@@ -266,19 +266,19 @@ func TestFSMigratorSQLiteTxModeValidationRunsBeforePreflight(t *testing.T) {
 	m = m.WithTransactionMode(MigrationTxModeNone)
 
 	called := false
-	err = m.MigrateUpWithPreflight(ctx, func(context.Context, MigrationPlan) error {
+	err = m.MigrateUpWithOptions(ctx, MigrateUpOptions{Preflight: func(context.Context, MigrationPlan) error {
 		called = true
 		return nil
-	})
+	}})
 	if err == nil {
-		t.Fatalf("MigrateUpWithPreflight unexpectedly succeeded")
+		t.Fatalf("MigrateUpWithOptions unexpectedly succeeded")
 	}
 	if called {
 		t.Fatalf("preflight hook ran before transaction-mode validation")
 	}
 }
 
-func TestMigrateUpWithPreflightAbortPreventsApply(t *testing.T) {
+func TestMigrateUpPreflightAbortPreventsApply(t *testing.T) {
 	ctx := context.Background()
 	conn := openSQLiteMigratorTestDB(t)
 	defer func() {
@@ -299,7 +299,7 @@ func TestMigrateUpWithPreflightAbortPreventsApply(t *testing.T) {
 		t.Fatalf("create filesystem migrator: %v", err)
 	}
 	hookErr := errors.New("preflight refused")
-	err = m.MigrateUpWithPreflight(ctx, func(ctx context.Context, plan MigrationPlan) error {
+	err = m.MigrateUpWithOptions(ctx, MigrateUpOptions{Preflight: func(ctx context.Context, plan MigrationPlan) error {
 		if plan.Direction != MigrationDirectionUp {
 			t.Fatalf("direction = %q, want up", plan.Direction)
 		}
@@ -317,9 +317,9 @@ func TestMigrateUpWithPreflightAbortPreventsApply(t *testing.T) {
 			t.Fatalf("guarded table exists before hook abort")
 		}
 		return hookErr
-	})
+	}})
 	if !errors.Is(err, hookErr) {
-		t.Fatalf("MigrateUpWithPreflight error = %v, want %v", err, hookErr)
+		t.Fatalf("MigrateUpWithOptions error = %v, want %v", err, hookErr)
 	}
 
 	var count int

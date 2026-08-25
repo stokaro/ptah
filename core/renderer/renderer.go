@@ -294,10 +294,10 @@ func RenderSQLWithCapabilities(dialect string, caps capability.Capabilities, nod
 	if err != nil {
 		return "", err
 	}
-	return VisitorRenderSQL(r, nodes...)
+	return visitorRenderSQL(r, nodes...)
 }
 
-func VisitorRenderSQL(r RenderVisitor, nodes ...ast.Node) (string, error) {
+func visitorRenderSQL(r RenderVisitor, nodes ...ast.Node) (string, error) {
 	r.Reset()
 	if validating, ok := r.(*validatingRenderer); ok {
 		prepared, err := prepareASTNodesForRendering(

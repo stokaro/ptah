@@ -1,13 +1,15 @@
-package goschema
+package generate
 
 import (
 	"fmt"
 	"strings"
+
+	"go.5x5.cz/ptah/core/goschema"
 )
 
-// GetDependencyInfo returns human-readable dependency information for debugging.
+// getDependencyInfo returns human-readable dependency information for debugging.
 //
-// This method generates a formatted string that displays the complete dependency
+// This helper generates a formatted string that displays the complete dependency
 // graph and table creation order. It's useful for debugging dependency issues,
 // understanding the schema structure, and verifying that the topological sort
 // has produced the expected results.
@@ -37,7 +39,7 @@ import (
 //	2. categories
 //	3. products
 //	4. orders
-func GetDependencyInfo(r *Database) string {
+func getDependencyInfo(r *goschema.Database) string {
 	var info strings.Builder
 	info.WriteString("Table Dependencies:\n")
 	info.WriteString("==================\n")

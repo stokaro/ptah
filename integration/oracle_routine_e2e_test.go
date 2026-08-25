@@ -65,8 +65,7 @@ func TestOracleRoutinesPlanAndConvergeE2E(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, before, nil)
 	c.Assert(err, qt.IsNil)
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(
-		diff, declared, platform.Oracle, conn.Info().Capabilities)
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, declared, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities})
 	c.Assert(err, qt.IsNil)
 
 	// Only the statements naming these three routines are executed. The
@@ -126,8 +125,7 @@ func TestOracleRoutinesPlanAndConvergeE2E(t *testing.T) {
 	// DROP FUNCTION on a procedure answers ORA-04043.
 	teardown, err := schemadiff.CompareWithDatabase(ctx, conn, &goschema.Database{}, after, nil)
 	c.Assert(err, qt.IsNil)
-	teardownStatements, err := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(
-		teardown, &goschema.Database{}, platform.Oracle, conn.Info().Capabilities)
+	teardownStatements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(teardown, &goschema.Database{}, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities})
 	c.Assert(err, qt.IsNil)
 	drops := oracleStatementsNamingRoutines(teardownStatements)
 	c.Assert(drops, qt.HasLen, 3)
@@ -266,8 +264,7 @@ func TestOracleTriggerCompilesE2E(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, live, nil)
 	c.Assert(err, qt.IsNil)
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(
-		diff, declared, platform.Oracle, conn.Info().Capabilities)
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, declared, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities})
 	c.Assert(err, qt.IsNil)
 
 	triggers := oracleStatementsNaming(statements, "CREATE TRIGGER")

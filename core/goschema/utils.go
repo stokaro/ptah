@@ -243,7 +243,7 @@ func Finalize(r *Database) {
 	restoreCompositeHelperDefinitions(r)
 	r.Fields = processEmbeddedFields(r.EmbeddedFields, r.Fields)
 	normalizeTableScopedNames(r)
-	Deduplicate(r)
+	deduplicate(r)
 	stashCompositeHelperDefinitions(r)
 	buildDependencyGraph(r)
 	sortTablesByDependencies(r)
@@ -1132,7 +1132,7 @@ func isFunctionInSorted(function Function, sorted []Function) bool {
 	return false
 }
 
-// Deduplicate removes duplicate entities that may be defined in multiple files.
+// deduplicate removes duplicate entities that may be defined in multiple files.
 //
 // During recursive parsing, the same entity might be encountered multiple times
 // if it's defined in different files or referenced across packages. This method
@@ -1161,7 +1161,7 @@ func isFunctionInSorted(function Function, sorted []Function) bool {
 // This method modifies the Database in-place, replacing the original
 // slices with deduplicated versions. The order of entities may change during
 // this process, but dependency ordering is handled separately.
-func Deduplicate(r *Database) {
+func deduplicate(r *Database) {
 	deduplicateDatabase(r, structDeduplicationScope)
 }
 

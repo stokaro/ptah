@@ -16,6 +16,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/cliobs"
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
+	"go.5x5.cz/ptah/cmd/internal/migrateflags"
 	"go.5x5.cz/ptah/cmd/internal/migrationsource"
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/dbschema"
@@ -295,7 +296,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 		return err
 	}
 
-	revisionFormat, err := migrator.ParseRevisionTableFormat(revisionFormatValue)
+	revisionFormat, err := migrateflags.ParseRevisionTableFormat(revisionFormatValue)
 	if err != nil {
 		return err
 	}
@@ -304,15 +305,15 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 		emit.Printf("Connecting to database: %s\n", dbschema.FormatDatabaseURL(dbURL))
 	}
 
-	timeouts, err := migrator.ParseMigrationTimeouts(lockTimeout, statementTimeout)
+	timeouts, err := migrateflags.ParseMigrationTimeouts(lockTimeout, statementTimeout)
 	if err != nil {
 		return err
 	}
-	execOrder, err := migrator.ParseExecOrder(execOrderValue)
+	execOrder, err := migrateflags.ParseExecOrder(execOrderValue)
 	if err != nil {
 		return err
 	}
-	migrationLockTimeout, err := migrator.ParseMigrationLockTimeout(migrationLockTimeoutValue)
+	migrationLockTimeout, err := migrateflags.ParseMigrationLockTimeout(migrationLockTimeoutValue)
 	if err != nil {
 		return err
 	}

@@ -1,11 +1,11 @@
 package goschema_test
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-
-	"go.5x5.cz/ptah/core/goschema/testutil"
 )
 
 func TestRLSPolicyParsingRobustness(t *testing.T) {
@@ -137,8 +137,8 @@ type User struct {
 			c := qt.New(t)
 
 			// Create a temporary file with the test code
-			tempFile := testutil.CreateTempGoFile(t, tt.goCode)
-			defer testutil.RemoveTempFile(t, tempFile)
+			tempFile := filepath.Join(t.TempDir(), "test.go")
+			c.Assert(os.WriteFile(tempFile, []byte(tt.goCode), 0600), qt.IsNil)
 
 			// Parse the file
 			database := mustParseFile(c, tempFile)

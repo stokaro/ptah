@@ -6,7 +6,6 @@ import (
 	"io/fs"
 	"path"
 	"regexp"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -308,12 +307,6 @@ func splitAtlasMigrationStem(stem string) (versionDigits, rawName string, ok boo
 	return stem[:i], strings.TrimLeft(stem[i:], "_."), true
 }
 
-// ValidateMigrationFileName validates that a filename follows the expected migration pattern
-func ValidateMigrationFileName(filename string) bool {
-	_, err := ParseMigrationFileName(filename)
-	return err == nil
-}
-
 // GenerateMigrationFileName generates a migration filename from components
 func GenerateMigrationFileName(version int64, description, direction string) string {
 	return fmt.Sprintf("%010d_%s.%s.sql", version, normalizeMigrationDescription(description), direction)
@@ -340,109 +333,6 @@ func normalizeMigrationDescription(description string) string {
 // This is a simple implementation that uses the current timestamp
 func GetNextMigrationVersion() int64 {
 	return time.Now().Unix()
-}
-
-// GroupMigrationFiles groups migration files by version, returning a map
-// where each version maps to a struct containing up and down migration files
-func GroupMigrationFiles(files []MigrationFile) map[int64]MigrationPair {
-	groups := make(map[int64]MigrationPair)
-
-	for _, file := range files {
-		pair := groups[file.Version]
-		switch file.Direction {
-		case "up":
-			pair.Up = &file
-		case "down":
-			pair.Down = &file
-		}
-		groups[file.Version] = pair
-	}
-
-	return groups
-}
-
-// MigrationPair represents a pair of up and down migration files for a version
-type MigrationPair struct {
-	Up   *MigrationFile
-	Down *MigrationFile
-}
-
-// IsComplete returns true if both up and down migrations are present
-func (mp MigrationPair) IsComplete() bool {
-	return mp.Up != nil && mp.Down != nil
-}
-
-// HasUp returns true if the up migration is present
-func (mp MigrationPair) HasUp() bool {
-	return mp.Up != nil
-}
-
-// HasDown returns true if the down migration is present
-func (mp MigrationPair) HasDown() bool {
-	return mp.Down != nil
-}
-
-// GetVersion returns the version number (assumes both up and down have same version)
-func (mp MigrationPair) GetVersion() int64 {
-	if mp.Up != nil {
-		return mp.Up.Version
-	}
-	if mp.Down != nil {
-		return mp.Down.Version
-	}
-	return 0
-}
-
-// GetDescription returns the description (assumes both up and down have same description)
-func (mp MigrationPair) GetDescription() string {
-	if mp.Up != nil {
-		return mp.Up.Name
-	}
-	if mp.Down != nil {
-		return mp.Down.Name
-	}
-	return ""
-}
-
-// ValidateMigrationPairs validates that all migration pairs are complete
-// Returns a list of versions that are missing either up or down migrations
-func ValidateMigrationPairs(pairs map[int64]MigrationPair) []int64 {
-	var incomplete []int64
-
-	for version, pair := range pairs {
-		if !pair.IsComplete() {
-			incomplete = append(incomplete, version)
-		}
-	}
-
-	slicesSort(incomplete)
-	return incomplete
-}
-
-// FindMigrationGaps finds gaps in migration version sequences
-// Returns a list of missing version numbers in the sequence
-func FindMigrationGaps(versions []int64) []int64 {
-	if len(versions) == 0 {
-		return nil
-	}
-
-	slicesSort(versions)
-	var gaps []int64
-
-	for i := 1; i < len(versions); i++ {
-		current := versions[i]
-		previous := versions[i-1]
-
-		// Check for gaps (this is a simple implementation)
-		// In practice, you might want more sophisticated gap detection
-		if current-previous > 1 {
-			for v := previous + 1; v < current; v++ {
-				gaps = append(gaps, v)
-			}
-		}
-	}
-
-	return gaps
 }
 
 // DiscoverMigrationFiles walks fsys and returns files matching the requested
@@ -612,8 +502,4 @@ func selectMigrationFiles(format MigrationDirFormat, ptahFiles, atlasFiles []Mig
 		}
 		return atlasFiles
 	}
-}
-
-func slicesSort(values []int64) {
-	slices.Sort(values)
 }

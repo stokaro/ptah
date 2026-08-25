@@ -203,10 +203,11 @@ func Register(dialect string, factory Factory) error {
 	return registerPlannerFactory(dialect, factory)
 }
 
-// RegisteredDialects returns the registered planner dialect names.
-func RegisteredDialects() []string {
+// RegisteredDialects returns the registered planner dialect names, or the
+// error that kept the built-in planners from registering.
+func RegisteredDialects() ([]string, error) {
 	if err := ensureBuiltInPlannersRegistered(); err != nil {
-		return nil
+		return nil, err
 	}
 	plannerRegistry.mu.RLock()
 	defer plannerRegistry.mu.RUnlock()
@@ -216,7 +217,7 @@ func RegisteredDialects() []string {
 		dialects = append(dialects, dialect)
 	}
 	slices.Sort(dialects)
-	return dialects
+	return dialects, nil
 }
 
 // GetPlanner returns a dialect-specific migration planner for the given database dialect.
@@ -279,19 +280,14 @@ func RegisteredDialects() []string {
 //   - Centralize dialect validation and error handling
 //   - Enable dependency injection and testing scenarios
 func GetPlanner(dialect string) (Planner, error) {
-	return GetPlannerWithCapabilities(dialect, capability.ForDialect(dialect))
-}
-
-// GetPlannerWithCapabilities returns a dialect-specific migration planner for
-// a concrete target capability set. Live database paths should pass
-// DBInfo.Capabilities so planning uses the same server-version preset as
-// readers and renderers. Offline callers should use GetPlanner.
-func GetPlannerWithCapabilities(dialect string, caps capability.Capabilities) (Planner, error) {
-	return GetPlannerWithOptions(dialect, Options{Capabilities: caps})
+	return GetPlannerWithOptions(dialect, Options{Capabilities: capability.ForDialect(dialect)})
 }
 
 // GetPlannerWithOptions returns a dialect-specific migration planner with
-// explicit high-level generation policy.
+// explicit high-level generation policy. Live database paths should set
+// Options.Capabilities from DBInfo.Capabilities so planning uses the same
+// server-version preset as readers and renderers; offline callers can leave
+// it nil to fall back to the dialect's default preset.
 func GetPlannerWithOptions(dialect string, opts Options) (Planner, error) {
 	if err := ensureBuiltInPlannersRegistered(); err != nil {
 		return nil, err
@@ -468,17 +464,6 @@ func GenerateSchemaDiffAST(diff *types.SchemaDiff, generated *goschema.Database,
 	})
 }
 
-// GenerateSchemaDiffASTWithCapabilities generates AST nodes for a concrete
-// target capability set resolved from a live server version.
-func GenerateSchemaDiffASTWithCapabilities(
-	diff *types.SchemaDiff,
-	generated *goschema.Database,
-	dialect string,
-	caps capability.Capabilities,
-) ([]ast.Node, error) {
-	return GenerateSchemaDiffASTWithOptions(diff, generated, dialect, Options{Capabilities: caps})
-}
-
 // GenerateSchemaDiffASTWithOptions generates AST nodes with explicit planning
 // options.
 func GenerateSchemaDiffASTWithOptions(
@@ -606,23 +591,14 @@ func RequiresNoTransaction(dialect string, nodes []ast.Node) bool {
 //   - GenerateSchemaDiffSQL: For complete SQL string without splitting
 //   - GenerateSchemaDiffAST: For AST nodes without rendering
 func GenerateSchemaDiffSQLStatements(diff *types.SchemaDiff, generated *goschema.Database, dialect string) ([]string, error) {
-	output, err := GenerateSchemaDiffSQLWithCapabilities(diff, generated, dialect, capability.ForDialect(dialect))
+	output, err := GenerateSchemaDiffSQLWithOptions(diff, generated, dialect, Options{
+		Capabilities: capability.ForDialect(dialect),
+	})
 	if err != nil {
 		return nil, err
 	}
 	statements := sqlutil.SplitSQLStatementsForDialect(output, dialect)
 	return statements, nil
-}
-
-// GenerateSchemaDiffSQLStatementsWithCapabilities generates individual SQL
-// statements using a concrete server capability set.
-func GenerateSchemaDiffSQLStatementsWithCapabilities(
-	diff *types.SchemaDiff,
-	generated *goschema.Database,
-	dialect string,
-	caps capability.Capabilities,
-) ([]string, error) {
-	return GenerateSchemaDiffSQLStatementsWithOptions(diff, generated, dialect, Options{Capabilities: caps})
 }
 
 // GenerateSchemaDiffSQLStatementsWithOptions generates individual SQL
@@ -703,18 +679,9 @@ func GenerateSchemaDiffSQLStatementsWithOptions(
 //   - GenerateSchemaDiffSQLStatements: For individual SQL statements
 //   - GenerateSchemaDiffAST: For AST nodes without rendering
 func GenerateSchemaDiffSQL(diff *types.SchemaDiff, generated *goschema.Database, dialect string) (string, error) {
-	return GenerateSchemaDiffSQLWithCapabilities(diff, generated, dialect, capability.ForDialect(dialect))
-}
-
-// GenerateSchemaDiffSQLWithCapabilities generates complete SQL using a
-// concrete server capability set.
-func GenerateSchemaDiffSQLWithCapabilities(
-	diff *types.SchemaDiff,
-	generated *goschema.Database,
-	dialect string,
-	caps capability.Capabilities,
-) (string, error) {
-	return GenerateSchemaDiffSQLWithOptions(diff, generated, dialect, Options{Capabilities: caps})
+	return GenerateSchemaDiffSQLWithOptions(diff, generated, dialect, Options{
+		Capabilities: capability.ForDialect(dialect),
+	})
 }
 
 // GenerateSchemaDiffSQLWithOptions generates complete SQL using explicit

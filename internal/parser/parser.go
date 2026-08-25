@@ -604,7 +604,7 @@ func (p *Parser) isCurrentSQLServerGoBatchSeparator() bool {
 	if !p.current.MatchIdentifierValue("GO") {
 		return false
 	}
-	return sqlutil.IsSQLServerGoBatchSeparatorAt(p.input, p.current.Start, p.current.End)
+	return isSQLServerGoBatchSeparatorAt(p.input, p.current.Start, p.current.End)
 }
 
 // isNumeric checks if a string represents a numeric value.
@@ -1087,7 +1087,7 @@ func (p *Parser) collectFunctionBeginBody() (string, bool, error) {
 
 func (p *Parser) trackCurrentRoutineCompoundKeyword(blockDepth, caseDepth *int, pendingEndTrailer *bool) {
 	keyword := strings.ToUpper(p.current.Value)
-	if keyword == "IF" && sqlutil.IsScalarIFExpressionFragment(p.input[p.current.End:]) {
+	if keyword == "IF" && isScalarIFExpressionFragment(p.input[p.current.End:]) {
 		// MySQL scalar IF(...) calls are not compound IF ... END IF blocks.
 		return
 	}

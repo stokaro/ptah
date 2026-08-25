@@ -10,6 +10,7 @@ import (
 	"io"
 	"io/fs"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/cliobs"
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
+	"go.5x5.cz/ptah/cmd/internal/migrateflags"
 	"go.5x5.cz/ptah/cmd/internal/migrationsource"
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/dbschema"
@@ -242,19 +244,19 @@ func parseMigrationSettings(
 	if err != nil {
 		return parsedMigrationSettings{}, err
 	}
-	revisionFormat, err := migrator.ParseRevisionTableFormat(revisionFormatValue)
+	revisionFormat, err := migrateflags.ParseRevisionTableFormat(revisionFormatValue)
 	if err != nil {
 		return parsedMigrationSettings{}, err
 	}
-	execOrder, err := migrator.ParseExecOrder(execOrderValue)
+	execOrder, err := migrateflags.ParseExecOrder(execOrderValue)
 	if err != nil {
 		return parsedMigrationSettings{}, err
 	}
-	txMode, err := migrator.ParseMigrationTxMode(txModeValue)
+	txMode, err := migrateflags.ParseMigrationTxMode(txModeValue)
 	if err != nil {
 		return parsedMigrationSettings{}, err
 	}
-	migrationLockTimeout, err := migrator.ParseMigrationLockTimeout(migrationLockTimeoutValue)
+	migrationLockTimeout, err := migrateflags.ParseMigrationLockTimeout(migrationLockTimeoutValue)
 	if err != nil {
 		return parsedMigrationSettings{}, err
 	}
@@ -404,7 +406,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 		emit.Printf("Connecting to database: %s\n", dbschema.FormatDatabaseURL(dbURL))
 	}
 
-	timeouts, err := migrator.ParseMigrationTimeouts(lockTimeout, statementTimeout)
+	timeouts, err := migrateflags.ParseMigrationTimeouts(lockTimeout, statementTimeout)
 	if err != nil {
 		return err
 	}
@@ -502,7 +504,10 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	}
 
 	if settings.execOrder == migrator.ExecOrderLinear && len(status.OutOfOrderMigrations) > 0 {
-		return migrator.NewOutOfOrderError(status.CurrentVersion, status.OutOfOrderMigrations)
+		return &migrator.OutOfOrderError{
+			CurrentVersion: status.CurrentVersion,
+			Versions:       slices.Clone(status.OutOfOrderMigrations),
+		}
 	}
 	preflightHook := dbcli.LockedMigrationPreflightHook(opts.dryRun, preflight.Options{
 		Direction:          preflight.DirectionUp,

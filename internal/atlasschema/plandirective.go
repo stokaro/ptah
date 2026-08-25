@@ -190,8 +190,8 @@ func PlanDirectiveHeader(directives []PlanDirective) string {
 // PlanTxMode reports the transaction mode a plan's migration text selects, as
 // a FILE mode: the plan states how it wants to be executed, and how that
 // combines with an operator's `--tx-mode` is
-// [migrator.ResolveAtlasDirectiveTxMode]'s decision rather than this
-// function's. [migrator.MigrationFileTxModeUnspecified] means it states
+// cmd/internal/migrateflags.ResolveAtlasDirectiveTxMode's decision rather than
+// this function's. [migrator.MigrationFileTxModeUnspecified] means it states
 // nothing.
 //
 // source names the plan for a refused value's diagnostic.

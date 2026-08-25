@@ -168,8 +168,7 @@ func applyInlineEnum(
 	_ = dialect
 	diff := inlineEnumDiff(c, conn, description)
 	info := conn.Info()
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(
-		diff, description, info.Dialect, info.Capabilities)
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, description, info.Dialect, planner.Options{Capabilities: info.Capabilities})
 	c.Assert(err, qt.IsNil)
 	for _, statement := range statements {
 		_, execErr := conn.ExecContext(ctx, statement)

@@ -2,6 +2,7 @@ package migrator_test
 
 import (
 	"testing"
+	"testing/fstest"
 	"time"
 
 	qt "github.com/frankban/quicktest"
@@ -76,9 +77,17 @@ func TestRuntimePolicies_ReachEveryTargetTheirCapabilityClaims(t *testing.T) {
 func TestMigrationTimeouts_ParseKeepsWorkingForEveryTarget(t *testing.T) {
 	c := qt.New(t)
 
-	timeouts, err := migrator.ParseMigrationTimeouts("200ms", "5s")
-
+	provider, err := migrator.NewFSMigrationProvider(fstest.MapFS{
+		"0000000001_t.up.sql": &fstest.MapFile{
+			Data: []byte("-- +ptah lock_timeout=200ms statement_timeout=5s\nSELECT 1;"),
+		},
+		"0000000001_t.down.sql": &fstest.MapFile{Data: []byte("SELECT 1;")},
+	})
 	c.Assert(err, qt.IsNil)
+	migrations := provider.Migrations()
+	c.Assert(migrations, qt.HasLen, 1)
+
+	timeouts := migrations[0].UpTimeouts
 	c.Assert(timeouts.HasLockTimeout, qt.IsTrue)
 	c.Assert(timeouts.LockTimeout, qt.Equals, 200*time.Millisecond)
 	c.Assert(timeouts.HasStatementTimeout, qt.IsTrue)

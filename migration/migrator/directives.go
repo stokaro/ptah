@@ -24,7 +24,7 @@ import (
 // directives take effect.
 //
 // The scan is lexer-driven with the same SQL-standard string handling the
-// dialect-blind SplitSQLStatements uses, so a `-- +ptah` sequence inside a
+// dialect-blind sqlutil.SplitStatements uses, so a `-- +ptah` sequence inside a
 // string literal or a block comment is never mistaken for a directive; the two
 // views of the file cannot disagree. A directive must additionally be a line
 // comment that begins its physical line (leading whitespace allowed), so an

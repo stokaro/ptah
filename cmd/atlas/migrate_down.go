@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
+	"go.5x5.cz/ptah/cmd/internal/migrateflags"
 	"go.5x5.cz/ptah/cmd/internal/migrationsource"
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/dbschema"
@@ -164,7 +165,7 @@ func runAtlasMigrateDownFormat(
 	if err != nil {
 		return err
 	}
-	migrationLockTimeout, err := migrator.ParseMigrationLockTimeout(opts.lockTimeout)
+	migrationLockTimeout, err := migrateflags.ParseMigrationLockTimeout(opts.lockTimeout)
 	if err != nil {
 		return err
 	}

@@ -12,6 +12,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/cmd/internal/editor"
+	"go.5x5.cz/ptah/cmd/internal/migrateflags"
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
@@ -27,7 +28,6 @@ import (
 	"go.5x5.cz/ptah/internal/pathguard"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/generator"
-	"go.5x5.cz/ptah/migration/migrator"
 )
 
 type atlasMigrateDiffOptions struct {
@@ -294,7 +294,7 @@ func runAtlasMigrateDiff(
 	if err := atlasreport.ValidateSchemaDiffTemplate(format); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	lockTimeout, err := migrator.ParseMigrationLockTimeout(opts.lockTimeout)
+	lockTimeout, err := migrateflags.ParseMigrationLockTimeout(opts.lockTimeout)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

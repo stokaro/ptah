@@ -149,14 +149,16 @@ func TestMigrationPreflightHookRunsInsidePostgresAdvisoryLock(t *testing.T) {
 	firstErr := make(chan error, 1)
 	go func() {
 		firstErr <- issue124Migrator(firstConn, names.migrationsTable, issue124Migrations(names)).
-			MigrateUpWithPreflight(ctx, func(ctx context.Context, _ migrator.MigrationPlan) error {
-				close(hookStarted)
-				select {
-				case <-releaseHook:
-					return nil
-				case <-ctx.Done():
-					return ctx.Err()
-				}
+			MigrateUpWithOptions(ctx, migrator.MigrateUpOptions{
+				Preflight: func(ctx context.Context, _ migrator.MigrationPlan) error {
+					close(hookStarted)
+					select {
+					case <-releaseHook:
+						return nil
+					case <-ctx.Done():
+						return ctx.Err()
+					}
+				},
 			})
 	}()
 

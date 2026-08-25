@@ -101,8 +101,7 @@ func assertOracleDomainsAreRefused(ctx context.Context, c *qt.C, conn *dbschema.
 	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, live, nil)
 	c.Assert(err, qt.IsNil)
 
-	_, err = planner.GenerateSchemaDiffSQLStatementsWithCapabilities(
-		diff, declared, platform.Oracle, conn.Info().Capabilities)
+	_, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, declared, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities})
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "CREATE DOMAIN")
 }
@@ -116,8 +115,7 @@ func assertOracleDomainsConverge(ctx context.Context, c *qt.C, conn *dbschema.Da
 	c.Assert(err, qt.IsNil)
 	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, before, nil)
 	c.Assert(err, qt.IsNil)
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(
-		diff, declared, platform.Oracle, conn.Info().Capabilities)
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, declared, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities})
 	c.Assert(err, qt.IsNil)
 
 	// Non-vacuity: the plan really carries both domains, and it carries them
@@ -151,8 +149,7 @@ func assertOracleDomainsConverge(ctx context.Context, c *qt.C, conn *dbschema.Da
 	// measured, dropping a domain a table still uses answers ORA-11502.
 	teardown, err := schemadiff.CompareWithDatabase(ctx, conn, &goschema.Database{}, after, nil)
 	c.Assert(err, qt.IsNil)
-	teardownStatements, err := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(
-		teardown, &goschema.Database{}, platform.Oracle, conn.Info().Capabilities)
+	teardownStatements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(teardown, &goschema.Database{}, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities})
 	c.Assert(err, qt.IsNil)
 	c.Assert(oracleFirstIndexOf(c, teardownStatements, "DROP TABLE") <
 		oracleFirstIndexOf(c, teardownStatements, "DROP DOMAIN"), qt.IsTrue)

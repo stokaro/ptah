@@ -6,7 +6,6 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/ast/mocks"
 )
 
 func TestCreateRoleNode(t *testing.T) {
@@ -51,7 +50,7 @@ func TestCreateRoleNode(t *testing.T) {
 	t.Run("Accept calls visitor correctly", func(t *testing.T) {
 		c := qt.New(t)
 		role := ast.NewCreateRole("test_role")
-		visitor := &mocks.MockVisitor{}
+		visitor := &MockVisitor{}
 
 		err := role.Accept(visitor)
 
@@ -62,7 +61,7 @@ func TestCreateRoleNode(t *testing.T) {
 	t.Run("Accept propagates visitor errors", func(t *testing.T) {
 		c := qt.New(t)
 		role := ast.NewCreateRole("test_role")
-		visitor := &mocks.MockVisitor{ReturnError: true}
+		visitor := &MockVisitor{ReturnError: true}
 
 		err := role.Accept(visitor)
 
@@ -95,7 +94,7 @@ func TestDropRoleNode(t *testing.T) {
 	t.Run("Accept calls visitor correctly", func(t *testing.T) {
 		c := qt.New(t)
 		dropRole := ast.NewDropRole("test_role")
-		visitor := &mocks.MockVisitor{}
+		visitor := &MockVisitor{}
 
 		err := dropRole.Accept(visitor)
 
@@ -106,7 +105,7 @@ func TestDropRoleNode(t *testing.T) {
 	t.Run("Accept propagates visitor errors", func(t *testing.T) {
 		c := qt.New(t)
 		dropRole := ast.NewDropRole("test_role")
-		visitor := &mocks.MockVisitor{ReturnError: true}
+		visitor := &MockVisitor{ReturnError: true}
 
 		err := dropRole.Accept(visitor)
 
@@ -144,7 +143,7 @@ func TestAlterRoleNode(t *testing.T) {
 	t.Run("Accept calls visitor correctly", func(t *testing.T) {
 		c := qt.New(t)
 		alterRole := ast.NewAlterRole("test_role")
-		visitor := &mocks.MockVisitor{}
+		visitor := &MockVisitor{}
 
 		err := alterRole.Accept(visitor)
 
@@ -155,7 +154,7 @@ func TestAlterRoleNode(t *testing.T) {
 	t.Run("Accept propagates visitor errors", func(t *testing.T) {
 		c := qt.New(t)
 		alterRole := ast.NewAlterRole("test_role")
-		visitor := &mocks.MockVisitor{ReturnError: true}
+		visitor := &MockVisitor{ReturnError: true}
 
 		err := alterRole.Accept(visitor)
 
@@ -182,7 +181,7 @@ func TestGrantPrivilegeNode(t *testing.T) {
 	t.Run("Accept calls visitor correctly", func(t *testing.T) {
 		c := qt.New(t)
 		grant := ast.NewGrantPrivilege("app_role", "TABLE", "users", []string{"SELECT"})
-		visitor := &mocks.MockVisitor{}
+		visitor := &MockVisitor{}
 
 		err := grant.Accept(visitor)
 
@@ -193,7 +192,7 @@ func TestGrantPrivilegeNode(t *testing.T) {
 	t.Run("Accept propagates visitor errors", func(t *testing.T) {
 		c := qt.New(t)
 		grant := ast.NewGrantPrivilege("app_role", "TABLE", "users", []string{"SELECT"})
-		visitor := &mocks.MockVisitor{ReturnError: true}
+		visitor := &MockVisitor{ReturnError: true}
 
 		err := grant.Accept(visitor)
 
@@ -220,7 +219,7 @@ func TestRevokePrivilegeNode(t *testing.T) {
 	t.Run("Accept calls visitor correctly", func(t *testing.T) {
 		c := qt.New(t)
 		revoke := ast.NewRevokePrivilege("app_role", "SCHEMA", "public", []string{"USAGE"})
-		visitor := &mocks.MockVisitor{}
+		visitor := &MockVisitor{}
 
 		err := revoke.Accept(visitor)
 
@@ -231,7 +230,7 @@ func TestRevokePrivilegeNode(t *testing.T) {
 	t.Run("Accept propagates visitor errors", func(t *testing.T) {
 		c := qt.New(t)
 		revoke := ast.NewRevokePrivilege("app_role", "SCHEMA", "public", []string{"USAGE"})
-		visitor := &mocks.MockVisitor{ReturnError: true}
+		visitor := &MockVisitor{ReturnError: true}
 
 		err := revoke.Accept(visitor)
 

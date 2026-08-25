@@ -111,3 +111,17 @@ v0.2.0 go.5x5.cz/ptah/core/renderer
 # optional method would have let a parser keep silently dropping files, which is
 # the defect itself.
 v0.2.0 go.5x5.cz/ptah/migration/importer
+
+# The no-consumer surface cuts of the #2246 public API audit. A full-module
+# consumer sweep classified these packages' deleted or unexported symbols as
+# having no caller outside their own package, their tests, or cmd/: planner's
+# *WithCapabilities tier was one-line sugar over the *WithOptions forms and
+# RegisteredDialects swallowed the registration error; renderer's
+# VisitorRenderSQL silently skipped the validation seam for caller-built
+# visitors; config.FilterIgnoredExtensions and sqlutil's two SQL Server parser
+# predicates had exactly one consumer each, inside this module. Pre-GA, with
+# zero library consumers, the cuts are direct.
+v0.2.0 go.5x5.cz/ptah/migration/planner
+v0.2.0 go.5x5.cz/ptah/core/renderer
+v0.2.0 go.5x5.cz/ptah/config
+v0.2.0 go.5x5.cz/ptah/core/sqlutil

@@ -7,8 +7,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/migration/migrator"
 )
 
 // execScript executes generated SQL using the same statement splitter as the
@@ -16,7 +16,7 @@ import (
 // MySQL and MariaDB commit DDL independently of transaction boundaries.
 func execScript(c *qt.C, conn *dbschema.DatabaseConnection, sqlText, label string) {
 	c.Helper()
-	for _, stmt := range migrator.SplitSQLStatements(sqlText) {
+	for _, stmt := range sqlutil.SplitStatements(sqlText) {
 		if strings.TrimSpace(stmt) == "" {
 			continue
 		}

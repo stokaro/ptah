@@ -17,6 +17,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
+	"go.5x5.cz/ptah/cmd/internal/migrateflags"
 	"go.5x5.cz/ptah/cmd/internal/migrationsource"
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/dbschema"
@@ -254,7 +255,7 @@ func migrateStatusCommand(cmd *cobra.Command, opts *options) error {
 		}
 	}
 
-	revisionFormat, err := migrator.ParseRevisionTableFormat(revisionFormatValue)
+	revisionFormat, err := migrateflags.ParseRevisionTableFormat(revisionFormatValue)
 	if err != nil {
 		return err
 	}

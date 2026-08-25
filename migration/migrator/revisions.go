@@ -236,7 +236,7 @@ func normalizeAtlasRevisionHash(hash string) string {
 }
 
 func migrationStatementCount(sqlText string) int {
-	return len(SplitSQLStatements(sqlText))
+	return len(sqlutil.SplitStatements(sqlText))
 }
 
 func migrationStatementCountForDialect(sqlText, dialect string) int {

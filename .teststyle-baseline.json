@@ -1,6 +1,12 @@
 {
   "test_conditionals": [
     {
+      "path": "cmd/internal/migrateflags/migrateflags_test.go",
+      "function": "TestParseMigrationLockTimeout",
+      "kind": "if",
+      "count": 1
+    },
+    {
       "path": "core/goschema/dependency_fix_test.go",
       "function": "TestDependencyOrderingWithEmbeddedFields",
       "kind": "if",
@@ -75,18 +81,6 @@
     {
       "path": "core/goschema/mysql_type_compatibility_test.go",
       "function": "TestMySQLTypeCompatibilityForEmbeddedRelations",
-      "kind": "if",
-      "count": 1
-    },
-    {
-      "path": "core/goschema/parser_test.go",
-      "function": "TestGetDependencyInfo",
-      "kind": "if",
-      "count": 2
-    },
-    {
-      "path": "core/goschema/parser_test.go",
-      "function": "TestGetDependencyInfo_EmptyResult",
       "kind": "if",
       "count": 1
     },
@@ -649,12 +643,6 @@
       "count": 1
     },
     {
-      "path": "migration/migrator/advisory_lock_test.go",
-      "function": "TestParseMigrationLockTimeout",
-      "kind": "if",
-      "count": 1
-    },
-    {
       "path": "migration/migrator/example_test.go",
       "function": "ExampleMigrator",
       "kind": "if",
@@ -788,7 +776,7 @@
     },
     {
       "path": "migration/migrator/sqlite_test.go",
-      "function": "TestMigrateUpWithPreflightAbortPreventsApply",
+      "function": "TestMigrateUpPreflightAbortPreventsApply",
       "kind": "if",
       "count": 10
     },

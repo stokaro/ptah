@@ -211,14 +211,6 @@ func observeToken(state *sqlcompound.State, token lexer.Token) {
 	state.Word(token.Value)
 }
 
-// IsSQLServerGoBatchSeparatorAt reports whether a GO token is a SQL Server
-// utility batch separator command on its own line. Identifiers such as
-// "AS go" or variables such as "@go" are ordinary T-SQL tokens.
-func IsSQLServerGoBatchSeparatorAt(input string, start, end int) bool {
-	_, ok := sqlServerGoBatchSeparatorRepeatCountAt(input, start, end)
-	return ok
-}
-
 // sqlServerGoBatchSeparatorRepeatCountAt reports whether a GO token is a SQL
 // Server utility batch separator and returns the optional GO count. Plain GO
 // has count 1; GO 0 discards the pending batch just like SQL Server client

@@ -6,13 +6,12 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/ast/mocks"
 )
 
 func TestAddColumnOperation_Accept(t *testing.T) {
 	c := qt.New(t)
 
-	visitor := &mocks.MockVisitor{}
+	visitor := &MockVisitor{}
 	column := &ast.ColumnNode{Name: "new_column"}
 	op := &ast.AddColumnOperation{Column: column}
 
@@ -25,7 +24,7 @@ func TestAddColumnOperation_Accept(t *testing.T) {
 func TestAddColumnOperation_AcceptError(t *testing.T) {
 	c := qt.New(t)
 
-	visitor := &mocks.MockVisitor{ReturnError: true}
+	visitor := &MockVisitor{ReturnError: true}
 	column := &ast.ColumnNode{Name: "new_column"}
 	op := &ast.AddColumnOperation{Column: column}
 
@@ -38,7 +37,7 @@ func TestAddColumnOperation_AcceptError(t *testing.T) {
 func TestDropColumnOperation_Accept(t *testing.T) {
 	c := qt.New(t)
 
-	visitor := &mocks.MockVisitor{}
+	visitor := &MockVisitor{}
 	op := &ast.DropColumnOperation{ColumnName: "old_column"}
 
 	err := op.Accept(visitor)
@@ -50,7 +49,7 @@ func TestDropColumnOperation_Accept(t *testing.T) {
 func TestDropColumnOperation_AcceptError(t *testing.T) {
 	c := qt.New(t)
 
-	visitor := &mocks.MockVisitor{ReturnError: true}
+	visitor := &MockVisitor{ReturnError: true}
 	op := &ast.DropColumnOperation{ColumnName: "old_column"}
 
 	err := op.Accept(visitor)
@@ -62,7 +61,7 @@ func TestDropColumnOperation_AcceptError(t *testing.T) {
 func TestModifyColumnOperation_Accept(t *testing.T) {
 	c := qt.New(t)
 
-	visitor := &mocks.MockVisitor{}
+	visitor := &MockVisitor{}
 	column := &ast.ColumnNode{Name: "modified_column"}
 	op := &ast.ModifyColumnOperation{Column: column}
 
@@ -75,7 +74,7 @@ func TestModifyColumnOperation_Accept(t *testing.T) {
 func TestModifyColumnOperation_AcceptError(t *testing.T) {
 	c := qt.New(t)
 
-	visitor := &mocks.MockVisitor{ReturnError: true}
+	visitor := &MockVisitor{ReturnError: true}
 	column := &ast.ColumnNode{Name: "modified_column"}
 	op := &ast.ModifyColumnOperation{Column: column}
 
@@ -106,7 +105,7 @@ func TestAlterOperations_ImplementInterface(t *testing.T) {
 	// Test that they all implement the Node interface as well (since AlterOperation embeds Node)
 	for _, op := range ops {
 		// This tests that Accept method exists and can be called
-		visitor := &mocks.MockVisitor{}
+		visitor := &MockVisitor{}
 		err := op.Accept(visitor)
 		c.Assert(err, qt.IsNil)
 	}
@@ -142,7 +141,7 @@ func TestAlterOperations_InterfaceCompliance(t *testing.T) {
 func TestAddConstraintOperation_ForeignKey(t *testing.T) {
 	c := qt.New(t)
 
-	visitor := &mocks.MockVisitor{}
+	visitor := &MockVisitor{}
 	fkRef := &ast.ForeignKeyRef{
 		Table:  "users",
 		Column: "id",
@@ -166,7 +165,7 @@ func TestAddConstraintOperation_ForeignKey(t *testing.T) {
 func TestDropConstraintOperation_Accept(t *testing.T) {
 	c := qt.New(t)
 
-	visitor := &mocks.MockVisitor{}
+	visitor := &MockVisitor{}
 	op := &ast.DropConstraintOperation{
 		ConstraintName: "test_constraint",
 		IfExists:       true,
@@ -188,7 +187,7 @@ func TestDropConstraintOperation_Accept(t *testing.T) {
 func TestAddColumnOperation_ComplexColumn(t *testing.T) {
 	c := qt.New(t)
 
-	visitor := &mocks.MockVisitor{}
+	visitor := &MockVisitor{}
 	column := ast.NewColumn("user_id", "INTEGER").
 		SetNotNull().
 		SetForeignKey("users", "id", "fk_user").
@@ -213,7 +212,7 @@ func TestAddColumnOperation_ComplexColumn(t *testing.T) {
 func TestModifyColumnOperation_ComplexColumn(t *testing.T) {
 	c := qt.New(t)
 
-	visitor := &mocks.MockVisitor{}
+	visitor := &MockVisitor{}
 	column := ast.NewColumn("status", "VARCHAR(20)").
 		SetNotNull().
 		SetDefault("'active'").
@@ -265,7 +264,7 @@ func TestDropColumnOperation_VariousNames(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			visitor := &mocks.MockVisitor{}
+			visitor := &MockVisitor{}
 			op := &ast.DropColumnOperation{ColumnName: tt.columnName}
 
 			err := op.Accept(visitor)
@@ -281,7 +280,7 @@ func TestDropColumnOperation_VariousNames(t *testing.T) {
 func TestAlterOperations_NilColumn(t *testing.T) {
 	c := qt.New(t)
 
-	visitor := &mocks.MockVisitor{}
+	visitor := &MockVisitor{}
 
 	// Test AddColumnOperation with nil column - this will panic
 	addOp := &ast.AddColumnOperation{Column: nil}

@@ -16,6 +16,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
+	"go.5x5.cz/ptah/cmd/internal/migrateflags"
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/migration/migrator"
@@ -110,7 +111,7 @@ func runMigrateTag(cmd *cobra.Command, opts options, args []string) error {
 		// of recording, which reads as success for a command that did nothing.
 		return cmdutil.Fail(cmd, fmt.Errorf("--%s needs a tag name to record it against", versionFlag))
 	}
-	revisionFormat, err := migrator.ParseRevisionTableFormat(opts.revisionTableFormat)
+	revisionFormat, err := migrateflags.ParseRevisionTableFormat(opts.revisionTableFormat)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

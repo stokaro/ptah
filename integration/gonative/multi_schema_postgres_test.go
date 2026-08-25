@@ -10,9 +10,9 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
-	"go.5x5.cz/ptah/migration/migrator"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
@@ -67,7 +67,7 @@ func TestPostgreSQLMultiSchemaGenerateApplyReadDiffIntegration(t *testing.T) {
 	c.Assert(migrationSQLForAssert, qt.Contains, "CREATE SCHEMA IF NOT EXISTS ptah_ms_billing;")
 	c.Assert(migrationSQLForAssert, qt.Contains, "REFERENCES ptah_ms_auth.ptah_ms_users(id);")
 
-	for _, stmt := range migrator.SplitSQLStatements(migrationSQL) {
+	for _, stmt := range sqlutil.SplitStatements(migrationSQL) {
 		_, err = db.Exec(stmt)
 		c.Assert(err, qt.IsNil, qt.Commentf("statement failed: %s", stmt))
 	}

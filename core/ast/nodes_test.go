@@ -6,7 +6,6 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/ast/mocks"
 )
 
 func TestNewCreateTable(t *testing.T) {
@@ -49,7 +48,7 @@ func TestCreateTableNode_FluentAPI(t *testing.T) {
 func TestCreateTableNode_Accept(t *testing.T) {
 	c := qt.New(t)
 
-	visitor := &mocks.MockVisitor{}
+	visitor := &MockVisitor{}
 	node := &ast.CreateTableNode{Name: "users"}
 
 	err := node.Accept(visitor)
@@ -61,7 +60,7 @@ func TestCreateTableNode_Accept(t *testing.T) {
 func TestCreateSchemaNode_Accept(t *testing.T) {
 	c := qt.New(t)
 
-	visitor := &mocks.MockVisitor{}
+	visitor := &MockVisitor{}
 	node := ast.NewCreateSchema("public")
 	node.IfNotExists = true
 
@@ -74,7 +73,7 @@ func TestCreateSchemaNode_Accept(t *testing.T) {
 func TestCreateDatabaseNode_Accept(t *testing.T) {
 	c := qt.New(t)
 
-	visitor := &mocks.MockVisitor{}
+	visitor := &MockVisitor{}
 	node := ast.NewCreateDatabase("app")
 
 	err := node.Accept(visitor)
@@ -86,7 +85,7 @@ func TestCreateDatabaseNode_Accept(t *testing.T) {
 func TestAlterTableNode_Accept(t *testing.T) {
 	c := qt.New(t)
 
-	visitor := &mocks.MockVisitor{}
+	visitor := &MockVisitor{}
 	node := &ast.AlterTableNode{Name: "users"}
 
 	err := node.Accept(visitor)
@@ -111,7 +110,7 @@ func TestNewColumn(t *testing.T) {
 func TestColumnNode_Accept(t *testing.T) {
 	c := qt.New(t)
 
-	visitor := &mocks.MockVisitor{}
+	visitor := &MockVisitor{}
 	node := &ast.ColumnNode{Name: "id"}
 
 	err := node.Accept(visitor)
@@ -259,7 +258,7 @@ func TestColumnNode_FluentAPI(t *testing.T) {
 func TestConstraintNode_Accept(t *testing.T) {
 	c := qt.New(t)
 
-	visitor := &mocks.MockVisitor{}
+	visitor := &MockVisitor{}
 	node := &ast.ConstraintNode{Name: "pk_users"}
 
 	err := node.Accept(visitor)
@@ -298,7 +297,7 @@ func TestIndexNode_EffectiveParts(t *testing.T) {
 func TestIndexNode_Accept(t *testing.T) {
 	c := qt.New(t)
 
-	visitor := &mocks.MockVisitor{}
+	visitor := &MockVisitor{}
 	node := &ast.IndexNode{Name: "idx_users_email"}
 
 	err := node.Accept(visitor)
@@ -343,7 +342,7 @@ func TestDropIndexNode_FluentAPI(t *testing.T) {
 func TestDropIndexNode_Accept(t *testing.T) {
 	c := qt.New(t)
 
-	visitor := &mocks.MockVisitor{}
+	visitor := &MockVisitor{}
 	dropIndex := ast.NewDropIndex("idx_users_email")
 
 	err := dropIndex.Accept(visitor)
@@ -365,7 +364,7 @@ func TestNewEnum(t *testing.T) {
 func TestEnumNode_Accept(t *testing.T) {
 	c := qt.New(t)
 
-	visitor := &mocks.MockVisitor{}
+	visitor := &MockVisitor{}
 	node := &ast.EnumNode{Name: "status"}
 
 	err := node.Accept(visitor)
@@ -385,7 +384,7 @@ func TestNewComment(t *testing.T) {
 func TestCommentNode_Accept(t *testing.T) {
 	c := qt.New(t)
 
-	visitor := &mocks.MockVisitor{}
+	visitor := &MockVisitor{}
 	node := &ast.CommentNode{Text: "This is a comment"}
 
 	err := node.Accept(visitor)
@@ -576,7 +575,7 @@ func TestDropTableNode_SetNames(t *testing.T) {
 func TestDropTableNode_Accept(t *testing.T) {
 	c := qt.New(t)
 
-	visitor := &mocks.MockVisitor{}
+	visitor := &MockVisitor{}
 	dropTable := ast.NewDropTable("users")
 
 	err := dropTable.Accept(visitor)
@@ -614,7 +613,7 @@ func TestDropTypeNode_FluentAPI(t *testing.T) {
 func TestDropTypeNode_Accept(t *testing.T) {
 	c := qt.New(t)
 
-	visitor := &mocks.MockVisitor{}
+	visitor := &MockVisitor{}
 	dropType := ast.NewDropType("status_enum")
 
 	err := dropType.Accept(visitor)
@@ -664,7 +663,7 @@ func TestCreateFunctionNode_FluentAPI(t *testing.T) {
 func TestCreateFunctionNode_Accept(t *testing.T) {
 	c := qt.New(t)
 
-	visitor := &mocks.MockVisitor{}
+	visitor := &MockVisitor{}
 	function := ast.NewCreateFunction("test_function")
 
 	err := function.Accept(visitor)
@@ -678,7 +677,7 @@ func TestOpaqueRoutineNode_AcceptDelegatesToRawSQL(t *testing.T) {
 	c := qt.New(t)
 
 	routine := ast.NewOpaqueRoutine(" CREATE PROCEDURE p() SELECT 1; ", "mysql", ast.RoutineKindProcedure)
-	visitor := &mocks.MockVisitor{}
+	visitor := &MockVisitor{}
 
 	err := routine.Accept(visitor)
 
@@ -691,7 +690,7 @@ func TestOpaqueRoutineNode_AcceptPropagatesRawSQLError(t *testing.T) {
 	c := qt.New(t)
 
 	routine := ast.NewOpaqueRoutine("CREATE PROCEDURE p() SELECT 1;", "mysql", ast.RoutineKindProcedure)
-	visitor := &mocks.MockVisitor{ReturnError: true}
+	visitor := &MockVisitor{ReturnError: true}
 
 	err := routine.Accept(visitor)
 
@@ -735,7 +734,7 @@ func TestCreatePolicyNode_FluentAPI(t *testing.T) {
 func TestCreatePolicyNode_Accept(t *testing.T) {
 	c := qt.New(t)
 
-	visitor := &mocks.MockVisitor{}
+	visitor := &MockVisitor{}
 	policy := ast.NewCreatePolicy("test_policy", "test_table")
 
 	err := policy.Accept(visitor)
@@ -767,7 +766,7 @@ func TestAlterTableEnableRLSNode_FluentAPI(t *testing.T) {
 func TestAlterTableEnableRLSNode_Accept(t *testing.T) {
 	c := qt.New(t)
 
-	visitor := &mocks.MockVisitor{}
+	visitor := &MockVisitor{}
 	enableRLS := ast.NewAlterTableEnableRLS("test_table")
 
 	err := enableRLS.Accept(visitor)
@@ -779,7 +778,7 @@ func TestAlterTableEnableRLSNode_Accept(t *testing.T) {
 
 func TestCreateSynonymNode_Accept(t *testing.T) {
 	c := qt.New(t)
-	visitor := &mocks.MockVisitor{}
+	visitor := &MockVisitor{}
 	node := ast.NewCreateSynonym("app.current_orders").
 		SetTarget("sales.orders").
 		SetComment("alias for the sales table")
@@ -794,7 +793,7 @@ func TestCreateSynonymNode_Accept(t *testing.T) {
 
 func TestCreateSynonymNode_AcceptPropagatesTheVisitorError(t *testing.T) {
 	c := qt.New(t)
-	visitor := &mocks.MockVisitor{ReturnError: true}
+	visitor := &MockVisitor{ReturnError: true}
 
 	err := ast.NewCreateSynonym("app.current_orders").Accept(visitor)
 
@@ -803,7 +802,7 @@ func TestCreateSynonymNode_AcceptPropagatesTheVisitorError(t *testing.T) {
 
 func TestDropSynonymNode_Accept(t *testing.T) {
 	c := qt.New(t)
-	visitor := &mocks.MockVisitor{}
+	visitor := &MockVisitor{}
 	node := ast.NewDropSynonym("app.current_orders").SetIfExists().SetComment("no longer used")
 
 	err := node.Accept(visitor)
@@ -816,7 +815,7 @@ func TestDropSynonymNode_Accept(t *testing.T) {
 
 func TestDropSynonymNode_AcceptPropagatesTheVisitorError(t *testing.T) {
 	c := qt.New(t)
-	visitor := &mocks.MockVisitor{ReturnError: true}
+	visitor := &MockVisitor{ReturnError: true}
 
 	err := ast.NewDropSynonym("app.current_orders").Accept(visitor)
 

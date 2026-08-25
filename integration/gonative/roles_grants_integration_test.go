@@ -17,12 +17,12 @@ import (
 	"go.5x5.cz/ptah/cmd/readdb"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/dbschema/postgres"
 	"go.5x5.cz/ptah/internal/rolescope"
-	"go.5x5.cz/ptah/migration/migrator"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -46,7 +46,7 @@ func TestPostgreSQLRolesGrantsRoundTripAndBehaviorIntegration(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	migrationSQL, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
-	for _, stmt := range migrator.SplitSQLStatements(migrationSQL) {
+	for _, stmt := range sqlutil.SplitStatements(migrationSQL) {
 		_, err = db.Exec(stmt)
 		c.Assert(err, qt.IsNil, qt.Commentf("statement failed: %s", stmt))
 	}
@@ -117,7 +117,7 @@ GRANT USAGE ON SCHEMA ptah_db_read_empty_schema_137 TO ptah_db_read_role_137;`)
 	c.Assert(stdout.String(), qt.Not(qt.Contains), "ptah_db_read_stranger_137")
 	c.Assert(stderr.String(), qt.Contains, "Connected to postgres database successfully!")
 	roleStatements := slices.DeleteFunc(
-		migrator.SplitSQLStatements(stdout.String()),
+		sqlutil.SplitStatements(stdout.String()),
 		func(statement string) bool {
 			return !strings.Contains(statement, "ptah_db_read_role_137")
 		},
@@ -540,7 +540,7 @@ func TestPostgreSQLRoleOutOfScopeIsPresentNotAbsentIntegration(t *testing.T) {
 	migrationSQL, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	c.Assert(migrationSQL, qt.Not(qt.Contains), "ptah_scope_outside_137")
-	for _, statement := range migrator.SplitSQLStatements(migrationSQL) {
+	for _, statement := range sqlutil.SplitStatements(migrationSQL) {
 		_, execErr := db.Exec(statement)
 		c.Assert(execErr, qt.IsNil, qt.Commentf("statement failed: %s", statement))
 	}

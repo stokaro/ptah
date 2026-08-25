@@ -101,11 +101,11 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseViewCapabilityDisabled(t *tes
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			statements, err := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(
+			statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 				test.diff,
 				generated,
 				platform.ClickHouse,
-				caps,
+				planner.Options{Capabilities: caps},
 			)
 
 			c.Assert(err, qt.IsNil)

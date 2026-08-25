@@ -10,9 +10,9 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/sqlutil"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
-	"go.5x5.cz/ptah/migration/migrator"
 )
 
 func renderConformanceSQL(c *qt.C, target *goschema.Database, dialect string) string {
@@ -23,7 +23,7 @@ func renderConformanceSQL(c *qt.C, target *goschema.Database, dialect string) st
 }
 
 func execConformanceSQL(c *qt.C, db *sql.DB, sqlText, fixture string) {
-	for _, stmt := range migrator.SplitSQLStatements(sqlText) {
+	for _, stmt := range sqlutil.SplitStatements(sqlText) {
 		_, err := db.Exec(stmt)
 		c.Assert(err, qt.IsNil, qt.Commentf("%s schema statement must apply: %s", fixture, stmt))
 	}
