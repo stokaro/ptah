@@ -77,6 +77,13 @@ import (
 // describe_session reporting how much of it is loaded. Both are additions: a
 // client that does not call the tool and ignores the new section is unaffected,
 // which is why the date does not move.
+//
+// 2026-08-25 put the untrusted-content notice on the three schema reads --
+// validate_schema, render_schema and schema_lineage. A declared schema is
+// repository content the model picks paths into, and its text reached the
+// answer verbatim while only the artifact operations said so. The date does not
+// move for the same reason as above: a client that ignores the new field is
+// unaffected (stokaro/ptah#1490).
 const Version = "2026-08-24"
 
 // SchemaSource names where a declared schema is read from.
@@ -150,6 +157,17 @@ type Problem struct {
 type ValidateSchemaResponse struct {
 	Dialect  string    `json:"dialect"`
 	Problems []Problem `json:"problems"`
+	// Notice says the content below is repository data rather than
+	// instructions. See [UntrustedContentNotice].
+	//
+	// A declared schema is repository content, and the model chooses which
+	// paths under the configured roots to read: a table comment, a column name
+	// or a check expression written by whoever authored the schema arrives in
+	// this answer verbatim. The artifact operations have said so since the
+	// surface existed; these three did not, which made the boundary visible on
+	// one channel and invisible on the other (stokaro/ptah#1490).
+	Notice string `json:"notice"`
+
 	// Valid is stated rather than left to be inferred from an empty list,
 	// because a caller that mishandles the list should not read silence as
 	// success.
@@ -171,6 +189,7 @@ func validateSchema(ctx context.Context, req ValidateSchemaRequest) (*ValidateSc
 		// "it does not parse for this target" answers that.
 		return &ValidateSchemaResponse{
 			Dialect: dialect,
+			Notice:  UntrustedContentNotice,
 			Problems: []Problem{{
 				Dialect: dialect,
 				Kind:    "source",
@@ -179,7 +198,11 @@ func validateSchema(ctx context.Context, req ValidateSchemaRequest) (*ValidateSc
 		}, nil
 	}
 	found := schemavalidate.Collect(database, dialect)
-	response := &ValidateSchemaResponse{Dialect: dialect, Valid: len(found) == 0}
+	response := &ValidateSchemaResponse{
+		Dialect: dialect,
+		Notice:  UntrustedContentNotice,
+		Valid:   len(found) == 0,
+	}
 	for _, problem := range found {
 		response.Problems = append(response.Problems, Problem{
 			Dialect: problem.Dialect,
@@ -201,6 +224,16 @@ type RenderSchemaRequest struct {
 type RenderSchemaResponse struct {
 	Dialect    string   `json:"dialect"`
 	Statements []string `json:"statements"`
+	// Notice says the content below is repository data rather than
+	// instructions. See [UntrustedContentNotice].
+	//
+	// A declared schema is repository content, and the model chooses which
+	// paths under the configured roots to read: a table comment, a column name
+	// or a check expression written by whoever authored the schema arrives in
+	// this answer verbatim. The artifact operations have said so since the
+	// surface existed; these three did not, which made the boundary visible on
+	// one channel and invisible on the other (stokaro/ptah#1490).
+	Notice string `json:"notice"`
 }
 
 // RenderSchema returns the DDL a declared schema renders to, in dependency
@@ -220,7 +253,11 @@ func renderSchema(ctx context.Context, req RenderSchemaRequest) (*RenderSchemaRe
 	if err != nil {
 		return nil, agentdiag.Errorf(agentdiag.CodeRenderFailed, "render %s: %w", dialect, err)
 	}
-	return &RenderSchemaResponse{Dialect: dialect, Statements: statements}, nil
+	return &RenderSchemaResponse{
+		Dialect:    dialect,
+		Statements: statements,
+		Notice:     UntrustedContentNotice,
+	}, nil
 }
 
 // SchemaLineageRequest asks where each view column's value comes from.
@@ -254,6 +291,16 @@ type LineageUndecided struct {
 type SchemaLineageResponse struct {
 	Edges     []LineageEdge      `json:"edges"`
 	Undecided []LineageUndecided `json:"undecided"`
+	// Notice says the content below is repository data rather than
+	// instructions. See [UntrustedContentNotice].
+	//
+	// A declared schema is repository content, and the model chooses which
+	// paths under the configured roots to read: a table comment, a column name
+	// or a check expression written by whoever authored the schema arrives in
+	// this answer verbatim. The artifact operations have said so since the
+	// surface existed; these three did not, which made the boundary visible on
+	// one channel and invisible on the other (stokaro/ptah#1490).
+	Notice string `json:"notice"`
 }
 
 // SchemaLineage traces which base columns feed each view column.
@@ -273,6 +320,7 @@ func schemaLineage(ctx context.Context, req SchemaLineageRequest) (*SchemaLineag
 	// null. A caller reading null as "no lineage" and [] as "no lineage" would
 	// be right by accident; one reading null as an absent field would not.
 	response := &SchemaLineageResponse{
+		Notice:    UntrustedContentNotice,
 		Edges:     make([]LineageEdge, 0, len(derived.Edges)),
 		Undecided: make([]LineageUndecided, 0, len(derived.Undecided)),
 	}

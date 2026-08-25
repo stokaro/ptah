@@ -728,8 +728,12 @@ What that means in practice:
 - A patch is applied only if the directory still has the digest the preview
   reported. If anything changed in between, the apply refuses and the agent has
   to read and propose again.
-- Artifact content comes back labeled as data, with a notice saying so. That is
-  a cheap layer, not a control: the controls are the capability broker, the path
+- Repository content comes back labeled as data, with a notice saying so —
+  artifact reads and the three schema reads alike. The schema half matters
+  because `render_schema` echoes a table comment into the DDL it answers with,
+  word for word, so the sentence quoted above arrives in the model's context
+  through a tool that reads nothing but the declaration. The notice is a cheap
+  layer, not a control: the controls are the capability broker, the path
   containment, and the gates.
 
 ## Related
