@@ -24,6 +24,7 @@ import (
 	"go.5x5.cz/ptah/internal/schemaselection"
 	"go.5x5.cz/ptah/internal/sqliterebuild"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
+	"go.5x5.cz/ptah/internal/systemschema"
 	"go.5x5.cz/ptah/migration/migrator"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -619,7 +620,7 @@ func loadAndValidateDesiredApplySchema(
 	if err != nil {
 		return nil, fmt.Errorf("load --to schema: %w", err)
 	}
-	if err := schemaselection.ValidateDeclaredPostgresSystemSchemas(
+	if err := systemschema.ValidateDeclaredPostgresSystemSchemas(
 		conn.Info().Dialect,
 		desired.Schemas,
 	); err != nil {

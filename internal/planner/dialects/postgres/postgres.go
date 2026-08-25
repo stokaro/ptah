@@ -19,7 +19,7 @@ import (
 	"go.5x5.cz/ptah/internal/planner/objectlookup"
 	"go.5x5.cz/ptah/internal/planner/tablelookup"
 	"go.5x5.cz/ptah/internal/rlsscope"
-	"go.5x5.cz/ptah/internal/schemaselection"
+	"go.5x5.cz/ptah/internal/systemschema"
 	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/migration/diffpolicy"
 	"go.5x5.cz/ptah/migration/schemadiff/types"
@@ -521,7 +521,7 @@ func (p *Planner) addSchemaPreconditions(
 		// PostgreSQL that spares a statement nobody needs; on Spanner it is
 		// what makes the migration run at all, because `public` there is
 		// implicit and CREATE SCHEMA for it is refused by name.
-		if schemaselection.IsUncreatableSchema(p.dialect, schema) {
+		if systemschema.IsUncreatableSchema(p.dialect, schema) {
 			continue
 		}
 		if _, ok := seen[schema]; ok {
@@ -533,7 +533,7 @@ func (p *Planner) addSchemaPreconditions(
 	for _, name := range diff.ExtensionsAdded {
 		for _, extension := range generated.Extensions {
 			if extension.Name != name || extension.Schema == "" ||
-				schemaselection.IsUncreatableSchema(p.dialect, extension.Schema) {
+				systemschema.IsUncreatableSchema(p.dialect, extension.Schema) {
 				continue
 			}
 			if _, ok := seen[extension.Schema]; !ok {

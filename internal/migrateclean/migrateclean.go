@@ -38,6 +38,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/schemaselection"
+	"go.5x5.cz/ptah/internal/systemschema"
 )
 
 const (
@@ -530,7 +531,7 @@ func realmProbe(dialect string) string {
 		return ""
 	}
 	// Which schemas belong to the realm is
-	// [schemaselection.PostgresNonSystemSchemasPredicate], shared so this gate
+	// [systemschema.PostgresNonSystemSchemasPredicate], shared so this gate
 	// and `schema inspect` cannot disagree about it. What this probe adds is
 	// the tables, which the gate needs and inspection does not.
 	return `
@@ -539,6 +540,6 @@ func realmProbe(dialect string) string {
 		LEFT JOIN pg_class c
 		  ON c.relnamespace = n.oid
 		 AND c.relkind IN ('r', 'p')
-		WHERE ` + schemaselection.PostgresNonSystemSchemasPredicate(dialect) + `
+		WHERE ` + systemschema.PostgresNonSystemSchemasPredicate(dialect) + `
 		ORDER BY n.nspname, c.relname`
 }

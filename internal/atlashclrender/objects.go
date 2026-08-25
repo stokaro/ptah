@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/internal/schemaselection"
+	"go.5x5.cz/ptah/internal/systemschema"
 	"go.5x5.cz/ptah/internal/tableref"
 )
 
@@ -26,7 +26,7 @@ func (r *renderer) renderExtensions() {
 			// empty, which keeps dialect-neutral artifacts from turning placement
 			// into a schema declaration. Target-specific namespaces such as
 			// CockroachDB's crdb_internal still require a concrete dialect.
-			if schemaselection.IsPostgresFamilySystemSchema(r.dialect, schema) {
+			if systemschema.IsPostgresFamilySystemSchema(r.dialect, schema) {
 				r.stringAttr(1, "schema", schema)
 			} else {
 				r.rawAttr(1, "schema", r.schemaRef(schema))
