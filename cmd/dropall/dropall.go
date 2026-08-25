@@ -13,6 +13,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dburldisplay"
 	"go.5x5.cz/ptah/internal/schemaclean"
 )
 
@@ -71,10 +72,10 @@ func dropAllCommand(cmd *cobra.Command, opts *options) error {
 
 	out := cmd.OutOrStdout()
 	if opts.dryRun {
-		fmt.Fprintf(out, "[DRY RUN] Would drop ALL tables and enums from database %s\n", dbschema.FormatDatabaseURL(opts.dbURL))
+		fmt.Fprintf(out, "[DRY RUN] Would drop ALL tables and enums from database %s\n", dburldisplay.Format(opts.dbURL))
 		fmt.Fprintln(out, "=== DRY RUN: DROP ALL TABLES FROM DATABASE ===")
 	} else {
-		fmt.Fprintf(out, "Dropping ALL tables and enums from database %s\n", dbschema.FormatDatabaseURL(opts.dbURL))
+		fmt.Fprintf(out, "Dropping ALL tables and enums from database %s\n", dburldisplay.Format(opts.dbURL))
 		fmt.Fprintln(out, "=== DROP ALL TABLES FROM DATABASE ===")
 	}
 	fmt.Fprintln(out)

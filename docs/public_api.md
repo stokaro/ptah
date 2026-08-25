@@ -293,6 +293,16 @@ Taking the session and the restrictions in one step is deliberate: the
 restrictions are properties of the physical session, so applying them
 separately would silently protect nothing.
 
+`dbschema.DatabaseConnection.WithRolledBackTransaction` runs a callback inside
+one transaction on one throwaway physical session, rolls the transaction back
+whatever the callback does, and then discards the session. It exists for
+callers that must create something on the server only to read back how the
+server stored it -- Ptah's own expression probes are the canonical consumer --
+and it is the supported way to do that without leaving state behind. A
+connection already pinned to a session reports `ran` false with a nil error
+and never runs the callback: the rollback would discard the session owner's
+work. Callers that need the transaction must check `ran` as well as the error.
+
 `dbschema.DatabaseConnection.WithIsolatedQuerySession` exposes a query-only
 `dbschema.IsolatedQueryer` on one physical session. Transaction-capable drivers
 always roll the transaction back; ClickHouse runs directly on the disposable

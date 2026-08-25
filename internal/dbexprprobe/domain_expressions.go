@@ -1,4 +1,4 @@
-package dbschema
+package dbexprprobe
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/dbschema"
 )
 
 // DomainExpressionProbe is one declared domain whose CHECK and DEFAULT need the
@@ -52,21 +52,25 @@ type DomainExpressionProbe struct {
 // and only one of them is a domain the caller may compare.
 //
 // Dialects other than the PostgreSQL family return nil: no other engine Ptah
-// targets has CREATE DOMAIN.
-func (dc *DatabaseConnection) ResolveDomainExpressions(
+// targets has CREATE DOMAIN. A connection pinned to a session also returns
+// nil, for the reason the package documentation gives: the rollback the probe
+// needs would discard the session owner's work, so nothing is asked and the
+// domain stays uncompared.
+func ResolveDomainExpressions(
 	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
 	probes []DomainExpressionProbe,
-) (result map[string]config.DomainExpression, resultErr error) {
-	if dc == nil || dc.db == nil {
+) (map[string]config.DomainExpression, error) {
+	if conn == nil {
 		return nil, fmt.Errorf("resolve domain expressions: database connection is nil")
 	}
 	if len(probes) == 0 {
 		return nil, nil
 	}
-	if !isPostgresFamily(dc.Info().Dialect) {
+	if !isPostgresFamily(conn.Info().Dialect) {
 		return nil, nil
 	}
-	return resolveProbes(ctx, dc, "resolve domain expressions", probes,
+	return resolveProbes(ctx, conn, "resolve domain expressions", probes,
 		func(probe DomainExpressionProbe) string { return probe.Key },
 		resolveOneDomainExpression)
 }
@@ -143,14 +147,4 @@ func resolveOneDomainExpression(
 		return config.DomainExpression{}, fmt.Errorf("resolve domain expressions: release probe: %w", err)
 	}
 	return expression, nil
-}
-
-// isPostgresFamily reports whether the dialect renders CREATE DOMAIN at all.
-func isPostgresFamily(dialect string) bool {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
-		return true
-	default:
-		return false
-	}
 }

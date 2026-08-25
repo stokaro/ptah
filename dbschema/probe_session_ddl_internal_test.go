@@ -1,9 +1,10 @@
 package dbschema
 
-// White-box testing required: probeSession is unexported, and what is under
-// test is a statement it issues INSIDE the transaction it owns. Nothing in the
-// public surface can observe the order of statements on one connection, and
-// reaching it from outside would mean a live CockroachDB.
+// White-box testing required: what is under test is a statement
+// WithRolledBackTransaction issues INSIDE the transaction it owns, observed by
+// wiring a recording fake driver into a DatabaseConnection's unexported db
+// field. Nothing in the public surface can observe the order of statements on
+// one connection, and reaching it from outside would mean a live CockroachDB.
 
 import (
 	"context"
@@ -18,7 +19,7 @@ import (
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 )
 
-// TestProbeSession_AsksOnlyTheServerThatWouldCommitTheDDL pins who is asked to
+// TestWithRolledBackTransaction_AsksOnlyTheServerThatWouldCommitTheDDL pins who is asked to
 // keep DDL inside the transaction, and who is not.
 //
 // CockroachDB defaults autocommit_before_ddl to on, so the DDL a probe creates
@@ -33,7 +34,7 @@ import (
 // answers `unrecognized configuration parameter`, and a failed statement inside
 // a PostgreSQL transaction poisons every later one -- so asking everybody would
 // break the servers that were working (stokaro/ptah#2140).
-func TestProbeSession_AsksOnlyTheServerThatWouldCommitTheDDL(t *testing.T) {
+func TestWithRolledBackTransaction_AsksOnlyTheServerThatWouldCommitTheDDL(t *testing.T) {
 	tests := []struct {
 		name    string
 		version string
@@ -76,7 +77,7 @@ func TestProbeSession_AsksOnlyTheServerThatWouldCommitTheDDL(t *testing.T) {
 			)
 			conn := &DatabaseConnection{db: db.SQL, info: types.DBInfo{Version: test.version}}
 
-			ran, err := conn.probeSession(context.Background(), "probe", func(ctx context.Context, tx *sql.Tx) error {
+			ran, err := conn.WithRolledBackTransaction(context.Background(), "probe", func(ctx context.Context, tx *sql.Tx) error {
 				_, execErr := tx.ExecContext(ctx, "CREATE TEMPORARY TABLE probe (id int)")
 				return execErr
 			})
@@ -91,10 +92,10 @@ func TestProbeSession_AsksOnlyTheServerThatWouldCommitTheDDL(t *testing.T) {
 	}
 }
 
-// TestProbeSession_AsksBeforeTheBodyRuns pins the order, which is the whole
+// TestWithRolledBackTransaction_AsksBeforeTheBodyRuns pins the order, which is the whole
 // point: the setting has to be in force before the first DDL, because it is the
 // first DDL that triggers the commit it prevents.
-func TestProbeSession_AsksBeforeTheBodyRuns(t *testing.T) {
+func TestWithRolledBackTransaction_AsksBeforeTheBodyRuns(t *testing.T) {
 	c := qt.New(t)
 	var executed []string
 	db := dbtest.OpenWithExec(
@@ -112,7 +113,7 @@ func TestProbeSession_AsksBeforeTheBodyRuns(t *testing.T) {
 		info: types.DBInfo{Version: "CockroachDB CCL v25.4.0"},
 	}
 
-	_, err := conn.probeSession(context.Background(), "probe", func(ctx context.Context, tx *sql.Tx) error {
+	_, err := conn.WithRolledBackTransaction(context.Background(), "probe", func(ctx context.Context, tx *sql.Tx) error {
 		_, execErr := tx.ExecContext(ctx, "CREATE TEMPORARY TABLE probe (id int)")
 		return execErr
 	})

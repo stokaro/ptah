@@ -21,6 +21,7 @@ import (
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
+	"go.5x5.cz/ptah/internal/dburldisplay"
 	"go.5x5.cz/ptah/internal/devdocker"
 	"go.5x5.cz/ptah/internal/migrationintegrity"
 	"go.5x5.cz/ptah/internal/onlineddl"
@@ -302,7 +303,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 	}
 
 	if opts.verbose {
-		emit.Printf("Connecting to database: %s\n", dbschema.FormatDatabaseURL(dbURL))
+		emit.Printf("Connecting to database: %s\n", dburldisplay.Format(dbURL))
 	}
 
 	timeouts, err := migrateflags.ParseMigrationTimeouts(lockTimeout, statementTimeout)
@@ -664,7 +665,7 @@ func writeDownBanner(emit cliobs.Emitter, b downBanner) {
 		emit.Println()
 	}
 	emit.Println("=== MIGRATE DOWN ===")
-	emit.Printf("Database: %s\n", dbschema.FormatDatabaseURL(b.dbURL))
+	emit.Printf("Database: %s\n", dburldisplay.Format(b.dbURL))
 	emit.Printf("Dialect: %s\n", b.dialect)
 	emit.Printf("Migrations directory: %s\n", b.migrationsDir)
 	emit.Printf("Migration directory format: %s\n", b.dirFormat)
@@ -843,7 +844,7 @@ func downPreflightHook(
 	return dbcli.LockedMigrationPreflightHook(opts.dryRun, preflight.Options{
 		Direction:          preflight.DirectionDown,
 		DatabaseURL:        dbURL,
-		DisplayDatabaseURL: dbschema.FormatDatabaseURL(dbURL),
+		DisplayDatabaseURL: dburldisplay.Format(dbURL),
 		Dialect:            conn.Info().Dialect,
 		Command:            resolved.preDownHook,
 		PostgresDumpDir:    resolved.pgDumpTo,

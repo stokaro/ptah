@@ -10,6 +10,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/dbexprprobe"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/migration/internal/generatedschema"
@@ -177,7 +178,7 @@ func resolveDomainExpressions(
 		held[strings.ToLower(domain.QualifiedName())] = struct{}{}
 	}
 
-	probes := make([]dbschema.DomainExpressionProbe, 0, len(generated.Domains))
+	probes := make([]dbexprprobe.DomainExpressionProbe, 0, len(generated.Domains))
 	for _, domain := range generated.Domains {
 		if _, exists := held[strings.ToLower(domain.QualifiedName())]; !exists {
 			continue
@@ -186,7 +187,7 @@ func resolveDomainExpressions(
 		if defaultExpression == "" && domain.Default != "" {
 			defaultExpression = quoteDomainDefaultLiteral(domain.Default)
 		}
-		probes = append(probes, dbschema.DomainExpressionProbe{
+		probes = append(probes, dbexprprobe.DomainExpressionProbe{
 			Key:      domain.QualifiedName(),
 			BaseType: domain.BaseType,
 			Check:    domain.Check,
@@ -197,7 +198,7 @@ func resolveDomainExpressions(
 		return nil, nil
 	}
 
-	expressions, err := conn.ResolveDomainExpressions(ctx, probes)
+	expressions, err := dbexprprobe.ResolveDomainExpressions(ctx, conn, probes)
 	if err != nil {
 		return nil, fmt.Errorf("compare schemas: %w", err)
 	}
@@ -234,7 +235,7 @@ func resolveCheckExpressions(
 	}
 	columns := liveTableColumns(database)
 
-	probes := make([]dbschema.CheckExpressionProbe, 0, len(generated.Constraints))
+	probes := make([]dbexprprobe.CheckExpressionProbe, 0, len(generated.Constraints))
 	for _, constraint := range generated.Constraints {
 		if !strings.EqualFold(constraint.Type, "CHECK") {
 			continue
@@ -247,7 +248,7 @@ func resolveCheckExpressions(
 		if !known {
 			continue
 		}
-		probes = append(probes, dbschema.CheckExpressionProbe{
+		probes = append(probes, dbexprprobe.CheckExpressionProbe{
 			Key:        key,
 			Columns:    probeColumns,
 			Expression: constraint.CheckExpression,
@@ -257,7 +258,7 @@ func resolveCheckExpressions(
 		return nil, nil
 	}
 
-	checks, err := conn.ResolveCheckExpressions(ctx, probes)
+	checks, err := dbexprprobe.ResolveCheckExpressions(ctx, conn, probes)
 	if err != nil {
 		return nil, fmt.Errorf("compare schemas: %w", err)
 	}
@@ -285,7 +286,7 @@ func resolvePolicyExpressions(
 	}
 	columns := liveTableColumns(database)
 
-	probes := make([]dbschema.PolicyExpressionProbe, 0, len(generated.RLSPolicies))
+	probes := make([]dbexprprobe.PolicyExpressionProbe, 0, len(generated.RLSPolicies))
 	for _, policy := range generated.RLSPolicies {
 		key := checkExpressionKey(policy.Table, policy.Name)
 		if _, exists := held[key]; !exists {
@@ -295,7 +296,7 @@ func resolvePolicyExpressions(
 		if !known {
 			continue
 		}
-		probes = append(probes, dbschema.PolicyExpressionProbe{
+		probes = append(probes, dbexprprobe.PolicyExpressionProbe{
 			Key:       key,
 			Columns:   probeColumns,
 			Using:     policy.UsingExpression,
@@ -306,7 +307,7 @@ func resolvePolicyExpressions(
 		return nil, nil
 	}
 
-	policies, err := conn.ResolvePolicyExpressions(ctx, probes)
+	policies, err := dbexprprobe.ResolvePolicyExpressions(ctx, conn, probes)
 	if err != nil {
 		return nil, fmt.Errorf("compare schemas: %w", err)
 	}
@@ -340,7 +341,7 @@ func resolveIndexExpressions(
 	// comes from the struct or block the index was declared inside.
 	owners := goschema.ResolveIndexOwners(generated.Indexes, generated.Tables, generated.MaterializedViews)
 
-	probes := make([]dbschema.IndexExpressionProbe, 0, len(generated.Indexes))
+	probes := make([]dbexprprobe.IndexExpressionProbe, 0, len(generated.Indexes))
 	for position, index := range generated.Indexes {
 		expression, parts := declaredIndexExpression(index)
 		if expression == "" && strings.TrimSpace(index.Condition) == "" {
@@ -354,7 +355,7 @@ func resolveIndexExpressions(
 		if !known {
 			continue
 		}
-		probes = append(probes, dbschema.IndexExpressionProbe{
+		probes = append(probes, dbexprprobe.IndexExpressionProbe{
 			Key:        key,
 			Columns:    probeColumns,
 			Expression: expression,
@@ -366,7 +367,7 @@ func resolveIndexExpressions(
 		return nil, nil
 	}
 
-	indexes, err := conn.ResolveIndexExpressions(ctx, probes)
+	indexes, err := dbexprprobe.ResolveIndexExpressions(ctx, conn, probes)
 	if err != nil {
 		return nil, fmt.Errorf("compare schemas: %w", err)
 	}
@@ -396,12 +397,12 @@ func declaredIndexExpression(index goschema.Index) (expression string, parts []s
 
 // liveTableColumns projects every live table's columns into the shape a probe
 // needs, keyed by the table's bare name.
-func liveTableColumns(database *dbschematypes.DBSchema) map[string][]dbschema.CheckProbeColumn {
-	columns := make(map[string][]dbschema.CheckProbeColumn, len(database.Tables))
+func liveTableColumns(database *dbschematypes.DBSchema) map[string][]dbexprprobe.CheckProbeColumn {
+	columns := make(map[string][]dbexprprobe.CheckProbeColumn, len(database.Tables))
 	for _, table := range database.Tables {
-		probeColumns := make([]dbschema.CheckProbeColumn, 0, len(table.Columns))
+		probeColumns := make([]dbexprprobe.CheckProbeColumn, 0, len(table.Columns))
 		for _, column := range table.Columns {
-			probeColumns = append(probeColumns, dbschema.CheckProbeColumn{
+			probeColumns = append(probeColumns, dbexprprobe.CheckProbeColumn{
 				Name: column.Name,
 				Type: column.RawType(),
 			})
@@ -451,12 +452,12 @@ func resolveContinuousAggregateBodies(
 		held[strings.ToLower(aggregate.Name)] = struct{}{}
 	}
 
-	probes := make([]dbschema.ContinuousAggregateProbe, 0, len(generated.ContinuousAggregates))
+	probes := make([]dbexprprobe.ContinuousAggregateProbe, 0, len(generated.ContinuousAggregates))
 	for _, aggregate := range generated.ContinuousAggregates {
 		if _, exists := held[strings.ToLower(aggregate.QualifiedName())]; !exists {
 			continue
 		}
-		probes = append(probes, dbschema.ContinuousAggregateProbe{
+		probes = append(probes, dbexprprobe.ContinuousAggregateProbe{
 			Key:              aggregate.QualifiedName(),
 			Schema:           aggregate.Schema,
 			Body:             aggregate.Body,
@@ -467,7 +468,7 @@ func resolveContinuousAggregateBodies(
 		return nil, nil
 	}
 
-	bodies, err := conn.ResolveContinuousAggregateBodies(ctx, probes)
+	bodies, err := dbexprprobe.ResolveContinuousAggregateBodies(ctx, conn, probes)
 	if err != nil {
 		return nil, fmt.Errorf("compare schemas: %w", err)
 	}

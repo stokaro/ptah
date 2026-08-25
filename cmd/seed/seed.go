@@ -13,6 +13,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dburldisplay"
 	"go.5x5.cz/ptah/migration/seeder"
 )
 
@@ -113,7 +114,7 @@ func runSeed(ctx context.Context, opts runOptions) error {
 	}
 
 	if opts.verbose {
-		fmt.Printf("Connecting to database: %s\n", dbschema.FormatDatabaseURL(opts.dbURL))
+		fmt.Printf("Connecting to database: %s\n", dburldisplay.Format(opts.dbURL))
 	}
 	connectCtx, cancelConnect := dbcli.ConnectContext(ctx, connectTimeout)
 	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.dbURL)
@@ -124,7 +125,7 @@ func runSeed(ctx context.Context, opts runOptions) error {
 	defer dbschema.CloseAndWarn(conn)
 
 	fmt.Println("=== SEED ===")
-	fmt.Printf("Database: %s\n", dbschema.FormatDatabaseURL(opts.dbURL))
+	fmt.Printf("Database: %s\n", dburldisplay.Format(opts.dbURL))
 	fmt.Printf("Dialect: %s\n", conn.Info().Dialect)
 	fmt.Printf("Seeds directory: %s\n", opts.seedsDir)
 	fmt.Printf("Environment: %s\n", strings.TrimSpace(opts.env))

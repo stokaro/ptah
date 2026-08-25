@@ -1,13 +1,13 @@
-package dbschema
+package dbexprprobe
 
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"strings"
 
 	"go.5x5.cz/ptah/config"
+	"go.5x5.cz/ptah/dbschema"
 )
 
 // ContinuousAggregateProbe is one declared TimescaleDB continuous aggregate
@@ -64,76 +64,63 @@ const timescaleAggregateCatalog = "timescaledb_information.continuous_aggregates
 // rather than omitted, because an absent key and an unresolvable one are
 // different facts and only one of them is an aggregate the caller may compare.
 //
-// A connection without the extension resolves nothing and asks nothing: the
-// catalog above does not exist there, and a failed statement would abort the
-// caller's transaction rather than degrade.
-func (dc *DatabaseConnection) ResolveContinuousAggregateBodies(
+// A connection without the extension resolves nothing and asks nothing beyond
+// the extension list: the catalog above does not exist there, and a failed
+// statement would abort the transaction rather than degrade. The extension is
+// asked about inside the same rolled-back transaction the probes use, so a
+// server without it sees one read and no DDL. A connection pinned to a session
+// returns nil before any of that, for the reason the package documentation
+// gives: the rollback the probes need would discard the session owner's work.
+func ResolveContinuousAggregateBodies(
 	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
 	probes []ContinuousAggregateProbe,
-) (result map[string]config.ContinuousAggregateBody, resultErr error) {
-	if dc == nil || dc.db == nil {
+) (map[string]config.ContinuousAggregateBody, error) {
+	if conn == nil {
 		return nil, fmt.Errorf("resolve continuous aggregate bodies: database connection is nil")
 	}
 	if len(probes) == 0 {
 		return nil, nil
 	}
-	if !isPostgresFamily(dc.Info().Dialect) {
-		return nil, nil
-	}
-	if dc.pinned {
-		// A pinned connection is already inside somebody else's session, and
-		// the rollback below would discard their work rather than the probe's.
-		return nil, nil
-	}
-	installed, err := dc.hasTimescaleExtension(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if !installed {
+	if !isPostgresFamily(conn.Info().Dialect) {
 		return nil, nil
 	}
 
-	session, err := dc.db.Conn(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("resolve continuous aggregate bodies: pin session: %w", err)
-	}
-	defer func() {
-		resultErr = errors.Join(resultErr, discardSQLConnection(session, "continuous aggregate session"))
-	}()
-
-	tx, err := session.BeginTx(ctx, &sql.TxOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("resolve continuous aggregate bodies: begin transaction: %w", err)
-	}
-	defer func() {
-		// The rollback is the point of the transaction, not its error path:
-		// every probe aggregate exists only until this line runs.
-		if rollbackErr := tx.Rollback(); rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
-			resultErr = errors.Join(resultErr,
-				fmt.Errorf("resolve continuous aggregate bodies: roll back: %w", rollbackErr))
-		}
-	}()
-
+	installed := false
 	resolved := make(map[string]config.ContinuousAggregateBody, len(probes))
-	for i, probe := range probes {
-		body, err := resolveOneContinuousAggregateBody(ctx, tx, i, probe)
-		if err != nil {
-			return nil, err
-		}
-		resolved[probe.Key] = body
+	ran, err := conn.WithRolledBackTransaction(ctx, "resolve continuous aggregate bodies",
+		func(ctx context.Context, tx *sql.Tx) error {
+			if err := hasTimescaleExtension(ctx, tx, &installed); err != nil {
+				return err
+			}
+			if !installed {
+				return nil
+			}
+			for i, probe := range probes {
+				body, err := resolveOneContinuousAggregateBody(ctx, tx, i, probe)
+				if err != nil {
+					return err
+				}
+				resolved[probe.Key] = body
+			}
+			return nil
+		})
+	if err != nil || !ran || !installed {
+		return nil, err
 	}
 	return resolved, nil
 }
 
 // hasTimescaleExtension asks whether the extension whose catalog the read-back
-// lives in is installed on this connection.
-func (dc *DatabaseConnection) hasTimescaleExtension(ctx context.Context) (bool, error) {
+// lives in is installed on this connection. The question never fails on the
+// PostgreSQL family -- pg_extension exists everywhere the dialect gate lets
+// through -- so it is safe to ask inside the transaction the probes share.
+func hasTimescaleExtension(ctx context.Context, tx *sql.Tx, installed *bool) error {
 	const query = `SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'timescaledb')`
-	var installed bool
-	if err := dc.db.QueryRowContext(ctx, query).Scan(&installed); err != nil {
-		return false, fmt.Errorf("resolve continuous aggregate bodies: read extension list: %w", err)
+	if err := tx.QueryRowContext(ctx, query).Scan(installed); err != nil {
+		return fmt.Errorf("resolve continuous aggregate bodies: read extension list: %w", err)
 	}
-	return installed, nil
+	return nil
 }
 
 // resolveOneContinuousAggregateBody creates one probe aggregate and reads its

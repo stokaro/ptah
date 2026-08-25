@@ -14,6 +14,7 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dbexprprobe"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
@@ -162,7 +163,7 @@ func TestTimescaleContinuousAggregateProbeLeavesNothingBehindE2E(t *testing.T) {
 	before, err := conn.Reader().ReadSchema()
 	c.Assert(err, qt.IsNil)
 
-	resolved, err := conn.ResolveContinuousAggregateBodies(ctx, []dbschema.ContinuousAggregateProbe{{
+	resolved, err := dbexprprobe.ResolveContinuousAggregateBodies(ctx, conn, []dbexprprobe.ContinuousAggregateProbe{{
 		Key: aggregate, Body: body,
 	}})
 

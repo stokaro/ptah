@@ -18,6 +18,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/schemaops"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasurl"
+	"go.5x5.cz/ptah/internal/dburldisplay"
 	"go.5x5.cz/ptah/internal/devdocker"
 	"go.5x5.cz/ptah/internal/migrationintegrity"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
@@ -324,7 +325,7 @@ func printDryRun(
 ) {
 	fmt.Println("=== DRY RUN BASELINE ===")
 	fmt.Println("No metadata rows will be written.")
-	fmt.Printf("Database: %s\n", dbschema.FormatDatabaseURL(dbURL))
+	fmt.Printf("Database: %s\n", dburldisplay.Format(dbURL))
 	fmt.Printf("Migrations directory: %s\n", migrationsDir)
 	fmt.Printf("Metadata table: %s\n", mig.MigrationsTableIdentifier())
 	fmt.Printf("Baseline version: %d\n", version)

@@ -15,6 +15,7 @@ import (
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlassource"
 	"go.5x5.cz/ptah/internal/atlasurl"
+	"go.5x5.cz/ptah/internal/dburldisplay"
 	"go.5x5.cz/ptah/internal/schemaload"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -111,7 +112,7 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 
 	return &CompareResult{
 		Sources:     loadOpts.Sources(),
-		DatabaseURL: dbschema.FormatDatabaseURL(opts.DatabaseURL),
+		DatabaseURL: dburldisplay.Format(opts.DatabaseURL),
 		Dialect:     info.Dialect,
 		Generated:   generated,
 		Database:    dbSchema,

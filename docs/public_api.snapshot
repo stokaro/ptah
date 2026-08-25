@@ -5189,12 +5189,11 @@ type ContinuousAggregate struct {
     answers, which selects from the materialization hypertable in a schema the
     extension owns (stokaro/ptah#1026).
 
-    Body is the SELECT as it was WRITTEN. The catalog stores
-    a rewritten one -- `time_bucket('1 hour', time)` comes
-    back as `time_bucket('01:00:00'::interval, "time")` -- so
-    the two are compared by putting the declaration through
-    the same rewrite rather than by folding the text. See
-    go.5x5.cz/ptah/dbschema.DatabaseConnection.ResolveContinuousAggregateBodies.
+    Body is the SELECT as it was WRITTEN. The catalog stores a
+    rewritten one -- `time_bucket('1 hour', time)` comes back as
+    `time_bucket('01:00:00'::interval, "time")` -- so the two are compared by
+    putting the declaration through the same rewrite rather than by folding the
+    text; the comparison's expression probes (internal/dbexprprobe) do that.
 
     Dialects is deliberately absent, for the reason Synonym gives: a continuous
     aggregate belongs to TimescaleDB and to nothing else.
@@ -7448,84 +7447,11 @@ func SplitSourceStatements(sql, dialect string) []SourceStatement
 ## go.5x5.cz/ptah/dbschema
 
 func CloseAndWarn(conn *DatabaseConnection)
-func FormatDatabaseURL(dbURL string) string
-func GeneratedExpressionProbeTable(index int) string
 func ReadSchemaWithSchemas(conn *DatabaseConnection, schemas []string) (*types.DBSchema, error)
 func ReadTableRows(ctx context.Context, conn *DatabaseConnection, schema, table string, ...) ([]map[string]any, error)
-func ResolveGeneratedExpressions(ctx context.Context, dev *DatabaseConnection, ...) (map[string]config.GeneratedExpression, error)
-type CheckExpressionProbe struct{ ... }
-type CheckProbeColumn struct{ ... }
-type ContinuousAggregateProbe struct{ ... }
 type DatabaseConnection struct{ ... }
     func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, error)
-type DomainExpressionProbe struct{ ... }
-type GeneratedExpressionProbe struct{ ... }
-type IndexExpressionProbe struct{ ... }
 type IsolatedQueryer interface{ ... }
-type PolicyExpressionProbe struct{ ... }
-
-### go.5x5.cz/ptah/dbschema.CheckExpressionProbe
-
-package dbschema // import "go.5x5.cz/ptah/dbschema"
-
-type CheckExpressionProbe struct {
-    // Key identifies the constraint to the caller. It is returned unchanged as
-    // the map key and is never sent to the server.
-    Key string
-    // Columns are the columns of the table the constraint belongs to, taken
-    // from the LIVE read rather than from the declaration: the expression has
-    // to parse against the table it will be added to.
-    Columns []CheckProbeColumn
-    // Expression is the declared CHECK, without the CHECK keyword and without
-    // its enclosing parentheses.
-    Expression string
-}
-    CheckExpressionProbe is one declared CHECK whose expression needs the target
-    server's own spelling before it can be compared with what the catalog holds.
-
-
-### go.5x5.cz/ptah/dbschema.CheckProbeColumn
-
-package dbschema // import "go.5x5.cz/ptah/dbschema"
-
-type CheckProbeColumn struct {
-    // Name is the column's name, quoted by the resolver.
-    Name string
-    // Type is the column's type as the catalog spells it, which is what makes
-    // the rewrite faithful: `price >= 0` normalizes to `(0)::numeric` over
-    // numeric and to `(0)` over integer.
-    Type string
-}
-    CheckProbeColumn is one column the probe table needs so a declared CHECK can
-    be parsed against it.
-
-
-### go.5x5.cz/ptah/dbschema.ContinuousAggregateProbe
-
-package dbschema // import "go.5x5.cz/ptah/dbschema"
-
-type ContinuousAggregateProbe struct {
-    // Key identifies the aggregate to the caller. It is returned unchanged as
-    // the map key and is never sent to the server.
-    Key string
-    // Schema is where the probe is created. It is the schema the declaration
-    // names, so the probe resolves the same objects the real aggregate does --
-    // a body that reads an unqualified table finds it through the same
-    // search_path.
-    Schema string
-    // Body is the declared SELECT, without the CREATE prefix and without a
-    // trailing semicolon.
-    Body string
-    // MaterializedOnly is the declared option, nil when the declaration made no
-    // choice. It is sent because the catalog reports it beside the definition,
-    // and a probe that named a value the declaration did not would answer for a
-    // different declaration.
-    MaterializedOnly *bool
-}
-    ContinuousAggregateProbe is one declared TimescaleDB continuous aggregate
-    whose SELECT needs the target server's own spelling before it can be
-    compared with what the catalog holds.
-
 
 ### go.5x5.cz/ptah/dbschema.DatabaseConnection
 
@@ -7547,93 +7473,15 @@ func (dc *DatabaseConnection) QueryContext(ctx context.Context, query string, ar
 func (dc *DatabaseConnection) QueryRow(query string, args ...any) *sql.Row
 func (dc *DatabaseConnection) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 func (dc *DatabaseConnection) Reader() types.SchemaReader
-func (dc *DatabaseConnection) ResolveCheckExpressions(ctx context.Context, probes []CheckExpressionProbe) (result map[string]config.CheckExpression, resultErr error)
-func (dc *DatabaseConnection) ResolveContinuousAggregateBodies(ctx context.Context, probes []ContinuousAggregateProbe) (result map[string]config.ContinuousAggregateBody, resultErr error)
-func (dc *DatabaseConnection) ResolveDomainExpressions(ctx context.Context, probes []DomainExpressionProbe) (result map[string]config.DomainExpression, resultErr error)
 func (dc *DatabaseConnection) ResolveIdentifierSemantics(ctx context.Context, names []string) (identifier.Semantics, error)
-func (dc *DatabaseConnection) ResolveIndexExpressions(ctx context.Context, probes []IndexExpressionProbe) (map[string]config.IndexExpression, error)
-func (dc *DatabaseConnection) ResolvePolicyExpressions(ctx context.Context, probes []PolicyExpressionProbe) (map[string]config.PolicyExpression, error)
 func (dc *DatabaseConnection) SchemaWriter() types.SchemaWriter
 func (dc *DatabaseConnection) WithExecutor(executor types.SchemaExecutor) *DatabaseConnection
 func (dc *DatabaseConnection) WithIsolatedQuerySession(ctx context.Context, opts *sql.TxOptions, use func(IsolatedQueryer) error) (resultErr error)
+func (dc *DatabaseConnection) WithRolledBackTransaction(ctx context.Context, label string, ...) (ran bool, resultErr error)
 func (dc *DatabaseConnection) WithSession(ctx context.Context, use func(*DatabaseConnection) error) (resultErr error)
 func (dc *DatabaseConnection) WithSessionOrCurrent(ctx context.Context, use func(*DatabaseConnection) error) error
 func (dc *DatabaseConnection) WithUntrustedSQLSession(ctx context.Context, use func(*DatabaseConnection) error) error
 func (dc *DatabaseConnection) Writer() types.SchemaExecutor
-
-### go.5x5.cz/ptah/dbschema.DomainExpressionProbe
-
-package dbschema // import "go.5x5.cz/ptah/dbschema"
-
-type DomainExpressionProbe struct {
-    // Key identifies the domain to the caller. It is returned unchanged as the
-    // map key and is never sent to the server.
-    Key string
-    // BaseType is the domain's underlying type. The server needs it to parse
-    // the expressions: `VALUE <> ''` normalizes to `VALUE <> ''::text` over
-    // text and does not parse at all over integer.
-    BaseType string
-    // Check is the declared CHECK expression, without the CHECK keyword and
-    // without its enclosing parentheses.
-    Check string
-    // Default is the declared DEFAULT expression or literal.
-    Default string
-}
-    DomainExpressionProbe is one declared domain whose CHECK and DEFAULT need
-    the target server's own spelling before they can be compared with what the
-    catalog holds.
-
-
-### go.5x5.cz/ptah/dbschema.GeneratedExpressionProbe
-
-package dbschema // import "go.5x5.cz/ptah/dbschema"
-
-type GeneratedExpressionProbe struct {
-    // Schema and Table qualify the declared table, and are what
-    // [config.CompareOptions.GeneratedExpressions] is keyed by. Schema may be
-    // empty.
-    Schema string
-    Table  string
-    // ProbeTable is the throwaway table Create makes, and the one this package
-    // reads back and drops. The caller names it because the caller renders the
-    // statement.
-    ProbeTable string
-    // Create is the rendered CREATE TABLE for ProbeTable, carrying the declared
-    // table's WHOLE column list. The whole list, because a generated expression
-    // references its siblings: `"size" * 2` needs a `size` column to reference,
-    // and a probe table carrying only the generated column is refused.
-    Create string
-    // Generated names the columns whose expression is wanted back.
-    Generated []string
-}
-    GeneratedExpressionProbe is one declared table whose generated columns need
-    the server's own spelling.
-
-    The columns arrive already rendered, as the target's own DDL. Rendering
-    them here would put the renderer under every caller of this package,
-    and the declaration the caller holds is what has to be normalized -- a probe
-    built from anything else would answer for a table nobody declared.
-
-
-### go.5x5.cz/ptah/dbschema.IndexExpressionProbe
-
-package dbschema // import "go.5x5.cz/ptah/dbschema"
-
-type IndexExpressionProbe struct {
-    // Key identifies the index to the caller and is never sent to the server.
-    Key string
-    // Columns are the columns of the table the index is on, from the LIVE read.
-    Columns []CheckProbeColumn
-    // Expression is what the index is over, empty for an index over plain
-    // columns. Parts is what those plain columns are.
-    Expression string
-    Parts      []string
-    // Predicate is the declared WHERE clause, empty for a full index.
-    Predicate string
-}
-    IndexExpressionProbe is one declared index whose expression or predicate
-    needs the target server's own spelling.
-
 
 ### go.5x5.cz/ptah/dbschema.IsolatedQueryer
 
@@ -7646,25 +7494,6 @@ type IsolatedQueryer interface {
     physical database session. It deliberately omits transaction control
     and schema writers so the callback cannot commit or acquire an auxiliary
     connection through Ptah.
-
-
-### go.5x5.cz/ptah/dbschema.PolicyExpressionProbe
-
-package dbschema // import "go.5x5.cz/ptah/dbschema"
-
-type PolicyExpressionProbe struct {
-    // Key identifies the policy to the caller and is never sent to the server.
-    Key string
-    // Columns are the columns of the table the policy is on, from the LIVE
-    // read: the clauses have to parse against the table they will guard.
-    Columns []CheckProbeColumn
-    // Using and WithCheck are the declared clauses, either of which may be
-    // empty.
-    Using     string
-    WithCheck string
-}
-    PolicyExpressionProbe is one declared RLS policy whose clauses need the
-    target server's own spelling before they can be compared.
 
 
 ## go.5x5.cz/ptah/dbschema/types
