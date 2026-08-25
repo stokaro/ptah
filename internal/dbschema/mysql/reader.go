@@ -212,7 +212,8 @@ func (r *Reader) readColumnsByTable(dbName string) (map[string][]types.DBColumn,
 			CHARACTER_SET_NAME,
 			COLLATION_NAME,
 			EXTRA,
-			GENERATION_EXPRESSION
+			GENERATION_EXPRESSION,
+			COLUMN_COMMENT
 		FROM information_schema.COLUMNS
 		WHERE TABLE_SCHEMA = ?
 		AND TABLE_NAME NOT IN ('schema_migrations')
@@ -231,6 +232,7 @@ func (r *Reader) readColumnsByTable(dbName string) (map[string][]types.DBColumn,
 		var defaultValue sql.NullString
 		var characterMaxLength, numericPrecision, numericScale sql.NullInt64
 		var charset, collate, extra, generatedExpression sql.NullString
+		var comment sql.NullString
 
 		err := rows.Scan(
 			&tableName,
@@ -247,6 +249,7 @@ func (r *Reader) readColumnsByTable(dbName string) (map[string][]types.DBColumn,
 			&collate,
 			&extra,
 			&generatedExpression,
+			&comment,
 		)
 		if err != nil {
 			return nil, err
@@ -254,6 +257,12 @@ func (r *Reader) readColumnsByTable(dbName string) (map[string][]types.DBColumn,
 		if col.ColumnType != "" {
 			col.DataType = col.ColumnType
 		}
+		// MySQL and MariaDB report a column with no comment as the empty
+		// string rather than NULL, so there is nothing to distinguish "no
+		// comment" from "a comment somebody set to nothing" -- and the second
+		// is not a state the engines keep. Assigning unconditionally is
+		// therefore the same thing, and reads as though it were not.
+		col.Comment = comment.String
 
 		applyMySQLColumnMetadata(
 			&col,
