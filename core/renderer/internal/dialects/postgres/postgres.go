@@ -859,13 +859,11 @@ func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
 				r.escapeIdentifier(op.ColumnName),
 				expression,
 			)
-		case *ast.RenameColumnOperation:
-			// PostgreSQL has supported `ALTER TABLE x RENAME COLUMN old TO new`
-			// for a long time; emit it unconditionally.
-			r.w.WriteLinef("ALTER TABLE %s RENAME COLUMN %s TO %s;",
-				r.escapeQualifiedIdentifier(node.Name), r.escapeIdentifier(op.OldName), r.escapeIdentifier(op.NewName))
-		case *ast.RenameTableOperation:
-			r.w.WriteLinef("ALTER TABLE %s RENAME TO %s;", r.escapeQualifiedIdentifier(node.Name), r.escapeIdentifier(op.NewName))
+		case *ast.RenameColumnOperation, *ast.RenameTableOperation:
+			// Both renames share one arm so this switch keeps its complexity
+			// budget, the way the two TTL arms below already do; writeRename
+			// re-selects between them.
+			r.writeRename(node, operation)
 		case *ast.AddSkippingIndexOperation, *ast.ModifyTTLOperation:
 			// Two ClickHouse-specific constructs with no PostgreSQL equivalent,
 			// sharing one arm so this switch keeps its complexity budget. The
@@ -882,6 +880,8 @@ func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
 			if err := r.writeRowTTLOperation(node, operation); err != nil {
 				return err
 			}
+		case *ast.SetCommentOperation:
+			r.writeSetComment(node.Name, op)
 		default:
 			return fmt.Errorf("unknown alter operation type: %T", operation)
 		}
@@ -890,6 +890,48 @@ func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
 	r.w.WriteLine("")
 
 	return nil
+}
+
+// writeRename renders either rename PostgreSQL accepts on ALTER TABLE.
+//
+// PostgreSQL has supported `ALTER TABLE x RENAME COLUMN old TO new` for a long
+// time, so both forms are emitted unconditionally.
+func (r *Renderer) writeRename(node *ast.AlterTableNode, operation ast.AlterOperation) {
+	table := r.escapeQualifiedIdentifier(node.Name)
+	switch op := operation.(type) {
+	case *ast.RenameColumnOperation:
+		r.w.WriteLinef("ALTER TABLE %s RENAME COLUMN %s TO %s;",
+			table, r.escapeIdentifier(op.OldName), r.escapeIdentifier(op.NewName))
+	case *ast.RenameTableOperation:
+		r.w.WriteLinef("ALTER TABLE %s RENAME TO %s;", table, r.escapeIdentifier(op.NewName))
+	}
+}
+
+// writeSetComment renders a comment transition as PostgreSQL spells it: a
+// statement of its own, outside ALTER TABLE.
+//
+// An empty comment becomes `IS NULL` rather than `IS ”`. PostgreSQL stores
+// them the same way, but only NULL is what the catalog reports for an object
+// with no comment, so writing the empty string would leave a comment the
+// reader brings back as absent and the comparison plans again on every run
+// (stokaro/ptah#2168).
+func (r *Renderer) writeSetComment(table string, op *ast.SetCommentOperation) {
+	target := r.escapeQualifiedIdentifier(table)
+	kind := "TABLE"
+	if op.Column != "" {
+		kind = "COLUMN"
+		target += "." + r.escapeIdentifier(op.Column)
+	}
+	r.w.WriteLinef("COMMENT ON %s %s IS %s;", kind, target, r.commentLiteral(op.Comment))
+}
+
+// commentLiteral spells a comment for a COMMENT ON statement, with NULL for
+// none.
+func (r *Renderer) commentLiteral(comment string) string {
+	if comment == "" {
+		return "NULL"
+	}
+	return r.escapeValue(comment)
 }
 
 func (r *Renderer) VisitColumn(node *ast.ColumnNode) error {

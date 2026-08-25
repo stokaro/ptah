@@ -316,3 +316,33 @@ func (op *ResetRowTTLOperation) Accept(_visitor Visitor) error {
 
 // alterOperation implements the marker method for type safety.
 func (op *ResetRowTTLOperation) alterOperation() {}
+
+// SetCommentOperation carries an object's comment to the state a declaration
+// asks for.
+//
+// It is an alter operation rather than a statement node because it is scoped to
+// one table and travels with the other changes to it, and because the engines
+// spell it in incompatible places: PostgreSQL and Oracle write a separate
+// `COMMENT ON`, MySQL and MariaDB write a table option or a column clause, and
+// SQL Server calls a stored procedure. Each renderer decides; the operation
+// only says which object and what the comment should become
+// (stokaro/ptah#2168).
+type SetCommentOperation struct {
+	// Column names the column whose comment is being set. Empty means the
+	// table's own comment.
+	Column string
+	// Comment is what the comment should become. Empty removes it, which is a
+	// state of its own: an engine that stores an absent comment as NULL needs
+	// a statement to get there, and leaving it alone is what made a comment
+	// deleted from a declaration survive in the database forever.
+	Comment string
+}
+
+// Accept implements the Node interface for SetCommentOperation.
+//
+// The actual rendering is handled by the dialect's VisitAlterTable method;
+// this stub exists to satisfy the Node interface.
+func (op *SetCommentOperation) Accept(_visitor Visitor) error { return nil }
+
+// alterOperation implements the marker method for type safety.
+func (op *SetCommentOperation) alterOperation() {}

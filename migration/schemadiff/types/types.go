@@ -825,6 +825,17 @@ type TableDiff struct {
 	// (potentially dangerous - may affect data integrity)
 	ConstraintsRemoved []string `json:"constraints_removed"`
 
+	// CommentChange carries the table's comment transition, and is nil when the
+	// comment is unchanged.
+	//
+	// Both sides, for the reason [RowTTLChange] gives: a comment the database
+	// holds and the declaration does not is a REMOVAL, and only the current
+	// state says so. A planner given the desired side alone cannot tell "no
+	// comment was declared, and none exists" from "no comment was declared, and
+	// one is there to drop" -- and the second is the case that made a changed
+	// comment report `Schema is synced` forever (stokaro/ptah#2168).
+	CommentChange *CommentChange `json:"comment_change,omitzero"`
+
 	// RowTTLChange carries a CockroachDB row-level TTL transition, and is nil
 	// when the table's policy is unchanged.
 	//
@@ -879,6 +890,29 @@ type ColumnDiff struct {
 	// Changes maps change types to their old->new value transitions
 	// Format: "change_type" -> "old_value -> new_value"
 	Changes map[string]string `json:"changes"`
+
+	// CommentChange carries the column's comment transition, and is nil when
+	// the comment is unchanged.
+	//
+	// It is a field of its own rather than an entry in Changes because a
+	// comment is prose: it can contain the " -> " the map's format uses as a
+	// separator, and it can be empty, which that format cannot tell from
+	// absent. Both distinctions are the ones a planner needs.
+	CommentChange *CommentChange `json:"comment_change,omitzero"`
+}
+
+// CommentChange is one object's comment transition.
+//
+// An empty string on either side means no comment. The engines agree on that
+// much even though they disagree on everything else here: PostgreSQL and Oracle
+// store an empty comment as NULL, and MySQL reports an absent one as the empty
+// string, so neither has a state between "no comment" and "a comment that says
+// nothing".
+type CommentChange struct {
+	// Current is what the database holds, empty when it holds none.
+	Current string `json:"current"`
+	// Desired is what the declaration asks for, empty to remove it.
+	Desired string `json:"desired"`
 }
 
 // EnumDiff represents changes to enum type values.
