@@ -1175,11 +1175,12 @@ func clickHouseTableOverrides(dbTable dbschematypes.DBTable) map[string]map[stri
 	// defaults: a ReplacingMergeTree came back a MergeTree, and the partition
 	// key, the sampling key, the TTL and the settings came back absent
 	// (stokaro/ptah#2198).
-	overrides := make(map[string]string, 6)
+	overrides := make(map[string]string, 7)
 	for key, value := range map[string]string{
 		"engine":       dbTable.ClickHouseEngine,
 		"order_by":     dbTable.ClickHouseOrderBy,
 		"partition_by": dbTable.ClickHousePartitionKey,
+		"primary_key":  dbTable.ClickHousePrimaryKey,
 		"sample_by":    dbTable.ClickHouseSamplingKey,
 		"ttl":          dbTable.ClickHouseTTL,
 		"settings":     dbTable.ClickHouseSettings,

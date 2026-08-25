@@ -273,11 +273,13 @@ func (r *Reader) readTables(dbName string) ([]types.DBTable, error) {
 		t.Columns = columnsByTable[name]
 		t.ClickHouseSortingKey = sortingKeyBeyondPrimaryKey(sortingKey, primaryKey)
 		t.ClickHouseOrderBy = sortingKey
-		t.ClickHouseEngine = engineClause(engineFull)
+		clauses := parseEngineFull(engineFull)
+		t.ClickHouseEngine = clauses.Engine
 		t.ClickHousePartitionKey = partitionKey
 		t.ClickHouseSamplingKey = samplingKey
-		t.ClickHouseTTL = engineFullClause(engineFull, "TTL")
-		t.ClickHouseSettings = engineFullClause(engineFull, "SETTINGS")
+		t.ClickHousePrimaryKey = primaryKeyBeyondSortingKey(primaryKey, sortingKey)
+		t.ClickHouseTTL = clauses.TTL
+		t.ClickHouseSettings = clauses.Settings
 		tables = append(tables, t)
 	}
 	if err := rows.Err(); err != nil {
@@ -549,83 +551,6 @@ func (r *Reader) readSkippingIndexes(dbName string) ([]types.DBIndex, error) {
 	return indexes, nil
 }
 
-// engineFullKeywords are the clauses system.tables.engine_full appends after the
-// engine, in the order ClickHouse prints them.
-var engineFullKeywords = []string{"PARTITION BY", "ORDER BY", "PRIMARY KEY", "SAMPLE BY", "TTL", "SETTINGS"}
-
-// engineClause is the engine WITH its parameters, which is the part of
-// engine_full before the first clause keyword.
-//
-// system.tables.engine reports the bare family name, so a ReplacingMergeTree
-// keyed on a version column comes back as "ReplacingMergeTree" and replays
-// without the column it deduplicates by -- silently, because the resulting
-// table is a valid ReplacingMergeTree that merges on nothing
-// (stokaro/ptah#2198).
-func engineClause(engineFull string) string {
-	cut := len(engineFull)
-	for _, keyword := range engineFullKeywords {
-		if at := clauseIndex(engineFull, keyword); at >= 0 && at < cut {
-			cut = at
-		}
-	}
-	return strings.TrimSpace(engineFull[:cut])
-}
-
-// engineFullClause is the body of one clause of engine_full, empty when the
-// table has none.
-func engineFullClause(engineFull, keyword string) string {
-	at := clauseIndex(engineFull, keyword)
-	if at < 0 {
-		return ""
-	}
-	rest := engineFull[at+len(keyword):]
-	cut := len(rest)
-	for _, other := range engineFullKeywords {
-		if other == keyword {
-			continue
-		}
-		if next := clauseIndex(rest, other); next >= 0 && next < cut {
-			cut = next
-		}
-	}
-	return strings.TrimSpace(rest[:cut])
-}
-
-// clauseIndex finds a clause keyword at nesting depth zero, so a keyword inside
-// an expression -- `PARTITION BY toYYYYMM(day)` holds no keyword, but a TTL
-// expression may hold parentheses -- is not mistaken for the clause itself.
-func clauseIndex(value, keyword string) int {
-	upper := strings.ToUpper(value)
-	depth := 0
-	for i := 0; i < len(upper); i++ {
-		switch upper[i] {
-		case '(':
-			depth++
-			continue
-		case ')':
-			depth--
-			continue
-		case '\'':
-			if next := strings.IndexByte(upper[i+1:], '\''); next >= 0 {
-				i += next + 1
-			}
-			continue
-		}
-		if depth != 0 || !strings.HasPrefix(upper[i:], keyword) {
-			continue
-		}
-		if i > 0 && upper[i-1] != ' ' {
-			continue
-		}
-		after := i + len(keyword)
-		if after < len(upper) && upper[after] != ' ' && upper[after] != '(' {
-			continue
-		}
-		return i
-	}
-	return -1
-}
-
 // sortingKeyBeyondPrimaryKey returns the ORDER BY a description has to carry
 // explicitly, and the empty string when the primary key already implies it.
 //
@@ -647,6 +572,26 @@ func sortingKeyBeyondPrimaryKey(sortingKey, primaryKey string) string {
 		return ""
 	}
 	return strings.TrimSpace(sortingKey)
+}
+
+// primaryKeyBeyondSortingKey returns the PRIMARY KEY a description has to carry
+// explicitly, and the empty string when it is the whole sorting key.
+//
+// It is the mirror of sortingKeyBeyondPrimaryKey: that one answers "does the
+// ORDER BY say more than the primary key", this one answers "does the primary
+// key say less than the ORDER BY". A MergeTree table is tuned by making the
+// primary key a prefix of the sorting key, and a description that names only
+// the ORDER BY replays with the primary key widened to match it -- a bigger
+// sparse index over the same rows (stokaro/ptah#2198).
+//
+// The comparison strips what the catalog puts on one column and not the other,
+// for the same reason its mirror does: primary_key comes back as `(id)` and
+// sorting_key as `id, s` for one table.
+func primaryKeyBeyondSortingKey(primaryKey, sortingKey string) string {
+	if normalizeKeyExpression(primaryKey) == normalizeKeyExpression(sortingKey) {
+		return ""
+	}
+	return strings.TrimSpace(primaryKey)
 }
 
 // normalizeKeyExpression reduces a key expression to a form that can be
