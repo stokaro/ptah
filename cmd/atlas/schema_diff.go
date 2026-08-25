@@ -36,7 +36,7 @@ func newAtlasSchemaDiffCommand(policy atlascompatpolicy.Policy) *cobra.Command {
 
 Calculates SQL statements that migrate the --from schema state to the --to
 schema state. Each side accepts local file:// schema files with .hcl, .yaml,
-.yml, or .sql extensions, one directly connectable database URL whose live
+.yml, .sql, or .dbml extensions, one directly connectable database URL whose live
 schema is introspected, one migration directory (a file:// directory containing
 atlas.sum) replayed on the required --dev-url dev database, or one
 env://<attribute> reference (src, schema.src, url, dev, migration.dir) resolved

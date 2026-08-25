@@ -68,7 +68,7 @@ func newSchemaInspectCommand() *cobra.Command {
 status banners: pipe it into files, diffs, or other tools.
 
 The source is a live database (--db-url), a local schema file (--schema-file:
-.hcl, .yaml, .yml, or .sql), or an Atlas-format migration directory
+.hcl, .yaml, .yml, .sql, or .dbml), or an Atlas-format migration directory
 (--migrations-dir). Non-database sources require --dev-url: the dev database
 is reset destructively, the source is materialized on it (schema files
 executed, migration directories replayed), and the result is introspected so
@@ -97,7 +97,7 @@ inspected output never references an object it omitted.`,
 	}
 	flags := cmd.Flags()
 	flags.StringVar(&opts.dbURL, inspectDBURLFlag, "", "Live database URL to inspect")
-	flags.StringVar(&opts.schemaFile, inspectSchemaFileFlag, "", "Schema file to inspect: a local .hcl, .yaml, .yml, or .sql file, or an oci:// schema artifact; requires --dev-url")
+	flags.StringVar(&opts.schemaFile, inspectSchemaFileFlag, "", "Schema file to inspect: a local .hcl, .yaml, .yml, .sql, or .dbml file, or an oci:// schema artifact; requires --dev-url")
 	flags.StringVar(&opts.migrationsDir, inspectMigrationsDirFlag, "", "Atlas-format migration directory to inspect; requires --dev-url")
 	flags.StringVar(&opts.devURL, inspectDevURLFlag, "", "Dev database URL used to evaluate non-database inspection sources; it is reset destructively")
 	dbcli.RegisterURLScopedSchemasFlag(flags, &opts.schemas)

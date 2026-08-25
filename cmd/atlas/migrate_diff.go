@@ -82,7 +82,7 @@ Drops all tables in the --dev-url database, replays the local migration
 directory on it, compares the resulting state to --to desired-state sources,
 and writes new Atlas-style migration files plus atlas.sum when changes are
 found. Use a disposable dev database. --to accepts local .hcl, .yaml, .yml,
-and .sql schema files, one directly connectable database URL, one local Atlas
+.sql, and .dbml schema files, one directly connectable database URL, one local Atlas
 migration directory, or one env://<attribute> reference resolved through the
 evaluated atlas.hcl env. A database used as --to must differ from --dev-url.
 Use --schema to limit the comparison to selected schema names.

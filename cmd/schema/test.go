@@ -63,8 +63,8 @@ func NewSchemaTestCommand() *cobra.Command {
 
 The desired schema is read from --root-dir and converged through live
 introspection and planning before test steps run. Three source kinds are
-accepted: a directory of Go schema annotations, a .sql or .hcl schema file, and
-a database URL whose live schema is introspected. Each test file is a YAML
+accepted: a directory of Go schema annotations, a schema file (.hcl, .yaml,
+.yml, .sql, or .dbml), and a database URL whose live schema is introspected. Each test file is a YAML
 document with a top-level cases: list. A case is a named, ordered list of steps;
 each step performs exactly one action:
 
@@ -103,7 +103,7 @@ The command exits non-zero if any case fails.`,
 	flags := cmd.Flags()
 	flags.StringVar(&opts.dir, testDirFlag, "./tests", "Directory containing declarative test-case YAML files")
 	flags.StringVar(&opts.rootDir, testRootDirFlag, "./models",
-		"Desired schema source: a directory of Go schema annotations, a .sql or .hcl schema file, or a database URL")
+		"Desired schema source: a directory of Go schema annotations, a schema file (.hcl, .yaml, .yml, .sql, or .dbml), or a database URL")
 	flags.StringVar(&opts.seedDir, testSeedDirFlag, "", "Default directory for seed steps that omit dir")
 	flags.StringVar(&opts.dbURL, testDBURLFlag, "", "Throwaway database URL (optional). An ephemeral SQLite database is used when empty.")
 	flags.StringVar(&opts.report, testReportFlag, testReportFormatText, "Report format: text, json, or html")

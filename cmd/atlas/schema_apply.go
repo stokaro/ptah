@@ -233,7 +233,7 @@ func newAtlasSchemaApplyCommand(policy atlascompatpolicy.Policy) *cobra.Command 
 
 Compares a live database from --url with the --to desired state and applies the
 generated schema changes directly to the target database. --to accepts local
-file:// schema files with .hcl, .yaml, .yml, or .sql extensions, one directly
+file:// schema files with .hcl, .yaml, .yml, .sql, or .dbml extensions, one directly
 connectable database URL whose live schema becomes the desired state, one
 migration directory (a file:// directory containing atlas.sum) replayed on the
 required --dev-url dev database, or one env://<attribute> reference (src,

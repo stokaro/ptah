@@ -347,6 +347,30 @@ func isEnvReference(schemaFile string) bool {
 
 // loadSchemaFile resolves a single YAML, HCL, or SQL schema file — or a
 // directory of .sql or .hcl schema files — into a finalized schema.
+// supportedExtensions are the schema file extensions this loader reads.
+//
+// It is one list because it was five: the switch here, the message beside it,
+// and the help text of four commands each spelled the set by hand, and adding
+// .dbml reached three of them. `ptah schema inspect --schema-file x.dbml` read
+// the file while its own --help said the file had to be .hcl, .yaml, .yml or
+// .sql (stokaro/ptah#2065).
+var supportedExtensions = []string{".yaml", ".yml", ".hcl", ".sql", ".dbml"}
+
+// SupportedExtensions reports the schema file extensions this loader reads.
+func SupportedExtensions() []string {
+	return slices.Clone(supportedExtensions)
+}
+
+// SupportedExtensionList spells the set for a message or a help string, so the
+// prose a person reads is generated from the same list the loader decides with.
+func SupportedExtensionList() string {
+	if len(supportedExtensions) < 2 {
+		return strings.Join(supportedExtensions, "")
+	}
+	return strings.Join(supportedExtensions[:len(supportedExtensions)-1], ", ") +
+		", and " + supportedExtensions[len(supportedExtensions)-1]
+}
+
 func (o Options) loadSchemaFile(ctx context.Context, schemaFile string) (*goschema.Database, error) {
 	if strings.HasPrefix(schemaFile, ociartifact.Scheme) {
 		return o.loadOCI(ctx, schemaFile)
@@ -367,14 +391,10 @@ func (o Options) loadSchemaFile(ctx context.Context, schemaFile string) (*gosche
 	// refuse it with `unsupported schema file extension ""` — a message about a
 	// file for something that is not one. The loader decides what a directory
 	// of schema files means, so a directory skips this switch and reaches it.
-	if !isSchemaDir(absPath) {
-		switch strings.ToLower(filepath.Ext(absPath)) {
-		case ".yaml", ".yml", ".hcl", ".sql", ".dbml":
-		default:
-			return nil, fmt.Errorf(
-				"unsupported schema file extension %q: only .yaml, .yml, .hcl, .sql, and .dbml are supported",
-				filepath.Ext(absPath))
-		}
+	if !isSchemaDir(absPath) && !slices.Contains(supportedExtensions, strings.ToLower(filepath.Ext(absPath))) {
+		return nil, fmt.Errorf(
+			"unsupported schema file extension %q: only %s are supported",
+			filepath.Ext(absPath), SupportedExtensionList())
 	}
 
 	o.logf("Reading schema file: %s", absPath)

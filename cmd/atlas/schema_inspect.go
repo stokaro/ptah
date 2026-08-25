@@ -36,7 +36,7 @@ func newAtlasSchemaInspectCommand(policy atlascompatpolicy.Policy) *cobra.Comman
 
 Inspects the --url source and writes Atlas-compatible schema output to stdout
 without Ptah status banners. The source is a live database URL, a local schema
-file (.hcl, .yaml, .yml, or .sql), a migration directory, or an env://
+file (.hcl, .yaml, .yml, .sql, or .dbml), a migration directory, or an env://
 reference into the evaluated atlas.hcl environment. Non-database sources
 require --dev-url: the dev database is reset, the source is materialized on
 it, and the result is introspected, mirroring Atlas dev-database

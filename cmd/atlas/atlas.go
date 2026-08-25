@@ -984,7 +984,7 @@ func atlasSchemaTestSourceFlag() atlasargs.Flag {
 		"url",
 		"u",
 		"Desired schema source URL: a local file:// directory of Go schema annotations,"+
-			" a .sql or .hcl schema file, or a database URL",
+			" a schema file (.hcl, .yaml, .yml, .sql, or .dbml), or a database URL",
 		"root-dir",
 	)
 	flag.MapValue = atlasSchemaTestSourceValue
@@ -1010,7 +1010,7 @@ func atlasSchemaTestSourceValue(value string) (string, error) {
 	}
 	return "", fmt.Errorf(
 		"atlas schema test does not support %s desired-state sources;"+
-			" pass a directory of Go schema annotations, a .sql or .hcl schema file, or a database URL",
+			" pass a directory of Go schema annotations, a schema file (.hcl, .yaml, .yml, .sql, or .dbml), or a database URL",
 		source.Kind,
 	)
 }
