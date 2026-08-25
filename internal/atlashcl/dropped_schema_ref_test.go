@@ -11,13 +11,23 @@ import (
 // TestParseIgnoreUnknownNamesResolvesDeclaredSchemaRefs pins that a dropped body
 // may name a schema the file declares.
 //
-// `procedure "p" { schema = schema.main }` is the ordinary spelling of every
+// `wibble "p" { schema = schema.main }` is the ordinary spelling of every
 // Atlas object Ptah does not model, and until stokaro/ptah#927 item 5 the whole
 // file was refused over it: the dropped body was evaluated in a scope with no
 // `schema` root at all, so the reference failed with `unknown variable
 // "schema"` and the load exited 1. The pinned Atlas community binary v1.3.0
 // loads each file below at exit 0 and reports `Schemas are synced, no changes to
 // be made.`
+//
+// The vehicle used to be `procedure`, which Ptah now models: a procedure is its
+// own top-level block, because writing one as a `function` made applying a
+// database's own description drop every procedure it had (stokaro/ptah#2209).
+// `wibble` replaces it rather than some other real construct because what these
+// rows measure is the dropped BODY -- the binary treats a top-level block whose
+// name it does not model the same way whatever that name is, and `wibble` is
+// the name the reference run already uses to prove exactly that
+// (atlasToleratedBlockTypes in
+// integration/atlasreference/render/atlas_refused_blocks_reference_test.go).
 //
 // Each row asserts the strong form: the file WITH the dropped construct produces
 // exactly the IR of the same file WITHOUT it, so the construct contributed
@@ -32,10 +42,10 @@ func TestParseIgnoreUnknownNamesResolvesDeclaredSchemaRefs(t *testing.T) {
 		strictErr  string
 	}{
 		{
-			name: "procedure below the schema it names",
+			name: "unmodeled block below the schema it names",
 			hcl: `schema "main" {
 }
-procedure "p" {
+wibble "p" {
   schema = schema.main
   as     = "BEGIN END"
 }
@@ -43,14 +53,14 @@ procedure "p" {
 			equivalent: `schema "main" {
 }
 `,
-			strictErr: `.*unsupported top-level block "procedure".*`,
+			strictErr: `.*unsupported top-level block "wibble".*`,
 		},
 		{
 			// Declaration order must not decide the verdict: the community
 			// binary evaluates the whole file before it decides what to
 			// decode, so a dropped body above the schema block resolves there.
-			name: "procedure above the schema it names",
-			hcl: `procedure "p" {
+			name: "unmodeled block above the schema it names",
+			hcl: `wibble "p" {
   schema = schema.main
   as     = "BEGIN END"
 }
@@ -60,7 +70,7 @@ schema "main" {
 			equivalent: `schema "main" {
 }
 `,
-			strictErr: `.*unsupported top-level block "procedure".*`,
+			strictErr: `.*unsupported top-level block "wibble".*`,
 		},
 		{
 			// The root carries every declared label, not just the first.
@@ -69,7 +79,7 @@ schema "main" {
 }
 schema "second" {
 }
-procedure "p" {
+wibble "p" {
   schema = schema.second
   as     = "BEGIN END"
 }
@@ -79,7 +89,7 @@ procedure "p" {
 schema "second" {
 }
 `,
-			strictErr: `.*unsupported top-level block "procedure".*`,
+			strictErr: `.*unsupported top-level block "wibble".*`,
 		},
 		{
 			// The same reference in an unknown ATTRIBUTE rather than an
@@ -154,7 +164,7 @@ func TestParseIgnoreUnknownNamesRefusesUndeclaredSchemaRefs(t *testing.T) {
 			name: "schema name no block declares",
 			hcl: `schema "main" {
 }
-procedure "p" {
+wibble "p" {
   schema = schema.nope
   as     = "BEGIN END"
 }
@@ -165,7 +175,7 @@ procedure "p" {
 			name: "member access on a declared schema",
 			hcl: `schema "main" {
 }
-procedure "p" {
+wibble "p" {
   schema = schema.main.nope
   as     = "BEGIN END"
 }
@@ -179,7 +189,7 @@ procedure "p" {
     type = int
   }
 }
-procedure "p" {
+wibble "p" {
   schema = schema.other
   as     = "BEGIN END"
 }
@@ -193,7 +203,7 @@ procedure "p" {
 			name: "schema block with two labels is still refused",
 			hcl: `schema "main" "extra" {
 }
-procedure "p" {
+wibble "p" {
   schema = schema.main
   as     = "BEGIN END"
 }

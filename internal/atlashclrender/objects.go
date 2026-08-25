@@ -252,14 +252,40 @@ func (r *renderer) renderFunctions() {
 	}
 }
 
+// routineBlock is the top-level block a routine is written as.
+//
+// A procedure is its own block rather than a `function` with an empty `return`,
+// because returning nothing is the ONE property the two differ in and a block
+// that states it by omission cannot be told apart from a function whose return
+// type the reader failed to describe. The comparator keys routines by kind
+// (routineKeyWithKind in migration/schemadiff/internal/compare), and the SQL
+// renderers pick CREATE PROCEDURE and DROP PROCEDURE from it, so a kind lost on
+// the way out of HCL comes back as a function that replaces the procedure it
+// was read from (stokaro/ptah#2209).
+//
+// Nothing suppresses this block on the Atlas-compatible surface. The pinned
+// Atlas community binary v1.3.0 drops a top-level block it does not model and
+// carries on at exit 0 -- measured for `procedure` in
+// TestParseIgnoreUnknownNamesResolvesDeclaredSchemaRefs and for the invented
+// name `wibble` in the reference run -- so emitting it costs that binary
+// nothing and withholding it would lose description for nothing. See
+// [atlasRefusedBlockTypes] for what a refusal actually looks like.
+func routineBlock(function goschema.Function) string {
+	if function.IsProcedure() {
+		return blockProcedure
+	}
+	return blockFunction
+}
+
 func (r *renderer) renderFunction(function goschema.Function) {
 	function.Canonicalize()
+	block := routineBlock(function)
 	if function.Body == "" {
-		r.warn("functions."+function.Name, "function body is required for HCL schema export")
+		r.warn("functions."+function.Name, block+" body is required for HCL schema export")
 		return
 	}
 	name := objectNameFromQualified(function.Name)
-	r.linef(`function %s {`, quote(name))
+	r.linef(`%s %s {`, block, quote(name))
 	if schema := r.schemaFor(schemaNameFromQualified(function.Name)); schema != "" {
 		r.rawAttr(1, "schema", r.schemaRef(schema))
 	}
@@ -287,7 +313,12 @@ func (r *renderer) renderFunction(function goschema.Function) {
 	// `lang = "BANANA"` is accepted too -- so it validates none of these values
 	// and the only thing to match is that the file evaluates at all.
 	r.rawAttr(1, "lang", atlasLanguage(function.Language))
-	r.stringAttr(1, "return", function.Returns)
+	// Guarded rather than left to stringAttr's empty check: a procedure that
+	// reached the renderer carrying a return type is describing something it
+	// cannot have, and writing it would produce a block the parser refuses.
+	if !function.IsProcedure() {
+		r.stringAttr(1, "return", function.Returns)
+	}
 	r.renderFunctionArgs(function)
 	r.stringAttr(1, "security", function.Security)
 	r.stringAttr(1, "volatility", function.Volatility)

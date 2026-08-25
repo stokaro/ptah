@@ -380,7 +380,7 @@ lock {
 atlas {
 }
 
-procedure "do_thing" {
+wibble "do_thing" {
   schema = schema.main
 }
 
@@ -396,10 +396,15 @@ table "users" {
 //
 // The compat surface accepts these three names and contributes nothing for
 // them, matching a documented tolerance. Matching it is defensible; matching it
-// in SILENCE is not -- a `procedure` block dropped from a schema file is a
-// stored routine the author believes is managed, and the same product already
-// warns about an ignored atlas.hcl block through
-// dbcli.ReportIgnoredAtlasConstructs.
+// in SILENCE is not -- a dropped top-level block is something the author
+// believes is managed, and the same product already warns about an ignored
+// atlas.hcl block through dbcli.ReportIgnoredAtlasConstructs.
+//
+// The third name was `procedure` when this test was written, and the example
+// was chosen because a dropped procedure is a stored routine that silently
+// stops being managed. That one is no longer dropped: a procedure is a modeled
+// top-level block since stokaro/ptah#2209, so the row moved to `wibble`, which
+// nothing models and nothing will.
 //
 // The load still succeeds and the modeled objects still arrive, which is the
 // half a reporting change could break by turning a warning into a refusal.
@@ -424,7 +429,7 @@ func TestLoad_ReportsIgnoredTopLevelBlocks(t *testing.T) {
 	// declares dozens of blocks, so it is asserted rather than the name alone.
 	c.Assert(lines[0], qt.Matches, `warning: schema file block "lock" at .*schema\.hcl:4 is ignored for Atlas compatibility and has no effect`)
 	c.Assert(lines[1], qt.Matches, `warning: schema file block "atlas" at .*schema\.hcl:7 is ignored for Atlas compatibility and has no effect`)
-	c.Assert(lines[2], qt.Matches, `warning: schema file block "procedure" at .*schema\.hcl:10 is ignored for Atlas compatibility and has no effect`)
+	c.Assert(lines[2], qt.Matches, `warning: schema file block "wibble" at .*schema\.hcl:10 is ignored for Atlas compatibility and has no effect`)
 }
 
 // TestLoad_RefusesIgnoredTopLevelBlocksWithoutTolerance is the other half of

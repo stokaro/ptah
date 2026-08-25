@@ -326,6 +326,7 @@ var objectBlockParsers = map[string]func(*parser, *hclsyntax.Block) error{
 	"table":                (*parser).parseTable,
 	"extension":            (*parser).parseExtension,
 	"function":             (*parser).parseFunction,
+	"procedure":            (*parser).parseProcedure,
 	"view":                 (*parser).parseView,
 	"materialized":         (*parser).parseMaterializedView,
 	"trigger":              (*parser).parseTrigger,

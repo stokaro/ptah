@@ -96,6 +96,7 @@ for the message and the flag it names.
 | `role` | PostgreSQL role attributes, including `password`. |
 | `permission` | PostgreSQL table, schema, and sequence permissions. |
 | `function` | PostgreSQL metadata and raw body, with Atlas-style `arg` blocks or a Ptah raw `params` string. |
+| `procedure` | The same shape as `function` without `return`, which a procedure does not have. Ptah block: the Atlas community CLI has no procedure block and ignores this one. |
 | `view` / `materialized` | SQL body plus schema and comments. |
 | `trigger` | Trigger timing, target, execution mode, function body, and comments. |
 | `policy` | PostgreSQL RLS policy fields. |
@@ -302,6 +303,38 @@ table "users" {
 Ptah preserves supported include columns through HCL parsing, SQL rendering,
 SQL parsing, schema diffing, and database introspection paths where the dialect
 supports the feature.
+
+## Procedures
+
+A procedure is written as its own block, not as a `function` with no `return`:
+
+```hcl
+procedure "reap_accounts" {
+  schema = schema.app
+  lang   = "plpgsql"
+  arg "before" {
+    type = timestamptz
+  }
+  as = "BEGIN DELETE FROM accounts WHERE seen_at < before; END;"
+}
+```
+
+The distinction is not presentational. A routine's kind decides the verb that
+creates and drops it, and Ptah compares procedures against procedures and
+functions against functions. A procedure described as a function is therefore a
+different object from the one in the database: applying such a description drops
+the procedure and creates a function in its place.
+
+Declaring `return` inside a `procedure` block is an error. Every other attribute
+is the one `function` takes.
+
+The block is not dialect-specific: every catalog reader that distinguishes a
+procedure describes one with it. Round-tripping a database's own description
+back to it is a no-op, measured on PostgreSQL 17 and MySQL 9.7.2.
+
+On the Atlas-compatible surface the block is emitted as well. The community CLI
+has no procedure block, ignores the one it finds, and leaving it out would
+withhold description without making any document more readable to it.
 
 ## Function bodies
 
