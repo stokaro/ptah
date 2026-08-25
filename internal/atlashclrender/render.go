@@ -17,6 +17,7 @@ import (
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/internal/pgindexstorage"
 	"go.5x5.cz/ptah/internal/sqlitekey"
 	"go.5x5.cz/ptah/internal/tableref"
 )
@@ -142,11 +143,21 @@ func render(db *goschema.Database, dialect, defaultSchema string, omitAtlasRefus
 		return Result{}, fmt.Errorf("schema database is nil")
 	}
 
+	// Resolved once, here, rather than per index. A malformed value has to fail
+	// the export whether or not this particular schema happens to carry an
+	// index storage parameter, or the typo lies dormant until the day a schema
+	// does -- and then changes behavior for a reason nobody connects to it.
+	carryStorageParams, err := pgindexstorage.CarryAll()
+	if err != nil {
+		return Result{}, err
+	}
+
 	r := renderer{
 		db:                     db,
 		dialect:                dialect,
 		defaultSchema:          defaultSchema,
 		omitAtlasRefusedBlocks: omitAtlasRefusedBlocks,
+		carryStorageParams:     carryStorageParams,
 	}
 	r.render()
 	return Result{
@@ -167,6 +178,10 @@ type renderer struct {
 	// surface, which leaves out the block types the pinned binary refuses
 	// unless the document names the object; see [renderer.omitRefusedBlock].
 	omitAtlasRefusedBlocks bool
+	// carryStorageParams is PTAH_POSTGRES_INDEX_STORAGE_PARAMS, resolved once
+	// at the boundary in [render] so a malformed value fails the export rather
+	// than reading as the default.
+	carryStorageParams bool
 	// references caches the identifiers the surviving document names, built
 	// once per render by [collectReferencedNames]. Nil means not yet built,
 	// which is distinguishable from "built and empty" because a document with
@@ -1057,6 +1072,7 @@ func (r *renderer) renderIndex(index goschema.Index) {
 		// no document that used to load stops loading. See #1242.
 		r.rawAttr(2, "page_per_range", pages)
 	}
+	r.renderIndexStorageParams(index)
 	if len(index.Parts) > 0 && !simpleIndexParts(index.Parts) {
 		for _, part := range index.Parts {
 			r.line("    on {")
@@ -1563,4 +1579,50 @@ func (r *renderer) tableColumnRefs(table string, columns []string) string {
 		refs = append(refs, tableRef+".column"+objectRefPart(column))
 	}
 	return "[" + strings.Join(refs, ", ") + "]"
+}
+
+// renderIndexStorageParams writes the storage parameters that have no
+// Atlas-compatible attribute, or names them as omitted.
+//
+// `pages_per_range` is written above, as `page_per_range`, because that is the
+// spelling the pinned community binary reads. Every other parameter has no slot
+// in that document at all, so writing one produces a Ptah document rather than
+// one that binary also parses -- which is why it happens only under
+// PTAH_POSTGRES_INDEX_STORAGE_PARAMS, and why the omission is announced rather
+// than silent when the switch is off (stokaro/ptah#2183).
+//
+// The map is emitted as one attribute rather than one attribute per parameter:
+// the set is open -- every index method brings its own, and pgvector's `m` and
+// `ef_construction` are only the current examples -- and an attribute per name
+// would make the parser a list of names to keep in step with the engine.
+func (r *renderer) renderIndexStorageParams(index goschema.Index) {
+	extra := make([]string, 0, len(index.StorageParams))
+	for name := range index.StorageParams {
+		if pgindexstorage.HasCompatibleSlot(name) {
+			continue
+		}
+		extra = append(extra, name)
+	}
+	if len(extra) == 0 {
+		return
+	}
+	slices.Sort(extra)
+
+	if !r.carryStorageParams {
+		// The reader does not record these unless the switch is on, so reaching
+		// here with the switch off means the declaration carried them -- from a
+		// Go annotation or a SQL file, where they have always been expressible.
+		// Dropping them without a word is the failure this issue is about.
+		r.warn("indexes."+index.Name, fmt.Sprintf(
+			"index storage parameter(s) %s have no attribute in an Atlas-compatible document and are omitted; "+
+				"set %s=true to write them as Ptah attributes",
+			strings.Join(extra, ", "), pgindexstorage.EnvVar))
+		return
+	}
+
+	pairs := make([]string, 0, len(extra))
+	for _, name := range extra {
+		pairs = append(pairs, fmt.Sprintf("%s = %s", name, quote(index.StorageParams[name])))
+	}
+	r.rawAttr(2, "storage_params", "{ "+strings.Join(pairs, ", ")+" }")
 }
