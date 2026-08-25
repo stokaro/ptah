@@ -82,7 +82,7 @@ jobs:
       # The build script verifies whatever it finds before reusing it, so a hit
       # is not a reason to trust the file.
       - name: Cache the pinned Atlas CE reference
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/ptah-atlas-ce
           key: atlas-ce-${{ runner.os }}-${{ hashFiles('scripts/atlas-ce-reference.lock') }}
