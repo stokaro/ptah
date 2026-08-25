@@ -50,6 +50,7 @@ func TestSecurityAnnotations(t *testing.T) {
 			wantAnnotated: map[string]string{"audit_log": "warning"},
 			wantUnattached: []string{
 				"OWN01 not checked here: object ownership was not read for this source",
+				"ROL01 not checked here: no role usage data was supplied; a privilege is not use, and no catalog records which roles read which objects",
 				"ROL03 not checked here: role membership was not read for this source",
 				"ROL04 not checked here: role membership was not read for this source",
 			},
@@ -64,6 +65,7 @@ func TestSecurityAnnotations(t *testing.T) {
 			wantUnattached: []string{
 				"routine escalate: info PRV02",
 				"OWN01 not checked here: object ownership was not read for this source",
+				"ROL01 not checked here: no role usage data was supplied; a privilege is not use, and no catalog records which roles read which objects",
 				"ROL03 not checked here: role membership was not read for this source",
 				"ROL04 not checked here: role membership was not read for this source",
 			},
@@ -79,6 +81,7 @@ func TestSecurityAnnotations(t *testing.T) {
 			wantAnnotated: map[string]string{"audit_log": "warning"},
 			wantUnattached: []string{
 				"OWN01 not checked here: object ownership was not read for this source",
+				"ROL01 not checked here: no role usage data was supplied; a privilege is not use, and no catalog records which roles read which objects",
 				"ROL03 not checked here: role membership was not read for this source",
 				"ROL04 not checked here: role membership was not read for this source",
 			},
@@ -93,6 +96,7 @@ func TestSecurityAnnotations(t *testing.T) {
 			wantUnattached: []string{
 				"PRV01 not checked here: the target does not model row-level security",
 				"OWN01 not checked here: object ownership was not read for this source",
+				"ROL01 not checked here: no role usage data was supplied; a privilege is not use, and no catalog records which roles read which objects",
 				"ROL03 not checked here: role membership was not read for this source",
 				"ROL04 not checked here: role membership was not read for this source",
 			},

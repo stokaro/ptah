@@ -152,6 +152,32 @@ type ObjectOwner struct {
 	OwnerCanLogin bool
 }
 
+// RoleObjectUsage is one observation that a role used an object.
+//
+// It is passed in for a stronger reason than ownership and membership are: a
+// privilege is not use, and no catalog Ptah reads keeps this. A role holding
+// SELECT on a table it has never read looks identical, in every catalog, to one
+// that reads it hourly. PostgreSQL's pg_stat_user_tables counts scans without
+// attributing them to a role; pg_stat_statements attributes to a userid but is
+// an extension a database may not have, is reset on demand, and records
+// statement text rather than the object graph; MySQL and MariaDB keep no
+// equivalent; SQL Server's sys.dm_db_index_usage_stats attributes nothing to a
+// principal.
+//
+// So the signal is the caller's to collect -- from pg_stat_statements, from an
+// audit stream, from anything that observed real access -- and ROL01 reports
+// itself skipped without one rather than reporting every grant as unused
+// (stokaro/ptah#1961).
+type RoleObjectUsage struct {
+	// Role is the role observed using the object.
+	Role string
+	// Kind is the object kind, matching what a grant names: table, schema, or
+	// sequence.
+	Kind string
+	// Name is the object's name.
+	Name string
+}
+
 // Options selects what the analysis can check.
 type Options struct {
 	// ObjectOwners are the owners of the objects under analysis.
@@ -168,6 +194,18 @@ type Options struct {
 	// are different answers, and only the second one makes a clean report mean
 	// something.
 	RoleMemberships []RoleMembership
+	// RoleObjectUsage records which roles were observed using which objects.
+	//
+	// A NIL slice means the caller collected no usage data, and ROL01 is
+	// reported as skipped. An EMPTY non-nil slice means the caller collected it
+	// and observed no access at all, and ROL01 runs -- a window in which
+	// nothing was used is a real answer, and it is the answer that makes every
+	// grant in it unused.
+	//
+	// The distinction matters more here than for the other signals, because the
+	// two states produce opposite reports: "not collected" must say nothing,
+	// and "collected, nothing used" must name every grant.
+	RoleObjectUsage []RoleObjectUsage
 	// Capabilities is the set the target resolves, and it decides which rules
 	// can run: a rule about row-level security has nothing to say where the
 	// target does not model it, and firing it there would report every granted
@@ -209,6 +247,16 @@ func Analyze(db *goschema.Database, opts Options) Report {
 	} else {
 		report.SkippedRules = append(report.SkippedRules,
 			SkippedRule{Code: "OWN01", Reason: "object ownership was not read for this source"})
+	}
+
+	if opts.RoleObjectUsage != nil {
+		report.Findings = append(report.Findings, findGrantsOnUnusedObjects(db, opts.RoleObjectUsage)...)
+	} else {
+		report.SkippedRules = append(report.SkippedRules, SkippedRule{
+			Code: "ROL01",
+			Reason: "no role usage data was supplied; a privilege is not use, and no catalog " +
+				"records which roles read which objects",
+		})
 	}
 
 	if opts.RoleMemberships != nil {
@@ -408,6 +456,69 @@ func setOfOwners(owned map[string]map[string]bool) map[string]bool {
 		keys[key] = true
 	}
 	return keys
+}
+
+// findGrantsOnUnusedObjects implements ROL01.
+//
+// A role holding privileges on an object it never touches is privilege nobody
+// is exercising, and the remedy is to revoke it. The rule cannot be answered
+// from a schema -- see [RoleObjectUsage] -- so it runs only over a usage signal
+// the caller collected, and the caller decides what window that signal covers.
+//
+// PUBLIC is skipped. Usage cannot be attributed to it (every role holds it, so
+// an observation naming a real role says nothing about the PUBLIC grant), and a
+// privilege granted to PUBLIC is already PRV03's finding with a better
+// suggestion. Reporting it here as well would mean two findings and two
+// remedies for one grant.
+//
+// Severity is Warning rather than Error: the signal is a window, and a window
+// is evidence of absence only for as long as it covers. A quarterly job that
+// did not run inside it holds a privilege this rule will name.
+func findGrantsOnUnusedObjects(db *goschema.Database, usage []RoleObjectUsage) []Finding {
+	used := make(map[string]bool, len(usage))
+	for _, observation := range usage {
+		role := strings.TrimSpace(observation.Role)
+		name := strings.TrimSpace(observation.Name)
+		if role == "" || name == "" {
+			continue
+		}
+		used[usageKey(role, observation.Kind, name)] = true
+	}
+
+	findings := make([]Finding, 0)
+	for _, grant := range db.Grants {
+		role := strings.TrimSpace(grant.Role)
+		if role == "" || strings.EqualFold(role, publicRole) {
+			continue
+		}
+		object, kind := grantTarget(grant)
+		if object == "" {
+			continue
+		}
+		if used[usageKey(role, kind, object)] {
+			continue
+		}
+		findings = append(findings, Finding{
+			Code:     "ROL01",
+			Severity: risk.Warning,
+			Subject:  Subject{Kind: kind, Name: object},
+			Message: "role " + role + " holds privileges on " + kind + " " + object +
+				", which it was not observed using",
+			Detail:     Detail{Privileges: normalizedPrivileges(grant.Privileges), Roles: []string{role}},
+			Suggestion: "revoke the privileges, or widen the usage window if the access is periodic",
+		})
+	}
+	return findings
+}
+
+// usageKey is the identity a grant and an observation are matched on.
+//
+// Case-insensitive on every part, for the reason the package already folds a
+// role name: a catalog reports an identifier in its own case and a usage
+// collector reports whatever its source recorded, and a rule that fired because
+// one of them said `Orders` would be reporting a spelling.
+func usageKey(role, kind, name string) string {
+	return strings.ToLower(role) + "\x00" + strings.ToLower(strings.TrimSpace(kind)) + "\x00" + strings.ToLower(name)
 }
 
 // findRolesWithNoMembers implements ROL04.
