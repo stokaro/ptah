@@ -410,7 +410,7 @@ func renderIndexParts(parts []ast.IndexPart) []string {
 // INCREMENT BY 2 MAXVALUE 100 CACHE 5 CYCLE`. That is why
 // SequenceStartCounterOnly is false on both presets -- it names the restriction
 // Spanner has, where a bare name and a start counter are all a sequence takes.
-func sequenceOptions(start, increment, minValue, maxValue *int64, cycle *bool) []string {
+func sequenceOptions(start, increment, minValue, maxValue, cache *int64, cycle *bool) []string {
 	var options []string
 	if start != nil {
 		options = append(options, fmt.Sprintf("START WITH %d", *start))
@@ -423,6 +423,9 @@ func sequenceOptions(start, increment, minValue, maxValue *int64, cycle *bool) [
 	}
 	if maxValue != nil {
 		options = append(options, fmt.Sprintf("MAXVALUE %d", *maxValue))
+	}
+	if cache != nil {
+		options = append(options, fmt.Sprintf("CACHE %d", *cache))
 	}
 	if cycle != nil && *cycle {
 		options = append(options, "CYCLE")
