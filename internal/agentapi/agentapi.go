@@ -36,6 +36,7 @@ import (
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/agentdiag"
 	"go.5x5.cz/ptah/internal/agenttarget"
+	"go.5x5.cz/ptah/internal/docsembed"
 	"go.5x5.cz/ptah/internal/schemalineage"
 	"go.5x5.cz/ptah/internal/schemaload"
 	"go.5x5.cz/ptah/internal/schemavalidate"
@@ -71,6 +72,11 @@ import (
 // error and a response when verification undid the patch. A client that read
 // only the message text still works; one that branches on the code no longer
 // has to parse prose.
+// 2026-08-24 also added search_docs, which answers a question about Ptah from
+// the documentation the binary carries, and a `documentation` section on
+// describe_session reporting how much of it is loaded. Both are additions: a
+// client that does not call the tool and ignores the new section is unaffected,
+// which is why the date does not move.
 const Version = "2026-08-24"
 
 // SchemaSource names where a declared schema is read from.
@@ -279,6 +285,77 @@ func schemaLineage(ctx context.Context, req SchemaLineageRequest) (*SchemaLineag
 	for _, undecided := range derived.Undecided {
 		response.Undecided = append(response.Undecided, LineageUndecided{
 			View: undecided.View, Reason: undecided.Reason,
+		})
+	}
+	return response, nil
+}
+
+// SearchDocsRequest asks a question about Ptah itself.
+//
+// It reads Ptah's own documentation, carried in the binary. Nothing about the
+// operator's project, database or filesystem is involved, and no network is
+// reached (stokaro/ptah#2123).
+type SearchDocsRequest struct {
+	// Query is the question, in the words it would be asked in. It is matched
+	// against the documentation's own words, so naming a flag or a command
+	// finds more than describing one.
+	Query string `json:"query" jsonschema:"a question about Ptah's behavior, flags, commands or concepts"`
+	// Limit caps how many passages come back. Zero takes the default.
+	Limit int `json:"limit,omitempty" jsonschema:"maximum passages to return; omit for the default"`
+}
+
+// DocPassage is one answer: what the documentation says, and where it says it.
+//
+// The text and its location together, because they answer to different
+// readers. A model needs the passage; a person checking the model needs the
+// file and the section, and a passage with no provenance is a claim the
+// documentation cannot be held to.
+type DocPassage struct {
+	// Path is the document, relative to the repository root.
+	Path string `json:"path"`
+	// Heading is the trail of headings the passage sits under, joined with
+	// " > ". It is empty for text above the first heading.
+	Heading string `json:"heading"`
+	// Text is the passage.
+	Text string `json:"text"`
+}
+
+// SearchDocsResponse carries the passages that answer the question.
+type SearchDocsResponse struct {
+	// Passages are the answers, best first. An empty list means the
+	// documentation does not answer the question -- which is a result, not a
+	// failure, and is the answer this operation is built to be able to give.
+	Passages []DocPassage `json:"passages"`
+	// Documents is how many documents were searched, so a caller can tell an
+	// unanswered question from an empty index.
+	Documents int `json:"documents"`
+}
+
+// defaultDocsLimit is how many passages come back when a caller names no limit.
+//
+// Five rather than one: a question about a flag is often answered by the
+// reference entry and the guide that explains when to reach for it, and a
+// single passage would make the caller ask again to find out.
+const defaultDocsLimit = 5
+
+// searchDocs answers a question from Ptah's own documentation.
+//
+// Owner: internal/docsembed.
+func searchDocs(_ context.Context, req SearchDocsRequest) (*SearchDocsResponse, error) {
+	limit := req.Limit
+	if limit <= 0 {
+		limit = defaultDocsLimit
+	}
+	index := docsembed.Index()
+	response := &SearchDocsResponse{
+		Passages:  make([]DocPassage, 0, limit),
+		Documents: index.DocumentCount(),
+	}
+	for _, result := range index.Search(req.Query, limit) {
+		response.Passages = append(response.Passages, DocPassage{
+			Path:    result.Path,
+			Heading: result.Heading,
+			Text:    result.Text,
 		})
 	}
 	return response, nil
