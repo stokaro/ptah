@@ -47,7 +47,7 @@ func newSchemaDiffCommand() *cobra.Command {
 		Short: "Diff two arbitrary schema states",
 		Long: `Calculate the SQL statements that migrate the --from schema state to the
 --to schema state. Each side accepts local schema files (.hcl, .yaml, .yml,
-or .sql; repeatable), one directly connectable database URL whose live schema
+.sql, or .dbml; repeatable), one directly connectable database URL whose live schema
 is introspected, or one Atlas-format migration directory replayed on the
 required --dev-url dev database. All URLs of one flag must be one source
 kind.
