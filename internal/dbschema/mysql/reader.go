@@ -641,7 +641,7 @@ func hiddenRoutineBodyError(dbName, routine string) error {
 // still produced `a int, p_x varchar(50), p_y decimal(10,2)` on both engines.
 func (r *Reader) readRoutineParameters(dbName string) (map[string]string, error) {
 	query := `
-		SELECT ROUTINE_TYPE, SPECIFIC_NAME, PARAMETER_NAME, DTD_IDENTIFIER
+		SELECT ROUTINE_TYPE, SPECIFIC_NAME, PARAMETER_MODE, PARAMETER_NAME, DTD_IDENTIFIER
 		FROM information_schema.PARAMETERS
 		WHERE SPECIFIC_SCHEMA = ?
 		AND ROUTINE_TYPE IN ('FUNCTION', 'PROCEDURE')
@@ -657,11 +657,13 @@ func (r *Reader) readRoutineParameters(dbName string) (map[string]string, error)
 	declarations := make(map[string][]string)
 	for rows.Next() {
 		var routineType, routine, name, dataType string
-		if err := rows.Scan(&routineType, &routine, &name, &dataType); err != nil {
+		var mode sql.NullString
+		if err := rows.Scan(&routineType, &routine, &mode, &name, &dataType); err != nil {
 			return nil, err
 		}
 		key := routineParameterKey(routineType, routine)
-		declarations[key] = append(declarations[key], name+" "+mysqlroutine.NormalizeType(dataType))
+		declarations[key] = append(declarations[key],
+			parameterDeclaration(routineType, mode.String, name, mysqlroutine.NormalizeType(dataType)))
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -1214,4 +1216,33 @@ func parseEnumValues(columnType string) []string {
 	}
 
 	return values
+}
+
+// parameterDeclaration spells one routine parameter the way CREATE accepts it.
+//
+// A procedure's parameter carries its mode, and losing one is not cosmetic: a
+// parameter with no mode is IN, so a replayed procedure assigns to a local copy
+// that is discarded at return. The procedure still exists, still accepts the
+// same call, still succeeds, and no longer returns its result
+// (stokaro/ptah#2208).
+//
+// A function's parameter carries none. MySQL reports IN for them in
+// information_schema.PARAMETERS all the same, and writing that back is a syntax
+// error -- measured on MySQL 9.7: `CREATE FUNCTION f(IN a INT)` answers
+// ERROR 1064. So the mode is emitted for procedures only, and the catalog's
+// answer for a function is deliberately discarded rather than trusted.
+//
+// IN is omitted even on a procedure. It is the default, the catalog reports it
+// for every parameter that was written without one, and emitting it would
+// rewrite a declaration somebody made into a longer one that means the same.
+func parameterDeclaration(routineType, mode, name, dataType string) string {
+	declaration := name + " " + dataType
+	if !strings.EqualFold(routineType, "PROCEDURE") {
+		return declaration
+	}
+	switch strings.ToUpper(strings.TrimSpace(mode)) {
+	case "OUT", "INOUT":
+		return strings.ToUpper(mode) + " " + declaration
+	}
+	return declaration
 }
