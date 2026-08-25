@@ -342,6 +342,14 @@ func synthesizeFieldLevelForeignKeyConstraints(
 			ForeignColumns: fkRef.ReferencedColumns(),
 			OnDelete:       f.OnDelete,
 			OnUpdate:       f.OnUpdate,
+			// foreignKeyConstraintChanged compares the deferral, so a
+			// synthesized constraint without it is unequal to every deferrable
+			// key the catalog reports -- and a single-column foreign key is
+			// ALWAYS synthesized, because a declaration carries it on the field
+			// rather than as a constraint. It went unnoticed only while no
+			// reader reported the property (stokaro/ptah#2202).
+			Deferrable: f.Deferrable,
+			Initially:  f.Initially,
 		})
 	}
 	return synthesized
