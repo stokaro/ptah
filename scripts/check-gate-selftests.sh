@@ -125,6 +125,21 @@ run_case check-public-api.sh \
 	"an exported package with no doc comment" \
 	"mkdir -p gateselftest && printf 'package gateselftest\n\nfunc Exported() {}\n' >gateselftest/gateselftest.go"
 
+# The ledger scrape reads list items only. This fixture documents the new
+# package in a prose paragraph rather than a bullet: a scrape that let prose
+# mentions join the allowlist would accept it and pass (stokaro/ptah#2246).
+run_case check-public-api.sh \
+	"a package whose only ledger mention is a prose paragraph" \
+	'mkdir -p gateselftest && printf "package gateselftest\n\nfunc Exported() {}\n" >gateselftest/gateselftest.go && printf "\nA prose paragraph that mentions \`go.5x5.cz/ptah/gateselftest\` is not a listing.\n" >>docs/public_api.md'
+
+run_case check-public-api-docs-sync.sh \
+	"a ledger package's row removed from the site's stable-packages table" \
+	"perl -0pi -e 's/^\| \`core\/coverage\`[^\n]*\n//m' docs/site/src/content/docs/extend/public-api.md"
+
+run_case check-public-api-docs-sync.sh \
+	"a package the site table lists deleted from the ledger" \
+	"perl -0pi -e 's/^- \`go\.5x5\.cz\/ptah\/migration\/seeder\`\n//m' docs/public_api.md"
+
 # What this harness does NOT cover, and why. A data table rather than a
 # paragraph, because the guard at the end of this file reads it: a coverage list
 # nobody checks is the same failure mode the harness exists to prevent --
