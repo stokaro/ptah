@@ -379,6 +379,18 @@ func convertUserTypes(database *goschema.Database, dbSchema *dbschematypes.DBSch
 			Name:    rangeType.Name,
 			Schema:  rangeType.Schema,
 			Subtype: rangeType.Subtype,
+			// The four attributes beside the subtype are what make one range
+			// type a different type from another. The reader asks pg_range for
+			// all of them and the renderer emits an option for each; listing
+			// only the subtype here described `CREATE TYPE r AS RANGE (SUBTYPE
+			// = timestamptz, SUBTYPE_DIFF = f)` as a range with no diff
+			// function, and replaying that built a type whose GiST indexes lose
+			// their penalty function and whose discrete values stop
+			// canonicalizing (stokaro/ptah#2200).
+			SubtypeOpClass: rangeType.SubtypeOpClass,
+			Collation:      rangeType.Collation,
+			Canonical:      rangeType.Canonical,
+			SubtypeDiff:    rangeType.SubtypeDiff,
 		})
 	}
 }
