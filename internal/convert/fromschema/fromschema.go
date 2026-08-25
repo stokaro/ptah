@@ -192,7 +192,7 @@ func platformOverrideGroup(overrides map[string]map[string]string, targetPlatfor
 }
 
 func applyPlatformOverrides(field goschema.Field, targetPlatform string) goschema.Field {
-	fieldType := platformFieldType(field.Type, targetPlatform)
+	fieldType := platformFieldType(field, targetPlatform)
 	checkConstraint := field.Check
 	checkName := field.CheckName
 	comment := field.Comment
@@ -290,7 +290,26 @@ func EffectiveFieldForPlatform(field goschema.Field, targetPlatform string) gosc
 	return applyPlatformOverrides(field, targetPlatform)
 }
 
-func platformFieldType(fieldType, targetPlatform string) string {
+// platformFieldType maps a PORTABLE type spelling onto the one this target
+// means by it, and leaves alone a type that is already the target's own.
+//
+// The second half is the part that had to be added. A type the author wrote
+// with Atlas HCL's sql() escape hatch, or one a catalog reported for this very
+// target, is not a portable spelling waiting to be interpreted -- it is the
+// answer. Mapping it produced a different column and, because the mapping
+// changed the string, [typeRawSQLSurvives] then correctly dropped the marker
+// that would have told the renderer to leave it alone, so nothing downstream
+// could recover the fact.
+//
+// Measured on SQL Server 2025: a `TEXT` column read from the target replayed as
+// `nvarchar(-1)` while `VARCHAR(50)` from the same table replayed as
+// `varchar/50`. The difference was only that `VARCHAR(50)` carries a length and
+// so misses the bare-name switch below (stokaro/ptah#2147).
+func platformFieldType(field goschema.Field, targetPlatform string) string {
+	fieldType := field.Type
+	if field.TypeRawSQL || field.TypeIsDeclaredText {
+		return fieldType
+	}
 	switch platform.NormalizeDialect(targetPlatform) {
 	case platform.MySQL, platform.MariaDB:
 		return mysqlFamilyFieldType(fieldType)
