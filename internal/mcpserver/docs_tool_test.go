@@ -105,3 +105,39 @@ func docsSession(c *qt.C, docs agentpolicy.Verdict) *mcp.ClientSession {
 	c.Assert(err, qt.IsNil)
 	return connect(c, mcpserver.Config{Version: "test", Session: session}, nil)
 }
+
+// Every answer names the documentation it came from, and describe_session
+// reports the same one.
+//
+// An answer from documentation that does not describe the binary being driven
+// is worse than no answer, because it is indistinguishable from a right one.
+// Reporting the build in both places is what lets a reader tell that the
+// passage and the session describe one thing (stokaro/ptah#2123).
+func TestSearchDocs_NamesTheSameDocumentationDescribeSessionReports(t *testing.T) {
+	c := qt.New(t)
+	session := docsSession(c, agentpolicy.VerdictAllow)
+
+	answer := callTool(c, session, "search_docs", map[string]any{
+		"query": "difference between migrations checkpoint and migrations baseline",
+	})["documentation"].(map[string]any)
+	reported := callTool(c, session, "describe_session", make(map[string]any))["documentation"].(map[string]any)
+
+	c.Assert(answer["version"], qt.Not(qt.Equals), "")
+	c.Assert(answer["commit"], qt.Not(qt.Equals), "")
+	c.Assert(answer["version"], qt.Equals, reported["version"])
+	c.Assert(answer["commit"], qt.Equals, reported["commit"])
+}
+
+// An empty answer names it too. A question the documentation does not answer is
+// still an answer about a particular documentation, and a reader deciding
+// whether to trust the emptiness needs to know which.
+func TestSearchDocs_AnEmptyAnswerStillNamesItsDocumentation(t *testing.T) {
+	c := qt.New(t)
+
+	result := callTool(c, docsSession(c, agentpolicy.VerdictAllow), "search_docs", map[string]any{
+		"query": "what is the price of a subscription refund",
+	})
+
+	c.Assert(result["passages"], qt.HasLen, 0)
+	c.Assert(result["documentation"].(map[string]any)["version"], qt.Not(qt.Equals), "")
+}

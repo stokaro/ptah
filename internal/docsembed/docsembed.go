@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"go.5x5.cz/ptah/docs"
+	"go.5x5.cz/ptah/internal/buildinfo"
 	"go.5x5.cz/ptah/internal/docsindex"
 )
 
@@ -26,6 +27,32 @@ var (
 	once   sync.Once
 	shared *docsindex.Index
 )
+
+// Version names the documentation this binary carries.
+//
+// It is the build's own version, and that is not a shortcut: the documentation
+// is compiled from the same tree as the code, so there is no pair of versions
+// that could disagree. The issue asked what happens when the documentation and
+// the binary describe different things (stokaro/ptah#2123) -- embedding the
+// source at build time is the answer that makes the question unanswerable,
+// and reporting the build is how a reader can tell which documentation they
+// got.
+//
+// A commit rather than a tag alone, because "dev" is what an unstamped build
+// reports and it names nothing on its own.
+func Version() Documentation {
+	info := buildinfo.Resolve()
+	return Documentation{Version: info.Version, Commit: info.Commit}
+}
+
+// Documentation names one build's documentation.
+type Documentation struct {
+	// Version is the build's version, "dev" when nothing stamped it.
+	Version string `json:"version"`
+	// Commit is the revision the documentation was compiled from, "unknown"
+	// when the build carries no VCS information.
+	Commit string `json:"commit"`
+}
 
 // Index returns the index over Ptah's own documentation, building it on first
 // use.

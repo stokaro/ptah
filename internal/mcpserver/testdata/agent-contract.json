@@ -408,14 +408,22 @@
         "documentation": {
           "additionalProperties": false,
           "properties": {
+            "commit": {
+              "type": "string"
+            },
             "documents": {
               "type": "integer"
             },
             "passages": {
               "type": "integer"
+            },
+            "version": {
+              "type": "string"
             }
           },
           "required": [
+            "version",
+            "commit",
             "documents",
             "passages"
           ],
@@ -1000,6 +1008,22 @@
     "output_schema": {
       "additionalProperties": false,
       "properties": {
+        "documentation": {
+          "additionalProperties": false,
+          "properties": {
+            "commit": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "version",
+            "commit"
+          ],
+          "type": "object"
+        },
         "documents": {
           "type": "integer"
         },
@@ -1032,7 +1056,8 @@
       },
       "required": [
         "passages",
-        "documents"
+        "documents",
+        "documentation"
       ],
       "type": "object"
     }

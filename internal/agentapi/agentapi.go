@@ -329,6 +329,12 @@ type SearchDocsResponse struct {
 	// Documents is how many documents were searched, so a caller can tell an
 	// unanswered question from an empty index.
 	Documents int `json:"documents"`
+	// Documentation names which documentation answered. An answer from
+	// documentation that does not describe the binary being driven is worse
+	// than no answer, because it is indistinguishable from a right one -- so
+	// every answer says which build it came from, and describe_session reports
+	// the same one.
+	Documentation docsembed.Documentation `json:"documentation"`
 }
 
 // defaultDocsLimit is how many passages come back when a caller names no limit.
@@ -348,8 +354,9 @@ func searchDocs(_ context.Context, req SearchDocsRequest) (*SearchDocsResponse, 
 	}
 	index := docsembed.Index()
 	response := &SearchDocsResponse{
-		Passages:  make([]DocPassage, 0, limit),
-		Documents: index.DocumentCount(),
+		Passages:      make([]DocPassage, 0, limit),
+		Documents:     index.DocumentCount(),
+		Documentation: docsembed.Version(),
 	}
 	for _, result := range index.Search(req.Query, limit) {
 		response.Passages = append(response.Passages, DocPassage{
