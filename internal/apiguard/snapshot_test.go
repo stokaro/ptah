@@ -126,6 +126,45 @@ func TestSnapshotRetainsInterfaceAndMethodCoverage(t *testing.T) {
 	c.Assert(base, qt.Contains, "func (w Widget) Describe() string")
 }
 
+// TestListPackagesReadsListItemsOnly proves that the ledger scrape behind
+// --list-packages collects list items only: a backticked package path inside a
+// prose paragraph or a heading is a mention, not a listing, and must not join
+// the package set the API gates enforce (stokaro/ptah#2246).
+func TestListPackagesReadsListItemsOnly(t *testing.T) {
+	c := qt.New(t)
+
+	dir := t.TempDir()
+	err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module apiguardfixture\n\ngo 1.21\n"), 0o600)
+	c.Assert(err, qt.IsNil)
+
+	ledger := "# Ledger fixture\n" +
+		"\n" +
+		"- `apiguardfixture/pkg`\n" +
+		"- `apiguardfixture/other` with a trailing description.\n" +
+		"\n" +
+		"A prose paragraph that mentions `apiguardfixture/internal/example` is a\n" +
+		"mention, not a listing.\n" +
+		"\n" +
+		"### `apiguardfixture/internal/heading`\n" +
+		"\n" +
+		"A heading is not a listing either.\n"
+	err = os.MkdirAll(filepath.Join(dir, "docs"), 0o700)
+	c.Assert(err, qt.IsNil)
+	err = os.WriteFile(filepath.Join(dir, "docs", "public_api.md"), []byte(ledger), 0o600)
+	c.Assert(err, qt.IsNil)
+
+	script := filepath.Join(moduleRoot(t), "scripts", "check-public-api-snapshot.sh")
+	cmd := exec.Command("bash", script, "--list-packages")
+	cmd.Dir = dir
+
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	c.Assert(err, qt.IsNil, qt.Commentf("list failed: %v\nstderr:\n%s", err, stderr.String()))
+
+	c.Assert(string(out), qt.Equals, "apiguardfixture/other\napiguardfixture/pkg\n")
+}
+
 // emitFragment writes source as the sole file of a throwaway temp module and
 // runs the guard's per-package generation (`--emit-package .`) against it,
 // returning the emitted snapshot fragment. The tests therefore exercise exactly

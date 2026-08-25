@@ -4,8 +4,11 @@ description: Stable embedder packages and API compatibility guardrails.
 ---
 
 Ptah is pre-GA, but embedders need a documented import surface. The packages on
-this page are the stable embedder API. Packages not listed here are command
-packages, examples, fixtures, tests, or implementation details.
+this page are the stable embedder API. The enforced ledger of that surface is
+`docs/public_api.md` in the repository; a package the ledger does not list is a
+command package, an example, a fixture, a test, or an implementation detail,
+and `scripts/check-public-api-docs-sync.sh` keeps this page's table equal to
+the ledger.
 
 ## Stable packages
 
@@ -15,6 +18,7 @@ packages, examples, fixtures, tests, or implementation details.
 | `config` | Project-level config loading helpers. |
 | `config/projectconfig` | Typed Ptah/Atlas project config IR, including validated online-DDL policy. |
 | `core/ast` | Typed schema DDL AST nodes. |
+| `core/coverage` | Schema description scope facts, so an absent object is not read as a removed one. |
 | `core/goschema` | Go annotation parser and schema IR. |
 | `core/platform` | Dialect and platform constants. |
 | `core/platform/capability` | Capability flags for dialect/version behavior. |
@@ -22,11 +26,16 @@ packages, examples, fixtures, tests, or implementation details.
 | `core/ptaherr` | Typed public errors and sentinel errors. |
 | `core/query` | Fluent builder for parameterized, dialect-aware SELECT statements. |
 | `core/renderer` | Dialect-aware SQL rendering from AST/schema IR, including fail-closed two-phase foreign key ordering. |
+| `core/schemasource` | Runs an external desired-schema program and parses its output into schema IR. |
 | `core/sqlutil` | SQL utility helpers used by public paths. |
 | `dbschema` | Live database schema introspection connection layer. |
 | `dbschema/types` | Shared database schema types. |
+| `docs` | Ptah's own documentation embedded in the binary as an `embed.FS`. |
+| `migration/datadiff` | Row-level diffing between declared managed data and live table rows. |
 | `migration/dbtest` | Declarative migration/schema test cases, runners, and reports. |
+| `migration/diffpolicy` | Declarative policy for which destructive changes a planner may emit. |
 | `migration/generator` | Migration file generation. |
+| `migration/importer` | Converts migration directories from other versioned-migration tools into Ptah's native layout. |
 | `migration/lint` | Migration SQL linting rules, immutable analysis snapshots, and findings. |
 | `migration/migrator` | Migration providers, revision metadata, dry-run plans, and execution. |
 | `migration/planner` | Schema change planning. |
