@@ -1,6 +1,9 @@
 package dbschematogo_test
 
 import (
+	"reflect"
+	"slices"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -41,6 +44,7 @@ func TestConvert_CarriesEveryClickHouseEngineClause(t *testing.T) {
 		ClickHouseEngine:       "ReplacingMergeTree(ver)",
 		ClickHouseOrderBy:      "day, id",
 		ClickHousePartitionKey: "toYYYYMM(day)",
+		ClickHousePrimaryKey:   "day",
 		ClickHouseSamplingKey:  "id",
 		ClickHouseTTL:          "day + toIntervalDay(90)",
 		ClickHouseSettings:     "index_granularity = 4096",
@@ -50,10 +54,74 @@ func TestConvert_CarriesEveryClickHouseEngineClause(t *testing.T) {
 		"engine":       "ReplacingMergeTree(ver)",
 		"order_by":     "day, id",
 		"partition_by": "toYYYYMM(day)",
+		"primary_key":  "day",
 		"sample_by":    "id",
 		"ttl":          "day + toIntervalDay(90)",
 		"settings":     "index_granularity = 4096",
 	})
+}
+
+// TestConvert_EveryClickHouseTableFieldReachesTheOverrides guards the list
+// against the way it has lost a clause twice.
+//
+// The override map is written by hand, and each time the reader learned a new
+// clause the map was the place it stopped: #2198 added six keys and left the
+// primary key behind, so `PRIMARY KEY (id) ORDER BY (id, s)` replayed with the
+// index widened to the whole sorting key. This walks the struct instead of the
+// map, so a field added to types.DBTable without a key here reddens.
+func TestConvert_EveryClickHouseTableFieldReachesTheOverrides(t *testing.T) {
+	c := qt.New(t)
+
+	table, carried := clickHouseTableWithEveryFieldMarked()
+
+	c.Assert(len(carried) > 0, qt.IsTrue, qt.Commentf("the walk found no ClickHouse fields at all"))
+
+	overrides := clickHouseOverrides(c, dbschematogo.ConvertDBSchemaToGoSchema(engineTable(table)))
+
+	c.Assert(markedFields(overrides), qt.DeepEquals, carried,
+		qt.Commentf("a ClickHouse table field has no override key, so the clause is read and dropped"))
+}
+
+// clickHouseTableWithEveryFieldMarked fills every ClickHouse string field of
+// types.DBTable with a value naming the field, and reports which ones it set.
+//
+// ClickHouseSortingKey is left out deliberately: it answers "does the ORDER BY
+// say more than the primary key", and ClickHouseOrderBy carries the clause
+// itself. Two override keys for one clause would put the expression in twice.
+func clickHouseTableWithEveryFieldMarked() (types.DBTable, []string) {
+	var table types.DBTable
+	value := reflect.ValueOf(&table).Elem()
+	fields := value.Type()
+
+	var carried []string
+	for i := range fields.NumField() {
+		field := fields.Field(i)
+		if !isClickHouseOverrideField(field.Name, field.Type.Kind()) {
+			continue
+		}
+		value.Field(i).SetString("marker_" + field.Name)
+		carried = append(carried, field.Name)
+	}
+	slices.Sort(carried)
+	return table, carried
+}
+
+// isClickHouseOverrideField reports whether a struct field is one the override
+// group is expected to carry.
+func isClickHouseOverrideField(name string, kind reflect.Kind) bool {
+	return strings.HasPrefix(name, "ClickHouse") &&
+		kind == reflect.String &&
+		name != "ClickHouseSortingKey"
+}
+
+// markedFields reads back the field names the override values were marked with.
+func markedFields(overrides map[string]string) []string {
+	present := make([]string, 0, len(overrides))
+	for _, value := range overrides {
+		present = append(present, strings.TrimPrefix(value, "marker_"))
+	}
+	slices.Sort(present)
+	return present
 }
 
 // TestConvert_CarriesTheOrderByEvenWhenItMatchesThePrimaryKey pins the order.

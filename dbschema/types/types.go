@@ -209,6 +209,16 @@ type DBTable struct {
 	// SAMPLE BY expressions, empty for a table that declares neither.
 	ClickHousePartitionKey string `json:"clickhouse_partition_key,omitempty"`
 	ClickHouseSamplingKey  string `json:"clickhouse_sampling_key,omitempty"`
+	// ClickHousePrimaryKey is the PRIMARY KEY a MergeTree table declares when
+	// it is not the whole sorting key, and empty when the two agree.
+	//
+	// A primary key that is a prefix of the ORDER BY is how a MergeTree table is
+	// tuned: the sparse index holds one mark per granule of the prefix, and the
+	// rest of the sorting key only orders rows within it. Measured on ClickHouse
+	// 26.7.5.10, `PRIMARY KEY (id) ORDER BY (id, s)` read and replayed came back
+	// as `PRIMARY KEY (id, s)` -- a wider index over the same data, which is a
+	// different table and says nothing about it (stokaro/ptah#2198).
+	ClickHousePrimaryKey string `json:"clickhouse_primary_key,omitempty"`
 	// ClickHouseTTL is the table's TTL expression, empty for a table with none.
 	// It is the retention rule: a table replayed without it keeps rows it was
 	// configured to delete.
