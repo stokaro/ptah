@@ -1088,7 +1088,21 @@ func renderDefaultLiteral(value string) string {
 func renderConstraint(constraint *ast.ConstraintNode) (string, error) {
 	switch constraint.Type {
 	case ast.PrimaryKeyConstraint:
-		return "  PRIMARY KEY (" + renderConstraintColumns(constraint) + ")", nil
+		// The name, where one was given. SQL Server keeps it: a named key is
+		// reported by sys.key_constraints under that name, and an unnamed one
+		// gets a generated PK__t__3BD0198F. Measured on SQL Server 2025:
+		//
+		//	t -> c_pk                     CONSTRAINT c_pk PRIMARY KEY (b)
+		//	u -> PK__u__3BD0198F3A610101  PRIMARY KEY (b)
+		//
+		// It is what a later ALTER TABLE ... DROP CONSTRAINT names, so writing
+		// the key without it hands the operator a name they did not choose and
+		// cannot predict (stokaro/ptah#2180).
+		prefix := "  "
+		if constraint.Name != "" {
+			prefix += "CONSTRAINT " + escapeIdentifier(constraint.Name) + " "
+		}
+		return prefix + "PRIMARY KEY (" + renderConstraintColumns(constraint) + ")", nil
 	case ast.UniqueConstraint:
 		prefix := "  "
 		if constraint.Name != "" {

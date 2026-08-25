@@ -6358,6 +6358,16 @@ type Table struct {
     VirtualArguments string
     Comment          string   // Table comment/description
     PrimaryKey       []string // Composite primary key column names
+    // PrimaryKeyName is the name a declaration gave the primary key, empty
+    // when it named none.
+    //
+    // A constraint name is what a later ALTER TABLE ... DROP CONSTRAINT names,
+    // what a hand-written migration refers to, and what an operator reads in an
+    // error. Nothing carried it, so a declared `CONSTRAINT c_pk PRIMARY KEY (b)`
+    // reached PostgreSQL as `t_named_pkey` and `--dry-run` reported the schema
+    // synced afterwards -- for a composite key as well as a single-column one
+    // (stokaro/ptah#2180).
+    PrimaryKeyName string
     // PrimaryKeyParts carries dialect-specific metadata for composite primary
     // key elements, such as MySQL prefix lengths and DESC ordering.
     PrimaryKeyParts []PrimaryKeyPart
