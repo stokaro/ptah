@@ -240,8 +240,13 @@ SELECT c.table_name,
        c.column_id,
        c.identity_column,
        c.virtual_column,
-       c.data_default
+       c.data_default,
+       cc.comments
 FROM all_tab_cols c
+LEFT JOIN all_col_comments cc
+       ON cc.owner = c.owner
+      AND cc.table_name = c.table_name
+      AND cc.column_name = c.column_name
 WHERE c.owner = :1
   AND c.hidden_column = 'NO'
   AND c.table_name NOT LIKE 'BIN$%'
@@ -267,11 +272,17 @@ func (r *Reader) readColumns() (map[string][]types.DBColumn, error) {
 			identity   string
 			virtual    string
 			def        sql.NullString
+			comment    sql.NullString
 		)
 		if err := rows.Scan(&table, &column.Name, &column.DataType, &charLength,
-			&precision, &scale, &nullable, &position, &identity, &virtual, &def); err != nil {
+			&precision, &scale, &nullable, &position, &identity, &virtual, &def,
+			&comment); err != nil {
 			return nil, err
 		}
+		// Oracle has no empty string: a column with no comment and one whose
+		// comment was set to '' both read as NULL, so there is no state the
+		// zero value could be mistaken for.
+		column.Comment = comment.String
 		// UDTName is deliberately left empty: it names a user-defined type,
 		// and the raw catalog spelling is not one. Filling it with DATA_TYPE
 		// made the comparison read `number` where the composed type says
