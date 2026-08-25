@@ -17,6 +17,7 @@ import (
 
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/internal/pgindexstorage"
 	"go.5x5.cz/ptah/internal/tableref"
 )
 
@@ -1121,12 +1122,33 @@ func (p *parser) parseIndexStorageParams(block *hclsyntax.Block) (map[string]str
 		params["pages_per_range"] = p.exprString(pagesPerRange)
 	}
 	// `storage_params` is Ptah's own attribute, for the parameters an
-	// Atlas-compatible document has no slot for. It is read unconditionally
-	// even though it is only WRITTEN under PTAH_POSTGRES_INDEX_STORAGE_PARAMS:
-	// a document already carrying one has to keep loading whether or not the
-	// switch that produced it is still set, or turning the switch off would
-	// make previously valid documents fail to parse (stokaro/ptah#2183).
+	// Atlas-compatible document has no slot for. Reading it needs the same
+	// switch that writes it, and the document is REFUSED rather than read
+	// without one.
+	//
+	// Reading it unconditionally was the first attempt and it is worse than it
+	// looks: the reader does not record these parameters with the switch off,
+	// so the desired model would carry `m` and `fillfactor` while the live one
+	// did not, the comparator would see two different maps, and every such
+	// index would be dropped and recreated on every apply -- forever, and
+	// immediately after a successful rebuild. Measured on PostgreSQL 17 with
+	// pgvector 0.8.6: three indexes, three DROP/CREATE pairs, on a database
+	// that had just been applied to.
+	//
+	// Failing closed with the variable named is the honest answer: the document
+	// says something Ptah is configured not to carry, and silently carrying
+	// half of it is what produces the loop (stokaro/ptah#2183).
 	if attr := block.Body.Attributes["storage_params"]; attr != nil {
+		carryEverything, err := pgindexstorage.CarryAll()
+		if err != nil {
+			return nil, err
+		}
+		if !carryEverything {
+			return nil, p.blockError(block,
+				"index sets storage_params, which needs %s=true; without it the parameters would be "+
+					"declared and not read back, and the index would be dropped and recreated on every apply",
+				pgindexstorage.EnvVar)
+		}
 		extra, err := p.indexStorageParamsMap(block, attr)
 		if err != nil {
 			return nil, err

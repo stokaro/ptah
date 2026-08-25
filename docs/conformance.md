@@ -792,9 +792,28 @@ index "documents_hnsw" {
 `storage_params` is a Ptah attribute. A document carrying it is a Ptah document
 rather than one Atlas CE also reads, which is why it is written only under the
 variable — and why the variable is `gated`
-rather than a correctness control. It is *read* unconditionally: a document
-produced with the variable set has to keep loading after it is unset, or turning
-a switch off would make previously valid documents fail to parse.
+rather than a correctness control.
+
+Reading it needs the same variable, and a document that carries it is **refused**
+without one:
+
+```text
+error: index sets storage_params, which needs PTAH_POSTGRES_INDEX_STORAGE_PARAMS=true;
+without it the parameters would be declared and not read back, and the index would be
+dropped and recreated on every apply
+```
+
+That refusal is the point rather than a restriction. Reading the attribute
+without the variable would put `m` and `fillfactor` in the desired model while
+the reader left them out of the live one, so the comparator would see two
+different maps and plan a `DROP INDEX` and a `CREATE INDEX` on every apply —
+forever, and immediately after a successful rebuild. Measured on PostgreSQL 17
+with pgvector 0.8.6: three indexes, three `DROP`/`CREATE` pairs, against a
+database that had just been applied to. A document with no `storage_params` is
+unaffected either way.
+
+A malformed value fails the export whatever the schema holds, rather than
+reading as `false` for a schema that happens to carry no such parameter.
 
 With the variable unset, a declaration that carries such a parameter — from a Go
 annotation or a `.sql` file, where they have always been expressible — is

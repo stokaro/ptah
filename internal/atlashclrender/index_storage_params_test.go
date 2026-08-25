@@ -104,12 +104,20 @@ func TestIndexStorageParams_TheCompatibleOneIsNotAnnouncedAsLost(t *testing.T) {
 	c.Assert(diagnosticText(rendered), qt.Not(qt.Contains), "pages_per_range have no attribute")
 }
 
-// A document carrying storage_params keeps loading when the switch is off.
+// A document carrying storage_params is REFUSED when the switch is off, rather
+// than read.
 //
-// The attribute is only WRITTEN under the switch; refusing to READ it without
-// the switch would make a document produced yesterday fail to parse today
-// because an environment variable changed.
-func TestIndexStorageParams_ADocumentKeepsLoadingWhenTheSwitchIsOff(t *testing.T) {
+// Reading it was the first attempt, on the reasoning that a document produced
+// yesterday should not stop loading today. Review of stokaro/ptah#2183 showed
+// that is worse than it looks: the reader does not record these parameters with
+// the switch off, so the desired model would carry `m` while the live one did
+// not, and the comparator would drop and recreate the index on every apply --
+// forever, and immediately after a successful rebuild. Measured against
+// PostgreSQL 17 with pgvector 0.8.6: three indexes, three DROP/CREATE pairs, on
+// a database that had just been applied to.
+//
+// Failing closed with the variable named is the honest answer.
+func TestIndexStorageParams_ADocumentIsRefusedWhenTheSwitchIsOff(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv(pgindexstorage.EnvVar, "true")
 	rendered, err := atlashclrender.Render(indexedSchema(map[string]string{"m": "32"}))
@@ -117,10 +125,41 @@ func TestIndexStorageParams_ADocumentKeepsLoadingWhenTheSwitchIsOff(t *testing.T
 	c.Assert(string(rendered.Data), qt.Contains, "storage_params")
 
 	t.Setenv(pgindexstorage.EnvVar, "false")
-	parsed, err := atlashcl.Parse([]byte(string(rendered.Data)), "round-trip.hcl")
+	_, err = atlashcl.Parse(rendered.Data, "round-trip.hcl")
+
+	c.Assert(err, qt.ErrorMatches, `(?s).*storage_params.*`)
+	c.Assert(err.Error(), qt.Contains, pgindexstorage.EnvVar)
+}
+
+// The same document loads with the switch on, which is the control the refusal
+// above needs: without it, a parser that refused every document would pass.
+func TestIndexStorageParams_TheSameDocumentLoadsWithTheSwitchOn(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv(pgindexstorage.EnvVar, "true")
+	rendered, err := atlashclrender.Render(indexedSchema(map[string]string{"m": "32"}))
+	c.Assert(err, qt.IsNil)
+
+	parsed, err := atlashcl.Parse(rendered.Data, "round-trip.hcl")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.Indexes[0].StorageParams, qt.DeepEquals, map[string]string{"m": "32"})
+}
+
+// A document that carries no storage_params still loads with the switch off.
+//
+// The refusal has to be about the attribute, not about the switch: every
+// document that loads today has to keep loading.
+func TestIndexStorageParams_ADocumentWithoutTheAttributeIsUnaffected(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv(pgindexstorage.EnvVar, "false")
+	rendered, err := atlashclrender.Render(indexedSchema(map[string]string{"pages_per_range": "32"}))
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(rendered.Data), qt.Not(qt.Contains), "storage_params")
+
+	parsed, err := atlashcl.Parse(rendered.Data, "round-trip.hcl")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(parsed.Indexes[0].StorageParams, qt.DeepEquals, map[string]string{"pages_per_range": "32"})
 }
 
 // diagnosticText joins what the render reported, so a test can assert on the

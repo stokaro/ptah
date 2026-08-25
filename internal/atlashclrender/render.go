@@ -143,11 +143,21 @@ func render(db *goschema.Database, dialect, defaultSchema string, omitAtlasRefus
 		return Result{}, fmt.Errorf("schema database is nil")
 	}
 
+	// Resolved once, here, rather than per index. A malformed value has to fail
+	// the export whether or not this particular schema happens to carry an
+	// index storage parameter, or the typo lies dormant until the day a schema
+	// does -- and then changes behavior for a reason nobody connects to it.
+	carryStorageParams, err := pgindexstorage.CarryAll()
+	if err != nil {
+		return Result{}, err
+	}
+
 	r := renderer{
 		db:                     db,
 		dialect:                dialect,
 		defaultSchema:          defaultSchema,
 		omitAtlasRefusedBlocks: omitAtlasRefusedBlocks,
+		carryStorageParams:     carryStorageParams,
 	}
 	r.render()
 	return Result{
@@ -168,6 +178,10 @@ type renderer struct {
 	// surface, which leaves out the block types the pinned binary refuses
 	// unless the document names the object; see [renderer.omitRefusedBlock].
 	omitAtlasRefusedBlocks bool
+	// carryStorageParams is PTAH_POSTGRES_INDEX_STORAGE_PARAMS, resolved once
+	// at the boundary in [render] so a malformed value fails the export rather
+	// than reading as the default.
+	carryStorageParams bool
 	// references caches the identifiers the surviving document names, built
 	// once per render by [collectReferencedNames]. Nil means not yet built,
 	// which is distinguishable from "built and empty" because a document with
@@ -1594,8 +1608,7 @@ func (r *renderer) renderIndexStorageParams(index goschema.Index) {
 	}
 	slices.Sort(extra)
 
-	carryEverything, err := pgindexstorage.CarryAll()
-	if err != nil || !carryEverything {
+	if !r.carryStorageParams {
 		// The reader does not record these unless the switch is on, so reaching
 		// here with the switch off means the declaration carried them -- from a
 		// Go annotation or a SQL file, where they have always been expressible.
