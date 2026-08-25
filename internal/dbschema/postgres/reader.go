@@ -3004,6 +3004,7 @@ func (r *Reader) readTriggersForSchema(schemaName string) ([]types.DBTrigger, er
 			) AS event,
 			CASE WHEN (trg.tgtype & 1) <> 0 THEN 'ROW' ELSE 'STATEMENT' END AS for_each,
 			p.prosrc AS body,
+			p.proname AS execute_function,
 			COALESCE(obj_description(trg.oid, 'pg_trigger'), '') AS comment
 		FROM pg_trigger trg
 		JOIN pg_class tbl ON tbl.oid = trg.tgrelid
@@ -3030,6 +3031,7 @@ func (r *Reader) readTriggersForSchema(schemaName string) ([]types.DBTrigger, er
 			&trigger.Event,
 			&trigger.ForEach,
 			&trigger.Body,
+			&trigger.ExecuteFunction,
 			&trigger.Comment,
 		)
 		if err != nil {

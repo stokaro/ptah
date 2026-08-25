@@ -572,6 +572,27 @@ func convertTriggers(database *goschema.Database, dbTriggers []dbschematypes.DBT
 			Comment: dbTrigger.Comment,
 		}
 		trigger.Canonicalize()
+		// A trigger running a function Ptah did NOT generate for it keeps that
+		// function by name rather than by a copy of its source. Describing the
+		// source instead made one audit function shared by ten tables into ten
+		// functions under ptah_trigger_* names, leaving the original defined and
+		// called by nothing -- so changing the audit logic stopped being one
+		// edit (stokaro/ptah#2210).
+		//
+		// The generated name is the discriminator, and it is the same one the
+		// reverse conversion uses to fold a body back in.
+		//
+		// The body is KEPT beside the reference. The Atlas HCL surface has no
+		// way to name a function a trigger runs and refuses a trigger without a
+		// body -- measured, `schema inspect` answers
+		// `trigger requires table and body for HCL schema export` and omits it,
+		// after which applying the document plans a DROP of the trigger it just
+		// described. The native SQL description uses the reference and the HCL
+		// one keeps falling back to the body, which is the surface's existing
+		// limit rather than a new one.
+		if dbTrigger.ExecuteFunction != "" && dbTrigger.ExecuteFunction != trigger.FunctionName() {
+			trigger.ExecuteFunction = dbTrigger.ExecuteFunction
+		}
 		database.Triggers = append(database.Triggers, trigger)
 	}
 }
