@@ -995,6 +995,13 @@ func toASTPartition(partition *goschema.PartitionSpec) *ast.PartitionSpec {
 }
 
 func tableNeedsPrimaryKeyConstraint(table goschema.Table) bool {
+	// A NAME is a reason on its own. An inline `PRIMARY KEY` has nowhere to
+	// carry one, so a named single-column key written that way reached the
+	// server as a generated name and nothing reported the difference
+	// (stokaro/ptah#2180).
+	if table.PrimaryKeyName != "" && (len(table.PrimaryKey) > 0 || len(table.PrimaryKeyParts) > 0) {
+		return true
+	}
 	if len(table.PrimaryKeyInclude) > 0 && (len(table.PrimaryKey) > 0 || len(table.PrimaryKeyParts) > 0) {
 		return true
 	}
@@ -1016,6 +1023,7 @@ func primaryKeyPartsHaveAttributes(parts []goschema.PrimaryKeyPart) bool {
 func newPrimaryKeyConstraint(table goschema.Table) *ast.ConstraintNode {
 	if len(table.PrimaryKeyParts) == 0 {
 		constraint := ast.NewPrimaryKeyConstraint(table.PrimaryKey...)
+		constraint.Name = table.PrimaryKeyName
 		constraint.IncludeColumns = table.PrimaryKeyInclude
 		return constraint
 	}
@@ -1031,6 +1039,7 @@ func newPrimaryKeyConstraint(table goschema.Table) *ast.ConstraintNode {
 	}
 	return &ast.ConstraintNode{
 		Type:           ast.PrimaryKeyConstraint,
+		Name:           table.PrimaryKeyName,
 		Columns:        columns,
 		ColumnParts:    columnParts,
 		IncludeColumns: table.PrimaryKeyInclude,
