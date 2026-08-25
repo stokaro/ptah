@@ -30,7 +30,7 @@ func TestPlanner_OraclePlansAColumnCommentOnItsOwn(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(setCommentOperations(nodes), qt.DeepEquals,
-		[]*ast.SetCommentOperation{{Column: "EMAIL", Comment: "primary contact"}})
+		[]*ast.SetCommentOperation{{Column: "EMAIL", Comment: "primary contact", HasCurrent: true}})
 	c.Assert(modifyColumnOperations(nodes), qt.HasLen, 0)
 }
 
@@ -46,7 +46,7 @@ func TestPlanner_OraclePlansAColumnCommentRemoval(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(setCommentOperations(nodes), qt.DeepEquals,
-		[]*ast.SetCommentOperation{{Column: "EMAIL", Comment: ""}})
+		[]*ast.SetCommentOperation{{Column: "EMAIL", Comment: "", HasCurrent: true}})
 }
 
 // The control: a column change that is not a comment still gets its MODIFY, so

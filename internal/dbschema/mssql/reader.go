@@ -312,9 +312,14 @@ func (r *Reader) readColumnsByTable() (map[catalogTableKey][]types.DBColumn, err
 				column.GeneratedKind = "PERSISTED"
 			}
 		}
-		if comment.Valid {
-			_ = comment.String
-		}
+		// The query has always asked for MS_Description; there was nowhere to
+		// put it until types.DBColumn gained a Comment, so the value was read
+		// and discarded. Assigning it is what lets the comparison see a
+		// comment SQL Server already holds -- without it every column comment
+		// reads as absent, and the planner calls sp_addextendedproperty on a
+		// property that exists, which answers `Property cannot be added.
+		// Property already exists` (stokaro/ptah#2168).
+		column.Comment = comment.String
 		if maxLength > 0 && supportsCharacterLength(typeName) {
 			length := maxLength
 			if isUnicodeType(typeName) {

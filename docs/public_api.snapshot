@@ -4347,6 +4347,17 @@ type SetCommentOperation struct {
     // a statement to get there, and leaving it alone is what made a comment
     // deleted from a declaration survive in the database forever.
     Comment string
+    // HasCurrent reports whether the object already carries a comment.
+    //
+    // Most renderers ignore it: PostgreSQL, Oracle and the MySQL family each
+    // have one statement that sets, changes and clears a comment alike. SQL
+    // Server does not -- a comment there is an extended property, and adding,
+    // changing and dropping one are three different stored procedures. Calling
+    // the wrong one is an error rather than a no-op, so that renderer needs to
+    // know which state it is starting from, the way ModifyColumnOperation
+    // carries the previous type and nullability for the decisions that need
+    // them (stokaro/ptah#2168).
+    HasCurrent bool
 }
     SetCommentOperation carries an object's comment to the state a declaration
     asks for.
