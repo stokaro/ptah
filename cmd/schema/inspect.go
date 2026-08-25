@@ -74,7 +74,7 @@ is reset destructively, the source is materialized on it (schema files
 executed, migration directories replayed), and the result is introspected so
 the output is normalized by a real database of the target dialect.
 
-The default output is HCL; --format selects hcl, sql, or json. With --out-dir
+The default output is HCL; --format selects hcl, sql, json, or dbml. With --out-dir
 the inspected schema is exported as files instead of one stream: one file per
 object by default, or grouped with --split schema|type.
 
@@ -103,7 +103,7 @@ inspected output never references an object it omitted.`,
 	dbcli.RegisterURLScopedSchemasFlag(flags, &opts.schemas)
 	flags.StringArrayVar(&opts.include, inspectIncludeFlag, nil, "Schema objects to include in inspection (Atlas-style selectors)")
 	flags.StringArrayVar(&opts.exclude, inspectExcludeFlag, nil, "Schema objects to exclude from inspection (Atlas-style selectors)")
-	flags.StringVar(&opts.format, inspectFormatFlag, "hcl", "Output format: hcl, sql, or json")
+	flags.StringVar(&opts.format, inspectFormatFlag, "hcl", "Output format: hcl, sql, json, or dbml")
 	flags.StringVar(&opts.outDir, inspectOutDirFlag, "", "Directory the inspected schema is exported into as files (hcl and sql formats only)")
 	flags.StringVar(&opts.split, inspectSplitFlag, "", "File grouping for --out-dir: object (default), schema, or type")
 	dbcli.RegisterPlainHTTPFlag(flags, &opts.plainHTTP)
@@ -368,9 +368,10 @@ func resolveInspectFormat(opts schemaInspectOptions) (string, error) {
 	switch format {
 	case "", "hcl":
 		format = "hcl"
-	case "sql", "json":
+	case "sql", "json", "dbml":
 	default:
-		return "", fmt.Errorf("unsupported --%s %q: expected hcl, sql, or json", inspectFormatFlag, opts.format)
+		return "", fmt.Errorf(
+			"unsupported --%s %q: expected hcl, sql, json, or dbml", inspectFormatFlag, opts.format)
 	}
 
 	split := strings.ToLower(strings.TrimSpace(opts.split))
@@ -381,7 +382,7 @@ func resolveInspectFormat(opts schemaInspectOptions) (string, error) {
 		}
 		return format, nil
 	}
-	if format == "json" {
+	if format == "json" || format == "dbml" {
 		return "", fmt.Errorf("--%s supports the hcl and sql formats only", inspectOutDirFlag)
 	}
 	splitArg := ""
