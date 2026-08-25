@@ -226,8 +226,11 @@ func (r *Reader) readColumnsByTable() (map[catalogTableKey][]types.DBColumn, err
 			c.scale,
 			c.is_nullable,
 			COLUMNPROPERTY(c.object_id, c.name, 'IsIdentity'),
-			IDENT_SEED(QUOTENAME(s.name) + '.' + QUOTENAME(t.name)),
-			IDENT_INCR(QUOTENAME(s.name) + '.' + QUOTENAME(t.name)),
+			-- Cast to text rather than scanning the NUMERIC: a float round
+			-- trip renders IDENTITY(1000.000000,5.000000), and a
+			-- DECIMAL(38,0) identity does not fit an int64 at all.
+			CAST(IDENT_SEED(QUOTENAME(s.name) + '.' + QUOTENAME(t.name)) AS VARCHAR(41)),
+			CAST(IDENT_INCR(QUOTENAME(s.name) + '.' + QUOTENAME(t.name)) AS VARCHAR(41)),
 				COLUMNPROPERTY(c.object_id, c.name, 'ColumnId'),
 				OBJECT_DEFINITION(c.default_object_id),
 				cc.definition,
@@ -261,7 +264,7 @@ func (r *Reader) readColumnsByTable() (map[catalogTableKey][]types.DBColumn, err
 			maxLength             int
 			precision, scale      int
 			nullable, identity    bool
-			seed, increment       sql.NullFloat64
+			seed, increment       sql.NullString
 			defaultSQL            sql.NullString
 			generatedExpression   sql.NullString
 			generatedPersisted    sql.NullBool
@@ -301,6 +304,16 @@ func (r *Reader) readColumnsByTable() (map[catalogTableKey][]types.DBColumn, err
 			column.IsNullable = "YES"
 		}
 		column.IsAutoIncrement = identity
+		// IDENT_SEED and IDENT_INCR answer for the TABLE, so the row carries
+		// the same pair for every column of it. Only the identity column may
+		// keep them, or a description would claim a seed for columns that have
+		// none. SQL Server allows at most one identity column per table, which
+		// is why the table-scoped functions are the right question to ask
+		// (stokaro/ptah#2196).
+		if identity {
+			column.IdentityStart = strings.TrimSpace(seed.String)
+			column.IdentityIncrement = strings.TrimSpace(increment.String)
+		}
 		if defaultSQL.Valid {
 			normalized := normalizeDefault(defaultSQL.String)
 			column.ColumnDefault = &normalized

@@ -168,6 +168,8 @@ func convertTablesAndFields(
 				Collate:            dbColumn.Collate,
 				GeneratedKind:      dbColumn.GeneratedKind,
 				IdentityGeneration: dbColumn.IdentityGeneration,
+				IdentityStart:      dbColumn.IdentityStart,
+				IdentityIncrement:  dbColumn.IdentityIncrement,
 			}
 			if dbColumn.GeneratedExpression != nil {
 				field.GeneratedExpression = *dbColumn.GeneratedExpression
