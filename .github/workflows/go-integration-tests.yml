@@ -12,8 +12,58 @@ permissions:
   pull-requests: read
 
 jobs:
+  scope:
+    name: scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.decide.outputs.code }}
+      reason: ${{ steps.decide.outputs.reason }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The decision is a diff against the base, so the base commit has to
+          # be in the clone. A shallow checkout has only the merge commit.
+          fetch-depth: 0
+
+      # This job always runs, and always reports. That is the difference
+      # between it and a `paths:` filter on the workflow: a filtered-out
+      # workflow leaves NO check on the pull request, and an absent check reads
+      # exactly like a passing one -- the hazard capability-matrix.yml records
+      # in its own comment (stokaro/ptah#2185 point 5).
+      # The rule checks itself before it is used to skip anything. A gate that
+      # silently stopped classifying would report "inert" for every diff, and
+      # the checks it guards would go quiet without failing.
+      - name: Self-test the scope rule
+        run: scripts/ci-diff-scope.sh --selftest
+
+      - name: Decide whether this diff can affect the contour
+        id: decide
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            echo "reason=not a pull request, so everything runs" >> "$GITHUB_OUTPUT"
+            echo "ci-diff-scope: code=true (not a pull request)"
+            exit 0
+          fi
+          scripts/ci-diff-scope.sh \
+            "${{ github.event.pull_request.base.sha }}" \
+            "${{ github.event.pull_request.head.sha }}"
+
+      - name: Report the decision in the job summary
+        run: |
+          {
+            printf '### Contour scope\n\n'
+            printf -- '- run the contour: `%s`\n' "${{ steps.decide.outputs.code }}"
+            printf -- '- because: %s\n' "${{ steps.decide.outputs.reason }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   integration-tests:
     name: integration-tests
+    needs: scope
+    # Skipped rather than absent: the check is still listed on the
+    # pull request, and the scope job above says why it was skipped.
+    if: github.event_name != 'pull_request' || needs.scope.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     
