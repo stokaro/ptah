@@ -18,6 +18,28 @@ mkdir -p "$(dirname "$output")"
 output_dir="$(cd "$(dirname "$output")" && pwd)"
 output="$output_dir/$(basename "$output")"
 
+# What the binary beside this stamp was built from. Reuse is decided on the
+# SOURCE checksum rather than on the version alone: two builds of one tag report
+# the same `atlas version`, so a stamp holding only the version would accept a
+# binary built from a different archive after the lock moved
+# (stokaro/ptah#2186).
+stamp="$output.source-sha256"
+
+# A binary already here that matches the lock is the one this script would spend
+# 1m40s producing. Measured on run 32820538377: the build is 1m40s of a
+# 22.6-minute integration job, repeated on every run, for a source archive
+# pinned by checksum.
+#
+# The verification still runs, and that is why this lives here rather than only
+# in the workflow. A cache that restores a file and trusts it because a key
+# matched removes the one check that makes the binary a reference.
+if [[ -f "$stamp" && "$(cat "$stamp" 2>/dev/null)" == "$ATLAS_CE_SOURCE_SHA256" ]] &&
+	atlas_ce_verify_binary "$output" >/dev/null 2>&1; then
+	printf 'atlas-ce: reusing the verified binary at %s\n' "$output"
+	exit 0
+fi
+rm -f "$stamp"
+
 workspace="$(mktemp -d "$output_dir/.atlas-ce-build.XXXXXX")"
 trap 'rm -rf "$workspace"' EXIT
 
@@ -81,6 +103,11 @@ printf 'atlas-ce: building verified source archive\n'
 atlas_ce_verify_binary "$candidate" >/dev/null
 chmod 0755 "$candidate"
 mv -f "$candidate" "$output"
+
+# The stamp is written LAST, after the binary is in place and verified. A stamp
+# written earlier would name a build that had not finished, and the next run
+# would reuse whatever the interrupted one left behind.
+printf '%s' "$ATLAS_CE_SOURCE_SHA256" >"$stamp"
 
 printf 'atlas-ce: installed verified reference at %s\n' "$output"
 atlas_ce_verify_binary "$output"

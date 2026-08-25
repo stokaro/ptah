@@ -378,6 +378,24 @@ jobs:
           PGPASSWORD=ptah_password psql -h localhost -p 5432 -U ptah_user -d postgres \
             -v ON_ERROR_STOP=1 -c 'CREATE DATABASE ptah_oracle_realmdev'
 
+      # The reference is a source archive pinned by checksum in
+      # scripts/atlas-ce-reference.lock, so the lock file IS the identity of the
+      # binary built from it and makes an exact cache key. Measured on run
+      # 32820538377, building it costs 1m40s of a 22.6-minute job, on every run
+      # (stokaro/ptah#2186).
+      #
+      # A hit does not skip the verification. The build script decides for
+      # itself whether what it found is usable -- it compares a stamp holding
+      # the source checksum and then runs the binary to check the version it
+      # reports -- so a restored file that is stale or damaged is rebuilt rather
+      # than trusted. Measured: a matching stamp beside a corrupted binary
+      # rebuilds.
+      - name: Cache the pinned Atlas CE reference
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/ptah-atlas-ce
+          key: atlas-ce-${{ runner.os }}-${{ hashFiles('scripts/atlas-ce-reference.lock') }}
+
       - name: Build pinned Atlas CE reference
         run: scripts/build-atlas-ce-reference.sh "${{ runner.temp }}/ptah-atlas-ce/atlas"
 

@@ -74,6 +74,19 @@ jobs:
       - name: Install Ptah dependencies
         run: GOWORK=off go mod download
 
+      # Same key and same path as go-integration-tests.yml, so the two workflows
+      # share one entry rather than each paying for the build. The lock file
+      # pins the source archive by checksum, which makes it the binary's
+      # identity (stokaro/ptah#2186).
+      #
+      # The build script verifies whatever it finds before reusing it, so a hit
+      # is not a reason to trust the file.
+      - name: Cache the pinned Atlas CE reference
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/ptah-atlas-ce
+          key: atlas-ce-${{ runner.os }}-${{ hashFiles('scripts/atlas-ce-reference.lock') }}
+
       - name: Build pinned Atlas CE reference
         run: scripts/build-atlas-ce-reference.sh "$PTAH_ATLAS_REFERENCE"
 
