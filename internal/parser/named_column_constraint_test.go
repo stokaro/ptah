@@ -68,13 +68,17 @@ func TestParser_ColumnLevelNamedConstraintWithNowhereToKeepTheName(t *testing.T)
 	tests := []struct {
 		name       string
 		constraint string
+		// named is how the refusal must spell the constraint. The cursor sits
+		// on one token, so a NOT NULL is `NOT` there -- and a message that says
+		// `on NOT` names half a keyword.
+		named string
 	}{
 		// NOT NULL and DEFAULT are what remain: ColumnNode keeps Nullable and
 		// the default with nowhere to put a constraint name, and neither has a
 		// table-level form to read the name into the way UNIQUE and PRIMARY KEY
 		// do.
-		{name: "not null", constraint: "NOT NULL"},
-		{name: "default", constraint: "DEFAULT 1"},
+		{name: "not null", constraint: "NOT NULL", named: "NOT NULL"},
+		{name: "default", constraint: "DEFAULT 1", named: "DEFAULT"},
 	}
 
 	for _, tt := range tests {
@@ -85,7 +89,12 @@ func TestParser_ColumnLevelNamedConstraintWithNowhereToKeepTheName(t *testing.T)
 				`CREATE TABLE t (b INTEGER CONSTRAINT c_x ` + tt.constraint + `);`).Parse()
 
 			c.Assert(err, qt.ErrorMatches, `.*named column constraint "c_x".*`)
+			c.Assert(err, qt.ErrorMatches, `.*name on `+tt.named+`,.*`)
 			c.Assert(err, qt.ErrorMatches, `.*CHECK, REFERENCES, UNIQUE and PRIMARY KEY.*`)
+			// The advice has to be one the reader can follow. There is no
+			// `ALTER TABLE ... ADD CONSTRAINT c NOT NULL` on any supported
+			// engine, so pointing at the table level would point at nothing.
+			c.Assert(err, qt.ErrorMatches, `.*write the constraint without a name.*`)
 		})
 	}
 }
