@@ -2,10 +2,12 @@ package assist_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -34,8 +36,65 @@ func (s *scripted) handler() http.HandlerFunc {
 		s.requests = append(s.requests, string(payload))
 		index := min(s.calls, len(s.bodies)-1)
 		s.calls++
-		_, _ = writer.Write([]byte(s.bodies[index]))
+		body := s.bodies[index]
+		// A surface that asked to stream is answered with a stream. Serving a
+		// whole document to a streaming request would make every test here
+		// pass against an endpoint no real one resembles.
+		if strings.Contains(string(payload), `"stream":true`) {
+			writeChatStream(writer, body)
+			return
+		}
+		_, _ = writer.Write([]byte(body))
 	}
+}
+
+// writeChatStream re-serves one whole chat completion as the events a streamed
+// one would arrive in.
+//
+// The prose is split into several deltas rather than sent as one, because a
+// consumer that only ever saw a single fragment would not be exercising the
+// accumulation this exists to test. Tool calls are sent whole: their arguments
+// are split by index in the adapter's own tests, where the assertion can be
+// about the assembly rather than about a command's output.
+func writeChatStream(writer http.ResponseWriter, body string) {
+	var answer struct {
+		ID      string `json:"id"`
+		Model   string `json:"model"`
+		Choices []struct {
+			FinishReason string          `json:"finish_reason"`
+			Message      json.RawMessage `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal([]byte(body), &answer); err != nil || len(answer.Choices) == 0 {
+		http.Error(writer, "the scripted body is not a chat completion", http.StatusInternalServerError)
+		return
+	}
+	var message struct {
+		Content   string          `json:"content"`
+		ToolCalls json.RawMessage `json:"tool_calls"`
+	}
+	_ = json.Unmarshal(answer.Choices[0].Message, &message)
+
+	writer.Header().Set("Content-Type", "text/event-stream")
+	for _, fragment := range splitForStream(message.Content) {
+		fmt.Fprintf(writer, "data: {\"id\":%q,\"model\":%q,\"choices\":[{\"delta\":{\"content\":%q}}]}\n\n",
+			answer.ID, answer.Model, fragment)
+	}
+	if len(message.ToolCalls) > 0 {
+		fmt.Fprintf(writer, "data: {\"choices\":[{\"delta\":{\"tool_calls\":%s}}]}\n\n", message.ToolCalls)
+	}
+	fmt.Fprintf(writer, "data: {\"choices\":[{\"finish_reason\":%q,\"delta\":{}}]}\n\n",
+		answer.Choices[0].FinishReason)
+	fmt.Fprint(writer, "data: [DONE]\n\n")
+}
+
+// splitForStream cuts text into a few fragments, the way a provider does.
+func splitForStream(text string) []string {
+	if text == "" {
+		return nil
+	}
+	words := strings.SplitAfter(text, " ")
+	return words
 }
 
 // textAnswer is a chat completion carrying prose.

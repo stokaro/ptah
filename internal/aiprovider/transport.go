@@ -223,6 +223,105 @@ func (c Config) attempt(
 	return nil
 }
 
+// streamCall is [Config.call] for a response consumed as it arrives.
+//
+// It retries the way call does, with one difference that is the whole reason it
+// is a separate function: a retry is only safe until the first fragment reaches
+// the caller. Once text has been shown, replaying the request would show it
+// twice, and a duplicated half-answer is worse than the failure it came from.
+// consume reports whether it delivered anything, and that decides.
+func (c Config) streamCall(
+	ctx context.Context,
+	method, path string,
+	body any,
+	auth func(*http.Request),
+	consume func(io.Reader) (delivered bool, err error),
+) error {
+	var lastErr error
+	for attempt := 0; attempt <= c.MaxRetries; attempt++ {
+		if attempt > 0 {
+			if err := c.Sleep(ctx, backoff(attempt, lastErr)); err != nil {
+				return c.wrap(KindTimeout, 0, "waiting to retry: "+err.Error(), err)
+			}
+		}
+		delivered, err := c.streamAttempt(ctx, method, path, body, auth, consume)
+		if err == nil {
+			return nil
+		}
+		if delivered {
+			// Past the point of no return. The caller has seen part of an
+			// answer, so this failure is reported rather than retried.
+			return err
+		}
+		lastErr = err
+		providerErr, is := errors.AsType[*Error](err)
+		if !is || !providerErr.Retryable() {
+			return err
+		}
+	}
+	return lastErr
+}
+
+// streamAttempt makes one streamed request, reporting whether the consumer got
+// anything before it failed.
+func (c Config) streamAttempt(
+	ctx context.Context,
+	method, path string,
+	body any,
+	auth func(*http.Request),
+	consume func(io.Reader) (bool, error),
+) (bool, error) {
+	endpoint, err := c.endpoint(path)
+	if err != nil {
+		return false, c.wrap(KindProvider, 0, err.Error(), err)
+	}
+
+	var payload io.Reader
+	if body != nil {
+		encoded, marshalErr := json.Marshal(body)
+		if marshalErr != nil {
+			return false, c.wrap(KindProvider, 0, "encode request: "+marshalErr.Error(), marshalErr)
+		}
+		payload = bytes.NewReader(encoded)
+	}
+
+	request, err := http.NewRequestWithContext(ctx, method, endpoint, payload)
+	if err != nil {
+		return false, c.wrap(KindProvider, 0, err.Error(), err)
+	}
+	// A streamed answer is server-sent events, and the endpoint is told so
+	// rather than left to infer it from the request body.
+	request.Header.Set("Accept", "text/event-stream")
+	if body != nil {
+		request.Header.Set("Content-Type", "application/json")
+	}
+	for name, value := range c.Headers {
+		request.Header.Set(name, value)
+	}
+	if auth != nil {
+		auth(request)
+	}
+
+	response, err := c.HTTPClient.Do(request)
+	if err != nil {
+		return false, c.transportError(err)
+	}
+	defer response.Body.Close() //nolint:errcheck // the body is drained or abandoned; a close error adds nothing
+
+	if response.StatusCode >= http.StatusBadRequest {
+		// The error body is JSON even on a request that asked for a stream, so
+		// this is the same classification an ordinary call gets.
+		return false, c.statusError(response)
+	}
+
+	delivered, err := consume(response.Body)
+	if err != nil {
+		return delivered, c.wrap(KindMalformedResponse, response.StatusCode,
+			"the endpoint's stream could not be read: "+err.Error(), err)
+	}
+	return delivered, nil
+}
+
 // transportError classifies a failure that produced no HTTP answer.
 func (c Config) transportError(err error) error {
 	if errors.Is(err, context.DeadlineExceeded) || isTimeout(err) {

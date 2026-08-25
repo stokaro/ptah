@@ -132,7 +132,7 @@ func converse(
 			continue
 		}
 
-		l, loopErr := newLoop(provider, tools, talk, opts.maxToolCalls, nil)
+		l, loopErr := newLoop(provider, tools, talk, opts.maxToolCalls, nil, streamTo(out))
 		if loopErr != nil {
 			return cmdutil.Fail(cmd, loopErr)
 		}
@@ -169,8 +169,11 @@ func answerOne(
 	}
 
 	writeTrace(out, show.records(result.Tools))
-	if answer := strings.TrimSpace(result.Answer); answer != "" {
-		fmt.Fprintln(out, answer)
+	// The answer was written as it arrived, so what is left is the newline
+	// that ends it. Printing it again here is the duplication a streamed
+	// surface has to avoid.
+	if strings.TrimSpace(result.Answer) != "" {
+		fmt.Fprintln(out, "")
 	}
 	if runErr != nil {
 		fmt.Fprintf(out, "  %s\n", runErr)
