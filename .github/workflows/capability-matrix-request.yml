@@ -1,0 +1,135 @@
+name: Capability Matrix Request
+
+# Runs the tier 2 probe fan-out on a pull request, on request.
+#
+# The fan-out is opt-in (see capability-matrix.yml for why: it was the larger
+# half of every pull request's checks and the queue stopped keeping up). This is
+# the way to ask for it from inside the pull request rather than from the
+# Actions tab:
+#
+#	/capability-matrix                     every declared cell
+#	/capability-matrix postgres            every PostgreSQL line
+#	/capability-matrix mysql, oracle-21    a mix of prefixes and exact ids
+#
+# It dispatches capability-matrix.yml against the pull request's head BRANCH, so
+# the probe checks attach to the head commit and appear on the pull request
+# itself.
+#
+# WHY THE GUARDS ARE WHAT THEY ARE
+#
+# `issue_comment` runs the workflow from the DEFAULT branch with a token that
+# can write to this repository, and what it starts then checks out the pull
+# request's code. Anyone able to comment could otherwise run arbitrary code from
+# a fork against that token, so:
+#
+#   - the comment author must already have write access, read from
+#     author_association (OWNER, MEMBER or COLLABORATOR);
+#   - the pull request's head must live in THIS repository. A fork's branch is
+#     not a ref here, so `workflow_dispatch` could not target it anyway -- the
+#     check is there to answer the requester instead of failing obscurely.
+#
+# The same reasoning is why testkit-sync.yml restricts itself to same-repository
+# branches from named bots.
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+jobs:
+  dispatch:
+    name: Dispatch the capability matrix
+    # A comment on an issue carries no pull_request field. Checking the body
+    # here as well keeps every unrelated comment on every pull request from
+    # starting a runner just to decide it was not addressed to us.
+    if: >-
+      github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/capability-matrix')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      pull-requests: write
+    steps:
+      - name: Check the requester may run code in this repository
+        env:
+          ASSOCIATION: ${{ github.event.comment.author_association }}
+        run: |
+          set -euo pipefail
+          case "${ASSOCIATION}" in
+            OWNER|MEMBER|COLLABORATOR) ;;
+            *)
+              echo "author_association is ${ASSOCIATION}: the capability matrix runs this repository's code and is not dispatched for it" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Resolve the pull request's head
+        id: head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh pr view "${PR}" --repo "${REPO}" \
+            --json headRefName,headRepositoryOwner,isCrossRepository >"${RUNNER_TEMP}/pr.json"
+          if [ "$(jq -r '.isCrossRepository' "${RUNNER_TEMP}/pr.json")" = "true" ]; then
+            echo "cross-repository=true" >>"${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          {
+            echo "cross-repository=false"
+            echo "ref=$(jq -r '.headRefName' "${RUNNER_TEMP}/pr.json")"
+          } >>"${GITHUB_OUTPUT}"
+
+      - name: Say why a fork cannot be dispatched
+        if: steps.head.outputs.cross-repository == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh pr comment "${PR}" --repo "${REPO}" --body \
+            'The capability matrix cannot be dispatched for a fork: `workflow_dispatch` targets a ref in this repository, and a fork branch is not one. Push the branch here, or run the workflow from the Actions tab against a branch that lives here.'
+          echo "the pull request's head is in another repository; nothing dispatched" >&2
+          exit 1
+
+      # The text after the command, if any. An empty request means every cell,
+      # which is what the workflow's own default already is.
+      - name: Read the requested cells
+        id: request
+        env:
+          BODY: ${{ github.event.comment.body }}
+        run: |
+          set -euo pipefail
+          first="$(printf '%s' "${BODY}" | head -n 1)"
+          cells="${first#/capability-matrix}"
+          cells="$(printf '%s' "${cells}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+          echo "cells=${cells:-all}" >>"${GITHUB_OUTPUT}"
+
+      - name: Dispatch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          REF: ${{ steps.head.outputs.ref }}
+          CELLS: ${{ steps.request.outputs.cells }}
+        run: |
+          set -euo pipefail
+          gh workflow run capability-matrix.yml \
+            --repo "${REPO}" --ref "${REF}" --field "cells=${CELLS}"
+
+      - name: Acknowledge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+          REF: ${{ steps.head.outputs.ref }}
+          CELLS: ${{ steps.request.outputs.cells }}
+        run: |
+          set -euo pipefail
+          gh pr comment "${PR}" --repo "${REPO}" --body \
+            "Capability matrix dispatched against \`${REF}\` for cells: \`${CELLS}\`. The \`probe *\` checks will appear on this pull request's head commit; a request that names nothing the matrix has fails the \`cells\` job rather than probing silently."
