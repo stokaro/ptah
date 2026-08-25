@@ -809,8 +809,8 @@ the reader left them out of the live one, so the comparator would see two
 different maps and plan a `DROP INDEX` and a `CREATE INDEX` on every apply —
 forever, and immediately after a successful rebuild. Measured on PostgreSQL 17
 with pgvector 0.8.6: three indexes, three `DROP`/`CREATE` pairs, against a
-database that had just been applied to. A document with no `storage_params` is
-unaffected either way.
+database the same document had already been applied to. A document with no
+`storage_params` is unaffected either way.
 
 A malformed value fails the export whatever the schema holds, rather than
 reading as `false` for a schema that happens to carry no such parameter.
