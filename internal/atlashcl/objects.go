@@ -122,7 +122,7 @@ func (p *parser) parseFunction(block *hclsyntax.Block) error {
 	function := goschema.Function{
 		Name:       tableref.Canonical(schema, name),
 		Parameters: parameters,
-		Returns:    p.optionalString(block.Body.Attributes["return"]),
+		Returns:    p.typeAttrString(block.Body.Attributes["return"]),
 		Language:   p.optionalString(block.Body.Attributes["lang"]),
 		Security:   p.optionalString(block.Body.Attributes["security"]),
 		Volatility: p.optionalString(block.Body.Attributes["volatility"]),
@@ -157,7 +157,7 @@ func (p *parser) parseFunctionArgs(block *hclsyntax.Block) ([]string, error) {
 		// keyword (`type = bigint`) so it has no string value to evaluate, but
 		// it can also be written with Atlas's sql() escape hatch, and the raw
 		// source of that call is not a type -- issue #1106.
-		args = append(args, nested.Labels[0]+" "+p.optionalRawExpr(typeAttr))
+		args = append(args, nested.Labels[0]+" "+p.functionArgType(typeAttr))
 	}
 	return args, nil
 }
@@ -963,7 +963,7 @@ func (p *parser) parseDomain(block *hclsyntax.Block) error {
 	if err := p.rejectUnsupportedDomainAttrs(block); err != nil {
 		return err
 	}
-	baseType := p.optionalString(block.Body.Attributes["type"])
+	baseType := p.typeAttrString(block.Body.Attributes["type"])
 	if baseType == "" {
 		return p.blockError(block, "domain %q requires type", name)
 	}
@@ -1034,6 +1034,19 @@ func (p *parser) parseComposite(block *hclsyntax.Block) error {
 	return nil
 }
 
+// functionArgType reads a function argument's type, resolving a reference to a
+// type the document declares before falling back to the raw source.
+//
+// optionalRawExpr is the fallback rather than exprString because an argument
+// type is written as a bare keyword (`type = bigint`), which has no string value
+// to evaluate, and it can also carry Atlas's sql() escape hatch -- issue #1106.
+func (p *parser) functionArgType(attr *hclsyntax.Attribute) string {
+	if name, ok := userTypeReferenceName(p.optionalRawExpr(attr)); ok {
+		return name
+	}
+	return p.optionalRawExpr(attr)
+}
+
 func (p *parser) parseCompositeFields(block *hclsyntax.Block) ([]goschema.CompositeTypeField, error) {
 	var fields []goschema.CompositeTypeField
 	for _, nested := range block.Body.Blocks {
@@ -1062,7 +1075,7 @@ func (p *parser) parseCompositeFields(block *hclsyntax.Block) ([]goschema.Compos
 		// function-call shapes (numeric(10,2)) fall back to the raw source.
 		fields = append(fields, goschema.CompositeTypeField{
 			Name: nested.Labels[0],
-			Type: p.exprString(typeAttr),
+			Type: p.typeAttrString(typeAttr),
 		})
 	}
 	return fields, nil
@@ -1085,7 +1098,7 @@ func (p *parser) parseRange(block *hclsyntax.Block) error {
 	if err := p.rejectUnsupportedRangeAttrs(block); err != nil {
 		return err
 	}
-	subtype := p.optionalString(block.Body.Attributes["subtype"])
+	subtype := p.typeAttrString(block.Body.Attributes["subtype"])
 	if subtype == "" {
 		return p.blockError(block, "range %q requires subtype", name)
 	}

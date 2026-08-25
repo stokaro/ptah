@@ -1,4 +1,4 @@
-# ADR 0006: A closed agent error taxonomy, assigned at the sentinel and carried in `_meta`
+# ADR 0007: A closed agent error taxonomy, assigned at the sentinel and carried in `_meta`
 
 - Status: proposed
 - Deciders: Ptah maintainers

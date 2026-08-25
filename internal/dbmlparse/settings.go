@@ -107,8 +107,17 @@ func applyColumnSettings(field *goschema.Field, settings []setting, schema strin
 	for _, entry := range settings {
 		switch entry.key {
 		case "pk", "primary key":
+			// Primary only. `pk` says the column is the key and says nothing
+			// about NULL, and inferring NOT NULL from it made DBML and SQL
+			// describe different schemas for one intent: measured, the same
+			// primary key rendered as `INTEGER PRIMARY KEY` from a .sql
+			// document and `INTEGER NOT NULL PRIMARY KEY` from this one, so a
+			// database built from either planned a rebuild against the other.
+			//
+			// Engines that imply NOT NULL from PRIMARY KEY still do; what
+			// changes is only what Ptah's model claims the document said
+			// (stokaro/ptah#2065).
 			field.Primary = true
-			field.Nullable = false
 		case "increment":
 			field.AutoInc = true
 		case "unique":

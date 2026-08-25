@@ -71,7 +71,7 @@ func TestLoad_UnsupportedExtensionSurvivesEnvRejection(t *testing.T) {
 
 	_, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}})
 
-	c.Assert(err, qt.ErrorMatches, `unsupported schema file extension "\.txt": only \.yaml, \.yml, \.hcl, and \.sql are supported`)
+	c.Assert(err, qt.ErrorMatches, `unsupported schema file extension "\.txt": only \.yaml, \.yml, \.hcl, \.sql, and \.dbml are supported`)
 }
 
 // TestLoad_PlainFileNamedLikeEnvIsStillAFile is the other negative control: the

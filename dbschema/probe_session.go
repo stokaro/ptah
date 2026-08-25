@@ -5,6 +5,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/capability"
 )
 
 // probeSession runs a body inside one pinned session and one transaction, and
@@ -47,6 +50,9 @@ func (dc *DatabaseConnection) probeSession(
 	if err != nil {
 		return false, fmt.Errorf("%s: begin transaction: %w", label, err)
 	}
+	if err := keepDDLInsideTheTransaction(ctx, tx, dc.info.Version); err != nil {
+		return false, fmt.Errorf("%s: %w", label, err)
+	}
 	defer func() {
 		// The rollback is the point of the transaction, not its error path:
 		// everything the body created exists only until this line runs.
@@ -56,6 +62,47 @@ func (dc *DatabaseConnection) probeSession(
 	}()
 
 	return true, body(ctx, tx)
+}
+
+// keepDDLInsideTheTransaction asks a server that would not to keep the probe's
+// DDL where the probe put it.
+//
+// CockroachDB defaults autocommit_before_ddl to on: a DDL statement issued
+// inside an explicit transaction makes the server COMMIT that transaction
+// first and run the DDL in one of its own. Everything this file guarantees
+// rests on the transaction still being there, and it is not.
+//
+// The symptom is not the commit, which is silent. It is what happens next --
+// measured on cockroachdb/cockroach:v25.4.0, `ptah schema apply --dry-run`
+// against any schema holding a CHECK constraint:
+//
+//	error: compare database schema: compare schemas: resolve check expressions:
+//	roll back to savepoint after "customers.customers_amount_ck":
+//	ERROR: savepoint "ptah_check_probe" does not exist (SQLSTATE 3B001)
+//
+// The probe's CREATE TEMPORARY TABLE is refused there anyway -- temp tables are
+// experimental and off -- and the code above treats a refusal as "unresolved",
+// which is the honest answer. It never gets to: the auto-commit ahead of the
+// refused DDL has already taken the savepoint with it, so the recovery fails
+// and the whole comparison fails with it. The reported error names the
+// rollback, which is the one thing that was not wrong.
+//
+// With the setting off the same sequence recovers and the comparison continues.
+// SET LOCAL rather than SET, so it lasts exactly as long as the transaction and
+// cannot reach the next borrower of a pooled connection (stokaro/ptah#2140).
+//
+// Asked of CockroachDB alone. PostgreSQL has no such variable and answers
+// `unrecognized configuration parameter`, and a failed statement inside a
+// PostgreSQL transaction poisons every later one -- so a version this does not
+// recognize is left alone rather than probed.
+func keepDDLInsideTheTransaction(ctx context.Context, tx *sql.Tx, version string) error {
+	if capability.BannerPlatform(version) != platform.CockroachDB {
+		return nil
+	}
+	if _, err := tx.ExecContext(ctx, "SET LOCAL autocommit_before_ddl = off"); err != nil {
+		return fmt.Errorf("keep DDL inside the transaction: %w", err)
+	}
+	return nil
 }
 
 // resolveProbes runs every probe through one rolled-back transaction and

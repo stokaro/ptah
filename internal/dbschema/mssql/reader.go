@@ -603,6 +603,9 @@ func (r *Reader) readViews() ([]types.DBView, error) {
 		if err := rows.Scan(&view.Schema, &view.Name, &view.Body); err != nil {
 			return nil, err
 		}
+		// OBJECT_DEFINITION hands back the whole CREATE statement; the body is
+		// what belongs here. See [viewBody].
+		view.Body = viewBody(view.Body)
 		view.Schema = r.outputSchema(view.Schema)
 		view.CheckOption = "NONE"
 		views = append(views, view)

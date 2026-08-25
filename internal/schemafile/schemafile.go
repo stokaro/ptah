@@ -19,6 +19,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlashcl"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/convert/toschema"
+	"go.5x5.cz/ptah/internal/dbmlparse"
 	"go.5x5.cz/ptah/internal/parser"
 	"go.5x5.cz/ptah/internal/pathguard"
 	"go.5x5.cz/ptah/internal/schemaselection"
@@ -347,7 +348,74 @@ func withFormatLimits(database *goschema.Database, resolved string) *goschema.Da
 			coverage.Synonym, coverage.ExtendedProperty, coverage.Hypertable,
 			coverage.ContinuousAggregate)...)
 	}
+	if extension == dbmlExtension {
+		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(dbmlCannotExpress()...)...)
+	}
 	return database
+}
+
+// dbmlExtension is the one a DBML document carries.
+const dbmlExtension = ".dbml"
+
+// dbmlCannotExpress is every object family DBML has no syntax for.
+//
+// It is the widest boundary any format here declares, and deliberately so: DBML
+// describes tables, columns, enums, indexes and references, and nothing else.
+// Every other family in the closed list is absent from the grammar, so a live
+// database holding one is holding something a DBML desired state never spoke
+// about -- and silence that is not read as intent is the difference between
+// "the document did not ask for this" and "the document asked for it to go"
+// (stokaro/ptah#2065).
+//
+// [coverage.Schema] is not in the list. DBML qualifies a name with a schema, so
+// a document can say which schema an object belongs to, and no other format
+// here declares that kind either.
+func dbmlCannotExpress() []coverage.Kind {
+	return []coverage.Kind{
+		coverage.Composite,
+		coverage.ContinuousAggregate,
+		coverage.Domain,
+		coverage.ExtendedProperty,
+		coverage.Extension,
+		coverage.Hypertable,
+		coverage.Policy,
+		coverage.Range,
+		coverage.Role,
+		coverage.Sequence,
+		coverage.Synonym,
+		coverage.VirtualTable,
+	}
+}
+
+// loadDBMLFile reads a DBML document.
+//
+// What the document declares and the schema model cannot carry -- a Project
+// block, a TableGroup, a Records block -- goes to [Options.ReportIgnored],
+// which is the channel that already exists for a top-level construct accepted
+// and dropped. Deliberately not a second one: the same product should not
+// describe an ignored HCL block and an ignored DBML block in two different
+// sentences.
+func loadDBMLFile(resolved string, opts Options) (*goschema.Database, error) {
+	contents, err := os.ReadFile(resolved)
+	if err != nil {
+		return nil, fmt.Errorf("read schema file %s: %w", resolved, err)
+	}
+	return dbmlparse.Parse(string(contents), dbmlparse.Options{
+		File:         resolved,
+		OnDiagnostic: dbmlLossReporter(opts.ReportIgnored),
+	})
+}
+
+// dbmlLossReporter adapts the parser's diagnostics onto the loader's writer,
+// and returns nil when nobody is listening so the parse does no work for a
+// report that goes nowhere.
+func dbmlLossReporter(out io.Writer) func(string) {
+	if out == nil {
+		return nil
+	}
+	return func(message string) {
+		fmt.Fprintf(out, "warning: schema file %s\n", message)
+	}
 }
 
 // unsupportedByFormat is what every limit in this file is: the object family
@@ -383,8 +451,10 @@ func parseSchemaFile(resolved string, opts Options) (*goschema.Database, error) 
 		return yamlschema.ParseFile(resolved)
 	case ".sql":
 		return loadSQLFile(resolved, opts)
+	case ".dbml":
+		return loadDBMLFile(resolved, opts)
 	default:
-		return nil, fmt.Errorf("unsupported schema file extension %q: only .yaml, .yml, .hcl, and .sql are supported", filepath.Ext(resolved))
+		return nil, fmt.Errorf("unsupported schema file extension %q: only .yaml, .yml, .hcl, .sql, and .dbml are supported", filepath.Ext(resolved))
 	}
 }
 

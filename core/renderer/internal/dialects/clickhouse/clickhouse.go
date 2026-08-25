@@ -311,13 +311,13 @@ func (r *Renderer) renderColumn(col *ast.ColumnNode) (string, error) {
 
 	parts := []string{fmt.Sprintf("  %s %s", col.Name, mapping.mapped)}
 
-	if col.Default != nil {
-		switch {
-		case col.Default.Expression != "":
-			parts = append(parts, "DEFAULT "+col.Default.Expression)
-		case col.Default.HasLiteral():
-			parts = append(parts, "DEFAULT "+defaultlit.Render(col.Default.Value, escapeStringLiteral))
-		}
+	switch {
+	case col.GeneratedExpression != "":
+		parts = append(parts, computedColumnClause(col))
+	case col.Default != nil && col.Default.Expression != "":
+		parts = append(parts, "DEFAULT "+col.Default.Expression)
+	case col.Default != nil && col.Default.HasLiteral():
+		parts = append(parts, "DEFAULT "+defaultlit.Render(col.Default.Value, escapeStringLiteral))
 	}
 
 	if col.Comment != "" {
@@ -325,6 +325,49 @@ func (r *Renderer) renderColumn(col *ast.ColumnNode) (string, error) {
 	}
 
 	return strings.Join(parts, " "), nil
+}
+
+// computedColumnClause spells a computed column the way ClickHouse does.
+//
+// There is no GENERATED ALWAYS AS here. A column computed from others is
+// written MATERIALIZED -- computed and stored when a row is inserted -- or
+// ALIAS, computed on read and never stored. The keyword takes the PLACE of
+// DEFAULT rather than standing beside it, which is why this is one switch with
+// the default arms and not a clause appended after them: ClickHouse refuses a
+// column that carries both.
+//
+// Nothing wrote either before, so the expression was dropped and the replayed
+// column was a plain one that holds the empty string forever where the source
+// computes it per row. Measured on clickhouse/clickhouse-server:26.7, source
+// against replay in system.columns:
+//
+//	src   full_name  String  MATERIALIZED  concat(email, ' ')
+//	rep   full_name  String
+//
+// with `schema apply --dry-run` reporting `Schema is synced` throughout
+// (stokaro/ptah#2142).
+func computedColumnClause(col *ast.ColumnNode) string {
+	return computedColumnKeyword(col.GeneratedKind) + " " + col.GeneratedExpression
+}
+
+// computedColumnKeyword maps the kinds a declaration may carry onto the two
+// ClickHouse has.
+//
+// A column read back from ClickHouse already carries the native keyword and
+// passes through. A DECLARED one carries the SQL-standard spelling instead, and
+// the two lines up: STORED means the value is written, which is MATERIALIZED;
+// VIRTUAL means it is computed on read, which is ALIAS.
+//
+// An unnamed kind takes MATERIALIZED rather than ALIAS, because the two differ
+// in whether the data EXISTS. A column guessed into ALIAS is absent from every
+// part on disk, and finding that out means noticing a query got cheaper.
+func computedColumnKeyword(kind string) string {
+	switch strings.ToUpper(strings.TrimSpace(kind)) {
+	case "ALIAS", "VIRTUAL":
+		return "ALIAS"
+	default:
+		return "MATERIALIZED"
+	}
 }
 
 // tableEngineSpec captures the parsed engine + family modifiers for a CH

@@ -138,10 +138,6 @@ func tableLeafName(table string) string {
 }
 
 func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
-	if node.Comment != "" {
-		r.w.WriteLinef("-- %s", node.Comment)
-	}
-
 	guard := ""
 	if node.IfNotExists {
 		guard = r.createGuard()
@@ -149,6 +145,7 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 
 	if len(node.Columns) == 0 && len(node.Constraints) == 0 && node.SelectBody != "" {
 		r.w.WriteLinef("CREATE TABLE%s %s AS %s;", guard, escapeQualifiedIdentifier(node.Name), strings.TrimSpace(node.SelectBody))
+		r.renderTableComments(node)
 		return nil
 	}
 
@@ -188,7 +185,42 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 	}
 
 	r.w.WriteLine(");")
+	r.renderTableComments(node)
 	return nil
+}
+
+// renderTableComments writes the comments a table and its columns carry.
+//
+// They were written as SQL line comments above the statement -- decoration the
+// server never reads -- so a comment did not survive a replay. Measured on
+// Oracle Free 23, a schema this repository did not write, replayed into an
+// empty one:
+//
+//	source:  CUSTOMERS  'people who buy'   EMAIL  'login address'
+//	replay:  CUSTOMERS  <none>             EMAIL  <none>
+//
+// `schema apply --dry-run` against the source reported `Schema is synced`
+// throughout, and the replay reported success (stokaro/ptah#2132).
+//
+// Oracle has no inline form for either: a comment is its own statement, the way
+// PostgreSQL writes one. They follow the CREATE TABLE because the object has to
+// exist before a comment can name it, and the column loop is skipped entirely
+// for a table whose columns carry none, so an ordinary render gains no
+// statements.
+func (r *Renderer) renderTableComments(node *ast.CreateTableNode) {
+	if node.Comment != "" {
+		r.w.WriteLinef("COMMENT ON TABLE %s IS %s;",
+			escapeQualifiedIdentifier(node.Name), escapeStringLiteral(node.Comment))
+	}
+	for _, column := range node.Columns {
+		if column.Comment == "" {
+			continue
+		}
+		r.w.WriteLinef("COMMENT ON COLUMN %s.%s IS %s;",
+			escapeQualifiedIdentifier(node.Name),
+			escapeIdentifier(column.Name),
+			escapeStringLiteral(column.Comment))
+	}
 }
 
 // VisitAlterTable renders Oracle's ALTER TABLE, whose clause names differ from

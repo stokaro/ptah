@@ -153,6 +153,7 @@ func convertTablesAndFields(
 				FieldName:          generateFieldName(dbColumn.Name),
 				Name:               dbColumn.Name,
 				Type:               goSchemaFieldType(dbColumn),
+				Comment:            dbColumn.Comment,
 				TypeIsDeclaredText: dbColumn.TypeIsDeclaredText,
 				Nullable:           dbColumn.IsNullable == "YES",
 				Primary:            dbColumn.IsPrimaryKey && !compositePKColumns[dbTable.QualifiedName()][dbColumn.Name],
@@ -262,6 +263,7 @@ func convertIndexParts(parts []dbschematypes.DBIndexPart) []goschema.IndexPart {
 			Name:       part.Name,
 			Expr:       part.Expr,
 			Operator:   part.Operator,
+			Prefix:     part.Prefix,
 			Desc:       part.Desc,
 			NullsOrder: part.NullsOrder,
 		}

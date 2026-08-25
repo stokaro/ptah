@@ -376,12 +376,11 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 
 	if len(node.Columns) == 0 && len(node.Constraints) == 0 && node.SelectBody != "" {
 		r.w.Writef("CREATE TABLE%s %s", guard, escapeQualifiedIdentifier(node.Name))
-		if len(node.Options) > 0 {
-			options := r.renderTableOptions(node.Options)
-			if options != "" {
-				r.w.Write(" ")
-				r.w.Write(options)
-			}
+		options := r.renderTableOptions(node.Options)
+		options = appendTableComment(options, r.escapeValue, node.Comment)
+		if options != "" {
+			r.w.Write(" ")
+			r.w.Write(options)
 		}
 		r.w.WriteLinef(" %s;", strings.TrimSpace(node.SelectBody))
 		r.w.WriteLine("")
@@ -432,12 +431,11 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 	r.w.Write(")")
 
 	// Close table definition with MariaDB-specific options
-	if len(node.Options) > 0 {
-		options := r.renderTableOptions(node.Options)
-		if options != "" {
-			r.w.Write(" ")
-			r.w.Write(options)
-		}
+	options := r.renderTableOptions(node.Options)
+	options = appendTableComment(options, r.escapeValue, node.Comment)
+	if options != "" {
+		r.w.Write(" ")
+		r.w.Write(options)
 	}
 
 	if node.SelectBody != "" {
@@ -838,6 +836,35 @@ func (r *Renderer) renderAutoIncrement() string {
 }
 
 // renderTableOptions renders MariaDB table options (same as MySQL)
+// appendTableComment puts a table's own comment where the server will keep it.
+//
+// It was written as an SQL line comment above the statement -- decoration the
+// server never sees -- so a table's comment did not survive a replay. Measured
+// on MariaDB 12.3, source against the replay of Ptah's own description read
+// back with an independent reader:
+//
+//	-CREATE TABLE `customers` (...) COMMENT "people who buy";
+//	+CREATE TABLE `customers` (...);
+//
+// --dry-run against the source reported `Schema is synced` throughout, because
+// the reader carries the comment correctly and only the rendering drops it
+// (stokaro/ptah#2129).
+//
+// It is appended after renderTableOptions rather than added to that map: the
+// comment reaches the renderer as a field of its own, and putting it in the
+// options would make it indistinguishable from a COMMENT somebody wrote as a
+// table option by hand.
+func appendTableComment(options string, escape func(string) string, comment string) string {
+	if comment == "" {
+		return options
+	}
+	rendered := "COMMENT=" + escape(comment)
+	if options == "" {
+		return rendered
+	}
+	return options + " " + rendered
+}
+
 func (r *Renderer) renderTableOptions(options map[string]string) string {
 	knownOrder := []string{"ENGINE", "AUTO_INCREMENT", "CHARSET", "COLLATE"}
 	parts := make([]string, 0, len(options))

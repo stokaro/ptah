@@ -401,3 +401,45 @@ func TestToolBytes_CountsWhatWasHandedBack(t *testing.T) {
 	c.Assert(result.ToolBytes(), qt.Equals, len(result.Tools[0].Result))
 	c.Assert(result.ToolBytes() > 0, qt.IsTrue)
 }
+
+func TestUsedTools_AFailedCallIsNotAnAnswer(t *testing.T) {
+	// `verified` and the "-- No Ptah tool answered" line are the difference
+	// between an answer Ptah stands behind and a model talking about databases
+	// in general. A refused call is Ptah answering nothing, and reporting it as
+	// verified would put the reassuring label on exactly the run that needs the
+	// other one.
+	tests := []struct {
+		name     string
+		records  []assistloop.ToolRecord
+		verified bool
+	}{
+		{name: "nothing ran", records: nil, verified: false},
+		{
+			name:     "the only call failed",
+			records:  []assistloop.ToolRecord{{Name: "apply_patch", Failed: true}},
+			verified: false,
+		},
+		{
+			name:     "one answered",
+			records:  []assistloop.ToolRecord{{Name: "read_artifact"}},
+			verified: true,
+		},
+		{
+			name: "one answered and one failed",
+			records: []assistloop.ToolRecord{
+				{Name: "read_artifact"},
+				{Name: "apply_patch", Failed: true},
+			},
+			verified: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			result := assistloop.Result{Tools: test.records}
+
+			c.Assert(result.UsedTools(), qt.Equals, test.verified)
+		})
+	}
+}

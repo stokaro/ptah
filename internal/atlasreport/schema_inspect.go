@@ -14,6 +14,7 @@ import (
 	"go.5x5.cz/ptah/core/renderer"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlashclrender"
+	"go.5x5.cz/ptah/internal/dbmlrender"
 	"go.5x5.cz/ptah/internal/schemaviz"
 )
 
@@ -273,6 +274,9 @@ func NormalizeSchemaInspectFormat(format string) (string, error) {
 	if trimmed == "json" {
 		return "{{ json . }}", nil
 	}
+	if trimmed == "dbml" {
+		return "{{ dbml . }}", nil
+	}
 	return format, nil
 }
 
@@ -291,6 +295,7 @@ func newAtlasSchemaInspectTemplate(
 		"hcl":       atlasSchemaInspectHCL,
 		"json":      atlasTemplateJSON,
 		"mermaid":   atlasSchemaInspectMermaid,
+		"dbml":      atlasSchemaInspectDBML,
 		"sql":       atlasSchemaInspectSQL,
 		"split": func(args ...any) (schemaInspectArchive, error) {
 			return atlasSchemaInspectSplit(report.defaultSchemaName(), args...)
@@ -405,6 +410,45 @@ func atlasSchemaInspectHCL(report *SchemaInspectReport) (string, error) {
 
 func atlasSchemaInspectSQL(report *SchemaInspectReport, indent ...string) (string, error) {
 	return report.MarshalSQL(indent...)
+}
+
+// MarshalDBML writes the inspected schema as DBML.
+//
+// It reads the same source MarshalSQL does, so the two formats describe one
+// inspection rather than two.
+//
+// Today that choice is unobservable and is made anyway. [sqlSource] differs
+// from r.db in exactly one way -- it drops the schema rows where SQL drops them
+// -- and dbmlrender never reads them, because DBML has no schema declaration.
+// So a mutant swapping one for the other survives, and no fixture can separate
+// them; it is an equivalent branch rather than an untested one. It stays
+// sqlSource because the day DBML learns to name a schema is the day the two
+// formats would otherwise start describing different databases, and the reason
+// to pick the right source is strongest while nothing forces it.
+//
+// What DBML cannot carry is not reported here. This returns a document; the
+// caller decides where a warning goes, and a renderer that wrote one into its
+// own output would be writing it into the artifact.
+func (r *SchemaInspectReport) MarshalDBML() (string, error) {
+	rendered, err := dbmlrender.Render(r.sqlSource(), dbmlrender.Options{})
+	if err != nil {
+		return "", fmt.Errorf("render DBML: %w", err)
+	}
+	return rendered.DBML, nil
+}
+
+// OmittedByDBML names the object families the inspected schema holds and DBML
+// has no syntax for, so a caller can report the loss beside the document.
+func (r *SchemaInspectReport) OmittedByDBML() ([]string, error) {
+	rendered, err := dbmlrender.Render(r.sqlSource(), dbmlrender.Options{})
+	if err != nil {
+		return nil, fmt.Errorf("render DBML: %w", err)
+	}
+	return rendered.Omitted, nil
+}
+
+func atlasSchemaInspectDBML(report *SchemaInspectReport, _ ...string) (string, error) {
+	return report.MarshalDBML()
 }
 
 func atlasSchemaInspectMermaid(report *SchemaInspectReport, _ ...string) (string, error) {

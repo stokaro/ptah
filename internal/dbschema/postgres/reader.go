@@ -481,6 +481,28 @@ func (r *Reader) generatedExpressionExpr() string {
 // earned on that target and the shorthand was not: a serial column is refused
 // while a CREATE SEQUENCE is rendered, so "has sequences" no longer implies
 // "can be asked which sequence a serial column owns" (stokaro/ptah#1856).
+// columnCommentExpr projects a column's own comment, where the target has the
+// catalog helper that reads one.
+//
+// information_schema has no column for it, so col_description over the
+// pg_attribute join this query already carries is the way to reach it without a
+// second query. That function is pg_catalog's, and a target emulating the
+// catalog does not necessarily have it: measured on Spanner through PGAdapter,
+// which builds pg_class and pg_attribute as views over information_schema and
+// answers `function col_description(bigint, bigint) does not exist` (SQLSTATE
+// 42883). The projection is one expression in a shared query, so its absence
+// took the whole column read with it rather than one field
+// (stokaro/ptah#2101).
+//
+// A target without the helper reports every comment empty, which is what it
+// was reporting before this column existed.
+func (r *Reader) columnCommentExpr() string {
+	if !r.caps.Has(capability.PostgresCatalogFunctions) {
+		return "'' AS column_comment"
+	}
+	return "COALESCE(col_description(cls.oid, a.attnum), '') AS column_comment"
+}
+
 func (r *Reader) ownedSequenceExpr() string {
 	if !r.caps.Has(capability.Sequences) || !r.caps.Has(capability.PostgresCatalogFunctions) {
 		return "'' AS owned_sequence_name"
@@ -589,6 +611,20 @@ func (r *Reader) constraintDefinitionExpr() string {
 // formattedTypeExpr renders the projection that spells a column's type the way
 // the server does, or a constant where pg_catalog's helpers do not resolve.
 //
+// A third shape reads it: a column whose type belongs to an extension. Such a
+// type is reported by information_schema as the bare category USER-DEFINED with
+// no modifier in any field, so vector(384) came back as vector and the
+// dimension -- the only part that makes the column indexable -- was gone. The
+// replay was then refused by the server with "column does not have dimensions"
+// while --dry-run against the source still answered "Schema is synced", because
+// both sides of that comparison read through this projection (stokaro/ptah#2121).
+//
+// atttypmod is what keeps that branch off everything else. An enum and a
+// composite type are USER-DEFINED too and carry -1, so their spelling does not
+// change; a domain is already covered by domain_name; and varchar and the other
+// sized built-ins are not USER-DEFINED at all, so the sized-type branches and
+// the SERIAL detection downstream stay where #1138 left them.
+//
 // The expression it replaces reads format_type inside a CASE that only an array
 // or a domain column takes. That is not enough on a catalog without the
 // function: the name is resolved before any row is, so a branch no row would
@@ -599,6 +635,7 @@ func (r *Reader) formattedTypeExpr() string {
 		return "'' AS formatted_type"
 	}
 	return `CASE WHEN data_type = 'ARRAY' OR col.domain_name IS NOT NULL
+				OR (data_type = 'USER-DEFINED' AND a.atttypmod <> -1)
 				THEN format_type(a.atttypid, a.atttypmod)
 				ELSE ''
 			END AS formatted_type`
@@ -667,6 +704,7 @@ func (r *Reader) readColumnsForSchema(schemaName string) (map[string][]types.DBC
 			` + r.generatedKindExpr() + `,
 			` + r.generatedExpressionExpr() + `,
 			COALESCE(a.attidentity, '') AS identity_kind,
+			` + r.columnCommentExpr() + `,
 			` + r.ownedSequenceExpr() + `
 		FROM information_schema.columns col
 		JOIN information_schema.tables tbl ON tbl.table_schema = col.table_schema
@@ -714,6 +752,7 @@ func (r *Reader) readColumnsForSchema(schemaName string) (map[string][]types.DBC
 			&generatedKind,
 			&generatedExpression,
 			&identityKind,
+			&col.Comment,
 			&ownedSequenceName,
 		)
 		if err != nil {

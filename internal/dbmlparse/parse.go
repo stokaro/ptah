@@ -12,6 +12,24 @@ type Options struct {
 	// File is the name diagnostics quote. Empty leaves them line and column
 	// only, which is what an in-memory document has.
 	File string
+	// OnDiagnostic receives one line per construct the document declares and
+	// the schema model cannot carry.
+	//
+	// A channel rather than a return value, because these are not failures:
+	// the document parses, the schema is usable, and something in it described
+	// the diagram or held seed rows rather than schema state. A caller that
+	// wants them prints them; a caller that does not passes nil and the parse
+	// is unchanged. What must NOT happen is the third option -- losing them
+	// with nowhere to say so (stokaro/ptah#2065).
+	OnDiagnostic func(string)
+}
+
+// diagnose reports a loss, if the caller asked to hear about them.
+func (o Options) diagnosef(format string, args ...any) {
+	if o.OnDiagnostic == nil {
+		return
+	}
+	o.OnDiagnostic(fmt.Sprintf(format, args...))
 }
 
 // Parse reads a DBML document into Ptah's schema model.
@@ -20,7 +38,7 @@ type Options struct {
 // mistakes reports the first rather than a cascade -- and the position it
 // reports is the token's own, not the parser's recovery point.
 func Parse(source string, opts Options) (*goschema.Database, error) {
-	p := &parser{lex: newLexer(source), file: opts.File, db: &goschema.Database{}}
+	p := &parser{lex: newLexer(source), opts: opts, file: opts.File, db: &goschema.Database{}}
 	if err := p.prime(); err != nil {
 		return nil, err
 	}
@@ -34,6 +52,7 @@ func Parse(source string, opts Options) (*goschema.Database, error) {
 
 type parser struct {
 	lex  *lexer
+	opts Options
 	file string
 	tok  token
 	db   *goschema.Database
@@ -83,20 +102,79 @@ func (p *parser) declaration() error {
 		return p.enum()
 	case "ref":
 		return p.ref()
-	case "project", "tablegroup", "note":
-		return p.skipPresentation()
+	case "project", "tablegroup", "note", "sticky note":
+		return p.presentation()
+	case "tablepartial":
+		return p.presentation()
+	case "records", "tablerecords":
+		return p.records()
+	case "use", "reuse", "include", "import":
+		// Multi-file composition is refused rather than skipped: a document
+		// that pulls in another one describes a schema this parser has not
+		// read, and carrying on would hand back a model missing whatever the
+		// other file declared -- silently, and looking complete.
+		return p.errorf(
+			"%s is not supported: this reads one document, so compose the schema in a single file",
+			strings.ToLower(p.tok.text))
 	default:
 		return p.errorf("unknown declaration %q", p.tok.text)
 	}
 }
 
-// skipPresentation consumes a construct that describes the diagram rather than
-// the database.
+// presentation consumes a construct that describes the diagram rather than the
+// database, and says so.
 //
 // Skipped rather than refused: a Project block or a TableGroup is legitimate
 // DBML that says nothing about schema state, and failing on one would make Ptah
-// reject documents dbdiagram itself writes. What is lost is reported by the
-// caller's loss policy rather than here.
+// reject documents dbdiagram itself writes. Diagnosed rather than dropped: a
+// reader who wrote one and finds it absent from the applied schema deserves to
+// have been told, and a loss with nowhere to say so is how a document and a
+// database quietly stop agreeing (stokaro/ptah#2065).
+func (p *parser) presentation() error {
+	kind := strings.ToLower(p.tok.text)
+	position := p.tok.position(p.file)
+	p.opts.diagnosef("%s: %s describes the diagram rather than the database, and is not applied", position, kind)
+	return p.skipPresentation()
+}
+
+// records consumes a seed-row block and says it was not applied.
+//
+// One diagnostic per block rather than one per row: a Records block holding a
+// thousand rows would otherwise bury everything else the parse reported, and
+// the fact a reader needs is that the block exists and did nothing, not how
+// large it was.
+//
+// Refused as data rather than converted: Ptah has managed data with its own
+// declaration, keys and safety gates, and quietly turning diagram seed rows
+// into rows a migration writes would apply data nobody asked to have applied.
+func (p *parser) records() error {
+	position := p.tok.position(p.file)
+	if err := p.advance(); err != nil {
+		return err
+	}
+	target := ""
+	if p.tok.kind == tokenWord || p.tok.kind == tokenQuoted {
+		_, name, err := p.qualifiedName()
+		if err != nil {
+			return err
+		}
+		target = name
+	}
+	p.opts.diagnosef(
+		"%s: records for %q are seed data, not schema, and are not applied; declare reference data if you want Ptah to manage rows",
+		position, target)
+	for p.tok.kind != tokenEOF && !p.isPunct("{") {
+		if err := p.advance(); err != nil {
+			return err
+		}
+	}
+	if p.tok.kind == tokenEOF {
+		return nil
+	}
+	return p.skipBlock()
+}
+
+// skipPresentation consumes a balanced construct without interpreting it.
 func (p *parser) skipPresentation() error {
 	for p.tok.kind != tokenEOF && !p.isPunct("{") {
 		if err := p.advance(); err != nil {

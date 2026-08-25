@@ -890,6 +890,11 @@ func (s *Session) expireOld() {
 // is the component that reports its own trouble.
 func (s *Session) record(event agentaudit.Event, outcome agentpolicy.Outcome) {
 	event.Capability = outcome.Request.String()
+	// The target and its class come from the request the broker answered, so
+	// every operation that names a database records which one without its call
+	// site having to remember (stokaro/ptah#2138).
+	event.Target = outcome.Request.TargetID
+	event.DatabaseClass = string(outcome.Request.Database)
 	event.Verdict = outcome.Decision.Verdict.String()
 	event.DecidedBy = outcome.Decision.Layer.String()
 	event.Approved = outcome.Approved
