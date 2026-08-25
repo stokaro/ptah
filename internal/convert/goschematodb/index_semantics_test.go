@@ -1,4 +1,4 @@
-package schemafile_test
+package goschematodb_test
 
 import (
 	"testing"
@@ -8,7 +8,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
-	"go.5x5.cz/ptah/internal/schemafile"
+	"go.5x5.cz/ptah/internal/convert/goschematodb"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
@@ -51,7 +51,7 @@ func postgresIndexDatabase() *goschema.Database {
 func TestToDBSchema_CarriesPostgresIndexSemantics(t *testing.T) {
 	c := qt.New(t)
 
-	got := schemafile.ToDBSchema(postgresIndexDatabase(), platform.Postgres)
+	got := goschematodb.ToDBSchema(postgresIndexDatabase(), platform.Postgres)
 
 	c.Assert(got.Indexes, qt.HasLen, 1)
 	index := got.Indexes[0]
@@ -72,7 +72,7 @@ func TestToDBSchema_PostgresIndexSemanticsAreIdempotent(t *testing.T) {
 	c := qt.New(t)
 	db := postgresIndexDatabase()
 
-	current := schemafile.ToDBSchema(db, platform.Postgres)
+	current := goschematodb.ToDBSchema(db, platform.Postgres)
 	diff := schemadiff.CompareWithDialect(db, current, platform.Postgres)
 
 	c.Assert(diff.IndexAdditions(), qt.HasLen, 0)
@@ -101,7 +101,7 @@ func TestToDBSchema_ClickHouseSkippingIndexTypeIsNotAnAccessMethod(t *testing.T)
 	}
 	goschema.Finalize(db)
 
-	got := schemafile.ToDBSchema(db, platform.ClickHouse)
+	got := goschematodb.ToDBSchema(db, platform.ClickHouse)
 
 	c.Assert(got.Indexes, qt.HasLen, 1)
 	c.Assert(got.Indexes[0].Method, qt.Equals, "")

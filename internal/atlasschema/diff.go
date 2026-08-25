@@ -17,6 +17,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlassource"
 	"go.5x5.cz/ptah/internal/clickhouserbac"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
+	"go.5x5.cz/ptah/internal/convert/goschematodb"
 	"go.5x5.cz/ptah/internal/crdbttl"
 	"go.5x5.cz/ptah/internal/schemafile"
 	"go.5x5.cz/ptah/internal/schemaselection"
@@ -438,7 +439,7 @@ func scopeDiffState(
 	if state.DB == nil {
 		return scopedDiffState{
 			schema:       generated,
-			database:     schemafile.ToDBSchema(generated, dialect),
+			database:     goschematodb.ToDBSchema(generated, dialect),
 			report:       generatedReports.Exclude,
 			selection:    generatedReports.Selection,
 			selectionErr: generatedErr,
