@@ -3,26 +3,24 @@ package query
 import (
 	"slices"
 	"strings"
-
-	"go.5x5.cz/ptah/core/ast"
 )
 
-// SelectBuilder builds an *ast.SelectStatement through a fluent, chainable API.
+// SelectBuilder builds a *SelectStatement through a fluent, chainable API.
 //
 // A zero SelectBuilder is not meant to be used directly; start with Select. Each
 // method mutates and returns the same builder for chaining. Build produces the
 // statement. Builders are not safe for concurrent use.
 type SelectBuilder struct {
-	with      []ast.CommonTableExpression
+	with      []CommonTableExpression
 	distinct  bool
-	columns   []ast.ResultColumn
+	columns   []ResultColumn
 	from      string
 	fromAlias string
-	joins     []ast.JoinClause
-	where     ast.Expression
-	groupBy   []ast.ColumnRef
-	having    ast.Expression
-	orderBy   []ast.OrderByClause
+	joins     []JoinClause
+	where     Expression
+	groupBy   []ColumnRef
+	having    Expression
+	orderBy   []OrderByClause
 	limit     *int64
 	offset    *int64
 }
@@ -36,10 +34,10 @@ func Select(columns ...string) *SelectBuilder {
 	b := &SelectBuilder{}
 	for _, name := range columns {
 		if name == "*" {
-			b.columns = append(b.columns, ast.ResultColumn{Star: true})
+			b.columns = append(b.columns, ResultColumn{Star: true})
 			continue
 		}
-		b.columns = append(b.columns, ast.ResultColumn{Name: name})
+		b.columns = append(b.columns, ResultColumn{Name: name})
 	}
 	return b
 }
@@ -51,41 +49,41 @@ func Select(columns ...string) *SelectBuilder {
 // an earlier one, and the bound values of all of them precede the outer query's
 // in the returned args.
 //
-// Only non-recursive CTEs are modeled; see [ast.SelectStatement].With.
+// Only non-recursive CTEs are modeled; see [SelectStatement].With.
 func (b *SelectBuilder) With(name string, query *SelectBuilder) *SelectBuilder {
 	if query == nil {
 		return b
 	}
-	b.with = append(b.with, ast.CommonTableExpression{Name: name, Query: query.Build()})
+	b.with = append(b.with, CommonTableExpression{Name: name, Query: query.Build()})
 	return b
 }
 
 // InQuery builds "column IN (SELECT …)", reading the candidate values from a
 // query rather than from a value list.
-func InQuery(column string, sub *SelectBuilder) ast.Expression {
+func InQuery(column string, sub *SelectBuilder) Expression {
 	if sub == nil {
 		return nil
 	}
-	return &ast.InExpr{Operand: &ast.ColumnRef{Name: column}, Subquery: sub.Build()}
+	return &InExpr{Operand: &ColumnRef{Name: column}, Subquery: sub.Build()}
 }
 
 // Exists builds "EXISTS (SELECT …)".
 //
 // The subquery's projection does not affect the test; EXISTS stops at the first
 // row whatever it selects.
-func Exists(sub *SelectBuilder) ast.Expression {
+func Exists(sub *SelectBuilder) Expression {
 	if sub == nil {
 		return nil
 	}
-	return &ast.ExistsExpr{Query: sub.Build()}
+	return &ExistsExpr{Query: sub.Build()}
 }
 
 // NotExists builds "NOT EXISTS (SELECT …)".
-func NotExists(sub *SelectBuilder) ast.Expression {
+func NotExists(sub *SelectBuilder) Expression {
 	if sub == nil {
 		return nil
 	}
-	return &ast.ExistsExpr{Query: sub.Build(), Negated: true}
+	return &ExistsExpr{Query: sub.Build(), Negated: true}
 }
 
 // From sets the source table for the query. It is required; rendering a
@@ -125,9 +123,9 @@ func (b *SelectBuilder) Distinct() *SelectBuilder {
 // Exprs appends expression projection entries — typically aggregates built with
 // Count, Sum, and friends — to the SELECT list, in the order given across calls.
 // Use ExprAs to attach an output-column alias.
-func (b *SelectBuilder) Exprs(exprs ...ast.Expression) *SelectBuilder {
+func (b *SelectBuilder) Exprs(exprs ...Expression) *SelectBuilder {
 	for _, expr := range exprs {
-		b.columns = append(b.columns, ast.ResultColumn{Expr: expr})
+		b.columns = append(b.columns, ResultColumn{Expr: expr})
 	}
 	return b
 }
@@ -135,40 +133,40 @@ func (b *SelectBuilder) Exprs(exprs ...ast.Expression) *SelectBuilder {
 // ExprAs appends a single expression projection entry with an output-column
 // alias, rendering as `<expr> AS "alias"`. It is the aliased counterpart to
 // Exprs, for example ExprAs(query.CountStar(), "n") to project COUNT(*) AS "n".
-func (b *SelectBuilder) ExprAs(expr ast.Expression, alias string) *SelectBuilder {
-	b.columns = append(b.columns, ast.ResultColumn{Expr: expr, Alias: alias})
+func (b *SelectBuilder) ExprAs(expr Expression, alias string) *SelectBuilder {
+	b.columns = append(b.columns, ResultColumn{Expr: expr, Alias: alias})
 	return b
 }
 
 // InnerJoin appends an INNER JOIN of table (with an optional alias) on the given
 // condition. Build the condition from qualified columns, for example
 // Col("o", "user_id").EqCol(Col("u", "id")). An empty alias joins the bare table.
-func (b *SelectBuilder) InnerJoin(table, alias string, on ast.Expression) *SelectBuilder {
-	return b.join(ast.JoinInner, table, alias, on)
+func (b *SelectBuilder) InnerJoin(table, alias string, on Expression) *SelectBuilder {
+	return b.join(JoinInner, table, alias, on)
 }
 
 // LeftJoin appends a LEFT OUTER JOIN of table (with an optional alias) on the
 // given condition.
-func (b *SelectBuilder) LeftJoin(table, alias string, on ast.Expression) *SelectBuilder {
-	return b.join(ast.JoinLeft, table, alias, on)
+func (b *SelectBuilder) LeftJoin(table, alias string, on Expression) *SelectBuilder {
+	return b.join(JoinLeft, table, alias, on)
 }
 
 // RightJoin appends a RIGHT OUTER JOIN of table (with an optional alias) on the
 // given condition. RenderSelect rejects a RIGHT JOIN on SQLite.
-func (b *SelectBuilder) RightJoin(table, alias string, on ast.Expression) *SelectBuilder {
-	return b.join(ast.JoinRight, table, alias, on)
+func (b *SelectBuilder) RightJoin(table, alias string, on Expression) *SelectBuilder {
+	return b.join(JoinRight, table, alias, on)
 }
 
 // FullJoin appends a FULL OUTER JOIN of table (with an optional alias) on the
 // given condition. RenderSelect rejects a FULL OUTER JOIN on SQLite.
-func (b *SelectBuilder) FullJoin(table, alias string, on ast.Expression) *SelectBuilder {
-	return b.join(ast.JoinFull, table, alias, on)
+func (b *SelectBuilder) FullJoin(table, alias string, on Expression) *SelectBuilder {
+	return b.join(JoinFull, table, alias, on)
 }
 
 // join appends a join clause of the given type. It is shared by the exported
 // per-type join methods.
-func (b *SelectBuilder) join(joinType ast.JoinType, table, alias string, on ast.Expression) *SelectBuilder {
-	b.joins = append(b.joins, ast.JoinClause{
+func (b *SelectBuilder) join(joinType JoinType, table, alias string, on Expression) *SelectBuilder {
+	b.joins = append(b.joins, JoinClause{
 		Type:  joinType,
 		Table: table,
 		Alias: alias,
@@ -179,7 +177,7 @@ func (b *SelectBuilder) join(joinType ast.JoinType, table, alias string, on ast.
 
 // Where sets the filter expression. Calling Where again replaces the previous
 // expression; compose multiple conditions with And, Or, and Not.
-func (b *SelectBuilder) Where(expr ast.Expression) *SelectBuilder {
+func (b *SelectBuilder) Where(expr Expression) *SelectBuilder {
 	b.where = expr
 	return b
 }
@@ -198,14 +196,14 @@ func (b *SelectBuilder) GroupBy(columns ...Column) *SelectBuilder {
 // after the WHERE clause. Calling Having again replaces the previous expression;
 // compare an aggregate against a bound value with Expr, for example
 // Expr(query.CountStar()).Gt(int64(5)), and compose with And, Or, and Not.
-func (b *SelectBuilder) Having(expr ast.Expression) *SelectBuilder {
+func (b *SelectBuilder) Having(expr Expression) *SelectBuilder {
 	b.having = expr
 	return b
 }
 
 // OrderBy appends sort terms, applied in the order given across calls. Use Asc
 // and Desc to build terms.
-func (b *SelectBuilder) OrderBy(terms ...ast.OrderByClause) *SelectBuilder {
+func (b *SelectBuilder) OrderBy(terms ...OrderByClause) *SelectBuilder {
 	b.orderBy = append(b.orderBy, terms...)
 	return b
 }
@@ -224,10 +222,10 @@ func (b *SelectBuilder) Offset(n int64) *SelectBuilder {
 	return b
 }
 
-// Build returns the assembled *ast.SelectStatement. Render it with
-// renderer.RenderSelect.
-func (b *SelectBuilder) Build() *ast.SelectStatement {
-	return &ast.SelectStatement{
+// Build returns the assembled *SelectStatement. Render it with
+// RenderSelect.
+func (b *SelectBuilder) Build() *SelectStatement {
+	return &SelectStatement{
 		With:      b.with,
 		Distinct:  b.distinct,
 		Columns:   b.columns,
@@ -245,42 +243,42 @@ func (b *SelectBuilder) Build() *ast.SelectStatement {
 
 // comparison builds a "column <op> value" expression with the column as a quoted
 // identifier and the value bound as a parameter.
-func comparison(column string, op ast.ComparisonOperator, value any) ast.Expression {
-	return &ast.Comparison{
-		Left:     &ast.ColumnRef{Name: column},
+func comparison(column string, op ComparisonOperator, value any) Expression {
+	return &Comparison{
+		Left:     &ColumnRef{Name: column},
 		Operator: op,
-		Right:    &ast.BoundValue{Value: value},
+		Right:    &BoundValue{Value: value},
 	}
 }
 
 // Eq builds "column = value".
-func Eq(column string, value any) ast.Expression {
-	return comparison(column, ast.OpEqual, value)
+func Eq(column string, value any) Expression {
+	return comparison(column, OpEqual, value)
 }
 
 // Ne builds "column <> value".
-func Ne(column string, value any) ast.Expression {
-	return comparison(column, ast.OpNotEqual, value)
+func Ne(column string, value any) Expression {
+	return comparison(column, OpNotEqual, value)
 }
 
 // Lt builds "column < value".
-func Lt(column string, value any) ast.Expression {
-	return comparison(column, ast.OpLessThan, value)
+func Lt(column string, value any) Expression {
+	return comparison(column, OpLessThan, value)
 }
 
 // Le builds "column <= value".
-func Le(column string, value any) ast.Expression {
-	return comparison(column, ast.OpLessThanOrEqual, value)
+func Le(column string, value any) Expression {
+	return comparison(column, OpLessThanOrEqual, value)
 }
 
 // Gt builds "column > value".
-func Gt(column string, value any) ast.Expression {
-	return comparison(column, ast.OpGreaterThan, value)
+func Gt(column string, value any) Expression {
+	return comparison(column, OpGreaterThan, value)
 }
 
 // Ge builds "column >= value".
-func Ge(column string, value any) ast.Expression {
-	return comparison(column, ast.OpGreaterThanOrEqual, value)
+func Ge(column string, value any) Expression {
+	return comparison(column, OpGreaterThanOrEqual, value)
 }
 
 // Like builds "column LIKE pattern", binding the pattern as a parameter.
@@ -296,14 +294,14 @@ func Ge(column string, value any) ast.Expression {
 // follows the column's collation and usually does not, and SQLite folds ASCII.
 // A query relying on one behavior is relying on that engine, not on this
 // builder (stokaro/ptah#941).
-func Like(column, pattern string) ast.Expression {
-	return comparison(column, ast.OpLike, pattern)
+func Like(column, pattern string) Expression {
+	return comparison(column, OpLike, pattern)
 }
 
 // NotLike builds "column NOT LIKE pattern". See [Like] on wildcards and on
 // case sensitivity.
-func NotLike(column, pattern string) ast.Expression {
-	return comparison(column, ast.OpNotLike, pattern)
+func NotLike(column, pattern string) Expression {
+	return comparison(column, OpNotLike, pattern)
 }
 
 // Func builds a call to name with args, for the functions this package has no
@@ -317,8 +315,8 @@ func NotLike(column, pattern string) ast.Expression {
 //
 //	query.Func("COALESCE", query.ColExpr("nick"), query.Value("anon"))
 //	// COALESCE("nick", $1)
-func Func(name string, args ...ast.Expression) ast.Expression {
-	return &ast.FuncCall{Name: name, Args: slices.Clone(args)}
+func Func(name string, args ...Expression) Expression {
+	return &FuncCall{Name: name, Args: slices.Clone(args)}
 }
 
 // ColExpr is a column reference usable as a function argument or an arithmetic
@@ -328,34 +326,34 @@ func Func(name string, args ...ast.Expression) ast.Expression {
 // GROUP BY term takes. The two are different positions in the grammar and
 // giving them one name would let a caller pass the wrong one and find out at
 // the type checker rather than at the point of confusion.
-func ColExpr(name string) ast.Expression { return &ast.ColumnRef{Name: name} }
+func ColExpr(name string) Expression { return &ColumnRef{Name: name} }
 
 // Value is a bound value usable as a function argument or an arithmetic
 // operand. It is never interpolated into the statement text.
-func Value(v any) ast.Expression { return &ast.BoundValue{Value: v} }
+func Value(v any) Expression { return &BoundValue{Value: v} }
 
 // Add, Sub, Mul, Div and Mod build binary arithmetic expressions.
 //
 // Each renders parenthesized, so the tree the caller built is the expression
 // the server evaluates rather than one its precedence rules recover. See
-// [go.5x5.cz/ptah/core/ast.Arithmetic].
-func Add(left, right ast.Expression) ast.Expression { return arith(left, ast.OpAdd, right) }
+// [Arithmetic].
+func Add(left, right Expression) Expression { return arith(left, OpAdd, right) }
 
 // Sub builds "(left - right)". See [Add].
-func Sub(left, right ast.Expression) ast.Expression { return arith(left, ast.OpSubtract, right) }
+func Sub(left, right Expression) Expression { return arith(left, OpSubtract, right) }
 
 // Mul builds "(left * right)". See [Add].
-func Mul(left, right ast.Expression) ast.Expression { return arith(left, ast.OpMultiply, right) }
+func Mul(left, right Expression) Expression { return arith(left, OpMultiply, right) }
 
 // Div builds "(left / right)". See [Add].
-func Div(left, right ast.Expression) ast.Expression { return arith(left, ast.OpDivide, right) }
+func Div(left, right Expression) Expression { return arith(left, OpDivide, right) }
 
 // Mod builds "(left %% right)". Its spelling is portable and its result for a
-// negative operand is not; see [go.5x5.cz/ptah/core/ast.OpModulo].
-func Mod(left, right ast.Expression) ast.Expression { return arith(left, ast.OpModulo, right) }
+// negative operand is not; see [OpModulo].
+func Mod(left, right Expression) Expression { return arith(left, OpModulo, right) }
 
-func arith(left ast.Expression, op ast.ArithmeticOperator, right ast.Expression) ast.Expression {
-	return &ast.Arithmetic{Left: left, Operator: op, Right: right}
+func arith(left Expression, op ArithmeticOperator, right Expression) Expression {
+	return &Arithmetic{Left: left, Operator: op, Right: right}
 }
 
 // Over turns a function call into a window function.
@@ -375,12 +373,12 @@ func arith(left ast.Expression, op ast.ArithmeticOperator, right ast.Expression)
 // No frame clause is emitted. Without one the engine applies its default, which
 // is what an unframed window means everywhere; guessing a frame would change
 // results.
-func Over(call ast.Expression, options ...WindowOption) ast.Expression {
-	fn, ok := call.(*ast.FuncCall)
+func Over(call Expression, options ...WindowOption) Expression {
+	fn, ok := call.(*FuncCall)
 	if !ok {
 		return call
 	}
-	spec := &ast.WindowSpec{}
+	spec := &WindowSpec{}
 	for _, option := range options {
 		option(spec)
 	}
@@ -389,31 +387,31 @@ func Over(call ast.Expression, options ...WindowOption) ast.Expression {
 }
 
 // WindowOption configures the OVER clause built by [Over].
-type WindowOption func(*ast.WindowSpec)
+type WindowOption func(*WindowSpec)
 
 // Partition adds PARTITION BY columns to a window.
 func Partition(columns ...string) WindowOption {
-	return func(spec *ast.WindowSpec) {
+	return func(spec *WindowSpec) {
 		for _, name := range columns {
-			spec.PartitionBy = append(spec.PartitionBy, ast.ColumnRef{Name: name})
+			spec.PartitionBy = append(spec.PartitionBy, ColumnRef{Name: name})
 		}
 	}
 }
 
 // OrderAsc adds ascending ORDER BY terms to a window.
 func OrderAsc(columns ...string) WindowOption {
-	return windowOrder(ast.SortAscending, columns)
+	return windowOrder(SortAscending, columns)
 }
 
 // OrderDesc adds descending ORDER BY terms to a window.
 func OrderDesc(columns ...string) WindowOption {
-	return windowOrder(ast.SortDescending, columns)
+	return windowOrder(SortDescending, columns)
 }
 
-func windowOrder(direction ast.SortDirection, columns []string) WindowOption {
-	return func(spec *ast.WindowSpec) {
+func windowOrder(direction SortDirection, columns []string) WindowOption {
+	return func(spec *WindowSpec) {
 		for _, name := range columns {
-			spec.OrderBy = append(spec.OrderBy, ast.OrderByClause{Column: name, Direction: direction})
+			spec.OrderBy = append(spec.OrderBy, OrderByClause{Column: name, Direction: direction})
 		}
 	}
 }
@@ -422,54 +420,54 @@ func windowOrder(direction ast.SortDirection, columns []string) WindowOption {
 // values slice must be non-empty; rendering an empty IN returns an error. The
 // generic element type lets callers pass, for example, []string or []int64
 // without converting to []any.
-func In[T any](column string, values []T) ast.Expression {
-	bound := make([]ast.Expression, len(values))
+func In[T any](column string, values []T) Expression {
+	bound := make([]Expression, len(values))
 	for i, v := range values {
-		bound[i] = &ast.BoundValue{Value: v}
+		bound[i] = &BoundValue{Value: v}
 	}
-	return &ast.InExpr{
-		Operand: &ast.ColumnRef{Name: column},
+	return &InExpr{
+		Operand: &ColumnRef{Name: column},
 		Values:  bound,
 	}
 }
 
 // IsNull builds "column IS NULL".
-func IsNull(column string) ast.Expression {
-	return &ast.NullTest{Operand: &ast.ColumnRef{Name: column}}
+func IsNull(column string) Expression {
+	return &NullTest{Operand: &ColumnRef{Name: column}}
 }
 
 // IsNotNull builds "column IS NOT NULL".
-func IsNotNull(column string) ast.Expression {
-	return &ast.NullTest{Operand: &ast.ColumnRef{Name: column}, Negated: true}
+func IsNotNull(column string) Expression {
+	return &NullTest{Operand: &ColumnRef{Name: column}, Negated: true}
 }
 
 // And combines expressions with AND. The renderer parenthesizes the result, so
 // it composes safely inside Or and Not.
-func And(exprs ...ast.Expression) ast.Expression {
-	return &ast.LogicalExpr{Operator: ast.LogicalAnd, Operands: exprs}
+func And(exprs ...Expression) Expression {
+	return &LogicalExpr{Operator: LogicalAnd, Operands: exprs}
 }
 
 // Or combines expressions with OR. The renderer parenthesizes the result, so it
 // composes safely inside And and Not.
-func Or(exprs ...ast.Expression) ast.Expression {
-	return &ast.LogicalExpr{Operator: ast.LogicalOr, Operands: exprs}
+func Or(exprs ...Expression) Expression {
+	return &LogicalExpr{Operator: LogicalOr, Operands: exprs}
 }
 
 // Not negates an expression, rendering as "NOT (expr)".
-func Not(expr ast.Expression) ast.Expression {
-	return &ast.NotExpr{Operand: expr}
+func Not(expr Expression) Expression {
+	return &NotExpr{Operand: expr}
 }
 
 // aggregate builds a single-argument aggregate function call over a bare column,
 // as in SUM("column"). It backs the bare-column aggregate constructors.
-func aggregate(name, column string) ast.Expression {
-	return &ast.FuncCall{Name: name, Args: []ast.Expression{&ast.ColumnRef{Name: column}}}
+func aggregate(name, column string) Expression {
+	return &FuncCall{Name: name, Args: []Expression{&ColumnRef{Name: column}}}
 }
 
 // CountStar builds the COUNT(*) aggregate, counting all rows. It is usable in a
 // projection (via Exprs or ExprAs) and in a HAVING comparison (via Expr).
-func CountStar() ast.Expression {
-	return &ast.FuncCall{Name: "COUNT", Star: true}
+func CountStar() Expression {
+	return &FuncCall{Name: "COUNT", Star: true}
 }
 
 // Count builds COUNT("column"), counting the non-null values of a bare column.
@@ -477,7 +475,7 @@ func CountStar() ast.Expression {
 // the invalid COUNT("*") over a column literally named "*". Use
 // Col(table, name).Count for a qualified column, and CountStar as the primary way
 // to count all rows.
-func Count(column string) ast.Expression {
+func Count(column string) Expression {
 	if strings.TrimSpace(column) == "*" {
 		return CountStar()
 	}
@@ -486,69 +484,69 @@ func Count(column string) ast.Expression {
 
 // CountDistinct builds COUNT(DISTINCT "column") over a bare column. Use
 // Col(table, name).CountDistinct for a qualified column.
-func CountDistinct(column string) ast.Expression {
-	return &ast.FuncCall{Name: "COUNT", Args: []ast.Expression{&ast.ColumnRef{Name: column}}, Distinct: true}
+func CountDistinct(column string) Expression {
+	return &FuncCall{Name: "COUNT", Args: []Expression{&ColumnRef{Name: column}}, Distinct: true}
 }
 
 // Sum builds SUM("column") over a bare column.
-func Sum(column string) ast.Expression { return aggregate("SUM", column) }
+func Sum(column string) Expression { return aggregate("SUM", column) }
 
 // Avg builds AVG("column") over a bare column.
-func Avg(column string) ast.Expression { return aggregate("AVG", column) }
+func Avg(column string) Expression { return aggregate("AVG", column) }
 
 // Min builds MIN("column") over a bare column.
-func Min(column string) ast.Expression { return aggregate("MIN", column) }
+func Min(column string) Expression { return aggregate("MIN", column) }
 
 // Max builds MAX("column") over a bare column.
-func Max(column string) ast.Expression { return aggregate("MAX", column) }
+func Max(column string) Expression { return aggregate("MAX", column) }
 
 // ExprCompare adapts an expression — typically an aggregate produced by Count,
 // Sum, and friends — so it can be compared against a bound value, the usual shape
 // of a HAVING predicate. Build one with Expr. It mirrors the comparison helpers
 // on Column, but its left operand is any expression rather than a column.
 type ExprCompare struct {
-	left ast.Expression
+	left Expression
 }
 
 // Expr wraps an expression so it can be compared against a bound value with the
 // methods on ExprCompare, for example Expr(query.CountStar()).Gt(int64(5)) as a
 // HAVING predicate. The result composes with And, Or, and Not like any other
 // expression.
-func Expr(left ast.Expression) ExprCompare {
+func Expr(left Expression) ExprCompare {
 	return ExprCompare{left: left}
 }
 
 // compare builds "expr <op> value" with the value bound as a parameter.
-func (e ExprCompare) compare(op ast.ComparisonOperator, value any) ast.Expression {
-	return &ast.Comparison{Left: e.left, Operator: op, Right: &ast.BoundValue{Value: value}}
+func (e ExprCompare) compare(op ComparisonOperator, value any) Expression {
+	return &Comparison{Left: e.left, Operator: op, Right: &BoundValue{Value: value}}
 }
 
 // Eq builds "expr = value", binding value as a parameter.
-func (e ExprCompare) Eq(value any) ast.Expression { return e.compare(ast.OpEqual, value) }
+func (e ExprCompare) Eq(value any) Expression { return e.compare(OpEqual, value) }
 
 // Ne builds "expr <> value", binding value as a parameter.
-func (e ExprCompare) Ne(value any) ast.Expression { return e.compare(ast.OpNotEqual, value) }
+func (e ExprCompare) Ne(value any) Expression { return e.compare(OpNotEqual, value) }
 
 // Lt builds "expr < value", binding value as a parameter.
-func (e ExprCompare) Lt(value any) ast.Expression { return e.compare(ast.OpLessThan, value) }
+func (e ExprCompare) Lt(value any) Expression { return e.compare(OpLessThan, value) }
 
 // Le builds "expr <= value", binding value as a parameter.
-func (e ExprCompare) Le(value any) ast.Expression { return e.compare(ast.OpLessThanOrEqual, value) }
+func (e ExprCompare) Le(value any) Expression { return e.compare(OpLessThanOrEqual, value) }
 
 // Gt builds "expr > value", binding value as a parameter.
-func (e ExprCompare) Gt(value any) ast.Expression { return e.compare(ast.OpGreaterThan, value) }
+func (e ExprCompare) Gt(value any) Expression { return e.compare(OpGreaterThan, value) }
 
 // Ge builds "expr >= value", binding value as a parameter.
-func (e ExprCompare) Ge(value any) ast.Expression { return e.compare(ast.OpGreaterThanOrEqual, value) }
+func (e ExprCompare) Ge(value any) Expression { return e.compare(OpGreaterThanOrEqual, value) }
 
 // Asc builds an ascending ORDER BY term for column.
-func Asc(column string) ast.OrderByClause {
-	return ast.OrderByClause{Column: column, Direction: ast.SortAscending}
+func Asc(column string) OrderByClause {
+	return OrderByClause{Column: column, Direction: SortAscending}
 }
 
 // Desc builds a descending ORDER BY term for column.
-func Desc(column string) ast.OrderByClause {
-	return ast.OrderByClause{Column: column, Direction: ast.SortDescending}
+func Desc(column string) OrderByClause {
+	return OrderByClause{Column: column, Direction: SortDescending}
 }
 
 // Column is a reference to a column, optionally qualified by a table name or
@@ -573,96 +571,96 @@ func Col(qualifier, name string) Column {
 }
 
 // columnRef returns the AST node for the column, used as a comparison operand.
-func (c Column) columnRef() *ast.ColumnRef {
-	return &ast.ColumnRef{Qualifier: c.qualifier, Name: c.name}
+func (c Column) columnRef() *ColumnRef {
+	return &ColumnRef{Qualifier: c.qualifier, Name: c.name}
 }
 
 // resultColumn returns the projection entry for the column.
-func (c Column) resultColumn() ast.ResultColumn {
-	return ast.ResultColumn{Qualifier: c.qualifier, Name: c.name}
+func (c Column) resultColumn() ResultColumn {
+	return ResultColumn{Qualifier: c.qualifier, Name: c.name}
 }
 
 // compareValue builds "column <op> value" with the value bound as a parameter.
-func (c Column) compareValue(op ast.ComparisonOperator, value any) ast.Expression {
-	return &ast.Comparison{
+func (c Column) compareValue(op ComparisonOperator, value any) Expression {
+	return &Comparison{
 		Left:     c.columnRef(),
 		Operator: op,
-		Right:    &ast.BoundValue{Value: value},
+		Right:    &BoundValue{Value: value},
 	}
 }
 
 // Eq builds "column = value", binding value as a parameter.
-func (c Column) Eq(value any) ast.Expression { return c.compareValue(ast.OpEqual, value) }
+func (c Column) Eq(value any) Expression { return c.compareValue(OpEqual, value) }
 
 // Ne builds "column <> value", binding value as a parameter.
-func (c Column) Ne(value any) ast.Expression { return c.compareValue(ast.OpNotEqual, value) }
+func (c Column) Ne(value any) Expression { return c.compareValue(OpNotEqual, value) }
 
 // Lt builds "column < value", binding value as a parameter.
-func (c Column) Lt(value any) ast.Expression { return c.compareValue(ast.OpLessThan, value) }
+func (c Column) Lt(value any) Expression { return c.compareValue(OpLessThan, value) }
 
 // Le builds "column <= value", binding value as a parameter.
-func (c Column) Le(value any) ast.Expression { return c.compareValue(ast.OpLessThanOrEqual, value) }
+func (c Column) Le(value any) Expression { return c.compareValue(OpLessThanOrEqual, value) }
 
 // Gt builds "column > value", binding value as a parameter.
-func (c Column) Gt(value any) ast.Expression { return c.compareValue(ast.OpGreaterThan, value) }
+func (c Column) Gt(value any) Expression { return c.compareValue(OpGreaterThan, value) }
 
 // Ge builds "column >= value", binding value as a parameter.
-func (c Column) Ge(value any) ast.Expression { return c.compareValue(ast.OpGreaterThanOrEqual, value) }
+func (c Column) Ge(value any) Expression { return c.compareValue(OpGreaterThanOrEqual, value) }
 
 // EqCol builds "column = other", comparing two columns rather than a column and
 // a bound value. It is the common equi-join predicate for a join ON condition.
-func (c Column) EqCol(other Column) ast.Expression {
-	return &ast.Comparison{
+func (c Column) EqCol(other Column) Expression {
+	return &Comparison{
 		Left:     c.columnRef(),
-		Operator: ast.OpEqual,
+		Operator: OpEqual,
 		Right:    other.columnRef(),
 	}
 }
 
 // IsNull builds "column IS NULL".
-func (c Column) IsNull() ast.Expression {
-	return &ast.NullTest{Operand: c.columnRef()}
+func (c Column) IsNull() Expression {
+	return &NullTest{Operand: c.columnRef()}
 }
 
 // IsNotNull builds "column IS NOT NULL".
-func (c Column) IsNotNull() ast.Expression {
-	return &ast.NullTest{Operand: c.columnRef(), Negated: true}
+func (c Column) IsNotNull() Expression {
+	return &NullTest{Operand: c.columnRef(), Negated: true}
 }
 
 // Asc builds an ascending ORDER BY term for the column.
-func (c Column) Asc() ast.OrderByClause {
-	return ast.OrderByClause{Qualifier: c.qualifier, Column: c.name, Direction: ast.SortAscending}
+func (c Column) Asc() OrderByClause {
+	return OrderByClause{Qualifier: c.qualifier, Column: c.name, Direction: SortAscending}
 }
 
 // Desc builds a descending ORDER BY term for the column.
-func (c Column) Desc() ast.OrderByClause {
-	return ast.OrderByClause{Qualifier: c.qualifier, Column: c.name, Direction: ast.SortDescending}
+func (c Column) Desc() OrderByClause {
+	return OrderByClause{Qualifier: c.qualifier, Column: c.name, Direction: SortDescending}
 }
 
 // aggregate builds a single-argument aggregate function call over the qualified
 // column, as in SUM("u"."total"). It backs the qualified-column aggregate
 // methods.
-func (c Column) aggregate(name string) ast.Expression {
-	return &ast.FuncCall{Name: name, Args: []ast.Expression{c.columnRef()}}
+func (c Column) aggregate(name string) Expression {
+	return &FuncCall{Name: name, Args: []Expression{c.columnRef()}}
 }
 
 // Count builds COUNT over the qualified column, as in COUNT("u"."id").
-func (c Column) Count() ast.Expression { return c.aggregate("COUNT") }
+func (c Column) Count() Expression { return c.aggregate("COUNT") }
 
 // CountDistinct builds COUNT(DISTINCT …) over the qualified column, as in
 // COUNT(DISTINCT "u"."id").
-func (c Column) CountDistinct() ast.Expression {
-	return &ast.FuncCall{Name: "COUNT", Args: []ast.Expression{c.columnRef()}, Distinct: true}
+func (c Column) CountDistinct() Expression {
+	return &FuncCall{Name: "COUNT", Args: []Expression{c.columnRef()}, Distinct: true}
 }
 
 // Sum builds SUM over the qualified column, as in SUM("o"."total").
-func (c Column) Sum() ast.Expression { return c.aggregate("SUM") }
+func (c Column) Sum() Expression { return c.aggregate("SUM") }
 
 // Avg builds AVG over the qualified column.
-func (c Column) Avg() ast.Expression { return c.aggregate("AVG") }
+func (c Column) Avg() Expression { return c.aggregate("AVG") }
 
 // Min builds MIN over the qualified column.
-func (c Column) Min() ast.Expression { return c.aggregate("MIN") }
+func (c Column) Min() Expression { return c.aggregate("MIN") }
 
 // Max builds MAX over the qualified column.
-func (c Column) Max() ast.Expression { return c.aggregate("MAX") }
+func (c Column) Max() Expression { return c.aggregate("MAX") }

@@ -1011,20 +1011,10 @@ type AlterTableEnableRLSNode struct{ ... }
 type AlterTableNode struct{ ... }
 type AlterTypeNode struct{ ... }
     func NewAlterType(name string) *AlterTypeNode
-type Arithmetic struct{ ... }
-type ArithmeticOperator int
-    const OpAdd ArithmeticOperator = iota ...
-type Assignment struct{ ... }
-type BoundValue struct{ ... }
 type ColumnNode struct{ ... }
     func NewColumn(name, dataType string) *ColumnNode
-type ColumnRef struct{ ... }
 type CommentNode struct{ ... }
     func NewComment(text string) *CommentNode
-type CommonTableExpression struct{ ... }
-type Comparison struct{ ... }
-type ComparisonOperator int
-    const OpEqual ComparisonOperator = iota ...
 type CompositeAttributeOperation struct{ ... }
     func NewAddCompositeAttributeOperation(name, fieldType string) *CompositeAttributeOperation
     func NewDropCompositeAttributeOperation(name string) *CompositeAttributeOperation
@@ -1068,7 +1058,6 @@ type CreateTypeNode struct{ ... }
 type CreateViewNode struct{ ... }
     func NewCreateView(name string) *CreateViewNode
 type DefaultValue struct{ ... }
-type DeleteStatement struct{ ... }
 type DomainConstraintOperation struct{ ... }
     func NewAddDomainConstraintOperation(expression string) *DomainConstraintOperation
     func NewDropDomainConstraintOperation(name string) *DomainConstraintOperation
@@ -1112,8 +1101,6 @@ type EnumNode struct{ ... }
     func NewEnum(name string, values ...string) *EnumNode
 type EnumTypeDef struct{ ... }
     func NewEnumTypeDef(values ...string) *EnumTypeDef
-type ExistsExpr struct{ ... }
-type Expression interface{ ... }
 type ExtendedPropertyNode struct{ ... }
     func NewExtendedProperty(operation ExtendedPropertyOperation, name string) *ExtendedPropertyNode
 type ExtendedPropertyOperation string
@@ -1123,22 +1110,13 @@ type ExtensionAlteration string
 type ExtensionNode struct{ ... }
     func NewExtension(name string) *ExtensionNode
 type ForeignKeyRef struct{ ... }
-type FuncCall struct{ ... }
 type FunctionBodyKind string
     const FunctionBodyQuoted FunctionBodyKind = "quoted" ...
 type GrantPrivilegeNode struct{ ... }
     func NewGrantPrivilege(role, objectType, objectName string, privileges []string) *GrantPrivilegeNode
-type InExpr struct{ ... }
 type IndexNode struct{ ... }
     func NewIndex(name, table string, columns ...string) *IndexNode
 type IndexPart struct{ ... }
-type InsertStatement struct{ ... }
-type JoinClause struct{ ... }
-type JoinType int
-    const JoinInner JoinType = iota ...
-type LogicalExpr struct{ ... }
-type LogicalOperator int
-    const LogicalAnd LogicalOperator = iota ...
 type MatViewRefreshSpec struct{ ... }
 type ModifyColumnOperation struct{ ... }
 type ModifyTTLOperation struct{ ... }
@@ -1154,12 +1132,8 @@ type MySQLRoutineStatement struct{ ... }
 type MySQLRoutineStatementKind string
     const MySQLRoutineStatementRaw MySQLRoutineStatementKind = "raw" ...
 type Node interface{ ... }
-type NotExpr struct{ ... }
-type NullTest struct{ ... }
-type OnConflict struct{ ... }
 type OpaqueRoutineNode struct{ ... }
     func NewOpaqueRoutine(sql, dialect string, kind RoutineKind) *OpaqueRoutineNode
-type OrderByClause struct{ ... }
 type PartitionPart struct{ ... }
 type PartitionSpec struct{ ... }
 type PostgresDoBlockNode struct{ ... }
@@ -1183,7 +1157,6 @@ type RenameTableOperation struct{ ... }
 type RenameTypeOperation struct{ ... }
     func NewRenameTypeOperation(newName string) *RenameTypeOperation
 type ResetRowTTLOperation struct{ ... }
-type ResultColumn struct{ ... }
 type RevokePrivilegeNode struct{ ... }
     func NewRevokePrivilege(role, objectType, objectName string, privileges []string) *RevokePrivilegeNode
 type RoleOperation interface{ ... }
@@ -1199,7 +1172,6 @@ type SQLServerRoutineNode struct{ ... }
 type SQLServerRoutineStatement struct{ ... }
 type SQLServerRoutineStatementKind string
     const SQLServerRoutineStatementRaw SQLServerRoutineStatementKind = "raw" ...
-type SelectStatement struct{ ... }
 type SetCommentOperation struct{ ... }
 type SetCreateDBOperation struct{ ... }
     func NewSetCreateDBOperation(createDB bool) *SetCreateDBOperation
@@ -1217,17 +1189,13 @@ type SetRowDeletionPolicyOperation struct{ ... }
 type SetRowTTLOperation struct{ ... }
 type SetSuperuserOperation struct{ ... }
     func NewSetSuperuserOperation(superuser bool) *SetSuperuserOperation
-type SortDirection int
-    const SortAscending SortDirection = iota ...
 type StatementList struct{ ... }
 type TypeDefinition interface{ ... }
 type TypeOperation interface{ ... }
-type UpdateStatement struct{ ... }
 type UpsertAssignment struct{ ... }
 type UpsertNode struct{ ... }
     func NewUpsert(table string) *UpsertNode
 type Visitor interface{ ... }
-type WindowSpec struct{ ... }
 
 ### go.5x5.cz/ptah/core/ast.AddColumnOperation
 
@@ -1520,73 +1488,6 @@ func NewAlterType(name string) *AlterTypeNode
 func (n *AlterTypeNode) Accept(visitor Visitor) error
 func (n *AlterTypeNode) AddOperation(operation TypeOperation) *AlterTypeNode
 
-### go.5x5.cz/ptah/core/ast.Arithmetic
-
-package ast // import "go.5x5.cz/ptah/core/ast"
-
-type Arithmetic struct {
-    // Left is the left-hand operand.
-    Left Expression
-    // Operator is the arithmetic operator.
-    Operator ArithmeticOperator
-    // Right is the right-hand operand.
-    Right Expression
-}
-    Arithmetic is a binary arithmetic expression of the form "(Left <Operator>
-    Right)".
-
-    # Why it always renders its own parentheses
-
-    The node is a TREE and SQL is text, so `Mul(Add(a, b), c)` and `Add(a,
-    Mul(b, c))` have to render differently. Emitting them without parentheses
-    produces `a + b * c` for both, and the server then applies its own
-    precedence -- which agrees with one of the two trees and silently rewrites
-    the other. Parenthesizing every node costs a pair of characters and makes
-    the rendered text mean exactly what the caller built (stokaro/ptah#941).
-
-
-### go.5x5.cz/ptah/core/ast.ArithmeticOperator
-
-package ast // import "go.5x5.cz/ptah/core/ast"
-
-type ArithmeticOperator int
-    ArithmeticOperator enumerates the binary arithmetic operators.
-
-const OpAdd ArithmeticOperator = iota ...
-func (op ArithmeticOperator) String() string
-
-### go.5x5.cz/ptah/core/ast.Assignment
-
-package ast // import "go.5x5.cz/ptah/core/ast"
-
-type Assignment struct {
-    // Column is the target column name, rendered as a quoted identifier.
-    Column string
-    // Value is the assigned value expression, typically a BoundValue.
-    Value Expression
-}
-    Assignment is a single "column = value" pair in an UPDATE SET clause.
-
-    Column is rendered as a dialect-quoted identifier; Value is an ordinary
-    expression, so the query builder supplies a BoundValue and the value travels
-    to the database as a placeholder rather than inline SQL.
-
-
-### go.5x5.cz/ptah/core/ast.BoundValue
-
-package ast // import "go.5x5.cz/ptah/core/ast"
-
-type BoundValue struct {
-    // Value is the parameter value, bound positionally at render time.
-    Value any
-}
-    BoundValue is a parameter value.
-
-    The renderer emits a dialect-specific placeholder ($1, $2, … for PostgreSQL;
-    ? for MySQL, MariaDB, and SQLite) and appends Value to the returned argument
-    slice. The value is never interpolated into the SQL string.
-
-
 ### go.5x5.cz/ptah/core/ast.ColumnNode
 
 package ast // import "go.5x5.cz/ptah/core/ast"
@@ -1691,27 +1592,6 @@ func (n *ColumnNode) SetPrimary() *ColumnNode
 func (n *ColumnNode) SetUnique() *ColumnNode
 func (n *ColumnNode) SetUpdateExpression(expression string) *ColumnNode
 
-### go.5x5.cz/ptah/core/ast.ColumnRef
-
-package ast // import "go.5x5.cz/ptah/core/ast"
-
-type ColumnRef struct {
-    // Qualifier is the optional table name or alias qualifying the column. An
-    // empty Qualifier renders a bare column name. It is quoted independently of
-    // Name so neither part can break out of its quotes.
-    Qualifier string
-    // Name is the column name.
-    Name string
-}
-    ColumnRef is a reference to a column, optionally qualified by a table name
-    or alias.
-
-    A ColumnRef always renders as a dialect-quoted identifier and never
-    as literal SQL text, so an attacker-shaped name cannot terminate the
-    identifier. When Qualifier is set the column renders as "Qualifier"."Name",
-    each part quoted independently.
-
-
 ### go.5x5.cz/ptah/core/ast.CommentNode
 
 package ast // import "go.5x5.cz/ptah/core/ast"
@@ -1728,59 +1608,6 @@ type CommentNode struct {
 
 func NewComment(text string) *CommentNode
 func (n *CommentNode) Accept(visitor Visitor) error
-
-### go.5x5.cz/ptah/core/ast.CommonTableExpression
-
-package ast // import "go.5x5.cz/ptah/core/ast"
-
-type CommonTableExpression struct {
-    Name  string
-    Query *SelectStatement
-}
-    SelectStatement is a SELECT over a source table and zero or more joins,
-    with an optional DISTINCT, WHERE clause, GROUP BY / HAVING, ORDER BY terms,
-    and LIMIT/OFFSET bounds.
-
-    Subqueries, non-aggregate functions, arithmetic, and window functions are
-    not modeled yet. Render it with renderer.RenderSelect, which returns the SQL
-    string and its positional arguments. Build one fluently with the core/query
-    package. CommonTableExpression is one named subquery of a WITH clause.
-
-    Name is emitted as a quoted identifier and referenced from the outer query's
-    From (or a join) as a plain table name. Query is rendered in parentheses,
-    and its bound values are appended before the outer query's, which is what
-    keeps positional placeholders in the order the driver will read them.
-
-
-### go.5x5.cz/ptah/core/ast.Comparison
-
-package ast // import "go.5x5.cz/ptah/core/ast"
-
-type Comparison struct {
-    // Left is the left-hand operand.
-    Left Expression
-    // Operator is the comparison operator.
-    Operator ComparisonOperator
-    // Right is the right-hand operand.
-    Right Expression
-}
-    Comparison is a binary comparison of the form "Left <Operator> Right".
-
-    In Phase 1 the query builder produces a ColumnRef on the left and a
-    BoundValue on the right, but the node accepts any Expression on either side
-    so later phases can compare columns or expressions directly.
-
-
-### go.5x5.cz/ptah/core/ast.ComparisonOperator
-
-package ast // import "go.5x5.cz/ptah/core/ast"
-
-type ComparisonOperator int
-    ComparisonOperator enumerates the binary comparison operators supported in
-    Phase 1.
-
-const OpEqual ComparisonOperator = iota ...
-func (op ComparisonOperator) String() string
 
 ### go.5x5.cz/ptah/core/ast.CompositeAttributeOperation
 
@@ -2438,30 +2265,6 @@ type DefaultValue struct {
 
 func (d *DefaultValue) HasLiteral() bool
 
-### go.5x5.cz/ptah/core/ast.DeleteStatement
-
-package ast // import "go.5x5.cz/ptah/core/ast"
-
-type DeleteStatement struct {
-    // Table is the target table, rendered as a quoted identifier. Required.
-    Table string
-    // Where is the optional filter expression tree; nil means no WHERE clause. A
-    // nil Where is allowed only together with Unconditional.
-    Where Expression
-    // Unconditional opts in to a whole-table DELETE when Where is nil, exactly as
-    // on UpdateStatement.
-    Unconditional bool
-    // Returning is the optional RETURNING projection. See InsertStatement.Returning
-    // for the dialect support rules.
-    Returning []ColumnRef
-}
-    DeleteStatement is a DELETE FROM … over a single table, with an optional
-    WHERE clause and RETURNING projection.
-
-    Like UpdateStatement, a DELETE with no WHERE clause removes every row,
-    so the renderer rejects it unless Unconditional is set.
-
-
 ### go.5x5.cz/ptah/core/ast.DomainConstraintOperation
 
 package ast // import "go.5x5.cz/ptah/core/ast"
@@ -3020,38 +2823,6 @@ type EnumTypeDef struct {
 func NewEnumTypeDef(values ...string) *EnumTypeDef
 func (td *EnumTypeDef) Accept(visitor Visitor) error
 
-### go.5x5.cz/ptah/core/ast.ExistsExpr
-
-package ast // import "go.5x5.cz/ptah/core/ast"
-
-type ExistsExpr struct {
-    Query   *SelectStatement
-    Negated bool
-}
-    ExistsExpr is a row-existence test of the form "EXISTS (SELECT …)" or,
-    when Negated, "NOT EXISTS (SELECT …)".
-
-    The subquery's projection is irrelevant to the test but is still rendered as
-    written; EXISTS stops at the first row either way.
-
-
-### go.5x5.cz/ptah/core/ast.Expression
-
-package ast // import "go.5x5.cz/ptah/core/ast"
-
-type Expression interface {
-    // Has unexported methods.
-}
-    Expression is a boolean or scalar expression used in DML statements such as
-    the WHERE clause of a SELECT.
-
-    Expression is a sealed sum type: only the node types declared in this
-    package implement it. Sealing serves the query builder's core safety
-    property — a caller cannot smuggle a raw SQL string in as an expression,
-    and every value reaches the SQL through a BoundValue node (a placeholder),
-    never inlined.
-
-
 ### go.5x5.cz/ptah/core/ast.ExtendedPropertyNode
 
 package ast // import "go.5x5.cz/ptah/core/ast"
@@ -3193,52 +2964,6 @@ type ForeignKeyRef struct {
 
 func (f *ForeignKeyRef) ReferencedColumns() []string
 
-### go.5x5.cz/ptah/core/ast.FuncCall
-
-package ast // import "go.5x5.cz/ptah/core/ast"
-
-type FuncCall struct {
-    // Name is the function name, emitted verbatim as a keyword. Required. It must
-    // be a simple identifier — a letter or underscore followed by letters, digits,
-    // or underscores — and the renderer rejects anything else rather than quote a
-    // function name.
-    Name string
-    // Args are the function arguments, each an expression. A column argument is
-    // quoted; a value argument is bound. Ignored when Star is true.
-    Args []Expression
-    // Star renders the argument list as a single "*", as in COUNT(*). When Star is
-    // true, Args must be empty and Distinct must be false; the renderer rejects
-    // either combination rather than emit invalid SQL.
-    Star bool
-    // Distinct emits the DISTINCT keyword before the arguments, as in
-    // COUNT(DISTINCT "col").
-    Distinct bool
-    // Over turns the call into a window function: SUM("x") OVER (PARTITION BY
-    // "y" ORDER BY "z" ASC). Nil emits no OVER clause and the call is an
-    // ordinary one.
-    //
-    // A window function is legal wherever a projection expression is, and
-    // nowhere else -- notably not in WHERE, because the window is computed
-    // after the rows are filtered. The renderer does not enforce that: the
-    // engines report it clearly and in their own terms, and a builder-side rule
-    // would have to model where each clause sits rather than what it contains
-    // (stokaro/ptah#941).
-    Over *WindowSpec
-}
-    FuncCall is a function-call expression, such as an aggregate: COUNT(*),
-    COUNT("col"), COUNT(DISTINCT "col"), or SUM("col"). It is shaped as a
-    general function call so non-aggregate functions can reuse it in a later
-    phase.
-
-    The function is usable anywhere an Expression is: in a projection (via
-    ResultColumn.Expr) and in a HAVING comparison (as an operand of Comparison).
-    Name is a bare SQL keyword emitted verbatim, never quoted and never bound
-    — the renderer rejects a Name that is not a simple identifier so a caller
-    cannot smuggle SQL through it. Args are ordinary expressions, so a column
-    argument is quoted through the identifier path and a value argument is bound
-    as a placeholder.
-
-
 ### go.5x5.cz/ptah/core/ast.FunctionBodyKind
 
 package ast // import "go.5x5.cz/ptah/core/ast"
@@ -3272,29 +2997,6 @@ func NewGrantPrivilege(role, objectType, objectName string, privileges []string)
 func (n *GrantPrivilegeNode) Accept(visitor Visitor) error
 func (n *GrantPrivilegeNode) SetComment(comment string) *GrantPrivilegeNode
 func (n *GrantPrivilegeNode) SetWithOption(withOption bool) *GrantPrivilegeNode
-
-### go.5x5.cz/ptah/core/ast.InExpr
-
-package ast // import "go.5x5.cz/ptah/core/ast"
-
-type InExpr struct {
-    // Operand is the expression tested for membership, typically a ColumnRef.
-    Operand Expression
-    // Values are the candidate values, each bound as a placeholder. Exactly one
-    // of Values and Subquery must be set.
-    Values []Expression
-    // Subquery, when set, replaces Values and renders as
-    // "Operand IN (SELECT …)". The two are mutually exclusive rather than
-    // combined: a caller who set both would be describing two different
-    // membership tests, and picking one silently would answer a question that
-    // was never asked.
-    Subquery *SelectStatement
-}
-    InExpr is a membership test of the form "Operand IN (Values...)".
-
-    Values must be non-empty; the renderer rejects an empty list rather than
-    emitting the invalid "IN ()". Each value renders as its own placeholder.
-
 
 ### go.5x5.cz/ptah/core/ast.IndexNode
 
@@ -3389,110 +3091,6 @@ type IndexPart struct {
     list.
 
 func (p IndexPart) Reference() string
-
-### go.5x5.cz/ptah/core/ast.InsertStatement
-
-package ast // import "go.5x5.cz/ptah/core/ast"
-
-type InsertStatement struct {
-    // Table is the target table, rendered as a quoted identifier. Required.
-    Table string
-    // Columns is the inserted column list, each a quoted identifier. Required and
-    // non-empty; every row must supply exactly one value per column.
-    Columns []string
-    // Rows is the list of value rows. At least one row is required unless Select
-    // supplies the rows instead, and each row must have the same length as
-    // Columns. Values are bound row by row, in order.
-    Rows [][]Expression
-    // Select supplies the inserted rows from a query rather than from literal
-    // values: INSERT INTO t (a, b) SELECT x, y FROM u.
-    //
-    // It is mutually exclusive with Rows. A statement carrying both is a
-    // contradiction rather than a merge -- VALUES and SELECT are alternative
-    // sources in the grammar, and picking one silently would insert rows the
-    // caller did not ask for (stokaro/ptah#941).
-    //
-    // The query's projection must supply one expression per column. That is the
-    // server's rule rather than Ptah's, but it is checked here because the
-    // mismatch is a runtime error naming neither side, and the builder knows
-    // both.
-    Select *SelectStatement
-    // Returning is the optional RETURNING projection: the columns to return from
-    // the inserted rows. An empty slice emits no RETURNING. RETURNING is supported
-    // only on the PostgreSQL family and SQLite; the renderer rejects it on MySQL
-    // and MariaDB rather than emit SQL those engines cannot run.
-    Returning []ColumnRef
-    // OnConflict is the optional upsert clause. Nil emits none, and a row that
-    // collides then fails the statement as it always did.
-    OnConflict *OnConflict
-}
-    InsertStatement is an INSERT INTO … VALUES … over a single table, with one
-    or more value rows and an optional RETURNING projection.
-
-    Every element of every row is an expression — the query builder supplies a
-    BoundValue — so values are bound positionally at render time, row by row
-    and left to right, and never interpolated. The renderer rejects a statement
-    with no columns, no rows, or a row whose length does not match Columns,
-    rather than emit invalid SQL or panic on ragged input.
-
-
-### go.5x5.cz/ptah/core/ast.JoinClause
-
-package ast // import "go.5x5.cz/ptah/core/ast"
-
-type JoinClause struct {
-    // Type is the join type (INNER, LEFT, RIGHT, or FULL OUTER).
-    Type JoinType
-    // Table is the joined table name, rendered as a quoted identifier. Required.
-    Table string
-    // Alias is the optional alias for the joined table; empty means no alias.
-    Alias string
-    // On is the join condition; nil is rejected by the renderer.
-    On Expression
-}
-    JoinClause is a single join applied to the SELECT's FROM clause: a join
-    type, a target table with an optional alias, and an ON condition.
-
-    The ON condition reuses the Expression tree, so an equi-join is a Comparison
-    of two ColumnRef operands and richer predicates compose with LogicalExpr.
-    The ON expression is rendered through the same bound-parameter and
-    identifier quoting path as WHERE.
-
-
-### go.5x5.cz/ptah/core/ast.JoinType
-
-package ast // import "go.5x5.cz/ptah/core/ast"
-
-type JoinType int
-    JoinType enumerates the join kinds supported in Phase 2.
-
-const JoinInner JoinType = iota ...
-func (t JoinType) String() string
-
-### go.5x5.cz/ptah/core/ast.LogicalExpr
-
-package ast // import "go.5x5.cz/ptah/core/ast"
-
-type LogicalExpr struct {
-    // Operator is the boolean combinator applied between operands.
-    Operator LogicalOperator
-    // Operands are the sub-expressions being combined; at least one is required.
-    Operands []Expression
-}
-    LogicalExpr combines two or more operands with a single boolean operator,
-    as in "Operands[0] AND Operands[1] AND …". The renderer parenthesizes the
-    whole expression so precedence is explicit regardless of nesting.
-
-
-### go.5x5.cz/ptah/core/ast.LogicalOperator
-
-package ast // import "go.5x5.cz/ptah/core/ast"
-
-type LogicalOperator int
-    LogicalOperator enumerates the boolean combinators used by LogicalExpr.
-
-const LogicalAnd LogicalOperator = iota ...
-func (op LogicalOperator) String() string
 
 ### go.5x5.cz/ptah/core/ast.MatViewRefreshSpec
 
@@ -3733,66 +3331,6 @@ type Node interface {
     dialect-specific SQL output.
 
 
-### go.5x5.cz/ptah/core/ast.NotExpr
-
-package ast // import "go.5x5.cz/ptah/core/ast"
-
-type NotExpr struct {
-    // Operand is the expression being negated.
-    Operand Expression
-}
-    NotExpr negates its operand, rendering as "NOT (Operand)".
-
-
-### go.5x5.cz/ptah/core/ast.NullTest
-
-package ast // import "go.5x5.cz/ptah/core/ast"
-
-type NullTest struct {
-    // Operand is the expression tested for null, typically a ColumnRef.
-    Operand Expression
-    // Negated selects IS NOT NULL instead of IS NULL.
-    Negated bool
-}
-    NullTest is a null check of the form "Operand IS NULL" or, when Negated,
-    "Operand IS NOT NULL".
-
-
-### go.5x5.cz/ptah/core/ast.OnConflict
-
-package ast // import "go.5x5.cz/ptah/core/ast"
-
-type OnConflict struct {
-    // Columns is the conflict target: the columns whose unique index the
-    // insert watches. Empty means "any unique key", which every supported
-    // engine can express.
-    Columns []string
-    // DoNothing discards a colliding row. It is mutually exclusive with Update.
-    DoNothing bool
-    // Update lists the columns to overwrite from the row that was proposed.
-    // Empty with DoNothing false is an error rather than a silent no-op: a
-    // clause that updates nothing is either DoNothing or a mistake.
-    Update []string
-}
-    OnConflict describes what an INSERT does when a row collides with an
-    existing one.
-
-    # Why the shape is this and not richer
-
-    The engines do not agree, and the disagreement is about MEANING rather than
-    spelling. PostgreSQL and SQLite name the constraint to watch -- `ON CONFLICT
-    (email) DO UPDATE` fires for that key and no other. MySQL and MariaDB have
-    no such target: `ON DUPLICATE KEY UPDATE` fires for ANY unique key on the
-    table. So a statement naming a target means one thing on one engine and
-    something broader on the other, and the renderer refuses the combination
-    rather than emit it (stokaro/ptah#941).
-
-    SQL Server expresses this as MERGE, a different statement with its own
-    source, join condition and match clauses, and ClickHouse has no upsert
-    statement at all -- its ReplacingMergeTree is a table engine, deduplicating
-    in the background rather than at insert time. Both are refused by name.
-
-
 ### go.5x5.cz/ptah/core/ast.OpaqueRoutineNode
 
 package ast // import "go.5x5.cz/ptah/core/ast"
@@ -3813,23 +3351,6 @@ type OpaqueRoutineNode struct {
 
 func NewOpaqueRoutine(sql, dialect string, kind RoutineKind) *OpaqueRoutineNode
 func (n *OpaqueRoutineNode) Accept(visitor Visitor) error
-
-### go.5x5.cz/ptah/core/ast.OrderByClause
-
-package ast // import "go.5x5.cz/ptah/core/ast"
-
-type OrderByClause struct {
-    // Qualifier is the optional table name or alias qualifying the column,
-    // quoted independently. An empty Qualifier renders a bare column name.
-    Qualifier string
-    // Column is the column name to order by, rendered as a quoted identifier.
-    Column string
-    // Direction is the sort direction.
-    Direction SortDirection
-}
-    OrderByClause is a single ORDER BY term: a column and a sort direction.
-    The direction is always rendered explicitly so output is deterministic.
-
 
 ### go.5x5.cz/ptah/core/ast.PartitionPart
 
@@ -4104,37 +3625,6 @@ type ResetRowTTLOperation struct {
 
 func (op *ResetRowTTLOperation) Accept(_visitor Visitor) error
 
-### go.5x5.cz/ptah/core/ast.ResultColumn
-
-package ast // import "go.5x5.cz/ptah/core/ast"
-
-type ResultColumn struct {
-    // Expr is an optional projected expression, such as a FuncCall aggregate. When
-    // non-nil it is rendered instead of Qualifier, Name, and Star.
-    Expr Expression
-    // Qualifier is the optional table name or alias qualifying the column,
-    // quoted independently. An empty Qualifier renders a bare column name. It is
-    // ignored when Star is true or Expr is set.
-    Qualifier string
-    // Name is the column name, used when Star is false and Expr is nil.
-    Name string
-    // Star selects all columns (SELECT *). Ignored when Expr is set.
-    Star bool
-    // Alias is an optional output-column alias, rendered as `AS "alias"` with the
-    // alias quoted independently. An empty Alias renders no alias.
-    Alias string
-}
-    ResultColumn is one entry in a SELECT projection.
-
-    When Expr is set the entry renders that expression (for example an
-    aggregate) and Qualifier, Name, and Star are ignored. Otherwise, when Star
-    is true the entry renders as "*" (select all columns) and Name and Qualifier
-    are ignored; otherwise Name renders as a dialect-quoted identifier, prefixed
-    by "Qualifier". when Qualifier is set. When Alias is set the entry is
-    followed by AS and the quoted alias. A zero ResultColumn leaves Expr nil and
-    Alias empty, so the Phase 1 and Phase 2 rendering is preserved unchanged.
-
-
 ### go.5x5.cz/ptah/core/ast.RevokePrivilegeNode
 
 package ast // import "go.5x5.cz/ptah/core/ast"
@@ -4343,51 +3833,6 @@ type SQLServerRoutineStatementKind string
 
 const SQLServerRoutineStatementRaw SQLServerRoutineStatementKind = "raw" ...
 
-### go.5x5.cz/ptah/core/ast.SelectStatement
-
-package ast // import "go.5x5.cz/ptah/core/ast"
-
-type SelectStatement struct {
-    // Distinct renders SELECT DISTINCT, deduplicating result rows. It defaults to
-    // false, so a zero statement renders a plain SELECT unchanged.
-    Distinct bool
-    // Columns is the projection. An empty slice renders as "*".
-    Columns []ResultColumn
-    // With is the optional WITH clause: named subqueries evaluated before the
-    // main query and referenced from it by name. An empty slice emits no WITH.
-    //
-    // Only non-recursive CTEs are modeled. RECURSIVE needs a UNION ALL body and
-    // a termination argument the builder has no way to state, and emitting the
-    // keyword without one would produce a query that runs forever rather than
-    // one that fails to parse.
-    With []CommonTableExpression
-    // From is the source table, rendered as a quoted identifier. Required.
-    From string
-    // FromAlias is the optional alias for the source table; empty means no alias.
-    // When set, the FROM clause renders as "From" "FromAlias".
-    FromAlias string
-    // Joins is the optional list of joins, rendered after FROM in order. Their ON
-    // conditions are bound before the WHERE clause.
-    Joins []JoinClause
-    // Where is the optional filter expression tree; nil means no WHERE clause.
-    Where Expression
-    // GroupBy is the optional list of GROUP BY columns, rendered after WHERE. Each
-    // column may be qualified. An empty slice renders no GROUP BY. Columns carry no
-    // bound values, so they do not affect placeholder numbering.
-    GroupBy []ColumnRef
-    // Having is the optional filter over grouped rows, rendered after GROUP BY; nil
-    // means no HAVING. Its bound values are numbered after the WHERE clause and
-    // before LIMIT/OFFSET.
-    Having Expression
-    // OrderBy is the optional list of sort terms, applied in order.
-    OrderBy []OrderByClause
-    // Limit is the optional row limit; nil means no LIMIT. The value is bound.
-    Limit *int64
-    // Offset is the optional row offset; nil means no OFFSET. The value is bound.
-    Offset *int64
-}
-
-
 ### go.5x5.cz/ptah/core/ast.SetCommentOperation
 
 package ast // import "go.5x5.cz/ptah/core/ast"
@@ -4558,16 +4003,6 @@ type SetSuperuserOperation struct {
 func NewSetSuperuserOperation(superuser bool) *SetSuperuserOperation
 func (op *SetSuperuserOperation) GetOperationType() string
 
-### go.5x5.cz/ptah/core/ast.SortDirection
-
-package ast // import "go.5x5.cz/ptah/core/ast"
-
-type SortDirection int
-    SortDirection is the direction of an ORDER BY term.
-
-const SortAscending SortDirection = iota ...
-func (d SortDirection) String() string
-
 ### go.5x5.cz/ptah/core/ast.StatementList
 
 package ast // import "go.5x5.cz/ptah/core/ast"
@@ -4615,37 +4050,6 @@ type TypeOperation interface {
     This interface extends the Node interface and includes a marker method
     to ensure type safety. All ALTER TYPE operations must implement both the
     visitor pattern and the marker method.
-
-
-### go.5x5.cz/ptah/core/ast.UpdateStatement
-
-package ast // import "go.5x5.cz/ptah/core/ast"
-
-type UpdateStatement struct {
-    // Table is the target table, rendered as a quoted identifier. Required.
-    Table string
-    // Set is the list of column assignments. Required and non-empty; the renderer
-    // rejects an empty SET.
-    Set []Assignment
-    // Where is the optional filter expression tree; nil means no WHERE clause. A
-    // nil Where is allowed only together with Unconditional.
-    Where Expression
-    // Unconditional opts in to a whole-table UPDATE when Where is nil. It is the
-    // explicit acknowledgment that every row is to be updated; without it, a nil
-    // Where is an error. It has no effect when Where is set.
-    Unconditional bool
-    // Returning is the optional RETURNING projection. See InsertStatement.Returning
-    // for the dialect support rules.
-    Returning []ColumnRef
-}
-    UpdateStatement is an UPDATE … SET … over a single table, with an optional
-    WHERE clause and RETURNING projection.
-
-    SET values are bound before WHERE values, matching left-to-right emission
-    order, so placeholder numbering is deterministic. An UPDATE with no WHERE
-    clause rewrites every row; because that is rarely intended, the renderer
-    rejects it unless Unconditional is set, turning an accidental whole-table
-    update into a render-time error rather than silent data loss.
 
 
 ### go.5x5.cz/ptah/core/ast.UpsertAssignment
@@ -4803,32 +4207,6 @@ type Visitor interface {
 
     Implementations of this interface should handle the rendering logic for
     their specific database dialect (PostgreSQL, MySQL, MariaDB, etc.).
-
-
-### go.5x5.cz/ptah/core/ast.WindowSpec
-
-package ast // import "go.5x5.cz/ptah/core/ast"
-
-type WindowSpec struct {
-    // PartitionBy divides the rows into groups the function is computed over.
-    // Empty computes over the whole result set.
-    PartitionBy []ColumnRef
-    // OrderBy orders the rows within each partition. Empty leaves the order
-    // unspecified, which for a ranking function means the engine may return any
-    // ordering -- a query relying on one is relying on that engine.
-    OrderBy []OrderByClause
-}
-    WindowSpec is the OVER (...) clause of a window function.
-
-    # What it deliberately does not model
-
-    A frame clause -- ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW and
-    its relatives -- is a further phase. Without one the engine applies its
-    default frame, which is well defined and is what an unframed window means
-    everywhere: RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW when the
-    window is ordered, and the whole partition when it is not. Emitting no frame
-    is therefore honest rather than incomplete; emitting a guessed one would
-    change results.
 
 
 ## go.5x5.cz/ptah/core/coverage
@@ -7121,57 +6499,160 @@ func (e *RenderError) Unwrap() error
 
 ## go.5x5.cz/ptah/core/query
 
-func Add(left, right ast.Expression) ast.Expression
-func And(exprs ...ast.Expression) ast.Expression
-func Asc(column string) ast.OrderByClause
-func Avg(column string) ast.Expression
-func ColExpr(name string) ast.Expression
-func Count(column string) ast.Expression
-func CountDistinct(column string) ast.Expression
-func CountStar() ast.Expression
-func Desc(column string) ast.OrderByClause
-func Div(left, right ast.Expression) ast.Expression
-func Eq(column string, value any) ast.Expression
-func Exists(sub *SelectBuilder) ast.Expression
-func Func(name string, args ...ast.Expression) ast.Expression
-func Ge(column string, value any) ast.Expression
-func Gt(column string, value any) ast.Expression
-func In[T any](column string, values []T) ast.Expression
-func InQuery(column string, sub *SelectBuilder) ast.Expression
-func IsNotNull(column string) ast.Expression
-func IsNull(column string) ast.Expression
-func Le(column string, value any) ast.Expression
-func Like(column, pattern string) ast.Expression
-func Lt(column string, value any) ast.Expression
-func Max(column string) ast.Expression
-func Min(column string) ast.Expression
-func Mod(left, right ast.Expression) ast.Expression
-func Mul(left, right ast.Expression) ast.Expression
-func Ne(column string, value any) ast.Expression
-func Not(expr ast.Expression) ast.Expression
-func NotExists(sub *SelectBuilder) ast.Expression
-func NotLike(column, pattern string) ast.Expression
-func Or(exprs ...ast.Expression) ast.Expression
-func Over(call ast.Expression, options ...WindowOption) ast.Expression
-func Sub(left, right ast.Expression) ast.Expression
-func Sum(column string) ast.Expression
-func Value(v any) ast.Expression
+func RenderDelete(stmt *DeleteStatement, dialect string) (string, []any, error)
+func RenderInsert(stmt *InsertStatement, dialect string) (string, []any, error)
+func RenderSelect(stmt *SelectStatement, dialect string) (string, []any, error)
+func RenderUpdate(stmt *UpdateStatement, dialect string) (string, []any, error)
+type Arithmetic struct{ ... }
+type ArithmeticOperator int
+    const OpAdd ArithmeticOperator = iota ...
+type Assignment struct{ ... }
+type BoundValue struct{ ... }
 type Column struct{ ... }
     func Col(qualifier, name string) Column
+type ColumnRef struct{ ... }
+type CommonTableExpression struct{ ... }
+type Comparison struct{ ... }
+type ComparisonOperator int
+    const OpEqual ComparisonOperator = iota ...
 type DeleteBuilder struct{ ... }
     func DeleteFrom(table string) *DeleteBuilder
+type DeleteStatement struct{ ... }
+type ExistsExpr struct{ ... }
 type ExprCompare struct{ ... }
-    func Expr(left ast.Expression) ExprCompare
+    func Expr(left Expression) ExprCompare
+type Expression interface{ ... }
+    func Add(left, right Expression) Expression
+    func And(exprs ...Expression) Expression
+    func Avg(column string) Expression
+    func ColExpr(name string) Expression
+    func Count(column string) Expression
+    func CountDistinct(column string) Expression
+    func CountStar() Expression
+    func Div(left, right Expression) Expression
+    func Eq(column string, value any) Expression
+    func Exists(sub *SelectBuilder) Expression
+    func Func(name string, args ...Expression) Expression
+    func Ge(column string, value any) Expression
+    func Gt(column string, value any) Expression
+    func In[T any](column string, values []T) Expression
+    func InQuery(column string, sub *SelectBuilder) Expression
+    func IsNotNull(column string) Expression
+    func IsNull(column string) Expression
+    func Le(column string, value any) Expression
+    func Like(column, pattern string) Expression
+    func Lt(column string, value any) Expression
+    func Max(column string) Expression
+    func Min(column string) Expression
+    func Mod(left, right Expression) Expression
+    func Mul(left, right Expression) Expression
+    func Ne(column string, value any) Expression
+    func Not(expr Expression) Expression
+    func NotExists(sub *SelectBuilder) Expression
+    func NotLike(column, pattern string) Expression
+    func Or(exprs ...Expression) Expression
+    func Over(call Expression, options ...WindowOption) Expression
+    func Sub(left, right Expression) Expression
+    func Sum(column string) Expression
+    func Value(v any) Expression
+type FuncCall struct{ ... }
+type InExpr struct{ ... }
 type InsertBuilder struct{ ... }
     func InsertInto(table string) *InsertBuilder
+type InsertStatement struct{ ... }
+type JoinClause struct{ ... }
+type JoinType int
+    const JoinInner JoinType = iota ...
+type LogicalExpr struct{ ... }
+type LogicalOperator int
+    const LogicalAnd LogicalOperator = iota ...
+type NotExpr struct{ ... }
+type NullTest struct{ ... }
+type OnConflict struct{ ... }
+type OrderByClause struct{ ... }
+    func Asc(column string) OrderByClause
+    func Desc(column string) OrderByClause
+type ResultColumn struct{ ... }
 type SelectBuilder struct{ ... }
     func Select(columns ...string) *SelectBuilder
+type SelectStatement struct{ ... }
+type SortDirection int
+    const SortAscending SortDirection = iota ...
 type UpdateBuilder struct{ ... }
     func Update(table string) *UpdateBuilder
-type WindowOption func(*ast.WindowSpec)
+type UpdateStatement struct{ ... }
+type WindowOption func(*WindowSpec)
     func OrderAsc(columns ...string) WindowOption
     func OrderDesc(columns ...string) WindowOption
     func Partition(columns ...string) WindowOption
+type WindowSpec struct{ ... }
+
+### go.5x5.cz/ptah/core/query.Arithmetic
+
+package query // import "go.5x5.cz/ptah/core/query"
+
+type Arithmetic struct {
+    // Left is the left-hand operand.
+    Left Expression
+    // Operator is the arithmetic operator.
+    Operator ArithmeticOperator
+    // Right is the right-hand operand.
+    Right Expression
+}
+    Arithmetic is a binary arithmetic expression of the form "(Left <Operator>
+    Right)".
+
+    # Why it always renders its own parentheses
+
+    The node is a TREE and SQL is text, so `Mul(Add(a, b), c)` and `Add(a,
+    Mul(b, c))` have to render differently. Emitting them without parentheses
+    produces `a + b * c` for both, and the server then applies its own
+    precedence -- which agrees with one of the two trees and silently rewrites
+    the other. Parenthesizing every node costs a pair of characters and makes
+    the rendered text mean exactly what the caller built (stokaro/ptah#941).
+
+
+### go.5x5.cz/ptah/core/query.ArithmeticOperator
+
+package query // import "go.5x5.cz/ptah/core/query"
+
+type ArithmeticOperator int
+    ArithmeticOperator enumerates the binary arithmetic operators.
+
+const OpAdd ArithmeticOperator = iota ...
+func (op ArithmeticOperator) String() string
+
+### go.5x5.cz/ptah/core/query.Assignment
+
+package query // import "go.5x5.cz/ptah/core/query"
+
+type Assignment struct {
+    // Column is the target column name, rendered as a quoted identifier.
+    Column string
+    // Value is the assigned value expression, typically a BoundValue.
+    Value Expression
+}
+    Assignment is a single "column = value" pair in an UPDATE SET clause.
+
+    Column is rendered as a dialect-quoted identifier; Value is an ordinary
+    expression, so the query builder supplies a BoundValue and the value travels
+    to the database as a placeholder rather than inline SQL.
+
+
+### go.5x5.cz/ptah/core/query.BoundValue
+
+package query // import "go.5x5.cz/ptah/core/query"
+
+type BoundValue struct {
+    // Value is the parameter value, bound positionally at render time.
+    Value any
+}
+    BoundValue is a parameter value.
+
+    The renderer emits a dialect-specific placeholder ($1, $2, … for PostgreSQL;
+    ? for MySQL, MariaDB, and SQLite) and appends Value to the returned argument
+    slice. The value is never interpolated into the SQL string.
+
 
 ### go.5x5.cz/ptah/core/query.Column
 
@@ -7192,23 +6673,90 @@ type Column struct {
     never inlined.
 
 func Col(qualifier, name string) Column
-func (c Column) Asc() ast.OrderByClause
-func (c Column) Avg() ast.Expression
-func (c Column) Count() ast.Expression
-func (c Column) CountDistinct() ast.Expression
-func (c Column) Desc() ast.OrderByClause
-func (c Column) Eq(value any) ast.Expression
-func (c Column) EqCol(other Column) ast.Expression
-func (c Column) Ge(value any) ast.Expression
-func (c Column) Gt(value any) ast.Expression
-func (c Column) IsNotNull() ast.Expression
-func (c Column) IsNull() ast.Expression
-func (c Column) Le(value any) ast.Expression
-func (c Column) Lt(value any) ast.Expression
-func (c Column) Max() ast.Expression
-func (c Column) Min() ast.Expression
-func (c Column) Ne(value any) ast.Expression
-func (c Column) Sum() ast.Expression
+func (c Column) Asc() OrderByClause
+func (c Column) Avg() Expression
+func (c Column) Count() Expression
+func (c Column) CountDistinct() Expression
+func (c Column) Desc() OrderByClause
+func (c Column) Eq(value any) Expression
+func (c Column) EqCol(other Column) Expression
+func (c Column) Ge(value any) Expression
+func (c Column) Gt(value any) Expression
+func (c Column) IsNotNull() Expression
+func (c Column) IsNull() Expression
+func (c Column) Le(value any) Expression
+func (c Column) Lt(value any) Expression
+func (c Column) Max() Expression
+func (c Column) Min() Expression
+func (c Column) Ne(value any) Expression
+func (c Column) Sum() Expression
+
+### go.5x5.cz/ptah/core/query.ColumnRef
+
+package query // import "go.5x5.cz/ptah/core/query"
+
+type ColumnRef struct {
+    // Qualifier is the optional table name or alias qualifying the column. An
+    // empty Qualifier renders a bare column name. It is quoted independently of
+    // Name so neither part can break out of its quotes.
+    Qualifier string
+    // Name is the column name.
+    Name string
+}
+    ColumnRef is a reference to a column, optionally qualified by a table name
+    or alias.
+
+    A ColumnRef always renders as a dialect-quoted identifier and never
+    as literal SQL text, so an attacker-shaped name cannot terminate the
+    identifier. When Qualifier is set the column renders as "Qualifier"."Name",
+    each part quoted independently.
+
+
+### go.5x5.cz/ptah/core/query.CommonTableExpression
+
+package query // import "go.5x5.cz/ptah/core/query"
+
+type CommonTableExpression struct {
+    Name  string
+    Query *SelectStatement
+}
+    CommonTableExpression is one named subquery of a WITH clause.
+
+    Name is emitted as a quoted identifier and referenced from the outer query's
+    From (or a join) as a plain table name. Query is rendered in parentheses,
+    and its bound values are appended before the outer query's, which is what
+    keeps positional placeholders in the order the driver will read them.
+
+
+### go.5x5.cz/ptah/core/query.Comparison
+
+package query // import "go.5x5.cz/ptah/core/query"
+
+type Comparison struct {
+    // Left is the left-hand operand.
+    Left Expression
+    // Operator is the comparison operator.
+    Operator ComparisonOperator
+    // Right is the right-hand operand.
+    Right Expression
+}
+    Comparison is a binary comparison of the form "Left <Operator> Right".
+
+    In Phase 1 the query builder produces a ColumnRef on the left and a
+    BoundValue on the right, but the node accepts any Expression on either side
+    so later phases can compare columns or expressions directly.
+
+
+### go.5x5.cz/ptah/core/query.ComparisonOperator
+
+package query // import "go.5x5.cz/ptah/core/query"
+
+type ComparisonOperator int
+    ComparisonOperator enumerates the binary comparison operators supported in
+    Phase 1.
+
+const OpEqual ComparisonOperator = iota ...
+func (op ComparisonOperator) String() string
 
 ### go.5x5.cz/ptah/core/query.DeleteBuilder
 
@@ -7217,14 +6765,53 @@ package query // import "go.5x5.cz/ptah/core/query"
 type DeleteBuilder struct {
     // Has unexported fields.
 }
-    DeleteBuilder builds an *ast.DeleteStatement through a fluent, chainable
-    API. Start with DeleteFrom. A builder is not safe for concurrent use.
+    DeleteBuilder builds a *DeleteStatement through a fluent, chainable API.
+    Start with DeleteFrom. A builder is not safe for concurrent use.
 
 func DeleteFrom(table string) *DeleteBuilder
-func (b *DeleteBuilder) Build() *ast.DeleteStatement
+func (b *DeleteBuilder) Build() *DeleteStatement
 func (b *DeleteBuilder) Returning(columns ...string) *DeleteBuilder
 func (b *DeleteBuilder) Unconditional() *DeleteBuilder
-func (b *DeleteBuilder) Where(expr ast.Expression) *DeleteBuilder
+func (b *DeleteBuilder) Where(expr Expression) *DeleteBuilder
+
+### go.5x5.cz/ptah/core/query.DeleteStatement
+
+package query // import "go.5x5.cz/ptah/core/query"
+
+type DeleteStatement struct {
+    // Table is the target table, rendered as a quoted identifier. Required.
+    Table string
+    // Where is the optional filter expression tree; nil means no WHERE clause. A
+    // nil Where is allowed only together with Unconditional.
+    Where Expression
+    // Unconditional opts in to a whole-table DELETE when Where is nil, exactly as
+    // on UpdateStatement.
+    Unconditional bool
+    // Returning is the optional RETURNING projection. See InsertStatement.Returning
+    // for the dialect support rules.
+    Returning []ColumnRef
+}
+    DeleteStatement is a DELETE FROM … over a single table, with an optional
+    WHERE clause and RETURNING projection.
+
+    Like UpdateStatement, a DELETE with no WHERE clause removes every row,
+    so the renderer rejects it unless Unconditional is set.
+
+
+### go.5x5.cz/ptah/core/query.ExistsExpr
+
+package query // import "go.5x5.cz/ptah/core/query"
+
+type ExistsExpr struct {
+    Query   *SelectStatement
+    Negated bool
+}
+    ExistsExpr is a row-existence test of the form "EXISTS (SELECT …)" or,
+    when Negated, "NOT EXISTS (SELECT …)".
+
+    The subquery's projection is irrelevant to the test but is still rendered as
+    written; EXISTS stops at the first row either way.
+
 
 ### go.5x5.cz/ptah/core/query.ExprCompare
 
@@ -7239,13 +6826,132 @@ type ExprCompare struct {
     helpers on Column, but its left operand is any expression rather than a
     column.
 
-func Expr(left ast.Expression) ExprCompare
-func (e ExprCompare) Eq(value any) ast.Expression
-func (e ExprCompare) Ge(value any) ast.Expression
-func (e ExprCompare) Gt(value any) ast.Expression
-func (e ExprCompare) Le(value any) ast.Expression
-func (e ExprCompare) Lt(value any) ast.Expression
-func (e ExprCompare) Ne(value any) ast.Expression
+func Expr(left Expression) ExprCompare
+func (e ExprCompare) Eq(value any) Expression
+func (e ExprCompare) Ge(value any) Expression
+func (e ExprCompare) Gt(value any) Expression
+func (e ExprCompare) Le(value any) Expression
+func (e ExprCompare) Lt(value any) Expression
+func (e ExprCompare) Ne(value any) Expression
+
+### go.5x5.cz/ptah/core/query.Expression
+
+package query // import "go.5x5.cz/ptah/core/query"
+
+type Expression interface {
+    // Has unexported methods.
+}
+    Expression is a boolean or scalar expression used in DML statements such as
+    the WHERE clause of a SELECT.
+
+    Expression is a sealed sum type: only the node types declared in this
+    package implement it. Sealing serves the query builder's core safety
+    property — a caller cannot smuggle a raw SQL string in as an expression,
+    and every value reaches the SQL through a BoundValue node (a placeholder),
+    never inlined.
+
+func Add(left, right Expression) Expression
+func And(exprs ...Expression) Expression
+func Avg(column string) Expression
+func ColExpr(name string) Expression
+func Count(column string) Expression
+func CountDistinct(column string) Expression
+func CountStar() Expression
+func Div(left, right Expression) Expression
+func Eq(column string, value any) Expression
+func Exists(sub *SelectBuilder) Expression
+func Func(name string, args ...Expression) Expression
+func Ge(column string, value any) Expression
+func Gt(column string, value any) Expression
+func In[T any](column string, values []T) Expression
+func InQuery(column string, sub *SelectBuilder) Expression
+func IsNotNull(column string) Expression
+func IsNull(column string) Expression
+func Le(column string, value any) Expression
+func Like(column, pattern string) Expression
+func Lt(column string, value any) Expression
+func Max(column string) Expression
+func Min(column string) Expression
+func Mod(left, right Expression) Expression
+func Mul(left, right Expression) Expression
+func Ne(column string, value any) Expression
+func Not(expr Expression) Expression
+func NotExists(sub *SelectBuilder) Expression
+func NotLike(column, pattern string) Expression
+func Or(exprs ...Expression) Expression
+func Over(call Expression, options ...WindowOption) Expression
+func Sub(left, right Expression) Expression
+func Sum(column string) Expression
+func Value(v any) Expression
+
+### go.5x5.cz/ptah/core/query.FuncCall
+
+package query // import "go.5x5.cz/ptah/core/query"
+
+type FuncCall struct {
+    // Name is the function name, emitted verbatim as a keyword. Required. It must
+    // be a simple identifier — a letter or underscore followed by letters, digits,
+    // or underscores — and the renderer rejects anything else rather than quote a
+    // function name.
+    Name string
+    // Args are the function arguments, each an expression. A column argument is
+    // quoted; a value argument is bound. Ignored when Star is true.
+    Args []Expression
+    // Star renders the argument list as a single "*", as in COUNT(*). When Star is
+    // true, Args must be empty and Distinct must be false; the renderer rejects
+    // either combination rather than emit invalid SQL.
+    Star bool
+    // Distinct emits the DISTINCT keyword before the arguments, as in
+    // COUNT(DISTINCT "col").
+    Distinct bool
+    // Over turns the call into a window function: SUM("x") OVER (PARTITION BY
+    // "y" ORDER BY "z" ASC). Nil emits no OVER clause and the call is an
+    // ordinary one.
+    //
+    // A window function is legal wherever a projection expression is, and
+    // nowhere else -- notably not in WHERE, because the window is computed
+    // after the rows are filtered. The renderer does not enforce that: the
+    // engines report it clearly and in their own terms, and a builder-side rule
+    // would have to model where each clause sits rather than what it contains
+    // (stokaro/ptah#941).
+    Over *WindowSpec
+}
+    FuncCall is a function-call expression, such as an aggregate: COUNT(*),
+    COUNT("col"), COUNT(DISTINCT "col"), or SUM("col"). It is shaped as a
+    general function call so non-aggregate functions can reuse it in a later
+    phase.
+
+    The function is usable anywhere an Expression is: in a projection (via
+    ResultColumn.Expr) and in a HAVING comparison (as an operand of Comparison).
+    Name is a bare SQL keyword emitted verbatim, never quoted and never bound
+    — the renderer rejects a Name that is not a simple identifier so a caller
+    cannot smuggle SQL through it. Args are ordinary expressions, so a column
+    argument is quoted through the identifier path and a value argument is bound
+    as a placeholder.
+
+
+### go.5x5.cz/ptah/core/query.InExpr
+
+package query // import "go.5x5.cz/ptah/core/query"
+
+type InExpr struct {
+    // Operand is the expression tested for membership, typically a ColumnRef.
+    Operand Expression
+    // Values are the candidate values, each bound as a placeholder. Exactly one
+    // of Values and Subquery must be set.
+    Values []Expression
+    // Subquery, when set, replaces Values and renders as
+    // "Operand IN (SELECT …)". The two are mutually exclusive rather than
+    // combined: a caller who set both would be describing two different
+    // membership tests, and picking one silently would answer a question that
+    // was never asked.
+    Subquery *SelectStatement
+}
+    InExpr is a membership test of the form "Operand IN (Values...)".
+
+    Values must be non-empty; the renderer rejects an empty list rather than
+    emitting the invalid "IN ()". Each value renders as its own placeholder.
+
 
 ### go.5x5.cz/ptah/core/query.InsertBuilder
 
@@ -7254,17 +6960,231 @@ package query // import "go.5x5.cz/ptah/core/query"
 type InsertBuilder struct {
     // Has unexported fields.
 }
-    InsertBuilder builds an *ast.InsertStatement through a fluent, chainable
-    API. Start with InsertInto. A builder is not safe for concurrent use.
+    InsertBuilder builds an *InsertStatement through a fluent, chainable API.
+    Start with InsertInto. A builder is not safe for concurrent use.
 
 func InsertInto(table string) *InsertBuilder
-func (b *InsertBuilder) Build() *ast.InsertStatement
+func (b *InsertBuilder) Build() *InsertStatement
 func (b *InsertBuilder) Columns(columns ...string) *InsertBuilder
 func (b *InsertBuilder) FromSelect(query *SelectBuilder) *InsertBuilder
 func (b *InsertBuilder) OnConflictDoNothing(columns ...string) *InsertBuilder
 func (b *InsertBuilder) OnConflictDoUpdate(columns []string, update ...string) *InsertBuilder
 func (b *InsertBuilder) Returning(columns ...string) *InsertBuilder
 func (b *InsertBuilder) Values(values ...any) *InsertBuilder
+
+### go.5x5.cz/ptah/core/query.InsertStatement
+
+package query // import "go.5x5.cz/ptah/core/query"
+
+type InsertStatement struct {
+    // Table is the target table, rendered as a quoted identifier. Required.
+    Table string
+    // Columns is the inserted column list, each a quoted identifier. Required and
+    // non-empty; every row must supply exactly one value per column.
+    Columns []string
+    // Rows is the list of value rows. At least one row is required unless Select
+    // supplies the rows instead, and each row must have the same length as
+    // Columns. Values are bound row by row, in order.
+    Rows [][]Expression
+    // Select supplies the inserted rows from a query rather than from literal
+    // values: INSERT INTO t (a, b) SELECT x, y FROM u.
+    //
+    // It is mutually exclusive with Rows. A statement carrying both is a
+    // contradiction rather than a merge -- VALUES and SELECT are alternative
+    // sources in the grammar, and picking one silently would insert rows the
+    // caller did not ask for (stokaro/ptah#941).
+    //
+    // The query's projection must supply one expression per column. That is the
+    // server's rule rather than Ptah's, but it is checked here because the
+    // mismatch is a runtime error naming neither side, and the builder knows
+    // both.
+    Select *SelectStatement
+    // Returning is the optional RETURNING projection: the columns to return from
+    // the inserted rows. An empty slice emits no RETURNING. RETURNING is supported
+    // only on the PostgreSQL family and SQLite; the renderer rejects it on MySQL
+    // and MariaDB rather than emit SQL those engines cannot run.
+    Returning []ColumnRef
+    // OnConflict is the optional upsert clause. Nil emits none, and a row that
+    // collides then fails the statement as it always did.
+    OnConflict *OnConflict
+}
+    InsertStatement is an INSERT INTO … VALUES … over a single table, with one
+    or more value rows and an optional RETURNING projection.
+
+    Every element of every row is an expression — the query builder supplies a
+    BoundValue — so values are bound positionally at render time, row by row
+    and left to right, and never interpolated. The renderer rejects a statement
+    with no columns, no rows, or a row whose length does not match Columns,
+    rather than emit invalid SQL or panic on ragged input.
+
+
+### go.5x5.cz/ptah/core/query.JoinClause
+
+package query // import "go.5x5.cz/ptah/core/query"
+
+type JoinClause struct {
+    // Type is the join type (INNER, LEFT, RIGHT, or FULL OUTER).
+    Type JoinType
+    // Table is the joined table name, rendered as a quoted identifier. Required.
+    Table string
+    // Alias is the optional alias for the joined table; empty means no alias.
+    Alias string
+    // On is the join condition; nil is rejected by the renderer.
+    On Expression
+}
+    JoinClause is a single join applied to the SELECT's FROM clause: a join
+    type, a target table with an optional alias, and an ON condition.
+
+    The ON condition reuses the Expression tree, so an equi-join is a Comparison
+    of two ColumnRef operands and richer predicates compose with LogicalExpr.
+    The ON expression is rendered through the same bound-parameter and
+    identifier quoting path as WHERE.
+
+
+### go.5x5.cz/ptah/core/query.JoinType
+
+package query // import "go.5x5.cz/ptah/core/query"
+
+type JoinType int
+    JoinType enumerates the join kinds supported in Phase 2.
+
+const JoinInner JoinType = iota ...
+func (t JoinType) String() string
+
+### go.5x5.cz/ptah/core/query.LogicalExpr
+
+package query // import "go.5x5.cz/ptah/core/query"
+
+type LogicalExpr struct {
+    // Operator is the boolean combinator applied between operands.
+    Operator LogicalOperator
+    // Operands are the sub-expressions being combined; at least one is required.
+    Operands []Expression
+}
+    LogicalExpr combines two or more operands with a single boolean operator,
+    as in "Operands[0] AND Operands[1] AND …". The renderer parenthesizes the
+    whole expression so precedence is explicit regardless of nesting.
+
+
+### go.5x5.cz/ptah/core/query.LogicalOperator
+
+package query // import "go.5x5.cz/ptah/core/query"
+
+type LogicalOperator int
+    LogicalOperator enumerates the boolean combinators used by LogicalExpr.
+
+const LogicalAnd LogicalOperator = iota ...
+func (op LogicalOperator) String() string
+
+### go.5x5.cz/ptah/core/query.NotExpr
+
+package query // import "go.5x5.cz/ptah/core/query"
+
+type NotExpr struct {
+    // Operand is the expression being negated.
+    Operand Expression
+}
+    NotExpr negates its operand, rendering as "NOT (Operand)".
+
+
+### go.5x5.cz/ptah/core/query.NullTest
+
+package query // import "go.5x5.cz/ptah/core/query"
+
+type NullTest struct {
+    // Operand is the expression tested for null, typically a ColumnRef.
+    Operand Expression
+    // Negated selects IS NOT NULL instead of IS NULL.
+    Negated bool
+}
+    NullTest is a null check of the form "Operand IS NULL" or, when Negated,
+    "Operand IS NOT NULL".
+
+
+### go.5x5.cz/ptah/core/query.OnConflict
+
+package query // import "go.5x5.cz/ptah/core/query"
+
+type OnConflict struct {
+    // Columns is the conflict target: the columns whose unique index the
+    // insert watches. Empty means "any unique key", which every supported
+    // engine can express.
+    Columns []string
+    // DoNothing discards a colliding row. It is mutually exclusive with Update.
+    DoNothing bool
+    // Update lists the columns to overwrite from the row that was proposed.
+    // Empty with DoNothing false is an error rather than a silent no-op: a
+    // clause that updates nothing is either DoNothing or a mistake.
+    Update []string
+}
+    OnConflict describes what an INSERT does when a row collides with an
+    existing one.
+
+    # Why the shape is this and not richer
+
+    The engines do not agree, and the disagreement is about MEANING rather than
+    spelling. PostgreSQL and SQLite name the constraint to watch -- `ON CONFLICT
+    (email) DO UPDATE` fires for that key and no other. MySQL and MariaDB have
+    no such target: `ON DUPLICATE KEY UPDATE` fires for ANY unique key on the
+    table. So a statement naming a target means one thing on one engine and
+    something broader on the other, and the renderer refuses the combination
+    rather than emit it (stokaro/ptah#941).
+
+    SQL Server expresses this as MERGE, a different statement with its own
+    source, join condition and match clauses, and ClickHouse has no upsert
+    statement at all -- its ReplacingMergeTree is a table engine, deduplicating
+    in the background rather than at insert time. Both are refused by name.
+
+
+### go.5x5.cz/ptah/core/query.OrderByClause
+
+package query // import "go.5x5.cz/ptah/core/query"
+
+type OrderByClause struct {
+    // Qualifier is the optional table name or alias qualifying the column,
+    // quoted independently. An empty Qualifier renders a bare column name.
+    Qualifier string
+    // Column is the column name to order by, rendered as a quoted identifier.
+    Column string
+    // Direction is the sort direction.
+    Direction SortDirection
+}
+    OrderByClause is a single ORDER BY term: a column and a sort direction.
+    The direction is always rendered explicitly so output is deterministic.
+
+func Asc(column string) OrderByClause
+func Desc(column string) OrderByClause
+
+### go.5x5.cz/ptah/core/query.ResultColumn
+
+package query // import "go.5x5.cz/ptah/core/query"
+
+type ResultColumn struct {
+    // Expr is an optional projected expression, such as a FuncCall aggregate. When
+    // non-nil it is rendered instead of Qualifier, Name, and Star.
+    Expr Expression
+    // Qualifier is the optional table name or alias qualifying the column,
+    // quoted independently. An empty Qualifier renders a bare column name. It is
+    // ignored when Star is true or Expr is set.
+    Qualifier string
+    // Name is the column name, used when Star is false and Expr is nil.
+    Name string
+    // Star selects all columns (SELECT *). Ignored when Expr is set.
+    Star bool
+    // Alias is an optional output-column alias, rendered as `AS "alias"` with the
+    // alias quoted independently. An empty Alias renders no alias.
+    Alias string
+}
+    ResultColumn is one entry in a SELECT projection.
+
+    When Expr is set the entry renders that expression (for example an
+    aggregate) and Qualifier, Name, and Star are ignored. Otherwise, when Star
+    is true the entry renders as "*" (select all columns) and Name and Qualifier
+    are ignored; otherwise Name renders as a dialect-quoted identifier, prefixed
+    by "Qualifier". when Qualifier is set. When Alias is set the entry is
+    followed by AS and the quoted alias. A zero ResultColumn leaves Expr nil and
+    Alias empty, so the Phase 1 and Phase 2 rendering is preserved unchanged.
+
 
 ### go.5x5.cz/ptah/core/query.SelectBuilder
 
@@ -7273,32 +7193,92 @@ package query // import "go.5x5.cz/ptah/core/query"
 type SelectBuilder struct {
     // Has unexported fields.
 }
-    SelectBuilder builds an *ast.SelectStatement through a fluent, chainable
-    API.
+    SelectBuilder builds a *SelectStatement through a fluent, chainable API.
 
     A zero SelectBuilder is not meant to be used directly; start with Select.
     Each method mutates and returns the same builder for chaining. Build
     produces the statement. Builders are not safe for concurrent use.
 
 func Select(columns ...string) *SelectBuilder
-func (b *SelectBuilder) Build() *ast.SelectStatement
+func (b *SelectBuilder) Build() *SelectStatement
 func (b *SelectBuilder) Columns(columns ...Column) *SelectBuilder
 func (b *SelectBuilder) Distinct() *SelectBuilder
-func (b *SelectBuilder) ExprAs(expr ast.Expression, alias string) *SelectBuilder
-func (b *SelectBuilder) Exprs(exprs ...ast.Expression) *SelectBuilder
+func (b *SelectBuilder) ExprAs(expr Expression, alias string) *SelectBuilder
+func (b *SelectBuilder) Exprs(exprs ...Expression) *SelectBuilder
 func (b *SelectBuilder) From(table string) *SelectBuilder
 func (b *SelectBuilder) FromAs(table, alias string) *SelectBuilder
-func (b *SelectBuilder) FullJoin(table, alias string, on ast.Expression) *SelectBuilder
+func (b *SelectBuilder) FullJoin(table, alias string, on Expression) *SelectBuilder
 func (b *SelectBuilder) GroupBy(columns ...Column) *SelectBuilder
-func (b *SelectBuilder) Having(expr ast.Expression) *SelectBuilder
-func (b *SelectBuilder) InnerJoin(table, alias string, on ast.Expression) *SelectBuilder
-func (b *SelectBuilder) LeftJoin(table, alias string, on ast.Expression) *SelectBuilder
+func (b *SelectBuilder) Having(expr Expression) *SelectBuilder
+func (b *SelectBuilder) InnerJoin(table, alias string, on Expression) *SelectBuilder
+func (b *SelectBuilder) LeftJoin(table, alias string, on Expression) *SelectBuilder
 func (b *SelectBuilder) Limit(n int64) *SelectBuilder
 func (b *SelectBuilder) Offset(n int64) *SelectBuilder
-func (b *SelectBuilder) OrderBy(terms ...ast.OrderByClause) *SelectBuilder
-func (b *SelectBuilder) RightJoin(table, alias string, on ast.Expression) *SelectBuilder
-func (b *SelectBuilder) Where(expr ast.Expression) *SelectBuilder
+func (b *SelectBuilder) OrderBy(terms ...OrderByClause) *SelectBuilder
+func (b *SelectBuilder) RightJoin(table, alias string, on Expression) *SelectBuilder
+func (b *SelectBuilder) Where(expr Expression) *SelectBuilder
 func (b *SelectBuilder) With(name string, query *SelectBuilder) *SelectBuilder
+
+### go.5x5.cz/ptah/core/query.SelectStatement
+
+package query // import "go.5x5.cz/ptah/core/query"
+
+type SelectStatement struct {
+    // Distinct renders SELECT DISTINCT, deduplicating result rows. It defaults to
+    // false, so a zero statement renders a plain SELECT unchanged.
+    Distinct bool
+    // Columns is the projection. An empty slice renders as "*".
+    Columns []ResultColumn
+    // With is the optional WITH clause: named subqueries evaluated before the
+    // main query and referenced from it by name. An empty slice emits no WITH.
+    //
+    // Only non-recursive CTEs are modeled. RECURSIVE needs a UNION ALL body and
+    // a termination argument the builder has no way to state, and emitting the
+    // keyword without one would produce a query that runs forever rather than
+    // one that fails to parse.
+    With []CommonTableExpression
+    // From is the source table, rendered as a quoted identifier. Required.
+    From string
+    // FromAlias is the optional alias for the source table; empty means no alias.
+    // When set, the FROM clause renders as "From" "FromAlias".
+    FromAlias string
+    // Joins is the optional list of joins, rendered after FROM in order. Their ON
+    // conditions are bound before the WHERE clause.
+    Joins []JoinClause
+    // Where is the optional filter expression tree; nil means no WHERE clause.
+    Where Expression
+    // GroupBy is the optional list of GROUP BY columns, rendered after WHERE. Each
+    // column may be qualified. An empty slice renders no GROUP BY. Columns carry no
+    // bound values, so they do not affect placeholder numbering.
+    GroupBy []ColumnRef
+    // Having is the optional filter over grouped rows, rendered after GROUP BY; nil
+    // means no HAVING. Its bound values are numbered after the WHERE clause and
+    // before LIMIT/OFFSET.
+    Having Expression
+    // OrderBy is the optional list of sort terms, applied in order.
+    OrderBy []OrderByClause
+    // Limit is the optional row limit; nil means no LIMIT. The value is bound.
+    Limit *int64
+    // Offset is the optional row offset; nil means no OFFSET. The value is bound.
+    Offset *int64
+}
+    SelectStatement is a SELECT over a source table and zero or more joins,
+    with an optional DISTINCT, WHERE clause, GROUP BY / HAVING, ORDER BY terms,
+    and LIMIT/OFFSET bounds.
+
+    Render it with RenderSelect, which returns the SQL string and its positional
+    arguments. Build one fluently with Select.
+
+
+### go.5x5.cz/ptah/core/query.SortDirection
+
+package query // import "go.5x5.cz/ptah/core/query"
+
+type SortDirection int
+    SortDirection is the direction of an ORDER BY term.
+
+const SortAscending SortDirection = iota ...
+func (d SortDirection) String() string
 
 ### go.5x5.cz/ptah/core/query.UpdateBuilder
 
@@ -7307,37 +7287,90 @@ package query // import "go.5x5.cz/ptah/core/query"
 type UpdateBuilder struct {
     // Has unexported fields.
 }
-    UpdateBuilder builds an *ast.UpdateStatement through a fluent, chainable
-    API. Start with Update. A builder is not safe for concurrent use.
+    UpdateBuilder builds an *UpdateStatement through a fluent, chainable API.
+    Start with Update. A builder is not safe for concurrent use.
 
 func Update(table string) *UpdateBuilder
-func (b *UpdateBuilder) Build() *ast.UpdateStatement
+func (b *UpdateBuilder) Build() *UpdateStatement
 func (b *UpdateBuilder) Returning(columns ...string) *UpdateBuilder
 func (b *UpdateBuilder) Set(column string, value any) *UpdateBuilder
 func (b *UpdateBuilder) Unconditional() *UpdateBuilder
-func (b *UpdateBuilder) Where(expr ast.Expression) *UpdateBuilder
+func (b *UpdateBuilder) Where(expr Expression) *UpdateBuilder
+
+### go.5x5.cz/ptah/core/query.UpdateStatement
+
+package query // import "go.5x5.cz/ptah/core/query"
+
+type UpdateStatement struct {
+    // Table is the target table, rendered as a quoted identifier. Required.
+    Table string
+    // Set is the list of column assignments. Required and non-empty; the renderer
+    // rejects an empty SET.
+    Set []Assignment
+    // Where is the optional filter expression tree; nil means no WHERE clause. A
+    // nil Where is allowed only together with Unconditional.
+    Where Expression
+    // Unconditional opts in to a whole-table UPDATE when Where is nil. It is the
+    // explicit acknowledgment that every row is to be updated; without it, a nil
+    // Where is an error. It has no effect when Where is set.
+    Unconditional bool
+    // Returning is the optional RETURNING projection. See InsertStatement.Returning
+    // for the dialect support rules.
+    Returning []ColumnRef
+}
+    UpdateStatement is an UPDATE … SET … over a single table, with an optional
+    WHERE clause and RETURNING projection.
+
+    SET values are bound before WHERE values, matching left-to-right emission
+    order, so placeholder numbering is deterministic. An UPDATE with no WHERE
+    clause rewrites every row; because that is rarely intended, the renderer
+    rejects it unless Unconditional is set, turning an accidental whole-table
+    update into a render-time error rather than silent data loss.
+
 
 ### go.5x5.cz/ptah/core/query.WindowOption
 
 package query // import "go.5x5.cz/ptah/core/query"
 
-type WindowOption func(*ast.WindowSpec)
+type WindowOption func(*WindowSpec)
     WindowOption configures the OVER clause built by Over.
 
 func OrderAsc(columns ...string) WindowOption
 func OrderDesc(columns ...string) WindowOption
 func Partition(columns ...string) WindowOption
 
+### go.5x5.cz/ptah/core/query.WindowSpec
+
+package query // import "go.5x5.cz/ptah/core/query"
+
+type WindowSpec struct {
+    // PartitionBy divides the rows into groups the function is computed over.
+    // Empty computes over the whole result set.
+    PartitionBy []ColumnRef
+    // OrderBy orders the rows within each partition. Empty leaves the order
+    // unspecified, which for a ranking function means the engine may return any
+    // ordering -- a query relying on one is relying on that engine.
+    OrderBy []OrderByClause
+}
+    WindowSpec is the OVER (...) clause of a window function.
+
+    # What it deliberately does not model
+
+    A frame clause -- ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW and
+    its relatives -- is a further phase. Without one the engine applies its
+    default frame, which is well defined and is what an unframed window means
+    everywhere: RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW when the
+    window is ordered, and the whole partition when it is not. Emitting no frame
+    is therefore honest rather than incomplete; emitting a guessed one would
+    change results.
+
+
 ## go.5x5.cz/ptah/core/renderer
 
 func GetOrderedCreateStatements(r *goschema.Database, dialect string) ([]string, error)
 func GetOrderedCreateStatementsWithCapabilities(r *goschema.Database, dialect string, caps capability.Capabilities) ([]string, error)
-func RenderDelete(stmt *ast.DeleteStatement, dialect string) (string, []any, error)
-func RenderInsert(stmt *ast.InsertStatement, dialect string) (string, []any, error)
 func RenderSQL(dialect string, nodes ...ast.Node) (string, error)
 func RenderSQLWithCapabilities(dialect string, caps capability.Capabilities, nodes ...ast.Node) (string, error)
-func RenderSelect(stmt *ast.SelectStatement, dialect string) (string, []any, error)
-func RenderUpdate(stmt *ast.UpdateStatement, dialect string) (string, []any, error)
 func SupportedDialects() []string
 func ValidateSchema(r *goschema.Database, dialect string) error
 func ValidateSchemaWithCapabilities(r *goschema.Database, dialect string, caps capability.Capabilities) error

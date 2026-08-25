@@ -1,4 +1,4 @@
-package renderer_test
+package query_test
 
 import (
 	"fmt"
@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/ast"
+	"go.5x5.cz/ptah/core/query"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/internal/sqlident"
@@ -68,8 +68,8 @@ func dmlVerbs() []dmlVerb {
 		{
 			name: "SELECT",
 			render: func(dialect string) (string, []any, error) {
-				return renderer.RenderSelect(&ast.SelectStatement{
-					Columns: []ast.ResultColumn{{Name: "id"}, {Name: "name"}},
+				return query.RenderSelect(&query.SelectStatement{
+					Columns: []query.ResultColumn{{Name: "id"}, {Name: "name"}},
 					From:    "users",
 					Where:   matrixWhereID(),
 					Limit:   matrixInt64(10),
@@ -79,19 +79,19 @@ func dmlVerbs() []dmlVerb {
 		{
 			name: "INSERT",
 			render: func(dialect string) (string, []any, error) {
-				return renderer.RenderInsert(&ast.InsertStatement{
+				return query.RenderInsert(&query.InsertStatement{
 					Table:   "users",
 					Columns: []string{"id", "name"},
-					Rows:    [][]ast.Expression{{&ast.BoundValue{Value: int64(1)}, &ast.BoundValue{Value: "a"}}},
+					Rows:    [][]query.Expression{{&query.BoundValue{Value: int64(1)}, &query.BoundValue{Value: "a"}}},
 				}, dialect)
 			},
 		},
 		{
 			name: "UPDATE",
 			render: func(dialect string) (string, []any, error) {
-				return renderer.RenderUpdate(&ast.UpdateStatement{
+				return query.RenderUpdate(&query.UpdateStatement{
 					Table: "users",
-					Set:   []ast.Assignment{{Column: "name", Value: &ast.BoundValue{Value: "a"}}},
+					Set:   []query.Assignment{{Column: "name", Value: &query.BoundValue{Value: "a"}}},
 					Where: matrixWhereID(),
 				}, dialect)
 			},
@@ -99,7 +99,7 @@ func dmlVerbs() []dmlVerb {
 		{
 			name: "DELETE",
 			render: func(dialect string) (string, []any, error) {
-				return renderer.RenderDelete(&ast.DeleteStatement{
+				return query.RenderDelete(&query.DeleteStatement{
 					Table: "users",
 					Where: matrixWhereID(),
 				}, dialect)
@@ -108,11 +108,11 @@ func dmlVerbs() []dmlVerb {
 	}
 }
 
-func matrixWhereID() ast.Expression {
-	return &ast.Comparison{
-		Left:     &ast.ColumnRef{Name: "id"},
-		Operator: ast.OpEqual,
-		Right:    &ast.BoundValue{Value: int64(1)},
+func matrixWhereID() query.Expression {
+	return &query.Comparison{
+		Left:     &query.ColumnRef{Name: "id"},
+		Operator: query.OpEqual,
+		Right:    &query.BoundValue{Value: int64(1)},
 	}
 }
 
@@ -412,11 +412,11 @@ func untaughtRows(rows []placeholderRow) []placeholderRow {
 
 // onePlaceholderInsert is the smallest statement with exactly one bound value,
 // so the placeholder it renders is unambiguously the first one.
-func onePlaceholderInsert() *ast.InsertStatement {
-	return &ast.InsertStatement{
+func onePlaceholderInsert() *query.InsertStatement {
+	return &query.InsertStatement{
 		Table:   "users",
 		Columns: []string{"id"},
-		Rows:    [][]ast.Expression{{&ast.BoundValue{Value: int64(1)}}},
+		Rows:    [][]query.Expression{{&query.BoundValue{Value: int64(1)}}},
 	}
 }
 
@@ -427,7 +427,7 @@ func onePlaceholderInsert() *ast.InsertStatement {
 // fails on this line.
 func assertAgreesWithRebind(c *qt.C, dialect string) {
 	c.Helper()
-	sql, args, err := renderer.RenderInsert(onePlaceholderInsert(), dialect)
+	sql, args, err := query.RenderInsert(onePlaceholderInsert(), dialect)
 	c.Assert(err, qt.IsNil)
 	c.Assert(args, qt.DeepEquals, []any{int64(1)})
 	// sqlident.Ident, not sqlident.Quote: this assertion is about the
@@ -450,7 +450,7 @@ func assertAgreesWithRebind(c *qt.C, dialect string) {
 // not the ? a naive entry in selectPlaceholderStyle would emit.
 func assertRefusesButRebindKnows(c *qt.C, dialect, wantRebind string) {
 	c.Helper()
-	_, _, err := renderer.RenderInsert(onePlaceholderInsert(), dialect)
+	_, _, err := query.RenderInsert(onePlaceholderInsert(), dialect)
 	c.Assert(errorText(err), qt.Equals,
 		fmt.Sprintf("renderer: INSERT %s %q", genericRefusalMarker, dialect))
 	c.Assert(sqlutil.Rebind(dialect, "?"), qt.Equals, wantRebind)

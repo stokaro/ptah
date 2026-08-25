@@ -1,4 +1,4 @@
-package ast
+package query
 
 // This file defines the write-side DML statement AST: INSERT, UPDATE, and
 // DELETE. Like SelectStatement, these are statements rather than expressions —
@@ -7,13 +7,14 @@ package ast
 // filter positions reuse the Expression tree from select.go (BoundValue,
 // ColumnRef, Comparison, and the boolean combinators), so every value still
 // reaches SQL as a placeholder and every identifier through dialect quoting.
-// Render them with renderer.RenderInsert, renderer.RenderUpdate, and
-// renderer.RenderDelete; build them fluently with the core/query package.
+// Render them with RenderInsert, RenderUpdate, and RenderDelete; build them
+// fluently with InsertInto, Update, and DeleteFrom. The upsert this file models
+// is InsertStatement.OnConflict; core/ast's DDL-side UpsertNode is a separate,
+// unrelated node.
 //
-// Deliberately out of scope for now, and tracked as follow-ups on issue #98:
-// ON CONFLICT / upsert (the DDL-side UpsertNode in dml.go is a separate,
-// unrelated node), INSERT … SELECT, common table expressions, subqueries in a
-// VALUES row or a SET value, and multi-table UPDATE / DELETE.
+// Deliberately out of scope for now, and tracked as follow-ups on issue #98: a
+// WITH clause on a write statement, subqueries in a VALUES row or a SET value,
+// and multi-table UPDATE / DELETE.
 
 // Assignment is a single "column = value" pair in an UPDATE SET clause.
 //

@@ -1,19 +1,18 @@
-package renderer_test
+package query_test
 
 import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/query"
 )
 
 func TestRenderSelect_Distinct(t *testing.T) {
-	stmt := &ast.SelectStatement{
+	stmt := &query.SelectStatement{
 		Distinct: true,
-		Columns:  []ast.ResultColumn{{Name: "status"}},
+		Columns:  []query.ResultColumn{{Name: "status"}},
 		From:     "orders",
 	}
 
@@ -30,7 +29,7 @@ func TestRenderSelect_Distinct(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			sql, args, err := renderer.RenderSelect(stmt, tt.dialect)
+			sql, args, err := query.RenderSelect(stmt, tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
 			c.Assert(args, qt.HasLen, 0)
@@ -41,28 +40,28 @@ func TestRenderSelect_Distinct(t *testing.T) {
 func TestRenderSelect_GroupBy(t *testing.T) {
 	tests := []struct {
 		name    string
-		stmt    *ast.SelectStatement
+		stmt    *query.SelectStatement
 		wantSQL string
 	}{
 		{
 			name: "bare columns",
-			stmt: &ast.SelectStatement{
-				Columns: []ast.ResultColumn{{Name: "status"}},
+			stmt: &query.SelectStatement{
+				Columns: []query.ResultColumn{{Name: "status"}},
 				From:    "orders",
-				GroupBy: []ast.ColumnRef{{Name: "status"}, {Name: "kind"}},
+				GroupBy: []query.ColumnRef{{Name: "status"}, {Name: "kind"}},
 			},
 			wantSQL: `SELECT "status" FROM "orders" GROUP BY "status", "kind"`,
 		},
 		{
 			name: "qualified columns in a join",
-			stmt: &ast.SelectStatement{
-				Columns:   []ast.ResultColumn{{Qualifier: "u", Name: "id"}},
+			stmt: &query.SelectStatement{
+				Columns:   []query.ResultColumn{{Qualifier: "u", Name: "id"}},
 				From:      "users",
 				FromAlias: "u",
-				Joins: []ast.JoinClause{
-					{Type: ast.JoinInner, Table: "orders", Alias: "o", On: eqCols("o", "user_id", "u", "id")},
+				Joins: []query.JoinClause{
+					{Type: query.JoinInner, Table: "orders", Alias: "o", On: eqCols("o", "user_id", "u", "id")},
 				},
-				GroupBy: []ast.ColumnRef{{Qualifier: "u", Name: "id"}, {Qualifier: "o", Name: "status"}},
+				GroupBy: []query.ColumnRef{{Qualifier: "u", Name: "id"}, {Qualifier: "o", Name: "status"}},
 			},
 			wantSQL: `SELECT "u"."id" FROM "users" "u" INNER JOIN "orders" "o" ON "o"."user_id" = "u"."id" GROUP BY "u"."id", "o"."status"`,
 		},
@@ -71,7 +70,7 @@ func TestRenderSelect_GroupBy(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			sql, args, err := renderer.RenderSelect(tt.stmt, platform.Postgres)
+			sql, args, err := query.RenderSelect(tt.stmt, platform.Postgres)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
 			c.Assert(args, qt.HasLen, 0)
@@ -82,24 +81,24 @@ func TestRenderSelect_GroupBy(t *testing.T) {
 // groupedCountQuery groups by a column, projects COUNT(*), filters rows before
 // grouping (WHERE) and groups after (HAVING), so the placeholder ordering across
 // WHERE, HAVING, and LIMIT can be asserted in one statement.
-func groupedCountQuery() *ast.SelectStatement {
+func groupedCountQuery() *query.SelectStatement {
 	limit := int64(10)
-	return &ast.SelectStatement{
-		Columns: []ast.ResultColumn{
+	return &query.SelectStatement{
+		Columns: []query.ResultColumn{
 			{Name: "status"},
-			{Expr: &ast.FuncCall{Name: "COUNT", Star: true}, Alias: "n"},
+			{Expr: &query.FuncCall{Name: "COUNT", Star: true}, Alias: "n"},
 		},
 		From:  "orders",
-		Where: &ast.Comparison{Left: &ast.ColumnRef{Name: "tenant_id"}, Operator: ast.OpEqual, Right: &ast.BoundValue{Value: "acme"}},
-		GroupBy: []ast.ColumnRef{
+		Where: &query.Comparison{Left: &query.ColumnRef{Name: "tenant_id"}, Operator: query.OpEqual, Right: &query.BoundValue{Value: "acme"}},
+		GroupBy: []query.ColumnRef{
 			{Name: "status"},
 		},
-		Having: &ast.Comparison{
-			Left:     &ast.FuncCall{Name: "COUNT", Star: true},
-			Operator: ast.OpGreaterThan,
-			Right:    &ast.BoundValue{Value: int64(5)},
+		Having: &query.Comparison{
+			Left:     &query.FuncCall{Name: "COUNT", Star: true},
+			Operator: query.OpGreaterThan,
+			Right:    &query.BoundValue{Value: int64(5)},
 		},
-		OrderBy: []ast.OrderByClause{{Column: "status", Direction: ast.SortAscending}},
+		OrderBy: []query.OrderByClause{{Column: "status", Direction: query.SortAscending}},
 		Limit:   &limit,
 	}
 }
@@ -135,7 +134,7 @@ func TestRenderSelect_GroupByHavingPlaceholderOrdering(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			sql, args, err := renderer.RenderSelect(groupedCountQuery(), tt.dialect)
+			sql, args, err := query.RenderSelect(groupedCountQuery(), tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
 			c.Assert(args, qt.DeepEquals, wantArgs)
@@ -146,48 +145,48 @@ func TestRenderSelect_GroupByHavingPlaceholderOrdering(t *testing.T) {
 func TestRenderSelect_AggregateProjection(t *testing.T) {
 	tests := []struct {
 		name    string
-		expr    ast.Expression
+		expr    query.Expression
 		alias   string
 		wantSQL string
 	}{
 		{
 			name:    "count star",
-			expr:    &ast.FuncCall{Name: "COUNT", Star: true},
+			expr:    &query.FuncCall{Name: "COUNT", Star: true},
 			wantSQL: `SELECT COUNT(*) FROM "t"`,
 		},
 		{
 			name:    "count column",
-			expr:    &ast.FuncCall{Name: "COUNT", Args: []ast.Expression{&ast.ColumnRef{Name: "id"}}},
+			expr:    &query.FuncCall{Name: "COUNT", Args: []query.Expression{&query.ColumnRef{Name: "id"}}},
 			wantSQL: `SELECT COUNT("id") FROM "t"`,
 		},
 		{
 			name:    "count distinct column",
-			expr:    &ast.FuncCall{Name: "COUNT", Args: []ast.Expression{&ast.ColumnRef{Name: "status"}}, Distinct: true},
+			expr:    &query.FuncCall{Name: "COUNT", Args: []query.Expression{&query.ColumnRef{Name: "status"}}, Distinct: true},
 			wantSQL: `SELECT COUNT(DISTINCT "status") FROM "t"`,
 		},
 		{
 			name:    "sum",
-			expr:    &ast.FuncCall{Name: "SUM", Args: []ast.Expression{&ast.ColumnRef{Name: "total"}}},
+			expr:    &query.FuncCall{Name: "SUM", Args: []query.Expression{&query.ColumnRef{Name: "total"}}},
 			wantSQL: `SELECT SUM("total") FROM "t"`,
 		},
 		{
 			name:    "avg",
-			expr:    &ast.FuncCall{Name: "AVG", Args: []ast.Expression{&ast.ColumnRef{Name: "total"}}},
+			expr:    &query.FuncCall{Name: "AVG", Args: []query.Expression{&query.ColumnRef{Name: "total"}}},
 			wantSQL: `SELECT AVG("total") FROM "t"`,
 		},
 		{
 			name:    "min",
-			expr:    &ast.FuncCall{Name: "MIN", Args: []ast.Expression{&ast.ColumnRef{Name: "total"}}},
+			expr:    &query.FuncCall{Name: "MIN", Args: []query.Expression{&query.ColumnRef{Name: "total"}}},
 			wantSQL: `SELECT MIN("total") FROM "t"`,
 		},
 		{
 			name:    "max",
-			expr:    &ast.FuncCall{Name: "MAX", Args: []ast.Expression{&ast.ColumnRef{Name: "total"}}},
+			expr:    &query.FuncCall{Name: "MAX", Args: []query.Expression{&query.ColumnRef{Name: "total"}}},
 			wantSQL: `SELECT MAX("total") FROM "t"`,
 		},
 		{
 			name:    "aliased aggregate",
-			expr:    &ast.FuncCall{Name: "SUM", Args: []ast.Expression{&ast.ColumnRef{Name: "total"}}},
+			expr:    &query.FuncCall{Name: "SUM", Args: []query.Expression{&query.ColumnRef{Name: "total"}}},
 			alias:   "grand_total",
 			wantSQL: `SELECT SUM("total") AS "grand_total" FROM "t"`,
 		},
@@ -196,9 +195,9 @@ func TestRenderSelect_AggregateProjection(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			col := ast.ResultColumn{Expr: tt.expr, Alias: tt.alias}
-			stmt := &ast.SelectStatement{Columns: []ast.ResultColumn{col}, From: "t"}
-			sql, args, err := renderer.RenderSelect(stmt, platform.Postgres)
+			col := query.ResultColumn{Expr: tt.expr, Alias: tt.alias}
+			stmt := &query.SelectStatement{Columns: []query.ResultColumn{col}, From: "t"}
+			sql, args, err := query.RenderSelect(stmt, platform.Postgres)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
 			c.Assert(args, qt.HasLen, 0)
@@ -209,18 +208,18 @@ func TestRenderSelect_AggregateProjection(t *testing.T) {
 func TestRenderSelect_AggregateOverQualifiedColumnInJoin(t *testing.T) {
 	// COUNT("u"."id") and SUM("o"."total") each quote both qualifier parts, mix
 	// with a grouped column, and render in a join query across dialects.
-	stmt := &ast.SelectStatement{
-		Columns: []ast.ResultColumn{
+	stmt := &query.SelectStatement{
+		Columns: []query.ResultColumn{
 			{Qualifier: "u", Name: "name"},
-			{Expr: &ast.FuncCall{Name: "COUNT", Args: []ast.Expression{&ast.ColumnRef{Qualifier: "o", Name: "id"}}}, Alias: "orders"},
-			{Expr: &ast.FuncCall{Name: "SUM", Args: []ast.Expression{&ast.ColumnRef{Qualifier: "o", Name: "total"}}}, Alias: "spent"},
+			{Expr: &query.FuncCall{Name: "COUNT", Args: []query.Expression{&query.ColumnRef{Qualifier: "o", Name: "id"}}}, Alias: "orders"},
+			{Expr: &query.FuncCall{Name: "SUM", Args: []query.Expression{&query.ColumnRef{Qualifier: "o", Name: "total"}}}, Alias: "spent"},
 		},
 		From:      "users",
 		FromAlias: "u",
-		Joins: []ast.JoinClause{
-			{Type: ast.JoinInner, Table: "orders", Alias: "o", On: eqCols("o", "user_id", "u", "id")},
+		Joins: []query.JoinClause{
+			{Type: query.JoinInner, Table: "orders", Alias: "o", On: eqCols("o", "user_id", "u", "id")},
 		},
-		GroupBy: []ast.ColumnRef{{Qualifier: "u", Name: "name"}},
+		GroupBy: []query.ColumnRef{{Qualifier: "u", Name: "name"}},
 	}
 
 	tests := []struct {
@@ -248,7 +247,7 @@ func TestRenderSelect_AggregateOverQualifiedColumnInJoin(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			sql, args, err := renderer.RenderSelect(stmt, tt.dialect)
+			sql, args, err := query.RenderSelect(stmt, tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
 			c.Assert(args, qt.HasLen, 0)
@@ -261,18 +260,18 @@ func TestRenderSelect_AggregateInHavingBindsValue(t *testing.T) {
 
 	// SUM("total") in the projection carries no value, but comparing it against a
 	// bound value in HAVING binds exactly one placeholder.
-	stmt := &ast.SelectStatement{
-		Columns: []ast.ResultColumn{{Name: "status"}, {Expr: &ast.FuncCall{Name: "SUM", Args: []ast.Expression{&ast.ColumnRef{Name: "total"}}}}},
+	stmt := &query.SelectStatement{
+		Columns: []query.ResultColumn{{Name: "status"}, {Expr: &query.FuncCall{Name: "SUM", Args: []query.Expression{&query.ColumnRef{Name: "total"}}}}},
 		From:    "orders",
-		GroupBy: []ast.ColumnRef{{Name: "status"}},
-		Having: &ast.Comparison{
-			Left:     &ast.FuncCall{Name: "SUM", Args: []ast.Expression{&ast.ColumnRef{Name: "total"}}},
-			Operator: ast.OpGreaterThanOrEqual,
-			Right:    &ast.BoundValue{Value: int64(1000)},
+		GroupBy: []query.ColumnRef{{Name: "status"}},
+		Having: &query.Comparison{
+			Left:     &query.FuncCall{Name: "SUM", Args: []query.Expression{&query.ColumnRef{Name: "total"}}},
+			Operator: query.OpGreaterThanOrEqual,
+			Right:    &query.BoundValue{Value: int64(1000)},
 		},
 	}
 
-	sql, args, err := renderer.RenderSelect(stmt, platform.Postgres)
+	sql, args, err := query.RenderSelect(stmt, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Equals, `SELECT "status", SUM("total") FROM "orders" GROUP BY "status" HAVING SUM("total") >= $1`)
 	c.Assert(args, qt.DeepEquals, []any{int64(1000)})
@@ -283,11 +282,11 @@ func TestRenderSelect_FunctionNameNeverQuotedButValidated(t *testing.T) {
 	// quoted even though its column argument is.
 	t.Run("name is not quoted", func(t *testing.T) {
 		c := qt.New(t)
-		stmt := &ast.SelectStatement{
-			Columns: []ast.ResultColumn{{Expr: &ast.FuncCall{Name: "COUNT", Args: []ast.Expression{&ast.ColumnRef{Name: "id"}}}}},
+		stmt := &query.SelectStatement{
+			Columns: []query.ResultColumn{{Expr: &query.FuncCall{Name: "COUNT", Args: []query.Expression{&query.ColumnRef{Name: "id"}}}}},
 			From:    "t",
 		}
-		sql, _, err := renderer.RenderSelect(stmt, platform.Postgres)
+		sql, _, err := query.RenderSelect(stmt, platform.Postgres)
 		c.Assert(err, qt.IsNil)
 		c.Assert(sql, qt.Equals, `SELECT COUNT("id") FROM "t"`)
 	})
@@ -296,11 +295,11 @@ func TestRenderSelect_FunctionNameNeverQuotedButValidated(t *testing.T) {
 	// is not quoted, the renderer rejects anything that is not a simple identifier.
 	t.Run("injection name is rejected", func(t *testing.T) {
 		c := qt.New(t)
-		stmt := &ast.SelectStatement{
-			Columns: []ast.ResultColumn{{Expr: &ast.FuncCall{Name: "COUNT(*) FROM secrets; --", Star: true}}},
+		stmt := &query.SelectStatement{
+			Columns: []query.ResultColumn{{Expr: &query.FuncCall{Name: "COUNT(*) FROM secrets; --", Star: true}}},
 			From:    "t",
 		}
-		sql, args, err := renderer.RenderSelect(stmt, platform.Postgres)
+		sql, args, err := query.RenderSelect(stmt, platform.Postgres)
 		c.Assert(err, qt.ErrorMatches, `renderer: function name "COUNT\(\*\) FROM secrets; --" is not a valid identifier`)
 		c.Assert(sql, qt.Equals, "")
 		c.Assert(args, qt.IsNil)
@@ -310,17 +309,17 @@ func TestRenderSelect_FunctionNameNeverQuotedButValidated(t *testing.T) {
 func TestRenderSelect_GroupByHavingErrors(t *testing.T) {
 	tests := []struct {
 		name        string
-		stmt        *ast.SelectStatement
+		stmt        *query.SelectStatement
 		wantErrLike string
 	}{
 		{
 			name:        "empty group by column",
-			stmt:        &ast.SelectStatement{From: "t", GroupBy: []ast.ColumnRef{{Name: "  "}}},
+			stmt:        &query.SelectStatement{From: "t", GroupBy: []query.ColumnRef{{Name: "  "}}},
 			wantErrLike: "renderer: GROUP BY term has an empty column",
 		},
 		{
 			name:        "function with empty name",
-			stmt:        &ast.SelectStatement{Columns: []ast.ResultColumn{{Expr: &ast.FuncCall{Name: "  ", Star: true}}}, From: "t"},
+			stmt:        &query.SelectStatement{Columns: []query.ResultColumn{{Expr: &query.FuncCall{Name: "  ", Star: true}}}, From: "t"},
 			wantErrLike: "renderer: function call has an empty name",
 		},
 		{
@@ -328,22 +327,22 @@ func TestRenderSelect_GroupByHavingErrors(t *testing.T) {
 			// call is meaningless without one and is the whole shape of a
 			// ranking function with one (stokaro/ptah#941).
 			name:        "function without arguments, star or window",
-			stmt:        &ast.SelectStatement{Columns: []ast.ResultColumn{{Expr: &ast.FuncCall{Name: "SUM"}}}, From: "t"},
+			stmt:        &query.SelectStatement{Columns: []query.ResultColumn{{Expr: &query.FuncCall{Name: "SUM"}}}, From: "t"},
 			wantErrLike: "renderer: function SUM requires at least one argument, or a window that supplies its input",
 		},
 		{
 			name:        "star with arguments",
-			stmt:        &ast.SelectStatement{Columns: []ast.ResultColumn{{Expr: &ast.FuncCall{Name: "COUNT", Star: true, Args: []ast.Expression{&ast.ColumnRef{Name: "id"}}}}}, From: "t"},
+			stmt:        &query.SelectStatement{Columns: []query.ResultColumn{{Expr: &query.FuncCall{Name: "COUNT", Star: true, Args: []query.Expression{&query.ColumnRef{Name: "id"}}}}}, From: "t"},
 			wantErrLike: "renderer: function COUNT with a star takes no arguments",
 		},
 		{
 			name:        "star with distinct",
-			stmt:        &ast.SelectStatement{Columns: []ast.ResultColumn{{Expr: &ast.FuncCall{Name: "COUNT", Star: true, Distinct: true}}}, From: "t"},
+			stmt:        &query.SelectStatement{Columns: []query.ResultColumn{{Expr: &query.FuncCall{Name: "COUNT", Star: true, Distinct: true}}}, From: "t"},
 			wantErrLike: "renderer: function COUNT cannot combine DISTINCT with a star",
 		},
 		{
 			name:        "typed-nil function call does not panic",
-			stmt:        &ast.SelectStatement{From: "t", Having: (*ast.FuncCall)(nil)},
+			stmt:        &query.SelectStatement{From: "t", Having: (*query.FuncCall)(nil)},
 			wantErrLike: "renderer: nil function call",
 		},
 	}
@@ -351,7 +350,7 @@ func TestRenderSelect_GroupByHavingErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			sql, args, err := renderer.RenderSelect(tt.stmt, platform.Postgres)
+			sql, args, err := query.RenderSelect(tt.stmt, platform.Postgres)
 			c.Assert(err, qt.ErrorMatches, tt.wantErrLike)
 			c.Assert(sql, qt.Equals, "")
 			c.Assert(args, qt.IsNil)
@@ -366,20 +365,20 @@ func TestRenderSelect_Phase3ZeroValuesAreBackwardCompatible(t *testing.T) {
 	// ResultColumn.Expr/Alias) renders byte-identically to the Phase 1/2 output.
 	limit := int64(24)
 	offset := int64(0)
-	stmt := &ast.SelectStatement{
-		Columns: []ast.ResultColumn{{Name: "id"}, {Name: "name"}},
+	stmt := &query.SelectStatement{
+		Columns: []query.ResultColumn{{Name: "id"}, {Name: "name"}},
 		From:    "commodities",
-		Where: &ast.Comparison{
-			Left:     &ast.ColumnRef{Name: "draft"},
-			Operator: ast.OpEqual,
-			Right:    &ast.BoundValue{Value: false},
+		Where: &query.Comparison{
+			Left:     &query.ColumnRef{Name: "draft"},
+			Operator: query.OpEqual,
+			Right:    &query.BoundValue{Value: false},
 		},
-		OrderBy: []ast.OrderByClause{{Column: "name", Direction: ast.SortAscending}},
+		OrderBy: []query.OrderByClause{{Column: "name", Direction: query.SortAscending}},
 		Limit:   &limit,
 		Offset:  &offset,
 	}
 
-	sql, args, err := renderer.RenderSelect(stmt, platform.Postgres)
+	sql, args, err := query.RenderSelect(stmt, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Equals, `SELECT "id", "name" FROM "commodities" WHERE "draft" = $1 ORDER BY "name" ASC LIMIT $2 OFFSET $3`)
 	c.Assert(args, qt.DeepEquals, []any{false, int64(24), int64(0)})
@@ -388,36 +387,36 @@ func TestRenderSelect_Phase3ZeroValuesAreBackwardCompatible(t *testing.T) {
 // onWhereHavingLimitOffset carries a bound value in the JOIN ON, the WHERE, the
 // HAVING, and both the LIMIT and OFFSET, so a single statement pins the full
 // placeholder order across every binding clause.
-func onWhereHavingLimitOffset() *ast.SelectStatement {
+func onWhereHavingLimitOffset() *query.SelectStatement {
 	limit := int64(10)
 	offset := int64(20)
-	return &ast.SelectStatement{
-		Columns: []ast.ResultColumn{
+	return &query.SelectStatement{
+		Columns: []query.ResultColumn{
 			{Qualifier: "o", Name: "status"},
-			{Expr: &ast.FuncCall{Name: "COUNT", Star: true}, Alias: "n"},
+			{Expr: &query.FuncCall{Name: "COUNT", Star: true}, Alias: "n"},
 		},
 		From:      "orders",
 		FromAlias: "o",
-		Joins: []ast.JoinClause{
+		Joins: []query.JoinClause{
 			{
-				Type:  ast.JoinInner,
+				Type:  query.JoinInner,
 				Table: "users",
 				Alias: "u",
-				On: &ast.LogicalExpr{
-					Operator: ast.LogicalAnd,
-					Operands: []ast.Expression{
+				On: &query.LogicalExpr{
+					Operator: query.LogicalAnd,
+					Operands: []query.Expression{
 						eqCols("u", "id", "o", "user_id"),
-						&ast.Comparison{Left: &ast.ColumnRef{Qualifier: "u", Name: "status"}, Operator: ast.OpEqual, Right: &ast.BoundValue{Value: "active"}},
+						&query.Comparison{Left: &query.ColumnRef{Qualifier: "u", Name: "status"}, Operator: query.OpEqual, Right: &query.BoundValue{Value: "active"}},
 					},
 				},
 			},
 		},
-		Where:   &ast.Comparison{Left: &ast.ColumnRef{Qualifier: "o", Name: "total"}, Operator: ast.OpGreaterThan, Right: &ast.BoundValue{Value: int64(100)}},
-		GroupBy: []ast.ColumnRef{{Qualifier: "o", Name: "status"}},
-		Having: &ast.Comparison{
-			Left:     &ast.FuncCall{Name: "COUNT", Star: true},
-			Operator: ast.OpGreaterThan,
-			Right:    &ast.BoundValue{Value: int64(5)},
+		Where:   &query.Comparison{Left: &query.ColumnRef{Qualifier: "o", Name: "total"}, Operator: query.OpGreaterThan, Right: &query.BoundValue{Value: int64(100)}},
+		GroupBy: []query.ColumnRef{{Qualifier: "o", Name: "status"}},
+		Having: &query.Comparison{
+			Left:     &query.FuncCall{Name: "COUNT", Star: true},
+			Operator: query.OpGreaterThan,
+			Right:    &query.BoundValue{Value: int64(5)},
 		},
 		Limit:  &limit,
 		Offset: &offset,
@@ -454,7 +453,7 @@ func TestRenderSelect_OnWhereHavingLimitOffsetPlaceholderOrdering(t *testing.T) 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			sql, args, err := renderer.RenderSelect(onWhereHavingLimitOffset(), tt.dialect)
+			sql, args, err := query.RenderSelect(onWhereHavingLimitOffset(), tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
 			c.Assert(args, qt.DeepEquals, wantArgs)
@@ -465,13 +464,13 @@ func TestRenderSelect_OnWhereHavingLimitOffsetPlaceholderOrdering(t *testing.T) 
 func TestRenderSelect_HavingWithoutGroupBy(t *testing.T) {
 	// A HAVING is valid without GROUP BY: the aggregate spans the whole table. No
 	// GROUP BY clause is emitted, and the HAVING value takes the first placeholder.
-	stmt := &ast.SelectStatement{
-		Columns: []ast.ResultColumn{{Expr: &ast.FuncCall{Name: "COUNT", Star: true}, Alias: "n"}},
+	stmt := &query.SelectStatement{
+		Columns: []query.ResultColumn{{Expr: &query.FuncCall{Name: "COUNT", Star: true}, Alias: "n"}},
 		From:    "orders",
-		Having: &ast.Comparison{
-			Left:     &ast.FuncCall{Name: "COUNT", Star: true},
-			Operator: ast.OpGreaterThan,
-			Right:    &ast.BoundValue{Value: int64(5)},
+		Having: &query.Comparison{
+			Left:     &query.FuncCall{Name: "COUNT", Star: true},
+			Operator: query.OpGreaterThan,
+			Right:    &query.BoundValue{Value: int64(5)},
 		},
 	}
 
@@ -487,7 +486,7 @@ func TestRenderSelect_HavingWithoutGroupBy(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			sql, args, err := renderer.RenderSelect(stmt, tt.dialect)
+			sql, args, err := query.RenderSelect(stmt, tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
 			c.Assert(args, qt.DeepEquals, []any{int64(5)})
@@ -501,14 +500,14 @@ func TestRenderSelect_HavingWithOffsetOnly(t *testing.T) {
 	// MariaDB, and SQLite the offset-only "no limit" sentinel is a literal between
 	// HAVING and OFFSET, so it consumes no placeholder and does not shift the order.
 	offset := int64(5)
-	stmt := &ast.SelectStatement{
-		Columns: []ast.ResultColumn{{Expr: &ast.FuncCall{Name: "SUM", Args: []ast.Expression{&ast.ColumnRef{Name: "total"}}}, Alias: "s"}},
+	stmt := &query.SelectStatement{
+		Columns: []query.ResultColumn{{Expr: &query.FuncCall{Name: "SUM", Args: []query.Expression{&query.ColumnRef{Name: "total"}}}, Alias: "s"}},
 		From:    "orders",
-		GroupBy: []ast.ColumnRef{{Name: "status"}},
-		Having: &ast.Comparison{
-			Left:     &ast.FuncCall{Name: "SUM", Args: []ast.Expression{&ast.ColumnRef{Name: "total"}}},
-			Operator: ast.OpGreaterThan,
-			Right:    &ast.BoundValue{Value: int64(1000)},
+		GroupBy: []query.ColumnRef{{Name: "status"}},
+		Having: &query.Comparison{
+			Left:     &query.FuncCall{Name: "SUM", Args: []query.Expression{&query.ColumnRef{Name: "total"}}},
+			Operator: query.OpGreaterThan,
+			Right:    &query.BoundValue{Value: int64(1000)},
 		},
 		Offset: &offset,
 	}
@@ -540,7 +539,7 @@ func TestRenderSelect_HavingWithOffsetOnly(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			sql, args, err := renderer.RenderSelect(stmt, tt.dialect)
+			sql, args, err := query.RenderSelect(stmt, tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
 			c.Assert(args, qt.DeepEquals, wantArgs)

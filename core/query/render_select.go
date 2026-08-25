@@ -1,4 +1,4 @@
-package renderer
+package query
 
 import (
 	"errors"
@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/internal/sqlident"
 )
@@ -42,7 +41,7 @@ import (
 // operator, a function call with an invalid name or a bad argument shape, a GROUP
 // BY term with an empty column, a join without a table or ON condition, or a
 // RIGHT/FULL join on SQLite (which cannot express one before version 3.39).
-func RenderSelect(stmt *ast.SelectStatement, dialect string) (string, []any, error) {
+func RenderSelect(stmt *SelectStatement, dialect string) (string, []any, error) {
 	if stmt == nil {
 		return "", nil, errors.New("renderer: nil select statement")
 	}
@@ -190,7 +189,7 @@ func (r *selectRenderer) writeTableRef(table, alias string) {
 	}
 }
 
-func (r *selectRenderer) render(stmt *ast.SelectStatement) error {
+func (r *selectRenderer) render(stmt *SelectStatement) error {
 	if strings.TrimSpace(stmt.From) == "" {
 		return errors.New("renderer: select statement requires a FROM table")
 	}
@@ -263,7 +262,7 @@ const maxNestDepth = 16
 // The subqueries are rendered first and in order, which is what puts their
 // bound values ahead of the outer query's in args: a positional driver reads
 // $1 from the first CTE, not from the first WHERE.
-func (r *selectRenderer) renderWith(ctes []ast.CommonTableExpression) error {
+func (r *selectRenderer) renderWith(ctes []CommonTableExpression) error {
 	if len(ctes) == 0 {
 		return nil
 	}
@@ -283,7 +282,7 @@ func (r *selectRenderer) renderWith(ctes []ast.CommonTableExpression) error {
 	return nil
 }
 
-func (r *selectRenderer) renderCTE(index int, cte ast.CommonTableExpression) error {
+func (r *selectRenderer) renderCTE(index int, cte CommonTableExpression) error {
 	if strings.TrimSpace(cte.Name) == "" {
 		return errors.New("renderer: common table expression requires a name")
 	}
@@ -302,7 +301,7 @@ func (r *selectRenderer) renderCTE(index int, cte ast.CommonTableExpression) err
 	return nil
 }
 
-func (r *selectRenderer) renderColumns(columns []ast.ResultColumn) error {
+func (r *selectRenderer) renderColumns(columns []ResultColumn) error {
 	if len(columns) == 0 {
 		r.buf.WriteString("*")
 		return nil
@@ -322,7 +321,7 @@ func (r *selectRenderer) renderColumns(columns []ast.ResultColumn) error {
 // entry renders the expression (for example an aggregate); a Star entry renders
 // "*"; every other entry renders a quoted column. Expr takes precedence over Star
 // and Name, so an expression projection ignores the column fields.
-func (r *selectRenderer) renderResultColumn(col ast.ResultColumn) error {
+func (r *selectRenderer) renderResultColumn(col ResultColumn) error {
 	switch {
 	case col.Expr != nil:
 		if err := r.renderExpr(col.Expr); err != nil {
@@ -347,7 +346,7 @@ func (r *selectRenderer) renderResultColumn(col ast.ResultColumn) error {
 // rendered with the qualifier quoted and a bare, unquoted "*" — quoting the star
 // would produce the invalid "u"."*" — so a qualified SELECT u.* renders as
 // standard SQL. Every other column routes through writeQualifiedIdent.
-func (r *selectRenderer) writeResultColumn(col ast.ResultColumn) {
+func (r *selectRenderer) writeResultColumn(col ResultColumn) {
 	if strings.TrimSpace(col.Name) != "*" {
 		r.writeQualifiedIdent(col.Qualifier, col.Name)
 		return
@@ -363,7 +362,7 @@ func (r *selectRenderer) writeResultColumn(col ast.ResultColumn) {
 // renderJoins appends each join after the FROM clause in declared order. Their
 // ON conditions bind their placeholders before the WHERE clause, because they
 // render first.
-func (r *selectRenderer) renderJoins(joins []ast.JoinClause) error {
+func (r *selectRenderer) renderJoins(joins []JoinClause) error {
 	for i := range joins {
 		if err := r.renderJoin(&joins[i]); err != nil {
 			return err
@@ -373,7 +372,7 @@ func (r *selectRenderer) renderJoins(joins []ast.JoinClause) error {
 }
 
 // renderJoin appends a single join: " <TYPE> JOIN <table> [alias] ON <cond>".
-func (r *selectRenderer) renderJoin(join *ast.JoinClause) error {
+func (r *selectRenderer) renderJoin(join *JoinClause) error {
 	keyword := join.Type.String()
 	if keyword == "" {
 		return fmt.Errorf("renderer: unknown join type %d", join.Type)
@@ -408,47 +407,47 @@ func (r *selectRenderer) renderJoin(join *ast.JoinClause) error {
 // INNER and LEFT joins are accepted by every supported dialect; RIGHT is
 // accepted everywhere except SQLite; FULL OUTER is accepted only by the
 // PostgreSQL family.
-func (r *selectRenderer) checkJoinDialect(t ast.JoinType) error {
+func (r *selectRenderer) checkJoinDialect(t JoinType) error {
 	switch r.dialect {
 	case platform.SQLite:
-		if t == ast.JoinRight || t == ast.JoinFull {
+		if t == JoinRight || t == JoinFull {
 			return fmt.Errorf("renderer: SQLite does not support %s", t)
 		}
 	case platform.MySQL, platform.MariaDB:
-		if t == ast.JoinFull {
+		if t == JoinFull {
 			return fmt.Errorf("renderer: %s does not support %s", r.dialect, t)
 		}
 	}
 	return nil
 }
 
-// renderExpr dispatches over the sealed ast.Expression sum type. Each case
+// renderExpr dispatches over the sealed Expression sum type. Each case
 // delegates to a small helper so the dispatch stays flat.
-func (r *selectRenderer) renderExpr(expr ast.Expression) error {
+func (r *selectRenderer) renderExpr(expr Expression) error {
 	switch e := expr.(type) {
-	case *ast.ColumnRef:
+	case *ColumnRef:
 		return r.renderColumnRef(e)
-	case *ast.BoundValue:
+	case *BoundValue:
 		if e == nil {
 			return errors.New("renderer: nil bound value")
 		}
 		r.buf.WriteString(r.bind(e.Value))
 		return nil
-	case *ast.Comparison:
+	case *Comparison:
 		return r.renderComparison(e)
-	case *ast.ExistsExpr:
+	case *ExistsExpr:
 		return r.renderExists(e)
-	case *ast.InExpr:
+	case *InExpr:
 		return r.renderIn(e)
-	case *ast.NullTest:
+	case *NullTest:
 		return r.renderNullTest(e)
-	case *ast.LogicalExpr:
+	case *LogicalExpr:
 		return r.renderLogical(e)
-	case *ast.NotExpr:
+	case *NotExpr:
 		return r.renderNot(e)
-	case *ast.FuncCall:
+	case *FuncCall:
 		return r.renderFuncCall(e)
-	case *ast.Arithmetic:
+	case *Arithmetic:
 		return r.renderArithmetic(e)
 	default:
 		return fmt.Errorf("renderer: unsupported expression type %T", expr)
@@ -460,8 +459,8 @@ func (r *selectRenderer) renderExpr(expr ast.Expression) error {
 // The parentheses are not decoration. The node is a tree and SQL is text, so
 // without them `Mul(Add(a, b), c)` and `Add(a, Mul(b, c))` both render as
 // `a + b * c` and the server picks one reading by its own precedence --
-// agreeing with one tree and silently rewriting the other. See ast.Arithmetic.
-func (r *selectRenderer) renderArithmetic(expr *ast.Arithmetic) error {
+// agreeing with one tree and silently rewriting the other. See Arithmetic.
+func (r *selectRenderer) renderArithmetic(expr *Arithmetic) error {
 	if expr == nil {
 		return errors.New("renderer: nil arithmetic expression")
 	}
@@ -483,7 +482,7 @@ func (r *selectRenderer) renderArithmetic(expr *ast.Arithmetic) error {
 	return nil
 }
 
-func (r *selectRenderer) renderColumnRef(ref *ast.ColumnRef) error {
+func (r *selectRenderer) renderColumnRef(ref *ColumnRef) error {
 	if ref == nil {
 		return errors.New("renderer: nil column reference")
 	}
@@ -502,7 +501,7 @@ func (r *selectRenderer) renderColumnRef(ref *ast.ColumnRef) error {
 	return nil
 }
 
-func (r *selectRenderer) renderComparison(cmp *ast.Comparison) error {
+func (r *selectRenderer) renderComparison(cmp *Comparison) error {
 	if cmp == nil {
 		return errors.New("renderer: nil comparison")
 	}
@@ -521,7 +520,7 @@ func (r *selectRenderer) renderComparison(cmp *ast.Comparison) error {
 
 // renderNested renders one statement inside another, inside parentheses, under
 // the shared nesting bound.
-func (r *selectRenderer) renderNested(stmt *ast.SelectStatement) error {
+func (r *selectRenderer) renderNested(stmt *SelectStatement) error {
 	r.nestDepth++
 	defer func() { r.nestDepth-- }()
 	if r.nestDepth > maxNestDepth {
@@ -535,7 +534,7 @@ func (r *selectRenderer) renderNested(stmt *ast.SelectStatement) error {
 	return nil
 }
 
-func (r *selectRenderer) renderExists(exists *ast.ExistsExpr) error {
+func (r *selectRenderer) renderExists(exists *ExistsExpr) error {
 	if exists == nil {
 		return errors.New("renderer: nil EXISTS expression")
 	}
@@ -549,7 +548,7 @@ func (r *selectRenderer) renderExists(exists *ast.ExistsExpr) error {
 	return r.renderNested(exists.Query)
 }
 
-func (r *selectRenderer) renderIn(in *ast.InExpr) error {
+func (r *selectRenderer) renderIn(in *InExpr) error {
 	if in == nil {
 		return errors.New("renderer: nil IN expression")
 	}
@@ -577,7 +576,7 @@ func (r *selectRenderer) renderIn(in *ast.InExpr) error {
 
 // renderInSubquery renders the membership form that reads its candidates from
 // a query rather than from a value list.
-func (r *selectRenderer) renderInSubquery(in *ast.InExpr) error {
+func (r *selectRenderer) renderInSubquery(in *InExpr) error {
 	if len(in.Values) > 0 {
 		return errors.New("renderer: IN takes either values or a subquery, not both")
 	}
@@ -588,7 +587,7 @@ func (r *selectRenderer) renderInSubquery(in *ast.InExpr) error {
 	return r.renderNested(in.Subquery)
 }
 
-func (r *selectRenderer) renderNullTest(test *ast.NullTest) error {
+func (r *selectRenderer) renderNullTest(test *NullTest) error {
 	if test == nil {
 		return errors.New("renderer: nil null test")
 	}
@@ -603,7 +602,7 @@ func (r *selectRenderer) renderNullTest(test *ast.NullTest) error {
 	return nil
 }
 
-func (r *selectRenderer) renderLogical(logical *ast.LogicalExpr) error {
+func (r *selectRenderer) renderLogical(logical *LogicalExpr) error {
 	if logical == nil {
 		return errors.New("renderer: nil logical expression")
 	}
@@ -629,7 +628,7 @@ func (r *selectRenderer) renderLogical(logical *ast.LogicalExpr) error {
 	return nil
 }
 
-func (r *selectRenderer) renderNot(not *ast.NotExpr) error {
+func (r *selectRenderer) renderNot(not *NotExpr) error {
 	if not == nil {
 		return errors.New("renderer: nil NOT expression")
 	}
@@ -648,7 +647,7 @@ func (r *selectRenderer) renderNot(not *ast.NotExpr) error {
 // COUNT(DISTINCT "col"), or SUM("u"."total"). The function name is validated and
 // emitted verbatim as a keyword — never quoted and never bound — while each
 // argument routes through renderExpr so a column is quoted and a value is bound.
-func (r *selectRenderer) renderFuncCall(fn *ast.FuncCall) error {
+func (r *selectRenderer) renderFuncCall(fn *FuncCall) error {
 	if fn == nil {
 		return errors.New("renderer: nil function call")
 	}
@@ -697,7 +696,7 @@ func (r *selectRenderer) renderFuncCall(fn *ast.FuncCall) error {
 // it for an empty spec would silently turn one back into an ordinary aggregate
 // over the group -- a different query with a different answer
 // (stokaro/ptah#941).
-func (r *selectRenderer) renderWindowSpec(spec *ast.WindowSpec) error {
+func (r *selectRenderer) renderWindowSpec(spec *WindowSpec) error {
 	if spec == nil {
 		return nil
 	}
@@ -730,7 +729,7 @@ func (r *selectRenderer) renderWindowSpec(spec *ast.WindowSpec) error {
 // renderFuncStar writes the "*" argument form, as in COUNT(*). The star is
 // mutually exclusive with explicit arguments and with DISTINCT, since neither
 // COUNT(*, x) nor COUNT(DISTINCT *) is valid SQL.
-func (r *selectRenderer) renderFuncStar(name string, fn *ast.FuncCall) error {
+func (r *selectRenderer) renderFuncStar(name string, fn *FuncCall) error {
 	if len(fn.Args) > 0 {
 		return fmt.Errorf("renderer: function %s with a star takes no arguments", name)
 	}
@@ -762,7 +761,7 @@ func isSafeFunctionName(name string) bool {
 // renderGroupBy appends the GROUP BY clause after WHERE. Each column is rendered
 // as a quoted identifier, qualified when a qualifier is set; GROUP BY carries no
 // values, so it never binds a placeholder. An empty list renders nothing.
-func (r *selectRenderer) renderGroupBy(cols []ast.ColumnRef) error {
+func (r *selectRenderer) renderGroupBy(cols []ColumnRef) error {
 	if len(cols) == 0 {
 		return nil
 	}
@@ -780,7 +779,7 @@ func (r *selectRenderer) renderGroupBy(cols []ast.ColumnRef) error {
 	return nil
 }
 
-func (r *selectRenderer) renderOrderBy(terms []ast.OrderByClause) error {
+func (r *selectRenderer) renderOrderBy(terms []OrderByClause) error {
 	if len(terms) == 0 {
 		return nil
 	}
@@ -794,7 +793,7 @@ func (r *selectRenderer) renderOrderBy(terms []ast.OrderByClause) error {
 // the loop: a term is a term, and two copies would let one learn a rule the
 // other did not -- an empty column refused in one place and emitted in the
 // other (stokaro/ptah#941).
-func (r *selectRenderer) writeOrderByTerms(terms []ast.OrderByClause) error {
+func (r *selectRenderer) writeOrderByTerms(terms []OrderByClause) error {
 	r.buf.WriteString("ORDER BY ")
 	for i, term := range terms {
 		if i > 0 {

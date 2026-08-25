@@ -5,18 +5,16 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/query"
-	"go.5x5.cz/ptah/core/renderer"
 )
 
 // renderWhere renders "SELECT * FROM t WHERE <expr>" for PostgreSQL and returns
 // the WHERE-clause behavior, so constructor tests can assert the observable SQL
 // contract rather than the internal node shape.
-func renderWhere(c *qt.C, expr ast.Expression) (string, []any) {
+func renderWhere(c *qt.C, expr query.Expression) (string, []any) {
 	c.Helper()
-	sql, args, err := renderer.RenderSelect(&ast.SelectStatement{From: "t", Where: expr}, platform.Postgres)
+	sql, args, err := query.RenderSelect(&query.SelectStatement{From: "t", Where: expr}, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	return sql, args
 }
@@ -24,7 +22,7 @@ func renderWhere(c *qt.C, expr ast.Expression) (string, []any) {
 func TestExpressionConstructors(t *testing.T) {
 	tests := []struct {
 		name     string
-		expr     ast.Expression
+		expr     query.Expression
 		wantSQL  string
 		wantArgs []any
 	}{
@@ -127,18 +125,18 @@ func TestExpressionConstructors(t *testing.T) {
 func TestSelectBuilder_Projection(t *testing.T) {
 	tests := []struct {
 		name string
-		stmt *ast.SelectStatement
-		want []ast.ResultColumn
+		stmt *query.SelectStatement
+		want []query.ResultColumn
 	}{
 		{
 			name: "named columns",
 			stmt: query.Select("id", "name").From("t").Build(),
-			want: []ast.ResultColumn{{Name: "id"}, {Name: "name"}},
+			want: []query.ResultColumn{{Name: "id"}, {Name: "name"}},
 		},
 		{
 			name: "explicit star",
 			stmt: query.Select("*").From("t").Build(),
-			want: []ast.ResultColumn{{Star: true}},
+			want: []query.ResultColumn{{Star: true}},
 		},
 	}
 
@@ -156,7 +154,7 @@ func TestSelectBuilder_NoColumnsIsSelectStar(t *testing.T) {
 	stmt := query.Select().From("t").Build()
 	c.Assert(stmt.Columns, qt.HasLen, 0)
 
-	sql, _, err := renderer.RenderSelect(stmt, platform.Postgres)
+	sql, _, err := query.RenderSelect(stmt, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Equals, `SELECT * FROM "t"`)
 }
@@ -184,9 +182,9 @@ func TestSelectBuilder_OrderByAccumulates(t *testing.T) {
 		OrderBy(query.Desc("id")).
 		Build()
 
-	c.Assert(stmt.OrderBy, qt.DeepEquals, []ast.OrderByClause{
-		{Column: "name", Direction: ast.SortAscending},
-		{Column: "id", Direction: ast.SortDescending},
+	c.Assert(stmt.OrderBy, qt.DeepEquals, []query.OrderByClause{
+		{Column: "name", Direction: query.SortAscending},
+		{Column: "id", Direction: query.SortDescending},
 	})
 }
 
@@ -199,7 +197,7 @@ func TestSelectBuilder_WhereReplaces(t *testing.T) {
 		Where(query.Eq("b", 2)).
 		Build()
 
-	sql, args, err := renderer.RenderSelect(stmt, platform.Postgres)
+	sql, args, err := query.RenderSelect(stmt, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Equals, `SELECT * FROM "t" WHERE "b" = $1`)
 	c.Assert(args, qt.DeepEquals, []any{2})
@@ -223,7 +221,7 @@ func TestSelectBuilder_FluentEndToEnd(t *testing.T) {
 		Offset(0).
 		Build()
 
-	sql, args, err := renderer.RenderSelect(stmt, platform.Postgres)
+	sql, args, err := query.RenderSelect(stmt, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Equals, `SELECT "id", "name" FROM "commodities" WHERE ("draft" = $1 AND "status" IN ($2, $3) AND ("deleted_at" IS NOT NULL OR NOT ("count" > $4))) ORDER BY "name" ASC, "id" ASC LIMIT $5 OFFSET $6`)
 	c.Assert(args, qt.DeepEquals, []any{false, "in_use", "sold", int64(10), int64(24), int64(0)})
@@ -239,12 +237,12 @@ func TestSelectBuilder_SharedWhereFragment(t *testing.T) {
 	page := query.Select("id").From("commodities").Where(filter).Limit(20).Build()
 	total := query.Select("id").From("commodities").Where(filter).Build()
 
-	pageSQL, pageArgs, err := renderer.RenderSelect(page, platform.Postgres)
+	pageSQL, pageArgs, err := query.RenderSelect(page, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	c.Assert(pageSQL, qt.Equals, `SELECT "id" FROM "commodities" WHERE ("draft" = $1 AND "tenant_id" = $2) LIMIT $3`)
 	c.Assert(pageArgs, qt.DeepEquals, []any{false, "acme", int64(20)})
 
-	totalSQL, totalArgs, err := renderer.RenderSelect(total, platform.Postgres)
+	totalSQL, totalArgs, err := query.RenderSelect(total, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	c.Assert(totalSQL, qt.Equals, `SELECT "id" FROM "commodities" WHERE ("draft" = $1 AND "tenant_id" = $2)`)
 	c.Assert(totalArgs, qt.DeepEquals, []any{false, "acme"})
@@ -255,7 +253,7 @@ func TestSelectBuilder_DegenerateExpressionsErrorCleanly(t *testing.T) {
 	// a panic, when the statement is rendered.
 	tests := []struct {
 		name        string
-		expr        ast.Expression
+		expr        query.Expression
 		wantErrLike string
 	}{
 		{
@@ -284,7 +282,7 @@ func TestSelectBuilder_DegenerateExpressionsErrorCleanly(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 			stmt := query.Select("*").From("t").Where(tt.expr).Build()
-			sql, args, err := renderer.RenderSelect(stmt, platform.Postgres)
+			sql, args, err := query.RenderSelect(stmt, platform.Postgres)
 			c.Assert(err, qt.ErrorMatches, tt.wantErrLike)
 			c.Assert(sql, qt.Equals, "")
 			c.Assert(args, qt.IsNil)

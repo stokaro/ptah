@@ -1,17 +1,16 @@
-package renderer
+package query
 
 import (
 	"errors"
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform"
 )
 
 // This file renders the write-side DML statements — INSERT, UPDATE, and DELETE —
 // to parameterized SQL. It reuses the SELECT renderer's parameter machinery
-// (selectRenderer in select.go) so that the whole family shares one placeholder
+// (selectRenderer in render_select.go) so that the whole family shares one placeholder
 // numbering pass, one identifier-quoting path, and one expression renderer. A
 // value can therefore never become an identifier, an identifier can never break
 // out of its quotes, and placeholder numbering is a single left-to-right pass —
@@ -31,7 +30,7 @@ import (
 // It returns an error for a nil statement, an unsupported dialect, a missing
 // table, an empty column list, an empty row list, or a row whose length does not
 // match the column count.
-func RenderInsert(stmt *ast.InsertStatement, dialect string) (string, []any, error) {
+func RenderInsert(stmt *InsertStatement, dialect string) (string, []any, error) {
 	if stmt == nil {
 		return "", nil, errors.New("renderer: nil insert statement")
 	}
@@ -58,7 +57,7 @@ func RenderInsert(stmt *ast.InsertStatement, dialect string) (string, []any, err
 // for a nil statement, an unsupported dialect, a missing table, an empty SET
 // list, an assignment with an empty column or nil value, or a RETURNING clause on
 // a dialect that cannot execute one.
-func RenderUpdate(stmt *ast.UpdateStatement, dialect string) (string, []any, error) {
+func RenderUpdate(stmt *UpdateStatement, dialect string) (string, []any, error) {
 	if stmt == nil {
 		return "", nil, errors.New("renderer: nil update statement")
 	}
@@ -82,7 +81,7 @@ func RenderUpdate(stmt *ast.UpdateStatement, dialect string) (string, []any, err
 // statement is explicitly marked Unconditional. It also returns an error for a
 // nil statement, an unsupported dialect, a missing table, or a RETURNING clause
 // on a dialect that cannot execute one.
-func RenderDelete(stmt *ast.DeleteStatement, dialect string) (string, []any, error) {
+func RenderDelete(stmt *DeleteStatement, dialect string) (string, []any, error) {
 	if stmt == nil {
 		return "", nil, errors.New("renderer: nil delete statement")
 	}
@@ -152,7 +151,7 @@ func refuseUnportableWrite(normalized, kind string) error {
 			"ALTER TABLE … UPDATE, or enable enable_block_number_column on the table")
 }
 
-func (r *selectRenderer) renderInsert(stmt *ast.InsertStatement) error {
+func (r *selectRenderer) renderInsert(stmt *InsertStatement) error {
 	if strings.TrimSpace(stmt.Table) == "" {
 		return errors.New("renderer: insert statement requires a table")
 	}
@@ -202,7 +201,7 @@ func (r *selectRenderer) renderInsert(stmt *ast.InsertStatement) error {
 // many columns the source table happens to have today, so a statement that
 // matches now breaks the next time somebody adds a column to that table, with
 // nothing in this statement changed (stokaro/ptah#941).
-func (r *selectRenderer) writeInsertSelect(columns []string, query *ast.SelectStatement) error {
+func (r *selectRenderer) writeInsertSelect(columns []string, query *SelectStatement) error {
 	if len(query.Columns) == 0 {
 		return errors.New(
 			"renderer: the SELECT supplying an INSERT must project its columns explicitly; " +
@@ -229,7 +228,7 @@ func (r *selectRenderer) writeInsertSelect(columns []string, query *ast.SelectSt
 //
 // SQL Server spells this as MERGE and ClickHouse has no upsert statement, so
 // both are refused by name (stokaro/ptah#941).
-func (r *selectRenderer) renderOnConflict(clause *ast.OnConflict, inserted []string) error {
+func (r *selectRenderer) renderOnConflict(clause *OnConflict, inserted []string) error {
 	if clause == nil {
 		return nil
 	}
@@ -268,7 +267,7 @@ func (r *selectRenderer) renderOnConflict(clause *ast.OnConflict, inserted []str
 
 // renderOnConflictTarget writes the PostgreSQL and SQLite spelling, where the
 // proposed row is named `excluded`.
-func (r *selectRenderer) renderOnConflictTarget(clause *ast.OnConflict) error {
+func (r *selectRenderer) renderOnConflictTarget(clause *OnConflict) error {
 	// Both engines allow the target to be omitted only for DO NOTHING. A bare
 	// `ON CONFLICT DO UPDATE` is a syntax error on each -- the server has no way
 	// to know which index's collision the SET applies to -- so it is refused
@@ -312,7 +311,7 @@ func (r *selectRenderer) renderOnConflictTarget(clause *ast.OnConflict) error {
 // A conflict TARGET is refused here rather than dropped: ON DUPLICATE KEY fires
 // for every unique key on the table, so honoring the clause while ignoring the
 // columns it named would widen what the caller asked for.
-func (r *selectRenderer) renderOnDuplicateKey(clause *ast.OnConflict, inserted []string) error {
+func (r *selectRenderer) renderOnDuplicateKey(clause *OnConflict, inserted []string) error {
 	if len(clause.Columns) > 0 {
 		return fmt.Errorf(
 			"renderer: %s cannot scope an upsert to named columns: ON DUPLICATE KEY UPDATE "+
@@ -367,7 +366,7 @@ func (r *selectRenderer) writeInsertColumns(columns []string) error {
 // order so args match placeholder numbering row by row. A row whose length does
 // not match the column count is rejected rather than emitted, so ragged input
 // fails cleanly instead of producing a mismatched INSERT.
-func (r *selectRenderer) writeInsertRows(columns []string, rows [][]ast.Expression) error {
+func (r *selectRenderer) writeInsertRows(columns []string, rows [][]Expression) error {
 	for i, row := range rows {
 		if len(row) != len(columns) {
 			return fmt.Errorf("renderer: insert row %d has %d values but there are %d columns", i+1, len(row), len(columns))
@@ -389,7 +388,7 @@ func (r *selectRenderer) writeInsertRows(columns []string, rows [][]ast.Expressi
 	return nil
 }
 
-func (r *selectRenderer) renderUpdate(stmt *ast.UpdateStatement) error {
+func (r *selectRenderer) renderUpdate(stmt *UpdateStatement) error {
 	if strings.TrimSpace(stmt.Table) == "" {
 		return errors.New("renderer: update statement requires a table")
 	}
@@ -417,7 +416,7 @@ func (r *selectRenderer) renderUpdate(stmt *ast.UpdateStatement) error {
 
 // writeAssignments writes the SET list, binding each value after its quoted
 // column. Because SET renders before WHERE, these values are numbered first.
-func (r *selectRenderer) writeAssignments(assignments []ast.Assignment) error {
+func (r *selectRenderer) writeAssignments(assignments []Assignment) error {
 	for i := range assignments {
 		if strings.TrimSpace(assignments[i].Column) == "" {
 			return errors.New("renderer: assignment has an empty column")
@@ -437,7 +436,7 @@ func (r *selectRenderer) writeAssignments(assignments []ast.Assignment) error {
 	return nil
 }
 
-func (r *selectRenderer) renderDelete(stmt *ast.DeleteStatement) error {
+func (r *selectRenderer) renderDelete(stmt *DeleteStatement) error {
 	if strings.TrimSpace(stmt.Table) == "" {
 		return errors.New("renderer: delete statement requires a table")
 	}
@@ -475,7 +474,7 @@ func (r *selectRenderer) renderDelete(stmt *ast.DeleteStatement) error {
 // and the databases support matrix already asks callers to review generated
 // Spanner SQL before relying on it; that caveat covers the whole statement, not
 // this clause in particular.
-func (r *selectRenderer) renderReturning(cols []ast.ColumnRef) error {
+func (r *selectRenderer) renderReturning(cols []ColumnRef) error {
 	if len(cols) == 0 {
 		return nil
 	}

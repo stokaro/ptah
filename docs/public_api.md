@@ -87,6 +87,13 @@ referenced-key policy: `ForeignKeysRequireUniqueReference`,
 schema validation without rendering SQL. Migration planning calls this path
 before producing AST nodes.
 
+`core/ast` and `core/renderer` carry the DDL language: the visitor node tree
+and the dialect engines that turn it into schema SQL. `core/query` carries the
+whole DML language: the SELECT / INSERT / UPDATE / DELETE statement and
+expression tree, the fluent builders that produce it, and `RenderSelect`,
+`RenderInsert`, `RenderUpdate`, and `RenderDelete`, which return parameterized
+SQL plus its positional arguments for a named dialect.
+
 `goschema.Extension.Schema` records a PostgreSQL extension's installation
 schema. `ast.ExtensionNode.Schema` and `SetSchema` carry the same intent into
 SQL rendering, which emits `CREATE EXTENSION ... WITH SCHEMA ...` after any

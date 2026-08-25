@@ -1,11 +1,14 @@
-// Package query provides a fluent, dialect-aware builder for parameterized SQL
-// SELECT statements.
+// Package query is Ptah's DML language in one place: the statement and
+// expression tree for SELECT, INSERT, UPDATE, and DELETE, the fluent builders
+// that produce it, and the render functions that turn it into parameterized
+// SQL.
 //
-// It is the DML counterpart to the DDL construction helpers in
-// ptah/internal/astbuilder: where those build CREATE TABLE and friends, this
-// package builds read queries. A builder produces an *ast.SelectStatement, which
-// renderer.RenderSelect turns into a SQL string plus its positional arguments
-// for PostgreSQL, MySQL, MariaDB, SQLite, ClickHouse, and SQL Server.
+// It is the DML counterpart to the DDL story split across core/ast (the node
+// tree) and core/renderer (the visitor engine): where those model CREATE TABLE
+// and friends, this package models data statements. A builder produces a
+// *SelectStatement, which RenderSelect turns into a SQL string plus its
+// positional arguments for the PostgreSQL family, MySQL, MariaDB, SQLite,
+// ClickHouse, SQL Server, and Oracle.
 //
 // # Scope
 //
@@ -19,14 +22,14 @@
 //
 // The write side of DML is covered too: InsertInto, Update, and DeleteFrom build
 // single-table INSERT / UPDATE / DELETE statements, each rendered by its own
-// renderer entry point (RenderInsert, RenderUpdate, RenderDelete). See the
+// entry point (RenderInsert, RenderUpdate, RenderDelete). See the
 // "Writes" section below.
 //
-// ClickHouse is the one dialect that does not render all four: UPDATE and
-// DELETE are mutations there -- spelled ALTER TABLE … UPDATE and applied
-// asynchronously outside a transaction -- so they are refused with that reason
-// rather than emitted in a portable spelling the server does not parse. SELECT
-// and INSERT are ordinary statements there and render normally.
+// ClickHouse is the one dialect that does not render all four: a plain UPDATE
+// runs there only on a table with the materialized _block_number column, which
+// a statement cannot declare, so RenderUpdate refuses it with that reason
+// rather than emit SQL the server rejects. SELECT, INSERT, and DELETE are
+// ordinary statements there and render normally.
 //
 // LIKE and NOT LIKE are available through Like and NotLike. Their pattern is a
 // bound value like any other, so it can carry no SQL; its wildcards are the
@@ -75,8 +78,8 @@
 //   - Values passed to Eq, In, and the other comparison helpers are typed as
 //     any and always travel to the database as bound parameters. They are never
 //     interpolated into the SQL text; the renderer emits a placeholder ($1, $2,
-//     … for PostgreSQL; ? for MySQL/MariaDB/SQLite/ClickHouse; @p1, @p2, … for
-//     SQL Server) and appends the value to the returned argument slice. LIMIT
+//     … for the PostgreSQL family; ? for MySQL/MariaDB/SQLite/ClickHouse;
+//     @p1, @p2, … for SQL Server; :1, :2, … for Oracle) and appends the value to the returned argument slice. LIMIT
 //     and OFFSET values are bound the same way, including the OFFSET/FETCH
 //     bounds SQL Server pages with.
 //   - Identifiers (table names, column names) are always emitted through
@@ -107,13 +110,13 @@
 //		Offset(0).
 //		Build()
 //
-//	sql, args, err := renderer.RenderSelect(stmt, platform.Postgres)
+//	sql, args, err := query.RenderSelect(stmt, platform.Postgres)
 //	// sql:  SELECT "id", "name" FROM "commodities" WHERE (...) ORDER BY ... LIMIT $5 OFFSET $6
 //	// args: []any{false, "in_use", "sold", int64(10), int64(24), int64(0)}
 //
 // A WHERE expression can be built once and shared between statements (for
 // example, a COUNT(*) and the paged SELECT that share the same filter), because
-// the expression constructors return plain *ast expression nodes.
+// the expression constructors return plain expression nodes.
 //
 // # Joins
 //
@@ -134,7 +137,7 @@
 //		Limit(20).
 //		Build()
 //
-//	sql, args, err := renderer.RenderSelect(stmt, platform.Postgres)
+//	sql, args, err := query.RenderSelect(stmt, platform.Postgres)
 //	// sql:  SELECT "u"."id", "u"."name", "o"."total" FROM "users" "u"
 //	//       INNER JOIN "orders" "o" ON "o"."user_id" = "u"."id"
 //	//       WHERE ("o"."status" = $1 AND "u"."active" = $2)
@@ -172,7 +175,7 @@
 //		Limit(10).
 //		Build()
 //
-//	sql, args, err := renderer.RenderSelect(stmt, platform.Postgres)
+//	sql, args, err := query.RenderSelect(stmt, platform.Postgres)
 //	// sql:  SELECT "status", COUNT(*) AS "n" FROM "orders" WHERE "tenant_id" = $1
 //	//       GROUP BY "status" HAVING COUNT(*) > $2 ORDER BY "status" ASC LIMIT $3
 //	// args: []any{tenantID, int64(5), int64(10)}
@@ -188,7 +191,7 @@
 // InsertInto, Update, and DeleteFrom build the write-side statements. Values
 // passed to Values and Set are bound exactly like WHERE values — the classic
 // "concatenate a value into SQL" injection cannot happen through this API — and
-// column and table names are quoted. Each has its own renderer entry point:
+// column and table names are quoted. Each has its own entry point:
 // RenderInsert, RenderUpdate, RenderDelete, all returning (sql, args, err).
 //
 //	ins := query.InsertInto("users").
@@ -197,7 +200,7 @@
 //		Values(int64(2), "bob").
 //		Returning("id").
 //		Build()
-//	sql, args, err := renderer.RenderInsert(ins, platform.Postgres)
+//	sql, args, err := query.RenderInsert(ins, platform.Postgres)
 //	// sql:  INSERT INTO "users" ("id", "name") VALUES ($1, $2), ($3, $4) RETURNING "id"
 //	// args: []any{int64(1), "alice", int64(2), "bob"}
 //
@@ -205,7 +208,7 @@
 //		Set("name", "bob").
 //		Where(query.Eq("id", int64(7))).
 //		Build()
-//	sql, args, err = renderer.RenderUpdate(upd, platform.Postgres)
+//	sql, args, err = query.RenderUpdate(upd, platform.Postgres)
 //	// sql:  UPDATE "users" SET "name" = $1 WHERE "id" = $2
 //	// args: []any{"bob", int64(7)}
 //
