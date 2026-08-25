@@ -207,10 +207,11 @@ refused, because half a credential authenticates nothing and the run would
 otherwise fail later at the registry with an error about authorization rather
 than about configuration.
 
-There is no password setting and there will not be one. A credential passed on
-a command line lands in shell history and in the process list of every user on
-the machine. Credentials come from the Docker credential store, which already
-exists on any machine that can pull an image.
+There is no password FLAG and there will not be one. A credential passed on a
+command line lands in shell history and in the process list of every user on the
+machine. That rule is about argv, and only about argv: `ptah oci login` reads
+the password from the terminal or from standard input, and `PTAH_OCI_PASSWORD`
+lives in neither place.
 
 ## What a published artifact records about itself
 
@@ -381,8 +382,72 @@ components.
 
 ## Authentication And Transport Security
 
-Ptah reads Docker's credential configuration. Run the login flow for the
-registry before using Ptah:
+Ptah resolves a registry challenge through three sources, in this order: the
+environment, Ptah's own credential store, and Docker's credential
+configuration. A later source answers only when the ones before it hold nothing
+for that registry, so a credential that works today keeps working.
+
+### `ptah oci login`
+
+Ptah needs no Docker installation to authenticate:
+
+```bash
+ptah oci login ghcr.io
+ptah migrations pull \
+  oci://ghcr.io/acme/app-migrations:stable \
+  --out ./migrations
+```
+
+The credential is checked against the registry before anything is written, so a
+typo fails at login rather than at the next push. It is stored in Docker's
+configuration format at `~/.ptah/registries.json`, in a directory only its owner
+can read. A platform credential helper is used when one is available; otherwise
+the credential goes into the file and the command says so:
+
+```console
+$ ptah oci login registry.internal:5000 --username deploy --password-stdin < ~/secret
+Logged in to registry.internal:5000
+Credential stored in plaintext at ~/.ptah/registries.json, because no
+platform credential helper accepted it.
+```
+
+Set `PTAH_OCI_CREDENTIAL_STORE=file` to keep the credential out of the platform
+keychain deliberately. `ptah oci logout <registry>` removes what Ptah stored,
+and leaves a credential placed by `docker login` alone.
+
+### Credentials from the environment
+
+A CI runner should not need a login step, a keychain, or a config file:
+
+| Variable | Meaning |
+| --- | --- |
+| `PTAH_OCI_USERNAME` | Registry username. |
+| `PTAH_OCI_PASSWORD` | Registry password, used with `PTAH_OCI_USERNAME`. |
+| `PTAH_OCI_TOKEN` | Registry identity token, used on its own. |
+| `PTAH_OCI_REGISTRY` | Restricts the above to one registry host. Unset, they answer for every registry. |
+| `PTAH_OCI_CONFIG` | Moves Ptah's credential file. |
+| `PTAH_OCI_CREDENTIAL_STORE` | `file` keeps the credential out of the platform keychain. |
+
+A username without a password, or a password without a username, is a
+configuration error and stops the run:
+
+```console
+error: ... failed to resolve credential: PTAH_OCI_USERNAME is set and PTAH_OCI_PASSWORD
+is not: set both, or unset PTAH_OCI_USERNAME to use a stored credential
+```
+
+It deliberately does not fall through to the stored credentials. A runner that
+meant to authenticate as one account would otherwise authenticate as whichever
+account those hold — or anonymously — and the only symptom would be an
+authorization message about the registry.
+
+Set `PTAH_OCI_REGISTRY` when a job talks to more than one registry, so a
+credential for one is not offered to the other.
+
+### `docker login`
+
+Docker's credential configuration is still read, credential helpers included,
+and `DOCKER_CONFIG` is still honored:
 
 ```bash
 docker login ghcr.io
@@ -718,7 +783,7 @@ path as repeatable local `--schema-file` and `--root-dir` inputs.
 | --- | --- |
 | `atlas://app` | `oci://registry.example/team/app` |
 | Unpinned source resolves to latest | An unqualified `oci://` reference resolves to `:latest` |
-| Atlas login and `ATLAS_TOKEN` | `docker login`, `DOCKER_CONFIG`, and Docker credential helpers |
+| Atlas login and `ATLAS_TOKEN` | `ptah oci login`, `PTAH_OCI_USERNAME`/`PTAH_OCI_PASSWORD`/`PTAH_OCI_TOKEN`, and — still — `docker login`, `DOCKER_CONFIG` and Docker credential helpers |
 | Registry version | Generated `vYYYYMMDDhhmmss-<random-base32>` tag or explicit `--version` |
 | Movable tag | Reference tag or repeatable `--tag` |
 | Immutable version/content pin | OCI manifest `@sha256:...` digest |
@@ -759,18 +824,18 @@ jobs:
         with:
           go-version: "1.26.x"
 
-      - name: Log in to GHCR
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Install Ptah
         run: go install go.5x5.cz/ptah/cmd/ptah@latest
 
+      # No login step and no Docker: the credential is read from the
+      # environment, where it appears in neither shell history nor the process
+      # list. `docker/login-action` still works if the job needs Docker anyway.
       - name: Publish migration artifact
         shell: bash
+        env:
+          PTAH_OCI_REGISTRY: ghcr.io
+          PTAH_OCI_USERNAME: ${{ github.actor }}
+          PTAH_OCI_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
         run: |
           ref="oci://ghcr.io/${GITHUB_REPOSITORY,,}-migrations"
           ptah migrations push "$ref" \

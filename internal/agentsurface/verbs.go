@@ -121,6 +121,11 @@ var verbs = map[string]Verb{
 		"downloads the payload of metadata attached to an OCI artifact and writes it to disk"},
 	"oci inspect": {TargetNone, ScratchNone,
 		"reports what an OCI artifact declares in its manifest, without downloading the payload"},
+	"oci login": {TargetNone, ScratchNone,
+		"checks a registry credential and stores it; it touches no database and writes only " +
+			"Ptah's own credential file"},
+	"oci logout": {TargetNone, ScratchNone,
+		"removes the credential Ptah stored for a registry, leaving a Docker-placed one alone"},
 	"oci referrers": {TargetNone, ScratchNone,
 		"asks a registry which metadata artifacts refer to one subject and prints them"},
 	"oci reindex": {TargetNone, ScratchNone,

@@ -39,6 +39,8 @@ func NewCommand() *cobra.Command {
 	cmd.AddCommand(newCopyCommand())
 	cmd.AddCommand(newFetchCommand())
 	cmd.AddCommand(newInspectCommand())
+	cmd.AddCommand(newLoginCommand())
+	cmd.AddCommand(newLogoutCommand())
 	cmd.AddCommand(newReferrersCommand())
 	cmd.AddCommand(newReindexCommand())
 	cmd.AddCommand(newResolveCommand())
