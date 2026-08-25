@@ -294,6 +294,23 @@ func commentEnd(definition string, i int) int {
 // half. Everything before it -- the name, an optional column list, and a
 // `WITH SCHEMABINDING` or `WITH VIEW_METADATA` clause -- is the header.
 func viewBody(definition string) string {
+	start := viewHeaderAS(definition)
+	if start < 0 {
+		// A definition with no header-level AS is not one this reader can
+		// split, so it is carried whole rather than cut at a guess.
+		return strings.TrimSpace(definition)
+	}
+	return strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(definition[start+2:]), ";"))
+}
+
+// viewHeaderAS reports where the header's AS keyword begins, or -1 when the
+// definition has none.
+//
+// One scan rather than two. [viewBody] takes what follows it and
+// [viewAttributes] takes what precedes it, and a header split at two different
+// places by two different walks is a defect neither of them can be tested for
+// on its own.
+func viewHeaderAS(definition string) int {
 	upper := strings.ToUpper(definition)
 	depth := 0
 	for i := 0; i < len(definition); i++ {
@@ -318,11 +335,106 @@ func viewBody(definition string) string {
 		if i+2 > len(upper) || upper[i:i+2] != "AS" || !standaloneWord(definition, i, i+2) {
 			continue
 		}
-		return strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(definition[i+2:]), ";"))
+		return i
 	}
-	// A definition with no header-level AS is not one this reader can split, so
-	// it is carried whole rather than cut at a guess.
-	return strings.TrimSpace(definition)
+	return -1
+}
+
+// viewAttributes reads the WITH clause a view's header carries.
+//
+// SQL Server writes `CREATE VIEW name [(columns)] [WITH attribute [,...]] AS`,
+// and the attributes are part of what the view IS: SCHEMABINDING binds it to
+// the tables it names, so they cannot be altered under it, and an indexed view
+// requires it. [viewBody] cuts the header off and nothing kept it, so a
+// replayed view was not bound. Measured on SQL Server 2025, source against the
+// replay of Ptah's own description:
+//
+//	v_bound   IsSchemaBound=1   ->   v_bound   IsSchemaBound=0
+//
+// with `schema apply --dry-run` reporting `Schema is synced` and the replay
+// reporting success, so nothing anywhere said the guarantee had been dropped
+// (stokaro/ptah#2125).
+//
+// A view created WITH ENCRYPTION cannot reach this: OBJECT_DEFINITION answers
+// NULL for one, so the reader never sees a definition to take a header from.
+func viewAttributes(definition string) []string {
+	end := viewHeaderAS(definition)
+	if end < 0 {
+		return nil
+	}
+	start := headerWith(definition[:end])
+	if start < 0 {
+		return nil
+	}
+	var attributes []string
+	for _, attribute := range splitTopLevel(definition[start:end]) {
+		if trimmed := strings.ToUpper(strings.TrimSpace(attribute)); trimmed != "" {
+			attributes = append(attributes, trimmed)
+		}
+	}
+	return attributes
+}
+
+// headerWith reports where the attribute list begins -- just past the header's
+// WITH -- or -1 when the header has none.
+func headerWith(header string) int {
+	upper := strings.ToUpper(header)
+	depth := 0
+	for i := 0; i < len(header); i++ {
+		if end := commentEnd(header, i); end >= 0 {
+			i = end
+			continue
+		}
+		switch header[i] {
+		case '(', '[':
+			depth++
+		case ')', ']':
+			depth--
+		case '\'':
+			if next := strings.IndexByte(header[i+1:], '\''); next >= 0 {
+				i += next + 1
+			}
+			continue
+		}
+		if depth != 0 {
+			continue
+		}
+		if i+4 > len(upper) || upper[i:i+4] != "WITH" || !standaloneWord(header, i, i+4) {
+			continue
+		}
+		return i + 4
+	}
+	return -1
+}
+
+// splitTopLevel cuts a comma-separated list, ignoring commas inside brackets,
+// quotes and comments.
+func splitTopLevel(list string) []string {
+	var parts []string
+	depth := 0
+	start := 0
+	for i := 0; i < len(list); i++ {
+		if end := commentEnd(list, i); end >= 0 {
+			i = end
+			continue
+		}
+		switch list[i] {
+		case '(', '[':
+			depth++
+		case ')', ']':
+			depth--
+		case '\'':
+			if next := strings.IndexByte(list[i+1:], '\''); next >= 0 {
+				i += next + 1
+			}
+		case ',':
+			if depth == 0 {
+				parts = append(parts, list[start:i])
+				start = i + 1
+			}
+		}
+	}
+	return append(parts, list[start:])
 }
 
 // standaloneWord reports whether the range is a whole word rather than part of

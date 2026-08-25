@@ -951,6 +951,16 @@ type DBView struct {
 	Body        string `json:"body"`         // SELECT query used as the view definition
 	CheckOption string `json:"check_option"` // NONE, LOCAL, CASCADED, or dialect equivalent
 	Comment     string `json:"comment"`      // View comment/description
+	// Attributes carries the view's own WITH clause -- SQL Server's
+	// SCHEMABINDING and VIEW_METADATA -- uppercased, in the order the server
+	// wrote them.
+	//
+	// They belong to the view rather than to its body: SCHEMABINDING binds it
+	// to the tables it names, so they cannot be altered under it, and an
+	// indexed view requires it. The reader cuts the header off to get at the
+	// body, and nothing kept this, so a replayed view came back unbound with
+	// no diagnostic anywhere (stokaro/ptah#2125).
+	Attributes []string `json:"attributes,omitempty"`
 }
 
 // QualifiedName returns schema.view when Schema is set, or Name otherwise.

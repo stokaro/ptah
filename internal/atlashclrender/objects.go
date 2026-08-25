@@ -326,6 +326,13 @@ func (r *renderer) renderViews() {
 			r.rawAttr(1, "schema", r.schemaRef(schema))
 		}
 		r.stringAttr(1, "as", view.Body)
+		// The view's own WITH clause. It has to survive the document, because
+		// the replay reads the document rather than the database: a view whose
+		// SCHEMABINDING is dropped here comes back unbound and nothing says so
+		// (stokaro/ptah#2125).
+		if len(view.Attributes) > 0 {
+			r.rawAttr(1, "attributes", stringList(view.Attributes))
+		}
 		if view.WithCheck {
 			r.rawAttr(1, "check_option", "LOCAL")
 		}

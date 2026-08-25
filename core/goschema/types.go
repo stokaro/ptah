@@ -1212,6 +1212,12 @@ type View struct {
 	WithCheck  bool   // Whether to add WITH CHECK OPTION where supported
 	Comment    string // Optional comment for documentation
 
+	// Attributes carries a view's own WITH clause on the targets that have one
+	// -- SQL Server's SCHEMABINDING and VIEW_METADATA. See
+	// [go.5x5.cz/ptah/dbschema/types.DBView] for why they are the view's rather
+	// than its body's (stokaro/ptah#2125).
+	Attributes []string `json:",omitempty"`
+
 	// Dialects scopes this declaration to the named target dialects. See
 	// [ScopeToDialect].
 	Dialects []string `json:",omitempty"`
