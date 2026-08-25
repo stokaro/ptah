@@ -1032,7 +1032,7 @@ func renderGeneratedColumn(column *ast.ColumnNode) string {
 // portable case, and deciding it differently is a separate question about which
 // #2147 has the measurements.
 func columnTypeFor(column *ast.ColumnNode) string {
-	if column.TypeRawSQL && strings.TrimSpace(column.Type) != "" {
+	if (column.TypeIsDeclaredText || column.TypeRawSQL) && strings.TrimSpace(column.Type) != "" {
 		return strings.TrimSpace(column.Type)
 	}
 	return mapColumnType(column.Type)
