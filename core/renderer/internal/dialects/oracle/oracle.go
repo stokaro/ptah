@@ -344,6 +344,8 @@ func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
 				guard = "IF EXISTS "
 			}
 			r.w.WriteLinef("ALTER TABLE %s DROP CONSTRAINT %s%s;", table, guard, escapeIdentifier(op.ConstraintName))
+		case *ast.SetCommentOperation:
+			r.writeSetComment(table, op)
 		default:
 			return unsupportedFeaturef("unsupported alter table operation %T", operation)
 		}
@@ -872,4 +874,25 @@ func (r *Renderer) refuses(key capability.Capability, kind, name string) bool {
 
 func unsupportedFeaturef(format string, args ...any) error {
 	return fmt.Errorf("%w: oracle: %s", ptaherr.ErrUnsupportedFeature, fmt.Sprintf(format, args...))
+}
+
+// writeSetComment renders a comment transition the way Oracle spells it: a
+// statement of its own, like PostgreSQL and unlike MySQL.
+//
+// Oracle has no inline comment clause, so a comment cannot travel with the
+// MODIFY that carries every other column change -- it needs its own statement
+// whether the column changed or not (stokaro/ptah#2168).
+//
+// An empty comment is written as the empty literal rather than NULL. Oracle has
+// no empty string: ” IS NULL there, so `COMMENT ON ... IS ”` clears the
+// comment and the catalog reports NULL afterwards, which is the absence the
+// reader brings back. `IS NULL` is a syntax error on this statement.
+func (r *Renderer) writeSetComment(table string, op *ast.SetCommentOperation) {
+	kind := "TABLE"
+	target := table
+	if op.Column != "" {
+		kind = "COLUMN"
+		target += "." + escapeIdentifier(op.Column)
+	}
+	r.w.WriteLinef("COMMENT ON %s %s IS %s;", kind, target, escapeStringLiteral(op.Comment))
 }
