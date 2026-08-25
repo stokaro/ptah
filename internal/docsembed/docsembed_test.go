@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/docs"
+	"go.5x5.cz/ptah/internal/buildinfo"
 	"go.5x5.cz/ptah/internal/docsembed"
 )
 
@@ -127,4 +128,18 @@ func extHit(name, ext string) int {
 		return 1
 	}
 	return 0
+}
+
+// The documentation's version is the build's version, because the documentation
+// is compiled from the same tree as the code. There is no second version that
+// could disagree with it -- which is the point, not a simplification.
+func TestVersionNamesTheBuild(t *testing.T) {
+	c := qt.New(t)
+
+	documentation := docsembed.Version()
+
+	c.Assert(documentation.Version, qt.Equals, buildinfo.Resolve().Version)
+	c.Assert(documentation.Commit, qt.Equals, buildinfo.Resolve().Commit)
+	c.Assert(documentation.Version, qt.Not(qt.Equals), "")
+	c.Assert(documentation.Commit, qt.Not(qt.Equals), "")
 }

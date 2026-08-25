@@ -955,6 +955,10 @@ func (s *Session) recordApply(
 // DocumentationSummary reports what Ptah's own documentation offers this
 // session: how much of it is loaded, not what it says.
 type DocumentationSummary struct {
+	// Documentation names the build whose documentation is loaded. It is the
+	// same value every search_docs answer carries, which is what lets a caller
+	// tell that the answer and the report describe one thing.
+	docsembed.Documentation
 	// Documents is how many documents are compiled into this binary.
 	Documents int `json:"documents"`
 	// Passages is how many heading-scoped passages they were cut into, which
@@ -965,7 +969,8 @@ type DocumentationSummary struct {
 func describeDocumentation() DocumentationSummary {
 	index := docsembed.Index()
 	return DocumentationSummary{
-		Documents: index.DocumentCount(),
-		Passages:  index.PassageCount(),
+		Documentation: docsembed.Version(),
+		Documents:     index.DocumentCount(),
+		Passages:      index.PassageCount(),
 	}
 }
