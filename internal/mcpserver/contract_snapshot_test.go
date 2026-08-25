@@ -3,6 +3,7 @@ package mcpserver_test
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"os"
 	"sort"
 	"testing"
@@ -14,6 +15,14 @@ import (
 
 // contractSnapshotPath is the checked-in shape of the agent contract.
 const contractSnapshotPath = "testdata/agent-contract.json"
+
+// updateContractSnapshot rewrites the snapshot instead of comparing against it.
+//
+// The failure message named this flag before the flag existed, which is its own
+// small version of the failure this file is about: an instruction nobody could
+// follow, in the one place a reader goes when something breaks.
+var updateContractSnapshot = flag.Bool("update-contract-snapshot", false,
+	"rewrite testdata/agent-contract.json from the served surface")
 
 // TestServer_TheContractSurfaceMatchesItsSnapshot makes the rule on
 // [agentapi.Version] enforceable.
@@ -39,9 +48,11 @@ func TestServer_TheContractSurfaceMatchesItsSnapshot(t *testing.T) {
 	c := qt.New(t)
 
 	current := contractSurface(c)
+	refreshContractSnapshot(c, current)
 	recorded, err := os.ReadFile(contractSnapshotPath)
 
-	c.Assert(err, qt.IsNil, qt.Commentf("write %s with the output of -update", contractSnapshotPath))
+	c.Assert(err, qt.IsNil, qt.Commentf(
+		"regenerate with: go test ./internal/mcpserver/ -run TheContractSurface -update-contract-snapshot"))
 	c.Assert(string(current), qt.Equals, string(recorded),
 		qt.Commentf(
 			"the agent contract surface changed.\n"+
@@ -85,6 +96,18 @@ type contractTool struct {
 }
 
 // contractSurface renders the served tools in a stable order.
+// refreshContractSnapshot rewrites the snapshot when the flag asks for it, and
+// does nothing otherwise. It runs before the comparison rather than instead of
+// it, so a regenerating run still reads the file back and still fails if the
+// write did not take.
+func refreshContractSnapshot(c *qt.C, current []byte) {
+	c.Helper()
+	if !*updateContractSnapshot {
+		return
+	}
+	c.Assert(os.WriteFile(contractSnapshotPath, current, 0o600), qt.IsNil)
+}
+
 func contractSurface(c *qt.C) []byte {
 	c.Helper()
 	fixture := newWorkspace(c, agentpolicy.VerdictAllow, nil)

@@ -125,7 +125,8 @@ func TestRun_OffersTheModelTheSameToolsAnExternalClientGets(t *testing.T) {
 	c.Assert(offered["validate_schema"], qt.IsTrue)
 	c.Assert(offered["describe_session"], qt.IsTrue)
 	c.Assert(offered["apply_patch"], qt.IsTrue)
-	c.Assert(offered, qt.HasLen, 8)
+	c.Assert(offered["search_docs"], qt.IsTrue)
+	c.Assert(offered, qt.HasLen, 9)
 }
 
 func TestRun_SendsPtahsOwnInstructionBlock(t *testing.T) {

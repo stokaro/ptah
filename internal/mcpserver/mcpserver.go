@@ -207,6 +207,15 @@ func registerReadTools(server *mcp.Server, session *agentapi.Session) {
 	}, wrap(session.SchemaLineage))
 
 	mcp.AddTool(server, &mcp.Tool{
+		Name: "search_docs",
+		Description: "Answer a question about Ptah itself from Ptah's own documentation, carried in " +
+			"this binary. Returns passages with the document and heading each came from, so an " +
+			"answer can be checked. Reads no project, no database and no network. A question the " +
+			"documentation does not answer returns no passages rather than the nearest paragraph.",
+		Annotations: readOnly(false),
+	}, wrap(session.SearchDocs))
+
+	mcp.AddTool(server, &mcp.Tool{
 		Name: "read_database",
 		Description: "Read the schema one of the operator's configured databases currently holds: its " +
 			"dialect, version and objects. Name a target from describe_session, or omit it when the " +

@@ -405,6 +405,22 @@
             "array"
           ]
         },
+        "documentation": {
+          "additionalProperties": false,
+          "properties": {
+            "documents": {
+              "type": "integer"
+            },
+            "passages": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "documents",
+            "passages"
+          ],
+          "type": "object"
+        },
         "ignored_policy_rules": {
           "items": {
             "type": "string"
@@ -485,6 +501,7 @@
         "contract_version",
         "databases",
         "schema_source_roots",
+        "documentation",
         "capabilities",
         "ignored_policy_rules"
       ],
@@ -956,6 +973,66 @@
       "required": [
         "edges",
         "undecided"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "search_docs",
+    "description": "Answer a question about Ptah itself from Ptah's own documentation, carried in this binary. Returns passages with the document and heading each came from, so an answer can be checked. Reads no project, no database and no network. A question the documentation does not answer returns no passages rather than the nearest paragraph.",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "limit": {
+          "description": "maximum passages to return; omit for the default",
+          "type": "integer"
+        },
+        "query": {
+          "description": "a question about Ptah's behavior, flags, commands or concepts",
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "documents": {
+          "type": "integer"
+        },
+        "passages": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "heading": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "heading",
+              "text"
+            ],
+            "type": "object"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        }
+      },
+      "required": [
+        "passages",
+        "documents"
       ],
       "type": "object"
     }
