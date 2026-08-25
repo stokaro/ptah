@@ -579,8 +579,9 @@ func appendColumnComment(result []ast.Node, table string, colDiff types.ColumnDi
 	return append(result, &ast.AlterTableNode{
 		Name: table,
 		Operations: []ast.AlterOperation{&ast.SetCommentOperation{
-			Column:  colDiff.ColumnName,
-			Comment: colDiff.CommentChange.Desired,
+			Column:     colDiff.ColumnName,
+			Comment:    colDiff.CommentChange.Desired,
+			HasCurrent: colDiff.CommentChange.Current != "",
 		}},
 	})
 }
@@ -591,8 +592,11 @@ func appendTableComment(result []ast.Node, tableDiff types.TableDiff) []ast.Node
 		return result
 	}
 	return append(result, &ast.AlterTableNode{
-		Name:       tableDiff.TableName,
-		Operations: []ast.AlterOperation{&ast.SetCommentOperation{Comment: tableDiff.CommentChange.Desired}},
+		Name: tableDiff.TableName,
+		Operations: []ast.AlterOperation{&ast.SetCommentOperation{
+			Comment:    tableDiff.CommentChange.Desired,
+			HasCurrent: tableDiff.CommentChange.Current != "",
+		}},
 	})
 }
 

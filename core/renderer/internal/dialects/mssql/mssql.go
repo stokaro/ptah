@@ -202,6 +202,10 @@ func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
 				escapeStringLiteral(node.Name),
 				escapeStringLiteral(op.NewName),
 			)
+		case *ast.SetCommentOperation:
+			if err := r.writeSetComment(node.Name, op); err != nil {
+				return err
+			}
 		case *ast.AddSkippingIndexOperation, *ast.ModifyTTLOperation:
 			r.notSupported("ClickHouse table option", node.Name)
 		default:
@@ -1311,4 +1315,57 @@ func splitQualifiedIdentifier(identifier string) []string {
 
 func unsupportedFeaturef(format string, args ...any) error {
 	return fmt.Errorf("%w: sqlserver: %s", ptaherr.ErrUnsupportedFeature, fmt.Sprintf(format, args...))
+}
+
+// commentPropertyName is the extended property SQL Server keeps an object's
+// description in.
+//
+// Ptah owns it: goschema refuses a declaration that names MS_Description as an
+// extended property of its own, because the object's comment is already that
+// property. This is the other half of that rule -- the place the comment is
+// written to (stokaro/ptah#2168).
+const commentPropertyName = "MS_Description"
+
+// writeSetComment renders a comment transition the way SQL Server spells it: as
+// one of three stored procedures on an extended property.
+//
+// This is the dialect the operation's HasCurrent exists for. PostgreSQL, Oracle
+// and the MySQL family each have a single statement that sets, changes and
+// clears a comment alike; here adding one that exists answers
+// `Property cannot be added. Property already exists`, and updating or dropping
+// one that does not answers `Property cannot be updated or deleted. Property
+// does not exist`. Which procedure to call is a fact about the current state,
+// not about the desired one.
+func (r *Renderer) writeSetComment(table string, op *ast.SetCommentOperation) error {
+	schemaName, tableName := commentTarget(table)
+	operation := ast.ExtendedPropertyAdd
+	switch {
+	case op.Comment == "":
+		operation = ast.ExtendedPropertyDrop
+	case op.HasCurrent:
+		operation = ast.ExtendedPropertyUpdate
+	}
+	return r.VisitExtendedProperty(&ast.ExtendedPropertyNode{
+		Name:      commentPropertyName,
+		Value:     op.Comment,
+		Operation: operation,
+		Schema:    schemaName,
+		Table:     tableName,
+		Column:    unquoteIdentifier(strings.TrimSpace(op.Column)),
+	})
+}
+
+// commentTarget splits a table reference into the schema and table an extended
+// property is addressed by, filling in the schema an unqualified name lands in.
+//
+// The property's address is a pair of string literals, so an unqualified name
+// cannot be left for the server to resolve the way a statement's would be:
+// sp_addextendedproperty needs the schema spelled out.
+func commentTarget(table string) (schemaName, tableName string) {
+	parts := splitQualifiedIdentifier(table)
+	last := unquoteIdentifier(strings.TrimSpace(parts[len(parts)-1]))
+	if len(parts) < 2 {
+		return defaultSchema, last
+	}
+	return sequenceSchemaOrDefault(parts[len(parts)-2]), last
 }
