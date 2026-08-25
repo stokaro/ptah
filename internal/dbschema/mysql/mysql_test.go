@@ -172,34 +172,16 @@ func TestMySQLReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 		}
 		tableRows = append(tableRows, []driver.Value{tableName, "BASE TABLE", comment})
 		columnRows = append(columnRows,
-			[]driver.Value{tableName, "id", "int", "int", "NO", nil, nil, int64(10), int64(0), int64(1), nil, nil, "auto_increment", nil},
-			[]driver.Value{tableName, "email", "varchar", "varchar(255)", "NO", nil, int64(255), nil, nil, int64(2), "utf8mb4", "utf8mb4_0900_ai_ci", "", nil},
-			[]driver.Value{tableName, "email_lc", "varchar", "varchar(255)", "YES", nil, int64(255), nil, nil, int64(3), "utf8mb4", "utf8mb4_0900_ai_ci", "STORED GENERATED", "lower(`email`)"},
+			[]driver.Value{tableName, "id", "int", "int", "NO", nil, nil, int64(10), int64(0), int64(1), nil, nil, "auto_increment", nil, ""},
+			[]driver.Value{tableName, "email", "varchar", "varchar(255)", "NO", nil, int64(255), nil, nil, int64(2), "utf8mb4", "utf8mb4_0900_ai_ci", "", nil, "login address"},
+			[]driver.Value{tableName, "email_lc", "varchar", "varchar(255)", "YES", nil, int64(255), nil, nil, int64(3), "utf8mb4", "utf8mb4_0900_ai_ci", "STORED GENERATED", "lower(`email`)", ""},
 		)
 	}
 
 	db := dbtest.Open(t, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
 		switch {
 		case strings.Contains(query, "FROM information_schema.COLUMNS"):
-			return dbtest.QueryResult{
-				Columns: []string{
-					"TABLE_NAME",
-					"COLUMN_NAME",
-					"DATA_TYPE",
-					"COLUMN_TYPE",
-					"IS_NULLABLE",
-					"COLUMN_DEFAULT",
-					"CHARACTER_MAXIMUM_LENGTH",
-					"NUMERIC_PRECISION",
-					"NUMERIC_SCALE",
-					"ORDINAL_POSITION",
-					"CHARACTER_SET_NAME",
-					"COLLATION_NAME",
-					"EXTRA",
-					"GENERATION_EXPRESSION",
-				},
-				Rows: columnRows,
-			}, nil
+			return columnQueryResult(query, columnRows)
 		case strings.Contains(query, "FROM information_schema.TABLES"):
 			return dbtest.QueryResult{
 				Columns: []string{"TABLE_NAME", "TABLE_TYPE", "TABLE_COMMENT"},
@@ -219,6 +201,11 @@ func TestMySQLReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 	c.Assert(tables[0].Name, qt.Equals, "table_00")
 	c.Assert(tables[0].Comment, qt.Equals, "customer accounts")
 	c.Assert(tables[0].Columns, qt.HasLen, 3)
+	// A column's comment is read, and a column without one carries none: the
+	// engines report the absence as an empty string, so a reader that assigned
+	// a constant would satisfy the first assertion alone.
+	c.Assert(tables[0].Columns[1].Comment, qt.Equals, "login address")
+	c.Assert(tables[0].Columns[0].Comment, qt.Equals, "")
 
 	id := tables[0].Columns[0]
 	c.Assert(id.IsAutoIncrement, qt.IsTrue)
@@ -653,4 +640,38 @@ func TestQuoteIdent(t *testing.T) {
 			c.Assert(quoteIdent(tc.in), qt.Equals, tc.want)
 		})
 	}
+}
+
+// columnQueryResult answers the bulk column read, and refuses a projection that
+// does not ask for what it returns.
+//
+// The fake returned a fixed set of columns whatever the query selected, so a
+// reader that stopped selecting COLUMN_COMMENT kept reading comments from a
+// server that was never asked for them -- the mutation that drops it from the
+// SELECT survived until this check existed.
+func columnQueryResult(query string, rows [][]driver.Value) (dbtest.QueryResult, error) {
+	if !strings.Contains(query, "COLUMN_COMMENT") {
+		return dbtest.QueryResult{}, fmt.Errorf(
+			"column query does not select COLUMN_COMMENT: %s", query)
+	}
+	return dbtest.QueryResult{
+		Columns: []string{
+			"TABLE_NAME",
+			"COLUMN_NAME",
+			"DATA_TYPE",
+			"COLUMN_TYPE",
+			"IS_NULLABLE",
+			"COLUMN_DEFAULT",
+			"CHARACTER_MAXIMUM_LENGTH",
+			"NUMERIC_PRECISION",
+			"NUMERIC_SCALE",
+			"ORDINAL_POSITION",
+			"CHARACTER_SET_NAME",
+			"COLLATION_NAME",
+			"EXTRA",
+			"GENERATION_EXPRESSION",
+			"COLUMN_COMMENT",
+		},
+		Rows: rows,
+	}, nil
 }
