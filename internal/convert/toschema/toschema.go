@@ -274,6 +274,10 @@ func ToTable(table *ast.CreateTableNode, sourcePlatform string) goschema.Table {
 	// Extract composite primary key from constraints
 	for _, constraint := range table.Constraints {
 		if constraint.Type == ast.PrimaryKeyConstraint {
+			// The name comes across with the columns. This is where it used to
+			// be dropped: everything else about the constraint was carried and
+			// the one field that identifies it was not (stokaro/ptah#2180).
+			tableSchema.PrimaryKeyName = constraint.Name
 			tableSchema.PrimaryKey = normalizeSQLIdentifiers(constraint.Columns)
 			tableSchema.PrimaryKeyParts = toPrimaryKeyParts(constraint)
 			tableSchema.PrimaryKeyInclude = normalizeSQLIdentifiers(constraint.IncludeColumns)
