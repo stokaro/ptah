@@ -38,6 +38,10 @@ type EmitResult struct {
 	// Remapped reports whether source versions were reassigned to sequential
 	// Ptah versions because at least one did not fit the 10-digit format.
 	Remapped bool
+	// Declined are the source files the import did not convert, in path order.
+	// An import that declined anything is not a faithful copy of the source,
+	// and the caller has to say so.
+	Declined []DeclinedFile
 }
 
 type plannedFile struct {
@@ -63,9 +67,9 @@ type plannedFile struct {
 // files already written, so a failed import never leaves an unreadable,
 // retry-blocking half-result. With dryRun it returns the planned file names and
 // writes nothing. It refuses to overwrite an existing target file.
-func Emit(outDir string, migrations []SourceMigration, opts Options) (*EmitResult, error) {
+func Emit(outDir string, migrations []SourceMigration, declined []DeclinedFile, opts Options) (*EmitResult, error) {
 	remap := needsVersionRemap(migrations)
-	result := &EmitResult{Remapped: remap}
+	result := &EmitResult{Remapped: remap, Declined: declined}
 
 	planned := make([]plannedFile, 0, len(migrations)*2)
 	var maxVersion int64 // highest output version assigned so far (versioned sort first)
@@ -121,6 +125,15 @@ func Emit(outDir string, migrations []SourceMigration, opts Options) (*EmitResul
 
 	if opts.DryRun {
 		return result, nil
+	}
+
+	// An import that left files behind must not come out checksum-clean and
+	// indistinguishable from a complete one. ptah.sum over the surviving subset
+	// is the laundering stokaro/ptah#1095 closed for tampered source
+	// directories, reached through a different door: the directory validates
+	// clean and the missing SQL leaves no trace (stokaro/ptah#2231).
+	if blocking := BlockingDeclines(declined); len(blocking) > 0 && !opts.AllowPartial {
+		return nil, &PartialImportError{Declined: blocking}
 	}
 
 	if err := os.MkdirAll(outDir, 0o755); err != nil {

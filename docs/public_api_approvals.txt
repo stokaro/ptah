@@ -95,3 +95,19 @@ v0.2.0 go.5x5.cz/ptah/migration/schemadiff/types
 # so widening one widens the other.
 v0.2.0 go.5x5.cz/ptah/core/ast
 v0.2.0 go.5x5.cz/ptah/core/renderer
+
+# migration/importer.Parser gained NamePattern and its Parse now returns a
+# *ParseResult instead of a []SourceMigration (stokaro/ptah#2231).
+#
+# The interface is what makes the accounting total. Every one of the five
+# parsers carried the same three lines that dropped an unrecognized file with
+# `continue // ignore non-migration files`, so a migration one directory down or
+# a name off by one character left no trace -- and ptah.sum was then written
+# over the subset that survived, so the truncated directory validated clean.
+#
+# The compile failure is the property the signature change is for: a parser that
+# does not report what it consumed cannot be registered, and the walk in
+# AccountForSource then declines everything it did not hear about. An additive
+# optional method would have let a parser keep silently dropping files, which is
+# the defect itself.
+v0.2.0 go.5x5.cz/ptah/migration/importer

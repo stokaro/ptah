@@ -44,6 +44,10 @@ type liquibaseParser struct{}
 
 func (liquibaseParser) Name() string { return "liquibase" }
 
+func (liquibaseParser) NamePattern() string {
+	return "a formatted-SQL changelog beginning with --liquibase formatted sql, or an XML/YAML/JSON changelog"
+}
+
 func (liquibaseParser) Detect(fsys fs.FS) bool {
 	entries, err := fs.ReadDir(fsys, ".")
 	if err != nil {
@@ -60,10 +64,11 @@ func (liquibaseParser) Detect(fsys fs.FS) bool {
 	return false
 }
 
-func (liquibaseParser) Parse(fsys fs.FS) ([]SourceMigration, error) {
-	entries, err := fs.ReadDir(fsys, ".")
+func (p liquibaseParser) Parse(fsys fs.FS) (*ParseResult, error) {
+	result := &ParseResult{}
+	entries, err := topLevelOnly(fsys, p.Name(), result)
 	if err != nil {
-		return nil, fmt.Errorf("read source directory: %w", err)
+		return nil, err
 	}
 
 	var sqlFiles, changelogFiles []string
@@ -96,6 +101,9 @@ func (liquibaseParser) Parse(fsys fs.FS) ([]SourceMigration, error) {
 		if err != nil {
 			return nil, err
 		}
+		for _, name := range changelogFiles {
+			result.consume(name)
+		}
 		if len(migrations) == 0 {
 			return nil, fmt.Errorf("liquibase changelog(s) %s contain no changesets",
 				strings.Join(changelogFiles, ", "))
@@ -103,7 +111,8 @@ func (liquibaseParser) Parse(fsys fs.FS) ([]SourceMigration, error) {
 		for i := range migrations {
 			migrations[i].Version = int64(i + 1)
 		}
-		return migrations, nil
+		result.Migrations = migrations
+		return result, nil
 	}
 
 	// No numeric version orders formatted-SQL changesets: Liquibase applies them
@@ -123,6 +132,7 @@ func (liquibaseParser) Parse(fsys fs.FS) ([]SourceMigration, error) {
 			return nil, err
 		}
 		migrations = append(migrations, changesets...)
+		result.consume(name)
 	}
 
 	if len(migrations) == 0 {
@@ -136,7 +146,8 @@ func (liquibaseParser) Parse(fsys fs.FS) ([]SourceMigration, error) {
 	for i := range migrations {
 		migrations[i].Version = int64(i + 1)
 	}
-	return migrations, nil
+	result.Migrations = migrations
+	return result, nil
 }
 
 // parseLiquibaseFormattedSQL splits one formatted-SQL changelog into changesets.

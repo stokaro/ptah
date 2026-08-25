@@ -44,7 +44,7 @@ func TestGolangMigrateParse(t *testing.T) {
 	parser, err := importer.ParserByName("golang-migrate")
 	c.Assert(err, qt.IsNil)
 
-	migrations, err := parser.Parse(golangMigrateFS())
+	migrations, err := parseMigrations(t, parser, golangMigrateFS())
 	c.Assert(err, qt.IsNil)
 
 	normalized, err := importer.Normalize(migrations)
@@ -69,7 +69,7 @@ func TestGolangMigrateParseTimestampVersions(t *testing.T) {
 		"20230101020304_b.up.sql": {Data: []byte("SELECT 2;")},
 	}
 	parser, _ := importer.ParserByName("golang-migrate")
-	migrations, err := parser.Parse(fsys)
+	migrations, err := parseMigrations(t, parser, fsys)
 	c.Assert(err, qt.IsNil)
 	normalized, err := importer.Normalize(migrations)
 	c.Assert(err, qt.IsNil)
@@ -115,7 +115,7 @@ func TestGolangMigrateParseErrors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 			parser, _ := importer.ParserByName("golang-migrate")
-			_, err := parser.Parse(tt.fsys)
+			_, err := parseMigrations(t, parser, tt.fsys)
 			c.Assert(err, qt.ErrorMatches, tt.re)
 		})
 	}

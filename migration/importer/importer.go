@@ -37,9 +37,14 @@ type Parser interface {
 	Name() string
 	// Detect reports whether fsys looks like this tool's migration directory.
 	Detect(fsys fs.FS) bool
-	// Parse reads every migration in fsys into SourceMigrations. It does not
-	// order or validate them — Normalize does.
-	Parse(fsys fs.FS) ([]SourceMigration, error)
+	// NamePattern is the file-name shape this tool's migrations take, quoted
+	// back to the user when a file is declined for not matching it.
+	NamePattern() string
+	// Parse reads every migration in fsys, and records which source files it
+	// used and which it deliberately turned down. It does not order or validate
+	// the migrations — Normalize does, and it does not have to account for
+	// files it never saw — AccountForSource does.
+	Parse(fsys fs.FS) (*ParseResult, error)
 }
 
 // Parsers returns the registered source-tool parsers, in detection-preference
@@ -80,6 +85,18 @@ func DetectParser(fsys fs.FS) (Parser, error) {
 	case 1:
 		return matched[0], nil
 	case 0:
+		// A directory whose migrations all sit one level down is not an
+		// undetectable directory -- it is a detectable one read at the wrong
+		// depth, and "pass --from" does not help: the chosen parser then fails
+		// with "no <tool> migration files found". Name the real cause
+		// (stokaro/ptah#2231).
+		if nested := detectBelowTopLevel(fsys); nested != nil {
+			return nil, fmt.Errorf(
+				"no migration files at the top level of the source directory, but %s migration files were found "+
+					"below it (%s); %s reads only the top level, so point --source-dir at the directory that holds "+
+					"the migrations",
+				nested.parser.Name(), strings.Join(nested.examples, ", "), nested.parser.Name())
+		}
 		return nil, fmt.Errorf("could not detect the source migration tool; pass --from (supported: %s)", supportedTools())
 	default:
 		names := make([]string, len(matched))
@@ -109,6 +126,14 @@ func supportedTools() string {
 type Options struct {
 	// DryRun reports the planned files without writing anything.
 	DryRun bool
+	// AllowPartial permits writing ptah.sum for an import that declined at
+	// least one source file.
+	//
+	// Without it such an import is refused, because the alternative is the
+	// failure this flag exists to prevent: ptah.sum written over the subset
+	// that survived, so the truncated directory validates clean and nothing
+	// downstream can establish that SQL was lost (stokaro/ptah#2231).
+	AllowPartial bool
 }
 
 // Import parses sourceFS, normalizes the result, and emits Ptah migration files
@@ -126,11 +151,19 @@ func Import(sourceFS fs.FS, parser Parser, outDir string, opts Options) (*EmitRe
 	if err != nil {
 		return nil, fmt.Errorf("parse %s source: %w", parser.Name(), err)
 	}
-	normalized, err := Normalize(parsed)
+	declined, err := AccountForSource(sourceFS, parser, parsed)
 	if err != nil {
 		return nil, err
 	}
-	return Emit(outDir, normalized, opts)
+	normalized, err := Normalize(parsed.Migrations)
+	if err != nil {
+		return nil, err
+	}
+	result, err := Emit(outDir, normalized, declined, opts)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 // Normalize orders migrations by version and validates them: it fails loudly on

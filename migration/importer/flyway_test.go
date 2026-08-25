@@ -44,7 +44,7 @@ func TestFlywayParseDottedRemapsAndPairsUndo(t *testing.T) {
 	c := qt.New(t)
 	parser, _ := importer.ParserByName("flyway")
 
-	migrations, err := parser.Parse(flywayFS())
+	migrations, err := parseMigrations(t, parser, flywayFS())
 	c.Assert(err, qt.IsNil)
 	normalized, err := importer.Normalize(migrations)
 	c.Assert(err, qt.IsNil)
@@ -81,7 +81,7 @@ func TestFlywayParsePreservesIntegerVersions(t *testing.T) {
 		"V1__init.sql": {Data: []byte("CREATE TABLE t (id int);\n")},
 		"V5__seed.sql": {Data: []byte("INSERT INTO t VALUES (1);\n")},
 	}
-	migrations, err := parser.Parse(src)
+	migrations, err := parseMigrations(t, parser, src)
 	c.Assert(err, qt.IsNil)
 	normalized, err := importer.Normalize(migrations)
 	c.Assert(err, qt.IsNil)
@@ -107,7 +107,7 @@ func TestFlywayParseUnderscoreVersionSeparator(t *testing.T) {
 		"U1_1__add_email.sql": {Data: []byte("ALTER TABLE users DROP email;\n")},     // undo for 1.1
 		"V2__orders.sql":      {Data: []byte("CREATE TABLE orders (id int);\n")},
 	}
-	migrations, err := parser.Parse(src)
+	migrations, err := parseMigrations(t, parser, src)
 	c.Assert(err, qt.IsNil)
 	normalized, err := importer.Normalize(migrations)
 	c.Assert(err, qt.IsNil)
@@ -127,7 +127,7 @@ func TestFlywayUnderscoreAndDotVersionsCollide(t *testing.T) {
 	c := qt.New(t)
 	parser, _ := importer.ParserByName("flyway")
 
-	_, err := parser.Parse(fstest.MapFS{
+	_, err := parseMigrations(t, parser, fstest.MapFS{
 		"V1.1__a.sql": {Data: []byte("SELECT 1;")},
 		"V1_1__b.sql": {Data: []byte("SELECT 2;")},
 	})
@@ -213,7 +213,7 @@ func TestFlywayParseErrors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 			parser, _ := importer.ParserByName("flyway")
-			_, err := parser.Parse(tt.fsys)
+			_, err := parseMigrations(t, parser, tt.fsys)
 			c.Assert(err, qt.ErrorMatches, tt.re)
 		})
 	}

@@ -367,11 +367,11 @@ func loadConventionalLiquibaseImportEntries(snapshot fsnapshot.Snapshot, covered
 		if err != nil {
 			return nil, fmt.Errorf("isolate liquibase source file %s: %w", name, err)
 		}
-		migrations, err := parser.Parse(singleFile)
+		parsed, err := parser.Parse(singleFile)
 		if err != nil {
 			return nil, fmt.Errorf("parse liquibase source file %s: %w", name, err)
 		}
-		for _, migration := range migrations {
+		for _, migration := range parsed.Migrations {
 			identity := sanitizeName(migration.Name)
 			if identity == "" {
 				return nil, fmt.Errorf("liquibase changeset identity %q in %s cannot be represented in an Atlas migration file name", migration.Name, name)
@@ -783,10 +783,11 @@ func loadLiquibaseChangelogEntries(fsys fs.FS, changelogs []string) ([]Entry, er
 	if err != nil {
 		return nil, err
 	}
-	migrations, err := parser.Parse(fsys)
+	parsed, err := parser.Parse(fsys)
 	if err != nil {
 		return nil, err
 	}
+	migrations := parsed.Migrations
 	// The same padding the conventional path applies, and for the same measured
 	// reason: atlas.sum orders entries lexically, so 10 would sort before 2
 	// without it.
