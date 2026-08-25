@@ -1167,10 +1167,29 @@ func generateFieldName(columnName string) string {
 // a read description and a hand-written one produce the same statement
 // (stokaro/ptah#1603).
 func clickHouseTableOverrides(dbTable dbschematypes.DBTable) map[string]map[string]string {
-	if dbTable.ClickHouseSortingKey == "" {
+	// Every clause the engine spec resolves, under the key the renderer reads.
+	// An unknown override key becomes a node option under its upper-cased name,
+	// which is what resolveTableEngineSpec looks up.
+	//
+	// Carrying only the sorting key left every other clause to the renderer's
+	// defaults: a ReplacingMergeTree came back a MergeTree, and the partition
+	// key, the sampling key, the TTL and the settings came back absent
+	// (stokaro/ptah#2198).
+	overrides := make(map[string]string, 6)
+	for key, value := range map[string]string{
+		"engine":       dbTable.ClickHouseEngine,
+		"order_by":     dbTable.ClickHouseOrderBy,
+		"partition_by": dbTable.ClickHousePartitionKey,
+		"sample_by":    dbTable.ClickHouseSamplingKey,
+		"ttl":          dbTable.ClickHouseTTL,
+		"settings":     dbTable.ClickHouseSettings,
+	} {
+		if value != "" {
+			overrides[key] = value
+		}
+	}
+	if len(overrides) == 0 {
 		return nil
 	}
-	return map[string]map[string]string{
-		"clickhouse": {"order_by": dbTable.ClickHouseSortingKey},
-	}
+	return map[string]map[string]string{"clickhouse": overrides}
 }

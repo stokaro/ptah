@@ -117,7 +117,7 @@ func TestReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 	columnRows := make([][]driver.Value, 0, 100)
 	for i := range 50 {
 		tableName := fmt.Sprintf("table_%02d", i)
-		tableRows = append(tableRows, []driver.Value{tableName, "", "(id)", "(id)"})
+		tableRows = append(tableRows, []driver.Value{tableName, "", "(id)", "(id)", "MergeTree", "", ""})
 		columnRows = append(columnRows,
 			[]driver.Value{tableName, "id", "UInt64", "", "", uint64(1), "", uint8(1)},
 			[]driver.Value{tableName, "payload", "Nullable(String)", "", "", uint64(2), "", uint8(0)},
@@ -138,7 +138,7 @@ func TestReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 			}, nil
 		case strings.Contains(query, "FROM system.tables"):
 			return dbtest.QueryResult{
-				Columns: []string{"name", "comment", "sorting_key", "primary_key"},
+				Columns: []string{"name", "comment", "sorting_key", "primary_key", "engine_full", "partition_key", "sampling_key"},
 				Rows:    tableRows,
 			}, nil
 		default:
@@ -260,8 +260,8 @@ func keyedTableServer(
 			}, nil
 		case strings.Contains(query, "FROM system.tables"):
 			return dbtest.QueryResult{
-				Columns: []string{"name", "comment", "sorting_key", "primary_key"},
-				Rows:    [][]driver.Value{{"t", "", sortingKey, primaryKey}},
+				Columns: []string{"name", "comment", "sorting_key", "primary_key", "engine_full", "partition_key", "sampling_key"},
+				Rows:    [][]driver.Value{{"t", "", sortingKey, primaryKey, "MergeTree", "", ""}},
 			}, nil
 		default:
 			return dbtest.QueryResult{}, fmt.Errorf("unexpected query: %s", query)
