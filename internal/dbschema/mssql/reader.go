@@ -289,6 +289,12 @@ func (r *Reader) readColumnsByTable() (map[catalogTableKey][]types.DBColumn, err
 			return nil, err
 		}
 		column.DataType = strings.ToUpper(typeName)
+		// The catalog answers with SQL Server's own type name, and the portable
+		// mapping uses some of those names for something else: a declared
+		// VARCHAR becomes NVARCHAR, which is two bytes per character rather
+		// than one. Marking it is what stops a description of this database
+		// from replaying as a Unicode column (stokaro/ptah#2147).
+		column.TypeIsDeclaredText = true
 		column.ColumnType = sqlServerColumnType(typeName, maxLength, precision, scale)
 		column.IsNullable = "NO"
 		if nullable {

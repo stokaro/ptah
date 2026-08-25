@@ -38,6 +38,15 @@ func TestCreateTable_ATypeNamedForThisTargetIsWrittenAsItStands(t *testing.T) {
 			want:   "  [a] VARCHAR(50)",
 		},
 		{
+			// The same fact reaching the renderer the other way: a type read
+			// from SQL Server's own catalog carries the marker rather than the
+			// escape hatch, and the renderer must leave both alone
+			// (stokaro/ptah#2147).
+			name:   "a native varchar read from the catalog",
+			column: &ast.ColumnNode{Name: "a", Type: "VARCHAR(50)", TypeIsDeclaredText: true},
+			want:   "  [a] VARCHAR(50)",
+		},
+		{
 			name:   "a native char named with sql()",
 			column: &ast.ColumnNode{Name: "a", Type: "CHAR(8)", TypeRawSQL: true},
 			want:   "  [a] CHAR(8)",

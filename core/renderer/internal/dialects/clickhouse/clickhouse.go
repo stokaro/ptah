@@ -290,7 +290,7 @@ type columnTypeOptions struct {
 // this is the other half -- `schema inspect` marking the types that came from
 // ClickHouse's own catalog, so a replay carries the fact this honors.
 func columnTypeFor(col *ast.ColumnNode) (typeMapping, error) {
-	if col.TypeRawSQL && strings.TrimSpace(col.Type) != "" {
+	if (col.TypeIsDeclaredText || col.TypeRawSQL) && strings.TrimSpace(col.Type) != "" {
 		return typeMapping{mapped: strings.TrimSpace(col.Type)}, nil
 	}
 	mapping, err := mapColumnType(col.Type)
