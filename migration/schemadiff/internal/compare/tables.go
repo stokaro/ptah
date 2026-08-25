@@ -12,6 +12,7 @@ import (
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/crdbttl"
 	"go.5x5.cz/ptah/internal/objectidentity"
+	"go.5x5.cz/ptah/internal/spannerttl"
 	"go.5x5.cz/ptah/internal/tableref"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
@@ -204,6 +205,13 @@ func TablesAndColumnsWithGeneratedExpressions(
 			// schema would report as synced while rows expire on a schedule
 			// nobody declared (stokaro/ptah#1027).
 			tableDiff.RowTTLChange = rowTTLChange(genTable.RowTTL, dbTable.RowTTL)
+			// The row deletion policy is compared here for exactly the reasons
+			// above: it belongs to the table, and a table whose only difference
+			// is its retention has to reach TablesModified or the schema
+			// reports synced while rows expire on a schedule nobody declared
+			// (stokaro/ptah#2236).
+			tableDiff.RowDeletionPolicyChange = rowDeletionPolicyChange(
+				genTable.RowDeletionPolicy, dbTable.RowDeletionPolicy)
 			// A comment is compared here for the same reason as the TTL policy,
 			// and reaches TablesModified for the same reason: it belongs to the
 			// table rather than to any column, and a table whose only
@@ -214,7 +222,7 @@ func TablesAndColumnsWithGeneratedExpressions(
 			tableDiff.CommentChange = commentChange(genTable.Comment, dbTable.Comment)
 			if len(tableDiff.ColumnsAdded) > 0 || len(tableDiff.ColumnsRemoved) > 0 ||
 				len(tableDiff.ColumnsModified) > 0 || tableDiff.RowTTLChange != nil ||
-				tableDiff.CommentChange != nil {
+				tableDiff.RowDeletionPolicyChange != nil || tableDiff.CommentChange != nil {
 				diff.TablesModified = append(diff.TablesModified, tableDiff)
 			}
 		}
@@ -285,4 +293,20 @@ func rowTTLChange(desired, current *ast.RowTTLSpec) *difftypes.RowTTLChange {
 		return nil
 	}
 	return &difftypes.RowTTLChange{Desired: desired.Clone(), Current: current.Clone()}
+}
+
+// rowDeletionPolicyChange is the transition a table's row deletion policy makes,
+// and nil when there is none.
+//
+// Equality is NOT exact here, and that is the difference from rowTTLChange
+// above. The server rewrites the interval it stores -- measured against the
+// Cloud Spanner emulator behind PGAdapter 0.55.2, `INTERVAL '30 days'` reads
+// back as `INTERVAL '4 WEEKS 2 DAYS'` -- so comparing the two as text would
+// report a difference between a database and its own description, forever.
+// [go.5x5.cz/ptah/internal/spannerttl] owns that comparison (stokaro/ptah#2236).
+func rowDeletionPolicyChange(desired, current *ast.RowDeletionPolicySpec) *difftypes.RowDeletionPolicyChange {
+	if spannerttl.Equal(desired, current) {
+		return nil
+	}
+	return &difftypes.RowDeletionPolicyChange{Desired: desired.Clone(), Current: current.Clone()}
 }

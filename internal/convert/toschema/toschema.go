@@ -252,6 +252,11 @@ func ToTable(table *ast.CreateTableNode, sourcePlatform string) goschema.Table {
 		Schema:     tableSchemaName,
 		Comment:    table.Comment,
 		Partition:  toSchemaPartition(table.Partition),
+		// Carried, because the SQL surface is where a row deletion policy is
+		// read back: `db read` emits the clause, and a schema file holding that
+		// output has to describe the same table it came from
+		// (stokaro/ptah#2236).
+		RowDeletionPolicy: table.RowDeletionPolicy.Clone(),
 	}
 
 	// Extract ENGINE option if present

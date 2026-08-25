@@ -317,6 +317,49 @@ func storedResult(key capability.Capability, setup []string, create, read, mutat
 	}
 }
 
+// storedRowDeletionPolicy decides capability.RowDeletionPolicy by whether the
+// clause the CREATE TABLE asked for is STORED, for the reason storedRowTTL
+// documents: acceptance is not support, and this family contains the engine
+// that proved it.
+//
+// Here the two answers separate cleanly. Measured against the Cloud Spanner
+// emulator behind PGAdapter 0.55.2, `TTL INTERVAL '30 days' ON created_at` is
+// accepted and information_schema.tables.row_deletion_policy_expression reports
+// `INTERVAL '4 WEEKS 2 DAYS' ON created_at`; PostgreSQL has neither the clause
+// nor the column, so it refuses the CREATE and the key is false without the
+// inspection running at all (stokaro/ptah#2236).
+//
+// The projection is the one internal/dbschema/postgres reads, on purpose: a
+// server that cannot answer it is one whose policy Ptah could never read back,
+// and a policy Ptah cannot read is one no comparison converges.
+func storedRowDeletionPolicy(setup []string, create, inspect string) experiment {
+	return experiment{
+		decides: []capability.Capability{capability.RowDeletionPolicy},
+		setup:   setup,
+		decide: func(ctx context.Context, s *session) (verdicts, []Attempt) {
+			created := s.exec(ctx, create)
+			attempts := []Attempt{created}
+			if !created.Accepted {
+				return verdicts{capability.RowDeletionPolicy: decided(false)}, attempts
+			}
+
+			stored, inspected := s.query(ctx, inspect)
+			attempts = append(attempts, inspected)
+			if !inspected.Accepted {
+				return verdicts{capability.RowDeletionPolicy: annotated(false,
+					"the CREATE was accepted but the policy cannot be read back here ("+
+						collapse(inspected.ServerErr)+"), and a policy Ptah cannot read is one it "+
+						"cannot converge, so the key is false whatever the server stores internally",
+				)}, attempts
+			}
+			return verdicts{capability.RowDeletionPolicy: annotated(stored == 1,
+				"decided by whether the catalog reports the clause back, because a server that parses "+
+					"it and discards it also accepts the CREATE TABLE",
+			)}, attempts
+		},
+	}
+}
+
 // storedRowTTL decides capability.RowLevelTTL by whether the policy the CREATE
 // TABLE asked for is actually STORED, not by whether the statement was accepted.
 //

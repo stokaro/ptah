@@ -674,6 +674,10 @@ type Table struct {
 	// a row-expiry policy means a table quietly keeping rows it was declared to
 	// delete (stokaro/ptah#1027).
 	RowTTL *ast.RowTTLSpec
+	// RowDeletionPolicy is the row deletion policy this table declares, nil for
+	// a table declaring none. It carries the ast type for the same reason
+	// RowTTL does (stokaro/ptah#2236).
+	RowDeletionPolicy *ast.RowDeletionPolicySpec
 }
 
 // PrimaryKeyPart represents one column reference inside a table primary key.

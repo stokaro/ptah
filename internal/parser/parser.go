@@ -3757,6 +3757,68 @@ func (p *Parser) parseTableOptions(table *ast.CreateTableNode) error {
 	return nil
 }
 
+// readsRowDeletionPolicy reports whether TTL introduces a row deletion policy
+// on this target.
+//
+// It asks the dialect rather than the capability set because a parser is often
+// built with a dialect alone, and reading a statement is not the same decision
+// as being allowed to emit one: a schema file naming Spanner has to be read the
+// way Spanner writes it whatever this process may then do with it.
+func (p *Parser) readsRowDeletionPolicy() bool {
+	return platform.NormalizeDialect(p.dialect) == platform.Spanner
+}
+
+// handleRowDeletionPolicy reads `TTL INTERVAL '<literal>' ON <column>`, the
+// clause an engine deletes rows on a schedule by.
+//
+// It has to be read, not merely rendered. This parser refuses an option it does
+// not know, so once the renderer emitted the clause, Ptah could no longer read
+// its OWN `db read` output for a table that had one -- and reading that output
+// back is exactly what the policy being modeled is for (stokaro/ptah#2236).
+func (p *Parser) handleRowDeletionPolicy(table *ast.CreateTableNode) error {
+	p.advance()
+	p.skipWhitespace()
+	if p.current.Type != lexer.TokenIdentifier || !strings.EqualFold(p.current.Value, "INTERVAL") {
+		return fmt.Errorf("expected INTERVAL after TTL at position %d", p.current.Start)
+	}
+	p.advance()
+	p.skipWhitespace()
+	if p.current.Type != lexer.TokenString {
+		return fmt.Errorf("expected a quoted interval after TTL INTERVAL at position %d", p.current.Start)
+	}
+	interval := unquoteLiteral(p.current.Value, '\'')
+	p.advance()
+	p.skipWhitespace()
+	if p.current.Type != lexer.TokenIdentifier || !strings.EqualFold(p.current.Value, "ON") {
+		return fmt.Errorf("expected ON after the TTL interval at position %d", p.current.Start)
+	}
+	p.advance()
+	p.skipWhitespace()
+	// A quoted column arrives as a String token: this lexer does not separate a
+	// double-quoted identifier from a string literal, and `db read` quotes
+	// every identifier it writes.
+	if p.current.Type != lexer.TokenIdentifier && p.current.Type != lexer.TokenString {
+		return fmt.Errorf("expected a column name after TTL ... ON at position %d", p.current.Start)
+	}
+	table.RowDeletionPolicy = &ast.RowDeletionPolicySpec{
+		Column:   unquoteLiteral(p.current.Value, '"'),
+		Interval: interval,
+	}
+	p.advance()
+	return nil
+}
+
+// unquoteLiteral strips one pair of the given quote character, and leaves a
+// value carrying none alone. The lexer hands a String token its quotes, so a
+// value stored as written would carry them into the model and out again into
+// every statement rendered from it.
+func unquoteLiteral(value string, quote byte) string {
+	if len(value) >= 2 && value[0] == quote && value[len(value)-1] == quote {
+		return value[1 : len(value)-1]
+	}
+	return value
+}
+
 func isCreateTableOptionBoundary(option string) bool {
 	switch option {
 	case "AS", "SELECT", "GO", "PARTITION":
@@ -3821,6 +3883,16 @@ func (p *Parser) handleClickHouseTableClause(table *ast.CreateTableNode, option 
 	case "SETTINGS":
 		return true, p.handleClickHouseRawClause(table, "SETTINGS")
 	case "TTL":
+		// Two clauses spell this keyword and neither is readable as the other.
+		// ClickHouse's takes a date expression -- `TTL created_at + INTERVAL 1
+		// MONTH` -- while a row deletion policy is `TTL INTERVAL '30 days' ON
+		// created_at` and names its column separately. Before the split the
+		// policy was swallowed into the ClickHouse raw option on every dialect,
+		// which is how it survived being rendered and still never reached the
+		// model (stokaro/ptah#2236).
+		if p.readsRowDeletionPolicy() {
+			return true, p.handleRowDeletionPolicy(table)
+		}
 		return true, p.handleClickHouseRawClause(table, "TTL")
 	default:
 		return false, nil

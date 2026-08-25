@@ -1783,6 +1783,13 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 		result = p.applyRowTTLChanges(result, diff)
 	}
 
+	// 12.4b. The row deletion policy, in the same position and for the same
+	// reason: it names a column, which has to exist before the clause can name
+	// it (stokaro/ptah#2236).
+	if p.planningRowDeletionPolicy() {
+		result = p.applyRowDeletionPolicyChanges(result, diff)
+	}
+
 	// 12.5. Remove constraints (must be done before removing tables)
 	result = p.removeConstraints(result, diff)
 

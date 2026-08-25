@@ -135,14 +135,39 @@ func TestSchemaPlanNewNamingFlagsBehaveAsOnTheParent(t *testing.T) {
 		dir := chdirToScratchC(c)
 		fixture := newSubverbFixture(c, "new-name-format")
 
+		// .ToHashSafe, not .ToHash. The subject here is the --name-format flag,
+		// and .ToHash is Base64: six of its characters contain a path
+		// separator about nine times in a hundred, so this row failed for
+		// changes that had nothing to do with it whenever the schema's bytes
+		// moved. The refusal it tripped is correct and is asserted by
+		// name_format_refuses_a_path_separator below; this row should measure
+		// the flag rather than the alphabet.
 		out, err := runSchemaPlanSubverb(atlas.NewCompatCommand("atlas"), "new",
-			fixture.args("--name-format", "plan_{{ slice .ToHash 0 6 }}")...)
+			fixture.args("--name-format", "plan_{{ slice .ToHashSafe 0 6 }}")...)
 
 		c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 		matches, globErr := filepath.Glob(filepath.Join(dir, "plan_*.plan.hcl"))
 		c.Assert(globErr, qt.IsNil)
 		c.Assert(matches, qt.HasLen, 1)
 		c.Assert(filepath.Base(matches[0]), qt.Matches, `plan_.{6}\.plan\.hcl`)
+	})
+
+	t.Run("name_format_refuses_a_path_separator", func(t *testing.T) {
+		// The control the row above used to provide by accident, and only
+		// nine times in a hundred. A plan name is a file name, so a format
+		// producing a separator has to be refused rather than written somewhere the
+		// caller did not ask for; asserting it on a literal separator makes the
+		// refusal measured on every run instead of when the hash happens to
+		// carry one (stokaro/ptah#2236).
+		c := qt.New(t)
+		chdirToScratchC(c)
+		fixture := newSubverbFixture(c, "new-name-format-separator")
+
+		out, err := runSchemaPlanSubverb(atlas.NewCompatCommand("atlas"), "new",
+			fixture.args("--name-format", "plans/{{ slice .ToHashSafe 0 6 }}")...)
+
+		c.Assert(err, qt.IsNotNil, qt.Commentf("%s", out))
+		c.Assert(err.Error(), qt.Contains, "contains a path separator")
 	})
 
 	t.Run("name_and_name_format_are_mutually_exclusive", func(t *testing.T) {

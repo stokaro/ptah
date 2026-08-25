@@ -853,6 +853,24 @@ type TableDiff struct {
 	// and absent from the declaration is a RESET, and only the current state
 	// says which those are. See stokaro/ptah#1027.
 	RowTTLChange *RowTTLChange `json:"row_ttl_change,omitzero"`
+
+	// RowDeletionPolicyChange carries a row deletion policy transition, and is
+	// nil when the declaration and the database agree. It is a second field
+	// beside RowTTLChange because the two are different clauses on different
+	// engines and no table carries both (stokaro/ptah#2236).
+	RowDeletionPolicyChange *RowDeletionPolicyChange `json:"row_deletion_policy_change,omitzero"`
+}
+
+// RowDeletionPolicyChange is one table's row deletion policy transition.
+//
+// Both sides travel, for the same reason RowTTLChange carries both: adding a
+// policy and changing one are different statements, and only the pair says
+// which of the two this is.
+type RowDeletionPolicyChange struct {
+	// Desired is the policy the declaration states, nil for none.
+	Desired *ast.RowDeletionPolicySpec `json:"desired,omitzero"`
+	// Current is the policy the database carries, nil for none.
+	Current *ast.RowDeletionPolicySpec `json:"current,omitzero"`
 }
 
 // RowTTLChange is one table's row-level TTL transition.
