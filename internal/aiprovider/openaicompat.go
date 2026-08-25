@@ -3,6 +3,8 @@ package aiprovider
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -139,6 +141,9 @@ func (p *OpenAICompatible) Chat(ctx context.Context, req Request) (*Response, er
 		Tools:       encodeTools(req.Tools),
 		MaxTokens:   req.MaxOutputTokens,
 		Temperature: req.Temperature,
+	}
+	if req.OnText != nil {
+		return p.chatStream(ctx, wire, req.OnText)
 	}
 
 	var answer chatResponse
@@ -351,3 +356,172 @@ func probeRequest() Request {
 		MaxOutputTokens: 128,
 	}
 }
+
+// chunkResponse is one streamed event from /chat/completions.
+//
+// The shape mirrors chatResponse with `delta` where that has `message`, and
+// every field is optional: an endpoint may send a chunk carrying only a role,
+// only usage, or only a finish reason.
+type chunkResponse struct {
+	ID      string `json:"id"`
+	Model   string `json:"model"`
+	Choices []struct {
+		FinishReason string `json:"finish_reason"`
+		Delta        struct {
+			Content   string              `json:"content"`
+			ToolCalls []toolCallDeltaWire `json:"tool_calls"`
+		} `json:"delta"`
+	} `json:"choices"`
+	Usage *struct {
+		PromptTokens        int `json:"prompt_tokens"`
+		CompletionTokens    int `json:"completion_tokens"`
+		PromptTokensDetails struct {
+			CachedTokens int `json:"cached_tokens"`
+		} `json:"prompt_tokens_details"`
+	} `json:"usage"`
+}
+
+// toolCallDeltaWire is one tool call arriving in pieces.
+//
+// Index is what ties the pieces together: the name comes in one chunk and the
+// arguments in several, and only the index says which call they belong to.
+type toolCallDeltaWire struct {
+	Index    int    `json:"index"`
+	ID       string `json:"id"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
+}
+
+// chatStream sends one streamed turn and assembles it into an ordinary answer.
+//
+// The prose reaches onText as it arrives. Tool calls do not: they are collected
+// by index and returned complete, because a caller acting on half of an
+// argument list is the failure this design exists to prevent.
+func (p *OpenAICompatible) chatStream(
+	ctx context.Context,
+	wire chatRequest,
+	onText func(string),
+) (*Response, error) {
+	wire.Stream = true
+	// Usage is not sent on a streamed answer unless it is asked for, and a
+	// session that could not report what a turn cost would be a worse record
+	// than the unstreamed one it replaces.
+	wire.StreamOpts = &streamOpts{IncludeUsage: true}
+
+	assembled := newOpenAIStreamState()
+	err := p.cfg.streamCall(ctx, http.MethodPost, "chat/completions", wire, p.authorize,
+		func(body io.Reader) (bool, error) {
+			readErr := readSSE(body, func(event sseEvent) error {
+				return assembled.consume(event, onText)
+			})
+			return assembled.delivered, readErr
+		})
+	if err != nil {
+		return nil, err
+	}
+	if !assembled.sawAnyChoice {
+		return nil, p.cfg.wrap(KindMalformedResponse, 0,
+			"the endpoint streamed no choices", nil)
+	}
+	return assembled.response(p.cfg.Model), nil
+}
+
+// openAIStreamState accumulates a streamed answer.
+type openAIStreamState struct {
+	id           string
+	model        string
+	finishReason string
+	content      strings.Builder
+	calls        map[int]*toolCallDeltaWire
+	order        []int
+	usage        Usage
+	delivered    bool
+	sawAnyChoice bool
+}
+
+func newOpenAIStreamState() *openAIStreamState {
+	return &openAIStreamState{calls: make(map[int]*toolCallDeltaWire)}
+}
+
+// consume folds one event into the answer being assembled.
+func (s *openAIStreamState) consume(event sseEvent, onText func(string)) error {
+	if event.Data == doneSentinel {
+		return nil
+	}
+	var chunk chunkResponse
+	if err := json.Unmarshal([]byte(event.Data), &chunk); err != nil {
+		return fmt.Errorf("read a streamed chunk: %w", err)
+	}
+	if chunk.ID != "" {
+		s.id = chunk.ID
+	}
+	if chunk.Model != "" {
+		s.model = chunk.Model
+	}
+	if chunk.Usage != nil {
+		s.usage = Usage{
+			InputTokens:       chunk.Usage.PromptTokens,
+			OutputTokens:      chunk.Usage.CompletionTokens,
+			CachedInputTokens: chunk.Usage.PromptTokensDetails.CachedTokens,
+		}
+	}
+	for _, choice := range chunk.Choices {
+		s.sawAnyChoice = true
+		if choice.FinishReason != "" {
+			s.finishReason = choice.FinishReason
+		}
+		if choice.Delta.Content != "" {
+			s.content.WriteString(choice.Delta.Content)
+			s.delivered = true
+			onText(choice.Delta.Content)
+		}
+		for _, call := range choice.Delta.ToolCalls {
+			s.foldToolCall(call)
+		}
+	}
+	return nil
+}
+
+// foldToolCall merges one tool-call fragment into the call its index names.
+func (s *openAIStreamState) foldToolCall(delta toolCallDeltaWire) {
+	existing, seen := s.calls[delta.Index]
+	if !seen {
+		copied := delta
+		s.calls[delta.Index] = &copied
+		s.order = append(s.order, delta.Index)
+		return
+	}
+	if delta.ID != "" {
+		existing.ID = delta.ID
+	}
+	if delta.Function.Name != "" {
+		existing.Function.Name = delta.Function.Name
+	}
+	existing.Function.Arguments += delta.Function.Arguments
+}
+
+// response is the assembled turn, in the shape an unstreamed one produces.
+func (s *openAIStreamState) response(configured string) *Response {
+	message := Message{Role: RoleAssistant, Content: s.content.String()}
+	for _, index := range s.order {
+		call := s.calls[index]
+		message.ToolCalls = append(message.ToolCalls, ToolCall{
+			ID:        call.ID,
+			Name:      call.Function.Name,
+			Arguments: rawArguments(call.Function.Arguments),
+		})
+	}
+	return &Response{
+		Model:      firstNonEmpty(s.model, configured),
+		Message:    message,
+		StopReason: stopReasonFor(s.finishReason, len(message.ToolCalls)),
+		Usage:      s.usage,
+		RequestID:  s.id,
+	}
+}
+
+// doneSentinel is what an OpenAI-compatible stream sends instead of a final
+// chunk. It is not JSON, so it is recognized before anything tries to parse it.
+const doneSentinel = "[DONE]"

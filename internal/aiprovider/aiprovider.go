@@ -130,6 +130,23 @@ type Request struct {
 	// Temperature is passed through when set. A nil value sends nothing, which
 	// is not the same as sending zero.
 	Temperature *float64
+	// OnText receives the answer in fragments as the provider produces them.
+	//
+	// A nil value asks for the answer in one piece, which is what every surface
+	// that renders a document rather than a conversation wants. A non-nil value
+	// asks the provider to stream, and [Response] is still returned whole when
+	// the turn ends: streaming is how the answer arrives, not a different
+	// answer. That keeps one sending path rather than two that drift.
+	//
+	// Only the model's prose is delivered here. A tool call arrives in
+	// fragments too, and acting on half-parsed arguments is not something a
+	// caller should be able to do, so those are assembled inside the adapter
+	// and appear in [Response.Message] complete or not at all.
+	//
+	// Never serialized: `ptah assist context` renders this struct to report
+	// what a question would send, and a callback is not something that is
+	// sent.
+	OnText func(fragment string) `json:"-"`
 }
 
 // Response is one turn's output.

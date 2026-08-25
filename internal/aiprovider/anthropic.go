@@ -3,7 +3,10 @@ package aiprovider
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -79,6 +82,7 @@ type messagesRequest struct {
 	MaxTokens   int               `json:"max_tokens"`
 	Temperature *float64          `json:"temperature,omitempty"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
+	Stream      bool              `json:"stream,omitempty"`
 }
 
 // anthropicWire is one message, whose content is always a block list here even
@@ -136,6 +140,10 @@ func (p *Anthropic) Chat(ctx context.Context, req Request) (*Response, error) {
 		Tools:       encodeAnthropicTools(req.Tools),
 		MaxTokens:   maxTokens,
 		Temperature: req.Temperature,
+	}
+
+	if req.OnText != nil {
+		return p.chatStream(ctx, wire, req.OnText)
 	}
 
 	var answer messagesResponse
@@ -307,4 +315,182 @@ func (p *Anthropic) Probe(ctx context.Context) (Probe, error) {
 			"the model answered with text where a tool call was the only sensible answer")
 	}
 	return probe, nil
+}
+
+// anthropicEvent is one streamed event from /messages.
+//
+// This API names its events rather than sending one shape repeatedly, so the
+// name decides which fields are meaningful. The union below is what a text and
+// tool_use turn produces; other names are ignored rather than refused, because
+// the API adds them and a client that failed on an unknown one would break on
+// a server upgrade it did not ask for.
+type anthropicEvent struct {
+	Type  string `json:"type"`
+	Index int    `json:"index"`
+	// ContentBlock arrives with content_block_start and says what the block is.
+	ContentBlock *struct {
+		Type string `json:"type"`
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	} `json:"content_block"`
+	// Delta arrives with content_block_delta and message_delta.
+	Delta *struct {
+		Type        string `json:"type"`
+		Text        string `json:"text"`
+		PartialJSON string `json:"partial_json"`
+		StopReason  string `json:"stop_reason"`
+	} `json:"delta"`
+	// Message arrives with message_start.
+	Message *struct {
+		ID    string `json:"id"`
+		Model string `json:"model"`
+		Usage struct {
+			InputTokens              int `json:"input_tokens"`
+			OutputTokens             int `json:"output_tokens"`
+			CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+			CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+		} `json:"usage"`
+	} `json:"message"`
+	// Usage arrives with message_delta and carries the final output count.
+	Usage *struct {
+		OutputTokens int `json:"output_tokens"`
+	} `json:"usage"`
+	// Error arrives with the error event, which the API sends in-band rather
+	// than as a status code once the stream has started.
+	Error *struct {
+		Type    string `json:"type"`
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+// chatStream sends one streamed turn and assembles it into an ordinary answer.
+func (p *Anthropic) chatStream(
+	ctx context.Context,
+	wire messagesRequest,
+	onText func(string),
+) (*Response, error) {
+	wire.Stream = true
+
+	assembled := newAnthropicStreamState()
+	err := p.cfg.streamCall(ctx, http.MethodPost, "messages", wire, p.authorize,
+		func(body io.Reader) (bool, error) {
+			readErr := readSSE(body, func(event sseEvent) error {
+				return assembled.consume(event, onText)
+			})
+			return assembled.delivered, readErr
+		})
+	if err != nil {
+		return nil, err
+	}
+	if assembled.failure != "" {
+		return nil, p.cfg.wrap(KindProvider, 0, assembled.failure, nil)
+	}
+	return assembled.response(p.cfg.Model), nil
+}
+
+// anthropicStreamState accumulates a streamed answer.
+type anthropicStreamState struct {
+	id         string
+	model      string
+	stopReason string
+	content    strings.Builder
+	blocks     map[int]*anthropicBlock
+	order      []int
+	usage      Usage
+	delivered  bool
+	failure    string
+}
+
+func newAnthropicStreamState() *anthropicStreamState {
+	return &anthropicStreamState{blocks: make(map[int]*anthropicBlock)}
+}
+
+// consume folds one event into the answer being assembled.
+func (s *anthropicStreamState) consume(event sseEvent, onText func(string)) error {
+	var parsed anthropicEvent
+	if err := json.Unmarshal([]byte(event.Data), &parsed); err != nil {
+		return fmt.Errorf("read a streamed event: %w", err)
+	}
+	// The event name and the payload's own type agree; the payload is used
+	// because an endpoint proxying this API may drop the name.
+	switch firstNonEmpty(parsed.Type, event.Name) {
+	case "message_start":
+		if parsed.Message != nil {
+			s.id = parsed.Message.ID
+			s.model = parsed.Message.Model
+			s.usage.InputTokens = parsed.Message.Usage.InputTokens
+			s.usage.CachedInputTokens = parsed.Message.Usage.CacheReadInputTokens
+		}
+	case "content_block_start":
+		if parsed.ContentBlock != nil {
+			block := anthropicBlock{
+				Type: parsed.ContentBlock.Type,
+				ID:   parsed.ContentBlock.ID,
+				Name: parsed.ContentBlock.Name,
+			}
+			s.blocks[parsed.Index] = &block
+			s.order = append(s.order, parsed.Index)
+		}
+	case "content_block_delta":
+		s.foldDelta(parsed, onText)
+	case "message_delta":
+		if parsed.Delta != nil && parsed.Delta.StopReason != "" {
+			s.stopReason = parsed.Delta.StopReason
+		}
+		if parsed.Usage != nil {
+			s.usage.OutputTokens = parsed.Usage.OutputTokens
+		}
+	case "error":
+		if parsed.Error != nil {
+			s.failure = parsed.Error.Message
+		}
+	}
+	return nil
+}
+
+// foldDelta appends one fragment to the block it belongs to.
+//
+// A tool call's arguments arrive as partial_json, which is not valid JSON until
+// the last fragment lands. It is accumulated as text and parsed once, because
+// there is no useful thing to do with half of it.
+func (s *anthropicStreamState) foldDelta(event anthropicEvent, onText func(string)) {
+	if event.Delta == nil {
+		return
+	}
+	block, seen := s.blocks[event.Index]
+	if !seen {
+		return
+	}
+	if event.Delta.Text != "" {
+		block.Text += event.Delta.Text
+		s.content.WriteString(event.Delta.Text)
+		s.delivered = true
+		onText(event.Delta.Text)
+	}
+	if event.Delta.PartialJSON != "" {
+		block.Content += event.Delta.PartialJSON
+	}
+}
+
+// response is the assembled turn, in the shape an unstreamed one produces.
+func (s *anthropicStreamState) response(configured string) *Response {
+	message := Message{Role: RoleAssistant, Content: s.content.String()}
+	for _, index := range s.order {
+		block := s.blocks[index]
+		if block.Type != "tool_use" {
+			continue
+		}
+		message.ToolCalls = append(message.ToolCalls, ToolCall{
+			ID:        block.ID,
+			Name:      block.Name,
+			Arguments: rawArguments(block.Content),
+		})
+	}
+	return &Response{
+		Model:      firstNonEmpty(s.model, configured),
+		Message:    message,
+		StopReason: anthropicStopReason(s.stopReason, len(message.ToolCalls)),
+		Usage:      s.usage,
+		RequestID:  s.id,
+	}
 }
