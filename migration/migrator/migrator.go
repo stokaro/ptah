@@ -606,7 +606,19 @@ func (m *Migrator) createMigrationsTableSQL() string {
 	if m.revisionTableFormat.isAtlas() {
 		return m.createAtlasRevisionsTableSQL()
 	}
-	if m.isSQLServer() {
+	// The dialect is a parameter for the same reason atlasRevisionsTableDDL
+	// takes one: it keeps every branch reachable from a zero-value Migrator, so
+	// the guard tests can assert the statement each target is sent without a
+	// live database of that engine.
+	return ptahRevisionsTableDDL(
+		m.connectionDialect(),
+		m.qualifiedMigrationsTable(),
+		sqlStringLiteral(m.sqlServerObjectName()),
+	)
+}
+
+func ptahRevisionsTableDDL(dialect, qualifiedTable, sqlServerObjectLiteral string) string {
+	if platform.NormalizeDialect(dialect) == platform.SQLServer {
 		return fmt.Sprintf(`IF OBJECT_ID(%s, N'U') IS NULL
 BEGIN
     CREATE TABLE %s (
@@ -621,16 +633,16 @@ BEGIN
         execution_time_ms BIGINT NOT NULL DEFAULT 0,
         checksum NVARCHAR(64) NOT NULL DEFAULT ''
     )
-END`, sqlStringLiteral(m.sqlServerObjectName()), m.qualifiedMigrationsTable())
+END`, sqlServerObjectLiteral, qualifiedTable)
 	}
 	engineClause := ""
-	if implicitCommitDialect(m.connectionDialect()) {
+	if implicitCommitDialect(dialect) {
 		engineClause = " ENGINE=InnoDB"
 	}
 	return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
     version BIGINT PRIMARY KEY,
     description TEXT NOT NULL,
-    applied_at TIMESTAMP NOT NULL,
+    applied_at %s NOT NULL,
     state VARCHAR(32) NOT NULL DEFAULT 'applied',
     applied INTEGER NOT NULL DEFAULT 1,
     total INTEGER NOT NULL DEFAULT 1,
@@ -638,7 +650,30 @@ END`, sqlStringLiteral(m.sqlServerObjectName()), m.qualifiedMigrationsTable())
     error_stmt TEXT NULL,
     execution_time_ms BIGINT NOT NULL DEFAULT 0,
     checksum VARCHAR(64) NOT NULL DEFAULT ''
-)%s`, m.qualifiedMigrationsTable(), engineClause)
+)%s`, qualifiedTable, revisionTimestampType(dialect), engineClause)
+}
+
+// revisionTimestampType is the type the revision table gives its timestamp
+// column.
+//
+// TIMESTAMP everywhere it is understood, which is every engine Ptah supports
+// except one. Spanner's PostgreSQL interface does not have the type at all:
+//
+//	applied_at TIMESTAMP    ERROR: Type <timestamp> is not supported. (SQLSTATE P0001)
+//	applied_at TIMESTAMPTZ  accepted
+//
+// Measured against the Cloud Spanner emulator behind PGAdapter 0.55.2. The
+// column is a point in time either way -- Spanner stores timestamps in UTC and
+// has no local-time type to lose -- so this is a spelling the target has,
+// not a different column.
+//
+// It is a function rather than a branch in each DDL because both revision table
+// formats have the column and both were refused (stokaro/ptah#2233).
+func revisionTimestampType(dialect string) string {
+	if platform.NormalizeDialect(dialect) == platform.Spanner {
+		return "TIMESTAMPTZ"
+	}
+	return "TIMESTAMP"
 }
 
 func (m *Migrator) getVersionSQL() string {
@@ -997,8 +1032,34 @@ func (m *Migrator) migrationsVersionColumnType(ctx context.Context, query string
 	return strings.ToLower(dataType), nil
 }
 
+// isPostgresFamily reports whether this connection takes the PostgreSQL
+// spelling of the metadata queries below.
+//
+// It deliberately answers a narrower question than
+// [platform.IsPostgresFamily], which counts Spanner in. The difference is not
+// an oversight and must not be closed by delegating to the exported one: the
+// only thing this predicate selects is a query written around
+// `current_schema()`, and Spanner's PostgreSQL interface does not have that
+// function anywhere a query can call it. Measured against the Cloud Spanner
+// emulator behind PGAdapter 0.55.2:
+//
+//	SELECT current_schema()                          public
+//	SELECT ... WHERE table_schema = current_schema()  ERROR: Postgres function
+//	                                                 current_schema() is not supported
+//
+// So Spanner belongs in the generic branch, which asks for a schema by name and
+// answers correctly there -- and does so because a Spanner connection carries
+// its schema, which metadataInformationSchemaName returns. Widening this
+// predicate would replace a working read with one the server refuses
+// (stokaro/ptah#2233).
 func (m *Migrator) isPostgresFamily() bool {
-	switch platform.NormalizeDialect(m.connectionDialect()) {
+	return usesPostgresMetadataQueries(m.connectionDialect())
+}
+
+// usesPostgresMetadataQueries is the decision itself, taking the dialect so it
+// can be measured without a live connection of each engine.
+func usesPostgresMetadataQueries(dialect string) bool {
+	switch platform.NormalizeDialect(dialect) {
 	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
 		return true
 	default:

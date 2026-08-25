@@ -575,10 +575,24 @@ func TestAtlasRevisionsTableDDL_GuardsEveryDialectBranch(t *testing.T) {
 			wantContains:      []string{"CREATE TABLE IF NOT EXISTS " + atlasRevisionsGuardTable},
 		},
 		{
-			name:              "spanner keeps the default JSON column",
+			// Spanner takes the PostgreSQL branch, and this row used to assert
+			// that it took the trailing default -- which named both of the two
+			// types its PostgreSQL interface does not have. Measured against
+			// the Cloud Spanner emulator behind PGAdapter 0.55.2:
+			//
+			//	partial_hashes JSON NULL   ERROR: Type <json> is not supported; use jsonb instead
+			//	executed_at TIMESTAMP      ERROR: Type <timestamp> is not supported
+			//
+			// so the statement this row pinned could never create a table
+			// (stokaro/ptah#2233).
+			name:              "spanner takes the PostgreSQL branch, whose types it has",
 			dialect:           platform.Spanner,
-			wantPartialHashes: "partial_hashes JSON NULL",
-			wantContains:      []string{"CREATE TABLE IF NOT EXISTS " + atlasRevisionsGuardTable},
+			wantPartialHashes: "partial_hashes JSONB NULL",
+			wantContains: []string{
+				"CREATE TABLE IF NOT EXISTS " + atlasRevisionsGuardTable,
+				"executed_at TIMESTAMPTZ NOT NULL",
+			},
+			wantAbsent: []string{" JSON NULL", "executed_at TIMESTAMP NOT NULL"},
 		},
 		{
 			name:              "sqlserver stores the JSON document as text",
