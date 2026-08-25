@@ -960,6 +960,7 @@ func fromTableWithFieldConverter(
 	// that must not be able to reach back through a pointer into the schema
 	// this was built from (stokaro/ptah#1027).
 	createTable.RowTTL = newTable.RowTTL.Clone()
+	createTable.RowDeletionPolicy = newTable.RowDeletionPolicy.Clone()
 
 	// Add columns for fields that belong to this table
 	tableLevelPK := tableNeedsPrimaryKeyConstraint(newTable)

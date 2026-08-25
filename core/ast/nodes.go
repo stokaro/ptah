@@ -96,6 +96,58 @@ type CreateTableNode struct {
 	// is a state Options cannot spell apart from "this renderer set no option"
 	// (stokaro/ptah#1027).
 	RowTTL *RowTTLSpec
+	// RowDeletionPolicy stores the table's row deletion policy, nil for a table
+	// declaring none.
+	//
+	// It is a second field beside RowTTL rather than a wider reading of it
+	// because the two are different clauses of different shapes on different
+	// engines, and one table never carries both: a row deletion policy is a
+	// clause on the table holding exactly one interval and one column, where a
+	// row-level TTL is a bag of storage parameters (stokaro/ptah#2236).
+	RowDeletionPolicy *RowDeletionPolicySpec
+}
+
+// RowDeletionPolicySpec is a table's row deletion policy: the engine deletes a
+// row once Interval has passed since the timestamp in Column.
+//
+// Spanner is the engine that has it, spelled `TTL INTERVAL '30 days' ON
+// created_at`.
+//
+// Interval is stored as the author wrote it and is NOT compared as text. The
+// server rewrites it: measured against the Cloud Spanner emulator behind
+// PGAdapter 0.55.2, `INTERVAL '30 days'` reads back as
+// `INTERVAL '4 WEEKS 2 DAYS'`, so a declaration compared as text could never
+// converge. Comparison goes through
+// [go.5x5.cz/ptah/internal/crdbinterval], which reads both sides into the value
+// they denote -- the same answer stokaro/ptah#1612 reached for the CockroachDB
+// policy, for the same reason.
+type RowDeletionPolicySpec struct {
+	// Column is the timestamp column the interval is measured from.
+	Column string
+	// Interval is the interval literal, without the INTERVAL keyword and
+	// without quotes: `30 days`.
+	Interval string
+}
+
+// IsZero reports whether this is a policy at all. Nil is zero, and so is a spec
+// missing either half: a policy needs both, and one without a column deletes
+// nothing while one without an interval has no schedule.
+func (s *RowDeletionPolicySpec) IsZero() bool {
+	if s == nil {
+		return true
+	}
+	return s.Column == "" || s.Interval == ""
+}
+
+// Clone returns an independent copy, so a spec handed to a comparator or a
+// planner cannot be mutated through the pointer it shares with the schema it
+// came from. Nil stays nil.
+func (s *RowDeletionPolicySpec) Clone() *RowDeletionPolicySpec {
+	if s == nil {
+		return nil
+	}
+	out := *s
+	return &out
 }
 
 // RowTTLSpec is a table's row-level TTL policy, as CockroachDB spells it in

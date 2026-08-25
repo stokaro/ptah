@@ -6,6 +6,7 @@ import (
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/internal/crdbttl"
+	"go.5x5.cz/ptah/internal/spannerttl"
 )
 
 // renderRowTTL returns the ` WITH (...)` clause a CREATE TABLE carries for its
@@ -105,5 +106,86 @@ func (r *Renderer) writeResetRowTTL(node *ast.AlterTableNode, op *ast.ResetRowTT
 	}
 	r.w.WriteLinef("ALTER TABLE %s RESET (%s);",
 		r.escapeQualifiedIdentifier(node.Name), strings.Join(op.Parameters, ", "))
+	return nil
+}
+
+// renderRowDeletionPolicy returns the ` TTL INTERVAL '…' ON …` clause a CREATE
+// TABLE carries for its row deletion policy, and the empty string for a table
+// declaring none.
+//
+// Like renderRowTTL it refuses rather than drops, and for the same reason: the
+// clause deletes rows, so a renderer that quietly omitted it on a target
+// without the capability would emit a CREATE TABLE the server accepts, report
+// success, and leave a table whose declared retention simply does not exist.
+// The two clauses are separate because they are different syntax on different
+// engines -- one is a table clause, the other a storage parameter -- and no
+// engine has both (stokaro/ptah#2236).
+func (r *Renderer) renderRowDeletionPolicy(node *ast.CreateTableNode) (string, error) {
+	if node.RowDeletionPolicy.IsZero() {
+		return "", nil
+	}
+	if !r.capabilities().Has(capability.RowDeletionPolicy) {
+		return "", r.rowDeletionPolicyUnsupported(node.Name)
+	}
+	return spannerttl.Render(node.RowDeletionPolicy, r.escapeIdentifier), nil
+}
+
+// rowDeletionPolicyUnsupported is the refusal a target without the capability
+// gets. It names the alternative, because the operator's next question is
+// whether some other spelling would work on this engine.
+func (r *Renderer) rowDeletionPolicyUnsupported(table string) error {
+	return unsupportedFeaturef(
+		"%s: table %q declares a row deletion policy: it is a Spanner table clause, and this target "+
+			"does not have it — on a PostgreSQL-wire engine that is not Spanner the row-expiry "+
+			"spelling is CockroachDB's row-level TTL storage parameters, so Ptah refuses the "+
+			"declaration rather than emitting a statement that silently keeps every row",
+		r.dialect, table)
+}
+
+// writeRowExpiryOperation renders whichever row-expiry operation it is handed,
+// and nothing for any other node.
+//
+// The two pairs are unrelated -- a CockroachDB row-level TTL is a set of
+// storage parameters and a row deletion policy is a Spanner table clause -- but
+// they reach VisitAlterTable through the same switch, whose complexity is
+// budgeted, so one arm dispatches all four.
+func (r *Renderer) writeRowExpiryOperation(node *ast.AlterTableNode, operation ast.AlterOperation) error {
+	switch op := operation.(type) {
+	case *ast.SetRowDeletionPolicyOperation:
+		return r.writeSetRowDeletionPolicy(node, op)
+	case *ast.DropRowDeletionPolicyOperation:
+		return r.writeDropRowDeletionPolicy(node)
+	default:
+		return r.writeRowTTLOperation(node, operation)
+	}
+}
+
+// writeSetRowDeletionPolicy emits ADD or ALTER, which are the same clause with
+// different verbs: ADD puts a policy on a table that has none, ALTER replaces
+// the one a table already carries. Measured, each is refused in the other's
+// position, so the verb is not interchangeable.
+func (r *Renderer) writeSetRowDeletionPolicy(node *ast.AlterTableNode, op *ast.SetRowDeletionPolicyOperation) error {
+	if op.Column == "" || op.Interval == "" {
+		return nil
+	}
+	if !r.capabilities().Has(capability.RowDeletionPolicy) {
+		return r.rowDeletionPolicyUnsupported(node.Name)
+	}
+	verb := "ADD"
+	if op.Replace {
+		verb = "ALTER"
+	}
+	r.w.WriteLinef("ALTER TABLE %s %s TTL INTERVAL '%s' ON %s;",
+		r.escapeQualifiedIdentifier(node.Name), verb, op.Interval, r.escapeIdentifier(op.Column))
+	return nil
+}
+
+// writeDropRowDeletionPolicy emits the removal, which names no column: the
+// clause goes and the timestamp column it referred to stays.
+func (r *Renderer) writeDropRowDeletionPolicy(node *ast.AlterTableNode) error {
+	if !r.capabilities().Has(capability.RowDeletionPolicy) {
+		return r.rowDeletionPolicyUnsupported(node.Name)
+	}
+	r.w.WriteLinef("ALTER TABLE %s DROP TTL;", r.escapeQualifiedIdentifier(node.Name))
 	return nil
 }

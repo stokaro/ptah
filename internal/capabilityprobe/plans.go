@@ -110,6 +110,22 @@ func (t tableSpelling) uniquelyReferenced(table, constraint, column string) []st
 // The experiments are one list for every dialect in it. What varies is how a
 // throwaway table is spelled, which is a property of the dialect's DDL and not
 // of the question being asked.
+// rowDeletionPolicyProbe asks whether the target STORES a row deletion policy.
+//
+// It lives outside postgresFamilyPlan because that function is at its length
+// budget, and because the statement and the projection belong together: the
+// inspection is the one internal/dbschema/postgres reads, so a server that
+// cannot answer it is one whose policy Ptah could never read back
+// (stokaro/ptah#2236).
+func rowDeletionPolicyProbe() experiment {
+	return storedRowDeletionPolicy(nil,
+		"CREATE TABLE rdp (id bigint PRIMARY KEY, created_at TIMESTAMPTZ NOT NULL) "+
+			"TTL INTERVAL '30 days' ON created_at",
+		"SELECT COUNT(*) FROM information_schema.tables "+
+			"WHERE table_name = 'rdp' AND COALESCE(row_deletion_policy_expression, '') <> ''",
+	)
+}
+
 func postgresFamilyPlan(dialect string) plan {
 	t := tableSpelling{}
 	if platform.NormalizeDialect(dialect) == platform.Spanner {
@@ -392,6 +408,7 @@ func postgresFamilyPlan(dialect string) plan {
 		// that is the parameter Ptah models: the server rewrites an interval
 		// on the way in, which is why internal/crdbttl refuses the other
 		// enabler instead of modeling it.
+		rowDeletionPolicyProbe(),
 		storedRowTTL(nil,
 			"CREATE TABLE ttlp (id int PRIMARY KEY, expires_at TIMESTAMPTZ) "+
 				"WITH (ttl_expiration_expression = 'expires_at')",
@@ -681,6 +698,9 @@ func mysqlFamilyPlan(dialect string) plan {
 		capability.CatalogDefaultPrivileges: "pg_default_acl is a PostgreSQL catalog relation this server " +
 			"does not have and no MySQL-family cleanup reads; its absence here says nothing about the " +
 			"PostgreSQL-family cleanup the key gates",
+		capability.RowDeletionPolicy: "the key names a table clause Ptah renders, reads and plans only " +
+			"for Spanner, whose PostgreSQL interface stores it; this server has no such clause, so its " +
+			"refusal would answer a different question",
 		capability.RowLevelTTL: "the key names a table storage parameter Ptah renders, reads and plans " +
 			"only on the PostgreSQL wire; this server's CREATE TABLE takes its own table options and " +
 			"none of them is the one the key names, so refusing it would answer a different question",

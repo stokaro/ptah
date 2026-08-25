@@ -442,6 +442,34 @@ const (
 	// part of the capability rather than a gap in it.
 	RowLevelTTL Capability = "row_level_ttl"
 
+	// RowDeletionPolicy marks support for a table's row deletion policy: an
+	// interval and a timestamp column, after which the engine deletes a row on
+	// its own schedule.
+	//
+	// It names the same idea as RowLevelTTL and a different surface, which is
+	// why it is a second key rather than a wider reading of the first. A row
+	// deletion policy is a clause on the table, not a storage parameter, and
+	// it holds exactly one interval and one column where CockroachDB's policy
+	// holds a dozen parameters.
+	//
+	// Spanner is the engine that has it, and the reason RowLevelTTL is false
+	// there is what makes the distinction load-bearing: through PGAdapter,
+	// Spanner ACCEPTS the CockroachDB storage-parameter spelling at exit 0 and
+	// stores nothing. Its own spelling is stored, and reads back from
+	// information_schema.tables.row_deletion_policy_expression. Measured
+	// against the Cloud Spanner emulator behind PGAdapter 0.55.2
+	// (stokaro/ptah#2236):
+	//
+	//	CREATE TABLE t (...) TTL INTERVAL '30 days' ON created_at
+	//	  -> row_deletion_policy_expression = INTERVAL '4 WEEKS 2 DAYS' ON created_at
+	//	CREATE TABLE t (...) TTL INTERVAL '1 hour' ON ts
+	//	  -> ERROR: TTL interval must be a whole number of days
+	//
+	// The interval that reads back is not the interval that was written, so
+	// what this key promises includes comparing the two as intervals rather
+	// than as text; a declaration compared as text could never converge.
+	RowDeletionPolicy Capability = "row_deletion_policy"
+
 	// MigrationTimeouts marks that Ptah can bound a migration with a lock and a
 	// statement timeout on this target.
 	//
@@ -802,6 +830,9 @@ var registry = map[Capability]spec{
 	RowLevelTTL: {
 		doc: "table storage parameters declaring a row-expiry policy (CockroachDB row-level TTL)",
 	},
+	RowDeletionPolicy: {
+		doc: "a table clause declaring an interval and a timestamp column after which the engine deletes a row (Spanner row deletion policy)",
+	},
 	CheckGrantStatement: {
 		doc: "a statement answering whether the connected account holds a privilege (ClickHouse CHECK GRANT)",
 	},
@@ -1027,6 +1058,7 @@ func MySQL84() Capabilities {
 		XMLType:                            false,
 		AdvisoryLocks:                      false,
 		RowLevelTTL:                        false,
+		RowDeletionPolicy:                  false,
 		MigrationTimeouts:                  true,
 		TransactionalDDL:                   false,
 		CatalogPartitions:                  true,
@@ -1159,6 +1191,7 @@ func MariaDB1011() Capabilities {
 		XMLType:                         false,
 		AdvisoryLocks:                   false,
 		RowLevelTTL:                     false,
+		RowDeletionPolicy:               false,
 		MigrationTimeouts:               true,
 		TransactionalDDL:                false,
 		CatalogPartitions:               true,
@@ -1236,6 +1269,7 @@ func Postgres16() Capabilities {
 		XMLType:                            true,
 		AdvisoryLocks:                      true,
 		RowLevelTTL:                        false,
+		RowDeletionPolicy:                  false,
 		MigrationTimeouts:                  true,
 		TransactionalDDL:                   true,
 		CatalogPartitions:                  true,
@@ -1400,6 +1434,7 @@ func ClickHouse24() Capabilities {
 		// pg_class.reloptions; `WITH (ttl_expiration_expression = ...)` is a
 		// syntax error here. Measured both ways on 26.7.3.19.
 		RowLevelTTL:                     false,
+		RowDeletionPolicy:               false,
 		MigrationTimeouts:               false,
 		TransactionalDDL:                false,
 		DDLInsideTransaction:            false,
@@ -1476,6 +1511,7 @@ func SQLite3() Capabilities {
 		XMLType:                            false,
 		AdvisoryLocks:                      false,
 		RowLevelTTL:                        false,
+		RowDeletionPolicy:                  false,
 		MigrationTimeouts:                  false,
 		TransactionalDDL:                   true,
 		CatalogPartitions:                  true,
@@ -1625,6 +1661,7 @@ func SQLServer2022() Capabilities {
 		XMLType:                         true,
 		AdvisoryLocks:                   false,
 		RowLevelTTL:                     false,
+		RowDeletionPolicy:               false,
 		MigrationTimeouts:               false,
 		TransactionalDDL:                false,
 		CatalogPartitions:               true,
@@ -1868,6 +1905,12 @@ func YugabyteDB24() Capabilities {
 // line stays best-effort -- not for want of coverage.
 func SpannerPostgres() Capabilities {
 	return Postgres16().
+		// Measured on the Cloud Spanner emulator behind PGAdapter 0.55.2:
+		// `TTL INTERVAL '30 days' ON created_at` is accepted and STORED, and
+		// reads back from information_schema.tables. It is the one row-expiry
+		// surface Spanner has -- RowLevelTTL stays false because the storage
+		// parameters it names are accepted and discarded (stokaro/ptah#2236).
+		With(RowDeletionPolicy, true).
 		// Measured on the Cloud Spanner emulator behind PGAdapter:
 		// `<DEFERRABLE> constraints are not supported` (stokaro/ptah#1624).
 		With(DeferrableConstraints, false).
@@ -2087,6 +2130,7 @@ func Oracle23() Capabilities {
 		// package is not these functions.
 		AdvisoryLocks:     false,
 		RowLevelTTL:       false,
+		RowDeletionPolicy: false,
 		MigrationTimeouts: false,
 		// A CREATE TABLE inside an explicit transaction survives ROLLBACK:
 		// Oracle commits the transaction in progress before every schema

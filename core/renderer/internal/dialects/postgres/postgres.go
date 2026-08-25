@@ -636,6 +636,14 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 	}
 	r.w.Write(rowTTL)
 
+	// The row deletion policy is a clause rather than a storage parameter, so
+	// it follows the WITH position rather than sharing it.
+	rowDeletionPolicy, err := r.renderRowDeletionPolicy(node)
+	if err != nil {
+		return err
+	}
+	r.w.Write(rowDeletionPolicy)
+
 	r.w.WriteLine(";")
 	r.w.WriteLine("")
 	r.renderTableComments(node)
@@ -872,12 +880,13 @@ func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
 			// expression on a MergeTree table, this one a set of storage
 			// parameters.
 			r.writeClickHouseOnlyOperation(operation)
-		case *ast.SetRowTTLOperation, *ast.ResetRowTTLOperation:
-			// Both row-level TTL operations share one branch so this switch
-			// keeps its complexity budget; writeRowTTLOperation re-selects
-			// between them, which is a two-case type switch of its own rather
-			// than another arm here (stokaro/ptah#1027).
-			if err := r.writeRowTTLOperation(node, operation); err != nil {
+		case *ast.SetRowTTLOperation, *ast.ResetRowTTLOperation,
+			*ast.SetRowDeletionPolicyOperation, *ast.DropRowDeletionPolicyOperation:
+			// Every row-expiry operation shares one branch so this switch keeps
+			// its complexity budget; writeRowExpiryOperation re-selects among
+			// them, which is a type switch of its own rather than four arms
+			// here (stokaro/ptah#1027, stokaro/ptah#2236).
+			if err := r.writeRowExpiryOperation(node, operation); err != nil {
 				return err
 			}
 		case *ast.SetCommentOperation:

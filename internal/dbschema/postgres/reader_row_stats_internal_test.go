@@ -51,9 +51,10 @@ func rowStatsFakeServer(
 					"partitioned",
 					"rls_enabled",
 					"row_ttl_options",
+					"row_deletion_policy",
 				},
 				Rows: [][]driver.Value{
-					{"public", "members", "BASE TABLE", "", int64(0), false, false, false, "[]"},
+					{"public", "members", "BASE TABLE", "", int64(0), false, false, false, "[]", ""},
 				},
 			}, nil
 		default:

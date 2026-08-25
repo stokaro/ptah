@@ -111,6 +111,11 @@ func TestEveryTableDiffFieldIsClassified(t *testing.T) {
 		// table cannot carry one and there is nothing to rebuild for
 		// (stokaro/ptah#1027).
 		"RowTTLChange": false,
+		// A row deletion policy is a Spanner table clause, and the field can
+		// only be non-nil for a target carrying capability.RowDeletionPolicy,
+		// which no SQLite preset does. Same reasoning as the field above, on a
+		// different engine (stokaro/ptah#2236).
+		"RowDeletionPolicyChange": false,
 		// SQLite has no comments: no CREATE TABLE clause, no COMMENT ON
 		// statement, and nothing in the catalog to read one back from. The
 		// field can only be non-nil for a target whose reader and renderer both
