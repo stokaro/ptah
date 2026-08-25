@@ -1429,6 +1429,45 @@ all three engines. The diff now reports it as `unique_protections_removed`, and
 on MySQL and MariaDB — where the removal is spelled `DROP INDEX`, exactly like
 dropping an access path — the statement itself is classified destructive.
 
+## An Omitted Attribute Is Not A Removal Request
+
+A declaration that leaves an attribute out is not read as asking for the
+attribute to be removed. That is the comparator's rule for every attribute a
+declaration may omit, and it is chosen rather than incidental: inverting it
+would make adopting Ptah over an existing database drop things nobody named.
+The rule is stated where it is applied, in `domainChanges`
+(`migration/schemadiff/internal/compare/usertypes.go`), and `rangeChanges`
+follows it.
+
+The rule has a cost, and it is worth stating rather than leaving to be
+discovered. For attributes the model carries as a bare string, an empty value is
+indistinguishable from an absent one — so there is no spelling that removes
+them, not merely no removal by omission:
+
+| Object | Attribute | Removable through a declaration |
+| --- | --- | --- |
+| `range` | `canonical` | No |
+| `range` | `subtype_diff` | No |
+| `domain` | `check` | No |
+| `domain` | `default` | No |
+
+Measured on PostgreSQL 18.6, two of the four rows — the other two reach the
+same early return in the same helper. A range type created with
+`SUBTYPE_DIFF = f8diff`, described, and applied back with the `subtype_diff`
+line deleted answers `Schema is synced, no changes to be made.` while
+`pg_range.rngsubdiff` still holds the function; a domain created with
+`CHECK (VALUE > 0)` and applied back without its `check` line answers the same.
+Changing the attribute plans normally — `subtype_diff = "f8diff2"` against the
+same database plans the type's replacement — so it is removal alone that has no
+spelling.
+
+Removing one is done out of band, with `ALTER TYPE` or `ALTER DOMAIN` against
+the database. Whether that stays is
+[`stokaro/ptah#2223`](https://github.com/stokaro/ptah/issues/2223): the
+alternatives are to report the difference without planning it, or to let a
+declaration say "none" explicitly by distinguishing an absent value from an
+empty one, the way `config.DomainExpression` already does on its own side.
+
 ## SQLite: A Primary Key Is Not A NOT NULL
 
 Ptah applied "a primary key column is NOT NULL" as if it were a rule of SQL. It
