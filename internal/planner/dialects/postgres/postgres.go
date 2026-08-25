@@ -816,6 +816,17 @@ func (p *Planner) modifyExistingTableColumns(
 			continue
 		}
 
+		// A comment is not part of ALTER TABLE on PostgreSQL, so it is emitted
+		// beside the column's other changes rather than inside them. A column
+		// whose ONLY difference is its comment gets no ALTER at all: the
+		// statement would be `ALTER COLUMN ... SET NOT NULL` for a column that
+		// is already NOT NULL, which is noise the operator has to read past
+		// and a write to a table nothing needed to write to (stokaro/ptah#2168).
+		result = appendColumnComment(result, tableDiff.TableName, colDiff)
+		if len(colDiff.Changes) == 0 {
+			continue
+		}
+
 		// Generate ALTER COLUMN statements using AST
 		alterNode := &ast.AlterTableNode{
 			Name: tableDiff.TableName,
@@ -839,6 +850,20 @@ func (p *Planner) modifyExistingTableColumns(
 		result = append(result, astCommentNode)
 	}
 	return result
+}
+
+// appendColumnComment emits the column's comment transition, if it has one.
+func appendColumnComment(result []ast.Node, table string, colDiff types.ColumnDiff) []ast.Node {
+	if colDiff.CommentChange == nil {
+		return result
+	}
+	return append(result, &ast.AlterTableNode{
+		Name: table,
+		Operations: []ast.AlterOperation{&ast.SetCommentOperation{
+			Column:  colDiff.ColumnName,
+			Comment: colDiff.CommentChange.Desired,
+		}},
+	})
 }
 
 func (p *Planner) modifyGeneratedColumnExpression(
@@ -956,9 +981,25 @@ func (p *Planner) removeTableColumnsFromDiff(result []ast.Node, tableDiff types.
 	return result
 }
 
+// appendTableComment emits the table's comment transition, if it has one.
+func appendTableComment(result []ast.Node, tableDiff types.TableDiff) []ast.Node {
+	if tableDiff.CommentChange == nil {
+		return result
+	}
+	return append(result, &ast.AlterTableNode{
+		Name:       tableDiff.TableName,
+		Operations: []ast.AlterOperation{&ast.SetCommentOperation{Comment: tableDiff.CommentChange.Desired}},
+	})
+}
+
 func (p *Planner) addAndModifyTableColumns(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, tableDiff := range diff.TablesModified {
+		// The table's own comment is emitted before its columns' changes, so a
+		// table whose only difference is its comment still produces a
+		// statement: the condition below asks about columns, and a comment
+		// belongs to the table (stokaro/ptah#2168).
+		result = appendTableComment(result, tableDiff)
 		if len(tableDiff.ColumnsAdded) > 0 || len(tableDiff.ColumnsModified) > 0 {
 			// Track the initial length to see if any actual operations were added
 			initialLength := len(result)

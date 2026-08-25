@@ -186,7 +186,11 @@ func tableColumnsWithSemantics(
 				table:                genTable.Name,
 				generatedExpressions: generatedExpressions,
 			})
-			if len(colDiff.Changes) > 0 {
+			// A comment-only difference has no entry in Changes, and it is
+			// still a difference: without the second condition a column whose
+			// comment was rewritten in the declaration never reached the
+			// planner (stokaro/ptah#2168).
+			if len(colDiff.Changes) > 0 || colDiff.CommentChange != nil {
 				tableDiff.ColumnsModified = append(tableDiff.ColumnsModified, colDiff)
 			}
 		}
@@ -200,6 +204,19 @@ func tableColumnsWithSemantics(
 	})
 
 	return tableDiff
+}
+
+// commentChange reports a comment transition, or nil when there is none.
+//
+// It takes both sides because absence is a state a planner has to act on: a
+// comment the database holds and the declaration does not is a removal, and the
+// desired side alone cannot say so. This is the shape [rowTTLChange] uses, for
+// the same reason.
+func commentChange(desired, current string) *difftypes.CommentChange {
+	if desired == current {
+		return nil
+	}
+	return &difftypes.CommentChange{Current: current, Desired: desired}
 }
 
 // Columns performs detailed property-level comparison between a generated column and database column.
@@ -324,8 +341,9 @@ func columnsWithDesiredDomains(
 	ctx columnContext,
 ) difftypes.ColumnDiff {
 	colDiff := difftypes.ColumnDiff{
-		ColumnName: genCol.Name,
-		Changes:    make(map[string]string),
+		ColumnName:    genCol.Name,
+		Changes:       make(map[string]string),
+		CommentChange: commentChange(genCol.Comment, dbCol.Comment),
 	}
 
 	// ClickHouse-only guard: older goschema models cannot express
