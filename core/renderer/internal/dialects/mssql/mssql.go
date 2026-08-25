@@ -497,6 +497,29 @@ func cyclePointer(cycle bool) *bool {
 	return map[bool]*bool{true: &cycle, false: nil}[cycle]
 }
 
+// viewAttributeClause writes the WITH clause a view carries, before the AS.
+//
+// SQL Server's grammar is `CREATE VIEW name [(columns)] [WITH attribute [,...]]
+// AS`, and the attributes belong to the view rather than to its body:
+// SCHEMABINDING binds it to the tables it names, so they cannot be altered
+// under it, and an indexed view requires it. Nothing wrote them, so a replayed
+// view came back unbound -- measured on SQL Server 2025, source against the
+// replay of Ptah's own description:
+//
+//	v_bound   IsSchemaBound=1   ->   v_bound   IsSchemaBound=0
+//
+// with the replay reporting success and --dry-run reporting `Schema is synced`,
+// so the guarantee was dropped and nothing said so (stokaro/ptah#2125).
+//
+// It is written before the AS and not beside WITH CHECK OPTION, which is a
+// different clause in a different place: that one follows the body.
+func viewAttributeClause(attributes []string) string {
+	if len(attributes) == 0 {
+		return ""
+	}
+	return " WITH " + strings.Join(attributes, ", ")
+}
+
 func (r *Renderer) VisitCreateView(node *ast.CreateViewNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
@@ -505,7 +528,7 @@ func (r *Renderer) VisitCreateView(node *ast.CreateViewNode) error {
 	if node.Replace {
 		create = "CREATE OR ALTER VIEW"
 	}
-	r.w.WriteLinef("%s %s AS", create, escapeQualifiedIdentifier(node.Name))
+	r.w.WriteLinef("%s %s%s AS", create, escapeQualifiedIdentifier(node.Name), viewAttributeClause(node.Attributes))
 	r.w.WriteLine(strings.TrimSpace(node.Body))
 	if node.WithCheck {
 		r.w.WriteLine("WITH CHECK OPTION")

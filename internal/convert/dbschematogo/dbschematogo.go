@@ -520,10 +520,11 @@ func convertExtendedProperties(
 func convertViews(database *goschema.Database, dbViews []dbschematypes.DBView) {
 	for _, dbView := range dbViews {
 		database.Views = append(database.Views, goschema.View{
-			Name:      dbView.QualifiedName(),
-			Body:      dbView.Body,
-			WithCheck: strings.EqualFold(dbView.CheckOption, "LOCAL") || strings.EqualFold(dbView.CheckOption, "CASCADED"),
-			Comment:   dbView.Comment,
+			Name:       dbView.QualifiedName(),
+			Body:       dbView.Body,
+			WithCheck:  strings.EqualFold(dbView.CheckOption, "LOCAL") || strings.EqualFold(dbView.CheckOption, "CASCADED"),
+			Comment:    dbView.Comment,
+			Attributes: dbView.Attributes,
 		})
 	}
 }

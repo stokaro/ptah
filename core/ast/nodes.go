@@ -1639,6 +1639,11 @@ type CreateViewNode struct {
 	Replace   bool
 	WithCheck bool
 	Comment   string
+	// Attributes carries the view's own WITH clause on the targets that have
+	// one -- SQL Server's SCHEMABINDING and VIEW_METADATA. It is separate from
+	// WithCheck, which is a clause that follows the body rather than one that
+	// precedes it (stokaro/ptah#2125).
+	Attributes []string
 }
 
 func NewCreateView(name string) *CreateViewNode {
