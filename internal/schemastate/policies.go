@@ -8,6 +8,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/objectidentity"
+	"go.5x5.cz/ptah/internal/rlspolicy"
 )
 
 // Policy is a row-level-security policy.
@@ -20,7 +21,9 @@ import (
 // already true in [objectidentity]; carrying the policy here is what makes the
 // canonical state hold them (stokaro/ptah#1664).
 type Policy struct {
-	Table      objectidentity.ID
+	Table objectidentity.ID
+	// Command is the FOR clause, folded through [rlspolicy.Command] so an
+	// unspecified one and an explicit ALL are the same value.
 	Command    string
 	Role       string
 	Using      string
@@ -67,7 +70,7 @@ func PoliciesFromDescription(state *State, description *goschema.Database, build
 		if existing, collided := state.Add(Object{
 			ID: id,
 			Policy: &Policy{
-				Table: owner, Command: policy.PolicyFor, Role: policy.ToRoles,
+				Table: owner, Command: rlspolicy.Command(policy.PolicyFor), Role: policy.ToRoles,
 				Using: policy.UsingExpression, WithCheck: policy.WithCheckExpression,
 			},
 			Provenance: Provenance{Source: coverage.Declared, Location: policy.StructName},
@@ -102,7 +105,7 @@ func PoliciesFromCatalog(state *State, schema *dbschematypes.DBSchema, builder o
 		if existing, collided := state.Add(Object{
 			ID: id,
 			Policy: &Policy{
-				Table: owner, Command: policy.PolicyFor, Role: policy.ToRoles,
+				Table: owner, Command: rlspolicy.Command(policy.PolicyFor), Role: policy.ToRoles,
 				Using: policy.UsingExpression, WithCheck: policy.WithCheckExpression,
 			},
 			Provenance: Provenance{Source: coverage.Observed, Location: "pg_policies"},

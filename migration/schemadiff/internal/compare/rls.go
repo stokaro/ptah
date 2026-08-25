@@ -10,6 +10,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/normalize"
+	"go.5x5.cz/ptah/internal/rlspolicy"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
@@ -444,8 +445,9 @@ func RLSPolicyDefinitionsWithExpressions(
 		Changes:    make(map[string]string),
 	}
 
-	// Compare policy type (FOR clause)
-	if genPolicy.PolicyFor != dbPolicy.PolicyFor {
+	// Compare policy type (FOR clause), folded so an unspecified clause and an
+	// explicit ALL are the same value on both sides (stokaro/ptah#2211).
+	if rlspolicy.Command(genPolicy.PolicyFor) != rlspolicy.Command(dbPolicy.PolicyFor) {
 		policyDiff.Changes["policy_for"] = fmt.Sprintf("%s -> %s", dbPolicy.PolicyFor, genPolicy.PolicyFor)
 	}
 
