@@ -18,6 +18,7 @@ import (
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlasurl"
+	"go.5x5.cz/ptah/internal/dburldisplay"
 	"go.5x5.cz/ptah/internal/devdocker"
 	"go.5x5.cz/ptah/internal/migrationintegrity"
 	"go.5x5.cz/ptah/internal/migrationreplay"
@@ -542,11 +543,11 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 // answers that it has no executable statements (stokaro/ptah#2083).
 func reportNothingToGenerate(out io.Writer, targetURL string) {
 	fmt.Fprintf(out, "Schema is synced with %s, no migration files generated.\n",
-		dbschema.FormatDatabaseURL(targetURL))
+		dburldisplay.Format(targetURL))
 }
 
 func reportGeneratedMigrationFiles(out io.Writer, targetURL string, files *generator.MigrationFiles) {
-	fmt.Fprintf(out, "Generated migration files for %s:\n", dbschema.FormatDatabaseURL(targetURL))
+	fmt.Fprintf(out, "Generated migration files for %s:\n", dburldisplay.Format(targetURL))
 	for _, pair := range files.Files {
 		fmt.Fprintf(out, "UP:   %s\n", pair.UpFile)
 		fmt.Fprintf(out, "DOWN: %s\n", pair.DownFile)

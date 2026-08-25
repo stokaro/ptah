@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dburldisplay"
 )
 
 // waitInterval is how long WaitForServer sleeps between attempts.
@@ -35,12 +36,12 @@ func WaitForServer(ctx context.Context, dbURL string, timeout time.Duration) err
 		}
 		if remaining := time.Until(deadline); remaining <= 0 {
 			return fmt.Errorf("%s did not answer within %s (%d attempts); the last error was: %w",
-				dbschema.FormatDatabaseURL(dbURL), timeout, attempts, err)
+				dburldisplay.Format(dbURL), timeout, attempts, err)
 		}
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("waiting for %s: %w (the last connection error was: %w)",
-				dbschema.FormatDatabaseURL(dbURL), ctx.Err(), err)
+				dburldisplay.Format(dbURL), ctx.Err(), err)
 		case <-time.After(waitInterval):
 		}
 	}

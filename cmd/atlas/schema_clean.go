@@ -22,6 +22,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
+	"go.5x5.cz/ptah/internal/dburldisplay"
 	"go.5x5.cz/ptah/internal/schemaclean"
 )
 
@@ -325,9 +326,9 @@ func printAtlasSchemaCleanPlan(
 	plan schemaclean.Plan,
 ) {
 	if opts.dryRun {
-		fmt.Fprintf(out, "[DRY RUN] Would clean schema objects from database %s\n", dbschema.FormatDatabaseURL(opts.url))
+		fmt.Fprintf(out, "[DRY RUN] Would clean schema objects from database %s\n", dburldisplay.Format(opts.url))
 	} else {
-		fmt.Fprintf(out, "Cleaning schema objects from database %s\n", dbschema.FormatDatabaseURL(opts.url))
+		fmt.Fprintf(out, "Cleaning schema objects from database %s\n", dburldisplay.Format(opts.url))
 	}
 	fmt.Fprintf(out, "Connected to %s database successfully.\n", conn.Info().Dialect)
 	fmt.Fprintf(out, "Planned cleanup changes: %d\n", len(plan.Changes))

@@ -2,9 +2,9 @@
 // database how it spells each declared generated expression.
 //
 // It exists as its own package because the two halves it joins may not import
-// each other: [go.5x5.cz/ptah/dbschema] must stay free of the renderer, and the
-// renderer knows nothing about connections. What is left over is this — a pure
-// function from a declaration to a list of statements.
+// each other: [go.5x5.cz/ptah/internal/dbexprprobe] must stay free of the
+// renderer, and the renderer knows nothing about connections. What is left
+// over is this — a pure function from a declaration to a list of statements.
 package genexprprobe
 
 import (
@@ -16,8 +16,8 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/dbexprprobe"
 )
 
 // For returns one probe per declared table that carries a generated column, and
@@ -31,19 +31,19 @@ import (
 // database may legitimately already hold the schema being compared -- that is
 // what a dev database is for -- and creating a second table under the same name
 // would fail on the first schema that did.
-func For(dialect string, caps capability.Capabilities, declared *goschema.Database) ([]dbschema.GeneratedExpressionProbe, error) {
+func For(dialect string, caps capability.Capabilities, declared *goschema.Database) ([]dbexprprobe.GeneratedExpressionProbe, error) {
 	if declared == nil || !rewritesStoredExpressions(dialect) {
 		return nil, nil
 	}
 
-	var probes []dbschema.GeneratedExpressionProbe
+	var probes []dbexprprobe.GeneratedExpressionProbe
 	for _, table := range declared.Tables {
 		fields := fieldsForTable(declared, table)
 		generated := generatedColumnNames(fields)
 		if len(generated) == 0 {
 			continue
 		}
-		probeTable := dbschema.GeneratedExpressionProbeTable(len(probes))
+		probeTable := dbexprprobe.GeneratedExpressionProbeTable(len(probes))
 		node := fromschema.FromTable(table, fields, declared.Enums, dialect)
 		if node == nil {
 			continue
@@ -56,7 +56,7 @@ func For(dialect string, caps capability.Capabilities, declared *goschema.Databa
 		if err != nil {
 			return nil, err
 		}
-		probes = append(probes, dbschema.GeneratedExpressionProbe{
+		probes = append(probes, dbexprprobe.GeneratedExpressionProbe{
 			Schema:     table.Schema,
 			Table:      table.Name,
 			ProbeTable: probeTable,

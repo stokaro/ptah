@@ -1,4 +1,4 @@
-package dbschema
+package dbexprprobe
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/config"
+	"go.5x5.cz/ptah/dbschema"
 )
 
 // PolicyExpressionProbe is one declared RLS policy whose clauses need the
@@ -41,30 +42,32 @@ type IndexExpressionProbe struct {
 // ResolvePolicyExpressions asks the connected server to normalize each declared
 // policy's USING and WITH CHECK.
 //
-// Same rewrite as [DatabaseConnection.ResolveCheckExpressions] and the same
-// reason it cannot be folded textually: the cast PostgreSQL inserts depends on
-// the type of the column the clause names. Measured on 17.11, `owner = 'x'` is
-// stored as `((owner)::text = 'x'::text)` over a varchar column and unchanged
-// over text, so a policy nobody had touched was dropped and recreated on every
-// run -- a security control taken away and put back for no reason
-// (stokaro/ptah#2049).
+// Same rewrite as [ResolveCheckExpressions] and the same reason it cannot be
+// folded textually: the cast PostgreSQL inserts depends on the type of the
+// column the clause names. Measured on 17.11, `owner = 'x'` is stored as
+// `((owner)::text = 'x'::text)` over a varchar column and unchanged over text,
+// so a policy nobody had touched was dropped and recreated on every run -- a
+// security control taken away and put back for no reason (stokaro/ptah#2049).
 //
 // The probe is a temporary table with row-level security enabled and the
-// declared policy on it, inside a transaction that is rolled back.
-func (dc *DatabaseConnection) ResolvePolicyExpressions(
+// declared policy on it, inside a transaction that is rolled back. A
+// connection pinned to a session returns nil, for the reason the package
+// documentation gives.
+func ResolvePolicyExpressions(
 	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
 	probes []PolicyExpressionProbe,
 ) (map[string]config.PolicyExpression, error) {
-	if dc == nil || dc.db == nil {
+	if conn == nil {
 		return nil, fmt.Errorf("resolve policy expressions: database connection is nil")
 	}
 	if len(probes) == 0 {
 		return nil, nil
 	}
-	if !isPostgresFamily(dc.Info().Dialect) {
+	if !isPostgresFamily(conn.Info().Dialect) {
 		return nil, nil
 	}
-	return resolveProbes(ctx, dc, "resolve policy expressions", probes,
+	return resolveProbes(ctx, conn, "resolve policy expressions", probes,
 		func(probe PolicyExpressionProbe) string { return probe.Key },
 		resolveOnePolicyExpression)
 }
@@ -125,21 +128,24 @@ func policyClauses(using, withCheck string) string {
 // The third object with the same rewrite. Measured on 17.11, `lower(code)` over
 // a varchar column is stored as `lower((code)::text)`, and a partial index's
 // `unit >= 0` over numeric as `(unit >= (0)::numeric)`, so an index nobody had
-// touched was dropped and rebuilt on every run (stokaro/ptah#2047).
-func (dc *DatabaseConnection) ResolveIndexExpressions(
+// touched was dropped and rebuilt on every run (stokaro/ptah#2047). A
+// connection pinned to a session returns nil, for the reason the package
+// documentation gives.
+func ResolveIndexExpressions(
 	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
 	probes []IndexExpressionProbe,
 ) (map[string]config.IndexExpression, error) {
-	if dc == nil || dc.db == nil {
+	if conn == nil {
 		return nil, fmt.Errorf("resolve index expressions: database connection is nil")
 	}
 	if len(probes) == 0 {
 		return nil, nil
 	}
-	if !isPostgresFamily(dc.Info().Dialect) {
+	if !isPostgresFamily(conn.Info().Dialect) {
 		return nil, nil
 	}
-	return resolveProbes(ctx, dc, "resolve index expressions", probes,
+	return resolveProbes(ctx, conn, "resolve index expressions", probes,
 		func(probe IndexExpressionProbe) string { return probe.Key },
 		resolveOneIndexExpression)
 }

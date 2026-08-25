@@ -23,6 +23,8 @@ import (
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasurl"
+	"go.5x5.cz/ptah/internal/dbexprprobe"
+	"go.5x5.cz/ptah/internal/dburldisplay"
 	"go.5x5.cz/ptah/internal/genexprprobe"
 	"go.5x5.cz/ptah/internal/schemaload"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
@@ -149,7 +151,7 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 		PlainHTTP:   opts.plainHTTP,
 	}
 
-	fmt.Fprintf(out, "Comparing schema from %s with database %s\n", loadOpts.Sources(), dbschema.FormatDatabaseURL(dbURL))
+	fmt.Fprintf(out, "Comparing schema from %s with database %s\n", loadOpts.Sources(), dburldisplay.Format(dbURL))
 	fmt.Fprintln(out, "=== SCHEMA COMPARISON ===")
 	fmt.Fprintln(out)
 
@@ -293,7 +295,7 @@ func resolveGeneratedExpressions(
 	}
 	defer dbschema.CloseAndWarn(dev)
 
-	resolved, err := dbschema.ResolveGeneratedExpressions(ctx, dev, probes)
+	resolved, err := dbexprprobe.ResolveGeneratedExpressions(ctx, dev, probes)
 	if err != nil {
 		return nil, err
 	}

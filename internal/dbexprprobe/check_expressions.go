@@ -1,4 +1,4 @@
-package dbschema
+package dbexprprobe
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/dbschema"
 )
 
 // CheckProbeColumn is one column the probe table needs so a declared CHECK can
@@ -65,24 +66,27 @@ type CheckExpressionProbe struct {
 // omitted, because an absent key and an unresolvable one are different facts
 // and only one of them is a constraint the caller may compare.
 //
-// Dialects other than the PostgreSQL family return nil: this rewrite is
-// PostgreSQL's, and the engines that store the text they were given need no
-// normalization at all.
-func (dc *DatabaseConnection) ResolveCheckExpressions(
+// Dialects other than the ones below return nil: this rewrite is theirs, and
+// the engines that store the text they were given need no normalization at
+// all. A connection pinned to a session also returns nil, for the reason the
+// package documentation gives: the rollback the probe needs would discard the
+// session owner's work, so nothing is asked and the check stays uncompared.
+func ResolveCheckExpressions(
 	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
 	probes []CheckExpressionProbe,
-) (result map[string]config.CheckExpression, resultErr error) {
-	if dc == nil || dc.db == nil {
+) (map[string]config.CheckExpression, error) {
+	if conn == nil {
 		return nil, fmt.Errorf("resolve check expressions: database connection is nil")
 	}
 	if len(probes) == 0 {
 		return nil, nil
 	}
-	one, supported := checkProbeFor(dc.Info().Dialect)
+	one, supported := checkProbeFor(conn.Info().Dialect)
 	if !supported {
 		return nil, nil
 	}
-	return resolveProbes(ctx, dc, "resolve check expressions", probes,
+	return resolveProbes(ctx, conn, "resolve check expressions", probes,
 		func(probe CheckExpressionProbe) string { return probe.Key },
 		one)
 }

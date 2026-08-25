@@ -19,6 +19,7 @@ import (
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasurl"
+	"go.5x5.cz/ptah/internal/dburldisplay"
 	"go.5x5.cz/ptah/internal/planartifact"
 	"go.5x5.cz/ptah/internal/schemaload"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
@@ -162,7 +163,7 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	rootsDisplay := loadOpts.Sources()
 
 	if reportFormat == "text" {
-		fmt.Fprintf(out, "Generating migration from %s to database %s\n", rootsDisplay, dbschema.FormatDatabaseURL(dbURL))
+		fmt.Fprintf(out, "Generating migration from %s to database %s\n", rootsDisplay, dburldisplay.Format(dbURL))
 		fmt.Fprintln(out, "=== GENERATE MIGRATION SQL ===")
 		fmt.Fprintln(out)
 	}
@@ -265,7 +266,7 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	fmt.Fprintln(out, "-- Migration generated from schema differences")
 	fmt.Fprintf(out, "-- Generated on: %s\n", "now") // You could add actual timestamp
 	fmt.Fprintf(out, "-- Source: %s\n", rootsDisplay)
-	fmt.Fprintf(out, "-- Target: %s\n", dbschema.FormatDatabaseURL(dbURL))
+	fmt.Fprintf(out, "-- Target: %s\n", dburldisplay.Format(dbURL))
 	fmt.Fprintln(out)
 
 	fmt.Fprint(out, migrationSQL)

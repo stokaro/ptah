@@ -1053,7 +1053,7 @@ type Hypertable struct {
 // `time_bucket('1 hour', time)` comes back as
 // `time_bucket('01:00:00'::interval, "time")` -- so the two are compared by
 // putting the declaration through the same rewrite rather than by folding the
-// text. See [go.5x5.cz/ptah/dbschema.DatabaseConnection.ResolveContinuousAggregateBodies].
+// text; the comparison's expression probes (internal/dbexprprobe) do that.
 //
 // Dialects is deliberately absent, for the reason [Synonym] gives: a continuous
 // aggregate belongs to TimescaleDB and to nothing else.
