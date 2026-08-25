@@ -17,9 +17,12 @@ import (
 // the normalization the two would never match for FKs declared without an
 // explicit action, producing a perpetual drop+add loop on every `generate`
 // (the same hazard checkConstraintChanged guards against for CHECK clauses).
-func foreignKeyConstraintChanged(genConstraint goschema.Constraint, dbConstraint types.DBConstraint, dialect string) bool {
-	semantics := identifier.ForDialect(dialect)
-
+func foreignKeyConstraintChanged(
+	genConstraint goschema.Constraint,
+	dbConstraint types.DBConstraint,
+	dialect string,
+	semantics identifier.Semantics,
+) bool {
 	// Compare local columns, under the dialect's column-name comparison rather
 	// than as raw strings: Oracle stores an unquoted `author_id` as AUTHOR_ID,
 	// and comparing the spellings made an untouched foreign key read as
@@ -29,7 +32,7 @@ func foreignKeyConstraintChanged(genConstraint goschema.Constraint, dbConstraint
 	}
 
 	// Compare referenced table
-	if !foreignTableRefMatches(genConstraint.ForeignTable, dbConstraint, dialect) {
+	if !foreignTableRefMatches(genConstraint.ForeignTable, dbConstraint, semantics) {
 		return true
 	}
 
@@ -69,21 +72,39 @@ func foreignKeyConstraintChanged(genConstraint goschema.Constraint, dbConstraint
 // catalog reporting ORA_AUTHORS name one table -- and comparing the strings
 // made a foreign key nobody touched read as changed, which the diff expresses
 // as a drop and an add of the same constraint on every run (stokaro/ptah#1875).
-func foreignTableRefMatches(generated string, dbConstraint types.DBConstraint, dialect string) bool {
+// The semantics are the CALLER's, not a second set derived from the dialect
+// name. Re-deriving them here made this comparison disagree with the identity
+// keys that paired the two constraints in the first place whenever the two
+// sources disagreed about the dialect -- the same split #1244 fixed for the
+// member keys.
+func foreignTableRefMatches(
+	generated string,
+	dbConstraint types.DBConstraint,
+	semantics identifier.Semantics,
+) bool {
 	generated = strings.TrimSpace(generated)
 	if generated == "" {
 		return dbConstraint.ForeignTable == nil
 	}
-	semantics := identifier.ForDialect(dialect)
-	if strings.Contains(generated, ".") {
-		return sameTableName(semantics, generated, dbConstraint.QualifiedForeignTableName())
-	}
-	return sameTableName(semantics, generated, getStringValue(dbConstraint.ForeignTable))
-}
-
-// sameTableName folds both sides through the dialect's table-name comparison.
-func sameTableName(semantics identifier.Semantics, left, right string) bool {
-	return semantics.TableIdentityKey(left) == semantics.TableIdentityKey(right)
+	// Qualified on BOTH sides, resolving an unqualified name to the dialect's
+	// default schema, because the two sides qualify differently and neither
+	// spelling is wrong.
+	//
+	// A reader blanks the schema for the one it was scoped to, so the catalog
+	// reports `parent`. `schema inspect` writes the declaration qualified, so
+	// the description says `public.parent`. Comparing those as bare strings
+	// made a composite foreign key differ from itself: `ptah schema apply` of a
+	// description against the database it was read from planned a DROP and an
+	// ADD on every run, taking a validating lock each time and never reporting
+	// the schema as synced.
+	//
+	// A single-column key escaped it only by accident -- a declaration carries
+	// that one on the field, as `parent(id)`, which is unqualified and happened
+	// to match. This is the same resolution constraintIdentity already applies,
+	// which is why the two sides paired as one object while their bodies
+	// compared unequal (stokaro/ptah#2219).
+	return semantics.QualifiedTableIdentityKey(generated) ==
+		semantics.QualifiedTableIdentityKey(dbConstraint.QualifiedForeignTableName())
 }
 
 // sameColumnNames compares two column lists in order, under the dialect's

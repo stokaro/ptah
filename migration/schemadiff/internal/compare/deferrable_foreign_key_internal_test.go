@@ -11,6 +11,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/dbschema/types"
 )
 
@@ -113,7 +114,7 @@ func TestForeignKeyConstraintChanged_Deferral(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			changed := foreignKeyConstraintChanged(test.generated, test.database, "postgres")
+			changed := foreignKeyConstraintChanged(test.generated, test.database, "postgres", identifier.ForDialect("postgres"))
 
 			c.Assert(changed, qt.Equals, test.wantChanged)
 		})
