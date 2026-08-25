@@ -70,9 +70,17 @@ func TestParser_ColumnLevelNamedConstraintWithNowhereToKeepTheName(t *testing.T)
 		constraint string
 	}{
 		{name: "not null", constraint: "NOT NULL"},
-		{name: "unique", constraint: "UNIQUE"},
-		{name: "primary key", constraint: "PRIMARY KEY"},
 		{name: "default", constraint: "DEFAULT 1"},
+		{
+			// PRIMARY KEY has a place to keep a name -- the table-level form
+			// this parser already reads -- and it is still refused, because the
+			// renderer collapses a single-column primary key back into the
+			// column and drops the name on the way out. Measured on PostgreSQL
+			// 17 from the table-level spelling: `CONSTRAINT c_pk PRIMARY KEY
+			// (b)` applies as `t_pkey` and --dry-run answers `Schema is synced`
+			// (stokaro/ptah#2180).
+			name: "primary key", constraint: "PRIMARY KEY",
+		},
 	}
 
 	for _, tt := range tests {
@@ -83,7 +91,49 @@ func TestParser_ColumnLevelNamedConstraintWithNowhereToKeepTheName(t *testing.T)
 				`CREATE TABLE t (b INTEGER CONSTRAINT c_x ` + tt.constraint + `);`).Parse()
 
 			c.Assert(err, qt.ErrorMatches, `.*named column constraint "c_x".*`)
-			c.Assert(err, qt.ErrorMatches, `.*CHECK and REFERENCES.*`)
+			c.Assert(err, qt.ErrorMatches, `.*CHECK, REFERENCES and UNIQUE.*`)
 		})
 	}
+}
+
+// A named UNIQUE written on a column is read as the table constraint it is --
+// stokaro/ptah#2161.
+//
+// `b INTEGER CONSTRAINT uq UNIQUE` and `UNIQUE (b) CONSTRAINT uq` describe the
+// same catalog row, and only the second is a shape Ptah's model can carry a
+// name for: ColumnNode keeps Unique as a boolean with nowhere to put one.
+// Reading the first into the second keeps the name instead of dropping it.
+//
+// Measured on PostgreSQL 17: applied, `pg_constraint.conname` reads `c_uq`, and
+// a second plan reports `Schema is synced`.
+func TestParser_ColumnLevelNamedUniqueBecomesATableConstraint(t *testing.T) {
+	c := qt.New(t)
+
+	statements, err := parser.NewParser(
+		`CREATE TABLE t (a INTEGER, b INTEGER CONSTRAINT c_uq UNIQUE);`).Parse()
+
+	c.Assert(err, qt.IsNil)
+	table := statements.Statements[0].(*ast.CreateTableNode)
+	c.Assert(table.Constraints, qt.HasLen, 1)
+	c.Assert(table.Constraints[0].Name, qt.Equals, "c_uq")
+	c.Assert(table.Constraints[0].Type, qt.Equals, ast.UniqueConstraint)
+	c.Assert(table.Constraints[0].Columns, qt.DeepEquals, []string{"b"})
+	// The column keeps no unique flag of its own: one constraint, stated once.
+	// Both would make the renderer emit the key twice.
+	c.Assert(table.Columns[1].Unique, qt.IsFalse)
+}
+
+// An unnamed UNIQUE stays on the column, which is where a nameless one belongs
+// and what every existing schema already produces. Without this the test above
+// would pass on a parser that moved every inline UNIQUE to table level.
+func TestParser_ColumnLevelUnnamedUniqueStaysOnTheColumn(t *testing.T) {
+	c := qt.New(t)
+
+	statements, err := parser.NewParser(
+		`CREATE TABLE t (a INTEGER, b INTEGER UNIQUE);`).Parse()
+
+	c.Assert(err, qt.IsNil)
+	table := statements.Statements[0].(*ast.CreateTableNode)
+	c.Assert(table.Constraints, qt.HasLen, 0)
+	c.Assert(table.Columns[1].Unique, qt.IsTrue)
 }
