@@ -188,6 +188,37 @@ type DBTable struct {
 	// describe a table that sorts differently from the one being read, and
 	// applying that description would create one (stokaro/ptah#1603).
 	ClickHouseSortingKey string `json:"clickhouse_sorting_key,omitempty"`
+	// ClickHouseOrderBy is the ORDER BY exactly as system.tables reports it,
+	// including when it equals the primary key.
+	//
+	// ClickHouseSortingKey above deliberately omits that case, because the
+	// renderer can derive the clause from the primary key -- but it derives the
+	// COLUMNS, not their order, and a table sorted `(day, id)` came back sorted
+	// `(id, day)`. That is a different physical layout: every range scan the
+	// original order served becomes a full scan (stokaro/ptah#2198).
+	ClickHouseOrderBy string `json:"clickhouse_order_by,omitempty"`
+	// ClickHouseEngine is the table engine with its parameters, as
+	// system.tables spells it -- "ReplacingMergeTree(ver)", not the bare family
+	// name the `engine` column reports.
+	//
+	// A description without it takes the renderer's default of MergeTree, so a
+	// ReplacingMergeTree read and replayed loses the deduplicating merge the
+	// table exists for (stokaro/ptah#2198).
+	ClickHouseEngine string `json:"clickhouse_engine,omitempty"`
+	// ClickHousePartitionKey and ClickHouseSamplingKey are the PARTITION BY and
+	// SAMPLE BY expressions, empty for a table that declares neither.
+	ClickHousePartitionKey string `json:"clickhouse_partition_key,omitempty"`
+	ClickHouseSamplingKey  string `json:"clickhouse_sampling_key,omitempty"`
+	// ClickHouseTTL is the table's TTL expression, empty for a table with none.
+	// It is the retention rule: a table replayed without it keeps rows it was
+	// configured to delete.
+	ClickHouseTTL string `json:"clickhouse_ttl,omitempty"`
+	// ClickHouseSettings is the SETTINGS clause body.
+	//
+	// The server resolves one whether or not the author wrote it -- every
+	// MergeTree table reports at least index_granularity -- so this is what the
+	// table HAS rather than what was declared.
+	ClickHouseSettings string `json:"clickhouse_settings,omitempty"`
 	// RowTTL is the CockroachDB row-level TTL this table carries, nil for a
 	// table with none and for every target without capability.RowLevelTTL.
 	//

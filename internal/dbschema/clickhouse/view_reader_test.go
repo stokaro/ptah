@@ -34,7 +34,10 @@ func clickHouseViewReaderQuery(
 			Rows:    [][]driver.Value{{uint64(0)}},
 		}, nil
 	case strings.Contains(query, "engine LIKE '%MergeTree'"):
-		return dbtest.QueryResult{Columns: []string{"name", "comment"}}, nil
+		return dbtest.QueryResult{Columns: []string{
+			"name", "comment", "sorting_key", "primary_key",
+			"engine_full", "partition_key", "sampling_key",
+		}}, nil
 	case strings.Contains(query, "engine = 'View'"):
 		return dbtest.QueryResult{
 			Columns: []string{"name", "as_select", "comment"},
@@ -187,6 +190,14 @@ func clickHouseRefreshableViewReaderQuery(
 	args []driver.NamedValue,
 ) (dbtest.QueryResult, error) {
 	switch {
+	// The table read must be matched BEFORE the materialized-view arm. Its
+	// query excludes a materialized view's inner storage by name, and that
+	// subquery contains `engine = 'MaterializedView'` -- so a substring match on
+	// that alone answered the TABLE read with a view's columns. It went
+	// unnoticed because the two column counts happened to agree; they stopped
+	// agreeing the moment the table read asked for one more (stokaro/ptah#2198).
+	case strings.Contains(query, "engine LIKE '%MergeTree'"):
+		return clickHouseViewReaderQuery(query, args)
 	case strings.Contains(query, "FROM system.view_refreshes"):
 		return dbtest.QueryResult{
 			Columns: []string{"view"},
