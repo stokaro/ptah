@@ -12,6 +12,7 @@ import (
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/pgindexstorage"
 	"go.5x5.cz/ptah/internal/reservedrole"
 	"go.5x5.cz/ptah/internal/rolescope"
 	"go.5x5.cz/ptah/internal/sqlrunner"
@@ -1517,27 +1518,6 @@ func buildPostgresIndex(row postgresIndexRow) (types.DBIndex, error) {
 	return index, nil
 }
 
-// postgresRoundTrippableIndexStorageParams names the PostgreSQL index storage
-// parameters this reader records.
-//
-// It is deliberately not every parameter pg_class.reloptions can hold. A
-// parameter recorded here has to survive every surface the model passes
-// through, because [go.5x5.cz/ptah/migration/schemadiff] treats a difference in
-// the recorded set as a reason to rebuild the index. `pages_per_range` does
-// survive: the Atlas-compatible HCL reader accepts `page_per_range` and
-// `pages_per_range`, the HCL writer emits one, the SQL parser reads one out of
-// a WITH clause, and the PostgreSQL renderer writes one.
-//
-// Measured on PostgreSQL 17.10, `fillfactor`, `deduplicate_items`, `buffering`,
-// `fastupdate`, `gin_pending_list_limit` and `autosummarize` have no slot on
-// that HCL surface, and the pinned Atlas community binary v1.3.0 drops all of
-// them too -- `CREATE INDEX i ON t (name) WITH (fillfactor = 70)` comes back
-// from both as `CREATE INDEX "i" ON "t" ("name")`. Recording one of those would
-// not make it survive an inspect-and-diff round trip; it would make every such
-// index differ from its own inspected document forever. docs/conformance.md
-// records the omission.
-var postgresRoundTrippableIndexStorageParams = []string{"pages_per_range"}
-
 // postgresIndexStorageParams decodes pg_class.reloptions, which PostgreSQL
 // reports as an array of "name=value" strings, into the storage parameters the
 // model carries. An entry with no "=" is skipped rather than recorded with an
@@ -1548,13 +1528,20 @@ func postgresIndexStorageParams(value string) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Which parameters are recorded is decided by the weakest surface they have
+	// to survive, not by what the catalog holds; [pgindexstorage] carries that
+	// rule and the switch that widens it (stokaro/ptah#2183).
+	carryEverything, err := pgindexstorage.CarryAll()
+	if err != nil {
+		return nil, err
+	}
 	params := make(map[string]string)
 	for _, entry := range entries {
 		name, paramValue, found := strings.Cut(entry, "=")
 		if !found {
 			continue
 		}
-		if !slices.Contains(postgresRoundTrippableIndexStorageParams, name) {
+		if !pgindexstorage.Records(name, carryEverything) {
 			continue
 		}
 		params[name] = paramValue
