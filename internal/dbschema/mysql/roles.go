@@ -93,34 +93,17 @@ func (r *Reader) rolePredicate() (string, error) {
 
 // readGrants reports the privileges the roles hold on the connected database.
 //
-// The two scopes MySQL accepts are read from the two tables that record them:
-// mysql.tables_priv for `db`.`table` and mysql.db for `db`.*. A grant on
-// another database is not reported, because the description this reader
-// produces is of one database and a grant elsewhere is not part of it.
+// Both scopes MySQL accepts come from the information_schema privilege views;
+// [grantQuery] says why those rather than the grant tables. A grant on another
+// database is not reported, because the description this reader produces is of
+// one database and a grant elsewhere is not part of it.
 func (r *Reader) readGrants(dbName string) ([]types.DBGrant, error) {
 	predicate, err := r.rolePredicate()
 	if err != nil {
 		return nil, err
 	}
 	rolePredicateOn := func(prefix string) string { return qualifyPredicate(predicate, prefix) }
-	query := `
-		SELECT grantee, object_name, privilege, object_type
-		FROM (
-			SELECT tp.user AS grantee, CONCAT(tp.db, '.', tp.table_name) AS object_name,
-				   UPPER(tp.table_priv) AS privilege, 'TABLE' AS object_type
-			FROM mysql.tables_priv AS tp
-			WHERE tp.db = ? AND tp.table_priv <> ''
-			UNION ALL
-			SELECT d.user AS grantee, d.db AS object_name,
-				   'SELECT' AS privilege, 'SCHEMA' AS object_type
-			FROM mysql.db AS d
-			WHERE d.db = ? AND d.Select_priv = 'Y'
-		) AS granted
-		JOIN mysql.user AS u ON u.user = granted.grantee
-		WHERE ` + rolePredicateOn("u.") + `
-			  AND u.user NOT LIKE 'mysql.%'
-		ORDER BY grantee, object_name, privilege`
-	rows, err := r.db.Query(query, dbName, dbName)
+	rows, err := r.db.Query(grantQuery(rolePredicateOn("u.")), dbName, dbName)
 	if err != nil {
 		return nil, err
 	}
@@ -128,25 +111,27 @@ func (r *Reader) readGrants(dbName string) ([]types.DBGrant, error) {
 
 	var grants []types.DBGrant
 	for rows.Next() {
-		var role, object, privilege, objectType string
-		if err := rows.Scan(&role, &object, &privilege, &objectType); err != nil {
+		var role, objectSchema, object, privilege, grantable, objectType string
+		if err := rows.Scan(&role, &objectSchema, &object, &privilege, &grantable, &objectType); err != nil {
 			return nil, err
 		}
-		// mysql.tables_priv stores several privileges in one SET column, so one
-		// row can carry `Select,Insert`. The comparator holds one privilege per
-		// grant, which is what the declaration writes.
-		for one := range strings.SplitSeq(privilege, ",") {
-			one = strings.TrimSpace(one)
-			if one == "" {
-				continue
-			}
-			grants = append(grants, types.DBGrant{
-				Role:       role,
-				Privilege:  one,
-				ObjectType: objectType,
-				ObjectName: object,
-			})
+		grant := types.DBGrant{
+			Role:       role,
+			Privilege:  strings.ToUpper(strings.TrimSpace(privilege)),
+			ObjectType: objectType,
+			WithOption: strings.EqualFold(strings.TrimSpace(grantable), "YES"),
 		}
+		// The schema and the table are kept apart. QualifiedTarget joins them,
+		// and handing it a name that was already joined made it quote the whole
+		// dotted string as one identifier -- `"mysrc`.`t"` -- which the server
+		// refuses to parse.
+		if strings.EqualFold(objectType, "SCHEMA") {
+			grant.ObjectName = objectSchema
+		} else {
+			grant.Schema = objectSchema
+			grant.ObjectName = object
+		}
+		grants = append(grants, grant)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -333,4 +318,36 @@ func (r *Reader) readRoleMemberships() ([]types.DBRoleMembership, error) {
 		return nil, err
 	}
 	return memberships, nil
+}
+
+// grantQuery projects one row per privilege a role holds in one schema.
+//
+// It is a function rather than a string built at the call site so that a test
+// can read the projection it actually runs. The four defects this replaced were
+// all in the SQL and all invisible from outside: each produced a description
+// that parsed, named real roles, and was wrong about what they hold.
+//
+// The grantee is `'user'@'host'` in these views, so the user is cut out of it
+// to join against mysql.user, which is where the role discriminator lives.
+func grantQuery(rolePredicate string) string {
+	const granteeUser = `REPLACE(SUBSTRING_INDEX(granted.grantee, '@', 1), '''', '')`
+	return `
+		SELECT ` + granteeUser + ` AS role_name, object_schema, object_name, privilege,
+			   grantable, object_type
+		FROM (
+			SELECT sp.GRANTEE AS grantee, sp.TABLE_SCHEMA AS object_schema,
+				   '' AS object_name, sp.PRIVILEGE_TYPE AS privilege,
+				   sp.IS_GRANTABLE AS grantable, 'SCHEMA' AS object_type
+			FROM information_schema.SCHEMA_PRIVILEGES AS sp
+			WHERE sp.TABLE_SCHEMA = ?
+			UNION ALL
+			SELECT tp.GRANTEE, tp.TABLE_SCHEMA, tp.TABLE_NAME, tp.PRIVILEGE_TYPE,
+				   tp.IS_GRANTABLE, 'TABLE'
+			FROM information_schema.TABLE_PRIVILEGES AS tp
+			WHERE tp.TABLE_SCHEMA = ?
+		) AS granted
+		JOIN mysql.user AS u ON u.user = ` + granteeUser + `
+		WHERE ` + rolePredicate + `
+			  AND u.user NOT LIKE 'mysql.%'
+		ORDER BY role_name, object_schema, object_name, privilege`
 }
