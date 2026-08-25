@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -22,6 +24,12 @@ const (
 	securitySchemaFlag = "schemas"
 	securityFormatFlag = "format"
 	securityFailOnFlag = "fail-on"
+	// securityRoleUsageFlag names the file carrying the usage signal ROL01
+	// needs. Collection is deliberately outside Ptah: no catalog records which
+	// roles read which objects, so the observation comes from whatever did see
+	// it -- pg_stat_statements, an audit stream, a proxy log
+	// (stokaro/ptah#1961).
+	securityRoleUsageFlag = "role-usage"
 )
 
 // The three thresholds `ptah lint` already spells, so one operator's CI script
@@ -33,10 +41,11 @@ const (
 )
 
 type schemaSecurityOptions struct {
-	dbURL   string
-	schemas string
-	format  string
-	failOn  string
+	dbURL     string
+	schemas   string
+	format    string
+	failOn    string
+	roleUsage string
 }
 
 // NewSchemaSecurityCommand returns the native `schema security` command.
@@ -78,6 +87,17 @@ listed as skipped with its reason, because a rule that did not run is
 indistinguishable from one that found nothing, and the difference is what makes
 a clean report worth having.
 
+ROL01 -- a role holding privileges on objects it never uses -- cannot be
+answered from a catalog: a privilege is not use, and no engine Ptah reads
+records which roles read which objects. Supply --role-usage with a JSON file of
+observations to run it:
+
+  [{"role": "reporting", "kind": "table", "name": "orders"}]
+
+Without the flag ROL01 is reported as skipped rather than passing quietly. An
+empty list is a different answer from no file at all: it says the window was
+observed and nothing used anything, so every grant in it is unused.
+
 The analysis is local: it reads the database named by --db-url and contacts
 nothing else. It also reads only what Ptah models, so a clean report means
 "nothing here matched a rule", never "this database is secure".`,
@@ -94,6 +114,8 @@ nothing else. It also reads only what Ptah models, so a clean report means
 	flags.StringVar(&opts.format, securityFormatFlag, "table", "Output format: table or json")
 	flags.StringVar(&opts.failOn, securityFailOnFlag, securityFailOnError,
 		"Failure threshold controlling the exit code: error, any or none")
+	flags.StringVar(&opts.roleUsage, securityRoleUsageFlag, "",
+		"JSON file of observed role-object usage, which ROL01 needs. Omitted, ROL01 reports itself skipped.")
 	cmd.SetFlagErrorFunc(cmdutil.FlagErrorFunc)
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd
@@ -108,6 +130,13 @@ func runSchemaSecurity(cmd *cobra.Command, opts schemaSecurityOptions) error {
 			securityFormatFlag, opts.format))
 	}
 	if err := validateSecurityFailOn(opts.failOn); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+
+	// Read before connecting: a malformed usage file should fail before the
+	// command opens a database connection to analyze.
+	usage, err := readRoleUsage(opts.roleUsage)
+	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 
@@ -133,6 +162,7 @@ func runSchemaSecurity(cmd *cobra.Command, opts schemaSecurityOptions) error {
 			// report themselves skipped (stokaro/ptah#1950).
 			RoleMemberships: roleMemberships(live),
 			ObjectOwners:    objectOwners(live),
+			RoleObjectUsage: usage,
 		},
 	)
 
@@ -276,4 +306,34 @@ func writeSecuritySkipped(w io.Writer, report schemasecurity.Report) error {
 		}
 	}
 	return nil
+}
+
+// readRoleUsage reads the observations ROL01 runs over, or nil when no file was
+// named.
+//
+// nil and an empty slice are deliberately different returns: no file means the
+// caller collected nothing and ROL01 must report itself skipped, while a file
+// holding `[]` means the caller observed a window in which nothing was used,
+// and every grant in it is then unused. Collapsing them would make the rule
+// either permanently silent or permanently wrong.
+func readRoleUsage(path string) ([]schemasecurity.RoleObjectUsage, error) {
+	if strings.TrimSpace(path) == "" {
+		return nil, nil
+	}
+	data, err := os.ReadFile(path) // #nosec G304 -- the operator named this file
+	if err != nil {
+		return nil, fmt.Errorf("read --%s: %w", securityRoleUsageFlag, err)
+	}
+	usage := make([]schemasecurity.RoleObjectUsage, 0)
+	if err := json.Unmarshal(data, &usage); err != nil {
+		return nil, fmt.Errorf("read --%s: %w", securityRoleUsageFlag, err)
+	}
+	for index, observation := range usage {
+		if strings.TrimSpace(observation.Role) == "" || strings.TrimSpace(observation.Name) == "" {
+			return nil, fmt.Errorf(
+				"read --%s: observation %d has no role or no name, so it names no use",
+				securityRoleUsageFlag, index)
+		}
+	}
+	return usage, nil
 }
