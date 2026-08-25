@@ -175,6 +175,27 @@ log and leaves nothing in the project — a command reporting what a question
 would send, while dropping a file into the directory it is describing, would
 contradict itself.
 
+### The answer arrives as it is written
+
+`ptah assist` and `ptah assist explain` print the model's words as they come,
+rather than after the turn ends. On a local model answering a long question that
+is the difference between a terminal that is working and one that looks stuck.
+
+What streams is the model's prose, and only that. A tool call arrives in
+fragments too — its arguments are not valid JSON until the last one lands — so
+Ptah assembles it and the run acts on it whole. There is no state in which a
+tool has been called with half its arguments.
+
+`--format json` and `--format jsonl` do not stream: one renders a document and
+the other a record stream, and neither has anywhere to put a fragment. The
+session file is unaffected either way — it holds the finished answer, because a
+file of half-sentences is not something anyone reads back.
+
+A stream that fails partway is reported rather than retried. Ptah retries a
+failed request up to twice, and stops doing so once any of the answer has been
+shown: replaying it would print the first half a second time, which is worse
+than the failure it came from.
+
 ### Reading a run with a program
 
 `ptah assist explain --format jsonl` prints the conversation to stdout as JSON

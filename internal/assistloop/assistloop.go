@@ -182,6 +182,16 @@ type Options struct {
 
 	// Emit receives progress. A nil value discards it.
 	Emit func(Event)
+	// OnText receives the model's answer in fragments as it arrives.
+	//
+	// A nil value asks for the answer whole. It is separate from Emit because
+	// Emit is Ptah's own words about what is happening and this is the model's
+	// text: a surface that prints them the same way would be putting a
+	// diagnostic and an answer in one voice.
+	//
+	// Only prose arrives here. A tool call is assembled by the adapter and
+	// reaches the loop complete, so nothing here can act on half an argument.
+	OnText func(fragment string)
 	// OnTool receives each tool record as the call completes, before the model
 	// is shown the result. A nil value discards it.
 	//
@@ -269,6 +279,7 @@ func (l *Loop) Run(ctx context.Context, request string) (*Result, error) {
 			System:   l.opts.System,
 			Messages: result.Messages,
 			Tools:    tools,
+			OnText:   l.opts.OnText,
 		})
 		if err != nil {
 			return result, err
