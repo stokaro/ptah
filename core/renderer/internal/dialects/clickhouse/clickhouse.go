@@ -262,6 +262,44 @@ type columnTypeOptions struct {
 	forceNotNull bool
 }
 
+// columnTypeFor writes a type the caller named for ClickHouse itself as it
+// stands, and maps everything else.
+//
+// mapColumnType exists for a PORTABLE declaration: `DATETIME` is the spelling a
+// schema written for several engines uses, ClickHouse has no such type, and
+// DateTime64(3) is what preserves a timestamp with subsecond precision. The
+// same conversion applied to a type somebody named for ClickHouse ITSELF is a
+// different column: DateTime is second precision and four bytes wide,
+// DateTime64(3) is millisecond precision and eight.
+//
+// Measured on ClickHouse 26.7, sql() came back widened:
+//
+//	column "created_at" { type = sql("DateTime") }   ->   DateTime64(3)
+//
+// which is the one form whose whole purpose is to be written as it stands
+// (stokaro/ptah#2142).
+//
+// The SQL Server renderer answers the same question the same way and for the
+// same reason (stokaro/ptah#2147), as does SQLite for the types its catalog
+// keeps verbatim (stokaro/ptah#2040): canonicalizing is right for a declaration
+// a person wrote and wrong for a description of a database that already has
+// one.
+//
+// A bare DATETIME is untouched by this and still becomes DateTime64(3). That is
+// the portable case, and it stays portable. What #2142 still asks for beyond
+// this is the other half -- `schema inspect` marking the types that came from
+// ClickHouse's own catalog, so a replay carries the fact this honors.
+func columnTypeFor(col *ast.ColumnNode) (typeMapping, error) {
+	if col.TypeRawSQL && strings.TrimSpace(col.Type) != "" {
+		return typeMapping{mapped: strings.TrimSpace(col.Type)}, nil
+	}
+	mapping, err := mapColumnType(col.Type)
+	if err != nil {
+		return typeMapping{}, fmt.Errorf("column %q: %w", col.Name, err)
+	}
+	return mapping, nil
+}
+
 // renderColumnType produces the final type expression for a column,
 // applying Nullable() wrapping for nullable columns subject to opts.
 //
@@ -270,9 +308,9 @@ type columnTypeOptions struct {
 // (e.g. `Nullable(String)` when the column ends up nullable) rather than the
 // pre-wrap form.
 func renderColumnType(col *ast.ColumnNode, opts columnTypeOptions) (typeMapping, error) {
-	mapping, err := mapColumnType(col.Type)
+	mapping, err := columnTypeFor(col)
 	if err != nil {
-		return typeMapping{}, fmt.Errorf("column %q: %w", col.Name, err)
+		return typeMapping{}, err
 	}
 	if col.Nullable && !col.Primary && !opts.forceNotNull {
 		// Don't wrap if already wrapped (e.g. user supplied native CH type).
