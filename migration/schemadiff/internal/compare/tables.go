@@ -204,8 +204,17 @@ func TablesAndColumnsWithGeneratedExpressions(
 			// schema would report as synced while rows expire on a schedule
 			// nobody declared (stokaro/ptah#1027).
 			tableDiff.RowTTLChange = rowTTLChange(genTable.RowTTL, dbTable.RowTTL)
+			// A comment is compared here for the same reason as the TTL policy,
+			// and reaches TablesModified for the same reason: it belongs to the
+			// table rather than to any column, and a table whose only
+			// difference is its comment has to arrive here or the schema
+			// reports synced while the declaration and the database say
+			// different things about what the table is for -- on every run,
+			// with nothing able to fix it (stokaro/ptah#2168).
+			tableDiff.CommentChange = commentChange(genTable.Comment, dbTable.Comment)
 			if len(tableDiff.ColumnsAdded) > 0 || len(tableDiff.ColumnsRemoved) > 0 ||
-				len(tableDiff.ColumnsModified) > 0 || tableDiff.RowTTLChange != nil {
+				len(tableDiff.ColumnsModified) > 0 || tableDiff.RowTTLChange != nil ||
+				tableDiff.CommentChange != nil {
 				diff.TablesModified = append(diff.TablesModified, tableDiff)
 			}
 		}
