@@ -179,15 +179,8 @@ func TestSave_KeepsTheStoreToItsOwner(t *testing.T) {
 		"registry.example.com", auth.Credential{Username: "u", Password: "p"})
 	c.Assert(err, qt.IsNil)
 
-	dir, err := os.Stat(filepath.Dir(storage.Path))
-	c.Assert(err, qt.IsNil)
-	c.Assert(dir.Mode().Perm()&0o077, qt.Equals, os.FileMode(0),
-		qt.Commentf("directory mode %v", dir.Mode().Perm()))
-
-	file, err := os.Stat(storage.Path)
-	c.Assert(err, qt.IsNil)
-	c.Assert(file.Mode().Perm()&0o077, qt.Equals, os.FileMode(0),
-		qt.Commentf("file mode %v", file.Mode().Perm()))
+	assertOwnerOnly(c, filepath.Dir(storage.Path))
+	assertOwnerOnly(c, storage.Path)
 }
 
 // The file Ptah writes is Docker's format, which is what makes the store
