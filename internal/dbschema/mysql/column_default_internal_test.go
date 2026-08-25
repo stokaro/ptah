@@ -24,7 +24,7 @@ var columnsColumns = []string{
 	"TABLE_NAME", "COLUMN_NAME", "DATA_TYPE", "COLUMN_TYPE", "IS_NULLABLE",
 	"COLUMN_DEFAULT", "CHARACTER_MAXIMUM_LENGTH", "NUMERIC_PRECISION",
 	"NUMERIC_SCALE", "ORDINAL_POSITION", "CHARACTER_SET_NAME",
-	"COLLATION_NAME", "EXTRA", "GENERATION_EXPRESSION",
+	"COLLATION_NAME", "EXTRA", "GENERATION_EXPRESSION", "COLUMN_COMMENT",
 }
 
 // TestReadColumns_SeparatesNoDefaultFromADefaultOfNull pins which answers mean
@@ -96,7 +96,7 @@ func TestReadColumns_SeparatesNoDefaultFromADefaultOfNull(t *testing.T) {
 			row := []driver.Value{
 				"customers", "bio", "text", "text", "YES",
 				test.catalog, nil, nil, nil, int64(1),
-				"utf8mb4", "utf8mb4_general_ci", "", nil,
+				"utf8mb4", "utf8mb4_general_ci", "", nil, "",
 			}
 			reader := NewMySQLReader(columnsDB(c, [][]driver.Value{row}).SQL, "app")
 
@@ -113,8 +113,14 @@ func TestReadColumns_SeparatesNoDefaultFromADefaultOfNull(t *testing.T) {
 // columnsDB answers the column query with the rows a case supplies.
 func columnsDB(c *qt.C, rows [][]driver.Value) *dbtest.DB {
 	return dbtest.Open(c, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+		// Every column this fake returns must be one the query asked for.
+		// Answering a projection that did not ask for COLUMN_COMMENT is how
+		// this fake went one column short of the reader and broke the package
+		// on master: the reader gained a column, the other fake for the same
+		// query was updated, and this one was not (stokaro/ptah#2129).
 		queried := strings.Contains(query, "FROM information_schema.COLUMNS") &&
-			strings.Contains(query, "GENERATION_EXPRESSION")
+			strings.Contains(query, "GENERATION_EXPRESSION") &&
+			strings.Contains(query, "COLUMN_COMMENT")
 		c.Assert(queried, qt.IsTrue, qt.Commentf("query: %s", query))
 		return dbtest.QueryResult{Columns: columnsColumns, Rows: rows}, nil
 	})
