@@ -3501,11 +3501,13 @@ func (p *Planner) appendScopedDrop(
 // that re-derived the table from a Go struct name.
 func (p *Planner) foreignKeyAdditionNode(add types.ConstraintAdditionInfo) *ast.AlterTableNode {
 	fkRef := &ast.ForeignKeyRef{
-		Table:    add.ForeignTable,
-		Column:   add.ForeignColumn,
-		Columns:  add.ForeignColumns,
-		OnDelete: add.OnDelete,
-		OnUpdate: add.OnUpdate,
+		Table:      add.ForeignTable,
+		Column:     add.ForeignColumn,
+		Columns:    add.ForeignColumns,
+		OnDelete:   add.OnDelete,
+		OnUpdate:   add.OnUpdate,
+		Deferrable: add.Deferrable,
+		Initially:  add.Initially,
 	}
 	return p.createForeignKeyAlterStatement(add.TableName, add.Name, add.Columns, fkRef)
 }
@@ -3890,12 +3892,14 @@ func (p *Planner) convertConstraintToAST(constraint goschema.Constraint) *ast.Co
 			return nil // Invalid FOREIGN KEY constraint
 		}
 		ref := &ast.ForeignKeyRef{
-			Table:    constraint.ForeignTable,
-			Column:   constraint.ForeignColumn,
-			Columns:  constraint.ForeignColumns,
-			OnDelete: constraint.OnDelete,
-			OnUpdate: constraint.OnUpdate,
-			Name:     constraint.Name,
+			Table:      constraint.ForeignTable,
+			Column:     constraint.ForeignColumn,
+			Columns:    constraint.ForeignColumns,
+			OnDelete:   constraint.OnDelete,
+			OnUpdate:   constraint.OnUpdate,
+			Name:       constraint.Name,
+			Deferrable: constraint.Deferrable,
+			Initially:  constraint.Initially,
 		}
 		return ast.NewForeignKeyConstraint(constraint.Name, constraint.Columns, ref)
 

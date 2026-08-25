@@ -11885,6 +11885,15 @@ type ConstraintAdditionInfo struct {
     // NullsDistinct carries PostgreSQL UNIQUE NULLS [NOT] DISTINCT state.
     // Nil means the clause was not specified.
     NullsDistinct *bool `json:"nulls_distinct,omitempty"`
+    // Deferrable and Initially carry a foreign key's deferral to the planner.
+    //
+    // Without them a difference the comparator detected arrived with the
+    // property already gone, so the ALTER that was supposed to apply a declared
+    // DEFERRABLE built a plain key instead -- and where the change is expressed
+    // as a drop and an add, the add REMOVED a deferral the database had
+    // (stokaro/ptah#2216).
+    Deferrable bool   `json:"deferrable,omitempty"`
+    Initially  string `json:"initially,omitempty"`
     // CheckExpression is the CHECK predicate body (CHECK only).
     CheckExpression string `json:"check_expression,omitempty"`
 
