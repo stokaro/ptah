@@ -51,30 +51,39 @@ var nonBooleanPtahVars = []string{
 	// Two spellings, because the rename in stokaro/ptah#1887 honors the old one
 	// so a checkout configured before it keeps working -- and both have to be
 	// classified, or this guard reports the compatibility as an oversight.
-	"PTAH_ASSIST_CONFIG",       // path to the operator's Ptah Assist provider profiles
-	"PTAH_ASSIST_MODEL",        // model identifier for a profile that states none
-	"PTAH_ASSIST_PROFILE",      // provider profile to use when nothing else selects one
-	"PTAH_ATLAS_REFERENCE",     // path to the pinned Atlas CE binary
-	"PTAH_ATLAS_REGISTRY",      // OCI namespace an atlas:// reference resolves against
-	"PTAH_CURRENT_VERSION",     // migration version, passed to preflight hooks
-	"PTAH_DB_URL",              // database URL
-	"PTAH_DIALECT",             // dialect name
-	"PTAH_DIR",                 // migration directory URL
-	"PTAH_FORMAT",              // Go template
-	"PTAH_LOG_FORMAT",          // log format name
-	"PTAH_MIGRATIONS_DIR",      // native migration directory path
-	"PTAH_OCI_BUILD_RUN",       // build identifier recorded on a published artifact
-	"PTAH_OCI_CA_FILE",         // PEM bundle trusted in addition to the system roots
-	"PTAH_OCI_CLIENT_CERT",     // mutual-TLS client certificate
-	"PTAH_OCI_CLIENT_KEY",      // mutual-TLS client key
-	"PTAH_OCI_REFERRER_POLICY", // referrer publish policy: auto, api, required-api, tag
-	"PTAH_OCI_REVISION",        // commit recorded on a published artifact
-	"PTAH_OCI_SOURCE",          // repository recorded on a published artifact
-	"PTAH_PLAN",                // plan name, an Atlas capability Ptah refuses
-	"PTAH_SQLSERVER_TEST_URL",  // SQL Server address for the live test contour
-	"PTAH_TARGET_VERSION",      // migration version, passed to preflight hooks
-	"PTAH_TO_TAG",              // tag name, an Atlas capability Ptah refuses
-	"PTAH_VAR",                 // repeatable name=value assignment
+	"PTAH_ASSIST_CONFIG",   // path to the operator's Ptah Assist provider profiles
+	"PTAH_ASSIST_MODEL",    // model identifier for a profile that states none
+	"PTAH_ASSIST_PROFILE",  // provider profile to use when nothing else selects one
+	"PTAH_ATLAS_REFERENCE", // path to the pinned Atlas CE binary
+	"PTAH_ATLAS_REGISTRY",  // OCI namespace an atlas:// reference resolves against
+	"PTAH_CURRENT_VERSION", // migration version, passed to preflight hooks
+	"PTAH_DB_URL",          // database URL
+	"PTAH_DIALECT",         // dialect name
+	"PTAH_DIR",             // migration directory URL
+	"PTAH_FORMAT",          // Go template
+	"PTAH_LOG_FORMAT",      // log format name
+	"PTAH_MIGRATIONS_DIR",  // native migration directory path
+	"PTAH_OCI_BUILD_RUN",   // build identifier recorded on a published artifact
+	"PTAH_OCI_CA_FILE",     // PEM bundle trusted in addition to the system roots
+	"PTAH_OCI_CLIENT_CERT", // mutual-TLS client certificate
+	"PTAH_OCI_CLIENT_KEY",  // mutual-TLS client key
+	"PTAH_OCI_CONFIG",      // path to Ptah's own registry credential file
+	// The value is `file`, not a boolean: a keychain, a file, and any store
+	// added later are more than two answers, and a boolean would have to be
+	// renamed the first time a third appears.
+	"PTAH_OCI_CREDENTIAL_STORE", // `file` keeps the credential out of the platform keychain
+	"PTAH_OCI_PASSWORD",         // registry password, used with PTAH_OCI_USERNAME
+	"PTAH_OCI_REGISTRY",         // registry host the environment credential is scoped to
+	"PTAH_OCI_REFERRER_POLICY",  // referrer publish policy: auto, api, required-api, tag
+	"PTAH_OCI_REVISION",         // commit recorded on a published artifact
+	"PTAH_OCI_SOURCE",           // repository recorded on a published artifact
+	"PTAH_OCI_TOKEN",            // registry identity token, used on its own
+	"PTAH_OCI_USERNAME",         // registry username
+	"PTAH_PLAN",                 // plan name, an Atlas capability Ptah refuses
+	"PTAH_SQLSERVER_TEST_URL",   // SQL Server address for the live test contour
+	"PTAH_TARGET_VERSION",       // migration version, passed to preflight hooks
+	"PTAH_TO_TAG",               // tag name, an Atlas capability Ptah refuses
+	"PTAH_VAR",                  // repeatable name=value assignment
 }
 
 // ptahVarPattern finds a variable name anywhere inside a string literal, so

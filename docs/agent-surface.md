@@ -103,6 +103,8 @@ verdict on any of it.
 | `oci copy` | none | none | — | copies an artifact between two registry repositories without rebuilding it |
 | `oci fetch` | none | none | — | downloads the payload of metadata attached to an OCI artifact and writes it to disk |
 | `oci inspect` | none | none | — | reports what an OCI artifact declares in its manifest, without downloading the payload |
+| `oci login` | none | none | — | checks a registry credential and stores it; it touches no database and writes only Ptah's own credential file |
+| `oci logout` | none | none | — | removes the credential Ptah stored for a registry, leaving a Docker-placed one alone |
 | `oci referrers` | none | none | — | asks a registry which metadata artifacts refer to one subject and prints them |
 | `oci reindex` | none | none | — | republishes attachments a registry's referrers index does not list, so a later query finds them |
 | `oci resolve` | none | none | — | asks a registry which immutable digest a mutable tag currently names |
@@ -172,6 +174,8 @@ permission.
 | `oci copy` | copies an artifact between two registry repositories without rebuilding it |
 | `oci fetch` | downloads the payload of metadata attached to an OCI artifact and writes it to disk |
 | `oci inspect` | reports what an OCI artifact declares in its manifest, without downloading the payload |
+| `oci login` | checks a registry credential and stores it; it touches no database and writes only Ptah's own credential file |
+| `oci logout` | removes the credential Ptah stored for a registry, leaving a Docker-placed one alone |
 | `oci referrers` | asks a registry which metadata artifacts refer to one subject and prints them |
 | `oci reindex` | republishes attachments a registry's referrers index does not list, so a later query finds them |
 | `oci resolve` | asks a registry which immutable digest a mutable tag currently names |

@@ -14,6 +14,8 @@ import (
 	"oras.land/oras-go/v2/registry/remote/auth"
 	"oras.land/oras-go/v2/registry/remote/credentials"
 	"oras.land/oras-go/v2/registry/remote/retry"
+
+	"go.5x5.cz/ptah/internal/ocicredentials"
 )
 
 const (
@@ -55,12 +57,18 @@ type Client struct {
 	tls     *tls.Config
 }
 
-// NewClient creates a client backed by Docker's credential configuration.
-// DOCKER_CONFIG, credsStore, and per-registry credHelpers are honored.
+// NewClient creates a client backed by the credential chain in
+// [ocicredentials.Store]: the environment, then Ptah's own store, then Docker's.
+//
+// DOCKER_CONFIG, credsStore, and per-registry credHelpers are still honored,
+// and still answer for every registry Ptah has no entry of its own for. The
+// chain was added because Docker's store was the ONLY source, so a machine
+// without Docker had no supported way to authenticate at all -- not to replace
+// it (stokaro/ptah#2241).
 func NewClient(opts ClientOptions) (*Client, error) {
-	store, err := credentials.NewStoreFromDocker(credentials.StoreOptions{})
+	store, err := ocicredentials.Store(ocicredentials.Options{})
 	if err != nil {
-		return nil, fmt.Errorf("open Docker credential store: %w", err)
+		return nil, err
 	}
 	if !opts.Transport.configured() {
 		opts.Transport = TransportFromEnvironment()

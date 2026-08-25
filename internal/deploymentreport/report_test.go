@@ -201,6 +201,11 @@ func TestNewFS_DoesNotLeakSecrets(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv("DATABASE_URL", "postgres://admin:database-secret@prod.internal/app")
 	t.Setenv("PTAH_REGISTRY_TOKEN", "registry-secret")
+	// The registry credential variables `ptah oci login` documents as the CI
+	// alternative to a login step (stokaro/ptah#2241). A report that published
+	// them would put a registry password in a file the pipeline archives.
+	t.Setenv("PTAH_OCI_PASSWORD", "oci-password-secret")
+	t.Setenv("PTAH_OCI_TOKEN", "oci-token-secret")
 
 	reportFS, err := deploymentreport.NewFS(validReport())
 	c.Assert(err, qt.IsNil)
@@ -210,6 +215,8 @@ func TestNewFS_DoesNotLeakSecrets(t *testing.T) {
 	for _, prohibited := range []string{
 		"database-secret",
 		"registry-secret",
+		"oci-password-secret",
+		"oci-token-secret",
 		"database_url",
 		"hostname",
 		"environment",

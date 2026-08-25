@@ -243,6 +243,8 @@ stdout therefore gets a document in every case except `2`.
 | `ptah oci capabilities` | Report what the registry behind a reference supports. |
 | `ptah oci reindex` | Republish attachments the registry's referrers index does not list. |
 | `ptah oci verify` | Check an artifact against a verification policy before it is consumed. |
+| `ptah oci login` | Store a credential for a registry, after checking it works. |
+| `ptah oci logout` | Remove the credential Ptah stored for a registry. |
 | `ptah sql lint` | Lint standalone SQL files. |
 
 ## Top-level verbs
