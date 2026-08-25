@@ -518,11 +518,27 @@ func (r *Reader) ownedSequenceExpr() string {
 
 // tableCommentExpr renders the projection carrying a table's stored comment,
 // or a constant where pg_catalog's helpers do not resolve.
+//
+// The catalog is named. `obj_description(oid)` with one argument searches every
+// system catalog, and PostgreSQL's own documentation deprecates it for that
+// reason: an OID is unique within a catalog and not across them. Measured on
+// CockroachDB 25.4, an uncommented table answered
+//
+//	Calculates y-intercept of the least-squares-fit linear equation determined
+//	by the (X, Y) pairs.
+//
+// which is a builtin function's documentation reached through a colliding OID.
+// The two-argument form answers NULL for the same table and the comment for a
+// commented one. Nothing noticed while the value was read and never compared;
+// the first comparison that used it planned `COMMENT ON TABLE ... IS NULL`
+// against every CockroachDB table (stokaro/ptah#2168).
+//
+// The schema projection above has always named its catalog.
 func (r *Reader) tableCommentExpr() string {
 	if !r.caps.Has(capability.PostgresCatalogFunctions) {
 		return "'' as table_comment"
 	}
-	return "COALESCE(obj_description(c.oid), '') as table_comment"
+	return "COALESCE(obj_description(c.oid, 'pg_class'), '') as table_comment"
 }
 
 // estimatedRowsExpr renders the row-count estimate, falling back to pg_class
