@@ -6,6 +6,7 @@ import (
 
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/internal/mssqlpolicy"
 )
 
 // SQL Server hosts row-level security through a SECURITY POLICY, and the shape
@@ -80,6 +81,11 @@ func (r *Renderer) VisitCreatePolicy(node *ast.CreatePolicyNode) error {
 	if node.ToRoles != "" {
 		r.w.WriteLinef("-- SQLSERVER: RLS policy %q declares TO %s, which a security policy has no clause for; "+
 			"scope the predicate function instead. The policy is not created.", node.Name, node.ToRoles)
+		return nil
+	}
+	if reason := mssqlpolicy.UnrenderableFor(node.PolicyFor, node.WithCheckExpression); reason != "" {
+		r.w.WriteLinef("-- SQLSERVER: RLS policy %q declares FOR %s, %s The policy is not created.",
+			node.Name, strings.ToUpper(strings.TrimSpace(node.PolicyFor)), reason)
 		return nil
 	}
 
