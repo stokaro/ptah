@@ -29,7 +29,7 @@ func TestPlanner_MySQLFamilyPlansATableCommentChange(t *testing.T) {
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(setCommentOperations(nodes), qt.DeepEquals,
-				[]*ast.SetCommentOperation{{Comment: "customers of record"}})
+				[]*ast.SetCommentOperation{{Comment: "customers of record", HasCurrent: true}})
 		})
 	}
 }
@@ -49,7 +49,7 @@ func TestPlanner_MySQLFamilyPlansATableCommentRemoval(t *testing.T) {
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(setCommentOperations(nodes), qt.DeepEquals,
-				[]*ast.SetCommentOperation{{Comment: ""}})
+				[]*ast.SetCommentOperation{{Comment: "", HasCurrent: true}})
 		})
 	}
 }
