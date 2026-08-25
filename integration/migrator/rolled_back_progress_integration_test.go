@@ -455,18 +455,7 @@ func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, adminURL, dia
 		cleanupIssue887(t, conn, names)
 		defer cleanupIssue887(t, conn, names)
 		interceptor := &issue887StatementInterceptor{}
-		migration, err := migrator.NewMigrationFromSQLFilesWithInterceptor(
-			1,
-			"interceptor",
-			"migration.up.sql",
-			"migration.down.sql",
-			fstest.MapFS{
-				"migration.up.sql":   &fstest.MapFile{Data: []byte("SELECT 1")},
-				"migration.down.sql": &fstest.MapFile{Data: []byte("SELECT 1")},
-			},
-			interceptor,
-		)
-		c.Assert(err, qt.IsNil)
+		migration := issue887InterceptedMigration(c, "SELECT 1", "SELECT 1", interceptor)
 
 		err = issue887Migrator(conn, names, migration).MigrateUp(ctx)
 		c.Assert(err, qt.ErrorMatches, `.*cannot run a statement interceptor for the up direction in tx-mode file.*`)
@@ -494,18 +483,7 @@ func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, adminURL, dia
 		c.Assert(issue887Migrator(conn, names, initial).MigrateUp(ctx), qt.IsNil)
 
 		interceptor := &issue887StatementInterceptor{}
-		intercepted, err := migrator.NewMigrationFromSQLFilesWithInterceptor(
-			1,
-			"interceptor down",
-			"migration.up.sql",
-			"migration.down.sql",
-			fstest.MapFS{
-				"migration.up.sql":   &fstest.MapFile{Data: []byte(upSQL)},
-				"migration.down.sql": &fstest.MapFile{Data: []byte(downSQL)},
-			},
-			interceptor,
-		)
-		c.Assert(err, qt.IsNil)
+		intercepted := issue887InterceptedMigration(c, upSQL, downSQL, interceptor)
 
 		err = issue887Migrator(conn, names, intercepted).MigrateDown(ctx)
 		c.Assert(err, qt.ErrorMatches, `.*cannot run a statement interceptor for the down direction in tx-mode file.*`)
@@ -2358,6 +2336,28 @@ func issue887Migrator(
 	migrations ...*migrator.Migration,
 ) *migrator.Migrator {
 	return issue887MigratorWithFormat(conn, names, migrator.RevisionTableFormatAtlas, migrations...)
+}
+
+// issue887InterceptedMigration loads a single up/down pair through the FS
+// provider with a statement interceptor attached, mirroring how a caller
+// attaches one in production.
+func issue887InterceptedMigration(
+	c *qt.C,
+	upSQL, downSQL string,
+	interceptor migrator.StatementInterceptor,
+) *migrator.Migration {
+	c.Helper()
+	provider, err := migrator.NewFSMigrationProvider(
+		fstest.MapFS{
+			"0000000001_intercepted.up.sql":   &fstest.MapFile{Data: []byte(upSQL)},
+			"0000000001_intercepted.down.sql": &fstest.MapFile{Data: []byte(downSQL)},
+		},
+		migrator.WithStatementInterceptor(interceptor),
+	)
+	c.Assert(err, qt.IsNil)
+	migrations := provider.Migrations()
+	c.Assert(migrations, qt.HasLen, 1)
+	return migrations[0]
 }
 
 func issue887MigratorWithFormat(

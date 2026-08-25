@@ -154,90 +154,6 @@ func TestMigrationStatus_NoPending(t *testing.T) {
 	c.Assert(status.HasPendingChanges, qt.IsFalse)
 }
 
-func TestSplitSQLStatements(t *testing.T) {
-	tests := []struct {
-		name     string
-		sql      string
-		expected []string
-	}{
-		{
-			name: "single statement",
-			sql:  "CREATE TABLE users (id SERIAL PRIMARY KEY);",
-			expected: []string{
-				"CREATE TABLE users (id SERIAL PRIMARY KEY)",
-			},
-		},
-		{
-			name: "multiple statements",
-			sql:  "CREATE TABLE users (id SERIAL PRIMARY KEY); CREATE INDEX idx_users_id ON users(id);",
-			expected: []string{
-				"CREATE TABLE users (id SERIAL PRIMARY KEY)",
-				"CREATE INDEX idx_users_id ON users(id)",
-			},
-		},
-		{
-			name: "statements with comments",
-			sql:  "-- Create users table\nCREATE TABLE users (id SERIAL PRIMARY KEY);\n-- Create index\nCREATE INDEX idx_users_id ON users(id);",
-			expected: []string{
-				"CREATE TABLE users (id SERIAL PRIMARY KEY)",
-				"CREATE INDEX idx_users_id ON users(id)",
-			},
-		},
-		{
-			name:     "empty SQL",
-			sql:      "",
-			expected: make([]string, 0),
-		},
-		{
-			name:     "only comments",
-			sql:      "-- This is a comment\n/* Another comment */",
-			expected: make([]string, 0),
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := qt.New(t)
-
-			result := SplitSQLStatements(tt.sql)
-			c.Assert(result, qt.DeepEquals, tt.expected)
-		})
-	}
-}
-
-func TestSplitSQLStatementsForConnection_NilFallback(t *testing.T) {
-	c := qt.New(t)
-
-	// A nil connection falls back to the dialect-blind split, matching
-	// SplitSQLStatements exactly.
-	sql := "CREATE TABLE users (id SERIAL PRIMARY KEY); CREATE INDEX idx ON users(id);"
-	c.Assert(SplitSQLStatementsForConnection(nil, sql), qt.DeepEquals, SplitSQLStatements(sql))
-}
-
-func TestSplitSQLStatements_AtlasDelimiterBeforeCommentStripping(t *testing.T) {
-	c := qt.New(t)
-
-	sql := `-- atlas:delimiter -- end
-CREATE PROCEDURE dorepeat(p1 INT)
-BEGIN
-    SET @x = 0;
-    REPEAT SET @x = @x + 1; UNTIL @x > p1 END REPEAT;
-END;
--- end
-CALL dorepeat(1000);`
-
-	result := SplitSQLStatements(sql)
-
-	c.Assert(result, qt.DeepEquals, []string{
-		`CREATE PROCEDURE dorepeat(p1 INT)
-BEGIN
-    SET @x = 0;
-    REPEAT SET @x = @x + 1; UNTIL @x > p1 END REPEAT;
-END`,
-		"CALL dorepeat(1000)",
-	})
-}
-
 func TestSplitSQLStatementsForDialect_SQLServerGoBatchSeparator(t *testing.T) {
 	c := qt.New(t)
 
@@ -290,33 +206,6 @@ GO 3
 `
 
 	c.Assert(migrationStatementCountForDialect(sql, platform.SQLServer), qt.Equals, 3)
-}
-
-func TestNewMigrationFromSQLFiles_Success(t *testing.T) {
-	c := qt.New(t)
-
-	fsys := fstest.MapFS{
-		"test.up.sql": &fstest.MapFile{
-			Data: []byte("CREATE TABLE test (id SERIAL PRIMARY KEY);"),
-		},
-		"test.down.sql": &fstest.MapFile{Data: []byte("DROP TABLE test;")},
-	}
-
-	migration, err := NewMigrationFromSQLFiles(1, "test", "test.up.sql", "test.down.sql", fsys)
-	c.Assert(err, qt.IsNil)
-	c.Assert(migration, qt.IsNotNil)
-	c.Assert(migration.Up, qt.IsNotNil)
-	c.Assert(migration.Down, qt.IsNotNil)
-}
-
-func TestNewMigrationFromSQLFiles_FileNotFound(t *testing.T) {
-	c := qt.New(t)
-
-	fsys := fstest.MapFS{}
-
-	migration, err := NewMigrationFromSQLFiles(1, "missing", "missing.up.sql", "missing.down.sql", fsys)
-	c.Assert(err, qt.ErrorMatches, "failed to load up migration missing.up.sql: failed to read migration file.*")
-	c.Assert(migration, qt.IsNil)
 }
 
 func TestParseAtlasTxtarSQL(t *testing.T) {
@@ -516,18 +405,20 @@ DROP TABLE users;`,
 	}
 }
 
-func TestNewMigrationFromSQLFiles_PreservesTimeouts(t *testing.T) {
+func TestFSMigrationProvider_PreservesTimeouts(t *testing.T) {
 	c := qt.New(t)
 
 	fsys := fstest.MapFS{
-		"test.up.sql": &fstest.MapFile{
+		"0000000001_test.up.sql": &fstest.MapFile{
 			Data: []byte("-- +ptah lock_timeout=3s\nCREATE TABLE test (id SERIAL PRIMARY KEY);"),
 		},
-		"test.down.sql": &fstest.MapFile{Data: []byte("DROP TABLE test;")},
+		"0000000001_test.down.sql": &fstest.MapFile{Data: []byte("DROP TABLE test;")},
 	}
 
-	migration, err := NewMigrationFromSQLFiles(1, "test", "test.up.sql", "test.down.sql", fsys)
+	provider, err := NewFSMigrationProvider(fsys)
 	c.Assert(err, qt.IsNil)
-	c.Assert(migration.UpTimeouts.HasLockTimeout, qt.IsTrue)
-	c.Assert(migration.UpTimeouts.LockTimeout, qt.Equals, 3*time.Second)
+	migrations := provider.Migrations()
+	c.Assert(migrations, qt.HasLen, 1)
+	c.Assert(migrations[0].UpTimeouts.HasLockTimeout, qt.IsTrue)
+	c.Assert(migrations[0].UpTimeouts.LockTimeout, qt.Equals, 3*time.Second)
 }

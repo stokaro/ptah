@@ -10,6 +10,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
+	"go.5x5.cz/ptah/cmd/internal/migrateflags"
 	"go.5x5.cz/ptah/cmd/internal/migrationsource"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/migrationintegrity"
@@ -109,7 +110,7 @@ func migrateRepairCommand(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return err
 	}
-	revisionFormat, err := migrator.ParseRevisionTableFormat(opts.revisionTableFormat)
+	revisionFormat, err := migrateflags.ParseRevisionTableFormat(opts.revisionTableFormat)
 	if err != nil {
 		return err
 	}

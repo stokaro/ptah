@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -675,70 +674,6 @@ func TestParsePackageRecursively_ErrorCases(t *testing.T) {
 			c.Assert(result, tt.resultChecker, qt.Commentf("Unexpected result value: %v", result))
 		})
 	}
-}
-
-func TestGetDependencyInfo_EmptyResult(t *testing.T) {
-	c := qt.New(t)
-
-	// Create an empty result to test edge case
-	result := &goschema.Database{
-		Tables:       make([]goschema.Table, 0),
-		Dependencies: make(map[string][]string),
-	}
-
-	info := goschema.GetDependencyInfo(result)
-
-	// Should still contain the headers even with no tables
-	c.Assert(info, qt.Contains, "Table Dependencies:")
-	c.Assert(info, qt.Contains, "Table Creation Order:")
-
-	// Should not contain any table entries
-	lines := strings.Split(info, "\n")
-	tableCount := 0
-	for _, line := range lines {
-		if strings.Contains(line, ": (no dependencies)") || strings.Contains(line, ": depends on") {
-			tableCount++
-		}
-	}
-	c.Assert(tableCount, qt.Equals, 0)
-}
-
-func TestGetDependencyInfo(t *testing.T) {
-	c := qt.New(t)
-
-	result, err := goschema.ParseDir("../../stubs")
-	c.Assert(err, qt.IsNil)
-
-	info := goschema.GetDependencyInfo(result)
-
-	// Verify the output contains expected sections
-	c.Assert(info, qt.Contains, "Table Dependencies:")
-	c.Assert(info, qt.Contains, "==================")
-	c.Assert(info, qt.Contains, "Table Creation Order:")
-
-	// Verify specific dependency information
-	c.Assert(info, qt.Contains, "articles: depends on [users]")
-	c.Assert(info, qt.Contains, "products: depends on [categories]")
-	c.Assert(info, qt.Contains, "categories: (no dependencies)") // self-reference moved to SelfReferencingForeignKeys
-
-	// Verify tables with no dependencies are marked correctly
-	c.Assert(info, qt.Contains, "users: (no dependencies)")
-
-	// Verify table creation order section contains numbered list
-	lines := strings.Split(info, "\n")
-	var orderSectionFound bool
-	for _, line := range lines {
-		if strings.Contains(line, "Table Creation Order:") {
-			orderSectionFound = true
-			continue
-		}
-		if orderSectionFound && strings.Contains(line, "1. ") {
-			// Found the first item in the order list
-			c.Assert(line, qt.Matches, `\d+\. \w+`)
-			break
-		}
-	}
-	c.Assert(orderSectionFound, qt.IsTrue, qt.Commentf("Should find Table Creation Order section"))
 }
 
 func TestParseFunctionComment(t *testing.T) {

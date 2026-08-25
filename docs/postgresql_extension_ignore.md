@@ -121,14 +121,18 @@ opts := config.WithAdditionalIgnoredExtensions("adminpack")
 ### Utility Methods
 
 ```go
-// Check if extension is ignored
+// Check if an extension is ignored
 if opts.IsExtensionIgnored("plpgsql") {
     // Extension will be ignored
 }
 
-// Filter a list of extensions
-filtered := opts.FilterIgnoredExtensions([]string{"plpgsql", "pg_trgm", "adminpack"})
-// Returns only non-ignored extensions
+// Keep only the extensions the comparison will see
+var kept []string
+for _, name := range []string{"plpgsql", "pg_trgm", "adminpack"} {
+    if !opts.IsExtensionIgnored(name) {
+        kept = append(kept, name)
+    }
+}
 ```
 
 ## Real-World Examples

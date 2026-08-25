@@ -153,9 +153,7 @@ func applyLiveRoutines(
 	dialect string,
 ) {
 	c.Helper()
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(
-		diff, declared, dialect, conn.Info().Capabilities,
-	)
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, declared, dialect, planner.Options{Capabilities: conn.Info().Capabilities})
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.Not(qt.HasLen), 0)
 	for _, statement := range statements {

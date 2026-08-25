@@ -14,7 +14,7 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/core/sqlutil"
 )
 
 func TestPostgreSQLGenerateMutualForeignKeysApplyIntegration(t *testing.T) {
@@ -47,7 +47,7 @@ func TestPostgreSQLGenerateMutualForeignKeysApplyIntegration(t *testing.T) {
 	c.Assert(sqlText, qt.Contains, `ALTER TABLE "left_nodes" ADD CONSTRAINT "fk_left_nodes_right_id"`)
 	c.Assert(sqlText, qt.Contains, `ALTER TABLE "right_nodes" ADD CONSTRAINT "fk_right_nodes_left_id"`)
 
-	for _, stmt := range migrator.SplitSQLStatements(sqlText) {
+	for _, stmt := range sqlutil.SplitStatements(sqlText) {
 		stmt = strings.TrimSpace(stmt)
 		if stmt == "" {
 			continue
@@ -125,7 +125,7 @@ func TestPostgreSQLForeignKeyReferencingUniqueIndexApplyIntegration(t *testing.T
 	defer cleanupUniqueIndexForeignKeyTables(t, db)
 
 	sqlText := strings.Join(statements, "\n")
-	for _, stmt := range migrator.SplitSQLStatements(sqlText) {
+	for _, stmt := range sqlutil.SplitStatements(sqlText) {
 		stmt = strings.TrimSpace(stmt)
 		if stmt == "" {
 			continue

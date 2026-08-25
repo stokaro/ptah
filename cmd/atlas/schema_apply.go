@@ -17,6 +17,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/cmdflags"
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
+	"go.5x5.cz/ptah/cmd/internal/migrateflags"
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
@@ -483,7 +484,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		}
 		preparedTo = &toSet
 	}
-	txMode, err := migrator.ParseMigrationTxMode(opts.txMode)
+	txMode, err := migrateflags.ParseMigrationTxMode(opts.txMode)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -761,7 +762,7 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 	if err := validateAtlasSchemaApplyPlanOptions(cmd, opts); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	txMode, err := migrator.ParseMigrationTxMode(opts.txMode)
+	txMode, err := migrateflags.ParseMigrationTxMode(opts.txMode)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

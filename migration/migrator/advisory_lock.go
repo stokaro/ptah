@@ -32,19 +32,6 @@ func IsMigrationLockTimeout(err error) bool {
 	return errors.As(err, &target)
 }
 
-// ParseMigrationLockTimeout parses the session-level advisory lock timeout.
-// Empty means wait indefinitely.
-func ParseMigrationLockTimeout(value string) (time.Duration, error) {
-	if value == "" {
-		return 0, nil
-	}
-	duration, err := parsePositiveDuration(value)
-	if err != nil {
-		return 0, fmt.Errorf("invalid migration lock timeout: %w", err)
-	}
-	return duration, nil
-}
-
 // WithMigrationLockTimeout returns a copy of the migrator that limits how long
 // it waits for the session-level migration advisory lock. Zero means wait
 // indefinitely.

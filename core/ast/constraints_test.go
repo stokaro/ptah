@@ -6,7 +6,6 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/ast/mocks"
 )
 
 func TestNewPrimaryKeyConstraint(t *testing.T) {
@@ -242,7 +241,7 @@ func TestConstraints_Accept(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			visitor := &mocks.MockVisitor{}
+			visitor := &MockVisitor{}
 			err := tt.constraint.Accept(visitor)
 
 			c.Assert(err, qt.IsNil)
@@ -255,7 +254,7 @@ func TestConstraints_Accept(t *testing.T) {
 func TestConstraints_AcceptError(t *testing.T) {
 	c := qt.New(t)
 
-	visitor := &mocks.MockVisitor{ReturnError: true}
+	visitor := &MockVisitor{ReturnError: true}
 	constraint := ast.NewPrimaryKeyConstraint("id")
 
 	err := constraint.Accept(visitor)

@@ -26,31 +26,6 @@ type MigrationTimeouts struct {
 
 type restoreTimeoutsFunc func(context.Context) error
 
-// ParseMigrationTimeouts parses CLI timeout values. Empty values are ignored.
-func ParseMigrationTimeouts(lockTimeout, statementTimeout string) (MigrationTimeouts, error) {
-	var timeouts MigrationTimeouts
-
-	if strings.TrimSpace(lockTimeout) != "" {
-		duration, err := parsePositiveDuration(lockTimeout)
-		if err != nil {
-			return MigrationTimeouts{}, fmt.Errorf("invalid lock timeout: %w", err)
-		}
-		timeouts.LockTimeout = duration
-		timeouts.HasLockTimeout = true
-	}
-
-	if strings.TrimSpace(statementTimeout) != "" {
-		duration, err := parsePositiveDuration(statementTimeout)
-		if err != nil {
-			return MigrationTimeouts{}, fmt.Errorf("invalid statement timeout: %w", err)
-		}
-		timeouts.StatementTimeout = duration
-		timeouts.HasStatementTimeout = true
-	}
-
-	return timeouts, nil
-}
-
 // IsZero reports whether no timeout is configured.
 func (t MigrationTimeouts) IsZero() bool {
 	return !t.HasLockTimeout && !t.HasStatementTimeout

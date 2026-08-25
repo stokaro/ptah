@@ -693,22 +693,6 @@ func TestRenderSQL_TypedNilAlterOperations_FailurePath(t *testing.T) {
 	}
 }
 
-func TestVisitorRenderSQL_FailedRenderClearsPreviousOutput(t *testing.T) {
-	c := qt.New(t)
-	r, err := renderer.NewRenderer("postgres")
-	c.Assert(err, qt.IsNil)
-	valid := ast.NewCreateTable("parents").AddColumn(ast.NewColumn("id", "INTEGER").SetPrimary())
-
-	sql, err := renderer.VisitorRenderSQL(r, valid)
-	c.Assert(err, qt.IsNil)
-	c.Assert(sql, qt.Contains, "CREATE TABLE")
-
-	sql, err = renderer.VisitorRenderSQL(r, nil)
-	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-	c.Assert(sql, qt.Equals, "")
-	c.Assert(r.Output(), qt.Equals, "")
-}
-
 func TestRendererRender_FailedValidationClearsPreviousOutput(t *testing.T) {
 	c := qt.New(t)
 	r, err := renderer.NewRenderer("postgres")
@@ -721,22 +705,6 @@ func TestRendererRender_FailedValidationClearsPreviousOutput(t *testing.T) {
 
 	sql, err = r.Render(nil)
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-	c.Assert(sql, qt.Equals, "")
-	c.Assert(r.Output(), qt.Equals, "")
-}
-
-func TestVisitorRenderSQL_RendererErrorClearsPartialOutput(t *testing.T) {
-	c := qt.New(t)
-	r, err := renderer.NewRenderer("postgres")
-	c.Assert(err, qt.IsNil)
-	valid := ast.NewCreateTable("parents").AddColumn(ast.NewColumn("id", "INTEGER").SetPrimary())
-	nullsDistinct := true
-	invalid := ast.NewIndex("idx_parents_id", "parents", "id")
-	invalid.NullsDistinct = &nullsDistinct
-
-	sql, err := renderer.VisitorRenderSQL(r, valid, invalid)
-
-	c.Assert(err, qt.ErrorMatches, "postgresql NULLS DISTINCT is only valid for unique indexes")
 	c.Assert(sql, qt.Equals, "")
 	c.Assert(r.Output(), qt.Equals, "")
 }

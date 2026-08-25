@@ -831,8 +831,6 @@ func TestRevisionReaders_RefuseInvalidMetadata(t *testing.T) {
 
 			_, err = m.GetRevisions(c.Context())
 			c.Assert(err, qt.ErrorMatches, test.want)
-			_, err = m.GetAppliedRevisions(c.Context())
-			c.Assert(err, qt.ErrorMatches, test.want)
 			_, err = m.GetAppliedMigrations(c.Context())
 			c.Assert(err, qt.ErrorMatches, test.want)
 			_, err = m.GetCurrentVersion(c.Context())

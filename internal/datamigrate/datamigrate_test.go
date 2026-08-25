@@ -10,9 +10,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/datamigrate"
-	"go.5x5.cz/ptah/migration/migrator"
 )
 
 // newRegionsConn opens an in-memory SQLite database and creates a "regions"
@@ -136,7 +136,7 @@ func TestGenerate_RoundTripApply(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	apply := func(script string) {
-		for _, stmt := range migrator.SplitSQLStatementsForConnection(conn, script) {
+		for _, stmt := range sqlutil.SplitStatementsForDialect(conn.Info().Dialect, script) {
 			_, execErr := conn.ExecContext(ctx, stmt)
 			c.Assert(execErr, qt.IsNil, qt.Commentf("stmt: %s", stmt))
 		}
@@ -212,7 +212,7 @@ type Region struct {
 	c.Assert(down, qt.Contains, `"reference"."regions"`)
 
 	apply := func(script string) {
-		for _, stmt := range migrator.SplitSQLStatementsForConnection(conn, script) {
+		for _, stmt := range sqlutil.SplitStatementsForDialect(conn.Info().Dialect, script) {
 			_, execErr := conn.ExecContext(ctx, stmt)
 			c.Assert(execErr, qt.IsNil, qt.Commentf("stmt: %s", stmt))
 		}
@@ -382,7 +382,7 @@ type regionData struct{ _ int }
 		qt.Commentf("up:\n%s", up))
 
 	apply := func(script string) {
-		for _, stmt := range migrator.SplitSQLStatementsForConnection(conn, script) {
+		for _, stmt := range sqlutil.SplitStatementsForDialect(conn.Info().Dialect, script) {
 			_, execErr := conn.ExecContext(ctx, stmt)
 			c.Assert(execErr, qt.IsNil, qt.Commentf("stmt: %s", stmt))
 		}
@@ -515,7 +515,7 @@ type widgetData struct{ _ int }
 	c.Assert(down, qt.Not(qt.Contains), "label_len")
 
 	apply := func(script string) {
-		for _, stmt := range migrator.SplitSQLStatementsForConnection(conn, script) {
+		for _, stmt := range sqlutil.SplitStatementsForDialect(conn.Info().Dialect, script) {
 			_, execErr := conn.ExecContext(ctx, stmt)
 			c.Assert(execErr, qt.IsNil, qt.Commentf("stmt: %s", stmt))
 		}
@@ -594,7 +594,7 @@ type eventData struct{ _ int }
 	c.Assert(down, qt.Contains, `INSERT INTO "events" ("created_at", "id") VALUES ('2024-03-05 06:07:08+00:00', 'A');`)
 
 	apply := func(script string) {
-		for _, stmt := range migrator.SplitSQLStatementsForConnection(conn, script) {
+		for _, stmt := range sqlutil.SplitStatementsForDialect(conn.Info().Dialect, script) {
 			_, execErr := conn.ExecContext(ctx, stmt)
 			c.Assert(execErr, qt.IsNil, qt.Commentf("stmt: %s", stmt))
 		}
@@ -658,7 +658,7 @@ type ticketData struct{ _ int }
 	c.Assert(down, qt.Contains, `INSERT INTO "tickets" ("id", "label") VALUES (1, 'alpha');`)
 
 	apply := func(script string) {
-		for _, stmt := range migrator.SplitSQLStatementsForConnection(conn, script) {
+		for _, stmt := range sqlutil.SplitStatementsForDialect(conn.Info().Dialect, script) {
 			_, execErr := conn.ExecContext(ctx, stmt)
 			c.Assert(execErr, qt.IsNil, qt.Commentf("stmt: %s", stmt))
 		}

@@ -218,9 +218,7 @@ func planClickHouseRowPolicies(
 	info := conn.Info()
 	diff, err := schemadiff.CompareWithDatabaseInfo(declared, readClickHouseRowPolicies(c, conn), info, nil)
 	c.Assert(err, qt.IsNil)
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(
-		diff, declared, info.Dialect, info.Capabilities,
-	)
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, declared, info.Dialect, planner.Options{Capabilities: info.Capabilities})
 	c.Assert(err, qt.IsNil)
 	return diff, statements
 }

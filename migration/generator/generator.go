@@ -434,12 +434,12 @@ func atlasEmptyMigrationFileName(version int64, name string) string {
 // `migrate checkpoint` keeps it: the register that prompted the change records
 // no cell for the verb, so there is nothing measured to move towards.
 //
-// Containment is no longer the reason. [WriteAtlasCheckpointFile] now creates
-// the file through a rooted directory handle, which refuses a name carrying a
-// separator rather than following it out of the directory (stokaro/ptah#1118),
-// so the stem rewriting is a naming convention and not a boundary. Removing it
-// would change file names for a verb with no measured counterpart, which is why
-// it stays.
+// Containment is no longer the reason. [WriteAtlasCheckpointFileWithOptions]
+// now creates the file through a rooted directory handle, which refuses a name
+// carrying a separator rather than following it out of the directory
+// (stokaro/ptah#1118), so the stem rewriting is a naming convention and not a
+// boundary. Removing it would change file names for a verb with no measured
+// counterpart, which is why it stays.
 func atlasCheckpointNameStem(name string) string {
 	name = strings.TrimSpace(name)
 	name = strings.ReplaceAll(name, " ", "-")
@@ -1982,7 +1982,10 @@ func generateUpMigrationSQLWithOptions(
 	if len(capsOverride) > 0 {
 		caps = capsOverride[0]
 	}
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(diff, generated, dialect, caps)
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		diff, generated, dialect,
+		planner.Options{Capabilities: caps},
+	)
 	if err != nil {
 		return "", fmt.Errorf("error generating up migration SQL: %w", err)
 	}

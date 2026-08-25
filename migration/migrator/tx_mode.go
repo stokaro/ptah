@@ -3,7 +3,6 @@ package migrator
 import (
 	"fmt"
 	"path"
-	"strings"
 )
 
 // MigrationTxMode controls how pending up migrations are wrapped in
@@ -20,17 +19,6 @@ const (
 	// migration transactions unless a file explicitly selects file.
 	MigrationTxModeNone MigrationTxMode = "none"
 )
-
-// ParseMigrationTxMode parses the Atlas-compatible migration transaction mode.
-func ParseMigrationTxMode(value string) (MigrationTxMode, error) {
-	mode := normalizeMigrationTxMode(MigrationTxMode(strings.ToLower(strings.TrimSpace(value))))
-	switch mode {
-	case MigrationTxModeFile, MigrationTxModeAll, MigrationTxModeNone:
-		return mode, nil
-	default:
-		return "", fmt.Errorf("invalid tx-mode %q: expected file, all, or none", value)
-	}
-}
 
 func normalizeMigrationTxMode(mode MigrationTxMode) MigrationTxMode {
 	if mode == "" {
@@ -61,10 +49,12 @@ func resolveMigrationFileTxMode(global MigrationTxMode, file MigrationFileTxMode
 // already answers to: the directive overrides the global mode, except under
 // `all`, where the combination is refused rather than resolved.
 //
-// It is exported because the directive is not only a migration file's: a
-// declarative plan file carries the same header, and reading the same line to
-// mean two different things depending on which artifact carried it is the
-// defect this shared entry point exists to prevent (stokaro/ptah#1700).
+// The directive is not only a migration file's: a declarative plan file
+// carries the same header, and reading the same line to mean two different
+// things depending on which artifact carried it is the defect this shared
+// rule exists to prevent (stokaro/ptah#1700): the migrator resolves a
+// migration file's directive and the CLI resolves a plan file's directive
+// through this one function.
 //
 // source names the artifact for the refusal -- a migration file's path and
 // description, or a plan file's path.

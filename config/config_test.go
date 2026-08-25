@@ -130,59 +130,6 @@ func TestCompareOptions_IsExtensionIgnored(t *testing.T) {
 	}
 }
 
-func TestCompareOptions_FilterIgnoredExtensions(t *testing.T) {
-	tests := []struct {
-		name              string
-		ignoredExtensions []string
-		inputExtensions   []string
-		expected          []string
-	}{
-		{
-			name:              "filter some extensions",
-			ignoredExtensions: []string{"plpgsql", "adminpack"},
-			inputExtensions:   []string{"plpgsql", "pg_trgm", "adminpack", "btree_gin"},
-			expected:          []string{"pg_trgm", "btree_gin"},
-		},
-		{
-			name:              "filter all extensions",
-			ignoredExtensions: []string{"plpgsql", "pg_trgm"},
-			inputExtensions:   []string{"plpgsql", "pg_trgm"},
-			expected:          make([]string, 0),
-		},
-		{
-			name:              "filter no extensions",
-			ignoredExtensions: []string{"adminpack"},
-			inputExtensions:   []string{"plpgsql", "pg_trgm", "btree_gin"},
-			expected:          []string{"plpgsql", "pg_trgm", "btree_gin"},
-		},
-		{
-			name:              "empty input list",
-			ignoredExtensions: []string{"plpgsql"},
-			inputExtensions:   make([]string, 0),
-			expected:          make([]string, 0),
-		},
-		{
-			name:              "empty ignore list",
-			ignoredExtensions: make([]string, 0),
-			inputExtensions:   []string{"plpgsql", "pg_trgm"},
-			expected:          []string{"plpgsql", "pg_trgm"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := qt.New(t)
-
-			opts := &config.CompareOptions{
-				IgnoredExtensions: tt.ignoredExtensions,
-			}
-
-			result := opts.FilterIgnoredExtensions(tt.inputExtensions)
-			c.Assert(result, qt.DeepEquals, tt.expected)
-		})
-	}
-}
-
 func TestLibraryUsageExamples(t *testing.T) {
 	t.Run("default usage", func(t *testing.T) {
 		// User wants default behavior (ignore plpgsql)

@@ -192,7 +192,10 @@ func TestMigrationTagNamespaceWorksUnderTheAtlasRevisionFormat(t *testing.T) {
 	c.Assert(count, qt.Equals, 0)
 }
 
-func TestNormalizeMigrationTagRefusesUnusableNames(t *testing.T) {
+// TestMigrationTagRefusesUnusableNames pins the tag shapes every tag entry
+// point refuses before touching the database: recording one fails on the
+// normalization step, so no connection work happens for an unusable name.
+func TestMigrationTagRefusesUnusableNames(t *testing.T) {
 	for _, test := range []struct {
 		name string
 		tag  string
@@ -206,17 +209,18 @@ func TestNormalizeMigrationTagRefusesUnusableNames(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, err := migrator.NormalizeMigrationTag(test.tag)
+			_, m := newTagMigrator(c, migrator.RevisionTableFormatPtah)
+			err := m.RecordMigrationTag(context.Background(), test.tag, 1)
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(err.Error(), qt.Contains, test.want)
 		})
 	}
 }
 
-// TestNormalizeMigrationTagTrimsSurroundingWhitespace keeps a tag typed with a
+// TestMigrationTagTrimsSurroundingWhitespace keeps a tag typed with a
 // stray space resolving to the one recorded without it, rather than to a second
 // tag that looks identical in every listing.
-func TestNormalizeMigrationTagTrimsSurroundingWhitespace(t *testing.T) {
+func TestMigrationTagTrimsSurroundingWhitespace(t *testing.T) {
 	c := qt.New(t)
 	ctx := context.Background()
 	_, m := newTagMigrator(c, migrator.RevisionTableFormatPtah)

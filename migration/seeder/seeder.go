@@ -23,7 +23,6 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/migration/migrator"
 )
 
 const (
@@ -207,7 +206,7 @@ func applySeed(ctx context.Context, conn *dbschema.DatabaseConnection, fsys fs.F
 	// Split with the connection's dialect so a semicolon inside a backslash-
 	// escaped string literal (valid on MySQL/MariaDB/ClickHouse) is not
 	// mis-split into a separately-executed statement.
-	statements := migrator.SplitSQLStatementsForConnection(conn, string(data))
+	statements := sqlutil.SplitStatementsForDialect(conn.Info().Dialect, string(data))
 
 	dialect := platform.NormalizeDialect(conn.Info().Dialect)
 	if dialect == platform.ClickHouse {

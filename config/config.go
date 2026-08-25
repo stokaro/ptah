@@ -353,16 +353,3 @@ func WithAdditionalIgnoredExtensions(extensions ...string) *CompareOptions {
 func (c *CompareOptions) IsExtensionIgnored(extensionName string) bool {
 	return slices.Contains(c.IgnoredExtensions, extensionName)
 }
-
-// FilterIgnoredExtensions removes ignored extensions from the provided slice
-// and returns a new slice containing only non-ignored extensions.
-// This is useful for filtering extension lists before comparison.
-func (c *CompareOptions) FilterIgnoredExtensions(extensions []string) []string {
-	filtered := make([]string, 0)
-	for _, ext := range extensions {
-		if !c.IsExtensionIgnored(ext) {
-			filtered = append(filtered, ext)
-		}
-	}
-	return filtered
-}

@@ -378,8 +378,7 @@ func existingPathStatements(
 ) []string {
 	c.Helper()
 	diff := schemadiff.CompareWithDialect(description, catalog, profile.Dialect)
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(
-		diff, description, profile.Dialect, profile.Capabilities)
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, description, profile.Dialect, planner.Options{Capabilities: profile.Capabilities})
 	c.Assert(err, qt.IsNil)
 	return statements
 }
@@ -555,8 +554,7 @@ func BenchmarkPipeline_LargeSchema(b *testing.B) {
 	b.Run("existing path", func(b *testing.B) {
 		for b.Loop() {
 			diff := schemadiff.CompareWithDialect(description, catalog, profile.Dialect)
-			_, _ = planner.GenerateSchemaDiffSQLStatementsWithCapabilities(
-				diff, description, profile.Dialect, profile.Capabilities)
+			_, _ = planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, description, profile.Dialect, planner.Options{Capabilities: profile.Capabilities})
 		}
 	})
 }
@@ -586,8 +584,7 @@ func TestPipeline_BlockedWhenTheReferenceIsNotAKey(t *testing.T) {
 	// The existing path refuses the same schema, which is what makes this a
 	// shared answer rather than the prototype inventing a rule.
 	diff := schemadiff.CompareWithDialect(description, emptyCatalogWithoutKeys(), "postgres")
-	_, existingErr := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(
-		diff, description, "postgres", postgresProfile().Capabilities)
+	_, existingErr := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, description, "postgres", planner.Options{Capabilities: postgresProfile().Capabilities})
 	c.Assert(existingErr, qt.IsNotNil)
 	c.Assert(existingErr.Error(), qt.Contains, "unique")
 }

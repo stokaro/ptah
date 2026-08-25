@@ -14,6 +14,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
+	"go.5x5.cz/ptah/cmd/internal/migrateflags"
 	"go.5x5.cz/ptah/cmd/internal/schemaops"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasurl"
@@ -135,7 +136,7 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error
 	); err != nil {
 		return err
 	}
-	revisionFormat, err := migrator.ParseRevisionTableFormat(opts.revisionTableFormat)
+	revisionFormat, err := migrateflags.ParseRevisionTableFormat(opts.revisionTableFormat)
 	if err != nil {
 		return err
 	}
@@ -160,7 +161,7 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error
 	if err != nil {
 		return err
 	}
-	lockTimeout, err := migrator.ParseMigrationLockTimeout(opts.lockTimeout)
+	lockTimeout, err := migrateflags.ParseMigrationLockTimeout(opts.lockTimeout)
 	if err != nil {
 		return err
 	}

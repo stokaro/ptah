@@ -201,7 +201,9 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	}
 
 	// 4. Display differences summary
-	astNodes, err := planner.GenerateSchemaDiffASTWithCapabilities(diff, result, info.Dialect, info.Capabilities)
+	astNodes, err := planner.GenerateSchemaDiffASTWithOptions(diff, result, info.Dialect, planner.Options{
+		Capabilities: info.Capabilities,
+	})
 	if err != nil {
 		return fmt.Errorf("error generating migration plan: %w", err)
 	}

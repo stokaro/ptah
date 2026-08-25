@@ -66,8 +66,9 @@ func TestGenerateSchemaDiffSQLStatements_KeepsAnOracleRoutineInOneStatement(t *t
 			}}}
 			diff := &types.SchemaDiff{FunctionsAdded: []string{"fn_double"}}
 
-			statements, err := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(
-				diff, generated, platform.Oracle, capability.Oracle23())
+			statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+				diff, generated, platform.Oracle,
+				planner.Options{Capabilities: capability.Oracle23()})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(statements, qt.HasLen, 1)
@@ -100,8 +101,9 @@ func TestGenerateSchemaDiffSQLStatements_OracleReplacesARoutineWithBothHalves(t 
 		Changes:      map[string]string{"body": "old -> new"},
 	}}}
 
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(
-		diff, generated, platform.Oracle, capability.Oracle23())
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		diff, generated, platform.Oracle,
+		planner.Options{Capabilities: capability.Oracle23()})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 2)
@@ -134,8 +136,9 @@ func TestGenerateSchemaDiffSQLStatements_OracleDropsNothingItCannotRecreate(t *t
 		Changes:      map[string]string{"body": "old -> new"},
 	}}}
 
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(
-		diff, generated, platform.Oracle, capability.Oracle23())
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		diff, generated, platform.Oracle,
+		planner.Options{Capabilities: capability.Oracle23()})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Join(statements, "\n"), qt.Not(qt.Contains), "DROP FUNCTION")

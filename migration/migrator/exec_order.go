@@ -20,20 +20,6 @@ const (
 	ExecOrderNonLinear ExecOrder = "non-linear"
 )
 
-// ParseExecOrder parses a CLI/API exec-order value.
-func ParseExecOrder(value string) (ExecOrder, error) {
-	switch ExecOrder(strings.ToLower(strings.TrimSpace(value))) {
-	case "", ExecOrderLinear:
-		return ExecOrderLinear, nil
-	case ExecOrderLinearSkip:
-		return ExecOrderLinearSkip, nil
-	case ExecOrderNonLinear:
-		return ExecOrderNonLinear, nil
-	default:
-		return "", fmt.Errorf("invalid exec-order %q: expected linear, linear-skip, or non-linear", value)
-	}
-}
-
 func normalizeExecOrder(value ExecOrder) ExecOrder {
 	switch value {
 	case "", ExecOrderLinear:
@@ -217,20 +203,20 @@ func (e *OutOfOrderError) describe(version int64) string {
 	return fmt.Sprintf("%q", source)
 }
 
-// NewOutOfOrderError builds the typed error returned for linear execution when
+// newOutOfOrderError builds the typed error returned for linear execution when
 // pending migrations the execution order refuses are present.
-func NewOutOfOrderError(currentVersion int64, versions []int64) *OutOfOrderError {
+func newOutOfOrderError(currentVersion int64, versions []int64) *OutOfOrderError {
 	return &OutOfOrderError{
 		CurrentVersion: currentVersion,
 		Versions:       slices.Clone(versions),
 	}
 }
 
-// NewOutOfOrderSourceError builds the same error for a directory read through a
+// newOutOfOrderSourceError builds the same error for a directory read through a
 // foreign layout, carrying the source version tokens needed to name the files
 // the refusal is about.
-func NewOutOfOrderSourceError(currentVersion int64, versions []int64, sourceVersions map[int64]string) *OutOfOrderError {
-	err := NewOutOfOrderError(currentVersion, versions)
+func newOutOfOrderSourceError(currentVersion int64, versions []int64, sourceVersions map[int64]string) *OutOfOrderError {
+	err := newOutOfOrderError(currentVersion, versions)
 	if len(sourceVersions) == 0 {
 		return err
 	}

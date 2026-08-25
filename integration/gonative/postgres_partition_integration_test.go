@@ -12,7 +12,7 @@ import (
 
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/core/sqlutil"
 )
 
 func TestPostgreSQLPartitionedTableExecuteIntegration(t *testing.T) {
@@ -41,7 +41,7 @@ func TestPostgreSQLPartitionedTableExecuteIntegration(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(legacyRenderedSQL(sqlText), qt.Contains, "PARTITION BY RANGE (x, (y * 2))")
 
-	for _, stmt := range migrator.SplitSQLStatements(sqlText) {
+	for _, stmt := range sqlutil.SplitStatements(sqlText) {
 		_, err = db.Exec(stmt)
 		c.Assert(err, qt.IsNil, qt.Commentf("statement failed: %s", stmt))
 	}

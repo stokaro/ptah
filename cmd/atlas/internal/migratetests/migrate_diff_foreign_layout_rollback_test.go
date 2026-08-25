@@ -11,10 +11,10 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
+	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasurl"
-	"go.5x5.cz/ptah/migration/migrator"
 )
 
 // This file is the DROP half of stokaro/ptah#1013's coverage. Every other
@@ -129,7 +129,7 @@ func compatExecSQL(c *qt.C, dbPath, sqlText, label string) {
 	c.Helper()
 	conn := compatConnect(c, dbPath)
 	defer dbschema.CloseAndWarn(conn)
-	for _, statement := range migrator.SplitSQLStatements(sqlText) {
+	for _, statement := range sqlutil.SplitStatements(sqlText) {
 		compatExecStatement(c, conn, statement, label)
 	}
 }

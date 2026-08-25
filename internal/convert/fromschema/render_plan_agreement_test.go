@@ -77,7 +77,7 @@ const objectSkippedMarker = "is not supported by this target; skipped."
 func TestRenderAndPlanAgreeOnEveryPostgresFamilyTarget(t *testing.T) {
 	c := qt.New(t)
 
-	dialects := postgresFamilyPlannerDialects()
+	dialects := postgresFamilyPlannerDialects(c)
 
 	// Control on the enumeration: a filter that matched nothing, or a registry
 	// that had not initialized, would make every loop below vacuous.
@@ -145,8 +145,10 @@ func assertRenderAndPlanAgree(c *qt.C, dialect string) {
 // It is derived from the registry and the predicate rather than written out,
 // because item 4 is about the family and not about three names somebody
 // remembered. A fifth member registered tomorrow is measured the same day.
-func postgresFamilyPlannerDialects() []string {
-	return slices.DeleteFunc(planner.RegisteredDialects(), func(dialect string) bool {
+func postgresFamilyPlannerDialects(c *qt.C) []string {
+	registered, err := planner.RegisteredDialects()
+	c.Assert(err, qt.IsNil)
+	return slices.DeleteFunc(registered, func(dialect string) bool {
 		return !platform.IsPostgresFamily(dialect)
 	})
 }

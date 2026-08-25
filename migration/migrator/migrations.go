@@ -15,46 +15,21 @@ import (
 // MigrationFunc represents a migration function that operates on a database connection
 type MigrationFunc func(context.Context, *dbschema.DatabaseConnection) error
 
-// SplitSQLStatements splits a SQL string into individual statements using AST-based parsing.
-// This is needed because MySQL doesn't handle multiple statements in a single ExecuteSQL call.
-// Unlike simple string splitting, this properly handles semicolons within string literals and comments.
-func SplitSQLStatements(sql string) []string {
-	normalized := sqlutil.NormalizeClientDelimiters(sql)
-	return sqlutil.SplitSQLStatements(sqlutil.StripComments(normalized))
-}
-
-// SplitSQLStatementsForConnection splits sql into individual statements using
+// splitSQLStatementsForConnection splits sql into individual statements using
 // the connection's dialect, so string-literal boundaries are scanned correctly
 // for that engine (a backslash is a C-style escape only for MySQL/MariaDB/
-// ClickHouse). Callers that execute the resulting statements one by one against
-// a live connection — for example the seeder — should use this rather than the
-// dialect-blind [SplitSQLStatements], so a semicolon inside a backslash-escaped
-// literal cannot leak out into a separately-executed statement. A nil
-// connection falls back to the dialect-blind split.
-func SplitSQLStatementsForConnection(conn *dbschema.DatabaseConnection, sql string) []string {
-	return splitSQLStatementsForConnection(conn, sql)
-}
-
+// ClickHouse) and a semicolon inside a backslash-escaped literal cannot leak
+// out into a separately-executed statement. A nil connection falls back to the
+// dialect-blind split.
 func splitSQLStatementsForConnection(conn *dbschema.DatabaseConnection, sql string) []string {
 	if conn == nil {
-		return SplitSQLStatements(sql)
+		return sqlutil.SplitStatements(sql)
 	}
 	return splitSQLStatementsForDialect(sql, conn.Info().Dialect)
 }
 
 func splitSQLStatementsForDialect(sql, dialect string) []string {
-	if strings.TrimSpace(dialect) == "" {
-		return SplitSQLStatements(sql)
-	}
-	statements := sqlutil.SplitSQLStatementsForDialect(sql, dialect)
-	filtered := statements[:0]
-	for _, stmt := range statements {
-		stmt = strings.TrimSpace(sqlutil.StripCommentsForDialect(stmt, dialect))
-		if stmt != "" {
-			filtered = append(filtered, stmt)
-		}
-	}
-	return filtered
+	return sqlutil.SplitStatementsForDialect(dialect, sql)
 }
 
 func splitSQLStatementsPreservingCommentsForDialect(sql, dialect string) []string {
@@ -366,49 +341,6 @@ func (e *CheckpointRollbackError) Error() string {
 		"cannot roll back to version %d: it is below checkpoint %d, whose squashed history cannot be reconstructed; roll back to version %d (the checkpoint) or to 0 (drop everything) instead",
 		e.TargetVersion, e.CheckpointVersion, e.CheckpointVersion,
 	)
-}
-
-// NewMigrationFromSQLFiles reads an up/down SQL pair into a complete Migration.
-// Transaction modes, timeouts, source paths, and executable functions remain
-// attached to the returned value so callers cannot accidentally discard file
-// metadata that affects execution policy.
-func NewMigrationFromSQLFiles(
-	version int64,
-	description, upFilename, downFilename string,
-	fsys fs.FS,
-) (*Migration, error) {
-	return NewMigrationFromSQLFilesWithInterceptor(
-		version,
-		description,
-		upFilename,
-		downFilename,
-		fsys,
-		nil,
-	)
-}
-
-// NewMigrationFromSQLFilesWithInterceptor is NewMigrationFromSQLFiles with an
-// optional StatementInterceptor consulted for every statement in both files.
-func NewMigrationFromSQLFilesWithInterceptor(
-	version int64,
-	description, upFilename, downFilename string,
-	fsys fs.FS,
-	interceptor StatementInterceptor,
-) (*Migration, error) {
-	hooks := statementExecutionHooks{interceptor: interceptor}
-	up, err := migrationFuncFromSQLFilenameWithMetadata(upFilename, fsys, hooks, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load up migration %s: %w", upFilename, err)
-	}
-	down, err := migrationFuncFromSQLFilenameWithMetadata(downFilename, fsys, hooks, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load down migration %s: %w", downFilename, err)
-	}
-
-	migration := &Migration{Version: version, Description: description}
-	setMigrationUp(migration, up)
-	setMigrationDown(migration, down)
-	return migration, nil
 }
 
 func migrationFuncFromSQLFilenameWithMetadata(

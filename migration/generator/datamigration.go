@@ -13,9 +13,9 @@ import (
 // resolves a version above the existing history — and returns the two written
 // paths.
 //
-// Unlike WriteCheckpointFiles it produces ordinary (non-checkpoint) migration
-// files, so the generated pair is applied and rolled back like any hand-written
-// migration and takes part in normal history. It is the writer for the
+// Unlike WriteCheckpointFilesWithOptions it produces ordinary (non-checkpoint)
+// migration files, so the generated pair is applied and rolled back like any
+// hand-written migration and takes part in normal history. It is the writer for the
 // declarative reference/seed data pipeline (ptah migrations data): the SQL
 // bodies are the concatenated datadiff DML for every managed table.
 func WriteDataMigrationFiles(outputDir string, version int64, description, upSQL, downSQL string) (upPath, downPath string, err error) {
@@ -27,8 +27,9 @@ func WriteDataMigrationFiles(outputDir string, version int64, description, upSQL
 // integrity-protected. It refuses to overwrite an existing pair. kind labels
 // the pair in error messages (for example "migration" or "checkpoint") so
 // callers surface a wording that matches the file kind they asked for. It is
-// the shared core of WriteDataMigrationFiles and WriteCheckpointFiles, which
-// differ only in the file-name scheme and that label.
+// the shared core of WriteDataMigrationFiles and
+// WriteCheckpointFilesWithOptions, which differ only in the file-name scheme
+// and that label.
 //
 // The whole transaction runs through one binding of outputDir. It used to
 // resolve the pathname afresh for the mkdir, the existence check, each of the
