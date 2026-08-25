@@ -764,6 +764,75 @@ It would make every such index differ from its own inspected document forever,
 and the rebuild that difference planned would drop the parameter it was meant to
 protect.
 
+#### Carrying the rest: `PTAH_POSTGRES_INDEX_STORAGE_PARAMS`
+
+The paragraph above is the reason the default set has one entry. It is not a
+reason the parameters cannot be carried — only a reason they cannot be carried
+on *one* surface at a time. `m` and `ef_construction` decide an HNSW index's
+recall and size, and losing them on a replay produces an index that answers
+different questions from the one that was described.
+
+Setting `PTAH_POSTGRES_INDEX_STORAGE_PARAMS=true` widens the recorded set to
+every parameter `pg_class.reloptions` holds, on **every** surface at once: the
+reader records them, the PostgreSQL renderer writes the `WITH (...)` clause, the
+SQL parser reads it back, and the HCL writer emits a `storage_params` object
+that the HCL parser reads back.
+
+```hcl
+index "documents_hnsw" {
+  type = "hnsw"
+  storage_params = { ef_construction = "128", m = "32" }
+  on {
+    column = column.embedding
+    ops    = "vector_l2_ops"
+  }
+}
+```
+
+`storage_params` is a Ptah attribute. A document carrying it is a Ptah document
+rather than one Atlas CE also reads, which is why it is written only under the
+variable — and why the variable is `gated`
+rather than a correctness control.
+
+Reading it needs the same variable, and a document that carries it is **refused**
+without one:
+
+```text
+error: index sets storage_params, which needs PTAH_POSTGRES_INDEX_STORAGE_PARAMS=true;
+without it the parameters would be declared and not read back, and the index would be
+dropped and recreated on every apply
+```
+
+That refusal is the point rather than a restriction. Reading the attribute
+without the variable would put `m` and `fillfactor` in the desired model while
+the reader left them out of the live one, so the comparator would see two
+different maps and plan a `DROP INDEX` and a `CREATE INDEX` on every apply —
+forever, and immediately after a successful rebuild. Measured on PostgreSQL 17
+with pgvector 0.8.6: three indexes, three `DROP`/`CREATE` pairs, against a
+database the same document had already been applied to. A document with no
+`storage_params` is unaffected either way.
+
+A malformed value fails the export whatever the schema holds, rather than
+reading as `false` for a schema that happens to carry no such parameter.
+
+With the variable unset, a declaration that carries such a parameter — from a Go
+annotation or a `.sql` file, where they have always been expressible — is
+reported rather than silently dropped:
+
+```text
+warning: indexes.documents_hnsw: index storage parameter(s) ef_construction, m have no attribute
+in an Atlas-compatible document and are omitted; set PTAH_POSTGRES_INDEX_STORAGE_PARAMS=true to
+write them as Ptah attributes
+```
+
+Measured on PostgreSQL 17 with pgvector 0.8.6: with the variable set, a database
+holding `documents_hnsw WITH (m=32, ef_construction=128)`,
+`documents_ivf WITH (lists=250)` and `documents_body_ff WITH (fillfactor=70)`
+inspects to a document that re-applies as `Schema is synced` on both the HCL and
+the `.sql` surface, and replaying it into an empty database reproduces every
+parameter (`reloptions` differ only in the order PostgreSQL stored them, which
+the comparator reads as a map).
+
 The HCL attribute is spelled `page_per_range`, singular. CE **accepts both
 spellings at exit 0** and honors only that one. Measured against two documents
 differing in that single token and nothing else:

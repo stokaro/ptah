@@ -17,6 +17,7 @@ import (
 
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/internal/pgindexstorage"
 	"go.5x5.cz/ptah/internal/tableref"
 )
 
@@ -1120,8 +1121,77 @@ func (p *parser) parseIndexStorageParams(block *hclsyntax.Block) (map[string]str
 	if pagesPerRange != nil {
 		params["pages_per_range"] = p.exprString(pagesPerRange)
 	}
+	// `storage_params` is Ptah's own attribute, for the parameters an
+	// Atlas-compatible document has no slot for. Reading it needs the same
+	// switch that writes it, and the document is REFUSED rather than read
+	// without one.
+	//
+	// Reading it unconditionally was the first attempt and it is worse than it
+	// looks: the reader does not record these parameters with the switch off,
+	// so the desired model would carry `m` and `fillfactor` while the live one
+	// did not, the comparator would see two different maps, and every such
+	// index would be dropped and recreated on every apply -- forever, and
+	// immediately after a successful rebuild. Measured on PostgreSQL 17 with
+	// pgvector 0.8.6: three indexes, three DROP/CREATE pairs, on a database
+	// that had just been applied to.
+	//
+	// Failing closed with the variable named is the honest answer: the document
+	// says something Ptah is configured not to carry, and silently carrying
+	// half of it is what produces the loop (stokaro/ptah#2183).
+	if attr := block.Body.Attributes["storage_params"]; attr != nil {
+		carryEverything, err := pgindexstorage.CarryAll()
+		if err != nil {
+			return nil, err
+		}
+		if !carryEverything {
+			return nil, p.blockError(block,
+				"index sets storage_params, which needs %s=true; without it the parameters would be "+
+					"declared and not read back, and the index would be dropped and recreated on every apply",
+				pgindexstorage.EnvVar)
+		}
+		extra, err := p.indexStorageParamsMap(block, attr)
+		if err != nil {
+			return nil, err
+		}
+		for name, value := range extra {
+			if _, taken := params[name]; taken {
+				return nil, p.blockError(block, "index sets %s both directly and in storage_params", name)
+			}
+			params[name] = value
+		}
+	}
 	if len(params) == 0 {
 		return nil, nil
+	}
+	return params, nil
+}
+
+// indexStorageParamsMap reads the `storage_params` object into the model's
+// string map.
+//
+// Values are read as strings whatever they were written as, because that is
+// what the model holds and what CREATE INDEX takes: `m = 32` and `m = "32"`
+// both describe the same index, and accepting only one spelling would make a
+// hand-written document fail for a reason about quoting rather than about
+// PostgreSQL.
+func (p *parser) indexStorageParamsMap(block *hclsyntax.Block, attr *hclsyntax.Attribute) (map[string]string, error) {
+	value, diags := attr.Expr.Value(nil)
+	if diags.HasErrors() {
+		return nil, p.blockError(block, "storage_params must be an object of name = value pairs")
+	}
+	if value.IsNull() || !value.Type().IsObjectType() {
+		return nil, p.blockError(block, "storage_params must be an object of name = value pairs")
+	}
+	params := make(map[string]string)
+	for name, item := range value.AsValueMap() {
+		if item.IsNull() {
+			return nil, p.blockError(block, "storage_params %q has no value", name)
+		}
+		converted, err := convert.Convert(item, cty.String)
+		if err != nil {
+			return nil, p.blockError(block, "storage_params %q is not a value CREATE INDEX takes", name)
+		}
+		params[name] = converted.AsString()
 	}
 	return params, nil
 }
@@ -1749,6 +1819,7 @@ func (p *parser) rejectUnsupportedIndexAttrs(block *hclsyntax.Block) error {
 		"include":         true,
 		"parser":          true,
 		"page_per_range":  true,
+		"storage_params":  true,
 		"pages_per_range": true,
 		"nulls_distinct":  true,
 		"unique":          true,
