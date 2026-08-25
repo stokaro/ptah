@@ -592,7 +592,14 @@ func (r *Reader) readIndexColumns() (map[string][]types.DBIndexPart, error) {
 // ALL_TAB_IDENTITY_COLS.SEQUENCE_NAME names exactly those, which is a fact
 // about ownership rather than the ISEQ$$_ prefix, which is a naming convention.
 const sequenceQuery = `
-SELECT s.sequence_name, s.min_value, s.max_value, s.increment_by, s.cycle_flag, s.cache_size
+SELECT s.sequence_name, s.min_value, s.max_value, s.increment_by, s.cycle_flag, s.cache_size,
+	       -- Oracle keeps no START WITH. last_number is the next value the
+	       -- sequence will issue, rounded UP to the end of the cached block, so
+	       -- for an unused sequence it IS the declared start and for a used one
+	       -- it is at or beyond where the source stands. Describing it never
+	       -- re-issues a value the source already handed out, which is the safe
+	       -- direction (stokaro/ptah#2207).
+	       s.last_number
 FROM all_sequences s
 WHERE s.sequence_owner = :1
   AND NOT EXISTS (
@@ -610,14 +617,15 @@ func (r *Reader) readSequences() ([]types.DBSequence, error) {
 	var sequences []types.DBSequence
 	for rows.Next() {
 		var (
-			sequence  types.DBSequence
-			minValue  sql.NullString
-			maxValue  sql.NullString
-			increment sql.NullString
-			cycle     string
-			cache     sql.NullString
+			sequence   types.DBSequence
+			minValue   sql.NullString
+			maxValue   sql.NullString
+			increment  sql.NullString
+			cycle      string
+			cache      sql.NullString
+			lastNumber sql.NullString
 		)
-		if err := rows.Scan(&sequence.Name, &minValue, &maxValue, &increment, &cycle, &cache); err != nil {
+		if err := rows.Scan(&sequence.Name, &minValue, &maxValue, &increment, &cycle, &cache, &lastNumber); err != nil {
 			return nil, err
 		}
 		sequence.Schema = r.schema
@@ -625,6 +633,7 @@ func (r *Reader) readSequences() ([]types.DBSequence, error) {
 		sequence.MaxValue = numberPointer(maxValue)
 		sequence.Increment = numberPointer(increment)
 		sequence.Cache = numberPointer(cache)
+		sequence.Start = numberPointer(lastNumber)
 		sequence.Cycle = cycle == "Y"
 		sequences = append(sequences, sequence)
 	}
