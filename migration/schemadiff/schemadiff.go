@@ -14,6 +14,7 @@ import (
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/clickhouserbac"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/convert/goschematodb"
 	"go.5x5.cz/ptah/internal/crdbttl"
 	"go.5x5.cz/ptah/internal/reservedrole"
 	"go.5x5.cz/ptah/internal/schemaselection"
@@ -41,6 +42,16 @@ func CompareWithDialect(generated *goschema.Database, database *types.DBSchema, 
 	opts := config.DefaultCompareOptions()
 	opts.Dialect = dialect
 	return CompareWithOptions(generated, database, opts)
+}
+
+// CompareSchemas diffs two in-memory desired-schema documents. Both sides are
+// desired-schema documents: current names the side treated as the existing
+// state, and the diff plans what would turn it into desired. The current side
+// goes through the same conversion the file-to-file schema diff uses before
+// the comparison runs under the supplied dialect. For a current state read
+// from a live database, use CompareWithDatabase instead.
+func CompareSchemas(desired, current *goschema.Database, dialect string) *difftypes.SchemaDiff {
+	return CompareWithDialect(desired, goschematodb.ToDBSchema(current, dialect), dialect)
 }
 
 // CompareWithDatabaseInfo compares using caller-supplied database metadata.
