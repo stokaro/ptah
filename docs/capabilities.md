@@ -692,13 +692,19 @@ CI driver queries Docker Hub for the highest numeric tag under the declared
 line immediately before Docker runs. The SQL Server tags name a marketing year
 where the matrix line is the product version; a `no` records that mismatch.
 
-**Probed per pull request** is tier 2. A line is probed when a container
-reproduces it and the capability probe has a statement table for its dialect;
-both halves are derived, so adding a ClickHouse plan turns four skipped cells
-into four probed ones with no workflow edit.
+**Probed by tier 2** is whether the capability probe covers the line at all. A
+line is probed when a container reproduces it and the probe has a statement
+table for its dialect; both halves are derived, so adding a ClickHouse plan
+turns four skipped cells into four probed ones with no workflow edit.
+
+It says nothing about WHEN. The tier 2 fan-out is one job per cell with a
+container each, and it does not run on a pull request by default — it runs
+nightly, from the workflow's Run button, or when somebody comments
+`/capability-matrix` on the pull request, optionally naming dialects or cells
+(stokaro/ptah#2185).
 
 <!-- BEGIN GENERATED VERSION MATRIX -->
-| Dialect | Release line | Support | Capability preset | Refinement | Container image | Tag names the line | Probed per pull request |
+| Dialect | Release line | Support | Capability preset | Refinement | Container image | Tag names the line | Probed by tier 2 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `postgres` | 18 | certified | `Postgres17` | version-ladder | `postgres:18` | yes | yes |
 | `postgres` | 17 | certified | `Postgres17` | version-ladder | `postgres:17` | yes | yes |

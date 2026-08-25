@@ -552,7 +552,7 @@ func splitImageTag(ref string) (repository, tag string) {
 // the build when the checked-in table and this output differ.
 func WriteMatrixMarkdown(w io.Writer) {
 	matrix := CIMatrix()
-	fmt.Fprintf(w, "| Dialect | Release line | Support | Capability preset | Refinement | Container image | Tag names the line | Probed per pull request |\n")
+	fmt.Fprintf(w, "| Dialect | Release line | Support | Capability preset | Refinement | Container image | Tag names the line | Probed by tier 2 |\n")
 	fmt.Fprintf(w, "| --- | --- | --- | --- | --- | --- | --- | --- |\n")
 	for _, cell := range append(slices.Clone(matrix.Cells), matrix.Skipped...) {
 		fmt.Fprintf(w, "| `%s` | %s | %s | %s | %s | %s | %s | %s |\n",

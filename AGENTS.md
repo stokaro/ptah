@@ -225,10 +225,28 @@ scripts/check-version-matrix.sh --write
 ```
 
 `.github/workflows/capability-matrix.yml` runs the capability probe once per
-cell on every pull request, and `capability-matrix-nightly.yml` runs the
-integration suite over the same cells on a schedule. Both read the declaration
-through `capmatrix matrix`, so adding a release line is a data change: one
-literal in `cells.go`, then `scripts/check-version-matrix.sh --write`.
+cell, and `capability-matrix-nightly.yml` runs the integration suite over the
+same cells on a schedule. Both read the declaration through `capmatrix matrix`,
+so adding a release line is a data change: one literal in `cells.go`, then
+`scripts/check-version-matrix.sh --write`.
+
+**The probe fan-out does not run on a pull request by default.** It is one job
+per cell with a container each, and it outnumbered every other check until the
+queue stopped keeping up (stokaro/ptah#2185). It runs nightly, from the
+workflow's Run button, and on request from the pull request itself:
+
+```text
+/capability-matrix                     every declared cell
+/capability-matrix postgres            every PostgreSQL line
+/capability-matrix mysql, oracle-21    a mix of prefixes and exact ids
+```
+
+The three cheap jobs beside it — `cells`, `preset coverage` and
+`documented matrix` — still run on every pull request and every push, so a
+change that adds a release line or a capability key is still caught by the gate
+that lives here rather than in `docs.yml`. A run that probed nothing says so in
+its own step summary: an absent check must not read like a passing one, which is
+the same reason this workflow carries no `paths:` filter.
 
 Every cell also declares a `Support` level from `capability.SupportLevel` —
 certified, legacy-tested, best-effort, or known-incompatible. It is a statement

@@ -1,7 +1,7 @@
 name: Capability Matrix
 
 # Tier 2 of stokaro/ptah#1341: one capability probe per (dialect, release
-# line), on every pull request.
+# line).
 #
 # There is deliberately NO `paths:` filter on this workflow. Measured on this
 # repository while investigating why the container-bump pull requests show
@@ -18,12 +18,47 @@ name: Capability Matrix
 # some earlier commit satisfied. The exclusion therefore bites exactly the
 # pull requests this tier exists to unblock, whose ENTIRE diff is a container
 # tag and matches `cmd/**`, `internal/**` and `go.mod` nowhere.
+#
+# The PROBE FAN-OUT is opt-in; the three cheap jobs beside it are not.
+#
+# It is one job per (dialect, release line) with a container each, and it was
+# the larger half of every pull request's checks -- 26 probe jobs beside 26 of
+# everything else. Measured on 2026-08-24, runs created at 18:54 had still not
+# been scheduled at 22:00 while newer ones on other branches ran and finished,
+# and at one point 97 of the 100 most recent runs were queued with none in
+# progress. A one-line fix waited hours behind a conformance sweep nobody asked
+# for on that change (stokaro/ptah#2185).
+#
+#	cells, preset coverage, documented matrix   every pull request and push
+#	probe *, tier 2 report                      schedule, dispatch, or a
+#	                                            comment on the pull request
+#
+# `documented matrix` in particular STAYS on every pull request, for the reason
+# given in its own job below: it lives here rather than in docs.yml precisely
+# because a change that adds a release line or a capability key touches no file
+# under `docs/`.
+#
+# The fan-out is gated by a DECISION rather than by a path filter, for the
+# reason above: the `cells` job always runs, always says which cells it selected
+# and why, so a pull request that ran no probes says so in its own step summary
+# instead of quietly showing fewer checks than the one beside it.
 on:
   push:
     branches:
       - master
   pull_request:
+  # 03:20 UTC, clear of the tier 3 nightly at 02:40 and the fuzz job at 02:17.
+  # Tier 3 probes each cell before running its suite, so this is not the only
+  # nightly coverage -- it is the one that reports the probe verdicts on their
+  # own, which is what a capability question is read from.
+  schedule:
+    - cron: '20 3 * * *'
   workflow_dispatch:
+    inputs:
+      cells:
+        description: 'Cells to probe: all, none, or a comma-separated list of cell ids or dialect prefixes (postgres, mysql-8-4).'
+        required: false
+        default: all
 
 permissions:
   contents: read
@@ -40,6 +75,8 @@ jobs:
     outputs:
       cells: ${{ steps.emit.outputs.cells }}
       count: ${{ steps.emit.outputs.count }}
+      selected: ${{ steps.select.outputs.selected }}
+      reason: ${{ steps.select.outputs.reason }}
     steps:
       - uses: actions/checkout@v7
 
@@ -86,6 +123,93 @@ jobs:
             echo
             jq -r '.skipped[] | "- `\(.id)` is declared and not run: \(.skip)"' "${RUNNER_TEMP}/matrix.json"
           } >>"${GITHUB_STEP_SUMMARY}"
+
+      # Which of those cells this RUN probes, and why.
+      #
+      # Separate from the emit step above on purpose. That step's "zero runnable
+      # cells is an error" guard is about the DECLARATION -- a matrix that
+      # produced nothing must not report success -- and selecting none here is a
+      # policy, not a broken declaration. Folding the two would make an opted-out
+      # pull request indistinguishable from a matrix that fell over.
+      #
+      # The reason is written to the step summary in every case, including the
+      # empty one. A run that probed nothing has to say so where somebody
+      # reading the pull request will see it; the failure mode this whole file
+      # warns about is an absent check reading like a passing one.
+      - name: Select the cells to probe
+        id: select
+        env:
+          EVENT: ${{ github.event_name }}
+          REQUESTED: ${{ github.event.inputs.cells }}
+          # The ids the step above published, rather than a second reading of
+          # matrix.json. Both spell the same list today -- measured, 26 ids
+          # either way -- and asking twice is how they would stop doing so
+          # without anything going red.
+          ALL: ${{ steps.emit.outputs.cells }}
+        run: |
+          set -euo pipefail
+          all="${ALL}"
+          request=""
+          case "${EVENT}" in
+            schedule)
+              request="all"
+              reason="the nightly tier 2 run probes every declared cell"
+              ;;
+            workflow_dispatch|repository_dispatch)
+              request="${REQUESTED:-all}"
+              reason="requested by hand: ${request}"
+              ;;
+            push)
+              request="none"
+              reason="the probe fan-out does not run on a push; it runs nightly, and on request from the workflow's Run button"
+              ;;
+            *)
+              request="none"
+              reason="not requested on this event (${EVENT}); comment \`/capability-matrix\` on the pull request to run it, or use the workflow's Run button"
+              ;;
+          esac
+
+          if [ "${request}" = "all" ]; then
+            selected="${all}"
+          elif [ "${request}" = "none" ] || [ -z "${request}" ]; then
+            selected="[]"
+          else
+            # A request names cell ids or dialect prefixes. Matching by prefix
+            # is what makes `postgres` mean every PostgreSQL line without the
+            # requester having to know the line numbers.
+            #
+            # `. as $w` is load-bearing. Written as `$id | startswith(. + "-")`
+            # the pipe rebinds `.` to $id, so every request compared the id to
+            # itself and matched nothing -- `postgres` selected zero cells and
+            # the run said the request was a typo. Caught by exercising the
+            # block against a sample matrix before it shipped.
+            selected="$(REQUEST="${request}" jq -c '
+              [ .[] as $id
+                | ($ENV.REQUEST | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))) as $want
+                | select(any($want[]; . as $w | $id == $w or ($id | startswith($w + "-"))))
+                | $id ]' <<<"${all}")"
+          fi
+
+          count="$(jq 'length' <<<"${selected}")"
+          {
+            echo "selected=${selected}"
+            echo "reason=${reason}"
+          } >>"${GITHUB_OUTPUT}"
+          {
+            echo
+            echo "### Probes this run"
+            echo
+            echo "Cells probed: ${count}. ${reason}"
+          } >>"${GITHUB_STEP_SUMMARY}"
+
+          # A request that names something the matrix does not have is a typo,
+          # and answering it with silence would be the same defect this file is
+          # about. Only a request that asked for cells can be wrong this way:
+          # "none" asked for nothing and got it.
+          if [ "${count}" -eq 0 ] && [ "${request}" != "none" ] && [ -n "${request}" ]; then
+            echo "requested cells (${request}) matched none of ${all}" >&2
+            exit 1
+          fi
 
   presets:
     name: preset coverage
@@ -141,6 +265,10 @@ jobs:
   probe:
     name: probe ${{ matrix.cell }}
     needs: cells
+    # The fan-out this tier exists for, and the reason the tier is opt-in. See
+    # the header: one job per cell with a container each, and it outnumbered
+    # everything else on every pull request.
+    if: needs.cells.outputs.selected != '[]'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
@@ -148,7 +276,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        cell: ${{ fromJSON(needs.cells.outputs.cells) }}
+        cell: ${{ fromJSON(needs.cells.outputs.selected) }}
     steps:
       - uses: actions/checkout@v7
 
@@ -225,7 +353,12 @@ jobs:
   report:
     name: tier 2 report
     needs: [cells, probe]
-    if: always()
+    # `always()` so a probe that failed still reaches the aggregation -- that is
+    # the whole point of the report. The second half is new: with no cells
+    # selected there is nothing to aggregate, and the report would otherwise run
+    # against an empty results directory and call every declared cell MISSING,
+    # turning an opt-out into a red check (stokaro/ptah#2185).
+    if: always() && needs.cells.outputs.selected != '[]'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
