@@ -103,6 +103,18 @@ type Event struct {
 	// Reason is Ptah's own sentence about the outcome, typically a refusal.
 	Reason string `json:"reason,omitempty"`
 
+	// Target and DatabaseClass identify the live database a decision was
+	// about, by the identity the operator configured and the class they gave
+	// it. Neither is the URL, and neither carries a credential: the URL is the
+	// operator's and belongs in no record a model or a log reader sees.
+	//
+	// Without them two configured databases produce indistinguishable records,
+	// so a log cannot answer "which one did it read" -- which the page
+	// documenting this log said it could
+	// (stokaro/ptah#2138).
+	Target        string `json:"target,omitempty"`
+	DatabaseClass string `json:"database_class,omitempty"`
+
 	// Artifact, Paths and the digests identify what was touched, without
 	// carrying any of it.
 	Artifact     string   `json:"artifact,omitempty"`
