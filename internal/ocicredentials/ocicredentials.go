@@ -195,16 +195,28 @@ type environmentStore struct {
 }
 
 func (s environmentStore) Get(_ context.Context, serverAddress string) (auth.Credential, error) {
-	cred := EnvironmentCredential(s.opts)
+	cred, err := EnvironmentCredential(s.opts)
+	if err != nil {
+		return auth.EmptyCredential, err
+	}
 	if cred == auth.EmptyCredential {
 		return auth.EmptyCredential, nil
 	}
-	if scope := strings.TrimSpace(s.opts.getenv(RegistryEnv)); scope != "" &&
-		!strings.EqualFold(credentials.ServerAddressFromHostname(scope), serverAddress) &&
-		!strings.EqualFold(scope, serverAddress) {
+	if !s.answersFor(serverAddress) {
 		return auth.EmptyCredential, nil
 	}
 	return cred, nil
+}
+
+// answersFor reports whether the environment credential is offered to this
+// registry, which is every registry unless RegistryEnv narrows it.
+func (s environmentStore) answersFor(serverAddress string) bool {
+	scope := strings.TrimSpace(s.opts.getenv(RegistryEnv))
+	if scope == "" {
+		return true
+	}
+	return strings.EqualFold(credentials.ServerAddressFromHostname(scope), serverAddress) ||
+		strings.EqualFold(scope, serverAddress)
 }
 
 func (s environmentStore) Put(_ context.Context, _ string, _ auth.Credential) error {
@@ -217,9 +229,17 @@ func (s environmentStore) Delete(_ context.Context, _ string) error {
 		UsernameEnv, PasswordEnv)
 }
 
-// EnvironmentCredential returns the credential the environment describes, or
-// the empty credential when it describes none.
-func EnvironmentCredential(opts Options) auth.Credential {
+// EnvironmentCredential returns the credential the environment describes, the
+// empty credential when it describes none, and an error when it describes half
+// of one.
+//
+// The half-configured case is an error rather than a fall-through. Returning
+// the empty credential there would send the run on to the Ptah and Docker
+// stores, so a runner that meant to authenticate as one account would
+// authenticate as whichever account those hold -- or anonymously -- and the
+// only symptom would be an authorization message about the registry. The
+// variable that was set is the thing to name.
+func EnvironmentCredential(opts Options) (auth.Credential, error) {
 	username := strings.TrimSpace(opts.getenv(UsernameEnv))
 	password := opts.getenv(PasswordEnv)
 	token := strings.TrimSpace(opts.getenv(TokenEnv))
@@ -228,15 +248,38 @@ func EnvironmentCredential(opts Options) auth.Credential {
 	case token != "":
 		// An identity token authenticates on its own; a registry that issues
 		// one does not want a username beside it.
-		return auth.Credential{RefreshToken: token}
+		return auth.Credential{RefreshToken: token}, nil
 	case username != "" && password != "":
-		return auth.Credential{Username: username, Password: password}
+		return auth.Credential{Username: username, Password: password}, nil
+	case username != "":
+		return auth.EmptyCredential, fmt.Errorf(
+			"%s is set and %s is not: set both, or unset %s to use a stored credential",
+			UsernameEnv, PasswordEnv, UsernameEnv)
+	case password != "":
+		return auth.EmptyCredential, fmt.Errorf(
+			"%s is set and %s is not: set both, or unset %s to use a stored credential",
+			PasswordEnv, UsernameEnv, PasswordEnv)
 	default:
-		// A username with no password, or a password with no username, is a
-		// half-configured runner. Answering with it would send a credential the
-		// registry cannot accept and report the failure as a registry problem.
-		return auth.EmptyCredential
+		return auth.EmptyCredential, nil
 	}
+}
+
+// EnvironmentAnswersFor reports whether the environment holds a credential this
+// registry would be given.
+//
+// It asks the environment source itself rather than the chain: a chain lookup
+// answers from the Ptah or Docker store when the environment is scoped to
+// another registry, and a caller warning about the environment on that answer
+// would be describing the wrong source.
+func EnvironmentAnswersFor(opts Options, serverAddress string) (bool, error) {
+	cred, err := EnvironmentCredential(opts)
+	if err != nil {
+		return false, err
+	}
+	if cred == auth.EmptyCredential {
+		return false, nil
+	}
+	return environmentStore{opts: opts}.answersFor(serverAddress), nil
 }
 
 // EnvironmentNames lists the variables that carry a secret, so a caller that

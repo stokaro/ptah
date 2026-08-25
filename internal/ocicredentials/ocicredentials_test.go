@@ -57,16 +57,6 @@ func TestEnvironmentCredential_ReadsAWholeCredentialOrNone(t *testing.T) {
 			want: auth.Credential{RefreshToken: "t"},
 		},
 		{
-			name: "a username with no password is not a credential",
-			env:  map[string]string{"PTAH_OCI_USERNAME": "u"},
-			want: auth.EmptyCredential,
-		},
-		{
-			name: "a password with no username is not one either",
-			env:  map[string]string{"PTAH_OCI_PASSWORD": "p"},
-			want: auth.EmptyCredential,
-		},
-		{
 			name: "nothing set",
 			env:  make(map[string]string),
 			want: auth.EmptyCredential,
@@ -76,8 +66,9 @@ func TestEnvironmentCredential_ReadsAWholeCredentialOrNone(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got := ocicredentials.EnvironmentCredential(envOptions(t.TempDir(), test.env))
+			got, err := ocicredentials.EnvironmentCredential(envOptions(t.TempDir(), test.env))
 
+			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.Equals, test.want)
 		})
 	}
@@ -247,5 +238,126 @@ func TestSecretEnvironmentNames_NamesEveryValueThatIsASecret(t *testing.T) {
 	// has, or a secret leaves through the gap.
 	for _, secret := range secrets {
 		c.Assert(ocicredentials.EnvironmentNames(), qt.Contains, secret)
+	}
+}
+
+// Half a credential is a configuration error, not a fall-through.
+//
+// Returning the empty credential here would send the run on to the Ptah and
+// Docker stores, so a runner that meant to authenticate as one account would
+// authenticate as whichever account those hold -- or anonymously -- and the
+// only symptom would be an authorization message about the registry. Found in
+// review of stokaro/ptah#2241: the doc comment claimed this behavior and the
+// code did not have it.
+func TestEnvironmentCredential_HalfAPairIsAConfigurationError(t *testing.T) {
+	tests := []struct {
+		name string
+		env  map[string]string
+		says string
+	}{
+		{
+			name: "a username with no password",
+			env:  map[string]string{"PTAH_OCI_USERNAME": "u"},
+			says: "PTAH_OCI_PASSWORD",
+		},
+		{
+			name: "a password with no username",
+			env:  map[string]string{"PTAH_OCI_PASSWORD": "p"},
+			says: "PTAH_OCI_USERNAME",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			_, err := ocicredentials.EnvironmentCredential(envOptions(t.TempDir(), test.env))
+
+			c.Assert(err, qt.ErrorMatches, ".*"+test.says+".*")
+		})
+	}
+}
+
+// The error reaches the chain rather than being swallowed by the fallbacks.
+//
+// This is the assertion that matters: the store below the environment holds a
+// working credential for the same registry, so a chain that fell through would
+// return it and the run would succeed as the wrong account.
+func TestStore_AHalfConfiguredEnvironmentDoesNotFallThroughToAStoredAccount(t *testing.T) {
+	c := qt.New(t)
+	home := t.TempDir()
+	t.Setenv("DOCKER_CONFIG", filepath.Join(home, "nodocker"))
+
+	stored := envOptions(home, make(map[string]string))
+	_, err := ocicredentials.Save(context.Background(), stored,
+		"registry.example.com", auth.Credential{Username: "stored", Password: "p"})
+	c.Assert(err, qt.IsNil)
+
+	// The control: with nothing in the environment, that stored account answers.
+	store, err := ocicredentials.Store(stored)
+	c.Assert(err, qt.IsNil)
+	got, err := store.Get(context.Background(), "registry.example.com")
+	c.Assert(err, qt.IsNil)
+	c.Assert(got.Username, qt.Equals, "stored")
+
+	half, err := ocicredentials.Store(envOptions(home, map[string]string{"PTAH_OCI_USERNAME": "ci"}))
+	c.Assert(err, qt.IsNil)
+
+	_, err = half.Get(context.Background(), "registry.example.com")
+
+	c.Assert(err, qt.ErrorMatches, ".*PTAH_OCI_PASSWORD.*")
+}
+
+// EnvironmentAnswersFor asks the environment, not the chain.
+//
+// A chain lookup answers from the Ptah or Docker store when the environment is
+// scoped to another registry, and a caller warning about the environment on
+// that answer would name the wrong source. Found in review of
+// stokaro/ptah#2241.
+func TestEnvironmentAnswersFor_IgnoresWhatTheStoresHold(t *testing.T) {
+	tests := []struct {
+		name    string
+		env     map[string]string
+		address string
+		want    bool
+	}{
+		{
+			name:    "unscoped answers for this registry",
+			env:     map[string]string{"PTAH_OCI_USERNAME": "u", "PTAH_OCI_PASSWORD": "p"},
+			address: "registry.example.com",
+			want:    true,
+		},
+		{
+			name: "scoped elsewhere does not, even though a stored credential exists",
+			env: map[string]string{
+				"PTAH_OCI_USERNAME": "u", "PTAH_OCI_PASSWORD": "p",
+				"PTAH_OCI_REGISTRY": "other.example.com",
+			},
+			address: "registry.example.com",
+			want:    false,
+		},
+		{
+			name:    "an empty environment does not",
+			env:     make(map[string]string),
+			address: "registry.example.com",
+			want:    false,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			home := t.TempDir()
+			t.Setenv("DOCKER_CONFIG", filepath.Join(home, "nodocker"))
+			opts := envOptions(home, test.env)
+			// A stored credential for the same registry, which is what a
+			// whole-chain lookup would wrongly report as the environment.
+			_, err := ocicredentials.Save(context.Background(), envOptions(home, make(map[string]string)),
+				"registry.example.com", auth.Credential{Username: "stored", Password: "p"})
+			c.Assert(err, qt.IsNil)
+
+			answers, err := ocicredentials.EnvironmentAnswersFor(opts, test.address)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(answers, qt.Equals, test.want)
+		})
 	}
 }

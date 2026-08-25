@@ -428,9 +428,18 @@ A CI runner should not need a login step, a keychain, or a config file:
 | `PTAH_OCI_CONFIG` | Moves Ptah's credential file. |
 | `PTAH_OCI_CREDENTIAL_STORE` | `file` keeps the credential out of the platform keychain. |
 
-A username without a password, or a password without a username, is not a
-credential and is not offered to the registry: a half-configured runner reports
-the missing variable rather than an authentication failure.
+A username without a password, or a password without a username, is a
+configuration error and stops the run:
+
+```console
+error: ... failed to resolve credential: PTAH_OCI_USERNAME is set and PTAH_OCI_PASSWORD
+is not: set both, or unset PTAH_OCI_USERNAME to use a stored credential
+```
+
+It deliberately does not fall through to the stored credentials. A runner that
+meant to authenticate as one account would otherwise authenticate as whichever
+account those hold — or anonymously — and the only symptom would be an
+authorization message about the registry.
 
 Set `PTAH_OCI_REGISTRY` when a job talks to more than one registry, so a
 credential for one is not offered to the other.

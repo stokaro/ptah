@@ -240,17 +240,15 @@ func promptPassword(out io.Writer, in io.Reader) (string, error) {
 
 // environmentAnswersFor reports whether the environment would answer for this
 // registry ahead of anything this command stores.
+//
+// It asks the environment source rather than the whole chain. A chain lookup
+// answers from the Ptah or Docker store when the environment is scoped to a
+// different registry, and the note below would then describe a source that has
+// nothing to do with this registry.
 func environmentAnswersFor(registryName string) bool {
-	opts := ocicredentials.Options{}
-	store, err := ocicredentials.Store(opts)
-	if err != nil {
-		return false
-	}
-	if ocicredentials.EnvironmentCredential(opts) == auth.EmptyCredential {
-		return false
-	}
-	cred, err := store.Get(context.Background(), credentials.ServerAddressFromRegistry(registryName))
-	return err == nil && cred != auth.EmptyCredential
+	answers, err := ocicredentials.EnvironmentAnswersFor(
+		ocicredentials.Options{}, credentials.ServerAddressFromRegistry(registryName))
+	return err == nil && answers
 }
 
 func environmentSourceName() string {
