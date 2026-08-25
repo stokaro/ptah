@@ -729,6 +729,25 @@ describes. Before this the read dropped the key entirely: a declaration carrying
 exited 2 against any ClickHouse database Ptah could create because the
 description it produced could not be rendered (stokaro/ptah#1603).
 
+Every other clause of the engine is carried with it, so a table read and
+replayed is the table that was read rather than a MergeTree that happens to hold
+the same columns. The engine is taken with its parameters — a
+`ReplacingMergeTree(ver)` stays one, and does not fall back to the default
+`MergeTree`, which would merge on nothing — and so are the `PARTITION BY`,
+`PRIMARY KEY`, `ORDER BY`, `SAMPLE BY`, `TTL` and `SETTINGS` clauses. The `TTL`
+is the one that changes what the data does rather than how fast it is read: a
+table replayed without it keeps rows it was configured to delete.
+
+Two things follow that are worth knowing before adopting the round trip:
+
+- **The settings are the server's resolved values, not the ones a `CREATE`
+  named.** `system.tables` reports `index_granularity = 8192` for a table that
+  never mentioned it, so a description carries that value and a replay pins it.
+  It is the value the source table is actually running with.
+- **A clause keyword is a legal column name, and the two are told apart by
+  position.** A table sorted by a column named `settings` or `ttl` is read as
+  what it is; the clause is only recognized where a clause can start.
+
 Plain views participate in the complete render, plan, and introspection cycle.
 Ptah emits `CREATE VIEW`, `CREATE OR REPLACE VIEW`, and `DROP VIEW`, preserving
 qualified names and query bodies, and reads ordinary views from
