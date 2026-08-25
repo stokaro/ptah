@@ -37,6 +37,24 @@ emit_package_snapshot() {
 		done
 }
 
+# list_ledger_packages emits the sorted package set docs/public_api.md lists,
+# one import path per line. Only list items count: the ledger's entries are
+# bullets of the shape `- \`<module>/<package>\``, and a backticked path inside
+# a prose paragraph is a mention, not a listing, so it must not join the set.
+#
+# The package prefix is derived from the module itself. A literal here silently
+# stops matching the day the module path moves, and because the pipeline runs
+# under `set -euo pipefail` the failing grep aborts the script with zero bytes
+# on stdout and stderr -- a check that reports failure without saying anything.
+list_ledger_packages() {
+	local module_path
+	module_path="$(go list -m -f '{{.Path}}')"
+	grep -Eo "^- \`${module_path}[^\`]+\`" docs/public_api.md |
+		tr -d '`' |
+		sed 's/^- //' |
+		sort -u
+}
+
 # Internal mode used by the guard self-test (internal/apiguard): emit the
 # fragment for a single package to stdout without touching the snapshot file or
 # reading docs/public_api.md. This keeps the per-package generation logic in one
@@ -50,6 +68,15 @@ if [[ "${1:-}" == "--emit-package" ]]; then
 	exit 0
 fi
 
+# Internal mode used by the docs-sync gate (check-public-api-docs-sync.sh) and
+# the guard self-test (internal/apiguard): print the set of packages the ledger
+# lists and nothing else, so every consumer reads the ledger through this one
+# scrape.
+if [[ "${1:-}" == "--list-packages" ]]; then
+	list_ledger_packages
+	exit 0
+fi
+
 snapshot="docs/public_api.snapshot"
 update=0
 if [[ "${1:-}" == "--update" ]]; then
@@ -60,15 +87,9 @@ tmp="$(mktemp)"
 packages="$(mktemp)"
 trap 'rm -f "$tmp" "$packages"' EXIT
 
-# Derive the package prefix from the module itself. A literal here silently
-# stops matching the day the module path moves, and because the pipeline runs
-# under `set -euo pipefail` the failing grep aborts the script with zero bytes
-# on stdout and stderr -- a check that reports failure without saying anything.
 module_path="$(go list -m -f '{{.Path}}')"
 
-grep -Eo "\`${module_path}[^\`]+\`" docs/public_api.md |
-	tr -d '`' |
-	sort -u >"$packages"
+list_ledger_packages >"$packages"
 
 if [[ ! -s "$packages" ]]; then
 	printf '%s: found no %s packages in docs/public_api.md; refusing to report a vacuous pass\n' \

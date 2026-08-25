@@ -8,8 +8,11 @@ allowlist="$(mktemp)"
 packages="$(mktemp)"
 trap 'rm -f "$allowlist" "$packages"' EXIT
 
-grep -Eo "\`${module_path}[^\`]+\`" docs/public_api.md |
+# List items only. A backticked package path in a prose paragraph is a
+# mention, not a listing, and must not join the allowlist.
+grep -Eo "^- \`${module_path}[^\`]+\`" docs/public_api.md |
 	tr -d '`' |
+	sed 's/^- //' |
 	sort -u >"$allowlist"
 
 if [[ ! -s "$allowlist" ]]; then

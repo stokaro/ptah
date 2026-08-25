@@ -72,7 +72,10 @@ jobs:
         run: scripts/check-public-api-snapshot.sh
 
       - name: Check public Go API released baseline
-        run: scripts/check-public-api-released.sh
+        run: scripts/check-public-api-released.sh --require-baseline
+
+      - name: Check public Go API docs sync
+        run: scripts/check-public-api-docs-sync.sh
 
       - name: Check annotation JSON Schema freshness
         run: |

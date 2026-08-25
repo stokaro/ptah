@@ -34,8 +34,11 @@ baseline_dir="$(mktemp -d)"
 exports_dir="$(mktemp -d)"
 trap 'rm -f "$packages"; rm -rf "$baseline_dir" "$exports_dir"' EXIT
 
-grep -Eo "\`${module_path}[^\`]+\`" docs/public_api.md |
+# List items only. A backticked package path in a prose paragraph is a
+# mention, not a listing, and must not join the checked set.
+grep -Eo "^- \`${module_path}[^\`]+\`" docs/public_api.md |
 	tr -d '`' |
+	sed 's/^- //' |
 	sort -u >"$packages"
 
 if [[ ! -s "$packages" ]]; then
