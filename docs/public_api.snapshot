@@ -7732,6 +7732,20 @@ type DBColumn struct {
     // for dialects that expose identity metadata (currently PostgreSQL via
     // pg_attribute.attidentity).
     IdentityGeneration string `json:"identity_generation,omitempty"`
+
+    // IdentityStart and IdentityIncrement are the first value an identity
+    // column issues and the step between values, as the catalog spells them.
+    //
+    // They are strings rather than numbers because that is what the model they
+    // feed uses, and because the value is not always an int64: SQL Server
+    // allows DECIMAL(38,0) IDENTITY, whose seed does not fit one. Carrying the
+    // digits keeps a reader from having to choose between rounding and
+    // refusing.
+    //
+    // Empty for a non-identity column, and for an identity column whose reader
+    // does not report them.
+    IdentityStart     string `json:"identity_start,omitempty"`
+    IdentityIncrement string `json:"identity_increment,omitempty"`
 }
     DBColumn represents a database column.
 

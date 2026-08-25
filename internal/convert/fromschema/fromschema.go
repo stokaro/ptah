@@ -593,6 +593,13 @@ func FromField(field goschema.Field, enums []goschema.Enum, targetPlatform strin
 	}
 	if field.AutoInc {
 		column.SetAutoIncrement()
+		// SQL Server spells an identity column as AutoInc and never carries a
+		// generation mode, which is PostgreSQL's word. Gating the range on the
+		// mode alone left IDENTITY(seed, increment) reachable only for columns
+		// that declare one, so a seed read off SQL Server never arrived
+		// (stokaro/ptah#2196).
+		column.IdentityStart = field.IdentityStart
+		column.IdentityIncrement = field.IdentityIncrement
 	}
 	if field.IdentityGeneration != "" {
 		column.SetIdentity(field.IdentityGeneration, field.IdentityStart, field.IdentityIncrement)
@@ -687,6 +694,13 @@ func FromFieldWithoutForeignKeys(field goschema.Field, enums []goschema.Enum, ta
 	// Set auto increment
 	if field.AutoInc {
 		column.SetAutoIncrement()
+		// SQL Server spells an identity column as AutoInc and never carries a
+		// generation mode, which is PostgreSQL's word. Gating the range on the
+		// mode alone left IDENTITY(seed, increment) reachable only for columns
+		// that declare one, so a seed read off SQL Server never arrived
+		// (stokaro/ptah#2196).
+		column.IdentityStart = field.IdentityStart
+		column.IdentityIncrement = field.IdentityIncrement
 	}
 	if field.IdentityGeneration != "" {
 		column.SetIdentity(field.IdentityGeneration, field.IdentityStart, field.IdentityIncrement)
