@@ -342,22 +342,33 @@ type DBColumn struct {
 	IsPrimaryKey     bool   `json:"is_primary_key"`    // Derived field
 	IsUnique         bool   `json:"is_unique"`         // Derived field
 
-	// TypeIsDeclaredText records that DataType is the text an author wrote,
-	// stored verbatim, rather than a type the engine resolved the declaration
-	// to.
+	// TypeIsDeclaredText records that DataType must be written back as it
+	// stands, because canonicalizing it would describe a different column.
 	//
-	// SQLite is the only engine Ptah reads where that is true: it keeps the
-	// declaration and derives an affinity from it at use time, so
-	// `VARCHAR(80)` comes back as `VARCHAR(80)` and means TEXT. Every other
-	// engine answers with a type of its own -- PostgreSQL turns `varchar(80)`
-	// into `character varying` plus a width, Oracle turns `INTEGER` into
-	// `NUMBER(10)` -- so the distinction has nowhere to apply there.
+	// The name records where the fact was first found. SQLite keeps the
+	// declaration and derives an affinity from it at use time, so `VARCHAR(80)`
+	// comes back as `VARCHAR(80)` and means TEXT -- the text an author wrote,
+	// stored verbatim. A description that rewrote it to `TEXT` replayed as a
+	// different table, and the comparison planned a rebuild that changed
+	// nothing (stokaro/ptah#2040).
+	//
+	// The contract is broader than that origin, and two more engines need it
+	// for a reason of their own: their catalog answers with a NATIVE type whose
+	// name Ptah's portable mapping also uses for something else.
+	//
+	//   - SQL Server: `varchar` is one byte per character. The portable mapping
+	//     turns a declared VARCHAR into NVARCHAR, which is two, so a native
+	//     varchar re-rendered bare comes back Unicode (stokaro/ptah#2147).
+	//   - ClickHouse: `DateTime` is second precision and four bytes wide. The
+	//     portable mapping turns a declared DATETIME into DateTime64(3), which
+	//     is millisecond precision and eight (stokaro/ptah#2142).
+	//
+	// PostgreSQL, MySQL, MariaDB and Oracle do not set it: their catalogs
+	// answer with types whose names the portable mapping leaves alone, so there
+	// is nothing for the flag to protect.
 	//
 	// A renderer reads it to decide whether it may canonicalize the spelling.
-	// It must not: a description of a SQLite database that rewrote
-	// `VARCHAR(80)` to `TEXT` would replay as a different table, and the
-	// comparison then planned a rebuild that changed nothing
-	// (stokaro/ptah#2040).
+	// It must not.
 	TypeIsDeclaredText bool `json:"type_is_declared_text,omitempty"`
 
 	// DomainName names the domain a column is declared with, empty for every

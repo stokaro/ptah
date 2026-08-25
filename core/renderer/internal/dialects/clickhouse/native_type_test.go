@@ -40,6 +40,14 @@ func TestCreateTable_ATypeNamedForThisTargetIsWrittenAsItStands(t *testing.T) {
 			want:   "created_at DateTime\n",
 		},
 		{
+			// The same fact reaching the renderer the other way: a type read
+			// from ClickHouse's own catalog carries the marker rather than the
+			// escape hatch (stokaro/ptah#2142).
+			name:   "a native DateTime read from the catalog",
+			column: &ast.ColumnNode{Name: "created_at", Type: "DateTime", TypeIsDeclaredText: true},
+			want:   "created_at DateTime\n",
+		},
+		{
 			name:   "a native DateTime64 with its own precision",
 			column: &ast.ColumnNode{Name: "created_at", Type: "DateTime64(6)", TypeRawSQL: true},
 			want:   "created_at DateTime64(6)\n",

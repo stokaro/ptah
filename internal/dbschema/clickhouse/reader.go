@@ -421,12 +421,18 @@ func (r *Reader) readColumnsByTable(dbName string) (map[string][]types.DBColumn,
 			nullable = "YES"
 		}
 		col := types.DBColumn{
-			Name:            name,
-			DataType:        dataType,
-			ColumnType:      dataType,
-			IsNullable:      nullable,
-			IsPrimaryKey:    inPrimaryKey != 0,
-			OrdinalPosition: position,
+			Name:     name,
+			DataType: dataType,
+			// The catalog answers with ClickHouse's own type name, and the
+			// portable mapping uses some of those names for something else: a
+			// declared DATETIME becomes DateTime64(3), which is millisecond
+			// precision and eight bytes rather than second precision and four
+			// (stokaro/ptah#2142).
+			TypeIsDeclaredText: true,
+			ColumnType:         dataType,
+			IsNullable:         nullable,
+			IsPrimaryKey:       inPrimaryKey != 0,
+			OrdinalPosition:    position,
 		}
 		// ClickHouse columns can have several flavours of default
 		// (DEFAULT, MATERIALIZED, ALIAS, EPHEMERAL). Only the plain DEFAULT
