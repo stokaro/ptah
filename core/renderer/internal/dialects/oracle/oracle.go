@@ -496,7 +496,7 @@ func (r *Renderer) VisitCreateSequence(node *ast.CreateSequenceNode) error {
 		create += r.createGuard()
 	}
 	parts := []string{create, escapeQualifiedIdentifier(node.Name)}
-	parts = append(parts, sequenceOptions(node.Start, node.Increment, node.MinValue, node.MaxValue, &node.Cycle)...)
+	parts = append(parts, sequenceOptions(node.Start, node.Increment, node.MinValue, node.MaxValue, node.Cache, &node.Cycle)...)
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
 	return nil
 }
@@ -512,7 +512,7 @@ func (r *Renderer) VisitAlterSequence(node *ast.AlterSequenceNode) error {
 		// cannot silently renumber a key column.
 		return unsupportedFeaturef("ALTER SEQUENCE %s: changing the start counter is not rendered for Oracle", node.Name)
 	}
-	options := sequenceOptions(nil, node.Increment, node.MinValue, node.MaxValue, node.Cycle)
+	options := sequenceOptions(nil, node.Increment, node.MinValue, node.MaxValue, node.Cache, node.Cycle)
 	if len(options) == 0 {
 		return nil
 	}
