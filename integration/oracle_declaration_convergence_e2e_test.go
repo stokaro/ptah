@@ -21,6 +21,7 @@ import (
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/dbexprprobe"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/genexprprobe"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -238,7 +239,7 @@ func oracleGeneratedExpressionOptions(
 	c.Assert(err, qt.IsNil)
 	c.Assert(probes, qt.Not(qt.HasLen), 0)
 
-	resolved, err := dbschema.ResolveGeneratedExpressions(ctx, dev, probes)
+	resolved, err := dbexprprobe.ResolveGeneratedExpressions(ctx, dev, probes)
 	c.Assert(err, qt.IsNil)
 	// Asserted rather than assumed: an empty map is what a resolver that
 	// silently did nothing returns, and it would make the comparison below pass

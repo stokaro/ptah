@@ -178,7 +178,6 @@
 //
 // The package includes security considerations:
 //
-//   - Password masking in connection string formatting
 //   - Proper SQL parameter binding to prevent injection
 //   - Connection validation and health checking
 //   - Secure handling of database credentials

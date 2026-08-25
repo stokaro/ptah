@@ -1,4 +1,4 @@
-package dbschema
+package dbexprprobe
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/dbschema"
 )
 
 // GeneratedExpressionProbe is one declared table whose generated columns need
@@ -54,13 +55,15 @@ type GeneratedExpressionProbe struct {
 // spellings. So the probe is a permanent table that has to be dropped
 // afterwards, and running that against the schema a comparison is only supposed
 // to read would create and drop objects in it, and leak one if the process died
-// in between.
+// in between. For the same reason this is the one resolver in the package with
+// no pinned-session gate: no transaction could take its DDL back anyway, so a
+// pinned session loses nothing it had.
 //
 // A target that stores what it was given needs none of this and gets an empty
 // map, which leaves every such comparison exactly as it was.
 func ResolveGeneratedExpressions(
 	ctx context.Context,
-	dev *DatabaseConnection,
+	dev *dbschema.DatabaseConnection,
 	probes []GeneratedExpressionProbe,
 ) (map[string]config.GeneratedExpression, error) {
 	if dev == nil || len(probes) == 0 {
@@ -99,7 +102,7 @@ func GeneratedExpressionProbeTable(index int) string {
 
 func resolveOneGeneratedProbe(
 	ctx context.Context,
-	dev *DatabaseConnection,
+	dev *dbschema.DatabaseConnection,
 	probe GeneratedExpressionProbe,
 	into map[string]config.GeneratedExpression,
 ) (resultErr error) {
@@ -163,7 +166,7 @@ const oracleVirtualColumnQuery = `
 
 func readOracleVirtualColumnExpressions(
 	ctx context.Context,
-	dev *DatabaseConnection,
+	dev *dbschema.DatabaseConnection,
 	table string,
 ) (map[string]string, error) {
 	rows, err := dev.QueryContext(ctx, oracleVirtualColumnQuery, strings.ToUpper(table))

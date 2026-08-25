@@ -21,6 +21,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/migrationsource"
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dburldisplay"
 	"go.5x5.cz/ptah/internal/migrationintegrity"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -350,7 +351,7 @@ func outputJSON(w io.Writer, status *migrator.MigrationStatus) error {
 
 func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *dbschema.DatabaseConnection, verbose bool) error { //revive:disable-line:flag-parameter output mode is caller-owned command state
 	emit.Println("=== MIGRATION STATUS ===")
-	emit.Printf("Database: %s\n", dbschema.FormatDatabaseURL("***"))
+	emit.Printf("Database: %s\n", dburldisplay.Format("***"))
 	emit.Printf("Dialect: %s\n", conn.Info().Dialect)
 	emit.Printf("Schema: %s\n", conn.Info().Schema)
 	emit.Println()

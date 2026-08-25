@@ -1815,9 +1815,9 @@ func CockroachDB26() Capabilities {
 // RangeTypes stays false. cockroachdb/cockroach#27791 is still open and v26.3
 // still points at it.
 //
-// One narrowing to know about: dbschema.ResolveDomainExpressions creates its
-// probe domain in pg_temp, and CockroachDB answers `cannot create type ... in
-// temporary schema` (SQLSTATE 3F000). The probe reports that as unresolved, so
+// One narrowing to know about: the domain expression probe (in
+// internal/dbexprprobe) creates its probe domain in pg_temp, and CockroachDB
+// answers `cannot create type ... in temporary schema` (SQLSTATE 3F000). The probe reports that as unresolved, so
 // CHECK and DEFAULT stay uncompared here while base type and NOT NULL are
 // compared as everywhere else.
 func CockroachDB263() Capabilities {

@@ -11,6 +11,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dburldisplay"
 )
 
 // Outcome is the verdict for one capability row.
@@ -269,12 +270,12 @@ func Run(ctx context.Context, dbURL string) (*Report, error) {
 	}
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	if err != nil {
-		return nil, fmt.Errorf("connect to %s: %w", dbschema.FormatDatabaseURL(dbURL), err)
+		return nil, fmt.Errorf("connect to %s: %w", dburldisplay.Format(dbURL), err)
 	}
 	defer dbschema.CloseAndWarn(conn)
 
 	report := &Report{
-		URL:     dbschema.FormatDatabaseURL(dbURL),
+		URL:     dburldisplay.Format(dbURL),
 		Dialect: platform.NormalizeDialect(conn.Info().Dialect),
 		Banner:  conn.Info().Version,
 	}

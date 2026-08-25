@@ -13,6 +13,7 @@ import (
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
+	"go.5x5.cz/ptah/internal/dburldisplay"
 	"go.5x5.cz/ptah/internal/rolescope"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/internal/timescale"
@@ -59,7 +60,7 @@ func readDBCommand(cmd *cobra.Command, opts *options) error {
 	}
 
 	stderr := cmd.ErrOrStderr()
-	fmt.Fprintf(stderr, "Reading schema from database: %s\n", dbschema.FormatDatabaseURL(opts.dbURL))
+	fmt.Fprintf(stderr, "Reading schema from database: %s\n", dburldisplay.Format(opts.dbURL))
 
 	connectTimeout, err := dbcli.ParseConnectTimeout(opts.connectTimeout)
 	if err != nil {
