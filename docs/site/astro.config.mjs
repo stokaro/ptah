@@ -89,6 +89,7 @@ export default defineConfig({
             { slug: 'schema/yaml' },
             { slug: 'schema/hcl' },
             { slug: 'schema/sql' },
+            { slug: 'schema/dbml' },
             { slug: 'schema/orm-and-external' },
             { slug: 'schema/composite' },
             { slug: 'schema/visualize' },
