@@ -127,6 +127,12 @@ func synthesizeTablePrimaryKeyConstraints(
 			Type:       "PRIMARY KEY",
 			Table:      table.QualifiedName(),
 			Columns:    append([]string(nil), columns...),
+			// primaryKeyConstraintChanged compares the payload, so a synthesized
+			// constraint without it is unequal to every covering key the catalog
+			// reports -- and the difference is a DROP and an ADD that removes the
+			// payload from the live index, after which the schema reads as synced
+			// (stokaro/ptah#2199).
+			IncludeColumns: append([]string(nil), table.PrimaryKeyInclude...),
 		})
 	}
 	return synthesized
