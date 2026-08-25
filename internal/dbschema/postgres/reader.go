@@ -611,6 +611,20 @@ func (r *Reader) constraintDefinitionExpr() string {
 // formattedTypeExpr renders the projection that spells a column's type the way
 // the server does, or a constant where pg_catalog's helpers do not resolve.
 //
+// A third shape reads it: a column whose type belongs to an extension. Such a
+// type is reported by information_schema as the bare category USER-DEFINED with
+// no modifier in any field, so vector(384) came back as vector and the
+// dimension -- the only part that makes the column indexable -- was gone. The
+// replay was then refused by the server with "column does not have dimensions"
+// while --dry-run against the source still answered "Schema is synced", because
+// both sides of that comparison read through this projection (stokaro/ptah#2121).
+//
+// atttypmod is what keeps that branch off everything else. An enum and a
+// composite type are USER-DEFINED too and carry -1, so their spelling does not
+// change; a domain is already covered by domain_name; and varchar and the other
+// sized built-ins are not USER-DEFINED at all, so the sized-type branches and
+// the SERIAL detection downstream stay where #1138 left them.
+//
 // The expression it replaces reads format_type inside a CASE that only an array
 // or a domain column takes. That is not enough on a catalog without the
 // function: the name is resolved before any row is, so a branch no row would
@@ -621,6 +635,7 @@ func (r *Reader) formattedTypeExpr() string {
 		return "'' AS formatted_type"
 	}
 	return `CASE WHEN data_type = 'ARRAY' OR col.domain_name IS NOT NULL
+				OR (data_type = 'USER-DEFINED' AND a.atttypmod <> -1)
 				THEN format_type(a.atttypid, a.atttypmod)
 				ELSE ''
 			END AS formatted_type`
