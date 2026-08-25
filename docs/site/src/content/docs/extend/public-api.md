@@ -141,7 +141,7 @@ use cumulative `partial_hashes`. A failure after changing transaction mode
 cannot reduce the recorded applied count below that verified prefix.
 
 Negative `applied` or `total` values and `applied > total` are rejected whenever
-a revision is read, including through `GetRevisions`, `GetAppliedRevisions`,
+a revision is read, including through `GetRevisions`,
 `GetAppliedMigrations`, `GetCurrentVersion`, and `GetMigrationStatus`. Native
 rows accept only `applied`, `pending`, `failed`, `pending:down`, and
 `failed:down`. An applied row cannot claim that state until `applied == total`;
@@ -186,10 +186,10 @@ Atlas transaction-mode directive validation errors expose
 the source file and transaction-mode details in its message.
 
 This pre-GA API replaces the former Boolean transaction fields. Use
-`NewMigrationFromSQLFiles` or its interceptor variant to load an up/down pair:
-they return a complete `Migration` with transaction modes, timeouts, source
-paths, and functions attached, so execution policy cannot be discarded while
-assembling a registered provider.
+`NewFSMigrationProvider` (with `WithStatementInterceptor` when an external
+executor takes over statements) to load up/down pairs: loaded migrations carry
+transaction modes, timeouts, source paths, and functions attached, so
+execution policy cannot be discarded while assembling a provider.
 
 `MigrateUpOptions.PlanObserver` receives the plan recalculated under the
 migration lock before transaction-mode validation, including an empty plan. It
@@ -281,11 +281,10 @@ string, so the desired spelling `public.orders` and the introspected spelling
 A reference the target schema cannot resolve is rejected with
 `ptaherr.ErrInvalidSchemaDiff`; it is never dropped from the plan.
 
-Use `migration/generator.GenerateCheckpointWithDatabase` for a SQL Server
-schema whose live catalog semantics must survive checkpoint planning.
-`GenerateCheckpointWithDatabaseInfo` accepts a caller-supplied complete
-identifier snapshot; the dialect-only checkpoint helper uses conservative
-offline rules.
+Use `migration/generator.GenerateCheckpointFromShadow` for a SQL Server
+schema whose live catalog semantics must survive checkpoint planning: the
+shadow replay reads identifier semantics from the live catalog, where the
+dialect-only offline rules stay conservative.
 
 `migration/generator.PlanMigration` returns an unpublished plan bound to the
 migration-directory snapshot used during planning. `MigrationPlan.WriteFiles`

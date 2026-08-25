@@ -132,7 +132,7 @@ func generateCommand(cmd *cobra.Command, opts *options) error {
 	fmt.Fprintf(stderr, "Found %d tables, %d fields, %d indexes, %d enums, %d embedded fields\n",
 		len(result.Tables), len(result.Fields), len(result.Indexes), len(result.Enums), len(result.EmbeddedFields))
 	fmt.Fprintln(stderr)
-	fmt.Fprintln(stderr, goschema.GetDependencyInfo(result))
+	fmt.Fprintln(stderr, getDependencyInfo(result))
 	fmt.Fprintln(stderr)
 
 	// Determine which dialects to generate

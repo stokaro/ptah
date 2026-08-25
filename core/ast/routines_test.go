@@ -6,7 +6,6 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/ast/mocks"
 )
 
 func TestNewMySQLRoutine(t *testing.T) {
@@ -41,7 +40,7 @@ func TestMySQLRoutineNode_AcceptDelegatesToRawSQL(t *testing.T) {
 	c := qt.New(t)
 
 	routine := ast.NewMySQLRoutine(" CREATE PROCEDURE p() SELECT 1; ", "mysql", ast.RoutineKindProcedure)
-	visitor := &mocks.MockVisitor{}
+	visitor := &MockVisitor{}
 
 	err := routine.Accept(visitor)
 
@@ -53,7 +52,7 @@ func TestMySQLRoutineNode_AcceptPropagatesRawSQLError(t *testing.T) {
 	c := qt.New(t)
 
 	routine := ast.NewMySQLRoutine("CREATE PROCEDURE p() SELECT 1;", "mysql", ast.RoutineKindProcedure)
-	visitor := &mocks.MockVisitor{ReturnError: true}
+	visitor := &MockVisitor{ReturnError: true}
 
 	err := routine.Accept(visitor)
 
@@ -75,7 +74,7 @@ func TestPostgresDoBlockNode_AcceptDelegatesToRawSQL(t *testing.T) {
 	c := qt.New(t)
 
 	block := ast.NewPostgresDoBlock(" DO $$ BEGIN PERFORM 1; END $$; ")
-	visitor := &mocks.MockVisitor{}
+	visitor := &MockVisitor{}
 
 	err := block.Accept(visitor)
 
@@ -102,7 +101,7 @@ func TestPostgresRoutineNode_AcceptDelegatesToRawSQL(t *testing.T) {
 	c := qt.New(t)
 
 	routine := ast.NewPostgresRoutine(" CREATE PROCEDURE p() LANGUAGE sql AS $$ SELECT 1 $$; ", "postgres", ast.RoutineKindProcedure)
-	visitor := &mocks.MockVisitor{}
+	visitor := &MockVisitor{}
 
 	err := routine.Accept(visitor)
 
@@ -130,7 +129,7 @@ func TestSQLServerRoutineNode_AcceptDelegatesToRawSQL(t *testing.T) {
 	c := qt.New(t)
 
 	routine := ast.NewSQLServerRoutine(" CREATE PROCEDURE [dbo].[p] AS SELECT 1; ", "sqlserver", ast.RoutineKindProcedure)
-	visitor := &mocks.MockVisitor{}
+	visitor := &MockVisitor{}
 
 	err := routine.Accept(visitor)
 

@@ -163,7 +163,7 @@ func resolveRedeclarationPolicy() (redeclarationPolicy, error) {
 //
 // They are kept apart rather than joined into one string because every name
 // here is an SQL identifier and quoting lets one contain the separator, which is
-// the encoding mistake [goschema.Deduplicate] documents at
+// the encoding mistake goschema's deduplication pass documents at
 // deduplicateNamedDefinitions.
 //
 // There is deliberately NO case fold on the name, and that is the whole point of
@@ -277,7 +277,7 @@ func (p *parser) rejectRedeclarations() error {
 // documentDeclarations lists the named objects one parsed document declares, in
 // declaration order.
 //
-// Each kind is keyed by the identity [goschema.Deduplicate] already folds that
+// Each kind is keyed by the identity goschema's deduplication pass already folds that
 // kind by, and that pairing is the point rather than a coincidence: the defect
 // being closed is the fold's silent drop, so a COARSER key here would refuse a
 // pair the fold keeps apart, and a FINER one would leave a drop unreported.
@@ -492,7 +492,7 @@ func (p *parser) recordForeignKey(table goschema.Table, name string) {
 // that is what the composite finalization folds them by.
 //
 // The enum key is the one that moves. By default it is the BARE name, matching
-// both [goschema.Deduplicate] and the pinned Atlas community binary v1.3.0,
+// both goschema's deduplication pass and the pinned Atlas community binary v1.3.0,
 // which refuses `enum "mood"` in schema public alongside `enum "mood"` in schema
 // other with `duplicate enum "mood"` (measured, PostgreSQL 17.10, realm-scoped
 // dev URL). Reading that document at exit 0 is the direction the drop-in rule
@@ -548,7 +548,7 @@ func indexOwner(index goschema.Index) string {
 
 // constraintOwner names the table a constraint belongs to, preferring an
 // explicit table over the block it was written in -- the same preference
-// [goschema.Deduplicate] applies at constraintDedupKey.
+// goschema's deduplication pass applies at constraintDedupKey.
 func constraintOwner(constraint goschema.Constraint) string {
 	if table := strings.TrimSpace(constraint.Table); table != "" {
 		return table

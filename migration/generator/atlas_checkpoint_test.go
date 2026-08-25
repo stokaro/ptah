@@ -87,28 +87,6 @@ func TestAtlasCheckpointArtifact_NamesAndDescriptions(t *testing.T) {
 	}
 }
 
-func TestWriteAtlasCheckpointFile_WritesFileAndSum(t *testing.T) {
-	c := qt.New(t)
-	dir := t.TempDir()
-	c.Assert(os.WriteFile(filepath.Join(dir, "20250801000001_init.sql"),
-		[]byte("CREATE TABLE users (id integer);\n"), 0o600), qt.IsNil)
-
-	path, err := generator.WriteAtlasCheckpointFile(dir, 20250801000003, "snapshot", "CREATE TABLE users (id integer);")
-	c.Assert(err, qt.IsNil)
-	c.Assert(filepath.Base(path), qt.Equals, "20250801000003_snapshot.sql")
-
-	// atlas.sum must cover BOTH the pre-existing migration and the checkpoint:
-	// a sum over the checkpoint alone would verify against itself and still be
-	// rejected by any reader of the whole directory.
-	sum, err := os.ReadFile(filepath.Join(dir, "atlas.sum"))
-	c.Assert(err, qt.IsNil)
-	c.Assert(string(sum), qt.Contains, "20250801000001_init.sql")
-	c.Assert(string(sum), qt.Contains, "20250801000003_snapshot.sql")
-
-	_, err = os.Stat(filepath.Join(dir, "ptah.sum"))
-	c.Assert(os.IsNotExist(err), qt.IsTrue)
-}
-
 func TestWriteAtlasCheckpointFileWithOptions_RefusesChangedAuthorizedHistory(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
@@ -132,61 +110,6 @@ func TestWriteAtlasCheckpointFileWithOptions_RefusesChangedAuthorizedHistory(t *
 	c.Assert(matches, qt.HasLen, 0)
 	_, statErr := os.Stat(filepath.Join(dir, "atlas.sum"))
 	c.Assert(os.IsNotExist(statErr), qt.IsTrue)
-}
-
-func TestWriteAtlasCheckpointFile_RollsBackWhenTheSumCannotBeWritten(t *testing.T) {
-	c := qt.New(t)
-	dir := t.TempDir()
-	c.Assert(os.WriteFile(filepath.Join(dir, "20250801000001_init.sql"),
-		[]byte("CREATE TABLE users (id integer);\n"), 0o600), qt.IsNil)
-	// atlas.sum as a directory: the checkpoint file writes fine, then the
-	// atomic sum replace fails. This is the only way to reach the rollback.
-	c.Assert(os.Mkdir(filepath.Join(dir, "atlas.sum"), 0o755), qt.IsNil)
-
-	_, err := generator.WriteAtlasCheckpointFile(dir, 20250801000003, "snapshot", "CREATE TABLE users (id integer);")
-	c.Assert(err, qt.IsNotNil)
-	c.Assert(err.Error(), qt.Contains, "checksum")
-
-	// The checkpoint must NOT survive: a checkpoint no integrity file covers
-	// makes the whole directory fail verification, and it would be applied on
-	// the next run. Asserting the file is gone is the point — the error alone
-	// says nothing about what was left behind.
-	leftovers, globErr := filepath.Glob(filepath.Join(dir, "*_snapshot.sql"))
-	c.Assert(globErr, qt.IsNil)
-	c.Assert(leftovers, qt.HasLen, 0)
-}
-
-func TestWriteAtlasCheckpointFile_RefusesToOverwrite(t *testing.T) {
-	c := qt.New(t)
-	dir := t.TempDir()
-	existing := filepath.Join(dir, "20250801000003_snapshot.sql")
-	c.Assert(os.WriteFile(existing, []byte("-- original\n"), 0o600), qt.IsNil)
-
-	_, err := generator.WriteAtlasCheckpointFile(dir, 20250801000003, "snapshot", "CREATE TABLE users (id integer);")
-	c.Assert(err, qt.IsNotNil)
-	c.Assert(err.Error(), qt.Contains, "already exists")
-
-	// Assert the protected state, not the message: the original file must still
-	// hold its own bytes.
-	body, readErr := os.ReadFile(existing)
-	c.Assert(readErr, qt.IsNil)
-	c.Assert(string(body), qt.Equals, "-- original\n")
-	// A refused write must not leave a sum behind either.
-	_, statErr := os.Stat(filepath.Join(dir, "atlas.sum"))
-	c.Assert(os.IsNotExist(statErr), qt.IsTrue)
-}
-
-func TestWriteAtlasCheckpointFile_RejectsNonPositiveVersion(t *testing.T) {
-	c := qt.New(t)
-	dir := t.TempDir()
-
-	_, err := generator.WriteAtlasCheckpointFile(dir, 0, "snapshot", "SELECT 1;")
-	c.Assert(err, qt.IsNotNil)
-	c.Assert(err.Error(), qt.Contains, "must be greater than zero")
-
-	entries, readErr := os.ReadDir(dir)
-	c.Assert(readErr, qt.IsNil)
-	c.Assert(entries, qt.HasLen, 0)
 }
 
 func TestResolveAtlasCheckpointVersion_BumpsPastFutureDatedHistory(t *testing.T) {

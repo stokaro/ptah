@@ -8,56 +8,6 @@ import (
 	qt "github.com/frankban/quicktest"
 )
 
-func TestParseMigrationLockTimeout(t *testing.T) {
-	tests := []struct {
-		name    string
-		value   string
-		want    time.Duration
-		wantErr string
-	}{
-		{
-			name:  "empty waits indefinitely",
-			value: "",
-			want:  0,
-		},
-		{
-			name:  "valid duration",
-			value: "2m",
-			want:  2 * time.Minute,
-		},
-		{
-			name:    "zero rejected",
-			value:   "0s",
-			wantErr: "invalid migration lock timeout: must be greater than zero",
-		},
-		{
-			name:    "negative rejected",
-			value:   "-1s",
-			wantErr: "invalid migration lock timeout: must be greater than zero",
-		},
-		{
-			name:    "invalid rejected",
-			value:   "soon",
-			wantErr: `invalid migration lock timeout: time: invalid duration "soon"`,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := qt.New(t)
-
-			got, err := ParseMigrationLockTimeout(tt.value)
-			if tt.wantErr != "" {
-				c.Assert(err, qt.ErrorMatches, tt.wantErr)
-				return
-			}
-
-			c.Assert(err, qt.IsNil)
-			c.Assert(got, qt.Equals, tt.want)
-		})
-	}
-}
-
 func TestIsMigrationLockTimeout(t *testing.T) {
 	c := qt.New(t)
 

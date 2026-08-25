@@ -6,7 +6,6 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/ast/mocks"
 )
 
 // TestVisitorInterface_HappyPath tests that the visitor interface works correctly
@@ -77,7 +76,7 @@ func TestVisitorInterface_HappyPath(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			visitor := &mocks.MockVisitor{}
+			visitor := &MockVisitor{}
 			err := tt.node.Accept(visitor)
 
 			c.Assert(err, qt.IsNil)
@@ -142,7 +141,7 @@ func TestVisitorInterface_ErrorPath(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			visitor := &mocks.MockVisitor{ReturnError: true}
+			visitor := &MockVisitor{ReturnError: true}
 			err := tt.node.Accept(visitor)
 
 			c.Assert(err, qt.IsNotNil)
@@ -154,7 +153,7 @@ func TestVisitorInterface_ErrorPath(t *testing.T) {
 func TestStatementList_Accept_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
-	visitor := &mocks.MockVisitor{}
+	visitor := &MockVisitor{}
 	statements := []ast.Node{
 		&ast.CreateTableNode{Name: "users"},
 		&ast.IndexNode{Name: "idx_users"},
@@ -175,7 +174,7 @@ func TestStatementList_Accept_HappyPath(t *testing.T) {
 func TestStatementList_Accept_ErrorPath(t *testing.T) {
 	c := qt.New(t)
 
-	visitor := &mocks.MockVisitor{ReturnError: true}
+	visitor := &MockVisitor{ReturnError: true}
 	statements := []ast.Node{
 		&ast.CreateTableNode{Name: "users"},
 		&ast.IndexNode{Name: "idx_users"},
@@ -192,7 +191,7 @@ func TestStatementList_Accept_ErrorPath(t *testing.T) {
 func TestStatementList_Accept_EmptyList(t *testing.T) {
 	c := qt.New(t)
 
-	visitor := &mocks.MockVisitor{}
+	visitor := &MockVisitor{}
 	sl := &ast.StatementList{Statements: make([]ast.Node, 0)}
 
 	err := sl.Accept(visitor)

@@ -231,10 +231,10 @@ spelling is reported but not refused outside its block, because Atlas CE applies
 such a directory.
 
 This pre-GA API replaces the former `UpNoTransaction` and
-`DownNoTransaction` Boolean fields. `NewMigrationFromSQLFiles` and its
-interceptor variant return a complete `Migration`, preserving both directions'
-transaction modes, timeouts, source paths, and execution functions as one
-coherent value.
+`DownNoTransaction` Boolean fields. `NewFSMigrationProvider` (with
+`WithStatementInterceptor` when an external executor takes over statements)
+loads complete `Migration` values, preserving both directions' transaction
+modes, timeouts, source paths, and execution functions as one coherent value.
 
 `MigrateUpOptions.PlanObserver` receives the plan recalculated under the
 migration lock before transaction-mode validation, including empty plans. It
@@ -548,29 +548,27 @@ rollback drops and recreates, which always applies. Embedders that build a
 `core/platform/identifier` exposes the reusable value types and conservative
 dialect defaults behind that contract.
 
-`migration/generator.GenerateCheckpointWithDatabaseInfo` preserves the same
-live semantics when an introspected schema is rendered as a checkpoint, but
-SQL Server callers should use `GenerateCheckpointWithDatabase` so Ptah
-resolves the complete candidate identifier set under the target catalog
-collation. `GenerateCheckpoint` remains the conservative dialect-only entry
-point.
+`migration/generator.GenerateCheckpointFromShadow` preserves the same live
+semantics when a replayed history is rendered as a checkpoint: the render goes
+through the shadow connection, so on SQL Server Ptah resolves the complete
+candidate identifier set under the shadow catalog's collation rather than
+under conservative offline rules.
 
-`migration/generator.WriteAtlasCheckpointFile` writes the Atlas single-file
-checkpoint convention (and refreshes `atlas.sum`), where
-`WriteCheckpointFiles` writes the reversible Ptah pair (and refreshes
-`ptah.sum`). `AtlasCheckpointArtifact` renders the same file name and contents
-without touching the filesystem, so previews cannot drift from what is
-written; the `AtlasCheckpointDirective` it emits is only honored on the file's
-first line. `ResolveAtlasCheckpointVersion` supplies the timestamp version,
-bumped past any newer migration already in the directory.
+`migration/generator.WriteAtlasCheckpointFileWithOptions` writes the Atlas
+single-file checkpoint convention (and refreshes `atlas.sum`), where
+`WriteCheckpointFilesWithOptions` writes the reversible Ptah pair (and
+refreshes `ptah.sum`). `AtlasCheckpointArtifact` renders the same file name
+and contents without touching the filesystem, so previews cannot drift from
+what is written; the `-- atlas:checkpoint` directive it emits is only honored
+on the file's first line. `ResolveAtlasCheckpointVersion` supplies the
+timestamp version, bumped past any newer migration already in the directory.
 
-`CheckpointWriteOptions.AuthorizedMigrationsFS` and the corresponding
-`WriteCheckpointFilesWithOptions` or `WriteAtlasCheckpointFileWithOptions`
-entry point bind publication to the history that produced the checkpoint body.
-The writer returns `generator.ErrMigrationDirectoryChanged` before creating a
-checkpoint, or withdraws the checkpoint before publishing the sum, when the
-rooted destination does not match the authorized expected state. The sum is
-computed from that state rather than from a newly reopened path.
+`CheckpointWriteOptions.AuthorizedMigrationsFS` binds publication to the
+history that produced the checkpoint body. The writer returns
+`generator.ErrMigrationDirectoryChanged` before creating a checkpoint, or
+withdraws the checkpoint before publishing the sum, when the rooted
+destination does not match the authorized expected state. The sum is computed
+from that state rather than from a newly reopened path.
 
 `migration/planner.Planner` exposes only checked planning; malformed
 references, unresolved additions, and target index-namespace conflicts fail

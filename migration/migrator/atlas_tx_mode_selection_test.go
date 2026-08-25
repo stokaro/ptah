@@ -49,11 +49,13 @@ func TestAtlasTxModeValidation_FirstFileErrorSkipsPreflight(t *testing.T) {
 	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
 	preflightCalled := false
 
-	err = mig.MigrateUpWithPreflight(
+	err = mig.MigrateUpWithOptions(
 		c.Context(),
-		func(context.Context, migrator.MigrationPlan) error {
-			preflightCalled = true
-			return nil
+		migrator.MigrateUpOptions{
+			Preflight: func(context.Context, migrator.MigrationPlan) error {
+				preflightCalled = true
+				return nil
+			},
 		},
 	)
 
@@ -320,7 +322,7 @@ DROP TABLE second_table;
 	}
 }
 
-func TestNewMigrationFromSQLFiles_PreservesTxModePolicy(t *testing.T) {
+func TestFSMigrationLoad_PreservesTxModePolicy(t *testing.T) {
 	tests := []struct {
 		name       string
 		globalMode migrator.MigrationTxMode
@@ -345,7 +347,7 @@ func TestNewMigrationFromSQLFiles_PreservesTxModePolicy(t *testing.T) {
 			name:       "file conflicts with global all",
 			globalMode: migrator.MigrationTxModeAll,
 			directive:  "-- atlas:txmode file\n\n",
-			wantErr:    `cannot set txmode directive to "file" in "migration.up.sql" when txmode "all" is set globally`,
+			wantErr:    `cannot set txmode directive to "file" in "0000000001_policy.up.sql" when txmode "all" is set globally`,
 		},
 	}
 
@@ -359,23 +361,17 @@ func TestNewMigrationFromSQLFiles_PreservesTxModePolicy(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
 
-			migration, err := migrator.NewMigrationFromSQLFiles(
-				1,
-				"constructor policy",
-				"migration.up.sql",
-				"migration.down.sql",
+			provider, err := migrator.NewFSMigrationProvider(
 				fstest.MapFS{
-					"migration.up.sql": {
+					"0000000001_policy.up.sql": {
 						Data: []byte(test.directive + "CREATE TABLE constructor_table (id INTEGER PRIMARY KEY);\nINSERT INTO missing_table (id) VALUES (1);\n"),
 					},
-					"migration.down.sql": {Data: []byte("DROP TABLE constructor_table;\n")},
+					"0000000001_policy.down.sql": {Data: []byte("DROP TABLE constructor_table;\n")},
 				},
 			)
 			c.Assert(err, qt.IsNil)
-			mig := migrator.NewMigrator(
-				conn,
-				migrator.NewRegisteredMigrationProvider(migration),
-			).WithRevisionTableFormat(migrator.RevisionTableFormatAtlas).
+			mig := migrator.NewMigrator(conn, provider).
+				WithRevisionTableFormat(migrator.RevisionTableFormatAtlas).
 				WithTransactionMode(test.globalMode)
 
 			err = mig.MigrateUp(c.Context())

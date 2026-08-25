@@ -186,8 +186,7 @@ func planRowTTLAgainstLive(
 	diff, err := schemadiff.CompareWithDatabaseInfo(declared, live, info, nil)
 	c.Assert(err, qt.IsNil)
 
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(
-		diff, declared, info.Dialect, info.Capabilities)
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, declared, info.Dialect, planner.Options{Capabilities: info.Capabilities})
 	c.Assert(err, qt.IsNil)
 	return statements
 }

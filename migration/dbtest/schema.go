@@ -8,8 +8,8 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/migration/migrator"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	schemadifftypes "go.5x5.cz/ptah/migration/schemadiff/types"
@@ -190,7 +190,7 @@ func applyDesiredSchema(
 	if err != nil {
 		return false, fmt.Errorf("plan desired schema for dialect %q: %w", info.Dialect, err)
 	}
-	for _, stmt := range migrator.SplitSQLStatementsForConnection(conn, sql) {
+	for _, stmt := range sqlutil.SplitStatementsForDialect(conn.Info().Dialect, sql) {
 		if strings.TrimSpace(stmt) == "" {
 			continue
 		}

@@ -1,7 +1,8 @@
-// Package mocks provides test doubles for the core/ast package, most notably
-// MockVisitor, an ast.Visitor that records the nodes it visits and can be
-// switched to fail every visit for error-path testing.
-package mocks
+package ast_test
+
+// MockVisitor is test support shared by the package's black-box suites: an
+// ast.Visitor that records the nodes it visits and can be switched to fail
+// every visit for error-path testing.
 
 import (
 	"errors"

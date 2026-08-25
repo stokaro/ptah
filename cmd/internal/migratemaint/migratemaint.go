@@ -15,6 +15,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
+	"go.5x5.cz/ptah/cmd/internal/migrateflags"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/migrateops"
 	"go.5x5.cz/ptah/migration/migrator"
@@ -92,7 +93,7 @@ func (o *Options) Guard(ctx context.Context, w io.Writer, version int64, format 
 		return nil
 	}
 
-	revisionFormat, err := migrator.ParseRevisionTableFormat(o.RevisionTableFormat)
+	revisionFormat, err := migrateflags.ParseRevisionTableFormat(o.RevisionTableFormat)
 	if err != nil {
 		return err
 	}

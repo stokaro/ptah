@@ -58,17 +58,13 @@
 //		log.Fatal(err)
 //	}
 //
-//	// Option 2: Create migrator with a registered SQL-file migration
-//	migration, err := migrator.NewMigrationFromSQLFiles(
+//	// Option 2: Create migrator with a registered SQL migration
+//	migration := migrator.CreateMigrationFromSQL(
 //		20240101120000,
 //		"Create users table",
-//		"001_create_users.up.sql",
-//		"001_create_users.down.sql",
-//		fsys,
+//		"CREATE TABLE users (id SERIAL PRIMARY KEY)",
+//		"DROP TABLE users",
 //	)
-//	if err != nil {
-//		log.Fatal(err)
-//	}
 //	provider := migrator.NewRegisteredMigrationProvider()
 //	provider.Register(migration)
 //	m := migrator.NewMigrator(conn, provider)
@@ -164,17 +160,13 @@
 //
 // The package provides utilities for SQL file-based migrations:
 //
-//	// Read both directions and preserve their execution metadata.
-//	migration, err := migrator.NewMigrationFromSQLFiles(
-//		20240101120000,
-//		"Add user preferences",
-//		"migration.up.sql",
-//		"migration.down.sql",
-//		fsys,
-//	)
+//	// Read every up/down pair in the directory and preserve their
+//	// execution metadata.
+//	provider, err := migrator.NewFSMigrationProvider(fsys)
 //	if err != nil {
 //		log.Fatal(err)
 //	}
+//	m := migrator.NewMigrator(conn, provider)
 //
 // # SQL Statement Splitting
 //

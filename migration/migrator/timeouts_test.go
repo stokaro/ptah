@@ -10,24 +10,6 @@ import (
 	"go.5x5.cz/ptah/core/platform/capability"
 )
 
-func TestParseMigrationTimeouts(t *testing.T) {
-	c := qt.New(t)
-
-	timeouts, err := ParseMigrationTimeouts("3s", "30s")
-	c.Assert(err, qt.IsNil)
-	c.Assert(timeouts.HasLockTimeout, qt.IsTrue)
-	c.Assert(timeouts.LockTimeout, qt.Equals, 3*time.Second)
-	c.Assert(timeouts.HasStatementTimeout, qt.IsTrue)
-	c.Assert(timeouts.StatementTimeout, qt.Equals, 30*time.Second)
-}
-
-func TestParseMigrationTimeouts_Invalid(t *testing.T) {
-	c := qt.New(t)
-
-	_, err := ParseMigrationTimeouts("0s", "")
-	c.Assert(err, qt.ErrorMatches, "invalid lock timeout: must be greater than zero")
-}
-
 func TestMergeMigrationTimeouts(t *testing.T) {
 	c := qt.New(t)
 

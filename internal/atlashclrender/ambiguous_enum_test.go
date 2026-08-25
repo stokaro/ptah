@@ -221,7 +221,7 @@ func TestInspectedTwoSchemaEnumsAreRefusedByDefault(t *testing.T) {
 
 // TestFinalizeKeepsTwoSchemaEnums pins the fold this depends on.
 //
-// [goschema.Deduplicate] keyed enums by their BARE name, so an inspected realm
+// goschema's deduplication pass keyed enums by their BARE name, so an inspected realm
 // holding public.mood and other.mood arrived at the renderer with one enum and
 // the other gone with no diagnostic -- the document then described a database
 // that does not exist. The Go-annotation path is unaffected because an enum

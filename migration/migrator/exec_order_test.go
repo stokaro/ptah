@@ -6,36 +6,6 @@ import (
 	qt "github.com/frankban/quicktest"
 )
 
-func TestParseExecOrder(t *testing.T) {
-	tests := []struct {
-		name string
-		in   string
-		want ExecOrder
-	}{
-		{name: "default", in: "", want: ExecOrderLinear},
-		{name: "linear", in: "linear", want: ExecOrderLinear},
-		{name: "linear skip", in: "linear-skip", want: ExecOrderLinearSkip},
-		{name: "non linear", in: "non-linear", want: ExecOrderNonLinear},
-		{name: "trim and case", in: " Non-Linear ", want: ExecOrderNonLinear},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := qt.New(t)
-			got, err := ParseExecOrder(tt.in)
-			c.Assert(err, qt.IsNil)
-			c.Assert(got, qt.Equals, tt.want)
-		})
-	}
-}
-
-func TestParseExecOrderRejectsUnknownValue(t *testing.T) {
-	c := qt.New(t)
-
-	_, err := ParseExecOrder("latest")
-	c.Assert(err, qt.ErrorMatches, `invalid exec-order "latest": expected linear, linear-skip, or non-linear`)
-}
-
 func TestPendingMigrationVersionsUsesAppliedSet(t *testing.T) {
 	c := qt.New(t)
 
@@ -76,7 +46,7 @@ func TestOutOfOrderErrorUsesExactSourceIdentityWithoutLeakingRuntimeKey(t *testi
 	const currentRuntime = int64(4611686018427510315)
 	const pendingRuntime = int64(4611686018427836747)
 
-	mapped := NewOutOfOrderSourceError(currentRuntime, []int64{pendingRuntime}, map[int64]string{
+	mapped := newOutOfOrderSourceError(currentRuntime, []int64{pendingRuntime}, map[int64]string{
 		currentRuntime: "2",
 		pendingRuntime: "10",
 	})
@@ -85,7 +55,7 @@ func TestOutOfOrderErrorUsesExactSourceIdentityWithoutLeakingRuntimeKey(t *testi
 			`(use --exec-order=non-linear to apply or --exec-order=linear-skip to ignore)`)
 	c.Assert(mapped.Error(), qt.Not(qt.Contains), "461168")
 
-	fallback := NewOutOfOrderSourceError(currentRuntime, []int64{pendingRuntime}, map[int64]string{
+	fallback := newOutOfOrderSourceError(currentRuntime, []int64{pendingRuntime}, map[int64]string{
 		currentRuntime: "2",
 	})
 	c.Assert(fallback.Error(), qt.Contains, "4611686018427836747")

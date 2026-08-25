@@ -1,9 +1,6 @@
 package migrator
 
 import (
-	"fmt"
-	"strings"
-
 	"go.5x5.cz/ptah/internal/revisiontable"
 )
 
@@ -29,18 +26,6 @@ const (
 	// atlas_schema_revisions table layout.
 	RevisionTableFormatAtlas RevisionTableFormat = "atlas"
 )
-
-// ParseRevisionTableFormat normalizes a revision table format value.
-func ParseRevisionTableFormat(value string) (RevisionTableFormat, error) {
-	switch RevisionTableFormat(strings.ToLower(strings.TrimSpace(value))) {
-	case "", RevisionTableFormatPtah:
-		return RevisionTableFormatPtah, nil
-	case RevisionTableFormatAtlas:
-		return RevisionTableFormatAtlas, nil
-	default:
-		return "", fmt.Errorf("unknown revision table format %q: expected ptah or atlas", value)
-	}
-}
 
 func (f RevisionTableFormat) isAtlas() bool {
 	return f == RevisionTableFormatAtlas

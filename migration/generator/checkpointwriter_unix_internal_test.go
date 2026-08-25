@@ -31,7 +31,7 @@ import (
 //
 // Measured on master at 69c5b2ea, the same replacement staged against these
 // three writers returned a nil error and split one transaction across two
-// directories: `WriteAtlasCheckpointFile` left the checkpoint in the retained
+// directories: the Atlas checkpoint writer left the checkpoint in the retained
 // directory and wrote atlas.sum into the directory that took over the pathname,
 // and both pair writers left the up half in the retained directory while the
 // down half and ptah.sum went to the impostor. Every one of those outcomes is a
@@ -138,7 +138,7 @@ func TestAuthorizedCheckpointWritersDoNotHashAConcurrentHistoryEdit(t *testing.T
 func TestCheckpointWritersReplacedDirectoryCannotRedirectTheWrite(t *testing.T) {
 	tests := []struct {
 		name string
-		// write runs the exported writer against the selected directory.
+		// write runs the writer against the selected directory.
 		write func(dir string) error
 		// wantRetained is every entry the transaction must leave in the object it
 		// bound, sorted as os.ReadDir returns them.
@@ -147,7 +147,7 @@ func TestCheckpointWritersReplacedDirectoryCannotRedirectTheWrite(t *testing.T) 
 		{
 			name: "atlas checkpoint",
 			write: func(dir string) error {
-				_, err := WriteAtlasCheckpointFile(dir, atlasCheckpointWriterVersion, "squash", "CREATE TABLE users (id integer);")
+				_, err := writeAtlasCheckpointFile(dir, atlasCheckpointWriterVersion, "squash", "CREATE TABLE users (id integer);")
 				return err
 			},
 			wantRetained: []string{"20990101000000_squash.sql", "atlas.sum"},
@@ -155,7 +155,7 @@ func TestCheckpointWritersReplacedDirectoryCannotRedirectTheWrite(t *testing.T) 
 		{
 			name: "paired checkpoint",
 			write: func(dir string) error {
-				_, _, err := WriteCheckpointFiles(dir, checkpointWriterVersion, "squash", "CREATE TABLE users (id integer);\n", "DROP TABLE users;\n")
+				_, _, err := writeCheckpointFiles(dir, checkpointWriterVersion, "squash", "CREATE TABLE users (id integer);\n", "DROP TABLE users;\n")
 				return err
 			},
 			wantRetained: []string{
@@ -219,7 +219,7 @@ func TestCheckpointWritersCreateAMissingDirectoryThroughTheBoundParent(t *testin
 		{
 			name: "atlas checkpoint",
 			write: func(dir string) error {
-				_, err := WriteAtlasCheckpointFile(dir, atlasCheckpointWriterVersion, "squash", "CREATE TABLE users (id integer);")
+				_, err := writeAtlasCheckpointFile(dir, atlasCheckpointWriterVersion, "squash", "CREATE TABLE users (id integer);")
 				return err
 			},
 			wantRetained: []string{"20990101000000_squash.sql", "atlas.sum"},
@@ -292,7 +292,7 @@ func TestMigrationWritersRefuseADestinationTakenAfterTheNameWasChosen(t *testing
 		// occupy is the name the intruder takes in the bound directory, of the
 		// names the writer just chose.
 		occupy func(names []string) string
-		// write runs the exported writer against the selected directory.
+		// write runs the writer against the selected directory.
 		write func(dir string) error
 		// wantErr is what the writer's one attempt returned.
 		wantErr string
@@ -303,7 +303,7 @@ func TestMigrationWritersRefuseADestinationTakenAfterTheNameWasChosen(t *testing
 			name:   "atlas checkpoint refuses",
 			occupy: func(names []string) string { return names[0] },
 			write: func(dir string) error {
-				_, err := WriteAtlasCheckpointFile(dir, atlasCheckpointWriterVersion, "squash", "CREATE TABLE users (id integer);")
+				_, err := writeAtlasCheckpointFile(dir, atlasCheckpointWriterVersion, "squash", "CREATE TABLE users (id integer);")
 				return err
 			},
 			wantErr: `.*checkpoint file .*20990101000000_squash\.sql already exists`,
@@ -313,7 +313,7 @@ func TestMigrationWritersRefuseADestinationTakenAfterTheNameWasChosen(t *testing
 			name:   "paired checkpoint refuses when the up half is taken",
 			occupy: func(names []string) string { return names[0] },
 			write: func(dir string) error {
-				_, _, err := WriteCheckpointFiles(dir, checkpointWriterVersion, "squash", "CREATE TABLE users (id integer);\n", "DROP TABLE users;\n")
+				_, _, err := writeCheckpointFiles(dir, checkpointWriterVersion, "squash", "CREATE TABLE users (id integer);\n", "DROP TABLE users;\n")
 				return err
 			},
 			wantErr: `checkpoint files for version 2099010100 already exist`,

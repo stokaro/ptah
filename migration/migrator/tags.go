@@ -99,8 +99,8 @@ func (m *Migrator) sqlServerTagsObjectName() string {
 	return schema + "." + m.migrationTagsTableName()
 }
 
-// EnsureMigrationTagsTable creates the tag table when it does not exist.
-func (m *Migrator) EnsureMigrationTagsTable(ctx context.Context) error {
+// ensureMigrationTagsTable creates the tag table when it does not exist.
+func (m *Migrator) ensureMigrationTagsTable(ctx context.Context) error {
 	if m.conn == nil {
 		return errors.New("ensure migration tags table: no database connection")
 	}
@@ -144,11 +144,11 @@ func (m *Migrator) migrationTagsTableExists(ctx context.Context) (bool, error) {
 // movable pointers, and refusing to move one would leave an operator who
 // re-tagged a directory unable to say so here.
 func (m *Migrator) RecordMigrationTag(ctx context.Context, tag string, version int64) error {
-	normalized, err := NormalizeMigrationTag(tag)
+	normalized, err := normalizeMigrationTag(tag)
 	if err != nil {
 		return err
 	}
-	if err := m.EnsureMigrationTagsTable(ctx); err != nil {
+	if err := m.ensureMigrationTagsTable(ctx); err != nil {
 		return err
 	}
 	now := time.Now().UTC()
@@ -190,7 +190,7 @@ func (m *Migrator) upsertMigrationTagSQL() string {
 // caller that could not tell the two apart would revert everything when it
 // meant to report a typo.
 func (m *Migrator) ResolveMigrationTag(ctx context.Context, tag string) (int64, error) {
-	normalized, err := NormalizeMigrationTag(tag)
+	normalized, err := normalizeMigrationTag(tag)
 	if err != nil {
 		return 0, err
 	}
@@ -250,7 +250,7 @@ func (m *Migrator) MigrationTags(ctx context.Context) ([]MigrationTag, error) {
 // DeleteMigrationTag removes a tag. Removing one that does not exist reports
 // ErrMigrationTagNotFound, so a script deleting a typo hears about it.
 func (m *Migrator) DeleteMigrationTag(ctx context.Context, tag string) error {
-	normalized, err := NormalizeMigrationTag(tag)
+	normalized, err := normalizeMigrationTag(tag)
 	if err != nil {
 		return err
 	}
@@ -280,14 +280,14 @@ func (m *Migrator) DeleteMigrationTag(ctx context.Context, tag string) error {
 	return nil
 }
 
-// NormalizeMigrationTag trims a tag and refuses the shapes that cannot name a
+// normalizeMigrationTag trims a tag and refuses the shapes that cannot name a
 // directory state.
 //
 // The rules are the registry's, because these tags exist to line up with the
 // ones a migration directory is pushed under: an empty tag names nothing, and
 // whitespace inside one would make `--to-tag` ambiguous to any shell that
 // splits arguments.
-func NormalizeMigrationTag(tag string) (string, error) {
+func normalizeMigrationTag(tag string) (string, error) {
 	trimmed := strings.TrimSpace(tag)
 	if trimmed == "" {
 		return "", errors.New("migration tag is empty")

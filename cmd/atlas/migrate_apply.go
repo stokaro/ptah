@@ -16,6 +16,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
+	"go.5x5.cz/ptah/cmd/internal/migrateflags"
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasargs"
@@ -277,15 +278,15 @@ func runAtlasMigrateApplyTarget(
 	// [resolveAtlasMigrateApplyDirFormat] below maps the empty value to the
 	// Atlas format, the same as the empty --dir-format the other verbs accept.
 
-	txMode, err := migrator.ParseMigrationTxMode(opts.txMode)
+	txMode, err := migrateflags.ParseMigrationTxMode(opts.txMode)
 	if err != nil {
 		return formatOutput, err
 	}
-	execOrder, err := migrator.ParseExecOrder(opts.execOrder)
+	execOrder, err := migrateflags.ParseExecOrder(opts.execOrder)
 	if err != nil {
 		return formatOutput, err
 	}
-	migrationLockTimeout, err := migrator.ParseMigrationLockTimeout(opts.lockTimeout)
+	migrationLockTimeout, err := migrateflags.ParseMigrationLockTimeout(opts.lockTimeout)
 	if err != nil {
 		return formatOutput, err
 	}

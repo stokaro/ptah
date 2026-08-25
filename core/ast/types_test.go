@@ -6,7 +6,6 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/ast/mocks"
 )
 
 // TestCreateTypeNode_Constructor tests the NewCreateType constructor
@@ -38,7 +37,7 @@ func TestCreateTypeNode_FluentAPI(t *testing.T) {
 func TestCreateTypeNode_Accept(t *testing.T) {
 	c := qt.New(t)
 
-	visitor := &mocks.MockVisitor{}
+	visitor := &MockVisitor{}
 	enumDef := ast.NewEnumTypeDef("active", "inactive")
 	createType := ast.NewCreateType("status", enumDef)
 
@@ -80,7 +79,7 @@ func TestAlterTypeNode_FluentAPI(t *testing.T) {
 func TestAlterTypeNode_Accept(t *testing.T) {
 	c := qt.New(t)
 
-	visitor := &mocks.MockVisitor{}
+	visitor := &MockVisitor{}
 	alterType := ast.NewAlterType("status")
 
 	err := alterType.Accept(visitor)

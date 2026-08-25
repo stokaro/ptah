@@ -14,6 +14,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/cmd/internal/editor"
+	"go.5x5.cz/ptah/cmd/internal/migrateflags"
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
@@ -210,7 +211,7 @@ func runSchemaApply(cmd *cobra.Command, opts schemaApplyOptions) error {
 			return cmdutil.Fail(cmd, err)
 		}
 	}
-	txMode, err := migrator.ParseMigrationTxMode(opts.txMode)
+	txMode, err := migrateflags.ParseMigrationTxMode(opts.txMode)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -340,7 +341,7 @@ func runSchemaApplyPlanFile(cmd *cobra.Command, opts schemaApplyOptions) error {
 	if err := validateSchemaApplyPlanOptions(cmd); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	txMode, err := migrator.ParseMigrationTxMode(opts.txMode)
+	txMode, err := migrateflags.ParseMigrationTxMode(opts.txMode)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

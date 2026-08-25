@@ -1136,21 +1136,6 @@ func (m *Migrator) GetAppliedMigrations(ctx context.Context) ([]int64, error) {
 	return appliedRevisionVersions(revisions), nil
 }
 
-// GetAppliedRevisions returns full metadata rows for applied migrations.
-func (m *Migrator) GetAppliedRevisions(ctx context.Context) ([]MigrationRevision, error) {
-	revisions, err := m.GetRevisions(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get migration revisions: %w", err)
-	}
-	applied := make([]MigrationRevision, 0, len(revisions))
-	for _, revision := range revisions {
-		if revision.State == migrationStateApplied {
-			applied = append(applied, revision)
-		}
-	}
-	return applied, nil
-}
-
 // GetRevisions returns every migration metadata row, including dirty rows.
 func (m *Migrator) GetRevisions(ctx context.Context) ([]MigrationRevision, error) {
 	return queryMigrationRows(
@@ -1279,9 +1264,9 @@ func (m *Migrator) GetPendingMigrations(ctx context.Context) ([]int64, error) {
 	return snapshot.Status.PendingMigrations, nil
 }
 
-// GetPreviousMigrationVersion finds the previous migration version compared to the current one.
+// getPreviousMigrationVersion finds the previous migration version compared to the current one.
 // Returns an error and -1 if no previous migrations exist.
-func (m *Migrator) GetPreviousMigrationVersion(ctx context.Context) (int64, error) {
+func (m *Migrator) getPreviousMigrationVersion(ctx context.Context) (int64, error) {
 	applied, err := m.GetAppliedMigrations(ctx)
 	if err != nil {
 		return -1, fmt.Errorf("failed to get applied migrations: %w", err)
@@ -1541,13 +1526,7 @@ func firstDirtyRevision(revisions []MigrationRevision) *MigrationRevision {
 
 // MigrateUp migrates the database up to the latest version
 func (m *Migrator) MigrateUp(ctx context.Context) error {
-	return m.MigrateUpWithPreflight(ctx, nil)
-}
-
-// MigrateUpWithPreflight migrates up after running hook inside the migration
-// advisory lock. A nil hook is equivalent to [Migrator.MigrateUp].
-func (m *Migrator) MigrateUpWithPreflight(ctx context.Context, hook PreMigrationHook) (err error) {
-	return m.MigrateUpWithOptions(ctx, MigrateUpOptions{Preflight: hook})
+	return m.MigrateUpWithOptions(ctx, MigrateUpOptions{})
 }
 
 // MigrateUpWithOptions migrates up using an explicitly selected apply plan.
@@ -1776,7 +1755,7 @@ func (m *Migrator) migrateDownLocked(ctx context.Context) error {
 		return err
 	}
 
-	targetVersion, err := m.GetPreviousMigrationVersion(ctx)
+	targetVersion, err := m.getPreviousMigrationVersion(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get previous version: %w", err)
 	}
@@ -3169,7 +3148,7 @@ func (m *Migrator) migrationsToApply(
 	execOrder := normalizeExecOrder(m.execOrder)
 
 	if execOrder == ExecOrderLinear && len(outOfOrderVersions) > 0 {
-		err := NewOutOfOrderSourceError(currentVersion, outOfOrderVersions, m.sourceVersions)
+		err := newOutOfOrderSourceError(currentVersion, outOfOrderVersions, m.sourceVersions)
 		if _, mappedCurrent := m.sourceVersions[currentVersion]; !mappedCurrent {
 			if currentSource, ok := highestAppliedSourceVersion(
 				applied,

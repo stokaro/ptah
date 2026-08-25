@@ -217,6 +217,5 @@ func planTimescaleReportingError(
 	diff, err := schemadiff.CompareWithDatabase(c.Context(), conn, declared, live, nil)
 	c.Assert(err, qt.IsNil)
 
-	return planner.GenerateSchemaDiffSQLStatementsWithCapabilities(
-		diff, declared, conn.Info().Dialect, conn.Info().Capabilities)
+	return planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, declared, conn.Info().Dialect, planner.Options{Capabilities: conn.Info().Capabilities})
 }

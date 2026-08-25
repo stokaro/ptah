@@ -84,12 +84,7 @@ CREATE TABLE [dbo].[users] (
 		{Name: "idx_email", TableName: "dbo.users"},
 	})
 
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(
-		replacementDiff,
-		target,
-		info.Dialect,
-		info.Capabilities,
-	)
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(replacementDiff, target, info.Dialect, planner.Options{Capabilities: info.Capabilities})
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 2)
 	c.Assert(strings.ToUpper(statements[0]), qt.Contains, "DROP INDEX")
@@ -156,12 +151,7 @@ CREATE TABLE [dbo].[users] (
 		{Name: "idx_users_lookup", TableName: "dbo.users"},
 	})
 
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(
-		replacementDiff,
-		target,
-		info.Dialect,
-		info.Capabilities,
-	)
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(replacementDiff, target, info.Dialect, planner.Options{Capabilities: info.Capabilities})
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 2)
 	c.Assert(strings.ToUpper(statements[0]), qt.Contains, "DROP INDEX")
@@ -236,12 +226,7 @@ CREATE TABLE [dbo].[users] (
 	c.Assert(replacementDiff.IndexAdditions(), qt.DeepEquals, want)
 	c.Assert(replacementDiff.IndexRemovals(), qt.DeepEquals, want)
 
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(
-		replacementDiff,
-		target,
-		info.Dialect,
-		info.Capabilities,
-	)
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(replacementDiff, target, info.Dialect, planner.Options{Capabilities: info.Capabilities})
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 2)
 	c.Assert(strings.ToUpper(statements[0]), qt.Contains, "DROP INDEX")
@@ -318,12 +303,7 @@ CREATE TABLE [dbo].[users] (
 	c.Assert(replacementDiff.IndexAdditions(), qt.DeepEquals, want)
 	c.Assert(replacementDiff.IndexRemovals(), qt.DeepEquals, want)
 
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(
-		replacementDiff,
-		target,
-		info.Dialect,
-		info.Capabilities,
-	)
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(replacementDiff, target, info.Dialect, planner.Options{Capabilities: info.Capabilities})
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 2)
 	c.Assert(strings.ToUpper(statements[0]), qt.Contains, "DROP INDEX")
@@ -391,12 +371,7 @@ CREATE TABLE [dbo].[users] (
 	})
 	c.Assert(createDiff.IndexRemovals(), qt.HasLen, 0)
 
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(
-		createDiff,
-		target,
-		info.Dialect,
-		info.Capabilities,
-	)
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(createDiff, target, info.Dialect, planner.Options{Capabilities: info.Capabilities})
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 1)
 	c.Assert(statements[0], qt.Contains, "WHERE status = 1")
@@ -457,12 +432,7 @@ CREATE TABLE [dbo].[users] (
 	})
 	c.Assert(diff.IndexRemovals(), qt.HasLen, 0)
 
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(
-		diff,
-		target,
-		info.Dialect,
-		info.Capabilities,
-	)
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, target, info.Dialect, planner.Options{Capabilities: info.Capabilities})
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 1)
 	_, err = conn.ExecContext(ctx, statements[0])

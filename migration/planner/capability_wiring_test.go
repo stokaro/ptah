@@ -54,7 +54,7 @@ func TestGetPlanner_CapabilityWiring(t *testing.T) {
 	})
 }
 
-func TestGenerateSchemaDiffSQLStatementsWithCapabilities_UsesServerVersionPreset(t *testing.T) {
+func TestGenerateSchemaDiffSQLStatementsWithOptions_UsesServerVersionPreset(t *testing.T) {
 	diff := &types.SchemaDiff{
 		ConstraintsRemoved: []string{"chk_qty"},
 		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
@@ -67,7 +67,7 @@ func TestGenerateSchemaDiffSQLStatementsWithCapabilities_UsesServerVersionPreset
 		c := qt.New(t)
 		caps := capability.ForServerVersion("mysql", "5.7.44")
 
-		statements, err := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(diff, generated, "mysql", caps)
+		statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, generated, "mysql", planner.Options{Capabilities: caps})
 		c.Assert(err, qt.IsNil)
 		sql := legacyRenderedSQL(strings.Join(statements, "\n"))
 
@@ -79,7 +79,7 @@ func TestGenerateSchemaDiffSQLStatementsWithCapabilities_UsesServerVersionPreset
 		c := qt.New(t)
 		caps := capability.ForServerVersion("mysql", "8.0.17")
 
-		statements, err := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(diff, generated, "mysql", caps)
+		statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, generated, "mysql", planner.Options{Capabilities: caps})
 		c.Assert(err, qt.IsNil)
 		sql := legacyRenderedSQL(strings.Join(statements, "\n"))
 
@@ -90,7 +90,7 @@ func TestGenerateSchemaDiffSQLStatementsWithCapabilities_UsesServerVersionPreset
 		c := qt.New(t)
 		caps := capability.ForServerVersion("mysql", "8.0.19")
 
-		statements, err := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(diff, generated, "mysql", caps)
+		statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, generated, "mysql", planner.Options{Capabilities: caps})
 		c.Assert(err, qt.IsNil)
 		sql := legacyRenderedSQL(strings.Join(statements, "\n"))
 

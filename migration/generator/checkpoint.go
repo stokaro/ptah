@@ -20,27 +20,29 @@ import (
 	schemadifftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
-// GenerateCheckpoint renders a full cumulative schema as a checkpoint migration
+// generateCheckpoint renders a full cumulative schema as a checkpoint migration
 // body pair. The up body creates every object in dependency order; the down
 // body drops them in reverse.
 //
 // It diffs the schema against an empty database, so it is deterministic and
 // needs no live database connection. Callers obtain the schema either by
 // introspecting a database that has the whole migration directory applied (and
-// converting the result with internal/convert/dbschematogo) or from Go
+// converting the result with atlascompat.DBSchemaToGoSchema) or from Go
 // entities / schema files. An empty schema yields empty up and down bodies.
-func GenerateCheckpoint(schema *goschema.Database, dialect string) (upSQL, downSQL string, err error) {
-	return GenerateCheckpointWithDatabaseInfo(schema, dbschematypes.DBInfo{
+func generateCheckpoint(schema *goschema.Database, dialect string) (upSQL, downSQL string, err error) {
+	return generateCheckpointWithDatabaseInfo(schema, dbschematypes.DBInfo{
 		Dialect:      dialect,
 		Capabilities: capability.ForDialect(dialect),
 	})
 }
 
-// GenerateCheckpointWithDatabaseInfo renders a full cumulative schema using
-// caller-supplied dialect, capability, and identifier metadata. SQL Server
-// callers should prefer GenerateCheckpointWithDatabase so the complete
-// candidate identifier set is resolved under the live catalog collation.
-func GenerateCheckpointWithDatabaseInfo(
+// generateCheckpointWithDatabaseInfo renders a full cumulative schema using
+// caller-supplied dialect, capability, and identifier metadata. It resolves
+// identifiers only from what info carries; checkpoints rendered from a live
+// database go through generateCheckpointWithDatabaseQualified instead, which
+// resolves the complete candidate identifier set under the live catalog
+// collation — the distinction that matters on SQL Server.
+func generateCheckpointWithDatabaseInfo(
 	schema *goschema.Database,
 	info dbschematypes.DBInfo,
 ) (upSQL, downSQL string, err error) {
@@ -56,19 +58,9 @@ func GenerateCheckpointWithDatabaseInfo(
 	return generateCheckpointFromDiff(schema, empty, info, diff, "")
 }
 
-// GenerateCheckpointWithDatabase renders a checkpoint after resolving the
-// schema's finite identifier set against the connected catalog.
-func GenerateCheckpointWithDatabase(
-	ctx context.Context,
-	conn *dbschema.DatabaseConnection,
-	schema *goschema.Database,
-) (upSQL, downSQL string, err error) {
-	return generateCheckpointWithDatabaseQualified(ctx, conn, schema, "")
-}
-
-// generateCheckpointWithDatabaseQualified is GenerateCheckpointWithDatabase
-// with the schema qualifier the shadow-replay entry point carries. The public
-// signature above stays qualifier-free so existing callers are unaffected.
+// generateCheckpointWithDatabaseQualified renders a checkpoint after resolving
+// the schema's finite identifier set against the connected catalog, under the
+// schema qualifier the shadow-replay entry point carries (empty for none).
 func generateCheckpointWithDatabaseQualified(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
@@ -125,13 +117,13 @@ func generateCheckpointFromDiff(
 	return spec.UpSQL, spec.DownSQL, nil
 }
 
-// WriteCheckpointFiles writes a checkpoint migration pair
+// writeCheckpointFiles writes a checkpoint migration pair
 // (NNNNNNNNNN_description.checkpoint.up.sql and .checkpoint.down.sql) into
 // outputDir at the given version and rewrites the directory's ptah.sum so the
 // new files are integrity-protected. It refuses to overwrite existing files —
 // the caller resolves a version above the existing history — and returns the
 // two written paths.
-func WriteCheckpointFiles(outputDir string, version int64, description, upSQL, downSQL string) (upPath, downPath string, err error) {
+func writeCheckpointFiles(outputDir string, version int64, description, upSQL, downSQL string) (upPath, downPath string, err error) {
 	return WriteCheckpointFilesWithOptions(outputDir, version, description, upSQL, downSQL, CheckpointWriteOptions{})
 }
 
@@ -165,14 +157,14 @@ func WriteCheckpointFilesWithOptions(
 	)
 }
 
-// AtlasCheckpointDirective is the file directive that marks an Atlas-format
+// atlasCheckpointDirective is the file directive that marks an Atlas-format
 // migration as a checkpoint.
 //
 // Measured against Atlas: the directive is honored only as the file's FIRST
 // line — the same text further down is ordinary comment content. The reader
 // enforces that (see migration/migrator/atlas_checkpoint.go), so the writer
 // must place it first and must not prepend a provenance header before it.
-const AtlasCheckpointDirective = "-- atlas:checkpoint"
+const atlasCheckpointDirective = "-- atlas:checkpoint"
 
 // ResolveAtlasCheckpointVersion returns the version an Atlas-format checkpoint
 // written into outputDir should carry: the current UTC timestamp in Atlas's
@@ -204,14 +196,14 @@ func ResolveAtlasCheckpointVersion(outputDir string) int64 {
 	return nextAvailableAtlasMigrationVersion(outputDir, nextAtlasMigrationVersion())
 }
 
-// WriteAtlasCheckpointFile writes an Atlas-format checkpoint migration
-// (<version>_<description>.sql whose first line is [AtlasCheckpointDirective])
+// writeAtlasCheckpointFile writes an Atlas-format checkpoint migration
+// (<version>_<description>.sql whose first line is [atlasCheckpointDirective])
 // into outputDir and rewrites the directory's atlas.sum so the new file is
 // integrity-protected. It returns the written path.
 //
 // Unlike the ptah two-file convention there is no down body: the Atlas format
 // is up-only, and measured Atlas checkpoints are a single file. Callers that
-// need a reversible checkpoint must use [WriteCheckpointFiles].
+// need a reversible checkpoint must use [WriteCheckpointFilesWithOptions].
 //
 // The file is created exclusively. A collision means the resolved version is
 // not above the existing history after all, which would produce a checkpoint
@@ -228,7 +220,7 @@ func ResolveAtlasCheckpointVersion(outputDir string) int64 {
 // The whole transaction runs through one binding of outputDir, so the file and
 // the checksum are committed to the same filesystem object even if the pathname
 // is replaced mid-call (stokaro/ptah#1118).
-func WriteAtlasCheckpointFile(outputDir string, version int64, description, upSQL string) (path string, err error) {
+func writeAtlasCheckpointFile(outputDir string, version int64, description, upSQL string) (path string, err error) {
 	return WriteAtlasCheckpointFileWithOptions(outputDir, version, description, upSQL, CheckpointWriteOptions{})
 }
 
@@ -248,9 +240,10 @@ func WriteAtlasCheckpointFileWithOptions(
 }
 
 // AtlasCheckpointArtifact returns the file name and contents that
-// [WriteAtlasCheckpointFile] writes for the given version, description and
-// cumulative up body, without touching the filesystem. Dry runs render it, and
-// the writer uses it too, so the previewed artifact is the written one.
+// [WriteAtlasCheckpointFileWithOptions] writes for the given version,
+// description and cumulative up body, without touching the filesystem. Dry
+// runs render it, and the writer uses it too, so the previewed artifact is
+// the written one.
 //
 // The name is <version>_<description>.sql; Atlas was measured to write
 // <version>_checkpoint.sql for an unnamed checkpoint, so an empty description
@@ -266,9 +259,9 @@ func AtlasCheckpointArtifact(version int64, description, upSQL string) (name, co
 
 	body := strings.Trim(upSQL, "\n")
 	if body == "" {
-		return name, AtlasCheckpointDirective + "\n"
+		return name, atlasCheckpointDirective + "\n"
 	}
-	return name, AtlasCheckpointDirective + "\n\n" + body + "\n"
+	return name, atlasCheckpointDirective + "\n\n" + body + "\n"
 }
 
 // CheckpointFromShadowOptions configures GenerateCheckpointFromShadow.
@@ -310,6 +303,11 @@ type CheckpointFromShadowOptions struct {
 // migration metadata is removed before introspection. For a SQLite shadow,
 // malformed PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP configuration is refused
 // before the shadow connection or replay.
+//
+// The checkpoint is rendered through the shadow connection, so the complete
+// candidate identifier set is resolved under the shadow catalog's collation
+// rather than under conservative offline rules — on SQL Server that is what
+// lets case-variant identifiers coexist in one checkpoint.
 func GenerateCheckpointFromShadow(ctx context.Context, opts CheckpointFromShadowOptions) (upSQL, downSQL string, err error) {
 	dialect := opts.Dialect
 	if resolvedDialect, dialectErr := atlasurl.DialectFromURL(opts.ShadowDatabaseURL); dialectErr == nil {

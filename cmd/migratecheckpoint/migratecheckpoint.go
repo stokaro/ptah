@@ -16,6 +16,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/cmd/internal/editor"
+	"go.5x5.cz/ptah/cmd/internal/migrateflags"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/dblock"
@@ -175,7 +176,7 @@ func migrateCheckpointCommand(cmd *cobra.Command, _ []string, opts *options) err
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	migrationLockTimeout, err := migrator.ParseMigrationLockTimeout(opts.migrationLockTimeout)
+	migrationLockTimeout, err := migrateflags.ParseMigrationLockTimeout(opts.migrationLockTimeout)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

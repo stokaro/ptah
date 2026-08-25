@@ -338,7 +338,7 @@ func publishMigrationDirSum(
 //
 // It used to run entirely on pathnames, and the split it allowed was measured
 // rather than argued: with the directory renamed aside after the checkpoint file
-// was created, `WriteAtlasCheckpointFile` returned nil having left the
+// was created, the writer returned nil having left the
 // checkpoint in the retained directory and written atlas.sum into the directory
 // that took over the pathname. The retained directory is then uncovered, so
 // every reader rejects it, and the impostor carries a checksum for a snapshot it
