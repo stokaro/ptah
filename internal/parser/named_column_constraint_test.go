@@ -69,18 +69,12 @@ func TestParser_ColumnLevelNamedConstraintWithNowhereToKeepTheName(t *testing.T)
 		name       string
 		constraint string
 	}{
+		// NOT NULL and DEFAULT are what remain: ColumnNode keeps Nullable and
+		// the default with nowhere to put a constraint name, and neither has a
+		// table-level form to read the name into the way UNIQUE and PRIMARY KEY
+		// do.
 		{name: "not null", constraint: "NOT NULL"},
 		{name: "default", constraint: "DEFAULT 1"},
-		{
-			// PRIMARY KEY has a place to keep a name -- the table-level form
-			// this parser already reads -- and it is still refused, because the
-			// renderer collapses a single-column primary key back into the
-			// column and drops the name on the way out. Measured on PostgreSQL
-			// 17 from the table-level spelling: `CONSTRAINT c_pk PRIMARY KEY
-			// (b)` applies as `t_pkey` and --dry-run answers `Schema is synced`
-			// (stokaro/ptah#2180).
-			name: "primary key", constraint: "PRIMARY KEY",
-		},
 	}
 
 	for _, tt := range tests {
@@ -91,7 +85,7 @@ func TestParser_ColumnLevelNamedConstraintWithNowhereToKeepTheName(t *testing.T)
 				`CREATE TABLE t (b INTEGER CONSTRAINT c_x ` + tt.constraint + `);`).Parse()
 
 			c.Assert(err, qt.ErrorMatches, `.*named column constraint "c_x".*`)
-			c.Assert(err, qt.ErrorMatches, `.*CHECK, REFERENCES and UNIQUE.*`)
+			c.Assert(err, qt.ErrorMatches, `.*CHECK, REFERENCES, UNIQUE and PRIMARY KEY.*`)
 		})
 	}
 }
@@ -136,4 +130,55 @@ func TestParser_ColumnLevelUnnamedUniqueStaysOnTheColumn(t *testing.T) {
 	table := statements.Statements[0].(*ast.CreateTableNode)
 	c.Assert(table.Constraints, qt.HasLen, 0)
 	c.Assert(table.Columns[1].Unique, qt.IsTrue)
+}
+
+// A named PRIMARY KEY written on a column is read as the table constraint it
+// is -- stokaro/ptah#2161, unblocked by stokaro/ptah#2180.
+//
+// It was refused until the renderer stopped collapsing a single-column primary
+// key back into the column: reading it then would have handed a name to a path
+// that dropped it, applying as `t_pkey` while --dry-run answered `Schema is
+// synced`. With the name surviving, reading it is what keeps it.
+//
+// Measured on PostgreSQL 17: applied, `pg_constraint.conname` reads `c_pk`, and
+// a second plan reports `Schema is synced`.
+func TestParser_ColumnLevelNamedPrimaryKeyBecomesATableConstraint(t *testing.T) {
+	c := qt.New(t)
+
+	statements, err := parser.NewParser(
+		`CREATE TABLE t (a INTEGER, b INTEGER CONSTRAINT c_pk PRIMARY KEY);`).Parse()
+
+	c.Assert(err, qt.IsNil)
+	table := statements.Statements[0].(*ast.CreateTableNode)
+	c.Assert(table.Constraints, qt.HasLen, 1)
+	c.Assert(table.Constraints[0].Name, qt.Equals, "c_pk")
+	c.Assert(table.Constraints[0].Type, qt.Equals, ast.PrimaryKeyConstraint)
+	c.Assert(table.Constraints[0].Columns, qt.DeepEquals, []string{"b"})
+	// The column keeps no primary flag of its own: one key, stated once.
+	c.Assert(table.Columns[1].Primary, qt.IsFalse)
+}
+
+// An unnamed inline PRIMARY KEY stays on the column, which is where a nameless
+// one belongs and what every existing schema produces.
+func TestParser_ColumnLevelUnnamedPrimaryKeyStaysOnTheColumn(t *testing.T) {
+	c := qt.New(t)
+
+	statements, err := parser.NewParser(
+		`CREATE TABLE t (a INTEGER, b INTEGER PRIMARY KEY);`).Parse()
+
+	c.Assert(err, qt.IsNil)
+	table := statements.Statements[0].(*ast.CreateTableNode)
+	c.Assert(table.Constraints, qt.HasLen, 0)
+	c.Assert(table.Columns[1].Primary, qt.IsTrue)
+}
+
+// PRIMARY without KEY is a syntax error, not a primary key. Without this the
+// reader could accept `CONSTRAINT c PRIMARY` and record a key nobody wrote.
+func TestParser_ColumnLevelNamedPrimaryRequiresKey(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := parser.NewParser(
+		`CREATE TABLE t (b INTEGER CONSTRAINT c_pk PRIMARY);`).Parse()
+
+	c.Assert(err, qt.ErrorMatches, `.*expected KEY after PRIMARY.*`)
 }
