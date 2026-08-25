@@ -11323,6 +11323,7 @@ func (m *Migrator) WithExecOrder(execOrder ExecOrder) *Migrator
 func (m *Migrator) WithLogger(l *slog.Logger) *Migrator
 func (m *Migrator) WithMigrationLockName(name string) *Migrator
 func (m *Migrator) WithMigrationLockTimeout(timeout time.Duration) *Migrator
+func (m *Migrator) WithMigrationsEngine(engine string) *Migrator
 func (m *Migrator) WithMigrationsTable(schema, table string) *Migrator
 func (m *Migrator) WithObserver(observer Observer) *Migrator
 func (m *Migrator) WithOutOfOrderExempt(versions []int64) *Migrator

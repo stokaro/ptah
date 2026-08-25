@@ -82,6 +82,7 @@ type options struct {
 	envName              string
 	migrationsSchema     string
 	migrationsTable      string
+	migrationsEngine     string
 	revisionTableFormat  string
 	logFormat            string
 	logLevel             string
@@ -158,6 +159,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	dbcli.RegisterAtlasProjectInternalFlags(flags)
 	dbcli.RegisterMigrationsSchemaFlag(flags, &opts.migrationsSchema)
 	dbcli.RegisterMigrationsTableFlag(flags, &opts.migrationsTable)
+	dbcli.RegisterMigrationsEngineFlag(flags, &opts.migrationsEngine)
 	dbcli.RegisterRevisionTableFormatFlag(flags, &opts.revisionTableFormat)
 }
 
@@ -352,6 +354,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 			dirFormat:        dirFormat,
 			migrationsSchema: migrationsSchema,
 			migrationsTable:  migrationsTable,
+			migrationsEngine: opts.migrationsEngine,
 			revisionFormat:   revisionFormat,
 		}); err != nil {
 			return err
@@ -374,6 +377,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 		return fmt.Errorf("error registering migrations: %w", err)
 	}
 	mig = mig.WithMigrationsTable(migrationsSchema, migrationsTable).
+		WithMigrationsEngine(opts.migrationsEngine).
 		WithRevisionTableFormat(revisionFormat).
 		WithSkipChecks(resolvedOpts.skipChecks).
 		WithDefaultTimeouts(timeouts).
@@ -619,6 +623,7 @@ type downTagResolution struct {
 	dirFormat        migrator.MigrationDirFormat
 	migrationsSchema string
 	migrationsTable  string
+	migrationsEngine string
 	revisionFormat   migrator.RevisionTableFormat
 }
 
@@ -639,6 +644,7 @@ func resolveDownTag(cmd *cobra.Command, emit cliobs.Emitter, r downTagResolution
 	}
 	resolver = resolver.
 		WithMigrationsTable(r.migrationsSchema, r.migrationsTable).
+		WithMigrationsEngine(r.migrationsEngine).
 		WithRevisionTableFormat(r.revisionFormat)
 	version, err := resolver.ResolveMigrationTag(cmd.Context(), r.toTag)
 	if err != nil {

@@ -133,6 +133,7 @@ type Migrator struct {
 	defaultTimeouts      MigrationTimeouts
 	migrationsTable      string
 	migrationsSchema     string
+	migrationsEngine     string
 	revisionTableFormat  RevisionTableFormat
 	execOrder            ExecOrder
 	outOfOrderExempt     []int64
@@ -490,6 +491,71 @@ func (m *Migrator) WithTransactionMode(mode MigrationTxMode) *Migrator {
 	return &tmp
 }
 
+// WithMigrationsEngine names the storage engine the revision table is created
+// with. An empty engine leaves the dialect's own default.
+//
+// Only ClickHouse reads it. There a table has no engine unless one is named,
+// and whether an unnamed one is even legal is decided by the server's
+// `default_table_engine` -- whose own default value is `None`
+// (stokaro/ptah#2234).
+func (m *Migrator) WithMigrationsEngine(engine string) *Migrator {
+	tmp := *m
+	tmp.migrationsEngine = strings.TrimSpace(engine)
+	tmp.initialized = false
+	tmp.initializedDryRun = false
+	return &tmp
+}
+
+// migrationsTableCreateError names the engine and the flag that chose it when a
+// target has one, because the server's own message does not.
+//
+// A ClickHouse engine the revision table cannot use is refused as
+// `code: 36, message: Engine Log doesn't support ... ORDER_BY ...`, which says
+// what is wrong and not where the engine came from. On a deployment that set it
+// through PTAH_MIGRATIONS_ENGINE rather than on the command line, that is the
+// difference between a one-line fix and a search (stokaro/ptah#2234).
+func (m *Migrator) migrationsTableCreateError(err error) error {
+	clause := strings.TrimSpace(m.revisionEngineClause())
+	if clause == "" {
+		return fmt.Errorf("failed to create migrations table: %w", err)
+	}
+	return fmt.Errorf(
+		"failed to create migrations table with %s (set --migrations-engine or PTAH_MIGRATIONS_ENGINE to choose another): %w",
+		clause, err)
+}
+
+// revisionEngineClause is the storage-engine clause the revision table carries.
+//
+// MySQL and MariaDB have always named InnoDB here, because the server default
+// is a deployment setting there too. ClickHouse now names one for the same
+// reason and a stronger one: an unnamed engine is not merely a different table,
+// it is a statement the server may refuse outright, and on a cluster it is a
+// local MergeTree holding a migration history the other replicas do not have.
+//
+// MergeTree is the default rather than a Log engine because the revision table
+// is read back and updated, and because it is what a server with the usual
+// `default_table_engine = MergeTree` was already producing -- so an existing
+// deployment sees the same table it had.
+func (m *Migrator) revisionEngineClause() string {
+	return revisionEngineClauseFor(m.connectionDialect(), m.migrationsEngine)
+}
+
+// revisionEngineClauseFor is the same decision without a Migrator, for the
+// Atlas-format DDL, which is built from a bare dialect.
+func revisionEngineClauseFor(dialect, engine string) string {
+	engine = strings.TrimSpace(engine)
+	switch {
+	case engine != "":
+		return " ENGINE = " + engine
+	case implicitCommitDialect(dialect):
+		return " ENGINE=InnoDB"
+	case platform.NormalizeDialect(dialect) == platform.ClickHouse:
+		return " ENGINE = MergeTree"
+	default:
+		return ""
+	}
+}
+
 // WithMigrationsTable sets the table used to record applied migrations.
 func (m *Migrator) WithMigrationsTable(schema, table string) *Migrator {
 	tmp := *m
@@ -614,10 +680,11 @@ func (m *Migrator) createMigrationsTableSQL() string {
 		m.connectionDialect(),
 		m.qualifiedMigrationsTable(),
 		sqlStringLiteral(m.sqlServerObjectName()),
+		m.migrationsEngine,
 	)
 }
 
-func ptahRevisionsTableDDL(dialect, qualifiedTable, sqlServerObjectLiteral string) string {
+func ptahRevisionsTableDDL(dialect, qualifiedTable, sqlServerObjectLiteral, engine string) string {
 	if platform.NormalizeDialect(dialect) == platform.SQLServer {
 		return fmt.Sprintf(`IF OBJECT_ID(%s, N'U') IS NULL
 BEGIN
@@ -635,10 +702,7 @@ BEGIN
     )
 END`, sqlServerObjectLiteral, qualifiedTable)
 	}
-	engineClause := ""
-	if implicitCommitDialect(dialect) {
-		engineClause = " ENGINE=InnoDB"
-	}
+	engineClause := revisionEngineClauseFor(dialect, engine)
 	return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
     version BIGINT PRIMARY KEY,
     description TEXT NOT NULL,
@@ -739,7 +803,7 @@ func (m *Migrator) Initialize(ctx context.Context) error {
 	// Deliberately outside the migration writer for the same reason as schema
 	// creation: there is no active migration transaction yet.
 	if _, err := m.conn.ExecContext(ctx, m.createMigrationsTableSQL()); err != nil {
-		return fmt.Errorf("failed to create migrations table: %w", err)
+		return m.migrationsTableCreateError(err)
 	}
 	// Check the engine before upgrading an existing table. ALTER TABLE itself
 	// commits on the MySQL family, so validating afterward could mutate metadata
