@@ -6,8 +6,14 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/internal/spannerttl"
 )
+
+// spannerColumnKey is the rule the comparator passes in production: the
+// target's own column-name semantics, which for Spanner are exact.
+var spannerColumnKey = identifier.ForDialect(platform.Spanner).ColumnIdentityKey
 
 // TestParse_ReadsWhatTheCatalogPrints pins the shapes a live server produced.
 //
@@ -188,6 +194,26 @@ func TestEqual_ComparesTheIntervalAsAValue(t *testing.T) {
 			want:     false,
 		},
 		{
+			// Case is part of the name on this target: identifier.ForDialect
+			// gives Spanner ComparisonExact for columns, so these are two
+			// columns and moving the policy between them is a real change.
+			// Folding them together would leave the deletion tied to the wrong
+			// timestamp with nothing planned.
+			name:     "two columns differing only in case are two columns",
+			declared: &ast.RowDeletionPolicySpec{Column: "CreatedAt", Interval: "30 days"},
+			stored:   &ast.RowDeletionPolicySpec{Column: "createdat", Interval: "30 days"},
+			want:     false,
+		},
+		{
+			// And the same spelling is the same column, which is what keeps the
+			// row above from being satisfied by a comparison that answers false
+			// for everything.
+			name:     "the same name is the same column",
+			declared: &ast.RowDeletionPolicySpec{Column: "CreatedAt", Interval: "30 days"},
+			stored:   &ast.RowDeletionPolicySpec{Column: "CreatedAt", Interval: "4 WEEKS 2 DAYS"},
+			want:     true,
+		},
+		{
 			// The control for the interval: without it, a comparison that
 			// folded every interval to equal would pass every row above.
 			name:     "a genuinely different interval is a change",
@@ -234,7 +260,7 @@ func TestEqual_ComparesTheIntervalAsAValue(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(spannerttl.Equal(test.declared, test.stored), qt.Equals, test.want)
+			c.Assert(spannerttl.Equal(test.declared, test.stored, spannerColumnKey), qt.Equals, test.want)
 		})
 	}
 }

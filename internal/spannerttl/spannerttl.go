@@ -101,7 +101,17 @@ func Render(spec *ast.RowDeletionPolicySpec, quoteIdentifier func(string) string
 
 // Equal reports whether two policies delete the same rows on the same schedule.
 //
-// The column is compared as written and the interval as the value it denotes.
+// The column is compared with the TARGET's identifier semantics, not folded
+// case-insensitively here. Spanner distinguishes quoted names that differ only
+// in case, so `"CreatedAt"` and `"createdat"` are two columns; a policy moved
+// between them is a real change, and folding it away would leave the deletion
+// tied to the wrong timestamp with nothing planned. The caller passes
+// [go.5x5.cz/ptah/core/platform/identifier.Semantics.ColumnIdentityKey], which
+// is the same rule every other column comparison in the comparator uses -- so
+// an unquoted name the server lower-cases still converges, and a quoted one
+// that genuinely differs does not.
+//
+// The interval is compared as the value it denotes.
 //
 // An interval either side cannot parse falls back to comparing the two as text,
 // rather than reporting a difference. The fallback is the conservative
@@ -110,11 +120,11 @@ func Render(spec *ast.RowDeletionPolicySpec, quoteIdentifier func(string) string
 // makes them identical. Reporting "differs" for every unreadable spelling would
 // plan that change on every run forever, which is the failure this comparison
 // exists to prevent.
-func Equal(a, b *ast.RowDeletionPolicySpec) bool {
+func Equal(a, b *ast.RowDeletionPolicySpec, columnKey func(string) string) bool {
 	if a.IsZero() || b.IsZero() {
 		return a.IsZero() && b.IsZero()
 	}
-	if !strings.EqualFold(a.Column, b.Column) {
+	if columnKey(a.Column) != columnKey(b.Column) {
 		return false
 	}
 	left, leftOK := intervalHours(a.Interval)

@@ -3808,15 +3808,20 @@ func (p *Parser) handleRowDeletionPolicy(table *ast.CreateTableNode) error {
 	return nil
 }
 
-// unquoteLiteral strips one pair of the given quote character, and leaves a
-// value carrying none alone. The lexer hands a String token its quotes, so a
-// value stored as written would carry them into the model and out again into
-// every statement rendered from it.
+// unquoteLiteral strips one pair of the given quote character and undoubles the
+// escapes inside it, leaving a value carrying no quotes alone.
+//
+// The lexer hands a String token its quotes, so a value stored as written would
+// carry them into the model and out again into every statement rendered from
+// it. Undoubling matters for the same reason in the other direction: a column
+// named `a"b` is written `"a""b"`, and keeping the doubled pair would store
+// `a""b`, which the renderer then escapes again into a column no database has.
 func unquoteLiteral(value string, quote byte) string {
-	if len(value) >= 2 && value[0] == quote && value[len(value)-1] == quote {
-		return value[1 : len(value)-1]
+	if len(value) < 2 || value[0] != quote || value[len(value)-1] != quote {
+		return value
 	}
-	return value
+	pair := string([]byte{quote, quote})
+	return strings.ReplaceAll(value[1:len(value)-1], pair, string(quote))
 }
 
 func isCreateTableOptionBoundary(option string) bool {

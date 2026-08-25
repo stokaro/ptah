@@ -211,7 +211,7 @@ func TablesAndColumnsWithGeneratedExpressions(
 			// reports synced while rows expire on a schedule nobody declared
 			// (stokaro/ptah#2236).
 			tableDiff.RowDeletionPolicyChange = rowDeletionPolicyChange(
-				genTable.RowDeletionPolicy, dbTable.RowDeletionPolicy)
+				genTable.RowDeletionPolicy, dbTable.RowDeletionPolicy, semantics)
 			// A comment is compared here for the same reason as the TTL policy,
 			// and reaches TablesModified for the same reason: it belongs to the
 			// table rather than to any column, and a table whose only
@@ -304,8 +304,11 @@ func rowTTLChange(desired, current *ast.RowTTLSpec) *difftypes.RowTTLChange {
 // back as `INTERVAL '4 WEEKS 2 DAYS'` -- so comparing the two as text would
 // report a difference between a database and its own description, forever.
 // [go.5x5.cz/ptah/internal/spannerttl] owns that comparison (stokaro/ptah#2236).
-func rowDeletionPolicyChange(desired, current *ast.RowDeletionPolicySpec) *difftypes.RowDeletionPolicyChange {
-	if spannerttl.Equal(desired, current) {
+func rowDeletionPolicyChange(
+	desired, current *ast.RowDeletionPolicySpec,
+	semantics identifier.Semantics,
+) *difftypes.RowDeletionPolicyChange {
+	if spannerttl.Equal(desired, current, semantics.ColumnIdentityKey) {
 		return nil
 	}
 	return &difftypes.RowDeletionPolicyChange{Desired: desired.Clone(), Current: current.Clone()}

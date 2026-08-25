@@ -1772,6 +1772,17 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	// 11. Disable RLS on tables (must be done after removing policies)
 	result = p.disableRLSOnTables(result, diff)
 
+	// 11.9. The row deletion policy, after the columns exist and BEFORE any
+	// column is removed. Both halves are load-bearing: the clause names a
+	// column, so retargeting it to one added in the same plan cannot run
+	// before that column is there -- and the column it currently names cannot
+	// be dropped while the policy still points at it. That is the same
+	// constraint the RLS policies above carry, and the same position
+	// (stokaro/ptah#2236).
+	if p.planningRowDeletionPolicy() {
+		result = p.applyRowDeletionPolicyChanges(result, diff)
+	}
+
 	// 12. Remove table columns (must be done after removing RLS policies that depend on columns)
 	result = p.removeTableColumns(result, diff)
 
@@ -1781,13 +1792,6 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	// (stokaro/ptah#1027).
 	if p.planningRowTTL() {
 		result = p.applyRowTTLChanges(result, diff)
-	}
-
-	// 12.4b. The row deletion policy, in the same position and for the same
-	// reason: it names a column, which has to exist before the clause can name
-	// it (stokaro/ptah#2236).
-	if p.planningRowDeletionPolicy() {
-		result = p.applyRowDeletionPolicyChanges(result, diff)
 	}
 
 	// 12.5. Remove constraints (must be done before removing tables)
