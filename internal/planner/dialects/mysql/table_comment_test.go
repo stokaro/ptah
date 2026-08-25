@@ -84,7 +84,10 @@ func tableCommentDiff(desired string) *types.SchemaDiff {
 func commentedTableSchema() *goschema.Database {
 	return &goschema.Database{
 		Tables: []goschema.Table{{Name: "users", StructName: "User"}},
-		Fields: []goschema.Field{{Name: "id", StructName: "User", Type: "INT", Primary: true}},
+		Fields: []goschema.Field{
+			{Name: "id", StructName: "User", Type: "INT", Primary: true},
+			{Name: "email", StructName: "User", Type: "VARCHAR(255)", Comment: "primary contact"},
+		},
 	}
 }
 
@@ -104,6 +107,62 @@ func appendSetComments(found []*ast.SetCommentOperation, node ast.Node) []*ast.S
 	for _, operation := range alter.Operations {
 		if setComment, isSetComment := operation.(*ast.SetCommentOperation); isSetComment {
 			found = append(found, setComment)
+		}
+	}
+	return found
+}
+
+// A column's comment does NOT get a statement of its own here: MODIFY COLUMN
+// restates the whole definition and carries it. This is the control for the
+// dialect predicate -- without it, making every dialect emit a separate
+// statement would pass, and MySQL would receive an operation its renderer
+// refuses (stokaro/ptah#2168).
+func TestPlanner_MySQLFamilyCarriesAColumnCommentInTheModify(t *testing.T) {
+	for _, test := range mysqlFamilyPlannerCases() {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			nodes, err := test.planner.GenerateMigrationASTChecked(
+				columnCommentOnlyDiff(),
+				commentedTableSchema(),
+			)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(setCommentOperations(nodes), qt.HasLen, 0)
+			c.Assert(modifiedColumnComments(nodes), qt.DeepEquals, []string{"primary contact"})
+		})
+	}
+}
+
+func columnCommentOnlyDiff() *types.SchemaDiff {
+	return &types.SchemaDiff{
+		TablesModified: []types.TableDiff{{
+			TableName: "users",
+			ColumnsModified: []types.ColumnDiff{{
+				ColumnName:    "email",
+				Changes:       make(map[string]string),
+				CommentChange: &types.CommentChange{Current: "login address", Desired: "primary contact"},
+			}},
+		}},
+	}
+}
+
+func modifiedColumnComments(nodes []ast.Node) []string {
+	found := make([]string, 0)
+	for _, node := range nodes {
+		found = appendModifiedComments(found, node)
+	}
+	return found
+}
+
+func appendModifiedComments(found []string, node ast.Node) []string {
+	alter, isAlter := node.(*ast.AlterTableNode)
+	if !isAlter {
+		return found
+	}
+	for _, operation := range alter.Operations {
+		if modify, isModify := operation.(*ast.ModifyColumnOperation); isModify {
+			found = append(found, modify.Column.Comment)
 		}
 	}
 	return found

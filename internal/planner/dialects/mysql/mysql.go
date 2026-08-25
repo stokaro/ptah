@@ -353,7 +353,22 @@ func (p *Planner) modifyExistingColumns(
 	generated *goschema.Database,
 	semantics identifier.Semantics,
 ) ([]ast.Node, error) {
+	commentRidesAlong := p.columnCommentRidesWithTheColumn()
 	for _, colDiff := range tableDiff.ColumnsModified {
+		// A column comment travels with the column on MySQL and MariaDB,
+		// because MODIFY COLUMN restates the whole definition and that
+		// definition carries a COMMENT clause. Oracle has no such clause, so
+		// there the comment is a statement of its own -- and a column whose
+		// ONLY difference is its comment gets no MODIFY at all, which matters
+		// more there than anywhere: this planner's own note records that
+		// Oracle's nullability clause is not idempotent, so a MODIFY that
+		// changes nothing is a statement waiting to fail (stokaro/ptah#2168).
+		if !commentRidesAlong {
+			result = appendColumnComment(result, tableDiff.TableName, colDiff)
+			if len(colDiff.Changes) == 0 {
+				continue
+			}
+		}
 		suppressColumnPrimary := false
 		if _, hasPrimaryKeyChange := colDiff.Changes["primary_key"]; hasPrimaryKeyChange &&
 			primaryKeyColumnChangeOwnedByTableConstraint(diff, tableDiff.TableName, colDiff.ColumnName, semantics) {
@@ -538,6 +553,36 @@ func (p *Planner) removeColumns(result []ast.Node, tableDiff *types.TableDiff) (
 		result = append(result, astCommentNode)
 	}
 	return result, nil
+}
+
+// columnCommentRidesWithTheColumn reports whether this dialect's MODIFY COLUMN
+// carries the comment, so no separate statement is needed.
+//
+// It is a question about the SQL these engines accept, not about Ptah: MySQL
+// and MariaDB have an inline COMMENT clause in a column definition and Oracle
+// does not, and the planners share this algorithm.
+func (p *Planner) columnCommentRidesWithTheColumn() bool {
+	switch p.targetDialect() {
+	case platform.MySQL, platform.MariaDB:
+		return true
+	default:
+		return false
+	}
+}
+
+// appendColumnComment emits a column's comment transition as a statement of its
+// own, for the dialects that need one.
+func appendColumnComment(result []ast.Node, table string, colDiff types.ColumnDiff) []ast.Node {
+	if colDiff.CommentChange == nil {
+		return result
+	}
+	return append(result, &ast.AlterTableNode{
+		Name: table,
+		Operations: []ast.AlterOperation{&ast.SetCommentOperation{
+			Column:  colDiff.ColumnName,
+			Comment: colDiff.CommentChange.Desired,
+		}},
+	})
 }
 
 // appendTableComment emits the table's comment transition, if it has one.
