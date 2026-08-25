@@ -66,7 +66,15 @@ func (r *Reader) readRLSPolicies() ([]types.DBRLSPolicy, error) {
 		key := pairKey{policy: policyName, table: tableName}
 		policy, seen := byPair[key]
 		if !seen {
-			policy = &types.DBRLSPolicy{Name: policyName, Table: tableName}
+			// PolicyFor is seeded here rather than in either arm below. A
+			// filter predicate has no per-operation form and the catalog
+			// reports its operation as NULL, so ALL is what it covers; the
+			// BLOCK arm overwrites this with the operation it carries. Seeding
+			// at construction also keeps the answer independent of which
+			// predicate the catalog reports first: a policy whose block half
+			// is written first would otherwise have its operation overwritten
+			// by the filter half arriving second.
+			policy = &types.DBRLSPolicy{Name: policyName, Table: tableName, PolicyFor: "ALL"}
 			byPair[key] = policy
 			order = append(order, key)
 		}

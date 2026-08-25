@@ -3,8 +3,10 @@ package mysql
 import (
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/mssqlpolicy"
 	"go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
@@ -51,6 +53,17 @@ func (p *Planner) planRLS(result []ast.Node, diff *types.SchemaDiff, generated *
 			continue
 		}
 		qualified := fromschema.QualifyRLSPolicyForTarget(*declaration, *generated, p.targetDialect())
+		// A replacement whose create half the renderer would refuse must not
+		// contribute its drop half. The pair would leave the table with no
+		// row-level security at all, which is a worse answer than the
+		// difference it was planned to close. The create node is still emitted
+		// so the refusal is visible in the plan rather than the policy
+		// silently going unchanged (stokaro/ptah#2211).
+		if p.targetDialect() == platform.SQLServer &&
+			mssqlpolicy.UnrenderableFor(qualified.PolicyFor, qualified.WithCheckExpression) != "" {
+			result = append(result, fromschema.FromRLSPolicy(qualified))
+			continue
+		}
 		result = append(result,
 			ast.NewDropPolicy(qualified.Name, qualified.Table).SetIfExists(),
 			fromschema.FromRLSPolicy(qualified))
