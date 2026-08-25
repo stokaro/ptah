@@ -2398,6 +2398,27 @@ func (p *Parser) parseColumnConstraintOrAttribute(table *ast.CreateTableNode, co
 	return nil
 }
 
+// handleColumnConstraint reads `CONSTRAINT <name> <constraint>` on a column.
+//
+// Every column constraint may be named in the SQL every supported engine
+// accepts -- measured on PostgreSQL 17.11, which takes a name in front of NOT
+// NULL, UNIQUE, PRIMARY KEY, CHECK, DEFAULT and REFERENCES alike. Ptah read
+// exactly one of them, and refused the rest by naming the keyword that followed
+// the name:
+//
+//	parent_id INTEGER CONSTRAINT fk_child_parent REFERENCES parent(id)
+//	-> unsupported column constraint "REFERENCES"
+//
+// which points at a word that works perfectly well on its own, one token to the
+// left (stokaro/ptah#2161).
+//
+// CHECK and REFERENCES are read, because [ast.ColumnNode.CheckName] and
+// [ast.ForeignKeyRef.Name] are places the name survives to DDL. The other four
+// are still refused, and deliberately: `Primary` and `Unique` are booleans with
+// nowhere to keep a name, so reading them would drop it, the renderer would
+// emit an unnamed constraint, the server would generate its own name, and the
+// reader would bring that name back as a difference nobody can resolve. A
+// refusal is worse than reading the file and better than permanent drift.
 func (p *Parser) handleColumnConstraint(column *ast.ColumnNode) error {
 	p.advance()
 	p.skipWhitespace()
@@ -2406,14 +2427,27 @@ func (p *Parser) handleColumnConstraint(column *ast.ColumnNode) error {
 		return fmt.Errorf("expected column constraint name: %w", err)
 	}
 	p.skipWhitespace()
-	if !p.current.MatchIdentifierValue("CHECK") {
-		return fmt.Errorf("unsupported column constraint %q at position %d", p.current.Value, p.current.Start)
+	switch {
+	case p.current.MatchIdentifierValue("CHECK"):
+		if err := p.handleCheck(column); err != nil {
+			return err
+		}
+		column.SetCheckName(name)
+		return nil
+	case p.current.MatchIdentifierValue("REFERENCES"):
+		if err := p.handleReferences(column); err != nil {
+			return err
+		}
+		column.ForeignKey.Name = name
+		return nil
+	default:
+		return fmt.Errorf(
+			"named column constraint %q at position %d: Ptah reads a name on CHECK and "+
+				"REFERENCES; on %s the name has nowhere to live and would be lost, so write "+
+				"the constraint at table level to keep it",
+			name, p.current.Start, strings.ToUpper(p.current.Value),
+		)
 	}
-	if err := p.handleCheck(column); err != nil {
-		return err
-	}
-	column.SetCheckName(name)
-	return nil
 }
 
 func (p *Parser) handlePrimaryKeyAttribute(table *ast.CreateTableNode, column *ast.ColumnNode) error {
