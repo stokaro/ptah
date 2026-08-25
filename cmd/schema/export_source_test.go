@@ -10,9 +10,10 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
+	"go.5x5.cz/ptah/cmd/schema"
 )
 
-// The four spellings of one desired schema. They declare the same two tables,
+// The spellings of one desired schema. They declare the same two tables,
 // the same foreign key, and the same named enum, so an export taken from any of
 // them describes the same contract and must produce the same bytes. The enum and
 // the foreign key are what make the comparison worth making: they are the two
@@ -171,6 +172,24 @@ CREATE TABLE products (
 );
 `
 
+	// gridDBMLSchema is the same schema as a DBML document. It exists so the
+	// source grid has a fifth spelling: a .dbml file loads without --from, and
+	// the refusal for a --from that contradicts it has to say which format the
+	// file is rather than call its extension unrecognized.
+	gridDBMLSchema = `Table categories {
+  id integer [pk]
+  name varchar(120) [not null]
+}
+
+Table products {
+  id integer [pk]
+  name varchar(255) [not null]
+  category_id integer [not null]
+}
+
+Ref: products.category_id > categories.id
+`
+
 	// strayGoModel is annotated Go in a directory nobody named as a source.
 	strayGoModel = `package stray
 
@@ -185,9 +204,9 @@ type AuditLog struct {
 `
 )
 
-// gridFixture writes the four source spellings into one directory and returns
-// it. The Go models live in a "models" subdirectory so a schema-file export can
-// be shown not to pick them up.
+// gridFixture writes the source spellings into one directory and returns it.
+// The Go models live in a "models" subdirectory so a schema-file export can be
+// shown not to pick them up.
 func gridFixture(c *qt.C) string {
 	c.Helper()
 	dir := resolvedTempDir(c)
@@ -198,6 +217,7 @@ func gridFixture(c *qt.C) string {
 	c.Assert(os.WriteFile(filepath.Join(dir, "schema.hcl"), []byte(gridHCLSchema), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(dir, "schema.sql"), []byte(gridSQLSchema), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("not a schema\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(dir, "schema.dbml"), []byte(gridDBMLSchema), 0o600), qt.IsNil)
 	return dir
 }
 
@@ -360,6 +380,7 @@ func TestSchemaExportRefusesSourcesItCannotRead(t *testing.T) {
 	yamlPath := filepath.Join(dir, "schema.yaml")
 	sqlPath := filepath.Join(dir, "schema.sql")
 	notesPath := filepath.Join(dir, "notes.txt")
+	dbmlPath := filepath.Join(dir, "schema.dbml")
 
 	tests := []struct {
 		name    string
@@ -375,7 +396,7 @@ func TestSchemaExportRefusesSourcesItCannotRead(t *testing.T) {
 		{
 			name:    "a format nothing reads",
 			args:    []string{"--to", "graphql", "--from", "toml"},
-			wantErr: `unsupported --from "toml": expected go, yaml, hcl, or sql`,
+			wantErr: `unsupported --from "toml": expected go, yaml, hcl, sql, or dbml`,
 		},
 		{
 			name:    "a declared format with no file",
@@ -388,10 +409,20 @@ func TestSchemaExportRefusesSourcesItCannotRead(t *testing.T) {
 			wantErr: fmt.Sprintf(`--from yaml does not match --schema-file %q, which is sql`, sqlPath),
 		},
 		{
+			// A .dbml file loads without --from, so the diagnostic for a
+			// mismatched --from has to name the format the file is -- not
+			// report the extension as unrecognized, which contradicts what the
+			// same command does one flag away (stokaro/ptah#2065).
+			name:    "a declared format a dbml file contradicts",
+			args:    []string{"--to", "graphql", "--from", "yaml", "--schema-file", dbmlPath},
+			wantErr: fmt.Sprintf(`--from yaml does not match --schema-file %q, which is dbml`, dbmlPath),
+		},
+		{
 			name: "a declared format on a file with no schema extension",
 			args: []string{"--to", "graphql", "--from", "yaml", "--schema-file", notesPath},
 			wantErr: fmt.Sprintf(
-				`--schema-file %q has no recognized schema file extension: expected .yaml, .yml, .hcl, or .sql`,
+				`--schema-file %q has no recognized schema file extension: `+
+					`expected .yaml, .yml, .hcl, .sql, or .dbml`,
 				notesPath,
 			),
 		},
@@ -443,4 +474,58 @@ func TestSchemaExportRefusesSourcesItCannotRead(t *testing.T) {
 			c.Assert(stdout, qt.Equals, "")
 		})
 	}
+}
+
+// TestSchemaExportAcceptsAnExplicitDBMLSource pins that a format Ptah reads is
+// a format Ptah can be told to read.
+//
+// A .dbml file loaded fine with --from left unset, because the resolver
+// dispatches on the extension, while naming it explicitly was refused --
+// "unsupported --from \"dbml\"" from a command that had just read the same
+// file. A format readable only by not mentioning it is a gap a caller finds by
+// being precise (stokaro/ptah#2065).
+func TestSchemaExportAcceptsAnExplicitDBMLSource(t *testing.T) {
+	c := qt.New(t)
+	dir := gridFixture(c)
+	dbmlPath := filepath.Join(dir, "schema.dbml")
+
+	implicit := runExportTarget(c, apiExportTargets()[1], []string{"--schema-file", dbmlPath})
+	explicit := runExportTarget(c, apiExportTargets()[1], []string{"--from", "dbml", "--schema-file", dbmlPath})
+
+	c.Assert(explicit, qt.Equals, implicit)
+	c.Assert(explicit, qt.Contains, "Product")
+}
+
+// TestSchemaExportFromHelpNamesEveryFormatItAccepts binds the flag's own
+// sentence to the formats it accepts.
+//
+// The help text is a hand-written list beside a switch, and it fell behind: it
+// said "go, yaml, hcl, or sql" while dbml was readable. A caller who reads
+// --help to find out what a flag takes is reading the one place nothing
+// checked (stokaro/ptah#2065).
+func TestSchemaExportFromHelpNamesEveryFormatItAccepts(t *testing.T) {
+	c := qt.New(t)
+
+	usage := exportFlagUsage(c, "from")
+
+	for _, format := range []string{"go", "yaml", "hcl", "sql", "dbml"} {
+		c.Assert(usage, qt.Contains, format,
+			qt.Commentf("--from accepts %q; its help does not say so", format))
+	}
+	// A format --from refuses must not be advertised, or the assertion above
+	// would pass on a sentence that listed everything.
+	c.Assert(usage, qt.Not(qt.Contains), "toml")
+}
+
+func exportFlagUsage(c *qt.C, name string) string {
+	c.Helper()
+	cmd := schema.NewSchemaCommand()
+	for _, sub := range cmd.Commands() {
+		flag := sub.Flags().Lookup(name)
+		if flag != nil && sub.Name() == "export" {
+			return flag.Usage
+		}
+	}
+	c.Fatalf("no --%s flag on \"schema export\"", name)
+	return ""
 }

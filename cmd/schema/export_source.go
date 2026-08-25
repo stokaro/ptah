@@ -74,6 +74,8 @@ func schemaFileFormat(path string) (string, bool) {
 		return exportFormatHCL, true
 	case ".sql":
 		return exportFormatSQL, true
+	case ".dbml":
+		return exportFormatDBML, true
 	default:
 		return "", false
 	}
@@ -105,7 +107,7 @@ func validateExportSource(opts exportOptions) error {
 			)
 		}
 		return nil
-	case exportFormatYAML, exportFormatHCL, exportFormatSQL:
+	case exportFormatYAML, exportFormatHCL, exportFormatSQL, exportFormatDBML:
 		return validateSchemaFileFormats(opts)
 	case exportSourceDB:
 		return fmt.Errorf(
@@ -114,8 +116,9 @@ func validateExportSource(opts exportOptions) error {
 			exportFromFlag, exportSourceDB,
 		)
 	default:
-		return fmt.Errorf("unsupported --%s %q: expected %s, %s, %s, or %s",
-			exportFromFlag, opts.from, exportFormatGo, exportFormatYAML, exportFormatHCL, exportFormatSQL)
+		return fmt.Errorf("unsupported --%s %q: expected %s, %s, %s, %s, or %s",
+			exportFromFlag, opts.from,
+			exportFormatGo, exportFormatYAML, exportFormatHCL, exportFormatSQL, exportFormatDBML)
 	}
 }
 
@@ -139,7 +142,8 @@ func validateSchemaFileFormats(opts exportOptions) error {
 		format, ok := schemaFileFormat(schemaFile)
 		if !ok {
 			return fmt.Errorf(
-				"--%s %q has no recognized schema file extension: expected .yaml, .yml, .hcl, or .sql",
+				"--%s %q has no recognized schema file extension: "+
+					"expected .yaml, .yml, .hcl, .sql, or .dbml",
 				exportSchemaFileFlag, schemaFile,
 			)
 		}
