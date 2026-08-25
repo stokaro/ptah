@@ -511,9 +511,36 @@ The rules today:
 | `PRV01` | a table whose privileges reach a role, with row-level security not enabled | info |
 | `PRV02` | a `SECURITY DEFINER` routine, which runs with its owner's privileges | info |
 | `PRV03` | a privilege granted to `PUBLIC`, which every current and future role holds | warning |
+| `ROL01` | a role holding privileges on an object it was not observed using | warning |
 | `ROL03` | two roles held by one member that grant nearly the same privileges | info |
 | `ROL04` | a role that cannot log in and that nobody holds | info |
 | `OWN01` | objects owned by a role that can log in | info |
+
+`ROL01` needs something no catalog keeps. A privilege is not use: a role holding
+`SELECT` on a table it has never read looks identical, in every catalog Ptah
+reads, to one that reads it hourly. PostgreSQL's `pg_stat_user_tables` counts
+scans without attributing them to a role, `pg_stat_statements` attributes to a
+`userid` but is an optional extension that records statement text rather than an
+object graph, MySQL and MariaDB keep no equivalent, and SQL Server's
+`sys.dm_db_index_usage_stats` attributes nothing to a principal.
+
+So the observation is supplied rather than read. `--role-usage <file>` takes a
+JSON list of what something else saw — an audit stream, `pg_stat_statements`, a
+proxy log:
+
+```json
+[{"role": "reporting", "kind": "table", "name": "orders"}]
+```
+
+Without the flag `ROL01` reports itself skipped. With it, every grant to a named
+role on an object absent from the list is reported. An empty list is a different
+answer from no file at all: it says the window was observed and nothing used
+anything, so every grant in it is unused.
+
+The severity is `warning` rather than `error` because the signal is a window,
+and a window is evidence of absence only for as long as it covers — a quarterly
+job that did not run inside it holds a privilege the rule will name. Grants to
+`PUBLIC` are left to `PRV03`, which has the better remedy for them.
 
 `ROL03` and `ROL04` read the server's role graph — who holds which role — so they
 run against a live database and report themselves skipped anywhere that graph was
