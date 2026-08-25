@@ -27,6 +27,7 @@ var nativeInspectedBlockTypes = []string{
 	"materialized \"account_counts\"",
 	"permission {",
 	"policy \"accounts_all\"",
+	"procedure \"reap_accounts\"",
 	"range \"intrange\"",
 	"role \"app_reader\"",
 	"schema \"public\"",
@@ -983,6 +984,13 @@ func inspectedRichDatabase() *goschema.Database {
 			Language: "plpgsql",
 			Returns:  "trigger",
 			Body:     "BEGIN RETURN NEW; END;",
+		}, {
+			// A procedure, so that the block the native surface owes its
+			// reader is one this fixture actually produces (stokaro/ptah#2209).
+			Name:     "reap_accounts",
+			Kind:     goschema.FunctionKindProcedure,
+			Language: "plpgsql",
+			Body:     "BEGIN END;",
 		}},
 		Views:             []goschema.View{{Name: "active_accounts", Body: "SELECT id FROM accounts"}},
 		MaterializedViews: []goschema.MaterializedView{{Name: "account_counts", Body: "SELECT id FROM accounts"}},

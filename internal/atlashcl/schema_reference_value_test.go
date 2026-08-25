@@ -29,9 +29,15 @@ import (
 // rewrite: with no `schema` block in the file, nothing binds the root and
 // `unknown variable` is the accurate thing to say. So is `nonsense`, which no
 // document ever declares.
+//
+// The carrier block is `wibble`, a name nothing models, because the check under
+// test runs before the body walk decides what to drop and so must not depend on
+// the block being one Ptah reads. It was `procedure` until Ptah began modeling
+// procedures (stokaro/ptah#2209), at which point these rows would have measured
+// an unsupported-attribute refusal instead of the evaluation they are about.
 func TestSchemaReferenceInAFunctionCallNamesTheRealCause(t *testing.T) {
 	const declared = `schema "main" {}
-procedure "p" {
+wibble "p" {
   names = jsonencode(schema.main)
 }
 `
@@ -40,12 +46,12 @@ procedure "p" {
     type = int
   }
 }
-procedure "p" {
+wibble "p" {
   names = jsonencode(schema.main)
 }
 `
 	const unknownRoot = `schema "main" {}
-procedure "p" {
+wibble "p" {
   names = jsonencode(nonsense.thing)
 }
 `
@@ -105,7 +111,7 @@ procedure "p" {
 // both of these down.
 func TestSchemaReferenceStillResolvesWhereItIsRead(t *testing.T) {
 	const source = `schema "main" {}
-procedure "p" {
+wibble "p" {
   schema = schema.main
 }
 table "users" {
