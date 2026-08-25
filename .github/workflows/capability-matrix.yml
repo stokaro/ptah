@@ -204,11 +204,24 @@ jobs:
 
           # A request that names something the matrix does not have is a typo,
           # and answering it with silence would be the same defect this file is
-          # about. Only a request that asked for cells can be wrong this way:
-          # "none" asked for nothing and got it.
-          if [ "${count}" -eq 0 ] && [ "${request}" != "none" ] && [ -n "${request}" ]; then
-            echo "requested cells (${request}) matched none of ${all}" >&2
-            exit 1
+          # about.
+          #
+          # EVERY selector is checked, not the count. `postgres,postgrez` has a
+          # valid half, so a count-only check passes while the misspelled half
+          # is discarded -- the run then probes fewer cells than were asked for
+          # and reports that it honored the request. Only "none" may match
+          # nothing: it asked for nothing and got it.
+          if [ "${request}" != "none" ] && [ -n "${request}" ]; then
+            unmatched="$(REQUEST="${request}" jq -r '
+              . as $ids
+              | ($ENV.REQUEST | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0)))
+              | map(select(. as $w | ($ids | any(. == $w or startswith($w + "-"))) | not))
+              | join(", ")' <<<"${all}")"
+            if [ -n "${unmatched}" ]; then
+              echo "requested cells matched nothing: ${unmatched}" >&2
+              echo "the matrix declares: ${all}" >&2
+              exit 1
+            fi
           fi
 
   presets:
@@ -388,11 +401,23 @@ jobs:
         run: go build -o "${RUNNER_TEMP}/capmatrix" ./internal/cmd/capmatrix
 
       - name: Aggregate the tier
+        env:
+          # The ids the cells job selected, as a comma-separated list. jq -r on
+          # a JSON array of strings is what turns one into the other without a
+          # shell loop.
+          EXPECTED: ${{ join(fromJSON(needs.cells.outputs.selected), ',') }}
         run: |
           set +e
           set -uo pipefail
           mkdir -p results
-          "${RUNNER_TEMP}/capmatrix" report --tier 2 --results results >"${RUNNER_TEMP}/tier2.md" 2>&1
+          # --expected narrows what "missing" means to what THIS run asked for.
+          # Without it a partial request -- `/capability-matrix postgres` --
+          # leaves every other declared cell without a result, and the report
+          # calls each of them MISSING and fails a run that did exactly what it
+          # was asked to do. The census itself is unchanged: it still iterates
+          # expected cells rather than received ones (stokaro/ptah#2185).
+          "${RUNNER_TEMP}/capmatrix" report --tier 2 --results results \
+            --expected "${EXPECTED}" >"${RUNNER_TEMP}/tier2.md" 2>&1
           code=$?
           cat "${RUNNER_TEMP}/tier2.md"
           cat "${RUNNER_TEMP}/tier2.md" >>"${GITHUB_STEP_SUMMARY}"
