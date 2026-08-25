@@ -2392,6 +2392,11 @@ type CreateViewNode struct {
     Replace   bool
     WithCheck bool
     Comment   string
+    // Attributes carries the view's own WITH clause on the targets that have
+    // one -- SQL Server's SCHEMABINDING and VIEW_METADATA. It is separate from
+    // WithCheck, which is a clause that follows the body rather than one that
+    // precedes it (stokaro/ptah#2125).
+    Attributes []string
 }
     CreateViewNode represents a CREATE VIEW statement.
 
@@ -6513,6 +6518,12 @@ type View struct {
     WithCheck  bool   // Whether to add WITH CHECK OPTION where supported
     Comment    string // Optional comment for documentation
 
+    // Attributes carries a view's own WITH clause on the targets that have one
+    // -- SQL Server's SCHEMABINDING and VIEW_METADATA. See
+    // [go.5x5.cz/ptah/dbschema/types.DBView] for why they are the view's rather
+    // than its body's (stokaro/ptah#2125).
+    Attributes []string `json:",omitempty"`
+
     // Dialects scopes this declaration to the named target dialects. See
     // [ScopeToDialect].
     Dialects []string `json:",omitempty"`
@@ -8740,6 +8751,16 @@ type DBView struct {
     Body        string `json:"body"`         // SELECT query used as the view definition
     CheckOption string `json:"check_option"` // NONE, LOCAL, CASCADED, or dialect equivalent
     Comment     string `json:"comment"`      // View comment/description
+    // Attributes carries the view's own WITH clause -- SQL Server's
+    // SCHEMABINDING and VIEW_METADATA -- uppercased, in the order the server
+    // wrote them.
+    //
+    // They belong to the view rather than to its body: SCHEMABINDING binds it
+    // to the tables it names, so they cannot be altered under it, and an
+    // indexed view requires it. The reader cuts the header off to get at the
+    // body, and nothing kept this, so a replayed view came back unbound with
+    // no diagnostic anywhere (stokaro/ptah#2125).
+    Attributes []string `json:"attributes,omitempty"`
 }
     DBView represents a database view read from the database.
 

@@ -609,8 +609,11 @@ func (r *Reader) readViews() ([]types.DBView, error) {
 		if err := rows.Scan(&view.Schema, &view.Name, &view.Body); err != nil {
 			return nil, err
 		}
-		// OBJECT_DEFINITION hands back the whole CREATE statement; the body is
-		// what belongs here. See [viewBody].
+		// OBJECT_DEFINITION hands back the whole CREATE statement. The body is
+		// what belongs in Body, and the header's WITH clause is what belongs in
+		// Attributes -- read before Body is overwritten, because both come from
+		// the same text. See [viewBody] and [viewAttributes].
+		view.Attributes = viewAttributes(view.Body)
 		view.Body = viewBody(view.Body)
 		view.Schema = r.outputSchema(view.Schema)
 		view.CheckOption = "NONE"

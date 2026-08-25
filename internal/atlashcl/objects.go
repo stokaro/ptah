@@ -174,11 +174,16 @@ func (p *parser) parseView(block *hclsyntax.Block) error {
 	if body == "" {
 		return p.blockError(block, "view %q requires as", name)
 	}
+	attributes, err := p.stringListAttr(block, "attributes")
+	if err != nil {
+		return err
+	}
 	p.db.Views = append(p.db.Views, goschema.View{
-		Name:      tableref.Canonical(schema, name),
-		Body:      body,
-		WithCheck: block.Body.Attributes["check_option"] != nil,
-		Comment:   p.optionalString(block.Body.Attributes["comment"]),
+		Name:       tableref.Canonical(schema, name),
+		Body:       body,
+		WithCheck:  block.Body.Attributes["check_option"] != nil,
+		Comment:    p.optionalString(block.Body.Attributes["comment"]),
+		Attributes: attributes,
 	})
 	return nil
 }
@@ -602,6 +607,7 @@ func (p *parser) rejectUnsupportedViewAttrs(block *hclsyntax.Block) error {
 		"as":           true,
 		"check_option": true,
 		"comment":      true,
+		"attributes":   true,
 	}, "view")
 }
 

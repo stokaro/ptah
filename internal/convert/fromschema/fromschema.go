@@ -1767,6 +1767,7 @@ func FromView(view goschema.View) *ast.CreateViewNode {
 		SetBody(view.Body).
 		SetWithCheck(view.WithCheck).
 		SetComment(view.Comment)
+	viewNode.Attributes = view.Attributes
 	return viewNode
 }
 

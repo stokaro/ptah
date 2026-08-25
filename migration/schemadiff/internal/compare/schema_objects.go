@@ -3,6 +3,7 @@ package compare
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -986,7 +987,53 @@ func ViewDefinitionsWithDialect(genView goschema.View, dbView types.DBView, dial
 		viewDiff.Changes["with_check"] = fmt.Sprintf("%t -> %t", dbWithCheck, genView.WithCheck)
 	}
 
+	// The view's own WITH clause. A view that gains or loses SCHEMABINDING is a
+	// different view -- it is what binds it to the tables it names, and an
+	// indexed view requires it -- so a change here has to be planned rather
+	// than tolerated (stokaro/ptah#2125).
+	if !sameViewAttributes(genView.Attributes, dbView.Attributes) {
+		viewDiff.Changes["attributes"] = fmt.Sprintf("%s -> %s",
+			renderViewAttributes(dbView.Attributes), renderViewAttributes(genView.Attributes))
+	}
+
 	return viewDiff
+}
+
+// sameViewAttributes compares two WITH clauses as SETS.
+//
+// `WITH SCHEMABINDING, VIEW_METADATA` and `WITH VIEW_METADATA, SCHEMABINDING`
+// are one view, and the server does not promise the order it reports. Comparing
+// the lists as written would plan a change for a document that says the same
+// thing in the other order, on every run.
+//
+// Case is folded for the same reason: the catalog echoes the text the author
+// wrote, so a lowercase declaration and an uppercase readback are the same
+// clause.
+func sameViewAttributes(declared, actual []string) bool {
+	return slices.Equal(normalizedViewAttributes(declared), normalizedViewAttributes(actual))
+}
+
+// normalizedViewAttributes upper-cases, trims, drops empties and sorts.
+func normalizedViewAttributes(attributes []string) []string {
+	normalized := make([]string, 0, len(attributes))
+	for _, attribute := range attributes {
+		if trimmed := strings.ToUpper(strings.TrimSpace(attribute)); trimmed != "" {
+			normalized = append(normalized, trimmed)
+		}
+	}
+	slices.Sort(normalized)
+	return normalized
+}
+
+// renderViewAttributes spells a clause for a change message, with a word for
+// the empty case so a failure reads as a sentence rather than as an arrow with
+// nothing on one side.
+func renderViewAttributes(attributes []string) string {
+	normalized := normalizedViewAttributes(attributes)
+	if len(normalized) == 0 {
+		return "(none)"
+	}
+	return strings.Join(normalized, ", ")
 }
 
 // MaterializedViewDefinitions performs detailed comparison between generated
