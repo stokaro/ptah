@@ -709,6 +709,13 @@ func TestAtlasRevisionsTableDDL_ClickHouseTakesTheEngineItIsGiven(t *testing.T) 
 // deployment that named an engine got InnoDB anyway and nothing said so. Both
 // revision formats and every dialect that has an engine clause now read the
 // same flag; InnoDB remains what an unset flag means.
+//
+// MyISAM is the value here because it is the one that shows the branch reading
+// the flag at all. It never reaches this function in a running Ptah:
+// revisionEngineRefusal turns it down before Initialize issues any statement,
+// which is what TestRevisionEngineRefusal_TurnsDownAnEngineTheTableCannotBe
+// pins. This is the DDL builder's own contract -- what the statement says when
+// it is given an engine -- and that refusal is a separate one.
 func TestAtlasRevisionsTableDDL_MySQLTakesTheEngineItIsGiven(t *testing.T) {
 	c := qt.New(t)
 

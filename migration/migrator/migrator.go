@@ -540,6 +540,49 @@ func (m *Migrator) revisionEngineClause() string {
 	return revisionEngineClauseFor(m.connectionDialect(), m.migrationsEngine)
 }
 
+// revisionEngineRefusal answers a named engine the revision table cannot be,
+// before any statement runs.
+//
+// Two dialects cannot take one, for opposite reasons.
+//
+// On the MySQL family the server accepts the statement and Ptah then refuses
+// the table: requireTransactionalMetadataEngine reads the engine back and
+// insists on InnoDB, because the revision table is the witness a migration was
+// applied and MyISAM has no transaction to roll a failed one back with. MySQL
+// DDL commits, and the create is `CREATE TABLE IF NOT EXISTS`, so refusing
+// after the fact leaves a table Ptah will not use and will not recreate --
+// every later verb fails until an operator drops it by hand. Refusing first
+// leaves the database as it was.
+//
+// On SQL Server the statement has no engine clause at all: both DDL builders
+// take an early return for it, so a named engine is dropped in silence while
+// revisionEngineClause still reports one -- and an unrelated create failure
+// would then name a clause the server never saw.
+//
+// ClickHouse is deliberately not in this list. Which engines a revision table
+// can be is the server's judgment there, it answers with its own message, and
+// the failure creates nothing.
+func revisionEngineRefusal(dialect, engine string) error {
+	engine = strings.TrimSpace(engine)
+	if engine == "" {
+		return nil
+	}
+	switch {
+	case implicitCommitDialect(dialect) && !strings.EqualFold(engine, "InnoDB"):
+		return fmt.Errorf(
+			"migrations engine %q is not usable for the revision table on %s: it must be InnoDB, "+
+				"which records that a migration was applied even when the statement around it fails "+
+				"(unset --migrations-engine or PTAH_MIGRATIONS_ENGINE for this target)",
+			engine, dialect)
+	case platform.NormalizeDialect(dialect) == platform.SQLServer:
+		return fmt.Errorf(
+			"migrations engine %q cannot be named on %s: the revision table there has no engine clause "+
+				"(unset --migrations-engine or PTAH_MIGRATIONS_ENGINE for this target)",
+			engine, dialect)
+	}
+	return nil
+}
+
 // revisionEngineClauseFor is the same decision without a Migrator, for the
 // Atlas-format DDL, which is built from a bare dialect.
 func revisionEngineClauseFor(dialect, engine string) string {
@@ -785,6 +828,12 @@ func (m *Migrator) Initialize(ctx context.Context) error {
 	// still get its table created.
 	if m.initialized && m.initializedDryRun == dryRun {
 		return nil
+	}
+
+	// Before any statement, including the dry run's inspection: a named engine
+	// the revision table cannot be is a refusal, not a table.
+	if err := revisionEngineRefusal(m.connectionDialect(), m.migrationsEngine); err != nil {
+		return err
 	}
 
 	if dryRun {

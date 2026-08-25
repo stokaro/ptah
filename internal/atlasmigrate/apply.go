@@ -50,9 +50,15 @@ type ApplyOptions struct {
 	RevisionTypes map[int64]migrator.AtlasRevisionType
 	// RepeatableVersions marks converted order keys whose source files are
 	// repeatables even though their converted Atlas filenames are numeric.
-	RepeatableVersions   []int64
-	TxMode               migrator.MigrationTxMode
-	RevisionsSchema      string
+	RepeatableVersions []int64
+	TxMode             migrator.MigrationTxMode
+	RevisionsSchema    string
+	// MigrationsEngine names the storage engine the revision table is created
+	// with. It is threaded through this package for the same reason SkipChecks
+	// is: the compatibility path builds its own migrator, so an option the
+	// native path applies is silently dropped here unless it is carried
+	// explicitly (stokaro/ptah#2234).
+	MigrationsEngine     string
 	MigrationLockTimeout time.Duration
 	// MigrationLockName overrides the session advisory lock name the migration
 	// run coordinates on. Empty keeps the migrator default. It carries Atlas's
@@ -151,6 +157,7 @@ func PrepareApply(ctx context.Context, conn *dbschema.DatabaseConnection, opts A
 		repeatableVersions:   opts.RepeatableVersions,
 		txMode:               opts.TxMode,
 		revisionsSchema:      opts.RevisionsSchema,
+		migrationsEngine:     opts.MigrationsEngine,
 		migrationLockTimeout: opts.MigrationLockTimeout,
 		migrationLockName:    opts.MigrationLockName,
 		skipMigrationLock:    opts.SkipMigrationLock,
@@ -460,6 +467,7 @@ type applyMigratorOptions struct {
 	repeatableVersions   []int64
 	txMode               migrator.MigrationTxMode
 	revisionsSchema      string
+	migrationsEngine     string
 	migrationLockTimeout time.Duration
 	migrationLockName    string
 	skipMigrationLock    bool
@@ -485,6 +493,7 @@ func newApplyMigrator(
 	}
 	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas).
 		WithMigrationsTable(opts.revisionsSchema, "").
+		WithMigrationsEngine(opts.migrationsEngine).
 		WithExecOrder(opts.execOrder).
 		WithOutOfOrderExempt(opts.outOfOrderExempt).
 		WithSourceVersions(opts.sourceVersions).

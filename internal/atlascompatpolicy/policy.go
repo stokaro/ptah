@@ -649,6 +649,11 @@ var gatedPresenceEnvVars = []string{
 	// community binary has no such setting, so a strict run that consumed it
 	// would fetch from a backend the oracle never reaches.
 	"PTAH_ATLAS_REGISTRY",
+	// Names the storage engine the revision table is created with. The
+	// community binary has no such setting, so a strict run that consumed it
+	// would create metadata the pinned oracle never would
+	// (stokaro/ptah#2234).
+	"PTAH_MIGRATIONS_ENGINE",
 }
 
 // validateStrictEnvironment applies the strict rule to every boolean `PTAH_*`

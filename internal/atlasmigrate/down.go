@@ -25,7 +25,10 @@ type DownOptions struct {
 	DryRun               bool
 	RevisionsSchema      string
 	MigrationLockTimeout time.Duration
-	AtlasEnv             string
+	// MigrationsEngine names the storage engine the revision table is created
+	// with, threaded for the same reason SkipChecks below is.
+	MigrationsEngine string
+	AtlasEnv         string
 	// SkipChecks bypasses the pre-migration checks the down bodies carry.
 	//
 	// The formatted path builds its own migrator here rather than going through
@@ -91,6 +94,7 @@ func PrepareDown(ctx context.Context, conn *dbschema.DatabaseConnection, opts Do
 	}
 	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas).
 		WithMigrationsTable(opts.RevisionsSchema, "").
+		WithMigrationsEngine(opts.MigrationsEngine).
 		WithMigrationLockTimeout(opts.MigrationLockTimeout).
 		WithSkipChecks(opts.SkipChecks).
 		WithLogger(compatMigratorLogger())

@@ -122,6 +122,7 @@ func (o *Options) Guard(ctx context.Context, w io.Writer, version int64, format 
 		return fmt.Errorf("error preparing migrator: %w", err)
 	}
 	mig = mig.WithMigrationsTable(o.MigrationsSchema, o.MigrationsTable).
+		WithMigrationsEngine(o.MigrationsEngine).
 		WithRevisionTableFormat(revisionFormat)
 
 	applied, err := mig.GetAppliedMigrations(ctx)

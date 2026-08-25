@@ -324,6 +324,18 @@ func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectc
 	return opts
 }
 
+// commandLogWriter is the stream structured logs go to.
+//
+// Human output and JSON output do not share a stream: a JSON run's logs belong
+// on stdout with the records a consumer parses, while a human run keeps them on
+// stderr so the report on stdout stays pipeable.
+func commandLogWriter(cmd *cobra.Command, logFormat string) io.Writer {
+	if logFormat == "json" {
+		return cmd.OutOrStdout()
+	}
+	return cmd.ErrOrStderr()
+}
+
 func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	integrityPolicy, err := migrationintegrity.Resolve()
 	if err != nil {
@@ -352,10 +364,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	revisionFormatValue := resolvedOpts.revisionTableFormat
 	connectTimeoutValue := resolvedOpts.connectTimeout
 
-	logWriter := cmd.ErrOrStderr()
-	if opts.logFormat == "json" {
-		logWriter = cmd.OutOrStdout()
-	}
+	logWriter := commandLogWriter(cmd, opts.logFormat)
 	runtime, err := cliobs.Start(context.Background(), cliobs.Options{
 		Command:     "migrations.up",
 		LogFormat:   opts.logFormat,
