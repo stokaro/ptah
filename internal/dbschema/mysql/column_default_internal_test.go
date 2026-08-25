@@ -24,7 +24,7 @@ var columnsColumns = []string{
 	"TABLE_NAME", "COLUMN_NAME", "DATA_TYPE", "COLUMN_TYPE", "IS_NULLABLE",
 	"COLUMN_DEFAULT", "CHARACTER_MAXIMUM_LENGTH", "NUMERIC_PRECISION",
 	"NUMERIC_SCALE", "ORDINAL_POSITION", "CHARACTER_SET_NAME",
-	"COLLATION_NAME", "EXTRA", "GENERATION_EXPRESSION",
+	"COLLATION_NAME", "EXTRA", "GENERATION_EXPRESSION", "COLUMN_COMMENT",
 }
 
 // TestReadColumns_SeparatesNoDefaultFromADefaultOfNull pins which answers mean
@@ -96,7 +96,7 @@ func TestReadColumns_SeparatesNoDefaultFromADefaultOfNull(t *testing.T) {
 			row := []driver.Value{
 				"customers", "bio", "text", "text", "YES",
 				test.catalog, nil, nil, nil, int64(1),
-				"utf8mb4", "utf8mb4_general_ci", "", nil,
+				"utf8mb4", "utf8mb4_general_ci", "", nil, "",
 			}
 			reader := NewMySQLReader(columnsDB(c, [][]driver.Value{row}).SQL, "app")
 
