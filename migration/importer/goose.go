@@ -33,6 +33,10 @@ type gooseParser struct{}
 
 func (gooseParser) Name() string { return "goose" }
 
+func (gooseParser) NamePattern() string {
+	return "<version>_<name>.sql carrying a -- +goose Up marker"
+}
+
 func (gooseParser) Detect(fsys fs.FS) bool {
 	entries, err := fs.ReadDir(fsys, ".")
 	if err != nil {
@@ -53,10 +57,11 @@ func (gooseParser) Detect(fsys fs.FS) bool {
 	return false
 }
 
-func (gooseParser) Parse(fsys fs.FS) ([]SourceMigration, error) {
-	entries, err := fs.ReadDir(fsys, ".")
+func (p gooseParser) Parse(fsys fs.FS) (*ParseResult, error) {
+	result := &ParseResult{}
+	entries, err := topLevelOnly(fsys, p.Name(), result)
 	if err != nil {
-		return nil, fmt.Errorf("read source directory: %w", err)
+		return nil, err
 	}
 
 	var migrations []SourceMigration
@@ -69,19 +74,25 @@ func (gooseParser) Parse(fsys fs.FS) ([]SourceMigration, error) {
 		}
 		match := gooseFileRE.FindStringSubmatch(entry.Name())
 		if match == nil {
-			continue // ignore non-migration files
+			continue // AccountForSource reports it by name
 		}
 		content, err := fs.ReadFile(fsys, entry.Name())
 		if err != nil {
 			return nil, fmt.Errorf("read %q: %w", entry.Name(), err)
 		}
 		if gooseSection(string(content)) == "" {
-			continue // not a Goose migration (no -- +goose Up marker)
+			// The name is a Goose migration's, and the content is not. That is
+			// the case worth naming: a README never carries this name, so this
+			// is far more likely a migration missing its marker than a file
+			// that was never meant to be one.
+			result.decline(entry.Name(), "it has a Goose migration's name but no -- +goose Up marker")
+			continue
 		}
 		version, err := strconv.ParseInt(match[1], 10, 64)
 		if err != nil {
 			return nil, fmt.Errorf("invalid goose version in %q: %w", entry.Name(), err)
 		}
+		result.consume(entry.Name())
 		up, down, noTransaction := splitGooseSQL(string(content))
 		if strings.TrimSpace(up) == "" {
 			return nil, fmt.Errorf("goose migration %q has an empty up section", entry.Name())
@@ -97,7 +108,8 @@ func (gooseParser) Parse(fsys fs.FS) ([]SourceMigration, error) {
 	if len(migrations) == 0 {
 		return nil, fmt.Errorf("no goose migration files (<version>_<name>.sql with -- +goose Up) found")
 	}
-	return migrations, nil
+	result.Migrations = migrations
+	return result, nil
 }
 
 // splitGooseSQL splits a Goose migration file into its up and down SQL, dropping

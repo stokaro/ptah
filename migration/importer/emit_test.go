@@ -118,7 +118,7 @@ func TestEmitRepeatableImportedAsOneTime(t *testing.T) {
 	})
 	c.Assert(err, qt.IsNil)
 
-	result, err := importer.Emit(out, normalized, importer.Options{})
+	result, err := importer.Emit(out, normalized, nil, importer.Options{})
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Files, qt.Contains, "0000000001_init.up.sql")
 	c.Assert(result.Files, qt.Contains, "0000000002_repeatable_view.up.sql")

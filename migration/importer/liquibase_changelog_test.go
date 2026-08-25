@@ -70,7 +70,7 @@ func parseLiquibaseChangelogFile(c *qt.C, name, content string) []importer.Sourc
 	parser, err := importer.ParserByName("liquibase")
 	c.Assert(err, qt.IsNil)
 
-	migrations, err := parser.Parse(fstest.MapFS{name: {Data: []byte(content)}})
+	migrations, err := parseMigrations(c, parser, fstest.MapFS{name: {Data: []byte(content)}})
 	c.Assert(err, qt.IsNil)
 	normalized, err := importer.Normalize(migrations)
 	c.Assert(err, qt.IsNil)
@@ -84,7 +84,7 @@ func parseLiquibaseChangelogError(c *qt.C, name, content string) error {
 	parser, err := importer.ParserByName("liquibase")
 	c.Assert(err, qt.IsNil)
 
-	_, parseErr := parser.Parse(fstest.MapFS{name: {Data: []byte(content)}})
+	_, parseErr := parseMigrations(c, parser, fstest.MapFS{name: {Data: []byte(content)}})
 	return parseErr
 }
 
@@ -204,7 +204,7 @@ func TestLiquibaseChangelog_FilesAreReadInNameOrder(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	// Written second-then-first so a reader honoring insertion order would fail.
-	migrations, err := parser.Parse(fstest.MapFS{
+	migrations, err := parseMigrations(c, parser, fstest.MapFS{
 		"02-add-email.xml":    {Data: []byte(second)},
 		"01-create-users.xml": {Data: []byte(first)},
 	})
@@ -429,7 +429,7 @@ func TestLiquibaseChangelog_MixedDirectoryIsRefused(t *testing.T) {
 	parser, err := importer.ParserByName("liquibase")
 	c.Assert(err, qt.IsNil)
 
-	_, parseErr := parser.Parse(fstest.MapFS{
+	_, parseErr := parseMigrations(c, parser, fstest.MapFS{
 		"changelog.sql": {Data: []byte(liquibaseFormattedSQL)},
 		"changelog.xml": {Data: []byte(liquibaseChangelogXML)},
 	})

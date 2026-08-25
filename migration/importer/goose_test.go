@@ -51,7 +51,7 @@ func TestGooseParse(t *testing.T) {
 	c := qt.New(t)
 	parser, _ := importer.ParserByName("goose")
 
-	migrations, err := parser.Parse(gooseFS())
+	migrations, err := parseMigrations(t, parser, gooseFS())
 	c.Assert(err, qt.IsNil)
 	normalized, err := importer.Normalize(migrations)
 	c.Assert(err, qt.IsNil)
@@ -94,7 +94,7 @@ $$ LANGUAGE plpgsql;
 DROP FUNCTION f();
 `
 	parser, _ := importer.ParserByName("goose")
-	migrations, err := parser.Parse(fstest.MapFS{"1_fn.sql": {Data: []byte(sql)}})
+	migrations, err := parseMigrations(t, parser, fstest.MapFS{"1_fn.sql": {Data: []byte(sql)}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(migrations, qt.HasLen, 1)
 
@@ -136,7 +136,7 @@ END;
 $$ LANGUAGE plpgsql;`
 
 	parser, _ := importer.ParserByName("goose")
-	migrations, err := parser.Parse(fstest.MapFS{"1_fn.sql": {Data: []byte(sql)}})
+	migrations, err := parseMigrations(t, parser, fstest.MapFS{"1_fn.sql": {Data: []byte(sql)}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(migrations, qt.HasLen, 1)
 	c.Assert(migrations[0].NoTransaction, qt.IsTrue)
@@ -207,7 +207,7 @@ func TestGooseParseNoTransactionRequiresExactMarker(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 
 			sql := "-- +goose Up\nSELECT 0;\n" + tt.marker + "\nSELECT 1;\n"
-			migrations, err := parser.Parse(fstest.MapFS{"1_marker.sql": {Data: []byte(sql)}})
+			migrations, err := parseMigrations(t, parser, fstest.MapFS{"1_marker.sql": {Data: []byte(sql)}})
 			c.Assert(err, qt.IsNil)
 			c.Assert(migrations, qt.HasLen, 1)
 			c.Assert(migrations[0].NoTransaction, qt.Equals, tt.noTransaction)
@@ -245,7 +245,7 @@ func TestGooseParseErrors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 			parser, _ := importer.ParserByName("goose")
-			_, err := parser.Parse(tt.fsys)
+			_, err := parseMigrations(t, parser, tt.fsys)
 			c.Assert(err, qt.ErrorMatches, tt.re)
 		})
 	}
