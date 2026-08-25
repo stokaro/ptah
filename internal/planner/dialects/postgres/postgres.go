@@ -3347,9 +3347,14 @@ func (p *Planner) addPrimaryKeyConstraintsWithTables(
 		if _, modified := state.removalByTableName[key]; modified {
 			result = p.emitModifyDrop(result, add, state)
 		}
+		// The payload rides with the key, exactly as it does for a covering
+		// UNIQUE. Without it the re-ADD builds a plain key and the INCLUDE the
+		// DROP just removed never comes back (stokaro/ptah#2199).
+		primaryKey := ast.NewPrimaryKeyConstraint(add.Columns...)
+		primaryKey.IncludeColumns = append([]string(nil), add.IncludeColumns...)
 		result = append(result, &ast.AlterTableNode{
 			Name:       add.TableName,
-			Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: ast.NewPrimaryKeyConstraint(add.Columns...)}},
+			Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: primaryKey}},
 		})
 		state.handled[add.Name] = struct{}{}
 	}
@@ -3876,7 +3881,9 @@ func (p *Planner) convertConstraintToAST(constraint goschema.Constraint) *ast.Co
 		if len(constraint.Columns) == 0 {
 			return nil // Invalid PRIMARY KEY constraint
 		}
-		return ast.NewPrimaryKeyConstraint(constraint.Columns...)
+		primaryKey := ast.NewPrimaryKeyConstraint(constraint.Columns...)
+		primaryKey.IncludeColumns = append([]string(nil), constraint.IncludeColumns...)
+		return primaryKey
 
 	case "FOREIGN KEY":
 		if len(constraint.Columns) == 0 || constraint.ForeignTable == "" || len(constraint.ForeignColumnsOrDefault()) == 0 {

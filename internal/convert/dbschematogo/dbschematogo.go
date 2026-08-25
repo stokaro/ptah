@@ -28,9 +28,9 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 	// the introspected (pre-change) database as the target, so the old action
 	// must survive the round-trip into goschema.
 	fkByColumn := indexForeignKeysByColumn(dbSchema)
-	primaryKeysByTable := compositePrimaryKeysByTable(dbSchema)
-	compositePKColumns := compositePrimaryKeyColumns(primaryKeysByTable)
-	tableStructNames := convertTablesAndFields(database, dbSchema, fkByColumn, primaryKeysByTable, compositePKColumns)
+	tablePrimaryKeys := primaryKeysByTable(dbSchema)
+	tablePKColumns := primaryKeyColumnSets(tablePrimaryKeys)
+	tableStructNames := convertTablesAndFields(database, dbSchema, fkByColumn, tablePrimaryKeys, tablePKColumns)
 
 	database.Indexes = convertIndexes(dbSchema, tableStructNames)
 	database.Constraints = convertConstraints(dbSchema, tableStructNames)
@@ -116,23 +116,28 @@ func convertTablesAndFields(
 	database *goschema.Database,
 	dbSchema *dbschematypes.DBSchema,
 	fkByColumn map[tableMemberKey]foreignKeyInfo,
-	primaryKeysByTable map[string][]string,
-	compositePKColumns map[string]map[string]bool,
+	tablePrimaryKeys map[string]tablePrimaryKey,
+	tablePKColumns map[string]map[string]bool,
 ) map[string]string {
 	tableStructNames := make(map[string]string, len(dbSchema.Tables))
 	tableNameCounts := tableNameCounts(dbSchema.Tables)
 	for _, dbTable := range dbSchema.Tables {
 		structName := dbTableStructName(dbTable, tableNameCounts)
 		tableStructNames[dbTable.QualifiedName()] = structName
+		primaryKey := tablePrimaryKeys[dbTable.QualifiedName()]
 
 		table := goschema.Table{
-			StructName:   structName,
-			Name:         dbTable.Name,
-			Schema:       dbTable.Schema,
-			Comment:      dbTable.Comment,
-			PrimaryKey:   primaryKeysByTable[dbTable.QualifiedName()],
-			Strict:       dbTable.Strict,
-			WithoutRowID: dbTable.WithoutRowID,
+			StructName: structName,
+			Name:       dbTable.Name,
+			Schema:     dbTable.Schema,
+			Comment:    dbTable.Comment,
+			PrimaryKey: primaryKey.columns,
+			// The payload rides with the key it belongs to. Nothing else can
+			// carry it: convertConstraint refuses a PRIMARY KEY outright so the
+			// key renders once, and the column flag has no slot for it.
+			PrimaryKeyInclude: primaryKey.include,
+			Strict:            dbTable.Strict,
+			WithoutRowID:      dbTable.WithoutRowID,
 			// A virtual table's module declaration is what recreates it.
 			// Dropping it here is what made `ptah db read` describe an FTS5
 			// index as an ordinary table. See stokaro/ptah#1028.
@@ -156,7 +161,7 @@ func convertTablesAndFields(
 				Comment:            dbColumn.Comment,
 				TypeIsDeclaredText: dbColumn.TypeIsDeclaredText,
 				Nullable:           dbColumn.IsNullable == "YES",
-				Primary:            dbColumn.IsPrimaryKey && !compositePKColumns[dbTable.QualifiedName()][dbColumn.Name],
+				Primary:            dbColumn.IsPrimaryKey && !tablePKColumns[dbTable.QualifiedName()][dbColumn.Name],
 				AutoInc:            dbColumn.IsAutoIncrement,
 				Unique:             dbColumn.IsUnique,
 				Charset:            dbColumn.Charset,
@@ -592,11 +597,18 @@ func convertRLSEnabledTables(
 	}
 }
 
-func compositePrimaryKeyColumns(primaryKeysByTable map[string][]string) map[string]map[string]bool {
+// tablePrimaryKey is a primary key the description writes as a declaration of
+// its own rather than as a flag on one column.
+type tablePrimaryKey struct {
+	columns []string
+	include []string
+}
+
+func primaryKeyColumnSets(primaryKeysByTable map[string]tablePrimaryKey) map[string]map[string]bool {
 	result := make(map[string]map[string]bool, len(primaryKeysByTable))
-	for tableName, columns := range primaryKeysByTable {
-		columnSet := make(map[string]bool, len(columns))
-		for _, column := range columns {
+	for tableName, key := range primaryKeysByTable {
+		columnSet := make(map[string]bool, len(key.columns))
+		for _, column := range key.columns {
 			columnSet[column] = true
 		}
 		result[tableName] = columnSet
@@ -604,17 +616,36 @@ func compositePrimaryKeyColumns(primaryKeysByTable map[string][]string) map[stri
 	return result
 }
 
-func compositePrimaryKeysByTable(dbSchema *dbschematypes.DBSchema) map[string][]string {
-	result := make(map[string][]string)
+// primaryKeysByTable selects the primary keys that need a declaration of their
+// own, keyed by qualified table name.
+//
+// A single-column key with nothing else to say is left to the column's own
+// `Primary` flag, which reproduces it exactly; writing a table-level key for it
+// would put a redundant second spelling into every description.
+//
+// An INCLUDE payload is the "something else to say". The column flag has
+// nowhere to hang it, so a covering key needs the table-level form however few
+// columns it has -- `PRIMARY KEY (a) INCLUDE (payload)` is as covering as
+// `PRIMARY KEY (a, b) INCLUDE (payload)`, and the column-count test alone
+// dropped the first of them before it reached this map at all
+// (stokaro/ptah#2199).
+func primaryKeysByTable(dbSchema *dbschematypes.DBSchema) map[string]tablePrimaryKey {
+	result := make(map[string]tablePrimaryKey)
 	for _, constraint := range dbSchema.Constraints {
 		if !strings.EqualFold(constraint.Type, "PRIMARY KEY") {
 			continue
 		}
 		columns := constraint.ColumnNamesOrDefault()
-		if len(columns) <= 1 {
+		if len(columns) == 0 {
 			continue
 		}
-		result[constraint.QualifiedTableName()] = columns
+		if len(columns) == 1 && len(constraint.IncludeColumns) == 0 {
+			continue
+		}
+		result[constraint.QualifiedTableName()] = tablePrimaryKey{
+			columns: columns,
+			include: slices.Clone(constraint.IncludeColumns),
+		}
 	}
 	return result
 }
