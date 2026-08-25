@@ -2375,7 +2375,7 @@ func (p *Parser) parseColumnConstraintOrAttribute(table *ast.CreateTableNode, co
 	case "CHECK":
 		return p.handleCheck(column)
 	case "CONSTRAINT":
-		return p.handleColumnConstraint(column)
+		return p.handleColumnConstraint(table, column)
 	case "REFERENCES":
 		return p.handleReferences(column)
 	case "AS":
@@ -2419,7 +2419,7 @@ func (p *Parser) parseColumnConstraintOrAttribute(table *ast.CreateTableNode, co
 // emit an unnamed constraint, the server would generate its own name, and the
 // reader would bring that name back as a difference nobody can resolve. A
 // refusal is worse than reading the file and better than permanent drift.
-func (p *Parser) handleColumnConstraint(column *ast.ColumnNode) error {
+func (p *Parser) handleColumnConstraint(table *ast.CreateTableNode, column *ast.ColumnNode) error {
 	p.advance()
 	p.skipWhitespace()
 	name, err := p.expectIdentifier()
@@ -2440,14 +2440,60 @@ func (p *Parser) handleColumnConstraint(column *ast.ColumnNode) error {
 		}
 		column.ForeignKey.Name = name
 		return nil
+	case p.current.MatchIdentifierValue("UNIQUE"):
+		return p.namedSingleColumnConstraint(table, column, name, ast.UniqueConstraint)
 	default:
+		// PRIMARY KEY is deliberately not here, and the reason is measured
+		// rather than assumed: the renderer collapses a single-column primary
+		// key back into the column, so a name given to one is dropped on the
+		// way out. Measured on PostgreSQL 17 from the TABLE-level spelling,
+		// which this parser already reads: `CONSTRAINT c_pk PRIMARY KEY (b)`
+		// applies as `t_pkey`, and --dry-run answers `Schema is synced`
+		// afterwards. Reading the column-level spelling would hand a name to
+		// the same path and lose it just as quietly, which is what this refusal
+		// exists to prevent (stokaro/ptah#2161, stokaro/ptah#2180).
 		return fmt.Errorf(
-			"named column constraint %q at position %d: Ptah reads a name on CHECK and "+
-				"REFERENCES; on %s the name has nowhere to live and would be lost, so write "+
-				"the constraint at table level to keep it",
+			"named column constraint %q at position %d: Ptah reads a name on CHECK, "+
+				"REFERENCES and UNIQUE; on %s the name has nowhere to live and would be "+
+				"lost, so write the constraint at table level to keep it",
 			name, p.current.Start, strings.ToUpper(p.current.Value),
 		)
 	}
+}
+
+// namedSingleColumnConstraint reads a named UNIQUE or PRIMARY KEY written on a
+// column and records it as the table constraint it is.
+//
+// `b INTEGER CONSTRAINT uq UNIQUE` and `UNIQUE (b) CONSTRAINT uq` describe the
+// same catalog row, and the second spelling is the one Ptah's model can carry a
+// name for: ColumnNode keeps Unique and Primary as booleans with nowhere to put
+// one. Reading the first into the second keeps the name instead of dropping it,
+// which is what made these two forms refusals rather than reads
+// (stokaro/ptah#2161).
+//
+// This is not a rewrite of the operator's DDL. It is the same constraint, read
+// at the level that holds its name; a renderer writes it back at table level,
+// which every supported engine accepts and which is what Ptah already emits for
+// a composite key.
+func (p *Parser) namedSingleColumnConstraint(
+	table *ast.CreateTableNode,
+	column *ast.ColumnNode,
+	name string,
+	kind ast.ConstraintType,
+) error {
+	if table == nil {
+		return fmt.Errorf(
+			"named column constraint %q at position %d: a %s constraint is read at table "+
+				"level, and this column has no table to attach it to",
+			name, p.current.Start, kind)
+	}
+	p.advance()
+	table.AddConstraint(&ast.ConstraintNode{
+		Type:    kind,
+		Name:    name,
+		Columns: []string{column.Name},
+	})
+	return nil
 }
 
 func (p *Parser) handlePrimaryKeyAttribute(table *ast.CreateTableNode, column *ast.ColumnNode) error {
