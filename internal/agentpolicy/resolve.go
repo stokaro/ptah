@@ -28,6 +28,13 @@ var ErrHardDenied = agentdiag.Sentinel(agentdiag.CodeCapabilityDenied, "capabili
 // that mutates a database or reaches past the workspace is refused.
 func Defaults() []Rule {
 	return []Rule{
+		// Reading Ptah's own documentation reveals nothing about the operator:
+		// no project, no database, no path, and the same answer for everyone
+		// running this build. There is nothing here for an operator to weigh,
+		// so asking would be a question with one sensible answer -- and a
+		// surface that asks such questions teaches the person answering to stop
+		// reading them.
+		{Capability: DocsRead, Verdict: VerdictAllow},
 		{Capability: ProjectRead, Verdict: VerdictAllow},
 		{Capability: SchemaValidate, Verdict: VerdictAllow},
 		{Capability: SchemaRender, Verdict: VerdictAllow},

@@ -67,6 +67,21 @@ import (
 type Capability string
 
 const (
+	// DocsRead covers reading Ptah's own documentation: the guides, the
+	// decision records and the reference pages the binary carries.
+	//
+	// It is not [ProjectRead]. Ptah's documentation is not the operator's
+	// content, and the two answer different questions -- "which directories
+	// hold what in this workspace" reveals the workspace, while "what does
+	// --allow-database-inspect do" reveals nothing about anyone's project,
+	// database or filesystem. Folding it into project.read would mean an
+	// operator who denies project reading also loses the answers that would
+	// have told them what they were denying.
+	//
+	// It is first in this list because it is the one capability whose subject
+	// is Ptah rather than the operator (stokaro/ptah#2123).
+	DocsRead Capability = "docs.read"
+
 	// ProjectRead covers reading project identity and configuration that
 	// describes the workspace: which directories hold what, which dialect is
 	// declared. It does not cover reading the artifacts themselves.
@@ -290,6 +305,7 @@ const (
 // deciding from the string's prefix -- makes every future capability's scope a
 // consequence of what it was called.
 var capabilityScope = map[Capability]scopeKind{
+	DocsRead:                 scopeNone,
 	ProjectRead:              scopeNone,
 	SchemaValidate:           scopeNone,
 	SchemaRender:             scopeNone,
@@ -311,10 +327,11 @@ var capabilityScope = map[Capability]scopeKind{
 // Capabilities lists every capability the broker knows, in a stable order.
 //
 // The order is the declaration order above rather than alphabetical, so a
-// rendered policy reads as project, schema, database, artifact, and the four
-// things this surface refuses to be.
+// rendered policy reads as Ptah's own documentation, then project, schema,
+// database, artifact, and the four things this surface refuses to be.
 func Capabilities() []Capability {
 	return []Capability{
+		DocsRead,
 		ProjectRead,
 		SchemaValidate,
 		SchemaRender,
