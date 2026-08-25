@@ -962,7 +962,14 @@ BEGIN
         operator_version NVARCHAR(255) NOT NULL
     )
 END`, sqlServerObjectLiteral, qualifiedTable)
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
+	// Spanner shares this branch rather than the trailing default. Its
+	// PostgreSQL interface has neither of the two types the default names --
+	// `Type <timestamp> is not supported` and `Type <json> is not supported;
+	// use jsonb instead` -- and this branch already spells both the way that
+	// interface has them. Measured against the Cloud Spanner emulator behind
+	// PGAdapter 0.55.2: the statement below is accepted verbatim
+	// (stokaro/ptah#2233).
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
 		return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
     version VARCHAR PRIMARY KEY,
     description VARCHAR NOT NULL,
