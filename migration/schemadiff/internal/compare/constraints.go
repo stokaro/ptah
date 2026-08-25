@@ -180,7 +180,7 @@ func ConstraintsWithSemantics(
 	// Find modified constraints (constraints that exist in both but have different definitions)
 	for constraintKey, genConstraint := range genConstraints {
 		if dbConstraint, exists := dbConstraints[constraintKey]; exists {
-			if constraintDefinitionsChanged(genConstraint, dbConstraint, dialect, checkExpressionsOf(opts)) {
+			if constraintDefinitionsChanged(genConstraint, dbConstraint, dialect, semantics, checkExpressionsOf(opts)) {
 				// For now, treat modified constraints as removed + added
 				// In the future, we could add a ConstraintsModified field to SchemaDiff
 				diff.ConstraintsRemoved = append(diff.ConstraintsRemoved, dbConstraint.Name)
@@ -337,6 +337,7 @@ func constraintDefinitionsChanged(
 	genConstraint goschema.Constraint,
 	dbConstraint types.DBConstraint,
 	dialect string,
+	semantics identifier.Semantics,
 	checks map[string]config.CheckExpression,
 ) bool {
 	// Basic constraint type comparison
@@ -355,7 +356,7 @@ func constraintDefinitionsChanged(
 	case "PRIMARY KEY":
 		return primaryKeyConstraintChanged(genConstraint, dbConstraint)
 	case "FOREIGN KEY":
-		return foreignKeyConstraintChanged(genConstraint, dbConstraint, dialect)
+		return foreignKeyConstraintChanged(genConstraint, dbConstraint, dialect, semantics)
 	default:
 		// For unknown constraint types, assume no change
 		return false
