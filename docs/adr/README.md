@@ -17,6 +17,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0005](0005-agent-surface-inventory.md) | The agent-exposure inventory is generated, and classified by what a verb does to a database | Proposed |
 | [0006](0006-one-authorized-agent-runtime.md) | One policy-bearing agent runtime, and an operator-bound database target | Proposed |
 | [0007](0007-agent-error-taxonomy.md) | A closed agent error taxonomy, assigned at the sentinel and carried in `_meta` | Proposed |
+| [0008](0008-agent-surface-maturity-criteria.md) | What the agent surfaces must satisfy before they stop being experimental | Proposed |
 
 ## Writing one
 
