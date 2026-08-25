@@ -83,7 +83,7 @@ func (r *Renderer) VisitCreatePolicy(node *ast.CreatePolicyNode) error {
 			"scope the predicate function instead. The policy is not created.", node.Name, node.ToRoles)
 		return nil
 	}
-	if reason := mssqlpolicy.UnrenderableFor(node.PolicyFor, node.WithCheckExpression != ""); reason != "" {
+	if reason := mssqlpolicy.UnrenderableFor(node.PolicyFor, node.WithCheckExpression); reason != "" {
 		r.w.WriteLinef("-- SQLSERVER: RLS policy %q declares FOR %s, %s The policy is not created.",
 			node.Name, strings.ToUpper(strings.TrimSpace(node.PolicyFor)), reason)
 		return nil

@@ -18,6 +18,10 @@ import "strings"
 // UnrenderableFor names why a declared FOR clause has no T-SQL form, or returns
 // the empty string when the clause is expressible.
 //
+// It takes the WITH CHECK expression itself rather than a flag, because the
+// expression is what decides the answer: it is the block predicate the
+// operation would ride on.
+//
 // The FOR clause reaches a rendered statement through one route only: the
 // operation a BLOCK predicate carries. A filter predicate has no per-operation
 // form -- SQL Server's grammar is `ADD FILTER PREDICATE <fn> ON <table>` with
@@ -30,12 +34,12 @@ import "strings"
 // That is the same silent widening the TO clause is already refused for: SQL
 // Server has no role list on a predicate, and honoring `TO app_user` would mean
 // dropping it.
-func UnrenderableFor(policyFor string, hasBlockPredicate bool) string {
+func UnrenderableFor(policyFor, withCheckExpression string) string {
 	switch strings.ToUpper(strings.TrimSpace(policyFor)) {
 	case "", "ALL":
 		return ""
 	case "INSERT", "UPDATE", "DELETE":
-		if hasBlockPredicate {
+		if strings.TrimSpace(withCheckExpression) != "" {
 			return ""
 		}
 		return "which only a block predicate can carry; this policy declares no WITH CHECK " +

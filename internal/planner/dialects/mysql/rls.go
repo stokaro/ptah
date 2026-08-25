@@ -60,7 +60,7 @@ func (p *Planner) planRLS(result []ast.Node, diff *types.SchemaDiff, generated *
 		// so the refusal is visible in the plan rather than the policy
 		// silently going unchanged (stokaro/ptah#2211).
 		if p.targetDialect() == platform.SQLServer &&
-			mssqlpolicy.UnrenderableFor(qualified.PolicyFor, qualified.WithCheckExpression != "") != "" {
+			mssqlpolicy.UnrenderableFor(qualified.PolicyFor, qualified.WithCheckExpression) != "" {
 			result = append(result, fromschema.FromRLSPolicy(qualified))
 			continue
 		}
