@@ -540,11 +540,29 @@ func (p *Planner) removeColumns(result []ast.Node, tableDiff *types.TableDiff) (
 	return result, nil
 }
 
+// appendTableComment emits the table's comment transition, if it has one.
+func appendTableComment(result []ast.Node, tableDiff types.TableDiff) []ast.Node {
+	if tableDiff.CommentChange == nil {
+		return result
+	}
+	return append(result, &ast.AlterTableNode{
+		Name:       tableDiff.TableName,
+		Operations: []ast.AlterOperation{&ast.SetCommentOperation{Comment: tableDiff.CommentChange.Desired}},
+	})
+}
+
 func (p *Planner) modifyExistingTables(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) ([]ast.Node, error) {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, tableDiff := range diff.TablesModified {
 		astCommentNode := ast.NewComment(fmt.Sprintf("Modify table: %s", tableDiff.TableName))
 		result = append(result, astCommentNode)
+
+		// The table's own comment is a table option here, so it needs a
+		// statement of its own. A column's does not: MySQL restates the whole
+		// column to change anything about it, and MODIFY COLUMN already
+		// carries the comment -- which is why only the table half is emitted
+		// here while PostgreSQL emits both (stokaro/ptah#2168).
+		result = appendTableComment(result, tableDiff)
 
 		// Add new columns
 		result = p.addNewTableColumns(result, &tableDiff, generated, semantics)
