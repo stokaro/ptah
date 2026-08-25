@@ -1028,8 +1028,26 @@ func partFromRight(parts []string, n int) string {
 }
 
 func (r *Reader) readTriggers() ([]types.DBTrigger, error) {
+	// is_instead_of_trigger and sys.trigger_events are the two facts a trigger
+	// IS. Reading neither and assigning constants described an INSTEAD OF
+	// DELETE trigger and an AFTER UPDATE one identically, as AFTER INSERT --
+	// which is not a spelling difference: an INSTEAD OF trigger REPLACES the
+	// statement and an AFTER one runs behind it (stokaro/ptah#2206).
+	//
+	// A trigger may name more than one event, so they are joined the way the
+	// declaration spells them, ordered by the catalog's own code so the string
+	// is stable rather than a function of row order.
+	//
+	// OBJECT_DEFINITION is NULL for an encrypted trigger. ISNULL keeps the read
+	// from failing on one; what it leaves is an empty body, which the
+	// comparator reports rather than a statement that would recreate the
+	// trigger empty.
 	query := `
-		SELECT s.name, tr.name, t.name, OBJECT_DEFINITION(tr.object_id)
+		SELECT s.name, tr.name, t.name,
+			   ISNULL(OBJECT_DEFINITION(tr.object_id), ''),
+			   CASE WHEN tr.is_instead_of_trigger = 1 THEN 'INSTEAD OF' ELSE 'AFTER' END,
+			   ISNULL((SELECT STRING_AGG(te.type_desc, ' OR ') WITHIN GROUP (ORDER BY te.type)
+					   FROM sys.trigger_events te WHERE te.object_id = tr.object_id), '')
 		FROM sys.triggers AS tr
 		JOIN sys.tables AS t ON t.object_id = tr.parent_id
 		JOIN sys.schemas AS s ON s.schema_id = t.schema_id
@@ -1045,12 +1063,27 @@ func (r *Reader) readTriggers() ([]types.DBTrigger, error) {
 	var triggers []types.DBTrigger
 	for rows.Next() {
 		var trigger types.DBTrigger
-		if err := rows.Scan(&trigger.Schema, &trigger.Name, &trigger.Table, &trigger.Body); err != nil {
+		var definition string
+		if err := rows.Scan(
+			&trigger.Schema, &trigger.Name, &trigger.Table,
+			&definition, &trigger.Timing, &trigger.Event,
+		); err != nil {
 			return nil, err
 		}
 		trigger.Schema = r.outputSchema(trigger.Schema)
-		trigger.Timing = "AFTER"
-		trigger.Event = ""
+		// OBJECT_DEFINITION hands back the whole CREATE TRIGGER statement, and
+		// Body is the body alone -- everything downstream treats it that way,
+		// so wrapping the statement in another CREATE TRIGGER produced SQL the
+		// server refuses with `Incorrect syntax near the keyword 'TRIGGER'`.
+		//
+		// A trigger's header ends the same way a procedure's does: at the first
+		// standalone AS outside brackets, skipping the one in WITH EXECUTE AS.
+		// That is the rule procedureBody already implements and is already
+		// measured against.
+		trigger.Body = procedureBody(definition)
+		// SQL Server has no row-level DML trigger -- FOR EACH ROW is not part of
+		// its grammar -- so this is the one constant of the three that states a
+		// property of the engine rather than an unread column.
 		trigger.ForEach = "STATEMENT"
 		triggers = append(triggers, trigger)
 	}
