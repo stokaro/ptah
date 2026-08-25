@@ -721,6 +721,26 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 	return r.renderColumnTail(parts, column), nil
 }
 
+// writeSetComment renders a table's comment transition, which MySQL and MariaDB
+// spell as a table option rather than a statement of its own.
+//
+// A COLUMN is refused rather than rendered. These engines have no way to change
+// one attribute of a column: MODIFY COLUMN restates the whole definition, and
+// that definition already carries the comment, so a column's comment travels
+// with the column and never arrives here. An operation that did would be a
+// planner bug, and rendering something plausible for it would hide the bug
+// behind valid-looking SQL (stokaro/ptah#2168).
+func (r *Renderer) writeSetComment(table string, op *ast.SetCommentOperation) error {
+	if op.Column != "" {
+		return fmt.Errorf(
+			"%s renders a column comment as part of MODIFY COLUMN, not on its own: column %q of table %q",
+			r.dialectUpper, op.Column, table)
+	}
+	r.w.WriteLinef("ALTER TABLE %s COMMENT=%s;",
+		escapeQualifiedIdentifier(table), r.escapeValue(op.Comment))
+	return nil
+}
+
 // appendColumnComment writes the column's own COMMENT clause.
 //
 // It was written on the ALTER path and not on the CREATE one, so one
@@ -1065,6 +1085,11 @@ func (r *Renderer) visitAlterTableWithEnums(node *ast.AlterTableNode, enums map[
 			// Remove the leading spaces from column rendering for ALTER
 			line = strings.TrimPrefix(line, "  ")
 			r.w.WriteLinef("ALTER TABLE %s MODIFY COLUMN %s;", escapeQualifiedIdentifier(node.Name), line)
+
+		case *ast.SetCommentOperation:
+			if err := r.writeSetComment(node.Name, op); err != nil {
+				return err
+			}
 
 		case *ast.RenameColumnOperation:
 			// MySQL 8.0+ and MariaDB 10.5.2+ both support the canonical
