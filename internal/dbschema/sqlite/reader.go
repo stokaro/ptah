@@ -616,12 +616,17 @@ type sqliteIndexColumns struct {
 type sqliteIndexKey struct {
 	name       string
 	expression bool
+	// desc is the key's own direction, which lives nowhere else: sqlite_schema
+	// carries the CREATE INDEX text and index_list says nothing about ordering,
+	// so a key read without this column is indistinguishable from an ascending
+	// one (stokaro/ptah#2197).
+	desc bool
 }
 
 func (r *Reader) readIndexColumnsByIndex(skipped []string) (map[string]sqliteIndexColumns, error) {
 	exclusion, exclusionArguments := excludeTablesFilter(skipped)
 	query := fmt.Sprintf(`
-		SELECT il.name, ix.seqno, ix.cid, ix.name, ix.key
+		SELECT il.name, ix.seqno, ix.cid, ix.name, ix.desc, ix.key
 		FROM %s AS m
 		JOIN pragma_index_list(m.name, ?) AS il
 		JOIN pragma_index_xinfo(il.name, ?) AS ix
@@ -640,18 +645,20 @@ func (r *Reader) readIndexColumnsByIndex(skipped []string) (map[string]sqliteInd
 		seqno      int
 		name       string
 		expression bool
+		desc       bool
 	}
 	columns := make(map[string][]indexColumn)
 	needsDDLParsing := make(map[string]bool)
 	for rows.Next() {
 		var (
-			indexName string
-			seqno     int
-			cid       int
-			name      sql.NullString
-			keyColumn int
+			indexName  string
+			seqno      int
+			cid        int
+			name       sql.NullString
+			descending int
+			keyColumn  int
 		)
-		if err := rows.Scan(&indexName, &seqno, &cid, &name, &keyColumn); err != nil {
+		if err := rows.Scan(&indexName, &seqno, &cid, &name, &descending, &keyColumn); err != nil {
 			return nil, fmt.Errorf("sqlite: scan index column: %w", err)
 		}
 		if keyColumn == 0 {
@@ -660,10 +667,11 @@ func (r *Reader) readIndexColumnsByIndex(skipped []string) (map[string]sqliteInd
 		if cid < 0 || !name.Valid || name.String == "" {
 			needsDDLParsing[indexName] = true
 			columns[indexName] = append(columns[indexName],
-				indexColumn{seqno: seqno, expression: true})
+				indexColumn{seqno: seqno, expression: true, desc: descending != 0})
 			continue
 		}
-		columns[indexName] = append(columns[indexName], indexColumn{seqno: seqno, name: name.String})
+		columns[indexName] = append(columns[indexName],
+			indexColumn{seqno: seqno, name: name.String, desc: descending != 0})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("sqlite: iterate index columns: %w", err)
@@ -675,7 +683,7 @@ func (r *Reader) readIndexColumnsByIndex(skipped []string) (map[string]sqliteInd
 		names := make([]string, 0, len(indexColumns))
 		keys := make([]sqliteIndexKey, len(indexColumns))
 		for i, column := range indexColumns {
-			keys[i] = sqliteIndexKey{name: column.name, expression: column.expression}
+			keys[i] = sqliteIndexKey{name: column.name, expression: column.expression, desc: column.desc}
 			if !column.expression {
 				names = append(names, column.name)
 			}
@@ -716,10 +724,15 @@ func sqliteIndexParts(keys []sqliteIndexKey, keyTexts []string) []types.DBIndexP
 	parts := make([]types.DBIndexPart, len(keys))
 	for position, key := range keys {
 		if key.expression {
+			// An expression key's text comes from the DDL rather than from the
+			// catalog, and the DDL spells the direction inside it -- the text
+			// for `lower(c) DESC` IS "lower(c) DESC". Setting Desc as well
+			// renders `lower(c) DESC DESC`, which SQLite refuses. Measured, and
+			// the reason this branch does not carry the flag its neighbour does.
 			parts[position] = types.DBIndexPart{Expr: keyTexts[position]}
 			continue
 		}
-		parts[position] = types.DBIndexPart{Name: keyTexts[position]}
+		parts[position] = types.DBIndexPart{Name: keyTexts[position], Desc: key.desc}
 	}
 	return parts
 }
