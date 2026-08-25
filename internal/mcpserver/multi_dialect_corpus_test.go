@@ -65,6 +65,15 @@ var corpusRows = []corpusRow{
 	{dialect: "sqlite"},
 	{dialect: "sqlserver"},
 	{dialect: "clickhouse", refusedBecause: "does not support foreign keys"},
+	// The four the surface accepts that this corpus did not ask about.
+	// agentapi.normalizedDialect delegates to platform.NormalizeDialect, which
+	// knows all four, and core/renderer has a renderer for each -- so a corpus
+	// stopping at six left four targets able to answer and never asked
+	// (stokaro/ptah#1490).
+	{dialect: "cockroachdb"},
+	{dialect: "yugabytedb"},
+	{dialect: "spanner"},
+	{dialect: "oracle"},
 }
 
 // renderingDialects are the rows that produce DDL, for the comparisons that
@@ -141,6 +150,14 @@ func TestServer_TheDialectsAnswerDifferently(t *testing.T) {
 	c.Assert(len(distinct) > 1, qt.IsTrue,
 		qt.Commentf("every dialect rendered the same bytes, so the parameter was accepted and not used"))
 	c.Assert(answers["postgres"], qt.Not(qt.Equals), answers["mysql"])
+	// Oracle is the row that separates "this dialect was accepted" from "this
+	// dialect was used" most sharply, and it is why the corpus is worth
+	// widening rather than just longer: measured on this fixture, it emits
+	// `CREATE TABLE authors (` where the other nine quote every identifier. A
+	// renderer selected by name but not by behavior would collapse this
+	// (stokaro/ptah#1490).
+	c.Assert(answers["oracle"], qt.Not(qt.Equals), answers["postgres"])
+	c.Assert(answers["oracle"], qt.Contains, "CREATE TABLE authors")
 }
 
 // TestServer_ADialectItDoesNotRenderForIsRefused pins the other side.
