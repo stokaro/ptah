@@ -22,7 +22,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -304,8 +307,9 @@ func newRecordCommand() *cobra.Command {
 
 func newReportCommand() *cobra.Command {
 	var (
-		tier    int
-		results string
+		tier     int
+		results  string
+		expected string
 	)
 	cmd := &cobra.Command{
 		Use:   "report",
@@ -316,14 +320,67 @@ func newReportCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			aggregate := capmatrix.Aggregate{Tier: tier, Matrix: capabilityprobe.CIMatrix(), Results: cells}
+			matrix, err := expectedMatrix(expected)
+			if err != nil {
+				return err
+			}
+			aggregate := capmatrix.Aggregate{Tier: tier, Matrix: matrix, Results: cells}
 			capmatrix.WriteAggregate(cmd.OutOrStdout(), aggregate)
 			return aggregate.Err()
 		},
 	}
 	cmd.Flags().IntVar(&tier, "tier", 0, "which tier is being reported")
 	cmd.Flags().StringVar(&results, "results", "", "directory holding the per-cell result JSON files")
+	cmd.Flags().StringVar(&expected, "expected", "",
+		"comma-separated cell ids this run asked for; empty means every runnable cell")
 	return cmd
+}
+
+// expectedMatrix narrows the declared matrix to the cells a run asked for.
+//
+// [capmatrix.Aggregate.Verdicts] iterates the EXPECTED cells rather than the
+// received ones on purpose -- a report built from whatever arrived counts the
+// cells that ran and calls the rest nothing at all. That is right, and it is why
+// a PARTIAL run needs this: probing one dialect on request would otherwise leave
+// every other declared cell without a result, and the report would call each of
+// them MISSING and fail a run that did exactly what it was asked to do
+// (stokaro/ptah#2185).
+//
+// So the guarantee is unchanged and only its subject narrows. MISSING still
+// means "this run asked for the cell and it did not report".
+//
+// An empty selection means the whole matrix, which is what every caller before
+// the fan-out became opt-in was doing implicitly.
+func expectedMatrix(expected string) (capabilityprobe.Matrix, error) {
+	matrix := capabilityprobe.CIMatrix()
+	wanted := make(map[string]bool)
+	for id := range strings.SplitSeq(expected, ",") {
+		if id = strings.TrimSpace(id); id != "" {
+			wanted[id] = true
+		}
+	}
+	if len(wanted) == 0 {
+		return matrix, nil
+	}
+
+	kept := make([]capabilityprobe.CICell, 0, len(wanted))
+	for _, cell := range matrix.Cells {
+		if wanted[cell.ID] {
+			kept = append(kept, cell)
+			delete(wanted, cell.ID)
+		}
+	}
+	// A name the matrix does not declare is a caller error, not an empty
+	// report. Silently narrowing to nothing is the failure this whole tier is
+	// written against.
+	if len(wanted) > 0 {
+		unknown := slices.Sorted(maps.Keys(wanted))
+		return capabilityprobe.Matrix{}, fmt.Errorf(
+			"--expected names %d cell(s) the matrix does not declare: %s",
+			len(unknown), strings.Join(unknown, ", "))
+	}
+	matrix.Cells = kept
+	return matrix, nil
 }
 
 // runnableCell resolves a cell id against the matrix and refuses anything the
