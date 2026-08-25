@@ -391,7 +391,7 @@ jobs:
       # than trusted. Measured: a matching stamp beside a corrupted binary
       # rebuilds.
       - name: Cache the pinned Atlas CE reference
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/ptah-atlas-ce
           key: atlas-ce-${{ runner.os }}-${{ hashFiles('scripts/atlas-ce-reference.lock') }}
