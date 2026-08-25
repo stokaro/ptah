@@ -181,6 +181,27 @@ one says what policy would permit, the other says nothing is there. Filtering
 the table to what is reachable was rejected — a report listing only grants
 answers "nothing was granted" the same way a broken report does.
 
+### 2.8 Ptah's own documentation is a capability of its own
+
+`docs.read` covers reading the guides, decision records and reference pages the
+binary carries. It is not folded into `project.read`.
+
+The two answer different questions. "Which directories hold what in this
+workspace" describes the operator's project; "what does
+`--allow-database-inspect` do" describes Ptah, and the answer is the same for
+everyone running this build. Reading it reveals no project, no database, no
+path.
+
+Folding them together would also have a consequence nobody would choose
+deliberately: an operator who refuses to have their workspace described would
+lose the answers that would have told them what they were refusing.
+
+The builtin default is `allow`. There is nothing here for an operator to weigh,
+and a surface that asks questions with one sensible answer teaches the person
+answering to stop reading them. `allow` is a default, not a guarantee — a
+narrowing layer refuses it like any other capability, and the refusal is what
+the policy report already said.
+
 ## 3. Alternatives rejected
 
 **Hide the unenforced rows.** Removing `database.inspect` and the schema
