@@ -7,6 +7,7 @@ import (
 
 	"go.5x5.cz/ptah/core/platform"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/convert/goschematodb"
 	"go.5x5.cz/ptah/internal/schemafile"
 )
 
@@ -50,7 +51,7 @@ func TestToDBSchema_SQLDocumentCarriesIndexKeySuffixes(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	parts := make(map[string][]dbschematypes.DBIndexPart)
-	for _, index := range schemafile.ToDBSchema(db, platform.Postgres).Indexes {
+	for _, index := range goschematodb.ToDBSchema(db, platform.Postgres).Indexes {
 		parts[index.Name] = index.Parts
 	}
 
