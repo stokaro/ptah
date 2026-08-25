@@ -125,6 +125,27 @@ func TriggerDefinitions(genTrigger goschema.Trigger, dbTrigger types.DBTrigger) 
 		triggerDiff.Changes["for"] = fmt.Sprintf("%s -> %s", dbForEach, genTrigger.ForEach)
 	}
 
+	// A trigger either carries a body Ptah owns or names a function somebody
+	// else wrote, and the two are compared differently: the body is a copy of
+	// the function's source, so holding an external reference against it always
+	// differs. Comparing them made a declaration that names an existing
+	// function plan CREATE OR REPLACE TRIGGER on every run, over a database
+	// that already matched it (stokaro/ptah#2210).
+	//
+	dbExecuteFunction := strings.TrimSpace(dbTrigger.ExecuteFunction)
+	// BOTH sides, not either. A desired side carrying a body against a database
+	// side naming an external function is the HCL surface's limitation rather
+	// than a rebinding request -- that surface cannot name a function, so it
+	// always describes the body -- and reading it as a change would plan one on
+	// every run for every trigger a live database inspected through HCL.
+	genExecuteFunction := strings.TrimSpace(genTrigger.ExecuteFunction)
+	if genExecuteFunction != "" && dbExecuteFunction != "" {
+		if !strings.EqualFold(genExecuteFunction, dbExecuteFunction) {
+			triggerDiff.Changes["function"] = fmt.Sprintf("%s -> %s", dbExecuteFunction, genExecuteFunction)
+		}
+		return triggerDiff
+	}
+
 	genBody := normalizeTriggerBody(genTrigger.Body)
 	dbBody := normalizeTriggerBody(dbTrigger.Body)
 	if genBody != dbBody {

@@ -8771,6 +8771,17 @@ type DBTrigger struct {
     ForEach string `json:"for"`     // ROW or STATEMENT
     Body    string `json:"body"`    // Trigger body
     Comment string `json:"comment"` // Trigger comment/description
+
+    // ExecuteFunction is the name of the function the trigger runs, as the
+    // catalog reports it.
+    //
+    // PostgreSQL has no inline trigger body: `CREATE TRIGGER ... EXECUTE
+    // FUNCTION f()` always names a function, and Ptah writes one per trigger
+    // when the declaration carries a body. Reading only that function's source
+    // and discarding its NAME made every trigger look like one Ptah owns, so a
+    // function shared by several triggers was described once per trigger and
+    // replayed as that many copies (stokaro/ptah#2210).
+    ExecuteFunction string `json:"execute_function,omitempty"`
 }
     DBTrigger represents a database trigger read from the database.
 
