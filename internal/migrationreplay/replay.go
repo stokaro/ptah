@@ -18,6 +18,7 @@ import (
 	"go.5x5.cz/ptah/internal/devdocker"
 	"go.5x5.cz/ptah/internal/devlock"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -26,7 +27,7 @@ const failedReplayCleanupTimeout = 30 * time.Second
 // Options configures a migration replay run.
 type Options struct {
 	Dir       string
-	DirFormat migrator.MigrationDirFormat
+	DirFormat migrationfile.DirFormat
 	DevURL    string
 	// FS supplies an immutable migration snapshot. When nil, Replay opens Dir.
 	FS                fs.FS
@@ -99,7 +100,7 @@ func ReplayOnConnection(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	dir string,
-	dirFormat migrator.MigrationDirFormat,
+	dirFormat migrationfile.DirFormat,
 ) error {
 	snapshot, err := migrationsnapshot.Capture(os.DirFS(dir))
 	if err != nil {
@@ -115,7 +116,7 @@ func WithReplayedDirectory(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	dir string,
-	dirFormat migrator.MigrationDirFormat,
+	dirFormat migrationfile.DirFormat,
 	consume func(*dbschema.DatabaseConnection) error,
 ) error {
 	snapshot, err := migrationsnapshot.Capture(os.DirFS(dir))
@@ -131,7 +132,7 @@ func ReplaySnapshotOnConnection(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	snapshot fs.FS,
-	dirFormat migrator.MigrationDirFormat,
+	dirFormat migrationfile.DirFormat,
 ) error {
 	snapshot, err := migrationsnapshot.Capture(snapshot)
 	if err != nil {
@@ -147,7 +148,7 @@ func WithReplayedSnapshot(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	snapshot fs.FS,
-	dirFormat migrator.MigrationDirFormat,
+	dirFormat migrationfile.DirFormat,
 	consume func(*dbschema.DatabaseConnection) error,
 ) error {
 	if consume == nil {
@@ -167,7 +168,7 @@ func WithReplayedSnapshotLocked(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	snapshot fs.FS,
-	dirFormat migrator.MigrationDirFormat,
+	dirFormat migrationfile.DirFormat,
 	consume func(*dbschema.DatabaseConnection) error,
 ) error {
 	if consume == nil {
@@ -194,7 +195,7 @@ func replayOnConnection(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	fsys fs.FS,
-	dirFormat migrator.MigrationDirFormat,
+	dirFormat migrationfile.DirFormat,
 	atlasTemplateData any,
 	revisionVersions map[int64]string,
 	hooks replayHooks,
@@ -216,7 +217,7 @@ func replayOnLockedConnection(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	fsys fs.FS,
-	dirFormat migrator.MigrationDirFormat,
+	dirFormat migrationfile.DirFormat,
 	atlasTemplateData any,
 	revisionVersions map[int64]string,
 	hooks replayHooks,

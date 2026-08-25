@@ -1,4 +1,4 @@
-package migrator
+package migrationfile_test
 
 import (
 	"testing"
@@ -6,9 +6,10 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
-func TestParseFileDirectives(t *testing.T) {
+func TestParseDirectives(t *testing.T) {
 	tests := []struct {
 		name string
 		sql  string
@@ -73,7 +74,7 @@ func TestParseFileDirectives(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(ParseFileDirectives(tt.sql), qt.DeepEquals, tt.want)
+			c.Assert(migrationfile.ParseDirectives(tt.sql), qt.DeepEquals, tt.want)
 		})
 	}
 }
@@ -114,7 +115,7 @@ func TestParseFileDirectivesTreatsHashCommentsAsHeaderComments(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Check(parseFileDirectivesForDialect(sql, test.dialect), qt.DeepEquals, test.want)
+			c.Check(migrationfile.ParseDirectivesForDialect(sql, test.dialect), qt.DeepEquals, test.want)
 		})
 	}
 }

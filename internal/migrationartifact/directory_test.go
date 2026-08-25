@@ -12,7 +12,7 @@ import (
 	"oras.land/oras-go/v2/content/memory"
 
 	"go.5x5.cz/ptah/internal/migrationartifact"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 func TestPushDirectoryTo_HappyPath(t *testing.T) {
@@ -33,7 +33,7 @@ func TestPushDirectoryTo_HappyPath(t *testing.T) {
 			Reference:        "oci://example.invalid/acme/migrations",
 			Directory:        dir,
 			Tags:             []string{"stable"},
-			DirFormat:        migrator.MigrationDirFormatPtah,
+			DirFormat:        migrationfile.DirFormatPtah,
 			Latest:           true,
 			GeneratedVersion: true,
 			Now: func() time.Time {
@@ -71,7 +71,7 @@ func TestPushDirectoryTo_WritesOnlyTheTagItWasGiven(t *testing.T) {
 		migrationartifact.DirectoryPushOptions{
 			Reference: "oci://example.invalid/acme/migrations:release",
 			Directory: dir,
-			DirFormat: migrator.MigrationDirFormatPtah,
+			DirFormat: migrationfile.DirFormatPtah,
 		},
 	)
 
@@ -119,7 +119,7 @@ func TestPushDirectoryTo_FailurePath(t *testing.T) {
 			migrationartifact.DirectoryPushOptions{
 				Reference: "oci://example.invalid/acme/migrations",
 				Directory: dir,
-				DirFormat: migrator.MigrationDirFormatPtah,
+				DirFormat: migrationfile.DirFormatPtah,
 				VerifySum: true,
 			},
 		)

@@ -11,7 +11,7 @@ import (
 	"go.5x5.cz/ptah/cmd/atlas"
 	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 func TestCompatCommand_MigrateValidateDevURLReplaysAtlasMigration(t *testing.T) {
@@ -67,6 +67,6 @@ func TestNewCompatCommand_MigrateValidateDevURLReplaysAtlasMigration(t *testing.
 func writeAtlasMigration(c *qt.C, dir, name, sql string) {
 	c.Helper()
 	c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(sql), 0o600), qt.IsNil)
-	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(dir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 }

@@ -9,7 +9,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // writeMigrateTestRevisionsFixture writes a hashed one-migration Atlas directory plus a
@@ -33,7 +33,7 @@ func writeMigrateTestRevisionsFixture(c *qt.C) (migrationsDir, casesDir string) 
 		[]byte("CREATE TABLE rs_users (id INTEGER PRIMARY KEY);\n"),
 		0o600,
 	), qt.IsNil)
-	_, err := migratesum.WriteWithFormat(migrationsDir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(migrationsDir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 
 	// Slashed: this path is interpolated into a double-quoted YAML scalar,

@@ -33,7 +33,7 @@ import (
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/internal/pathguard"
 	"go.5x5.cz/ptah/internal/schemascope"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 const undecidedSequenceDiagnostic = "Warning: sequence \"order_seq\" is declared by --to but no change was planned for it:" +
@@ -612,7 +612,7 @@ func TestRecoverPendingPublication_RollsBackInterruptedBatch(t *testing.T) {
 	dir := c.TempDir()
 	initialPath := filepath.Join(dir, "1_initial.sql")
 	c.Assert(os.WriteFile(initialPath, []byte("SELECT 1;"), 0o600), qt.IsNil)
-	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(dir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	writer := openTestWriter(c, dir)
 	batch, err := stageMigrationBatchAt(
@@ -640,7 +640,7 @@ func TestRecoverPendingPublication_RollsBackInterruptedBatch(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
 	_, err = os.Stat(testJournalPath(writer))
 	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
-	result, err := migratesum.VerifyWithFormat(os.DirFS(dir), migrator.MigrationDirFormatAtlas)
+	result, err := migratesum.VerifyWithFormat(os.DirFS(dir), migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.OK(), qt.IsTrue)
 }
@@ -650,7 +650,7 @@ func TestRecoverPendingPublication_RollsBackInterruptedCopyBatch(t *testing.T) {
 	dir := c.TempDir()
 	initialPath := filepath.Join(dir, "1_initial.sql")
 	c.Assert(os.WriteFile(initialPath, []byte("SELECT 1;"), 0o600), qt.IsNil)
-	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(dir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	writer := openTestWriter(c, dir)
 	batch, err := stageMigrationBatchAt(
@@ -679,7 +679,7 @@ func TestRecoverPendingPublication_RollsBackInterruptedCopyBatch(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
 	result, err := migratesum.VerifyWithFormat(
 		os.DirFS(dir),
-		migrator.MigrationDirFormatAtlas,
+		migrationfile.DirFormatAtlas,
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.OK(), qt.IsTrue)
@@ -862,7 +862,7 @@ func TestRecoverPendingPublication_FinalizesCommittedBatch(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
 	_, err = os.Stat(testJournalPath(writer))
 	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
-	result, err := migratesum.VerifyWithFormat(os.DirFS(dir), migrator.MigrationDirFormatAtlas)
+	result, err := migratesum.VerifyWithFormat(os.DirFS(dir), migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.OK(), qt.IsTrue)
 }
@@ -1079,7 +1079,7 @@ func TestWriteDiffArtifacts_CommitUncertainRetainsRecoverableBatch(t *testing.T)
 	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
 	verifyResult, err := migratesum.VerifyWithFormat(
 		os.DirFS(dir),
-		migrator.MigrationDirFormatAtlas,
+		migrationfile.DirFormatAtlas,
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(verifyResult.OK(), qt.IsTrue)
@@ -1251,7 +1251,7 @@ func TestGenerateDiff_FinalCleanupFailureIsNotRetried(t *testing.T) {
 			ctx context.Context,
 			conn *dbschema.DatabaseConnection,
 			snapshot fs.FS,
-			format migrator.MigrationDirFormat,
+			format migrationfile.DirFormat,
 			consume func(*dbschema.DatabaseConnection) error,
 		) error {
 			cleanupCalls++
@@ -1288,7 +1288,7 @@ func TestGenerateDiff_JoinsPostReplayFailureAndCleanupFailure(t *testing.T) {
 			ctx context.Context,
 			conn *dbschema.DatabaseConnection,
 			snapshot fs.FS,
-			format migrator.MigrationDirFormat,
+			format migrationfile.DirFormat,
 			consume func(*dbschema.DatabaseConnection) error,
 		) error {
 			cleanupCalls++
@@ -1319,7 +1319,7 @@ func TestGenerateDiff_CancellationDuringCleanupPreventsArtifacts(t *testing.T) {
 			replayCtx context.Context,
 			replayConn *dbschema.DatabaseConnection,
 			snapshot fs.FS,
-			format migrator.MigrationDirFormat,
+			format migrationfile.DirFormat,
 			consume func(*dbschema.DatabaseConnection) error,
 		) error {
 			cleanupCalls++
@@ -1378,7 +1378,7 @@ func TestGenerateDiff_PreparePublicationFailurePreservesExistingArtifacts(t *tes
 	c.Assert(restoredSum, qt.DeepEquals, previousSum)
 	verification, err := migratesum.VerifyWithFormat(
 		os.DirFS(opts.Dir),
-		migrator.MigrationDirFormatAtlas,
+		migrationfile.DirFormatAtlas,
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(verification.OK(), qt.IsTrue)
@@ -1412,7 +1412,7 @@ func TestGenerateDiff_PreparedContentsArePublishedWithMatchingChecksum(t *testin
 	c.Assert(string(contents), qt.Equals, "SELECT 99;\n")
 	verification, err := migratesum.VerifyWithFormat(
 		os.DirFS(opts.Dir),
-		migrator.MigrationDirFormatAtlas,
+		migrationfile.DirFormatAtlas,
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(verification.OK(), qt.IsTrue)
@@ -1517,7 +1517,7 @@ CREATE VIEW replayed_user_ids AS SELECT id FROM replayed_users;
 `),
 		0o600,
 	), qt.IsNil)
-	_, err := migratesum.WriteWithFormat(migrationsDir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(migrationsDir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	schemaPath := filepath.Join(dir, "schema.sql")
 	c.Assert(os.WriteFile(

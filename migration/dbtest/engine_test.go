@@ -11,7 +11,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/migration/dbtest"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 func TestRunMigrationTest_AssertionsHappyPath(t *testing.T) {
@@ -163,7 +163,7 @@ func TestRunMigrationTest_MigrateToLatest(t *testing.T) {
 	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
 		Cases:         cases,
 		MigrationsDir: migrationsDir,
-		DirFormat:     migrator.MigrationDirFormatPtah,
+		DirFormat:     migrationfile.DirFormatPtah,
 	})
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.Failed(), qt.IsFalse)
@@ -209,7 +209,7 @@ func TestRunMigrationTest_MigrateToUsesProvidedSnapshotInsteadOfPath(t *testing.
 		}},
 		MigrationsDir: reopenedDir,
 		MigrationsFS:  authorized,
-		DirFormat:     migrator.MigrationDirFormatPtah,
+		DirFormat:     migrationfile.DirFormatPtah,
 	})
 
 	c.Assert(err, qt.IsNil)

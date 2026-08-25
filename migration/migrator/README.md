@@ -851,7 +851,7 @@ normal per-migration transaction. This is intended for narrow database
 requirements such as PostgreSQL enum value additions that must be used by a
 later statement in the same migration, or PostgreSQL `CREATE INDEX
 CONCURRENTLY` operations. Programmatic migrations set `UpTxMode` or
-`DownTxMode` to `MigrationFileTxModeNone`; the two directions never share an
+`DownTxMode` to `migrationfile.FileTxModeNone`; the two directions never share an
 execution-mode value.
 
 Ptah recognizes the directive with the target database's string and comment

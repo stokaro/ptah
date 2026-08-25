@@ -12,7 +12,7 @@ import (
 
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/internal/migrationlintreport"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // TestBuild_GitBaseAcceptsARepositoryReachedThroughASymlink pins that the
@@ -59,7 +59,7 @@ func TestBuild_GitBaseAcceptsARepositoryReachedThroughASymlink(t *testing.T) {
 
 	report, err := migrationlintreport.Build(context.Background(), migrationlintreport.Options{
 		Dir:       linkedMigrations,
-		DirFormat: string(migrator.MigrationDirFormatAtlas),
+		DirFormat: string(migrationfile.DirFormatAtlas),
 		Dialect:   "sqlite",
 		GitBase:   "HEAD~1",
 		GitDir:    linkedMigrations,

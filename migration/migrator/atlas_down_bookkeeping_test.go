@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -76,7 +77,7 @@ func newAtlasDownMigrator(t *testing.T, secondMigration string) (*dbschema.Datab
 			"1_create_parent.sql": &fstest.MapFile{Data: []byte("CREATE TABLE parent (id INTEGER PRIMARY KEY);\n")},
 			"2_create_child.sql":  &fstest.MapFile{Data: []byte(secondMigration)},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	m = m.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
@@ -241,7 +242,7 @@ func TestMigrateDown_AtlasFormatRepairAfterFailedDownRunsDownBody(t *testing.T) 
 		"1_create_parent.sql": &fstest.MapFile{Data: []byte("CREATE TABLE parent (id INTEGER PRIMARY KEY);\n")},
 		"2_create_child.sql":  &fstest.MapFile{Data: []byte(failingDownTxtar)},
 	}
-	broken, err := migrator.NewFSMigrator(conn, fsys, migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas))
+	broken, err := migrator.NewFSMigrator(conn, fsys, migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas))
 	c.Assert(err, qt.IsNil)
 	broken = broken.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
 	c.Assert(broken.MigrateUp(ctx), qt.IsNil)
@@ -249,7 +250,7 @@ func TestMigrateDown_AtlasFormatRepairAfterFailedDownRunsDownBody(t *testing.T) 
 
 	// The operator repairs the down body and explicitly resumes the rollback.
 	fsys["2_create_child.sql"] = &fstest.MapFile{Data: []byte(succeedingDownTxtar)}
-	repaired, err := migrator.NewFSMigrator(conn, fsys, migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas))
+	repaired, err := migrator.NewFSMigrator(conn, fsys, migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas))
 	c.Assert(err, qt.IsNil)
 	repaired = repaired.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
 

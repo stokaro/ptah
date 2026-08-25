@@ -12,7 +12,7 @@ import (
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	migrationlint "go.5x5.cz/ptah/migration/lint"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 func TestWriteMigrateLintFormat_CustomTemplate(t *testing.T) {
@@ -22,7 +22,7 @@ func TestWriteMigrateLintFormat_CustomTemplate(t *testing.T) {
 		"2_drop_users.sql":   {Data: []byte("DROP TABLE users;")},
 	}
 	analysis, err := migrationlint.AnalyzeFS(fsys, migrationlint.Options{
-		DirFormat: migrator.MigrationDirFormatAtlas,
+		DirFormat: migrationfile.DirFormatAtlas,
 		Selection: migrationlint.VersionSelection{
 			Versions:   []int64{2},
 			Restricted: true,
@@ -51,7 +51,7 @@ func TestWriteMigrateLintFormat_JSONFiles(t *testing.T) {
 		"1_create_users.sql": {Data: []byte("CREATE TABLE users (id integer);")},
 	}
 	analysis, err := migrationlint.AnalyzeFS(fsys, migrationlint.Options{
-		DirFormat: migrator.MigrationDirFormatAtlas,
+		DirFormat: migrationfile.DirFormatAtlas,
 	})
 	c.Assert(err, qt.IsNil)
 	var out bytes.Buffer
@@ -77,7 +77,7 @@ func TestNewMigrateLint_OmitsAtlasIgnoredFilesAndCounts(t *testing.T) {
 	}
 	analysis, err := migrationlint.AnalyzeFS(fsys, migrationlint.Options{
 		Compatibility: migrationlint.CompatibilityProfileAtlas,
-		DirFormat:     migrator.MigrationDirFormatAtlas,
+		DirFormat:     migrationfile.DirFormatAtlas,
 	})
 	c.Assert(err, qt.IsNil)
 
@@ -99,7 +99,7 @@ func TestNewMigrateLint_DuplicateBasenamesKeepFindingsScoped(t *testing.T) {
 		"b/1_change.sql": {Data: []byte("SELECT 1;")},
 	}
 	analysis, err := migrationlint.AnalyzeFS(fsys, migrationlint.Options{
-		DirFormat: migrator.MigrationDirFormatAtlas,
+		DirFormat: migrationfile.DirFormatAtlas,
 	})
 	c.Assert(err, qt.IsNil)
 
@@ -128,7 +128,7 @@ ALTER TABLE accounts ADD COLUMN tenant_id INTEGER NOT NULL;
 	}
 	analysis, err := migrationlint.AnalyzeFS(fsys, migrationlint.Options{
 		Compatibility: migrationlint.CompatibilityProfileAtlas,
-		DirFormat:     migrator.MigrationDirFormatAtlas,
+		DirFormat:     migrationfile.DirFormatAtlas,
 		Dialect:       "sqlite",
 	})
 	c.Assert(err, qt.IsNil)
@@ -152,7 +152,7 @@ func TestNewMigrateLint_OrdersMigrationsByVersion(t *testing.T) {
 		"2_earlier.sql": {Data: []byte("SELECT 2;")},
 	}
 	analysis, err := migrationlint.AnalyzeFS(fsys, migrationlint.Options{
-		DirFormat: migrator.MigrationDirFormatAtlas,
+		DirFormat: migrationfile.DirFormatAtlas,
 	})
 	c.Assert(err, qt.IsNil)
 
@@ -174,7 +174,7 @@ func TestNewMigrateLint_PathPrefixCannotCrossAttachFindings(t *testing.T) {
 	}
 	analysis, err := migrationlint.AnalyzeFS(fsys, migrationlint.Options{
 		Compatibility: migrationlint.CompatibilityProfileAtlas,
-		DirFormat:     migrator.MigrationDirFormatAtlas,
+		DirFormat:     migrationfile.DirFormatAtlas,
 		PathPrefix:    "migrations",
 	})
 	c.Assert(err, qt.IsNil)
@@ -197,7 +197,7 @@ func TestNewMigrateLint_LoadsSemanticChangeCountForMultiActionAlter(t *testing.T
 	analysis, err := migrationlint.AnalyzeFS(fstest.MapFS{
 		"1_alter.sql": {Data: []byte("ALTER TABLE users ADD COLUMN a INTEGER, ADD COLUMN b INTEGER;\n")},
 	}, migrationlint.Options{
-		DirFormat: migrator.MigrationDirFormatAtlas,
+		DirFormat: migrationfile.DirFormatAtlas,
 		Dialect:   "sqlite",
 	})
 	c.Assert(err, qt.IsNil)
@@ -217,7 +217,7 @@ func TestNewMigrateLint_LoadsZeroChangesForNonDDLFile(t *testing.T) {
 	analysis, err := migrationlint.AnalyzeFS(fstest.MapFS{
 		"1_seed.sql": {Data: []byte("INSERT INTO users (id) VALUES (1);\n")},
 	}, migrationlint.Options{
-		DirFormat: migrator.MigrationDirFormatAtlas,
+		DirFormat: migrationfile.DirFormatAtlas,
 		Dialect:   "sqlite",
 	})
 	c.Assert(err, qt.IsNil)
@@ -238,7 +238,7 @@ func TestNewMigrateLint_LoadsSemanticChangeCountForMixedFile(t *testing.T) {
 				"INSERT INTO t (id) VALUES (1);\n" +
 				"ALTER TABLE t ADD COLUMN a INTEGER, ADD COLUMN b INTEGER;\n")},
 	}, migrationlint.Options{
-		DirFormat: migrator.MigrationDirFormatAtlas,
+		DirFormat: migrationfile.DirFormatAtlas,
 		Dialect:   "sqlite",
 	})
 	c.Assert(err, qt.IsNil)
@@ -256,7 +256,7 @@ func TestNewMigrateLint_LoadsOneChangePerSingleStatementFixtureFile(t *testing.T
 		"1_create_users.sql":    {Data: []byte("CREATE TABLE users (id INTEGER);\n")},
 		"2_create_accounts.sql": {Data: []byte("CREATE TABLE accounts (id INTEGER);\n")},
 	}, migrationlint.Options{
-		DirFormat: migrator.MigrationDirFormatAtlas,
+		DirFormat: migrationfile.DirFormatAtlas,
 		Dialect:   "sqlite",
 	})
 	c.Assert(err, qt.IsNil)
@@ -277,7 +277,7 @@ func TestNewMigrateLint_IncludesAtlasRepeatableFiles(t *testing.T) {
 		"2R_drop_users.sql":  {Data: []byte("DROP TABLE users;\n")},
 	}, migrationlint.Options{
 		Compatibility: migrationlint.CompatibilityProfileAtlas,
-		DirFormat:     migrator.MigrationDirFormatAtlas,
+		DirFormat:     migrationfile.DirFormatAtlas,
 		Dialect:       "sqlite",
 	})
 	c.Assert(err, qt.IsNil)
@@ -304,7 +304,7 @@ func TestWriteMigrateLintFormat_RedactsSensitiveURL(t *testing.T) {
 		"&sslmode=disable"
 	analysis, err := migrationlint.AnalyzeFS(fstest.MapFS{
 		"1_empty.sql": {Data: []byte("-- no changes\n")},
-	}, migrationlint.Options{DirFormat: migrator.MigrationDirFormatAtlas})
+	}, migrationlint.Options{DirFormat: migrationfile.DirFormatAtlas})
 	c.Assert(err, qt.IsNil)
 	var out bytes.Buffer
 
@@ -322,7 +322,7 @@ func TestWriteMigrateLintFormat_ValidAtlasSumAddsIntegrityStep(t *testing.T) {
 	fsys := fstest.MapFS{
 		"1_create_users.sql": {Data: []byte("CREATE TABLE users (id integer);\n")},
 	}
-	sum, err := migratesum.ComputeWithFormat(fsys, migrator.MigrationDirFormatAtlas)
+	sum, err := migratesum.ComputeWithFormat(fsys, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	fsys[migratesum.AtlasFileName] = &fstest.MapFile{Data: sum.Bytes()}
 	snapshot, err := migrationsnapshot.Capture(fsys)
@@ -334,7 +334,7 @@ func TestWriteMigrateLintFormat_ValidAtlasSumAddsIntegrityStep(t *testing.T) {
 	integrity, err := atlasreport.InspectMigrateLintIntegrity(snapshot, covered)
 	c.Assert(err, qt.IsNil)
 	analysis, err := migrationlint.AnalyzeFS(snapshot, migrationlint.Options{
-		DirFormat: migrator.MigrationDirFormatAtlas,
+		DirFormat: migrationfile.DirFormatAtlas,
 	})
 	c.Assert(err, qt.IsNil)
 	var out bytes.Buffer

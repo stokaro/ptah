@@ -7,7 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/migration/lint"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // TestAnalyzeFS_ACompoundRoutineBodyIsOneStatement pins the first half of
@@ -56,7 +56,7 @@ func TestAnalyzeFS_ACompoundRoutineBodyIsOneStatement(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 			analysis, err := lint.AnalyzeFS(routineFS(row.sql), lint.Options{
-				DirFormat: migrator.MigrationDirFormatAtlas,
+				DirFormat: migrationfile.DirFormatAtlas,
 				Dialect:   row.dialect,
 			})
 
@@ -98,7 +98,7 @@ func TestAnalyzeFS_ARoutineBodyIsNotAMigrationStatement(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 			analysis, err := lint.AnalyzeFS(routineFS(row.sql), lint.Options{
-				DirFormat: migrator.MigrationDirFormatAtlas,
+				DirFormat: migrationfile.DirFormatAtlas,
 				Dialect:   "mysql",
 			})
 

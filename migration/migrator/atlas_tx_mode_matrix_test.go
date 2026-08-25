@@ -8,6 +8,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -39,7 +40,7 @@ func newAtlasTxModeMatrixMigrator(
 				Data: []byte(directive + atlasTxModeMatrixBody),
 			},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	return conn, mig.
@@ -109,7 +110,7 @@ func assertAtlasTxModeRejectedBeforeWrites(
 ) {
 	err := mig.MigrateUp(c.Context())
 	c.Assert(err, qt.IsNotNil)
-	var txModeErr *migrator.AtlasTxModeDirectiveError
+	var txModeErr *migrationfile.AtlasTxModeDirectiveError
 	c.Assert(err, qt.ErrorAs, &txModeErr)
 	c.Assert(err.Error(), qt.Equals, wantErr)
 	c.Assert(atlasTxModeTableExists(c, conn), qt.IsFalse)

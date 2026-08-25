@@ -14,6 +14,7 @@ import (
 
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlashash"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // MigrationProvider provides a list of migrations
@@ -72,7 +73,7 @@ type FSMigrationProvider struct {
 	fsys                   fs.FS
 	migrations             []*Migration
 	hooks                  statementExecutionHooks
-	format                 MigrationDirFormat
+	format                 migrationfile.DirFormat
 	atlasTemplateData      any
 	atlasRevisionVersions  map[int64]string
 	atlasRevisionChecksums map[int64]string
@@ -117,7 +118,7 @@ func WithStatementObserver(observer StatementObserver) FSProviderOption {
 // WithMigrationDirFormat selects how filesystem migrations are discovered.
 // The default auto mode keeps existing Ptah-pair behavior when Ptah files are
 // present and otherwise accepts Atlas single-file migrations.
-func WithMigrationDirFormat(format MigrationDirFormat) FSProviderOption {
+func WithMigrationDirFormat(format migrationfile.DirFormat) FSProviderOption {
 	return func(p *FSMigrationProvider) {
 		p.format = format
 	}
@@ -227,7 +228,7 @@ func (p *FSMigrationProvider) hasAtlasRevisionVersionMap() bool {
 }
 
 func (p *FSMigrationProvider) load() error {
-	files, err := DiscoverMigrationFiles(p.fsys, p.format)
+	files, err := migrationfile.Discover(p.fsys, p.format)
 	if err != nil {
 		return err
 	}
@@ -235,13 +236,13 @@ func (p *FSMigrationProvider) load() error {
 		p.migrations = make([]*Migration, 0)
 		return nil
 	}
-	if files[0].Format == MigrationDirFormatAtlas {
+	if files[0].Format == migrationfile.DirFormatAtlas {
 		return p.loadAtlas(files)
 	}
 	return p.loadPtah(files)
 }
 
-func (p *FSMigrationProvider) loadPtah(files []MigrationFile) error {
+func (p *FSMigrationProvider) loadPtah(files []migrationfile.File) error {
 	migrationsMap := make(map[int64]*Migration)
 	foundFiles := make(map[int64]map[string]bool)
 
@@ -304,7 +305,7 @@ func (p *FSMigrationProvider) loadPtah(files []MigrationFile) error {
 	return nil
 }
 
-func (p *FSMigrationProvider) loadAtlas(files []MigrationFile) error {
+func (p *FSMigrationProvider) loadAtlas(files []migrationfile.File) error {
 	hashes, err := readAtlasSumHashes(p.fsys)
 	if err != nil {
 		return err
@@ -339,7 +340,7 @@ func (p *FSMigrationProvider) loadAtlas(files []MigrationFile) error {
 					hasAtlasRevisionVersion:    true,
 					atlasRevisionVersionMapped: mapped,
 					atlasOrderKey:              migrationFile.Path,
-					revisionDescription:        migrationFile.revisionDescription,
+					revisionDescription:        migrationFile.RevisionDescription,
 					hasRevisionDescription:     true,
 					atlasRevisionType:          revisionType,
 					atlasRepeatable:            repeatable,
@@ -391,7 +392,7 @@ func (p *FSMigrationProvider) loadAtlas(files []MigrationFile) error {
 	return nil
 }
 
-func atlasMaxNumericVersion(files []MigrationFile) int64 {
+func atlasMaxNumericVersion(files []migrationfile.File) int64 {
 	var maxVersion int64
 	for _, file := range files {
 		if !file.Repeatable && file.Version > maxVersion {
@@ -401,7 +402,7 @@ func atlasMaxNumericVersion(files []MigrationFile) int64 {
 	return maxVersion
 }
 
-func atlasRuntimeVersion(file MigrationFile, maxVersion int64) int64 {
+func atlasRuntimeVersion(file migrationfile.File, maxVersion int64) int64 {
 	if !file.Repeatable || file.Version > 0 {
 		return file.Version
 	}
@@ -423,7 +424,7 @@ func atlasRuntimeVersion(file MigrationFile, maxVersion int64) int64 {
 // (stokaro/ptah#1209).
 func (p *FSMigrationProvider) recordAtlasHashes(
 	migration *Migration,
-	migrationFile MigrationFile,
+	migrationFile migrationfile.File,
 	sumHash string,
 	runtimeVersion int64,
 ) {
@@ -438,7 +439,7 @@ func (p *FSMigrationProvider) recordAtlasHashes(
 	}
 }
 
-func (p *FSMigrationProvider) loadAtlasFile(parts *atlasParts, migrationFile MigrationFile) error {
+func (p *FSMigrationProvider) loadAtlasFile(parts *atlasParts, migrationFile migrationfile.File) error {
 	switch migrationFile.Direction {
 	case "up":
 		if parts.hasUp {
@@ -455,7 +456,7 @@ func (p *FSMigrationProvider) loadAtlasFile(parts *atlasParts, migrationFile Mig
 	}
 }
 
-func (p *FSMigrationProvider) loadAtlasUp(parts *atlasParts, migrationFile MigrationFile) error {
+func (p *FSMigrationProvider) loadAtlasUp(parts *atlasParts, migrationFile migrationfile.File) error {
 	sql, err := readSQLMigrationFile(p.fsys, migrationFile.Path, p.atlasTemplateData)
 	if err != nil {
 		return fmt.Errorf("failed to load Atlas migration %s: %w", migrationFile.Path, err)
@@ -495,7 +496,7 @@ func (p *FSMigrationProvider) loadAtlasUp(parts *atlasParts, migrationFile Migra
 	return nil
 }
 
-func (p *FSMigrationProvider) loadAtlasDown(parts *atlasParts, migrationFile MigrationFile) error {
+func (p *FSMigrationProvider) loadAtlasDown(parts *atlasParts, migrationFile migrationfile.File) error {
 	down, err := migrationFuncFromSQLFilenameWithMetadata(migrationFile.Path, p.fsys, p.hooks, p.atlasTemplateData)
 	if err != nil {
 		return fmt.Errorf("failed to load Atlas migration %s: %w", migrationFile.Path, err)
@@ -512,10 +513,10 @@ func setAtlasUp(parts *atlasParts, up sqlMigrationFile) {
 func setMigrationUp(migration *Migration, up sqlMigrationFile) {
 	migration.Up = func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
 		txMode := migration.parsedUpTxModeForDialect(databaseConnectionDialect(conn))
-		if txMode.err != nil {
-			return txMode.err
+		if txMode.Err != nil {
+			return txMode.Err
 		}
-		return up.fn(ctx, conn, migrationExecutionModeForFileTxMode(txMode.mode))
+		return up.fn(ctx, conn, migrationExecutionModeForFileTxMode(txMode.Mode))
 	}
 	migration.upSQLFunc = up.fn
 	migration.upHasStatementInterceptor = up.statementIntercepted
@@ -540,10 +541,10 @@ func setAtlasDown(parts *atlasParts, down sqlMigrationFile) {
 func setMigrationDown(migration *Migration, down sqlMigrationFile) {
 	migration.Down = func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
 		txMode := migration.parsedDownTxModeForDialect(databaseConnectionDialect(conn))
-		if txMode.err != nil {
-			return txMode.err
+		if txMode.Err != nil {
+			return txMode.Err
 		}
-		return down.fn(ctx, conn, migrationExecutionModeForFileTxMode(txMode.mode))
+		return down.fn(ctx, conn, migrationExecutionModeForFileTxMode(txMode.Mode))
 	}
 	migration.downSQLFunc = down.fn
 	migration.downHasStatementInterceptor = down.statementIntercepted
@@ -559,7 +560,7 @@ func setMigrationDown(migration *Migration, down sqlMigrationFile) {
 	migration.downSourcePath = down.sourcePath
 }
 
-func isAtlasDirectionalMigrationFile(file MigrationFile) bool {
+func isAtlasDirectionalMigrationFile(file migrationfile.File) bool {
 	base := path.Base(file.Path)
 	return strings.HasSuffix(base, ".up.sql") || strings.HasSuffix(base, ".down.sql")
 }

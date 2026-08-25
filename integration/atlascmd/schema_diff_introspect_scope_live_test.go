@@ -18,7 +18,7 @@ import (
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // uniqueScopeSuffix names throwaway databases and schemas so parallel runs
@@ -413,7 +413,7 @@ func TestSchemaDiffMigrationDirReplayIntrospectsRequestedSchemaLivePostgres(t *t
 			"CREATE TABLE "+scoped+".users (id SERIAL PRIMARY KEY, email TEXT, extra TEXT);\n"),
 		0o600,
 	), qt.IsNil)
-	_, err := migratesum.WriteWithFormat(migrationsDir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(migrationsDir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 
 	tests := []struct {

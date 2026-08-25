@@ -17,7 +17,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlassource"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/testutils"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 func TestGenerateDiff_HappyPathCreatesAtlasMigrationFromLocalSchema(t *testing.T) {
@@ -157,7 +157,7 @@ CREATE TABLE users (
   id INTEGER PRIMARY KEY
 );
 `), 0o600), qt.IsNil)
-	_, err := migratesum.WriteWithFormat(migrationsDir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(migrationsDir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	sumPath := filepath.Join(migrationsDir, "atlas.sum")
 	beforeSum, err := os.ReadFile(sumPath)
@@ -276,7 +276,7 @@ CREATE TABLE users (
   id INTEGER PRIMARY KEY
 );
 `), 0o600), qt.IsNil)
-	_, err := migratesum.WriteWithFormat(migrationsDir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(migrationsDir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(migrationsDir, "1_init.sql"), []byte(`
 CREATE TABLE users (
@@ -365,7 +365,7 @@ func TestGenerateDiff_LockCoversMigrationDirectoryDesiredResolution(t *testing.T
 		[]byte("CREATE TABLE desired_users (id INTEGER PRIMARY KEY);\n"),
 		0o600,
 	), qt.IsNil)
-	_, err = migratesum.WriteWithFormat(desiredDir, migrator.MigrationDirFormatAtlas)
+	_, err = migratesum.WriteWithFormat(desiredDir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	conn := connectSQLite(c, filepath.Join(dir, "dev.db"))
 	defer dbschema.CloseAndWarn(conn)
@@ -653,7 +653,7 @@ CREATE TABLE users (
   id INTEGER PRIMARY KEY
 );
 `), 0o600), qt.IsNil)
-	_, err := migratesum.WriteWithFormat(migrationsDir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(migrationsDir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	sumPath := filepath.Join(migrationsDir, "atlas.sum")
 	previousSum, err := os.ReadFile(sumPath)

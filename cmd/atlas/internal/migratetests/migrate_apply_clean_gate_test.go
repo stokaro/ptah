@@ -12,7 +12,7 @@ import (
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // stokaro/ptah#1231 case 1: the compat surface applied every migration to a
@@ -41,7 +41,7 @@ func writeCleanGateFixture(c *qt.C) (migrationsDir, dbPath string) {
 	for name, body := range files {
 		c.Assert(os.WriteFile(filepath.Join(migrationsDir, name), []byte(body), 0o600), qt.IsNil)
 	}
-	_, err := migratesum.WriteWithFormat(migrationsDir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(migrationsDir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	return migrationsDir, filepath.Join(root, "gate.db")
 }
@@ -148,7 +148,7 @@ func TestCompatCommand_MigrateApplyRefusesUncleanDatabaseWithEmptyDirectory(t *t
 	root := c.TempDir()
 	migrationsDir := filepath.Join(root, "migrations")
 	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
-	_, sumErr := migratesum.WriteWithFormat(migrationsDir, migrator.MigrationDirFormatAtlas)
+	_, sumErr := migratesum.WriteWithFormat(migrationsDir, migrationfile.DirFormatAtlas)
 	c.Assert(sumErr, qt.IsNil)
 	dbPath := filepath.Join(root, "empty-dir.db")
 	execCleanGateSQL(c, dbPath, "CREATE TABLE legacy_stuff (id INTEGER PRIMARY KEY)")

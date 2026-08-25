@@ -16,7 +16,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // frozen is the instant every row below rebases in. Its seconds field is 07 so
@@ -34,7 +34,7 @@ func freezeRebaseClock(t *testing.T) {
 
 // writeFixture writes files into a fresh directory, adds the integrity file
 // format expects, and returns the directory.
-func writeFixture(t *testing.T, format migrator.MigrationDirFormat, files map[string]string) string {
+func writeFixture(t *testing.T, format migrationfile.DirFormat, files map[string]string) string {
 	t.Helper()
 	dir := t.TempDir()
 	for name, sql := range files {
@@ -61,12 +61,12 @@ func TestRebaseClockIsTheCalendarSecondOnAtlas(t *testing.T) {
 	c := qt.New(t)
 	freezeRebaseClock(t)
 
-	dir := writeFixture(t, migrator.MigrationDirFormatAtlas, map[string]string{
+	dir := writeFixture(t, migrationfile.DirFormatAtlas, map[string]string{
 		"1_init.sql":   "CREATE TABLE init (id int);\n",
 		"2_second.sql": "CREATE TABLE two (id int);\n",
 	})
 
-	version, _, err := Rebase(dir, 1, migrator.MigrationDirFormatAtlas)
+	version, _, err := Rebase(dir, 1, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	c.Assert(version, qt.Equals, int64(20260809094307))
 
@@ -84,14 +84,14 @@ func TestRebaseClockIsTheEpochOnPtah(t *testing.T) {
 	c := qt.New(t)
 	freezeRebaseClock(t)
 
-	dir := writeFixture(t, migrator.MigrationDirFormatPtah, map[string]string{
+	dir := writeFixture(t, migrationfile.DirFormatPtah, map[string]string{
 		"0000000001_first.up.sql":    "CREATE TABLE a (id int);\n",
 		"0000000001_first.down.sql":  "DROP TABLE a;\n",
 		"0000000002_second.up.sql":   "CREATE TABLE b (id int);\n",
 		"0000000002_second.down.sql": "DROP TABLE b;\n",
 	})
 
-	version, _, err := Rebase(dir, 1, migrator.MigrationDirFormatPtah)
+	version, _, err := Rebase(dir, 1, migrationfile.DirFormatPtah)
 	c.Assert(err, qt.IsNil)
 	c.Assert(version, qt.Equals, int64(1786268587))
 

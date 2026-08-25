@@ -5,123 +5,17 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
-	"strings"
 	"time"
 
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
-
-const ptahDirectivePrefix = "-- +ptah "
-
-// MigrationTimeouts configures per-migration database safety timeouts.
-// Empty values mean no timeout is configured.
-type MigrationTimeouts struct {
-	LockTimeout         time.Duration
-	StatementTimeout    time.Duration
-	HasLockTimeout      bool
-	HasStatementTimeout bool
-}
 
 type restoreTimeoutsFunc func(context.Context) error
 
-// IsZero reports whether no timeout is configured.
-func (t MigrationTimeouts) IsZero() bool {
-	return !t.HasLockTimeout && !t.HasStatementTimeout
-}
-
-// parseMigrationTimeoutDirectives reads the `-- +ptah lock_timeout=` and
-// `-- +ptah statement_timeout=` directives from the region where directives are
-// significant.
-//
-// It takes that region from [directiveRegion] rather than re-deciding where the
-// header ends. This loop used to stop at the first executable line while
-// [ParseFileDirectives] scanned the whole file, so two `+ptah` keys written on
-// one misplaced line had different fates -- the timeout was dropped and the
-// transaction mode was honored. One region is what keeps them the same fact.
-func parseMigrationTimeoutDirectives(sql string) (MigrationTimeouts, error) {
-	return parseMigrationTimeoutDirectivesForDialect(sql, "")
-}
-
-func parseMigrationTimeoutDirectivesForDialect(sql, dialect string) (MigrationTimeouts, error) {
-	var timeouts MigrationTimeouts
-
-	for line := range strings.SplitSeq(directiveRegion(sql, dialect), "\n") {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" {
-			continue
-		}
-		directive, ok := strings.CutPrefix(trimmed, ptahDirectivePrefix)
-		if !ok {
-			continue
-		}
-
-		directive = strings.TrimSpace(directive)
-		if directive == "" {
-			return MigrationTimeouts{}, fmt.Errorf("empty +ptah directive")
-		}
-		if isCheckDirectiveBody(directive) {
-			// `-- +ptah check ...` is an ordered pre-migration check owned by
-			// ParseChecks. Its quoted assert value may contain spaces and '=',
-			// so it must be skipped as a whole line rather than field-split.
-			continue
-		}
-
-		if err := parseTimeoutDirectiveFields(directive, &timeouts); err != nil {
-			return MigrationTimeouts{}, err
-		}
-	}
-
-	return timeouts, nil
-}
-
-// parseTimeoutDirectiveFields field-splits a single `-- +ptah` directive body
-// and folds any timeout key=value pairs into timeouts. Unknown key=value fields
-// belong to other directive families and are skipped; a bare field that is not
-// no_transaction is a typo'd directive and rejected.
-func parseTimeoutDirectiveFields(directive string, timeouts *MigrationTimeouts) error {
-	for field := range strings.FieldsSeq(directive) {
-		key, value, ok := strings.Cut(field, "=")
-		if !ok {
-			if field == DirectiveNoTransaction {
-				continue
-			}
-			return fmt.Errorf("invalid +ptah directive %q", field)
-		}
-
-		switch key {
-		case "lock_timeout", "lock-timeout":
-			duration, err := parsePositiveDuration(value)
-			if err != nil {
-				return fmt.Errorf("invalid +ptah %s value: %w", key, err)
-			}
-			timeouts.LockTimeout = duration
-			timeouts.HasLockTimeout = true
-		case "statement_timeout", "statement-timeout":
-			duration, err := parsePositiveDuration(value)
-			if err != nil {
-				return fmt.Errorf("invalid +ptah %s value: %w", key, err)
-			}
-			timeouts.StatementTimeout = duration
-			timeouts.HasStatementTimeout = true
-		}
-	}
-	return nil
-}
-
-func parsePositiveDuration(value string) (time.Duration, error) {
-	duration, err := time.ParseDuration(strings.TrimSpace(value))
-	if err != nil {
-		return 0, err
-	}
-	if duration <= 0 {
-		return 0, fmt.Errorf("must be greater than zero")
-	}
-	return duration, nil
-}
-
-func mergeMigrationTimeouts(defaults, overrides MigrationTimeouts) MigrationTimeouts {
+func mergeMigrationTimeouts(defaults, overrides migrationfile.Timeouts) migrationfile.Timeouts {
 	merged := defaults
 	if overrides.HasLockTimeout {
 		merged.LockTimeout = overrides.LockTimeout
@@ -136,7 +30,7 @@ func mergeMigrationTimeouts(defaults, overrides MigrationTimeouts) MigrationTime
 
 // WithDefaultTimeouts returns a copy of the migrator that applies the provided
 // timeouts to migrations that do not override them with file-level directives.
-func (m *Migrator) WithDefaultTimeouts(timeouts MigrationTimeouts) *Migrator {
+func (m *Migrator) WithDefaultTimeouts(timeouts migrationfile.Timeouts) *Migrator {
 	tmp := *m
 	tmp.defaultTimeouts = timeouts
 	return &tmp
@@ -145,7 +39,7 @@ func (m *Migrator) WithDefaultTimeouts(timeouts MigrationTimeouts) *Migrator {
 func (m *Migrator) applyTimeoutsWithRestore(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
-	timeouts MigrationTimeouts,
+	timeouts migrationfile.Timeouts,
 ) (restoreTimeoutsFunc, error) {
 	if timeouts.IsZero() {
 		return noopRestoreTimeouts, nil
@@ -215,7 +109,7 @@ func (m *Migrator) restoreTimeoutsAfterFailure(ctx context.Context, version int6
 func timeoutStatements(
 	dialect string,
 	caps capability.Capabilities,
-	timeouts MigrationTimeouts,
+	timeouts migrationfile.Timeouts,
 ) (setupStatements, restoreStatements []string, err error) {
 	normalized := platform.NormalizeDialect(dialect)
 
@@ -241,7 +135,7 @@ func timeoutStatements(
 	}
 }
 
-func postgresTimeoutStatements(timeouts MigrationTimeouts) []string {
+func postgresTimeoutStatements(timeouts migrationfile.Timeouts) []string {
 	statements := make([]string, 0, 2)
 	if timeouts.HasLockTimeout {
 		statements = append(statements, "SET LOCAL lock_timeout = '"+durationMillisLiteral(timeouts.LockTimeout)+"'")
@@ -252,7 +146,7 @@ func postgresTimeoutStatements(timeouts MigrationTimeouts) []string {
 	return statements
 }
 
-func mysqlTimeoutStatements(timeouts MigrationTimeouts) (setupStatements, restoreStatements []string, err error) {
+func mysqlTimeoutStatements(timeouts migrationfile.Timeouts) (setupStatements, restoreStatements []string, err error) {
 	setup := make([]string, 0, 4)
 	restore := make([]string, 0, 2)
 	if timeouts.HasLockTimeout {
@@ -272,7 +166,7 @@ func mysqlTimeoutStatements(timeouts MigrationTimeouts) (setupStatements, restor
 	return setup, reverseStrings(restore), nil
 }
 
-func mariaDBTimeoutStatements(timeouts MigrationTimeouts) (setupStatements, restoreStatements []string, err error) {
+func mariaDBTimeoutStatements(timeouts migrationfile.Timeouts) (setupStatements, restoreStatements []string, err error) {
 	setup := make([]string, 0, 4)
 	restore := make([]string, 0, 2)
 	if timeouts.HasLockTimeout {

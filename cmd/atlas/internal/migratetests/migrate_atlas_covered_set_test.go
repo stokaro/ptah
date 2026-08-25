@@ -11,7 +11,7 @@ import (
 	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // These tests pin stokaro/ptah#976: on a native Atlas directory the files
@@ -235,7 +235,7 @@ func TestCompatMigrateApply_CoveredTamperStillRefuses(t *testing.T) {
 }
 
 // TestAtlasDiscoveryMatchesSumCoverage asserts the invariant structurally
-// rather than through a database: what migrator.DiscoverMigrationFiles selects
+// rather than through a database: what migrationfile.Discover selects
 // for the Atlas format is a subset of what atlasmigrateimport.SumFileNames
 // covers for it.
 //
@@ -260,7 +260,7 @@ func TestAtlasDiscoveryMatchesSumCoverage(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(covered, qt.DeepEquals, []string{"1_a.sql"})
 
-	discovered, err := migrator.DiscoverMigrationFiles(fsys, migrator.MigrationDirFormatAtlas)
+	discovered, err := migrationfile.Discover(fsys, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	paths := make([]string, 0, len(discovered))
 	for _, file := range discovered {

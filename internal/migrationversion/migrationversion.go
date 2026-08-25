@@ -8,7 +8,7 @@
 // version that is not strictly positive, so the bound there is math.MaxInt64.
 //
 // Both bounds matter because discovery drops a name it cannot parse SILENTLY:
-// [migrator.DiscoverMigrationFiles] only reports "no migration files matched"
+// [migrationfile.Discover] only reports "no migration files matched"
 // when the matched set is empty, so an unreadable eleventh file among ten
 // readable ones is written, hashed into the integrity file, reported as
 // created, and then never executed. Any rule of the form "one above the newest
@@ -30,7 +30,7 @@ import (
 	"strconv"
 	"time"
 
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 const (
@@ -53,8 +53,8 @@ const (
 // Only the Atlas layout gets the int64 ceiling. Every other value -- ptah,
 // auto, or the empty format -- is bounded by the ptah width, because a writer
 // that is not writing Atlas names is writing the fixed-width paired ones.
-func Max(format migrator.MigrationDirFormat) int64 {
-	if format == migrator.MigrationDirFormatAtlas {
+func Max(format migrationfile.DirFormat) int64 {
+	if format == migrationfile.DirFormatAtlas {
 		return AtlasMax
 	}
 	return PtahMax
@@ -69,7 +69,7 @@ func Max(format migrator.MigrationDirFormat) int64 {
 // written and then dropped. A directory reaches that value through ordinary
 // use -- `migrate import --dir-format flyway` stamps a Flyway `R__` repeatable
 // with [AtlasMax] so it sorts last.
-func Next(latest int64, format migrator.MigrationDirFormat) (int64, error) {
+func Next(latest int64, format migrationfile.DirFormat) (int64, error) {
 	limit := Max(format)
 	if latest >= limit {
 		return 0, fmt.Errorf(
@@ -84,7 +84,7 @@ func Next(latest int64, format migrator.MigrationDirFormat) (int64, error) {
 // Check reports whether version can be written as a format file name and read
 // back. It is the counterpart of [Next] for callers that advance a version
 // themselves, such as a scan stepping past names that are already taken.
-func Check(version int64, format migrator.MigrationDirFormat) error {
+func Check(version int64, format migrationfile.DirFormat) error {
 	limit := Max(format)
 	if version <= 0 || version > limit {
 		return fmt.Errorf(
@@ -138,7 +138,7 @@ func IsStamp(version int64) bool {
 // the next free slot; raising it to the next real second gives the caller a
 // version that means what it looks like. The bounds in [Check] are different:
 // nothing above them is writable at all, so those still return an error.
-func Writable(candidate int64, format migrator.MigrationDirFormat) (int64, error) {
+func Writable(candidate int64, format migrationfile.DirFormat) (int64, error) {
 	version := candidate
 	if version >= stampLow && version <= stampHigh && !IsStamp(version) {
 		raised, ok := ceilStamp(version)
@@ -164,7 +164,7 @@ func Writable(candidate int64, format migrator.MigrationDirFormat) (int64, error
 // migration dated 29991231235959 the raw increment produced 29991231235960 --
 // the value stokaro/ptah#938 names, sixty seconds past the minute -- and this
 // returns 30000101000000 instead.
-func Advance(latest int64, format migrator.MigrationDirFormat) (int64, error) {
+func Advance(latest int64, format migrationfile.DirFormat) (int64, error) {
 	next, err := Next(latest, format)
 	if err != nil {
 		return 0, err
@@ -178,7 +178,7 @@ func Advance(latest int64, format migrator.MigrationDirFormat) (int64, error) {
 // A batch that stages its files at version+0, version+1, ... needs the whole
 // run, not just its first slot: a two-file plan based at 20991231235959 would
 // put its second file at 20991231235960. count below 1 is treated as 1.
-func WritableRun(candidate int64, count int, format migrator.MigrationDirFormat) (int64, error) {
+func WritableRun(candidate int64, count int, format migrationfile.DirFormat) (int64, error) {
 	if count < 1 {
 		count = 1
 	}
@@ -265,9 +265,9 @@ func daysInMonth(year, month int) int {
 	return time.Date(year, time.Month(month)+1, 0, 0, 0, 0, 0, time.UTC).Day()
 }
 
-func formatLabel(format migrator.MigrationDirFormat) string {
-	if format == migrator.MigrationDirFormatAtlas {
-		return string(migrator.MigrationDirFormatAtlas)
+func formatLabel(format migrationfile.DirFormat) string {
+	if format == migrationfile.DirFormatAtlas {
+		return string(migrationfile.DirFormatAtlas)
 	}
-	return string(migrator.MigrationDirFormatPtah)
+	return string(migrationfile.DirFormatPtah)
 }

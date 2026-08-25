@@ -13,7 +13,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/migratecheckpoint"
 	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // ptahMigrationFiles is the two-migration history in the ptah convention, as
@@ -256,7 +256,7 @@ func TestMigrateCheckpointCommand_AtlasGuardDoesNotOverfire(t *testing.T) {
 	seedAtlasMigrations(c, dir)
 	shadow := "sqlite://" + filepath.Join(t.TempDir(), "shadow.db")
 
-	// A pure Atlas name carries no direction component, so ParseMigrationFileName
+	// A pure Atlas name carries no direction component, so migrationfile.ParseFileName
 	// yields nothing and the ptah-content guard must not fire. This separates
 	// "holds ptah files" from "holds any files at all" — without it the guard
 	// could refuse every directory and nothing would notice.
@@ -406,7 +406,7 @@ func TestMigrateCheckpointCommand_AtlasAcceptsVersionAbovePtahMaximum(t *testing
 // of the ceiling the explicit --version guard next door never covered
 // (stokaro/ptah#938). Without --version the resolver returned newest+1 with no
 // bound at all, so a directory whose newest migration is 9999999999 got a
-// checkpoint at 10000000000: an eleven-digit name ParseMigrationFileName
+// checkpoint at 10000000000: an eleven-digit name migrationfile.ParseFileName
 // refuses. Measured on master, that exited 0, printed "Wrote checkpoint version
 // 10000000000", and a fresh database then replayed the history instead of
 // bootstrapping from the checkpoint -- the one thing a checkpoint exists to
@@ -601,7 +601,7 @@ func TestMigrateCheckpointCommand_AllowsCheckpointBesideItsOwnSum(t *testing.T) 
 	// correct — the old fixture depended on checkpoint executing a directory
 	// whose integrity file could not be read at all — and a valid sum keeps the
 	// test measuring what its name says.
-	sumBefore, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
+	sumBefore, err := migratesum.WriteWithFormat(dir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sumBefore, qt.IsNotNil)
 	shadow := "sqlite://" + filepath.Join(t.TempDir(), "shadow.db")

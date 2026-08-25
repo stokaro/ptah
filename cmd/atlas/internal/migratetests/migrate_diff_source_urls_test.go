@@ -11,7 +11,7 @@ import (
 	"go.5x5.cz/ptah/cmd/atlas"
 	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 func TestMigrateDiffDatabaseURLDesiredState(t *testing.T) {
@@ -235,7 +235,7 @@ func TestMigrateDiffMigrationDirectoryDesiredState(t *testing.T) {
 		[]byte("CREATE TABLE replayed_users (id INTEGER PRIMARY KEY);\n"),
 		0o600,
 	), qt.IsNil)
-	_, err := migratesum.WriteWithFormat(desiredDir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(desiredDir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	devPath := filepath.Join(t.TempDir(), "dev.db")
 	migrationsDir := filepath.Join(t.TempDir(), "migrations")

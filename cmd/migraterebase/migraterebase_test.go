@@ -11,7 +11,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
 	"go.5x5.cz/ptah/cmd/migraterebase"
 	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 func fixture(t *testing.T) string {
@@ -25,7 +25,7 @@ func fixture(t *testing.T) string {
 			t.Fatal(err)
 		}
 	}
-	if _, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatPtah); err != nil {
+	if _, err := migratesum.WriteWithFormat(dir, migrationfile.DirFormatPtah); err != nil {
 		t.Fatal(err)
 	}
 	return dir

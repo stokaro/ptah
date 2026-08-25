@@ -14,6 +14,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/migrationsource"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/migrationintegrity"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -74,7 +75,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.dbURL, dbURLFlag, "", "Database URL (required). Example: postgres://localhost:5432/dbname")
 	flags.StringVar(&opts.migrationsDir, migrationsFlag, "", "Directory containing migration files (required)")
 	flags.StringVar(&opts.version, versionFlag, "", "Migration version to repair (required)")
-	flags.StringVar(&opts.dirFormat, dirFormatFlag, string(migrator.MigrationDirFormatAuto), "Migration directory format: auto, ptah, or atlas")
+	flags.StringVar(&opts.dirFormat, dirFormatFlag, string(migrationfile.DirFormatAuto), "Migration directory format: auto, ptah, or atlas")
 	flags.StringVar(&opts.atlasEnv, atlasEnvFlag, "", "Value exposed as .Env when rendering Atlas SQL template migrations")
 	flags.BoolVar(&opts.force, forceFlag, false, "Rewrite or create the revision row even when it is not dirty")
 	flags.StringVar(&opts.resumeFrom, resumeFromFlag, "", "Execute the remaining statements of the body that failed, starting from this 1-based statement number. An up migration is then marked applied; a rollback's revision is removed")
@@ -108,7 +109,7 @@ func migrateRepairCommand(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return err
 	}
-	dirFormat, err := migrator.ParseMigrationDirFormat(opts.dirFormat)
+	dirFormat, err := migrationfile.ParseDirFormat(opts.dirFormat)
 	if err != nil {
 		return err
 	}
@@ -147,7 +148,7 @@ func migrateRepairCommand(cmd *cobra.Command, opts *options) error {
 	provider, err := migrator.NewFSMigrationProvider(
 		source.FileSystem,
 		migrator.WithMigrationDirFormat(dirFormat),
-		migrator.WithAtlasTemplateData(migrator.AtlasTemplateData{Env: opts.atlasEnv}),
+		migrator.WithAtlasTemplateData(migrationfile.AtlasTemplateData{Env: opts.atlasEnv}),
 	)
 	if err != nil {
 		return fmt.Errorf("error registering migrations: %w", err)

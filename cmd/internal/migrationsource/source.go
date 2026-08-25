@@ -15,12 +15,12 @@ import (
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/internal/ociartifact"
 	"go.5x5.cz/ptah/internal/pathguard"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // Options controls migration source resolution.
 type Options struct {
-	DirFormat migrator.MigrationDirFormat
+	DirFormat migrationfile.DirFormat
 	PlainHTTP bool
 }
 
@@ -46,7 +46,7 @@ type OCI struct {
 type Source struct {
 	FileSystem fs.FS
 	Display    string
-	DirFormat  migrator.MigrationDirFormat
+	DirFormat  migrationfile.DirFormat
 	OCI        *OCI
 }
 
@@ -177,7 +177,7 @@ func resolveVirtual(virtual virtualContextSource, opts Options) (Source, error) 
 	if err != nil {
 		return Source{}, err
 	}
-	format, err := migrator.ParseMigrationDirFormat(string(opts.DirFormat))
+	format, err := migrationfile.ParseDirFormat(string(opts.DirFormat))
 	if err != nil {
 		return Source{}, err
 	}
@@ -205,7 +205,7 @@ func resolveLocal(raw string, opts Options, localOpts LocalOptions) (Source, err
 	if err != nil {
 		return Source{}, err
 	}
-	format, err := migrator.ParseMigrationDirFormat(string(opts.DirFormat))
+	format, err := migrationfile.ParseDirFormat(string(opts.DirFormat))
 	if err != nil {
 		return Source{}, err
 	}
@@ -298,7 +298,7 @@ func resolveOCI(ctx context.Context, raw string, opts Options) (Source, error) {
 	if err != nil {
 		return Source{}, err
 	}
-	requestedFormat, err := migrator.ParseMigrationDirFormat(string(opts.DirFormat))
+	requestedFormat, err := migrationfile.ParseDirFormat(string(opts.DirFormat))
 	if err != nil {
 		return Source{}, err
 	}
@@ -310,7 +310,7 @@ func resolveOCI(ctx context.Context, raw string, opts Options) (Source, error) {
 	if err != nil {
 		return Source{}, fmt.Errorf("resolve migrations artifact: %w", err)
 	}
-	if requestedFormat != migrator.MigrationDirFormatAuto && requestedFormat != artifact.DirFormat {
+	if requestedFormat != migrationfile.DirFormatAuto && requestedFormat != artifact.DirFormat {
 		return Source{}, fmt.Errorf(
 			"migration artifact format %q does not match requested format %q",
 			artifact.DirFormat,

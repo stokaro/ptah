@@ -13,6 +13,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/migrationsource"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -23,14 +24,14 @@ func TestResolve_LocalDirectory(t *testing.T) {
 	writeFile(c, filepath.Join(dir, "README.md"), "not a migration input\n")
 
 	source, err := migrationsource.Resolve(context.Background(), dir, migrationsource.Options{
-		DirFormat: migrator.MigrationDirFormatPtah,
+		DirFormat: migrationfile.DirFormatPtah,
 	})
 
 	c.Assert(err, qt.IsNil)
 	expectedDisplay, err := filepath.Abs(dir)
 	c.Assert(err, qt.IsNil)
 	c.Assert(source.Display, qt.Equals, expectedDisplay)
-	c.Assert(source.DirFormat, qt.Equals, migrator.MigrationDirFormatPtah)
+	c.Assert(source.DirFormat, qt.Equals, migrationfile.DirFormatPtah)
 	c.Assert(source.OCI, qt.IsNil)
 	contents, err := fs.ReadFile(source.FileSystem, "0000000001_create_users.up.sql")
 	c.Assert(err, qt.IsNil)
@@ -45,7 +46,7 @@ func TestResolve_LocalDirectoryFailurePath(t *testing.T) {
 	_, err := migrationsource.Resolve(
 		context.Background(),
 		filepath.Join(t.TempDir(), "missing"),
-		migrationsource.Options{DirFormat: migrator.MigrationDirFormatPtah},
+		migrationsource.Options{DirFormat: migrationfile.DirFormatPtah},
 	)
 	c.Assert(err, qt.ErrorMatches, "open migrations directory: .*")
 }
@@ -56,12 +57,12 @@ func TestResolve_EmptyLocalDirectory(t *testing.T) {
 	source, err := migrationsource.Resolve(
 		context.Background(),
 		t.TempDir(),
-		migrationsource.Options{DirFormat: migrator.MigrationDirFormatAuto},
+		migrationsource.Options{DirFormat: migrationfile.DirFormatAuto},
 	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(source.FileSystem, qt.IsNotNil)
-	c.Assert(source.DirFormat, qt.Equals, migrator.MigrationDirFormatAuto)
+	c.Assert(source.DirFormat, qt.Equals, migrationfile.DirFormatAuto)
 	c.Assert(source.OCI, qt.IsNil)
 }
 
@@ -78,19 +79,19 @@ func TestResolve_VirtualDirectoryUsesOnlyItsBoundToken(t *testing.T) {
 	}, "mem:///other")
 
 	source, err := migrationsource.Resolve(ctx, bindingID, migrationsource.Options{
-		DirFormat: migrator.MigrationDirFormatAtlas,
+		DirFormat: migrationfile.DirFormatAtlas,
 	})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(source.Display, qt.Equals, display)
-	c.Assert(source.DirFormat, qt.Equals, migrator.MigrationDirFormatAtlas)
+	c.Assert(source.DirFormat, qt.Equals, migrationfile.DirFormatAtlas)
 	files["1_init.sql"].Data = []byte("CREATE TABLE mutated (id INTEGER);\n")
 	contents, err := fs.ReadFile(source.FileSystem, "1_init.sql")
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(contents), qt.Equals, "CREATE TABLE captured (id INTEGER);\n")
 
 	_, err = migrationsource.Resolve(ctx, bindingID+"-different", migrationsource.Options{
-		DirFormat: migrator.MigrationDirFormatAtlas,
+		DirFormat: migrationfile.DirFormatAtlas,
 	})
 	c.Assert(err, qt.ErrorMatches, "open migrations directory: .*")
 }

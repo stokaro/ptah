@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 func TestMigration_Basic(t *testing.T) {
@@ -57,8 +58,8 @@ func TestCreateMigrationFromSQL(t *testing.T) {
 	c.Assert(migration.Description, qt.Equals, "Create test table")
 	c.Assert(migration.Up, qt.IsNotNil)
 	c.Assert(migration.Down, qt.IsNotNil)
-	c.Assert(migration.UpTxMode, qt.Equals, MigrationFileTxModeUnspecified)
-	c.Assert(migration.DownTxMode, qt.Equals, MigrationFileTxModeUnspecified)
+	c.Assert(migration.UpTxMode, qt.Equals, migrationfile.FileTxModeUnspecified)
+	c.Assert(migration.DownTxMode, qt.Equals, migrationfile.FileTxModeUnspecified)
 
 	// Test that the functions don't panic (we can't test execution without a real DB)
 	c.Assert(migration.Up, qt.IsNotNil)
@@ -73,8 +74,8 @@ func TestCreateMigrationFromSQL_NoTransactionDirective(t *testing.T) {
 		"-- manual down migration required",
 	)
 
-	c.Assert(migration.UpTxMode, qt.Equals, MigrationFileTxModeNone)
-	c.Assert(migration.DownTxMode, qt.Equals, MigrationFileTxModeUnspecified)
+	c.Assert(migration.UpTxMode, qt.Equals, migrationfile.FileTxModeNone)
+	c.Assert(migration.DownTxMode, qt.Equals, migrationfile.FileTxModeUnspecified)
 }
 
 func TestCreateMigrationFromSQL_DownNoTransactionDirective(t *testing.T) {
@@ -85,8 +86,8 @@ func TestCreateMigrationFromSQL_DownNoTransactionDirective(t *testing.T) {
 		"-- +ptah no_transaction\nDROP INDEX CONCURRENTLY users_email_idx;",
 	)
 
-	c.Assert(migration.UpTxMode, qt.Equals, MigrationFileTxModeUnspecified)
-	c.Assert(migration.DownTxMode, qt.Equals, MigrationFileTxModeNone)
+	c.Assert(migration.UpTxMode, qt.Equals, migrationfile.FileTxModeUnspecified)
+	c.Assert(migration.DownTxMode, qt.Equals, migrationfile.FileTxModeNone)
 }
 
 func TestCreateMigrationFromSQL_AtlasTxModeNoneDirective(t *testing.T) {
@@ -97,14 +98,14 @@ func TestCreateMigrationFromSQL_AtlasTxModeNoneDirective(t *testing.T) {
 		"DROP INDEX users_email_idx;",
 	)
 
-	c.Assert(migration.UpTxMode, qt.Equals, MigrationFileTxModeNone)
-	c.Assert(migration.DownTxMode, qt.Equals, MigrationFileTxModeUnspecified)
+	c.Assert(migration.UpTxMode, qt.Equals, migrationfile.FileTxModeNone)
+	c.Assert(migration.DownTxMode, qt.Equals, migrationfile.FileTxModeUnspecified)
 }
 
 func TestMigration_ExplicitDirectionalNoTransactionFieldsControlManualMigrations(t *testing.T) {
 	c := qt.New(t)
 
-	migration := &Migration{UpTxMode: MigrationFileTxModeNone, DownTxMode: MigrationFileTxModeNone}
+	migration := &Migration{UpTxMode: migrationfile.FileTxModeNone, DownTxMode: migrationfile.FileTxModeNone}
 
 	c.Assert(migration.upExecutionMode(), qt.Equals, migrationExecutionNoTransaction)
 	c.Assert(migration.downExecutionMode(), qt.Equals, migrationExecutionNoTransaction)
@@ -206,203 +207,6 @@ GO 3
 `
 
 	c.Assert(migrationStatementCountForDialect(sql, platform.SQLServer), qt.Equals, 3)
-}
-
-func TestParseAtlasTxtarSQL(t *testing.T) {
-	c := qt.New(t)
-
-	parsed, ok, err := parseAtlasTxtarSQL("20240305171146_seed.sql", `-- atlas:txtar
-
--- migration.sql --
-INSERT INTO users (id, name) VALUES (1, 'Alice');
-
--- down.sql --
-DELETE FROM users WHERE id = 1;
-`)
-	c.Assert(err, qt.IsNil)
-	c.Assert(ok, qt.IsTrue)
-	c.Assert(parsed.hasDown, qt.IsTrue)
-	c.Assert(parsed.migrationSQL, qt.Contains, "INSERT INTO users")
-	c.Assert(parsed.downSQL, qt.Contains, "DELETE FROM users")
-}
-
-func TestParseAtlasTxtarSQLWithoutDown(t *testing.T) {
-	c := qt.New(t)
-
-	parsed, ok, err := parseAtlasTxtarSQL("20240305171146_seed.sql", `-- atlas:txtar
-
--- migration.sql --
-INSERT INTO users (id, name) VALUES (1, 'Alice');
-`)
-	c.Assert(err, qt.IsNil)
-	c.Assert(ok, qt.IsTrue)
-	c.Assert(parsed.hasDown, qt.IsFalse)
-	c.Assert(parsed.migrationSQL, qt.Contains, "INSERT INTO users")
-	c.Assert(parsed.downSQL, qt.Equals, "")
-}
-
-func TestParseAtlasTxtarSQLRequiresMigrationSection(t *testing.T) {
-	c := qt.New(t)
-
-	_, ok, err := parseAtlasTxtarSQL("20240305171146_seed.sql", `-- atlas:txtar
-
--- down.sql --
-DELETE FROM users WHERE id = 1;
-`)
-	c.Assert(ok, qt.IsTrue)
-	c.Assert(err, qt.ErrorMatches, `invalid Atlas txtar migration 20240305171146_seed.sql: missing migration.sql section`)
-}
-
-func TestParseAtlasTxtarSQLRejectsSQLBeforeSection(t *testing.T) {
-	c := qt.New(t)
-
-	_, ok, err := parseAtlasTxtarSQL("20240305171146_seed.sql", `-- atlas:txtar
-INSERT INTO users (id, name) VALUES (1, 'Alice');
-
--- migration.sql --
-SELECT 1;
-`)
-	c.Assert(ok, qt.IsTrue)
-	c.Assert(err, qt.ErrorMatches, `invalid Atlas txtar migration 20240305171146_seed.sql: SQL appears before the first txtar section`)
-}
-
-func TestParseAtlasTxtarSQLIgnoresUnknownCommentMarkers(t *testing.T) {
-	c := qt.New(t)
-
-	parsed, ok, err := parseAtlasTxtarSQL("20240305171146_seed.sql", `-- atlas:txtar
-
--- migration.sql --
--- keep this comment --
-INSERT INTO users (id, name) VALUES (1, 'Alice');
-
--- down.sql --
-DELETE FROM users WHERE id = 1;
-`)
-	c.Assert(err, qt.IsNil)
-	c.Assert(ok, qt.IsTrue)
-	c.Assert(parsed.migrationSQL, qt.Contains, "-- keep this comment --")
-	c.Assert(parsed.migrationSQL, qt.Contains, "INSERT INTO users")
-	c.Assert(parsed.hasDown, qt.IsTrue)
-}
-
-func TestParseAtlasTxtarSQLIgnoresUnknownFileSections(t *testing.T) {
-	c := qt.New(t)
-
-	parsed, ok, err := parseAtlasTxtarSQL("20240305171146_seed.sql", `-- atlas:txtar
-
--- migration.sql --
-INSERT INTO users (id, name) VALUES (1, 'Alice');
-
--- schema.sql --
-THIS IS NOT MIGRATION SQL;
-
--- down.sql --
-DELETE FROM users WHERE id = 1;
-`)
-	c.Assert(err, qt.IsNil)
-	c.Assert(ok, qt.IsTrue)
-	c.Assert(parsed.migrationSQL, qt.Contains, "INSERT INTO users")
-	c.Assert(parsed.migrationSQL, qt.Not(qt.Contains), "THIS IS NOT MIGRATION SQL")
-	c.Assert(parsed.downSQL, qt.Contains, "DELETE FROM users")
-}
-
-func TestParseMigrationTimeoutDirectives(t *testing.T) {
-	tests := []struct {
-		name                    string
-		sql                     string
-		wantLockTimeout         time.Duration
-		wantStatementTimeout    time.Duration
-		wantHasLockTimeout      bool
-		wantHasStatementTimeout bool
-		wantErr                 string
-	}{
-		{
-			name: "directives at top of file",
-			sql: `-- Migration header
--- +ptah lock_timeout=3s
--- +ptah statement_timeout=30s
-
-ALTER TABLE users ADD COLUMN email TEXT;`,
-			wantLockTimeout:         3 * time.Second,
-			wantStatementTimeout:    30 * time.Second,
-			wantHasLockTimeout:      true,
-			wantHasStatementTimeout: true,
-		},
-		{
-			name: "multiple directives on one line",
-			sql: `-- +ptah lock_timeout=500ms statement_timeout=2m
-ALTER TABLE users ADD COLUMN email TEXT;`,
-			wantLockTimeout:         500 * time.Millisecond,
-			wantStatementTimeout:    2 * time.Minute,
-			wantHasLockTimeout:      true,
-			wantHasStatementTimeout: true,
-		},
-		{
-			name: "directive after SQL is ignored",
-			sql: `ALTER TABLE users ADD COLUMN email TEXT;
--- +ptah lock_timeout=3s`,
-		},
-		{
-			name: "other ptah directive is ignored",
-			sql:  "-- +ptah unknown_timeout=3s\nALTER TABLE users ADD COLUMN email TEXT;",
-		},
-		{
-			name: "online ddl directive is ignored by timeout parser",
-			sql:  "-- +ptah online_ddl_tool=ghost\nALTER TABLE users ADD COLUMN email TEXT;",
-		},
-		{
-			name: "no transaction directive is ignored by timeout parser",
-			sql:  "-- +ptah no_transaction\nALTER TABLE users ADD COLUMN email TEXT;",
-		},
-		{
-			name: "check directive is ignored by timeout parser",
-			sql:  `-- +ptah check name="users_empty" assert="SELECT count(*) = 0 FROM users" on_fail=abort` + "\nDROP TABLE users;",
-		},
-		{
-			name: "check directive alongside timeout directives",
-			sql: `-- +ptah check name="users_empty" assert="SELECT count(*) = 0 FROM users" on_fail=abort
--- +ptah lock_timeout=3s statement_timeout=30s
-DROP TABLE users;`,
-			wantLockTimeout:         3 * time.Second,
-			wantStatementTimeout:    30 * time.Second,
-			wantHasLockTimeout:      true,
-			wantHasStatementTimeout: true,
-		},
-		{
-			name:    "bare unknown directive fails",
-			sql:     "-- +ptah unknown_directive\nALTER TABLE users ADD COLUMN email TEXT;",
-			wantErr: `invalid +ptah directive "unknown_directive"`,
-		},
-		{
-			name:    "invalid duration fails",
-			sql:     "-- +ptah lock_timeout=soon\nALTER TABLE users ADD COLUMN email TEXT;",
-			wantErr: "invalid +ptah lock_timeout value",
-		},
-		{
-			name:    "zero duration fails",
-			sql:     "-- +ptah statement_timeout=0s\nALTER TABLE users ADD COLUMN email TEXT;",
-			wantErr: "must be greater than zero",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := qt.New(t)
-
-			got, err := parseMigrationTimeoutDirectives(tt.sql)
-			if tt.wantErr != "" {
-				c.Assert(err, qt.IsNotNil)
-				c.Assert(err.Error(), qt.Contains, tt.wantErr)
-				return
-			}
-
-			c.Assert(err, qt.IsNil)
-			c.Assert(got.HasLockTimeout, qt.Equals, tt.wantHasLockTimeout)
-			c.Assert(got.HasStatementTimeout, qt.Equals, tt.wantHasStatementTimeout)
-			c.Assert(got.LockTimeout, qt.Equals, tt.wantLockTimeout)
-			c.Assert(got.StatementTimeout, qt.Equals, tt.wantStatementTimeout)
-		})
-	}
 }
 
 func TestFSMigrationProvider_PreservesTimeouts(t *testing.T) {

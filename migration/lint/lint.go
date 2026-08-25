@@ -41,7 +41,7 @@ import (
 
 	"go.5x5.cz/ptah/internal/atlaslint"
 	"go.5x5.cz/ptah/internal/sqlcompound"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/risk"
 )
 
@@ -214,9 +214,9 @@ type Options struct {
 	Selection VersionSelection
 	// DirFormat selects the migration filename/parser rules used by file-form
 	// linting. Empty uses auto detection.
-	DirFormat migrator.MigrationDirFormat
+	DirFormat migrationfile.DirFormat
 	// AtlasTemplateData supplies data for Atlas SQL template migrations.
-	// When nil, templates render with migrator.AtlasTemplateData{}.
+	// When nil, templates render with migrationfile.AtlasTemplateData{}.
 	AtlasTemplateData any
 	// ExtraRules appends caller-provided rules to the built-in registry for
 	// this run. It is the preferred API for out-of-tree analyzers that should
@@ -232,17 +232,17 @@ type Options struct {
 	Baseline []BaselineColumn
 }
 
-func parseKnownMigrationName(name string, dirFormat migrator.MigrationDirFormat) (*migrator.MigrationFile, error) {
+func parseKnownMigrationName(name string, dirFormat migrationfile.DirFormat) (*migrationfile.File, error) {
 	switch dirFormat {
-	case migrator.MigrationDirFormatPtah:
-		return migrator.ParseMigrationFileName(name)
-	case migrator.MigrationDirFormatAtlas:
-		return migrator.ParseAtlasMigrationFileName(name)
+	case migrationfile.DirFormatPtah:
+		return migrationfile.ParseFileName(name)
+	case migrationfile.DirFormatAtlas:
+		return migrationfile.ParseAtlasFileName(name)
 	}
-	if parsed, err := migrator.ParseMigrationFileName(name); err == nil {
+	if parsed, err := migrationfile.ParseFileName(name); err == nil {
 		return parsed, nil
 	}
-	return migrator.ParseAtlasMigrationFileNameForAutoDetection(name)
+	return migrationfile.ParseAtlasFileNameForAutoDetection(name)
 }
 
 // runRules applies every enabled rule to one prepared file.

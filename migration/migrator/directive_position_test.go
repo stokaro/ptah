@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/internal/directiveplacement"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -31,19 +32,19 @@ type directiveClassCase struct {
 // upTxMode is the same reading for a test that wants the mode itself rather
 // than a predicate, and reports a parse failure through the checker because it
 // is called from a test body rather than held in a row.
-func upTxMode(c *qt.C, sql string) migrator.MigrationFileTxMode {
+func upTxMode(c *qt.C, sql string) migrationfile.FileTxMode {
 	c.Helper()
-	parsed, err := migrator.ParseMigrationUp("1_x.sql", sql)
+	parsed, err := migrationfile.ParseUp("1_x.sql", sql)
 	c.Assert(err, qt.IsNil)
 	return parsed.TxMode
 }
 
 func upTxModeIsNone(sql string) (bool, error) {
-	parsed, err := migrator.ParseMigrationUp("1_x.sql", sql)
+	parsed, err := migrationfile.ParseUp("1_x.sql", sql)
 	if err != nil {
 		return false, err
 	}
-	return parsed.TxMode == migrator.MigrationFileTxModeNone, nil
+	return parsed.TxMode == migrationfile.FileTxModeNone, nil
 }
 
 // TestDirectivePositionIsOneRuleAcrossBothFamilies is the class, not the
@@ -60,12 +61,13 @@ func upTxModeIsNone(sql string) (bool, error) {
 //
 // Every directive both families understand is enumerated by:
 //
-//	grep -rn 'atlasFileTxModeKey\|atlasCheckpointDirective\|atlasTxtarDirective\|atlas:assert\|DirectiveNoTransaction\|checkDirective\|lock_timeout\|statement_timeout' \
-//	  --include='*.go' migration/migrator internal/onlineddl | grep -v _test
+//	grep -rn 'atlasFileTxModeKey\|atlasCheckpointDirective\|AtlasTxtarDirective\|atlas:assert\|DirectiveNoTransaction\|checkDirective\|lock_timeout\|statement_timeout' \
+//	  --include='*.go' migration/migrationfile migration/migrator internal/onlineddl | grep -v _test
 //
-// The rows below are the ones with an exported observable. The timeout keys,
-// `-- atlas:checkpoint`, `-- atlas:txtar` and `-- atlas:assert oneof` have none
-// and are covered in directive_position_internal_test.go against the same
+// The rows below are the ones with an exported observable. The timeout keys
+// are covered in migration/migrationfile's directive_position_internal_test.go,
+// and `-- atlas:checkpoint`, `-- atlas:txtar` and `-- atlas:assert oneof` in
+// this package's directive_position_internal_test.go, against the same
 // placement table.
 func TestDirectivePositionIsOneRuleAcrossBothFamilies(t *testing.T) {
 	tests := []directiveClassCase{
@@ -80,7 +82,7 @@ func TestDirectivePositionIsOneRuleAcrossBothFamilies(t *testing.T) {
 			directive: "-- +ptah online_ddl_tool=ghost",
 			honored:   directiveplacement.BeforeTheStatement(),
 			observe: func(sql string) (bool, error) {
-				return migrator.ParseFileDirectives(sql)["online_ddl_tool"] == "ghost", nil
+				return migrationfile.ParseDirectives(sql)["online_ddl_tool"] == "ghost", nil
 			},
 		},
 		{
@@ -88,7 +90,7 @@ func TestDirectivePositionIsOneRuleAcrossBothFamilies(t *testing.T) {
 			directive: "-- +ptah online_ddl_fallback=plain",
 			honored:   directiveplacement.BeforeTheStatement(),
 			observe: func(sql string) (bool, error) {
-				return migrator.ParseFileDirectives(sql)["online_ddl_fallback"] == "plain", nil
+				return migrationfile.ParseDirectives(sql)["online_ddl_fallback"] == "plain", nil
 			},
 		},
 		{
@@ -145,7 +147,7 @@ func TestTrailingCommentCarriesNoDirectiveInEitherFamily(t *testing.T) {
 	ptah := "CREATE TABLE t (id INTEGER PRIMARY KEY); -- +ptah no_transaction\n"
 	atlas := "CREATE TABLE t (id INTEGER PRIMARY KEY); -- atlas:txmode none\n"
 
-	c.Check(upTxMode(c, ptah), qt.Equals, migrator.MigrationFileTxModeUnspecified)
-	c.Check(upTxMode(c, atlas), qt.Equals, migrator.MigrationFileTxModeUnspecified)
-	c.Check(migrator.ParseFileDirectives(ptah), qt.HasLen, 0)
+	c.Check(upTxMode(c, ptah), qt.Equals, migrationfile.FileTxModeUnspecified)
+	c.Check(upTxMode(c, atlas), qt.Equals, migrationfile.FileTxModeUnspecified)
+	c.Check(migrationfile.ParseDirectives(ptah), qt.HasLen, 0)
 }

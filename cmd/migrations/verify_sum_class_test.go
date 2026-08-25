@@ -14,7 +14,7 @@ import (
 	"go.5x5.cz/ptah/cmd/migratestatus"
 	"go.5x5.cz/ptah/cmd/migrateup"
 	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // This file is the CLASS test for --verify-sum, and it exists to answer one
@@ -207,7 +207,7 @@ func TestVerifySum_RefusesADriftedHashedDirectoryToo(t *testing.T) {
 		t.Run(verb.name, func(t *testing.T) {
 			c := qt.New(t)
 			f := newUnhashedFixture(c)
-			_, err := migratesum.WriteWithFormat(f.dir, migrator.MigrationDirFormatPtah)
+			_, err := migratesum.WriteWithFormat(f.dir, migrationfile.DirFormatPtah)
 			c.Assert(err, qt.IsNil)
 			c.Assert(os.WriteFile(filepath.Join(f.dir, "0000000001_init.down.sql"),
 				[]byte("CREATE TABLE evil_down (id INTEGER PRIMARY KEY);\nDROP TABLE widgets;\n"), 0o600), qt.IsNil)
@@ -234,7 +234,7 @@ func TestVerifySum_RefusesADriftedHashedDirectoryToo(t *testing.T) {
 func TestStatus_StaysUsableOnADriftedDirectoryWithoutTheFlag(t *testing.T) {
 	c := qt.New(t)
 	f := newUnhashedFixture(c)
-	_, err := migratesum.WriteWithFormat(f.dir, migrator.MigrationDirFormatPtah)
+	_, err := migratesum.WriteWithFormat(f.dir, migrationfile.DirFormatPtah)
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(f.dir, "0000000001_init.down.sql"),
 		[]byte("CREATE TABLE evil_down (id INTEGER PRIMARY KEY);\nDROP TABLE widgets;\n"), 0o600), qt.IsNil)
@@ -286,7 +286,7 @@ func TestVerboseConfirmation_BelongsToTheFlagNotTheAlwaysOnGate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 			f := newUnhashedFixture(c)
-			_, err := migratesum.WriteWithFormat(f.dir, migrator.MigrationDirFormatPtah)
+			_, err := migratesum.WriteWithFormat(f.dir, migrationfile.DirFormatPtah)
 			c.Assert(err, qt.IsNil)
 
 			out, runErr := runClassCommand(migrateup.NewMigrateUpCommand(), append([]string{

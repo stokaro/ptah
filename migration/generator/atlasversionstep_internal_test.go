@@ -16,7 +16,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // TestAtlasCollisionStepLandsOnASecondThatExists pins the `...235960` half of
@@ -32,7 +32,7 @@ import (
 // The cheaper wrong implementation is not deleting the step. It is the bounded
 // integer step this branch shipped:
 //
-//	if err := migrationversion.Check(version, migrator.MigrationDirFormatAtlas); err != nil {
+//	if err := migrationversion.Check(version, migrationfile.DirFormatAtlas); err != nil {
 //		return 0, err
 //	}
 //	...
@@ -52,7 +52,7 @@ func TestAtlasCollisionStepLandsOnASecondThatExists(t *testing.T) {
 	files, err := GenerateEmptyMigration(EmptyMigrationOptions{
 		MigrationName: "hello",
 		OutputDir:     dir,
-		DirFormat:     migrator.MigrationDirFormatAtlas,
+		DirFormat:     migrationfile.DirFormatAtlas,
 	})
 
 	c.Assert(err, qt.IsNil)
@@ -80,7 +80,7 @@ func TestAtlasCollisionStepStillAddsOneMidMinute(t *testing.T) {
 	files, err := GenerateEmptyMigration(EmptyMigrationOptions{
 		MigrationName: "hello",
 		OutputDir:     dir,
-		DirFormat:     migrator.MigrationDirFormatAtlas,
+		DirFormat:     migrationfile.DirFormatAtlas,
 	})
 
 	c.Assert(err, qt.IsNil)

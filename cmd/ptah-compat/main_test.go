@@ -11,7 +11,7 @@ import (
 
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/testutils"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // These tests build the ptah-compat binary at run time and exercise it as a
@@ -253,7 +253,7 @@ func TestCompatBinaryMigrateNewSuccessIsSilent(t *testing.T) {
 	migrations, globErr := filepath.Glob(filepath.Join(dir, "*_manual_hotfix.sql"))
 	c.Assert(globErr, qt.IsNil)
 	c.Assert(migrations, qt.HasLen, 1)
-	result, verifyErr := migratesum.VerifyDirWithFormat(dir, migrator.MigrationDirFormatAtlas)
+	result, verifyErr := migratesum.VerifyDirWithFormat(dir, migrationfile.DirFormatAtlas)
 	c.Assert(verifyErr, qt.IsNil)
 	c.Assert(result.OK(), qt.IsTrue)
 }
@@ -564,7 +564,7 @@ func malformedAtlasDir(c *qt.C) string {
 func cleanAtlasDir(c *qt.C) string {
 	c.Helper()
 	dir := atlasDirWithoutSum(c)
-	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(dir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	return dir
 }
@@ -583,7 +583,7 @@ func malformedAtlasTxModeDir(c *qt.C, filename, directive string) string {
 	c.Assert(os.WriteFile(filepath.Join(dir, filename), []byte(
 		directive+"CREATE TABLE invalid_txmode (id INTEGER PRIMARY KEY);\n",
 	), 0o600), qt.IsNil)
-	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(dir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	return dir
 }

@@ -1,4 +1,4 @@
-package migrator
+package migrationfile
 
 import (
 	"fmt"
@@ -32,8 +32,8 @@ import (
 // semantics from a position nobody reads as a header.
 //
 // Two further facts made the divergence hard to see. Inside the `+ptah` family
-// the rule was already inconsistent: `parseMigrationTimeoutDirectives` stopped
-// at the first executable line while [ParseFileDirectives] scanned the whole
+// the rule was already inconsistent: `ParseTimeouts` stopped
+// at the first executable line while [ParseDirectives] scanned the whole
 // file, so `-- +ptah lock_timeout=5s` and `-- +ptah no_transaction` written on
 // the same misplaced line had different fates. And a dropped directive produced
 // no output at all -- the operator writes `txmode none`, sees exit 0, and
@@ -167,20 +167,20 @@ func atlasDirectiveHeaderLength(sql string) int {
 	return len(sql)
 }
 
-// misplacedDirective is one directive line the migrator recognized but did not
+// MisplacedDirective is one directive line the migrator recognized but did not
 // honor, because it sits outside the region where its family is significant.
-type misplacedDirective struct {
-	// line is the 1-based line number in the migration file.
-	line int
-	// text is the source line, trimmed.
-	text string
-	// remedy names what the operator can do about it.
-	remedy string
-	// err is set when the directive's key is one the merged parser recognizes
+type MisplacedDirective struct {
+	// Line is the 1-based line number in the migration file.
+	Line int
+	// Text is the source line, trimmed.
+	Text string
+	// Remedy names what the operator can do about it.
+	Remedy string
+	// Err is set when the directive's key is one the merged parser recognizes
 	// and its VALUE is one no parser can read. Position and value are separate
 	// facts about a line, and a malformed value stays an error wherever the
-	// line sits -- see [misplacedDirectiveError].
-	err error
+	// Line sits -- see [misplacedDirectiveError].
+	Err error
 }
 
 // validateRecognizedDirectives reports the first recognized `-- +ptah` key
@@ -226,12 +226,12 @@ func validateRecognizedDirectives(directives map[string]string) error {
 // That divergence in SEVERITY between the families is real, measured, and loud
 // on both sides: the `atlas:` line is still reported, just not fatal.
 func misplacedDirectiveError(sql, dialect string) error {
-	for _, misplaced := range misplacedDirectives(sql, dialect) {
-		if misplaced.err == nil {
+	for _, misplaced := range MisplacedDirectives(sql, dialect) {
+		if misplaced.Err == nil {
 			continue
 		}
 		return fmt.Errorf("%w (on line %d, below the first SQL statement, where it would not have been honored)",
-			misplaced.err, misplaced.line)
+			misplaced.Err, misplaced.Line)
 	}
 	return nil
 }
@@ -241,7 +241,7 @@ func misplacedDirectiveError(sql, dialect string) error {
 //
 // With no target dialect the scan must be conservative, because a marker only
 // one dialect's string rules expose is not yet known to be a directive. Asking
-// a different question here than [parseMigrationFileTxModeForDialect] asked
+// a different question here than [ParseFileTxModeForDialect] asked
 // would let load time refuse a file the target dialect reads as string content.
 func misplacedDirectiveMarkers(sql, dialect string) iter.Seq[ptahdirective.Marker] {
 	if dialect == "" {
@@ -250,7 +250,7 @@ func misplacedDirectiveMarkers(sql, dialect string) iter.Seq[ptahdirective.Marke
 	return ptahdirective.Markers(sql, dialectlexer.Options(dialect))
 }
 
-// misplacedDirectives returns every directive line in sql that a reader would
+// MisplacedDirectives returns every directive line in sql that a reader would
 // take for a directive and the migrator did not honor.
 //
 // This is the whole of "diagnosed, not dropped". A directive that is present
@@ -270,25 +270,25 @@ func misplacedDirectiveMarkers(sql, dialect string) iter.Seq[ptahdirective.Marke
 // down body was parsed by nothing. That is fixed where it belongs, by reading
 // the body the direction is about to run, rather than by warning here
 // (stokaro/ptah#1715).
-func misplacedDirectives(sql, dialect string) []misplacedDirective {
+func MisplacedDirectives(sql, dialect string) []MisplacedDirective {
 	options := dialectlexer.Options(dialect)
-	var found []misplacedDirective
+	var found []MisplacedDirective
 
 	headerLength := directiveHeaderLength(sql, dialect)
 	for marker := range misplacedDirectiveMarkers(sql, dialect) {
 		if marker.Start < headerLength {
 			continue
 		}
-		directives := parseFileDirectives(slices.Values([]string{marker.Body}))
+		directives := parseDirectives(slices.Values([]string{marker.Body}))
 		err := misplacedDirectiveValueError(directives, marker.Body)
 		if len(directives) == 0 && err == nil {
 			continue // a marker every directive parser would have ignored
 		}
-		found = append(found, misplacedDirective{
-			line:   lineNumberAt(sql, marker.Start),
-			text:   directiveLineAt(sql, marker.Start),
-			remedy: "move it above the first SQL statement",
-			err:    err,
+		found = append(found, MisplacedDirective{
+			Line:   lineNumberAt(sql, marker.Start),
+			Text:   directiveLineAt(sql, marker.Start),
+			Remedy: "move it above the first SQL statement",
+			Err:    err,
 		})
 	}
 
@@ -300,14 +300,14 @@ func misplacedDirectives(sql, dialect string) []misplacedDirective {
 		if !strings.Contains(comment.Text, atlasFileTxModeKey) {
 			continue
 		}
-		found = append(found, misplacedDirective{
-			line:   lineNumberAt(sql, comment.Start),
-			text:   directiveLineAt(sql, comment.Start),
-			remedy: "move it into the unbroken comment block that starts on line 1",
+		found = append(found, MisplacedDirective{
+			Line:   lineNumberAt(sql, comment.Start),
+			Text:   directiveLineAt(sql, comment.Start),
+			Remedy: "move it into the unbroken comment block that starts on line 1",
 		})
 	}
 
-	slices.SortFunc(found, func(a, b misplacedDirective) int { return a.line - b.line })
+	slices.SortFunc(found, func(a, b MisplacedDirective) int { return a.Line - b.Line })
 	return found
 }
 

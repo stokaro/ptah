@@ -13,7 +13,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlaslint"
 	"go.5x5.cz/ptah/internal/fsnapshot"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // errNoSQLMigrationFiles reports a directory holding no *.sql file at all. It
@@ -343,7 +343,7 @@ func ValidateOptions(opts Options) error {
 	return err
 }
 
-func validateOptions(opts Options) (migrator.MigrationDirFormat, []Rule, error) {
+func validateOptions(opts Options) (migrationfile.DirFormat, []Rule, error) {
 	if err := validateCompatibilityProfile(opts.Compatibility); err != nil {
 		return "", nil, err
 	}
@@ -363,7 +363,7 @@ func validateOptions(opts Options) (migrator.MigrationDirFormat, []Rule, error) 
 	if err := validateConfiguredRuleSelectors(rules, opts); err != nil {
 		return "", nil, err
 	}
-	dirFormat, parseErr := migrator.ParseMigrationDirFormat(string(opts.DirFormat))
+	dirFormat, parseErr := migrationfile.ParseDirFormat(string(opts.DirFormat))
 	return dirFormat, rules, parseErr
 }
 
@@ -514,7 +514,7 @@ func validateCompatibilityProfile(profile CompatibilityProfile) error {
 func filterAtlasTemplateSupportNames(
 	sources sqlSources,
 	names []string,
-	dirFormat migrator.MigrationDirFormat,
+	dirFormat migrationfile.DirFormat,
 ) ([]string, error) {
 	if !hasAtlasTemplateMigration(sources, names, dirFormat) {
 		return names, nil
@@ -536,14 +536,14 @@ func filterAtlasTemplateSupportNames(
 func hasAtlasTemplateMigration(
 	sources sqlSources,
 	names []string,
-	dirFormat migrator.MigrationDirFormat,
+	dirFormat migrationfile.DirFormat,
 ) bool {
 	for _, name := range names {
 		parsed, err := parseKnownMigrationName(path.Base(name), dirFormat)
-		if err != nil || parsed.Format != migrator.MigrationDirFormatAtlas {
+		if err != nil || parsed.Format != migrationfile.DirFormatAtlas {
 			continue
 		}
-		if migrator.LooksAtlasTemplateSQL(sources[name]) {
+		if migrationfile.LooksAtlasTemplateSQL(sources[name]) {
 			return true
 		}
 	}
@@ -551,7 +551,7 @@ func hasAtlasTemplateMigration(
 }
 
 func isAtlasTemplateSupportFile(sql string) bool {
-	return migrator.LooksAtlasTemplateSQL(sql) && strings.Contains(sql, "define ")
+	return migrationfile.LooksAtlasTemplateSQL(sql) && strings.Contains(sql, "define ")
 }
 
 // prepareFile loads one migration file into the forms rules consume.
@@ -565,7 +565,7 @@ func prepareFile(
 	mode scanMode,
 	dialect string,
 	atlasTemplateData any,
-	dirFormat migrator.MigrationDirFormat,
+	dirFormat migrationfile.DirFormat,
 	selection VersionSelection,
 	compatibility CompatibilityProfile,
 	scope schemaScope,
@@ -584,7 +584,7 @@ func prepareFile(
 		version = parsed.Version
 		revisionVersion = parsed.RevisionVersion()
 		hasVersion = true
-		atlasFormat = parsed.Format == migrator.MigrationDirFormatAtlas
+		atlasFormat = parsed.Format == migrationfile.DirFormatAtlas
 		repeatable = parsed.Repeatable
 	}
 	file := File{
@@ -632,19 +632,19 @@ func prepareFile(
 	// forward delta this version applies, and the rollback is not a second one.
 	if file.IsUp || file.IsDown {
 		sql := raw
-		if atlasFormat && migrator.LooksAtlasTemplateSQL(sql) {
-			rendered, _, err := migrator.RenderAtlasTemplateSQL(snapshot, name, atlasTemplateData)
+		if atlasFormat && migrationfile.LooksAtlasTemplateSQL(sql) {
+			rendered, _, err := migrationfile.RenderAtlasTemplateSQL(snapshot, name, atlasTemplateData)
 			if err != nil {
 				return File{}, err
 			}
 			sql = rendered
 		}
-		up, err := migrator.ParseMigrationUpForAnalysis(name, sql)
+		up, err := migrationfile.ParseUpForAnalysis(name, sql)
 		if err != nil {
 			return File{}, err
 		}
 		file.SQL = up.SQL
-		file.NoTransaction = up.TxMode == migrator.MigrationFileTxModeNone
+		file.NoTransaction = up.TxMode == migrationfile.FileTxModeNone
 		for index, rawStmt := range splitStatementsWithLines(up.SQL, mode, compatibility) {
 			file.Statements = append(file.Statements, Statement{
 				Index:           index,

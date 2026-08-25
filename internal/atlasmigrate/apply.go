@@ -12,6 +12,7 @@ import (
 
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/revisiontable"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -339,7 +340,7 @@ func (p ApplyPlan) execute(ctx context.Context, hook migrator.PreMigrationHook) 
 		result.Applied = executionStarted && !p.DryRun
 		result.ApplyError = err
 		result.ErrorText = err.Error()
-		if txModeErr, ok := errors.AsType[*migrator.AtlasTxModeDirectiveError](err); ok {
+		if txModeErr, ok := errors.AsType[*migrationfile.AtlasTxModeDirectiveError](err); ok {
 			return result, txModeErr
 		}
 		return result, fmt.Errorf("error applying migrations: %w", err)
@@ -482,7 +483,7 @@ func newApplyMigrator(
 	mig, err := migrator.NewFSMigrator(
 		conn,
 		fsys,
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 		migrator.WithAtlasRevisionVersions(opts.revisionVersions),
 		migrator.WithAtlasRevisionChecksums(opts.revisionChecksums),
 		migrator.WithAtlasRevisionTypes(opts.revisionTypes),

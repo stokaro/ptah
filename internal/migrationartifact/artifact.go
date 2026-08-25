@@ -13,7 +13,7 @@ import (
 
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/internal/ociartifact"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 const (
@@ -27,7 +27,7 @@ const (
 type PushOptions struct {
 	Tags          []string
 	WriteOnceTags []string
-	DirFormat     migrator.MigrationDirFormat
+	DirFormat     migrationfile.DirFormat
 	Annotations   map[string]string
 }
 
@@ -36,12 +36,12 @@ type Artifact struct {
 	FileSystem fs.FS
 	Descriptor ocispec.Descriptor
 	Reference  ociartifact.Reference
-	DirFormat  migrator.MigrationDirFormat
+	DirFormat  migrationfile.DirFormat
 }
 
 type preparedArtifact struct {
 	FileSystem  fs.FS
-	DirFormat   migrator.MigrationDirFormat
+	DirFormat   migrationfile.DirFormat
 	Annotations map[string]string
 }
 
@@ -56,8 +56,8 @@ func VersionTag(timestamp time.Time) string {
 }
 
 // Capture returns the immutable migration inputs accepted by Ptah.
-func Capture(fsys fs.FS, format migrator.MigrationDirFormat) (fs.FS, error) {
-	normalized, err := migrator.ParseMigrationDirFormat(string(format))
+func Capture(fsys fs.FS, format migrationfile.DirFormat) (fs.FS, error) {
+	normalized, err := migrationfile.ParseDirFormat(string(format))
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +68,7 @@ func Capture(fsys fs.FS, format migrator.MigrationDirFormat) (fs.FS, error) {
 	if err != nil {
 		return nil, fmt.Errorf("capture migration artifact: %w", err)
 	}
-	files, err := migrator.DiscoverMigrationFiles(snapshot, normalized)
+	files, err := migrationfile.Discover(snapshot, normalized)
 	if err != nil {
 		return nil, fmt.Errorf("validate migration artifact: %w", err)
 	}
@@ -175,7 +175,7 @@ func prepare(
 	fsys fs.FS,
 	opts PushOptions,
 ) (preparedArtifact, error) {
-	format, err := migrator.ParseMigrationDirFormat(string(opts.DirFormat))
+	format, err := migrationfile.ParseDirFormat(string(opts.DirFormat))
 	if err != nil {
 		return preparedArtifact{}, err
 	}
@@ -196,7 +196,7 @@ func prepare(
 }
 
 func validatePulled(pulled ociartifact.Artifact) (Artifact, error) {
-	format, err := migrator.ParseMigrationDirFormat(pulled.Annotations[annotationDirFormat])
+	format, err := migrationfile.ParseDirFormat(pulled.Annotations[annotationDirFormat])
 	if err != nil {
 		return Artifact{}, fmt.Errorf("invalid migration artifact format: %w", err)
 	}

@@ -10,12 +10,13 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 func TestParseAtlasTxtarSQLCapturesChecksSection(t *testing.T) {
 	c := qt.New(t)
 
-	parsed, ok, err := parseAtlasTxtarSQL("20240305171146_seed.sql", `-- atlas:txtar
+	parsed, ok, err := migrationfile.ParseAtlasTxtar("20240305171146_seed.sql", `-- atlas:txtar
 
 -- checks.sql --
 SELECT NOT EXISTS (SELECT * FROM users);
@@ -25,16 +26,16 @@ ALTER TABLE users ADD COLUMN email TEXT;
 `)
 	c.Assert(err, qt.IsNil)
 	c.Assert(ok, qt.IsTrue)
-	c.Assert(parsed.checkFiles, qt.HasLen, 1)
-	c.Assert(parsed.checkFiles[0].name, qt.Equals, "checks.sql")
-	c.Assert(parsed.checkFiles[0].sql, qt.Contains, "SELECT NOT EXISTS")
-	c.Assert(parsed.migrationSQL, qt.Contains, "ALTER TABLE users")
+	c.Assert(parsed.CheckFiles, qt.HasLen, 1)
+	c.Assert(parsed.CheckFiles[0].Name, qt.Equals, "checks.sql")
+	c.Assert(parsed.CheckFiles[0].SQL, qt.Contains, "SELECT NOT EXISTS")
+	c.Assert(parsed.MigrationSQL, qt.Contains, "ALTER TABLE users")
 }
 
 func TestParseAtlasTxtarSQLCapturesNamedChecksInArchiveOrder(t *testing.T) {
 	c := qt.New(t)
 
-	parsed, ok, err := parseAtlasTxtarSQL("20240305171146_seed.sql", `-- atlas:txtar
+	parsed, ok, err := migrationfile.ParseAtlasTxtar("20240305171146_seed.sql", `-- atlas:txtar
 
 -- checks/users.sql --
 SELECT 1;
@@ -50,17 +51,17 @@ SELECT 3;
 `)
 	c.Assert(err, qt.IsNil)
 	c.Assert(ok, qt.IsTrue)
-	c.Assert(parsed.checkFiles, qt.HasLen, 2)
-	c.Assert(parsed.checkFiles[0].name, qt.Equals, "checks/users.sql")
-	c.Assert(parsed.checkFiles[0].sql, qt.Equals, "SELECT 1;\n\n")
-	c.Assert(parsed.checkFiles[1].name, qt.Equals, "checks/roles.sql")
-	c.Assert(parsed.checkFiles[1].sql, qt.Equals, "SELECT 2;\n\n")
+	c.Assert(parsed.CheckFiles, qt.HasLen, 2)
+	c.Assert(parsed.CheckFiles[0].Name, qt.Equals, "checks/users.sql")
+	c.Assert(parsed.CheckFiles[0].SQL, qt.Equals, "SELECT 1;\n\n")
+	c.Assert(parsed.CheckFiles[1].Name, qt.Equals, "checks/roles.sql")
+	c.Assert(parsed.CheckFiles[1].SQL, qt.Equals, "SELECT 2;\n\n")
 }
 
 func TestParseAtlasTxtarSQLRejectsDuplicateChecksSection(t *testing.T) {
 	c := qt.New(t)
 
-	_, ok, err := parseAtlasTxtarSQL("20240305171146_seed.sql", `-- atlas:txtar
+	_, ok, err := migrationfile.ParseAtlasTxtar("20240305171146_seed.sql", `-- atlas:txtar
 
 -- checks.sql --
 SELECT 1;

@@ -7,7 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/internal/migrationversion"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // The two bounds are different numbers for different reasons, so every row below
@@ -22,24 +22,24 @@ func TestNext(t *testing.T) {
 	tests := []struct {
 		name    string
 		latest  int64
-		format  migrator.MigrationDirFormat
+		format  migrationfile.DirFormat
 		want    int64
 		wantErr bool
 	}{
-		{name: "ptah below the ceiling", latest: 1786000000, format: migrator.MigrationDirFormatPtah, want: 1786000001},
-		{name: "ptah one below the ceiling", latest: 9999999998, format: migrator.MigrationDirFormatPtah, want: 9999999999},
-		{name: "ptah at the ceiling", latest: 9999999999, format: migrator.MigrationDirFormatPtah, wantErr: true},
-		{name: "ptah past the ceiling", latest: 10000000000, format: migrator.MigrationDirFormatPtah, wantErr: true},
-		{name: "auto follows the paired ceiling", latest: 9999999999, format: migrator.MigrationDirFormatAuto, wantErr: true},
+		{name: "ptah below the ceiling", latest: 1786000000, format: migrationfile.DirFormatPtah, want: 1786000001},
+		{name: "ptah one below the ceiling", latest: 9999999998, format: migrationfile.DirFormatPtah, want: 9999999999},
+		{name: "ptah at the ceiling", latest: 9999999999, format: migrationfile.DirFormatPtah, wantErr: true},
+		{name: "ptah past the ceiling", latest: 10000000000, format: migrationfile.DirFormatPtah, wantErr: true},
+		{name: "auto follows the paired ceiling", latest: 9999999999, format: migrationfile.DirFormatAuto, wantErr: true},
 		{
 			name:   "atlas accepts what the flyway importer writes",
-			latest: 4611686018427469511, format: migrator.MigrationDirFormatAtlas, want: 4611686018427469512,
+			latest: 4611686018427469511, format: migrationfile.DirFormatAtlas, want: 4611686018427469512,
 		},
 		{
 			name:   "atlas is not bounded by the paired ceiling",
-			latest: 9999999999, format: migrator.MigrationDirFormatAtlas, want: 10000000000,
+			latest: 9999999999, format: migrationfile.DirFormatAtlas, want: 10000000000,
 		},
-		{name: "atlas at the ceiling", latest: math.MaxInt64, format: migrator.MigrationDirFormatAtlas, wantErr: true},
+		{name: "atlas at the ceiling", latest: math.MaxInt64, format: migrationfile.DirFormatAtlas, wantErr: true},
 	}
 
 	for _, test := range tests {
@@ -103,57 +103,57 @@ func TestWritable(t *testing.T) {
 	tests := []struct {
 		name      string
 		candidate int64
-		format    migrator.MigrationDirFormat
+		format    migrationfile.DirFormat
 		want      int64
 		wantErr   bool
 	}{
 		{
 			name:      "a real second is returned untouched",
-			candidate: 20260809042338, format: migrator.MigrationDirFormatAtlas, want: 20260809042338,
+			candidate: 20260809042338, format: migrationfile.DirFormatAtlas, want: 20260809042338,
 		},
 		{
 			name:      "sixty seconds rolls to the next minute",
-			candidate: 20260809055860, format: migrator.MigrationDirFormatAtlas, want: 20260809055900,
+			candidate: 20260809055860, format: migrationfile.DirFormatAtlas, want: 20260809055900,
 		},
 		{
 			name:      "the carry runs all the way through the year",
-			candidate: 29991231235960, format: migrator.MigrationDirFormatAtlas, want: 30000101000000,
+			candidate: 29991231235960, format: migrationfile.DirFormatAtlas, want: 30000101000000,
 		},
 		{
 			name:      "a second checkpoint's 235961 lands on the same second",
-			candidate: 29991231235961, format: migrator.MigrationDirFormatAtlas, want: 30000101000000,
+			candidate: 29991231235961, format: migrationfile.DirFormatAtlas, want: 30000101000000,
 		},
 		{
 			name:      "the thirty-first of February rolls into March",
-			candidate: 20260231000000, format: migrator.MigrationDirFormatAtlas, want: 20260301000000,
+			candidate: 20260231000000, format: migrationfile.DirFormatAtlas, want: 20260301000000,
 		},
 		{
 			name:      "month thirteen rolls into the next January",
-			candidate: 20261301000000, format: migrator.MigrationDirFormatAtlas, want: 20270101000000,
+			candidate: 20261301000000, format: migrationfile.DirFormatAtlas, want: 20270101000000,
 		},
 		{
 			name:      "past the last representable instant it stops claiming to be one",
-			candidate: 99991231235960, format: migrator.MigrationDirFormatAtlas, want: 100000000000000,
+			candidate: 99991231235960, format: migrationfile.DirFormatAtlas, want: 100000000000000,
 		},
 		{
 			name:      "a ten-digit epoch claims no instant and is left alone",
-			candidate: 1786000000, format: migrator.MigrationDirFormatAtlas, want: 1786000000,
+			candidate: 1786000000, format: migrationfile.DirFormatAtlas, want: 1786000000,
 		},
 		{
 			name:      "what the flyway importer writes claims no instant either",
-			candidate: 4611686018427469511, format: migrator.MigrationDirFormatAtlas, want: 4611686018427469511,
+			candidate: 4611686018427469511, format: migrationfile.DirFormatAtlas, want: 4611686018427469511,
 		},
 		{
 			name:      "a paired version is ten digits, far below any stamp",
-			candidate: 9999999999, format: migrator.MigrationDirFormatPtah, want: 9999999999,
+			candidate: 9999999999, format: migrationfile.DirFormatPtah, want: 9999999999,
 		},
 		{
 			name:      "the paired ceiling still refuses rather than steps",
-			candidate: 10000000000, format: migrator.MigrationDirFormatPtah, wantErr: true,
+			candidate: 10000000000, format: migrationfile.DirFormatPtah, wantErr: true,
 		},
 		{
 			name:      "a wrapped version is still a refusal",
-			candidate: math.MinInt64, format: migrator.MigrationDirFormatAtlas, wantErr: true,
+			candidate: math.MinInt64, format: migrationfile.DirFormatAtlas, wantErr: true,
 		},
 	}
 
@@ -179,37 +179,37 @@ func TestAdvance(t *testing.T) {
 	tests := []struct {
 		name    string
 		latest  int64
-		format  migrator.MigrationDirFormat
+		format  migrationfile.DirFormat
 		want    int64
 		wantErr bool
 	}{
 		{
 			name:   "an ordinary second advances by one second",
-			latest: 20260809042338, format: migrator.MigrationDirFormatAtlas, want: 20260809042339,
+			latest: 20260809042338, format: migrationfile.DirFormatAtlas, want: 20260809042339,
 		},
 		{
 			name:   "the last second of a minute advances to the next minute",
-			latest: 20260809042359, format: migrator.MigrationDirFormatAtlas, want: 20260809042400,
+			latest: 20260809042359, format: migrationfile.DirFormatAtlas, want: 20260809042400,
 		},
 		{
 			name:   "the last second of 2999 advances to 3000",
-			latest: 29991231235959, format: migrator.MigrationDirFormatAtlas, want: 30000101000000,
+			latest: 29991231235959, format: migrationfile.DirFormatAtlas, want: 30000101000000,
 		},
 		{
 			name:   "a ten-digit epoch neighbor advances by one",
-			latest: 1786000000, format: migrator.MigrationDirFormatAtlas, want: 1786000001,
+			latest: 1786000000, format: migrationfile.DirFormatAtlas, want: 1786000001,
 		},
 		{
 			name:   "the paired layout keeps plain arithmetic, being far below any stamp",
-			latest: 1786000000, format: migrator.MigrationDirFormatPtah, want: 1786000001,
+			latest: 1786000000, format: migrationfile.DirFormatPtah, want: 1786000001,
 		},
 		{
 			name:   "the paired ceiling refuses",
-			latest: 9999999999, format: migrator.MigrationDirFormatPtah, wantErr: true,
+			latest: 9999999999, format: migrationfile.DirFormatPtah, wantErr: true,
 		},
 		{
 			name:   "the atlas ceiling refuses",
-			latest: math.MaxInt64, format: migrator.MigrationDirFormatAtlas, wantErr: true,
+			latest: math.MaxInt64, format: migrationfile.DirFormatAtlas, wantErr: true,
 		},
 	}
 
@@ -249,7 +249,7 @@ func TestWritableRun(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			base, err := migrationversion.WritableRun(test.candidate, test.count, migrator.MigrationDirFormatAtlas)
+			base, err := migrationversion.WritableRun(test.candidate, test.count, migrationfile.DirFormatAtlas)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(base, qt.Equals, test.want)
@@ -261,16 +261,16 @@ func TestCheck(t *testing.T) {
 	tests := []struct {
 		name    string
 		version int64
-		format  migrator.MigrationDirFormat
+		format  migrationfile.DirFormat
 		wantErr bool
 	}{
-		{name: "ptah ordinary", version: 1786000000, format: migrator.MigrationDirFormatPtah},
-		{name: "ptah at the ceiling", version: 9999999999, format: migrator.MigrationDirFormatPtah},
-		{name: "ptah past the ceiling", version: 10000000000, format: migrator.MigrationDirFormatPtah, wantErr: true},
-		{name: "ptah zero", version: 0, format: migrator.MigrationDirFormatPtah, wantErr: true},
-		{name: "atlas wrapped", version: math.MinInt64, format: migrator.MigrationDirFormatAtlas, wantErr: true},
-		{name: "atlas at the ceiling", version: math.MaxInt64, format: migrator.MigrationDirFormatAtlas},
-		{name: "atlas timestamp", version: 20260809042338, format: migrator.MigrationDirFormatAtlas},
+		{name: "ptah ordinary", version: 1786000000, format: migrationfile.DirFormatPtah},
+		{name: "ptah at the ceiling", version: 9999999999, format: migrationfile.DirFormatPtah},
+		{name: "ptah past the ceiling", version: 10000000000, format: migrationfile.DirFormatPtah, wantErr: true},
+		{name: "ptah zero", version: 0, format: migrationfile.DirFormatPtah, wantErr: true},
+		{name: "atlas wrapped", version: math.MinInt64, format: migrationfile.DirFormatAtlas, wantErr: true},
+		{name: "atlas at the ceiling", version: math.MaxInt64, format: migrationfile.DirFormatAtlas},
+		{name: "atlas timestamp", version: 20260809042338, format: migrationfile.DirFormatAtlas},
 	}
 
 	for _, test := range tests {

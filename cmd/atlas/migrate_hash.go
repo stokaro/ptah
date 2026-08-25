@@ -12,7 +12,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlascompatpolicy"
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
 	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // newAtlasMigrateHashCommand returns `atlas migrate hash`. A native Atlas
@@ -98,7 +98,7 @@ func runAtlasMigrateHash(
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	if err := migratesum.WritePrecomputedWithFormat(source.dir, migrator.MigrationDirFormatAtlas, sum); err != nil {
+	if err := migratesum.WritePrecomputedWithFormat(source.dir, migrationfile.DirFormatAtlas, sum); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 

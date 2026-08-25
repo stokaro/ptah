@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 var (
@@ -80,7 +80,7 @@ func (r *Result) FirstMismatch() *Mismatch {
 // ErrSumFileMissing; a read/parse failure returns a wrapped error. A drift is
 // reported in the Result (not as an error) so callers choose the exit code.
 func Verify(fsys fs.FS) (*Result, error) {
-	return VerifyWithFormat(fsys, migrator.MigrationDirFormatAuto)
+	return VerifyWithFormat(fsys, migrationfile.DirFormatAuto)
 }
 
 // VerifyHashed verifies fsys against its integrity file when one exists.
@@ -89,8 +89,8 @@ func Verify(fsys fs.FS) (*Result, error) {
 // apply-time verification on hashed directories while leaving unhashed
 // directories ungated. When a sum file exists, the result and error are
 // exactly those of [VerifyWithFormat].
-func VerifyHashed(fsys fs.FS, format migrator.MigrationDirFormat) (result *Result, hashed bool, err error) {
-	normalized, err := migrator.ParseMigrationDirFormat(string(format))
+func VerifyHashed(fsys fs.FS, format migrationfile.DirFormat) (result *Result, hashed bool, err error) {
+	normalized, err := migrationfile.ParseDirFormat(string(format))
 	if err != nil {
 		return nil, false, err
 	}
@@ -123,7 +123,7 @@ func VerifyAtlasFiles(fsys fs.FS, names []string) (*Result, error) {
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, sumFileMissingError{
 			name:   AtlasFileName,
-			format: migrator.MigrationDirFormatAtlas,
+			format: migrationfile.DirFormatAtlas,
 		}
 	}
 	if err != nil {
@@ -158,9 +158,9 @@ func VerifyAtlasFilesHashed(fsys fs.FS, names []string) (result *Result, hashed 
 	return result, true, err
 }
 
-func hasSumFile(fsys fs.FS, format migrator.MigrationDirFormat) (bool, error) {
+func hasSumFile(fsys fs.FS, format migrationfile.DirFormat) (bool, error) {
 	names := []string{FileName, AtlasFileName}
-	if format != migrator.MigrationDirFormatAuto {
+	if format != migrationfile.DirFormatAuto {
 		name, err := FileNameForFormat(format)
 		if err != nil {
 			return false, err
@@ -178,7 +178,7 @@ func hasSumFile(fsys fs.FS, format migrator.MigrationDirFormat) (bool, error) {
 
 // VerifyWithFormat recomputes the sum of fsys using the selected migration
 // directory format and compares it against the selected integrity file.
-func VerifyWithFormat(fsys fs.FS, format migrator.MigrationDirFormat) (*Result, error) {
+func VerifyWithFormat(fsys fs.FS, format migrationfile.DirFormat) (*Result, error) {
 	name, err := fileNameForVerify(fsys, format)
 	if err != nil {
 		return nil, err
@@ -209,29 +209,29 @@ func VerifyWithFormat(fsys fs.FS, format migrator.MigrationDirFormat) (*Result, 
 // dirHashForFormat returns the directory-hash function the selected format's
 // [ComputeWithFormat] path uses, so a recorded sum file is re-hashed with the
 // same scheme it was written with.
-func dirHashForFormat(format migrator.MigrationDirFormat) func([]Entry) string {
-	if format == migrator.MigrationDirFormatAtlas {
+func dirHashForFormat(format migrationfile.DirFormat) func([]Entry) string {
+	if format == migrationfile.DirFormatAtlas {
 		return atlasDirHash
 	}
 	return dirHash
 }
 
-func formatForSumFile(format migrator.MigrationDirFormat, name string) migrator.MigrationDirFormat {
-	if format != migrator.MigrationDirFormatAuto && format != "" {
+func formatForSumFile(format migrationfile.DirFormat, name string) migrationfile.DirFormat {
+	if format != migrationfile.DirFormatAuto && format != "" {
 		return format
 	}
 	if name == AtlasFileName {
-		return migrator.MigrationDirFormatAtlas
+		return migrationfile.DirFormatAtlas
 	}
-	return migrator.MigrationDirFormatPtah
+	return migrationfile.DirFormatPtah
 }
 
-func fileNameForVerify(fsys fs.FS, format migrator.MigrationDirFormat) (string, error) {
-	normalized, err := migrator.ParseMigrationDirFormat(string(format))
+func fileNameForVerify(fsys fs.FS, format migrationfile.DirFormat) (string, error) {
+	normalized, err := migrationfile.ParseDirFormat(string(format))
 	if err != nil {
 		return "", err
 	}
-	if normalized != migrator.MigrationDirFormatAuto {
+	if normalized != migrationfile.DirFormatAuto {
 		return FileNameForFormat(normalized)
 	}
 
@@ -253,7 +253,7 @@ func fileNameForVerify(fsys fs.FS, format migrator.MigrationDirFormat) (string, 
 	}
 }
 
-func missingSumFileError(name string, format migrator.MigrationDirFormat) error {
+func missingSumFileError(name string, format migrationfile.DirFormat) error {
 	if name == FileName {
 		return ErrSumFileMissing
 	}
@@ -262,7 +262,7 @@ func missingSumFileError(name string, format migrator.MigrationDirFormat) error 
 
 type sumFileMissingError struct {
 	name   string
-	format migrator.MigrationDirFormat
+	format migrationfile.DirFormat
 }
 
 func (e sumFileMissingError) Error() string {

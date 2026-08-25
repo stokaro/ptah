@@ -21,7 +21,7 @@ import (
 	"go.5x5.cz/ptah/internal/devlock"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/schemafile"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 func TestInspectSource_DatabaseURL(t *testing.T) {
@@ -156,7 +156,7 @@ func TestInspectSource_MigrationDirOnDev(t *testing.T) {
 		[]byte("CREATE TABLE replayed_users (id INTEGER PRIMARY KEY);\n"),
 		0o600,
 	), qt.IsNil)
-	_, err := migratesum.WriteWithFormat(migrationsDir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(migrationsDir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 
 	rendered, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{

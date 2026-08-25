@@ -9,7 +9,7 @@ import (
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/internal/migrationlintreport"
 	migrationlint "go.5x5.cz/ptah/migration/lint"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 func TestBuild_AtlasExplicitZeroSuppressesProjectLatestAndAllowsProjectGit(t *testing.T) {
@@ -26,7 +26,7 @@ func TestBuild_AtlasExplicitZeroSuppressesProjectLatestAndAllowsProjectGit(t *te
 	_, err := migrationlintreport.Build(t.Context(), migrationlintreport.Options{
 		Dir:           "unused",
 		FS:            fstest.MapFS{"1_init.sql": {Data: []byte("CREATE TABLE users (id int);\n")}},
-		DirFormat:     string(migrator.MigrationDirFormatAtlas),
+		DirFormat:     string(migrationfile.DirFormatAtlas),
 		Dialect:       "sqlite",
 		FailOn:        migrationlintreport.FailOnNone,
 		Compatibility: migrationlint.CompatibilityProfileAtlas,
@@ -45,7 +45,7 @@ func TestBuild_NativeExplicitZeroKeepsPreciseRefusal(t *testing.T) {
 	_, err := migrationlintreport.Build(t.Context(), migrationlintreport.Options{
 		Dir:       "unused",
 		FS:        fstest.MapFS{"1_init.sql": {Data: []byte("CREATE TABLE users (id int);\n")}},
-		DirFormat: string(migrator.MigrationDirFormatAtlas),
+		DirFormat: string(migrationfile.DirFormatAtlas),
 		Dialect:   "sqlite",
 		FailOn:    migrationlintreport.FailOnNone,
 		Changed: migrationlintreport.ChangedOptions{

@@ -12,7 +12,7 @@ import (
 
 // memFS is a read-only, flat, in-memory filesystem holding migration files that
 // have already been converted to Atlas single-file layout. It implements fs.FS,
-// fs.ReadDirFS, and fs.ReadFileFS so migrator.DiscoverMigrationFiles (which uses
+// fs.ReadDirFS, and fs.ReadFileFS so migrationfile.Discover (which uses
 // fs.WalkDir) and the Atlas migration loader (which uses fs.ReadFile) can read a
 // converted directory without writing it to disk. All files live directly under
 // the root; there are no subdirectories.

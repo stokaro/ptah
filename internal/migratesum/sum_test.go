@@ -11,7 +11,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 func fixture(files map[string]string) fstest.MapFS {
@@ -91,7 +91,7 @@ func TestComputeWithFormat_HashesAtlasMigrationFiles(t *testing.T) {
 		"20220318104615_add_users.sql": "CREATE TABLE users (id INT);\n",
 		"20220318104614_team_A.sql":    "CREATE TABLE teams (id INT);\n",
 		"atlas.sum":                    "ignored\n",
-	}), migrator.MigrationDirFormatAtlas)
+	}), migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 
 	var names []string
@@ -110,7 +110,7 @@ func TestComputeWithFormat_AtlasGoldenBytes(t *testing.T) {
 	sum, err := migratesum.ComputeWithFormat(fixture(map[string]string{
 		"0000000001_init.up.sql":   "CREATE TABLE users (id SERIAL PRIMARY KEY);\n",
 		"0000000001_init.down.sql": "DROP TABLE users;\n",
-	}), migrator.MigrationDirFormatAtlas)
+	}), migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 
 	const expected = `h1:dV4b2tjr5jLyPdgrKp+m/NTaWTKMVgV80o5ps0Ew/GE=
@@ -131,9 +131,9 @@ func TestComputeWithFormat_AtlasHashIsChained(t *testing.T) {
 		"1_first.sql":  "SELECT 10;\n",
 		"2_second.sql": "SELECT 2;\n",
 	})
-	baseSum, err := migratesum.ComputeWithFormat(base, migrator.MigrationDirFormatAtlas)
+	baseSum, err := migratesum.ComputeWithFormat(base, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
-	changedSum, err := migratesum.ComputeWithFormat(changedFirst, migrator.MigrationDirFormatAtlas)
+	changedSum, err := migratesum.ComputeWithFormat(changedFirst, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(changedSum.Entries[0].Hash, qt.Not(qt.Equals), baseSum.Entries[0].Hash)
@@ -147,11 +147,11 @@ func TestComputeWithFormat_AtlasSumIgnore(t *testing.T) {
 	withIgnored, err := migratesum.ComputeWithFormat(fixture(map[string]string{
 		"1_ignore.sql": "-- atlas:sum ignore\nSELECT ignored;\n",
 		"2_keep.sql":   "SELECT kept;\n",
-	}), migrator.MigrationDirFormatAtlas)
+	}), migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	withoutIgnored, err := migratesum.ComputeWithFormat(fixture(map[string]string{
 		"2_keep.sql": "SELECT kept;\n",
-	}), migrator.MigrationDirFormatAtlas)
+	}), migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(withIgnored.Entries, qt.HasLen, 1)
@@ -169,7 +169,7 @@ func TestCompute_AutoUsesAtlasHashWhenAtlasSumPresent(t *testing.T) {
 	})
 	autoSum, err := migratesum.Compute(fsys)
 	c.Assert(err, qt.IsNil)
-	atlasSum, err := migratesum.ComputeWithFormat(fsys, migrator.MigrationDirFormatAtlas)
+	atlasSum, err := migratesum.ComputeWithFormat(fsys, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	c.Assert(autoSum.Bytes(), qt.DeepEquals, atlasSum.Bytes())
 }
@@ -372,7 +372,7 @@ func TestVerify_MissingAtlasSumFile(t *testing.T) {
 
 	_, err := migratesum.VerifyWithFormat(fixture(map[string]string{
 		"1_initial.sql": "CREATE TABLE users (id INT);\n",
-	}), migrator.MigrationDirFormatAtlas)
+	}), migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.ErrorIs, migratesum.ErrSumFileMissing)
 	c.Assert(err, qt.ErrorMatches, "atlas.sum not found; run `ptah migrations hash --dir-format atlas` to create it")
 }
@@ -383,7 +383,7 @@ func TestVerify_MalformedAtlasSumFile(t *testing.T) {
 	_, err := migratesum.VerifyWithFormat(fixture(map[string]string{
 		"1_initial.sql": "CREATE TABLE users (id INT);\n",
 		"atlas.sum":     "h1:tampered\n",
-	}), migrator.MigrationDirFormatAtlas)
+	}), migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.ErrorIs, migratesum.ErrSumFileMalformed)
 	c.Assert(err, qt.ErrorMatches, `failed to parse atlas\.sum: malformed directory hash line: "h1:tampered"`)
 }
@@ -394,7 +394,7 @@ func TestVerify_AutoReadsAtlasSum(t *testing.T) {
 	fsys := fixture(map[string]string{
 		"1_initial.sql": "CREATE TABLE users (id INT);\n",
 	})
-	sum, err := migratesum.ComputeWithFormat(fsys, migrator.MigrationDirFormatAtlas)
+	sum, err := migratesum.ComputeWithFormat(fsys, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	fsys[migratesum.AtlasFileName] = &fstest.MapFile{Data: sum.Bytes()}
 

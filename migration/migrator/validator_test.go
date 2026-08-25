@@ -7,6 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -42,7 +43,7 @@ func TestFSMigrationProvider_StatementValidatorRejectsBeforeExecution(t *testing
 	}
 	provider, err := migrator.NewFSMigrationProvider(
 		fsys,
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 		migrator.WithStatementValidator(validator),
 		migrator.WithStatementInterceptor(interceptor),
 	)
@@ -71,7 +72,7 @@ func TestFSMigrationProvider_StatementValidatorComposesWithInterceptor(t *testin
 	}
 	provider, err := migrator.NewFSMigrationProvider(
 		fsys,
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 		migrator.WithStatementValidator(validator),
 		migrator.WithStatementInterceptor(interceptor),
 	)

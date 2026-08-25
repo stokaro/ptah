@@ -11,7 +11,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/ociartifact"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // NewMigrateHashCommand returns the migration hash command.
@@ -36,7 +36,7 @@ an already-committed migration.`,
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", "./migrations", "Directory containing migration files")
-	cmd.Flags().StringVar(&dirFormatValue, "dir-format", string(migrator.MigrationDirFormatAuto), "Migration directory format: auto, ptah, or atlas")
+	cmd.Flags().StringVar(&dirFormatValue, "dir-format", string(migrationfile.DirFormatAuto), "Migration directory format: auto, ptah, or atlas")
 	cmd.SetFlagErrorFunc(cmdutil.FlagErrorFunc)
 	return cmd
 }
@@ -70,7 +70,7 @@ func runHash(cmd *cobra.Command, dir, dirFormatValue string) error {
 		return cmdutil.Fail(cmd, err)
 	}
 
-	dirFormat, err := migrator.ParseMigrationDirFormat(dirFormatValue)
+	dirFormat, err := migrationfile.ParseDirFormat(dirFormatValue)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

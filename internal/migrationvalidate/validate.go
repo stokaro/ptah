@@ -8,7 +8,7 @@ import (
 
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/migrationreplay"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // Options configures a migration validation run.
@@ -28,7 +28,7 @@ type Options struct {
 	// through here rather than materializing it to a temporary directory keeps
 	// the verified bytes the pulled bytes, with no second read in between.
 	FS        fs.FS
-	DirFormat migrator.MigrationDirFormat
+	DirFormat migrationfile.DirFormat
 	DevURL    string
 }
 
@@ -76,9 +76,9 @@ func verify(opts Options) (*migratesum.Result, error) {
 	return migratesum.VerifyWithFormat(opts.FS, opts.DirFormat)
 }
 
-func migrationFormatForSum(result *migratesum.Result) migrator.MigrationDirFormat {
+func migrationFormatForSum(result *migratesum.Result) migrationfile.DirFormat {
 	if result != nil && result.SumFileName == migratesum.AtlasFileName {
-		return migrator.MigrationDirFormatAtlas
+		return migrationfile.DirFormatAtlas
 	}
-	return migrator.MigrationDirFormatPtah
+	return migrationfile.DirFormatPtah
 }

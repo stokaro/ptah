@@ -14,7 +14,7 @@ import (
 	"go.5x5.cz/ptah/internal/fsnapshot"
 	"go.5x5.cz/ptah/internal/lintdialect"
 	"go.5x5.cz/ptah/migration/lint"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // sourceName is the name the plan's SQL is analyzed under.
@@ -54,7 +54,7 @@ func Analyze(sql, dialect string) (lint.Analysis, error) {
 	return lint.AnalyzeFS(snapshot, lint.Options{
 		Compatibility: lint.CompatibilityProfileAtlas,
 		Dialect:       canonical,
-		DirFormat:     migrator.MigrationDirFormatAtlas,
+		DirFormat:     migrationfile.DirFormatAtlas,
 	})
 }
 

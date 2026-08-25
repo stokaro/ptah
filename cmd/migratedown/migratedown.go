@@ -27,6 +27,7 @@ import (
 	"go.5x5.cz/ptah/internal/onlineddl"
 	"go.5x5.cz/ptah/internal/preflight"
 	"go.5x5.cz/ptah/migration/generator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -128,7 +129,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.BoolVar(&opts.plan, planFlag, false,
 		"Derive the rollback from the schema difference instead of running the down migrations, "+
 			"requires --"+shadowDBFlag)
-	flags.StringVar(&opts.dirFormat, dirFormatFlag, string(migrator.MigrationDirFormatAuto), "Migration directory format: auto, ptah, or atlas")
+	flags.StringVar(&opts.dirFormat, dirFormatFlag, string(migrationfile.DirFormatAuto), "Migration directory format: auto, ptah, or atlas")
 	flags.StringVar(&opts.atlasEnv, atlasEnvFlag, "", "Value exposed as .Env when rendering Atlas SQL template migrations")
 	flags.BoolVar(&opts.dryRun, dryRunFlag, false, "Show what migrations would be rolled back without actually running them")
 	flags.BoolVar(&opts.verbose, verboseFlag, false, "Enable verbose output")
@@ -258,7 +259,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 		return fmt.Errorf("target version must be >= 0")
 	}
 
-	dirFormat, err := migrator.ParseMigrationDirFormat(dirFormatValue)
+	dirFormat, err := migrationfile.ParseDirFormat(dirFormatValue)
 	if err != nil {
 		return err
 	}
@@ -372,7 +373,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 		migrationsFS,
 		migrator.WithStatementInterceptor(interceptor),
 		migrator.WithMigrationDirFormat(dirFormat),
-		migrator.WithAtlasTemplateData(migrator.AtlasTemplateData{Env: atlasEnv}),
+		migrator.WithAtlasTemplateData(migrationfile.AtlasTemplateData{Env: atlasEnv}),
 	)
 	if err != nil {
 		return fmt.Errorf("error registering migrations: %w", err)
@@ -514,7 +515,7 @@ type shadowVerification struct {
 	migrationsFS     fs.FS
 	currentVersion   int64
 	targetVersion    int64
-	dirFormat        migrator.MigrationDirFormat
+	dirFormat        migrationfile.DirFormat
 	atlasEnv         string
 	connectTimeout   time.Duration
 }
@@ -547,7 +548,7 @@ func verifyRollbackOnShadow(
 		TargetVersion:     v.targetVersion,
 		ProviderOptions: []migrator.FSProviderOption{
 			migrator.WithMigrationDirFormat(v.dirFormat),
-			migrator.WithAtlasTemplateData(migrator.AtlasTemplateData{Env: v.atlasEnv}),
+			migrator.WithAtlasTemplateData(migrationfile.AtlasTemplateData{Env: v.atlasEnv}),
 		},
 		ConnectTimeout: v.connectTimeout,
 	})
@@ -621,7 +622,7 @@ type downTagResolution struct {
 	toTag            string
 	conn             *dbschema.DatabaseConnection
 	migrationsFS     fs.FS
-	dirFormat        migrator.MigrationDirFormat
+	dirFormat        migrationfile.DirFormat
 	migrationsSchema string
 	migrationsTable  string
 	migrationsEngine string
@@ -661,7 +662,7 @@ type downBanner struct {
 	dbURL         string
 	dialect       string
 	migrationsDir string
-	dirFormat     migrator.MigrationDirFormat
+	dirFormat     migrationfile.DirFormat
 }
 
 func writeDownBanner(emit cliobs.Emitter, b downBanner) {
@@ -701,7 +702,7 @@ type dynamicRollback struct {
 	migrationsFS   fs.FS
 	migrationsDir  string
 	targetVersion  int64
-	dirFormat      migrator.MigrationDirFormat
+	dirFormat      migrationfile.DirFormat
 	atlasEnv       string
 	connectTimeout time.Duration
 	dryRun         bool
@@ -736,7 +737,7 @@ func runDynamicRollback(cmd *cobra.Command, r dynamicRollback, emit cliobs.Emitt
 		TargetVersion:    r.targetVersion,
 		ProviderOptions: []migrator.FSProviderOption{
 			migrator.WithMigrationDirFormat(r.dirFormat),
-			migrator.WithAtlasTemplateData(migrator.AtlasTemplateData{Env: r.atlasEnv}),
+			migrator.WithAtlasTemplateData(migrationfile.AtlasTemplateData{Env: r.atlasEnv}),
 		},
 		ConnectTimeout: r.connectTimeout,
 		RevisionsTable: r.revisionsOpts.RevisionsTable,
@@ -793,7 +794,7 @@ type rollbackInputs struct {
 	migrationsFS     fs.FS
 	migrationsDir    string
 	targetVersion    int64
-	dirFormat        migrator.MigrationDirFormat
+	dirFormat        migrationfile.DirFormat
 	atlasEnv         string
 	connectTimeout   time.Duration
 	migrationsSchema string

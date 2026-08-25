@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -86,8 +87,8 @@ func PrepareDown(ctx context.Context, conn *dbschema.DatabaseConnection, opts Do
 	mig, err := migrator.NewFSMigrator(
 		conn,
 		opts.FS,
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
-		migrator.WithAtlasTemplateData(migrator.AtlasTemplateData{Env: opts.AtlasEnv}),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
+		migrator.WithAtlasTemplateData(migrationfile.AtlasTemplateData{Env: opts.AtlasEnv}),
 	)
 	if err != nil {
 		return DownPlan{}, fmt.Errorf("error registering migrations: %w", err)

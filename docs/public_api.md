@@ -34,6 +34,7 @@ These packages are intended for application and tool embedders:
 - `go.5x5.cz/ptah/migration/generator`
 - `go.5x5.cz/ptah/migration/importer`
 - `go.5x5.cz/ptah/migration/lint`
+- `go.5x5.cz/ptah/migration/migrationfile`
 - `go.5x5.cz/ptah/migration/migrator`
 - `go.5x5.cz/ptah/migration/planner`
 - `go.5x5.cz/ptah/migration/risk`
@@ -187,6 +188,20 @@ Atlas-ignored files are marked explicitly without changing version selection.
 Compatibility-specific directive behavior must be selected explicitly; native
 Ptah behavior is the zero-value default.
 
+`migration/migrationfile` is the migration file-layout toolkit: what a
+migration directory and its files mean, with no database and no execution.
+`Discover` walks a filesystem in a `DirFormat` (`ParseDirFormat` normalizes the
+CLI spelling) and returns `File` values; `ParseFileName` and
+`ParseAtlasFileName` read one name; `FileName`, `CheckpointFileName`, and
+`NextVersion` produce names for writers. `ParseDirectives` and `ParseTimeouts`
+read the `-- +ptah` directive header, `ParseFileTxMode` and `ParseUp` resolve a
+file's transaction mode across both directive families, `MisplacedDirectives`
+diagnoses directive lines outside the region where they are significant,
+`ParseAtlasTxtar` unpacks Atlas txtar archives, and `RenderAtlasTemplateSQL`
+renders Atlas SQL templates. The migrator engine builds on this package;
+linters, importers, and compatibility tooling use it without importing the
+engine.
+
 `migration/migrator` exposes `WithStatementObserver` for tools that need to
 audit successful filesystem-migration execution without replacing the
 interceptor, splitter, directive, or transaction path. Observers receive
@@ -206,18 +221,18 @@ cannot reduce the recorded applied count below that verified prefix.
 resumed SQL, safety checks, and the final metadata write.
 
 Programmatic migrations use `Migration.UpTxMode` and `Migration.DownTxMode`
-with `MigrationFileTxModeUnspecified`, `MigrationFileTxModeFile`, or
-`MigrationFileTxModeNone`. `ParseMigrationUp` gives tools the executable
-up-direction SQL, explicit mode, and source-line offset from plain SQL or Atlas
-txtar content. The two directions remain independent; the migrator resolves
-the up value against its global transaction mode and treats an unspecified
-down value as `file`.
+with `migrationfile.FileTxModeUnspecified`, `migrationfile.FileTxModeFile`, or
+`migrationfile.FileTxModeNone`. `migrationfile.ParseUp` gives tools the
+executable up-direction SQL, explicit mode, and source-line offset from plain
+SQL or Atlas txtar content. The two directions remain independent; the
+migrator resolves the up value against its global transaction mode and treats
+an unspecified down value as `file`.
 
 Atlas transaction-mode directive validation errors expose
-`migrator.AtlasTxModeDirectiveError` through `errors.As`. The leaf error keeps
-the source file and transaction-mode details in its message.
+`migrationfile.AtlasTxModeDirectiveError` through `errors.As`. The leaf error
+keeps the source file and transaction-mode details in its message.
 
-`migration/migrator.ParseFileDirectives` reads the file's directive header —
+`migration/migrationfile.ParseDirectives` reads the file's directive header —
 the run of blank lines and line comments before the first executable statement
 — rather than the whole file. A `-- +ptah` line written below the statements it
 claims to govern is not honored. Atlas transaction mode keeps the stricter
@@ -230,8 +245,8 @@ rules; for example, `atlas:txmode` must be in the unbroken column-1 comment
 block at the start of the file.
 
 Position and value stay separate verdicts. A `-- +ptah` directive whose key is
-recognized but whose value cannot be read fails `ParseMigrationUp`, `Migration.Up`
-and `Migration.Down` wherever the line sits, and the error names the line, so a
+recognized but whose value cannot be read fails `migrationfile.ParseUp`,
+`Migration.Up` and `Migration.Down` wherever the line sits, and the error names the line, so a
 typo is never demoted to a position warning. An unrecognized bare token and an
 unknown `key=value` pair are not directives and produce neither. The `-- atlas:txmode`
 spelling is reported but not refused outside its block, because Atlas CE applies

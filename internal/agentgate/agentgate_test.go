@@ -12,7 +12,7 @@ import (
 	"go.5x5.cz/ptah/internal/agentpolicy"
 	"go.5x5.cz/ptah/internal/agentworkspace"
 	"go.5x5.cz/ptah/internal/migrateops"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // scopeFor builds a workspace holding one class directory with the given files
@@ -69,7 +69,7 @@ func resultFor(c *qt.C, report agentgate.Report, gate string) agentgate.Result {
 // what every Ptah verb that touches one leaves behind.
 func hashMigrations(c *qt.C, scope *agentworkspace.Scope) {
 	c.Helper()
-	_, err := migrateops.Rehash(scope.Path(), migrator.MigrationDirFormatAuto)
+	_, err := migrateops.Rehash(scope.Path(), migrationfile.DirFormatAuto)
 	c.Assert(err, qt.IsNil)
 }
 
