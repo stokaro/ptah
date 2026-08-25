@@ -23,11 +23,11 @@ uses them internally.
 
 | Need | Stable package(s) | What it gives you |
 | --- | --- | --- |
-| Build SQL DDL programmatically | `core/ast`, `core/renderer` | Dialect-aware SQL from structured AST nodes. |
+| Build SQL DDL programmatically | `core/ast`, `core/astbuilder`, `core/renderer` | Dialect-aware SQL from structured AST nodes, written as struct literals or as builder chains. |
 | Build parameterized SELECT queries | `core/query`, `core/renderer` | Fluent, dialect-aware SELECT/WHERE/ORDER BY/LIMIT with bound parameters. See [Query builder](../query-builder/). |
 | Parse Go schema annotations | `core/goschema` | Go source comments to Ptah's schema IR. |
 | Parse Atlas HCL schema files | `atlascompat` | Atlas-style HCL schema files to Ptah's schema IR through a stable compatibility wrapper. |
-| Parse YAML schema files | Native CLI and schema-file workflows | An implementation detail, not a stable package. Use the CLI, or open an API proposal before embedding it. |
+| Parse YAML schema files | `core/yamlschema` | Ptah's YAML authoring format to the schema IR, from bytes or from a path. |
 | Render SQL from schema IR | `core/renderer`, `atlascompat` | Ordered DDL statements for supported dialects. |
 | Introspect live databases | `dbschema`, `dbschema/types` | Database schema snapshots from live connections. |
 | Compare desired vs. live schemas | `migration/schemadiff`, `migration/schemadiff/types` | Structured schema diffs for planning and reporting. |
@@ -123,6 +123,23 @@ CREATE TABLE "users" (
 );
 ```
 
+`core/astbuilder` writes the same AST as a chain rather than as nested literals.
+It produces `core/ast` nodes and nothing of its own, so the two spellings mix,
+and a node the builders do not model stays reachable through `core/ast`:
+
+```go
+table := astbuilder.NewTable("users").
+	Column("id", "SERIAL").Primary().End().
+	Column("email", "TEXT").NotNull().Unique().End().
+	Build()
+```
+
+`NewSchema` builds a whole `*ast.StatementList` in one chain — enums, tables,
+indexes, and comments in the order they were added — where `NewTable` and
+`NewIndex` build a single statement. The builders do not validate; an unknown
+type or an unresolved foreign key is reported by `core/renderer` or by the
+database.
+
 ## End-to-end reuse examples
 
 The examples below use only stable public packages unless a block is explicitly
@@ -205,16 +222,50 @@ fmt.Println(sql)
 
 ### Render SQL from YAML schema
 
-YAML schema files are supported by Ptah workflows, but the YAML parser is not a
-stable embedder package today. For embedders, prefer Go annotations or HCL
-through `atlascompat`. For scripts, use the CLI:
+YAML is one of the authoring formats that produce Ptah's schema IR, alongside Go
+annotations, HCL, SQL, and DBML. `core/yamlschema` is its reader: `Parse` takes
+the document as bytes, `ParseFile` reads it from a path, and both return the
+same `*goschema.Database` the other readers return. Nothing downstream knows
+which one filled it.
+
+```go
+package main
+
+import (
+	"fmt"
+	"log"
+
+	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/yamlschema"
+)
+
+func main() {
+	db, err := yamlschema.ParseFile("schema.yaml")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	statements, err := renderer.GetOrderedCreateStatements(db, "postgres")
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, statement := range statements {
+		fmt.Println(statement)
+	}
+}
+```
+
+Parsing is strict: an unknown key is an error, and a second YAML document in the
+same stream is refused. See [YAML schema](../../schema/yaml/) for the document
+format. The equivalent CLI call is:
 
 ```bash
 ptah schema render --schema-file schema.yaml --dialect postgres
 ```
 
-If you need a stable YAML-to-IR Go API, create a design issue before depending
-on the current implementation package.
+When the YAML is written by another program rather than held in a file, use
+`core/schemasource` instead: it runs that program and parses its standard output
+through the same reader.
 
 ### Inspect a live database and diff
 
@@ -579,9 +630,6 @@ changes.
 This page intentionally avoids documenting unsupported public APIs. Follow-up
 issues should be created before exposing:
 
-- a stable YAML schema parser package;
 - a stable Atlas HCL renderer package beyond `atlascompat` wrappers;
-- more ergonomic AST builder helpers if current AST construction becomes too
-  verbose for embedder docs;
 - snippet validation that extracts docs code blocks automatically;
 - out-of-tree dialect, planner, renderer, or lint-rule extension points.

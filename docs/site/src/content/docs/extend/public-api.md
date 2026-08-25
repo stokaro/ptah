@@ -18,6 +18,7 @@ equal to it.
 | `config` | Project-level config loading helpers. |
 | `config/projectconfig` | Typed Ptah/Atlas project config IR, including validated online-DDL policy. |
 | `core/ast` | Typed schema DDL AST nodes. |
+| `core/astbuilder` | Fluent builders that construct `core/ast` DDL nodes without hand-written struct literals. |
 | `core/coverage` | Schema description scope facts, so an absent object is not read as a removed one. |
 | `core/goschema` | Go annotation parser and schema IR. |
 | `core/platform` | Dialect and platform constants. |
@@ -28,6 +29,7 @@ equal to it.
 | `core/renderer` | Dialect-aware SQL rendering from AST/schema IR, including fail-closed two-phase foreign key ordering. |
 | `core/schemasource` | Runs an external desired-schema program and parses its output into schema IR. |
 | `core/sqlutil` | SQL utility helpers used by public paths. |
+| `core/yamlschema` | Reads Ptah's YAML authoring format into the schema IR, strictly. |
 | `dbschema` | Live database schema introspection connection layer. |
 | `dbschema/types` | Shared database schema types. |
 | `docs` | Ptah's own documentation embedded in the binary as an `embed.FS`. |
@@ -87,6 +89,20 @@ to expose the same metadata.
 a complete `goschema.Database` without rendering SQL. They use the same
 foreign-key and capability validation as ordered schema rendering and migration
 planning.
+
+`core/astbuilder` writes `core/ast` DDL nodes as method chains: `NewTable` and
+`NewIndex` build one statement, `NewSchema` builds an `*ast.StatementList` in
+declaration order. The builders return AST types and nothing of their own, so a
+chain and a hand-written literal mix freely. They validate nothing — an unknown
+type or an unresolved foreign key reaches the AST and is reported by
+`core/renderer` or by the database.
+
+`core/yamlschema` reads Ptah's YAML authoring format: `Parse` from bytes,
+`ParseFile` from a path, both returning the `*goschema.Database` that Go
+annotations, HCL, SQL, and DBML also produce. Parsing refuses an unknown key and
+refuses a second YAML document in the same stream, so a misspelled attribute
+cannot pass as an intentional setting. Use `core/schemasource` when the YAML is
+written by an external program rather than held in a file.
 
 `goschema.Extension.Schema` is the PostgreSQL installation namespace.
 `ast.ExtensionNode.Schema` and `SetSchema` preserve it through SQL rendering;

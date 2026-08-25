@@ -315,9 +315,10 @@ func (tb *TableBuilder) Build() *ast.CreateTableNode {
 // SchemaTableBuilder provides a fluent API for building tables within schema contexts.
 //
 // SchemaTableBuilder wraps a TableBuilder and operates within the context of
-// a SchemaBuilder rather than standalone usage. It embeds TableBuilder to inherit
-// all table configuration functionality and provides schema-specific column building
-// that returns to the schema context.
+// a SchemaBuilder rather than standalone usage. It offers the same table
+// configuration methods as TableBuilder, each returning a SchemaTableBuilder so
+// that the chain stays inside the schema, and provides schema-specific column
+// building that returns to the schema context.
 //
 // This builder is used when constructing tables as part of a larger schema definition,
 // allowing seamless navigation between schema, table, and column contexts. It provides
@@ -344,14 +345,94 @@ func (tb *TableBuilder) Build() *ast.CreateTableNode {
 //				OnDelete("RESTRICT").End().
 //		End()
 //
-// All inherited methods from TableBuilder return the SchemaTableBuilder instance for chaining, except:
+// All methods return the SchemaTableBuilder instance for chaining, except:
 //   - Column() returns a SchemaColumnBuilder for schema-aware column construction
+//   - ForeignKey() returns a SchemaForeignKeyBuilder for referential actions
 //   - End() returns the parent SchemaBuilder to continue schema construction
 type SchemaTableBuilder struct {
-	// TableBuilder provides all table configuration methods
-	*TableBuilder
+	// tableBuilder holds the table configuration methods. It is a named field
+	// rather than an embedded one so that a schema-scoped chain cannot leave
+	// the schema: an embedded *TableBuilder would promote methods that return
+	// *TableBuilder, which has no End, and would publish the standalone builder
+	// as a field of the public type.
+	tableBuilder *TableBuilder
 	// schema is the parent schema builder for returning context
 	schema *SchemaBuilder
+}
+
+// Comment sets a descriptive comment for the table and returns the SchemaTableBuilder for chaining.
+//
+// Example:
+//
+//	schema.Table("users").Comment("Customer accounts")
+func (stb *SchemaTableBuilder) Comment(comment string) *SchemaTableBuilder {
+	stb.tableBuilder.Comment(comment)
+	return stb
+}
+
+// Engine sets the storage engine and returns the SchemaTableBuilder for chaining.
+//
+// The engine is a MySQL and MariaDB table option; other dialects ignore it.
+//
+// Example:
+//
+//	schema.Table("sessions").Engine("InnoDB")
+func (stb *SchemaTableBuilder) Engine(engine string) *SchemaTableBuilder {
+	stb.tableBuilder.Engine(engine)
+	return stb
+}
+
+// Option sets a dialect-specific table option and returns the SchemaTableBuilder for chaining.
+//
+// Example:
+//
+//	schema.Table("logs").Option("CHARSET", "utf8mb4")
+func (stb *SchemaTableBuilder) Option(key, value string) *SchemaTableBuilder {
+	stb.tableBuilder.Option(key, value)
+	return stb
+}
+
+// PrimaryKey adds a table-level primary key constraint and returns the SchemaTableBuilder for chaining.
+//
+// Use it for composite keys; a single-column key is usually clearer as
+// Column(...).Primary().
+//
+// Example:
+//
+//	schema.Table("user_roles").PrimaryKey("user_id", "role_id")
+func (stb *SchemaTableBuilder) PrimaryKey(columns ...string) *SchemaTableBuilder {
+	stb.tableBuilder.PrimaryKey(columns...)
+	return stb
+}
+
+// Unique adds a table-level unique constraint and returns the SchemaTableBuilder for chaining.
+//
+// Example:
+//
+//	schema.Table("products").Unique("uk_products_category_sku", "category_id", "sku")
+func (stb *SchemaTableBuilder) Unique(name string, columns ...string) *SchemaTableBuilder {
+	stb.tableBuilder.Unique(name, columns...)
+	return stb
+}
+
+// ForeignKey adds a table-level foreign key constraint and returns a SchemaForeignKeyBuilder
+// for configuring its referential actions.
+//
+// Use it for multi-column foreign keys, or when the constraint reads better
+// beside the other table-level constraints than on the column. A single-column
+// foreign key is usually clearer as Column(...).ForeignKey(...).
+//
+// Example:
+//
+//	schema.Table("order_items").
+//		ForeignKey("fk_order_items_product", []string{"product_id", "variant_id"}, "product_variants", "product_id").
+//		OnDelete("RESTRICT").End()
+func (stb *SchemaTableBuilder) ForeignKey(name string, columns []string, refTable, refColumn string) *SchemaForeignKeyBuilder {
+	fkb := stb.tableBuilder.ForeignKey(name, columns, refTable, refColumn)
+	return &SchemaForeignKeyBuilder{
+		ref:         fkb.ref,
+		schemaTable: stb,
+	}
 }
 
 // Column begins a column definition and returns a SchemaColumnBuilder for detailed column construction.
@@ -361,8 +442,8 @@ type SchemaTableBuilder struct {
 // configuring column properties and can return to this SchemaTableBuilder when
 // the column definition is complete.
 //
-// This method overrides the embedded TableBuilder.Column() method to provide
-// schema-aware navigation while maintaining the same column configuration capabilities.
+// It mirrors TableBuilder.Column with schema-aware navigation: the returned
+// builder's End returns this SchemaTableBuilder rather than a TableBuilder.
 //
 // Parameters:
 //   - name: The column name
@@ -382,7 +463,7 @@ type SchemaTableBuilder struct {
 //		OnDelete("CASCADE").End()
 func (stb *SchemaTableBuilder) Column(name, dataType string) *SchemaColumnBuilder {
 	column := ast.NewColumn(name, dataType)
-	stb.TableBuilder.table.AddColumn(column)
+	stb.tableBuilder.table.AddColumn(column)
 	return &SchemaColumnBuilder{
 		column:      column,
 		schemaTable: stb,
@@ -408,6 +489,6 @@ func (stb *SchemaTableBuilder) Column(name, dataType string) *SchemaColumnBuilde
 //		End().
 //		Index("idx_posts_user", "posts", "user_id").End()
 func (stb *SchemaTableBuilder) End() *SchemaBuilder {
-	stb.schema.statements = append(stb.schema.statements, stb.TableBuilder.Build())
+	stb.schema.statements = append(stb.schema.statements, stb.tableBuilder.Build())
 	return stb.schema
 }

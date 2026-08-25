@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/internal/astbuilder"
+	"go.5x5.cz/ptah/core/astbuilder"
 )
 
 func TestNewTable(t *testing.T) {
@@ -237,4 +237,63 @@ func TestTableBuilder_MultipleConstraints(t *testing.T) {
 
 	c.Assert(result.Constraints[2].Type, qt.Equals, ast.UniqueConstraint)
 	c.Assert(result.Constraints[2].Name, qt.Equals, "uk_username")
+}
+
+func TestSchemaTableBuilder_TableConfigurationStaysInTheSchema(t *testing.T) {
+	c := qt.New(t)
+
+	schema := astbuilder.NewSchema()
+	table := schema.Table("order_items")
+
+	// Every table-level configuration method returns the schema-scoped builder,
+	// so a chain that uses one can still reach End and the enclosing schema. An
+	// embedded *TableBuilder would return the standalone builder here, which has
+	// no End at all.
+	c.Assert(table.Comment("Line items"), qt.Equals, table)
+	c.Assert(table.Engine("InnoDB"), qt.Equals, table)
+	c.Assert(table.Option("CHARSET", "utf8mb4"), qt.Equals, table)
+	c.Assert(table.PrimaryKey("order_id", "sku"), qt.Equals, table)
+	c.Assert(table.Unique("uk_order_items_sku", "sku"), qt.Equals, table)
+	c.Assert(table.ForeignKey("fk_order_items_order", []string{"order_id"}, "orders", "id").End(), qt.Equals, table)
+	c.Assert(table.Column("order_id", "BIGINT").End(), qt.Equals, table)
+	c.Assert(table.End(), qt.Equals, schema)
+}
+
+func TestSchemaTableBuilder_TableConfigurationReachesTheNode(t *testing.T) {
+	c := qt.New(t)
+
+	statements := astbuilder.NewSchema().
+		Table("order_items").
+		Comment("Line items").
+		Engine("InnoDB").
+		Option("CHARSET", "utf8mb4").
+		Column("order_id", "BIGINT").NotNull().End().
+		Column("sku", "VARCHAR(50)").NotNull().End().
+		PrimaryKey("order_id", "sku").
+		Unique("uk_order_items_sku", "sku").
+		ForeignKey("fk_order_items_order", []string{"order_id"}, "orders", "id").
+		OnDelete("CASCADE").
+		End().
+		End().
+		Build()
+
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	table, ok := statements.Statements[0].(*ast.CreateTableNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(table.Name, qt.Equals, "order_items")
+	c.Assert(table.Comment, qt.Equals, "Line items")
+	c.Assert(table.Options["ENGINE"], qt.Equals, "InnoDB")
+	c.Assert(table.Options["CHARSET"], qt.Equals, "utf8mb4")
+	c.Assert(table.Columns, qt.HasLen, 2)
+
+	c.Assert(table.Constraints, qt.HasLen, 3)
+	c.Assert(table.Constraints[0].Type, qt.Equals, ast.PrimaryKeyConstraint)
+	c.Assert(table.Constraints[0].Columns, qt.DeepEquals, []string{"order_id", "sku"})
+	c.Assert(table.Constraints[1].Type, qt.Equals, ast.UniqueConstraint)
+	c.Assert(table.Constraints[1].Name, qt.Equals, "uk_order_items_sku")
+	c.Assert(table.Constraints[2].Type, qt.Equals, ast.ForeignKeyConstraint)
+	c.Assert(table.Constraints[2].Reference, qt.IsNotNil)
+	c.Assert(table.Constraints[2].Reference.Table, qt.Equals, "orders")
+	c.Assert(table.Constraints[2].Reference.OnDelete, qt.Equals, "CASCADE")
 }
