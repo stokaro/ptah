@@ -28,6 +28,9 @@ const (
 	MigrationsTableFlagName = "migrations-table"
 	// RevisionTableFormatFlagName is the CLI flag name for the migration revision table layout.
 	RevisionTableFormatFlagName = "revision-format"
+	// MigrationsEngineFlagName is the CLI flag name for the revision table's
+	// storage engine.
+	MigrationsEngineFlagName = "migrations-engine"
 )
 
 // DefaultConnectTimeout is the default value for [ConnectTimeoutFlagName]. It
@@ -74,6 +77,24 @@ func RegisterMigrationsSchemaFlag(flags *pflag.FlagSet, target *string) {
 // RegisterMigrationsTableFlag registers the migration tracking table name flag.
 func RegisterMigrationsTableFlag(flags *pflag.FlagSet, target *string) {
 	flags.StringVar(target, MigrationsTableFlagName, "", "Table name for the migration tracking table. Empty uses the revision format default.")
+}
+
+// RegisterMigrationsEngineFlag registers the revision table's storage engine.
+//
+// It exists for ClickHouse, where a table has no engine unless one is named and
+// the server's own `default_table_engine` decides whether the statement is even
+// legal -- its default value is `None`, which answers
+// `Table engine is not specified in CREATE query`. Naming a default is half the
+// fix; the other half is this flag, because a replicated deployment needs
+// `ReplicatedMergeTree` with its keeper path and replica name or the migration
+// history exists on one node only and every replica reports itself consistent
+// (stokaro/ptah#2234).
+//
+// Empty means the dialect's own default, which is what every other engine has
+// always used.
+func RegisterMigrationsEngineFlag(flags *pflag.FlagSet, target *string) {
+	flags.StringVar(target, MigrationsEngineFlagName, "",
+		"Storage engine for Ptah's migration tracking table (ClickHouse; for example \"ReplicatedMergeTree('/clickhouse/tables/{shard}/schema_migrations', '{replica}')\"). Empty uses the dialect default.")
 }
 
 // RegisterRevisionTableFormatFlag registers the migration revision table layout flag.

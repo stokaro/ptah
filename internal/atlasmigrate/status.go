@@ -14,6 +14,10 @@ type StatusOptions struct {
 	FS              fs.FS
 	AtlasEnv        string
 	RevisionsSchema string
+	// MigrationsEngine names the storage engine the revision table is created
+	// with. Status reads revisions, and reading them initializes the metadata,
+	// so this path creates the table too (stokaro/ptah#2234).
+	MigrationsEngine string
 	// RevisionVersions maps converted numeric order keys to exact revision
 	// identities. A full mapping may include baseline-squashed history; only
 	// migrations present in FS become pending work.
@@ -51,6 +55,7 @@ func Status(ctx context.Context, conn *dbschema.DatabaseConnection, opts StatusO
 		return StatusResult{}, fmt.Errorf("error registering migrations: %w", err)
 	}
 	mig = mig.WithMigrationsTable(opts.RevisionsSchema, "").
+		WithMigrationsEngine(opts.MigrationsEngine).
 		WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
 	snapshot, err := mig.GetMigrationStatusSnapshot(ctx)
 	if err != nil {

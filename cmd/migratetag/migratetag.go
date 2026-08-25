@@ -37,6 +37,7 @@ type options struct {
 	envName             string
 	migrationsSchema    string
 	migrationsTable     string
+	migrationsEngine    string
 	revisionTableFormat string
 }
 
@@ -75,6 +76,7 @@ never changes which migrations are applied.`,
 	dbcli.RegisterEnvFlag(flags, &opts.envName)
 	dbcli.RegisterMigrationsSchemaFlag(flags, &opts.migrationsSchema)
 	dbcli.RegisterMigrationsTableFlag(flags, &opts.migrationsTable)
+	dbcli.RegisterMigrationsEngineFlag(flags, &opts.migrationsEngine)
 	dbcli.RegisterRevisionTableFormatFlag(flags, &opts.revisionTableFormat)
 	cmdutil.ConfigureCommandArgs(cmd, cobra.MaximumNArgs(1))
 	return cmd
@@ -138,6 +140,7 @@ func runMigrateTag(cmd *cobra.Command, opts options, args []string) error {
 	}
 	mig = mig.
 		WithMigrationsTable(opts.migrationsSchema, opts.migrationsTable).
+		WithMigrationsEngine(opts.migrationsEngine).
 		WithRevisionTableFormat(revisionFormat)
 
 	switch {

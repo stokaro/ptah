@@ -54,6 +54,7 @@ type options struct {
 	connectTimeout      string
 	migrationsSchema    string
 	migrationsTable     string
+	migrationsEngine    string
 	revisionTableFormat string
 	schemas             string
 }
@@ -93,6 +94,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 	dbcli.RegisterMigrationsSchemaFlag(flags, &opts.migrationsSchema)
 	dbcli.RegisterMigrationsTableFlag(flags, &opts.migrationsTable)
+	dbcli.RegisterMigrationsEngineFlag(flags, &opts.migrationsEngine)
 	dbcli.RegisterRevisionTableFormatFlag(flags, &opts.revisionTableFormat)
 	dbcli.RegisterSchemasFlag(flags, &opts.schemas)
 }
@@ -176,6 +178,7 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error
 	conn.SchemaWriter().SetDryRun(opts.dryRun)
 	mig := migrator.NewMigrator(conn, provider).
 		WithMigrationsTable(opts.migrationsSchema, opts.migrationsTable).
+		WithMigrationsEngine(opts.migrationsEngine).
 		WithRevisionTableFormat(revisionFormat).
 		WithMigrationLockTimeout(lockTimeout)
 	if opts.dryRun {

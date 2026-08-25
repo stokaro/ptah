@@ -972,6 +972,50 @@ The connected account needs the privileges these statements require —
 in this repository configures `CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1`, which
 is what gives its `ptah_user` that authority.
 
+### The revision table's storage engine
+
+ClickHouse gives a table no engine unless the statement names one, and whether
+an unnamed one is legal at all is decided by the server's `default_table_engine`
+— whose own default value is `None`. Against such a server the first
+`migrations up` stopped before the first migration:
+
+```text
+code: 119, message: Table engine is not specified in CREATE query
+```
+
+Ptah names `ENGINE = MergeTree` in both revision layouts, which is what a server
+whose default is already `MergeTree` was producing, so an existing deployment
+sees the table it had.
+
+**A replicated deployment has to say so.** With the default, the migration
+history is a node-local `MergeTree` on whichever node ran the migration, and
+every replica then reports itself consistent. Name the engine instead:
+
+```console
+$ ptah migrations up --db-url 'clickhouse://…' \
+    --migrations-engine "ReplicatedMergeTree('/clickhouse/tables/{shard}/schema_migrations', '{replica}')"
+```
+
+`PTAH_MIGRATIONS_ENGINE` carries the same value, and is the only spelling on the
+compatibility surface — `ptah-compat` registers no flag for it, because the
+community binary has none and the conformance `cli-surface` tier asserts flag
+parity against it. `ptah-compat migrate apply`, `status` and `down` read the
+variable; the native verbs take either.
+
+Two things follow:
+
+- **Every command that can create the table has to be given the same value.**
+  `migrations up`, `down`, `status`, `tag`, `baseline`, `repair`, and the
+  maintenance verbs `edit`, `rm` and `rebase` all initialize metadata when they
+  are the first to run. `CREATE TABLE IF NOT EXISTS` does not re-engine a table
+  that already exists, so whichever command ran first decided it.
+- **An engine the revision table cannot be is refused before any statement
+  runs.** On MySQL and MariaDB it must be InnoDB, which is the only engine that
+  records an applied migration when the statement around it fails; SQL Server's
+  revision table has no engine clause at all. The refusal happens first because
+  MySQL DDL commits: rejecting the table afterwards would leave one Ptah will
+  neither use nor recreate.
+
 ### Atlas revision metadata on ClickHouse
 
 Ptah creates the Atlas revision table with `partial_hashes` declared as text.

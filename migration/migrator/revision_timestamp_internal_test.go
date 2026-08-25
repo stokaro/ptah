@@ -114,7 +114,7 @@ func TestCreateMigrationsTableSQL_CarriesTheTargetsTimestampType(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			ddl := ptahRevisionsTableDDL(test.dialect, `"ptah_migrations"`, "N'ptah_migrations'")
+			ddl := ptahRevisionsTableDDL(test.dialect, `"ptah_migrations"`, "N'ptah_migrations'", "")
 
 			c.Assert(ddl, qt.Contains, test.want)
 			c.Assert(ddl, qt.Not(qt.Contains), test.absent)

@@ -207,6 +207,7 @@ func runAtlasMigrateStatus(
 	defer dbschema.CloseAndWarn(conn)
 
 	result, err := atlasmigrate.Status(cmd.Context(), conn, atlasmigrate.StatusOptions{
+		MigrationsEngine: migrationsEngineFromEnv(),
 		Dir:              dir,
 		FS:               migrationFS,
 		AtlasEnv:         opts.atlasEnv,

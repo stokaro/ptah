@@ -913,6 +913,7 @@ func (m *Migrator) createAtlasRevisionsTableSQL() string {
 		m.connectionDialect(),
 		m.qualifiedMigrationsTable(),
 		sqlStringLiteral(m.sqlServerObjectName()),
+		m.migrationsEngine,
 	)
 }
 
@@ -942,7 +943,7 @@ func (m *Migrator) createAtlasRevisionsTableSQL() string {
 // of the platform constants; normalizing is a no-op in production and lets the
 // guard tests drive this function with a bare dialect string. A zero-value
 // Migrator (dialect "") takes the default branch by design.
-func atlasRevisionsTableDDL(dialect, qualifiedTable, sqlServerObjectLiteral string) string {
+func atlasRevisionsTableDDL(dialect, qualifiedTable, sqlServerObjectLiteral, engine string) string {
 	switch platform.NormalizeDialect(dialect) {
 	case platform.SQLServer:
 		return fmt.Sprintf(`IF OBJECT_ID(%s, N'U') IS NULL
@@ -985,6 +986,10 @@ END`, sqlServerObjectLiteral, qualifiedTable)
     operator_version VARCHAR NOT NULL
 )`, qualifiedTable)
 	case platform.ClickHouse:
+		// The engine is named here for the same reason the native DDL names
+		// one: ClickHouse gives a table no engine unless asked, and whether an
+		// unnamed one is legal at all is the server's `default_table_engine`
+		// setting -- whose own default is `None` (stokaro/ptah#2234).
 		return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
     version VARCHAR(255) PRIMARY KEY,
     description TEXT NOT NULL,
@@ -998,12 +1003,11 @@ END`, sqlServerObjectLiteral, qualifiedTable)
     hash VARCHAR(255) NOT NULL,
     partial_hashes TEXT NULL,
     operator_version VARCHAR(255) NOT NULL
-)`, qualifiedTable)
+)%s`, qualifiedTable, revisionEngineClauseFor(dialect, engine))
 	}
-	engineClause := ""
+	engineClause := revisionEngineClauseFor(dialect, engine)
 	versionDefinition := "VARCHAR(255)"
 	if implicitCommitDialect(dialect) {
-		engineClause = " ENGINE=InnoDB"
 		versionDefinition = "VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin"
 	}
 	return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (

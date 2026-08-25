@@ -33,6 +33,7 @@ type Options struct {
 	ConnectTimeout      string
 	MigrationsSchema    string
 	MigrationsTable     string
+	MigrationsEngine    string
 	RevisionTableFormat string
 }
 
@@ -47,6 +48,7 @@ func RegisterFlags(flags *pflag.FlagSet, opts *Options) {
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.ConnectTimeout)
 	dbcli.RegisterMigrationsSchemaFlag(flags, &opts.MigrationsSchema)
 	dbcli.RegisterMigrationsTableFlag(flags, &opts.MigrationsTable)
+	dbcli.RegisterMigrationsEngineFlag(flags, &opts.MigrationsEngine)
 	dbcli.RegisterRevisionTableFormatFlag(flags, &opts.RevisionTableFormat)
 }
 
@@ -120,6 +122,7 @@ func (o *Options) Guard(ctx context.Context, w io.Writer, version int64, format 
 		return fmt.Errorf("error preparing migrator: %w", err)
 	}
 	mig = mig.WithMigrationsTable(o.MigrationsSchema, o.MigrationsTable).
+		WithMigrationsEngine(o.MigrationsEngine).
 		WithRevisionTableFormat(revisionFormat)
 
 	applied, err := mig.GetAppliedMigrations(ctx)
