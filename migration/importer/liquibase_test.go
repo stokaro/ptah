@@ -53,7 +53,7 @@ func TestLiquibaseParse(t *testing.T) {
 	c := qt.New(t)
 	parser, _ := importer.ParserByName("liquibase")
 
-	migrations, err := parser.Parse(liquibaseFS())
+	migrations, err := parseMigrations(t, parser, liquibaseFS())
 	c.Assert(err, qt.IsNil)
 	normalized, err := importer.Normalize(migrations)
 	c.Assert(err, qt.IsNil)
@@ -129,7 +129,7 @@ func TestLiquibaseDetectsAnXMLChangelog(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(parser.Name(), qt.Equals, "liquibase")
 	// The construct, not the serialization, is what stops this one now.
-	_, err = parser.Parse(xmlFS)
+	_, err = parseMigrations(t, parser, xmlFS)
 	c.Assert(err, qt.ErrorMatches, `.*uses <createTable>, which is not SQL text.*`)
 }
 
@@ -194,7 +194,7 @@ func TestLiquibaseParseErrors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 			parser, _ := importer.ParserByName("liquibase")
-			_, err := parser.Parse(tt.fsys)
+			_, err := parseMigrations(t, parser, tt.fsys)
 			c.Assert(err, qt.ErrorMatches, tt.re)
 		})
 	}

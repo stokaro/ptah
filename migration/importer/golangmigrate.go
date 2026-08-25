@@ -18,6 +18,8 @@ type golangMigrateParser struct{}
 
 func (golangMigrateParser) Name() string { return "golang-migrate" }
 
+func (golangMigrateParser) NamePattern() string { return "<version>_<name>.up.sql / .down.sql" }
+
 func (golangMigrateParser) Detect(fsys fs.FS) bool {
 	entries, err := fs.ReadDir(fsys, ".")
 	if err != nil {
@@ -34,10 +36,11 @@ func (golangMigrateParser) Detect(fsys fs.FS) bool {
 	return false
 }
 
-func (golangMigrateParser) Parse(fsys fs.FS) ([]SourceMigration, error) {
-	entries, err := fs.ReadDir(fsys, ".")
+func (p golangMigrateParser) Parse(fsys fs.FS) (*ParseResult, error) {
+	result := &ParseResult{}
+	entries, err := topLevelOnly(fsys, p.Name(), result)
 	if err != nil {
-		return nil, fmt.Errorf("read source directory: %w", err)
+		return nil, err
 	}
 
 	byVersion := make(map[int64]*SourceMigration)
@@ -51,7 +54,10 @@ func (golangMigrateParser) Parse(fsys fs.FS) ([]SourceMigration, error) {
 		}
 		match := golangMigrateFileRE.FindStringSubmatch(entry.Name())
 		if match == nil {
-			continue // ignore non-migration files (README, .gitkeep, ...)
+			// Not dropped: AccountForSource reports it by name, because the
+			// importer cannot tell a README from a migration whose name missed
+			// the rule by one character.
+			continue
 		}
 		version, err := strconv.ParseInt(match[1], 10, 64)
 		if err != nil {
@@ -62,6 +68,7 @@ func (golangMigrateParser) Parse(fsys fs.FS) ([]SourceMigration, error) {
 		if err != nil {
 			return nil, fmt.Errorf("read %q: %w", entry.Name(), err)
 		}
+		result.consume(entry.Name())
 
 		migration := byVersion[version]
 		if migration == nil {
@@ -103,5 +110,6 @@ func (golangMigrateParser) Parse(fsys fs.FS) ([]SourceMigration, error) {
 		}
 		migrations = append(migrations, *byVersion[version])
 	}
-	return migrations, nil
+	result.Migrations = migrations
+	return result, nil
 }

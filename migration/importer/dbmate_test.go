@@ -29,7 +29,7 @@ func TestDbmateParserDetectAndParse(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(parser.Name(), qt.Equals, "dbmate")
 
-	migrations, err := parser.Parse(fsys)
+	migrations, err := parseMigrations(t, parser, fsys)
 	c.Assert(err, qt.IsNil)
 	c.Assert(migrations, qt.HasLen, 2)
 
@@ -52,7 +52,7 @@ func TestDbmateParserRejectsEmptyUpSection(t *testing.T) {
 
 	parser, err := importer.ParserByName("dbmate")
 	c.Assert(err, qt.IsNil)
-	_, err = parser.Parse(fsys)
+	_, err = parseMigrations(t, parser, fsys)
 	c.Assert(err, qt.ErrorMatches, `dbmate migration "1_empty.sql" has an empty up section`)
 }
 
@@ -64,7 +64,7 @@ func TestDbmateParserIgnoresFilesWithoutUpDirective(t *testing.T) {
 
 	parser, err := importer.ParserByName("dbmate")
 	c.Assert(err, qt.IsNil)
-	_, err = parser.Parse(fsys)
+	_, err = parseMigrations(t, parser, fsys)
 	c.Assert(err, qt.ErrorMatches, `no dbmate migration files \(<version>_<name>\.sql with -- migrate:up\) found`)
 }
 

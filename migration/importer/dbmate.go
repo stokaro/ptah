@@ -20,6 +20,10 @@ type dbmateParser struct{}
 
 func (dbmateParser) Name() string { return "dbmate" }
 
+func (dbmateParser) NamePattern() string {
+	return "<version>_<name>.sql carrying a -- migrate:up directive"
+}
+
 func (dbmateParser) Detect(fsys fs.FS) bool {
 	entries, err := fs.ReadDir(fsys, ".")
 	if err != nil {
@@ -40,10 +44,11 @@ func (dbmateParser) Detect(fsys fs.FS) bool {
 	return false
 }
 
-func (dbmateParser) Parse(fsys fs.FS) ([]SourceMigration, error) {
-	entries, err := fs.ReadDir(fsys, ".")
+func (p dbmateParser) Parse(fsys fs.FS) (*ParseResult, error) {
+	result := &ParseResult{}
+	entries, err := topLevelOnly(fsys, p.Name(), result)
 	if err != nil {
-		return nil, fmt.Errorf("read source directory: %w", err)
+		return nil, err
 	}
 
 	var migrations []SourceMigration
@@ -53,19 +58,24 @@ func (dbmateParser) Parse(fsys fs.FS) ([]SourceMigration, error) {
 		}
 		match := dbmateFileRE.FindStringSubmatch(entry.Name())
 		if match == nil {
-			continue // ignore non-migration files
+			continue // AccountForSource reports it by name
 		}
 		content, err := fs.ReadFile(fsys, entry.Name())
 		if err != nil {
 			return nil, fmt.Errorf("read %q: %w", entry.Name(), err)
 		}
 		if !dbmateHasUpDirective(string(content)) {
-			continue // not a dbmate migration (no -- migrate:up directive)
+			// The name is a dbmate migration's and the content is not, which is
+			// far more likely a migration missing its directive than a file
+			// that was never one.
+			result.decline(entry.Name(), "it has a dbmate migration's name but no -- migrate:up directive")
+			continue
 		}
 		version, err := strconv.ParseInt(match[1], 10, 64)
 		if err != nil {
 			return nil, fmt.Errorf("invalid dbmate version in %q: %w", entry.Name(), err)
 		}
+		result.consume(entry.Name())
 		up, down := splitDbmateSQL(string(content))
 		if strings.TrimSpace(up) == "" {
 			return nil, fmt.Errorf("dbmate migration %q has an empty up section", entry.Name())
@@ -80,7 +90,8 @@ func (dbmateParser) Parse(fsys fs.FS) ([]SourceMigration, error) {
 	if len(migrations) == 0 {
 		return nil, fmt.Errorf("no dbmate migration files (<version>_<name>.sql with -- migrate:up) found")
 	}
-	return migrations, nil
+	result.Migrations = migrations
+	return result, nil
 }
 
 // splitDbmateSQL splits a dbmate migration file into its up and down SQL.

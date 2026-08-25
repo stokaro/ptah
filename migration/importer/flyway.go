@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"fmt"
 	"io/fs"
+	"path"
 	"regexp"
 	"slices"
 	"strconv"
@@ -26,6 +27,13 @@ var (
 	flywayVersionedRE  = regexp.MustCompile(`^V(\d+(?:[._]\d+)*)__(.+)\.sql$`)
 	flywayUndoRE       = regexp.MustCompile(`^U(\d+(?:[._]\d+)*)__(.+)\.sql$`)
 	flywayRepeatableRE = regexp.MustCompile(`^R__(.+)\.sql$`)
+	// B<version>__<description>.sql is a Flyway baseline, and the callbacks are
+	// a fixed set of event names. Both are recognized in order to be declined
+	// by name rather than falling through to "unrecognized".
+	flywayBaselineRE = regexp.MustCompile(`^B(\d+(?:[._]\d+)*)__(.+)\.sql$`)
+	flywayCallbackRE = regexp.MustCompile(
+		`^(?:before|after)(?:Migrate|EachMigrate|Repeatables|EachRepeatable|Clean|Info|Validate|Baseline|Undo|EachUndo)` +
+			`(?:Error|Applied)?__(.+)\.sql$`)
 )
 
 // flywayParser imports Flyway SQL migrations. Flyway encodes direction in the
@@ -36,16 +44,21 @@ type flywayParser struct{}
 
 func (flywayParser) Name() string { return "flyway" }
 
+func (flywayParser) NamePattern() string {
+	return "V<version>__<name>.sql, U<version>__<name>.sql or R__<name>.sql"
+}
+
+// Detect walks the tree rather than listing the top level, for the same reason
+// Parse does: a Flyway project laid out per module or per release keeps its
+// migrations below the location root, and that is a Flyway directory.
 func (flywayParser) Detect(fsys fs.FS) bool {
-	entries, err := fs.ReadDir(fsys, ".")
+	files, err := sourceFiles(fsys)
 	if err != nil {
 		return false
 	}
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		if flywayVersionedRE.MatchString(entry.Name()) || flywayRepeatableRE.MatchString(entry.Name()) {
+	for _, file := range files {
+		base := path.Base(file)
+		if flywayVersionedRE.MatchString(base) || flywayRepeatableRE.MatchString(base) {
 			return true
 		}
 	}
@@ -63,10 +76,19 @@ type flywayVersioned struct {
 	fileName string
 }
 
-func (flywayParser) Parse(fsys fs.FS) ([]SourceMigration, error) {
-	entries, err := fs.ReadDir(fsys, ".")
+// Parse walks the source tree rather than reading only its top level.
+//
+// Flyway's documented contract is that a location is scanned recursively -- all
+// migrations in non-hidden directories below the configured locations are picked
+// up. Reading only the top level meant a real Flyway project imported missing
+// whatever sat below it, and `ptah-compat migrate import` converted the same
+// directory differently, with neither verb saying anything about the difference
+// (stokaro/ptah#2231).
+func (p flywayParser) Parse(fsys fs.FS) (*ParseResult, error) {
+	result := &ParseResult{}
+	files, err := sourceFiles(fsys)
 	if err != nil {
-		return nil, fmt.Errorf("read source directory: %w", err)
+		return nil, err
 	}
 
 	var versioned []flywayVersioned
@@ -75,11 +97,8 @@ func (flywayParser) Parse(fsys fs.FS) ([]SourceMigration, error) {
 	seenVersion := make(map[string]string)   // canonical version -> V file name
 	seenUndo := make(map[string]string)      // canonical version -> U file name
 
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		fileName := entry.Name()
+	for _, filePath := range files {
+		fileName := path.Base(filePath)
 		switch {
 		case flywayVersionedRE.MatchString(fileName):
 			match := flywayVersionedRE.FindStringSubmatch(fileName)
@@ -91,17 +110,18 @@ func (flywayParser) Parse(fsys fs.FS) ([]SourceMigration, error) {
 			if first, ok := seenVersion[canonical]; ok {
 				return nil, fmt.Errorf("duplicate flyway version %s (%q and %q)", canonical, first, fileName)
 			}
-			seenVersion[canonical] = fileName
-			up, err := readFlywaySQL(fsys, fileName)
+			seenVersion[canonical] = filePath
+			up, err := readFlywaySQL(fsys, filePath)
 			if err != nil {
 				return nil, err
 			}
+			result.consume(filePath)
 			versioned = append(versioned, flywayVersioned{
 				comps:    comps,
 				raw:      match[1],
 				name:     match[2],
 				upSQL:    up,
-				fileName: fileName,
+				fileName: filePath,
 			})
 		case flywayUndoRE.MatchString(fileName):
 			match := flywayUndoRE.FindStringSubmatch(fileName)
@@ -113,25 +133,40 @@ func (flywayParser) Parse(fsys fs.FS) ([]SourceMigration, error) {
 			if first, ok := seenUndo[canonical]; ok {
 				return nil, fmt.Errorf("duplicate flyway undo version %s (%q and %q)", canonical, first, fileName)
 			}
-			seenUndo[canonical] = fileName
-			down, err := readFlywaySQL(fsys, fileName)
+			seenUndo[canonical] = filePath
+			down, err := readFlywaySQL(fsys, filePath)
 			if err != nil {
 				return nil, err
 			}
+			result.consume(filePath)
 			undoByVersion[canonical] = down
 		case flywayRepeatableRE.MatchString(fileName):
 			match := flywayRepeatableRE.FindStringSubmatch(fileName)
-			up, err := readFlywaySQL(fsys, fileName)
+			up, err := readFlywaySQL(fsys, filePath)
 			if err != nil {
 				return nil, err
 			}
+			result.consume(filePath)
 			repeatables = append(repeatables, SourceMigration{
 				Name:       match[1],
 				UpSQL:      up,
 				Repeatable: true,
 			})
+		case flywayBaselineRE.MatchString(fileName):
+			// Ptah models a Flyway baseline on the compat path (decided in
+			// stokaro/ptah#1003) and has no native counterpart: a baseline
+			// asserts a schema already exists rather than describing a change
+			// to make. Naming it is the difference between a decision and a
+			// dropped file.
+			result.decline(filePath,
+				"it is a Flyway baseline, which describes a schema already in place rather than a "+
+					"migration to apply; Ptah has no native baseline, so import the schema instead")
+		case flywayCallbackRE.MatchString(fileName):
+			result.decline(filePath,
+				"it is a Flyway callback, which runs around migrations rather than being one")
 		default:
-			continue // ignore non-migration files (README, .gitkeep, ...)
+			// AccountForSource reports it by name.
+			continue
 		}
 	}
 
@@ -158,7 +193,9 @@ func (flywayParser) Parse(fsys fs.FS) ([]SourceMigration, error) {
 	slices.SortStableFunc(repeatables, func(a, b SourceMigration) int {
 		return cmp.Compare(a.Name, b.Name)
 	})
-	return append(migrations, repeatables...), nil
+	migrations = append(migrations, repeatables...)
+	result.Migrations = migrations
+	return result, nil
 }
 
 // buildFlywayVersioned converts sorted Flyway versioned migrations into
