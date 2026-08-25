@@ -4,11 +4,11 @@ description: Stable embedder packages and API compatibility guardrails.
 ---
 
 Ptah is pre-GA, but embedders need a documented import surface. The packages on
-this page are the stable embedder API. The enforced ledger of that surface is
-`docs/public_api.md` in the repository; a package the ledger does not list is a
-command package, an example, a fixture, a test, or an implementation detail,
-and `scripts/check-public-api-docs-sync.sh` keeps this page's table equal to
-the ledger.
+this page are the stable embedder API, and the table below is enforced: a
+ledger in the repository is the source of truth, a package the ledger does not
+list is a command package, an example, a fixture, a test, or an implementation
+detail, and `scripts/check-public-api-docs-sync.sh` keeps this page's table
+equal to it.
 
 ## Stable packages
 
