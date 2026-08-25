@@ -1731,8 +1731,8 @@ func newConstraintPlanState(
 	// FK, issue #189). Its old definition must be dropped before the re-add or
 	// the ADD CONSTRAINT collides with the still-present constraint of the same
 	// name (errno 1826 for FKs / 3822 for CHECKs).
-	removedNames := make(map[string]struct{}, len(diff.ConstraintsRemoved))
-	for _, name := range diff.ConstraintsRemoved {
+	removedNames := make(map[string]struct{}, len(diff.ConstraintsRemovedWithTables))
+	for _, name := range constraintscope.RemovalNames(diff) {
 		removedNames[semantics.IndexIdentityKey(name)] = struct{}{}
 	}
 

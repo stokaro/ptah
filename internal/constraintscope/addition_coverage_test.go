@@ -96,19 +96,101 @@ func TestNormalize_RunningTwiceChangesNothing(t *testing.T) {
 		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
 			{Name: "c", TableName: "orders", Type: "CHECK"},
 		},
+		ConstraintsRemoved: []string{"e", "f"},
+		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
+			{Name: "e", TableName: "orders", Type: "CHECK"},
+		},
 	}
 
 	constraintscope.Normalize(diff, identifier.ForDialect("postgres"))
-	once := append([]difftypes.ConstraintAdditionInfo(nil), diff.ConstraintsAddedWithTables...)
+	onceAdded := append([]difftypes.ConstraintAdditionInfo(nil), diff.ConstraintsAddedWithTables...)
+	onceRemoved := append([]difftypes.ConstraintRemovalInfo(nil), diff.ConstraintsRemovedWithTables...)
 	constraintscope.Normalize(diff, identifier.ForDialect("postgres"))
 
-	c.Assert(diff.ConstraintsAddedWithTables, qt.DeepEquals, once)
+	c.Assert(diff.ConstraintsAddedWithTables, qt.DeepEquals, onceAdded)
+	c.Assert(diff.ConstraintsRemovedWithTables, qt.DeepEquals, onceRemoved)
 }
 
 // hostless lists the additions that name no table, nil when none.
 func hostless(diff *difftypes.SchemaDiff) []string {
 	var names []string
 	for _, info := range diff.ConstraintsAddedWithTables {
+		if info.TableName != "" {
+			continue
+		}
+		names = append(names, info.Name)
+	}
+	return names
+}
+
+// TestNormalize_EveryBareRemovalGetsARecord is [TestNormalize_EveryBareAdditionGetsARecord]
+// for the other direction.
+//
+// Both lists have the same shape and the same two producers, so both need the
+// same guarantee before a consumer can read records alone. Asserted separately
+// rather than folded into one table, because a Normalize that covered one list
+// and not the other would pass a combined test that only counted records.
+func TestNormalize_EveryBareRemovalGetsARecord(t *testing.T) {
+	rows := []struct {
+		name         string
+		diff         *difftypes.SchemaDiff
+		wantHostless []string
+		wantTotal    int
+	}{
+		{
+			name:         "a name with no record at all",
+			diff:         &difftypes.SchemaDiff{ConstraintsRemoved: []string{"c"}},
+			wantHostless: []string{"c"},
+			wantTotal:    1,
+		},
+		{
+			name: "a name whose record carries a table",
+			diff: &difftypes.SchemaDiff{
+				ConstraintsRemoved: []string{"c"},
+				ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
+					{Name: "c", TableName: "orders", Type: "CHECK"},
+				},
+			},
+			wantHostless: nil,
+			wantTotal:    1,
+		},
+		{
+			name: "one name on two tables, one of them recorded",
+			diff: &difftypes.SchemaDiff{
+				ConstraintsRemoved: []string{"c", "c"},
+				ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
+					{Name: "c", TableName: "orders", Type: "CHECK"},
+				},
+			},
+			wantHostless: []string{"c"},
+			wantTotal:    2,
+		},
+		{
+			name:         "no removals at all",
+			diff:         &difftypes.SchemaDiff{},
+			wantHostless: nil,
+			wantTotal:    0,
+		},
+	}
+
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			constraintscope.Normalize(row.diff, identifier.ForDialect("postgres"))
+
+			c.Assert(hostlessRemovals(row.diff), qt.DeepEquals, row.wantHostless)
+			c.Assert(row.diff.ConstraintsRemovedWithTables, qt.HasLen, row.wantTotal)
+			c.Assert(constraintscope.RemovalNames(row.diff), qt.HasLen, len(row.diff.ConstraintsRemoved),
+				qt.Commentf("the records do not cover the names"))
+		})
+	}
+}
+
+// hostlessRemovals lists the removals that name no table, nil when none.
+func hostlessRemovals(diff *difftypes.SchemaDiff) []string {
+	var names []string
+	for _, info := range diff.ConstraintsRemovedWithTables {
 		if info.TableName != "" {
 			continue
 		}
