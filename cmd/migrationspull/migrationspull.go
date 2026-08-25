@@ -25,8 +25,10 @@ func NewMigrationsPullCommand() *cobra.Command {
 		Short: "Pull a migration directory from an OCI registry",
 		Long: `Pull and validate a Ptah migration artifact from an OCI-compliant registry,
 then reconstruct the migration directory byte-for-byte. Authentication comes
-from the Docker credential store; --plain-http is intended only for explicitly
-trusted local registries.`,
+from "ptah oci login", the PTAH_OCI_USERNAME and PTAH_OCI_PASSWORD environment
+variables, or Docker's credential configuration, whichever holds a credential
+for the registry; --plain-http is intended only for explicitly trusted local
+registries.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return run(cmd, args[0], opts)
 		},

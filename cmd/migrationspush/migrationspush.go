@@ -41,8 +41,10 @@ version tag is opt-in through --generated-version. A publish that did both by
 default was performing two operations under one verb, and the second one is the
 one an operator has to be able to decline.
 
-Authentication comes from the Docker credential store; --plain-http is intended
-only for explicitly trusted local registries.`,
+Authentication comes from "ptah oci login", the PTAH_OCI_USERNAME and
+PTAH_OCI_PASSWORD environment variables, or Docker's credential configuration,
+whichever holds a credential for the registry; --plain-http is intended only for
+explicitly trusted local registries.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return run(cmd, args[0], opts)
 		},
