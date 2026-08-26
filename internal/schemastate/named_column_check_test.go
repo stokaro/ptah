@@ -56,16 +56,60 @@ func TestFromDescription_ANamedColumnCheckIsTheTableConstraintItIs(t *testing.T)
 		qt.DeepEquals, []string{"b_positive"})
 }
 
-// TestFromDescription_AnUnnamedColumnCheckIsNotSynthesized is the control, and
-// it is the case still open on #1663.
+// TestFromDescription_AnUnnamedColumnCheckIsAlsoTheTableConstraint is what the
+// identity decision made expressible.
 //
-// The server invents the name -- `widget_b_check` on PostgreSQL,
-// `widget_chk_1` on MySQL -- so a synthesized constraint carrying no name, or
-// one named by a single server's convention, would differ from the catalog on
-// every run. Carrying it on the column and leaving it out of the comparison is
-// the honest answer until identity for an unnamed check is decided.
-func TestFromDescription_AnUnnamedColumnCheckIsNotSynthesized(t *testing.T) {
+// The server names an unnamed check itself, and differently per engine, so a
+// synthesized constraint keyed by name would differ from the catalog on every
+// run. Keyed by its CONDITION it matches, whatever either side calls it
+// (stokaro/ptah#1663).
+func TestFromDescription_AnUnnamedColumnCheckIsAlsoTheTableConstraint(t *testing.T) {
 	c := qt.New(t)
 
-	c.Assert(checkConstraintNames(c, checkedWidget("")), qt.HasLen, 0)
+	c.Assert(checkConstraintNames(c, checkedWidget("")), qt.HasLen, 1)
+}
+
+// TestFromDescription_ACheckIsIdentifiedByItsCondition pins the identity rule
+// itself: two spellings of one guarantee are one object, and the name each side
+// gives it does not split them.
+func TestFromDescription_ACheckIsIdentifiedByItsCondition(t *testing.T) {
+	c := qt.New(t)
+
+	named := checkIdentityKeys(c, checkedWidget("b_positive"))
+	unnamed := checkIdentityKeys(c, checkedWidget(""))
+
+	c.Assert(named, qt.HasLen, 1)
+	c.Assert(named, qt.DeepEquals, unnamed)
+}
+
+// TestFromDescription_ADifferentConditionIsADifferentCheck is the control.
+//
+// Identity by condition must still tell two conditions apart, or a changed
+// CHECK would read as the one it replaced and nothing would be planned.
+func TestFromDescription_ADifferentConditionIsADifferentCheck(t *testing.T) {
+	c := qt.New(t)
+
+	first := checkIdentityKeys(c, checkedWidget("b_positive"))
+
+	other := checkedWidget("b_positive")
+	other.Fields[1].Check = "b > 10"
+	second := checkIdentityKeys(c, other)
+
+	c.Assert(first, qt.Not(qt.DeepEquals), second)
+}
+
+// checkIdentityKeys lists the comparison keys the CHECK constraints carry.
+func checkIdentityKeys(c *qt.C, database *goschema.Database) []string {
+	c.Helper()
+
+	state, err := schemastate.FromDescription(database, platform.Postgres, identifier.ForDialect(platform.Postgres))
+	c.Assert(err, qt.IsNil)
+
+	var keys []string
+	for _, object := range state.Objects() {
+		if object.Constraint != nil && object.Constraint.Kind == "CHECK" {
+			keys = append(keys, object.ID.Name.Normalized)
+		}
+	}
+	return keys
 }

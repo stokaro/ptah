@@ -79,7 +79,33 @@ func changedConstraint(before, after schemastate.TableConstraint) []string {
 		!equalClause(before.Where, after.Where) {
 		changed = append(changed, "exclusion")
 	}
+	if renamedCheck(before, after) {
+		changed = append(changed, "name")
+	}
 	return changed
+}
+
+// renamedCheck reports a CHECK whose condition both sides agree on under two
+// different names.
+//
+// The name is an attribute rather than the identity for this kind alone,
+// because the server names an unnamed check itself; the pair are matched on the
+// condition, so without this a declared rename would compare equal and the name
+// in the database would stay whatever the server chose (stokaro/ptah#1663).
+//
+// Two conditions have to hold, and each rules out a false rename measured while
+// writing this. The kind has to be CHECK: every other constraint is identified
+// BY its name, so two names are two objects and a difference here cannot be a
+// rename. And the desired name has to be present: a description that names no
+// constraint is asking the server to choose one, which is what a primary key
+// declared without a name does -- comparing that against the catalog's
+// `widget_pkey` reported a rename to nothing.
+func renamedCheck(before, after schemastate.TableConstraint) bool {
+	if !strings.EqualFold(strings.TrimSpace(after.Kind), excludeCheckKind) {
+		return false
+	}
+	desired := strings.TrimSpace(after.ConstraintName)
+	return desired != "" && !equalClause(before.ConstraintName, desired)
 }
 
 func equalClause(before, after string) bool {
@@ -166,6 +192,9 @@ func addConstraintNode(change Change) ast.Node {
 		}},
 	}
 }
+
+// excludeCheckKind is the kind whose identity is its condition.
+const excludeCheckKind = "CHECK"
 
 // excludeConstraintKind is the one clause kind that is enforced with an index.
 const excludeConstraintKind = "EXCLUDE"
