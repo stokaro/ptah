@@ -32,6 +32,7 @@ const (
 	foreignKeyConstraintType = "FOREIGN KEY"
 	uniqueConstraintType     = "UNIQUE"
 	primaryKeyConstraintType = "PRIMARY KEY"
+	checkConstraintType      = "CHECK"
 )
 
 // tableConstraintTypes are the constraint families whose whole definition is one
@@ -798,10 +799,16 @@ func addTableConstraint(
 	location string,
 ) error {
 	identityName := constraintIdentityName(constraint.Kind, table, name)
-	if strings.TrimSpace(identityName) == "" {
+	id := builder.ConstraintParts(schema, table, identityName)
+	if strings.EqualFold(strings.TrimSpace(constraint.Kind), checkConstraintType) {
+		// A CHECK is identified by its condition rather than its name: the
+		// server names an unnamed one itself, differently per engine, so a
+		// name key would make one guarantee two objects (stokaro/ptah#1663).
+		id = builder.CheckConstraintParts(schema, table, identityName, constraint.Expression)
+	}
+	if strings.TrimSpace(id.Name.Normalized) == "" {
 		return nil
 	}
-	id := builder.ConstraintParts(schema, table, identityName)
 	if existing, collided := state.Add(Object{
 		ID:         id,
 		Constraint: constraint,
@@ -979,7 +986,7 @@ func addNamedColumnChecks(
 	columns []Column,
 ) error {
 	for _, column := range columns {
-		if strings.TrimSpace(column.Check) == "" || strings.TrimSpace(column.CheckName) == "" {
+		if strings.TrimSpace(column.Check) == "" {
 			continue
 		}
 		if err := addTableConstraint(state, builder, table.Schema, table.Name, column.CheckName,

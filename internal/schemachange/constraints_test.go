@@ -1,6 +1,7 @@
 package schemachange_test
 
 import (
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -18,13 +19,7 @@ import (
 // question a foreign key asks and these do not (stokaro/ptah#1663).
 
 func TestAClauseConstraintIsPlanned(t *testing.T) {
-	tests := []struct {
-		name          string
-		description   *goschema.Database
-		catalog       *dbschematypes.DBSchema
-		wantOperation schemachange.Operation
-		wantChanged   []string
-	}{
+	tests := []constraintCase{
 		{
 			name:          "a check the database does not have",
 			description:   constrainedWidget(checkConstraint("price > 0")),
@@ -38,11 +33,16 @@ func TestAClauseConstraintIsPlanned(t *testing.T) {
 			wantOperation: schemachange.Remove,
 		},
 		{
-			name:          "a check whose condition changed",
-			description:   constrainedWidget(checkConstraint("price >= 0")),
-			catalog:       constrainedCatalog(catalogCheck("price > 0")),
-			wantOperation: schemachange.Modify,
-			wantChanged:   []string{"expression"},
+			// A CHECK is identified by its condition, so a different condition
+			// is a different guarantee rather than the same one altered. The
+			// SQL is what it always was -- no engine alters a CHECK's condition
+			// in place, so a modification rendered a drop and an add -- but the
+			// change now says which object goes and which arrives
+			// (stokaro/ptah#1663). Its two changes are asserted below.
+			name:        "a check whose condition changed",
+			description: constrainedWidget(checkConstraint("price >= 0")),
+			catalog:     constrainedCatalog(catalogCheck("price > 0")),
+			wantPair:    []schemachange.Operation{schemachange.Add, schemachange.Remove},
 		},
 		{
 			name: "a primary key the database does not have",
@@ -74,12 +74,45 @@ func TestAClauseConstraintIsPlanned(t *testing.T) {
 
 			changes := changesFor(c, test.description, test.catalog)
 
-			c.Assert(changes, qt.HasLen, 1)
-			c.Assert(changes[0].Operation, qt.Equals, test.wantOperation)
-			c.Assert(changes[0].Changed, qt.DeepEquals, test.wantChanged)
-			c.Assert(changes[0].Status, qt.Equals, schemachange.Planned)
+			assertConstraintChanges(c, changes, test)
 		})
 	}
+}
+
+// constraintCase is one comparison, expecting either a single operation or the
+// pair a replacement produces.
+type constraintCase struct {
+	name          string
+	description   *goschema.Database
+	catalog       *dbschematypes.DBSchema
+	wantOperation schemachange.Operation
+	wantChanged   []string
+	wantPair      []schemachange.Operation
+}
+
+// assertConstraintChanges reads one row's expectation, which is either a single
+// operation or the pair a replacement produces.
+func assertConstraintChanges(c *qt.C, changes []schemachange.Change, test constraintCase) {
+	c.Helper()
+
+	if len(test.wantPair) > 0 {
+		c.Assert(operationsOf(changes), qt.DeepEquals, test.wantPair)
+		return
+	}
+	c.Assert(changes, qt.HasLen, 1)
+	c.Assert(changes[0].Operation, qt.Equals, test.wantOperation)
+	c.Assert(changes[0].Changed, qt.DeepEquals, test.wantChanged)
+	c.Assert(changes[0].Status, qt.Equals, schemachange.Planned)
+}
+
+// operationsOf lists the operations a change set carries, in order.
+func operationsOf(changes []schemachange.Change) []schemachange.Operation {
+	operations := make([]schemachange.Operation, 0, len(changes))
+	for _, change := range changes {
+		operations = append(operations, change.Operation)
+	}
+	slices.Sort(operations)
+	return operations
 }
 
 // TestAnUnchangedClauseConstraintIsNotAChange is the control the rows above
