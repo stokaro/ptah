@@ -112,6 +112,11 @@ var verbs = map[string]Verb{
 		"validates the directory against its integrity file; the dev database it names is " +
 			"\"used to clean and replay migrations for SQL validation\""},
 
+	// project.
+	"project inspect": {TargetNone, ScratchNone,
+		"reads a project file and reports which of its settings Ptah acts on and which it " +
+			"read and ignored; it opens no database"},
+
 	// oci.
 	"oci capabilities": {TargetNone, ScratchNone,
 		"asks the registry behind a reference which features it supports, and prints them"},

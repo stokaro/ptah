@@ -245,6 +245,7 @@ stdout therefore gets a document in every case except `2`.
 | `ptah oci verify` | Check an artifact against a verification policy before it is consumed. |
 | `ptah oci login` | Store a credential for a registry, after checking it works. |
 | `ptah oci logout` | Remove the credential Ptah stored for a registry. |
+| `ptah project inspect` | Report which project-file settings Ptah acts on, and which it read and ignored. |
 | `ptah sql lint` | Lint standalone SQL files. |
 
 ## Top-level verbs
