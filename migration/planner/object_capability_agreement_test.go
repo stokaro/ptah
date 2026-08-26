@@ -10,11 +10,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -161,7 +161,7 @@ func renderedSchema(c *qt.C, database goschema.Database, dialect string) string 
 // against an empty database: the comparator's diff, through the dialect planner
 // and the same renderer.
 func plannedSchema(c *qt.C, database goschema.Database, dialect string) string {
-	diff := schemadiff.CompareWithDialect(&database, &dbschematypes.DBSchema{}, dialect)
+	diff := schemadiff.CompareWithDialect(&database, &catalog.Database{}, dialect)
 	sql, err := planner.GenerateSchemaDiffSQL(diff, &database, dialect)
 	c.Assert(err, qt.IsNil, qt.Commentf("plan path failed for %s", dialect))
 	return sql
@@ -179,7 +179,7 @@ func renderedOrRefusal(database goschema.Database, dialect string) string {
 }
 
 func plannedOrRefusal(database goschema.Database, dialect string) string {
-	diff := schemadiff.CompareWithDialect(&database, &dbschematypes.DBSchema{}, dialect)
+	diff := schemadiff.CompareWithDialect(&database, &catalog.Database{}, dialect)
 	sql, err := planner.GenerateSchemaDiffSQL(diff, &database, dialect)
 	return fmt.Sprintf("%s | err=%v", sql, err)
 }

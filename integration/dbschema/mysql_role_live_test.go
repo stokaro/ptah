@@ -10,9 +10,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -127,7 +127,7 @@ func TestMySQLLiveRoleAttributeIsRefusedByTheServerToo(t *testing.T) {
 }
 
 // roleNames lists the names a read reported.
-func roleNames(roles []dbschematypes.DBRole) []string {
+func roleNames(roles []catalog.Role) []string {
 	names := make([]string, 0, len(roles))
 	for _, role := range roles {
 		names = append(names, role.Name)

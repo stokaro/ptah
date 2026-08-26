@@ -3,9 +3,9 @@ package compare
 import (
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
 )
 
 // foreignKeyConstraintChanged compares FOREIGN KEY constraint definitions.
@@ -19,7 +19,7 @@ import (
 // (the same hazard checkConstraintChanged guards against for CHECK clauses).
 func foreignKeyConstraintChanged(
 	genConstraint goschema.Constraint,
-	dbConstraint types.DBConstraint,
+	dbConstraint catalog.Constraint,
 	dialect string,
 	semantics identifier.Semantics,
 ) bool {
@@ -79,7 +79,7 @@ func foreignKeyConstraintChanged(
 // member keys.
 func foreignTableRefMatches(
 	generated string,
-	dbConstraint types.DBConstraint,
+	dbConstraint catalog.Constraint,
 	semantics identifier.Semantics,
 ) bool {
 	generated = strings.TrimSpace(generated)

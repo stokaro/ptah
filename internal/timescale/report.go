@@ -6,9 +6,9 @@ import (
 	"sort"
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
 )
 
 // ReportUndescribed writes a note naming the TimescaleDB objects the
@@ -46,7 +46,7 @@ import (
 // stream"; the note is then dropped rather than panicking. Write errors are
 // dropped too: a diagnostic that fails to print must not fail a read that
 // succeeded.
-func ReportUndescribed(w io.Writer, schema *types.DBSchema) {
+func ReportUndescribed(w io.Writer, schema *catalog.Database) {
 	if w == nil || schema == nil {
 		return
 	}
@@ -73,7 +73,7 @@ func ReportUndescribed(w io.Writer, schema *types.DBSchema) {
 // `--exclude conditions` removes the table from the document, and naming it
 // here would send the reader looking for a statement that is not in front of
 // them.
-func reportHypertables(w io.Writer, schema *types.DBSchema) {
+func reportHypertables(w io.Writer, schema *catalog.Database) {
 	described := describedTables(schema)
 	var named []string
 	for _, hypertable := range schema.Hypertables {
@@ -103,11 +103,11 @@ func reportHypertables(w io.Writer, schema *types.DBSchema) {
 // are. A note that named only the table would leave the reader to go and look
 // up what was lost.
 //
-// The count is why [types.DBHypertable.Dimensions] is read at all. A hypertable
+// The count is why [catalog.Hypertable.Dimensions] is read at all. A hypertable
 // partitioned by range on `time` AND by hash on `device` reports two, and a note
 // naming only `time` would say less than the truth about what a replay drops --
 // the failure this note exists to prevent, one level down.
-func describeHypertable(hypertable types.DBHypertable) string {
+func describeHypertable(hypertable catalog.Hypertable) string {
 	if hypertable.PrimaryDimension == "" {
 		return hypertable.QualifiedName()
 	}
@@ -131,7 +131,7 @@ func furtherDimensions(dimensions int) string {
 
 // describedTables keys the tables this description carries, folded the way
 // PostgreSQL folds an unquoted name.
-func describedTables(schema *types.DBSchema) map[string]struct{} {
+func describedTables(schema *catalog.Database) map[string]struct{} {
 	described := make(map[string]struct{}, len(schema.Tables))
 	for _, table := range schema.Tables {
 		described[tableKey(table.Schema, table.Name)] = struct{}{}
@@ -141,7 +141,7 @@ func describedTables(schema *types.DBSchema) map[string]struct{} {
 
 func tableKey(schemaName, name string) string {
 	semantics := identifier.ForDialect(platform.Postgres)
-	return semantics.QualifiedTableIdentityKey(types.QualifyTableName(schemaName, name))
+	return semantics.QualifiedTableIdentityKey(catalog.QualifyTableName(schemaName, name))
 }
 
 // countedNoun renders a count with its singular or plural phrase, in the shape

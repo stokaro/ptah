@@ -6,9 +6,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -34,7 +34,7 @@ func TestRLSFixturePipeline(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			c.Assert(generated.RLSPolicies, qt.HasLen, test.expectedPolicies)
 			c.Assert(generated.RLSEnabledTables, qt.HasLen, test.expectedEnabledTables)
-			diff := schemadiff.Compare(generated, &types.DBSchema{})
+			diff := schemadiff.Compare(generated, &catalog.Database{})
 			sql, err := planner.GenerateSchemaDiffSQL(diff, generated, platform.Postgres)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Not(qt.Equals), "")

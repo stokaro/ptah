@@ -152,7 +152,7 @@
 // This package integrates with other Ptah components:
 //
 //   - ptah/core/goschema: Consumes generated schema from Go entities
-//   - ptah/dbschema/types: Consumes database schema from introspection
+//   - ptah/catalog: Consumes database schema from introspection
 //   - ptah/migration/planner: Provides difference data for migration planning
 //   - ptah/migration/generator: Used in migration file generation
 //

@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -15,7 +15,7 @@ func TestSequences_AddRemove(t *testing.T) {
 	tests := []struct {
 		name              string
 		generated         []goschema.Sequence
-		database          []types.DBSequence
+		database          []catalog.Sequence
 		expectedAdded     []string
 		expectedRemoved   []string
 		expectedModifiedN int
@@ -37,14 +37,14 @@ func TestSequences_AddRemove(t *testing.T) {
 		{
 			name:            "sequence needs to be removed",
 			generated:       nil,
-			database:        []types.DBSequence{{Name: "legacy_seq"}},
+			database:        []catalog.Sequence{{Name: "legacy_seq"}},
 			expectedAdded:   nil,
 			expectedRemoved: []string{"legacy_seq"},
 		},
 		{
 			name:            "schema-qualified sequence matches by qualified name",
 			generated:       []goschema.Sequence{{Name: "s", Schema: "app"}},
-			database:        []types.DBSequence{{Name: "s", Schema: "app"}},
+			database:        []catalog.Sequence{{Name: "s", Schema: "app"}},
 			expectedAdded:   nil,
 			expectedRemoved: nil,
 		},
@@ -54,7 +54,7 @@ func TestSequences_AddRemove(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 			generated := &goschema.Database{Sequences: tt.generated}
-			database := &types.DBSchema{Sequences: tt.database}
+			database := &catalog.Database{Sequences: tt.database}
 			diff := &difftypes.SchemaDiff{}
 
 			compare.Sequences(generated, database, diff, compare.CoverageOf(generated, database))
@@ -75,7 +75,7 @@ func TestSequences_ModifiedOnlyComparesDeclaredOptions(t *testing.T) {
 	generated := &goschema.Database{Sequences: []goschema.Sequence{
 		{Name: "s", Increment: new(int64(2)), Cycle: true},
 	}}
-	database := &types.DBSchema{Sequences: []types.DBSequence{
+	database := &catalog.Database{Sequences: []catalog.Sequence{
 		{Name: "s", Increment: new(int64(1)), Cache: new(int64(30)), Cycle: false},
 	}}
 	diff := &difftypes.SchemaDiff{}
@@ -102,8 +102,8 @@ func TestGrants_OnSequenceRoundTrip(t *testing.T) {
 			{Role: "app_user", Privileges: []string{"USAGE", "SELECT"}, OnSequence: "order_seq"},
 		},
 	}
-	database := &types.DBSchema{
-		Grants: []types.DBGrant{
+	database := &catalog.Database{
+		Grants: []catalog.Grant{
 			{Role: "app_user", Privilege: "USAGE", ObjectType: "SEQUENCE", ObjectName: "order_seq"},
 			{Role: "app_user", Privilege: "SELECT", ObjectType: "SEQUENCE", ObjectName: "order_seq"},
 		},
@@ -127,7 +127,7 @@ func TestGrants_OnSequenceAddedWhenMissing(t *testing.T) {
 			{Role: "app_user", Privileges: []string{"USAGE"}, OnSequence: "order_seq"},
 		},
 	}
-	database := &types.DBSchema{}
+	database := &catalog.Database{}
 	diff := &difftypes.SchemaDiff{}
 
 	compare.Grants(generated, database, diff)
@@ -143,7 +143,7 @@ func TestSequences_UnchangedProducesNoDiff(t *testing.T) {
 	generated := &goschema.Database{Sequences: []goschema.Sequence{
 		{Name: "s", AsType: "bigint", Increment: new(int64(1)), Cache: new(int64(20)), Cycle: true},
 	}}
-	database := &types.DBSchema{Sequences: []types.DBSequence{
+	database := &catalog.Database{Sequences: []catalog.Sequence{
 		{Name: "s", DataType: "bigint", Increment: new(int64(1)), Cache: new(int64(20)), Cycle: true},
 	}}
 	diff := &difftypes.SchemaDiff{}

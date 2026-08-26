@@ -11,10 +11,10 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/jackc/pgx/v5"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -66,7 +66,7 @@ func TestMaterializedViewReadback_LiveUnqualifiedBodyRoundTrips(t *testing.T) {
 	}
 	// Only the two view kinds, so this is a comparison about their bodies rather
 	// than about the source table the desired state does not declare.
-	viewLikes := &dbschematypes.DBSchema{Views: live.Views, MatViews: live.MatViews}
+	viewLikes := &catalog.Database{Views: live.Views, MatViews: live.MatViews}
 
 	settled := schemadiff.CompareWithDialect(declared, viewLikes, platform.Postgres)
 	c.Assert(settled.MaterializedViewsModified, qt.HasLen, 0)

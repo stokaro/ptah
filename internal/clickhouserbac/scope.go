@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/sqlident"
 )
 
@@ -157,16 +157,16 @@ func refuseWildcard(role, value, position string) error {
 // ScopeOfLive reads the scope a live grant row names.
 //
 // The two object types put the database in different fields, and that is the
-// shared [types.DBGrant] contract rather than a ClickHouse quirk: a
+// shared [catalog.Grant] contract rather than a ClickHouse quirk: a
 // schema-scoped grant carries its target in ObjectName with Schema empty —
-// which is what [types.DBGrant.QualifiedTarget] returns and what every
+// which is what [catalog.Grant.QualifiedTarget] returns and what every
 // comparator and converter reads — while a table-scoped grant carries the
 // schema in Schema and the table in ObjectName.
 //
 // Reading only (Schema, ObjectName) positionally is what an earlier version of
 // this function did, and it made every database-scoped grant compare unequal to
 // itself.
-func ScopeOfLive(grant types.DBGrant) Scope {
+func ScopeOfLive(grant catalog.Grant) Scope {
 	if strings.EqualFold(strings.TrimSpace(grant.ObjectType), "SCHEMA") {
 		return Scope{Database: grant.ObjectName}
 	}

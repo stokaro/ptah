@@ -3,9 +3,9 @@ package compare
 import (
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
 )
 
 // buildTablePrimaryKeyColumnSets maps each generated table to the set of
@@ -41,7 +41,7 @@ func buildTablePrimaryKeyColumnSets(
 // counterpart (e.g. a column that is not yet in the database, which never gets
 // synthesized) keep the previous filter-out behavior.
 func isFieldLevelConstraint(
-	dbConstraint types.DBConstraint,
+	dbConstraint catalog.Constraint,
 	generated *goschema.Database,
 	synthesizedFKKeys map[tableMemberKey]struct{},
 	semantics identifier.Semantics,
@@ -149,7 +149,7 @@ func isFieldLevelConstraint(
 
 // getConstraintColumn extracts the column name from a constraint
 // This is a simplified implementation - in practice, constraints can span multiple columns
-func getConstraintColumn(constraint types.DBConstraint) string {
+func getConstraintColumn(constraint catalog.Constraint) string {
 	// For single-column constraints, try to extract column name from constraint name
 	// This is database-specific and may need refinement
 
@@ -193,7 +193,7 @@ func getConstraintColumn(constraint types.DBConstraint) string {
 }
 
 // extractPostgreSQLNotNullColumn extracts column name from PostgreSQL NOT NULL constraint
-func extractPostgreSQLNotNullColumn(constraint types.DBConstraint) string {
+func extractPostgreSQLNotNullColumn(constraint catalog.Constraint) string {
 	parts := strings.Split(constraint.Name, "_")
 	if len(parts) < 3 {
 		return ""
@@ -221,7 +221,7 @@ func extractPostgreSQLNotNullColumn(constraint types.DBConstraint) string {
 }
 
 // extractPostgreSQLUniqueColumn extracts column name from PostgreSQL UNIQUE constraint
-func extractPostgreSQLUniqueColumn(constraint types.DBConstraint) string {
+func extractPostgreSQLUniqueColumn(constraint catalog.Constraint) string {
 	parts := strings.Split(constraint.Name, "_")
 	if len(parts) < 3 {
 		return ""

@@ -9,8 +9,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/migration/migrator"
@@ -371,7 +371,7 @@ func sqliteTableExists(c *qt.C, dbPath, table string) bool {
 
 	schema, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, nil)
 	c.Assert(err, qt.IsNil)
-	return slices.ContainsFunc(schema.Tables, func(dbTable types.DBTable) bool {
+	return slices.ContainsFunc(schema.Tables, func(dbTable catalog.Table) bool {
 		return dbTable.Name == table
 	})
 }

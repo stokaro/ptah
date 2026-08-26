@@ -7,12 +7,12 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/ptaherr"
-	dbtypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/planner/dialects/mysql"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/safety"
@@ -275,11 +275,11 @@ func TestGeneratedNarrowingTypeChangeIsDestructive(t *testing.T) {
 			{Name: "name", Type: "VARCHAR(100)", StructName: "User"},
 		},
 	}
-	database := &dbtypes.DBSchema{
-		Tables: []dbtypes.DBTable{
+	database := &catalog.Database{
+		Tables: []catalog.Table{
 			{
 				Name: "users",
-				Columns: []dbtypes.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "name", DataType: "VARCHAR(255)", IsNullable: "NO"},
 				},
 			},

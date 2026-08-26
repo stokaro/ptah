@@ -6,12 +6,12 @@ import (
 	"io/fs"
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 )
 
@@ -141,10 +141,10 @@ func quoteSQLServerScenarioIdentifier(identifier string) string {
 }
 
 func findSQLServerScenarioTable(
-	tables []dbschematypes.DBTable,
+	tables []catalog.Table,
 	schemaName,
 	tableName string,
-) *dbschematypes.DBTable {
+) *catalog.Table {
 	for i := range tables {
 		table := &tables[i]
 		if table.Schema == schemaName && table.Name == tableName {
@@ -154,7 +154,7 @@ func findSQLServerScenarioTable(
 	return nil
 }
 
-func findSQLServerScenarioColumn(columns []dbschematypes.DBColumn, columnName string) *dbschematypes.DBColumn {
+func findSQLServerScenarioColumn(columns []catalog.Column, columnName string) *catalog.Column {
 	for i := range columns {
 		column := &columns[i]
 		if column.Name == columnName {

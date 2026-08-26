@@ -229,7 +229,7 @@ type Field struct {
 	// (`There is no type named "USER_DEFINED"`) and accepts only the call.
 	TypeRawSQL bool
 	// TypeIsDeclaredText records that Type is the text an author wrote, read
-	// back from a catalog that stored it verbatim rather than resolving it.
+	// back from a currentCatalog that stored it verbatim rather than resolving it.
 	//
 	// SQLite is the only engine where a read can say that. A renderer honors
 	// it by writing the type as it stands instead of canonicalizing the
@@ -278,7 +278,7 @@ type Field struct {
 	CheckName string   // Optional constraint name for the column-level CHECK; defaults to "<table>_<column>_check"
 	// NotNullConstraintName is an optional explicit constraint name for the
 	// column's NOT NULL, carried only where the target persists one as an
-	// addressable catalog object. See
+	// addressable currentCatalog object. See
 	// [go.5x5.cz/ptah/core/ast.ColumnNode.NotNullConstraintName].
 	NotNullConstraintName string
 	// GeneratedExpression stores the raw SQL expression for generated columns.
@@ -314,7 +314,7 @@ type IndexPart struct {
 
 // Index NULLS ordering spellings for IndexPart.NullsOrder, matching
 // [go.5x5.cz/ptah/core/ast.NullsOrderFirst] and
-// [go.5x5.cz/ptah/dbschema/types.NullsOrderFirst] so the value survives every
+// [go.5x5.cz/ptah/catalog.NullsOrderFirst] so the value survives every
 // hop between the three index-part shapes unchanged.
 const (
 	NullsOrderFirst = "FIRST"
@@ -429,7 +429,7 @@ type Index struct {
 	Granularity int
 
 	// RequiresExtensions names the extensions this index cannot be built
-	// without, as the catalog resolved them rather than as the index's own DDL
+	// without, as the currentCatalog resolved them rather than as the index's own DDL
 	// spells them. It is filled in when the schema was read from a live
 	// PostgreSQL catalog.
 	//
@@ -437,15 +437,15 @@ type Index struct {
 	// type on the index's access method, so an index resting on a default class
 	// an extension supplies spells no token of that extension: `USING gin (n)`
 	// over an integer column needs btree_gin, and `isbn` at least says a word
-	// [Extension.Provides] can match. The catalog is asked instead of the text
+	// [Extension.Provides] can match. The currentCatalog is asked instead of the text
 	// (stokaro/ptah#1286).
 	//
 	// A printed class such as pg_trgm's `gin_trgm_ops` is recorded here too. The
-	// field is the catalog's answer, not "the part the DDL left out", so a reader
+	// field is the currentCatalog's answer, not "the part the DDL left out", so a reader
 	// of it must not conclude that the document names nothing behind the edge.
 	//
 	// Empty means not measured or nothing to report. Annotation and YAML sources
-	// have no catalog to ask and leave it unset.
+	// have no currentCatalog to ask and leave it unset.
 	RequiresExtensions []string
 }
 
@@ -508,9 +508,9 @@ type Constraint struct {
 	Initially string
 
 	// RequiresExtensions names the extensions the index backing this constraint
-	// cannot be built without, as the catalog resolved them rather than as
+	// cannot be built without, as the currentCatalog resolved them rather than as
 	// ExcludeElements spells them. It is filled in for EXCLUDE constraints read
-	// from a live PostgreSQL catalog, where an element prints its operator and
+	// from a live PostgreSQL currentCatalog, where an element prints its operator and
 	// prints its operator class only when that class is not the default:
 	// `EXCLUDE USING gist (room WITH =, during WITH &&)` over an integer column
 	// needs btree_gist and says so nowhere, while
@@ -552,9 +552,9 @@ type Extension struct {
 	Version     string // Specific version requirement (optional)
 	Comment     string // Extension comment/description
 
-	// Provides lists the catalog names this extension supplies -- types,
+	// Provides lists the currentCatalog names this extension supplies -- types,
 	// functions, relations, operator classes and operator families. It is filled
-	// in when the schema was read from a live PostgreSQL catalog and answers
+	// in when the schema was read from a live PostgreSQL currentCatalog and answers
 	// "what stops resolving without this extension", which is almost never the
 	// extension's own name: `isn` supplies the type `isbn`.
 	//
@@ -574,7 +574,7 @@ type Extension struct {
 	// no such type entry exists -- an extension supplying `merge(text, text)`
 	// and no type at all -- the name is the only evidence there is and it stays.
 	//
-	// Empty means not measured. Annotation and YAML sources have no catalog to
+	// Empty means not measured. Annotation and YAML sources have no currentCatalog to
 	// ask and leave it unset.
 	Provides []string
 
@@ -601,7 +601,7 @@ type Extension struct {
 //
 // Platform-specific configurations can be specified using overrides:
 //
-//	//ptah:schema:table name="products" platform.mysql.engine="InnoDB" platform.mysql.comment="Product catalog"
+//	//ptah:schema:table name="products" platform.mysql.engine="InnoDB" platform.mysql.comment="Product currentCatalog"
 //	type Product struct {
 //	    // ... fields
 //	}
@@ -889,7 +889,7 @@ type Range struct {
 	// in the fields above, and the comparator has to tell them apart. Omission
 	// means "say nothing about this", so adopting Ptah over a database whose
 	// range carries a SUBTYPE_DIFF does not plan its removal; `subtype_diff=""`
-	// means "this range has none", which is a difference from a catalog that
+	// means "this range has none", which is a difference from a currentCatalog that
 	// holds one (stokaro/ptah#2223).
 	//
 	// Only a surface that can spell an empty value fills this. A `CREATE TYPE
@@ -955,7 +955,7 @@ type Function struct {
 	// Kind separates a function from a procedure. Empty means "function",
 	// which is what every declaration written before procedures existed meant.
 	//
-	// The two are one model because they are one catalog row on both engines
+	// The two are one model because they are one currentCatalog row on both engines
 	// that have them -- pg_proc with prokind 'f' or 'p', ROUTINE_TYPE FUNCTION
 	// or PROCEDURE -- and they differ in exactly one property a schema can
 	// state: a procedure returns nothing and is invoked with CALL
@@ -1028,7 +1028,7 @@ type Sequence struct {
 // table's own definition, and a target that does not have the extension has a
 // table without it rather than a different table.
 //
-// Nothing outside TimescaleDB's own catalog can see one. Measured on 2.29.2 /
+// Nothing outside TimescaleDB's own currentCatalog can see one. Measured on 2.29.2 /
 // PostgreSQL 17.11 after `create_hypertable('conditions', by_range('time'))`,
 // `pg_class.relkind` answers `r`, `pg_depend` reports no extension ownership,
 // and the index the call created carries `deptype 'a'` -- the same as an
@@ -1056,7 +1056,7 @@ type Hypertable struct {
 	// It is a string rather than a duration because the server's own spelling
 	// is what `timescaledb_information.dimensions` reports back, and a
 	// declaration that had to be converted to compare would differ from the
-	// catalog on every run.
+	// currentCatalog on every run.
 	ChunkInterval string
 	// IfNotExists renders `if_not_exists => TRUE`, which turns the server's
 	// `table "x" is already a hypertable` error into a skipped notice.
@@ -1075,7 +1075,7 @@ type Hypertable struct {
 // answers, which selects from the materialization hypertable in a schema the
 // extension owns (stokaro/ptah#1026).
 //
-// Body is the SELECT as it was WRITTEN. The catalog stores a rewritten one --
+// Body is the SELECT as it was WRITTEN. The currentCatalog stores a rewritten one --
 // `time_bucket('1 hour', time)` comes back as
 // `time_bucket('01:00:00'::interval, "time")` -- so the two are compared by
 // putting the declaration through the same rewrite rather than by folding the
@@ -1098,7 +1098,7 @@ type ContinuousAggregate struct {
 	// whatever the server defaults to. The default is not a constant --
 	// measured on 2.29.2, an aggregate created without the option is reported
 	// `materialized_only = t` -- so comparing an unset declaration against the
-	// catalog as if it said false would report a change on every run, and the
+	// currentCatalog as if it said false would report a change on every run, and the
 	// plan for that change drops the aggregate and its materialization.
 	MaterializedOnly *bool
 	Comment          string // Optional comment for documentation
@@ -1254,7 +1254,7 @@ type View struct {
 
 	// Attributes carries a view's own WITH clause on the targets that have one
 	// -- SQL Server's SCHEMABINDING and VIEW_METADATA. See
-	// [go.5x5.cz/ptah/dbschema/types.DBView] for why they are the view's rather
+	// [go.5x5.cz/ptah/catalog.View] for why they are the view's rather
 	// than its body's (stokaro/ptah#2125).
 	Attributes []string `json:",omitempty"`
 

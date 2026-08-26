@@ -13,9 +13,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/generator"
 )
@@ -103,7 +103,7 @@ func readSQLServerGeneratorIndexDirection(
 	c.Helper()
 	schema, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, []string{"dbo"})
 	c.Assert(err, qt.IsNil)
-	indexes := make([]dbschematypes.DBIndex, 0, len(schema.Indexes))
+	indexes := make([]catalog.Index, 0, len(schema.Indexes))
 	for _, index := range schema.Indexes {
 		if index.Name == "idx_users_status" {
 			indexes = append(indexes, index)

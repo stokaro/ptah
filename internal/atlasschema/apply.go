@@ -9,12 +9,12 @@ import (
 	"slices"
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 	"go.5x5.cz/ptah/internal/atlassource"
 	"go.5x5.cz/ptah/internal/atlasurl"
@@ -155,7 +155,7 @@ type ApplyRuntimePlan struct {
 	// current is the filtered (schema/include scope and exclude) introspected
 	// target state the plan was computed against; the dev database simulation
 	// recreates it before rehearsing the plan.
-	current *types.DBSchema
+	current *catalog.Database
 }
 
 func (p ApplyPlan) HasChanges() bool {
@@ -188,7 +188,7 @@ func PlanApply(
 // re-reading the database.
 type applyComputation struct {
 	statements []string
-	current    *types.DBSchema
+	current    *catalog.Database
 	desired    *goschema.Database
 	// readScope is the schema allow-list current was read at, nil when the read
 	// was the connection's own default. A saved plan records no schema scope, so
@@ -364,7 +364,7 @@ func validateApplyPlanningInputs(conn *dbschema.DatabaseConnection, opts ApplyOp
 }
 
 type scopedApplyStates struct {
-	current        *types.DBSchema
+	current        *catalog.Database
 	desired        *goschema.Database
 	currentReports atlasfilter.ScopeReports
 	desiredReports atlasfilter.ScopeReports
@@ -373,7 +373,7 @@ type scopedApplyStates struct {
 }
 
 func scopeApplyStates(
-	current *types.DBSchema,
+	current *catalog.Database,
 	desired *goschema.Database,
 	scope atlasfilter.Scope,
 ) scopedApplyStates {
@@ -408,7 +408,7 @@ func scopeApplyStates(
 
 func validateCurrentApplyState(
 	conn *dbschema.DatabaseConnection,
-	current *types.DBSchema,
+	current *catalog.Database,
 	readScope []string,
 	opts ApplyOptions,
 ) error {
@@ -426,7 +426,7 @@ func resolveApplyAllowUnmatched(opts ApplyOptions) (bool, error) {
 }
 
 func validateCurrentApplySchema(
-	current *types.DBSchema,
+	current *catalog.Database,
 	validate func(*goschema.Database) error,
 ) error {
 	if validate == nil {
@@ -443,7 +443,7 @@ func applyCurrentState(
 	conn *dbschema.DatabaseConnection,
 	requested []string,
 	desired *goschema.Database,
-) (current *types.DBSchema, readScope []string, err error) {
+) (current *catalog.Database, readScope []string, err error) {
 	urlScope, err := schemascope.ReadNames(ctx, conn.Info(), nil, conn)
 	if err != nil {
 		return nil, nil, fmt.Errorf("read database schema: %w", err)
@@ -813,7 +813,7 @@ func FormatMigrationSQL(statements []string) string {
 	return out.String()
 }
 
-func executeApplyStatements(ctx context.Context, executor types.SchemaExecutor, statements []string) error {
+func executeApplyStatements(ctx context.Context, executor catalog.SchemaExecutor, statements []string) error {
 	for i, stmt := range statements {
 		stmt = strings.TrimSpace(stmt)
 		if stmt == "" {

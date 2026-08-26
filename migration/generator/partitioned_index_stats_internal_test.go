@@ -11,14 +11,14 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
-func postgresIndexDBInfo() dbschematypes.DBInfo {
-	return dbschematypes.DBInfo{
+func postgresIndexDBInfo() catalog.ServerInfo {
+	return catalog.ServerInfo{
 		Dialect:      platform.Postgres,
 		Capabilities: capability.Postgres17(),
 	}
@@ -36,12 +36,12 @@ func postgresIndexDBInfo() dbschematypes.DBInfo {
 func TestConcurrentIndexRefsForPopulatedTables_PartitionedAndUnknownStats(t *testing.T) {
 	tests := []struct {
 		name   string
-		tables []dbschematypes.DBTable
+		tables []catalog.Table
 		want   []difftypes.IndexRef
 	}{
 		{
 			name:   "populated ordinary table builds concurrently",
-			tables: []dbschematypes.DBTable{{Name: "events", EstimatedRows: 5000}},
+			tables: []catalog.Table{{Name: "events", EstimatedRows: 5000}},
 			want:   []difftypes.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
 		},
 		{
@@ -49,7 +49,7 @@ func TestConcurrentIndexRefsForPopulatedTables_PartitionedAndUnknownStats(t *tes
 			// a partitioned table" rather than on "this index names one" passes
 			// every other row and fails here.
 			name: "an unrelated partitioned table does not downgrade the build",
-			tables: []dbschematypes.DBTable{
+			tables: []catalog.Table{
 				{Name: "events", EstimatedRows: 5000},
 				{Name: "measurements", EstimatedRows: 5000, Partitioned: true},
 			},
@@ -57,22 +57,22 @@ func TestConcurrentIndexRefsForPopulatedTables_PartitionedAndUnknownStats(t *tes
 		},
 		{
 			name:   "reported empty table stays transactional",
-			tables: []dbschematypes.DBTable{{Name: "events", EstimatedRows: 0}},
+			tables: []catalog.Table{{Name: "events", EstimatedRows: 0}},
 			want:   nil,
 		},
 		{
 			name:   "unreported row statistics build concurrently",
-			tables: []dbschematypes.DBTable{{Name: "events", EstimatedRows: 0, RowStatsUnknown: true}},
+			tables: []catalog.Table{{Name: "events", EstimatedRows: 0, RowStatsUnknown: true}},
 			want:   []difftypes.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
 		},
 		{
 			name:   "populated partitioned parent stays transactional",
-			tables: []dbschematypes.DBTable{{Name: "events", EstimatedRows: 5000, Partitioned: true}},
+			tables: []catalog.Table{{Name: "events", EstimatedRows: 5000, Partitioned: true}},
 			want:   nil,
 		},
 		{
 			name: "partitioned parent with unreported statistics stays transactional",
-			tables: []dbschematypes.DBTable{{
+			tables: []catalog.Table{{
 				Name:            "events",
 				EstimatedRows:   0,
 				RowStatsUnknown: true,
@@ -92,7 +92,7 @@ func TestConcurrentIndexRefsForPopulatedTables_PartitionedAndUnknownStats(t *tes
 
 			got := concurrentIndexRefsForPopulatedTables(
 				diff,
-				&dbschematypes.DBSchema{Tables: tt.tables},
+				&catalog.Database{Tables: tt.tables},
 				postgresIndexDBInfo(),
 			)
 
@@ -115,7 +115,7 @@ func TestConcurrentIndexPolicy_RefusesPartitionedParent(t *testing.T) {
 
 	refs, err := concurrentIndexRefsForPolicy(
 		diff,
-		&dbschematypes.DBSchema{Tables: []dbschematypes.DBTable{{Name: "events", Partitioned: true}}},
+		&catalog.Database{Tables: []catalog.Table{{Name: "events", Partitioned: true}}},
 		postgresIndexDBInfo(),
 		DiffPolicy{ConcurrentIndex: true},
 	)
@@ -133,12 +133,12 @@ func TestConcurrentIndexPolicy_RefusesPartitionedParent(t *testing.T) {
 func TestConcurrentIndexPolicy_HonorsATableTheBuildIsLegalOn(t *testing.T) {
 	tests := []struct {
 		name   string
-		tables []dbschematypes.DBTable
+		tables []catalog.Table
 		want   []difftypes.IndexRef
 	}{
 		{
 			name:   "create over an ordinary table is honored",
-			tables: []dbschematypes.DBTable{{Name: "events"}},
+			tables: []catalog.Table{{Name: "events"}},
 			want:   []difftypes.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
 		},
 		{
@@ -146,7 +146,7 @@ func TestConcurrentIndexPolicy_HonorsATableTheBuildIsLegalOn(t *testing.T) {
 			// partitioned table" rather than on "this index names one" passes
 			// the refusal test and fails here.
 			name: "an unrelated partitioned table does not refuse the run",
-			tables: []dbschematypes.DBTable{
+			tables: []catalog.Table{
 				{Name: "events"},
 				{Name: "measurements", Partitioned: true},
 			},
@@ -164,7 +164,7 @@ func TestConcurrentIndexPolicy_HonorsATableTheBuildIsLegalOn(t *testing.T) {
 
 			refs, err := concurrentIndexRefsForPolicy(
 				diff,
-				&dbschematypes.DBSchema{Tables: tt.tables},
+				&catalog.Database{Tables: tt.tables},
 				postgresIndexDBInfo(),
 				DiffPolicy{ConcurrentIndex: true},
 			)
@@ -189,7 +189,7 @@ func TestConcurrentIndexDropPolicy_RefusesPartitionedParent(t *testing.T) {
 
 	refs, err := concurrentIndexDropRefsForPolicy(
 		diff,
-		&dbschematypes.DBSchema{Tables: []dbschematypes.DBTable{{Name: "events", Partitioned: true}}},
+		&catalog.Database{Tables: []catalog.Table{{Name: "events", Partitioned: true}}},
 		postgresIndexDBInfo(),
 		DiffPolicy{ConcurrentIndexDrop: true},
 	)
@@ -207,17 +207,17 @@ func TestConcurrentIndexDropPolicy_RefusesPartitionedParent(t *testing.T) {
 func TestConcurrentIndexDropPolicy_HonorsATableTheDropIsLegalOn(t *testing.T) {
 	tests := []struct {
 		name   string
-		tables []dbschematypes.DBTable
+		tables []catalog.Table
 		want   []difftypes.IndexRef
 	}{
 		{
 			name:   "drop over an ordinary table is honored",
-			tables: []dbschematypes.DBTable{{Name: "events"}},
+			tables: []catalog.Table{{Name: "events"}},
 			want:   []difftypes.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
 		},
 		{
 			name: "an unrelated partitioned table does not refuse the run",
-			tables: []dbschematypes.DBTable{
+			tables: []catalog.Table{
 				{Name: "events"},
 				{Name: "measurements", Partitioned: true},
 			},
@@ -235,7 +235,7 @@ func TestConcurrentIndexDropPolicy_HonorsATableTheDropIsLegalOn(t *testing.T) {
 
 			refs, err := concurrentIndexDropRefsForPolicy(
 				diff,
-				&dbschematypes.DBSchema{Tables: tt.tables},
+				&catalog.Database{Tables: tt.tables},
 				postgresIndexDBInfo(),
 				DiffPolicy{ConcurrentIndexDrop: true},
 			)

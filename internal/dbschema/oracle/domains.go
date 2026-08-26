@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 )
 
 // domainQuery reads the SQL domains this schema owns, one row per domain.
@@ -58,7 +58,7 @@ ORDER BY c.domain_name, c.name`
 // DOMAIN answers ORA-00901, and asking anyway would fail the statement -- and
 // a failed statement aborts the enclosing transaction, so every later read
 // would answer ORA-25P02's Oracle equivalent rather than the read that broke.
-func (r *Reader) readDomains(ctx context.Context) ([]types.DBDomain, error) {
+func (r *Reader) readDomains(ctx context.Context) ([]catalog.Domain, error) {
 	checks, err := r.readDomainChecks(ctx)
 	if err != nil {
 		return nil, err
@@ -70,10 +70,10 @@ func (r *Reader) readDomains(ctx context.Context) ([]types.DBDomain, error) {
 	}
 	defer rows.Close()
 
-	var domains []types.DBDomain
+	var domains []catalog.Domain
 	for rows.Next() {
 		var (
-			domain     types.DBDomain
+			domain     catalog.Domain
 			columnName string
 			dataType   string
 			length     sql.NullInt64
@@ -104,17 +104,17 @@ func (r *Reader) readDomains(ctx context.Context) ([]types.DBDomain, error) {
 }
 
 // readDomainChecks groups the CHECK constraints by domain name.
-func (r *Reader) readDomainChecks(ctx context.Context) (map[string][]types.DBDomainCheck, error) {
+func (r *Reader) readDomainChecks(ctx context.Context) (map[string][]catalog.DomainCheck, error) {
 	rows, err := r.db.QueryContext(ctx, domainConstraintQuery, r.schema)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	checks := make(map[string][]types.DBDomainCheck)
+	checks := make(map[string][]catalog.DomainCheck)
 	for rows.Next() {
 		var domainName string
-		var check types.DBDomainCheck
+		var check catalog.DomainCheck
 		var condition sql.NullString
 		if err := rows.Scan(&domainName, &check.Name, &condition); err != nil {
 			return nil, err
@@ -137,8 +137,8 @@ func (r *Reader) readDomainChecks(ctx context.Context) (map[string][]types.DBDom
 //
 // The nullability itself is not lost: it is read from the column, which is
 // where it is a fact rather than a restatement.
-func declaredDomainChecks(checks []types.DBDomainCheck, columnName string) []types.DBDomainCheck {
-	kept := make([]types.DBDomainCheck, 0, len(checks))
+func declaredDomainChecks(checks []catalog.DomainCheck, columnName string) []catalog.DomainCheck {
+	kept := make([]catalog.DomainCheck, 0, len(checks))
 	for _, check := range checks {
 		if notNullRestatement(check.Expression, columnName) {
 			continue
@@ -163,7 +163,7 @@ func notNullRestatement(expression, columnName string) bool {
 }
 
 // joinDomainChecks renders the constraint set the way a declaration writes it.
-func joinDomainChecks(checks []types.DBDomainCheck) string {
+func joinDomainChecks(checks []catalog.DomainCheck) string {
 	if len(checks) == 0 {
 		return ""
 	}

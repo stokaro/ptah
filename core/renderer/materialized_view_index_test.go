@@ -6,10 +6,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -109,7 +109,7 @@ func TestPlan_IndexOnAMaterializedViewIsPlannedRatherThanRefused(t *testing.T) {
 	c := qt.New(t)
 	description := materializedViewIndexSchema()
 
-	diff := schemadiff.CompareWithDialect(description, &dbschematypes.DBSchema{}, platform.Postgres)
+	diff := schemadiff.CompareWithDialect(description, &catalog.Database{}, platform.Postgres)
 	nodes, err := planner.GenerateSchemaDiffAST(diff, description, platform.Postgres)
 
 	c.Assert(err, qt.IsNil)

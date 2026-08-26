@@ -5,11 +5,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -85,9 +85,9 @@ func TestConstraints_ACheckIsComparedThroughTheServerWhenOneAnswered(t *testing.
 					Type: "CHECK", CheckExpression: test.declared,
 				}},
 			}
-			live := &types.DBSchema{
-				Tables: []types.DBTable{{Name: "t", Schema: "public"}},
-				Constraints: []types.DBConstraint{{
+			live := &catalog.Database{
+				Tables: []catalog.Table{{Name: "t", Schema: "public"}},
+				Constraints: []catalog.Constraint{{
 					Name: "ck_score", TableName: "t", Schema: "public",
 					Type: "CHECK", CheckClause: new(stored),
 				}},

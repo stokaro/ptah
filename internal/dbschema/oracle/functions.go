@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/oracleroutine"
 )
 
@@ -87,7 +87,7 @@ ORDER BY s.name, s.type, s.line`
 // reports DEFAULTED = 'Y' and never the value. A routine created with one
 // therefore reads back without it and would be replanned on every run, which is
 // why the renderer refuses that shape up front instead.
-func (r *Reader) readFunctions(ctx context.Context) ([]types.DBFunction, error) {
+func (r *Reader) readFunctions(ctx context.Context) ([]catalog.Function, error) {
 	parameters, returns, err := r.readRoutineArguments(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("read routine arguments: %w", err)
@@ -103,14 +103,14 @@ func (r *Reader) readFunctions(ctx context.Context) ([]types.DBFunction, error) 
 	}
 	defer rows.Close()
 
-	var functions []types.DBFunction
+	var functions []catalog.Function
 	for rows.Next() {
 		var name, objectType, authID, deterministic string
 		if err := rows.Scan(&name, &objectType, &authID, &deterministic); err != nil {
 			return nil, err
 		}
 		key := routineKey{name: name, objectType: objectType}
-		functions = append(functions, types.DBFunction{
+		functions = append(functions, catalog.Function{
 			Name:       name,
 			Kind:       routineKind(objectType),
 			Parameters: parameters[key.name],

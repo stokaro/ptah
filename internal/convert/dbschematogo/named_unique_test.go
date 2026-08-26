@@ -5,24 +5,24 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 )
 
 // uniqueSchema is one table with one single-column UNIQUE constraint under the
 // given name, and the column marked unique the way a reader marks it.
-func uniqueSchema(constraintName string) *types.DBSchema {
-	return &types.DBSchema{
-		Tables: []types.DBTable{{
+func uniqueSchema(constraintName string) *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{{
 			Name: "customers",
 			Type: "BASE TABLE",
-			Columns: []types.DBColumn{
+			Columns: []catalog.Column{
 				{Name: "id", DataType: "bigint", IsNullable: "NO", IsPrimaryKey: true},
 				{Name: "email", DataType: "character varying", IsNullable: "NO", IsUnique: true},
 			},
 		}},
-		Constraints: []types.DBConstraint{{
+		Constraints: []catalog.Constraint{{
 			TableName:   "customers",
 			Name:        constraintName,
 			Type:        "UNIQUE",

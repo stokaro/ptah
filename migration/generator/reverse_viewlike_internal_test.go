@@ -13,8 +13,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -40,13 +40,13 @@ func viewLikeFields() []goschema.Field {
 	}
 }
 
-func viewLikeDBWithTableOnly() *dbschematypes.DBSchema {
-	return &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
+func viewLikeDBWithTableOnly() *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{
 			{
 				Name: "rev_view_users",
 				Type: "TABLE",
-				Columns: []dbschematypes.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "id", DataType: "bigint", IsNullable: "NO", IsPrimaryKey: true, OrdinalPosition: 1},
 					{Name: "email", DataType: "text", IsNullable: "NO", OrdinalPosition: 2},
 				},
@@ -85,15 +85,15 @@ func viewLikeGoSchemaWithObjects(viewBody, matViewBody, triggerBody string) *gos
 	return schema
 }
 
-func viewLikeDBWithObjects(viewBody, matViewBody, triggerBody string) *dbschematypes.DBSchema {
+func viewLikeDBWithObjects(viewBody, matViewBody, triggerBody string) *catalog.Database {
 	db := viewLikeDBWithTableOnly()
-	db.Views = []dbschematypes.DBView{
+	db.Views = []catalog.View{
 		{Name: "rev_active_users", Body: viewBody},
 	}
-	db.MatViews = []dbschematypes.DBMatView{
+	db.MatViews = []catalog.MaterializedView{
 		{Name: "rev_user_stats", Body: matViewBody},
 	}
-	db.Triggers = []dbschematypes.DBTrigger{
+	db.Triggers = []catalog.Trigger{
 		{
 			Name:    "rev_touch",
 			Table:   "rev_view_users",

@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/internal/schemaclean"
 )
 
@@ -13,36 +13,36 @@ import (
 // dialect's reader can surface into a cleanup plan. Each dialect case below
 // asserts the exact subset its writer destroys, so a dialect that reported a
 // kind it does not drop shows up as an extra row rather than as a silent pass.
-func schemaWithEveryReportableKind() *dbschematypes.DBSchema {
-	return &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
+func schemaWithEveryReportableKind() *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{
 			{Name: "users", Schema: "public"},
 			{Name: "posts", Schema: "public"},
 		},
-		Constraints: []dbschematypes.DBConstraint{
+		Constraints: []catalog.Constraint{
 			{Name: "fk_posts_users", Schema: "public", TableName: "posts", Type: "FOREIGN KEY"},
 			{Name: "pk_posts", Schema: "public", TableName: "posts", Type: "PRIMARY KEY"},
 		},
-		Enums:      []dbschematypes.DBEnum{{Name: "mood"}},
-		Views:      []dbschematypes.DBView{{Name: "v_users", Schema: "public"}},
-		MatViews:   []dbschematypes.DBMatView{{Name: "mv_users", Schema: "public"}},
-		Functions:  []dbschematypes.DBFunction{{Name: "f_touch"}},
-		Domains:    []dbschematypes.DBDomain{{Name: "d_email", Schema: "public"}},
-		Composites: []dbschematypes.DBComposite{{Name: "c_addr", Schema: "public"}},
-		Ranges:     []dbschematypes.DBRange{{Name: "r_int", Schema: "public"}},
+		Enums:      []catalog.Enum{{Name: "mood"}},
+		Views:      []catalog.View{{Name: "v_users", Schema: "public"}},
+		MatViews:   []catalog.MaterializedView{{Name: "mv_users", Schema: "public"}},
+		Functions:  []catalog.Function{{Name: "f_touch"}},
+		Domains:    []catalog.Domain{{Name: "d_email", Schema: "public"}},
+		Composites: []catalog.CompositeType{{Name: "c_addr", Schema: "public"}},
+		Ranges:     []catalog.Range{{Name: "r_int", Schema: "public"}},
 	}
 }
 
 func TestSnapshotWithinWriterScopeKeepsOnlyPostgresSchemaOwnedExtensions(t *testing.T) {
 	c := qt.New(t)
-	schema := &dbschematypes.DBSchema{Extensions: []dbschematypes.DBExtension{
+	schema := &catalog.Database{Extensions: []catalog.Extension{
 		{Name: "plpgsql", Schema: "pg_catalog"},
 		{Name: "pgcrypto", Schema: "app"},
 	}}
 
 	got := schemaclean.SnapshotWithinWriterScope(schema, "postgres", "app")
 
-	c.Assert(got.Extensions, qt.DeepEquals, []dbschematypes.DBExtension{
+	c.Assert(got.Extensions, qt.DeepEquals, []catalog.Extension{
 		{Name: "pgcrypto", Schema: "app"},
 	})
 	c.Assert(schema.Extensions, qt.HasLen, 2)
@@ -321,7 +321,7 @@ func TestPlanFromSchemaPreservesOverloadedFunctionIdentity(t *testing.T) {
 	integerIdentity := "integer"
 	textIdentity := "text"
 	emptyIdentity := ""
-	schema := &dbschematypes.DBSchema{Functions: []dbschematypes.DBFunction{
+	schema := &catalog.Database{Functions: []catalog.Function{
 		{
 			Name:              "normalize",
 			Schema:            "app",
@@ -420,11 +420,11 @@ func TestPlanFromObjectsOrdersReportByKindThenLocation(t *testing.T) {
 
 func TestPlanFromSchemaIgnoresMySQLColumnEnums(t *testing.T) {
 	c := qt.New(t)
-	schema := &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
+	schema := &catalog.Database{
+		Tables: []catalog.Table{
 			{Name: "users"},
 		},
-		Enums: []dbschematypes.DBEnum{
+		Enums: []catalog.Enum{
 			{Name: "users_status"},
 		},
 	}
@@ -441,16 +441,16 @@ func TestPlanFromSchemaIgnoresMySQLColumnEnums(t *testing.T) {
 
 // TestPlanFromSchemaReportsViewsOnceForReadersThatAlsoListThemAsTables guards
 // the one double-count risk of reporting views: a reader that puts a view into
-// both DBSchema.Tables (with Type "VIEW") and DBSchema.Views must still yield a
+// both Database.Tables (with Type "VIEW") and Database.Views must still yield a
 // single view row.
 func TestPlanFromSchemaReportsViewsOnceForReadersThatAlsoListThemAsTables(t *testing.T) {
 	c := qt.New(t)
-	schema := &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
+	schema := &catalog.Database{
+		Tables: []catalog.Table{
 			{Name: "users", Type: "BASE TABLE"},
 			{Name: "v_users", Type: "VIEW"},
 		},
-		Views: []dbschematypes.DBView{
+		Views: []catalog.View{
 			{Name: "v_users"},
 		},
 	}
@@ -465,8 +465,8 @@ func TestPlanFromSchemaReportsViewsOnceForReadersThatAlsoListThemAsTables(t *tes
 
 func TestPlanFromSchemaUsesDialectSpecificTableCommands(t *testing.T) {
 	c := qt.New(t)
-	schema := &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
+	schema := &catalog.Database{
+		Tables: []catalog.Table{
 			{Name: "events"},
 		},
 	}

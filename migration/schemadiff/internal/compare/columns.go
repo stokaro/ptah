@@ -6,11 +6,11 @@ import (
 	"sort"
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/normalize"
 	"go.5x5.cz/ptah/internal/oracletype"
 	"go.5x5.cz/ptah/internal/sqlitekey"
@@ -87,7 +87,7 @@ import (
 // # Output Consistency
 //
 // Column lists are sorted alphabetically for deterministic output and reliable testing.
-func TableColumns(genTable goschema.Table, dbTable types.DBTable, generated *goschema.Database) difftypes.TableDiff {
+func TableColumns(genTable goschema.Table, dbTable catalog.Table, generated *goschema.Database) difftypes.TableDiff {
 	return TableColumnsWithDialect(genTable, dbTable, generated, "")
 }
 
@@ -95,7 +95,7 @@ func TableColumns(genTable goschema.Table, dbTable types.DBTable, generated *gos
 // normalization for catalog-rewritten generated expressions.
 func TableColumnsWithDialect(
 	genTable goschema.Table,
-	dbTable types.DBTable,
+	dbTable catalog.Table,
 	generated *goschema.Database,
 	dialect string,
 ) difftypes.TableDiff {
@@ -112,7 +112,7 @@ func TableColumnsWithDialect(
 // catalog identifier rules.
 func TableColumnsWithSemantics(
 	genTable goschema.Table,
-	dbTable types.DBTable,
+	dbTable catalog.Table,
 	generated *goschema.Database,
 	dialect string,
 	semantics identifier.Semantics,
@@ -130,7 +130,7 @@ func TableColumnsWithSemantics(
 
 func tableColumnsWithSemantics(
 	genTable goschema.Table,
-	dbTable types.DBTable,
+	dbTable catalog.Table,
 	generated *goschema.Database,
 	dialect string,
 	semantics identifier.Semantics,
@@ -147,7 +147,7 @@ func tableColumnsWithSemantics(
 	}
 	keyColumns := sqlitekey.KeyColumns(genTable, genFields)
 
-	dbColumns := make(map[string]types.DBColumn)
+	dbColumns := make(map[string]catalog.Column)
 	for _, col := range dbTable.Columns {
 		dbColumns[semantics.ColumnIdentityKey(col.Name)] = col
 	}
@@ -326,7 +326,7 @@ func commentChange(desired, current string) *difftypes.CommentChange {
 //   - **PostgreSQL**: UDT names, SERIAL types, native boolean types
 //   - **MySQL/MariaDB**: TINYINT boolean representation, AUTO_INCREMENT
 //   - **Type mapping**: Intelligent normalization for accurate comparison
-func Columns(genCol goschema.Field, dbCol types.DBColumn) difftypes.ColumnDiff {
+func Columns(genCol goschema.Field, dbCol catalog.Column) difftypes.ColumnDiff {
 	return ColumnsWithDialect(genCol, dbCol, "")
 }
 
@@ -337,7 +337,7 @@ func Columns(genCol goschema.Field, dbCol types.DBColumn) difftypes.ColumnDiff {
 // domains, so it decides a domain from the DATABASE column alone. Every
 // comparison that has a desired schema to consult goes through
 // tableColumnsWithSemantics, which passes that set down.
-func ColumnsWithDialect(genCol goschema.Field, dbCol types.DBColumn, dialect string) difftypes.ColumnDiff {
+func ColumnsWithDialect(genCol goschema.Field, dbCol catalog.Column, dialect string) difftypes.ColumnDiff {
 	return columnsWithDesiredDomains(genCol, dbCol, dialect, nil, columnContext{})
 }
 
@@ -359,7 +359,7 @@ type columnContext struct {
 
 func columnsWithDesiredDomains(
 	genCol goschema.Field,
-	dbCol types.DBColumn,
+	dbCol catalog.Column,
 	dialect string,
 	desiredDomains map[string]domainIdentity,
 	ctx columnContext,
@@ -386,7 +386,7 @@ func columnsWithDesiredDomains(
 	// a default is normalized as a boolean or a number.
 	//
 	// For a domain column both sides receive the DOMAIN NAME, not the domain's
-	// base type, because DBColumn.RawType answers with the domain and the desired
+	// base type, because Column.RawType answers with the domain and the desired
 	// side spells the column as the domain too. So `d_bool` reaches the
 	// normalizer, which folds by substring and lands on "boolean" by luck, while
 	// `positive` folds to nothing and the boolean/decimal/temporal branches of
@@ -584,7 +584,7 @@ func sqliteKeyColumnImpliesNotNull(
 // halves of the identity is what makes that a reported change.
 func columnTypeChange(
 	genCol goschema.Field,
-	dbCol types.DBColumn,
+	dbCol catalog.Column,
 	dbRawType, dialect string,
 	desiredDomains map[string]domainIdentity,
 ) string {
@@ -644,7 +644,7 @@ func foldDomainPart(value string) string {
 // identifier -- and format_type spells every array with a trailing "[]",
 // including an array of a domain, while a column whose declared type IS a
 // domain is spelled with the domain's own name.
-func dbColumnDomainIdentity(dbCol types.DBColumn) (domainIdentity, bool) {
+func dbColumnDomainIdentity(dbCol catalog.Column) (domainIdentity, bool) {
 	qualifier, spelled := domainColumnSpelling(dbCol)
 	if name := foldDomainPart(dbCol.DomainName); name != "" {
 		schema := foldDomainPart(dbCol.DomainSchema)
@@ -662,7 +662,7 @@ func dbColumnDomainIdentity(dbCol types.DBColumn) (domainIdentity, bool) {
 // domainColumnSpelling splits the server's own spelling of a domain column's
 // declared type, and returns an empty name for every column that has none --
 // including an array, whose spelling is a type.
-func domainColumnSpelling(dbCol types.DBColumn) (schema, name string) {
+func domainColumnSpelling(dbCol catalog.Column) (schema, name string) {
 	formatted := strings.TrimSpace(dbCol.FormattedType)
 	if formatted == "" || strings.HasSuffix(formatted, "[]") {
 		return "", ""
@@ -958,7 +958,7 @@ func shouldReportSizedTypeChange(dbType, genType, dialect string) bool {
 	return typechange.IsNarrowing(dbType, genType) || typechange.IsWidening(dbType, genType)
 }
 
-func normalizeTablePrimaryKeyColumn(genCol goschema.Field, dbCol types.DBColumn, dialect string) goschema.Field {
+func normalizeTablePrimaryKeyColumn(genCol goschema.Field, dbCol catalog.Column, dialect string) goschema.Field {
 	if primaryKeyImpliesNotNull(dialect) {
 		genCol.Nullable = false
 	}
@@ -1025,7 +1025,7 @@ func generatedColumnKey(schema, table, column string) string {
 // alone. An arm that separated them would be an arm nothing could reach.
 func generatedColumnDiff(
 	genCol goschema.Field,
-	dbCol types.DBColumn,
+	dbCol catalog.Column,
 	dialect string,
 	resolution *config.GeneratedExpression,
 ) string {
@@ -1061,7 +1061,7 @@ func generatedColumnDiff(
 // It is what remains comparable on a rewriting target with no resolution: a
 // column that stops being generated, or changes between STORED and VIRTUAL, is
 // a change no spelling question can hide.
-func generatedKindDiff(genCol goschema.Field, dbCol types.DBColumn) string {
+func generatedKindDiff(genCol goschema.Field, dbCol catalog.Column) string {
 	genKind := strings.ToUpper(strings.TrimSpace(genCol.GeneratedKind))
 	dbKind := strings.ToUpper(strings.TrimSpace(dbCol.GeneratedKind))
 	if genKind == dbKind {

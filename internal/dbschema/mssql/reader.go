@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/internal/sqlrunner"
 )
 
@@ -77,14 +77,14 @@ func (r *Reader) outputSchema(schemaName string) string {
 }
 
 // ReadSchema is [Reader.ReadSchemaContext] under context.Background(), the
-// context-free half of the pair [types.SchemaReader] declares. Prefer the
+// context-free half of the pair [catalog.SchemaReader] declares. Prefer the
 // Context form: only it can be told to stop.
-func (r *Reader) ReadSchema() (*types.DBSchema, error) {
+func (r *Reader) ReadSchema() (*catalog.Database, error) {
 	return r.ReadSchemaContext(context.Background())
 }
 
-func (r *Reader) ReadSchemaContext(ctx context.Context) (*types.DBSchema, error) {
-	schema := &types.DBSchema{}
+func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, error) {
+	schema := &catalog.Database{}
 
 	tables, err := r.readTables(ctx)
 	if err != nil {
@@ -180,7 +180,7 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*types.DBSchema, error)
 	return schema, nil
 }
 
-func (r *Reader) readTables(ctx context.Context) ([]types.DBTable, error) {
+func (r *Reader) readTables(ctx context.Context) ([]catalog.Table, error) {
 	columns, err := r.readColumnsByTable(ctx)
 	if err != nil {
 		return nil, err
@@ -204,9 +204,9 @@ func (r *Reader) readTables(ctx context.Context) ([]types.DBTable, error) {
 	}
 	defer rows.Close()
 
-	var tables []types.DBTable
+	var tables []catalog.Table
 	for rows.Next() {
-		var table types.DBTable
+		var table catalog.Table
 		if err := rows.Scan(&table.Schema, &table.Name, &table.Comment); err != nil {
 			return nil, err
 		}
@@ -222,7 +222,7 @@ func (r *Reader) readTables(ctx context.Context) ([]types.DBTable, error) {
 	return tables, nil
 }
 
-func (r *Reader) readColumnsByTable(ctx context.Context) (map[catalogTableKey][]types.DBColumn, error) {
+func (r *Reader) readColumnsByTable(ctx context.Context) (map[catalogTableKey][]catalog.Column, error) {
 	query := `
 		SELECT
 			s.name,
@@ -264,7 +264,7 @@ func (r *Reader) readColumnsByTable(ctx context.Context) (map[catalogTableKey][]
 	}
 	defer rows.Close()
 
-	columns := make(map[catalogTableKey][]types.DBColumn)
+	columns := make(map[catalogTableKey][]catalog.Column)
 	for rows.Next() {
 		var (
 			schemaName, tableName string
@@ -277,7 +277,7 @@ func (r *Reader) readColumnsByTable(ctx context.Context) (map[catalogTableKey][]
 			generatedExpression   sql.NullString
 			generatedPersisted    sql.NullBool
 			comment               sql.NullString
-			column                types.DBColumn
+			column                catalog.Column
 		)
 		if err := rows.Scan(
 			&schemaName,
@@ -334,7 +334,7 @@ func (r *Reader) readColumnsByTable(ctx context.Context) (map[catalogTableKey][]
 			}
 		}
 		// The query has always asked for MS_Description; there was nowhere to
-		// put it until types.DBColumn gained a Comment, so the value was read
+		// put it until catalog.Column gained a Comment, so the value was read
 		// and discarded. Assigning it is what lets the comparison see a
 		// comment SQL Server already holds -- without it every column comment
 		// reads as absent, and the planner calls sp_addextendedproperty on a
@@ -363,7 +363,7 @@ func (r *Reader) readColumnsByTable(ctx context.Context) (map[catalogTableKey][]
 	return columns, nil
 }
 
-func (r *Reader) readIndexes(ctx context.Context) ([]types.DBIndex, error) {
+func (r *Reader) readIndexes(ctx context.Context) ([]catalog.Index, error) {
 	query := `
 		SELECT s.name, t.name, i.name, i.is_unique, i.is_primary_key, c.name, ic.key_ordinal, ic.is_descending_key, COALESCE(i.filter_definition, '')
 		FROM sys.indexes AS i
@@ -387,7 +387,7 @@ func (r *Reader) readIndexes(ctx context.Context) ([]types.DBIndex, error) {
 	}
 	defer rows.Close()
 
-	indexByKey := make(map[catalogObjectKey]*types.DBIndex)
+	indexByKey := make(map[catalogObjectKey]*catalog.Index)
 	var order []catalogObjectKey
 	for rows.Next() {
 		var (
@@ -404,7 +404,7 @@ func (r *Reader) readIndexes(ctx context.Context) ([]types.DBIndex, error) {
 		}
 		index := indexByKey[key]
 		if index == nil {
-			index = &types.DBIndex{
+			index = &catalog.Index{
 				Name:      indexName,
 				TableName: tableName,
 				Schema:    r.outputSchema(schemaName),
@@ -416,7 +416,7 @@ func (r *Reader) readIndexes(ctx context.Context) ([]types.DBIndex, error) {
 			order = append(order, key)
 		}
 		index.Columns = append(index.Columns, columnName)
-		index.Parts = append(index.Parts, types.DBIndexPart{
+		index.Parts = append(index.Parts, catalog.IndexPart{
 			Name: columnName,
 			Desc: desc,
 		})
@@ -425,14 +425,14 @@ func (r *Reader) readIndexes(ctx context.Context) ([]types.DBIndex, error) {
 		return nil, err
 	}
 
-	indexes := make([]types.DBIndex, 0, len(order))
+	indexes := make([]catalog.Index, 0, len(order))
 	for _, key := range order {
 		indexes = append(indexes, *indexByKey[key])
 	}
 	return indexes, nil
 }
 
-func (r *Reader) readConstraints(ctx context.Context) ([]types.DBConstraint, error) {
+func (r *Reader) readConstraints(ctx context.Context) ([]catalog.Constraint, error) {
 	constraints, err := r.readKeyConstraints(ctx)
 	if err != nil {
 		return nil, err
@@ -450,7 +450,7 @@ func (r *Reader) readConstraints(ctx context.Context) ([]types.DBConstraint, err
 	return constraints, nil
 }
 
-func (r *Reader) readKeyConstraints(ctx context.Context) ([]types.DBConstraint, error) {
+func (r *Reader) readKeyConstraints(ctx context.Context) ([]catalog.Constraint, error) {
 	query := `
 		SELECT s.name, t.name, kc.name, kc.type_desc, c.name, ic.key_ordinal
 		FROM sys.key_constraints AS kc
@@ -468,7 +468,7 @@ func (r *Reader) readKeyConstraints(ctx context.Context) ([]types.DBConstraint, 
 	}
 	defer rows.Close()
 
-	byKey := make(map[catalogObjectKey]*types.DBConstraint)
+	byKey := make(map[catalogObjectKey]*catalog.Constraint)
 	var order []catalogObjectKey
 	for rows.Next() {
 		var schemaName, tableName, name, typeDesc, column string
@@ -486,7 +486,7 @@ func (r *Reader) readKeyConstraints(ctx context.Context) ([]types.DBConstraint, 
 			if strings.EqualFold(typeDesc, "PRIMARY_KEY_CONSTRAINT") {
 				constraintType = "PRIMARY KEY"
 			}
-			constraint = &types.DBConstraint{Name: name, TableName: tableName, Schema: r.outputSchema(schemaName), Type: constraintType}
+			constraint = &catalog.Constraint{Name: name, TableName: tableName, Schema: r.outputSchema(schemaName), Type: constraintType}
 			byKey[key] = constraint
 			order = append(order, key)
 		}
@@ -499,14 +499,14 @@ func (r *Reader) readKeyConstraints(ctx context.Context) ([]types.DBConstraint, 
 		return nil, err
 	}
 
-	constraints := make([]types.DBConstraint, 0, len(order))
+	constraints := make([]catalog.Constraint, 0, len(order))
 	for _, key := range order {
 		constraints = append(constraints, *byKey[key])
 	}
 	return constraints, nil
 }
 
-func (r *Reader) readForeignKeys(ctx context.Context) ([]types.DBConstraint, error) {
+func (r *Reader) readForeignKeys(ctx context.Context) ([]catalog.Constraint, error) {
 	query := `
 		SELECT
 			s.name, t.name, fk.name, c.name,
@@ -532,7 +532,7 @@ func (r *Reader) readForeignKeys(ctx context.Context) ([]types.DBConstraint, err
 	}
 	defer rows.Close()
 
-	byKey := make(map[catalogObjectKey]*types.DBConstraint)
+	byKey := make(map[catalogObjectKey]*catalog.Constraint)
 	var order []catalogObjectKey
 	for rows.Next() {
 		var (
@@ -550,7 +550,7 @@ func (r *Reader) readForeignKeys(ctx context.Context) ([]types.DBConstraint, err
 		}
 		constraint := byKey[key]
 		if constraint == nil {
-			constraint = &types.DBConstraint{
+			constraint = &catalog.Constraint{
 				Name:          name,
 				TableName:     tableName,
 				Schema:        r.outputSchema(schemaName),
@@ -576,14 +576,14 @@ func (r *Reader) readForeignKeys(ctx context.Context) ([]types.DBConstraint, err
 		return nil, err
 	}
 
-	constraints := make([]types.DBConstraint, 0, len(order))
+	constraints := make([]catalog.Constraint, 0, len(order))
 	for _, key := range order {
 		constraints = append(constraints, *byKey[key])
 	}
 	return constraints, nil
 }
 
-func (r *Reader) readChecks(ctx context.Context) ([]types.DBConstraint, error) {
+func (r *Reader) readChecks(ctx context.Context) ([]catalog.Constraint, error) {
 	query := `
 		SELECT s.name, t.name, cc.name, cc.definition
 		FROM sys.check_constraints AS cc
@@ -599,9 +599,9 @@ func (r *Reader) readChecks(ctx context.Context) ([]types.DBConstraint, error) {
 	}
 	defer rows.Close()
 
-	var constraints []types.DBConstraint
+	var constraints []catalog.Constraint
 	for rows.Next() {
-		var constraint types.DBConstraint
+		var constraint catalog.Constraint
 		if err := rows.Scan(&constraint.Schema, &constraint.TableName, &constraint.Name, &constraint.CheckClause); err != nil {
 			return nil, err
 		}
@@ -615,7 +615,7 @@ func (r *Reader) readChecks(ctx context.Context) ([]types.DBConstraint, error) {
 	return constraints, nil
 }
 
-func (r *Reader) readViews(ctx context.Context) ([]types.DBView, error) {
+func (r *Reader) readViews(ctx context.Context) ([]catalog.View, error) {
 	query := `
 		SELECT s.name, v.name, OBJECT_DEFINITION(v.object_id)
 		FROM sys.views AS v
@@ -629,9 +629,9 @@ func (r *Reader) readViews(ctx context.Context) ([]types.DBView, error) {
 	}
 	defer rows.Close()
 
-	var views []types.DBView
+	var views []catalog.View
 	for rows.Next() {
-		var view types.DBView
+		var view catalog.View
 		if err := rows.Scan(&view.Schema, &view.Name, &view.Body); err != nil {
 			return nil, err
 		}
@@ -674,7 +674,7 @@ func (r *Reader) readViews(ctx context.Context) ([]types.DBView, error) {
 // by number, so it reads as unset. is_cached = 0 is NO CACHE, which
 // goschema.Sequence has no way to spell either; it also reads as unset, and the
 // renderer's own NO CACHE stays reachable through a declared cache of zero.
-func (r *Reader) readSequences(ctx context.Context) ([]types.DBSequence, error) {
+func (r *Reader) readSequences(ctx context.Context) ([]catalog.Sequence, error) {
 	query := `
 		SELECT s.name, sq.name, t.name,
 			   CAST(sq.start_value AS bigint), CAST(sq.increment AS bigint),
@@ -692,7 +692,7 @@ func (r *Reader) readSequences(ctx context.Context) ([]types.DBSequence, error) 
 	}
 	defer rows.Close()
 
-	var sequences []types.DBSequence
+	var sequences []catalog.Sequence
 	for rows.Next() {
 		sequence, scanErr := scanSequence(rows)
 		if scanErr != nil {
@@ -708,16 +708,16 @@ func (r *Reader) readSequences(ctx context.Context) ([]types.DBSequence, error) 
 }
 
 // scanSequence reads one sys.sequences row into the shared shape.
-func scanSequence(rows *sql.Rows) (types.DBSequence, error) {
+func scanSequence(rows *sql.Rows) (catalog.Sequence, error) {
 	var (
-		sequence                         types.DBSequence
+		sequence                         catalog.Sequence
 		start, increment, minVal, maxVal int64
 		isCycling, isCached              bool
 		cacheSize                        sql.NullInt64
 	)
 	if err := rows.Scan(&sequence.Schema, &sequence.Name, &sequence.DataType,
 		&start, &increment, &minVal, &maxVal, &isCycling, &isCached, &cacheSize); err != nil {
-		return types.DBSequence{}, err
+		return catalog.Sequence{}, err
 	}
 	sequence.Start = &start
 	sequence.Increment = &increment
@@ -767,7 +767,7 @@ func (f sequenceCacheFacts) managedOption() *int64 {
 // -- no login, no password, no superuser -- so reporting false for each is not
 // a loss of information; it is the only truth available, and the renderer says
 // so when a declaration asks for one.
-func (r *Reader) readRoles(ctx context.Context) ([]types.DBRole, error) {
+func (r *Reader) readRoles(ctx context.Context) ([]catalog.Role, error) {
 	query := `
 		SELECT p.name
 		FROM sys.database_principals AS p
@@ -779,9 +779,9 @@ func (r *Reader) readRoles(ctx context.Context) ([]types.DBRole, error) {
 	}
 	defer rows.Close()
 
-	var roles []types.DBRole
+	var roles []catalog.Role
 	for rows.Next() {
-		var role types.DBRole
+		var role catalog.Role
 		if err := rows.Scan(&role.Name); err != nil {
 			return nil, err
 		}
@@ -807,7 +807,7 @@ func (r *Reader) readRoles(ctx context.Context) ([]types.DBRole, error) {
 // SQL Server records no admin option: `ALTER ROLE ... ADD MEMBER` grants
 // membership and nothing else, so AdminOption is false here rather than
 // unknown (stokaro/ptah#1950).
-func (r *Reader) readRoleMemberships(ctx context.Context) ([]types.DBRoleMembership, error) {
+func (r *Reader) readRoleMemberships(ctx context.Context) ([]catalog.RoleMembership, error) {
 	query := `
 		SELECT role_principal.name AS role_name, member_principal.name AS member_name
 		FROM sys.database_role_members AS rm
@@ -823,9 +823,9 @@ func (r *Reader) readRoleMemberships(ctx context.Context) ([]types.DBRoleMembers
 	}
 	defer rows.Close()
 
-	memberships := make([]types.DBRoleMembership, 0)
+	memberships := make([]catalog.RoleMembership, 0)
 	for rows.Next() {
-		var membership types.DBRoleMembership
+		var membership catalog.RoleMembership
 		if err := rows.Scan(&membership.Role, &membership.Member); err != nil {
 			return nil, err
 		}
@@ -858,7 +858,7 @@ var mssqlOwnerKinds = map[string]string{
 // NONE and cannot be authenticated as either, so neither is somebody whose
 // password could be held. Measured on SQL Server 2025: dbo reports INSTANCE,
 // `guest` and a `CREATE USER ... WITHOUT LOGIN` user both report NONE.
-func (r *Reader) readObjectOwners(ctx context.Context) ([]types.DBObjectOwner, error) {
+func (r *Reader) readObjectOwners(ctx context.Context) ([]catalog.ObjectOwner, error) {
 	query := `
 		SELECT o.type AS kind, s.name AS schema_name, o.name AS object_name,
 		       owner.name AS owner_name,
@@ -882,7 +882,7 @@ func (r *Reader) readObjectOwners(ctx context.Context) ([]types.DBObjectOwner, e
 	}
 	defer rows.Close()
 
-	owners := make([]types.DBObjectOwner, 0)
+	owners := make([]catalog.ObjectOwner, 0)
 	for rows.Next() {
 		var kind, schemaName, name, owner string
 		var canLogin bool
@@ -893,7 +893,7 @@ func (r *Reader) readObjectOwners(ctx context.Context) ([]types.DBObjectOwner, e
 		if mapped, ok := mssqlOwnerKinds[strings.TrimSpace(kind)]; ok {
 			resolved = mapped
 		}
-		owners = append(owners, types.DBObjectOwner{
+		owners = append(owners, catalog.ObjectOwner{
 			Kind: resolved, Schema: schemaName, Name: name, Owner: owner, OwnerCanLogin: canLogin,
 		})
 	}
@@ -906,13 +906,13 @@ func (r *Reader) readObjectOwners(ctx context.Context) ([]types.DBObjectOwner, e
 // readGrants reads the permissions this database's roles hold.
 //
 // state_desc carries three values, not two. GRANT and
-// GRANT_WITH_GRANT_OPTION are the pair DBGrant.WithOption models. DENY is the
+// GRANT_WITH_GRANT_OPTION are the pair Grant.WithOption models. DENY is the
 // third, and it SUBTRACTS: a role holding SELECT through a broader grant and
 // DENY on one table cannot read that table. Ptah plans no such shape, so the
 // row is reported with IsPartialRevoke set rather than dropped -- exactly what
 // that field exists for, and what lets a live validation refuse a managed role
 // whose effective privileges are quietly narrower than its grant rows say.
-func (r *Reader) readGrants(ctx context.Context) ([]types.DBGrant, error) {
+func (r *Reader) readGrants(ctx context.Context) ([]catalog.Grant, error) {
 	query := `
 		SELECT grantee.name, pe.permission_name, pe.state_desc, pe.class_desc,
 			   COALESCE(s.name, ''), COALESCE(OBJECT_NAME(pe.major_id), SCHEMA_NAME(pe.major_id), '')
@@ -928,9 +928,9 @@ func (r *Reader) readGrants(ctx context.Context) ([]types.DBGrant, error) {
 	}
 	defer rows.Close()
 
-	var grants []types.DBGrant
+	var grants []catalog.Grant
 	for rows.Next() {
-		var grant types.DBGrant
+		var grant catalog.Grant
 		var state, class string
 		if err := rows.Scan(&grant.Role, &grant.Privilege, &state, &class,
 			&grant.Schema, &grant.ObjectName); err != nil {
@@ -973,7 +973,7 @@ func grantObjectTypeFor(class string) string {
 // rewriting it would change which object the alias names. The parsed parts are
 // derived from it so that ordering can tell a local target from one in another
 // database without parsing the string again at every call site.
-func (r *Reader) readSynonyms(ctx context.Context) ([]types.DBSynonym, error) {
+func (r *Reader) readSynonyms(ctx context.Context) ([]catalog.Synonym, error) {
 	query := `
 		SELECT s.name, sy.name, sy.base_object_name
 		FROM sys.synonyms AS sy
@@ -987,9 +987,9 @@ func (r *Reader) readSynonyms(ctx context.Context) ([]types.DBSynonym, error) {
 	}
 	defer rows.Close()
 
-	var synonyms []types.DBSynonym
+	var synonyms []catalog.Synonym
 	for rows.Next() {
-		var synonym types.DBSynonym
+		var synonym catalog.Synonym
 		if err := rows.Scan(&synonym.Schema, &synonym.Name, &synonym.Target); err != nil {
 			return nil, err
 		}
@@ -1011,7 +1011,7 @@ func (r *Reader) readSynonyms(ctx context.Context) ([]types.DBSynonym, error) {
 // going left. A missing middle part is written as an empty pair of brackets, so
 // `[srv]..[dbo].[t]` names a server and no database, and reading positionally
 // from the left would take the server for a database.
-func applySynonymTargetParts(synonym *types.DBSynonym) {
+func applySynonymTargetParts(synonym *catalog.Synonym) {
 	parts := strings.Split(synonym.Target, ".")
 	for i, part := range parts {
 		part = strings.TrimSpace(part)
@@ -1035,7 +1035,7 @@ func partFromRight(parts []string, n int) string {
 	return parts[index]
 }
 
-func (r *Reader) readTriggers(ctx context.Context) ([]types.DBTrigger, error) {
+func (r *Reader) readTriggers(ctx context.Context) ([]catalog.Trigger, error) {
 	query := `
 		SELECT s.name, tr.name, t.name, OBJECT_DEFINITION(tr.object_id)
 		FROM sys.triggers AS tr
@@ -1050,9 +1050,9 @@ func (r *Reader) readTriggers(ctx context.Context) ([]types.DBTrigger, error) {
 	}
 	defer rows.Close()
 
-	var triggers []types.DBTrigger
+	var triggers []catalog.Trigger
 	for rows.Next() {
-		var trigger types.DBTrigger
+		var trigger catalog.Trigger
 		if err := rows.Scan(&trigger.Schema, &trigger.Name, &trigger.Table, &trigger.Body); err != nil {
 			return nil, err
 		}
@@ -1199,7 +1199,7 @@ func normalizeRule(rule string) *string {
 	return &normalized
 }
 
-func reconcileColumnFlags(schema *types.DBSchema) {
+func reconcileColumnFlags(schema *catalog.Database) {
 	primary := make(map[catalogTableKey]map[string]struct{})
 	unique := make(map[catalogTableKey]map[string]struct{})
 	for _, constraint := range schema.Constraints {

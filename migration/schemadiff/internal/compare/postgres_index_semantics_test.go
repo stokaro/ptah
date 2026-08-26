@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -33,8 +33,8 @@ const postgresIndexTable = "t"
 // after #1246 and #1271 -- an access method from pg_am, one part per key with
 // the operator class recorded only when it is not the type default, and the
 // NULLS ordering recorded only when it deviates from the direction's default.
-func databaseIndex(parts []types.DBIndexPart) types.DBIndex {
-	return types.DBIndex{
+func databaseIndex(parts []catalog.IndexPart) catalog.Index {
+	return catalog.Index{
 		Name:      "i",
 		TableName: postgresIndexTable,
 		Method:    "btree",
@@ -43,7 +43,7 @@ func databaseIndex(parts []types.DBIndexPart) types.DBIndex {
 	}
 }
 
-func databaseIndexColumns(parts []types.DBIndexPart) []string {
+func databaseIndexColumns(parts []catalog.IndexPart) []string {
 	columns := make([]string, 0, len(parts))
 	for _, part := range parts {
 		columns = append(columns, part.Name)
@@ -82,7 +82,7 @@ func TestPostgresIndexSemantics_AxisIsDetected(t *testing.T) {
 	tests := []struct {
 		name      string
 		generated goschema.Index
-		database  types.DBIndex
+		database  catalog.Index
 	}{
 		{
 			// CREATE INDEX i ON t USING btree (value)
@@ -93,7 +93,7 @@ func TestPostgresIndexSemantics_AxisIsDetected(t *testing.T) {
 				index.Type = "hash"
 				return index
 			}(),
-			database: databaseIndex([]types.DBIndexPart{{Name: "value"}}),
+			database: databaseIndex([]catalog.IndexPart{{Name: "value"}}),
 		},
 		{
 			// CREATE INDEX i ON t USING gin (tsv)
@@ -104,8 +104,8 @@ func TestPostgresIndexSemantics_AxisIsDetected(t *testing.T) {
 				index.Type = "gist"
 				return index
 			}(),
-			database: func() types.DBIndex {
-				index := databaseIndex([]types.DBIndexPart{{Name: "tsv"}})
+			database: func() catalog.Index {
+				index := databaseIndex([]catalog.IndexPart{{Name: "tsv"}})
 				index.Method = "gin"
 				return index
 			}(),
@@ -114,13 +114,13 @@ func TestPostgresIndexSemantics_AxisIsDetected(t *testing.T) {
 			// (value) -> (value text_pattern_ops)
 			name:      "operator class added",
 			generated: generatedIndex([]goschema.IndexPart{{Name: "value", Operator: "text_pattern_ops"}}),
-			database:  databaseIndex([]types.DBIndexPart{{Name: "value"}}),
+			database:  databaseIndex([]catalog.IndexPart{{Name: "value"}}),
 		},
 		{
 			// (value text_pattern_ops) -> (value)
 			name:      "operator class removed",
 			generated: generatedIndex([]goschema.IndexPart{{Name: "value"}}),
-			database:  databaseIndex([]types.DBIndexPart{{Name: "value", Operator: "text_pattern_ops"}}),
+			database:  databaseIndex([]catalog.IndexPart{{Name: "value", Operator: "text_pattern_ops"}}),
 		},
 		{
 			// USING gist (tsv tsvector_ops(siglen=64))
@@ -133,7 +133,7 @@ func TestPostgresIndexSemantics_AxisIsDetected(t *testing.T) {
 			generated: generatedIndex([]goschema.IndexPart{
 				{Name: "tsv", Operator: "tsvector_ops(siglen=32)"},
 			}),
-			database: databaseIndex([]types.DBIndexPart{
+			database: databaseIndex([]catalog.IndexPart{
 				{Name: "tsv", Operator: "tsvector_ops(siglen=64)"},
 			}),
 		},
@@ -146,8 +146,8 @@ func TestPostgresIndexSemantics_AxisIsDetected(t *testing.T) {
 				index.StorageParams = map[string]string{"pages_per_range": "8"}
 				return index
 			}(),
-			database: func() types.DBIndex {
-				index := databaseIndex([]types.DBIndexPart{{Name: "ts"}})
+			database: func() catalog.Index {
+				index := databaseIndex([]catalog.IndexPart{{Name: "ts"}})
 				index.Method = "brin"
 				index.StorageParams = map[string]string{"pages_per_range": "32"}
 				return index
@@ -162,8 +162,8 @@ func TestPostgresIndexSemantics_AxisIsDetected(t *testing.T) {
 				index.StorageParams = map[string]string{"pages_per_range": "32"}
 				return index
 			}(),
-			database: func() types.DBIndex {
-				index := databaseIndex([]types.DBIndexPart{{Name: "ts"}})
+			database: func() catalog.Index {
+				index := databaseIndex([]catalog.IndexPart{{Name: "ts"}})
 				index.Method = "brin"
 				return index
 			}(),
@@ -176,8 +176,8 @@ func TestPostgresIndexSemantics_AxisIsDetected(t *testing.T) {
 				index.Type = "brin"
 				return index
 			}(),
-			database: func() types.DBIndex {
-				index := databaseIndex([]types.DBIndexPart{{Name: "ts"}})
+			database: func() catalog.Index {
+				index := databaseIndex([]catalog.IndexPart{{Name: "ts"}})
 				index.Method = "brin"
 				index.StorageParams = map[string]string{"pages_per_range": "32"}
 				return index
@@ -194,13 +194,13 @@ func TestPostgresIndexSemantics_AxisIsDetected(t *testing.T) {
 				index.Operator = "text_pattern_ops"
 				return index
 			}(),
-			database: databaseIndex([]types.DBIndexPart{{Name: "value"}}),
+			database: databaseIndex([]catalog.IndexPart{{Name: "value"}}),
 		},
 		{
 			// (value) -> (value DESC)
 			name:      "sort direction",
 			generated: generatedIndex([]goschema.IndexPart{{Name: "value", Desc: true}}),
-			database:  databaseIndex([]types.DBIndexPart{{Name: "value"}}),
+			database:  databaseIndex([]catalog.IndexPart{{Name: "value"}}),
 		},
 		{
 			// (value NULLS FIRST) -> (value DESC).
@@ -215,8 +215,8 @@ func TestPostgresIndexSemantics_AxisIsDetected(t *testing.T) {
 			// and the pinned community binary v1.3.0 planned a rebuild for it.
 			name:      "sort direction with the same resolved nulls ordering",
 			generated: generatedIndex([]goschema.IndexPart{{Name: "value", Desc: true}}),
-			database: databaseIndex([]types.DBIndexPart{
-				{Name: "value", NullsOrder: types.NullsOrderFirst},
+			database: databaseIndex([]catalog.IndexPart{
+				{Name: "value", NullsOrder: catalog.NullsOrderFirst},
 			}),
 		},
 		{
@@ -224,7 +224,7 @@ func TestPostgresIndexSemantics_AxisIsDetected(t *testing.T) {
 			// so FIRST deviates and the reader records it.
 			name:      "nulls first on an ascending key",
 			generated: generatedIndex([]goschema.IndexPart{{Name: "value", NullsOrder: goschema.NullsOrderFirst}}),
-			database:  databaseIndex([]types.DBIndexPart{{Name: "value"}}),
+			database:  databaseIndex([]catalog.IndexPart{{Name: "value"}}),
 		},
 		{
 			// (value DESC) -> (value DESC NULLS LAST): NULLS FIRST is the DESC
@@ -233,7 +233,7 @@ func TestPostgresIndexSemantics_AxisIsDetected(t *testing.T) {
 			generated: generatedIndex([]goschema.IndexPart{
 				{Name: "value", Desc: true, NullsOrder: goschema.NullsOrderLast},
 			}),
-			database: databaseIndex([]types.DBIndexPart{{Name: "value", Desc: true}}),
+			database: databaseIndex([]catalog.IndexPart{{Name: "value", Desc: true}}),
 		},
 		{
 			// (a) INCLUDE (b) -> (a) INCLUDE (c)
@@ -243,8 +243,8 @@ func TestPostgresIndexSemantics_AxisIsDetected(t *testing.T) {
 				index.IncludeColumns = []string{"c"}
 				return index
 			}(),
-			database: func() types.DBIndex {
-				index := databaseIndex([]types.DBIndexPart{{Name: "a"}})
+			database: func() catalog.Index {
+				index := databaseIndex([]catalog.IndexPart{{Name: "a"}})
 				index.IncludeColumns = []string{"b"}
 				return index
 			}(),
@@ -257,14 +257,14 @@ func TestPostgresIndexSemantics_AxisIsDetected(t *testing.T) {
 				index.IncludeColumns = []string{"b"}
 				return index
 			}(),
-			database: databaseIndex([]types.DBIndexPart{{Name: "a"}}),
+			database: databaseIndex([]catalog.IndexPart{{Name: "a"}}),
 		},
 		{
 			// (a) INCLUDE (b) -> (a)
 			name:      "include payload removed",
 			generated: generatedIndex([]goschema.IndexPart{{Name: "a"}}),
-			database: func() types.DBIndex {
-				index := databaseIndex([]types.DBIndexPart{{Name: "a"}})
+			database: func() catalog.Index {
+				index := databaseIndex([]catalog.IndexPart{{Name: "a"}})
 				index.IncludeColumns = []string{"b"}
 				return index
 			}(),
@@ -279,8 +279,8 @@ func TestPostgresIndexSemantics_AxisIsDetected(t *testing.T) {
 				index.IncludeColumns = []string{"c", "b"}
 				return index
 			}(),
-			database: func() types.DBIndex {
-				index := databaseIndex([]types.DBIndexPart{{Name: "a"}})
+			database: func() catalog.Index {
+				index := databaseIndex([]catalog.IndexPart{{Name: "a"}})
 				index.IncludeColumns = []string{"b", "c"}
 				return index
 			}(),
@@ -290,19 +290,19 @@ func TestPostgresIndexSemantics_AxisIsDetected(t *testing.T) {
 			// not a column key spelling the same text.
 			name:      "column key becomes an expression",
 			generated: generatedIndex([]goschema.IndexPart{{Expr: "lower(a)"}}),
-			database:  databaseIndex([]types.DBIndexPart{{Name: "a"}}),
+			database:  databaseIndex([]catalog.IndexPart{{Name: "a"}}),
 		},
 		{
 			// (lower(a)) -> (a)
 			name:      "expression key becomes a column",
 			generated: generatedIndex([]goschema.IndexPart{{Name: "a"}}),
-			database:  databaseIndex([]types.DBIndexPart{{Expr: "lower(a)"}}),
+			database:  databaseIndex([]catalog.IndexPart{{Expr: "lower(a)"}}),
 		},
 		{
 			// (lower(a)) -> (upper(a))
 			name:      "expression key changed",
 			generated: generatedIndex([]goschema.IndexPart{{Expr: "upper(a)"}}),
-			database:  databaseIndex([]types.DBIndexPart{{Expr: "lower(a)"}}),
+			database:  databaseIndex([]catalog.IndexPart{{Expr: "lower(a)"}}),
 		},
 		{
 			// An expression and a column that spell the same text stay
@@ -310,7 +310,7 @@ func TestPostgresIndexSemantics_AxisIsDetected(t *testing.T) {
 			// CREATE INDEX ... ("lower(name)"), which psql rejects.
 			name:      "expression and identically spelled column stay distinct",
 			generated: generatedIndex([]goschema.IndexPart{{Expr: "lower(a)"}}),
-			database:  databaseIndex([]types.DBIndexPart{{Name: "lower(a)"}}),
+			database:  databaseIndex([]catalog.IndexPart{{Name: "lower(a)"}}),
 		},
 		{
 			// (value) -> UNIQUE (value)
@@ -320,20 +320,20 @@ func TestPostgresIndexSemantics_AxisIsDetected(t *testing.T) {
 				index.Unique = true
 				return index
 			}(),
-			database: databaseIndex([]types.DBIndexPart{{Name: "value"}}),
+			database: databaseIndex([]catalog.IndexPart{{Name: "value"}}),
 		},
 		{
 			// (a) -> (b). The plainest change of all, and it reported "synced"
 			// too: the PostgreSQL branch never reached the key comparison.
 			name:      "key column changed",
 			generated: generatedIndex([]goschema.IndexPart{{Name: "b"}}),
-			database:  databaseIndex([]types.DBIndexPart{{Name: "a"}}),
+			database:  databaseIndex([]catalog.IndexPart{{Name: "a"}}),
 		},
 		{
 			// (a) -> (a, b)
 			name:      "key column added",
 			generated: generatedIndex([]goschema.IndexPart{{Name: "a"}, {Name: "b"}}),
-			database:  databaseIndex([]types.DBIndexPart{{Name: "a"}}),
+			database:  databaseIndex([]catalog.IndexPart{{Name: "a"}}),
 		},
 		{
 			// The mixed multi-key fixture issue #1272 asks for, mutated one
@@ -362,7 +362,7 @@ func TestPostgresIndexSemantics_AxisIsDetected(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			generated := &goschema.Database{Indexes: []goschema.Index{test.generated}}
-			database := &types.DBSchema{Indexes: []types.DBIndex{test.database}}
+			database := &catalog.Database{Indexes: []catalog.Index{test.database}}
 			diff := &difftypes.SchemaDiff{}
 
 			compare.IndexesWithDialect(generated, database, diff, platform.Postgres)
@@ -385,10 +385,10 @@ func TestPostgresIndexSemantics_AxisIsDetected(t *testing.T) {
 //	) INCLUDE (c);
 //
 // as PostgreSQL 17.10 reports it.
-func mixedDatabaseIndex() types.DBIndex {
-	index := databaseIndex([]types.DBIndexPart{
-		{Name: "a", Operator: "text_pattern_ops", Desc: true, NullsOrder: types.NullsOrderLast},
-		{Name: "b", NullsOrder: types.NullsOrderFirst},
+func mixedDatabaseIndex() catalog.Index {
+	index := databaseIndex([]catalog.IndexPart{
+		{Name: "a", Operator: "text_pattern_ops", Desc: true, NullsOrder: catalog.NullsOrderLast},
+		{Name: "b", NullsOrder: catalog.NullsOrderFirst},
 	})
 	index.IncludeColumns = []string{"c"}
 	return index
@@ -404,12 +404,12 @@ func TestPostgresIndexSemantics_EquivalentDefinitionsDoNotChurn(t *testing.T) {
 	tests := []struct {
 		name      string
 		generated goschema.Index
-		database  types.DBIndex
+		database  catalog.Index
 	}{
 		{
 			name:      "identical single-key index",
 			generated: generatedIndex([]goschema.IndexPart{{Name: "value"}}),
-			database:  databaseIndex([]types.DBIndexPart{{Name: "value"}}),
+			database:  databaseIndex([]catalog.IndexPart{{Name: "value"}}),
 		},
 		{
 			name: "identical mixed multi-key index",
@@ -435,8 +435,8 @@ func TestPostgresIndexSemantics_EquivalentDefinitionsDoNotChurn(t *testing.T) {
 				index.StorageParams = map[string]string{"pages_per_range": "32"}
 				return index
 			}(),
-			database: func() types.DBIndex {
-				index := databaseIndex([]types.DBIndexPart{{Name: "ts"}})
+			database: func() catalog.Index {
+				index := databaseIndex([]catalog.IndexPart{{Name: "ts"}})
 				index.Method = "brin"
 				index.StorageParams = map[string]string{"pages_per_range": "32"}
 				return index
@@ -451,7 +451,7 @@ func TestPostgresIndexSemantics_EquivalentDefinitionsDoNotChurn(t *testing.T) {
 				index.StorageParams = make(map[string]string)
 				return index
 			}(),
-			database: databaseIndex([]types.DBIndexPart{{Name: "ts"}}),
+			database: databaseIndex([]catalog.IndexPart{{Name: "ts"}}),
 		},
 		{
 			// The same class and the same parameter, differing only in case and
@@ -460,7 +460,7 @@ func TestPostgresIndexSemantics_EquivalentDefinitionsDoNotChurn(t *testing.T) {
 			generated: generatedIndex([]goschema.IndexPart{
 				{Name: "tsv", Operator: "TSVector_Ops(siglen=64)"},
 			}),
-			database: databaseIndex([]types.DBIndexPart{
+			database: databaseIndex([]catalog.IndexPart{
 				{Name: "tsv", Operator: "tsvector_ops(siglen=64)"},
 			}),
 		},
@@ -473,14 +473,14 @@ func TestPostgresIndexSemantics_EquivalentDefinitionsDoNotChurn(t *testing.T) {
 				index.Type = "BTREE"
 				return index
 			}(),
-			database: databaseIndex([]types.DBIndexPart{{Name: "value"}}),
+			database: databaseIndex([]catalog.IndexPart{{Name: "value"}}),
 		},
 		{
 			// A source that says nothing about the access method means the
 			// default one, which is what the reader reports.
 			name:      "unspecified access method is the default one",
 			generated: generatedIndex([]goschema.IndexPart{{Name: "value"}}),
-			database:  databaseIndex([]types.DBIndexPart{{Name: "value"}}),
+			database:  databaseIndex([]catalog.IndexPart{{Name: "value"}}),
 		},
 		{
 			// GIN and gin are the same access method.
@@ -490,8 +490,8 @@ func TestPostgresIndexSemantics_EquivalentDefinitionsDoNotChurn(t *testing.T) {
 				index.Type = "GIN"
 				return index
 			}(),
-			database: func() types.DBIndex {
-				index := databaseIndex([]types.DBIndexPart{{Name: "tsv"}})
+			database: func() catalog.Index {
+				index := databaseIndex([]catalog.IndexPart{{Name: "tsv"}})
 				index.Method = "gin"
 				return index
 			}(),
@@ -502,7 +502,7 @@ func TestPostgresIndexSemantics_EquivalentDefinitionsDoNotChurn(t *testing.T) {
 			// source that spells it out must still compare equal.
 			name:      "explicit nulls last on an ascending key is the default",
 			generated: generatedIndex([]goschema.IndexPart{{Name: "value", NullsOrder: goschema.NullsOrderLast}}),
-			database:  databaseIndex([]types.DBIndexPart{{Name: "value"}}),
+			database:  databaseIndex([]catalog.IndexPart{{Name: "value"}}),
 		},
 		{
 			// DESC and DESC NULLS FIRST are the same key.
@@ -510,15 +510,15 @@ func TestPostgresIndexSemantics_EquivalentDefinitionsDoNotChurn(t *testing.T) {
 			generated: generatedIndex([]goschema.IndexPart{
 				{Name: "value", Desc: true, NullsOrder: goschema.NullsOrderFirst},
 			}),
-			database: databaseIndex([]types.DBIndexPart{{Name: "value", Desc: true}}),
+			database: databaseIndex([]catalog.IndexPart{{Name: "value", Desc: true}}),
 		},
 		{
 			// The reverse direction: the database side spells the default and
 			// the desired side omits it.
 			name:      "database side spells the ascending default",
 			generated: generatedIndex([]goschema.IndexPart{{Name: "value"}}),
-			database: databaseIndex([]types.DBIndexPart{
-				{Name: "value", NullsOrder: types.NullsOrderLast},
+			database: databaseIndex([]catalog.IndexPart{
+				{Name: "value", NullsOrder: catalog.NullsOrderLast},
 			}),
 		},
 		{
@@ -526,7 +526,7 @@ func TestPostgresIndexSemantics_EquivalentDefinitionsDoNotChurn(t *testing.T) {
 			// other identifier PostgreSQL folds.
 			name:      "operator class differs only in case",
 			generated: generatedIndex([]goschema.IndexPart{{Name: "value", Operator: "TEXT_PATTERN_OPS"}}),
-			database:  databaseIndex([]types.DBIndexPart{{Name: "value", Operator: "text_pattern_ops"}}),
+			database:  databaseIndex([]catalog.IndexPart{{Name: "value", Operator: "text_pattern_ops"}}),
 		},
 		{
 			// An index-level operator class and the same class written on the
@@ -537,7 +537,7 @@ func TestPostgresIndexSemantics_EquivalentDefinitionsDoNotChurn(t *testing.T) {
 				index.Operator = "text_pattern_ops"
 				return index
 			}(),
-			database: databaseIndex([]types.DBIndexPart{{Name: "value", Operator: "text_pattern_ops"}}),
+			database: databaseIndex([]catalog.IndexPart{{Name: "value", Operator: "text_pattern_ops"}}),
 		},
 		{
 			// Expression spelling is normalized the same way check-constraint
@@ -545,7 +545,7 @@ func TestPostgresIndexSemantics_EquivalentDefinitionsDoNotChurn(t *testing.T) {
 			// index.
 			name:      "expression differs only in spacing and case",
 			generated: generatedIndex([]goschema.IndexPart{{Expr: "LOWER( a )"}}),
-			database:  databaseIndex([]types.DBIndexPart{{Expr: "lower(a)"}}),
+			database:  databaseIndex([]catalog.IndexPart{{Expr: "lower(a)"}}),
 		},
 		{
 			// A source that lists plain column names without structured parts
@@ -554,14 +554,14 @@ func TestPostgresIndexSemantics_EquivalentDefinitionsDoNotChurn(t *testing.T) {
 			generated: goschema.Index{
 				Name: "i", TableName: postgresIndexTable, Fields: []string{"a", "b"},
 			},
-			database: databaseIndex([]types.DBIndexPart{{Name: "a"}, {Name: "b"}}),
+			database: databaseIndex([]catalog.IndexPart{{Name: "a"}, {Name: "b"}}),
 		},
 		{
 			// A reader that reported only Columns (no structured parts) still
 			// matches a plain desired index, so the legacy shape does not churn.
 			name:      "introspected index without structured parts",
 			generated: generatedIndex([]goschema.IndexPart{{Name: "a"}, {Name: "b"}}),
-			database: types.DBIndex{
+			database: catalog.Index{
 				Name: "i", TableName: postgresIndexTable, Method: "btree",
 				Columns: []string{"a", "b"},
 			},
@@ -572,7 +572,7 @@ func TestPostgresIndexSemantics_EquivalentDefinitionsDoNotChurn(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			generated := &goschema.Database{Indexes: []goschema.Index{test.generated}}
-			database := &types.DBSchema{Indexes: []types.DBIndex{test.database}}
+			database := &catalog.Database{Indexes: []catalog.Index{test.database}}
 			diff := &difftypes.SchemaDiff{}
 
 			compare.IndexesWithDialect(generated, database, diff, platform.Postgres)
@@ -598,15 +598,15 @@ func TestPostgresIndexSemantics_ChangeStaysInItsOwnSchema(t *testing.T) {
 			{Name: "i", TableName: "app.t", Fields: []string{"value"}, Type: "hash"},
 		},
 	}
-	database := &types.DBSchema{
-		Indexes: []types.DBIndex{
+	database := &catalog.Database{
+		Indexes: []catalog.Index{
 			{
 				Name: "i", TableName: "t", Schema: "public", Method: "btree",
-				Columns: []string{"value"}, Parts: []types.DBIndexPart{{Name: "value"}},
+				Columns: []string{"value"}, Parts: []catalog.IndexPart{{Name: "value"}},
 			},
 			{
 				Name: "i", TableName: "t", Schema: "app", Method: "btree",
-				Columns: []string{"value"}, Parts: []types.DBIndexPart{{Name: "value"}},
+				Columns: []string{"value"}, Parts: []catalog.IndexPart{{Name: "value"}},
 			},
 		},
 	}
@@ -625,7 +625,7 @@ func TestPostgresIndexSemantics_ChangeStaysInItsOwnSchema(t *testing.T) {
 // TestPostgresIndexSemantics_OtherDialectsAreUnaffected is the isolation
 // control issue #1272 requires. The comparison lives in shared infrastructure,
 // so every dialect routes through the same function; only PostgreSQL was
-// measured, and a dialect whose catalog semantics have not been measured keeps
+// measured, and a dialect whose currentCatalog semantics have not been measured keeps
 // the name-only comparison it had rather than getting guessed ones.
 //
 // Each row is the access-method fixture -- the axis with the widest reach,
@@ -656,8 +656,8 @@ func TestPostgresIndexSemantics_OtherDialectsAreUnaffected(t *testing.T) {
 					return index
 				}(),
 			}}
-			database := &types.DBSchema{Indexes: []types.DBIndex{
-				databaseIndex([]types.DBIndexPart{{Name: "value"}}),
+			database := &catalog.Database{Indexes: []catalog.Index{
+				databaseIndex([]catalog.IndexPart{{Name: "value"}}),
 			}}
 			diff := &difftypes.SchemaDiff{}
 

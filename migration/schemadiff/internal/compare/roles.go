@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"sort"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
@@ -35,8 +35,8 @@ import (
 // alone reads "out of scope" as "absent": the diff plans CREATE ROLE for a
 // role that is already there and the server refuses it at SQLSTATE 42710.
 //
-// So a role counts as present when it appears in either DBSchema.Roles or
-// DBSchema.RolesOutOfScope, which together are every role the reader manages.
+// So a role counts as present when it appears in either Database.Roles or
+// Database.RolesOutOfScope, which together are every role the reader manages.
 // Nothing else about this comparison changes: a role that exists is still
 // compared attribute by attribute wherever the reader found it, so an
 // ALTER ROLE the annotations ask for is still planned for a role outside the
@@ -104,7 +104,7 @@ import (
 // Results are sorted alphabetically for consistent output across multiple runs.
 func Roles(
 	generated *goschema.Database,
-	database *types.DBSchema,
+	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
 ) {
@@ -119,13 +119,13 @@ func Roles(
 	// that does not exist, or one Ptah never manages; a role missing from
 	// database.Roles alone is only a role this description does not speak
 	// about.
-	databaseRoleMap := make(map[string]types.DBRole, len(database.Roles)+len(database.RolesOutOfScope))
+	databaseRoleMap := make(map[string]catalog.Role, len(database.Roles)+len(database.RolesOutOfScope))
 	for _, role := range database.Roles {
 		databaseRoleMap[role.Name] = role
 	}
 	// The described entry wins when a name is in both lists. A PostgreSQL
 	// reader's two lists are disjoint by construction, so this decides nothing
-	// there; it decides for every other producer of a DBSchema -- a
+	// there; it decides for every other producer of a Database -- a
 	// hand-assembled one, a merged one, a future reader whose scoping rule
 	// overlaps -- and without it the later list would silently overwrite the
 	// attributes the description was read from.
@@ -232,7 +232,7 @@ func Roles(
 //			"password": "no_password -> password_set",
 //		},
 //	}
-func RoleDefinitions(generated goschema.Role, database types.DBRole) difftypes.RoleDiff {
+func RoleDefinitions(generated goschema.Role, database catalog.Role) difftypes.RoleDiff {
 	roleDiff := difftypes.RoleDiff{
 		RoleName: generated.Name,
 		Changes:  make(map[string]string),

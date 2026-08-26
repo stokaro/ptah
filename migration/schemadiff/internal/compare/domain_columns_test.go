@@ -17,15 +17,15 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
 
 // domainColumn is the reader's report of `qty positive` where
 // CREATE DOMAIN positive AS integer CHECK (VALUE > 0).
-func domainColumn() types.DBColumn {
-	return types.DBColumn{
+func domainColumn() catalog.Column {
+	return catalog.Column{
 		Name:          "qty",
 		DataType:      "integer",
 		UDTName:       "int4",
@@ -44,8 +44,8 @@ func domainColumn() types.DBColumn {
 // domain_name 'd_enum' and format_type 'd_enum'. Nothing in the tree built this
 // shape until stokaro/ptah#1242 landed, so the branch that answers from udt_name
 // before consulting the domain was invisible to every test.
-func domainOverEnumColumn() types.DBColumn {
-	return types.DBColumn{
+func domainOverEnumColumn() catalog.Column {
+	return catalog.Column{
 		Name:          "qty",
 		DataType:      "USER-DEFINED",
 		UDTName:       "color",
@@ -69,7 +69,7 @@ func TestColumns_DomainColumnHappyPath(t *testing.T) {
 	tests := []struct {
 		name    string
 		genType string
-		dbCol   types.DBColumn
+		dbCol   catalog.Column
 	}{
 		{
 			name:    "desired names the domain the column is declared as",
@@ -79,7 +79,7 @@ func TestColumns_DomainColumnHappyPath(t *testing.T) {
 		{
 			name:    "a domain outside the search path keeps its qualifier on both sides",
 			genType: "doms.positive",
-			dbCol: func() types.DBColumn {
+			dbCol: func() catalog.Column {
 				column := domainColumn()
 				column.FormattedType = "doms.positive"
 				return column
@@ -101,7 +101,7 @@ func TestColumns_DomainColumnHappyPath(t *testing.T) {
 		{
 			name:    "a domain over a composite type",
 			genType: "d_comp",
-			dbCol: func() types.DBColumn {
+			dbCol: func() catalog.Column {
 				column := domainOverEnumColumn()
 				column.UDTName = "addr"
 				column.FormattedType = "d_comp"
@@ -137,7 +137,7 @@ func TestColumns_DomainColumnFailurePath(t *testing.T) {
 	tests := []struct {
 		name       string
 		genType    string
-		dbCol      types.DBColumn
+		dbCol      catalog.Column
 		wantChange string
 	}{
 		{
@@ -155,7 +155,7 @@ func TestColumns_DomainColumnFailurePath(t *testing.T) {
 		{
 			name:    "a domain whose name contains a type keyword is still compared as a domain",
 			genType: "bigint",
-			dbCol: func() types.DBColumn {
+			dbCol: func() catalog.Column {
 				column := domainColumn()
 				column.FormattedType = "positive_int"
 				column.DomainName = "positive_int"
@@ -192,13 +192,13 @@ func TestColumns_NonDomainColumnKeepsCategoryComparison(t *testing.T) {
 	tests := []struct {
 		name       string
 		genType    string
-		dbCol      types.DBColumn
+		dbCol      catalog.Column
 		wantChange string
 	}{
 		{
 			name:    "catalog spelling of a plain column still folds to its category",
 			genType: "integer",
-			dbCol: types.DBColumn{
+			dbCol: catalog.Column{
 				Name: "qty", DataType: "integer", UDTName: "int4", IsNullable: "YES",
 			},
 			wantChange: "",
@@ -206,7 +206,7 @@ func TestColumns_NonDomainColumnKeepsCategoryComparison(t *testing.T) {
 		{
 			name:    "a plain column of the domain's base type is not the domain",
 			genType: "positive",
-			dbCol: types.DBColumn{
+			dbCol: catalog.Column{
 				Name: "qty", DataType: "integer", UDTName: "int4", IsNullable: "YES",
 			},
 			wantChange: "integer -> positive",
@@ -217,7 +217,7 @@ func TestColumns_NonDomainColumnKeepsCategoryComparison(t *testing.T) {
 			// gate stays on DomainName rather than on DataType.
 			name:    "a plain enum column with no domain compares as the enum",
 			genType: "color",
-			dbCol: types.DBColumn{
+			dbCol: catalog.Column{
 				Name: "qty", DataType: "USER-DEFINED", UDTName: "color", IsNullable: "YES",
 			},
 			wantChange: "",

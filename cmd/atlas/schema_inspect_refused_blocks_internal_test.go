@@ -14,8 +14,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/envbool/envbooltest"
@@ -90,8 +90,8 @@ func TestAtlasInspectRefusedBlockGate(t *testing.T) {
 			var diagnostics bytes.Buffer
 			report := atlasreport.NewSchemaInspectReport(
 				refusedBlockGateDatabase(),
-				&types.DBSchema{},
-				types.DBInfo{Dialect: "postgres", Schema: "public"},
+				&catalog.Database{},
+				catalog.ServerInfo{Dialect: "postgres", Schema: "public"},
 				&diagnostics,
 				atlasreport.SchemaInspectReportOptions{
 					OmitAtlasRefusedBlocks: omit,
@@ -157,8 +157,8 @@ func TestAtlasInspectKeepsAReferencedBlockInEitherState(t *testing.T) {
 			})
 			report := atlasreport.NewSchemaInspectReport(
 				db,
-				&types.DBSchema{},
-				types.DBInfo{Dialect: "postgres", Schema: "public"},
+				&catalog.Database{},
+				catalog.ServerInfo{Dialect: "postgres", Schema: "public"},
 				&diagnostics,
 				atlasreport.SchemaInspectReportOptions{
 					OmitAtlasRefusedBlocks: omit,

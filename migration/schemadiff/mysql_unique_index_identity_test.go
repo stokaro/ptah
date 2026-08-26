@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -23,12 +23,12 @@ import (
 // One object appears twice: information_schema.STATISTICS reports the unique
 // index and information_schema.TABLE_CONSTRAINTS reports a UNIQUE constraint,
 // both named uq_users_email on users.
-func mysqlUniqueKeyDatabaseSchema() *types.DBSchema {
-	return &types.DBSchema{
-		Tables: []types.DBTable{{
+func mysqlUniqueKeyDatabaseSchema() *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{{
 			Name: "users",
 			Type: "BASE TABLE",
-			Columns: []types.DBColumn{{
+			Columns: []catalog.Column{{
 				Name:       "email",
 				DataType:   "varchar(255)",
 				ColumnType: "varchar(255)",
@@ -36,13 +36,13 @@ func mysqlUniqueKeyDatabaseSchema() *types.DBSchema {
 				IsUnique:   true,
 			}},
 		}},
-		Indexes: []types.DBIndex{{
+		Indexes: []catalog.Index{{
 			Name:      "uq_users_email",
 			TableName: "users",
 			Columns:   []string{"email"},
 			IsUnique:  true,
 		}},
-		Constraints: []types.DBConstraint{{
+		Constraints: []catalog.Constraint{{
 			Name:        "uq_users_email",
 			TableName:   "users",
 			Type:        "UNIQUE",
@@ -251,10 +251,10 @@ func TestCompareWithDialect_UniqueKeyOnAnotherTableIsNotTheSameObject(t *testing
 			generated.Indexes[0].StructName = "Order"
 			generated.Indexes[0].TableName = "orders"
 			database := mysqlUniqueKeyDatabaseSchema()
-			database.Tables = append(database.Tables, types.DBTable{
+			database.Tables = append(database.Tables, catalog.Table{
 				Name: "orders",
 				Type: "BASE TABLE",
-				Columns: []types.DBColumn{{
+				Columns: []catalog.Column{{
 					Name:       "email",
 					DataType:   "varchar(255)",
 					ColumnType: "varchar(255)",
@@ -349,7 +349,7 @@ func TestCompareWithDialect_DeclaredIndexColumnsStillCompared(t *testing.T) {
 			})
 			generated.Indexes[0].Fields = []string{"name"}
 			database := mysqlUniqueKeyDatabaseSchema()
-			database.Tables[0].Columns = append(database.Tables[0].Columns, types.DBColumn{
+			database.Tables[0].Columns = append(database.Tables[0].Columns, catalog.Column{
 				Name:       "name",
 				DataType:   "varchar(255)",
 				ColumnType: "varchar(255)",
@@ -586,7 +586,7 @@ func TestCompareWithDialect_MySQLUnreadablePartDoesNotHideANamedDifference(t *te
 				{Expr: "(`c` + 1)"},
 			}
 			database := expressionKeyDatabaseSchema(true)
-			database.Tables[0].Columns = append(database.Tables[0].Columns, types.DBColumn{
+			database.Tables[0].Columns = append(database.Tables[0].Columns, catalog.Column{
 				Name:       "c",
 				DataType:   "int",
 				ColumnType: "int",
@@ -619,19 +619,19 @@ func TestCompareWithDialect_MySQLUnreadablePartDoesNotHideANamedDifference(t *te
 // once the reader has assembled the key: one named column, and -- when
 // incomplete is set -- the record that a second part exists which it could not
 // name.
-func expressionKeyDatabaseSchema(incomplete bool) *types.DBSchema {
-	return &types.DBSchema{
-		Tables: []types.DBTable{{
+func expressionKeyDatabaseSchema(incomplete bool) *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{{
 			Name: "t4",
 			Type: "BASE TABLE",
-			Columns: []types.DBColumn{{
+			Columns: []catalog.Column{{
 				Name:       "b",
 				DataType:   "int",
 				ColumnType: "int",
 				IsNullable: "NO",
 			}},
 		}},
-		Indexes: []types.DBIndex{{
+		Indexes: []catalog.Index{{
 			Name:               "idx_mixed",
 			TableName:          "t4",
 			Columns:            []string{"b"},

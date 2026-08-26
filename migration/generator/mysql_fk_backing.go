@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"slices"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/indexscope"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -49,7 +49,7 @@ type mysqlForeignKeyIndexSimulation struct {
 func addMySQLFamilyForeignKeyBackingIndexRemovals(
 	reverseDiff,
 	upDiff *difftypes.SchemaDiff,
-	current *dbschematypes.DBSchema,
+	current *catalog.Database,
 	dialect string,
 	forwardNodes []ast.Node,
 ) error {
@@ -460,7 +460,7 @@ func (s *mysqlForeignKeyIndexSimulation) allForeignKeyColumnsWereAdded(foreignKe
 	return len(foreignKey.columns) > 0
 }
 
-func mysqlCurrentKeyCandidates(schema *dbschematypes.DBSchema) []mysqlIndexCandidate {
+func mysqlCurrentKeyCandidates(schema *catalog.Database) []mysqlIndexCandidate {
 	if schema == nil {
 		return nil
 	}
@@ -502,7 +502,7 @@ func mysqlCurrentKeyCandidates(schema *dbschematypes.DBSchema) []mysqlIndexCandi
 	return candidates
 }
 
-func mysqlCurrentForeignKeys(schema *dbschematypes.DBSchema) []mysqlForeignKeyState {
+func mysqlCurrentForeignKeys(schema *catalog.Database) []mysqlForeignKeyState {
 	if schema == nil {
 		return nil
 	}
@@ -522,7 +522,7 @@ func mysqlCurrentForeignKeys(schema *dbschematypes.DBSchema) []mysqlForeignKeySt
 	return foreignKeys
 }
 
-func mysqlDatabaseIndexKeyColumns(index dbschematypes.DBIndex) ([]string, bool) {
+func mysqlDatabaseIndexKeyColumns(index catalog.Index) ([]string, bool) {
 	if len(index.Parts) == 0 {
 		return slices.Clone(index.Columns), !index.KeyPartsIncomplete
 	}

@@ -9,7 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/go-sql-driver/mysql"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/internal/dbschema/mysql"
 	"go.5x5.cz/ptah/internal/dbtarget"
 )
@@ -27,7 +27,7 @@ func skipIfNoMariaDB(t *testing.T) string {
 }
 
 // Helper function to find a column by name
-func findColumn(columns []types.DBColumn, name string) *types.DBColumn {
+func findColumn(columns []catalog.Column, name string) *catalog.Column {
 	for i := range columns {
 		if columns[i].Name == name {
 			return &columns[i]
@@ -91,7 +91,7 @@ func testMySQLCompatibleReaderReadSchema(t *testing.T, dsn string) {
 	c.Assert(schema.Tables, qt.Not(qt.HasLen), 0)
 
 	// Find our test table
-	var testTable *types.DBTable
+	var testTable *catalog.Table
 	for i := range schema.Tables {
 		if schema.Tables[i].Name == "test_table" {
 			testTable = &schema.Tables[i]

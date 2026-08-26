@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/goschema"
-	dbtypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -35,7 +35,7 @@ import (
 func TestCompareForwardsEveryDiffSkipTheVirtualTableGuardReads(t *testing.T) {
 	tests := []struct {
 		name     string
-		database *dbtypes.DBSchema
+		database *catalog.Database
 		desired  *goschema.Database
 		options  *config.CompareOptions
 		wantErr  bool
@@ -103,7 +103,7 @@ func TestCompareForwardsEveryDiffSkipTheVirtualTableGuardReads(t *testing.T) {
 			_, err := schemadiff.CompareWithDatabaseInfo(
 				tt.desired,
 				tt.database,
-				dbtypes.DBInfo{Dialect: "sqlite"},
+				catalog.ServerInfo{Dialect: "sqlite"},
 				tt.options,
 			)
 
@@ -116,20 +116,20 @@ func TestCompareForwardsEveryDiffSkipTheVirtualTableGuardReads(t *testing.T) {
 // for a database holding one: the virtual table itself, the module's storage
 // described as an ordinary table, and the reader's record of what it could not
 // classify.
-func unclassifiableFTS4Database() *dbtypes.DBSchema {
-	return &dbtypes.DBSchema{
-		Tables: []dbtypes.DBTable{
+func unclassifiableFTS4Database() *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{
 			{Name: "docs", Type: "TABLE", VirtualModule: "fts4", VirtualArguments: "title, body"},
-			{Name: "docs_content", Type: "TABLE", Columns: []dbtypes.DBColumn{
+			{Name: "docs_content", Type: "TABLE", Columns: []catalog.Column{
 				{Name: "docid", DataType: "INTEGER", IsNullable: "YES", OrdinalPosition: 1},
 			}},
-			{Name: "users", Type: "TABLE", Columns: []dbtypes.DBColumn{
+			{Name: "users", Type: "TABLE", Columns: []catalog.Column{
 				{Name: "id", DataType: "INTEGER", IsNullable: "NO", OrdinalPosition: 1, IsPrimaryKey: true},
 				{Name: "name", DataType: "TEXT", IsNullable: "YES", OrdinalPosition: 2},
 				{Name: "legacy", DataType: "TEXT", IsNullable: "YES", OrdinalPosition: 3},
 			}},
 		},
-		UnregisteredVirtualTables: []dbtypes.DBVirtualTable{
+		UnregisteredVirtualTables: []catalog.VirtualTable{
 			{Name: "docs", Module: "fts4"},
 		},
 	}
@@ -138,9 +138,9 @@ func unclassifiableFTS4Database() *dbtypes.DBSchema {
 // unclassifiableFTS4DatabaseWithIndex is the same database carrying an explicit
 // index on the module's storage. Nothing here can say whether the module put it
 // there, which is the point.
-func unclassifiableFTS4DatabaseWithIndex() *dbtypes.DBSchema {
+func unclassifiableFTS4DatabaseWithIndex() *catalog.Database {
 	database := unclassifiableFTS4Database()
-	database.Indexes = []dbtypes.DBIndex{{
+	database.Indexes = []catalog.Index{{
 		Name:      "docs_content_docid_idx",
 		TableName: "docs_content",
 		Columns:   []string{"docid"},

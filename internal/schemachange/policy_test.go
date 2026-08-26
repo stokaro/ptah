@@ -5,23 +5,23 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/schemachange"
 	"go.5x5.cz/ptah/internal/schemastate"
 )
 
 // policyCatalog is a database carrying one table and one policy on it.
-func policyCatalog() *dbschematypes.DBSchema {
-	return &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
-			{Name: "orders", Schema: "public", Columns: []dbschematypes.DBColumn{
+func policyCatalog() *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{
+			{Name: "orders", Schema: "public", Columns: []catalog.Column{
 				{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
 			}},
 		},
-		RLSPolicies: []dbschematypes.DBRLSPolicy{
+		RLSPolicies: []catalog.RLSPolicy{
 			{Name: "tenant_isolation", Table: "public.orders", PolicyFor: "ALL",
 				ToRoles: "app", UsingExpression: "tenant_id = current_setting('app.tenant')"},
 		},
@@ -184,22 +184,22 @@ func TestPolicyChangeIsRefusedByThePlannerRatherThanDropped(t *testing.T) {
 	c.Assert(operations, qt.IsNil)
 }
 
-// TestPolicyIdentityFromCatalogKeepsOneNameOnTwoTablesApart is the catalog-side
+// TestPolicyIdentityFromCatalogKeepsOneNameOnTwoTablesApart is the currentCatalog-side
 // half of the identity property.
 //
 // The two adapters build the identity from different components -- one resolves
 // the owning table through the struct that declared the policy, the other
-// parses a qualified name the catalog reported -- so a defect in either is
+// parses a qualified name the currentCatalog reported -- so a defect in either is
 // invisible to a test that exercises only the other.
 func TestPolicyIdentityFromCatalogKeepsOneNameOnTwoTablesApart(t *testing.T) {
 	c := qt.New(t)
 	profile := postgresProfile()
-	catalog := policyCatalog()
-	catalog.RLSPolicies = append(catalog.RLSPolicies, dbschematypes.DBRLSPolicy{
+	currentCatalog := policyCatalog()
+	currentCatalog.RLSPolicies = append(currentCatalog.RLSPolicies, catalog.RLSPolicy{
 		Name: "tenant_isolation", Table: "public.invoices", PolicyFor: "ALL",
 	})
 
-	state, err := schemastate.FromCatalog(catalog, profile.Dialect, profile.Semantics)
+	state, err := schemastate.FromCatalog(currentCatalog, profile.Dialect, profile.Semantics)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(state.OfKind(objectidentity.KindPolicy), qt.HasLen, 2)

@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"strings"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 )
 
 // extendedPropertyQuery reads the SQL Server extended properties Ptah
@@ -100,16 +100,16 @@ const extendedPropertyQuery = `
 
 // readExtendedProperties reads the schema-, table- and column-scoped extended
 // properties of the schemas this read covers.
-func (r *Reader) readExtendedProperties(ctx context.Context) ([]types.DBExtendedProperty, error) {
+func (r *Reader) readExtendedProperties(ctx context.Context) ([]catalog.ExtendedProperty, error) {
 	rows, err := r.db.QueryContext(ctx, r.queryWithSchemaPredicate(extendedPropertyQuery), r.schemaArgs()...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var properties []types.DBExtendedProperty
+	var properties []catalog.ExtendedProperty
 	for rows.Next() {
-		var property types.DBExtendedProperty
+		var property catalog.ExtendedProperty
 		var value sql.NullString
 		var baseType sql.NullString
 		var scannedSchema string

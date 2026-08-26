@@ -12,7 +12,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/internal/sqlrunner"
 )
 
@@ -29,13 +29,13 @@ func (r *raceReaderStub) SetSchemas(schemas []string) {
 	r.schemas = slices.Clone(schemas)
 }
 
-func (r *raceReaderStub) ReadSchema() (*types.DBSchema, error) {
+func (r *raceReaderStub) ReadSchema() (*catalog.Database, error) {
 	return r.ReadSchemaContext(context.Background())
 }
 
-func (r *raceReaderStub) ReadSchemaContext(context.Context) (*types.DBSchema, error) {
+func (r *raceReaderStub) ReadSchemaContext(context.Context) (*catalog.Database, error) {
 	r.read = slices.Clone(r.schemas)
-	return &types.DBSchema{}, nil
+	return &catalog.Database{}, nil
 }
 
 // TestReadSchemaWithSchemas_ConcurrentScopesDoNotShareAReader is the test the
@@ -47,7 +47,7 @@ func TestReadSchemaWithSchemas_ConcurrentScopesDoNotShareAReader(t *testing.T) {
 
 	conn := &DatabaseConnection{
 		reader: &raceReaderStub{},
-		newReader: func(sqlrunner.Runner) types.SchemaReader {
+		newReader: func(sqlrunner.Runner) catalog.SchemaReader {
 			return &raceReaderStub{}
 		},
 	}

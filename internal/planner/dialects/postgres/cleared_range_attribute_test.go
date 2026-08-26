@@ -6,9 +6,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
-	dbtypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -57,7 +57,7 @@ func clearedRangeMigrationSQL(c *qt.C, declared goschema.Range) string {
 	c.Helper()
 
 	target := &goschema.Database{Ranges: []goschema.Range{declared}}
-	current := &dbtypes.DBSchema{Ranges: []dbtypes.DBRange{{
+	current := &catalog.Database{Ranges: []catalog.Range{{
 		Name:        "measurement",
 		Subtype:     "int8",
 		SubtypeDiff: "int8_subdiff",

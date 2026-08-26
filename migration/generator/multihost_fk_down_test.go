@@ -6,10 +6,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/constraintscope"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
@@ -61,23 +61,23 @@ func multiHostMixinGenerated(onDelete string, hosts ...string) *goschema.Databas
 
 // multiHostMixinDB builds the introspected (pre-change) DB: each host has the
 // tenant FK with the given delete rule.
-func multiHostMixinDB(deleteRule string, hosts ...string) *dbschematypes.DBSchema {
+func multiHostMixinDB(deleteRule string, hosts ...string) *catalog.Database {
 	varcharLength := 255
-	db := &dbschematypes.DBSchema{Tables: []dbschematypes.DBTable{{
+	db := &catalog.Database{Tables: []catalog.Table{{
 		Name: "tenants",
-		Columns: []dbschematypes.DBColumn{
+		Columns: []catalog.Column{
 			{Name: "id", DataType: "varchar", CharacterMaxLength: &varcharLength, IsNullable: "NO", IsPrimaryKey: true},
 		},
 	}}}
 	for _, h := range hosts {
-		db.Tables = append(db.Tables, dbschematypes.DBTable{
+		db.Tables = append(db.Tables, catalog.Table{
 			Name: h,
-			Columns: []dbschematypes.DBColumn{
+			Columns: []catalog.Column{
 				{Name: "id", DataType: "varchar", CharacterMaxLength: &varcharLength, IsNullable: "NO", IsPrimaryKey: true},
 				{Name: "tenant_id", DataType: "varchar", CharacterMaxLength: &varcharLength, IsNullable: "NO"},
 			},
 		})
-		db.Constraints = append(db.Constraints, dbschematypes.DBConstraint{
+		db.Constraints = append(db.Constraints, catalog.Constraint{
 			Name: "fk_entity_tenant", TableName: h, Type: "FOREIGN KEY", ColumnName: "tenant_id",
 			ForeignTable: new("tenants"), ForeignColumn: new("id"),
 			DeleteRule: new(deleteRule), UpdateRule: new("NO ACTION"),
@@ -202,8 +202,8 @@ func TestReverseConstraintAdditions_RestoresPerHostBody(t *testing.T) {
 func TestReverseConstraintAdditions_RestoresPrimaryKeyColumns(t *testing.T) {
 	c := qt.New(t)
 
-	dbSchema := &dbschematypes.DBSchema{
-		Constraints: []dbschematypes.DBConstraint{{
+	dbSchema := &catalog.Database{
+		Constraints: []catalog.Constraint{{
 			Name:        "PRIMARY",
 			TableName:   "memberships",
 			Type:        "PRIMARY KEY",
@@ -230,8 +230,8 @@ func TestReverseConstraintAdditions_RestoresPrimaryKeyColumns(t *testing.T) {
 
 func TestReverseConstraintAdditions_RestoresCompositeForeignKeyBody(t *testing.T) {
 	c := qt.New(t)
-	dbSchema := &dbschematypes.DBSchema{
-		Constraints: []dbschematypes.DBConstraint{
+	dbSchema := &catalog.Database{
+		Constraints: []catalog.Constraint{
 			{
 				Name:           "fk_orders_accounts",
 				TableName:      "orders",
@@ -273,8 +273,8 @@ func TestReverseConstraintAdditions_RestoresCompositeForeignKeyBody(t *testing.T
 func TestReverseConstraintAdditions_RestoresCheckConstraintBody(t *testing.T) {
 	c := qt.New(t)
 	checkClause := "quantity > 0"
-	dbSchema := &dbschematypes.DBSchema{
-		Constraints: []dbschematypes.DBConstraint{{
+	dbSchema := &catalog.Database{
+		Constraints: []catalog.Constraint{{
 			Name:        "products_quantity_check",
 			TableName:   "products",
 			Type:        "CHECK",
@@ -301,8 +301,8 @@ func TestReverseConstraintAdditions_RestoresCheckConstraintBody(t *testing.T) {
 func TestReverseConstraintAdditions_RestoresUniqueConstraintBody(t *testing.T) {
 	c := qt.New(t)
 	nullsDistinct := false
-	dbSchema := &dbschematypes.DBSchema{
-		Constraints: []dbschematypes.DBConstraint{{
+	dbSchema := &catalog.Database{
+		Constraints: []catalog.Constraint{{
 			Name:           "accounts_identity_unique",
 			TableName:      "accounts",
 			Type:           "UNIQUE",

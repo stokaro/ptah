@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
 
@@ -79,7 +79,7 @@ func TestViewDefinitions_PlansAChangeOfAttributes(t *testing.T) {
 
 			diff := compare.ViewDefinitions(
 				goschema.View{Name: "dbo.v", Body: "SELECT id FROM dbo.t", Attributes: test.declared},
-				types.DBView{Name: "v", Schema: "dbo", Body: "SELECT id FROM dbo.t", Attributes: test.actual},
+				catalog.View{Name: "v", Schema: "dbo", Body: "SELECT id FROM dbo.t", Attributes: test.actual},
 			)
 
 			_, changed := diff.Changes["attributes"]

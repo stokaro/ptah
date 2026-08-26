@@ -10,16 +10,16 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
 func TestScopeApplyStatesDoesNotReAddCurrentSupportExtension(t *testing.T) {
 	c := qt.New(t)
-	current := &types.DBSchema{Extensions: []types.DBExtension{
+	current := &catalog.Database{Extensions: []catalog.Extension{
 		{Schema: "extensions", Name: "citext"},
 		{Name: "pgcrypto"},
 	}}

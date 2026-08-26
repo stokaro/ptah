@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/cmd/internal/diffreport"
@@ -21,7 +22,6 @@ import (
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/dbexprprobe"
 	"go.5x5.cz/ptah/internal/dburldisplay"
@@ -273,7 +273,7 @@ func resolveGeneratedExpressions(
 	ctx context.Context,
 	opts *options,
 	connectTimeout time.Duration,
-	info dbschematypes.DBInfo,
+	info catalog.ServerInfo,
 	declared *goschema.Database,
 ) (*config.CompareOptions, error) {
 	probes, err := genexprprobe.For(info.Dialect, info.Capabilities, declared)

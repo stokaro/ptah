@@ -6,9 +6,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/timescale"
 )
 
@@ -24,7 +24,7 @@ func TestValidateLive_RefusesADeclarationThatWantsAnAggregatesName(t *testing.T)
 		name      string
 		dialect   string
 		generated *goschema.Database
-		database  *types.DBSchema
+		database  *catalog.Database
 		wantErr   string
 		// wantProblems is how many refusals the row expects. It is here
 		// because qt.Contains with an empty substring matches ANY string, so
@@ -72,7 +72,7 @@ func TestValidateLive_RefusesADeclarationThatWantsAnAggregatesName(t *testing.T)
 			generated: &goschema.Database{
 				Views: []goschema.View{{Name: "APP.Conditions_Hourly", Body: "SELECT 1"}},
 			},
-			database: &types.DBSchema{ContinuousAggregates: []types.DBContinuousAggregate{{
+			database: &catalog.Database{ContinuousAggregates: []catalog.ContinuousAggregate{{
 				Schema: "app", Name: "conditions_hourly",
 				HypertableSchema: "app", HypertableName: "conditions",
 			}}},
@@ -91,7 +91,7 @@ func TestValidateLive_RefusesADeclarationThatWantsAnAggregatesName(t *testing.T)
 			generated: &goschema.Database{
 				Views: []goschema.View{{Name: "conditions_hourly", Body: "SELECT 1"}},
 			},
-			database: &types.DBSchema{},
+			database: &catalog.Database{},
 		},
 		{
 			// The catalog is PostgreSQL's, and so is the collision. A MySQL
@@ -116,8 +116,8 @@ func TestValidateLive_RefusesADeclarationThatWantsAnAggregatesName(t *testing.T)
 	}
 }
 
-func liveWithAggregate() *types.DBSchema {
-	return &types.DBSchema{ContinuousAggregates: []types.DBContinuousAggregate{{
+func liveWithAggregate() *catalog.Database {
+	return &catalog.Database{ContinuousAggregates: []catalog.ContinuousAggregate{{
 		Name:             "conditions_hourly",
 		HypertableSchema: "public",
 		HypertableName:   "conditions",

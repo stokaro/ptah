@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 	"go.5x5.cz/ptah/internal/atlassource"
 	"go.5x5.cz/ptah/internal/devclean"
@@ -75,7 +75,7 @@ type InspectSourceOptions struct {
 	ValidateInspectedSchema func(*goschema.Database) error
 	// PrepareInspectedSchema normalizes and validates the exact introspected
 	// database snapshot that rendering and file exports consume.
-	PrepareInspectedSchema func(*dbschematypes.DBSchema) (*dbschematypes.DBSchema, error)
+	PrepareInspectedSchema func(*catalog.Database) (*catalog.Database, error)
 	// ValidateLiveObject applies to catalog-only live or dev-database objects
 	// before output or file exports. Nil avoids supplemental catalog reads.
 	ValidateLiveObject func(LiveSchemaObject) error
@@ -544,7 +544,7 @@ func materializeOnDev(
 // caller's --schema selection on purpose. Only the ROLE lists are consulted,
 // and their union is the set of roles the server has whatever schemas are in
 // scope: what the selection moves is which of them are described, not which of
-// them exist. See [dbschematypes.DBSchema.RolesOutOfScope].
+// them exist. See [catalog.Database.RolesOutOfScope].
 //
 // The desired state is copied rather than edited. Which roles one dev database
 // happened to have is a fact about that database, not about the document, and
@@ -588,7 +588,7 @@ func readValidatedInspectDevSchema(
 	ctx context.Context,
 	devConn *dbschema.DatabaseConnection,
 	opts inspectDevReadOptions,
-) (*dbschematypes.DBSchema, InspectOptions, error) {
+) (*catalog.Database, InspectOptions, error) {
 	schema, names, err := readInspectSchemaWithNames(ctx, devConn, opts.inspect.Schemas)
 	if err != nil {
 		return nil, InspectOptions{}, fmt.Errorf("read dev database schema: %w", err)

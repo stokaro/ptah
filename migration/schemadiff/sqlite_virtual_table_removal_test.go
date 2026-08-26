@@ -8,8 +8,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "modernc.org/sqlite"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	dbtypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbschema/sqlite"
 	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
@@ -19,7 +19,7 @@ import (
 
 // TestCompareRefusesToPlanDroppingALiveVirtualTable is the seam test for the
 // data-loss path, run against a real SQLite database rather than a hand-built
-// DBSchema.
+// Database.
 //
 // The unit guard in internal/sqlitevirtual proves the rule; this proves the
 // rule is wired into the comparison every native verb goes through. The two
@@ -86,7 +86,7 @@ func TestCompareRefusesToPlanDroppingALiveVirtualTable(t *testing.T) {
 			diff, err := schemadiff.CompareWithDatabaseInfo(
 				generated,
 				database,
-				dbtypes.DBInfo{Dialect: "sqlite"},
+				catalog.ServerInfo{Dialect: "sqlite"},
 				nil,
 			)
 
@@ -99,9 +99,9 @@ func TestCompareRefusesToPlanDroppingALiveVirtualTable(t *testing.T) {
 
 // readLiveVirtualTableFixture builds a SQLite database holding a virtual table,
 // an ordinary table that stays, and an ordinary table that goes, and reads it
-// with the real reader. A hand-built DBSchema would prove the validator reads
+// with the real reader. A hand-built Database would prove the validator reads
 // a struct field; this proves it reads what the reader reports.
-func readLiveVirtualTableFixture(t *testing.T) *dbtypes.DBSchema {
+func readLiveVirtualTableFixture(t *testing.T) *catalog.Database {
 	t.Helper()
 
 	path := filepath.Join(t.TempDir(), "virtual.sqlite")

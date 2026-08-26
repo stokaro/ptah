@@ -12,11 +12,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -208,7 +208,7 @@ CREATE TABLE [dbo].[users] (
 	current, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{"dbo"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(current.Indexes, qt.HasLen, 1)
-	c.Assert(current.Indexes[0].Parts, qt.DeepEquals, []dbschematypes.DBIndexPart{
+	c.Assert(current.Indexes[0].Parts, qt.DeepEquals, []catalog.IndexPart{
 		{Name: "email"},
 		{Name: "status"},
 	})
@@ -243,7 +243,7 @@ CREATE TABLE [dbo].[users] (
 	actual, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{"dbo"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(actual.Indexes, qt.HasLen, 1)
-	c.Assert(actual.Indexes[0].Parts, qt.DeepEquals, []dbschematypes.DBIndexPart{
+	c.Assert(actual.Indexes[0].Parts, qt.DeepEquals, []catalog.IndexPart{
 		{Name: "email", Desc: true},
 		{Name: "status"},
 	})
@@ -565,7 +565,7 @@ func TestSQLServerLiveIdentifierSemantics_TargetTableCollision_FailurePath(t *te
 		t.Context(),
 		conn,
 		target,
-		&dbschematypes.DBSchema{},
+		&catalog.Database{},
 		nil,
 	)
 
@@ -598,7 +598,7 @@ func TestSQLServerLiveIdentifierSemantics_EmbeddedColumnCollision_FailurePath(t 
 		t.Context(),
 		conn,
 		target,
-		&dbschematypes.DBSchema{},
+		&catalog.Database{},
 		nil,
 	)
 
@@ -673,8 +673,8 @@ func connectSQLServerCollationDatabase(
 	return conn
 }
 
-func indexOnlySchema(schema *dbschematypes.DBSchema) *dbschematypes.DBSchema {
-	return &dbschematypes.DBSchema{Indexes: schema.Indexes}
+func indexOnlySchema(schema *catalog.Database) *catalog.Database {
+	return &catalog.Database{Indexes: schema.Indexes}
 }
 
 func withSQLServerDefaultSchema(t *testing.T, dbURL, schema string) string {

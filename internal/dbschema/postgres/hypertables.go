@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 )
 
 // hypertableCatalog is the view TimescaleDB publishes its hypertables through.
@@ -77,11 +77,11 @@ const hypertableQuery = `
 // here is partitioned", and that is a claim a failed read cannot make. The
 // consequence of getting it wrong is not a wrong statement but a MISSING note,
 // which is the failure this whole read exists to prevent.
-func (r *Reader) readHypertables(ctx context.Context, extensions []types.DBExtension) ([]types.DBHypertable, error) {
+func (r *Reader) readHypertables(ctx context.Context, extensions []catalog.Extension) ([]catalog.Hypertable, error) {
 	if !hasTimescaleExtension(extensions) {
 		return nil, nil
 	}
-	var hypertables []types.DBHypertable
+	var hypertables []catalog.Hypertable
 	for _, schemaName := range r.schemasToRead() {
 		schemaHypertables, err := r.readHypertablesForSchema(ctx, schemaName)
 		if err != nil {
@@ -92,16 +92,16 @@ func (r *Reader) readHypertables(ctx context.Context, extensions []types.DBExten
 	return hypertables, nil
 }
 
-func (r *Reader) readHypertablesForSchema(ctx context.Context, schemaName string) ([]types.DBHypertable, error) {
+func (r *Reader) readHypertablesForSchema(ctx context.Context, schemaName string) ([]catalog.Hypertable, error) {
 	rows, err := r.db.QueryContext(ctx, hypertableQuery, schemaName)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var hypertables []types.DBHypertable
+	var hypertables []catalog.Hypertable
 	for rows.Next() {
-		var hypertable types.DBHypertable
+		var hypertable catalog.Hypertable
 		var dimension, dimensionType, interval sql.NullString
 		if err := rows.Scan(
 			&hypertable.Schema, &hypertable.Name,

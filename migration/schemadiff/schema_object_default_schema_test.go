@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -53,7 +53,7 @@ func TestCompareWithDialect_DifferentSchemaDoesNotMatchSchemaObjects(t *testing.
 func schemaObjectIdentityFixtures(
 	desiredSchema,
 	currentSchema string,
-) (*goschema.Database, *types.DBSchema) {
+) (*goschema.Database, *catalog.Database) {
 	generated := &goschema.Database{
 		Functions: []goschema.Function{{
 			Name:       desiredSchema + ".f_ctl",
@@ -100,8 +100,8 @@ func schemaObjectIdentityFixtures(
 			Body:    "SELECT 1",
 		}},
 	}
-	database := &types.DBSchema{
-		Functions: []types.DBFunction{{
+	database := &catalog.Database{
+		Functions: []catalog.Function{{
 			Name:       "f_ctl",
 			Schema:     currentSchema,
 			Returns:    "integer",
@@ -110,38 +110,38 @@ func schemaObjectIdentityFixtures(
 			Volatility: "VOLATILE",
 			Body:       "SELECT 1",
 		}},
-		Sequences: []types.DBSequence{{
+		Sequences: []catalog.Sequence{{
 			Name:     "s_ctl",
 			Schema:   currentSchema,
 			DataType: "bigint",
 		}},
-		Domains: []types.DBDomain{{
+		Domains: []catalog.Domain{{
 			Name:     "d_ctl",
 			Schema:   currentSchema,
 			BaseType: "text",
 		}},
-		Composites: []types.DBComposite{{
+		Composites: []catalog.CompositeType{{
 			Name:   "c_ctl",
 			Schema: currentSchema,
-			Fields: []types.DBCompositeField{{Name: "value", Type: "text"}},
+			Fields: []catalog.CompositeField{{Name: "value", Type: "text"}},
 		}},
-		Ranges: []types.DBRange{{
+		Ranges: []catalog.Range{{
 			Name:    "r_ctl",
 			Schema:  currentSchema,
 			Subtype: "integer",
 		}},
-		Views: []types.DBView{{
+		Views: []catalog.View{{
 			Name:        "v_ctl",
 			Schema:      currentSchema,
 			Body:        "SELECT 1",
 			CheckOption: "NONE",
 		}},
-		MatViews: []types.DBMatView{{
+		MatViews: []catalog.MaterializedView{{
 			Name:   "mv_ctl",
 			Schema: currentSchema,
 			Body:   "SELECT 1",
 		}},
-		Triggers: []types.DBTrigger{{
+		Triggers: []catalog.Trigger{{
 			Name:    "tr_ctl",
 			Schema:  currentSchema,
 			Table:   "items",

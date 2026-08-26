@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/schemastate"
 )
@@ -103,22 +103,22 @@ func TestFromDescriptionRecordsNoGuaranteeWhereNoneIsDeclared(t *testing.T) {
 func TestFromCatalogReadsBothSpellingsAServerUses(t *testing.T) {
 	tests := []struct {
 		name        string
-		catalog     *dbschematypes.DBSchema
+		catalog     *catalog.Database
 		wantColumns [][]string
 	}{
 		{
 			name: "the column's own flag",
-			catalog: catalogWidget([]dbschematypes.DBColumn{
+			catalog: catalogWidget([]catalog.Column{
 				{Name: "code", DataType: "text", IsNullable: "NO", IsUnique: true},
 			}, nil),
 			wantColumns: [][]string{{"code"}},
 		},
 		{
 			name: "a constraint row",
-			catalog: catalogWidget([]dbschematypes.DBColumn{
+			catalog: catalogWidget([]catalog.Column{
 				{Name: "tenant", DataType: "integer", IsNullable: "NO"},
 				{Name: "code", DataType: "text", IsNullable: "NO"},
-			}, []dbschematypes.DBConstraint{{
+			}, []catalog.Constraint{{
 				Name: "uq_widget_scope", TableName: "widget", Schema: "public",
 				Type: "UNIQUE", ColumnNames: []string{"tenant", "code"},
 			}}),
@@ -126,7 +126,7 @@ func TestFromCatalogReadsBothSpellingsAServerUses(t *testing.T) {
 		},
 		{
 			name: "no guarantee at all",
-			catalog: catalogWidget([]dbschematypes.DBColumn{
+			catalog: catalogWidget([]catalog.Column{
 				{Name: "code", DataType: "text", IsNullable: "YES"},
 			}, nil),
 			wantColumns: make([][]string, 0),
@@ -193,11 +193,11 @@ func withIndex(description *goschema.Database, index goschema.Index) *goschema.D
 }
 
 func catalogWidget(
-	columns []dbschematypes.DBColumn,
-	constraints []dbschematypes.DBConstraint,
-) *dbschematypes.DBSchema {
-	return &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
+	columns []catalog.Column,
+	constraints []catalog.Constraint,
+) *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{
 			{Name: "widget", Schema: "public", Columns: columns},
 		},
 		Constraints: constraints,

@@ -3,8 +3,8 @@ package compare
 import (
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 )
 
 // normalizeRoutineSignature reduces a routine's argument list to the form both
@@ -208,7 +208,7 @@ func splitTopLevel(text string) []string {
 // routinePair is one declared routine matched to the recorded routine it is.
 type routinePair struct {
 	declared goschema.Function
-	recorded types.DBFunction
+	recorded catalog.Function
 }
 
 // pairRoutineOverloads matches the routines a schema declares under one name to
@@ -229,8 +229,8 @@ type routinePair struct {
 // is visible in a plan, rather than as a silent mispairing.
 func pairRoutineOverloads(
 	declared []goschema.Function,
-	recorded []types.DBFunction,
-) (pairs []routinePair, unmatchedDeclared int, removed []types.DBFunction) {
+	recorded []catalog.Function,
+) (pairs []routinePair, unmatchedDeclared int, removed []catalog.Function) {
 	if len(declared) == 0 {
 		return nil, 0, recorded
 	}
@@ -268,7 +268,7 @@ func pairRoutineOverloads(
 
 // matchRecordedRoutine finds the unused recorded routine whose signature equals
 // the declared one's, or -1.
-func matchRecordedRoutine(declared goschema.Function, recorded []types.DBFunction, used []bool) int {
+func matchRecordedRoutine(declared goschema.Function, recorded []catalog.Function, used []bool) int {
 	want := normalizeRoutineSignature(declared.Parameters)
 	for index, candidate := range recorded {
 		if used[index] {
@@ -290,7 +290,7 @@ func matchRecordedRoutine(declared goschema.Function, recorded []types.DBFunctio
 // where a name is overloaded: on a dialect with no identity arguments the two
 // sides are compared on the same kind of string, which is the best available
 // and is still better than keeping one entry per name.
-func recordedRoutineSignature(function types.DBFunction) string {
+func recordedRoutineSignature(function catalog.Function) string {
 	if function.IdentityArguments != nil {
 		return *function.IdentityArguments
 	}

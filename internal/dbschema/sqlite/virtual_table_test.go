@@ -7,8 +7,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/dbschema/sqlite"
 )
@@ -377,7 +377,7 @@ func forgeCatalogRow(t *testing.T, db *sql.DB, name, ddl string) {
 	execSQL(t, db, `PRAGMA writable_schema = RESET`)
 }
 
-func tableNames(tables []types.DBTable) []string {
+func tableNames(tables []catalog.Table) []string {
 	names := make([]string, 0, len(tables))
 	for _, table := range tables {
 		names = append(names, table.Name)
@@ -385,7 +385,7 @@ func tableNames(tables []types.DBTable) []string {
 	return names
 }
 
-func columnNames(columns []types.DBColumn) []string {
+func columnNames(columns []catalog.Column) []string {
 	names := make([]string, 0, len(columns))
 	for _, column := range columns {
 		names = append(names, column.Name)

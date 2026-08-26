@@ -5,17 +5,17 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 )
 
 // identitySchema is one table whose id column carries the given identity range.
-func identitySchema(start, increment string) *types.DBSchema {
-	return &types.DBSchema{
-		Tables: []types.DBTable{{
+func identitySchema(start, increment string) *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{{
 			Name: "orders", Type: "BASE TABLE",
-			Columns: []types.DBColumn{
+			Columns: []catalog.Column{
 				{
 					Name: "id", DataType: "int", IsNullable: "NO",
 					IsPrimaryKey: true, IsAutoIncrement: true,

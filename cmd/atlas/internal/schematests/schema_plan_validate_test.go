@@ -11,10 +11,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/cmd/atlas"
 	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasschema"
 )
 
@@ -69,7 +69,7 @@ func execOnTarget(c *qt.C, dbURL, statement string) {
 
 // readTargetSchema introspects the target so a test can prove validate left it
 // alone.
-func readTargetSchema(c *qt.C, dbURL string) *dbschematypes.DBSchema {
+func readTargetSchema(c *qt.C, dbURL string) *catalog.Database {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
 	c.Assert(err, qt.IsNil)
@@ -788,7 +788,7 @@ func TestSchemaPlanValidateRejectsPositionalArguments(t *testing.T) {
 
 // tableNames returns the introspected table names, sorted by the reader's own
 // order, so two schemas can be compared without depending on column detail.
-func tableNames(schema *dbschematypes.DBSchema) []string {
+func tableNames(schema *catalog.Database) []string {
 	names := make([]string, 0, len(schema.Tables))
 	for _, table := range schema.Tables {
 		names = append(names, table.Name)

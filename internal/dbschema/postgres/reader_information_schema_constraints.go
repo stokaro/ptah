@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 )
 
 // informationSchemaConstraintQuery reads constraints from the SQL-standard
@@ -61,7 +61,7 @@ const notNullCheckPrefix = "CK_IS_NOT_NULL_"
 
 // readInformationSchemaConstraints reads one schema's constraints from the
 // SQL-standard catalog. See [informationSchemaConstraintQuery].
-func (r *Reader) readInformationSchemaConstraints(ctx context.Context, schemaName string) ([]types.DBConstraint, error) {
+func (r *Reader) readInformationSchemaConstraints(ctx context.Context, schemaName string) ([]catalog.Constraint, error) {
 	rows, err := r.db.QueryContext(ctx, informationSchemaConstraintQuery, schemaName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query constraints: %w", err)
@@ -69,7 +69,7 @@ func (r *Reader) readInformationSchemaConstraints(ctx context.Context, schemaNam
 	defer rows.Close()
 
 	var (
-		constraints []types.DBConstraint
+		constraints []catalog.Constraint
 		byName      = make(map[string]int)
 	)
 	for rows.Next() {
@@ -95,7 +95,7 @@ func (r *Reader) readInformationSchemaConstraints(ctx context.Context, schemaNam
 		if !seen {
 			position = len(constraints)
 			byName[key] = position
-			constraints = append(constraints, types.DBConstraint{
+			constraints = append(constraints, catalog.Constraint{
 				Name:      name,
 				TableName: tableName,
 				// r.outputSchema is what every other read in this file uses: the
@@ -144,7 +144,7 @@ func isMaterializedNotNullCheck(name string, clause sql.NullString) bool {
 // addInformationSchemaConstraintColumn records one key column, and its
 // referenced counterpart when the constraint has one.
 func addInformationSchemaConstraintColumn(
-	constraint *types.DBConstraint,
+	constraint *catalog.Constraint,
 	column,
 	refColumn sql.NullString,
 ) {

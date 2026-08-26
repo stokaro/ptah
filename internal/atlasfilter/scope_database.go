@@ -4,17 +4,17 @@ import (
 	"slices"
 	"strings"
 
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/internal/objectidentity"
 )
 
 // projectDatabase applies the schema universe and include selectors to the
 // introspected database schema, mirroring projectGenerated so both comparison
 // sides see one projection.
-func (s *scopeSelection) projectDatabase(db *dbschematypes.DBSchema) *dbschematypes.DBSchema {
+func (s *scopeSelection) projectDatabase(db *catalog.Database) *catalog.Database {
 	out := cloneDatabase(db)
 	keptTables := make(map[tableIdentity]struct{})
-	out.Tables = keep(db.Tables, func(table dbschematypes.DBTable) bool {
+	out.Tables = keep(db.Tables, func(table catalog.Table) bool {
 		if !s.schemaAllowed(table.Schema) {
 			return false
 		}
@@ -25,16 +25,16 @@ func (s *scopeSelection) projectDatabase(db *dbschematypes.DBSchema) *dbschematy
 		return true
 	})
 
-	out.Indexes = keep(db.Indexes, func(index dbschematypes.DBIndex) bool {
+	out.Indexes = keep(db.Indexes, func(index catalog.Index) bool {
 		return s.tableKept(keptTables, index.Schema, index.TableName)
 	})
-	out.Constraints = keep(db.Constraints, func(constraint dbschematypes.DBConstraint) bool {
+	out.Constraints = keep(db.Constraints, func(constraint catalog.Constraint) bool {
 		return s.tableKept(keptTables, constraint.Schema, constraint.TableName)
 	})
-	out.Triggers = keep(db.Triggers, func(trigger dbschematypes.DBTrigger) bool {
+	out.Triggers = keep(db.Triggers, func(trigger catalog.Trigger) bool {
 		return s.tableKept(keptTables, trigger.Schema, trigger.Table)
 	})
-	out.RLSPolicies = keep(db.RLSPolicies, func(policy dbschematypes.DBRLSPolicy) bool {
+	out.RLSPolicies = keep(db.RLSPolicies, func(policy catalog.RLSPolicy) bool {
 		schema, table := splitQualified(policy.Table)
 		return s.tableKept(keptTables, schema, table)
 	})
@@ -51,20 +51,20 @@ func (s *scopeSelection) projectDatabase(db *dbschematypes.DBSchema) *dbschematy
 // support objects, when the selection knows whether a non-extension resource
 // matched.
 func (s *scopeSelection) projectDatabaseTopLevel(
-	db, out *dbschematypes.DBSchema,
+	db, out *catalog.Database,
 	keptTables map[tableIdentity]struct{},
 ) {
-	out.Views = keep(db.Views, func(view dbschematypes.DBView) bool {
+	out.Views = keep(db.Views, func(view catalog.View) bool {
 		return s.selected(typeList("view"), view.Schema, view.Name)
 	})
-	out.MatViews = keep(db.MatViews, func(view dbschematypes.DBMatView) bool {
+	out.MatViews = keep(db.MatViews, func(view catalog.MaterializedView) bool {
 		return s.selected(typeList("materialized_view"), view.Schema, view.Name)
 	})
 	// A synonym is selected on its own name, never on its target's. The alias
 	// is the object this schema declares, and a rule that kept a synonym
 	// because its target was selected would pull in an alias the operator did
 	// not name -- possibly one whose target is not even in this database.
-	out.Synonyms = keep(db.Synonyms, func(synonym dbschematypes.DBSynonym) bool {
+	out.Synonyms = keep(db.Synonyms, func(synonym catalog.Synonym) bool {
 		return s.selected(typeList("synonym"), synonym.Schema, synonym.Name)
 	})
 	// An extended property rides with the object it hangs off, and is also
@@ -77,7 +77,7 @@ func (s *scopeSelection) projectDatabaseTopLevel(
 	// placement is not ownership. Narrowing it away would plan
 	// sp_dropextendedproperty for a property the declaration still names.
 	out.ExtendedProperties = keep(db.ExtendedProperties,
-		func(property dbschematypes.DBExtendedProperty) bool {
+		func(property catalog.ExtendedProperty) bool {
 			if property.Schema == "" {
 				return s.selectedDatabaseProperty(property.Name)
 			}
@@ -92,23 +92,23 @@ func (s *scopeSelection) projectDatabaseTopLevel(
 	// rides on its owning table; it is here so a narrowed description still
 	// carries the aggregates of the schemas it does describe.
 	out.ContinuousAggregates = keep(db.ContinuousAggregates,
-		func(aggregate dbschematypes.DBContinuousAggregate) bool {
+		func(aggregate catalog.ContinuousAggregate) bool {
 			return s.selected(typeList("continuous_aggregate"), aggregate.Schema, aggregate.Name)
 		})
-	out.Functions = keep(db.Functions, func(function dbschematypes.DBFunction) bool {
+	out.Functions = keep(db.Functions, func(function catalog.Function) bool {
 		return s.selected(typeList("function"), function.Schema, function.Name)
 	})
-	out.Sequences = keep(db.Sequences, func(sequence dbschematypes.DBSequence) bool {
+	out.Sequences = keep(db.Sequences, func(sequence catalog.Sequence) bool {
 		if s.selected(typeList("sequence"), sequence.Schema, sequence.Name) {
 			return true
 		}
 		ownerSchema, ownerTable := sequenceOwnerTable(sequence.Schema, sequence.OwnedBy)
 		return s.tableKept(keptTables, ownerSchema, ownerTable)
 	})
-	out.Grants = keep(db.Grants, func(grant dbschematypes.DBGrant) bool {
+	out.Grants = keep(db.Grants, func(grant catalog.Grant) bool {
 		return s.databaseGrantSelected(out, keptTables, grant)
 	})
-	out.Roles = keep(db.Roles, func(role dbschematypes.DBRole) bool {
+	out.Roles = keep(db.Roles, func(role catalog.Role) bool {
 		if s.selectedNames(typeList("role"), role.Name) {
 			return true
 		}
@@ -116,7 +116,7 @@ func (s *scopeSelection) projectDatabaseTopLevel(
 	})
 }
 
-func (s *scopeSelection) projectDatabaseExtensions(db, out *dbschematypes.DBSchema) {
+func (s *scopeSelection) projectDatabaseExtensions(db, out *catalog.Database) {
 	if s.extensionSupport || s.nonExtensionMatched {
 		for _, extension := range db.Extensions {
 			s.selectedExtension(extension.Schema, extension.Name)
@@ -124,7 +124,7 @@ func (s *scopeSelection) projectDatabaseExtensions(db, out *dbschematypes.DBSche
 		out.Extensions = slices.Clone(db.Extensions)
 		return
 	}
-	out.Extensions = keep(db.Extensions, func(extension dbschematypes.DBExtension) bool {
+	out.Extensions = keep(db.Extensions, func(extension catalog.Extension) bool {
 		return s.selectedExtension(extension.Schema, extension.Name)
 	})
 }
@@ -132,24 +132,24 @@ func (s *scopeSelection) projectDatabaseExtensions(db, out *dbschematypes.DBSche
 // projectDatabaseSupport retains type objects referenced by kept columns:
 // enums via user-defined column types, and domains, composite types, and
 // ranges via column type names.
-func (s *scopeSelection) projectDatabaseSupport(db, out *dbschematypes.DBSchema) {
+func (s *scopeSelection) projectDatabaseSupport(db, out *catalog.Database) {
 	referenced := databaseColumnTypeSet(out.Tables)
 	out.Domains = keepTypeObjects(s, db.Domains, "domain", referenced,
-		func(d dbschematypes.DBDomain) (string, string) { return d.Schema, d.Name })
+		func(d catalog.Domain) (string, string) { return d.Schema, d.Name })
 	out.Composites = keepTypeObjects(s, db.Composites, "composite_type", referenced,
-		func(c dbschematypes.DBComposite) (string, string) { return c.Schema, c.Name })
+		func(c catalog.CompositeType) (string, string) { return c.Schema, c.Name })
 	out.Ranges = keepTypeObjects(s, db.Ranges, "range", referenced,
-		func(r dbschematypes.DBRange) (string, string) { return r.Schema, r.Name })
+		func(r catalog.Range) (string, string) { return r.Schema, r.Name })
 	out.Enums = keepEnumObjects(s, db.Enums, referenced,
-		func(e dbschematypes.DBEnum) (string, string) { return e.Schema, e.Name })
+		func(e catalog.Enum) (string, string) { return e.Schema, e.Name })
 }
 
 // databaseGrantSelected mirrors generatedGrantSelected for introspected
 // grants.
 func (s *scopeSelection) databaseGrantSelected(
-	out *dbschematypes.DBSchema,
+	out *catalog.Database,
 	keptTables map[tableIdentity]struct{},
-	grant dbschematypes.DBGrant,
+	grant catalog.Grant,
 ) bool {
 	switch {
 	case strings.EqualFold(grant.ObjectType, "SCHEMA"):
@@ -170,7 +170,7 @@ func (s *scopeSelection) databaseGrantSelected(
 
 // keepDatabaseSchemas keeps schema entries that own selected objects, so both
 // sides agree on which schemas stay in the comparison.
-func (s *scopeSelection) keepDatabaseSchemas(db, out *dbschematypes.DBSchema) []dbschematypes.DBSchemaInfo {
+func (s *scopeSelection) keepDatabaseSchemas(db, out *catalog.Database) []catalog.Schema {
 	owning := make(map[string]struct{})
 	for _, table := range out.Tables {
 		owning[s.effectiveSchema(table.Schema)] = struct{}{}
@@ -202,7 +202,7 @@ func (s *scopeSelection) keepDatabaseSchemas(db, out *dbschematypes.DBSchema) []
 	for _, extension := range out.Extensions {
 		owning[s.effectiveExtensionSchema(extension.Schema)] = struct{}{}
 	}
-	return keep(db.Schemas, func(schema dbschematypes.DBSchemaInfo) bool {
+	return keep(db.Schemas, func(schema catalog.Schema) bool {
 		if !s.schemaAllowed(schema.Name) {
 			return false
 		}
@@ -247,7 +247,7 @@ func sequenceOwnerTable(sequenceSchema, ownedBy string) (schema, table string) {
 	}
 }
 
-func databaseSequenceNameKept(sequences []dbschematypes.DBSequence, schema, name string) bool {
+func databaseSequenceNameKept(sequences []catalog.Sequence, schema, name string) bool {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return false
@@ -261,7 +261,7 @@ func databaseSequenceNameKept(sequences []dbschematypes.DBSequence, schema, name
 	return false
 }
 
-func databaseGrantRoleReferenced(grants []dbschematypes.DBGrant, role string) bool {
+func databaseGrantRoleReferenced(grants []catalog.Grant, role string) bool {
 	for _, grant := range grants {
 		if strings.EqualFold(grant.Role, role) {
 			return true
@@ -273,7 +273,7 @@ func databaseGrantRoleReferenced(grants []dbschematypes.DBGrant, role string) bo
 // databaseColumnTypeSet collects lowercase column type spellings of the kept
 // tables, including user-defined type names, so type objects those columns
 // use can be retained as dependencies.
-func databaseColumnTypeSet(tables []dbschematypes.DBTable) map[string]struct{} {
+func databaseColumnTypeSet(tables []catalog.Table) map[string]struct{} {
 	types := make(map[string]struct{})
 	for _, table := range tables {
 		for _, column := range table.Columns {
@@ -290,7 +290,7 @@ func databaseColumnTypeSet(tables []dbschematypes.DBTable) map[string]struct{} {
 
 // databaseEnumColumnRef resolves the user-defined type a column references,
 // mirroring how introspected schemas mark enum and domain usage.
-func databaseEnumColumnRef(column dbschematypes.DBColumn) (string, bool) {
+func databaseEnumColumnRef(column catalog.Column) (string, bool) {
 	if column.UDTName == "" {
 		return "", false
 	}

@@ -14,7 +14,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 )
 
@@ -131,7 +131,7 @@ func columnsDB(c *qt.C, rows [][]driver.Value) *dbtest.DB {
 //
 // The empty string is unambiguous here: a column declared DEFAULT ” is
 // reported by the catalog WITH its quotes, so it arrives as "”".
-func recordedDefault(column types.DBColumn) string {
+func recordedDefault(column catalog.Column) string {
 	if column.ColumnDefault == nil {
 		return ""
 	}

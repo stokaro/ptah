@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -46,7 +46,7 @@ func TestGrantsWithSemantics_UnresolvedTablesAreNotOneTable(t *testing.T) {
 	}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.GrantsWithSemantics(generated, &types.DBSchema{}, diff, unresolvedTargetSemantics())
+	compare.GrantsWithSemantics(generated, &catalog.Database{}, diff, unresolvedTargetSemantics())
 
 	granted := make([]string, 0, len(diff.GrantsAdded))
 	for _, grant := range diff.GrantsAdded {
@@ -69,7 +69,7 @@ func TestRLSEnabledTablesWithSemantics_UnresolvedTablesAreNotOneTable(t *testing
 	diff := &difftypes.SchemaDiff{}
 
 	compare.RLSEnabledTablesWithSemantics(
-		generated, &types.DBSchema{}, diff, unresolvedTargetSemantics(),
+		generated, &catalog.Database{}, diff, unresolvedTargetSemantics(),
 	)
 
 	c.Assert(diff.RLSEnabledTablesAdded, qt.DeepEquals, []string{"alpha", "beta"})
@@ -97,7 +97,7 @@ func TestConstraintsWithSemantics_UnresolvedTablesAreNotOneTable(t *testing.T) {
 	}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.ConstraintsWithSemantics(generated, &types.DBSchema{}, diff, nil, unresolvedTargetSemantics())
+	compare.ConstraintsWithSemantics(generated, &catalog.Database{}, diff, nil, unresolvedTargetSemantics())
 
 	tables := make([]string, 0, len(diff.ConstraintsAddedWithTables))
 	for _, constraint := range diff.ConstraintsAddedWithTables {

@@ -12,7 +12,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 )
 
 func TestParsePostgresIndexParts_HappyPath(t *testing.T) {
@@ -20,7 +20,7 @@ func TestParsePostgresIndexParts_HappyPath(t *testing.T) {
 		name     string
 		columns  []string
 		attnums  string
-		expected []types.DBIndexPart
+		expected []catalog.IndexPart
 	}{
 		{
 			// Measured on PostgreSQL 17.10: CREATE INDEX i ON t (lower(name))
@@ -28,19 +28,19 @@ func TestParsePostgresIndexParts_HappyPath(t *testing.T) {
 			name:     "single expression key",
 			columns:  []string{"lower(name)"},
 			attnums:  "[0]",
-			expected: []types.DBIndexPart{{Expr: "lower(name)"}},
+			expected: []catalog.IndexPart{{Expr: "lower(name)"}},
 		},
 		{
 			name:     "single column key",
 			columns:  []string{"plain"},
 			attnums:  "[2]",
-			expected: []types.DBIndexPart{{Name: "plain"}},
+			expected: []catalog.IndexPart{{Name: "plain"}},
 		},
 		{
 			name:    "column and expression in one index",
 			columns: []string{"tenant_id", "lower(name)"},
 			attnums: "[2,0]",
-			expected: []types.DBIndexPart{
+			expected: []catalog.IndexPart{
 				{Name: "tenant_id"},
 				{Expr: "lower(name)"},
 			},
@@ -52,7 +52,7 @@ func TestParsePostgresIndexParts_HappyPath(t *testing.T) {
 			name:     "column named like a function call",
 			columns:  []string{"lower(name)"},
 			attnums:  "[3]",
-			expected: []types.DBIndexPart{{Name: "lower(name)"}},
+			expected: []catalog.IndexPart{{Name: "lower(name)"}},
 		},
 	}
 
@@ -67,7 +67,7 @@ func TestParsePostgresIndexParts_HappyPath(t *testing.T) {
 }
 
 func TestParsePostgresIndexParts_FallsBackToColumnsOnly(t *testing.T) {
-	// Returning nil leaves DBIndex.Parts empty, which the rest of the pipeline
+	// Returning nil leaves Index.Parts empty, which the rest of the pipeline
 	// reads as "this reader supplied only the legacy Columns form" rather than
 	// as "this index has no keys".
 	tests := []struct {

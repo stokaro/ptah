@@ -19,8 +19,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	mysqldriver "github.com/go-sql-driver/mysql"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 )
 
@@ -60,7 +60,7 @@ func TestReadRolesInto_RecordsWhyTheRoleCatalogWasNotRead(t *testing.T) {
 			db := dbtest.Open(t, refusingMySQLCatalog(test.refused))
 			reader := NewMySQLReader(db.SQL, "app")
 
-			schema := &types.DBSchema{}
+			schema := &catalog.Database{}
 			c.Assert(reader.readRolesInto(t.Context(), schema, "app"), qt.IsNil)
 
 			c.Assert(schema.NotDescribed.Objects, qt.DeepEquals, test.want)

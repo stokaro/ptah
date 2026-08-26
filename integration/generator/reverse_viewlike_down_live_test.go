@@ -13,9 +13,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -369,24 +369,24 @@ func revIntSchema(opts revIntOptions) *goschema.Database {
 // revIntMissingObjects names the view-like objects a schema declares that the
 // catalog does not hold. An empty result is what "the migration arrived" means;
 // a non-empty one is a plan that applied and still left work undone.
-func revIntMissingObjects(schema *goschema.Database, db *dbschematypes.DBSchema) []string {
+func revIntMissingObjects(schema *goschema.Database, db *catalog.Database) []string {
 	var missing []string
 	for _, view := range schema.Views {
-		if !slices.ContainsFunc(db.Views, func(candidate dbschematypes.DBView) bool {
+		if !slices.ContainsFunc(db.Views, func(candidate catalog.View) bool {
 			return candidate.Name == view.Name
 		}) {
 			missing = append(missing, "view "+view.Name)
 		}
 	}
 	for _, view := range schema.MaterializedViews {
-		if !slices.ContainsFunc(db.MatViews, func(candidate dbschematypes.DBMatView) bool {
+		if !slices.ContainsFunc(db.MatViews, func(candidate catalog.MaterializedView) bool {
 			return candidate.Name == view.Name
 		}) {
 			missing = append(missing, "matview "+view.Name)
 		}
 	}
 	for _, trigger := range schema.Triggers {
-		if !slices.ContainsFunc(db.Triggers, func(candidate dbschematypes.DBTrigger) bool {
+		if !slices.ContainsFunc(db.Triggers, func(candidate catalog.Trigger) bool {
 			return candidate.Name == trigger.Name
 		}) {
 			missing = append(missing, "trigger "+trigger.Name)
@@ -398,7 +398,7 @@ func revIntMissingObjects(schema *goschema.Database, db *dbschematypes.DBSchema)
 // revIntCatalog reduces the introspected schema to the view-like objects this
 // test governs, so a mismatch names the object rather than dumping a whole
 // schema.
-func revIntCatalog(db *dbschematypes.DBSchema) []string {
+func revIntCatalog(db *catalog.Database) []string {
 	var lines []string
 	for _, view := range db.Views {
 		lines = append(lines, fmt.Sprintf("view %s = %s", view.Name, revIntNormalize(view.Body)))
@@ -422,8 +422,8 @@ func revIntNormalize(body string) string {
 	return strings.Join(strings.Fields(body), " ")
 }
 
-func revIntHasTable(db *dbschematypes.DBSchema) bool {
-	return slices.ContainsFunc(db.Tables, func(table dbschematypes.DBTable) bool {
+func revIntHasTable(db *catalog.Database) bool {
+	return slices.ContainsFunc(db.Tables, func(table catalog.Table) bool {
 		return table.Name == revIntTable
 	})
 }

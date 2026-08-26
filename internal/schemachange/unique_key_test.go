@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/schemachange"
 )
 
@@ -39,7 +39,7 @@ func TestAReferenceAgainstACompositeKeyIsPlanned(t *testing.T) {
 		},
 		{
 			// PostgreSQL folds an unquoted identifier on the way in, so the
-			// spelling an author typed and the one the catalog reports differ
+			// spelling an author typed and the one the currentCatalog reports differ
 			// in case and name one column. The fold is the target's, which is
 			// why it is passed in rather than assumed.
 			name:       "in another case",
@@ -100,19 +100,19 @@ func TestAReferenceAgainstANonKeyColumnIsBlocked(t *testing.T) {
 			ForeignColumns: []string{"label"},
 		}},
 	}
-	catalog := &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
-			{Name: "parent", Schema: "public", Columns: []dbschematypes.DBColumn{
+	currentCatalog := &catalog.Database{
+		Tables: []catalog.Table{
+			{Name: "parent", Schema: "public", Columns: []catalog.Column{
 				{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
 				{Name: "label", DataType: "text", IsNullable: "NO"},
 			}},
-			{Name: "child", Schema: "public", Columns: []dbschematypes.DBColumn{
+			{Name: "child", Schema: "public", Columns: []catalog.Column{
 				{Name: "parent_label", DataType: "text", IsNullable: "YES"},
 			}},
 		},
 	}
 
-	changes := changesFor(c, description, catalog)
+	changes := changesFor(c, description, currentCatalog)
 
 	c.Assert(changes, qt.HasLen, 1)
 	c.Assert(changes[0].Status, qt.Equals, schemachange.Blocked)
@@ -156,19 +156,19 @@ func tenantScopedSchema(references []string) *goschema.Database {
 
 // tenantScopedCatalog holds both tables and the composite key, and no foreign
 // key, so the reference is the only change.
-func tenantScopedCatalog() *dbschematypes.DBSchema {
-	return &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
-			{Name: "parent", Schema: "public", Columns: []dbschematypes.DBColumn{
+func tenantScopedCatalog() *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{
+			{Name: "parent", Schema: "public", Columns: []catalog.Column{
 				{Name: "tenant", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
 				{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
 			}},
-			{Name: "child", Schema: "public", Columns: []dbschematypes.DBColumn{
+			{Name: "child", Schema: "public", Columns: []catalog.Column{
 				{Name: "parent_tenant", DataType: "integer", IsNullable: "YES"},
 				{Name: "parent_id", DataType: "integer", IsNullable: "YES"},
 			}},
 		},
-		Constraints: []dbschematypes.DBConstraint{{
+		Constraints: []catalog.Constraint{{
 			Name: "parent_pkey", TableName: "parent", Schema: "public",
 			Type: "PRIMARY KEY", ColumnNames: []string{"tenant", "id"},
 		}},

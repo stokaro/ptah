@@ -9,10 +9,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
-	dbtypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 	"go.5x5.cz/ptah/internal/schemafile"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -196,16 +196,16 @@ func roundTripRows() []roundTripRow {
 // from the format Ptah itself writes.
 func TestHCLDocument_StillRemovesWhatItCouldHaveNamed(t *testing.T) {
 	c := qt.New(t)
-	live := &dbtypes.DBSchema{
-		Schemas:   []dbtypes.DBSchemaInfo{{Name: "public"}},
-		Tables:    []dbtypes.DBTable{{Schema: "public", Name: "users"}},
-		Sequences: []dbtypes.DBSequence{{Schema: "public", Name: "s1"}},
-		Domains:   []dbtypes.DBDomain{{Schema: "public", Name: "d1", BaseType: "text"}},
-		Composites: []dbtypes.DBComposite{{
+	live := &catalog.Database{
+		Schemas:   []catalog.Schema{{Name: "public"}},
+		Tables:    []catalog.Table{{Schema: "public", Name: "users"}},
+		Sequences: []catalog.Sequence{{Schema: "public", Name: "s1"}},
+		Domains:   []catalog.Domain{{Schema: "public", Name: "d1", BaseType: "text"}},
+		Composites: []catalog.CompositeType{{
 			Schema: "public", Name: "c1",
-			Fields: []dbtypes.DBCompositeField{{Name: "a", Type: "integer"}},
+			Fields: []catalog.CompositeField{{Name: "a", Type: "integer"}},
 		}},
-		Ranges: []dbtypes.DBRange{{Schema: "public", Name: "r1", Subtype: "integer"}},
+		Ranges: []catalog.Range{{Schema: "public", Name: "r1", Subtype: "integer"}},
 	}
 
 	parsed := loadPostgresDocument(c, renderPostgresDocument(c, roundTripFixture()))

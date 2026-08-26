@@ -14,17 +14,17 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/internal/testutils"
 )
 
 // fakeConn satisfies Conn without a database. QueryRowContext must never be
 // reached: tests stub the executor's rowCount seam instead.
 type fakeConn struct {
-	info types.DBInfo
+	info catalog.ServerInfo
 }
 
-func (f fakeConn) Info() types.DBInfo { return f.info }
+func (f fakeConn) Info() catalog.ServerInfo { return f.info }
 
 func (f fakeConn) QueryRowContext(_ context.Context, _ string, _ ...any) *sql.Row {
 	panic("QueryRowContext must not be called in unit tests")
@@ -32,7 +32,7 @@ func (f fakeConn) QueryRowContext(_ context.Context, _ string, _ ...any) *sql.Ro
 
 func mysqlConn() fakeConn {
 	// #nosec G101 -- fixture URL with a made-up password, not a credential
-	return fakeConn{info: types.DBInfo{Dialect: "mysql", URL: "mysql://app:secret@db.internal:3307/shop"}}
+	return fakeConn{info: catalog.ServerInfo{Dialect: "mysql", URL: "mysql://app:secret@db.internal:3307/shop"}}
 }
 
 // testExecutor returns an executor with recording seams: *ran captures the
@@ -228,7 +228,7 @@ func TestExecuteStatement_PTOSCAcceptsCommaInPasswordWithoutArgvLeak(t *testing.
 
 	var ran []invocation
 	e := testExecutor(Config{}, &ran, nil, 0, nil)
-	conn := fakeConn{info: types.DBInfo{Dialect: "mysql", URL: "mysql://app:se,cret@db:3306/shop"}}
+	conn := fakeConn{info: catalog.ServerInfo{Dialect: "mysql", URL: "mysql://app:se,cret@db:3306/shop"}}
 
 	handled, err := e.executeStatement(context.Background(), conn,
 		"ALTER TABLE users ADD COLUMN a INT",
@@ -261,7 +261,7 @@ func TestExecuteStatement_UserPTOSCCredentialsSuppressGeneratedCredential(t *tes
 			var ran []invocation
 			e := testExecutor(Config{Args: tt.args}, &ran, nil, 0, nil)
 			// #nosec G101 -- fixture URL with a made-up password, not a credential
-			conn := fakeConn{info: types.DBInfo{Dialect: "mysql", URL: "mysql://app:ptah-password@db:3306/shop"}}
+			conn := fakeConn{info: catalog.ServerInfo{Dialect: "mysql", URL: "mysql://app:ptah-password@db:3306/shop"}}
 
 			handled, err := e.executeStatement(context.Background(), conn,
 				"ALTER TABLE users ADD COLUMN a INT",
@@ -527,7 +527,7 @@ func TestExecuteStatement_NonAlterAndNonMySQLPassThrough(t *testing.T) {
 	c.Assert(handled, qt.IsFalse)
 
 	// Non-MySQL dialects never route, even with an explicit directive.
-	pg := fakeConn{info: types.DBInfo{Dialect: "postgres", URL: "postgres://app@db/shop"}}
+	pg := fakeConn{info: catalog.ServerInfo{Dialect: "postgres", URL: "postgres://app@db/shop"}}
 	handled, err = e.executeStatement(context.Background(), pg,
 		"ALTER TABLE users ADD COLUMN bio TEXT",
 		map[string]string{DirectiveTool: ToolGhost})
@@ -644,7 +644,7 @@ func TestExecuteStatement_EmptyPasswordOmitsPasswordArg(t *testing.T) {
 
 	var ran []invocation
 	e := testExecutor(Config{}, &ran, nil, 0, nil)
-	conn := fakeConn{info: types.DBInfo{Dialect: "mariadb", URL: "mariadb://root@localhost:3306/shop"}}
+	conn := fakeConn{info: catalog.ServerInfo{Dialect: "mariadb", URL: "mariadb://root@localhost:3306/shop"}}
 
 	handled, err := e.executeStatement(context.Background(), conn,
 		"ALTER TABLE users ADD COLUMN bio TEXT",

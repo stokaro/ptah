@@ -5,12 +5,12 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -38,7 +38,7 @@ func TestContinuousAggregates_ComparesByTheQualifiedName(t *testing.T) {
 	tests := []struct {
 		name        string
 		declared    []goschema.ContinuousAggregate
-		live        []types.DBContinuousAggregate
+		live        []catalog.ContinuousAggregate
 		wantAdded   []string
 		wantRemoved []string
 	}{
@@ -50,7 +50,7 @@ func TestContinuousAggregates_ComparesByTheQualifiedName(t *testing.T) {
 		{
 			name:     "declared and present",
 			declared: []goschema.ContinuousAggregate{{Name: "hourly", Schema: "public", Body: theBody}},
-			live: []types.DBContinuousAggregate{{
+			live: []catalog.ContinuousAggregate{{
 				Schema: "public", Name: "hourly", Definition: theStored,
 			}},
 		},
@@ -62,13 +62,13 @@ func TestContinuousAggregates_ComparesByTheQualifiedName(t *testing.T) {
 			// created it before dropping it.
 			name:     "a qualified declaration of an unqualified row",
 			declared: []goschema.ContinuousAggregate{{Name: "hourly", Schema: "public", Body: theBody}},
-			live: []types.DBContinuousAggregate{{
+			live: []catalog.ContinuousAggregate{{
 				Name: "hourly", Definition: theStored,
 			}},
 		},
 		{
 			name: "live and undeclared",
-			live: []types.DBContinuousAggregate{{
+			live: []catalog.ContinuousAggregate{{
 				Schema: "public", Name: "hourly", Definition: theStored,
 			}},
 			wantRemoved: []string{"public.hourly"},
@@ -81,7 +81,7 @@ func TestContinuousAggregates_ComparesByTheQualifiedName(t *testing.T) {
 			diff := &difftypes.SchemaDiff{}
 
 			declared := &goschema.Database{ContinuousAggregates: test.declared}
-			live := &types.DBSchema{ContinuousAggregates: test.live}
+			live := &catalog.Database{ContinuousAggregates: test.live}
 
 			compare.ContinuousAggregates(declared, live, diff, compare.CoverageOf(declared, live), nil,
 				postgresSemantics())
@@ -141,7 +141,7 @@ func TestContinuousAggregates_TheBodyIsComparedOnlyThroughTheServer(t *testing.T
 			declared := &goschema.Database{ContinuousAggregates: []goschema.ContinuousAggregate{
 				{Name: "hourly", Body: theBody},
 			}}
-			live := &types.DBSchema{ContinuousAggregates: []types.DBContinuousAggregate{
+			live := &catalog.Database{ContinuousAggregates: []catalog.ContinuousAggregate{
 				{Name: "hourly", Definition: theStored},
 			}}
 
@@ -165,7 +165,7 @@ func TestContinuousAggregates_TheOptionIsComparedWithoutOne(t *testing.T) {
 	declared := &goschema.Database{ContinuousAggregates: []goschema.ContinuousAggregate{
 		{Name: "hourly", Body: theBody, MaterializedOnly: new(true)},
 	}}
-	live := &types.DBSchema{ContinuousAggregates: []types.DBContinuousAggregate{
+	live := &catalog.Database{ContinuousAggregates: []catalog.ContinuousAggregate{
 		{Name: "hourly", Definition: theStored, MaterializedOnly: false},
 	}}
 
@@ -188,7 +188,7 @@ func TestContinuousAggregates_TheOptionIsComparedWithoutOne(t *testing.T) {
 func TestContinuousAggregates_ADescriptionThatCouldNotSayItDoesNotDropIt(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{}
-	live := &types.DBSchema{ContinuousAggregates: []types.DBContinuousAggregate{{
+	live := &catalog.Database{ContinuousAggregates: []catalog.ContinuousAggregate{{
 		Schema: "public", Name: "hourly", Definition: theStored,
 	}}}
 	silent := &goschema.Database{NotDescribed: coverage.Set{}.With(coverage.Object{

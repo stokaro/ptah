@@ -1,5 +1,5 @@
 // Package dbschematogo converts an introspected database schema
-// (dbschema/types.DBSchema) into the goschema entity model, so live databases
+// (catalog.Database) into the goschema entity model, so live databases
 // can flow through the same diff and planning pipeline as annotated Go
 // sources.
 package dbschematogo
@@ -10,13 +10,13 @@ import (
 	"slices"
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 )
 
 // ConvertDBSchemaToGoSchema converts a database schema to goschema format
 // This is needed for down migrations where we use the current DB state as the target
-func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Database {
+func ConvertDBSchemaToGoSchema(dbSchema *catalog.Database) *goschema.Database {
 	database := newDatabase()
 	convertSchemas(database, dbSchema.Schemas)
 	convertEnums(database, dbSchema.Enums)
@@ -58,7 +58,7 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 	return database
 }
 
-func convertSchemas(database *goschema.Database, schemas []dbschematypes.DBSchemaInfo) {
+func convertSchemas(database *goschema.Database, schemas []catalog.Schema) {
 	for _, schema := range schemas {
 		database.Schemas = append(database.Schemas, goschema.Schema{
 			Name:    schema.Name,
@@ -102,7 +102,7 @@ func newDatabase() *goschema.Database {
 // claim about a type the database does not hold: `extra.mood` was described as
 // `public.mood`, applying the description built the type in `public`, and the
 // column in `extra` that uses it was typed against it (stokaro/ptah#1276).
-func convertEnums(database *goschema.Database, dbEnums []dbschematypes.DBEnum) {
+func convertEnums(database *goschema.Database, dbEnums []catalog.Enum) {
 	for _, dbEnum := range dbEnums {
 		database.Enums = append(database.Enums, goschema.Enum{
 			Name:   dbEnum.Name,
@@ -114,7 +114,7 @@ func convertEnums(database *goschema.Database, dbEnums []dbschematypes.DBEnum) {
 
 func convertTablesAndFields(
 	database *goschema.Database,
-	dbSchema *dbschematypes.DBSchema,
+	dbSchema *catalog.Database,
 	fkByColumn map[tableMemberKey]foreignKeyInfo,
 	tablePrimaryKeys map[string]tablePrimaryKey,
 	tablePKColumns map[string]map[string]bool,
@@ -202,7 +202,7 @@ func convertTablesAndFields(
 	return tableStructNames
 }
 
-func tableNameCounts(tables []dbschematypes.DBTable) map[string]int {
+func tableNameCounts(tables []catalog.Table) map[string]int {
 	counts := make(map[string]int, len(tables))
 	for _, table := range tables {
 		counts[table.Name]++
@@ -210,14 +210,14 @@ func tableNameCounts(tables []dbschematypes.DBTable) map[string]int {
 	return counts
 }
 
-func dbTableStructName(table dbschematypes.DBTable, tableNameCounts map[string]int) string {
+func dbTableStructName(table catalog.Table, tableNameCounts map[string]int) string {
 	if tableNameCounts[table.Name] > 1 && strings.TrimSpace(table.Schema) != "" {
 		return generateStructName(table.Schema + "_" + table.Name)
 	}
 	return generateStructName(table.Name)
 }
 
-func convertIndexes(dbSchema *dbschematypes.DBSchema, tableStructNames map[string]string) []goschema.Index {
+func convertIndexes(dbSchema *catalog.Database, tableStructNames map[string]string) []goschema.Index {
 	constraintBackedIndexes := constraintBackedIndexesByTable(dbSchema)
 	indexes := make([]goschema.Index, 0, len(dbSchema.Indexes))
 	for _, dbIndex := range dbSchema.Indexes {
@@ -259,14 +259,14 @@ func convertIndexes(dbSchema *dbschematypes.DBSchema, tableStructNames map[strin
 // apart: the PostgreSQL access method (btree/gin/gist/brin/hash) and the
 // ClickHouse data-skipping-index type (minmax/bloom_filter/...). No reader
 // sets both, so the choice is unambiguous.
-func indexType(index dbschematypes.DBIndex) string {
+func indexType(index catalog.Index) string {
 	if index.Method != "" {
 		return index.Method
 	}
 	return index.Type
 }
 
-func convertIndexParts(parts []dbschematypes.DBIndexPart) []goschema.IndexPart {
+func convertIndexParts(parts []catalog.IndexPart) []goschema.IndexPart {
 	if len(parts) == 0 {
 		return nil
 	}
@@ -284,7 +284,7 @@ func convertIndexParts(parts []dbschematypes.DBIndexPart) []goschema.IndexPart {
 	return converted
 }
 
-func convertExtensions(database *goschema.Database, dbExtensions []dbschematypes.DBExtension) {
+func convertExtensions(database *goschema.Database, dbExtensions []catalog.Extension) {
 	for _, dbExtension := range dbExtensions {
 		extension := goschema.Extension{
 			Name:        dbExtension.Name,
@@ -308,7 +308,7 @@ func convertExtensions(database *goschema.Database, dbExtensions []dbschematypes
 
 func convertRLSPolicies(
 	database *goschema.Database,
-	dbPolicies []dbschematypes.DBRLSPolicy,
+	dbPolicies []catalog.RLSPolicy,
 	tableStructNames map[string]string,
 ) {
 	for _, dbPolicy := range dbPolicies {
@@ -336,7 +336,7 @@ func convertRLSPolicies(
 // function in whatever schema the connection defaulted to. On a read covering
 // more than one schema, `extra.f_extra` came back as `public.f_extra`
 // (stokaro/ptah#1276).
-func convertFunctions(database *goschema.Database, dbFunctions []dbschematypes.DBFunction) {
+func convertFunctions(database *goschema.Database, dbFunctions []catalog.Function) {
 	for _, dbFunction := range dbFunctions {
 		function := goschema.Function{
 			StructName: "", // Functions are not associated with specific structs in DB schema
@@ -357,7 +357,7 @@ func convertFunctions(database *goschema.Database, dbFunctions []dbschematypes.D
 	}
 }
 
-func convertUserTypes(database *goschema.Database, dbSchema *dbschematypes.DBSchema) {
+func convertUserTypes(database *goschema.Database, dbSchema *catalog.Database) {
 	for _, domain := range dbSchema.Domains {
 		converted := goschema.Domain{
 			Name:     domain.Name,
@@ -401,7 +401,7 @@ func convertUserTypes(database *goschema.Database, dbSchema *dbschematypes.DBSch
 	}
 }
 
-func convertSequences(database *goschema.Database, dbSequences []dbschematypes.DBSequence) {
+func convertSequences(database *goschema.Database, dbSequences []catalog.Sequence) {
 	for _, dbSequence := range dbSequences {
 		database.Sequences = append(database.Sequences, goschema.Sequence{
 			Name:      dbSequence.Name,
@@ -425,7 +425,7 @@ func convertSequences(database *goschema.Database, dbSequences []dbschematypes.D
 // Only the primary dimension is carried, because only it is declarable. A
 // table with more than one is described with the first, and the note the reader
 // emits says how many it did not describe.
-func convertHypertables(database *goschema.Database, hypertables []dbschematypes.DBHypertable) {
+func convertHypertables(database *goschema.Database, hypertables []catalog.Hypertable) {
 	for _, hypertable := range hypertables {
 		database.Hypertables = append(database.Hypertables, goschema.Hypertable{
 			Table:         hypertable.QualifiedName(),
@@ -445,7 +445,7 @@ func convertHypertables(database *goschema.Database, hypertables []dbschematypes
 // aggregate over an internal relation.
 func convertContinuousAggregates(
 	database *goschema.Database,
-	aggregates []dbschematypes.DBContinuousAggregate,
+	aggregates []catalog.ContinuousAggregate,
 ) {
 	for _, aggregate := range aggregates {
 		// The catalog always reports a value, so the converted declaration
@@ -476,7 +476,7 @@ func convertContinuousAggregates(
 // emitted: one to four dot-separated parts, unquoted. Copying the catalog's
 // form would put `[other].[dbo].[gauge]` in a document and render it again as
 // a name with brackets inside it.
-func convertSynonyms(database *goschema.Database, synonyms []dbschematypes.DBSynonym) {
+func convertSynonyms(database *goschema.Database, synonyms []catalog.Synonym) {
 	for _, synonym := range synonyms {
 		database.Synonyms = append(database.Synonyms, goschema.Synonym{
 			Name:    synonym.Name,
@@ -490,7 +490,7 @@ func convertSynonyms(database *goschema.Database, synonyms []dbschematypes.DBSyn
 // synonymTarget joins the parsed target parts back into the spelling a
 // declaration uses. Absent leading parts are empty, so joining what is present
 // gives the one-to-four part name without inventing a level.
-func synonymTarget(synonym dbschematypes.DBSynonym) string {
+func synonymTarget(synonym catalog.Synonym) string {
 	parts := make([]string, 0, 4)
 	for _, part := range []string{
 		synonym.TargetServer,
@@ -522,11 +522,11 @@ func synonymTarget(synonym dbschematypes.DBSynonym) string {
 // declines those in both directions; describing one would undo that by turning
 // the description into a declaration that asks for the string.
 //
-// The read still reports it, so it is not invisible: [dbschematypes.DBExtendedProperty]
+// The read still reports it, so it is not invisible: [catalog.ExtendedProperty]
 // carries the row and the flag, and nothing is planned to remove it.
 func convertExtendedProperties(
 	database *goschema.Database,
-	properties []dbschematypes.DBExtendedProperty,
+	properties []catalog.ExtendedProperty,
 ) {
 	for _, property := range properties {
 		if property.ValueNotRepresentable {
@@ -542,7 +542,7 @@ func convertExtendedProperties(
 	}
 }
 
-func convertViews(database *goschema.Database, dbViews []dbschematypes.DBView) {
+func convertViews(database *goschema.Database, dbViews []catalog.View) {
 	for _, dbView := range dbViews {
 		database.Views = append(database.Views, goschema.View{
 			Name:       dbView.QualifiedName(),
@@ -554,7 +554,7 @@ func convertViews(database *goschema.Database, dbViews []dbschematypes.DBView) {
 	}
 }
 
-func convertMaterializedViews(database *goschema.Database, dbViews []dbschematypes.DBMatView) {
+func convertMaterializedViews(database *goschema.Database, dbViews []catalog.MaterializedView) {
 	for _, dbView := range dbViews {
 		materializedView := goschema.MaterializedView{
 			Name:    dbView.QualifiedName(),
@@ -566,7 +566,7 @@ func convertMaterializedViews(database *goschema.Database, dbViews []dbschematyp
 	}
 }
 
-func convertTriggers(database *goschema.Database, dbTriggers []dbschematypes.DBTrigger) {
+func convertTriggers(database *goschema.Database, dbTriggers []catalog.Trigger) {
 	for _, dbTrigger := range dbTriggers {
 		trigger := goschema.Trigger{
 			Name:    dbTrigger.Name,
@@ -603,13 +603,13 @@ func convertTriggers(database *goschema.Database, dbTriggers []dbschematypes.DBT
 	}
 }
 
-func convertRoles(database *goschema.Database, dbRoles []dbschematypes.DBRole) {
+func convertRoles(database *goschema.Database, dbRoles []catalog.Role) {
 	for _, dbRole := range dbRoles {
 		role := goschema.Role{
 			StructName:  "", // Roles are not associated with specific structs in DB schema
 			Name:        dbRole.Name,
 			Login:       dbRole.Login,
-			Password:    "", // Not available in current DBRole for security
+			Password:    "", // Not available in current Role for security
 			Superuser:   dbRole.Superuser,
 			CreateDB:    dbRole.CreateDB,
 			CreateRole:  dbRole.CreateRole,
@@ -623,7 +623,7 @@ func convertRoles(database *goschema.Database, dbRoles []dbschematypes.DBRole) {
 
 func convertRLSEnabledTables(
 	database *goschema.Database,
-	dbTables []dbschematypes.DBTable,
+	dbTables []catalog.Table,
 	tableStructNames map[string]string,
 ) {
 	for _, dbTable := range dbTables {
@@ -643,7 +643,7 @@ func convertRLSEnabledTables(
 				// table with a policy that was never enforced
 				// (stokaro/ptah#2201).
 				Table:   dbTable.QualifiedName(),
-				Comment: "", // Comment not available in DBTable for RLS enablement
+				Comment: "", // Comment not available in Table for RLS enablement
 			}
 			database.RLSEnabledTables = append(database.RLSEnabledTables, rlsEnabledTable)
 		}
@@ -682,7 +682,7 @@ func primaryKeyColumnSets(primaryKeysByTable map[string]tablePrimaryKey) map[str
 // `PRIMARY KEY (a, b) INCLUDE (payload)`, and the column-count test alone
 // dropped the first of them before it reached this map at all
 // (stokaro/ptah#2199).
-func primaryKeysByTable(dbSchema *dbschematypes.DBSchema) map[string]tablePrimaryKey {
+func primaryKeysByTable(dbSchema *catalog.Database) map[string]tablePrimaryKey {
 	result := make(map[string]tablePrimaryKey)
 	for _, constraint := range dbSchema.Constraints {
 		if !strings.EqualFold(constraint.Type, "PRIMARY KEY") {
@@ -711,7 +711,7 @@ func primaryKeysByTable(dbSchema *dbschematypes.DBSchema) map[string]tablePrimar
 // a constraint `<table>_<column>_key`, and MySQL and MariaDB name it after the
 // column. Anything else is a name somebody chose, and choosing one is the only
 // reason to write a table-level constraint for a single column.
-func generatedUniqueConstraintName(constraint dbschematypes.DBConstraint, columns []string) bool {
+func generatedUniqueConstraintName(constraint catalog.Constraint, columns []string) bool {
 	if len(columns) != 1 {
 		return false
 	}
@@ -743,7 +743,7 @@ func clearColumnUniqueForNamedConstraints(database *goschema.Database) {
 	}
 }
 
-func convertConstraints(dbSchema *dbschematypes.DBSchema, tableStructNames map[string]string) []goschema.Constraint {
+func convertConstraints(dbSchema *catalog.Database, tableStructNames map[string]string) []goschema.Constraint {
 	constraints := make([]goschema.Constraint, 0, len(dbSchema.Constraints))
 	for _, dbConstraint := range dbSchema.Constraints {
 		constraint, ok := convertConstraint(dbConstraint, tableStructNames)
@@ -754,7 +754,7 @@ func convertConstraints(dbSchema *dbschematypes.DBSchema, tableStructNames map[s
 	return constraints
 }
 
-func convertConstraint(dbConstraint dbschematypes.DBConstraint, tableStructNames map[string]string) (goschema.Constraint, bool) {
+func convertConstraint(dbConstraint catalog.Constraint, tableStructNames map[string]string) (goschema.Constraint, bool) {
 	constraintType := strings.ToUpper(dbConstraint.Type)
 	columns := dbConstraint.ColumnNamesOrDefault()
 	switch constraintType {
@@ -816,7 +816,7 @@ func convertConstraint(dbConstraint dbschematypes.DBConstraint, tableStructNames
 	}, true
 }
 
-func constraintBackedIndexesByTable(dbSchema *dbschematypes.DBSchema) map[tableMemberKey]struct{} {
+func constraintBackedIndexesByTable(dbSchema *catalog.Database) map[tableMemberKey]struct{} {
 	result := make(map[tableMemberKey]struct{}, len(dbSchema.Constraints))
 	for _, constraint := range dbSchema.Constraints {
 		switch strings.ToUpper(constraint.Type) {
@@ -827,7 +827,7 @@ func constraintBackedIndexesByTable(dbSchema *dbschematypes.DBSchema) map[tableM
 	return result
 }
 
-func isPostgresSyntheticNotNullCheck(constraint dbschematypes.DBConstraint) bool {
+func isPostgresSyntheticNotNullCheck(constraint catalog.Constraint) bool {
 	if constraint.CheckClause == nil || !strings.HasSuffix(constraint.Name, "_not_null") {
 		return false
 	}
@@ -859,7 +859,7 @@ func firstString(values []string) string {
 	return values[0]
 }
 
-func goSchemaFieldType(dbColumn dbschematypes.DBColumn) string {
+func goSchemaFieldType(dbColumn catalog.Column) string {
 	if serialType := postgresSerialType(dbColumn); serialType != "" {
 		return serialType
 	}
@@ -928,7 +928,7 @@ func goSchemaFieldType(dbColumn dbschematypes.DBColumn) string {
 // v1.3.0 reports `type = sql("positive")` with the nextval default beside it,
 // and Ptah reported `type = serial` with no default at all. See
 // stokaro/ptah#1242.
-func postgresSerialType(dbColumn dbschematypes.DBColumn) string {
+func postgresSerialType(dbColumn catalog.Column) string {
 	if dbColumn.DomainName != "" {
 		return ""
 	}
@@ -956,7 +956,7 @@ func postgresSerialType(dbColumn dbschematypes.DBColumn) string {
 // on PostgreSQL 17.11, three bits of every value gone. A `bit varying(8)` came
 // back unlimited, and applying the document to the SOURCE database removed the
 // declared width from the live column (stokaro/ptah#2034).
-func sizedColumnType(dbColumn dbschematypes.DBColumn) string {
+func sizedColumnType(dbColumn catalog.Column) string {
 	dataType := strings.ToLower(strings.TrimSpace(dbColumn.DataType))
 	switch dataType {
 	case "character varying", "varchar":
@@ -1042,7 +1042,7 @@ func dbDefaultLooksLikeExpression(defaultSQL string) bool {
 
 // convertGrants describes live grant rows as declarations.
 //
-// A row marked [dbschematypes.DBGrant.IsPartialRevoke] is skipped, because it
+// A row marked [catalog.Grant.IsPartialRevoke] is skipped, because it
 // is not a grant: it SUBTRACTS a privilege from a broader grant, and only
 // ClickHouse produces one. Describing it as a [goschema.Grant] would state the
 // exact opposite of what the row says — a document telling an operator the role
@@ -1059,7 +1059,7 @@ func dbDefaultLooksLikeExpression(defaultSQL string) bool {
 // [go.5x5.cz/ptah/internal/clickhouserbac.ValidateLive] refuses to compare a
 // managed role carrying one at all rather than leaving this function to
 // approximate it.
-func convertGrants(dbGrants []dbschematypes.DBGrant) []goschema.Grant {
+func convertGrants(dbGrants []catalog.Grant) []goschema.Grant {
 	grants := make([]goschema.Grant, 0, len(dbGrants))
 	for _, dbGrant := range dbGrants {
 		if dbGrant.IsPartialRevoke {
@@ -1105,7 +1105,7 @@ type tableMemberKey struct {
 // single-column FOREIGN KEY constraint in the database schema. Multi-column FKs
 // are not field-level and are skipped (they are represented as table-level
 // constraints, which this converter does not yet round-trip).
-func indexForeignKeysByColumn(dbSchema *dbschematypes.DBSchema) map[tableMemberKey]foreignKeyInfo {
+func indexForeignKeysByColumn(dbSchema *catalog.Database) map[tableMemberKey]foreignKeyInfo {
 	result := make(map[tableMemberKey]foreignKeyInfo)
 	for _, c := range dbSchema.Constraints {
 		if c.Type != "FOREIGN KEY" || c.ColumnName == "" || c.ForeignTable == nil || len(c.ColumnNamesOrDefault()) != 1 {
@@ -1172,7 +1172,7 @@ func generateFieldName(columnName string) string {
 // `order_by` platform override, which is the same key a declaration writes, so
 // a read description and a hand-written one produce the same statement
 // (stokaro/ptah#1603).
-func clickHouseTableOverrides(dbTable dbschematypes.DBTable) map[string]map[string]string {
+func clickHouseTableOverrides(dbTable catalog.Table) map[string]map[string]string {
 	// Every clause the engine spec resolves, under the key the renderer reads.
 	// An unknown override key becomes a node option under its upper-cased name,
 	// which is what resolveTableEngineSpec looks up.

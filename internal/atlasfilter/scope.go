@@ -5,8 +5,8 @@ import (
 	"maps"
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/schemascope"
 )
 
@@ -147,7 +147,7 @@ type Resource struct {
 // ScopeResources applies schema/include/exclude matching to arbitrary
 // top-level identities while preserving input order. It exists for catalogs
 // such as schema-clean plans whose writer-owned kinds do not all have a field
-// in DBSchema. The boolean result aligns one-for-one with resources.
+// in Database. The boolean result aligns one-for-one with resources.
 func ScopeResources(resources []Resource, scope Scope) ([]bool, error) {
 	selectors, err := parseResourceIncludeSelectors(scope.Include)
 	if err != nil {
@@ -181,7 +181,7 @@ var additionalResourceSelectableTypes = map[string]struct{}{
 // ValidateResourceIncludeSelectors validates include selectors for arbitrary
 // writer-owned top-level resources. It is the pre-connect counterpart of
 // [ScopeResources]; the ordinary schema validator intentionally remains
-// narrower because a DBSchema cannot represent these additional catalog kinds.
+// narrower because a Database cannot represent these additional catalog kinds.
 func ValidateResourceIncludeSelectors(values []string) error {
 	_, err := parseResourceIncludeSelectors(values)
 	return err
@@ -480,14 +480,14 @@ func scopeReport[T any](
 // positive selection as [ScopeGenerated], so both sides of a comparison see
 // one projection. A non-positive scope degrades to plain exclusion. It reports
 // an empty include selection the same way [ScopeGenerated] does.
-func ScopeDatabase(db *dbschematypes.DBSchema, scope Scope) (*dbschematypes.DBSchema, error) {
+func ScopeDatabase(db *catalog.Database, scope Scope) (*catalog.Database, error) {
 	filtered, _, err := ScopeDatabaseReport(db, scope)
 	return filtered, err
 }
 
 // ScopeDatabaseReport is [ScopeDatabase] plus the [ExcludeReport], measured
 // against the unprojected state for the reason [ScopeGeneratedReport] gives.
-func ScopeDatabaseReport(db *dbschematypes.DBSchema, scope Scope) (*dbschematypes.DBSchema, ExcludeReport, error) {
+func ScopeDatabaseReport(db *catalog.Database, scope Scope) (*catalog.Database, ExcludeReport, error) {
 	filtered, reports, err := ScopeDatabaseSelectionReport(db, scope)
 	return filtered, reports.Exclude, err
 }
@@ -496,9 +496,9 @@ func ScopeDatabaseReport(db *dbschematypes.DBSchema, scope Scope) (*dbschematype
 // selection outcome needed when a comparison aggregates matches across both
 // sides.
 func ScopeDatabaseSelectionReport(
-	db *dbschematypes.DBSchema,
+	db *catalog.Database,
 	scope Scope,
-) (*dbschematypes.DBSchema, ScopeReports, error) {
+) (*catalog.Database, ScopeReports, error) {
 	return scopeReport(db, scope, ExcludeDatabaseScopeReport,
 		(*scopeSelection).projectDatabase, validateDatabaseScope)
 }
@@ -571,7 +571,7 @@ func (s *scopeSelection) nameCandidates(schema, name string) []string {
 	if name == "" {
 		return nil
 	}
-	qualified := dbschematypes.QualifyTableName(s.effectiveSchema(schema), name)
+	qualified := catalog.QualifyTableName(s.effectiveSchema(schema), name)
 	if qualified == name {
 		return []string{name}
 	}

@@ -9,9 +9,9 @@ import (
 	"fmt"
 	"io"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/platform"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/envbool"
 )
 
@@ -74,7 +74,7 @@ func DescribeAll() (bool, error) {
 // mention.
 //
 // It reports a COUNT and never the names. The names are precisely what
-// [dbschematypes.DBSchema.RolesOutOfScope] is `json:"-"` to keep out of
+// [catalog.Database.RolesOutOfScope] is `json:"-"` to keep out of
 // output: on a shared instance they are other tenants' role names, and a note
 // that printed them would leak through the diagnostics stream what the
 // description was scoped to stop leaking.
@@ -83,7 +83,7 @@ func DescribeAll() (bool, error) {
 // stream"; the note is then dropped rather than panicking. Write errors are
 // dropped too: a diagnostic that fails to print must not fail a read that
 // succeeded.
-func ReportUndescribed(w io.Writer, dialect string, schema *dbschematypes.DBSchema) {
+func ReportUndescribed(w io.Writer, dialect string, schema *catalog.Database) {
 	if w == nil || schema == nil {
 		return
 	}

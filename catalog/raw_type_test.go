@@ -1,11 +1,11 @@
-package types_test
+package catalog_test
 
 import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 )
 
 // RawType answers one question two comparators both ask, which is why it lives
@@ -16,35 +16,35 @@ import (
 func TestRawType(t *testing.T) {
 	tests := []struct {
 		name   string
-		column types.DBColumn
+		column catalog.Column
 		want   string
 	}{
 		{
 			// What a PostgreSQL read reports for `code varchar(50)`: the type
 			// name without its width, and the width in a field of its own.
 			name: "a varchar keeps the width the catalog holds separately",
-			column: types.DBColumn{
+			column: catalog.Column{
 				DataType: "character varying", CharacterMaxLength: new(50),
 			},
 			want: "character varying(50)",
 		},
 		{
 			name: "a varchar with no width stays bare",
-			column: types.DBColumn{
+			column: catalog.Column{
 				DataType: "character varying",
 			},
 			want: "character varying",
 		},
 		{
 			name: "a numeric keeps its precision and its scale",
-			column: types.DBColumn{
+			column: catalog.Column{
 				DataType: "numeric", NumericPrecision: new(10), NumericScale: new(2),
 			},
 			want: "numeric(10,2)",
 		},
 		{
 			name: "a numeric with a precision and no scale keeps the precision",
-			column: types.DBColumn{
+			column: catalog.Column{
 				DataType: "numeric", NumericPrecision: new(10),
 			},
 			want: "numeric(10)",
@@ -53,7 +53,7 @@ func TestRawType(t *testing.T) {
 			// A type that already carries its size is left alone, or the size
 			// would be appended twice.
 			name: "a spelling that already carries its size is untouched",
-			column: types.DBColumn{
+			column: catalog.Column{
 				DataType: "character varying", ColumnType: "varchar(100)", CharacterMaxLength: new(100),
 			},
 			want: "varchar(100)",
@@ -63,7 +63,7 @@ func TestRawType(t *testing.T) {
 			// settled: FormattedType is the only one that survives an array or
 			// a domain, and both sides read it.
 			name: "the server's own spelling wins",
-			column: types.DBColumn{
+			column: catalog.Column{
 				DataType: "ARRAY", UDTName: "_varchar", ColumnType: "varchar",
 				FormattedType: "character varying(100)[]",
 			},
@@ -71,28 +71,28 @@ func TestRawType(t *testing.T) {
 		},
 		{
 			name: "then the column type",
-			column: types.DBColumn{
+			column: catalog.Column{
 				DataType: "enum", UDTName: "status", ColumnType: "enum('a','b')",
 			},
 			want: "enum('a','b')",
 		},
 		{
 			name: "then the user-defined type name",
-			column: types.DBColumn{
+			column: catalog.Column{
 				DataType: "USER-DEFINED", UDTName: "status",
 			},
 			want: "status",
 		},
 		{
 			name:   "and the plain data type last",
-			column: types.DBColumn{DataType: "integer"},
+			column: catalog.Column{DataType: "integer"},
 			want:   "integer",
 		},
 		{
 			// A type with no size family gets nothing appended even when the
 			// catalog fills the fields, which it does for an integer.
 			name: "a type with no size family is left alone",
-			column: types.DBColumn{
+			column: catalog.Column{
 				DataType: "integer", NumericPrecision: new(32), NumericScale: new(0),
 			},
 			want: "integer",

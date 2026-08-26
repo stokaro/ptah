@@ -13,11 +13,11 @@ import (
 	qt "github.com/frankban/quicktest"
 	mysqldriver "github.com/go-sql-driver/mysql"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbschema/mysql"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -554,9 +554,9 @@ func TestFunctionParametersIgnoreASameNamedProcedure_Integration(t *testing.T) {
 // the failure mode: the migration reports success.
 // liveRoutineOfKind picks the one routine of the asked-for kind, failing when
 // the read holds none or more than one.
-func liveRoutineOfKind(c *qt.C, routines []dbschematypes.DBFunction, procedures bool) dbschematypes.DBFunction {
+func liveRoutineOfKind(c *qt.C, routines []catalog.Function, procedures bool) catalog.Function {
 	c.Helper()
-	var found []dbschematypes.DBFunction
+	var found []catalog.Function
 	for _, routine := range routines {
 		if strings.EqualFold(strings.TrimSpace(routine.Kind), "procedure") == procedures {
 			found = append(found, routine)

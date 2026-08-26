@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 )
 
 // TestTheExtensionAnIndexNeedsIsNotCompared pins the half of the fact that is
@@ -48,16 +48,16 @@ func TestTheExtensionAnIndexNeedsIsNotCompared(t *testing.T) {
 			description.Indexes = append(description.Indexes, goschema.Index{
 				StructName: "Widget", Name: "widget_gin", Fields: test.declaredFields,
 			})
-			catalog := catalogTable(
-				dbschematypes.DBColumn{Name: "n", DataType: "integer", IsNullable: "YES"},
-				dbschematypes.DBColumn{Name: "code", DataType: "text", IsNullable: "YES"},
+			currentCatalog := catalogTable(
+				catalog.Column{Name: "n", DataType: "integer", IsNullable: "YES"},
+				catalog.Column{Name: "code", DataType: "text", IsNullable: "YES"},
 			)
-			catalog.Indexes = []dbschematypes.DBIndex{{
+			currentCatalog.Indexes = []catalog.Index{{
 				Name: "widget_gin", TableName: "widget", Schema: "public",
 				Columns: []string{"n"}, RequiresExtensions: []string{"btree_gin"},
 			}}
 
-			changes := changesFor(c, description, catalog)
+			changes := changesFor(c, description, currentCatalog)
 
 			c.Assert(changes, qt.HasLen, test.wantChanges)
 		})

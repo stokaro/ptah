@@ -10,11 +10,11 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/dbschema/postgres"
 	"go.5x5.cz/ptah/migration/planner"
@@ -105,7 +105,7 @@ func generatedPartialIndexSchema(schemaName, expression string) *goschema.Databa
 	}
 }
 
-func findDBIndex(indexes []dbschematypes.DBIndex, name string) *dbschematypes.DBIndex {
+func findDBIndex(indexes []catalog.Index, name string) *catalog.Index {
 	for i := range indexes {
 		if indexes[i].Name == name {
 			return &indexes[i]

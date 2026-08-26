@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -26,7 +26,7 @@ import (
 // some of them fails on the rows it does not cover rather than passing on the
 // strength of its neighbours.
 func TestRanges_AttributeChangesAreReported(t *testing.T) {
-	current := types.DBRange{
+	current := catalog.Range{
 		Name:           "audit_range",
 		Subtype:        "timestamp with time zone",
 		SubtypeOpClass: "timestamptz_ops",
@@ -77,7 +77,7 @@ func TestRanges_AttributeChangesAreReported(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			generated := &goschema.Database{Ranges: []goschema.Range{test.target}}
-			database := &types.DBSchema{Ranges: []types.DBRange{current}}
+			database := &catalog.Database{Ranges: []catalog.Range{current}}
 			diff := &difftypes.SchemaDiff{}
 
 			compare.Ranges(generated, database, diff, compare.CoverageOf(generated, database))
@@ -106,7 +106,7 @@ func TestRanges_UnchangedRangeReportsNothing(t *testing.T) {
 	generated := &goschema.Database{Ranges: []goschema.Range{
 		{Name: "audit_range", Subtype: "timestamptz"},
 	}}
-	database := &types.DBSchema{Ranges: []types.DBRange{{
+	database := &catalog.Database{Ranges: []catalog.Range{{
 		Name:           "audit_range",
 		Subtype:        "timestamp with time zone",
 		SubtypeOpClass: "timestamptz_ops",
@@ -126,7 +126,7 @@ func TestRanges_AddAndRemoveStillReported(t *testing.T) {
 	c := qt.New(t)
 
 	generated := &goschema.Database{Ranges: []goschema.Range{{Name: "fresh", Subtype: "int4"}}}
-	database := &types.DBSchema{Ranges: []types.DBRange{{Name: "legacy", Subtype: "int4"}}}
+	database := &catalog.Database{Ranges: []catalog.Range{{Name: "legacy", Subtype: "int4"}}}
 	diff := &difftypes.SchemaDiff{}
 
 	compare.Ranges(generated, database, diff, compare.CoverageOf(generated, database))

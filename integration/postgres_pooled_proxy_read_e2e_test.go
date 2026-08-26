@@ -12,8 +12,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
@@ -67,7 +67,7 @@ func TestPostgresPooledProxyDescribesTheSameSchemaE2E(t *testing.T) {
 	c.Assert(pooledSchema.Indexes, qt.DeepEquals, directSchema.Indexes)
 }
 
-func pooledTableNames(schema *dbschematypes.DBSchema) []string {
+func pooledTableNames(schema *catalog.Database) []string {
 	names := make([]string, 0, len(schema.Tables))
 	for _, table := range schema.Tables {
 		names = append(names, table.Name)

@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -35,9 +35,9 @@ func TestGrants_APartialRevokeIsNotAGrantToRevoke(t *testing.T) {
 		Roles:  []goschema.Role{{Name: "reporting"}},
 		Grants: []goschema.Grant{{Role: "reporting", Privileges: []string{"SELECT"}, OnTable: "orders"}},
 	}
-	database := &types.DBSchema{
-		Roles: []types.DBRole{{Name: "reporting"}},
-		Grants: []types.DBGrant{
+	database := &catalog.Database{
+		Roles: []catalog.Role{{Name: "reporting"}},
+		Grants: []catalog.Grant{
 			{Role: "reporting", Privilege: "SELECT", ObjectType: "TABLE", Schema: "public", ObjectName: "orders"},
 			{
 				Role: "reporting", Privilege: "DELETE", ObjectType: "TABLE",
@@ -58,9 +58,9 @@ func TestGrants_APartialRevokeIsNotAGrantToRevoke(t *testing.T) {
 func TestGrants_APlainGrantIsStillRevoked(t *testing.T) {
 	c := qt.New(t)
 	generated := &goschema.Database{Roles: []goschema.Role{{Name: "reporting"}}}
-	database := &types.DBSchema{
-		Roles: []types.DBRole{{Name: "reporting"}},
-		Grants: []types.DBGrant{
+	database := &catalog.Database{
+		Roles: []catalog.Role{{Name: "reporting"}},
+		Grants: []catalog.Grant{
 			{Role: "reporting", Privilege: "DELETE", ObjectType: "TABLE", Schema: "public", ObjectName: "orders"},
 		},
 	}
@@ -81,9 +81,9 @@ func TestGrants_APartialRevokeDoesNotSatisfyADeclaration(t *testing.T) {
 		Roles:  []goschema.Role{{Name: "reporting"}},
 		Grants: []goschema.Grant{{Role: "reporting", Privileges: []string{"DELETE"}, OnTable: "orders"}},
 	}
-	database := &types.DBSchema{
-		Roles: []types.DBRole{{Name: "reporting"}},
-		Grants: []types.DBGrant{{
+	database := &catalog.Database{
+		Roles: []catalog.Role{{Name: "reporting"}},
+		Grants: []catalog.Grant{{
 			Role: "reporting", Privilege: "DELETE", ObjectType: "TABLE",
 			Schema: "public", ObjectName: "orders", IsPartialRevoke: true,
 		}},

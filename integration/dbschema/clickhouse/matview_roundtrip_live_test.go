@@ -8,9 +8,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	clickhousedb "go.5x5.cz/ptah/internal/dbschema/clickhouse"
 	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/migration/planner"
@@ -21,12 +21,12 @@ func readClickHouseMaterializedViews(
 	t *testing.T,
 	db *sql.DB,
 	database string,
-) *dbschematypes.DBSchema {
+) *catalog.Database {
 	c := qt.New(t)
 	t.Helper()
 	schema, err := clickhousedb.NewClickHouseReader(db, database).ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
-	return &dbschematypes.DBSchema{MatViews: schema.MatViews}
+	return &catalog.Database{MatViews: schema.MatViews}
 }
 
 // readClickHouseViewLikes reads both view kinds and nothing else, so a
@@ -36,12 +36,12 @@ func readClickHouseViewLikes(
 	t *testing.T,
 	db *sql.DB,
 	database string,
-) *dbschematypes.DBSchema {
+) *catalog.Database {
 	c := qt.New(t)
 	t.Helper()
 	schema, err := clickhousedb.NewClickHouseReader(db, database).ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
-	return &dbschematypes.DBSchema{Views: schema.Views, MatViews: schema.MatViews}
+	return &catalog.Database{Views: schema.Views, MatViews: schema.MatViews}
 }
 
 // TestMaterializedViewLifecycleRoundTripsLive is the acceptance for #1462.

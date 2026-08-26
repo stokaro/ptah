@@ -11,10 +11,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/schemachange"
 	"go.5x5.cz/ptah/internal/schemastate"
@@ -142,7 +142,7 @@ func livePostgresProfile() schemastate.Profile {
 func planFor(
 	c *qt.C,
 	description *goschema.Database,
-	catalog *dbschematypes.DBSchema,
+	catalog *catalog.Database,
 	profile schemastate.Profile,
 ) []schemachange.PlannedOperation {
 	c.Helper()
@@ -156,7 +156,7 @@ func planFor(
 func changesFor(
 	c *qt.C,
 	description *goschema.Database,
-	catalog *dbschematypes.DBSchema,
+	catalog *catalog.Database,
 	profile schemastate.Profile,
 ) []schemachange.Change {
 	c.Helper()
@@ -213,13 +213,13 @@ func liveDescriptionWithoutForeignKey() *goschema.Database {
 
 // liveCatalog is the database as it stands before each step. A nil delete rule
 // means the foreign key is not there yet.
-func liveCatalog(deleteRule *string) *dbschematypes.DBSchema {
-	schema := &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
-			{Name: "parent", Schema: "public", Columns: []dbschematypes.DBColumn{
+func liveCatalog(deleteRule *string) *catalog.Database {
+	schema := &catalog.Database{
+		Tables: []catalog.Table{
+			{Name: "parent", Schema: "public", Columns: []catalog.Column{
 				{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
 			}},
-			{Name: "child", Schema: "public", Columns: []dbschematypes.DBColumn{
+			{Name: "child", Schema: "public", Columns: []catalog.Column{
 				{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
 				{Name: "parent_id", DataType: "integer", IsNullable: "YES"},
 			}},
@@ -230,7 +230,7 @@ func liveCatalog(deleteRule *string) *dbschematypes.DBSchema {
 	}
 	parent := "parent"
 	column := "id"
-	schema.Constraints = []dbschematypes.DBConstraint{{
+	schema.Constraints = []catalog.Constraint{{
 		Name:          "fk_child_parent",
 		TableName:     "child",
 		Schema:        "public",

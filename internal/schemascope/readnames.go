@@ -3,7 +3,7 @@ package schemascope
 import (
 	"context"
 
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/internal/schemaselection"
 )
 
@@ -48,7 +48,7 @@ import (
 // connection layer.
 func ReadNames(
 	ctx context.Context,
-	info dbschematypes.DBInfo,
+	info catalog.ServerInfo,
 	requested []string,
 	q schemaselection.RowsQuerier,
 ) ([]string, error) {
@@ -68,7 +68,7 @@ func ReadNames(
 // leaves the dialect reader on its own default. Only a connection whose dialect
 // reports no schema at all reaches that, and inventing a name for it here would
 // describe a schema the server never confirmed.
-func connectedSchemaNames(info dbschematypes.DBInfo) []string {
+func connectedSchemaNames(info catalog.ServerInfo) []string {
 	if names := SplitNames([]string{info.Schema}); len(names) > 0 {
 		return names
 	}

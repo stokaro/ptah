@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -42,7 +42,7 @@ import (
 //
 // The attachment is the fact; the name is a coincidence in both directions.
 func TestCompareWithDialect_PartitionAttachedIndexIsNeverPlanned(t *testing.T) {
-	partitionTables := []types.DBTable{
+	partitionTables := []catalog.Table{
 		{Name: "events", Type: "TABLE", Partitioned: true},
 		{Name: "events_2026", Type: "TABLE"},
 	}
@@ -63,7 +63,7 @@ func TestCompareWithDialect_PartitionAttachedIndexIsNeverPlanned(t *testing.T) {
 	tests := []struct {
 		name      string
 		generated *goschema.Database
-		database  *types.DBSchema
+		database  *catalog.Database
 		// wantRemovals and wantAdditions are the whole plan for indexes, so a
 		// row that stops dropping one index cannot pass by staying silent about
 		// the others. Every row states both, including the rows that first
@@ -74,9 +74,9 @@ func TestCompareWithDialect_PartitionAttachedIndexIsNeverPlanned(t *testing.T) {
 		{
 			name:      "the partition copy of a declared parent index is not dropped",
 			generated: parentDeclaration,
-			database: &types.DBSchema{
+			database: &catalog.Database{
 				Tables: partitionTables,
-				Indexes: []types.DBIndex{
+				Indexes: []catalog.Index{
 					{
 						Name:      "idx_events_tenant",
 						TableName: "events",
@@ -94,9 +94,9 @@ func TestCompareWithDialect_PartitionAttachedIndexIsNeverPlanned(t *testing.T) {
 		{
 			name:      "an index created on the partition itself is still dropped",
 			generated: parentDeclaration,
-			database: &types.DBSchema{
+			database: &catalog.Database{
 				Tables: partitionTables,
-				Indexes: []types.DBIndex{
+				Indexes: []catalog.Index{
 					{
 						Name:      "idx_events_tenant",
 						TableName: "events",
@@ -122,9 +122,9 @@ func TestCompareWithDialect_PartitionAttachedIndexIsNeverPlanned(t *testing.T) {
 		{
 			name:      "a standalone partition index named like a copy is still dropped",
 			generated: parentDeclaration,
-			database: &types.DBSchema{
+			database: &catalog.Database{
 				Tables: partitionTables,
-				Indexes: []types.DBIndex{
+				Indexes: []catalog.Index{
 					{
 						Name:      "idx_events_tenant",
 						TableName: "events",
@@ -144,9 +144,9 @@ func TestCompareWithDialect_PartitionAttachedIndexIsNeverPlanned(t *testing.T) {
 		{
 			name:      "a copy attached under a name of its own is not dropped",
 			generated: parentDeclaration,
-			database: &types.DBSchema{
+			database: &catalog.Database{
 				Tables: partitionTables,
-				Indexes: []types.DBIndex{
+				Indexes: []catalog.Index{
 					{
 						Name:      "idx_events_tenant",
 						TableName: "events",
@@ -178,9 +178,9 @@ func TestCompareWithDialect_PartitionAttachedIndexIsNeverPlanned(t *testing.T) {
 					{Name: "events_2026_tenant_idx", StructName: "Event2026", Fields: []string{"id"}},
 				},
 			},
-			database: &types.DBSchema{
+			database: &catalog.Database{
 				Tables: partitionTables,
-				Indexes: []types.DBIndex{
+				Indexes: []catalog.Index{
 					{
 						Name:      "idx_events_tenant",
 						TableName: "events",
@@ -198,12 +198,12 @@ func TestCompareWithDialect_PartitionAttachedIndexIsNeverPlanned(t *testing.T) {
 		{
 			name:      "control: an ordinary undeclared index on an ordinary table is dropped",
 			generated: parentDeclaration,
-			database: &types.DBSchema{
+			database: &catalog.Database{
 				Tables: append(
-					[]types.DBTable{{Name: "members", Type: "TABLE"}},
+					[]catalog.Table{{Name: "members", Type: "TABLE"}},
 					partitionTables...,
 				),
-				Indexes: []types.DBIndex{
+				Indexes: []catalog.Index{
 					{
 						Name:      "idx_events_tenant",
 						TableName: "events",

@@ -9,8 +9,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -283,18 +283,18 @@ func TestReadPlanFileMissingFile(t *testing.T) {
 
 func TestSchemaFingerprintIsDeterministicOverContent(t *testing.T) {
 	c := qt.New(t)
-	schema := &types.DBSchema{
-		Tables: []types.DBTable{{Name: "users"}},
+	schema := &catalog.Database{
+		Tables: []catalog.Table{{Name: "users"}},
 	}
 
 	first, err := atlasschema.SchemaFingerprint(schema)
 	c.Assert(err, qt.IsNil)
-	second, err := atlasschema.SchemaFingerprint(&types.DBSchema{
-		Tables: []types.DBTable{{Name: "users"}},
+	second, err := atlasschema.SchemaFingerprint(&catalog.Database{
+		Tables: []catalog.Table{{Name: "users"}},
 	})
 	c.Assert(err, qt.IsNil)
-	changed, err := atlasschema.SchemaFingerprint(&types.DBSchema{
-		Tables: []types.DBTable{{Name: "orders"}},
+	changed, err := atlasschema.SchemaFingerprint(&catalog.Database{
+		Tables: []catalog.Table{{Name: "orders"}},
 	})
 	c.Assert(err, qt.IsNil)
 

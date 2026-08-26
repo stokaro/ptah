@@ -11,9 +11,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
@@ -74,13 +74,13 @@ func widgetSchemaForReversal() *goschema.Database {
 	}
 }
 
-func widgetCatalogForReversal() *dbschematypes.DBSchema {
-	return &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{{Schema: "public", Name: "widget", Columns: []dbschematypes.DBColumn{
+func widgetCatalogForReversal() *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{{Schema: "public", Name: "widget", Columns: []catalog.Column{
 			{Name: "id", DataType: "integer", IsPrimaryKey: true, IsNullable: "NO"},
 			{Name: "tenant", DataType: "text", IsNullable: "NO"},
 		}}},
-		Constraints: []dbschematypes.DBConstraint{{
+		Constraints: []catalog.Constraint{{
 			Schema: "public", TableName: "widget", Name: "uq_widget_scope",
 			Type: "UNIQUE", ColumnNames: []string{"tenant", "code"},
 		}},

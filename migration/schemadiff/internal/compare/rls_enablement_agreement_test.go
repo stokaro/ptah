@@ -5,10 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -72,7 +72,7 @@ func TestRLSEnabledTables_ADeclaredPolicyIsNotARequestToDisable(t *testing.T) {
 				RLSPolicies:      test.policies,
 				RLSEnabledTables: test.enabled,
 			}
-			live := &types.DBSchema{Tables: []types.DBTable{{
+			live := &catalog.Database{Tables: []catalog.Table{{
 				Name: "docs", Schema: "public", RLSEnabled: true,
 			}}}
 

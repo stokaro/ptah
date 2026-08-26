@@ -1,7 +1,7 @@
 package postgres
 
 // White-box testing required: readIndexesForSchema is unexported, and the SQL
-// it issues is the only place pg_index's per-key catalog vectors enter the
+// it issues is the only place pg_index's per-key currentCatalog vectors enter the
 // process. Everything downstream -- parsePostgresIndexParts, the conversion to
 // goschema, the renderer -- can be correct while the reader simply never asks
 // the server for them, which is precisely the state this package was in before
@@ -9,8 +9,8 @@ package postgres
 // vector it is supposed to prove was fetched.
 //
 // The fake server below therefore answers each projection the way a real
-// PostgreSQL would. A projection that reads a catalog column is answered from
-// the fixture catalog; a projection that reads nothing -- a bare literal, which
+// PostgreSQL would. A projection that reads a currentCatalog column is answered from
+// the fixture currentCatalog; a projection that reads nothing -- a bare literal, which
 // is the shape the query had before each of these attributes was added, and the
 // shape a revert restores -- is answered with that literal. Reverting any of
 // them makes these tests fail where reverting them leaves the rest of the suite
@@ -30,7 +30,7 @@ package postgres
 // it also means accepting every spelling the query's own joins prove equal; see
 // [namesIndexRelation].
 //
-// The comment one: obj_description takes an object AND the catalog its
+// The comment one: obj_description takes an object AND the currentCatalog its
 // description is filed under, and only the pair answers. See
 // [answerCommentProjection].
 //
@@ -47,7 +47,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 )
 
@@ -67,7 +67,7 @@ type pgIndexCatalog struct {
 	// marks an expression key; every real column has a positive attnum.
 	keyAttnums string
 	// keyOpclasses is the index's per-key operator classes, one entry per key
-	// in key order. It is kept as catalog facts rather than as the JSON the
+	// in key order. It is kept as currentCatalog facts rather than as the JSON the
 	// reader receives so the fake can assemble the answer the projection's own
 	// join earns; see [answerOpclassProjection].
 	keyOpclasses []pgIndexKeyOpclass
@@ -80,7 +80,7 @@ type pgIndexCatalog struct {
 	// storageParams is the JSON array of pg_class.reloptions entries.
 	storageParams string
 	// requiredExtensions is the JSON array of extensions the index resolves to
-	// through the catalog, and requiredExtensionsFrom is the catalog column the
+	// through the currentCatalog, and requiredExtensionsFrom is the currentCatalog column the
 	// resolution goes through -- indclass for an operator class, relam for an
 	// access method. The two arms are separated so a fixture answers only the
 	// one it is about, and dropping either arm from the reader's SQL reddens the
@@ -102,10 +102,10 @@ type pgIndexCatalog struct {
 	partitionAttached bool
 }
 
-// pgIndexKeyOpclass is one key's operator class as three separate catalog
+// pgIndexKeyOpclass is one key's operator class as three separate currentCatalog
 // facts rather than as the JSON the reader receives.
 //
-// They do not come from one catalog row, and that is the reason for the split.
+// They do not come from one currentCatalog row, and that is the reason for the split.
 // name and isDefault are pg_opclass columns reached through pg_index.indclass,
 // which is a per-key vector; attoptions belongs to the INDEX relation's
 // pg_attribute row at the key's position, which is a different relation reached
@@ -152,12 +152,12 @@ func plainCatalog() pgIndexCatalog {
 
 // expressionCatalog is CREATE INDEX i_expr ON t (lower(name)): indkey {0}.
 func expressionCatalog() pgIndexCatalog {
-	catalog := plainCatalog()
-	catalog.indexName = "i_expr"
-	catalog.indexDef = "CREATE INDEX i_expr ON public.t USING btree (lower(name))"
-	catalog.keyTexts = `["lower(name)"]`
-	catalog.keyAttnums = `[0]`
-	return catalog
+	currentCatalog := plainCatalog()
+	currentCatalog.indexName = "i_expr"
+	currentCatalog.indexDef = "CREATE INDEX i_expr ON public.t USING btree (lower(name))"
+	currentCatalog.keyTexts = `["lower(name)"]`
+	currentCatalog.keyAttnums = `[0]`
+	return currentCatalog
 }
 
 // columnNamedLikeACallCatalog separates the expression case from its only
@@ -166,32 +166,32 @@ func expressionCatalog() pgIndexCatalog {
 // difference, so a reader that does not fetch the vector cannot tell them
 // apart.
 func columnNamedLikeACallCatalog() pgIndexCatalog {
-	catalog := expressionCatalog()
-	catalog.indexName = "i_quoted"
-	catalog.indexDef = `CREATE INDEX i_quoted ON public.t USING btree ("lower(name)")`
-	catalog.keyAttnums = `[3]`
-	return catalog
+	currentCatalog := expressionCatalog()
+	currentCatalog.indexName = "i_quoted"
+	currentCatalog.indexDef = `CREATE INDEX i_quoted ON public.t USING btree ("lower(name)")`
+	currentCatalog.keyAttnums = `[3]`
+	return currentCatalog
 }
 
 // gistOnPointCatalog is CREATE INDEX i_gist ON t USING gist (p) over a point
 // column. Dropping the access method here is not a quiet degradation: point
 // has no default btree operator class, so the emitted DDL does not replay.
 func gistOnPointCatalog() pgIndexCatalog {
-	catalog := plainCatalog()
-	catalog.indexName = "i_gist"
-	catalog.indexDef = "CREATE INDEX i_gist ON public.t USING gist (p)"
-	catalog.keyTexts = `["p"]`
-	catalog.method = "gist"
-	return catalog
+	currentCatalog := plainCatalog()
+	currentCatalog.indexName = "i_gist"
+	currentCatalog.indexDef = "CREATE INDEX i_gist ON public.t USING gist (p)"
+	currentCatalog.keyTexts = `["p"]`
+	currentCatalog.method = "gist"
+	return currentCatalog
 }
 
 // opclassCatalog is CREATE INDEX i_op ON t (name text_pattern_ops).
 func opclassCatalog() pgIndexCatalog {
-	catalog := plainCatalog()
-	catalog.indexName = "i_op"
-	catalog.indexDef = "CREATE INDEX i_op ON public.t USING btree (name text_pattern_ops)"
-	catalog.keyOpclasses = []pgIndexKeyOpclass{{name: "text_pattern_ops"}}
-	return catalog
+	currentCatalog := plainCatalog()
+	currentCatalog.indexName = "i_op"
+	currentCatalog.indexDef = "CREATE INDEX i_op ON public.t USING btree (name text_pattern_ops)"
+	currentCatalog.keyOpclasses = []pgIndexKeyOpclass{{name: "text_pattern_ops"}}
+	return currentCatalog
 }
 
 // parameterisedOpclassCatalog is
@@ -205,15 +205,15 @@ func opclassCatalog() pgIndexCatalog {
 // #1242 -- an index rebuilt without the parameters gets the 124-byte default
 // signature, which psql accepts at exit 0.
 func parameterisedOpclassCatalog() pgIndexCatalog {
-	catalog := plainCatalog()
-	catalog.indexName = "i_sig"
-	catalog.indexDef = "CREATE INDEX i_sig ON public.t USING gist (tsv tsvector_ops (siglen='64'))"
-	catalog.keyTexts = `["tsv"]`
-	catalog.method = "gist"
-	catalog.keyOpclasses = []pgIndexKeyOpclass{
+	currentCatalog := plainCatalog()
+	currentCatalog.indexName = "i_sig"
+	currentCatalog.indexDef = "CREATE INDEX i_sig ON public.t USING gist (tsv tsvector_ops (siglen='64'))"
+	currentCatalog.keyTexts = `["tsv"]`
+	currentCatalog.method = "gist"
+	currentCatalog.keyOpclasses = []pgIndexKeyOpclass{
 		{name: "tsvector_ops", isDefault: true, attoptions: "siglen=64"},
 	}
-	return catalog
+	return currentCatalog
 }
 
 // multiKeyParameterisedOpclassCatalog is
@@ -234,18 +234,18 @@ func parameterisedOpclassCatalog() pgIndexCatalog {
 // rebuilds is USING gist ("a", "b"), which psql accepts at exit 0 and which
 // gives the second key the 124-byte default signature.
 func multiKeyParameterisedOpclassCatalog() pgIndexCatalog {
-	catalog := plainCatalog()
-	catalog.indexName = "i_sig_multi"
-	catalog.indexDef = "CREATE INDEX i_sig_multi ON public.t USING gist (a, b tsvector_ops (siglen='64'))"
-	catalog.keyTexts = `["a", "b"]`
-	catalog.keyAttnums = `[2, 3]`
-	catalog.keyOptions = `[0, 0]`
-	catalog.method = "gist"
-	catalog.keyOpclasses = []pgIndexKeyOpclass{
+	currentCatalog := plainCatalog()
+	currentCatalog.indexName = "i_sig_multi"
+	currentCatalog.indexDef = "CREATE INDEX i_sig_multi ON public.t USING gist (a, b tsvector_ops (siglen='64'))"
+	currentCatalog.keyTexts = `["a", "b"]`
+	currentCatalog.keyAttnums = `[2, 3]`
+	currentCatalog.keyOptions = `[0, 0]`
+	currentCatalog.method = "gist"
+	currentCatalog.keyOpclasses = []pgIndexKeyOpclass{
 		{name: "tsvector_ops", isDefault: true},
 		{name: "tsvector_ops", isDefault: true, attoptions: "siglen=64"},
 	}
-	return catalog
+	return currentCatalog
 }
 
 // perKeyParameterisedOpclassCatalog is
@@ -260,28 +260,28 @@ func multiKeyParameterisedOpclassCatalog() pgIndexCatalog {
 // key the other's signature length. Its sibling above separates the correlation
 // from "no parameters at all"; neither row alone pins both.
 func perKeyParameterisedOpclassCatalog() pgIndexCatalog {
-	catalog := multiKeyParameterisedOpclassCatalog()
-	catalog.indexName = "i_sig_perkey"
-	catalog.indexDef = "CREATE INDEX i_sig_perkey ON public.t USING gist " +
+	currentCatalog := multiKeyParameterisedOpclassCatalog()
+	currentCatalog.indexName = "i_sig_perkey"
+	currentCatalog.indexDef = "CREATE INDEX i_sig_perkey ON public.t USING gist " +
 		"(a tsvector_ops (siglen='32'), b tsvector_ops (siglen='64'))"
-	catalog.keyOpclasses = []pgIndexKeyOpclass{
+	currentCatalog.keyOpclasses = []pgIndexKeyOpclass{
 		{name: "tsvector_ops", isDefault: true, attoptions: "siglen=32"},
 		{name: "tsvector_ops", isDefault: true, attoptions: "siglen=64"},
 	}
-	return catalog
+	return currentCatalog
 }
 
 // storageParamsCatalog is
 // CREATE INDEX i_brin ON t USING brin (ts) WITH (pages_per_range = 32),
 // whose pg_class.reloptions PostgreSQL 17.10 reports as {pages_per_range=32}.
 func storageParamsCatalog() pgIndexCatalog {
-	catalog := plainCatalog()
-	catalog.indexName = "i_brin"
-	catalog.indexDef = "CREATE INDEX i_brin ON public.t USING brin (ts) WITH (pages_per_range='32')"
-	catalog.keyTexts = `["ts"]`
-	catalog.method = "brin"
-	catalog.storageParams = `["pages_per_range=32"]`
-	return catalog
+	currentCatalog := plainCatalog()
+	currentCatalog.indexName = "i_brin"
+	currentCatalog.indexDef = "CREATE INDEX i_brin ON public.t USING brin (ts) WITH (pages_per_range='32')"
+	currentCatalog.keyTexts = `["ts"]`
+	currentCatalog.method = "brin"
+	currentCatalog.storageParams = `["pages_per_range=32"]`
+	return currentCatalog
 }
 
 // unrepresentableStorageParamsCatalog is the same index with fillfactor as
@@ -291,10 +291,10 @@ func storageParamsCatalog() pgIndexCatalog {
 // every run. The reader keeps the parameter the chain can carry and drops the
 // one it cannot, rather than keeping both or neither.
 func unrepresentableStorageParamsCatalog() pgIndexCatalog {
-	catalog := storageParamsCatalog()
-	catalog.indexName = "i_brin_ff"
-	catalog.storageParams = `["pages_per_range=32", "fillfactor=70", "autosummarize=on"]`
-	return catalog
+	currentCatalog := storageParamsCatalog()
+	currentCatalog.indexName = "i_brin_ff"
+	currentCatalog.storageParams = `["pages_per_range=32", "fillfactor=70", "autosummarize=on"]`
+	return currentCatalog
 }
 
 // commentedCatalog is CREATE INDEX i_note ON t (name) followed by
@@ -310,32 +310,32 @@ func unrepresentableStorageParamsCatalog() pgIndexCatalog {
 //
 // The table's comment is set, and set to something else, because the index row
 // joins the table as well: obj_description(t.oid, 'pg_class') is the same
-// function on the same catalog reaching the wrong object, and a fixture whose
+// function on the same currentCatalog reaching the wrong object, and a fixture whose
 // table had no comment would report the empty string for it and let that pass.
 func commentedCatalog() pgIndexCatalog {
-	catalog := plainCatalog()
-	catalog.indexName = "i_note"
-	catalog.indexDef = "CREATE INDEX i_note ON public.t USING btree (name)"
-	catalog.comment = "keep me"
-	catalog.tableComment = "the table, not the index"
-	return catalog
+	currentCatalog := plainCatalog()
+	currentCatalog.indexName = "i_note"
+	currentCatalog.indexDef = "CREATE INDEX i_note ON public.t USING btree (name)"
+	currentCatalog.comment = "keep me"
+	currentCatalog.tableComment = "the table, not the index"
+	return currentCatalog
 }
 
 // includeCatalog is CREATE INDEX i_inc ON t (a, b) INCLUDE (c). indclass and
 // indoption cover the two key columns only; the payload column is not in them.
 func includeCatalog() pgIndexCatalog {
-	catalog := plainCatalog()
-	catalog.indexName = "i_inc"
-	catalog.indexDef = "CREATE INDEX i_inc ON public.t USING btree (a, b) INCLUDE (c)"
-	catalog.keyTexts = `["a", "b"]`
-	catalog.keyAttnums = `[2, 3]`
-	catalog.keyOpclasses = []pgIndexKeyOpclass{
+	currentCatalog := plainCatalog()
+	currentCatalog.indexName = "i_inc"
+	currentCatalog.indexDef = "CREATE INDEX i_inc ON public.t USING btree (a, b) INCLUDE (c)"
+	currentCatalog.keyTexts = `["a", "b"]`
+	currentCatalog.keyAttnums = `[2, 3]`
+	currentCatalog.keyOpclasses = []pgIndexKeyOpclass{
 		{name: "int4_ops", isDefault: true},
 		{name: "int4_ops", isDefault: true},
 	}
-	catalog.keyOptions = `[0, 0]`
-	catalog.includeColumns = `["c"]`
-	return catalog
+	currentCatalog.keyOptions = `[0, 0]`
+	currentCatalog.includeColumns = `["c"]`
+	return currentCatalog
 }
 
 // implicitOpclassCatalog is CREATE INDEX t_gin ON t USING gin (n int4_ops) over
@@ -345,28 +345,28 @@ func includeCatalog() pgIndexCatalog {
 // plain btree key. The extension is therefore invisible in every text this row
 // carries, and only pg_index.indclass answers for it (stokaro/ptah#1286).
 func implicitOpclassCatalog() pgIndexCatalog {
-	catalog := plainCatalog()
-	catalog.indexName = "t_gin"
-	catalog.indexDef = "CREATE INDEX t_gin ON public.t USING gin (n)"
-	catalog.keyTexts = `["n"]`
-	catalog.method = "gin"
-	catalog.requiredExtensions = `["btree_gin"]`
-	return catalog
+	currentCatalog := plainCatalog()
+	currentCatalog.indexName = "t_gin"
+	currentCatalog.indexDef = "CREATE INDEX t_gin ON public.t USING gin (n)"
+	currentCatalog.keyTexts = `["n"]`
+	currentCatalog.method = "gin"
+	currentCatalog.requiredExtensions = `["btree_gin"]`
+	return currentCatalog
 }
 
 // coreOpclassCatalog is the control: the same gin index over a jsonb column,
 // whose GIN operator class core supplies. Everything the reader can read as
 // text is identical to implicitOpclassCatalog -- including `USING gin` -- and
-// the catalog answer is the only difference, so a rule that matched the access
+// the currentCatalog answer is the only difference, so a rule that matched the access
 // method rather than the resolved class would keep an extension this index does
 // not need.
 func coreOpclassCatalog() pgIndexCatalog {
-	catalog := implicitOpclassCatalog()
-	catalog.indexName = "doc_body_gin"
-	catalog.indexDef = "CREATE INDEX doc_body_gin ON public.t USING gin (body)"
-	catalog.keyTexts = `["body"]`
-	catalog.requiredExtensions = `[]`
-	return catalog
+	currentCatalog := implicitOpclassCatalog()
+	currentCatalog.indexName = "doc_body_gin"
+	currentCatalog.indexDef = "CREATE INDEX doc_body_gin ON public.t USING gin (body)"
+	currentCatalog.keyTexts = `["body"]`
+	currentCatalog.requiredExtensions = `[]`
+	return currentCatalog
 }
 
 // extensionAccessMethodCatalog is CREATE INDEX i_bloom ON t USING bloom (name),
@@ -374,26 +374,26 @@ func coreOpclassCatalog() pgIndexCatalog {
 // field through pg_class.relam rather than through pg_index.indclass, so it is
 // the fixture that fails if that arm is dropped.
 func extensionAccessMethodCatalog() pgIndexCatalog {
-	catalog := plainCatalog()
-	catalog.indexName = "i_bloom"
-	catalog.indexDef = "CREATE INDEX i_bloom ON public.t USING bloom (name)"
-	catalog.method = "bloom"
-	catalog.requiredExtensions = `["bloom"]`
-	catalog.requiredExtensionsFrom = "relam"
-	return catalog
+	currentCatalog := plainCatalog()
+	currentCatalog.indexName = "i_bloom"
+	currentCatalog.indexDef = "CREATE INDEX i_bloom ON public.t USING bloom (name)"
+	currentCatalog.method = "bloom"
+	currentCatalog.requiredExtensions = `["bloom"]`
+	currentCatalog.requiredExtensionsFrom = "relam"
+	return currentCatalog
 }
 
 // partitionAttachedCatalog is the copy PostgreSQL creates on a partition when
 // an index is created on its partitioned parent: an ordinary relkind 'i' index
 // that pg_inherits records as attached to the parent's index.
 func partitionAttachedCatalog() pgIndexCatalog {
-	catalog := plainCatalog()
-	catalog.tableName = "events_2026"
-	catalog.indexName = "events_2026_tenant_idx"
-	catalog.indexDef = "CREATE INDEX events_2026_tenant_idx ON public.events_2026 USING btree (tenant)"
-	catalog.keyTexts = `["tenant"]`
-	catalog.partitionAttached = true
-	return catalog
+	currentCatalog := plainCatalog()
+	currentCatalog.tableName = "events_2026"
+	currentCatalog.indexName = "events_2026_tenant_idx"
+	currentCatalog.indexDef = "CREATE INDEX events_2026_tenant_idx ON public.events_2026 USING btree (tenant)"
+	currentCatalog.keyTexts = `["tenant"]`
+	currentCatalog.partitionAttached = true
+	return currentCatalog
 }
 
 // sortOrderCatalog builds a one-key fixture with the given pg_index.indoption
@@ -402,23 +402,23 @@ func partitionAttachedCatalog() pgIndexCatalog {
 // reports 0.
 func sortOrderCatalog(option string) func() pgIndexCatalog {
 	return func() pgIndexCatalog {
-		catalog := plainCatalog()
-		catalog.indexName = "i_sorted"
-		catalog.keyOptions = "[" + option + "]"
-		return catalog
+		currentCatalog := plainCatalog()
+		currentCatalog.indexName = "i_sorted"
+		currentCatalog.keyOptions = "[" + option + "]"
+		return currentCatalog
 	}
 }
 
 // serveIndexQuery answers the reader's index query. Every value is looked up by
-// the catalog expression the query asks for rather than by the alias it
-// assigns, which is what makes a projection that stopped reading the catalog
+// the currentCatalog expression the query asks for rather than by the alias it
+// assigns, which is what makes a projection that stopped reading the currentCatalog
 // visible here instead of silently answered.
-func serveIndexQuery(catalog pgIndexCatalog, query string) (dbtest.QueryResult, error) {
-	opclasses, err := answerOpclassProjection(catalog, query)
+func serveIndexQuery(currentCatalog pgIndexCatalog, query string) (dbtest.QueryResult, error) {
+	opclasses, err := answerOpclassProjection(currentCatalog, query)
 	if err != nil {
 		return dbtest.QueryResult{}, err
 	}
-	comment, err := answerCommentProjection(catalog, query)
+	comment, err := answerCommentProjection(currentCatalog, query)
 	if err != nil {
 		return dbtest.QueryResult{}, err
 	}
@@ -428,19 +428,19 @@ func serveIndexQuery(catalog pgIndexCatalog, query string) (dbtest.QueryResult, 
 		catalogColumn string
 		value         string
 	}{
-		{"index_columns", "pg_get_indexdef", catalog.keyTexts},
-		{"index_key_attnums", "indkey", catalog.keyAttnums},
+		{"index_columns", "pg_get_indexdef", currentCatalog.keyTexts},
+		{"index_key_attnums", "indkey", currentCatalog.keyAttnums},
 		{"index_key_opclasses", "indclass", opclasses},
-		{"index_key_options", "indoption", catalog.keyOptions},
-		{"index_include_columns", "indkey", catalog.includeColumns},
-		{"index_method", "amname", catalog.method},
-		{"index_storage_params", "reloptions", catalog.storageParams},
-		{"index_required_extensions", catalog.requiredExtensionsFrom, catalog.requiredExtensions},
+		{"index_key_options", "indoption", currentCatalog.keyOptions},
+		{"index_include_columns", "indkey", currentCatalog.includeColumns},
+		{"index_method", "amname", currentCatalog.method},
+		{"index_storage_params", "reloptions", currentCatalog.storageParams},
+		{"index_required_extensions", currentCatalog.requiredExtensionsFrom, currentCatalog.requiredExtensions},
 		{"index_comment", "obj_description", comment},
 	}
 
 	values := []driver.Value{
-		catalog.schemaName, catalog.tableName, catalog.indexName, catalog.indexDef,
+		currentCatalog.schemaName, currentCatalog.tableName, currentCatalog.indexName, currentCatalog.indexDef,
 	}
 	columns := []string{"schemaname", "tablename", "indexname", "indexdef"}
 	for _, answer := range answers {
@@ -451,18 +451,18 @@ func serveIndexQuery(catalog pgIndexCatalog, query string) (dbtest.QueryResult, 
 		columns = append(columns, answer.alias)
 		values = append(values, value)
 	}
-	attached, err := answerPartitionAttached(query, catalog.partitionAttached)
+	attached, err := answerPartitionAttached(query, currentCatalog.partitionAttached)
 	if err != nil {
 		return dbtest.QueryResult{}, err
 	}
 	columns = append(columns, "predicate", "indisprimary", "indisunique", "partition_attached")
-	values = append(values, catalog.predicate, catalog.isPrimary, catalog.isUnique, attached)
+	values = append(values, currentCatalog.predicate, currentCatalog.isPrimary, currentCatalog.isUnique, attached)
 
 	return dbtest.QueryResult{Columns: columns, Rows: [][]driver.Value{values}}, nil
 }
 
 // answerPartitionAttached answers the partition_attached projection the way a
-// server would: with the catalog's answer when the projection reads
+// server would: with the currentCatalog's answer when the projection reads
 // pg_inherits, and with false when it reads something else.
 //
 // pg_inherits is where the attachment of a partition's index copy to its parent
@@ -470,7 +470,7 @@ func serveIndexQuery(catalog pgIndexCatalog, query string) (dbtest.QueryResult, 
 // instead is not a weaker version of this question, it is a different one --
 // relkind marks the parent, which is the one index of the pair a DROP INDEX may
 // name -- so a mutant that swaps them gets the answer a server would give it,
-// false, rather than the catalog's.
+// false, rather than the currentCatalog's.
 func answerPartitionAttached(query string, attached bool) (driver.Value, error) {
 	projection, ok := selectListItem(query, "partition_attached", "FROM pg_index")
 	if !ok {
@@ -483,8 +483,8 @@ func answerPartitionAttached(query string, attached bool) (driver.Value, error) 
 // SELECT-list item the query aliases to alias.
 //
 // It returns catalogValue only when that projection actually reads
-// catalogColumn. A projection that reads nothing from the catalog cannot
-// produce a catalog value on a real server either, so it is answered with the
+// catalogColumn. A projection that reads nothing from the currentCatalog cannot
+// produce a currentCatalog value on a real server either, so it is answered with the
 // empty JSON array -- the same thing `'[]' as index_key_attnums` returns.
 //
 // A query with no projection under that alias is a hard error rather than a
@@ -511,14 +511,14 @@ func answerProjection(query, alias, catalogColumn, catalogValue string) (string,
 // position. Reaching them takes a relation and an attribute number, and a query
 // can be wrong about either while still mentioning attoptions -- which is why
 // this is evaluated rather than pattern-matched. See [attoptionsAsProjected].
-func answerOpclassProjection(catalog pgIndexCatalog, query string) (string, error) {
+func answerOpclassProjection(currentCatalog pgIndexCatalog, query string) (string, error) {
 	projection, ok := selectListItem(query, "index_key_opclasses", "FROM pg_index")
 	if !ok {
 		return "", fmt.Errorf("query has no projection aliased %q:\n%s", "index_key_opclasses", query)
 	}
-	entries := make([]string, 0, len(catalog.keyOpclasses))
-	for position, class := range catalog.keyOpclasses {
-		params, err := attoptionsAsProjected(catalog, query, projection, position+1)
+	entries := make([]string, 0, len(currentCatalog.keyOpclasses))
+	for position, class := range currentCatalog.keyOpclasses {
+		params, err := attoptionsAsProjected(currentCatalog, query, projection, position+1)
 		if err != nil {
 			return "", err
 		}
@@ -532,21 +532,21 @@ func answerOpclassProjection(catalog pgIndexCatalog, query string) (string, erro
 
 // answerCommentProjection returns the comment the index_comment projection asks
 // for, decided by BOTH arguments it passes to obj_description: which object,
-// and which catalog that object's description is filed under.
+// and which currentCatalog that object's description is filed under.
 //
 // The index row joins pg_class twice -- once as the index, once as the table --
 // so obj_description(t.oid, 'pg_class') is the same function on the same
-// catalog reaching a different object, and it reads a comment.
+// currentCatalog reaching a different object, and it reads a comment.
 //
 // The second argument is load-bearing in its own right, and it is the cheaper
 // wrong implementation of the two: obj_description(i.oid, 'pg_index') is the
-// same length, names the catalog the row plainly comes from, and returns NULL,
+// same length, names the currentCatalog the row plainly comes from, and returns NULL,
 // because a comment on any relation -- an index included -- is filed in
 // pg_description under classoid pg_class, never pg_index. A fake that read only
 // the object would answer it with the index's comment and let the whole unit
 // suite pass at exit 0 while the comment was silently dropped on every real
 // server.
-func answerCommentProjection(catalog pgIndexCatalog, query string) (string, error) {
+func answerCommentProjection(currentCatalog pgIndexCatalog, query string) (string, error) {
 	projection, ok := selectListItem(query, "index_comment", "FROM pg_index")
 	if !ok {
 		return "", fmt.Errorf("query has no projection aliased %q:\n%s", "index_comment", query)
@@ -555,7 +555,7 @@ func answerCommentProjection(catalog pgIndexCatalog, query string) (string, erro
 	if !called {
 		return "", nil
 	}
-	// Any other catalog name finds no pg_description row and returns NULL,
+	// Any other currentCatalog name finds no pg_description row and returns NULL,
 	// which the projection's COALESCE turns into the empty string. That is a
 	// real server's answer, not this fake declining to model something.
 	if descriptionCatalog != "'pg_class'" {
@@ -563,9 +563,9 @@ func answerCommentProjection(catalog pgIndexCatalog, query string) (string, erro
 	}
 	switch object {
 	case "i.oid":
-		return catalog.comment, nil
+		return currentCatalog.comment, nil
 	case "t.oid":
-		return catalog.tableComment, nil
+		return currentCatalog.tableComment, nil
 	default:
 		return "", fmt.Errorf(
 			"the index_comment projection describes an object this fake does not model:\n%s",
@@ -607,7 +607,7 @@ func objDescriptionArguments(projection string) (object, descriptionCatalog stri
 //   - a correlation that names an attribute number the index does not have,
 //     which a LEFT JOIN answers with NULL and the projection's COALESCE turns
 //     into the empty string.
-func attoptionsAsProjected(catalog pgIndexCatalog, query, projection string, ordinality int) (string, error) {
+func attoptionsAsProjected(currentCatalog pgIndexCatalog, query, projection string, ordinality int) (string, error) {
 	relation, joined := joinOperand(projection, "keyatt.attrelid")
 	if !joined || !namesIndexRelation(query, relation) {
 		return "", nil
@@ -623,10 +623,10 @@ func attoptionsAsProjected(catalog pgIndexCatalog, query, projection string, ord
 	if err != nil {
 		return "", err
 	}
-	if attnum < 1 || attnum > len(catalog.keyOpclasses) {
+	if attnum < 1 || attnum > len(currentCatalog.keyOpclasses) {
 		return "", nil
 	}
-	return catalog.keyOpclasses[attnum-1].attoptions, nil
+	return currentCatalog.keyOpclasses[attnum-1].attoptions, nil
 }
 
 // namesIndexRelation reports whether an expression is the index relation's OID,
@@ -729,10 +729,10 @@ func resolveProjectedAttnum(correlation string, ordinality int) (int, error) {
 // not end an item.
 //
 // Comments are stripped first, and that is not tidiness. Each projection in the
-// reader is introduced by a comment naming the catalog column it reads and
+// reader is introduced by a comment naming the currentCatalog column it reads and
 // saying why. Matching against the raw text would let that prose stand in for
 // the column: a mutant that deletes the sub-select and leaves the comment above
-// it would still look like it reads the catalog. Measured -- the first version
+// it would still look like it reads the currentCatalog. Measured -- the first version
 // of the domain guard next door made exactly this mistake and stayed green
 // through the revert it existed to catch.
 //
@@ -786,16 +786,16 @@ func splitTopLevel(value string) []string {
 	return append(items, value[start:])
 }
 
-func readIndexThroughFakeServer(t *testing.T, catalog pgIndexCatalog) (types.DBIndex, error) {
+func readIndexThroughFakeServer(t *testing.T, currentCatalog pgIndexCatalog) (catalog.Index, error) {
 	db := dbtest.Open(t, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
-		return serveIndexQuery(catalog, query)
+		return serveIndexQuery(currentCatalog, query)
 	})
 	indexes, err := NewPostgreSQLReader(db.SQL, "public").readIndexesForSchema(t.Context(), "public")
 	if err != nil {
-		return types.DBIndex{}, err
+		return catalog.Index{}, err
 	}
 	if len(indexes) != 1 {
-		return types.DBIndex{}, fmt.Errorf("expected exactly one index, got %d", len(indexes))
+		return catalog.Index{}, fmt.Errorf("expected exactly one index, got %d", len(indexes))
 	}
 	return indexes[0], nil
 }
@@ -812,60 +812,60 @@ func readIndexThroughFakeServer(t *testing.T, catalog pgIndexCatalog) (types.DBI
 //
 // Each test states one thing the reader must report once the fake server has
 // answered only the projections the query genuinely asks for, so a row is a
-// catalog and the value it must produce. Columns is asserted beside Parts on
+// currentCatalog and the value it must produce. Columns is asserted beside Parts on
 // every row because the legacy columns-only view is populated either way, which
 // is what made the expression loss invisible: only Parts separates the two.
 func TestReadIndexesForSchema_ReportsEveryKeyTheCatalogDescribes(t *testing.T) {
 	tests := []struct {
-		name        string
-		catalog     func() pgIndexCatalog
-		wantParts   []types.DBIndexPart
-		wantColumns []string
+		name           string
+		currentCatalog func() pgIndexCatalog
+		wantParts      []catalog.IndexPart
+		wantColumns    []string
 	}{
 		{
-			name:        "plain ascending btree key carries no extras",
-			catalog:     plainCatalog,
-			wantParts:   []types.DBIndexPart{{Name: "name"}},
-			wantColumns: []string{"name"},
+			name:           "plain ascending btree key carries no extras",
+			currentCatalog: plainCatalog,
+			wantParts:      []catalog.IndexPart{{Name: "name"}},
+			wantColumns:    []string{"name"},
 		},
 		{
 			// attnum 0 is PostgreSQL's marker for an expression key. Losing it
 			// makes the renderer quote the expression into a column reference
 			// that does not exist.
-			name:        "expression key is labelled an expression",
-			catalog:     expressionCatalog,
-			wantParts:   []types.DBIndexPart{{Expr: "lower(name)"}},
-			wantColumns: []string{"lower(name)"},
+			name:           "expression key is labelled an expression",
+			currentCatalog: expressionCatalog,
+			wantParts:      []catalog.IndexPart{{Expr: "lower(name)"}},
+			wantColumns:    []string{"lower(name)"},
 		},
 		{
-			name:        "column named like a call stays a column",
-			catalog:     columnNamedLikeACallCatalog,
-			wantParts:   []types.DBIndexPart{{Name: "lower(name)"}},
-			wantColumns: []string{"lower(name)"},
+			name:           "column named like a call stays a column",
+			currentCatalog: columnNamedLikeACallCatalog,
+			wantParts:      []catalog.IndexPart{{Name: "lower(name)"}},
+			wantColumns:    []string{"lower(name)"},
 		},
 		{
-			name:        "non-default operator class is carried",
-			catalog:     opclassCatalog,
-			wantParts:   []types.DBIndexPart{{Name: "name", Operator: "text_pattern_ops"}},
-			wantColumns: []string{"name"},
+			name:           "non-default operator class is carried",
+			currentCatalog: opclassCatalog,
+			wantParts:      []catalog.IndexPart{{Name: "name", Operator: "text_pattern_ops"}},
+			wantColumns:    []string{"name"},
 		},
 		{
 			// The class is the key type's default, so a reader that stops at
 			// opcdefault reports nothing at all -- and the index it rebuilds
 			// has the 124-byte default signature instead of the 64-byte one.
-			name:        "a default operator class with parameters is carried whole",
-			catalog:     parameterisedOpclassCatalog,
-			wantParts:   []types.DBIndexPart{{Name: "tsv", Operator: "tsvector_ops(siglen=64)"}},
-			wantColumns: []string{"tsv"},
+			name:           "a default operator class with parameters is carried whole",
+			currentCatalog: parameterisedOpclassCatalog,
+			wantParts:      []catalog.IndexPart{{Name: "tsv", Operator: "tsvector_ops(siglen=64)"}},
+			wantColumns:    []string{"tsv"},
 		},
 		{
 			// One key cannot tell a per-key correlation from a constant, and
 			// every operator-class row above has one key. Reading the first
 			// attribute's options for every key answers all of them and drops
 			// the parameters here.
-			name:    "parameters land on the key that carries them",
-			catalog: multiKeyParameterisedOpclassCatalog,
-			wantParts: []types.DBIndexPart{
+			name:           "parameters land on the key that carries them",
+			currentCatalog: multiKeyParameterisedOpclassCatalog,
+			wantParts: []catalog.IndexPart{
 				{Name: "a"},
 				{Name: "b", Operator: "tsvector_ops(siglen=64)"},
 			},
@@ -874,9 +874,9 @@ func TestReadIndexesForSchema_ReportsEveryKeyTheCatalogDescribes(t *testing.T) {
 		{
 			// Both keys are parameterised and the two differ, so no constant
 			// attribute number and no reordering of the keys reports this row.
-			name:    "each key keeps its own parameters",
-			catalog: perKeyParameterisedOpclassCatalog,
-			wantParts: []types.DBIndexPart{
+			name:           "each key keeps its own parameters",
+			currentCatalog: perKeyParameterisedOpclassCatalog,
+			wantParts: []catalog.IndexPart{
 				{Name: "a", Operator: "tsvector_ops(siglen=32)"},
 				{Name: "b", Operator: "tsvector_ops(siglen=64)"},
 			},
@@ -886,42 +886,42 @@ func TestReadIndexesForSchema_ReportsEveryKeyTheCatalogDescribes(t *testing.T) {
 			// The class is the default for this key type, so it is not carried
 			// as a printed one. The extension behind it is
 			// TestReadIndexesForSchema_ReportsTheExtensionAnIndexDependsOn.
-			name:        "an implicit operator class is not printed on its key",
-			catalog:     implicitOpclassCatalog,
-			wantParts:   []types.DBIndexPart{{Name: "n"}},
-			wantColumns: []string{"n"},
+			name:           "an implicit operator class is not printed on its key",
+			currentCatalog: implicitOpclassCatalog,
+			wantParts:      []catalog.IndexPart{{Name: "n"}},
+			wantColumns:    []string{"n"},
 		},
 		{
 			// The payload column is in neither vector, so it must appear in
 			// neither the keys nor the legacy columns view.
-			name:        "include payload columns stay out of the keys",
-			catalog:     includeCatalog,
-			wantParts:   []types.DBIndexPart{{Name: "a"}, {Name: "b"}},
-			wantColumns: []string{"a", "b"},
+			name:           "include payload columns stay out of the keys",
+			currentCatalog: includeCatalog,
+			wantParts:      []catalog.IndexPart{{Name: "a"}, {Name: "b"}},
+			wantColumns:    []string{"a", "b"},
 		},
 		{
-			name:        "indoption 3 is DESC with its default NULLS FIRST",
-			catalog:     sortOrderCatalog("3"),
-			wantParts:   []types.DBIndexPart{{Name: "name", Desc: true}},
-			wantColumns: []string{"name"},
+			name:           "indoption 3 is DESC with its default NULLS FIRST",
+			currentCatalog: sortOrderCatalog("3"),
+			wantParts:      []catalog.IndexPart{{Name: "name", Desc: true}},
+			wantColumns:    []string{"name"},
 		},
 		{
-			name:        "indoption 1 is DESC NULLS LAST",
-			catalog:     sortOrderCatalog("1"),
-			wantParts:   []types.DBIndexPart{{Name: "name", Desc: true, NullsOrder: types.NullsOrderLast}},
-			wantColumns: []string{"name"},
+			name:           "indoption 1 is DESC NULLS LAST",
+			currentCatalog: sortOrderCatalog("1"),
+			wantParts:      []catalog.IndexPart{{Name: "name", Desc: true, NullsOrder: catalog.NullsOrderLast}},
+			wantColumns:    []string{"name"},
 		},
 		{
-			name:        "indoption 2 is ascending NULLS FIRST",
-			catalog:     sortOrderCatalog("2"),
-			wantParts:   []types.DBIndexPart{{Name: "name", NullsOrder: types.NullsOrderFirst}},
-			wantColumns: []string{"name"},
+			name:           "indoption 2 is ascending NULLS FIRST",
+			currentCatalog: sortOrderCatalog("2"),
+			wantParts:      []catalog.IndexPart{{Name: "name", NullsOrder: catalog.NullsOrderFirst}},
+			wantColumns:    []string{"name"},
 		},
 		{
-			name:        "indoption 0 is ascending with its default NULLS LAST",
-			catalog:     sortOrderCatalog("0"),
-			wantParts:   []types.DBIndexPart{{Name: "name"}},
-			wantColumns: []string{"name"},
+			name:           "indoption 0 is ascending with its default NULLS LAST",
+			currentCatalog: sortOrderCatalog("0"),
+			wantParts:      []catalog.IndexPart{{Name: "name"}},
+			wantColumns:    []string{"name"},
 		},
 	}
 
@@ -929,7 +929,7 @@ func TestReadIndexesForSchema_ReportsEveryKeyTheCatalogDescribes(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			index, err := readIndexThroughFakeServer(t, test.catalog())
+			index, err := readIndexThroughFakeServer(t, test.currentCatalog())
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(index.Parts, qt.DeepEquals, test.wantParts)
@@ -944,21 +944,21 @@ func TestReadIndexesForSchema_ReportsEveryKeyTheCatalogDescribes(t *testing.T) {
 // the object's comment is gone at exit 0.
 func TestReadIndexesForSchema_CarriesTheIndexComment(t *testing.T) {
 	tests := []struct {
-		name    string
-		catalog func() pgIndexCatalog
-		want    string
+		name           string
+		currentCatalog func() pgIndexCatalog
+		want           string
 	}{
 		{
-			name:    "an index comment is carried",
-			catalog: commentedCatalog,
-			want:    "keep me",
+			name:           "an index comment is carried",
+			currentCatalog: commentedCatalog,
+			want:           "keep me",
 		},
 		{
 			// The control: an index with no comment must not acquire the
 			// table's, which the same row already joins.
-			name:    "an uncommented index reports none",
-			catalog: plainCatalog,
-			want:    "",
+			name:           "an uncommented index reports none",
+			currentCatalog: plainCatalog,
+			want:           "",
 		},
 	}
 
@@ -966,7 +966,7 @@ func TestReadIndexesForSchema_CarriesTheIndexComment(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			index, err := readIndexThroughFakeServer(t, test.catalog())
+			index, err := readIndexThroughFakeServer(t, test.currentCatalog())
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(index.Comment, qt.Equals, test.want)
@@ -979,26 +979,26 @@ func TestReadIndexesForSchema_CarriesTheIndexComment(t *testing.T) {
 // class, so an index over it does not replay without the method.
 func TestReadIndexesForSchema_CarriesTheAccessMethod(t *testing.T) {
 	tests := []struct {
-		name    string
-		catalog func() pgIndexCatalog
-		want    string
+		name           string
+		currentCatalog func() pgIndexCatalog
+		want           string
 	}{
 		{
-			name:    "the default method",
-			catalog: plainCatalog,
-			want:    "btree",
+			name:           "the default method",
+			currentCatalog: plainCatalog,
+			want:           "btree",
 		},
 		{
-			name:    "a method the index would not replay without",
-			catalog: gistOnPointCatalog,
-			want:    "gist",
+			name:           "a method the index would not replay without",
+			currentCatalog: gistOnPointCatalog,
+			want:           "gist",
 		},
 		{
 			// The control the extension rows below rest on: it has to keep the
 			// access method the fixture beside it has.
-			name:    "a core operator class keeps its method",
-			catalog: coreOpclassCatalog,
-			want:    "gin",
+			name:           "a core operator class keeps its method",
+			currentCatalog: coreOpclassCatalog,
+			want:           "gin",
 		},
 	}
 
@@ -1006,7 +1006,7 @@ func TestReadIndexesForSchema_CarriesTheAccessMethod(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			index, err := readIndexThroughFakeServer(t, test.catalog())
+			index, err := readIndexThroughFakeServer(t, test.currentCatalog())
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(index.Method, qt.Equals, test.want)
@@ -1021,24 +1021,24 @@ func TestReadIndexesForSchema_CarriesTheAccessMethod(t *testing.T) {
 // from its own inspected document on every run.
 func TestReadIndexesForSchema_CarriesTheStorageParametersTheModelCanWrite(t *testing.T) {
 	tests := []struct {
-		name    string
-		catalog func() pgIndexCatalog
-		want    map[string]string
+		name           string
+		currentCatalog func() pgIndexCatalog
+		want           map[string]string
 	}{
 		{
-			name:    "storage parameters the chain can carry are kept",
-			catalog: storageParamsCatalog,
-			want:    map[string]string{"pages_per_range": "32"},
+			name:           "storage parameters the chain can carry are kept",
+			currentCatalog: storageParamsCatalog,
+			want:           map[string]string{"pages_per_range": "32"},
 		},
 		{
-			name:    "storage parameters no surface can write are dropped",
-			catalog: unrepresentableStorageParamsCatalog,
-			want:    map[string]string{"pages_per_range": "32"},
+			name:           "storage parameters no surface can write are dropped",
+			currentCatalog: unrepresentableStorageParamsCatalog,
+			want:           map[string]string{"pages_per_range": "32"},
 		},
 		{
-			name:    "an index with no WITH clause carries no storage parameters",
-			catalog: plainCatalog,
-			want:    nil,
+			name:           "an index with no WITH clause carries no storage parameters",
+			currentCatalog: plainCatalog,
+			want:           nil,
 		},
 	}
 
@@ -1046,7 +1046,7 @@ func TestReadIndexesForSchema_CarriesTheStorageParametersTheModelCanWrite(t *tes
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			index, err := readIndexThroughFakeServer(t, test.catalog())
+			index, err := readIndexThroughFakeServer(t, test.currentCatalog())
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(index.StorageParams, qt.DeepEquals, test.want)
@@ -1059,19 +1059,19 @@ func TestReadIndexesForSchema_CarriesTheStorageParametersTheModelCanWrite(t *tes
 // reachable only by asking for it.
 func TestReadIndexesForSchema_CarriesIncludePayloadColumns(t *testing.T) {
 	tests := []struct {
-		name    string
-		catalog func() pgIndexCatalog
-		want    []string
+		name           string
+		currentCatalog func() pgIndexCatalog
+		want           []string
 	}{
 		{
-			name:    "payload columns are carried",
-			catalog: includeCatalog,
-			want:    []string{"c"},
+			name:           "payload columns are carried",
+			currentCatalog: includeCatalog,
+			want:           []string{"c"},
 		},
 		{
-			name:    "an index with no INCLUDE carries none",
-			catalog: plainCatalog,
-			want:    nil,
+			name:           "an index with no INCLUDE carries none",
+			currentCatalog: plainCatalog,
+			want:           nil,
 		},
 	}
 
@@ -1079,7 +1079,7 @@ func TestReadIndexesForSchema_CarriesIncludePayloadColumns(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			index, err := readIndexThroughFakeServer(t, test.catalog())
+			index, err := readIndexThroughFakeServer(t, test.currentCatalog())
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(index.IncludeColumns, qt.DeepEquals, test.want)
@@ -1091,27 +1091,27 @@ func TestReadIndexesForSchema_CarriesIncludePayloadColumns(t *testing.T) {
 // dependency #1286 is about: nothing in an index's own text names btree_gin, so
 // a reader that does not resolve indclass against pg_depend reports an index
 // that cannot be built. The two arms are separated because they reach the same
-// field through different catalog columns.
+// field through different currentCatalog columns.
 func TestReadIndexesForSchema_ReportsTheExtensionAnIndexDependsOn(t *testing.T) {
 	tests := []struct {
-		name    string
-		catalog func() pgIndexCatalog
-		want    []string
+		name           string
+		currentCatalog func() pgIndexCatalog
+		want           []string
 	}{
 		{
-			name:    "an implicit operator class reports the extension behind it",
-			catalog: implicitOpclassCatalog,
-			want:    []string{"btree_gin"},
+			name:           "an implicit operator class reports the extension behind it",
+			currentCatalog: implicitOpclassCatalog,
+			want:           []string{"btree_gin"},
 		},
 		{
-			name:    "a core operator class reports no extension",
-			catalog: coreOpclassCatalog,
-			want:    nil,
+			name:           "a core operator class reports no extension",
+			currentCatalog: coreOpclassCatalog,
+			want:           nil,
 		},
 		{
-			name:    "an extension-supplied access method reports its extension",
-			catalog: extensionAccessMethodCatalog,
-			want:    []string{"bloom"},
+			name:           "an extension-supplied access method reports its extension",
+			currentCatalog: extensionAccessMethodCatalog,
+			want:           []string{"bloom"},
 		},
 	}
 
@@ -1119,7 +1119,7 @@ func TestReadIndexesForSchema_ReportsTheExtensionAnIndexDependsOn(t *testing.T) 
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			index, err := readIndexThroughFakeServer(t, test.catalog())
+			index, err := readIndexThroughFakeServer(t, test.currentCatalog())
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(index.RequiresExtensions, qt.DeepEquals, test.want)
@@ -1132,19 +1132,19 @@ func TestReadIndexesForSchema_ReportsTheExtensionAnIndexDependsOn(t *testing.T) 
 // else answers false here exactly as a server would.
 func TestReadIndexesForSchema_ReportsPartitionAttachment(t *testing.T) {
 	tests := []struct {
-		name    string
-		catalog func() pgIndexCatalog
-		want    bool
+		name           string
+		currentCatalog func() pgIndexCatalog
+		want           bool
 	}{
 		{
-			name:    "a partition's copy of a parent index is attached",
-			catalog: partitionAttachedCatalog,
-			want:    true,
+			name:           "a partition's copy of a parent index is attached",
+			currentCatalog: partitionAttachedCatalog,
+			want:           true,
 		},
 		{
-			name:    "an ordinary index is not",
-			catalog: plainCatalog,
-			want:    false,
+			name:           "an ordinary index is not",
+			currentCatalog: plainCatalog,
+			want:           false,
 		},
 	}
 
@@ -1152,7 +1152,7 @@ func TestReadIndexesForSchema_ReportsPartitionAttachment(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			index, err := readIndexThroughFakeServer(t, test.catalog())
+			index, err := readIndexThroughFakeServer(t, test.currentCatalog())
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(index.PartitionAttached, qt.Equals, test.want)
@@ -1161,7 +1161,7 @@ func TestReadIndexesForSchema_ReportsPartitionAttachment(t *testing.T) {
 }
 
 // TestPostgresOperatorClassSpelling covers all four combinations of the two
-// catalog facts that decide how a key's operator class is spelled, because the
+// currentCatalog facts that decide how a key's operator class is spelled, because the
 // rule is an ordering and an ordering is only pinned by the row that separates
 // it from the other one.
 //
@@ -1336,13 +1336,13 @@ func TestNamesIndexRelation(t *testing.T) {
 // A relation's comment is filed in pg_description under classoid pg_class, and
 // an index is a relation. obj_description(i.oid, 'pg_index') is therefore the
 // cheaper wrong implementation with everything going for it -- the same length,
-// and it names the catalog the row visibly comes from -- and it returns NULL.
+// and it names the currentCatalog the row visibly comes from -- and it returns NULL.
 // Until this fake read that argument it answered such a projection with the
 // index's comment, so the whole unit suite passed at exit 0 while every real
 // server dropped the comment; only the live guard caught it, and the live guard
 // runs only in integration-tests.
 func TestAnswerCommentProjectionReadsTheCatalogArgument(t *testing.T) {
-	catalog := commentedCatalog()
+	currentCatalog := commentedCatalog()
 
 	tests := []struct {
 		name       string
@@ -1352,15 +1352,15 @@ func TestAnswerCommentProjectionReadsTheCatalogArgument(t *testing.T) {
 		{
 			name:       "the index relation, filed under pg_class",
 			projection: `COALESCE(obj_description(i.oid, 'pg_class'), '') as index_comment`,
-			want:       catalog.comment,
+			want:       currentCatalog.comment,
 		},
 		{
 			name:       "the table relation, filed under pg_class",
 			projection: `COALESCE(obj_description(t.oid, 'pg_class'), '') as index_comment`,
-			want:       catalog.tableComment,
+			want:       currentCatalog.tableComment,
 		},
 		{
-			name:       "the index relation, filed under a catalog that holds no descriptions",
+			name:       "the index relation, filed under a currentCatalog that holds no descriptions",
 			projection: `COALESCE(obj_description(i.oid, 'pg_index'), '') as index_comment`,
 			want:       "",
 		},
@@ -1375,7 +1375,7 @@ func TestAnswerCommentProjectionReadsTheCatalogArgument(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			query := "SELECT\n\t" + test.projection + "\nFROM pg_index ix"
-			got, err := answerCommentProjection(catalog, query)
+			got, err := answerCommentProjection(currentCatalog, query)
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.Equals, test.want)
 		})

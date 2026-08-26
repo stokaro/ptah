@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
@@ -28,15 +28,15 @@ import (
 func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 	// Shared setup: an "exports" table whose "file_id" column already exists in
 	// the database, so the field-level FK gets synthesized.
-	exportsTable := types.DBTable{
+	exportsTable := catalog.Table{
 		Name:    "exports",
-		Columns: []types.DBColumn{{Name: "id"}, {Name: "file_id"}},
+		Columns: []catalog.Column{{Name: "id"}, {Name: "file_id"}},
 	}
 
 	// dbFK builds the introspected FK row for exports.file_id -> files.id with
 	// the given delete/update rules (nil pointer == rule absent).
-	dbFK := func(deleteRule, updateRule *string) types.DBConstraint {
-		return types.DBConstraint{
+	dbFK := func(deleteRule, updateRule *string) catalog.Constraint {
+		return catalog.Constraint{
 			Name:          "fk_export_file",
 			TableName:     "exports",
 			Type:          "FOREIGN KEY",
@@ -51,7 +51,7 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 	tests := []struct {
 		name      string
 		generated *goschema.Database
-		database  *types.DBSchema
+		database  *catalog.Database
 		expected  *difftypes.SchemaDiff
 		wantSQL   []string
 	}{
@@ -78,9 +78,9 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 					},
 				},
 			},
-			database: &types.DBSchema{
-				Tables: []types.DBTable{
-					{Name: "files", Columns: []types.DBColumn{{Name: "id"}}},
+			database: &catalog.Database{
+				Tables: []catalog.Table{
+					{Name: "files", Columns: []catalog.Column{{Name: "id"}}},
 					exportsTable,
 				},
 			},
@@ -112,9 +112,9 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 					},
 				},
 			},
-			database: &types.DBSchema{
-				Tables:      []types.DBTable{exportsTable},
-				Constraints: []types.DBConstraint{dbFK(new("NO ACTION"), new("NO ACTION"))},
+			database: &catalog.Database{
+				Tables:      []catalog.Table{exportsTable},
+				Constraints: []catalog.Constraint{dbFK(new("NO ACTION"), new("NO ACTION"))},
 			},
 			expected: &difftypes.SchemaDiff{
 				ConstraintsAdded:   []string{"fk_export_file"},
@@ -138,9 +138,9 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 					},
 				},
 			},
-			database: &types.DBSchema{
-				Tables:      []types.DBTable{exportsTable},
-				Constraints: []types.DBConstraint{dbFK(new("SET NULL"), new("NO ACTION"))},
+			database: &catalog.Database{
+				Tables:      []catalog.Table{exportsTable},
+				Constraints: []catalog.Constraint{dbFK(new("SET NULL"), new("NO ACTION"))},
 			},
 			expected: &difftypes.SchemaDiff{},
 		},
@@ -162,9 +162,9 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 					},
 				},
 			},
-			database: &types.DBSchema{
-				Tables:      []types.DBTable{exportsTable},
-				Constraints: []types.DBConstraint{dbFK(new("SET NULL"), new("NO ACTION"))},
+			database: &catalog.Database{
+				Tables:      []catalog.Table{exportsTable},
+				Constraints: []catalog.Constraint{dbFK(new("SET NULL"), new("NO ACTION"))},
 			},
 			expected: &difftypes.SchemaDiff{},
 		},
@@ -188,9 +188,9 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 					},
 				},
 			},
-			database: &types.DBSchema{
-				Tables:      []types.DBTable{exportsTable},
-				Constraints: []types.DBConstraint{dbFK(new("NO ACTION"), new("NO ACTION"))},
+			database: &catalog.Database{
+				Tables:      []catalog.Table{exportsTable},
+				Constraints: []catalog.Constraint{dbFK(new("NO ACTION"), new("NO ACTION"))},
 			},
 			expected: &difftypes.SchemaDiff{},
 		},
@@ -212,9 +212,9 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 					},
 				},
 			},
-			database: &types.DBSchema{
-				Tables:      []types.DBTable{exportsTable},
-				Constraints: []types.DBConstraint{dbFK(new("NO ACTION"), new("NO ACTION"))},
+			database: &catalog.Database{
+				Tables:      []catalog.Table{exportsTable},
+				Constraints: []catalog.Constraint{dbFK(new("NO ACTION"), new("NO ACTION"))},
 			},
 			expected: &difftypes.SchemaDiff{},
 		},
@@ -236,9 +236,9 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 					},
 				},
 			},
-			database: &types.DBSchema{
-				Tables:      []types.DBTable{exportsTable},
-				Constraints: []types.DBConstraint{dbFK(new("CASCADE"), new("NO ACTION"))},
+			database: &catalog.Database{
+				Tables:      []catalog.Table{exportsTable},
+				Constraints: []catalog.Constraint{dbFK(new("CASCADE"), new("NO ACTION"))},
 			},
 			expected: &difftypes.SchemaDiff{},
 		},
@@ -259,9 +259,9 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 					},
 				},
 			},
-			database: &types.DBSchema{
-				Tables:      []types.DBTable{exportsTable},
-				Constraints: []types.DBConstraint{dbFK(new("NO ACTION"), new("NO ACTION"))},
+			database: &catalog.Database{
+				Tables:      []catalog.Table{exportsTable},
+				Constraints: []catalog.Constraint{dbFK(new("NO ACTION"), new("NO ACTION"))},
 			},
 			expected: &difftypes.SchemaDiff{
 				ConstraintsAdded:   []string{"fk_export_file"},
@@ -287,9 +287,9 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 					},
 				},
 			},
-			database: &types.DBSchema{
-				Tables: []types.DBTable{exportsTable},
-				Constraints: []types.DBConstraint{
+			database: &catalog.Database{
+				Tables: []catalog.Table{exportsTable},
+				Constraints: []catalog.Constraint{
 					{
 						Name:          "fk_exports_file_id",
 						TableName:     "exports",
@@ -327,14 +327,14 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 					},
 				},
 			},
-			database: &types.DBSchema{
-				Tables: []types.DBTable{
+			database: &catalog.Database{
+				Tables: []catalog.Table{
 					{
 						Name:    "categories",
-						Columns: []types.DBColumn{{Name: "id"}, {Name: "parent_id"}},
+						Columns: []catalog.Column{{Name: "id"}, {Name: "parent_id"}},
 					},
 				},
-				Constraints: []types.DBConstraint{
+				Constraints: []catalog.Constraint{
 					{
 						Name:          "fk_categories_parent",
 						TableName:     "categories",
@@ -372,9 +372,9 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 					},
 				},
 			},
-			database: &types.DBSchema{
+			database: &catalog.Database{
 				// exports exists but new_file_id column does not yet.
-				Tables: []types.DBTable{{Name: "exports", Columns: []types.DBColumn{{Name: "id"}}}},
+				Tables: []catalog.Table{{Name: "exports", Columns: []catalog.Column{{Name: "id"}}}},
 			},
 			expected: &difftypes.SchemaDiff{},
 		},
@@ -395,9 +395,9 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 					},
 				},
 			},
-			database: &types.DBSchema{
-				Tables:      []types.DBTable{exportsTable},
-				Constraints: []types.DBConstraint{dbFK(new("NO ACTION"), new("NO ACTION"))},
+			database: &catalog.Database{
+				Tables:      []catalog.Table{exportsTable},
+				Constraints: []catalog.Constraint{dbFK(new("NO ACTION"), new("NO ACTION"))},
 			},
 			expected: &difftypes.SchemaDiff{
 				ConstraintsAdded:   []string{"fk_export_file"},
@@ -453,12 +453,12 @@ func TestConstraints_FieldLevelForeignKeyDeduplicatesRepeatedIntrospectionColumn
 		},
 	}
 	foreignTable := "ptah_tenants"
-	database := &types.DBSchema{
-		Tables: []types.DBTable{
-			{Name: "ptah_area", Columns: []types.DBColumn{{Name: "id"}, {Name: "tenant_id"}}},
-			{Name: "ptah_tenants", Columns: []types.DBColumn{{Name: "id"}}},
+	database := &catalog.Database{
+		Tables: []catalog.Table{
+			{Name: "ptah_area", Columns: []catalog.Column{{Name: "id"}, {Name: "tenant_id"}}},
+			{Name: "ptah_tenants", Columns: []catalog.Column{{Name: "id"}}},
 		},
-		Constraints: []types.DBConstraint{
+		Constraints: []catalog.Constraint{
 			{
 				Name:           "fk_entity_tenant",
 				TableName:      "ptah_area",
