@@ -101,6 +101,11 @@ func ClassifySchemaDiff(diff *difftypes.SchemaDiff) []Finding {
 		add(&findings, "columns_added", len(table.ColumnsAdded), Warning)
 		add(&findings, "columns_removed", len(table.ColumnsRemoved), Destructive)
 		add(&findings, "columns_modified", len(table.ColumnsModified), Warning)
+		// Counted separately from columns_modified, and Destructive rather than
+		// Warning, because it is the one column modification the server refuses
+		// outright while any row holds a value (stokaro/ptah#2068). A reader
+		// who sees "columns_modified: 1 (warning)" is told a cast is planned.
+		add(&findings, "vector_dimension_changed", vectorDimensionChanges(table.ColumnsModified), Destructive)
 		add(&findings, "table_constraints_added", len(table.ConstraintsAdded), Warning)
 		add(&findings, "table_constraints_removed", len(table.ConstraintsRemoved), Destructive)
 	}
@@ -439,6 +444,11 @@ func classifyModifyColumn(op *ast.ModifyColumnOperation) (Severity, string) {
 	if op == nil || op.Column == nil {
 		return Warning, "column modification needs manual review"
 	}
+	if from, to, ok := typechange.VectorDimensionChange(op.PreviousType, op.Column.Type); ok {
+		return Destructive, fmt.Sprintf(
+			"vector dimension changes from %d to %d: the server refuses the cast while any row holds a vector, "+
+				"and every value has to be recomputed rather than converted", from, to)
+	}
 	if IsTypeNarrowing(op.PreviousType, op.Column.Type) {
 		return Destructive, fmt.Sprintf("column type narrows from %s to %s", op.PreviousType, op.Column.Type)
 	}
@@ -565,6 +575,26 @@ func aggregate(findings []Finding) []Finding {
 		out = append(out, finding)
 	}
 	return out
+}
+
+// vectorDimensionChanges counts the columns whose pgvector dimension changes.
+//
+// The transition is read from the diff's own `type` entry, which the comparator
+// writes as "old -> new". A column whose entry cannot be split that way is not
+// counted: reporting a change nobody can name would be worse than reporting
+// none, and the generic columns_modified finding still covers it.
+func vectorDimensionChanges(columns []difftypes.ColumnDiff) int {
+	changed := 0
+	for _, column := range columns {
+		before, after, ok := strings.Cut(column.Changes["type"], " -> ")
+		if !ok {
+			continue
+		}
+		if _, _, isVector := typechange.VectorDimensionChange(before, after); isVector {
+			changed++
+		}
+	}
+	return changed
 }
 
 func severityRank(severity Severity) int {

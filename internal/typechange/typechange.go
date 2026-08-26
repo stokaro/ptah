@@ -70,6 +70,54 @@ func IsWidening(oldType, newType string) bool {
 	return false
 }
 
+// VectorDimensionChange reports a pgvector column whose declared dimension
+// changes, and the two dimensions.
+//
+// It is not a cast and it is not narrowing: it is a different vector space.
+// Measured on pgvector 0.8.6 / PostgreSQL 17, `ALTER TABLE t ALTER COLUMN emb
+// TYPE vector(1024)` on a column declared `vector(384)`:
+//
+//	three rows holding 384-dimension vectors -> ERROR: expected 1024 dimensions, not 384
+//	no rows, or rows whose value is NULL      -> ALTER TABLE
+//
+// So the server performs it exactly when there is nothing to convert. Every
+// existing vector has to be recomputed by the embedding model that produced it,
+// which is not a migration a schema tool can write, and the widening direction
+// is no different from the narrowing one -- 384 numbers do not become 1024 by
+// padding.
+//
+// Measured on the same build: `halfvec(3) -> halfvec(8)` answers "expected 8
+// dimensions, not 3" and `sparsevec(5) -> sparsevec(9)` answers "expected 9
+// dimensions, not 5". `bit` is deliberately absent -- it is not pgvector's, and
+// its length is a width rather than a space.
+//
+// Reported for the sized spellings only, and that exclusion is measured rather
+// than conservative. What the server checks is the dimension of the value
+// STORED, which an unsized declaration does not record: a `vector` column
+// holding a 3-dimension value takes `TYPE vector(3)` and refuses
+// `TYPE vector(7)` with "expected 7 dimensions, not 3". The declared types
+// alone cannot tell those two apart, so a transition to or from the unsized
+// form is not answered here (stokaro/ptah#2068).
+func VectorDimensionChange(oldType, newType string) (from, to int, ok bool) {
+	oldSpec := parseSpec(oldType)
+	newSpec := parseSpec(newType)
+	if !isVectorType(oldSpec.name) || !isVectorType(newSpec.name) {
+		return 0, 0, false
+	}
+	if len(oldSpec.args) != 1 || len(newSpec.args) != 1 {
+		return 0, 0, false
+	}
+	if oldSpec.arg == newSpec.arg {
+		return 0, 0, false
+	}
+	return oldSpec.arg, newSpec.arg, true
+}
+
+// isVectorType reports pgvector's dimensioned types.
+func isVectorType(name string) bool {
+	return name == "vector" || name == "halfvec" || name == "sparsevec"
+}
+
 // Same reports whether two type names normalize to the same semantic type.
 func Same(left, right string) bool {
 	return normalizeName(left) == normalizeName(right)
