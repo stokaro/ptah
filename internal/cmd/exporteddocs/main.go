@@ -19,6 +19,20 @@
 // the top: the functions and types a consumer meets first, of which ten had
 // nothing to say for themselves.
 //
+// # Why go/packages rather than parser.ParseDir
+//
+// ParseDir does not consider build tags, so a file behind one is associated
+// with a package by filename alone. An undocumented export could then sit in a
+// `//go:build windows` file and be measured on a Linux runner as though it were
+// always there -- or, worse, be missed. The loader answers with the files the
+// build actually selects, and it is what `internal/cmd/boundaries` already uses.
+//
+// The consequence is stated rather than hidden: this measures ONE build
+// configuration, the runner's. A declaration exported only under a tag the
+// runner does not select is not seen. Nothing on the ledger is behind a tag
+// today, and a gate that quietly widened to every configuration would be
+// claiming a coverage it does not have.
+//
 // # Why not revive's `exported` rule
 //
 // It cannot be scoped to the ledger, so it would fire across every internal
@@ -31,12 +45,13 @@ package main
 import (
 	"fmt"
 	"go/ast"
-	"go/parser"
 	"go/token"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"golang.org/x/tools/go/packages"
 )
 
 // finding is one exported declaration with nothing said about it.
@@ -62,14 +77,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	var findings []finding
-	for _, directory := range directories {
-		found, err := undocumented(filepath.Join(root, directory), directory)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s: %v\n", os.Args[0], err)
-			os.Exit(1)
-		}
-		findings = append(findings, found...)
+	findings, err := undocumented(root, directories)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s: %v\n", os.Args[0], err)
+		os.Exit(1)
 	}
 	if len(findings) == 0 {
 		fmt.Printf("exporteddocs: every exported declaration in %d stable packages is documented\n",
@@ -81,38 +92,49 @@ func main() {
 		fmt.Fprintf(os.Stderr, "%s: exported %s %s has no doc comment\n",
 			item.position, item.kind, item.name)
 	}
-	fmt.Fprintf(os.Stderr, "\n%d exported declarations on the public surface say nothing about themselves.\n",
-		len(findings))
+	fmt.Fprintf(os.Stderr, "\n%s on the public surface %s nothing about %s.\n",
+		plural(len(findings), "exported declaration", "exported declarations"),
+		plural(len(findings), "says", "say"), plural(len(findings), "itself", "themselves"))
 	fmt.Fprintf(os.Stderr, "Write a doc comment, or unexport it if no embedder needs it.\n")
 	os.Exit(1)
 }
 
-// undocumented reports the exported top-level declarations of one package
-// directory that carry no doc comment.
-func undocumented(directory, name string) ([]finding, error) {
-	fileSet := token.NewFileSet()
-	packages, err := parser.ParseDir(fileSet, directory, notATest, parser.ParseComments)
-	if err != nil {
-		return nil, fmt.Errorf("parse %s: %w", name, err)
+// undocumented reports the exported top-level declarations that carry no doc
+// comment, across every package directory it is given.
+func undocumented(root string, directories []string) ([]finding, error) {
+	patterns := make([]string, 0, len(directories))
+	for _, directory := range directories {
+		patterns = append(patterns, "./"+filepath.ToSlash(directory))
 	}
-	if len(packages) == 0 {
-		return nil, fmt.Errorf("%s holds no Go files; the ledger names a package that is not there", name)
+	loaded, err := packages.Load(&packages.Config{
+		// Tests are excluded: an embedder does not read them, and they are not
+		// part of the surface the ledger promises.
+		Mode: packages.NeedName | packages.NeedSyntax | packages.NeedFiles | packages.NeedCompiledGoFiles,
+		Dir:  root,
+	}, patterns...)
+	if err != nil {
+		return nil, fmt.Errorf("load the ledger's packages: %w", err)
+	}
+	if len(loaded) != len(directories) {
+		return nil, fmt.Errorf("asked for %d packages and the loader answered with %d",
+			len(directories), len(loaded))
 	}
 	var findings []finding
-	for _, parsed := range packages {
-		// A package's files are walked in map order, so the positions are
-		// sorted by the caller rather than trusted to arrive that way.
-		for _, file := range parsed.Files {
-			findings = append(findings, undocumentedInFile(fileSet, file)...)
+	for _, pkg := range loaded {
+		if len(pkg.Errors) > 0 {
+			return nil, fmt.Errorf("load %s: %v", pkg.PkgPath, pkg.Errors[0])
+		}
+		// A package with no syntax is a package the loader did not read, which
+		// would be counted as documented.
+		if len(pkg.Syntax) == 0 {
+			return nil, fmt.Errorf("%s parsed to no files; the ledger names a package that is not there",
+				pkg.PkgPath)
+		}
+		for _, file := range pkg.Syntax {
+			findings = append(findings, undocumentedInFile(pkg.Fset, file)...)
 		}
 	}
 	return findings, nil
-}
-
-// notATest keeps test files out: an embedder does not read them, and they are
-// not part of the surface the ledger promises.
-func notATest(info os.FileInfo) bool {
-	return !strings.HasSuffix(info.Name(), "_test.go")
 }
 
 // undocumentedInFile walks one file's top-level declarations.
@@ -165,6 +187,19 @@ func undocumentedSpecs(fileSet *token.FileSet, node *ast.GenDecl) []finding {
 		})
 	}
 	return findings
+}
+
+// plural picks the spelling one count needs. A gate whose failure reads "1
+// exported declarations" is a gate someone stops reading.
+func plural(count int, one, many string) string {
+	word := many
+	if count == 1 {
+		word = one
+	}
+	if one == "exported declaration" {
+		return fmt.Sprintf("%d %s", count, word)
+	}
+	return word
 }
 
 // relative renders a position the way a terminal can jump to it, without the
