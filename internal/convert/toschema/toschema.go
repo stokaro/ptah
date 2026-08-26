@@ -853,7 +853,7 @@ func ToConstraint(constraint *ast.ConstraintNode, structName, tableName string) 
 		}
 		return fk, true
 	case ast.CheckConstraint:
-		return goschema.Constraint{
+		return schemamodel.Constraint{
 			StructName:      structName,
 			Name:            normalizeSQLIdentifier(constraint.Name),
 			Type:            "CHECK",
@@ -861,7 +861,7 @@ func ToConstraint(constraint *ast.ConstraintNode, structName, tableName string) 
 			CheckExpression: constraint.Expression,
 		}, true
 	case ast.ExcludeConstraint:
-		return goschema.Constraint{
+		return schemamodel.Constraint{
 			StructName:      structName,
 			Name:            normalizeSQLIdentifier(constraint.Name),
 			Type:            "EXCLUDE",
@@ -872,10 +872,10 @@ func ToConstraint(constraint *ast.ConstraintNode, structName, tableName string) 
 		}, true
 	case ast.PrimaryKeyConstraint:
 		// The only kind this deliberately declines. A table-level PRIMARY KEY
-		// is carried on [goschema.Table.PrimaryKey] and, when it names one
+		// is carried on [schemamodel.Table.PrimaryKey] and, when it names one
 		// column, on that column's Primary flag -- see markPrimaryFields. A
 		// second copy here would declare it twice.
-		return goschema.Constraint{}, false
+		return schemamodel.Constraint{}, false
 	default:
 		return schemamodel.Constraint{}, false
 	}

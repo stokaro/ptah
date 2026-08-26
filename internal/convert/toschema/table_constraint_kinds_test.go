@@ -112,7 +112,7 @@ func TestToConstraint_AnExcludeKeepsItsThreeParts(t *testing.T) {
 // TestToConstraint_APrimaryKeyIsStillDeclined is the one kind that must not be
 // carried, and the control for the change.
 //
-// A table-level PRIMARY KEY is carried on goschema.Table.PrimaryKey and, for a
+// A table-level PRIMARY KEY is carried on schemamodel.Table.PrimaryKey and, for a
 // single column, on that column's Primary flag. Returning it here too would
 // declare it twice, so a fix that made `default` carry everything would be
 // wrong in the other direction.
