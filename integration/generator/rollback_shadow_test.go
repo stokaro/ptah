@@ -11,7 +11,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/migration/generator"
+	"go.5x5.cz/ptah/migration/shadow"
 )
 
 func writeRollbackShadowMigrations(c *qt.C, dir, downSQL string) {
@@ -35,7 +35,7 @@ func openRollbackTarget(c *qt.C, rawURL string) *dbschema.DatabaseConnection {
 	return conn
 }
 
-func TestVerifyRollbackFromShadow_HappyPathReplaysUpThenDown(t *testing.T) {
+func TestVerifyRollback_HappyPathReplaysUpThenDown(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	writeRollbackShadowMigrations(c, dir, "ALTER TABLE users DROP COLUMN email;\n")
@@ -44,7 +44,7 @@ func TestVerifyRollbackFromShadow_HappyPathReplaysUpThenDown(t *testing.T) {
 		"sqlite://"+filepath.Join(t.TempDir(), "target.db"),
 	)
 
-	err := generator.VerifyRollbackFromShadow(context.Background(), generator.RollbackFromShadowOptions{
+	err := shadow.VerifyRollback(context.Background(), shadow.RollbackVerifyOptions{
 		TargetConnection:  targetConn,
 		ShadowDatabaseURL: "sqlite://" + filepath.Join(t.TempDir(), "shadow.db"),
 		FS:                os.DirFS(dir),
@@ -55,7 +55,7 @@ func TestVerifyRollbackFromShadow_HappyPathReplaysUpThenDown(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 }
 
-func TestVerifyRollbackFromShadow_FailurePathBrokenDownMigrationReported(t *testing.T) {
+func TestVerifyRollback_FailurePathBrokenDownMigrationReported(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	writeRollbackShadowMigrations(c, dir, "ALTER TABLE users DROP COLUMN no_such_column;\n")
@@ -64,7 +64,7 @@ func TestVerifyRollbackFromShadow_FailurePathBrokenDownMigrationReported(t *test
 		"sqlite://"+filepath.Join(t.TempDir(), "target.db"),
 	)
 
-	err := generator.VerifyRollbackFromShadow(context.Background(), generator.RollbackFromShadowOptions{
+	err := shadow.VerifyRollback(context.Background(), shadow.RollbackVerifyOptions{
 		TargetConnection:  targetConn,
 		ShadowDatabaseURL: "sqlite://" + filepath.Join(t.TempDir(), "shadow.db"),
 		FS:                os.DirFS(dir),
@@ -77,30 +77,30 @@ func TestVerifyRollbackFromShadow_FailurePathBrokenDownMigrationReported(t *test
 	c.Assert(err, qt.ErrorMatches, `(?s)rollback verification failed: roll back to version 1 on shadow database: failed to revert migration 2: .*no_such_column.*`)
 }
 
-func TestVerifyRollbackFromShadow_FailurePathValidatesInputs(t *testing.T) {
+func TestVerifyRollback_FailurePathValidatesInputs(t *testing.T) {
 	c := qt.New(t)
 	targetConn := openRollbackTarget(c, "sqlite://"+filepath.Join(t.TempDir(), "target.db"))
 
-	err := generator.VerifyRollbackFromShadow(context.Background(), generator.RollbackFromShadowOptions{
+	err := shadow.VerifyRollback(context.Background(), shadow.RollbackVerifyOptions{
 		TargetConnection: targetConn,
 		FS:               os.DirFS(t.TempDir()),
 	})
 	c.Assert(err, qt.ErrorMatches, `rollback verification failed: a shadow database URL is required`)
 
-	err = generator.VerifyRollbackFromShadow(context.Background(), generator.RollbackFromShadowOptions{
+	err = shadow.VerifyRollback(context.Background(), shadow.RollbackVerifyOptions{
 		ShadowDatabaseURL: "sqlite://shadow.db",
 		FS:                os.DirFS(t.TempDir()),
 	})
 	c.Assert(err, qt.ErrorMatches, `rollback verification failed: a target database connection is required`)
 
-	err = generator.VerifyRollbackFromShadow(context.Background(), generator.RollbackFromShadowOptions{
+	err = shadow.VerifyRollback(context.Background(), shadow.RollbackVerifyOptions{
 		TargetConnection:  targetConn,
 		ShadowDatabaseURL: "sqlite://ignored.db",
 	})
 	c.Assert(err, qt.ErrorMatches, `rollback verification failed: a migration filesystem is required`)
 }
 
-func TestVerifyRollbackFromShadow_FailurePathRejectsTargetAliasBeforeReset(t *testing.T) {
+func TestVerifyRollback_FailurePathRejectsTargetAliasBeforeReset(t *testing.T) {
 	c := qt.New(t)
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -114,7 +114,7 @@ func TestVerifyRollbackFromShadow_FailurePathRejectsTargetAliasBeforeReset(t *te
 	_, err = targetConn.Exec("CREATE TABLE protected_target (id INTEGER PRIMARY KEY)")
 	c.Assert(err, qt.IsNil)
 
-	err = generator.VerifyRollbackFromShadow(ctx, generator.RollbackFromShadowOptions{
+	err = shadow.VerifyRollback(ctx, shadow.RollbackVerifyOptions{
 		TargetConnection:  targetConn,
 		ShadowDatabaseURL: shadowAliasURL,
 		FS:                os.DirFS(t.TempDir()),

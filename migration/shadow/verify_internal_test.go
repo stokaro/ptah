@@ -1,13 +1,12 @@
-package generator
+package shadow
 
-// White-box testing required: these tests exercise shadow replay stages,
-// deterministic mismatch collection, and migration-version helpers that are
-// not observable independently through the exported generation API. Public
-// propagation is covered separately in shadow_external_test.go.
+// White-box testing required: these tests exercise shadow replay stages and
+// deterministic mismatch collection, neither of which is observable on its own
+// through the exported verification API. Public propagation is covered
+// separately in verify_test.go.
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -16,11 +15,10 @@ import (
 
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
-func TestDescribeShadowDiffMissingColumn(t *testing.T) {
+func TestDescribeDiffMissingColumn(t *testing.T) {
 	c := qt.New(t)
 
 	diff := &types.SchemaDiff{
@@ -32,9 +30,9 @@ func TestDescribeShadowDiffMissingColumn(t *testing.T) {
 		},
 	}
 
-	c.Assert(describeShadowDiff(diff), qt.Equals, "missing column users.email")
-	mismatches := collectShadowMismatches(diff)
-	c.Assert(mismatches, qt.DeepEquals, []ShadowMismatch{
+	c.Assert(describeDiff(diff), qt.Equals, "missing column users.email")
+	mismatches := collectMismatches(diff)
+	c.Assert(mismatches, qt.DeepEquals, []Mismatch{
 		{
 			Kind:    "missing_column",
 			Object:  "users.email",
@@ -50,7 +48,7 @@ func TestDescribeShadowDiffMissingColumn(t *testing.T) {
 			Message: "missing column users.name",
 		},
 	})
-	c.Assert((&ShadowVerificationError{Result: ShadowVerificationResult{
+	c.Assert((&VerificationError{Result: VerificationResult{
 		Stage:      "schema-match",
 		Mismatches: mismatches,
 	}}).Error(), qt.Equals, "shadow check failed: missing column users.email")
@@ -67,7 +65,7 @@ func TestDescribeChangesIsDeterministic(t *testing.T) {
 	c.Assert(got, qt.Equals, "nullable true -> false, type text -> varchar")
 }
 
-func TestCollectShadowMismatchesCoversEverySchemaDiffCategory(t *testing.T) {
+func TestCollectMismatchesCoversEverySchemaDiffCategory(t *testing.T) {
 	c := qt.New(t)
 	changes := map[string]string{"definition": "old -> new"}
 	diff := &types.SchemaDiff{
@@ -142,7 +140,7 @@ func TestCollectShadowMismatchesCoversEverySchemaDiffCategory(t *testing.T) {
 		}},
 	}
 
-	mismatches := collectShadowMismatches(diff)
+	mismatches := collectMismatches(diff)
 	c.Assert(mismatchKinds(mismatches), qt.DeepEquals, []string{
 		"missing_table",
 		"extra_table",
@@ -202,7 +200,7 @@ func TestCollectShadowMismatchesCoversEverySchemaDiffCategory(t *testing.T) {
 	c.Assert(mismatches[len(mismatches)-2].Table, qt.Equals, "accounts")
 	c.Assert(mismatches[len(mismatches)-1].Object, qt.Equals, "accounts.extra_global_constraint")
 	c.Assert(mismatches[len(mismatches)-1].Table, qt.Equals, "accounts")
-	c.Assert(mismatches[15], qt.DeepEquals, ShadowMismatch{
+	c.Assert(mismatches[15], qt.DeepEquals, Mismatch{
 		Kind:    "extension_mismatch",
 		Object:  "changed_extension",
 		Changes: map[string]string{"schema": "public -> extensions"},
@@ -210,7 +208,7 @@ func TestCollectShadowMismatchesCoversEverySchemaDiffCategory(t *testing.T) {
 	})
 }
 
-func mismatchKinds(mismatches []ShadowMismatch) []string {
+func mismatchKinds(mismatches []Mismatch) []string {
 	kinds := make([]string, len(mismatches))
 	for index, mismatch := range mismatches {
 		kinds[index] = mismatch.Kind
@@ -218,8 +216,8 @@ func mismatchKinds(mismatches []ShadowMismatch) []string {
 	return kinds
 }
 
-// TestCollectShadowMismatchesNamesTheTableOwningAnRLSPolicy pins the shape of
-// the two policy-reference mismatches, not only their kinds. ShadowMismatch is
+// TestCollectMismatchesNamesTheTableOwningAnRLSPolicy pins the shape of
+// the two policy-reference mismatches, not only their kinds. Mismatch is
 // serialized into the shadow verification report, so a reader of that JSON is
 // told which policy is missing and which table it belongs to. Reporting a bare
 // name could not distinguish two tables that each carry a policy called
@@ -228,7 +226,7 @@ func mismatchKinds(mismatches []ShadowMismatch) []string {
 // Ordering is part of the contract too: the refs are sorted by table first, so
 // alpha_orders leads zeta_orders regardless of the order the comparison put
 // them in.
-func TestCollectShadowMismatchesNamesTheTableOwningAnRLSPolicy(t *testing.T) {
+func TestCollectMismatchesNamesTheTableOwningAnRLSPolicy(t *testing.T) {
 	c := qt.New(t)
 
 	diff := &types.SchemaDiff{
@@ -241,7 +239,7 @@ func TestCollectShadowMismatchesNamesTheTableOwningAnRLSPolicy(t *testing.T) {
 		},
 	}
 
-	c.Assert(collectShadowMismatches(diff), qt.DeepEquals, []ShadowMismatch{
+	c.Assert(collectMismatches(diff), qt.DeepEquals, []Mismatch{
 		{
 			Kind:    "missing_rls_policy",
 			Table:   "alpha_orders",
@@ -263,43 +261,15 @@ func TestCollectShadowMismatchesNamesTheTableOwningAnRLSPolicy(t *testing.T) {
 	})
 }
 
-func TestNextAvailableMigrationVersionChecksUpAndDownFiles(t *testing.T) {
-	c := qt.New(t)
-
-	dir := t.TempDir()
-	err := os.WriteFile(filepath.Join(dir, migrationfile.FileName(100, "add_email", "down")), []byte("SELECT 1;"), 0600)
-	c.Assert(err, qt.IsNil)
-	err = os.WriteFile(filepath.Join(dir, migrationfile.FileName(105, "future", "up")), []byte("SELECT 1;"), 0600)
-	c.Assert(err, qt.IsNil)
-
-	writer, err := bindPlannedMigrationDir("", dir)
-	c.Assert(err, qt.IsNil)
-	defer func() { _ = writer.Close() }()
-
-	version, err := nextAvailableMigrationVersion(writer, 100, "add_email")
-
-	c.Assert(err, qt.IsNil)
-	c.Assert(version, qt.Equals, int64(106))
-}
-
-func TestLoadPriorMigrationsMissingDir(t *testing.T) {
-	c := qt.New(t)
-
-	migrations, err := loadPriorMigrations(filepath.Join(t.TempDir(), "missing"))
-
-	c.Assert(err, qt.IsNil)
-	c.Assert(migrations, qt.HasLen, 0)
-}
-
 func TestVerifyShadowMigrationConnectErrorIsStructured(t *testing.T) {
 	c := qt.New(t)
 
-	err := verifyShadowMigration(t.Context(), shadowMigrationOptions{
-		DatabaseURL: "not-a-dsn",
-		Dialect:     "postgres",
+	err := VerifyMigration(t.Context(), MigrationVerifyOptions{
+		ShadowDatabaseURL: "not-a-dsn",
+		Dialect:           "postgres",
 	})
 
-	var shadowErr *ShadowVerificationError
+	var shadowErr *VerificationError
 	c.Assert(err, qt.ErrorAs, &shadowErr)
 	c.Assert(shadowErr.Result.Stage, qt.Equals, "connect")
 	c.Assert(shadowErr.Result.Mismatches, qt.HasLen, 1)
@@ -308,7 +278,7 @@ func TestVerifyShadowMigrationConnectErrorIsStructured(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `shadow check failed: connect to shadow database: invalid database URL: missing scheme`)
 }
 
-func TestVerifyShadowMigration_ReplayHonorsCallerCancellation(t *testing.T) {
+func TestVerifyMigration_ReplayHonorsCallerCancellation(t *testing.T) {
 	c := qt.New(t)
 	target, err := dbschema.ConnectToDatabase(
 		t.Context(),
@@ -319,11 +289,11 @@ func TestVerifyShadowMigration_ReplayHonorsCallerCancellation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
 	defer cancel()
 
-	err = verifyShadowMigration(ctx, shadowMigrationOptions{
-		DatabaseURL:      "sqlite://" + filepath.Join(t.TempDir(), "shadow.db"),
-		TargetConnection: target,
-		Dialect:          platform.SQLite,
-		Candidates: []shadowCandidate{{
+	err = VerifyMigration(ctx, MigrationVerifyOptions{
+		ShadowDatabaseURL: "sqlite://" + filepath.Join(t.TempDir(), "shadow.db"),
+		TargetConnection:  target,
+		Dialect:           platform.SQLite,
+		Candidates: []Candidate{{
 			Version: 1,
 			Name:    "long replay",
 			UpSQL: `WITH RECURSIVE counter(value) AS (
@@ -335,7 +305,7 @@ func TestVerifyShadowMigration_ReplayHonorsCallerCancellation(t *testing.T) {
 		}},
 	})
 
-	var shadowErr *ShadowVerificationError
+	var shadowErr *VerificationError
 	c.Assert(err, qt.ErrorAs, &shadowErr)
 	c.Assert(shadowErr.Result.Stage, qt.Equals, "replay")
 	c.Assert(err, qt.ErrorIs, context.DeadlineExceeded)

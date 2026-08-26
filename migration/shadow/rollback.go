@@ -1,4 +1,4 @@
-package generator
+package shadow
 
 import (
 	"context"
@@ -9,11 +9,12 @@ import (
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/devlock"
+	"go.5x5.cz/ptah/migration/internal/shadowdb"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
-// RollbackFromShadowOptions configures VerifyRollbackFromShadow.
-type RollbackFromShadowOptions struct {
+// RollbackVerifyOptions configures VerifyRollback.
+type RollbackVerifyOptions struct {
 	// TargetConnection is the already-open database the verified rollback
 	// would eventually modify. Its live realm must be distinct from the shadow
 	// database.
@@ -34,7 +35,7 @@ type RollbackFromShadowOptions struct {
 	ConnectTimeout time.Duration
 }
 
-// VerifyRollbackFromShadow replays a rollback plan on a disposable shadow
+// VerifyRollback replays a rollback plan on a disposable shadow
 // database before the target database is touched: the shadow database is
 // dropped clean, migrated up to the target's current version, and then
 // migrated down to the requested target version. Any failure aborts with the
@@ -43,7 +44,7 @@ type RollbackFromShadowOptions struct {
 // The replay assumes a linear history: every migration at or below
 // CurrentVersion is applied during the up phase, so a target database with a
 // non-linear applied set is approximated by its full linear prefix.
-func VerifyRollbackFromShadow(ctx context.Context, opts RollbackFromShadowOptions) error {
+func VerifyRollback(ctx context.Context, opts RollbackVerifyOptions) error {
 	if opts.ShadowDatabaseURL == "" {
 		return fmt.Errorf("rollback verification failed: a shadow database URL is required")
 	}
@@ -64,7 +65,7 @@ func VerifyRollbackFromShadow(ctx context.Context, opts RollbackFromShadowOption
 		return fmt.Errorf("rollback verification failed: shadow database must be distinct from target database")
 	}
 
-	connectCtx, cancelConnect := baselineShadowConnectContext(ctx, opts.ConnectTimeout)
+	connectCtx, cancelConnect := connectContext(ctx, opts.ConnectTimeout)
 	shadowConn, err := dbschema.ConnectToDatabase(connectCtx, opts.ShadowDatabaseURL)
 	cancelConnect()
 	if err != nil {
@@ -72,7 +73,7 @@ func VerifyRollbackFromShadow(ctx context.Context, opts RollbackFromShadowOption
 	}
 	defer dbschema.CloseAndWarn(shadowConn)
 
-	if !sameDialect(opts.TargetConnection.Info().Dialect, shadowConn.Info().Dialect) {
+	if !shadowdb.SameDialect(opts.TargetConnection.Info().Dialect, shadowConn.Info().Dialect) {
 		return fmt.Errorf(
 			"rollback verification failed: shadow database dialect %q does not match target dialect %q",
 			shadowConn.Info().Dialect,
@@ -96,7 +97,7 @@ func VerifyRollbackFromShadow(ctx context.Context, opts RollbackFromShadowOption
 		return fmt.Errorf("rollback verification failed: register migrations: %w", err)
 	}
 	if err := mig.MigrateTo(ctx, opts.CurrentVersion); err != nil {
-		if description := describeReplayError(err); description != "" {
+		if description := shadowdb.DescribeReplayError(err); description != "" {
 			return fmt.Errorf("rollback verification failed: replay migrations: %s", description)
 		}
 		return fmt.Errorf("rollback verification failed: replay migrations: %w", err)

@@ -1,4 +1,4 @@
-package generator
+package shadow
 
 import (
 	"fmt"
@@ -9,65 +9,65 @@ import (
 	"go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
-func describeShadowDiff(diff *types.SchemaDiff) string {
-	mismatches := collectShadowMismatches(diff)
+func describeDiff(diff *types.SchemaDiff) string {
+	mismatches := collectMismatches(diff)
 	if len(mismatches) > 0 {
 		return mismatches[0].Message
 	}
 	return "schema differs"
 }
 
-func newShadowSchemaMismatchError(diff *types.SchemaDiff) *ShadowVerificationError {
-	return &ShadowVerificationError{Result: ShadowVerificationResult{
+func newSchemaMismatchError(diff *types.SchemaDiff) *VerificationError {
+	return &VerificationError{Result: VerificationResult{
 		Stage:      "schema-match",
-		Mismatches: collectShadowMismatches(diff),
+		Mismatches: collectMismatches(diff),
 	}}
 }
 
-func collectModifiedTableMismatches(table types.TableDiff) []ShadowMismatch {
-	var mismatches []ShadowMismatch
+func collectModifiedTableMismatches(table types.TableDiff) []Mismatch {
+	var mismatches []Mismatch
 	for _, columnName := range sortedStrings(table.ColumnsAdded) {
 		message := fmt.Sprintf("missing column %s.%s", table.TableName, columnName)
-		mismatches = append(mismatches, ShadowMismatch{Kind: "missing_column", Table: table.TableName, Column: columnName, Object: table.TableName + "." + columnName, Message: message})
+		mismatches = append(mismatches, Mismatch{Kind: "missing_column", Table: table.TableName, Column: columnName, Object: table.TableName + "." + columnName, Message: message})
 	}
 	for _, constraintName := range sortedStrings(table.ConstraintsAdded) {
 		message := fmt.Sprintf("missing constraint %s.%s", table.TableName, constraintName)
-		mismatches = append(mismatches, ShadowMismatch{Kind: "missing_constraint", Table: table.TableName, Constraint: constraintName, Object: table.TableName + "." + constraintName, Message: message})
+		mismatches = append(mismatches, Mismatch{Kind: "missing_constraint", Table: table.TableName, Constraint: constraintName, Object: table.TableName + "." + constraintName, Message: message})
 	}
 	for _, column := range sortedColumnDiffs(table.ColumnsModified) {
 		message := fmt.Sprintf("column mismatch %s.%s: %s", table.TableName, column.ColumnName, describeChanges(column.Changes))
-		mismatches = append(mismatches, ShadowMismatch{Kind: "column_mismatch", Table: table.TableName, Column: column.ColumnName, Object: table.TableName + "." + column.ColumnName, Changes: maps.Clone(column.Changes), Message: message})
+		mismatches = append(mismatches, Mismatch{Kind: "column_mismatch", Table: table.TableName, Column: column.ColumnName, Object: table.TableName + "." + column.ColumnName, Changes: maps.Clone(column.Changes), Message: message})
 	}
 	for _, columnName := range sortedStrings(table.ColumnsRemoved) {
 		message := fmt.Sprintf("extra column %s.%s", table.TableName, columnName)
-		mismatches = append(mismatches, ShadowMismatch{Kind: "extra_column", Table: table.TableName, Column: columnName, Object: table.TableName + "." + columnName, Message: message})
+		mismatches = append(mismatches, Mismatch{Kind: "extra_column", Table: table.TableName, Column: columnName, Object: table.TableName + "." + columnName, Message: message})
 	}
 	for _, constraintName := range sortedStrings(table.ConstraintsRemoved) {
 		message := fmt.Sprintf("extra constraint %s.%s", table.TableName, constraintName)
-		mismatches = append(mismatches, ShadowMismatch{Kind: "extra_constraint", Table: table.TableName, Constraint: constraintName, Object: table.TableName + "." + constraintName, Message: message})
+		mismatches = append(mismatches, Mismatch{Kind: "extra_constraint", Table: table.TableName, Constraint: constraintName, Object: table.TableName + "." + constraintName, Message: message})
 	}
 	return mismatches
 }
 
-func collectShadowMismatches(diff *types.SchemaDiff) []ShadowMismatch {
+func collectMismatches(diff *types.SchemaDiff) []Mismatch {
 	if diff == nil {
-		return []ShadowMismatch{{Kind: "schema", Message: "schema differs"}}
+		return []Mismatch{{Kind: "schema", Message: "schema differs"}}
 	}
 
-	var mismatches []ShadowMismatch
+	var mismatches []Mismatch
 	mismatches = append(mismatches, collectTableMismatches(diff)...)
 	mismatches = append(mismatches, collectEnumAndIndexMismatches(diff)...)
 	mismatches = append(mismatches, collectSchemaObjectMismatches(diff)...)
 	mismatches = append(mismatches, collectAccessControlMismatches(diff)...)
 	mismatches = append(mismatches, collectTopLevelConstraintMismatches(diff)...)
 	if len(mismatches) == 0 {
-		return []ShadowMismatch{{Kind: "schema", Message: "schema differs"}}
+		return []Mismatch{{Kind: "schema", Message: "schema differs"}}
 	}
 	return mismatches
 }
 
-func collectTableMismatches(diff *types.SchemaDiff) []ShadowMismatch {
-	var mismatches []ShadowMismatch
+func collectTableMismatches(diff *types.SchemaDiff) []Mismatch {
+	var mismatches []Mismatch
 	mismatches = append(mismatches, tableMismatches(diff.TablesAdded, "missing_table", "missing table")...)
 	mismatches = append(mismatches, tableMismatches(diff.TablesRemoved, "extra_table", "extra table")...)
 	for _, table := range sortedTableDiffs(diff.TablesModified) {
@@ -76,8 +76,8 @@ func collectTableMismatches(diff *types.SchemaDiff) []ShadowMismatch {
 	return mismatches
 }
 
-func collectSchemaObjectMismatches(diff *types.SchemaDiff) []ShadowMismatch {
-	var mismatches []ShadowMismatch
+func collectSchemaObjectMismatches(diff *types.SchemaDiff) []Mismatch {
+	var mismatches []Mismatch
 	mismatches = append(mismatches, namedMismatches(diff.ExtensionsAdded, "missing_extension", "missing extension")...)
 	mismatches = append(mismatches, namedMismatches(diff.ExtensionsRemoved, "extra_extension", "extra extension")...)
 	mismatches = append(mismatches, changedObjectMismatches(
@@ -113,8 +113,8 @@ func collectSchemaObjectMismatches(diff *types.SchemaDiff) []ShadowMismatch {
 	return mismatches
 }
 
-func collectUserTypeMismatches(diff *types.SchemaDiff) []ShadowMismatch {
-	var mismatches []ShadowMismatch
+func collectUserTypeMismatches(diff *types.SchemaDiff) []Mismatch {
+	var mismatches []Mismatch
 	mismatches = append(mismatches, namedMismatches(diff.DomainsAdded, "missing_domain", "missing domain")...)
 	mismatches = append(mismatches, namedMismatches(diff.DomainsRemoved, "extra_domain", "extra domain")...)
 	mismatches = append(mismatches, changedObjectMismatches(
@@ -145,8 +145,8 @@ func collectUserTypeMismatches(diff *types.SchemaDiff) []ShadowMismatch {
 	return mismatches
 }
 
-func collectViewMismatches(diff *types.SchemaDiff) []ShadowMismatch {
-	var mismatches []ShadowMismatch
+func collectViewMismatches(diff *types.SchemaDiff) []Mismatch {
+	var mismatches []Mismatch
 	mismatches = append(mismatches, namedMismatches(diff.ViewsAdded, "missing_view", "missing view")...)
 	mismatches = append(mismatches, namedMismatches(diff.ViewsRemoved, "extra_view", "extra view")...)
 	mismatches = append(mismatches, changedObjectMismatches(
@@ -168,38 +168,38 @@ func collectViewMismatches(diff *types.SchemaDiff) []ShadowMismatch {
 	return mismatches
 }
 
-func collectTriggerMismatches(diff *types.SchemaDiff) []ShadowMismatch {
-	var mismatches []ShadowMismatch
+func collectTriggerMismatches(diff *types.SchemaDiff) []Mismatch {
+	var mismatches []Mismatch
 	for _, ref := range sortedTriggerRefs(diff.TriggersAdded) {
 		object := qualifiedObject(ref.TableName, ref.TriggerName)
-		mismatches = append(mismatches, ShadowMismatch{Kind: "missing_trigger", Table: ref.TableName, Object: object, Message: "missing trigger " + object})
+		mismatches = append(mismatches, Mismatch{Kind: "missing_trigger", Table: ref.TableName, Object: object, Message: "missing trigger " + object})
 	}
 	for _, ref := range sortedTriggerRefs(diff.TriggersRemoved) {
 		object := qualifiedObject(ref.TableName, ref.TriggerName)
-		mismatches = append(mismatches, ShadowMismatch{Kind: "extra_trigger", Table: ref.TableName, Object: object, Message: "extra trigger " + object})
+		mismatches = append(mismatches, Mismatch{Kind: "extra_trigger", Table: ref.TableName, Object: object, Message: "extra trigger " + object})
 	}
 	for _, trigger := range sortedTriggerDiffs(diff.TriggersModified) {
 		object := qualifiedObject(trigger.TableName, trigger.TriggerName)
 		message := fmt.Sprintf("trigger mismatch %s: %s", object, describeChanges(trigger.Changes))
-		mismatches = append(mismatches, ShadowMismatch{Kind: "trigger_mismatch", Table: trigger.TableName, Object: object, Changes: maps.Clone(trigger.Changes), Message: message})
+		mismatches = append(mismatches, Mismatch{Kind: "trigger_mismatch", Table: trigger.TableName, Object: object, Changes: maps.Clone(trigger.Changes), Message: message})
 	}
 	return mismatches
 }
 
-func collectAccessControlMismatches(diff *types.SchemaDiff) []ShadowMismatch {
-	var mismatches []ShadowMismatch
+func collectAccessControlMismatches(diff *types.SchemaDiff) []Mismatch {
+	var mismatches []Mismatch
 	for _, ref := range sortedRLSPolicyRefs(diff.RLSPoliciesAdded) {
 		object := qualifiedObject(ref.TableName, ref.PolicyName)
-		mismatches = append(mismatches, ShadowMismatch{Kind: "missing_rls_policy", Table: ref.TableName, Object: object, Message: "missing RLS policy " + object})
+		mismatches = append(mismatches, Mismatch{Kind: "missing_rls_policy", Table: ref.TableName, Object: object, Message: "missing RLS policy " + object})
 	}
 	for _, ref := range sortedRLSPolicyRefs(diff.RLSPoliciesRemoved) {
 		object := qualifiedObject(ref.TableName, ref.PolicyName)
-		mismatches = append(mismatches, ShadowMismatch{Kind: "extra_rls_policy", Table: ref.TableName, Object: object, Message: "extra RLS policy " + object})
+		mismatches = append(mismatches, Mismatch{Kind: "extra_rls_policy", Table: ref.TableName, Object: object, Message: "extra RLS policy " + object})
 	}
 	for _, policy := range sortedRLSPolicyDiffs(diff.RLSPoliciesModified) {
 		object := qualifiedObject(policy.TableName, policy.PolicyName)
 		message := fmt.Sprintf("RLS policy mismatch %s: %s", object, describeChanges(policy.Changes))
-		mismatches = append(mismatches, ShadowMismatch{Kind: "rls_policy_mismatch", Table: policy.TableName, Object: object, Changes: maps.Clone(policy.Changes), Message: message})
+		mismatches = append(mismatches, Mismatch{Kind: "rls_policy_mismatch", Table: policy.TableName, Object: object, Changes: maps.Clone(policy.Changes), Message: message})
 	}
 	mismatches = append(mismatches, tableMismatches(diff.RLSEnabledTablesAdded, "missing_rls_enablement", "missing RLS enablement")...)
 	mismatches = append(mismatches, tableMismatches(diff.RLSEnabledTablesRemoved, "extra_rls_enablement", "extra RLS enablement")...)
@@ -219,66 +219,66 @@ func collectAccessControlMismatches(diff *types.SchemaDiff) []ShadowMismatch {
 	return mismatches
 }
 
-func collectTopLevelConstraintMismatches(diff *types.SchemaDiff) []ShadowMismatch {
-	var mismatches []ShadowMismatch
+func collectTopLevelConstraintMismatches(diff *types.SchemaDiff) []Mismatch {
+	var mismatches []Mismatch
 	mismatches = append(mismatches, constraintAdditionMismatches(diff)...)
 	mismatches = append(mismatches, constraintRemovalMismatches(diff)...)
 	return mismatches
 }
 
-func constraintAdditionMismatches(diff *types.SchemaDiff) []ShadowMismatch {
+func constraintAdditionMismatches(diff *types.SchemaDiff) []Mismatch {
 	represented := make(map[string]struct{}, len(diff.ConstraintsAddedWithTables))
-	var mismatches []ShadowMismatch
+	var mismatches []Mismatch
 	for _, info := range sortedConstraintAdditions(diff.ConstraintsAddedWithTables) {
 		object := qualifiedObject(info.TableName, info.Name)
-		mismatches = append(mismatches, ShadowMismatch{Kind: "missing_constraint", Table: info.TableName, Constraint: info.Name, Object: object, Message: "missing constraint " + object})
+		mismatches = append(mismatches, Mismatch{Kind: "missing_constraint", Table: info.TableName, Constraint: info.Name, Object: object, Message: "missing constraint " + object})
 		represented[info.Name] = struct{}{}
 	}
 	for _, name := range sortedStrings(diff.ConstraintsAdded) {
 		if _, ok := represented[name]; !ok {
-			mismatches = append(mismatches, ShadowMismatch{Kind: "missing_constraint", Constraint: name, Object: name, Message: "missing constraint " + name})
+			mismatches = append(mismatches, Mismatch{Kind: "missing_constraint", Constraint: name, Object: name, Message: "missing constraint " + name})
 		}
 	}
 	return mismatches
 }
 
-func constraintRemovalMismatches(diff *types.SchemaDiff) []ShadowMismatch {
+func constraintRemovalMismatches(diff *types.SchemaDiff) []Mismatch {
 	represented := make(map[string]struct{}, len(diff.ConstraintsRemovedWithTables))
-	var mismatches []ShadowMismatch
+	var mismatches []Mismatch
 	for _, info := range sortedConstraintRemovals(diff.ConstraintsRemovedWithTables) {
 		object := qualifiedObject(info.TableName, info.Name)
-		mismatches = append(mismatches, ShadowMismatch{Kind: "extra_constraint", Table: info.TableName, Constraint: info.Name, Object: object, Message: "extra constraint " + object})
+		mismatches = append(mismatches, Mismatch{Kind: "extra_constraint", Table: info.TableName, Constraint: info.Name, Object: object, Message: "extra constraint " + object})
 		represented[info.Name] = struct{}{}
 	}
 	for _, name := range sortedStrings(diff.ConstraintsRemoved) {
 		if _, ok := represented[name]; !ok {
-			mismatches = append(mismatches, ShadowMismatch{Kind: "extra_constraint", Constraint: name, Object: name, Message: "extra constraint " + name})
+			mismatches = append(mismatches, Mismatch{Kind: "extra_constraint", Constraint: name, Object: name, Message: "extra constraint " + name})
 		}
 	}
 	return mismatches
 }
 
-func tableMismatches(names []string, kind, label string) []ShadowMismatch {
-	var mismatches []ShadowMismatch
+func tableMismatches(names []string, kind, label string) []Mismatch {
+	var mismatches []Mismatch
 	for _, name := range sortedStrings(names) {
-		mismatches = append(mismatches, ShadowMismatch{Kind: kind, Table: name, Object: name, Message: label + " " + name})
+		mismatches = append(mismatches, Mismatch{Kind: kind, Table: name, Object: name, Message: label + " " + name})
 	}
 	return mismatches
 }
 
-func namedMismatches(names []string, kind, label string) []ShadowMismatch {
-	var mismatches []ShadowMismatch
+func namedMismatches(names []string, kind, label string) []Mismatch {
+	var mismatches []Mismatch
 	for _, name := range sortedStrings(names) {
-		mismatches = append(mismatches, ShadowMismatch{Kind: kind, Object: name, Message: label + " " + name})
+		mismatches = append(mismatches, Mismatch{Kind: kind, Object: name, Message: label + " " + name})
 	}
 	return mismatches
 }
 
-func indexMismatches(refs []types.IndexRef, kind, label string) []ShadowMismatch {
-	var mismatches []ShadowMismatch
+func indexMismatches(refs []types.IndexRef, kind, label string) []Mismatch {
+	var mismatches []Mismatch
 	for _, ref := range sortedIndexRefs(refs) {
 		object := qualifiedObject(ref.TableName, ref.Name)
-		mismatches = append(mismatches, ShadowMismatch{Kind: kind, Table: ref.TableName, Object: object, Message: label + " " + object})
+		mismatches = append(mismatches, Mismatch{Kind: kind, Table: ref.TableName, Object: object, Message: label + " " + object})
 	}
 	return mismatches
 }
@@ -289,24 +289,24 @@ func changedObjectMismatches[T any](
 	label string,
 	object func(T) string,
 	changes func(T) map[string]string,
-) []ShadowMismatch {
+) []Mismatch {
 	sorted := append([]T(nil), values...)
 	sort.Slice(sorted, func(i, j int) bool { return object(sorted[i]) < object(sorted[j]) })
-	mismatches := make([]ShadowMismatch, 0, len(sorted))
+	mismatches := make([]Mismatch, 0, len(sorted))
 	for _, value := range sorted {
 		name := object(value)
 		objectChanges := changes(value)
 		message := fmt.Sprintf("%s mismatch %s: %s", label, name, describeChanges(objectChanges))
-		mismatches = append(mismatches, ShadowMismatch{Kind: kind, Object: name, Changes: maps.Clone(objectChanges), Message: message})
+		mismatches = append(mismatches, Mismatch{Kind: kind, Object: name, Changes: maps.Clone(objectChanges), Message: message})
 	}
 	return mismatches
 }
 
-func grantMismatches(refs []types.GrantRef, kind, label string) []ShadowMismatch {
-	var mismatches []ShadowMismatch
+func grantMismatches(refs []types.GrantRef, kind, label string) []Mismatch {
+	var mismatches []Mismatch
 	for _, ref := range sortedGrantRefs(refs) {
 		object := fmt.Sprintf("%s %s ON %s %s", ref.Role, ref.Privilege, ref.ObjectType, ref.ObjectName)
-		mismatches = append(mismatches, ShadowMismatch{Kind: kind, Object: object, Message: label + " " + object})
+		mismatches = append(mismatches, Mismatch{Kind: kind, Object: object, Message: label + " " + object})
 	}
 	return mismatches
 }
@@ -318,18 +318,18 @@ func qualifiedObject(namespace, name string) string {
 	return namespace + "." + name
 }
 
-func collectEnumAndIndexMismatches(diff *types.SchemaDiff) []ShadowMismatch {
-	var mismatches []ShadowMismatch
+func collectEnumAndIndexMismatches(diff *types.SchemaDiff) []Mismatch {
+	var mismatches []Mismatch
 	mismatches = append(mismatches, namedMismatches(diff.EnumsAdded, "missing_enum", "missing enum")...)
 	mismatches = append(mismatches, namedMismatches(diff.EnumsRemoved, "extra_enum", "extra enum")...)
 	for _, enum := range sortedEnumDiffs(diff.EnumsModified) {
 		for _, value := range sortedStrings(enum.ValuesAdded) {
 			message := fmt.Sprintf("missing enum value %s.%s", enum.EnumName, value)
-			mismatches = append(mismatches, ShadowMismatch{Kind: "missing_enum_value", Object: enum.EnumName + "." + value, Message: message})
+			mismatches = append(mismatches, Mismatch{Kind: "missing_enum_value", Object: enum.EnumName + "." + value, Message: message})
 		}
 		for _, value := range sortedStrings(enum.ValuesRemoved) {
 			message := fmt.Sprintf("extra enum value %s.%s", enum.EnumName, value)
-			mismatches = append(mismatches, ShadowMismatch{Kind: "extra_enum_value", Object: enum.EnumName + "." + value, Message: message})
+			mismatches = append(mismatches, Mismatch{Kind: "extra_enum_value", Object: enum.EnumName + "." + value, Message: message})
 		}
 	}
 	mismatches = append(mismatches, indexMismatches(diff.IndexAdditions(), "missing_index", "missing index")...)

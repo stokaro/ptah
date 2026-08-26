@@ -45,6 +45,7 @@ import (
 	"go.5x5.cz/ptah/migration/safety"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/shadow"
 )
 
 var (
@@ -107,9 +108,10 @@ type GenerateMigrationOptions struct {
 	ReportFormat string
 	// ShadowDatabaseURL enables pre-write verification on an ephemeral database
 	// whose live database realm must be distinct from the target connection.
-	// The generator drops all objects in this database, replays existing
-	// migrations from OutputDir, applies the candidate migration, re-introspects
-	// the result, and aborts if it differs from the Go schema.
+	// The verification runs in [go.5x5.cz/ptah/migration/shadow]: it drops all
+	// objects in this database, replays existing migrations from OutputDir,
+	// applies the candidate migration, re-introspects the result, and aborts if
+	// it differs from the Go schema.
 	ShadowDatabaseURL string
 	// PriorMigrationsFS supplies the immutable, already-authorized migration
 	// history used by shadow verification or another replay-based caller. When
@@ -668,13 +670,13 @@ func verifyPlannedShadowMigration(
 	if opts.ShadowDatabaseURL == "" {
 		return nil
 	}
-	return verifyShadowMigration(ctx, shadowMigrationOptions{
-		DatabaseURL:      opts.ShadowDatabaseURL,
-		TargetConnection: conn,
-		MigrationsDir:    opts.OutputDir,
-		MigrationsFS:     opts.PriorMigrationsFS,
-		Dialect:          info.Dialect,
-		Capabilities:     info.Capabilities,
+	return shadow.VerifyMigration(ctx, shadow.MigrationVerifyOptions{
+		ShadowDatabaseURL: opts.ShadowDatabaseURL,
+		TargetConnection:  conn,
+		MigrationsDir:     opts.OutputDir,
+		MigrationsFS:      opts.PriorMigrationsFS,
+		Dialect:           info.Dialect,
+		Capabilities:      info.Capabilities,
 		IdentifierSemantics: cloneIdentifierSemanticsValue(
 			diff.IdentifierSemantics,
 		),
@@ -729,7 +731,17 @@ func connectContextFor(
 	ctx context.Context,
 	opts GenerateMigrationOptions,
 ) (context.Context, context.CancelFunc) {
-	return baselineShadowConnectContext(ctx, opts.ConnectTimeout)
+	return connectContext(ctx, opts.ConnectTimeout)
+}
+
+// connectContext bounds a connect attempt by the configured budget, and leaves
+// the context unbounded when no budget was set. The cancel function is returned
+// in both cases, so every caller releases the context the same way.
+func connectContext(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if timeout <= 0 {
+		return context.WithCancel(ctx)
+	}
+	return context.WithTimeout(ctx, timeout)
 }
 
 // resolveDesiredSchema answers what the migration should bring the database to:
@@ -3688,10 +3700,10 @@ func renderMigrationArtifacts(
 	return artifacts, pairs, nil
 }
 
-func shadowCandidatesFromSpecs(specs []generatedMigrationSpec) []shadowCandidate {
-	candidates := make([]shadowCandidate, 0, len(specs))
+func shadowCandidatesFromSpecs(specs []generatedMigrationSpec) []shadow.Candidate {
+	candidates := make([]shadow.Candidate, 0, len(specs))
 	for _, spec := range specs {
-		candidates = append(candidates, shadowCandidate{
+		candidates = append(candidates, shadow.Candidate{
 			Version: spec.Version,
 			Name:    spec.Name,
 			UpSQL:   spec.UpSQL,

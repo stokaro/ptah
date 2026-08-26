@@ -19,9 +19,10 @@ import (
 	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/migration/generator"
 	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/shadow"
 )
 
-func TestVerifyBaselineShadow_ReplayErrorWithRealPostgres(t *testing.T) {
+func TestVerifyBaseline_ReplayErrorWithRealPostgres(t *testing.T) {
 	c := qt.New(t)
 	ctx := t.Context()
 	dbURL := requireGeneratorPostgresURL(t)
@@ -45,7 +46,7 @@ func TestVerifyBaselineShadow_ReplayErrorWithRealPostgres(t *testing.T) {
 		0o600,
 	), qt.IsNil)
 
-	err = generator.VerifyBaselineShadow(ctx, generator.BaselineShadowVerifyOptions{
+	err = shadow.VerifyBaseline(ctx, shadow.BaselineVerifyOptions{
 		ShadowDatabaseURL: shadowURL,
 		TargetConn:        target,
 		MigrationsDir:     migrationsDir,
@@ -55,11 +56,11 @@ func TestVerifyBaselineShadow_ReplayErrorWithRealPostgres(t *testing.T) {
 	})
 
 	c.Assert(err, qt.ErrorMatches, `baseline shadow check failed: missing column users\.name`)
-	var shadowErr *generator.ShadowVerificationError
+	var shadowErr *shadow.VerificationError
 	c.Assert(err, qt.ErrorAs, &shadowErr)
-	c.Assert(shadowErr.Result, qt.DeepEquals, generator.ShadowVerificationResult{
+	c.Assert(shadowErr.Result, qt.DeepEquals, shadow.VerificationResult{
 		Stage: "replay",
-		Mismatches: []generator.ShadowMismatch{
+		Mismatches: []shadow.Mismatch{
 			{
 				Kind:    "replay_error",
 				Message: "missing column users.name",
