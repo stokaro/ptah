@@ -173,6 +173,7 @@ func convertTablesAndFields(
 				Charset:               dbColumn.Charset,
 				Collate:               dbColumn.Collate,
 				GeneratedKind:         dbColumn.GeneratedKind,
+				UpdateExpression:      dbColumn.UpdateExpression,
 				IdentityGeneration:    dbColumn.IdentityGeneration,
 				IdentityStart:         dbColumn.IdentityStart,
 				IdentityIncrement:     dbColumn.IdentityIncrement,
