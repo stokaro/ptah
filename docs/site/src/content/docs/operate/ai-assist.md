@@ -3,6 +3,14 @@ title: Ptah Assist and your own model
 description: Configure a model provider for ptah assist with your own key, endpoint, and model, and check that it works.
 ---
 
+:::note[Experimental]
+This surface is experimental: the contract may change with `agentapi.Version`,
+and the capability names are not frozen. Read the version rather than assuming
+it. What has to be true before that ends is recorded as a decision record with
+the project's sources, and two of its criteria are still open questions rather
+than pending work.
+:::
+
 Ptah Assist talks to a model you choose, through a key you hold. There is no
 Ptah account, no Ptah-hosted model, and no Ptah AI token. The model can be a
 hosted API, a gateway your organization runs, or one running on this machine —
