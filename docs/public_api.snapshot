@@ -8021,6 +8021,7 @@ type DatabaseConnection struct {
     DatabaseConnection represents a database connection with metadata
 
 func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, error)
+func (dc *DatabaseConnection) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
 func (dc *DatabaseConnection) Close() error
 func (dc *DatabaseConnection) Conn(ctx context.Context) (*sql.Conn, error)
 func (dc *DatabaseConnection) Exec(query string, args ...any) (sql.Result, error)

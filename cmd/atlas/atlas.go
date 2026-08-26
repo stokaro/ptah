@@ -227,6 +227,15 @@ func newAtlasCommand(use, short, long string, policy atlascompatpolicy.Policy) *
 	cmd.AddCommand(newAtlasLicenseCommand())
 	cmd.AddCommand(schemaCommand)
 	cmd.AddCommand(migrateCommand)
+	// `script` is registered outside the strict CE profile only. The pinned
+	// community binary does not register it at all, and the strict profile is
+	// where the conformance measurement runs -- so registering it there would
+	// report a divergence Ptah introduced rather than one it found. Outside it,
+	// an Atlas Pro user's scripts keep working under ptah-compat
+	// (stokaro/ptah#1017, under the principle in stokaro/ptah#951).
+	if !policy.IsStrictCE() {
+		cmd.AddCommand(newAtlasScriptCommand(policy))
+	}
 	installAtlasCompletionCommand(cmd)
 	installAtlasUsageTree(cmd)
 	installAtlasProjectFlagResetTree(schemaCommand)
