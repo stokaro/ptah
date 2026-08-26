@@ -87,3 +87,12 @@ func materializedViewDatabase() *goschema.Database {
 		Name: "analytics.user_counts",
 		Body: "SELECT count(*) AS total FROM analytics.users"}}}
 }
+
+// errorText keeps the loop body branch-free: a nil error reads as the empty
+// string, so the same Contains assertion covers both outcomes.
+func errorText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}

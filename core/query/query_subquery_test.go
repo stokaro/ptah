@@ -5,15 +5,13 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/query"
-	"go.5x5.cz/ptah/core/renderer"
 )
 
 // subqueryRow is one builder helper and the SQL it must produce.
 type subqueryRow struct {
 	name  string
-	where ast.Expression
+	where query.Expression
 	want  string
 	args  []any
 }
@@ -47,7 +45,7 @@ func TestSubqueryHelpersRenderTheirClause(t *testing.T) {
 			c := qt.New(t)
 			stmt := query.Select("id").From("users").Where(row.where).Build()
 
-			sql, args, err := renderer.RenderSelect(stmt, "postgres")
+			sql, args, err := query.RenderSelect(stmt, "postgres")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, row.want)
@@ -70,7 +68,7 @@ func TestSubqueryBindsInRenderedOrder(t *testing.T) {
 			query.Eq("id", 7),
 		)).Build()
 
-	_, args, err := renderer.RenderSelect(stmt, "postgres")
+	_, args, err := query.RenderSelect(stmt, "postgres")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(args, qt.DeepEquals, []any{true, 7})
@@ -80,7 +78,7 @@ func TestSubqueryHelpersIgnoreANilQuery(t *testing.T) {
 	c := qt.New(t)
 
 	// The helpers are used inline inside Where, so returning a typed nil
-	// expression here would surface as a panic deep in the renderer.
+	// expression here would surface as a panic deep in the query.
 	c.Assert(query.InQuery("id", nil), qt.IsNil)
 	c.Assert(query.Exists(nil), qt.IsNil)
 	c.Assert(query.NotExists(nil), qt.IsNil)

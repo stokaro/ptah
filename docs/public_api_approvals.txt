@@ -134,3 +134,13 @@ v0.2.0 go.5x5.cz/ptah/core/sqlutil
 # their place, WithRolledBackTransaction, which is the connection contract the
 # probes actually needed.
 v0.2.0 go.5x5.cz/ptah/dbschema
+
+# The DML language consolidates into core/query (#2246 §4.3): the statement
+# and expression node types leave core/ast, and the four Render functions
+# leave core/renderer. Neither package lost a DDL symbol, and the moved
+# quartet had no production caller outside core/query's own documentation --
+# the two packages were carrying one language between them. Names and error
+# text are unchanged; only the import path moves.
+v0.2.0 go.5x5.cz/ptah/core/ast
+v0.2.0 go.5x5.cz/ptah/core/renderer
+v0.2.0 go.5x5.cz/ptah/core/query

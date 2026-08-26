@@ -6,7 +6,6 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/query"
-	"go.5x5.cz/ptah/core/renderer"
 )
 
 // archiveFromUsers is the statement the rows below render.
@@ -52,7 +51,7 @@ func TestInsertSelect_RendersOnEveryDialect(t *testing.T) {
 		t.Run(test.dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			sql, args, err := renderer.RenderInsert(archiveFromUsers().Build(), test.dialect)
+			sql, args, err := query.RenderInsert(archiveFromUsers().Build(), test.dialect)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, test.want)
@@ -113,7 +112,7 @@ func TestInsertSelect_RefusesAContradictoryOrUncheckableSource(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			sql, _, err := renderer.RenderInsert(test.build().Build(), "postgres")
+			sql, _, err := query.RenderInsert(test.build().Build(), "postgres")
 
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(err.Error(), qt.Contains, test.message)
@@ -133,7 +132,7 @@ func TestInsertSelect_ComposesWithUpsertAndReturning(t *testing.T) {
 		Returning("id").
 		Build()
 
-	sql, args, err := renderer.RenderInsert(stmt, "postgres")
+	sql, args, err := query.RenderInsert(stmt, "postgres")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Equals,
@@ -149,7 +148,7 @@ func TestInsertSelect_ValuesStillWork(t *testing.T) {
 	c := qt.New(t)
 	stmt := query.InsertInto("t").Columns("a", "b").Values(1, "x").Build()
 
-	sql, args, err := renderer.RenderInsert(stmt, "postgres")
+	sql, args, err := query.RenderInsert(stmt, "postgres")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Equals, `INSERT INTO "t" ("a", "b") VALUES ($1, $2)`)

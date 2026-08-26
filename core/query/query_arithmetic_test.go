@@ -5,9 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/query"
-	"go.5x5.cz/ptah/core/renderer"
 )
 
 // TestArithmetic_ParenthesizesSoTheTreeSurvives is the reason this node renders
@@ -24,7 +22,7 @@ func TestArithmetic_ParenthesizesSoTheTreeSurvives(t *testing.T) {
 	product := query.Add(query.ColExpr("a"), query.Mul(query.ColExpr("b"), query.ColExpr("c")))
 	stmt := query.Select().From("t").ExprAs(sum, "l").ExprAs(product, "r").Build()
 
-	sql, _, err := renderer.RenderSelect(stmt, "postgres")
+	sql, _, err := query.RenderSelect(stmt, "postgres")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Equals,
@@ -35,14 +33,14 @@ func TestArithmetic_ParenthesizesSoTheTreeSurvives(t *testing.T) {
 func TestArithmetic_RendersEveryOperator(t *testing.T) {
 	tests := []struct {
 		name  string
-		build func() ast.Expression
+		build func() query.Expression
 		want  string
 	}{
-		{name: "add", build: func() ast.Expression { return query.Add(query.ColExpr("a"), query.ColExpr("b")) }, want: `("a" + "b")`},
-		{name: "sub", build: func() ast.Expression { return query.Sub(query.ColExpr("a"), query.ColExpr("b")) }, want: `("a" - "b")`},
-		{name: "mul", build: func() ast.Expression { return query.Mul(query.ColExpr("a"), query.ColExpr("b")) }, want: `("a" * "b")`},
-		{name: "div", build: func() ast.Expression { return query.Div(query.ColExpr("a"), query.ColExpr("b")) }, want: `("a" / "b")`},
-		{name: "mod", build: func() ast.Expression { return query.Mod(query.ColExpr("a"), query.ColExpr("b")) }, want: `("a" % "b")`},
+		{name: "add", build: func() query.Expression { return query.Add(query.ColExpr("a"), query.ColExpr("b")) }, want: `("a" + "b")`},
+		{name: "sub", build: func() query.Expression { return query.Sub(query.ColExpr("a"), query.ColExpr("b")) }, want: `("a" - "b")`},
+		{name: "mul", build: func() query.Expression { return query.Mul(query.ColExpr("a"), query.ColExpr("b")) }, want: `("a" * "b")`},
+		{name: "div", build: func() query.Expression { return query.Div(query.ColExpr("a"), query.ColExpr("b")) }, want: `("a" / "b")`},
+		{name: "mod", build: func() query.Expression { return query.Mod(query.ColExpr("a"), query.ColExpr("b")) }, want: `("a" % "b")`},
 	}
 
 	for _, test := range tests {
@@ -50,7 +48,7 @@ func TestArithmetic_RendersEveryOperator(t *testing.T) {
 			c := qt.New(t)
 			stmt := query.Select().From("t").ExprAs(test.build(), "v").Build()
 
-			sql, _, err := renderer.RenderSelect(stmt, "postgres")
+			sql, _, err := query.RenderSelect(stmt, "postgres")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Contains, test.want)
@@ -70,7 +68,7 @@ func TestArithmetic_BindsAValueOperand(t *testing.T) {
 	stmt := query.Select().From("t").
 		ExprAs(query.Div(query.ColExpr("total"), query.Value(2)), "half").Build()
 
-	sql, args, err := renderer.RenderSelect(stmt, "postgres")
+	sql, args, err := query.RenderSelect(stmt, "postgres")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Equals, `SELECT ("total" / $1) AS "half" FROM "t"`)
@@ -87,7 +85,7 @@ func TestFunc_CallsANonAggregateFunction(t *testing.T) {
 	stmt := query.Select().From("users").
 		ExprAs(query.Func("COALESCE", query.ColExpr("nick"), query.Value("anon")), "n").Build()
 
-	sql, args, err := renderer.RenderSelect(stmt, "postgres")
+	sql, args, err := query.RenderSelect(stmt, "postgres")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Equals, `SELECT COALESCE("nick", $1) AS "n" FROM "users"`)
@@ -113,7 +111,7 @@ func TestFunc_RefusesANameThatIsNotAnIdentifier(t *testing.T) {
 			c := qt.New(t)
 			stmt := query.Select().From("t").ExprAs(query.Func(name, query.ColExpr("a")), "v").Build()
 
-			sql, _, err := renderer.RenderSelect(stmt, "postgres")
+			sql, _, err := query.RenderSelect(stmt, "postgres")
 
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(sql, qt.Equals, "")
@@ -133,7 +131,7 @@ func TestArithmetic_ComposesWithComparisons(t *testing.T) {
 		ExprAs(query.Mul(query.ColExpr("total"), query.Value(100)), "cents").
 		Build()
 
-	sql, args, err := renderer.RenderSelect(stmt, "postgres")
+	sql, args, err := query.RenderSelect(stmt, "postgres")
 
 	c.Assert(err, qt.IsNil)
 	// The projection is emitted before WHERE, so its bound value is numbered
@@ -154,13 +152,13 @@ func TestArithmetic_ComposesWithComparisons(t *testing.T) {
 // something else entirely on some engines and as nothing on others.
 func TestArithmetic_RefusesAnOperatorOutsideTheEnum(t *testing.T) {
 	c := qt.New(t)
-	stmt := query.Select().From("t").ExprAs(&ast.Arithmetic{
-		Left:     &ast.ColumnRef{Name: "a"},
-		Operator: ast.ArithmeticOperator(99),
-		Right:    &ast.ColumnRef{Name: "b"},
+	stmt := query.Select().From("t").ExprAs(&query.Arithmetic{
+		Left:     &query.ColumnRef{Name: "a"},
+		Operator: query.ArithmeticOperator(99),
+		Right:    &query.ColumnRef{Name: "b"},
 	}, "v").Build()
 
-	sql, _, err := renderer.RenderSelect(stmt, "postgres")
+	sql, _, err := query.RenderSelect(stmt, "postgres")
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "unknown arithmetic operator")
@@ -172,13 +170,13 @@ func TestArithmetic_RefusesAnOperatorOutsideTheEnum(t *testing.T) {
 func TestArithmeticOperator_StringIsEmptyOutsideTheEnum(t *testing.T) {
 	tests := []struct {
 		name string
-		op   ast.ArithmeticOperator
+		op   query.ArithmeticOperator
 		want string
 	}{
-		{name: "add", op: ast.OpAdd, want: "+"},
-		{name: "modulo", op: ast.OpModulo, want: "%"},
-		{name: "past the end", op: ast.ArithmeticOperator(99), want: ""},
-		{name: "negative", op: ast.ArithmeticOperator(-1), want: ""},
+		{name: "add", op: query.OpAdd, want: "+"},
+		{name: "modulo", op: query.OpModulo, want: "%"},
+		{name: "past the end", op: query.ArithmeticOperator(99), want: ""},
+		{name: "negative", op: query.ArithmeticOperator(-1), want: ""},
 	}
 
 	for _, test := range tests {

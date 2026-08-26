@@ -5,16 +5,14 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/query"
-	"go.5x5.cz/ptah/core/renderer"
 )
 
 // windowSelect renders one window expression in a projection.
-func windowSelect(c *qt.C, expr ast.Expression, dialect string) (string, error) {
+func windowSelect(c *qt.C, expr query.Expression, dialect string) (string, error) {
 	c.Helper()
 	stmt := query.Select("id").From("t").ExprAs(expr, "v").Build()
-	sql, _, err := renderer.RenderSelect(stmt, dialect)
+	sql, _, err := query.RenderSelect(stmt, dialect)
 	return sql, err
 }
 
@@ -28,7 +26,7 @@ func windowSelect(c *qt.C, expr ast.Expression, dialect string) (string, error) 
 func TestWindow_RendersEachClauseCombination(t *testing.T) {
 	tests := []struct {
 		name string
-		expr ast.Expression
+		expr query.Expression
 		want string
 	}{
 		{
@@ -79,7 +77,7 @@ func TestWindow_RendersEachClauseCombination(t *testing.T) {
 func TestWindow_RankingFunctionsTakeNoArguments(t *testing.T) {
 	tests := []struct {
 		name string
-		expr ast.Expression
+		expr query.Expression
 		want string
 	}{
 		{
@@ -150,9 +148,9 @@ func TestWindow_RendersOnEveryDialect(t *testing.T) {
 // clause, the same rule the statement's own ORDER BY has.
 func TestWindow_RefusesAnEmptyPartitionColumn(t *testing.T) {
 	c := qt.New(t)
-	call := &ast.FuncCall{
-		Name: "SUM", Args: []ast.Expression{&ast.ColumnRef{Name: "x"}},
-		Over: &ast.WindowSpec{PartitionBy: []ast.ColumnRef{{Name: "   "}}},
+	call := &query.FuncCall{
+		Name: "SUM", Args: []query.Expression{&query.ColumnRef{Name: "x"}},
+		Over: &query.WindowSpec{PartitionBy: []query.ColumnRef{{Name: "   "}}},
 	}
 
 	sql, err := windowSelect(c, call, "postgres")
@@ -169,9 +167,9 @@ func TestWindow_RefusesAnEmptyPartitionColumn(t *testing.T) {
 // empty column refused in one place and emitted in the other.
 func TestWindow_OrderTermsShareTheStatementsRules(t *testing.T) {
 	c := qt.New(t)
-	call := &ast.FuncCall{
-		Name: "SUM", Args: []ast.Expression{&ast.ColumnRef{Name: "x"}},
-		Over: &ast.WindowSpec{OrderBy: []ast.OrderByClause{{Column: ""}}},
+	call := &query.FuncCall{
+		Name: "SUM", Args: []query.Expression{&query.ColumnRef{Name: "x"}},
+		Over: &query.WindowSpec{OrderBy: []query.OrderByClause{{Column: ""}}},
 	}
 
 	sql, err := windowSelect(c, call, "postgres")

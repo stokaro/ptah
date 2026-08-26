@@ -10,8 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/microsoft/go-mssqldb"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/query"
 	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
@@ -30,11 +29,11 @@ import (
 
 const dmlExecutionTable = "ptah_941_dml"
 
-func dmlWhereID(id int64) ast.Expression {
-	return &ast.Comparison{
-		Left:     &ast.ColumnRef{Name: "id"},
-		Operator: ast.OpEqual,
-		Right:    &ast.BoundValue{Value: id},
+func dmlWhereID(id int64) query.Expression {
+	return &query.Comparison{
+		Left:     &query.ColumnRef{Name: "id"},
+		Operator: query.OpEqual,
+		Right:    &query.BoundValue{Value: id},
 	}
 }
 
@@ -54,12 +53,12 @@ func TestSQLServerRenderedDMLExecutes(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	defer func() { _, _ = db.Exec("DROP TABLE " + dmlExecutionTable) }()
 
-	insert, insertArgs, err := renderer.RenderInsert(&ast.InsertStatement{
+	insert, insertArgs, err := query.RenderInsert(&query.InsertStatement{
 		Table:   dmlExecutionTable,
 		Columns: []string{"id", "name"},
-		Rows: [][]ast.Expression{
-			{&ast.BoundValue{Value: int64(1)}, &ast.BoundValue{Value: "a"}},
-			{&ast.BoundValue{Value: int64(2)}, &ast.BoundValue{Value: "b"}},
+		Rows: [][]query.Expression{
+			{&query.BoundValue{Value: int64(1)}, &query.BoundValue{Value: "a"}},
+			{&query.BoundValue{Value: int64(2)}, &query.BoundValue{Value: "b"}},
 		},
 	}, "sqlserver")
 	c.Assert(err, qt.IsNil)
@@ -70,8 +69,8 @@ func TestSQLServerRenderedDMLExecutes(t *testing.T) {
 	// Server keyword, so the renderer writes an ORDER BY the caller never asked
 	// for; only the server can say whether that is accepted.
 	limit := int64(1)
-	selectSQL, selectArgs, err := renderer.RenderSelect(&ast.SelectStatement{
-		Columns: []ast.ResultColumn{{Name: "id"}, {Name: "name"}},
+	selectSQL, selectArgs, err := query.RenderSelect(&query.SelectStatement{
+		Columns: []query.ResultColumn{{Name: "id"}, {Name: "name"}},
 		From:    dmlExecutionTable,
 		Where:   dmlWhereID(1),
 		Limit:   &limit,
@@ -91,9 +90,9 @@ func TestSQLServerRenderedDMLExecutes(t *testing.T) {
 	c.Assert(rows.Next(), qt.IsFalse, qt.Commentf("the rendered LIMIT did not bound the result"))
 	c.Assert(rows.Err(), qt.IsNil)
 
-	update, updateArgs, err := renderer.RenderUpdate(&ast.UpdateStatement{
+	update, updateArgs, err := query.RenderUpdate(&query.UpdateStatement{
 		Table: dmlExecutionTable,
-		Set:   []ast.Assignment{{Column: "name", Value: &ast.BoundValue{Value: "z"}}},
+		Set:   []query.Assignment{{Column: "name", Value: &query.BoundValue{Value: "z"}}},
 		Where: dmlWhereID(1),
 	}, "sqlserver")
 	c.Assert(err, qt.IsNil)
@@ -103,7 +102,7 @@ func TestSQLServerRenderedDMLExecutes(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(affected, qt.Equals, int64(1))
 
-	del, delArgs, err := renderer.RenderDelete(&ast.DeleteStatement{
+	del, delArgs, err := query.RenderDelete(&query.DeleteStatement{
 		Table: dmlExecutionTable,
 		Where: dmlWhereID(1),
 	}, "sqlserver")
@@ -136,17 +135,17 @@ func TestClickHouseRenderedDMLExecutes(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	defer func() { _, _ = db.Exec("DROP TABLE IF EXISTS " + dmlExecutionTable) }()
 
-	insert, insertArgs, err := renderer.RenderInsert(&ast.InsertStatement{
+	insert, insertArgs, err := query.RenderInsert(&query.InsertStatement{
 		Table:   dmlExecutionTable,
 		Columns: []string{"id", "name"},
-		Rows:    [][]ast.Expression{{&ast.BoundValue{Value: int64(1)}, &ast.BoundValue{Value: "a"}}},
+		Rows:    [][]query.Expression{{&query.BoundValue{Value: int64(1)}, &query.BoundValue{Value: "a"}}},
 	}, "clickhouse")
 	c.Assert(err, qt.IsNil)
 	_, err = db.Exec(insert, insertArgs...)
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered INSERT: %s", insert))
 
-	selectSQL, selectArgs, err := renderer.RenderSelect(&ast.SelectStatement{
-		Columns: []ast.ResultColumn{{Name: "id"}, {Name: "name"}},
+	selectSQL, selectArgs, err := query.RenderSelect(&query.SelectStatement{
+		Columns: []query.ResultColumn{{Name: "id"}, {Name: "name"}},
 		From:    dmlExecutionTable,
 		Where:   dmlWhereID(1),
 	}, "clickhouse")
@@ -161,7 +160,7 @@ func TestClickHouseRenderedDMLExecutes(t *testing.T) {
 	// DELETE is rendered for ClickHouse because the engine executes the
 	// portable spelling -- lightweight delete has been on by default since
 	// 23.3, and refusing it here was once stricter than the server.
-	del, delArgs, err := renderer.RenderDelete(&ast.DeleteStatement{
+	del, delArgs, err := query.RenderDelete(&query.DeleteStatement{
 		Table: dmlExecutionTable,
 		Where: dmlWhereID(1),
 	}, "clickhouse")
@@ -172,9 +171,9 @@ func TestClickHouseRenderedDMLExecutes(t *testing.T) {
 	// And UPDATE is refused with the engine's reason rather than rendered. The
 	// refusal belongs beside the executions: without it, deleting the arm would
 	// leave every other assertion here green.
-	_, _, err = renderer.RenderUpdate(&ast.UpdateStatement{
+	_, _, err = query.RenderUpdate(&query.UpdateStatement{
 		Table: dmlExecutionTable,
-		Set:   []ast.Assignment{{Column: "name", Value: &ast.BoundValue{Value: "z"}}},
+		Set:   []query.Assignment{{Column: "name", Value: &query.BoundValue{Value: "z"}}},
 		Where: dmlWhereID(1),
 	}, "clickhouse")
 	c.Assert(err, qt.ErrorMatches, `renderer: UPDATE is not a portable statement on ClickHouse.*`)

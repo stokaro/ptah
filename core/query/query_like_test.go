@@ -6,7 +6,6 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/query"
-	"go.5x5.cz/ptah/core/renderer"
 )
 
 // TestLike_RendersOnEveryDialect pins LIKE across the dialects the builder
@@ -34,7 +33,7 @@ func TestLike_RendersOnEveryDialect(t *testing.T) {
 			c := qt.New(t)
 			stmt := query.Select("id").From("users").Where(query.Like("name", "ada%")).Build()
 
-			sql, args, err := renderer.RenderSelect(stmt, test.dialect)
+			sql, args, err := query.RenderSelect(stmt, test.dialect)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, test.want)
@@ -50,7 +49,7 @@ func TestNotLike_RendersTheNegatedOperator(t *testing.T) {
 	c := qt.New(t)
 	stmt := query.Select("id").From("users").Where(query.NotLike("name", "%test%")).Build()
 
-	sql, args, err := renderer.RenderSelect(stmt, "postgres")
+	sql, args, err := query.RenderSelect(stmt, "postgres")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Equals, `SELECT "id" FROM "users" WHERE "name" NOT LIKE $1`)
@@ -68,7 +67,7 @@ func TestLike_PatternIsBoundNotInterpolated(t *testing.T) {
 	hostile := "%' OR 1=1 --"
 	stmt := query.Select("id").From("users").Where(query.Like("name", hostile)).Build()
 
-	sql, args, err := renderer.RenderSelect(stmt, "postgres")
+	sql, args, err := query.RenderSelect(stmt, "postgres")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Equals, `SELECT "id" FROM "users" WHERE "name" LIKE $1`)
@@ -98,7 +97,7 @@ func TestLike_WildcardsAreTheCallersToWrite(t *testing.T) {
 			c := qt.New(t)
 			stmt := query.Select("id").From("t").Where(query.Like("c", test.pattern)).Build()
 
-			_, args, err := renderer.RenderSelect(stmt, "postgres")
+			_, args, err := query.RenderSelect(stmt, "postgres")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(args, qt.DeepEquals, []any{test.pattern})
@@ -114,7 +113,7 @@ func TestLike_ComposesWithOtherPredicates(t *testing.T) {
 		Where(query.And(query.Like("name", "ada%"), query.Gt("age", 30))).
 		Build()
 
-	sql, args, err := renderer.RenderSelect(stmt, "postgres")
+	sql, args, err := query.RenderSelect(stmt, "postgres")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Equals, `SELECT "id" FROM "users" WHERE ("name" LIKE $1 AND "age" > $2)`)

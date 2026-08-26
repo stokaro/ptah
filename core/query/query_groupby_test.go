@@ -5,19 +5,17 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/query"
-	"go.5x5.cz/ptah/core/renderer"
 )
 
 // renderProjection renders "SELECT <expr> FROM t" for PostgreSQL and returns the
 // observable SQL and args, so aggregate constructors can be asserted through the
 // public rendering contract rather than the internal node shape.
-func renderProjection(c *qt.C, expr ast.Expression) (string, []any) {
+func renderProjection(c *qt.C, expr query.Expression) (string, []any) {
 	c.Helper()
 	stmt := query.Select().Exprs(expr).From("t").Build()
-	sql, args, err := renderer.RenderSelect(stmt, platform.Postgres)
+	sql, args, err := query.RenderSelect(stmt, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	return sql, args
 }
@@ -25,7 +23,7 @@ func renderProjection(c *qt.C, expr ast.Expression) (string, []any) {
 func TestAggregateConstructors(t *testing.T) {
 	tests := []struct {
 		name    string
-		expr    ast.Expression
+		expr    query.Expression
 		wantSQL string
 	}{
 		{name: "count star", expr: query.CountStar(), wantSQL: `SELECT COUNT(*) FROM "t"`},
@@ -67,7 +65,7 @@ func TestAggregateStarArgumentRejected(t *testing.T) {
 	// SQL form, so it is rejected at render time rather than emitting a quoted "*".
 	tests := []struct {
 		name string
-		expr ast.Expression
+		expr query.Expression
 	}{
 		{name: "sum star", expr: query.Sum("*")},
 		{name: "avg star", expr: query.Avg("*")},
@@ -82,7 +80,7 @@ func TestAggregateStarArgumentRejected(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 			stmt := query.Select().Exprs(tt.expr).From("t").Build()
-			sql, args, err := renderer.RenderSelect(stmt, platform.Postgres)
+			sql, args, err := query.RenderSelect(stmt, platform.Postgres)
 			c.Assert(err, qt.ErrorMatches, `.*is not a valid column reference.*`)
 			c.Assert(sql, qt.Equals, "")
 			c.Assert(args, qt.IsNil)
@@ -93,7 +91,7 @@ func TestAggregateStarArgumentRejected(t *testing.T) {
 func TestColumnAggregateMethods(t *testing.T) {
 	tests := []struct {
 		name    string
-		expr    ast.Expression
+		expr    query.Expression
 		wantSQL string
 	}{
 		{name: "count", expr: query.Col("u", "id").Count(), wantSQL: `SELECT COUNT("u"."id") FROM "t"`},
@@ -119,7 +117,7 @@ func TestExprComparison(t *testing.T) {
 	// shape of a HAVING predicate. The value is always bound, never inlined.
 	tests := []struct {
 		name    string
-		expr    ast.Expression
+		expr    query.Expression
 		wantSQL string
 	}{
 		{name: "eq", expr: query.Expr(query.CountStar()).Eq(int64(5)), wantSQL: `SELECT * FROM "t" WHERE COUNT(*) = $1`},
@@ -146,7 +144,7 @@ func TestSelectBuilder_Distinct(t *testing.T) {
 	stmt := query.Select("status").Distinct().From("orders").Build()
 	c.Assert(stmt.Distinct, qt.IsTrue)
 
-	sql, args, err := renderer.RenderSelect(stmt, platform.Postgres)
+	sql, args, err := query.RenderSelect(stmt, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Equals, `SELECT DISTINCT "status" FROM "orders"`)
 	c.Assert(args, qt.HasLen, 0)
@@ -163,7 +161,7 @@ func TestSelectBuilder_GroupBy(t *testing.T) {
 		GroupBy(query.Col("o", "kind")).
 		Build()
 
-	c.Assert(stmt.GroupBy, qt.DeepEquals, []ast.ColumnRef{
+	c.Assert(stmt.GroupBy, qt.DeepEquals, []query.ColumnRef{
 		{Name: "status"},
 		{Qualifier: "o", Name: "kind"},
 	})
@@ -181,7 +179,7 @@ func TestSelectBuilder_ExprsAndExprAs(t *testing.T) {
 		From("orders").
 		Build()
 
-	sql, args, err := renderer.RenderSelect(stmt, platform.Postgres)
+	sql, args, err := query.RenderSelect(stmt, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Equals, `SELECT "status", SUM("total"), COUNT(*) AS "n" FROM "orders"`)
 	c.Assert(args, qt.HasLen, 0)
@@ -222,7 +220,7 @@ func TestSelectBuilder_GroupByHavingEndToEnd(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			sql, args, err := renderer.RenderSelect(stmt, tt.dialect)
+			sql, args, err := query.RenderSelect(stmt, tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
 			c.Assert(args, qt.DeepEquals, wantArgs)
@@ -247,7 +245,7 @@ func TestSelectBuilder_HavingComposesWithBooleans(t *testing.T) {
 		)).
 		Build()
 
-	sql, args, err := renderer.RenderSelect(stmt, platform.Postgres)
+	sql, args, err := query.RenderSelect(stmt, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Equals, `SELECT "u"."id", COUNT("o"."id") AS "orders" FROM "users" "u" INNER JOIN "orders" "o" ON "o"."user_id" = "u"."id" GROUP BY "u"."id" HAVING (COUNT("o"."id") > $1 AND SUM("o"."total") >= $2)`)
 	c.Assert(args, qt.DeepEquals, []any{int64(1), int64(100)})

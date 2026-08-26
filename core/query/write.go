@@ -2,29 +2,27 @@ package query
 
 import (
 	"slices"
-
-	"go.5x5.cz/ptah/core/ast"
 )
 
 // This file adds the write-side builders — INSERT, UPDATE, and DELETE — alongside
 // the SELECT builder. They share the SELECT builder's conventions: each method
 // mutates and returns the same builder for chaining, values passed as any are
 // wrapped as bound parameters (never inlined), identifiers stay identifiers, and
-// Build produces a plain *ast node that renderer.RenderInsert / RenderUpdate /
+// Build produces a plain statement node that RenderInsert / RenderUpdate /
 // RenderDelete turns into dialect SQL plus its positional arguments. Validation
 // of degenerate input (no rows, ragged rows, empty SET, a WHERE-less whole-table
 // mutation) happens at render time, mirroring the SELECT builder, so Build never
 // fails.
 
-// InsertBuilder builds an *ast.InsertStatement through a fluent, chainable API.
+// InsertBuilder builds an *InsertStatement through a fluent, chainable API.
 // Start with InsertInto. A builder is not safe for concurrent use.
 type InsertBuilder struct {
 	table        string
 	columns      []string
-	rows         [][]ast.Expression
-	returning    []ast.ColumnRef
-	onConflict   *ast.OnConflict
-	selectSource *ast.SelectStatement
+	rows         [][]Expression
+	returning    []ColumnRef
+	onConflict   *OnConflict
+	selectSource *SelectStatement
 }
 
 // InsertInto starts an INSERT INTO the given table. Follow it with Columns to
@@ -45,9 +43,9 @@ func (b *InsertBuilder) Columns(columns ...string) *InsertBuilder {
 // per row for a multi-row INSERT; rows render in call order and their values are
 // numbered left to right, row by row. Passing nil as a value binds SQL NULL.
 func (b *InsertBuilder) Values(values ...any) *InsertBuilder {
-	row := make([]ast.Expression, len(values))
+	row := make([]Expression, len(values))
 	for i, v := range values {
-		row[i] = &ast.BoundValue{Value: v}
+		row[i] = &BoundValue{Value: v}
 	}
 	b.rows = append(b.rows, row)
 	return b
@@ -87,7 +85,7 @@ func (b *InsertBuilder) FromSelect(query *SelectBuilder) *InsertBuilder {
 // fires for every unique key on the table and has no syntax for narrowing that
 // (stokaro/ptah#941).
 func (b *InsertBuilder) OnConflictDoNothing(columns ...string) *InsertBuilder {
-	b.onConflict = &ast.OnConflict{Columns: slices.Clone(columns), DoNothing: true}
+	b.onConflict = &OnConflict{Columns: slices.Clone(columns), DoNothing: true}
 	return b
 }
 
@@ -100,7 +98,7 @@ func (b *InsertBuilder) OnConflictDoNothing(columns ...string) *InsertBuilder {
 // target at all -- so a call carrying one is refused there rather than widened
 // to every unique key on the table.
 func (b *InsertBuilder) OnConflictDoUpdate(columns []string, update ...string) *InsertBuilder {
-	b.onConflict = &ast.OnConflict{Columns: slices.Clone(columns), Update: slices.Clone(update)}
+	b.onConflict = &OnConflict{Columns: slices.Clone(columns), Update: slices.Clone(update)}
 	return b
 }
 
@@ -109,10 +107,10 @@ func (b *InsertBuilder) Returning(columns ...string) *InsertBuilder {
 	return b
 }
 
-// Build returns the assembled *ast.InsertStatement. Render it with
-// renderer.RenderInsert.
-func (b *InsertBuilder) Build() *ast.InsertStatement {
-	return &ast.InsertStatement{
+// Build returns the assembled *InsertStatement. Render it with
+// RenderInsert.
+func (b *InsertBuilder) Build() *InsertStatement {
+	return &InsertStatement{
 		Table:      b.table,
 		Columns:    b.columns,
 		Rows:       b.rows,
@@ -122,14 +120,14 @@ func (b *InsertBuilder) Build() *ast.InsertStatement {
 	}
 }
 
-// UpdateBuilder builds an *ast.UpdateStatement through a fluent, chainable API.
+// UpdateBuilder builds an *UpdateStatement through a fluent, chainable API.
 // Start with Update. A builder is not safe for concurrent use.
 type UpdateBuilder struct {
 	table         string
-	set           []ast.Assignment
-	where         ast.Expression
+	set           []Assignment
+	where         Expression
 	unconditional bool
-	returning     []ast.ColumnRef
+	returning     []ColumnRef
 }
 
 // Update starts an UPDATE of the given table. Add assignments with Set and a
@@ -142,13 +140,13 @@ func Update(table string) *UpdateBuilder {
 // Assignments render in call order, and their values are numbered before any
 // WHERE value. Passing nil sets the column to SQL NULL.
 func (b *UpdateBuilder) Set(column string, value any) *UpdateBuilder {
-	b.set = append(b.set, ast.Assignment{Column: column, Value: &ast.BoundValue{Value: value}})
+	b.set = append(b.set, Assignment{Column: column, Value: &BoundValue{Value: value}})
 	return b
 }
 
 // Where sets the filter expression. Calling Where again replaces the previous
 // expression; compose multiple conditions with And, Or, and Not.
-func (b *UpdateBuilder) Where(expr ast.Expression) *UpdateBuilder {
+func (b *UpdateBuilder) Where(expr Expression) *UpdateBuilder {
 	b.where = expr
 	return b
 }
@@ -169,10 +167,10 @@ func (b *UpdateBuilder) Returning(columns ...string) *UpdateBuilder {
 	return b
 }
 
-// Build returns the assembled *ast.UpdateStatement. Render it with
-// renderer.RenderUpdate.
-func (b *UpdateBuilder) Build() *ast.UpdateStatement {
-	return &ast.UpdateStatement{
+// Build returns the assembled *UpdateStatement. Render it with
+// RenderUpdate.
+func (b *UpdateBuilder) Build() *UpdateStatement {
+	return &UpdateStatement{
 		Table:         b.table,
 		Set:           b.set,
 		Where:         b.where,
@@ -181,13 +179,13 @@ func (b *UpdateBuilder) Build() *ast.UpdateStatement {
 	}
 }
 
-// DeleteBuilder builds an *ast.DeleteStatement through a fluent, chainable API.
+// DeleteBuilder builds a *DeleteStatement through a fluent, chainable API.
 // Start with DeleteFrom. A builder is not safe for concurrent use.
 type DeleteBuilder struct {
 	table         string
-	where         ast.Expression
+	where         Expression
 	unconditional bool
-	returning     []ast.ColumnRef
+	returning     []ColumnRef
 }
 
 // DeleteFrom starts a DELETE FROM the given table. Add a filter with Where.
@@ -197,7 +195,7 @@ func DeleteFrom(table string) *DeleteBuilder {
 
 // Where sets the filter expression. Calling Where again replaces the previous
 // expression; compose multiple conditions with And, Or, and Not.
-func (b *DeleteBuilder) Where(expr ast.Expression) *DeleteBuilder {
+func (b *DeleteBuilder) Where(expr Expression) *DeleteBuilder {
 	b.where = expr
 	return b
 }
@@ -216,10 +214,10 @@ func (b *DeleteBuilder) Returning(columns ...string) *DeleteBuilder {
 	return b
 }
 
-// Build returns the assembled *ast.DeleteStatement. Render it with
-// renderer.RenderDelete.
-func (b *DeleteBuilder) Build() *ast.DeleteStatement {
-	return &ast.DeleteStatement{
+// Build returns the assembled *DeleteStatement. Render it with
+// RenderDelete.
+func (b *DeleteBuilder) Build() *DeleteStatement {
+	return &DeleteStatement{
 		Table:         b.table,
 		Where:         b.where,
 		Unconditional: b.unconditional,
@@ -229,9 +227,9 @@ func (b *DeleteBuilder) Build() *ast.DeleteStatement {
 
 // appendReturning appends bare column names as RETURNING projection entries. It
 // backs the Returning method on all three write builders.
-func appendReturning(dst []ast.ColumnRef, columns []string) []ast.ColumnRef {
+func appendReturning(dst []ColumnRef, columns []string) []ColumnRef {
 	for _, name := range columns {
-		dst = append(dst, ast.ColumnRef{Name: name})
+		dst = append(dst, ColumnRef{Name: name})
 	}
 	return dst
 }

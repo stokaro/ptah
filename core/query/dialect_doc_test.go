@@ -1,4 +1,4 @@
-package renderer_test
+package query_test
 
 import (
 	"os"
@@ -25,7 +25,7 @@ const dialectTableHeading = "## Dialect coverage"
 // The page said SQL Server and ClickHouse were refused for months after they
 // rendered, and quoted the refusal to prove it. Nothing caught that, because a
 // page is only read by people and the two people who could have noticed were
-// the ones who had just taught the renderer. So a name added to
+// the ones who had just taught the query. So a name added to
 // SupportedDialects without a row written for it reddens here, and so does the
 // reverse (stokaro/ptah#941).
 func TestDialectCoverageDoc_ListsEverySupportedDialect(t *testing.T) {
