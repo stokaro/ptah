@@ -30,7 +30,7 @@ func TestPlanner_GenerateMigrationAST_Grants(t *testing.T) {
 		},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, &goschema.Database{})
+	nodes, err := postgres.New().GenerateMigrationAST(diff, &goschema.Database{})
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)

@@ -257,7 +257,7 @@ func nextExternalPlannerDialect(prefix string) string {
 	return fmt.Sprintf("%s_%d", prefix, externalPlannerDialectSeq.Add(1))
 }
 
-func (p externalPlanner) GenerateMigrationASTChecked(
+func (p externalPlanner) GenerateMigrationAST(
 	_ *difftypes.SchemaDiff,
 	_ *goschema.Database,
 ) ([]ast.Node, error) {
@@ -316,7 +316,7 @@ func TestGeneratedRLSPolicyRemovalIsDestructive(t *testing.T) {
 	c.Assert(legacyRenderedSQL(assessments[0].Statement), qt.Contains, "DROP POLICY IF EXISTS tenant_isolation ON accounts")
 }
 
-func TestGenerateMigrationASTChecked(t *testing.T) {
+func TestGenerateMigrationAST(t *testing.T) {
 	tests := []struct {
 		name      string
 		dialect   string

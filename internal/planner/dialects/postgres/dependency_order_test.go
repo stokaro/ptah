@@ -23,7 +23,7 @@ func TestPlanner_GenerateMigrationAST_OrdersFKChainTables(t *testing.T) {
 		},
 	}
 
-	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	nodes, err := planner.GenerateMigrationAST(diff, generated)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -47,7 +47,7 @@ func TestPlanner_GenerateMigrationAST_OrdersFKDiamondTables(t *testing.T) {
 		},
 	}
 
-	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	nodes, err := planner.GenerateMigrationAST(diff, generated)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -72,7 +72,7 @@ func TestPlanner_GenerateMigrationAST_DropsFKDiamondTablesInDependencyOrder(t *t
 		},
 	}
 
-	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	nodes, err := planner.GenerateMigrationAST(diff, generated)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -95,7 +95,7 @@ func TestPlanner_GenerateMigrationAST_AddsReferencedUniqueIndexBeforeNewTableFKs
 		},
 	}
 
-	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	nodes, err := planner.GenerateMigrationAST(diff, generated)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -120,7 +120,7 @@ func TestPlanner_GenerateMigrationAST_AddsReferencedUniqueConstraintBeforeNewTab
 		}},
 	}
 
-	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	nodes, err := planner.GenerateMigrationAST(diff, generated)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)

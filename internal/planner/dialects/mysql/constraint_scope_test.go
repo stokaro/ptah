@@ -25,7 +25,7 @@ var mysqlFamilyDialects = []string{"mysql", "mariadb"}
 // renderMySQLFamily generates the migration AST once per invocation and
 // renders it with the given dialect.
 func renderMySQLFamily(c *qt.C, dialect string, diff *difftypes.SchemaDiff, generated *goschema.Database) string {
-	nodes, err := mysql.New().GenerateMigrationASTChecked(diff, generated)
+	nodes, err := mysql.New().GenerateMigrationAST(diff, generated)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL(dialect, nodes...)
 	c.Assert(err, qt.IsNil)

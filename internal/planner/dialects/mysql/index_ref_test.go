@@ -42,7 +42,7 @@ func TestPlanner_IndexRefs_MySQLFamilyRoutesDuplicateAdditions(t *testing.T) {
 	for _, test := range mysqlFamilyPlannerCases() {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := test.planner.GenerateMigrationASTChecked(diff, generated)
+			nodes, err := test.planner.GenerateMigrationAST(diff, generated)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(nodes, qt.HasLen, 2)
@@ -71,7 +71,7 @@ func TestPlanner_IndexRefs_MySQLFamilyRoutesDuplicateRemovals(t *testing.T) {
 	for _, test := range mysqlFamilyPlannerCases() {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := test.planner.GenerateMigrationASTChecked(diff, &goschema.Database{})
+			nodes, err := test.planner.GenerateMigrationAST(diff, &goschema.Database{})
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(nodes, qt.HasLen, 2)
@@ -102,7 +102,7 @@ func TestPlanner_IndexRefs_MySQLFamilyReplacesOnlyExactRef(t *testing.T) {
 	for _, test := range mysqlFamilyPlannerCases() {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := test.planner.GenerateMigrationASTChecked(diff, generated)
+			nodes, err := test.planner.GenerateMigrationAST(diff, generated)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(nodes, qt.HasLen, 3)
@@ -137,7 +137,7 @@ func TestPlanner_IndexRefs_MySQLFamilyPreservesReplacementAddition(t *testing.T)
 	for _, test := range mysqlFamilyPlannerCases() {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := test.planner.GenerateMigrationASTChecked(diff, generated)
+			nodes, err := test.planner.GenerateMigrationAST(diff, generated)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(nodes, qt.HasLen, 2)
@@ -171,7 +171,7 @@ func TestPlanner_IndexRefs_MySQLFamilyCaseInsensitiveReplacementDropsFirst(t *te
 	for _, test := range mysqlFamilyPlannerCases() {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := test.planner.GenerateMigrationASTChecked(diff, generated)
+			nodes, err := test.planner.GenerateMigrationAST(diff, generated)
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.HasLen, 2)
 
@@ -209,7 +209,7 @@ func TestPlanner_IndexRefs_SQLServerSharedPlannerRoutesDuplicateAdditions(t *tes
 	}}
 
 	nodes, err := mysql.NewForDialect(platform.SQLServer, capability.SQLServer2022()).
-		GenerateMigrationASTChecked(diff, generated)
+		GenerateMigrationAST(diff, generated)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(nodes, qt.HasLen, 2)
@@ -243,7 +243,7 @@ func TestPlanner_IndexRefs_SQLServerPreservesIndexPartDirection(t *testing.T) {
 	}}
 
 	nodes, err := mysql.NewForDialect(platform.SQLServer, capability.SQLServer2022()).
-		GenerateMigrationASTChecked(diff, generated)
+		GenerateMigrationAST(diff, generated)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 1)
@@ -275,7 +275,7 @@ func TestPlanner_IndexRefs_SQLServerPreservesFilteredIndexPredicate(t *testing.T
 	}}
 
 	nodes, err := mysql.NewForDialect(platform.SQLServer, capability.SQLServer2022()).
-		GenerateMigrationASTChecked(diff, generated)
+		GenerateMigrationAST(diff, generated)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 2)
@@ -304,7 +304,7 @@ func TestPlanner_IndexRefs_SQLServerUnknownCollationOrdersPotentialReplacementSa
 	}
 
 	nodes, err := mysql.NewForDialect(platform.SQLServer, capability.SQLServer2022()).
-		GenerateMigrationASTChecked(diff, generated)
+		GenerateMigrationAST(diff, generated)
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 2)
 
@@ -338,7 +338,7 @@ func TestPlanner_IndexRefs_SQLServerCaseInsensitiveReplacementDropsFirst(t *test
 	}}
 
 	nodes, err := mysql.NewForDialect(platform.SQLServer, capability.SQLServer2022()).
-		GenerateMigrationASTChecked(diff, generated)
+		GenerateMigrationAST(diff, generated)
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 2)
 
@@ -373,7 +373,7 @@ func TestPlanner_IndexRefs_SQLServerCaseSensitiveVariantsRemainIndependent(t *te
 	}}
 
 	nodes, err := mysql.NewForDialect(platform.SQLServer, capability.SQLServer2022()).
-		GenerateMigrationASTChecked(diff, generated)
+		GenerateMigrationAST(diff, generated)
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 2)
 

@@ -48,7 +48,7 @@ func TestEveryDiffCategoryRendersSQL(t *testing.T) {
 	for _, fixture := range fixtures {
 		t.Run(fixture.field, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := postgres.New().GenerateMigrationASTChecked(fixture.diff, fixture.generated)
+			nodes, err := postgres.New().GenerateMigrationAST(fixture.diff, fixture.generated)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(len(nodes) > 0, qt.IsTrue, qt.Commentf("the planner rendered nothing for %s", fixture.field))

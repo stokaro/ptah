@@ -53,7 +53,7 @@ const (
 //	}
 //
 //	// Generate migration AST nodes
-//	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+//	nodes, err := planner.GenerateMigrationAST(diff, generated)
 //	if err != nil {
 //		return err
 //	}
@@ -1165,7 +1165,7 @@ func (p *Planner) handleEnumRemovals(result []ast.Node, diff *difftypes.SchemaDi
 	return result
 }
 
-// GenerateMigrationASTChecked generates MySQL-specific migration AST statements from schema differences.
+// GenerateMigrationAST generates MySQL-specific migration AST statements from schema differences.
 //
 // This method transforms the schema differences captured in the SchemaDiff into executable
 // MySQL AST statements that can be applied to bring the database schema in line with the target
@@ -1211,7 +1211,7 @@ func (p *Planner) handleEnumRemovals(result []ast.Node, diff *difftypes.SchemaDi
 //		},
 //	}
 //
-//	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+//	nodes, err := planner.GenerateMigrationAST(diff, generated)
 //	if err != nil {
 //		return err
 //	}
@@ -1238,7 +1238,7 @@ func (p *Planner) handleEnumRemovals(result []ast.Node, diff *difftypes.SchemaDi
 // Returns a slice of AST nodes representing SQL statements or an error when
 // the diff cannot be planned safely. Each node can be rendered to SQL using a
 // MySQL-specific visitor.
-func (p *Planner) GenerateMigrationASTChecked(diff *difftypes.SchemaDiff, generated *goschema.Database) ([]ast.Node, error) {
+func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, generated *goschema.Database) ([]ast.Node, error) {
 	var result []ast.Node
 	if generated == nil {
 		generated = &goschema.Database{}

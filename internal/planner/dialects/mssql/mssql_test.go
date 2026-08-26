@@ -31,7 +31,7 @@ func TestNewWithCapabilitiesUsesSQLServerDialect(t *testing.T) {
 		},
 	}
 
-	_, err := plan.GenerateMigrationASTChecked(diff, generated)
+	_, err := plan.GenerateMigrationAST(diff, generated)
 
 	c.Assert(err, qt.ErrorMatches, `.*SQL Server planner only supports ALTER COLUMN for type/nullability changes on users\.status; unsupported changes: default.*`)
 }
@@ -50,7 +50,7 @@ func TestNewWithCapabilitiesRejectsSQLServerColumnRemoval(t *testing.T) {
 		Tables: []goschema.Table{{StructName: "User", Name: "users"}},
 	}
 
-	_, err := plan.GenerateMigrationASTChecked(diff, generated)
+	_, err := plan.GenerateMigrationAST(diff, generated)
 
 	c.Assert(err, qt.ErrorMatches, `.*SQL Server planner does not support automatic DROP COLUMN for users; write an explicit migration that drops dependent constraints and indexes first.*`)
 }
