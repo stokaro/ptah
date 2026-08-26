@@ -64,8 +64,8 @@ import (
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/internal/deporder"
 	"go.5x5.cz/ptah/internal/planner/tablelookup"
-	"go.5x5.cz/ptah/internal/schemaselection"
 	"go.5x5.cz/ptah/internal/sqlident"
+	"go.5x5.cz/ptah/internal/systemschema"
 	"go.5x5.cz/ptah/internal/tableref"
 )
 
@@ -2656,7 +2656,7 @@ func schemasForRender(database goschema.Database, targetPlatform string) []gosch
 	}
 	for _, extension := range database.Extensions {
 		name := extension.Schema
-		if name == "" || schemaselection.IsPostgresSystemSchema(name) {
+		if name == "" || systemschema.IsPostgresSystemSchema(name) {
 			continue
 		}
 		if _, exists := seen[name]; exists {
