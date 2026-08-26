@@ -349,6 +349,11 @@ func newReportCommand() *cobra.Command {
 // So the guarantee is unchanged and only its subject narrows. MISSING still
 // means "this run asked for the cell and it did not report".
 //
+// The census narrows with it, and must: `declared == runnable + skipped` is an
+// identity about the cells this report is ABOUT, and leaving Declared at the
+// full inventory while the other two halves narrow makes it unsatisfiable for
+// every partial request.
+//
 // An empty selection means the whole matrix, which is what every caller before
 // the fan-out became opt-in was doing implicitly.
 func expectedMatrix(expected string) (capabilityprobe.Matrix, error) {
@@ -370,6 +375,16 @@ func expectedMatrix(expected string) (capabilityprobe.Matrix, error) {
 			delete(wanted, cell.ID)
 		}
 	}
+	// A declared line the tier cannot execute is still DECLARED, so naming one
+	// is not a caller error. It carries its own reason and belongs in the
+	// narrowed census beside the cells that ran.
+	keptSkipped := make([]capabilityprobe.CICell, 0, len(wanted))
+	for _, cell := range matrix.Skipped {
+		if wanted[cell.ID] {
+			keptSkipped = append(keptSkipped, cell)
+			delete(wanted, cell.ID)
+		}
+	}
 	// A name the matrix does not declare is a caller error, not an empty
 	// report. Silently narrowing to nothing is the failure this whole tier is
 	// written against.
@@ -380,6 +395,17 @@ func expectedMatrix(expected string) (capabilityprobe.Matrix, error) {
 			len(unknown), strings.Join(unknown, ", "))
 	}
 	matrix.Cells = kept
+	matrix.Skipped = keptSkipped
+	// Declared narrows with its subject. The census identity is
+	// declared == runnable + skipped, and it is what stops a line leaving the
+	// pipeline by being forgotten -- but it is an identity about the cells this
+	// report is ABOUT. Leaving Declared at the full inventory while the other
+	// two halves narrow makes the identity unsatisfiable for every partial
+	// request, so `/capability-matrix postgres` reported
+	// `the census does not add up: 30 declared, 6 runnable, 4 skipped`
+	// and failed a run that did exactly what it was asked to do -- the same
+	// failure stokaro/ptah#2185 removed from MISSING, one assertion further in.
+	matrix.Declared = len(kept) + len(keptSkipped)
 	return matrix, nil
 }
 
