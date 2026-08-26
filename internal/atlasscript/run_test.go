@@ -173,6 +173,16 @@ script "exec" "purge" {
 			name: "a loop script",
 			document: `
 script "loop" "purge" {
+  iterator "keyset" {
+    cursor { id = int }
+    init {
+      sql = "SELECT id FROM users ORDER BY id LIMIT 2"
+    }
+    next {
+      sql  = "SELECT id FROM users WHERE id > ? ORDER BY id LIMIT 2"
+      args = [cursor.id]
+    }
+  }
   do {
     exec "e" { sql = "DELETE FROM users" }
   }

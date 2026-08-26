@@ -173,7 +173,7 @@ func TestParse_RefusesWhatItDoesNotReadYet(t *testing.T) {
 		says     string
 	}{
 		{
-			name: "an iterator",
+			name: "an iterator with no init",
 			document: `
 script "loop" "purge" {
   iterator "keyset" {
@@ -183,7 +183,7 @@ script "loop" "purge" {
     exec "e" { sql = "DELETE FROM t" }
   }
 }`,
-			says: "iterator blocks are not read yet",
+			says: "no init sql",
 		},
 		{
 			name: "an http step",
