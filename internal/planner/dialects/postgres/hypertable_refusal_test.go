@@ -43,7 +43,7 @@ func TestPlanner_RefusesWhatTimescaleDBCannotUndo(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, err := postgres.New().GenerateMigrationASTChecked(test.diff, &goschema.Database{})
+			_, err := postgres.New().GenerateMigrationAST(test.diff, &goschema.Database{})
 
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(err.Error(), qt.Contains, test.want)
@@ -62,7 +62,7 @@ func TestPlanner_PlansAnAddedHypertable(t *testing.T) {
 		{Table: "public.readings", Column: "time"},
 	}}
 
-	nodes, err := postgres.New().GenerateMigrationASTChecked(
+	nodes, err := postgres.New().GenerateMigrationAST(
 		&difftypes.SchemaDiff{HypertablesAdded: []string{"public.readings"}}, declared)
 
 	c.Assert(err, qt.IsNil)

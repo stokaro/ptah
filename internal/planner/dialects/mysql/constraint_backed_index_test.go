@@ -46,7 +46,7 @@ func TestPlanner_MySQLFamilyDropsAConstraintBackedKeyAsAnIndex(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			nodes, err := test.planner.GenerateMigrationASTChecked(
+			nodes, err := test.planner.GenerateMigrationAST(
 				uniqueKeyRebuildDiff(),
 				uniqueKeyRebuildSchema(),
 			)
@@ -73,7 +73,7 @@ func TestPlanner_MySQLFamilyMarksTheUniquenessLossOnTheDrop(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			nodes, err := test.planner.GenerateMigrationASTChecked(
+			nodes, err := test.planner.GenerateMigrationAST(
 				uniqueKeyRebuildDiff(),
 				uniqueKeyRebuildSchema(),
 			)
@@ -98,7 +98,7 @@ func TestPlanner_MySQLFamilyLeavesAPlainIndexDropUnmarked(t *testing.T) {
 				IndexesRemoved: []difftypes.IndexRef{{Name: "idx_users_email", TableName: "users"}},
 			}
 
-			nodes, err := test.planner.GenerateMigrationASTChecked(diff, &goschema.Database{})
+			nodes, err := test.planner.GenerateMigrationAST(diff, &goschema.Database{})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.HasLen, 1)

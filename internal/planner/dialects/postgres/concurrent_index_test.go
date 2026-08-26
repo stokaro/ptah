@@ -39,7 +39,7 @@ func TestPlanner_ConcurrentIndexes(t *testing.T) {
 	t.Run("default policy stays non-concurrent", func(t *testing.T) {
 		c := qt.New(t)
 
-		nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
+		nodes, err := postgres.New().GenerateMigrationAST(diff, generated)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -53,7 +53,7 @@ func TestPlanner_ConcurrentIndexes(t *testing.T) {
 	t.Run("policy plus capability emits CONCURRENTLY", func(t *testing.T) {
 		c := qt.New(t)
 
-		nodes, err := postgres.New().WithConcurrentIndexes().GenerateMigrationASTChecked(diff, generated)
+		nodes, err := postgres.New().WithConcurrentIndexes().GenerateMigrationAST(diff, generated)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -67,7 +67,7 @@ func TestPlanner_ConcurrentIndexes(t *testing.T) {
 		c := qt.New(t)
 
 		caps := capability.Postgres16().With(capability.CreateIndexConcurrently, false)
-		nodes, err := postgres.NewWithCapabilities(caps).WithConcurrentIndexes().GenerateMigrationASTChecked(diff, generated)
+		nodes, err := postgres.NewWithCapabilities(caps).WithConcurrentIndexes().GenerateMigrationAST(diff, generated)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -90,7 +90,7 @@ func TestPlanner_ConcurrentIndexes(t *testing.T) {
 				{Name: "uq_users_email", StructName: "User", Fields: []string{"email"}, Unique: true},
 			},
 		}
-		nodes, err := postgres.New().WithConcurrentIndexes().GenerateMigrationASTChecked(uniqueDiff, uniqueGenerated)
+		nodes, err := postgres.New().WithConcurrentIndexes().GenerateMigrationAST(uniqueDiff, uniqueGenerated)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -106,7 +106,7 @@ func TestPlanner_ConcurrentIndexes(t *testing.T) {
 		base := postgres.New()
 		_ = base.WithConcurrentIndexes()
 
-		nodes, err := base.GenerateMigrationASTChecked(diff, generated)
+		nodes, err := base.GenerateMigrationAST(diff, generated)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -137,7 +137,7 @@ func TestPlanner_ConcurrentIndexRefs(t *testing.T) {
 		nodes, err := postgres.New().WithConcurrentIndexRefs(
 			difftypes.IndexRef{},
 			difftypes.IndexRef{Name: "idx_users_email", TableName: "users"},
-		).GenerateMigrationASTChecked(diff, generated)
+		).GenerateMigrationAST(diff, generated)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -153,7 +153,7 @@ func TestPlanner_ConcurrentIndexRefs(t *testing.T) {
 		caps := capability.Postgres16().With(capability.CreateIndexConcurrently, false)
 		nodes, err := postgres.NewWithCapabilities(caps).WithConcurrentIndexRefs(
 			difftypes.IndexRef{Name: "idx_users_email", TableName: "users"},
-		).GenerateMigrationASTChecked(diff, generated)
+		).GenerateMigrationAST(diff, generated)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -167,7 +167,7 @@ func TestPlanner_ConcurrentIndexRefs(t *testing.T) {
 
 		base := postgres.New()
 		_ = base.WithConcurrentIndexRefs(difftypes.IndexRef{Name: "idx_users_email", TableName: "users"})
-		nodes, err := base.GenerateMigrationASTChecked(diff, generated)
+		nodes, err := base.GenerateMigrationAST(diff, generated)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -187,7 +187,7 @@ func TestPlanner_ConcurrentIndexRefs(t *testing.T) {
 		}
 
 		nodes, err := postgres.New().WithConcurrentIndexRefs(ref).
-			GenerateMigrationASTChecked(rawDiff, rawGenerated)
+			GenerateMigrationAST(rawDiff, rawGenerated)
 		c.Assert(err, qt.IsNil)
 		c.Assert(nodes, qt.HasLen, 1)
 

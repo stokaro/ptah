@@ -42,7 +42,7 @@ func uniqueKeyRebuildSchema() *goschema.Database {
 func TestPlanner_ConstraintBackedIndexRebuildDropsTheConstraint(t *testing.T) {
 	c := qt.New(t)
 
-	nodes, err := postgres.New().GenerateMigrationASTChecked(
+	nodes, err := postgres.New().GenerateMigrationAST(
 		uniqueKeyRebuildDiff([]difftypes.IndexRef{{Name: "uq_users_email", TableName: "users"}}),
 		uniqueKeyRebuildSchema(),
 	)
@@ -71,7 +71,7 @@ func TestPlanner_ConstraintBackedIndexRebuildDropsTheConstraint(t *testing.T) {
 func TestPlanner_UnmarkedIndexRebuildStillDropsTheIndex(t *testing.T) {
 	c := qt.New(t)
 
-	nodes, err := postgres.New().GenerateMigrationASTChecked(
+	nodes, err := postgres.New().GenerateMigrationAST(
 		uniqueKeyRebuildDiff(nil),
 		uniqueKeyRebuildSchema(),
 	)
@@ -94,7 +94,7 @@ func TestPlanner_ConstraintBackedStandaloneRemovalDropsTheConstraint(t *testing.
 		ConstraintBackedIndexRemovals: []difftypes.IndexRef{{Name: "uq_users_email", TableName: "users"}},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, &goschema.Database{})
+	nodes, err := postgres.New().GenerateMigrationAST(diff, &goschema.Database{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 1)

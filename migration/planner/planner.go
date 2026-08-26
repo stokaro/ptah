@@ -67,7 +67,7 @@ var plannerRegistry struct {
 //
 // # Example Implementation Pattern
 //
-//	func (p *PostgresPlanner) GenerateMigrationASTChecked(
+//	func (p *PostgresPlanner) GenerateMigrationAST(
 //		diff *difftypes.SchemaDiff,
 //		generated *goschema.Database,
 //	) ([]ast.Node, error) {
@@ -85,7 +85,7 @@ var plannerRegistry struct {
 //		return nodes, nil
 //	}
 type Planner interface {
-	GenerateMigrationASTChecked(diff *difftypes.SchemaDiff, generated *goschema.Database) ([]ast.Node, error)
+	GenerateMigrationAST(diff *difftypes.SchemaDiff, generated *goschema.Database) ([]ast.Node, error)
 }
 
 // Options configures high-level planner helpers.
@@ -194,7 +194,7 @@ func RegisteredDialects() ([]string, error) {
 //	}
 //
 //	// Generate migration AST
-//	nodes, err := pgPlanner.GenerateMigrationASTChecked(diff, generated)
+//	nodes, err := pgPlanner.GenerateMigrationAST(diff, generated)
 //	if err != nil {
 //		log.Fatal(err)
 //	}
@@ -352,7 +352,7 @@ func normalizeRegistryDialect(dialect string) string {
 //
 // This is a convenience function that combines planner creation and AST generation
 // into a single call. It internally uses GetPlanner to obtain the appropriate
-// dialect-specific planner and then calls GenerateMigrationASTChecked on it.
+// dialect-specific planner and then calls GenerateMigrationAST on it.
 //
 // # Parameters
 //
@@ -437,7 +437,7 @@ func GenerateSchemaDiffASTWithOptions(
 	if err != nil {
 		return nil, wrapPlanError(dialect, err)
 	}
-	nodes, err := planner.GenerateMigrationASTChecked(diff, preparedGenerated)
+	nodes, err := planner.GenerateMigrationAST(diff, preparedGenerated)
 	if err != nil {
 		return nil, wrapPlanError(dialect, err)
 	}

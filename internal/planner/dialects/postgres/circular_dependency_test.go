@@ -45,7 +45,7 @@ func TestTwoPhaseTableCreationWithSelfReference(t *testing.T) {
 
 	// Generate AST nodes using PostgreSQL planner
 	planner := &postgres.Planner{}
-	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	nodes, err := planner.GenerateMigrationAST(diff, generated)
 	c.Assert(err, qt.IsNil)
 
 	// Render the nodes to SQL
@@ -134,7 +134,7 @@ func TestComplexDependencyChainTwoPhase(t *testing.T) {
 
 	// Generate AST nodes using PostgreSQL planner
 	planner := &postgres.Planner{}
-	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	nodes, err := planner.GenerateMigrationAST(diff, generated)
 	c.Assert(err, qt.IsNil)
 
 	// Render the nodes to SQL
@@ -217,7 +217,7 @@ func TestNoForeignKeysInCreateTable(t *testing.T) {
 
 	// Generate AST nodes using PostgreSQL planner
 	planner := &postgres.Planner{}
-	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	nodes, err := planner.GenerateMigrationAST(diff, generated)
 	c.Assert(err, qt.IsNil)
 
 	// Render the nodes to SQL

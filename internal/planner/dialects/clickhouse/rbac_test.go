@@ -37,7 +37,7 @@ func nodeTypes(nodes []ast.Node) []string {
 }
 
 func planClickHouse(c *qt.C, diff *difftypes.SchemaDiff, generated *goschema.Database) []ast.Node {
-	nodes, err := clickhouse.New().GenerateMigrationASTChecked(diff, generated)
+	nodes, err := clickhouse.New().GenerateMigrationAST(diff, generated)
 	c.Assert(err, qt.IsNil)
 	return nodes
 }

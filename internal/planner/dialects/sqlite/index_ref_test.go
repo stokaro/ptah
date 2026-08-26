@@ -34,7 +34,7 @@ func TestPlanner_IndexRefs_AttributesAdditionsToExactTables(t *testing.T) {
 		},
 	}
 
-	nodes, err := sqlite.New().GenerateMigrationASTChecked(diff, generated)
+	nodes, err := sqlite.New().GenerateMigrationAST(diff, generated)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(nodes, qt.HasLen, 2)
@@ -64,7 +64,7 @@ func TestPlanner_IndexRefs_PreservesAttachedSchema(t *testing.T) {
 		},
 	}
 
-	nodes, err := sqlite.New().GenerateMigrationASTChecked(diff, generated)
+	nodes, err := sqlite.New().GenerateMigrationAST(diff, generated)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(nodes, qt.HasLen, 1)
@@ -94,7 +94,7 @@ func TestPlanner_IndexRefs_DropsSameSchemaNameBeforeMovingIndex(t *testing.T) {
 		},
 	}
 
-	nodes, err := sqlite.New().GenerateMigrationASTChecked(diff, generated)
+	nodes, err := sqlite.New().GenerateMigrationAST(diff, generated)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(nodes, qt.HasLen, 2)
@@ -123,7 +123,7 @@ func TestPlanner_IndexRefs_ReplacesExactGlobalIndexBeforeCreate(t *testing.T) {
 		}},
 	}
 
-	nodes, err := sqlite.New().GenerateMigrationASTChecked(diff, generated)
+	nodes, err := sqlite.New().GenerateMigrationAST(diff, generated)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(nodes, qt.HasLen, 2)
@@ -161,7 +161,7 @@ func TestPlanner_IndexRefs_UsesCanonicalOwnerWithDuplicateStructNames(t *testing
 		},
 	}
 
-	nodes, err := sqlite.New().GenerateMigrationASTChecked(diff, generated)
+	nodes, err := sqlite.New().GenerateMigrationAST(diff, generated)
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 1)
 
@@ -202,7 +202,7 @@ func TestPlanner_IndexRefs_CaseInsensitiveReplacementExecutesOnSQLite(t *testing
 		},
 	}
 
-	nodes, err := sqlite.New().GenerateMigrationASTChecked(diff, generated)
+	nodes, err := sqlite.New().GenerateMigrationAST(diff, generated)
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 2)
 

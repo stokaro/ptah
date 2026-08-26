@@ -31,7 +31,7 @@ func TestPlanner_IndexRefs_RendersDuplicateNamesOnExactTables(t *testing.T) {
 		{Name: "idx_shared", TableName: "events", Fields: []string{"event_id"}, Type: "minmax"},
 	}}
 
-	nodes, err := clickhouse.New().GenerateMigrationASTChecked(diff, generated)
+	nodes, err := clickhouse.New().GenerateMigrationAST(diff, generated)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(nodes, qt.HasLen, 4)

@@ -23,7 +23,7 @@ func TestPlanner_LiteralDotAndQualifiedTablesRemainDistinct(t *testing.T) {
 		},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
+	nodes, err := postgres.New().GenerateMigrationAST(diff, generated)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -41,7 +41,7 @@ func TestPlanner_LiteralDotAndQualifiedTableRemovalsRemainDistinct(t *testing.T)
 		TablesRemoved: []string{`"tenant.data"`, "tenant.data"},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, literalDotAndQualifiedSchema())
+	nodes, err := postgres.New().GenerateMigrationAST(diff, literalDotAndQualifiedSchema())
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)

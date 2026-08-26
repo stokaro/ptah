@@ -52,7 +52,7 @@ func TestPlanner_GenerateMigrationAST_CreatesUserTypesBeforeTheTypesThatNameThem
 		RangesAdded:         []string{"myrange", "posrange"},
 	}
 
-	nodes, err := planner.GenerateMigrationASTChecked(diff, userTypeOrderSchema())
+	nodes, err := planner.GenerateMigrationAST(diff, userTypeOrderSchema())
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -99,7 +99,7 @@ func TestPlanner_GenerateMigrationAST_RecreatesUserTypesInDependencyOrder(t *tes
 		},
 	}
 
-	nodes, err := planner.GenerateMigrationASTChecked(diff, userTypeOrderSchema())
+	nodes, err := planner.GenerateMigrationAST(diff, userTypeOrderSchema())
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -132,7 +132,7 @@ func TestPlanner_GenerateMigrationAST_CreatesRecreatedUserTypesBeforeNewDependen
 		},
 	}
 
-	nodes, err := planner.GenerateMigrationASTChecked(diff, userTypeOrderSchema())
+	nodes, err := planner.GenerateMigrationAST(diff, userTypeOrderSchema())
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)

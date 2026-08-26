@@ -29,7 +29,7 @@ func tableQualifiedAdditionSQL(c *qt.C, deferrable bool, initially string) strin
 			Initially:      initially,
 		}},
 	}
-	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, &goschema.Database{})
+	nodes, err := postgres.New().GenerateMigrationAST(diff, &goschema.Database{})
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -56,7 +56,7 @@ func declaredAdditionSQL(c *qt.C, deferrable bool, initially string) string {
 			Initially:      initially,
 		}},
 	}
-	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
+	nodes, err := postgres.New().GenerateMigrationAST(diff, generated)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)

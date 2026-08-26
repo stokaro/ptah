@@ -138,7 +138,7 @@ func TestEmbeddedInlineMixinFK_NeverTargetsStructName(t *testing.T) {
 		diff := schemadiff.Compare(gen, ownableMixinColumnsOnlyDB(hosts...))
 		c.Assert(diff.HasChanges(), qt.IsTrue)
 
-		nodes, err := postgres.New().GenerateMigrationASTChecked(diff, gen)
+		nodes, err := postgres.New().GenerateMigrationAST(diff, gen)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -165,7 +165,7 @@ func TestEmbeddedInlineMixinFK_NeverTargetsStructName(t *testing.T) {
 
 		// Reverse the diff the way the generator does for the down migration.
 		downDiff := reverseConstraintDiff(diff)
-		nodes, err := postgres.New().GenerateMigrationASTChecked(downDiff, gen)
+		nodes, err := postgres.New().GenerateMigrationAST(downDiff, gen)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -213,7 +213,7 @@ func TestEmbeddedInlineMixinFK_MultiHostActionDrift(t *testing.T) {
 		c.Assert(countName(diff.ConstraintsAdded, "fk_entity_tenant"), qt.Equals, len(hosts))
 		c.Assert(countName(diff.ConstraintsRemoved, "fk_entity_tenant"), qt.Equals, len(hosts))
 
-		nodes, err := postgres.New().GenerateMigrationASTChecked(diff, gen)
+		nodes, err := postgres.New().GenerateMigrationAST(diff, gen)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -238,7 +238,7 @@ func TestEmbeddedInlineMixinFK_MultiHostActionDrift(t *testing.T) {
 
 		// Idempotency: once the database carries CASCADE, regenerating is empty.
 		converged := schemadiff.Compare(gen, ownableMixinConvergedTenantOnDelete("CASCADE", hosts...))
-		noopNodes, err := postgres.New().GenerateMigrationASTChecked(converged, gen)
+		noopNodes, err := postgres.New().GenerateMigrationAST(converged, gen)
 		c.Assert(err, qt.IsNil)
 		noopSQL, err := renderer.RenderSQL("postgres", noopNodes...)
 		c.Assert(err, qt.IsNil)
@@ -255,7 +255,7 @@ func TestEmbeddedInlineMixinFK_MultiHostActionDrift(t *testing.T) {
 		diff := schemadiff.CompareWithDialect(gen, converged, "mysql")
 		c.Assert(diff.HasChanges(), qt.IsTrue)
 
-		nodes, err := mysql.New().GenerateMigrationASTChecked(diff, gen)
+		nodes, err := mysql.New().GenerateMigrationAST(diff, gen)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("mysql", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -342,7 +342,7 @@ func TestEmbeddedInlineMixinFK_MixedModifyAndAdd_NoPhantomDrop(t *testing.T) {
 	diff := schemadiff.Compare(gen, dbSchema)
 	c.Assert(diff.HasChanges(), qt.IsTrue)
 
-	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, gen)
+	nodes, err := postgres.New().GenerateMigrationAST(diff, gen)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
