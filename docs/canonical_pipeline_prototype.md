@@ -270,14 +270,15 @@ criteria:
 | Issue | Families | Retires |
 | --- | --- | --- |
 | [#1662](https://github.com/stokaro/ptah/issues/1662) | Tables and columns | Both `internal/convert` direction packages, and the planner's second parameter |
-| [#1663](https://github.com/stokaro/ptah/issues/1663) | Indexes and the remaining constraint kinds | `objectidentity.ConstraintPartsVerbatim` and the planners' constraint host keys |
+| [#1663](https://github.com/stokaro/ptah/issues/1663) | Indexes and the remaining constraint kinds | Retired: `objectidentity.ConstraintPartsVerbatim` is gone, and both planners' constraint host keys are aliases of `types.ConstraintIdentity` |
 | [#1664](https://github.com/stokaro/ptah/issues/1664) | The schema-scoped families | `core/goschema` parse-time keys, the third and fourth `tableMemberKey` copies, and routine overload identity |
 
 ## What this does not do
 
-- No object family is planned other than foreign keys. Tables, columns, indexes
-  and roles are read, not planned; policies and grants are read and compared,
-  and `Plan` refuses them rather than rendering them.
+- Roles, policies and grants are read and compared, and `Plan` refuses them with
+  `ErrNotRendered` rather than rendering them. Tables, columns, indexes and the
+  constraint kinds are planned: `nodesFor` dispatches on the change's kind and
+  each has a renderer.
 - No source adapter other than Go annotations and the catalog. HCL and YAML
   reach `goschema.Database` first, so they are covered transitively rather than
   directly, and a native adapter for each is per-family migration work.
