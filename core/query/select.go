@@ -1,10 +1,10 @@
-package ast
+package query
 
 // This file defines the DML query AST: a SELECT statement and the composable
-// boolean expression tree used by its WHERE and JOIN ON clauses. These nodes
-// live alongside the DDL nodes but do not participate in the DDL Visitor
-// interface, because DML rendering must return bound arguments in addition to a
-// SQL string. Rendering is handled by renderer.RenderSelect.
+// boolean expression tree used by its WHERE and JOIN ON clauses. These are the
+// nodes the fluent builders in this package produce. They do not participate in
+// core/ast's DDL Visitor interface, because DML rendering must return bound
+// arguments in addition to a SQL string. Rendering is handled by RenderSelect.
 //
 // Phase 1 modeled SELECT / WHERE / ORDER BY / LIMIT / OFFSET over a single
 // table. Phase 2 adds JOINs: a table alias on the FROM clause, an optional
@@ -457,13 +457,6 @@ type JoinClause struct {
 	On Expression
 }
 
-// SelectStatement is a SELECT over a source table and zero or more joins, with
-// an optional DISTINCT, WHERE clause, GROUP BY / HAVING, ORDER BY terms, and
-// LIMIT/OFFSET bounds.
-//
-// Subqueries, non-aggregate functions, arithmetic, and window functions are not
-// modeled yet. Render it with renderer.RenderSelect, which returns the SQL string
-// and its positional arguments. Build one fluently with the core/query package.
 // CommonTableExpression is one named subquery of a WITH clause.
 //
 // Name is emitted as a quoted identifier and referenced from the outer query's
@@ -475,6 +468,12 @@ type CommonTableExpression struct {
 	Query *SelectStatement
 }
 
+// SelectStatement is a SELECT over a source table and zero or more joins, with
+// an optional DISTINCT, WHERE clause, GROUP BY / HAVING, ORDER BY terms, and
+// LIMIT/OFFSET bounds.
+//
+// Render it with RenderSelect, which returns the SQL string and its positional
+// arguments. Build one fluently with Select.
 type SelectStatement struct {
 	// Distinct renders SELECT DISTINCT, deduplicating result rows. It defaults to
 	// false, so a zero statement renders a plain SELECT unchanged.

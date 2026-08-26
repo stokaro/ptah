@@ -1,21 +1,20 @@
-package renderer_test
+package query_test
 
 import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/query"
 )
 
-func insertUsers() *ast.InsertStatement {
-	return &ast.InsertStatement{
+func insertUsers() *query.InsertStatement {
+	return &query.InsertStatement{
 		Table:   "users",
 		Columns: []string{"id", "name"},
-		Rows: [][]ast.Expression{
-			{&ast.BoundValue{Value: int64(1)}, &ast.BoundValue{Value: "alice"}},
+		Rows: [][]query.Expression{
+			{&query.BoundValue{Value: int64(1)}, &query.BoundValue{Value: "alice"}},
 		},
 	}
 }
@@ -53,7 +52,7 @@ func TestRenderInsert_SingleRow(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			sql, args, err := renderer.RenderInsert(insertUsers(), tt.dialect)
+			sql, args, err := query.RenderInsert(insertUsers(), tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
 			c.Assert(args, qt.DeepEquals, wantArgs)
@@ -62,13 +61,13 @@ func TestRenderInsert_SingleRow(t *testing.T) {
 }
 
 func TestRenderInsert_MultiRow(t *testing.T) {
-	stmt := &ast.InsertStatement{
+	stmt := &query.InsertStatement{
 		Table:   "users",
 		Columns: []string{"id", "name"},
-		Rows: [][]ast.Expression{
-			{&ast.BoundValue{Value: int64(1)}, &ast.BoundValue{Value: "alice"}},
-			{&ast.BoundValue{Value: int64(2)}, &ast.BoundValue{Value: "bob"}},
-			{&ast.BoundValue{Value: int64(3)}, &ast.BoundValue{Value: "carol"}},
+		Rows: [][]query.Expression{
+			{&query.BoundValue{Value: int64(1)}, &query.BoundValue{Value: "alice"}},
+			{&query.BoundValue{Value: int64(2)}, &query.BoundValue{Value: "bob"}},
+			{&query.BoundValue{Value: int64(3)}, &query.BoundValue{Value: "carol"}},
 		},
 	}
 	wantArgs := []any{int64(1), "alice", int64(2), "bob", int64(3), "carol"}
@@ -93,7 +92,7 @@ func TestRenderInsert_MultiRow(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			sql, args, err := renderer.RenderInsert(stmt, tt.dialect)
+			sql, args, err := query.RenderInsert(stmt, tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
 			c.Assert(args, qt.DeepEquals, wantArgs)
@@ -102,11 +101,11 @@ func TestRenderInsert_MultiRow(t *testing.T) {
 }
 
 func TestRenderInsert_Returning(t *testing.T) {
-	stmt := &ast.InsertStatement{
+	stmt := &query.InsertStatement{
 		Table:     "users",
 		Columns:   []string{"name"},
-		Rows:      [][]ast.Expression{{&ast.BoundValue{Value: "alice"}}},
-		Returning: []ast.ColumnRef{{Name: "id"}, {Name: "created_at"}},
+		Rows:      [][]query.Expression{{&query.BoundValue{Value: "alice"}}},
+		Returning: []query.ColumnRef{{Name: "id"}, {Name: "created_at"}},
 	}
 
 	tests := []struct {
@@ -129,7 +128,7 @@ func TestRenderInsert_Returning(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			sql, args, err := renderer.RenderInsert(stmt, tt.dialect)
+			sql, args, err := query.RenderInsert(stmt, tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
 			c.Assert(args, qt.DeepEquals, []any{"alice"})
@@ -140,7 +139,7 @@ func TestRenderInsert_Returning(t *testing.T) {
 func TestRenderInsert_Errors(t *testing.T) {
 	tests := []struct {
 		name        string
-		stmt        *ast.InsertStatement
+		stmt        *query.InsertStatement
 		dialect     string
 		wantErrLike string
 	}{
@@ -162,13 +161,13 @@ func TestRenderInsert_Errors(t *testing.T) {
 		},
 		{
 			name:        "missing table",
-			stmt:        &ast.InsertStatement{Columns: []string{"a"}, Rows: [][]ast.Expression{{&ast.BoundValue{Value: 1}}}},
+			stmt:        &query.InsertStatement{Columns: []string{"a"}, Rows: [][]query.Expression{{&query.BoundValue{Value: 1}}}},
 			dialect:     platform.Postgres,
 			wantErrLike: "renderer: insert statement requires a table",
 		},
 		{
 			name:        "no columns",
-			stmt:        &ast.InsertStatement{Table: "t", Rows: [][]ast.Expression{{}}},
+			stmt:        &query.InsertStatement{Table: "t", Rows: [][]query.Expression{{}}},
 			dialect:     platform.Postgres,
 			wantErrLike: "renderer: insert statement requires at least one column",
 		},
@@ -176,48 +175,48 @@ func TestRenderInsert_Errors(t *testing.T) {
 			// The message names both sources now that a SELECT can supply the
 			// rows; an insert with neither is still refused (stokaro/ptah#941).
 			name:        "neither rows nor a select source",
-			stmt:        &ast.InsertStatement{Table: "t", Columns: []string{"a"}},
+			stmt:        &query.InsertStatement{Table: "t", Columns: []string{"a"}},
 			dialect:     platform.Postgres,
 			wantErrLike: "renderer: insert statement requires at least one row or a SELECT source",
 		},
 		{
 			name: "ragged row",
-			stmt: &ast.InsertStatement{
+			stmt: &query.InsertStatement{
 				Table:   "t",
 				Columns: []string{"a", "b"},
-				Rows:    [][]ast.Expression{{&ast.BoundValue{Value: 1}}},
+				Rows:    [][]query.Expression{{&query.BoundValue{Value: 1}}},
 			},
 			dialect:     platform.Postgres,
 			wantErrLike: "renderer: insert row 1 has 1 values but there are 2 columns",
 		},
 		{
 			name: "empty column name",
-			stmt: &ast.InsertStatement{
+			stmt: &query.InsertStatement{
 				Table:   "t",
 				Columns: []string{"  "},
-				Rows:    [][]ast.Expression{{&ast.BoundValue{Value: 1}}},
+				Rows:    [][]query.Expression{{&query.BoundValue{Value: 1}}},
 			},
 			dialect:     platform.Postgres,
 			wantErrLike: "renderer: insert column has an empty name",
 		},
 		{
 			name: "returning on mysql",
-			stmt: &ast.InsertStatement{
+			stmt: &query.InsertStatement{
 				Table:     "t",
 				Columns:   []string{"a"},
-				Rows:      [][]ast.Expression{{&ast.BoundValue{Value: 1}}},
-				Returning: []ast.ColumnRef{{Name: "id"}},
+				Rows:      [][]query.Expression{{&query.BoundValue{Value: 1}}},
+				Returning: []query.ColumnRef{{Name: "id"}},
 			},
 			dialect:     platform.MySQL,
 			wantErrLike: "renderer: mysql does not support RETURNING",
 		},
 		{
 			name: "returning on mariadb",
-			stmt: &ast.InsertStatement{
+			stmt: &query.InsertStatement{
 				Table:     "t",
 				Columns:   []string{"a"},
-				Rows:      [][]ast.Expression{{&ast.BoundValue{Value: 1}}},
-				Returning: []ast.ColumnRef{{Name: "id"}},
+				Rows:      [][]query.Expression{{&query.BoundValue{Value: 1}}},
+				Returning: []query.ColumnRef{{Name: "id"}},
 			},
 			dialect:     platform.MariaDB,
 			wantErrLike: "renderer: mariadb does not support RETURNING",
@@ -227,7 +226,7 @@ func TestRenderInsert_Errors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			sql, args, err := renderer.RenderInsert(tt.stmt, tt.dialect)
+			sql, args, err := query.RenderInsert(tt.stmt, tt.dialect)
 			c.Assert(err, qt.ErrorMatches, tt.wantErrLike)
 			c.Assert(sql, qt.Equals, "")
 			c.Assert(args, qt.IsNil)
@@ -235,17 +234,17 @@ func TestRenderInsert_Errors(t *testing.T) {
 	}
 }
 
-func updateUser() *ast.UpdateStatement {
-	return &ast.UpdateStatement{
+func updateUser() *query.UpdateStatement {
+	return &query.UpdateStatement{
 		Table: "users",
-		Set: []ast.Assignment{
-			{Column: "name", Value: &ast.BoundValue{Value: "bob"}},
-			{Column: "email", Value: &ast.BoundValue{Value: "bob@example.com"}},
+		Set: []query.Assignment{
+			{Column: "name", Value: &query.BoundValue{Value: "bob"}},
+			{Column: "email", Value: &query.BoundValue{Value: "bob@example.com"}},
 		},
-		Where: &ast.Comparison{
-			Left:     &ast.ColumnRef{Name: "id"},
-			Operator: ast.OpEqual,
-			Right:    &ast.BoundValue{Value: int64(7)},
+		Where: &query.Comparison{
+			Left:     &query.ColumnRef{Name: "id"},
+			Operator: query.OpEqual,
+			Right:    &query.BoundValue{Value: int64(7)},
 		},
 	}
 }
@@ -278,7 +277,7 @@ func TestRenderUpdate_SetThenWhere(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			sql, args, err := renderer.RenderUpdate(updateUser(), tt.dialect)
+			sql, args, err := query.RenderUpdate(updateUser(), tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
 			c.Assert(args, qt.DeepEquals, wantArgs)
@@ -287,11 +286,11 @@ func TestRenderUpdate_SetThenWhere(t *testing.T) {
 }
 
 func TestRenderUpdate_Returning(t *testing.T) {
-	stmt := &ast.UpdateStatement{
+	stmt := &query.UpdateStatement{
 		Table:     "users",
-		Set:       []ast.Assignment{{Column: "name", Value: &ast.BoundValue{Value: "bob"}}},
-		Where:     &ast.Comparison{Left: &ast.ColumnRef{Name: "id"}, Operator: ast.OpEqual, Right: &ast.BoundValue{Value: int64(7)}},
-		Returning: []ast.ColumnRef{{Name: "updated_at"}},
+		Set:       []query.Assignment{{Column: "name", Value: &query.BoundValue{Value: "bob"}}},
+		Where:     &query.Comparison{Left: &query.ColumnRef{Name: "id"}, Operator: query.OpEqual, Right: &query.BoundValue{Value: int64(7)}},
+		Returning: []query.ColumnRef{{Name: "updated_at"}},
 	}
 
 	tests := []struct {
@@ -314,7 +313,7 @@ func TestRenderUpdate_Returning(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			sql, args, err := renderer.RenderUpdate(stmt, tt.dialect)
+			sql, args, err := query.RenderUpdate(stmt, tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
 			c.Assert(args, qt.DeepEquals, []any{"bob", int64(7)})
@@ -325,11 +324,11 @@ func TestRenderUpdate_Returning(t *testing.T) {
 func TestRenderUpdate_NoWhereGuard(t *testing.T) {
 	t.Run("without unconditional the whole-table update is rejected", func(t *testing.T) {
 		c := qt.New(t)
-		stmt := &ast.UpdateStatement{
+		stmt := &query.UpdateStatement{
 			Table: "users",
-			Set:   []ast.Assignment{{Column: "active", Value: &ast.BoundValue{Value: false}}},
+			Set:   []query.Assignment{{Column: "active", Value: &query.BoundValue{Value: false}}},
 		}
-		sql, args, err := renderer.RenderUpdate(stmt, platform.Postgres)
+		sql, args, err := query.RenderUpdate(stmt, platform.Postgres)
 		c.Assert(err, qt.ErrorMatches, "renderer: update without a WHERE clause must be marked unconditional")
 		c.Assert(sql, qt.Equals, "")
 		c.Assert(args, qt.IsNil)
@@ -337,12 +336,12 @@ func TestRenderUpdate_NoWhereGuard(t *testing.T) {
 
 	t.Run("with unconditional the whole-table update renders", func(t *testing.T) {
 		c := qt.New(t)
-		stmt := &ast.UpdateStatement{
+		stmt := &query.UpdateStatement{
 			Table:         "users",
-			Set:           []ast.Assignment{{Column: "active", Value: &ast.BoundValue{Value: false}}},
+			Set:           []query.Assignment{{Column: "active", Value: &query.BoundValue{Value: false}}},
 			Unconditional: true,
 		}
-		sql, args, err := renderer.RenderUpdate(stmt, platform.Postgres)
+		sql, args, err := query.RenderUpdate(stmt, platform.Postgres)
 		c.Assert(err, qt.IsNil)
 		c.Assert(sql, qt.Equals, `UPDATE "users" SET "active" = $1`)
 		c.Assert(args, qt.DeepEquals, []any{false})
@@ -352,7 +351,7 @@ func TestRenderUpdate_NoWhereGuard(t *testing.T) {
 func TestRenderUpdate_Errors(t *testing.T) {
 	tests := []struct {
 		name        string
-		stmt        *ast.UpdateStatement
+		stmt        *query.UpdateStatement
 		dialect     string
 		wantErrLike string
 	}{
@@ -364,35 +363,35 @@ func TestRenderUpdate_Errors(t *testing.T) {
 		},
 		{
 			name:        "missing table",
-			stmt:        &ast.UpdateStatement{Set: []ast.Assignment{{Column: "a", Value: &ast.BoundValue{Value: 1}}}, Unconditional: true},
+			stmt:        &query.UpdateStatement{Set: []query.Assignment{{Column: "a", Value: &query.BoundValue{Value: 1}}}, Unconditional: true},
 			dialect:     platform.Postgres,
 			wantErrLike: "renderer: update statement requires a table",
 		},
 		{
 			name:        "empty set",
-			stmt:        &ast.UpdateStatement{Table: "t", Unconditional: true},
+			stmt:        &query.UpdateStatement{Table: "t", Unconditional: true},
 			dialect:     platform.Postgres,
 			wantErrLike: "renderer: update statement requires at least one assignment",
 		},
 		{
 			name:        "empty column",
-			stmt:        &ast.UpdateStatement{Table: "t", Set: []ast.Assignment{{Column: " ", Value: &ast.BoundValue{Value: 1}}}, Unconditional: true},
+			stmt:        &query.UpdateStatement{Table: "t", Set: []query.Assignment{{Column: " ", Value: &query.BoundValue{Value: 1}}}, Unconditional: true},
 			dialect:     platform.Postgres,
 			wantErrLike: "renderer: assignment has an empty column",
 		},
 		{
 			name:        "nil value",
-			stmt:        &ast.UpdateStatement{Table: "t", Set: []ast.Assignment{{Column: "a"}}, Unconditional: true},
+			stmt:        &query.UpdateStatement{Table: "t", Set: []query.Assignment{{Column: "a"}}, Unconditional: true},
 			dialect:     platform.Postgres,
 			wantErrLike: "renderer: assignment has a nil value",
 		},
 		{
 			name: "returning on mysql",
-			stmt: &ast.UpdateStatement{
+			stmt: &query.UpdateStatement{
 				Table:     "t",
-				Set:       []ast.Assignment{{Column: "a", Value: &ast.BoundValue{Value: 1}}},
-				Where:     &ast.Comparison{Left: &ast.ColumnRef{Name: "id"}, Operator: ast.OpEqual, Right: &ast.BoundValue{Value: 1}},
-				Returning: []ast.ColumnRef{{Name: "a"}},
+				Set:       []query.Assignment{{Column: "a", Value: &query.BoundValue{Value: 1}}},
+				Where:     &query.Comparison{Left: &query.ColumnRef{Name: "id"}, Operator: query.OpEqual, Right: &query.BoundValue{Value: 1}},
+				Returning: []query.ColumnRef{{Name: "a"}},
 			},
 			dialect:     platform.MySQL,
 			wantErrLike: "renderer: mysql does not support RETURNING",
@@ -402,7 +401,7 @@ func TestRenderUpdate_Errors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			sql, args, err := renderer.RenderUpdate(tt.stmt, tt.dialect)
+			sql, args, err := query.RenderUpdate(tt.stmt, tt.dialect)
 			c.Assert(err, qt.ErrorMatches, tt.wantErrLike)
 			c.Assert(sql, qt.Equals, "")
 			c.Assert(args, qt.IsNil)
@@ -410,13 +409,13 @@ func TestRenderUpdate_Errors(t *testing.T) {
 	}
 }
 
-func deleteUser() *ast.DeleteStatement {
-	return &ast.DeleteStatement{
+func deleteUser() *query.DeleteStatement {
+	return &query.DeleteStatement{
 		Table: "users",
-		Where: &ast.Comparison{
-			Left:     &ast.ColumnRef{Name: "id"},
-			Operator: ast.OpEqual,
-			Right:    &ast.BoundValue{Value: int64(7)},
+		Where: &query.Comparison{
+			Left:     &query.ColumnRef{Name: "id"},
+			Operator: query.OpEqual,
+			Right:    &query.BoundValue{Value: int64(7)},
 		},
 	}
 }
@@ -449,7 +448,7 @@ func TestRenderDelete_Where(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			sql, args, err := renderer.RenderDelete(deleteUser(), tt.dialect)
+			sql, args, err := query.RenderDelete(deleteUser(), tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
 			c.Assert(args, qt.DeepEquals, wantArgs)
@@ -460,7 +459,7 @@ func TestRenderDelete_Where(t *testing.T) {
 func TestRenderDelete_NoWhereGuard(t *testing.T) {
 	t.Run("without unconditional the whole-table delete is rejected", func(t *testing.T) {
 		c := qt.New(t)
-		sql, args, err := renderer.RenderDelete(&ast.DeleteStatement{Table: "users"}, platform.Postgres)
+		sql, args, err := query.RenderDelete(&query.DeleteStatement{Table: "users"}, platform.Postgres)
 		c.Assert(err, qt.ErrorMatches, "renderer: delete without a WHERE clause must be marked unconditional")
 		c.Assert(sql, qt.Equals, "")
 		c.Assert(args, qt.IsNil)
@@ -468,7 +467,7 @@ func TestRenderDelete_NoWhereGuard(t *testing.T) {
 
 	t.Run("with unconditional the whole-table delete renders and binds nothing", func(t *testing.T) {
 		c := qt.New(t)
-		sql, args, err := renderer.RenderDelete(&ast.DeleteStatement{Table: "users", Unconditional: true}, platform.Postgres)
+		sql, args, err := query.RenderDelete(&query.DeleteStatement{Table: "users", Unconditional: true}, platform.Postgres)
 		c.Assert(err, qt.IsNil)
 		c.Assert(sql, qt.Equals, `DELETE FROM "users"`)
 		c.Assert(args, qt.HasLen, 0)
@@ -476,10 +475,10 @@ func TestRenderDelete_NoWhereGuard(t *testing.T) {
 }
 
 func TestRenderDelete_Returning(t *testing.T) {
-	stmt := &ast.DeleteStatement{
+	stmt := &query.DeleteStatement{
 		Table:     "users",
-		Where:     &ast.Comparison{Left: &ast.ColumnRef{Name: "id"}, Operator: ast.OpEqual, Right: &ast.BoundValue{Value: int64(7)}},
-		Returning: []ast.ColumnRef{{Name: "id"}},
+		Where:     &query.Comparison{Left: &query.ColumnRef{Name: "id"}, Operator: query.OpEqual, Right: &query.BoundValue{Value: int64(7)}},
+		Returning: []query.ColumnRef{{Name: "id"}},
 	}
 
 	tests := []struct {
@@ -502,7 +501,7 @@ func TestRenderDelete_Returning(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			sql, args, err := renderer.RenderDelete(stmt, tt.dialect)
+			sql, args, err := query.RenderDelete(stmt, tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
 			c.Assert(args, qt.DeepEquals, []any{int64(7)})
@@ -513,7 +512,7 @@ func TestRenderDelete_Returning(t *testing.T) {
 func TestRenderDelete_Errors(t *testing.T) {
 	tests := []struct {
 		name        string
-		stmt        *ast.DeleteStatement
+		stmt        *query.DeleteStatement
 		dialect     string
 		wantErrLike string
 	}{
@@ -535,16 +534,16 @@ func TestRenderDelete_Errors(t *testing.T) {
 		},
 		{
 			name:        "missing table",
-			stmt:        &ast.DeleteStatement{Unconditional: true},
+			stmt:        &query.DeleteStatement{Unconditional: true},
 			dialect:     platform.Postgres,
 			wantErrLike: "renderer: delete statement requires a table",
 		},
 		{
 			name: "returning on mysql",
-			stmt: &ast.DeleteStatement{
+			stmt: &query.DeleteStatement{
 				Table:     "t",
-				Where:     &ast.Comparison{Left: &ast.ColumnRef{Name: "id"}, Operator: ast.OpEqual, Right: &ast.BoundValue{Value: 1}},
-				Returning: []ast.ColumnRef{{Name: "id"}},
+				Where:     &query.Comparison{Left: &query.ColumnRef{Name: "id"}, Operator: query.OpEqual, Right: &query.BoundValue{Value: 1}},
+				Returning: []query.ColumnRef{{Name: "id"}},
 			},
 			dialect:     platform.MySQL,
 			wantErrLike: "renderer: mysql does not support RETURNING",
@@ -554,7 +553,7 @@ func TestRenderDelete_Errors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			sql, args, err := renderer.RenderDelete(tt.stmt, tt.dialect)
+			sql, args, err := query.RenderDelete(tt.stmt, tt.dialect)
 			c.Assert(err, qt.ErrorMatches, tt.wantErrLike)
 			c.Assert(sql, qt.Equals, "")
 			c.Assert(args, qt.IsNil)
@@ -570,12 +569,12 @@ func TestRenderWrite_ValuesStayBound(t *testing.T) {
 
 	t.Run("insert value is bound", func(t *testing.T) {
 		c := qt.New(t)
-		stmt := &ast.InsertStatement{
+		stmt := &query.InsertStatement{
 			Table:   "users",
 			Columns: []string{"name"},
-			Rows:    [][]ast.Expression{{&ast.BoundValue{Value: payload}}},
+			Rows:    [][]query.Expression{{&query.BoundValue{Value: payload}}},
 		}
-		sql, args, err := renderer.RenderInsert(stmt, platform.Postgres)
+		sql, args, err := query.RenderInsert(stmt, platform.Postgres)
 		c.Assert(err, qt.IsNil)
 		c.Assert(sql, qt.Equals, `INSERT INTO "users" ("name") VALUES ($1)`)
 		c.Assert(sql, qt.Not(qt.Contains), "DROP TABLE")
@@ -584,12 +583,12 @@ func TestRenderWrite_ValuesStayBound(t *testing.T) {
 
 	t.Run("update set value is bound", func(t *testing.T) {
 		c := qt.New(t)
-		stmt := &ast.UpdateStatement{
+		stmt := &query.UpdateStatement{
 			Table:         "users",
-			Set:           []ast.Assignment{{Column: "name", Value: &ast.BoundValue{Value: payload}}},
+			Set:           []query.Assignment{{Column: "name", Value: &query.BoundValue{Value: payload}}},
 			Unconditional: true,
 		}
-		sql, args, err := renderer.RenderUpdate(stmt, platform.Postgres)
+		sql, args, err := query.RenderUpdate(stmt, platform.Postgres)
 		c.Assert(err, qt.IsNil)
 		c.Assert(sql, qt.Equals, `UPDATE "users" SET "name" = $1`)
 		c.Assert(sql, qt.Not(qt.Contains), "DROP TABLE")
@@ -598,11 +597,11 @@ func TestRenderWrite_ValuesStayBound(t *testing.T) {
 
 	t.Run("delete where value is bound", func(t *testing.T) {
 		c := qt.New(t)
-		stmt := &ast.DeleteStatement{
+		stmt := &query.DeleteStatement{
 			Table: "users",
-			Where: &ast.Comparison{Left: &ast.ColumnRef{Name: "name"}, Operator: ast.OpEqual, Right: &ast.BoundValue{Value: payload}},
+			Where: &query.Comparison{Left: &query.ColumnRef{Name: "name"}, Operator: query.OpEqual, Right: &query.BoundValue{Value: payload}},
 		}
-		sql, args, err := renderer.RenderDelete(stmt, platform.Postgres)
+		sql, args, err := query.RenderDelete(stmt, platform.Postgres)
 		c.Assert(err, qt.IsNil)
 		c.Assert(sql, qt.Equals, `DELETE FROM "users" WHERE "name" = $1`)
 		c.Assert(sql, qt.Not(qt.Contains), "DROP TABLE")
@@ -617,12 +616,12 @@ func TestRenderWrite_ValuesStayBound(t *testing.T) {
 func TestRenderWrite_IdentifiersAreQuoted(t *testing.T) {
 	t.Run("insert column and table are quoted", func(t *testing.T) {
 		c := qt.New(t)
-		stmt := &ast.InsertStatement{
+		stmt := &query.InsertStatement{
 			Table:   `us"ers`,
 			Columns: []string{`na"me`},
-			Rows:    [][]ast.Expression{{&ast.BoundValue{Value: "alice"}}},
+			Rows:    [][]query.Expression{{&query.BoundValue{Value: "alice"}}},
 		}
-		sql, args, err := renderer.RenderInsert(stmt, platform.Postgres)
+		sql, args, err := query.RenderInsert(stmt, platform.Postgres)
 		c.Assert(err, qt.IsNil)
 		c.Assert(sql, qt.Equals, `INSERT INTO "us""ers" ("na""me") VALUES ($1)`)
 		c.Assert(args, qt.DeepEquals, []any{"alice"})
@@ -630,12 +629,12 @@ func TestRenderWrite_IdentifiersAreQuoted(t *testing.T) {
 
 	t.Run("update assignment column is quoted", func(t *testing.T) {
 		c := qt.New(t)
-		stmt := &ast.UpdateStatement{
+		stmt := &query.UpdateStatement{
 			Table:         "users",
-			Set:           []ast.Assignment{{Column: `na"me`, Value: &ast.BoundValue{Value: "alice"}}},
+			Set:           []query.Assignment{{Column: `na"me`, Value: &query.BoundValue{Value: "alice"}}},
 			Unconditional: true,
 		}
-		sql, args, err := renderer.RenderUpdate(stmt, platform.Postgres)
+		sql, args, err := query.RenderUpdate(stmt, platform.Postgres)
 		c.Assert(err, qt.IsNil)
 		c.Assert(sql, qt.Equals, `UPDATE "users" SET "na""me" = $1`)
 		c.Assert(args, qt.DeepEquals, []any{"alice"})

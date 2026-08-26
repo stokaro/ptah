@@ -6,7 +6,6 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/query"
-	"go.5x5.cz/ptah/core/renderer"
 )
 
 // cteDialectRow is one dialect and the WITH clause it must receive.
@@ -44,7 +43,7 @@ func TestSelectWithRendersACommonTableExpression(t *testing.T) {
 			stmt := query.Select("id").With("recent", recent).
 				From("recent").Where(query.Eq("author_id", 7)).Build()
 
-			sql, args, err := renderer.RenderSelect(stmt, row.dialect)
+			sql, args, err := query.RenderSelect(stmt, row.dialect)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, row.want)
@@ -66,7 +65,7 @@ func TestSelectWithBindsTheSubqueryValuesFirst(t *testing.T) {
 	stmt := query.Select("id").With("recent", inner).
 		From("recent").Where(query.Eq("id", "outer-value")).Build()
 
-	_, args, err := renderer.RenderSelect(stmt, "postgres")
+	_, args, err := query.RenderSelect(stmt, "postgres")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(args, qt.DeepEquals, []any{"inner-value", "outer-value"})
@@ -81,7 +80,7 @@ func TestSelectWithAccumulatesInOrder(t *testing.T) {
 		With("second", second).
 		From("second").Build()
 
-	sql, _, err := renderer.RenderSelect(stmt, "postgres")
+	sql, _, err := query.RenderSelect(stmt, "postgres")
 
 	// A later CTE may read an earlier one, so the emitted order has to be the
 	// order the caller declared.
@@ -98,7 +97,7 @@ func TestSelectWithIgnoresANilSubquery(t *testing.T) {
 	// surface as a nil-pointer panic at Build rather than at the call site.
 	stmt := query.Select("id").With("recent", nil).From("posts").Build()
 
-	sql, _, err := renderer.RenderSelect(stmt, "postgres")
+	sql, _, err := query.RenderSelect(stmt, "postgres")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Equals, `SELECT "id" FROM "posts"`)

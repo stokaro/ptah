@@ -1,54 +1,53 @@
-package renderer_test
+package query_test
 
 import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/query"
 )
 
 // representativeSelect exercises columns, WHERE with AND/OR/NOT/IN/comparison/
 // IS NOT NULL, ORDER BY with a tie-breaker, and LIMIT/OFFSET in a single tree.
-func representativeSelect() *ast.SelectStatement {
+func representativeSelect() *query.SelectStatement {
 	limit := int64(24)
 	offset := int64(0)
-	return &ast.SelectStatement{
-		Columns: []ast.ResultColumn{{Name: "id"}, {Name: "name"}},
+	return &query.SelectStatement{
+		Columns: []query.ResultColumn{{Name: "id"}, {Name: "name"}},
 		From:    "commodities",
-		Where: &ast.LogicalExpr{
-			Operator: ast.LogicalAnd,
-			Operands: []ast.Expression{
-				&ast.Comparison{
-					Left:     &ast.ColumnRef{Name: "draft"},
-					Operator: ast.OpEqual,
-					Right:    &ast.BoundValue{Value: false},
+		Where: &query.LogicalExpr{
+			Operator: query.LogicalAnd,
+			Operands: []query.Expression{
+				&query.Comparison{
+					Left:     &query.ColumnRef{Name: "draft"},
+					Operator: query.OpEqual,
+					Right:    &query.BoundValue{Value: false},
 				},
-				&ast.InExpr{
-					Operand: &ast.ColumnRef{Name: "status"},
-					Values: []ast.Expression{
-						&ast.BoundValue{Value: "in_use"},
-						&ast.BoundValue{Value: "sold"},
+				&query.InExpr{
+					Operand: &query.ColumnRef{Name: "status"},
+					Values: []query.Expression{
+						&query.BoundValue{Value: "in_use"},
+						&query.BoundValue{Value: "sold"},
 					},
 				},
-				&ast.LogicalExpr{
-					Operator: ast.LogicalOr,
-					Operands: []ast.Expression{
-						&ast.NullTest{Operand: &ast.ColumnRef{Name: "deleted_at"}, Negated: true},
-						&ast.NotExpr{Operand: &ast.Comparison{
-							Left:     &ast.ColumnRef{Name: "count"},
-							Operator: ast.OpGreaterThan,
-							Right:    &ast.BoundValue{Value: int64(10)},
+				&query.LogicalExpr{
+					Operator: query.LogicalOr,
+					Operands: []query.Expression{
+						&query.NullTest{Operand: &query.ColumnRef{Name: "deleted_at"}, Negated: true},
+						&query.NotExpr{Operand: &query.Comparison{
+							Left:     &query.ColumnRef{Name: "count"},
+							Operator: query.OpGreaterThan,
+							Right:    &query.BoundValue{Value: int64(10)},
 						}},
 					},
 				},
 			},
 		},
-		OrderBy: []ast.OrderByClause{
-			{Column: "name", Direction: ast.SortAscending},
-			{Column: "id", Direction: ast.SortDescending},
+		OrderBy: []query.OrderByClause{
+			{Column: "name", Direction: query.SortAscending},
+			{Column: "id", Direction: query.SortDescending},
 		},
 		Limit:  &limit,
 		Offset: &offset,
@@ -88,7 +87,7 @@ func TestRenderSelect_Representative(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			sql, args, err := renderer.RenderSelect(representativeSelect(), tt.dialect)
+			sql, args, err := query.RenderSelect(representativeSelect(), tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
 			c.Assert(args, qt.DeepEquals, wantArgs)
@@ -97,13 +96,13 @@ func TestRenderSelect_Representative(t *testing.T) {
 }
 
 func TestRenderSelect_DialectAliasesNormalize(t *testing.T) {
-	stmt := &ast.SelectStatement{
-		Columns: []ast.ResultColumn{{Star: true}},
+	stmt := &query.SelectStatement{
+		Columns: []query.ResultColumn{{Star: true}},
 		From:    "users",
-		Where: &ast.Comparison{
-			Left:     &ast.ColumnRef{Name: "id"},
-			Operator: ast.OpEqual,
-			Right:    &ast.BoundValue{Value: int64(7)},
+		Where: &query.Comparison{
+			Left:     &query.ColumnRef{Name: "id"},
+			Operator: query.OpEqual,
+			Right:    &query.BoundValue{Value: int64(7)},
 		},
 	}
 
@@ -121,7 +120,7 @@ func TestRenderSelect_DialectAliasesNormalize(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			sql, args, err := renderer.RenderSelect(stmt, tt.dialect)
+			sql, args, err := query.RenderSelect(stmt, tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
 			c.Assert(args, qt.DeepEquals, []any{int64(7)})
@@ -132,22 +131,22 @@ func TestRenderSelect_DialectAliasesNormalize(t *testing.T) {
 func TestRenderSelect_ProjectionVariants(t *testing.T) {
 	tests := []struct {
 		name    string
-		stmt    *ast.SelectStatement
+		stmt    *query.SelectStatement
 		wantSQL string
 	}{
 		{
 			name:    "no columns renders star",
-			stmt:    &ast.SelectStatement{From: "t"},
+			stmt:    &query.SelectStatement{From: "t"},
 			wantSQL: `SELECT * FROM "t"`,
 		},
 		{
 			name:    "explicit star",
-			stmt:    &ast.SelectStatement{Columns: []ast.ResultColumn{{Star: true}}, From: "t"},
+			stmt:    &query.SelectStatement{Columns: []query.ResultColumn{{Star: true}}, From: "t"},
 			wantSQL: `SELECT * FROM "t"`,
 		},
 		{
 			name:    "named columns are quoted",
-			stmt:    &ast.SelectStatement{Columns: []ast.ResultColumn{{Name: "a"}, {Name: "b"}}, From: "t"},
+			stmt:    &query.SelectStatement{Columns: []query.ResultColumn{{Name: "a"}, {Name: "b"}}, From: "t"},
 			wantSQL: `SELECT "a", "b" FROM "t"`,
 		},
 	}
@@ -155,7 +154,7 @@ func TestRenderSelect_ProjectionVariants(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			sql, args, err := renderer.RenderSelect(tt.stmt, platform.Postgres)
+			sql, args, err := query.RenderSelect(tt.stmt, platform.Postgres)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
 			c.Assert(args, qt.HasLen, 0)
@@ -170,13 +169,13 @@ func TestRenderSelect_LimitOffsetPlaceholderOrdering(t *testing.T) {
 	// proving the bounds are numbered by emission order, not treated specially.
 	limit := int64(5)
 	offset := int64(10)
-	stmt := &ast.SelectStatement{
+	stmt := &query.SelectStatement{
 		From:   "t",
 		Limit:  &limit,
 		Offset: &offset,
 	}
 
-	sql, args, err := renderer.RenderSelect(stmt, platform.Postgres)
+	sql, args, err := query.RenderSelect(stmt, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Equals, `SELECT * FROM "t" LIMIT $1 OFFSET $2`)
 	c.Assert(args, qt.DeepEquals, []any{int64(5), int64(10)})
@@ -201,8 +200,8 @@ func TestRenderSelect_OffsetWithoutLimit(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 			offset := int64(10)
-			stmt := &ast.SelectStatement{From: "t", Offset: &offset}
-			sql, args, err := renderer.RenderSelect(stmt, tt.dialect)
+			stmt := &query.SelectStatement{From: "t", Offset: &offset}
+			sql, args, err := query.RenderSelect(stmt, tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
 			c.Assert(args, qt.DeepEquals, []any{int64(10)})
@@ -215,28 +214,28 @@ func TestRenderSelect_IdentifierQuotingAcrossClauses(t *testing.T) {
 	// dialect quoting, so a quote-bearing name is escaped in every clause.
 	tests := []struct {
 		name    string
-		stmt    *ast.SelectStatement
+		stmt    *query.SelectStatement
 		wantSQL string
 	}{
 		{
 			name: "projection column is escaped",
-			stmt: &ast.SelectStatement{
-				Columns: []ast.ResultColumn{{Name: `weird" col`}},
+			stmt: &query.SelectStatement{
+				Columns: []query.ResultColumn{{Name: `weird" col`}},
 				From:    "t",
 			},
 			wantSQL: `SELECT "weird"" col" FROM "t"`,
 		},
 		{
 			name: "order by column is escaped",
-			stmt: &ast.SelectStatement{
+			stmt: &query.SelectStatement{
 				From:    "t",
-				OrderBy: []ast.OrderByClause{{Column: `weird" col`, Direction: ast.SortDescending}},
+				OrderBy: []query.OrderByClause{{Column: `weird" col`, Direction: query.SortDescending}},
 			},
 			wantSQL: `SELECT * FROM "t" ORDER BY "weird"" col" DESC`,
 		},
 		{
 			name: "from table is escaped",
-			stmt: &ast.SelectStatement{
+			stmt: &query.SelectStatement{
 				From: `weird" table`,
 			},
 			wantSQL: `SELECT * FROM "weird"" table"`,
@@ -246,7 +245,7 @@ func TestRenderSelect_IdentifierQuotingAcrossClauses(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			sql, args, err := renderer.RenderSelect(tt.stmt, platform.Postgres)
+			sql, args, err := query.RenderSelect(tt.stmt, platform.Postgres)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
 			c.Assert(args, qt.HasLen, 0)
@@ -267,11 +266,11 @@ func TestRenderSelect_NullTests(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			stmt := &ast.SelectStatement{
+			stmt := &query.SelectStatement{
 				From:  "t",
-				Where: &ast.NullTest{Operand: &ast.ColumnRef{Name: "deleted_at"}, Negated: tt.negated},
+				Where: &query.NullTest{Operand: &query.ColumnRef{Name: "deleted_at"}, Negated: tt.negated},
 			}
-			sql, args, err := renderer.RenderSelect(stmt, platform.Postgres)
+			sql, args, err := query.RenderSelect(stmt, platform.Postgres)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
 			c.Assert(args, qt.HasLen, 0)
@@ -283,16 +282,16 @@ func TestRenderSelect_ValueNeverBecomesSQL(t *testing.T) {
 	c := qt.New(t)
 
 	payload := "x'; DROP TABLE users; --"
-	stmt := &ast.SelectStatement{
+	stmt := &query.SelectStatement{
 		From: "users",
-		Where: &ast.Comparison{
-			Left:     &ast.ColumnRef{Name: "name"},
-			Operator: ast.OpEqual,
-			Right:    &ast.BoundValue{Value: payload},
+		Where: &query.Comparison{
+			Left:     &query.ColumnRef{Name: "name"},
+			Operator: query.OpEqual,
+			Right:    &query.BoundValue{Value: payload},
 		},
 	}
 
-	sql, args, err := renderer.RenderSelect(stmt, platform.Postgres)
+	sql, args, err := query.RenderSelect(stmt, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	// The injection payload appears only as a bound argument, never in the SQL.
 	c.Assert(sql, qt.Equals, `SELECT * FROM "users" WHERE "name" = $1`)
@@ -326,15 +325,15 @@ func TestRenderSelect_IdentifierQuotingNeutralizesInjection(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			stmt := &ast.SelectStatement{
+			stmt := &query.SelectStatement{
 				From: "t",
-				Where: &ast.Comparison{
-					Left:     &ast.ColumnRef{Name: tt.column},
-					Operator: ast.OpEqual,
-					Right:    &ast.BoundValue{Value: 1},
+				Where: &query.Comparison{
+					Left:     &query.ColumnRef{Name: tt.column},
+					Operator: query.OpEqual,
+					Right:    &query.BoundValue{Value: 1},
 				},
 			}
-			sql, _, err := renderer.RenderSelect(stmt, tt.dialect)
+			sql, _, err := query.RenderSelect(stmt, tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
 		})
@@ -344,7 +343,7 @@ func TestRenderSelect_IdentifierQuotingNeutralizesInjection(t *testing.T) {
 func TestRenderSelect_Errors(t *testing.T) {
 	tests := []struct {
 		name        string
-		stmt        *ast.SelectStatement
+		stmt        *query.SelectStatement
 		dialect     string
 		wantErrLike string
 	}{
@@ -356,7 +355,7 @@ func TestRenderSelect_Errors(t *testing.T) {
 		},
 		{
 			name: "unsupported dialect",
-			stmt: &ast.SelectStatement{From: "t"},
+			stmt: &query.SelectStatement{From: "t"},
 			// A dialect the renderer has never been taught. ClickHouse stood
 			// here until stokaro/ptah#941 taught it, which is why the example
 			// is now a name outside platform's set entirely: an example the
@@ -366,56 +365,56 @@ func TestRenderSelect_Errors(t *testing.T) {
 		},
 		{
 			name:        "missing from",
-			stmt:        &ast.SelectStatement{Columns: []ast.ResultColumn{{Name: "a"}}},
+			stmt:        &query.SelectStatement{Columns: []query.ResultColumn{{Name: "a"}}},
 			dialect:     platform.Postgres,
 			wantErrLike: "renderer: select statement requires a FROM table",
 		},
 		{
 			name:        "empty in list",
-			stmt:        &ast.SelectStatement{From: "t", Where: &ast.InExpr{Operand: &ast.ColumnRef{Name: "a"}}},
+			stmt:        &query.SelectStatement{From: "t", Where: &query.InExpr{Operand: &query.ColumnRef{Name: "a"}}},
 			dialect:     platform.Postgres,
 			wantErrLike: "renderer: IN requires at least one value or a subquery",
 		},
 		{
 			name:        "empty column name",
-			stmt:        &ast.SelectStatement{Columns: []ast.ResultColumn{{Name: "  "}}, From: "t"},
+			stmt:        &query.SelectStatement{Columns: []query.ResultColumn{{Name: "  "}}, From: "t"},
 			dialect:     platform.Postgres,
 			wantErrLike: "renderer: result column has an empty name",
 		},
 		{
 			name: "unknown comparison operator",
-			stmt: &ast.SelectStatement{From: "t", Where: &ast.Comparison{
-				Left:     &ast.ColumnRef{Name: "a"},
-				Operator: ast.ComparisonOperator(99),
-				Right:    &ast.BoundValue{Value: 1},
+			stmt: &query.SelectStatement{From: "t", Where: &query.Comparison{
+				Left:     &query.ColumnRef{Name: "a"},
+				Operator: query.ComparisonOperator(99),
+				Right:    &query.BoundValue{Value: 1},
 			}},
 			dialect:     platform.Postgres,
 			wantErrLike: "renderer: unknown comparison operator 99",
 		},
 		{
 			name: "unknown sort direction",
-			stmt: &ast.SelectStatement{From: "t", OrderBy: []ast.OrderByClause{
-				{Column: "a", Direction: ast.SortDirection(99)},
+			stmt: &query.SelectStatement{From: "t", OrderBy: []query.OrderByClause{
+				{Column: "a", Direction: query.SortDirection(99)},
 			}},
 			dialect:     platform.Postgres,
 			wantErrLike: "renderer: unknown sort direction 99",
 		},
 		{
 			name: "typed-nil column reference leaf does not panic",
-			stmt: &ast.SelectStatement{From: "t", Where: &ast.Comparison{
-				Left:     (*ast.ColumnRef)(nil),
-				Operator: ast.OpEqual,
-				Right:    &ast.BoundValue{Value: 1},
+			stmt: &query.SelectStatement{From: "t", Where: &query.Comparison{
+				Left:     (*query.ColumnRef)(nil),
+				Operator: query.OpEqual,
+				Right:    &query.BoundValue{Value: 1},
 			}},
 			dialect:     platform.Postgres,
 			wantErrLike: "renderer: nil column reference",
 		},
 		{
 			name: "typed-nil bound value leaf does not panic",
-			stmt: &ast.SelectStatement{From: "t", Where: &ast.Comparison{
-				Left:     &ast.ColumnRef{Name: "a"},
-				Operator: ast.OpEqual,
-				Right:    (*ast.BoundValue)(nil),
+			stmt: &query.SelectStatement{From: "t", Where: &query.Comparison{
+				Left:     &query.ColumnRef{Name: "a"},
+				Operator: query.OpEqual,
+				Right:    (*query.BoundValue)(nil),
 			}},
 			dialect:     platform.Postgres,
 			wantErrLike: "renderer: nil bound value",
@@ -425,7 +424,7 @@ func TestRenderSelect_Errors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			sql, args, err := renderer.RenderSelect(tt.stmt, tt.dialect)
+			sql, args, err := query.RenderSelect(tt.stmt, tt.dialect)
 			c.Assert(err, qt.ErrorMatches, tt.wantErrLike)
 			c.Assert(sql, qt.Equals, "")
 			c.Assert(args, qt.IsNil)

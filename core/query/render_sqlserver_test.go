@@ -1,12 +1,11 @@
-package renderer_test
+package query_test
 
 import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/query"
 )
 
 // TestRenderSelect_SQLServerPagination pins T-SQL's row-limiting clause across
@@ -25,13 +24,13 @@ import (
 func TestRenderSelect_SQLServerPagination(t *testing.T) {
 	limit := int64(10)
 	offset := int64(5)
-	ordered := []ast.OrderByClause{{Column: "id"}}
+	ordered := []query.OrderByClause{{Column: "id"}}
 
 	tests := []struct {
 		name    string
 		limit   *int64
 		offset  *int64
-		orderBy []ast.OrderByClause
+		orderBy []query.OrderByClause
 		want    string
 		args    []any
 	}{
@@ -81,8 +80,8 @@ func TestRenderSelect_SQLServerPagination(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			sql, args, err := renderer.RenderSelect(&ast.SelectStatement{
-				Columns: []ast.ResultColumn{{Name: "id"}},
+			sql, args, err := query.RenderSelect(&query.SelectStatement{
+				Columns: []query.ResultColumn{{Name: "id"}},
 				From:    "users",
 				OrderBy: test.orderBy,
 				Limit:   test.limit,

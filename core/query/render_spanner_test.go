@@ -1,13 +1,12 @@
-package renderer_test
+package query_test
 
 import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/query"
 )
 
 // Ptah routes Cloud Spanner's PostgreSQL interface through the PostgreSQL
@@ -33,11 +32,11 @@ type spannerParityCase struct {
 }
 
 func spannerParityCases() []spannerParityCase {
-	whereID := func() ast.Expression {
-		return &ast.Comparison{
-			Left:     &ast.ColumnRef{Name: "id"},
-			Operator: ast.OpEqual,
-			Right:    &ast.BoundValue{Value: int64(7)},
+	whereID := func() query.Expression {
+		return &query.Comparison{
+			Left:     &query.ColumnRef{Name: "id"},
+			Operator: query.OpEqual,
+			Right:    &query.BoundValue{Value: int64(7)},
 		}
 	}
 	limit := int64(10)
@@ -47,24 +46,24 @@ func spannerParityCases() []spannerParityCase {
 		{
 			name: "select with full outer join, limit and offset",
 			render: func(dialect string) (string, []any, error) {
-				return renderer.RenderSelect(&ast.SelectStatement{
-					Columns:   []ast.ResultColumn{{Qualifier: "u", Name: "id"}, {Qualifier: "o", Name: "total"}},
+				return query.RenderSelect(&query.SelectStatement{
+					Columns:   []query.ResultColumn{{Qualifier: "u", Name: "id"}, {Qualifier: "o", Name: "total"}},
 					From:      "users",
 					FromAlias: "u",
-					Joins: []ast.JoinClause{{
-						Type:  ast.JoinFull,
+					Joins: []query.JoinClause{{
+						Type:  query.JoinFull,
 						Table: "orders",
 						Alias: "o",
-						On: &ast.Comparison{
-							Left:     &ast.ColumnRef{Qualifier: "u", Name: "id"},
-							Operator: ast.OpEqual,
-							Right:    &ast.ColumnRef{Qualifier: "o", Name: "user_id"},
+						On: &query.Comparison{
+							Left:     &query.ColumnRef{Qualifier: "u", Name: "id"},
+							Operator: query.OpEqual,
+							Right:    &query.ColumnRef{Qualifier: "o", Name: "user_id"},
 						},
 					}},
-					Where: &ast.Comparison{
-						Left:     &ast.ColumnRef{Qualifier: "u", Name: "status"},
-						Operator: ast.OpEqual,
-						Right:    &ast.BoundValue{Value: "paid"},
+					Where: &query.Comparison{
+						Left:     &query.ColumnRef{Qualifier: "u", Name: "status"},
+						Operator: query.OpEqual,
+						Right:    &query.BoundValue{Value: "paid"},
 					},
 					Limit:  &limit,
 					Offset: &offset,
@@ -77,8 +76,8 @@ func spannerParityCases() []spannerParityCase {
 		{
 			name: "select with offset and no limit emits a bare OFFSET",
 			render: func(dialect string) (string, []any, error) {
-				return renderer.RenderSelect(&ast.SelectStatement{
-					Columns: []ast.ResultColumn{{Name: "id"}},
+				return query.RenderSelect(&query.SelectStatement{
+					Columns: []query.ResultColumn{{Name: "id"}},
 					From:    "users",
 					Offset:  &offset,
 				}, dialect)
@@ -89,11 +88,11 @@ func spannerParityCases() []spannerParityCase {
 		{
 			name: "insert with returning",
 			render: func(dialect string) (string, []any, error) {
-				return renderer.RenderInsert(&ast.InsertStatement{
+				return query.RenderInsert(&query.InsertStatement{
 					Table:     "users",
 					Columns:   []string{"id", "name"},
-					Rows:      [][]ast.Expression{{&ast.BoundValue{Value: int64(1)}, &ast.BoundValue{Value: "alice"}}},
-					Returning: []ast.ColumnRef{{Name: "id"}},
+					Rows:      [][]query.Expression{{&query.BoundValue{Value: int64(1)}, &query.BoundValue{Value: "alice"}}},
+					Returning: []query.ColumnRef{{Name: "id"}},
 				}, dialect)
 			},
 			wantSQL:  `INSERT INTO "users" ("id", "name") VALUES ($1, $2) RETURNING "id"`,
@@ -102,11 +101,11 @@ func spannerParityCases() []spannerParityCase {
 		{
 			name: "update with returning",
 			render: func(dialect string) (string, []any, error) {
-				return renderer.RenderUpdate(&ast.UpdateStatement{
+				return query.RenderUpdate(&query.UpdateStatement{
 					Table:     "users",
-					Set:       []ast.Assignment{{Column: "name", Value: &ast.BoundValue{Value: "bob"}}},
+					Set:       []query.Assignment{{Column: "name", Value: &query.BoundValue{Value: "bob"}}},
 					Where:     whereID(),
-					Returning: []ast.ColumnRef{{Name: "id"}, {Name: "name"}},
+					Returning: []query.ColumnRef{{Name: "id"}, {Name: "name"}},
 				}, dialect)
 			},
 			wantSQL:  `UPDATE "users" SET "name" = $1 WHERE "id" = $2 RETURNING "id", "name"`,
@@ -115,10 +114,10 @@ func spannerParityCases() []spannerParityCase {
 		{
 			name: "delete with returning",
 			render: func(dialect string) (string, []any, error) {
-				return renderer.RenderDelete(&ast.DeleteStatement{
+				return query.RenderDelete(&query.DeleteStatement{
 					Table:     "users",
 					Where:     whereID(),
-					Returning: []ast.ColumnRef{{Name: "id"}},
+					Returning: []query.ColumnRef{{Name: "id"}},
 				}, dialect)
 			},
 			wantSQL:  `DELETE FROM "users" WHERE "id" = $1 RETURNING "id"`,
@@ -176,9 +175,9 @@ func TestSpannerRejectsTheSameStatementsAsPostgres(t *testing.T) {
 		{
 			name: "update without a where clause",
 			render: func(dialect string) (string, []any, error) {
-				return renderer.RenderUpdate(&ast.UpdateStatement{
+				return query.RenderUpdate(&query.UpdateStatement{
 					Table: "users",
-					Set:   []ast.Assignment{{Column: "name", Value: &ast.BoundValue{Value: "bob"}}},
+					Set:   []query.Assignment{{Column: "name", Value: &query.BoundValue{Value: "bob"}}},
 				}, dialect)
 			},
 			wantErr: "renderer: update without a WHERE clause must be marked unconditional",
@@ -186,10 +185,10 @@ func TestSpannerRejectsTheSameStatementsAsPostgres(t *testing.T) {
 		{
 			name: "returning a star column",
 			render: func(dialect string) (string, []any, error) {
-				return renderer.RenderDelete(&ast.DeleteStatement{
+				return query.RenderDelete(&query.DeleteStatement{
 					Table:         "users",
 					Unconditional: true,
-					Returning:     []ast.ColumnRef{{Name: "*"}},
+					Returning:     []query.ColumnRef{{Name: "*"}},
 				}, dialect)
 			},
 			wantErr: "renderer: RETURNING does not support a star column",

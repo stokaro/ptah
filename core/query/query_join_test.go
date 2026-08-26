@@ -5,16 +5,14 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/query"
-	"go.5x5.cz/ptah/core/renderer"
 )
 
 func TestColumnExpressionConstructors(t *testing.T) {
 	tests := []struct {
 		name     string
-		expr     ast.Expression
+		expr     query.Expression
 		wantSQL  string
 		wantArgs []any
 	}{
@@ -98,9 +96,9 @@ func TestColumnOrderByTerms(t *testing.T) {
 		OrderBy(query.Col("u", "name").Asc(), query.Col("o", "total").Desc()).
 		Build()
 
-	c.Assert(stmt.OrderBy, qt.DeepEquals, []ast.OrderByClause{
-		{Qualifier: "u", Column: "name", Direction: ast.SortAscending},
-		{Qualifier: "o", Column: "total", Direction: ast.SortDescending},
+	c.Assert(stmt.OrderBy, qt.DeepEquals, []query.OrderByClause{
+		{Qualifier: "u", Column: "name", Direction: query.SortAscending},
+		{Qualifier: "o", Column: "total", Direction: query.SortDescending},
 	})
 }
 
@@ -111,7 +109,7 @@ func TestSelectBuilder_FromAs(t *testing.T) {
 	c.Assert(stmt.From, qt.Equals, "users")
 	c.Assert(stmt.FromAlias, qt.Equals, "u")
 
-	sql, _, err := renderer.RenderSelect(stmt, platform.Postgres)
+	sql, _, err := query.RenderSelect(stmt, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Equals, `SELECT * FROM "users" "u"`)
 }
@@ -128,18 +126,18 @@ func TestSelectBuilder_FromClearsPreviousAlias(t *testing.T) {
 func TestSelectBuilder_Columns(t *testing.T) {
 	tests := []struct {
 		name string
-		stmt *ast.SelectStatement
-		want []ast.ResultColumn
+		stmt *query.SelectStatement
+		want []query.ResultColumn
 	}{
 		{
 			name: "qualified columns replace the implicit star",
 			stmt: query.Select().Columns(query.Col("u", "id"), query.Col("o", "total")).From("t").Build(),
-			want: []ast.ResultColumn{{Qualifier: "u", Name: "id"}, {Qualifier: "o", Name: "total"}},
+			want: []query.ResultColumn{{Qualifier: "u", Name: "id"}, {Qualifier: "o", Name: "total"}},
 		},
 		{
 			name: "qualified columns append after bare columns",
 			stmt: query.Select("id").Columns(query.Col("o", "total")).From("t").Build(),
-			want: []ast.ResultColumn{{Name: "id"}, {Qualifier: "o", Name: "total"}},
+			want: []query.ResultColumn{{Name: "id"}, {Qualifier: "o", Name: "total"}},
 		},
 	}
 
@@ -162,7 +160,7 @@ func TestSelectBuilder_QualifiedStarProjection(t *testing.T) {
 		InnerJoin("orders", "o", query.Col("o", "user_id").EqCol(query.Col("u", "id"))).
 		Build()
 
-	sql, args, err := renderer.RenderSelect(stmt, platform.Postgres)
+	sql, args, err := query.RenderSelect(stmt, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Equals, `SELECT "u".*, "o"."total" FROM "users" "u" INNER JOIN "orders" "o" ON "o"."user_id" = "u"."id"`)
 	c.Assert(args, qt.HasLen, 0)
@@ -173,28 +171,28 @@ func TestSelectBuilder_JoinMethodsSetType(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		build    func() *ast.SelectStatement
-		wantType ast.JoinType
+		build    func() *query.SelectStatement
+		wantType query.JoinType
 	}{
 		{
 			name:     "inner",
-			build:    func() *ast.SelectStatement { return query.Select("*").From("a").InnerJoin("b", "x", on).Build() },
-			wantType: ast.JoinInner,
+			build:    func() *query.SelectStatement { return query.Select("*").From("a").InnerJoin("b", "x", on).Build() },
+			wantType: query.JoinInner,
 		},
 		{
 			name:     "left",
-			build:    func() *ast.SelectStatement { return query.Select("*").From("a").LeftJoin("b", "x", on).Build() },
-			wantType: ast.JoinLeft,
+			build:    func() *query.SelectStatement { return query.Select("*").From("a").LeftJoin("b", "x", on).Build() },
+			wantType: query.JoinLeft,
 		},
 		{
 			name:     "right",
-			build:    func() *ast.SelectStatement { return query.Select("*").From("a").RightJoin("b", "x", on).Build() },
-			wantType: ast.JoinRight,
+			build:    func() *query.SelectStatement { return query.Select("*").From("a").RightJoin("b", "x", on).Build() },
+			wantType: query.JoinRight,
 		},
 		{
 			name:     "full",
-			build:    func() *ast.SelectStatement { return query.Select("*").From("a").FullJoin("b", "x", on).Build() },
-			wantType: ast.JoinFull,
+			build:    func() *query.SelectStatement { return query.Select("*").From("a").FullJoin("b", "x", on).Build() },
+			wantType: query.JoinFull,
 		},
 	}
 
@@ -221,9 +219,9 @@ func TestSelectBuilder_JoinsAccumulateInOrder(t *testing.T) {
 		Build()
 
 	c.Assert(stmt.Joins, qt.HasLen, 2)
-	c.Assert(stmt.Joins[0].Type, qt.Equals, ast.JoinInner)
+	c.Assert(stmt.Joins[0].Type, qt.Equals, query.JoinInner)
 	c.Assert(stmt.Joins[0].Table, qt.Equals, "orders")
-	c.Assert(stmt.Joins[1].Type, qt.Equals, ast.JoinLeft)
+	c.Assert(stmt.Joins[1].Type, qt.Equals, query.JoinLeft)
 	c.Assert(stmt.Joins[1].Table, qt.Equals, "payments")
 }
 
@@ -242,7 +240,7 @@ func TestSelectBuilder_JoinFluentEndToEnd(t *testing.T) {
 		Limit(5).
 		Build()
 
-	sql, args, err := renderer.RenderSelect(stmt, platform.Postgres)
+	sql, args, err := query.RenderSelect(stmt, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Equals, `SELECT "u"."id", "u"."name", "o"."total" FROM "users" "u" INNER JOIN "orders" "o" ON "o"."user_id" = "u"."id" WHERE ("o"."status" = $1 AND "u"."active" = $2) ORDER BY "u"."name" ASC, "o"."total" DESC LIMIT $3`)
 	c.Assert(args, qt.DeepEquals, []any{"paid", true, int64(5)})

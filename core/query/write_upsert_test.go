@@ -6,7 +6,6 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/query"
-	"go.5x5.cz/ptah/core/renderer"
 )
 
 // upsertInsert is the statement every row below renders: two columns, one row,
@@ -77,7 +76,7 @@ func TestUpsert_RendersTheDialectsOwnSpelling(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			sql, args, err := renderer.RenderInsert(test.build().Build(), test.dialect)
+			sql, args, err := query.RenderInsert(test.build().Build(), test.dialect)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, test.want)
@@ -153,7 +152,7 @@ func TestUpsert_RefusesWhatTheEngineCannotMean(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			sql, _, err := renderer.RenderInsert(test.build().Build(), test.dialect)
+			sql, _, err := query.RenderInsert(test.build().Build(), test.dialect)
 
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(err.Error(), qt.Contains, test.message)
@@ -170,7 +169,7 @@ func TestUpsert_RefusesWhatTheEngineCannotMean(t *testing.T) {
 func TestUpsert_AbsentClauseChangesNothing(t *testing.T) {
 	c := qt.New(t)
 
-	sql, _, err := renderer.RenderInsert(upsertInsert().Build(), "postgres")
+	sql, _, err := query.RenderInsert(upsertInsert().Build(), "postgres")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Equals, `INSERT INTO "users" ("id", "email") VALUES ($1, $2)`)
@@ -183,7 +182,7 @@ func TestUpsert_ComposesWithReturning(t *testing.T) {
 	c := qt.New(t)
 	stmt := upsertInsert().OnConflictDoUpdate([]string{"email"}, "email").Returning("id").Build()
 
-	sql, _, err := renderer.RenderInsert(stmt, "postgres")
+	sql, _, err := query.RenderInsert(stmt, "postgres")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Equals, `INSERT INTO "users" ("id", "email") VALUES ($1, $2) `+
