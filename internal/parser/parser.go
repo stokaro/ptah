@@ -2413,12 +2413,18 @@ func (p *Parser) parseColumnConstraintOrAttribute(table *ast.CreateTableNode, co
 // left (stokaro/ptah#2161).
 //
 // CHECK and REFERENCES are read, because [ast.ColumnNode.CheckName] and
-// [ast.ForeignKeyRef.Name] are places the name survives to DDL. The other four
-// are still refused, and deliberately: `Primary` and `Unique` are booleans with
-// nowhere to keep a name, so reading them would drop it, the renderer would
-// emit an unnamed constraint, the server would generate its own name, and the
-// reader would bring that name back as a difference nobody can resolve. A
-// refusal is worse than reading the file and better than permanent drift.
+// [ast.ForeignKeyRef.Name] are places the name survives to DDL. UNIQUE and
+// PRIMARY KEY are read into the table-level constraint they describe, which is
+// the level the model can carry a name for.
+//
+// NOT NULL and DEFAULT are refused, and deliberately. `Nullable` is a boolean
+// and a default is a value, with nowhere to keep a name and no table-level form
+// to read one into. The reader does not return one either: measured on
+// PostgreSQL 18.6, a column written `CONSTRAINT c_keep NOT NULL` reads back as
+// a bare `NOT NULL`. Reading the file would drop the name, the renderer would
+// emit an unnamed constraint, and every later comparison would report a
+// difference no apply can settle. A refusal is worse than reading the file and
+// better than permanent drift.
 func (p *Parser) handleColumnConstraint(table *ast.CreateTableNode, column *ast.ColumnNode) error {
 	p.advance()
 	p.skipWhitespace()
@@ -2456,13 +2462,44 @@ func (p *Parser) handleColumnConstraint(table *ast.CreateTableNode, column *ast.
 		// default with nowhere to put a constraint name, and neither has a
 		// table-level form to read the name into the way UNIQUE and PRIMARY KEY
 		// do (stokaro/ptah#2161).
+		//
+		// The advice is to drop the name rather than to move it, because the
+		// name has nowhere to go on either side. The reader does not bring one
+		// back: measured on PostgreSQL 18.6, `a integer CONSTRAINT c_keep NOT
+		// NULL` reads back as a bare `a integer NOT NULL`. Accepting a name the
+		// reader cannot return would make every later comparison report a
+		// difference no apply can settle.
+		//
+		// What differs per engine is whether the name exists at all, and only
+		// for NOT NULL. PostgreSQL 18 records it -- pg_constraint contype 'n',
+		// dropped and added by name -- while PostgreSQL 17 stores nothing and
+		// MariaDB 12.3 refuses the syntax outright. A DEFAULT is recorded
+		// nowhere on any of them.
 		return fmt.Errorf(
-			"named column constraint %q at position %d: Ptah reads a name on CHECK, "+
-				"REFERENCES, UNIQUE and PRIMARY KEY; on %s the name has nowhere to live "+
-				"and would be lost, so write the constraint at table level to keep it",
-			name, p.current.Start, strings.ToUpper(p.current.Value),
+			"named column constraint %q at position %d: Ptah has nowhere to keep a "+
+				"name on %s, and does not read one back from a database, so write the "+
+				"constraint without a name; a name is kept on CHECK, REFERENCES, "+
+				"UNIQUE and PRIMARY KEY",
+			name, p.current.Start, p.refusedColumnConstraintKeyword(),
 		)
 	}
+}
+
+// refusedColumnConstraintKeyword spells the constraint a refusal is about.
+//
+// The cursor sits on one token, and for a NOT NULL that token is `NOT` -- so
+// the refusal read `on NOT the name has nowhere to live`, which names half a
+// keyword and reads like a truncated message rather than a constraint. `NOT` is
+// the start of no other column constraint in the grammar reached here: CHECK,
+// REFERENCES, UNIQUE and PRIMARY KEY are taken by the branches above, and a
+// referential `NOT DEFERRABLE` is consumed by the REFERENCES branch
+// (stokaro/ptah#2161).
+func (p *Parser) refusedColumnConstraintKeyword() string {
+	keyword := strings.ToUpper(p.current.Value)
+	if keyword == "NOT" {
+		return "NOT NULL"
+	}
+	return keyword
 }
 
 // namedSingleColumnPrimaryKey reads `CONSTRAINT <name> PRIMARY KEY` on a column,
