@@ -72,7 +72,7 @@ folding made them one. The quotes are part of what the author said.
 
 Applying the rule twice is as wrong as not applying it. Where a value has
 already been folded by whatever produced it — the planner receives a
-`types.SchemaDiff` the comparator already normalized — the verbatim constructors
+`difftypes.SchemaDiff` the comparator already normalized — the verbatim constructors
 exist so the second fold does not happen.
 
 ### 5. Components held separately are never rejoined
@@ -164,7 +164,7 @@ it on a target where the two are distinct tables, and the object would leave the
 schema without ever being named.
 
 The planners are verbatim for invariant 4: both spellings a constraint host key
-is built from arrive from one `types.SchemaDiff`, already normalized by the
+is built from arrive from one `difftypes.SchemaDiff`, already normalized by the
 comparator that produced it.
 
 ## Adapters and their deletion criteria
@@ -191,7 +191,7 @@ It is not temporary: quoted leading and trailing whitespace is part of a SQLite
 table name, so trimming there merges two distinct tables. It stays as long as
 SQLite does.
 
-There is no constraint counterpart. `types.SchemaDiff` names a constraint by
+There is no constraint counterpart. `difftypes.SchemaDiff` names a constraint by
 `types.ConstraintIdentity` rather than by spelling, so the planner reads the
 identity the comparator already built and a second fold is not expressible.
 

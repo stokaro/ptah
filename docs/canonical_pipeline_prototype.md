@@ -58,7 +58,7 @@ func Plan(changes []Change, profile schemastate.Profile) ([]PlannedOperation, er
 against the existing path's
 
 ```go
-func GenerateSchemaDiffAST(diff *types.SchemaDiff, generated *goschema.Database, dialect string) ([]ast.Node, error)
+func GenerateSchemaDiffAST(diff *difftypes.SchemaDiff, generated *goschema.Database, dialect string) ([]ast.Node, error)
 ```
 
 The second parameter there is where the planner recovers what a diff of name
