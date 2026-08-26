@@ -142,6 +142,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.DomainTypes,
 			capability.Hypertables,
 			capability.MigrationTimeouts,
+			capability.NamedNotNullConstraints,
 			capability.PostgresCatalogFunctions,
 			capability.RangeTypes,
 			capability.RoleManagement,
@@ -165,6 +166,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.DomainTypes,
 			capability.Hypertables,
 			capability.MigrationTimeouts,
+			capability.NamedNotNullConstraints,
 			capability.PostgresCatalogFunctions,
 			capability.RangeTypes,
 			capability.RoleManagement,
@@ -187,6 +189,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.DomainTypes,
 			capability.Hypertables,
 			capability.MigrationTimeouts,
+			capability.NamedNotNullConstraints,
 			capability.Procedures,
 			capability.RangeTypes,
 			capability.RowDeletionPolicy,
@@ -312,23 +315,23 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 		caps: capability.Postgres17(),
 		want: registered - 6,
 	}, {
-		name: "mysql owes nineteen fewer: role_management, row_level_ttl, row_deletion_policy, the two TimescaleDB keys, the five catalog keys, the three user-type kinds, the three runtime properties and the sequence grammar restriction name surfaces no MySQL path reads or no statement decides",
+		name: "mysql owes twenty fewer: role_management, row_level_ttl, row_deletion_policy, named_not_null_constraints, the two TimescaleDB keys, the five catalog keys, the three user-type kinds, the three runtime properties and the sequence grammar restriction name surfaces no MySQL path reads or no statement decides",
 		cell: Cell{
 			Dialect: platform.MySQL, Line: "9.7",
 			Preset: capability.MySQL84, PresetName: "MySQL84",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.MySQL84(),
-		want: registered - 19,
+		want: registered - 20,
 	}, {
-		name: "mariadb owes nineteen fewer: the three user-type kinds have no MariaDB spelling, the three runtime properties are not statements, neither pg_class nor pg_default_acl is a catalog it has, the sequence grammar restriction has no control statement here, row_deletion_policy is a Spanner clause it has no spelling of, and sequences is asked now that Ptah renders, reads and plans one",
+		name: "mariadb owes twenty fewer: the three user-type kinds have no MariaDB spelling, the three runtime properties are not statements, neither pg_class nor pg_default_acl is a catalog it has, the sequence grammar restriction has no control statement here, row_deletion_policy is a Spanner clause it has no spelling of, named_not_null_constraints is a PostgreSQL 18 catalog behavior, and sequences is asked now that Ptah renders, reads and plans one",
 		cell: Cell{
 			Dialect: platform.MariaDB, Line: "10.11",
 			Preset: capability.MariaDB1011, PresetName: "MariaDB1011",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.MariaDB1011(),
-		want: registered - 19,
+		want: registered - 20,
 	}, {
 		name: "cockroachdb 26.2 owes every row its preset enables a prerequisite for, less the two the probe cannot ask",
 		cell: Cell{

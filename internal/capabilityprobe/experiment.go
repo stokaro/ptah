@@ -317,6 +317,55 @@ func storedResult(key capability.Capability, setup []string, create, read, mutat
 	}
 }
 
+// storedNotNullName decides capability.NamedNotNullConstraints by whether the
+// name a CREATE TABLE wrote on a NOT NULL is REPORTED BACK, not by whether the
+// statement was accepted.
+//
+// Acceptance is the wrong test, and this key is the clearest case of it in the
+// registry: PostgreSQL 17 accepts `CONSTRAINT my_nn NOT NULL` at exit 0 and
+// stores no constraint at all, while 18 catalogues it. A probe that read the
+// exit status would call both true and disagree with the catalog on one of
+// them. Measured by hand on both before writing this (stokaro/ptah#2161):
+//
+//	18.6  SELECT conname FROM pg_constraint ... -> my_nn
+//	17    SELECT conname FROM pg_constraint ... -> 0 rows
+//
+// The inspection asks for the NAME the statement wrote rather than for a count
+// of rows, because 18 also invents a name for every unnamed NOT NULL: a count
+// would be non-zero on a server that discarded the author's name and kept its
+// own, which is a different capability than the one this key is about.
+//
+// A refused inspection decides FALSE rather than going undecidable, for the
+// reason storedRowDeletionPolicy gives: a name Ptah could not read back is one
+// no comparison could converge on.
+func storedNotNullName(setup []string, create, inspect string) experiment {
+	return experiment{
+		decides: []capability.Capability{capability.NamedNotNullConstraints},
+		setup:   setup,
+		decide: func(ctx context.Context, s *session) (verdicts, []Attempt) {
+			created := s.exec(ctx, create)
+			attempts := []Attempt{created}
+			if !created.Accepted {
+				return verdicts{capability.NamedNotNullConstraints: decided(false)}, attempts
+			}
+
+			stored, inspected := s.query(ctx, inspect)
+			attempts = append(attempts, inspected)
+			if !inspected.Accepted {
+				return verdicts{capability.NamedNotNullConstraints: annotated(false,
+					"the CREATE was accepted but the catalog cannot be asked for the name here ("+
+						collapse(inspected.ServerErr)+"), and a name Ptah cannot read is one it cannot "+
+						"converge on, so the key is false whatever the server stores internally",
+				)}, attempts
+			}
+			return verdicts{capability.NamedNotNullConstraints: annotated(stored == 1,
+				"decided by whether pg_constraint reports the name the CREATE TABLE wrote, because a "+
+					"server that accepts the clause and discards the name also accepts the statement",
+			)}, attempts
+		},
+	}
+}
+
 // storedRowDeletionPolicy decides capability.RowDeletionPolicy by whether the
 // clause the CREATE TABLE asked for is STORED, for the reason storedRowTTL
 // documents: acceptance is not support, and this family contains the engine
