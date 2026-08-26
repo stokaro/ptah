@@ -103,7 +103,7 @@ for the message and the flag it names.
 | `sequence` | PostgreSQL `type`, `start`, `increment`, `min_value`, `max_value`, `cache`, `cycle`, `owned_by`, and `if_not_exists`. |
 | `domain` | PostgreSQL `type`, `null`, `default`, and `check`. |
 | `composite` | PostgreSQL composite type with ordered `field` sub-blocks. |
-| `range` | PostgreSQL `subtype`, `subtype_opclass`, `collation`, `canonical`, and `subtype_diff`. |
+| `range` | PostgreSQL `subtype`, `subtype_opclass`, `collation`, `canonical`, and `subtype_diff`. Writing one of the four optional attributes as `""` says the range has none; omitting it says nothing about it, so a range that already carries one keeps it. |
 | `hypertable` | TimescaleDB partitioning of the table the label names: `column`, and optionally `chunk_interval`, `if_not_exists` and the `schema` holding the table. |
 | `continuous_aggregate` | TimescaleDB continuous aggregate: `as` for the `SELECT` it materializes, and optionally `materialized_only`, a comment and the `schema` holding it. |
 | `synonym` | SQL Server alias: `target`, plus the `schema` the alias lives in and a comment. |

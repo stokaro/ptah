@@ -1407,10 +1407,37 @@ func (s *schemaParseState) parseRangeComment(comment *ast.Comment, structName st
 		SubtypeDiff:    kv["subtype_diff"],
 		Comment:        kv["comment"],
 		Dialects:       scope,
+
+		ClearedAttributes: clearedAttributes(kv, rangeClearableAttributes),
 	}
 	rangeType.Canonicalize()
 	s.ranges = append(s.ranges, rangeType)
 	return nil
+}
+
+// rangeClearableAttributes are the range attributes a declaration may write
+// empty to say the type has none of them.
+//
+// The subtype is not one: a range without one is not a range, and an empty one
+// is a declaration the server refuses rather than a request to remove anything.
+var rangeClearableAttributes = []string{"subtype_opclass", "collation", "canonical", "subtype_diff"}
+
+// clearedAttributes lists the given attributes the annotation wrote with an
+// empty value, in the order they are listed rather than the map's.
+//
+// An omitted attribute and one written `key=""` reach the same empty string in
+// the parsed struct, and only the key's presence separates them: omission says
+// nothing about the attribute, while an empty value says the object has none
+// (stokaro/ptah#2223).
+func clearedAttributes(kv map[string]string, clearable []string) []string {
+	var cleared []string
+	for _, attribute := range clearable {
+		value, present := kv[attribute]
+		if present && strings.TrimSpace(value) == "" {
+			cleared = append(cleared, attribute)
+		}
+	}
+	return cleared
 }
 
 func (s *schemaParseState) parseViewComment(comment *ast.Comment, structName string) error {
