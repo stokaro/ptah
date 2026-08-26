@@ -11,7 +11,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestPlannerRendersRLSEnablementFromDiff covers stokaro/ptah#1284: the
@@ -21,13 +21,13 @@ import (
 func TestPlannerRendersRLSEnablementFromDiff(t *testing.T) {
 	tests := []struct {
 		name      string
-		diff      *types.SchemaDiff
+		diff      *difftypes.SchemaDiff
 		generated *goschema.Database
 		want      []string
 	}{
 		{
 			name: "enablement recorded for an existing table",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				RLSEnabledTablesAdded: []string{"other.secured"},
 			},
 			generated: &goschema.Database{},
@@ -38,7 +38,7 @@ func TestPlannerRendersRLSEnablementFromDiff(t *testing.T) {
 		},
 		{
 			name: "disablement recorded for an existing table",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				RLSEnabledTablesRemoved: []string{"public.p"},
 			},
 			generated: &goschema.Database{},
@@ -49,7 +49,7 @@ func TestPlannerRendersRLSEnablementFromDiff(t *testing.T) {
 		},
 		{
 			name: "enablement and disablement in one diff",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				RLSEnabledTablesAdded:   []string{"other.secured"},
 				RLSEnabledTablesRemoved: []string{"public.p"},
 			},
@@ -63,9 +63,9 @@ func TestPlannerRendersRLSEnablementFromDiff(t *testing.T) {
 		},
 		{
 			name: "a new table carrying a policy is enabled without a diff entry",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				TablesAdded:      []string{"tenants"},
-				RLSPoliciesAdded: []types.RLSPolicyRef{{PolicyName: "tenant_isolation", TableName: "tenants"}},
+				RLSPoliciesAdded: []difftypes.RLSPolicyRef{{PolicyName: "tenant_isolation", TableName: "tenants"}},
 			},
 			generated: &goschema.Database{
 				Tables: []goschema.Table{{Name: "tenants", StructName: "Tenant"}},
@@ -89,10 +89,10 @@ func TestPlannerRendersRLSEnablementFromDiff(t *testing.T) {
 		},
 		{
 			name: "a table listed twice is enabled once",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				TablesAdded:           []string{"tenants"},
 				RLSEnabledTablesAdded: []string{"tenants"},
-				RLSPoliciesAdded: []types.RLSPolicyRef{
+				RLSPoliciesAdded: []difftypes.RLSPolicyRef{
 					{PolicyName: "tenant_isolation", TableName: "tenants"},
 				},
 			},
@@ -118,8 +118,8 @@ func TestPlannerRendersRLSEnablementFromDiff(t *testing.T) {
 		},
 		{
 			name: "an existing table keeps its enablement when only a policy changes",
-			diff: &types.SchemaDiff{
-				RLSPoliciesModified: []types.RLSPolicyDiff{
+			diff: &difftypes.SchemaDiff{
+				RLSPoliciesModified: []difftypes.RLSPolicyDiff{
 					{PolicyName: "tenant_isolation", TableName: "tenants", Changes: map[string]string{"using": "a -> b"}},
 				},
 			},
@@ -137,7 +137,7 @@ func TestPlannerRendersRLSEnablementFromDiff(t *testing.T) {
 		},
 		{
 			name: "a dropped table is not disabled before it is dropped",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				TablesRemoved:           []string{"public.legacy"},
 				RLSEnabledTablesRemoved: []string{"public.legacy"},
 			},
@@ -149,8 +149,8 @@ func TestPlannerRendersRLSEnablementFromDiff(t *testing.T) {
 		},
 		{
 			name: "losing every policy is not losing enablement",
-			diff: &types.SchemaDiff{
-				RLSPoliciesRemoved: []types.RLSPolicyRef{{PolicyName: "tenant_isolation", TableName: "tenants"}},
+			diff: &difftypes.SchemaDiff{
+				RLSPoliciesRemoved: []difftypes.RLSPolicyRef{{PolicyName: "tenant_isolation", TableName: "tenants"}},
 			},
 			generated: &goschema.Database{},
 			want: []string{
@@ -161,8 +161,8 @@ func TestPlannerRendersRLSEnablementFromDiff(t *testing.T) {
 		},
 		{
 			name: "a disabled table gets the statement rather than the advisory comment",
-			diff: &types.SchemaDiff{
-				RLSPoliciesRemoved:      []types.RLSPolicyRef{{PolicyName: "tenant_isolation", TableName: "tenants"}},
+			diff: &difftypes.SchemaDiff{
+				RLSPoliciesRemoved:      []difftypes.RLSPolicyRef{{PolicyName: "tenant_isolation", TableName: "tenants"}},
 				RLSEnabledTablesRemoved: []string{"tenants"},
 			},
 			generated: &goschema.Database{},
@@ -206,7 +206,7 @@ func TestPlannerRendersRLSEnablementFromDiff(t *testing.T) {
 func TestPlannerNamesRLSItCannotCarry(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		RLSEnabledTablesAdded:   []string{"other.secured"},
 		RLSEnabledTablesRemoved: []string{"public.p"},
 	}

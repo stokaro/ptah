@@ -11,7 +11,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestFieldOrderConsistencyInMigrationGeneration tests that field order is preserved
@@ -57,7 +57,7 @@ type User struct {
 		c.Assert(err, qt.IsNil)
 
 		// Create a schema diff for table creation
-		diff := &types.SchemaDiff{
+		diff := &difftypes.SchemaDiff{
 			TablesAdded: []string{"users"},
 		}
 
@@ -166,7 +166,7 @@ type Post struct {
 		c.Assert(err, qt.IsNil)
 
 		// Create a schema diff for table creation
-		diff := &types.SchemaDiff{
+		diff := &difftypes.SchemaDiff{
 			TablesAdded: []string{"posts"},
 		}
 
@@ -261,7 +261,7 @@ type Post struct {
 		c.Assert(err, qt.IsNil)
 
 		// Create a schema diff for table creation
-		diff := &types.SchemaDiff{
+		diff := &difftypes.SchemaDiff{
 			TablesAdded: []string{"users", "posts"},
 		}
 

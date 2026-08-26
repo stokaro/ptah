@@ -9,11 +9,11 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // droppedRoutineSQL plans the removals and returns the statements as one string.
-func droppedRoutineSQL(c *qt.C, diff *types.SchemaDiff) string {
+func droppedRoutineSQL(c *qt.C, diff *difftypes.SchemaDiff) string {
 	c.Helper()
 
 	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, &goschema.Database{})
@@ -43,9 +43,9 @@ func droppedRoutineSQL(c *qt.C, diff *types.SchemaDiff) string {
 func TestRemoveFunctions_ADroppedOverloadNamesItsArguments(t *testing.T) {
 	c := qt.New(t)
 
-	sql := droppedRoutineSQL(c, &types.SchemaDiff{
+	sql := droppedRoutineSQL(c, &difftypes.SchemaDiff{
 		FunctionsRemoved: []string{"f"},
-		FunctionsRemovedWithSignatures: []types.RoutineRemoval{
+		FunctionsRemovedWithSignatures: []difftypes.RoutineRemoval{
 			{Name: "f", Signature: "a text"},
 		},
 	})
@@ -58,9 +58,9 @@ func TestRemoveFunctions_ADroppedOverloadNamesItsArguments(t *testing.T) {
 func TestRemoveFunctions_ADroppedProcedureNamesItsArguments(t *testing.T) {
 	c := qt.New(t)
 
-	sql := droppedRoutineSQL(c, &types.SchemaDiff{
+	sql := droppedRoutineSQL(c, &difftypes.SchemaDiff{
 		ProceduresRemoved: []string{"p"},
-		ProceduresRemovedWithSignatures: []types.RoutineRemoval{
+		ProceduresRemovedWithSignatures: []difftypes.RoutineRemoval{
 			{Name: "p", Signature: "a integer"},
 		},
 	})
@@ -78,7 +78,7 @@ func TestRemoveFunctions_ADroppedProcedureNamesItsArguments(t *testing.T) {
 func TestRemoveFunctions_ARoutineWithNoSignatureIsStillDropped(t *testing.T) {
 	c := qt.New(t)
 
-	sql := droppedRoutineSQL(c, &types.SchemaDiff{FunctionsRemoved: []string{"solo"}})
+	sql := droppedRoutineSQL(c, &difftypes.SchemaDiff{FunctionsRemoved: []string{"solo"}})
 
 	c.Assert(sql, qt.Contains, `DROP FUNCTION IF EXISTS "solo"`)
 	c.Assert(sql, qt.Not(qt.Contains), "()")

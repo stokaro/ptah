@@ -11,7 +11,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 var generatedForeignKeyNamePattern = regexp.MustCompile(`fk_[[:alnum:]_]+_[0-9a-f]{8}`)
@@ -22,7 +22,7 @@ func TestGenerateSchemaDiffSQL_AssignsLengthLimitedForeignKeyNames(t *testing.T)
 	fieldName := strings.Repeat("parent_", 5) + "id"
 	schema := plannerForeignKeyNameSchema(tableName, fieldName)
 	goschema.Finalize(schema)
-	diff := &types.SchemaDiff{TablesAdded: []string{"parents", tableName}}
+	diff := &difftypes.SchemaDiff{TablesAdded: []string{"parents", tableName}}
 
 	sql, err := planner.GenerateSchemaDiffSQL(diff, schema, platform.MySQL)
 
@@ -44,7 +44,7 @@ func TestGenerateSchemaDiffSQL_AvoidsExplicitAndGeneratedForeignKeyNameCollision
 		ForeignKeyName: "FK_CHILDREN_PARENT_ID",
 	})
 	goschema.Finalize(schema)
-	diff := &types.SchemaDiff{TablesAdded: []string{"parents", "children"}}
+	diff := &difftypes.SchemaDiff{TablesAdded: []string{"parents", "children"}}
 
 	sql, err := planner.GenerateSchemaDiffSQL(diff, schema, platform.MySQL)
 

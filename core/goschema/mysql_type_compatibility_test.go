@@ -10,7 +10,7 @@ import (
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/planner/dialects/mysql"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestMySQLTypeCompatibilityForEmbeddedRelations tests that embedded relation mode
@@ -112,7 +112,7 @@ func TestMySQLMigrationGeneratesCompatibleTypes(t *testing.T) {
 	}
 
 	// Create schema diff for adding both tables
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		TablesAdded: []string{"users", "articles"},
 	}
 

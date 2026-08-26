@@ -8,7 +8,7 @@ import (
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // planExtensionChanges turns a modified extension into the statements the
@@ -36,7 +36,7 @@ import (
 // Order matters within one extension: the version moves first. An update script
 // creates objects in the extension's current schema, so moving first would put
 // the new objects where the old ones no longer are.
-func (p *Planner) planExtensionChanges(result []ast.Node, diff *types.SchemaDiff) ([]ast.Node, error) {
+func (p *Planner) planExtensionChanges(result []ast.Node, diff *difftypes.SchemaDiff) ([]ast.Node, error) {
 	if diff == nil {
 		return result, nil
 	}

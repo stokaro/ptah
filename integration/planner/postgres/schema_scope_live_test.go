@@ -10,7 +10,7 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestPlannerDoesNotWriteToARelationTheSchemaNeverDeclaredLive is blocker 1
@@ -77,7 +77,7 @@ func TestPlannerDoesNotWriteToARelationTheSchemaNeverDeclaredLive(t *testing.T) 
 					{StructName: "User", Name: "note", Type: "TEXT"},
 				},
 			}
-			diff := &types.SchemaDiff{TablesModified: []types.TableDiff{{
+			diff := &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:    "app.users",
 				ColumnsAdded: []string{"note"},
 			}}}

@@ -7,7 +7,7 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestPlanner_RefusesWhatTimescaleDBCannotUndo pins the two divergences that
@@ -22,17 +22,17 @@ import (
 func TestPlanner_RefusesWhatTimescaleDBCannotUndo(t *testing.T) {
 	tests := []struct {
 		name string
-		diff *types.SchemaDiff
+		diff *difftypes.SchemaDiff
 		want string
 	}{
 		{
 			name: "the declaration stops naming it",
-			diff: &types.SchemaDiff{HypertablesRemoved: []string{"public.readings"}},
+			diff: &difftypes.SchemaDiff{HypertablesRemoved: []string{"public.readings"}},
 			want: "no statement that turns a hypertable back into an ordinary table",
 		},
 		{
 			name: "the declaration moves the dimension",
-			diff: &types.SchemaDiff{HypertablesModified: []types.HypertableDiff{{
+			diff: &difftypes.SchemaDiff{HypertablesModified: []difftypes.HypertableDiff{{
 				Table: "public.readings", OldColumn: "time", NewColumn: "recorded_at",
 			}}},
 			want: "no statement that repartitions an existing hypertable",
@@ -63,7 +63,7 @@ func TestPlanner_PlansAnAddedHypertable(t *testing.T) {
 	}}
 
 	nodes, err := postgres.New().GenerateMigrationASTChecked(
-		&types.SchemaDiff{HypertablesAdded: []string{"public.readings"}}, declared)
+		&difftypes.SchemaDiff{HypertablesAdded: []string{"public.readings"}}, declared)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.Not(qt.HasLen), 0)

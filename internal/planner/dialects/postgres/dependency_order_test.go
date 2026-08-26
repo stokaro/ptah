@@ -8,14 +8,14 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestPlanner_GenerateMigrationAST_OrdersFKChainTables(t *testing.T) {
 	c := qt.New(t)
 	planner := postgres.New()
 	generated := dependencyOrderSchema()
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		TablesAdded: []string{
 			"ptah_fk_order_tasks",
 			"ptah_fk_order_projects",
@@ -38,7 +38,7 @@ func TestPlanner_GenerateMigrationAST_OrdersFKDiamondTables(t *testing.T) {
 	c := qt.New(t)
 	planner := postgres.New()
 	generated := dependencyOrderSchema()
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		TablesAdded: []string{
 			"ptah_fk_order_tasks",
 			"ptah_fk_order_projects",
@@ -63,7 +63,7 @@ func TestPlanner_GenerateMigrationAST_DropsFKDiamondTablesInDependencyOrder(t *t
 	c := qt.New(t)
 	planner := postgres.New()
 	generated := dependencyOrderSchema()
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		TablesRemoved: []string{
 			"ptah_fk_order_accounts",
 			"ptah_fk_order_projects",
@@ -88,9 +88,9 @@ func TestPlanner_GenerateMigrationAST_AddsReferencedUniqueIndexBeforeNewTableFKs
 	c := qt.New(t)
 	planner := postgres.New()
 	generated := referencedUniqueKeySchema()
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		TablesAdded: []string{"ptah_fk_order_children", "ptah_fk_order_parents"},
-		IndexesAdded: []types.IndexRef{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "uq_ptah_fk_order_parents_code_idx", TableName: "ptah_fk_order_parents"},
 		},
 	}
@@ -109,10 +109,10 @@ func TestPlanner_GenerateMigrationAST_AddsReferencedUniqueConstraintBeforeNewTab
 	c := qt.New(t)
 	planner := postgres.New()
 	generated := referencedUniqueKeySchema()
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		TablesAdded:      []string{"ptah_fk_order_children", "ptah_fk_order_parents"},
 		ConstraintsAdded: []string{"uq_ptah_fk_order_parents_code"},
-		ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
 			Name:      "uq_ptah_fk_order_parents_code",
 			TableName: "ptah_fk_order_parents",
 			Type:      "UNIQUE",

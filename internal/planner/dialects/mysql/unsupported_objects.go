@@ -13,7 +13,7 @@ import (
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/mysqlroutine"
 	"go.5x5.cz/ptah/internal/oracleroutine"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // reportUnsupportedObjects appends the AST nodes for the declared object kinds
@@ -44,7 +44,7 @@ import (
 // hands both to the renderer for every target now, and a plan that says nothing
 // about an object `render` names is the same disagreement between the two
 // surfaces that #929 is about, pointing the other way.
-func (p *Planner) reportUnsupportedObjects(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) reportUnsupportedObjects(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, name := range diff.ExtensionsAdded {
 		result = append(result, ast.NewExtension(name))
 	}
@@ -67,7 +67,7 @@ func (p *Planner) reportUnsupportedObjects(result []ast.Node, diff *types.Schema
 // which is what makes the key mean what its own doc comment says: a preset may
 // claim it only where a path emits, reads back and plans the object
 // (stokaro/ptah#1626).
-func (p *Planner) reportUnsupportedSequences(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) reportUnsupportedSequences(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	if p.capabilities().Has(capability.Sequences) {
 		return result
 	}
@@ -93,7 +93,7 @@ func (p *Planner) reportUnsupportedSequences(result []ast.Node, diff *types.Sche
 // planFunctions instead, which is what makes the key mean what its own doc
 // comment says: a preset may claim it only where a path emits, reads back and
 // plans the object.
-func (p *Planner) reportUnsupportedRoutinesAndRoles(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) reportUnsupportedRoutinesAndRoles(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	result = p.reportUnsupportedRoles(result, diff)
 	result = p.reportUnsupportedAccessControl(result, diff)
 	if p.capabilities().Has(capability.Functions) {
@@ -116,7 +116,7 @@ func (p *Planner) reportUnsupportedRoutinesAndRoles(result []ast.Node, diff *typ
 //
 // A target declaring capability.RoleManagement gets real DDL from planRoles
 // instead (stokaro/ptah#1698).
-func (p *Planner) reportUnsupportedRoles(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) reportUnsupportedRoles(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	if p.capabilities().Has(capability.RoleManagement) {
 		return result
 	}
@@ -145,7 +145,7 @@ func (p *Planner) reportUnsupportedRoles(result []ast.Node, diff *types.SchemaDi
 // The nodes carry identity only. They are not DDL this target can run -- the
 // renderer turns each into a comment -- so a privilege list or a policy body
 // would be detail nobody reads.
-func (p *Planner) reportUnsupportedAccessControl(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) reportUnsupportedAccessControl(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	if p.capabilities().Has(capability.RoleManagement) {
 		// Grants are planned as real DDL; RLS is not, and the two are split
 		// below so a target that manages roles still reports the policy it
@@ -169,7 +169,7 @@ func (p *Planner) reportUnsupportedAccessControl(result []ast.Node, diff *types.
 // It is split from the grants above because the two moved apart: SQL Server
 // manages roles and grants now, and still has no RLS path, so a target that
 // plans one must keep reporting the other (stokaro/ptah#1699).
-func (p *Planner) reportUnsupportedRowLevelSecurity(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) reportUnsupportedRowLevelSecurity(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	if p.capabilities().Has(capability.RowLevelSecurity) {
 		// planRLS emits the real DDL for this target. Reporting here as well
 		// would put a skip comment beside the statement it says was skipped.
@@ -214,7 +214,7 @@ func (p *Planner) reportUnsupportedRowLevelSecurity(result []ast.Node, diff *typ
 //
 // A target that declines capability.Functions plans nothing here; its named
 // skips come from reportUnsupportedRoutinesAndRoles.
-func (p *Planner) planFunctions(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) planFunctions(result []ast.Node, diff *difftypes.SchemaDiff, generated *goschema.Database) []ast.Node {
 	if !p.capabilities().Has(capability.Functions) {
 		return result
 	}

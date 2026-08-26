@@ -7,28 +7,28 @@ import (
 
 	"go.5x5.cz/ptah/cmd/internal/diffreport"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestCategoriesNamesEveryChangedObject(t *testing.T) {
 	tests := []struct {
 		name string
-		diff *types.SchemaDiff
+		diff *difftypes.SchemaDiff
 		want []diffreport.Category
 	}{
 		{
 			name: "plain names",
-			diff: &types.SchemaDiff{RLSEnabledTablesAdded: []string{"other.secured", "public.p"}},
+			diff: &difftypes.SchemaDiff{RLSEnabledTablesAdded: []string{"other.secured", "public.p"}},
 			want: []diffreport.Category{
 				{Name: "rls_enabled_tables_added", Objects: []string{"other.secured", "public.p"}},
 			},
 		},
 		{
 			name: "object references carry their qualifying context",
-			diff: &types.SchemaDiff{
-				IndexesAdded:  []types.IndexRef{{Name: "idx_users_email", TableName: "public.users"}},
-				TriggersAdded: []types.TriggerRef{{TriggerName: "trg_audit", TableName: "public.users"}},
-				GrantsAdded: []types.GrantRef{
+			diff: &difftypes.SchemaDiff{
+				IndexesAdded:  []difftypes.IndexRef{{Name: "idx_users_email", TableName: "public.users"}},
+				TriggersAdded: []difftypes.TriggerRef{{TriggerName: "trg_audit", TableName: "public.users"}},
+				GrantsAdded: []difftypes.GrantRef{
 					{Role: "app", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "other.granted"},
 				},
 			},
@@ -40,9 +40,9 @@ func TestCategoriesNamesEveryChangedObject(t *testing.T) {
 		},
 		{
 			name: "per-object diffs are named by their object",
-			diff: &types.SchemaDiff{
-				TablesModified: []types.TableDiff{{TableName: "products", ColumnsAdded: []string{"price"}}},
-				EnumsModified:  []types.EnumDiff{{EnumName: "status", ValuesAdded: []string{"archived"}}},
+			diff: &difftypes.SchemaDiff{
+				TablesModified: []difftypes.TableDiff{{TableName: "products", ColumnsAdded: []string{"price"}}},
+				EnumsModified:  []difftypes.EnumDiff{{EnumName: "status", ValuesAdded: []string{"archived"}}},
 			},
 			want: []diffreport.Category{
 				{Name: "tables_modified", Objects: []string{"products"}},
@@ -51,7 +51,7 @@ func TestCategoriesNamesEveryChangedObject(t *testing.T) {
 		},
 		{
 			name: "categories are reported in diff field order",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				ConstraintsRemoved: []string{"uq_products_sku"},
 				TablesAdded:        []string{"public.orders"},
 			},
@@ -76,12 +76,12 @@ func TestCategoriesNamesEveryChangedObject(t *testing.T) {
 func TestCategoriesIgnoresNonChangeFields(t *testing.T) {
 	tests := []struct {
 		name string
-		diff *types.SchemaDiff
+		diff *difftypes.SchemaDiff
 	}{
-		{name: "empty diff", diff: &types.SchemaDiff{}},
+		{name: "empty diff", diff: &difftypes.SchemaDiff{}},
 		{
 			name: "identifier semantics only",
-			diff: &types.SchemaDiff{IdentifierSemantics: &identifier.Semantics{}},
+			diff: &difftypes.SchemaDiff{IdentifierSemantics: &identifier.Semantics{}},
 		},
 		{name: "nil diff", diff: nil},
 	}
@@ -97,7 +97,7 @@ func TestCategoriesIgnoresNonChangeFields(t *testing.T) {
 func TestCategoryCountAndNames(t *testing.T) {
 	c := qt.New(t)
 
-	categories := diffreport.Categories(&types.SchemaDiff{
+	categories := diffreport.Categories(&difftypes.SchemaDiff{
 		TablesAdded:           []string{"public.orders", "public.order_items"},
 		RLSEnabledTablesAdded: []string{"other.secured"},
 	})

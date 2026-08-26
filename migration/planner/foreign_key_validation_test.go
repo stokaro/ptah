@@ -10,14 +10,14 @@ import (
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestGenerateSchemaDiffAST_ValidatesTargetForeignKeys_FailurePath(t *testing.T) {
 	tests := []struct {
 		name    string
 		dialect string
-		diff    *types.SchemaDiff
+		diff    *difftypes.SchemaDiff
 		schema  *goschema.Database
 		wantIs  error
 		wantErr string
@@ -25,7 +25,7 @@ func TestGenerateSchemaDiffAST_ValidatesTargetForeignKeys_FailurePath(t *testing
 		{
 			name:    "mysql nonunique referenced key",
 			dialect: platform.MySQL,
-			diff:    &types.SchemaDiff{},
+			diff:    &difftypes.SchemaDiff{},
 			schema:  plannerIndexedForeignKeyDatabase(),
 			wantIs:  ptaherr.ErrUnsupportedFeature,
 			wantErr: `mysql requires referenced columns tenant_id, code on table "parents" to be declared unique`,
@@ -41,7 +41,7 @@ func TestGenerateSchemaDiffAST_ValidatesTargetForeignKeys_FailurePath(t *testing
 		{
 			name:    "postgres incompatible types",
 			dialect: platform.Postgres,
-			diff:    &types.SchemaDiff{},
+			diff:    &difftypes.SchemaDiff{},
 			schema:  plannerTypeMismatchDatabase(),
 			wantIs:  ptaherr.ErrInvalidSchemaDiff,
 			wantErr: `foreign-key columns "children"\."parent_id" \(BIGINT\) and "parents"\."id" \(INTEGER\) have incompatible types`,
@@ -59,7 +59,7 @@ func TestGenerateSchemaDiffAST_ValidatesTargetForeignKeys_FailurePath(t *testing
 	}
 }
 
-func plannerSQLServerDiff() *types.SchemaDiff {
+func plannerSQLServerDiff() *difftypes.SchemaDiff {
 	semantics := identifier.ForSQLServerCatalog("SQL_Latin1_General_CP1_CI_AS").
 		WithResolvedNames([]identifier.ResolvedName{
 			{Name: "dbo", Key: "dbo"},
@@ -69,7 +69,7 @@ func plannerSQLServerDiff() *types.SchemaDiff {
 			{Name: "left_id", Key: "left_id"},
 			{Name: "right_id", Key: "right_id"},
 		})
-	return &types.SchemaDiff{IdentifierSemantics: &semantics}
+	return &difftypes.SchemaDiff{IdentifierSemantics: &semantics}
 }
 
 func plannerIndexedForeignKeyDatabase() *goschema.Database {

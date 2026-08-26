@@ -9,8 +9,8 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 // grantTarget is the part of a planned grant these rows tell apart: what the

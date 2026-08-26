@@ -9,7 +9,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestGenerateSchemaDiffSQLStatements_ClickHouseViewLifecycle(t *testing.T) {
@@ -21,19 +21,19 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseViewLifecycle(t *testing.T) {
 	}}}
 	tests := []struct {
 		name      string
-		diff      *types.SchemaDiff
+		diff      *difftypes.SchemaDiff
 		generated *goschema.Database
 		want      string
 	}{
 		{
 			name:      "create",
-			diff:      &types.SchemaDiff{ViewsAdded: []string{"analytics.active_users"}},
+			diff:      &difftypes.SchemaDiff{ViewsAdded: []string{"analytics.active_users"}},
 			generated: generated,
 			want:      "CREATE VIEW `analytics`.`active_users` AS\n" + viewBody,
 		},
 		{
 			name: "replace",
-			diff: &types.SchemaDiff{ViewsModified: []types.ViewDiff{{
+			diff: &difftypes.SchemaDiff{ViewsModified: []difftypes.ViewDiff{{
 				ViewName: "analytics.active_users",
 				Changes:  map[string]string{"body": "SELECT 1 -> " + viewBody},
 			}}},
@@ -42,7 +42,7 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseViewLifecycle(t *testing.T) {
 		},
 		{
 			name:      "drop",
-			diff:      &types.SchemaDiff{ViewsRemoved: []string{"analytics.active_users"}},
+			diff:      &difftypes.SchemaDiff{ViewsRemoved: []string{"analytics.active_users"}},
 			generated: &goschema.Database{},
 			want:      "DROP VIEW IF EXISTS `analytics`.`active_users`",
 		},
@@ -75,17 +75,17 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseViewCapabilityDisabled(t *tes
 		With(capability.Views, false)
 	tests := []struct {
 		name string
-		diff *types.SchemaDiff
+		diff *difftypes.SchemaDiff
 		want string
 	}{
 		{
 			name: "create",
-			diff: &types.SchemaDiff{ViewsAdded: []string{"analytics.active_users"}},
+			diff: &difftypes.SchemaDiff{ViewsAdded: []string{"analytics.active_users"}},
 			want: `-- CLICKHOUSE: CREATE VIEW "analytics.active_users" is not supported`,
 		},
 		{
 			name: "replace",
-			diff: &types.SchemaDiff{ViewsModified: []types.ViewDiff{{
+			diff: &difftypes.SchemaDiff{ViewsModified: []difftypes.ViewDiff{{
 				ViewName: "analytics.active_users",
 				Changes:  map[string]string{"body": "SELECT 0 -> SELECT 1"},
 			}}},
@@ -93,7 +93,7 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseViewCapabilityDisabled(t *tes
 		},
 		{
 			name: "drop",
-			diff: &types.SchemaDiff{ViewsRemoved: []string{"analytics.active_users"}},
+			diff: &difftypes.SchemaDiff{ViewsRemoved: []string{"analytics.active_users"}},
 			want: `-- CLICKHOUSE: DROP VIEW "analytics.active_users" is not supported`,
 		},
 	}
@@ -119,7 +119,7 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseDropsViewBeforeSourceTable(t 
 	c := qt.New(t)
 
 	statements, err := planner.GenerateSchemaDiffSQLStatements(
-		&types.SchemaDiff{
+		&difftypes.SchemaDiff{
 			ViewsRemoved:  []string{"analytics.active_users"},
 			TablesRemoved: []string{"analytics.users"},
 		},
@@ -152,7 +152,7 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseOrdersAddedViewDependencies(t
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			statements, err := planner.GenerateSchemaDiffSQLStatements(
-				&types.SchemaDiff{ViewsAdded: []string{"analytics.a_dep", "analytics.z_base"}},
+				&difftypes.SchemaDiff{ViewsAdded: []string{"analytics.a_dep", "analytics.z_base"}},
 				clickHouseDependentViews(test.dependentBody),
 				platform.ClickHouse,
 			)
@@ -169,13 +169,13 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseOrdersReplacementDependencies
 	generated := clickHouseDependentViews("SELECT n FROM `analytics`.`z_base`")
 	tests := []struct {
 		name       string
-		diff       *types.SchemaDiff
+		diff       *difftypes.SchemaDiff
 		firstVerb  string
 		secondVerb string
 	}{
 		{
 			name: "two replacements",
-			diff: &types.SchemaDiff{ViewsModified: []types.ViewDiff{
+			diff: &difftypes.SchemaDiff{ViewsModified: []difftypes.ViewDiff{
 				{ViewName: "analytics.a_dep", Changes: map[string]string{"body": "changed"}},
 				{ViewName: "analytics.z_base", Changes: map[string]string{"body": "changed"}},
 			}},
@@ -184,9 +184,9 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseOrdersReplacementDependencies
 		},
 		{
 			name: "added dependent waits for replaced base",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				ViewsAdded: []string{"analytics.a_dep"},
-				ViewsModified: []types.ViewDiff{{
+				ViewsModified: []difftypes.ViewDiff{{
 					ViewName: "analytics.z_base",
 					Changes:  map[string]string{"body": "changed"},
 				}},
@@ -241,7 +241,7 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseMaterializedViewCarriesItsBod
 	}}}
 
 	statements, err := planner.GenerateSchemaDiffSQLStatements(
-		&types.SchemaDiff{MaterializedViewsAdded: []string{"analytics.user_counts"}},
+		&difftypes.SchemaDiff{MaterializedViewsAdded: []string{"analytics.user_counts"}},
 		generated,
 		platform.ClickHouse,
 	)

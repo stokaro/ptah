@@ -11,7 +11,7 @@ import (
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestGenerateSchemaDiffAST_NilDiffRejected(t *testing.T) {
@@ -56,8 +56,8 @@ func TestGenerateSchemaDiffAST_RemovalDoesNotRequireTargetSchema(t *testing.T) {
 		{name: "sql server", dialect: platform.SQLServer},
 		{name: "clickhouse", dialect: platform.ClickHouse},
 	}
-	diff := &types.SchemaDiff{
-		IndexesRemoved: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_users_email", TableName: "users"},
 		},
 	}
@@ -75,8 +75,8 @@ func TestGenerateSchemaDiffAST_RemovalDoesNotRequireTargetSchema(t *testing.T) {
 
 func TestGenerateSchemaDiffAST_IndexRefMissingOwnerRejected(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{
-		IndexesAdded: []types.IndexRef{{Name: "idx_users_email"}},
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: []difftypes.IndexRef{{Name: "idx_users_email"}},
 	}
 	generated := &goschema.Database{
 		Indexes: []goschema.Index{
@@ -92,8 +92,8 @@ func TestGenerateSchemaDiffAST_IndexRefMissingOwnerRejected(t *testing.T) {
 
 func TestGenerateSchemaDiffAST_AmbiguousStructOwnerRejected(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{
-		IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "idx_shared", TableName: "app.users"},
 		},
 	}
@@ -126,8 +126,8 @@ func TestGenerateSchemaDiffAST_SchemaScopedDuplicateAdditionsRejected(t *testing
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := &types.SchemaDiff{
-				IndexesAdded: []types.IndexRef{
+			diff := &difftypes.SchemaDiff{
+				IndexesAdded: []difftypes.IndexRef{
 					{Name: "idx_shared", TableName: "users"},
 					{Name: "idx_shared", TableName: "orders"},
 				},
@@ -190,8 +190,8 @@ func TestGenerateSchemaDiffAST_UnchangedTargetIndexConflictRejected(t *testing.T
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := &types.SchemaDiff{
-				IndexesAdded: []types.IndexRef{
+			diff := &difftypes.SchemaDiff{
+				IndexesAdded: []difftypes.IndexRef{
 					{Name: "idx_shared", TableName: test.addedTable},
 				},
 			}
@@ -210,7 +210,7 @@ func TestGenerateSchemaDiffAST_TargetConflictRejectedWithoutIndexChanges(t *test
 	generated := duplicateIndexTarget("app.users", "app.orders")
 
 	nodes, err := planner.GenerateSchemaDiffAST(
-		&types.SchemaDiff{},
+		&difftypes.SchemaDiff{},
 		generated,
 		platform.Postgres,
 	)
@@ -221,8 +221,8 @@ func TestGenerateSchemaDiffAST_TargetConflictRejectedWithoutIndexChanges(t *test
 
 func TestGenerateSchemaDiffAST_UnknownQualifiedTargetOwnerRejected(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{
-		IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "idx_users_email", TableName: "publci.users"},
 		},
 	}
@@ -258,8 +258,8 @@ func TestGenerateSchemaDiffAST_TableScopedDuplicateAdditionsAccepted(t *testing.
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := &types.SchemaDiff{
-				IndexesAdded: []types.IndexRef{
+			diff := &difftypes.SchemaDiff{
+				IndexesAdded: []difftypes.IndexRef{
 					{Name: "idx_shared", TableName: "users"},
 					{Name: "idx_shared", TableName: "orders"},
 				},
@@ -276,11 +276,11 @@ func TestGenerateSchemaDiffAST_TableScopedDuplicateAdditionsAccepted(t *testing.
 
 func TestGenerateSchemaDiffAST_MariaDBUnicodeCaseReplacementDropsFirst(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{
-		IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "ä_idx", TableName: "users"},
 		},
-		IndexesRemoved: []types.IndexRef{
+		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "Ä_idx", TableName: "users"},
 		},
 	}
@@ -304,11 +304,11 @@ func TestGenerateSchemaDiffAST_MariaDBUnicodeCaseReplacementDropsFirst(t *testin
 
 func TestGenerateSchemaDiffSQL_PostgreSQLRawDottedIndexNameIsOneIdentifier(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{
-		IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "idx.users.email", TableName: "public.users"},
 		},
-		IndexesRemoved: []types.IndexRef{
+		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx.users.email", TableName: "public.users"},
 		},
 	}
@@ -329,11 +329,11 @@ func TestGenerateSchemaDiffSQL_PostgreSQLRawDottedIndexNameIsOneIdentifier(t *te
 
 func TestGenerateSchemaDiffSQL_SQLiteRawDottedIndexNameIsOneIdentifier(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{
-		IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "idx.users.email", TableName: "main.users"},
 		},
-		IndexesRemoved: []types.IndexRef{
+		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx.users.email", TableName: "main.users"},
 		},
 	}
@@ -356,11 +356,11 @@ func TestGenerateSchemaDiffSQL_ClickHouseIndexIdentifiersAreInjectionSafe(t *tes
 	c := qt.New(t)
 	tableName := "analytics.events`; DROP TABLE audit; --"
 	indexName := "idx`; DROP TABLE users; --"
-	diff := &types.SchemaDiff{
-		IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: indexName, TableName: tableName},
 		},
-		IndexesRemoved: []types.IndexRef{
+		IndexesRemoved: []difftypes.IndexRef{
 			{Name: indexName, TableName: tableName},
 		},
 	}

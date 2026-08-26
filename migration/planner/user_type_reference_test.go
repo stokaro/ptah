@@ -8,7 +8,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestGenerateSchemaDiffSQLQualifiesDeclaredUserTypes pins the second of the
@@ -66,7 +66,7 @@ func TestGenerateSchemaDiffSQLQualifiesDeclaredUserTypes(t *testing.T) {
 			c := qt.New(t)
 
 			schema := plannerUserTypeSchema(test.columnType)
-			diff := &types.SchemaDiff{TablesAdded: []string{"t"}}
+			diff := &difftypes.SchemaDiff{TablesAdded: []string{"t"}}
 
 			sql, err := planner.GenerateSchemaDiffSQL(diff, schema, platform.Postgres)
 
@@ -129,7 +129,7 @@ func TestGenerateSchemaDiffSQLLeavesABuiltInTypeAlone(t *testing.T) {
 					{Name: "positive_int", Schema: "advm", BaseType: "integer"},
 				},
 			}
-			diff := &types.SchemaDiff{TablesAdded: []string{"t"}}
+			diff := &difftypes.SchemaDiff{TablesAdded: []string{"t"}}
 
 			sql, err := planner.GenerateSchemaDiffSQL(diff, schema, platform.Postgres)
 

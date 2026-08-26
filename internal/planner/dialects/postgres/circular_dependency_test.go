@@ -9,7 +9,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestTwoPhaseTableCreationWithSelfReference tests that the PostgreSQL planner
@@ -39,7 +39,7 @@ func TestTwoPhaseTableCreationWithSelfReference(t *testing.T) {
 	}
 
 	// Create a schema diff that adds the users table
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		TablesAdded: []string{"users"},
 	}
 
@@ -128,7 +128,7 @@ func TestComplexDependencyChainTwoPhase(t *testing.T) {
 	}
 
 	// Create a schema diff that adds all tables
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		TablesAdded: []string{"tenants", "users", "locations", "areas"},
 	}
 
@@ -211,7 +211,7 @@ func TestNoForeignKeysInCreateTable(t *testing.T) {
 	}
 
 	// Create a schema diff that adds both tables
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		TablesAdded: []string{"users", "posts"},
 	}
 

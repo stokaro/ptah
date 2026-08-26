@@ -10,16 +10,16 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // policyDiff is a diff whose only content is one table's row deletion policy
 // transition.
-func policyDiff(desired, current *ast.RowDeletionPolicySpec) *types.SchemaDiff {
-	return &types.SchemaDiff{
-		TablesModified: []types.TableDiff{{
+func policyDiff(desired, current *ast.RowDeletionPolicySpec) *difftypes.SchemaDiff {
+	return &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{{
 			TableName: "sessions",
-			RowDeletionPolicyChange: &types.RowDeletionPolicyChange{
+			RowDeletionPolicyChange: &difftypes.RowDeletionPolicyChange{
 				Desired: desired, Current: current,
 			},
 		}},
@@ -93,11 +93,11 @@ func TestPlanner_RowDeletionPolicyTransitions(t *testing.T) {
 func TestPlanner_ThePolicyIsRetargetedBeforeItsColumnIsDropped(t *testing.T) {
 	c := qt.New(t)
 
-	statements := planRowDeletionPolicy(c, &types.SchemaDiff{
-		TablesModified: []types.TableDiff{{
+	statements := planRowDeletionPolicy(c, &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{{
 			TableName:      "sessions",
 			ColumnsRemoved: []string{"created_at"},
-			RowDeletionPolicyChange: &types.RowDeletionPolicyChange{
+			RowDeletionPolicyChange: &difftypes.RowDeletionPolicyChange{
 				Desired: &ast.RowDeletionPolicySpec{Column: "updated_at", Interval: "30 days"},
 				Current: &ast.RowDeletionPolicySpec{Column: "created_at", Interval: "30 days"},
 			},
@@ -115,11 +115,11 @@ func TestPlanner_ThePolicyIsRetargetedBeforeItsColumnIsDropped(t *testing.T) {
 func TestPlanner_TheDroppedPolicyGoesBeforeItsColumn(t *testing.T) {
 	c := qt.New(t)
 
-	statements := planRowDeletionPolicy(c, &types.SchemaDiff{
-		TablesModified: []types.TableDiff{{
+	statements := planRowDeletionPolicy(c, &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{{
 			TableName:      "sessions",
 			ColumnsRemoved: []string{"created_at"},
-			RowDeletionPolicyChange: &types.RowDeletionPolicyChange{
+			RowDeletionPolicyChange: &difftypes.RowDeletionPolicyChange{
 				Current: &ast.RowDeletionPolicySpec{Column: "created_at", Interval: "30 days"},
 			},
 		}},
@@ -157,7 +157,7 @@ func TestPlanner_RowDeletionPolicyIsNotPlannedWithoutTheCapability(t *testing.T)
 }
 
 // planRowDeletionPolicy renders a diff for the one dialect that has the clause.
-func planRowDeletionPolicy(c *qt.C, diff *types.SchemaDiff) []string {
+func planRowDeletionPolicy(c *qt.C, diff *difftypes.SchemaDiff) []string {
 	c.Helper()
 
 	planner := postgres.NewForDialect(platform.Spanner, capability.SpannerPostgres())

@@ -5,7 +5,7 @@ import (
 
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // applyRowDeletionPolicyChanges appends the statement each table's row deletion
@@ -22,7 +22,7 @@ import (
 //
 // Which of the first two applies is not derivable from the desired state alone,
 // which is why the diff carries both sides.
-func (p *Planner) applyRowDeletionPolicyChanges(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) applyRowDeletionPolicyChanges(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, tableDiff := range diff.TablesModified {
 		change := tableDiff.RowDeletionPolicyChange
 		if change == nil {
@@ -40,7 +40,7 @@ func (p *Planner) applyRowDeletionPolicyChanges(result []ast.Node, diff *types.S
 
 // rowDeletionPolicyOperation turns one transition into the operation reaching
 // it.
-func rowDeletionPolicyOperation(change *types.RowDeletionPolicyChange) ast.AlterOperation {
+func rowDeletionPolicyOperation(change *difftypes.RowDeletionPolicyChange) ast.AlterOperation {
 	if change.Desired.IsZero() {
 		return &ast.DropRowDeletionPolicyOperation{}
 	}

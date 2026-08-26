@@ -12,13 +12,13 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/internal/planner/dialects/sqlite"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestPlanner_IndexRefs_AttributesAdditionsToExactTables(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{
-		IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "idx_orders_reference", TableName: "orders"},
 			{Name: "idx_users_email", TableName: "users"},
 		},
@@ -50,8 +50,8 @@ func TestPlanner_IndexRefs_AttributesAdditionsToExactTables(t *testing.T) {
 
 func TestPlanner_IndexRefs_PreservesAttachedSchema(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{
-		IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "idx_users_email", TableName: "tenant.users"},
 		},
 	}
@@ -77,11 +77,11 @@ func TestPlanner_IndexRefs_PreservesAttachedSchema(t *testing.T) {
 
 func TestPlanner_IndexRefs_DropsSameSchemaNameBeforeMovingIndex(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{
-		IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "idx_shared", TableName: "tenant.orders"},
 		},
-		IndexesRemoved: []types.IndexRef{
+		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_shared", TableName: "tenant.users"},
 		},
 	}
@@ -109,9 +109,9 @@ func TestPlanner_IndexRefs_DropsSameSchemaNameBeforeMovingIndex(t *testing.T) {
 
 func TestPlanner_IndexRefs_ReplacesExactGlobalIndexBeforeCreate(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{
-		IndexesAdded:   []types.IndexRef{{Name: "idx_users_email", TableName: "users"}},
-		IndexesRemoved: []types.IndexRef{{Name: "idx_users_email", TableName: "users"}},
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded:   []difftypes.IndexRef{{Name: "idx_users_email", TableName: "users"}},
+		IndexesRemoved: []difftypes.IndexRef{{Name: "idx_users_email", TableName: "users"}},
 	}
 	generated := &goschema.Database{
 		Tables: []goschema.Table{{Name: "users", StructName: "User"}},
@@ -141,8 +141,8 @@ func TestPlanner_IndexRefs_ReplacesExactGlobalIndexBeforeCreate(t *testing.T) {
 
 func TestPlanner_IndexRefs_UsesCanonicalOwnerWithDuplicateStructNames(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{
-		IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "idx_users_email", TableName: "tenant.users"},
 		},
 	}
@@ -183,11 +183,11 @@ func TestPlanner_IndexRefs_CaseInsensitiveReplacementExecutesOnSQLite(t *testing
 	_, err = db.Exec(`CREATE INDEX "IDX_Users_Email" ON users (email)`)
 	c.Assert(err, qt.IsNil)
 
-	diff := &types.SchemaDiff{
-		IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "idx_users_email", TableName: "users"},
 		},
-		IndexesRemoved: []types.IndexRef{
+		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "IDX_Users_Email", TableName: "users"},
 		},
 	}

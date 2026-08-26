@@ -10,24 +10,24 @@ import (
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/internal/planner/dialects/mysql"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // mixedSharedFKDiff is the issue #207 mixed scenario (shared_fk modified on
 // articles, purely removed from pages), reused here to prove the capability
 // gating composes with the exactly-once drop discipline instead of replacing
 // it.
-func mixedSharedFKDiff() *types.SchemaDiff {
-	return &types.SchemaDiff{
+func mixedSharedFKDiff() *difftypes.SchemaDiff {
+	return &difftypes.SchemaDiff{
 		ConstraintsAdded:   []string{"shared_fk"},
 		ConstraintsRemoved: []string{"shared_fk"},
-		ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{
+		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
 			{
 				Name: "shared_fk", TableName: "articles", Type: "FOREIGN KEY",
 				Columns: []string{"author_id"}, ForeignTable: "users", ForeignColumn: "id", OnDelete: "CASCADE",
 			},
 		},
-		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 			{Name: "shared_fk", TableName: "articles", Type: "FOREIGN KEY"},
 			{Name: "shared_fk", TableName: "pages", Type: "FOREIGN KEY"},
 		},
@@ -110,9 +110,9 @@ func TestPlanner_CapabilityGating_MySQLPlannerEmitsNoGuardIntent(t *testing.T) {
 func TestPlanner_CapabilityGating_DropCheckSpellingWithoutGenericClause(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		ConstraintsRemoved: []string{"chk_qty"},
-		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 			{Name: "chk_qty", TableName: "things", Type: "CHECK"},
 		},
 	}
@@ -148,9 +148,9 @@ func TestPlanner_CapabilityGating_NoGenericClauseFallbacks(t *testing.T) {
 	t.Run("unique removal uses DROP INDEX", func(t *testing.T) {
 		c := qt.New(t)
 
-		diff := &types.SchemaDiff{
+		diff := &difftypes.SchemaDiff{
 			ConstraintsRemoved: []string{"uq_email"},
-			ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+			ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 				{Name: "uq_email", TableName: "users", Type: "UNIQUE"},
 			},
 		}
@@ -173,9 +173,9 @@ func TestPlanner_CapabilityGating_NoGenericClauseFallbacks(t *testing.T) {
 	t.Run("check removal without any valid spelling warns", func(t *testing.T) {
 		c := qt.New(t)
 
-		diff := &types.SchemaDiff{
+		diff := &difftypes.SchemaDiff{
 			ConstraintsRemoved: []string{"chk_qty"},
-			ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+			ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 				{Name: "chk_qty", TableName: "things", Type: "CHECK"},
 			},
 		}
@@ -203,7 +203,7 @@ func TestPlanner_CapabilityGating_CheckAddSkippedWhenUnenforced(t *testing.T) {
 	t.Run("table-level constraint", func(t *testing.T) {
 		c := qt.New(t)
 
-		diff := &types.SchemaDiff{ConstraintsAdded: []string{"positive_price"}}
+		diff := &difftypes.SchemaDiff{ConstraintsAdded: []string{"positive_price"}}
 		generated := &goschema.Database{
 			Constraints: []goschema.Constraint{
 				{StructName: "Product", Name: "positive_price", Type: "CHECK", Table: "products", CheckExpression: "price > 0"},
@@ -234,7 +234,7 @@ func TestPlanner_CapabilityGating_CheckAddSkippedWhenUnenforced(t *testing.T) {
 	t.Run("field-level synthesized constraint", func(t *testing.T) {
 		c := qt.New(t)
 
-		diff := &types.SchemaDiff{
+		diff := &difftypes.SchemaDiff{
 			ConstraintsAdded:   []string{"things_qty_check"},
 			ConstraintsRemoved: make([]string, 0),
 		}
@@ -278,10 +278,10 @@ func TestPlanner_CapabilityGating_CheckAddSkippedWhenUnenforced(t *testing.T) {
 func TestPlanner_CapabilityGating_ZeroValuePlannerBehavesLikeNew(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		ConstraintsAdded:   []string{"positive_price"},
 		ConstraintsRemoved: []string{"chk_old"},
-		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 			{Name: "chk_old", TableName: "things", Type: "CHECK"},
 		},
 	}
@@ -319,9 +319,9 @@ func TestPlanner_CapabilityGating_ZeroValuePlannerBehavesLikeNew(t *testing.T) {
 func TestPlanner_CapabilityGating_DropCheckDegradesOnMariaDBRenderer(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		ConstraintsRemoved: []string{"chk_qty"},
-		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 			{Name: "chk_qty", TableName: "things", Type: "CHECK"},
 		},
 	}
@@ -347,8 +347,8 @@ func TestPlanner_CapabilityGating_DropCheckDegradesOnMariaDBRenderer(t *testing.
 func TestPlanner_CapabilityGating_DropIndexGuard(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
-		IndexesRemoved: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_things_qty", TableName: "things"},
 		},
 	}
@@ -392,9 +392,9 @@ func TestPlanner_CapabilityGating_DropIndexGuard(t *testing.T) {
 // removals stay skipped. On MariaDB the spelling carries the IF EXISTS guard
 // (verified live: MariaDB 10.11 accepts it, MySQL 9.7 rejects it).
 func TestPlanner_UniqueConstraintRemoval_UsesDropIndex(t *testing.T) {
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		ConstraintsRemoved: []string{"uq_email", "fk_posts_user", "pk_legacy"},
-		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 			{Name: "uq_email", TableName: "users", Type: "UNIQUE"},
 			{Name: "fk_posts_user", TableName: "posts", Type: "FOREIGN KEY"},
 			{Name: "pk_legacy", TableName: "legacy", Type: "PRIMARY KEY"},
@@ -453,9 +453,9 @@ func TestPlanner_UniqueConstraintRemoval_UsesDropIndex(t *testing.T) {
 func TestPlanner_UniqueDropGuard_FollowsIndexCapability(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		ConstraintsRemoved: []string{"uq_email", "fk_posts_user"},
-		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 			{Name: "uq_email", TableName: "users", Type: "UNIQUE"},
 			{Name: "fk_posts_user", TableName: "posts", Type: "FOREIGN KEY"},
 		},

@@ -8,15 +8,15 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/internal/planner/dialects/mssql"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // planModifiedPolicy renders the plan for a policy the diff reports as changed.
 func planModifiedPolicy(c *qt.C, policyFor, withCheck string) string {
 	c.Helper()
 
-	diff := &types.SchemaDiff{
-		RLSPoliciesModified: []types.RLSPolicyDiff{{
+	diff := &difftypes.SchemaDiff{
+		RLSPoliciesModified: []difftypes.RLSPolicyDiff{{
 			PolicyName: "tenant_filter", TableName: "docs",
 			Changes: map[string]string{"for": "ALL -> " + policyFor},
 		}},

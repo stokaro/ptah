@@ -11,7 +11,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/internal/indexscope"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestNewResolver_HappyPath(t *testing.T) {
@@ -24,8 +24,8 @@ func TestNewResolver_HappyPath(t *testing.T) {
 			{StructName: "User", Name: "idx_email", Fields: []string{"email"}},
 		},
 	}
-	diff := &types.SchemaDiff{
-		IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "idx_email", TableName: "app.users"},
 		},
 	}
@@ -33,7 +33,7 @@ func TestNewResolver_HappyPath(t *testing.T) {
 	resolver, err := indexscope.NewResolver("postgres", diff, generated)
 	c.Assert(err, qt.IsNil)
 	index, err := resolver.Resolve(
-		types.IndexRef{Name: "idx_email", TableName: "app.users"},
+		difftypes.IndexRef{Name: "idx_email", TableName: "app.users"},
 	)
 
 	c.Assert(err, qt.IsNil)
@@ -48,8 +48,8 @@ func TestNewResolver_TargetIdentityCollisionRejected(t *testing.T) {
 			{Name: "idx_shared", TableName: "orders"},
 		},
 	}
-	diff := &types.SchemaDiff{
-		IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "idx_shared", TableName: "orders"},
 		},
 	}
@@ -71,7 +71,7 @@ func TestNewResolver_TargetIdentityCollisionRejectedWithoutAdditions(t *testing.
 
 	resolver, err := indexscope.NewResolver(
 		"postgres",
-		&types.SchemaDiff{},
+		&difftypes.SchemaDiff{},
 		generated,
 	)
 
@@ -92,13 +92,13 @@ func TestNewResolver_DefaultAndNamedSchemaIndexesAreIndependent(t *testing.T) {
 		},
 	}
 
-	resolver, err := indexscope.NewResolver("postgres", &types.SchemaDiff{}, generated)
+	resolver, err := indexscope.NewResolver("postgres", &difftypes.SchemaDiff{}, generated)
 
 	c.Assert(err, qt.IsNil)
-	defaultIndex, err := resolver.Resolve(types.IndexRef{Name: "idx_email", TableName: "users"})
+	defaultIndex, err := resolver.Resolve(difftypes.IndexRef{Name: "idx_email", TableName: "users"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(defaultIndex.StructName, qt.Equals, "User")
-	auditIndex, err := resolver.Resolve(types.IndexRef{Name: "idx_email", TableName: "audit.users"})
+	auditIndex, err := resolver.Resolve(difftypes.IndexRef{Name: "idx_email", TableName: "audit.users"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(auditIndex.StructName, qt.Equals, "AuditUser")
 }
@@ -122,8 +122,8 @@ func TestNewResolver_CaseInsensitiveTargetIdentityCollisionRejected(t *testing.T
 					{Name: "idx_shared", TableName: "users"},
 				},
 			}
-			diff := &types.SchemaDiff{
-				IndexesAdded: []types.IndexRef{
+			diff := &difftypes.SchemaDiff{
+				IndexesAdded: []difftypes.IndexRef{
 					{Name: "IDX_Shared", TableName: "users"},
 				},
 			}
@@ -149,8 +149,8 @@ func TestNewResolver_CaseInsensitiveDiffCollisionRejected(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := &types.SchemaDiff{
-				IndexesAdded: []types.IndexRef{
+			diff := &difftypes.SchemaDiff{
+				IndexesAdded: []difftypes.IndexRef{
 					{Name: "IDX_Shared", TableName: "users"},
 					{Name: "idx_shared", TableName: "users"},
 				},
@@ -171,8 +171,8 @@ func TestNewResolverWithSemantics_IncompleteCatalogSnapshotRejected(t *testing.T
 			{Name: "dbo", Key: "dbo"},
 			{Name: "users", Key: "users"},
 		})
-	diff := &types.SchemaDiff{
-		IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "idx_email", TableName: "dbo.users"},
 		},
 	}
@@ -203,7 +203,7 @@ func TestNewResolver_TargetTableResolution(t *testing.T) {
 		name   string
 		tables []goschema.Table
 		index  goschema.Index
-		ref    types.IndexRef
+		ref    difftypes.IndexRef
 	}{
 		{
 			name: "struct association",
@@ -211,7 +211,7 @@ func TestNewResolver_TargetTableResolution(t *testing.T) {
 				{StructName: "User", Schema: "app", Name: "users"},
 			},
 			index: goschema.Index{StructName: "User", Name: "idx_email"},
-			ref:   types.IndexRef{Name: "idx_email", TableName: "app.users"},
+			ref:   difftypes.IndexRef{Name: "idx_email", TableName: "app.users"},
 		},
 		{
 			name: "explicit struct table association",
@@ -219,7 +219,7 @@ func TestNewResolver_TargetTableResolution(t *testing.T) {
 				{StructName: "User", Schema: "app", Name: "users"},
 			},
 			index: goschema.Index{StructName: "User", Name: "idx_email", TableName: "users"},
-			ref:   types.IndexRef{Name: "idx_email", TableName: "app.users"},
+			ref:   difftypes.IndexRef{Name: "idx_email", TableName: "app.users"},
 		},
 		{
 			name: "explicit unqualified struct table association",
@@ -227,7 +227,7 @@ func TestNewResolver_TargetTableResolution(t *testing.T) {
 				{StructName: "User", Name: "users"},
 			},
 			index: goschema.Index{StructName: "User", Name: "idx_email", TableName: "users"},
-			ref:   types.IndexRef{Name: "idx_email", TableName: "users"},
+			ref:   difftypes.IndexRef{Name: "idx_email", TableName: "users"},
 		},
 		{
 			name: "unique plain table association",
@@ -235,12 +235,12 @@ func TestNewResolver_TargetTableResolution(t *testing.T) {
 				{StructName: "User", Schema: "app", Name: "users"},
 			},
 			index: goschema.Index{Name: "idx_email", TableName: "users"},
-			ref:   types.IndexRef{Name: "idx_email", TableName: "app.users"},
+			ref:   difftypes.IndexRef{Name: "idx_email", TableName: "app.users"},
 		},
 		{
 			name:  "explicit table without table metadata",
 			index: goschema.Index{Name: "idx_email", TableName: "users"},
-			ref:   types.IndexRef{Name: "idx_email", TableName: "users"},
+			ref:   difftypes.IndexRef{Name: "idx_email", TableName: "users"},
 		},
 	}
 
@@ -251,7 +251,7 @@ func TestNewResolver_TargetTableResolution(t *testing.T) {
 				Tables:  test.tables,
 				Indexes: []goschema.Index{test.index},
 			}
-			diff := &types.SchemaDiff{IndexesAdded: []types.IndexRef{test.ref}}
+			diff := &difftypes.SchemaDiff{IndexesAdded: []difftypes.IndexRef{test.ref}}
 
 			resolver, err := indexscope.NewResolver("mysql", diff, generated)
 			c.Assert(err, qt.IsNil)
@@ -280,8 +280,8 @@ func TestNewResolver_UnknownQualifiedTableRejected(t *testing.T) {
 		},
 		Indexes: []goschema.Index{index},
 	}
-	diff := &types.SchemaDiff{
-		IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "idx_email", TableName: "app.users"},
 		},
 	}
@@ -303,8 +303,8 @@ func TestNewResolver_AmbiguousPlainTableRejected(t *testing.T) {
 			{Name: "idx_email", TableName: "users"},
 		},
 	}
-	diff := &types.SchemaDiff{
-		IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "idx_email", TableName: "app.users"},
 		},
 	}
@@ -317,8 +317,8 @@ func TestNewResolver_AmbiguousPlainTableRejected(t *testing.T) {
 
 func TestNewResolver_MalformedRemovalRejectedWithoutTarget(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{
-		IndexesRemoved: []types.IndexRef{{Name: "idx_users_email"}},
+	diff := &difftypes.SchemaDiff{
+		IndexesRemoved: []difftypes.IndexRef{{Name: "idx_users_email"}},
 	}
 
 	resolver, err := indexscope.NewResolver("postgres", diff, nil)
@@ -329,8 +329,8 @@ func TestNewResolver_MalformedRemovalRejectedWithoutTarget(t *testing.T) {
 
 func TestNewResolver_AdditionRequiresTargetIndex(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{
-		IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "idx_users_email", TableName: "users"},
 		},
 	}
@@ -343,26 +343,26 @@ func TestNewResolver_AdditionRequiresTargetIndex(t *testing.T) {
 
 func TestIdentityKey_DialectCaseSemantics(t *testing.T) {
 	c := qt.New(t)
-	ref := types.IndexRef{Name: "IDX_Users_Email", TableName: "Tenant.Users"}
+	ref := difftypes.IndexRef{Name: "IDX_Users_Email", TableName: "Tenant.Users"}
 	tests := []struct {
 		name    string
 		dialect string
-		want    types.IndexRef
+		want    difftypes.IndexRef
 	}{
 		{
 			name:    "mysql folds only index name",
 			dialect: "mysql",
-			want:    types.IndexRef{Name: "idx_users_email", TableName: "Tenant.Users"},
+			want:    difftypes.IndexRef{Name: "idx_users_email", TableName: "Tenant.Users"},
 		},
 		{
 			name:    "mariadb folds only index name",
 			dialect: "mariadb",
-			want:    types.IndexRef{Name: "idx_users_email", TableName: "Tenant.Users"},
+			want:    difftypes.IndexRef{Name: "idx_users_email", TableName: "Tenant.Users"},
 		},
 		{
 			name:    "sqlite folds schema table and index",
 			dialect: "sqlite",
-			want:    types.IndexRef{Name: "idx_users_email", TableName: "tenant.users"},
+			want:    difftypes.IndexRef{Name: "idx_users_email", TableName: "tenant.users"},
 		},
 		{
 			name:    "postgres preserves quoted identity",
@@ -384,78 +384,78 @@ func TestIdentityKey_DialectCaseSemantics(t *testing.T) {
 		})
 	}
 
-	c.Assert(ref, qt.DeepEquals, types.IndexRef{
+	c.Assert(ref, qt.DeepEquals, difftypes.IndexRef{
 		Name:      "IDX_Users_Email",
 		TableName: "Tenant.Users",
 	})
 }
 
 func TestConflictSet_DialectMatching(t *testing.T) {
-	candidate := types.IndexRef{Name: "IDX_Shared", TableName: "Tenant.Users"}
+	candidate := difftypes.IndexRef{Name: "IDX_Shared", TableName: "Tenant.Users"}
 	tests := []struct {
 		name    string
 		dialect string
-		ref     types.IndexRef
+		ref     difftypes.IndexRef
 		want    bool
 	}{
 		{
 			name:    "mysql index names are case insensitive per table",
 			dialect: "mysql",
-			ref:     types.IndexRef{Name: "idx_shared", TableName: "Tenant.Users"},
+			ref:     difftypes.IndexRef{Name: "idx_shared", TableName: "Tenant.Users"},
 			want:    true,
 		},
 		{
 			name:    "mariadb index names are case insensitive per table",
 			dialect: "mariadb",
-			ref:     types.IndexRef{Name: "idx_shared", TableName: "Tenant.Users"},
+			ref:     difftypes.IndexRef{Name: "idx_shared", TableName: "Tenant.Users"},
 			want:    true,
 		},
 		{
 			name:    "mysql keeps different tables independent",
 			dialect: "mysql",
-			ref:     types.IndexRef{Name: "idx_shared", TableName: "Tenant.Orders"},
+			ref:     difftypes.IndexRef{Name: "idx_shared", TableName: "Tenant.Orders"},
 			want:    false,
 		},
 		{
 			name:    "sqlite schema and index names are case insensitive",
 			dialect: "sqlite",
-			ref:     types.IndexRef{Name: "idx_shared", TableName: "tenant.orders"},
+			ref:     difftypes.IndexRef{Name: "idx_shared", TableName: "tenant.orders"},
 			want:    true,
 		},
 		{
 			name:    "postgres quoted names remain case sensitive",
 			dialect: "postgres",
-			ref:     types.IndexRef{Name: "idx_shared", TableName: "Tenant.Orders"},
+			ref:     difftypes.IndexRef{Name: "idx_shared", TableName: "Tenant.Orders"},
 			want:    false,
 		},
 		{
 			name:    "postgres same schema conflicts across tables",
 			dialect: "postgres",
-			ref:     types.IndexRef{Name: "IDX_Shared", TableName: "Tenant.Orders"},
+			ref:     difftypes.IndexRef{Name: "IDX_Shared", TableName: "Tenant.Orders"},
 			want:    true,
 		},
 		{
 			name:    "postgres different schemas are independent",
 			dialect: "postgres",
-			ref:     types.IndexRef{Name: "IDX_Shared", TableName: "Audit.Orders"},
+			ref:     difftypes.IndexRef{Name: "IDX_Shared", TableName: "Audit.Orders"},
 			want:    false,
 		},
 		{
 			name:    "spanner same schema conflicts across tables",
 			dialect: "spanner",
-			ref:     types.IndexRef{Name: "IDX_Shared", TableName: "Tenant.Orders"},
+			ref:     difftypes.IndexRef{Name: "IDX_Shared", TableName: "Tenant.Orders"},
 			want:    true,
 		},
 		{
 			name:    "spanner different schemas are independent",
 			dialect: "spanner",
-			ref:     types.IndexRef{Name: "IDX_Shared", TableName: "Audit.Orders"},
+			ref:     difftypes.IndexRef{Name: "IDX_Shared", TableName: "Audit.Orders"},
 			want:    false,
 		},
 		{
 			name:    "raw dotted index name remains one identifier",
 			dialect: "postgres",
-			ref:     types.IndexRef{Name: "Tenant.IDX_Shared", TableName: "Orders"},
+			ref:     difftypes.IndexRef{Name: "Tenant.IDX_Shared", TableName: "Orders"},
 			want:    false,
 		},
 	}
@@ -463,7 +463,7 @@ func TestConflictSet_DialectMatching(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			set := indexscope.NewConflictSet(test.dialect, []types.IndexRef{candidate})
+			set := indexscope.NewConflictSet(test.dialect, []difftypes.IndexRef{candidate})
 			c.Assert(set.Contains(test.ref), qt.Equals, test.want)
 		})
 	}
@@ -517,12 +517,12 @@ func TestConflictSet_NonASCIICaseSemantics(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			set := indexscope.NewConflictSet(test.dialect, []types.IndexRef{
+			set := indexscope.NewConflictSet(test.dialect, []difftypes.IndexRef{
 				{Name: test.stored, TableName: "users"},
 			})
 
 			c.Assert(
-				set.Contains(types.IndexRef{Name: test.lookup, TableName: "users"}),
+				set.Contains(difftypes.IndexRef{Name: test.lookup, TableName: "users"}),
 				qt.Equals,
 				test.want,
 			)
@@ -532,7 +532,7 @@ func TestConflictSet_NonASCIICaseSemantics(t *testing.T) {
 
 func TestConflictSet_DefaultSchemaIsIndependentFromNamedSchemas(t *testing.T) {
 	c := qt.New(t)
-	refs := []types.IndexRef{
+	refs := []difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "orders"},
 		{Name: "idx_shared", TableName: "app.users"},
 		{Name: "idx_shared", TableName: "logs.users"},
@@ -540,14 +540,14 @@ func TestConflictSet_DefaultSchemaIsIndependentFromNamedSchemas(t *testing.T) {
 	}
 	set := indexscope.NewConflictSet("postgres", refs)
 
-	got := slices.Collect(set.Matches(types.IndexRef{
+	got := slices.Collect(set.Matches(difftypes.IndexRef{
 		Name:      "idx_shared",
 		TableName: "orders",
 	}))
 
 	c.Assert(got, qt.DeepEquals, refs[:1])
 	c.Assert(
-		slices.Collect(set.Matches(types.IndexRef{
+		slices.Collect(set.Matches(difftypes.IndexRef{
 			Name:      "idx_shared",
 			TableName: "app.orders",
 		})),
@@ -555,7 +555,7 @@ func TestConflictSet_DefaultSchemaIsIndependentFromNamedSchemas(t *testing.T) {
 		refs[1:2],
 	)
 	c.Assert(
-		slices.Collect(set.Matches(types.IndexRef{
+		slices.Collect(set.Matches(difftypes.IndexRef{
 			Name:      "idx_shared",
 			TableName: "public.users",
 		})),
@@ -565,11 +565,11 @@ func TestConflictSet_DefaultSchemaIsIndependentFromNamedSchemas(t *testing.T) {
 }
 
 func TestIdentityKeyWithSemantics_SQLServerCatalogResolution(t *testing.T) {
-	ref := types.IndexRef{Name: "IDX_Email", TableName: "Users"}
+	ref := difftypes.IndexRef{Name: "IDX_Email", TableName: "Users"}
 	tests := []struct {
 		name      string
 		semantics identifier.Semantics
-		want      types.IndexRef
+		want      difftypes.IndexRef
 	}{
 		{
 			name: "case insensitive",
@@ -579,7 +579,7 @@ func TestIdentityKeyWithSemantics_SQLServerCatalogResolution(t *testing.T) {
 				[]string{"users", "Users"},
 				[]string{"idx_email", "IDX_Email"},
 			),
-			want: types.IndexRef{Name: "IDX_Email", TableName: "dbo.Users"},
+			want: difftypes.IndexRef{Name: "IDX_Email", TableName: "dbo.Users"},
 		},
 		{
 			name: "case sensitive",
@@ -591,12 +591,12 @@ func TestIdentityKeyWithSemantics_SQLServerCatalogResolution(t *testing.T) {
 				[]string{"IDX_Email"},
 				[]string{"idx_email"},
 			),
-			want: types.IndexRef{Name: "IDX_Email", TableName: "dbo.Users"},
+			want: difftypes.IndexRef{Name: "IDX_Email", TableName: "dbo.Users"},
 		},
 		{
 			name:      "unknown remains exact identity",
 			semantics: identifier.ForDialect("sqlserver"),
-			want:      types.IndexRef{Name: "IDX_Email", TableName: "dbo.Users"},
+			want:      difftypes.IndexRef{Name: "IDX_Email", TableName: "dbo.Users"},
 		},
 	}
 
@@ -610,8 +610,8 @@ func TestIdentityKeyWithSemantics_SQLServerCatalogResolution(t *testing.T) {
 }
 
 func TestConflictSetWithSemantics_SQLServerCatalogResolution(t *testing.T) {
-	candidate := types.IndexRef{Name: "IDX_Email", TableName: "Users"}
-	lookup := types.IndexRef{Name: "idx_email", TableName: "dbo.users"}
+	candidate := difftypes.IndexRef{Name: "IDX_Email", TableName: "Users"}
+	lookup := difftypes.IndexRef{Name: "idx_email", TableName: "dbo.users"}
 	tests := []struct {
 		name      string
 		semantics identifier.Semantics
@@ -649,7 +649,7 @@ func TestConflictSetWithSemantics_SQLServerCatalogResolution(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			set := indexscope.NewConflictSetWithSemantics(test.semantics, []types.IndexRef{candidate})
+			set := indexscope.NewConflictSetWithSemantics(test.semantics, []difftypes.IndexRef{candidate})
 			c.Assert(set.Contains(lookup), qt.Equals, test.want)
 		})
 	}
@@ -661,7 +661,7 @@ func TestNewResolverWithSemantics_SQLServerUnknownRejectsDistinctNames(t *testin
 		{Name: "resume", TableName: "dbo.users"},
 		{Name: "r\u00e9sum\u00e9", TableName: "dbo.users"},
 	}}
-	diff := &types.SchemaDiff{IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{IndexesAdded: []difftypes.IndexRef{
 		{Name: "resume", TableName: "dbo.users"},
 		{Name: "r\u00e9sum\u00e9", TableName: "dbo.users"},
 	}}
@@ -694,7 +694,7 @@ func TestNewResolverWithSemantics_SQLServerCaseSensitiveAcceptsVariants(t *testi
 		{Name: "idx_email", TableName: "dbo.users"},
 		{Name: "IDX_Email", TableName: "dbo.users"},
 	}}
-	diff := &types.SchemaDiff{IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{IndexesAdded: []difftypes.IndexRef{
 		{Name: "idx_email", TableName: "dbo.users"},
 		{Name: "IDX_Email", TableName: "dbo.users"},
 	}}
@@ -702,10 +702,10 @@ func TestNewResolverWithSemantics_SQLServerCaseSensitiveAcceptsVariants(t *testi
 	resolver, err := indexscope.NewResolverWithSemantics("sqlserver", semantics, diff, generated)
 
 	c.Assert(err, qt.IsNil)
-	lower, err := resolver.Resolve(types.IndexRef{Name: "idx_email", TableName: "users"})
+	lower, err := resolver.Resolve(difftypes.IndexRef{Name: "idx_email", TableName: "users"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(lower.Name, qt.Equals, "idx_email")
-	upper, err := resolver.Resolve(types.IndexRef{Name: "IDX_Email", TableName: "dbo.users"})
+	upper, err := resolver.Resolve(difftypes.IndexRef{Name: "IDX_Email", TableName: "dbo.users"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(upper.Name, qt.Equals, "IDX_Email")
 }
@@ -733,7 +733,7 @@ func BenchmarkNewResolver_LargeDuplicateNameSchema(b *testing.B) {
 
 	tables := make([]goschema.Table, 0, indexCount)
 	indexes := make([]goschema.Index, 0, indexCount)
-	additions := make([]types.IndexRef, 0, indexCount)
+	additions := make([]difftypes.IndexRef, 0, indexCount)
 	for index := range indexCount {
 		tableName := "table_" + strconv.Itoa(index)
 		tables = append(tables, goschema.Table{Name: tableName, StructName: tableName})
@@ -742,13 +742,13 @@ func BenchmarkNewResolver_LargeDuplicateNameSchema(b *testing.B) {
 			Name:       "idx_shared",
 			Fields:     []string{"value"},
 		})
-		additions = append(additions, types.IndexRef{
+		additions = append(additions, difftypes.IndexRef{
 			Name:      "idx_shared",
 			TableName: tableName,
 		})
 	}
 	generated := &goschema.Database{Tables: tables, Indexes: indexes}
-	diff := &types.SchemaDiff{IndexesAdded: additions}
+	diff := &difftypes.SchemaDiff{IndexesAdded: additions}
 
 	b.ReportAllocs()
 	b.ResetTimer()

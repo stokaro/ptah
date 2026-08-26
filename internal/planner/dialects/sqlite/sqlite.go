@@ -20,7 +20,7 @@ import (
 	"go.5x5.cz/ptah/internal/planner/sqliterebuild"
 	"go.5x5.cz/ptah/internal/sqliteforeignkeys"
 	"go.5x5.cz/ptah/internal/tableref"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 const DialectName = platform.SQLite
@@ -50,7 +50,7 @@ func (p *Planner) capabilities() capability.Capabilities {
 	return p.caps
 }
 
-func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated *goschema.Database) ([]ast.Node, error) {
+func (p *Planner) GenerateMigrationASTChecked(diff *difftypes.SchemaDiff, generated *goschema.Database) ([]ast.Node, error) {
 	if generated == nil {
 		generated = &goschema.Database{}
 	}
@@ -138,7 +138,7 @@ func withRebuildForeignKeySession(plan []ast.Node, rebuilds tableRebuilds) []ast
 	)
 }
 
-func rejectUnsupportedChanges(diff *types.SchemaDiff) error {
+func rejectUnsupportedChanges(diff *difftypes.SchemaDiff) error {
 	if err := rejectUnsupportedSchemaObjects(diff); err != nil {
 		return err
 	}
@@ -153,7 +153,7 @@ func rejectUnsupportedChanges(diff *types.SchemaDiff) error {
 // create-new / copy-rows / drop-old / rename sequence.
 //
 // The order field keeps emission deterministic: tables reached through
-// [types.SchemaDiff.TablesModified] keep that slice's order, and tables reached
+// [difftypes.SchemaDiff.TablesModified] keep that slice's order, and tables reached
 // only through a constraint change follow, sorted by name.
 type tableRebuilds struct {
 	order   []string
@@ -198,7 +198,7 @@ func identity(name string) string { return name }
 // through a new table. A constraint change that cannot be attributed to a table
 // is still refused, because there is nothing to rebuild.
 func planTableRebuilds(
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	generated *goschema.Database,
 	semantics identifier.Semantics,
 ) (tableRebuilds, error) {
@@ -276,7 +276,7 @@ func planTableRebuilds(
 // `main.t` while the constraint names it `t`, and the table was then rebuilt as
 // well as created. SQLite folds ASCII, so the same split opens on case alone.
 func existingTablesWithConstraintChanges(
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	semantics identifier.Semantics,
 ) ([]string, error) {
 	// Keyed by IDENTITY, and holding the spelling to plan with.
@@ -331,7 +331,7 @@ func existingTablesWithConstraintChanges(
 // to emit at any version, so the refusal cannot be lifted by a capability set.
 // This one is about the server in front of us, and a set that declines views or
 // triggers must not be handed statements creating them (stokaro/ptah#916).
-func (p *Planner) rejectObjectsTheTargetDeclines(diff *types.SchemaDiff) error {
+func (p *Planner) rejectObjectsTheTargetDeclines(diff *difftypes.SchemaDiff) error {
 	caps := p.capabilities()
 	if !caps.Has(capability.Views) && touchesViews(diff) {
 		return unsupportedFeaturef("views are not supported by the target capability set")
@@ -342,11 +342,11 @@ func (p *Planner) rejectObjectsTheTargetDeclines(diff *types.SchemaDiff) error {
 	return nil
 }
 
-func touchesViews(diff *types.SchemaDiff) bool {
+func touchesViews(diff *difftypes.SchemaDiff) bool {
 	return len(diff.ViewsAdded) > 0 || len(diff.ViewsModified) > 0 || len(diff.ViewsRemoved) > 0
 }
 
-func touchesTriggers(diff *types.SchemaDiff) bool {
+func touchesTriggers(diff *difftypes.SchemaDiff) bool {
 	return len(diff.TriggersAdded) > 0 || len(diff.TriggersModified) > 0 || len(diff.TriggersRemoved) > 0
 }
 
@@ -357,7 +357,7 @@ func touchesTriggers(diff *types.SchemaDiff) bool {
 // operator that something in their schema is a function, which they knew; it
 // does not tell them WHICH function to remove or move, and a schema with forty
 // objects is then a search (stokaro/ptah#1628).
-func rejectUnsupportedSchemaObjects(diff *types.SchemaDiff) error {
+func rejectUnsupportedSchemaObjects(diff *difftypes.SchemaDiff) error {
 	if names := changedNames(diff.MaterializedViewsAdded, diff.MaterializedViewsRemoved, materializedViewNames(diff)); len(names) > 0 {
 		return unsupportedFeaturef("materialized views are not supported: %s", strings.Join(names, ", "))
 	}
@@ -386,7 +386,7 @@ func changedNames(added, removed, modified []string) []string {
 
 // rejectUnsupportedAccessControl refuses roles, grants and row-level security,
 // naming the objects for the reason rejectUnsupportedSchemaObjects does.
-func rejectUnsupportedAccessControl(diff *types.SchemaDiff) error {
+func rejectUnsupportedAccessControl(diff *difftypes.SchemaDiff) error {
 	if names := rowLevelSecurityNames(diff); len(names) > 0 {
 		return unsupportedFeaturef("row-level security is not supported: %s", strings.Join(names, ", "))
 	}
@@ -398,7 +398,7 @@ func rejectUnsupportedAccessControl(diff *types.SchemaDiff) error {
 
 // rowLevelSecurityNames lists every policy and every table whose row-level
 // security the diff changes.
-func rowLevelSecurityNames(diff *types.SchemaDiff) []string {
+func rowLevelSecurityNames(diff *difftypes.SchemaDiff) []string {
 	names := slices.Concat(diff.RLSEnabledTablesAdded, diff.RLSEnabledTablesRemoved)
 	for _, policy := range slices.Concat(diff.RLSPoliciesAdded, diff.RLSPoliciesRemoved) {
 		names = append(names, policy.PolicyName)
@@ -412,7 +412,7 @@ func rowLevelSecurityNames(diff *types.SchemaDiff) []string {
 
 // roleAndGrantNames lists every role the diff changes and every role a changed
 // grant names, which is what an operator has to find in their schema.
-func roleAndGrantNames(diff *types.SchemaDiff) []string {
+func roleAndGrantNames(diff *difftypes.SchemaDiff) []string {
 	names := slices.Concat(diff.RolesAdded, diff.RolesRemoved)
 	for _, role := range diff.RolesModified {
 		names = append(names, role.RoleName)
@@ -428,7 +428,7 @@ func roleAndGrantNames(diff *types.SchemaDiff) []string {
 }
 
 func (p *Planner) addTables(
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	generated *goschema.Database,
 	semantics identifier.Semantics,
 ) ([]ast.Node, error) {
@@ -491,7 +491,7 @@ func withDefaultForeignKeyName(tableName string, constraint goschema.Constraint)
 }
 
 func (p *Planner) modifyTables(
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	generated *goschema.Database,
 	rebuilds tableRebuilds,
 ) ([]ast.Node, error) {
@@ -538,7 +538,7 @@ func (p *Planner) modifyTables(
 // as well as dropped and added columns.
 func (p *Planner) rebuildTable(
 	target rebuildTarget,
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	generated *goschema.Database,
 ) ([]ast.Node, error) {
 	table := findTable(generated.Tables, target.tableName, diff.EffectiveIdentifierSemantics(DialectName))
@@ -611,7 +611,7 @@ const rebuildTableNameAttempts = 100
 // one plan and their order is not this function's to assume.
 func availableRebuildTableName(
 	table goschema.Table,
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	generated *goschema.Database,
 ) (string, error) {
 	base := "__ptah_rebuild_" + table.Name
@@ -910,7 +910,7 @@ func findColumn(generated *goschema.Database, tableName, columnName string) *ast
 }
 
 func (p *Planner) addIndexes(
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	indexes *indexscope.Resolver,
 	rebuilds tableRebuilds,
 ) ([]ast.Node, error) {
@@ -939,7 +939,7 @@ func (p *Planner) addIndexes(
 	return result, nil
 }
 
-func (p *Planner) removeIndexes(diff *types.SchemaDiff, rebuilds tableRebuilds) []ast.Node {
+func (p *Planner) removeIndexes(diff *difftypes.SchemaDiff, rebuilds tableRebuilds) []ast.Node {
 	var result []ast.Node
 	indexAdditions := indexscope.NewConflictSetWithSemantics(
 		diff.EffectiveIdentifierSemantics(platform.SQLite),
@@ -958,7 +958,7 @@ func (p *Planner) removeIndexes(diff *types.SchemaDiff, rebuilds tableRebuilds) 
 	return result
 }
 
-func (p *Planner) removeTables(diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) removeTables(diff *difftypes.SchemaDiff) []ast.Node {
 	result := make([]ast.Node, 0, len(diff.TablesRemoved))
 	for _, tableName := range diff.TablesRemoved {
 		result = append(result, ast.NewDropTable(tableName).SetIfExists().SetComment("WARNING: This will delete all data!"))
@@ -967,7 +967,7 @@ func (p *Planner) removeTables(diff *types.SchemaDiff) []ast.Node {
 }
 
 func (p *Planner) addViews(
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	generated *goschema.Database,
 	semantics identifier.Semantics,
 ) []ast.Node {
@@ -981,7 +981,7 @@ func (p *Planner) addViews(
 }
 
 func (p *Planner) modifyViews(
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	generated *goschema.Database,
 	semantics identifier.Semantics,
 ) []ast.Node {
@@ -994,7 +994,7 @@ func (p *Planner) modifyViews(
 	return result
 }
 
-func (p *Planner) removeViews(diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) removeViews(diff *difftypes.SchemaDiff) []ast.Node {
 	result := make([]ast.Node, 0, len(diff.ViewsRemoved))
 	for _, name := range diff.ViewsRemoved {
 		result = append(result, ast.NewDropView(name).SetIfExists())
@@ -1007,7 +1007,7 @@ func findView(views []goschema.View, name string, semantics identifier.Semantics
 }
 
 func (p *Planner) addTriggers(
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	generated *goschema.Database,
 	rebuilds tableRebuilds,
 	semantics identifier.Semantics,
@@ -1027,7 +1027,7 @@ func (p *Planner) addTriggers(
 }
 
 func (p *Planner) modifyTriggers(
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	generated *goschema.Database,
 	rebuilds tableRebuilds,
 	semantics identifier.Semantics,
@@ -1044,7 +1044,7 @@ func (p *Planner) modifyTriggers(
 	return result
 }
 
-func (p *Planner) removeTriggers(diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) removeTriggers(diff *difftypes.SchemaDiff) []ast.Node {
 	result := make([]ast.Node, 0, len(diff.TriggersRemoved))
 	for _, ref := range diff.TriggersRemoved {
 		result = append(result, ast.NewDropTrigger(ref.TriggerName, ref.TableName).SetIfExists())
@@ -1084,12 +1084,12 @@ func unsupportedFeaturef(format string, args ...any) error {
 // then copies the new column out of the old table, where SQLite reads the
 // unknown double-quoted identifier as a STRING LITERAL and writes the column's
 // own name into every row.
-func addedColumnsFor(diff *types.SchemaDiff, tableName string, semantics identifier.Semantics) []string {
+func addedColumnsFor(diff *difftypes.SchemaDiff, tableName string, semantics identifier.Semantics) []string {
 	table := objectlookup.Find(
 		diff.TablesModified,
 		tableName,
 		semantics,
-		func(candidate types.TableDiff) string { return candidate.TableName },
+		func(candidate difftypes.TableDiff) string { return candidate.TableName },
 	)
 	if table == nil {
 		return nil
@@ -1102,7 +1102,7 @@ func addedColumnsFor(diff *types.SchemaDiff, tableName string, semantics identif
 // differently -- ViewName, Name, FunctionName, SequenceName -- so one generic
 // helper would take a closure per call site and read worse than four lines.
 
-func materializedViewNames(diff *types.SchemaDiff) []string {
+func materializedViewNames(diff *difftypes.SchemaDiff) []string {
 	names := make([]string, 0, len(diff.MaterializedViewsModified))
 	for _, view := range diff.MaterializedViewsModified {
 		names = append(names, view.ViewName)
@@ -1110,7 +1110,7 @@ func materializedViewNames(diff *types.SchemaDiff) []string {
 	return names
 }
 
-func extensionNames(diff *types.SchemaDiff) []string {
+func extensionNames(diff *difftypes.SchemaDiff) []string {
 	names := make([]string, 0, len(diff.ExtensionsModified))
 	for _, extension := range diff.ExtensionsModified {
 		names = append(names, extension.Name)
@@ -1118,7 +1118,7 @@ func extensionNames(diff *types.SchemaDiff) []string {
 	return names
 }
 
-func functionNames(diff *types.SchemaDiff) []string {
+func functionNames(diff *difftypes.SchemaDiff) []string {
 	names := make([]string, 0, len(diff.FunctionsModified))
 	for _, function := range diff.FunctionsModified {
 		names = append(names, function.FunctionName)
@@ -1126,7 +1126,7 @@ func functionNames(diff *types.SchemaDiff) []string {
 	return names
 }
 
-func sequenceNames(diff *types.SchemaDiff) []string {
+func sequenceNames(diff *difftypes.SchemaDiff) []string {
 	names := make([]string, 0, len(diff.SequencesModified))
 	for _, sequence := range diff.SequencesModified {
 		names = append(names, sequence.SequenceName)
@@ -1137,7 +1137,7 @@ func sequenceNames(diff *types.SchemaDiff) []string {
 // userDefinedTypeNames lists every domain, composite type and range the diff
 // touches. hasUserDefinedTypeChanges answered the same question as a bool; this
 // answers it with the names the refusal prints.
-func userDefinedTypeNames(diff *types.SchemaDiff) []string {
+func userDefinedTypeNames(diff *difftypes.SchemaDiff) []string {
 	names := slices.Concat(
 		diff.DomainsAdded, diff.DomainsRemoved,
 		diff.CompositeTypesAdded, diff.CompositeTypesRemoved,

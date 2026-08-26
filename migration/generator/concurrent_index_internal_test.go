@@ -16,7 +16,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/capability"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestPlanGeneratedMigrationSpecs_ConcurrentIndexForPopulatedPostgresTable(t *testing.T) {
@@ -49,7 +49,7 @@ func TestPlanGeneratedMigrationSpecs_ConcurrentIndexForPopulatedPostgresTable(t 
 
 func TestPlanGeneratedMigrationSpecs_ReverseOnlyNoTransactionMarksPair(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{EnumsModified: []types.EnumDiff{{
+	diff := &difftypes.SchemaDiff{EnumsModified: []difftypes.EnumDiff{{
 		EnumName: "status", ValuesRemoved: []string{"retired"},
 	}}}
 	desired := &goschema.Database{Enums: []goschema.Enum{{
@@ -193,7 +193,7 @@ func TestPlanGeneratedMigrationSpecs_SplitsTransactionalAndConcurrentIndex(t *te
 func TestPlanGeneratedMigrationSpecs_SplitsPopulatedAndEmptyTableIndexes(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{IndexesAdded: []difftypes.IndexRef{
 		{Name: "idx_users_email", TableName: "users"},
 		{Name: "idx_posts_title", TableName: "posts"},
 	}}
@@ -241,9 +241,9 @@ func TestPlanGeneratedMigrationSpecs_SplitsPopulatedAndEmptyTableIndexes(t *test
 func TestPlanGeneratedMigrationSpecs_LeadsWithTheEnumValueAddition(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		TablesAdded: []string{"users"},
-		EnumsModified: []types.EnumDiff{{
+		EnumsModified: []difftypes.EnumDiff{{
 			EnumName:    "status",
 			ValuesAdded: []string{"archived"},
 		}},
@@ -448,14 +448,14 @@ func indexRemovalDBSchema() *dbschematypes.DBSchema {
 	}
 }
 
-func indexRemovalOnlyDiff() *types.SchemaDiff {
-	return &types.SchemaDiff{IndexesRemoved: []types.IndexRef{
+func indexRemovalOnlyDiff() *difftypes.SchemaDiff {
+	return &difftypes.SchemaDiff{IndexesRemoved: []difftypes.IndexRef{
 		{Name: "idx_users_email", TableName: "users"},
 	}}
 }
 
-func indexOnlyDiff() *types.SchemaDiff {
-	return &types.SchemaDiff{IndexesAdded: []types.IndexRef{
+func indexOnlyDiff() *difftypes.SchemaDiff {
+	return &difftypes.SchemaDiff{IndexesAdded: []difftypes.IndexRef{
 		{Name: "idx_users_email", TableName: "users"},
 	}}
 }

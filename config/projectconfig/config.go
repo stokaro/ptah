@@ -727,7 +727,7 @@ type DiffSkipConfig struct {
 	// read as bool` even on `schema inspect`.
 	//
 	// It has no entry in SkipChangeKinds because Ptah's planner has no
-	// schema-removal change kind to omit: migration/schemadiff/types.SchemaDiff
+	// schema-removal change kind to omit: migration/schemadiff/difftypes.SchemaDiff
 	// carries no removed-schema list and no code path renders DROP SCHEMA into a
 	// plan. Measured on the community binary, `schema apply --dry-run` against a
 	// realm URL holding a schema the desired state omits prints

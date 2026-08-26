@@ -11,7 +11,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/internal/planner/dialects/mysql"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // These tests pin issue #694: a column-type change on a column that participates
@@ -22,12 +22,12 @@ import (
 // schema, so exercising both input shapes here proves up and down are inverses.
 
 // typeChangeDiff builds a single-column type-change diff for one table.
-func typeChangeDiff(table, column, change string) *types.SchemaDiff {
-	return &types.SchemaDiff{
-		TablesModified: []types.TableDiff{
+func typeChangeDiff(table, column, change string) *difftypes.SchemaDiff {
+	return &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{
 			{
 				TableName: table,
-				ColumnsModified: []types.ColumnDiff{
+				ColumnsModified: []difftypes.ColumnDiff{
 					{ColumnName: column, Changes: map[string]string{"type": change}},
 				},
 			},
@@ -107,15 +107,15 @@ func TestPlanner_ColumnTypeChange_DefaultSchemaQualifiedRemovalMatchesBareAdditi
 	diff := typeChangeDiff("posts", "user_id", "INTEGER -> BIGINT")
 	diff.IdentifierSemantics = &semantics
 	diff.ConstraintsAdded = []string{"fk_posts_user_id"}
-	diff.ConstraintsAddedWithTables = []types.ConstraintAdditionInfo{{
+	diff.ConstraintsAddedWithTables = []difftypes.ConstraintAdditionInfo{{
 		Name: "fk_posts_user_id", TableName: "posts", Type: "FOREIGN KEY",
 		Columns: []string{"user_id"}, ForeignTable: "users", ForeignColumns: []string{"id"},
 	}}
 	diff.ConstraintsRemoved = []string{"fk_posts_user_id"}
-	diff.ConstraintsRemovedWithTables = []types.ConstraintRemovalInfo{{
+	diff.ConstraintsRemovedWithTables = []difftypes.ConstraintRemovalInfo{{
 		Name: "fk_posts_user_id", TableName: "app.posts", Type: "FOREIGN KEY",
 	}}
-	diff.ForeignKeysRemovedWithTables = []types.ForeignKeyRemovalInfo{{
+	diff.ForeignKeysRemovedWithTables = []difftypes.ForeignKeyRemovalInfo{{
 		Name: "fk_posts_user_id", TableName: "app.posts", Columns: []string{"user_id"},
 		ForeignTable: "users", ForeignColumns: []string{"id"},
 	}}
@@ -148,7 +148,7 @@ func TestPlanner_ColumnTypeChange_DefaultSchemaQualifiedRemovalMatchesBareAdditi
 func TestPlanner_ColumnTypeChange_IgnoresUnmatchedSupplementalForeignKeyRemoval(t *testing.T) {
 	c := qt.New(t)
 	diff := typeChangeDiff("posts", "user_id", "INTEGER -> BIGINT")
-	diff.ForeignKeysRemovedWithTables = []types.ForeignKeyRemovalInfo{{
+	diff.ForeignKeysRemovedWithTables = []difftypes.ForeignKeyRemovalInfo{{
 		Name: "fk_posts_user_id", TableName: "posts", Columns: []string{"user_id"},
 		ForeignTable: "users", ForeignColumns: []string{"id"},
 	}}
@@ -173,12 +173,12 @@ func TestPlanner_ColumnTypeChange_BothEnds_SingleDropAndReadd(t *testing.T) {
 			// A valid widening changes both ends of the key so the recreated
 			// constraint stays type-compatible. The key must be dropped once,
 			// both columns modified, then the key recreated once.
-			diff := &types.SchemaDiff{
-				TablesModified: []types.TableDiff{
-					{TableName: "posts", ColumnsModified: []types.ColumnDiff{
+			diff := &difftypes.SchemaDiff{
+				TablesModified: []difftypes.TableDiff{
+					{TableName: "posts", ColumnsModified: []difftypes.ColumnDiff{
 						{ColumnName: "user_id", Changes: map[string]string{"type": "INTEGER -> BIGINT"}},
 					}},
-					{TableName: "users", ColumnsModified: []types.ColumnDiff{
+					{TableName: "users", ColumnsModified: []difftypes.ColumnDiff{
 						{ColumnName: "code", Changes: map[string]string{"type": "INTEGER -> BIGINT"}},
 					}},
 				},
@@ -216,9 +216,9 @@ func TestPlanner_ColumnTypeChange_TableLevelForeignKey(t *testing.T) {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := &types.SchemaDiff{
-				TablesModified: []types.TableDiff{
-					{TableName: "orders", ColumnsModified: []types.ColumnDiff{
+			diff := &difftypes.SchemaDiff{
+				TablesModified: []difftypes.TableDiff{
+					{TableName: "orders", ColumnsModified: []difftypes.ColumnDiff{
 						{ColumnName: "tenant_id", Changes: map[string]string{"type": "INTEGER -> BIGINT"}},
 					}},
 				},
@@ -337,19 +337,19 @@ func TestPlanner_ColumnTypeChange_CoincidentFKDefinitionChange(t *testing.T) {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := &types.SchemaDiff{
-				TablesModified: []types.TableDiff{
-					{TableName: "posts", ColumnsModified: []types.ColumnDiff{
+			diff := &difftypes.SchemaDiff{
+				TablesModified: []difftypes.TableDiff{
+					{TableName: "posts", ColumnsModified: []difftypes.ColumnDiff{
 						{ColumnName: "user_id", Changes: map[string]string{"type": "INTEGER -> BIGINT"}},
 					}},
 				},
 				ConstraintsAdded:   []string{"fk_posts_user_id"},
 				ConstraintsRemoved: []string{"fk_posts_user_id"},
-				ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
 					Name: "fk_posts_user_id", TableName: "posts", Type: "FOREIGN KEY",
 					Columns: []string{"user_id"}, ForeignTable: "users", ForeignColumn: "id", OnDelete: "SET NULL",
 				}},
-				ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{{
+				ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{{
 					Name: "fk_posts_user_id", TableName: "posts", Type: "FOREIGN KEY",
 				}},
 			}
@@ -397,22 +397,22 @@ func TestPlanner_ColumnTypeChange_CoHostedSharedFKName(t *testing.T) {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := &types.SchemaDiff{
-				TablesModified: []types.TableDiff{
-					{TableName: "posts", ColumnsModified: []types.ColumnDiff{
+			diff := &difftypes.SchemaDiff{
+				TablesModified: []difftypes.TableDiff{
+					{TableName: "posts", ColumnsModified: []difftypes.ColumnDiff{
 						{ColumnName: "user_id", Changes: map[string]string{"type": "INTEGER -> BIGINT"}},
 					}},
-					{TableName: "comments", ColumnsModified: []types.ColumnDiff{
+					{TableName: "comments", ColumnsModified: []difftypes.ColumnDiff{
 						{ColumnName: "user_id", Changes: map[string]string{"type": "INTEGER -> BIGINT"}},
 					}},
 				},
 				ConstraintsAdded:   []string{"fk_shared"},
 				ConstraintsRemoved: []string{"fk_shared"},
-				ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
 					Name: "fk_shared", TableName: "posts", Type: "FOREIGN KEY",
 					Columns: []string{"user_id"}, ForeignTable: "users", ForeignColumn: "id", OnDelete: "SET NULL",
 				}},
-				ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{{
+				ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{{
 					Name: "fk_shared", TableName: "posts", Type: "FOREIGN KEY",
 				}},
 			}
@@ -460,14 +460,14 @@ func TestPlanner_ColumnTypeChange_RemovedOnlyForeignKey(t *testing.T) {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := &types.SchemaDiff{
-				TablesModified: []types.TableDiff{
-					{TableName: "posts", ColumnsModified: []types.ColumnDiff{
+			diff := &difftypes.SchemaDiff{
+				TablesModified: []difftypes.TableDiff{
+					{TableName: "posts", ColumnsModified: []difftypes.ColumnDiff{
 						{ColumnName: "author_id", Changes: map[string]string{"type": "INTEGER -> BIGINT"}},
 					}},
 				},
 				ConstraintsRemoved: []string{"fk_posts_author"},
-				ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+				ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 					{Name: "fk_posts_author", TableName: "posts", Type: "FOREIGN KEY"},
 				},
 			}
@@ -502,9 +502,9 @@ func TestPlanner_ColumnTypeChange_NonTypeChangeKeepsForeignKey(t *testing.T) {
 
 			// A nullability-only change does not disturb the referential type
 			// match, so no foreign key is dropped.
-			diff := &types.SchemaDiff{
-				TablesModified: []types.TableDiff{
-					{TableName: "posts", ColumnsModified: []types.ColumnDiff{
+			diff := &difftypes.SchemaDiff{
+				TablesModified: []difftypes.TableDiff{
+					{TableName: "posts", ColumnsModified: []difftypes.ColumnDiff{
 						{ColumnName: "user_id", Changes: map[string]string{"nullable": "false -> true"}},
 					}},
 				},

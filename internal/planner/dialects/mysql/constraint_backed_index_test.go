@@ -7,18 +7,18 @@ import (
 
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // uniqueKeyRebuildDiff is a database `UNIQUE KEY uq_users_email (email)` against
 // a desired state that names the same object as a plain index: one object,
 // replaced, which the comparator states as an index addition plus the removal of
 // the index it replaces, with the removal marked as a UNIQUE constraint's.
-func uniqueKeyRebuildDiff() *types.SchemaDiff {
-	return &types.SchemaDiff{
-		IndexesAdded:   []types.IndexRef{{Name: "uq_users_email", TableName: "users"}},
-		IndexesRemoved: []types.IndexRef{{Name: "uq_users_email", TableName: "users"}},
-		ConstraintBackedIndexRemovals: []types.IndexRef{
+func uniqueKeyRebuildDiff() *difftypes.SchemaDiff {
+	return &difftypes.SchemaDiff{
+		IndexesAdded:   []difftypes.IndexRef{{Name: "uq_users_email", TableName: "users"}},
+		IndexesRemoved: []difftypes.IndexRef{{Name: "uq_users_email", TableName: "users"}},
+		ConstraintBackedIndexRemovals: []difftypes.IndexRef{
 			{Name: "uq_users_email", TableName: "users"},
 		},
 	}
@@ -94,8 +94,8 @@ func TestPlanner_MySQLFamilyLeavesAPlainIndexDropUnmarked(t *testing.T) {
 	for _, test := range mysqlFamilyPlannerCases() {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := &types.SchemaDiff{
-				IndexesRemoved: []types.IndexRef{{Name: "idx_users_email", TableName: "users"}},
+			diff := &difftypes.SchemaDiff{
+				IndexesRemoved: []difftypes.IndexRef{{Name: "idx_users_email", TableName: "users"}},
 			}
 
 			nodes, err := test.planner.GenerateMigrationASTChecked(diff, &goschema.Database{})

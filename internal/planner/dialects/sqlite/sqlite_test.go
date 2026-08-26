@@ -11,7 +11,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestPlannerCreatesTableWithInlineConstraints(t *testing.T) {
@@ -45,7 +45,7 @@ func TestPlannerCreatesTableWithInlineConstraints(t *testing.T) {
 			},
 		},
 	}
-	diff := &types.SchemaDiff{TablesAdded: []string{"users"}}
+	diff := &difftypes.SchemaDiff{TablesAdded: []string{"users"}}
 
 	nodes, err := planner.GenerateSchemaDiffAST(diff, generated, platform.SQLite)
 	c.Assert(err, qt.IsNil)
@@ -87,10 +87,10 @@ func TestPlannerCreatesAddedTablesWithQualifiedConstraintDiffs(t *testing.T) {
 			OnDelete:      "CASCADE",
 		}},
 	}
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		TablesAdded:      []string{"posts", "users"},
 		ConstraintsAdded: []string{"fk_posts_user"},
-		ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
 			Name:          "fk_posts_user",
 			TableName:     "posts",
 			Type:          "FOREIGN KEY",
@@ -110,10 +110,10 @@ func TestPlannerCreatesAddedTablesWithQualifiedConstraintDiffs(t *testing.T) {
 
 func TestPlannerDropsTablesWithQualifiedConstraintDiffs(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		TablesRemoved:      []string{"posts"},
 		ConstraintsRemoved: []string{"fk_posts_user"},
-		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{{
+		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{{
 			Name:      "fk_posts_user",
 			TableName: "posts",
 			Type:      "FOREIGN KEY",
@@ -144,11 +144,11 @@ func TestPlannerAddsColumnsAndIndexes(t *testing.T) {
 			},
 		},
 	}
-	diff := &types.SchemaDiff{
-		TablesModified: []types.TableDiff{
+	diff := &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{
 			{TableName: "users", ColumnsAdded: []string{"display_name"}},
 		},
-		IndexesAdded: []types.IndexRef{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "idx_users_display_name", TableName: "users"},
 		},
 	}
@@ -182,7 +182,7 @@ func TestPlannerRebuildsTableWhenDroppingColumn(t *testing.T) {
 			Body:    "BEGIN SELECT NEW.email; END",
 		}},
 	}
-	diff := &types.SchemaDiff{TablesModified: []types.TableDiff{{
+	diff := &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 		TableName:      "users",
 		ColumnsRemoved: []string{"name"},
 	}}}
@@ -215,7 +215,7 @@ func TestPlannerRebuildStepsAsideFromADeclaredTableName(t *testing.T) {
 		},
 		Fields: []goschema.Field{{Name: "id", Type: "INTEGER", StructName: "User", Primary: true}},
 	}
-	diff := &types.SchemaDiff{TablesModified: []types.TableDiff{{
+	diff := &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 		TableName:      "users",
 		ColumnsRemoved: []string{"name"},
 	}}}
@@ -250,7 +250,7 @@ func TestPlannerRejectsUnsafeTableRebuildPreconditions(t *testing.T) {
 			want: `(?s)sqlite: rebuilding table users cannot recreate trigger trg_users_email: its body is itself a CREATE TRIGGER statement.*`,
 		},
 	}
-	diff := &types.SchemaDiff{TablesModified: []types.TableDiff{{
+	diff := &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 		TableName:      "users",
 		ColumnsRemoved: []string{"name"},
 	}}}
@@ -312,7 +312,7 @@ func TestPlannerRebuildsATableOtherTablesReferTo(t *testing.T) {
 			},
 		},
 	}
-	diff := &types.SchemaDiff{TablesModified: []types.TableDiff{{
+	diff := &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 		TableName:      "users",
 		ColumnsRemoved: []string{"name"},
 	}}}
@@ -356,9 +356,9 @@ func TestPlannerRebuildStepsAsideFromARemovedTableName(t *testing.T) {
 		Tables: []goschema.Table{{Name: "users", StructName: "User"}},
 		Fields: []goschema.Field{{Name: "id", Type: "INTEGER", StructName: "User", Primary: true}},
 	}
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		TablesRemoved: []string{"__ptah_rebuild_users"},
-		TablesModified: []types.TableDiff{{
+		TablesModified: []difftypes.TableDiff{{
 			TableName:      "users",
 			ColumnsRemoved: []string{"name"},
 		}},
@@ -422,7 +422,7 @@ func TestPlannerRebuildsForAddColumnShapesAlterCannotExpress(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 			generated := addColumnRebuildSchema(tt.field)
-			diff := &types.SchemaDiff{TablesModified: []types.TableDiff{{
+			diff := &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:    "users",
 				ColumnsAdded: []string{tt.field.Name},
 			}}}
@@ -456,7 +456,7 @@ func TestPlannerRefusesRebuiltNotNullAddWithoutDefault(t *testing.T) {
 
 	field := goschema.Field{Name: "email", Type: "TEXT", StructName: "User", Nullable: false}
 	generated := addColumnRebuildSchema(field)
-	diff := &types.SchemaDiff{TablesModified: []types.TableDiff{{
+	diff := &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 		TableName:    "users",
 		ColumnsAdded: []string{field.Name},
 	}}}
@@ -495,8 +495,8 @@ func addColumnRebuildSchema(field goschema.Field) *goschema.Database {
 func TestPlannerDropsIndexesAndTables(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
-		IndexesRemoved: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_users_email", TableName: "users"},
 		},
 		TablesRemoved: []string{"old_users"},
@@ -538,7 +538,7 @@ func TestPlannerRebuildsTableForChangesAlterTableCannotExpress(t *testing.T) {
 	tests := []struct {
 		name      string
 		generated *goschema.Database
-		diff      *types.SchemaDiff
+		diff      *difftypes.SchemaDiff
 		// wantSQL is the shape-specific detail the rebuild must carry, and
 		// wantNoSQL what it must have left behind. The create/copy/drop/rename
 		// sequence every row shares is asserted once, below.
@@ -551,9 +551,9 @@ func TestPlannerRebuildsTableForChangesAlterTableCannotExpress(t *testing.T) {
 				usersNameField(goschema.Field{Name: "name", Type: "INTEGER", StructName: "User"}),
 				nil,
 			),
-			diff: &types.SchemaDiff{TablesModified: []types.TableDiff{{
+			diff: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:       "users",
-				ColumnsModified: []types.ColumnDiff{{ColumnName: "name", Changes: map[string]string{"type": "text -> integer"}}},
+				ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "name", Changes: map[string]string{"type": "text -> integer"}}},
 			}}},
 			wantSQL: []string{
 				`"name" INTEGER NOT NULL`,
@@ -566,9 +566,9 @@ func TestPlannerRebuildsTableForChangesAlterTableCannotExpress(t *testing.T) {
 				usersNameField(goschema.Field{Name: "name", Type: "TEXT", StructName: "User", Nullable: true}),
 				nil,
 			),
-			diff: &types.SchemaDiff{TablesModified: []types.TableDiff{{
+			diff: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:       "users",
-				ColumnsModified: []types.ColumnDiff{{ColumnName: "name", Changes: map[string]string{"nullable": "false -> true"}}},
+				ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "name", Changes: map[string]string{"nullable": "false -> true"}}},
 			}}},
 			wantSQL:   []string{`"name" TEXT`},
 			wantNoSQL: []string{`"name" TEXT NOT NULL`},
@@ -579,9 +579,9 @@ func TestPlannerRebuildsTableForChangesAlterTableCannotExpress(t *testing.T) {
 				usersNameField(goschema.Field{Name: "name", Type: "TEXT", StructName: "User", Default: "'x'"}),
 				nil,
 			),
-			diff: &types.SchemaDiff{TablesModified: []types.TableDiff{{
+			diff: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName: "users",
-				ColumnsModified: []types.ColumnDiff{{
+				ColumnsModified: []difftypes.ColumnDiff{{
 					ColumnName: "name",
 					Changes:    map[string]string{"nullable": "true -> false", "default": " -> 'x'"},
 				}},
@@ -599,7 +599,7 @@ func TestPlannerRebuildsTableForChangesAlterTableCannotExpress(t *testing.T) {
 					CheckExpression: "length(name) > 2",
 				}},
 			),
-			diff: &types.SchemaDiff{TablesModified: []types.TableDiff{{
+			diff: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:        "users",
 				ConstraintsAdded: []string{"users_name_check"},
 			}}},
@@ -616,9 +616,9 @@ func TestPlannerRebuildsTableForChangesAlterTableCannotExpress(t *testing.T) {
 					CheckExpression: "length(name) > 2",
 				}},
 			),
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				ConstraintsAdded: []string{"users_name_check"},
-				ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
 					Name:            "users_name_check",
 					TableName:       "users",
 					Type:            "CHECK",
@@ -639,17 +639,17 @@ func TestPlannerRebuildsTableForChangesAlterTableCannotExpress(t *testing.T) {
 				}),
 				nil,
 			),
-			diff: &types.SchemaDiff{
-				EnumsModified:      []types.EnumDiff{{EnumName: "enum_users_status", ValuesRemoved: []string{"archived"}}},
+			diff: &difftypes.SchemaDiff{
+				EnumsModified:      []difftypes.EnumDiff{{EnumName: "enum_users_status", ValuesRemoved: []string{"archived"}}},
 				ConstraintsAdded:   []string{"users_status_check"},
 				ConstraintsRemoved: []string{"users_status_check"},
-				ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
 					Name:            "users_status_check",
 					TableName:       "users",
 					Type:            "CHECK",
 					CheckExpression: "status IN ('draft', 'published')",
 				}},
-				ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{{
+				ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{{
 					Name:      "users_status_check",
 					TableName: "users",
 					Type:      "CHECK",
@@ -664,7 +664,7 @@ func TestPlannerRebuildsTableForChangesAlterTableCannotExpress(t *testing.T) {
 				usersNameField(goschema.Field{Name: "nickname", Type: "TEXT", StructName: "User", Nullable: true}),
 				nil,
 			),
-			diff: &types.SchemaDiff{TablesModified: []types.TableDiff{{
+			diff: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:      "users",
 				ColumnsAdded:   []string{"nickname"},
 				ColumnsRemoved: []string{"email"},
@@ -710,7 +710,7 @@ func TestPlannerRebuildRefusesAddedNotNullColumnWithoutDefault(t *testing.T) {
 		usersNameField(goschema.Field{Name: "email", Type: "TEXT", StructName: "User"}),
 		nil,
 	)
-	diff := &types.SchemaDiff{TablesModified: []types.TableDiff{{
+	diff := &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 		TableName:      "users",
 		ColumnsAdded:   []string{"email"},
 		ColumnsRemoved: []string{"legacy"},
@@ -754,13 +754,13 @@ func TestPlannerRebuildEmitsIndexesAndTriggersOnce(t *testing.T) {
 			Body:    "BEGIN SELECT NEW.name; END",
 		}},
 	}
-	diff := &types.SchemaDiff{
-		TablesModified: []types.TableDiff{{
+	diff := &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{{
 			TableName:       "users",
-			ColumnsModified: []types.ColumnDiff{{ColumnName: "name", Changes: map[string]string{"type": "text -> integer"}}},
+			ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "name", Changes: map[string]string{"type": "text -> integer"}}},
 		}},
-		IndexesAdded:  []types.IndexRef{{Name: "idx_users_name", TableName: "users"}},
-		TriggersAdded: []types.TriggerRef{{TriggerName: "trg_users_name", TableName: "users"}},
+		IndexesAdded:  []difftypes.IndexRef{{Name: "idx_users_name", TableName: "users"}},
+		TriggersAdded: []difftypes.TriggerRef{{TriggerName: "trg_users_name", TableName: "users"}},
 	}
 
 	sql, err := planner.GenerateSchemaDiffSQL(diff, generated, platform.SQLite)
@@ -800,9 +800,9 @@ func TestPlannerEmitsTriggerChangesWithoutRebuild(t *testing.T) {
 			},
 		},
 	}
-	diff := &types.SchemaDiff{
-		TriggersAdded:    []types.TriggerRef{{TriggerName: "trg_users_insert", TableName: "users"}},
-		TriggersModified: []types.TriggerDiff{{TriggerName: "trg_users_update", TableName: "users"}},
+	diff := &difftypes.SchemaDiff{
+		TriggersAdded:    []difftypes.TriggerRef{{TriggerName: "trg_users_insert", TableName: "users"}},
+		TriggersModified: []difftypes.TriggerDiff{{TriggerName: "trg_users_update", TableName: "users"}},
 	}
 
 	sql, err := planner.GenerateSchemaDiffSQL(diff, generated, platform.SQLite)
@@ -814,7 +814,7 @@ func TestPlannerEmitsTriggerChangesWithoutRebuild(t *testing.T) {
 
 func TestPlannerRejectsUnqualifiedExistingTableConstraintChanges(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{ConstraintsAdded: []string{"users_name_key"}}
+	diff := &difftypes.SchemaDiff{ConstraintsAdded: []string{"users_name_key"}}
 
 	nodes, err := planner.GenerateSchemaDiffAST(diff, &goschema.Database{}, platform.SQLite)
 
@@ -828,7 +828,7 @@ func TestPlannerRejectsUnqualifiedExistingTableConstraintChanges(t *testing.T) {
 
 func TestPlannerRejectsExtensionPlacementChanges(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{ExtensionsModified: []types.ExtensionDiff{{
+	diff := &difftypes.SchemaDiff{ExtensionsModified: []difftypes.ExtensionDiff{{
 		Name: "pgcrypto", FromSchema: "public", ToSchema: "extensions",
 	}}}
 
@@ -859,7 +859,7 @@ func TestPlannerRejectsSQLiteExcludeConstraint(t *testing.T) {
 			ExcludeElements: "room_id WITH =",
 		}},
 	}
-	diff := &types.SchemaDiff{TablesAdded: []string{"bookings"}}
+	diff := &difftypes.SchemaDiff{TablesAdded: []string{"bookings"}}
 
 	nodes, err := planner.GenerateSchemaDiffAST(diff, generated, platform.SQLite)
 
@@ -897,13 +897,13 @@ func TestPlannerRebuildExcludesColumnsAddedBesideAConstraintChange(t *testing.T)
 			{Name: "note", Type: "TEXT", StructName: "User", Nullable: true},
 		},
 	}
-	diff := &types.SchemaDiff{
-		TablesModified: []types.TableDiff{{
+	diff := &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{{
 			TableName:    "users",
 			ColumnsAdded: []string{"note"},
 		}},
 		ConstraintsAdded: []string{"uq_users_name"},
-		ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
 			Name:      "uq_users_name",
 			TableName: "users",
 			Type:      "UNIQUE",

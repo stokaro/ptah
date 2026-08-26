@@ -18,27 +18,27 @@ import (
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/migration/diffpolicy"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestSplitConcurrentIndexDiff_PreservesTableQualifiedIdentity(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{}
-	diff.SetIndexAdditions([]types.IndexRef{
+	diff := &difftypes.SchemaDiff{}
+	diff.SetIndexAdditions([]difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "users"},
 		{Name: "idx_shared", TableName: "orders"},
 	})
-	got := splitConcurrentIndexDiff(diff, []types.IndexRef{
+	got := splitConcurrentIndexDiff(diff, []difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "users"},
 	}, nil)
 
-	c.Assert(got.transactional.IndexAdditions(), qt.DeepEquals, []types.IndexRef{
+	c.Assert(got.transactional.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "orders"},
 	})
-	c.Assert(got.noTransaction.IndexAdditions(), qt.DeepEquals, []types.IndexRef{
+	c.Assert(got.noTransaction.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "users"},
 	})
-	c.Assert(diff.IndexAdditions(), qt.DeepEquals, []types.IndexRef{
+	c.Assert(diff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "orders"},
 		{Name: "idx_shared", TableName: "users"},
 	})
@@ -46,8 +46,8 @@ func TestSplitConcurrentIndexDiff_PreservesTableQualifiedIdentity(t *testing.T) 
 
 func TestConcurrentIndexRefsForPopulatedTables_SelectsExactIndex(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{}
-	diff.SetIndexAdditions([]types.IndexRef{
+	diff := &difftypes.SchemaDiff{}
+	diff.SetIndexAdditions([]difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "users"},
 		{Name: "idx_shared", TableName: "orders"},
 	})
@@ -64,18 +64,18 @@ func TestConcurrentIndexRefsForPopulatedTables_SelectsExactIndex(t *testing.T) {
 		},
 	)
 
-	c.Assert(got, qt.DeepEquals, []types.IndexRef{
+	c.Assert(got, qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "users"},
 	})
 }
 
 func TestPlanGeneratedMigrationSpecs_SkipDropIndexPreservesPostgresSchemaMove(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{}
-	diff.SetIndexAdditions([]types.IndexRef{
+	diff := &difftypes.SchemaDiff{}
+	diff.SetIndexAdditions([]difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "app.orders"},
 	})
-	diff.SetIndexRemovals([]types.IndexRef{
+	diff.SetIndexRemovals([]difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "app.users"},
 	})
 	generated := &goschema.Database{
@@ -125,21 +125,21 @@ func TestPlanGeneratedMigrationSpecs_SkipDropIndexPreservesPostgresSchemaMove(t 
 
 func TestReverseSchemaDiff_PreservesTableQualifiedIndexIdentity(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{}
-	diff.SetIndexAdditions([]types.IndexRef{
+	diff := &difftypes.SchemaDiff{}
+	diff.SetIndexAdditions([]difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "users"},
 		{Name: "idx_shared", TableName: "orders"},
 	})
-	diff.SetIndexRemovals([]types.IndexRef{
+	diff.SetIndexRemovals([]difftypes.IndexRef{
 		{Name: "idx_legacy", TableName: "audit.events"},
 	})
 
 	got := reverseSchemaDiff(diff)
 
-	c.Assert(got.IndexAdditions(), qt.DeepEquals, []types.IndexRef{
+	c.Assert(got.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "idx_legacy", TableName: "audit.events"},
 	})
-	c.Assert(got.IndexRemovals(), qt.DeepEquals, []types.IndexRef{
+	c.Assert(got.IndexRemovals(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "orders"},
 		{Name: "idx_shared", TableName: "users"},
 	})
@@ -147,15 +147,15 @@ func TestReverseSchemaDiff_PreservesTableQualifiedIndexIdentity(t *testing.T) {
 
 func TestCloneSchemaDiff_ClonesTableQualifiedIndexRepresentations(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{}
-	diff.SetIndexAdditions([]types.IndexRef{
+	diff := &difftypes.SchemaDiff{}
+	diff.SetIndexAdditions([]difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "users"},
 	})
 
 	got := cloneSchemaDiff(diff)
-	got.IndexesAdded[0] = types.IndexRef{Name: "idx_changed", TableName: "orders"}
+	got.IndexesAdded[0] = difftypes.IndexRef{Name: "idx_changed", TableName: "orders"}
 
-	c.Assert(diff.IndexesAdded, qt.DeepEquals, []types.IndexRef{
+	c.Assert(diff.IndexesAdded, qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "users"},
 	})
 }
@@ -169,12 +169,12 @@ func TestIndexTransforms_PreserveIdentifierSemantics(t *testing.T) {
 			{Name: "IDX_Email", Key: "IDX_Email"},
 			{Name: "idx_email", Key: "IDX_Email"},
 		})
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		IdentifierSemantics: &semantics,
-		IndexesAdded: []types.IndexRef{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "IDX_Email", TableName: "dbo.users"},
 		},
-		IndexesRemoved: []types.IndexRef{
+		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_email", TableName: "dbo.users"},
 		},
 	}
@@ -206,11 +206,11 @@ func TestIndexTransforms_PreserveIdentifierSemantics(t *testing.T) {
 
 func TestGenerateDownMigrationSQL_SQLServerPreservesFilteredIndexPredicate(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{
-		IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "idx_active_users", TableName: "dbo.users"},
 		},
-		IndexesRemoved: []types.IndexRef{
+		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_active_users", TableName: "dbo.users"},
 		},
 	}
@@ -262,9 +262,9 @@ func TestGenerateDownMigrationSQL_SQLServerPreservesFilteredIndexPredicate(t *te
 
 func TestAddMySQLFamilyForeignKeyBackingIndexRemovals_PreservesDuplicateNames(t *testing.T) {
 	c := qt.New(t)
-	reverseDiff := &types.SchemaDiff{}
-	upDiff := &types.SchemaDiff{
-		ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{
+	reverseDiff := &difftypes.SchemaDiff{}
+	upDiff := &difftypes.SchemaDiff{
+		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
 			{Name: "fk_tenant", TableName: "orders", Type: "FOREIGN KEY"},
 			{Name: "fk_tenant", TableName: "users", Type: "FOREIGN KEY"},
 		},
@@ -282,11 +282,11 @@ func TestAddMySQLFamilyForeignKeyBackingIndexRemovals_PreservesDuplicateNames(t 
 	)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(reverseDiff.IndexesRemoved, qt.DeepEquals, []types.IndexRef{
+	c.Assert(reverseDiff.IndexesRemoved, qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "fk_tenant", TableName: "orders"},
 		{Name: "fk_tenant", TableName: "users"},
 	})
-	c.Assert(reverseDiff.IndexRemovals(), qt.DeepEquals, []types.IndexRef{
+	c.Assert(reverseDiff.IndexRemovals(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "fk_tenant", TableName: "orders"},
 		{Name: "fk_tenant", TableName: "users"},
 	})
@@ -294,9 +294,9 @@ func TestAddMySQLFamilyForeignKeyBackingIndexRemovals_PreservesDuplicateNames(t 
 
 func TestAddMySQLFamilyForeignKeyBackingIndexRemovals_DoesNotCollideOnDots(t *testing.T) {
 	c := qt.New(t)
-	reverseDiff := &types.SchemaDiff{}
-	upDiff := &types.SchemaDiff{
-		ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{
+	reverseDiff := &difftypes.SchemaDiff{}
+	upDiff := &difftypes.SchemaDiff{
+		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
 			{Name: "c", TableName: "a.b", Type: "FOREIGN KEY"},
 		},
 	}
@@ -315,7 +315,7 @@ func TestAddMySQLFamilyForeignKeyBackingIndexRemovals_DoesNotCollideOnDots(t *te
 	)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(reverseDiff.IndexRemovals(), qt.DeepEquals, []types.IndexRef{
+	c.Assert(reverseDiff.IndexRemovals(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "c", TableName: "a.b"},
 	})
 }

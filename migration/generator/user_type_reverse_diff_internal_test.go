@@ -11,7 +11,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestReverseSchemaDiff_ModifiedUserTypesCarryTheDownDirectionsCurrentShape
@@ -32,11 +32,11 @@ func TestReverseSchemaDiff_ModifiedUserTypesCarryTheDownDirectionsCurrentShape(t
 			{Name: "cc", Fields: []goschema.CompositeTypeField{{Name: "f", Type: "dd"}}},
 		},
 	}
-	forward := &types.SchemaDiff{
-		DomainsModified: []types.DomainDiff{
+	forward := &difftypes.SchemaDiff{
+		DomainsModified: []difftypes.DomainDiff{
 			{DomainName: "dd", Changes: map[string]string{"type": "cc -> integer"}, CurrentBaseType: "cc"},
 		},
-		CompositeTypesModified: []types.CompositeTypeDiff{
+		CompositeTypesModified: []difftypes.CompositeTypeDiff{
 			{TypeName: "cc", Changes: map[string]string{"fields": "f integer -> f dd"}, CurrentFieldTypes: []string{"integer"}},
 		},
 	}
@@ -57,11 +57,11 @@ func TestReverseSchemaDiff_ModifiedUserTypesCarryTheDownDirectionsCurrentShape(t
 func TestReverseSchemaDiff_ModifiedUserTypesWithoutATargetSchema(t *testing.T) {
 	c := qt.New(t)
 
-	forward := &types.SchemaDiff{
-		DomainsModified: []types.DomainDiff{
+	forward := &difftypes.SchemaDiff{
+		DomainsModified: []difftypes.DomainDiff{
 			{DomainName: "dd", Changes: map[string]string{"type": "cc -> integer"}, CurrentBaseType: "cc"},
 		},
-		CompositeTypesModified: []types.CompositeTypeDiff{
+		CompositeTypesModified: []difftypes.CompositeTypeDiff{
 			{TypeName: "cc", Changes: map[string]string{"fields": "f integer -> f dd"}, CurrentFieldTypes: []string{"integer"}},
 		},
 	}

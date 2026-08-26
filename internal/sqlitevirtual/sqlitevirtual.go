@@ -137,7 +137,7 @@ import (
 	"go.5x5.cz/ptah/internal/planner/sqliterebuild"
 	"go.5x5.cz/ptah/internal/sqlitemodule"
 	"go.5x5.cz/ptah/migration/diffpolicy"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // AllowDropEnvVar plans the removal of a live virtual table the desired state

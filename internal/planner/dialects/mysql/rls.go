@@ -7,7 +7,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/mssqlpolicy"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // planRLS emits real row-level-security DDL for a target in this family that
@@ -23,7 +23,7 @@ import (
 // table its predicate filters and the engine resolves that name at creation
 // time, so the table has to exist first -- the opposite of a sequence, which a
 // column default may reference and which therefore goes first.
-func (p *Planner) planRLS(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) planRLS(result []ast.Node, diff *difftypes.SchemaDiff, generated *goschema.Database) []ast.Node {
 	if !p.capabilities().Has(capability.RowLevelSecurity) {
 		return result
 	}
@@ -76,7 +76,7 @@ func (p *Planner) planRLS(result []ast.Node, diff *types.SchemaDiff, generated *
 // It runs before table removal, not after. A security policy holds a
 // schema-bound reference to the table it filters, so the table cannot be
 // dropped while the policy stands.
-func (p *Planner) removeRLS(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) removeRLS(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	if !p.capabilities().Has(capability.RowLevelSecurity) {
 		return result
 	}

@@ -9,7 +9,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/internal/rlsscope"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestNewResolver_RefusesADiffItCannotPlan covers the refusals the PostgreSQL
@@ -22,7 +22,7 @@ func TestNewResolver_RefusesADiffItCannotPlan(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		diff      *types.SchemaDiff
+		diff      *difftypes.SchemaDiff
 		generated *goschema.Database
 		wantError string
 	}{
@@ -34,24 +34,24 @@ func TestNewResolver_RefusesADiffItCannotPlan(t *testing.T) {
 		},
 		{
 			name: "an addition with no owning table",
-			diff: &types.SchemaDiff{
-				RLSPoliciesAdded: []types.RLSPolicyRef{{PolicyName: "p"}},
+			diff: &difftypes.SchemaDiff{
+				RLSPoliciesAdded: []difftypes.RLSPolicyRef{{PolicyName: "p"}},
 			},
 			generated: declared(),
 			wantError: `invalid schema diff: added RLS policy reference at position 0 requires a policy name and owning table`,
 		},
 		{
 			name: "an addition with no policy name",
-			diff: &types.SchemaDiff{
-				RLSPoliciesAdded: []types.RLSPolicyRef{{TableName: "orders"}},
+			diff: &difftypes.SchemaDiff{
+				RLSPoliciesAdded: []difftypes.RLSPolicyRef{{TableName: "orders"}},
 			},
 			generated: declared(),
 			wantError: `invalid schema diff: added RLS policy reference at position 0 requires a policy name and owning table`,
 		},
 		{
 			name: "an addition the target schema does not hold",
-			diff: &types.SchemaDiff{
-				RLSPoliciesAdded: []types.RLSPolicyRef{{PolicyName: "p", TableName: "orders"}},
+			diff: &difftypes.SchemaDiff{
+				RLSPoliciesAdded: []difftypes.RLSPolicyRef{{PolicyName: "p", TableName: "orders"}},
 			},
 			generated: declared(),
 			wantError: `invalid schema diff: added RLS policy p on table orders at position 0 is missing from the target schema`,
@@ -61,7 +61,7 @@ func TestNewResolver_RefusesADiffItCannotPlan(t *testing.T) {
 			// policy under PostgreSQL's rules, so the map would keep whichever
 			// came last and the plan would depend on declaration order.
 			name: "a target schema with two declarations of one policy",
-			diff: &types.SchemaDiff{},
+			diff: &difftypes.SchemaDiff{},
 			generated: declared(
 				goschema.RLSPolicy{Name: "p", Table: "orders"},
 				goschema.RLSPolicy{Name: "p", Table: "public.orders"},
@@ -70,7 +70,7 @@ func TestNewResolver_RefusesADiffItCannotPlan(t *testing.T) {
 		},
 		{
 			name:      "a target declaration with no owning table",
-			diff:      &types.SchemaDiff{},
+			diff:      &difftypes.SchemaDiff{},
 			generated: declared(goschema.RLSPolicy{Name: "p"}),
 			wantError: `invalid schema diff: target RLS policy reference at position 0 requires a policy name and owning table`,
 		},
@@ -96,7 +96,7 @@ func TestResolver_ResolveOnANilResolver(t *testing.T) {
 	c := qt.New(t)
 	var resolver *rlsscope.Resolver
 
-	policy, err := resolver.Resolve(types.RLSPolicyRef{PolicyName: "p", TableName: "orders"})
+	policy, err := resolver.Resolve(difftypes.RLSPolicyRef{PolicyName: "p", TableName: "orders"})
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 	c.Assert(err, qt.ErrorMatches, `invalid schema diff: no validated target RLS policies are available`)
@@ -126,12 +126,12 @@ func TestResolver_ResolvesEitherDefaultSchemaSpelling(t *testing.T) {
 					{Name: "p", Table: test.declared, UsingExpression: "tenant_id = 1"},
 				},
 			}
-			ref := types.RLSPolicyRef{PolicyName: "p", TableName: test.reference}
+			ref := difftypes.RLSPolicyRef{PolicyName: "p", TableName: test.reference}
 
 			resolver, err := rlsscope.NewResolverWithSemantics(
 				"postgres",
 				identifier.ForDialect("postgres"),
-				&types.SchemaDiff{RLSPoliciesAdded: []types.RLSPolicyRef{ref}},
+				&difftypes.SchemaDiff{RLSPoliciesAdded: []difftypes.RLSPolicyRef{ref}},
 				generated,
 			)
 			c.Assert(err, qt.IsNil)
@@ -170,9 +170,9 @@ func TestResolver_KeepsOnePolicyNamePerTable(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			ref := types.RLSPolicyRef{PolicyName: "tenant_isolation", TableName: test.table}
+			ref := difftypes.RLSPolicyRef{PolicyName: "tenant_isolation", TableName: test.table}
 
-			resolver, err := rlsscope.NewResolver("postgres", &types.SchemaDiff{}, generated)
+			resolver, err := rlsscope.NewResolver("postgres", &difftypes.SchemaDiff{}, generated)
 			c.Assert(err, qt.IsNil)
 
 			policy, err := resolver.Resolve(ref)

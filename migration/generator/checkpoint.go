@@ -19,7 +19,7 @@ import (
 	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	schemadifftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // generateCheckpoint renders a full cumulative schema as a checkpoint migration
@@ -84,7 +84,7 @@ func generateCheckpointFromDiff(
 	schema *goschema.Database,
 	empty *dbschematypes.DBSchema,
 	info dbschematypes.DBInfo,
-	diff *schemadifftypes.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	qualifierValue string,
 ) (upSQL, downSQL string, err error) {
 	capabilities := info.Capabilities

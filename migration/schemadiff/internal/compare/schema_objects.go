@@ -18,7 +18,7 @@ import (
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/oracleroutine"
 	"go.5x5.cz/ptah/internal/tableref"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // Functions performs PostgreSQL function comparison between generated and database schemas.

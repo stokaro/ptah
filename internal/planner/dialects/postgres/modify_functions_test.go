@@ -8,14 +8,14 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestPlanner_GenerateMigrationAST_FunctionsModified_EmitsCreateOrReplace(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
-		FunctionsModified: []types.FunctionDiff{
+	diff := &difftypes.SchemaDiff{
+		FunctionsModified: []difftypes.FunctionDiff{
 			{
 				FunctionName: "set_tenant_context",
 				Changes: map[string]string{
@@ -63,8 +63,8 @@ func TestPlanner_GenerateMigrationAST_FunctionsModified_SkippedWhenTargetMissing
 
 	// FunctionsModified references a function not present in generated.Functions:
 	// the planner must skip silently rather than emitting a malformed CREATE.
-	diff := &types.SchemaDiff{
-		FunctionsModified: []types.FunctionDiff{
+	diff := &difftypes.SchemaDiff{
+		FunctionsModified: []difftypes.FunctionDiff{
 			{
 				FunctionName: "ghost",
 				Changes:      map[string]string{"body": "x -> y"},

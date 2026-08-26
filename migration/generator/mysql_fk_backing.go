@@ -9,11 +9,11 @@ import (
 	"go.5x5.cz/ptah/core/platform/identifier"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/indexscope"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 type mysqlIndexCandidate struct {
-	ref            types.IndexRef
+	ref            difftypes.IndexRef
 	keyColumns     []string
 	positionsKnown bool
 	incomplete     bool
@@ -29,7 +29,7 @@ const (
 )
 
 type mysqlForeignKeyState struct {
-	ref     types.IndexRef
+	ref     difftypes.IndexRef
 	columns []string
 	added   bool
 }
@@ -39,16 +39,16 @@ type mysqlForeignKeyIndexSimulation struct {
 	semantics         identifier.Semantics
 	indexes           []mysqlIndexCandidate
 	foreignKeys       []mysqlForeignKeyState
-	reverseRemovals   []types.IndexRef
-	reverseRemovalSet map[types.IndexRef]struct{}
-	autoRemovalSet    map[types.IndexRef]struct{}
+	reverseRemovals   []difftypes.IndexRef
+	reverseRemovalSet map[difftypes.IndexRef]struct{}
+	autoRemovalSet    map[difftypes.IndexRef]struct{}
 	createdTables     map[string]struct{}
 	addedColumns      map[string]map[string]struct{}
 }
 
 func addMySQLFamilyForeignKeyBackingIndexRemovals(
 	reverseDiff,
-	upDiff *types.SchemaDiff,
+	upDiff *difftypes.SchemaDiff,
 	current *dbschematypes.DBSchema,
 	dialect string,
 	forwardNodes []ast.Node,
@@ -67,7 +67,7 @@ func addMySQLFamilyForeignKeyBackingIndexRemovals(
 		foreignKeys:       mysqlCurrentForeignKeys(current),
 		reverseRemovals:   reverseDiff.IndexRemovals(),
 		reverseRemovalSet: mysqlIndexIdentitySet(reverseDiff.IndexRemovals(), semantics),
-		autoRemovalSet:    make(map[types.IndexRef]struct{}),
+		autoRemovalSet:    make(map[difftypes.IndexRef]struct{}),
 		createdTables:     make(map[string]struct{}),
 		addedColumns:      make(map[string]map[string]struct{}),
 	}
@@ -87,7 +87,7 @@ func (s *mysqlForeignKeyIndexSimulation) applyNode(node ast.Node) error {
 	case *ast.IndexNode:
 		s.addIndex(mysqlIndexCandidateFromNode(typed))
 	case *ast.DropIndexNode:
-		return s.removeIndex(types.IndexRef{Name: typed.Name, TableName: typed.Table})
+		return s.removeIndex(difftypes.IndexRef{Name: typed.Name, TableName: typed.Table})
 	case *ast.AlterTableNode:
 		return s.applyAlterTable(typed)
 	case *ast.DropTableNode:
@@ -280,7 +280,7 @@ func (s *mysqlForeignKeyIndexSimulation) addForeignKey(
 	constraint *ast.ConstraintNode,
 ) error {
 	foreignKey := mysqlForeignKeyState{
-		ref:     types.IndexRef{Name: constraint.Name, TableName: table},
+		ref:     difftypes.IndexRef{Name: constraint.Name, TableName: table},
 		columns: slices.Clone(constraint.Columns),
 		added:   true,
 	}
@@ -305,7 +305,7 @@ func (s *mysqlForeignKeyIndexSimulation) addForeignKey(
 	return nil
 }
 
-func (s *mysqlForeignKeyIndexSimulation) hasSameNamedIndex(ref types.IndexRef) bool {
+func (s *mysqlForeignKeyIndexSimulation) hasSameNamedIndex(ref difftypes.IndexRef) bool {
 	return slices.ContainsFunc(s.indexes, func(candidate mysqlIndexCandidate) bool {
 		return s.sameIndexIdentity(candidate.ref, ref)
 	})
@@ -341,14 +341,14 @@ func (s *mysqlForeignKeyIndexSimulation) dropConstraint(
 		s.foreignKeys = slices.DeleteFunc(s.foreignKeys, func(foreignKey mysqlForeignKeyState) bool {
 			return s.sameIndexIdentity(
 				foreignKey.ref,
-				types.IndexRef{Name: operation.ConstraintName, TableName: table},
+				difftypes.IndexRef{Name: operation.ConstraintName, TableName: table},
 			)
 		})
 		return nil
 	case operation.PrimaryKey:
-		return s.removeIndex(types.IndexRef{Name: "PRIMARY", TableName: table})
+		return s.removeIndex(difftypes.IndexRef{Name: "PRIMARY", TableName: table})
 	case operation.Unique:
-		return s.removeIndex(types.IndexRef{Name: operation.ConstraintName, TableName: table})
+		return s.removeIndex(difftypes.IndexRef{Name: operation.ConstraintName, TableName: table})
 	default:
 		return nil
 	}
@@ -379,19 +379,19 @@ func (s *mysqlForeignKeyIndexSimulation) discardSupersededGeneratedIndexes(candi
 	}
 }
 
-func (s *mysqlForeignKeyIndexSimulation) removeAutoReverseRemoval(ref types.IndexRef) {
+func (s *mysqlForeignKeyIndexSimulation) removeAutoReverseRemoval(ref difftypes.IndexRef) {
 	identity := indexscope.IdentityKeyWithSemantics(s.semantics, ref)
 	if _, auto := s.autoRemovalSet[identity]; !auto {
 		return
 	}
 	delete(s.autoRemovalSet, identity)
 	delete(s.reverseRemovalSet, identity)
-	s.reverseRemovals = slices.DeleteFunc(s.reverseRemovals, func(removal types.IndexRef) bool {
+	s.reverseRemovals = slices.DeleteFunc(s.reverseRemovals, func(removal difftypes.IndexRef) bool {
 		return s.sameIndexIdentity(removal, ref)
 	})
 }
 
-func (s *mysqlForeignKeyIndexSimulation) removeIndex(ref types.IndexRef) error {
+func (s *mysqlForeignKeyIndexSimulation) removeIndex(ref difftypes.IndexRef) error {
 	s.indexes = slices.DeleteFunc(s.indexes, func(candidate mysqlIndexCandidate) bool {
 		return s.sameIndexIdentity(candidate.ref, ref)
 	})
@@ -418,7 +418,7 @@ func (s *mysqlForeignKeyIndexSimulation) validateForeignKeyCoverage() error {
 	return nil
 }
 
-func (s *mysqlForeignKeyIndexSimulation) sameIndexIdentity(left, right types.IndexRef) bool {
+func (s *mysqlForeignKeyIndexSimulation) sameIndexIdentity(left, right difftypes.IndexRef) bool {
 	return indexscope.IdentityKeyWithSemantics(s.semantics, left) ==
 		indexscope.IdentityKeyWithSemantics(s.semantics, right)
 }
@@ -468,7 +468,7 @@ func mysqlCurrentKeyCandidates(schema *dbschematypes.DBSchema) []mysqlIndexCandi
 	for _, index := range schema.Indexes {
 		columns, positionsKnown := mysqlDatabaseIndexKeyColumns(index)
 		candidates = append(candidates, mysqlIndexCandidate{
-			ref: types.IndexRef{
+			ref: difftypes.IndexRef{
 				Name:      index.Name,
 				TableName: index.QualifiedTableName(),
 			},
@@ -481,7 +481,7 @@ func mysqlCurrentKeyCandidates(schema *dbschematypes.DBSchema) []mysqlIndexCandi
 		switch constraint.Type {
 		case "PRIMARY KEY":
 			candidates = append(candidates, mysqlIndexCandidate{
-				ref: types.IndexRef{
+				ref: difftypes.IndexRef{
 					Name:      "PRIMARY",
 					TableName: constraint.QualifiedTableName(),
 				},
@@ -490,7 +490,7 @@ func mysqlCurrentKeyCandidates(schema *dbschematypes.DBSchema) []mysqlIndexCandi
 			})
 		case "UNIQUE":
 			candidates = append(candidates, mysqlIndexCandidate{
-				ref: types.IndexRef{
+				ref: difftypes.IndexRef{
 					Name:      constraint.Name,
 					TableName: constraint.QualifiedTableName(),
 				},
@@ -512,7 +512,7 @@ func mysqlCurrentForeignKeys(schema *dbschematypes.DBSchema) []mysqlForeignKeySt
 			continue
 		}
 		foreignKeys = append(foreignKeys, mysqlForeignKeyState{
-			ref: types.IndexRef{
+			ref: difftypes.IndexRef{
 				Name:      constraint.Name,
 				TableName: constraint.QualifiedTableName(),
 			},
@@ -546,7 +546,7 @@ func mysqlIndexCandidateFromNode(index *ast.IndexNode) mysqlIndexCandidate {
 		}
 	}
 	return mysqlIndexCandidate{
-		ref:            types.IndexRef{Name: index.Name, TableName: index.Table},
+		ref:            difftypes.IndexRef{Name: index.Name, TableName: index.Table},
 		keyColumns:     columns,
 		positionsKnown: true,
 	}
@@ -567,7 +567,7 @@ func mysqlConstraintIndexCandidate(
 		}
 	}
 	return mysqlIndexCandidate{
-		ref:            types.IndexRef{Name: name, TableName: table},
+		ref:            difftypes.IndexRef{Name: name, TableName: table},
 		keyColumns:     columns,
 		positionsKnown: true,
 	}
@@ -575,7 +575,7 @@ func mysqlConstraintIndexCandidate(
 
 func mysqlColumnIndexCandidate(table, name, column string) mysqlIndexCandidate {
 	return mysqlIndexCandidate{
-		ref:            types.IndexRef{Name: name, TableName: table},
+		ref:            difftypes.IndexRef{Name: name, TableName: table},
 		keyColumns:     []string{column},
 		positionsKnown: true,
 	}
@@ -585,12 +585,12 @@ func mysqlForeignKeyCoverage(
 	candidates []mysqlIndexCandidate,
 	foreignKey mysqlForeignKeyState,
 	semantics identifier.Semantics,
-) (mysqlIndexCoverage, types.IndexRef) {
-	var ambiguous types.IndexRef
+) (mysqlIndexCoverage, difftypes.IndexRef) {
+	var ambiguous difftypes.IndexRef
 	for _, candidate := range candidates {
 		coverage := mysqlCandidateForeignKeyCoverage(candidate, foreignKey, semantics)
 		if coverage == mysqlIndexCovers {
-			return coverage, types.IndexRef{}
+			return coverage, difftypes.IndexRef{}
 		}
 		if coverage == mysqlIndexCoverageAmbiguous && ambiguous.Name == "" {
 			ambiguous = candidate.ref
@@ -599,7 +599,7 @@ func mysqlForeignKeyCoverage(
 	if ambiguous.Name != "" {
 		return mysqlIndexCoverageAmbiguous, ambiguous
 	}
-	return mysqlIndexDoesNotCover, types.IndexRef{}
+	return mysqlIndexDoesNotCover, difftypes.IndexRef{}
 }
 
 func mysqlCandidateForeignKeyCoverage(
@@ -643,10 +643,10 @@ func mysqlIndexColumnsCoverForeignKey(
 }
 
 func mysqlIndexIdentitySet(
-	refs []types.IndexRef,
+	refs []difftypes.IndexRef,
 	semantics identifier.Semantics,
-) map[types.IndexRef]struct{} {
-	set := make(map[types.IndexRef]struct{}, len(refs))
+) map[difftypes.IndexRef]struct{} {
+	set := make(map[difftypes.IndexRef]struct{}, len(refs))
 	for _, ref := range refs {
 		set[indexscope.IdentityKeyWithSemantics(semantics, ref)] = struct{}{}
 	}
@@ -655,7 +655,7 @@ func mysqlIndexIdentitySet(
 
 func ambiguousMySQLForeignKeyIndexError(
 	foreignKey mysqlForeignKeyState,
-	index types.IndexRef,
+	index difftypes.IndexRef,
 	dialect string,
 ) error {
 	return fmt.Errorf(
