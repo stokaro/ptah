@@ -14,7 +14,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -115,19 +115,19 @@ func createCheckTable() string {
 
 // checkDeclaration is the same table as a description, carrying the expressions
 // as they were WRITTEN.
-func checkDeclaration() *goschema.Database {
-	declared := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "S", Name: "shapes"}},
-		Fields: []goschema.Field{{StructName: "S", Name: "pk", Type: "integer", Primary: true}},
+func checkDeclaration() *schemamodel.Database {
+	declared := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "S", Name: "shapes"}},
+		Fields: []schemamodel.Field{{StructName: "S", Name: "pk", Type: "integer", Primary: true}},
 	}
 	for _, shape := range checkShapes {
 		name, columnType, _ := strings.Cut(shape.column, " ")
-		declared.Fields = append(declared.Fields, goschema.Field{
+		declared.Fields = append(declared.Fields, schemamodel.Field{
 			StructName: "S", Name: name, Type: columnType, Nullable: true,
 		})
 	}
 	for i, shape := range checkShapes {
-		declared.Constraints = append(declared.Constraints, goschema.Constraint{
+		declared.Constraints = append(declared.Constraints, schemamodel.Constraint{
 			StructName: "S", Name: fmt.Sprintf("ck_%d", i), Table: "shapes",
 			Type: "CHECK", CheckExpression: shape.declared,
 		})

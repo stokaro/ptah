@@ -6,8 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -17,13 +17,13 @@ import (
 // PostgreSQL permits because a policy name is scoped to its table. Measured on
 // PostgreSQL 17.10, CREATE POLICY tenant_isolation succeeds on both
 // public.alpha_orders and public.zeta_orders and leaves two rows in pg_policy.
-func generatedSharedPolicyName() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func generatedSharedPolicyName() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: "alpha_orders", StructName: "AlphaOrder"},
 			{Name: "zeta_orders", StructName: "ZetaOrder"},
 		},
-		RLSPolicies: []goschema.RLSPolicy{
+		RLSPolicies: []schemamodel.RLSPolicy{
 			{Name: "tenant_isolation", Table: "alpha_orders", PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "tenant_id = 1"},
 			{Name: "tenant_isolation", Table: "zeta_orders", PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "tenant_id = 1"},
 		},
@@ -89,12 +89,12 @@ func TestRLSPoliciesWithSemantics_TableQualifiedAdditions(t *testing.T) {
 }
 
 func TestRLSPoliciesWithSemantics_TableQualifiedRemovals(t *testing.T) {
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: "alpha_orders", StructName: "AlphaOrder"},
 			{Name: "zeta_orders", StructName: "ZetaOrder"},
 		},
-		RLSPolicies: []goschema.RLSPolicy{
+		RLSPolicies: []schemamodel.RLSPolicy{
 			{Name: "tenant_isolation", Table: "alpha_orders", PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "tenant_id = 1"},
 		},
 	}
@@ -144,7 +144,7 @@ func TestRLSPoliciesWithSemantics_TableQualifiedRemovals(t *testing.T) {
 			c := qt.New(t)
 			diff := &difftypes.SchemaDiff{}
 
-			compare.RLSPoliciesWithSemantics(generated, test.database, diff, identifier.ForDialect("postgres"), compare.Coverage{}, nil)
+			compare.RLSPoliciesWithSemantics(desired, test.database, diff, identifier.ForDialect("postgres"), compare.Coverage{}, nil)
 
 			c.Assert(diff.RLSPoliciesRemoved, qt.DeepEquals, test.want)
 			c.Assert(diff.RLSPoliciesAdded, qt.HasLen, 0)
@@ -161,12 +161,12 @@ func TestRLSPoliciesWithSemantics_TableQualifiedRemovals(t *testing.T) {
 func TestRLSPoliciesWithSemantics_ModificationMatchesTheSameTable(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: "alpha_orders", StructName: "AlphaOrder"},
 			{Name: "zeta_orders", StructName: "ZetaOrder"},
 		},
-		RLSPolicies: []goschema.RLSPolicy{
+		RLSPolicies: []schemamodel.RLSPolicy{
 			{Name: "tenant_isolation", Table: "alpha_orders", PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "tenant_id = 1"},
 		},
 	}
@@ -178,7 +178,7 @@ func TestRLSPoliciesWithSemantics_ModificationMatchesTheSameTable(t *testing.T) 
 	}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.RLSPoliciesWithSemantics(generated, database, diff, identifier.ForDialect("postgres"), compare.Coverage{}, nil)
+	compare.RLSPoliciesWithSemantics(desired, database, diff, identifier.ForDialect("postgres"), compare.Coverage{}, nil)
 
 	c.Assert(diff.RLSPoliciesModified, qt.HasLen, 1)
 	c.Assert(diff.RLSPoliciesModified[0].PolicyName, qt.Equals, "tenant_isolation")
@@ -198,9 +198,9 @@ func TestRLSPoliciesWithSemantics_ModificationMatchesTheSameTable(t *testing.T) 
 func TestRLSPoliciesWithSemantics_ImplicitSchemaStillMatches(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Tables: []goschema.Table{{Name: "alpha_orders", Schema: "public", StructName: "AlphaOrder"}},
-		RLSPolicies: []goschema.RLSPolicy{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "alpha_orders", Schema: "public", StructName: "AlphaOrder"}},
+		RLSPolicies: []schemamodel.RLSPolicy{
 			{Name: "tenant_isolation", Table: "public.alpha_orders", PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "tenant_id = 1"},
 		},
 	}
@@ -211,7 +211,7 @@ func TestRLSPoliciesWithSemantics_ImplicitSchemaStillMatches(t *testing.T) {
 	}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.RLSPoliciesWithSemantics(generated, database, diff, identifier.ForDialect("postgres"), compare.Coverage{}, nil)
+	compare.RLSPoliciesWithSemantics(desired, database, diff, identifier.ForDialect("postgres"), compare.Coverage{}, nil)
 
 	c.Assert(diff.RLSPoliciesAdded, qt.HasLen, 0)
 	c.Assert(diff.RLSPoliciesRemoved, qt.HasLen, 0)
@@ -253,12 +253,12 @@ func TestRLSPolicies_DelegatesWithDialectlessSemantics(t *testing.T) {
 func TestRLSPoliciesWithSemantics_OrdersRefsByTableFirst(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: "alpha_orders", StructName: "AlphaOrder"},
 			{Name: "zeta_orders", StructName: "ZetaOrder"},
 		},
-		RLSPolicies: []goschema.RLSPolicy{
+		RLSPolicies: []schemamodel.RLSPolicy{
 			{Name: "zeta_policy", Table: "alpha_orders", PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "tenant_id = 1"},
 			{Name: "alpha_policy", Table: "zeta_orders", PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "tenant_id = 2"},
 			{Name: "alpha_policy", Table: "alpha_orders", PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "tenant_id = 3"},
@@ -272,7 +272,7 @@ func TestRLSPoliciesWithSemantics_OrdersRefsByTableFirst(t *testing.T) {
 	}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.RLSPoliciesWithSemantics(generated, database, diff, identifier.ForDialect("postgres"), compare.Coverage{}, nil)
+	compare.RLSPoliciesWithSemantics(desired, database, diff, identifier.ForDialect("postgres"), compare.Coverage{}, nil)
 
 	c.Assert(diff.RLSPoliciesAdded, qt.DeepEquals, []difftypes.RLSPolicyRef{
 		{PolicyName: "alpha_policy", TableName: "alpha_orders"},

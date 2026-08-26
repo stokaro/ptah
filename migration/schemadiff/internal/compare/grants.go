@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -20,8 +20,8 @@ const grantObjectTypeSchema = "SCHEMA"
 // Callers holding a live connection should use [GrantsWithSemantics] instead:
 // on MySQL and MariaDB a schema is a database, so nothing offline can name the
 // one that owns an unqualified target.
-func Grants(generated *goschema.Database, database *catalog.Database, diff *difftypes.SchemaDiff) {
-	GrantsWithSemantics(generated, database, diff, identifier.ForDialect(""))
+func Grants(desired *schemamodel.Database, current *catalog.Database, diff *difftypes.SchemaDiff) {
+	GrantsWithSemantics(desired, current, diff, identifier.ForDialect(""))
 }
 
 // GrantsWithSemantics is [Grants] told which identifier rules the target has.
@@ -38,14 +38,14 @@ func Grants(generated *goschema.Database, database *catalog.Database, diff *diff
 // This is [tableMemberKey]'s defect (stokaro/ptah#1232) in a comparator that
 // builds its own key, and one of the instances collected in stokaro/ptah#1276.
 func GrantsWithSemantics(
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	semantics identifier.Semantics,
 ) {
 	generatedGrantMap := make(map[grantIdentity]difftypes.GrantRef)
 	generatedGrantRoles := make(map[string]bool)
-	for _, grant := range generated.Grants {
+	for _, grant := range desired.Grants {
 		generatedGrantRoles[grant.Role] = true
 		for _, ref := range grantRefsFromGenerated(grant) {
 			generatedGrantMap[newGrantIdentity(ref, semantics)] = ref
@@ -53,7 +53,7 @@ func GrantsWithSemantics(
 	}
 
 	managedRoles := make(map[string]bool)
-	for _, role := range generated.Roles {
+	for _, role := range desired.Roles {
 		managedRoles[role.Name] = true
 	}
 
@@ -111,7 +111,7 @@ func GrantsWithSemantics(
 	sortGrantRefs(diff.GrantOptionsRevoked)
 }
 
-func grantRefsFromGenerated(grant goschema.Grant) []difftypes.GrantRef {
+func grantRefsFromGenerated(grant schemamodel.Grant) []difftypes.GrantRef {
 	grant.Canonicalize()
 	objectType := "TABLE"
 	objectName := grant.OnTable

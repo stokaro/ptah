@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/generator"
@@ -49,7 +49,7 @@ func TestPlanBidirectionalSchemaDiffGatesTheRollbackItGenerates(t *testing.T) {
 		name         string
 		env          func(testing.TB)
 		diff         *difftypes.SchemaDiff
-		desired      *goschema.Database
+		desired      *schemamodel.Database
 		wantErr      bool
 		wantContains []string
 	}{
@@ -147,14 +147,14 @@ func rollbackFTS4Database() *catalog.Database {
 // rollbackDeclaredLiveTables declares every live table, module storage
 // included. Without that the comparison would not reach a plan at all: the
 // pre-comparison half of the guard refuses an undeclared live table first.
-func rollbackDeclaredLiveTables() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func rollbackDeclaredLiveTables() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Doc", Name: "docs", VirtualModule: "fts4", VirtualArguments: "title, body"},
 			{StructName: "DocContent", Name: "docs_content"},
 			{StructName: "User", Name: "users"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "DocContent", Name: "docid", Type: "INTEGER", Nullable: true},
 			{StructName: "User", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "User", Name: "name", Type: "TEXT", Nullable: true},
@@ -162,26 +162,26 @@ func rollbackDeclaredLiveTables() *goschema.Database {
 	}
 }
 
-func declaredLiveTablesWithSpuriousColumn() *goschema.Database {
+func declaredLiveTablesWithSpuriousColumn() *schemamodel.Database {
 	desired := rollbackDeclaredLiveTables()
-	desired.Fields = append(desired.Fields, goschema.Field{
+	desired.Fields = append(desired.Fields, schemamodel.Field{
 		StructName: "DocContent", Name: "spurious", Type: "TEXT", Nullable: true,
 	})
 	return desired
 }
 
-func declaredLiveTablesWithAuditTable() *goschema.Database {
+func declaredLiveTablesWithAuditTable() *schemamodel.Database {
 	desired := rollbackDeclaredLiveTables()
-	desired.Tables = append(desired.Tables, goschema.Table{StructName: "Audit", Name: "audit"})
-	desired.Fields = append(desired.Fields, goschema.Field{
+	desired.Tables = append(desired.Tables, schemamodel.Table{StructName: "Audit", Name: "audit"})
+	desired.Fields = append(desired.Fields, schemamodel.Field{
 		StructName: "Audit", Name: "id", Type: "INTEGER", Primary: true,
 	})
 	return desired
 }
 
-func declaredLiveTablesWithUserIndex() *goschema.Database {
+func declaredLiveTablesWithUserIndex() *schemamodel.Database {
 	desired := rollbackDeclaredLiveTables()
-	desired.Indexes = append(desired.Indexes, goschema.Index{
+	desired.Indexes = append(desired.Indexes, schemamodel.Index{
 		StructName: "User", Name: "users_name_idx", Fields: []string{"name"},
 	})
 	return desired

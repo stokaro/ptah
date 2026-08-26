@@ -20,7 +20,8 @@ equal to it.
 | `core/ast` | Typed schema DDL AST nodes. |
 | `core/astbuilder` | Fluent builders that construct `core/ast` DDL nodes without hand-written struct literals. |
 | `core/coverage` | Schema description scope facts, so an absent object is not read as a removed one. |
-| `core/goschema` | Go annotation parser and schema IR. |
+| `core/goschema` | Go annotation parser. Produces a `schemamodel.Database`. |
+| `core/schemamodel` | The desired-schema model every authoring source produces: Go annotations, HCL, YAML, SQL, DBML and live-catalog conversion. |
 | `core/platform` | Dialect and platform constants. |
 | `core/platform/capability` | Capability flags for dialect/version behavior. |
 | `core/platform/identifier` | Catalog identifier comparison and namespace semantics. |

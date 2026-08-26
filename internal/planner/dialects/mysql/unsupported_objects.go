@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/mysqlroutine"
 	"go.5x5.cz/ptah/internal/oracleroutine"
@@ -106,7 +106,7 @@ func (p *Planner) reportUnsupportedRoutinesAndRoles(result []ast.Node, diff *dif
 		result = append(result, ast.NewDropFunction(name))
 	}
 	for _, name := range diff.ProceduresRemoved {
-		result = append(result, ast.NewDropFunction(name).SetKind(goschema.FunctionKindProcedure))
+		result = append(result, ast.NewDropFunction(name).SetKind(schemamodel.FunctionKindProcedure))
 	}
 	return result
 }
@@ -214,17 +214,17 @@ func (p *Planner) reportUnsupportedRowLevelSecurity(result []ast.Node, diff *dif
 //
 // A target that declines capability.Functions plans nothing here; its named
 // skips come from reportUnsupportedRoutinesAndRoles.
-func (p *Planner) planFunctions(result []ast.Node, diff *difftypes.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) planFunctions(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
 	if !p.capabilities().Has(capability.Functions) {
 		return result
 	}
 	for _, name := range diff.FunctionsAdded {
-		if fn, ok := findGeneratedFunction(generated, name); ok {
+		if fn, ok := findGeneratedFunction(desired, name); ok {
 			result = append(result, fromschema.FromFunction(fn))
 		}
 	}
 	for _, fnDiff := range diff.FunctionsModified {
-		fn, ok := findGeneratedFunction(generated, fnDiff.FunctionName)
+		fn, ok := findGeneratedFunction(desired, fnDiff.FunctionName)
 		if !ok {
 			continue
 		}
@@ -272,7 +272,7 @@ func (p *Planner) planFunctions(result []ast.Node, diff *difftypes.SchemaDiff, g
 	// exactly this statement (stokaro/ptah#1722).
 	for _, name := range diff.ProceduresRemoved {
 		result = append(result, ast.NewDropFunction(name).
-			SetKind(goschema.FunctionKindProcedure).
+			SetKind(schemamodel.FunctionKindProcedure).
 			SetIfExists().
 			SetComment("WARNING: Ensure no other objects depend on this procedure"))
 	}
@@ -282,18 +282,18 @@ func (p *Planner) planFunctions(result []ast.Node, diff *difftypes.SchemaDiff, g
 // findGeneratedFunction returns the desired definition the diff entry names.
 // The diff carries names only, so without the definition there is no faithful
 // CREATE to emit.
-func findGeneratedFunction(generated *goschema.Database, name string) (goschema.Function, bool) {
-	for _, fn := range generated.Functions {
+func findGeneratedFunction(desired *schemamodel.Database, name string) (schemamodel.Function, bool) {
+	for _, fn := range desired.Functions {
 		if fn.Name == name {
 			return fn, true
 		}
 	}
-	return goschema.Function{}, false
+	return schemamodel.Function{}, false
 }
 
 // routineWord names the object a plan comment is about, so a comment on a
 // procedure does not call it a function.
-func routineWord(fn goschema.Function) string {
+func routineWord(fn schemamodel.Function) string {
 	if fn.IsProcedure() {
 		return "procedure"
 	}

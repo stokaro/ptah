@@ -11,9 +11,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
@@ -59,7 +59,7 @@ func TestGenerateDownMigration_ContinuousAggregate(t *testing.T) {
 			Definition: "SELECT time_bucket('01:00:00'::interval, \"time\") FROM readings",
 		}},
 	}
-	generated := &goschema.Database{ContinuousAggregates: []goschema.ContinuousAggregate{{
+	desired := &schemamodel.Database{ContinuousAggregates: []schemamodel.ContinuousAggregate{{
 		Name: "hourly", Schema: "public", Body: "SELECT 1",
 	}}}
 
@@ -69,7 +69,7 @@ func TestGenerateDownMigration_ContinuousAggregate(t *testing.T) {
 
 			sql, err := generateDownMigrationSQL(
 				test.diff,
-				generated,
+				desired,
 				database,
 				platform.Postgres,
 				capability.Postgres17().With(capability.ContinuousAggregates, true),

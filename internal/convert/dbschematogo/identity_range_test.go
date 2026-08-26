@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 )
 
@@ -28,7 +28,7 @@ func identitySchema(start, increment string) *catalog.Database {
 }
 
 // identityField returns the converted id column.
-func identityField(c *qt.C, database *goschema.Database) goschema.Field {
+func identityField(c *qt.C, database *schemamodel.Database) schemamodel.Field {
 	c.Helper()
 	for _, field := range database.Fields {
 		if field.Name == "id" {
@@ -36,7 +36,7 @@ func identityField(c *qt.C, database *goschema.Database) goschema.Field {
 		}
 	}
 	c.Fatalf("no id field in %+v", database.Fields)
-	return goschema.Field{}
+	return schemamodel.Field{}
 }
 
 // TestConvert_CarriesTheIdentityRange pins that the range crosses this

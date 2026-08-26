@@ -6,48 +6,48 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // unhostableSchema declares one of every object kind a non-PostgreSQL target
 // cannot host, plus a table so the plan carries a real statement too.
-func unhostableSchema() *goschema.Database {
+func unhostableSchema() *schemamodel.Database {
 	start := int64(1000)
-	return &goschema.Database{
-		Extensions: []goschema.Extension{{Name: "pg_trgm"}},
-		Sequences:  []goschema.Sequence{{Name: "order_number_seq", AsType: "bigint", Start: &start}},
-		Roles:      []goschema.Role{{Name: "app_role"}},
-		Functions:  []goschema.Function{{Name: "bump", Returns: "integer", Language: "sql", Body: "SELECT 1;"}},
-		Tables:     []goschema.Table{{StructName: "T", Name: "t"}},
-		Fields: []goschema.Field{
+	return &schemamodel.Database{
+		Extensions: []schemamodel.Extension{{Name: "pg_trgm"}},
+		Sequences:  []schemamodel.Sequence{{Name: "order_number_seq", AsType: "bigint", Start: &start}},
+		Roles:      []schemamodel.Role{{Name: "app_role"}},
+		Functions:  []schemamodel.Function{{Name: "bump", Returns: "integer", Language: "sql", Body: "SELECT 1;"}},
+		Tables:     []schemamodel.Table{{StructName: "T", Name: "t"}},
+		Fields: []schemamodel.Field{
 			{StructName: "T", Name: "id", Type: "BIGINT", Primary: true},
 			{StructName: "T", Name: "n", Type: "INTEGER", Nullable: true, Check: "n > 0"},
 		},
-		Views:             []goschema.View{{StructName: "V", Name: "v1", Body: "SELECT id FROM t"}},
-		MaterializedViews: []goschema.MaterializedView{{StructName: "MV", Name: "mv1", Body: "SELECT id FROM t"}},
-		RLSEnabledTables:  []goschema.RLSEnabledTable{{StructName: "S", Table: "t"}},
+		Views:             []schemamodel.View{{StructName: "V", Name: "v1", Body: "SELECT id FROM t"}},
+		MaterializedViews: []schemamodel.MaterializedView{{StructName: "MV", Name: "mv1", Body: "SELECT id FROM t"}},
+		RLSEnabledTables:  []schemamodel.RLSEnabledTable{{StructName: "S", Table: "t"}},
 		// FOR ALL rather than FOR SELECT, which is what an annotation without
 		// `for=` parses to. ClickHouse stores the two identically and answers
 		// SELECT to both, so a declaration naming SELECT explicitly cannot
 		// converge and this renderer names it instead of creating it
 		// (stokaro/ptah#1736). The refusal has its own row in
 		// clickhouse/rowpolicy_test.go; this fixture is about the created path.
-		RLSPolicies: []goschema.RLSPolicy{{
+		RLSPolicies: []schemamodel.RLSPolicy{{
 			StructName: "S", Name: "p1", Table: "t", PolicyFor: "ALL",
 			ToRoles: "app_role", UsingExpression: "true",
 		}},
 		// Qualified because a ClickHouse grant scope is a two-part pattern and
 		// an offline render has no current database to attach a bare table to.
 		// See internal/clickhouserbac (stokaro/ptah#1025).
-		Grants: []goschema.Grant{{
+		Grants: []schemamodel.Grant{{
 			StructName: "G", Role: "app_role", Privileges: []string{"SELECT"}, OnTable: "app.t",
 		}},
-		Triggers: []goschema.Trigger{{
+		Triggers: []schemamodel.Trigger{{
 			StructName: "TR", Name: "trg1", Table: "t",
 			Timing: "AFTER", Event: "INSERT", ForEach: "ROW", Body: "SELECT 1",
 		}},
@@ -102,14 +102,14 @@ func diagnosticLines(statements []string) []string {
 	return lines
 }
 
-func planStatements(c *qt.C, diff *difftypes.SchemaDiff, generated *goschema.Database, dialect string) []string {
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, generated, dialect)
+func planStatements(c *qt.C, diff *difftypes.SchemaDiff, desired *schemamodel.Database, dialect string) []string {
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, dialect)
 	c.Assert(err, qt.IsNil)
 	return statements
 }
 
-func renderStatements(c *qt.C, generated *goschema.Database, dialect string) []string {
-	statements, err := renderer.GetOrderedCreateStatements(generated, dialect)
+func renderStatements(c *qt.C, desired *schemamodel.Database, dialect string) []string {
+	statements, err := renderer.GetOrderedCreateStatements(desired, dialect)
 	c.Assert(err, qt.IsNil)
 	return statements
 }
@@ -193,12 +193,12 @@ func TestPlan_ClickHouseRenderAndPlanGiveTheSameAnswer(t *testing.T) {
 func TestPlan_ClickHouseViewAloneIsNotReportedAsSynced(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Views: []goschema.View{{StructName: "V", Name: "v_only", Body: "SELECT 1"}},
+	desired := &schemamodel.Database{
+		Views: []schemamodel.View{{StructName: "V", Name: "v_only", Body: "SELECT 1"}},
 	}
 	diff := &difftypes.SchemaDiff{ViewsAdded: []string{"v_only"}}
 
-	statements := planStatements(c, diff, generated, platform.ClickHouse)
+	statements := planStatements(c, diff, desired, platform.ClickHouse)
 
 	c.Assert(statements, qt.HasLen, 1)
 	c.Assert(statements[0], qt.Contains, "CREATE VIEW `v_only` AS\nSELECT 1")
@@ -228,7 +228,7 @@ func TestPlan_ClickHouseNamesRemovedObjectsToo(t *testing.T) {
 		TriggersRemoved: []difftypes.TriggerRef{{TriggerName: "trg1", TableName: "t"}},
 	}
 
-	planned := strings.Join(planStatements(c, diff, &goschema.Database{}, platform.ClickHouse), "\n")
+	planned := strings.Join(planStatements(c, diff, &schemamodel.Database{}, platform.ClickHouse), "\n")
 
 	tests := []struct {
 		name string
@@ -306,13 +306,13 @@ func TestPlan_PostgreSQLStillPlansTheObjects(t *testing.T) {
 
 // mysqlFamilySchema declares the two object kinds #931 items 5 and 8 moved on
 // the render side: a standalone extension and a standalone sequence.
-func mysqlFamilySchema() *goschema.Database {
+func mysqlFamilySchema() *schemamodel.Database {
 	start := int64(1000)
-	return &goschema.Database{
-		Extensions: []goschema.Extension{{Name: "pg_trgm"}},
-		Sequences:  []goschema.Sequence{{Name: "order_number_seq", AsType: "bigint", Start: &start}},
-		Tables:     []goschema.Table{{StructName: "T", Name: "t"}},
-		Fields:     []goschema.Field{{StructName: "T", Name: "id", Type: "BIGINT", Primary: true}},
+	return &schemamodel.Database{
+		Extensions: []schemamodel.Extension{{Name: "pg_trgm"}},
+		Sequences:  []schemamodel.Sequence{{Name: "order_number_seq", AsType: "bigint", Start: &start}},
+		Tables:     []schemamodel.Table{{StructName: "T", Name: "t"}},
+		Fields:     []schemamodel.Field{{StructName: "T", Name: "id", Type: "BIGINT", Primary: true}},
 	}
 }
 
@@ -420,7 +420,7 @@ func TestPlan_MySQLFamilyNamesTheUserTypesItNoLongerDeclares(t *testing.T) {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			planned := strings.Join(planStatements(c, diff, &goschema.Database{}, dialect), "\n")
+			planned := strings.Join(planStatements(c, diff, &schemamodel.Database{}, dialect), "\n")
 
 			upper := strings.ToUpper(dialect)
 			c.Assert(planned, qt.Contains, "-- "+upper+": DROP DOMAIN email is not generated")
@@ -447,7 +447,7 @@ func TestPlan_NonPostgreSQLTargetsDoNotLoseExtensionPlacementDrift(t *testing.T)
 	for _, test := range tests {
 		t.Run(test.dialect, func(t *testing.T) {
 			c := qt.New(t)
-			planned := strings.Join(planStatements(c, diff, &goschema.Database{}, test.dialect), "\n")
+			planned := strings.Join(planStatements(c, diff, &schemamodel.Database{}, test.dialect), "\n")
 			c.Assert(planned, qt.Contains, test.want)
 		})
 	}
@@ -455,14 +455,14 @@ func TestPlan_NonPostgreSQLTargetsDoNotLoseExtensionPlacementDrift(t *testing.T)
 
 func TestPlan_ExtensionInstallationSchemaSupportedTargets(t *testing.T) {
 	diff := &difftypes.SchemaDiff{ExtensionsAdded: []string{"pgcrypto"}}
-	generated := &goschema.Database{
-		Extensions: []goschema.Extension{{Name: "pgcrypto", Schema: "extensions"}},
+	desired := &schemamodel.Database{
+		Extensions: []schemamodel.Extension{{Name: "pgcrypto", Schema: "extensions"}},
 	}
 
 	for _, dialect := range []string{platform.Postgres, platform.YugabyteDB} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
-			statements, err := planner.GenerateSchemaDiffSQLStatements(diff, generated, dialect)
+			statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, dialect)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(statements, qt.DeepEquals, []string{
@@ -475,14 +475,14 @@ func TestPlan_ExtensionInstallationSchemaSupportedTargets(t *testing.T) {
 
 func TestPlan_ExtensionInstallationSchemaUnsupportedTargetsFailBeforeAST(t *testing.T) {
 	diff := &difftypes.SchemaDiff{ExtensionsAdded: []string{"pgcrypto"}}
-	generated := &goschema.Database{
-		Extensions: []goschema.Extension{{Name: "pgcrypto", Schema: "extensions"}},
+	desired := &schemamodel.Database{
+		Extensions: []schemamodel.Extension{{Name: "pgcrypto", Schema: "extensions"}},
 	}
 
 	for _, dialect := range []string{platform.CockroachDB, platform.Spanner} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := planner.GenerateSchemaDiffAST(diff, generated, dialect)
+			nodes, err := planner.GenerateSchemaDiffAST(diff, desired, dialect)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(err, qt.ErrorMatches, dialect+` does not support PostgreSQL extension installation schema "extensions" for extension "pgcrypto"`)
@@ -493,14 +493,14 @@ func TestPlan_ExtensionInstallationSchemaUnsupportedTargetsFailBeforeAST(t *test
 
 func TestPlan_WhitespaceOnlyExtensionInstallationSchemaUnsupportedTargetsFailBeforeAST(t *testing.T) {
 	diff := &difftypes.SchemaDiff{ExtensionsAdded: []string{"pgcrypto"}}
-	generated := &goschema.Database{
-		Extensions: []goschema.Extension{{Name: "pgcrypto", Schema: " "}},
+	desired := &schemamodel.Database{
+		Extensions: []schemamodel.Extension{{Name: "pgcrypto", Schema: " "}},
 	}
 
 	for _, dialect := range []string{platform.CockroachDB, platform.Spanner} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := planner.GenerateSchemaDiffAST(diff, generated, dialect)
+			nodes, err := planner.GenerateSchemaDiffAST(diff, desired, dialect)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(err, qt.ErrorMatches, dialect+` does not support PostgreSQL extension installation schema " " for extension "pgcrypto"`)
@@ -589,11 +589,11 @@ func TestPlan_MySQLFamilyRoleRefusalNamesTheSameRoleAtEitherGate(t *testing.T) {
 	added := []string{"admin_user", "app_user", "readonly_user"}
 
 	tests := []struct {
-		name      string
-		generated *goschema.Database
+		name    string
+		desired *schemamodel.Database
 	}{
-		{name: "validation gate", generated: rolesDeclaringLogin(declarationOrder...)},
-		{name: "planner gate", generated: rolesDeclaringLogin(added...)},
+		{name: "validation gate", desired: rolesDeclaringLogin(declarationOrder...)},
+		{name: "planner gate", desired: rolesDeclaringLogin(added...)},
 	}
 
 	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
@@ -602,7 +602,7 @@ func TestPlan_MySQLFamilyRoleRefusalNamesTheSameRoleAtEitherGate(t *testing.T) {
 				c := qt.New(t)
 
 				statements, err := planner.GenerateSchemaDiffSQLStatements(
-					&difftypes.SchemaDiff{RolesAdded: added}, test.generated, dialect)
+					&difftypes.SchemaDiff{RolesAdded: added}, test.desired, dialect)
 
 				c.Assert(statements, qt.HasLen, 0)
 				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
@@ -631,12 +631,12 @@ func countCreateSequence(sql string) int {
 // repository until this fixture existed: the live round trip renders through
 // GetOrderedCreateStatements, so the planner was never asked
 // (stokaro/ptah#1698).
-func roleFamilySchema() *goschema.Database {
-	return &goschema.Database{
-		Roles:  []goschema.Role{{StructName: "A", Name: "app_reader", Inherit: true}},
-		Tables: []goschema.Table{{StructName: "T", Name: "t"}},
-		Fields: []goschema.Field{{StructName: "T", Name: "id", Type: "BIGINT", Primary: true}},
-		Grants: []goschema.Grant{{
+func roleFamilySchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Roles:  []schemamodel.Role{{StructName: "A", Name: "app_reader", Inherit: true}},
+		Tables: []schemamodel.Table{{StructName: "T", Name: "t"}},
+		Fields: []schemamodel.Field{{StructName: "T", Name: "id", Type: "BIGINT", Primary: true}},
+		Grants: []schemamodel.Grant{{
 			StructName: "A", Role: "app_reader", Privileges: []string{"SELECT"}, OnTable: "t",
 		}},
 	}
@@ -708,10 +708,10 @@ func countStatement(sql, keyword string) int {
 
 // rolesDeclaringLogin builds a desired schema whose roles all ask to log in,
 // which is the shape the MySQL family refuses now that a bare role is created.
-func rolesDeclaringLogin(names ...string) *goschema.Database {
-	roles := make([]goschema.Role, 0, len(names))
+func rolesDeclaringLogin(names ...string) *schemamodel.Database {
+	roles := make([]schemamodel.Role, 0, len(names))
 	for _, name := range names {
-		roles = append(roles, goschema.Role{StructName: "R", Name: name, Login: true})
+		roles = append(roles, schemamodel.Role{StructName: "R", Name: name, Login: true})
 	}
-	return &goschema.Database{Roles: roles}
+	return &schemamodel.Database{Roles: roles}
 }

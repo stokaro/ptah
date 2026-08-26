@@ -14,6 +14,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/serverversion"
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/pathguard"
 	"go.5x5.cz/ptah/internal/schemasecurity"
 	"go.5x5.cz/ptah/internal/schemaviz"
@@ -139,7 +140,7 @@ func run(cmd *cobra.Command, opts options) error {
 // it is reported by `schema security`: a rule that did not run is
 // indistinguishable from one that found nothing.
 func securityAnnotations(
-	db *goschema.Database,
+	db *schemamodel.Database,
 	opts options,
 ) (map[string]schemaviz.Annotation, []string, error) {
 	if !opts.security {

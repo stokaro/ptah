@@ -10,16 +10,17 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/goschema/internal/parseutils"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
-func mustParseSource(c *qt.C, filename string, source any) goschema.Database {
+func mustParseSource(c *qt.C, filename string, source any) schemamodel.Database {
 	c.Helper()
 	db, err := goschema.ParseSource(filename, source)
 	c.Assert(err, qt.IsNil)
 	return db
 }
 
-func mustParseFile(c *qt.C, filename string) goschema.Database {
+func mustParseFile(c *qt.C, filename string) schemamodel.Database {
 	c.Helper()
 	db, err := goschema.ParseFile(filename)
 	c.Assert(err, qt.IsNil)
@@ -308,7 +309,7 @@ type User struct {
 	c.Assert(db.Triggers[0].Timing, qt.Equals, "BEFORE")
 	c.Assert(db.Triggers[0].Event, qt.Equals, "UPDATE")
 	c.Assert(db.Triggers[0].ForEach, qt.Equals, "ROW")
-	c.Assert(db.Schemas, qt.DeepEquals, []goschema.Schema{{
+	c.Assert(db.Schemas, qt.DeepEquals, []schemamodel.Schema{{
 		Name:    "auth",
 		Comment: "Authentication schema",
 	}})
@@ -358,8 +359,8 @@ type User struct{}
 func TestTrigger_FunctionNameIsTableScoped(t *testing.T) {
 	c := qt.New(t)
 
-	userTrigger := goschema.Trigger{Name: "set_updated_at", Table: "public.users"}
-	postTrigger := goschema.Trigger{Name: "set_updated_at", Table: "public.posts"}
+	userTrigger := schemamodel.Trigger{Name: "set_updated_at", Table: "public.users"}
+	postTrigger := schemamodel.Trigger{Name: "set_updated_at", Table: "public.posts"}
 
 	c.Assert(userTrigger.FunctionName(), qt.Equals, "ptah_trigger_public_users_set_updated_at")
 	c.Assert(postTrigger.FunctionName(), qt.Equals, "ptah_trigger_public_posts_set_updated_at")
@@ -567,10 +568,10 @@ type User struct {
 	c.Assert(database.Constraints[1].ForeignTable, qt.Equals, "auth.accounts")
 	c.Assert(database.Indexes, qt.HasLen, 1)
 	c.Assert(database.Indexes[0].TableName, qt.Equals, "auth.users")
-	c.Assert(database.RLSEnabledTables, qt.DeepEquals, []goschema.RLSEnabledTable{
+	c.Assert(database.RLSEnabledTables, qt.DeepEquals, []schemamodel.RLSEnabledTable{
 		{StructName: "User", Table: "auth.users"},
 	})
-	c.Assert(database.RLSPolicies, qt.DeepEquals, []goschema.RLSPolicy{
+	c.Assert(database.RLSPolicies, qt.DeepEquals, []schemamodel.RLSPolicy{
 		{StructName: "User", Name: "users_rls", Table: "auth.users", PolicyFor: "ALL", UsingExpression: "account_id IS NOT NULL"},
 	})
 }
@@ -680,12 +681,12 @@ func TestParseFunctionComment(t *testing.T) {
 	tests := []struct {
 		name     string
 		comment  string
-		expected goschema.Function
+		expected schemamodel.Function
 	}{
 		{
 			name:    "Basic function definition",
 			comment: `//ptah:schema:function name="set_tenant_context" params="tenant_id_param TEXT" returns="VOID" language="plpgsql" security="DEFINER" body="BEGIN PERFORM set_config('app.current_tenant_id', tenant_id_param, false); END;"`,
-			expected: goschema.Function{
+			expected: schemamodel.Function{
 				StructName: "TestStruct",
 				Name:       "set_tenant_context",
 				Parameters: "tenant_id_param text", // lowercased to match pg_get_function_arguments
@@ -699,7 +700,7 @@ func TestParseFunctionComment(t *testing.T) {
 		{
 			name:    "Function with volatility",
 			comment: `//ptah:schema:function name="get_current_tenant_id" returns="TEXT" language="plpgsql" volatility="STABLE" body="BEGIN RETURN current_setting('app.current_tenant_id', true); END;"`,
-			expected: goschema.Function{
+			expected: schemamodel.Function{
 				StructName: "TestStruct",
 				Name:       "get_current_tenant_id",
 				Returns:    "text", // lowercased
@@ -712,7 +713,7 @@ func TestParseFunctionComment(t *testing.T) {
 		{
 			name:    "Function with comment",
 			comment: `//ptah:schema:function name="test_func" returns="INTEGER" language="sql" comment="Test function for unit tests"`,
-			expected: goschema.Function{
+			expected: schemamodel.Function{
 				StructName: "TestStruct",
 				Name:       "test_func",
 				Returns:    "integer", // lowercased
@@ -725,7 +726,7 @@ func TestParseFunctionComment(t *testing.T) {
 		{
 			name:    "Empty language defaults to plpgsql",
 			comment: `//ptah:schema:function name="no_lang" returns="VOID" body="BEGIN END;"`,
-			expected: goschema.Function{
+			expected: schemamodel.Function{
 				StructName: "TestStruct",
 				Name:       "no_lang",
 				Returns:    "void",    // lowercased
@@ -738,7 +739,7 @@ func TestParseFunctionComment(t *testing.T) {
 		{
 			name:    "Mixed-case attributes are normalized",
 			comment: `//ptah:schema:function name="mixed_case" returns="VOID" language="PLPGSQL" security="Definer" volatility="Stable" body="BEGIN END;"`,
-			expected: goschema.Function{
+			expected: schemamodel.Function{
 				StructName: "TestStruct",
 				Name:       "mixed_case",
 				Returns:    "void",    // ToLower
@@ -773,12 +774,12 @@ func TestParseRLSPolicyComment(t *testing.T) {
 	tests := []struct {
 		name     string
 		comment  string
-		expected goschema.RLSPolicy
+		expected schemamodel.RLSPolicy
 	}{
 		{
 			name:    "Basic RLS policy",
 			comment: `//ptah:schema:rls:policy name="user_tenant_isolation" table="users" for="ALL" to="inventario_app" using="tenant_id = get_current_tenant_id()"`,
-			expected: goschema.RLSPolicy{
+			expected: schemamodel.RLSPolicy{
 				StructName:      "TestStruct",
 				Name:            "user_tenant_isolation",
 				Table:           "users",
@@ -790,7 +791,7 @@ func TestParseRLSPolicyComment(t *testing.T) {
 		{
 			name:    "RLS policy with WITH CHECK",
 			comment: `//ptah:schema:rls:policy name="insert_policy" table="products" for="INSERT" to="app_user" using="tenant_id = get_current_tenant_id()" with_check="tenant_id = get_current_tenant_id()"`,
-			expected: goschema.RLSPolicy{
+			expected: schemamodel.RLSPolicy{
 				StructName:          "TestStruct",
 				Name:                "insert_policy",
 				Table:               "products",
@@ -803,7 +804,7 @@ func TestParseRLSPolicyComment(t *testing.T) {
 		{
 			name:    "RLS policy with comment",
 			comment: `//ptah:schema:rls:policy name="select_policy" table="orders" for="SELECT" to="PUBLIC" using="user_id = current_user_id()" comment="Allow users to see only their orders"`,
-			expected: goschema.RLSPolicy{
+			expected: schemamodel.RLSPolicy{
 				StructName:      "TestStruct",
 				Name:            "select_policy",
 				Table:           "orders",
@@ -820,7 +821,7 @@ func TestParseRLSPolicyComment(t *testing.T) {
 			c := qt.New(t)
 
 			kv := parseutils.ParseKeyValueComment(tt.comment)
-			policy := goschema.RLSPolicy{
+			policy := schemamodel.RLSPolicy{
 				StructName:          "TestStruct",
 				Name:                kv["name"],
 				Table:               kv["table"],
@@ -840,12 +841,12 @@ func TestParseRLSEnableComment(t *testing.T) {
 	tests := []struct {
 		name     string
 		comment  string
-		expected goschema.RLSEnabledTable
+		expected schemamodel.RLSEnabledTable
 	}{
 		{
 			name:    "Basic RLS enable",
 			comment: `//ptah:schema:rls:enable table="users"`,
-			expected: goschema.RLSEnabledTable{
+			expected: schemamodel.RLSEnabledTable{
 				StructName: "TestStruct",
 				Table:      "users",
 			},
@@ -853,7 +854,7 @@ func TestParseRLSEnableComment(t *testing.T) {
 		{
 			name:    "RLS enable with comment",
 			comment: `//ptah:schema:rls:enable table="products" comment="Enable RLS for multi-tenant isolation"`,
-			expected: goschema.RLSEnabledTable{
+			expected: schemamodel.RLSEnabledTable{
 				StructName: "TestStruct",
 				Table:      "products",
 				Comment:    "Enable RLS for multi-tenant isolation",
@@ -866,7 +867,7 @@ func TestParseRLSEnableComment(t *testing.T) {
 			c := qt.New(t)
 
 			kv := parseutils.ParseKeyValueComment(tt.comment)
-			rlsEnabled := goschema.RLSEnabledTable{
+			rlsEnabled := schemamodel.RLSEnabledTable{
 				StructName: "TestStruct",
 				Table:      kv["table"],
 				Comment:    kv["comment"],
@@ -882,12 +883,12 @@ func TestParseSource_ConstraintComment(t *testing.T) {
 	tests := []struct {
 		name     string
 		comment  string
-		expected goschema.Constraint
+		expected schemamodel.Constraint
 	}{
 		{
 			name:    "EXCLUDE constraint with all fields",
 			comment: `//ptah:schema:constraint name="no_overlapping_bookings" type="EXCLUDE" using="gist" elements="room_id WITH =, during WITH &&" condition="is_active = true" comment="Prevent overlapping bookings"`,
-			expected: goschema.Constraint{
+			expected: schemamodel.Constraint{
 				StructName:      "TestStruct",
 				Name:            "no_overlapping_bookings",
 				Type:            "EXCLUDE",
@@ -900,7 +901,7 @@ func TestParseSource_ConstraintComment(t *testing.T) {
 		{
 			name:    "EXCLUDE constraint without WHERE clause",
 			comment: `//ptah:schema:constraint name="unique_locations" type="EXCLUDE" using="gist" elements="location WITH &&"`,
-			expected: goschema.Constraint{
+			expected: schemamodel.Constraint{
 				StructName:      "TestStruct",
 				Name:            "unique_locations",
 				Type:            "EXCLUDE",
@@ -911,7 +912,7 @@ func TestParseSource_ConstraintComment(t *testing.T) {
 		{
 			name:    "CHECK constraint",
 			comment: `//ptah:schema:constraint name="positive_price" type="CHECK" check="price > 0"`,
-			expected: goschema.Constraint{
+			expected: schemamodel.Constraint{
 				StructName:      "TestStruct",
 				Name:            "positive_price",
 				Type:            "CHECK",
@@ -921,7 +922,7 @@ func TestParseSource_ConstraintComment(t *testing.T) {
 		{
 			name:    "UNIQUE constraint with multiple columns",
 			comment: `//ptah:schema:constraint name="unique_user_email" type="UNIQUE" columns="user_id, email" include="updated_at"`,
-			expected: goschema.Constraint{
+			expected: schemamodel.Constraint{
 				StructName:     "TestStruct",
 				Name:           "unique_user_email",
 				Type:           "UNIQUE",
@@ -932,7 +933,7 @@ func TestParseSource_ConstraintComment(t *testing.T) {
 		{
 			name:    "FOREIGN KEY constraint",
 			comment: `//ptah:schema:constraint name="fk_user" type="FOREIGN KEY" columns="user_id" foreign_table="users" foreign_column="id" on_delete="CASCADE"`,
-			expected: goschema.Constraint{
+			expected: schemamodel.Constraint{
 				StructName:    "TestStruct",
 				Name:          "fk_user",
 				Type:          "FOREIGN KEY",
@@ -945,7 +946,7 @@ func TestParseSource_ConstraintComment(t *testing.T) {
 		{
 			name:    "composite FOREIGN KEY constraint",
 			comment: `//ptah:schema:constraint name="fk_memberships_accounts" type="FOREIGN KEY" columns="tenant_id, account_id" foreign_table="accounts" foreign_columns="tenant_id,id" on_update="RESTRICT"`,
-			expected: goschema.Constraint{
+			expected: schemamodel.Constraint{
 				StructName:     "TestStruct",
 				Name:           "fk_memberships_accounts",
 				Type:           "FOREIGN KEY",
@@ -958,7 +959,7 @@ func TestParseSource_ConstraintComment(t *testing.T) {
 		{
 			name:    "UNIQUE constraint with NULLS NOT DISTINCT",
 			comment: `//ptah:schema:constraint name="unique_email" type="UNIQUE" columns="email" nulls_distinct="false"`,
-			expected: goschema.Constraint{
+			expected: schemamodel.Constraint{
 				StructName:    "TestStruct",
 				Name:          "unique_email",
 				Type:          "UNIQUE",
@@ -1005,7 +1006,7 @@ type SchemaObjects struct{}
 `
 	db := mustParseSource(c, "enums.go", source)
 
-	c.Assert(db.Enums, qt.DeepEquals, []goschema.Enum{{
+	c.Assert(db.Enums, qt.DeepEquals, []schemamodel.Enum{{
 		Name:   "status_type",
 		Values: []string{"active", "inactive", "pending"},
 	}})
@@ -1118,7 +1119,7 @@ type CommodityService struct {
 
 	database := mustParseFile(c, testFile)
 
-	var fkField *goschema.Field
+	var fkField *schemamodel.Field
 	for i, f := range database.Fields {
 		if f.Name == "commodity_id" {
 			fkField = &database.Fields[i]
@@ -1167,7 +1168,7 @@ type Post struct {
 	database, err := goschema.ParseDir(tmpDir)
 	c.Assert(err, qt.IsNil)
 
-	var authorField *goschema.Field
+	var authorField *schemamodel.Field
 	for i, f := range database.Fields {
 		if f.StructName == "Post" && f.Name == "author_id" {
 			authorField = &database.Fields[i]
@@ -1183,7 +1184,7 @@ type Post struct {
 
 // TestParseField_CheckConstraint verifies that the column-level `check=` and
 // optional `check_name=` attributes (issue #112) are accepted by the parser
-// and propagated onto goschema.Field. The expression is passed through
+// and propagated onto schemamodel.Field. The expression is passed through
 // verbatim — the parser does not parse or validate the SQL.
 func TestParseField_CheckConstraint(t *testing.T) {
 	c := qt.New(t)
@@ -1210,7 +1211,7 @@ type File struct {
 
 	database := mustParseFile(c, testFile)
 
-	var category, typ *goschema.Field
+	var category, typ *schemamodel.Field
 	for i, f := range database.Fields {
 		switch f.Name {
 		case "category":

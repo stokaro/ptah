@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 func TestNumberingAdditiveChangeAllocatesAboveTheMaximum(t *testing.T) {
@@ -164,6 +164,6 @@ func TestNumberingCollapsesContiguousReservedRuns(t *testing.T) {
 
 // inlineEnumTable builds a single table whose "state" column carries an inline
 // enum, producing the Protobuf enum ThingState.
-func inlineEnumTable(values ...string) *goschema.Database {
-	return oneTable(goschema.Field{Name: "state", Type: enumCarrierType, Enum: values})
+func inlineEnumTable(values ...string) *schemamodel.Database {
+	return oneTable(schemamodel.Field{Name: "state", Type: enumCarrierType, Enum: values})
 }

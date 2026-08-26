@@ -12,9 +12,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/schemachange"
 	"go.5x5.cz/ptah/internal/schemastate"
@@ -141,7 +141,7 @@ func livePostgresProfile() schemastate.Profile {
 // planFor runs the whole prototype and returns its rendered operations.
 func planFor(
 	c *qt.C,
-	description *goschema.Database,
+	description *schemamodel.Database,
 	catalog *catalog.Database,
 	profile schemastate.Profile,
 ) []schemachange.PlannedOperation {
@@ -155,7 +155,7 @@ func planFor(
 // asserts on a blocked change rather than on statements.
 func changesFor(
 	c *qt.C,
-	description *goschema.Database,
+	description *schemamodel.Database,
 	catalog *catalog.Database,
 	profile schemastate.Profile,
 ) []schemachange.Change {
@@ -177,13 +177,13 @@ func changesFor(
 	return ordered
 }
 
-func liveDescription(onDelete string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func liveDescription(onDelete string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Parent", Name: "parent"},
 			{StructName: "Child", Name: "child"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Parent", Name: "id", Type: "integer", Primary: true},
 			{StructName: "Child", Name: "id", Type: "integer", Primary: true},
 			{
@@ -204,7 +204,7 @@ func liveDescription(onDelete string) *goschema.Database {
 	}
 }
 
-func liveDescriptionWithoutForeignKey() *goschema.Database {
+func liveDescriptionWithoutForeignKey() *schemamodel.Database {
 	description := liveDescription("")
 	description.Fields[2].Foreign = ""
 	description.Fields[2].ForeignKeyName = ""

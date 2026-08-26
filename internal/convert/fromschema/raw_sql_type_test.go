@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 )
 
@@ -23,21 +23,21 @@ import (
 func TestFromFieldCarriesTheSQLRawExpressionTypeMarker(t *testing.T) {
 	tests := []struct {
 		name       string
-		field      goschema.Field
+		field      schemamodel.Field
 		platform   string
 		wantType   string
 		wantRawSQL bool
 	}{
 		{
 			name:       "marked type",
-			field:      goschema.Field{Name: "c", Type: "USER_DEFINED", TypeRawSQL: true},
+			field:      schemamodel.Field{Name: "c", Type: "USER_DEFINED", TypeRawSQL: true},
 			wantType:   "USER_DEFINED",
 			wantRawSQL: true,
 		},
 		{
 			// Negative control: an ordinary type must not acquire the marker.
 			name:       "unmarked type",
-			field:      goschema.Field{Name: "c", Type: "USER_DEFINED"},
+			field:      schemamodel.Field{Name: "c", Type: "USER_DEFINED"},
 			wantType:   "USER_DEFINED",
 			wantRawSQL: false,
 		},
@@ -46,7 +46,7 @@ func TestFromFieldCarriesTheSQLRawExpressionTypeMarker(t *testing.T) {
 			// call never carried, so the marker must not survive: writing it
 			// back would attribute the escape hatch to the override's text.
 			name: "platform override replaces the type",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name:       "c",
 				Type:       "USER_DEFINED",
 				TypeRawSQL: true,
@@ -60,7 +60,7 @@ func TestFromFieldCarriesTheSQLRawExpressionTypeMarker(t *testing.T) {
 			// An override that does not touch the type leaves the marker
 			// alone -- otherwise any override at all would silently drop it.
 			name: "platform override leaves the type alone",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name:       "c",
 				Type:       "USER_DEFINED",
 				TypeRawSQL: true,

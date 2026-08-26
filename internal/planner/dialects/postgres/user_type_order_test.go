@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -14,19 +14,19 @@ import (
 // userTypeOrderSchema holds one type of each kind that names another kind, in
 // both directions, so a plan that emits kind by kind gets at least one of them
 // wrong whichever kind it puts first.
-func userTypeOrderSchema() *goschema.Database {
-	return &goschema.Database{
-		Domains: []goschema.Domain{
+func userTypeOrderSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Domains: []schemamodel.Domain{
 			{Name: "d_comp", BaseType: "addr"},
 			{Name: "d_range", BaseType: "myrange"},
 			{Name: "d_int", BaseType: "integer", Check: "VALUE > 0"},
 		},
-		CompositeTypes: []goschema.CompositeType{
-			{Name: "addr", Fields: []goschema.CompositeTypeField{{Name: "street", Type: "text"}, {Name: "city", Type: "text"}}},
-			{Name: "measure", Fields: []goschema.CompositeTypeField{{Name: "qty", Type: "d_int"}}},
-			{Name: "envelope", Fields: []goschema.CompositeTypeField{{Name: "recipient", Type: "addr"}}},
+		CompositeTypes: []schemamodel.CompositeType{
+			{Name: "addr", Fields: []schemamodel.CompositeField{{Name: "street", Type: "text"}, {Name: "city", Type: "text"}}},
+			{Name: "measure", Fields: []schemamodel.CompositeField{{Name: "qty", Type: "d_int"}}},
+			{Name: "envelope", Fields: []schemamodel.CompositeField{{Name: "recipient", Type: "addr"}}},
 		},
-		Ranges: []goschema.Range{
+		Ranges: []schemamodel.Range{
 			{Name: "myrange", Subtype: "integer"},
 			{Name: "posrange", Subtype: "d_int"},
 		},

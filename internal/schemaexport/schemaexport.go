@@ -10,7 +10,7 @@ import (
 	"regexp"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // Severity classifies an export diagnostic.
@@ -38,10 +38,10 @@ type Options struct {
 
 // SelectTables returns the tables to export, in schema-definition order, after
 // applying the include/exclude filters. A table named in both is excluded.
-func SelectTables(db *goschema.Database, opts Options) []goschema.Table {
+func SelectTables(db *schemamodel.Database, opts Options) []schemamodel.Table {
 	include := toSet(opts.IncludeTables)
 	exclude := toSet(opts.ExcludeTables)
-	var out []goschema.Table
+	var out []schemamodel.Table
 	for _, table := range db.Tables {
 		if len(include) > 0 {
 			if _, ok := include[table.Name]; !ok {
@@ -60,8 +60,8 @@ func SelectTables(db *goschema.Database, opts Options) []goschema.Table {
 // renderers use: fields are grouped by the struct they were parsed from and
 // selected by the table's struct name. Embedded columns are already folded into
 // this set during parsing, so no extra expansion is needed here.
-func FieldsFor(db *goschema.Database, table goschema.Table) []goschema.Field {
-	var out []goschema.Field
+func FieldsFor(db *schemamodel.Database, table schemamodel.Table) []schemamodel.Field {
+	var out []schemamodel.Field
 	for _, field := range db.Fields {
 		if field.StructName == table.StructName {
 			out = append(out, field)
@@ -73,7 +73,7 @@ func FieldsFor(db *goschema.Database, table goschema.Table) []goschema.Field {
 // EffectivePrimaryKey returns the primary-key column names for a table, taking
 // the table-level composite key if present and otherwise the union of fields
 // marked primary.
-func EffectivePrimaryKey(table goschema.Table, fields []goschema.Field) []string {
+func EffectivePrimaryKey(table schemamodel.Table, fields []schemamodel.Field) []string {
 	if len(table.PrimaryKey) > 0 {
 		return append([]string(nil), table.PrimaryKey...)
 	}
@@ -88,7 +88,7 @@ func EffectivePrimaryKey(table goschema.Table, fields []goschema.Field) []string
 
 // EnumIndex maps enum type names to their allowed values, for resolving fields
 // that reference a named enum type instead of carrying inline values.
-func EnumIndex(db *goschema.Database) map[string][]string {
+func EnumIndex(db *schemamodel.Database) map[string][]string {
 	index := make(map[string][]string, len(db.Enums))
 	for _, enum := range db.Enums {
 		index[enum.Name] = enum.Values
@@ -101,7 +101,7 @@ func EnumIndex(db *goschema.Database) map[string][]string {
 // through enums. The second result is false when the field is not an enum or its
 // values cannot be resolved, in which case the caller falls back to a plain
 // string.
-func ResolveEnumValues(field goschema.Field, enums map[string][]string) ([]string, bool) {
+func ResolveEnumValues(field schemamodel.Field, enums map[string][]string) ([]string, bool) {
 	if len(field.Enum) > 0 {
 		return field.Enum, true
 	}
@@ -304,7 +304,7 @@ const (
 // does. An unknown Target resolves to nothing rather than guessing, so a target
 // added without a name field falls back to the shared one instead of silently
 // reading another target's.
-func (t Target) nameIn(names goschema.TargetNames) string {
+func (t Target) nameIn(names schemamodel.TargetNames) string {
 	switch t {
 	case TargetOpenAPI:
 		return names.OpenAPI
@@ -354,7 +354,7 @@ func collisionAdvice(target Target) string {
 // byte-identically, a shared alias answers every target, and a per-target name
 // exists only where a format's naming rules make the shared one unusable
 // (stokaro/ptah#905).
-func FieldAPIName(field goschema.Field, target Target) string {
+func FieldAPIName(field schemamodel.Field, target Target) string {
 	if name := target.nameIn(field.APINames); name != "" {
 		return name
 	}
@@ -372,7 +372,7 @@ func FieldAPIName(field goschema.Field, target Target) string {
 // exported schema, and the reader of that schema has nothing left to notice it
 // with. Both sources are named because the alias is as likely to be the
 // mistake as the column it collided with.
-func ValidateFieldAPINames(table goschema.Table, fields []goschema.Field, target Target) error {
+func ValidateFieldAPINames(table schemamodel.Table, fields []schemamodel.Field, target Target) error {
 	claimed := make(map[string]string, len(fields))
 	for _, field := range fields {
 		api := FieldAPIName(field, target)
@@ -393,7 +393,7 @@ func ValidateFieldAPINames(table goschema.Table, fields []goschema.Field, target
 // A table that declares no API name keeps its table name, so an unannotated
 // schema exports byte-identically. This is the table-level half of what
 // [FieldAPIName] does for a column (stokaro/ptah#905).
-func TableAPIName(table goschema.Table, target Target) string {
+func TableAPIName(table schemamodel.Table, target Target) string {
 	if name := target.nameIn(table.APINames); name != "" {
 		return name
 	}
@@ -409,7 +409,7 @@ func TableAPIName(table goschema.Table, target Target) string {
 // Two tables published under one name means one of them is absent from the
 // exported schema, exactly as with a field, and the reader of that schema has
 // nothing left to notice it with.
-func ValidateTableAPINames(tables []goschema.Table, target Target) error {
+func ValidateTableAPINames(tables []schemamodel.Table, target Target) error {
 	claimed := make(map[string]string, len(tables))
 	for _, table := range tables {
 		api := TableAPIName(table, target)
@@ -429,7 +429,7 @@ func ValidateTableAPINames(tables []goschema.Table, target Target) error {
 //
 // A field that declares no override keeps its column type, so an unannotated
 // schema exports exactly as before (stokaro/ptah#905).
-func FieldAPIType(field goschema.Field) string {
+func FieldAPIType(field schemamodel.Field) string {
 	if field.APIType != "" {
 		return field.APIType
 	}
@@ -445,7 +445,7 @@ func FieldAPIType(field goschema.Field) string {
 // most a projection can do. An unmapped override is something the author typed
 // on purpose and the exporter cannot honor -- projecting it as a string would
 // answer a request nobody made and hide that the declaration did nothing.
-func UnknownAPITypeError(table goschema.Table, field goschema.Field, target Target) error {
+func UnknownAPITypeError(table schemamodel.Table, field schemamodel.Field, target Target) error {
 	return fmt.Errorf(
 		"column %q on table %q declares api_type %q, which the %s projection does not recognize; "+
 			"name a type Ptah maps, or drop the override to keep the column's own type %q",
@@ -467,7 +467,7 @@ func UnknownAPITypeError(table goschema.Table, field goschema.Field, target Targ
 // enum anyway -- the declaration doing nothing, silently, which is the one
 // outcome this whole annotation exists to rule out. An override that names a
 // declared enum still resolves, through the enum index, on the type.
-func ProjectedField(field goschema.Field) goschema.Field {
+func ProjectedField(field schemamodel.Field) schemamodel.Field {
 	if field.APIType != "" {
 		field.Enum = nil
 	}
@@ -486,8 +486,8 @@ func ProjectedField(field goschema.Field) goschema.Field {
 // fact produce, and the natural way to publish a column stored as text on a
 // dialect with no native enum.
 func RefuseUnknownAPIType(
-	table goschema.Table,
-	field goschema.Field,
+	table schemamodel.Table,
+	field schemamodel.Field,
 	target Target,
 	enums map[string][]string,
 	maps func(projectedType string) bool,

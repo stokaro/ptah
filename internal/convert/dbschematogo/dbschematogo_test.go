@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 )
 
@@ -14,7 +14,7 @@ func TestConvertDBSchemaToGoSchema_Extensions(t *testing.T) {
 	tests := []struct {
 		name     string
 		dbSchema *catalog.Database
-		expected []goschema.Extension
+		expected []schemamodel.Extension
 	}{
 		{
 			name: "single extension without comment",
@@ -27,7 +27,7 @@ func TestConvertDBSchemaToGoSchema_Extensions(t *testing.T) {
 					},
 				},
 			},
-			expected: []goschema.Extension{
+			expected: []schemamodel.Extension{
 				{
 					Name:        "pg_trgm",
 					Schema:      "public",
@@ -49,7 +49,7 @@ func TestConvertDBSchemaToGoSchema_Extensions(t *testing.T) {
 					},
 				},
 			},
-			expected: []goschema.Extension{
+			expected: []schemamodel.Extension{
 				{
 					Name:        "postgis",
 					Schema:      "public",
@@ -76,7 +76,7 @@ func TestConvertDBSchemaToGoSchema_Extensions(t *testing.T) {
 					},
 				},
 			},
-			expected: []goschema.Extension{
+			expected: []schemamodel.Extension{
 				{
 					Name:        "pg_trgm",
 					Schema:      "public",
@@ -98,14 +98,14 @@ func TestConvertDBSchemaToGoSchema_Extensions(t *testing.T) {
 			dbSchema: &catalog.Database{
 				Extensions: make([]catalog.Extension, 0),
 			},
-			expected: make([]goschema.Extension, 0),
+			expected: make([]schemamodel.Extension, 0),
 		},
 		{
 			name: "nil extensions",
 			dbSchema: &catalog.Database{
 				Extensions: nil,
 			},
-			expected: make([]goschema.Extension, 0),
+			expected: make([]schemamodel.Extension, 0),
 		},
 	}
 
@@ -185,7 +185,7 @@ func TestConvertDBSchemaToGoSchema_Schemas(t *testing.T) {
 
 	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
 
-	c.Assert(result.Schemas, qt.DeepEquals, []goschema.Schema{
+	c.Assert(result.Schemas, qt.DeepEquals, []schemamodel.Schema{
 		{Name: "auth", Comment: "Authentication objects"},
 		{Name: "billing", Charset: "utf8mb4", Collate: "utf8mb4_0900_ai_ci"},
 	})
@@ -665,17 +665,17 @@ func TestConvertDBSchemaToGoSchema_DuplicateTableNamesUseSchemaQualifiedStructNa
 
 	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
 
-	c.Assert(result.Tables, qt.DeepEquals, []goschema.Table{
+	c.Assert(result.Tables, qt.DeepEquals, []schemamodel.Table{
 		{StructName: "AuthUsers", Schema: "auth", Name: "users"},
 		{StructName: "BillingUsers", Schema: "billing", Name: "users"},
 	})
-	c.Assert(result.Fields, qt.DeepEquals, []goschema.Field{
+	c.Assert(result.Fields, qt.DeepEquals, []schemamodel.Field{
 		{StructName: "AuthUsers", FieldName: "Id", Name: "id", Type: "integer", Nullable: false},
 		{StructName: "AuthUsers", FieldName: "Email", Name: "email", Type: "text", Nullable: false},
 		{StructName: "BillingUsers", FieldName: "Id", Name: "id", Type: "integer", Nullable: false},
 		{StructName: "BillingUsers", FieldName: "ExternalId", Name: "external_id", Type: "text", Nullable: false},
 	})
-	c.Assert(result.Indexes, qt.DeepEquals, []goschema.Index{
+	c.Assert(result.Indexes, qt.DeepEquals, []schemamodel.Index{
 		{StructName: "AuthUsers", Name: "users_email_key", TableName: "auth.users", Fields: []string{"email"}, Unique: true},
 		{StructName: "BillingUsers", Name: "users_external_id_key", TableName: "billing.users", Fields: []string{"external_id"}, Unique: true},
 	})
@@ -705,7 +705,7 @@ func TestConvertDBSchemaToGoSchema_PreservesIndexPartDirection(t *testing.T) {
 
 	c.Assert(result.Indexes, qt.HasLen, 1)
 	c.Assert(result.Indexes[0].Fields, qt.DeepEquals, []string{"email", "status"})
-	c.Assert(result.Indexes[0].Parts, qt.DeepEquals, []goschema.IndexPart{
+	c.Assert(result.Indexes[0].Parts, qt.DeepEquals, []schemamodel.IndexPart{
 		{Name: "email", Desc: true},
 		{Name: "status"},
 	})
@@ -738,7 +738,7 @@ func TestConvertDBSchemaToGoSchema_PreservesIndexPartExpression(t *testing.T) {
 	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
 
 	c.Assert(result.Indexes, qt.HasLen, 1)
-	c.Assert(result.Indexes[0].Parts, qt.DeepEquals, []goschema.IndexPart{
+	c.Assert(result.Indexes[0].Parts, qt.DeepEquals, []schemamodel.IndexPart{
 		{Name: "tenant_id"},
 		{Expr: "lower(name)"},
 	})
@@ -911,7 +911,7 @@ func TestConvertDBSchemaToGoSchema_CompositeForeignKeyBecomesTableConstraint(t *
 		c.Assert(field.Foreign, qt.Equals, "")
 		c.Assert(field.ForeignKeyName, qt.Equals, "")
 	}
-	c.Assert(result.Constraints, qt.DeepEquals, []goschema.Constraint{{
+	c.Assert(result.Constraints, qt.DeepEquals, []schemamodel.Constraint{{
 		StructName:     "Orders",
 		Name:           "fk_orders_accounts",
 		Type:           "FOREIGN KEY",
@@ -972,7 +972,7 @@ func TestConvertDBSchemaToGoSchema_TableLevelConstraintsAndSizedTypes(t *testing
 	c.Assert(result.Fields[1].Primary, qt.IsFalse)
 	c.Assert(result.Fields[2].Type, qt.Equals, "VARCHAR(255)")
 	c.Assert(result.Fields[3].Type, qt.Equals, "NUMERIC(10,2)")
-	c.Assert(result.Constraints, qt.DeepEquals, []goschema.Constraint{
+	c.Assert(result.Constraints, qt.DeepEquals, []schemamodel.Constraint{
 		{
 			StructName:     "OrderItems",
 			Name:           "order_items_sku_unique",

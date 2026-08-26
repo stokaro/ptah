@@ -19,10 +19,10 @@ import (
 
 	"go.5x5.cz/ptah/cmd/generate"
 	"go.5x5.cz/ptah/cmd/readdb"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/dbtarget"
@@ -392,15 +392,15 @@ func testMySQLFamilyMutualForeignKeys(t *testing.T, databaseName, dsn string) {
 	c.Assert(foreignKeyCount, qt.Equals, 2)
 }
 
-func mutualLiveForeignKeyDatabase(prefix string) *goschema.Database {
+func mutualLiveForeignKeyDatabase(prefix string) *schemamodel.Database {
 	leftTable := prefix + "_left"
 	rightTable := prefix + "_right"
-	return &goschema.Database{
-		Tables: []goschema.Table{
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Left", Name: leftTable},
 			{StructName: "Right", Name: rightTable},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Left", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Left", Name: "right_id", Type: "INTEGER", Foreign: rightTable + "(id)", ForeignKeyName: "fk_" + prefix + "_left_right"},
 			{StructName: "Right", Name: "id", Type: "INTEGER", Primary: true},
@@ -409,26 +409,26 @@ func mutualLiveForeignKeyDatabase(prefix string) *goschema.Database {
 	}
 }
 
-func indexedLiveForeignKeyDatabase(prefix string) *goschema.Database {
+func indexedLiveForeignKeyDatabase(prefix string) *schemamodel.Database {
 	parentTable := prefix + "_parent"
 	childTable := prefix + "_child"
-	return &goschema.Database{
-		Tables: []goschema.Table{
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Parent", Name: parentTable},
 			{StructName: "Child", Name: childTable},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Parent", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Parent", Name: "code", Type: "INTEGER"},
 			{StructName: "Child", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Child", Name: "parent_code", Type: "INTEGER"},
 		},
-		Indexes: []goschema.Index{{
+		Indexes: []schemamodel.Index{{
 			StructName: "Parent",
 			Name:       "idx_" + prefix + "_parent_code",
 			Fields:     []string{"code"},
 		}},
-		Constraints: []goschema.Constraint{{
+		Constraints: []schemamodel.Constraint{{
 			StructName:    "Child",
 			Name:          "fk_" + prefix + "_child_parent",
 			Type:          "FOREIGN KEY",

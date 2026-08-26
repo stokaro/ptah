@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
@@ -36,7 +36,7 @@ type identity struct {
 // need, indexed by the identity the diff refers to them with.
 type Resolver struct {
 	semantics identifier.Semantics
-	policies  map[identity]goschema.RLSPolicy
+	policies  map[identity]schemamodel.RLSPolicy
 }
 
 // Resolve returns the target policy identified by ref.
@@ -47,16 +47,16 @@ type Resolver struct {
 // database unprotected -- the failure stokaro/ptah#1311 was reviewed for. The
 // public planning contract already promises that an invalid schema diff is
 // rejected with [ptaherr.ErrInvalidSchemaDiff].
-func (r *Resolver) Resolve(ref difftypes.RLSPolicyRef) (goschema.RLSPolicy, error) {
+func (r *Resolver) Resolve(ref difftypes.RLSPolicyRef) (schemamodel.RLSPolicy, error) {
 	if r == nil {
-		return goschema.RLSPolicy{}, fmt.Errorf(
+		return schemamodel.RLSPolicy{}, fmt.Errorf(
 			"%w: no validated target RLS policies are available",
 			ptaherr.ErrInvalidSchemaDiff,
 		)
 	}
 	policy, ok := r.policies[identityKey(r.semantics, ref)]
 	if !ok {
-		return goschema.RLSPolicy{}, fmt.Errorf(
+		return schemamodel.RLSPolicy{}, fmt.Errorf(
 			"%w: target RLS policy %s on table %s was not part of the validated plan",
 			ptaherr.ErrInvalidSchemaDiff,
 			ref.PolicyName,
@@ -71,9 +71,9 @@ func (r *Resolver) Resolve(ref difftypes.RLSPolicyRef) (goschema.RLSPolicy, erro
 func NewResolver(
 	dialect string,
 	diff *difftypes.SchemaDiff,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 ) (*Resolver, error) {
-	return NewResolverWithSemantics(dialect, identifier.ForDialect(dialect), diff, generated)
+	return NewResolverWithSemantics(dialect, identifier.ForDialect(dialect), diff, desired)
 }
 
 // NewResolverWithSemantics validates and indexes target policies using explicit
@@ -95,7 +95,7 @@ func NewResolverWithSemantics(
 	dialect string,
 	semantics identifier.Semantics,
 	diff *difftypes.SchemaDiff,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 ) (*Resolver, error) {
 	if diff == nil {
 		return nil, fmt.Errorf("%w: schema diff is nil", ptaherr.ErrInvalidSchemaDiff)
@@ -109,7 +109,7 @@ func NewResolverWithSemantics(
 	if err := validateRefs("modified", modifiedRefs(diff)); err != nil {
 		return nil, err
 	}
-	resolver, err := newTargetResolver(dialect, semantics, generated)
+	resolver, err := newTargetResolver(dialect, semantics, desired)
 	if err != nil {
 		return nil, err
 	}
@@ -135,16 +135,16 @@ func modifiedRefs(diff *difftypes.SchemaDiff) []difftypes.RLSPolicyRef {
 func newTargetResolver(
 	dialect string,
 	semantics identifier.Semantics,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 ) (*Resolver, error) {
 	resolver := &Resolver{
 		semantics: semantics,
-		policies:  make(map[identity]goschema.RLSPolicy),
+		policies:  make(map[identity]schemamodel.RLSPolicy),
 	}
-	if generated == nil {
+	if desired == nil {
 		return resolver, nil
 	}
-	for position, policy := range generated.RLSPolicies {
+	for position, policy := range desired.RLSPolicies {
 		ref := difftypes.RLSPolicyRef{PolicyName: policy.Name, TableName: policy.Table}
 		if err := validateRef("target", position, ref); err != nil {
 			return nil, err
@@ -211,7 +211,7 @@ func validateRef(operation string, position int, ref difftypes.RLSPolicyRef) err
 	return nil
 }
 
-func conflictError(dialect string, previous, policy goschema.RLSPolicy) error {
+func conflictError(dialect string, previous, policy schemamodel.RLSPolicy) error {
 	return fmt.Errorf(
 		"%w: target RLS policies %s on %s and %s on %s share one identity in %s",
 		ptaherr.ErrInvalidSchemaDiff,

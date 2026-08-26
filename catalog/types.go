@@ -670,7 +670,7 @@ type Index struct {
 	//
 	// It is the index's, not the table's: COMMENT ON INDEX and COMMENT ON TABLE
 	// address different objects, and an index has a slot for one on every
-	// surface below this model -- goschema.Index.Comment, the Atlas-compatible
+	// surface below this model -- schemamodel.Index.Comment, the Atlas-compatible
 	// HCL reader's `comment` attribute, and the HCL writer's. Before #1242 this
 	// field did not exist, so a comment the server reported was dropped between
 	// the catalog and the model and every surface below it saw an index that

@@ -7,7 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 )
 
@@ -22,7 +22,7 @@ import (
 func TestPrimaryKeyName_DecidesTheFormAndCarriesTheName(t *testing.T) {
 	tests := []struct {
 		name  string
-		table goschema.Table
+		table schemamodel.Table
 		// want is where the key ended up: "(inline)" when it stayed on the
 		// column, "(unnamed)" when it became a table-level constraint with no
 		// name, and the name itself otherwise. One value rather than two
@@ -31,7 +31,7 @@ func TestPrimaryKeyName_DecidesTheFormAndCarriesTheName(t *testing.T) {
 	}{
 		{
 			name: "a named single-column key takes the table-level form",
-			table: goschema.Table{
+			table: schemamodel.Table{
 				Name: "t", StructName: "T",
 				PrimaryKey: []string{"b"}, PrimaryKeyName: "c_pk",
 			},
@@ -39,7 +39,7 @@ func TestPrimaryKeyName_DecidesTheFormAndCarriesTheName(t *testing.T) {
 		},
 		{
 			name: "a named composite key keeps its name",
-			table: goschema.Table{
+			table: schemamodel.Table{
 				Name: "t", StructName: "T",
 				PrimaryKey: []string{"a", "b"}, PrimaryKeyName: "c_comp_pk",
 			},
@@ -50,7 +50,7 @@ func TestPrimaryKeyName_DecidesTheFormAndCarriesTheName(t *testing.T) {
 			// every table in every document grows a constraint clause and the
 			// diff against a database that has none never settles.
 			name: "an unnamed single-column key stays inline",
-			table: goschema.Table{
+			table: schemamodel.Table{
 				Name: "t", StructName: "T",
 				PrimaryKey: []string{"b"},
 			},
@@ -60,7 +60,7 @@ func TestPrimaryKeyName_DecidesTheFormAndCarriesTheName(t *testing.T) {
 			// The other control: an unnamed composite key was already
 			// table-level and must not gain a name.
 			name: "an unnamed composite key keeps the table-level form and no name",
-			table: goschema.Table{
+			table: schemamodel.Table{
 				Name: "t", StructName: "T",
 				PrimaryKey: []string{"a", "b"},
 			},
@@ -74,7 +74,7 @@ func TestPrimaryKeyName_DecidesTheFormAndCarriesTheName(t *testing.T) {
 			// The fields carry Primary the way a declaration delivers them:
 			// every column the key names is marked, and the conversion decides
 			// whether that mark survives or becomes a table-level constraint.
-			fields := []goschema.Field{
+			fields := []schemamodel.Field{
 				{StructName: "T", Name: "a", Type: "INTEGER", Primary: slices.Contains(test.table.PrimaryKey, "a")},
 				{StructName: "T", Name: "b", Type: "INTEGER", Primary: slices.Contains(test.table.PrimaryKey, "b")},
 			}

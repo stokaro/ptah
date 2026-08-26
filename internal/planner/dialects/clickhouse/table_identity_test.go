@@ -6,16 +6,16 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // eventsTable declares one `events` table whose schema is spelled as given.
-func eventsTable(tableSchema string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Event", Name: "events", Schema: tableSchema}},
-		Fields: []goschema.Field{
+func eventsTable(tableSchema string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Event", Name: "events", Schema: tableSchema}},
+		Fields: []schemamodel.Field{
 			{StructName: "Event", Name: "id", Type: "UInt64", Primary: true},
 			{StructName: "Event", Name: "note", Type: "String"},
 		},

@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashcl"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 )
@@ -34,32 +34,32 @@ import (
 func TestRenderWritesUserTypeBasesAsSQLCalls(t *testing.T) {
 	tests := []struct {
 		name string
-		db   *goschema.Database
+		db   *schemamodel.Database
 		want string
 	}{
 		{
 			name: "a domain's base type",
-			db:   &goschema.Database{Domains: []goschema.Domain{{Name: "d", BaseType: "text"}}},
+			db:   &schemamodel.Database{Domains: []schemamodel.Domain{{Name: "d", BaseType: "text"}}},
 			want: `  type = sql("text")` + "\n",
 		},
 		{
 			name: "a composite field's type",
-			db: &goschema.Database{CompositeTypes: []goschema.CompositeType{{
+			db: &schemamodel.Database{CompositeTypes: []schemamodel.CompositeType{{
 				Name:   "c",
-				Fields: []goschema.CompositeTypeField{{Name: "f", Type: "text"}},
+				Fields: []schemamodel.CompositeField{{Name: "f", Type: "text"}},
 			}}},
 			want: `    type = sql("text")` + "\n",
 		},
 		{
 			name: "a range's subtype",
-			db:   &goschema.Database{Ranges: []goschema.Range{{Name: "r", Subtype: "int4"}}},
+			db:   &schemamodel.Database{Ranges: []schemamodel.Range{{Name: "r", Subtype: "int4"}}},
 			want: `  subtype = sql("int4")` + "\n",
 		},
 		{
 			// A type carrying a size or a space would be a syntax error bare and
 			// a refused string quoted; the call takes it verbatim.
 			name: "a sized type survives verbatim",
-			db:   &goschema.Database{Domains: []goschema.Domain{{Name: "d", BaseType: "character varying(100)"}}},
+			db:   &schemamodel.Database{Domains: []schemamodel.Domain{{Name: "d", BaseType: "character varying(100)"}}},
 			want: `  type = sql("character varying(100)")` + "\n",
 		},
 	}
@@ -85,11 +85,11 @@ func TestRenderWritesUserTypeBasesAsSQLCalls(t *testing.T) {
 func TestRenderedUserTypeBasesRoundTrip(t *testing.T) {
 	c := qt.New(t)
 
-	db := &goschema.Database{
-		Schemas:        []goschema.Schema{{Name: "public"}},
-		Domains:        []goschema.Domain{{Name: "d", Schema: "public", BaseType: "text"}},
-		CompositeTypes: []goschema.CompositeType{{Name: "c", Schema: "public", Fields: []goschema.CompositeTypeField{{Name: "f", Type: "text"}}}},
-		Ranges:         []goschema.Range{{Name: "r", Schema: "public", Subtype: "int4"}},
+	db := &schemamodel.Database{
+		Schemas:        []schemamodel.Schema{{Name: "public"}},
+		Domains:        []schemamodel.Domain{{Name: "d", Schema: "public", BaseType: "text"}},
+		CompositeTypes: []schemamodel.CompositeType{{Name: "c", Schema: "public", Fields: []schemamodel.CompositeField{{Name: "f", Type: "text"}}}},
+		Ranges:         []schemamodel.Range{{Name: "r", Schema: "public", Subtype: "int4"}},
 	}
 
 	result, err := atlashclrender.Render(db)
@@ -113,8 +113,8 @@ func TestRenderedUserTypeBasesRoundTrip(t *testing.T) {
 func TestRenderKeepsAnEmptyUserTypeBaseUnwrapped(t *testing.T) {
 	c := qt.New(t)
 
-	result, err := atlashclrender.Render(&goschema.Database{
-		Domains: []goschema.Domain{{Name: "d", BaseType: ""}},
+	result, err := atlashclrender.Render(&schemamodel.Database{
+		Domains: []schemamodel.Domain{{Name: "d", BaseType: ""}},
 	})
 
 	c.Assert(err, qt.IsNil)

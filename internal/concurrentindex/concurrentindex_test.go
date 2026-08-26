@@ -6,18 +6,18 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/concurrentindex"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // desiredWithConcurrentIndex is one table and one index on it, with the
 // declaration's answer under the caller's control.
-func desiredWithConcurrentIndex(concurrently bool) *goschema.Database {
-	return &goschema.Database{
-		Tables:  []goschema.Table{{StructName: "Widget", Name: "widget"}},
-		Indexes: []goschema.Index{{StructName: "Widget", Name: "idx_widget_a", Fields: []string{"a"}, Concurrently: concurrently}},
+func desiredWithConcurrentIndex(concurrently bool) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables:  []schemamodel.Table{{StructName: "Widget", Name: "widget"}},
+		Indexes: []schemamodel.Index{{StructName: "Widget", Name: "idx_widget_a", Fields: []string{"a"}, Concurrently: concurrently}},
 	}
 }
 

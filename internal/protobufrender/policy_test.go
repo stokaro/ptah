@@ -6,20 +6,20 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/protobufrender"
 )
 
 // twoTypeSchema has one plain table plus a table whose enum column produces a
 // second top-level type, so removal policies can be exercised on a message and
 // an enum at once.
-func twoTypeSchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func twoTypeSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Thing", Name: "things"},
 			{StructName: "Order", Name: "orders"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Thing", Name: "id", Type: "BIGINT"},
 			{StructName: "Order", Name: "id", Type: "BIGINT"},
 			{StructName: "Order", Name: "state", Type: enumCarrierType, Enum: []string{"new", "done"}},
@@ -29,7 +29,7 @@ func twoTypeSchema() *goschema.Database {
 
 // survivingSchema is twoTypeSchema with the orders table gone, which removes
 // both the Order message and the OrderState enum.
-func survivingSchema() *goschema.Database {
+func survivingSchema() *schemamodel.Database {
 	return oneTable(column("id", "BIGINT"))
 }
 

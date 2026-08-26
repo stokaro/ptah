@@ -1,7 +1,7 @@
 // Package fromschema provides converters for transforming goschema types into AST nodes.
 //
-// This package serves as a bridge between the high-level schema definitions (goschema.Field,
-// goschema.Table, etc.) and the low-level AST nodes that represent SQL DDL statements.
+// This package serves as a bridge between the high-level schema definitions (schemamodel.Field,
+// schemamodel.Table, etc.) and the low-level AST nodes that represent SQL DDL statements.
 // The converters handle the translation of schema metadata into concrete SQL structures that
 // can be rendered by dialect-specific visitors.
 //
@@ -18,7 +18,7 @@
 //
 // Converting a simple field definition:
 //
-//	field := goschema.Field{
+//	field := schemamodel.Field{
 //		Name:     "email",
 //		Type:     "VARCHAR(255)",
 //		Nullable: false,
@@ -29,11 +29,11 @@
 //
 // Converting a complete database schema:
 //
-//	database := goschema.Database{
-//		Tables: []goschema.Table{...},
-//		Fields: []goschema.Field{...},
-//		Indexes: []goschema.Index{...},
-//		Enums: []goschema.Enum{...},
+//	database := schemamodel.Database{
+//		Tables: []schemamodel.Table{...},
+//		Fields: []schemamodel.Field{...},
+//		Indexes: []schemamodel.Index{...},
+//		Enums: []schemamodel.Enum{...},
 //	}
 //	statements := fromschema.FromDatabase(database, "postgres")
 //
@@ -59,9 +59,9 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/deporder"
 	"go.5x5.cz/ptah/internal/planner/tablelookup"
 	"go.5x5.cz/ptah/internal/sqlident"
@@ -95,7 +95,7 @@ func GenerateForeignKeyName(tableName, fieldName string) string {
 	return "fk_" + strings.ToLower(tableName) + "_" + strings.ToLower(fieldName)
 }
 
-func defaultGeneratedKind(field goschema.Field, targetPlatform string) string {
+func defaultGeneratedKind(field schemamodel.Field, targetPlatform string) string {
 	if field.GeneratedExpression == "" || field.GeneratedKind != "" {
 		return field.GeneratedKind
 	}
@@ -158,7 +158,7 @@ func supportsExtensionInstallationSchema(targetPlatform string) bool {
 // original no longer describes it. Carrying the marker across such a rewrite
 // would make a writer emit `sql("<the override>")`, attributing the escape
 // hatch to text that never went through it.
-func typeRawSQLSurvives(field goschema.Field, declaredType string) bool {
+func typeRawSQLSurvives(field schemamodel.Field, declaredType string) bool {
 	return field.TypeRawSQL && field.Type == declaredType
 }
 
@@ -191,7 +191,7 @@ func platformOverrideGroup(overrides map[string]map[string]string, targetPlatfor
 	return overrides[candidates[0]], true
 }
 
-func applyPlatformOverrides(field goschema.Field, targetPlatform string) goschema.Field {
+func applyPlatformOverrides(field schemamodel.Field, targetPlatform string) schemamodel.Field {
 	fieldType := platformFieldType(field, targetPlatform)
 	checkConstraint := field.Check
 	checkName := field.CheckName
@@ -286,7 +286,7 @@ func applyPlatformOverrides(field goschema.Field, targetPlatform string) goschem
 
 // EffectiveFieldForPlatform returns the field definition after applying the
 // same platform overrides used by AST conversion.
-func EffectiveFieldForPlatform(field goschema.Field, targetPlatform string) goschema.Field {
+func EffectiveFieldForPlatform(field schemamodel.Field, targetPlatform string) schemamodel.Field {
 	return applyPlatformOverrides(field, targetPlatform)
 }
 
@@ -305,7 +305,7 @@ func EffectiveFieldForPlatform(field goschema.Field, targetPlatform string) gosc
 // `nvarchar(-1)` while `VARCHAR(50)` from the same table replayed as
 // `varchar/50`. The difference was only that `VARCHAR(50)` carries a length and
 // so misses the bare-name switch below (stokaro/ptah#2147).
-func platformFieldType(field goschema.Field, targetPlatform string) string {
+func platformFieldType(field schemamodel.Field, targetPlatform string) string {
 	fieldType := field.Type
 	if field.TypeRawSQL || field.TypeIsDeclaredText {
 		return fieldType
@@ -345,7 +345,7 @@ func sqlServerFieldType(fieldType string) string {
 }
 
 func fieldWithPlatformValues(
-	field goschema.Field,
+	field schemamodel.Field,
 	fieldType,
 	checkConstraint,
 	checkName,
@@ -355,7 +355,7 @@ func fieldWithPlatformValues(
 	defaultValue string,
 	defaultSet bool,
 	defaultExpr string,
-) goschema.Field {
+) schemamodel.Field {
 	newField := field
 	newField.Type = fieldType
 	newField.Check = checkConstraint
@@ -380,7 +380,7 @@ func fieldWithPlatformValues(
 // skip standalone CREATE TYPE emission, so the values disappeared entirely and
 // the DDL named a type the server had never heard of (stokaro/ptah#931 item 1).
 // A declaration is what makes a type an enum; how it is spelled is not.
-func declaredEnum(fieldType string, enums []goschema.Enum) *goschema.Enum {
+func declaredEnum(fieldType string, enums []schemamodel.Enum) *schemamodel.Enum {
 	for i := range enums {
 		if enums[i].Name == fieldType {
 			return &enums[i]
@@ -389,7 +389,7 @@ func declaredEnum(fieldType string, enums []goschema.Enum) *goschema.Enum {
 	return nil
 }
 
-func handleEnumTypes(field goschema.Field, enums []goschema.Enum, targetPlatform string) goschema.Field {
+func handleEnumTypes(field schemamodel.Field, enums []schemamodel.Enum, targetPlatform string) schemamodel.Field {
 	enum := declaredEnum(field.Type, enums)
 	if enum == nil {
 		return field
@@ -424,7 +424,7 @@ func handleEnumTypes(field goschema.Field, enums []goschema.Enum, targetPlatform
 	return applyInlineEnumModel(field, *enum, targetPlatform)
 }
 
-func applyInlineEnumModel(field goschema.Field, enum goschema.Enum, targetPlatform string) goschema.Field {
+func applyInlineEnumModel(field schemamodel.Field, enum schemamodel.Enum, targetPlatform string) schemamodel.Field {
 	quotedValues := make([]string, len(enum.Values))
 	for i, value := range enum.Values {
 		quotedValues[i] = escapeSQLStringLiteral(value)
@@ -475,7 +475,7 @@ func emitsStandaloneEnumDefinitions(targetPlatform string) bool {
 	}
 }
 
-// FromField converts a goschema.Field to an ast.ColumnNode with comprehensive attribute mapping.
+// FromField converts a schemamodel.Field to an ast.ColumnNode with comprehensive attribute mapping.
 //
 // This function transforms a high-level field definition into a concrete column AST node,
 // handling all supported column attributes including constraints, defaults, foreign keys,
@@ -501,7 +501,7 @@ func emitsStandaloneEnumDefinitions(targetPlatform string) bool {
 //
 // Basic field with constraints:
 //
-//	field := goschema.Field{
+//	field := schemamodel.Field{
 //		Name:     "email",
 //		Type:     "VARCHAR(255)",
 //		Nullable: false,
@@ -513,7 +513,7 @@ func emitsStandaloneEnumDefinitions(targetPlatform string) bool {
 //
 // Field with foreign key:
 //
-//	field := goschema.Field{
+//	field := schemamodel.Field{
 //		Name:           "user_id",
 //		Type:           "INTEGER",
 //		Nullable:       false,
@@ -525,7 +525,7 @@ func emitsStandaloneEnumDefinitions(targetPlatform string) bool {
 //
 // Field with default values:
 //
-//	field := goschema.Field{
+//	field := schemamodel.Field{
 //		Name:        "created_at",
 //		Type:        "TIMESTAMP",
 //		Nullable:    false,
@@ -539,7 +539,7 @@ func emitsStandaloneEnumDefinitions(targetPlatform string) bool {
 // The function supports platform-specific overrides through the field.Overrides map.
 // These overrides allow different database platforms to use different configurations:
 //
-//	field := goschema.Field{
+//	field := schemamodel.Field{
 //		Name: "data",
 //		Type: "JSONB",
 //		Overrides: map[string]map[string]string{
@@ -564,11 +564,11 @@ func emitsStandaloneEnumDefinitions(targetPlatform string) bool {
 // spelling has been replaced there is nothing verbatim left to protect, and a
 // renderer that skipped canonicalization would write the substituted type
 // unchanged. It is the rule [typeRawSQLSurvives] applies for the same reason.
-func typeIsDeclaredTextSurvives(field goschema.Field, declaredType string) bool {
+func typeIsDeclaredTextSurvives(field schemamodel.Field, declaredType string) bool {
 	return field.TypeIsDeclaredText && field.Type == declaredType
 }
 
-func FromField(field goschema.Field, enums []goschema.Enum, targetPlatform string) *ast.ColumnNode {
+func FromField(field schemamodel.Field, enums []schemamodel.Enum, targetPlatform string) *ast.ColumnNode {
 	declaredType := field.Type
 	field = applyPlatformOverrides(field, targetPlatform)
 	field = handleEnumTypes(field, enums, targetPlatform)
@@ -651,7 +651,7 @@ func FromField(field goschema.Field, enums []goschema.Enum, targetPlatform strin
 	return column
 }
 
-// FromFieldWithoutForeignKeys converts a goschema.Field to an AST ColumnNode without foreign key constraints.
+// FromFieldWithoutForeignKeys converts a schemamodel.Field to an AST ColumnNode without foreign key constraints.
 //
 // This function is identical to FromField but excludes foreign key constraints from the column definition.
 // It's used during two-phase table creation where foreign key constraints are added separately
@@ -664,7 +664,7 @@ func FromField(field goschema.Field, enums []goschema.Enum, targetPlatform strin
 //
 // Returns:
 //   - *ast.ColumnNode: Column definition without foreign key constraints
-func FromFieldWithoutForeignKeys(field goschema.Field, enums []goschema.Enum, targetPlatform string) *ast.ColumnNode {
+func FromFieldWithoutForeignKeys(field schemamodel.Field, enums []schemamodel.Enum, targetPlatform string) *ast.ColumnNode {
 	// Apply platform-specific overrides if available
 	declaredType := field.Type
 	field = applyPlatformOverrides(field, targetPlatform)
@@ -748,7 +748,7 @@ func FromFieldWithoutForeignKeys(field goschema.Field, enums []goschema.Enum, ta
 	return column
 }
 
-func applyTablePlatformOverrides(createTable *ast.CreateTableNode, table goschema.Table, targetPlatform string) goschema.Table {
+func applyTablePlatformOverrides(createTable *ast.CreateTableNode, table schemamodel.Table, targetPlatform string) schemamodel.Table {
 	// Apply platform-specific overrides if available
 	if targetPlatform == "" || table.Overrides == nil {
 		return table
@@ -824,9 +824,9 @@ func isKnownTablePlatformOverride(key string) bool {
 	return slices.Contains(knownKeys, key)
 }
 
-type fieldConverter func(goschema.Field, []goschema.Enum, string) *ast.ColumnNode
+type fieldConverter func(schemamodel.Field, []schemamodel.Enum, string) *ast.ColumnNode
 
-// FromTable converts a goschema.Table to an ast.CreateTableNode with all associated columns and constraints.
+// FromTable converts a schemamodel.Table to an ast.CreateTableNode with all associated columns and constraints.
 //
 // This function creates a complete table definition by combining table metadata with its associated
 // field definitions. It handles table-level properties, adds all matching columns, creates
@@ -851,12 +851,12 @@ type fieldConverter func(goschema.Field, []goschema.Enum, string) *ast.ColumnNod
 //
 // Basic table with simple primary key:
 //
-//	table := goschema.Table{
+//	table := schemamodel.Table{
 //		StructName: "User",
 //		Name:       "users",
 //		Comment:    "Application users",
 //	}
-//	fields := []goschema.Field{
+//	fields := []schemamodel.Field{
 //		{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 //		{StructName: "User", Name: "email", Type: "VARCHAR(255)", Nullable: false, Unique: true},
 //	}
@@ -864,12 +864,12 @@ type fieldConverter func(goschema.Field, []goschema.Enum, string) *ast.ColumnNod
 //
 // Table with composite primary key:
 //
-//	table := goschema.Table{
+//	table := schemamodel.Table{
 //		StructName: "UserRole",
 //		Name:       "user_roles",
 //		PrimaryKey: []string{"user_id", "role_id"},
 //	}
-//	fields := []goschema.Field{
+//	fields := []schemamodel.Field{
 //		{StructName: "UserRole", Name: "user_id", Type: "INTEGER", Foreign: "users(id)"},
 //		{StructName: "UserRole", Name: "role_id", Type: "INTEGER", Foreign: "roles(id)"},
 //	}
@@ -877,7 +877,7 @@ type fieldConverter func(goschema.Field, []goschema.Enum, string) *ast.ColumnNod
 //
 // MySQL table with engine specification:
 //
-//	table := goschema.Table{
+//	table := schemamodel.Table{
 //		StructName: "Product",
 //		Name:       "products",
 //		Engine:     "InnoDB",
@@ -889,7 +889,7 @@ type fieldConverter func(goschema.Field, []goschema.Enum, string) *ast.ColumnNod
 //
 // The function supports platform-specific table overrides through the table.Overrides map:
 //
-//	table := goschema.Table{
+//	table := schemamodel.Table{
 //		Name: "products",
 //		Overrides: map[string]map[string]string{
 //			"mysql":   {"engine": "InnoDB", "comment": "Product catalog"},
@@ -901,14 +901,14 @@ type fieldConverter func(goschema.Field, []goschema.Enum, string) *ast.ColumnNod
 //
 // Returns a fully configured *ast.CreateTableNode ready for SQL generation.
 // The node contains the table definition with all columns, constraints, and platform-specific options.
-func FromTable(table goschema.Table, fields []goschema.Field, enums []goschema.Enum, targetPlatform string) *ast.CreateTableNode {
+func FromTable(table schemamodel.Table, fields []schemamodel.Field, enums []schemamodel.Enum, targetPlatform string) *ast.CreateTableNode {
 	return fromTableWithFieldConverter(table, fields, enums, targetPlatform, FromField)
 }
 
 func fromTableWithFieldConverter(
-	table goschema.Table,
-	fields []goschema.Field,
-	enums []goschema.Enum,
+	table schemamodel.Table,
+	fields []schemamodel.Field,
+	enums []schemamodel.Enum,
 	targetPlatform string,
 	convertField fieldConverter,
 ) *ast.CreateTableNode {
@@ -983,7 +983,7 @@ func fromTableWithFieldConverter(
 	return createTable
 }
 
-func renderTableName(table goschema.Table, targetPlatform string) string {
+func renderTableName(table schemamodel.Table, targetPlatform string) string {
 	// SQLite catalog identifiers are already parsed. Preserve their exact
 	// components for virtual tables: quoted leading or trailing whitespace is
 	// part of the identity, and normalizing it would recreate another object.
@@ -997,15 +997,15 @@ func renderTableName(table goschema.Table, targetPlatform string) string {
 }
 
 func fromTableWithoutForeignKeys(
-	table goschema.Table,
-	fields []goschema.Field,
-	enums []goschema.Enum,
+	table schemamodel.Table,
+	fields []schemamodel.Field,
+	enums []schemamodel.Enum,
 	targetPlatform string,
 ) *ast.CreateTableNode {
 	return fromTableWithFieldConverter(table, fields, enums, targetPlatform, FromFieldWithoutForeignKeys)
 }
 
-func withDefaultForeignKeyName(tableName string, field goschema.Field, targetPlatform string) goschema.Field {
+func withDefaultForeignKeyName(tableName string, field schemamodel.Field, targetPlatform string) schemamodel.Field {
 	if field.Foreign == "" || field.ForeignKeyName != "" {
 		return field
 	}
@@ -1017,7 +1017,7 @@ func withDefaultForeignKeyName(tableName string, field goschema.Field, targetPla
 	return field
 }
 
-func toASTPartition(partition *goschema.PartitionSpec) *ast.PartitionSpec {
+func toASTPartition(partition *schemamodel.PartitionSpec) *ast.PartitionSpec {
 	if partition == nil {
 		return nil
 	}
@@ -1028,7 +1028,7 @@ func toASTPartition(partition *goschema.PartitionSpec) *ast.PartitionSpec {
 	return &ast.PartitionSpec{Type: partition.Type, Parts: parts}
 }
 
-func tableNeedsPrimaryKeyConstraint(table goschema.Table) bool {
+func tableNeedsPrimaryKeyConstraint(table schemamodel.Table) bool {
 	// A NAME is a reason on its own. An inline `PRIMARY KEY` has nowhere to
 	// carry one, so a named single-column key written that way reached the
 	// server as a generated name and nothing reported the difference
@@ -1045,7 +1045,7 @@ func tableNeedsPrimaryKeyConstraint(table goschema.Table) bool {
 	return len(table.PrimaryKey) > 1
 }
 
-func primaryKeyPartsHaveAttributes(parts []goschema.PrimaryKeyPart) bool {
+func primaryKeyPartsHaveAttributes(parts []schemamodel.PrimaryKeyPart) bool {
 	for _, part := range parts {
 		if part.Prefix != "" || part.Desc {
 			return true
@@ -1054,7 +1054,7 @@ func primaryKeyPartsHaveAttributes(parts []goschema.PrimaryKeyPart) bool {
 	return false
 }
 
-func newPrimaryKeyConstraint(table goschema.Table) *ast.ConstraintNode {
+func newPrimaryKeyConstraint(table schemamodel.Table) *ast.ConstraintNode {
 	if len(table.PrimaryKeyParts) == 0 {
 		constraint := ast.NewPrimaryKeyConstraint(table.PrimaryKey...)
 		constraint.Name = table.PrimaryKeyName
@@ -1080,8 +1080,8 @@ func newPrimaryKeyConstraint(table goschema.Table) *ast.ConstraintNode {
 	}
 }
 
-// FromConstraint converts a goschema.Constraint to an AST table constraint.
-func FromConstraint(constraint goschema.Constraint) *ast.ConstraintNode {
+// FromConstraint converts a schemamodel.Constraint to an AST table constraint.
+func FromConstraint(constraint schemamodel.Constraint) *ast.ConstraintNode {
 	switch strings.ToUpper(constraint.Type) {
 	case "PRIMARY KEY":
 		return ast.NewPrimaryKeyConstraint(constraint.Columns...)
@@ -1124,8 +1124,8 @@ const (
 
 func addTableConstraints(
 	createTable *ast.CreateTableNode,
-	table goschema.Table,
-	constraints []goschema.Constraint,
+	table schemamodel.Table,
+	constraints []schemamodel.Constraint,
 	mode tableConstraintMode,
 	targetPlatform string,
 ) {
@@ -1145,11 +1145,11 @@ func addTableConstraints(
 	}
 }
 
-func isForeignKeyConstraint(constraint goschema.Constraint) bool {
+func isForeignKeyConstraint(constraint schemamodel.Constraint) bool {
 	return strings.EqualFold(constraint.Type, "FOREIGN KEY")
 }
 
-func withDefaultConstraintForeignKeyName(tableName string, constraint goschema.Constraint, targetPlatform string) goschema.Constraint {
+func withDefaultConstraintForeignKeyName(tableName string, constraint schemamodel.Constraint, targetPlatform string) schemamodel.Constraint {
 	if !isForeignKeyConstraint(constraint) || constraint.Name != "" {
 		return constraint
 	}
@@ -1161,7 +1161,7 @@ func withDefaultConstraintForeignKeyName(tableName string, constraint goschema.C
 	return constraint
 }
 
-func defaultConstraintForeignKeyName(tableName string, constraint goschema.Constraint) string {
+func defaultConstraintForeignKeyName(tableName string, constraint schemamodel.Constraint) string {
 	columnName := strings.Join(constraint.Columns, "_")
 	if columnName == "" {
 		columnName = "foreign_key"
@@ -1170,11 +1170,11 @@ func defaultConstraintForeignKeyName(tableName string, constraint goschema.Const
 }
 
 func assignDefaultForeignKeyNames(
-	tables []goschema.Table,
-	fields []goschema.Field,
-	constraints []goschema.Constraint,
+	tables []schemamodel.Table,
+	fields []schemamodel.Field,
+	constraints []schemamodel.Constraint,
 	targetPlatform string,
-) ([]goschema.Field, []goschema.Constraint) {
+) ([]schemamodel.Field, []schemamodel.Constraint) {
 	assignedFields := slices.Clone(fields)
 	assignedConstraints := slices.Clone(constraints)
 	allocations := make(map[string]*foreignKeyNameAllocation)
@@ -1207,7 +1207,7 @@ type foreignKeyNameAllocation struct {
 	counts    map[string]int
 }
 
-func foreignKeyNameAllocationScope(table goschema.Table, targetPlatform string) string {
+func foreignKeyNameAllocationScope(table schemamodel.Table, targetPlatform string) string {
 	switch platform.NormalizeDialect(targetPlatform) {
 	case platform.MySQL, platform.MariaDB:
 		return "database"
@@ -1223,9 +1223,9 @@ func foreignKeyNameAllocationScope(table goschema.Table, targetPlatform string) 
 }
 
 func foreignKeyNameReservations(
-	table goschema.Table,
-	fields []goschema.Field,
-	constraints []goschema.Constraint,
+	table schemamodel.Table,
+	fields []schemamodel.Field,
+	constraints []schemamodel.Constraint,
 	targetPlatform string,
 ) (map[string]struct{}, map[string]int) {
 	reserved := make(map[string]struct{})
@@ -1258,8 +1258,8 @@ func foreignKeyNameReservations(
 }
 
 func assignFieldForeignKeyNames(
-	table goschema.Table,
-	fields []goschema.Field,
+	table schemamodel.Table,
+	fields []schemamodel.Field,
 	counts map[string]int,
 	allocated map[string]struct{},
 	targetPlatform string,
@@ -1282,7 +1282,7 @@ func assignFieldForeignKeyNames(
 	}
 }
 
-func defaultFieldForeignKeyName(tableName string, field goschema.Field) string {
+func defaultFieldForeignKeyName(tableName string, field schemamodel.Field) string {
 	if field.GeneratedFromEmbedded && field.ForeignKeyName != "" {
 		return field.ForeignKeyName
 	}
@@ -1290,8 +1290,8 @@ func defaultFieldForeignKeyName(tableName string, field goschema.Field) string {
 }
 
 func assignConstraintForeignKeyNames(
-	table goschema.Table,
-	constraints []goschema.Constraint,
+	table schemamodel.Table,
+	constraints []schemamodel.Constraint,
 	counts map[string]int,
 	allocated map[string]struct{},
 	targetPlatform string,
@@ -1313,7 +1313,7 @@ func assignConstraintForeignKeyNames(
 	}
 }
 
-func fieldForeignKeyIdentity(field goschema.Field) string {
+func fieldForeignKeyIdentity(field schemamodel.Field) string {
 	return strings.Join([]string{
 		"field",
 		field.StructName,
@@ -1324,7 +1324,7 @@ func fieldForeignKeyIdentity(field goschema.Field) string {
 	}, "\x00")
 }
 
-func constraintForeignKeyIdentity(constraint goschema.Constraint) string {
+func constraintForeignKeyIdentity(constraint schemamodel.Constraint) string {
 	return strings.Join([]string{
 		"constraint",
 		constraint.StructName,
@@ -1435,14 +1435,14 @@ func truncateIdentifierCharacters(value string, maxCharacters int) string {
 	return string(runes[:maxCharacters])
 }
 
-func constraintBelongsToTable(constraint goschema.Constraint, table goschema.Table) bool {
+func constraintBelongsToTable(constraint schemamodel.Constraint, table schemamodel.Table) bool {
 	if constraint.Table != "" {
 		return constraint.Table == table.Name || constraint.Table == table.QualifiedName()
 	}
 	return constraint.StructName == table.StructName
 }
 
-// FromIndex converts a goschema.Index to an ast.IndexNode for database index creation.
+// FromIndex converts a schemamodel.Index to an ast.IndexNode for database index creation.
 //
 // This function transforms index metadata into an AST node that can be rendered
 // as CREATE INDEX statements by dialect-specific visitors. It supports both
@@ -1463,7 +1463,7 @@ func constraintBelongsToTable(constraint goschema.Constraint, table goschema.Tab
 //
 // Simple single-column index:
 //
-//	index := goschema.Index{
+//	index := schemamodel.Index{
 //		Name:       "idx_users_email",
 //		StructName: "users",
 //		Fields:     []string{"email"},
@@ -1473,7 +1473,7 @@ func constraintBelongsToTable(constraint goschema.Constraint, table goschema.Tab
 //
 // Unique composite index:
 //
-//	index := goschema.Index{
+//	index := schemamodel.Index{
 //		Name:       "idx_user_roles_unique",
 //		StructName: "user_roles",
 //		Fields:     []string{"user_id", "role_id"},
@@ -1486,7 +1486,7 @@ func constraintBelongsToTable(constraint goschema.Constraint, table goschema.Tab
 //
 // Returns a fully configured *ast.IndexNode ready for SQL generation.
 // The node contains the index name, target table, column list, and all specified options.
-func FromIndex(index goschema.Index) *ast.IndexNode {
+func FromIndex(index schemamodel.Index) *ast.IndexNode {
 	// Use TableName if specified, otherwise fall back to StructName
 	tableName := index.TableName
 	if tableName == "" {
@@ -1539,7 +1539,7 @@ func FromIndex(index goschema.Index) *ast.IndexNode {
 	return indexNode
 }
 
-// FromExtension converts a goschema.Extension to an ast.ExtensionNode for PostgreSQL extension creation.
+// FromExtension converts a schemamodel.Extension to an ast.ExtensionNode for PostgreSQL extension creation.
 //
 // This function transforms extension metadata into an AST node that can be rendered
 // as CREATE EXTENSION statements for PostgreSQL databases.
@@ -1560,7 +1560,7 @@ func FromIndex(index goschema.Index) *ast.IndexNode {
 //
 // Basic extension:
 //
-//	extension := goschema.Extension{
+//	extension := schemamodel.Extension{
 //		Name:        "pg_trgm",
 //		IfNotExists: true,
 //		Comment:     "Enable trigram similarity search",
@@ -1569,7 +1569,7 @@ func FromIndex(index goschema.Index) *ast.IndexNode {
 //
 // Extension with version:
 //
-//	extension := goschema.Extension{
+//	extension := schemamodel.Extension{
 //		Name:        "postgis",
 //		Schema:      "extensions",
 //		Version:     "3.0",
@@ -1582,7 +1582,7 @@ func FromIndex(index goschema.Index) *ast.IndexNode {
 //
 // Returns a fully configured *ast.ExtensionNode ready for SQL generation.
 // The node contains the extension name, installation schema, version, and all specified options.
-func FromExtension(extension goschema.Extension) *ast.ExtensionNode {
+func FromExtension(extension schemamodel.Extension) *ast.ExtensionNode {
 	extensionNode := ast.NewExtension(extension.Name)
 	if extension.Schema != "" {
 		extensionNode.SetSchema(extension.Schema)
@@ -1606,7 +1606,7 @@ func FromExtension(extension goschema.Extension) *ast.ExtensionNode {
 	return extensionNode
 }
 
-// FromEnum converts a goschema.Enum to an ast.EnumNode for database enum type creation.
+// FromEnum converts a schemamodel.Enum to an ast.EnumNode for database enum type creation.
 //
 // This function transforms a global enum definition into an AST node that can be rendered
 // as CREATE TYPE statements (primarily for PostgreSQL) or equivalent enum handling for
@@ -1620,7 +1620,7 @@ func FromExtension(extension goschema.Extension) *ast.ExtensionNode {
 //
 // Simple status enum:
 //
-//	enum := goschema.Enum{
+//	enum := schemamodel.Enum{
 //		Name:   "status_type",
 //		Values: []string{"active", "inactive", "pending"},
 //	}
@@ -1628,7 +1628,7 @@ func FromExtension(extension goschema.Extension) *ast.ExtensionNode {
 //
 // User role enum:
 //
-//	enum := goschema.Enum{
+//	enum := schemamodel.Enum{
 //		Name:   "user_role",
 //		Values: []string{"admin", "moderator", "user", "guest"},
 //	}
@@ -1646,7 +1646,7 @@ func FromExtension(extension goschema.Extension) *ast.ExtensionNode {
 //
 // Returns an *ast.EnumNode ready for SQL generation by dialect-specific visitors.
 // The visitor implementation determines how the enum is rendered for each database type.
-func FromEnum(enum goschema.Enum) *ast.EnumNode {
+func FromEnum(enum schemamodel.Enum) *ast.EnumNode {
 	return ast.NewEnum(enum.QualifiedName(), enum.Values...)
 }
 
@@ -1654,12 +1654,12 @@ func FromEnum(enum goschema.Enum) *ast.EnumNode {
 // renderer splits on "." to escape each part, so the qualified form is safe to
 // pass as a CreateTypeNode name.
 func qualifyTypeName(schema, name string) string {
-	return goschema.QualifyTableName(schema, name)
+	return schemamodel.QualifyTableName(schema, name)
 }
 
-// FromDomain converts a goschema.Domain into a CreateTypeNode wrapping a domain
+// FromDomain converts a schemamodel.Domain into a CreateTypeNode wrapping a domain
 // type definition.
-func FromDomain(domain goschema.Domain) *ast.CreateTypeNode {
+func FromDomain(domain schemamodel.Domain) *ast.CreateTypeNode {
 	domainDef := ast.NewDomainTypeDef(domain.BaseType)
 	if domain.NotNull {
 		domainDef.SetNotNull()
@@ -1680,9 +1680,9 @@ func FromDomain(domain goschema.Domain) *ast.CreateTypeNode {
 	return node
 }
 
-// FromCompositeType converts a goschema.CompositeType into a CreateTypeNode
+// FromCompositeType converts a schemamodel.CompositeType into a CreateTypeNode
 // wrapping a composite type definition.
-func FromCompositeType(composite goschema.CompositeType) *ast.CreateTypeNode {
+func FromCompositeType(composite schemamodel.CompositeType) *ast.CreateTypeNode {
 	fields := make([]*ast.CompositeField, 0, len(composite.Fields))
 	for _, field := range composite.Fields {
 		fields = append(fields, &ast.CompositeField{Name: field.Name, Type: field.Type})
@@ -1694,9 +1694,9 @@ func FromCompositeType(composite goschema.CompositeType) *ast.CreateTypeNode {
 	return node
 }
 
-// FromRange converts a goschema.Range into a CreateTypeNode wrapping a range
+// FromRange converts a schemamodel.Range into a CreateTypeNode wrapping a range
 // type definition.
-func FromRange(rangeType goschema.Range) *ast.CreateTypeNode {
+func FromRange(rangeType schemamodel.Range) *ast.CreateTypeNode {
 	rangeDef := ast.NewRangeTypeDef(rangeType.Subtype)
 	if rangeType.SubtypeOpClass != "" {
 		rangeDef.SetSubtypeOpClass(rangeType.SubtypeOpClass)
@@ -1717,7 +1717,7 @@ func FromRange(rangeType goschema.Range) *ast.CreateTypeNode {
 	return node
 }
 
-// FromFunction converts a goschema.Function to an ast.CreateFunctionNode.
+// FromFunction converts a schemamodel.Function to an ast.CreateFunctionNode.
 //
 // This function creates a PostgreSQL function definition from the parsed function metadata.
 // It handles all function attributes including parameters, return type, language, security,
@@ -1730,7 +1730,7 @@ func FromRange(rangeType goschema.Range) *ast.CreateTypeNode {
 // # Return Value
 //
 // Returns a fully configured *ast.CreateFunctionNode ready for SQL generation.
-func FromFunction(function goschema.Function) *ast.CreateFunctionNode {
+func FromFunction(function schemamodel.Function) *ast.CreateFunctionNode {
 	functionNode := ast.NewCreateFunction(function.Name).
 		SetKind(function.Kind).
 		SetParameters(function.Parameters).
@@ -1744,14 +1744,14 @@ func FromFunction(function goschema.Function) *ast.CreateFunctionNode {
 	return functionNode
 }
 
-// FromSequence converts a goschema.Sequence into a CreateSequenceNode.
+// FromSequence converts a schemamodel.Sequence into a CreateSequenceNode.
 //
 // The returned node faithfully carries every declared option, including OWNED
 // BY. Callers that generate a full schema (see FromDatabase) deliberately defer
 // the OWNED BY association to a separate post-table ALTER SEQUENCE, because a
 // sequence referenced by a column DEFAULT must be created before its table
 // while OWNED BY requires the table to already exist.
-func FromSequence(sequence goschema.Sequence) *ast.CreateSequenceNode {
+func FromSequence(sequence schemamodel.Sequence) *ast.CreateSequenceNode {
 	sequenceNode := ast.NewCreateSequence(sequence.Name)
 	if sequence.Schema != "" {
 		sequenceNode.SetSchema(sequence.Schema)
@@ -1793,7 +1793,7 @@ func FromSequence(sequence goschema.Sequence) *ast.CreateSequenceNode {
 // sequence that declares an owner, or nil when it does not. It exists so schema
 // generation can emit the ownership association after the owning table is
 // created.
-func sequenceOwnershipNode(sequence goschema.Sequence) *ast.AlterSequenceNode {
+func sequenceOwnershipNode(sequence schemamodel.Sequence) *ast.AlterSequenceNode {
 	if sequence.OwnedBy == "" {
 		return nil
 	}
@@ -1804,8 +1804,8 @@ func sequenceOwnershipNode(sequence goschema.Sequence) *ast.AlterSequenceNode {
 	return node
 }
 
-// FromView converts a goschema.View to an ast.CreateViewNode.
-func FromView(view goschema.View) *ast.CreateViewNode {
+// FromView converts a schemamodel.View to an ast.CreateViewNode.
+func FromView(view schemamodel.View) *ast.CreateViewNode {
 	viewNode := ast.NewCreateView(view.Name).
 		SetBody(view.Body).
 		SetWithCheck(view.WithCheck).
@@ -1814,7 +1814,7 @@ func FromView(view goschema.View) *ast.CreateViewNode {
 	return viewNode
 }
 
-// FromSynonym converts a goschema.Synonym to an ast.CreateSynonymNode.
+// FromSynonym converts a schemamodel.Synonym to an ast.CreateSynonymNode.
 //
 // The alias is qualified here and the target is not. The alias is an object
 // this schema declares, so it belongs in the schema the declaration named; the
@@ -1822,21 +1822,21 @@ func FromView(view goschema.View) *ast.CreateViewNode {
 // tells SQL Server whether it names this database, another one, or a linked
 // server, and adding a qualifier would silently turn a remote reference into a
 // local one.
-func FromSynonym(synonym goschema.Synonym) *ast.CreateSynonymNode {
+func FromSynonym(synonym schemamodel.Synonym) *ast.CreateSynonymNode {
 	return ast.NewCreateSynonym(synonym.QualifiedName()).
 		SetTarget(synonym.Target).
 		SetComment(synonym.Comment)
 }
 
 // appendSynonymStatements adds a CREATE SYNONYM node for each declared synonym.
-func appendSynonymStatements(statements *ast.StatementList, synonyms []goschema.Synonym) {
+func appendSynonymStatements(statements *ast.StatementList, synonyms []schemamodel.Synonym) {
 	for _, synonym := range synonyms {
 		statements.Statements = append(statements.Statements, FromSynonym(synonym))
 	}
 }
 
-// FromHypertable converts a goschema.Hypertable into the call that makes one.
-func FromHypertable(hypertable goschema.Hypertable) *ast.CreateHypertableNode {
+// FromHypertable converts a schemamodel.Hypertable into the call that makes one.
+func FromHypertable(hypertable schemamodel.Hypertable) *ast.CreateHypertableNode {
 	return ast.NewCreateHypertable(hypertable.Table, hypertable.Column).
 		SetChunkInterval(hypertable.ChunkInterval).
 		SetIfNotExists(hypertable.IfNotExists).
@@ -1844,13 +1844,13 @@ func FromHypertable(hypertable goschema.Hypertable) *ast.CreateHypertableNode {
 }
 
 // appendHypertableStatements adds one create_hypertable call per declaration.
-func appendHypertableStatements(statements *ast.StatementList, hypertables []goschema.Hypertable) {
+func appendHypertableStatements(statements *ast.StatementList, hypertables []schemamodel.Hypertable) {
 	for _, hypertable := range hypertables {
 		statements.Statements = append(statements.Statements, FromHypertable(hypertable))
 	}
 }
 
-// FromContinuousAggregate converts a goschema.ContinuousAggregate into the
+// FromContinuousAggregate converts a schemamodel.ContinuousAggregate into the
 // statement that creates one.
 //
 // WITH NO DATA is the default the node carries, and it is deliberate: creating
@@ -1858,7 +1858,7 @@ func appendHypertableStatements(statements *ast.StatementList, hypertables []gos
 // underneath it, which is an unbounded amount of work a schema change should
 // not start on its own. A refresh is an operation someone runs, not a side
 // effect of CREATE.
-func FromContinuousAggregate(aggregate goschema.ContinuousAggregate) *ast.CreateContinuousAggregateNode {
+func FromContinuousAggregate(aggregate schemamodel.ContinuousAggregate) *ast.CreateContinuousAggregateNode {
 	return ast.NewCreateContinuousAggregate(aggregate.Name, aggregate.Body).
 		SetSchema(aggregate.Schema).
 		SetMaterializedOnly(aggregate.MaterializedOnly).
@@ -1869,14 +1869,14 @@ func FromContinuousAggregate(aggregate goschema.ContinuousAggregate) *ast.Create
 // declared aggregate.
 func appendContinuousAggregateStatements(
 	statements *ast.StatementList,
-	aggregates []goschema.ContinuousAggregate,
+	aggregates []schemamodel.ContinuousAggregate,
 ) {
 	for _, aggregate := range aggregates {
 		statements.Statements = append(statements.Statements, FromContinuousAggregate(aggregate))
 	}
 }
 
-// FromExtendedProperty converts a goschema.ExtendedProperty into the node that
+// FromExtendedProperty converts a schemamodel.ExtendedProperty into the node that
 // writes it.
 //
 // The operation is always an add. An update is what a COMPARISON produces, from
@@ -1887,7 +1887,7 @@ func appendContinuousAggregateStatements(
 // renderer as string literals rather than identifiers, because that is what
 // sp_addextendedproperty takes -- see VisitExtendedProperty for what quoting
 // them would write.
-func FromExtendedProperty(property goschema.ExtendedProperty) *ast.ExtendedPropertyNode {
+func FromExtendedProperty(property schemamodel.ExtendedProperty) *ast.ExtendedPropertyNode {
 	return ast.NewExtendedProperty(ast.ExtendedPropertyAdd, property.Name).
 		SetOwner(property.Schema, property.Table, property.Column).
 		SetValue(property.Value).
@@ -1897,16 +1897,16 @@ func FromExtendedProperty(property goschema.ExtendedProperty) *ast.ExtendedPrope
 // appendExtendedPropertyStatements adds one add-property node per declaration.
 func appendExtendedPropertyStatements(
 	statements *ast.StatementList,
-	properties []goschema.ExtendedProperty,
+	properties []schemamodel.ExtendedProperty,
 ) {
 	for _, property := range properties {
 		statements.Statements = append(statements.Statements, FromExtendedProperty(property))
 	}
 }
 
-// FromMaterializedView converts a goschema.MaterializedView to an
+// FromMaterializedView converts a schemamodel.MaterializedView to an
 // ast.CreateMaterializedViewNode.
-func FromMaterializedView(view goschema.MaterializedView) *ast.CreateMaterializedViewNode {
+func FromMaterializedView(view schemamodel.MaterializedView) *ast.CreateMaterializedViewNode {
 	node := ast.NewCreateMaterializedView(view.Name).
 		SetBody(view.Body).
 		SetComment(view.Comment)
@@ -1918,9 +1918,9 @@ func FromMaterializedView(view goschema.MaterializedView) *ast.CreateMaterialize
 
 func appendForeignKeyConstraintStatements(
 	statements *ast.StatementList,
-	tables []goschema.Table,
-	fields []goschema.Field,
-	constraints []goschema.Constraint,
+	tables []schemamodel.Table,
+	fields []schemamodel.Field,
+	constraints []schemamodel.Constraint,
 	targetPlatform string,
 ) {
 	appendFieldForeignKeyConstraintStatements(statements, tables, fields, targetPlatform)
@@ -1929,8 +1929,8 @@ func appendForeignKeyConstraintStatements(
 
 func appendFieldForeignKeyConstraintStatements(
 	statements *ast.StatementList,
-	tables []goschema.Table,
-	fields []goschema.Field,
+	tables []schemamodel.Table,
+	fields []schemamodel.Field,
 	targetPlatform string,
 ) {
 	for _, table := range tables {
@@ -1967,8 +1967,8 @@ func appendFieldForeignKeyConstraintStatements(
 
 func appendTableForeignKeyConstraintStatements(
 	statements *ast.StatementList,
-	tables []goschema.Table,
-	constraints []goschema.Constraint,
+	tables []schemamodel.Table,
+	constraints []schemamodel.Constraint,
 	targetPlatform string,
 ) {
 	for _, table := range tables {
@@ -1992,8 +1992,8 @@ func appendTableForeignKeyConstraintStatements(
 	}
 }
 
-// FromTrigger converts a goschema.Trigger to an ast.CreateTriggerNode.
-func FromTrigger(trigger goschema.Trigger) *ast.CreateTriggerNode {
+// FromTrigger converts a schemamodel.Trigger to an ast.CreateTriggerNode.
+func FromTrigger(trigger schemamodel.Trigger) *ast.CreateTriggerNode {
 	trigger.Canonicalize()
 	// A trigger that names an existing function keeps that name; the renderer
 	// then emits only the CREATE TRIGGER, because the function is not Ptah's to
@@ -2016,7 +2016,7 @@ func FromTrigger(trigger goschema.Trigger) *ast.CreateTriggerNode {
 	return triggerNode
 }
 
-// FromRLSPolicy converts a goschema.RLSPolicy to an ast.CreatePolicyNode.
+// FromRLSPolicy converts a schemamodel.RLSPolicy to an ast.CreatePolicyNode.
 //
 // This function creates a PostgreSQL RLS policy definition from the parsed policy metadata.
 // It handles all policy attributes including target table, policy type, target roles,
@@ -2029,7 +2029,7 @@ func FromTrigger(trigger goschema.Trigger) *ast.CreateTriggerNode {
 // # Return Value
 //
 // Returns a fully configured *ast.CreatePolicyNode ready for SQL generation.
-func FromRLSPolicy(policy goschema.RLSPolicy) *ast.CreatePolicyNode {
+func FromRLSPolicy(policy schemamodel.RLSPolicy) *ast.CreatePolicyNode {
 	policyNode := ast.NewCreatePolicy(policy.Name, policy.Table).
 		SetPolicyFor(policy.PolicyFor).
 		SetToRoles(policy.ToRoles).
@@ -2040,7 +2040,7 @@ func FromRLSPolicy(policy goschema.RLSPolicy) *ast.CreatePolicyNode {
 	return policyNode
 }
 
-// FromRLSEnabledTable converts a goschema.RLSEnabledTable to an ast.AlterTableEnableRLSNode.
+// FromRLSEnabledTable converts a schemamodel.RLSEnabledTable to an ast.AlterTableEnableRLSNode.
 //
 // This function creates a PostgreSQL ALTER TABLE ENABLE ROW LEVEL SECURITY statement
 // from the parsed RLS enablement metadata.
@@ -2052,14 +2052,14 @@ func FromRLSPolicy(policy goschema.RLSPolicy) *ast.CreatePolicyNode {
 // # Return Value
 //
 // Returns a fully configured *ast.AlterTableEnableRLSNode ready for SQL generation.
-func FromRLSEnabledTable(rlsEnabled goschema.RLSEnabledTable) *ast.AlterTableEnableRLSNode {
+func FromRLSEnabledTable(rlsEnabled schemamodel.RLSEnabledTable) *ast.AlterTableEnableRLSNode {
 	rlsNode := ast.NewAlterTableEnableRLS(rlsEnabled.Table).
 		SetComment(rlsEnabled.Comment)
 
 	return rlsNode
 }
 
-// FromRole converts a goschema.Role to an ast.CreateRoleNode.
+// FromRole converts a schemamodel.Role to an ast.CreateRoleNode.
 //
 // This function creates a PostgreSQL role definition from the parsed role metadata.
 // It handles all role attributes including login capabilities, password, privileges,
@@ -2072,7 +2072,7 @@ func FromRLSEnabledTable(rlsEnabled goschema.RLSEnabledTable) *ast.AlterTableEna
 // # Return Value
 //
 // Returns a fully configured *ast.CreateRoleNode ready for SQL generation.
-func FromRole(role goschema.Role) *ast.CreateRoleNode {
+func FromRole(role schemamodel.Role) *ast.CreateRoleNode {
 	roleNode := ast.NewCreateRole(role.Name).
 		SetLogin(role.Login).
 		SetPassword(role.Password).
@@ -2086,8 +2086,8 @@ func FromRole(role goschema.Role) *ast.CreateRoleNode {
 	return roleNode
 }
 
-// FromGrant converts a goschema.Grant to an ast.GrantPrivilegeNode.
-func FromGrant(grant goschema.Grant) *ast.GrantPrivilegeNode {
+// FromGrant converts a schemamodel.Grant to an ast.GrantPrivilegeNode.
+func FromGrant(grant schemamodel.Grant) *ast.GrantPrivilegeNode {
 	grant.Canonicalize()
 	objectType := "TABLE"
 	objectName := grant.OnTable
@@ -2108,7 +2108,7 @@ func FromGrant(grant goschema.Grant) *ast.GrantPrivilegeNode {
 // dialect-valid names. The input is never mutated. Dialect-specific comparison,
 // planning, and rendering paths use this normalization so generated and
 // explicit names share the same namespace and length rules.
-func AssignDefaultForeignKeyNames(database *goschema.Database, targetPlatform string) *goschema.Database {
+func AssignDefaultForeignKeyNames(database *schemamodel.Database, targetPlatform string) *schemamodel.Database {
 	if database == nil {
 		return nil
 	}
@@ -2132,14 +2132,14 @@ func AssignDefaultForeignKeyNames(database *goschema.Database, targetPlatform st
 }
 
 func assignedSelfReferencingForeignKeys(
-	foreignKeys map[string][]goschema.SelfReferencingFK,
-	tables []goschema.Table,
-	fields []goschema.Field,
-) map[string][]goschema.SelfReferencingFK {
+	foreignKeys map[string][]schemamodel.SelfReferencingFK,
+	tables []schemamodel.Table,
+	fields []schemamodel.Field,
+) map[string][]schemamodel.SelfReferencingFK {
 	if foreignKeys == nil {
 		return nil
 	}
-	assigned := make(map[string][]goschema.SelfReferencingFK, len(foreignKeys))
+	assigned := make(map[string][]schemamodel.SelfReferencingFK, len(foreignKeys))
 	for tableName, tableForeignKeys := range foreignKeys {
 		cloned := slices.Clone(tableForeignKeys)
 		table := foreignKeyOwnerTable(tables, tableName)
@@ -2151,7 +2151,7 @@ func assignedSelfReferencingForeignKeys(
 	return assigned
 }
 
-func foreignKeyOwnerTable(tables []goschema.Table, tableName string) *goschema.Table {
+func foreignKeyOwnerTable(tables []schemamodel.Table, tableName string) *schemamodel.Table {
 	for i := range tables {
 		if tables[i].QualifiedName() == tableName || tables[i].Name == tableName {
 			return &tables[i]
@@ -2161,9 +2161,9 @@ func foreignKeyOwnerTable(tables []goschema.Table, tableName string) *goschema.T
 }
 
 func assignedSelfReferencingForeignKeyName(
-	table *goschema.Table,
-	foreignKey goschema.SelfReferencingFK,
-	fields []goschema.Field,
+	table *schemamodel.Table,
+	foreignKey schemamodel.SelfReferencingFK,
+	fields []schemamodel.Field,
 ) string {
 	if table == nil {
 		return foreignKey.ForeignKeyName
@@ -2178,7 +2178,7 @@ func assignedSelfReferencingForeignKeyName(
 	return foreignKey.ForeignKeyName
 }
 
-// FromDatabase converts a complete goschema.Database to an ast.StatementList containing all DDL statements.
+// FromDatabase converts a complete schemamodel.Database to an ast.StatementList containing all DDL statements.
 //
 // This function creates a comprehensive database schema by converting all schema elements
 // (schemas, enums, tables, indexes, embedded fields) into their corresponding AST nodes. The statements are ordered
@@ -2227,21 +2227,21 @@ func assignedSelfReferencingForeignKeyName(
 //
 // Converting a complete database schema:
 //
-//	database := goschema.Database{
-//		Enums: []goschema.Enum{
+//	database := schemamodel.Database{
+//		Enums: []schemamodel.Enum{
 //			{Name: "user_status", Values: []string{"active", "inactive"}},
 //		},
-//		Tables: []goschema.Table{
+//		Tables: []schemamodel.Table{
 //			{StructName: "User", Name: "users", Comment: "User accounts"},
 //		},
-//		Fields: []goschema.Field{
+//		Fields: []schemamodel.Field{
 //			{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 //			{StructName: "User", Name: "status", Type: "user_status", Nullable: false},
 //		},
-//		EmbeddedFields: []goschema.EmbeddedField{
+//		EmbeddedFields: []schemamodel.EmbeddedField{
 //			{StructName: "User", Mode: "inline", EmbeddedTypeName: "Timestamps"},
 //		},
-//		Indexes: []goschema.Index{
+//		Indexes: []schemamodel.Index{
 //			{Name: "idx_users_status", StructName: "users", Fields: []string{"status"}},
 //		},
 //	}
@@ -2276,7 +2276,7 @@ func assignedSelfReferencingForeignKeyName(
 //
 // Returns an *ast.StatementList containing all DDL statements in proper execution order.
 // The statement list can be processed by dialect-specific visitors to generate SQL.
-func FromDatabase(database goschema.Database, targetPlatform string) *ast.StatementList {
+func FromDatabase(database schemamodel.Database, targetPlatform string) *ast.StatementList {
 	statements := &ast.StatementList{
 		Statements: make([]ast.Node, 0),
 	}
@@ -2401,7 +2401,7 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 // the migration planner applies to the types a diff adds; a schema rendered
 // whole has to hold it too, or `ptah generate` writes a script that stops at
 // `ERROR: type "addr" does not exist`.
-func orderedUserTypeStatements(database goschema.Database) []ast.Node {
+func orderedUserTypeStatements(database schemamodel.Database) []ast.Node {
 	total := len(database.Domains) + len(database.Ranges) + len(database.CompositeTypes)
 	byName := make(map[string]ast.Node, total)
 	userTypes := make([]deporder.UserType, 0, total)
@@ -2434,8 +2434,8 @@ func orderedUserTypeStatements(database goschema.Database) []ast.Node {
 
 func appendTableStatements(
 	statements *ast.StatementList,
-	database goschema.Database,
-	allFields []goschema.Field,
+	database schemamodel.Database,
+	allFields []schemamodel.Field,
 	targetPlatform string,
 ) {
 	sqliteTarget := isSQLiteTarget(targetPlatform)
@@ -2453,23 +2453,23 @@ func appendTableStatements(
 	}
 }
 
-func appendUniqueIndexStatements(statements *ast.StatementList, tables []goschema.Table, indexes []goschema.Index) {
-	appendMatchingIndexStatements(statements, tables, indexes, func(index goschema.Index) bool {
+func appendUniqueIndexStatements(statements *ast.StatementList, tables []schemamodel.Table, indexes []schemamodel.Index) {
+	appendMatchingIndexStatements(statements, tables, indexes, func(index schemamodel.Index) bool {
 		return index.Unique
 	})
 }
 
-func appendNonUniqueIndexStatements(statements *ast.StatementList, tables []goschema.Table, indexes []goschema.Index) {
-	appendMatchingIndexStatements(statements, tables, indexes, func(index goschema.Index) bool {
+func appendNonUniqueIndexStatements(statements *ast.StatementList, tables []schemamodel.Table, indexes []schemamodel.Index) {
+	appendMatchingIndexStatements(statements, tables, indexes, func(index schemamodel.Index) bool {
 		return !index.Unique
 	})
 }
 
 func appendMatchingIndexStatements(
 	statements *ast.StatementList,
-	tables []goschema.Table,
-	indexes []goschema.Index,
-	matches func(goschema.Index) bool,
+	tables []schemamodel.Table,
+	indexes []schemamodel.Index,
+	matches func(schemamodel.Index) bool,
 ) {
 	structToTableMap := createStructToTableMap(tables)
 	for _, index := range indexes {
@@ -2491,8 +2491,8 @@ func appendMatchingIndexStatements(
 // foreign key references a materialized view.
 func appendMaterializedViewIndexStatements(
 	statements *ast.StatementList,
-	database goschema.Database,
-	viewIndexes []goschema.Index,
+	database schemamodel.Database,
+	viewIndexes []schemamodel.Index,
 ) {
 	mapping := createStructToViewMap(database.MaterializedViews)
 	for _, index := range viewIndexes {
@@ -2510,14 +2510,14 @@ func appendMaterializedViewIndexStatements(
 // FromIndexWithTableMapping's fall back to the struct name is what makes a
 // declaration writing the TABLE name in StructName work, and that spelling is
 // in the fixtures (stokaro/ptah#1725).
-func splitMaterializedViewIndexes(database goschema.Database) (tableIndexes, viewIndexes []goschema.Index) {
+func splitMaterializedViewIndexes(database schemamodel.Database) (tableIndexes, viewIndexes []schemamodel.Index) {
 	if len(database.MaterializedViews) == 0 {
 		return database.Indexes, nil
 	}
-	tableOwners := goschema.ResolveIndexTableNames(database.Indexes, database.Tables)
-	relationOwners := goschema.ResolveIndexOwners(database.Indexes, database.Tables, database.MaterializedViews)
-	tableIndexes = make([]goschema.Index, 0, len(database.Indexes))
-	viewIndexes = make([]goschema.Index, 0)
+	tableOwners := schemamodel.ResolveIndexTableNames(database.Indexes, database.Tables)
+	relationOwners := schemamodel.ResolveIndexOwners(database.Indexes, database.Tables, database.MaterializedViews)
+	tableIndexes = make([]schemamodel.Index, 0, len(database.Indexes))
+	viewIndexes = make([]schemamodel.Index, 0)
 	for position, index := range database.Indexes {
 		if tableOwners[position] == "" && relationOwners[position] != "" {
 			viewIndexes = append(viewIndexes, index)
@@ -2536,7 +2536,7 @@ func splitMaterializedViewIndexes(database goschema.Database) (tableIndexes, vie
 // -- and an index whose struct also declares a table is never one of those. A
 // merged map would need a precedence rule for a collision that cannot occur,
 // and unreachable precedence rules are how the wrong one gets picked later.
-func createStructToViewMap(views []goschema.MaterializedView) map[string]string {
+func createStructToViewMap(views []schemamodel.MaterializedView) map[string]string {
 	mapping := make(map[string]string, len(views))
 	for _, view := range views {
 		mapping[view.StructName] = view.Name
@@ -2546,7 +2546,7 @@ func createStructToViewMap(views []goschema.MaterializedView) map[string]string 
 
 // appendRoleAndFunctionStatements appends every declared role and function, for
 // every target. A target that cannot host one says so through its renderer.
-func appendRoleAndFunctionStatements(statements *ast.StatementList, database goschema.Database) {
+func appendRoleAndFunctionStatements(statements *ast.StatementList, database schemamodel.Database) {
 	for _, role := range database.Roles {
 		statements.Statements = append(statements.Statements, FromRole(role))
 	}
@@ -2564,7 +2564,7 @@ func appendRoleAndFunctionStatements(statements *ast.StatementList, database gos
 // wrong whichever kind goes first.
 func appendPostTableObjectStatements(
 	statements *ast.StatementList,
-	database goschema.Database,
+	database schemamodel.Database,
 	targetPlatform string,
 ) {
 	// Associate standalone sequences with their owning table.column now that the
@@ -2592,12 +2592,12 @@ func appendPostTableObjectStatements(
 
 func appendOrderedViewLikeStatements(
 	statements *ast.StatementList,
-	database goschema.Database,
+	database schemamodel.Database,
 	targetPlatform string,
 ) {
 	objects := make([]deporder.ViewLike, 0, len(database.Views)+len(database.MaterializedViews))
-	viewsByName := make(map[string]goschema.View, len(database.Views))
-	materializedViewsByName := make(map[string]goschema.MaterializedView, len(database.MaterializedViews))
+	viewsByName := make(map[string]schemamodel.View, len(database.Views))
+	materializedViewsByName := make(map[string]schemamodel.MaterializedView, len(database.MaterializedViews))
 	for _, view := range database.Views {
 		objects = append(objects, deporder.ViewLike{Name: view.Name, Body: view.Body})
 		viewsByName[view.Name] = view
@@ -2632,7 +2632,7 @@ func isMySQLFamilyTarget(targetPlatform string) bool {
 	}
 }
 
-func appendSchemaStatements(statements *ast.StatementList, schemas []goschema.Schema) {
+func appendSchemaStatements(statements *ast.StatementList, schemas []schemamodel.Schema) {
 	for _, schema := range schemas {
 		statements.Statements = append(statements.Statements, &ast.CreateSchemaNode{
 			Name:        schema.Name,
@@ -2644,7 +2644,7 @@ func appendSchemaStatements(statements *ast.StatementList, schemas []goschema.Sc
 	}
 }
 
-func schemasForRender(database goschema.Database, targetPlatform string) []goschema.Schema {
+func schemasForRender(database schemamodel.Database, targetPlatform string) []schemamodel.Schema {
 	schemas := slices.Clone(database.Schemas)
 	if !supportsExtensionInstallationSchema(targetPlatform) {
 		return schemas
@@ -2663,14 +2663,14 @@ func schemasForRender(database goschema.Database, targetPlatform string) []gosch
 			continue
 		}
 		seen[name] = struct{}{}
-		schemas = append(schemas, goschema.Schema{Name: name})
+		schemas = append(schemas, schemamodel.Schema{Name: name})
 	}
 	return schemas
 }
 
 // createStructToTableMap creates a mapping from struct names to table names.
 // This is used to resolve the correct table names for indexes.
-func createStructToTableMap(tables []goschema.Table) map[string]string {
+func createStructToTableMap(tables []schemamodel.Table) map[string]string {
 	structToTableMap := make(map[string]string)
 	for _, table := range tables {
 		structToTableMap[table.StructName] = table.QualifiedName()
@@ -2678,9 +2678,9 @@ func createStructToTableMap(tables []goschema.Table) map[string]string {
 	return structToTableMap
 }
 
-// FromIndexWithTableMapping converts a goschema.Index to an ast.IndexNode with proper table name resolution.
+// FromIndexWithTableMapping converts a schemamodel.Index to an ast.IndexNode with proper table name resolution.
 // This function is similar to FromIndex but uses a struct-to-table mapping to resolve the correct table names.
-func FromIndexWithTableMapping(index goschema.Index, structToTableMap map[string]string) *ast.IndexNode {
+func FromIndexWithTableMapping(index schemamodel.Index, structToTableMap map[string]string) *ast.IndexNode {
 	// Determine the target table name
 	tableName := index.TableName
 	if tableName == "" {
@@ -2745,7 +2745,7 @@ func cloneBoolPtr(value *bool) *bool {
 	return new(*value)
 }
 
-func toASTIndexParts(parts []goschema.IndexPart) []ast.IndexPart {
+func toASTIndexParts(parts []schemamodel.IndexPart) []ast.IndexPart {
 	astParts := make([]ast.IndexPart, 0, len(parts))
 	for _, part := range parts {
 		astParts = append(astParts, ast.IndexPart{
@@ -2760,7 +2760,7 @@ func toASTIndexParts(parts []goschema.IndexPart) []ast.IndexPart {
 	return astParts
 }
 
-func indexFields(index goschema.Index) []string {
+func indexFields(index schemamodel.Index) []string {
 	if len(index.Parts) == 0 {
 		return index.Fields
 	}
@@ -2829,7 +2829,7 @@ func ParseForeignKeyReference(foreign string) *ast.ForeignKeyRef {
 //
 // Validation warnings are logged but do not stop the conversion process, allowing for
 // graceful handling of incomplete or evolving schema definitions.
-func validateEnumField(field goschema.Field, enums []goschema.Enum) {
+func validateEnumField(field schemamodel.Field, enums []schemamodel.Enum) {
 	// Enum identity is the declaration, not an "enum_" name prefix; see
 	// declaredEnum.
 	globalEnum := declaredEnum(field.Type, enums)
@@ -2881,19 +2881,19 @@ func validateEnumField(field goschema.Field, enums []goschema.Enum) {
 //
 // # Return Value
 //
-// Returns a combined slice of goschema.Field containing both the original fields and
+// Returns a combined slice of schemamodel.Field containing both the original fields and
 // the generated fields from embedded field processing. This combined list is ready
 // for use in table creation. When originalFields already contains an embedded
 // field's generated concrete column, that original field is kept and the duplicate
 // generated field is skipped so callers can safely pass parser-finalized schemas.
-func ProcessEmbeddedFields(embeddedFields []goschema.EmbeddedField, originalFields []goschema.Field) []goschema.Field {
+func ProcessEmbeddedFields(embeddedFields []schemamodel.EmbeddedField, originalFields []schemamodel.Field) []schemamodel.Field {
 	// Start with the original fields
-	allFields := make([]goschema.Field, len(originalFields))
+	allFields := make([]schemamodel.Field, len(originalFields))
 	copy(allFields, originalFields)
 	seenFields := fieldKeySet(originalFields)
 
 	// Process embedded fields for each struct
-	structNames := goschema.UniqueStructNames(embeddedFields)
+	structNames := schemamodel.UniqueStructNames(embeddedFields)
 	for _, structName := range structNames {
 		generatedFields := processEmbeddedFieldsForStruct(embeddedFields, originalFields, structName)
 		allFields = appendNewFields(allFields, generatedFields, seenFields)
@@ -2907,7 +2907,7 @@ type fieldKey struct {
 	name       string
 }
 
-func fieldKeySet(fields []goschema.Field) map[fieldKey]struct{} {
+func fieldKeySet(fields []schemamodel.Field) map[fieldKey]struct{} {
 	seen := make(map[fieldKey]struct{}, len(fields))
 	for _, field := range fields {
 		seen[fieldKeyFor(field)] = struct{}{}
@@ -2915,7 +2915,7 @@ func fieldKeySet(fields []goschema.Field) map[fieldKey]struct{} {
 	return seen
 }
 
-func appendNewFields(fields, newFields []goschema.Field, seen map[fieldKey]struct{}) []goschema.Field {
+func appendNewFields(fields, newFields []schemamodel.Field, seen map[fieldKey]struct{}) []schemamodel.Field {
 	for _, field := range newFields {
 		key := fieldKeyFor(field)
 		if _, ok := seen[key]; ok {
@@ -2927,14 +2927,14 @@ func appendNewFields(fields, newFields []goschema.Field, seen map[fieldKey]struc
 	return fields
 }
 
-func fieldKeyFor(field goschema.Field) fieldKey {
+func fieldKeyFor(field schemamodel.Field) fieldKey {
 	return fieldKey{
 		structName: field.StructName,
 		name:       field.Name,
 	}
 }
 
-func processEmbeddedInlineMode(generatedFields []goschema.Field, embedded goschema.EmbeddedField, allFields []goschema.Field, allEmbeddedFields []goschema.EmbeddedField, structName string) []goschema.Field {
+func processEmbeddedInlineMode(generatedFields []schemamodel.Field, embedded schemamodel.EmbeddedField, allFields []schemamodel.Field, allEmbeddedFields []schemamodel.EmbeddedField, structName string) []schemamodel.Field {
 	// INLINE MODE: Expand embedded struct fields as individual table columns
 	generatedFields = processEmbeddedInlineModeRecursive(
 		generatedFields,
@@ -2950,13 +2950,13 @@ func processEmbeddedInlineMode(generatedFields []goschema.Field, embedded gosche
 // processEmbeddedInlineModeRecursive recursively processes embedded fields in inline mode.
 // This handles nested embedded structs by recursively expanding embedded fields within embedded types.
 func processEmbeddedInlineModeRecursive(
-	generatedFields []goschema.Field,
-	embedded goschema.EmbeddedField,
-	allFields []goschema.Field,
-	allEmbeddedFields []goschema.EmbeddedField,
+	generatedFields []schemamodel.Field,
+	embedded schemamodel.EmbeddedField,
+	allFields []schemamodel.Field,
+	allEmbeddedFields []schemamodel.EmbeddedField,
 	structName string,
 	activeTypes map[string]bool,
-) []goschema.Field {
+) []schemamodel.Field {
 	if embedded.EmbeddedTypeName == "" || activeTypes[embedded.EmbeddedTypeName] {
 		return generatedFields
 	}
@@ -3018,7 +3018,7 @@ func processEmbeddedInlineModeRecursive(
 	return generatedFields
 }
 
-func processEmbeddedJSONMode(generatedFields []goschema.Field, embedded goschema.EmbeddedField, structName string) []goschema.Field {
+func processEmbeddedJSONMode(generatedFields []schemamodel.Field, embedded schemamodel.EmbeddedField, structName string) []schemamodel.Field {
 	// JSON MODE: Serialize embedded struct into a single JSON/JSONB column
 	columnName := embedded.Name
 	if columnName == "" {
@@ -3033,7 +3033,7 @@ func processEmbeddedJSONMode(generatedFields []goschema.Field, embedded goschema
 	}
 
 	// Create the JSON column field
-	generatedFields = append(generatedFields, goschema.Field{
+	generatedFields = append(generatedFields, schemamodel.Field{
 		StructName: structName,
 		FieldName:  embedded.EmbeddedTypeName,
 		Name:       columnName,
@@ -3048,7 +3048,7 @@ func processEmbeddedJSONMode(generatedFields []goschema.Field, embedded goschema
 	return generatedFields
 }
 
-func processEmbeddedRelationMode(generatedFields []goschema.Field, embedded goschema.EmbeddedField, structName string) []goschema.Field {
+func processEmbeddedRelationMode(generatedFields []schemamodel.Field, embedded schemamodel.EmbeddedField, structName string) []schemamodel.Field {
 	// RELATION MODE: Create a foreign key field linking to another table
 	if embedded.Field == "" || embedded.Ref == "" {
 		// Skip incomplete relation definitions - both field name and reference are required
@@ -3079,7 +3079,7 @@ func processEmbeddedRelationMode(generatedFields []goschema.Field, embedded gosc
 	overrides = mergePlatformOverrides(overrides, embedded.Overrides)
 
 	// Create the foreign key field
-	generatedFields = append(generatedFields, goschema.Field{
+	generatedFields = append(generatedFields, schemamodel.Field{
 		StructName:     structName,
 		FieldName:      embedded.EmbeddedTypeName,
 		Name:           fieldName,         // e.g., "user_id"
@@ -3132,10 +3132,10 @@ func mergePlatformOverrides(
 //
 // # Return Value
 //
-// Returns a slice of goschema.Field representing the generated database fields for the specified struct.
+// Returns a slice of schemamodel.Field representing the generated database fields for the specified struct.
 // Each field is fully configured with appropriate types, constraints, and metadata.
-func processEmbeddedFieldsForStruct(embeddedFields []goschema.EmbeddedField, allFields []goschema.Field, structName string) []goschema.Field {
-	var generatedFields []goschema.Field
+func processEmbeddedFieldsForStruct(embeddedFields []schemamodel.EmbeddedField, allFields []schemamodel.Field, structName string) []schemamodel.Field {
+	var generatedFields []schemamodel.Field
 
 	// Process each embedded field definition
 	for _, embedded := range embeddedFields {
@@ -3170,7 +3170,7 @@ func processEmbeddedFieldsForStruct(embeddedFields []goschema.EmbeddedField, all
 // QualifyRLSPolicyForTarget puts a policy and its target table into the schema
 // the table was declared in, for a target that needs the qualification.
 //
-// Neither goschema.RLSPolicy nor ast.CreatePolicyNode carries a schema of its
+// Neither schemamodel.RLSPolicy nor ast.CreatePolicyNode carries a schema of its
 // own: the declaration names a table, and the table is what has one. On
 // PostgreSQL that costs nothing, because an unqualified name resolves through
 // search_path, and the rendering is left alone there rather than changed for
@@ -3186,10 +3186,10 @@ func processEmbeddedFieldsForStruct(embeddedFields []goschema.EmbeddedField, all
 // dbo lies outside the scope a read of the table's schema covers, and an object
 // the reader cannot see is one the comparator plans forever.
 func QualifyRLSPolicyForTarget(
-	policy goschema.RLSPolicy,
-	database goschema.Database,
+	policy schemamodel.RLSPolicy,
+	database schemamodel.Database,
 	targetPlatform string,
-) goschema.RLSPolicy {
+) schemamodel.RLSPolicy {
 	if targetPlatform != platform.SQLServer {
 		return policy
 	}

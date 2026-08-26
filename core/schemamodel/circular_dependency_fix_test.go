@@ -1,4 +1,4 @@
-package goschema_test
+package schemamodel_test
 
 import (
 	"slices"
@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // TestSelfReferencingForeignKeyDetection tests that self-referencing foreign keys
@@ -16,14 +16,14 @@ func TestSelfReferencingForeignKeyDetection(t *testing.T) {
 	c := qt.New(t)
 
 	// Create a database with a self-referencing table
-	db := &goschema.Database{
-		Tables: []goschema.Table{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{
 				Name:       "users",
 				StructName: "User",
 			},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{
 				StructName: "User",
 				Name:       "id",
@@ -40,7 +40,7 @@ func TestSelfReferencingForeignKeyDetection(t *testing.T) {
 			},
 		},
 		Dependencies:               make(map[string][]string),
-		SelfReferencingForeignKeys: make(map[string][]goschema.SelfReferencingFK),
+		SelfReferencingForeignKeys: make(map[string][]schemamodel.SelfReferencingFK),
 	}
 
 	// Build dependency graph
@@ -65,14 +65,14 @@ func TestComplexDependencyChainWithSelfReference(t *testing.T) {
 	c := qt.New(t)
 
 	// Recreate the scenario from issue #51
-	db := &goschema.Database{
-		Tables: []goschema.Table{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: "tenants", StructName: "Tenant"},
 			{Name: "users", StructName: "User"},
 			{Name: "locations", StructName: "Location"},
 			{Name: "areas", StructName: "Area"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			// Tenants table (no dependencies)
 			{StructName: "Tenant", Name: "id", Type: "TEXT", Primary: true},
 			{StructName: "Tenant", Name: "name", Type: "TEXT"},
@@ -97,7 +97,7 @@ func TestComplexDependencyChainWithSelfReference(t *testing.T) {
 			{StructName: "Area", Name: "name", Type: "TEXT"},
 		},
 		Dependencies:               make(map[string][]string),
-		SelfReferencingForeignKeys: make(map[string][]goschema.SelfReferencingFK),
+		SelfReferencingForeignKeys: make(map[string][]schemamodel.SelfReferencingFK),
 	}
 
 	// Build dependency graph
@@ -131,15 +131,15 @@ func TestComplexDependencyChainWithSelfReference(t *testing.T) {
 func TestEmbeddedFieldSelfReference(t *testing.T) {
 	c := qt.New(t)
 
-	db := &goschema.Database{
-		Tables: []goschema.Table{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: "categories", StructName: "Category"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Category", Name: "id", Type: "TEXT", Primary: true},
 			{StructName: "Category", Name: "name", Type: "TEXT"},
 		},
-		EmbeddedFields: []goschema.EmbeddedField{
+		EmbeddedFields: []schemamodel.EmbeddedField{
 			{
 				StructName:       "Category",
 				EmbeddedTypeName: "ParentCategory",
@@ -150,7 +150,7 @@ func TestEmbeddedFieldSelfReference(t *testing.T) {
 			},
 		},
 		Dependencies:               make(map[string][]string),
-		SelfReferencingForeignKeys: make(map[string][]goschema.SelfReferencingFK),
+		SelfReferencingForeignKeys: make(map[string][]schemamodel.SelfReferencingFK),
 	}
 
 	// Build dependency graph
@@ -171,18 +171,18 @@ func TestEmbeddedFieldSelfReference(t *testing.T) {
 func TestMultipleSelfReferencesInSameTable(t *testing.T) {
 	c := qt.New(t)
 
-	db := &goschema.Database{
-		Tables: []goschema.Table{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: "nodes", StructName: "Node"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Node", Name: "id", Type: "TEXT", Primary: true},
 			{StructName: "Node", Name: "parent_id", Type: "TEXT", Foreign: "nodes(id)", ForeignKeyName: "fk_nodes_parent", Nullable: true},
 			{StructName: "Node", Name: "next_sibling_id", Type: "TEXT", Foreign: "nodes(id)", ForeignKeyName: "fk_nodes_next_sibling", Nullable: true},
 			{StructName: "Node", Name: "name", Type: "TEXT"},
 		},
 		Dependencies:               make(map[string][]string),
-		SelfReferencingForeignKeys: make(map[string][]goschema.SelfReferencingFK),
+		SelfReferencingForeignKeys: make(map[string][]schemamodel.SelfReferencingFK),
 	}
 
 	// Build dependency graph
@@ -204,7 +204,7 @@ func TestMultipleSelfReferencesInSameTable(t *testing.T) {
 }
 
 // Helper functions (copied from utils.go for testing)
-func buildDependencyGraphTest(r *goschema.Database) {
+func buildDependencyGraphTest(r *schemamodel.Database) {
 	// Initialize dependencies map for all tables
 	for _, table := range r.Tables {
 		r.Dependencies[table.Name] = make([]string, 0)
@@ -212,7 +212,7 @@ func buildDependencyGraphTest(r *goschema.Database) {
 
 	// Initialize self-referencing foreign keys tracking
 	if r.SelfReferencingForeignKeys == nil {
-		r.SelfReferencingForeignKeys = make(map[string][]goschema.SelfReferencingFK)
+		r.SelfReferencingForeignKeys = make(map[string][]schemamodel.SelfReferencingFK)
 	}
 
 	// Analyze foreign key relationships
@@ -232,7 +232,7 @@ func buildDependencyGraphTest(r *goschema.Database) {
 			// Check if this is a self-referencing foreign key
 			if table.Name == refTable {
 				// Track self-referencing foreign key for deferred constraint creation
-				r.SelfReferencingForeignKeys[table.Name] = append(r.SelfReferencingForeignKeys[table.Name], goschema.SelfReferencingFK{
+				r.SelfReferencingForeignKeys[table.Name] = append(r.SelfReferencingForeignKeys[table.Name], schemamodel.SelfReferencingFK{
 					FieldName:      field.Name,
 					Foreign:        field.Foreign,
 					ForeignKeyName: field.ForeignKeyName,
@@ -265,7 +265,7 @@ func buildDependencyGraphTest(r *goschema.Database) {
 			// Check if this is a self-referencing foreign key
 			if table.Name == refTable {
 				// Track self-referencing foreign key for deferred constraint creation
-				r.SelfReferencingForeignKeys[table.Name] = append(r.SelfReferencingForeignKeys[table.Name], goschema.SelfReferencingFK{
+				r.SelfReferencingForeignKeys[table.Name] = append(r.SelfReferencingForeignKeys[table.Name], schemamodel.SelfReferencingFK{
 					FieldName:      embedded.Field,
 					Foreign:        embedded.Ref,
 					ForeignKeyName: "fk_" + strings.ToLower(table.Name) + "_" + strings.ToLower(embedded.Field),
@@ -281,9 +281,9 @@ func buildDependencyGraphTest(r *goschema.Database) {
 	}
 }
 
-func sortTablesByDependenciesTest(r *goschema.Database) {
+func sortTablesByDependenciesTest(r *schemamodel.Database) {
 	// Simple topological sort implementation for testing
-	var sorted []goschema.Table
+	var sorted []schemamodel.Table
 	inDegree := make(map[string]int)
 
 	for tableName := range r.Dependencies {
@@ -300,7 +300,7 @@ func sortTablesByDependenciesTest(r *goschema.Database) {
 		}
 	}
 
-	tableMap := make(map[string]goschema.Table)
+	tableMap := make(map[string]schemamodel.Table)
 	for _, table := range r.Tables {
 		tableMap[table.Name] = table
 	}

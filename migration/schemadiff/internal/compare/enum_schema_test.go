@@ -6,8 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -22,7 +22,7 @@ import (
 func TestEnumsWithSemantics_SchemaIdentity(t *testing.T) {
 	tests := []struct {
 		name      string
-		generated []goschema.Enum
+		desired   []schemamodel.Enum
 		database  []catalog.Enum
 		semantics identifier.Semantics
 		want      difftypes.SchemaDiff
@@ -34,7 +34,7 @@ func TestEnumsWithSemantics_SchemaIdentity(t *testing.T) {
 			// where the read says nothing. Compared raw this planned a CREATE
 			// and a DROP of the same type.
 			name:      "an explicit default schema matches the reader's blank",
-			generated: []goschema.Enum{{Name: "p_color", Schema: "public", Values: []string{"red"}}},
+			desired:   []schemamodel.Enum{{Name: "p_color", Schema: "public", Values: []string{"red"}}},
 			database:  []catalog.Enum{{Name: "p_color", Values: []string{"red"}}},
 			semantics: identifier.Semantics{DefaultSchema: "public"},
 			want:      difftypes.SchemaDiff{},
@@ -43,7 +43,7 @@ func TestEnumsWithSemantics_SchemaIdentity(t *testing.T) {
 			// `ptah introspect --schemas <s>` writes annotations that carry no
 			// schema, and the read they are compared against names one.
 			name:      "a generated enum naming no schema matches a unique read",
-			generated: []goschema.Enum{{Name: "status_type", Values: []string{"a"}}},
+			desired:   []schemamodel.Enum{{Name: "status_type", Values: []string{"a"}}},
 			database:  []catalog.Enum{{Name: "status_type", Schema: "brownfield", Values: []string{"a"}}},
 			semantics: identifier.Semantics{DefaultSchema: "public"},
 			want:      difftypes.SchemaDiff{},
@@ -52,8 +52,8 @@ func TestEnumsWithSemantics_SchemaIdentity(t *testing.T) {
 			// The control that keeps the row above from becoming "any name
 			// matches anything". Two schemas holding one name is exactly where
 			// a guess would attribute the type to the wrong schema.
-			name:      "an ambiguous bare name matches nothing",
-			generated: []goschema.Enum{{Name: "mood", Values: []string{"a"}}},
+			name:    "an ambiguous bare name matches nothing",
+			desired: []schemamodel.Enum{{Name: "mood", Values: []string{"a"}}},
 			database: []catalog.Enum{
 				{Name: "mood", Schema: "one", Values: []string{"a"}},
 				{Name: "mood", Schema: "two", Values: []string{"a"}},
@@ -70,7 +70,7 @@ func TestEnumsWithSemantics_SchemaIdentity(t *testing.T) {
 			// that actually differs. Keyed on the bare name this reported
 			// nothing at all.
 			name: "same name in two schemas pairs by schema",
-			generated: []goschema.Enum{
+			desired: []schemamodel.Enum{
 				{Name: "mood", Schema: "one", Values: []string{"a"}},
 				{Name: "mood", Schema: "two", Values: []string{"a", "b"}},
 			},
@@ -90,7 +90,7 @@ func TestEnumsWithSemantics_SchemaIdentity(t *testing.T) {
 			// hold is added there, not silently matched against the enum of
 			// the same name somewhere else.
 			name:      "a qualified name does not fall back to another schema",
-			generated: []goschema.Enum{{Name: "mood", Schema: "wanted", Values: []string{"a"}}},
+			desired:   []schemamodel.Enum{{Name: "mood", Schema: "wanted", Values: []string{"a"}}},
 			database:  []catalog.Enum{{Name: "mood", Schema: "other", Values: []string{"a"}}},
 			semantics: identifier.Semantics{DefaultSchema: "public"},
 			want: difftypes.SchemaDiff{
@@ -106,7 +106,7 @@ func TestEnumsWithSemantics_SchemaIdentity(t *testing.T) {
 
 			diff := &difftypes.SchemaDiff{}
 			compare.EnumsWithSemantics(
-				&goschema.Database{Enums: test.generated},
+				&schemamodel.Database{Enums: test.desired},
 				&catalog.Database{Enums: test.database},
 				diff,
 				test.semantics,

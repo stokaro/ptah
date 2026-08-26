@@ -4,8 +4,8 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // buildTablePrimaryKeyColumnSets maps each generated table to the set of
@@ -15,11 +15,11 @@ import (
 // database side of the lookup spells an implicit schema as nothing at all
 // (stokaro/ptah#1232).
 func buildTablePrimaryKeyColumnSets(
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	semantics identifier.Semantics,
 ) map[tableIdentity]map[string]struct{} {
-	result := make(map[tableIdentity]map[string]struct{}, len(generated.Tables))
-	for _, table := range generated.Tables {
+	result := make(map[tableIdentity]map[string]struct{}, len(desired.Tables))
+	for _, table := range desired.Tables {
 		columns := make(map[string]struct{})
 		for _, column := range tablePrimaryKeyColumns(table) {
 			columns[column] = struct{}{}
@@ -42,20 +42,20 @@ func buildTablePrimaryKeyColumnSets(
 // synthesized) keep the previous filter-out behavior.
 func isFieldLevelConstraint(
 	dbConstraint catalog.Constraint,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	synthesizedFKKeys map[tableMemberKey]struct{},
 	semantics identifier.Semantics,
 ) bool {
 	// Create a map of table.column -> field for quick lookup
-	fieldMap := make(map[tableMemberKey]goschema.Field)
+	fieldMap := make(map[tableMemberKey]schemamodel.Field)
 	// tablePKColumns maps a qualified table name to the set of columns in its
 	// table-level primary key (Table.PrimaryKey), which are synthesized as a
 	// table-level PRIMARY KEY constraint.
-	tablePKColumns := buildTablePrimaryKeyColumnSets(generated, semantics)
-	for _, field := range generated.Fields {
+	tablePKColumns := buildTablePrimaryKeyColumnSets(desired, semantics)
+	for _, field := range desired.Fields {
 		// Get table name for this field
 		tableName := field.StructName // default to struct name
-		for _, table := range generated.Tables {
+		for _, table := range desired.Tables {
 			if table.StructName == field.StructName {
 				tableName = table.QualifiedName()
 				break
@@ -137,7 +137,7 @@ func isFieldLevelConstraint(
 			return true
 		}
 		// Regular CHECK constraints from `check=` annotations are surfaced
-		// to the diff via synthesized goschema.Constraint entries (see
+		// to the diff via synthesized schemamodel.Constraint entries (see
 		// synthesizeFieldLevelCheckConstraints in Constraints). Letting the
 		// DB constraint participate here means it gets matched against the
 		// synthesized entry by name, so add/remove/expression-change cases

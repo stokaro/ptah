@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/objectlookup"
 )
 
@@ -17,35 +17,35 @@ import (
 func TestView_HappyPath(t *testing.T) {
 	tests := []struct {
 		name      string
-		views     []goschema.View
+		views     []schemamodel.View
 		lookup    string
 		semantics identifier.Semantics
 		wantBody  string
 	}{
 		{
 			name:      "exact name",
-			views:     []goschema.View{{Name: "active_users", Body: "exact"}},
+			views:     []schemamodel.View{{Name: "active_users", Body: "exact"}},
 			lookup:    "active_users",
 			semantics: identifier.ForDialect("postgres"),
 			wantBody:  "exact",
 		},
 		{
 			name:      "diff spells it bare, schema qualifies it",
-			views:     []goschema.View{{Name: "reporting.active_users", Body: "qualified"}},
+			views:     []schemamodel.View{{Name: "reporting.active_users", Body: "qualified"}},
 			lookup:    "active_users",
 			semantics: identifier.ForDialect("postgres"),
 			wantBody:  "qualified",
 		},
 		{
 			name:      "diff qualifies it, schema spells it bare",
-			views:     []goschema.View{{Name: "active_users", Body: "bare"}},
+			views:     []schemamodel.View{{Name: "active_users", Body: "bare"}},
 			lookup:    "reporting.active_users",
 			semantics: identifier.ForDialect("postgres"),
 			wantBody:  "bare",
 		},
 		{
 			name: "an exact match wins over an unqualified one",
-			views: []goschema.View{
+			views: []schemamodel.View{
 				{Name: "reporting.active_users", Body: "qualified"},
 				{Name: "active_users", Body: "bare"},
 			},
@@ -58,7 +58,7 @@ func TestView_HappyPath(t *testing.T) {
 			// this is two candidates and no answer; under PostgreSQL's rules a
 			// bare name IS the one in public.
 			name: "a bare name resolves to the default schema, not to the other one",
-			views: []goschema.View{
+			views: []schemamodel.View{
 				{Name: "public.active_users", Body: "public"},
 				{Name: "archive.active_users", Body: "archive"},
 			},
@@ -70,7 +70,7 @@ func TestView_HappyPath(t *testing.T) {
 			// Symmetric to the row above: the qualified spelling is the diff's
 			// and the bare one is the declaration's.
 			name: "a default-schema name resolves to the bare declaration",
-			views: []goschema.View{
+			views: []schemamodel.View{
 				{Name: "active_users", Body: "bare"},
 				{Name: "archive.active_users", Body: "archive"},
 			},
@@ -80,21 +80,21 @@ func TestView_HappyPath(t *testing.T) {
 		},
 		{
 			name:      "SQL Server resolves a bare name against dbo",
-			views:     []goschema.View{{Name: "dbo.active_users", Body: "dbo"}},
+			views:     []schemamodel.View{{Name: "dbo.active_users", Body: "dbo"}},
 			lookup:    "active_users",
 			semantics: identifier.ForDialect("sqlserver"),
 			wantBody:  "dbo",
 		},
 		{
 			name:      "SQLite folds ASCII case",
-			views:     []goschema.View{{Name: "Active_Users", Body: "folded"}},
+			views:     []schemamodel.View{{Name: "Active_Users", Body: "folded"}},
 			lookup:    "active_users",
 			semantics: identifier.ForDialect("sqlite"),
 			wantBody:  "folded",
 		},
 		{
 			name:      "PostgreSQL does not fold case",
-			views:     []goschema.View{{Name: "Active_Users", Body: "unfolded"}, {Name: "active_users", Body: "exact"}},
+			views:     []schemamodel.View{{Name: "Active_Users", Body: "unfolded"}, {Name: "active_users", Body: "exact"}},
 			lookup:    "active_users",
 			semantics: identifier.ForDialect("postgres"),
 			wantBody:  "exact",
@@ -118,19 +118,19 @@ func TestView_HappyPath(t *testing.T) {
 func TestView_FailurePath(t *testing.T) {
 	tests := []struct {
 		name      string
-		views     []goschema.View
+		views     []schemamodel.View
 		lookup    string
 		semantics identifier.Semantics
 	}{
 		{
 			name:      "no candidate at all",
-			views:     []goschema.View{{Name: "other_view"}},
+			views:     []schemamodel.View{{Name: "other_view"}},
 			lookup:    "active_users",
 			semantics: identifier.ForDialect("postgres"),
 		},
 		{
 			name: "the same name in two non-default schemas",
-			views: []goschema.View{
+			views: []schemamodel.View{
 				{Name: "reporting.active_users", Body: "reporting"},
 				{Name: "archive.active_users", Body: "archive"},
 			},
@@ -139,7 +139,7 @@ func TestView_FailurePath(t *testing.T) {
 		},
 		{
 			name: "PostgreSQL keeps two case-distinct names apart",
-			views: []goschema.View{
+			views: []schemamodel.View{
 				{Name: "reporting.Active_Users", Body: "upper"},
 				{Name: "reporting.active_users", Body: "lower"},
 			},
@@ -159,7 +159,7 @@ func TestView_FailurePath(t *testing.T) {
 func TestMaterializedView_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
-	views := []goschema.MaterializedView{{Name: "reporting.user_stats", Body: "qualified"}}
+	views := []schemamodel.MaterializedView{{Name: "reporting.user_stats", Body: "qualified"}}
 	got := objectlookup.MaterializedView(views, "user_stats", identifier.ForDialect("postgres"))
 	c.Assert(got, qt.IsNotNil)
 	c.Assert(got.Body, qt.Equals, "qualified")
@@ -168,7 +168,7 @@ func TestMaterializedView_HappyPath(t *testing.T) {
 func TestMaterializedView_FailurePath(t *testing.T) {
 	c := qt.New(t)
 
-	views := []goschema.MaterializedView{
+	views := []schemamodel.MaterializedView{
 		{Name: "reporting.user_stats"},
 		{Name: "archive.user_stats"},
 	}
@@ -180,7 +180,7 @@ func TestMaterializedView_FailurePath(t *testing.T) {
 func TestTrigger_HappyPath(t *testing.T) {
 	tests := []struct {
 		name      string
-		triggers  []goschema.Trigger
+		triggers  []schemamodel.Trigger
 		table     string
 		trigger   string
 		semantics identifier.Semantics
@@ -188,7 +188,7 @@ func TestTrigger_HappyPath(t *testing.T) {
 	}{
 		{
 			name:      "the table half is qualified in the schema only",
-			triggers:  []goschema.Trigger{{Name: "touch", Table: "reporting.users", Body: "qualified"}},
+			triggers:  []schemamodel.Trigger{{Name: "touch", Table: "reporting.users", Body: "qualified"}},
 			table:     "users",
 			trigger:   "touch",
 			semantics: identifier.ForDialect("postgres"),
@@ -196,7 +196,7 @@ func TestTrigger_HappyPath(t *testing.T) {
 		},
 		{
 			name:      "the table half resolves through the default schema",
-			triggers:  []goschema.Trigger{{Name: "touch", Table: "public.users", Body: "public"}},
+			triggers:  []schemamodel.Trigger{{Name: "touch", Table: "public.users", Body: "public"}},
 			table:     "users",
 			trigger:   "touch",
 			semantics: identifier.ForDialect("postgres"),
@@ -204,7 +204,7 @@ func TestTrigger_HappyPath(t *testing.T) {
 		},
 		{
 			name:      "SQLite folds the trigger name too",
-			triggers:  []goschema.Trigger{{Name: "Touch", Table: "users", Body: "folded"}},
+			triggers:  []schemamodel.Trigger{{Name: "Touch", Table: "users", Body: "folded"}},
 			table:     "users",
 			trigger:   "touch",
 			semantics: identifier.ForDialect("sqlite"),
@@ -225,21 +225,21 @@ func TestTrigger_HappyPath(t *testing.T) {
 func TestTrigger_FailurePath(t *testing.T) {
 	tests := []struct {
 		name      string
-		triggers  []goschema.Trigger
+		triggers  []schemamodel.Trigger
 		table     string
 		trigger   string
 		semantics identifier.Semantics
 	}{
 		{
 			name:      "the trigger name still has to match",
-			triggers:  []goschema.Trigger{{Name: "touch", Table: "reporting.users"}},
+			triggers:  []schemamodel.Trigger{{Name: "touch", Table: "reporting.users"}},
 			table:     "users",
 			trigger:   "other",
 			semantics: identifier.ForDialect("postgres"),
 		},
 		{
 			name: "the same trigger name on the same table in two schemas",
-			triggers: []goschema.Trigger{
+			triggers: []schemamodel.Trigger{
 				{Name: "touch", Table: "reporting.users"},
 				{Name: "touch", Table: "archive.users"},
 			},
@@ -249,7 +249,7 @@ func TestTrigger_FailurePath(t *testing.T) {
 		},
 		{
 			name:      "PostgreSQL does not fold the trigger name",
-			triggers:  []goschema.Trigger{{Name: "Touch", Table: "users"}},
+			triggers:  []schemamodel.Trigger{{Name: "Touch", Table: "users"}},
 			table:     "users",
 			trigger:   "touch",
 			semantics: identifier.ForDialect("postgres"),
@@ -342,28 +342,28 @@ func TestContains(t *testing.T) {
 func TestQualified(t *testing.T) {
 	tests := []struct {
 		name       string
-		tables     []goschema.Table
+		tables     []schemamodel.Table
 		lookup     string
 		semantics  identifier.Semantics
 		wantStruct string
 	}{
 		{
 			name:       "the diff qualifies, the declaration does not",
-			tables:     []goschema.Table{{StructName: "User", Name: "users"}},
+			tables:     []schemamodel.Table{{StructName: "User", Name: "users"}},
 			lookup:     "public.users",
 			semantics:  identifier.ForDialect("postgres"),
 			wantStruct: "User",
 		},
 		{
 			name:       "the declaration qualifies, the diff does not",
-			tables:     []goschema.Table{{StructName: "User", Name: "users", Schema: "public"}},
+			tables:     []schemamodel.Table{{StructName: "User", Name: "users", Schema: "public"}},
 			lookup:     "users",
 			semantics:  identifier.ForDialect("postgres"),
 			wantStruct: "User",
 		},
 		{
 			name:       "SQL Server resolves dbo",
-			tables:     []goschema.Table{{StructName: "Order", Name: "orders", Schema: "dbo"}},
+			tables:     []schemamodel.Table{{StructName: "Order", Name: "orders", Schema: "dbo"}},
 			lookup:     "orders",
 			semantics:  identifier.ForDialect("sqlserver"),
 			wantStruct: "Order",
@@ -372,7 +372,7 @@ func TestQualified(t *testing.T) {
 			// A non-default schema is not the default one, and the two must stay
 			// distinct or a fix that resolves everything would pass.
 			name: "a non-default schema is preferred over the default one when named",
-			tables: []goschema.Table{
+			tables: []schemamodel.Table{
 				{StructName: "PublicUser", Name: "users", Schema: "public"},
 				{StructName: "AppUser", Name: "users", Schema: "app"},
 			},

@@ -9,19 +9,20 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/goschematogo"
 )
 
 func TestRenderPerTableFilesRoundTripThroughParser(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Tables: []goschema.Table{{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{
 			StructName: "OrderItem",
 			Name:       "order_items",
 			PrimaryKey: []string{"tenant_id", "order_id"},
 			Comment:    "Imported order items",
 		}},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{
 				StructName: "OrderItem",
 				FieldName:  "TenantID",
@@ -47,24 +48,24 @@ func TestRenderPerTableFilesRoundTripThroughParser(t *testing.T) {
 				DefaultExpr: "now()",
 			},
 		},
-		Enums: []goschema.Enum{{
+		Enums: []schemamodel.Enum{{
 			Name:   "status_type",
 			Values: []string{"active", "inactive"},
 		}},
-		Extensions: []goschema.Extension{{
+		Extensions: []schemamodel.Extension{{
 			Name:        "pgcrypto",
 			Schema:      "extensions",
 			IfNotExists: true,
 			Version:     "1.3",
 		}},
-		Indexes: []goschema.Index{{
+		Indexes: []schemamodel.Index{{
 			StructName:     "OrderItem",
 			Name:           "idx_order_items_status",
 			Fields:         []string{"status"},
 			IncludeColumns: []string{"created_at", "tenant_id"},
 			Condition:      "status <> 'inactive'",
 		}},
-		Constraints: []goschema.Constraint{
+		Constraints: []schemamodel.Constraint{
 			{
 				StructName:     "OrderItem",
 				Name:           "order_items_sku_unique",
@@ -84,7 +85,7 @@ func TestRenderPerTableFilesRoundTripThroughParser(t *testing.T) {
 				OnDelete:       "CASCADE",
 			},
 		},
-		Functions: []goschema.Function{{
+		Functions: []schemamodel.Function{{
 			Name:       "touch_order_item",
 			Returns:    "trigger",
 			Language:   "plpgsql",
@@ -92,21 +93,21 @@ func TestRenderPerTableFilesRoundTripThroughParser(t *testing.T) {
 			Volatility: "VOLATILE",
 			Body:       "BEGIN RAISE NOTICE \"touch\";\nRETURN NEW; END;",
 		}},
-		Roles: []goschema.Role{{
+		Roles: []schemamodel.Role{{
 			Name:    "app_user",
 			Login:   true,
 			Inherit: true,
 		}},
-		Grants: []goschema.Grant{{
+		Grants: []schemamodel.Grant{{
 			Role:       "app_user",
 			Privileges: []string{"SELECT", "INSERT"},
 			OnTable:    "order_items",
 		}},
-		RLSEnabledTables: []goschema.RLSEnabledTable{{
+		RLSEnabledTables: []schemamodel.RLSEnabledTable{{
 			StructName: "OrderItem",
 			Table:      "order_items",
 		}},
-		RLSPolicies: []goschema.RLSPolicy{{
+		RLSPolicies: []schemamodel.RLSPolicy{{
 			StructName:      "OrderItem",
 			Name:            "tenant_isolation",
 			Table:           "order_items",
@@ -162,9 +163,9 @@ func TestRenderPerTableFilesRoundTripThroughParser(t *testing.T) {
 func TestRenderSingleFileUsesOneSchemaFile(t *testing.T) {
 	c := qt.New(t)
 
-	files, err := goschematogo.Render(&goschema.Database{
-		Tables: []goschema.Table{{StructName: "User", Name: "users"}},
-		Fields: []goschema.Field{{
+	files, err := goschematogo.Render(&schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
+		Fields: []schemamodel.Field{{
 			StructName: "User",
 			FieldName:  "ID",
 			Name:       "id",
@@ -211,7 +212,7 @@ func TestRenderRejectsUnrepresentableIndexIncludeColumns(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			database := &goschema.Database{Indexes: []goschema.Index{{
+			database := &schemamodel.Database{Indexes: []schemamodel.Index{{
 				Name:           "idx_accounts_email",
 				IncludeColumns: []string{"created_at", test.column},
 			}}}
@@ -226,9 +227,9 @@ func TestRenderRejectsUnrepresentableIndexIncludeColumns(t *testing.T) {
 
 func TestRenderAcceptsRepresentableIndexIncludeColumns(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Account", Name: "accounts"}},
-		Indexes: []goschema.Index{{
+	database := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Account", Name: "accounts"}},
+		Indexes: []schemamodel.Index{{
 			StructName:     "Account",
 			Name:           "idx_accounts_email",
 			Fields:         []string{"email"},
@@ -250,8 +251,8 @@ func TestRenderAcceptsRepresentableIndexIncludeColumns(t *testing.T) {
 func TestRenderPerTableFileNamesIncludeSchema(t *testing.T) {
 	c := qt.New(t)
 
-	files, err := goschematogo.Render(&goschema.Database{
-		Tables: []goschema.Table{
+	files, err := goschematogo.Render(&schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "BillingUser", Schema: "billing", Name: "users"},
 			{StructName: "AuthUser", Schema: "auth", Name: "users"},
 		},
@@ -264,7 +265,7 @@ func TestRenderPerTableFileNamesIncludeSchema(t *testing.T) {
 func TestRenderRejectsInvalidPackageName(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := goschematogo.Render(&goschema.Database{}, goschematogo.Options{PackageName: "type"})
+	_, err := goschematogo.Render(&schemamodel.Database{}, goschematogo.Options{PackageName: "type"})
 
 	c.Assert(err, qt.ErrorMatches, `invalid package name "type"`)
 }

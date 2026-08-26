@@ -77,13 +77,13 @@ func TestIntrospectCommand_PostgresBrownfieldGoRoundTrip(t *testing.T) {
 	output, err := goTest.CombinedOutput()
 	c.Assert(err, qt.IsNil, qt.Commentf("generated package go test:\n%s", output))
 
-	generated, err := goschema.ParseDir(outDir)
+	desired, err := goschema.ParseDir(outDir)
 	c.Assert(err, qt.IsNil)
-	c.Assert(generated.Tables, qt.HasLen, 10)
-	c.Assert(generated.Enums, qt.HasLen, 1)
-	c.Assert(generated.Functions, qt.HasLen, 1)
-	c.Assert(generated.RLSPolicies, qt.HasLen, 1)
-	c.Assert(generated.RLSEnabledTables, qt.HasLen, 1)
+	c.Assert(desired.Tables, qt.HasLen, 10)
+	c.Assert(desired.Enums, qt.HasLen, 1)
+	c.Assert(desired.Functions, qt.HasLen, 1)
+	c.Assert(desired.RLSPolicies, qt.HasLen, 1)
+	c.Assert(desired.RLSEnabledTables, qt.HasLen, 1)
 
 	conn, err := dbschema.ConnectToDatabase(t.Context(), dsn)
 	c.Assert(err, qt.IsNil)
@@ -92,7 +92,7 @@ func TestIntrospectCommand_PostgresBrownfieldGoRoundTrip(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	compareOpts := config.DefaultCompareOptions()
 	compareOpts.Dialect = conn.Info().Dialect
-	diff := schemadiff.CompareWithOptions(generated, live, compareOpts)
+	diff := schemadiff.CompareWithOptions(desired, live, compareOpts)
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %#v", diff))
 }
 

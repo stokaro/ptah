@@ -13,7 +13,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -106,27 +106,27 @@ func TestPostgresIndexAndPolicyExpressionsConvergeE2E(t *testing.T) {
 
 // expressionDeclaration is the same schema as a description, carrying the
 // expressions as they were WRITTEN.
-func expressionDeclaration(indexExpr, predicate, using string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "O", Name: "orders"}},
-		Fields: []goschema.Field{
+func expressionDeclaration(indexExpr, predicate, using string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "O", Name: "orders"}},
+		Fields: []schemamodel.Field{
 			{StructName: "O", Name: "id", Type: "integer", Primary: true},
 			{StructName: "O", Name: "code", Type: "varchar(40)"},
 			{StructName: "O", Name: "owner", Type: "varchar(60)"},
 			{StructName: "O", Name: "unit", Type: "numeric(10,2)"},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{
 				StructName: "O", Name: "idx_lower_code", TableName: "orders",
-				Parts: []goschema.IndexPart{{Expr: indexExpr}},
+				Parts: []schemamodel.IndexPart{{Expr: indexExpr}},
 			},
 			{
 				StructName: "O", Name: "idx_partial", TableName: "orders",
 				Fields: []string{"code"}, Condition: predicate,
 			},
 		},
-		RLSEnabledTables: []goschema.RLSEnabledTable{{StructName: "O", Table: "orders"}},
-		RLSPolicies: []goschema.RLSPolicy{{
+		RLSEnabledTables: []schemamodel.RLSEnabledTable{{StructName: "O", Table: "orders"}},
+		RLSPolicies: []schemamodel.RLSPolicy{{
 			StructName: "O", Name: "p_owner", Table: "orders",
 			PolicyFor: "SELECT", ToRoles: "PUBLIC", UsingExpression: using,
 		}},

@@ -6,7 +6,7 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
@@ -103,14 +103,14 @@ import (
 //
 // Results are sorted alphabetically for consistent output across multiple runs.
 func Roles(
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
 ) {
 	// Build lookup maps for role comparison
-	generatedRoleMap := make(map[string]goschema.Role)
-	for _, role := range generated.Roles {
+	generatedRoleMap := make(map[string]schemamodel.Role)
+	for _, role := range desired.Roles {
 		generatedRoleMap[role.Name] = role
 	}
 
@@ -232,47 +232,47 @@ func Roles(
 //			"password": "no_password -> password_set",
 //		},
 //	}
-func RoleDefinitions(generated goschema.Role, database catalog.Role) difftypes.RoleDiff {
+func RoleDefinitions(desired schemamodel.Role, database catalog.Role) difftypes.RoleDiff {
 	roleDiff := difftypes.RoleDiff{
-		RoleName: generated.Name,
+		RoleName: desired.Name,
 		Changes:  make(map[string]string),
 	}
 
 	// Compare login capability
-	if generated.Login != database.Login {
-		roleDiff.Changes["login"] = fmt.Sprintf("%t -> %t", database.Login, generated.Login)
+	if desired.Login != database.Login {
+		roleDiff.Changes["login"] = fmt.Sprintf("%t -> %t", database.Login, desired.Login)
 	}
 
 	// Compare password (special handling for security)
 	// We only detect if a password needs to be set, not compare actual values
-	if generated.Password != "" && !database.HasPassword {
+	if desired.Password != "" && !database.HasPassword {
 		// If target has password but database role doesn't, mark for update
 		roleDiff.Changes["password"] = "password_update_required"
 	}
 
 	// Compare superuser status
-	if generated.Superuser != database.Superuser {
-		roleDiff.Changes["superuser"] = fmt.Sprintf("%t -> %t", database.Superuser, generated.Superuser)
+	if desired.Superuser != database.Superuser {
+		roleDiff.Changes["superuser"] = fmt.Sprintf("%t -> %t", database.Superuser, desired.Superuser)
 	}
 
 	// Compare createdb capability
-	if generated.CreateDB != database.CreateDB {
-		roleDiff.Changes["createdb"] = fmt.Sprintf("%t -> %t", database.CreateDB, generated.CreateDB)
+	if desired.CreateDB != database.CreateDB {
+		roleDiff.Changes["createdb"] = fmt.Sprintf("%t -> %t", database.CreateDB, desired.CreateDB)
 	}
 
 	// Compare createrole capability
-	if generated.CreateRole != database.CreateRole {
-		roleDiff.Changes["createrole"] = fmt.Sprintf("%t -> %t", database.CreateRole, generated.CreateRole)
+	if desired.CreateRole != database.CreateRole {
+		roleDiff.Changes["createrole"] = fmt.Sprintf("%t -> %t", database.CreateRole, desired.CreateRole)
 	}
 
 	// Compare inherit capability
-	if generated.Inherit != database.Inherit {
-		roleDiff.Changes["inherit"] = fmt.Sprintf("%t -> %t", database.Inherit, generated.Inherit)
+	if desired.Inherit != database.Inherit {
+		roleDiff.Changes["inherit"] = fmt.Sprintf("%t -> %t", database.Inherit, desired.Inherit)
 	}
 
 	// Compare replication capability
-	if generated.Replication != database.Replication {
-		roleDiff.Changes["replication"] = fmt.Sprintf("%t -> %t", database.Replication, generated.Replication)
+	if desired.Replication != database.Replication {
+		roleDiff.Changes["replication"] = fmt.Sprintf("%t -> %t", database.Replication, desired.Replication)
 	}
 
 	return roleDiff

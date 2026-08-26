@@ -10,8 +10,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -107,19 +107,19 @@ func readPostgresIndexIdentitySchema(c *qt.C, t *testing.T, dsn string) *catalog
 	}
 }
 
-func postgresSchemaScopedIndexTarget() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func postgresSchemaScopedIndexTarget() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "SchemaAUser", Schema: postgresIndexIdentitySchemaA, Name: "users"},
 			{StructName: "SchemaAOrder", Schema: postgresIndexIdentitySchemaA, Name: "orders"},
 			{StructName: "SchemaBUser", Schema: postgresIndexIdentitySchemaB, Name: "users"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "SchemaAUser", Name: "email", Type: "TEXT"},
 			{StructName: "SchemaAOrder", Name: "reference", Type: "TEXT"},
 			{StructName: "SchemaBUser", Name: "email", Type: "TEXT"},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{
 				StructName: "SchemaAOrder",
 				Name:       postgresIndexIdentityName,

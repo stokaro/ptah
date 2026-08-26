@@ -15,8 +15,8 @@ import (
 	"github.com/zclconf/go-cty/cty"
 
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/pgindexstorage"
 	"go.5x5.cz/ptah/internal/sqlitekey"
 	"go.5x5.cz/ptah/internal/tableref"
@@ -78,7 +78,7 @@ type Result struct {
 // the schema came out of a database rather than out of HCL: an inspected type
 // carries no record of how it was written, and some of them have to be written
 // as a sql() call to be readable at all.
-func Render(db *goschema.Database) (Result, error) {
+func Render(db *schemamodel.Database) (Result, error) {
 	return RenderForDialect(db, "")
 }
 
@@ -89,7 +89,7 @@ func Render(db *goschema.Database) (Result, error) {
 // what [Render] renders, which is what the parse-and-re-render callers want:
 // their input was HCL, so the raw-SQL marker the parser set is already right and
 // re-deciding it from the type name would second-guess the author.
-func RenderForDialect(db *goschema.Database, dialect string) (Result, error) {
+func RenderForDialect(db *schemamodel.Database, dialect string) (Result, error) {
 	return render(db, dialect, "", false)
 }
 
@@ -115,7 +115,7 @@ func RenderForDialect(db *goschema.Database, dialect string) (Result, error) {
 // [RenderForDialect] is deliberately left alone. Its callers parsed HCL to get
 // here, so their IR already carries whatever the author wrote, and synthesizing
 // a schema there would invent one the author did not declare.
-func RenderInspected(db *goschema.Database, dialect, defaultSchema string) (Result, error) {
+func RenderInspected(db *schemamodel.Database, dialect, defaultSchema string) (Result, error) {
 	return render(db, dialect, strings.TrimSpace(defaultSchema), false)
 }
 
@@ -134,11 +134,11 @@ func RenderInspected(db *goschema.Database, dialect, defaultSchema string) (Resu
 //
 // The capability is not deleted by the default. Setting
 // [KeepAtlasRefusedBlocksEnvVar] restores every block on this same surface.
-func RenderInspectedForAtlasCLI(db *goschema.Database, dialect, defaultSchema string) (Result, error) {
+func RenderInspectedForAtlasCLI(db *schemamodel.Database, dialect, defaultSchema string) (Result, error) {
 	return render(db, dialect, strings.TrimSpace(defaultSchema), true)
 }
 
-func render(db *goschema.Database, dialect, defaultSchema string, omitAtlasRefusedBlocks bool) (Result, error) {
+func render(db *schemamodel.Database, dialect, defaultSchema string, omitAtlasRefusedBlocks bool) (Result, error) {
 	if db == nil {
 		return Result{}, fmt.Errorf("schema database is nil")
 	}
@@ -168,7 +168,7 @@ func render(db *goschema.Database, dialect, defaultSchema string, omitAtlasRefus
 }
 
 type renderer struct {
-	db      *goschema.Database
+	db      *schemamodel.Database
 	dialect string
 	// defaultSchema owns every object that arrived without one. Empty means the
 	// IR is taken as written, which is what every parse-and-re-render caller
@@ -393,7 +393,7 @@ func (r *renderer) schemaFor(schema string) string {
 // System-owned placement is rendered as a string rather than a schema block
 // reference by [renderer.renderExtensions], so preserving it cannot synthesize
 // a CREATE SCHEMA the server refuses.
-func (r *renderer) extensionSchemaFor(extension goschema.Extension) string {
+func (r *renderer) extensionSchemaFor(extension schemamodel.Extension) string {
 	if extension.Schema != "" {
 		return extension.Schema
 	}
@@ -459,7 +459,7 @@ func (r *renderer) render() {
 // cleanup would remove the only place the scope was ever written down and the
 // schema would silently go back to reaching every dialect.
 func (r *renderer) reportDialectScopes() {
-	for _, scoped := range goschema.ScopedObjects(r.db) {
+	for _, scoped := range schemamodel.ScopedObjects(r.db) {
 		r.diagnostics = append(r.diagnostics, Diagnostic{
 			Severity: SeverityWarning,
 			Path:     fmt.Sprintf("%s.%s", scoped.Kind, scoped.Name),
@@ -495,7 +495,7 @@ func (r *renderer) renderBody() {
 }
 
 func (r *renderer) renderSchemas() {
-	schemas := append([]goschema.Schema(nil), r.db.Schemas...)
+	schemas := append([]schemamodel.Schema(nil), r.db.Schemas...)
 	// Every schema the file references has to be declared here or the reference
 	// resolves to nothing. Inspected reads commonly report no schema block at
 	// all; Go annotations and YAML can likewise carry an object's schema without
@@ -506,8 +506,8 @@ func (r *renderer) renderSchemas() {
 	// rendered, not guessed from the IR; see [renderer.referencedSchemas] for
 	// the three guesses that were wrong.
 	for _, name := range r.referencedSchemas() {
-		if !slices.ContainsFunc(schemas, func(s goschema.Schema) bool { return s.Name == name }) {
-			schemas = append(schemas, goschema.Schema{Name: name})
+		if !slices.ContainsFunc(schemas, func(s schemamodel.Schema) bool { return s.Name == name }) {
+			schemas = append(schemas, schemamodel.Schema{Name: name})
 		}
 	}
 	sort.Slice(schemas, func(i, j int) bool {
@@ -524,7 +524,7 @@ func (r *renderer) renderSchemas() {
 }
 
 func (r *renderer) renderEnums() {
-	enums := append([]goschema.Enum(nil), r.db.Enums...)
+	enums := append([]schemamodel.Enum(nil), r.db.Enums...)
 	sort.Slice(enums, func(i, j int) bool {
 		return enums[i].QualifiedName() < enums[j].QualifiedName()
 	})
@@ -546,7 +546,7 @@ func (r *renderer) renderEnums() {
 		// treats the read's own schema as implicit.
 		//
 		// It used to be the render's default unconditionally, because
-		// goschema.Enum carried no schema. That is right for every read of one
+		// schemamodel.Enum carried no schema. That is right for every read of one
 		// schema and wrong for every read of more than one: `schema inspect`
 		// against a URL that pins no schema describes the whole realm, so
 		// `extra.mood` was written as `schema = schema.public` -- an enum
@@ -581,7 +581,7 @@ func (r *renderer) renderEnums() {
 // "mood"`, exit 1, measured on its own output); Ptah's reads it under
 // [go.5x5.cz/ptah/internal/atlashcl.SchemaScopedEnumsEnvVar], which is the
 // round trip that binary does not have.
-func (r *renderer) enumLabels(enum goschema.Enum) string {
+func (r *renderer) enumLabels(enum schemamodel.Enum) string {
 	schema := r.schemaFor(enum.Schema)
 	if schema == "" || !r.enumNameIsAmbiguous(enum.Name) {
 		return quote(enum.Name)
@@ -608,7 +608,7 @@ func (r *renderer) enumNameIsAmbiguous(name string) bool {
 }
 
 func (r *renderer) renderTables() {
-	tables := append([]goschema.Table(nil), r.db.Tables...)
+	tables := append([]schemamodel.Table(nil), r.db.Tables...)
 	sort.Slice(tables, func(i, j int) bool {
 		return tables[i].QualifiedName() < tables[j].QualifiedName()
 	})
@@ -638,11 +638,11 @@ func (r *renderer) renderTables() {
 }
 
 func (r *renderer) renderTable(
-	table goschema.Table,
-	fields []goschema.Field,
-	indexes []goschema.Index,
-	constraints []goschema.Constraint,
-	rlsEnabled *goschema.RLSEnabledTable,
+	table schemamodel.Table,
+	fields []schemamodel.Field,
+	indexes []schemamodel.Index,
+	constraints []schemamodel.Constraint,
+	rlsEnabled *schemamodel.RLSEnabledTable,
 ) {
 	r.linef(`table %s {`, quote(table.Name))
 	if schema := r.schemaFor(table.Schema); schema != "" {
@@ -701,7 +701,7 @@ func (r *renderer) renderTable(
 	r.line("")
 }
 
-func (r *renderer) renderColumn(field goschema.Field) {
+func (r *renderer) renderColumn(field schemamodel.Field) {
 	r.linef(`  column %s {`, quote(field.Name))
 	r.rawAttr(2, "type", r.columnTypeExpr(field))
 	if field.Nullable {
@@ -759,9 +759,9 @@ func (r *renderer) renderColumn(field goschema.Field) {
 // parse-and-re-render callers of [Render] want: their input was HCL and its
 // nullability is already the author's.
 func (r *renderer) keyColumnIsNotNull(
-	table goschema.Table,
-	fields []goschema.Field,
-	field goschema.Field,
+	table schemamodel.Table,
+	fields []schemamodel.Field,
+	field schemamodel.Field,
 ) bool {
 	if platform.NormalizeDialect(r.dialect) != platform.SQLite {
 		return primaryKeyImpliesNotNull(r.dialect)
@@ -769,18 +769,18 @@ func (r *renderer) keyColumnIsNotNull(
 	return sqlitekey.ImpliesNotNull(table, sqlitekey.KeyColumns(table, fields), field)
 }
 
-func fieldIsPrimary(table goschema.Table, field goschema.Field) bool {
+func fieldIsPrimary(table schemamodel.Table, field schemamodel.Field) bool {
 	return field.Primary ||
 		slices.Contains(table.PrimaryKey, field.Name) ||
-		slices.ContainsFunc(table.PrimaryKeyParts, func(part goschema.PrimaryKeyPart) bool {
+		slices.ContainsFunc(table.PrimaryKeyParts, func(part schemamodel.PrimaryKeyPart) bool {
 			return part.Name == field.Name
 		})
 }
 
 func (r *renderer) renderFieldForeignKeys(
-	table goschema.Table,
-	fields []goschema.Field,
-	constraints []goschema.Constraint,
+	table schemamodel.Table,
+	fields []schemamodel.Field,
+	constraints []schemamodel.Constraint,
 ) {
 	constraintNames := foreignKeyConstraintNames(constraints)
 	for _, field := range fields {
@@ -800,7 +800,7 @@ func (r *renderer) renderFieldForeignKeys(
 	}
 }
 
-func foreignKeyConstraintNames(constraints []goschema.Constraint) map[string]bool {
+func foreignKeyConstraintNames(constraints []schemamodel.Constraint) map[string]bool {
 	result := make(map[string]bool)
 	for _, constraint := range constraints {
 		if strings.EqualFold(constraint.Type, "FOREIGN KEY") && constraint.Name != "" {
@@ -810,7 +810,7 @@ func foreignKeyConstraintNames(constraints []goschema.Constraint) map[string]boo
 	return result
 }
 
-func (r *renderer) renderPrimaryKey(table goschema.Table, fields []goschema.Field) {
+func (r *renderer) renderPrimaryKey(table schemamodel.Table, fields []schemamodel.Field) {
 	columns := table.PrimaryKey
 	if len(columns) == 0 {
 		for _, field := range fields {
@@ -847,7 +847,7 @@ func (r *renderer) renderPrimaryKey(table goschema.Table, fields []goschema.Fiel
 	r.line("  }")
 }
 
-func (r *renderer) renderPartition(partition *goschema.PartitionSpec) {
+func (r *renderer) renderPartition(partition *schemamodel.PartitionSpec) {
 	if partition == nil {
 		return
 	}
@@ -864,14 +864,14 @@ func (r *renderer) renderPartition(partition *goschema.PartitionSpec) {
 	r.line("  }")
 }
 
-func (r *renderer) renderConstraint(constraint goschema.Constraint) {
+func (r *renderer) renderConstraint(constraint schemamodel.Constraint) {
 	if r.renderAtlasConstraint(constraint) {
 		return
 	}
 	r.renderPtahConstraint(constraint)
 }
 
-func (r *renderer) renderAtlasConstraint(constraint goschema.Constraint) bool {
+func (r *renderer) renderAtlasConstraint(constraint schemamodel.Constraint) bool {
 	switch strings.ToUpper(constraint.Type) {
 	case "CHECK":
 		if !atlasCheckConstraint(constraint) {
@@ -927,7 +927,7 @@ func (r *renderer) renderAtlasConstraint(constraint goschema.Constraint) bool {
 	}
 }
 
-func (r *renderer) renderPtahConstraint(constraint goschema.Constraint) {
+func (r *renderer) renderPtahConstraint(constraint schemamodel.Constraint) {
 	r.linef(`  constraint %s {`, quote(constraint.Name))
 	r.stringAttr(2, "type", constraint.Type)
 	r.stringAttr(2, "using", constraint.UsingMethod)
@@ -951,7 +951,7 @@ func (r *renderer) renderPtahConstraint(constraint goschema.Constraint) {
 	r.line("  }")
 }
 
-func atlasCheckConstraint(constraint goschema.Constraint) bool {
+func atlasCheckConstraint(constraint schemamodel.Constraint) bool {
 	return constraint.CheckExpression != "" &&
 		constraint.UsingMethod == "" &&
 		constraint.ExcludeElements == "" &&
@@ -966,7 +966,7 @@ func atlasCheckConstraint(constraint goschema.Constraint) bool {
 		constraint.Comment == ""
 }
 
-func atlasUniqueConstraint(constraint goschema.Constraint) bool {
+func atlasUniqueConstraint(constraint schemamodel.Constraint) bool {
 	return constraint.Name != "" &&
 		len(constraint.Columns) > 0 &&
 		constraint.UsingMethod == "" &&
@@ -980,7 +980,7 @@ func atlasUniqueConstraint(constraint goschema.Constraint) bool {
 		constraint.Comment == ""
 }
 
-func atlasForeignKeyConstraint(constraint goschema.Constraint) bool {
+func atlasForeignKeyConstraint(constraint schemamodel.Constraint) bool {
 	return len(constraint.Columns) > 0 &&
 		constraint.ForeignTable != "" &&
 		len(constraint.ForeignColumnsOrDefault()) == len(constraint.Columns) &&
@@ -993,7 +993,7 @@ func atlasForeignKeyConstraint(constraint goschema.Constraint) bool {
 		constraint.Comment == ""
 }
 
-func atlasPrimaryKeyConstraint(constraint goschema.Constraint) bool {
+func atlasPrimaryKeyConstraint(constraint schemamodel.Constraint) bool {
 	return constraint.Name == "" &&
 		len(constraint.Columns) > 0 &&
 		constraint.UsingMethod == "" &&
@@ -1039,7 +1039,7 @@ func (r *renderer) renderForeignKey(
 	r.line("  }")
 }
 
-func (r *renderer) renderIndex(index goschema.Index) {
+func (r *renderer) renderIndex(index schemamodel.Index) {
 	r.linef(`  index %s {`, quote(index.Name))
 	if index.Unique {
 		r.rawAttr(2, "unique", "true")
@@ -1151,8 +1151,8 @@ func (r *renderer) boolPtrAttr(indent int, name string, value *bool) {
 	r.rawAttr(indent, name, strconv.FormatBool(*value))
 }
 
-func groupFieldsByStruct(fields []goschema.Field) map[string][]goschema.Field {
-	result := make(map[string][]goschema.Field)
+func groupFieldsByStruct(fields []schemamodel.Field) map[string][]schemamodel.Field {
+	result := make(map[string][]schemamodel.Field)
 	for _, field := range fields {
 		result[field.StructName] = append(result[field.StructName], field)
 	}
@@ -1160,32 +1160,32 @@ func groupFieldsByStruct(fields []goschema.Field) map[string][]goschema.Field {
 }
 
 func groupIndexesByTable(
-	indexes []goschema.Index,
-	tables []goschema.Table,
-) (map[string][]goschema.Index, []goschema.Index) {
+	indexes []schemamodel.Index,
+	tables []schemamodel.Table,
+) (map[string][]schemamodel.Index, []schemamodel.Index) {
 	return groupTableObjects(
 		indexes,
 		tables,
-		func(index goschema.Index) (string, string) {
+		func(index schemamodel.Index) (string, string) {
 			return index.StructName, index.TableName
 		},
-		func(a, b goschema.Index) int {
+		func(a, b schemamodel.Index) int {
 			return cmp.Compare(a.Name, b.Name)
 		},
 	)
 }
 
 func groupConstraintsByTable(
-	constraints []goschema.Constraint,
-	tables []goschema.Table,
-) (map[string][]goschema.Constraint, []goschema.Constraint) {
+	constraints []schemamodel.Constraint,
+	tables []schemamodel.Table,
+) (map[string][]schemamodel.Constraint, []schemamodel.Constraint) {
 	return groupTableObjects(
 		constraints,
 		tables,
-		func(constraint goschema.Constraint) (string, string) {
+		func(constraint schemamodel.Constraint) (string, string) {
 			return constraint.StructName, constraint.Table
 		},
-		func(a, b goschema.Constraint) int {
+		func(a, b schemamodel.Constraint) int {
 			return cmp.Compare(a.Name, b.Name)
 		},
 	)
@@ -1193,7 +1193,7 @@ func groupConstraintsByTable(
 
 func groupTableObjects[T any](
 	objects []T,
-	tables []goschema.Table,
+	tables []schemamodel.Table,
 	tableReference func(T) (string, string),
 	compare func(T, T) int,
 ) (map[string][]T, []T) {
@@ -1215,7 +1215,7 @@ func groupTableObjects[T any](
 	return result, orphan
 }
 
-func resolveTable(tables []goschema.Table, structName, tableName string) *goschema.Table {
+func resolveTable(tables []schemamodel.Table, structName, tableName string) *schemamodel.Table {
 	tableName = strings.TrimSpace(tableName)
 	if tableName == "" {
 		for i := range tables {
@@ -1239,7 +1239,7 @@ func resolveTable(tables []goschema.Table, structName, tableName string) *gosche
 			return &tables[i]
 		}
 	}
-	var match *goschema.Table
+	var match *schemamodel.Table
 	for i := range tables {
 		if tables[i].Name != ref.Name {
 			continue
@@ -1252,7 +1252,7 @@ func resolveTable(tables []goschema.Table, structName, tableName string) *gosche
 	return match
 }
 
-func simplePrimaryKeyParts(parts []goschema.PrimaryKeyPart) bool {
+func simplePrimaryKeyParts(parts []schemamodel.PrimaryKeyPart) bool {
 	for _, part := range parts {
 		if part.Prefix != "" || part.Desc {
 			return false
@@ -1271,9 +1271,9 @@ func simplePrimaryKeyParts(parts []goschema.PrimaryKeyPart) bool {
 // stays readable by both (issue #1272).
 func (r *renderer) renderIndexPartNullsOrder(order string) {
 	switch strings.ToUpper(strings.TrimSpace(order)) {
-	case goschema.NullsOrderFirst:
+	case schemamodel.NullsOrderFirst:
 		r.rawAttr(3, "nulls_first", "true")
-	case goschema.NullsOrderLast:
+	case schemamodel.NullsOrderLast:
 		r.rawAttr(3, "nulls_last", "true")
 	}
 }
@@ -1283,7 +1283,7 @@ func (r *renderer) renderIndexPartNullsOrder(order string) {
 // has to be listed: a part carrying only a NULLS ordering is not simple, and
 // omitting that check is how the ordering used to disappear from rendered HCL
 // even after #1271 taught the reader to preserve it.
-func simpleIndexParts(parts []goschema.IndexPart) bool {
+func simpleIndexParts(parts []schemamodel.IndexPart) bool {
 	for _, part := range parts {
 		if part.Expr != "" || part.Operator != "" || part.Prefix != "" ||
 			part.Desc || part.NullsOrder != "" {
@@ -1293,7 +1293,7 @@ func simpleIndexParts(parts []goschema.IndexPart) bool {
 	return true
 }
 
-func indexPartNames(parts []goschema.IndexPart) []string {
+func indexPartNames(parts []schemamodel.IndexPart) []string {
 	names := make([]string, 0, len(parts))
 	for _, part := range parts {
 		if part.Name != "" {
@@ -1346,7 +1346,7 @@ func parseForeignReference(value string) (string, []string) {
 // `type = USER_DEFINED` with `Unknown column.type; There is no type named
 // "USER_DEFINED"` and accepts `type = sql("USER_DEFINED")`. Measured on that
 // binary, an HCL file it plans must survive a Ptah round trip still planning.
-func (r *renderer) columnTypeExpr(field goschema.Field) string {
+func (r *renderer) columnTypeExpr(field schemamodel.Field) string {
 	if strings.TrimSpace(field.Type) == "" {
 		return typeExpr(field.Type)
 	}
@@ -1430,9 +1430,9 @@ func (r *renderer) enumTypeRef(typeName string) (string, bool) {
 	if !found {
 		return "", false
 	}
-	if slices.ContainsFunc(r.db.Domains, func(d goschema.Domain) bool { return d.Name == enum.Name }) ||
-		slices.ContainsFunc(r.db.CompositeTypes, func(ct goschema.CompositeType) bool { return ct.Name == enum.Name }) ||
-		slices.ContainsFunc(r.db.Ranges, func(rg goschema.Range) bool { return rg.Name == enum.Name }) {
+	if slices.ContainsFunc(r.db.Domains, func(d schemamodel.Domain) bool { return d.Name == enum.Name }) ||
+		slices.ContainsFunc(r.db.CompositeTypes, func(ct schemamodel.CompositeType) bool { return ct.Name == enum.Name }) ||
+		slices.ContainsFunc(r.db.Ranges, func(rg schemamodel.Range) bool { return rg.Name == enum.Name }) {
 		return "", false
 	}
 	if schema := r.schemaFor(enum.Schema); schema != "" && r.enumNameIsAmbiguous(enum.Name) {
@@ -1448,7 +1448,7 @@ func (r *renderer) enumTypeRef(typeName string) (string, bool) {
 // so both are looked up. The qualified match is tried first: a bare match would
 // otherwise pick whichever same-named enum came first in the slice, which is the
 // silent wrong-schema attribution stokaro/ptah#1276 is about.
-func (r *renderer) referencedEnum(name string) (goschema.Enum, bool) {
+func (r *renderer) referencedEnum(name string) (schemamodel.Enum, bool) {
 	for _, enum := range r.db.Enums {
 		if enum.QualifiedName() == name {
 			return enum, true
@@ -1459,7 +1459,7 @@ func (r *renderer) referencedEnum(name string) (goschema.Enum, bool) {
 			return enum, true
 		}
 	}
-	return goschema.Enum{}, false
+	return schemamodel.Enum{}, false
 }
 
 func typeExpr(value string) string {
@@ -1595,7 +1595,7 @@ func (r *renderer) tableColumnRefs(table string, columns []string) string {
 // the set is open -- every index method brings its own, and pgvector's `m` and
 // `ef_construction` are only the current examples -- and an attribute per name
 // would make the parser a list of names to keep in step with the engine.
-func (r *renderer) renderIndexStorageParams(index goschema.Index) {
+func (r *renderer) renderIndexStorageParams(index schemamodel.Index) {
 	extra := make([]string, 0, len(index.StorageParams))
 	for name := range index.StorageParams {
 		if pgindexstorage.HasCompatibleSlot(name) {

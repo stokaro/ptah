@@ -6,9 +6,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashcl"
 )
 
@@ -76,7 +76,7 @@ func TestParseExtensionSchemaAttributePresence(t *testing.T) {
 			c := qt.New(t)
 			db, err := atlashcl.Parse([]byte(test.source), "schema.hcl")
 			c.Assert(err, qt.IsNil)
-			c.Assert(db.Extensions, qt.DeepEquals, []goschema.Extension{{
+			c.Assert(db.Extensions, qt.DeepEquals, []schemamodel.Extension{{
 				Schema: test.wantSchema,
 				Name:   test.wantName,
 			}})
@@ -111,7 +111,7 @@ extension "plpgsql" {
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Extensions, qt.HasLen, 1)
 	c.Assert(db.Extensions[0].Schema, qt.Equals, "pg_catalog")
-	c.Assert(db.Schemas, qt.DeepEquals, []goschema.Schema{
+	c.Assert(db.Schemas, qt.DeepEquals, []schemamodel.Schema{
 		{Name: "pg_catalog"},
 		{Name: "PG_CATALOG"},
 	})
@@ -133,7 +133,7 @@ extension "plpgsql" {
 `), "schema.hcl")
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Schemas, qt.HasLen, 0)
-	c.Assert(db.Extensions, qt.DeepEquals, []goschema.Extension{{
+	c.Assert(db.Extensions, qt.DeepEquals, []schemamodel.Extension{{
 		Name:    "plpgsql",
 		Schema:  "pg_catalog",
 		Version: "1.0",
@@ -151,7 +151,7 @@ func TestParseStandaloneSystemSchemaIsNotTreatedAsAnExtensionReference(t *testin
 schema "pg_catalog" {}
 `), "schema.hcl")
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.Schemas, qt.DeepEquals, []goschema.Schema{{Name: "pg_catalog"}})
+	c.Assert(db.Schemas, qt.DeepEquals, []schemamodel.Schema{{Name: "pg_catalog"}})
 
 	statements, err := renderer.GetOrderedCreateStatements(db, "postgres")
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
@@ -178,7 +178,7 @@ table "blocked" {
 }
 `), "schema.hcl")
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.Schemas, qt.DeepEquals, []goschema.Schema{{Name: "pg_catalog"}})
+	c.Assert(db.Schemas, qt.DeepEquals, []schemamodel.Schema{{Name: "pg_catalog"}})
 
 	statements, err := renderer.GetOrderedCreateStatements(db, "postgres")
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
@@ -194,7 +194,7 @@ schema "pg_catalog" {}
 extension "pg_catalog" "plpgsql" {}
 `), "schema.hcl")
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.Schemas, qt.DeepEquals, []goschema.Schema{{Name: "pg_catalog"}})
+	c.Assert(db.Schemas, qt.DeepEquals, []schemamodel.Schema{{Name: "pg_catalog"}})
 
 	statements, err := renderer.GetOrderedCreateStatements(db, "postgres")
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
@@ -228,7 +228,7 @@ permission {
 }
 `), "schema.hcl")
 			c.Assert(err, qt.IsNil)
-			c.Assert(db.Schemas, qt.DeepEquals, []goschema.Schema{{Name: "pg_catalog"}})
+			c.Assert(db.Schemas, qt.DeepEquals, []schemamodel.Schema{{Name: "pg_catalog"}})
 
 			statements, err := renderer.GetOrderedCreateStatements(db, "postgres")
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)

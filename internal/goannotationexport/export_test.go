@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashcl"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 	"go.5x5.cz/ptah/internal/goannotationcleanup"
@@ -256,7 +256,7 @@ type Country struct {
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.ManagedData, qt.HasLen, 1)
 	c.Assert(parsed.ManagedData[0].File, qt.Equals, "../models/countries.yaml")
-	rows, err := goschema.LoadManagedRows("", parsed.ManagedData[0])
+	rows, err := schemamodel.LoadManagedRows("", parsed.ManagedData[0])
 	c.Assert(err, qt.IsNil)
 	c.Assert(rows, qt.DeepEquals, []map[string]any{{"code": "CZ"}})
 }
@@ -760,7 +760,7 @@ type Roles struct{}
 	c.Assert(err, qt.IsNil)
 	parsed, err := atlashcl.Parse(outputData, output)
 	c.Assert(err, qt.IsNil)
-	c.Assert(parsed.Roles, qt.DeepEquals, []goschema.Role{
+	c.Assert(parsed.Roles, qt.DeepEquals, []schemamodel.Role{
 		{StructName: "", Name: "app", Login: true, Inherit: true},
 	})
 }

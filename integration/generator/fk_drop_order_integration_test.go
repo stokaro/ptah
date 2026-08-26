@@ -9,7 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
 )
@@ -34,7 +34,7 @@ func TestFKDropOrder_DownRoundTrip_Integration(t *testing.T) {
 			t.Cleanup(func() { dropFKOrderTables(conn, dialect) })
 
 			target := fkOrderSchema()
-			goschema.Finalize(target)
+			schemamodel.Finalize(target)
 			upSQL, downSQL := generateLiveMigrationSQL(c, conn, target)
 			execScript(c, conn, upSQL, "UP")
 
@@ -68,7 +68,7 @@ func TestFKDropOrder_MutualCycleDownRoundTrip_Integration(t *testing.T) {
 			t.Cleanup(func() { dropMutualFKCycleTables(conn, dialect) })
 
 			target := mutualFKCycleSchema()
-			goschema.Finalize(target)
+			schemamodel.Finalize(target)
 			upSQL, downSQL := generateLiveMigrationSQL(c, conn, target)
 			execScript(c, conn, upSQL, "UP")
 

@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // readFunctions recovers the functions the connected database declares.
@@ -512,7 +512,7 @@ func isProcedureObjectType(objectType string) bool {
 // which is what every description written before procedures existed meant.
 func routineKind(objectType string) string {
 	if isProcedureObjectType(objectType) {
-		return goschema.FunctionKindProcedure
+		return schemamodel.FunctionKindProcedure
 	}
 	return ""
 }

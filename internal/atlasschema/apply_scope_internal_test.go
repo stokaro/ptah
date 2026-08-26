@@ -11,8 +11,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -23,9 +23,9 @@ func TestScopeApplyStatesDoesNotReAddCurrentSupportExtension(t *testing.T) {
 		{Schema: "extensions", Name: "citext"},
 		{Name: "pgcrypto"},
 	}}
-	desired := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "User", Schema: "app", Name: "users"}},
-		Extensions: []goschema.Extension{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Schema: "app", Name: "users"}},
+		Extensions: []schemamodel.Extension{
 			{Schema: "extensions", Name: "citext"},
 			{Name: "pgcrypto"},
 		},

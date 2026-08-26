@@ -11,9 +11,9 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
@@ -36,9 +36,9 @@ func TestCompatBidirectionalPlannerForFormat_ForeignLayoutKeepsYugabyteBlockingR
 
 	plan, err := planFn(atlasmigrate.BidirectionalPlanInput{
 		Diff: diff,
-		DesiredSchema: &goschema.Database{
-			Tables: []goschema.Table{{StructName: "User", Name: "users"}},
-			Indexes: []goschema.Index{{
+		DesiredSchema: &schemamodel.Database{
+			Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
+			Indexes: []schemamodel.Index{{
 				StructName: "User", Name: "idx_users_email", Fields: []string{"email"},
 			}},
 		},
@@ -69,7 +69,7 @@ func TestCompatBidirectionalPlannerForFormat_ExplicitUnavailableForwardStillRefu
 
 	plan, err := planFn(atlasmigrate.BidirectionalPlanInput{
 		Diff:                  diff,
-		DesiredSchema:         &goschema.Database{},
+		DesiredSchema:         &schemamodel.Database{},
 		CurrentSchema:         &catalog.Database{},
 		Dialect:               platform.CockroachDB,
 		Capabilities:          capability.CockroachDB23(),

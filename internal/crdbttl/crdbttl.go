@@ -256,7 +256,7 @@ func ValidateDeclared(dialect string, caps capability.Capabilities, tables []Dec
 
 // Declared pairs a table name with the TTL it declares, which is all this
 // package needs to validate one. It exists so that callers holding a
-// goschema.Table and callers holding an ast.CreateTableNode can both reach the
+// schemamodel.Table and callers holding an ast.CreateTableNode can both reach the
 // same rules without this package importing either.
 type Declared struct {
 	// Table is the table's name, for the diagnostic.

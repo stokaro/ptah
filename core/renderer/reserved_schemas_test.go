@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 func TestGetOrderedCreateStatementsRefusesDeclaredPostgresSystemSchemas(t *testing.T) {
@@ -24,7 +24,7 @@ func TestGetOrderedCreateStatementsRefusesDeclaredPostgresSystemSchemas(t *testi
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			statements, err := renderer.GetOrderedCreateStatements(
-				&goschema.Database{Schemas: []goschema.Schema{{Name: test.schema}}},
+				&schemamodel.Database{Schemas: []schemamodel.Schema{{Name: test.schema}}},
 				"postgres",
 			)
 
@@ -39,9 +39,9 @@ func TestGetOrderedCreateStatementsRefusesAnExplicitSystemSchemaBesideAnExtensio
 	c := qt.New(t)
 
 	statements, err := renderer.GetOrderedCreateStatements(
-		&goschema.Database{
-			Schemas:    []goschema.Schema{{Name: "pg_catalog"}},
-			Extensions: []goschema.Extension{{Name: "plpgsql", Schema: "pg_catalog"}},
+		&schemamodel.Database{
+			Schemas:    []schemamodel.Schema{{Name: "pg_catalog"}},
+			Extensions: []schemamodel.Extension{{Name: "plpgsql", Schema: "pg_catalog"}},
 		},
 		"postgres",
 	)
@@ -55,7 +55,7 @@ func TestGetOrderedCreateStatementsKeepsAQuotedSystemSchemaLookalike(t *testing.
 	c := qt.New(t)
 
 	statements, err := renderer.GetOrderedCreateStatements(
-		&goschema.Database{Schemas: []goschema.Schema{{Name: "PG_CATALOG"}}},
+		&schemamodel.Database{Schemas: []schemamodel.Schema{{Name: "PG_CATALOG"}}},
 		"postgres",
 	)
 
@@ -67,7 +67,7 @@ func TestGetOrderedCreateStatementsRefusesCockroachDBInternalSchema(t *testing.T
 	c := qt.New(t)
 
 	statements, err := renderer.GetOrderedCreateStatements(
-		&goschema.Database{Schemas: []goschema.Schema{{Name: "crdb_internal"}}},
+		&schemamodel.Database{Schemas: []schemamodel.Schema{{Name: "crdb_internal"}}},
 		"cockroachdb",
 	)
 
@@ -80,7 +80,7 @@ func TestGetOrderedCreateStatementsKeepsQuotedCockroachDBInternalLookalike(t *te
 	c := qt.New(t)
 
 	statements, err := renderer.GetOrderedCreateStatements(
-		&goschema.Database{Schemas: []goschema.Schema{{Name: "CRDB_INTERNAL"}}},
+		&schemamodel.Database{Schemas: []schemamodel.Schema{{Name: "CRDB_INTERNAL"}}},
 		"cockroachdb",
 	)
 

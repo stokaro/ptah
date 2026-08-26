@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/migration/migrator"
@@ -719,7 +719,7 @@ func containsSubstring(s, substr string) bool {
 }
 
 // findTable finds a table by name in a slice of tables
-func findTable(tables []goschema.Table, name string) *goschema.Table {
+func findTable(tables []schemamodel.Table, name string) *schemamodel.Table {
 	for i, table := range tables {
 		if table.Name == name {
 			return &tables[i]
@@ -729,7 +729,7 @@ func findTable(tables []goschema.Table, name string) *goschema.Table {
 }
 
 // hasField checks if a field exists for a specific table
-func hasField(fields []goschema.Field, tableName, fieldName string) bool {
+func hasField(fields []schemamodel.Field, tableName, fieldName string) bool {
 	for _, field := range fields {
 		if field.StructName == tableName && field.Name == fieldName {
 			return true
@@ -1303,12 +1303,12 @@ func testDynamicCircularDependencies(
 	recorder *StepRecorder,
 ) error {
 	return recorder.RecordStep("Test Circular Dependencies", "Create tables with circular foreign key references", func() error {
-		database := &goschema.Database{
-			Tables: []goschema.Table{
+		database := &schemamodel.Database{
+			Tables: []schemamodel.Table{
 				{StructName: "Department", Name: "departments"},
 				{StructName: "Employee", Name: "employees"},
 			},
-			Fields: []goschema.Field{
+			Fields: []schemamodel.Field{
 				{StructName: "Department", Name: "id", Type: "BIGINT", Primary: true},
 				{StructName: "Department", Name: "manager_id", Type: "BIGINT", Foreign: "employees(id)", ForeignKeyName: "fk_dept_manager"},
 				{StructName: "Employee", Name: "id", Type: "BIGINT", Primary: true},
@@ -2488,7 +2488,7 @@ func skipNonPostgreSQL(conn *dbschema.DatabaseConnection, recorder *StepRecorder
 }
 
 // verifyBasicRLSSchema verifies the basic RLS schema contains expected functions, policies, and tables
-func verifyBasicRLSSchema(schema *goschema.Database) error {
+func verifyBasicRLSSchema(schema *schemamodel.Database) error {
 	// Should have 2 functions
 	if len(schema.Functions) != 2 {
 		return fmt.Errorf("expected 2 functions, got %d", len(schema.Functions))
@@ -2572,7 +2572,7 @@ func testDynamicRLSFunctionsBasic(ctx context.Context, conn *dbschema.DatabaseCo
 }
 
 // verifyAdvancedRLSSchema verifies the advanced RLS schema contains expected functions and policies
-func verifyAdvancedRLSSchema(schema *goschema.Database) error {
+func verifyAdvancedRLSSchema(schema *schemamodel.Database) error {
 	// Should have 3 functions (including validation function)
 	if len(schema.Functions) != 3 {
 		return fmt.Errorf("expected 3 functions, got %d", len(schema.Functions))
@@ -3427,7 +3427,7 @@ func skipNonPostgreSQLForRoles(conn *dbschema.DatabaseConnection, recorder *Step
 }
 
 // verifyBasicRolesSchema verifies the basic roles schema contains expected roles
-func verifyBasicRolesSchema(schema *goschema.Database) error {
+func verifyBasicRolesSchema(schema *schemamodel.Database) error {
 	// Should have 3 roles
 	if len(schema.Roles) != 3 {
 		return fmt.Errorf("expected 3 roles, got %d", len(schema.Roles))
@@ -3508,7 +3508,7 @@ func testDynamicRolesBasic(ctx context.Context, conn *dbschema.DatabaseConnectio
 }
 
 // verifyAdvancedRolesSchema verifies the advanced roles schema contains expected roles
-func verifyAdvancedRolesSchema(schema *goschema.Database) error {
+func verifyAdvancedRolesSchema(schema *schemamodel.Database) error {
 	// Should have 6 roles (including advanced ones)
 	if len(schema.Roles) != 6 {
 		return fmt.Errorf("expected 6 roles, got %d", len(schema.Roles))

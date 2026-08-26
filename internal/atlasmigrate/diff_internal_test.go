@@ -22,7 +22,7 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
 	"go.5x5.cz/ptah/internal/atlasschema"
@@ -97,7 +97,7 @@ func TestCompareReplayedState_CarriesTheDropPolicyIntoTheVirtualTableGuard(t *te
 
 			_, _, err := compareReplayedState(
 				c.Context(), conn, runtime, nil, conn.Info().Schema,
-				&goschema.Database{}, nil, nil, tt.policy,
+				&schemamodel.Database{}, nil, nil, tt.policy,
 			)
 
 			c.Assert(err != nil, qt.Equals, tt.wantErr)
@@ -121,7 +121,7 @@ func TestCompareReplayedState_PreservesDesiredCoverage(t *testing.T) {
 	current := &catalog.Database{
 		Extensions: []catalog.Extension{{Name: "pgcrypto"}},
 	}
-	desired := &goschema.Database{
+	desired := &schemamodel.Database{
 		NotDescribed: coverage.Set{}.WithKind(coverage.Extension),
 	}
 	runtime := diffRuntime{
@@ -164,7 +164,7 @@ func TestCompareReplayedState_PreservesExplicitRemoval(t *testing.T) {
 
 	_, diff, err := compareReplayedState(
 		c.Context(), conn, runtime, nil, conn.Info().Schema,
-		&goschema.Database{}, nil, nil, atlasschema.DiffPolicy{},
+		&schemamodel.Database{}, nil, nil, atlasschema.DiffPolicy{},
 	)
 
 	c.Assert(err, qt.IsNil)
@@ -182,8 +182,8 @@ func TestCompareReplayedState_SchemaScopeKeepsDatabaseWideExtensionSynced(t *tes
 			{Name: "unrelated", Schema: "other"},
 		},
 	}
-	desired := schemascope.FilterGeneratedWithDefaultSchema(&goschema.Database{
-		Extensions: []goschema.Extension{
+	desired := schemascope.FilterGeneratedWithDefaultSchema(&schemamodel.Database{
+		Extensions: []schemamodel.Extension{
 			{Name: "pgcrypto", Schema: "public"},
 			{Name: "citext", Schema: "extensions"},
 			{Name: "unrelated", Schema: "other"},
@@ -230,7 +230,7 @@ func TestCompareReplayedState_SchemaScopePreservesExplicitExtensionRemoval(t *te
 
 	replayed, diff, err := compareReplayedState(
 		c.Context(), conn, runtime, schemas, "public",
-		schemascope.FilterGeneratedWithDefaultSchema(&goschema.Database{}, schemas, "public"), nil, nil,
+		schemascope.FilterGeneratedWithDefaultSchema(&schemamodel.Database{}, schemas, "public"), nil, nil,
 		atlasschema.DiffPolicy{},
 	)
 
@@ -259,7 +259,7 @@ func TestCompareReplayedState_ReportsUndecidedAddition(t *testing.T) {
 
 	_, diff, err := compareReplayedState(
 		c.Context(), conn, runtime, nil, conn.Info().Schema,
-		&goschema.Database{Sequences: []goschema.Sequence{{Name: "order_seq"}}},
+		&schemamodel.Database{Sequences: []schemamodel.Sequence{{Name: "order_seq"}}},
 		diagnostics, nil, atlasschema.DiffPolicy{},
 	)
 

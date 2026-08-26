@@ -6,17 +6,17 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/generator"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // A desired state may ask for PostgreSQL's non-locking index build in its own
 // words -- `CREATE INDEX CONCURRENTLY` survives parsing into
-// goschema.Index.Concurrently -- and nothing carried the answer to the planner,
+// schemamodel.Index.Concurrently -- and nothing carried the answer to the planner,
 // so the build was planned as a locking one, silently (stokaro/ptah#2019).
 //
 // Every row below declares the index on an EMPTY table, which is what separates
@@ -149,7 +149,7 @@ func TestPlanBidirectionalSchemaDiff_DeclaredConcurrentIndexIsPostgresOnly(t *te
 }
 
 // usersSchemaDeclaring is the target schema, with or without the request.
-func usersSchemaDeclaring(concurrently bool) *goschema.Database {
+func usersSchemaDeclaring(concurrently bool) *schemamodel.Database {
 	description := singleConcurrentIndexSchema()
 	description.Indexes[0].Concurrently = concurrently
 	return description

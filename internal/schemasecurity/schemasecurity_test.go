@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemasecurity"
 	"go.5x5.cz/ptah/migration/risk"
 )
@@ -21,7 +21,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 	tests := []struct {
 		name     string
 		dialect  string
-		database *goschema.Database
+		database *schemamodel.Database
 		// memberships is what the caller read; nil means it read none, which
 		// is a different answer from an empty slice.
 		memberships []schemasecurity.RoleMembership
@@ -35,11 +35,11 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 		{
 			name:    "a grant to PUBLIC is reported",
 			dialect: "postgres",
-			database: &goschema.Database{
-				Grants: []goschema.Grant{
+			database: &schemamodel.Database{
+				Grants: []schemamodel.Grant{
 					{Role: "PUBLIC", Privileges: []string{"SELECT"}, OnTable: "users"},
 				},
-				RLSEnabledTables: []goschema.RLSEnabledTable{{Table: "users"}},
+				RLSEnabledTables: []schemamodel.RLSEnabledTable{{Table: "users"}},
 			},
 			wantCodes:   []string{"PRV03"},
 			wantSkipped: []string{"OWN01", "ROL01", "ROL03", "ROL04"},
@@ -47,11 +47,11 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 		{
 			name:    "the same grant to a named role is not",
 			dialect: "postgres",
-			database: &goschema.Database{
-				Grants: []goschema.Grant{
+			database: &schemamodel.Database{
+				Grants: []schemamodel.Grant{
 					{Role: "app_user", Privileges: []string{"SELECT"}, OnTable: "users"},
 				},
-				RLSEnabledTables: []goschema.RLSEnabledTable{{Table: "users"}},
+				RLSEnabledTables: []schemamodel.RLSEnabledTable{{Table: "users"}},
 			},
 			wantCodes:   make([]string, 0),
 			wantSkipped: []string{"OWN01", "ROL01", "ROL03", "ROL04"},
@@ -59,8 +59,8 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 		{
 			name:    "a SECURITY DEFINER routine is reported",
 			dialect: "postgres",
-			database: &goschema.Database{
-				Functions: []goschema.Function{
+			database: &schemamodel.Database{
+				Functions: []schemamodel.Function{
 					{Name: "set_tenant", Security: "DEFINER", Language: "plpgsql"},
 				},
 			},
@@ -70,8 +70,8 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 		{
 			name:    "a SECURITY INVOKER routine is not",
 			dialect: "postgres",
-			database: &goschema.Database{
-				Functions: []goschema.Function{
+			database: &schemamodel.Database{
+				Functions: []schemamodel.Function{
 					{Name: "set_tenant", Security: "INVOKER", Language: "plpgsql"},
 				},
 			},
@@ -81,8 +81,8 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 		{
 			name:    "a granted table with no row-level security is reported",
 			dialect: "postgres",
-			database: &goschema.Database{
-				Grants: []goschema.Grant{
+			database: &schemamodel.Database{
+				Grants: []schemamodel.Grant{
 					{Role: "app_user", Privileges: []string{"SELECT"}, OnTable: "users"},
 				},
 			},
@@ -92,11 +92,11 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 		{
 			name:    "the same table with row-level security enabled is not",
 			dialect: "postgres",
-			database: &goschema.Database{
-				Grants: []goschema.Grant{
+			database: &schemamodel.Database{
+				Grants: []schemamodel.Grant{
 					{Role: "app_user", Privileges: []string{"SELECT"}, OnTable: "users"},
 				},
-				RLSEnabledTables: []goschema.RLSEnabledTable{{Table: "users"}},
+				RLSEnabledTables: []schemamodel.RLSEnabledTable{{Table: "users"}},
 			},
 			wantCodes:   make([]string, 0),
 			wantSkipped: []string{"OWN01", "ROL01", "ROL03", "ROL04"},
@@ -107,8 +107,8 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 			// dressed as a finding.
 			name:    "the row-level rule does not run where the target has no row-level security",
 			dialect: "mysql",
-			database: &goschema.Database{
-				Grants: []goschema.Grant{
+			database: &schemamodel.Database{
+				Grants: []schemamodel.Grant{
 					{Role: "app_user", Privileges: []string{"SELECT"}, OnTable: "users"},
 				},
 			},
@@ -120,8 +120,8 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 			// fires on every database is one a reader learns to skip.
 			name:    "the shipped USAGE on schema public to PUBLIC is not a finding",
 			dialect: "postgres",
-			database: &goschema.Database{
-				Grants: []goschema.Grant{
+			database: &schemamodel.Database{
+				Grants: []schemamodel.Grant{
 					{Role: "PUBLIC", Privileges: []string{"USAGE"}, OnSchema: "public"},
 				},
 			},
@@ -133,8 +133,8 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 			// database that grants it is stating something.
 			name:    "CREATE on the same schema to PUBLIC is",
 			dialect: "postgres",
-			database: &goschema.Database{
-				Grants: []goschema.Grant{
+			database: &schemamodel.Database{
+				Grants: []schemamodel.Grant{
 					{Role: "PUBLIC", Privileges: []string{"USAGE", "CREATE"}, OnSchema: "public"},
 				},
 			},
@@ -144,8 +144,8 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 		{
 			name:    "a role nobody holds and that cannot log in is reported",
 			dialect: "postgres",
-			database: &goschema.Database{
-				Roles: []goschema.Role{{Name: "reporting", Login: false}},
+			database: &schemamodel.Database{
+				Roles: []schemamodel.Role{{Name: "reporting", Login: false}},
 			},
 			memberships: make([]schemasecurity.RoleMembership, 0),
 			wantCodes:   []string{"ROL04"},
@@ -154,8 +154,8 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 		{
 			name:    "the same role with a member is not",
 			dialect: "postgres",
-			database: &goschema.Database{
-				Roles: []goschema.Role{{Name: "reporting", Login: false}, {Name: "alice", Login: true}},
+			database: &schemamodel.Database{
+				Roles: []schemamodel.Role{{Name: "reporting", Login: false}, {Name: "alice", Login: true}},
 			},
 			memberships: []schemasecurity.RoleMembership{{Role: "reporting", Member: "alice"}},
 			wantCodes:   make([]string, 0),
@@ -166,8 +166,8 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 			// account would bury the rule that matters.
 			name:    "a login role with no members is not reported",
 			dialect: "postgres",
-			database: &goschema.Database{
-				Roles: []goschema.Role{{Name: "app_user", Login: true}},
+			database: &schemamodel.Database{
+				Roles: []schemamodel.Role{{Name: "app_user", Login: true}},
 			},
 			memberships: make([]schemasecurity.RoleMembership, 0),
 			wantCodes:   make([]string, 0),
@@ -176,19 +176,19 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 		{
 			name:    "two roles held by one member that grant the same privileges are reported",
 			dialect: "postgres",
-			database: &goschema.Database{
-				Roles: []goschema.Role{
+			database: &schemamodel.Database{
+				Roles: []schemamodel.Role{
 					{Name: "reader", Login: false},
 					{Name: "analyst", Login: false},
 					{Name: "alice", Login: true},
 				},
-				Grants: []goschema.Grant{
+				Grants: []schemamodel.Grant{
 					{Role: "reader", Privileges: []string{"SELECT"}, OnTable: "users"},
 					{Role: "reader", Privileges: []string{"SELECT"}, OnTable: "orders"},
 					{Role: "analyst", Privileges: []string{"SELECT"}, OnTable: "users"},
 					{Role: "analyst", Privileges: []string{"SELECT"}, OnTable: "orders"},
 				},
-				RLSEnabledTables: []goschema.RLSEnabledTable{{Table: "users"}, {Table: "orders"}},
+				RLSEnabledTables: []schemamodel.RLSEnabledTable{{Table: "users"}, {Table: "orders"}},
 			},
 			memberships: []schemasecurity.RoleMembership{
 				{Role: "reader", Member: "alice"},
@@ -202,19 +202,19 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 			// duplicate role: below the threshold, and nothing is reported.
 			name:    "two roles that mostly differ are not",
 			dialect: "postgres",
-			database: &goschema.Database{
-				Roles: []goschema.Role{
+			database: &schemamodel.Database{
+				Roles: []schemamodel.Role{
 					{Name: "reader", Login: false},
 					{Name: "writer", Login: false},
 					{Name: "alice", Login: true},
 				},
-				Grants: []goschema.Grant{
+				Grants: []schemamodel.Grant{
 					{Role: "reader", Privileges: []string{"SELECT"}, OnTable: "users"},
 					{Role: "reader", Privileges: []string{"SELECT"}, OnTable: "orders"},
 					{Role: "writer", Privileges: []string{"SELECT"}, OnTable: "users"},
 					{Role: "writer", Privileges: []string{"INSERT", "UPDATE", "DELETE"}, OnTable: "audit"},
 				},
-				RLSEnabledTables: []goschema.RLSEnabledTable{
+				RLSEnabledTables: []schemamodel.RLSEnabledTable{
 					{Table: "users"}, {Table: "orders"}, {Table: "audit"},
 				},
 			},
@@ -231,8 +231,8 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 			// on any MariaDB server.
 			name:    "a role held only with admin option is still reported",
 			dialect: "postgres",
-			database: &goschema.Database{
-				Roles: []goschema.Role{{Name: "reporting", Login: false}, {Name: "root", Login: true}},
+			database: &schemamodel.Database{
+				Roles: []schemamodel.Role{{Name: "reporting", Login: false}, {Name: "root", Login: true}},
 			},
 			memberships: []schemasecurity.RoleMembership{
 				{Role: "reporting", Member: "root", AdminOption: true},
@@ -243,20 +243,20 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 		{
 			name:    "two roles held only with admin option are not an overlap",
 			dialect: "postgres",
-			database: &goschema.Database{
-				Roles: []goschema.Role{
+			database: &schemamodel.Database{
+				Roles: []schemamodel.Role{
 					{Name: "reader", Login: false},
 					{Name: "analyst", Login: false},
 					{Name: "root", Login: true},
 					{Name: "alice", Login: true},
 				},
-				Grants: []goschema.Grant{
+				Grants: []schemamodel.Grant{
 					{Role: "reader", Privileges: []string{"SELECT"}, OnTable: "users"},
 					{Role: "reader", Privileges: []string{"SELECT"}, OnTable: "orders"},
 					{Role: "analyst", Privileges: []string{"SELECT"}, OnTable: "users"},
 					{Role: "analyst", Privileges: []string{"SELECT"}, OnTable: "orders"},
 				},
-				RLSEnabledTables: []goschema.RLSEnabledTable{{Table: "users"}, {Table: "orders"}},
+				RLSEnabledTables: []schemamodel.RLSEnabledTable{{Table: "users"}, {Table: "orders"}},
 			},
 			memberships: []schemasecurity.RoleMembership{
 				{Role: "reader", Member: "root", AdminOption: true},
@@ -272,7 +272,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 		{
 			name:     "objects owned by a login role are reported once for that role",
 			dialect:  "postgres",
-			database: &goschema.Database{},
+			database: &schemamodel.Database{},
 			owners: []schemasecurity.ObjectOwner{
 				{Kind: "table", Name: "users", Owner: "app_user", OwnerCanLogin: true},
 				{Kind: "table", Name: "orders", Owner: "app_user", OwnerCanLogin: true},
@@ -286,7 +286,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 		{
 			name:     "the same objects owned by a role that cannot log in are not",
 			dialect:  "postgres",
-			database: &goschema.Database{},
+			database: &schemamodel.Database{},
 			owners: []schemasecurity.ObjectOwner{
 				{Kind: "table", Name: "users", Owner: "app_owner"},
 				{Kind: "schema", Name: "public", Owner: "app_owner"},
@@ -300,7 +300,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 			// object of every database read by a restricted account.
 			name:     "an owner this description does not define is not reported",
 			dialect:  "postgres",
-			database: &goschema.Database{},
+			database: &schemamodel.Database{},
 			owners: []schemasecurity.ObjectOwner{
 				{Kind: "table", Name: "users", Owner: "postgres"},
 			},
@@ -310,7 +310,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 		{
 			name:        "an empty schema reports nothing",
 			dialect:     "postgres",
-			database:    &goschema.Database{},
+			database:    &schemamodel.Database{},
 			wantCodes:   make([]string, 0),
 			wantSkipped: []string{"OWN01", "ROL01", "ROL03", "ROL04"},
 		},
@@ -354,12 +354,12 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 // prose to act on a finding.
 func TestAnalyze_FindingsCarryTheValuesTheirSuggestionNames(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{
-		Grants: []goschema.Grant{
+	database := &schemamodel.Database{
+		Grants: []schemamodel.Grant{
 			{Role: "public", Privileges: []string{"select", " insert "}, OnTable: "users"},
 			{Role: "reporting", Privileges: []string{"SELECT"}, OnTable: "users"},
 		},
-		Functions: []goschema.Function{{Name: "set_tenant", Security: "definer", Language: "plpgsql"}},
+		Functions: []schemamodel.Function{{Name: "set_tenant", Security: "definer", Language: "plpgsql"}},
 	}
 
 	report := schemasecurity.Analyze(database, schemasecurity.Options{Capabilities: capability.ForDialect("postgres")})
@@ -391,8 +391,8 @@ func TestAnalyze_FindingsCarryTheValuesTheirSuggestionNames(t *testing.T) {
 // of two reports says something changed when a map iterated differently.
 func TestAnalyze_OrdersFindingsSoTwoRunsAgreeIsTheDiffableProperty(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{
-		Grants: []goschema.Grant{
+	database := &schemamodel.Database{
+		Grants: []schemamodel.Grant{
 			{Role: "PUBLIC", Privileges: []string{"SELECT"}, OnTable: "orders"},
 			{Role: "PUBLIC", Privileges: []string{"SELECT"}, OnTable: "accounts"},
 			{Role: "app_user", Privileges: []string{"SELECT"}, OnTable: "invoices"},

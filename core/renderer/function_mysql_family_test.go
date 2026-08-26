@@ -6,15 +6,15 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // functionSchema declares a single stored function, with no table, so the
 // rendered output is about that object and nothing else.
-func functionSchema(fn goschema.Function) *goschema.Database {
-	return &goschema.Database{Functions: []goschema.Function{fn}}
+func functionSchema(fn schemamodel.Function) *schemamodel.Database {
+	return &schemamodel.Database{Functions: []schemamodel.Function{fn}}
 }
 
 // TestRender_MySQLFamilyEmitsTheCharacteristicTheEngineDemands pins the clause
@@ -49,7 +49,7 @@ func TestRender_MySQLFamilyEmitsTheCharacteristicTheEngineDemands(t *testing.T) 
 		for _, test := range tests {
 			t.Run(dialect+"/"+test.name, func(t *testing.T) {
 				c := qt.New(t)
-				sql, err := renderer.GetOrderedCreateStatements(functionSchema(goschema.Function{
+				sql, err := renderer.GetOrderedCreateStatements(functionSchema(schemamodel.Function{
 					Name: "func_probe", Returns: "integer", Language: "sql",
 					Volatility: test.volatility, Body: "RETURN 1",
 				}), dialect)
@@ -84,7 +84,7 @@ func TestRender_MySQLFamilyEmitsTheCharacteristicTheEngineDemands(t *testing.T) 
 // the dialect-blind validator: folding there would refuse a schema PostgreSQL
 // hosts perfectly well.
 func TestRender_MySQLFamilyRefusesCaseCollidingFunctionNames(t *testing.T) {
-	colliding := &goschema.Database{Functions: []goschema.Function{
+	colliding := &schemamodel.Database{Functions: []schemamodel.Function{
 		{
 			Name: "Ptah_Dup_Fn", Returns: "int", Language: "sql",
 			Volatility: "IMMUTABLE", Security: "INVOKER", Body: "RETURN 1",
@@ -94,7 +94,7 @@ func TestRender_MySQLFamilyRefusesCaseCollidingFunctionNames(t *testing.T) {
 			Volatility: "IMMUTABLE", Security: "INVOKER", Body: "RETURN 2",
 		},
 	}}
-	distinct := &goschema.Database{Functions: []goschema.Function{
+	distinct := &schemamodel.Database{Functions: []schemamodel.Function{
 		{
 			Name: "ptah_dup_one", Returns: "int", Language: "sql",
 			Volatility: "IMMUTABLE", Security: "INVOKER", Body: "RETURN 1",
@@ -155,7 +155,7 @@ func TestRender_MySQLFamilyRendersOneStatementPerElement(t *testing.T) {
 	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
-			sql, err := renderer.GetOrderedCreateStatements(functionSchema(goschema.Function{
+			sql, err := renderer.GetOrderedCreateStatements(functionSchema(schemamodel.Function{
 				Name: "func_probe", Returns: "integer", Language: "sql", Body: "RETURN 1",
 			}), dialect)
 
@@ -179,7 +179,7 @@ func TestRender_MySQLFamilyNoLongerBlamesTheEngine(t *testing.T) {
 	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
-			sql, err := renderer.GetOrderedCreateStatements(functionSchema(goschema.Function{
+			sql, err := renderer.GetOrderedCreateStatements(functionSchema(schemamodel.Function{
 				Name: "func_probe", Returns: "integer", Language: "sql", Body: "RETURN 1",
 			}), dialect)
 
@@ -207,7 +207,7 @@ func TestRender_SQLServerGeneratesTheFunctionItUsedToName(t *testing.T) {
 	t.Run("sqlserver emits the T-SQL create form", func(t *testing.T) {
 		c := qt.New(t)
 
-		sql, err := renderer.GetOrderedCreateStatements(functionSchema(goschema.Function{
+		sql, err := renderer.GetOrderedCreateStatements(functionSchema(schemamodel.Function{
 			Name: "func_probe", Returns: "integer", Language: "sql", Body: "RETURN 1",
 		}), platform.SQLServer)
 
@@ -224,7 +224,7 @@ func TestRender_SQLServerGeneratesTheFunctionItUsedToName(t *testing.T) {
 	t.Run("clickhouse still declines, and names Ptah rather than the engine", func(t *testing.T) {
 		c := qt.New(t)
 
-		sql, err := renderer.GetOrderedCreateStatements(functionSchema(goschema.Function{
+		sql, err := renderer.GetOrderedCreateStatements(functionSchema(schemamodel.Function{
 			Name: "func_probe", Returns: "integer", Language: "sql", Body: "RETURN 1",
 		}), platform.ClickHouse)
 

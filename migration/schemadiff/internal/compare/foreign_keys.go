@@ -4,8 +4,8 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // foreignKeyConstraintChanged compares FOREIGN KEY constraint definitions.
@@ -18,7 +18,7 @@ import (
 // explicit action, producing a perpetual drop+add loop on every `generate`
 // (the same hazard checkConstraintChanged guards against for CHECK clauses).
 func foreignKeyConstraintChanged(
-	genConstraint goschema.Constraint,
+	genConstraint schemamodel.Constraint,
 	dbConstraint catalog.Constraint,
 	dialect string,
 	semantics identifier.Semantics,
@@ -78,12 +78,12 @@ func foreignKeyConstraintChanged(
 // sources disagreed about the dialect -- the same split #1244 fixed for the
 // member keys.
 func foreignTableRefMatches(
-	generated string,
+	desired string,
 	dbConstraint catalog.Constraint,
 	semantics identifier.Semantics,
 ) bool {
-	generated = strings.TrimSpace(generated)
-	if generated == "" {
+	desired = strings.TrimSpace(desired)
+	if desired == "" {
 		return dbConstraint.ForeignTable == nil
 	}
 	// Qualified on BOTH sides, resolving an unqualified name to the dialect's
@@ -103,7 +103,7 @@ func foreignTableRefMatches(
 	// to match. This is the same resolution constraintIdentity already applies,
 	// which is why the two sides paired as one object while their bodies
 	// compared unequal (stokaro/ptah#2219).
-	return semantics.QualifiedTableIdentityKey(generated) ==
+	return semantics.QualifiedTableIdentityKey(desired) ==
 		semantics.QualifiedTableIdentityKey(dbConstraint.QualifiedForeignTableName())
 }
 

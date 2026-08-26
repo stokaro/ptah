@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // TestTheExtensionAnIndexNeedsIsNotCompared pins the half of the fact that is
@@ -42,10 +42,10 @@ func TestTheExtensionAnIndexNeedsIsNotCompared(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			description := describedTable(
-				goschema.Field{StructName: "Widget", Name: "n", Type: "int", Nullable: true},
-				goschema.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true},
+				schemamodel.Field{StructName: "Widget", Name: "n", Type: "int", Nullable: true},
+				schemamodel.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true},
 			)
-			description.Indexes = append(description.Indexes, goschema.Index{
+			description.Indexes = append(description.Indexes, schemamodel.Index{
 				StructName: "Widget", Name: "widget_gin", Fields: test.declaredFields,
 			})
 			currentCatalog := catalogTable(

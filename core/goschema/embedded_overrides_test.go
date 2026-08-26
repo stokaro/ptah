@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 func TestParseSource_EmbeddedPlatformOverridesReachConcreteFields(t *testing.T) {
@@ -47,7 +48,7 @@ type User struct {
 
 	parsed, err := goschema.ParseSource("models.go", source)
 	c.Assert(err, qt.IsNil)
-	db, err := goschema.Merge(&parsed)
+	db, err := schemamodel.Merge(&parsed)
 
 	c.Assert(err, qt.IsNil)
 	fields := embeddedFieldsByName(db.Fields)
@@ -68,8 +69,8 @@ type User struct {
 	})
 }
 
-func embeddedFieldsByName(values []goschema.Field) map[string]goschema.Field {
-	result := make(map[string]goschema.Field, len(values))
+func embeddedFieldsByName(values []schemamodel.Field) map[string]schemamodel.Field {
+	result := make(map[string]schemamodel.Field, len(values))
 	for _, value := range values {
 		result[value.StructName+"."+value.Name] = value
 	}

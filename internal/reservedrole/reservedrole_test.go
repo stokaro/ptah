@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 	"go.5x5.cz/ptah/internal/reservedrole"
 )
@@ -69,17 +69,17 @@ func TestValidateDeclaredHappyPath(t *testing.T) {
 	tests := []struct {
 		name    string
 		dialect string
-		roles   []goschema.Role
+		roles   []schemamodel.Role
 	}{
 		{
 			name:    "an ordinary role on postgres",
 			dialect: "postgres",
-			roles:   []goschema.Role{{Name: "app_user", Login: true}},
+			roles:   []schemamodel.Role{{Name: "app_user", Login: true}},
 		},
 		{
 			name:    "roles whose names merely start like the reserved ones",
 			dialect: "postgres",
-			roles:   []goschema.Role{{Name: "pgbouncer"}, {Name: "postgres_admin"}},
+			roles:   []schemamodel.Role{{Name: "pgbouncer"}, {Name: "postgres_admin"}},
 		},
 		{
 			name:    "no roles at all",
@@ -89,12 +89,12 @@ func TestValidateDeclaredHappyPath(t *testing.T) {
 		{
 			name:    "a reserved name on mysql, whose reader excludes nothing",
 			dialect: "mysql",
-			roles:   []goschema.Role{{Name: "pg_monitor"}},
+			roles:   []schemamodel.Role{{Name: "pg_monitor"}},
 		},
 		{
 			name:    "a reserved name with no dialect resolved",
 			dialect: "",
-			roles:   []goschema.Role{{Name: "postgres"}},
+			roles:   []schemamodel.Role{{Name: "postgres"}},
 		},
 	}
 
@@ -113,13 +113,13 @@ func TestValidateDeclaredFailurePath(t *testing.T) {
 	tests := []struct {
 		name    string
 		dialect string
-		roles   []goschema.Role
+		roles   []schemamodel.Role
 		wantErr string
 	}{
 		{
 			name:    "the reserved prefix on postgres",
 			dialect: "postgres",
-			roles:   []goschema.Role{{Name: "pg_monitor"}},
+			roles:   []schemamodel.Role{{Name: "pg_monitor"}},
 			wantErr: `.*declares reserved PostgreSQL role "pg_monitor" ` +
 				`\(PostgreSQL reserves the "pg_" prefix for system roles and refuses ` +
 				`CREATE ROLE at SQLSTATE 42939\).*`,
@@ -127,7 +127,7 @@ func TestValidateDeclaredFailurePath(t *testing.T) {
 		{
 			name:    "the bootstrap superuser on postgres",
 			dialect: "postgres",
-			roles:   []goschema.Role{{Name: "postgres"}},
+			roles:   []schemamodel.Role{{Name: "postgres"}},
 			wantErr: `.*declares reserved PostgreSQL role "postgres" ` +
 				`\(the bootstrap superuser is not a role Ptah manages, and CREATE ROLE ` +
 				`for a role that already exists fails at SQLSTATE 42710\).*`,
@@ -135,7 +135,7 @@ func TestValidateDeclaredFailurePath(t *testing.T) {
 		{
 			name:    "both spellings are named at once",
 			dialect: "postgres",
-			roles: []goschema.Role{
+			roles: []schemamodel.Role{
 				{Name: "app_user"},
 				{Name: "pg_monitor"},
 				{Name: "postgres"},
@@ -145,19 +145,19 @@ func TestValidateDeclaredFailurePath(t *testing.T) {
 		{
 			name:    "cockroachdb reads the same catalog",
 			dialect: "cockroachdb",
-			roles:   []goschema.Role{{Name: "pg_monitor"}},
+			roles:   []schemamodel.Role{{Name: "pg_monitor"}},
 			wantErr: `.*declares reserved PostgreSQL role "pg_monitor".*`,
 		},
 		{
 			name:    "yugabytedb reads the same catalog",
 			dialect: "yugabytedb",
-			roles:   []goschema.Role{{Name: "postgres"}},
+			roles:   []schemamodel.Role{{Name: "postgres"}},
 			wantErr: `.*declares reserved PostgreSQL role "postgres".*`,
 		},
 		{
 			name:    "the alias spelling resolves to the same dialect",
 			dialect: "postgresql",
-			roles:   []goschema.Role{{Name: "pg_monitor"}},
+			roles:   []schemamodel.Role{{Name: "pg_monitor"}},
 			wantErr: `.*declares reserved PostgreSQL role "pg_monitor".*`,
 		},
 	}
@@ -197,7 +197,7 @@ func TestValidateDeclaredOptInRestoresTheOlderBehavior(t *testing.T) {
 			c := qt.New(t)
 			c.Setenv(reservedrole.AllowEnvVar, test.value)
 
-			err := reservedrole.ValidateDeclared("postgres", []goschema.Role{{Name: "postgres"}})
+			err := reservedrole.ValidateDeclared("postgres", []schemamodel.Role{{Name: "postgres"}})
 
 			c.Assert(err, qt.IsNil)
 		})
@@ -222,7 +222,7 @@ func TestValidateDeclaredOptInKeepsTheRefusalForAValidFalse(t *testing.T) {
 			c := qt.New(t)
 			test.env(c)
 
-			err := reservedrole.ValidateDeclared("postgres", []goschema.Role{{Name: "postgres"}})
+			err := reservedrole.ValidateDeclared("postgres", []schemamodel.Role{{Name: "postgres"}})
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 		})
@@ -259,7 +259,7 @@ func TestValidateDeclaredRefusesAMalformedOptIn(t *testing.T) {
 			c := qt.New(t)
 			test.env(c)
 
-			err := reservedrole.ValidateDeclared("postgres", []goschema.Role{{Name: "postgres"}})
+			err := reservedrole.ValidateDeclared("postgres", []schemamodel.Role{{Name: "postgres"}})
 
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(err.Error(), qt.Equals, test.wantMessage)
@@ -280,7 +280,7 @@ func TestValidateDeclaredRefusesAMalformedOptInWithNoReservedRole(t *testing.T) 
 	c := qt.New(t)
 	envbooltest.Set(reservedrole.AllowEnvVar, "yes please")(t)
 
-	err := reservedrole.ValidateDeclared("postgres", []goschema.Role{{Name: "app_user"}})
+	err := reservedrole.ValidateDeclared("postgres", []schemamodel.Role{{Name: "app_user"}})
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Equals, `invalid boolean value "yes please" for PTAH_ALLOW_RESERVED_ROLE_NAMES`)
@@ -308,7 +308,7 @@ func TestValidateDeclaredLeavesAnUnrelatedDialectAlone(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			err := reservedrole.ValidateDeclared(test.dialect, []goschema.Role{{Name: "postgres"}})
+			err := reservedrole.ValidateDeclared(test.dialect, []schemamodel.Role{{Name: "postgres"}})
 
 			c.Assert(err, qt.IsNil)
 		})

@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -21,7 +21,7 @@ import (
 func TestExtendedProperties_KeysOnTheAddressAndNotOnTheName(t *testing.T) {
 	c := qt.New(t)
 
-	declared := &goschema.Database{ExtendedProperties: []goschema.ExtendedProperty{
+	declared := &schemamodel.Database{ExtendedProperties: []schemamodel.ExtendedProperty{
 		{Name: "ptah_flag", Schema: "app", Value: "schema value"},
 		{Name: "ptah_flag", Schema: "app", Table: "docs", Value: "table value"},
 		{Name: "ptah_flag", Schema: "app", Table: "docs", Column: "title", Value: "column value"},
@@ -47,7 +47,7 @@ func TestExtendedProperties_KeysOnTheAddressAndNotOnTheName(t *testing.T) {
 func TestExtendedProperties_ReportsEachDirection(t *testing.T) {
 	tests := []struct {
 		name        string
-		declared    []goschema.ExtendedProperty
+		declared    []schemamodel.ExtendedProperty
 		live        []catalog.ExtendedProperty
 		wantAdded   []string
 		wantRemoved []string
@@ -55,7 +55,7 @@ func TestExtendedProperties_ReportsEachDirection(t *testing.T) {
 	}{
 		{
 			name:      "a declaration the database does not have is added",
-			declared:  []goschema.ExtendedProperty{{Name: "ptah_flag", Schema: "app", Table: "docs", Value: "on"}},
+			declared:  []schemamodel.ExtendedProperty{{Name: "ptah_flag", Schema: "app", Table: "docs", Value: "on"}},
 			wantAdded: []string{"app.docs ptah_flag = on"},
 		},
 		{
@@ -65,7 +65,7 @@ func TestExtendedProperties_ReportsEachDirection(t *testing.T) {
 		},
 		{
 			name:        "a different value is a modification, not a drop and an add",
-			declared:    []goschema.ExtendedProperty{{Name: "ptah_flag", Schema: "app", Table: "docs", Value: "off"}},
+			declared:    []schemamodel.ExtendedProperty{{Name: "ptah_flag", Schema: "app", Table: "docs", Value: "off"}},
 			live:        []catalog.ExtendedProperty{{Name: "ptah_flag", Schema: "app", Table: "docs", Value: "on", ValueType: "nvarchar"}},
 			wantChanged: []string{"app.docs ptah_flag = off"},
 		},
@@ -75,7 +75,7 @@ func TestExtendedProperties_ReportsEachDirection(t *testing.T) {
 			// catalog spells `docs`. Comparing raw strings would report an
 			// addition and a removal of one property on every run.
 			name:     "the address is folded the way the server folds it",
-			declared: []goschema.ExtendedProperty{{Name: "PTAH_FLAG", Schema: "APP", Table: "Docs", Value: "on"}},
+			declared: []schemamodel.ExtendedProperty{{Name: "PTAH_FLAG", Schema: "APP", Table: "Docs", Value: "on"}},
 			live:     []catalog.ExtendedProperty{{Name: "ptah_flag", Schema: "app", Table: "docs", Value: "on", ValueType: "nvarchar"}},
 		},
 		{
@@ -83,7 +83,7 @@ func TestExtendedProperties_ReportsEachDirection(t *testing.T) {
 			// comparison has, and a removal would destroy a value no
 			// declaration could restore.
 			name:     "a value Ptah cannot write is declined in both directions",
-			declared: []goschema.ExtendedProperty{{Name: "ptah_int", Schema: "app", Table: "docs", Value: "42"}},
+			declared: []schemamodel.ExtendedProperty{{Name: "ptah_int", Schema: "app", Table: "docs", Value: "42"}},
 			live: []catalog.ExtendedProperty{{
 				Name: "ptah_int", Schema: "app", Table: "docs",
 				ValueType: "int", ValueNotRepresentable: true,
@@ -104,7 +104,7 @@ func TestExtendedProperties_ReportsEachDirection(t *testing.T) {
 			diff := &difftypes.SchemaDiff{}
 
 			compare.ExtendedProperties(
-				&goschema.Database{ExtendedProperties: test.declared},
+				&schemamodel.Database{ExtendedProperties: test.declared},
 				&catalog.Database{ExtendedProperties: test.live},
 				diff, compare.Coverage{})
 

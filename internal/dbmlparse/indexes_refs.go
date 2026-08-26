@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // indexes reads the `Indexes { ... }` block inside a table.
@@ -30,8 +30,8 @@ func (p *parser) indexes(structName string) error {
 
 // index reads one entry: a single column, or a parenthesized list, plus
 // settings.
-func (p *parser) index(structName string) (goschema.Index, error) {
-	index := goschema.Index{StructName: structName}
+func (p *parser) index(structName string) (schemamodel.Index, error) {
+	index := schemamodel.Index{StructName: structName}
 	switch {
 	case p.isPunct("("):
 		if err := p.advance(); err != nil {
@@ -77,7 +77,7 @@ func (p *parser) index(structName string) (goschema.Index, error) {
 }
 
 // applyIndexSettings maps an index's bracketed list.
-func applyIndexSettings(index *goschema.Index, settings []setting) error {
+func applyIndexSettings(index *schemamodel.Index, settings []setting) error {
 	for _, entry := range settings {
 		switch entry.key {
 		case "unique":
@@ -257,7 +257,7 @@ func (p *parser) recordReference(
 }
 
 // applyRefSettings maps a relationship's bracketed list.
-func applyRefSettings(field *goschema.Field, settings []setting) error {
+func applyRefSettings(field *schemamodel.Field, settings []setting) error {
 	for _, entry := range settings {
 		switch entry.key {
 		case "delete":

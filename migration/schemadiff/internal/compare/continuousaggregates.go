@@ -7,8 +7,8 @@ import (
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -34,15 +34,15 @@ import (
 // history the aggregate exists to keep. Without a resolver the body stays
 // uncompared and only the option is (stokaro/ptah#1026).
 func ContinuousAggregates(
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
 	bodies map[string]config.ContinuousAggregateBody,
 	semantics identifier.Semantics,
 ) {
-	declared := make(map[objectIdentity]goschema.ContinuousAggregate, len(generated.ContinuousAggregates))
-	for _, aggregate := range generated.ContinuousAggregates {
+	declared := make(map[objectIdentity]schemamodel.ContinuousAggregate, len(desired.ContinuousAggregates))
+	for _, aggregate := range desired.ContinuousAggregates {
 		declared[continuousAggregateIdentity(aggregate.Schema, aggregate.Name, semantics)] = aggregate
 	}
 	live := make(map[objectIdentity]catalog.ContinuousAggregate, len(database.ContinuousAggregates))
@@ -88,7 +88,7 @@ func ContinuousAggregates(
 // continuousAggregateChange reports how a declaration differs from the catalog,
 // or nil when it does not.
 func continuousAggregateChange(
-	declared goschema.ContinuousAggregate,
+	declared schemamodel.ContinuousAggregate,
 	reported catalog.ContinuousAggregate,
 	bodies map[string]config.ContinuousAggregateBody,
 ) *difftypes.ContinuousAggregateDiff {
@@ -135,7 +135,7 @@ func declaredMaterializedOnly(declared *bool, reported bool) bool {
 // return is what keeps an unanswerable question from being answered "changed":
 // a caller with no connection compares the option and leaves the body alone.
 func continuousAggregateBodiesAgree(
-	declared goschema.ContinuousAggregate,
+	declared schemamodel.ContinuousAggregate,
 	reported catalog.ContinuousAggregate,
 	bodies map[string]config.ContinuousAggregateBody,
 ) (agree, comparable bool) {

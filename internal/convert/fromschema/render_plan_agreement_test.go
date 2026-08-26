@@ -10,11 +10,11 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -66,7 +66,7 @@ const objectSkippedMarker = "is not supported by this target; skipped."
 //
 // The fixture is shared with that second test on purpose:
 // TestFromDatabase_TheRoutingFixtureCoversEveryDeclaredCollection holds it
-// complete over goschema.Database by reflection, so an object kind added to the
+// complete over schemamodel.Database by reflection, so an object kind added to the
 // schema model cannot quietly fall outside this comparison.
 //
 // The live half of this measurement is
@@ -184,7 +184,7 @@ func surfaceCensus(c *qt.C, dialect string, nodes []ast.Node) []string {
 
 // assertBothSurfacesRefuseTheDomain checks the shared refusal and reports
 // whether it applied, so the caller has one branch rather than a nest of them.
-func assertBothSurfacesRefuseTheDomain(c *qt.C, dialect string, desired *goschema.Database) bool {
+func assertBothSurfacesRefuseTheDomain(c *qt.C, dialect string, desired *schemamodel.Database) bool {
 	c.Helper()
 	if capability.ForDialect(dialect).Has(capability.DomainTypes) {
 		return false

@@ -8,8 +8,8 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 	"go.5x5.cz/ptah/internal/atlasreport"
 )
@@ -42,13 +42,13 @@ func TestCompatibilityHCLFraming_EmptySQLiteExactBytes(t *testing.T) {
 func TestCompatibilityHCLFraming_PopulatedDocumentKeepsOnlyOneMarkerOccurrence(t *testing.T) {
 	c := qt.New(t)
 	report := atlasreport.NewSchemaInspectReport(
-		&goschema.Database{
-			Schemas: []goschema.Schema{{
+		&schemamodel.Database{
+			Schemas: []schemamodel.Schema{{
 				Name:    "main",
 				Comment: atlashclrender.GeneratedCodeMarker,
 			}},
-			Tables: []goschema.Table{{StructName: "User", Name: "users", Schema: "main"}},
-			Fields: []goschema.Field{{StructName: "User", Name: "id", Type: "INTEGER", Primary: true}},
+			Tables: []schemamodel.Table{{StructName: "User", Name: "users", Schema: "main"}},
+			Fields: []schemamodel.Field{{StructName: "User", Name: "id", Type: "INTEGER", Primary: true}},
 		},
 		&catalog.Database{},
 		catalog.ServerInfo{Dialect: platform.SQLite, Schema: "main"},
@@ -73,11 +73,11 @@ func TestCompatibilityHCLFraming_PopulatedDocumentKeepsOnlyOneMarkerOccurrence(t
 func TestCompatibilityHCLFraming_PreservesPostgreSQLCoverageDirectives(t *testing.T) {
 	c := qt.New(t)
 	report := atlasreport.NewSchemaInspectReport(
-		&goschema.Database{
-			Schemas:    []goschema.Schema{{Name: "public"}},
-			Tables:     []goschema.Table{{StructName: "User", Name: "users", Schema: "public"}},
-			Fields:     []goschema.Field{{StructName: "User", Name: "id", Type: "bigint"}},
-			Extensions: []goschema.Extension{{Name: "pgcrypto"}},
+		&schemamodel.Database{
+			Schemas:    []schemamodel.Schema{{Name: "public"}},
+			Tables:     []schemamodel.Table{{StructName: "User", Name: "users", Schema: "public"}},
+			Fields:     []schemamodel.Field{{StructName: "User", Name: "id", Type: "bigint"}},
+			Extensions: []schemamodel.Extension{{Name: "pgcrypto"}},
 		},
 		&catalog.Database{},
 		catalog.ServerInfo{Dialect: platform.Postgres, Schema: "public"},
@@ -106,9 +106,9 @@ func TestCompatibilityHCLFraming_PreservesPostgreSQLCoverageDirectives(t *testin
 func TestCompatibilityHCLFraming_IsIndependentOfBlockPolicy(t *testing.T) {
 	c := qt.New(t)
 	report := atlasreport.NewSchemaInspectReport(
-		&goschema.Database{
-			Schemas:    []goschema.Schema{{Name: "public"}},
-			Extensions: []goschema.Extension{{Name: "pgcrypto"}},
+		&schemamodel.Database{
+			Schemas:    []schemamodel.Schema{{Name: "public"}},
+			Extensions: []schemamodel.Extension{{Name: "pgcrypto"}},
 		},
 		&catalog.Database{},
 		catalog.ServerInfo{Dialect: platform.Postgres, Schema: "public"},
@@ -157,7 +157,7 @@ func TestCompatibilityHCLFraming_NativeDocumentIsByteIdentical(t *testing.T) {
 
 func emptySQLiteInspectReport(compatibilityHCLFraming bool) *atlasreport.SchemaInspectReport {
 	return atlasreport.NewSchemaInspectReport(
-		&goschema.Database{Schemas: []goschema.Schema{{Name: "main"}}},
+		&schemamodel.Database{Schemas: []schemamodel.Schema{{Name: "main"}}},
 		&catalog.Database{Schemas: []catalog.Schema{{Name: "main"}}},
 		catalog.ServerInfo{Dialect: platform.SQLite, Schema: "main"},
 		nil,

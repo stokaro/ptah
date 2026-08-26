@@ -1,23 +1,25 @@
 // Package generatedschema provides reusable views over generated schema data.
 package generatedschema
 
-import "go.5x5.cz/ptah/core/goschema"
+import (
+	"go.5x5.cz/ptah/core/schemamodel"
+)
 
 // FieldsForTable returns direct and embedded columns for table.
 func FieldsForTable(
-	database *goschema.Database,
-	table goschema.Table,
-) []goschema.Field {
+	database *schemamodel.Database,
+	table schemamodel.Table,
+) []schemamodel.Field {
 	if database == nil {
 		return nil
 	}
-	fields := make([]goschema.Field, 0)
+	fields := make([]schemamodel.Field, 0)
 	for _, field := range database.Fields {
 		if field.StructName == table.StructName {
 			fields = append(fields, field)
 		}
 	}
-	generated := embeddedFieldsForStruct(
+	desired := embeddedFieldsForStruct(
 		database.EmbeddedFields,
 		database.Fields,
 		table.StructName,
@@ -26,7 +28,7 @@ func FieldsForTable(
 	for _, field := range fields {
 		seen[field.Name] = struct{}{}
 	}
-	for _, field := range generated {
+	for _, field := range desired {
 		if _, exists := seen[field.Name]; exists {
 			continue
 		}
@@ -37,11 +39,11 @@ func FieldsForTable(
 }
 
 func embeddedFieldsForStruct(
-	embeddedFields []goschema.EmbeddedField,
-	allFields []goschema.Field,
+	embeddedFields []schemamodel.EmbeddedField,
+	allFields []schemamodel.Field,
 	structName string,
-) []goschema.Field {
-	var generatedFields []goschema.Field
+) []schemamodel.Field {
+	var generatedFields []schemamodel.Field
 	for _, embedded := range embeddedFields {
 		if embedded.StructName != structName {
 			continue
@@ -73,10 +75,10 @@ func embeddedFieldsForStruct(
 }
 
 func jsonEmbeddedField(
-	embedded goschema.EmbeddedField,
+	embedded schemamodel.EmbeddedField,
 	structName string,
-) goschema.Field {
-	return goschema.Field{
+) schemamodel.Field {
+	return schemamodel.Field{
 		StructName: structName,
 		FieldName:  embedded.EmbeddedTypeName,
 		Name:       embedded.Name,
@@ -87,10 +89,10 @@ func jsonEmbeddedField(
 }
 
 func relationEmbeddedField(
-	embedded goschema.EmbeddedField,
+	embedded schemamodel.EmbeddedField,
 	structName string,
-) goschema.Field {
-	return goschema.Field{
+) schemamodel.Field {
+	return schemamodel.Field{
 		StructName: structName,
 		FieldName:  embedded.EmbeddedTypeName + "ID",
 		Name:       embedded.Field,
@@ -107,12 +109,12 @@ func relationEmbeddedField(
 }
 
 func appendInlineEmbeddedFields(
-	generatedFields []goschema.Field,
-	embedded goschema.EmbeddedField,
-	allFields []goschema.Field,
-	allEmbeddedFields []goschema.EmbeddedField,
+	generatedFields []schemamodel.Field,
+	embedded schemamodel.EmbeddedField,
+	allFields []schemamodel.Field,
+	allEmbeddedFields []schemamodel.EmbeddedField,
 	structName string,
-) []goschema.Field {
+) []schemamodel.Field {
 	for _, field := range allFields {
 		if field.StructName != embedded.EmbeddedTypeName {
 			continue

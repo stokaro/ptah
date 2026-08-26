@@ -15,10 +15,10 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 )
 
@@ -45,7 +45,7 @@ func (p Problem) String() string {
 
 // Collect reports every structural problem it can find in database for one
 // dialect, against that dialect's default capability preset.
-func Collect(database *goschema.Database, dialect string) []Problem {
+func Collect(database *schemamodel.Database, dialect string) []Problem {
 	return CollectWithCapabilities(database, dialect, capability.ForDialect(dialect))
 }
 
@@ -57,7 +57,7 @@ func Collect(database *goschema.Database, dialect string) []Problem {
 // entry. The renderer's own validation contributes at most one problem,
 // because it is fail-fast by construction.
 func CollectWithCapabilities(
-	database *goschema.Database,
+	database *schemamodel.Database,
 	dialect string,
 	caps capability.Capabilities,
 ) []Problem {
@@ -71,7 +71,7 @@ func CollectWithCapabilities(
 	// Scoped first, for the same reason the renderer scopes before validating:
 	// a declaration this dialect was not given is not part of its desired
 	// state, so faulting it here would refuse what the operator excluded.
-	scoped := goschema.ScopeToDialect(database, dialect)
+	scoped := schemamodel.ScopeToDialect(database, dialect)
 	problems := collectIndexProblems(scoped, dialect)
 	if err := renderer.ValidateSchemaWithCapabilities(scoped, dialect, caps); err != nil {
 		problems = append(problems, Problem{
@@ -89,11 +89,11 @@ func CollectWithCapabilities(
 // to nothing falls back to the Go struct name and renders as `ON "Struct"`,
 // which the server answers at apply time; an index naming a column the table
 // does not declare renders and fails the same way.
-func collectIndexProblems(database *goschema.Database, dialect string) []Problem {
+func collectIndexProblems(database *schemamodel.Database, dialect string) []Problem {
 	if len(database.Indexes) == 0 {
 		return nil
 	}
-	owners := goschema.ResolveIndexOwners(database.Indexes, database.Tables, database.MaterializedViews)
+	owners := schemamodel.ResolveIndexOwners(database.Indexes, database.Tables, database.MaterializedViews)
 	columnsByTable := indexableColumns(database)
 	var problems []Problem
 	for position, index := range database.Indexes {
@@ -124,7 +124,7 @@ func collectIndexProblems(database *goschema.Database, dialect string) []Problem
 // missingIndexColumns reports every column an index names that its table does
 // not declare.
 func missingIndexColumns(
-	index goschema.Index,
+	index schemamodel.Index,
 	position int,
 	owner string,
 	columns []string,
@@ -155,7 +155,7 @@ func missingIndexColumns(
 // Reading both would report `lower(total)` as a column no table declares --
 // which is what a functional index looked like before this preferred Parts.
 // An index with no Parts carries plain column names in Fields.
-func indexColumnNames(index goschema.Index) []string {
+func indexColumnNames(index schemamodel.Index) []string {
 	names := make([]string, 0, len(index.Fields)+len(index.Parts)+len(index.IncludeColumns))
 	if len(index.Parts) > 0 {
 		for _, part := range index.Parts {
@@ -174,7 +174,7 @@ func indexColumnNames(index goschema.Index) []string {
 
 // indexableColumns maps each table's qualified name to the columns an index on
 // it may name, embedded fields included.
-func indexableColumns(database *goschema.Database) map[string][]string {
+func indexableColumns(database *schemamodel.Database) map[string][]string {
 	fields := fromschema.ProcessEmbeddedFields(database.EmbeddedFields, database.Fields)
 	byStruct := make(map[string][]string, len(database.Tables))
 	for _, field := range fields {
@@ -189,15 +189,15 @@ func indexableColumns(database *goschema.Database) map[string][]string {
 
 // isMaterializedViewOwner reports whether the resolved owner names a declared
 // materialized view.
-func isMaterializedViewOwner(database *goschema.Database, owner string) bool {
-	return slices.ContainsFunc(database.MaterializedViews, func(view goschema.MaterializedView) bool {
+func isMaterializedViewOwner(database *schemamodel.Database, owner string) bool {
+	return slices.ContainsFunc(database.MaterializedViews, func(view schemamodel.MaterializedView) bool {
 		return view.Name == owner || view.StructName == owner
 	})
 }
 
 // indexName names an index for a diagnostic, falling back to its position when
 // the declaration carries no name.
-func indexName(index goschema.Index, position int) string {
+func indexName(index schemamodel.Index, position int) string {
 	if strings.TrimSpace(index.Name) != "" {
 		return index.Name
 	}
@@ -224,7 +224,7 @@ func Dialects(requested []string) []string {
 // The resolver returns an empty string when it can match no relation, and
 // echoing that back asks the reader to fix a table called "". The declaration
 // itself still carries the name, under whichever spelling it used.
-func declaredOwner(index goschema.Index, resolved string) string {
+func declaredOwner(index schemamodel.Index, resolved string) string {
 	for _, candidate := range []string{resolved, index.TableName, index.StructName} {
 		if strings.TrimSpace(candidate) != "" {
 			return candidate

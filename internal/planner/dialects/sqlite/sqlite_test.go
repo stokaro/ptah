@@ -7,9 +7,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -17,18 +17,18 @@ import (
 func TestPlannerCreatesTableWithInlineConstraints(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: "accounts", StructName: "Account", Strict: true},
 			{Name: "users", StructName: "User", Strict: true},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{Name: "id", Type: "INTEGER", StructName: "Account", Primary: true},
 			{Name: "id", Type: "INTEGER", StructName: "User", Primary: true},
 			{Name: "account_id", Type: "INTEGER", StructName: "User", Nullable: false},
 			{Name: "email", Type: "TEXT", StructName: "User", Nullable: false},
 		},
-		Constraints: []goschema.Constraint{
+		Constraints: []schemamodel.Constraint{
 			{
 				Name:            "users_email_check",
 				Type:            "CHECK",
@@ -47,7 +47,7 @@ func TestPlannerCreatesTableWithInlineConstraints(t *testing.T) {
 	}
 	diff := &difftypes.SchemaDiff{TablesAdded: []string{"users"}}
 
-	nodes, err := planner.GenerateSchemaDiffAST(diff, generated, platform.SQLite)
+	nodes, err := planner.GenerateSchemaDiffAST(diff, desired, platform.SQLite)
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 1)
 
@@ -55,7 +55,7 @@ func TestPlannerCreatesTableWithInlineConstraints(t *testing.T) {
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(table.Constraints, qt.HasLen, 2)
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, generated, platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.SQLite)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `CREATE TABLE "users"`)
 	c.Assert(sql, qt.Contains, `CONSTRAINT "users_email_check" CHECK (email <> '')`)
@@ -66,17 +66,17 @@ func TestPlannerCreatesTableWithInlineConstraints(t *testing.T) {
 func TestPlannerCreatesAddedTablesWithQualifiedConstraintDiffs(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: "users", StructName: "users"},
 			{Name: "posts", StructName: "posts"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{Name: "id", Type: "INTEGER", StructName: "users", Primary: true},
 			{Name: "id", Type: "INTEGER", StructName: "posts", Primary: true},
 			{Name: "user_id", Type: "INTEGER", StructName: "posts", Nullable: false},
 		},
-		Constraints: []goschema.Constraint{{
+		Constraints: []schemamodel.Constraint{{
 			Name:          "fk_posts_user",
 			Type:          "FOREIGN KEY",
 			StructName:    "posts",
@@ -100,7 +100,7 @@ func TestPlannerCreatesAddedTablesWithQualifiedConstraintDiffs(t *testing.T) {
 		}},
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, generated, platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.SQLite)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `CREATE TABLE "users"`)
@@ -120,7 +120,7 @@ func TestPlannerDropsTablesWithQualifiedConstraintDiffs(t *testing.T) {
 		}},
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, &goschema.Database{}, platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(diff, &schemamodel.Database{}, platform.SQLite)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `DROP TABLE IF EXISTS "posts";`)
@@ -129,12 +129,12 @@ func TestPlannerDropsTablesWithQualifiedConstraintDiffs(t *testing.T) {
 func TestPlannerAddsColumnsAndIndexes(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Tables: []goschema.Table{{Name: "users", StructName: "User"}},
-		Fields: []goschema.Field{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "users", StructName: "User"}},
+		Fields: []schemamodel.Field{
 			{Name: "display_name", Type: "TEXT", StructName: "User", Nullable: true},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{
 				Name:       "idx_users_display_name",
 				StructName: "User",
@@ -153,7 +153,7 @@ func TestPlannerAddsColumnsAndIndexes(t *testing.T) {
 		},
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, generated, platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.SQLite)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `ALTER TABLE "users" ADD COLUMN "display_name" TEXT`)
 	c.Assert(sql, qt.Contains, `CREATE UNIQUE INDEX IF NOT EXISTS "idx_users_display_name" ON "users" ("display_name") WHERE display_name IS NOT NULL`)
@@ -162,18 +162,18 @@ func TestPlannerAddsColumnsAndIndexes(t *testing.T) {
 func TestPlannerRebuildsTableWhenDroppingColumn(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Tables: []goschema.Table{{Name: "users", StructName: "User"}},
-		Fields: []goschema.Field{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "users", StructName: "User"}},
+		Fields: []schemamodel.Field{
 			{Name: "id", Type: "INTEGER", StructName: "User", Primary: true},
 			{Name: "email", Type: "TEXT", StructName: "User", Nullable: false},
 		},
-		Indexes: []goschema.Index{{
+		Indexes: []schemamodel.Index{{
 			Name:       "idx_users_email",
 			StructName: "User",
 			Fields:     []string{"email"},
 		}},
-		Triggers: []goschema.Trigger{{
+		Triggers: []schemamodel.Trigger{{
 			Name:    "trg_users_email",
 			Table:   "users",
 			Timing:  "AFTER",
@@ -187,7 +187,7 @@ func TestPlannerRebuildsTableWhenDroppingColumn(t *testing.T) {
 		ColumnsRemoved: []string{"name"},
 	}}}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, generated, platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.SQLite)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `CREATE TABLE "__ptah_rebuild_users"`)
@@ -208,19 +208,19 @@ func TestPlannerRebuildsTableWhenDroppingColumn(t *testing.T) {
 func TestPlannerRebuildStepsAsideFromADeclaredTableName(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: "users", StructName: "User"},
 			{Name: "__ptah_rebuild_users", StructName: "RebuildUser"},
 		},
-		Fields: []goschema.Field{{Name: "id", Type: "INTEGER", StructName: "User", Primary: true}},
+		Fields: []schemamodel.Field{{Name: "id", Type: "INTEGER", StructName: "User", Primary: true}},
 	}
 	diff := &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 		TableName:      "users",
 		ColumnsRemoved: []string{"name"},
 	}}}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, generated, platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.SQLite)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `CREATE TABLE "__ptah_rebuild_users_1"`)
@@ -232,16 +232,16 @@ func TestPlannerRebuildStepsAsideFromADeclaredTableName(t *testing.T) {
 
 func TestPlannerRejectsUnsafeTableRebuildPreconditions(t *testing.T) {
 	tests := []struct {
-		name      string
-		generated *goschema.Database
-		want      string
+		name    string
+		desired *schemamodel.Database
+		want    string
 	}{
 		{
 			name: "unsupported trigger syntax",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{{Name: "users", StructName: "User"}},
-				Fields: []goschema.Field{{Name: "id", Type: "INTEGER", StructName: "User", Primary: true}},
-				Triggers: []goschema.Trigger{{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{{Name: "users", StructName: "User"}},
+				Fields: []schemamodel.Field{{Name: "id", Type: "INTEGER", StructName: "User", Primary: true}},
+				Triggers: []schemamodel.Trigger{{
 					Name:  "trg_users_email",
 					Table: "users",
 					Body:  "CREATE TRIGGER trg_users_email AFTER UPDATE OF email ON users BEGIN SELECT NEW.email; END",
@@ -258,7 +258,7 @@ func TestPlannerRejectsUnsafeTableRebuildPreconditions(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := planner.GenerateSchemaDiffAST(diff, tt.generated, platform.SQLite)
+			nodes, err := planner.GenerateSchemaDiffAST(diff, tt.desired, platform.SQLite)
 			c.Assert(nodes, qt.IsNil)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(err, qt.ErrorMatches, tt.want)
@@ -273,17 +273,17 @@ func TestPlannerRejectsUnsafeTableRebuildPreconditions(t *testing.T) {
 // community binary emits. See stokaro/ptah#1561.
 func TestPlannerRebuildsATableOtherTablesReferTo(t *testing.T) {
 	tests := []struct {
-		name      string
-		generated *goschema.Database
+		name    string
+		desired *schemamodel.Database
 	}{
 		{
 			name: "a field declares the reference",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{Name: "users", StructName: "User"},
 					{Name: "posts", StructName: "Post"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{Name: "id", Type: "INTEGER", StructName: "User", Primary: true},
 					{Name: "user_id", Type: "INTEGER", StructName: "Post", Foreign: "users(id)"},
 				},
@@ -291,18 +291,18 @@ func TestPlannerRebuildsATableOtherTablesReferTo(t *testing.T) {
 		},
 		{
 			name: "a table constraint declares the reference",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{Name: "users", StructName: "User"},
 					{Name: "memberships", StructName: "Membership"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{Name: "id", Type: "INTEGER", StructName: "User", Primary: true},
 					{Name: "tenant_id", Type: "INTEGER", StructName: "User", Primary: true},
 					{Name: "user_id", Type: "INTEGER", StructName: "Membership"},
 					{Name: "tenant_id", Type: "INTEGER", StructName: "Membership"},
 				},
-				Constraints: []goschema.Constraint{{
+				Constraints: []schemamodel.Constraint{{
 					Type:           "FOREIGN KEY",
 					Table:          "memberships",
 					Columns:        []string{"user_id", "tenant_id"},
@@ -321,7 +321,7 @@ func TestPlannerRebuildsATableOtherTablesReferTo(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			sql, err := planner.GenerateSchemaDiffSQL(diff, tt.generated, platform.SQLite)
+			sql, err := planner.GenerateSchemaDiffSQL(diff, tt.desired, platform.SQLite)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Contains, "PRAGMA foreign_keys = off;")
 			c.Assert(sql, qt.Contains, "PRAGMA foreign_keys = on;")
@@ -352,9 +352,9 @@ func TestPlannerRebuildsATableOtherTablesReferTo(t *testing.T) {
 func TestPlannerRebuildStepsAsideFromARemovedTableName(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Tables: []goschema.Table{{Name: "users", StructName: "User"}},
-		Fields: []goschema.Field{{Name: "id", Type: "INTEGER", StructName: "User", Primary: true}},
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "users", StructName: "User"}},
+		Fields: []schemamodel.Field{{Name: "id", Type: "INTEGER", StructName: "User", Primary: true}},
 	}
 	diff := &difftypes.SchemaDiff{
 		TablesRemoved: []string{"__ptah_rebuild_users"},
@@ -364,7 +364,7 @@ func TestPlannerRebuildStepsAsideFromARemovedTableName(t *testing.T) {
 		}},
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, generated, platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.SQLite)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `CREATE TABLE "__ptah_rebuild_users_1"`)
@@ -387,27 +387,27 @@ func TestPlannerRebuildStepsAsideFromARemovedTableName(t *testing.T) {
 func TestPlannerRebuildsForAddColumnShapesAlterCannotExpress(t *testing.T) {
 	tests := []struct {
 		name  string
-		field goschema.Field
+		field schemamodel.Field
 	}{
 		{
 			name:  "primary key",
-			field: goschema.Field{Name: "account_id", Type: "INTEGER", StructName: "User", Primary: true},
+			field: schemamodel.Field{Name: "account_id", Type: "INTEGER", StructName: "User", Primary: true},
 		},
 		{
 			name:  "unique",
-			field: goschema.Field{Name: "email", Type: "TEXT", StructName: "User", Nullable: true, Unique: true},
+			field: schemamodel.Field{Name: "email", Type: "TEXT", StructName: "User", Nullable: true, Unique: true},
 		},
 		{
 			name:  "foreign key with non null default",
-			field: goschema.Field{Name: "account_id", Type: "INTEGER", StructName: "User", Nullable: true, Foreign: "accounts(id)", Default: "1"},
+			field: schemamodel.Field{Name: "account_id", Type: "INTEGER", StructName: "User", Nullable: true, Foreign: "accounts(id)", Default: "1"},
 		},
 		{
 			name:  "expression default",
-			field: goschema.Field{Name: "created_at", Type: "TEXT", StructName: "User", Nullable: true, DefaultExpr: "CURRENT_TIMESTAMP"},
+			field: schemamodel.Field{Name: "created_at", Type: "TEXT", StructName: "User", Nullable: true, DefaultExpr: "CURRENT_TIMESTAMP"},
 		},
 		{
 			name: "stored generated column",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name:                "slug",
 				Type:                "TEXT",
 				StructName:          "User",
@@ -421,13 +421,13 @@ func TestPlannerRebuildsForAddColumnShapesAlterCannotExpress(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			generated := addColumnRebuildSchema(tt.field)
+			desired := addColumnRebuildSchema(tt.field)
 			diff := &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:    "users",
 				ColumnsAdded: []string{tt.field.Name},
 			}}}
 
-			sql, err := planner.GenerateSchemaDiffSQL(diff, generated, platform.SQLite)
+			sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.SQLite)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Contains, `CREATE TABLE "__ptah_rebuild_users"`)
@@ -454,14 +454,14 @@ func TestPlannerRebuildsForAddColumnShapesAlterCannotExpress(t *testing.T) {
 func TestPlannerRefusesRebuiltNotNullAddWithoutDefault(t *testing.T) {
 	c := qt.New(t)
 
-	field := goschema.Field{Name: "email", Type: "TEXT", StructName: "User", Nullable: false}
-	generated := addColumnRebuildSchema(field)
+	field := schemamodel.Field{Name: "email", Type: "TEXT", StructName: "User", Nullable: false}
+	desired := addColumnRebuildSchema(field)
 	diff := &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 		TableName:    "users",
 		ColumnsAdded: []string{field.Name},
 	}}}
 
-	nodes, err := planner.GenerateSchemaDiffAST(diff, generated, platform.SQLite)
+	nodes, err := planner.GenerateSchemaDiffAST(diff, desired, platform.SQLite)
 
 	c.Assert(nodes, qt.IsNil)
 	var planErr *ptaherr.PlanError
@@ -478,13 +478,13 @@ func TestPlannerRefusesRebuiltNotNullAddWithoutDefault(t *testing.T) {
 // the new table, so a users declared with nothing but the added field is a
 // table with nothing to copy -- which is refused for that reason and would hide
 // the shape under test behind an unrelated message.
-func addColumnRebuildSchema(field goschema.Field) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func addColumnRebuildSchema(field schemamodel.Field) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: "users", StructName: "User"},
 			{Name: "accounts", StructName: "Account"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{Name: "id", Type: "INTEGER", StructName: "User", Primary: true},
 			{Name: "id", Type: "INTEGER", StructName: "Account", Primary: true},
 			field,
@@ -502,7 +502,7 @@ func TestPlannerDropsIndexesAndTables(t *testing.T) {
 		TablesRemoved: []string{"old_users"},
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, &goschema.Database{}, platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(diff, &schemamodel.Database{}, platform.SQLite)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `DROP INDEX IF EXISTS "idx_users_email"`)
 	c.Assert(sql, qt.Contains, `DROP TABLE IF EXISTS "old_users"`)
@@ -510,16 +510,16 @@ func TestPlannerDropsIndexesAndTables(t *testing.T) {
 
 // usersRebuildSchema is the desired shape the rebuild tests converge on: a
 // two-column table whose definition the caller adjusts per case.
-func usersRebuildSchema(fields []goschema.Field, constraints []goschema.Constraint) *goschema.Database {
-	return &goschema.Database{
-		Tables:      []goschema.Table{{Name: "users", StructName: "User"}},
+func usersRebuildSchema(fields []schemamodel.Field, constraints []schemamodel.Constraint) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables:      []schemamodel.Table{{Name: "users", StructName: "User"}},
 		Fields:      fields,
 		Constraints: constraints,
 	}
 }
 
-func usersNameField(name goschema.Field) []goschema.Field {
-	return []goschema.Field{
+func usersNameField(name schemamodel.Field) []schemamodel.Field {
+	return []schemamodel.Field{
 		{Name: "id", Type: "INTEGER", StructName: "User", Primary: true},
 		name,
 	}
@@ -536,9 +536,9 @@ func usersNameField(name goschema.Field) []goschema.Field {
 // plan" for the schema-level constraint and enum rows.
 func TestPlannerRebuildsTableForChangesAlterTableCannotExpress(t *testing.T) {
 	tests := []struct {
-		name      string
-		generated *goschema.Database
-		diff      *difftypes.SchemaDiff
+		name    string
+		desired *schemamodel.Database
+		diff    *difftypes.SchemaDiff
 		// wantSQL is the shape-specific detail the rebuild must carry, and
 		// wantNoSQL what it must have left behind. The create/copy/drop/rename
 		// sequence every row shares is asserted once, below.
@@ -547,8 +547,8 @@ func TestPlannerRebuildsTableForChangesAlterTableCannotExpress(t *testing.T) {
 	}{
 		{
 			name: "column type change",
-			generated: usersRebuildSchema(
-				usersNameField(goschema.Field{Name: "name", Type: "INTEGER", StructName: "User"}),
+			desired: usersRebuildSchema(
+				usersNameField(schemamodel.Field{Name: "name", Type: "INTEGER", StructName: "User"}),
 				nil,
 			),
 			diff: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
@@ -562,8 +562,8 @@ func TestPlannerRebuildsTableForChangesAlterTableCannotExpress(t *testing.T) {
 		},
 		{
 			name: "column nullability change",
-			generated: usersRebuildSchema(
-				usersNameField(goschema.Field{Name: "name", Type: "TEXT", StructName: "User", Nullable: true}),
+			desired: usersRebuildSchema(
+				usersNameField(schemamodel.Field{Name: "name", Type: "TEXT", StructName: "User", Nullable: true}),
 				nil,
 			),
 			diff: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
@@ -575,8 +575,8 @@ func TestPlannerRebuildsTableForChangesAlterTableCannotExpress(t *testing.T) {
 		},
 		{
 			name: "not null default addition backfills the copy",
-			generated: usersRebuildSchema(
-				usersNameField(goschema.Field{Name: "name", Type: "TEXT", StructName: "User", Default: "'x'"}),
+			desired: usersRebuildSchema(
+				usersNameField(schemamodel.Field{Name: "name", Type: "TEXT", StructName: "User", Default: "'x'"}),
 				nil,
 			),
 			diff: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
@@ -590,9 +590,9 @@ func TestPlannerRebuildsTableForChangesAlterTableCannotExpress(t *testing.T) {
 		},
 		{
 			name: "table-level constraint change",
-			generated: usersRebuildSchema(
-				usersNameField(goschema.Field{Name: "name", Type: "TEXT", StructName: "User"}),
-				[]goschema.Constraint{{
+			desired: usersRebuildSchema(
+				usersNameField(schemamodel.Field{Name: "name", Type: "TEXT", StructName: "User"}),
+				[]schemamodel.Constraint{{
 					Name:            "users_name_check",
 					Type:            "CHECK",
 					StructName:      "User",
@@ -607,9 +607,9 @@ func TestPlannerRebuildsTableForChangesAlterTableCannotExpress(t *testing.T) {
 		},
 		{
 			name: "schema-level constraint change on an existing table",
-			generated: usersRebuildSchema(
-				usersNameField(goschema.Field{Name: "name", Type: "TEXT", StructName: "User"}),
-				[]goschema.Constraint{{
+			desired: usersRebuildSchema(
+				usersNameField(schemamodel.Field{Name: "name", Type: "TEXT", StructName: "User"}),
+				[]schemamodel.Constraint{{
 					Name:            "users_name_check",
 					Type:            "CHECK",
 					StructName:      "User",
@@ -629,8 +629,8 @@ func TestPlannerRebuildsTableForChangesAlterTableCannotExpress(t *testing.T) {
 		},
 		{
 			name: "enum-backed check constraint change",
-			generated: usersRebuildSchema(
-				usersNameField(goschema.Field{
+			desired: usersRebuildSchema(
+				usersNameField(schemamodel.Field{
 					Name:       "status",
 					Type:       "TEXT",
 					StructName: "User",
@@ -660,8 +660,8 @@ func TestPlannerRebuildsTableForChangesAlterTableCannotExpress(t *testing.T) {
 		},
 		{
 			name: "dropped column combined with an added column",
-			generated: usersRebuildSchema(
-				usersNameField(goschema.Field{Name: "nickname", Type: "TEXT", StructName: "User", Nullable: true}),
+			desired: usersRebuildSchema(
+				usersNameField(schemamodel.Field{Name: "nickname", Type: "TEXT", StructName: "User", Nullable: true}),
 				nil,
 			),
 			diff: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
@@ -680,7 +680,7 @@ func TestPlannerRebuildsTableForChangesAlterTableCannotExpress(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			sql, err := planner.GenerateSchemaDiffSQL(test.diff, test.generated, platform.SQLite)
+			sql, err := planner.GenerateSchemaDiffSQL(test.diff, test.desired, platform.SQLite)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Contains, `CREATE TABLE "__ptah_rebuild_users"`)
@@ -706,8 +706,8 @@ func TestPlannerRebuildsTableForChangesAlterTableCannotExpress(t *testing.T) {
 func TestPlannerRebuildRefusesAddedNotNullColumnWithoutDefault(t *testing.T) {
 	c := qt.New(t)
 
-	generated := usersRebuildSchema(
-		usersNameField(goschema.Field{Name: "email", Type: "TEXT", StructName: "User"}),
+	desired := usersRebuildSchema(
+		usersNameField(schemamodel.Field{Name: "email", Type: "TEXT", StructName: "User"}),
 		nil,
 	)
 	diff := &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
@@ -716,7 +716,7 @@ func TestPlannerRebuildRefusesAddedNotNullColumnWithoutDefault(t *testing.T) {
 		ColumnsRemoved: []string{"legacy"},
 	}}}
 
-	nodes, err := planner.GenerateSchemaDiffAST(diff, generated, platform.SQLite)
+	nodes, err := planner.GenerateSchemaDiffAST(diff, desired, platform.SQLite)
 
 	c.Assert(nodes, qt.IsNil)
 	var planErr *ptaherr.PlanError
@@ -734,18 +734,18 @@ func TestPlannerRebuildRefusesAddedNotNullColumnWithoutDefault(t *testing.T) {
 func TestPlannerRebuildEmitsIndexesAndTriggersOnce(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Tables: []goschema.Table{{Name: "users", StructName: "User"}},
-		Fields: []goschema.Field{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "users", StructName: "User"}},
+		Fields: []schemamodel.Field{
 			{Name: "id", Type: "INTEGER", StructName: "User", Primary: true},
 			{Name: "name", Type: "INTEGER", StructName: "User"},
 		},
-		Indexes: []goschema.Index{{
+		Indexes: []schemamodel.Index{{
 			Name:       "idx_users_name",
 			StructName: "User",
 			Fields:     []string{"name"},
 		}},
-		Triggers: []goschema.Trigger{{
+		Triggers: []schemamodel.Trigger{{
 			Name:    "trg_users_name",
 			Table:   "users",
 			Timing:  "AFTER",
@@ -763,7 +763,7 @@ func TestPlannerRebuildEmitsIndexesAndTriggersOnce(t *testing.T) {
 		TriggersAdded: []difftypes.TriggerRef{{TriggerName: "trg_users_name", TableName: "users"}},
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, generated, platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.SQLite)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Count(sql, `CREATE INDEX IF NOT EXISTS "idx_users_name"`), qt.Equals, 1)
@@ -778,10 +778,10 @@ func TestPlannerRebuildEmitsIndexesAndTriggersOnce(t *testing.T) {
 func TestPlannerEmitsTriggerChangesWithoutRebuild(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Tables: []goschema.Table{{Name: "users", StructName: "User"}},
-		Fields: []goschema.Field{{Name: "id", Type: "INTEGER", StructName: "User", Primary: true}},
-		Triggers: []goschema.Trigger{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "users", StructName: "User"}},
+		Fields: []schemamodel.Field{{Name: "id", Type: "INTEGER", StructName: "User", Primary: true}},
+		Triggers: []schemamodel.Trigger{
 			{
 				Name:    "trg_users_insert",
 				Table:   "users",
@@ -805,7 +805,7 @@ func TestPlannerEmitsTriggerChangesWithoutRebuild(t *testing.T) {
 		TriggersModified: []difftypes.TriggerDiff{{TriggerName: "trg_users_update", TableName: "users"}},
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, generated, platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.SQLite)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Count(sql, `CREATE TRIGGER "trg_users_insert"`), qt.Equals, 1)
@@ -816,7 +816,7 @@ func TestPlannerRejectsUnqualifiedExistingTableConstraintChanges(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{ConstraintsAdded: []string{"users_name_key"}}
 
-	nodes, err := planner.GenerateSchemaDiffAST(diff, &goschema.Database{}, platform.SQLite)
+	nodes, err := planner.GenerateSchemaDiffAST(diff, &schemamodel.Database{}, platform.SQLite)
 
 	c.Assert(nodes, qt.IsNil)
 	var planErr *ptaherr.PlanError
@@ -832,7 +832,7 @@ func TestPlannerRejectsExtensionPlacementChanges(t *testing.T) {
 		Name: "pgcrypto", FromSchema: "public", ToSchema: "extensions",
 	}}}
 
-	nodes, err := planner.GenerateSchemaDiffAST(diff, &goschema.Database{}, platform.SQLite)
+	nodes, err := planner.GenerateSchemaDiffAST(diff, &schemamodel.Database{}, platform.SQLite)
 
 	c.Assert(nodes, qt.IsNil)
 	var planErr *ptaherr.PlanError
@@ -848,10 +848,10 @@ func TestPlannerRejectsExtensionPlacementChanges(t *testing.T) {
 func TestPlannerRejectsSQLiteExcludeConstraint(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Tables: []goschema.Table{{Name: "bookings", StructName: "Booking"}},
-		Fields: []goschema.Field{{Name: "id", Type: "INTEGER", StructName: "Booking", Primary: true}},
-		Constraints: []goschema.Constraint{{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "bookings", StructName: "Booking"}},
+		Fields: []schemamodel.Field{{Name: "id", Type: "INTEGER", StructName: "Booking", Primary: true}},
+		Constraints: []schemamodel.Constraint{{
 			Name:            "no_overlap",
 			Type:            "EXCLUDE",
 			StructName:      "Booking",
@@ -861,7 +861,7 @@ func TestPlannerRejectsSQLiteExcludeConstraint(t *testing.T) {
 	}
 	diff := &difftypes.SchemaDiff{TablesAdded: []string{"bookings"}}
 
-	nodes, err := planner.GenerateSchemaDiffAST(diff, generated, platform.SQLite)
+	nodes, err := planner.GenerateSchemaDiffAST(diff, desired, platform.SQLite)
 
 	c.Assert(nodes, qt.IsNil)
 	var planErr *ptaherr.PlanError
@@ -889,9 +889,9 @@ func TestPlannerRejectsSQLiteExcludeConstraint(t *testing.T) {
 func TestPlannerRebuildExcludesColumnsAddedBesideAConstraintChange(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Tables: []goschema.Table{{Name: "users", StructName: "User"}},
-		Fields: []goschema.Field{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "users", StructName: "User"}},
+		Fields: []schemamodel.Field{
 			{Name: "id", Type: "INTEGER", StructName: "User", Primary: true},
 			{Name: "name", Type: "TEXT", StructName: "User", Nullable: false},
 			{Name: "note", Type: "TEXT", StructName: "User", Nullable: true},
@@ -911,7 +911,7 @@ func TestPlannerRebuildExcludesColumnsAddedBesideAConstraintChange(t *testing.T)
 		}},
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, generated, platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.SQLite)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains,

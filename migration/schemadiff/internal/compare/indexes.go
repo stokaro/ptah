@@ -5,9 +5,9 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/indexscope"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -177,13 +177,13 @@ func isMySQLConstraintBasedUniqueIndex(indexName, tableName string) bool {
 // - Time Complexity: O(n + m) where n=generated indexes, m=database indexes
 // - Space Complexity: O(n + m) for the identity maps
 // - Index operations can be expensive on large tables in production
-func Indexes(generated *goschema.Database, database *catalog.Database, diff *difftypes.SchemaDiff) {
-	IndexesWithDialect(generated, database, diff, "")
+func Indexes(desired *schemamodel.Database, current *catalog.Database, diff *difftypes.SchemaDiff) {
+	IndexesWithDialect(desired, current, diff, "")
 }
 
 type generatedIndexEntry struct {
 	ref   difftypes.IndexRef
-	index goschema.Index
+	index schemamodel.Index
 }
 
 type databaseIndexEntry struct {
@@ -199,20 +199,20 @@ type databaseIndexEntry struct {
 	partitionAttached bool
 }
 
-func IndexesWithDialect(generated *goschema.Database, database *catalog.Database, diff *difftypes.SchemaDiff, dialect string) {
-	IndexesWithSemantics(generated, database, diff, dialect, identifier.ForDialect(dialect), nil)
+func IndexesWithDialect(desired *schemamodel.Database, current *catalog.Database, diff *difftypes.SchemaDiff, dialect string) {
+	IndexesWithSemantics(desired, current, diff, dialect, identifier.ForDialect(dialect), nil)
 }
 
 // IndexesWithSemantics compares indexes using explicit identifier semantics.
 func IndexesWithSemantics(
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	dialect string,
 	semantics identifier.Semantics,
 	indexes map[string]config.IndexExpression,
 ) {
-	genIndexes, ambiguousGenerated := collectGeneratedIndexes(generated, semantics)
+	genIndexes, ambiguousGenerated := collectGeneratedIndexes(desired, semantics)
 	owned := constraintBackedIndexIdentities(database, dialect, semantics)
 	dbIndexes := collectDatabaseIndexes(
 		database,
@@ -236,7 +236,7 @@ func IndexesWithSemantics(
 }
 
 func collectGeneratedIndexes(
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	semantics identifier.Semantics,
 ) (
 	map[difftypes.IndexRef]generatedIndexEntry,
@@ -250,8 +250,8 @@ func collectGeneratedIndexes(
 	// against tables alone left the owner empty, and the refusal that
 	// followed named a position in a slice rather than the index or the view
 	// (stokaro/ptah#1725).
-	tableNames := goschema.ResolveIndexOwners(generated.Indexes, generated.Tables, generated.MaterializedViews)
-	for position, index := range generated.Indexes {
+	tableNames := schemamodel.ResolveIndexOwners(desired.Indexes, desired.Tables, desired.MaterializedViews)
+	for position, index := range desired.Indexes {
 		ref := difftypes.IndexRef{
 			Name:      index.Name,
 			TableName: tableNames[position],
@@ -619,7 +619,7 @@ func constraintOwnedDatabaseIndex(
 
 func appendIndexDifferences(
 	diff *difftypes.SchemaDiff,
-	generated map[difftypes.IndexRef]generatedIndexEntry,
+	desired map[difftypes.IndexRef]generatedIndexEntry,
 	ambiguousGenerated map[difftypes.IndexRef][]difftypes.IndexRef,
 	database map[difftypes.IndexRef]databaseIndexEntry,
 	dialect string,
@@ -630,9 +630,9 @@ func appendIndexDifferences(
 		for _, ref := range refs {
 			appendIndexAddition(diff, ref)
 		}
-		delete(generated, identity)
+		delete(desired, identity)
 	}
-	for identity, generatedEntry := range generated {
+	for identity, generatedEntry := range desired {
 		databaseEntry, exists := database[identity]
 		switch {
 		case !exists:
@@ -658,7 +658,7 @@ func appendIndexDifferences(
 		if partitionAttachedIndexIsNotPlannable(entry) {
 			continue
 		}
-		if _, exists := generated[identity]; !exists {
+		if _, exists := desired[identity]; !exists {
 			appendIndexRemoval(diff, entry)
 		}
 	}
@@ -714,21 +714,21 @@ func isSQLiteInternalAutoindex(indexName, dialect string) bool {
 }
 
 func indexReplacementRequired(
-	generated generatedIndexEntry,
+	desired generatedIndexEntry,
 	database databaseIndexEntry,
 	dialect string,
 	semantics identifier.Semantics,
 	resolved config.IndexExpression,
 ) bool {
 	if platform.NormalizeDialect(dialect) == platform.SQLServer &&
-		generated.ref.Name != database.ref.Name {
+		desired.ref.Name != database.ref.Name {
 		return true
 	}
-	return indexDefinitionsChanged(generated.index, database.index, dialect, semantics, resolved)
+	return indexDefinitionsChanged(desired.index, database.index, dialect, semantics, resolved)
 }
 
 func indexDefinitionsChanged(
-	generated goschema.Index,
+	desired schemamodel.Index,
 	database catalog.Index,
 	dialect string,
 	semantics identifier.Semantics,
@@ -740,11 +740,11 @@ func indexDefinitionsChanged(
 	// 17.11, `unit >= 0` over a numeric column is stored as
 	// `(unit >= (0)::numeric)`, so a partial index nobody had touched was
 	// dropped and rebuilt on every run (stokaro/ptah#2047).
-	declaredPredicate := generated.Condition
+	declaredPredicate := desired.Condition
 	if resolved.Resolved {
 		declaredPredicate = resolved.Predicate
 	}
-	if !boolPtrEqual(generated.NullsDistinct, database.NullsDistinct) ||
+	if !boolPtrEqual(desired.NullsDistinct, database.NullsDistinct) ||
 		indexPredicateChanged(declaredPredicate, database.Condition, dialect) {
 		return true
 	}
@@ -755,12 +755,12 @@ func indexDefinitionsChanged(
 	// getting guessed semantics (issue #1272 scope).
 	switch platform.NormalizeDialect(dialect) {
 	case platform.SQLServer:
-		return generated.Unique != database.IsUnique ||
-			indexKeyPartsChanged(generated, database, semantics)
+		return desired.Unique != database.IsUnique ||
+			indexKeyPartsChanged(desired, database, semantics)
 	case platform.Postgres:
-		return postgresIndexDefinitionChanged(generated, database, semantics, resolved)
+		return postgresIndexDefinitionChanged(desired, database, semantics, resolved)
 	case platform.MySQL, platform.MariaDB:
-		return mysqlIndexDefinitionChanged(generated, database, semantics)
+		return mysqlIndexDefinitionChanged(desired, database, semantics)
 	default:
 		return false
 	}
@@ -795,12 +795,12 @@ func indexDefinitionsChanged(
 // a rebuild on every run forever, which is the oscillation this change exists
 // to remove. Those are reader gaps, recorded as such.
 func mysqlIndexDefinitionChanged(
-	generated goschema.Index,
+	desired schemamodel.Index,
 	database catalog.Index,
 	semantics identifier.Semantics,
 ) bool {
-	return generated.Unique != database.IsUnique ||
-		mysqlIndexKeyColumnsChanged(generated, database, semantics)
+	return desired.Unique != database.IsUnique ||
+		mysqlIndexKeyColumnsChanged(desired, database, semantics)
 }
 
 // mysqlIndexKeyColumnsChanged compares the key columns in order, and only the
@@ -818,14 +818,14 @@ func mysqlIndexDefinitionChanged(
 // same key, which is a different key by every part the reader could read. The
 // names that were read are compared; see [mysqlNamedKeyPartsContradict].
 func mysqlIndexKeyColumnsChanged(
-	generated goschema.Index,
+	desired schemamodel.Index,
 	database catalog.Index,
 	semantics identifier.Semantics,
 ) bool {
 	if database.KeyPartsIncomplete {
-		return mysqlNamedKeyPartsContradict(generated, database, semantics)
+		return mysqlNamedKeyPartsContradict(desired, database, semantics)
 	}
-	generatedParts := effectiveGeneratedIndexParts(generated)
+	generatedParts := effectiveGeneratedIndexParts(desired)
 	databaseParts := effectiveDatabaseIndexParts(database)
 	if len(generatedParts) != len(databaseParts) {
 		return true
@@ -863,11 +863,11 @@ func mysqlIndexKeyColumnsChanged(
 // a reader change with its own dialect sweep (MariaDB has no such column).
 // Recorded in docs/conformance.md.
 func mysqlNamedKeyPartsContradict(
-	generated goschema.Index,
+	desired schemamodel.Index,
 	database catalog.Index,
 	semantics identifier.Semantics,
 ) bool {
-	generatedParts := effectiveGeneratedIndexParts(generated)
+	generatedParts := effectiveGeneratedIndexParts(desired)
 	databaseParts := effectiveDatabaseIndexParts(database)
 	if len(databaseParts) > len(generatedParts) {
 		return true
@@ -917,16 +917,16 @@ func mysqlNamedKeyPartsContradict(
 // an index that is both added and removed, which is the transition the pinned
 // binary plans and the one the server accepts.
 func postgresIndexDefinitionChanged(
-	generated goschema.Index,
+	desired schemamodel.Index,
 	database catalog.Index,
 	semantics identifier.Semantics,
 	resolved config.IndexExpression,
 ) bool {
-	return generated.Unique != database.IsUnique ||
-		postgresAccessMethod(generated.Type) != postgresAccessMethod(database.Method) ||
-		postgresIndexKeysChanged(generated, database, semantics, resolved) ||
-		postgresIncludeColumnsChanged(generated.IncludeColumns, database.IncludeColumns, semantics) ||
-		postgresIndexStorageParamsChanged(generated.StorageParams, database.StorageParams)
+	return desired.Unique != database.IsUnique ||
+		postgresAccessMethod(desired.Type) != postgresAccessMethod(database.Method) ||
+		postgresIndexKeysChanged(desired, database, semantics, resolved) ||
+		postgresIncludeColumnsChanged(desired.IncludeColumns, database.IncludeColumns, semantics) ||
+		postgresIndexStorageParamsChanged(desired.StorageParams, database.StorageParams)
 }
 
 // postgresIndexStorageParamsChanged compares the WITH (...) storage parameters.
@@ -943,11 +943,11 @@ func postgresIndexDefinitionChanged(
 // and every writing surface in the chain spells integers the same way, so there
 // is no unit or default resolution to do here -- an absent parameter means the
 // server's own default, and both sides say so by omitting it.
-func postgresIndexStorageParamsChanged(generated, database map[string]string) bool {
-	if len(generated) != len(database) {
+func postgresIndexStorageParamsChanged(desired, database map[string]string) bool {
+	if len(desired) != len(database) {
 		return true
 	}
-	for name, value := range generated {
+	for name, value := range desired {
 		databaseValue, ok := database[name]
 		if !ok {
 			return true
@@ -978,7 +978,7 @@ func postgresAccessMethod(method string) string {
 }
 
 func postgresIndexKeysChanged(
-	generated goschema.Index,
+	desired schemamodel.Index,
 	database catalog.Index,
 	semantics identifier.Semantics,
 	resolved config.IndexExpression,
@@ -991,14 +991,14 @@ func postgresIndexKeysChanged(
 	// index nobody had touched was dropped and rebuilt on every run, and no
 	// rule over the declaration's text could tell the two cases apart
 	// (stokaro/ptah#2047).
-	generated = generatedIndexWithResolvedExpression(generated, resolved)
-	generatedParts := effectiveGeneratedIndexParts(generated)
+	desired = generatedIndexWithResolvedExpression(desired, resolved)
+	generatedParts := effectiveGeneratedIndexParts(desired)
 	databaseParts := effectiveDatabaseIndexParts(database)
 	if len(generatedParts) != len(databaseParts) {
 		return true
 	}
 	for position, generatedPart := range generatedParts {
-		generatedKey := postgresGeneratedIndexKey(generatedPart, generated.Operator, semantics)
+		generatedKey := postgresGeneratedIndexKey(generatedPart, desired.Operator, semantics)
 		if generatedKey != postgresDatabaseIndexKey(databaseParts[position], semantics) {
 			return true
 		}
@@ -1013,15 +1013,15 @@ func postgresIndexKeysChanged(
 // the server refused leaves the textual comparison in charge -- which is every
 // offline path.
 func generatedIndexWithResolvedExpression(
-	generated goschema.Index,
+	desired schemamodel.Index,
 	resolved config.IndexExpression,
-) goschema.Index {
+) schemamodel.Index {
 	if !resolved.Resolved || strings.TrimSpace(resolved.Expression) == "" {
-		return generated
+		return desired
 	}
-	parts := make([]goschema.IndexPart, 0, len(generated.Parts))
+	parts := make([]schemamodel.IndexPart, 0, len(desired.Parts))
 	replaced := false
-	for _, part := range generated.Parts {
+	for _, part := range desired.Parts {
 		if !replaced && strings.TrimSpace(part.Expr) != "" {
 			part.Expr = resolved.Expression
 			replaced = true
@@ -1029,10 +1029,10 @@ func generatedIndexWithResolvedExpression(
 		parts = append(parts, part)
 	}
 	if !replaced {
-		return generated
+		return desired
 	}
-	generated.Parts = parts
-	return generated
+	desired.Parts = parts
+	return desired
 }
 
 // postgresIndexKey is one index key reduced to the form the two sides can be
@@ -1080,7 +1080,7 @@ func (k postgresIndexKey) resolvedNullsOrder(order string) string {
 // every key at once. The renderer applies it to each key that has none, so the
 // comparison resolves it the same way.
 func postgresGeneratedIndexKey(
-	part goschema.IndexPart,
+	part schemamodel.IndexPart,
 	indexOperator string,
 	semantics identifier.Semantics,
 ) postgresIndexKey {
@@ -1160,13 +1160,13 @@ func postgresOperatorClass(partOperator, indexOperator string) string {
 // an index on (a) INCLUDE (b) is not an index on (a, b), and treating the
 // payload as a trailing key would make the two compare equal.
 func postgresIncludeColumnsChanged(
-	generated, database []string,
+	desired, database []string,
 	semantics identifier.Semantics,
 ) bool {
-	if len(generated) != len(database) {
+	if len(desired) != len(database) {
 		return true
 	}
-	for position, column := range generated {
+	for position, column := range desired {
 		if semantics.ColumnIdentityKey(column) !=
 			semantics.ColumnIdentityKey(database[position]) {
 			return true
@@ -1176,11 +1176,11 @@ func postgresIncludeColumnsChanged(
 }
 
 func indexKeyPartsChanged(
-	generated goschema.Index,
+	desired schemamodel.Index,
 	database catalog.Index,
 	semantics identifier.Semantics,
 ) bool {
-	generatedParts := effectiveGeneratedIndexParts(generated)
+	generatedParts := effectiveGeneratedIndexParts(desired)
 	databaseParts := effectiveDatabaseIndexParts(database)
 	if len(generatedParts) != len(databaseParts) {
 		return true
@@ -1196,13 +1196,13 @@ func indexKeyPartsChanged(
 	return false
 }
 
-func effectiveGeneratedIndexParts(index goschema.Index) []goschema.IndexPart {
+func effectiveGeneratedIndexParts(index schemamodel.Index) []schemamodel.IndexPart {
 	if len(index.Parts) > 0 {
 		return index.Parts
 	}
-	parts := make([]goschema.IndexPart, len(index.Fields))
+	parts := make([]schemamodel.IndexPart, len(index.Fields))
 	for position, field := range index.Fields {
-		parts[position] = goschema.IndexPart{Name: field}
+		parts[position] = schemamodel.IndexPart{Name: field}
 	}
 	return parts
 }
@@ -1218,14 +1218,14 @@ func effectiveDatabaseIndexParts(index catalog.Index) []catalog.IndexPart {
 	return parts
 }
 
-func indexPredicateChanged(generated, database, dialect string) bool {
-	if strings.TrimSpace(generated) == "" || strings.TrimSpace(database) == "" {
-		return strings.TrimSpace(generated) != strings.TrimSpace(database)
+func indexPredicateChanged(desired, database, dialect string) bool {
+	if strings.TrimSpace(desired) == "" || strings.TrimSpace(database) == "" {
+		return strings.TrimSpace(desired) != strings.TrimSpace(database)
 	}
-	if checkExpressionHasUnsupportedRewrite(generated, database) {
+	if checkExpressionHasUnsupportedRewrite(desired, database) {
 		return false
 	}
-	return normalizePredicate(generated, dialect) != normalizePredicate(database, dialect)
+	return normalizePredicate(desired, dialect) != normalizePredicate(database, dialect)
 }
 
 // normalizePredicate reduces an index predicate to a spelling-insensitive

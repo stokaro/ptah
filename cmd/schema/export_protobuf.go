@@ -11,7 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/fsdurable"
 	"go.5x5.cz/ptah/internal/pathguard"
 	"go.5x5.cz/ptah/internal/protobufrender"
@@ -196,7 +196,7 @@ func parseCommentPolicy(value string) (protobufrender.CommentPolicy, error) {
 // runProtobufExport renders the schema and replaces the output atomically. A
 // failed render must never destroy the compatibility baseline, so nothing is
 // written until the rendered bytes have been re-parsed successfully.
-func runProtobufExport(cmd *cobra.Command, opts exportOptions, db *goschema.Database) error {
+func runProtobufExport(cmd *cobra.Command, opts exportOptions, db *schemamodel.Database) error {
 	outPath, err := pathguard.ResolveCLIPath(strings.TrimSpace(opts.outPath))
 	if err != nil {
 		return fmt.Errorf("invalid output path: %w", err)

@@ -28,7 +28,7 @@ import (
 	"sort"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // Metric is one counted object kind.
@@ -52,9 +52,9 @@ type Stats struct {
 // A nil database yields zero for every kind rather than an error: "no schema"
 // and "an empty schema" are the same shape to a metrics pipeline, and a scrape
 // that fails is worse than one reporting zeroes it can chart.
-func Collect(db *goschema.Database) Stats {
+func Collect(db *schemamodel.Database) Stats {
 	if db == nil {
-		db = &goschema.Database{}
+		db = &schemamodel.Database{}
 	}
 	metrics := []Metric{
 		{Name: "schemas", Help: "Schemas declared or read", Value: len(db.Schemas)},

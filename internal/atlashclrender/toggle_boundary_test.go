@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 	"go.5x5.cz/ptah/internal/pgindexstorage"
 )
@@ -21,9 +21,9 @@ func TestRender_AMalformedToggleFailsEvenWithNothingToCarry(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv(pgindexstorage.EnvVar, "yes")
 
-	_, err := atlashclrender.Render(&goschema.Database{
-		Tables: []goschema.Table{{StructName: "T", Name: "t"}},
-		Fields: []goschema.Field{{StructName: "T", Name: "id", Type: "INTEGER", Primary: true}},
+	_, err := atlashclrender.Render(&schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "T", Name: "t"}},
+		Fields: []schemamodel.Field{{StructName: "T", Name: "id", Type: "INTEGER", Primary: true}},
 	})
 
 	c.Assert(err, qt.ErrorMatches, `.*PTAH_POSTGRES_INDEX_STORAGE_PARAMS.*`)
@@ -43,9 +43,9 @@ func TestRender_AValidToggleStillRenders(t *testing.T) {
 			c := qt.New(t)
 			t.Setenv(pgindexstorage.EnvVar, test.value)
 
-			result, err := atlashclrender.Render(&goschema.Database{
-				Tables: []goschema.Table{{StructName: "T", Name: "t"}},
-				Fields: []goschema.Field{{StructName: "T", Name: "id", Type: "INTEGER", Primary: true}},
+			result, err := atlashclrender.Render(&schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "T", Name: "t"}},
+				Fields: []schemamodel.Field{{StructName: "T", Name: "id", Type: "INTEGER", Primary: true}},
 			})
 
 			c.Assert(err, qt.IsNil)

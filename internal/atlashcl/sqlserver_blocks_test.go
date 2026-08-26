@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashcl"
 )
 
@@ -48,11 +48,11 @@ extended_property "MS_Description" {
 `), "schema.hcl")
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.Synonyms, qt.DeepEquals, []goschema.Synonym{{
+	c.Assert(db.Synonyms, qt.DeepEquals, []schemamodel.Synonym{{
 		Name: "s_users", Schema: "dbo", Target: "other.dbo.users",
 		Comment: "the remote users",
 	}})
-	c.Assert(db.ExtendedProperties, qt.DeepEquals, []goschema.ExtendedProperty{
+	c.Assert(db.ExtendedProperties, qt.DeepEquals, []schemamodel.ExtendedProperty{
 		{Name: "ptah_flag", Value: "database scope"},
 		{Name: "schema_note", Schema: "dbo", Value: "schema scope"},
 		{
@@ -75,7 +75,7 @@ synonym "reporting" "s_users" {
 `), "schema.hcl")
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.Synonyms, qt.DeepEquals, []goschema.Synonym{{
+	c.Assert(db.Synonyms, qt.DeepEquals, []schemamodel.Synonym{{
 		Name: "s_users", Schema: "reporting", Target: "other.dbo.users",
 	}})
 }

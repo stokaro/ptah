@@ -6,9 +6,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemachange"
 	"go.5x5.cz/ptah/internal/schemastate"
 )
@@ -79,13 +79,13 @@ func cockroachProfile() schemastate.Profile {
 
 // parentChildDescription is the desired schema every row starts from: a parent
 // with a key, and a child whose column references it.
-func parentChildDescription(onDelete string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func parentChildDescription(onDelete string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Parent", Name: "parent"},
 			{StructName: "Child", Name: "child"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Parent", Name: "id", Type: "int", Primary: true},
 			{StructName: "Child", Name: "id", Type: "int", Primary: true},
 			{
@@ -172,7 +172,7 @@ func emptyCatalogInSchema(schema string) *catalog.Database {
 // under test in most rows: adapters, normalization, comparison, graph, plan.
 func pipeline(
 	c *qt.C,
-	description *goschema.Database,
+	description *schemamodel.Database,
 	currentCatalog *catalog.Database,
 	profile schemastate.Profile,
 ) []schemachange.PlannedOperation {
@@ -188,7 +188,7 @@ func pipeline(
 // assert on changes rather than on statements.
 func orderedChanges(
 	c *qt.C,
-	description *goschema.Database,
+	description *schemamodel.Database,
 	currentCatalog *catalog.Database,
 	profile schemastate.Profile,
 ) ([]schemachange.Change, error) {
@@ -210,7 +210,7 @@ func orderedChanges(
 
 // states builds and normalizes both sides.
 func states(
-	description *goschema.Database,
+	description *schemamodel.Database,
 	currentCatalog *catalog.Database,
 	profile schemastate.Profile,
 ) (desired, current *schemastate.State, err error) {

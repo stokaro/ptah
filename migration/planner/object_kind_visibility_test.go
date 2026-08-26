@@ -8,8 +8,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // everyPlannedDialect is every canonical dialect the planner registry routes,
@@ -139,9 +139,9 @@ func TestObjectKinds_NoDialectDropsAnObjectWithoutNamingIt(t *testing.T) {
 // The role is kept alongside the grant and the two row-level-security kinds
 // because those three name it: a grant to a role the schema never declares is a
 // different fixture, not a smaller one.
-func singleObjectFixture(gate objectKindGate) goschema.Database {
+func singleObjectFixture(gate objectKindGate) schemamodel.Database {
 	full := objectKindFixture()
-	kept := goschema.Database{
+	kept := schemamodel.Database{
 		Tables: full.Tables,
 		// ONE column, where the shared fixture declares two.
 		//

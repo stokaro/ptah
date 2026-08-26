@@ -14,8 +14,8 @@ import (
 	moderncsqlite "modernc.org/sqlite"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/dbschema/sqlite"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -326,12 +326,12 @@ func TestRoundTripGeneratedSchemaThroughSQLite(t *testing.T) {
 	c := qt.New(t)
 	db := openMemoryDB(t)
 
-	generated := sqliteRoundTripSchema()
+	desired := sqliteRoundTripSchema()
 	initial, err := sqlite.NewSQLiteReader(db, "main").ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 
-	diff := schemadiff.CompareWithDialect(generated, initial, platform.SQLite)
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, generated, platform.SQLite)
+	diff := schemadiff.CompareWithDialect(desired, initial, platform.SQLite)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, platform.SQLite)
 	c.Assert(err, qt.IsNil)
 	c.Assert(len(statements) > 0, qt.IsTrue)
 
@@ -345,7 +345,7 @@ func TestRoundTripGeneratedSchemaThroughSQLite(t *testing.T) {
 
 	actual, err := sqlite.NewSQLiteReader(db, "main").ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
-	secondDiff := schemadiff.CompareWithDialect(generated, actual, platform.SQLite)
+	secondDiff := schemadiff.CompareWithDialect(desired, actual, platform.SQLite)
 	c.Assert(secondDiff.HasChanges(), qt.IsFalse, qt.Commentf("unexpected SQLite drift: %+v", secondDiff))
 }
 
@@ -453,13 +453,13 @@ func TestSQLiteWriterConcurrentTransactions(t *testing.T) {
 	}
 }
 
-func sqliteRoundTripSchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func sqliteRoundTripSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: "accounts", StructName: "Account", Strict: true},
 			{Name: "users", StructName: "User", Strict: true},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{Name: "id", Type: "INTEGER", StructName: "Account", Primary: true, AutoInc: true},
 			{Name: "name", Type: "TEXT", StructName: "Account", Nullable: false, Unique: true},
 			{Name: "id", Type: "INTEGER", StructName: "User", Primary: true},
@@ -469,15 +469,15 @@ func sqliteRoundTripSchema() *goschema.Database {
 			{Name: "email_norm", Type: "TEXT", StructName: "User", Nullable: true, GeneratedExpression: "lower(email)"},
 			{Name: "email_len", Type: "INTEGER", StructName: "User", Nullable: true, GeneratedExpression: "length(email)", GeneratedKind: "STORED"},
 		},
-		Enums: []goschema.Enum{{Name: "enum_user_status", Values: []string{"active", "disabled"}}},
-		Indexes: []goschema.Index{{
+		Enums: []schemamodel.Enum{{Name: "enum_user_status", Values: []string{"active", "disabled"}}},
+		Indexes: []schemamodel.Index{{
 			Name:       "idx_users_email_active",
 			StructName: "User",
 			Fields:     []string{"email"},
 			Unique:     true,
 			Condition:  "status = 'active'",
 		}},
-		Views: []goschema.View{{
+		Views: []schemamodel.View{{
 			Name: "active_users",
 			Body: "SELECT id, email FROM users WHERE status = 'active'",
 		}},

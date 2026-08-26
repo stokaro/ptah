@@ -7,9 +7,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -26,18 +26,18 @@ func TestPlanner_IndexRefs_QualifiesDropsAndReplacesOnlyExactRef(t *testing.T) {
 			{Name: "idx_shared", TableName: "archive.records"},
 		},
 	}
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: "records", Schema: "app", StructName: "AppRecord"},
 			{Name: "records", Schema: "logs", StructName: "LogRecord"},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{Name: "idx_shared", StructName: "LogRecord", Fields: []string{"recorded_at"}},
 			{Name: "idx_shared", StructName: "AppRecord", Fields: []string{"external_id"}},
 		},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff, generated)
+	nodes, err := postgres.New().GenerateMigrationAST(diff, desired)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(nodes, qt.HasLen, 4)
@@ -71,16 +71,16 @@ func TestPlanner_IndexRefs_DropsSameSchemaNameBeforeMovingIndex(t *testing.T) {
 			{Name: "idx_shared", TableName: "app.users"},
 		},
 	}
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: "orders", Schema: "app", StructName: "Order"},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{Name: "idx_shared", StructName: "Order", Fields: []string{"reference"}},
 		},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff, generated)
+	nodes, err := postgres.New().GenerateMigrationAST(diff, desired)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(nodes, qt.HasLen, 2)
@@ -101,14 +101,14 @@ func TestPlanner_IndexRefs_CockroachDBPreservesReplacementTable(t *testing.T) {
 	diff.SetIndexRemovals([]difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "public.users"},
 	})
-	generated := &goschema.Database{
-		Indexes: []goschema.Index{
+	desired := &schemamodel.Database{
+		Indexes: []schemamodel.Index{
 			{Name: "idx_shared", TableName: "public.users", Fields: []string{"handle"}},
 		},
 	}
 
 	nodes, err := postgres.NewForDialect(platform.CockroachDB, capability.CockroachDB23()).
-		GenerateMigrationAST(diff, generated)
+		GenerateMigrationAST(diff, desired)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(nodes, qt.HasLen, 2)
@@ -130,14 +130,14 @@ func TestPlanner_IndexRefs_SpannerDropsSameSchemaNameBeforeMovingIndex(t *testin
 	diff.SetIndexRemovals([]difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "app.users"},
 	})
-	generated := &goschema.Database{
-		Indexes: []goschema.Index{
+	desired := &schemamodel.Database{
+		Indexes: []schemamodel.Index{
 			{Name: "idx_shared", TableName: "app.orders", Fields: []string{"reference"}},
 		},
 	}
 
 	nodes, err := postgres.NewForDialect(platform.Spanner, capability.SpannerPostgres()).
-		GenerateMigrationAST(diff, generated)
+		GenerateMigrationAST(diff, desired)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(nodes, qt.HasLen, 2)
@@ -158,14 +158,14 @@ func TestPlanner_IndexRefs_SpannerKeepsDifferentSchemaIndexesIndependent(t *test
 	diff.SetIndexRemovals([]difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "logs.users"},
 	})
-	generated := &goschema.Database{
-		Indexes: []goschema.Index{
+	desired := &schemamodel.Database{
+		Indexes: []schemamodel.Index{
 			{Name: "idx_shared", TableName: "app.orders", Fields: []string{"reference"}},
 		},
 	}
 
 	nodes, err := postgres.NewForDialect(platform.Spanner, capability.SpannerPostgres()).
-		GenerateMigrationAST(diff, generated)
+		GenerateMigrationAST(diff, desired)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(nodes, qt.HasLen, 2)
@@ -194,12 +194,12 @@ func TestPlanner_IndexRefs_UsesCanonicalOwnerAcrossPostgresFamily(t *testing.T) 
 			{Name: "idx_users_email", TableName: "app.users"},
 		},
 	}
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Shared", Schema: "app", Name: "users"},
 			{StructName: "Shared", Schema: "archive", Name: "records"},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{
 				Name:       "idx_users_email",
 				StructName: "Shared",
@@ -213,7 +213,7 @@ func TestPlanner_IndexRefs_UsesCanonicalOwnerAcrossPostgresFamily(t *testing.T) 
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			nodes, err := postgres.NewForDialect(test.dialect, test.caps).
-				GenerateMigrationAST(diff, generated)
+				GenerateMigrationAST(diff, desired)
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.HasLen, 1)
 
@@ -224,15 +224,15 @@ func TestPlanner_IndexRefs_UsesCanonicalOwnerAcrossPostgresFamily(t *testing.T) 
 		})
 	}
 
-	c.Assert(generated.Indexes[0].TableName, qt.Equals, "app.users")
+	c.Assert(desired.Indexes[0].TableName, qt.Equals, "app.users")
 }
 
 func BenchmarkPlanner_LargeIndexReplacementPlan(b *testing.B) {
 	c := qt.New(b)
 	const indexCount = 10_000
 
-	tables := make([]goschema.Table, 0, indexCount)
-	indexes := make([]goschema.Index, 0, indexCount)
+	tables := make([]schemamodel.Table, 0, indexCount)
+	indexes := make([]schemamodel.Index, 0, indexCount)
 	additions := make([]difftypes.IndexRef, 0, indexCount)
 	removals := make([]difftypes.IndexRef, 0, indexCount)
 	for index := range indexCount {
@@ -240,12 +240,12 @@ func BenchmarkPlanner_LargeIndexReplacementPlan(b *testing.B) {
 		structName := "Record" + suffix
 		tableName := "records_" + suffix
 		indexName := "idx_records_value_" + suffix
-		tables = append(tables, goschema.Table{
+		tables = append(tables, schemamodel.Table{
 			StructName: structName,
 			Schema:     "app",
 			Name:       tableName,
 		})
-		indexes = append(indexes, goschema.Index{
+		indexes = append(indexes, schemamodel.Index{
 			StructName: structName,
 			Name:       indexName,
 			Fields:     []string{"value"},
@@ -259,7 +259,7 @@ func BenchmarkPlanner_LargeIndexReplacementPlan(b *testing.B) {
 			TableName: "app.legacy_" + suffix,
 		})
 	}
-	generated := &goschema.Database{Tables: tables, Indexes: indexes}
+	desired := &schemamodel.Database{Tables: tables, Indexes: indexes}
 	diff := &difftypes.SchemaDiff{IndexesAdded: additions, IndexesRemoved: removals}
 	planner := postgres.New()
 
@@ -268,7 +268,7 @@ func BenchmarkPlanner_LargeIndexReplacementPlan(b *testing.B) {
 	var nodes []ast.Node
 	var err error
 	for range b.N {
-		nodes, err = planner.GenerateMigrationAST(diff, generated)
+		nodes, err = planner.GenerateMigrationAST(diff, desired)
 	}
 	b.StopTimer()
 	c.Assert(err, qt.IsNil)

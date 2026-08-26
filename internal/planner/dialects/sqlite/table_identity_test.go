@@ -6,17 +6,17 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // identityRebuildSchema declares one `notes` table whose schema is spelled as
 // given, carrying the column the rebuild must not copy out of the old table.
-func identityRebuildSchema(tableSchema string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Note", Name: "notes", Schema: tableSchema}},
-		Fields: []goschema.Field{
+func identityRebuildSchema(tableSchema string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Note", Name: "notes", Schema: tableSchema}},
+		Fields: []schemamodel.Field{
 			{StructName: "Note", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Note", Name: "body", Type: "TEXT"},
 			{StructName: "Note", Name: "author", Type: "TEXT", Nullable: true},

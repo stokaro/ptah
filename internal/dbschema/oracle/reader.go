@@ -165,13 +165,13 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 // nothing is lost by removing the row afterwards. A constraint the user named
 // arrives with generated = 'USER NAME' and is kept, because that one does have a
 // counterpart (stokaro/ptah#1890).
-func withoutGeneratedKeys(constraints []catalog.Constraint, generated map[string]bool) []catalog.Constraint {
-	if len(generated) == 0 {
+func withoutGeneratedKeys(constraints []catalog.Constraint, desired map[string]bool) []catalog.Constraint {
+	if len(desired) == 0 {
 		return constraints
 	}
 	kept := make([]catalog.Constraint, 0, len(constraints))
 	for _, constraint := range constraints {
-		if generated[constraint.Name] {
+		if desired[constraint.Name] {
 			continue
 		}
 		kept = append(kept, constraint)
@@ -374,7 +374,7 @@ func (r *Reader) readConstraints(ctx context.Context) ([]catalog.Constraint, map
 		var (
 			name       string
 			kind       string
-			generated  string
+			desired    string
 			table      string
 			condition  string
 			refName    string
@@ -384,11 +384,11 @@ func (r *Reader) readConstraints(ctx context.Context) ([]catalog.Constraint, map
 			columnName sql.NullString
 			position   sql.NullInt64
 		)
-		if err := rows.Scan(&name, &kind, &generated, &table, &condition, &refName,
+		if err := rows.Scan(&name, &kind, &desired, &table, &condition, &refName,
 			&deleteRule, &deferrable, &deferred, &columnName, &position); err != nil {
 			return nil, nil, err
 		}
-		if generated == "GENERATED NAME" && (kind == "P" || kind == "U") {
+		if desired == "GENERATED NAME" && (kind == "P" || kind == "U") {
 			generatedKeys[name] = true
 		}
 

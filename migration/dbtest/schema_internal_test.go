@@ -10,8 +10,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -83,7 +83,7 @@ func TestPreserveUnmanagedObjects_NormalizesReplacementForPlanner(t *testing.T) 
 	}
 
 	preserveUnmanagedObjects(diff, "postgres")
-	sql, err := planner.GenerateSchemaDiffSQL(diff, &goschema.Database{}, "postgres")
+	sql, err := planner.GenerateSchemaDiffSQL(diff, &schemamodel.Database{}, "postgres")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Matches, `(?s).*DROP CONSTRAINT IF EXISTS "check_users_name".*ADD CONSTRAINT "check_users_name".*`)

@@ -9,8 +9,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/go-sql-driver/mysql"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	mysqlreader "go.5x5.cz/ptah/internal/dbschema/mysql"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -43,13 +43,13 @@ func TestConstraintsActionsConformanceFixture_RoundTrip_MySQL(t *testing.T) {
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 }
 
-func constraintsActionsConformanceSchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func constraintsActionsConformanceSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Organization", Name: "organizations"},
 			{StructName: "Project", Name: "projects"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Organization", Name: "id", Type: "SERIAL", Primary: true},
 			{
 				StructName: "Organization",
@@ -93,7 +93,7 @@ func constraintsActionsConformanceSchema() *goschema.Database {
 				CheckName:   "projects_budget_nonnegative",
 			},
 		},
-		Constraints: []goschema.Constraint{
+		Constraints: []schemamodel.Constraint{
 			{
 				StructName: "Project",
 				Name:       "projects_org_slug_unique",

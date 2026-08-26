@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -101,10 +101,10 @@ func TestCompareWithDialect_AColumnCommentDifferenceIsAChange(t *testing.T) {
 		&difftypes.CommentChange{Current: "login address", Desired: "primary contact"})
 }
 
-func commentedDeclaration(table, column string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{Name: "users", StructName: "User", Comment: table}},
-		Fields: []goschema.Field{
+func commentedDeclaration(table, column string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "users", StructName: "User", Comment: table}},
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "integer", Primary: true},
 			{StructName: "User", Name: "email", Type: "varchar(255)", Comment: column},
 		},

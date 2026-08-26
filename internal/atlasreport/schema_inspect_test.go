@@ -10,7 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlasreport"
 )
 
@@ -397,7 +397,7 @@ func TestRenderSchemaInspect_JSONColumnTypeMatchesThePinnedBinary(t *testing.T) 
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			report := atlasreport.NewSchemaInspectReport(
-				&goschema.Database{},
+				&schemamodel.Database{},
 				&catalog.Database{
 					Tables: []catalog.Table{{
 						Name:    "t",
@@ -424,11 +424,11 @@ func TestRenderSchemaInspect_JSONColumnTypeMatchesThePinnedBinary(t *testing.T) 
 
 func sampleSchemaInspectReport() *atlasreport.SchemaInspectReport {
 	return atlasreport.NewSchemaInspectReport(
-		&goschema.Database{
-			Tables: []goschema.Table{
+		&schemamodel.Database{
+			Tables: []schemamodel.Table{
 				{StructName: "User", Name: "users", Comment: "keeps { braces } in strings"},
 			},
-			Fields: []goschema.Field{
+			Fields: []schemamodel.Field{
 				{StructName: "User", Name: "id", Type: "INTEGER", Primary: true},
 				{StructName: "User", Name: "email", Type: "TEXT"},
 			},

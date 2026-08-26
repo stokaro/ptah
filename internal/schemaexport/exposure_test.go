@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemaexport"
 )
 
@@ -13,10 +13,10 @@ import (
 // ordinary column, a credential that may be sent and never returned, an
 // internal column that belongs in no contract, and one column that declares
 // nothing at all.
-func exposureDB() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "User", Name: "users"}},
-		Fields: []goschema.Field{
+func exposureDB() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "INTEGER", Primary: true, APIExpose: "read"},
 			{StructName: "User", Name: "email", Type: "TEXT", APIExpose: "read-write"},
 			{StructName: "User", Name: "password_hash", Type: "TEXT", APIExpose: "write"},
@@ -26,7 +26,7 @@ func exposureDB() *goschema.Database {
 	}
 }
 
-func fieldNames(fields []goschema.Field) []string {
+func fieldNames(fields []schemamodel.Field) []string {
 	names := make([]string, 0, len(fields))
 	for _, field := range fields {
 		names = append(names, field.Name)

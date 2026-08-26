@@ -14,10 +14,10 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/cmd/internal/serverversion"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemaload"
 	"go.5x5.cz/ptah/internal/servertarget"
 )
@@ -176,8 +176,8 @@ func generateCommand(cmd *cobra.Command, opts *options) error {
 // function that was never going to appear. The report goes to stderr rather
 // than into the statement list because stdout is DDL somebody pipes into a
 // database, and a note about a declaration is not a statement.
-func reportDialectScopeOmissions(stderr io.Writer, db *goschema.Database, dialect string) {
-	for _, omitted := range goschema.OmissionsForDialect(db, dialect) {
+func reportDialectScopeOmissions(stderr io.Writer, db *schemamodel.Database, dialect string) {
+	for _, omitted := range schemamodel.OmissionsForDialect(db, dialect) {
 		fmt.Fprintf(stderr, "note: %s: %s %s is declared for %s and is not part of this target's schema\n",
 			dialect, omitted.Kind, omitted.Name, strings.Join(omitted.Dialects, ", "))
 	}

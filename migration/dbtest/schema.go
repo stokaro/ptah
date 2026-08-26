@@ -8,6 +8,7 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/migration/planner"
@@ -29,7 +30,7 @@ type SchemaOptions struct {
 	RootDir string
 	// Desired is an already-resolved desired schema. When non-nil RootDir is
 	// used only to name the source in errors.
-	Desired *goschema.Database
+	Desired *schemamodel.Database
 	// SeedDir is the default directory of seed files for seed steps that omit
 	// their own [SeedStep.Dir].
 	SeedDir string
@@ -52,7 +53,7 @@ type SchemaOptions struct {
 	// that knows about schema files (stokaro/ptah#1211). A case using the step
 	// with no callback set fails, rather than silently skipping the state it
 	// was meant to establish.
-	ResolveSchema func(url string) (*goschema.Database, error)
+	ResolveSchema func(url string) (*schemamodel.Database, error)
 	// ApplyPlan executes the saved plan file at url against the connected
 	// database. It backs the `apply` block of a plan case, and is supplied by
 	// the caller for the same reason.
@@ -129,7 +130,7 @@ func RunSchemaTest(ctx context.Context, opts SchemaOptions) (*Report, error) {
 	return runCases(ctx, opts.DBURL, kind, opts.Cases, provision, run)
 }
 
-func desiredSchemaForMigrationCases(rootDir string, cases []Case) (*goschema.Database, error) {
+func desiredSchemaForMigrationCases(rootDir string, cases []Case) (*schemamodel.Database, error) {
 	if !casesUseStepKind(cases, stepKindApplySchema) {
 		return nil, nil
 	}
@@ -165,7 +166,7 @@ func casesUseStepKind(cases []Case, want stepKind) bool {
 func applyDesiredSchema(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
-	schema *goschema.Database,
+	schema *schemamodel.Database,
 ) (bool, error) {
 	current, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, nil)
 	if err != nil {
@@ -336,7 +337,7 @@ func constraintRemovalNames(removals []difftypes.ConstraintRemovalInfo) []string
 	return names
 }
 
-func validateTestSchema(schema *goschema.Database) error {
+func validateTestSchema(schema *schemamodel.Database) error {
 	if len(schema.Roles) > 0 || len(schema.Grants) > 0 {
 		return fmt.Errorf(
 			"database tests do not support roles or grants because they can mutate cluster-scoped security state",

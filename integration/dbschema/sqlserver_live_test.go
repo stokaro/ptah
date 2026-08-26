@@ -13,8 +13,8 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -244,13 +244,13 @@ func TestSQLServerLiveComputedColumnZeroDiff(t *testing.T) {
 
 	liveSchema, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
-	generated := &goschema.Database{
-		Tables: []goschema.Table{{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{
 			Name:       "users",
 			Schema:     schemaName,
 			StructName: "User",
 		}},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "INT", Primary: true, Nullable: false},
 			{StructName: "User", Name: "email", Type: "NVARCHAR(320)", Nullable: false},
 			{StructName: "User", Name: "email_lc", Type: "NVARCHAR(320)", Nullable: true, GeneratedExpression: "lower(email)"},
@@ -260,7 +260,7 @@ func TestSQLServerLiveComputedColumnZeroDiff(t *testing.T) {
 		},
 	}
 
-	diff, err := schemadiff.CompareWithDatabase(ctx, conn, generated, liveSchema, nil)
+	diff, err := schemadiff.CompareWithDatabase(ctx, conn, desired, liveSchema, nil)
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.TablesModified, qt.HasLen, 0)
 }

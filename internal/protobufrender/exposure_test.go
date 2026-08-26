@@ -5,12 +5,12 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemaexport"
 )
 
 // exposed returns a column carrying an api_expose declaration.
-func exposed(name, columnType, expose string) goschema.Field {
+func exposed(name, columnType, expose string) schemamodel.Field {
 	field := column(name, columnType)
 	field.APIExpose = expose
 	return field

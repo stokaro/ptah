@@ -18,7 +18,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
 
@@ -114,7 +114,7 @@ func TestColumns_DomainColumnHappyPath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			genCol := goschema.Field{Name: "qty", Type: test.genType, Nullable: true}
+			genCol := schemamodel.Field{Name: "qty", Type: test.genType, Nullable: true}
 
 			result := compare.Columns(genCol, test.dbCol)
 
@@ -174,7 +174,7 @@ func TestColumns_DomainColumnFailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			genCol := goschema.Field{Name: "qty", Type: test.genType, Nullable: true}
+			genCol := schemamodel.Field{Name: "qty", Type: test.genType, Nullable: true}
 
 			result := compare.Columns(genCol, test.dbCol)
 
@@ -227,7 +227,7 @@ func TestColumns_NonDomainColumnKeepsCategoryComparison(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			genCol := goschema.Field{Name: "qty", Type: test.genType, Nullable: true}
+			genCol := schemamodel.Field{Name: "qty", Type: test.genType, Nullable: true}
 
 			result := compare.Columns(genCol, test.dbCol)
 

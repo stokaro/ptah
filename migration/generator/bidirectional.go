@@ -6,9 +6,9 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/concurrentindex"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
@@ -61,7 +61,7 @@ type SchemaDirectionPlan struct {
 type BidirectionalSchemaPlan struct {
 	Dialect       string
 	Capabilities  capability.Capabilities
-	DesiredSchema *goschema.Database
+	DesiredSchema *schemamodel.Database
 	CurrentSchema *catalog.Database
 	Policy        BidirectionalPlanPolicy
 	Forward       SchemaDirectionPlan
@@ -72,7 +72,7 @@ type BidirectionalSchemaPlan struct {
 // schema change and the rollback that restores its pre-change state.
 type BidirectionalSchemaPlanOptions struct {
 	Diff          *difftypes.SchemaDiff
-	DesiredSchema *goschema.Database
+	DesiredSchema *schemamodel.Database
 	CurrentSchema *catalog.Database
 	Dialect       string
 	Capabilities  capability.Capabilities
@@ -260,7 +260,7 @@ func planBidirectionalSchemaDiffWithRefs(
 
 func concurrentIndexCreateRefs(
 	diff *difftypes.SchemaDiff,
-	desired *goschema.Database,
+	desired *schemamodel.Database,
 	current *catalog.Database,
 	info catalog.ServerInfo,
 	mode ConcurrentIndexMode,

@@ -416,9 +416,9 @@ func TestConventionSpellsIdentifiersTheWayTheIssueDecided(t *testing.T) {
 func TestGeneratedBlockMatchesThePublishedPage(t *testing.T) {
 	c := qt.New(t)
 
-	generated := generatedBlock(c)
-	c.Assert(generated, qt.Not(qt.Equals), "")
-	c.Assert(publishedBlock(c), qt.Equals, generated,
+	desired := generatedBlock(c)
+	c.Assert(desired, qt.Not(qt.Equals), "")
+	c.Assert(publishedBlock(c), qt.Equals, desired,
 		qt.Commentf("run scripts/check-lint-rules.sh --write"))
 }
 

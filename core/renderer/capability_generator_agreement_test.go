@@ -6,10 +6,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // TestRender_ObjectKindCapabilitiesAgreeWithTheGenerator generalizes the gate
@@ -65,7 +65,7 @@ func TestRender_ObjectKindCapabilitiesAgreeWithTheGenerator(t *testing.T) {
 type capabilityProbeKind struct {
 	key      capability.Capability
 	keywords []string
-	schema   func() *goschema.Database
+	schema   func() *schemamodel.Database
 }
 
 func capabilityProbeKinds() []capabilityProbeKind {
@@ -73,22 +73,22 @@ func capabilityProbeKinds() []capabilityProbeKind {
 		{
 			key:      capability.Sequences,
 			keywords: []string{"CREATE SEQUENCE"},
-			schema:   func() *goschema.Database { return probeSchema(withSequence) },
+			schema:   func() *schemamodel.Database { return probeSchema(withSequence) },
 		},
 		{
 			key:      capability.RoleManagement,
 			keywords: []string{"CREATE ROLE"},
-			schema:   func() *goschema.Database { return probeSchema(withRole) },
+			schema:   func() *schemamodel.Database { return probeSchema(withRole) },
 		},
 		{
 			key:      capability.Views,
 			keywords: []string{"CREATE VIEW", "CREATE OR REPLACE VIEW", "CREATE OR ALTER VIEW"},
-			schema:   func() *goschema.Database { return probeSchema(withTable, withView) },
+			schema:   func() *schemamodel.Database { return probeSchema(withTable, withView) },
 		},
 		{
 			key:      capability.Triggers,
 			keywords: []string{"CREATE TRIGGER", "CREATE OR REPLACE TRIGGER"},
-			schema:   func() *goschema.Database { return probeSchema(withTable, withTrigger) },
+			schema:   func() *schemamodel.Database { return probeSchema(withTable, withTrigger) },
 		},
 		// T-SQL's create form is its replace form: CREATE OR ALTER is accepted
 		// on a name that does not exist yet, and CREATE FUNCTION IF NOT EXISTS
@@ -97,49 +97,49 @@ func capabilityProbeKinds() []capabilityProbeKind {
 		{
 			key:      capability.Functions,
 			keywords: []string{"CREATE FUNCTION", "CREATE OR REPLACE FUNCTION", "CREATE OR ALTER FUNCTION"},
-			schema:   func() *goschema.Database { return probeSchema(withFunction) },
+			schema:   func() *schemamodel.Database { return probeSchema(withFunction) },
 		},
 	}
 }
 
-func probeSchema(parts ...func(*goschema.Database)) *goschema.Database {
-	schema := &goschema.Database{}
+func probeSchema(parts ...func(*schemamodel.Database)) *schemamodel.Database {
+	schema := &schemamodel.Database{}
 	for _, part := range parts {
 		part(schema)
 	}
 	return schema
 }
 
-func withSequence(schema *goschema.Database) {
+func withSequence(schema *schemamodel.Database) {
 	start := int64(1000)
-	schema.Sequences = []goschema.Sequence{{Name: "seq_probe", AsType: "bigint", Start: &start}}
+	schema.Sequences = []schemamodel.Sequence{{Name: "seq_probe", AsType: "bigint", Start: &start}}
 }
 
 // withRole declares a role with no attributes, so the only thing under test is
 // whether the target creates one. ClickHouse refuses a role carrying
 // PostgreSQL attributes, which would answer a different question.
-func withRole(schema *goschema.Database) {
-	schema.Roles = []goschema.Role{{Name: "role_probe", Inherit: true}}
+func withRole(schema *schemamodel.Database) {
+	schema.Roles = []schemamodel.Role{{Name: "role_probe", Inherit: true}}
 }
 
-func withTable(schema *goschema.Database) {
-	schema.Tables = []goschema.Table{{StructName: "T", Name: "table_probe"}}
-	schema.Fields = []goschema.Field{{StructName: "T", Name: "id", Type: "BIGINT", Primary: true}}
+func withTable(schema *schemamodel.Database) {
+	schema.Tables = []schemamodel.Table{{StructName: "T", Name: "table_probe"}}
+	schema.Fields = []schemamodel.Field{{StructName: "T", Name: "id", Type: "BIGINT", Primary: true}}
 }
 
-func withView(schema *goschema.Database) {
-	schema.Views = []goschema.View{{StructName: "V", Name: "view_probe", Body: "SELECT id FROM table_probe"}}
+func withView(schema *schemamodel.Database) {
+	schema.Views = []schemamodel.View{{StructName: "V", Name: "view_probe", Body: "SELECT id FROM table_probe"}}
 }
 
-func withTrigger(schema *goschema.Database) {
-	schema.Triggers = []goschema.Trigger{{
+func withTrigger(schema *schemamodel.Database) {
+	schema.Triggers = []schemamodel.Trigger{{
 		StructName: "TR", Name: "trigger_probe", Table: "table_probe",
 		Timing: "AFTER", Event: "INSERT", ForEach: "ROW", Body: "SELECT 1",
 	}}
 }
 
-func withFunction(schema *goschema.Database) {
-	schema.Functions = []goschema.Function{{
+func withFunction(schema *schemamodel.Database) {
+	schema.Functions = []schemamodel.Function{{
 		Name: "func_probe", Returns: "integer", Language: "sql", Body: "SELECT 1;",
 	}}
 }

@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemafile"
 )
 
@@ -164,6 +164,6 @@ func TestLoadPathAdmitsADirectoryThatBuildsOnEarlierFiles(t *testing.T) {
 // sortedTableNames answers what the directory declared as a set, so a row states
 // its expectation without depending on the order the files happened to be read
 // in.
-func sortedTableNames(db *goschema.Database) []string {
+func sortedTableNames(db *schemamodel.Database) []string {
 	return slices.Sorted(slices.Values(tableNames(db)))
 }

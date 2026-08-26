@@ -1294,7 +1294,7 @@ func (r *Reader) readIndexes(ctx context.Context) ([]catalog.Index, error) {
 //
 // Both arms are unconditional on opcdefault, so a printed class is recorded
 // here as well as an unprinted one. A printed class is also matchable by name
-// through [goschema.Extension.Provides] wherever the renderer's reference scan
+// through [schemamodel.Extension.Provides] wherever the renderer's reference scan
 // reads the attribute it lands in, and that is the answer preferred when both
 // are available, because a name can be looked up in the document; see
 // [go.5x5.cz/ptah/internal/atlashclrender] omitRefusedExtension. This projection

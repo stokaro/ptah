@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
@@ -37,9 +37,9 @@ func TestCompareWithDialect_MaterializedViewBodyMatchesCatalogReadback(t *testin
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			generated, database := materializedViewReadbackFixtures(test.schema, test.schema)
+			desired, database := materializedViewReadbackFixtures(test.schema, test.schema)
 
-			diff := schemadiff.CompareWithDialect(generated, database, test.dialect)
+			diff := schemadiff.CompareWithDialect(desired, database, test.dialect)
 
 			c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 		})
@@ -65,9 +65,9 @@ func TestCompareWithDialect_MaterializedViewWrongSchemaRelationStillDiffs(t *tes
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			generated, database := materializedViewReadbackFixtures(test.schema, "archive")
+			desired, database := materializedViewReadbackFixtures(test.schema, "archive")
 
-			diff := schemadiff.CompareWithDialect(generated, database, test.dialect)
+			diff := schemadiff.CompareWithDialect(desired, database, test.dialect)
 
 			c.Assert(diff.MaterializedViewsModified, qt.HasLen, 1)
 			c.Assert(diff.MaterializedViewsModified[0].Changes["body"], qt.Not(qt.Equals), "")
@@ -98,9 +98,9 @@ func TestCompareWithDialect_MaterializedViewWrongSchemaRelationStillDiffs(t *tes
 func TestCompareWithDialect_MaterializedViewAliasedBodyMatchesCatalogReadback(t *testing.T) {
 	c := qt.New(t)
 
-	generated, database := aliasedMaterializedViewReadbackFixtures("mvqual", "mvqual")
+	desired, database := aliasedMaterializedViewReadbackFixtures("mvqual", "mvqual")
 
-	diff := schemadiff.CompareWithDialect(generated, database, "clickhouse")
+	diff := schemadiff.CompareWithDialect(desired, database, "clickhouse")
 
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 }
@@ -111,9 +111,9 @@ func TestCompareWithDialect_MaterializedViewAliasedBodyMatchesCatalogReadback(t 
 func TestCompareWithDialect_MaterializedViewAliasedRelationSchemaStillDiffs(t *testing.T) {
 	c := qt.New(t)
 
-	generated, database := aliasedMaterializedViewReadbackFixtures("mvqual", "archive")
+	desired, database := aliasedMaterializedViewReadbackFixtures("mvqual", "archive")
 
-	diff := schemadiff.CompareWithDialect(generated, database, "clickhouse")
+	diff := schemadiff.CompareWithDialect(desired, database, "clickhouse")
 
 	c.Assert(diff.MaterializedViewsModified, qt.HasLen, 1)
 	c.Assert(diff.MaterializedViewsModified[0].Changes["body"], qt.Not(qt.Equals), "")
@@ -125,14 +125,14 @@ func TestCompareWithDialect_MaterializedViewAliasedRelationSchemaStillDiffs(t *t
 func aliasedMaterializedViewReadbackFixtures(
 	schema,
 	readbackSchema string,
-) (*goschema.Database, *catalog.Database) {
-	generated := &goschema.Database{
-		MaterializedViews: []goschema.MaterializedView{{
+) (*schemamodel.Database, *catalog.Database) {
+	desired := &schemamodel.Database{
+		MaterializedViews: []schemamodel.MaterializedView{{
 			StructName: "UserIDs",
 			Name:       schema + ".user_ids",
 			Body:       "SELECT u.id AS id FROM users AS u",
 		}},
-		Views: []goschema.View{{
+		Views: []schemamodel.View{{
 			StructName: "UserIDsPlain",
 			Name:       schema + ".user_ids_plain",
 			Body:       "SELECT u.id AS id FROM users AS u",
@@ -152,7 +152,7 @@ func aliasedMaterializedViewReadbackFixtures(
 			Body:   "SELECT u.id AS id FROM " + schema + ".users AS u",
 		}},
 	}
-	return generated, database
+	return desired, database
 }
 
 // materializedViewReadbackFixtures builds a desired schema whose bodies name
@@ -161,14 +161,14 @@ func aliasedMaterializedViewReadbackFixtures(
 func materializedViewReadbackFixtures(
 	schema,
 	readbackSchema string,
-) (*goschema.Database, *catalog.Database) {
-	generated := &goschema.Database{
-		MaterializedViews: []goschema.MaterializedView{{
+) (*schemamodel.Database, *catalog.Database) {
+	desired := &schemamodel.Database{
+		MaterializedViews: []schemamodel.MaterializedView{{
 			StructName: "UserCounts",
 			Name:       schema + ".user_counts",
 			Body:       "SELECT count(*) AS c FROM users",
 		}},
-		Views: []goschema.View{{
+		Views: []schemamodel.View{{
 			StructName: "UserCountsPlain",
 			Name:       schema + ".user_counts_plain",
 			Body:       "SELECT count(*) AS c FROM users",
@@ -189,5 +189,5 @@ func materializedViewReadbackFixtures(
 			Body:   "SELECT count(*) AS c FROM " + schema + ".users",
 		}},
 	}
-	return generated, database
+	return desired, database
 }

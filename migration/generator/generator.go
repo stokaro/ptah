@@ -23,6 +23,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
@@ -69,7 +70,7 @@ type GenerateMigrationOptions struct {
 	// Generated is a pre-parsed desired schema (optional). When set, it is used
 	// directly and GoEntitiesDir/GoEntitiesFS are ignored, letting a caller supply
 	// a composite schema merged from several sources.
-	Generated *goschema.Database
+	Generated *schemamodel.Database
 	// DatabaseURL is the connection string for the database
 	DatabaseURL string
 	// ConnectTimeout bounds the attempt to open DatabaseURL, and nothing after
@@ -552,7 +553,7 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 	// 1. Determine the desired schema: use a pre-merged one when provided (for a
 	// composite desired-state assembled from several sources), otherwise parse the
 	// Go entities directory.
-	generated, err := resolveDesiredSchema(opts)
+	desired, err := resolveDesiredSchema(opts)
 	if err != nil {
 		return nil, err
 	}
@@ -599,7 +600,7 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 	diff, err := schemadiff.CompareWithDatabase(
 		ctx,
 		conn,
-		generated,
+		desired,
 		dbSchema,
 		compareOptionsWithDiffPolicy(opts.CompareOptions, opts.DiffPolicy),
 	)
@@ -632,7 +633,7 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 		return nil, err
 	}
 
-	specs, assessments, err := planGeneratedMigrationSpecs(diff, generated, dbSchema, info, version, opts.MigrationName, opts.DiffPolicy, qualifier)
+	specs, assessments, err := planGeneratedMigrationSpecs(diff, desired, dbSchema, info, version, opts.MigrationName, opts.DiffPolicy, qualifier)
 	if err != nil {
 		return nil, err
 	}
@@ -643,7 +644,7 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 		return nil, err
 	}
 
-	if err := verifyPlannedShadowMigration(ctx, opts, conn, info, diff, specs, generated); err != nil {
+	if err := verifyPlannedShadowMigration(ctx, opts, conn, info, diff, specs, desired); err != nil {
 		return nil, err
 	}
 
@@ -666,7 +667,7 @@ func verifyPlannedShadowMigration(
 	info catalog.ServerInfo,
 	diff *difftypes.SchemaDiff,
 	specs []generatedMigrationSpec,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 ) error {
 	if opts.ShadowDatabaseURL == "" {
 		return nil
@@ -682,7 +683,7 @@ func verifyPlannedShadowMigration(
 			diff.IdentifierSemantics,
 		),
 		Candidates:  shadowCandidatesFromSpecs(specs),
-		Generated:   generated,
+		Generated:   desired,
 		CompareOpts: opts.CompareOptions,
 		Schemas:     opts.Schemas,
 	})
@@ -749,7 +750,7 @@ func connectContext(ctx context.Context, timeout time.Duration) (context.Context
 // a pre-merged schema when the caller assembled one from several sources, and
 // otherwise the Go entities directory, parsed through a filesystem rooted at its
 // parent so the scan cannot walk out of the directory the caller named.
-func resolveDesiredSchema(opts GenerateMigrationOptions) (*goschema.Database, error) {
+func resolveDesiredSchema(opts GenerateMigrationOptions) (*schemamodel.Database, error) {
 	if opts.Generated != nil {
 		return opts.Generated, nil
 	}
@@ -763,11 +764,11 @@ func resolveDesiredSchema(opts GenerateMigrationOptions) (*goschema.Database, er
 		entitiesFS = os.DirFS(filepath.Dir(absPath))
 		entitiesDir = filepath.Base(absPath)
 	}
-	generated, err := goschema.ParseFS(entitiesFS, entitiesDir)
+	desired, err := goschema.ParseFS(entitiesFS, entitiesDir)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing Go entities: %w", err)
 	}
-	return generated, nil
+	return desired, nil
 }
 
 // recoverMigrationPublication resolves an interrupted publication left by an
@@ -1108,7 +1109,7 @@ type generatedMigrationSpec struct {
 
 func planGeneratedMigrationSpecs(
 	diff *difftypes.SchemaDiff,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	dbSchema *catalog.Database,
 	info catalog.ServerInfo,
 	version int64,
@@ -1130,7 +1131,7 @@ func planGeneratedMigrationSpecs(
 
 	bidirectional, err := PlanBidirectionalSchemaDiff(BidirectionalSchemaPlanOptions{
 		Diff:          diff,
-		DesiredSchema: generated,
+		DesiredSchema: desired,
 		CurrentSchema: dbSchema,
 		Dialect:       info.Dialect,
 		Capabilities:  info.Capabilities,
@@ -1774,11 +1775,11 @@ func hasActualSQLStatements(statements []string) bool {
 // generateUpMigrationSQL generates the SQL for the up migration.
 func generateUpMigrationSQL(
 	diff *difftypes.SchemaDiff,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	dialect string,
 	capsOverride ...capability.Capabilities,
 ) (string, error) {
-	return generateUpMigrationSQLWithOptions(diff, generated, dialect, generatedDirectiveOptions{}, capsOverride...)
+	return generateUpMigrationSQLWithOptions(diff, desired, dialect, generatedDirectiveOptions{}, capsOverride...)
 }
 
 type generatedDirectiveOptions struct {
@@ -1787,7 +1788,7 @@ type generatedDirectiveOptions struct {
 
 func generateUpMigrationSQLWithOptions(
 	diff *difftypes.SchemaDiff,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	dialect string,
 	directiveOpts generatedDirectiveOptions,
 	capsOverride ...capability.Capabilities,
@@ -1797,7 +1798,7 @@ func generateUpMigrationSQLWithOptions(
 		caps = capsOverride[0]
 	}
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
-		diff, generated, dialect,
+		diff, desired, dialect,
 		planner.Options{Capabilities: caps},
 	)
 	if err != nil {
@@ -1819,17 +1820,17 @@ func generateUpMigrationSQLWithOptions(
 // generateDownMigrationSQL generates the SQL for the down migration by reversing the diff.
 func generateDownMigrationSQL(
 	diff *difftypes.SchemaDiff,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	dbSchema *catalog.Database,
 	dialect string,
 	capsOverride ...capability.Capabilities,
 ) (string, error) {
-	return generateDownMigrationSQLWithOptions(diff, generated, dbSchema, dialect, generatedDirectiveOptions{}, capsOverride...)
+	return generateDownMigrationSQLWithOptions(diff, desired, dbSchema, dialect, generatedDirectiveOptions{}, capsOverride...)
 }
 
 func generateDownMigrationSQLWithOptions(
 	diff *difftypes.SchemaDiff,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	dbSchema *catalog.Database,
 	dialect string,
 	directiveOpts generatedDirectiveOptions,
@@ -1839,7 +1840,7 @@ func generateDownMigrationSQLWithOptions(
 	if len(capsOverride) > 0 {
 		opts.capabilities = capsOverride[0]
 	}
-	return generateDownMigrationSQLQualified(diff, generated, dbSchema, dialect, opts)
+	return generateDownMigrationSQLQualified(diff, desired, dbSchema, dialect, opts)
 }
 
 // downMigrationOptions carries the down-direction planning inputs that vary per
@@ -1857,7 +1858,7 @@ type downMigrationOptions struct {
 
 func generateDownMigrationSQLQualified(
 	diff *difftypes.SchemaDiff,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	dbSchema *catalog.Database,
 	dialect string,
 	opts downMigrationOptions,
@@ -1872,11 +1873,11 @@ func generateDownMigrationSQLQualified(
 	// introspected database schema so the reversed constraint additions can
 	// rebuild the full prior body from the pre-change DB state — that is exactly
 	// the definition the down must restore.
-	reverseDiff := reverseSchemaDiffWithSchemaForDialect(diff, generated, dbSchema, dialect)
+	reverseDiff := reverseSchemaDiffWithSchemaForDialect(diff, desired, dbSchema, dialect)
 	if normalized := platform.NormalizeDialect(dialect); normalized == platform.MySQL || normalized == platform.MariaDB {
 		forwardNodes, err := planner.GenerateSchemaDiffASTWithOptions(
 			diff,
-			generated,
+			desired,
 			dialect,
 			planner.Options{Capabilities: opts.capabilities},
 		)
@@ -1924,7 +1925,7 @@ func generateDownMigrationSQLQualified(
 // before rendering, mirroring the up direction.
 func planDownMigrationStatements(
 	reverseDiff *difftypes.SchemaDiff,
-	dbAsGoSchema *goschema.Database,
+	dbAsGoSchema *schemamodel.Database,
 	dialect string,
 	plannerOpts planner.Options,
 	qualifier atlasmigrate.Qualifier,
@@ -2035,7 +2036,7 @@ func reverseSchemaDiff(diff *difftypes.SchemaDiff) *difftypes.SchemaDiff {
 // direction. TestReverseSchemaDiff_AccountsForEverySchemaDiffField enforces
 // that by reflection: it zeroes one field of a fully populated diff at a time
 // and fails when doing so leaves the reverse plan unchanged.
-func reverseSchemaDiffWithSchema(diff *difftypes.SchemaDiff, schema *goschema.Database, dbSchema *catalog.Database) *difftypes.SchemaDiff {
+func reverseSchemaDiffWithSchema(diff *difftypes.SchemaDiff, schema *schemamodel.Database, dbSchema *catalog.Database) *difftypes.SchemaDiff {
 	return reverseSchemaDiffWithSchemaForDialect(diff, schema, dbSchema, "")
 }
 
@@ -2057,7 +2058,7 @@ func bareRoutineRemovals(names []string) []difftypes.RoutineRemoval {
 // by name. A routine the schema no longer declares gets an empty signature,
 // which drops correctly wherever the name is unique and is the same answer the
 // bare list gave before (stokaro/ptah#2296).
-func routineRemovalsWithSignatures(names []string, schema *goschema.Database) []difftypes.RoutineRemoval {
+func routineRemovalsWithSignatures(names []string, schema *schemamodel.Database) []difftypes.RoutineRemoval {
 	if len(names) == 0 {
 		return nil
 	}
@@ -2086,7 +2087,7 @@ func routineRemovalsWithSignatures(names []string, schema *goschema.Database) []
 // desired schema no longer holds is left with the functions, because a DROP
 // FUNCTION that is refused is a louder failure than a DROP PROCEDURE aimed at a
 // function (stokaro/ptah#1722).
-func reverseFunctionsRemoved(added []string, schema *goschema.Database) []string {
+func reverseFunctionsRemoved(added []string, schema *schemamodel.Database) []string {
 	procedures := reverseProceduresRemoved(added, schema)
 	if len(procedures) == 0 {
 		return added
@@ -2104,7 +2105,7 @@ func reverseFunctionsRemoved(added []string, schema *goschema.Database) []string
 	return kept
 }
 
-func reverseProceduresRemoved(added []string, schema *goschema.Database) []string {
+func reverseProceduresRemoved(added []string, schema *schemamodel.Database) []string {
 	if schema == nil || len(added) == 0 {
 		return nil
 	}
@@ -2125,7 +2126,7 @@ func reverseProceduresRemoved(added []string, schema *goschema.Database) []strin
 
 func reverseSchemaDiffWithSchemaForDialect(
 	diff *difftypes.SchemaDiff,
-	schema *goschema.Database,
+	schema *schemamodel.Database,
 	dbSchema *catalog.Database,
 	dialect string,
 ) *difftypes.SchemaDiff {
@@ -2404,7 +2405,7 @@ func introspectedUniqueConstraintsByHost(
 	return constraints
 }
 
-func generatedTableByStructName(tables []goschema.Table, structName string) *goschema.Table {
+func generatedTableByStructName(tables []schemamodel.Table, structName string) *schemamodel.Table {
 	for i := range tables {
 		if tables[i].StructName == structName {
 			return &tables[i]
@@ -2413,7 +2414,7 @@ func generatedTableByStructName(tables []goschema.Table, structName string) *gos
 	return nil
 }
 
-func generatedTableReference(tables []goschema.Table, structName, tableName string) *goschema.Table {
+func generatedTableReference(tables []schemamodel.Table, structName, tableName string) *schemamodel.Table {
 	tableName = strings.TrimSpace(tableName)
 	if tableName == "" {
 		return generatedTableByStructName(tables, structName)
@@ -2433,7 +2434,7 @@ func generatedTableReference(tables []goschema.Table, structName, tableName stri
 		}
 	}
 
-	var match *goschema.Table
+	var match *schemamodel.Table
 	for i := range tables {
 		if tables[i].Name != ref.Name {
 			continue
@@ -2603,7 +2604,7 @@ func derefString(s *string) string {
 // through ConstraintsRemoved; only the richer per-table info is omitted.
 func reverseConstraintRemovals(
 	diff *difftypes.SchemaDiff,
-	schema *goschema.Database,
+	schema *schemamodel.Database,
 	semantics identifier.Semantics,
 ) []difftypes.ConstraintRemovalInfo {
 	if schema == nil {
@@ -2611,7 +2612,7 @@ func reverseConstraintRemovals(
 	}
 
 	// Index explicit table-level constraints by name.
-	tableConstraints := make(map[string]goschema.Constraint, len(schema.Constraints))
+	tableConstraints := make(map[string]schemamodel.Constraint, len(schema.Constraints))
 	for _, c := range schema.Constraints {
 		tableConstraints[c.Name] = c
 	}
@@ -2696,7 +2697,7 @@ func reverseConstraintRemovals(
 
 func reverseForeignKeyRemovals(
 	diff *difftypes.SchemaDiff,
-	schema *goschema.Database,
+	schema *schemamodel.Database,
 	dialect string,
 ) []difftypes.ForeignKeyRemovalInfo {
 	if diff == nil || schema == nil {
@@ -2758,7 +2759,7 @@ func (c *reverseForeignKeyRemovalCollector) addQualifiedAdditions(
 	}
 }
 
-func (c *reverseForeignKeyRemovalCollector) addFieldForeignKeys(schema *goschema.Database) {
+func (c *reverseForeignKeyRemovalCollector) addFieldForeignKeys(schema *schemamodel.Database) {
 	for _, field := range schema.Fields {
 		if field.Foreign == "" {
 			continue
@@ -2786,7 +2787,7 @@ func (c *reverseForeignKeyRemovalCollector) addFieldForeignKeys(schema *goschema
 	}
 }
 
-func (c *reverseForeignKeyRemovalCollector) addTableForeignKeys(schema *goschema.Database) {
+func (c *reverseForeignKeyRemovalCollector) addTableForeignKeys(schema *schemamodel.Database) {
 	for _, constraint := range schema.Constraints {
 		if !strings.EqualFold(constraint.Type, "FOREIGN KEY") {
 			continue
@@ -2816,7 +2817,7 @@ func (c *reverseForeignKeyRemovalCollector) addTableForeignKeys(schema *goschema
 }
 
 func (c *reverseForeignKeyRemovalCollector) selectedFieldForeignKey(
-	table goschema.Table,
+	table schemamodel.Table,
 	name,
 	column string,
 ) bool {
@@ -2826,7 +2827,7 @@ func (c *reverseForeignKeyRemovalCollector) selectedFieldForeignKey(
 }
 
 func (c *reverseForeignKeyRemovalCollector) selectedTableForeignKey(
-	table goschema.Table,
+	table schemamodel.Table,
 	tableName,
 	name string,
 ) bool {
@@ -2885,7 +2886,7 @@ func stringSet(values []string) map[string]struct{} {
 	return set
 }
 
-func tableDiffAddsColumn(tableDiffs []difftypes.TableDiff, table goschema.Table, column string) bool {
+func tableDiffAddsColumn(tableDiffs []difftypes.TableDiff, table schemamodel.Table, column string) bool {
 	for _, tableDiff := range tableDiffs {
 		if (tableDiff.TableName == table.Name || tableDiff.TableName == table.QualifiedName() ||
 			tableDiff.TableName == table.StructName) && slices.Contains(tableDiff.ColumnsAdded, column) {
@@ -2899,7 +2900,7 @@ func appendAddedColumnForeignKeyRemovals(
 	infos []difftypes.ConstraintRemovalInfo,
 	seen map[tableMemberKey]struct{},
 	tableDiffs []difftypes.TableDiff,
-	schema *goschema.Database,
+	schema *schemamodel.Database,
 ) []difftypes.ConstraintRemovalInfo {
 	for _, tableDiff := range tableDiffs {
 		if len(tableDiff.ColumnsAdded) == 0 {
@@ -2932,7 +2933,7 @@ func appendAddedTableForeignKeyRemovals(
 	infos []difftypes.ConstraintRemovalInfo,
 	seen map[tableMemberKey]struct{},
 	tableNames []string,
-	schema *goschema.Database,
+	schema *schemamodel.Database,
 ) []difftypes.ConstraintRemovalInfo {
 	addedTables := make(map[string]struct{}, len(tableNames))
 	for _, tableName := range tableNames {
@@ -2983,7 +2984,7 @@ func appendAddedTableForeignKeyRemovals(
 	return infos
 }
 
-func generatedTableInSet(table goschema.Table, tableNames map[string]struct{}) bool {
+func generatedTableInSet(table schemamodel.Table, tableNames map[string]struct{}) bool {
 	_, byName := tableNames[table.Name]
 	_, byQualifiedName := tableNames[table.QualifiedName()]
 	return byName || byQualifiedName
@@ -3138,7 +3139,7 @@ func reverseChangeMap(changes map[string]string) map[string]string {
 // the up migration created. schema is the up direction's target, so that is
 // where the down direction's from-side lives. A nil schema leaves it empty and
 // the drop ordering falls back to declaration order.
-func reverseDomainDiffs(domainDiffs []difftypes.DomainDiff, schema *goschema.Database) []difftypes.DomainDiff {
+func reverseDomainDiffs(domainDiffs []difftypes.DomainDiff, schema *schemamodel.Database) []difftypes.DomainDiff {
 	reversed := make([]difftypes.DomainDiff, len(domainDiffs))
 	for i, domainDiff := range domainDiffs {
 		reversed[i] = difftypes.DomainDiff{
@@ -3238,7 +3239,7 @@ func reverseSynonymDiffs(diffs []difftypes.SynonymDiff) []difftypes.SynonymDiff 
 	return reversed
 }
 
-func reverseViewDiffs(viewDiffs []difftypes.ViewDiff, schema *goschema.Database) []difftypes.ViewDiff {
+func reverseViewDiffs(viewDiffs []difftypes.ViewDiff, schema *schemamodel.Database) []difftypes.ViewDiff {
 	reversed := make([]difftypes.ViewDiff, len(viewDiffs))
 	for i, viewDiff := range viewDiffs {
 		reversed[i] = difftypes.ViewDiff{
@@ -3252,7 +3253,7 @@ func reverseViewDiffs(viewDiffs []difftypes.ViewDiff, schema *goschema.Database)
 }
 
 // reverseRangeDiffs mirrors reverseDomainDiffs for range types.
-func reverseRangeDiffs(rangeDiffs []difftypes.RangeDiff, schema *goschema.Database) []difftypes.RangeDiff {
+func reverseRangeDiffs(rangeDiffs []difftypes.RangeDiff, schema *schemamodel.Database) []difftypes.RangeDiff {
 	reversed := make([]difftypes.RangeDiff, len(rangeDiffs))
 	for i, rangeDiff := range rangeDiffs {
 		reversed[i] = difftypes.RangeDiff{
@@ -3264,7 +3265,7 @@ func reverseRangeDiffs(rangeDiffs []difftypes.RangeDiff, schema *goschema.Databa
 	return reversed
 }
 
-func generatedViewBody(schema *goschema.Database, viewName string) string {
+func generatedViewBody(schema *schemamodel.Database, viewName string) string {
 	if schema == nil {
 		return ""
 	}
@@ -3276,7 +3277,7 @@ func generatedViewBody(schema *goschema.Database, viewName string) string {
 	return ""
 }
 
-func targetRangeSubtype(schema *goschema.Database, name string) string {
+func targetRangeSubtype(schema *schemamodel.Database, name string) string {
 	if schema == nil {
 		return ""
 	}
@@ -3318,7 +3319,7 @@ func reverseTriggerDiffs(triggerDiffs []difftypes.TriggerDiff) []difftypes.Trigg
 }
 
 // reverseCompositeTypeDiffs mirrors reverseDomainDiffs for composite types.
-func reverseCompositeTypeDiffs(compositeDiffs []difftypes.CompositeTypeDiff, schema *goschema.Database) []difftypes.CompositeTypeDiff {
+func reverseCompositeTypeDiffs(compositeDiffs []difftypes.CompositeTypeDiff, schema *schemamodel.Database) []difftypes.CompositeTypeDiff {
 	reversed := make([]difftypes.CompositeTypeDiff, len(compositeDiffs))
 	for i, compositeDiff := range compositeDiffs {
 		reversed[i] = difftypes.CompositeTypeDiff{
@@ -3330,7 +3331,7 @@ func reverseCompositeTypeDiffs(compositeDiffs []difftypes.CompositeTypeDiff, sch
 	return reversed
 }
 
-func targetDomainBaseType(schema *goschema.Database, name string) string {
+func targetDomainBaseType(schema *schemamodel.Database, name string) string {
 	if schema == nil {
 		return ""
 	}
@@ -3342,7 +3343,7 @@ func targetDomainBaseType(schema *goschema.Database, name string) string {
 	return ""
 }
 
-func targetCompositeFieldTypes(schema *goschema.Database, name string) []string {
+func targetCompositeFieldTypes(schema *schemamodel.Database, name string) []string {
 	if schema == nil {
 		return nil
 	}

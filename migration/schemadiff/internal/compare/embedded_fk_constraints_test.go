@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -47,7 +47,7 @@ func TestConstraints_EmbeddedInlineMixinForeignKey(t *testing.T) {
 
 	// mixinFields are the FK fields owned by the "Ownable" mixin struct. They
 	// are declared on the mixin, not on any table.
-	mixinFields := []goschema.Field{
+	mixinFields := []schemamodel.Field{
 		{
 			StructName:     "Ownable",
 			Name:           "tenant_id",
@@ -67,7 +67,7 @@ func TestConstraints_EmbeddedInlineMixinForeignKey(t *testing.T) {
 	}
 
 	// Two concrete tables embed the mixin inline.
-	embedded := []goschema.EmbeddedField{
+	embedded := []schemamodel.EmbeddedField{
 		{StructName: "Location", Mode: "inline", EmbeddedTypeName: "Ownable"},
 		{StructName: "Area", Mode: "inline", EmbeddedTypeName: "Ownable"},
 	}
@@ -85,12 +85,12 @@ func TestConstraints_EmbeddedInlineMixinForeignKey(t *testing.T) {
 		}
 	}
 
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Location", Name: "locations"},
 			{StructName: "Area", Name: "areas"},
 		},
-		Fields: append([]goschema.Field{
+		Fields: append([]schemamodel.Field{
 			{StructName: "Location", Name: "id", Type: "TEXT", Primary: true},
 			{StructName: "Area", Name: "id", Type: "TEXT", Primary: true},
 		}, mixinFields...),
@@ -113,7 +113,7 @@ func TestConstraints_EmbeddedInlineMixinForeignKey(t *testing.T) {
 		}
 
 		diff := &difftypes.SchemaDiff{}
-		compare.Constraints(generated, database, diff, nil)
+		compare.Constraints(desired, database, diff, nil)
 
 		c.Assert(diff.ConstraintsAdded, qt.HasLen, 0, qt.Commentf("added=%v", diff.ConstraintsAdded))
 		c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0, qt.Commentf("removed=%v", diff.ConstraintsRemoved))
@@ -142,7 +142,7 @@ func TestConstraints_EmbeddedInlineMixinForeignKey(t *testing.T) {
 		// removal-info table names never contain the mixin struct. The removal
 		// slice is the structure the planner reads to build ALTER statements.
 		diff := &difftypes.SchemaDiff{}
-		compare.Constraints(generated, database, diff, nil)
+		compare.Constraints(desired, database, diff, nil)
 		for _, info := range diff.ConstraintsRemovedWithTables {
 			c.Assert(info.TableName, qt.Not(qt.Equals), "Ownable",
 				qt.Commentf("removal must target a real table, got %q", info.TableName))
@@ -167,7 +167,7 @@ func TestConstraints_EmbeddedInlineMixinForeignKey(t *testing.T) {
 		}
 
 		diff := &difftypes.SchemaDiff{}
-		compare.Constraints(generated, database, diff, nil)
+		compare.Constraints(desired, database, diff, nil)
 
 		c.Assert(diff.ConstraintsAdded, qt.DeepEquals, []string{"fk_entity_tenant"},
 			qt.Commentf("added=%v", diff.ConstraintsAdded))
@@ -186,18 +186,18 @@ func TestConstraints_EmbeddedInlineMixinForeignKey(t *testing.T) {
 
 		// Add a third embedding host to prove the per-host de-duplication does
 		// not accidentally drop legitimate distinct (table,name) pairs.
-		gen3 := &goschema.Database{
-			Tables: []goschema.Table{
+		gen3 := &schemamodel.Database{
+			Tables: []schemamodel.Table{
 				{StructName: "Location", Name: "locations"},
 				{StructName: "Area", Name: "areas"},
 				{StructName: "Commodity", Name: "commodities"},
 			},
-			Fields: append([]goschema.Field{
+			Fields: append([]schemamodel.Field{
 				{StructName: "Location", Name: "id", Type: "TEXT", Primary: true},
 				{StructName: "Area", Name: "id", Type: "TEXT", Primary: true},
 				{StructName: "Commodity", Name: "id", Type: "TEXT", Primary: true},
 			}, mixinFields...),
-			EmbeddedFields: []goschema.EmbeddedField{
+			EmbeddedFields: []schemamodel.EmbeddedField{
 				{StructName: "Location", Mode: "inline", EmbeddedTypeName: "Ownable"},
 				{StructName: "Area", Mode: "inline", EmbeddedTypeName: "Ownable"},
 				{StructName: "Commodity", Mode: "inline", EmbeddedTypeName: "Ownable"},
@@ -240,7 +240,7 @@ func TestConstraints_EmbeddedInlineMixinForeignKey(t *testing.T) {
 		}
 
 		diff := &difftypes.SchemaDiff{}
-		compare.Constraints(generated, database, diff, nil)
+		compare.Constraints(desired, database, diff, nil)
 
 		c.Assert(diff.ConstraintsAdded, qt.HasLen, 0, qt.Commentf("added=%v", diff.ConstraintsAdded))
 		c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0, qt.Commentf("removed=%v", diff.ConstraintsRemoved))
@@ -257,9 +257,9 @@ func TestConstraints_EmbeddedInlineMixinForeignKey(t *testing.T) {
 func TestConstraints_FieldLevelForeignKeyOnDeleteNotStripped(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "AuditRow", Name: "audit_rows"}},
-		Fields: []goschema.Field{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "AuditRow", Name: "audit_rows"}},
+		Fields: []schemamodel.Field{
 			{StructName: "AuditRow", Name: "id", Type: "TEXT", Primary: true},
 			{
 				StructName:     "AuditRow",
@@ -290,7 +290,7 @@ func TestConstraints_FieldLevelForeignKeyOnDeleteNotStripped(t *testing.T) {
 	}
 
 	diff := &difftypes.SchemaDiff{}
-	compare.Constraints(generated, database, diff, nil)
+	compare.Constraints(desired, database, diff, nil)
 
 	c.Assert(diff.ConstraintsAdded, qt.HasLen, 0, qt.Commentf("CASCADE must not be stripped, added=%v", diff.ConstraintsAdded))
 	c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0, qt.Commentf("CASCADE must not be stripped, removed=%v", diff.ConstraintsRemoved))

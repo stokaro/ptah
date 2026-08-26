@@ -8,9 +8,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // TestNormalizeColumnTypesForDialect_AsksWhatTheRendererWouldWrite holds the
@@ -48,7 +48,7 @@ func TestNormalizeColumnTypesForDialect_AsksWhatTheRendererWouldWrite(t *testing
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			declared, catalog := normalizeColumnTypesForDialect(goschema.Field{Type: test.declared}, test.catalog, platform.Oracle)
+			declared, catalog := normalizeColumnTypesForDialect(schemamodel.Field{Type: test.declared}, test.catalog, platform.Oracle)
 
 			c.Assert(declared == catalog, qt.Equals, test.wantEqual)
 		})

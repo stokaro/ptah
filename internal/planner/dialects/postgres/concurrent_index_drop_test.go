@@ -5,39 +5,39 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
-func indexRemovalFixture() (*difftypes.SchemaDiff, *goschema.Database) {
+func indexRemovalFixture() (*difftypes.SchemaDiff, *schemamodel.Database) {
 	diff := &difftypes.SchemaDiff{IndexesRemoved: []difftypes.IndexRef{
 		{Name: "idx_users_email", TableName: "users"},
 	}}
-	generated := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "User", Name: "users"}},
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
 	}
-	return diff, generated
+	return diff, desired
 }
 
 // indexRedefinitionFixture drops and rebuilds the same index identity. The
 // planner pairs that drop with the rebuild, so it is not a standalone removal
 // and must never become concurrent: PostgreSQL would then need the pair split
 // across a transactional and a non-transactional file.
-func indexRedefinitionFixture() (*difftypes.SchemaDiff, *goschema.Database) {
+func indexRedefinitionFixture() (*difftypes.SchemaDiff, *schemamodel.Database) {
 	diff := &difftypes.SchemaDiff{
 		IndexesAdded:   []difftypes.IndexRef{{Name: "idx_users_email", TableName: "users"}},
 		IndexesRemoved: []difftypes.IndexRef{{Name: "idx_users_email", TableName: "users"}},
 	}
-	generated := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "User", Name: "users"}},
-		Indexes: []goschema.Index{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
+		Indexes: []schemamodel.Index{
 			{Name: "idx_users_email", StructName: "User", Fields: []string{"email", "tenant"}},
 		},
 	}
-	return diff, generated
+	return diff, desired
 }
 
 // TestPlanner_ConcurrentIndexDrops pins that DROP INDEX CONCURRENTLY needs BOTH
@@ -53,7 +53,7 @@ func TestPlanner_ConcurrentIndexDrops(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		fixture func() (*difftypes.SchemaDiff, *goschema.Database)
+		fixture func() (*difftypes.SchemaDiff, *schemamodel.Database)
 		planner func() *postgres.Planner
 		want    string
 	}{
@@ -109,9 +109,9 @@ func TestPlanner_ConcurrentIndexDrops(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff, generated := tt.fixture()
+			diff, desired := tt.fixture()
 
-			nodes, err := tt.planner().GenerateMigrationAST(diff, generated)
+			nodes, err := tt.planner().GenerateMigrationAST(diff, desired)
 			c.Assert(err, qt.IsNil)
 			sql, err := renderer.RenderSQL("postgres", nodes...)
 			c.Assert(err, qt.IsNil)

@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/internal/generatedschema"
 )
 
@@ -14,7 +14,7 @@ func TestFieldsForTable_NilDatabase(t *testing.T) {
 
 	got := generatedschema.FieldsForTable(
 		nil,
-		goschema.Table{StructName: "User"},
+		schemamodel.Table{StructName: "User"},
 	)
 
 	c.Assert(got, qt.IsNil)
@@ -22,8 +22,8 @@ func TestFieldsForTable_NilDatabase(t *testing.T) {
 
 func TestFieldsForTable_DirectAndEmbeddedFields(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{
-		Fields: []goschema.Field{
+	database := &schemamodel.Database{
+		Fields: []schemamodel.Field{
 			{StructName: "User", FieldName: "ID", Name: "id", Type: "BIGINT"},
 			{
 				StructName: "Timestamps",
@@ -38,7 +38,7 @@ func TestFieldsForTable_DirectAndEmbeddedFields(t *testing.T) {
 				Type:       "VARCHAR(64)",
 			},
 		},
-		EmbeddedFields: []goschema.EmbeddedField{
+		EmbeddedFields: []schemamodel.EmbeddedField{
 			{
 				StructName:       "User",
 				Mode:             "inline",
@@ -80,10 +80,10 @@ func TestFieldsForTable_DirectAndEmbeddedFields(t *testing.T) {
 
 	got := generatedschema.FieldsForTable(
 		database,
-		goschema.Table{StructName: "User"},
+		schemamodel.Table{StructName: "User"},
 	)
 
-	c.Assert(got, qt.DeepEquals, []goschema.Field{
+	c.Assert(got, qt.DeepEquals, []schemamodel.Field{
 		{StructName: "User", FieldName: "ID", Name: "id", Type: "BIGINT"},
 		{
 			StructName: "User",
@@ -124,8 +124,8 @@ func TestFieldsForTable_DirectAndEmbeddedFields(t *testing.T) {
 
 func TestFieldsForTable_UnspecifiedModeIsInline(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{
-		Fields: []goschema.Field{
+	database := &schemamodel.Database{
+		Fields: []schemamodel.Field{
 			{
 				StructName: "Address",
 				FieldName:  "City",
@@ -133,7 +133,7 @@ func TestFieldsForTable_UnspecifiedModeIsInline(t *testing.T) {
 				Type:       "VARCHAR(128)",
 			},
 		},
-		EmbeddedFields: []goschema.EmbeddedField{
+		EmbeddedFields: []schemamodel.EmbeddedField{
 			{
 				StructName:       "User",
 				Prefix:           "billing_",
@@ -144,10 +144,10 @@ func TestFieldsForTable_UnspecifiedModeIsInline(t *testing.T) {
 
 	got := generatedschema.FieldsForTable(
 		database,
-		goschema.Table{StructName: "User"},
+		schemamodel.Table{StructName: "User"},
 	)
 
-	c.Assert(got, qt.DeepEquals, []goschema.Field{
+	c.Assert(got, qt.DeepEquals, []schemamodel.Field{
 		{
 			StructName: "User",
 			FieldName:  "City",

@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/ociartifact"
 	"go.5x5.cz/ptah/internal/pathguard"
 	"go.5x5.cz/ptah/internal/schemaload"
@@ -21,7 +21,7 @@ import (
 // "ptah schema compare" and the migration commands, so --schema-file means the
 // same thing on every surface that accepts it. Parsing a schema file here
 // instead would be a second loader free to drift from the first.
-func loadExportSchema(cmd *cobra.Command, opts exportOptions) (*goschema.Database, error) {
+func loadExportSchema(cmd *cobra.Command, opts exportOptions) (*schemamodel.Database, error) {
 	rootDirs, err := exportRootDirs(opts)
 	if err != nil {
 		return nil, err

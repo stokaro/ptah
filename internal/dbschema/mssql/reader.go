@@ -672,7 +672,7 @@ func (r *Reader) readViews(ctx context.Context) ([]catalog.View, error) {
 // is_cached and cache_size are two facts, not one. is_cached = 1 with a NULL
 // cache_size is the server choosing the size, which no declaration can ask for
 // by number, so it reads as unset. is_cached = 0 is NO CACHE, which
-// goschema.Sequence has no way to spell either; it also reads as unset, and the
+// schemamodel.Sequence has no way to spell either; it also reads as unset, and the
 // renderer's own NO CACHE stays reachable through a declared cache of zero.
 func (r *Reader) readSequences(ctx context.Context) ([]catalog.Sequence, error) {
 	query := `
@@ -740,7 +740,7 @@ type sequenceCacheFacts struct {
 // A cached sequence with a size is the only combination a declaration can
 // express, so it is the only one that reads as set. A cached sequence with a
 // NULL size is the server choosing, and an uncached one is NO CACHE; neither
-// has a spelling in goschema.Sequence, and reporting a number for either would
+// has a spelling in schemamodel.Sequence, and reporting a number for either would
 // make every such sequence compare unequal against a declaration that named
 // one.
 func (f sequenceCacheFacts) managedOption() *int64 {

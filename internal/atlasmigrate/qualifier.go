@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/tableref"
 )
 
@@ -144,7 +144,7 @@ func qualifierDialectRefusal(dialect string) string {
 // safely fail explicitly, before any migration file or checksum is written.
 // desired supplies the enum-type catalog used to refuse enum-typed columns,
 // whose rendered type references cannot be re-qualified yet.
-func (q Qualifier) ApplyToPlan(dialect string, desired *goschema.Database, nodes []ast.Node) error {
+func (q Qualifier) ApplyToPlan(dialect string, desired *schemamodel.Database, nodes []ast.Node) error {
 	if q.IsZero() {
 		return nil
 	}
@@ -319,7 +319,7 @@ func (s *qualifyState) checkSingleSchemaScope() error {
 // enumTypeNames collects the desired-state enum type names (bare, lowercased)
 // for PostgreSQL-family dialects, where enum-typed columns reference a named
 // type that the qualifier rewrite cannot reach yet.
-func enumTypeNames(dialect string, desired *goschema.Database) map[string]struct{} {
+func enumTypeNames(dialect string, desired *schemamodel.Database) map[string]struct{} {
 	if desired == nil || !platform.IsPostgresFamily(dialect) {
 		return nil
 	}

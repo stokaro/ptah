@@ -7,26 +7,26 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/mysql"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestPlanner_GenerateMigrationAST_EnumsAdded(t *testing.T) {
 	tests := []struct {
-		name      string
-		diff      *difftypes.SchemaDiff
-		generated *goschema.Database
-		expected  func(nodes []ast.Node) bool
+		name     string
+		diff     *difftypes.SchemaDiff
+		desired  *schemamodel.Database
+		expected func(nodes []ast.Node) bool
 	}{
 		{
 			name: "enum added generates warning comment",
 			diff: &difftypes.SchemaDiff{
 				EnumsAdded: []string{"user_status"},
 			},
-			generated: &goschema.Database{
-				Enums: []goschema.Enum{
+			desired: &schemamodel.Database{
+				Enums: []schemamodel.Enum{
 					{Name: "user_status", Values: []string{"active", "inactive"}},
 				},
 			},
@@ -48,7 +48,7 @@ func TestPlanner_GenerateMigrationAST_EnumsAdded(t *testing.T) {
 			c := qt.New(t)
 
 			planner := mysql.New()
-			nodes, err := planner.GenerateMigrationAST(tt.diff, tt.generated)
+			nodes, err := planner.GenerateMigrationAST(tt.diff, tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -58,10 +58,10 @@ func TestPlanner_GenerateMigrationAST_EnumsAdded(t *testing.T) {
 
 func TestPlanner_GenerateMigrationAST_EnumsModified(t *testing.T) {
 	tests := []struct {
-		name      string
-		diff      *difftypes.SchemaDiff
-		generated *goschema.Database
-		expected  func(nodes []ast.Node) bool
+		name     string
+		diff     *difftypes.SchemaDiff
+		desired  *schemamodel.Database
+		expected func(nodes []ast.Node) bool
 	}{
 		{
 			name: "enum modification generates warning comments",
@@ -74,7 +74,7 @@ func TestPlanner_GenerateMigrationAST_EnumsModified(t *testing.T) {
 					},
 				},
 			},
-			generated: &goschema.Database{},
+			desired: &schemamodel.Database{},
 			expected: func(nodes []ast.Node) bool {
 				if len(nodes) != 2 {
 					return false
@@ -98,7 +98,7 @@ func TestPlanner_GenerateMigrationAST_EnumsModified(t *testing.T) {
 			c := qt.New(t)
 
 			planner := mysql.New()
-			nodes, err := planner.GenerateMigrationAST(tt.diff, tt.generated)
+			nodes, err := planner.GenerateMigrationAST(tt.diff, tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -108,21 +108,21 @@ func TestPlanner_GenerateMigrationAST_EnumsModified(t *testing.T) {
 
 func TestPlanner_GenerateMigrationAST_TablesAdded(t *testing.T) {
 	tests := []struct {
-		name      string
-		diff      *difftypes.SchemaDiff
-		generated *goschema.Database
-		expected  func(nodes []ast.Node) bool
+		name     string
+		diff     *difftypes.SchemaDiff
+		desired  *schemamodel.Database
+		expected func(nodes []ast.Node) bool
 	}{
 		{
 			name: "single table added",
 			diff: &difftypes.SchemaDiff{
 				TablesAdded: []string{"users"},
 			},
-			generated: &goschema.Database{
-				Tables: []goschema.Table{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{Name: "users", StructName: "User"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{Name: "id", Type: "INT", StructName: "User", Primary: true, AutoInc: true},
 					{Name: "email", Type: "VARCHAR(255)", StructName: "User", Nullable: false},
 				},
@@ -143,13 +143,13 @@ func TestPlanner_GenerateMigrationAST_TablesAdded(t *testing.T) {
 			diff: &difftypes.SchemaDiff{
 				TablesAdded: []string{"memberships"},
 			},
-			generated: &goschema.Database{
-				Tables: []goschema.Table{{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{{
 					Name:       "memberships",
 					StructName: "Membership",
 					PrimaryKey: []string{"org_id", "user_id"},
 				}},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{Name: "org_id", Type: "INT", StructName: "Membership", Nullable: false},
 					{Name: "user_id", Type: "INT", StructName: "Membership", Nullable: false},
 					{Name: "role", Type: "TEXT", StructName: "Membership", Nullable: false},
@@ -171,7 +171,7 @@ func TestPlanner_GenerateMigrationAST_TablesAdded(t *testing.T) {
 			c := qt.New(t)
 
 			planner := mysql.New()
-			nodes, err := planner.GenerateMigrationAST(tt.diff, tt.generated)
+			nodes, err := planner.GenerateMigrationAST(tt.diff, tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -181,10 +181,10 @@ func TestPlanner_GenerateMigrationAST_TablesAdded(t *testing.T) {
 
 func TestPlanner_GenerateMigrationAST_TablesModified(t *testing.T) {
 	tests := []struct {
-		name      string
-		diff      *difftypes.SchemaDiff
-		generated *goschema.Database
-		expected  func(nodes []ast.Node) bool
+		name     string
+		diff     *difftypes.SchemaDiff
+		desired  *schemamodel.Database
+		expected func(nodes []ast.Node) bool
 	}{
 		{
 			name: "table with columns added",
@@ -196,11 +196,11 @@ func TestPlanner_GenerateMigrationAST_TablesModified(t *testing.T) {
 					},
 				},
 			},
-			generated: &goschema.Database{
-				Tables: []goschema.Table{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{Name: "users", StructName: "User"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{Name: "created_at", Type: "TIMESTAMP", StructName: "User", Nullable: false},
 				},
 			},
@@ -234,11 +234,11 @@ func TestPlanner_GenerateMigrationAST_TablesModified(t *testing.T) {
 					},
 				},
 			},
-			generated: &goschema.Database{
-				Tables: []goschema.Table{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{Name: "posts", StructName: "Post"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{
 						Name:           "user_id",
 						Type:           "INTEGER",
@@ -305,7 +305,7 @@ func TestPlanner_GenerateMigrationAST_TablesModified(t *testing.T) {
 			c := qt.New(t)
 
 			planner := mysql.New()
-			nodes, err := planner.GenerateMigrationAST(tt.diff, tt.generated)
+			nodes, err := planner.GenerateMigrationAST(tt.diff, tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -315,10 +315,10 @@ func TestPlanner_GenerateMigrationAST_TablesModified(t *testing.T) {
 
 func TestPlanner_GenerateMigrationAST_IndexesAdded(t *testing.T) {
 	tests := []struct {
-		name      string
-		diff      *difftypes.SchemaDiff
-		generated *goschema.Database
-		expected  func(nodes []ast.Node) bool
+		name     string
+		diff     *difftypes.SchemaDiff
+		desired  *schemamodel.Database
+		expected func(nodes []ast.Node) bool
 	}{
 		{
 			name: "single index added",
@@ -327,8 +327,8 @@ func TestPlanner_GenerateMigrationAST_IndexesAdded(t *testing.T) {
 					{Name: "idx_users_email", TableName: "users"},
 				},
 			},
-			generated: &goschema.Database{
-				Indexes: []goschema.Index{
+			desired: &schemamodel.Database{
+				Indexes: []schemamodel.Index{
 					{Name: "idx_users_email", StructName: "users", TableName: "users", Fields: []string{"email"}},
 				},
 			},
@@ -352,7 +352,7 @@ func TestPlanner_GenerateMigrationAST_IndexesAdded(t *testing.T) {
 			c := qt.New(t)
 
 			planner := mysql.New()
-			nodes, err := planner.GenerateMigrationAST(tt.diff, tt.generated)
+			nodes, err := planner.GenerateMigrationAST(tt.diff, tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -362,17 +362,17 @@ func TestPlanner_GenerateMigrationAST_IndexesAdded(t *testing.T) {
 
 func TestPlanner_GenerateMigrationAST_EnumsRemoved(t *testing.T) {
 	tests := []struct {
-		name      string
-		diff      *difftypes.SchemaDiff
-		generated *goschema.Database
-		expected  func(nodes []ast.Node) bool
+		name     string
+		diff     *difftypes.SchemaDiff
+		desired  *schemamodel.Database
+		expected func(nodes []ast.Node) bool
 	}{
 		{
 			name: "enum removed generates warning comment",
 			diff: &difftypes.SchemaDiff{
 				EnumsRemoved: []string{"old_enum"},
 			},
-			generated: &goschema.Database{},
+			desired: &schemamodel.Database{},
 			expected: func(nodes []ast.Node) bool {
 				if len(nodes) != 1 {
 					return false
@@ -391,7 +391,7 @@ func TestPlanner_GenerateMigrationAST_EnumsRemoved(t *testing.T) {
 			c := qt.New(t)
 
 			planner := mysql.New()
-			nodes, err := planner.GenerateMigrationAST(tt.diff, tt.generated)
+			nodes, err := planner.GenerateMigrationAST(tt.diff, tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -403,11 +403,11 @@ func TestPlanner_AddNewTables_WithEmbeddedFields(t *testing.T) {
 	c := qt.New(t)
 
 	// Test data: schema with embedded fields (simulating the walker.go processing)
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "TestTable", Name: "test_table"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			// Regular field
 			{StructName: "TestTable", Name: "name", Type: "VARCHAR(255)", Nullable: false},
 			// Embedded struct fields (original)
@@ -415,7 +415,7 @@ func TestPlanner_AddNewTables_WithEmbeddedFields(t *testing.T) {
 			// Processed embedded field (what walker.go would generate)
 			{StructName: "TestTable", Name: "id", Type: "INT", Primary: true, AutoInc: true},
 		},
-		EmbeddedFields: []goschema.EmbeddedField{
+		EmbeddedFields: []schemamodel.EmbeddedField{
 			{
 				StructName:       "TestTable",
 				Mode:             "inline",
@@ -429,7 +429,7 @@ func TestPlanner_AddNewTables_WithEmbeddedFields(t *testing.T) {
 	}
 
 	planner := mysql.New()
-	result, err := planner.GenerateMigrationAST(diff, generated)
+	result, err := planner.GenerateMigrationAST(diff, desired)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(result, qt.HasLen, 1)

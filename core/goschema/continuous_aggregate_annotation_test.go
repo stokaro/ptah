@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // TestParseSource_ReadsTheContinuousAggregateAnnotation pins what the
@@ -27,7 +28,7 @@ func TestParseSource_ReadsTheContinuousAggregateAnnotation(t *testing.T) {
 
 	db := mustParseSource(c, "aggregate.go", source)
 
-	c.Assert(db.ContinuousAggregates, qt.DeepEquals, []goschema.ContinuousAggregate{{
+	c.Assert(db.ContinuousAggregates, qt.DeepEquals, []schemamodel.ContinuousAggregate{{
 		StructName: "Hourly", Name: "hourly", Schema: "metrics", Body: body,
 		MaterializedOnly: &materializedOnly, Comment: "one row per hour",
 	}})
@@ -43,7 +44,7 @@ func TestParseSource_TheAggregateOptionDefaultsOff(t *testing.T) {
 
 	db := mustParseSource(c, "aggregate.go", source)
 
-	c.Assert(db.ContinuousAggregates, qt.DeepEquals, []goschema.ContinuousAggregate{{
+	c.Assert(db.ContinuousAggregates, qt.DeepEquals, []schemamodel.ContinuousAggregate{{
 		StructName: "Hourly", Name: "hourly", Body: "SELECT 1",
 	}})
 }

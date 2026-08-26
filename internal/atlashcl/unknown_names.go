@@ -228,7 +228,7 @@ func (p *parser) droppedSchemaRoot() (cty.Value, bool) {
 // as the walk reaches them would refuse a file over declaration order alone.
 //
 // Repeated labels are KEPT rather than folded, which is what makes the count
-// usable as a count. `goschema.Finalize` deduplicates schemas by name, so a
+// usable as a count. `schemamodel.Finalize` deduplicates schemas by name, so a
 // document declaring `schema "main"` twice has one schema in the IR and two
 // blocks here -- and two is the number the pinned Atlas community binary v1.3.0
 // counts: that document is refused against a schema-limited URL with

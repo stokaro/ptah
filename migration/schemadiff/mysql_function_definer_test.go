@@ -6,9 +6,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
@@ -155,8 +155,8 @@ func TestCompareWithDatabaseInfoAllowsSafeFunctionChanges(t *testing.T) {
 	}
 }
 
-func mysqlDefinerDesired(body, security string) *goschema.Database {
-	return &goschema.Database{Functions: []goschema.Function{{
+func mysqlDefinerDesired(body, security string) *schemamodel.Database {
+	return &schemamodel.Database{Functions: []schemamodel.Function{{
 		Name: "f", Returns: "int", Language: "sql",
 		Security: security, Volatility: "IMMUTABLE", Body: body,
 	}}}

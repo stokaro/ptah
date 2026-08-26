@@ -6,14 +6,14 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // plsqlFunction is the declaration every case below starts from: the shape an
-// annotation produces once goschema.Function.Canonicalize has run on it.
+// annotation produces once schemamodel.Function.Canonicalize has run on it.
 func plsqlFunction(name string) *ast.CreateFunctionNode {
 	return ast.NewCreateFunction(name).
 		SetParameters("p IN NUMBER").
@@ -65,7 +65,7 @@ func TestCreateFunction_RendersTheHeaderOracleStores(t *testing.T) {
 		},
 		{
 			name: "a procedure has no RETURN clause",
-			node: plsqlFunction("pr_touch").SetKind(goschema.FunctionKindProcedure).
+			node: plsqlFunction("pr_touch").SetKind(schemamodel.FunctionKindProcedure).
 				SetReturns("").SetBody("BEGIN\n  NULL;\nEND;"),
 			want: "CREATE OR REPLACE PROCEDURE pr_touch(p IN NUMBER) AUTHID DEFINER IS\n" +
 				"BEGIN\n  NULL;\nEND;\n",
@@ -210,7 +210,7 @@ func TestRoutines_FollowTheirOwnCapabilityKeys(t *testing.T) {
 		{
 			name: "a procedure keeps its own key when functions are off",
 			caps: capability.Oracle23().With(capability.Functions, false),
-			node: plsqlFunction("pr_touch").SetKind(goschema.FunctionKindProcedure).
+			node: plsqlFunction("pr_touch").SetKind(schemamodel.FunctionKindProcedure).
 				SetReturns("").SetBody("BEGIN\n  NULL;\nEND;"),
 			want: "CREATE OR REPLACE PROCEDURE pr_touch(p IN NUMBER) AUTHID DEFINER IS\n" +
 				"BEGIN\n  NULL;\nEND;\n",
@@ -218,7 +218,7 @@ func TestRoutines_FollowTheirOwnCapabilityKeys(t *testing.T) {
 		{
 			name: "a procedure without the procedure key",
 			caps: capability.Oracle23().With(capability.Procedures, false),
-			node: plsqlFunction("pr_touch").SetKind(goschema.FunctionKindProcedure).
+			node: plsqlFunction("pr_touch").SetKind(schemamodel.FunctionKindProcedure).
 				SetReturns("").SetBody("BEGIN\n  NULL;\nEND;"),
 			want: "-- ORACLE: CREATE PROCEDURE \"pr_touch\" is not supported\n",
 		},
@@ -238,7 +238,7 @@ func TestRoutines_FollowTheirOwnCapabilityKeys(t *testing.T) {
 		{
 			name: "dropping a procedure without the procedure key",
 			caps: capability.Oracle23().With(capability.Procedures, false),
-			node: ast.NewDropFunction("pr_touch").SetKind(goschema.FunctionKindProcedure),
+			node: ast.NewDropFunction("pr_touch").SetKind(schemamodel.FunctionKindProcedure),
 			want: "-- ORACLE: DROP PROCEDURE \"pr_touch\" is not supported\n",
 		},
 	}
@@ -276,7 +276,7 @@ func TestDropFunction_NamesTheObjectItIsDropping(t *testing.T) {
 		{
 			name: "a procedure",
 			caps: capability.Oracle23(),
-			node: ast.NewDropFunction("pr_touch").SetKind(goschema.FunctionKindProcedure),
+			node: ast.NewDropFunction("pr_touch").SetKind(schemamodel.FunctionKindProcedure),
 			want: "DROP PROCEDURE pr_touch;\n",
 		},
 		{

@@ -11,7 +11,7 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemaexport"
 )
 
@@ -37,7 +37,7 @@ const defaultTitle = "Schema reference"
 // Every column of every selected table appears. That is deliberate and unlike
 // the API targets, which project a public shape: documentation that hid a
 // column would describe a schema the reader does not have.
-func Render(db *goschema.Database, opts Options) (Result, error) {
+func Render(db *schemamodel.Database, opts Options) (Result, error) {
 	if db == nil {
 		return Result{}, fmt.Errorf("schema database is nil")
 	}
@@ -79,16 +79,16 @@ func Render(db *goschema.Database, opts Options) (Result, error) {
 	return Result{Data: []byte(out.String()), Diagnostics: diagnostics}, nil
 }
 
-func tableByName(tables []goschema.Table, name string) goschema.Table {
+func tableByName(tables []schemamodel.Table, name string) schemamodel.Table {
 	for _, table := range tables {
 		if table.Name == name {
 			return table
 		}
 	}
-	return goschema.Table{}
+	return schemamodel.Table{}
 }
 
-func writeTable(out *strings.Builder, db *goschema.Database, table goschema.Table) {
+func writeTable(out *strings.Builder, db *schemamodel.Database, table schemamodel.Table) {
 	fmt.Fprintf(out, "\n## %s\n", table.Name)
 	if table.Comment != "" {
 		fmt.Fprintf(out, "\n%s\n", table.Comment)
@@ -106,7 +106,7 @@ func writeTable(out *strings.Builder, db *goschema.Database, table goschema.Tabl
 	writeIndexes(out, db, table)
 }
 
-func writeIndexes(out *strings.Builder, db *goschema.Database, table goschema.Table) {
+func writeIndexes(out *strings.Builder, db *schemamodel.Database, table schemamodel.Table) {
 	var lines []string
 	for _, index := range db.Indexes {
 		if index.StructName != table.StructName {
@@ -128,13 +128,13 @@ func writeIndexes(out *strings.Builder, db *goschema.Database, table goschema.Ta
 	out.WriteString("\n")
 }
 
-func writeEnums(out *strings.Builder, db *goschema.Database) {
+func writeEnums(out *strings.Builder, db *schemamodel.Database) {
 	if len(db.Enums) == 0 {
 		return
 	}
 	out.WriteString("\n## Enums\n\n")
 	names := make([]string, 0, len(db.Enums))
-	byName := make(map[string]goschema.Enum, len(db.Enums))
+	byName := make(map[string]schemamodel.Enum, len(db.Enums))
 	for _, enum := range db.Enums {
 		names = append(names, enum.Name)
 		byName[enum.Name] = enum
@@ -151,7 +151,7 @@ func writeEnums(out *strings.Builder, db *goschema.Database) {
 // keep a deliberate empty-string default. The two are not equivalent: the Go
 // annotation parser sets DefaultSet and the YAML loader does not, so requiring
 // it would have documented every YAML-declared default as absent.
-func defaultOf(field goschema.Field) string {
+func defaultOf(field schemamodel.Field) string {
 	if field.DefaultExpr != "" {
 		return field.DefaultExpr
 	}
@@ -162,7 +162,7 @@ func defaultOf(field goschema.Field) string {
 }
 
 // keyOf names what makes the column special, most significant first.
-func keyOf(field goschema.Field) string {
+func keyOf(field schemamodel.Field) string {
 	var parts []string
 	if field.Primary {
 		parts = append(parts, "PK")
@@ -177,7 +177,7 @@ func keyOf(field goschema.Field) string {
 }
 
 // nullability spells a column's nullability for the table.
-func nullability(field goschema.Field) string {
+func nullability(field schemamodel.Field) string {
 	if field.Nullable {
 		return "yes"
 	}

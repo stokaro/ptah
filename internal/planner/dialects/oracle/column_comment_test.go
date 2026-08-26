@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	oracleplanner "go.5x5.cz/ptah/internal/planner/dialects/oracle"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -78,10 +78,10 @@ func columnCommentDiff(desired string) *difftypes.SchemaDiff {
 	}
 }
 
-func commentedColumnSchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{Name: "USERS", StructName: "User"}},
-		Fields: []goschema.Field{
+func commentedColumnSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "USERS", StructName: "User"}},
+		Fields: []schemamodel.Field{
 			{Name: "ID", StructName: "User", Type: "NUMBER", Primary: true},
 			{Name: "EMAIL", StructName: "User", Type: "VARCHAR2(255)"},
 		},

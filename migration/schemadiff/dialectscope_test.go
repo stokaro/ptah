@@ -7,15 +7,15 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
 // scopedDesiredState declares one PostgreSQL-only function and one role, both
 // scoped to postgres, against an empty database.
-func scopedDesiredState() *goschema.Database {
-	return &goschema.Database{
-		Functions: []goschema.Function{{
+func scopedDesiredState() *schemamodel.Database {
+	return &schemamodel.Database{
+		Functions: []schemamodel.Function{{
 			StructName: "Fn",
 			Name:       "get_current_tenant_id",
 			Returns:    "TEXT",
@@ -23,7 +23,7 @@ func scopedDesiredState() *goschema.Database {
 			Body:       "BEGIN RETURN 'x'; END;",
 			Dialects:   []string{"postgres"},
 		}},
-		Roles: []goschema.Role{
+		Roles: []schemamodel.Role{
 			{StructName: "Rol", Name: "app_reader", Inherit: true, Dialects: []string{"postgres"}},
 		},
 	}
@@ -153,9 +153,9 @@ func TestCompare_AnUndeclaredObjectIsStillRemovedOnAScopedTarget(t *testing.T) {
 }
 
 // scopedFunctionDeclaredFor declares one function scoped to dialect.
-func scopedFunctionDeclaredFor(dialect string) *goschema.Database {
-	return &goschema.Database{
-		Functions: []goschema.Function{{
+func scopedFunctionDeclaredFor(dialect string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Functions: []schemamodel.Function{{
 			StructName: "Fn",
 			Name:       "get_current_tenant_id",
 			Returns:    "TEXT",
@@ -197,8 +197,8 @@ func TestCompare_AScopedAwayNameDoesNotSuppressAnotherSchemasObject(t *testing.T
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			desired := &goschema.Database{
-				Sequences: []goschema.Sequence{{
+			desired := &schemamodel.Database{
+				Sequences: []schemamodel.Sequence{{
 					StructName: "Seq",
 					Name:       "tenant_seq",
 					Schema:     "app",

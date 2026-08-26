@@ -7,8 +7,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/planner/dialects/mysql"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
@@ -40,9 +40,9 @@ func reverseConstraintDiff(up *difftypes.SchemaDiff) *difftypes.SchemaDiff {
 // created_by_user_id, each with an explicit shared foreign_key_name). The mixin
 // is embedded inline into the named host tables, so each host materializes the
 // same columns + the same FK names.
-func ownableMixinSchema(hostTables ...string) *goschema.Database {
-	db := &goschema.Database{
-		Fields: []goschema.Field{
+func ownableMixinSchema(hostTables ...string) *schemamodel.Database {
+	db := &schemamodel.Database{
+		Fields: []schemamodel.Field{
 			{
 				StructName:     "Ownable",
 				Name:           "tenant_id",
@@ -62,9 +62,9 @@ func ownableMixinSchema(hostTables ...string) *goschema.Database {
 	for _, ht := range hostTables {
 		// Derive a struct name from the table name for the test (e.g. locations -> Locations).
 		structName := strings.ToUpper(ht[:1]) + ht[1:]
-		db.Tables = append(db.Tables, goschema.Table{StructName: structName, Name: ht})
-		db.Fields = append(db.Fields, goschema.Field{StructName: structName, Name: "id", Type: "TEXT", Primary: true})
-		db.EmbeddedFields = append(db.EmbeddedFields, goschema.EmbeddedField{
+		db.Tables = append(db.Tables, schemamodel.Table{StructName: structName, Name: ht})
+		db.Fields = append(db.Fields, schemamodel.Field{StructName: structName, Name: "id", Type: "TEXT", Primary: true})
+		db.EmbeddedFields = append(db.EmbeddedFields, schemamodel.EmbeddedField{
 			StructName: structName, Mode: "inline", EmbeddedTypeName: "Ownable",
 		})
 	}
@@ -102,7 +102,7 @@ func ownableMixinConvergedDB(hostTables ...string) *catalog.Database {
 // action change (issue #197 MODIFY path): the generated action differs from the
 // converged NO ACTION database, so the comparator routes fk_entity_tenant into
 // ConstraintsAdded + ConstraintsRemoved for each host table at once.
-func ownableMixinSchemaWithTenantOnDelete(onDelete string, hostTables ...string) *goschema.Database {
+func ownableMixinSchemaWithTenantOnDelete(onDelete string, hostTables ...string) *schemamodel.Database {
 	db := ownableMixinSchema(hostTables...)
 	for i := range db.Fields {
 		if db.Fields[i].StructName == "Ownable" && db.Fields[i].Name == "tenant_id" {
@@ -280,20 +280,20 @@ func TestEmbeddedInlineMixinFK_MultiHostActionDrift(t *testing.T) {
 }
 
 func ownableMixinConvergedDBForDialect(
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	dialect string,
 	hostTables ...string,
 ) *catalog.Database {
 	database := ownableMixinConvergedDB(hostTables...)
 	for i := range database.Constraints {
 		constraint := &database.Constraints[i]
-		constraint.Name = assignedForeignKeyName(generated, dialect, constraint.TableName, constraint.ColumnName)
+		constraint.Name = assignedForeignKeyName(desired, dialect, constraint.TableName, constraint.ColumnName)
 	}
 	return database
 }
 
-func assignedForeignKeyName(generated *goschema.Database, dialect, tableName, columnName string) string {
-	assigned := fromschema.AssignDefaultForeignKeyNames(generated, dialect)
+func assignedForeignKeyName(desired *schemamodel.Database, dialect, tableName, columnName string) string {
+	assigned := fromschema.AssignDefaultForeignKeyNames(desired, dialect)
 	structName := ""
 	for _, table := range assigned.Tables {
 		if table.Name == tableName {

@@ -6,24 +6,24 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
-func indexAdditionFixture() (*difftypes.SchemaDiff, *goschema.Database) {
+func indexAdditionFixture() (*difftypes.SchemaDiff, *schemamodel.Database) {
 	diff := &difftypes.SchemaDiff{IndexesAdded: []difftypes.IndexRef{
 		{Name: "idx_users_email", TableName: "users"},
 	}}
-	generated := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "User", Name: "users"}},
-		Indexes: []goschema.Index{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
+		Indexes: []schemamodel.Index{
 			{Name: "idx_users_email", StructName: "User", Fields: []string{"email"}},
 		},
 	}
-	return diff, generated
+	return diff, desired
 }
 
 // TestPlanner_ConcurrentIndexes covers the postgres consumer of the
@@ -34,12 +34,12 @@ func indexAdditionFixture() (*difftypes.SchemaDiff, *goschema.Database) {
 // capability.CreateIndexConcurrently (a postgres-compatible engine without
 // it, e.g. CockroachDB in issue #171, keeps plain CREATE INDEX).
 func TestPlanner_ConcurrentIndexes(t *testing.T) {
-	diff, generated := indexAdditionFixture()
+	diff, desired := indexAdditionFixture()
 
 	t.Run("default policy stays non-concurrent", func(t *testing.T) {
 		c := qt.New(t)
 
-		nodes, err := postgres.New().GenerateMigrationAST(diff, generated)
+		nodes, err := postgres.New().GenerateMigrationAST(diff, desired)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -53,7 +53,7 @@ func TestPlanner_ConcurrentIndexes(t *testing.T) {
 	t.Run("policy plus capability emits CONCURRENTLY", func(t *testing.T) {
 		c := qt.New(t)
 
-		nodes, err := postgres.New().WithConcurrentIndexes().GenerateMigrationAST(diff, generated)
+		nodes, err := postgres.New().WithConcurrentIndexes().GenerateMigrationAST(diff, desired)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -67,7 +67,7 @@ func TestPlanner_ConcurrentIndexes(t *testing.T) {
 		c := qt.New(t)
 
 		caps := capability.Postgres16().With(capability.CreateIndexConcurrently, false)
-		nodes, err := postgres.NewWithCapabilities(caps).WithConcurrentIndexes().GenerateMigrationAST(diff, generated)
+		nodes, err := postgres.NewWithCapabilities(caps).WithConcurrentIndexes().GenerateMigrationAST(diff, desired)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -84,9 +84,9 @@ func TestPlanner_ConcurrentIndexes(t *testing.T) {
 		uniqueDiff := &difftypes.SchemaDiff{IndexesAdded: []difftypes.IndexRef{
 			{Name: "uq_users_email", TableName: "users"},
 		}}
-		uniqueGenerated := &goschema.Database{
-			Tables: []goschema.Table{{StructName: "User", Name: "users"}},
-			Indexes: []goschema.Index{
+		uniqueGenerated := &schemamodel.Database{
+			Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
+			Indexes: []schemamodel.Index{
 				{Name: "uq_users_email", StructName: "User", Fields: []string{"email"}, Unique: true},
 			},
 		}
@@ -106,7 +106,7 @@ func TestPlanner_ConcurrentIndexes(t *testing.T) {
 		base := postgres.New()
 		_ = base.WithConcurrentIndexes()
 
-		nodes, err := base.GenerateMigrationAST(diff, generated)
+		nodes, err := base.GenerateMigrationAST(diff, desired)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -123,9 +123,9 @@ func TestPlanner_ConcurrentIndexRefs(t *testing.T) {
 			{Name: "idx_users_name", TableName: "users"},
 		},
 	}
-	generated := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "User", Name: "users"}},
-		Indexes: []goschema.Index{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
+		Indexes: []schemamodel.Index{
 			{Name: "idx_users_email", StructName: "User", Fields: []string{"email"}},
 			{Name: "idx_users_name", StructName: "User", Fields: []string{"name"}},
 		},
@@ -137,7 +137,7 @@ func TestPlanner_ConcurrentIndexRefs(t *testing.T) {
 		nodes, err := postgres.New().WithConcurrentIndexRefs(
 			difftypes.IndexRef{},
 			difftypes.IndexRef{Name: "idx_users_email", TableName: "users"},
-		).GenerateMigrationAST(diff, generated)
+		).GenerateMigrationAST(diff, desired)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -153,7 +153,7 @@ func TestPlanner_ConcurrentIndexRefs(t *testing.T) {
 		caps := capability.Postgres16().With(capability.CreateIndexConcurrently, false)
 		nodes, err := postgres.NewWithCapabilities(caps).WithConcurrentIndexRefs(
 			difftypes.IndexRef{Name: "idx_users_email", TableName: "users"},
-		).GenerateMigrationAST(diff, generated)
+		).GenerateMigrationAST(diff, desired)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -167,7 +167,7 @@ func TestPlanner_ConcurrentIndexRefs(t *testing.T) {
 
 		base := postgres.New()
 		_ = base.WithConcurrentIndexRefs(difftypes.IndexRef{Name: "idx_users_email", TableName: "users"})
-		nodes, err := base.GenerateMigrationAST(diff, generated)
+		nodes, err := base.GenerateMigrationAST(diff, desired)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -180,8 +180,8 @@ func TestPlanner_ConcurrentIndexRefs(t *testing.T) {
 		c := qt.New(t)
 		ref := difftypes.IndexRef{Name: " idx users email ", TableName: "users"}
 		rawDiff := &difftypes.SchemaDiff{IndexesAdded: []difftypes.IndexRef{ref}}
-		rawGenerated := &goschema.Database{
-			Indexes: []goschema.Index{
+		rawGenerated := &schemamodel.Database{
+			Indexes: []schemamodel.Index{
 				{Name: ref.Name, TableName: ref.TableName, Fields: []string{"email"}},
 			},
 		}

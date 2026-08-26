@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashcl"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 )
@@ -20,25 +20,25 @@ import (
 // exactly what the fixture below did.
 func TestRenderIndexPartNullsOrderRoundTrip(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "T", Name: "t"}},
-		Fields: []goschema.Field{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "T", Name: "t"}},
+		Fields: []schemamodel.Field{
 			{StructName: "T", Name: "a", Type: "text"},
 			{StructName: "T", Name: "b", Type: "text"},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{
 				StructName: "T",
 				Name:       "i",
 				Fields:     []string{"a", "b"},
-				Parts: []goschema.IndexPart{
-					{Name: "a", Desc: true, NullsOrder: goschema.NullsOrderLast},
-					{Name: "b", NullsOrder: goschema.NullsOrderFirst},
+				Parts: []schemamodel.IndexPart{
+					{Name: "a", Desc: true, NullsOrder: schemamodel.NullsOrderLast},
+					{Name: "b", NullsOrder: schemamodel.NullsOrderFirst},
 				},
 			},
 		},
 	}
-	goschema.Finalize(db)
+	schemamodel.Finalize(db)
 
 	rendered, err := atlashclrender.Render(db)
 	c.Assert(err, qt.IsNil)
@@ -49,9 +49,9 @@ func TestRenderIndexPartNullsOrderRoundTrip(t *testing.T) {
 	parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", hcl))
 	c.Assert(parsed.Indexes, qt.HasLen, 1)
-	c.Assert(parsed.Indexes[0].Parts, qt.DeepEquals, []goschema.IndexPart{
-		{Name: "a", Desc: true, NullsOrder: goschema.NullsOrderLast},
-		{Name: "b", NullsOrder: goschema.NullsOrderFirst},
+	c.Assert(parsed.Indexes[0].Parts, qt.DeepEquals, []schemamodel.IndexPart{
+		{Name: "a", Desc: true, NullsOrder: schemamodel.NullsOrderLast},
+		{Name: "b", NullsOrder: schemamodel.NullsOrderFirst},
 	})
 }
 
@@ -62,21 +62,21 @@ func TestRenderIndexPartNullsOrderRoundTrip(t *testing.T) {
 // to write it.
 func TestRenderIndexPartNullsOrderKeepsOnBlocks(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "T", Name: "t"}},
-		Fields: []goschema.Field{{StructName: "T", Name: "a", Type: "text"}},
-		Indexes: []goschema.Index{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "T", Name: "t"}},
+		Fields: []schemamodel.Field{{StructName: "T", Name: "a", Type: "text"}},
+		Indexes: []schemamodel.Index{
 			{
 				StructName: "T",
 				Name:       "i",
 				Fields:     []string{"a"},
-				Parts: []goschema.IndexPart{
-					{Name: "a", NullsOrder: goschema.NullsOrderFirst},
+				Parts: []schemamodel.IndexPart{
+					{Name: "a", NullsOrder: schemamodel.NullsOrderFirst},
 				},
 			},
 		},
 	}
-	goschema.Finalize(db)
+	schemamodel.Finalize(db)
 
 	rendered, err := atlashclrender.Render(db)
 	c.Assert(err, qt.IsNil)
@@ -86,7 +86,7 @@ func TestRenderIndexPartNullsOrderKeepsOnBlocks(t *testing.T) {
 
 	parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", hcl))
-	c.Assert(parsed.Indexes[0].Parts, qt.DeepEquals, []goschema.IndexPart{
-		{Name: "a", NullsOrder: goschema.NullsOrderFirst},
+	c.Assert(parsed.Indexes[0].Parts, qt.DeepEquals, []schemamodel.IndexPart{
+		{Name: "a", NullsOrder: schemamodel.NullsOrderFirst},
 	})
 }

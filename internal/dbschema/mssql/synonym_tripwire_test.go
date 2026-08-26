@@ -7,7 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // TestSynonyms_ModelAndIntrospectionLandTogether is a tripwire, not a feature
@@ -17,7 +17,7 @@ import (
 // because no schema model carries a synonym and no converter builds the node,
 // so there is no way to publish a statement the reader cannot read back.
 //
-// The day goschema.Database gains a Synonyms collection, that stops being true.
+// The day schemamodel.Database gains a Synonyms collection, that stops being true.
 // A declared synonym would render, apply, and then be invisible to `db read` --
 // so the next comparison would find it missing and emit CREATE SYNONYM again,
 // forever. The mssql renderer's own VisitCreateSequence comment records this
@@ -31,11 +31,11 @@ import (
 func TestSynonyms_ModelAndIntrospectionLandTogether(t *testing.T) {
 	c := qt.New(t)
 
-	_, modelled := reflect.TypeFor[goschema.Database]().FieldByName("Synonyms")
+	_, modelled := reflect.TypeFor[schemamodel.Database]().FieldByName("Synonyms")
 	_, introspected := reflect.TypeFor[catalog.Database]().FieldByName("Synonyms")
 
 	c.Assert(modelled, qt.Equals, introspected, qt.Commentf(
-		"goschema.Database declares Synonyms: %t, catalog.Database declares them: %t. "+
+		"schemamodel.Database declares Synonyms: %t, catalog.Database declares them: %t. "+
 			"The SQL Server renderer emits CREATE SYNONYM, so a model that declares the object "+
 			"while introspection cannot read it back makes every apply re-create it",
 		modelled, introspected))

@@ -12,9 +12,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -52,7 +52,7 @@ func TestPlanGeneratedMigrationSpecs_ReverseOnlyNoTransactionMarksPair(t *testin
 	diff := &difftypes.SchemaDiff{EnumsModified: []difftypes.EnumDiff{{
 		EnumName: "status", ValuesRemoved: []string{"retired"},
 	}}}
-	desired := &goschema.Database{Enums: []goschema.Enum{{
+	desired := &schemamodel.Database{Enums: []schemamodel.Enum{{
 		Name: "status", Values: []string{"active"},
 	}}}
 	current := &catalog.Database{Enums: []catalog.Enum{{
@@ -151,9 +151,9 @@ func TestPlanGeneratedMigrationSpecs_SplitsTransactionalAndConcurrentIndex(t *te
 
 	diff := indexOnlyDiff()
 	diff.TablesAdded = []string{"posts"}
-	generated := indexOnlyGeneratedSchema()
-	generated.Tables = append(generated.Tables, goschema.Table{StructName: "Post", Name: "posts"})
-	generated.Fields = append(generated.Fields, goschema.Field{
+	desired := indexOnlyGeneratedSchema()
+	desired.Tables = append(desired.Tables, schemamodel.Table{StructName: "Post", Name: "posts"})
+	desired.Fields = append(desired.Fields, schemamodel.Field{
 		StructName: "Post",
 		Name:       "id",
 		Type:       "SERIAL",
@@ -163,7 +163,7 @@ func TestPlanGeneratedMigrationSpecs_SplitsTransactionalAndConcurrentIndex(t *te
 
 	specs, _, err := planGeneratedMigrationSpecs(
 		diff,
-		generated,
+		desired,
 		&catalog.Database{Tables: []catalog.Table{{Name: "users", Type: "BASE TABLE", EstimatedRows: 10}}},
 		postgresInfo(capability.Postgres16()),
 		100,
@@ -197,12 +197,12 @@ func TestPlanGeneratedMigrationSpecs_SplitsPopulatedAndEmptyTableIndexes(t *test
 		{Name: "idx_users_email", TableName: "users"},
 		{Name: "idx_posts_title", TableName: "posts"},
 	}}
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "User", Name: "users"},
 			{StructName: "Post", Name: "posts"},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{Name: "idx_users_email", StructName: "User", Fields: []string{"email"}},
 			{Name: "idx_posts_title", StructName: "Post", Fields: []string{"title"}},
 		},
@@ -212,7 +212,7 @@ func TestPlanGeneratedMigrationSpecs_SplitsPopulatedAndEmptyTableIndexes(t *test
 		{Name: "posts", Type: "BASE TABLE", EstimatedRows: 0},
 	}}
 
-	specs, _, err := planGeneratedMigrationSpecs(diff, generated, dbSchema, postgresInfo(capability.Postgres16()), 100, "add_indexes", DiffPolicy{}, atlasmigrate.Qualifier{})
+	specs, _, err := planGeneratedMigrationSpecs(diff, desired, dbSchema, postgresInfo(capability.Postgres16()), 100, "add_indexes", DiffPolicy{}, atlasmigrate.Qualifier{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(specs, qt.HasLen, 2)
@@ -248,19 +248,19 @@ func TestPlanGeneratedMigrationSpecs_LeadsWithTheEnumValueAddition(t *testing.T)
 			ValuesAdded: []string{"archived"},
 		}},
 	}
-	generated := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "User", Name: "users"}},
-		Fields: []goschema.Field{{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
+		Fields: []schemamodel.Field{{
 			StructName: "User",
 			Name:       "id",
 			Type:       "SERIAL",
 			Primary:    true,
 			AutoInc:    true,
 		}},
-		Enums: []goschema.Enum{{Name: "status", Values: []string{"active", "archived"}}},
+		Enums: []schemamodel.Enum{{Name: "status", Values: []string{"active", "archived"}}},
 	}
 
-	specs, _, err := planGeneratedMigrationSpecs(diff, generated, &catalog.Database{}, postgresInfo(capability.Postgres16()), 100, "mixed", DiffPolicy{}, atlasmigrate.Qualifier{})
+	specs, _, err := planGeneratedMigrationSpecs(diff, desired, &catalog.Database{}, postgresInfo(capability.Postgres16()), 100, "mixed", DiffPolicy{}, atlasmigrate.Qualifier{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(specs, qt.HasLen, 2)
@@ -392,9 +392,9 @@ func TestPlanGeneratedMigrationSpecs_ConcurrentIndexDropSplitsFromTransactional(
 
 	diff := indexRemovalOnlyDiff()
 	diff.TablesAdded = []string{"posts"}
-	generated := indexOnlyGeneratedSchema()
-	generated.Tables = append(generated.Tables, goschema.Table{StructName: "Post", Name: "posts"})
-	generated.Fields = append(generated.Fields, goschema.Field{
+	desired := indexOnlyGeneratedSchema()
+	desired.Tables = append(desired.Tables, schemamodel.Table{StructName: "Post", Name: "posts"})
+	desired.Fields = append(desired.Fields, schemamodel.Field{
 		StructName: "Post",
 		Name:       "id",
 		Type:       "SERIAL",
@@ -404,7 +404,7 @@ func TestPlanGeneratedMigrationSpecs_ConcurrentIndexDropSplitsFromTransactional(
 
 	specs, _, err := planGeneratedMigrationSpecs(
 		diff,
-		generated,
+		desired,
 		indexRemovalDBSchema(),
 		postgresInfo(capability.Postgres16()),
 		100,
@@ -460,10 +460,10 @@ func indexOnlyDiff() *difftypes.SchemaDiff {
 	}}
 }
 
-func indexOnlyGeneratedSchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "User", Name: "users"}},
-		Indexes: []goschema.Index{
+func indexOnlyGeneratedSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
+		Indexes: []schemamodel.Index{
 			{Name: "idx_users_email", StructName: "User", Fields: []string{"email"}},
 		},
 	}

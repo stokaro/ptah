@@ -8,7 +8,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 )
 
@@ -488,18 +488,18 @@ func TestExcludeDatabase_SelectorsThatNameNoSchemaKeepEverySchema(t *testing.T) 
 // a CREATE SCHEMA, together with everything the selector was protecting.
 func TestExcludeGenerated_SchemaSelectorTakesTheSchemaContentsWithIt(t *testing.T) {
 	c := qt.New(t)
-	schema := &goschema.Database{
-		Schemas: []goschema.Schema{{Name: "public"}, {Name: "app"}},
-		Tables: []goschema.Table{
+	schema := &schemamodel.Database{
+		Schemas: []schemamodel.Schema{{Name: "public"}, {Name: "app"}},
+		Tables: []schemamodel.Table{
 			{StructName: "User", Name: "users"},
 			{StructName: "Order", Schema: "app", Name: "orders"},
 		},
-		Enums: []goschema.Enum{
+		Enums: []schemamodel.Enum{
 			{Name: "mood", Values: []string{"happy"}},
 			{Name: "app.color", Values: []string{"red"}},
 		},
-		Sequences: []goschema.Sequence{{Schema: "app", Name: "app_seq"}},
-		Functions: []goschema.Function{{Name: "app.fn_app"}},
+		Sequences: []schemamodel.Sequence{{Schema: "app", Name: "app_seq"}},
+		Functions: []schemamodel.Function{{Name: "app.fn_app"}},
 	}
 
 	got, report, err := atlasfilter.ExcludeGeneratedReport(schema, []string{"app"}, "public")

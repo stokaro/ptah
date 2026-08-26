@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemachange"
 	"go.5x5.cz/ptah/internal/schemastate"
 )
@@ -43,10 +43,10 @@ func TestAConstraintsBackingIndexIsNotDropped(t *testing.T) {
 func TestAStandaloneUniqueIndexIsStillCompared(t *testing.T) {
 	c := qt.New(t)
 	description := describedTable(
-		goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
-		goschema.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true},
+		schemamodel.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+		schemamodel.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true},
 	)
-	description.Indexes = append(description.Indexes, goschema.Index{
+	description.Indexes = append(description.Indexes, schemamodel.Index{
 		StructName: "Widget", Name: "uq_widget_code", Fields: []string{"code"}, Unique: true,
 	})
 
@@ -77,18 +77,18 @@ func TestAnIndexThatBacksNothingIsStillDropped(t *testing.T) {
 
 // widgetDeclaringUniqueConstraint declares the guarantee as a CONSTRAINT and no
 // index, which is what a schema author writes.
-func widgetDeclaringUniqueConstraint() *goschema.Database {
+func widgetDeclaringUniqueConstraint() *schemamodel.Database {
 	description := widgetDeclaringNothing()
-	description.Constraints = append(description.Constraints, goschema.Constraint{
+	description.Constraints = append(description.Constraints, schemamodel.Constraint{
 		StructName: "Widget", Name: "uq_widget_code", Type: "UNIQUE", Columns: []string{"code"},
 	})
 	return description
 }
 
-func widgetDeclaringNothing() *goschema.Database {
+func widgetDeclaringNothing() *schemamodel.Database {
 	return describedTable(
-		goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
-		goschema.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true},
+		schemamodel.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+		schemamodel.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true},
 	)
 }
 
@@ -126,8 +126,8 @@ func widgetWithoutTheIndex() *catalog.Database {
 func TestAPrimaryKeysBackingIndexIsNotDropped(t *testing.T) {
 	c := qt.New(t)
 	description := describedTableWithKey([]string{"id"},
-		goschema.Field{StructName: "Widget", Name: "id", Type: "int"},
-		goschema.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true},
+		schemamodel.Field{StructName: "Widget", Name: "id", Type: "int"},
+		schemamodel.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true},
 	)
 	currentCatalog := widgetWithoutTheIndex()
 	currentCatalog.Constraints = []catalog.Constraint{{
@@ -208,7 +208,7 @@ func TestSuppressionMatchesTheWholeIdentity(t *testing.T) {
 // name a table of their own, which both sides then have to carry.
 func backingIdentityFixture(
 	indexName, indexTable, indexSchema string,
-) (*goschema.Database, *catalog.Database) {
+) (*schemamodel.Database, *catalog.Database) {
 	currentCatalog := widgetWithoutTheIndex()
 	currentCatalog.Constraints = []catalog.Constraint{{
 		Name: "uq_widget_code", TableName: "widget", Schema: "public",
@@ -230,11 +230,11 @@ func backingIdentityFixture(
 			{Name: "code", DataType: "text", IsNullable: "YES"},
 		},
 	})
-	description.Schemas = append(description.Schemas, goschema.Schema{Name: indexSchema})
-	description.Tables = append(description.Tables, goschema.Table{
+	description.Schemas = append(description.Schemas, schemamodel.Schema{Name: indexSchema})
+	description.Tables = append(description.Tables, schemamodel.Table{
 		StructName: "Other", Name: indexTable, Schema: indexSchema,
 	})
-	description.Fields = append(description.Fields, goschema.Field{
+	description.Fields = append(description.Fields, schemamodel.Field{
 		StructName: "Other", Name: "code", Type: "text", Nullable: true,
 	})
 	return description, currentCatalog
@@ -351,13 +351,13 @@ func TestSQLServerKeepsTheConstraintAndTheIndexApart(t *testing.T) {
 // foreignKeyBackingFixture is a child whose column references a parent through a
 // named FOREIGN KEY, read back with an index of the constraint's name that the
 // description never mentions.
-func foreignKeyBackingFixture(schema string) (*goschema.Database, *catalog.Database) {
-	description := &goschema.Database{
-		Tables: []goschema.Table{
+func foreignKeyBackingFixture(schema string) (*schemamodel.Database, *catalog.Database) {
+	description := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Parent", Name: "parent", Schema: schema},
 			{StructName: "Widget", Name: "widget", Schema: schema},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Parent", Name: "id", Type: "int", Primary: true},
 			{StructName: "Widget", Name: "id", Type: "int", Primary: true},
 			{
@@ -400,8 +400,8 @@ func foreignKeyBackingFixture(schema string) (*goschema.Database, *catalog.Datab
 func TestAPrimaryKeyIndexUnderAnotherNameIsStillTheServers(t *testing.T) {
 	c := qt.New(t)
 	description := describedTableWithKey([]string{"id"},
-		goschema.Field{StructName: "Widget", Name: "id", Type: "int"},
-		goschema.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true},
+		schemamodel.Field{StructName: "Widget", Name: "id", Type: "int"},
+		schemamodel.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true},
 	)
 	currentCatalog := widgetWithoutTheIndex()
 	currentCatalog.Constraints = []catalog.Constraint{{
@@ -455,13 +455,13 @@ func TestTheAutoindexPrefixIsSQLitesAlone(t *testing.T) {
 func TestAnExcludeConstraintOwnsItsIndexAndACheckOwnsNone(t *testing.T) {
 	tests := []struct {
 		name       string
-		constraint goschema.Constraint
+		constraint schemamodel.Constraint
 		reported   catalog.Constraint
 		drops      int
 	}{
 		{
 			name: "an EXCLUDE is enforced with one",
-			constraint: goschema.Constraint{
+			constraint: schemamodel.Constraint{
 				StructName: "Widget", Name: "guard_widget_code", Type: "EXCLUDE",
 				UsingMethod: "gist", ExcludeElements: "code WITH =",
 			},
@@ -474,7 +474,7 @@ func TestAnExcludeConstraintOwnsItsIndexAndACheckOwnsNone(t *testing.T) {
 		},
 		{
 			name: "a CHECK is enforced with none",
-			constraint: goschema.Constraint{
+			constraint: schemamodel.Constraint{
 				StructName: "Widget", Name: "guard_widget_code", Type: "CHECK",
 				CheckExpression: "code <> ''",
 			},

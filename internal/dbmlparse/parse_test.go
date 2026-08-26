@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/dbmlparse"
 )
 
@@ -182,8 +182,8 @@ func TestParse_SkipsWhatDescribesTheDiagram(t *testing.T) {
 }
 
 // fieldsByName indexes one table's columns by column name.
-func fieldsByName(db *goschema.Database, structName string) map[string]goschema.Field {
-	fields := make(map[string]goschema.Field, len(db.Fields))
+func fieldsByName(db *schemamodel.Database, structName string) map[string]schemamodel.Field {
+	fields := make(map[string]schemamodel.Field, len(db.Fields))
 	for _, field := range db.Fields {
 		if field.StructName != structName {
 			continue

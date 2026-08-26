@@ -8,6 +8,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashcl"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 	"go.5x5.cz/ptah/internal/goannotationexport"
@@ -146,7 +147,7 @@ func TestExport_HappyPath_PreservesGoAnnotationSemantics(t *testing.T) {
 	c.Assert(after.ManagedData[0].Schema, qt.Equals, "app")
 	c.Assert(after.ManagedData[0].Table, qt.Equals, "users")
 	c.Assert(after.ManagedData[0].Keys, qt.DeepEquals, []string{"id", "email"})
-	rows, err := goschema.LoadManagedRows("", after.ManagedData[0])
+	rows, err := schemamodel.LoadManagedRows("", after.ManagedData[0])
 	c.Assert(err, qt.IsNil)
 	c.Assert(rows, qt.HasLen, 1)
 
@@ -156,72 +157,72 @@ func TestExport_HappyPath_PreservesGoAnnotationSemantics(t *testing.T) {
 	c.Assert(stable.Data, qt.DeepEquals, hclData)
 }
 
-func withoutSequenceProvenance(values []goschema.Sequence) []goschema.Sequence {
-	result := append([]goschema.Sequence(nil), values...)
+func withoutSequenceProvenance(values []schemamodel.Sequence) []schemamodel.Sequence {
+	result := append([]schemamodel.Sequence(nil), values...)
 	for i := range result {
 		result[i].StructName = ""
 	}
 	return result
 }
 
-func withoutDomainProvenance(values []goschema.Domain) []goschema.Domain {
-	result := append([]goschema.Domain(nil), values...)
+func withoutDomainProvenance(values []schemamodel.Domain) []schemamodel.Domain {
+	result := append([]schemamodel.Domain(nil), values...)
 	for i := range result {
 		result[i].StructName = ""
 	}
 	return result
 }
 
-func withoutCompositeProvenance(values []goschema.CompositeType) []goschema.CompositeType {
-	result := append([]goschema.CompositeType(nil), values...)
+func withoutCompositeProvenance(values []schemamodel.CompositeType) []schemamodel.CompositeType {
+	result := append([]schemamodel.CompositeType(nil), values...)
 	for i := range result {
 		result[i].StructName = ""
 	}
 	return result
 }
 
-func withoutRangeProvenance(values []goschema.Range) []goschema.Range {
-	result := append([]goschema.Range(nil), values...)
+func withoutRangeProvenance(values []schemamodel.Range) []schemamodel.Range {
+	result := append([]schemamodel.Range(nil), values...)
 	for i := range result {
 		result[i].StructName = ""
 	}
 	return result
 }
 
-func grantsByTarget(values []goschema.Grant) map[string]goschema.Grant {
-	result := make(map[string]goschema.Grant, len(values))
+func grantsByTarget(values []schemamodel.Grant) map[string]schemamodel.Grant {
+	result := make(map[string]schemamodel.Grant, len(values))
 	for _, value := range values {
 		result[value.OnTable+"|"+value.OnSchema+"|"+value.OnSequence] = value
 	}
 	return result
 }
 
-func tablesByQualifiedName(values []goschema.Table) map[string]goschema.Table {
-	result := make(map[string]goschema.Table, len(values))
+func tablesByQualifiedName(values []schemamodel.Table) map[string]schemamodel.Table {
+	result := make(map[string]schemamodel.Table, len(values))
 	for _, value := range values {
 		result[value.QualifiedName()] = value
 	}
 	return result
 }
 
-func fieldsByQualifiedName(values []goschema.Field) map[string]goschema.Field {
-	result := make(map[string]goschema.Field, len(values))
+func fieldsByQualifiedName(values []schemamodel.Field) map[string]schemamodel.Field {
+	result := make(map[string]schemamodel.Field, len(values))
 	for _, value := range values {
 		result[value.StructName+"."+value.Name] = value
 	}
 	return result
 }
 
-func indexesByName(values []goschema.Index) map[string]goschema.Index {
-	result := make(map[string]goschema.Index, len(values))
+func indexesByName(values []schemamodel.Index) map[string]schemamodel.Index {
+	result := make(map[string]schemamodel.Index, len(values))
 	for _, value := range values {
 		result[value.Name] = value
 	}
 	return result
 }
 
-func constraintsByName(values []goschema.Constraint) map[string]goschema.Constraint {
-	result := make(map[string]goschema.Constraint, len(values))
+func constraintsByName(values []schemamodel.Constraint) map[string]schemamodel.Constraint {
+	result := make(map[string]schemamodel.Constraint, len(values))
 	for _, value := range values {
 		result[value.Name] = value
 	}

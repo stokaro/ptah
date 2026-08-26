@@ -13,10 +13,10 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // PostgresDescribedSchemasPredicate is the realm predicate a DESCRIPTION uses:
@@ -132,7 +132,7 @@ func IsUncreatableSchema(dialect, name string) bool {
 // PostgreSQL-family migration to create a server-owned namespace. Extensions
 // may still name these schemas as installation placement without declaring a
 // schema block.
-func ValidateDeclaredPostgresSystemSchemas(dialect string, schemas []goschema.Schema) error {
+func ValidateDeclaredPostgresSystemSchemas(dialect string, schemas []schemamodel.Schema) error {
 	normalized := platform.NormalizeDialect(dialect)
 	if !platform.IsPostgresFamily(normalized) {
 		return nil

@@ -7,15 +7,16 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashcl"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 )
 
 func TestRenderColumnUniqueExprAndIdentityOptionsRoundTrip(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "T", Name: "t"}},
-		Fields: []goschema.Field{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "T", Name: "t"}},
+		Fields: []schemamodel.Field{
 			{
 				StructName:         "T",
 				Name:               "id",
@@ -31,7 +32,7 @@ func TestRenderColumnUniqueExprAndIdentityOptionsRoundTrip(t *testing.T) {
 			},
 		},
 	}
-	goschema.Finalize(db)
+	schemamodel.Finalize(db)
 
 	rendered, err := atlashclrender.Render(db)
 	c.Assert(err, qt.IsNil)
@@ -47,7 +48,7 @@ func TestRenderColumnUniqueExprAndIdentityOptionsRoundTrip(t *testing.T) {
 
 func TestRenderSystemExtensionSchemaAsLiteralRoundTrip(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{Extensions: []goschema.Extension{{
+	db := &schemamodel.Database{Extensions: []schemamodel.Extension{{
 		Name: "plpgsql", Schema: "pg_catalog", Version: "1.0", IfNotExists: true,
 	}}}
 
@@ -85,8 +86,8 @@ func TestRenderSystemExtensionSchemaAsLiteralRoundTrip(t *testing.T) {
 
 func TestRenderExtensionInstallationSchemaRoundTrip(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Extensions: []goschema.Extension{{
+	db := &schemamodel.Database{
+		Extensions: []schemamodel.Extension{{
 			Name:        "pgcrypto",
 			Schema:      "Extension Store",
 			IfNotExists: true,
@@ -106,8 +107,8 @@ func TestRenderExtensionInstallationSchemaRoundTrip(t *testing.T) {
 
 func TestRenderExtensionWhitespaceOnlyInstallationSchemaRoundTrip(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Extensions: []goschema.Extension{{Name: "pgcrypto", Schema: " "}},
+	db := &schemamodel.Database{
+		Extensions: []schemamodel.Extension{{Name: "pgcrypto", Schema: " "}},
 	}
 
 	rendered, err := atlashclrender.Render(db)
@@ -122,13 +123,13 @@ func TestRenderExtensionWhitespaceOnlyInstallationSchemaRoundTrip(t *testing.T) 
 
 func TestRenderPrimaryKeyColumnIsNotNullable(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Tables: []goschema.Table{{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{
 			StructName: "User",
 			Name:       "users",
 			PrimaryKey: []string{"id"},
 		}},
-		Fields: []goschema.Field{{
+		Fields: []schemamodel.Field{{
 			StructName: "User",
 			Name:       "id",
 			Type:       "BIGINT",
@@ -149,15 +150,15 @@ func TestRenderPrimaryKeyColumnIsNotNullable(t *testing.T) {
 func TestRenderTablesIndexesConstraintsAndDiagnostics(t *testing.T) {
 	c := qt.New(t)
 	falseValue := false
-	db := &goschema.Database{
-		Schemas: []goschema.Schema{{Name: "auth", Comment: "Authentication objects"}},
-		Enums:   []goschema.Enum{{Name: "enum_user_status", Values: []string{"active", "disabled"}}},
-		Tables: []goschema.Table{
+	db := &schemamodel.Database{
+		Schemas: []schemamodel.Schema{{Name: "auth", Comment: "Authentication objects"}},
+		Enums:   []schemamodel.Enum{{Name: "enum_user_status", Values: []string{"active", "disabled"}}},
+		Tables: []schemamodel.Table{
 			{StructName: "Account", Name: "accounts", Schema: "auth", PrimaryKey: []string{"id"}},
 			{StructName: "Team", Name: "teams", Schema: "auth", PrimaryKey: []string{"id"}},
 			{StructName: "User", Name: "users", Schema: "auth", Comment: "User accounts"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Account", FieldName: "ID", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "Team", FieldName: "ID", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "User", FieldName: "ID", Name: "id", Type: "SERIAL", Primary: true},
@@ -166,7 +167,7 @@ func TestRenderTablesIndexesConstraintsAndDiagnostics(t *testing.T) {
 			{StructName: "User", FieldName: "Status", Name: "status", Type: "enum_user_status", Default: "active", DefaultSet: true},
 			{StructName: "User", FieldName: "CreatedAt", Name: "created_at", Type: "TIMESTAMP", DefaultExpr: "CURRENT_TIMESTAMP", Check: "created_at IS NOT NULL"},
 		},
-		Indexes: []goschema.Index{{
+		Indexes: []schemamodel.Index{{
 			StructName:     "User",
 			TableName:      "auth.users",
 			Name:           "users_status_idx",
@@ -175,14 +176,14 @@ func TestRenderTablesIndexesConstraintsAndDiagnostics(t *testing.T) {
 			NullsDistinct:  &falseValue,
 			IncludeColumns: []string{"created_at"},
 		}},
-		Constraints: []goschema.Constraint{
+		Constraints: []schemamodel.Constraint{
 			{StructName: "User", Name: "users_status_check", Type: "CHECK", Table: "auth.users", CheckExpression: "status <> ''"},
 			{StructName: "User", Name: "users_email_key", Type: "UNIQUE", Table: "auth.users", Columns: []string{"account_id"}, IncludeColumns: []string{"created_at"}, NullsDistinct: &falseValue},
 			{StructName: "User", Name: "users_account_fk", Type: "FOREIGN KEY", Table: "auth.users", Columns: []string{"account_id"}, ForeignTable: "auth.accounts", ForeignColumn: "id", OnDelete: "CASCADE"},
 		},
-		Functions: []goschema.Function{{Name: "set_tenant_context", Body: "BEGIN END;"}},
+		Functions: []schemamodel.Function{{Name: "set_tenant_context", Body: "BEGIN END;"}},
 	}
-	goschema.Finalize(db)
+	schemamodel.Finalize(db)
 
 	first, err := atlashclrender.Render(db)
 	c.Assert(err, qt.IsNil)
@@ -226,16 +227,16 @@ func TestRenderTablesIndexesConstraintsAndDiagnostics(t *testing.T) {
 
 func TestRender_ExplicitTableReferencePreservesStructuralIdentity(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Tables: []goschema.Table{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Literal", Name: "tenant.data"},
 			{StructName: "Qualified", Schema: "tenant", Name: "data"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Literal", Name: "literal_id", Type: "INTEGER"},
 			{StructName: "Qualified", Name: "qualified_id", Type: "INTEGER"},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{
 				StructName: "Literal",
 				Name:       "literal_lookup",
@@ -249,7 +250,7 @@ func TestRender_ExplicitTableReferencePreservesStructuralIdentity(t *testing.T) 
 				Fields:     []string{"qualified_id"},
 			},
 		},
-		Constraints: []goschema.Constraint{
+		Constraints: []schemamodel.Constraint{
 			{
 				StructName:    "Literal",
 				Name:          "literal_self_fk",
@@ -269,7 +270,7 @@ func TestRender_ExplicitTableReferencePreservesStructuralIdentity(t *testing.T) 
 				ForeignColumn: "qualified_id",
 			},
 		},
-		Triggers: []goschema.Trigger{
+		Triggers: []schemamodel.Trigger{
 			{
 				Name:    "literal_trigger",
 				Table:   `"tenant.data"`,
@@ -287,15 +288,15 @@ func TestRender_ExplicitTableReferencePreservesStructuralIdentity(t *testing.T) 
 				Body:    "SELECT 1",
 			},
 		},
-		Functions: []goschema.Function{
+		Functions: []schemamodel.Function{
 			{Name: `"tenant.data"`, Returns: "integer", Language: "sql", Body: "SELECT 1"},
 			{Name: "tenant.data", Returns: "integer", Language: "sql", Body: "SELECT 1"},
 		},
-		Views: []goschema.View{
+		Views: []schemamodel.View{
 			{Name: `"tenant.data"`, Body: "SELECT 1"},
 			{Name: "tenant.data", Body: "SELECT 1"},
 		},
-		MaterializedViews: []goschema.MaterializedView{
+		MaterializedViews: []schemamodel.MaterializedView{
 			{Name: `"tenant.data"`, Body: "SELECT 1"},
 			{Name: "tenant.data", Body: "SELECT 1"},
 		},
@@ -408,28 +409,28 @@ func TestRenderFixture023SchemaObjectsRoundTrip(t *testing.T) {
 
 func TestRenderPreservesSensitiveAndComplexValuesWhileReportingInvalidObjects(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "User", Name: "users"}},
-		Roles:  []goschema.Role{{Name: "app_user", Password: "secret"}},
-		Functions: []goschema.Function{{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
+		Roles:  []schemamodel.Role{{Name: "app_user", Password: "secret"}},
+		Functions: []schemamodel.Function{{
 			Name:       "filter_user",
 			Parameters: "OUT tenant_id text",
 			Returns:    "text",
 			Language:   "sql",
 			Body:       "SELECT tenant_id",
 		}},
-		MaterializedViews: []goschema.MaterializedView{{
+		MaterializedViews: []schemamodel.MaterializedView{{
 			Name: "user_stats",
 			Body: "SELECT count(*) FROM users",
 		}},
-		Triggers: []goschema.Trigger{{
+		Triggers: []schemamodel.Trigger{{
 			Name:   "bad_event",
 			Table:  "users",
 			Timing: "BEFORE",
 			Event:  "ALTER",
 			Body:   "RETURN NEW;",
 		}},
-		Grants: []goschema.Grant{{Role: "app_user", Privileges: []string{"SELECT"}}},
+		Grants: []schemamodel.Grant{{Role: "app_user", Privileges: []string{"SELECT"}}},
 	}
 
 	rendered, err := atlashclrender.Render(db)
@@ -449,24 +450,24 @@ func TestRenderPreservesSensitiveAndComplexValuesWhileReportingInvalidObjects(t 
 
 func TestRenderPreservesTableChecksAndManagedDataWhileReportingOrphans(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Tables: []goschema.Table{{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{
 			StructName: "User",
 			Name:       "users",
 			Checks:     []string{"id > 0"},
 		}},
-		ManagedData: []goschema.ManagedData{{
+		ManagedData: []schemamodel.ManagedData{{
 			StructName: "User",
 			Table:      "users",
 			Keys:       []string{"id"},
 			File:       "users.yaml",
 		}},
-		Indexes: []goschema.Index{{
+		Indexes: []schemamodel.Index{{
 			Name:      "missing_table_idx",
 			TableName: "missing",
 			Fields:    []string{"id"},
 		}},
-		Constraints: []goschema.Constraint{{
+		Constraints: []schemamodel.Constraint{{
 			Name:    "missing_table_check",
 			Table:   "missing",
 			Type:    "CHECK",
@@ -508,8 +509,8 @@ func TestRenderPreservesTableChecksAndManagedDataWhileReportingOrphans(t *testin
 // (stokaro/ptah#1625).
 func TestRenderMaterializedViewRoundTripCarriesNoRefreshStrategy(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		MaterializedViews: []goschema.MaterializedView{{
+	db := &schemamodel.Database{
+		MaterializedViews: []schemamodel.MaterializedView{{
 			Name: "user_stats",
 			Body: "SELECT count(*) FROM users",
 		}},
@@ -530,8 +531,8 @@ func TestRenderMaterializedViewRoundTripCarriesNoRefreshStrategy(t *testing.T) {
 
 func TestRenderMaterializedViewOmitsTheRetiredAttribute(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		MaterializedViews: []goschema.MaterializedView{{
+	db := &schemamodel.Database{
+		MaterializedViews: []schemamodel.MaterializedView{{
 			Name: "user_stats",
 			Body: "SELECT count(*) FROM users",
 		}},
@@ -546,10 +547,10 @@ func TestRenderMaterializedViewOmitsTheRetiredAttribute(t *testing.T) {
 
 func TestRenderIndexCommentRoundTrip(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "User", Name: "users"}},
-		Fields: []goschema.Field{{StructName: "User", FieldName: "Email", Name: "email", Type: "text"}},
-		Indexes: []goschema.Index{{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
+		Fields: []schemamodel.Field{{StructName: "User", FieldName: "Email", Name: "email", Type: "text"}},
+		Indexes: []schemamodel.Index{{
 			StructName: "User",
 			TableName:  "users",
 			Name:       "idx_users_email",
@@ -557,7 +558,7 @@ func TestRenderIndexCommentRoundTrip(t *testing.T) {
 			Comment:    "lookup by email",
 		}},
 	}
-	goschema.Finalize(db)
+	schemamodel.Finalize(db)
 
 	rendered, err := atlashclrender.Render(db)
 
@@ -574,10 +575,10 @@ func TestRenderIndexCommentRoundTrip(t *testing.T) {
 
 func TestRenderIndexGranularityRoundTrip(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Event", Name: "events"}},
-		Fields: []goschema.Field{{StructName: "Event", FieldName: "Payload", Name: "payload", Type: "String"}},
-		Indexes: []goschema.Index{{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Event", Name: "events"}},
+		Fields: []schemamodel.Field{{StructName: "Event", FieldName: "Payload", Name: "payload", Type: "String"}},
+		Indexes: []schemamodel.Index{{
 			StructName:  "Event",
 			TableName:   "events",
 			Name:        "idx_events_payload",
@@ -586,7 +587,7 @@ func TestRenderIndexGranularityRoundTrip(t *testing.T) {
 			Granularity: 64,
 		}},
 	}
-	goschema.Finalize(db)
+	schemamodel.Finalize(db)
 
 	rendered, err := atlashclrender.Render(db)
 
@@ -603,17 +604,17 @@ func TestRenderIndexGranularityRoundTrip(t *testing.T) {
 
 func TestRenderIndexZeroGranularityOmitsAttribute(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Event", Name: "events"}},
-		Fields: []goschema.Field{{StructName: "Event", FieldName: "Payload", Name: "payload", Type: "String"}},
-		Indexes: []goschema.Index{{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Event", Name: "events"}},
+		Fields: []schemamodel.Field{{StructName: "Event", FieldName: "Payload", Name: "payload", Type: "String"}},
+		Indexes: []schemamodel.Index{{
 			StructName: "Event",
 			TableName:  "events",
 			Name:       "idx_events_payload",
 			Fields:     []string{"payload"},
 		}},
 	}
-	goschema.Finalize(db)
+	schemamodel.Finalize(db)
 
 	rendered, err := atlashclrender.Render(db)
 
@@ -624,19 +625,19 @@ func TestRenderIndexZeroGranularityOmitsAttribute(t *testing.T) {
 
 func TestRenderColumnParityExtensionsRoundTrip(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Enums: []goschema.Enum{{
+	db := &schemamodel.Database{
+		Enums: []schemamodel.Enum{{
 			Name:   "enum_user_status",
 			Values: []string{"active", "disabled"},
 		}},
-		Tables: []goschema.Table{{
+		Tables: []schemamodel.Table{{
 			StructName: "User",
 			Name:       "users",
 			Overrides: map[string]map[string]string{
 				"mysql": {"engine": "InnoDB"},
 			},
 		}},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{
 				StructName: "User",
 				FieldName:  "ID",
@@ -674,13 +675,13 @@ func TestRenderColumnParityExtensionsRoundTrip(t *testing.T) {
 
 func TestRenderStringTemplateIntroducersRoundTrip(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Tables: []goschema.Table{{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{
 			StructName: "Template",
 			Name:       "templates",
 			Comment:    "literal ${tenant} and %{if enabled}",
 		}},
-		Fields: []goschema.Field{{
+		Fields: []schemamodel.Field{{
 			StructName: "Template",
 			FieldName:  "Body",
 			Name:       "body",
@@ -688,8 +689,8 @@ func TestRenderStringTemplateIntroducersRoundTrip(t *testing.T) {
 			Default:    "${literal}",
 			DefaultSet: true,
 		}},
-		Roles: []goschema.Role{{Name: "role${literal}"}},
-		Grants: []goschema.Grant{{
+		Roles: []schemamodel.Role{{Name: "role${literal}"}},
+		Grants: []schemamodel.Grant{{
 			Role:       "role${literal}",
 			Privileges: []string{"SELECT"},
 			OnTable:    "templates",
@@ -713,19 +714,19 @@ func TestRenderStringTemplateIntroducersRoundTrip(t *testing.T) {
 
 func TestRenderQuotedIdentifiersRoundTrip(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Schemas: []goschema.Schema{{Name: "tenant.data"}},
-		Tables: []goschema.Table{{
+	db := &schemamodel.Database{
+		Schemas: []schemamodel.Schema{{Name: "tenant.data"}},
+		Tables: []schemamodel.Table{{
 			StructName: "Record",
 			Name:       "user-records",
 			Schema:     "tenant.data",
 			PrimaryKey: []string{"tenant-id"},
 		}},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Record", FieldName: "TenantID", Name: "tenant-id", Type: "TEXT"},
 			{StructName: "Record", FieldName: "DisplayName", Name: "display.name", Type: "TEXT"},
 		},
-		Indexes: []goschema.Index{{
+		Indexes: []schemamodel.Index{{
 			StructName: "Record",
 			Name:       "display-name-index",
 			Fields:     []string{"display.name"},
@@ -749,14 +750,14 @@ func TestRenderQuotedIdentifiersRoundTrip(t *testing.T) {
 
 func TestRenderPreservesQualifiedTargetsAndRoleInheritance(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Schemas: []goschema.Schema{{Name: "auth"}},
-		Tables:  []goschema.Table{{StructName: "User", Name: "users", Schema: "auth"}},
-		Roles: []goschema.Role{
+	db := &schemamodel.Database{
+		Schemas: []schemamodel.Schema{{Name: "auth"}},
+		Tables:  []schemamodel.Table{{StructName: "User", Name: "users", Schema: "auth"}},
+		Roles: []schemamodel.Role{
 			{Name: "inheriting", Inherit: true},
 			{Name: "isolated", Inherit: false},
 		},
-		Triggers: []goschema.Trigger{{
+		Triggers: []schemamodel.Trigger{{
 			Name:    "users_touch",
 			Table:   "auth.users",
 			Timing:  "BEFORE",
@@ -764,20 +765,20 @@ func TestRenderPreservesQualifiedTargetsAndRoleInheritance(t *testing.T) {
 			ForEach: "ROW",
 			Body:    "RETURN NEW;",
 		}},
-		RLSPolicies: []goschema.RLSPolicy{{
+		RLSPolicies: []schemamodel.RLSPolicy{{
 			Name:            "users_policy",
 			Table:           "auth.users",
 			PolicyFor:       "SELECT",
 			ToRoles:         "isolated",
 			UsingExpression: "true",
 		}},
-		Grants: []goschema.Grant{{
+		Grants: []schemamodel.Grant{{
 			Role:       "isolated",
 			Privileges: []string{"SELECT"},
 			OnTable:    "auth.users",
 		}},
 	}
-	goschema.Finalize(db)
+	schemamodel.Finalize(db)
 
 	rendered, err := atlashclrender.Render(db)
 
@@ -807,12 +808,12 @@ func TestRenderPreservesQualifiedTargetsAndRoleInheritance(t *testing.T) {
 
 func TestRenderSkipsIncompleteObjectsWithDiagnostics(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Functions:         []goschema.Function{{Name: "missing_body"}},
-		Views:             []goschema.View{{Name: "missing_body"}},
-		MaterializedViews: []goschema.MaterializedView{{Name: "missing_body"}},
-		Triggers:          []goschema.Trigger{{Name: "missing_table", Timing: "BEFORE", Event: "UPDATE", Body: "RETURN NEW;"}},
-		RLSPolicies:       []goschema.RLSPolicy{{Name: "missing_table"}},
+	db := &schemamodel.Database{
+		Functions:         []schemamodel.Function{{Name: "missing_body"}},
+		Views:             []schemamodel.View{{Name: "missing_body"}},
+		MaterializedViews: []schemamodel.MaterializedView{{Name: "missing_body"}},
+		Triggers:          []schemamodel.Trigger{{Name: "missing_table", Timing: "BEFORE", Event: "UPDATE", Body: "RETURN NEW;"}},
+		RLSPolicies:       []schemamodel.RLSPolicy{{Name: "missing_table"}},
 	}
 
 	rendered, err := atlashclrender.Render(db)
@@ -831,13 +832,13 @@ func TestRenderSkipsIncompleteObjectsWithDiagnostics(t *testing.T) {
 
 func TestRenderCollapsesEmbeddedFieldsToConcreteColumns(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "User", Name: "users"}},
-		Fields: []goschema.Field{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
+		Fields: []schemamodel.Field{
 			{StructName: "User", FieldName: "CreatedAt", Name: "created_at", Type: "TIMESTAMP"},
 			{StructName: "User", FieldName: "UpdatedAt", Name: "updated_at", Type: "TIMESTAMP"},
 		},
-		EmbeddedFields: []goschema.EmbeddedField{{StructName: "User", Mode: "inline", EmbeddedTypeName: "Timestamps"}},
+		EmbeddedFields: []schemamodel.EmbeddedField{{StructName: "User", Mode: "inline", EmbeddedTypeName: "Timestamps"}},
 	}
 
 	result, err := atlashclrender.Render(db)
@@ -849,22 +850,22 @@ func TestRenderCollapsesEmbeddedFieldsToConcreteColumns(t *testing.T) {
 	c.Assert(hcl, qt.Not(qt.Contains), "embedded")
 }
 
-func fieldByName(fields []goschema.Field, name string) goschema.Field {
+func fieldByName(fields []schemamodel.Field, name string) schemamodel.Field {
 	for _, field := range fields {
 		if field.Name == name {
 			return field
 		}
 	}
-	return goschema.Field{}
+	return schemamodel.Field{}
 }
 
-func constraintByName(constraints []goschema.Constraint, name string) goschema.Constraint {
+func constraintByName(constraints []schemamodel.Constraint, name string) schemamodel.Constraint {
 	for _, constraint := range constraints {
 		if constraint.Name == name {
 			return constraint
 		}
 	}
-	return goschema.Constraint{}
+	return schemamodel.Constraint{}
 }
 
 func diagnosticPaths(diagnostics []atlashclrender.Diagnostic) []string {
@@ -875,13 +876,13 @@ func diagnosticPaths(diagnostics []atlashclrender.Diagnostic) []string {
 	return paths
 }
 
-func roleByName(roles []goschema.Role, name string) goschema.Role {
+func roleByName(roles []schemamodel.Role, name string) schemamodel.Role {
 	for _, role := range roles {
 		if role.Name == name {
 			return role
 		}
 	}
-	return goschema.Role{}
+	return schemamodel.Role{}
 }
 
 // TestRenderKeepsTheDeclaredColumnOrder pins that a document describes the
@@ -899,9 +900,9 @@ func roleByName(roles []goschema.Role, name string) goschema.Role {
 // both directions: sorted they are active, id, name.
 func TestRenderKeepsTheDeclaredColumnOrder(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Author", Name: "authors"}},
-		Fields: []goschema.Field{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Author", Name: "authors"}},
+		Fields: []schemamodel.Field{
 			{StructName: "Author", Name: "id", Type: "bigint", Primary: true},
 			{StructName: "Author", Name: "name", Type: "text"},
 			{StructName: "Author", Name: "active", Type: "boolean"},

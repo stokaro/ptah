@@ -10,7 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
@@ -26,10 +26,10 @@ import (
 func TestReverseSchemaDiff_ModifiedUserTypesCarryTheDownDirectionsCurrentShape(t *testing.T) {
 	c := qt.New(t)
 
-	target := &goschema.Database{
-		Domains: []goschema.Domain{{Name: "dd", BaseType: "integer"}},
-		CompositeTypes: []goschema.CompositeType{
-			{Name: "cc", Fields: []goschema.CompositeTypeField{{Name: "f", Type: "dd"}}},
+	target := &schemamodel.Database{
+		Domains: []schemamodel.Domain{{Name: "dd", BaseType: "integer"}},
+		CompositeTypes: []schemamodel.CompositeType{
+			{Name: "cc", Fields: []schemamodel.CompositeField{{Name: "f", Type: "dd"}}},
 		},
 	}
 	forward := &difftypes.SchemaDiff{

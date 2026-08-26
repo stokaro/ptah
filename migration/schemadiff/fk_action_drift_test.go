@@ -7,18 +7,18 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
 // exportsSchema returns a generated schema with an exports.file_id field-level
 // FK whose ON DELETE action is set to onDelete (empty string == no action).
-func exportsSchema(onDelete string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Export", Name: "exports"}},
-		Fields: []goschema.Field{
+func exportsSchema(onDelete string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Export", Name: "exports"}},
+		Fields: []schemamodel.Field{
 			{StructName: "Export", Name: "id", Type: "TEXT", Primary: true},
 			{
 				StructName:     "Export",
@@ -108,16 +108,16 @@ func TestCompare_FieldLevelForeignKeyActionDrift(t *testing.T) {
 func TestCompare_FieldLevelForeignKeyActionIdempotency(t *testing.T) {
 	c := qt.New(t)
 
-	generated := exportsSchema("SET NULL")
+	desired := exportsSchema("SET NULL")
 	// The database now reflects the applied SET NULL action.
 	database := exportsDBSchema("SET NULL")
 
 	// Run Compare twice against the same (already-converged) inputs. Both runs
 	// must report no changes — no churn on repeated `generate`.
-	first := schemadiff.Compare(generated, database)
+	first := schemadiff.Compare(desired, database)
 	c.Assert(first.HasChanges(), qt.IsFalse, qt.Commentf("first run should be a no-op"))
 
-	second := schemadiff.Compare(generated, database)
+	second := schemadiff.Compare(desired, database)
 	c.Assert(second.HasChanges(), qt.IsFalse, qt.Commentf("second run should remain a no-op"))
 
 	// And the empty-action default likewise converges and stays converged.

@@ -1,11 +1,11 @@
-package goschema_test
+package schemamodel_test
 
 import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 func TestDeduplicate_FieldOrderPreservation(t *testing.T) {
@@ -15,11 +15,11 @@ func TestDeduplicate_FieldOrderPreservation(t *testing.T) {
 
 	for range 10 {
 		// Create a fresh copy for each test
-		testDB := &goschema.Database{
-			Tables: []goschema.Table{
+		testDB := &schemamodel.Database{
+			Tables: []schemamodel.Table{
 				{Name: "users", StructName: "User"},
 			},
-			Fields: []goschema.Field{
+			Fields: []schemamodel.Field{
 				{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 				{StructName: "User", Name: "email", Type: "VARCHAR(255)", Nullable: false},
 				{StructName: "User", Name: "name", Type: "VARCHAR(255)", Nullable: false},
@@ -31,7 +31,7 @@ func TestDeduplicate_FieldOrderPreservation(t *testing.T) {
 		}
 
 		// Apply deduplication
-		goschema.Deduplicate(testDB)
+		schemamodel.Deduplicate(testDB)
 
 		// Verify field order is preserved
 		userFields := make([]string, 0)
@@ -53,12 +53,12 @@ func TestDeduplicate_FieldOrderPreservation(t *testing.T) {
 func TestDeduplicate_MultipleStructsFieldOrder(t *testing.T) {
 	c := qt.New(t)
 
-	db := &goschema.Database{
-		Tables: []goschema.Table{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: "users", StructName: "User"},
 			{Name: "posts", StructName: "Post"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			// User fields
 			{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "User", Name: "email", Type: "VARCHAR(255)"},
@@ -76,7 +76,7 @@ func TestDeduplicate_MultipleStructsFieldOrder(t *testing.T) {
 		},
 	}
 
-	goschema.Deduplicate(db)
+	schemamodel.Deduplicate(db)
 
 	// Extract fields by struct
 	userFields := make([]string, 0)
@@ -103,8 +103,8 @@ func TestDeduplicate_MultipleStructsFieldOrder(t *testing.T) {
 func TestDeduplicate_IndexOrderPreservation(t *testing.T) {
 	c := qt.New(t)
 
-	db := &goschema.Database{
-		Indexes: []goschema.Index{
+	db := &schemamodel.Database{
+		Indexes: []schemamodel.Index{
 			{StructName: "User", Name: "idx_email", Fields: []string{"email"}},
 			{StructName: "User", Name: "idx_name", Fields: []string{"name"}},
 			{StructName: "Post", Name: "idx_title", Fields: []string{"title"}},
@@ -115,7 +115,7 @@ func TestDeduplicate_IndexOrderPreservation(t *testing.T) {
 		},
 	}
 
-	goschema.Deduplicate(db)
+	schemamodel.Deduplicate(db)
 
 	// Extract index names in order
 	indexNames := make([]string, 0)
@@ -132,8 +132,8 @@ func TestDeduplicate_IndexOrderPreservation(t *testing.T) {
 func TestDeduplicate_EnumOrderPreservation(t *testing.T) {
 	c := qt.New(t)
 
-	db := &goschema.Database{
-		Enums: []goschema.Enum{
+	db := &schemamodel.Database{
+		Enums: []schemamodel.Enum{
 			{Name: "user_status", Values: []string{"active", "inactive"}},
 			{Name: "post_status", Values: []string{"draft", "published"}},
 			{Name: "priority", Values: []string{"low", "medium", "high"}},
@@ -143,7 +143,7 @@ func TestDeduplicate_EnumOrderPreservation(t *testing.T) {
 		},
 	}
 
-	goschema.Deduplicate(db)
+	schemamodel.Deduplicate(db)
 
 	// Extract enum names in order
 	enumNames := make([]string, 0)
@@ -160,8 +160,8 @@ func TestDeduplicate_EnumOrderPreservation(t *testing.T) {
 func TestDeduplicate_TableOrderPreservation(t *testing.T) {
 	c := qt.New(t)
 
-	db := &goschema.Database{
-		Tables: []goschema.Table{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: "users", StructName: "User"},
 			{Name: "posts", StructName: "Post"},
 			{Name: "comments", StructName: "Comment"},
@@ -172,7 +172,7 @@ func TestDeduplicate_TableOrderPreservation(t *testing.T) {
 		},
 	}
 
-	goschema.Deduplicate(db)
+	schemamodel.Deduplicate(db)
 
 	// Extract table names in order
 	tableNames := make([]string, 0)
@@ -189,8 +189,8 @@ func TestDeduplicate_TableOrderPreservation(t *testing.T) {
 func TestDeduplicate_EmbeddedFieldOrderPreservation(t *testing.T) {
 	c := qt.New(t)
 
-	db := &goschema.Database{
-		EmbeddedFields: []goschema.EmbeddedField{
+	db := &schemamodel.Database{
+		EmbeddedFields: []schemamodel.EmbeddedField{
 			{StructName: "User", EmbeddedTypeName: "BaseEntity", Mode: "inline"},
 			{StructName: "User", EmbeddedTypeName: "Timestamps", Mode: "inline"},
 			{StructName: "Post", EmbeddedTypeName: "BaseEntity", Mode: "inline"},
@@ -201,7 +201,7 @@ func TestDeduplicate_EmbeddedFieldOrderPreservation(t *testing.T) {
 		},
 	}
 
-	goschema.Deduplicate(db)
+	schemamodel.Deduplicate(db)
 
 	// Extract embedded field names in order
 	embeddedKeys := make([]string, 0)
@@ -219,15 +219,15 @@ func TestDeduplicate_EmbeddedFieldOrderPreservation(t *testing.T) {
 func TestDeduplicate_GrantsKeepGrantOptionAndIgnorePrivilegeOrder(t *testing.T) {
 	c := qt.New(t)
 
-	db := &goschema.Database{
-		Grants: []goschema.Grant{
+	db := &schemamodel.Database{
+		Grants: []schemamodel.Grant{
 			{Role: "app", Privileges: []string{"SELECT", "INSERT"}, OnTable: "users"},
 			{Role: "app", Privileges: []string{"INSERT", "SELECT"}, OnTable: "users"},
 			{Role: "app", Privileges: []string{"SELECT", "INSERT"}, OnTable: "users", WithOption: true},
 		},
 	}
 
-	goschema.Deduplicate(db)
+	schemamodel.Deduplicate(db)
 
 	c.Assert(db.Grants, qt.HasLen, 2)
 	c.Assert(db.Grants[0].WithOption, qt.IsFalse)
@@ -242,15 +242,15 @@ func TestDeduplicate_GrantsDistinguishSequenceTargets(t *testing.T) {
 	// Grants that differ only by their sequence target must both survive; the
 	// sequence name is part of the grant's identity. A duplicate sequence grant
 	// still deduplicates.
-	db := &goschema.Database{
-		Grants: []goschema.Grant{
+	db := &schemamodel.Database{
+		Grants: []schemamodel.Grant{
 			{Role: "app", Privileges: []string{"USAGE"}, OnSequence: "seq_a"},
 			{Role: "app", Privileges: []string{"USAGE"}, OnSequence: "seq_b"},
 			{Role: "app", Privileges: []string{"USAGE"}, OnSequence: "seq_a"},
 		},
 	}
 
-	goschema.Deduplicate(db)
+	schemamodel.Deduplicate(db)
 
 	c.Assert(db.Grants, qt.HasLen, 2)
 	c.Assert(db.Grants[0].OnSequence, qt.Equals, "seq_a")
@@ -260,15 +260,15 @@ func TestDeduplicate_GrantsDistinguishSequenceTargets(t *testing.T) {
 func TestDeduplicate_ConstraintsUseExplicitTableScope(t *testing.T) {
 	c := qt.New(t)
 
-	db := &goschema.Database{
-		Constraints: []goschema.Constraint{
+	db := &schemamodel.Database{
+		Constraints: []schemamodel.Constraint{
 			{StructName: "User", Table: "users", Name: "users_email_check", Type: "CHECK", CheckExpression: "email <> ''"},
 			{StructName: "UserMixin", Table: "users", Name: "users_email_check", Type: "CHECK", CheckExpression: "email <> ''"},
 			{StructName: "Account", Table: "accounts", Name: "users_email_check", Type: "CHECK", CheckExpression: "email <> ''"},
 		},
 	}
 
-	goschema.Deduplicate(db)
+	schemamodel.Deduplicate(db)
 
 	c.Assert(db.Constraints, qt.HasLen, 2)
 	c.Assert(db.Constraints[0].StructName, qt.Equals, "User")
@@ -279,13 +279,13 @@ func TestDeduplicate_ComplexScenarioWithAllTypes(t *testing.T) {
 	c := qt.New(t)
 
 	// Test a complex scenario with all types of entities and duplicates
-	db := &goschema.Database{
-		Tables: []goschema.Table{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: "users", StructName: "User"},
 			{Name: "posts", StructName: "Post"},
 			{Name: "users", StructName: "User"}, // duplicate
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "Post", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "User", Name: "email", Type: "VARCHAR(255)"},
@@ -294,25 +294,25 @@ func TestDeduplicate_ComplexScenarioWithAllTypes(t *testing.T) {
 			{StructName: "Post", Name: "content", Type: "TEXT"},
 			{StructName: "User", Name: "id", Type: "SERIAL", Primary: true}, // duplicate
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{StructName: "User", Name: "idx_email", Fields: []string{"email"}},
 			{StructName: "Post", Name: "idx_title", Fields: []string{"title"}},
 			{StructName: "User", Name: "idx_name", Fields: []string{"name"}},
 			{StructName: "User", Name: "idx_email", Fields: []string{"email"}}, // duplicate
 		},
-		Enums: []goschema.Enum{
+		Enums: []schemamodel.Enum{
 			{Name: "status", Values: []string{"active", "inactive"}},
 			{Name: "priority", Values: []string{"low", "high"}},
 			{Name: "status", Values: []string{"active", "inactive"}}, // duplicate
 		},
-		EmbeddedFields: []goschema.EmbeddedField{
+		EmbeddedFields: []schemamodel.EmbeddedField{
 			{StructName: "User", EmbeddedTypeName: "BaseEntity", Mode: "inline"},
 			{StructName: "Post", EmbeddedTypeName: "BaseEntity", Mode: "inline"},
 			{StructName: "User", EmbeddedTypeName: "BaseEntity", Mode: "inline"}, // duplicate
 		},
 	}
 
-	goschema.Deduplicate(db)
+	schemamodel.Deduplicate(db)
 
 	// Verify all collections maintain order and remove duplicates
 

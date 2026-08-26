@@ -11,9 +11,9 @@ import (
 	"sync"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/internal/sqlrunner"
 )
@@ -128,7 +128,7 @@ func NewPostgreSQLWriterForRunnerWithCapabilities(
 }
 
 // writeEnums creates all enum types
-func (w *PostgreSQLWriter) writeEnums(enums []goschema.Enum) error { //nolint:unused // TODO: verify why this is not used
+func (w *PostgreSQLWriter) writeEnums(enums []schemamodel.Enum) error { //nolint:unused // TODO: verify why this is not used
 	for _, enum := range enums {
 		// Check if enum already exists (skip in dry run mode)
 		var exists bool

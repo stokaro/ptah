@@ -6,8 +6,8 @@ import (
 	"io/fs"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
 )
@@ -16,7 +16,7 @@ import (
 // existing dialect-specific scenarios. It exercises the engine annotation
 // pipeline end-to-end:
 //
-//  1. Build a goschema.Database with a `platform.clickhouse.engine=`
+//  1. Build a schemamodel.Database with a `platform.clickhouse.engine=`
 //     override on the table.
 //  2. Render CREATE TABLE for ClickHouse and apply it to a live ClickHouse
 //     server.
@@ -56,8 +56,8 @@ func testClickHouseMergeTreeEngine(ctx context.Context, conn *dbschema.DatabaseC
 		return err
 	}
 
-	schema := &goschema.Database{
-		Tables: []goschema.Table{
+	schema := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{
 				StructName: "PtahClickHouseEngineScenario",
 				Name:       tableName,
@@ -70,7 +70,7 @@ func testClickHouseMergeTreeEngine(ctx context.Context, conn *dbschema.DatabaseC
 				},
 			},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "PtahClickHouseEngineScenario", Name: "id", Type: "BIGINT", Primary: true, Nullable: false},
 			{StructName: "PtahClickHouseEngineScenario", Name: "created_at", Type: "TIMESTAMP", Nullable: false},
 			{StructName: "PtahClickHouseEngineScenario", Name: "payload", Type: "TEXT", Nullable: true},

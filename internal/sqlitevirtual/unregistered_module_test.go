@@ -9,8 +9,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/diffpolicy"
@@ -53,7 +53,7 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 		name            string
 		dialect         string
 		env             func(testing.TB)
-		desired         *goschema.Database
+		desired         *schemamodel.Database
 		database        *catalog.Database
 		policy          sqlitevirtual.Policy
 		wantErr         bool
@@ -1511,13 +1511,13 @@ func declaringVirtualWithTable(
 	virtualName, module, arguments,
 	tableName string,
 	columns []string,
-) *goschema.Database {
-	fields := make([]goschema.Field, 0, len(columns))
+) *schemamodel.Database {
+	fields := make([]schemamodel.Field, 0, len(columns))
 	for _, column := range columns {
-		fields = append(fields, goschema.Field{StructName: tableName, Name: column})
+		fields = append(fields, schemamodel.Field{StructName: tableName, Name: column})
 	}
-	return &goschema.Database{
-		Tables: []goschema.Table{
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{
 				StructName:       virtualName,
 				Name:             virtualName,

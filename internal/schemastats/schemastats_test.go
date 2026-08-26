@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemastats"
 )
 
@@ -23,7 +23,7 @@ func metricValue(c *qt.C, body, name string) string {
 }
 
 // render is Collect plus WriteOpenMetrics, which is how both verbs use them.
-func render(c *qt.C, db *goschema.Database, labels map[string]string) string {
+func render(c *qt.C, db *schemamodel.Database, labels map[string]string) string {
 	c.Helper()
 	var out strings.Builder
 	c.Assert(schemastats.WriteOpenMetrics(&out, schemastats.Collect(db), labels), qt.IsNil)
@@ -37,13 +37,13 @@ func render(c *qt.C, db *goschema.Database, labels map[string]string) string {
 // behind equal counts (stokaro/ptah#1711).
 func TestCollect_CountsEachObjectKind(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Tables:            []goschema.Table{{Name: "a"}, {Name: "b"}},
-		Fields:            []goschema.Field{{Name: "c1"}, {Name: "c2"}, {Name: "c3"}},
-		Indexes:           []goschema.Index{{Name: "i"}},
-		Views:             []goschema.View{{Name: "v1"}, {Name: "v2"}, {Name: "v3"}, {Name: "v4"}},
-		MaterializedViews: []goschema.MaterializedView{{Name: "m"}},
-		Enums:             []goschema.Enum{{Name: "e1"}, {Name: "e2"}, {Name: "e3"}, {Name: "e4"}, {Name: "e5"}},
+	db := &schemamodel.Database{
+		Tables:            []schemamodel.Table{{Name: "a"}, {Name: "b"}},
+		Fields:            []schemamodel.Field{{Name: "c1"}, {Name: "c2"}, {Name: "c3"}},
+		Indexes:           []schemamodel.Index{{Name: "i"}},
+		Views:             []schemamodel.View{{Name: "v1"}, {Name: "v2"}, {Name: "v3"}, {Name: "v4"}},
+		MaterializedViews: []schemamodel.MaterializedView{{Name: "m"}},
+		Enums:             []schemamodel.Enum{{Name: "e1"}, {Name: "e2"}, {Name: "e3"}, {Name: "e4"}, {Name: "e5"}},
 	}
 
 	body := render(c, db, nil)
@@ -65,7 +65,7 @@ func TestCollect_CountsEachObjectKind(t *testing.T) {
 func TestWriteOpenMetrics_CarriesTheFormatsRequiredParts(t *testing.T) {
 	c := qt.New(t)
 
-	body := render(c, &goschema.Database{Tables: []goschema.Table{{Name: "a"}}}, nil)
+	body := render(c, &schemamodel.Database{Tables: []schemamodel.Table{{Name: "a"}}}, nil)
 
 	// Every metric declares its help and its type before its sample.
 	c.Assert(body, qt.Contains, "# HELP ptah_schema_tables Tables.\n")
@@ -83,8 +83,8 @@ func TestWriteOpenMetrics_LabelsAreStableAndEscaped(t *testing.T) {
 	c := qt.New(t)
 	labels := map[string]string{"dialect": "postgres", "schemas": `we"ird`, "blank": "  "}
 
-	first := render(c, &goschema.Database{}, labels)
-	second := render(c, &goschema.Database{}, labels)
+	first := render(c, &schemamodel.Database{}, labels)
+	second := render(c, &schemamodel.Database{}, labels)
 
 	// Sorted, not map order: a scrape that reorders its labels between runs is
 	// a different series to some collectors, and Go's map iteration is
@@ -100,7 +100,7 @@ func TestWriteOpenMetrics_LabelsAreStableAndEscaped(t *testing.T) {
 func TestWriteOpenMetrics_NoLabelsEmitsNoBraces(t *testing.T) {
 	c := qt.New(t)
 
-	body := render(c, &goschema.Database{Tables: []goschema.Table{{Name: "a"}}}, nil)
+	body := render(c, &schemamodel.Database{Tables: []schemamodel.Table{{Name: "a"}}}, nil)
 
 	c.Assert(body, qt.Contains, "ptah_schema_tables 1\n")
 	c.Assert(body, qt.Not(qt.Contains), "ptah_schema_tables{}")

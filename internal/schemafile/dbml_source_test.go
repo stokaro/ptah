@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemafile"
 )
 
@@ -59,7 +59,7 @@ func TestLoadPath_AnUnknownExtensionNamesDBMLAmongTheSupportedOnes(t *testing.T)
 }
 
 // columnNames lists the loaded columns in declaration order.
-func columnNames(db *goschema.Database) []string {
+func columnNames(db *schemamodel.Database) []string {
 	names := make([]string, 0, len(db.Fields))
 	for _, field := range db.Fields {
 		names = append(names, field.Name)

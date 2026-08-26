@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -22,14 +22,14 @@ import (
 func TestViewAndTriggerLookupsDoNotCrossDatabases(t *testing.T) {
 	tests := []struct {
 		name        string
-		generated   *goschema.Database
+		desired     *schemamodel.Database
 		diff        *difftypes.SchemaDiff
 		unwantedSQL string
 	}{
 		{
 			name: "a modified view declared in another database is left alone",
-			generated: &goschema.Database{
-				Views: []goschema.View{{
+			desired: &schemamodel.Database{
+				Views: []schemamodel.View{{
 					Name: "reporting.active_orders",
 					Body: "SELECT id FROM orders WHERE open",
 				}},
@@ -43,8 +43,8 @@ func TestViewAndTriggerLookupsDoNotCrossDatabases(t *testing.T) {
 		},
 		{
 			name: "a trigger whose table is declared in another database is left alone",
-			generated: &goschema.Database{
-				Triggers: []goschema.Trigger{{
+			desired: &schemamodel.Database{
+				Triggers: []schemamodel.Trigger{{
 					StructName: "Order",
 					Name:       "touch",
 					Table:      "reporting.orders",
@@ -65,7 +65,7 @@ func TestViewAndTriggerLookupsDoNotCrossDatabases(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			statements, err := planner.GenerateSchemaDiffSQLStatements(test.diff, test.generated, "mysql")
+			statements, err := planner.GenerateSchemaDiffSQLStatements(test.diff, test.desired, "mysql")
 			c.Assert(err, qt.IsNil)
 			plan := strings.Join(statements, "\n")
 			c.Assert(plan, qt.Not(qt.Contains), test.unwantedSQL, qt.Commentf("plan:\n%s", plan))
@@ -79,15 +79,15 @@ func TestViewAndTriggerLookupsDoNotCrossDatabases(t *testing.T) {
 // (stokaro/ptah#1287) and the one no static default schema can answer.
 func TestViewAndTriggerLookupsResolveAcrossDatabaseSpellings(t *testing.T) {
 	tests := []struct {
-		name      string
-		generated *goschema.Database
-		diff      *difftypes.SchemaDiff
-		wantSQL   string
+		name    string
+		desired *schemamodel.Database
+		diff    *difftypes.SchemaDiff
+		wantSQL string
 	}{
 		{
 			name: "a modified view the diff qualifies with the database",
-			generated: &goschema.Database{
-				Views: []goschema.View{{
+			desired: &schemamodel.Database{
+				Views: []schemamodel.View{{
 					Name: "active_orders",
 					Body: "SELECT id FROM orders WHERE open",
 				}},
@@ -101,8 +101,8 @@ func TestViewAndTriggerLookupsResolveAcrossDatabaseSpellings(t *testing.T) {
 		},
 		{
 			name: "a trigger whose table the diff qualifies with the database",
-			generated: &goschema.Database{
-				Triggers: []goschema.Trigger{{
+			desired: &schemamodel.Database{
+				Triggers: []schemamodel.Trigger{{
 					StructName: "Order",
 					Name:       "touch",
 					Table:      "orders",
@@ -123,7 +123,7 @@ func TestViewAndTriggerLookupsResolveAcrossDatabaseSpellings(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			statements, err := planner.GenerateSchemaDiffSQLStatements(test.diff, test.generated, "mysql")
+			statements, err := planner.GenerateSchemaDiffSQLStatements(test.diff, test.desired, "mysql")
 			c.Assert(err, qt.IsNil)
 			plan := strings.Join(statements, "\n")
 			c.Assert(plan, qt.Contains, test.wantSQL, qt.Commentf("plan:\n%s", plan))

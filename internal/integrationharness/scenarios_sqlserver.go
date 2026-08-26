@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
@@ -46,19 +46,19 @@ func testDynamicSQLServerIdentitySchemaBracketReservedWords(
 			_ = cleanupSQLServerAcceptanceSchema(ctx, conn)
 		}()
 
-		database := goschema.Database{
-			Schemas: []goschema.Schema{{Name: sqlServerAcceptanceSchema}},
-			Tables: []goschema.Table{{
+		database := schemamodel.Database{
+			Schemas: []schemamodel.Schema{{Name: sqlServerAcceptanceSchema}},
+			Tables: []schemamodel.Table{{
 				StructName: "Order",
 				Schema:     sqlServerAcceptanceSchema,
 				Name:       "order",
 			}},
-			Fields: []goschema.Field{
+			Fields: []schemamodel.Field{
 				{StructName: "Order", Name: "id", Type: "SERIAL", Primary: true, AutoInc: true},
 				{StructName: "Order", Name: "select", Type: "VARCHAR(100)", Nullable: false},
 				{StructName: "Order", Name: "from", Type: "INTEGER", Nullable: false},
 			},
-			Indexes: []goschema.Index{{
+			Indexes: []schemamodel.Index{{
 				StructName: "Order",
 				TableName:  sqlServerAcceptanceSchema + ".order",
 				Name:       "idx_order_select",

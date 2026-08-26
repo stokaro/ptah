@@ -8,7 +8,7 @@ import (
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbexprprobe"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
@@ -22,12 +22,12 @@ import (
 func CompareWithDatabase(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	database *catalog.Database,
 	opts *config.CompareOptions,
 ) (*difftypes.SchemaDiff, error) {
 	diff, _, err := CompareWithDatabaseReportingUndecidedAdditions(
-		ctx, conn, generated, database, opts,
+		ctx, conn, desired, database, opts,
 	)
 	return diff, err
 }
@@ -43,7 +43,7 @@ func CompareWithDatabase(
 func CompareWithDatabaseReportingUndecidedAdditions(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	database *catalog.Database,
 	opts *config.CompareOptions,
 ) (*difftypes.SchemaDiff, []coverage.Object, error) {
@@ -58,7 +58,7 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 	if err := sqlitevirtual.ValidateToggle(info.Dialect); err != nil {
 		return nil, nil, err
 	}
-	names := collectIdentifierNames(generated, database, info.Schema)
+	names := collectIdentifierNames(desired, database, info.Schema)
 	semantics, err := conn.ResolveIdentifierSemantics(ctx, names)
 	if err != nil {
 		return nil, nil, fmt.Errorf("compare schemas: %w", err)
@@ -69,23 +69,23 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 	// identifier semantics are: a live fact belongs to the side that holds a
 	// connection, and the comparison itself must stay a pure function of the
 	// two states it is given.
-	expressions, err := resolveDomainExpressions(ctx, conn, generated, database)
+	expressions, err := resolveDomainExpressions(ctx, conn, desired, database)
 	if err != nil {
 		return nil, nil, err
 	}
-	bodies, err := resolveContinuousAggregateBodies(ctx, conn, generated, database)
+	bodies, err := resolveContinuousAggregateBodies(ctx, conn, desired, database)
 	if err != nil {
 		return nil, nil, err
 	}
-	checks, err := resolveCheckExpressions(ctx, conn, generated, database)
+	checks, err := resolveCheckExpressions(ctx, conn, desired, database)
 	if err != nil {
 		return nil, nil, err
 	}
-	policies, err := resolvePolicyExpressions(ctx, conn, generated, database)
+	policies, err := resolvePolicyExpressions(ctx, conn, desired, database)
 	if err != nil {
 		return nil, nil, err
 	}
-	indexes, err := resolveIndexExpressions(ctx, conn, generated, database)
+	indexes, err := resolveIndexExpressions(ctx, conn, desired, database)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -102,7 +102,7 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 	})
 
 	return compareWithDatabaseInfoReportingUndecidedAdditions(
-		generated, database, info, opts,
+		desired, database, info, opts,
 	)
 }
 
@@ -167,10 +167,10 @@ func withResolvedExpressions(
 func resolveDomainExpressions(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	database *catalog.Database,
 ) (map[string]config.DomainExpression, error) {
-	if generated == nil || database == nil {
+	if desired == nil || database == nil {
 		return nil, nil
 	}
 	held := make(map[string]struct{}, len(database.Domains))
@@ -178,8 +178,8 @@ func resolveDomainExpressions(
 		held[strings.ToLower(domain.QualifiedName())] = struct{}{}
 	}
 
-	probes := make([]dbexprprobe.DomainExpressionProbe, 0, len(generated.Domains))
-	for _, domain := range generated.Domains {
+	probes := make([]dbexprprobe.DomainExpressionProbe, 0, len(desired.Domains))
+	for _, domain := range desired.Domains {
 		if _, exists := held[strings.ToLower(domain.QualifiedName())]; !exists {
 			continue
 		}
@@ -221,10 +221,10 @@ func resolveDomainExpressions(
 func resolveCheckExpressions(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	database *catalog.Database,
 ) (map[string]config.CheckExpression, error) {
-	if generated == nil || database == nil {
+	if desired == nil || database == nil {
 		return nil, nil
 	}
 	held := make(map[string]struct{}, len(database.Constraints))
@@ -235,8 +235,8 @@ func resolveCheckExpressions(
 	}
 	columns := liveTableColumns(database)
 
-	probes := make([]dbexprprobe.CheckExpressionProbe, 0, len(generated.Constraints))
-	for _, constraint := range generated.Constraints {
+	probes := make([]dbexprprobe.CheckExpressionProbe, 0, len(desired.Constraints))
+	for _, constraint := range desired.Constraints {
 		if !strings.EqualFold(constraint.Type, "CHECK") {
 			continue
 		}
@@ -274,10 +274,10 @@ func resolveCheckExpressions(
 func resolvePolicyExpressions(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	database *catalog.Database,
 ) (map[string]config.PolicyExpression, error) {
-	if generated == nil || database == nil {
+	if desired == nil || database == nil {
 		return nil, nil
 	}
 	held := make(map[string]struct{}, len(database.RLSPolicies))
@@ -286,8 +286,8 @@ func resolvePolicyExpressions(
 	}
 	columns := liveTableColumns(database)
 
-	probes := make([]dbexprprobe.PolicyExpressionProbe, 0, len(generated.RLSPolicies))
-	for _, policy := range generated.RLSPolicies {
+	probes := make([]dbexprprobe.PolicyExpressionProbe, 0, len(desired.RLSPolicies))
+	for _, policy := range desired.RLSPolicies {
 		key := checkExpressionKey(policy.Table, policy.Name)
 		if _, exists := held[key]; !exists {
 			continue
@@ -323,10 +323,10 @@ func resolvePolicyExpressions(
 func resolveIndexExpressions(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	database *catalog.Database,
 ) (map[string]config.IndexExpression, error) {
-	if generated == nil || database == nil {
+	if desired == nil || database == nil {
 		return nil, nil
 	}
 	held := make(map[string]struct{}, len(database.Indexes))
@@ -339,10 +339,10 @@ func resolveIndexExpressions(
 	// index declaration does not always carry its table: `TableName` is the
 	// cross-table override and is empty for the ordinary case, where the owner
 	// comes from the struct or block the index was declared inside.
-	owners := goschema.ResolveIndexOwners(generated.Indexes, generated.Tables, generated.MaterializedViews)
+	owners := schemamodel.ResolveIndexOwners(desired.Indexes, desired.Tables, desired.MaterializedViews)
 
-	probes := make([]dbexprprobe.IndexExpressionProbe, 0, len(generated.Indexes))
-	for position, index := range generated.Indexes {
+	probes := make([]dbexprprobe.IndexExpressionProbe, 0, len(desired.Indexes))
+	for position, index := range desired.Indexes {
 		expression, parts := declaredIndexExpression(index)
 		if expression == "" && strings.TrimSpace(index.Condition) == "" {
 			continue
@@ -378,9 +378,9 @@ func resolveIndexExpressions(
 // plain columns, which is what decides how the probe writes its CREATE INDEX.
 //
 // Parts is preferred over Fields where it is filled, for the reason
-// [go.5x5.cz/ptah/core/goschema.Index] gives: the two spellings duplicate each
+// [go.5x5.cz/ptah/core/schemamodel.Index] gives: the two spellings duplicate each
 // other and only Parts distinguishes an expression from a column.
-func declaredIndexExpression(index goschema.Index) (expression string, parts []string) {
+func declaredIndexExpression(index schemamodel.Index) (expression string, parts []string) {
 	for _, part := range index.Parts {
 		if strings.TrimSpace(part.Expr) != "" {
 			return part.Expr, nil
@@ -397,9 +397,9 @@ func declaredIndexExpression(index goschema.Index) (expression string, parts []s
 
 // liveTableColumns projects every live table's columns into the shape a probe
 // needs, keyed by the table's bare name.
-func liveTableColumns(database *catalog.Database) map[string][]dbexprprobe.CheckProbeColumn {
-	columns := make(map[string][]dbexprprobe.CheckProbeColumn, len(database.Tables))
-	for _, table := range database.Tables {
+func liveTableColumns(current *catalog.Database) map[string][]dbexprprobe.CheckProbeColumn {
+	columns := make(map[string][]dbexprprobe.CheckProbeColumn, len(current.Tables))
+	for _, table := range current.Tables {
 		probeColumns := make([]dbexprprobe.CheckProbeColumn, 0, len(table.Columns))
 		for _, column := range table.Columns {
 			probeColumns = append(probeColumns, dbexprprobe.CheckProbeColumn{
@@ -440,10 +440,10 @@ func foldCheckTableName(table string) string {
 func resolveContinuousAggregateBodies(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	database *catalog.Database,
 ) (map[string]config.ContinuousAggregateBody, error) {
-	if generated == nil || database == nil {
+	if desired == nil || database == nil {
 		return nil, nil
 	}
 	held := make(map[string]struct{}, len(database.ContinuousAggregates))
@@ -452,8 +452,8 @@ func resolveContinuousAggregateBodies(
 		held[strings.ToLower(aggregate.Name)] = struct{}{}
 	}
 
-	probes := make([]dbexprprobe.ContinuousAggregateProbe, 0, len(generated.ContinuousAggregates))
-	for _, aggregate := range generated.ContinuousAggregates {
+	probes := make([]dbexprprobe.ContinuousAggregateProbe, 0, len(desired.ContinuousAggregates))
+	for _, aggregate := range desired.ContinuousAggregates {
 		if _, exists := held[strings.ToLower(aggregate.QualifiedName())]; !exists {
 			continue
 		}
@@ -477,7 +477,7 @@ func resolveContinuousAggregateBodies(
 
 // quoteDomainDefaultLiteral renders a declared literal default as SQL.
 //
-// goschema.Domain keeps a literal and an expression apart, and only the
+// schemamodel.Domain keeps a literal and an expression apart, and only the
 // expression is already SQL. A literal reaches here as the value itself, so
 // `abc` has to become `'abc'` before a server can parse the statement carrying
 // it.
@@ -486,32 +486,32 @@ func quoteDomainDefaultLiteral(literal string) string {
 }
 
 func collectIdentifierNames(
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	database *catalog.Database,
 	defaultSchema string,
 ) []string {
 	names := []string{defaultSchema}
-	names = appendGeneratedIdentifierNames(names, generated)
+	names = appendGeneratedIdentifierNames(names, desired)
 	return appendDatabaseIdentifierNames(names, database)
 }
 
 func appendGeneratedIdentifierNames(
 	names []string,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 ) []string {
-	if generated == nil {
+	if desired == nil {
 		return names
 	}
-	for _, field := range generated.Fields {
+	for _, field := range desired.Fields {
 		names = append(names, field.Name)
 	}
-	for _, table := range generated.Tables {
+	for _, table := range desired.Tables {
 		names = append(names, table.Schema, table.Name)
-		for _, field := range generatedschema.FieldsForTable(generated, table) {
+		for _, field := range generatedschema.FieldsForTable(desired, table) {
 			names = append(names, field.Name)
 		}
 	}
-	for _, index := range generated.Indexes {
+	for _, index := range desired.Indexes {
 		names = append(names, index.Name)
 		names = appendQualifiedIdentifier(names, index.TableName)
 		names = append(names, index.Fields...)

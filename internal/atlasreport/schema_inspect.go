@@ -10,16 +10,16 @@ import (
 	"text/template/parse"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 	"go.5x5.cz/ptah/internal/dbmlrender"
 	"go.5x5.cz/ptah/internal/schemaviz"
 )
 
 type SchemaInspectReport struct {
-	db          *goschema.Database
+	db          *schemamodel.Database
 	info        catalog.ServerInfo
 	diagnostics io.Writer
 	// omitAtlasRefusedBlocks renders HCL for the Atlas-compatible surface,
@@ -175,7 +175,7 @@ func RenderSchemaInspect(format string, report *SchemaInspectReport) (SchemaInsp
 // Options.DescribeSchemas gates schema DDL out of the SQL format for a run whose scope
 // came from the connection URL; see the field's own documentation.
 func NewSchemaInspectReport(
-	db *goschema.Database,
+	db *schemamodel.Database,
 	schema *catalog.Database,
 	info catalog.ServerInfo,
 	diagnostics io.Writer,
@@ -372,7 +372,7 @@ func (r *SchemaInspectReport) renderHCL() (atlashclrender.Result, error) {
 //
 // The copy is shallow on purpose -- only the Schemas slice header is replaced,
 // and nothing downstream writes through it.
-func (r *SchemaInspectReport) sqlSource() *goschema.Database {
+func (r *SchemaInspectReport) sqlSource() *schemamodel.Database {
 	if r.describeSchemas || r.db == nil || len(r.db.Schemas) == 0 {
 		return r.db
 	}

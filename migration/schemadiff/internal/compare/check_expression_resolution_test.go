@@ -7,9 +7,9 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -77,10 +77,10 @@ func TestConstraints_ACheckIsComparedThroughTheServerWhenOneAnswered(t *testing.
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			diff := &difftypes.SchemaDiff{}
-			declared := &goschema.Database{
-				Tables: []goschema.Table{{StructName: "T", Name: "t"}},
-				Fields: []goschema.Field{{StructName: "T", Name: "score", Type: "INTEGER"}},
-				Constraints: []goschema.Constraint{{
+			declared := &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "T", Name: "t"}},
+				Fields: []schemamodel.Field{{StructName: "T", Name: "score", Type: "INTEGER"}},
+				Constraints: []schemamodel.Constraint{{
 					StructName: "T", Name: "ck_score", Table: "t",
 					Type: "CHECK", CheckExpression: test.declared,
 				}},

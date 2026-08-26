@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemafile"
 )
 
@@ -203,7 +203,7 @@ table "orders" {
 }
 
 // columnDefault reads the default of the one column with the given name.
-func columnDefault(db *goschema.Database, column string) string {
+func columnDefault(db *schemamodel.Database, column string) string {
 	for _, field := range db.Fields {
 		if field.Name == column {
 			return field.Default

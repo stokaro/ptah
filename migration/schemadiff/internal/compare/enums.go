@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
@@ -90,8 +90,8 @@ import (
 // no-default-schema rule: a blank schema stays blank and only matches a blank
 // one. Callers that have a live connection have a default schema and should
 // pass it.
-func Enums(generated *goschema.Database, database *catalog.Database, diff *difftypes.SchemaDiff) {
-	EnumsWithSemantics(generated, database, diff, identifier.Semantics{})
+func Enums(desired *schemamodel.Database, current *catalog.Database, diff *difftypes.SchemaDiff) {
+	EnumsWithSemantics(desired, current, diff, identifier.Semantics{})
 }
 
 // EnumsWithSemantics compares enum types by (schema, name) identity.
@@ -135,7 +135,7 @@ func Enums(generated *goschema.Database, database *catalog.Database, diff *difft
 //
 // for a schema nothing had changed. Both on PostgreSQL 17.10.
 func EnumsWithSemantics(
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	semantics identifier.Semantics,
@@ -149,7 +149,7 @@ func EnumsWithSemantics(
 	}
 
 	matched := make(map[string]struct{}, len(database.Enums))
-	for _, genEnum := range generated.Enums {
+	for _, genEnum := range desired.Enums {
 		dbEnum, exists := findDatabaseEnum(genEnum, dbByIdentity, dbByName, semantics)
 		if !exists {
 			diff.EnumsAdded = append(diff.EnumsAdded, genEnum.QualifiedName())
@@ -179,7 +179,7 @@ func EnumsWithSemantics(
 
 // findDatabaseEnum resolves one generated enum against the read.
 func findDatabaseEnum(
-	genEnum goschema.Enum,
+	genEnum schemamodel.Enum,
 	dbByIdentity map[objectIdentity]catalog.Enum,
 	dbByName map[string][]catalog.Enum,
 	semantics identifier.Semantics,
@@ -287,7 +287,7 @@ func enumParts(schema, name string) (enumSchema, enumName string) {
 //
 // Value lists are sorted alphabetically to ensure deterministic migration
 // generation and reliable testing across multiple runs.
-func EnumValues(genEnum goschema.Enum, dbEnum catalog.Enum) difftypes.EnumDiff {
+func EnumValues(genEnum schemamodel.Enum, dbEnum catalog.Enum) difftypes.EnumDiff {
 	// The qualified name, so the planner can name the type it has to alter.
 	// It is the bare name for every enum that names no schema, which is every
 	// enum a Go annotation can declare (stokaro/ptah#1276).

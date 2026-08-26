@@ -9,7 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
 )
@@ -177,29 +177,29 @@ func runAddedReferencedColumnRoundTrip(c *qt.C, conn *dbschema.DatabaseConnectio
 	c.Assert(hasNamedIndex(afterDown, childTable, "idx_parent_code"), qt.IsTrue)
 }
 
-func addedReferencedColumnSchema(withReference bool) *goschema.Database {
-	database := &goschema.Database{
-		Tables: []goschema.Table{
+func addedReferencedColumnSchema(withReference bool) *schemamodel.Database {
+	database := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "PtahFKRefColumnParent", Name: "ptah_fk_ref_column_parents"},
 			{StructName: "PtahFKRefColumnChild", Name: "ptah_fk_ref_column_children"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "PtahFKRefColumnParent", Name: "id", Type: "VARCHAR(36)", Primary: true},
 			{StructName: "PtahFKRefColumnChild", Name: "id", Type: "VARCHAR(36)", Primary: true},
 			{StructName: "PtahFKRefColumnChild", Name: "parent_code", Type: "VARCHAR(36)", Nullable: true},
 		},
-		Indexes: []goschema.Index{{
+		Indexes: []schemamodel.Index{{
 			StructName: "PtahFKRefColumnChild", Name: "idx_parent_code", Fields: []string{"parent_code"},
 		}},
 	}
 	if withReference {
-		database.Fields = append(database.Fields, goschema.Field{
+		database.Fields = append(database.Fields, schemamodel.Field{
 			StructName: "PtahFKRefColumnParent", Name: "code", Type: "VARCHAR(36)", Unique: true,
 		})
 		database.Fields[2].Foreign = "ptah_fk_ref_column_parents(code)"
 		database.Fields[2].ForeignKeyName = "fk_parent_code"
 	}
-	goschema.Finalize(database)
+	schemamodel.Finalize(database)
 	return database
 }
 
@@ -249,19 +249,19 @@ func runAddedForeignKeyColumnRoundTrip(c *qt.C, conn *dbschema.DatabaseConnectio
 	c.Assert(hasNamedColumn(afterDown, childTable, "id"), qt.IsTrue)
 }
 
-func addedForeignKeyColumnSchema(withForeignKeyColumn bool) *goschema.Database {
-	database := &goschema.Database{
-		Tables: []goschema.Table{
+func addedForeignKeyColumnSchema(withForeignKeyColumn bool) *schemamodel.Database {
+	database := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "PtahFKColumnParent", Name: "ptah_fk_column_parents"},
 			{StructName: "PtahFKColumnChild", Name: "ptah_fk_column_children"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "PtahFKColumnParent", Name: "id", Type: "VARCHAR(36)", Primary: true},
 			{StructName: "PtahFKColumnChild", Name: "id", Type: "VARCHAR(36)", Primary: true},
 		},
 	}
 	if withForeignKeyColumn {
-		database.Fields = append(database.Fields, goschema.Field{
+		database.Fields = append(database.Fields, schemamodel.Field{
 			StructName:     "PtahFKColumnChild",
 			Name:           "parent_id",
 			Type:           "VARCHAR(36)",
@@ -270,7 +270,7 @@ func addedForeignKeyColumnSchema(withForeignKeyColumn bool) *goschema.Database {
 			ForeignKeyName: "fk_added_parent",
 		})
 	}
-	goschema.Finalize(database)
+	schemamodel.Finalize(database)
 	return database
 }
 
@@ -329,13 +329,13 @@ func runForeignKeyBackingIndexRoundTrip(
 	)
 }
 
-func foreignKeyBackingSchema(withForeignKey bool, indexName string) *goschema.Database {
-	database := &goschema.Database{
-		Tables: []goschema.Table{
+func foreignKeyBackingSchema(withForeignKey bool, indexName string) *schemamodel.Database {
+	database := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "PtahFKBackingParent", Name: "ptah_fk_backing_parents"},
 			{StructName: "PtahFKBackingChild", Name: "ptah_fk_backing_children"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "PtahFKBackingParent", Name: "id", Type: "VARCHAR(36)", Primary: true},
 			{StructName: "PtahFKBackingChild", Name: "id", Type: "VARCHAR(36)", Primary: true},
 			{StructName: "PtahFKBackingChild", Name: "parent_id", Type: "VARCHAR(36)", Nullable: true},
@@ -346,13 +346,13 @@ func foreignKeyBackingSchema(withForeignKey bool, indexName string) *goschema.Da
 		database.Fields[2].ForeignKeyName = "fk_parent"
 	}
 	if indexName != "" {
-		database.Indexes = []goschema.Index{{
+		database.Indexes = []schemamodel.Index{{
 			StructName: "PtahFKBackingChild",
 			Name:       indexName,
 			Fields:     []string{"parent_id"},
 		}}
 	}
-	goschema.Finalize(database)
+	schemamodel.Finalize(database)
 	return database
 }
 

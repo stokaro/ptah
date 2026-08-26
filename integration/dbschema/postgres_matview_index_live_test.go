@@ -10,9 +10,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
 )
@@ -48,13 +48,13 @@ func TestPostgresLiveMaterializedViewIndexApplies(t *testing.T) {
 	_, err = conn.ExecContext(ctx, `SET search_path TO "`+schemaName+`"`)
 	c.Assert(err, qt.IsNil)
 
-	description := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "T", Name: "t"}},
-		Fields: []goschema.Field{{StructName: "T", Name: "id", Type: "INT", Primary: true}},
-		MaterializedViews: []goschema.MaterializedView{{
+	description := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "T", Name: "t"}},
+		Fields: []schemamodel.Field{{StructName: "T", Name: "id", Type: "INT", Primary: true}},
+		MaterializedViews: []schemamodel.MaterializedView{{
 			StructName: "MV", Name: "mv", Body: "SELECT id FROM t",
 		}},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{StructName: "MV", Name: "mv_uk", Fields: []string{"id"}, Unique: true},
 		},
 	}

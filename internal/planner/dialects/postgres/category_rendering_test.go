@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -14,9 +14,9 @@ import (
 // categoryFixture is one schema diff category together with the desired schema
 // the planner needs to emit SQL for it.
 type categoryFixture struct {
-	field     string
-	diff      *difftypes.SchemaDiff
-	generated *goschema.Database
+	field   string
+	diff    *difftypes.SchemaDiff
+	desired *schemamodel.Database
 }
 
 var supplementalDiffCategories = map[string]string{
@@ -48,7 +48,7 @@ func TestEveryDiffCategoryRendersSQL(t *testing.T) {
 	for _, fixture := range fixtures {
 		t.Run(fixture.field, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := postgres.New().GenerateMigrationAST(fixture.diff, fixture.generated)
+			nodes, err := postgres.New().GenerateMigrationAST(fixture.diff, fixture.desired)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(len(nodes) > 0, qt.IsTrue, qt.Commentf("the planner rendered nothing for %s", fixture.field))
@@ -96,15 +96,15 @@ func TestRefusedDiffCategoriesAreDocumented(t *testing.T) {
 }
 
 func diffCategoryFixtures() []categoryFixture {
-	oneTable := &goschema.Database{
-		Tables: []goschema.Table{{Name: "t", StructName: "T"}},
-		Fields: []goschema.Field{{Name: "c", StructName: "T", Type: "TEXT"}},
+	oneTable := &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "t", StructName: "T"}},
+		Fields: []schemamodel.Field{{Name: "c", StructName: "T", Type: "TEXT"}},
 	}
 	increment := int64(2)
 
 	return []categoryFixture{
 		{"TablesAdded", &difftypes.SchemaDiff{TablesAdded: []string{"t"}}, oneTable},
-		{"TablesRemoved", &difftypes.SchemaDiff{TablesRemoved: []string{"t"}}, &goschema.Database{}},
+		{"TablesRemoved", &difftypes.SchemaDiff{TablesRemoved: []string{"t"}}, &schemamodel.Database{}},
 		{
 			"TablesModified",
 			&difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{TableName: "t", ColumnsAdded: []string{"c"}}}},
@@ -113,26 +113,26 @@ func diffCategoryFixtures() []categoryFixture {
 		{
 			"EnumsAdded",
 			&difftypes.SchemaDiff{EnumsAdded: []string{"e"}},
-			&goschema.Database{Enums: []goschema.Enum{{Name: "e", Values: []string{"a"}}}},
+			&schemamodel.Database{Enums: []schemamodel.Enum{{Name: "e", Values: []string{"a"}}}},
 		},
-		{"EnumsRemoved", &difftypes.SchemaDiff{EnumsRemoved: []string{"e"}}, &goschema.Database{}},
+		{"EnumsRemoved", &difftypes.SchemaDiff{EnumsRemoved: []string{"e"}}, &schemamodel.Database{}},
 		{
 			"EnumsModified",
 			&difftypes.SchemaDiff{EnumsModified: []difftypes.EnumDiff{{EnumName: "e", ValuesAdded: []string{"b"}}}},
-			&goschema.Database{Enums: []goschema.Enum{{Name: "e", Values: []string{"a", "b"}}}},
+			&schemamodel.Database{Enums: []schemamodel.Enum{{Name: "e", Values: []string{"a", "b"}}}},
 		},
 		{
 			"IndexesAdded",
 			&difftypes.SchemaDiff{IndexesAdded: []difftypes.IndexRef{{Name: "ix", TableName: "t"}}},
-			&goschema.Database{
-				Tables:  []goschema.Table{{Name: "t", StructName: "T"}},
-				Indexes: []goschema.Index{{Name: "ix", StructName: "T", Fields: []string{"c"}}},
+			&schemamodel.Database{
+				Tables:  []schemamodel.Table{{Name: "t", StructName: "T"}},
+				Indexes: []schemamodel.Index{{Name: "ix", StructName: "T", Fields: []string{"c"}}},
 			},
 		},
 		{
 			"IndexesRemoved",
 			&difftypes.SchemaDiff{IndexesRemoved: []difftypes.IndexRef{{Name: "ix", TableName: "t"}}},
-			&goschema.Database{},
+			&schemamodel.Database{},
 		},
 		{
 			// A subset of IndexesRemoved, so the fixture carries both lists:
@@ -143,69 +143,69 @@ func diffCategoryFixtures() []categoryFixture {
 				IndexesRemoved:                []difftypes.IndexRef{{Name: "uq", TableName: "t"}},
 				ConstraintBackedIndexRemovals: []difftypes.IndexRef{{Name: "uq", TableName: "t"}},
 			},
-			&goschema.Database{},
+			&schemamodel.Database{},
 		},
 		{
 			"ExtensionsAdded",
 			&difftypes.SchemaDiff{ExtensionsAdded: []string{"pg_trgm"}},
-			&goschema.Database{Extensions: []goschema.Extension{{Name: "pg_trgm"}}},
+			&schemamodel.Database{Extensions: []schemamodel.Extension{{Name: "pg_trgm"}}},
 		},
-		{"ExtensionsRemoved", &difftypes.SchemaDiff{ExtensionsRemoved: []string{"pg_trgm"}}, &goschema.Database{}},
+		{"ExtensionsRemoved", &difftypes.SchemaDiff{ExtensionsRemoved: []string{"pg_trgm"}}, &schemamodel.Database{}},
 		{
 			"FunctionsAdded",
 			&difftypes.SchemaDiff{FunctionsAdded: []string{"f"}},
-			&goschema.Database{Functions: []goschema.Function{{Name: "f", Returns: "int", Body: "SELECT 1"}}},
+			&schemamodel.Database{Functions: []schemamodel.Function{{Name: "f", Returns: "int", Body: "SELECT 1"}}},
 		},
-		{"FunctionsRemoved", &difftypes.SchemaDiff{FunctionsRemoved: []string{"f"}}, &goschema.Database{}},
-		{"ProceduresRemoved", &difftypes.SchemaDiff{ProceduresRemoved: []string{"p"}}, &goschema.Database{}},
+		{"FunctionsRemoved", &difftypes.SchemaDiff{FunctionsRemoved: []string{"f"}}, &schemamodel.Database{}},
+		{"ProceduresRemoved", &difftypes.SchemaDiff{ProceduresRemoved: []string{"p"}}, &schemamodel.Database{}},
 		{
 			"FunctionsModified",
 			&difftypes.SchemaDiff{FunctionsModified: []difftypes.FunctionDiff{{FunctionName: "f", Changes: map[string]string{"body": "x -> y"}}}},
-			&goschema.Database{Functions: []goschema.Function{{Name: "f", Returns: "int", Body: "SELECT 2"}}},
+			&schemamodel.Database{Functions: []schemamodel.Function{{Name: "f", Returns: "int", Body: "SELECT 2"}}},
 		},
 		{
 			"SequencesAdded",
 			&difftypes.SchemaDiff{SequencesAdded: []string{"s"}},
-			&goschema.Database{Sequences: []goschema.Sequence{{Name: "s"}}},
+			&schemamodel.Database{Sequences: []schemamodel.Sequence{{Name: "s"}}},
 		},
-		{"SequencesRemoved", &difftypes.SchemaDiff{SequencesRemoved: []string{"s"}}, &goschema.Database{}},
+		{"SequencesRemoved", &difftypes.SchemaDiff{SequencesRemoved: []string{"s"}}, &schemamodel.Database{}},
 		{
 			"SequencesModified",
 			&difftypes.SchemaDiff{SequencesModified: []difftypes.SequenceDiff{{SequenceName: "s", Changes: map[string]string{"increment": "1 -> 2"}}}},
-			&goschema.Database{Sequences: []goschema.Sequence{{Name: "s", Increment: &increment}}},
+			&schemamodel.Database{Sequences: []schemamodel.Sequence{{Name: "s", Increment: &increment}}},
 		},
 		{
 			"DomainsAdded",
 			&difftypes.SchemaDiff{DomainsAdded: []string{"d"}},
-			&goschema.Database{Domains: []goschema.Domain{{Name: "d", BaseType: "TEXT"}}},
+			&schemamodel.Database{Domains: []schemamodel.Domain{{Name: "d", BaseType: "TEXT"}}},
 		},
-		{"DomainsRemoved", &difftypes.SchemaDiff{DomainsRemoved: []string{"d"}}, &goschema.Database{}},
+		{"DomainsRemoved", &difftypes.SchemaDiff{DomainsRemoved: []string{"d"}}, &schemamodel.Database{}},
 		{
 			"DomainsModified",
 			&difftypes.SchemaDiff{DomainsModified: []difftypes.DomainDiff{{DomainName: "d", Changes: map[string]string{"base_type": "TEXT -> VARCHAR"}}}},
-			&goschema.Database{Domains: []goschema.Domain{{Name: "d", BaseType: "VARCHAR"}}},
+			&schemamodel.Database{Domains: []schemamodel.Domain{{Name: "d", BaseType: "VARCHAR"}}},
 		},
 		{
 			"CompositeTypesAdded",
 			&difftypes.SchemaDiff{CompositeTypesAdded: []string{"ct"}},
-			&goschema.Database{CompositeTypes: []goschema.CompositeType{
-				{Name: "ct", Fields: []goschema.CompositeTypeField{{Name: "a", Type: "TEXT"}}},
+			&schemamodel.Database{CompositeTypes: []schemamodel.CompositeType{
+				{Name: "ct", Fields: []schemamodel.CompositeField{{Name: "a", Type: "TEXT"}}},
 			}},
 		},
-		{"CompositeTypesRemoved", &difftypes.SchemaDiff{CompositeTypesRemoved: []string{"ct"}}, &goschema.Database{}},
+		{"CompositeTypesRemoved", &difftypes.SchemaDiff{CompositeTypesRemoved: []string{"ct"}}, &schemamodel.Database{}},
 		{
 			"CompositeTypesModified",
 			&difftypes.SchemaDiff{CompositeTypesModified: []difftypes.CompositeTypeDiff{{TypeName: "ct", Changes: map[string]string{"fields": "a -> b"}}}},
-			&goschema.Database{CompositeTypes: []goschema.CompositeType{
-				{Name: "ct", Fields: []goschema.CompositeTypeField{{Name: "b", Type: "TEXT"}}},
+			&schemamodel.Database{CompositeTypes: []schemamodel.CompositeType{
+				{Name: "ct", Fields: []schemamodel.CompositeField{{Name: "b", Type: "TEXT"}}},
 			}},
 		},
 		{
 			"RangesAdded",
 			&difftypes.SchemaDiff{RangesAdded: []string{"r"}},
-			&goschema.Database{Ranges: []goschema.Range{{Name: "r", Subtype: "int4"}}},
+			&schemamodel.Database{Ranges: []schemamodel.Range{{Name: "r", Subtype: "int4"}}},
 		},
-		{"RangesRemoved", &difftypes.SchemaDiff{RangesRemoved: []string{"r"}}, &goschema.Database{}},
+		{"RangesRemoved", &difftypes.SchemaDiff{RangesRemoved: []string{"r"}}, &schemamodel.Database{}},
 		{
 			"RangesModified",
 			&difftypes.SchemaDiff{RangesModified: []difftypes.RangeDiff{{
@@ -213,50 +213,50 @@ func diffCategoryFixtures() []categoryFixture {
 				Changes:        map[string]string{"subtype": "timestamptz -> int8"},
 				CurrentSubtype: "timestamptz",
 			}}},
-			&goschema.Database{Ranges: []goschema.Range{{Name: "r", Subtype: "int8"}}},
+			&schemamodel.Database{Ranges: []schemamodel.Range{{Name: "r", Subtype: "int8"}}},
 		},
 		{
 			"ViewsAdded",
 			&difftypes.SchemaDiff{ViewsAdded: []string{"v"}},
-			&goschema.Database{Views: []goschema.View{{Name: "v", Body: "SELECT 1"}}},
+			&schemamodel.Database{Views: []schemamodel.View{{Name: "v", Body: "SELECT 1"}}},
 		},
-		{"ViewsRemoved", &difftypes.SchemaDiff{ViewsRemoved: []string{"v"}}, &goschema.Database{}},
+		{"ViewsRemoved", &difftypes.SchemaDiff{ViewsRemoved: []string{"v"}}, &schemamodel.Database{}},
 		{
 			"ViewsModified",
 			&difftypes.SchemaDiff{ViewsModified: []difftypes.ViewDiff{{ViewName: "v", Changes: map[string]string{"body": "a -> b"}}}},
-			&goschema.Database{Views: []goschema.View{{Name: "v", Body: "SELECT 2"}}},
+			&schemamodel.Database{Views: []schemamodel.View{{Name: "v", Body: "SELECT 2"}}},
 		},
 		{
 			"SynonymsAdded",
 			&difftypes.SchemaDiff{SynonymsAdded: []string{"s"}},
-			&goschema.Database{Synonyms: []goschema.Synonym{{Name: "s", Target: "dbo.t"}}},
+			&schemamodel.Database{Synonyms: []schemamodel.Synonym{{Name: "s", Target: "dbo.t"}}},
 		},
-		{"SynonymsRemoved", &difftypes.SchemaDiff{SynonymsRemoved: []string{"s"}}, &goschema.Database{}},
+		{"SynonymsRemoved", &difftypes.SchemaDiff{SynonymsRemoved: []string{"s"}}, &schemamodel.Database{}},
 		{
 			"HypertablesAdded",
 			&difftypes.SchemaDiff{HypertablesAdded: []string{"conditions"}},
-			&goschema.Database{Hypertables: []goschema.Hypertable{
+			&schemamodel.Database{Hypertables: []schemamodel.Hypertable{
 				{Table: "conditions", Column: "time"},
 			}},
 		},
 		{
 			"ContinuousAggregatesAdded",
 			&difftypes.SchemaDiff{ContinuousAggregatesAdded: []string{"hourly"}},
-			&goschema.Database{ContinuousAggregates: []goschema.ContinuousAggregate{
+			&schemamodel.Database{ContinuousAggregates: []schemamodel.ContinuousAggregate{
 				{Name: "hourly", Body: "SELECT 1"},
 			}},
 		},
 		{
 			"ContinuousAggregatesRemoved",
 			&difftypes.SchemaDiff{ContinuousAggregatesRemoved: []string{"hourly"}},
-			&goschema.Database{},
+			&schemamodel.Database{},
 		},
 		{
 			"ContinuousAggregatesModified",
 			&difftypes.SchemaDiff{ContinuousAggregatesModified: []difftypes.ContinuousAggregateDiff{
 				{Name: "hourly", OldBody: "SELECT 1", NewBody: "SELECT 2"},
 			}},
-			&goschema.Database{ContinuousAggregates: []goschema.ContinuousAggregate{
+			&schemamodel.Database{ContinuousAggregates: []schemamodel.ContinuousAggregate{
 				{Name: "hourly", Body: "SELECT 2"},
 			}},
 		},
@@ -265,21 +265,21 @@ func diffCategoryFixtures() []categoryFixture {
 			&difftypes.SchemaDiff{SynonymsModified: []difftypes.SynonymDiff{
 				{SynonymName: "s", OldTarget: "dbo.old", NewTarget: "dbo.new"},
 			}},
-			&goschema.Database{Synonyms: []goschema.Synonym{{Name: "s", Target: "dbo.new"}}},
+			&schemamodel.Database{Synonyms: []schemamodel.Synonym{{Name: "s", Target: "dbo.new"}}},
 		},
 		{
 			"ExtendedPropertiesAdded",
 			&difftypes.SchemaDiff{ExtendedPropertiesAdded: []difftypes.ExtendedPropertyRef{
 				{Name: "ptah_flag", Schema: "app", Table: "docs", Value: "enabled"},
 			}},
-			&goschema.Database{},
+			&schemamodel.Database{},
 		},
 		{
 			"ExtendedPropertiesRemoved",
 			&difftypes.SchemaDiff{ExtendedPropertiesRemoved: []difftypes.ExtendedPropertyRef{
 				{Name: "ptah_flag", Schema: "app", Table: "docs", Value: "enabled"},
 			}},
-			&goschema.Database{},
+			&schemamodel.Database{},
 		},
 		{
 			"ExtendedPropertiesModified",
@@ -289,92 +289,92 @@ func diffCategoryFixtures() []categoryFixture {
 				},
 				OldValue: "enabled",
 			}}},
-			&goschema.Database{},
+			&schemamodel.Database{},
 		},
 		{
 			"MaterializedViewsAdded",
 			&difftypes.SchemaDiff{MaterializedViewsAdded: []string{"mv"}},
-			&goschema.Database{MaterializedViews: []goschema.MaterializedView{{Name: "mv", Body: "SELECT 1"}}},
+			&schemamodel.Database{MaterializedViews: []schemamodel.MaterializedView{{Name: "mv", Body: "SELECT 1"}}},
 		},
-		{"MaterializedViewsRemoved", &difftypes.SchemaDiff{MaterializedViewsRemoved: []string{"mv"}}, &goschema.Database{}},
+		{"MaterializedViewsRemoved", &difftypes.SchemaDiff{MaterializedViewsRemoved: []string{"mv"}}, &schemamodel.Database{}},
 		{
 			"MaterializedViewsModified",
 			&difftypes.SchemaDiff{MaterializedViewsModified: []difftypes.MaterializedViewDiff{{ViewName: "mv", Changes: map[string]string{"body": "a -> b"}}}},
-			&goschema.Database{MaterializedViews: []goschema.MaterializedView{{Name: "mv", Body: "SELECT 2"}}},
+			&schemamodel.Database{MaterializedViews: []schemamodel.MaterializedView{{Name: "mv", Body: "SELECT 2"}}},
 		},
 		{
 			"TriggersAdded",
 			&difftypes.SchemaDiff{TriggersAdded: []difftypes.TriggerRef{{TriggerName: "tg", TableName: "t"}}},
-			&goschema.Database{Triggers: []goschema.Trigger{
+			&schemamodel.Database{Triggers: []schemamodel.Trigger{
 				{Name: "tg", Table: "t", Timing: "BEFORE", Event: "INSERT", ForEach: "ROW", Body: "RETURN NEW;"},
 			}},
 		},
 		{
 			"TriggersRemoved",
 			&difftypes.SchemaDiff{TriggersRemoved: []difftypes.TriggerRef{{TriggerName: "tg", TableName: "t"}}},
-			&goschema.Database{},
+			&schemamodel.Database{},
 		},
 		{
 			"TriggersModified",
 			&difftypes.SchemaDiff{TriggersModified: []difftypes.TriggerDiff{{TriggerName: "tg", TableName: "t", Changes: map[string]string{"timing": "BEFORE -> AFTER"}}}},
-			&goschema.Database{Triggers: []goschema.Trigger{
+			&schemamodel.Database{Triggers: []schemamodel.Trigger{
 				{Name: "tg", Table: "t", Timing: "AFTER", Event: "INSERT", ForEach: "ROW", Body: "RETURN NEW;"},
 			}},
 		},
 		{
 			"RLSPoliciesAdded",
 			&difftypes.SchemaDiff{RLSPoliciesAdded: []difftypes.RLSPolicyRef{{PolicyName: "pol", TableName: "t"}}},
-			&goschema.Database{RLSPolicies: []goschema.RLSPolicy{{Name: "pol", Table: "t", PolicyFor: "ALL", ToRoles: "app"}}},
+			&schemamodel.Database{RLSPolicies: []schemamodel.RLSPolicy{{Name: "pol", Table: "t", PolicyFor: "ALL", ToRoles: "app"}}},
 		},
 		{
 			"RLSPoliciesRemoved",
 			&difftypes.SchemaDiff{RLSPoliciesRemoved: []difftypes.RLSPolicyRef{{PolicyName: "pol", TableName: "t"}}},
-			&goschema.Database{},
+			&schemamodel.Database{},
 		},
 		{
 			"RLSPoliciesModified",
 			&difftypes.SchemaDiff{RLSPoliciesModified: []difftypes.RLSPolicyDiff{{PolicyName: "pol", TableName: "t", Changes: map[string]string{"using": "a -> b"}}}},
-			&goschema.Database{RLSPolicies: []goschema.RLSPolicy{{Name: "pol", Table: "t", PolicyFor: "ALL", ToRoles: "app"}}},
+			&schemamodel.Database{RLSPolicies: []schemamodel.RLSPolicy{{Name: "pol", Table: "t", PolicyFor: "ALL", ToRoles: "app"}}},
 		},
-		{"RLSEnabledTablesAdded", &difftypes.SchemaDiff{RLSEnabledTablesAdded: []string{"t"}}, &goschema.Database{}},
-		{"RLSEnabledTablesRemoved", &difftypes.SchemaDiff{RLSEnabledTablesRemoved: []string{"t"}}, &goschema.Database{}},
+		{"RLSEnabledTablesAdded", &difftypes.SchemaDiff{RLSEnabledTablesAdded: []string{"t"}}, &schemamodel.Database{}},
+		{"RLSEnabledTablesRemoved", &difftypes.SchemaDiff{RLSEnabledTablesRemoved: []string{"t"}}, &schemamodel.Database{}},
 		{
 			"RolesAdded",
 			&difftypes.SchemaDiff{RolesAdded: []string{"app"}},
-			&goschema.Database{Roles: []goschema.Role{{Name: "app"}}},
+			&schemamodel.Database{Roles: []schemamodel.Role{{Name: "app"}}},
 		},
-		{"RolesRemoved", &difftypes.SchemaDiff{RolesRemoved: []string{"app"}}, &goschema.Database{}},
+		{"RolesRemoved", &difftypes.SchemaDiff{RolesRemoved: []string{"app"}}, &schemamodel.Database{}},
 		{
 			"RolesModified",
 			&difftypes.SchemaDiff{RolesModified: []difftypes.RoleDiff{{RoleName: "app", Changes: map[string]string{"login": "false -> true"}}}},
-			&goschema.Database{Roles: []goschema.Role{{Name: "app", Login: true}}},
+			&schemamodel.Database{Roles: []schemamodel.Role{{Name: "app", Login: true}}},
 		},
 		{
 			"GrantsAdded",
 			&difftypes.SchemaDiff{GrantsAdded: []difftypes.GrantRef{{Role: "app", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t"}}},
-			&goschema.Database{},
+			&schemamodel.Database{},
 		},
 		{
 			"GrantsRemoved",
 			&difftypes.SchemaDiff{GrantsRemoved: []difftypes.GrantRef{{Role: "app", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t"}}},
-			&goschema.Database{},
+			&schemamodel.Database{},
 		},
 		{
 			"GrantOptionsAdded",
 			&difftypes.SchemaDiff{GrantOptionsAdded: []difftypes.GrantRef{{Role: "app", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t", WithOption: true}}},
-			&goschema.Database{},
+			&schemamodel.Database{},
 		},
 		{
 			"GrantOptionsRevoked",
 			&difftypes.SchemaDiff{GrantOptionsRevoked: []difftypes.GrantRef{{Role: "app", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t", WithOption: true}}},
-			&goschema.Database{},
+			&schemamodel.Database{},
 		},
 		{
 			"ConstraintsAdded",
 			&difftypes.SchemaDiff{ConstraintsAdded: []string{"uq"}},
-			&goschema.Database{
-				Tables:      []goschema.Table{{Name: "t", StructName: "T"}},
-				Constraints: []goschema.Constraint{{Name: "uq", StructName: "T", Type: "UNIQUE", Columns: []string{"c"}}},
+			&schemamodel.Database{
+				Tables:      []schemamodel.Table{{Name: "t", StructName: "T"}},
+				Constraints: []schemamodel.Constraint{{Name: "uq", StructName: "T", Type: "UNIQUE", Columns: []string{"c"}}},
 			},
 		},
 		{
@@ -382,15 +382,15 @@ func diffCategoryFixtures() []categoryFixture {
 			&difftypes.SchemaDiff{ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
 				{Name: "uq", TableName: "t", Type: "UNIQUE", Columns: []string{"c"}},
 			}},
-			&goschema.Database{},
+			&schemamodel.Database{},
 		},
-		{"ConstraintsRemoved", &difftypes.SchemaDiff{ConstraintsRemoved: []string{"uq"}}, &goschema.Database{}},
+		{"ConstraintsRemoved", &difftypes.SchemaDiff{ConstraintsRemoved: []string{"uq"}}, &schemamodel.Database{}},
 		{
 			"ConstraintsRemovedWithTables",
 			&difftypes.SchemaDiff{ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 				{Name: "uq", TableName: "t", Type: "UNIQUE"},
 			}},
-			&goschema.Database{},
+			&schemamodel.Database{},
 		},
 	}
 }

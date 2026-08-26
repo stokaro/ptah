@@ -7,17 +7,17 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // declaredTTL is a one-table declaration carrying the given policy.
-func declaredTTL(spec *ast.RowTTLSpec) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Sessions", Name: "sessions", RowTTL: spec}},
-		Fields: []goschema.Field{{StructName: "Sessions", Name: "id", Type: "BIGINT", Primary: true}},
+func declaredTTL(spec *ast.RowTTLSpec) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Sessions", Name: "sessions", RowTTL: spec}},
+		Fields: []schemamodel.Field{{StructName: "Sessions", Name: "id", Type: "BIGINT", Primary: true}},
 	}
 }
 
@@ -163,7 +163,7 @@ func TestCompare_ATTLOnlyDifferenceStillReachesTablesModified(t *testing.T) {
 // columnsMatching describes the declaration's columns exactly as a read of the
 // table it creates would, so a comparison over the two finds no column
 // difference at all.
-func columnsMatching(_ *goschema.Database) []catalog.Column {
+func columnsMatching(_ *schemamodel.Database) []catalog.Column {
 	return []catalog.Column{{
 		Name: "id", DataType: "bigint", UDTName: "int8", IsNullable: "NO", IsPrimaryKey: true,
 	}}

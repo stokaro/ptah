@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/integrationharness"
 )
 
@@ -125,7 +125,7 @@ func scenarioNames(scenarios []integrationharness.TestScenario) []string {
 	return names
 }
 
-func loadRoundTripFixtureSchema(c *qt.C, version string) *goschema.Database {
+func loadRoundTripFixtureSchema(c *qt.C, version string) *schemamodel.Database {
 	c.Helper()
 	vem, err := integrationharness.NewVersionedEntityManager(os.DirFS(fixturesRoot))
 	c.Assert(err, qt.IsNil)
@@ -138,18 +138,18 @@ func loadRoundTripFixtureSchema(c *qt.C, version string) *goschema.Database {
 	return schema
 }
 
-func findRoundTripTable(c *qt.C, schema *goschema.Database, name string) *goschema.Table {
+func findRoundTripTable(c *qt.C, schema *schemamodel.Database, name string) *schemamodel.Table {
 	c.Helper()
-	index := slices.IndexFunc(schema.Tables, func(table goschema.Table) bool {
+	index := slices.IndexFunc(schema.Tables, func(table schemamodel.Table) bool {
 		return table.Name == name
 	})
 	c.Assert(index, qt.Not(qt.Equals), -1, qt.Commentf("missing table %s", name))
 	return &schema.Tables[index]
 }
 
-func findRoundTripField(c *qt.C, schema *goschema.Database, structName, name string) *goschema.Field {
+func findRoundTripField(c *qt.C, schema *schemamodel.Database, structName, name string) *schemamodel.Field {
 	c.Helper()
-	index := slices.IndexFunc(schema.Fields, func(field goschema.Field) bool {
+	index := slices.IndexFunc(schema.Fields, func(field schemamodel.Field) bool {
 		return field.StructName == structName && field.Name == name
 	})
 	c.Assert(index, qt.Not(qt.Equals), -1, qt.Commentf("missing field %s.%s", structName, name))

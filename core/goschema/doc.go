@@ -1,9 +1,23 @@
 // Package goschema parses Ptah annotation comments in Go source files into the
-// database-agnostic schema model used across the Ptah toolchain.
+// schema model.
 //
-// The package walks directories or file systems (ParseDir, ParseFS, ParseDirs),
-// extracts tables, fields, indexes, constraints, enums, extensions, roles, and
-// RLS declarations into a Database, merges embedded fields and multi-file
-// declarations, and reports conflicting definitions. The resulting model feeds
-// the renderer, planner, and schema-diff layers.
+// Every entry point returns a
+// [go.5x5.cz/ptah/core/schemamodel.Database] holding the tables, fields,
+// indexes, constraints, enums, extensions, roles, grants, and RLS declarations
+// the annotations declare. They differ in what they read and in how far the
+// result is taken:
+//
+//   - ParseFile and ParseSource read one file, resolve its table-scoped names,
+//     and build its dependency graph. Embedded fields are not expanded and
+//     nothing is deduplicated: one file is not a schema.
+//   - ParseDir, ParseFS, and ParseDirs walk one or more roots and finalize the
+//     result, which expands embedded fields, folds repeated declarations,
+//     reports conflicting ones as an error, and orders tables and functions by
+//     their dependencies.
+//   - ParseDirRaw walks one root and stops before that pipeline, so
+//     [go.5x5.cz/ptah/core/schemamodel.Merge] can compose it with schemas from
+//     other authoring sources under one collision policy.
+//
+// The model itself, and everything done to it after parsing, lives in
+// schemamodel. This package only turns Go source into one.
 package goschema

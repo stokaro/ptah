@@ -1,8 +1,8 @@
-package goschema
+package schemamodel
 
-// newDatabase returns an empty Database with every slice and map field
+// NewDatabase returns an empty Database with every slice and map field
 // initialized, ready to accumulate schema objects from one or more sources.
-func newDatabase() *Database {
+func NewDatabase() *Database {
 	return &Database{
 		Schemas:            make([]Schema, 0),
 		Tables:             make([]Table, 0),
@@ -37,11 +37,11 @@ func newDatabase() *Database {
 	}
 }
 
-// appendDatabase concatenates every schema slice of src onto dst. The derived
+// AppendDatabase concatenates every schema slice of src onto dst. The derived
 // maps (Dependencies, FunctionDependencies, SelfReferencingForeignKeys) are not
 // copied: they are rebuilt from the combined slices by finalizeDatabase, so
 // carrying them here would only risk duplicating self-referencing entries.
-func appendDatabase(dst, src *Database) {
+func AppendDatabase(dst, src *Database) {
 	// A limit one source declared is a limit of the whole composite. Dropping
 	// it here would turn "this description does not claim to describe X" into
 	// silence, and silence is what a comparator reads as a removal -- the exact
@@ -82,7 +82,7 @@ func appendDatabase(dst, src *Database) {
 func finalizeDatabase(result *Database) error {
 	// Process embedded fields BEFORE building dependency graph so that foreign
 	// keys contributed by embedded fields are included in dependency analysis.
-	result.Fields = processEmbeddedFields(result.EmbeddedFields, result.Fields)
+	result.Fields = ProcessEmbeddedFields(result.EmbeddedFields, result.Fields)
 	validator := compositeDefinitionValidator{
 		database: result,
 		resolver: newTableScopeResolver(result.Tables),
@@ -98,7 +98,7 @@ func finalizeDatabase(result *Database) error {
 	stashCompositeHelperDefinitions(result)
 
 	// Build dependency graph for foreign key ordering.
-	buildDependencyGraph(result)
+	BuildDependencyGraph(result)
 
 	// Sort tables and functions by dependency order.
 	sortTablesByDependencies(result)
@@ -166,7 +166,7 @@ func restoreCompositeHelperDefinitions(result *Database) {
 }
 
 func finalizeAccumulatedDatabase(result *Database) error {
-	normalizeTableScopedNames(result)
+	NormalizeTableScopedNames(result)
 	if err := validateDuplicateSchemaObjectDefinitions(result); err != nil {
 		return err
 	}
@@ -205,25 +205,25 @@ func Merge(dbs ...*Database) (*Database, error) {
 		if db == nil {
 			continue
 		}
-		source := newDatabase()
-		appendDatabase(source, db)
+		source := NewDatabase()
+		AppendDatabase(source, db)
 		sources = append(sources, source)
 	}
 	if err := reconcileTableOwners(sources); err != nil {
 		return nil, err
 	}
 
-	result := newDatabase()
+	result := NewDatabase()
 	for _, source := range sources {
-		appendDatabase(result, source)
+		AppendDatabase(result, source)
 	}
 	return finalizeMergedDatabase(result)
 }
 
-// mergeAccumulatedDatabase reconciles and finalizes a mutable accumulator
+// MergeAccumulated reconciles and finalizes a mutable accumulator
 // assembled by ParseFS. Merge copies and reconciles its inputs first so callers'
 // source schemas are never mutated.
-func mergeAccumulatedDatabase(result *Database) (*Database, error) {
+func MergeAccumulated(result *Database) (*Database, error) {
 	if err := reconcileTableOwners([]*Database{result}); err != nil {
 		return nil, err
 	}

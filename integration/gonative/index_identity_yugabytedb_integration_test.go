@@ -10,8 +10,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/planner"
@@ -106,14 +106,14 @@ func readYugabyteIndexIdentitySchema(c *qt.C, t *testing.T, dsn string) *catalog
 	return live
 }
 
-func yugabyteIndexIdentityTarget() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func yugabyteIndexIdentityTarget() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "YugabyteSchemaAUser", Schema: yugabyteIndexIdentitySchemaA, Name: "users"},
 			{StructName: "YugabyteSchemaAOrder", Schema: yugabyteIndexIdentitySchemaA, Name: "orders"},
 			{StructName: "YugabyteSchemaBUser", Schema: yugabyteIndexIdentitySchemaB, Name: "users"},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{
 				StructName: "YugabyteSchemaAOrder",
 				Name:       yugabyteIndexIdentityName,

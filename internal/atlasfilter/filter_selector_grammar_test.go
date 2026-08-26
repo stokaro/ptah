@@ -7,7 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 )
 
@@ -174,7 +174,7 @@ func grammarFieldCensus(schema *catalog.Database) []string {
 }
 
 // grammarGeneratedFieldCensus is the desired-schema half of the same census.
-func grammarGeneratedFieldCensus(db *goschema.Database) []string {
+func grammarGeneratedFieldCensus(db *schemamodel.Database) []string {
 	var out []string
 	add := func(kind, name, field, value string) {
 		if value == "" {
@@ -275,13 +275,13 @@ func TestExcludeDatabase_LeadingSchemaTypeSelector(t *testing.T) {
 // objects: a selector that removed a table from the introspected side but not
 // from the desired side would turn a filtered-out object into a CREATE.
 func TestExcludeGenerated_LeadingSchemaTypeSelector(t *testing.T) {
-	fixture := func() *goschema.Database {
-		return &goschema.Database{
-			Tables: []goschema.Table{
+	fixture := func() *schemamodel.Database {
+		return &schemamodel.Database{
+			Tables: []schemamodel.Table{
 				{StructName: "User", Name: "users"},
 				{StructName: "Order", Schema: "app", Name: "orders"},
 			},
-			Enums: []goschema.Enum{
+			Enums: []schemamodel.Enum{
 				{Name: "mood", Values: []string{"a"}},
 				{Name: "app.color", Values: []string{"r"}},
 			},
@@ -449,11 +449,11 @@ func TestExcludeGenerated_FieldSelectorsSubtractFields(t *testing.T) {
 		},
 	}
 
-	fixture := func() *goschema.Database {
-		return &goschema.Database{
-			Tables:            []goschema.Table{{StructName: "User", Name: "users", Comment: "a users comment"}},
-			Views:             []goschema.View{{StructName: "VUser", Name: "v_users", Comment: "a view comment"}},
-			MaterializedViews: []goschema.MaterializedView{{StructName: "MVUser", Name: "mv_users", Comment: "a matview comment"}},
+	fixture := func() *schemamodel.Database {
+		return &schemamodel.Database{
+			Tables:            []schemamodel.Table{{StructName: "User", Name: "users", Comment: "a users comment"}},
+			Views:             []schemamodel.View{{StructName: "VUser", Name: "v_users", Comment: "a view comment"}},
+			MaterializedViews: []schemamodel.MaterializedView{{StructName: "MVUser", Name: "mv_users", Comment: "a matview comment"}},
 		}
 	}
 
@@ -581,7 +581,7 @@ func TestExcludeDatabase_LeadingSchemaSegmentIsNotCountedTwice(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 }
 
-func grammarGeneratedTableNames(tables []goschema.Table) []string {
+func grammarGeneratedTableNames(tables []schemamodel.Table) []string {
 	out := make([]string, 0, len(tables))
 	for _, value := range tables {
 		out = append(out, value.QualifiedName())
@@ -589,7 +589,7 @@ func grammarGeneratedTableNames(tables []goschema.Table) []string {
 	return out
 }
 
-func grammarGeneratedEnumNames(enums []goschema.Enum) []string {
+func grammarGeneratedEnumNames(enums []schemamodel.Enum) []string {
 	out := make([]string, 0, len(enums))
 	for _, value := range enums {
 		out = append(out, value.Name)

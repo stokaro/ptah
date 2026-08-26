@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/dbmlrender"
 )
 
@@ -87,8 +87,8 @@ func TestRender_EndsWithExactlyOneNewlineAndUsesLF(t *testing.T) {
 func TestRender_NamesWhatTheFormatCannotCarry(t *testing.T) {
 	c := qt.New(t)
 	db := bookshop()
-	db.Views = []goschema.View{{Name: "recent_posts"}, {Name: "active_users"}}
-	db.Triggers = []goschema.Trigger{{Name: "posts_audit"}}
+	db.Views = []schemamodel.View{{Name: "recent_posts"}, {Name: "active_users"}}
+	db.Triggers = []schemamodel.Trigger{{Name: "posts_audit"}}
 
 	result, err := dbmlrender.Render(db, dbmlrender.Options{})
 
@@ -102,7 +102,7 @@ func TestRender_NamesWhatTheFormatCannotCarry(t *testing.T) {
 func TestRender_AnEmptySchemaRendersNothing(t *testing.T) {
 	c := qt.New(t)
 
-	result, err := dbmlrender.Render(&goschema.Database{}, dbmlrender.Options{})
+	result, err := dbmlrender.Render(&schemamodel.Database{}, dbmlrender.Options{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.DBML, qt.Equals, "")
@@ -121,13 +121,13 @@ func TestRender_RefusesANilSchema(t *testing.T) {
 
 // bookshop is one schema carrying one of each thing DBML can say, declared in
 // an order the renderer has to sort rather than echo.
-func bookshop() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func bookshop() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Post", Name: "posts", Schema: "public", Comment: "Everything anybody wrote"},
 			{StructName: "User", Name: "users", Schema: "public"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Post", Name: "id", Type: "BIGINT", Primary: true, AutoInc: true},
 			{
 				StructName: "Post", Name: "author_id", Type: "BIGINT",
@@ -142,10 +142,10 @@ func bookshop() *goschema.Database {
 			{StructName: "User", Name: "id", Type: "BIGINT", Primary: true, AutoInc: true},
 			{StructName: "User", Name: "email", Type: "TEXT", Unique: true},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{StructName: "Post", Name: "posts_author_status_idx", Fields: []string{"author_id", "status"}},
 		},
-		Enums: []goschema.Enum{
+		Enums: []schemamodel.Enum{
 			{Name: "post_status", Schema: "public", Values: []string{"draft", "published"}},
 		},
 	}

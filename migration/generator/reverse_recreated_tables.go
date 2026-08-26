@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/deporder"
@@ -42,7 +42,7 @@ import (
 // Only what the re-created table demonstrably brings back on its own:
 //
 //   - PRIMARY KEY, when the restored table body carries one — single-column via
-//     the field, composite via [goschema.Table.PrimaryKey]. Both render inline,
+//     the field, composite via [schemamodel.Table.PrimaryKey]. Both render inline,
 //     and neither renders the constraint's NAME, so the separate ALTER carried
 //     no information the CREATE TABLE loses.
 //   - FOREIGN KEY, when the restored table has a field-level reference the
@@ -120,7 +120,7 @@ func dropReverseConstraintsRestoredByTableCreation(
 type recreatedTableRestores []recreatedTableRestore
 
 type recreatedTableRestore struct {
-	table goschema.Table
+	table schemamodel.Table
 	// hasPrimaryKey is true when the rendered table body declares a primary
 	// key, in either spelling the renderer accepts.
 	hasPrimaryKey bool
@@ -133,7 +133,7 @@ type recreatedTableRestore struct {
 // do — through [deporder.TablesForCreate], the same call
 // `addNewTables`/`addForeignKeyConstraintsForNewTables` make — so this
 // function's idea of "this plan creates that table" cannot drift from theirs.
-func tableCreationRestores(prior *goschema.Database, tablesAdded []string) recreatedTableRestores {
+func tableCreationRestores(prior *schemamodel.Database, tablesAdded []string) recreatedTableRestores {
 	created := deporder.TablesForCreate(prior, tablesAdded)
 	if len(created) == 0 {
 		return nil
@@ -168,7 +168,7 @@ func tableCreationRestores(prior *goschema.Database, tablesAdded []string) recre
 // planners route self-references through a separate list the introspected
 // schema does not populate — so it is reported as not restored, and its ALTER
 // stays.
-func recreatedForeignKeyName(prior *goschema.Database, table goschema.Table, field goschema.Field) (string, bool) {
+func recreatedForeignKeyName(prior *schemamodel.Database, table schemamodel.Table, field schemamodel.Field) (string, bool) {
 	if strings.TrimSpace(field.Foreign) == "" {
 		return "", false
 	}

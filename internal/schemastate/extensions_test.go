@@ -6,8 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/schemastate"
 )
@@ -51,10 +51,10 @@ func TestTheExtensionAnIndexNeedsSurvivesBothAdapters(t *testing.T) {
 			name: "a description carries it",
 			build: func() (*schemastate.State, error) {
 				description := withIndex(
-					describedWidget([]goschema.Field{
+					describedWidget([]schemamodel.Field{
 						{StructName: "Widget", Name: "n", Type: "int", Nullable: true},
 					}),
-					goschema.Index{
+					schemamodel.Index{
 						StructName: "Widget", Name: "widget_gin", Fields: []string{"n"},
 						RequiresExtensions: []string{"btree_gin"},
 					},
@@ -103,10 +103,10 @@ func TestTheExtensionAConstraintsIndexNeedsSurvivesBothAdapters(t *testing.T) {
 			build: func() (*schemastate.State, error) {
 				return schemastate.FromDescription(
 					withConstraint(
-						describedWidget([]goschema.Field{
+						describedWidget([]schemamodel.Field{
 							{StructName: "Widget", Name: "room", Type: "int", Nullable: true},
 						}),
-						goschema.Constraint{
+						schemamodel.Constraint{
 							StructName: "Widget", Name: "ex_widget_room", Type: "EXCLUDE",
 							UsingMethod: "gist", ExcludeElements: "room WITH =",
 							RequiresExtensions: []string{"btree_gist"},

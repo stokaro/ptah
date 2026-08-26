@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 	"go.5x5.cz/ptah/internal/atlasurl"
@@ -84,7 +84,7 @@ func RehearsePlanStatements(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	statements []string,
-	desired *goschema.Database,
+	desired *schemamodel.Database,
 	opts PlanRehearsalOptions,
 ) error {
 	if conn == nil {
@@ -152,7 +152,7 @@ func RehearsePlanStatements(
 func VerifyAppliedPlanState(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
-	desired *goschema.Database,
+	desired *schemamodel.Database,
 	exclude []string,
 ) error {
 	if conn == nil {

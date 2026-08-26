@@ -9,7 +9,7 @@ import (
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemachange"
 	"go.5x5.cz/ptah/internal/schemastate"
 )
@@ -26,7 +26,7 @@ import (
 func TestColumnModificationCarriesBothSides(t *testing.T) {
 	c := qt.New(t)
 
-	changes := changesFor(c, describedTable(goschema.Field{
+	changes := changesFor(c, describedTable(schemamodel.Field{
 		StructName: "Widget", Name: "code", Type: "varchar(200)", Nullable: true,
 	}), catalogTable(catalog.Column{
 		Name: "code", DataType: "varchar(50)", IsNullable: "YES",
@@ -52,7 +52,7 @@ func TestColumnModificationCarriesBothSides(t *testing.T) {
 func TestAGeneratedColumnChangeCarriesBothExpressions(t *testing.T) {
 	c := qt.New(t)
 
-	changes := changesFor(c, describedTable(goschema.Field{
+	changes := changesFor(c, describedTable(schemamodel.Field{
 		StructName: "Widget", Name: "code", Type: "text", Nullable: true,
 		GeneratedExpression: "upper(name)", GeneratedKind: "STORED",
 	}), catalogTable(catalog.Column{
@@ -86,7 +86,7 @@ func TestTypeSpellingsThatMeanOneTypeAreNotAChange(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			changes := changesFor(c, describedTable(goschema.Field{
+			changes := changesFor(c, describedTable(schemamodel.Field{
 				StructName: "Widget", Name: "code", Type: test.declared, Nullable: true,
 			}), catalogTable(catalog.Column{
 				Name: "code", DataType: test.reported, IsNullable: "YES",
@@ -139,8 +139,8 @@ func TestNotNullColumnAdditionAnswersFromTheRowStatistics(t *testing.T) {
 			currentCatalog.Tables[0].RowStatsUnknown = test.statsUnknown
 
 			changes := changesFor(c, describedTable(
-				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
-				goschema.Field{StructName: "Widget", Name: "code", Type: "text"},
+				schemamodel.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				schemamodel.Field{StructName: "Widget", Name: "code", Type: "text"},
 			), currentCatalog)
 
 			c.Assert(changes, qt.HasLen, 1)
@@ -158,27 +158,27 @@ func TestNotNullColumnAdditionAnswersFromTheRowStatistics(t *testing.T) {
 func TestAColumnThatFillsItselfIsPlannedOnAPopulatedTable(t *testing.T) {
 	tests := []struct {
 		name  string
-		field goschema.Field
+		field schemamodel.Field
 	}{
 		{
 			name:  "nullable",
-			field: goschema.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true},
+			field: schemamodel.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true},
 		},
 		{
 			name: "a declared default",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				StructName: "Widget", Name: "code", Type: "text", Default: "unset", DefaultSet: true,
 			},
 		},
 		{
 			name: "a default expression",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				StructName: "Widget", Name: "code", Type: "text", DefaultExpr: "now()",
 			},
 		},
 		{
 			name: "a column the engine fills",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				StructName: "Widget", Name: "code", Type: "int", AutoInc: true,
 			},
 		},
@@ -193,7 +193,7 @@ func TestAColumnThatFillsItselfIsPlannedOnAPopulatedTable(t *testing.T) {
 			currentCatalog.Tables[0].EstimatedRows = 42
 
 			changes := changesFor(c, describedTable(
-				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				schemamodel.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
 				test.field,
 			), currentCatalog)
 
@@ -211,18 +211,18 @@ func TestAColumnThatFillsItselfIsPlannedOnAPopulatedTable(t *testing.T) {
 func TestDroppingSaysWhatItCosts(t *testing.T) {
 	tests := []struct {
 		name        string
-		description *goschema.Database
+		description *schemamodel.Database
 		wantKind    string
 	}{
 		{
 			name:        "a table",
-			description: &goschema.Database{},
+			description: &schemamodel.Database{},
 			wantKind:    "table",
 		},
 		{
 			name: "a column",
 			description: describedTable(
-				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true}),
+				schemamodel.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true}),
 			wantKind: "column",
 		},
 	}
@@ -255,7 +255,7 @@ func TestCreatingATableSaysItCostsNothing(t *testing.T) {
 	c := qt.New(t)
 
 	changes := changesFor(c, describedTable(
-		goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+		schemamodel.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
 	), &catalog.Database{})
 
 	c.Assert(changes, qt.HasLen, 1)
@@ -270,7 +270,7 @@ func TestCreatingATableSaysItCostsNothing(t *testing.T) {
 // their own tests and this family does not render yet.
 func changesFor(
 	c *qt.C,
-	description *goschema.Database,
+	description *schemamodel.Database,
 	currentCatalog *catalog.Database,
 ) []schemachange.Change {
 	c.Helper()
@@ -281,7 +281,7 @@ func changesFor(
 // needs: what a declared type folds to is the TARGET's rule.
 func changesForProfile(
 	c *qt.C,
-	description *goschema.Database,
+	description *schemamodel.Database,
 	currentCatalog *catalog.Database,
 	profile schemastate.Profile,
 ) []schemachange.Change {
@@ -300,12 +300,12 @@ func changesForProfile(
 }
 
 // describedTable is one authored table carrying the given fields.
-func describedTable(fields ...goschema.Field) *goschema.Database {
+func describedTable(fields ...schemamodel.Field) *schemamodel.Database {
 	return describedTableWithKey(nil, fields...)
 }
 
 // describedTableOptions is [describedTable] carrying SQLite's table options.
-func describedTableOptions(strict, withoutRowID bool, fields ...goschema.Field) *goschema.Database {
+func describedTableOptions(strict, withoutRowID bool, fields ...schemamodel.Field) *schemamodel.Database {
 	description := describedTable(fields...)
 	description.Tables[0].Strict = strict
 	description.Tables[0].WithoutRowID = withoutRowID
@@ -314,7 +314,7 @@ func describedTableOptions(strict, withoutRowID bool, fields ...goschema.Field) 
 
 // describedTableMySQLOptions is [describedTable] carrying the MySQL-family
 // table options.
-func describedTableMySQLOptions(fields ...goschema.Field) *goschema.Database {
+func describedTableMySQLOptions(fields ...schemamodel.Field) *schemamodel.Database {
 	description := describedTable(fields...)
 	description.Tables[0].Engine = "InnoDB"
 	description.Tables[0].Charset = "utf8mb4"
@@ -324,14 +324,14 @@ func describedTableMySQLOptions(fields ...goschema.Field) *goschema.Database {
 
 // describedTableCoveringKey is [describedTable] with a primary key that carries
 // INCLUDE payload columns.
-func describedTableCoveringKey(fields ...goschema.Field) *goschema.Database {
+func describedTableCoveringKey(fields ...schemamodel.Field) *schemamodel.Database {
 	description := describedTableWithKey([]string{"id"}, fields...)
 	description.Tables[0].PrimaryKeyInclude = []string{"code"}
 	return description
 }
 
 // describedTableCounter is [describedTable] with a MySQL-family table counter.
-func describedTableCounter(fields ...goschema.Field) *goschema.Database {
+func describedTableCounter(fields ...schemamodel.Field) *schemamodel.Database {
 	description := describedTable(fields...)
 	description.Tables[0].AutoIncrement = "42"
 	return description
@@ -339,16 +339,16 @@ func describedTableCounter(fields ...goschema.Field) *goschema.Database {
 
 // describedTableWithDomain is [describedTable] plus the domain declaration a
 // column's declared type names. Without it the type is a type, not a domain.
-func describedTableWithDomain(domain string, fields ...goschema.Field) *goschema.Database {
+func describedTableWithDomain(domain string, fields ...schemamodel.Field) *schemamodel.Database {
 	description := describedTable(fields...)
-	description.Domains = append(description.Domains, goschema.Domain{
+	description.Domains = append(description.Domains, schemamodel.Domain{
 		StructName: "Widget", Name: domain, Schema: "public", BaseType: "text",
 	})
 	return description
 }
 
 // describedTableWithDomainIn is [describedTableWithDomain] in a named schema.
-func describedTableWithDomainIn(schema, domain string, fields ...goschema.Field) *goschema.Database {
+func describedTableWithDomainIn(schema, domain string, fields ...schemamodel.Field) *schemamodel.Database {
 	description := describedTableWithDomain(domain, fields...)
 	description.Domains[0].Schema = schema
 	return description
@@ -356,17 +356,17 @@ func describedTableWithDomainIn(schema, domain string, fields ...goschema.Field)
 
 // describedTablePartitioned is [describedTable] partitioned by range over its
 // second column.
-func describedTablePartitioned(fields ...goschema.Field) *goschema.Database {
+func describedTablePartitioned(fields ...schemamodel.Field) *schemamodel.Database {
 	description := describedTable(fields...)
-	description.Tables[0].Partition = &goschema.PartitionSpec{
+	description.Tables[0].Partition = &schemamodel.PartitionSpec{
 		Type:  "RANGE",
-		Parts: []goschema.PartitionPart{{Name: "created"}},
+		Parts: []schemamodel.PartitionPart{{Name: "created"}},
 	}
 	return description
 }
 
 // describedVirtualTable is [describedTable] declared as a SQLite virtual table.
-func describedVirtualTable(fields ...goschema.Field) *goschema.Database {
+func describedVirtualTable(fields ...schemamodel.Field) *schemamodel.Database {
 	description := describedTable(fields...)
 	description.Tables[0].VirtualModule = "fts5"
 	description.Tables[0].VirtualArguments = "content, tokenize='porter'"
@@ -374,7 +374,7 @@ func describedVirtualTable(fields ...goschema.Field) *goschema.Database {
 }
 
 // describedTableRowTTL is [describedTable] with a CockroachDB row-level TTL.
-func describedTableRowTTL(fields ...goschema.Field) *goschema.Database {
+func describedTableRowTTL(fields ...schemamodel.Field) *schemamodel.Database {
 	description := describedTable(fields...)
 	description.Tables[0].RowTTL = &ast.RowTTLSpec{ExpireAfter: "30 days"}
 	return description
@@ -383,9 +383,9 @@ func describedTableRowTTL(fields ...goschema.Field) *goschema.Database {
 // describedTableWithKey is [describedTable] with a table-level primary key,
 // which is how the authoring model spells a COMPOSITE one: the field flag
 // declares a single-column key and cannot express a key over two.
-func describedTableWithKey(key []string, fields ...goschema.Field) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Widget", Name: "widget", PrimaryKey: key}},
+func describedTableWithKey(key []string, fields ...schemamodel.Field) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Widget", Name: "widget", PrimaryKey: key}},
 		Fields: fields,
 	}
 }
@@ -417,7 +417,7 @@ func TestCoverageGatesTablesInBothDirections(t *testing.T) {
 		name           string
 		desiredLimits  coverage.Set
 		currentLimits  coverage.Set
-		description    *goschema.Database
+		description    *schemamodel.Database
 		currentCatalog *catalog.Database
 		wantOperation  schemachange.Operation
 		wantStatus     schemachange.Status
@@ -426,7 +426,7 @@ func TestCoverageGatesTablesInBothDirections(t *testing.T) {
 		{
 			name:          "a table the desired schema never claimed to describe",
 			desiredLimits: coverage.Set{}.WithObject(coverage.Schema, "public"),
-			description:   &goschema.Database{},
+			description:   &schemamodel.Database{},
 			currentCatalog: catalogTable(catalog.Column{
 				Name: "id", DataType: "integer", IsNullable: "NO",
 			}),
@@ -438,7 +438,7 @@ func TestCoverageGatesTablesInBothDirections(t *testing.T) {
 			name:          "a table the read never looked for",
 			currentLimits: coverage.Set{}.WithObject(coverage.Schema, "public"),
 			description: describedTable(
-				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true}),
+				schemamodel.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true}),
 			currentCatalog: &catalog.Database{},
 			wantOperation:  schemachange.Add,
 			wantStatus:     schemachange.Undecidable,
@@ -469,7 +469,7 @@ func TestCoverageDoesNotWithholdWhatBothSidesDescribe(t *testing.T) {
 	c := qt.New(t)
 
 	changes := changesFor(c, describedTable(
-		goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+		schemamodel.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
 	), &catalog.Database{})
 
 	c.Assert(changes, qt.HasLen, 1)
@@ -524,13 +524,13 @@ func TestATableCreationOrdersBeforeTheConstraintThatNeedsIt(t *testing.T) {
 
 // parentChildSchema is a parent with a key and a child whose column references
 // it.
-func parentChildSchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func parentChildSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Parent", Name: "parent"},
 			{StructName: "Child", Name: "child"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Parent", Name: "id", Type: "int", Primary: true},
 			{StructName: "Child", Name: "id", Type: "int", Primary: true},
 			{
@@ -590,7 +590,7 @@ func TestATableDropOrdersAfterTheConstraintOnIt(t *testing.T) {
 		}},
 	}
 
-	forward := forwardOrderFor(c, &goschema.Database{}, currentCatalog, "table", "constraint")
+	forward := forwardOrderFor(c, &schemamodel.Database{}, currentCatalog, "table", "constraint")
 
 	c.Assert(kindsOf(forward), qt.DeepEquals, []string{"constraint", "table", "table"})
 	c.Assert(forward[0].ID.Name.Source, qt.Equals, "fk_child_parent")
@@ -607,7 +607,7 @@ func TestATableDropOrdersAfterTheConstraintOnIt(t *testing.T) {
 // loop rather than the graph.
 func forwardOrderFor(
 	c *qt.C,
-	description *goschema.Database,
+	description *schemamodel.Database,
 	currentCatalog *catalog.Database,
 	inputKinds ...string,
 ) []schemachange.Change {
@@ -667,7 +667,7 @@ func TestADeclaredTypeIsAskedInTheTargetsSpelling(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			changes := changesForProfile(c, describedTable(goschema.Field{
+			changes := changesForProfile(c, describedTable(schemamodel.Field{
 				StructName: "Widget", Name: "code", Type: test.declared, Nullable: true,
 			}), catalogTableInSchema("", catalog.Column{
 				Name: "code", DataType: test.reported, IsNullable: "YES",
@@ -685,12 +685,12 @@ func TestADeclaredTypeIsAskedInTheTargetsSpelling(t *testing.T) {
 func TestADefaultChangeIsAChange(t *testing.T) {
 	tests := []struct {
 		name     string
-		declared goschema.Field
+		declared schemamodel.Field
 		reported catalog.Column
 	}{
 		{
 			name: "a default the database does not have",
-			declared: goschema.Field{
+			declared: schemamodel.Field{
 				StructName: "Widget", Name: "code", Type: "text", Nullable: true,
 				Default: "unset", DefaultSet: true,
 			},
@@ -698,7 +698,7 @@ func TestADefaultChangeIsAChange(t *testing.T) {
 		},
 		{
 			name: "a different default",
-			declared: goschema.Field{
+			declared: schemamodel.Field{
 				StructName: "Widget", Name: "code", Type: "text", Nullable: true,
 				Default: "unset", DefaultSet: true,
 			},
@@ -710,7 +710,7 @@ func TestADefaultChangeIsAChange(t *testing.T) {
 			// The empty string is a default, and a model carrying only the
 			// string cannot tell it from a column that has none.
 			name: "an empty-string default against no default",
-			declared: goschema.Field{
+			declared: schemamodel.Field{
 				StructName: "Widget", Name: "code", Type: "text", Nullable: true,
 				Default: "", DefaultSet: true,
 			},
@@ -738,7 +738,7 @@ func TestADefaultChangeIsAChange(t *testing.T) {
 func TestADomainColumnIsComparedByIdentity(t *testing.T) {
 	tests := []struct {
 		name        string
-		description *goschema.Database
+		description *schemamodel.Database
 		column      catalog.Column
 		wantChanged []string
 	}{
@@ -747,7 +747,7 @@ func TestADomainColumnIsComparedByIdentity(t *testing.T) {
 			// DOMAIN named after it. Folding the domain's name as if it were a
 			// type made these one column.
 			name: "a domain named after a base type",
-			description: describedTable(goschema.Field{
+			description: describedTable(schemamodel.Field{
 				StructName: "Widget", Name: "amount", Type: "bigint", Nullable: true,
 			}),
 			column: catalog.Column{
@@ -760,7 +760,7 @@ func TestADomainColumnIsComparedByIdentity(t *testing.T) {
 			// Two domains of one name in two schemas are two domains.
 			name: "one domain name in two schemas",
 			description: describedTableWithDomainIn("app", "email",
-				goschema.Field{StructName: "Widget", Name: "contact", Type: "email", Nullable: true}),
+				schemamodel.Field{StructName: "Widget", Name: "contact", Type: "email", Nullable: true}),
 			column: catalog.Column{
 				Name: "contact", DataType: "USER-DEFINED", IsNullable: "YES",
 				DomainName: "email", DomainSchema: "public", FormattedType: "email",
@@ -773,7 +773,7 @@ func TestADomainColumnIsComparedByIdentity(t *testing.T) {
 			// pass both rows above.
 			name: "the same domain on both sides",
 			description: describedTableWithDomain("email",
-				goschema.Field{StructName: "Widget", Name: "contact", Type: "email", Nullable: true}),
+				schemamodel.Field{StructName: "Widget", Name: "contact", Type: "email", Nullable: true}),
 			column: catalog.Column{
 				Name: "contact", DataType: "USER-DEFINED", IsNullable: "YES",
 				DomainName: "email", DomainSchema: "public", FormattedType: "email",

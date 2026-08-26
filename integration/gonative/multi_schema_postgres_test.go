@@ -9,8 +9,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/migration/planner"
@@ -29,26 +29,26 @@ func TestPostgreSQLMultiSchemaGenerateApplyReadDiffIntegration(t *testing.T) {
 	cleanupMultiSchemaIntegration(t, db)
 	defer cleanupMultiSchemaIntegration(t, db)
 
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Account", Name: "ptah_ms_accounts"},
 			{StructName: "User", Name: "ptah_ms_users", Schema: "ptah_ms_auth"},
 			{StructName: "Invoice", Name: "ptah_ms_invoices", Schema: "ptah_ms_billing"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Account", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "Invoice", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "Invoice", Name: "user_id", Type: "INTEGER", Foreign: "ptah_ms_auth.ptah_ms_users(id)"},
 			{StructName: "Invoice", Name: "account_id", Type: "INTEGER", Foreign: "ptah_ms_accounts(id)"},
 		},
-		RLSPolicies: []goschema.RLSPolicy{
+		RLSPolicies: []schemamodel.RLSPolicy{
 			{Name: "ptah_ms_users_visible", Table: "ptah_ms_auth.ptah_ms_users", PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "id IS NOT NULL"},
 		},
-		RLSEnabledTables: []goschema.RLSEnabledTable{
+		RLSEnabledTables: []schemamodel.RLSEnabledTable{
 			{Table: "ptah_ms_auth.ptah_ms_users"},
 		},
-		SelfReferencingForeignKeys: make(map[string][]goschema.SelfReferencingFK),
+		SelfReferencingForeignKeys: make(map[string][]schemamodel.SelfReferencingFK),
 	}
 
 	diff := &difftypes.SchemaDiff{
@@ -58,7 +58,7 @@ func TestPostgreSQLMultiSchemaGenerateApplyReadDiffIntegration(t *testing.T) {
 		},
 		RLSEnabledTablesAdded: []string{"ptah_ms_auth.ptah_ms_users"},
 	}
-	nodes, err := planner.GenerateSchemaDiffAST(diff, generated, "postgres")
+	nodes, err := planner.GenerateSchemaDiffAST(diff, desired, "postgres")
 	c.Assert(err, qt.IsNil)
 	migrationSQL, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -80,7 +80,7 @@ func TestPostgreSQLMultiSchemaGenerateApplyReadDiffIntegration(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	live = filterMultiSchemaIntegrationTables(live)
 
-	roundTripDiff := schemadiff.CompareWithDialect(generated, live, "postgres")
+	roundTripDiff := schemadiff.CompareWithDialect(desired, live, "postgres")
 	c.Assert(roundTripDiff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %#v", roundTripDiff))
 }
 

@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashcl"
 )
 
@@ -205,7 +205,7 @@ table "t" {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
-	c.Assert(db.Tables[0].PrimaryKeyParts, qt.DeepEquals, []goschema.PrimaryKeyPart{{Name: "n"}})
+	c.Assert(db.Tables[0].PrimaryKeyParts, qt.DeepEquals, []schemamodel.PrimaryKeyPart{{Name: "n"}})
 }
 
 // And a partition's `by` parts, which are a third destination for the same read.
@@ -224,9 +224,9 @@ table "t" {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
-	c.Assert(db.Tables[0].Partition, qt.DeepEquals, &goschema.PartitionSpec{
+	c.Assert(db.Tables[0].Partition, qt.DeepEquals, &schemamodel.PartitionSpec{
 		Type:  "RANGE",
-		Parts: []goschema.PartitionPart{{Name: "n"}},
+		Parts: []schemamodel.PartitionPart{{Name: "n"}},
 	})
 }
 

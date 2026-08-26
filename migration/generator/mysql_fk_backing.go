@@ -17,7 +17,7 @@ type mysqlIndexCandidate struct {
 	keyColumns     []string
 	positionsKnown bool
 	incomplete     bool
-	generated      bool
+	desired        bool
 }
 
 type mysqlIndexCoverage uint8
@@ -328,7 +328,7 @@ func (s *mysqlForeignKeyIndexSimulation) addGeneratedBackingIndex(
 		ref:            foreignKey.ref,
 		keyColumns:     slices.Clone(foreignKey.columns),
 		positionsKnown: true,
-		generated:      true,
+		desired:        true,
 	})
 }
 
@@ -356,7 +356,7 @@ func (s *mysqlForeignKeyIndexSimulation) dropConstraint(
 
 func (s *mysqlForeignKeyIndexSimulation) addIndex(candidate mysqlIndexCandidate) {
 	s.indexes = append(s.indexes, candidate)
-	if !candidate.generated {
+	if !candidate.desired {
 		s.discardSupersededGeneratedIndexes(candidate)
 	}
 }
@@ -369,7 +369,7 @@ func (s *mysqlForeignKeyIndexSimulation) discardSupersededGeneratedIndexes(candi
 		}
 		removed := false
 		s.indexes = slices.DeleteFunc(s.indexes, func(index mysqlIndexCandidate) bool {
-			matches := index.generated && s.sameIndexIdentity(index.ref, foreignKey.ref)
+			matches := index.desired && s.sameIndexIdentity(index.ref, foreignKey.ref)
 			removed = removed || matches
 			return matches
 		})

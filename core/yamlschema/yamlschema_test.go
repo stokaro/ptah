@@ -8,10 +8,11 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/core/yamlschema"
 )
 
-func renderStatements(c *qt.C, db *goschema.Database, dialect string) []string {
+func renderStatements(c *qt.C, db *schemamodel.Database, dialect string) []string {
 	c.Helper()
 	statements, err := renderer.GetOrderedCreateStatements(db, dialect)
 	c.Assert(err, qt.IsNil)
@@ -200,7 +201,7 @@ rls_policies:
 	c.Assert(db.Fields, qt.HasLen, 6)
 	c.Assert(db.Fields[5].GeneratedExpression, qt.Equals, "lower(email)")
 	c.Assert(db.Fields[5].GeneratedKind, qt.Equals, "STORED")
-	c.Assert(db.Enums, qt.DeepEquals, []goschema.Enum{{Name: "account_status", Values: []string{"active", "suspended"}}})
+	c.Assert(db.Enums, qt.DeepEquals, []schemamodel.Enum{{Name: "account_status", Values: []string{"active", "suspended"}}})
 	c.Assert(db.Extensions, qt.HasLen, 1)
 	c.Assert(db.Extensions[0].Schema, qt.Equals, "extensions")
 	c.Assert(db.Functions, qt.HasLen, 1)
@@ -236,7 +237,7 @@ enums:
   account_status: active, suspended
 `))
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.Enums, qt.DeepEquals, []goschema.Enum{{
+	c.Assert(db.Enums, qt.DeepEquals, []schemamodel.Enum{{
 		Name:   "account_status",
 		Values: []string{"active", "suspended"},
 	}})

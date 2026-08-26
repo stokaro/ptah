@@ -14,7 +14,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -29,12 +29,12 @@ func indexOfFragment(sql, fragment string) int {
 // off. It exists in the database before and after every case below, so a
 // DROP TABLE ... CASCADE can never be what removes the view, the materialized
 // view or the trigger: the down migration has to name them itself.
-func viewLikeTable() goschema.Table {
-	return goschema.Table{StructName: "RevViewUser", Name: "rev_view_users"}
+func viewLikeTable() schemamodel.Table {
+	return schemamodel.Table{StructName: "RevViewUser", Name: "rev_view_users"}
 }
 
-func viewLikeFields() []goschema.Field {
-	return []goschema.Field{
+func viewLikeFields() []schemamodel.Field {
+	return []schemamodel.Field{
 		{StructName: "RevViewUser", Name: "id", Type: "BIGINT", Primary: true},
 		{StructName: "RevViewUser", Name: "email", Type: "TEXT"},
 	}
@@ -55,21 +55,21 @@ func viewLikeDBWithTableOnly() *catalog.Database {
 	}
 }
 
-func viewLikeGoSchemaWithObjects(viewBody, matViewBody, triggerBody string) *goschema.Database {
-	schema := &goschema.Database{
-		Tables: []goschema.Table{viewLikeTable()},
+func viewLikeGoSchemaWithObjects(viewBody, matViewBody, triggerBody string) *schemamodel.Database {
+	schema := &schemamodel.Database{
+		Tables: []schemamodel.Table{viewLikeTable()},
 		Fields: viewLikeFields(),
-		Views: []goschema.View{
+		Views: []schemamodel.View{
 			{StructName: "RevActiveUsers", Name: "rev_active_users", Body: viewBody},
 		},
-		MaterializedViews: []goschema.MaterializedView{
+		MaterializedViews: []schemamodel.MaterializedView{
 			{
 				StructName: "RevUserStats",
 				Name:       "rev_user_stats",
 				Body:       matViewBody,
 			},
 		},
-		Triggers: []goschema.Trigger{
+		Triggers: []schemamodel.Trigger{
 			{
 				StructName: "RevViewUser",
 				Name:       "rev_touch",
@@ -81,7 +81,7 @@ func viewLikeGoSchemaWithObjects(viewBody, matViewBody, triggerBody string) *gos
 			},
 		},
 	}
-	goschema.Finalize(schema)
+	schemamodel.Finalize(schema)
 	return schema
 }
 
@@ -162,11 +162,11 @@ func TestGenerateDownMigrationSQL_DropsViewLikeObjectsCreatedByUp(t *testing.T) 
 func TestGenerateDownMigrationSQL_RestoresViewLikeObjectsDroppedByUp(t *testing.T) {
 	c := qt.New(t)
 
-	schema := &goschema.Database{
-		Tables: []goschema.Table{viewLikeTable()},
+	schema := &schemamodel.Database{
+		Tables: []schemamodel.Table{viewLikeTable()},
 		Fields: viewLikeFields(),
 	}
-	goschema.Finalize(schema)
+	schemamodel.Finalize(schema)
 	db := viewLikeDBWithObjects(revViewBody, revMatViewBody, revTriggerBody)
 
 	upDiff := schemadiff.CompareWithDialect(schema, db, "postgres")

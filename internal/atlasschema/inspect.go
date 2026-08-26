@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 	"go.5x5.cz/ptah/internal/atlasreport"
@@ -64,7 +64,7 @@ type InspectOptions struct {
 	PrepareSchema func(*catalog.Database) (*catalog.Database, error)
 	// ValidateSchema applies a caller-selected policy to the fully introspected
 	// schema before any template renders or file export is published.
-	ValidateSchema func(*goschema.Database) error
+	ValidateSchema func(*schemamodel.Database) error
 	// ValidateRenderedVirtualTables applies a caller-selected policy to the
 	// SQLite virtual tables whose module declaration the chosen rendering
 	// dropped. It is asked only when something was actually dropped, so a
@@ -144,7 +144,7 @@ func prepareInspectSchema(
 	return prepare(schema)
 }
 
-func validateInspectSchema(schema *catalog.Database, validate func(*goschema.Database) error) error {
+func validateInspectSchema(schema *catalog.Database, validate func(*schemamodel.Database) error) error {
 	if validate == nil {
 		return nil
 	}

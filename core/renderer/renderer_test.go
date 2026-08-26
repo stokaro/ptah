@@ -10,6 +10,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 func TestSupportedDialects(t *testing.T) {
@@ -608,12 +609,12 @@ type LiveProductsView struct{}
 func TestGetOrderedCreateStatements_MutualForeignKeysAreTwoPhase(t *testing.T) {
 	c := qt.New(t)
 
-	result := &goschema.Database{
-		Tables: []goschema.Table{
+	result := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "A", Name: "a"},
 			{StructName: "B", Name: "b"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "A", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "A", Name: "b_id", Type: "INTEGER", Foreign: "b(id)", ForeignKeyName: "fk_a_b"},
 			{StructName: "B", Name: "id", Type: "INTEGER", Primary: true},

@@ -1,4 +1,4 @@
-package goschema_test
+package schemamodel_test
 
 import (
 	"slices"
@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // TestDependencyOrderingWithEmbeddedFields tests that tables with foreign key dependencies
@@ -16,12 +16,12 @@ func TestDependencyOrderingWithEmbeddedFields(t *testing.T) {
 	c := qt.New(t)
 
 	// Create a database schema that reproduces the issue from GitHub issue #16
-	database := &goschema.Database{
-		Tables: []goschema.Table{
+	database := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Tenant", Name: "tenants"},
 			{StructName: "User", Name: "users"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			// Tenant fields
 			{StructName: "Tenant", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "Tenant", Name: "name", Type: "VARCHAR(255)", Nullable: false},
@@ -35,7 +35,7 @@ func TestDependencyOrderingWithEmbeddedFields(t *testing.T) {
 			// User direct fields (NOT including embedded fields yet)
 			{StructName: "User", Name: "email", Type: "VARCHAR(255)", Nullable: false},
 		},
-		EmbeddedFields: []goschema.EmbeddedField{
+		EmbeddedFields: []schemamodel.EmbeddedField{
 			// User embeds TenantAwareEntityID (which contains the foreign key)
 			{
 				StructName:       "User",
@@ -53,8 +53,8 @@ func TestDependencyOrderingWithEmbeddedFields(t *testing.T) {
 	}
 
 	// Simulate the fixed flow: process embedded fields BEFORE building dependency graph
-	database.Fields = processEmbeddedFields(database.EmbeddedFields, database.Fields)
-	buildDependencyGraph(database)
+	database.Fields = ProcessEmbeddedFields(database.EmbeddedFields, database.Fields)
+	BuildDependencyGraph(database)
 	sortTablesByDependencies(database)
 
 	// Verify that the dependency was correctly detected
@@ -84,7 +84,7 @@ func TestDependencyOrderingWithEmbeddedFields(t *testing.T) {
 	c.Assert(tenantsIndex < usersIndex, qt.IsTrue, qt.Commentf("Tenants table should come before users table"))
 
 	// Verify that the embedded fields were properly expanded
-	userFields := make([]goschema.Field, 0)
+	userFields := make([]schemamodel.Field, 0)
 	for _, field := range database.Fields {
 		if field.StructName == "User" {
 			userFields = append(userFields, field)
@@ -110,11 +110,11 @@ func TestDependencyOrderingWithEmbeddedFields(t *testing.T) {
 func TestEmbeddedFieldProcessingModes(t *testing.T) {
 	c := qt.New(t)
 
-	database := &goschema.Database{
-		Tables: []goschema.Table{
+	database := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Article", Name: "articles"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			// Article direct fields
 			{StructName: "Article", Name: "title", Type: "VARCHAR(255)", Nullable: false},
 
@@ -124,7 +124,7 @@ func TestEmbeddedFieldProcessingModes(t *testing.T) {
 			{StructName: "AuditInfo", Name: "by", Type: "VARCHAR(255)"},
 			{StructName: "AuditInfo", Name: "reason", Type: "TEXT"},
 		},
-		EmbeddedFields: []goschema.EmbeddedField{
+		EmbeddedFields: []schemamodel.EmbeddedField{
 			// Mode 1: inline
 			{
 				StructName:       "Article",
@@ -165,10 +165,10 @@ func TestEmbeddedFieldProcessingModes(t *testing.T) {
 	}
 
 	// Process embedded fields
-	processedFields := processEmbeddedFields(database.EmbeddedFields, database.Fields)
+	processedFields := ProcessEmbeddedFields(database.EmbeddedFields, database.Fields)
 
 	// Find Article fields
-	articleFields := make([]goschema.Field, 0)
+	articleFields := make([]schemamodel.Field, 0)
 	for _, field := range processedFields {
 		if field.StructName == "Article" {
 			articleFields = append(articleFields, field)
@@ -236,12 +236,12 @@ func TestEmbeddedFieldProcessingModes(t *testing.T) {
 }
 
 // Helper functions for testing (simplified versions of the actual functions)
-func processEmbeddedFields(embeddedFields []goschema.EmbeddedField, originalFields []goschema.Field) []goschema.Field {
-	allFields := make([]goschema.Field, len(originalFields))
+func ProcessEmbeddedFields(embeddedFields []schemamodel.EmbeddedField, originalFields []schemamodel.Field) []schemamodel.Field {
+	allFields := make([]schemamodel.Field, len(originalFields))
 	copy(allFields, originalFields)
 
 	// Process embedded fields for each struct
-	structNames := goschema.UniqueStructNames(embeddedFields)
+	structNames := schemamodel.UniqueStructNames(embeddedFields)
 	for _, structName := range structNames {
 		generatedFields := processEmbeddedFieldsForStruct(embeddedFields, originalFields, structName)
 		allFields = append(allFields, generatedFields...)
@@ -250,8 +250,8 @@ func processEmbeddedFields(embeddedFields []goschema.EmbeddedField, originalFiel
 	return allFields
 }
 
-func processEmbeddedFieldsForStruct(embeddedFields []goschema.EmbeddedField, allFields []goschema.Field, structName string) []goschema.Field {
-	var generatedFields []goschema.Field
+func processEmbeddedFieldsForStruct(embeddedFields []schemamodel.EmbeddedField, allFields []schemamodel.Field, structName string) []schemamodel.Field {
+	var generatedFields []schemamodel.Field
 
 	for _, embedded := range embeddedFields {
 		if embedded.StructName != structName {
@@ -275,7 +275,7 @@ func processEmbeddedFieldsForStruct(embeddedFields []goschema.EmbeddedField, all
 			if columnName == "" {
 				columnName = embedded.EmbeddedTypeName + "_data"
 			}
-			generatedFields = append(generatedFields, goschema.Field{
+			generatedFields = append(generatedFields, schemamodel.Field{
 				StructName: structName,
 				FieldName:  embedded.EmbeddedTypeName,
 				Name:       columnName,
@@ -284,7 +284,7 @@ func processEmbeddedFieldsForStruct(embeddedFields []goschema.EmbeddedField, all
 			})
 		case "relation":
 			if embedded.Field != "" && embedded.Ref != "" {
-				generatedFields = append(generatedFields, goschema.Field{
+				generatedFields = append(generatedFields, schemamodel.Field{
 					StructName: structName,
 					FieldName:  embedded.EmbeddedTypeName,
 					Name:       embedded.Field,
@@ -301,7 +301,7 @@ func processEmbeddedFieldsForStruct(embeddedFields []goschema.EmbeddedField, all
 	return generatedFields
 }
 
-func buildDependencyGraph(r *goschema.Database) {
+func BuildDependencyGraph(r *schemamodel.Database) {
 	for _, table := range r.Tables {
 		r.Dependencies[table.Name] = make([]string, 0)
 	}
@@ -325,9 +325,9 @@ func buildDependencyGraph(r *goschema.Database) {
 	}
 }
 
-func sortTablesByDependencies(r *goschema.Database) {
+func sortTablesByDependencies(r *schemamodel.Database) {
 	// Simple topological sort for testing
-	var sorted []goschema.Table
+	var sorted []schemamodel.Table
 	inDegree := make(map[string]int)
 
 	for tableName := range r.Dependencies {
@@ -344,7 +344,7 @@ func sortTablesByDependencies(r *goschema.Database) {
 		}
 	}
 
-	tableMap := make(map[string]goschema.Table)
+	tableMap := make(map[string]schemamodel.Table)
 	for _, table := range r.Tables {
 		tableMap[table.Name] = table
 	}

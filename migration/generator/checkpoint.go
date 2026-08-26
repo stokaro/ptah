@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlasurl"
@@ -31,7 +31,7 @@ import (
 // introspecting a database that has the whole migration directory applied (and
 // converting the result with atlascompat.DBSchemaToGoSchema) or from Go
 // entities / schema files. An empty schema yields empty up and down bodies.
-func generateCheckpoint(schema *goschema.Database, dialect string) (upSQL, downSQL string, err error) {
+func generateCheckpoint(schema *schemamodel.Database, dialect string) (upSQL, downSQL string, err error) {
 	return generateCheckpointWithDatabaseInfo(schema, catalog.ServerInfo{
 		Dialect:      dialect,
 		Capabilities: capability.ForDialect(dialect),
@@ -45,7 +45,7 @@ func generateCheckpoint(schema *goschema.Database, dialect string) (upSQL, downS
 // resolves the complete candidate identifier set under the live catalog
 // collation — the distinction that matters on SQL Server.
 func generateCheckpointWithDatabaseInfo(
-	schema *goschema.Database,
+	schema *schemamodel.Database,
 	info catalog.ServerInfo,
 ) (upSQL, downSQL string, err error) {
 	if schema == nil {
@@ -66,7 +66,7 @@ func generateCheckpointWithDatabaseInfo(
 func generateCheckpointWithDatabaseQualified(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
-	schema *goschema.Database,
+	schema *schemamodel.Database,
 	qualifier string,
 ) (upSQL, downSQL string, err error) {
 	if schema == nil {
@@ -81,7 +81,7 @@ func generateCheckpointWithDatabaseQualified(
 }
 
 func generateCheckpointFromDiff(
-	schema *goschema.Database,
+	schema *schemamodel.Database,
 	empty *catalog.Database,
 	info catalog.ServerInfo,
 	diff *difftypes.SchemaDiff,

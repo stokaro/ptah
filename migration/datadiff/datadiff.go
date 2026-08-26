@@ -4,7 +4,7 @@
 //
 // It is a pure computation layer with no database or filesystem dependencies. A
 // caller in a later phase composes the full pipeline: load desired rows with
-// goschema.LoadManagedRows, read the live rows with dbschema.ReadTableRows, and
+// schemamodel.LoadManagedRows, read the live rows with dbschema.ReadTableRows, and
 // hand both to [Compute]. Rendering the resulting diff into DML and wiring it
 // into the migrate/apply commands are separate, later phases; this package only
 // reports what changed.
@@ -32,7 +32,7 @@ import (
 )
 
 // Row is a single table row keyed by column name. It matches the shape returned
-// by goschema.LoadManagedRows and dbschema.ReadTableRows.
+// by schemamodel.LoadManagedRows and dbschema.ReadTableRows.
 type Row = map[string]any
 
 // RowUpdate describes a row present in both the desired and live data whose

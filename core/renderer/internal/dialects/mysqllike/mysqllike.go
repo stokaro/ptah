@@ -1225,7 +1225,7 @@ func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
 	// declaration.
 	//
 	// What the message says is new, and it is the part worth keeping. The skip
-	// used to name only the language. [goschema.Function.Canonicalize] defaults
+	// used to name only the language. [schemamodel.Function.Canonicalize] defaults
 	// an UNSET language to plpgsql -- PostgreSQL's default, baked into a
 	// dialect-neutral type -- so a function annotated without `language=` lands
 	// here too and is skipped when it should have been generated. Measured on

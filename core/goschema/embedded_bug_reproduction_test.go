@@ -1,4 +1,4 @@
-package goschema
+package goschema_test
 
 import (
 	"os"
@@ -6,6 +6,9 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // Test case to reproduce the bug described in issue #49
@@ -75,17 +78,17 @@ func TestEmbeddedEntityIDBugReproduction(t *testing.T) {
 	c := qt.New(t)
 
 	// Parse the test file to get the schema
-	database, err := ParseFile("embedded_bug_reproduction_test.go")
+	database, err := goschema.ParseFile("embedded_bug_reproduction_test.go")
 	c.Assert(err, qt.IsNil)
 
 	// Process embedded fields to get all fields
-	allFields := processEmbeddedFields(database.EmbeddedFields, database.Fields)
+	allFields := schemamodel.ProcessEmbeddedFields(database.EmbeddedFields, database.Fields)
 
 	// Check that we have the expected tables (users, tenants, areas, prefixed_test)
 	c.Assert(database.Tables, qt.HasLen, 4)
 
 	// Find the users table
-	var usersTable Table
+	var usersTable schemamodel.Table
 	for _, table := range database.Tables {
 		if table.Name == "users" {
 			usersTable = table
@@ -95,7 +98,7 @@ func TestEmbeddedEntityIDBugReproduction(t *testing.T) {
 	c.Assert(usersTable.Name, qt.Equals, "users")
 
 	// Get all fields for the users table
-	var usersFields []Field
+	var usersFields []schemamodel.Field
 	for _, field := range allFields {
 		if field.StructName == usersTable.StructName {
 			usersFields = append(usersFields, field)
@@ -104,7 +107,7 @@ func TestEmbeddedEntityIDBugReproduction(t *testing.T) {
 
 	// Check that the users table has an id field (this should fail with the current bug)
 	var hasIDField bool
-	var idField Field
+	var idField schemamodel.Field
 	for _, field := range usersFields {
 		if field.Name == "id" {
 			hasIDField = true
@@ -131,7 +134,7 @@ func TestEmbeddedEntityIDBugReproduction(t *testing.T) {
 	}
 
 	// Check that tenants table also has id field
-	var tenantsTable Table
+	var tenantsTable schemamodel.Table
 	for _, table := range database.Tables {
 		if table.Name == "tenants" {
 			tenantsTable = table
@@ -140,7 +143,7 @@ func TestEmbeddedEntityIDBugReproduction(t *testing.T) {
 	}
 	c.Assert(tenantsTable.Name, qt.Equals, "tenants")
 
-	var tenantsFields []Field
+	var tenantsFields []schemamodel.Field
 	for _, field := range allFields {
 		if field.StructName == tenantsTable.StructName {
 			tenantsFields = append(tenantsFields, field)
@@ -161,7 +164,7 @@ func TestEmbeddedFieldProcessingDebug(t *testing.T) {
 	c := qt.New(t)
 
 	// Parse the test file to get the schema
-	database, err := ParseFile("embedded_bug_reproduction_test.go")
+	database, err := goschema.ParseFile("embedded_bug_reproduction_test.go")
 	c.Assert(err, qt.IsNil)
 
 	t.Logf("Found %d tables", len(database.Tables))
@@ -180,7 +183,7 @@ func TestEmbeddedFieldProcessingDebug(t *testing.T) {
 	}
 
 	// Process embedded fields
-	allFields := processEmbeddedFields(database.EmbeddedFields, database.Fields)
+	allFields := schemamodel.ProcessEmbeddedFields(database.EmbeddedFields, database.Fields)
 
 	t.Logf("After processing embedded fields, found %d total fields", len(allFields))
 	for _, field := range allFields {
@@ -188,7 +191,7 @@ func TestEmbeddedFieldProcessingDebug(t *testing.T) {
 	}
 
 	// Check specifically for User struct fields
-	var userFields []Field
+	var userFields []schemamodel.Field
 	for _, field := range allFields {
 		if field.StructName == "User" {
 			userFields = append(userFields, field)
@@ -208,14 +211,14 @@ func TestNestedEmbeddedFieldsComprehensive(t *testing.T) {
 	c := qt.New(t)
 
 	// Parse the test file to get the schema
-	database, err := ParseFile("embedded_bug_reproduction_test.go")
+	database, err := goschema.ParseFile("embedded_bug_reproduction_test.go")
 	c.Assert(err, qt.IsNil)
 
 	// Process embedded fields to get all fields
-	allFields := processEmbeddedFields(database.EmbeddedFields, database.Fields)
+	allFields := schemamodel.ProcessEmbeddedFields(database.EmbeddedFields, database.Fields)
 
 	// Test 1: Verify User table has all expected fields including nested ones
-	var userFields []Field
+	var userFields []schemamodel.Field
 	for _, field := range allFields {
 		if field.StructName == "User" {
 			userFields = append(userFields, field)
@@ -236,7 +239,7 @@ func TestNestedEmbeddedFieldsComprehensive(t *testing.T) {
 		"updated_at":    true, // Direct field
 	}
 
-	actualUserFields := make(map[string]Field)
+	actualUserFields := make(map[string]schemamodel.Field)
 	for _, field := range userFields {
 		actualUserFields[field.Name] = field
 	}
@@ -254,7 +257,7 @@ func TestNestedEmbeddedFieldsComprehensive(t *testing.T) {
 	}
 
 	// Test 2: Verify Tenant table has id field from EntityID
-	var tenantFields []Field
+	var tenantFields []schemamodel.Field
 	for _, field := range allFields {
 		if field.StructName == "Tenant" {
 			tenantFields = append(tenantFields, field)
@@ -271,7 +274,7 @@ func TestNestedEmbeddedFieldsComprehensive(t *testing.T) {
 	c.Assert(tenantHasID, qt.IsTrue, qt.Commentf("Tenant table should have primary key id field"))
 
 	// Test 3: Verify Area table has all fields from nested embedding
-	var areaFields []Field
+	var areaFields []schemamodel.Field
 	for _, field := range allFields {
 		if field.StructName == "Area" {
 			areaFields = append(areaFields, field)
@@ -285,7 +288,7 @@ func TestNestedEmbeddedFieldsComprehensive(t *testing.T) {
 		"name":      true, // Direct field
 	}
 
-	actualAreaFields := make(map[string]Field)
+	actualAreaFields := make(map[string]schemamodel.Field)
 	for _, field := range areaFields {
 		actualAreaFields[field.Name] = field
 	}
@@ -336,14 +339,14 @@ func TestNestedEmbeddedFieldsWithPrefixes(t *testing.T) {
 	c := qt.New(t)
 
 	// Parse the test file to get the schema
-	database, err := ParseFile("embedded_bug_reproduction_test.go")
+	database, err := goschema.ParseFile("embedded_bug_reproduction_test.go")
 	c.Assert(err, qt.IsNil)
 
 	// Process embedded fields to get all fields
-	allFields := processEmbeddedFields(database.EmbeddedFields, database.Fields)
+	allFields := schemamodel.ProcessEmbeddedFields(database.EmbeddedFields, database.Fields)
 
 	// Find the prefixed_test table fields
-	var prefixedTestFields []Field
+	var prefixedTestFields []schemamodel.Field
 	for _, field := range allFields {
 		if field.StructName == "PrefixedTest" {
 			prefixedTestFields = append(prefixedTestFields, field)
@@ -357,7 +360,7 @@ func TestNestedEmbeddedFieldsWithPrefixes(t *testing.T) {
 		"name":           true, // Direct field (no prefix)
 	}
 
-	actualFields := make(map[string]Field)
+	actualFields := make(map[string]schemamodel.Field)
 	for _, field := range prefixedTestFields {
 		actualFields[field.Name] = field
 	}
@@ -377,7 +380,7 @@ func TestNestedEmbeddedFieldsWithPrefixes(t *testing.T) {
 }
 
 // Helper function to get field names for debugging
-func getFieldNames(fields []Field) []string {
+func getFieldNames(fields []schemamodel.Field) []string {
 	names := make([]string, len(fields))
 	for i, field := range fields {
 		names[i] = field.Name
@@ -454,14 +457,14 @@ type Area struct {
 	c.Assert(err, qt.IsNil)
 
 	// Parse the test file
-	database, err := ParseFile(testFile)
+	database, err := goschema.ParseFile(testFile)
 	c.Assert(err, qt.IsNil)
 
 	// Process embedded fields
-	allFields := processEmbeddedFields(database.EmbeddedFields, database.Fields)
+	allFields := schemamodel.ProcessEmbeddedFields(database.EmbeddedFields, database.Fields)
 
 	// Verify that the users table has the id field (this was the main issue)
-	var usersFields []Field
+	var usersFields []schemamodel.Field
 	for _, field := range allFields {
 		if field.StructName == "User" {
 			usersFields = append(usersFields, field)
@@ -470,7 +473,7 @@ type Area struct {
 
 	// Check that the id field exists and is primary
 	var hasIDField bool
-	var idField Field
+	var idField schemamodel.Field
 	for _, field := range usersFields {
 		if field.Name == "id" {
 			hasIDField = true
@@ -496,7 +499,7 @@ type Area struct {
 	}
 
 	// Verify that areas table also has the id field (this would also fail before the fix)
-	var areasFields []Field
+	var areasFields []schemamodel.Field
 	for _, field := range allFields {
 		if field.StructName == "Area" {
 			areasFields = append(areasFields, field)
@@ -513,7 +516,7 @@ type Area struct {
 	c.Assert(areasHasIDField, qt.IsTrue, qt.Commentf("Areas table should have an 'id' field from nested embedded EntityID"))
 
 	// Verify that tenants table has the id field (this should work even before the fix)
-	var tenantsFields []Field
+	var tenantsFields []schemamodel.Field
 	for _, field := range allFields {
 		if field.StructName == "Tenant" {
 			tenantsFields = append(tenantsFields, field)

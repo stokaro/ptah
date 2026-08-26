@@ -20,10 +20,10 @@ import (
 	"slices"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/indexscope"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -104,7 +104,7 @@ func mergeTableFacts(into map[string]TableFacts, key string, facts TableFacts) {
 // concurrently.
 //
 // `CREATE INDEX CONCURRENTLY` survives parsing into
-// [go.5x5.cz/ptah/core/goschema.Index.Concurrently], and until this existed
+// [go.5x5.cz/ptah/core/schemamodel.Index.Concurrently], and until this existed
 // nothing carried the answer to the planner: a `.sql` desired state asking for
 // the non-locking build was planned as a locking one, silently, which on a table
 // large enough for the request to be worth making is the difference between a
@@ -128,7 +128,7 @@ func mergeTableFacts(into map[string]TableFacts, key string, facts TableFacts) {
 // concurrent on an empty table is still built concurrently.
 func DeclaredRefs(
 	diff *difftypes.SchemaDiff,
-	desired *goschema.Database,
+	desired *schemamodel.Database,
 	dbSchema *catalog.Database,
 	info catalog.ServerInfo,
 ) []difftypes.IndexRef {
@@ -164,13 +164,13 @@ func DeclaredRefs(
 // planner's diagnostic with one about concurrency, for a diff that has nothing
 // to do with it.
 func declaredIdentities(
-	desired *goschema.Database,
+	desired *schemamodel.Database,
 	semantics identifier.Semantics,
 ) map[difftypes.IndexRef]struct{} {
 	if desired == nil {
 		return nil
 	}
-	owners := goschema.ResolveIndexOwners(desired.Indexes, desired.Tables, desired.MaterializedViews)
+	owners := schemamodel.ResolveIndexOwners(desired.Indexes, desired.Tables, desired.MaterializedViews)
 	identities := make(map[difftypes.IndexRef]struct{})
 	for position, index := range desired.Indexes {
 		if !index.Concurrently {

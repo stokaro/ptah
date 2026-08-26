@@ -6,15 +6,15 @@ import (
 	qt "github.com/frankban/quicktest"
 	yaml "go.yaml.in/yaml/v3"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/openapirender"
 )
 
 // apiNameFixture is one table whose storage names are deliberately unlike the
 // names a published API would use.
-func apiNameFixture(fields ...goschema.Field) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Invoice", Name: "invoices"}},
+func apiNameFixture(fields ...schemamodel.Field) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Invoice", Name: "invoices"}},
 		Fields: fields,
 	}
 }
@@ -27,12 +27,12 @@ func TestRenderUsesTheDeclaredAPIName(t *testing.T) {
 	c := qt.New(t)
 
 	res, err := openapirender.Render(apiNameFixture(
-		goschema.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
-		goschema.Field{
+		schemamodel.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
+		schemamodel.Field{
 			StructName: "Invoice", Name: "billing_amount_minor",
 			APIName: "amount", Type: "INTEGER",
 		},
-		goschema.Field{StructName: "Invoice", Name: "note", Type: "TEXT", Nullable: true},
+		schemamodel.Field{StructName: "Invoice", Name: "note", Type: "TEXT", Nullable: true},
 	), openapirender.Options{})
 	c.Assert(err, qt.IsNil)
 
@@ -66,8 +66,8 @@ func TestRenderRefusesAnAPINameCollision(t *testing.T) {
 	c := qt.New(t)
 
 	res, err := openapirender.Render(apiNameFixture(
-		goschema.Field{StructName: "Invoice", Name: "amount", Type: "INTEGER"},
-		goschema.Field{
+		schemamodel.Field{StructName: "Invoice", Name: "amount", Type: "INTEGER"},
+		schemamodel.Field{
 			StructName: "Invoice", Name: "billing_amount_minor",
 			APIName: "amount", Type: "INTEGER",
 		},
@@ -84,9 +84,9 @@ func TestRenderRefusesAnAPINameCollision(t *testing.T) {
 func TestRenderUsesTheDeclaredTableAPIName(t *testing.T) {
 	c := qt.New(t)
 
-	res, err := openapirender.Render(&goschema.Database{
-		Tables: []goschema.Table{{StructName: "Invoice", Name: "billing_invoices", APIName: "invoices"}},
-		Fields: []goschema.Field{
+	res, err := openapirender.Render(&schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Invoice", Name: "billing_invoices", APIName: "invoices"}},
+		Fields: []schemamodel.Field{
 			{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
 			{StructName: "Invoice", Name: "quirk", Type: "some_unknown_type", Nullable: true},
 		},
@@ -111,12 +111,12 @@ func TestRenderUsesTheDeclaredTableAPIName(t *testing.T) {
 func TestRenderRefusesATableAPINameCollision(t *testing.T) {
 	c := qt.New(t)
 
-	res, err := openapirender.Render(&goschema.Database{
-		Tables: []goschema.Table{
+	res, err := openapirender.Render(&schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Invoice", Name: "invoices"},
 			{StructName: "Billing", Name: "billing_invoices", APIName: "invoices"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
 			{StructName: "Billing", Name: "id", Type: "BIGSERIAL", Primary: true},
 		},
@@ -134,9 +134,9 @@ func TestRenderUsesTheDeclaredAPIType(t *testing.T) {
 	c := qt.New(t)
 
 	res, err := openapirender.Render(apiNameFixture(
-		goschema.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
-		goschema.Field{StructName: "Invoice", Name: "plain", Type: "DECIMAL(12,2)"},
-		goschema.Field{StructName: "Invoice", Name: "exact", Type: "DECIMAL(12,2)", APIType: "TEXT"},
+		schemamodel.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
+		schemamodel.Field{StructName: "Invoice", Name: "plain", Type: "DECIMAL(12,2)"},
+		schemamodel.Field{StructName: "Invoice", Name: "exact", Type: "DECIMAL(12,2)", APIType: "TEXT"},
 	), openapirender.Options{})
 	c.Assert(err, qt.IsNil)
 
@@ -155,8 +155,8 @@ func TestRenderRefusesAnUnknownAPIType(t *testing.T) {
 	c := qt.New(t)
 
 	res, err := openapirender.Render(apiNameFixture(
-		goschema.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
-		goschema.Field{StructName: "Invoice", Name: "amount", Type: "DECIMAL(12,2)", APIType: "money_ish"},
+		schemamodel.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
+		schemamodel.Field{StructName: "Invoice", Name: "amount", Type: "DECIMAL(12,2)", APIType: "money_ish"},
 	), openapirender.Options{})
 
 	c.Assert(err, qt.IsNotNil)
@@ -172,8 +172,8 @@ func TestRenderStillWarnsForAnUnknownColumnType(t *testing.T) {
 	c := qt.New(t)
 
 	res, err := openapirender.Render(apiNameFixture(
-		goschema.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
-		goschema.Field{StructName: "Invoice", Name: "quirk", Type: "money_ish", Nullable: true},
+		schemamodel.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
+		schemamodel.Field{StructName: "Invoice", Name: "quirk", Type: "money_ish", Nullable: true},
 	), openapirender.Options{})
 
 	c.Assert(err, qt.IsNil)
@@ -189,11 +189,11 @@ func TestRenderProjectsEnumsBothWays(t *testing.T) {
 	c := qt.New(t)
 
 	db := apiNameFixture(
-		goschema.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
-		goschema.Field{StructName: "Invoice", Name: "flattened", Type: "invoice_state", APIType: "TEXT"},
-		goschema.Field{StructName: "Invoice", Name: "promoted", Type: "VARCHAR(32)", APIType: "invoice_state"},
+		schemamodel.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
+		schemamodel.Field{StructName: "Invoice", Name: "flattened", Type: "invoice_state", APIType: "TEXT"},
+		schemamodel.Field{StructName: "Invoice", Name: "promoted", Type: "VARCHAR(32)", APIType: "invoice_state"},
 	)
-	db.Enums = []goschema.Enum{{Name: "invoice_state", Values: []string{"draft", "sent"}}}
+	db.Enums = []schemamodel.Enum{{Name: "invoice_state", Values: []string{"draft", "sent"}}}
 
 	res, err := openapirender.Render(db, openapirender.Options{})
 	c.Assert(err, qt.IsNil)
@@ -213,8 +213,8 @@ func TestRenderOverridesInlineEnumValues(t *testing.T) {
 	c := qt.New(t)
 
 	res, err := openapirender.Render(apiNameFixture(
-		goschema.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
-		goschema.Field{
+		schemamodel.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
+		schemamodel.Field{
 			StructName: "Invoice", Name: "state", Type: "VARCHAR(16)",
 			Enum: []string{"draft", "sent"}, APIType: "TEXT",
 		},
@@ -235,15 +235,15 @@ func TestRenderIgnoresAnotherTargetsName(t *testing.T) {
 	c := qt.New(t)
 
 	db := apiNameFixture(
-		goschema.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
-		goschema.Field{
+		schemamodel.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
+		schemamodel.Field{
 			StructName: "Invoice", Name: "billing_amount_minor", Type: "INTEGER",
 			APIName:  "amount",
-			APINames: goschema.TargetNames{GraphQL: "amountMinor"},
+			APINames: schemamodel.TargetNames{GraphQL: "amountMinor"},
 		},
 	)
 	db.Tables[0].APIName = "invoices"
-	db.Tables[0].APINames = goschema.TargetNames{OpenAPI: "invoice_documents"}
+	db.Tables[0].APINames = schemamodel.TargetNames{OpenAPI: "invoice_documents"}
 
 	res, err := openapirender.Render(db, openapirender.Options{})
 	c.Assert(err, qt.IsNil)

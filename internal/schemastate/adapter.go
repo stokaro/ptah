@@ -6,9 +6,9 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/normalize"
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/tableref"
@@ -225,7 +225,7 @@ func foreignKeyFromCatalog(
 // object here. Keeping them as two shapes past the adapter is what makes a
 // later stage answer one question twice.
 func FromDescription(
-	description *goschema.Database,
+	description *schemamodel.Database,
 	dialect string,
 	semantics identifier.Semantics,
 ) (*State, error) {
@@ -236,7 +236,7 @@ func FromDescription(
 	state := New(dialect, sliceScope...).WithCoverage(description.NotDescribed)
 	builder := objectidentity.NewBuilder(semantics)
 	domains := declaredDomains(description, semantics)
-	tablesByStruct := make(map[string]goschema.Table)
+	tablesByStruct := make(map[string]schemamodel.Table)
 
 	if err := declaredTables(state, description, builder, domains, tablesByStruct); err != nil {
 		return nil, err
@@ -299,7 +299,7 @@ func FromDescription(
 func addForeignKey(
 	state *State,
 	builder objectidentity.Builder,
-	owner goschema.Table,
+	owner schemamodel.Table,
 	name string,
 	key *ForeignKey,
 	location string,
@@ -324,7 +324,7 @@ func addForeignKey(
 // domains of one name are ambiguous, and resolving the ambiguity by picking one
 // would compare a column against a domain the author may not have meant. The
 // existing comparator makes the same choice.
-func declaredDomains(description *goschema.Database, semantics identifier.Semantics) map[string]string {
+func declaredDomains(description *schemamodel.Database, semantics identifier.Semantics) map[string]string {
 	schemas := make(map[string]string, len(description.Domains))
 	ambiguous := make(map[string]struct{})
 	for _, domain := range description.Domains {
@@ -348,8 +348,8 @@ func declaredDomains(description *goschema.Database, semantics identifier.Semant
 }
 
 func columnsFromDescription(
-	description *goschema.Database,
-	table goschema.Table,
+	description *schemamodel.Database,
+	table schemamodel.Table,
 	builder objectidentity.Builder,
 	domains map[string]string,
 ) []Column {
@@ -403,7 +403,7 @@ func columnsFromDescription(
 
 // foreignKeyName resolves the constraint name a field-level foreign key
 // carries, or the name the renderer would generate for it.
-func foreignKeyName(field goschema.Field, owner goschema.Table) string {
+func foreignKeyName(field schemamodel.Field, owner schemamodel.Table) string {
 	if name := strings.TrimSpace(field.ForeignKeyName); name != "" {
 		return name
 	}
@@ -413,8 +413,8 @@ func foreignKeyName(field goschema.Field, owner goschema.Table) string {
 // foreignKeyFromField reads the `table(column)` spelling a field-level foreign
 // key carries.
 func foreignKeyFromField(
-	field goschema.Field,
-	owner goschema.Table,
+	field schemamodel.Field,
+	owner schemamodel.Table,
 	builder objectidentity.Builder,
 ) (*ForeignKey, error) {
 	table, column, err := splitFieldReference(field.Foreign)
@@ -440,9 +440,9 @@ func foreignKeyFromField(
 
 // foreignKeyFromConstraint reads a table-level foreign key.
 func foreignKeyFromConstraint(
-	constraint goschema.Constraint,
+	constraint schemamodel.Constraint,
 	builder objectidentity.Builder,
-	owner goschema.Table,
+	owner schemamodel.Table,
 ) (*ForeignKey, error) {
 	onDelete, err := ParseReferentialAction(constraint.OnDelete)
 	if err != nil {
@@ -471,7 +471,7 @@ func foreignKeyFromConstraint(
 // Resolving here rather than at comparison time is ADR 0001 invariant 3: the
 // adapter knows its source's defaulting rule, and a later stage re-parsing the
 // name would have to guess it.
-func referencedTable(reference string, owner goschema.Table, builder objectidentity.Builder) objectidentity.ID {
+func referencedTable(reference string, owner schemamodel.Table, builder objectidentity.Builder) objectidentity.ID {
 	ref, ok := tableref.Parse(reference)
 	if !ok {
 		return builder.TableParts(owner.Schema, reference)
@@ -513,7 +513,7 @@ func derefOrEmpty(value *string) string {
 // spellings the authoring model uses. An expression and a literal are one fact
 // here: both answer "does a row without a value get one", and a comparison that
 // kept them apart would report a modification for a column nobody changed.
-func declaredDefault(field goschema.Field) string {
+func declaredDefault(field schemamodel.Field) string {
 	if expression := strings.TrimSpace(field.DefaultExpr); expression != "" {
 		return expression
 	}
@@ -599,9 +599,9 @@ func compositeKeyName(table string) string {
 // object rather than two shapes a later stage has to ask twice.
 func declaredUniqueKeys(
 	state *State,
-	description *goschema.Database,
+	description *schemamodel.Database,
 	builder objectidentity.Builder,
-	tablesByStruct map[string]goschema.Table,
+	tablesByStruct map[string]schemamodel.Table,
 ) error {
 	if err := declaredTableConstraints(state, description, builder, tablesByStruct); err != nil {
 		return err
@@ -676,7 +676,7 @@ func declaredDomainName(declared string, domains map[string]string) string {
 // It copies rather than aliases: the two shapes agree today, and a canonical
 // state holding the authoring model's own struct would make every later change
 // to that struct reach through into a state both sides are supposed to produce.
-func partitionFromDescription(spec *goschema.PartitionSpec) *Partition {
+func partitionFromDescription(spec *schemamodel.PartitionSpec) *Partition {
 	if spec == nil {
 		return nil
 	}
@@ -890,13 +890,13 @@ func constraintIdentityName(kind, table, name string) string {
 
 // addDeclaredPrimaryKey records the primary key a table declares on itself.
 //
-// `goschema.Table.PrimaryKey` is a column list with nowhere to put a name, and
+// `schemamodel.Table.PrimaryKey` is a column list with nowhere to put a name, and
 // it is the ONLY way to declare a composite one. Without this the desired side
 // carried no primary key object at all and the catalog's read as a removal.
 func addDeclaredPrimaryKey(
 	state *State,
 	builder objectidentity.Builder,
-	table goschema.Table,
+	table schemamodel.Table,
 ) error {
 	if len(table.PrimaryKey) == 0 {
 		return nil
@@ -913,14 +913,14 @@ func addDeclaredPrimaryKey(
 // constraints a description declares at the table level.
 //
 // The table comes from the STRUCT when the declaration does not name one, which
-// is what goschema.Constraint.Table documents ("if different from struct name")
+// is what schemamodel.Constraint.Table documents ("if different from struct name")
 // -- and what the shipping planner forgets for EXCLUDE, rendering
 // `ALTER TABLE ""` (stokaro/ptah#2008).
 func declaredTableConstraints(
 	state *State,
-	description *goschema.Database,
+	description *schemamodel.Database,
 	builder objectidentity.Builder,
-	tablesByStruct map[string]goschema.Table,
+	tablesByStruct map[string]schemamodel.Table,
 ) error {
 	for _, constraint := range description.Constraints {
 		if !isTableConstraint(constraint.Type) {
@@ -954,10 +954,10 @@ func declaredTableConstraints(
 // and the keys each one carries.
 func declaredTables(
 	state *State,
-	description *goschema.Database,
+	description *schemamodel.Database,
 	builder objectidentity.Builder,
 	domains map[string]string,
-	tablesByStruct map[string]goschema.Table,
+	tablesByStruct map[string]schemamodel.Table,
 ) error {
 	for _, table := range description.Tables {
 		tablesByStruct[table.StructName] = table
@@ -1035,7 +1035,7 @@ func declaredTables(
 func addNamedColumnChecks(
 	state *State,
 	builder objectidentity.Builder,
-	table goschema.Table,
+	table schemamodel.Table,
 	columns []Column,
 ) error {
 	for _, column := range columns {

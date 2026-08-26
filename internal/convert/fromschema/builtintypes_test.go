@@ -6,9 +6,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 )
 
@@ -26,37 +26,37 @@ import (
 // said which column is which. `declare` is what varies per row: it puts the
 // shadowing declaration into the document, and the column type is the bare name
 // both of them answer to.
-func shadowingDocument(columnType string, declare func(*goschema.Database)) *goschema.Database {
-	database := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "T", Name: "t", Schema: "advm"}},
-		Fields: []goschema.Field{{StructName: "T", Name: "c", Type: columnType}},
+func shadowingDocument(columnType string, declare func(*schemamodel.Database)) *schemamodel.Database {
+	database := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "T", Name: "t", Schema: "advm"}},
+		Fields: []schemamodel.Field{{StructName: "T", Name: "c", Type: columnType}},
 	}
 	declare(database)
 	return database
 }
 
-func declareShadowingDomain(database *goschema.Database) {
-	database.Domains = []goschema.Domain{{
+func declareShadowingDomain(database *schemamodel.Database) {
+	database.Domains = []schemamodel.Domain{{
 		Name: "money", Schema: "advm", BaseType: "numeric(12,2)",
 	}}
 }
 
-func declareShadowingComposite(database *goschema.Database) {
-	database.CompositeTypes = []goschema.CompositeType{{
+func declareShadowingComposite(database *schemamodel.Database) {
+	database.CompositeTypes = []schemamodel.CompositeType{{
 		Name:   "point",
 		Schema: "advp",
-		Fields: []goschema.CompositeTypeField{{Name: "x", Type: "numeric"}},
+		Fields: []schemamodel.CompositeField{{Name: "x", Type: "numeric"}},
 	}}
 }
 
-func declareShadowingRange(database *goschema.Database) {
-	database.Ranges = []goschema.Range{{
+func declareShadowingRange(database *schemamodel.Database) {
+	database.Ranges = []schemamodel.Range{{
 		Name: "numrange", Schema: "advr", Subtype: "numeric",
 	}}
 }
 
-func declareShadowingEnum(database *goschema.Database) {
-	database.Enums = []goschema.Enum{{
+func declareShadowingEnum(database *schemamodel.Database) {
+	database.Enums = []schemamodel.Enum{{
 		Name: "money", Schema: "adve", Values: []string{"lo", "hi"},
 	}}
 }
@@ -83,7 +83,7 @@ func TestQualifyDeclaredUserTypesLeavesABuiltInTypeAlone(t *testing.T) {
 	tests := []struct {
 		name       string
 		columnType string
-		declare    func(*goschema.Database)
+		declare    func(*schemamodel.Database)
 	}{
 		{
 			name:       "a domain shadowing money, scalar",
@@ -129,8 +129,8 @@ func TestQualifyDeclaredUserTypesLeavesABuiltInTypeAlone(t *testing.T) {
 			// compares them verbatim protects `money` and retypes `MONEY`.
 			name:       "a built-in name the column spells in upper case",
 			columnType: "MONEY",
-			declare: func(database *goschema.Database) {
-				database.Domains = []goschema.Domain{{
+			declare: func(database *schemamodel.Database) {
+				database.Domains = []schemamodel.Domain{{
 					Name: "MONEY", Schema: "advm", BaseType: "numeric(12,2)",
 				}}
 			},
@@ -140,8 +140,8 @@ func TestQualifyDeclaredUserTypesLeavesABuiltInTypeAlone(t *testing.T) {
 			// and `serial` is not a pg_catalog type name -- it is grammar.
 			name:       "a grammar spelling pg_catalog does not store",
 			columnType: "serial",
-			declare: func(database *goschema.Database) {
-				database.Domains = []goschema.Domain{{
+			declare: func(database *schemamodel.Database) {
+				database.Domains = []schemamodel.Domain{{
 					Name: "serial", Schema: "advm", BaseType: "integer",
 				}}
 			},
@@ -175,14 +175,14 @@ func TestQualifyDeclaredUserTypesStillNamesASchemaForANameOfItsOwn(t *testing.T)
 	tests := []struct {
 		name       string
 		columnType string
-		declare    func(*goschema.Database)
+		declare    func(*schemamodel.Database)
 		want       string
 	}{
 		{
 			name:       "a domain, scalar",
 			columnType: "positive_int",
-			declare: func(database *goschema.Database) {
-				database.Domains = []goschema.Domain{{
+			declare: func(database *schemamodel.Database) {
+				database.Domains = []schemamodel.Domain{{
 					Name: "positive_int", Schema: "advm", BaseType: "integer",
 				}}
 			},
@@ -191,8 +191,8 @@ func TestQualifyDeclaredUserTypesStillNamesASchemaForANameOfItsOwn(t *testing.T)
 		{
 			name:       "a domain, array",
 			columnType: "positive_int[]",
-			declare: func(database *goschema.Database) {
-				database.Domains = []goschema.Domain{{
+			declare: func(database *schemamodel.Database) {
+				database.Domains = []schemamodel.Domain{{
 					Name: "positive_int", Schema: "advm", BaseType: "integer",
 				}}
 			},
@@ -201,11 +201,11 @@ func TestQualifyDeclaredUserTypesStillNamesASchemaForANameOfItsOwn(t *testing.T)
 		{
 			name:       "a composite, array",
 			columnType: "addr[]",
-			declare: func(database *goschema.Database) {
-				database.CompositeTypes = []goschema.CompositeType{{
+			declare: func(database *schemamodel.Database) {
+				database.CompositeTypes = []schemamodel.CompositeType{{
 					Name:   "addr",
 					Schema: "advp",
-					Fields: []goschema.CompositeTypeField{{Name: "street", Type: "text"}},
+					Fields: []schemamodel.CompositeField{{Name: "street", Type: "text"}},
 				}}
 			},
 			want: "advp.addr[]",
@@ -213,8 +213,8 @@ func TestQualifyDeclaredUserTypesStillNamesASchemaForANameOfItsOwn(t *testing.T)
 		{
 			name:       "a range, array",
 			columnType: "numrng[]",
-			declare: func(database *goschema.Database) {
-				database.Ranges = []goschema.Range{{
+			declare: func(database *schemamodel.Database) {
+				database.Ranges = []schemamodel.Range{{
 					Name: "numrng", Schema: "advr", Subtype: "numeric",
 				}}
 			},
@@ -223,8 +223,8 @@ func TestQualifyDeclaredUserTypesStillNamesASchemaForANameOfItsOwn(t *testing.T)
 		{
 			name:       "an enum, array",
 			columnType: "mood[]",
-			declare: func(database *goschema.Database) {
-				database.Enums = []goschema.Enum{{
+			declare: func(database *schemamodel.Database) {
+				database.Enums = []schemamodel.Enum{{
 					Name: "mood", Schema: "adve", Values: []string{"lo", "hi"},
 				}}
 			},

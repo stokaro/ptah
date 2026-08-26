@@ -18,6 +18,7 @@ import (
 	"go.5x5.cz/ptah/cmd/readdb"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasschema"
@@ -145,34 +146,34 @@ WHERE rolname = 'ptah_db_read_role_137'`).Scan(&comment)
 	c.Assert(comment, qt.Equals, "Database read replay role")
 }
 
-func rolesGrantsTarget() *goschema.Database {
-	target := &goschema.Database{
-		Tables: []goschema.Table{
+func rolesGrantsTarget() *schemamodel.Database {
+	target := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "RolesGrantUser", Name: "ptah_grants_users"},
 			{StructName: "RolesGrantAuditLog", Name: "ptah_grants_audit_log"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "RolesGrantUser", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "RolesGrantUser", Name: "tenant_id", Type: "INTEGER", Nullable: false},
 			{StructName: "RolesGrantUser", Name: "email", Type: "TEXT", Nullable: false},
 			{StructName: "RolesGrantAuditLog", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "RolesGrantAuditLog", Name: "message", Type: "TEXT", Nullable: false},
 		},
-		Roles: []goschema.Role{
+		Roles: []schemamodel.Role{
 			{Name: "ptah_grants_reader", Inherit: true, Comment: "Read tenant data"},
 			{Name: "ptah_grants_writer", Inherit: true, Comment: "Write tenant data"},
 		},
-		Grants: []goschema.Grant{
+		Grants: []schemamodel.Grant{
 			{Role: "ptah_grants_reader", Privileges: []string{"USAGE"}, OnSchema: "public"},
 			{Role: "ptah_grants_writer", Privileges: []string{"USAGE"}, OnSchema: "public"},
 			{Role: "ptah_grants_reader", Privileges: []string{"SELECT"}, OnTable: "ptah_grants_users"},
 			{Role: "ptah_grants_writer", Privileges: []string{"SELECT", "INSERT", "UPDATE", "DELETE"}, OnTable: "ptah_grants_users"},
 			{Role: "ptah_grants_writer", Privileges: []string{"INSERT"}, OnTable: "ptah_grants_audit_log"},
 		},
-		RLSEnabledTables: []goschema.RLSEnabledTable{
+		RLSEnabledTables: []schemamodel.RLSEnabledTable{
 			{Table: "ptah_grants_users"},
 		},
-		RLSPolicies: []goschema.RLSPolicy{
+		RLSPolicies: []schemamodel.RLSPolicy{
 			{
 				Name:                "ptah_grants_tenant_isolation",
 				Table:               "ptah_grants_users",
@@ -183,7 +184,7 @@ func rolesGrantsTarget() *goschema.Database {
 			},
 		},
 	}
-	goschema.Finalize(target)
+	schemamodel.Finalize(target)
 	return target
 }
 
@@ -517,8 +518,8 @@ func TestPostgreSQLRoleOutOfScopeIsPresentNotAbsentIntegration(t *testing.T) {
 	c.Assert(integrationRoleNames(live.Roles), qt.Not(qt.Contains), "ptah_scope_outside_137")
 	c.Assert(integrationRoleNames(live.RolesOutOfScope), qt.Contains, "ptah_scope_outside_137")
 
-	desired := &goschema.Database{
-		Roles: []goschema.Role{
+	desired := &schemamodel.Database{
+		Roles: []schemamodel.Role{
 			{Name: "ptah_scope_outside_137", Login: true, Inherit: true},
 			{Name: "ptah_scope_absent_137", Login: true, Inherit: true},
 		},
@@ -707,8 +708,8 @@ CREATE ROLE pgbouncer_undescribed_137 LOGIN;`)
 	c.Assert(integrationRoleNames(full.Roles), qt.Contains, "ptah_undescribed_outside_137")
 	c.Assert(full.RolesOutOfScope, qt.HasLen, 0)
 
-	desired := &goschema.Database{
-		Roles: []goschema.Role{
+	desired := &schemamodel.Database{
+		Roles: []schemamodel.Role{
 			{Name: "ptah_undescribed_outside_137", Login: true, Inherit: true},
 			{Name: "ptah_undescribed_absent_137", Login: true, Inherit: true},
 		},

@@ -8,7 +8,7 @@
 //   - A role carries NO attributes. `system.roles` is (name, id, storage), there
 //     is no LOGIN, PASSWORD, SUPERUSER, CREATEDB, CREATEROLE, INHERIT or
 //     REPLICATION, and `CREATE ROLE ... COMMENT 'x'` is a syntax error. Every
-//     attribute [goschema.Role] carries beyond a name is unrepresentable, so
+//     attribute [schemamodel.Role] carries beyond a name is unrepresentable, so
 //     declaring one is refused instead of dropped — a dropped PASSWORD would
 //     leave an operator believing a credential was set.
 //   - The server ABSORBS a narrower grant into a broader one. Granting SELECT on
@@ -53,8 +53,8 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // reservedRoleNames are principals ClickHouse ships or reserves. Declaring one
@@ -80,7 +80,7 @@ var reservedRoleNames = map[string]bool{
 // defaultDatabase resolves an unqualified table name. Empty means there is no
 // default to resolve against, and an unqualified name is then refused rather
 // than attached to a database nobody named.
-func ValidateDeclared(dialect string, roles []goschema.Role, grants []goschema.Grant, defaultDatabase string) error {
+func ValidateDeclared(dialect string, roles []schemamodel.Role, grants []schemamodel.Grant, defaultDatabase string) error {
 	if platform.NormalizeDialect(dialect) != platform.ClickHouse {
 		return nil
 	}
@@ -97,8 +97,8 @@ func ValidateDeclared(dialect string, roles []goschema.Role, grants []goschema.G
 // the same first offender. A map iteration here would make the message depend
 // on the hash seed, and a diagnostic that changes between runs is one nobody
 // can pin in a test.
-func roleProblems(roles []goschema.Role) []error {
-	sorted := slices.SortedFunc(slices.Values(roles), func(a, b goschema.Role) int {
+func roleProblems(roles []schemamodel.Role) []error {
+	sorted := slices.SortedFunc(slices.Values(roles), func(a, b schemamodel.Role) int {
 		return cmp.Compare(a.Name, b.Name)
 	})
 	var problems []error
@@ -108,7 +108,7 @@ func roleProblems(roles []goschema.Role) []error {
 	return problems
 }
 
-func roleAttributeProblems(role goschema.Role) []error {
+func roleAttributeProblems(role schemamodel.Role) []error {
 	var problems []error
 	if reservedRoleNames[strings.ToLower(role.Name)] {
 		problems = append(problems, fmt.Errorf(
@@ -155,7 +155,7 @@ func roleAttributeProblems(role goschema.Role) []error {
 
 // grantProblems reports every declared grant ClickHouse cannot represent, plus
 // the pairs it would silently absorb.
-func grantProblems(roles []goschema.Role, grants []goschema.Grant, defaultDatabase string) []error {
+func grantProblems(roles []schemamodel.Role, grants []schemamodel.Grant, defaultDatabase string) []error {
 	var problems []error
 	scopes := make(map[string][]Scope)
 
@@ -164,7 +164,7 @@ func grantProblems(roles []goschema.Role, grants []goschema.Grant, defaultDataba
 		declared[role.Name] = true
 	}
 
-	sorted := slices.SortedFunc(slices.Values(grants), func(a, b goschema.Grant) int {
+	sorted := slices.SortedFunc(slices.Values(grants), func(a, b schemamodel.Grant) int {
 		return cmp.Or(
 			cmp.Compare(a.Role, b.Role),
 			cmp.Compare(strings.Join(a.Privileges, ","), strings.Join(b.Privileges, ",")),
@@ -299,7 +299,7 @@ func (r rewrite) recordedAs(scope Scope) string {
 	return r.atTable
 }
 
-func privilegeProblems(grant goschema.Grant, scope Scope) []error {
+func privilegeProblems(grant schemamodel.Grant, scope Scope) []error {
 	if len(grant.Privileges) == 0 {
 		return []error{fmt.Errorf("grant to role %q names no privilege", grant.Role)}
 	}
