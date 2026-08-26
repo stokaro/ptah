@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -141,6 +142,47 @@ env "local" {
 	}
 	c.Assert(carried["database url"], qt.Contains, "postgres://")
 	c.Assert(carried["dev url"], qt.Equals, "")
+}
+
+// The ignored list is reported in ascending position.
+//
+// A reader follows a file top to bottom, and a list that jumped around would
+// make them hunt. The parser happens to yield file order today, so the sort is
+// a no-op on this input -- which is exactly why the property is asserted here
+// rather than assumed: a reversal of the list passes every other test in this
+// file, and would pass review as a refactor.
+func TestProjectInspect_TheIgnoredListIsInAscendingPosition(t *testing.T) {
+	c := qt.New(t)
+	path := projectFile(c, `
+env "local" {
+  url   = "postgres://localhost:5432/app?sslmode=disable"
+  zulu  = "nothing"
+  alpha = "nothing"
+  mike  = "nothing"
+  bravo = "nothing"
+}
+`)
+
+	stdout, _, err := runInspect(c, "inspect", "--atlas-config", path, "--env", "local", "--format", "json")
+	c.Assert(err, qt.IsNil)
+
+	var report project.Report
+	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
+	c.Assert(len(report.Ignored) > 1, qt.IsTrue,
+		qt.Commentf("one entry cannot be out of order, so this would pass vacuously"))
+
+	lines := make([]int, 0, len(report.Ignored))
+	for _, ignored := range report.Ignored {
+		lines = append(lines, ignored.Line)
+	}
+	c.Assert(slices.IsSorted(lines), qt.IsTrue, qt.Commentf("lines were %v", lines))
+	// The names in that order, so the assertion is about which entry is where
+	// rather than only about the numbers being non-decreasing.
+	names := make([]string, 0, len(report.Ignored))
+	for _, ignored := range report.Ignored {
+		names = append(names, ignored.Name)
+	}
+	c.Assert(names, qt.DeepEquals, []string{"zulu", "alpha", "mike", "bravo"})
 }
 
 // Two runs over one file produce the same report.
