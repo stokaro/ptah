@@ -330,7 +330,7 @@ func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions) (Stat
 	devURL = strings.TrimSpace(resolved)
 	snapshot := s.migrationSnapshot
 	if snapshot == nil {
-		snapshot, err = CaptureVerifiedMigrationDir(source.Path)
+		snapshot, err = s.captureMigrationSource()
 		if err != nil {
 			return State{}, err
 		}
@@ -432,7 +432,17 @@ func VerifyMigrationDir(dir string) error {
 // inspect policy and then replay the directory use the returned filesystem so
 // both operations see the same bytes.
 func CaptureVerifiedMigrationDir(dir string) (fs.FS, error) {
-	snapshot, err := migrationsnapshot.CaptureStable(os.DirFS(dir))
+	return CaptureVerifiedMigrationFS(os.DirFS(dir))
+}
+
+// CaptureVerifiedMigrationFS is [CaptureVerifiedMigrationDir] for a directory
+// that has no local path.
+//
+// A `migration.dir` naming a registry reference is one: the project loader
+// registers a lazily-pulled filesystem, and the fetch happens on the first read
+// this capture performs (stokaro/ptah#1215).
+func CaptureVerifiedMigrationFS(fsys fs.FS) (fs.FS, error) {
+	snapshot, err := migrationsnapshot.CaptureStable(fsys)
 	if err != nil {
 		return nil, fmt.Errorf("capture migration directory: %w", err)
 	}
