@@ -153,10 +153,12 @@ jobs:
           npm run check:style
           npx playwright install --with-deps chromium
           npm run check:responsive:selftest
+          npm run check:glossary:selftest
           npm run build
-          # Needs the built site, so it runs after the build rather than with
+          # Need the built site, so they run after the build rather than with
           # the other checks.
           npm run check:responsive
+          npm run check:glossary
           mkdir -p "$GITHUB_WORKSPACE/_site/edge"
           cp -r dist/. "$GITHUB_WORKSPACE/_site/edge/"
 
