@@ -110,6 +110,20 @@ func (t tableSpelling) uniquelyReferenced(table, constraint, column string) []st
 // The experiments are one list for every dialect in it. What varies is how a
 // throwaway table is spelled, which is a property of the dialect's DDL and not
 // of the question being asked.
+// notNullNameProbe asks whether the target reports back the name written on a
+// NOT NULL constraint.
+//
+// It lives outside postgresFamilyPlan because that function is at its length
+// budget. The inspection names the constraint the CREATE wrote rather than
+// counting rows: PostgreSQL 18 invents a name for every unnamed NOT NULL, so a
+// count answers a different question (stokaro/ptah#2161).
+func notNullNameProbe() experiment {
+	return storedNotNullName(nil,
+		"CREATE TABLE nnn (id int CONSTRAINT nnn_named NOT NULL)",
+		"SELECT COUNT(*) FROM pg_constraint WHERE conname = 'nnn_named'",
+	)
+}
+
 // rowDeletionPolicyProbe asks whether the target STORES a row deletion policy.
 //
 // It lives outside postgresFamilyPlan because that function is at its length
@@ -409,6 +423,7 @@ func postgresFamilyPlan(dialect string) plan {
 		// on the way in, which is why internal/crdbttl refuses the other
 		// enabler instead of modeling it.
 		rowDeletionPolicyProbe(),
+		notNullNameProbe(),
 		storedRowTTL(nil,
 			"CREATE TABLE ttlp (id int PRIMARY KEY, expires_at TIMESTAMPTZ) "+
 				"WITH (ttl_expiration_expression = 'expires_at')",
@@ -701,6 +716,8 @@ func mysqlFamilyPlan(dialect string) plan {
 		capability.RowDeletionPolicy: "the key names a table clause Ptah renders, reads and plans only " +
 			"for Spanner, whose PostgreSQL interface stores it; this server has no such clause, so its " +
 			"refusal would answer a different question",
+		capability.NamedNotNullConstraints: "the key names a PostgreSQL 18 catalog behavior; this " +
+			"server names no NOT NULL constraint at all, so its answer would be to a different question",
 		capability.RowLevelTTL: "the key names a table storage parameter Ptah renders, reads and plans " +
 			"only on the PostgreSQL wire; this server's CREATE TABLE takes its own table options and " +
 			"none of them is the one the key names, so refusing it would answer a different question",

@@ -208,6 +208,8 @@ func measuredLines() map[string]measuredLine {
 				capability.CatalogDefaultPrivileges: "the key names pg_default_acl, which this run never read: the artifact records no ALTER DEFAULT PRIVILEGES, and a server having the relation would not tell this line apart from the preset below",
 				capability.RowLevelTTL: "this run predates the key and sent no TTL statement. PostgreSQL is the engine the key is false FOR, so a refusal here would restate the premise rather than measure this line; " +
 					"what decides the key is CockroachDB accepting the parameter, which internal/capabilityprobe asks on the CockroachDB cells (stokaro/ptah#1027)",
+				capability.NamedNotNullConstraints: "this run predates the key and asked no NOT NULL question. The value carried here is false, which is what the preset beneath holds; " +
+					"a hand measurement on 18.6 says the server does report the name, and the probe now asks it, so the next matrix run decides this line rather than this table (stokaro/ptah#2161)",
 				capability.RowDeletionPolicy: "the key names a table clause only Spanner has, and PostgreSQL 18 answers `syntax error` to a construct that is not in its grammar -- which measures the grammar, not this line. " +
 					"What decides the key is Spanner STORING the clause and reading it back from information_schema.tables.row_deletion_policy_expression, which is asked on the Spanner cells (stokaro/ptah#2236)",
 				capability.CheckGrantStatement:             "the key names ClickHouse's CHECK GRANT, which this server has no spelling of; its answer would be to a different question. What decides the key is ClickHouse accepting the statement on one declared line and refusing it as a syntax error on another, which internal/capabilityprobe asks on the ClickHouse cells (stokaro/ptah#916)",
@@ -281,6 +283,8 @@ func measuredLines() map[string]measuredLine {
 					"this server's own CREATE ROLE and GRANT are a different surface, so accepting them would not decide the key",
 				capability.RowLevelTTL: "the key names a table storage parameter no MySQL-family renderer, reader or planner emits; " +
 					"this server has no such parameter to accept or refuse, so its answer would be to a different question",
+				capability.NamedNotNullConstraints: "the key names a PostgreSQL 18 catalog behavior; this server names no NOT NULL constraint at all, " +
+					"so its answer would be to a different question (stokaro/ptah#2161)",
 				capability.RowDeletionPolicy: "the key names a table clause only Spanner has, and no MySQL-family renderer, reader or planner emits it; " +
 					"this server has nothing to accept or refuse, so its answer would be to a different question (stokaro/ptah#2236)",
 				capability.CheckGrantStatement:             "the key names ClickHouse's CHECK GRANT, which this server has no spelling of; its answer would be to a different question. What decides the key is ClickHouse accepting the statement on one declared line and refusing it as a syntax error on another, which internal/capabilityprobe asks on the ClickHouse cells (stokaro/ptah#916)",
@@ -356,6 +360,8 @@ func measuredLines() map[string]measuredLine {
 					"so the server's answer is to a different question",
 				capability.RowLevelTTL: "the key names a table storage parameter no MySQL-family renderer, reader or planner emits; " +
 					"this server has no such parameter to accept or refuse, so its answer would be to a different question",
+				capability.NamedNotNullConstraints: "the key names a PostgreSQL 18 catalog behavior; this server names no NOT NULL constraint at all, " +
+					"so its answer would be to a different question (stokaro/ptah#2161)",
 				capability.RowDeletionPolicy: "the key names a table clause only Spanner has, and no MySQL-family renderer, reader or planner emits it; " +
 					"this server has nothing to accept or refuse, so its answer would be to a different question (stokaro/ptah#2236)",
 				capability.CheckGrantStatement:             "the key names ClickHouse's CHECK GRANT, which this server has no spelling of; its answer would be to a different question. What decides the key is ClickHouse accepting the statement on one declared line and refusing it as a syntax error on another, which internal/capabilityprobe asks on the ClickHouse cells (stokaro/ptah#916)",
