@@ -5,10 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -31,10 +31,10 @@ func notNullNameDiff(current, desired string) *difftypes.SchemaDiff {
 	}
 }
 
-func widgetSchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{Name: "widget", StructName: "Widget"}},
-		Fields: []goschema.Field{{StructName: "Widget", Name: "a", Type: "TEXT"}},
+func widgetSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "widget", StructName: "Widget"}},
+		Fields: []schemamodel.Field{{StructName: "Widget", Name: "a", Type: "TEXT"}},
 	}
 }
 

@@ -7,7 +7,7 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/schemachange"
 	"go.5x5.cz/ptah/internal/schemastate"
@@ -30,22 +30,22 @@ func grantCatalog(withOption bool) *catalog.Database {
 }
 
 // grantDescription declares the table, the roles named, and the grants given.
-func grantDescription(roles []string, grants []goschema.Grant) *goschema.Database {
-	description := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Order", Name: "orders"}},
-		Fields: []goschema.Field{
+func grantDescription(roles []string, grants []schemamodel.Grant) *schemamodel.Database {
+	description := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Order", Name: "orders"}},
+		Fields: []schemamodel.Field{
 			{StructName: "Order", Name: "id", Type: "integer", Primary: true},
 		},
 		Grants: grants,
 	}
 	for _, role := range roles {
 		description.Roles = append(description.Roles,
-			goschema.Role{StructName: "Access", Name: role})
+			schemamodel.Role{StructName: "Access", Name: role})
 	}
 	return description
 }
 
-func grantChanges(c *qt.C, description *goschema.Database, currentCatalog *catalog.Database) []schemachange.Change {
+func grantChanges(c *qt.C, description *schemamodel.Database, currentCatalog *catalog.Database) []schemachange.Change {
 	c.Helper()
 	profile := postgresProfile()
 	rawDesired, err := schemastate.FromDescription(description, profile.Dialect, profile.Semantics)
@@ -130,7 +130,7 @@ func TestGrantIsNotRevokedWhenTheRoleFamilyIsNotDescribed(t *testing.T) {
 // own key.
 func TestGrantDeclaredOnBothSidesIsNoChange(t *testing.T) {
 	c := qt.New(t)
-	description := grantDescription([]string{"reporting"}, []goschema.Grant{{
+	description := grantDescription([]string{"reporting"}, []schemamodel.Grant{{
 		StructName: "Access", Role: "reporting", Privileges: []string{"SELECT"}, OnTable: "orders",
 	}})
 
@@ -143,7 +143,7 @@ func TestGrantDeclaredOnBothSidesIsNoChange(t *testing.T) {
 // property of a grant rather than part of its identity.
 func TestGrantOptionChangeIsAModification(t *testing.T) {
 	c := qt.New(t)
-	description := grantDescription([]string{"reporting"}, []goschema.Grant{{
+	description := grantDescription([]string{"reporting"}, []schemamodel.Grant{{
 		StructName: "Access", Role: "reporting", Privileges: []string{"SELECT"},
 		OnTable: "orders", WithOption: true,
 	}})
@@ -163,7 +163,7 @@ func TestGrantOptionChangeIsAModification(t *testing.T) {
 // cannot express the state that follows.
 func TestGrantIdentityKeepsTwoPrivilegesApart(t *testing.T) {
 	c := qt.New(t)
-	description := grantDescription([]string{"reporting"}, []goschema.Grant{{
+	description := grantDescription([]string{"reporting"}, []schemamodel.Grant{{
 		StructName: "Access", Role: "reporting",
 		Privileges: []string{"SELECT", "INSERT"}, OnTable: "orders",
 	}})
@@ -184,7 +184,7 @@ func TestGrantIdentityKeepsTwoPrivilegesApart(t *testing.T) {
 func TestSchemaGrantDoesNotCollideWithATableGrant(t *testing.T) {
 	c := qt.New(t)
 	profile := postgresProfile()
-	description := grantDescription([]string{"reporting"}, []goschema.Grant{
+	description := grantDescription([]string{"reporting"}, []schemamodel.Grant{
 		{StructName: "Access", Role: "reporting", Privileges: []string{"USAGE"}, OnSchema: "app"},
 		{StructName: "Access", Role: "reporting", Privileges: []string{"USAGE"}, OnTable: "app"},
 	})
@@ -223,7 +223,7 @@ func TestPartialRevokeIsNotAGrant(t *testing.T) {
 func TestGrantIdentityKeepsTwoObjectsApart(t *testing.T) {
 	c := qt.New(t)
 	profile := postgresProfile()
-	description := grantDescription([]string{"reporting"}, []goschema.Grant{
+	description := grantDescription([]string{"reporting"}, []schemamodel.Grant{
 		{StructName: "Access", Role: "reporting", Privileges: []string{"SELECT"}, OnTable: "orders"},
 		{StructName: "Access", Role: "reporting", Privileges: []string{"SELECT"}, OnTable: "invoices"},
 	})
@@ -248,7 +248,7 @@ func TestCatalogSchemaGrantMatchesADeclaredSchemaGrant(t *testing.T) {
 	currentCatalog.Grants = []catalog.Grant{{
 		Role: "reporting", Privilege: "USAGE", ObjectType: "SCHEMA", ObjectName: "app",
 	}}
-	description := grantDescription([]string{"reporting"}, []goschema.Grant{{
+	description := grantDescription([]string{"reporting"}, []schemamodel.Grant{{
 		StructName: "Access", Role: "reporting", Privileges: []string{"USAGE"}, OnSchema: "app",
 	}})
 

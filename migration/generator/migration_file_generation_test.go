@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -14,7 +14,7 @@ import (
 func TestMigrationFileGeneration_ExtensionSQL(t *testing.T) {
 	tests := []struct {
 		name              string
-		generatedSchema   *goschema.Database
+		generatedSchema   *schemamodel.Database
 		databaseSchema    *catalog.Database
 		expectedUpSQL     []string
 		expectedDownSQL   []string
@@ -23,8 +23,8 @@ func TestMigrationFileGeneration_ExtensionSQL(t *testing.T) {
 	}{
 		{
 			name: "extension addition generates correct up and down SQL",
-			generatedSchema: &goschema.Database{
-				Extensions: []goschema.Extension{
+			generatedSchema: &schemamodel.Database{
+				Extensions: []schemamodel.Extension{
 					{Name: "pg_trgm", IfNotExists: true, Comment: "Enable trigram similarity search"},
 					{Name: "btree_gin", IfNotExists: true, Comment: "Enable GIN indexes on btree types"},
 				},
@@ -55,8 +55,8 @@ func TestMigrationFileGeneration_ExtensionSQL(t *testing.T) {
 		},
 		{
 			name: "extension removal generates correct up and down SQL",
-			generatedSchema: &goschema.Database{
-				Extensions: make([]goschema.Extension, 0),
+			generatedSchema: &schemamodel.Database{
+				Extensions: make([]schemamodel.Extension, 0),
 			},
 			databaseSchema: &catalog.Database{
 				Extensions: []catalog.Extension{
@@ -81,7 +81,7 @@ func TestMigrationFileGeneration_ExtensionSQL(t *testing.T) {
 		},
 		{
 			name:            "nondefault extension removal restores its schema on rollback",
-			generatedSchema: &goschema.Database{},
+			generatedSchema: &schemamodel.Database{},
 			databaseSchema: &catalog.Database{Extensions: []catalog.Extension{{
 				Name: "pgcrypto", Version: "1.3", Schema: "Extension Store",
 			}}},
@@ -165,8 +165,8 @@ func TestExtensionMigrationSQL_CompleteFlow(t *testing.T) {
 	c := qt.New(t)
 
 	// Test the complete flow: schema with extensions -> empty database -> up migration -> down migration
-	generatedSchema := &goschema.Database{
-		Extensions: []goschema.Extension{
+	generatedSchema := &schemamodel.Database{
+		Extensions: []schemamodel.Extension{
 			{Name: "pg_trgm", IfNotExists: true, Comment: "Enable trigram similarity search"},
 		},
 	}
@@ -207,18 +207,18 @@ func TestExtensionMigrationSQL_CompleteFlow(t *testing.T) {
 func TestMigrationFileGeneration_EmptyDiffPrevention(t *testing.T) {
 	tests := []struct {
 		name            string
-		generatedSchema *goschema.Database
+		generatedSchema *schemamodel.Database
 		databaseSchema  *catalog.Database
 		diff            *difftypes.SchemaDiff
 		description     string
 	}{
 		{
 			name: "table modification with missing field definitions should not generate migration",
-			generatedSchema: &goschema.Database{
-				Tables: []goschema.Table{
+			generatedSchema: &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{Name: "users", StructName: "User"},
 				},
-				Fields: make([]goschema.Field, 0),
+				Fields: make([]schemamodel.Field, 0),
 			},
 			databaseSchema: &catalog.Database{
 				Tables: []catalog.Table{
@@ -242,9 +242,9 @@ func TestMigrationFileGeneration_EmptyDiffPrevention(t *testing.T) {
 		},
 		{
 			name: "completely empty diff should not generate migration",
-			generatedSchema: &goschema.Database{
-				Tables: make([]goschema.Table, 0),
-				Fields: make([]goschema.Field, 0),
+			generatedSchema: &schemamodel.Database{
+				Tables: make([]schemamodel.Table, 0),
+				Fields: make([]schemamodel.Field, 0),
 			},
 			databaseSchema: &catalog.Database{
 				Tables: make([]catalog.Table, 0),
@@ -278,9 +278,9 @@ func TestGenerateUpMigrationSQL_NoChangesSuccess(t *testing.T) {
 		// Completely empty diff
 	}
 
-	emptySchema := &goschema.Database{
-		Tables: make([]goschema.Table, 0),
-		Fields: make([]goschema.Field, 0),
+	emptySchema := &schemamodel.Database{
+		Tables: make([]schemamodel.Table, 0),
+		Fields: make([]schemamodel.Field, 0),
 	}
 
 	// Generate up migration SQL - should return success with empty SQL

@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -16,7 +16,7 @@ import (
 func droppedRoutineSQL(c *qt.C, diff *difftypes.SchemaDiff) string {
 	c.Helper()
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff, &goschema.Database{})
+	nodes, err := postgres.New().GenerateMigrationAST(diff, &schemamodel.Database{})
 	c.Assert(err, qt.IsNil)
 
 	var statements []string

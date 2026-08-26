@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -49,8 +49,8 @@ func TestSequenceLookupResolvesAcrossSchemaSpellings(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			increment := int64(5)
-			generated := &goschema.Database{
-				Sequences: []goschema.Sequence{{
+			desired := &schemamodel.Database{
+				Sequences: []schemamodel.Sequence{{
 					Name:      "order_id_seq",
 					Schema:    test.sequenceSchema,
 					AsType:    "bigint",
@@ -61,7 +61,7 @@ func TestSequenceLookupResolvesAcrossSchemaSpellings(t *testing.T) {
 
 			added, err := planner.GenerateSchemaDiffSQLStatements(
 				&difftypes.SchemaDiff{SequencesAdded: []string{test.diffName}},
-				generated,
+				desired,
 				"postgres",
 			)
 			c.Assert(err, qt.IsNil)
@@ -77,7 +77,7 @@ func TestSequenceLookupResolvesAcrossSchemaSpellings(t *testing.T) {
 					SequenceName: test.diffName,
 					Changes:      map[string]string{"increment": "1 -> 5"},
 				}}},
-				generated,
+				desired,
 				"postgres",
 			)
 			c.Assert(err, qt.IsNil)
@@ -93,12 +93,12 @@ func TestSequenceLookupResolvesAcrossSchemaSpellings(t *testing.T) {
 func TestSequenceLookupDoesNotGuessBetweenSchemas(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Sequences: []goschema.Sequence{{Name: "order_id_seq", Schema: "reporting", AsType: "bigint"}},
+	desired := &schemamodel.Database{
+		Sequences: []schemamodel.Sequence{{Name: "order_id_seq", Schema: "reporting", AsType: "bigint"}},
 	}
 	statements, err := planner.GenerateSchemaDiffSQLStatements(
 		&difftypes.SchemaDiff{SequencesAdded: []string{"app.order_id_seq"}},
-		generated,
+		desired,
 		"postgres",
 	)
 	c.Assert(err, qt.IsNil)
@@ -138,8 +138,8 @@ func TestEnumLookupResolvesAcrossSchemaSpellings(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			generated := &goschema.Database{
-				Enums: []goschema.Enum{{
+			desired := &schemamodel.Database{
+				Enums: []schemamodel.Enum{{
 					Name:   "status",
 					Schema: test.enumSchema,
 					Values: []string{"draft", "live"},
@@ -148,7 +148,7 @@ func TestEnumLookupResolvesAcrossSchemaSpellings(t *testing.T) {
 
 			added, err := planner.GenerateSchemaDiffSQLStatements(
 				&difftypes.SchemaDiff{EnumsAdded: []string{test.diffName}},
-				generated,
+				desired,
 				"postgres",
 			)
 			c.Assert(err, qt.IsNil)
@@ -160,7 +160,7 @@ func TestEnumLookupResolvesAcrossSchemaSpellings(t *testing.T) {
 					EnumName:      test.diffName,
 					ValuesRemoved: []string{"draft"},
 				}}},
-				generated,
+				desired,
 				"postgres",
 			)
 			c.Assert(err, qt.IsNil)
@@ -177,12 +177,12 @@ func TestEnumLookupResolvesAcrossSchemaSpellings(t *testing.T) {
 func TestEnumLookupDoesNotGuessBetweenSchemas(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Enums: []goschema.Enum{{Name: "status", Schema: "reporting", Values: []string{"draft", "live"}}},
+	desired := &schemamodel.Database{
+		Enums: []schemamodel.Enum{{Name: "status", Schema: "reporting", Values: []string{"draft", "live"}}},
 	}
 	statements, err := planner.GenerateSchemaDiffSQLStatements(
 		&difftypes.SchemaDiff{EnumsAdded: []string{"app.status"}},
-		generated,
+		desired,
 		"postgres",
 	)
 	c.Assert(err, qt.IsNil)
@@ -197,16 +197,16 @@ func TestEnumLookupDoesNotGuessBetweenSchemas(t *testing.T) {
 // the two sides spell the schema differently: the pair must still be a pair.
 func TestUserTypeLookupResolvesAcrossSchemaSpellings(t *testing.T) {
 	tests := []struct {
-		name      string
-		generated *goschema.Database
-		diff      *difftypes.SchemaDiff
+		name    string
+		desired *schemamodel.Database
+		diff    *difftypes.SchemaDiff
 	}{
 		{
 			name: "a composite type qualified in the diff and bare in the schema",
-			generated: &goschema.Database{
-				CompositeTypes: []goschema.CompositeType{{
+			desired: &schemamodel.Database{
+				CompositeTypes: []schemamodel.CompositeType{{
 					Name: "addr",
-					Fields: []goschema.CompositeTypeField{
+					Fields: []schemamodel.CompositeField{
 						{Name: "line1", Type: "text"},
 						{Name: "line2", Type: "text"},
 					},
@@ -219,11 +219,11 @@ func TestUserTypeLookupResolvesAcrossSchemaSpellings(t *testing.T) {
 		},
 		{
 			name: "a composite type bare in the diff and qualified in the schema",
-			generated: &goschema.Database{
-				CompositeTypes: []goschema.CompositeType{{
+			desired: &schemamodel.Database{
+				CompositeTypes: []schemamodel.CompositeType{{
 					Name:   "addr",
 					Schema: "public",
-					Fields: []goschema.CompositeTypeField{
+					Fields: []schemamodel.CompositeField{
 						{Name: "line1", Type: "text"},
 						{Name: "line2", Type: "text"},
 					},
@@ -236,8 +236,8 @@ func TestUserTypeLookupResolvesAcrossSchemaSpellings(t *testing.T) {
 		},
 		{
 			name: "a range type qualified in the diff and bare in the schema",
-			generated: &goschema.Database{
-				Ranges: []goschema.Range{{Name: "span", Subtype: "int8"}},
+			desired: &schemamodel.Database{
+				Ranges: []schemamodel.Range{{Name: "span", Subtype: "int8"}},
 			},
 			diff: &difftypes.SchemaDiff{RangesModified: []difftypes.RangeDiff{{
 				RangeName:      "public.span",
@@ -247,8 +247,8 @@ func TestUserTypeLookupResolvesAcrossSchemaSpellings(t *testing.T) {
 		},
 		{
 			name: "a range type bare in the diff and qualified in the schema",
-			generated: &goschema.Database{
-				Ranges: []goschema.Range{{Name: "span", Schema: "public", Subtype: "int8"}},
+			desired: &schemamodel.Database{
+				Ranges: []schemamodel.Range{{Name: "span", Schema: "public", Subtype: "int8"}},
 			},
 			diff: &difftypes.SchemaDiff{RangesModified: []difftypes.RangeDiff{{
 				RangeName:      "span",
@@ -261,7 +261,7 @@ func TestUserTypeLookupResolvesAcrossSchemaSpellings(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			statements, err := planner.GenerateSchemaDiffSQLStatements(test.diff, test.generated, "postgres")
+			statements, err := planner.GenerateSchemaDiffSQLStatements(test.diff, test.desired, "postgres")
 			c.Assert(err, qt.IsNil)
 			plan := strings.Join(statements, "\n")
 			c.Assert(plan, qt.Contains, "DROP TYPE", qt.Commentf("plan:\n%s", plan))
@@ -283,9 +283,9 @@ func TestUserTypeLookupResolvesAcrossSchemaSpellings(t *testing.T) {
 // that catalog; these rows assert the plan for every object kind that reaches
 // the same tier.
 func TestPlannerWritesNoDDLForARelationTheSchemaDoesNotDeclare(t *testing.T) {
-	reportingUsers := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "User", Name: "users", Schema: "reporting"}},
-		Fields: []goschema.Field{
+	reportingUsers := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Name: "users", Schema: "reporting"}},
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "User", Name: "note", Type: "TEXT"},
 		},
@@ -293,13 +293,13 @@ func TestPlannerWritesNoDDLForARelationTheSchemaDoesNotDeclare(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		generated   *goschema.Database
+		desired     *schemamodel.Database
 		diff        *difftypes.SchemaDiff
 		unwantedSQL string
 	}{
 		{
-			name:      "a column addition on a table declared in another schema",
-			generated: reportingUsers,
+			name:    "a column addition on a table declared in another schema",
+			desired: reportingUsers,
 			diff: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:    "app.users",
 				ColumnsAdded: []string{"note"},
@@ -307,8 +307,8 @@ func TestPlannerWritesNoDDLForARelationTheSchemaDoesNotDeclare(t *testing.T) {
 			unwantedSQL: "ADD COLUMN",
 		},
 		{
-			name:      "a column modification on a table declared in another schema",
-			generated: reportingUsers,
+			name:    "a column modification on a table declared in another schema",
+			desired: reportingUsers,
 			diff: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName: "app.users",
 				ColumnsModified: []difftypes.ColumnDiff{{
@@ -320,8 +320,8 @@ func TestPlannerWritesNoDDLForARelationTheSchemaDoesNotDeclare(t *testing.T) {
 		},
 		{
 			name: "a domain modification on a type declared in another schema",
-			generated: &goschema.Database{
-				Domains: []goschema.Domain{{Name: "zip", Schema: "reporting", BaseType: "VARCHAR(10)"}},
+			desired: &schemamodel.Database{
+				Domains: []schemamodel.Domain{{Name: "zip", Schema: "reporting", BaseType: "VARCHAR(10)"}},
 			},
 			diff: &difftypes.SchemaDiff{DomainsModified: []difftypes.DomainDiff{{
 				DomainName:      "app.zip",
@@ -335,7 +335,7 @@ func TestPlannerWritesNoDDLForARelationTheSchemaDoesNotDeclare(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			statements, err := planner.GenerateSchemaDiffSQLStatements(test.diff, test.generated, "postgres")
+			statements, err := planner.GenerateSchemaDiffSQLStatements(test.diff, test.desired, "postgres")
 			c.Assert(err, qt.IsNil)
 			plan := strings.Join(statements, "\n")
 			c.Assert(plan, qt.Not(qt.Contains), test.unwantedSQL, qt.Commentf("plan:\n%s", plan))

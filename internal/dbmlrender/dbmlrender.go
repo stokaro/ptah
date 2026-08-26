@@ -1,6 +1,6 @@
 // Package dbmlrender writes a Ptah schema as DBML.
 //
-// It is a format adapter and nothing else: it reads [goschema.Database] and
+// It is a format adapter and nothing else: it reads [schemamodel.Database] and
 // produces text. It plans nothing, converts nothing to SQL, and is not a second
 // place where schema semantics are decided (stokaro/ptah#2065).
 //
@@ -28,7 +28,7 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // Options selects what is rendered.
@@ -50,7 +50,7 @@ type Result struct {
 }
 
 // Render writes the schema as DBML.
-func Render(db *goschema.Database, opts Options) (Result, error) {
+func Render(db *schemamodel.Database, opts Options) (Result, error) {
 	if db == nil {
 		return Result{}, fmt.Errorf("schema database is nil")
 	}
@@ -59,7 +59,7 @@ func Render(db *goschema.Database, opts Options) (Result, error) {
 }
 
 type builder struct {
-	db   *goschema.Database
+	db   *schemamodel.Database
 	opts Options
 }
 

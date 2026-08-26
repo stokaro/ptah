@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -57,16 +57,16 @@ func TestTableColumns_FloatSpellingsConverge(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			genTable := goschema.Table{StructName: "Reading", Name: "readings"}
+			genTable := schemamodel.Table{StructName: "Reading", Name: "readings"}
 			dbTable := catalog.Table{
 				Name:    "readings",
 				Columns: []catalog.Column{{Name: "x", DataType: test.catalog, IsNullable: "YES"}},
 			}
-			generated := &goschema.Database{Fields: []goschema.Field{
+			desired := &schemamodel.Database{Fields: []schemamodel.Field{
 				{StructName: "Reading", Name: "x", Type: test.declared, Nullable: true},
 			}}
 
-			result := compare.TableColumns(genTable, dbTable, generated)
+			result := compare.TableColumns(genTable, dbTable, desired)
 
 			c.Assert(floatTypeChanges(result.ColumnsModified), qt.DeepEquals, wantedChanges(test.want))
 		})

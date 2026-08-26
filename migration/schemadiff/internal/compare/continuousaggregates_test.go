@@ -8,9 +8,9 @@ import (
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -37,19 +37,19 @@ const (
 func TestContinuousAggregates_ComparesByTheQualifiedName(t *testing.T) {
 	tests := []struct {
 		name        string
-		declared    []goschema.ContinuousAggregate
+		declared    []schemamodel.ContinuousAggregate
 		live        []catalog.ContinuousAggregate
 		wantAdded   []string
 		wantRemoved []string
 	}{
 		{
 			name:      "declared and absent",
-			declared:  []goschema.ContinuousAggregate{{Name: "hourly", Body: theBody}},
+			declared:  []schemamodel.ContinuousAggregate{{Name: "hourly", Body: theBody}},
 			wantAdded: []string{"hourly"},
 		},
 		{
 			name:     "declared and present",
-			declared: []goschema.ContinuousAggregate{{Name: "hourly", Schema: "public", Body: theBody}},
+			declared: []schemamodel.ContinuousAggregate{{Name: "hourly", Schema: "public", Body: theBody}},
 			live: []catalog.ContinuousAggregate{{
 				Schema: "public", Name: "hourly", Definition: theStored,
 			}},
@@ -61,7 +61,7 @@ func TestContinuousAggregates_ComparesByTheQualifiedName(t *testing.T) {
 			// an addition AND a removal for one unchanged object, and the plan
 			// created it before dropping it.
 			name:     "a qualified declaration of an unqualified row",
-			declared: []goschema.ContinuousAggregate{{Name: "hourly", Schema: "public", Body: theBody}},
+			declared: []schemamodel.ContinuousAggregate{{Name: "hourly", Schema: "public", Body: theBody}},
 			live: []catalog.ContinuousAggregate{{
 				Name: "hourly", Definition: theStored,
 			}},
@@ -80,7 +80,7 @@ func TestContinuousAggregates_ComparesByTheQualifiedName(t *testing.T) {
 			c := qt.New(t)
 			diff := &difftypes.SchemaDiff{}
 
-			declared := &goschema.Database{ContinuousAggregates: test.declared}
+			declared := &schemamodel.Database{ContinuousAggregates: test.declared}
 			live := &catalog.Database{ContinuousAggregates: test.live}
 
 			compare.ContinuousAggregates(declared, live, diff, compare.CoverageOf(declared, live), nil,
@@ -138,7 +138,7 @@ func TestContinuousAggregates_TheBodyIsComparedOnlyThroughTheServer(t *testing.T
 			c := qt.New(t)
 			diff := &difftypes.SchemaDiff{}
 
-			declared := &goschema.Database{ContinuousAggregates: []goschema.ContinuousAggregate{
+			declared := &schemamodel.Database{ContinuousAggregates: []schemamodel.ContinuousAggregate{
 				{Name: "hourly", Body: theBody},
 			}}
 			live := &catalog.Database{ContinuousAggregates: []catalog.ContinuousAggregate{
@@ -162,7 +162,7 @@ func TestContinuousAggregates_TheOptionIsComparedWithoutOne(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{}
 
-	declared := &goschema.Database{ContinuousAggregates: []goschema.ContinuousAggregate{
+	declared := &schemamodel.Database{ContinuousAggregates: []schemamodel.ContinuousAggregate{
 		{Name: "hourly", Body: theBody, MaterializedOnly: new(true)},
 	}}
 	live := &catalog.Database{ContinuousAggregates: []catalog.ContinuousAggregate{
@@ -191,7 +191,7 @@ func TestContinuousAggregates_ADescriptionThatCouldNotSayItDoesNotDropIt(t *test
 	live := &catalog.Database{ContinuousAggregates: []catalog.ContinuousAggregate{{
 		Schema: "public", Name: "hourly", Definition: theStored,
 	}}}
-	silent := &goschema.Database{NotDescribed: coverage.Set{}.With(coverage.Object{
+	silent := &schemamodel.Database{NotDescribed: coverage.Set{}.With(coverage.Object{
 		Kind:       coverage.ContinuousAggregate,
 		Reason:     coverage.Unsupported,
 		Provenance: coverage.DerivedFromFact,
@@ -203,7 +203,7 @@ func TestContinuousAggregates_ADescriptionThatCouldNotSayItDoesNotDropIt(t *test
 	c.Assert(diff.ContinuousAggregatesRemoved, qt.HasLen, 0)
 
 	// The control: a description that COULD have named one still removes.
-	speaking := &goschema.Database{}
+	speaking := &schemamodel.Database{}
 	plain := &difftypes.SchemaDiff{}
 	compare.ContinuousAggregates(speaking, live, plain, compare.CoverageOf(speaking, live), nil,
 		postgresSemantics())

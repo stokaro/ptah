@@ -6,8 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
 
@@ -16,7 +16,7 @@ import (
 // describe the same routine.
 //
 // They always do. The generated side has been through
-// goschema.Function.Canonicalize, which lower-cases the whole parameter list;
+// schemamodel.Function.Canonicalize, which lower-cases the whole parameter list;
 // the database side is whatever the catalog printed, and the catalogs print
 // upper case. Measured on PostgreSQL 17 and MySQL 9.7.2:
 //
@@ -37,39 +37,39 @@ import (
 // never converged either.
 func TestFunctionDefinitions_AnArgumentModeIsOneArgumentWhateverItsCase(t *testing.T) {
 	tests := []struct {
-		name      string
-		generated string
-		database  string
+		name     string
+		desired  string
+		database string
 	}{
 		{
-			name:      "OUT as PostgreSQL prints it against OUT as Canonicalize writes it",
-			generated: "a integer, out b integer",
-			database:  "a integer, OUT b integer",
+			name:     "OUT as PostgreSQL prints it against OUT as Canonicalize writes it",
+			desired:  "a integer, out b integer",
+			database: "a integer, OUT b integer",
 		},
 		{
-			name:      "INOUT, which a procedure's argument list is full of",
-			generated: "in a integer, inout c integer",
-			database:  "IN a integer, INOUT c integer",
+			name:     "INOUT, which a procedure's argument list is full of",
+			desired:  "in a integer, inout c integer",
+			database: "IN a integer, INOUT c integer",
 		},
 		{
-			name:      "VARIADIC, the third mode that is not the default",
-			generated: "variadic parts text[]",
-			database:  "VARIADIC parts text[]",
+			name:     "VARIADIC, the third mode that is not the default",
+			desired:  "variadic parts text[]",
+			database: "VARIADIC parts text[]",
 		},
 		{
-			name:      "the default mode, written on one side only",
-			generated: "a integer",
-			database:  "IN a integer",
+			name:     "the default mode, written on one side only",
+			desired:  "a integer",
+			database: "IN a integer",
 		},
 		{
-			name:      "a mixed spelling neither side is supposed to produce",
-			generated: "InOut c integer",
-			database:  "inout c integer",
+			name:     "a mixed spelling neither side is supposed to produce",
+			desired:  "InOut c integer",
+			database: "inout c integer",
 		},
 		{
-			name:      "a type whose own parentheses hold a comma",
-			generated: "out amount numeric(10, 2)",
-			database:  "OUT amount numeric(10, 2)",
+			name:     "a type whose own parentheses hold a comma",
+			desired:  "out amount numeric(10, 2)",
+			database: "OUT amount numeric(10, 2)",
 		},
 	}
 
@@ -78,7 +78,7 @@ func TestFunctionDefinitions_AnArgumentModeIsOneArgumentWhateverItsCase(t *testi
 			c := qt.New(t)
 
 			diff := compare.FunctionDefinitions(
-				goschema.Function{Name: "r", Parameters: test.generated, Body: "BEGIN END;"},
+				schemamodel.Function{Name: "r", Parameters: test.desired, Body: "BEGIN END;"},
 				catalog.Function{Name: "r", Parameters: test.database, Body: "BEGIN END;"},
 			)
 
@@ -95,29 +95,29 @@ func TestFunctionDefinitions_AnArgumentModeIsOneArgumentWhateverItsCase(t *testi
 // table above.
 func TestFunctionDefinitions_ChangingAnArgumentModeIsStillAChange(t *testing.T) {
 	tests := []struct {
-		name      string
-		generated string
-		database  string
+		name     string
+		desired  string
+		database string
 	}{
 		{
-			name:      "an argument that became OUT",
-			generated: "out b integer",
-			database:  "b integer",
+			name:     "an argument that became OUT",
+			desired:  "out b integer",
+			database: "b integer",
 		},
 		{
-			name:      "OUT is not INOUT",
-			generated: "out b integer",
-			database:  "INOUT b integer",
+			name:     "OUT is not INOUT",
+			desired:  "out b integer",
+			database: "INOUT b integer",
 		},
 		{
-			name:      "VARIADIC is not the default",
-			generated: "parts text[]",
-			database:  "VARIADIC parts text[]",
+			name:     "VARIADIC is not the default",
+			desired:  "parts text[]",
+			database: "VARIADIC parts text[]",
 		},
 		{
-			name:      "the argument itself still decides",
-			generated: "out b bigint",
-			database:  "OUT b integer",
+			name:     "the argument itself still decides",
+			desired:  "out b bigint",
+			database: "OUT b integer",
 		},
 	}
 
@@ -126,7 +126,7 @@ func TestFunctionDefinitions_ChangingAnArgumentModeIsStillAChange(t *testing.T) 
 			c := qt.New(t)
 
 			diff := compare.FunctionDefinitions(
-				goschema.Function{Name: "r", Parameters: test.generated, Body: "BEGIN END;"},
+				schemamodel.Function{Name: "r", Parameters: test.desired, Body: "BEGIN END;"},
 				catalog.Function{Name: "r", Parameters: test.database, Body: "BEGIN END;"},
 			)
 
@@ -143,7 +143,7 @@ func TestFunctionDefinitions_TheMySQLFamilyFoldsTheSameModes(t *testing.T) {
 	c := qt.New(t)
 
 	diff := compare.FunctionDefinitionsWithDialect(
-		goschema.Function{Name: "p_out", Parameters: "a int, out b int, inout c int", Body: "SET b = a"},
+		schemamodel.Function{Name: "p_out", Parameters: "a int, out b int, inout c int", Body: "SET b = a"},
 		catalog.Function{Name: "p_out", Parameters: "a int, OUT b int, INOUT c int", Body: "SET b = a"},
 		platform.MySQL,
 	)

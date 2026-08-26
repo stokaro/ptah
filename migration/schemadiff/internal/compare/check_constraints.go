@@ -198,9 +198,9 @@ func checkCastFollowsLiteral(expr string, castIndex int) bool {
 	return false
 }
 
-func checkExpressionHasUnsupportedRewrite(generated, database string) bool {
+func checkExpressionHasUnsupportedRewrite(desired, database string) bool {
 	db := strings.ToLower(database)
-	return checkExpressionContainsInOperator(generated) && strings.Contains(db, "any") && strings.Contains(db, "array[")
+	return checkExpressionContainsInOperator(desired) && strings.Contains(db, "any") && strings.Contains(db, "array[")
 }
 
 func checkExpressionContainsInOperator(expr string) bool {

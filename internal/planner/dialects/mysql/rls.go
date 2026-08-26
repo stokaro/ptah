@@ -2,9 +2,9 @@ package mysql
 
 import (
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/mssqlpolicy"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
@@ -23,23 +23,23 @@ import (
 // table its predicate filters and the engine resolves that name at creation
 // time, so the table has to exist first -- the opposite of a sequence, which a
 // column default may reference and which therefore goes first.
-func (p *Planner) planRLS(result []ast.Node, diff *difftypes.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) planRLS(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
 	if !p.capabilities().Has(capability.RowLevelSecurity) {
 		return result
 	}
 	for _, table := range diff.RLSEnabledTablesAdded {
-		declaration := findRLSEnabledTable(generated.RLSEnabledTables, table)
+		declaration := findRLSEnabledTable(desired.RLSEnabledTables, table)
 		if declaration == nil {
 			continue
 		}
 		result = append(result, fromschema.FromRLSEnabledTable(*declaration))
 	}
 	for _, policy := range diff.RLSPoliciesAdded {
-		declaration := findRLSPolicy(generated.RLSPolicies, policy.PolicyName, policy.TableName)
+		declaration := findRLSPolicy(desired.RLSPolicies, policy.PolicyName, policy.TableName)
 		if declaration == nil {
 			continue
 		}
-		result = append(result, fromschema.FromRLSPolicy(fromschema.QualifyRLSPolicyForTarget(*declaration, *generated, p.targetDialect())))
+		result = append(result, fromschema.FromRLSPolicy(fromschema.QualifyRLSPolicyForTarget(*declaration, *desired, p.targetDialect())))
 	}
 	// A modified policy is planned as a drop followed by a create. T-SQL has
 	// ALTER SECURITY POLICY, but it alters the state and the predicate list
@@ -48,11 +48,11 @@ func (p *Planner) planRLS(result []ast.Node, diff *difftypes.SchemaDiff, generat
 	// pair is what a replacement is here, the same answer planFunctions
 	// reached for the same reason.
 	for _, policy := range diff.RLSPoliciesModified {
-		declaration := findRLSPolicy(generated.RLSPolicies, policy.PolicyName, policy.TableName)
+		declaration := findRLSPolicy(desired.RLSPolicies, policy.PolicyName, policy.TableName)
 		if declaration == nil {
 			continue
 		}
-		qualified := fromschema.QualifyRLSPolicyForTarget(*declaration, *generated, p.targetDialect())
+		qualified := fromschema.QualifyRLSPolicyForTarget(*declaration, *desired, p.targetDialect())
 		// A replacement whose create half the renderer would refuse must not
 		// contribute its drop half. The pair would leave the table with no
 		// row-level security at all, which is a worse answer than the
@@ -95,7 +95,7 @@ func (p *Planner) removeRLS(result []ast.Node, diff *difftypes.SchemaDiff) []ast
 //
 // The pair is the identity: SQL Server lets one policy carry predicates for
 // several tables, so a name on its own does not name a declaration.
-func findRLSPolicy(declarations []goschema.RLSPolicy, name, table string) *goschema.RLSPolicy {
+func findRLSPolicy(declarations []schemamodel.RLSPolicy, name, table string) *schemamodel.RLSPolicy {
 	for i := range declarations {
 		if declarations[i].Name == name && declarations[i].Table == table {
 			return &declarations[i]
@@ -106,7 +106,7 @@ func findRLSPolicy(declarations []goschema.RLSPolicy, name, table string) *gosch
 
 // findRLSEnabledTable returns the declaration that asked for row-level security
 // on a table, or nil when the diff names a table nothing declared.
-func findRLSEnabledTable(declarations []goschema.RLSEnabledTable, table string) *goschema.RLSEnabledTable {
+func findRLSEnabledTable(declarations []schemamodel.RLSEnabledTable, table string) *schemamodel.RLSEnabledTable {
 	for i := range declarations {
 		if declarations[i].Table == table {
 			return &declarations[i]

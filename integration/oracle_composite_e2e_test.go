@@ -13,8 +13,8 @@ import (
 	_ "github.com/sijms/go-ora/v3"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/planner"
@@ -81,9 +81,9 @@ func TestOracleCompositeTypesPlanAndConvergeE2E(t *testing.T) {
 
 	// And the removal direction, whose ordering matters: dropping a type a
 	// column still uses answers ORA-02303.
-	teardown, err := schemadiff.CompareWithDatabase(ctx, conn, &goschema.Database{}, after, nil)
+	teardown, err := schemadiff.CompareWithDatabase(ctx, conn, &schemamodel.Database{}, after, nil)
 	c.Assert(err, qt.IsNil)
-	teardownStatements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(teardown, &goschema.Database{}, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities})
+	teardownStatements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(teardown, &schemamodel.Database{}, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities})
 	c.Assert(err, qt.IsNil)
 	c.Assert(oracleFirstIndexOf(c, teardownStatements, "DROP TABLE") <
 		oracleFirstIndexOf(c, teardownStatements, "DROP TYPE"), qt.IsTrue)
@@ -139,26 +139,26 @@ func TestOracleCompositeReaderDeclinesWhatTheModelCannotCarryE2E(t *testing.T) {
 }
 
 // oracleCompositeDeclaration declares two composites and a table typed by one.
-func oracleCompositeDeclaration() *goschema.Database {
-	return &goschema.Database{
-		CompositeTypes: []goschema.CompositeType{
+func oracleCompositeDeclaration() *schemamodel.Database {
+	return &schemamodel.Database{
+		CompositeTypes: []schemamodel.CompositeType{
 			{
 				StructName: "P", Name: "ora_point",
-				Fields: []goschema.CompositeTypeField{
+				Fields: []schemamodel.CompositeField{
 					{Name: "x", Type: "NUMBER(10,2)"},
 					{Name: "y", Type: "NUMBER(10,2)"},
 				},
 			},
 			{
 				StructName: "A", Name: "ora_addr",
-				Fields: []goschema.CompositeTypeField{
+				Fields: []schemamodel.CompositeField{
 					{Name: "street", Type: "VARCHAR2(100)"},
 					{Name: "zip", Type: "VARCHAR2(10)"},
 				},
 			},
 		},
-		Tables: []goschema.Table{{StructName: "T", Name: "ora_places"}},
-		Fields: []goschema.Field{
+		Tables: []schemamodel.Table{{StructName: "T", Name: "ora_places"}},
+		Fields: []schemamodel.Field{
 			{StructName: "T", Name: "id", Type: "INT", Primary: true},
 			{StructName: "T", Name: "at", Type: "ora_point"},
 		},

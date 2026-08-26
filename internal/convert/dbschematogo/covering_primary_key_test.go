@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 )
 
@@ -35,7 +35,7 @@ func coveringSchema(keyColumns, include []string) *catalog.Database {
 }
 
 // coveringTable returns the converted table the key is on.
-func coveringTable(c *qt.C, database *goschema.Database) goschema.Table {
+func coveringTable(c *qt.C, database *schemamodel.Database) schemamodel.Table {
 	c.Helper()
 	for _, table := range database.Tables {
 		if table.Name == "covering" {
@@ -43,11 +43,11 @@ func coveringTable(c *qt.C, database *goschema.Database) goschema.Table {
 		}
 	}
 	c.Fatalf("no covering table in %+v", database.Tables)
-	return goschema.Table{}
+	return schemamodel.Table{}
 }
 
 // primaryField returns the converted column named, for the flag assertions.
-func primaryField(c *qt.C, database *goschema.Database, name string) goschema.Field {
+func primaryField(c *qt.C, database *schemamodel.Database, name string) schemamodel.Field {
 	c.Helper()
 	for _, field := range database.Fields {
 		if field.Name == name {
@@ -55,7 +55,7 @@ func primaryField(c *qt.C, database *goschema.Database, name string) goschema.Fi
 		}
 	}
 	c.Fatalf("no %s field in %+v", name, database.Fields)
-	return goschema.Field{}
+	return schemamodel.Field{}
 }
 
 // TestConvert_KeepsTheIncludePayloadOfACoveringPrimaryKey pins that the payload

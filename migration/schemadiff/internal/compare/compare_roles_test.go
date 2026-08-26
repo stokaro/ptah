@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/reservedrole"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
@@ -15,11 +15,11 @@ import (
 func TestRolesComparison(t *testing.T) {
 	t.Run("no roles in either schema", func(t *testing.T) {
 		c := qt.New(t)
-		generated := &goschema.Database{Roles: make([]goschema.Role, 0)}
+		desired := &schemamodel.Database{Roles: make([]schemamodel.Role, 0)}
 		database := &catalog.Database{Roles: make([]catalog.Role, 0)}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Roles(generated, database, diff, compare.CoverageOf(generated, database))
+		compare.Roles(desired, database, diff, compare.CoverageOf(desired, database))
 
 		c.Assert(diff.RolesAdded, qt.HasLen, 0)
 		c.Assert(diff.RolesRemoved, qt.HasLen, 0)
@@ -28,8 +28,8 @@ func TestRolesComparison(t *testing.T) {
 
 	t.Run("roles added", func(t *testing.T) {
 		c := qt.New(t)
-		generated := &goschema.Database{
-			Roles: []goschema.Role{
+		desired := &schemamodel.Database{
+			Roles: []schemamodel.Role{
 				{Name: "app_user", Login: true},
 				{Name: "admin_user", Login: true, Superuser: true},
 			},
@@ -37,7 +37,7 @@ func TestRolesComparison(t *testing.T) {
 		database := &catalog.Database{Roles: make([]catalog.Role, 0)}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Roles(generated, database, diff, compare.CoverageOf(generated, database))
+		compare.Roles(desired, database, diff, compare.CoverageOf(desired, database))
 
 		c.Assert(diff.RolesAdded, qt.HasLen, 2)
 		c.Assert(diff.RolesAdded, qt.Contains, "app_user")
@@ -48,7 +48,7 @@ func TestRolesComparison(t *testing.T) {
 
 	t.Run("roles not automatically removed", func(t *testing.T) {
 		c := qt.New(t)
-		generated := &goschema.Database{Roles: make([]goschema.Role, 0)}
+		desired := &schemamodel.Database{Roles: make([]schemamodel.Role, 0)}
 		database := &catalog.Database{
 			Roles: []catalog.Role{
 				{Name: "old_role", Login: true},
@@ -57,7 +57,7 @@ func TestRolesComparison(t *testing.T) {
 		}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Roles(generated, database, diff, compare.CoverageOf(generated, database))
+		compare.Roles(desired, database, diff, compare.CoverageOf(desired, database))
 
 		// Roles should not be automatically removed for safety
 		c.Assert(diff.RolesAdded, qt.HasLen, 0)
@@ -67,8 +67,8 @@ func TestRolesComparison(t *testing.T) {
 
 	t.Run("roles modified", func(t *testing.T) {
 		c := qt.New(t)
-		generated := &goschema.Database{
-			Roles: []goschema.Role{
+		desired := &schemamodel.Database{
+			Roles: []schemamodel.Role{
 				{Name: "app_user", Login: true, CreateDB: true},
 			},
 		}
@@ -79,7 +79,7 @@ func TestRolesComparison(t *testing.T) {
 		}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Roles(generated, database, diff, compare.CoverageOf(generated, database))
+		compare.Roles(desired, database, diff, compare.CoverageOf(desired, database))
 
 		c.Assert(diff.RolesAdded, qt.HasLen, 0)
 		c.Assert(diff.RolesRemoved, qt.HasLen, 0)
@@ -92,8 +92,8 @@ func TestRolesComparison(t *testing.T) {
 
 	t.Run("mixed changes", func(t *testing.T) {
 		c := qt.New(t)
-		generated := &goschema.Database{
-			Roles: []goschema.Role{
+		desired := &schemamodel.Database{
+			Roles: []schemamodel.Role{
 				{Name: "app_user", Login: true},        // Modified
 				{Name: "new_role", Login: true},        // Added
 				{Name: "unchanged_role", Login: false}, // Unchanged
@@ -108,7 +108,7 @@ func TestRolesComparison(t *testing.T) {
 		}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Roles(generated, database, diff, compare.CoverageOf(generated, database))
+		compare.Roles(desired, database, diff, compare.CoverageOf(desired, database))
 
 		c.Assert(diff.RolesAdded, qt.HasLen, 1)
 		c.Assert(diff.RolesAdded[0], qt.Equals, "new_role")
@@ -123,8 +123,8 @@ func TestRolesComparison(t *testing.T) {
 
 	t.Run("results are sorted", func(t *testing.T) {
 		c := qt.New(t)
-		generated := &goschema.Database{
-			Roles: []goschema.Role{
+		desired := &schemamodel.Database{
+			Roles: []schemamodel.Role{
 				{Name: "z_role", Login: true},
 				{Name: "a_role", Login: true},
 				{Name: "m_role", Login: true, CreateDB: true},
@@ -139,7 +139,7 @@ func TestRolesComparison(t *testing.T) {
 		}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Roles(generated, database, diff, compare.CoverageOf(generated, database))
+		compare.Roles(desired, database, diff, compare.CoverageOf(desired, database))
 
 		// Check added roles are sorted
 		c.Assert(diff.RolesAdded, qt.DeepEquals, []string{"a_role", "z_role"})
@@ -163,8 +163,8 @@ func TestRolesTreatsOutOfScopeRolesAsPresent(t *testing.T) {
 
 	t.Run("plans no create for a role the description leaves out", func(t *testing.T) {
 		c := qt.New(t)
-		generated := &goschema.Database{
-			Roles: []goschema.Role{{Name: "admin_user", Login: true, Superuser: true}},
+		desired := &schemamodel.Database{
+			Roles: []schemamodel.Role{{Name: "admin_user", Login: true, Superuser: true}},
 		}
 		database := &catalog.Database{
 			Roles: make([]catalog.Role, 0),
@@ -174,7 +174,7 @@ func TestRolesTreatsOutOfScopeRolesAsPresent(t *testing.T) {
 		}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Roles(generated, database, diff, compare.CoverageOf(generated, database))
+		compare.Roles(desired, database, diff, compare.CoverageOf(desired, database))
 
 		c.Assert(diff.RolesAdded, qt.HasLen, 0)
 		c.Assert(diff.RolesRemoved, qt.HasLen, 0)
@@ -183,8 +183,8 @@ func TestRolesTreatsOutOfScopeRolesAsPresent(t *testing.T) {
 
 	t.Run("still plans a create for a role that exists nowhere", func(t *testing.T) {
 		c := qt.New(t)
-		generated := &goschema.Database{
-			Roles: []goschema.Role{
+		desired := &schemamodel.Database{
+			Roles: []schemamodel.Role{
 				{Name: "admin_user", Login: true},
 				{Name: "brand_new_user", Login: true},
 			},
@@ -194,7 +194,7 @@ func TestRolesTreatsOutOfScopeRolesAsPresent(t *testing.T) {
 		}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Roles(generated, database, diff, compare.CoverageOf(generated, database))
+		compare.Roles(desired, database, diff, compare.CoverageOf(desired, database))
 
 		c.Assert(diff.RolesAdded, qt.DeepEquals, []string{"brand_new_user"})
 	})
@@ -204,15 +204,15 @@ func TestRolesTreatsOutOfScopeRolesAsPresent(t *testing.T) {
 		// Scoping the description must not cost the capability of correcting
 		// a role's attributes: the annotations name this role, so the user
 		// asked about it.
-		generated := &goschema.Database{
-			Roles: []goschema.Role{{Name: "admin_user", Login: true, Superuser: true}},
+		desired := &schemamodel.Database{
+			Roles: []schemamodel.Role{{Name: "admin_user", Login: true, Superuser: true}},
 		}
 		database := &catalog.Database{
 			RolesOutOfScope: []catalog.Role{{Name: "admin_user", Login: false, Superuser: false}},
 		}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Roles(generated, database, diff, compare.CoverageOf(generated, database))
+		compare.Roles(desired, database, diff, compare.CoverageOf(desired, database))
 
 		c.Assert(diff.RolesAdded, qt.HasLen, 0)
 		c.Assert(diff.RolesModified, qt.HasLen, 1)
@@ -223,8 +223,8 @@ func TestRolesTreatsOutOfScopeRolesAsPresent(t *testing.T) {
 
 	t.Run("a described role is compared, and an unrelated out-of-scope name changes nothing", func(t *testing.T) {
 		c := qt.New(t)
-		generated := &goschema.Database{
-			Roles: []goschema.Role{{Name: "app_user", Login: true}},
+		desired := &schemamodel.Database{
+			Roles: []schemamodel.Role{{Name: "app_user", Login: true}},
 		}
 		database := &catalog.Database{
 			Roles:           []catalog.Role{{Name: "app_user", Login: true}},
@@ -232,7 +232,7 @@ func TestRolesTreatsOutOfScopeRolesAsPresent(t *testing.T) {
 		}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Roles(generated, database, diff, compare.CoverageOf(generated, database))
+		compare.Roles(desired, database, diff, compare.CoverageOf(desired, database))
 
 		c.Assert(diff.RolesAdded, qt.HasLen, 0)
 		c.Assert(diff.RolesModified, qt.HasLen, 0)
@@ -248,8 +248,8 @@ func TestRolesTreatsOutOfScopeRolesAsPresent(t *testing.T) {
 		// description rather than from whichever loop happens to run last.
 		// The out-of-scope copy is stale on every attribute, so reading it
 		// would plan an ALTER ROLE that changes nothing back.
-		generated := &goschema.Database{
-			Roles: []goschema.Role{{Name: "app_user", Login: true, CreateDB: true}},
+		desired := &schemamodel.Database{
+			Roles: []schemamodel.Role{{Name: "app_user", Login: true, CreateDB: true}},
 		}
 		database := &catalog.Database{
 			Roles:           []catalog.Role{{Name: "app_user", Login: true, CreateDB: true}},
@@ -257,7 +257,7 @@ func TestRolesTreatsOutOfScopeRolesAsPresent(t *testing.T) {
 		}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Roles(generated, database, diff, compare.CoverageOf(generated, database))
+		compare.Roles(desired, database, diff, compare.CoverageOf(desired, database))
 
 		c.Assert(diff.RolesAdded, qt.HasLen, 0)
 		c.Assert(diff.RolesRemoved, qt.HasLen, 0)
@@ -279,8 +279,8 @@ func TestRolesAnswerIsTheSameWhicheverListTheRoleWasReadInto(t *testing.T) {
 	// it, an operator who turned the variable on to copy a cluster's roles
 	// could get a different migration plan for the same two databases, which
 	// would make the escape hatch a second behavior rather than a fuller read.
-	generated := &goschema.Database{
-		Roles: []goschema.Role{
+	desired := &schemamodel.Database{
+		Roles: []schemamodel.Role{
 			{Name: "app_user", Login: true},
 			{Name: "scoped_out", Login: true, CreateDB: true},
 			{Name: "nowhere_at_all", Login: true},
@@ -302,9 +302,9 @@ func TestRolesAnswerIsTheSameWhicheverListTheRoleWasReadInto(t *testing.T) {
 	}
 
 	scopedDiff := &difftypes.SchemaDiff{}
-	compare.Roles(generated, scoped, scopedDiff, compare.CoverageOf(generated, scoped))
+	compare.Roles(desired, scoped, scopedDiff, compare.CoverageOf(desired, scoped))
 	describedDiff := &difftypes.SchemaDiff{}
-	compare.Roles(generated, described, describedDiff, compare.CoverageOf(generated, described))
+	compare.Roles(desired, described, describedDiff, compare.CoverageOf(desired, described))
 
 	c.Assert(scopedDiff.RolesAdded, qt.DeepEquals, []string{"nowhere_at_all"})
 	c.Assert(scopedDiff.RolesModified, qt.HasLen, 1)
@@ -340,8 +340,8 @@ func TestRolesReservedNameIsRefusedBeforeThisComparisonRunsAtAll(t *testing.T) {
 	// name this comparison would read as absent is a name reservedrole.Is
 	// recognizes, so there is no reserved spelling that slips past the refusal
 	// and lands here.
-	generated := &goschema.Database{
-		Roles: []goschema.Role{
+	desired := &schemamodel.Database{
+		Roles: []schemamodel.Role{
 			{Name: "postgres", Login: true, Superuser: true},
 			{Name: "pg_monitor"},
 			{Name: "app_user", Login: true},
@@ -353,7 +353,7 @@ func TestRolesReservedNameIsRefusedBeforeThisComparisonRunsAtAll(t *testing.T) {
 	}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.Roles(generated, database, diff, compare.CoverageOf(generated, database))
+	compare.Roles(desired, database, diff, compare.CoverageOf(desired, database))
 
 	c.Assert(diff.RolesAdded, qt.DeepEquals, []string{"pg_monitor", "postgres"},
 		qt.Commentf("reserved names are in neither database list, so they read as absent"))
@@ -362,14 +362,14 @@ func TestRolesReservedNameIsRefusedBeforeThisComparisonRunsAtAll(t *testing.T) {
 		c.Assert(reservedrole.Is(roleName), qt.IsTrue,
 			qt.Commentf("%q read as absent but the refusal would not have caught it", roleName))
 	}
-	c.Assert(reservedrole.ValidateDeclared("postgres", generated.Roles), qt.IsNotNil,
+	c.Assert(reservedrole.ValidateDeclared("postgres", desired.Roles), qt.IsNotNil,
 		qt.Commentf("the desired schema this comparison received should never have reached it"))
 }
 
 func TestRoleDefinitionsComparison(t *testing.T) {
 	t.Run("no differences", func(t *testing.T) {
 		c := qt.New(t)
-		generated := goschema.Role{
+		desired := schemamodel.Role{
 			Name:        "test_role",
 			Login:       true,
 			Superuser:   false,
@@ -388,7 +388,7 @@ func TestRoleDefinitionsComparison(t *testing.T) {
 			Replication: false,
 		}
 
-		diff := compare.RoleDefinitions(generated, database)
+		diff := compare.RoleDefinitions(desired, database)
 
 		c.Assert(diff.RoleName, qt.Equals, "test_role")
 		c.Assert(diff.Changes, qt.HasLen, 0)
@@ -396,7 +396,7 @@ func TestRoleDefinitionsComparison(t *testing.T) {
 
 	t.Run("all attributes different", func(t *testing.T) {
 		c := qt.New(t)
-		generated := goschema.Role{
+		desired := schemamodel.Role{
 			Name:        "test_role",
 			Login:       true,
 			Password:    "encrypted_password",
@@ -416,7 +416,7 @@ func TestRoleDefinitionsComparison(t *testing.T) {
 			Replication: false,
 		}
 
-		diff := compare.RoleDefinitions(generated, database)
+		diff := compare.RoleDefinitions(desired, database)
 
 		c.Assert(diff.RoleName, qt.Equals, "test_role")
 		c.Assert(diff.Changes, qt.HasLen, 7)
@@ -431,7 +431,7 @@ func TestRoleDefinitionsComparison(t *testing.T) {
 
 	t.Run("only login changed", func(t *testing.T) {
 		c := qt.New(t)
-		generated := goschema.Role{
+		desired := schemamodel.Role{
 			Name:  "test_role",
 			Login: true,
 		}
@@ -440,7 +440,7 @@ func TestRoleDefinitionsComparison(t *testing.T) {
 			Login: false,
 		}
 
-		diff := compare.RoleDefinitions(generated, database)
+		diff := compare.RoleDefinitions(desired, database)
 
 		c.Assert(diff.RoleName, qt.Equals, "test_role")
 		c.Assert(diff.Changes, qt.HasLen, 1)
@@ -449,7 +449,7 @@ func TestRoleDefinitionsComparison(t *testing.T) {
 
 	t.Run("password handling", func(t *testing.T) {
 		c := qt.New(t)
-		generated := goschema.Role{
+		desired := schemamodel.Role{
 			Name:     "test_role",
 			Password: "new_password",
 		}
@@ -457,7 +457,7 @@ func TestRoleDefinitionsComparison(t *testing.T) {
 			Name: "test_role",
 		}
 
-		diff := compare.RoleDefinitions(generated, database)
+		diff := compare.RoleDefinitions(desired, database)
 
 		c.Assert(diff.RoleName, qt.Equals, "test_role")
 		c.Assert(diff.Changes, qt.HasLen, 1)
@@ -466,7 +466,7 @@ func TestRoleDefinitionsComparison(t *testing.T) {
 
 	t.Run("no password change when target has no password", func(t *testing.T) {
 		c := qt.New(t)
-		generated := goschema.Role{
+		desired := schemamodel.Role{
 			Name:     "test_role",
 			Password: "", // No password in target
 		}
@@ -475,7 +475,7 @@ func TestRoleDefinitionsComparison(t *testing.T) {
 			HasPassword: true, // Database role has a password
 		}
 
-		diff := compare.RoleDefinitions(generated, database)
+		diff := compare.RoleDefinitions(desired, database)
 
 		c.Assert(diff.RoleName, qt.Equals, "test_role")
 		c.Assert(diff.Changes, qt.HasLen, 0) // No password change detected
@@ -485,9 +485,9 @@ func TestRoleDefinitionsComparison(t *testing.T) {
 func TestGrantsComparison(t *testing.T) {
 	t.Run("adds table and schema grants", func(t *testing.T) {
 		c := qt.New(t)
-		generated := &goschema.Database{
-			Roles: []goschema.Role{{Name: "app_role"}},
-			Grants: []goschema.Grant{
+		desired := &schemamodel.Database{
+			Roles: []schemamodel.Role{{Name: "app_role"}},
+			Grants: []schemamodel.Grant{
 				{Role: "app_role", Privileges: []string{"SELECT", "INSERT"}, OnTable: "users"},
 				{Role: "app_role", Privileges: []string{"USAGE"}, OnSchema: "public"},
 			},
@@ -495,7 +495,7 @@ func TestGrantsComparison(t *testing.T) {
 		database := &catalog.Database{}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Grants(generated, database, diff)
+		compare.Grants(desired, database, diff)
 
 		c.Assert(diff.GrantsAdded, qt.DeepEquals, []difftypes.GrantRef{
 			{Role: "app_role", Privilege: "USAGE", ObjectType: "SCHEMA", ObjectName: "public"},
@@ -507,9 +507,9 @@ func TestGrantsComparison(t *testing.T) {
 
 	t.Run("matches PostgreSQL row per privilege introspection", func(t *testing.T) {
 		c := qt.New(t)
-		generated := &goschema.Database{
-			Roles: []goschema.Role{{Name: "app_role"}},
-			Grants: []goschema.Grant{
+		desired := &schemamodel.Database{
+			Roles: []schemamodel.Role{{Name: "app_role"}},
+			Grants: []schemamodel.Grant{
 				{Role: "app_role", Privileges: []string{"select", "insert"}, OnTable: "public.users"},
 			},
 		}
@@ -521,7 +521,7 @@ func TestGrantsComparison(t *testing.T) {
 		}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Grants(generated, database, diff)
+		compare.Grants(desired, database, diff)
 
 		c.Assert(diff.GrantsAdded, qt.HasLen, 0)
 		c.Assert(diff.GrantsRemoved, qt.HasLen, 0)
@@ -529,9 +529,9 @@ func TestGrantsComparison(t *testing.T) {
 
 	t.Run("removes grants only for managed roles", func(t *testing.T) {
 		c := qt.New(t)
-		generated := &goschema.Database{
-			Roles:  []goschema.Role{{Name: "app_role"}},
-			Grants: []goschema.Grant{{Role: "app_role", Privileges: []string{"SELECT"}, OnTable: "users"}},
+		desired := &schemamodel.Database{
+			Roles:  []schemamodel.Role{{Name: "app_role"}},
+			Grants: []schemamodel.Grant{{Role: "app_role", Privileges: []string{"SELECT"}, OnTable: "users"}},
 		}
 		database := &catalog.Database{
 			Grants: []catalog.Grant{
@@ -541,7 +541,7 @@ func TestGrantsComparison(t *testing.T) {
 		}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Grants(generated, database, diff)
+		compare.Grants(desired, database, diff)
 
 		c.Assert(diff.GrantsRemoved, qt.DeepEquals, []difftypes.GrantRef{
 			{Role: "app_role", Privilege: "DELETE", ObjectType: "TABLE", ObjectName: "users"},
@@ -551,8 +551,8 @@ func TestGrantsComparison(t *testing.T) {
 
 	t.Run("matches explicit grants to external roles without revoking their other privileges", func(t *testing.T) {
 		c := qt.New(t)
-		generated := &goschema.Database{
-			Grants: []goschema.Grant{{Role: "external_role", Privileges: []string{"SELECT"}, OnTable: "users"}},
+		desired := &schemamodel.Database{
+			Grants: []schemamodel.Grant{{Role: "external_role", Privileges: []string{"SELECT"}, OnTable: "users"}},
 		}
 		database := &catalog.Database{
 			Grants: []catalog.Grant{
@@ -562,7 +562,7 @@ func TestGrantsComparison(t *testing.T) {
 		}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Grants(generated, database, diff)
+		compare.Grants(desired, database, diff)
 
 		c.Assert(diff.GrantsAdded, qt.HasLen, 0)
 		c.Assert(diff.GrantsRemoved, qt.HasLen, 0)
@@ -570,9 +570,9 @@ func TestGrantsComparison(t *testing.T) {
 
 	t.Run("downgrades grant option without revoking the privilege", func(t *testing.T) {
 		c := qt.New(t)
-		generated := &goschema.Database{
-			Roles:  []goschema.Role{{Name: "app_role"}},
-			Grants: []goschema.Grant{{Role: "app_role", Privileges: []string{"SELECT"}, OnTable: "users"}},
+		desired := &schemamodel.Database{
+			Roles:  []schemamodel.Role{{Name: "app_role"}},
+			Grants: []schemamodel.Grant{{Role: "app_role", Privileges: []string{"SELECT"}, OnTable: "users"}},
 		}
 		database := &catalog.Database{
 			Grants: []catalog.Grant{
@@ -581,7 +581,7 @@ func TestGrantsComparison(t *testing.T) {
 		}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Grants(generated, database, diff)
+		compare.Grants(desired, database, diff)
 
 		c.Assert(diff.GrantsAdded, qt.HasLen, 0)
 		c.Assert(diff.GrantsRemoved, qt.HasLen, 0)
@@ -592,9 +592,9 @@ func TestGrantsComparison(t *testing.T) {
 
 	t.Run("upgrades grant option without re-adding the privilege", func(t *testing.T) {
 		c := qt.New(t)
-		generated := &goschema.Database{
-			Roles: []goschema.Role{{Name: "app_role"}},
-			Grants: []goschema.Grant{
+		desired := &schemamodel.Database{
+			Roles: []schemamodel.Role{{Name: "app_role"}},
+			Grants: []schemamodel.Grant{
 				{Role: "app_role", Privileges: []string{"SELECT"}, OnTable: "users", WithOption: true},
 			},
 		}
@@ -605,7 +605,7 @@ func TestGrantsComparison(t *testing.T) {
 		}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Grants(generated, database, diff)
+		compare.Grants(desired, database, diff)
 
 		c.Assert(diff.GrantsAdded, qt.HasLen, 0)
 		c.Assert(diff.GrantsRemoved, qt.HasLen, 0)
@@ -617,7 +617,7 @@ func TestGrantsComparison(t *testing.T) {
 
 	t.Run("removing a grant with grant option still revokes the full privilege", func(t *testing.T) {
 		c := qt.New(t)
-		generated := &goschema.Database{Roles: []goschema.Role{{Name: "app_role"}}}
+		desired := &schemamodel.Database{Roles: []schemamodel.Role{{Name: "app_role"}}}
 		database := &catalog.Database{
 			Grants: []catalog.Grant{
 				{Role: "app_role", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "users", WithOption: true},
@@ -625,7 +625,7 @@ func TestGrantsComparison(t *testing.T) {
 		}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Grants(generated, database, diff)
+		compare.Grants(desired, database, diff)
 
 		c.Assert(diff.GrantsAdded, qt.HasLen, 0)
 		c.Assert(diff.GrantsRemoved, qt.DeepEquals, []difftypes.GrantRef{

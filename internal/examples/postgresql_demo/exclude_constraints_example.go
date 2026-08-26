@@ -5,6 +5,7 @@ import (
 	"log"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // Example 1: Room booking system with EXCLUDE constraint to prevent overlapping bookings
@@ -126,7 +127,7 @@ func runExcludeConstraintsExample() {
 
 	for _, table := range database.Tables {
 		// Find constraints for this table
-		var tableConstraints []goschema.Constraint
+		var tableConstraints []schemamodel.Constraint
 		for _, constraint := range database.Constraints {
 			if constraint.Table == table.Name {
 				tableConstraints = append(tableConstraints, constraint)

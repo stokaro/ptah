@@ -7,6 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // TestParseProcedureAnnotation covers the declaration a procedure needs and the
@@ -27,7 +28,7 @@ func TestParseProcedureAnnotation(t *testing.T) {
 		{
 			name:       "a procedure is parsed as one",
 			annotation: `//ptah:schema:procedure name="bump" params="n integer" language="sql" body="SELECT n"`,
-			wantKind:   goschema.FunctionKindProcedure,
+			wantKind:   schemamodel.FunctionKindProcedure,
 		},
 		{
 			name:       "a function is still a function",
@@ -60,7 +61,7 @@ func TestParseProcedureAnnotation(t *testing.T) {
 
 // routineKindOf returns the kind of the single parsed routine, or empty when
 // the parse was refused.
-func routineKindOf(database goschema.Database) string {
+func routineKindOf(database schemamodel.Database) string {
 	if len(database.Functions) != 1 {
 		return ""
 	}

@@ -17,9 +17,9 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 	"go.5x5.cz/ptah/internal/atlassource"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
@@ -77,7 +77,7 @@ func TestScopeDiffStatePreservesGeneratedDomainDependencies(t *testing.T) {
 	c.Assert(got.err, qt.IsNil)
 	c.Assert(got.schema.Fields, qt.HasLen, 1)
 	c.Assert(got.schema.Fields[0].Type, qt.Equals, "doms.positive")
-	c.Assert(got.schema.Domains, qt.DeepEquals, []goschema.Domain{{
+	c.Assert(got.schema.Domains, qt.DeepEquals, []schemamodel.Domain{{
 		Name:     "positive",
 		Schema:   "doms",
 		BaseType: "integer",
@@ -110,7 +110,7 @@ func TestScopeDiffStatePreservesQualifiedDatabaseFunctionIdentity(t *testing.T) 
 	c.Assert(got.database.Schemas, qt.DeepEquals, database.Schemas)
 	c.Assert(got.schema.Functions, qt.HasLen, 1)
 	c.Assert(got.schema.Functions[0].Name, qt.Equals, "extra.fn")
-	c.Assert(got.schema.Schemas, qt.DeepEquals, []goschema.Schema{{Name: "extra"}})
+	c.Assert(got.schema.Schemas, qt.DeepEquals, []schemamodel.Schema{{Name: "extra"}})
 }
 
 func TestScopeDiffStateExcludesQualifiedDatabaseEnumSymmetrically(t *testing.T) {
@@ -132,7 +132,7 @@ func TestScopeDiffStateExcludesQualifiedDatabaseEnumSymmetrically(t *testing.T) 
 	c.Assert(got.database.Enums, qt.HasLen, 0)
 	c.Assert(got.schema.Enums, qt.HasLen, 0)
 	c.Assert(got.database.Schemas, qt.DeepEquals, database.Schemas)
-	c.Assert(got.schema.Schemas, qt.DeepEquals, []goschema.Schema{{Name: "app"}})
+	c.Assert(got.schema.Schemas, qt.DeepEquals, []schemamodel.Schema{{Name: "app"}})
 }
 
 func TestScopeDiffStatesBareExcludePreservesCatalogSchemaSpelling(t *testing.T) {
@@ -145,7 +145,7 @@ func TestScopeDiffStatesBareExcludePreservesCatalogSchemaSpelling(t *testing.T) 
 
 	from, to := scopeDiffStates(
 		diffDatabaseState(current),
-		atlassource.State{Schema: &goschema.Database{}, DefaultSchema: "dbo"},
+		atlassource.State{Schema: &schemamodel.Database{}, DefaultSchema: "dbo"},
 		scope,
 		platform.SQLServer,
 	)
@@ -252,7 +252,7 @@ func TestScopeDiffStatePreservesDatabaseWideExtensionsAcrossSchemaUniverse(t *te
 	c.Assert(got.err, qt.IsNil)
 	c.Assert(got.selectionErr, qt.IsNil)
 	c.Assert(got.database.Extensions, qt.DeepEquals, database.Extensions)
-	c.Assert(got.schema.Extensions, qt.DeepEquals, []goschema.Extension{
+	c.Assert(got.schema.Extensions, qt.DeepEquals, []schemamodel.Extension{
 		{Schema: "extensions", Name: "citext", IfNotExists: true},
 		{Name: "pgcrypto", IfNotExists: true},
 		{Schema: "other", Name: "unrelated", IfNotExists: true},
@@ -280,9 +280,9 @@ func TestNonExtensionScopeDoesNotRemoveUnmentionedCurrentExtension(t *testing.T)
 			{Name: "pgcrypto"},
 		},
 	}
-	desired := &goschema.Database{
-		Tables:     []goschema.Table{{StructName: "User", Schema: "app", Name: "users"}},
-		Extensions: []goschema.Extension{{Schema: "extensions", Name: "citext"}},
+	desired := &schemamodel.Database{
+		Tables:     []schemamodel.Table{{StructName: "User", Schema: "app", Name: "users"}},
+		Extensions: []schemamodel.Extension{{Schema: "extensions", Name: "citext"}},
 	}
 	scope := atlasfilter.Scope{Include: []string{"app.users"}, DefaultSchema: "public"}
 
@@ -318,7 +318,7 @@ func TestCurrentOnlyNonExtensionMatchDoesNotRemoveUnrelatedExtension(t *testing.
 
 	from, to := scopeDiffStates(
 		diffDatabaseState(current),
-		atlassource.State{Schema: &goschema.Database{}, DefaultSchema: "public"},
+		atlassource.State{Schema: &schemamodel.Database{}, DefaultSchema: "public"},
 		scope,
 		"postgres",
 	)
@@ -336,9 +336,9 @@ func TestCurrentOnlyNonExtensionMatchDoesNotRemoveUnrelatedExtension(t *testing.
 func TestDesiredOnlyNonExtensionMatchStillAddsDeclaredExtension(t *testing.T) {
 	c := qt.New(t)
 	current := &catalog.Database{}
-	desired := &goschema.Database{
-		Tables:     []goschema.Table{{StructName: "User", Schema: "app", Name: "users"}},
-		Extensions: []goschema.Extension{{Schema: "extensions", Name: "citext"}},
+	desired := &schemamodel.Database{
+		Tables:     []schemamodel.Table{{StructName: "User", Schema: "app", Name: "users"}},
+		Extensions: []schemamodel.Extension{{Schema: "extensions", Name: "citext"}},
 	}
 	scope := atlasfilter.Scope{Include: []string{"app.users"}, DefaultSchema: "public"}
 
@@ -366,9 +366,9 @@ func TestDesiredOnlyNonExtensionMatchDoesNotReAddCurrentSupportExtension(t *test
 		{Schema: "extensions", Name: "citext"},
 		{Name: "pgcrypto"},
 	}}
-	desired := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "User", Schema: "app", Name: "users"}},
-		Extensions: []goschema.Extension{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Schema: "app", Name: "users"}},
+		Extensions: []schemamodel.Extension{
 			{Schema: "extensions", Name: "citext"},
 			{Name: "pgcrypto"},
 		},
@@ -399,7 +399,7 @@ func TestDesiredOnlyNonExtensionMatchDoesNotReAddCurrentSupportExtension(t *test
 func TestExtensionOnlyScopeStillRemovesSelectedExtension(t *testing.T) {
 	c := qt.New(t)
 	current := &catalog.Database{Extensions: []catalog.Extension{{Name: "pgcrypto"}}}
-	desired := &goschema.Database{}
+	desired := &schemamodel.Database{}
 	scope := atlasfilter.Scope{Include: []string{"pgcrypto"}, DefaultSchema: "public"}
 
 	from, to := scopeDiffStates(
@@ -432,19 +432,19 @@ func TestValidateDiffSystemSchemaStatesRefusesAuthoredStates(t *testing.T) {
 		{
 			name:    "PostgreSQL current document",
 			dialect: platform.Postgres,
-			fromState: atlassource.State{Schema: &goschema.Database{
-				Schemas: []goschema.Schema{{Name: "pg_catalog"}},
+			fromState: atlassource.State{Schema: &schemamodel.Database{
+				Schemas: []schemamodel.Schema{{Name: "pg_catalog"}},
 			}},
-			toState:  atlassource.State{Schema: &goschema.Database{}},
+			toState:  atlassource.State{Schema: &schemamodel.Database{}},
 			wantFlag: "--from",
 			wantName: "pg_catalog",
 		},
 		{
 			name:      "PostgreSQL desired document",
 			dialect:   platform.Postgres,
-			fromState: atlassource.State{Schema: &goschema.Database{}},
-			toState: atlassource.State{Schema: &goschema.Database{
-				Schemas: []goschema.Schema{{Name: "information_schema"}},
+			fromState: atlassource.State{Schema: &schemamodel.Database{}},
+			toState: atlassource.State{Schema: &schemamodel.Database{
+				Schemas: []schemamodel.Schema{{Name: "information_schema"}},
 			}},
 			wantFlag: "--to",
 			wantName: "information_schema",
@@ -452,9 +452,9 @@ func TestValidateDiffSystemSchemaStatesRefusesAuthoredStates(t *testing.T) {
 		{
 			name:      "CockroachDB desired document",
 			dialect:   platform.CockroachDB,
-			fromState: atlassource.State{Schema: &goschema.Database{}},
-			toState: atlassource.State{Schema: &goschema.Database{
-				Schemas: []goschema.Schema{{Name: "crdb_internal"}},
+			fromState: atlassource.State{Schema: &schemamodel.Database{}},
+			toState: atlassource.State{Schema: &schemamodel.Database{
+				Schemas: []schemamodel.Schema{{Name: "crdb_internal"}},
 			}},
 			wantFlag: "--to",
 			wantName: "crdb_internal",
@@ -483,7 +483,7 @@ func TestValidateDiffSystemSchemaStatesRefusesUnsafeObservedStates(t *testing.T)
 	crdbInternal.Kind = atlassource.KindDatabase
 	replayedCatalog := diffDatabaseState(&catalog.Database{Schemas: []catalog.Schema{{Name: "pg_catalog"}}})
 	replayedCatalog.Kind = atlassource.KindMigrationDir
-	empty := atlassource.State{Schema: &goschema.Database{}}
+	empty := atlassource.State{Schema: &schemamodel.Database{}}
 	tests := []struct {
 		name      string
 		dialect   string
@@ -538,10 +538,10 @@ func TestValidateDiffSystemSchemaStatesAllowsOrdinaryObservedStates(t *testing.T
 	}
 }
 
-func diffDatabaseState(database *catalog.Database) atlassource.State {
+func diffDatabaseState(current *catalog.Database) atlassource.State {
 	return atlassource.State{
-		Schema:        dbschematogo.ConvertDBSchemaToGoSchema(database),
-		DB:            database,
+		Schema:        dbschematogo.ConvertDBSchemaToGoSchema(current),
+		DB:            current,
 		DefaultSchema: "public",
 	}
 }

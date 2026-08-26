@@ -11,8 +11,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
@@ -44,17 +44,17 @@ func TestGenerateDownMigrationSQL_RestoresModifiedViewInANamedSchema(t *testing.
 	const priorBody = "SELECT id FROM rev_view_users"
 	const targetBody = "SELECT id, email FROM rev_view_users"
 
-	schema := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "RevViewUser", Name: "rev_view_users"}},
-		Fields: []goschema.Field{
+	schema := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "RevViewUser", Name: "rev_view_users"}},
+		Fields: []schemamodel.Field{
 			{StructName: "RevViewUser", Name: "id", Type: "BIGINT", Primary: true},
 			{StructName: "RevViewUser", Name: "email", Type: "TEXT"},
 		},
-		Views: []goschema.View{
+		Views: []schemamodel.View{
 			{StructName: "RevActiveUsers", Name: "rev_active_users", Body: targetBody},
 		},
 	}
-	goschema.Finalize(schema)
+	schemamodel.Finalize(schema)
 
 	db := &catalog.Database{
 		Tables: []catalog.Table{{

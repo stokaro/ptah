@@ -18,6 +18,7 @@ These packages are intended for application and tool embedders:
 - `go.5x5.cz/ptah/core/astbuilder`
 - `go.5x5.cz/ptah/core/coverage`
 - `go.5x5.cz/ptah/core/goschema`
+- `go.5x5.cz/ptah/core/schemamodel`
 - `go.5x5.cz/ptah/core/platform`
 - `go.5x5.cz/ptah/core/platform/capability`
 - `go.5x5.cz/ptah/core/platform/identifier`

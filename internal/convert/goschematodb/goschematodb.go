@@ -10,8 +10,8 @@ import (
 	"slices"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/tableref"
 )
@@ -23,16 +23,16 @@ import (
 //
 // dialect names the target the converted schema will be compared under. It only
 // decides how the one goschema field that carries two concepts is unpacked:
-// goschema.Index.Type is the PostgreSQL access method on a PostgreSQL-family
+// schemamodel.Index.Type is the PostgreSQL access method on a PostgreSQL-family
 // target and the ClickHouse data-skipping-index type on ClickHouse, and the DB
 // shape keeps those apart in Method and Type. An empty dialect converts as if
 // no target were known and leaves Method unset.
-func ToDBSchema(db *goschema.Database, dialect string) *catalog.Database {
+func ToDBSchema(db *schemamodel.Database, dialect string) *catalog.Database {
 	if db == nil {
 		return &catalog.Database{}
 	}
 
-	tableByStruct := make(map[string]goschema.Table, len(db.Tables))
+	tableByStruct := make(map[string]schemamodel.Table, len(db.Tables))
 	for _, table := range db.Tables {
 		tableByStruct[table.StructName] = table
 	}
@@ -64,7 +64,7 @@ func ToDBSchema(db *goschema.Database, dialect string) *catalog.Database {
 	return out
 }
 
-func toDBSchemas(schemas []goschema.Schema) []catalog.Schema {
+func toDBSchemas(schemas []schemamodel.Schema) []catalog.Schema {
 	out := make([]catalog.Schema, 0, len(schemas))
 	for _, schema := range schemas {
 		out = append(out, catalog.Schema{
@@ -78,11 +78,11 @@ func toDBSchemas(schemas []goschema.Schema) []catalog.Schema {
 }
 
 func toDBTables(
-	tables []goschema.Table,
-	fields []goschema.Field,
-	rlsEnabledTables []goschema.RLSEnabledTable,
+	tables []schemamodel.Table,
+	fields []schemamodel.Field,
+	rlsEnabledTables []schemamodel.RLSEnabledTable,
 ) []catalog.Table {
-	fieldsByStruct := make(map[string][]goschema.Field)
+	fieldsByStruct := make(map[string][]schemamodel.Field)
 	for _, field := range fields {
 		fieldsByStruct[field.StructName] = append(fieldsByStruct[field.StructName], field)
 	}
@@ -108,15 +108,15 @@ func toDBTables(
 	return out
 }
 
-func tableRLSEnabled(table goschema.Table, enabledTables []goschema.RLSEnabledTable) bool {
-	return slices.ContainsFunc(enabledTables, func(enabled goschema.RLSEnabledTable) bool {
+func tableRLSEnabled(table schemamodel.Table, enabledTables []schemamodel.RLSEnabledTable) bool {
+	return slices.ContainsFunc(enabledTables, func(enabled schemamodel.RLSEnabledTable) bool {
 		return enabled.StructName != "" && enabled.StructName == table.StructName ||
 			enabled.Table == table.QualifiedName() ||
 			table.Schema == "" && enabled.Table == table.Name
 	})
 }
 
-func toDBColumns(fields []goschema.Field) []catalog.Column {
+func toDBColumns(fields []schemamodel.Field) []catalog.Column {
 	out := make([]catalog.Column, 0, len(fields))
 	for i, field := range fields {
 		out = append(out, toDBColumn(field, i+1))
@@ -124,7 +124,7 @@ func toDBColumns(fields []goschema.Field) []catalog.Column {
 	return out
 }
 
-func toDBColumn(field goschema.Field, ordinal int) catalog.Column {
+func toDBColumn(field schemamodel.Field, ordinal int) catalog.Column {
 	nullable := "NO"
 	if field.Nullable {
 		nullable = "YES"
@@ -156,7 +156,7 @@ func toDBColumn(field goschema.Field, ordinal int) catalog.Column {
 	return column
 }
 
-func applyTablePrimaryKeys(schema *catalog.Database, tables []goschema.Table) {
+func applyTablePrimaryKeys(schema *catalog.Database, tables []schemamodel.Table) {
 	primaryByTable := make(map[string]map[string]struct{})
 	for _, table := range tables {
 		if len(table.PrimaryKey) == 0 {
@@ -181,7 +181,7 @@ func applyTablePrimaryKeys(schema *catalog.Database, tables []goschema.Table) {
 	}
 }
 
-func toDBEnums(enums []goschema.Enum) []catalog.Enum {
+func toDBEnums(enums []schemamodel.Enum) []catalog.Enum {
 	out := make([]catalog.Enum, 0, len(enums))
 	for _, enum := range enums {
 		out = append(out, catalog.Enum{Name: enum.Name, Values: append([]string(nil), enum.Values...)})
@@ -198,8 +198,8 @@ func toDBEnums(enums []goschema.Enum) []catalog.Enum {
 // --from side is a local file would have reported a rebuild for every index
 // carrying any of them against the database it was inspected from.
 func toDBIndexes(
-	indexes []goschema.Index,
-	tables map[string]goschema.Table,
+	indexes []schemamodel.Index,
+	tables map[string]schemamodel.Table,
 	dialect string,
 ) []catalog.Index {
 	out := make([]catalog.Index, 0, len(indexes))
@@ -224,7 +224,7 @@ func toDBIndexes(
 	return out
 }
 
-// indexAccessMethod reports goschema.Index.Type as an access method only where
+// indexAccessMethod reports schemamodel.Index.Type as an access method only where
 // that is what it means. On ClickHouse the same field carries the
 // data-skipping-index type, which is a different concept the DB shape keeps in
 // Index.Type.
@@ -239,7 +239,7 @@ func indexAccessMethod(indexType, dialect string) string {
 // operator class the way the renderer applies it: a part without its own class
 // inherits the index's, so the DB shape -- which has no index-level slot --
 // records the resolved value per part.
-func toDBIndexParts(parts []goschema.IndexPart, indexOperator string) []catalog.IndexPart {
+func toDBIndexParts(parts []schemamodel.IndexPart, indexOperator string) []catalog.IndexPart {
 	if len(parts) == 0 {
 		return nil
 	}
@@ -261,12 +261,12 @@ func toDBIndexParts(parts []goschema.IndexPart, indexOperator string) []catalog.
 }
 
 func toDBConstraints(
-	tablesList []goschema.Table,
-	fields []goschema.Field,
-	constraints []goschema.Constraint,
-	tables map[string]goschema.Table,
+	tablesList []schemamodel.Table,
+	fields []schemamodel.Field,
+	constraints []schemamodel.Constraint,
+	tables map[string]schemamodel.Table,
 ) []catalog.Constraint {
-	fieldsByStruct := make(map[string][]goschema.Field)
+	fieldsByStruct := make(map[string][]schemamodel.Field)
 	for _, field := range fields {
 		fieldsByStruct[field.StructName] = append(fieldsByStruct[field.StructName], field)
 	}
@@ -343,7 +343,7 @@ func toDBConstraints(
 	return out
 }
 
-func toDBFieldConstraints(table goschema.Table, field goschema.Field) []catalog.Constraint {
+func toDBFieldConstraints(table schemamodel.Table, field schemamodel.Field) []catalog.Constraint {
 	var out []catalog.Constraint
 	if field.Check != "" {
 		name := field.CheckName
@@ -388,14 +388,14 @@ func toDBFieldConstraints(table goschema.Table, field goschema.Field) []catalog.
 	return out
 }
 
-func tablePrimaryKeyName(table goschema.Table) string {
+func tablePrimaryKeyName(table schemamodel.Table) string {
 	if table.Name == "" {
 		return "primary"
 	}
 	return table.Name + "_pkey"
 }
 
-func indexTable(structName, explicitTable string, tables map[string]goschema.Table) (tableName, schema string) {
+func indexTable(structName, explicitTable string, tables map[string]schemamodel.Table) (tableName, schema string) {
 	if explicitTable != "" {
 		return splitTableIdentity(explicitTable)
 	}
@@ -414,7 +414,7 @@ func splitTableIdentity(value string) (name, schema string) {
 	return ref.Name, ref.Schema
 }
 
-func toDBExtensions(extensions []goschema.Extension) []catalog.Extension {
+func toDBExtensions(extensions []schemamodel.Extension) []catalog.Extension {
 	out := make([]catalog.Extension, 0, len(extensions))
 	for _, extension := range extensions {
 		out = append(out, catalog.Extension{
@@ -429,7 +429,7 @@ func toDBExtensions(extensions []goschema.Extension) []catalog.Extension {
 	return out
 }
 
-func toDBSequences(sequences []goschema.Sequence) []catalog.Sequence {
+func toDBSequences(sequences []schemamodel.Sequence) []catalog.Sequence {
 	out := make([]catalog.Sequence, 0, len(sequences))
 	for _, sequence := range sequences {
 		out = append(out, catalog.Sequence{
@@ -449,7 +449,7 @@ func toDBSequences(sequences []goschema.Sequence) []catalog.Sequence {
 	return out
 }
 
-func toDBDomains(domains []goschema.Domain) []catalog.Domain {
+func toDBDomains(domains []schemamodel.Domain) []catalog.Domain {
 	out := make([]catalog.Domain, 0, len(domains))
 	for _, domain := range domains {
 		defaultValue := domain.Default
@@ -468,7 +468,7 @@ func toDBDomains(domains []goschema.Domain) []catalog.Domain {
 	return out
 }
 
-func toDBCompositeTypes(composites []goschema.CompositeType) []catalog.CompositeType {
+func toDBCompositeTypes(composites []schemamodel.CompositeType) []catalog.CompositeType {
 	out := make([]catalog.CompositeType, 0, len(composites))
 	for _, composite := range composites {
 		fields := make([]catalog.CompositeField, 0, len(composite.Fields))
@@ -487,7 +487,7 @@ func toDBCompositeTypes(composites []goschema.CompositeType) []catalog.Composite
 	return out
 }
 
-func toDBRanges(ranges []goschema.Range) []catalog.Range {
+func toDBRanges(ranges []schemamodel.Range) []catalog.Range {
 	out := make([]catalog.Range, 0, len(ranges))
 	for _, rangeType := range ranges {
 		out = append(out, catalog.Range{
@@ -499,7 +499,7 @@ func toDBRanges(ranges []goschema.Range) []catalog.Range {
 	return out
 }
 
-func toDBFunctions(functions []goschema.Function) []catalog.Function {
+func toDBFunctions(functions []schemamodel.Function) []catalog.Function {
 	out := make([]catalog.Function, 0, len(functions))
 	for _, function := range functions {
 		function.Canonicalize()
@@ -519,7 +519,7 @@ func toDBFunctions(functions []goschema.Function) []catalog.Function {
 	return out
 }
 
-func toDBViews(views []goschema.View) []catalog.View {
+func toDBViews(views []schemamodel.View) []catalog.View {
 	out := make([]catalog.View, 0, len(views))
 	for _, view := range views {
 		name, schema := splitTableIdentity(view.Name)
@@ -538,7 +538,7 @@ func toDBViews(views []goschema.View) []catalog.View {
 	return out
 }
 
-func toDBMaterializedViews(views []goschema.MaterializedView) []catalog.MaterializedView {
+func toDBMaterializedViews(views []schemamodel.MaterializedView) []catalog.MaterializedView {
 	out := make([]catalog.MaterializedView, 0, len(views))
 	for _, view := range views {
 		name, schema := splitTableIdentity(view.Name)
@@ -552,7 +552,7 @@ func toDBMaterializedViews(views []goschema.MaterializedView) []catalog.Material
 	return out
 }
 
-func toDBTriggers(triggers []goschema.Trigger, tables map[string]goschema.Table) []catalog.Trigger {
+func toDBTriggers(triggers []schemamodel.Trigger, tables map[string]schemamodel.Table) []catalog.Trigger {
 	out := make([]catalog.Trigger, 0, len(triggers))
 	for _, trigger := range triggers {
 		trigger.Canonicalize()
@@ -571,7 +571,7 @@ func toDBTriggers(triggers []goschema.Trigger, tables map[string]goschema.Table)
 	return out
 }
 
-func toDBRLSPolicies(policies []goschema.RLSPolicy) []catalog.RLSPolicy {
+func toDBRLSPolicies(policies []schemamodel.RLSPolicy) []catalog.RLSPolicy {
 	out := make([]catalog.RLSPolicy, 0, len(policies))
 	for _, policy := range policies {
 		out = append(out, catalog.RLSPolicy{
@@ -587,7 +587,7 @@ func toDBRLSPolicies(policies []goschema.RLSPolicy) []catalog.RLSPolicy {
 	return out
 }
 
-func toDBRoles(roles []goschema.Role) []catalog.Role {
+func toDBRoles(roles []schemamodel.Role) []catalog.Role {
 	out := make([]catalog.Role, 0, len(roles))
 	for _, role := range roles {
 		out = append(out, catalog.Role{
@@ -605,7 +605,7 @@ func toDBRoles(roles []goschema.Role) []catalog.Role {
 	return out
 }
 
-func toDBGrants(grants []goschema.Grant) []catalog.Grant {
+func toDBGrants(grants []schemamodel.Grant) []catalog.Grant {
 	var out []catalog.Grant
 	for _, grant := range grants {
 		grant.Canonicalize()

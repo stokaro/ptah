@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 )
 
@@ -176,47 +176,47 @@ func TestExcludeSelectorsReachChildResources(t *testing.T) {
 // objects: app.users carries an index, a trigger, an RLS policy, a grant, an
 // enum-typed column, and an owned sequence; app.audit_log references
 // app.users via a foreign key; billing.invoices lives in another schema.
-func scopeGeneratedFixture() *goschema.Database {
-	return &goschema.Database{
-		Schemas: []goschema.Schema{{Name: "app"}, {Name: "billing"}},
-		Tables: []goschema.Table{
+func scopeGeneratedFixture() *schemamodel.Database {
+	return &schemamodel.Database{
+		Schemas: []schemamodel.Schema{{Name: "app"}, {Name: "billing"}},
+		Tables: []schemamodel.Table{
 			{StructName: "User", Schema: "app", Name: "users"},
 			{StructName: "AuditLog", Schema: "app", Name: "audit_log"},
 			{StructName: "Invoice", Schema: "billing", Name: "invoices"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "INTEGER"},
 			{StructName: "User", Name: "status", Type: "user_status"},
 			{StructName: "AuditLog", Name: "id", Type: "INTEGER"},
 			{StructName: "AuditLog", Name: "user_id", Type: "INTEGER", Foreign: "users(id)"},
 			{StructName: "Invoice", Name: "id", Type: "INTEGER"},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{StructName: "User", Name: "users_status_idx", Fields: []string{"status"}},
 			{StructName: "AuditLog", Name: "audit_log_user_idx", Fields: []string{"user_id"}},
 		},
-		Enums: []goschema.Enum{
+		Enums: []schemamodel.Enum{
 			{Name: "user_status", Values: []string{"active", "inactive"}},
 			{Name: "invoice_status", Values: []string{"open", "paid"}},
 		},
-		Sequences: []goschema.Sequence{
+		Sequences: []schemamodel.Sequence{
 			{StructName: "UserSeq", Schema: "app", Name: "user_number_seq", OwnedBy: "users.id"},
 			{StructName: "InvoiceSeq", Schema: "billing", Name: "invoice_number_seq"},
 		},
-		Triggers: []goschema.Trigger{
+		Triggers: []schemamodel.Trigger{
 			{StructName: "User", Table: "users", Name: "users_updated_at", Body: "NEW.updated_at = NOW(); RETURN NEW;"},
 		},
-		RLSPolicies: []goschema.RLSPolicy{
+		RLSPolicies: []schemamodel.RLSPolicy{
 			{StructName: "User", Table: "users", Name: "users_policy"},
 		},
-		RLSEnabledTables: []goschema.RLSEnabledTable{
+		RLSEnabledTables: []schemamodel.RLSEnabledTable{
 			{StructName: "User", Table: "users"},
 		},
-		Roles: []goschema.Role{
+		Roles: []schemamodel.Role{
 			{Name: "app_user"},
 			{Name: "billing_user"},
 		},
-		Grants: []goschema.Grant{
+		Grants: []schemamodel.Grant{
 			{Role: "app_user", Privileges: []string{"SELECT"}, OnTable: "users"},
 			{Role: "billing_user", Privileges: []string{"SELECT"}, OnTable: "invoices"},
 		},
@@ -376,16 +376,16 @@ func TestScopeGenerated_FailurePath(t *testing.T) {
 
 	t.Run("constraint foreign key to unselected table", func(t *testing.T) {
 		c := qt.New(t)
-		schema := &goschema.Database{
-			Tables: []goschema.Table{
+		schema := &schemamodel.Database{
+			Tables: []schemamodel.Table{
 				{StructName: "Order", Name: "orders"},
 				{StructName: "User", Name: "users"},
 			},
-			Fields: []goschema.Field{
+			Fields: []schemamodel.Field{
 				{StructName: "Order", Name: "id", Type: "INTEGER"},
 				{StructName: "User", Name: "id", Type: "INTEGER"},
 			},
-			Constraints: []goschema.Constraint{
+			Constraints: []schemamodel.Constraint{
 				{StructName: "Order", Name: "orders_user_fk", Type: "FOREIGN KEY", Columns: []string{"user_id"}, ForeignTable: "users", ForeignColumn: "id"},
 			},
 		}
@@ -399,8 +399,8 @@ func TestScopeGenerated_FailurePath(t *testing.T) {
 
 	t.Run("function depending on unselected function", func(t *testing.T) {
 		c := qt.New(t)
-		schema := &goschema.Database{
-			Functions: []goschema.Function{
+		schema := &schemamodel.Database{
+			Functions: []schemamodel.Function{
 				{Name: "outer_fn"},
 				{Name: "inner_fn"},
 			},
@@ -418,10 +418,10 @@ func TestScopeGenerated_FailurePath(t *testing.T) {
 
 	t.Run("view referencing unselected table", func(t *testing.T) {
 		c := qt.New(t)
-		schema := &goschema.Database{
-			Tables: []goschema.Table{{StructName: "User", Name: "users"}},
-			Fields: []goschema.Field{{StructName: "User", Name: "id", Type: "INTEGER"}},
-			Views:  []goschema.View{{Name: "active_users", Body: "SELECT * FROM users WHERE active"}},
+		schema := &schemamodel.Database{
+			Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
+			Fields: []schemamodel.Field{{StructName: "User", Name: "id", Type: "INTEGER"}},
+			Views:  []schemamodel.View{{Name: "active_users", Body: "SELECT * FROM users WHERE active"}},
 		}
 		_, err := atlasfilter.ScopeGenerated(schema, atlasfilter.Scope{Include: []string{"active_users"}})
 		var crossScope *atlasfilter.CrossScopeError
@@ -447,11 +447,11 @@ func TestScopeGenerated_FailurePath(t *testing.T) {
 
 	t.Run("excluded enum keeps schema identity in dependency diagnostics", func(t *testing.T) {
 		c := qt.New(t)
-		schema := &goschema.Database{
-			Schemas: []goschema.Schema{{Name: "app"}, {Name: "public"}},
-			Tables:  []goschema.Table{{StructName: "User", Schema: "app", Name: "users"}},
-			Fields:  []goschema.Field{{StructName: "User", Name: "color", Type: "app.color"}},
-			Enums: []goschema.Enum{
+		schema := &schemamodel.Database{
+			Schemas: []schemamodel.Schema{{Name: "app"}, {Name: "public"}},
+			Tables:  []schemamodel.Table{{StructName: "User", Schema: "app", Name: "users"}},
+			Fields:  []schemamodel.Field{{StructName: "User", Name: "color", Type: "app.color"}},
+			Enums: []schemamodel.Enum{
 				{Schema: "app", Name: "color"},
 				{Schema: "public", Name: "color"},
 			},
@@ -643,42 +643,42 @@ func TestScopeGenerated_QualifiedFunctionAndEnumRetainOwningSchema(t *testing.T)
 		name      string
 		include   string
 		functions []string
-		enums     []goschema.Enum
+		enums     []schemamodel.Enum
 		schema    string
 	}{
 		{
 			name:      "qualified function",
 			include:   "app.fn_app",
 			functions: []string{"app.fn_app"},
-			enums:     make([]goschema.Enum, 0),
+			enums:     make([]schemamodel.Enum, 0),
 			schema:    "app",
 		},
 		{
 			name:      "bare function",
 			include:   "fn_app",
 			functions: []string{"app.fn_app"},
-			enums:     make([]goschema.Enum, 0),
+			enums:     make([]schemamodel.Enum, 0),
 			schema:    "app",
 		},
 		{
 			name:      "qualified enum with explicit schema",
 			include:   "app.color",
 			functions: make([]string, 0),
-			enums:     []goschema.Enum{{Schema: "app", Name: "color"}},
+			enums:     []schemamodel.Enum{{Schema: "app", Name: "color"}},
 			schema:    "app",
 		},
 		{
 			name:      "bare enum with explicit schema",
 			include:   "color",
 			functions: make([]string, 0),
-			enums:     []goschema.Enum{{Schema: "app", Name: "color"}},
+			enums:     []schemamodel.Enum{{Schema: "app", Name: "color"}},
 			schema:    "app",
 		},
 		{
 			name:      "qualified legacy enum name",
 			include:   "legacy.state",
 			functions: make([]string, 0),
-			enums:     []goschema.Enum{{Name: "legacy.state"}},
+			enums:     []schemamodel.Enum{{Name: "legacy.state"}},
 			schema:    "legacy",
 		},
 	}
@@ -686,10 +686,10 @@ func TestScopeGenerated_QualifiedFunctionAndEnumRetainOwningSchema(t *testing.T)
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			got, err := atlasfilter.ScopeGenerated(&goschema.Database{
-				Schemas:   []goschema.Schema{{Name: "app"}, {Name: "legacy"}},
-				Functions: []goschema.Function{{Name: "app.fn_app"}},
-				Enums: []goschema.Enum{
+			got, err := atlasfilter.ScopeGenerated(&schemamodel.Database{
+				Schemas:   []schemamodel.Schema{{Name: "app"}, {Name: "legacy"}},
+				Functions: []schemamodel.Function{{Name: "app.fn_app"}},
+				Enums: []schemamodel.Enum{
 					{Schema: "app", Name: "color"},
 					{Name: "legacy.state"},
 				},
@@ -708,10 +708,10 @@ func TestScopeGenerated_WrongQualifiedFunctionAndEnumMatchNothing(t *testing.T) 
 	for _, include := range tests {
 		t.Run(include, func(t *testing.T) {
 			c := qt.New(t)
-			got, err := atlasfilter.ScopeGenerated(&goschema.Database{
-				Schemas:   []goschema.Schema{{Name: "app"}},
-				Functions: []goschema.Function{{Name: "app.fn_app"}},
-				Enums:     []goschema.Enum{{Schema: "app", Name: "color"}},
+			got, err := atlasfilter.ScopeGenerated(&schemamodel.Database{
+				Schemas:   []schemamodel.Schema{{Name: "app"}},
+				Functions: []schemamodel.Function{{Name: "app.fn_app"}},
+				Enums:     []schemamodel.Enum{{Schema: "app", Name: "color"}},
 			}, atlasfilter.Scope{Include: []string{include}, DefaultSchema: "public"})
 
 			c.Assert(err, qt.ErrorMatches, `the --include selection matched no objects: ".*"`)
@@ -810,7 +810,7 @@ func TestScopeDatabase_FailurePath(t *testing.T) {
 	})
 }
 
-func generatedSchemaNames(schemas []goschema.Schema) []string {
+func generatedSchemaNames(schemas []schemamodel.Schema) []string {
 	names := make([]string, 0, len(schemas))
 	for _, schema := range schemas {
 		names = append(names, schema.Name)
@@ -818,7 +818,7 @@ func generatedSchemaNames(schemas []goschema.Schema) []string {
 	return names
 }
 
-func generatedEnumNames(enums []goschema.Enum) []string {
+func generatedEnumNames(enums []schemamodel.Enum) []string {
 	names := make([]string, 0, len(enums))
 	for _, enum := range enums {
 		names = append(names, enum.Name)
@@ -826,7 +826,7 @@ func generatedEnumNames(enums []goschema.Enum) []string {
 	return names
 }
 
-func generatedSequenceNames(sequences []goschema.Sequence) []string {
+func generatedSequenceNames(sequences []schemamodel.Sequence) []string {
 	names := make([]string, 0, len(sequences))
 	for _, sequence := range sequences {
 		names = append(names, sequence.QualifiedName())
@@ -834,7 +834,7 @@ func generatedSequenceNames(sequences []goschema.Sequence) []string {
 	return names
 }
 
-func generatedRoleNames(roles []goschema.Role) []string {
+func generatedRoleNames(roles []schemamodel.Role) []string {
 	names := make([]string, 0, len(roles))
 	for _, role := range roles {
 		names = append(names, role.Name)

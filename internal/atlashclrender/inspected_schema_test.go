@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashcl"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 )
@@ -82,7 +82,7 @@ func TestRenderInspectedDoesNotDuplicateADeclaredSchema(t *testing.T) {
 	c := qt.New(t)
 
 	db := inspectedTable("public")
-	db.Schemas = []goschema.Schema{{Name: "public", Comment: "standard public schema"}}
+	db.Schemas = []schemamodel.Schema{{Name: "public", Comment: "standard public schema"}}
 
 	result, err := atlashclrender.RenderInspected(db, platform.Postgres, "public")
 
@@ -100,11 +100,11 @@ func TestRenderInspectedDoesNotDuplicateADeclaredSchema(t *testing.T) {
 func TestRenderForDialectSynthesizesNoSchema(t *testing.T) {
 	tests := []struct {
 		name   string
-		render func(*goschema.Database) (atlashclrender.Result, error)
+		render func(*schemamodel.Database) (atlashclrender.Result, error)
 	}{
 		{
 			name: "the dialect-aware entry point",
-			render: func(db *goschema.Database) (atlashclrender.Result, error) {
+			render: func(db *schemamodel.Database) (atlashclrender.Result, error) {
 				return atlashclrender.RenderForDialect(db, platform.Postgres)
 			},
 		},
@@ -160,7 +160,7 @@ func TestRenderWritesPermissionBodiesThatEvaluate(t *testing.T) {
 	tests := []struct {
 		name  string
 		role  string
-		roles []goschema.Role
+		roles []schemamodel.Role
 		want  string
 	}{
 		{
@@ -176,7 +176,7 @@ func TestRenderWritesPermissionBodiesThatEvaluate(t *testing.T) {
 		{
 			name:  "a named role the document declares stays a reference",
 			role:  "app",
-			roles: []goschema.Role{{Name: "app"}},
+			roles: []schemamodel.Role{{Name: "app"}},
 			want:  "  to = role.app\n",
 		},
 		{
@@ -193,7 +193,7 @@ func TestRenderWritesPermissionBodiesThatEvaluate(t *testing.T) {
 
 			db := inspectedTable("public")
 			db.Roles = test.roles
-			db.Grants = []goschema.Grant{{
+			db.Grants = []schemamodel.Grant{{
 				Role:       test.role,
 				OnSchema:   "public",
 				Privileges: []string{"USAGE"},
@@ -224,14 +224,14 @@ func TestRenderWritesPermissionBodiesThatEvaluate(t *testing.T) {
 func TestRenderInspectedDeclaresTheSchemaAGrantReferences(t *testing.T) {
 	tests := []struct {
 		name        string
-		db          func() *goschema.Database
+		db          func() *schemamodel.Database
 		wantPresent []string
 		wantAbsent  []string
 	}{
 		{
 			name: "a grant on the schema is the only thing referencing it",
-			db: func() *goschema.Database {
-				return &goschema.Database{Grants: []goschema.Grant{{
+			db: func() *schemamodel.Database {
+				return &schemamodel.Database{Grants: []schemamodel.Grant{{
 					Role:       "PUBLIC",
 					OnSchema:   "public",
 					Privileges: []string{"USAGE"},
@@ -241,9 +241,9 @@ func TestRenderInspectedDeclaresTheSchemaAGrantReferences(t *testing.T) {
 		},
 		{
 			name: "a table references it as well",
-			db: func() *goschema.Database {
+			db: func() *schemamodel.Database {
 				db := inspectedTable("")
-				db.Grants = []goschema.Grant{{
+				db.Grants = []schemamodel.Grant{{
 					Role:       "PUBLIC",
 					OnSchema:   "public",
 					Privileges: []string{"USAGE"},
@@ -258,8 +258,8 @@ func TestRenderInspectedDeclaresTheSchemaAGrantReferences(t *testing.T) {
 		},
 		{
 			name: "nothing references it",
-			db: func() *goschema.Database {
-				return &goschema.Database{Roles: []goschema.Role{{Name: "app"}}}
+			db: func() *schemamodel.Database {
+				return &schemamodel.Database{Roles: []schemamodel.Role{{Name: "app"}}}
 			},
 			wantPresent: []string{"role \"app\" {\n"},
 			wantAbsent:  []string{"schema \"public\"", "schema."},
@@ -274,8 +274,8 @@ func TestRenderInspectedDeclaresTheSchemaAGrantReferences(t *testing.T) {
 			// before the target is computed and could not tell whether asking
 			// for the target had declared anything.
 			name: "a grant too incomplete to render",
-			db: func() *goschema.Database {
-				return &goschema.Database{Grants: []goschema.Grant{{
+			db: func() *schemamodel.Database {
+				return &schemamodel.Database{Grants: []schemamodel.Grant{{
 					Role:     "app",
 					OnSchema: "public",
 				}}}
@@ -311,10 +311,10 @@ func TestRenderedPermissionRoundTrips(t *testing.T) {
 	tests := []struct {
 		name  string
 		role  string
-		roles []goschema.Role
+		roles []schemamodel.Role
 	}{
-		{name: "PUBLIC", role: "PUBLIC", roles: []goschema.Role{{Name: "app"}}},
-		{name: "a named role", role: "app", roles: []goschema.Role{{Name: "app"}}},
+		{name: "PUBLIC", role: "PUBLIC", roles: []schemamodel.Role{{Name: "app"}}},
+		{name: "a named role", role: "app", roles: []schemamodel.Role{{Name: "app"}}},
 		{
 			// The spelling the fix introduces. Quoting is only free if the
 			// grantee survives it, and this row is what says it does.
@@ -330,7 +330,7 @@ func TestRenderedPermissionRoundTrips(t *testing.T) {
 
 			db := inspectedTable("public")
 			db.Roles = test.roles
-			db.Grants = []goschema.Grant{{
+			db.Grants = []schemamodel.Grant{{
 				Role:       test.role,
 				OnSchema:   "public",
 				Privileges: []string{"USAGE", "CREATE"},
@@ -393,13 +393,13 @@ func TestRenderedPermissionRoundTrips(t *testing.T) {
 func TestRenderNamesTheBlockTypeTheDocumentDeclares(t *testing.T) {
 	tests := []struct {
 		name string
-		db   func() *goschema.Database
+		db   func() *schemamodel.Database
 		want []string
 	}{
 		{
 			name: "a grant on a table names the table block",
-			db: func() *goschema.Database {
-				return relationTargetDocument(goschema.Grant{
+			db: func() *schemamodel.Database {
+				return relationTargetDocument(schemamodel.Grant{
 					Role: "app", OnTable: "t", Privileges: []string{"SELECT"},
 				})
 			},
@@ -407,22 +407,22 @@ func TestRenderNamesTheBlockTypeTheDocumentDeclares(t *testing.T) {
 		},
 		{
 			name: "a grant on a view names the view block",
-			db: func() *goschema.Database {
-				db := relationTargetDocument(goschema.Grant{
+			db: func() *schemamodel.Database {
+				db := relationTargetDocument(schemamodel.Grant{
 					Role: "app", OnTable: "v", Privileges: []string{"SELECT"},
 				})
-				db.Views = []goschema.View{{Name: "v", Body: "SELECT id FROM t"}}
+				db.Views = []schemamodel.View{{Name: "v", Body: "SELECT id FROM t"}}
 				return db
 			},
 			want: []string{"view \"v\" {\n", "  for = view.v\n"},
 		},
 		{
 			name: "a grant on a materialized view names the materialized block",
-			db: func() *goschema.Database {
-				db := relationTargetDocument(goschema.Grant{
+			db: func() *schemamodel.Database {
+				db := relationTargetDocument(schemamodel.Grant{
 					Role: "app", OnTable: "mv", Privileges: []string{"SELECT"},
 				})
-				db.MaterializedViews = []goschema.MaterializedView{{Name: "mv", Body: "SELECT id FROM t"}}
+				db.MaterializedViews = []schemamodel.MaterializedView{{Name: "mv", Body: "SELECT id FROM t"}}
 				return db
 			},
 			want: []string{"materialized \"mv\" {\n", "  for = materialized.mv\n"},
@@ -433,12 +433,12 @@ func TestRenderNamesTheBlockTypeTheDocumentDeclares(t *testing.T) {
 			// Measured on the same binary, `on = table.v` refused with the same
 			// message and `on = view.v` read at exit 0.
 			name: "a trigger on a view names the view block",
-			db: func() *goschema.Database {
-				db := relationTargetDocument(goschema.Grant{
+			db: func() *schemamodel.Database {
+				db := relationTargetDocument(schemamodel.Grant{
 					Role: "app", OnTable: "t", Privileges: []string{"SELECT"},
 				})
-				db.Views = []goschema.View{{Name: "v", Body: "SELECT id FROM t"}}
-				db.Triggers = []goschema.Trigger{{
+				db.Views = []schemamodel.View{{Name: "v", Body: "SELECT id FROM t"}}
+				db.Triggers = []schemamodel.Trigger{{
 					Name: "v_ins", Table: "v", Timing: "INSTEAD OF", Event: "INSERT",
 					ForEach: "ROW", Body: "RETURN NEW;",
 				}}
@@ -448,11 +448,11 @@ func TestRenderNamesTheBlockTypeTheDocumentDeclares(t *testing.T) {
 		},
 		{
 			name: "a view this render drops is not a block to name",
-			db: func() *goschema.Database {
-				db := relationTargetDocument(goschema.Grant{
+			db: func() *schemamodel.Database {
+				db := relationTargetDocument(schemamodel.Grant{
 					Role: "app", OnTable: "v", Privileges: []string{"SELECT"},
 				})
-				db.Views = []goschema.View{{Name: "v"}}
+				db.Views = []schemamodel.View{{Name: "v"}}
 				return db
 			},
 			want: []string{"  for = \"v\"\n"},
@@ -463,14 +463,14 @@ func TestRenderNamesTheBlockTypeTheDocumentDeclares(t *testing.T) {
 			// in OnSequence. One reference, so one spelling: both name the block
 			// the document declares.
 			name: "a grant on a sequence names the sequence block whichever field it arrived in",
-			db: func() *goschema.Database {
-				db := relationTargetDocument(goschema.Grant{
+			db: func() *schemamodel.Database {
+				db := relationTargetDocument(schemamodel.Grant{
 					Role: "app", OnTable: "order_seq", Privileges: []string{"SELECT"},
 				})
-				db.Grants = append(db.Grants, goschema.Grant{
+				db.Grants = append(db.Grants, schemamodel.Grant{
 					Role: "app", OnSequence: "order_seq", Privileges: []string{"USAGE"},
 				})
-				db.Sequences = []goschema.Sequence{{Name: "order_seq"}}
+				db.Sequences = []schemamodel.Sequence{{Name: "order_seq"}}
 				return db
 			},
 			want: []string{
@@ -481,8 +481,8 @@ func TestRenderNamesTheBlockTypeTheDocumentDeclares(t *testing.T) {
 		},
 		{
 			name: "a name the document declares nothing under is quoted",
-			db: func() *goschema.Database {
-				return relationTargetDocument(goschema.Grant{
+			db: func() *schemamodel.Database {
+				return relationTargetDocument(schemamodel.Grant{
 					Role: "app", OnTable: "gone", Privileges: []string{"SELECT"},
 				})
 			},
@@ -498,16 +498,16 @@ func TestRenderNamesTheBlockTypeTheDocumentDeclares(t *testing.T) {
 			// attribute named "other"`. `for = "other.v"` is read at exit 0 and
 			// keeps the schema.
 			name: "a label two schemas both declare is a quoted qualified name",
-			db: func() *goschema.Database {
-				db := relationTargetDocument(goschema.Grant{
+			db: func() *schemamodel.Database {
+				db := relationTargetDocument(schemamodel.Grant{
 					Role: "app", OnTable: "other.v", Privileges: []string{"SELECT"},
 				})
-				db.Schemas = append(db.Schemas, goschema.Schema{Name: "other"})
-				db.Views = []goschema.View{
+				db.Schemas = append(db.Schemas, schemamodel.Schema{Name: "other"})
+				db.Views = []schemamodel.View{
 					{Name: "v", Body: "SELECT id FROM t"},
 					{Name: "other.v", Body: "SELECT id FROM other.t"},
 				}
-				db.Grants = append(db.Grants, goschema.Grant{
+				db.Grants = append(db.Grants, schemamodel.Grant{
 					Role: "app", OnTable: "v", Privileges: []string{"SELECT"},
 				})
 				return db
@@ -520,16 +520,16 @@ func TestRenderNamesTheBlockTypeTheDocumentDeclares(t *testing.T) {
 		{
 			// Same document, the other position that can name a relation.
 			name: "a trigger on a label two schemas both declare is a quoted qualified name",
-			db: func() *goschema.Database {
-				db := relationTargetDocument(goschema.Grant{
+			db: func() *schemamodel.Database {
+				db := relationTargetDocument(schemamodel.Grant{
 					Role: "app", OnTable: "t", Privileges: []string{"SELECT"},
 				})
-				db.Schemas = append(db.Schemas, goschema.Schema{Name: "other"})
-				db.Views = []goschema.View{
+				db.Schemas = append(db.Schemas, schemamodel.Schema{Name: "other"})
+				db.Views = []schemamodel.View{
 					{Name: "v", Body: "SELECT id FROM t"},
 					{Name: "other.v", Body: "SELECT id FROM other.t"},
 				}
-				db.Triggers = []goschema.Trigger{{
+				db.Triggers = []schemamodel.Trigger{{
 					Name: "v_ins", Table: "other.v", Timing: "INSTEAD OF", Event: "INSERT",
 					ForEach: "ROW", Body: "RETURN NEW;",
 				}}
@@ -543,8 +543,8 @@ func TestRenderNamesTheBlockTypeTheDocumentDeclares(t *testing.T) {
 			// document does not declare is unreadable either way, so the one
 			// that says what the object IS is the one to write.
 			name: "a sequence the document declares no block for keeps the sequence spelling",
-			db: func() *goschema.Database {
-				return relationTargetDocument(goschema.Grant{
+			db: func() *schemamodel.Database {
+				return relationTargetDocument(schemamodel.Grant{
 					Role: "app", OnSequence: "gone_seq", Privileges: []string{"USAGE"},
 				})
 			},
@@ -576,20 +576,20 @@ func TestRenderNamesTheBlockTypeTheDocumentDeclares(t *testing.T) {
 func TestRenderedRelationTargetRoundTrips(t *testing.T) {
 	tests := []struct {
 		name   string
-		db     func() *goschema.Database
+		db     func() *schemamodel.Database
 		target string
 	}{
 		{
 			// All three targets come back qualified, and that uniformity is
-			// the point. goschema.Finalize reads a grant's schema off the block
+			// the point. schemamodel.Finalize reads a grant's schema off the block
 			// it names, and an inspected render now attributes a view and a
 			// materialized view to the read's schema exactly as it has always
 			// attributed a table. Before stokaro/ptah#1138 only this row was
 			// qualified; the other two came back bare, which was the asymmetry
 			// rather than the rule.
 			name: "a table",
-			db: func() *goschema.Database {
-				return relationTargetDocument(goschema.Grant{
+			db: func() *schemamodel.Database {
+				return relationTargetDocument(schemamodel.Grant{
 					Role: "app", OnTable: "t", Privileges: []string{"SELECT"},
 				})
 			},
@@ -597,22 +597,22 @@ func TestRenderedRelationTargetRoundTrips(t *testing.T) {
 		},
 		{
 			name: "a view",
-			db: func() *goschema.Database {
-				db := relationTargetDocument(goschema.Grant{
+			db: func() *schemamodel.Database {
+				db := relationTargetDocument(schemamodel.Grant{
 					Role: "app", OnTable: "v", Privileges: []string{"SELECT"},
 				})
-				db.Views = []goschema.View{{Name: "v", Body: "SELECT id FROM t"}}
+				db.Views = []schemamodel.View{{Name: "v", Body: "SELECT id FROM t"}}
 				return db
 			},
 			target: "public.v",
 		},
 		{
 			name: "a materialized view",
-			db: func() *goschema.Database {
-				db := relationTargetDocument(goschema.Grant{
+			db: func() *schemamodel.Database {
+				db := relationTargetDocument(schemamodel.Grant{
 					Role: "app", OnTable: "mv", Privileges: []string{"SELECT"},
 				})
-				db.MaterializedViews = []goschema.MaterializedView{{Name: "mv", Body: "SELECT id FROM t"}}
+				db.MaterializedViews = []schemamodel.MaterializedView{{Name: "mv", Body: "SELECT id FROM t"}}
 				return db
 			},
 			target: "public.mv",
@@ -643,11 +643,11 @@ func TestRenderedRelationTargetRoundTrips(t *testing.T) {
 func TestRenderedTriggerOnAViewRoundTrips(t *testing.T) {
 	c := qt.New(t)
 
-	db := relationTargetDocument(goschema.Grant{
+	db := relationTargetDocument(schemamodel.Grant{
 		Role: "app", OnTable: "t", Privileges: []string{"SELECT"},
 	})
-	db.Views = []goschema.View{{Name: "v", Body: "SELECT id FROM t"}}
-	db.Triggers = []goschema.Trigger{{
+	db.Views = []schemamodel.View{{Name: "v", Body: "SELECT id FROM t"}}
+	db.Triggers = []schemamodel.Trigger{{
 		Name: "v_ins", Table: "v", Timing: "INSTEAD OF", Event: "INSERT",
 		ForEach: "ROW", Body: "RETURN NEW;",
 	}}
@@ -676,7 +676,7 @@ func TestRenderedTriggerOnAViewRoundTrips(t *testing.T) {
 // pinned Atlas community binary v1.3.0 reads -- measured on a two-schema
 // PostgreSQL 17 inspect, `for = table.other.v` refused with
 // `This object does not have an attribute named "other"` and `for = view.v`
-// read at exit 0. goschema.Finalize restores a grant's schema off a TABLE block
+// read at exit 0. schemamodel.Finalize restores a grant's schema off a TABLE block
 // and says in its own closing note that it does nothing for views, so the
 // restore for these lives in the HCL reader beside the other two positions the
 // same note leaves out.
@@ -713,10 +713,10 @@ func TestRenderedRelationTargetKeepsItsSchema(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
 
-			db := relationTargetDocument(goschema.Grant{
+			db := relationTargetDocument(schemamodel.Grant{
 				Role: "app", OnTable: test.grantTarget, Privileges: []string{"SELECT"},
 			})
-			db.Views = []goschema.View{{Name: test.viewName, Body: "SELECT id FROM t"}}
+			db.Views = []schemamodel.View{{Name: test.viewName, Body: "SELECT id FROM t"}}
 
 			result, err := atlashclrender.RenderInspected(db, platform.Postgres, "public")
 			c.Assert(err, qt.IsNil)
@@ -745,18 +745,18 @@ func TestRenderedRelationTargetKeepsItsSchema(t *testing.T) {
 func TestRenderedDuplicateRelationLabelRoundTrips(t *testing.T) {
 	c := qt.New(t)
 
-	db := relationTargetDocument(goschema.Grant{
+	db := relationTargetDocument(schemamodel.Grant{
 		Role: "app", OnTable: "other.v", Privileges: []string{"SELECT"},
 	})
-	db.Schemas = append(db.Schemas, goschema.Schema{Name: "other"})
-	db.Views = []goschema.View{
+	db.Schemas = append(db.Schemas, schemamodel.Schema{Name: "other"})
+	db.Views = []schemamodel.View{
 		{Name: "v", Body: "SELECT id FROM t"},
 		{Name: "other.v", Body: "SELECT id FROM other.t"},
 	}
-	db.Grants = append(db.Grants, goschema.Grant{
+	db.Grants = append(db.Grants, schemamodel.Grant{
 		Role: "app", OnTable: "v", Privileges: []string{"SELECT"},
 	})
-	db.Triggers = []goschema.Trigger{{
+	db.Triggers = []schemamodel.Trigger{{
 		Name: "v_ins", Table: "other.v", Timing: "INSTEAD OF", Event: "INSERT",
 		ForEach: "ROW", Body: "RETURN NEW;",
 	}}
@@ -779,7 +779,7 @@ func TestRenderedDuplicateRelationLabelRoundTrips(t *testing.T) {
 
 // grantTargets lists the parsed grant targets in a stable order, so the
 // assertion names the same thing however the render ordered the blocks.
-func grantTargets(grants []goschema.Grant) []string {
+func grantTargets(grants []schemamodel.Grant) []string {
 	targets := make([]string, 0, len(grants))
 	for _, grant := range grants {
 		targets = append(targets, grant.OnTable)
@@ -819,10 +819,10 @@ func TestRenderedSequenceTargetKeepsItsSchema(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
 
-			db := relationTargetDocument(goschema.Grant{
+			db := relationTargetDocument(schemamodel.Grant{
 				Role: "app", OnSequence: test.grantTarget, Privileges: []string{"USAGE"},
 			})
-			db.Sequences = []goschema.Sequence{{Name: "order_seq", Schema: test.sequenceSchema}}
+			db.Sequences = []schemamodel.Sequence{{Name: "order_seq", Schema: test.sequenceSchema}}
 
 			result, err := atlashclrender.RenderInspected(db, platform.Postgres, "public")
 			c.Assert(err, qt.IsNil)
@@ -840,19 +840,19 @@ func TestRenderedSequenceTargetKeepsItsSchema(t *testing.T) {
 // relationTargetDocument builds the IR a database read produces for one table
 // plus one grant, with no schema anywhere -- which is what a catalog reports
 // for the read's own schema.
-func relationTargetDocument(grant goschema.Grant) *goschema.Database {
+func relationTargetDocument(grant schemamodel.Grant) *schemamodel.Database {
 	db := inspectedTable("")
-	db.Roles = []goschema.Role{{Name: "app"}}
-	db.Grants = []goschema.Grant{grant}
+	db.Roles = []schemamodel.Role{{Name: "app"}}
+	db.Grants = []schemamodel.Grant{grant}
 	return db
 }
 
 // inspectedTable builds the IR a database read produces for one table, with the
 // schema the reader reported -- which is nothing at all wherever the engine
 // treats it as implicit.
-func inspectedTable(schema string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "T", Name: "t", Schema: schema}},
-		Fields: []goschema.Field{{StructName: "T", Name: "id", Type: "integer"}},
+func inspectedTable(schema string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "T", Name: "t", Schema: schema}},
+		Fields: []schemamodel.Field{{StructName: "T", Name: "id", Type: "integer"}},
 	}
 }

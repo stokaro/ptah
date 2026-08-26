@@ -7,10 +7,10 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/mysql"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -34,7 +34,7 @@ func TestPlanner_IndexRefs_MySQLFamilyRoutesDuplicateAdditions(t *testing.T) {
 			{Name: "idx_shared", TableName: "users"},
 		},
 	}
-	generated := &goschema.Database{Indexes: []goschema.Index{
+	desired := &schemamodel.Database{Indexes: []schemamodel.Index{
 		{Name: "idx_shared", TableName: "users", Fields: []string{"email"}},
 		{Name: "idx_shared", TableName: "orders", Fields: []string{"reference"}},
 	}}
@@ -42,7 +42,7 @@ func TestPlanner_IndexRefs_MySQLFamilyRoutesDuplicateAdditions(t *testing.T) {
 	for _, test := range mysqlFamilyPlannerCases() {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := test.planner.GenerateMigrationAST(diff, generated)
+			nodes, err := test.planner.GenerateMigrationAST(diff, desired)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(nodes, qt.HasLen, 2)
@@ -71,7 +71,7 @@ func TestPlanner_IndexRefs_MySQLFamilyRoutesDuplicateRemovals(t *testing.T) {
 	for _, test := range mysqlFamilyPlannerCases() {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := test.planner.GenerateMigrationAST(diff, &goschema.Database{})
+			nodes, err := test.planner.GenerateMigrationAST(diff, &schemamodel.Database{})
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(nodes, qt.HasLen, 2)
@@ -95,14 +95,14 @@ func TestPlanner_IndexRefs_MySQLFamilyReplacesOnlyExactRef(t *testing.T) {
 			{Name: "idx_shared", TableName: "orders"},
 		},
 	}
-	generated := &goschema.Database{Indexes: []goschema.Index{
+	desired := &schemamodel.Database{Indexes: []schemamodel.Index{
 		{Name: "idx_shared", TableName: "users", Fields: []string{"email"}},
 	}}
 
 	for _, test := range mysqlFamilyPlannerCases() {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := test.planner.GenerateMigrationAST(diff, generated)
+			nodes, err := test.planner.GenerateMigrationAST(diff, desired)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(nodes, qt.HasLen, 3)
@@ -128,8 +128,8 @@ func TestPlanner_IndexRefs_MySQLFamilyPreservesReplacementAddition(t *testing.T)
 			{Name: "idx_email", TableName: "users"},
 		},
 	}
-	generated := &goschema.Database{
-		Indexes: []goschema.Index{
+	desired := &schemamodel.Database{
+		Indexes: []schemamodel.Index{
 			{Name: "idx_email", TableName: "users", Fields: []string{"email"}},
 		},
 	}
@@ -137,7 +137,7 @@ func TestPlanner_IndexRefs_MySQLFamilyPreservesReplacementAddition(t *testing.T)
 	for _, test := range mysqlFamilyPlannerCases() {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := test.planner.GenerateMigrationAST(diff, generated)
+			nodes, err := test.planner.GenerateMigrationAST(diff, desired)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(nodes, qt.HasLen, 2)
@@ -162,8 +162,8 @@ func TestPlanner_IndexRefs_MySQLFamilyCaseInsensitiveReplacementDropsFirst(t *te
 			{Name: "idx_email", TableName: "users"},
 		},
 	}
-	generated := &goschema.Database{
-		Indexes: []goschema.Index{
+	desired := &schemamodel.Database{
+		Indexes: []schemamodel.Index{
 			{Name: "IDX_Email", TableName: "users", Fields: []string{"email"}},
 		},
 	}
@@ -171,7 +171,7 @@ func TestPlanner_IndexRefs_MySQLFamilyCaseInsensitiveReplacementDropsFirst(t *te
 	for _, test := range mysqlFamilyPlannerCases() {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := test.planner.GenerateMigrationAST(diff, generated)
+			nodes, err := test.planner.GenerateMigrationAST(diff, desired)
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.HasLen, 2)
 
@@ -203,13 +203,13 @@ func TestPlanner_IndexRefs_SQLServerSharedPlannerRoutesDuplicateAdditions(t *tes
 			{Name: "idx_shared", TableName: "dbo.records"},
 		},
 	}
-	generated := &goschema.Database{Indexes: []goschema.Index{
+	desired := &schemamodel.Database{Indexes: []schemamodel.Index{
 		{Name: "idx_shared", TableName: "dbo.records", Fields: []string{"external_id"}},
 		{Name: "idx_shared", TableName: "audit.records", Fields: []string{"recorded_at"}},
 	}}
 
 	nodes, err := mysql.NewForDialect(platform.SQLServer, capability.SQLServer2022()).
-		GenerateMigrationAST(diff, generated)
+		GenerateMigrationAST(diff, desired)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(nodes, qt.HasLen, 2)
@@ -230,12 +230,12 @@ func TestPlanner_IndexRefs_SQLServerPreservesIndexPartDirection(t *testing.T) {
 			{Name: "idx_users_lookup", TableName: "dbo.users"},
 		},
 	}
-	generated := &goschema.Database{Indexes: []goschema.Index{
+	desired := &schemamodel.Database{Indexes: []schemamodel.Index{
 		{
 			Name:      "idx_users_lookup",
 			TableName: "dbo.users",
 			Fields:    []string{"email", "status"},
-			Parts: []goschema.IndexPart{
+			Parts: []schemamodel.IndexPart{
 				{Name: "email", Desc: true},
 				{Name: "status"},
 			},
@@ -243,7 +243,7 @@ func TestPlanner_IndexRefs_SQLServerPreservesIndexPartDirection(t *testing.T) {
 	}}
 
 	nodes, err := mysql.NewForDialect(platform.SQLServer, capability.SQLServer2022()).
-		GenerateMigrationAST(diff, generated)
+		GenerateMigrationAST(diff, desired)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 1)
@@ -265,7 +265,7 @@ func TestPlanner_IndexRefs_SQLServerPreservesFilteredIndexPredicate(t *testing.T
 			{Name: "idx_active_users", TableName: "dbo.users"},
 		},
 	}
-	generated := &goschema.Database{Indexes: []goschema.Index{
+	desired := &schemamodel.Database{Indexes: []schemamodel.Index{
 		{
 			Name:      "idx_active_users",
 			TableName: "dbo.users",
@@ -275,7 +275,7 @@ func TestPlanner_IndexRefs_SQLServerPreservesFilteredIndexPredicate(t *testing.T
 	}}
 
 	nodes, err := mysql.NewForDialect(platform.SQLServer, capability.SQLServer2022()).
-		GenerateMigrationAST(diff, generated)
+		GenerateMigrationAST(diff, desired)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 2)
@@ -297,14 +297,14 @@ func TestPlanner_IndexRefs_SQLServerUnknownCollationOrdersPotentialReplacementSa
 			{Name: "idx_email", TableName: "dbo.users"},
 		},
 	}
-	generated := &goschema.Database{
-		Indexes: []goschema.Index{
+	desired := &schemamodel.Database{
+		Indexes: []schemamodel.Index{
 			{Name: "IDX_Email", TableName: "dbo.users", Fields: []string{"email"}},
 		},
 	}
 
 	nodes, err := mysql.NewForDialect(platform.SQLServer, capability.SQLServer2022()).
-		GenerateMigrationAST(diff, generated)
+		GenerateMigrationAST(diff, desired)
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 2)
 
@@ -333,12 +333,12 @@ func TestPlanner_IndexRefs_SQLServerCaseInsensitiveReplacementDropsFirst(t *test
 			{Name: "idx_email", TableName: "dbo.users"},
 		},
 	}
-	generated := &goschema.Database{Indexes: []goschema.Index{
+	desired := &schemamodel.Database{Indexes: []schemamodel.Index{
 		{Name: "IDX_Email", TableName: "dbo.users", Fields: []string{"email"}},
 	}}
 
 	nodes, err := mysql.NewForDialect(platform.SQLServer, capability.SQLServer2022()).
-		GenerateMigrationAST(diff, generated)
+		GenerateMigrationAST(diff, desired)
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 2)
 
@@ -368,12 +368,12 @@ func TestPlanner_IndexRefs_SQLServerCaseSensitiveVariantsRemainIndependent(t *te
 			{Name: "idx_email", TableName: "dbo.users"},
 		},
 	}
-	generated := &goschema.Database{Indexes: []goschema.Index{
+	desired := &schemamodel.Database{Indexes: []schemamodel.Index{
 		{Name: "IDX_Email", TableName: "dbo.users", Fields: []string{"email"}},
 	}}
 
 	nodes, err := mysql.NewForDialect(platform.SQLServer, capability.SQLServer2022()).
-		GenerateMigrationAST(diff, generated)
+		GenerateMigrationAST(diff, desired)
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 2)
 

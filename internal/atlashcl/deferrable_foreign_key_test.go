@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashcl"
 )
 
@@ -117,9 +117,9 @@ func TestParseForeignKeyDeferralRefusesAnUnknownTiming(t *testing.T) {
 // fieldNamed1624 returns the one field with a name, failing when the document
 // carries none. Selecting inside a loop in the test body would let a document
 // that lost the column assert nothing.
-func fieldNamed1624(c *qt.C, db *goschema.Database, name string) goschema.Field {
+func fieldNamed1624(c *qt.C, db *schemamodel.Database, name string) schemamodel.Field {
 	c.Helper()
-	matched := make([]goschema.Field, 0, 1)
+	matched := make([]schemamodel.Field, 0, 1)
 	for _, field := range db.Fields {
 		if field.Name == name {
 			matched = append(matched, field)

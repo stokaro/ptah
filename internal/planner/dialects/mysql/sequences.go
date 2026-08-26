@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/planner/objectlookup"
 	"go.5x5.cz/ptah/internal/tableref"
@@ -29,20 +29,20 @@ import (
 // Creations run before tables because a column DEFAULT may draw from the
 // sequence, and on SQL Server that dependency is enforced: the engine refuses
 // `DROP SEQUENCE` while a default still references it.
-func (p *Planner) planSequences(result []ast.Node, diff *difftypes.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) planSequences(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
 	if !p.capabilities().Has(capability.Sequences) {
 		return result
 	}
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, name := range diff.SequencesAdded {
-		sequence := objectlookup.Qualified(generated.Sequences, name, semantics)
+		sequence := objectlookup.Qualified(desired.Sequences, name, semantics)
 		if sequence == nil {
 			continue
 		}
 		result = append(result, fromschema.FromSequence(*sequence))
 	}
 	for _, sequenceDiff := range diff.SequencesModified {
-		sequence := objectlookup.Qualified(generated.Sequences, sequenceDiff.SequenceName, semantics)
+		sequence := objectlookup.Qualified(desired.Sequences, sequenceDiff.SequenceName, semantics)
 		if sequence == nil {
 			continue
 		}
@@ -76,7 +76,7 @@ func (p *Planner) removeSequences(result []ast.Node, diff *difftypes.SchemaDiff)
 
 // alterSequenceFromDiff builds an ALTER SEQUENCE node carrying only the options
 // the diff reports as changed, sourced from the declaration.
-func alterSequenceFromDiff(target goschema.Sequence, changes map[string]string) *ast.AlterSequenceNode {
+func alterSequenceFromDiff(target schemamodel.Sequence, changes map[string]string) *ast.AlterSequenceNode {
 	node := ast.NewAlterSequence(target.Name)
 	if target.Schema != "" {
 		node.SetSchema(target.Schema)

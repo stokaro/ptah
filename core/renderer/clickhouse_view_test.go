@@ -5,15 +5,15 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 func TestGetOrderedCreateStatements_ClickHouseViewCapabilityEnabled(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{Views: []goschema.View{{
+	database := &schemamodel.Database{Views: []schemamodel.View{{
 		StructName: "ActiveUsers",
 		Name:       "analytics.active_users",
 		Body:       "SELECT id\nFROM `analytics`.`users`",
@@ -29,7 +29,7 @@ func TestGetOrderedCreateStatements_ClickHouseViewCapabilityEnabled(t *testing.T
 
 func TestGetOrderedCreateStatements_ClickHouseOrdersViewDependencies(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{Views: []goschema.View{
+	database := &schemamodel.Database{Views: []schemamodel.View{
 		{
 			StructName: "Dependent",
 			Name:       "analytics.a_dep",
@@ -52,7 +52,7 @@ func TestGetOrderedCreateStatements_ClickHouseOrdersViewDependencies(t *testing.
 
 func TestGetOrderedCreateStatements_ClickHouseViewCapabilityDisabled(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{Views: []goschema.View{{
+	database := &schemamodel.Database{Views: []schemamodel.View{{
 		StructName: "ActiveUsers",
 		Name:       "analytics.active_users",
 		Body:       "SELECT 1",

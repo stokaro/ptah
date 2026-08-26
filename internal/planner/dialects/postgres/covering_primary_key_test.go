@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -24,7 +24,7 @@ func primaryKeyAdditionSQL(c *qt.C, include []string) string {
 			IncludeColumns: include,
 		}},
 	}
-	nodes, err := postgres.New().GenerateMigrationAST(diff, &goschema.Database{})
+	nodes, err := postgres.New().GenerateMigrationAST(diff, &schemamodel.Database{})
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -72,9 +72,9 @@ func TestPlanner_LeavesAPlainPrimaryKeyWithoutAnIncludeClause(t *testing.T) {
 func declaredPrimaryKeyAdditionSQL(c *qt.C, include []string) string {
 	c.Helper()
 	diff := &difftypes.SchemaDiff{ConstraintsAdded: []string{"covering_pkey"}}
-	generated := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Covering", Name: "covering"}},
-		Constraints: []goschema.Constraint{{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Covering", Name: "covering"}},
+		Constraints: []schemamodel.Constraint{{
 			StructName:     "Covering",
 			Name:           "covering_pkey",
 			Type:           "PRIMARY KEY",
@@ -83,7 +83,7 @@ func declaredPrimaryKeyAdditionSQL(c *qt.C, include []string) string {
 			IncludeColumns: include,
 		}},
 	}
-	nodes, err := postgres.New().GenerateMigrationAST(diff, generated)
+	nodes, err := postgres.New().GenerateMigrationAST(diff, desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)

@@ -7,11 +7,11 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/constraintscope"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/deporder"
@@ -43,11 +43,11 @@ const (
 //	}
 //
 //	// Target schema from Go struct parsing
-//	generated := &goschema.Database{
-//		Tables: []goschema.Table{
+//	generated := &schemamodel.Database{
+//		Tables: []schemamodel.Table{
 //			{Name: "users", StructName: "User"},
 //		},
-//		Fields: []goschema.Field{
+//		Fields: []schemamodel.Field{
 //			{Name: "id", Type: "AUTO_INCREMENT", StructName: "User", Primary: true},
 //		},
 //	}
@@ -166,25 +166,25 @@ func (p *Planner) enumDialectLabel() string {
 	}
 }
 
-func (p *Planner) addNewTables(result []ast.Node, diff *difftypes.SchemaDiff, generated *goschema.Database) []ast.Node {
-	orderedTables := deporder.TablesForCreate(generated, diff.TablesAdded)
+func (p *Planner) addNewTables(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
+	orderedTables := deporder.TablesForCreate(desired, diff.TablesAdded)
 
 	// Phase 1: Create tables without foreign key constraints
-	result = p.createTablesWithoutForeignKeys(result, generated, orderedTables)
+	result = p.createTablesWithoutForeignKeys(result, desired, orderedTables)
 
 	return result
 }
 
-func (p *Planner) addForeignKeyConstraintsForNewTables(result []ast.Node, diff *difftypes.SchemaDiff, generated *goschema.Database) []ast.Node {
-	return p.addForeignKeyConstraints(result, generated, deporder.TablesForCreate(generated, diff.TablesAdded))
+func (p *Planner) addForeignKeyConstraintsForNewTables(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
+	return p.addForeignKeyConstraints(result, desired, deporder.TablesForCreate(desired, diff.TablesAdded))
 }
 
 // createTablesWithoutForeignKeys creates all tables without foreign key constraints
-func (p *Planner) createTablesWithoutForeignKeys(result []ast.Node, generated *goschema.Database, tables []goschema.Table) []ast.Node {
-	allFields := generated.Fields
+func (p *Planner) createTablesWithoutForeignKeys(result []ast.Node, desired *schemamodel.Database, tables []schemamodel.Table) []ast.Node {
+	allFields := desired.Fields
 
 	for _, table := range tables {
-		astNode := fromschema.FromTable(table, allFields, generated.Enums, p.targetDialect())
+		astNode := fromschema.FromTable(table, allFields, desired.Enums, p.targetDialect())
 		for _, column := range astNode.Columns {
 			column.ForeignKey = nil
 		}
@@ -195,18 +195,18 @@ func (p *Planner) createTablesWithoutForeignKeys(result []ast.Node, generated *g
 }
 
 // addForeignKeyConstraints adds foreign key constraints via ALTER TABLE statements
-func (p *Planner) addForeignKeyConstraints(result []ast.Node, generated *goschema.Database, tables []goschema.Table) []ast.Node {
+func (p *Planner) addForeignKeyConstraints(result []ast.Node, desired *schemamodel.Database, tables []schemamodel.Table) []ast.Node {
 	for _, table := range tables {
-		result = p.addRegularForeignKeys(result, generated, table)
-		result = p.addSelfReferencingForeignKeys(result, generated, table)
+		result = p.addRegularForeignKeys(result, desired, table)
+		result = p.addSelfReferencingForeignKeys(result, desired, table)
 	}
 
 	return result
 }
 
 // addRegularForeignKeys adds regular (non-self-referencing) foreign key constraints
-func (p *Planner) addRegularForeignKeys(result []ast.Node, generated *goschema.Database, table goschema.Table) []ast.Node {
-	for _, field := range generated.Fields {
+func (p *Planner) addRegularForeignKeys(result []ast.Node, desired *schemamodel.Database, table schemamodel.Table) []ast.Node {
+	for _, field := range desired.Fields {
 		if !isRegularForeignKeyField(field, table) {
 			continue
 		}
@@ -215,7 +215,7 @@ func (p *Planner) addRegularForeignKeys(result []ast.Node, generated *goschema.D
 		if fkRef == nil {
 			continue
 		}
-		fkRef.Table = tablelookup.ResolveReference(generated.Tables, table, fkRef.Table)
+		fkRef.Table = tablelookup.ResolveReference(desired.Tables, table, fkRef.Table)
 		if fkRef.Table == table.QualifiedName() {
 			continue
 		}
@@ -227,8 +227,8 @@ func (p *Planner) addRegularForeignKeys(result []ast.Node, generated *goschema.D
 }
 
 // addSelfReferencingForeignKeys adds self-referencing foreign key constraints
-func (p *Planner) addSelfReferencingForeignKeys(result []ast.Node, generated *goschema.Database, table goschema.Table) []ast.Node {
-	selfRefFKs, exists := generated.SelfReferencingForeignKeys[table.QualifiedName()]
+func (p *Planner) addSelfReferencingForeignKeys(result []ast.Node, desired *schemamodel.Database, table schemamodel.Table) []ast.Node {
+	selfRefFKs, exists := desired.SelfReferencingForeignKeys[table.QualifiedName()]
 	if !exists {
 		return result
 	}
@@ -236,7 +236,7 @@ func (p *Planner) addSelfReferencingForeignKeys(result []ast.Node, generated *go
 	for _, selfRefFK := range selfRefFKs {
 		fkRef := fromschema.ParseForeignKeyReference(selfRefFK.Foreign)
 		if fkRef != nil {
-			fkRef.Table = tablelookup.ResolveReference(generated.Tables, table, fkRef.Table)
+			fkRef.Table = tablelookup.ResolveReference(desired.Tables, table, fkRef.Table)
 			fkRef.OnDelete = selfRefFK.OnDelete
 			fkRef.OnUpdate = selfRefFK.OnUpdate
 			result = append(result, p.createForeignKeyAlterStatement(table.QualifiedName(), selfReferencingForeignKeyName(table.Name, selfRefFK), []string{selfRefFK.FieldName}, fkRef))
@@ -254,7 +254,7 @@ func (p *Planner) addSelfReferencingForeignKeys(result []ast.Node, generated *go
 // is actually created with a stable, named identity. MySQL in particular needs
 // a known name to later emit ALTER TABLE ... DROP FOREIGN KEY for action drift
 // (issue #189).
-func isRegularForeignKeyField(field goschema.Field, table goschema.Table) bool {
+func isRegularForeignKeyField(field schemamodel.Field, table schemamodel.Table) bool {
 	return field.StructName == table.StructName && field.Foreign != ""
 }
 
@@ -262,7 +262,7 @@ func isRegularForeignKeyField(field goschema.Field, table goschema.Table) bool {
 // key: the explicit foreign_key_name= when set, otherwise the conventional
 // fk_<table>_<column> name shared with the schemadiff comparator and the down
 // path via fromschema.GenerateForeignKeyName.
-func foreignKeyName(tableName string, field goschema.Field) string {
+func foreignKeyName(tableName string, field schemamodel.Field) string {
 	if field.ForeignKeyName != "" {
 		return field.ForeignKeyName
 	}
@@ -272,7 +272,7 @@ func foreignKeyName(tableName string, field goschema.Field) string {
 // selfReferencingForeignKeyName returns the constraint name for a
 // self-referencing field-level foreign key, deriving the conventional
 // fk_<table>_<field> name when foreign_key_name= was omitted.
-func selfReferencingForeignKeyName(tableName string, fk goschema.SelfReferencingFK) string {
+func selfReferencingForeignKeyName(tableName string, fk schemamodel.SelfReferencingFK) string {
 	if fk.ForeignKeyName != "" {
 		return fk.ForeignKeyName
 	}
@@ -293,13 +293,13 @@ func (p *Planner) createForeignKeyAlterStatement(tableName, constraintName strin
 func (p *Planner) addNewTableColumns(
 	result []ast.Node,
 	tableDiff *difftypes.TableDiff,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	semantics identifier.Semantics,
 ) []ast.Node {
 	for _, colName := range tableDiff.ColumnsAdded {
-		var targetField *goschema.Field
-		if targetTable := findGeneratedTable(generated.Tables, tableDiff.TableName, semantics); targetTable != nil {
-			for _, field := range generated.Fields {
+		var targetField *schemamodel.Field
+		if targetTable := findGeneratedTable(desired.Tables, tableDiff.TableName, semantics); targetTable != nil {
+			for _, field := range desired.Fields {
 				if field.StructName == targetTable.StructName && field.Name == colName {
 					targetField = &field
 					break
@@ -308,7 +308,7 @@ func (p *Planner) addNewTableColumns(
 		}
 
 		if targetField != nil {
-			columnNode := fromschema.FromField(*targetField, generated.Enums, p.targetDialect())
+			columnNode := fromschema.FromField(*targetField, desired.Enums, p.targetDialect())
 
 			// Create operations list starting with ADD COLUMN
 			operations := []ast.AlterOperation{&ast.AddColumnOperation{Column: columnNode}}
@@ -350,7 +350,7 @@ func (p *Planner) modifyExistingColumns(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
 	tableDiff *difftypes.TableDiff,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	semantics identifier.Semantics,
 ) ([]ast.Node, error) {
 	commentRidesAlong := p.columnCommentRidesWithTheColumn()
@@ -383,11 +383,11 @@ func (p *Planner) modifyExistingColumns(
 			return result, err
 		}
 
-		var targetField *goschema.Field
+		var targetField *schemamodel.Field
 		var targetStructName string
-		if targetTable := findGeneratedTable(generated.Tables, tableDiff.TableName, semantics); targetTable != nil {
+		if targetTable := findGeneratedTable(desired.Tables, tableDiff.TableName, semantics); targetTable != nil {
 			targetStructName = targetTable.StructName
-			for _, field := range generated.Fields {
+			for _, field := range desired.Fields {
 				if field.StructName == targetStructName && field.Name == colDiff.ColumnName {
 					targetField = &field
 					break
@@ -406,7 +406,7 @@ func (p *Planner) modifyExistingColumns(
 		if suppressColumnPrimary {
 			field.Primary = false
 		}
-		columnNode := fromschema.FromField(field, generated.Enums, p.targetDialect())
+		columnNode := fromschema.FromField(field, desired.Enums, p.targetDialect())
 
 		// Generate ALTER COLUMN statements using AST
 		alterNode := &ast.AlterTableNode{
@@ -450,10 +450,10 @@ func (p *Planner) modifyExistingColumns(
 // through the same semantics, so an `==` here split what the comparator joined
 // and the column DDL for that table was silently dropped from the plan.
 func findGeneratedTable(
-	tables []goschema.Table,
+	tables []schemamodel.Table,
 	tableName string,
 	semantics identifier.Semantics,
-) *goschema.Table {
+) *schemamodel.Table {
 	if table := objectlookup.Qualified(tables, tableName, semantics); table != nil {
 		return table
 	}
@@ -600,7 +600,7 @@ func appendTableComment(result []ast.Node, tableDiff difftypes.TableDiff) []ast.
 	})
 }
 
-func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.SchemaDiff, generated *goschema.Database) ([]ast.Node, error) {
+func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) ([]ast.Node, error) {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, tableDiff := range diff.TablesModified {
 		astCommentNode := ast.NewComment(fmt.Sprintf("Modify table: %s", tableDiff.TableName))
@@ -614,11 +614,11 @@ func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.Schema
 		result = appendTableComment(result, tableDiff)
 
 		// Add new columns
-		result = p.addNewTableColumns(result, &tableDiff, generated, semantics)
+		result = p.addNewTableColumns(result, &tableDiff, desired, semantics)
 
 		// Modify existing columns
 		var err error
-		result, err = p.modifyExistingColumns(result, diff, &tableDiff, generated, semantics)
+		result, err = p.modifyExistingColumns(result, diff, &tableDiff, desired, semantics)
 		if err != nil {
 			return result, err
 		}
@@ -707,9 +707,9 @@ type columnTypeForeignKeyPlan struct {
 //   - Neither (not in the FK constraint diff at all): a pure column-type change
 //     on an unchanged key. This planner owns both the pre-drop and the
 //     post-MODIFY re-add.
-func (p *Planner) planColumnTypeForeignKeyChanges(diff *difftypes.SchemaDiff, generated *goschema.Database) columnTypeForeignKeyPlan {
+func (p *Planner) planColumnTypeForeignKeyChanges(diff *difftypes.SchemaDiff, desired *schemamodel.Database) columnTypeForeignKeyPlan {
 	plan := columnTypeForeignKeyPlan{dropped: make(map[constraintHostKey]struct{})}
-	if diff == nil || generated == nil {
+	if diff == nil || desired == nil {
 		return plan
 	}
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
@@ -720,7 +720,7 @@ func (p *Planner) planColumnTypeForeignKeyChanges(diff *difftypes.SchemaDiff, ge
 
 	addedHosts, removedHosts := foreignKeyConstraintDiffHosts(diff, semantics)
 	drops, readds := collectColumnTypeForeignKeyActions(
-		generated,
+		desired,
 		diff,
 		blockingChanges,
 		addedHosts,
@@ -747,7 +747,7 @@ func (p *Planner) planColumnTypeForeignKeyChanges(diff *difftypes.SchemaDiff, ge
 // planner also re-adds. See planColumnTypeForeignKeyChanges for the ownership
 // rules.
 func collectColumnTypeForeignKeyActions(
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	diff *difftypes.SchemaDiff,
 	typeChanged map[string]map[string]struct{},
 	addedHosts, removedHosts map[constraintHostKey]struct{},
@@ -760,7 +760,7 @@ func collectColumnTypeForeignKeyActions(
 	// target schema on the up path, the introspected pre-change schema on the
 	// down path. This covers unchanged and modified keys. Added-only keys are
 	// not in the database yet, so they are not pre-dropped here.
-	for _, fk := range candidateForeignKeys(generated) {
+	for _, fk := range candidateForeignKeys(desired) {
 		if !foreignKeyValid(fk) || !foreignKeyTouchesTypeChange(fk, typeChanged, semantics) {
 			continue
 		}
@@ -855,18 +855,18 @@ func foreignKeyConstraintDiffHosts(
 // single-column FKs the down path reconstructs from the database),
 // self-referencing foreign keys, and table-level foreign key constraints (and
 // the composite FKs the down path reconstructs).
-func candidateForeignKeys(generated *goschema.Database) []affectedForeignKey {
-	structToTable := make(map[string]goschema.Table, len(generated.Tables))
-	tableByQualifiedName := make(map[string]goschema.Table, len(generated.Tables))
-	for _, t := range generated.Tables {
+func candidateForeignKeys(desired *schemamodel.Database) []affectedForeignKey {
+	structToTable := make(map[string]schemamodel.Table, len(desired.Tables))
+	tableByQualifiedName := make(map[string]schemamodel.Table, len(desired.Tables))
+	for _, t := range desired.Tables {
 		structToTable[t.StructName] = t
 		tableByQualifiedName[t.QualifiedName()] = t
 	}
 
 	var candidates []affectedForeignKey
-	candidates = appendFieldLevelForeignKeys(candidates, generated, structToTable)
-	candidates = appendSelfReferencingForeignKeys(candidates, generated, tableByQualifiedName)
-	candidates = appendTableLevelForeignKeys(candidates, generated)
+	candidates = appendFieldLevelForeignKeys(candidates, desired, structToTable)
+	candidates = appendSelfReferencingForeignKeys(candidates, desired, tableByQualifiedName)
+	candidates = appendTableLevelForeignKeys(candidates, desired)
 	return candidates
 }
 
@@ -876,8 +876,8 @@ func candidateForeignKeys(generated *goschema.Database) []affectedForeignKey {
 // constraint name is derived from the bare table name, matching
 // fromschema.GenerateForeignKeyName as used on the FK-creation path and by the
 // comparator's synthesis.
-func appendFieldLevelForeignKeys(candidates []affectedForeignKey, generated *goschema.Database, structToTable map[string]goschema.Table) []affectedForeignKey {
-	for _, field := range generated.Fields {
+func appendFieldLevelForeignKeys(candidates []affectedForeignKey, desired *schemamodel.Database, structToTable map[string]schemamodel.Table) []affectedForeignKey {
+	for _, field := range desired.Fields {
 		if field.Foreign == "" {
 			continue
 		}
@@ -906,10 +906,10 @@ func appendFieldLevelForeignKeys(candidates []affectedForeignKey, generated *gos
 
 func appendSelfReferencingForeignKeys(
 	candidates []affectedForeignKey,
-	generated *goschema.Database,
-	tableByQualifiedName map[string]goschema.Table,
+	desired *schemamodel.Database,
+	tableByQualifiedName map[string]schemamodel.Table,
 ) []affectedForeignKey {
-	for tableName, fks := range generated.SelfReferencingForeignKeys {
+	for tableName, fks := range desired.SelfReferencingForeignKeys {
 		qualified := tableName
 		bare := tableName
 		if table, ok := tableByQualifiedName[tableName]; ok {
@@ -939,7 +939,7 @@ func appendSelfReferencingForeignKeys(
 // declaredConstraintTable is the table a table-level constraint is on.
 //
 // A declaration names one only when it differs from the struct's own table --
-// that is what [goschema.Constraint.Table] documents -- so the ordinary
+// that is what [schemamodel.Constraint.Table] documents -- so the ordinary
 // declaration leaves it empty and the table has to come from the struct. Read
 // straight, the empty value reached the renderer and every kind came out as
 //
@@ -948,7 +948,7 @@ func appendSelfReferencingForeignKeys(
 // which no server takes (stokaro/ptah#2008). The struct's own name is the last
 // resort, which is the fallback the field-level paths beside this one already
 // use for the same question.
-func declaredConstraintTable(constraint goschema.Constraint, structToTable map[string]string) string {
+func declaredConstraintTable(constraint schemamodel.Constraint, structToTable map[string]string) string {
 	if constraint.Table != "" {
 		return constraint.Table
 	}
@@ -958,8 +958,8 @@ func declaredConstraintTable(constraint goschema.Constraint, structToTable map[s
 	return constraint.StructName
 }
 
-func appendTableLevelForeignKeys(candidates []affectedForeignKey, generated *goschema.Database) []affectedForeignKey {
-	for _, constraint := range generated.Constraints {
+func appendTableLevelForeignKeys(candidates []affectedForeignKey, desired *schemamodel.Database) []affectedForeignKey {
+	for _, constraint := range desired.Constraints {
 		if !strings.EqualFold(constraint.Type, "FOREIGN KEY") {
 			continue
 		}
@@ -1145,8 +1145,8 @@ func (p *Planner) removeIndexes(
 	return result
 }
 
-func (p *Planner) removeTables(result []ast.Node, diff *difftypes.SchemaDiff, generated *goschema.Database) []ast.Node {
-	for _, tableName := range deporder.TableDropOrder(diff.TablesRemoved, generated) {
+func (p *Planner) removeTables(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
+	for _, tableName := range deporder.TableDropOrder(diff.TablesRemoved, desired) {
 		dropTableNode := ast.NewDropTable(tableName).
 			SetIfExists().
 			SetCascade().
@@ -1201,11 +1201,11 @@ func (p *Planner) handleEnumRemovals(result []ast.Node, diff *difftypes.SchemaDi
 //		TablesAdded: []string{"users"},
 //	}
 //
-//	generated := &goschema.Database{
-//		Tables: []goschema.Table{
+//	generated := &schemamodel.Database{
+//		Tables: []schemamodel.Table{
 //			{Name: "users", StructName: "User"},
 //		},
-//		Fields: []goschema.Field{
+//		Fields: []schemamodel.Field{
 //			{Name: "id", Type: "INT AUTO_INCREMENT", StructName: "User", Primary: true},
 //			{Name: "status", Type: "ENUM('active','inactive')", StructName: "User"},
 //		},
@@ -1238,10 +1238,10 @@ func (p *Planner) handleEnumRemovals(result []ast.Node, diff *difftypes.SchemaDi
 // Returns a slice of AST nodes representing SQL statements or an error when
 // the diff cannot be planned safely. Each node can be rendered to SQL using a
 // MySQL-specific visitor.
-func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, generated *goschema.Database) ([]ast.Node, error) {
+func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *schemamodel.Database) ([]ast.Node, error) {
 	var result []ast.Node
-	if generated == nil {
-		generated = &goschema.Database{}
+	if desired == nil {
+		desired = &schemamodel.Database{}
 	}
 	// One fold, at the door, beside the index resolver that has always been
 	// here. A diff the comparator produced arrives with its identities
@@ -1253,13 +1253,13 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, generated *go
 		p.targetDialect(),
 		diff.EffectiveIdentifierSemantics(p.targetDialect()),
 		diff,
-		generated,
+		desired,
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := p.rejectUniqueIncludeConstraints(diff, generated); err != nil {
+	if err := p.rejectUniqueIncludeConstraints(diff, desired); err != nil {
 		return nil, err
 	}
 
@@ -1278,21 +1278,21 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, generated *go
 	// 0a. Plan the sequences this target does host, before tables: a column
 	// DEFAULT may draw from one, and SQL Server enforces that dependency in
 	// both directions.
-	result = p.planSequences(result, diff, generated)
+	result = p.planSequences(result, diff, desired)
 
 	// 0a2. Plan the roles this target does manage, before tables, because a
 	// grant names a role that has to exist.
-	result = p.planRoles(result, diff, generated)
+	result = p.planRoles(result, diff, desired)
 
 	// 0a3. Plan the domains this target does host, before tables: a column may
 	// be declared with the domain as its type.
-	result = p.planDomains(result, diff, generated)
-	result = p.planCompositeTypes(result, diff, generated)
+	result = p.planDomains(result, diff, desired)
+	result = p.planCompositeTypes(result, diff, desired)
 
 	// 0b. Plan the stored functions this target does host. Functions are
 	// planned before tables because a generated column or a CHECK constraint
 	// may call one, and the function must exist first.
-	result = p.planFunctions(result, diff, generated)
+	result = p.planFunctions(result, diff, desired)
 
 	// 1. Add enum change warnings (MySQL limitations)
 	result = p.addEnumChangeWarnings(result, diff)
@@ -1301,7 +1301,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, generated *go
 	result = p.handleEnumModifications(result, diff)
 
 	// 3. Add new tables
-	result = p.addNewTables(result, diff, generated)
+	result = p.addNewTables(result, diff, desired)
 
 	// 4. Modify existing tables. On MySQL/MariaDB a column-type change on a
 	// column that participates in a foreign key — as the referencing OR the
@@ -1315,10 +1315,10 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, generated *go
 	// to addNewConstraints, which runs after the modifications; fkPlan.dropped
 	// tells that machinery — and removeConstraints — to suppress their own now
 	// redundant drop of the same (table, name).
-	fkPlan := p.planColumnTypeForeignKeyChanges(diff, generated)
+	fkPlan := p.planColumnTypeForeignKeyChanges(diff, desired)
 	result = append(result, fkPlan.drops...)
 
-	result, err = p.modifyExistingTables(result, diff, generated)
+	result, err = p.modifyExistingTables(result, diff, desired)
 	if err != nil {
 		return nil, err
 	}
@@ -1326,18 +1326,18 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, generated *go
 	result = append(result, fkPlan.readds...)
 
 	// 4.5. Add and modify views/triggers after tables exist.
-	result = p.addNewViews(result, diff, generated)
-	result = p.modifyExistingViews(result, diff, generated)
-	result = p.retargetSynonyms(result, diff, generated)
-	result = p.addNewSynonyms(result, diff, generated)
+	result = p.addNewViews(result, diff, desired)
+	result = p.modifyExistingViews(result, diff, desired)
+	result = p.retargetSynonyms(result, diff, desired)
+	result = p.addNewSynonyms(result, diff, desired)
 	result = p.addExtendedProperties(result, diff)
 	if err := p.rejectMaterializedViews(diff); err != nil {
 		return nil, err
 	}
-	result = p.addNewMaterializedViews(result, diff, generated)
-	result = p.modifyExistingMaterializedViews(result, diff, generated)
-	result = p.addNewTriggers(result, diff, generated)
-	result = p.modifyExistingTriggers(result, diff, generated)
+	result = p.addNewMaterializedViews(result, diff, desired)
+	result = p.modifyExistingMaterializedViews(result, diff, desired)
+	result = p.addNewTriggers(result, diff, desired)
+	result = p.modifyExistingTriggers(result, diff, desired)
 
 	// 5. Add new indexes
 	result, err = p.addNewIndexes(result, diff, indexes)
@@ -1348,11 +1348,11 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, generated *go
 	// 5.5. Add new constraints (must be done after tables and columns exist).
 	// fkPlan.dropped suppresses the drop half of any FK modification whose
 	// pre-MODIFY drop was already emitted at step 4.
-	result = p.addNewConstraints(result, diff, generated, fkPlan.dropped)
+	result = p.addNewConstraints(result, diff, desired, fkPlan.dropped)
 
 	// 5.6. Add field-level foreign keys for new tables after referenced
 	// unique indexes and constraints have been created.
-	result = p.addForeignKeyConstraintsForNewTables(result, diff, generated)
+	result = p.addForeignKeyConstraintsForNewTables(result, diff, desired)
 
 	// 5.7. Grant privileges once the objects they name exist.
 	result = p.planGrants(result, diff)
@@ -1361,7 +1361,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, generated *go
 	// Unlike sequences, roles and functions this cannot run before tables: a
 	// security policy is schema-bound to the table it filters, and the engine
 	// resolves that name at creation time.
-	result = p.planRLS(result, diff, generated)
+	result = p.planRLS(result, diff, desired)
 
 	// 6. Remove constraints before indexes. MySQL-family servers keep the
 	// backing index after DROP FOREIGN KEY when the index was auto-created, so
@@ -1384,7 +1384,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, generated *go
 	result = p.removeRLS(result, diff)
 
 	// 7. Remove tables (dangerous!)
-	result = p.removeTables(result, diff, generated)
+	result = p.removeTables(result, diff, desired)
 
 	// 7a. Remove sequences after the tables whose defaults drew from them.
 	result = p.removeSequences(result, diff)
@@ -1403,7 +1403,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, generated *go
 	return result, nil
 }
 
-func (p *Planner) rejectUniqueIncludeConstraints(diff *difftypes.SchemaDiff, generated *goschema.Database) error {
+func (p *Planner) rejectUniqueIncludeConstraints(diff *difftypes.SchemaDiff, desired *schemamodel.Database) error {
 	if diff != nil {
 		for _, add := range diff.ConstraintsAddedWithTables {
 			if !strings.EqualFold(add.Type, "UNIQUE") || len(add.IncludeColumns) == 0 {
@@ -1412,10 +1412,10 @@ func (p *Planner) rejectUniqueIncludeConstraints(diff *difftypes.SchemaDiff, gen
 			return p.uniqueIncludeUnsupportedError(add.Name)
 		}
 	}
-	if generated == nil {
+	if desired == nil {
 		return nil
 	}
-	for _, constraint := range generated.Constraints {
+	for _, constraint := range desired.Constraints {
 		if !strings.EqualFold(constraint.Type, "UNIQUE") || len(constraint.IncludeColumns) == 0 {
 			continue
 		}
@@ -1476,20 +1476,20 @@ func (p *Planner) rejectMaterializedViews(diff *difftypes.SchemaDiff) error {
 	}
 }
 
-func (p *Planner) addNewViews(result []ast.Node, diff *difftypes.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) addNewViews(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, viewName := range diff.ViewsAdded {
-		if view := findView(generated.Views, viewName, semantics); view != nil {
+		if view := findView(desired.Views, viewName, semantics); view != nil {
 			result = append(result, fromschema.FromView(*view))
 		}
 	}
 	return result
 }
 
-func (p *Planner) modifyExistingViews(result []ast.Node, diff *difftypes.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) modifyExistingViews(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, viewDiff := range diff.ViewsModified {
-		if view := findView(generated.Views, viewDiff.ViewName, semantics); view != nil {
+		if view := findView(desired.Views, viewDiff.ViewName, semantics); view != nil {
 			result = append(result, fromschema.FromView(*view).SetReplace())
 		}
 	}
@@ -1503,9 +1503,9 @@ func (p *Planner) removeViews(result []ast.Node, diff *difftypes.SchemaDiff) []a
 	return result
 }
 
-func (p *Planner) addNewSynonyms(result []ast.Node, diff *difftypes.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) addNewSynonyms(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
 	for _, name := range diff.SynonymsAdded {
-		if synonym := findSynonym(generated.Synonyms, name); synonym != nil {
+		if synonym := findSynonym(desired.Synonyms, name); synonym != nil {
 			result = append(result, fromschema.FromSynonym(*synonym))
 		}
 	}
@@ -1518,9 +1518,9 @@ func (p *Planner) addNewSynonyms(result []ast.Node, diff *difftypes.SchemaDiff, 
 // and CREATE SYNONYM refuses a name that already exists. Splitting the two
 // across the add and remove phases would put the create before the drop and
 // fail at the server.
-func (p *Planner) retargetSynonyms(result []ast.Node, diff *difftypes.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) retargetSynonyms(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
 	for _, synonymDiff := range diff.SynonymsModified {
-		synonym := findSynonym(generated.Synonyms, synonymDiff.SynonymName)
+		synonym := findSynonym(desired.Synonyms, synonymDiff.SynonymName)
 		if synonym == nil {
 			continue
 		}
@@ -1583,7 +1583,7 @@ func extendedPropertyNode(
 }
 
 // findSynonym returns the declared synonym with the given qualified name.
-func findSynonym(synonyms []goschema.Synonym, name string) *goschema.Synonym {
+func findSynonym(synonyms []schemamodel.Synonym, name string) *schemamodel.Synonym {
 	for i := range synonyms {
 		if synonyms[i].QualifiedName() == name {
 			return &synonyms[i]
@@ -1592,20 +1592,20 @@ func findSynonym(synonyms []goschema.Synonym, name string) *goschema.Synonym {
 	return nil
 }
 
-func (p *Planner) addNewTriggers(result []ast.Node, diff *difftypes.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) addNewTriggers(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, triggerRef := range diff.TriggersAdded {
-		if trigger := findTrigger(generated.Triggers, triggerRef.TableName, triggerRef.TriggerName, semantics); trigger != nil {
+		if trigger := findTrigger(desired.Triggers, triggerRef.TableName, triggerRef.TriggerName, semantics); trigger != nil {
 			result = append(result, fromschema.FromTrigger(*trigger))
 		}
 	}
 	return result
 }
 
-func (p *Planner) modifyExistingTriggers(result []ast.Node, diff *difftypes.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) modifyExistingTriggers(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, triggerDiff := range diff.TriggersModified {
-		if trigger := findTrigger(generated.Triggers, triggerDiff.TableName, triggerDiff.TriggerName, semantics); trigger != nil {
+		if trigger := findTrigger(desired.Triggers, triggerDiff.TableName, triggerDiff.TriggerName, semantics); trigger != nil {
 			result = append(result, fromschema.FromTrigger(*trigger).SetReplace())
 		}
 	}
@@ -1627,11 +1627,11 @@ func (p *Planner) removeTriggers(result []ast.Node, diff *difftypes.SchemaDiff) 
 func (p *Planner) addNewMaterializedViews(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 ) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, viewName := range diff.MaterializedViewsAdded {
-		if view := findMaterializedView(generated.MaterializedViews, viewName, semantics); view != nil {
+		if view := findMaterializedView(desired.MaterializedViews, viewName, semantics); view != nil {
 			result = append(result, fromschema.FromMaterializedView(*view))
 		}
 	}
@@ -1646,11 +1646,11 @@ func (p *Planner) addNewMaterializedViews(
 func (p *Planner) modifyExistingMaterializedViews(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 ) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, viewDiff := range diff.MaterializedViewsModified {
-		if view := findMaterializedView(generated.MaterializedViews, viewDiff.ViewName, semantics); view != nil {
+		if view := findMaterializedView(desired.MaterializedViews, viewDiff.ViewName, semantics); view != nil {
 			result = append(result, ast.NewDropMaterializedView(view.Name).SetIfExists())
 			result = append(result, fromschema.FromMaterializedView(*view))
 		}
@@ -1668,22 +1668,22 @@ func (p *Planner) removeMaterializedViews(result []ast.Node, diff *difftypes.Sch
 }
 
 func findMaterializedView(
-	views []goschema.MaterializedView,
+	views []schemamodel.MaterializedView,
 	name string,
 	semantics identifier.Semantics,
-) *goschema.MaterializedView {
+) *schemamodel.MaterializedView {
 	return objectlookup.MaterializedView(views, name, semantics)
 }
 
-func findView(views []goschema.View, name string, semantics identifier.Semantics) *goschema.View {
+func findView(views []schemamodel.View, name string, semantics identifier.Semantics) *schemamodel.View {
 	return objectlookup.View(views, name, semantics)
 }
 
 func findTrigger(
-	triggers []goschema.Trigger,
+	triggers []schemamodel.Trigger,
 	tableName, triggerName string,
 	semantics identifier.Semantics,
-) *goschema.Trigger {
+) *schemamodel.Trigger {
 	return objectlookup.Trigger(triggers, tableName, triggerName, semantics)
 }
 
@@ -1736,12 +1736,12 @@ func findTrigger(
 func (p *Planner) addNewConstraints(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	bracketDropped map[constraintHostKey]struct{},
 ) []ast.Node {
 	// Resolve struct → table name once for the field-level synthesis fallbacks.
-	structToTable := make(map[string]string, len(generated.Tables))
-	for _, t := range generated.Tables {
+	structToTable := make(map[string]string, len(desired.Tables))
+	for _, t := range desired.Tables {
 		structToTable[t.StructName] = t.Name
 	}
 
@@ -1765,9 +1765,9 @@ func (p *Planner) addNewConstraints(
 		diff.IndexRemovalsRebuiltAsUniqueConstraints(),
 		state.semantics,
 	)
-	result = p.addNamedConstraintsByKind(result, diff, generated, structToTable, state, nonForeignKeyConstraints)
+	result = p.addNamedConstraintsByKind(result, diff, desired, structToTable, state, nonForeignKeyConstraints)
 	result = p.addForeignKeyConstraintsWithTables(result, diff.ConstraintsAddedWithTables, state)
-	result = p.addNamedConstraintsByKind(result, diff, generated, structToTable, state, foreignKeyConstraints)
+	result = p.addNamedConstraintsByKind(result, diff, desired, structToTable, state, foreignKeyConstraints)
 	return result
 }
 
@@ -1898,7 +1898,7 @@ func (p *Planner) addPrimaryKeyConstraintsWithTables(
 func (p *Planner) addNamedConstraintsByKind(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	structToTable map[string]string,
 	state constraintPlanState,
 	kind constraintKindFilter,
@@ -1911,7 +1911,7 @@ func (p *Planner) addNamedConstraintsByKind(
 		if _, done := state.handled[constraintIdentity]; done {
 			continue
 		}
-		if p.constraintNameIsForeignKey(constraintName, generated, structToTable) != wantForeignKey {
+		if p.constraintNameIsForeignKey(constraintName, desired, structToTable) != wantForeignKey {
 			continue
 		}
 
@@ -1930,7 +1930,7 @@ func (p *Planner) addNamedConstraintsByKind(
 			)
 		}
 
-		result = p.appendAddConstraint(result, constraintName, generated, structToTable)
+		result = p.appendAddConstraint(result, constraintName, desired, structToTable)
 	}
 	return result
 }
@@ -1957,13 +1957,13 @@ func (p *Planner) addForeignKeyConstraintsWithTables(
 	return result
 }
 
-func (p *Planner) constraintNameIsForeignKey(constraintName string, generated *goschema.Database, structToTable map[string]string) bool {
-	for _, constraint := range generated.Constraints {
+func (p *Planner) constraintNameIsForeignKey(constraintName string, desired *schemamodel.Database, structToTable map[string]string) bool {
+	for _, constraint := range desired.Constraints {
 		if constraint.Name == constraintName {
 			return strings.EqualFold(constraint.Type, "FOREIGN KEY")
 		}
 	}
-	for _, field := range generated.Fields {
+	for _, field := range desired.Fields {
 		if field.Foreign == "" {
 			continue
 		}
@@ -2148,8 +2148,8 @@ func (p *Planner) foreignKeyAdditionNode(add difftypes.ConstraintAdditionInfo) *
 // only by name, trying the explicit table-level constraints first and then the
 // synthesized field-level check= / foreign= fallbacks, mirroring the PostgreSQL
 // planner.
-func (p *Planner) appendAddConstraint(result []ast.Node, constraintName string, generated *goschema.Database, structToTable map[string]string) []ast.Node {
-	for _, constraint := range generated.Constraints {
+func (p *Planner) appendAddConstraint(result []ast.Node, constraintName string, desired *schemamodel.Database, structToTable map[string]string) []ast.Node {
+	for _, constraint := range desired.Constraints {
 		if constraint.Name != constraintName {
 			continue
 		}
@@ -2173,14 +2173,14 @@ func (p *Planner) appendAddConstraint(result []ast.Node, constraintName string, 
 		return result
 	}
 
-	if node, ok := p.fieldLevelCheckConstraintNode(constraintName, generated, structToTable); ok {
+	if node, ok := p.fieldLevelCheckConstraintNode(constraintName, desired, structToTable); ok {
 		if node != nil {
 			result = append(result, node)
 		}
 		return result
 	}
 
-	if node, ok := p.fieldLevelForeignKeyConstraintNode(constraintName, generated, structToTable); ok {
+	if node, ok := p.fieldLevelForeignKeyConstraintNode(constraintName, desired, structToTable); ok {
 		if node != nil {
 			result = append(result, node)
 		}
@@ -2193,8 +2193,8 @@ func (p *Planner) appendAddConstraint(result []ast.Node, constraintName string, 
 // handled by the inline CHECK in ALTER TABLE ADD COLUMN and the comparator
 // deliberately skips synthesizing those, so only existing-column field-level
 // CHECKs reach here.
-func (p *Planner) fieldLevelCheckConstraintNode(constraintName string, generated *goschema.Database, structToTable map[string]string) (ast.Node, bool) {
-	for _, f := range generated.Fields {
+func (p *Planner) fieldLevelCheckConstraintNode(constraintName string, desired *schemamodel.Database, structToTable map[string]string) (ast.Node, bool) {
+	for _, f := range desired.Fields {
 		if f.Check == "" {
 			continue
 		}
@@ -2252,8 +2252,8 @@ func (p *Planner) constraintDialectLabel() string {
 // silently-broken migration. New columns/tables are handled by the inline FK in
 // CREATE TABLE / ALTER TABLE ADD COLUMN and the comparator deliberately skips
 // synthesizing those, so only existing-column FK action changes reach here.
-func (p *Planner) fieldLevelForeignKeyConstraintNode(constraintName string, generated *goschema.Database, structToTable map[string]string) (ast.Node, bool) {
-	for _, f := range generated.Fields {
+func (p *Planner) fieldLevelForeignKeyConstraintNode(constraintName string, desired *schemamodel.Database, structToTable map[string]string) (ast.Node, bool) {
+	for _, f := range desired.Fields {
 		if f.Foreign == "" {
 			continue
 		}
@@ -2443,12 +2443,12 @@ func (p *Planner) dropConstraintNode(info difftypes.ConstraintRemovalInfo) ast.N
 	}
 }
 
-// convertConstraintToAST converts a goschema.Constraint to an ast.ConstraintNode for MySQL.
+// convertConstraintToAST converts a schemamodel.Constraint to an ast.ConstraintNode for MySQL.
 //
 // This helper method handles the conversion between the schema annotation representation
 // and the AST representation used for SQL generation, taking into account MySQL-specific
 // limitations and syntax differences.
-func (p *Planner) convertConstraintToAST(constraint goschema.Constraint) *ast.ConstraintNode {
+func (p *Planner) convertConstraintToAST(constraint schemamodel.Constraint) *ast.ConstraintNode {
 	switch constraint.Type {
 	case "EXCLUDE":
 		// EXCLUDE constraints are not supported in MySQL

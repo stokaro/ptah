@@ -11,9 +11,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -151,21 +151,21 @@ func TestSQLServerLiveExtendedPropertyLeavesAnUnwritableValueAlone(t *testing.T)
 
 	// A declaration that does not name it plans no removal, which is the half
 	// that would otherwise destroy the value.
-	empty := &goschema.Database{}
+	empty := &schemamodel.Database{}
 	settled := schemadiff.CompareWithDialect(empty, live, platform.SQLServer)
 	c.Assert(extendedPropertiesOn(settled.ExtendedPropertiesRemoved, table), qt.HasLen, 0)
 }
 
 // sqlServerExtendedPropertySchema declares one table carrying a table-scoped
 // property and a column-scoped one.
-func sqlServerExtendedPropertySchema(table, property, columnProperty, value string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "XP", Name: table}},
-		Fields: []goschema.Field{
+func sqlServerExtendedPropertySchema(table, property, columnProperty, value string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "XP", Name: table}},
+		Fields: []schemamodel.Field{
 			{StructName: "XP", Name: "id", Type: "INT", Primary: true},
 			{StructName: "XP", Name: "title", Type: "NVARCHAR(200)", Nullable: true},
 		},
-		ExtendedProperties: []goschema.ExtendedProperty{
+		ExtendedProperties: []schemamodel.ExtendedProperty{
 			{StructName: "XP", Name: property, Schema: "dbo", Table: table, Value: value},
 			{
 				StructName: "XP", Name: columnProperty, Schema: "dbo",
@@ -265,8 +265,8 @@ func TestSQLServerLiveDatabaseScopedExtendedPropertyRoundTrip(t *testing.T) {
 			schemaProperty))
 	}()
 
-	description := &goschema.Database{
-		ExtendedProperties: []goschema.ExtendedProperty{
+	description := &schemamodel.Database{
+		ExtendedProperties: []schemamodel.ExtendedProperty{
 			{StructName: "DB", Name: databaseProperty, Value: "database scope"},
 			{StructName: "DB", Name: schemaProperty, Schema: "dbo", Value: "schema scope"},
 		},

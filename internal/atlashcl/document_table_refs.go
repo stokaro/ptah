@@ -3,7 +3,7 @@ package atlashcl
 import (
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/tablelookup"
 	"go.5x5.cz/ptah/internal/tableref"
 )
@@ -21,7 +21,7 @@ type pendingForeignRef struct {
 	// owner is the table declaring the foreign key. Its schema is both the
 	// tie-breaker for a name several schemas carry and the schema this
 	// reference does not have to spell out -- see [resolveDocumentTableName].
-	owner  goschema.Table
+	owner  schemamodel.Table
 	table  string
 	column string
 }
@@ -31,7 +31,7 @@ type pendingForeignRef struct {
 //
 // A reference in HCL names a block by its labels, so a table in another schema
 // is named `table.users`, not `table.other.users` -- see the measurement on
-// objectRef in internal/atlashclrender. goschema.Finalize already reads the
+// objectRef in internal/atlashclrender. schemamodel.Finalize already reads the
 // schema back off the referenced block for constraints, indexes, policies,
 // grants and triggers. Two positions it does not cover are handled here:
 //
@@ -43,12 +43,12 @@ type pendingForeignRef struct {
 //     losing the schema, while the multi-column form of the same key read back
 //     as `other.users`. Ptah could not correctly read that binary's output for
 //     the shape it emits most.
-//   - A `data` block's table, whose schema goschema.Finalize never touches and
+//   - A `data` block's table, whose schema schemamodel.Finalize never touches and
 //     whose block has no owning table to supply one.
 //   - A `permission` target or a `trigger`'s `on` naming a VIEW, a MATERIALIZED
 //     view or a SEQUENCE. Finalize reads a grant's or a trigger's schema off a
 //     TABLE block and does nothing for these, by the note at the end of
-//     goschema.Finalize, so the schema the short form drops would be dropped for
+//     schemamodel.Finalize, so the schema the short form drops would be dropped for
 //     good. The renderer only writes the short form where the document declares
 //     the block, so the block is right there to read it back off
 //     (stokaro/ptah#1234).
@@ -69,7 +69,7 @@ func (p *parser) resolveDocumentTableRefs() {
 		}
 		// A data block has no owning table, so no schema is implicit in it and
 		// the referenced block's is the only one there is.
-		resolved := resolveDocumentTableName(p.db.Tables, goschema.Table{}, data.Table)
+		resolved := resolveDocumentTableName(p.db.Tables, schemamodel.Table{}, data.Table)
 		ref, ok := tableref.Parse(resolved)
 		if !ok || !ref.Qualified {
 			continue
@@ -92,7 +92,7 @@ func (p *parser) resolveDocumentTableRefs() {
 // or `sequence` block a bare relation reference names.
 //
 // It answers only for a name no TABLE block claims, so it can never disagree
-// with the resolution goschema.Finalize does for those: a relation name belongs
+// with the resolution schemamodel.Finalize does for those: a relation name belongs
 // to one namespace per schema, and where a table block carries the label the
 // table path already restores whatever there is to restore.
 //
@@ -131,7 +131,7 @@ func (p *parser) qualifyFromRelationBlock(name string) string {
 //
 // A single declaration carrying no schema still restores nothing, because there
 // is nothing to restore: the empty entry falls through the caller's own check.
-func relationBlockSchema(db *goschema.Database, label string) string {
+func relationBlockSchema(db *schemamodel.Database, label string) string {
 	var found []string
 	for _, view := range db.Views {
 		if ref, ok := tableref.Parse(view.Name); ok && ref.Name == label {
@@ -170,7 +170,7 @@ func relationBlockSchema(db *goschema.Database, label string) string {
 //
 // A reference that already carries a schema keeps it. The author wrote it, and
 // this is a restore of what a spelling drops, not a normalizer.
-func resolveDocumentTableName(tables []goschema.Table, owner goschema.Table, name string) string {
+func resolveDocumentTableName(tables []schemamodel.Table, owner schemamodel.Table, name string) string {
 	ref, ok := tableref.Parse(name)
 	if !ok || ref.Qualified {
 		return name

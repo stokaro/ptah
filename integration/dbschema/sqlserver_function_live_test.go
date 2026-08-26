@@ -11,9 +11,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -170,9 +170,9 @@ func TestSQLServerLiveFunctionRefusesWhatTheRendererDeclines(t *testing.T) {
 
 // sqlServerFunctionSchema declares two functions: one with arguments and a
 // sized return type, one with neither.
-func sqlServerFunctionSchema(schemaName string) *goschema.Database {
-	return &goschema.Database{
-		Functions: []goschema.Function{{
+func sqlServerFunctionSchema(schemaName string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Functions: []schemamodel.Function{{
 			// nvarchar is here on purpose: sys.parameters reports max_length in
 			// BYTES, so this one is stored as 100 and has to be rendered back as
 			// 50. A fixture using only varchar leaves that halving unmeasured.

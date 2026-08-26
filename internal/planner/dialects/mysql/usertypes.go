@@ -2,8 +2,8 @@ package mysql
 
 import (
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -24,12 +24,12 @@ import (
 // constraint, not changing a base type or a default -- so planning a rename of
 // the whole shape would emit a statement that changes something else. It stays
 // unplanned until there is a measurement to write it from.
-func (p *Planner) planDomains(result []ast.Node, diff *difftypes.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) planDomains(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
 	if !p.capabilities().Has(capability.DomainTypes) {
 		return result
 	}
-	declared := make(map[string]goschema.Domain, len(generated.Domains))
-	for _, domain := range generated.Domains {
+	declared := make(map[string]schemamodel.Domain, len(desired.Domains))
+	for _, domain := range desired.Domains {
 		declared[domain.Name] = domain
 	}
 	for _, name := range diff.DomainsAdded {
@@ -59,13 +59,13 @@ func (p *Planner) planDomains(result []ast.Node, diff *difftypes.SchemaDiff, gen
 func (p *Planner) planCompositeTypes(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 ) []ast.Node {
 	if !p.capabilities().Has(capability.CompositeTypes) {
 		return result
 	}
-	declared := make(map[string]goschema.CompositeType, len(generated.CompositeTypes))
-	for _, composite := range generated.CompositeTypes {
+	declared := make(map[string]schemamodel.CompositeType, len(desired.CompositeTypes))
+	for _, composite := range desired.CompositeTypes {
 		declared[composite.Name] = composite
 	}
 	names := make([]string, 0, len(diff.CompositeTypesAdded)+len(diff.CompositeTypesModified))

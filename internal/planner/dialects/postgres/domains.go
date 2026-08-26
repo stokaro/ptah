@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
@@ -67,14 +67,14 @@ func compositeIsAlterableInPlace(
 func (p *Planner) alterModifiedDomains(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 ) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, domainDiff := range diff.DomainsModified {
 		if !domainIsAlterableInPlace(domainDiff) {
 			continue
 		}
-		domain := findDomain(generated.Domains, domainDiff.DomainName, semantics)
+		domain := findDomain(desired.Domains, domainDiff.DomainName, semantics)
 		if domain == nil {
 			// The same rule the rebuild path follows: a definition the schema
 			// does not hold is not one to plan statements from.
@@ -94,7 +94,7 @@ func (p *Planner) alterModifiedDomains(
 // The order of the operations is the order they have to run in. A replaced
 // CHECK drops the old constraint before adding the new one, and NOT NULL is set
 // after the CHECK it may depend on rather than before it.
-func alterDomainNode(domainDiff difftypes.DomainDiff, domain goschema.Domain) ast.Node {
+func alterDomainNode(domainDiff difftypes.DomainDiff, domain schemamodel.Domain) ast.Node {
 	node := ast.NewAlterType(domainDiff.DomainName)
 	operations := 0
 
@@ -135,7 +135,7 @@ func alterDomainNode(domainDiff difftypes.DomainDiff, domain goschema.Domain) as
 // A domain keeps a literal and an expression apart. Only the expression is
 // already SQL; a literal is the value itself and has to be quoted before a
 // server can parse the statement carrying it.
-func declaredDomainDefault(domain goschema.Domain) string {
+func declaredDomainDefault(domain schemamodel.Domain) string {
 	if domain.DefaultExpr != "" {
 		return domain.DefaultExpr
 	}
@@ -263,7 +263,7 @@ func bareTypeName(name string) string {
 func (p *Planner) alterModifiedCompositeTypes(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 ) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	rebuilt := rebuiltUserTypes(diff)
@@ -271,7 +271,7 @@ func (p *Planner) alterModifiedCompositeTypes(
 		if !compositeIsAlterableInPlace(compositeDiff, rebuilt) {
 			continue
 		}
-		if findCompositeType(generated.CompositeTypes, compositeDiff.TypeName, semantics) == nil {
+		if findCompositeType(desired.CompositeTypes, compositeDiff.TypeName, semantics) == nil {
 			result = append(result, unrecreatableUserTypeComment("composite type", compositeDiff.TypeName))
 			continue
 		}

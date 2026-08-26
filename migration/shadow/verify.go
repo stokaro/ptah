@@ -7,9 +7,9 @@ import (
 	"maps"
 
 	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/devlock"
 	"go.5x5.cz/ptah/migration/internal/shadowdb"
@@ -151,7 +151,7 @@ type MigrationVerifyOptions struct {
 	Capabilities        capability.Capabilities
 	IdentifierSemantics identifier.Semantics
 	Candidates          []Candidate
-	Generated           *goschema.Database
+	Generated           *schemamodel.Database
 	CompareOpts         *config.CompareOptions
 	Schemas             []string
 }

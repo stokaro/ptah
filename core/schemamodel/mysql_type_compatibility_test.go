@@ -1,4 +1,4 @@
-package goschema_test
+package schemamodel_test
 
 import (
 	"strings"
@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/planner/dialects/mysql"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
@@ -19,17 +19,17 @@ func TestMySQLTypeCompatibilityForEmbeddedRelations(t *testing.T) {
 	c := qt.New(t)
 
 	// Create a schema with embedded relation that should generate compatible types
-	db := &goschema.Database{
-		Tables: []goschema.Table{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: "users", StructName: "User"},
 			{Name: "articles", StructName: "Article"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			// User table with SERIAL id (becomes INT AUTO_INCREMENT in MySQL)
 			{StructName: "User", Name: "id", Type: "SERIAL", Primary: true, AutoInc: true},
 			{StructName: "User", Name: "email", Type: "VARCHAR(255)"},
 		},
-		EmbeddedFields: []goschema.EmbeddedField{
+		EmbeddedFields: []schemamodel.EmbeddedField{
 			{
 				StructName:       "Article",
 				EmbeddedTypeName: "User",
@@ -39,14 +39,14 @@ func TestMySQLTypeCompatibilityForEmbeddedRelations(t *testing.T) {
 			},
 		},
 		Dependencies:               make(map[string][]string),
-		SelfReferencingForeignKeys: make(map[string][]goschema.SelfReferencingFK),
+		SelfReferencingForeignKeys: make(map[string][]schemamodel.SelfReferencingFK),
 	}
 
 	// Process embedded fields to generate the author_id field
 	processEmbeddedFieldsTest(db)
 
 	// Find the generated author_id field
-	var authorField *goschema.Field
+	var authorField *schemamodel.Field
 	for _, field := range db.Fields {
 		if field.Name == "author_id" {
 			authorField = &field
@@ -83,12 +83,12 @@ func TestMySQLMigrationGeneratesCompatibleTypes(t *testing.T) {
 	c := qt.New(t)
 
 	// Create a schema similar to the failing integration tests
-	db := &goschema.Database{
-		Tables: []goschema.Table{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: "users", StructName: "User"},
 			{Name: "articles", StructName: "Article"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			// User table with SERIAL id (AutoInc should be true for SERIAL)
 			{StructName: "User", Name: "id", Type: "SERIAL", Primary: true, AutoInc: true},
 			{StructName: "User", Name: "email", Type: "VARCHAR(255)"},
@@ -108,7 +108,7 @@ func TestMySQLMigrationGeneratesCompatibleTypes(t *testing.T) {
 				},
 			},
 		},
-		SelfReferencingForeignKeys: make(map[string][]goschema.SelfReferencingFK),
+		SelfReferencingForeignKeys: make(map[string][]schemamodel.SelfReferencingFK),
 	}
 
 	// Create schema diff for adding both tables
@@ -170,7 +170,7 @@ func TestMySQLMigrationGeneratesCompatibleTypes(t *testing.T) {
 }
 
 // Helper function to process embedded fields (simplified version for testing)
-func processEmbeddedFieldsTest(db *goschema.Database) {
+func processEmbeddedFieldsTest(db *schemamodel.Database) {
 	for _, embedded := range db.EmbeddedFields {
 		if embedded.Mode == "relation" && embedded.Field != "" && embedded.Ref != "" {
 			// Create platform-specific overrides for MySQL/MariaDB compatibility
@@ -179,7 +179,7 @@ func processEmbeddedFieldsTest(db *goschema.Database) {
 			overrides["mariadb"] = map[string]string{"type": "INT"}
 
 			// Generate the foreign key field
-			db.Fields = append(db.Fields, goschema.Field{
+			db.Fields = append(db.Fields, schemamodel.Field{
 				StructName:     embedded.StructName,
 				FieldName:      embedded.EmbeddedTypeName,
 				Name:           embedded.Field,

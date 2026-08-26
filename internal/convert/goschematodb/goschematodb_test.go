@@ -6,55 +6,55 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/goschematodb"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
 func TestToDBSchema_PreservesExtendedSchemaObjects(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Schemas: []goschema.Schema{{Name: "app", Comment: "Application"}},
-		Tables:  []goschema.Table{{StructName: "User", Name: "users", Schema: "app"}},
-		Fields:  []goschema.Field{{StructName: "User", Name: "id", Type: "bigint"}},
-		Extensions: []goschema.Extension{{
+	db := &schemamodel.Database{
+		Schemas: []schemamodel.Schema{{Name: "app", Comment: "Application"}},
+		Tables:  []schemamodel.Table{{StructName: "User", Name: "users", Schema: "app"}},
+		Fields:  []schemamodel.Field{{StructName: "User", Name: "id", Type: "bigint"}},
+		Extensions: []schemamodel.Extension{{
 			Name:   "pgcrypto",
 			Schema: "app",
 		}},
-		Sequences: []goschema.Sequence{{
+		Sequences: []schemamodel.Sequence{{
 			Name:      "order_seq",
 			Schema:    "app",
 			AsType:    "bigint",
 			Increment: new(int64(2)),
 		}},
-		Domains: []goschema.Domain{{
+		Domains: []schemamodel.Domain{{
 			Name:     "email",
 			Schema:   "app",
 			BaseType: "text",
 			NotNull:  true,
 		}},
-		CompositeTypes: []goschema.CompositeType{{
+		CompositeTypes: []schemamodel.CompositeType{{
 			Name:   "address",
 			Schema: "app",
-			Fields: []goschema.CompositeTypeField{{Name: "city", Type: "text"}},
+			Fields: []schemamodel.CompositeField{{Name: "city", Type: "text"}},
 		}},
-		Ranges: []goschema.Range{{
+		Ranges: []schemamodel.Range{{
 			Name:    "price_range",
 			Schema:  "app",
 			Subtype: "numeric",
 		}},
-		RLSEnabledTables: []goschema.RLSEnabledTable{{
+		RLSEnabledTables: []schemamodel.RLSEnabledTable{{
 			StructName: "User",
 			Table:      "app.users",
 		}},
-		Grants: []goschema.Grant{{
+		Grants: []schemamodel.Grant{{
 			Role:       "app_user",
 			Privileges: []string{"USAGE"},
 			OnSequence: "app.order_seq",
 		}},
 	}
-	goschema.Finalize(db)
+	schemamodel.Finalize(db)
 
 	got := goschematodb.ToDBSchema(db, platform.Postgres)
 
@@ -82,12 +82,12 @@ func TestToDBSchema_PreservesExtendedSchemaObjects(t *testing.T) {
 
 func TestToDBSchema_FieldLevelConstraintsStayIdempotent(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Tables: []goschema.Table{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "User", Name: "users"},
 			{StructName: "Post", Name: "posts"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "INTEGER", Primary: true},
 			{
 				StructName: "User",
@@ -116,16 +116,16 @@ func TestToDBSchema_FieldLevelConstraintsStayIdempotent(t *testing.T) {
 
 func TestToDBSchema_ExplicitConstraintOverridesFieldLevelConstraintWithSameName(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "User", Name: "users"}},
-		Fields: []goschema.Field{{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
+		Fields: []schemamodel.Field{{
 			StructName: "User",
 			Name:       "status",
 			Type:       "TEXT",
 			Check:      "status <> ''",
 			CheckName:  "users_status_check",
 		}},
-		Constraints: []goschema.Constraint{{
+		Constraints: []schemamodel.Constraint{{
 			StructName:      "User",
 			Name:            "users_status_check",
 			Type:            "CHECK",
@@ -142,22 +142,22 @@ func TestToDBSchema_ExplicitConstraintOverridesFieldLevelConstraintWithSameName(
 
 func TestToDBSchema_PreservesStructuralObjectIdentities(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Tables: []goschema.Table{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Qualified", Schema: "tenant", Name: "data", PrimaryKey: []string{"qualified_id"}},
 			{StructName: "Literal", Name: "tenant.data", PrimaryKey: []string{"literal_id"}},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Qualified", Name: "qualified_id", Type: "INTEGER"},
 			{StructName: "Qualified", Name: "id", Type: "INTEGER"},
 			{StructName: "Literal", Name: "literal_id", Type: "INTEGER"},
 			{StructName: "Literal", Name: "id", Type: "INTEGER"},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{StructName: "Literal", Name: "literal_lookup", TableName: `"tenant.data"`, Fields: []string{"id"}},
 			{StructName: "Qualified", Name: "qualified_lookup", TableName: "tenant.data", Fields: []string{"id"}},
 		},
-		Constraints: []goschema.Constraint{{
+		Constraints: []schemamodel.Constraint{{
 			StructName:    "Literal",
 			Name:          "literal_to_qualified_fk",
 			Type:          "FOREIGN KEY",
@@ -166,24 +166,24 @@ func TestToDBSchema_PreservesStructuralObjectIdentities(t *testing.T) {
 			ForeignTable:  "tenant.data",
 			ForeignColumn: "id",
 		}},
-		Views: []goschema.View{
+		Views: []schemamodel.View{
 			{Name: `"tenant.data"`, Body: "SELECT 'literal'"},
 			{Name: "tenant.data", Body: "SELECT 'qualified'"},
 		},
-		MaterializedViews: []goschema.MaterializedView{
+		MaterializedViews: []schemamodel.MaterializedView{
 			{Name: `"tenant.data"`, Body: "SELECT 'literal'"},
 			{Name: "tenant.data", Body: "SELECT 'qualified'"},
 		},
-		Triggers: []goschema.Trigger{
+		Triggers: []schemamodel.Trigger{
 			{Name: "literal_trigger", Table: `"tenant.data"`, Timing: "AFTER", Event: "INSERT", Body: "SELECT 1"},
 			{Name: "qualified_trigger", Table: "tenant.data", Timing: "AFTER", Event: "INSERT", Body: "SELECT 1"},
 		},
-		Grants: []goschema.Grant{
+		Grants: []schemamodel.Grant{
 			{Role: "app", Privileges: []string{"SELECT"}, OnTable: `"tenant.data"`},
 			{Role: "app", Privileges: []string{"SELECT"}, OnTable: "tenant.data"},
 		},
 	}
-	goschema.Finalize(db)
+	schemamodel.Finalize(db)
 
 	got := goschematodb.ToDBSchema(db, platform.Postgres)
 
@@ -216,11 +216,11 @@ func TestToDBSchema_PreservesStructuralObjectIdentities(t *testing.T) {
 // the name rather than becoming a qualification boundary.
 func TestToDBSchema_PreservesFunctionIdentities(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{Functions: []goschema.Function{
+	db := &schemamodel.Database{Functions: []schemamodel.Function{
 		{Name: `"tenant.data"`, Parameters: "literal INTEGER", Returns: "integer", Language: "sql", Body: "SELECT 1"},
 		{Name: "tenant.data", Parameters: "value TEXT", Returns: "integer", Language: "sql", Body: "SELECT 2"},
 	}}
-	goschema.Finalize(db)
+	schemamodel.Finalize(db)
 
 	got := goschematodb.ToDBSchema(db, platform.Postgres)
 

@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/envbool"
 )
 
@@ -281,7 +281,7 @@ func (r *renderer) omitRefusedBlock(path, block string, names ...string) bool {
 //
 // The evidence therefore comes from the reader, which resolved the index's
 // operator classes and access method against pg_depend; see
-// [goschema.Index.RequiresExtensions]. Asking the document instead -- treating
+// [schemamodel.Index.RequiresExtensions]. Asking the document instead -- treating
 // `USING gin` as a reference to btree_gin -- is the wrong answer to the same
 // question: `gin` is a core access method, and tsvector, jsonb and array columns
 // have core GIN operator classes, so that rule would pin btree_gin to indexes
@@ -300,10 +300,10 @@ func (r *renderer) omitRefusedBlock(path, block string, names ...string) bool {
 // are exactly the non-default ones, and over the 45 extensions in the
 // postgres:17 image all 5 of those have names pg_catalog does not also supply,
 // so each survives the shadowed-name filter into
-// [goschema.Extension.Provides] and the name scan can answer for it:
+// [schemamodel.Extension.Provides] and the name scan can answer for it:
 // citext_pattern_ops, gin__int_ops, gist__intbig_ops, gin_trgm_ops,
 // gist_trgm_ops.
-func (r *renderer) omitRefusedExtension(path string, extension goschema.Extension) bool {
+func (r *renderer) omitRefusedExtension(path string, extension schemamodel.Extension) bool {
 	return r.omitRefused(path, blockExtension, func() blockDependency {
 		// The extension's own name AND everything it supplies: a document that
 		// depends on `isn` says `isbn`, never `isn`. Provides is empty for
@@ -446,7 +446,7 @@ func (r *renderer) documentRequiresExtension(name string) bool {
 // emits a document with no index block anywhere; kept, the pinned binary
 // refused it with `postgres: extensions are not supported by this version`,
 // while both documents applied at exit 0.
-func collectRequiredExtensions(db *goschema.Database) map[string]bool {
+func collectRequiredExtensions(db *schemamodel.Database) map[string]bool {
 	required := make(map[string]bool)
 	add := func(names []string) {
 		for _, name := range names {
@@ -486,7 +486,7 @@ func collectRequiredExtensions(db *goschema.Database) map[string]bool {
 // with no relationship to the extension (stokaro/ptah#1280).
 //
 // What makes the answer precise is therefore the input: the names in
-// [goschema.Extension.Provides] are only those the extension supplies that do
+// [schemamodel.Extension.Provides] are only those the extension supplies that do
 // not also resolve without it, and among functions a keyword-named one is left
 // out only where a type of the same extension is in the list and stands in for
 // it. This scan reads words, not positions, so `DELETE FROM audit` in a plpgsql
@@ -522,10 +522,10 @@ func (r *renderer) documentNamesAny(names []string) bool {
 //
 // This builds the set of names the document USES. Deciding whether a particular
 // extension is still needed is the other half, and it belongs to
-// [goschema.Extension.Provides], which the PostgreSQL reader fills from
+// [schemamodel.Extension.Provides], which the PostgreSQL reader fills from
 // pg_depend: the names collected here are matched against what the extension
 // supplies, not against its label.
-func collectReferencedNames(db *goschema.Database) map[string]bool {
+func collectReferencedNames(db *schemamodel.Database) map[string]bool {
 	names := make(map[string]bool)
 	add := func(text string) {
 		for _, token := range sqlIdentifierTokens(text) {
@@ -565,7 +565,7 @@ func collectReferencedNames(db *goschema.Database) map[string]bool {
 		// document says so. A class reaches the document exactly when it is not
 		// the default for its key's type, and a non-default extension class is
 		// one the shadowed-name filter keeps in
-		// [goschema.Extension.Provides], so what lands here is matchable. Not
+		// [schemamodel.Extension.Provides], so what lands here is matchable. Not
 		// reading it omitted pg_trgm from a document whose index block spelled
 		// gin_trgm_ops, and the document then failed to apply with `operator
 		// class "gin_trgm_ops" does not exist for access method "gin"` --
@@ -629,7 +629,7 @@ func collectReferencedNames(db *goschema.Database) map[string]bool {
 // The words it yields carry no position, so a statement keyword and a call to a
 // function of the same name are the same token here. That is answered where the
 // member list is built rather than guessed at afterwards: the PostgreSQL reader
-// leaves a keyword-named function out of [goschema.Extension.Provides] when a
+// leaves a keyword-named function out of [schemamodel.Extension.Provides] when a
 // type of the same extension is in that list to answer for it, and keeps it
 // when none is.
 func sqlIdentifierTokens(text string) []string {

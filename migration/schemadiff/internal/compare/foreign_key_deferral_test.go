@@ -6,8 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -18,13 +18,13 @@ import (
 // Single-column matters: a declaration carries such a key on the FIELD rather
 // than as a constraint, so the comparator has to synthesize one for it, and the
 // synthesis is what this is about.
-func deferrableDeclaration(deferrable bool, initially string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func deferrableDeclaration(deferrable bool, initially string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Parent", Name: "parent"},
 			{StructName: "Child", Name: "child"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Parent", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Child", Name: "id", Type: "INTEGER", Primary: true},
 			{
@@ -60,10 +60,10 @@ func deferrableCatalog(deferrable bool, initially string) *catalog.Database {
 }
 
 // deferralDiff compares one description against one catalog.
-func deferralDiff(c *qt.C, generated *goschema.Database, database *catalog.Database) *difftypes.SchemaDiff {
+func deferralDiff(c *qt.C, desired *schemamodel.Database, current *catalog.Database) *difftypes.SchemaDiff {
 	c.Helper()
 	diff := &difftypes.SchemaDiff{}
-	compare.ConstraintsWithSemantics(generated, database, diff, nil, identifier.ForDialect("postgres"))
+	compare.ConstraintsWithSemantics(desired, current, diff, nil, identifier.ForDialect("postgres"))
 	return diff
 }
 

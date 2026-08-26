@@ -10,7 +10,7 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/generator"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -69,8 +69,8 @@ func TestGenerateMigrationOptions_CompareOptions_NilHandling_DefaultBehavior(t *
 	c := qt.New(t)
 
 	// Create test schemas
-	generated := &goschema.Database{
-		Extensions: []goschema.Extension{
+	desired := &schemamodel.Database{
+		Extensions: []schemamodel.Extension{
 			{Name: "pg_trgm", IfNotExists: true},
 		},
 	}
@@ -83,7 +83,7 @@ func TestGenerateMigrationOptions_CompareOptions_NilHandling_DefaultBehavior(t *
 	}
 
 	// Test schema comparison with nil options (should use defaults)
-	diff := schemadiff.CompareWithOptions(generated, database, nil)
+	diff := schemadiff.CompareWithOptions(desired, database, nil)
 
 	// With nil options, should use defaults (ignore plpgsql)
 	c.Assert(diff.ExtensionsAdded, qt.DeepEquals, []string{"pg_trgm"})
@@ -97,8 +97,8 @@ func TestGenerateMigrationOptions_CompareOptions_NilHandling_CustomOptions(t *te
 	c := qt.New(t)
 
 	// Create test schemas
-	generated := &goschema.Database{
-		Extensions: []goschema.Extension{
+	desired := &schemamodel.Database{
+		Extensions: []schemamodel.Extension{
 			{Name: "pg_trgm", IfNotExists: true},
 		},
 	}
@@ -112,7 +112,7 @@ func TestGenerateMigrationOptions_CompareOptions_NilHandling_CustomOptions(t *te
 
 	// Test schema comparison with custom options
 	compareOptions := config.WithIgnoredExtensions("plpgsql", "adminpack")
-	diff := schemadiff.CompareWithOptions(generated, database, compareOptions)
+	diff := schemadiff.CompareWithOptions(desired, database, compareOptions)
 
 	// With custom options ignoring both plpgsql and adminpack
 	c.Assert(diff.ExtensionsAdded, qt.DeepEquals, []string{"pg_trgm"})
@@ -180,8 +180,8 @@ func TestGenerateMigrationOptions_CompareOptions_ConfigurationValidation(t *test
 			}
 
 			// Test schema comparison with these options
-			generated := &goschema.Database{
-				Extensions: []goschema.Extension{
+			desired := &schemamodel.Database{
+				Extensions: []schemamodel.Extension{
 					{Name: "pg_trgm", IfNotExists: true},
 				},
 			}
@@ -193,7 +193,7 @@ func TestGenerateMigrationOptions_CompareOptions_ConfigurationValidation(t *test
 				},
 			}
 
-			diff := schemadiff.CompareWithOptions(generated, database, tt.compareOptions)
+			diff := schemadiff.CompareWithOptions(desired, database, tt.compareOptions)
 
 			c.Assert(diff.ExtensionsAdded, qt.HasLen, tt.expectedAddedCount,
 				qt.Commentf("Expected %d extensions to be added", tt.expectedAddedCount))

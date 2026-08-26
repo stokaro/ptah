@@ -69,7 +69,7 @@ func TestVisitCreateRole_HappyPath(t *testing.T) {
 			// anybody declared inherit="false". The two are indistinguishable at
 			// this boundary, so the visitor renders rather than refuses, and
 			// clickhouserbac.ValidateDeclared makes the distinction one layer up
-			// where goschema.Role still carries the parser's default of true.
+			// where schemamodel.Role still carries the parser's default of true.
 			name: "a zero-valued node renders",
 			node: &ast.CreateRoleNode{Name: "analyst"},
 			want: "CREATE ROLE IF NOT EXISTS `analyst`;\n",

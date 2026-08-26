@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // ValidateLive refuses a declaration that names a relation the server holds as
@@ -29,27 +29,27 @@ import (
 // as a materialized view, which is the natural mistake: PostgreSQL calls it one.
 // The `continuous_aggregate` block and `//ptah:schema:continuousaggregate`
 // declare the object itself, and neither reaches this refusal.
-func ValidateLive(dialect string, generated *goschema.Database, database *catalog.Database) error {
+func ValidateLive(dialect string, desired *schemamodel.Database, current *catalog.Database) error {
 	if !platform.IsPostgresFamily(dialect) {
 		return nil
 	}
-	if generated == nil || database == nil || len(database.ContinuousAggregates) == 0 {
+	if desired == nil || current == nil || len(current.ContinuousAggregates) == 0 {
 		return nil
 	}
 
-	live := make(map[string]catalog.ContinuousAggregate, len(database.ContinuousAggregates))
-	for _, aggregate := range database.ContinuousAggregates {
+	live := make(map[string]catalog.ContinuousAggregate, len(current.ContinuousAggregates))
+	for _, aggregate := range current.ContinuousAggregates {
 		live[foldQualified(aggregate.Schema, aggregate.Name)] = aggregate
 	}
 
 	var problems []error
-	for _, view := range generated.Views {
+	for _, view := range desired.Views {
 		problems = appendAggregateClash(problems, live, "view", view.Name)
 	}
-	for _, view := range generated.MaterializedViews {
+	for _, view := range desired.MaterializedViews {
 		problems = appendAggregateClash(problems, live, "materialized view", view.Name)
 	}
-	for _, table := range generated.Tables {
+	for _, table := range desired.Tables {
 		problems = appendAggregateClash(problems, live, "table", table.Name)
 	}
 	slices.SortFunc(problems, func(a, b error) int {

@@ -6,8 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -16,13 +16,13 @@ import (
 // carried by two tables, which PostgreSQL permits: a policy name is scoped to
 // its table, so tenant_isolation can exist on alpha_orders and zeta_orders at
 // once. The planner therefore cannot resolve an addition by name alone.
-func generatedSharedPolicyName() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func generatedSharedPolicyName() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: "alpha_orders", StructName: "AlphaOrder"},
 			{Name: "zeta_orders", StructName: "ZetaOrder"},
 		},
-		RLSPolicies: []goschema.RLSPolicy{
+		RLSPolicies: []schemamodel.RLSPolicy{
 			{Name: "tenant_isolation", Table: "alpha_orders", PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "tenant_id = 1"},
 			{Name: "tenant_isolation", Table: "zeta_orders", PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "tenant_id = 2"},
 		},
@@ -205,9 +205,9 @@ func TestPlanner_RLSPolicyRefs_ResolvesTheDefaultSchemaSpelling(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			generated := &goschema.Database{
-				Tables: []goschema.Table{{Name: "orders", StructName: "Order"}},
-				RLSPolicies: []goschema.RLSPolicy{{
+			desired := &schemamodel.Database{
+				Tables: []schemamodel.Table{{Name: "orders", StructName: "Order"}},
+				RLSPolicies: []schemamodel.RLSPolicy{{
 					Name:            "tenant_isolation",
 					Table:           test.declared,
 					PolicyFor:       "ALL",
@@ -221,7 +221,7 @@ func TestPlanner_RLSPolicyRefs_ResolvesTheDefaultSchemaSpelling(t *testing.T) {
 				},
 			}
 
-			nodes, err := postgres.New().GenerateMigrationAST(diff, generated)
+			nodes, err := postgres.New().GenerateMigrationAST(diff, desired)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.HasLen, 1)

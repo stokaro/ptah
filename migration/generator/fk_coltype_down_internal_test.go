@@ -12,7 +12,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
@@ -115,15 +115,15 @@ func TestGenerateMigration_ForeignKeyColumnTypeChange_CoincidentActionChange(t *
 // database for the posts.user_slug widening. When genOnDelete is non-empty the
 // target's ON DELETE action differs from the database's CASCADE, producing a
 // coincident foreign-key definition change alongside the column-type change.
-func fkColumnTypeFixtures(genOnDelete string) (*goschema.Database, *catalog.Database) {
+func fkColumnTypeFixtures(genOnDelete string) (*schemamodel.Database, *catalog.Database) {
 	oldLen, newLen := 50, 100
 
-	gen := &goschema.Database{
-		Tables: []goschema.Table{
+	gen := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: "users", StructName: "User"},
 			{Name: "posts", StructName: "Post"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{Name: "id", Type: "BIGINT", StructName: "User", Primary: true, AutoInc: true},
 			{Name: "slug", Type: "VARCHAR(100)", StructName: "User", Nullable: false, Unique: true},
 			{Name: "id", Type: "BIGINT", StructName: "Post", Primary: true, AutoInc: true},

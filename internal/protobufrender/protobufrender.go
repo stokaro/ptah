@@ -23,7 +23,7 @@ import (
 	"sort"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemaexport"
 )
 
@@ -229,7 +229,7 @@ type builder struct {
 
 // Render renders db as a deterministic Protobuf definition, preserving every
 // field and enum-value number pinned by opts.Previous.
-func Render(ctx context.Context, db *goschema.Database, opts Options) (Result, error) {
+func Render(ctx context.Context, db *schemamodel.Database, opts Options) (Result, error) {
 	if db == nil {
 		return Result{}, fmt.Errorf("schema database is nil")
 	}
@@ -364,9 +364,9 @@ type desiredField struct {
 // It asks the shared model rather than filtering here, so this target and the
 // two API targets cannot disagree about what is published.
 func (b *builder) exposedFields(
-	db *goschema.Database,
-	table goschema.Table,
-) ([]goschema.Field, []schemaexport.Diagnostic, error) {
+	db *schemamodel.Database,
+	table schemamodel.Table,
+) ([]schemamodel.Field, []schemaexport.Diagnostic, error) {
 	policy := b.opts.FieldPolicy
 	if policy == "" {
 		policy = schemaexport.FieldPolicyAll
@@ -380,7 +380,7 @@ func (b *builder) exposedFields(
 		return nil, nil, err
 	}
 	published := make(map[string]bool, len(readable))
-	fields := append([]goschema.Field(nil), readable...)
+	fields := append([]schemamodel.Field(nil), readable...)
 	for _, field := range readable {
 		published[field.Name] = true
 	}
@@ -401,7 +401,7 @@ func (b *builder) exposedFields(
 	return fields, kept, nil
 }
 
-func (b *builder) buildDesired(db *goschema.Database) (desiredShape, error) {
+func (b *builder) buildDesired(db *schemamodel.Database) (desiredShape, error) {
 	tables := schemaexport.SelectTables(db, schemaexport.Options{
 		IncludeTables: b.opts.IncludeTables,
 		ExcludeTables: b.opts.ExcludeTables,
@@ -468,8 +468,8 @@ func (b *builder) buildDesired(db *goschema.Database) (desiredShape, error) {
 // collision by schema. The rule is total and order-independent: if two tables
 // still collide after qualification the export fails naming both, rather than
 // aliasing with a numeric suffix whose result would depend on table order.
-func (b *builder) assignMessageNames(tables []goschema.Table) (map[string]string, error) {
-	bare := make(map[string][]goschema.Table)
+func (b *builder) assignMessageNames(tables []schemamodel.Table) (map[string]string, error) {
+	bare := make(map[string][]schemamodel.Table)
 	for _, table := range tables {
 		name, changed := messageName(schemaexport.TableAPIName(table, schemaexport.TargetProtobuf))
 		if changed {
@@ -481,7 +481,7 @@ func (b *builder) assignMessageNames(tables []goschema.Table) (map[string]string
 	}
 
 	names := make(map[string]string)
-	final := make(map[string][]goschema.Table)
+	final := make(map[string][]schemamodel.Table)
 	for name, group := range bare {
 		if len(group) == 1 {
 			names[group[0].QualifiedName()] = name
@@ -519,7 +519,7 @@ func (b *builder) assignMessageNames(tables []goschema.Table) (map[string]string
 	return names, nil
 }
 
-func (b *builder) buildField(table goschema.Table, f goschema.Field, enumIndex map[string][]string) (desiredField, error) {
+func (b *builder) buildField(table schemamodel.Table, f schemamodel.Field, enumIndex map[string][]string) (desiredField, error) {
 	// An explicit type override the mapping cannot honor is refused rather than
 	// defaulted to string. Here the stake is higher than in the other two
 	// exporters: a wire type is persistent, and a silently defaulted one would
@@ -607,7 +607,7 @@ func (b *builder) sourceComment(comment string) string {
 // registerEnum creates (or reuses) the Protobuf enum backing an enum column.
 // The keying mirrors internal/graphqlrender so several columns sharing one
 // named Ptah enum produce exactly one Protobuf enum.
-func (b *builder) registerEnum(table goschema.Table, f goschema.Field, values []string) (string, error) {
+func (b *builder) registerEnum(table schemamodel.Table, f schemamodel.Field, values []string) (string, error) {
 	// Mirrors internal/graphqlrender.enumSourceKey exactly. Deliberately does
 	// NOT also test len(f.Enum) == 0: the parser sets BOTH Field.Type and
 	// Field.Enum on the column that DEFINES an enum, so such a test would send

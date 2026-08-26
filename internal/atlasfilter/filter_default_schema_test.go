@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 )
 
@@ -251,7 +251,7 @@ func TestExcludeDatabase_WithoutDefaultSchemaKeepsBareOnlyCandidates(t *testing.
 // Reverting the fix fails this with the table and the view still present in the
 // desired state, while the introspected side of the same pattern is empty.
 func TestExcludeGeneratedWithDefaultSchema_MatchesDatabaseSide(t *testing.T) {
-	// goschema.Finalize sorts tables by name; fields and views keep input order.
+	// schemamodel.Finalize sorts tables by name; fields and views keep input order.
 	tests := []struct {
 		name    string
 		pattern string
@@ -289,16 +289,16 @@ func TestExcludeGeneratedWithDefaultSchema_MatchesDatabaseSide(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			schema := &goschema.Database{
-				Tables: []goschema.Table{
+			schema := &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{StructName: "User", Name: "users"},
 					{StructName: "Order", Schema: "app", Name: "orders"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{StructName: "User", Name: "id", Type: "INTEGER", Primary: true},
 					{StructName: "Order", Name: "id", Type: "INTEGER", Primary: true},
 				},
-				Views: []goschema.View{
+				Views: []schemamodel.View{
 					{StructName: "VUsers", Name: "v_users", Body: "SELECT id FROM users"},
 					{StructName: "VOrders", Name: "app.v_orders", Body: "SELECT id FROM app.orders"},
 				},
@@ -320,7 +320,7 @@ type generatedDefaultSchemaObjects struct {
 	Views  []string
 }
 
-func generatedDefaultSchemaObjectsOf(schema *goschema.Database) generatedDefaultSchemaObjects {
+func generatedDefaultSchemaObjectsOf(schema *schemamodel.Database) generatedDefaultSchemaObjects {
 	return generatedDefaultSchemaObjects{
 		Tables: generatedTableNames(schema.Tables),
 		Fields: generatedFieldNames(schema.Fields),
@@ -328,7 +328,7 @@ func generatedDefaultSchemaObjectsOf(schema *goschema.Database) generatedDefault
 	}
 }
 
-func generatedViewNames(views []goschema.View) []string {
+func generatedViewNames(views []schemamodel.View) []string {
 	names := make([]string, 0, len(views))
 	for _, view := range views {
 		names = append(names, view.Name)

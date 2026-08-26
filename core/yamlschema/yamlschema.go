@@ -2,7 +2,7 @@
 //
 // # One of the authoring formats
 //
-// A desired schema reaches Ptah as a *goschema.Database, and YAML is one of the
+// A desired schema reaches Ptah as a *schemamodel.Database, and YAML is one of the
 // formats that produce it. Go annotations, YAML, HCL, SQL, and DBML each have a
 // reader of their own, each returns the same model, and everything downstream —
 // rendering, diffing, planning, linting, migration generation — sees only that
@@ -58,12 +58,12 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/matviewrefresh"
 )
 
 // ParseFile parses a YAML schema file into the same Database IR used by Go annotations.
-func ParseFile(path string) (*goschema.Database, error) {
+func ParseFile(path string) (*schemamodel.Database, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read schema file: %w", err)
@@ -73,7 +73,7 @@ func ParseFile(path string) (*goschema.Database, error) {
 }
 
 // Parse parses a YAML schema document into the same Database IR used by Go annotations.
-func Parse(data []byte) (*goschema.Database, error) {
+func Parse(data []byte) (*schemamodel.Database, error) {
 	var doc document
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
@@ -309,11 +309,11 @@ type grantSpec struct {
 
 type platformSpec map[string]map[string]stringScalar
 
-func (d document) toDatabase() (*goschema.Database, error) {
-	db := &goschema.Database{
+func (d document) toDatabase() (*schemamodel.Database, error) {
+	db := &schemamodel.Database{
 		Dependencies:               make(map[string][]string),
 		FunctionDependencies:       make(map[string][]string),
-		SelfReferencingForeignKeys: make(map[string][]goschema.SelfReferencingFK),
+		SelfReferencingForeignKeys: make(map[string][]schemamodel.SelfReferencingFK),
 	}
 
 	d.addEnums(db)
@@ -341,26 +341,26 @@ func (d document) toDatabase() (*goschema.Database, error) {
 	d.addRoles(db)
 	d.addGrants(db)
 
-	goschema.Finalize(db)
+	schemamodel.Finalize(db)
 	return db, nil
 }
 
-func (d document) addEnums(db *goschema.Database) {
+func (d document) addEnums(db *schemamodel.Database) {
 	for _, name := range sortedKeys(d.Enums) {
-		db.Enums = append(db.Enums, goschema.Enum{
+		db.Enums = append(db.Enums, schemamodel.Enum{
 			Name:   name,
 			Values: cleanStrings(d.Enums[name].Values),
 		})
 	}
 }
 
-func (d document) addTables(db *goschema.Database) error {
+func (d document) addTables(db *schemamodel.Database) error {
 	for _, tableKey := range sortedKeys(d.Tables) {
 		table := d.Tables[tableKey]
 		structName := valueOrDefault(table.StructName, tableKey)
 		tableName := valueOrDefault(table.Name, tableKey)
 
-		db.Tables = append(db.Tables, goschema.Table{
+		db.Tables = append(db.Tables, schemamodel.Table{
 			StructName: structName,
 			Name:       tableName,
 			Engine:     string(table.Engine),
@@ -381,7 +381,7 @@ func (d document) addTables(db *goschema.Database) error {
 			return err
 		}
 		if table.RLSEnabled {
-			db.RLSEnabledTables = append(db.RLSEnabledTables, goschema.RLSEnabledTable{
+			db.RLSEnabledTables = append(db.RLSEnabledTables, schemamodel.RLSEnabledTable{
 				StructName: structName,
 				Table:      tableName,
 			})
@@ -391,7 +391,7 @@ func (d document) addTables(db *goschema.Database) error {
 	return nil
 }
 
-func addFields(db *goschema.Database, structName string, columns, fields orderedMap[fieldSpec]) error {
+func addFields(db *schemamodel.Database, structName string, columns, fields orderedMap[fieldSpec]) error {
 	seen := make(map[string]bool)
 	for _, column := range columns {
 		seen[column.Name] = true
@@ -416,14 +416,14 @@ func addFields(db *goschema.Database, structName string, columns, fields ordered
 	return nil
 }
 
-func buildField(structName, key string, spec fieldSpec, db *goschema.Database) (goschema.Field, error) {
+func buildField(structName, key string, spec fieldSpec, db *schemamodel.Database) (schemamodel.Field, error) {
 	fieldName := valueOrDefault(spec.FieldName, key)
 	columnName := valueOrDefault(spec.Name, key)
 	fieldType := string(spec.Type)
 	enumValues := cleanStrings(spec.Enum)
 	if len(enumValues) > 0 && (fieldType == "" || fieldType == "ENUM") {
 		enumName := "enum_" + strings.ToLower(structName) + "_" + strings.ToLower(fieldName)
-		db.Enums = append(db.Enums, goschema.Enum{Name: enumName, Values: enumValues})
+		db.Enums = append(db.Enums, schemamodel.Enum{Name: enumName, Values: enumValues})
 		fieldType = enumName
 	}
 
@@ -436,13 +436,13 @@ func buildField(structName, key string, spec fieldSpec, db *goschema.Database) (
 	}
 	identityGeneration := normalizeIdentityGeneration(string(spec.IdentityGeneration))
 	if spec.IdentityGeneration != "" && identityGeneration == "" {
-		return goschema.Field{}, fmt.Errorf("column %q has unsupported identity_generation %q", key, spec.IdentityGeneration)
+		return schemamodel.Field{}, fmt.Errorf("column %q has unsupported identity_generation %q", key, spec.IdentityGeneration)
 	}
 	if identityGeneration == "" && hasIdentitySettings(spec) {
 		identityGeneration = "BY_DEFAULT"
 	}
 
-	return goschema.Field{
+	return schemamodel.Field{
 		StructName:          structName,
 		FieldName:           fieldName,
 		Name:                columnName,
@@ -511,7 +511,7 @@ func normalizeIdentityGeneration(value string) string {
 	}
 }
 
-func addTableIndexes(db *goschema.Database, structName string, indexes orderedMap[indexSpec]) error {
+func addTableIndexes(db *schemamodel.Database, structName string, indexes orderedMap[indexSpec]) error {
 	for _, index := range indexes {
 		value, err := buildIndex(index.Name, structName, index.Value)
 		if err != nil {
@@ -522,7 +522,7 @@ func addTableIndexes(db *goschema.Database, structName string, indexes orderedMa
 	return nil
 }
 
-func (d document) addIndexes(db *goschema.Database) error {
+func (d document) addIndexes(db *schemamodel.Database) error {
 	for _, key := range sortedKeys(d.Indexes) {
 		index, err := buildIndex(key, "", d.Indexes[key])
 		if err != nil {
@@ -533,19 +533,19 @@ func (d document) addIndexes(db *goschema.Database) error {
 	return nil
 }
 
-func buildIndex(key, structName string, spec indexSpec) (goschema.Index, error) {
+func buildIndex(key, structName string, spec indexSpec) (schemamodel.Index, error) {
 	fields := cleanStrings(spec.Fields)
 	if len(fields) == 0 {
 		fields = cleanStrings(spec.Columns)
 	}
 	if len(fields) == 0 {
-		return goschema.Index{}, fmt.Errorf("index %q requires fields", key)
+		return schemamodel.Index{}, fmt.Errorf("index %q requires fields", key)
 	}
 	if structName == "" && string(spec.TableName) == "" {
-		return goschema.Index{}, fmt.Errorf("top-level index %q requires table", key)
+		return schemamodel.Index{}, fmt.Errorf("top-level index %q requires table", key)
 	}
 
-	return goschema.Index{
+	return schemamodel.Index{
 		StructName:  structName,
 		Name:        valueOrDefault(spec.Name, key),
 		Fields:      fields,
@@ -559,7 +559,7 @@ func buildIndex(key, structName string, spec indexSpec) (goschema.Index, error) 
 	}, nil
 }
 
-func addTableConstraints(db *goschema.Database, structName, tableName string, constraints orderedMap[constraintSpec]) error {
+func addTableConstraints(db *schemamodel.Database, structName, tableName string, constraints orderedMap[constraintSpec]) error {
 	for _, constraint := range constraints {
 		value, err := buildConstraint(constraint.Name, structName, tableName, constraint.Value)
 		if err != nil {
@@ -570,7 +570,7 @@ func addTableConstraints(db *goschema.Database, structName, tableName string, co
 	return nil
 }
 
-func (d document) addConstraints(db *goschema.Database) error {
+func (d document) addConstraints(db *schemamodel.Database) error {
 	for _, key := range sortedKeys(d.Constraints) {
 		constraint, err := buildConstraint(key, "", "", d.Constraints[key])
 		if err != nil {
@@ -581,7 +581,7 @@ func (d document) addConstraints(db *goschema.Database) error {
 	return nil
 }
 
-func buildConstraint(key, structName, tableName string, spec constraintSpec) (goschema.Constraint, error) {
+func buildConstraint(key, structName, tableName string, spec constraintSpec) (schemamodel.Constraint, error) {
 	constraintTable := string(spec.Table)
 	if constraintTable == "" && structName == "" {
 		constraintTable = tableName
@@ -589,10 +589,10 @@ func buildConstraint(key, structName, tableName string, spec constraintSpec) (go
 	constraintType := strings.ToUpper(string(spec.Type))
 	columns := cleanStrings(spec.Columns)
 	if err := validateConstraint(key, structName, constraintTable, constraintType, columns, spec); err != nil {
-		return goschema.Constraint{}, err
+		return schemamodel.Constraint{}, err
 	}
 
-	return goschema.Constraint{
+	return schemamodel.Constraint{
 		StructName:      structName,
 		Name:            valueOrDefault(spec.Name, key),
 		Type:            constraintType,
@@ -643,10 +643,10 @@ func validateConstraint(key, structName, tableName, constraintType string, colum
 	return nil
 }
 
-func (d document) addExtensions(db *goschema.Database) {
+func (d document) addExtensions(db *schemamodel.Database) {
 	for _, key := range sortedKeys(d.Extensions) {
 		spec := d.Extensions[key]
-		db.Extensions = append(db.Extensions, goschema.Extension{
+		db.Extensions = append(db.Extensions, schemamodel.Extension{
 			Name:        valueOrDefault(spec.Name, key),
 			Schema:      string(spec.Schema),
 			IfNotExists: spec.IfNotExists,
@@ -656,7 +656,7 @@ func (d document) addExtensions(db *goschema.Database) {
 	}
 }
 
-func (d document) addFunctions(db *goschema.Database) {
+func (d document) addFunctions(db *schemamodel.Database) {
 	for _, key := range sortedKeys(d.Functions) {
 		spec := d.Functions[key]
 		parameters := string(spec.Parameters)
@@ -664,7 +664,7 @@ func (d document) addFunctions(db *goschema.Database) {
 			parameters = string(spec.Params)
 		}
 
-		fn := goschema.Function{
+		fn := schemamodel.Function{
 			StructName: string(spec.StructName),
 			Name:       valueOrDefault(spec.Name, key),
 			Parameters: parameters,
@@ -680,13 +680,13 @@ func (d document) addFunctions(db *goschema.Database) {
 	}
 }
 
-func (d document) addViews(db *goschema.Database) error {
+func (d document) addViews(db *schemamodel.Database) error {
 	for _, key := range sortedKeys(d.Views) {
 		spec := d.Views[key]
 		if string(spec.Body) == "" {
 			return fmt.Errorf("view %q requires body", key)
 		}
-		db.Views = append(db.Views, goschema.View{
+		db.Views = append(db.Views, schemamodel.View{
 			StructName: string(spec.StructName),
 			Name:       valueOrDefault(spec.Name, key),
 			Body:       string(spec.Body),
@@ -697,7 +697,7 @@ func (d document) addViews(db *goschema.Database) error {
 	return nil
 }
 
-func (d document) addMaterializedViews(db *goschema.Database) error {
+func (d document) addMaterializedViews(db *schemamodel.Database) error {
 	for _, key := range sortedKeys(d.MaterializedViews) {
 		spec := d.MaterializedViews[key]
 		if string(spec.Body) == "" {
@@ -706,7 +706,7 @@ func (d document) addMaterializedViews(db *goschema.Database) error {
 		if spec.RefreshStrategy.Kind != 0 {
 			return matviewrefresh.Refuse(valueOrDefault(spec.Name, key))
 		}
-		db.MaterializedViews = append(db.MaterializedViews, goschema.MaterializedView{
+		db.MaterializedViews = append(db.MaterializedViews, schemamodel.MaterializedView{
 			StructName: string(spec.StructName),
 			Name:       valueOrDefault(spec.Name, key),
 			Body:       string(spec.Body),
@@ -716,7 +716,7 @@ func (d document) addMaterializedViews(db *goschema.Database) error {
 	return nil
 }
 
-func (d document) addTriggers(db *goschema.Database) error {
+func (d document) addTriggers(db *schemamodel.Database) error {
 	for _, key := range sortedKeys(d.Triggers) {
 		spec := d.Triggers[key]
 		if string(spec.Table) == "" {
@@ -731,7 +731,7 @@ func (d document) addTriggers(db *goschema.Database) error {
 		if string(spec.Body) == "" {
 			return fmt.Errorf("trigger %q requires body", key)
 		}
-		trigger := goschema.Trigger{
+		trigger := schemamodel.Trigger{
 			StructName: string(spec.StructName),
 			Name:       valueOrDefault(spec.Name, key),
 			Table:      string(spec.Table),
@@ -747,7 +747,7 @@ func (d document) addTriggers(db *goschema.Database) error {
 	return nil
 }
 
-func (d document) addRLS(db *goschema.Database) {
+func (d document) addRLS(db *schemamodel.Database) {
 	for _, key := range sortedKeys(d.RLSEnabledTables) {
 		db.RLSEnabledTables = append(db.RLSEnabledTables, buildRLSEnabledTable(key, d.RLSEnabledTables[key]))
 	}
@@ -757,7 +757,7 @@ func (d document) addRLS(db *goschema.Database) {
 
 	for _, key := range sortedKeys(d.RLSPolicies) {
 		spec := d.RLSPolicies[key]
-		db.RLSPolicies = append(db.RLSPolicies, goschema.RLSPolicy{
+		db.RLSPolicies = append(db.RLSPolicies, schemamodel.RLSPolicy{
 			StructName:          string(spec.StructName),
 			Name:                valueOrDefault(spec.Name, key),
 			Table:               string(spec.Table),
@@ -770,22 +770,22 @@ func (d document) addRLS(db *goschema.Database) {
 	}
 }
 
-func buildRLSEnabledTable(key string, spec rlsEnableSpec) goschema.RLSEnabledTable {
-	return goschema.RLSEnabledTable{
+func buildRLSEnabledTable(key string, spec rlsEnableSpec) schemamodel.RLSEnabledTable {
+	return schemamodel.RLSEnabledTable{
 		StructName: string(spec.StructName),
 		Table:      valueOrDefault(spec.Table, key),
 		Comment:    string(spec.Comment),
 	}
 }
 
-func (d document) addRoles(db *goschema.Database) {
+func (d document) addRoles(db *schemamodel.Database) {
 	for _, key := range sortedKeys(d.Roles) {
 		spec := d.Roles[key]
 		inherit := true
 		if spec.Inherit != nil {
 			inherit = *spec.Inherit
 		}
-		db.Roles = append(db.Roles, goschema.Role{
+		db.Roles = append(db.Roles, schemamodel.Role{
 			StructName:  string(spec.StructName),
 			Name:        valueOrDefault(spec.Name, key),
 			Login:       spec.Login,
@@ -800,14 +800,14 @@ func (d document) addRoles(db *goschema.Database) {
 	}
 }
 
-func (d document) addGrants(db *goschema.Database) {
+func (d document) addGrants(db *schemamodel.Database) {
 	for _, key := range sortedKeys(d.Grants) {
 		spec := d.Grants[key]
 		privileges := cleanStrings(spec.Privilege)
 		if len(privileges) == 0 {
 			privileges = cleanStrings(spec.Privileges)
 		}
-		grant := goschema.Grant{
+		grant := schemamodel.Grant{
 			StructName: string(spec.StructName),
 			Role:       string(spec.Role),
 			Privileges: privileges,

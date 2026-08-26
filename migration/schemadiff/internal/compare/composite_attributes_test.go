@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -23,7 +23,7 @@ import (
 func TestCompositeTypes_AttributeDeltaOnlyWhenALTERReachesTheDeclaredShape(t *testing.T) {
 	tests := []struct {
 		name        string
-		declared    []goschema.CompositeTypeField
+		declared    []schemamodel.CompositeField
 		current     []catalog.CompositeField
 		wantAdded   []string
 		wantRemoved []string
@@ -67,7 +67,7 @@ func TestCompositeTypes_AttributeDeltaOnlyWhenALTERReachesTheDeclaredShape(t *te
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			generated := &goschema.Database{CompositeTypes: []goschema.CompositeType{
+			desired := &schemamodel.Database{CompositeTypes: []schemamodel.CompositeType{
 				{Name: "addr", Fields: test.declared},
 			}}
 			database := &catalog.Database{Composites: []catalog.CompositeType{
@@ -75,7 +75,7 @@ func TestCompositeTypes_AttributeDeltaOnlyWhenALTERReachesTheDeclaredShape(t *te
 			}}
 			diff := &difftypes.SchemaDiff{}
 
-			compare.CompositeTypes(generated, database, diff, compare.CoverageOf(generated, database))
+			compare.CompositeTypes(desired, database, diff, compare.CoverageOf(desired, database))
 
 			c.Assert(diff.CompositeTypesModified, qt.HasLen, 1)
 			c.Assert(addedNames(diff.CompositeTypesModified[0]), qt.DeepEquals, test.wantAdded)
@@ -94,8 +94,8 @@ func TestCompositeTypes_AttributeDeltaOnlyWhenALTERReachesTheDeclaredShape(t *te
 func TestCompositeTypes_AChangedFieldTypeIsNotAnAttributeDelta(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{CompositeTypes: []goschema.CompositeType{
-		{Name: "addr", Fields: []goschema.CompositeTypeField{
+	desired := &schemamodel.Database{CompositeTypes: []schemamodel.CompositeType{
+		{Name: "addr", Fields: []schemamodel.CompositeField{
 			{Name: "street", Type: "varchar(80)"},
 			{Name: "city", Type: "text"},
 		}},
@@ -108,7 +108,7 @@ func TestCompositeTypes_AChangedFieldTypeIsNotAnAttributeDelta(t *testing.T) {
 	}}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.CompositeTypes(generated, database, diff, compare.CoverageOf(generated, database))
+	compare.CompositeTypes(desired, database, diff, compare.CoverageOf(desired, database))
 
 	c.Assert(diff.CompositeTypesModified, qt.HasLen, 1)
 	c.Assert(diff.CompositeTypesModified[0].AttributesAdded, qt.HasLen, 0)
@@ -116,10 +116,10 @@ func TestCompositeTypes_AChangedFieldTypeIsNotAnAttributeDelta(t *testing.T) {
 }
 
 // fields builds declared text fields with the given names.
-func fields(names ...string) []goschema.CompositeTypeField {
-	built := make([]goschema.CompositeTypeField, 0, len(names))
+func fields(names ...string) []schemamodel.CompositeField {
+	built := make([]schemamodel.CompositeField, 0, len(names))
 	for _, name := range names {
-		built = append(built, goschema.CompositeTypeField{Name: name, Type: "text"})
+		built = append(built, schemamodel.CompositeField{Name: name, Type: "text"})
 	}
 	return built
 }

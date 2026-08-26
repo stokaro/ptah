@@ -17,7 +17,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/migration/migrator"
@@ -25,7 +25,7 @@ import (
 
 // goschemaDatabaseFixture is a non-nil desired state; these tests never reach
 // the comparison that would read it.
-var goschemaDatabaseFixture = goschema.Database{}
+var goschemaDatabaseFixture = schemamodel.Database{}
 
 // withoutPlanLint neutralizes the escape lint for one test, so anything that
 // still refuses a statement is doing so for real.

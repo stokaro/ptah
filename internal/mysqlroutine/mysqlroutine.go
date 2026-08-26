@@ -22,7 +22,7 @@ import (
 	"strings"
 )
 
-// Volatility values, spelled as [goschema.Function.Canonicalize] leaves them.
+// Volatility values, spelled as [schemamodel.Function.Canonicalize] leaves them.
 const (
 	Immutable = "IMMUTABLE"
 	Stable    = "STABLE"
@@ -58,7 +58,7 @@ func IdentityKey(name string) string {
 // accepted because an [ast.CreateFunctionNode] built directly carries no
 // language and the renderer has always treated that as SQL; note that a
 // declaration parsed from an annotation never arrives empty, because
-// [goschema.Function.Canonicalize] defaults an unset language to plpgsql.
+// [schemamodel.Function.Canonicalize] defaults an unset language to plpgsql.
 //
 // It lives here, next to the rest of the family's routine rules, because TWO
 // callers must agree on it and they are in different packages. The renderer
@@ -113,7 +113,7 @@ func RunsLanguage(language string) bool {
 // up to which of the two gets which value.
 //
 // VOLATILE keeps READS SQL DATA, the spelling stokaro/ptah#1461 shipped. It is
-// the value [goschema.Function.Canonicalize] gives every function whose
+// the value [schemamodel.Function.Canonicalize] gives every function whose
 // annotation omits volatility, so it is the common case and every function
 // already deployed by that release carries it; moving it would rewrite the
 // catalog entry of every existing routine to fix a value almost nobody

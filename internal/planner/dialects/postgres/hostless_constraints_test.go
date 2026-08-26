@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -66,7 +66,7 @@ func TestPlanner_GenerateMigrationAST_TableQualifiedCheckAndUniqueAdditions(t *t
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			nodes, err := postgres.New().GenerateMigrationAST(tt.diff, &goschema.Database{})
+			nodes, err := postgres.New().GenerateMigrationAST(tt.diff, &schemamodel.Database{})
 			c.Assert(err, qt.IsNil)
 			sql, err := renderer.RenderSQL("postgres", nodes...)
 			c.Assert(err, qt.IsNil)
@@ -105,13 +105,13 @@ func TestPlanner_GenerateMigrationAST_HostlessReAdd_DropsExactlyOnce(t *testing.
 				{Name: "chk_down", TableName: "things", Type: "CHECK"},
 			},
 		}
-		generated := &goschema.Database{
-			Constraints: []goschema.Constraint{
+		desired := &schemamodel.Database{
+			Constraints: []schemamodel.Constraint{
 				{StructName: "Thing", Name: "chk_down", Type: "CHECK", Table: "things", CheckExpression: "qty >= 0"},
 			},
 		}
 
-		nodes, err := postgres.New().GenerateMigrationAST(diff, generated)
+		nodes, err := postgres.New().GenerateMigrationAST(diff, desired)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -147,13 +147,13 @@ func TestPlanner_GenerateMigrationAST_HostlessReAdd_DropsExactlyOnce(t *testing.
 				{Name: "shared_check", TableName: "pages", Type: "CHECK"},
 			},
 		}
-		generated := &goschema.Database{
-			Constraints: []goschema.Constraint{
+		desired := &schemamodel.Database{
+			Constraints: []schemamodel.Constraint{
 				{StructName: "Article", Name: "shared_check", Type: "CHECK", Table: "articles", CheckExpression: "qty >= 0"},
 			},
 		}
 
-		nodes, err := postgres.New().GenerateMigrationAST(diff, generated)
+		nodes, err := postgres.New().GenerateMigrationAST(diff, desired)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -195,13 +195,13 @@ func TestPlanner_GenerateMigrationAST_EmptyTableNameAdditionTreatedAsHostless(t 
 			{Name: "chk_ghost", TableName: "things", Type: "CHECK"},
 		},
 	}
-	generated := &goschema.Database{
-		Constraints: []goschema.Constraint{
+	desired := &schemamodel.Database{
+		Constraints: []schemamodel.Constraint{
 			{StructName: "Thing", Name: "chk_ghost", Type: "CHECK", Table: "things", CheckExpression: "qty >= 0"},
 		},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff, generated)
+	nodes, err := postgres.New().GenerateMigrationAST(diff, desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -236,7 +236,7 @@ func TestPlanner_GenerateMigrationAST_TableQualifiedPrimaryKeyAddition(t *testin
 		}},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff, &goschema.Database{})
+	nodes, err := postgres.New().GenerateMigrationAST(diff, &schemamodel.Database{})
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)

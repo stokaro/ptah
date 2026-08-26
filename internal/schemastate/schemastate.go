@@ -3,7 +3,7 @@
 //
 // # Why it exists
 //
-// The tree describes a schema two ways. `core/goschema.Database` is what an
+// The tree describes a schema two ways. `core/schemamodel.Database` is what an
 // authoring source produces and `catalog.Database` is what a catalog
 // read produces; they carry different field sets, spell two families
 // differently, and four packages under internal/convert exist to move between

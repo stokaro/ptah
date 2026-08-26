@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // RolesToCreateOnDev splits the roles a desired schema declares into the ones a
@@ -50,9 +50,9 @@ import (
 // stored, and both sides here are stored spellings: the label of a role block
 // and a pg_roles row.
 func RolesToCreateOnDev(
-	declared []goschema.Role,
+	declared []schemamodel.Role,
 	present []catalog.Role,
-) (create, alreadyOnServer []goschema.Role) {
+) (create, alreadyOnServer []schemamodel.Role) {
 	if len(declared) == 0 {
 		return declared, nil
 	}
@@ -60,7 +60,7 @@ func RolesToCreateOnDev(
 	for _, role := range present {
 		onServer[role.Name] = struct{}{}
 	}
-	create = make([]goschema.Role, 0, len(declared))
+	create = make([]schemamodel.Role, 0, len(declared))
 	for _, role := range declared {
 		if _, ok := onServer[role.Name]; ok {
 			alreadyOnServer = append(alreadyOnServer, role)
@@ -87,7 +87,7 @@ func RolesToCreateOnDev(
 // stream"; the note is then dropped rather than panicking. Write errors are
 // dropped too: a diagnostic that fails to print must not fail a
 // materialization that succeeded.
-func ReportNotCreatedOnDev(w io.Writer, alreadyOnServer []goschema.Role) {
+func ReportNotCreatedOnDev(w io.Writer, alreadyOnServer []schemamodel.Role) {
 	if w == nil || len(alreadyOnServer) == 0 {
 		return
 	}

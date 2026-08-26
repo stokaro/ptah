@@ -7,39 +7,39 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/convert/toschema"
 	"go.5x5.cz/ptah/internal/parser"
 )
 
-// These tests exercise the SQL -> goschema.Database path used by the
+// These tests exercise the SQL -> schemamodel.Database path used by the
 // external_schema source and SQL --schema-file, asserting that table-level
 // PRIMARY KEY and ALTER TABLE ADD CONSTRAINT FOREIGN KEY survive (see #708).
 
-func parseToDatabase(c *qt.C, sql string) goschema.Database {
+func parseToDatabase(c *qt.C, sql string) schemamodel.Database {
 	statements, err := parser.NewParser(sql).Parse()
 	c.Assert(err, qt.IsNil)
 	return toschema.ToDatabase(statements, "")
 }
 
-func findTable(db goschema.Database, name string) (goschema.Table, bool) {
+func findTable(db schemamodel.Database, name string) (schemamodel.Table, bool) {
 	for _, t := range db.Tables {
 		if t.Name == name {
 			return t, true
 		}
 	}
-	return goschema.Table{}, false
+	return schemamodel.Table{}, false
 }
 
-func findConstraint(db goschema.Database, typ, table string) (goschema.Constraint, bool) {
+func findConstraint(db schemamodel.Database, typ, table string) (schemamodel.Constraint, bool) {
 	for _, con := range db.Constraints {
 		if con.Type == typ && con.Table == table {
 			return con, true
 		}
 	}
-	return goschema.Constraint{}, false
+	return schemamodel.Constraint{}, false
 }
 
 func TestToDatabase_TableLevelPrimaryKeyCaptured(t *testing.T) {
@@ -92,7 +92,7 @@ CREATE TABLE children (
 	c.Assert(db.Fields[2].Foreign, qt.Equals, `"tenant.data"(id)`)
 	c.Assert(db.Fields[3].Foreign, qt.Equals, "tenant.data(id)")
 
-	goschema.Finalize(&db)
+	schemamodel.Finalize(&db)
 	statements, err := renderer.GetOrderedCreateStatements(&db, "postgres")
 	c.Assert(err, qt.IsNil)
 	rendered := strings.Join(statements, "\n")
@@ -110,7 +110,7 @@ func TestToDatabase_SQLRoundTripRendersPrimaryKeyAndForeignKey(t *testing.T) {
 	db := parseToDatabase(c, `CREATE TABLE users (id bigserial, name varchar(255), PRIMARY KEY (id));
 CREATE TABLE pets (id bigserial, user_id bigint, PRIMARY KEY (id));
 ALTER TABLE pets ADD CONSTRAINT fk_pets_user FOREIGN KEY (user_id) REFERENCES users(id);`)
-	goschema.Finalize(&db)
+	schemamodel.Finalize(&db)
 
 	statements, err := renderer.GetOrderedCreateStatements(&db, "postgres")
 	c.Assert(err, qt.IsNil)
@@ -256,7 +256,7 @@ func TestToDatabase_ParserPreservesIndexExpression(t *testing.T) {
 	c.Assert(db.Indexes[0].Fields, qt.DeepEquals, []string{
 		`concat(first_name, '. ', last_name)`,
 	})
-	c.Assert(db.Indexes[0].Parts, qt.DeepEquals, []goschema.IndexPart{{
+	c.Assert(db.Indexes[0].Parts, qt.DeepEquals, []schemamodel.IndexPart{{
 		Expr: `concat(first_name, '. ', last_name)`,
 	}})
 
@@ -308,11 +308,11 @@ func TestToDatabase_DialectQuotedIdentifiersAreCanonicalized(t *testing.T) {
 	c.Assert(db.Indexes[0].Name, qt.Equals, "event`lookup")
 	c.Assert(db.Indexes[0].TableName, qt.Equals, `audit."user""events"`)
 	c.Assert(db.Indexes[0].Fields, qt.DeepEquals, []string{"event]id"})
-	c.Assert(toschema.ToExtension(extension), qt.DeepEquals, goschema.Extension{
+	c.Assert(toschema.ToExtension(extension), qt.DeepEquals, schemamodel.Extension{
 		Name:   "uuid-ossp",
 		Schema: "Extension Store",
 	})
-	c.Assert(db.Enums, qt.DeepEquals, []goschema.Enum{{
+	c.Assert(db.Enums, qt.DeepEquals, []schemamodel.Enum{{
 		Name:   `audit.event"kind`,
 		Values: []string{"created"},
 	}})
@@ -322,7 +322,7 @@ func TestToDatabase_PostgresExtensionIdentifiersUseCatalogIdentity(t *testing.T)
 	c := qt.New(t)
 
 	unquoted := parseToDatabase(c, `CREATE EXTENSION PGCRYPTO SCHEMA Extensions;`)
-	c.Assert(unquoted.Extensions, qt.DeepEquals, []goschema.Extension{{
+	c.Assert(unquoted.Extensions, qt.DeepEquals, []schemamodel.Extension{{
 		Name:   "pgcrypto",
 		Schema: "extensions",
 	}})
@@ -331,7 +331,7 @@ func TestToDatabase_PostgresExtensionIdentifiersUseCatalogIdentity(t *testing.T)
 	c.Assert(unquotedSQL, qt.Contains, `CREATE EXTENSION "pgcrypto" WITH SCHEMA "extensions";`)
 
 	quoted := parseToDatabase(c, `CREATE EXTENSION "PGCrypto" SCHEMA " Extension Store ";`)
-	c.Assert(quoted.Extensions, qt.DeepEquals, []goschema.Extension{{
+	c.Assert(quoted.Extensions, qt.DeepEquals, []schemamodel.Extension{{
 		Name:   "PGCrypto",
 		Schema: " Extension Store ",
 	}})
@@ -409,7 +409,7 @@ func TestToIndex_ExpressionIsPreserved(t *testing.T) {
 	c.Assert(got.Name, qt.Equals, "events_payload_idx")
 	c.Assert(got.TableName, qt.Equals, "events")
 	c.Assert(got.Fields, qt.DeepEquals, []string{`json_extract(payload, '$.user.id')`})
-	c.Assert(got.Parts, qt.DeepEquals, []goschema.IndexPart{{
+	c.Assert(got.Parts, qt.DeepEquals, []schemamodel.IndexPart{{
 		Expr: `json_extract(payload, '$.user.id')`,
 	}})
 }

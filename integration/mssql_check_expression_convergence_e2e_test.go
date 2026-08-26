@@ -14,7 +14,7 @@ import (
 	_ "github.com/microsoft/go-mssqldb"
 
 	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -106,14 +106,14 @@ func replaceSQLServerDatabase(c *qt.C, dbURL, database string) string {
 
 // sqlServerCheckDeclaration is the same table as a description, carrying the
 // expression as it was WRITTEN.
-func sqlServerCheckDeclaration(expression string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "I", Name: "items"}},
-		Fields: []goschema.Field{
+func sqlServerCheckDeclaration(expression string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "I", Name: "items"}},
+		Fields: []schemamodel.Field{
 			{StructName: "I", Name: "id", Type: "int", Primary: true},
 			{StructName: "I", Name: "price", Type: "decimal(10,2)"},
 		},
-		Constraints: []goschema.Constraint{{
+		Constraints: []schemamodel.Constraint{{
 			StructName: "I", Name: "ck_price", Table: "items",
 			Type: "CHECK", CheckExpression: expression,
 		}},

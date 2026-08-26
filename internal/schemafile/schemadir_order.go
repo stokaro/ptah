@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // A schema DIRECTORY is an ordered script, not a set of declarations.
@@ -107,7 +107,7 @@ const (
 // with `schema "main" {}` is exit 0 there against a realm-scoped dev database,
 // because HCL files are one document and not a script. Refusing that layout
 // would remove a capability.
-func declaredObjects(db *goschema.Database, format schemaDirFormat) []declaredObject {
+func declaredObjects(db *schemamodel.Database, format schemaDirFormat) []declaredObject {
 	if db == nil {
 		return nil
 	}
@@ -119,7 +119,7 @@ func declaredObjects(db *goschema.Database, format schemaDirFormat) []declaredOb
 		}
 	}
 	for _, table := range db.Tables {
-		objects = append(objects, newDeclaredObject(kindTable, goschema.QualifyTableName(table.Schema, table.Name)))
+		objects = append(objects, newDeclaredObject(kindTable, schemamodel.QualifyTableName(table.Schema, table.Name)))
 	}
 	for _, view := range db.Views {
 		objects = append(objects, newDeclaredObject(kindView, view.Name))
@@ -138,7 +138,7 @@ func declaredObjects(db *goschema.Database, format schemaDirFormat) []declaredOb
 	}
 	objects = append(objects, declaredTypes(db)...)
 	for _, sequence := range db.Sequences {
-		objects = append(objects, newDeclaredObject(kindSequence, goschema.QualifyTableName(sequence.Schema, sequence.Name)))
+		objects = append(objects, newDeclaredObject(kindSequence, schemamodel.QualifyTableName(sequence.Schema, sequence.Name)))
 	}
 	for _, extension := range db.Extensions {
 		objects = append(objects, newDeclaredObject(kindExtension, extension.Name))
@@ -151,27 +151,27 @@ func declaredObjects(db *goschema.Database, format schemaDirFormat) []declaredOb
 
 // declaredTypes lists the four object kinds that share one type namespace, so a
 // domain and an enum spelled the same collide the way the engine collides them.
-func declaredTypes(db *goschema.Database) []declaredObject {
+func declaredTypes(db *schemamodel.Database) []declaredObject {
 	objects := make([]declaredObject, 0,
 		len(db.Enums)+len(db.Domains)+len(db.CompositeTypes)+len(db.Ranges))
 	for _, enum := range db.Enums {
 		objects = append(objects, newDeclaredObject(kindType, enum.Name))
 	}
 	for _, domain := range db.Domains {
-		objects = append(objects, newDeclaredObject(kindType, goschema.QualifyTableName(domain.Schema, domain.Name)))
+		objects = append(objects, newDeclaredObject(kindType, schemamodel.QualifyTableName(domain.Schema, domain.Name)))
 	}
 	for _, composite := range db.CompositeTypes {
-		objects = append(objects, newDeclaredObject(kindType, goschema.QualifyTableName(composite.Schema, composite.Name)))
+		objects = append(objects, newDeclaredObject(kindType, schemamodel.QualifyTableName(composite.Schema, composite.Name)))
 	}
 	for _, rangeType := range db.Ranges {
-		objects = append(objects, newDeclaredObject(kindType, goschema.QualifyTableName(rangeType.Schema, rangeType.Name)))
+		objects = append(objects, newDeclaredObject(kindType, schemamodel.QualifyTableName(rangeType.Schema, rangeType.Name)))
 	}
 	return objects
 }
 
 // indexOwner names the table an index belongs to, preferring the qualified
 // spelling the SQL loader records.
-func indexOwner(index goschema.Index) string {
+func indexOwner(index schemamodel.Index) string {
 	if index.TableName != "" {
 		return index.TableName
 	}

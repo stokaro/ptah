@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -22,10 +22,10 @@ import (
 // rendered SQL silently dropped them.
 func TestPlanner_FieldLevelForeignKeyActions(t *testing.T) {
 	tests := []struct {
-		name      string
-		diff      *difftypes.SchemaDiff
-		generated *goschema.Database
-		mustEmit  string
+		name     string
+		diff     *difftypes.SchemaDiff
+		desired  *schemamodel.Database
+		mustEmit string
 		// constraintMarker filters the negative check so it only inspects the
 		// ALTER TABLE line carrying this constraint name.
 		constraintMarker string
@@ -33,12 +33,12 @@ func TestPlanner_FieldLevelForeignKeyActions(t *testing.T) {
 	}{
 		{
 			name: "ON DELETE CASCADE on field annotation",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{StructName: "Commodity", Name: "commodities"},
 					{StructName: "CommodityService", Name: "commodity_services"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{StructName: "Commodity", Name: "id", Type: "TEXT", Primary: true},
 					{StructName: "CommodityService", Name: "id", Type: "TEXT", Primary: true},
 					{
@@ -55,12 +55,12 @@ func TestPlanner_FieldLevelForeignKeyActions(t *testing.T) {
 		},
 		{
 			name: "ON DELETE SET NULL + ON UPDATE CASCADE",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{StructName: "User", Name: "users"},
 					{StructName: "Post", Name: "posts"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 					{StructName: "Post", Name: "id", Type: "SERIAL", Primary: true},
 					{
@@ -78,12 +78,12 @@ func TestPlanner_FieldLevelForeignKeyActions(t *testing.T) {
 		},
 		{
 			name: "no FK actions still emits a clean REFERENCES (no ON DELETE/UPDATE)",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{StructName: "User", Name: "users"},
 					{StructName: "Post", Name: "posts"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 					{StructName: "Post", Name: "id", Type: "SERIAL", Primary: true},
 					{
@@ -101,14 +101,14 @@ func TestPlanner_FieldLevelForeignKeyActions(t *testing.T) {
 		},
 		{
 			name: "self-referencing FK carries ON DELETE SET NULL",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{StructName: "Category", Name: "categories"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{StructName: "Category", Name: "id", Type: "SERIAL", Primary: true},
 				},
-				SelfReferencingForeignKeys: map[string][]goschema.SelfReferencingFK{
+				SelfReferencingForeignKeys: map[string][]schemamodel.SelfReferencingFK{
 					"categories": {
 						{
 							FieldName:      "parent_id",
@@ -128,12 +128,12 @@ func TestPlanner_FieldLevelForeignKeyActions(t *testing.T) {
 					{TableName: "posts", ColumnsAdded: []string{"owner_id"}},
 				},
 			},
-			generated: &goschema.Database{
-				Tables: []goschema.Table{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{StructName: "User", Name: "users"},
 					{StructName: "Post", Name: "posts"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 					{StructName: "Post", Name: "id", Type: "SERIAL", Primary: true},
 					{
@@ -161,14 +161,14 @@ func TestPlanner_FieldLevelForeignKeyActions(t *testing.T) {
 			diff := tt.diff
 			if diff == nil {
 				// Default: emit FKs for all tables in TablesAdded.
-				tablesAdded := make([]string, 0, len(tt.generated.Tables))
-				for _, table := range tt.generated.Tables {
+				tablesAdded := make([]string, 0, len(tt.desired.Tables))
+				for _, table := range tt.desired.Tables {
 					tablesAdded = append(tablesAdded, table.Name)
 				}
 				diff = &difftypes.SchemaDiff{TablesAdded: tablesAdded}
 			}
 
-			nodes, err := postgres.New().GenerateMigrationAST(diff, tt.generated)
+			nodes, err := postgres.New().GenerateMigrationAST(diff, tt.desired)
 			c.Assert(err, qt.IsNil)
 			sql, err := renderer.RenderSQL("postgres", nodes...)
 			c.Assert(err, qt.IsNil)

@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
@@ -386,7 +386,7 @@ func recreateCurrentSchema(
 // empty dev database would reference a sequence that never gets created.
 // Columns whose nextval default names an explicitly introspected sequence
 // keep their default: that sequence is part of the baseline and is created.
-func normalizeBaselineSerialColumns(baseline *goschema.Database, dialect string) {
+func normalizeBaselineSerialColumns(baseline *schemamodel.Database, dialect string) {
 	if !platform.IsPostgresFamily(dialect) {
 		return
 	}

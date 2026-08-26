@@ -12,7 +12,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/schemachange"
 )
@@ -59,7 +59,7 @@ func TestSchemaChangeTablePipelinePostgresE2E(t *testing.T) {
 
 	// A column the table does not have. It is nullable, so nothing about the
 	// rows it will not have can stop it.
-	addition := planFor(c, liveWidget([]goschema.Field{{
+	addition := planFor(c, liveWidget([]schemamodel.Field{{
 		StructName: "Widget", Name: "label", Type: "text", Nullable: true,
 	}}), liveWidgetCatalog(nil), profile)
 	c.Assert(addition, qt.HasLen, 1)
@@ -75,7 +75,7 @@ func TestSchemaChangeTablePipelinePostgresE2E(t *testing.T) {
 	c.Assert(liveColumns(c, ctx, db, "widget"), qt.DeepEquals, []string{"code text", "id integer"})
 
 	// The whole table.
-	drop := planFor(c, &goschema.Database{}, liveWidgetCatalog(nil), profile)
+	drop := planFor(c, &schemamodel.Database{}, liveWidgetCatalog(nil), profile)
 	c.Assert(drop, qt.HasLen, 1)
 	execute(c, ctx, db, drop)
 	c.Assert(liveColumns(c, ctx, db, "widget"), qt.HasLen, 0)
@@ -115,7 +115,7 @@ func TestSchemaChangeNotNullColumnRefusalIsTheEnginesPostgresE2E(t *testing.T) {
 	currentCatalog := liveWidgetCatalog(nil)
 	currentCatalog.Tables[0].EstimatedRows = 1
 
-	changes := changesFor(c, liveWidget([]goschema.Field{{
+	changes := changesFor(c, liveWidget([]schemamodel.Field{{
 		StructName: "Widget", Name: "label", Type: "text",
 	}}), currentCatalog, livePostgresProfile())
 
@@ -130,13 +130,13 @@ func TestSchemaChangeNotNullColumnRefusalIsTheEnginesPostgresE2E(t *testing.T) {
 }
 
 // liveWidget is a table with a key, a column, and whatever else a row adds.
-func liveWidget(extra []goschema.Field) *goschema.Database {
-	fields := []goschema.Field{
+func liveWidget(extra []schemamodel.Field) *schemamodel.Database {
+	fields := []schemamodel.Field{
 		{StructName: "Widget", Name: "id", Type: "integer", Primary: true},
 		{StructName: "Widget", Name: "code", Type: "text", Nullable: true},
 	}
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Widget", Name: "widget"}},
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Widget", Name: "widget"}},
 		Fields: append(fields, extra...),
 	}
 }

@@ -30,6 +30,7 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 func main() {
@@ -94,7 +95,7 @@ func shouldShowDetails() bool {
 }
 
 // generateDDLForDialects generates and displays DDL statements for all supported dialects
-func generateDDLForDialects(database *goschema.Database) {
+func generateDDLForDialects(database *schemamodel.Database) {
 	supportedDialects := []string{"postgres", "mysql", "mariadb"}
 
 	for _, dialect := range supportedDialects {
@@ -118,7 +119,7 @@ func generateDDLForDialects(database *goschema.Database) {
 }
 
 // displaySchemaDetails shows detailed information about all parsed schema elements
-func displaySchemaDetails(embeddedFields []goschema.EmbeddedField, fields []goschema.Field, indexes []goschema.Index, tables []goschema.Table, enums []goschema.Enum) {
+func displaySchemaDetails(embeddedFields []schemamodel.EmbeddedField, fields []schemamodel.Field, indexes []schemamodel.Index, tables []schemamodel.Table, enums []schemamodel.Enum) {
 	// Display embedded fields
 	if len(embeddedFields) > 0 {
 		fmt.Printf("\nEmbedded Fields (%d):\n", len(embeddedFields))

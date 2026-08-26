@@ -1,4 +1,4 @@
-package goschema_test
+package schemamodel_test
 
 import (
 	"bytes"
@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 func TestFinalize_DoesNotReportExternalDependencyAsCycle(t *testing.T) {
@@ -18,9 +18,9 @@ func TestFinalize_DoesNotReportExternalDependencyAsCycle(t *testing.T) {
 	t.Cleanup(func() {
 		slog.SetDefault(previousLogger)
 	})
-	database := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Order", Name: "orders"}},
-		Fields: []goschema.Field{{
+	database := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Order", Name: "orders"}},
+		Fields: []schemamodel.Field{{
 			StructName: "Order",
 			Name:       "user_id",
 			Type:       "INTEGER",
@@ -28,7 +28,7 @@ func TestFinalize_DoesNotReportExternalDependencyAsCycle(t *testing.T) {
 		}},
 	}
 
-	goschema.Finalize(database)
+	schemamodel.Finalize(database)
 
 	c.Assert(database.Tables, qt.HasLen, 1)
 	c.Assert(database.Tables[0].Name, qt.Equals, "orders")

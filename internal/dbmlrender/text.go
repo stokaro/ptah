@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // qualified renders an object's identity, schema-qualified when it has one.
@@ -49,7 +49,7 @@ type omittedFamily struct {
 // Listed rather than counted in one number, because "3 objects were dropped"
 // tells a reader nothing about whether the export is usable and "views (2),
 // triggers (1)" tells them exactly.
-func omittedFamilies(db *goschema.Database) []string {
+func omittedFamilies(db *schemamodel.Database) []string {
 	families := []omittedFamily{
 		{"composite types", len(db.CompositeTypes)},
 		{"continuous aggregates", len(db.ContinuousAggregates)},

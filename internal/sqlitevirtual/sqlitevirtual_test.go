@@ -8,8 +8,8 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
 )
@@ -57,7 +57,7 @@ func TestValidateComparison(t *testing.T) {
 		name            string
 		dialect         string
 		env             func(testing.TB)
-		desired         *goschema.Database
+		desired         *schemamodel.Database
 		database        []catalog.Table
 		policy          sqlitevirtual.Policy
 		wantErr         bool
@@ -256,7 +256,7 @@ func TestValidateComparison(t *testing.T) {
 			name:    "significant whitespace in a schema name does not create a collision",
 			dialect: "sqlite",
 			env:     envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "1"),
-			desired: &goschema.Database{Tables: []goschema.Table{{Schema: "aux", Name: "docs"}}},
+			desired: &schemamodel.Database{Tables: []schemamodel.Table{{Schema: "aux", Name: "docs"}}},
 			database: []catalog.Table{{
 				Schema: " aux ", Name: "docs", Type: "TABLE", VirtualModule: "fts5", VirtualArguments: "body",
 			}},
@@ -491,8 +491,8 @@ func TestTables(t *testing.T) {
 
 // declaringVirtual builds a desired state whose table is itself virtual, which
 // is what a database URL on the desired side of `schema diff` produces.
-func declaringVirtual(name, module, arguments string) *goschema.Database {
-	return &goschema.Database{Tables: []goschema.Table{{
+func declaringVirtual(name, module, arguments string) *schemamodel.Database {
+	return &schemamodel.Database{Tables: []schemamodel.Table{{
 		Name:             name,
 		VirtualModule:    module,
 		VirtualArguments: arguments,
@@ -501,12 +501,12 @@ func declaringVirtual(name, module, arguments string) *goschema.Database {
 
 // declaring builds a desired state naming the given tables. Only the names
 // matter here: nothing a desired state can spell makes a table virtual.
-func declaring(names ...string) *goschema.Database {
-	tables := make([]goschema.Table, 0, len(names))
+func declaring(names ...string) *schemamodel.Database {
+	tables := make([]schemamodel.Table, 0, len(names))
 	for _, name := range names {
-		tables = append(tables, goschema.Table{Name: name})
+		tables = append(tables, schemamodel.Table{Name: name})
 	}
-	return &goschema.Database{Tables: tables}
+	return &schemamodel.Database{Tables: tables}
 }
 
 func errorText(err error) string {
@@ -518,7 +518,7 @@ func errorText(err error) string {
 
 // cannotDescribeVirtualTables marks a desired state the way the loaders mark
 // one produced by a format with no virtual-table construct.
-func cannotDescribeVirtualTables(db *goschema.Database) *goschema.Database {
+func cannotDescribeVirtualTables(db *schemamodel.Database) *schemamodel.Database {
 	db.NotDescribed = db.NotDescribed.WithKind(coverage.VirtualTable)
 	return db
 }

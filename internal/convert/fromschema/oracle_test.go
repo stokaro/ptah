@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 )
 
@@ -28,8 +28,8 @@ import (
 func TestFromField_OracleEnumUsesVarchar2WithCheck(t *testing.T) {
 	c := qt.New(t)
 
-	field := goschema.Field{Name: "status", Type: "enum_status"}
-	enums := []goschema.Enum{{Name: "enum_status", Values: []string{"active", "blocked"}}}
+	field := schemamodel.Field{Name: "status", Type: "enum_status"}
+	enums := []schemamodel.Enum{{Name: "enum_status", Values: []string{"active", "blocked"}}}
 
 	column := fromschema.FromField(field, enums, platform.Oracle)
 
@@ -52,8 +52,8 @@ func TestFromField_OracleEnumCheckMatchesTheColumnSpelling(t *testing.T) {
 
 	// "comment" is a word Oracle refuses bare, so the renderer quotes the
 	// declaration and the CHECK has to follow it.
-	field := goschema.Field{Name: "comment", Type: "enum_kind"}
-	enums := []goschema.Enum{{Name: "enum_kind", Values: []string{"note"}}}
+	field := schemamodel.Field{Name: "comment", Type: "enum_kind"}
+	enums := []schemamodel.Enum{{Name: "enum_kind", Values: []string{"note"}}}
 
 	column := fromschema.FromField(field, enums, platform.Oracle)
 

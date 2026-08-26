@@ -5,7 +5,7 @@ import (
 	"html"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // Options selects what the document covers and what it is called.
@@ -30,7 +30,7 @@ const defaultTitle = "Schema reference"
 // Every column of every selected table appears. That is deliberate and unlike
 // the API export targets, which project a public shape: documentation that hid
 // a column would describe a schema the reader does not have.
-func Render(db *goschema.Database, opts Options) (Result, error) {
+func Render(db *schemamodel.Database, opts Options) (Result, error) {
 	if db == nil {
 		return Result{}, fmt.Errorf("schema database is nil")
 	}
@@ -73,7 +73,7 @@ func Stylesheet() string { return documentCSS }
 // the surrounding html, head and body itself. Everything here is the same
 // markup Render emits, so the two views cannot disagree about what a schema
 // looks like.
-func Page(db *goschema.Database, opts Options) (sidebar, content string, err error) {
+func Page(db *schemamodel.Database, opts Options) (sidebar, content string, err error) {
 	if db == nil {
 		return "", "", fmt.Errorf("schema database is nil")
 	}

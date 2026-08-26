@@ -8,7 +8,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -25,7 +25,7 @@ func TestCompareWithDatabaseRejectsMalformedSQLiteVirtualDropToggleBeforeCatalog
 	_, err = schemadiff.CompareWithDatabase(
 		ctx,
 		conn,
-		&goschema.Database{},
+		&schemamodel.Database{},
 		&catalog.Database{},
 		nil,
 	)

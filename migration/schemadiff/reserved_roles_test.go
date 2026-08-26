@@ -6,8 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/reservedrole"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -40,22 +40,22 @@ func emptyPostgresDatabase() *catalog.Database {
 func TestCompareWithDatabaseInfoRefusesAReservedRole(t *testing.T) {
 	tests := []struct {
 		name    string
-		roles   []goschema.Role
+		roles   []schemamodel.Role
 		wantErr string
 	}{
 		{
 			name:    "the reserved prefix",
-			roles:   []goschema.Role{{Name: "pg_monitor"}},
+			roles:   []schemamodel.Role{{Name: "pg_monitor"}},
 			wantErr: `.*declares reserved PostgreSQL role "pg_monitor".*SQLSTATE 42939.*`,
 		},
 		{
 			name:    "the bootstrap superuser",
-			roles:   []goschema.Role{{Name: "postgres", Login: true, Superuser: true}},
+			roles:   []schemamodel.Role{{Name: "postgres", Login: true, Superuser: true}},
 			wantErr: `.*declares reserved PostgreSQL role "postgres".*SQLSTATE 42710.*`,
 		},
 		{
 			name: "a reserved role alongside ordinary ones",
-			roles: []goschema.Role{
+			roles: []schemamodel.Role{
 				{Name: "app_user", Login: true},
 				{Name: "pg_monitor"},
 			},
@@ -67,7 +67,7 @@ func TestCompareWithDatabaseInfoRefusesAReservedRole(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			diff, err := schemadiff.CompareWithDatabaseInfo(
-				&goschema.Database{Roles: test.roles},
+				&schemamodel.Database{Roles: test.roles},
 				emptyPostgresDatabase(),
 				postgresInfo(),
 				nil,
@@ -87,28 +87,28 @@ func TestCompareWithDatabaseInfoRefusesAReservedRole(t *testing.T) {
 func TestCompareWithDatabaseInfoStillComparesAnOrdinaryRole(t *testing.T) {
 	tests := []struct {
 		name       string
-		roles      []goschema.Role
+		roles      []schemamodel.Role
 		wantAdded  []string
 		wantSynced bool
 	}{
 		{
 			name:      "a role the database does not have is still added",
-			roles:     []goschema.Role{{Name: "brand_new", Login: true}},
+			roles:     []schemamodel.Role{{Name: "brand_new", Login: true}},
 			wantAdded: []string{"brand_new"},
 		},
 		{
 			name:      "pgbouncer is an ordinary role, not a reserved one",
-			roles:     []goschema.Role{{Name: "pgbouncer", Login: true}},
+			roles:     []schemamodel.Role{{Name: "pgbouncer", Login: true}},
 			wantAdded: []string{"pgbouncer"},
 		},
 		{
 			name:      "postgres_admin is an ordinary role, not the superuser",
-			roles:     []goschema.Role{{Name: "postgres_admin", Login: true}},
+			roles:     []schemamodel.Role{{Name: "postgres_admin", Login: true}},
 			wantAdded: []string{"postgres_admin"},
 		},
 		{
 			name:       "a role the database already has is not added",
-			roles:      []goschema.Role{{Name: "app_user", Login: true}},
+			roles:      []schemamodel.Role{{Name: "app_user", Login: true}},
 			wantAdded:  nil,
 			wantSynced: true,
 		},
@@ -118,7 +118,7 @@ func TestCompareWithDatabaseInfoStillComparesAnOrdinaryRole(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			diff, err := schemadiff.CompareWithDatabaseInfo(
-				&goschema.Database{Roles: test.roles},
+				&schemamodel.Database{Roles: test.roles},
 				emptyPostgresDatabase(),
 				postgresInfo(),
 				nil,
@@ -142,7 +142,7 @@ func TestCompareWithDatabaseInfoOptInPlansTheReservedRoleAnyway(t *testing.T) {
 	c.Setenv(reservedrole.AllowEnvVar, "1")
 
 	diff, err := schemadiff.CompareWithDatabaseInfo(
-		&goschema.Database{Roles: []goschema.Role{{Name: "postgres"}, {Name: "pg_monitor"}}},
+		&schemamodel.Database{Roles: []schemamodel.Role{{Name: "postgres"}, {Name: "pg_monitor"}}},
 		emptyPostgresDatabase(),
 		postgresInfo(),
 		nil,

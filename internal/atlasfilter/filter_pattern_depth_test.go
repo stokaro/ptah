@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 )
 
@@ -125,9 +125,9 @@ func TestExcludeDatabaseWithDefaultSchema_RefusesPatternsDeeperThanTheScope(t *t
 func TestExcludeGeneratedWithDefaultSchema_RefusesPatternsDeeperThanTheScope(t *testing.T) {
 	c := qt.New(t)
 
-	schema := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "User", Name: "users"}},
-		Fields: []goschema.Field{
+	schema := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "User", Name: "name", Type: "TEXT"},
 		},

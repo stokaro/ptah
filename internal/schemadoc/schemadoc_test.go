@@ -7,32 +7,32 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemadoc"
 )
 
 // bookshop is a schema with a dependency chain, a foreign key, an index and an
 // enum, so one fixture exercises every section the document renders.
-func bookshop() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func bookshop() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Author", Name: "authors", Comment: "People who write things"},
 			{StructName: "Book", Name: "books"},
 			{StructName: "Order", Name: "orders"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Author", Name: "id", Type: "BIGINT", Primary: true},
 			{StructName: "Author", Name: "email", Type: "TEXT", Unique: true, Nullable: true},
 			{StructName: "Book", Name: "id", Type: "BIGINT", Primary: true},
 			{StructName: "Book", Name: "author_id", Type: "BIGINT", Foreign: "authors(id)"},
 			{StructName: "Order", Name: "book_id", Type: "BIGINT", Foreign: "books(id)"},
 		},
-		Indexes: []goschema.Index{{StructName: "Book", Name: "idx_books_author", Fields: []string{"author_id"}}},
-		Enums:   []goschema.Enum{{Name: "order_status", Values: []string{"pending", "paid"}}},
+		Indexes: []schemamodel.Index{{StructName: "Book", Name: "idx_books_author", Fields: []string{"author_id"}}},
+		Enums:   []schemamodel.Enum{{Name: "order_status", Values: []string{"pending", "paid"}}},
 	}
 }
 
-func render(c *qt.C, db *goschema.Database, opts schemadoc.Options) string {
+func render(c *qt.C, db *schemamodel.Database, opts schemadoc.Options) string {
 	c.Helper()
 	result, err := schemadoc.Render(db, opts)
 	c.Assert(err, qt.IsNil)

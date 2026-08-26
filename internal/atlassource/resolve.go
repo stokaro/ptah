@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/core/schemasource"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasregistry"
@@ -90,11 +90,11 @@ type ResolveOptions struct {
 	// fully materialized and before the resolved state is returned. Nil accepts
 	// every schema. The callback is interface-neutral: compatibility adapters
 	// select policy without making this shared resolver depend on a CLI layer.
-	ValidateSchema func(*goschema.Database) error
+	ValidateSchema func(*schemamodel.Database) error
 	// ValidateInspectedSchema replaces ValidateSchema for database-backed and
 	// replayed migration-directory states. It lets an adapter distinguish
 	// authored desired content from objects supplied by the target server.
-	ValidateInspectedSchema func(*goschema.Database) error
+	ValidateInspectedSchema func(*schemamodel.Database) error
 	// ValidateInspectedDatabase applies a caller-selected policy while a live
 	// database source or replayed migration-directory dev database is still
 	// open. The schema list is the exact scope introspected into the returned
@@ -116,7 +116,7 @@ type State struct {
 	// Kind is the concrete source kind the state was resolved from.
 	Kind Kind
 	// Schema is the desired-state schema IR.
-	Schema *goschema.Database
+	Schema *schemamodel.Database
 	// DB is the introspected database state backing Schema for database and
 	// migration-directory sources; nil for local schema files.
 	DB *catalog.Database

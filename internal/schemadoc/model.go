@@ -17,7 +17,7 @@ import (
 	"sort"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/schemaexport"
 	"go.5x5.cz/ptah/internal/tableref"
@@ -70,13 +70,13 @@ type relation struct {
 }
 
 // build resolves the document model from a declared schema.
-func build(db *goschema.Database, opts Options) document {
+func build(db *schemamodel.Database, opts Options) document {
 	selected := schemaexport.SelectTables(db, schemaexport.Options{
 		IncludeTables: opts.IncludeTables,
 		ExcludeTables: opts.ExcludeTables,
 	})
 	included := make(map[string]bool, len(selected))
-	byStruct := make(map[string]goschema.Table, len(selected))
+	byStruct := make(map[string]schemamodel.Table, len(selected))
 	for _, table := range selected {
 		included[table.Name] = true
 		byStruct[table.StructName] = table
@@ -110,7 +110,7 @@ func build(db *goschema.Database, opts Options) document {
 	return doc
 }
 
-func columnOf(field goschema.Field) columnDoc {
+func columnOf(field schemamodel.Field) columnDoc {
 	return columnDoc{
 		Name:     field.Name,
 		Type:     field.Type,
@@ -124,7 +124,7 @@ func columnOf(field goschema.Field) columnDoc {
 
 // keyOf names the strongest key role a column carries, because a column that is
 // both primary and unique is described by the first alone.
-func keyOf(field goschema.Field) string {
+func keyOf(field schemamodel.Field) string {
 	switch {
 	case field.Primary:
 		return "primary"
@@ -137,7 +137,7 @@ func keyOf(field goschema.Field) string {
 
 // defaultOf reads a default that was set to an empty string as a default,
 // because DefaultSet is what separates "defaults to empty" from "has none".
-func defaultOf(field goschema.Field) string {
+func defaultOf(field schemamodel.Field) string {
 	if field.DefaultExpr != "" {
 		return field.DefaultExpr
 	}
@@ -147,7 +147,7 @@ func defaultOf(field goschema.Field) string {
 	return ""
 }
 
-func indexesOf(db *goschema.Database, table goschema.Table) []indexDoc {
+func indexesOf(db *schemamodel.Database, table schemamodel.Table) []indexDoc {
 	var indexes []indexDoc
 	for _, index := range db.Indexes {
 		if index.StructName != table.StructName {
@@ -163,7 +163,7 @@ func indexesOf(db *goschema.Database, table goschema.Table) []indexDoc {
 	return indexes
 }
 
-func enumsOf(db *goschema.Database) []enumDoc {
+func enumsOf(db *schemamodel.Database) []enumDoc {
 	var enums []enumDoc
 	for _, enum := range db.Enums {
 		enums = append(enums, enumDoc{Name: enum.Name, Values: enum.Values})

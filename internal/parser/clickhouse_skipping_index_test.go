@@ -7,9 +7,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/toschema"
 	"go.5x5.cz/ptah/internal/parser"
 )
@@ -23,7 +23,7 @@ func renderClickHouseSchema(c *qt.C, sqlText string) string {
 	statements, err := parser.NewParser(sqlText, parser.WithDialect(platform.ClickHouse)).Parse()
 	c.Assert(err, qt.IsNil)
 	database := toschema.ToDatabase(statements, platform.ClickHouse)
-	goschema.Finalize(&database)
+	schemamodel.Finalize(&database)
 
 	rendered, err := renderer.GetOrderedCreateStatements(&database, platform.ClickHouse)
 	c.Assert(err, qt.IsNil)

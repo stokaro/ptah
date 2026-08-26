@@ -7,7 +7,7 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -36,7 +36,7 @@ func TestCompareForwardsEveryDiffSkipTheVirtualTableGuardReads(t *testing.T) {
 	tests := []struct {
 		name     string
 		database *catalog.Database
-		desired  *goschema.Database
+		desired  *schemamodel.Database
 		options  *config.CompareOptions
 		wantErr  bool
 	}{
@@ -152,14 +152,14 @@ func unclassifiableFTS4DatabaseWithIndex() *catalog.Database {
 // refused for. The module's storage is declared on purpose: without it the
 // comparison never reaches the post-diff gate, because the pre-comparison half
 // refuses an undeclared live table first.
-func declaredLiveTables() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func declaredLiveTables() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Doc", Name: "docs", VirtualModule: "fts4", VirtualArguments: "title, body"},
 			{StructName: "DocContent", Name: "docs_content"},
 			{StructName: "User", Name: "users"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "DocContent", Name: "docid", Type: "INTEGER", Nullable: true},
 			{StructName: "User", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "User", Name: "name", Type: "TEXT", Nullable: true},
@@ -170,7 +170,7 @@ func declaredLiveTables() *goschema.Database {
 
 // desiredWithoutTheLegacyColumn drops one column from the ordinary table and
 // changes nothing else, so the diff carries exactly one ColumnsRemoved entry.
-func desiredWithoutTheLegacyColumn() *goschema.Database {
+func desiredWithoutTheLegacyColumn() *schemamodel.Database {
 	desired := declaredLiveTables()
 	desired.Fields = desired.Fields[:len(desired.Fields)-1]
 	return desired
@@ -179,6 +179,6 @@ func desiredWithoutTheLegacyColumn() *goschema.Database {
 // desiredWithoutTheIndex leaves every table and column as the database has
 // them and omits only the index, so the diff carries exactly one IndexesRemoved
 // entry and no table is dropped or rebuilt.
-func desiredWithoutTheIndex() *goschema.Database {
+func desiredWithoutTheIndex() *schemamodel.Database {
 	return declaredLiveTables()
 }

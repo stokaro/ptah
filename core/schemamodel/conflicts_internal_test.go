@@ -1,4 +1,4 @@
-package goschema
+package schemamodel
 
 // White-box testing required: these package-local resolvers are shared by every
 // composite-schema conflict validator, and their edge cases cannot be isolated

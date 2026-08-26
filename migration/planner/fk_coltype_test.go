@@ -6,16 +6,16 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // fkColumnTypeChangeInputs is the shared scenario for issue #694: posts.user_id
 // widens from INTEGER to BIGINT while carrying a foreign key to users(id).
-func fkColumnTypeChangeInputs() (*difftypes.SchemaDiff, *goschema.Database) {
+func fkColumnTypeChangeInputs() (*difftypes.SchemaDiff, *schemamodel.Database) {
 	diff := &difftypes.SchemaDiff{
 		TablesModified: []difftypes.TableDiff{
 			{
@@ -26,17 +26,17 @@ func fkColumnTypeChangeInputs() (*difftypes.SchemaDiff, *goschema.Database) {
 			},
 		},
 	}
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: "users", StructName: "User"},
 			{Name: "posts", StructName: "Post"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{Name: "id", Type: "BIGINT", StructName: "User", Primary: true},
 			{Name: "user_id", Type: "BIGINT", StructName: "Post", Nullable: false, Foreign: "users(id)"},
 		},
 	}
-	return diff, generated
+	return diff, desired
 }
 
 // TestGenerateSchemaDiffSQL_ForeignKeyColumnTypeChange_MySQLFamilyBrackets checks
@@ -44,13 +44,13 @@ func fkColumnTypeChangeInputs() (*difftypes.SchemaDiff, *goschema.Database) {
 // (issue #694), while the PostgreSQL planner keeps its single ALTER COLUMN ... TYPE
 // with no constraint churn.
 func TestGenerateSchemaDiffSQL_ForeignKeyColumnTypeChange_MySQLFamilyBrackets(t *testing.T) {
-	diff, generated := fkColumnTypeChangeInputs()
+	diff, desired := fkColumnTypeChangeInputs()
 
 	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			statements, err := planner.GenerateSchemaDiffSQLStatements(diff, generated, dialect)
+			statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, dialect)
 			c.Assert(err, qt.IsNil)
 			sql := strings.Join(statements, "\n")
 
@@ -75,7 +75,7 @@ func TestGenerateSchemaDiffSQL_ForeignKeyColumnTypeChange_MySQLFamilyBrackets(t 
 func TestGenerateSchemaDiffSQL_ForeignKeyColumnTypeChange_SQLServerBrackets(t *testing.T) {
 	c := qt.New(t)
 
-	diff, generated := fkColumnTypeChangeInputs()
+	diff, desired := fkColumnTypeChangeInputs()
 	semantics := identifier.ForSQLServerCatalog("SQL_Latin1_General_CP1_CI_AS").
 		WithResolvedNames([]identifier.ResolvedName{
 			{Name: "dbo", Key: "dbo"},
@@ -86,7 +86,7 @@ func TestGenerateSchemaDiffSQL_ForeignKeyColumnTypeChange_SQLServerBrackets(t *t
 		})
 	diff.IdentifierSemantics = &semantics
 
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, generated, platform.SQLServer)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, platform.SQLServer)
 	c.Assert(err, qt.IsNil)
 	sql := strings.Join(statements, "\n")
 
@@ -105,9 +105,9 @@ func TestGenerateSchemaDiffSQL_ForeignKeyColumnTypeChange_SQLServerBrackets(t *t
 func TestGenerateSchemaDiffSQL_ForeignKeyColumnTypeChange_PostgresUnchanged(t *testing.T) {
 	c := qt.New(t)
 
-	diff, generated := fkColumnTypeChangeInputs()
+	diff, desired := fkColumnTypeChangeInputs()
 
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, generated, platform.Postgres)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	sql := strings.Join(statements, "\n")
 

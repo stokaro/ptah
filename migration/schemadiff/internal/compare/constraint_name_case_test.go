@@ -6,8 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -74,14 +74,14 @@ func TestConstraints_NameCaseFollowsTheEngineThatResolvesIt(t *testing.T) {
 
 // widgetDeclaringLowerCaseConstraint names the constraint the way an annotation
 // does.
-func widgetDeclaringLowerCaseConstraint() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Widget", Name: "widget"}},
-		Fields: []goschema.Field{
+func widgetDeclaringLowerCaseConstraint() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Widget", Name: "widget"}},
+		Fields: []schemamodel.Field{
 			{StructName: "Widget", Name: "id", Type: "int", Primary: true},
 			{StructName: "Widget", Name: "tenant", Type: "text"},
 		},
-		Constraints: []goschema.Constraint{{
+		Constraints: []schemamodel.Constraint{{
 			StructName: "Widget", Name: "uq_widget_scope", Table: "widget",
 			Type: "UNIQUE", Columns: []string{"tenant"},
 		}},
@@ -151,13 +151,13 @@ func TestConstraints_ASynthesizedForeignKeyMatchesTheCatalogsSpelling(t *testing
 
 // widgetReferencingParent declares the foreign key on the field, which is what
 // the synthesizer turns into a named constraint.
-func widgetReferencingParent() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func widgetReferencingParent() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Parent", Name: "parent"},
 			{StructName: "Widget", Name: "widget"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Parent", Name: "id", Type: "int", Primary: true},
 			{StructName: "Widget", Name: "id", Type: "int", Primary: true},
 			{StructName: "Widget", Name: "parent", Type: "int", Foreign: "parent(id)"},

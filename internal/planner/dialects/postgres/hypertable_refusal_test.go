@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -43,7 +43,7 @@ func TestPlanner_RefusesWhatTimescaleDBCannotUndo(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, err := postgres.New().GenerateMigrationAST(test.diff, &goschema.Database{})
+			_, err := postgres.New().GenerateMigrationAST(test.diff, &schemamodel.Database{})
 
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(err.Error(), qt.Contains, test.want)
@@ -58,7 +58,7 @@ func TestPlanner_RefusesWhatTimescaleDBCannotUndo(t *testing.T) {
 // direction that HAS a statement still produces one.
 func TestPlanner_PlansAnAddedHypertable(t *testing.T) {
 	c := qt.New(t)
-	declared := &goschema.Database{Hypertables: []goschema.Hypertable{
+	declared := &schemamodel.Database{Hypertables: []schemamodel.Hypertable{
 		{Table: "public.readings", Column: "time"},
 	}}
 

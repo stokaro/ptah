@@ -7,8 +7,8 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemachange"
 	"go.5x5.cz/ptah/internal/schemastate"
 )
@@ -22,7 +22,7 @@ import (
 func TestAnIndexIsPlanned(t *testing.T) {
 	tests := []struct {
 		name           string
-		description    *goschema.Database
+		description    *schemamodel.Database
 		currentCatalog *catalog.Database
 		wantOperation  schemachange.Operation
 		wantChanged    []string
@@ -116,24 +116,24 @@ func TestAnIndexInAnUndescribedSchemaIsNotDropped(t *testing.T) {
 
 // indexedWidget is a table carrying an index over the given columns, or none
 // when they are absent.
-func indexedWidget(unique bool, columns ...string) *goschema.Database {
+func indexedWidget(unique bool, columns ...string) *schemamodel.Database {
 	description := describedTable(
-		goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
-		goschema.Field{StructName: "Widget", Name: "a", Type: "text", Nullable: true},
-		goschema.Field{StructName: "Widget", Name: "b", Type: "text", Nullable: true},
+		schemamodel.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+		schemamodel.Field{StructName: "Widget", Name: "a", Type: "text", Nullable: true},
+		schemamodel.Field{StructName: "Widget", Name: "b", Type: "text", Nullable: true},
 	)
 	return withDeclaredIndex(description, unique, columns)
 }
 
 func withDeclaredIndex(
-	description *goschema.Database,
+	description *schemamodel.Database,
 	unique bool,
 	columns []string,
-) *goschema.Database {
-	return map[bool]func() *goschema.Database{
-		true: func() *goschema.Database { return description },
-		false: func() *goschema.Database {
-			description.Indexes = append(description.Indexes, goschema.Index{
+) *schemamodel.Database {
+	return map[bool]func() *schemamodel.Database{
+		true: func() *schemamodel.Database { return description },
+		false: func() *schemamodel.Database {
+			description.Indexes = append(description.Indexes, schemamodel.Index{
 				StructName: "Widget", Name: "idx_widget_ab", Fields: columns, Unique: unique,
 			})
 			return description

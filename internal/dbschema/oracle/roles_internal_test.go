@@ -56,7 +56,7 @@ func TestIsRoleReadDenied_SeparatesARefusalFromAFault(t *testing.T) {
 // TestGrantObjectTypeFor_SpellsAViewTheWayADeclarationDoes pins the mapping
 // that decides whether a view grant round-trips.
 //
-// goschema.Grant spells every relation target OnTable, so the declared side of
+// schemamodel.Grant spells every relation target OnTable, so the declared side of
 // a view grant carries TABLE. A reader passing ALL_TAB_PRIVS.TYPE through
 // unmapped keys the same grant two ways, and the comparison plans a GRANT and
 // a REVOKE of it on every run of an unchanged schema.

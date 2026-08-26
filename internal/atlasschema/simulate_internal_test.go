@@ -11,7 +11,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 func TestNextvalSequenceName(t *testing.T) {
@@ -41,7 +41,7 @@ func TestNextvalSequenceName(t *testing.T) {
 func TestNormalizeBaselineSerialColumns(t *testing.T) {
 	t.Run("implicit serial sequence becomes SERIAL", func(t *testing.T) {
 		c := qt.New(t)
-		baseline := &goschema.Database{Fields: []goschema.Field{
+		baseline := &schemamodel.Database{Fields: []schemamodel.Field{
 			{Name: "id", Type: "integer", DefaultExpr: `nextval('users_id_seq'::regclass)`},
 			{Name: "big_id", Type: "bigint", DefaultExpr: `nextval('users_big_id_seq'::regclass)`},
 			{Name: "small_id", Type: "smallint", DefaultExpr: `nextval('users_small_id_seq'::regclass)`},
@@ -57,9 +57,9 @@ func TestNormalizeBaselineSerialColumns(t *testing.T) {
 
 	t.Run("explicitly introspected sequence keeps its default", func(t *testing.T) {
 		c := qt.New(t)
-		baseline := &goschema.Database{
-			Sequences: []goschema.Sequence{{Name: "order_number_seq"}},
-			Fields: []goschema.Field{
+		baseline := &schemamodel.Database{
+			Sequences: []schemamodel.Sequence{{Name: "order_number_seq"}},
+			Fields: []schemamodel.Field{
 				{Name: "order_number", Type: "integer", DefaultExpr: `nextval('order_number_seq'::regclass)`},
 			},
 		}
@@ -72,7 +72,7 @@ func TestNormalizeBaselineSerialColumns(t *testing.T) {
 
 	t.Run("non integer type keeps its default", func(t *testing.T) {
 		c := qt.New(t)
-		baseline := &goschema.Database{Fields: []goschema.Field{
+		baseline := &schemamodel.Database{Fields: []schemamodel.Field{
 			{Name: "label", Type: "text", DefaultExpr: `nextval('labels_seq'::regclass)`},
 		}}
 
@@ -84,7 +84,7 @@ func TestNormalizeBaselineSerialColumns(t *testing.T) {
 
 	t.Run("non postgres dialect is untouched", func(t *testing.T) {
 		c := qt.New(t)
-		baseline := &goschema.Database{Fields: []goschema.Field{
+		baseline := &schemamodel.Database{Fields: []schemamodel.Field{
 			{Name: "id", Type: "integer", DefaultExpr: `nextval('users_id_seq'::regclass)`},
 		}}
 

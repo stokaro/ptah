@@ -7,7 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -58,16 +58,16 @@ func TestCompareDoesNotPlanColumnChangesForASQLiteVirtualTable(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			generated := &goschema.Database{
-				Tables: []goschema.Table{{StructName: "Doc", Name: "docs"}},
-				Fields: []goschema.Field{
+			desired := &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "Doc", Name: "docs"}},
+				Fields: []schemamodel.Field{
 					{StructName: "Doc", Name: "title", Type: "TEXT"},
 					{StructName: "Doc", Name: "body", Type: "TEXT"},
 				},
 			}
 			database := &catalog.Database{Tables: []catalog.Table{tt.dbTable}}
 
-			diff := schemadiff.CompareWithDialect(generated, database, "sqlite")
+			diff := schemadiff.CompareWithDialect(desired, database, "sqlite")
 
 			c.Assert(diff.TablesAdded, qt.HasLen, 0)
 			c.Assert(diff.TablesRemoved, qt.HasLen, 0)

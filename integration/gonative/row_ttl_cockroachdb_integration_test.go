@@ -10,7 +10,7 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -153,10 +153,10 @@ func TestCockroachDBRowLevelTTL_IsReadBackVerbatim(t *testing.T) {
 
 // rowTTLDeclaration is the desired state these tests apply: one table with the
 // given policy, or none.
-func rowTTLDeclaration(spec *ast.RowTTLSpec) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Sessions", Name: rowTTLTable, RowTTL: spec}},
-		Fields: []goschema.Field{
+func rowTTLDeclaration(spec *ast.RowTTLSpec) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Sessions", Name: rowTTLTable, RowTTL: spec}},
+		Fields: []schemamodel.Field{
 			{StructName: "Sessions", Name: "id", Type: "INT8", Primary: true},
 			{StructName: "Sessions", Name: "expires_at", Type: "TIMESTAMPTZ", Nullable: true},
 		},
@@ -171,7 +171,7 @@ func rowTTLDeclaration(spec *ast.RowTTLSpec) *goschema.Database {
 // against a description read once would assert about statements Ptah would
 // emit, not about the state the previous ones reached.
 func planRowTTLAgainstLive(
-	c *qt.C, t *testing.T, dsn string, declared *goschema.Database,
+	c *qt.C, t *testing.T, dsn string, declared *schemamodel.Database,
 ) []string {
 	c.Helper()
 

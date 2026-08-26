@@ -7,20 +7,20 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/indexscope"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestNewResolver_HappyPath(t *testing.T) {
 	c := qt.New(t)
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "User", Schema: "app", Name: "users"},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{StructName: "User", Name: "idx_email", Fields: []string{"email"}},
 		},
 	}
@@ -30,7 +30,7 @@ func TestNewResolver_HappyPath(t *testing.T) {
 		},
 	}
 
-	resolver, err := indexscope.NewResolver("postgres", diff, generated)
+	resolver, err := indexscope.NewResolver("postgres", diff, desired)
 	c.Assert(err, qt.IsNil)
 	index, err := resolver.Resolve(
 		difftypes.IndexRef{Name: "idx_email", TableName: "app.users"},
@@ -42,8 +42,8 @@ func TestNewResolver_HappyPath(t *testing.T) {
 
 func TestNewResolver_TargetIdentityCollisionRejected(t *testing.T) {
 	c := qt.New(t)
-	generated := &goschema.Database{
-		Indexes: []goschema.Index{
+	desired := &schemamodel.Database{
+		Indexes: []schemamodel.Index{
 			{Name: "idx_shared", TableName: "orders"},
 			{Name: "idx_shared", TableName: "orders"},
 		},
@@ -54,7 +54,7 @@ func TestNewResolver_TargetIdentityCollisionRejected(t *testing.T) {
 		},
 	}
 
-	resolver, err := indexscope.NewResolver("mysql", diff, generated)
+	resolver, err := indexscope.NewResolver("mysql", diff, desired)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 	c.Assert(resolver, qt.IsNil)
@@ -62,8 +62,8 @@ func TestNewResolver_TargetIdentityCollisionRejected(t *testing.T) {
 
 func TestNewResolver_TargetIdentityCollisionRejectedWithoutAdditions(t *testing.T) {
 	c := qt.New(t)
-	generated := &goschema.Database{
-		Indexes: []goschema.Index{
+	desired := &schemamodel.Database{
+		Indexes: []schemamodel.Index{
 			{Name: "idx_shared", TableName: "app.orders"},
 			{Name: "idx_shared", TableName: "app.users"},
 		},
@@ -72,7 +72,7 @@ func TestNewResolver_TargetIdentityCollisionRejectedWithoutAdditions(t *testing.
 	resolver, err := indexscope.NewResolver(
 		"postgres",
 		&difftypes.SchemaDiff{},
-		generated,
+		desired,
 	)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
@@ -81,18 +81,18 @@ func TestNewResolver_TargetIdentityCollisionRejectedWithoutAdditions(t *testing.
 
 func TestNewResolver_DefaultAndNamedSchemaIndexesAreIndependent(t *testing.T) {
 	c := qt.New(t)
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "User", Name: "users"},
 			{StructName: "AuditUser", Schema: "audit", Name: "users"},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{StructName: "User", Name: "idx_email"},
 			{StructName: "AuditUser", Name: "idx_email"},
 		},
 	}
 
-	resolver, err := indexscope.NewResolver("postgres", &difftypes.SchemaDiff{}, generated)
+	resolver, err := indexscope.NewResolver("postgres", &difftypes.SchemaDiff{}, desired)
 
 	c.Assert(err, qt.IsNil)
 	defaultIndex, err := resolver.Resolve(difftypes.IndexRef{Name: "idx_email", TableName: "users"})
@@ -116,8 +116,8 @@ func TestNewResolver_CaseInsensitiveTargetIdentityCollisionRejected(t *testing.T
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			generated := &goschema.Database{
-				Indexes: []goschema.Index{
+			desired := &schemamodel.Database{
+				Indexes: []schemamodel.Index{
 					{Name: "IDX_Shared", TableName: "users"},
 					{Name: "idx_shared", TableName: "users"},
 				},
@@ -128,7 +128,7 @@ func TestNewResolver_CaseInsensitiveTargetIdentityCollisionRejected(t *testing.T
 				},
 			}
 
-			resolver, err := indexscope.NewResolver(test.dialect, diff, generated)
+			resolver, err := indexscope.NewResolver(test.dialect, diff, desired)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 			c.Assert(resolver, qt.IsNil)
@@ -176,8 +176,8 @@ func TestNewResolverWithSemantics_IncompleteCatalogSnapshotRejected(t *testing.T
 			{Name: "idx_email", TableName: "dbo.users"},
 		},
 	}
-	generated := &goschema.Database{
-		Indexes: []goschema.Index{
+	desired := &schemamodel.Database{
+		Indexes: []schemamodel.Index{
 			{Name: "idx_email", TableName: "dbo.users"},
 		},
 	}
@@ -186,7 +186,7 @@ func TestNewResolverWithSemantics_IncompleteCatalogSnapshotRejected(t *testing.T
 		"sqlserver",
 		semantics,
 		diff,
-		generated,
+		desired,
 	)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
@@ -201,45 +201,45 @@ func TestNewResolverWithSemantics_IncompleteCatalogSnapshotRejected(t *testing.T
 func TestNewResolver_TargetTableResolution(t *testing.T) {
 	tests := []struct {
 		name   string
-		tables []goschema.Table
-		index  goschema.Index
+		tables []schemamodel.Table
+		index  schemamodel.Index
 		ref    difftypes.IndexRef
 	}{
 		{
 			name: "struct association",
-			tables: []goschema.Table{
+			tables: []schemamodel.Table{
 				{StructName: "User", Schema: "app", Name: "users"},
 			},
-			index: goschema.Index{StructName: "User", Name: "idx_email"},
+			index: schemamodel.Index{StructName: "User", Name: "idx_email"},
 			ref:   difftypes.IndexRef{Name: "idx_email", TableName: "app.users"},
 		},
 		{
 			name: "explicit struct table association",
-			tables: []goschema.Table{
+			tables: []schemamodel.Table{
 				{StructName: "User", Schema: "app", Name: "users"},
 			},
-			index: goschema.Index{StructName: "User", Name: "idx_email", TableName: "users"},
+			index: schemamodel.Index{StructName: "User", Name: "idx_email", TableName: "users"},
 			ref:   difftypes.IndexRef{Name: "idx_email", TableName: "app.users"},
 		},
 		{
 			name: "explicit unqualified struct table association",
-			tables: []goschema.Table{
+			tables: []schemamodel.Table{
 				{StructName: "User", Name: "users"},
 			},
-			index: goschema.Index{StructName: "User", Name: "idx_email", TableName: "users"},
+			index: schemamodel.Index{StructName: "User", Name: "idx_email", TableName: "users"},
 			ref:   difftypes.IndexRef{Name: "idx_email", TableName: "users"},
 		},
 		{
 			name: "unique plain table association",
-			tables: []goschema.Table{
+			tables: []schemamodel.Table{
 				{StructName: "User", Schema: "app", Name: "users"},
 			},
-			index: goschema.Index{Name: "idx_email", TableName: "users"},
+			index: schemamodel.Index{Name: "idx_email", TableName: "users"},
 			ref:   difftypes.IndexRef{Name: "idx_email", TableName: "app.users"},
 		},
 		{
 			name:  "explicit table without table metadata",
-			index: goschema.Index{Name: "idx_email", TableName: "users"},
+			index: schemamodel.Index{Name: "idx_email", TableName: "users"},
 			ref:   difftypes.IndexRef{Name: "idx_email", TableName: "users"},
 		},
 	}
@@ -247,17 +247,17 @@ func TestNewResolver_TargetTableResolution(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			generated := &goschema.Database{
+			desired := &schemamodel.Database{
 				Tables:  test.tables,
-				Indexes: []goschema.Index{test.index},
+				Indexes: []schemamodel.Index{test.index},
 			}
 			diff := &difftypes.SchemaDiff{IndexesAdded: []difftypes.IndexRef{test.ref}}
 
-			resolver, err := indexscope.NewResolver("mysql", diff, generated)
+			resolver, err := indexscope.NewResolver("mysql", diff, desired)
 			c.Assert(err, qt.IsNil)
 			c.Assert(
-				goschema.ResolveIndexTableNames(
-					[]goschema.Index{test.index},
+				schemamodel.ResolveIndexTableNames(
+					[]schemamodel.Index{test.index},
 					test.tables,
 				)[0],
 				qt.Equals,
@@ -273,12 +273,12 @@ func TestNewResolver_TargetTableResolution(t *testing.T) {
 
 func TestNewResolver_UnknownQualifiedTableRejected(t *testing.T) {
 	c := qt.New(t)
-	index := goschema.Index{Name: "idx_email", TableName: "app.users"}
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	index := schemamodel.Index{Name: "idx_email", TableName: "app.users"}
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Audit", Schema: "logs", Name: "events"},
 		},
-		Indexes: []goschema.Index{index},
+		Indexes: []schemamodel.Index{index},
 	}
 	diff := &difftypes.SchemaDiff{
 		IndexesAdded: []difftypes.IndexRef{
@@ -286,7 +286,7 @@ func TestNewResolver_UnknownQualifiedTableRejected(t *testing.T) {
 		},
 	}
 
-	resolver, err := indexscope.NewResolver("mysql", diff, generated)
+	resolver, err := indexscope.NewResolver("mysql", diff, desired)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 	c.Assert(resolver, qt.IsNil)
@@ -294,12 +294,12 @@ func TestNewResolver_UnknownQualifiedTableRejected(t *testing.T) {
 
 func TestNewResolver_AmbiguousPlainTableRejected(t *testing.T) {
 	c := qt.New(t)
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "AppUser", Schema: "app", Name: "users"},
 			{StructName: "AuditUser", Schema: "audit", Name: "users"},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{Name: "idx_email", TableName: "users"},
 		},
 	}
@@ -309,7 +309,7 @@ func TestNewResolver_AmbiguousPlainTableRejected(t *testing.T) {
 		},
 	}
 
-	resolver, err := indexscope.NewResolver("mysql", diff, generated)
+	resolver, err := indexscope.NewResolver("mysql", diff, desired)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 	c.Assert(resolver, qt.IsNil)
@@ -657,7 +657,7 @@ func TestConflictSetWithSemantics_SQLServerCatalogResolution(t *testing.T) {
 
 func TestNewResolverWithSemantics_SQLServerUnknownRejectsDistinctNames(t *testing.T) {
 	c := qt.New(t)
-	generated := &goschema.Database{Indexes: []goschema.Index{
+	desired := &schemamodel.Database{Indexes: []schemamodel.Index{
 		{Name: "resume", TableName: "dbo.users"},
 		{Name: "r\u00e9sum\u00e9", TableName: "dbo.users"},
 	}}
@@ -670,7 +670,7 @@ func TestNewResolverWithSemantics_SQLServerUnknownRejectsDistinctNames(t *testin
 		"sqlserver",
 		identifier.ForDialect("sqlserver"),
 		diff,
-		generated,
+		desired,
 	)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
@@ -690,7 +690,7 @@ func TestNewResolverWithSemantics_SQLServerCaseSensitiveAcceptsVariants(t *testi
 		[]string{"idx_email"},
 		[]string{"IDX_Email"},
 	)
-	generated := &goschema.Database{Indexes: []goschema.Index{
+	desired := &schemamodel.Database{Indexes: []schemamodel.Index{
 		{Name: "idx_email", TableName: "dbo.users"},
 		{Name: "IDX_Email", TableName: "dbo.users"},
 	}}
@@ -699,7 +699,7 @@ func TestNewResolverWithSemantics_SQLServerCaseSensitiveAcceptsVariants(t *testi
 		{Name: "IDX_Email", TableName: "dbo.users"},
 	}}
 
-	resolver, err := indexscope.NewResolverWithSemantics("sqlserver", semantics, diff, generated)
+	resolver, err := indexscope.NewResolverWithSemantics("sqlserver", semantics, diff, desired)
 
 	c.Assert(err, qt.IsNil)
 	lower, err := resolver.Resolve(difftypes.IndexRef{Name: "idx_email", TableName: "users"})
@@ -731,13 +731,13 @@ func BenchmarkNewResolver_LargeDuplicateNameSchema(b *testing.B) {
 	c := qt.New(b)
 	const indexCount = 10_000
 
-	tables := make([]goschema.Table, 0, indexCount)
-	indexes := make([]goschema.Index, 0, indexCount)
+	tables := make([]schemamodel.Table, 0, indexCount)
+	indexes := make([]schemamodel.Index, 0, indexCount)
 	additions := make([]difftypes.IndexRef, 0, indexCount)
 	for index := range indexCount {
 		tableName := "table_" + strconv.Itoa(index)
-		tables = append(tables, goschema.Table{Name: tableName, StructName: tableName})
-		indexes = append(indexes, goschema.Index{
+		tables = append(tables, schemamodel.Table{Name: tableName, StructName: tableName})
+		indexes = append(indexes, schemamodel.Index{
 			StructName: tableName,
 			Name:       "idx_shared",
 			Fields:     []string{"value"},
@@ -747,7 +747,7 @@ func BenchmarkNewResolver_LargeDuplicateNameSchema(b *testing.B) {
 			TableName: tableName,
 		})
 	}
-	generated := &goschema.Database{Tables: tables, Indexes: indexes}
+	desired := &schemamodel.Database{Tables: tables, Indexes: indexes}
 	diff := &difftypes.SchemaDiff{IndexesAdded: additions}
 
 	b.ReportAllocs()
@@ -755,7 +755,7 @@ func BenchmarkNewResolver_LargeDuplicateNameSchema(b *testing.B) {
 	var resolver *indexscope.Resolver
 	var err error
 	for range b.N {
-		resolver, err = indexscope.NewResolver("mysql", diff, generated)
+		resolver, err = indexscope.NewResolver("mysql", diff, desired)
 	}
 	b.StopTimer()
 	c.Assert(err, qt.IsNil)

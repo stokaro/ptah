@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // typeCase pins one row of the documented type-mapping table. want is the whole
@@ -231,7 +231,7 @@ func TestTypeMapFaithfulProjectionsAreSilent(t *testing.T) {
 func TestTypeMapNullableArrayReportsTheNullVersusEmptyLoss(t *testing.T) {
 	c := qt.New(t)
 
-	res := mustRender(c, oneTable(goschema.Field{Name: "tags", Type: "TEXT[]", Nullable: true}), baseOptions())
+	res := mustRender(c, oneTable(schemamodel.Field{Name: "tags", Type: "TEXT[]", Nullable: true}), baseOptions())
 	c.Assert(diagnosticMessages(res), qt.Any(qt.Contains),
 		"warning things.tags: nullable array column exported as repeated; "+
 			"protobuf cannot distinguish SQL NULL from an empty list")
@@ -247,8 +247,8 @@ func TestTypeMapNeverEmitsPresenceModifiers(t *testing.T) {
 	// Editions default features.field_presence to EXPLICIT, and both "optional"
 	// and "required" are hard parse errors there. SQL NOT NULL is simply lossy.
 	text := mustRenderText(c, oneTable(
-		goschema.Field{Name: "a", Type: "TEXT", Nullable: true},
-		goschema.Field{Name: "b", Type: "TEXT", Nullable: false},
+		schemamodel.Field{Name: "a", Type: "TEXT", Nullable: true},
+		schemamodel.Field{Name: "b", Type: "TEXT", Nullable: false},
 	), baseOptions())
 
 	c.Assert(text, qt.Not(qt.Contains), "optional ")

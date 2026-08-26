@@ -136,7 +136,7 @@ ORDER BY p.grantee, p.table_name, p.privilege`
 // something to take away.
 //
 //   - A SYSTEM privilege (DBA_SYS_PRIVS): `GRANT CREATE SESSION TO r` names no
-//     object, and goschema.Grant has no shape without one -- its target is a
+//     object, and schemamodel.Grant has no shape without one -- its target is a
 //     table, a schema or a sequence. Reported, it would match no declaration
 //     and be planned as a REVOKE of a privilege nobody could have declared.
 //   - A role granted to a role (DBA_ROLE_PRIVS), for the same reason: Ptah
@@ -186,7 +186,7 @@ func (r *Reader) readGrants(ctx context.Context) ([]catalog.Grant, error) {
 // grant shape names.
 //
 // A VIEW becomes TABLE rather than staying VIEW, because that is the word the
-// declared side carries for one: goschema.Grant spells every relation target
+// declared side carries for one: schemamodel.Grant spells every relation target
 // OnTable, on every dialect, and PostgreSQL's information_schema reports a
 // view grant the same way. Keying the two sides differently would make one
 // grant into two -- a GRANT planned because the declaration matched nothing,

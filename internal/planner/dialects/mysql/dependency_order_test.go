@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
@@ -13,7 +13,7 @@ func TestPlanner_GenerateMigrationAST_MySQLFamilyOrdersFKChainTables(t *testing.
 	for _, dialect := range mysqlFamilyDialects {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
-			generated := dependencyOrderSchema()
+			desired := dependencyOrderSchema()
 			diff := &difftypes.SchemaDiff{
 				TablesAdded: []string{
 					"ptah_fk_order_tasks",
@@ -22,7 +22,7 @@ func TestPlanner_GenerateMigrationAST_MySQLFamilyOrdersFKChainTables(t *testing.
 				},
 			}
 
-			sql := renderMySQLFamily(c, dialect, diff, generated)
+			sql := renderMySQLFamily(c, dialect, diff, desired)
 
 			assertContainsBefore(c, sql, "CREATE TABLE ptah_fk_order_accounts", "CREATE TABLE ptah_fk_order_projects")
 			assertContainsBefore(c, sql, "CREATE TABLE ptah_fk_order_projects", "CREATE TABLE ptah_fk_order_tasks")
@@ -35,7 +35,7 @@ func TestPlanner_GenerateMigrationAST_MySQLFamilyOrdersFKDiamondTables(t *testin
 	for _, dialect := range mysqlFamilyDialects {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
-			generated := dependencyOrderSchema()
+			desired := dependencyOrderSchema()
 			diff := &difftypes.SchemaDiff{
 				TablesAdded: []string{
 					"ptah_fk_order_tasks",
@@ -45,7 +45,7 @@ func TestPlanner_GenerateMigrationAST_MySQLFamilyOrdersFKDiamondTables(t *testin
 				},
 			}
 
-			sql := renderMySQLFamily(c, dialect, diff, generated)
+			sql := renderMySQLFamily(c, dialect, diff, desired)
 
 			assertContainsBefore(c, sql, "CREATE TABLE ptah_fk_order_accounts", "CREATE TABLE ptah_fk_order_projects")
 			assertContainsBefore(c, sql, "CREATE TABLE ptah_fk_order_accounts", "CREATE TABLE ptah_fk_order_memberships")
@@ -59,7 +59,7 @@ func TestPlanner_GenerateMigrationAST_MySQLFamilyDropsFKDiamondTablesInDependenc
 	for _, dialect := range mysqlFamilyDialects {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
-			generated := dependencyOrderSchema()
+			desired := dependencyOrderSchema()
 			diff := &difftypes.SchemaDiff{
 				TablesRemoved: []string{
 					"ptah_fk_order_accounts",
@@ -69,7 +69,7 @@ func TestPlanner_GenerateMigrationAST_MySQLFamilyDropsFKDiamondTablesInDependenc
 				},
 			}
 
-			sql := renderMySQLFamily(c, dialect, diff, generated)
+			sql := renderMySQLFamily(c, dialect, diff, desired)
 
 			assertContainsBefore(c, sql, "DROP TABLE IF EXISTS ptah_fk_order_tasks", "DROP TABLE IF EXISTS ptah_fk_order_projects")
 			assertContainsBefore(c, sql, "DROP TABLE IF EXISTS ptah_fk_order_tasks", "DROP TABLE IF EXISTS ptah_fk_order_memberships")
@@ -83,7 +83,7 @@ func TestPlanner_GenerateMigrationAST_MySQLFamilyAddsReferencedUniqueIndexBefore
 	for _, dialect := range mysqlFamilyDialects {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
-			generated := referencedUniqueKeySchema()
+			desired := referencedUniqueKeySchema()
 			diff := &difftypes.SchemaDiff{
 				TablesAdded: []string{"ptah_fk_order_children", "ptah_fk_order_parents"},
 				IndexesAdded: []difftypes.IndexRef{
@@ -91,7 +91,7 @@ func TestPlanner_GenerateMigrationAST_MySQLFamilyAddsReferencedUniqueIndexBefore
 				},
 			}
 
-			sql := renderMySQLFamily(c, dialect, diff, generated)
+			sql := renderMySQLFamily(c, dialect, diff, desired)
 
 			assertContainsBefore(c, sql, "CREATE TABLE ptah_fk_order_parents", "CREATE TABLE ptah_fk_order_children")
 			assertContainsBefore(c, sql, "CREATE UNIQUE INDEX uq_ptah_fk_order_parents_code_idx", "ALTER TABLE ptah_fk_order_children ADD CONSTRAINT")
@@ -103,7 +103,7 @@ func TestPlanner_GenerateMigrationAST_MySQLFamilyAddsReferencedUniqueConstraintB
 	for _, dialect := range mysqlFamilyDialects {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
-			generated := referencedUniqueKeySchema()
+			desired := referencedUniqueKeySchema()
 			diff := &difftypes.SchemaDiff{
 				TablesAdded:      []string{"ptah_fk_order_children", "ptah_fk_order_parents"},
 				ConstraintsAdded: []string{"uq_ptah_fk_order_parents_code"},
@@ -115,22 +115,22 @@ func TestPlanner_GenerateMigrationAST_MySQLFamilyAddsReferencedUniqueConstraintB
 				}},
 			}
 
-			sql := renderMySQLFamily(c, dialect, diff, generated)
+			sql := renderMySQLFamily(c, dialect, diff, desired)
 
 			assertContainsBefore(c, sql, "ALTER TABLE ptah_fk_order_parents ADD CONSTRAINT uq_ptah_fk_order_parents_code", "ALTER TABLE ptah_fk_order_children ADD CONSTRAINT")
 		})
 	}
 }
 
-func dependencyOrderSchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func dependencyOrderSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "PtahFKOrderTask", Name: "ptah_fk_order_tasks"},
 			{StructName: "PtahFKOrderProject", Name: "ptah_fk_order_projects"},
 			{StructName: "PtahFKOrderMembership", Name: "ptah_fk_order_memberships"},
 			{StructName: "PtahFKOrderAccount", Name: "ptah_fk_order_accounts"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "PtahFKOrderAccount", Name: "id", Type: "VARCHAR(36)", Primary: true},
 			{StructName: "PtahFKOrderProject", Name: "id", Type: "VARCHAR(36)", Primary: true},
 			{
@@ -167,13 +167,13 @@ func dependencyOrderSchema() *goschema.Database {
 	}
 }
 
-func referencedUniqueKeySchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func referencedUniqueKeySchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "PtahFKOrderChild", Name: "ptah_fk_order_children"},
 			{StructName: "PtahFKOrderParent", Name: "ptah_fk_order_parents"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "PtahFKOrderParent", Name: "id", Type: "VARCHAR(36)", Primary: true},
 			{StructName: "PtahFKOrderParent", Name: "code", Type: "VARCHAR(36)"},
 			{StructName: "PtahFKOrderChild", Name: "id", Type: "VARCHAR(36)", Primary: true},
@@ -185,7 +185,7 @@ func referencedUniqueKeySchema() *goschema.Database {
 				ForeignKeyName: "fk_ptah_fk_order_children_parent_code",
 			},
 		},
-		Indexes: []goschema.Index{{
+		Indexes: []schemamodel.Index{{
 			StructName: "PtahFKOrderParent",
 			Name:       "uq_ptah_fk_order_parents_code_idx",
 			Fields:     []string{"code"},

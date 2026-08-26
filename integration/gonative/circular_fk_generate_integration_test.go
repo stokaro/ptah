@@ -14,6 +14,7 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/core/sqlutil"
 )
 
@@ -70,12 +71,12 @@ func TestPostgreSQLGenerateMutualForeignKeysApplyIntegration(t *testing.T) {
 func TestPostgreSQLForeignKeyReferencingUniqueIndexApplyIntegration(t *testing.T) {
 	c := qt.New(t)
 
-	database := &goschema.Database{
-		Tables: []goschema.Table{
+	database := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Parent", Name: "ptah_fk_unique_parents"},
 			{StructName: "Child", Name: "ptah_fk_unique_children"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Parent", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "Parent", Name: "code", Type: "TEXT", Nullable: false},
 			{StructName: "Child", Name: "id", Type: "SERIAL", Primary: true},
@@ -88,7 +89,7 @@ func TestPostgreSQLForeignKeyReferencingUniqueIndexApplyIntegration(t *testing.T
 				ForeignKeyName: "fk_ptah_fk_unique_children_parent_code",
 			},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{
 				StructName: "Child",
 				TableName:  "ptah_fk_unique_children",

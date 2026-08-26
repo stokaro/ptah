@@ -7,11 +7,11 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/generator"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -70,7 +70,7 @@ func TestPlanBidirectionalSchemaDiff_MySQLForeignKeyBackingIndexes(t *testing.T)
 
 			plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
 				Diff:          diff,
-				DesiredSchema: &goschema.Database{},
+				DesiredSchema: &schemamodel.Database{},
 				CurrentSchema: current,
 				Dialect:       platform.MySQL,
 				Capabilities:  capability.MySQL84(),
@@ -97,9 +97,9 @@ func TestPlanBidirectionalSchemaDiff_MySQLSameRunCoveringIndexPreventsBackingInd
 		}},
 	}
 	diff.SetIndexAdditions([]difftypes.IndexRef{{Name: "idx_parent", TableName: "children"}})
-	desired := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Child", Name: "children"}},
-		Indexes: []goschema.Index{{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Child", Name: "children"}},
+		Indexes: []schemamodel.Index{{
 			StructName: "Child", Name: "idx_parent", Fields: []string{"parent_id", "created_at"},
 		}},
 	}
@@ -128,7 +128,7 @@ func TestPlanBidirectionalSchemaDiff_MySQLRefusesSameNamedNonCoveringIndex(t *te
 
 	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
 		Diff:          diff,
-		DesiredSchema: &goschema.Database{},
+		DesiredSchema: &schemamodel.Database{},
 		CurrentSchema: &catalog.Database{Indexes: []catalog.Index{{
 			Name: "FK_PARENT", TableName: "children", Columns: []string{"other_id"},
 		}}},
@@ -160,7 +160,7 @@ func TestPlanBidirectionalSchemaDiff_MySQLRefusesRemovalOfOnlyCoveringIndex(t *t
 
 	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
 		Diff:          diff,
-		DesiredSchema: &goschema.Database{},
+		DesiredSchema: &schemamodel.Database{},
 		CurrentSchema: &catalog.Database{Indexes: []catalog.Index{{
 			Name: "idx_parent", TableName: "children", Columns: []string{"parent_id"},
 		}}},
@@ -197,7 +197,7 @@ func TestPlanBidirectionalSchemaDiff_MySQLConstraintAdditionCoversForeignKey(t *
 				Columns: []string{"parent_id"},
 			}}, diff.ConstraintsAddedWithTables...)
 
-			plan, err := planMySQLBidirectional(diff, &goschema.Database{}, &catalog.Database{})
+			plan, err := planMySQLBidirectional(diff, &schemamodel.Database{}, &catalog.Database{})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(plan.Reverse.Diff.IndexRemovals(), qt.Not(qt.Contains), difftypes.IndexRef{
@@ -221,9 +221,9 @@ func TestPlanBidirectionalSchemaDiff_MySQLCompositeAddedColumnBackingCleanupOrde
 			ForeignColumns: []string{"id", "tenant_id"},
 		}},
 	}
-	desired := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Child", Name: "children"}},
-		Fields: []goschema.Field{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Child", Name: "children"}},
+		Fields: []schemamodel.Field{
 			{StructName: "Child", Name: "parent_id", Type: "BIGINT"},
 			{StructName: "Child", Name: "tenant_id", Type: "BIGINT"},
 		},
@@ -262,12 +262,12 @@ func TestPlanBidirectionalSchemaDiff_MySQLReferencedAddedColumnDropsForeignKeyFi
 			ForeignColumns: []string{"code"},
 		}},
 	}
-	desired := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Parent", Name: "parents"},
 			{StructName: "Child", Name: "children"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Parent", Name: "code", Type: "VARCHAR(36)", Unique: true},
 			{StructName: "Child", Name: "parent_code", Type: "VARCHAR(36)"},
 		},
@@ -314,7 +314,7 @@ func TestPlanBidirectionalSchemaDiff_MySQLConstraintRemovalCannotStrandForeignKe
 				ColumnNames: []string{"parent_id"},
 			}}}
 
-			plan, err := planMySQLBidirectional(diff, &goschema.Database{}, current)
+			plan, err := planMySQLBidirectional(diff, &schemamodel.Database{}, current)
 
 			c.Assert(plan, qt.IsNil)
 			c.Assert(err, qt.ErrorMatches,
@@ -338,7 +338,7 @@ func TestPlanBidirectionalSchemaDiff_MySQLUniqueReplacementStopsCoveringForeignK
 		Name: "uq_parent", TableName: "children", Type: "UNIQUE", ColumnNames: []string{"parent_id"},
 	}}}
 
-	plan, err := planMySQLBidirectional(diff, &goschema.Database{}, current)
+	plan, err := planMySQLBidirectional(diff, &schemamodel.Database{}, current)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.Reverse.Diff.IndexRemovals(), qt.Contains, difftypes.IndexRef{
@@ -360,12 +360,12 @@ func TestPlanBidirectionalSchemaDiff_MySQLNewTableInlineKeyAvoidsPhantomCleanup(
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			diff := &difftypes.SchemaDiff{TablesAdded: []string{"children"}}
-			desired := &goschema.Database{
-				Tables: []goschema.Table{
+			desired := &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{StructName: "Parent", Name: "parents"},
 					{StructName: "Child", Name: "children"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{StructName: "Parent", Name: "id", Type: "BIGINT", Primary: true},
 					{
 						StructName: "Child", Name: "parent_id", Type: "BIGINT",
@@ -401,12 +401,12 @@ func TestPlanBidirectionalSchemaDiff_MySQLAddedColumnInlineKeyAvoidsPhantomClean
 			diff := &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName: "children", ColumnsAdded: []string{"parent_id"},
 			}}}
-			desired := &goschema.Database{
-				Tables: []goschema.Table{
+			desired := &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{StructName: "Parent", Name: "parents"},
 					{StructName: "Child", Name: "children"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{StructName: "Parent", Name: "id", Type: "BIGINT", Primary: true},
 					{
 						StructName: "Child", Name: "parent_id", Type: "BIGINT",
@@ -444,9 +444,9 @@ func TestPlanBidirectionalSchemaDiff_MySQLModifyColumnUniqueCoversForeignKey(t *
 			ColumnName: "parent_id", Changes: map[string]string{"unique": "false -> true"},
 		}},
 	}}
-	desired := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Child", Name: "children"}},
-		Fields: []goschema.Field{{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Child", Name: "children"}},
+		Fields: []schemamodel.Field{{
 			StructName: "Child", Name: "parent_id", Type: "BIGINT", Unique: true,
 		}},
 	}
@@ -464,9 +464,9 @@ func TestPlanBidirectionalSchemaDiff_MySQLReplacementCoverSurvivesCaseEquivalent
 	diff := singleMySQLForeignKeyDiff("children")
 	diff.SetIndexAdditions([]difftypes.IndexRef{{Name: "IDX_PARENT", TableName: "children"}})
 	diff.SetIndexRemovals([]difftypes.IndexRef{{Name: "idx_parent", TableName: "children"}})
-	desired := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Child", Name: "children"}},
-		Indexes: []goschema.Index{{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Child", Name: "children"}},
+		Indexes: []schemamodel.Index{{
 			StructName: "Child", Name: "Idx_Parent", Fields: []string{"parent_id"},
 		}},
 	}
@@ -496,9 +496,9 @@ func TestPlanBidirectionalSchemaDiff_MySQLReplacementDropsOldCoverBeforeForeignK
 	diff := singleMySQLForeignKeyDiff("children")
 	diff.SetIndexAdditions([]difftypes.IndexRef{{Name: "idx_parent", TableName: "children"}})
 	diff.SetIndexRemovals([]difftypes.IndexRef{{Name: "idx_parent", TableName: "children"}})
-	desired := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Child", Name: "children"}},
-		Indexes: []goschema.Index{{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Child", Name: "children"}},
+		Indexes: []schemamodel.Index{{
 			StructName: "Child", Name: "idx_parent", Fields: []string{"other_id"},
 		}},
 	}
@@ -532,7 +532,7 @@ func TestPlanBidirectionalSchemaDiff_MySQLDefaultSchemaMatchesUnqualifiedCatalog
 
 	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
 		Diff:          diff,
-		DesiredSchema: &goschema.Database{},
+		DesiredSchema: &schemamodel.Database{},
 		CurrentSchema: &catalog.Database{Indexes: []catalog.Index{{
 			Name: "idx_parent", TableName: "children", Columns: []string{"parent_id"},
 		}}},
@@ -554,7 +554,7 @@ func TestPlanBidirectionalSchemaDiff_MySQLIncompleteKeyPositionRefusesAmbiguousC
 
 	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
 		Diff:          diff,
-		DesiredSchema: &goschema.Database{},
+		DesiredSchema: &schemamodel.Database{},
 		CurrentSchema: &catalog.Database{Indexes: []catalog.Index{{
 			Name: "idx_parent_expr", TableName: "children", Columns: []string{"parent_id"},
 			KeyPartsIncomplete: true,
@@ -600,7 +600,7 @@ func TestPlanBidirectionalSchemaDiff_MySQLStructuredFunctionalKeyPositions(t *te
 			c := qt.New(t)
 			plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
 				Diff:          singleMySQLForeignKeyDiff("children"),
-				DesiredSchema: &goschema.Database{},
+				DesiredSchema: &schemamodel.Database{},
 				CurrentSchema: &catalog.Database{Indexes: []catalog.Index{{
 					Name: "idx_parent_expr", TableName: "children", Parts: test.parts,
 					KeyPartsIncomplete: true,
@@ -675,7 +675,7 @@ func TestPlanBidirectionalSchemaDiff_SwapsExactConcurrentIndexDropRefs(t *testin
 
 	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
 		Diff:          diff,
-		DesiredSchema: &goschema.Database{},
+		DesiredSchema: &schemamodel.Database{},
 		CurrentSchema: current,
 		Dialect:       platform.Postgres,
 		Capabilities:  capability.Postgres17(),
@@ -768,7 +768,7 @@ func TestPlanBidirectionalSchemaDiff_ExplicitConcurrentModeRequiresCapability(t 
 			diff.SetIndexRemovals([]difftypes.IndexRef{{Name: "idx_old", TableName: "users"}})
 			plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
 				Diff:          diff,
-				DesiredSchema: &goschema.Database{},
+				DesiredSchema: &schemamodel.Database{},
 				CurrentSchema: &catalog.Database{},
 				Dialect:       test.dialect,
 				Capabilities:  test.caps,
@@ -908,7 +908,7 @@ func TestPlanBidirectionalSchemaDiff_ConcurrentDropUsesBlockingReverseCreateWith
 
 	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
 		Diff:          diff,
-		DesiredSchema: &goschema.Database{},
+		DesiredSchema: &schemamodel.Database{},
 		CurrentSchema: current,
 		Dialect:       platform.Postgres,
 		Capabilities:  caps,
@@ -935,9 +935,9 @@ func TestPlanBidirectionalSchemaDiff_PartitionedParentRefusesExplicitPolicy(t *t
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{}
 	diff.SetIndexAdditions([]difftypes.IndexRef{{Name: "idx_events_tenant", TableName: "events"}})
-	desired := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Event", Name: "events"}},
-		Indexes: []goschema.Index{{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Event", Name: "events"}},
+		Indexes: []schemamodel.Index{{
 			StructName: "Event", Name: "idx_events_tenant", Fields: []string{"tenant"},
 		}},
 	}
@@ -960,23 +960,23 @@ func TestPlanBidirectionalSchemaDiff_PartitionedParentRefusesExplicitPolicy(t *t
 	c.Assert(err, qt.ErrorMatches, `CREATE INDEX CONCURRENTLY requested by diff\.concurrent_index\.create cannot be generated for partitioned table\(s\): .*`)
 }
 
-func concurrentIndexSchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func concurrentIndexSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Order", Name: "orders", Schema: "app"},
 			{StructName: "User", Name: "users", Schema: "audit"},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{StructName: "Order", Name: "idx_shared", Fields: []string{"reference"}},
 			{StructName: "User", Name: "idx_shared", Fields: []string{"reference"}},
 		},
 	}
 }
 
-func singleConcurrentIndexSchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "User", Name: "users"}},
-		Indexes: []goschema.Index{{
+func singleConcurrentIndexSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
+		Indexes: []schemamodel.Index{{
 			StructName: "User", Name: "idx_users_reference", Fields: []string{"reference"},
 		}},
 	}
@@ -984,7 +984,7 @@ func singleConcurrentIndexSchema() *goschema.Database {
 
 func planMySQLBidirectional(
 	diff *difftypes.SchemaDiff,
-	desired *goschema.Database,
+	desired *schemamodel.Database,
 	current *catalog.Database,
 ) (*generator.BidirectionalSchemaPlan, error) {
 	return generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{

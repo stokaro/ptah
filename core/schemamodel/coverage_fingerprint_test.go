@@ -1,4 +1,4 @@
-package goschema_test
+package schemamodel_test
 
 import (
 	"encoding/json"
@@ -8,11 +8,11 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // TestDatabaseJSONEncodingIsTheFingerprint pins the one property that lets a
-// new field be added to [goschema.Database] at all: the JSON encoding of this
+// new field be added to [schemamodel.Database] at all: the JSON encoding of this
 // struct IS the desired-state fingerprint that plan files record and that
 // `schema plan --name-format` renders through `.ToHash`. A field that
 // serialized unconditionally would change that fingerprint for every schema
@@ -26,22 +26,22 @@ import (
 func TestDatabaseJSONEncodingIsTheFingerprint(t *testing.T) {
 	tests := []struct {
 		name        string
-		database    goschema.Database
+		database    schemamodel.Database
 		wantPresent bool
 	}{
 		{
 			name:        "a description that declares no limits encodes as it did before the field existed",
-			database:    goschema.Database{},
+			database:    schemamodel.Database{},
 			wantPresent: false,
 		},
 		{
 			name:        "a populated description still encodes no record while it declares no limits",
-			database:    goschema.Database{Tables: []goschema.Table{{Name: "users", StructName: "User"}}},
+			database:    schemamodel.Database{Tables: []schemamodel.Table{{Name: "users", StructName: "User"}}},
 			wantPresent: false,
 		},
 		{
 			name: "a description that declares a limit says so",
-			database: goschema.Database{
+			database: schemamodel.Database{
 				NotDescribed: coverage.Set{}.WithKind(coverage.Extension),
 			},
 			wantPresent: true,

@@ -9,6 +9,7 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 )
 
@@ -140,7 +141,7 @@ type BlogPost struct {
 	c.Assert(database.Tables, qt.HasLen, 2)
 
 	// Find the BlogPost table
-	var blogPostTable *goschema.Table
+	var blogPostTable *schemamodel.Table
 	for _, table := range database.Tables {
 		if table.StructName == "BlogPost" {
 			blogPostTable = &table

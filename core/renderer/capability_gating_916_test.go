@@ -151,10 +151,10 @@ func TestSQLServerRenderer_DropGuardsFollowTheCapabilitySet(t *testing.T) {
 func generatedColumnTable916() ast.Node {
 	table := ast.NewCreateTable("readings")
 	table.AddColumn(ast.NewColumn("n", "int"))
-	generated := ast.NewColumn("g", "int")
-	generated.GeneratedExpression = "n + 1"
-	generated.GeneratedKind = "STORED"
-	table.AddColumn(generated)
+	desired := ast.NewColumn("g", "int")
+	desired.GeneratedExpression = "n + 1"
+	desired.GeneratedKind = "STORED"
+	table.AddColumn(desired)
 	return table
 }
 

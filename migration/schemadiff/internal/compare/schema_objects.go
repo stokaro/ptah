@@ -10,9 +10,9 @@ import (
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/chrefresh"
 	"go.5x5.cz/ptah/internal/mysqlroutine"
 	"go.5x5.cz/ptah/internal/objectidentity"
@@ -89,8 +89,8 @@ import (
 // # Output Consistency
 //
 // Results are sorted alphabetically for consistent output across multiple runs.
-func Functions(generated *goschema.Database, database *catalog.Database, diff *difftypes.SchemaDiff) {
-	FunctionsWithDialect(generated, database, diff, "")
+func Functions(desired *schemamodel.Database, current *catalog.Database, diff *difftypes.SchemaDiff) {
+	FunctionsWithDialect(desired, current, diff, "")
 }
 
 // routineIdentityKey returns the key under which two spellings of one stored
@@ -169,14 +169,14 @@ func qualifiedRoutineIdentityKey(name, dialect string) string {
 // and type-spelling rules. See [routineIdentityKey] and
 // [FunctionDefinitionsWithDialect] for what the dialect decides.
 func FunctionsWithDialect(
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	dialect string,
 ) {
 	// Build lookup maps for function comparison
-	generatedFunctionMap := make(map[string]goschema.Function)
-	for _, fn := range generated.Functions {
+	generatedFunctionMap := make(map[string]schemamodel.Function)
+	for _, fn := range desired.Functions {
 		generatedFunctionMap[qualifiedRoutineIdentityKey(fn.Name, dialect)] = fn
 	}
 
@@ -250,7 +250,7 @@ func FunctionsWithDialect(
 // diff remain the original desired/current spellings so downstream planners
 // can resolve the exact source objects they received.
 func FunctionsWithSemantics(
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	dialect string,
@@ -258,13 +258,13 @@ func FunctionsWithSemantics(
 ) {
 	semantics = semantics.Normalize("")
 	if semantics.DefaultSchema == "" {
-		FunctionsWithDialect(generated, database, diff, dialect)
+		FunctionsWithDialect(desired, database, diff, dialect)
 		return
 	}
 
-	generatedFunctions := make(map[objectIdentity][]goschema.Function, len(generated.Functions))
-	generatedNames := make(map[objectIdentity]string, len(generated.Functions))
-	for _, function := range generated.Functions {
+	generatedFunctions := make(map[objectIdentity][]schemamodel.Function, len(desired.Functions))
+	generatedNames := make(map[objectIdentity]string, len(desired.Functions))
+	for _, function := range desired.Functions {
 		// qualifiedRoutineIdentityKey, not routineIdentityKey: folding the whole
 		// string lowercased the SCHEMA too, while the database loop below folds
 		// only the routine name and leaves function.Schema to the identifier
@@ -385,7 +385,7 @@ func canonicalizePostgresArgument(argument string) string {
 // but kept in ONE case, because the two sides of this comparison do not agree
 // on it and never did.
 //
-// The generated side has been through [goschema.Function.Canonicalize], which
+// The generated side has been through [schemamodel.Function.Canonicalize], which
 // lower-cases the whole parameter list. The database side is whatever the
 // catalog printed, and the catalogs print upper case. Measured on PostgreSQL 17
 // and MySQL 9.7.2:
@@ -507,13 +507,13 @@ func findDatabaseFunction(
 // modification says the two belong together, which is what lets a plan order
 // them as one operation and a reader tell a retarget from a coincidence.
 func Synonyms(
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
 ) {
-	generatedSynonyms := make(map[string]goschema.Synonym, len(generated.Synonyms))
-	for _, synonym := range generated.Synonyms {
+	generatedSynonyms := make(map[string]schemamodel.Synonym, len(desired.Synonyms))
+	for _, synonym := range desired.Synonyms {
 		generatedSynonyms[synonym.QualifiedName()] = synonym
 	}
 	databaseSynonyms := make(map[string]catalog.Synonym, len(database.Synonyms))
@@ -588,27 +588,27 @@ func synonymTargetParts(name string) string {
 }
 
 // Views compares view definitions between generated and database schemas.
-func Views(generated *goschema.Database, database *catalog.Database, diff *difftypes.SchemaDiff) {
-	ViewsWithDialect(generated, database, diff, "")
+func Views(desired *schemamodel.Database, current *catalog.Database, diff *difftypes.SchemaDiff) {
+	ViewsWithDialect(desired, current, diff, "")
 }
 
 // ViewsWithDialect compares view definitions with dialect-aware normalization
 // for catalog readback forms that are semantically equivalent to Ptah-rendered
 // view SQL.
-func ViewsWithDialect(generated *goschema.Database, database *catalog.Database, diff *difftypes.SchemaDiff, dialect string) {
-	generatedViews := make(map[string]goschema.View, len(generated.Views))
-	for _, view := range generated.Views {
+func ViewsWithDialect(desired *schemamodel.Database, current *catalog.Database, diff *difftypes.SchemaDiff, dialect string) {
+	generatedViews := make(map[string]schemamodel.View, len(desired.Views))
+	for _, view := range desired.Views {
 		generatedViews[view.Name] = view
 	}
 
-	databaseViewsByName := make(map[string][]catalog.View, len(database.Views))
-	databaseViewsByQualifiedName := make(map[string]catalog.View, len(database.Views))
-	for _, view := range database.Views {
+	databaseViewsByName := make(map[string][]catalog.View, len(current.Views))
+	databaseViewsByQualifiedName := make(map[string]catalog.View, len(current.Views))
+	for _, view := range current.Views {
 		databaseViewsByName[view.Name] = append(databaseViewsByName[view.Name], view)
 		databaseViewsByQualifiedName[view.QualifiedName()] = view
 	}
 
-	matchedDatabaseViews := make(map[string]struct{}, len(database.Views))
+	matchedDatabaseViews := make(map[string]struct{}, len(current.Views))
 	for viewName, generatedView := range generatedViews {
 		databaseView, exists := findDatabaseViewForGeneratedView(
 			generatedView,
@@ -627,7 +627,7 @@ func ViewsWithDialect(generated *goschema.Database, database *catalog.Database, 
 		}
 	}
 
-	for _, view := range database.Views {
+	for _, view := range current.Views {
 		if _, ok := matchedDatabaseViews[view.QualifiedName()]; ok {
 			continue
 		}
@@ -644,7 +644,7 @@ func ViewsWithDialect(generated *goschema.Database, database *catalog.Database, 
 // ViewsWithSemantics compares view identity with the live database's resolved
 // default schema while retaining dialect-aware SQL-body normalization.
 func ViewsWithSemantics(
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	dialect string,
@@ -652,13 +652,13 @@ func ViewsWithSemantics(
 ) {
 	semantics = semantics.Normalize(dialect)
 	if semantics.DefaultSchema == "" {
-		ViewsWithDialect(generated, database, diff, dialect)
+		ViewsWithDialect(desired, database, diff, dialect)
 		return
 	}
 
-	generatedViews := make(map[objectIdentity]goschema.View, len(generated.Views))
-	generatedNames := make(map[objectIdentity]string, len(generated.Views))
-	for _, view := range generated.Views {
+	generatedViews := make(map[objectIdentity]schemamodel.View, len(desired.Views))
+	generatedNames := make(map[objectIdentity]string, len(desired.Views))
+	for _, view := range desired.Views {
 		identity := newQualifiedObjectIdentity(objectidentity.KindView, view.Name, semantics)
 		generatedViews[identity] = view
 		generatedNames[identity] = view.Name
@@ -696,7 +696,7 @@ func ViewsWithSemantics(
 }
 
 func findDatabaseViewForGeneratedView(
-	generatedView goschema.View,
+	generatedView schemamodel.View,
 	databaseViewsByName map[string][]catalog.View,
 	databaseViewsByQualifiedName map[string]catalog.View,
 ) (catalog.View, bool) {
@@ -724,8 +724,8 @@ func viewNameForDiff(view catalog.View) string {
 
 // MaterializedViews compares materialized view definitions between generated
 // and database schemas.
-func MaterializedViews(generated *goschema.Database, database *catalog.Database, diff *difftypes.SchemaDiff) {
-	MaterializedViewsWithDialect(generated, database, diff, "")
+func MaterializedViews(desired *schemamodel.Database, current *catalog.Database, diff *difftypes.SchemaDiff) {
+	MaterializedViewsWithDialect(desired, current, diff, "")
 }
 
 // MaterializedViewsWithDialect compares materialized-view definitions with
@@ -748,13 +748,13 @@ func MaterializedViews(generated *goschema.Database, database *catalog.Database,
 // plain view beside it, which has matched bare names against a uniquely-named
 // database view since #1276, reported nothing at all.
 func MaterializedViewsWithDialect(
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	dialect string,
 ) {
-	generatedViews := make(map[string]goschema.MaterializedView, len(generated.MaterializedViews))
-	for _, view := range generated.MaterializedViews {
+	generatedViews := make(map[string]schemamodel.MaterializedView, len(desired.MaterializedViews))
+	for _, view := range desired.MaterializedViews {
 		generatedViews[view.Name] = view
 	}
 
@@ -804,7 +804,7 @@ func MaterializedViewsWithDialect(
 // that name only when exactly one schema has it. Two schemas holding the same
 // name leave the declaration unmatched rather than guessing between them.
 func findDatabaseMatViewForGeneratedView(
-	generatedView goschema.MaterializedView,
+	generatedView schemamodel.MaterializedView,
 	databaseViewsByName map[string][]catalog.MaterializedView,
 	databaseViewsByQualifiedName map[string]catalog.MaterializedView,
 ) (catalog.MaterializedView, bool) {
@@ -826,7 +826,7 @@ func findDatabaseMatViewForGeneratedView(
 // MaterializedViewsWithSemantics compares materialized-view identities using
 // the same default-schema semantics as tables and ordinary views.
 func MaterializedViewsWithSemantics(
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	dialect string,
@@ -840,13 +840,13 @@ func MaterializedViewsWithSemantics(
 		// current database as the schema on every object it reads and leaves
 		// DefaultSchema empty, so a declaration written "user_stats" and a
 		// readback of "<database>.user_stats" are the same object.
-		MaterializedViewsWithDialect(generated, database, diff, dialect)
+		MaterializedViewsWithDialect(desired, database, diff, dialect)
 		return
 	}
 
-	generatedViews := make(map[objectIdentity]goschema.MaterializedView, len(generated.MaterializedViews))
-	generatedNames := make(map[objectIdentity]string, len(generated.MaterializedViews))
-	for _, view := range generated.MaterializedViews {
+	generatedViews := make(map[objectIdentity]schemamodel.MaterializedView, len(desired.MaterializedViews))
+	generatedNames := make(map[objectIdentity]string, len(desired.MaterializedViews))
+	for _, view := range desired.MaterializedViews {
 		identity := newQualifiedObjectIdentity(objectidentity.KindMatView, view.Name, semantics)
 		generatedViews[identity] = view
 		generatedNames[identity] = view.Name
@@ -932,7 +932,7 @@ func MaterializedViewsWithSemantics(
 // Function changes typically require:
 //  1. DROP FUNCTION (with CASCADE if dependencies exist)
 //  2. CREATE OR REPLACE FUNCTION with new definition
-func FunctionDefinitions(genFunction goschema.Function, dbFunction catalog.Function) difftypes.FunctionDiff {
+func FunctionDefinitions(genFunction schemamodel.Function, dbFunction catalog.Function) difftypes.FunctionDiff {
 	return FunctionDefinitionsWithDialect(genFunction, dbFunction, "")
 }
 
@@ -941,7 +941,7 @@ func FunctionDefinitions(genFunction goschema.Function, dbFunction catalog.Funct
 //
 // The dialect is needed because a routine type has two spellings and only the
 // target knows they are one type. On the MySQL family the operator writes
-// `returns="INTEGER"`, [goschema.Function.Canonicalize] lowercases it to
+// `returns="INTEGER"`, [schemamodel.Function.Canonicalize] lowercases it to
 // `integer`, and information_schema answers `int` -- both engines resolve the
 // synonym themselves before recording it. Comparing those exactly reported
 // `returns: int -> integer` on a function that already matched, and the planner
@@ -954,7 +954,7 @@ func FunctionDefinitions(genFunction goschema.Function, dbFunction catalog.Funct
 // original defect: it made the two engines agree with each other while leaving
 // the desired side speaking a third spelling.
 func FunctionDefinitionsWithDialect(
-	genFunction goschema.Function,
+	genFunction schemamodel.Function,
 	dbFunction catalog.Function,
 	dialect string,
 ) difftypes.FunctionDiff {
@@ -965,7 +965,7 @@ func FunctionDefinitionsWithDialect(
 
 	// Defense-in-depth: canonicalize a local copy. The annotation parser at
 	// core/goschema/parser.go already calls Canonicalize, but test code (this
-	// package, integration tests) constructs goschema.Function directly with
+	// package, integration tests) constructs schemamodel.Function directly with
 	// non-canonical case, and a future programmatic API consumer might too.
 	// The DB-side read path already returns canonical case by construction,
 	// so we only normalize the gen side.
@@ -1052,13 +1052,13 @@ func FunctionDefinitionsWithDialect(
 }
 
 // ViewDefinitions performs detailed comparison between generated and database view definitions.
-func ViewDefinitions(genView goschema.View, dbView catalog.View) difftypes.ViewDiff {
+func ViewDefinitions(genView schemamodel.View, dbView catalog.View) difftypes.ViewDiff {
 	return ViewDefinitionsWithDialect(genView, dbView, "")
 }
 
 // ViewDefinitionsWithDialect performs detailed comparison between generated and
 // database view definitions with dialect-aware catalog readback normalization.
-func ViewDefinitionsWithDialect(genView goschema.View, dbView catalog.View, dialect string) difftypes.ViewDiff {
+func ViewDefinitionsWithDialect(genView schemamodel.View, dbView catalog.View, dialect string) difftypes.ViewDiff {
 	viewDiff := difftypes.ViewDiff{
 		ViewName: genView.Name,
 		Changes:  make(map[string]string),
@@ -1128,7 +1128,7 @@ func renderViewAttributes(attributes []string) string {
 
 // MaterializedViewDefinitions performs detailed comparison between generated
 // and database materialized view definitions.
-func MaterializedViewDefinitions(genView goschema.MaterializedView, dbView catalog.MaterializedView) difftypes.MaterializedViewDiff {
+func MaterializedViewDefinitions(genView schemamodel.MaterializedView, dbView catalog.MaterializedView) difftypes.MaterializedViewDiff {
 	return MaterializedViewDefinitionsWithDialect(genView, dbView, "")
 }
 
@@ -1153,7 +1153,7 @@ func MaterializedViewDefinitions(genView goschema.MaterializedView, dbView catal
 // unsupported declaration cannot be reported as synchronized merely because a
 // reader defaults the field to manual.
 func MaterializedViewDefinitionsWithDialect(
-	genView goschema.MaterializedView,
+	genView schemamodel.MaterializedView,
 	dbView catalog.MaterializedView,
 	dialect string,
 ) difftypes.MaterializedViewDiff {
@@ -1191,7 +1191,7 @@ func MaterializedViewDefinitionsWithDialect(
 // the reason; a comparison that invented a difference here would plan work for
 // a schedule that is never going to be sent.
 func refreshChange(
-	genView goschema.MaterializedView,
+	genView schemamodel.MaterializedView,
 	dbView catalog.MaterializedView,
 ) (desired, current *ast.MatViewRefreshSpec, changed bool) {
 	desired, err := chrefresh.Canonical(genView.Refresh, dbView.Schema)
@@ -1228,21 +1228,21 @@ func refreshText(spec *ast.MatViewRefreshSpec) string {
 // A column prefix -- `u.id` for an alias, `users.id` for a table -- is not a
 // schema, and reading it as one made an unchanged declaration report drift.
 func schemaObjectBodiesEqual(generatedBody, databaseBody, dialect, databaseSchema string) bool {
-	generated := normalizeSQLBody(generatedBody, dialect)
-	if canonicalizeNormalizedSQLBody(generated, dialect) ==
+	desired := normalizeSQLBody(generatedBody, dialect)
+	if canonicalizeNormalizedSQLBody(desired, dialect) ==
 		normalizeSQLBodyPreservingQualifiers(databaseBody, dialect) {
 		return true
 	}
 
-	if bodyQualifiesRelation(generated) {
+	if bodyQualifiesRelation(desired) {
 		return false
 	}
-	return canonicalizeNormalizedSQLBody(generated, dialect) ==
+	return canonicalizeNormalizedSQLBody(desired, dialect) ==
 		normalizeSQLBodyStrippingQualifiers(
 			databaseBody,
 			dialect,
 			databaseSchema,
-			singlePartQualifierNames(generated),
+			singlePartQualifierNames(desired),
 		)
 }
 

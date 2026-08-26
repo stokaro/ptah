@@ -7,7 +7,7 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 )
 
@@ -66,8 +66,8 @@ func TestScopeGeneratedKeepsCoverage(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			schema := &goschema.Database{
-				Tables: []goschema.Table{
+			schema := &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{Name: "kept", StructName: "Kept", Schema: "public"},
 					{Name: "dropped", StructName: "Dropped", Schema: "public"},
 				},

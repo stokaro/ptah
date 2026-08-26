@@ -11,14 +11,14 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // deferrableGenerated and deferrableDatabase are the two sides of one foreign
 // key, identical but for the deferral each row sets.
-func deferrableGenerated(deferrable bool, initially string) goschema.Constraint {
-	return goschema.Constraint{
+func deferrableGenerated(deferrable bool, initially string) schemamodel.Constraint {
+	return schemamodel.Constraint{
 		Name:           "fk_child_parent",
 		Type:           "FOREIGN KEY",
 		Table:          "child",
@@ -66,31 +66,31 @@ func deferrableDatabase(deferrable bool, initially string) catalog.Constraint {
 func TestForeignKeyConstraintChanged_Deferral(t *testing.T) {
 	tests := []struct {
 		name        string
-		generated   goschema.Constraint
+		desired     schemamodel.Constraint
 		database    catalog.Constraint
 		wantChanged bool
 	}{
 		{
 			name:        "declared deferrable against a catalog that is not",
-			generated:   deferrableGenerated(true, "deferred"),
+			desired:     deferrableGenerated(true, "deferred"),
 			database:    deferrableDatabase(false, ""),
 			wantChanged: true,
 		},
 		{
 			name:        "the same deferrability with a different timing",
-			generated:   deferrableGenerated(true, "deferred"),
+			desired:     deferrableGenerated(true, "deferred"),
 			database:    deferrableDatabase(true, "immediate"),
 			wantChanged: true,
 		},
 		{
-			name:      "identical deferral is no change",
-			generated: deferrableGenerated(true, "deferred"),
-			database:  deferrableDatabase(true, "deferred"),
+			name:     "identical deferral is no change",
+			desired:  deferrableGenerated(true, "deferred"),
+			database: deferrableDatabase(true, "deferred"),
 		},
 		{
-			name:      "neither side deferrable is no change",
-			generated: deferrableGenerated(false, ""),
-			database:  deferrableDatabase(false, ""),
+			name:     "neither side deferrable is no change",
+			desired:  deferrableGenerated(false, ""),
+			database: deferrableDatabase(false, ""),
 		},
 		{
 			// The row only the DEFERRABILITY check catches: both sides normalize
@@ -99,14 +99,14 @@ func TestForeignKeyConstraintChanged_Deferral(t *testing.T) {
 			// cannot. Without it the bool comparison is redundant with the
 			// timing comparison and a mutant removing it survives.
 			name:        "deferrable with an immediate default against a catalog that is not deferrable",
-			generated:   deferrableGenerated(true, "immediate"),
+			desired:     deferrableGenerated(true, "immediate"),
 			database:    deferrableDatabase(false, ""),
 			wantChanged: true,
 		},
 		{
-			name:      "an unwritten timing equals the immediate the engine reports",
-			generated: deferrableGenerated(true, ""),
-			database:  deferrableDatabase(true, "immediate"),
+			name:     "an unwritten timing equals the immediate the engine reports",
+			desired:  deferrableGenerated(true, ""),
+			database: deferrableDatabase(true, "immediate"),
 		},
 	}
 
@@ -114,7 +114,7 @@ func TestForeignKeyConstraintChanged_Deferral(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			changed := foreignKeyConstraintChanged(test.generated, test.database, "postgres", identifier.ForDialect("postgres"))
+			changed := foreignKeyConstraintChanged(test.desired, test.database, "postgres", identifier.ForDialect("postgres"))
 
 			c.Assert(changed, qt.Equals, test.wantChanged)
 		})

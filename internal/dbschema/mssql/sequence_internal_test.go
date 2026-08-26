@@ -27,7 +27,7 @@ import (
 // NULL cache_size, and no declaration can ask for "whatever the server picks"
 // by number -- so it has to read as unset, or every such sequence would compare
 // unequal against a declaration that named a size and equal against nothing.
-// NO CACHE reports is_cached = 0, which goschema.Sequence also cannot spell.
+// NO CACHE reports is_cached = 0, which schemamodel.Sequence also cannot spell.
 func TestSequenceCacheReadsTwoFactsNotOne(t *testing.T) {
 	size := sql.NullInt64{Int64: 20, Valid: true}
 	tests := []struct {

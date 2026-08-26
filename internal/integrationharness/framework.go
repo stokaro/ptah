@@ -14,6 +14,7 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/integrationfixture"
@@ -537,14 +538,14 @@ func (vem *VersionedEntityManager) LoadEntityVersion(versionDir string) error {
 }
 
 // GenerateSchemaFromEntities parses the current entities and returns the schema
-func (vem *VersionedEntityManager) GenerateSchemaFromEntities() (*goschema.Database, error) {
+func (vem *VersionedEntityManager) GenerateSchemaFromEntities() (*schemamodel.Database, error) {
 	return goschema.ParseDir(vem.entitiesDir)
 }
 
 // GenerateMigrationSQL compares current entities with database and generates migration SQL.
 func (vem *VersionedEntityManager) GenerateMigrationSQL(ctx context.Context, conn *dbschema.DatabaseConnection) ([]string, bool, error) {
 	// Parse current entities
-	generated, err := vem.GenerateSchemaFromEntities()
+	desired, err := vem.GenerateSchemaFromEntities()
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to parse entities: %w", err)
 	}
@@ -555,20 +556,20 @@ func (vem *VersionedEntityManager) GenerateMigrationSQL(ctx context.Context, con
 		return nil, false, fmt.Errorf("failed to read database schema: %w", err)
 	}
 
-	diff, err := schemadiff.CompareWithDatabase(ctx, conn, generated, dbSchema, nil)
+	diff, err := schemadiff.CompareWithDatabase(ctx, conn, desired, dbSchema, nil)
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to compare schemas: %w", err)
 	}
 
 	// Generate migration SQL
 	info := conn.Info()
-	nodes, err := planner.GenerateSchemaDiffASTWithOptions(diff, generated, info.Dialect, planner.Options{
+	nodes, err := planner.GenerateSchemaDiffASTWithOptions(diff, desired, info.Dialect, planner.Options{
 		Capabilities: info.Capabilities,
 	})
 	if err != nil {
 		return nil, false, fmt.Errorf("error generating migration plan: %w", err)
 	}
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, generated, info.Dialect, planner.Options{
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, desired, info.Dialect, planner.Options{
 		Capabilities: info.Capabilities,
 	})
 	if err != nil {

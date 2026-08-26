@@ -14,7 +14,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	mysqldriver "github.com/go-sql-driver/mysql"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/sqlident"
@@ -161,9 +161,9 @@ func TestPrimaryKeyIsPlannedOnceLiveMySQL(t *testing.T) {
 			})
 			c.Assert(primaryKeyColumns(c, dbURL, database, "orders"), qt.DeepEquals, make([]string, 0))
 
-			generated := &goschema.Database{
-				Tables: []goschema.Table{{StructName: "Order", Name: "orders", Schema: database}},
-				Fields: []goschema.Field{
+			desired := &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "Order", Name: "orders", Schema: database}},
+				Fields: []schemamodel.Field{
 					{StructName: "Order", Name: "id", Type: "INT", Primary: true},
 					{StructName: "Order", Name: "note", Type: "TEXT"},
 				},
@@ -185,7 +185,7 @@ func TestPrimaryKeyIsPlannedOnceLiveMySQL(t *testing.T) {
 				}},
 			}
 
-			statements, err := planner.GenerateSchemaDiffSQLStatements(diff, generated, "mysql")
+			statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, "mysql")
 			c.Assert(err, qt.IsNil)
 			c.Logf("plan:\n%s", strings.Join(statements, "\n"))
 			executeMySQL(c, dbURL, statements)

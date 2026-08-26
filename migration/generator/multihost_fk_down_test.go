@@ -7,9 +7,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/constraintscope"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
@@ -31,10 +31,10 @@ import (
 // multiHostMixinGenerated builds a generated schema with an "Ownable" inline
 // mixin carrying a shared tenant FK (fk_entity_tenant, ON DELETE = onDelete)
 // embedded into each host table.
-func multiHostMixinGenerated(onDelete string, hosts ...string) *goschema.Database {
-	db := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Tenant", Name: "tenants"}},
-		Fields: []goschema.Field{
+func multiHostMixinGenerated(onDelete string, hosts ...string) *schemamodel.Database {
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Tenant", Name: "tenants"}},
+		Fields: []schemamodel.Field{
 			{StructName: "Tenant", Name: "id", Type: "VARCHAR(255)", Primary: true},
 			{
 				StructName:     "Ownable",
@@ -48,11 +48,11 @@ func multiHostMixinGenerated(onDelete string, hosts ...string) *goschema.Databas
 	}
 	for _, h := range hosts {
 		structName := strings.ToUpper(h[:1]) + h[1:]
-		db.Tables = append(db.Tables, goschema.Table{StructName: structName, Name: h})
+		db.Tables = append(db.Tables, schemamodel.Table{StructName: structName, Name: h})
 		db.Fields = append(db.Fields,
-			goschema.Field{StructName: structName, Name: "id", Type: "TEXT", Primary: true},
+			schemamodel.Field{StructName: structName, Name: "id", Type: "TEXT", Primary: true},
 		)
-		db.EmbeddedFields = append(db.EmbeddedFields, goschema.EmbeddedField{
+		db.EmbeddedFields = append(db.EmbeddedFields, schemamodel.EmbeddedField{
 			StructName: structName, Mode: "inline", EmbeddedTypeName: "Ownable",
 		})
 	}
@@ -130,11 +130,11 @@ func TestGenerateDownMigration_MultiHostMixinFKModify_RestoresPriorActionPerHost
 func TestGenerateDownMigration_MultiHostMixinFKModify_MySQLRejectsDuplicateNames(t *testing.T) {
 	c := qt.New(t)
 	hosts := []string{"locations", "areas", "commodities"}
-	generated := multiHostMixinGenerated("CASCADE", hosts...)
+	desired := multiHostMixinGenerated("CASCADE", hosts...)
 	dbSchema := multiHostMixinDB("NO ACTION", hosts...)
-	diff := schemadiff.CompareWithDialect(generated, dbSchema, "mysql")
+	diff := schemadiff.CompareWithDialect(desired, dbSchema, "mysql")
 
-	downSQL, err := generateDownMigrationSQL(diff, generated, dbSchema, "mysql")
+	downSQL, err := generateDownMigrationSQL(diff, desired, dbSchema, "mysql")
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 	c.Assert(err, qt.ErrorMatches, `error generating down migration SQL: invalid foreign key: foreign-key name "fk_entity_tenant" is duplicated in database constraint namespace`)

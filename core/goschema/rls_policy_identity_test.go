@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // A PostgreSQL RLS policy name is scoped to its table, not to the schema.
@@ -75,25 +75,25 @@ type AlphaOrder struct {
 }
 
 func TestDeduplicate_KeepsOnePolicyNamePerTable(t *testing.T) {
-	twoTables := []goschema.Table{
+	twoTables := []schemamodel.Table{
 		{Name: "alpha_orders", StructName: "AlphaOrder"},
 		{Name: "zeta_orders", StructName: "ZetaOrder"},
 	}
 
 	tests := []struct {
 		name     string
-		tables   []goschema.Table
-		policies []goschema.RLSPolicy
-		want     []goschema.RLSPolicy
+		tables   []schemamodel.Table
+		policies []schemamodel.RLSPolicy
+		want     []schemamodel.RLSPolicy
 	}{
 		{
 			name:   "one name on two tables survives whole",
 			tables: twoTables,
-			policies: []goschema.RLSPolicy{
+			policies: []schemamodel.RLSPolicy{
 				{Name: "tenant_isolation", Table: "alpha_orders", UsingExpression: "tenant_id = 1"},
 				{Name: "tenant_isolation", Table: "zeta_orders", UsingExpression: "tenant_id = 2"},
 			},
-			want: []goschema.RLSPolicy{
+			want: []schemamodel.RLSPolicy{
 				{Name: "tenant_isolation", Table: "alpha_orders", UsingExpression: "tenant_id = 1"},
 				{Name: "tenant_isolation", Table: "zeta_orders", UsingExpression: "tenant_id = 2"},
 			},
@@ -101,11 +101,11 @@ func TestDeduplicate_KeepsOnePolicyNamePerTable(t *testing.T) {
 		{
 			name:   "the same name on the same table collapses",
 			tables: twoTables,
-			policies: []goschema.RLSPolicy{
+			policies: []schemamodel.RLSPolicy{
 				{Name: "tenant_isolation", Table: "alpha_orders", UsingExpression: "tenant_id = 1"},
 				{Name: "tenant_isolation", Table: "alpha_orders", UsingExpression: "tenant_id = 1"},
 			},
-			want: []goschema.RLSPolicy{
+			want: []schemamodel.RLSPolicy{
 				{Name: "tenant_isolation", Table: "alpha_orders", UsingExpression: "tenant_id = 1"},
 			},
 		},
@@ -116,11 +116,11 @@ func TestDeduplicate_KeepsOnePolicyNamePerTable(t *testing.T) {
 			// definitions disagree.
 			name:   "the same name on the same table collapses despite a different definition",
 			tables: twoTables,
-			policies: []goschema.RLSPolicy{
+			policies: []schemamodel.RLSPolicy{
 				{Name: "tenant_isolation", Table: "alpha_orders", UsingExpression: "tenant_id = 1"},
 				{Name: "tenant_isolation", Table: "alpha_orders", UsingExpression: "tenant_id = 2"},
 			},
-			want: []goschema.RLSPolicy{
+			want: []schemamodel.RLSPolicy{
 				{Name: "tenant_isolation", Table: "alpha_orders", UsingExpression: "tenant_id = 1"},
 			},
 		},
@@ -135,12 +135,12 @@ func TestDeduplicate_KeepsOnePolicyNamePerTable(t *testing.T) {
 			// survivor is the first, so the applied USING expression is the
 			// one written first rather than whichever spelling came last.
 			name:   "two spellings of one unqualified table collapse onto the first",
-			tables: []goschema.Table{{Name: "orders", StructName: "Order"}},
-			policies: []goschema.RLSPolicy{
+			tables: []schemamodel.Table{{Name: "orders", StructName: "Order"}},
+			policies: []schemamodel.RLSPolicy{
 				{Name: "p", Table: "orders", UsingExpression: "tenant_id = 1"},
 				{Name: "p", Table: "public.orders", UsingExpression: "tenant_id = 2"},
 			},
-			want: []goschema.RLSPolicy{
+			want: []schemamodel.RLSPolicy{
 				{Name: "p", Table: "orders", UsingExpression: "tenant_id = 1"},
 			},
 		},
@@ -161,12 +161,12 @@ func TestDeduplicate_KeepsOnePolicyNamePerTable(t *testing.T) {
 			// quoting question has only one answer. Two spellings, two
 			// policies, and the render reproduces the database's own answer.
 			name:   "a case variant of one unqualified table is a second relation",
-			tables: []goschema.Table{{Name: "orders", StructName: "Order"}},
-			policies: []goschema.RLSPolicy{
+			tables: []schemamodel.Table{{Name: "orders", StructName: "Order"}},
+			policies: []schemamodel.RLSPolicy{
 				{Name: "p", Table: "orders", UsingExpression: "tenant_id = 1"},
 				{Name: "p", Table: "ORDERS", UsingExpression: "tenant_id = 2"},
 			},
-			want: []goschema.RLSPolicy{
+			want: []schemamodel.RLSPolicy{
 				{Name: "p", Table: "orders", UsingExpression: "tenant_id = 1"},
 				{Name: "p", Table: "ORDERS", UsingExpression: "tenant_id = 2"},
 			},
@@ -177,12 +177,12 @@ func TestDeduplicate_KeepsOnePolicyNamePerTable(t *testing.T) {
 			// declaration came first. Neither spelling is rewritten into the
 			// other, so order changes nothing.
 			name:   "a case variant declared first keeps its own spelling",
-			tables: []goschema.Table{{Name: "orders", StructName: "Order"}},
-			policies: []goschema.RLSPolicy{
+			tables: []schemamodel.Table{{Name: "orders", StructName: "Order"}},
+			policies: []schemamodel.RLSPolicy{
 				{Name: "p", Table: "ORDERS", UsingExpression: "tenant_id = 2"},
 				{Name: "p", Table: "orders", UsingExpression: "tenant_id = 1"},
 			},
-			want: []goschema.RLSPolicy{
+			want: []schemamodel.RLSPolicy{
 				{Name: "p", Table: "ORDERS", UsingExpression: "tenant_id = 2"},
 				{Name: "p", Table: "orders", UsingExpression: "tenant_id = 1"},
 			},
@@ -199,11 +199,11 @@ func TestDeduplicate_KeepsOnePolicyNamePerTable(t *testing.T) {
 			// `ORDERS` and leave the named relation unprotected, so the
 			// reference keeps its spelling and nothing binds.
 			name:   "a case-preserving declared table does not capture a lower-case reference",
-			tables: []goschema.Table{{Name: "ORDERS", StructName: "OrdersTable"}},
-			policies: []goschema.RLSPolicy{
+			tables: []schemamodel.Table{{Name: "ORDERS", StructName: "OrdersTable"}},
+			policies: []schemamodel.RLSPolicy{
 				{Name: "p", Table: "orders", UsingExpression: "tenant_id = 1"},
 			},
-			want: []goschema.RLSPolicy{
+			want: []schemamodel.RLSPolicy{
 				{Name: "p", Table: "orders", UsingExpression: "tenant_id = 1"},
 			},
 		},
@@ -213,11 +213,11 @@ func TestDeduplicate_KeepsOnePolicyNamePerTable(t *testing.T) {
 			// declaring `CREATE SCHEMA "App"` and then naming `app.ledger`
 			// exits 3 with `schema "app" does not exist`.
 			name:   "a case-preserving declared schema does not capture a folded reference",
-			tables: []goschema.Table{{Name: "orders", Schema: "App", StructName: "Order"}},
-			policies: []goschema.RLSPolicy{
+			tables: []schemamodel.Table{{Name: "orders", Schema: "App", StructName: "Order"}},
+			policies: []schemamodel.RLSPolicy{
 				{Name: "p", Table: "app.orders", UsingExpression: "tenant_id = 1"},
 			},
-			want: []goschema.RLSPolicy{
+			want: []schemamodel.RLSPolicy{
 				{Name: "p", Table: "app.orders", UsingExpression: "tenant_id = 1"},
 			},
 		},
@@ -235,11 +235,11 @@ func TestDeduplicate_KeepsOnePolicyNamePerTable(t *testing.T) {
 			// file gets PostgreSQL's answer and a schema built in memory gets
 			// the one its own renderer will produce.
 			name:   "a case variant of a qualified reference keeps its spelling",
-			tables: []goschema.Table{{Name: "orders", Schema: "app", StructName: "Order"}},
-			policies: []goschema.RLSPolicy{
+			tables: []schemamodel.Table{{Name: "orders", Schema: "app", StructName: "Order"}},
+			policies: []schemamodel.RLSPolicy{
 				{Name: "p", Table: "APP.ORDERS", UsingExpression: "tenant_id = 1"},
 			},
-			want: []goschema.RLSPolicy{
+			want: []schemamodel.RLSPolicy{
 				{Name: "p", Table: "APP.ORDERS", UsingExpression: "tenant_id = 1"},
 			},
 		},
@@ -250,15 +250,15 @@ func TestDeduplicate_KeepsOnePolicyNamePerTable(t *testing.T) {
 			// in pg_policy. An ambiguous fold must resolve to nothing rather
 			// than pick one.
 			name: "two tables differing only in case keep one policy each",
-			tables: []goschema.Table{
+			tables: []schemamodel.Table{
 				{Name: "orders", StructName: "Order"},
 				{Name: "ORDERS", StructName: "ORDERSTable"},
 			},
-			policies: []goschema.RLSPolicy{
+			policies: []schemamodel.RLSPolicy{
 				{Name: "p", Table: "orders", UsingExpression: "tenant_id = 1"},
 				{Name: "p", Table: "ORDERS", UsingExpression: "tenant_id = 2"},
 			},
-			want: []goschema.RLSPolicy{
+			want: []schemamodel.RLSPolicy{
 				{Name: "p", Table: "orders", UsingExpression: "tenant_id = 1"},
 				{Name: "p", Table: "ORDERS", UsingExpression: "tenant_id = 2"},
 			},
@@ -268,11 +268,11 @@ func TestDeduplicate_KeepsOnePolicyNamePerTable(t *testing.T) {
 			// resolver maps a reference onto a declared table or leaves it
 			// alone; it does not invent one.
 			name:   "a policy on an undeclared table keeps its spelling",
-			tables: []goschema.Table{{Name: "orders", StructName: "Order"}},
-			policies: []goschema.RLSPolicy{
+			tables: []schemamodel.Table{{Name: "orders", StructName: "Order"}},
+			policies: []schemamodel.RLSPolicy{
 				{Name: "p", Table: "archive.SHIPMENTS", UsingExpression: "tenant_id = 1"},
 			},
-			want: []goschema.RLSPolicy{
+			want: []schemamodel.RLSPolicy{
 				{Name: "p", Table: "archive.SHIPMENTS", UsingExpression: "tenant_id = 1"},
 			},
 		},
@@ -282,15 +282,15 @@ func TestDeduplicate_KeepsOnePolicyNamePerTable(t *testing.T) {
 			// schemas are two tables, and one policy name on each is two
 			// policies. PostgreSQL accepts both.
 			name: "one name on the same table name in two schemas survives whole",
-			tables: []goschema.Table{
+			tables: []schemamodel.Table{
 				{Name: "orders", Schema: "tenanta", StructName: "TenantAOrder"},
 				{Name: "orders", Schema: "tenantb", StructName: "TenantBOrder"},
 			},
-			policies: []goschema.RLSPolicy{
+			policies: []schemamodel.RLSPolicy{
 				{Name: "tenant_isolation", Table: "tenanta.orders", UsingExpression: "tenant_id = 1"},
 				{Name: "tenant_isolation", Table: "tenantb.orders", UsingExpression: "tenant_id = 2"},
 			},
-			want: []goschema.RLSPolicy{
+			want: []schemamodel.RLSPolicy{
 				{Name: "tenant_isolation", Table: "tenanta.orders", UsingExpression: "tenant_id = 1"},
 				{Name: "tenant_isolation", Table: "tenantb.orders", UsingExpression: "tenant_id = 2"},
 			},
@@ -300,12 +300,12 @@ func TestDeduplicate_KeepsOnePolicyNamePerTable(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			database := &goschema.Database{
+			database := &schemamodel.Database{
 				Tables:      test.tables,
 				RLSPolicies: test.policies,
 			}
 
-			goschema.Deduplicate(database)
+			schemamodel.Deduplicate(database)
 
 			c.Assert(database.RLSPolicies, qt.DeepEquals, test.want)
 		})

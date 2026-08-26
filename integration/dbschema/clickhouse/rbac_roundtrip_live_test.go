@@ -14,8 +14,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/sqlident"
@@ -387,9 +387,9 @@ func cleanupClickHouseRBACFixture(c *qt.C, conn *dbschema.DatabaseConnection, st
 // membership always inherits, there is no NOINHERIT to read, and the annotation
 // parser defaults a declared role to inherit=true. A role declared with false
 // would differ from its own live description on every inspection.
-func clickHouseRBACDeclaration(role, qualifiedTable string, withOption bool) *goschema.Database {
+func clickHouseRBACDeclaration(role, qualifiedTable string, withOption bool) *schemamodel.Database {
 	declaration := clickHouseRoleOnlyDeclaration(role)
-	declaration.Grants = []goschema.Grant{{
+	declaration.Grants = []schemamodel.Grant{{
 		StructName: "ClickHouseAccess",
 		Role:       role,
 		Privileges: []string{"SELECT"},
@@ -401,9 +401,9 @@ func clickHouseRBACDeclaration(role, qualifiedTable string, withOption bool) *go
 
 // clickHouseRoleOnlyDeclaration declares the role and none of its grants, which
 // is what a schema says after the grant is taken out of it.
-func clickHouseRoleOnlyDeclaration(role string) *goschema.Database {
-	return &goschema.Database{
-		Roles: []goschema.Role{{StructName: "ClickHouseAccess", Name: role, Inherit: true}},
+func clickHouseRoleOnlyDeclaration(role string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Roles: []schemamodel.Role{{StructName: "ClickHouseAccess", Name: role, Inherit: true}},
 	}
 }
 
@@ -470,7 +470,7 @@ func readClickHouseRBAC(c *qt.C, conn *dbschema.DatabaseConnection) *catalog.Dat
 func planClickHouseRBAC(
 	c *qt.C,
 	conn *dbschema.DatabaseConnection,
-	declared *goschema.Database,
+	declared *schemamodel.Database,
 ) (*difftypes.SchemaDiff, []string) {
 	c.Helper()
 	info := conn.Info()
@@ -495,7 +495,7 @@ func planClickHouseRBAC(
 func planClickHouseRBACCreation(
 	c *qt.C,
 	conn *dbschema.DatabaseConnection,
-	declared *goschema.Database,
+	declared *schemamodel.Database,
 	role, database, table string,
 ) []string {
 	c.Helper()
@@ -640,9 +640,9 @@ func TestClickHouseDatabaseScopeGrantRoundTripsLive(t *testing.T) {
 // clickHouseDatabaseScopeDeclaration declares one role and one SELECT grant on
 // a whole database, which is what `on_schema` means on a ClickHouse target:
 // Ptah models a ClickHouse schema as a database.
-func clickHouseDatabaseScopeDeclaration(role, database string) *goschema.Database {
+func clickHouseDatabaseScopeDeclaration(role, database string) *schemamodel.Database {
 	declaration := clickHouseRoleOnlyDeclaration(role)
-	declaration.Grants = []goschema.Grant{{
+	declaration.Grants = []schemamodel.Grant{{
 		StructName: "ClickHouseAccess",
 		Role:       role,
 		Privileges: []string{"SELECT"},

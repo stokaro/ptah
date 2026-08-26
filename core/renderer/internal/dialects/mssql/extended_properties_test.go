@@ -147,8 +147,8 @@ func TestExtendedProperty_RefusesAnAddressItCannotCompose(t *testing.T) {
 // TestExtendedProperty_EveryOtherDialectSkipsRatherThanFails pins the
 // asymmetry that must not exist.
 //
-// goschema.ExtendedProperty carries no dialect scope, exactly as
-// goschema.Synonym does not, so a schema declaring one has to render on every
+// schemamodel.ExtendedProperty carries no dialect scope, exactly as
+// schemamodel.Synonym does not, so a schema declaring one has to render on every
 // target. A dialect that returned an error instead would make one schema
 // renderable on five targets and fatal on the sixth.
 func TestExtendedProperty_EveryOtherDialectSkipsRatherThanFails(t *testing.T) {

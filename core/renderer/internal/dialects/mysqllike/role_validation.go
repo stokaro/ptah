@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"slices"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // ValidateDeclaredRoles refuses a MySQL-family schema whose declared roles
@@ -21,7 +21,7 @@ import (
 // sorts diff.RolesAdded and so refuses on the alphabetically first CREATE ROLE
 // it renders. Naming the parse-order role here made the two disagree about the
 // same schema, and moved the name whenever a declaration was reordered.
-func ValidateDeclaredRoles(dialect string, caps capability.Capabilities, roles []goschema.Role) error {
+func ValidateDeclaredRoles(dialect string, caps capability.Capabilities, roles []schemamodel.Role) error {
 	normalized := platform.NormalizeDialect(dialect)
 	if (normalized != platform.MySQL && normalized != platform.MariaDB) || len(roles) == 0 {
 		return nil
@@ -33,7 +33,7 @@ func ValidateDeclaredRoles(dialect string, caps capability.Capabilities, roles [
 	if caps.Has(capability.RoleManagement) {
 		return validateRoleAttributes(normalized, roles)
 	}
-	first := slices.MinFunc(roles, func(a, b goschema.Role) int {
+	first := slices.MinFunc(roles, func(a, b schemamodel.Role) int {
 		return cmp.Compare(a.Name, b.Name)
 	})
 	return unsupportedRoleError(normalized, "CREATE ROLE", first.Name)
@@ -46,8 +46,8 @@ func ValidateDeclaredRoles(dialect string, caps capability.Capabilities, roles [
 // Both gates exist because whole-schema rendering and planning enter by
 // different doors, and they name the lexicographically first offending role so
 // that two answers about one schema agree.
-func validateRoleAttributes(dialect string, roles []goschema.Role) error {
-	offending := make([]goschema.Role, 0, len(roles))
+func validateRoleAttributes(dialect string, roles []schemamodel.Role) error {
+	offending := make([]schemamodel.Role, 0, len(roles))
 	for _, role := range roles {
 		if role.Login || role.Password != "" || role.Superuser ||
 			role.CreateDB || role.CreateRole || role.Replication {
@@ -57,7 +57,7 @@ func validateRoleAttributes(dialect string, roles []goschema.Role) error {
 	if len(offending) == 0 {
 		return nil
 	}
-	first := slices.MinFunc(offending, func(a, b goschema.Role) int {
+	first := slices.MinFunc(offending, func(a, b schemamodel.Role) int {
 		return cmp.Compare(a.Name, b.Name)
 	})
 	return roleAttributeError(dialect, first.Name, "LOGIN, PASSWORD or another user attribute")

@@ -6,8 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
@@ -47,14 +47,14 @@ func TestEnumDeclaredByName_ComparesAsWhatTheTargetStores(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			generated := &goschema.Database{
-				Tables: []goschema.Table{{StructName: "Account", Name: "accounts"}},
-				Fields: []goschema.Field{
+			desired := &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "Account", Name: "accounts"}},
+				Fields: []schemamodel.Field{
 					// The declaration names the enum rather than listing its
 					// values, which is what `//ptah:schema:enum` produces.
 					{StructName: "Account", Name: "status", Type: "status_kind", Nullable: true},
 				},
-				Enums: []goschema.Enum{{Name: "status_kind", Values: []string{"active", "archived"}}},
+				Enums: []schemamodel.Enum{{Name: "status_kind", Values: []string{"active", "archived"}}},
 			}
 			live := &catalog.Database{
 				Tables: []catalog.Table{{Name: "accounts", Columns: []catalog.Column{
@@ -63,7 +63,7 @@ func TestEnumDeclaredByName_ComparesAsWhatTheTargetStores(t *testing.T) {
 				Constraints: tt.constraints,
 			}
 
-			diff := schemadiff.CompareWithDialect(generated, live, tt.dialect)
+			diff := schemadiff.CompareWithDialect(desired, live, tt.dialect)
 
 			c.Assert(diff.TablesModified, qt.HasLen, 0,
 				qt.Commentf("a column declared by enum name must compare as what %s stores", tt.dialect))

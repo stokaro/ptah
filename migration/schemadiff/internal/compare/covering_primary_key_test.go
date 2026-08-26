@@ -6,23 +6,23 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
 
 // coveringDeclaration is a description whose table declares a primary key with
 // the given INCLUDE payload.
-func coveringDeclaration(include []string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{
+func coveringDeclaration(include []string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{
 			StructName:        "Covering",
 			Name:              "covering",
 			PrimaryKey:        []string{"a", "b"},
 			PrimaryKeyInclude: include,
 		}},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Covering", Name: "a", Type: "INTEGER"},
 			{StructName: "Covering", Name: "b", Type: "INTEGER"},
 			{StructName: "Covering", Name: "payload", Type: "TEXT", Nullable: true},
@@ -50,10 +50,10 @@ func coveringCatalog(include []string) *catalog.Database {
 }
 
 // constraintDiff compares one description against one catalog.
-func constraintDiff(c *qt.C, generated *goschema.Database, database *catalog.Database) *difftypes.SchemaDiff {
+func constraintDiff(c *qt.C, desired *schemamodel.Database, current *catalog.Database) *difftypes.SchemaDiff {
 	c.Helper()
 	diff := &difftypes.SchemaDiff{}
-	compare.ConstraintsWithSemantics(generated, database, diff, nil, identifier.ForDialect("postgres"))
+	compare.ConstraintsWithSemantics(desired, current, diff, nil, identifier.ForDialect("postgres"))
 	return diff
 }
 

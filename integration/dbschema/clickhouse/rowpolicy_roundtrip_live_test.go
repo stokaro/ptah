@@ -9,8 +9,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/migration/planner"
@@ -142,9 +142,9 @@ func TestClickHouseSwallowsAWriteCheckLive(t *testing.T) {
 }
 
 // clickHouseRowPolicyDeclaration is a table under one policy naming one role.
-func clickHouseRowPolicyDeclaration(role, database, table, policy string) *goschema.Database {
+func clickHouseRowPolicyDeclaration(role, database, table, policy string) *schemamodel.Database {
 	declared := clickHouseRBACDeclaration(role, database+"."+table, false)
-	declared.RLSPolicies = []goschema.RLSPolicy{{
+	declared.RLSPolicies = []schemamodel.RLSPolicy{{
 		StructName:      "Order",
 		Name:            policy,
 		Table:           table,
@@ -212,7 +212,7 @@ func readClickHouseRowPolicies(c *qt.C, conn *dbschema.DatabaseConnection) *cata
 func planClickHouseRowPolicies(
 	c *qt.C,
 	conn *dbschema.DatabaseConnection,
-	declared *goschema.Database,
+	declared *schemamodel.Database,
 ) (*difftypes.SchemaDiff, []string) {
 	c.Helper()
 	info := conn.Info()

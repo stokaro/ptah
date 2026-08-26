@@ -5,14 +5,14 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 )
 
 // identityField is an auto-incrementing column carrying the given range and no
 // generation mode, which is how SQL Server's is spelled.
-func identityField(start, increment string) goschema.Field {
-	return goschema.Field{
+func identityField(start, increment string) schemamodel.Field {
+	return schemamodel.Field{
 		StructName:        "Orders",
 		Name:              "id",
 		Type:              "INT",

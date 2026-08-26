@@ -6,15 +6,15 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
 
 // declaredTrigger is the desired side: either an external function reference or
 // an inline body, never both.
-func declaredTrigger(executeFunction, body string) goschema.Trigger {
-	return goschema.Trigger{
+func declaredTrigger(executeFunction, body string) schemamodel.Trigger {
+	return schemamodel.Trigger{
 		Name: "trg_a", Table: "a", Timing: "AFTER", Event: "INSERT", ForEach: "ROW",
 		ExecuteFunction: executeFunction, Body: body,
 	}

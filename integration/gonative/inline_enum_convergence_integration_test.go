@@ -13,6 +13,7 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/dbschema/mysql"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -22,11 +23,11 @@ import (
 //
 // It is PARSED rather than constructed, from the annotations an author writes,
 // so the round trip below measures the shape the CLI produces. A hand-built
-// goschema.Database is not that shape: the enum catalog a column reference
+// schemamodel.Database is not that shape: the enum catalog a column reference
 // resolves against is derived during parsing, and a struct literal that sets
 // Field.Enum without it renders as a bare `ENUM`, which MySQL answers with a
 // syntax error.
-func inlineEnumSchema(c *qt.C, values ...string) *goschema.Database {
+func inlineEnumSchema(c *qt.C, values ...string) *schemamodel.Database {
 	c.Helper()
 
 	source := fmt.Sprintf(`package models
@@ -92,7 +93,7 @@ func TestInlineEnumChangeConverges_Integration(t *testing.T) {
 
 // applyInlineEnumSchema plans desired against the live catalog and executes
 // every statement, failing on the first one the engine refuses.
-func applyInlineEnumSchema(c *qt.C, db *sql.DB, dialect string, desired *goschema.Database) {
+func applyInlineEnumSchema(c *qt.C, db *sql.DB, dialect string, desired *schemamodel.Database) {
 	c.Helper()
 
 	statements := inlineEnumPending(c, db, dialect, desired)
@@ -105,7 +106,7 @@ func applyInlineEnumSchema(c *qt.C, db *sql.DB, dialect string, desired *goschem
 
 // inlineEnumPending returns the statements that would still run. Empty is
 // convergence.
-func inlineEnumPending(c *qt.C, db *sql.DB, dialect string, desired *goschema.Database) []string {
+func inlineEnumPending(c *qt.C, db *sql.DB, dialect string, desired *schemamodel.Database) []string {
 	c.Helper()
 
 	reader := mysql.NewMySQLReader(db, "")

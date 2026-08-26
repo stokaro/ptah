@@ -118,12 +118,12 @@ type Event struct {
 }
 
 func runEmbedPath(root string) error {
-	generated, err := goschema.ParseDir(root)
+	desired, err := goschema.ParseDir(root)
 	if err != nil {
 		return err
 	}
-	diff := schemadiff.Compare(generated, &catalog.Database{})
-	nodes, err := planner.GenerateSchemaDiffAST(diff, generated, "postgres")
+	diff := schemadiff.Compare(desired, &catalog.Database{})
+	nodes, err := planner.GenerateSchemaDiffAST(diff, desired, "postgres")
 	if err != nil {
 		return err
 	}

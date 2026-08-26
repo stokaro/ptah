@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 )
 
@@ -32,7 +32,7 @@ func uniqueSchema(constraintName string) *catalog.Database {
 }
 
 // emailField returns the converted column the constraint is about.
-func emailField(c *qt.C, database *goschema.Database) goschema.Field {
+func emailField(c *qt.C, database *schemamodel.Database) schemamodel.Field {
 	c.Helper()
 	for _, field := range database.Fields {
 		if field.Name == "email" {
@@ -40,7 +40,7 @@ func emailField(c *qt.C, database *goschema.Database) goschema.Field {
 		}
 	}
 	c.Fatalf("no email field in %+v", database.Fields)
-	return goschema.Field{}
+	return schemamodel.Field{}
 }
 
 // TestConvert_KeepsAUniqueConstraintNameSomebodyChose pins that a name survives

@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/clickhouserbac"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 )
@@ -109,29 +109,29 @@ func TestScope_Contains_IsTheServerAbsorptionRule(t *testing.T) {
 func TestScopeOf_HappyPath(t *testing.T) {
 	tests := []struct {
 		name            string
-		grant           goschema.Grant
+		grant           schemamodel.Grant
 		defaultDatabase string
 		want            clickhouserbac.Scope
 	}{
 		{
 			name:  "on_schema is a database scope",
-			grant: goschema.Grant{Role: "reader", OnSchema: "shop"},
+			grant: schemamodel.Grant{Role: "reader", OnSchema: "shop"},
 			want:  clickhouserbac.Scope{Database: "shop"},
 		},
 		{
 			name:  "a qualified on_table names its own database",
-			grant: goschema.Grant{Role: "reader", OnTable: "shop.orders"},
+			grant: schemamodel.Grant{Role: "reader", OnTable: "shop.orders"},
 			want:  clickhouserbac.Scope{Database: "shop", Table: "orders"},
 		},
 		{
 			name:            "an unqualified on_table resolves against the default",
-			grant:           goschema.Grant{Role: "reader", OnTable: "orders"},
+			grant:           schemamodel.Grant{Role: "reader", OnTable: "orders"},
 			defaultDatabase: "shop",
 			want:            clickhouserbac.Scope{Database: "shop", Table: "orders"},
 		},
 		{
 			name:            "a qualified on_table outranks the default",
-			grant:           goschema.Grant{Role: "reader", OnTable: "warehouse.orders"},
+			grant:           schemamodel.Grant{Role: "reader", OnTable: "warehouse.orders"},
 			defaultDatabase: "shop",
 			want:            clickhouserbac.Scope{Database: "warehouse", Table: "orders"},
 		},
@@ -150,33 +150,33 @@ func TestScopeOf_HappyPath(t *testing.T) {
 func TestScopeOf_FailurePath(t *testing.T) {
 	tests := []struct {
 		name            string
-		grant           goschema.Grant
+		grant           schemamodel.Grant
 		defaultDatabase string
 		wantErr         string
 	}{
 		{
 			name:    "sequences do not exist",
-			grant:   goschema.Grant{Role: "reader", OnSequence: "order_id_seq"},
+			grant:   schemamodel.Grant{Role: "reader", OnSequence: "order_id_seq"},
 			wantErr: `grant to role "reader" names on_sequence "order_id_seq": ClickHouse has no sequences`,
 		},
 		{
 			name:    "two scopes at once",
-			grant:   goschema.Grant{Role: "reader", OnSchema: "shop", OnTable: "shop.orders"},
+			grant:   schemamodel.Grant{Role: "reader", OnSchema: "shop", OnTable: "shop.orders"},
 			wantErr: `.*names both on_schema "shop" and on_table "shop.orders".*`,
 		},
 		{
 			name:    "no object at all",
-			grant:   goschema.Grant{Role: "reader"},
+			grant:   schemamodel.Grant{Role: "reader"},
 			wantErr: `grant to role "reader" names no object.*`,
 		},
 		{
 			name:    "an unqualified table with no default to resolve against",
-			grant:   goschema.Grant{Role: "reader", OnTable: "orders"},
+			grant:   schemamodel.Grant{Role: "reader", OnTable: "orders"},
 			wantErr: `.*names table "orders" with no database.*`,
 		},
 		{
 			name:    "three parts",
-			grant:   goschema.Grant{Role: "reader", OnTable: "cluster.shop.orders"},
+			grant:   schemamodel.Grant{Role: "reader", OnTable: "cluster.shop.orders"},
 			wantErr: `.*a ClickHouse scope has at most two parts`,
 		},
 		{
@@ -185,23 +185,23 @@ func TestScopeOf_FailurePath(t *testing.T) {
 			// this would widen one table's privilege to every table in the
 			// database — silently, from a typo.
 			name:    "a trailing dot, which would widen the scope",
-			grant:   goschema.Grant{Role: "reader", OnTable: "shop."},
+			grant:   schemamodel.Grant{Role: "reader", OnTable: "shop."},
 			wantErr: `.*names table "shop\." with no table part.*`,
 		},
 		{
 			name:            "a trailing dot is refused even with a default database",
-			grant:           goschema.Grant{Role: "reader", OnTable: "shop."},
+			grant:           schemamodel.Grant{Role: "reader", OnTable: "shop."},
 			defaultDatabase: "warehouse",
 			wantErr:         `.*with no table part.*`,
 		},
 		{
 			name:    "a wildcard database",
-			grant:   goschema.Grant{Role: "reader", OnTable: "*.orders"},
+			grant:   schemamodel.Grant{Role: "reader", OnTable: "*.orders"},
 			wantErr: `.*not wildcard scopes`,
 		},
 		{
 			name:    "a wildcard schema",
-			grant:   goschema.Grant{Role: "reader", OnSchema: "*"},
+			grant:   schemamodel.Grant{Role: "reader", OnSchema: "*"},
 			wantErr: `.*not wildcard scopes`,
 		},
 	}
@@ -279,19 +279,19 @@ func TestScopeOfLive_ReadsTheCatalogShape(t *testing.T) {
 func TestScopeOfLive_AgreesWithScopeOfAcrossTheBoundary(t *testing.T) {
 	tests := []struct {
 		name    string
-		grant   goschema.Grant
+		grant   schemamodel.Grant
 		live    catalog.Grant
 		wantSQL string
 	}{
 		{
 			name:    "a database scope",
-			grant:   goschema.Grant{Role: "reader", Privileges: []string{"SELECT"}, OnSchema: "shop"},
+			grant:   schemamodel.Grant{Role: "reader", Privileges: []string{"SELECT"}, OnSchema: "shop"},
 			live:    catalog.Grant{Role: "reader", Privilege: "SELECT", ObjectType: "SCHEMA", ObjectName: "shop"},
 			wantSQL: "`shop`.*",
 		},
 		{
 			name:    "a table scope",
-			grant:   goschema.Grant{Role: "reader", Privileges: []string{"SELECT"}, OnTable: "shop.orders"},
+			grant:   schemamodel.Grant{Role: "reader", Privileges: []string{"SELECT"}, OnTable: "shop.orders"},
 			live:    catalog.Grant{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", Schema: "shop", ObjectName: "orders"},
 			wantSQL: "`shop`.`orders`",
 		},

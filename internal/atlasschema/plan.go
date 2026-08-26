@@ -13,7 +13,7 @@ import (
 	digest "github.com/opencontainers/go-digest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasfilter"
@@ -83,7 +83,7 @@ type PlanFileOptions struct {
 	Policy    DiffPolicy
 	// Desired supplies a pre-loaded desired schema model; see
 	// [ApplyOptions.Desired]. When set, ToURLs are ignored.
-	Desired *goschema.Database
+	Desired *schemamodel.Database
 	// Vars supplies values for HCL schema-file `variable` blocks, as `--var`
 	// spells them; see [go.5x5.cz/ptah/internal/schemafile.Options].
 	Vars []string
@@ -437,7 +437,7 @@ func SchemaFingerprint(schema *catalog.Database) (string, error) {
 // informational: apply --plan executes the recorded statements and only
 // verifies the source fingerprint, but the target fingerprint lets tooling
 // detect that a plan no longer corresponds to the desired sources.
-func desiredSchemaFingerprint(desired *goschema.Database) (string, error) {
+func desiredSchemaFingerprint(desired *schemamodel.Database) (string, error) {
 	if desired == nil {
 		return "", errors.New("desired schema fingerprint requires schema")
 	}

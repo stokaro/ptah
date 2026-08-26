@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -37,37 +37,37 @@ func TestRanges_AttributeChangesAreReported(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		target    goschema.Range
+		target    schemamodel.Range
 		changeKey string
 		want      string
 	}{
 		{
 			name:      "subtype",
-			target:    goschema.Range{Name: "audit_range", Subtype: "int8"},
+			target:    schemamodel.Range{Name: "audit_range", Subtype: "int8"},
 			changeKey: "subtype",
 			want:      "timestamp with time zone -> int8",
 		},
 		{
 			name:      "subtype_opclass",
-			target:    goschema.Range{Name: "audit_range", Subtype: "timestamptz", SubtypeOpClass: "custom_ops"},
+			target:    schemamodel.Range{Name: "audit_range", Subtype: "timestamptz", SubtypeOpClass: "custom_ops"},
 			changeKey: "subtype_opclass",
 			want:      "timestamptz_ops -> custom_ops",
 		},
 		{
 			name:      "collation",
-			target:    goschema.Range{Name: "audit_range", Subtype: "timestamptz", Collation: "en_US"},
+			target:    schemamodel.Range{Name: "audit_range", Subtype: "timestamptz", Collation: "en_US"},
 			changeKey: "collation",
 			want:      " -> en_US",
 		},
 		{
 			name:      "canonical",
-			target:    goschema.Range{Name: "audit_range", Subtype: "timestamptz", Canonical: "audit_range_canonical"},
+			target:    schemamodel.Range{Name: "audit_range", Subtype: "timestamptz", Canonical: "audit_range_canonical"},
 			changeKey: "canonical",
 			want:      " -> audit_range_canonical",
 		},
 		{
 			name:      "subtype_diff",
-			target:    goschema.Range{Name: "audit_range", Subtype: "timestamptz", SubtypeDiff: "audit_range_diff"},
+			target:    schemamodel.Range{Name: "audit_range", Subtype: "timestamptz", SubtypeDiff: "audit_range_diff"},
 			changeKey: "subtype_diff",
 			want:      " -> audit_range_diff",
 		},
@@ -76,11 +76,11 @@ func TestRanges_AttributeChangesAreReported(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			generated := &goschema.Database{Ranges: []goschema.Range{test.target}}
+			desired := &schemamodel.Database{Ranges: []schemamodel.Range{test.target}}
 			database := &catalog.Database{Ranges: []catalog.Range{current}}
 			diff := &difftypes.SchemaDiff{}
 
-			compare.Ranges(generated, database, diff, compare.CoverageOf(generated, database))
+			compare.Ranges(desired, database, diff, compare.CoverageOf(desired, database))
 
 			c.Assert(diff.RangesAdded, qt.IsNil)
 			c.Assert(diff.RangesRemoved, qt.IsNil)
@@ -103,7 +103,7 @@ func TestRanges_AttributeChangesAreReported(t *testing.T) {
 func TestRanges_UnchangedRangeReportsNothing(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{Ranges: []goschema.Range{
+	desired := &schemamodel.Database{Ranges: []schemamodel.Range{
 		{Name: "audit_range", Subtype: "timestamptz"},
 	}}
 	database := &catalog.Database{Ranges: []catalog.Range{{
@@ -113,7 +113,7 @@ func TestRanges_UnchangedRangeReportsNothing(t *testing.T) {
 	}}}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.Ranges(generated, database, diff, compare.CoverageOf(generated, database))
+	compare.Ranges(desired, database, diff, compare.CoverageOf(desired, database))
 
 	c.Assert(diff.RangesAdded, qt.IsNil)
 	c.Assert(diff.RangesRemoved, qt.IsNil)
@@ -125,11 +125,11 @@ func TestRanges_UnchangedRangeReportsNothing(t *testing.T) {
 func TestRanges_AddAndRemoveStillReported(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{Ranges: []goschema.Range{{Name: "fresh", Subtype: "int4"}}}
+	desired := &schemamodel.Database{Ranges: []schemamodel.Range{{Name: "fresh", Subtype: "int4"}}}
 	database := &catalog.Database{Ranges: []catalog.Range{{Name: "legacy", Subtype: "int4"}}}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.Ranges(generated, database, diff, compare.CoverageOf(generated, database))
+	compare.Ranges(desired, database, diff, compare.CoverageOf(desired, database))
 
 	c.Assert(diff.RangesAdded, qt.DeepEquals, []string{"fresh"})
 	c.Assert(diff.RangesRemoved, qt.DeepEquals, []string{"legacy"})

@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -29,7 +29,7 @@ func tableQualifiedAdditionSQL(c *qt.C, deferrable bool, initially string) strin
 			Initially:      initially,
 		}},
 	}
-	nodes, err := postgres.New().GenerateMigrationAST(diff, &goschema.Database{})
+	nodes, err := postgres.New().GenerateMigrationAST(diff, &schemamodel.Database{})
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -41,9 +41,9 @@ func tableQualifiedAdditionSQL(c *qt.C, deferrable bool, initially string) strin
 func declaredAdditionSQL(c *qt.C, deferrable bool, initially string) string {
 	c.Helper()
 	diff := &difftypes.SchemaDiff{ConstraintsAdded: []string{"fk_child_pid"}}
-	generated := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Child", Name: "child"}},
-		Constraints: []goschema.Constraint{{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Child", Name: "child"}},
+		Constraints: []schemamodel.Constraint{{
 			StructName:     "Child",
 			Name:           "fk_child_pid",
 			Type:           "FOREIGN KEY",
@@ -56,7 +56,7 @@ func declaredAdditionSQL(c *qt.C, deferrable bool, initially string) string {
 			Initially:      initially,
 		}},
 	}
-	nodes, err := postgres.New().GenerateMigrationAST(diff, generated)
+	nodes, err := postgres.New().GenerateMigrationAST(diff, desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)

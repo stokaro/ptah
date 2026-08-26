@@ -11,7 +11,7 @@ import (
 	"sort"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemaexport"
 )
 
@@ -34,7 +34,7 @@ type Result struct {
 }
 
 // Render renders db as deterministic GraphQL SDL.
-func Render(db *goschema.Database, opts Options) (Result, error) {
+func Render(db *schemamodel.Database, opts Options) (Result, error) {
 	if db == nil {
 		return Result{}, fmt.Errorf("schema database is nil")
 	}
@@ -146,7 +146,7 @@ type builder struct {
 // the input projections reuse the exact name the object type published rather
 // than re-deriving it and drifting from a deduplicated one.
 type column struct {
-	source goschema.Field
+	source schemamodel.Field
 	field  gqlField
 }
 
@@ -155,7 +155,7 @@ type column struct {
 //
 // The order is the read shape's, with write-only columns appended, so a schema
 // does not reshuffle when an exposure changes.
-func unionShapes(read, write []goschema.Field) (all []goschema.Field, inObject, inInput map[string]bool) {
+func unionShapes(read, write []schemamodel.Field) (all []schemamodel.Field, inObject, inInput map[string]bool) {
 	inObject = make(map[string]bool, len(read))
 	for _, field := range read {
 		inObject[field.Name] = true
@@ -164,7 +164,7 @@ func unionShapes(read, write []goschema.Field) (all []goschema.Field, inObject, 
 	for _, field := range write {
 		inInput[field.Name] = true
 	}
-	all = append([]goschema.Field(nil), read...)
+	all = append([]schemamodel.Field(nil), read...)
 	for _, field := range write {
 		if !inObject[field.Name] {
 			all = append(all, field)
@@ -173,7 +173,7 @@ func unionShapes(read, write []goschema.Field) (all []goschema.Field, inObject, 
 	return all, inObject, inInput
 }
 
-func (b *builder) addTable(db *goschema.Database, table goschema.Table, policy schemaexport.FieldPolicy) error {
+func (b *builder) addTable(db *schemamodel.Database, table schemamodel.Table, policy schemaexport.FieldPolicy) error {
 	// The object type is the read shape and the input types are the write one,
 	// which is the split GraphQL already had a word for. A column exposed for
 	// write alone still needs a field built for it, so the build walks the
@@ -301,7 +301,7 @@ func (b *builder) addInputs(typeName string, columns []column, pk map[string]boo
 
 // addQueries emits the requested Query root fields and, for the list shape, the
 // connection and edge types they return.
-func (b *builder) addQueries(table goschema.Table, typeName string, columns []column, pk map[string]bool) {
+func (b *builder) addQueries(table schemamodel.Table, typeName string, columns []column, pk map[string]bool) {
 	if b.ops.List {
 		edgeName := b.reg.unique(typeName + "Edge")
 		b.edgeTypes = append(b.edgeTypes, gqlType{
@@ -400,7 +400,7 @@ func writeProjection(columns []column, pk map[string]bool, shape writeShape) []g
 
 // columnField builds the GraphQL field for a column, mapping an array column to a
 // list of the element type.
-func (b *builder) columnField(table goschema.Table, field goschema.Field, pk map[string]bool, name string) gqlField {
+func (b *builder) columnField(table schemamodel.Table, field schemamodel.Field, pk map[string]bool, name string) gqlField {
 	elementField := field
 	list := false
 	if element, isArray := schemaexport.ElementType(field.Type); isArray {
@@ -439,7 +439,7 @@ func lowerFirst(s string) string {
 // resolveColumnType returns the GraphQL type name for a column, resolving enums,
 // applying the ID convention to primary keys, and recording custom scalars and
 // diagnostics as a side effect.
-func (b *builder) resolveColumnType(table goschema.Table, field goschema.Field, pk map[string]bool) string {
+func (b *builder) resolveColumnType(table schemamodel.Table, field schemamodel.Field, pk map[string]bool) string {
 	if values, ok := schemaexport.ResolveEnumValues(field, b.enums); ok {
 		if name, ok := b.enumType(table, field, values); ok {
 			return name
@@ -467,7 +467,7 @@ func (b *builder) resolveColumnType(table goschema.Table, field goschema.Field, 
 // enumType returns the GraphQL enum type name for a field, defining the enum once
 // and deduplicating fields that share the same source enum. The second result is
 // false when the values are not valid GraphQL enum names.
-func (b *builder) enumType(table goschema.Table, field goschema.Field, values []string) (string, bool) {
+func (b *builder) enumType(table schemamodel.Table, field schemamodel.Field, values []string) (string, bool) {
 	for _, value := range values {
 		if !schemaexport.IsValidGraphQLName(value) {
 			return "", false
@@ -483,14 +483,14 @@ func (b *builder) enumType(table goschema.Table, field goschema.Field, values []
 	return name, true
 }
 
-func (b *builder) enumSourceKey(table goschema.Table, field goschema.Field) string {
+func (b *builder) enumSourceKey(table schemamodel.Table, field schemamodel.Field) string {
 	if !mapGraphQLScalar(field.Type).Known {
 		return "type:" + field.Type // named enum type shared across columns
 	}
 	return "col:" + table.Name + "." + field.Name // inline enum, unique per column
 }
 
-func (b *builder) desiredEnumName(table goschema.Table, field goschema.Field) string {
+func (b *builder) desiredEnumName(table schemamodel.Table, field schemamodel.Field) string {
 	var raw string
 	if !mapGraphQLScalar(field.Type).Known {
 		raw = schemaexport.PascalCase(strings.TrimPrefix(field.Type, "enum_"))
@@ -514,7 +514,7 @@ func (b *builder) warn(path, message string) {
 // the server rewrites on every update. None of them belongs in an input the
 // caller fills in. A plain DEFAULT is not in this set — a caller may still
 // supply that column — so those fields stay in the projection as optional.
-func isServerOwned(field goschema.Field) bool {
+func isServerOwned(field schemamodel.Field) bool {
 	if field.AutoInc {
 		return true
 	}
@@ -534,7 +534,7 @@ func isServerOwned(field goschema.Field) bool {
 // hasDefault reports whether the database supplies a value when the column is
 // omitted, which makes the column optional in a create input even when it is
 // NOT NULL.
-func hasDefault(field goschema.Field) bool {
+func hasDefault(field schemamodel.Field) bool {
 	return field.DefaultSet || strings.TrimSpace(field.DefaultExpr) != "" ||
 		strings.TrimSpace(field.Default) != ""
 }

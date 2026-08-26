@@ -7,9 +7,9 @@ import (
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/crdbttl"
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/spannerttl"
@@ -76,39 +76,39 @@ import (
 //
 // Results are sorted alphabetically for consistent output across multiple runs,
 // ensuring deterministic migration generation and reliable testing.
-func TablesAndColumns(generated *goschema.Database, database *catalog.Database, diff *difftypes.SchemaDiff) {
-	TablesAndColumnsWithDialect(generated, database, diff, "")
+func TablesAndColumns(desired *schemamodel.Database, current *catalog.Database, diff *difftypes.SchemaDiff) {
+	TablesAndColumnsWithDialect(desired, current, diff, "")
 }
 
 // TablesAndColumnsWithDialect performs table and column comparison with
 // dialect-aware normalization for surfaces whose catalogs rewrite expressions.
 func TablesAndColumnsWithDialect(
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	dialect string,
 ) {
 	TablesAndColumnsWithSemantics(
-		generated,
+		desired,
 		database,
 		diff,
 		dialect,
 		identifier.ForDialect(dialect),
-		CoverageOf(generated, database),
+		CoverageOf(desired, database),
 	)
 }
 
 // TablesAndColumnsWithSemantics compares tables and columns using explicit
 // identifier rules while retaining target spelling in the produced diff.
 func TablesAndColumnsWithSemantics(
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	dialect string,
 	semantics identifier.Semantics,
 	cov Coverage,
 ) {
-	TablesAndColumnsWithGeneratedExpressions(generated, database, diff, dialect, semantics, cov, nil)
+	TablesAndColumnsWithGeneratedExpressions(desired, database, diff, dialect, semantics, cov, nil)
 }
 
 // TablesAndColumnsWithGeneratedExpressions is [TablesAndColumnsWithSemantics]
@@ -117,7 +117,7 @@ func TablesAndColumnsWithSemantics(
 // A nil map is every comparison that could not ask a server, which is what the
 // six-argument form passes. See [config.CompareOptions.GeneratedExpressions].
 func TablesAndColumnsWithGeneratedExpressions(
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	dialect string,
@@ -126,8 +126,8 @@ func TablesAndColumnsWithGeneratedExpressions(
 	generatedExpressions map[string]config.GeneratedExpression,
 ) {
 	// Create maps for quick lookup
-	genTables := make(map[tableIdentity]goschema.Table)
-	for _, table := range generated.Tables {
+	genTables := make(map[tableIdentity]schemamodel.Table)
+	for _, table := range desired.Tables {
 		genTables[tableMapIdentity(table.Schema, table.Name, dialect, semantics)] = table
 	}
 
@@ -136,7 +136,7 @@ func TablesAndColumnsWithGeneratedExpressions(
 		dbTables[tableMapIdentity(table.Schema, table.Name, dialect, semantics)] = table
 	}
 	objectOwnedUniqueColumns := collectGeneratedObjectOwnedUniqueColumns(
-		generated,
+		desired,
 		semantics,
 	)
 
@@ -191,7 +191,7 @@ func TablesAndColumnsWithGeneratedExpressions(
 			tableDiff := tableColumnsWithSemantics(
 				genTable,
 				dbTable,
-				generated,
+				desired,
 				dialect,
 				semantics,
 				objectOwnedUniqueColumns,

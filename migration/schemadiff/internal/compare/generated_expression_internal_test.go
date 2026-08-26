@@ -12,8 +12,8 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // oracleStoredExpression is what a live 23.26.2.0.0 stores for
@@ -21,8 +21,8 @@ import (
 // around the operator gone.
 const oracleStoredExpression = `"VIEW_COUNT"*2`
 
-func generatedColumn(expression string) goschema.Field {
-	return goschema.Field{
+func generatedColumn(expression string) schemamodel.Field {
+	return schemamodel.Field{
 		Name:                "doubled",
 		Type:                "INT",
 		Nullable:            true,

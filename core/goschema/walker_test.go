@@ -14,6 +14,7 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/goannotationsource"
 )
 
@@ -399,7 +400,7 @@ type User struct {
 	c.Assert(result.Tables, qt.HasLen, 1) // Should have only one "users" table
 
 	// Verify all fields are merged (should have id, name, email)
-	userFields := make([]goschema.Field, 0)
+	userFields := make([]schemamodel.Field, 0)
 	for _, field := range result.Fields {
 		if field.StructName == "User" {
 			userFields = append(userFields, field)
@@ -427,13 +428,13 @@ type User struct {
 //
 // Returns:
 //   - fs.FS: An in-memory filesystem containing the specified files
-func grantByOnSequence(grants []goschema.Grant, sequenceName string) goschema.Grant {
+func grantByOnSequence(grants []schemamodel.Grant, sequenceName string) schemamodel.Grant {
 	for _, grant := range grants {
 		if grant.OnSequence == sequenceName {
 			return grant
 		}
 	}
-	return goschema.Grant{}
+	return schemamodel.Grant{}
 }
 
 func createTestFS(files map[string]string) fs.FS {
@@ -1609,7 +1610,7 @@ func TestParseDir_ReflectionGuard(t *testing.T) {
 
 	fixtureDir := "../../integration/fixtures/entities/023-go-annotations-objects"
 
-	merged := goschema.Database{}
+	merged := schemamodel.Database{}
 	entries, err := os.ReadDir(fixtureDir)
 	c.Assert(err, qt.IsNil)
 	for _, e := range entries {
@@ -1768,7 +1769,7 @@ type Second struct{}
 	result, err := goschema.ParseFS(fsys, ".")
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(result.Schemas, qt.DeepEquals, []goschema.Schema{{
+	c.Assert(result.Schemas, qt.DeepEquals, []schemamodel.Schema{{
 		Name:    "auth",
 		Comment: "Authentication schema",
 	}})

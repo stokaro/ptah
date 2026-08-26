@@ -11,8 +11,8 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/schemachange"
 	"go.5x5.cz/ptah/internal/schemastate"
@@ -29,7 +29,7 @@ import (
 func TestPipeline_ProducesTheChangeTheInputsDescribe(t *testing.T) {
 	tests := []struct {
 		name              string
-		description       *goschema.Database
+		description       *schemamodel.Database
 		currentCatalog    *catalog.Database
 		wantOperation     schemachange.Operation
 		wantChanged       []string
@@ -49,7 +49,7 @@ func TestPipeline_ProducesTheChangeTheInputsDescribe(t *testing.T) {
 		},
 		{
 			name:              "a foreign key the desired schema does not declare",
-			description:       &goschema.Database{Tables: parentChildDescription("").Tables, Fields: fieldsWithoutForeignKey()},
+			description:       &schemamodel.Database{Tables: parentChildDescription("").Tables, Fields: fieldsWithoutForeignKey()},
 			currentCatalog:    parentChildCatalog("NO ACTION"),
 			wantOperation:     schemachange.Remove,
 			wantRisk:          schemachange.RiskGuaranteeLoss,
@@ -258,7 +258,7 @@ func TestPipeline_RefusesToNormalizeTwice(t *testing.T) {
 func TestPipeline_UnknownStateNeverPlansDestruction(t *testing.T) {
 	tests := []struct {
 		name           string
-		description    *goschema.Database
+		description    *schemamodel.Database
 		currentCatalog *catalog.Database
 		wantErr        string
 	}{
@@ -346,7 +346,7 @@ func TestPipeline_ExplainNamesTheChangeAndItsSource(t *testing.T) {
 func TestPipeline_MatchesTheExistingPath(t *testing.T) {
 	tests := []struct {
 		name           string
-		description    *goschema.Database
+		description    *schemamodel.Database
 		currentCatalog *catalog.Database
 	}{
 		{name: "adding a foreign key", description: parentChildDescription(""), currentCatalog: emptyCatalog()},
@@ -372,7 +372,7 @@ func TestPipeline_MatchesTheExistingPath(t *testing.T) {
 // measured against.
 func existingPathStatements(
 	c *qt.C,
-	description *goschema.Database,
+	description *schemamodel.Database,
 	currentCatalog *catalog.Database,
 	profile schemastate.Profile,
 ) []string {
@@ -445,49 +445,49 @@ func reversedLine(changes []schemachange.Change) string {
 
 // fieldsWithoutForeignKey is the child schema with the reference removed, which
 // is what a removal's desired side looks like.
-func fieldsWithoutForeignKey() []goschema.Field {
+func fieldsWithoutForeignKey() []schemamodel.Field {
 	fields := parentChildDescription("").Fields
-	kept := make([]goschema.Field, 0, len(fields))
+	kept := make([]schemamodel.Field, 0, len(fields))
 	for _, field := range fields {
 		kept = append(kept, clearedForeign(field))
 	}
 	return kept
 }
 
-func clearedForeign(field goschema.Field) goschema.Field {
+func clearedForeign(field schemamodel.Field) schemamodel.Field {
 	field.Foreign = ""
 	field.ForeignKeyName = ""
 	field.OnDelete = ""
 	return field
 }
 
-func referencingAMissingTable() *goschema.Database {
+func referencingAMissingTable() *schemamodel.Database {
 	return withForeignSpelling("nowhere(id)")
 }
 
-func withForeignSpelling(spelling string) *goschema.Database {
+func withForeignSpelling(spelling string) *schemamodel.Database {
 	description := parentChildDescription("")
 	description.Fields[2].Foreign = spelling
 	return description
 }
 
-func withOnDelete(action string) *goschema.Database {
+func withOnDelete(action string) *schemamodel.Database {
 	return parentChildDescription(action)
 }
 
 // manyForeignKeys builds a description with enough constraints that a
 // nondeterministic order would show up rather than happen to agree.
-func manyForeignKeys(count int) *goschema.Database {
-	description := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Parent", Name: "parent"}},
-		Fields: []goschema.Field{{StructName: "Parent", Name: "id", Type: "int", Primary: true}},
+func manyForeignKeys(count int) *schemamodel.Database {
+	description := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Parent", Name: "parent"}},
+		Fields: []schemamodel.Field{{StructName: "Parent", Name: "id", Type: "int", Primary: true}},
 	}
 	for index := range count {
 		child := fmt.Sprintf("child%02d", index)
-		description.Tables = append(description.Tables, goschema.Table{StructName: child, Name: child})
+		description.Tables = append(description.Tables, schemamodel.Table{StructName: child, Name: child})
 		description.Fields = append(description.Fields,
-			goschema.Field{StructName: child, Name: "id", Type: "int", Primary: true},
-			goschema.Field{
+			schemamodel.Field{StructName: child, Name: "id", Type: "int", Primary: true},
+			schemamodel.Field{
 				StructName: child,
 				Name:       "parent_id",
 				Type:       "int",
@@ -666,7 +666,7 @@ func TestPipeline_RollbackReversesAMultiChangeOrder(t *testing.T) {
 }
 
 // edgeLine renders a graph's edges as one comparable string.
-func edgeLine(c *qt.C, description *goschema.Database, currentCatalog *catalog.Database) string {
+func edgeLine(c *qt.C, description *schemamodel.Database, currentCatalog *catalog.Database) string {
 	c.Helper()
 	desired, current, err := states(description, currentCatalog, postgresProfile())
 	c.Assert(err, qt.IsNil)
@@ -683,17 +683,17 @@ func edgeLine(c *qt.C, description *goschema.Database, currentCatalog *catalog.D
 
 // sharedForeignKeyName declares one foreign-key NAME on two host tables, which
 // is what an embedded mixin produces.
-func sharedForeignKeyName() *goschema.Database {
-	description := &goschema.Database{
-		Tables: []goschema.Table{
+func sharedForeignKeyName() *schemamodel.Database {
+	description := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Parent", Name: "parent"},
 			{StructName: "One", Name: "one"},
 			{StructName: "Two", Name: "two"},
 		},
-		Fields: []goschema.Field{{StructName: "Parent", Name: "id", Type: "int", Primary: true}},
+		Fields: []schemamodel.Field{{StructName: "Parent", Name: "id", Type: "int", Primary: true}},
 	}
 	for _, host := range []string{"One", "Two"} {
-		description.Fields = append(description.Fields, goschema.Field{
+		description.Fields = append(description.Fields, schemamodel.Field{
 			StructName: host,
 			Name:       "parent_id",
 			Type:       "int",

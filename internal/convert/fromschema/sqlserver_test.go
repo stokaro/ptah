@@ -5,31 +5,31 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 )
 
 func TestFromField_SQLServerTypeConversions(t *testing.T) {
 	tests := []struct {
 		name     string
-		field    goschema.Field
+		field    schemamodel.Field
 		expected string
 	}{
 		{
 			name:     "serial",
-			field:    goschema.Field{Name: "id", Type: "SERIAL", AutoInc: true},
+			field:    schemamodel.Field{Name: "id", Type: "SERIAL", AutoInc: true},
 			expected: "INT",
 		},
 		{
 			name:     "bigserial",
-			field:    goschema.Field{Name: "id", Type: "BIGSERIAL", AutoInc: true},
+			field:    schemamodel.Field{Name: "id", Type: "BIGSERIAL", AutoInc: true},
 			expected: "BIGINT",
 		},
 		{
 			name:     "text",
-			field:    goschema.Field{Name: "body", Type: "TEXT"},
+			field:    schemamodel.Field{Name: "body", Type: "TEXT"},
 			expected: "NVARCHAR(MAX)",
 		},
 	}
@@ -48,8 +48,8 @@ func TestFromField_SQLServerTypeConversions(t *testing.T) {
 func TestFromField_SQLServerEnumUsesTextWithCheck(t *testing.T) {
 	c := qt.New(t)
 
-	field := goschema.Field{Name: "status", Type: "enum_status"}
-	enums := []goschema.Enum{{Name: "enum_status", Values: []string{"active", "blocked"}}}
+	field := schemamodel.Field{Name: "status", Type: "enum_status"}
+	enums := []schemamodel.Enum{{Name: "enum_status", Values: []string{"active", "blocked"}}}
 
 	column := fromschema.FromField(field, enums, platform.SQLServer)
 
@@ -60,16 +60,16 @@ func TestFromField_SQLServerEnumUsesTextWithCheck(t *testing.T) {
 func TestFromDatabase_SQLServerIncludesViewsAndTriggers(t *testing.T) {
 	c := qt.New(t)
 
-	database := goschema.Database{
-		Tables: []goschema.Table{{StructName: "User", Schema: "dbo", Name: "users"}},
-		Fields: []goschema.Field{
+	database := schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Schema: "dbo", Name: "users"}},
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "SERIAL", Primary: true, AutoInc: true},
 		},
-		Views: []goschema.View{{
+		Views: []schemamodel.View{{
 			Name: "dbo.active_users",
 			Body: "SELECT [id] FROM [dbo].[users]",
 		}},
-		Triggers: []goschema.Trigger{{
+		Triggers: []schemamodel.Trigger{{
 			Name:  "dbo.tr_users_touch",
 			Table: "dbo.users",
 			Event: "UPDATE",

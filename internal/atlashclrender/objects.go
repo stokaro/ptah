@@ -6,14 +6,14 @@ import (
 	"strconv"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/systemschema"
 	"go.5x5.cz/ptah/internal/tableref"
 )
 
 func (r *renderer) renderExtensions() {
-	extensions := append([]goschema.Extension(nil), r.db.Extensions...)
-	slices.SortFunc(extensions, func(a, b goschema.Extension) int {
+	extensions := append([]schemamodel.Extension(nil), r.db.Extensions...)
+	slices.SortFunc(extensions, func(a, b schemamodel.Extension) int {
 		return cmp.Compare(a.Name, b.Name)
 	})
 	for _, extension := range extensions {
@@ -43,8 +43,8 @@ func (r *renderer) renderExtensions() {
 }
 
 func (r *renderer) renderSequences() {
-	sequences := append([]goschema.Sequence(nil), r.db.Sequences...)
-	slices.SortFunc(sequences, func(a, b goschema.Sequence) int {
+	sequences := append([]schemamodel.Sequence(nil), r.db.Sequences...)
+	slices.SortFunc(sequences, func(a, b schemamodel.Sequence) int {
 		return cmp.Compare(a.QualifiedName(), b.QualifiedName())
 	})
 	for _, sequence := range sequences {
@@ -89,24 +89,24 @@ func (r *renderer) renderSequences() {
 }
 
 func (r *renderer) renderUserTypes() {
-	domains := append([]goschema.Domain(nil), r.db.Domains...)
-	slices.SortFunc(domains, func(a, b goschema.Domain) int {
+	domains := append([]schemamodel.Domain(nil), r.db.Domains...)
+	slices.SortFunc(domains, func(a, b schemamodel.Domain) int {
 		return cmp.Compare(a.QualifiedName(), b.QualifiedName())
 	})
 	for _, domain := range domains {
 		r.renderDomain(domain)
 	}
 
-	composites := append([]goschema.CompositeType(nil), r.db.CompositeTypes...)
-	slices.SortFunc(composites, func(a, b goschema.CompositeType) int {
+	composites := append([]schemamodel.CompositeType(nil), r.db.CompositeTypes...)
+	slices.SortFunc(composites, func(a, b schemamodel.CompositeType) int {
 		return cmp.Compare(a.QualifiedName(), b.QualifiedName())
 	})
 	for _, composite := range composites {
 		r.renderComposite(composite)
 	}
 
-	ranges := append([]goschema.Range(nil), r.db.Ranges...)
-	slices.SortFunc(ranges, func(a, b goschema.Range) int {
+	ranges := append([]schemamodel.Range(nil), r.db.Ranges...)
+	slices.SortFunc(ranges, func(a, b schemamodel.Range) int {
 		return cmp.Compare(a.QualifiedName(), b.QualifiedName())
 	})
 	for _, rangeType := range ranges {
@@ -114,7 +114,7 @@ func (r *renderer) renderUserTypes() {
 	}
 }
 
-func (r *renderer) renderDomain(domain goschema.Domain) {
+func (r *renderer) renderDomain(domain schemamodel.Domain) {
 	domain.Canonicalize()
 	r.linef(`domain %s {`, quote(domain.Name))
 	if schema := r.schemaFor(domain.Schema); schema != "" {
@@ -137,7 +137,7 @@ func (r *renderer) renderDomain(domain goschema.Domain) {
 	r.line("")
 }
 
-func (r *renderer) renderComposite(composite goschema.CompositeType) {
+func (r *renderer) renderComposite(composite schemamodel.CompositeType) {
 	composite.Canonicalize()
 	r.linef(`composite %s {`, quote(composite.Name))
 	if schema := r.schemaFor(composite.Schema); schema != "" {
@@ -153,7 +153,7 @@ func (r *renderer) renderComposite(composite goschema.CompositeType) {
 	r.line("")
 }
 
-func (r *renderer) renderRange(rangeType goschema.Range) {
+func (r *renderer) renderRange(rangeType schemamodel.Range) {
 	rangeType.Canonicalize()
 	r.linef(`range %s {`, quote(rangeType.Name))
 	if schema := r.schemaFor(rangeType.Schema); schema != "" {
@@ -172,13 +172,13 @@ func (r *renderer) renderRange(rangeType goschema.Range) {
 // rangeAttr writes one optional range attribute, keeping an explicit empty
 // value that a declaration wrote on purpose.
 //
-// [goschema.Range.Clears] is filled only by a declaration -- a catalog read
+// [schemamodel.Range.Clears] is filled only by a declaration -- a catalog read
 // carries the values the server reported and clears nothing -- so this never
 // changes what `schema inspect` emits. What it keeps is a declaration's
 // meaning: `subtype_diff = ""` says the range has none, and dropping the
 // attribute on the way out would turn that into "say nothing about it", which
 // is a different instruction (stokaro/ptah#2223).
-func (r *renderer) rangeAttr(rangeType goschema.Range, name, value string) {
+func (r *renderer) rangeAttr(rangeType schemamodel.Range, name, value string) {
 	if value == "" && rangeType.Clears(name) {
 		r.rawAttr(1, name, quote(""))
 		return
@@ -187,8 +187,8 @@ func (r *renderer) rangeAttr(rangeType goschema.Range, name, value string) {
 }
 
 func (r *renderer) renderManagedData() {
-	managedData := append([]goschema.ManagedData(nil), r.db.ManagedData...)
-	slices.SortFunc(managedData, func(a, b goschema.ManagedData) int {
+	managedData := append([]schemamodel.ManagedData(nil), r.db.ManagedData...)
+	slices.SortFunc(managedData, func(a, b schemamodel.ManagedData) int {
 		return cmp.Or(
 			cmp.Compare(managedDataTable(a), managedDataTable(b)),
 			cmp.Compare(strings.Join(a.Keys, ","), strings.Join(b.Keys, ",")),
@@ -205,7 +205,7 @@ func (r *renderer) renderManagedData() {
 	}
 }
 
-func managedDataTable(data goschema.ManagedData) string {
+func managedDataTable(data schemamodel.ManagedData) string {
 	if data.Schema == "" {
 		return data.Table
 	}
@@ -216,8 +216,8 @@ func managedDataTable(data goschema.ManagedData) string {
 }
 
 func (r *renderer) renderRoles() {
-	roles := append([]goschema.Role(nil), r.db.Roles...)
-	slices.SortFunc(roles, func(a, b goschema.Role) int {
+	roles := append([]schemamodel.Role(nil), r.db.Roles...)
+	slices.SortFunc(roles, func(a, b schemamodel.Role) int {
 		return cmp.Compare(a.Name, b.Name)
 	})
 	for _, role := range roles {
@@ -249,7 +249,7 @@ func (r *renderer) renderRoles() {
 	}
 }
 
-func (r *renderer) renderRowSecurity(rlsEnabled *goschema.RLSEnabledTable) {
+func (r *renderer) renderRowSecurity(rlsEnabled *schemamodel.RLSEnabledTable) {
 	if rlsEnabled == nil {
 		return
 	}
@@ -260,8 +260,8 @@ func (r *renderer) renderRowSecurity(rlsEnabled *goschema.RLSEnabledTable) {
 }
 
 func (r *renderer) renderFunctions() {
-	functions := append([]goschema.Function(nil), r.db.Functions...)
-	slices.SortFunc(functions, func(a, b goschema.Function) int {
+	functions := append([]schemamodel.Function(nil), r.db.Functions...)
+	slices.SortFunc(functions, func(a, b schemamodel.Function) int {
 		return cmp.Compare(a.Name, b.Name)
 	})
 	for _, function := range functions {
@@ -287,14 +287,14 @@ func (r *renderer) renderFunctions() {
 // name `wibble` in the reference run -- so emitting it costs that binary
 // nothing and withholding it would lose description for nothing. See
 // [atlasRefusedBlockTypes] for what a refusal actually looks like.
-func routineBlock(function goschema.Function) string {
+func routineBlock(function schemamodel.Function) string {
 	if function.IsProcedure() {
 		return blockProcedure
 	}
 	return blockFunction
 }
 
-func (r *renderer) renderFunction(function goschema.Function) {
+func (r *renderer) renderFunction(function schemamodel.Function) {
 	function.Canonicalize()
 	block := routineBlock(function)
 	if function.Body == "" {
@@ -345,7 +345,7 @@ func (r *renderer) renderFunction(function goschema.Function) {
 	r.line("")
 }
 
-func (r *renderer) renderFunctionArgs(function goschema.Function) {
+func (r *renderer) renderFunctionArgs(function schemamodel.Function) {
 	args, ok := splitFunctionArgs(function.Parameters)
 	if !ok {
 		r.stringAttr(1, "params", function.Parameters)
@@ -359,8 +359,8 @@ func (r *renderer) renderFunctionArgs(function goschema.Function) {
 }
 
 func (r *renderer) renderViews() {
-	views := append([]goschema.View(nil), r.db.Views...)
-	slices.SortFunc(views, func(a, b goschema.View) int {
+	views := append([]schemamodel.View(nil), r.db.Views...)
+	slices.SortFunc(views, func(a, b schemamodel.View) int {
 		return cmp.Compare(a.Name, b.Name)
 	})
 	for _, view := range views {
@@ -391,8 +391,8 @@ func (r *renderer) renderViews() {
 }
 
 func (r *renderer) renderMaterializedViews() {
-	views := append([]goschema.MaterializedView(nil), r.db.MaterializedViews...)
-	slices.SortFunc(views, func(a, b goschema.MaterializedView) int {
+	views := append([]schemamodel.MaterializedView(nil), r.db.MaterializedViews...)
+	slices.SortFunc(views, func(a, b schemamodel.MaterializedView) int {
 		return cmp.Compare(a.Name, b.Name)
 	})
 	for _, view := range views {
@@ -400,7 +400,7 @@ func (r *renderer) renderMaterializedViews() {
 	}
 }
 
-func (r *renderer) renderMaterializedView(view goschema.MaterializedView) {
+func (r *renderer) renderMaterializedView(view schemamodel.MaterializedView) {
 	if view.Body == "" {
 		r.warn("materialized_views."+view.Name, "materialized view body is required for HCL schema export")
 		return
@@ -417,8 +417,8 @@ func (r *renderer) renderMaterializedView(view goschema.MaterializedView) {
 }
 
 func (r *renderer) renderTriggers() {
-	triggers := append([]goschema.Trigger(nil), r.db.Triggers...)
-	slices.SortFunc(triggers, func(a, b goschema.Trigger) int {
+	triggers := append([]schemamodel.Trigger(nil), r.db.Triggers...)
+	slices.SortFunc(triggers, func(a, b schemamodel.Trigger) int {
 		return cmp.Or(cmp.Compare(a.Table, b.Table), cmp.Compare(a.Name, b.Name))
 	})
 	for _, trigger := range triggers {
@@ -426,7 +426,7 @@ func (r *renderer) renderTriggers() {
 	}
 }
 
-func (r *renderer) renderTrigger(trigger goschema.Trigger) {
+func (r *renderer) renderTrigger(trigger schemamodel.Trigger) {
 	trigger.Canonicalize()
 	path := TriggerDiagnosticPath(trigger.Table, trigger.Name)
 	if trigger.Table == "" || trigger.Body == "" {
@@ -478,8 +478,8 @@ func (r *renderer) renderTrigger(trigger goschema.Trigger) {
 }
 
 func (r *renderer) renderRLSPolicies() {
-	policies := append([]goschema.RLSPolicy(nil), r.db.RLSPolicies...)
-	slices.SortFunc(policies, func(a, b goschema.RLSPolicy) int {
+	policies := append([]schemamodel.RLSPolicy(nil), r.db.RLSPolicies...)
+	slices.SortFunc(policies, func(a, b schemamodel.RLSPolicy) int {
 		return cmp.Or(cmp.Compare(a.Table, b.Table), cmp.Compare(a.Name, b.Name))
 	})
 	for _, policy := range policies {
@@ -523,7 +523,7 @@ func (r *renderer) renderGrants() {
 	// declare a `schema` block for a `permission` block the document does not
 	// contain -- a declaration of nothing, which is the failure this render's
 	// collected schema set exists to avoid in the other direction.
-	grants := make([]goschema.Grant, 0, len(r.db.Grants))
+	grants := make([]schemamodel.Grant, 0, len(r.db.Grants))
 	for _, grant := range r.db.Grants {
 		grant.Canonicalize()
 		if grant.Role == "" || grantTargetName(grant) == "" || len(grant.Privileges) == 0 {
@@ -532,7 +532,7 @@ func (r *renderer) renderGrants() {
 		}
 		grants = append(grants, grant)
 	}
-	slices.SortFunc(grants, func(a, b goschema.Grant) int {
+	slices.SortFunc(grants, func(a, b schemamodel.Grant) int {
 		return cmp.Or(
 			cmp.Compare(a.Role, b.Role),
 			cmp.Compare(r.grantTarget(a), r.grantTarget(b)),
@@ -558,11 +558,11 @@ func (r *renderer) renderGrants() {
 }
 
 func groupRLSEnabledByTable(
-	values []goschema.RLSEnabledTable,
-	tables []goschema.Table,
-) (map[string]*goschema.RLSEnabledTable, []goschema.RLSEnabledTable) {
-	result := make(map[string]*goschema.RLSEnabledTable)
-	var orphan []goschema.RLSEnabledTable
+	values []schemamodel.RLSEnabledTable,
+	tables []schemamodel.Table,
+) (map[string]*schemamodel.RLSEnabledTable, []schemamodel.RLSEnabledTable) {
+	result := make(map[string]*schemamodel.RLSEnabledTable)
+	var orphan []schemamodel.RLSEnabledTable
 	for i := range values {
 		rlsEnabled := &values[i]
 		table := resolveTable(tables, rlsEnabled.StructName, rlsEnabled.Table)
@@ -754,7 +754,7 @@ func (r *renderer) roleTarget(value string) string {
 // grantTargetName is the raw name a grant targets, with no reference rendered
 // and nothing recorded. It answers "is this grant complete" without asking
 // [renderer.grantTarget], which has the side effect of declaring a schema.
-func grantTargetName(grant goschema.Grant) string {
+func grantTargetName(grant schemamodel.Grant) string {
 	return cmp.Or(grant.OnSchema, grant.OnTable, grant.OnSequence)
 }
 
@@ -768,7 +768,7 @@ func grantTargetName(grant goschema.Grant) string {
 // declaring `view "<view>"`. That is [renderer.relationRef]'s question, and the
 // field only decides what to write when the document declares no single block
 // to name.
-func (r *renderer) grantTarget(grant goschema.Grant) string {
+func (r *renderer) grantTarget(grant schemamodel.Grant) string {
 	if grant.OnSchema != "" {
 		return r.schemaRef(grant.OnSchema)
 	}
@@ -1012,8 +1012,8 @@ func containsFold(values []string, target string) bool {
 //
 // The label is the table, because a hypertable has no name of its own.
 func (r *renderer) renderHypertables() {
-	hypertables := append([]goschema.Hypertable(nil), r.db.Hypertables...)
-	slices.SortFunc(hypertables, func(a, b goschema.Hypertable) int {
+	hypertables := append([]schemamodel.Hypertable(nil), r.db.Hypertables...)
+	slices.SortFunc(hypertables, func(a, b schemamodel.Hypertable) int {
 		return cmp.Compare(a.Table, b.Table)
 	})
 	for _, hypertable := range hypertables {
@@ -1056,8 +1056,8 @@ func splitHypertableName(table string) (schema, name string) {
 // It is a name of its own, unlike a hypertable, so the label is that name and
 // the schema is a reference like every other block's.
 func (r *renderer) renderContinuousAggregates() {
-	aggregates := append([]goschema.ContinuousAggregate(nil), r.db.ContinuousAggregates...)
-	slices.SortFunc(aggregates, func(a, b goschema.ContinuousAggregate) int {
+	aggregates := append([]schemamodel.ContinuousAggregate(nil), r.db.ContinuousAggregates...)
+	slices.SortFunc(aggregates, func(a, b schemamodel.ContinuousAggregate) int {
 		return cmp.Compare(a.Name, b.Name)
 	})
 	for _, aggregate := range aggregates {
@@ -1098,8 +1098,8 @@ func (r *renderer) renderContinuousAggregates() {
 // speak, a top-level block it does not model is dropped at exit 0 exactly like
 // the `wibble "x" {}` control in [atlasRefusedBlockTypes]'s own measurement.
 func (r *renderer) renderSynonyms() {
-	synonyms := append([]goschema.Synonym(nil), r.db.Synonyms...)
-	slices.SortFunc(synonyms, func(a, b goschema.Synonym) int {
+	synonyms := append([]schemamodel.Synonym(nil), r.db.Synonyms...)
+	slices.SortFunc(synonyms, func(a, b schemamodel.Synonym) int {
 		return cmp.Compare(a.QualifiedName(), b.QualifiedName())
 	})
 	for _, synonym := range synonyms {
@@ -1127,12 +1127,12 @@ func (r *renderer) renderSynonyms() {
 // The schema is written VERBATIM rather than through [renderer.schemaFor]: an
 // empty Schema is the DATABASE scope, a fourth address alongside schema, table
 // and column, and substituting the connection default for it would move a
-// database property onto a schema. [go.5x5.cz/ptah/core/goschema.ExtendedProperty.QualifiedOwner]
+// database property onto a schema. [go.5x5.cz/ptah/core/schemamodel.ExtendedProperty.QualifiedOwner]
 // spells that address `(database)`, and the SQL Server renderer emits it by
 // passing no `@level0type` at all.
 func (r *renderer) renderExtendedProperties() {
-	properties := append([]goschema.ExtendedProperty(nil), r.db.ExtendedProperties...)
-	slices.SortFunc(properties, func(a, b goschema.ExtendedProperty) int {
+	properties := append([]schemamodel.ExtendedProperty(nil), r.db.ExtendedProperties...)
+	slices.SortFunc(properties, func(a, b schemamodel.ExtendedProperty) int {
 		if owner := cmp.Compare(a.QualifiedOwner(), b.QualifiedOwner()); owner != 0 {
 			return owner
 		}

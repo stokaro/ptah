@@ -1,21 +1,21 @@
-package goschema_test
+package schemamodel_test
 
 import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 func TestFinalize_RebuildsDerivedForeignKeyState(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{
-		Tables: []goschema.Table{
+	database := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "User", Name: "users"},
 			{StructName: "Post", Name: "posts"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "User", Name: "parent_id", Type: "INTEGER", Foreign: "users(id)"},
 			{StructName: "Post", Name: "id", Type: "INTEGER", Primary: true},
@@ -23,40 +23,40 @@ func TestFinalize_RebuildsDerivedForeignKeyState(t *testing.T) {
 		},
 	}
 
-	goschema.Finalize(database)
-	goschema.Finalize(database)
+	schemamodel.Finalize(database)
+	schemamodel.Finalize(database)
 
 	c.Assert(database.Dependencies["posts"], qt.DeepEquals, []string{"users"})
-	c.Assert(database.SelfReferencingForeignKeys["users"], qt.DeepEquals, []goschema.SelfReferencingFK{{
+	c.Assert(database.SelfReferencingForeignKeys["users"], qt.DeepEquals, []schemamodel.SelfReferencingFK{{
 		FieldName: "parent_id",
 		Foreign:   "users(id)",
 	}})
 
-	database.Fields = []goschema.Field{
+	database.Fields = []schemamodel.Field{
 		{StructName: "User", Name: "id", Type: "INTEGER", Primary: true},
 		{StructName: "Post", Name: "id", Type: "INTEGER", Primary: true},
 	}
-	goschema.Finalize(database)
+	schemamodel.Finalize(database)
 
 	c.Assert(database.Dependencies, qt.DeepEquals, map[string][]string{
 		"posts": {},
 		"users": {},
 	})
-	c.Assert(database.SelfReferencingForeignKeys, qt.DeepEquals, make(map[string][]goschema.SelfReferencingFK))
+	c.Assert(database.SelfReferencingForeignKeys, qt.DeepEquals, make(map[string][]schemamodel.SelfReferencingFK))
 }
 
 func TestFinalize_ExpandsEmbeddedRelationsIdempotently(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{
-		Tables: []goschema.Table{
+	database := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "User", Name: "users"},
 			{StructName: "Post", Name: "posts"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Post", Name: "id", Type: "INTEGER", Primary: true},
 		},
-		EmbeddedFields: []goschema.EmbeddedField{{
+		EmbeddedFields: []schemamodel.EmbeddedField{{
 			StructName:       "Post",
 			EmbeddedTypeName: "User",
 			Mode:             "relation",
@@ -65,8 +65,8 @@ func TestFinalize_ExpandsEmbeddedRelationsIdempotently(t *testing.T) {
 		}},
 	}
 
-	goschema.Finalize(database)
-	goschema.Finalize(database)
+	schemamodel.Finalize(database)
+	schemamodel.Finalize(database)
 
 	c.Assert(database.Fields, qt.HasLen, 3)
 	c.Assert(database.Dependencies["posts"], qt.DeepEquals, []string{"users"})
@@ -76,18 +76,18 @@ func TestFinalize_ExpandsEmbeddedRelationsIdempotently(t *testing.T) {
 
 func TestFinalize_ReplacesGeneratedEmbeddedFieldsAfterMutation(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{
-		Tables: []goschema.Table{
+	database := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "User", Name: "users"},
 			{StructName: "Account", Name: "accounts"},
 			{StructName: "Post", Name: "posts"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Account", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Post", Name: "id", Type: "INTEGER", Primary: true},
 		},
-		EmbeddedFields: []goschema.EmbeddedField{{
+		EmbeddedFields: []schemamodel.EmbeddedField{{
 			StructName:       "Post",
 			EmbeddedTypeName: "User",
 			Mode:             "relation",
@@ -96,15 +96,15 @@ func TestFinalize_ReplacesGeneratedEmbeddedFieldsAfterMutation(t *testing.T) {
 		}},
 	}
 
-	goschema.Finalize(database)
-	database.EmbeddedFields = []goschema.EmbeddedField{{
+	schemamodel.Finalize(database)
+	database.EmbeddedFields = []schemamodel.EmbeddedField{{
 		StructName:       "Post",
 		EmbeddedTypeName: "Account",
 		Mode:             "relation",
 		Field:            "account_id",
 		Ref:              "accounts(id)",
 	}}
-	goschema.Finalize(database)
+	schemamodel.Finalize(database)
 
 	c.Assert(database.Fields, qt.HasLen, 4)
 	c.Assert(database.Fields[3].Name, qt.Equals, "account_id")
@@ -114,15 +114,15 @@ func TestFinalize_ReplacesGeneratedEmbeddedFieldsAfterMutation(t *testing.T) {
 
 func TestFinalize_RecordsEmbeddedSelfReferenceOnce(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Node", Name: "nodes"}},
-		Fields: []goschema.Field{{
+	database := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Node", Name: "nodes"}},
+		Fields: []schemamodel.Field{{
 			StructName: "Node",
 			Name:       "id",
 			Type:       "INTEGER",
 			Primary:    true,
 		}},
-		EmbeddedFields: []goschema.EmbeddedField{{
+		EmbeddedFields: []schemamodel.EmbeddedField{{
 			StructName:       "Node",
 			EmbeddedTypeName: "Parent",
 			Mode:             "relation",
@@ -131,9 +131,9 @@ func TestFinalize_RecordsEmbeddedSelfReferenceOnce(t *testing.T) {
 		}},
 	}
 
-	goschema.Finalize(database)
+	schemamodel.Finalize(database)
 
-	c.Assert(database.SelfReferencingForeignKeys["nodes"], qt.DeepEquals, []goschema.SelfReferencingFK{{
+	c.Assert(database.SelfReferencingForeignKeys["nodes"], qt.DeepEquals, []schemamodel.SelfReferencingFK{{
 		FieldName:      "parent_id",
 		Foreign:        "nodes(id)",
 		ForeignKeyName: "fk_node_parent_id",
@@ -142,18 +142,18 @@ func TestFinalize_RecordsEmbeddedSelfReferenceOnce(t *testing.T) {
 
 func TestFinalize_ExpandsNestedEmbeddedModesAndStopsInlineCycles(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{
-		Tables: []goschema.Table{
+	database := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Tenant", Name: "tenants"},
 			{StructName: "Order", Name: "orders"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Tenant", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Order", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Ownership", Name: "label", Type: "TEXT"},
 			{StructName: "Cycle", Name: "code", Type: "TEXT"},
 		},
-		EmbeddedFields: []goschema.EmbeddedField{
+		EmbeddedFields: []schemamodel.EmbeddedField{
 			{StructName: "Order", EmbeddedTypeName: "Ownership", Mode: "inline", Prefix: "owner_"},
 			{StructName: "Ownership", EmbeddedTypeName: "Tenant", Mode: "relation", Field: "tenant_id", Ref: "tenants(id)"},
 			{StructName: "Ownership", EmbeddedTypeName: "Metadata", Mode: "json", Name: "metadata"},
@@ -162,7 +162,7 @@ func TestFinalize_ExpandsNestedEmbeddedModesAndStopsInlineCycles(t *testing.T) {
 		},
 	}
 
-	goschema.Finalize(database)
+	schemamodel.Finalize(database)
 
 	c.Assert(database.Fields, qt.HasLen, 14)
 	c.Assert(database.Fields[7].StructName, qt.Equals, "Order")
@@ -182,9 +182,9 @@ func TestFinalize_ExpandsNestedEmbeddedModesAndStopsInlineCycles(t *testing.T) {
 
 func TestFinalize_PreservesUnnamedTableConstraints(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Node", Name: "nodes"}},
-		Constraints: []goschema.Constraint{
+	database := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Node", Name: "nodes"}},
+		Constraints: []schemamodel.Constraint{
 			{
 				StructName:     "Node",
 				Type:           "FOREIGN KEY",
@@ -200,27 +200,27 @@ func TestFinalize_PreservesUnnamedTableConstraints(t *testing.T) {
 		},
 	}
 
-	goschema.Finalize(database)
+	schemamodel.Finalize(database)
 
 	c.Assert(database.Constraints, qt.HasLen, 2)
-	c.Assert(database.SelfReferencingForeignKeys, qt.DeepEquals, make(map[string][]goschema.SelfReferencingFK))
+	c.Assert(database.SelfReferencingForeignKeys, qt.DeepEquals, make(map[string][]schemamodel.SelfReferencingFK))
 }
 
 func TestFinalize_PreservesDistinctUnnamedForeignKeys(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{
-		Tables: []goschema.Table{
+	database := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "FirstParent", Name: "first_parents"},
 			{StructName: "SecondParent", Name: "second_parents"},
 			{StructName: "Child", Name: "children"},
 		},
-		Constraints: []goschema.Constraint{
+		Constraints: []schemamodel.Constraint{
 			{StructName: "Child", Type: "FOREIGN KEY", Columns: []string{"parent_id"}, ForeignTable: "first_parents", ForeignColumns: []string{"id"}},
 			{StructName: "Child", Type: "FOREIGN KEY", Columns: []string{"parent_id"}, ForeignTable: "second_parents", ForeignColumns: []string{"id"}},
 		},
 	}
 
-	goschema.Finalize(database)
+	schemamodel.Finalize(database)
 
 	c.Assert(database.Constraints, qt.HasLen, 2)
 	c.Assert(database.Dependencies["children"], qt.DeepEquals, []string{"first_parents", "second_parents"})
@@ -228,12 +228,12 @@ func TestFinalize_PreservesDistinctUnnamedForeignKeys(t *testing.T) {
 
 func TestFinalize_DeduplicatesEquivalentNormalizedUnnamedForeignKeys(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{
-		Tables: []goschema.Table{
+	database := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Child", Schema: "app", Name: "children"},
 			{StructName: "Parent", Schema: "app", Name: "parents"},
 		},
-		Constraints: []goschema.Constraint{
+		Constraints: []schemamodel.Constraint{
 			{
 				StructName:     "Child",
 				Type:           "FOREIGN KEY",
@@ -252,9 +252,9 @@ func TestFinalize_DeduplicatesEquivalentNormalizedUnnamedForeignKeys(t *testing.
 		},
 	}
 
-	goschema.Finalize(database)
+	schemamodel.Finalize(database)
 
-	c.Assert(database.Constraints, qt.DeepEquals, []goschema.Constraint{{
+	c.Assert(database.Constraints, qt.DeepEquals, []schemamodel.Constraint{{
 		StructName:     "Child",
 		Table:          "app.children",
 		Type:           "FOREIGN KEY",
@@ -268,11 +268,11 @@ func TestFinalize_DeduplicatesEquivalentNormalizedUnnamedForeignKeys(t *testing.
 func TestFinalize_OrdersStronglyConnectedComponentsDeterministically(t *testing.T) {
 	tests := []struct {
 		name   string
-		tables []goschema.Table
+		tables []schemamodel.Table
 	}{
 		{
 			name: "dependent declared before cycle",
-			tables: []goschema.Table{
+			tables: []schemamodel.Table{
 				{StructName: "Leaf", Name: "leaf"},
 				{StructName: "CycleB", Name: "cycle_b"},
 				{StructName: "CycleA", Name: "cycle_a"},
@@ -281,7 +281,7 @@ func TestFinalize_OrdersStronglyConnectedComponentsDeterministically(t *testing.
 		},
 		{
 			name: "cycle members and acyclic nodes permuted",
-			tables: []goschema.Table{
+			tables: []schemamodel.Table{
 				{StructName: "CycleA", Name: "cycle_a"},
 				{StructName: "Root", Name: "root"},
 				{StructName: "Leaf", Name: "leaf"},
@@ -289,7 +289,7 @@ func TestFinalize_OrdersStronglyConnectedComponentsDeterministically(t *testing.
 			},
 		},
 	}
-	expected := []goschema.Table{
+	expected := []schemamodel.Table{
 		{StructName: "Root", Name: "root"},
 		{StructName: "CycleA", Name: "cycle_a"},
 		{StructName: "CycleB", Name: "cycle_b"},
@@ -299,9 +299,9 @@ func TestFinalize_OrdersStronglyConnectedComponentsDeterministically(t *testing.
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			database := &goschema.Database{
+			database := &schemamodel.Database{
 				Tables: test.tables,
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{StructName: "Root", Name: "id", Type: "INTEGER", Primary: true},
 					{StructName: "CycleA", Name: "id", Type: "INTEGER", Primary: true},
 					{StructName: "CycleA", Name: "root_id", Type: "INTEGER", Foreign: "root(id)"},
@@ -313,7 +313,7 @@ func TestFinalize_OrdersStronglyConnectedComponentsDeterministically(t *testing.
 				},
 			}
 
-			goschema.Finalize(database)
+			schemamodel.Finalize(database)
 
 			c.Assert(database.Tables, qt.DeepEquals, expected)
 		})

@@ -15,7 +15,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/envbool/envbooltest"
@@ -149,7 +149,7 @@ func TestAtlasInspectKeepsAReferencedBlockInEitherState(t *testing.T) {
 			c.Assert(gateErr, qt.IsNil)
 			var diagnostics bytes.Buffer
 			db := refusedBlockGateDatabase()
-			db.Fields = append(db.Fields, goschema.Field{
+			db.Fields = append(db.Fields, schemamodel.Field{
 				StructName:  "Account",
 				Name:        "seq_id",
 				Type:        "integer",
@@ -178,15 +178,15 @@ func TestAtlasInspectKeepsAReferencedBlockInEitherState(t *testing.T) {
 
 // refusedBlockGateDatabase carries one object of each refused block type with
 // nothing naming it, plus a table so the document is not empty.
-func refusedBlockGateDatabase() *goschema.Database {
+func refusedBlockGateDatabase() *schemamodel.Database {
 	start := int64(1)
-	return &goschema.Database{
-		Extensions:       []goschema.Extension{{Name: "pgcrypto", Version: "1.3"}},
-		Sequences:        []goschema.Sequence{{Name: "lonely_seq", AsType: "bigint", Start: &start}},
-		Tables:           []goschema.Table{{StructName: "Account", Name: "accounts", Schema: "public"}},
-		Fields:           []goschema.Field{{StructName: "Account", Name: "id", Type: "bigint"}},
-		RLSEnabledTables: []goschema.RLSEnabledTable{{Table: "accounts"}},
-		RLSPolicies: []goschema.RLSPolicy{{
+	return &schemamodel.Database{
+		Extensions:       []schemamodel.Extension{{Name: "pgcrypto", Version: "1.3"}},
+		Sequences:        []schemamodel.Sequence{{Name: "lonely_seq", AsType: "bigint", Start: &start}},
+		Tables:           []schemamodel.Table{{StructName: "Account", Name: "accounts", Schema: "public"}},
+		Fields:           []schemamodel.Field{{StructName: "Account", Name: "id", Type: "bigint"}},
+		RLSEnabledTables: []schemamodel.RLSEnabledTable{{Table: "accounts"}},
+		RLSPolicies: []schemamodel.RLSPolicy{{
 			Name:            "accounts_all",
 			Table:           "accounts",
 			PolicyFor:       "ALL",

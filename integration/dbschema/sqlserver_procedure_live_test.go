@@ -10,9 +10,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -68,7 +68,7 @@ func TestSQLServerLiveProcedureRoundTrip(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(live.Functions, qt.HasLen, 2)
 	report := sqlServerFunctionNamed(live.Functions, "p_report")
-	c.Assert(report.Kind, qt.Equals, goschema.FunctionKindProcedure)
+	c.Assert(report.Kind, qt.Equals, schemamodel.FunctionKindProcedure)
 	c.Assert(report.Parameters, qt.Equals, "@id int, @label varchar(50)")
 	c.Assert(report.Returns, qt.Equals, "")
 	owner := sqlServerFunctionNamed(live.Functions, "p_owner")
@@ -138,17 +138,17 @@ func TestSQLServerLiveProcedureReplacementUsesTheMatchingVerb(t *testing.T) {
 // carrying WITH EXECUTE AS OWNER, whose definition keeps both an `EXECUTE AS`
 // and the `AS` that opens the body. Without the second, a walk taking the first
 // standalone AS looks correct.
-func sqlServerProcedureSchema(schemaName string) *goschema.Database {
-	return &goschema.Database{
-		Functions: []goschema.Function{{
+func sqlServerProcedureSchema(schemaName string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Functions: []schemamodel.Function{{
 			StructName: "Report", Name: schemaName + ".p_report",
-			Kind:       goschema.FunctionKindProcedure,
+			Kind:       schemamodel.FunctionKindProcedure,
 			Parameters: "@id int, @label varchar(50)",
 			Language:   "sql",
 			Body:       "BEGIN SET NOCOUNT ON; SELECT @id AS id, @label AS label; END",
 		}, {
 			StructName: "Owner", Name: schemaName + ".p_owner",
-			Kind:       goschema.FunctionKindProcedure,
+			Kind:       schemamodel.FunctionKindProcedure,
 			Parameters: "@n int",
 			Language:   "sql",
 			Security:   "DEFINER",

@@ -8,11 +8,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // routingDialects is every canonical engine `--dialect` accepts. The grid below
@@ -50,24 +50,24 @@ var routedObjectRows = []struct {
 //
 // The grant names its own role rather than role_probe so that the grant row and
 // the role row cannot be satisfied by the same mention.
-func routedObjectSchema() *goschema.Database {
+func routedObjectSchema() *schemamodel.Database {
 	start := int64(1000)
-	return &goschema.Database{
-		Sequences: []goschema.Sequence{{Name: "seq_probe", AsType: "bigint", Start: &start}},
-		Domains:   []goschema.Domain{{Name: "domain_probe", BaseType: "TEXT"}},
-		Roles:     []goschema.Role{{Name: "role_probe", Login: true, Inherit: true}},
-		Tables:    []goschema.Table{{StructName: "T", Name: "table_probe"}},
-		Fields: []goschema.Field{
+	return &schemamodel.Database{
+		Sequences: []schemamodel.Sequence{{Name: "seq_probe", AsType: "bigint", Start: &start}},
+		Domains:   []schemamodel.Domain{{Name: "domain_probe", BaseType: "TEXT"}},
+		Roles:     []schemamodel.Role{{Name: "role_probe", Login: true, Inherit: true}},
+		Tables:    []schemamodel.Table{{StructName: "T", Name: "table_probe"}},
+		Fields: []schemamodel.Field{
 			{StructName: "T", Name: "id", Type: "BIGINT", Primary: true},
 			{StructName: "T", Name: "touched", Type: "TIMESTAMP", Nullable: true},
 		},
-		Views:     []goschema.View{{StructName: "V", Name: "view_probe", Body: "SELECT id FROM table_probe"}},
-		Functions: []goschema.Function{{Name: "func_probe", Returns: "integer", Language: "sql", Body: "SELECT 1;"}},
-		Triggers: []goschema.Trigger{{
+		Views:     []schemamodel.View{{StructName: "V", Name: "view_probe", Body: "SELECT id FROM table_probe"}},
+		Functions: []schemamodel.Function{{Name: "func_probe", Returns: "integer", Language: "sql", Body: "SELECT 1;"}},
+		Triggers: []schemamodel.Trigger{{
 			StructName: "TR", Name: "trigger_probe", Table: "table_probe",
 			Timing: "AFTER", Event: "INSERT", ForEach: "ROW", Body: "SELECT 1",
 		}},
-		Grants: []goschema.Grant{{
+		Grants: []schemamodel.Grant{{
 			StructName: "G", Role: "grant_probe", Privileges: []string{"SELECT"}, OnTable: "table_probe",
 		}},
 	}
@@ -149,8 +149,8 @@ func routedObjectGrid(c *qt.C) []routedObjectCell {
 			// the way it already records the MySQL-family role refusal
 			// (stokaro/ptah#1717).
 			if domainRefused && row.kind == "domain" {
-				_, err := renderer.GetOrderedCreateStatements(&goschema.Database{
-					Domains: []goschema.Domain{{Name: row.object, BaseType: "TEXT"}},
+				_, err := renderer.GetOrderedCreateStatements(&schemamodel.Database{
+					Domains: []schemamodel.Domain{{Name: row.object, BaseType: "TEXT"}},
 				}, dialect)
 				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 				cells = append(cells, routedObjectCell{
@@ -162,8 +162,8 @@ func routedObjectGrid(c *qt.C) []routedObjectCell {
 				continue
 			}
 			if roleRefused && row.kind == "role" {
-				_, err := renderer.GetOrderedCreateStatements(&goschema.Database{
-					Roles: []goschema.Role{{Name: row.object}},
+				_, err := renderer.GetOrderedCreateStatements(&schemamodel.Database{
+					Roles: []schemamodel.Role{{Name: row.object}},
 				}, dialect)
 				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 				cells = append(cells, routedObjectCell{
@@ -446,7 +446,7 @@ func TestRender_MySQLFamilyEmitsRolesAndStillRefusesTheAttributes(t *testing.T) 
 
 			// A local fixture, because the shared one declares Login: true --
 			// which is now the refusal case rather than the ordinary one.
-			bare := &goschema.Database{Roles: []goschema.Role{{Name: "role_probe"}}}
+			bare := &schemamodel.Database{Roles: []schemamodel.Role{{Name: "role_probe"}}}
 			statements, err := renderer.GetOrderedCreateStatements(bare, dialect)
 
 			c.Assert(err, qt.IsNil)
@@ -472,7 +472,7 @@ func TestValidateSchema_MySQLFamilyRefusesRoleAttributes(t *testing.T) {
 	tests := []struct {
 		name     string
 		dialect  string
-		validate func(*goschema.Database, string) error
+		validate func(*schemamodel.Database, string) error
 	}{
 		{
 			name: "mysql default capabilities", dialect: platform.MySQL,
@@ -484,7 +484,7 @@ func TestValidateSchema_MySQLFamilyRefusesRoleAttributes(t *testing.T) {
 		},
 		{
 			name: "mysql capability override", dialect: platform.MySQL,
-			validate: func(database *goschema.Database, dialect string) error {
+			validate: func(database *schemamodel.Database, dialect string) error {
 				return renderer.ValidateSchemaWithCapabilities(
 					database,
 					dialect,
@@ -494,7 +494,7 @@ func TestValidateSchema_MySQLFamilyRefusesRoleAttributes(t *testing.T) {
 		},
 		{
 			name: "mariadb capability override", dialect: platform.MariaDB,
-			validate: func(database *goschema.Database, dialect string) error {
+			validate: func(database *schemamodel.Database, dialect string) error {
 				return renderer.ValidateSchemaWithCapabilities(
 					database,
 					dialect,
@@ -513,7 +513,7 @@ func TestValidateSchema_MySQLFamilyRefusesRoleAttributes(t *testing.T) {
 			// same answer rendering gives: a role cannot pass validation and
 			// then fail only when SQL is asked for.
 			err := test.validate(
-				&goschema.Database{Roles: []goschema.Role{{Name: "app_user", Login: true}}},
+				&schemamodel.Database{Roles: []schemamodel.Role{{Name: "app_user", Login: true}}},
 				test.dialect,
 			)
 
@@ -530,19 +530,19 @@ func TestValidateSchema_MySQLFamilyRoleRefusalIsNarrow(t *testing.T) {
 	tests := []struct {
 		name     string
 		dialect  string
-		database *goschema.Database
+		database *schemamodel.Database
 	}{
 		{
 			name: "mysql without roles", dialect: platform.MySQL,
-			database: &goschema.Database{Tables: []goschema.Table{{StructName: "T", Name: "t"}}},
+			database: &schemamodel.Database{Tables: []schemamodel.Table{{StructName: "T", Name: "t"}}},
 		},
 		{
 			name: "mariadb without roles", dialect: platform.MariaDB,
-			database: &goschema.Database{Tables: []goschema.Table{{StructName: "T", Name: "t"}}},
+			database: &schemamodel.Database{Tables: []schemamodel.Table{{StructName: "T", Name: "t"}}},
 		},
 		{
 			name: "postgres with an application role", dialect: platform.Postgres,
-			database: &goschema.Database{Roles: []goschema.Role{{Name: "app_user"}}},
+			database: &schemamodel.Database{Roles: []schemamodel.Role{{Name: "app_user"}}},
 		},
 	}
 
@@ -584,12 +584,12 @@ func TestValidateSchema_MySQLFamilyRoleRefusalNamesTheSortedFirstRole(t *testing
 				// (stokaro/ptah#1762). The property under test is unchanged:
 				// whichever role the two gates refuse, they must name the same
 				// one, and it must not move when the declaration is reordered.
-				roles := make([]goschema.Role, 0, len(order))
+				roles := make([]schemamodel.Role, 0, len(order))
 				for _, name := range order {
-					roles = append(roles, goschema.Role{Name: name, Login: true})
+					roles = append(roles, schemamodel.Role{Name: name, Login: true})
 				}
 
-				err := renderer.ValidateSchema(&goschema.Database{Roles: roles}, dialect)
+				err := renderer.ValidateSchema(&schemamodel.Database{Roles: roles}, dialect)
 
 				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 				c.Assert(err, qt.ErrorMatches, "(?s).*"+dialect+`: role "admin_user" declares.*`)
@@ -620,7 +620,7 @@ func TestValidateSchema_MySQLFamilyRoleRefusalNamesTheSortedFirstRole(t *testing
 // grantee, and on ClickHouse the grantee must be declared. The property is held
 // instead by core/renderer/internal/dialects/clickhouse's own tests, which
 // assert the rendered GRANT statement rather than a mention of the name.
-func adaptForClickHouse(database *goschema.Database, dialect string) {
+func adaptForClickHouse(database *schemamodel.Database, dialect string) {
 	if dialect != platform.ClickHouse {
 		return
 	}
@@ -629,7 +629,7 @@ func adaptForClickHouse(database *goschema.Database, dialect string) {
 	}
 	for i := range database.Grants {
 		database.Grants[i].OnTable = "public." + database.Grants[i].OnTable
-		database.Roles = append(database.Roles, goschema.Role{
+		database.Roles = append(database.Roles, schemamodel.Role{
 			Name: database.Grants[i].Role, Inherit: true,
 		})
 	}
@@ -645,7 +645,7 @@ func adaptForClickHouse(database *goschema.Database, dialect string) {
 // different question, whether any declared object is lost -- hands it a role
 // the target can represent. The control below is what proves the un-adapted
 // fixture is refused rather than quietly rendered (stokaro/ptah#1698).
-func adaptForSQLServer(database *goschema.Database, dialect string) {
+func adaptForSQLServer(database *schemamodel.Database, dialect string) {
 	if dialect != platform.SQLServer {
 		return
 	}
@@ -707,7 +707,7 @@ func TestRender_SQLServerCreatesARoleWithoutAttributes(t *testing.T) {
 // different question, is handed a schema this target can represent. The
 // control below proves the un-adapted fixture is refused rather than quietly
 // rendered (stokaro/ptah#1717).
-func adaptForUserTypeSupport(database *goschema.Database, dialect string) {
+func adaptForUserTypeSupport(database *schemamodel.Database, dialect string) {
 	caps := capability.ForDialect(dialect)
 	if !caps.Has(capability.DomainTypes) {
 		database.Domains = nil
@@ -742,10 +742,10 @@ func TestRender_CockroachDBRefusesADomainItCannotCreate(t *testing.T) {
 // would refuse something this target accepts.
 func TestRender_CockroachDBStillTakesACompositeType(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{
-		CompositeTypes: []goschema.CompositeType{{
+	database := &schemamodel.Database{
+		CompositeTypes: []schemamodel.CompositeType{{
 			StructName: "Addr", Name: "addr_t",
-			Fields: []goschema.CompositeTypeField{{Name: "street", Type: "TEXT"}},
+			Fields: []schemamodel.CompositeField{{Name: "street", Type: "TEXT"}},
 		}},
 	}
 

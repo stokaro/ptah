@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/sqlident"
 )
 
@@ -77,7 +77,7 @@ func (s Scope) Contains(other Scope) bool {
 // It may be empty, in which case an unqualified table name is refused rather
 // than guessed at: a grant is an access-control decision and resolving it
 // against the wrong database is not a formatting mistake.
-func ScopeOf(grant goschema.Grant, defaultDatabase string) (Scope, error) {
+func ScopeOf(grant schemamodel.Grant, defaultDatabase string) (Scope, error) {
 	switch {
 	case grant.OnSequence != "":
 		return Scope{}, fmt.Errorf(

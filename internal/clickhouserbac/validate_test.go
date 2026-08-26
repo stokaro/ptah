@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/clickhouserbac"
 )
 
@@ -15,54 +15,54 @@ import (
 // other attribute absent. Building it here rather than writing a literal per
 // row keeps the rows carrying only what varies, and keeps a row from passing
 // because it forgot Inherit.
-func clickHouseRole(name string) goschema.Role {
-	return goschema.Role{Name: name, Inherit: true}
+func clickHouseRole(name string) schemamodel.Role {
+	return schemamodel.Role{Name: name, Inherit: true}
 }
 
 func TestValidateDeclared_HappyPath(t *testing.T) {
 	tests := []struct {
 		name            string
-		roles           []goschema.Role
-		grants          []goschema.Grant
+		roles           []schemamodel.Role
+		grants          []schemamodel.Grant
 		defaultDatabase string
 	}{
 		{
 			name:  "a bare role",
-			roles: []goschema.Role{clickHouseRole("reader")},
+			roles: []schemamodel.Role{clickHouseRole("reader")},
 		},
 		{
 			// Inherit false is the Go zero value, so a Role built in code
 			// carries it without anyone declaring it. Refusing on that signal
 			// would refuse the common case; this row is what says so.
 			name:  "a role built in code, with Inherit left at its zero value",
-			roles: []goschema.Role{{Name: "reader"}},
+			roles: []schemamodel.Role{{Name: "reader"}},
 		},
 		{
 			name:  "a role with a comment, which renders as a SQL comment line",
-			roles: []goschema.Role{{Name: "reader", Inherit: true, Comment: "read-only access"}},
+			roles: []schemamodel.Role{{Name: "reader", Inherit: true, Comment: "read-only access"}},
 		},
 		{
 			name:   "a table grant",
-			roles:  []goschema.Role{clickHouseRole("reader")},
-			grants: []goschema.Grant{{Role: "reader", Privileges: []string{"SELECT"}, OnTable: "shop.orders"}},
+			roles:  []schemamodel.Role{clickHouseRole("reader")},
+			grants: []schemamodel.Grant{{Role: "reader", Privileges: []string{"SELECT"}, OnTable: "shop.orders"}},
 		},
 		{
 			name:   "a database grant with the option",
-			roles:  []goschema.Role{clickHouseRole("admin")},
-			grants: []goschema.Grant{{Role: "admin", Privileges: []string{"SELECT", "INSERT"}, OnSchema: "shop", WithOption: true}},
+			roles:  []schemamodel.Role{clickHouseRole("admin")},
+			grants: []schemamodel.Grant{{Role: "admin", Privileges: []string{"SELECT", "INSERT"}, OnSchema: "shop", WithOption: true}},
 		},
 		{
 			name:  "the same privilege on disjoint databases",
-			roles: []goschema.Role{clickHouseRole("reader")},
-			grants: []goschema.Grant{
+			roles: []schemamodel.Role{clickHouseRole("reader")},
+			grants: []schemamodel.Grant{
 				{Role: "reader", Privileges: []string{"SELECT"}, OnSchema: "shop"},
 				{Role: "reader", Privileges: []string{"SELECT"}, OnSchema: "warehouse"},
 			},
 		},
 		{
 			name:  "different privileges on nested scopes, which the server keeps apart",
-			roles: []goschema.Role{clickHouseRole("reader")},
-			grants: []goschema.Grant{
+			roles: []schemamodel.Role{clickHouseRole("reader")},
+			grants: []schemamodel.Grant{
 				{Role: "reader", Privileges: []string{"SELECT"}, OnSchema: "shop"},
 				{Role: "reader", Privileges: []string{"INSERT"}, OnTable: "shop.orders"},
 			},
@@ -73,8 +73,8 @@ func TestValidateDeclared_HappyPath(t *testing.T) {
 			// read back under their own names on both declared lines, and a
 			// gate that refused them would remove grants that converge.
 			name:  "group privileges the server stores as written",
-			roles: []goschema.Role{clickHouseRole("writer")},
-			grants: []goschema.Grant{
+			roles: []schemamodel.Role{clickHouseRole("writer")},
+			grants: []schemamodel.Grant{
 				{Role: "writer", Privileges: []string{"ALTER TABLE", "ALTER COLUMN"}, OnTable: "shop.orders"},
 				{Role: "writer", Privileges: []string{"ALTER VIEW"}, OnTable: "shop.summary"},
 				{Role: "writer", Privileges: []string{"SYSTEM SENDS"}, OnSchema: "warehouse"},
@@ -85,16 +85,16 @@ func TestValidateDeclared_HappyPath(t *testing.T) {
 			// a table and stored as written on a database, so the database
 			// spelling has to keep working.
 			name:  "ALTER and SHOW on a database, where the server stores them as written",
-			roles: []goschema.Role{clickHouseRole("writer")},
-			grants: []goschema.Grant{
+			roles: []schemamodel.Role{clickHouseRole("writer")},
+			grants: []schemamodel.Grant{
 				{Role: "writer", Privileges: []string{"ALTER"}, OnSchema: "shop"},
 				{Role: "writer", Privileges: []string{"SHOW"}, OnSchema: "warehouse"},
 			},
 		},
 		{
 			name:  "two roles may hold the same privilege on the same scope",
-			roles: []goschema.Role{clickHouseRole("reader"), clickHouseRole("auditor")},
-			grants: []goschema.Grant{
+			roles: []schemamodel.Role{clickHouseRole("reader"), clickHouseRole("auditor")},
+			grants: []schemamodel.Grant{
 				{Role: "reader", Privileges: []string{"SELECT"}, OnSchema: "shop"},
 				{Role: "auditor", Privileges: []string{"SELECT"}, OnSchema: "shop"},
 			},
@@ -113,61 +113,61 @@ func TestValidateDeclared_HappyPath(t *testing.T) {
 func TestValidateDeclared_FailurePath(t *testing.T) {
 	tests := []struct {
 		name    string
-		roles   []goschema.Role
-		grants  []goschema.Grant
+		roles   []schemamodel.Role
+		grants  []schemamodel.Grant
 		wantErr string
 	}{
 		{
 			name:    "a password",
-			roles:   []goschema.Role{{Name: "reader", Inherit: true, Password: "hunter2"}},
+			roles:   []schemamodel.Role{{Name: "reader", Inherit: true, Password: "hunter2"}},
 			wantErr: `(?s).*role "reader" declares a password: ClickHouse roles carry no credentials.*`,
 		},
 		{
 			name:    "login",
-			roles:   []goschema.Role{{Name: "reader", Inherit: true, Login: true}},
+			roles:   []schemamodel.Role{{Name: "reader", Inherit: true, Login: true}},
 			wantErr: `(?s).*role "reader" declares login: a ClickHouse role carries no attributes.*`,
 		},
 		{
 			name:    "superuser",
-			roles:   []goschema.Role{{Name: "reader", Inherit: true, Superuser: true}},
+			roles:   []schemamodel.Role{{Name: "reader", Inherit: true, Superuser: true}},
 			wantErr: `(?s).*declares superuser.*`,
 		},
 		{
 			name:    "createdb",
-			roles:   []goschema.Role{{Name: "reader", Inherit: true, CreateDB: true}},
+			roles:   []schemamodel.Role{{Name: "reader", Inherit: true, CreateDB: true}},
 			wantErr: `(?s).*declares createdb.*`,
 		},
 		{
 			name:    "createrole",
-			roles:   []goschema.Role{{Name: "reader", Inherit: true, CreateRole: true}},
+			roles:   []schemamodel.Role{{Name: "reader", Inherit: true, CreateRole: true}},
 			wantErr: `(?s).*declares createrole.*`,
 		},
 		{
 			name:    "replication",
-			roles:   []goschema.Role{{Name: "reader", Inherit: true, Replication: true}},
+			roles:   []schemamodel.Role{{Name: "reader", Inherit: true, Replication: true}},
 			wantErr: `(?s).*declares replication.*`,
 		},
 		{
 			name:    "the reserved principal",
-			roles:   []goschema.Role{clickHouseRole("default")},
+			roles:   []schemamodel.Role{clickHouseRole("default")},
 			wantErr: `(?s).*role "default" is a reserved ClickHouse principal.*`,
 		},
 		{
 			name:    "ALL, which the server expands",
-			roles:   []goschema.Role{clickHouseRole("reader")},
-			grants:  []goschema.Grant{{Role: "reader", Privileges: []string{"ALL"}, OnSchema: "shop"}},
+			roles:   []schemamodel.Role{clickHouseRole("reader")},
+			grants:  []schemamodel.Grant{{Role: "reader", Privileges: []string{"ALL"}, OnSchema: "shop"}},
 			wantErr: `(?s).*declares privilege "ALL" on shop\.\*: ClickHouse records it as every individual privilege on the target.*`,
 		},
 		{
 			name:    "ALL PRIVILEGES",
-			roles:   []goschema.Role{clickHouseRole("reader")},
-			grants:  []goschema.Grant{{Role: "reader", Privileges: []string{"ALL PRIVILEGES"}, OnSchema: "shop"}},
+			roles:   []schemamodel.Role{clickHouseRole("reader")},
+			grants:  []schemamodel.Grant{{Role: "reader", Privileges: []string{"ALL PRIVILEGES"}, OnSchema: "shop"}},
 			wantErr: `(?s).*records it as every individual privilege on the target.*`,
 		},
 		{
 			name:    "NONE, which names no privilege",
-			roles:   []goschema.Role{clickHouseRole("reader")},
-			grants:  []goschema.Grant{{Role: "reader", Privileges: []string{"NONE"}, OnSchema: "shop"}},
+			roles:   []schemamodel.Role{clickHouseRole("reader")},
+			grants:  []schemamodel.Grant{{Role: "reader", Privileges: []string{"NONE"}, OnSchema: "shop"}},
 			wantErr: `(?s).*declares privilege "NONE": it names no privilege; omit the grant instead.*`,
 		},
 		{
@@ -175,20 +175,20 @@ func TestValidateDeclared_FailurePath(t *testing.T) {
 			// operator who declared it would be told the grant applied and
 			// would hold no privilege. Refused at both scopes.
 			name:    "SHOW FILESYSTEM CACHES, which the server records nowhere",
-			roles:   []goschema.Role{clickHouseRole("reader")},
-			grants:  []goschema.Grant{{Role: "reader", Privileges: []string{"SHOW FILESYSTEM CACHES"}, OnSchema: "shop"}},
+			roles:   []schemamodel.Role{clickHouseRole("reader")},
+			grants:  []schemamodel.Grant{{Role: "reader", Privileges: []string{"SHOW FILESYSTEM CACHES"}, OnSchema: "shop"}},
 			wantErr: `(?s).*ClickHouse records it as nothing at all.*`,
 		},
 		{
 			name:    "CREATE, which the server expands at database scope",
-			roles:   []goschema.Role{clickHouseRole("writer")},
-			grants:  []goschema.Grant{{Role: "writer", Privileges: []string{"CREATE"}, OnSchema: "shop"}},
+			roles:   []schemamodel.Role{clickHouseRole("writer")},
+			grants:  []schemamodel.Grant{{Role: "writer", Privileges: []string{"CREATE"}, OnSchema: "shop"}},
 			wantErr: `(?s).*records it as CREATE DATABASE, CREATE TABLE, CREATE VIEW and CREATE DICTIONARY.*`,
 		},
 		{
 			name:    "DROP, which the server expands at table scope too",
-			roles:   []goschema.Role{clickHouseRole("writer")},
-			grants:  []goschema.Grant{{Role: "writer", Privileges: []string{"DROP"}, OnTable: "shop.orders"}},
+			roles:   []schemamodel.Role{clickHouseRole("writer")},
+			grants:  []schemamodel.Grant{{Role: "writer", Privileges: []string{"DROP"}, OnTable: "shop.orders"}},
 			wantErr: `(?s).*on shop\.orders: ClickHouse records it as DROP TABLE, DROP VIEW and DROP DICTIONARY.*`,
 		},
 		{
@@ -196,20 +196,20 @@ func TestValidateDeclared_FailurePath(t *testing.T) {
 			// round-trips on a database and is rewritten on a table. The happy
 			// path holds the database half.
 			name:    "ALTER on a table, which the server splits",
-			roles:   []goschema.Role{clickHouseRole("writer")},
-			grants:  []goschema.Grant{{Role: "writer", Privileges: []string{"ALTER"}, OnTable: "shop.orders"}},
+			roles:   []schemamodel.Role{clickHouseRole("writer")},
+			grants:  []schemamodel.Grant{{Role: "writer", Privileges: []string{"ALTER"}, OnTable: "shop.orders"}},
 			wantErr: `(?s).*records it as ALTER TABLE and ALTER VIEW.*`,
 		},
 		{
 			name:    "SHOW on a table, which the server splits",
-			roles:   []goschema.Role{clickHouseRole("reader")},
-			grants:  []goschema.Grant{{Role: "reader", Privileges: []string{"SHOW"}, OnTable: "shop.orders"}},
+			roles:   []schemamodel.Role{clickHouseRole("reader")},
+			grants:  []schemamodel.Grant{{Role: "reader", Privileges: []string{"SHOW"}, OnTable: "shop.orders"}},
 			wantErr: `(?s).*records it as SHOW TABLES, SHOW COLUMNS and SHOW DICTIONARIES.*`,
 		},
 		{
 			name:    "SHOW ACCESS, which the server renames at every scope",
-			roles:   []goschema.Role{clickHouseRole("reader")},
-			grants:  []goschema.Grant{{Role: "reader", Privileges: []string{"show access"}, OnSchema: "shop"}},
+			roles:   []schemamodel.Role{clickHouseRole("reader")},
+			grants:  []schemamodel.Grant{{Role: "reader", Privileges: []string{"show access"}, OnSchema: "shop"}},
 			wantErr: `(?s).*records it as SHOW ROW POLICIES.*`,
 		},
 		{
@@ -217,20 +217,20 @@ func TestValidateDeclared_FailurePath(t *testing.T) {
 			// name, because a declaration that stops converging on an upgrade
 			// is not one Ptah accepts.
 			name:    "SYSTEM FLUSH, which only the older line round-trips",
-			roles:   []goschema.Role{clickHouseRole("ops")},
-			grants:  []goschema.Grant{{Role: "ops", Privileges: []string{"SYSTEM FLUSH"}, OnSchema: "shop"}},
+			roles:   []schemamodel.Role{clickHouseRole("ops")},
+			grants:  []schemamodel.Grant{{Role: "ops", Privileges: []string{"SYSTEM FLUSH"}, OnSchema: "shop"}},
 			wantErr: `(?s).*records it as the individual SYSTEM FLUSH privileges.*`,
 		},
 		{
 			name:    "a column-scoped privilege",
-			roles:   []goschema.Role{clickHouseRole("reader")},
-			grants:  []goschema.Grant{{Role: "reader", Privileges: []string{"SELECT(id)"}, OnTable: "shop.orders"}},
+			roles:   []schemamodel.Role{clickHouseRole("reader")},
+			grants:  []schemamodel.Grant{{Role: "reader", Privileges: []string{"SELECT(id)"}, OnTable: "shop.orders"}},
 			wantErr: `(?s).*column-scoped privilege "SELECT\(id\)".*`,
 		},
 		{
 			name:    "no privilege at all",
-			roles:   []goschema.Role{clickHouseRole("reader")},
-			grants:  []goschema.Grant{{Role: "reader", OnSchema: "shop"}},
+			roles:   []schemamodel.Role{clickHouseRole("reader")},
+			grants:  []schemamodel.Grant{{Role: "reader", OnSchema: "shop"}},
 			wantErr: `(?s).*grant to role "reader" names no privilege.*`,
 		},
 		{
@@ -239,8 +239,8 @@ func TestValidateDeclared_FailurePath(t *testing.T) {
 			// that name it SUCCEEDS and lands on the user, where the reader
 			// never sees it again.
 			name:    "a grant to a role the schema does not declare",
-			roles:   []goschema.Role{clickHouseRole("reader")},
-			grants:  []goschema.Grant{{Role: "analyst", Privileges: []string{"SELECT"}, OnSchema: "shop"}},
+			roles:   []schemamodel.Role{clickHouseRole("reader")},
+			grants:  []schemamodel.Grant{{Role: "analyst", Privileges: []string{"SELECT"}, OnSchema: "shop"}},
 			wantErr: `(?s).*grant names role "analyst", which this schema does not declare.*`,
 		},
 		{
@@ -248,14 +248,14 @@ func TestValidateDeclared_FailurePath(t *testing.T) {
 			// case-sensitive, so `Reader` and `reader` are two principals and
 			// declaring one does not declare the other.
 			name:    "a grant whose grantee differs from the declared role only in case",
-			roles:   []goschema.Role{clickHouseRole("reader")},
-			grants:  []goschema.Grant{{Role: "Reader", Privileges: []string{"SELECT"}, OnSchema: "shop"}},
+			roles:   []schemamodel.Role{clickHouseRole("reader")},
+			grants:  []schemamodel.Grant{{Role: "Reader", Privileges: []string{"SELECT"}, OnSchema: "shop"}},
 			wantErr: `(?s).*grant names role "Reader", which this schema does not declare.*`,
 		},
 		{
 			name:  "the absorption pair the server would collapse",
-			roles: []goschema.Role{clickHouseRole("reader")},
-			grants: []goschema.Grant{
+			roles: []schemamodel.Role{clickHouseRole("reader")},
+			grants: []schemamodel.Grant{
 				{Role: "reader", Privileges: []string{"SELECT"}, OnSchema: "shop"},
 				{Role: "reader", Privileges: []string{"SELECT"}, OnTable: "shop.orders"},
 			},
@@ -263,8 +263,8 @@ func TestValidateDeclared_FailurePath(t *testing.T) {
 		},
 		{
 			name:  "an exact duplicate is the same collapse",
-			roles: []goschema.Role{clickHouseRole("reader")},
-			grants: []goschema.Grant{
+			roles: []schemamodel.Role{clickHouseRole("reader")},
+			grants: []schemamodel.Grant{
 				{Role: "reader", Privileges: []string{"SELECT"}, OnTable: "shop.orders"},
 				{Role: "reader", Privileges: []string{"SELECT"}, OnTable: "shop.orders"},
 			},
@@ -291,11 +291,11 @@ func TestValidateDeclared_FailurePath(t *testing.T) {
 // are declarations PostgreSQL accepts and ClickHouse refuses; every one must
 // pass here.
 func TestValidateDeclared_LeavesOtherDialectsAlone(t *testing.T) {
-	roles := []goschema.Role{{
+	roles := []schemamodel.Role{{
 		Name: "app_user", Login: true, Password: "hunter2",
 		Superuser: true, CreateDB: true, CreateRole: true, Replication: true,
 	}}
-	grants := []goschema.Grant{
+	grants := []schemamodel.Grant{
 		{Role: "app_user", Privileges: []string{"ALL"}, OnSchema: "public"},
 		{Role: "app_user", Privileges: []string{"SELECT"}, OnSequence: "orders_id_seq"},
 		{Role: "app_user", Privileges: []string{"SELECT"}, OnSchema: "public"},
@@ -328,11 +328,11 @@ func TestValidateDeclared_LeavesOtherDialectsAlone(t *testing.T) {
 func TestValidateDeclared_RefusesTheSameDeclarationOnClickHouse(t *testing.T) {
 	c := qt.New(t)
 
-	roles := []goschema.Role{{
+	roles := []schemamodel.Role{{
 		Name: "app_user", Login: true, Password: "hunter2",
 		Superuser: true, CreateDB: true, CreateRole: true, Replication: true,
 	}}
-	grants := []goschema.Grant{
+	grants := []schemamodel.Grant{
 		{Role: "app_user", Privileges: []string{"ALL"}, OnSchema: "public"},
 		{Role: "app_user", Privileges: []string{"SELECT"}, OnSequence: "orders_id_seq"},
 	}
@@ -353,7 +353,7 @@ func TestValidateDeclared_NeverEchoesACredential(t *testing.T) {
 	c := qt.New(t)
 
 	const secret = "s3cr3t-value-that-must-not-appear"
-	roles := []goschema.Role{{Name: "reader", Inherit: true, Password: secret}}
+	roles := []schemamodel.Role{{Name: "reader", Inherit: true, Password: secret}}
 
 	err := clickhouserbac.ValidateDeclared(platform.ClickHouse, roles, nil, "")
 
@@ -369,8 +369,8 @@ func TestValidateDeclared_NeverEchoesACredential(t *testing.T) {
 func TestValidateDeclared_IsDeterministic(t *testing.T) {
 	c := qt.New(t)
 
-	roles := []goschema.Role{clickHouseRole("a"), clickHouseRole("b"), clickHouseRole("c")}
-	grants := []goschema.Grant{
+	roles := []schemamodel.Role{clickHouseRole("a"), clickHouseRole("b"), clickHouseRole("c")}
+	grants := []schemamodel.Grant{
 		{Role: "c", Privileges: []string{"SELECT"}, OnSchema: "shop"},
 		{Role: "c", Privileges: []string{"SELECT"}, OnTable: "shop.orders"},
 		{Role: "a", Privileges: []string{"INSERT"}, OnSchema: "warehouse"},

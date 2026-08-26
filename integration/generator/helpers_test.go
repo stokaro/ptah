@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/generator"
@@ -44,7 +44,7 @@ func legacyRenderedSQL(sql string) string {
 func generateLiveMigrationSQL(
 	c *qt.C,
 	conn *dbschema.DatabaseConnection,
-	desired *goschema.Database,
+	desired *schemamodel.Database,
 ) (upSQL, downSQL string) {
 	c.Helper()
 	outputDir := c.TempDir()
@@ -64,15 +64,15 @@ func generateLiveMigrationSQL(
 	return string(up), string(down)
 }
 
-func fkOrderSchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func fkOrderSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "PtahFKOrderAccount", Name: "ptah_fk_order_accounts"},
 			{StructName: "PtahFKOrderProject", Name: "ptah_fk_order_projects"},
 			{StructName: "PtahFKOrderMembership", Name: "ptah_fk_order_memberships"},
 			{StructName: "PtahFKOrderTask", Name: "ptah_fk_order_tasks"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "PtahFKOrderAccount", Name: "id", Type: "VARCHAR(36)", Primary: true},
 			{StructName: "PtahFKOrderProject", Name: "id", Type: "VARCHAR(36)", Primary: true},
 			{StructName: "PtahFKOrderProject", Name: "account_id", Type: "VARCHAR(36)", Foreign: "ptah_fk_order_accounts(id)", ForeignKeyName: "fk_ptah_fk_order_projects_account"},
@@ -85,13 +85,13 @@ func fkOrderSchema() *goschema.Database {
 	}
 }
 
-func mutualFKCycleSchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func mutualFKCycleSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "LeftNode", Name: "left_nodes"},
 			{StructName: "RightNode", Name: "right_nodes"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "LeftNode", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "LeftNode", Name: "right_id", Type: "INTEGER", Foreign: "right_nodes(id)", ForeignKeyName: "fk_left_nodes_right_id"},
 			{StructName: "RightNode", Name: "id", Type: "INTEGER", Primary: true},

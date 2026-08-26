@@ -6,10 +6,10 @@ import (
 	"iter"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -18,20 +18,20 @@ import (
 // Index lookup is constant time and uses the canonical table-qualified identity.
 type Resolver struct {
 	semantics identifier.Semantics
-	indexes   map[difftypes.IndexRef]goschema.Index
+	indexes   map[difftypes.IndexRef]schemamodel.Index
 }
 
 // Resolve returns the target index identified by ref.
-func (r *Resolver) Resolve(ref difftypes.IndexRef) (goschema.Index, error) {
+func (r *Resolver) Resolve(ref difftypes.IndexRef) (schemamodel.Index, error) {
 	if r == nil {
-		return goschema.Index{}, fmt.Errorf(
+		return schemamodel.Index{}, fmt.Errorf(
 			"%w: no validated target indexes are available",
 			ptaherr.ErrInvalidSchemaDiff,
 		)
 	}
 	index, ok := r.indexes[IdentityKeyWithSemantics(r.semantics, ref)]
 	if !ok {
-		return goschema.Index{}, fmt.Errorf(
+		return schemamodel.Index{}, fmt.Errorf(
 			"%w: target index %s.%s was not part of the validated plan",
 			ptaherr.ErrInvalidSchemaDiff,
 			ref.TableName,
@@ -57,9 +57,9 @@ func validateDiff(dialect string, semantics identifier.Semantics, diff *difftype
 func NewResolver(
 	dialect string,
 	diff *difftypes.SchemaDiff,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 ) (*Resolver, error) {
-	return NewResolverWithSemantics(dialect, identifier.ForDialect(dialect), diff, generated)
+	return NewResolverWithSemantics(dialect, identifier.ForDialect(dialect), diff, desired)
 }
 
 // NewResolverWithSemantics validates and indexes target indexes using explicit
@@ -68,7 +68,7 @@ func NewResolverWithSemantics(
 	dialect string,
 	semantics identifier.Semantics,
 	diff *difftypes.SchemaDiff,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 ) (*Resolver, error) {
 	if diff == nil {
 		return nil, fmt.Errorf("%w: schema diff is nil", ptaherr.ErrInvalidSchemaDiff)
@@ -76,7 +76,7 @@ func NewResolverWithSemantics(
 	if err := validateDiff(dialect, semantics, diff); err != nil {
 		return nil, err
 	}
-	resolver, err := newTargetResolver(dialect, semantics, generated)
+	resolver, err := newTargetResolver(dialect, semantics, desired)
 	if err != nil {
 		return nil, err
 	}
@@ -100,13 +100,13 @@ func NewResolverWithSemantics(
 func newTargetResolver(
 	dialect string,
 	semantics identifier.Semantics,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 ) (*Resolver, error) {
 	resolver := &Resolver{
 		semantics: semantics,
-		indexes:   make(map[difftypes.IndexRef]goschema.Index),
+		indexes:   make(map[difftypes.IndexRef]schemamodel.Index),
 	}
-	if generated == nil {
+	if desired == nil {
 		return resolver, nil
 	}
 	tracker := NewConflictSetWithSemantics(semantics, nil)
@@ -116,8 +116,8 @@ func newTargetResolver(
 	// against tables alone left the owner empty, and the refusal that
 	// followed named a position in a slice rather than the index or the view
 	// (stokaro/ptah#1725).
-	tableNames := goschema.ResolveIndexOwners(generated.Indexes, generated.Tables, generated.MaterializedViews)
-	for position, index := range generated.Indexes {
+	tableNames := schemamodel.ResolveIndexOwners(desired.Indexes, desired.Tables, desired.MaterializedViews)
+	for position, index := range desired.Indexes {
 		ref := difftypes.IndexRef{
 			Name:      index.Name,
 			TableName: tableNames[position],

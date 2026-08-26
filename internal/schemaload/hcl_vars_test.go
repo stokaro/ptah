@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemaload"
 )
 
@@ -133,7 +133,7 @@ func TestLoad_RefusesARequiredVariableNobodyGaveAValue(t *testing.T) {
 
 // tenantColumnDefault returns the default the loaded schema gives the tenant
 // column, with the quoting the renderer applies stripped.
-func tenantColumnDefault(c *qt.C, db *goschema.Database) string {
+func tenantColumnDefault(c *qt.C, db *schemamodel.Database) string {
 	c.Helper()
 	for _, field := range db.Fields {
 		if field.Name == "tenant" {

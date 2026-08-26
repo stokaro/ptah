@@ -4,8 +4,8 @@ import (
 	"strings"
 	"unicode"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 func normalizeSQLIdentifier(value string) string {
@@ -30,7 +30,7 @@ func normalizeSQLTableIdentifier(value string) (schema, name string) {
 
 func normalizeSQLTableReference(value string) string {
 	schema, name := normalizeSQLTableIdentifier(value)
-	return goschema.QualifyTableName(schema, name)
+	return schemamodel.QualifyTableName(schema, name)
 }
 
 // catalogPostgresTableReference answers which relation a PostgreSQL statement
@@ -66,9 +66,9 @@ func catalogPostgresTableReference(value string) string {
 		parts[index] = catalogPostgresIdentifierPart(strings.TrimSpace(part))
 	}
 	if len(parts) == 1 {
-		return goschema.QualifyTableName("", parts[0])
+		return schemamodel.QualifyTableName("", parts[0])
 	}
-	return goschema.QualifyTableName(
+	return schemamodel.QualifyTableName(
 		strings.Join(parts[:len(parts)-1], "."),
 		parts[len(parts)-1],
 	)

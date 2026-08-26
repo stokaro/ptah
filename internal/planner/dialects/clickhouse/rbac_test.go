@@ -7,7 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/clickhouse"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -36,8 +36,8 @@ func nodeTypes(nodes []ast.Node) []string {
 	return kinds
 }
 
-func planClickHouse(c *qt.C, diff *difftypes.SchemaDiff, generated *goschema.Database) []ast.Node {
-	nodes, err := clickhouse.New().GenerateMigrationAST(diff, generated)
+func planClickHouse(c *qt.C, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
+	nodes, err := clickhouse.New().GenerateMigrationAST(diff, desired)
 	c.Assert(err, qt.IsNil)
 	return nodes
 }
@@ -88,7 +88,7 @@ func TestGenerateMigrationAST_ClickHouseGrantsArePlannedAsGrantNodes(t *testing.
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			nodes := planClickHouse(c, test.diff, &goschema.Database{})
+			nodes := planClickHouse(c, test.diff, &schemamodel.Database{})
 
 			c.Assert(nodes, qt.HasLen, 1)
 			node, ok := nodes[0].(*ast.GrantPrivilegeNode)
@@ -136,7 +136,7 @@ func TestGenerateMigrationAST_ClickHouseRevokesArePlannedAsRevokeNodes(t *testin
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			nodes := planClickHouse(c, test.diff, &goschema.Database{})
+			nodes := planClickHouse(c, test.diff, &schemamodel.Database{})
 
 			c.Assert(nodes, qt.HasLen, 1)
 			node, ok := nodes[0].(*ast.RevokePrivilegeNode)
@@ -180,7 +180,7 @@ func TestGenerateMigrationAST_ClickHouseCreateRoleCarriesOnlyTheName(t *testing.
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			nodes := planClickHouse(c, &difftypes.SchemaDiff{RolesAdded: test.roles}, &goschema.Database{})
+			nodes := planClickHouse(c, &difftypes.SchemaDiff{RolesAdded: test.roles}, &schemamodel.Database{})
 
 			c.Assert(nodes, qt.HasLen, len(test.want))
 			got := make([]string, 0, len(nodes))
@@ -286,9 +286,9 @@ func TestGenerateMigrationAST_ClickHouseGrantsKeepTheSlotTheRenderPathUsesForThe
 	// carries capability.RowLevelSecurity, so the desired schema has to hold
 	// what the diff names or the phase contributes nothing and the ordering
 	// this test is about cannot be seen (stokaro/ptah#1736).
-	nodes := planClickHouse(c, diff, &goschema.Database{
-		RLSEnabledTables: []goschema.RLSEnabledTable{{Table: "events"}},
-		RLSPolicies: []goschema.RLSPolicy{{
+	nodes := planClickHouse(c, diff, &schemamodel.Database{
+		RLSEnabledTables: []schemamodel.RLSEnabledTable{{Table: "events"}},
+		RLSPolicies: []schemamodel.RLSPolicy{{
 			Name: "p1", Table: "events", UsingExpression: "true",
 		}},
 	})
@@ -308,7 +308,7 @@ func TestGenerateMigrationAST_ClickHouseGrantsKeepTheSlotTheRenderPathUsesForThe
 //
 // A modification cannot be planned because a ClickHouse role has no attribute to
 // alter, so whatever the comparison found is a disagreement about fields
-// goschema.Role carries for PostgreSQL. A removal is not planned because a role
+// schemamodel.Role carries for PostgreSQL. A removal is not planned because a role
 // is cluster-wide while Ptah manages one database, and dropping one would take
 // away grants no declaration here describes -- stokaro/ptah#1025 lists that as a
 // non-goal, and migration/schemadiff never produces the category anyway.
@@ -341,7 +341,7 @@ func TestGenerateMigrationAST_ClickHouseRoleChangesWithNoStatementAreNamed(t *te
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			nodes := planClickHouse(c, test.diff, &goschema.Database{})
+			nodes := planClickHouse(c, test.diff, &schemamodel.Database{})
 
 			c.Assert(nodes, qt.HasLen, 1)
 			comment, ok := nodes[0].(*ast.CommentNode)

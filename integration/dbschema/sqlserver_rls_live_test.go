@@ -11,9 +11,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -183,16 +183,16 @@ func TestSQLServerLiveRLSRefusesWhatTheRendererDeclines(t *testing.T) {
 
 // sqlServerRLSSchema is a table under one policy, with the predicate naming a
 // function the schema does not declare.
-func sqlServerRLSSchema(schemaName string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func sqlServerRLSSchema(schemaName string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Document", Name: "documents", Schema: schemaName},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Document", Name: "id", Type: "INT", Nullable: false},
 			{StructName: "Document", Name: "tenant", Type: "INT", Nullable: false},
 		},
-		RLSPolicies: []goschema.RLSPolicy{{
+		RLSPolicies: []schemamodel.RLSPolicy{{
 			StructName:      "Document",
 			Name:            "tenant_isolation",
 			Table:           "documents",

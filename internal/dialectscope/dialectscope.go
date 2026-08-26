@@ -87,7 +87,7 @@ func Parse(raw string) ([]string, error) {
 // refusal with a schema that appears already synced.
 // Both sides are normalized before they are compared. Parse canonicalizes what
 // it stores, so a scope that arrived through an annotation already holds the
-// canonical spelling; a Go caller building a goschema.Database by hand reaches
+// canonical spelling; a Go caller building a schemamodel.Database by hand reaches
 // these fields directly, has no exported parser to canonicalize with, and
 // stores exactly the documented alias it was given. Comparing that stored
 // spelling literally scoped the object away from the very dialect it names --

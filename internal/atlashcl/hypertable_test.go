@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashcl"
 )
 
@@ -14,13 +14,13 @@ import (
 // The label is the TABLE, because a hypertable has no name of its own:
 // `timescaledb_information.hypertables` is keyed by the relation, and there is
 // nothing to rename. The schema folds back into the table name, which is how
-// [goschema.Hypertable] carries it — a declaration names a table, and a table
+// [schemamodel.Hypertable] carries it — a declaration names a table, and a table
 // is named the way every other reference to one is.
 func TestParseHypertable(t *testing.T) {
 	tests := []struct {
 		name     string
 		document string
-		want     goschema.Hypertable
+		want     schemamodel.Hypertable
 	}{
 		{
 			name: "the whole block",
@@ -36,7 +36,7 @@ hypertable "readings" {
   comment        = "partitioned by hour of arrival"
 }
 `,
-			want: goschema.Hypertable{
+			want: schemamodel.Hypertable{
 				Table: "app.readings", Column: "time", ChunkInterval: "1 day",
 				IfNotExists: true, Comment: "partitioned by hour of arrival",
 			},
@@ -50,7 +50,7 @@ hypertable "readings" {
   column = "time"
 }
 `,
-			want: goschema.Hypertable{Table: "readings", Column: "time"},
+			want: schemamodel.Hypertable{Table: "readings", Column: "time"},
 		},
 		{
 			name: "the two-label spelling",
@@ -59,7 +59,7 @@ hypertable "app" "readings" {
   column = "time"
 }
 `,
-			want: goschema.Hypertable{Table: "app.readings", Column: "time"},
+			want: schemamodel.Hypertable{Table: "app.readings", Column: "time"},
 		},
 	}
 
@@ -70,7 +70,7 @@ hypertable "app" "readings" {
 			db, err := atlashcl.Parse([]byte(test.document), "schema.hcl")
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(db.Hypertables, qt.DeepEquals, []goschema.Hypertable{test.want})
+			c.Assert(db.Hypertables, qt.DeepEquals, []schemamodel.Hypertable{test.want})
 		})
 	}
 }

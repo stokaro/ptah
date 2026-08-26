@@ -6,26 +6,26 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 )
 
 // userTypeOrderDatabase declares one type of each kind naming another kind, in
 // both directions, so a whole-schema render that emits kind by kind gets one
 // direction wrong whichever kind it puts first.
-func userTypeOrderDatabase() goschema.Database {
-	return goschema.Database{
-		Domains: []goschema.Domain{
+func userTypeOrderDatabase() schemamodel.Database {
+	return schemamodel.Database{
+		Domains: []schemamodel.Domain{
 			{Name: "d_comp", BaseType: "addr"},
 			{Name: "d_range", BaseType: "myrange"},
 			{Name: "d_int", BaseType: "integer", Check: "VALUE > 0"},
 		},
-		CompositeTypes: []goschema.CompositeType{
-			{Name: "addr", Fields: []goschema.CompositeTypeField{{Name: "street", Type: "text"}}},
-			{Name: "measure", Fields: []goschema.CompositeTypeField{{Name: "qty", Type: "d_int"}}},
+		CompositeTypes: []schemamodel.CompositeType{
+			{Name: "addr", Fields: []schemamodel.CompositeField{{Name: "street", Type: "text"}}},
+			{Name: "measure", Fields: []schemamodel.CompositeField{{Name: "qty", Type: "d_int"}}},
 		},
-		Ranges: []goschema.Range{
+		Ranges: []schemamodel.Range{
 			{Name: "myrange", Subtype: "integer"},
 			{Name: "posrange", Subtype: "d_int"},
 		},

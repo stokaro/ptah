@@ -11,8 +11,8 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasfilter"
@@ -61,7 +61,7 @@ type ApplyOptions struct {
 	// not resolved: the native command tree uses it to plan from Go-annotation
 	// roots and native schema files loaded through the shared desired-source
 	// loader. The Atlas-compatible callers never set it.
-	Desired *goschema.Database
+	Desired *schemamodel.Database
 	// Vars supplies values for HCL schema-file `variable` blocks, as `--var`
 	// spells them; see [go.5x5.cz/ptah/internal/schemafile.Options].
 	Vars []string
@@ -79,10 +79,10 @@ type ApplyOptions struct {
 	RefuseUnmatchedExclude bool
 	// ValidateDesiredSchema applies a caller-selected desired-schema policy
 	// after loading and before planning. Nil accepts every modeled object.
-	ValidateDesiredSchema func(*goschema.Database) error
+	ValidateDesiredSchema func(*schemamodel.Database) error
 	// ValidateCurrentSchema applies a caller-selected policy to the fully
 	// introspected target before planning. Nil accepts every modeled object.
-	ValidateCurrentSchema func(*goschema.Database) error
+	ValidateCurrentSchema func(*schemamodel.Database) error
 	// ValidateLiveObject applies a caller-selected policy to supplemental
 	// catalog objects in the current target and in database-backed or replayed
 	// desired sources. Nil performs no supplemental catalog reads.
@@ -119,7 +119,7 @@ type ApplyRuntimeOptions struct {
 	PreparedTo *atlassource.Set
 	// Desired supplies a pre-loaded desired schema model; see
 	// [ApplyOptions.Desired].
-	Desired *goschema.Database
+	Desired *schemamodel.Database
 	// Diagnostics receives out-of-band notices; see [ApplyOptions.Diagnostics].
 	Diagnostics io.Writer
 	// Vars supplies values for HCL schema-file `variable` blocks, as `--var`
@@ -130,10 +130,10 @@ type ApplyRuntimeOptions struct {
 	IgnoreUnknownHCLNames bool
 	// ValidateDesiredSchema applies a caller-selected desired-schema policy;
 	// see [ApplyOptions.ValidateDesiredSchema].
-	ValidateDesiredSchema func(*goschema.Database) error
+	ValidateDesiredSchema func(*schemamodel.Database) error
 	// ValidateCurrentSchema applies a caller-selected current-schema policy;
 	// see [ApplyOptions.ValidateCurrentSchema].
-	ValidateCurrentSchema func(*goschema.Database) error
+	ValidateCurrentSchema func(*schemamodel.Database) error
 	// ValidateLiveObject applies a caller-selected supplemental catalog policy;
 	// see [ApplyOptions.ValidateLiveObject].
 	ValidateLiveObject func(LiveSchemaObject) error
@@ -189,7 +189,7 @@ func PlanApply(
 type applyComputation struct {
 	statements []string
 	current    *catalog.Database
-	desired    *goschema.Database
+	desired    *schemamodel.Database
 	// readScope is the schema allow-list current was read at, nil when the read
 	// was the connection's own default. A saved plan records no schema scope, so
 	// [VerifyPlanTarget] re-reads at that default; a caller fingerprinting
@@ -213,7 +213,7 @@ func PreflightApplyTarget(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	schemas []string,
-	validateSchema func(*goschema.Database) error,
+	validateSchema func(*schemamodel.Database) error,
 	validateLiveObject func(LiveSchemaObject) error,
 ) error {
 	if validateSchema == nil && validateLiveObject == nil {
@@ -365,7 +365,7 @@ func validateApplyPlanningInputs(conn *dbschema.DatabaseConnection, opts ApplyOp
 
 type scopedApplyStates struct {
 	current        *catalog.Database
-	desired        *goschema.Database
+	desired        *schemamodel.Database
 	currentReports atlasfilter.ScopeReports
 	desiredReports atlasfilter.ScopeReports
 	currentErr     error
@@ -374,7 +374,7 @@ type scopedApplyStates struct {
 
 func scopeApplyStates(
 	current *catalog.Database,
-	desired *goschema.Database,
+	desired *schemamodel.Database,
 	scope atlasfilter.Scope,
 ) scopedApplyStates {
 	project := func(scope atlasfilter.Scope) scopedApplyStates {
@@ -427,7 +427,7 @@ func resolveApplyAllowUnmatched(opts ApplyOptions) (bool, error) {
 
 func validateCurrentApplySchema(
 	current *catalog.Database,
-	validate func(*goschema.Database) error,
+	validate func(*schemamodel.Database) error,
 ) error {
 	if validate == nil {
 		return nil
@@ -442,7 +442,7 @@ func applyCurrentState(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	requested []string,
-	desired *goschema.Database,
+	desired *schemamodel.Database,
 ) (current *catalog.Database, readScope []string, err error) {
 	urlScope, err := schemascope.ReadNames(ctx, conn.Info(), nil, conn)
 	if err != nil {
@@ -485,7 +485,7 @@ func applyCurrentState(
 // creation planned for an object that exists fails the run.
 //
 // An explicit `--schema` outranks both: it is the operator naming the scope.
-func applyReadScope(requested, base []string, desired *goschema.Database) []string {
+func applyReadScope(requested, base []string, desired *schemamodel.Database) []string {
 	if names := SplitSchemaNames(requested); len(names) > 0 {
 		return names
 	}
@@ -504,7 +504,7 @@ func applyReadScope(requested, base []string, desired *goschema.Database) []stri
 // declarations that carry one. A document may name a schema by declaring a
 // block for it or by qualifying an object with it, and both have to count: an
 // inspected document does the first, a hand-written one often only the second.
-func desiredSchemaNames(desired *goschema.Database) []string {
+func desiredSchemaNames(desired *schemamodel.Database) []string {
 	if desired == nil {
 		return nil
 	}
@@ -544,7 +544,7 @@ func loadDesiredApplySchema(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	opts ApplyOptions,
-) (*goschema.Database, error) {
+) (*schemamodel.Database, error) {
 	if opts.Desired != nil {
 		return validateDesiredApplySchema(opts.Desired, opts.ValidateDesiredSchema)
 	}
@@ -618,7 +618,7 @@ func loadAndValidateDesiredApplySchema(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	opts ApplyOptions,
-) (*goschema.Database, error) {
+) (*schemamodel.Database, error) {
 	desired, err := loadDesiredApplySchema(ctx, conn, opts)
 	if err != nil {
 		return nil, fmt.Errorf("load --to schema: %w", err)
@@ -680,9 +680,9 @@ func PrepareApply(
 }
 
 func validateDesiredApplySchema(
-	desired *goschema.Database,
-	validator func(*goschema.Database) error,
-) (*goschema.Database, error) {
+	desired *schemamodel.Database,
+	validator func(*schemamodel.Database) error,
+) (*schemamodel.Database, error) {
 	if validator != nil {
 		if err := validator(desired); err != nil {
 			return nil, err

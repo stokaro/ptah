@@ -11,8 +11,8 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/dbschema/postgres"
 	"go.5x5.cz/ptah/migration/planner"
@@ -41,9 +41,9 @@ func TestFieldLevelCheckConstraint_RoundTrip_Integration(t *testing.T) {
 	_, _ = db.Exec("DROP TABLE IF EXISTS ptah_test_files CASCADE")
 	defer func() { _, _ = db.Exec("DROP TABLE IF EXISTS ptah_test_files CASCADE") }()
 
-	target := &goschema.Database{
-		Tables: []goschema.Table{{Name: "ptah_test_files", StructName: "File"}},
-		Fields: []goschema.Field{
+	target := &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "ptah_test_files", StructName: "File"}},
+		Fields: []schemamodel.Field{
 			{StructName: "File", Name: "id", Type: "SERIAL", Primary: true},
 			{
 				StructName: "File",
@@ -118,9 +118,9 @@ func TestFieldLevelCheckConstraint_Removal_Integration(t *testing.T) {
 	defer func() { _, _ = db.Exec("DROP TABLE IF EXISTS ptah_test_check_drop CASCADE") }()
 
 	// Phase 1 — install table with the CHECK.
-	withCheck := &goschema.Database{
-		Tables: []goschema.Table{{Name: "ptah_test_check_drop", StructName: "Doc"}},
-		Fields: []goschema.Field{
+	withCheck := &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "ptah_test_check_drop", StructName: "Doc"}},
+		Fields: []schemamodel.Field{
 			{StructName: "Doc", Name: "id", Type: "SERIAL", Primary: true},
 			{
 				StructName: "Doc",
@@ -138,9 +138,9 @@ func TestFieldLevelCheckConstraint_Removal_Integration(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	// Phase 2 — drop the CHECK from the Go definition and regenerate.
-	withoutCheck := &goschema.Database{
-		Tables: []goschema.Table{{Name: "ptah_test_check_drop", StructName: "Doc"}},
-		Fields: []goschema.Field{
+	withoutCheck := &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "ptah_test_check_drop", StructName: "Doc"}},
+		Fields: []schemamodel.Field{
 			{StructName: "Doc", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "Doc", Name: "score", Type: "INTEGER", Nullable: false},
 		},

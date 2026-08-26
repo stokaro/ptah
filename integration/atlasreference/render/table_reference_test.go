@@ -13,8 +13,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 )
 
@@ -96,14 +96,14 @@ func TestReferenceReadsTheReferenceSpellingPtahRenders(t *testing.T) {
 // It declares nothing the binary refuses as a feature -- no extension, sequence
 // or policy -- so a non-zero status is attributable to a reference and not to a
 // construct that build does not model.
-func referenceSchema(schema string) *goschema.Database {
-	return &goschema.Database{
-		Schemas: []goschema.Schema{{Name: schema}},
-		Tables: []goschema.Table{
+func referenceSchema(schema string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Schemas: []schemamodel.Schema{{Name: schema}},
+		Tables: []schemamodel.Table{
 			{StructName: "User", Name: "users", Schema: schema},
 			{StructName: "Post", Name: "posts", Schema: schema},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "integer", Primary: true},
 			{
 				StructName:     "Post",
@@ -113,8 +113,8 @@ func referenceSchema(schema string) *goschema.Database {
 				ForeignKeyName: "posts_author_fk",
 			},
 		},
-		Roles: []goschema.Role{{Name: "probe_role"}},
-		Triggers: []goschema.Trigger{{
+		Roles: []schemamodel.Role{{Name: "probe_role"}},
+		Triggers: []schemamodel.Trigger{{
 			Name:    "users_touch",
 			Table:   schema + ".users",
 			Timing:  "BEFORE",
@@ -122,7 +122,7 @@ func referenceSchema(schema string) *goschema.Database {
 			ForEach: "ROW",
 			Body:    "SELECT 1",
 		}},
-		Grants: []goschema.Grant{{
+		Grants: []schemamodel.Grant{{
 			Role:       "probe_role",
 			Privileges: []string{"SELECT"},
 			OnTable:    schema + ".users",

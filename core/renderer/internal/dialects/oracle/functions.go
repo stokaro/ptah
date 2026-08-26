@@ -45,7 +45,7 @@ import (
 // plan a drop whose create this branch is about to skip.
 //
 // The trap that costs an afternoon is worth naming, and the message names it:
-// [goschema.Function.Canonicalize] defaults an unset language to plpgsql, so a
+// [schemamodel.Function.Canonicalize] defaults an unset language to plpgsql, so a
 // routine annotated without `language=` lands in this branch and is skipped
 // when it looks like it should have been generated.
 func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {

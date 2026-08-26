@@ -9,7 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 )
 
@@ -22,7 +22,7 @@ func engineTable(table catalog.Table) *catalog.Database {
 }
 
 // clickHouseOverrides returns the converted table's ClickHouse override group.
-func clickHouseOverrides(c *qt.C, database *goschema.Database) map[string]string {
+func clickHouseOverrides(c *qt.C, database *schemamodel.Database) map[string]string {
 	c.Helper()
 	c.Assert(database.Tables, qt.HasLen, 1)
 	return database.Tables[0].Overrides["clickhouse"]

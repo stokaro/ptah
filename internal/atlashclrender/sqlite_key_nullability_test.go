@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 )
 
@@ -26,43 +26,43 @@ import (
 func TestRenderSQLiteKeyColumnNullabilityFollowsTheTableShape(t *testing.T) {
 	tests := []struct {
 		name        string
-		table       goschema.Table
-		fields      []goschema.Field
+		table       schemamodel.Table
+		fields      []schemamodel.Field
 		wantNullSet bool
 	}{
 		{
 			name:        "rowid table keeps its nullable key column",
-			table:       goschema.Table{StructName: "T", Name: "users"},
-			fields:      []goschema.Field{{StructName: "T", Name: "id", Type: "text", Primary: true, Nullable: true}},
+			table:       schemamodel.Table{StructName: "T", Name: "users"},
+			fields:      []schemamodel.Field{{StructName: "T", Name: "id", Type: "text", Primary: true, Nullable: true}},
 			wantNullSet: true,
 		},
 		{
 			name:        "without rowid table writes the key column NOT NULL",
-			table:       goschema.Table{StructName: "T", Name: "users", WithoutRowID: true},
-			fields:      []goschema.Field{{StructName: "T", Name: "id", Type: "text", Primary: true, Nullable: true}},
+			table:       schemamodel.Table{StructName: "T", Name: "users", WithoutRowID: true},
+			fields:      []schemamodel.Field{{StructName: "T", Name: "id", Type: "text", Primary: true, Nullable: true}},
 			wantNullSet: false,
 		},
 		{
 			name:        "strict table writes the key column NOT NULL",
-			table:       goschema.Table{StructName: "T", Name: "users", Strict: true},
-			fields:      []goschema.Field{{StructName: "T", Name: "id", Type: "text", Primary: true, Nullable: true}},
+			table:       schemamodel.Table{StructName: "T", Name: "users", Strict: true},
+			fields:      []schemamodel.Field{{StructName: "T", Name: "id", Type: "text", Primary: true, Nullable: true}},
 			wantNullSet: false,
 		},
 		{
 			name:        "strict rowid alias keeps its nullable key column",
-			table:       goschema.Table{StructName: "T", Name: "users", Strict: true},
-			fields:      []goschema.Field{{StructName: "T", Name: "id", Type: "integer", Primary: true, Nullable: true}},
+			table:       schemamodel.Table{StructName: "T", Name: "users", Strict: true},
+			fields:      []schemamodel.Field{{StructName: "T", Name: "id", Type: "integer", Primary: true, Nullable: true}},
 			wantNullSet: true,
 		},
 		{
 			name: "strict table level composite key writes both columns NOT NULL",
-			table: goschema.Table{
+			table: schemamodel.Table{
 				StructName: "T",
 				Name:       "memberships",
 				Strict:     true,
 				PrimaryKey: []string{"team", "member"},
 			},
-			fields: []goschema.Field{
+			fields: []schemamodel.Field{
 				{StructName: "T", Name: "team", Type: "text", Nullable: true},
 				{StructName: "T", Name: "member", Type: "text", Nullable: true},
 			},
@@ -72,11 +72,11 @@ func TestRenderSQLiteKeyColumnNullabilityFollowsTheTableShape(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db := &goschema.Database{
-				Tables: []goschema.Table{test.table},
+			db := &schemamodel.Database{
+				Tables: []schemamodel.Table{test.table},
 				Fields: test.fields,
 			}
-			goschema.Finalize(db)
+			schemamodel.Finalize(db)
 
 			rendered, err := atlashclrender.RenderInspected(db, "sqlite", "main")
 			c.Assert(err, qt.IsNil)

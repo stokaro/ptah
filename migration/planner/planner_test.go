@@ -9,10 +9,10 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/mysql"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/safety"
@@ -160,7 +160,7 @@ func TestGetPlannerRejectsFactoryReturningNil(t *testing.T) {
 func TestGenerateSchemaDiffSQL_UnsupportedDialectReturnsError(t *testing.T) {
 	c := qt.New(t)
 
-	nodes, err := planner.GenerateSchemaDiffAST(&difftypes.SchemaDiff{}, &goschema.Database{}, "db2")
+	nodes, err := planner.GenerateSchemaDiffAST(&difftypes.SchemaDiff{}, &schemamodel.Database{}, "db2")
 	c.Assert(nodes, qt.IsNil)
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedDialect)
 
@@ -168,7 +168,7 @@ func TestGenerateSchemaDiffSQL_UnsupportedDialectReturnsError(t *testing.T) {
 	c.Assert(err, qt.ErrorAs, &astPlanErr)
 	c.Assert(astPlanErr.Dialect, qt.Equals, "db2")
 
-	sql, err := planner.GenerateSchemaDiffSQL(&difftypes.SchemaDiff{}, &goschema.Database{}, "db2")
+	sql, err := planner.GenerateSchemaDiffSQL(&difftypes.SchemaDiff{}, &schemamodel.Database{}, "db2")
 	c.Assert(sql, qt.Equals, "")
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedDialect)
 
@@ -184,7 +184,7 @@ func TestGenerateSchemaDiffAST_WrapsPlannerFailures(t *testing.T) {
 		{TableName: "users", ColumnsRemoved: []string{"name"}},
 	}}
 
-	nodes, err := planner.GenerateSchemaDiffAST(diff, &goschema.Database{}, platform.SQLite)
+	nodes, err := planner.GenerateSchemaDiffAST(diff, &schemamodel.Database{}, platform.SQLite)
 
 	c.Assert(nodes, qt.IsNil)
 	var planErr *ptaherr.PlanError
@@ -259,7 +259,7 @@ func nextExternalPlannerDialect(prefix string) string {
 
 func (p externalPlanner) GenerateMigrationAST(
 	_ *difftypes.SchemaDiff,
-	_ *goschema.Database,
+	_ *schemamodel.Database,
 ) ([]ast.Node, error) {
 	return []ast.Node{ast.NewComment("external planner")}, nil
 }
@@ -267,11 +267,11 @@ func (p externalPlanner) GenerateMigrationAST(
 func TestGeneratedNarrowingTypeChangeIsDestructive(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: "users", StructName: "User"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{Name: "name", Type: "VARCHAR(100)", StructName: "User"},
 		},
 	}
@@ -286,12 +286,12 @@ func TestGeneratedNarrowingTypeChangeIsDestructive(t *testing.T) {
 		},
 	}
 
-	diff := schemadiff.Compare(generated, database)
+	diff := schemadiff.Compare(desired, database)
 	c.Assert(diff.TablesModified, qt.HasLen, 1)
 	c.Assert(diff.TablesModified[0].ColumnsModified, qt.HasLen, 1)
 	c.Assert(diff.TablesModified[0].ColumnsModified[0].Changes["type"], qt.Equals, "VARCHAR(255) -> VARCHAR(100)")
 
-	nodes, err := planner.GenerateSchemaDiffAST(diff, generated, platform.Postgres)
+	nodes, err := planner.GenerateSchemaDiffAST(diff, desired, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	assessments, err := safety.AssessRendered(nodes, platform.Postgres)
 	c.Assert(err, qt.IsNil)
@@ -307,7 +307,7 @@ func TestGeneratedRLSPolicyRemovalIsDestructive(t *testing.T) {
 		},
 	}
 
-	nodes, err := planner.GenerateSchemaDiffAST(diff, &goschema.Database{}, platform.Postgres)
+	nodes, err := planner.GenerateSchemaDiffAST(diff, &schemamodel.Database{}, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	assessments, err := safety.AssessRendered(nodes, platform.Postgres)
 	c.Assert(err, qt.IsNil)
@@ -318,10 +318,10 @@ func TestGeneratedRLSPolicyRemovalIsDestructive(t *testing.T) {
 
 func TestGenerateMigrationAST(t *testing.T) {
 	tests := []struct {
-		name      string
-		dialect   string
-		diff      *difftypes.SchemaDiff
-		generated *goschema.Database
+		name    string
+		dialect string
+		diff    *difftypes.SchemaDiff
+		desired *schemamodel.Database
 	}{
 		{
 			name:    "postgres migration generation",
@@ -329,11 +329,11 @@ func TestGenerateMigrationAST(t *testing.T) {
 			diff: &difftypes.SchemaDiff{
 				TablesAdded: []string{"users"},
 			},
-			generated: &goschema.Database{
-				Tables: []goschema.Table{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{Name: "users", StructName: "User"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{Name: "id", Type: "SERIAL", StructName: "User", Primary: true},
 				},
 			},
@@ -344,11 +344,11 @@ func TestGenerateMigrationAST(t *testing.T) {
 			diff: &difftypes.SchemaDiff{
 				TablesAdded: []string{"users"},
 			},
-			generated: &goschema.Database{
-				Tables: []goschema.Table{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{Name: "users", StructName: "User"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{Name: "id", Type: "INT", StructName: "User", Primary: true, AutoInc: true},
 				},
 			},
@@ -359,7 +359,7 @@ func TestGenerateMigrationAST(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			nodes, err := planner.GenerateSchemaDiffAST(tt.diff, tt.generated, tt.dialect)
+			nodes, err := planner.GenerateSchemaDiffAST(tt.diff, tt.desired, tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.IsNotNil)
 			c.Assert(nodes, qt.HasLen, 1) // Should have one CREATE TABLE statement

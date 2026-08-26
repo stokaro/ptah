@@ -13,8 +13,8 @@ import (
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
 	"go.5x5.cz/ptah/internal/atlasreport"
@@ -102,10 +102,10 @@ type DiffOptions struct {
 	// ValidateDesiredSchema applies a caller-selected policy after the desired
 	// source is resolved and before migration-directory planning. Nil accepts
 	// every modeled object.
-	ValidateDesiredSchema func(*goschema.Database) error
+	ValidateDesiredSchema func(*schemamodel.Database) error
 	// ValidateInspectedSchema replaces ValidateDesiredSchema for live database
 	// and replayed migration-directory desired states.
-	ValidateInspectedSchema func(*goschema.Database) error
+	ValidateInspectedSchema func(*schemamodel.Database) error
 	// ValidateLiveObject applies a caller-selected policy to supplemental
 	// catalog objects in live desired sources and both replayed database states.
 	// Nil performs no supplemental catalog reads.
@@ -153,7 +153,7 @@ type DiffOptions struct {
 // preserving the dependency direction between the packages.
 type BidirectionalPlanInput struct {
 	Diff                  *difftypes.SchemaDiff
-	DesiredSchema         *goschema.Database
+	DesiredSchema         *schemamodel.Database
 	CurrentSchema         *catalog.Database
 	Dialect               string
 	Capabilities          capability.Capabilities
@@ -526,7 +526,7 @@ func resolveDesiredState(
 // and renders the migration file contents for one diff run — both directions.
 func planDiffFileContents(
 	diff *difftypes.SchemaDiff,
-	desired *goschema.Database,
+	desired *schemamodel.Database,
 	current *catalog.Database,
 	info catalog.ServerInfo,
 	format string,
@@ -637,7 +637,7 @@ func compareReplayedState(
 	runtime diffRuntime,
 	schemas []string,
 	defaultSchema string,
-	desired *goschema.Database,
+	desired *schemamodel.Database,
 	diagnostics io.Writer,
 	validateLiveObject func(atlasschema.LiveSchemaObject) error,
 	policy atlasschema.DiffPolicy,

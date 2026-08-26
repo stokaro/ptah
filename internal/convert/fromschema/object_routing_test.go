@@ -10,7 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 )
 
@@ -65,45 +65,45 @@ func countNodes[T ast.Node](statements []ast.Node) int {
 // instead of as a standalone type, so the enum node count legitimately differs
 // by dialect -- the object is still emitted, inside the column -- and that is the
 // one modeling difference this comparison must not mistake for a drop.
-func routingFixture() goschema.Database {
+func routingFixture() schemamodel.Database {
 	start := int64(1000)
-	return goschema.Database{
-		Extensions:     []goschema.Extension{{Name: "pgcrypto"}},
-		Sequences:      []goschema.Sequence{{Name: "seq_probe", AsType: "bigint", Start: &start}},
-		Domains:        []goschema.Domain{{Name: "domain_probe", BaseType: "TEXT"}},
-		CompositeTypes: []goschema.CompositeType{{Name: "composite_probe", Fields: []goschema.CompositeTypeField{{Name: "street", Type: "TEXT"}}}},
-		Ranges:         []goschema.Range{{Name: "range_probe", Subtype: "float8"}},
-		Roles:          []goschema.Role{{Name: "role_probe", Login: true, Inherit: true}},
-		Tables:         []goschema.Table{{StructName: "T", Name: "table_probe"}},
-		Fields: []goschema.Field{
+	return schemamodel.Database{
+		Extensions:     []schemamodel.Extension{{Name: "pgcrypto"}},
+		Sequences:      []schemamodel.Sequence{{Name: "seq_probe", AsType: "bigint", Start: &start}},
+		Domains:        []schemamodel.Domain{{Name: "domain_probe", BaseType: "TEXT"}},
+		CompositeTypes: []schemamodel.CompositeType{{Name: "composite_probe", Fields: []schemamodel.CompositeField{{Name: "street", Type: "TEXT"}}}},
+		Ranges:         []schemamodel.Range{{Name: "range_probe", Subtype: "float8"}},
+		Roles:          []schemamodel.Role{{Name: "role_probe", Login: true, Inherit: true}},
+		Tables:         []schemamodel.Table{{StructName: "T", Name: "table_probe"}},
+		Fields: []schemamodel.Field{
 			{StructName: "T", Name: "id", Type: "BIGINT", Primary: true},
 			{StructName: "T", Name: "touched", Type: "TIMESTAMP", Nullable: true},
 		},
-		Functions:         []goschema.Function{{Name: "func_probe", Returns: "integer", Language: "sql", Body: "SELECT 1;"}},
-		Views:             []goschema.View{{StructName: "V", Name: "view_probe", Body: "SELECT id FROM table_probe"}},
-		MaterializedViews: []goschema.MaterializedView{{StructName: "MV", Name: "matview_probe", Body: "SELECT id FROM table_probe"}},
-		Synonyms:          []goschema.Synonym{{StructName: "SY", Name: "synonym_probe", Target: "dbo.table_probe"}},
-		Hypertables: []goschema.Hypertable{{
+		Functions:         []schemamodel.Function{{Name: "func_probe", Returns: "integer", Language: "sql", Body: "SELECT 1;"}},
+		Views:             []schemamodel.View{{StructName: "V", Name: "view_probe", Body: "SELECT id FROM table_probe"}},
+		MaterializedViews: []schemamodel.MaterializedView{{StructName: "MV", Name: "matview_probe", Body: "SELECT id FROM table_probe"}},
+		Synonyms:          []schemamodel.Synonym{{StructName: "SY", Name: "synonym_probe", Target: "dbo.table_probe"}},
+		Hypertables: []schemamodel.Hypertable{{
 			StructName: "HY", Table: "table_probe", Column: "n",
 		}},
-		ContinuousAggregates: []goschema.ContinuousAggregate{{
+		ContinuousAggregates: []schemamodel.ContinuousAggregate{{
 			StructName: "CA", Name: "aggregate_probe",
 			Body: "SELECT id FROM table_probe",
 		}},
-		ExtendedProperties: []goschema.ExtendedProperty{{
+		ExtendedProperties: []schemamodel.ExtendedProperty{{
 			StructName: "XP", Name: "property_probe", Schema: "dbo",
 			Table: "table_probe", Value: "probe",
 		}},
-		Triggers: []goschema.Trigger{{
+		Triggers: []schemamodel.Trigger{{
 			StructName: "TR", Name: "trigger_probe", Table: "table_probe",
 			Timing: "AFTER", Event: "INSERT", ForEach: "ROW", Body: "SELECT 1",
 		}},
-		RLSEnabledTables: []goschema.RLSEnabledTable{{StructName: "S", Table: "table_probe"}},
-		RLSPolicies: []goschema.RLSPolicy{{
+		RLSEnabledTables: []schemamodel.RLSEnabledTable{{StructName: "S", Table: "table_probe"}},
+		RLSPolicies: []schemamodel.RLSPolicy{{
 			StructName: "S", Name: "policy_probe", Table: "table_probe",
 			PolicyFor: "SELECT", ToRoles: "role_probe", UsingExpression: "true",
 		}},
-		Grants: []goschema.Grant{{
+		Grants: []schemamodel.Grant{{
 			StructName: "G", Role: "role_probe", Privileges: []string{"SELECT"}, OnTable: "table_probe",
 		}},
 	}
@@ -160,7 +160,7 @@ func missingRoutedObjects(spellings []string) []string {
 // The grid is only as complete as the fixture. A kind the fixture does not
 // declare is a kind the comparison cannot lose, so a gate reintroduced for it
 // would pass unnoticed -- which is how the earlier per-instance fixes each left
-// the class open. This reads the collections goschema.Database actually has and
+// the class open. This reads the collections schemamodel.Database actually has and
 // requires every one of them to be either declared by the fixture or named here
 // with a reason, so a new object kind added to Database fails this test until
 // someone decides which it is.
@@ -192,23 +192,23 @@ func TestFromDatabase_TheRoutingFixtureCoversEveryDeclaredCollection(t *testing.
 	})
 
 	c.Assert(uncovered, qt.HasLen, 0,
-		qt.Commentf("goschema.Database collections the routing fixture neither declares nor excuses: %s",
+		qt.Commentf("schemamodel.Database collections the routing fixture neither declares nor excuses: %s",
 			strings.Join(uncovered, ", ")))
 
 	// Control on the control: the reflection really found the collections. An
 	// extractor returning nothing would make the filter above trivially empty.
 	c.Assert(len(all) > len(notObjectCollections), qt.IsTrue,
-		qt.Commentf("reflection found %d fields on goschema.Database", len(all)))
+		qt.Commentf("reflection found %d fields on schemamodel.Database", len(all)))
 	c.Assert(declared, qt.Contains, "Sequences")
 	c.Assert(declared, qt.Contains, "Domains")
 	c.Assert(declared, qt.Contains, "Grants")
 }
 
-// allCollectionNames lists every exported field of goschema.Database, read from
+// allCollectionNames lists every exported field of schemamodel.Database, read from
 // the type rather than copied, so a new collection appears here the day it is
 // added.
 func allCollectionNames() []string {
-	databaseType := reflect.TypeFor[goschema.Database]()
+	databaseType := reflect.TypeFor[schemamodel.Database]()
 	names := make([]string, 0, databaseType.NumField())
 	for field := range databaseType.Fields() {
 		names = append(names, field.Name)
@@ -219,7 +219,7 @@ func allCollectionNames() []string {
 // declaredCollectionNames lists the exported fields the routing fixture actually
 // populates. A field left at its zero value declares no object, so naming it in
 // routedKinds would assert nothing.
-func declaredCollectionNames(database goschema.Database) []string {
+func declaredCollectionNames(database schemamodel.Database) []string {
 	value := reflect.ValueOf(database)
 	names := make([]string, 0, value.NumField())
 	for i := range value.NumField() {

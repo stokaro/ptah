@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -53,8 +53,8 @@ func TestGenerateSchemaDiffSQL_SQLiteRebuildUsesStructuralIdentity(t *testing.T)
 
 func TestGenerateSchemaDiffSQL_SQLiteTableCreationUsesStructuralIdentity(t *testing.T) {
 	c := qt.New(t)
-	generated := referenceCollisionSchema()
-	generated.Constraints = []goschema.Constraint{
+	desired := referenceCollisionSchema()
+	desired.Constraints = []schemamodel.Constraint{
 		{
 			StructName:      "Literal",
 			Name:            "literal_check",
@@ -74,7 +74,7 @@ func TestGenerateSchemaDiffSQL_SQLiteTableCreationUsesStructuralIdentity(t *test
 		TablesAdded: []string{`"tenant.data"`, "tenant.data"},
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, generated, platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.SQLite)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Count(sql, "CREATE TABLE"), qt.Equals, 2)
@@ -106,10 +106,10 @@ func TestGenerateSchemaDiffSQL_ForeignKeyPreservesStructuralIdentity(t *testing.
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			generated := referenceCollisionForeignKeySchema()
+			desired := referenceCollisionForeignKeySchema()
 			sql, err := planner.GenerateSchemaDiffSQL(
 				&difftypes.SchemaDiff{TablesAdded: []string{`"tenant.data"`, "tenant.data"}},
-				generated,
+				desired,
 				tt.dialect,
 			)
 
@@ -122,12 +122,12 @@ func TestGenerateSchemaDiffSQL_ForeignKeyPreservesStructuralIdentity(t *testing.
 
 func TestGenerateSchemaDiffSQL_MySQLSelfForeignKeyTypeChangePreservesStructuralIdentity(t *testing.T) {
 	c := qt.New(t)
-	generated := referenceCollisionSchema()
-	generated.Fields = append(generated.Fields,
-		goschema.Field{StructName: "Qualified", Name: "id", Type: "BIGINT", Primary: true},
-		goschema.Field{StructName: "Qualified", Name: "parent_id", Type: "BIGINT", Nullable: true},
+	desired := referenceCollisionSchema()
+	desired.Fields = append(desired.Fields,
+		schemamodel.Field{StructName: "Qualified", Name: "id", Type: "BIGINT", Primary: true},
+		schemamodel.Field{StructName: "Qualified", Name: "parent_id", Type: "BIGINT", Nullable: true},
 	)
-	generated.SelfReferencingForeignKeys = map[string][]goschema.SelfReferencingFK{
+	desired.SelfReferencingForeignKeys = map[string][]schemamodel.SelfReferencingFK{
 		"tenant.data": {{
 			FieldName:      "parent_id",
 			Foreign:        "tenant.data(id)",
@@ -144,7 +144,7 @@ func TestGenerateSchemaDiffSQL_MySQLSelfForeignKeyTypeChangePreservesStructuralI
 		}},
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, generated, platform.MySQL)
+	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.MySQL)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "ALTER TABLE `tenant`.`data` DROP FOREIGN KEY `fk_qualified_parent`")
@@ -154,13 +154,13 @@ func TestGenerateSchemaDiffSQL_MySQLSelfForeignKeyTypeChangePreservesStructuralI
 
 func TestGenerateSchemaDiffSQL_PostgresEnumRemovalPreservesLiteralDotIdentity(t *testing.T) {
 	c := qt.New(t)
-	generated := &goschema.Database{
-		Enums: []goschema.Enum{{Name: `"tenant.data"`, Values: []string{"active"}}},
-		Tables: []goschema.Table{{
+	desired := &schemamodel.Database{
+		Enums: []schemamodel.Enum{{Name: `"tenant.data"`, Values: []string{"active"}}},
+		Tables: []schemamodel.Table{{
 			StructName: "Literal",
 			Name:       "tenant.data",
 		}},
-		Fields: []goschema.Field{{
+		Fields: []schemamodel.Field{{
 			StructName: "Literal",
 			Name:       "status",
 			Type:       `"tenant.data"`,
@@ -173,7 +173,7 @@ func TestGenerateSchemaDiffSQL_PostgresEnumRemovalPreservesLiteralDotIdentity(t 
 		}},
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, generated, platform.Postgres)
+	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.Postgres)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `ALTER TYPE "tenant.data" RENAME TO "tenant.data__ptah_old"`)
@@ -188,33 +188,33 @@ func TestGenerateSchemaDiffSQL_PostgresSequenceRemovalPreservesLiteralDotIdentit
 		SequencesRemoved: []string{`"tenant.data"`},
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, &goschema.Database{}, platform.Postgres)
+	sql, err := planner.GenerateSchemaDiffSQL(diff, &schemamodel.Database{}, platform.Postgres)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `DROP SEQUENCE IF EXISTS "tenant.data"`)
 	c.Assert(sql, qt.Not(qt.Contains), `"tenant"."data"`)
 }
 
-func referenceCollisionSchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func referenceCollisionSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Literal", Name: "tenant.data"},
 			{StructName: "Qualified", Schema: "tenant", Name: "data"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Literal", Name: "payload", Type: "TEXT"},
 			{StructName: "Qualified", Name: "payload", Type: "BIGINT"},
 		},
 	}
 }
 
-func referenceCollisionForeignKeySchema() *goschema.Database {
-	database := &goschema.Database{
-		Tables: []goschema.Table{
+func referenceCollisionForeignKeySchema() *schemamodel.Database {
+	database := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Literal", Name: "tenant.data"},
 			{StructName: "Qualified", Schema: "tenant", Name: "data"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Literal", Name: "id", Type: "INTEGER", Primary: true},
 			{
 				StructName: "Literal",
@@ -225,6 +225,6 @@ func referenceCollisionForeignKeySchema() *goschema.Database {
 			{StructName: "Qualified", Name: "id", Type: "INTEGER", Primary: true},
 		},
 	}
-	goschema.Finalize(database)
+	schemamodel.Finalize(database)
 	return database
 }

@@ -9,7 +9,7 @@ import (
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 	"github.com/zclconf/go-cty/cty"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/matviewrefresh"
 	"go.5x5.cz/ptah/internal/tableref"
 )
@@ -26,7 +26,7 @@ func (p *parser) parseExtension(block *hclsyntax.Block) error {
 	if err != nil {
 		return err
 	}
-	p.db.Extensions = append(p.db.Extensions, goschema.Extension{
+	p.db.Extensions = append(p.db.Extensions, schemamodel.Extension{
 		Name:        name,
 		Schema:      schema,
 		IfNotExists: ifNotExists,
@@ -97,7 +97,7 @@ func (p *parser) parseFunction(block *hclsyntax.Block) error {
 	return p.parseRoutine(block, routineBlockFunction, "")
 }
 
-// parseProcedure reads a `procedure` block into the same [goschema.Function]
+// parseProcedure reads a `procedure` block into the same [schemamodel.Function]
 // the `function` block produces, differing in the kind it stamps.
 //
 // The block exists because the kind had nowhere else to live. A routine's kind
@@ -113,7 +113,7 @@ func (p *parser) parseFunction(block *hclsyntax.Block) error {
 // nothing, and a description that states otherwise is describing an object the
 // engine cannot create.
 func (p *parser) parseProcedure(block *hclsyntax.Block) error {
-	return p.parseRoutine(block, routineBlockProcedure, goschema.FunctionKindProcedure)
+	return p.parseRoutine(block, routineBlockProcedure, schemamodel.FunctionKindProcedure)
 }
 
 // The two spellings of a routine block. Named because the parser labels errors
@@ -150,7 +150,7 @@ func (p *parser) parseRoutine(block *hclsyntax.Block, blockType, kind string) er
 	if body == "" {
 		return p.blockError(block, "%s %q requires as", blockType, name)
 	}
-	function := goschema.Function{
+	function := schemamodel.Function{
 		Name:       tableref.Canonical(schema, name),
 		Kind:       kind,
 		Parameters: parameters,
@@ -172,7 +172,7 @@ func (p *parser) parseRoutine(block *hclsyntax.Block, blockType, kind string) er
 
 // routineReturns reads the declared return type, which only a function has.
 func (p *parser) routineReturns(block *hclsyntax.Block, kind string) string {
-	if kind == goschema.FunctionKindProcedure {
+	if kind == schemamodel.FunctionKindProcedure {
 		return ""
 	}
 	return p.typeAttrString(block.Body.Attributes["return"])
@@ -222,7 +222,7 @@ func (p *parser) parseView(block *hclsyntax.Block) error {
 	if err != nil {
 		return err
 	}
-	p.db.Views = append(p.db.Views, goschema.View{
+	p.db.Views = append(p.db.Views, schemamodel.View{
 		Name:       tableref.Canonical(schema, name),
 		Body:       body,
 		WithCheck:  block.Body.Attributes["check_option"] != nil,
@@ -257,7 +257,7 @@ func (p *parser) parseMaterializedView(block *hclsyntax.Block) error {
 	if _, declared := block.Body.Attributes[matviewrefresh.Attribute]; declared {
 		return p.blockError(block, "%w", matviewrefresh.Refuse(tableref.Canonical(schema, name)))
 	}
-	p.db.MaterializedViews = append(p.db.MaterializedViews, goschema.MaterializedView{
+	p.db.MaterializedViews = append(p.db.MaterializedViews, schemamodel.MaterializedView{
 		Name:    tableref.Canonical(schema, name),
 		Body:    body,
 		Comment: p.optionalString(block.Body.Attributes["comment"]),
@@ -285,7 +285,7 @@ func (p *parser) parseTrigger(block *hclsyntax.Block) error {
 	if body == "" {
 		return p.blockError(block, "trigger %q requires as", name)
 	}
-	p.db.Triggers = append(p.db.Triggers, goschema.Trigger{
+	p.db.Triggers = append(p.db.Triggers, schemamodel.Trigger{
 		Name:    name,
 		Table:   table,
 		Timing:  eventSpec.timing,
@@ -348,7 +348,7 @@ func (p *parser) parsePolicy(block *hclsyntax.Block) error {
 	if table == "" {
 		return p.blockError(block, "policy %q requires on", name)
 	}
-	p.db.RLSPolicies = append(p.db.RLSPolicies, goschema.RLSPolicy{
+	p.db.RLSPolicies = append(p.db.RLSPolicies, schemamodel.RLSPolicy{
 		Name:                name,
 		Table:               table,
 		PolicyFor:           p.optionalString(block.Body.Attributes["for"]),
@@ -360,21 +360,21 @@ func (p *parser) parsePolicy(block *hclsyntax.Block) error {
 	return nil
 }
 
-func (p *parser) parseRowSecurity(table *goschema.Table, block *hclsyntax.Block) (goschema.RLSEnabledTable, error) {
+func (p *parser) parseRowSecurity(table *schemamodel.Table, block *hclsyntax.Block) (schemamodel.RLSEnabledTable, error) {
 	if len(block.Labels) != 0 {
-		return goschema.RLSEnabledTable{}, p.blockError(block, "row_security block does not accept labels")
+		return schemamodel.RLSEnabledTable{}, p.blockError(block, "row_security block does not accept labels")
 	}
 	if err := p.rejectUnsupportedRowSecurityAttrs(block); err != nil {
-		return goschema.RLSEnabledTable{}, err
+		return schemamodel.RLSEnabledTable{}, err
 	}
 	enabled, err := p.boolAttr(block, "enabled", "row_security", false)
 	if err != nil {
-		return goschema.RLSEnabledTable{}, err
+		return schemamodel.RLSEnabledTable{}, err
 	}
 	if !enabled {
-		return goschema.RLSEnabledTable{}, p.blockError(block, "row_security requires enabled = true")
+		return schemamodel.RLSEnabledTable{}, p.blockError(block, "row_security requires enabled = true")
 	}
-	return goschema.RLSEnabledTable{
+	return schemamodel.RLSEnabledTable{
 		StructName: table.StructName,
 		Table:      table.QualifiedName(),
 		Comment:    p.optionalString(block.Body.Attributes["comment"]),
@@ -397,7 +397,7 @@ func (p *parser) parseRole(block *hclsyntax.Block) error {
 	if err != nil {
 		return err
 	}
-	p.db.Roles = append(p.db.Roles, goschema.Role{
+	p.db.Roles = append(p.db.Roles, schemamodel.Role{
 		Name:        name,
 		Login:       attrs.login,
 		Password:    password,
@@ -470,7 +470,7 @@ func (p *parser) parsePermission(block *hclsyntax.Block) error {
 		return p.blockError(block, "permission requires privileges")
 	}
 	target := p.optionalRawExpr(block.Body.Attributes["for"])
-	grant := goschema.Grant{
+	grant := schemamodel.Grant{
 		Role:       roleTargetName(p.optionalRawExpr(block.Body.Attributes["to"])),
 		Privileges: privileges,
 		Comment:    p.optionalString(block.Body.Attributes["comment"]),
@@ -555,7 +555,7 @@ func (p *parser) parseManagedDataBody(block *hclsyntax.Block) error {
 	if file == "" {
 		return p.blockError(block, "data requires file")
 	}
-	p.db.ManagedData = append(p.db.ManagedData, goschema.ManagedData{
+	p.db.ManagedData = append(p.db.ManagedData, schemamodel.ManagedData{
 		Table:     tableRef.Name,
 		Schema:    tableRef.Schema,
 		Keys:      keys,
@@ -918,7 +918,7 @@ func bracketObjectRefName(raw, kind string) (string, bool) {
 	return unquoted, true
 }
 
-// parseSequence parses a top-level sequence block into a goschema.Sequence.
+// parseSequence parses a top-level sequence block into a schemamodel.Sequence.
 //
 // The name and optional schema come from the block labels (one label = name,
 // two labels = schema and name) or from a schema attribute. The integer bounds
@@ -960,7 +960,7 @@ func (p *parser) parseSequence(block *hclsyntax.Block) error {
 	if err != nil {
 		return err
 	}
-	seq := goschema.Sequence{
+	seq := schemamodel.Sequence{
 		Name:        name,
 		Schema:      schema,
 		AsType:      p.optionalString(block.Body.Attributes["type"]),
@@ -978,7 +978,7 @@ func (p *parser) parseSequence(block *hclsyntax.Block) error {
 	// int4, ...) map to their canonical spelling, matching the Go-annotation
 	// path and keeping the AS clause from churning against introspection.
 	seq.Canonicalize()
-	if !goschema.IsValidSequenceType(seq.AsType) {
+	if !schemamodel.IsValidSequenceType(seq.AsType) {
 		return p.blockError(block, "sequence %q type %q is invalid; expected smallint, integer, or bigint", name, seq.AsType)
 	}
 	p.db.Sequences = append(p.db.Sequences, seq)
@@ -1004,7 +1004,7 @@ func (p *parser) rejectUnsupportedSequenceAttrs(block *hclsyntax.Block) error {
 	}, "sequence")
 }
 
-// parseDomain parses a top-level domain block into a goschema.Domain.
+// parseDomain parses a top-level domain block into a schemamodel.Domain.
 //
 // The base type is required. Nullability follows the column convention: null
 // defaults to true, so NOT NULL is expressed as null = false. A default may be
@@ -1026,7 +1026,7 @@ func (p *parser) parseDomain(block *hclsyntax.Block) error {
 	if err != nil {
 		return err
 	}
-	domain := goschema.Domain{
+	domain := schemamodel.Domain{
 		Name:     name,
 		Schema:   schema,
 		BaseType: baseType,
@@ -1061,7 +1061,7 @@ func (p *parser) rejectUnsupportedDomainAttrs(block *hclsyntax.Block) error {
 }
 
 // parseComposite parses a top-level composite block into a
-// goschema.CompositeType. The ordered fields come from nested field blocks,
+// schemamodel.CompositeType. The ordered fields come from nested field blocks,
 // each carrying a name label and a type attribute.
 func (p *parser) parseComposite(block *hclsyntax.Block) error {
 	schema, name, err := p.objectSchemaAndName(block, "composite")
@@ -1078,7 +1078,7 @@ func (p *parser) parseComposite(block *hclsyntax.Block) error {
 	if len(fields) == 0 {
 		return p.blockError(block, "composite %q requires at least one field", name)
 	}
-	composite := goschema.CompositeType{
+	composite := schemamodel.CompositeType{
 		Name:    name,
 		Schema:  schema,
 		Fields:  fields,
@@ -1102,8 +1102,8 @@ func (p *parser) functionArgType(attr *hclsyntax.Attribute) string {
 	return p.optionalRawExpr(attr)
 }
 
-func (p *parser) parseCompositeFields(block *hclsyntax.Block) ([]goschema.CompositeTypeField, error) {
-	var fields []goschema.CompositeTypeField
+func (p *parser) parseCompositeFields(block *hclsyntax.Block) ([]schemamodel.CompositeField, error) {
+	var fields []schemamodel.CompositeField
 	for _, nested := range block.Body.Blocks {
 		if nested.Type != "field" {
 			if err := p.rejectUnsupportedBlock(nested, "composite"); err != nil {
@@ -1128,7 +1128,7 @@ func (p *parser) parseCompositeFields(block *hclsyntax.Block) ([]goschema.Compos
 		// multi-word types like "double precision" have no bare HCL spelling,
 		// so they must be written as a string, while bare references (text) and
 		// function-call shapes (numeric(10,2)) fall back to the raw source.
-		fields = append(fields, goschema.CompositeTypeField{
+		fields = append(fields, schemamodel.CompositeField{
 			Name: nested.Labels[0],
 			Type: p.typeAttrString(typeAttr),
 		})
@@ -1143,7 +1143,7 @@ func (p *parser) rejectUnsupportedCompositeAttrs(block *hclsyntax.Block) error {
 	}, "composite")
 }
 
-// parseRange parses a top-level range block into a goschema.Range. The subtype
+// parseRange parses a top-level range block into a schemamodel.Range. The subtype
 // is required; the remaining attributes are optional PostgreSQL range options.
 func (p *parser) parseRange(block *hclsyntax.Block) error {
 	schema, name, err := p.objectSchemaAndName(block, "range")
@@ -1157,7 +1157,7 @@ func (p *parser) parseRange(block *hclsyntax.Block) error {
 	if subtype == "" {
 		return p.blockError(block, "range %q requires subtype", name)
 	}
-	rng := goschema.Range{
+	rng := schemamodel.Range{
 		Name:           name,
 		Schema:         schema,
 		Subtype:        subtype,
@@ -1178,7 +1178,7 @@ func (p *parser) parseRange(block *hclsyntax.Block) error {
 // empty string, which is how a declaration says the type has none of them.
 //
 // An attribute the block omits and one written `subtype_diff = ""` both reach
-// the same empty string in [goschema.Range], and only the attribute's presence
+// the same empty string in [schemamodel.Range], and only the attribute's presence
 // separates them. Omission says nothing about the attribute, so adopting Ptah
 // over a database whose range carries a SUBTYPE_DIFF does not plan its removal
 // (stokaro/ptah#2223).
@@ -1257,7 +1257,7 @@ func (p *parser) optionalInt64(block *hclsyntax.Block, name, label string) (*int
 	return &result, nil
 }
 
-// parseSynonym parses a top-level synonym block into a goschema.Synonym.
+// parseSynonym parses a top-level synonym block into a schemamodel.Synonym.
 //
 // `target` is required: a synonym that stands for nothing is not one, and the
 // server has no default. The name and optional schema come from the block
@@ -1280,7 +1280,7 @@ func (p *parser) parseSynonym(block *hclsyntax.Block) error {
 	if strings.TrimSpace(target) == "" {
 		return p.blockError(block, "synonym %q requires a target", name)
 	}
-	p.db.Synonyms = append(p.db.Synonyms, goschema.Synonym{
+	p.db.Synonyms = append(p.db.Synonyms, schemamodel.Synonym{
 		Name:    name,
 		Schema:  schema,
 		Target:  target,
@@ -1298,7 +1298,7 @@ func (p *parser) rejectUnsupportedSynonymAttrs(block *hclsyntax.Block) error {
 }
 
 // parseExtendedProperty parses a top-level extended_property block into a
-// goschema.ExtendedProperty.
+// schemamodel.ExtendedProperty.
 //
 // The address is refused exactly where the SQL Server renderer refuses it: a
 // `table` needs the `schema` that holds it and a `column` needs its `table`,
@@ -1341,7 +1341,7 @@ func (p *parser) parseExtendedProperty(block *hclsyntax.Block) error {
 	if err != nil {
 		return err
 	}
-	p.db.ExtendedProperties = append(p.db.ExtendedProperties, goschema.ExtendedProperty{
+	p.db.ExtendedProperties = append(p.db.ExtendedProperties, schemamodel.ExtendedProperty{
 		Name:    name,
 		Schema:  schema,
 		Table:   table,
@@ -1363,7 +1363,7 @@ func (p *parser) rejectUnsupportedExtendedPropertyAttrs(block *hclsyntax.Block) 
 }
 
 // parseHypertable parses a top-level hypertable block into a
-// goschema.Hypertable.
+// schemamodel.Hypertable.
 //
 // The block's label is the TABLE it partitions, not a name of its own: a
 // hypertable has no name, and `timescaledb_information.hypertables` is keyed by
@@ -1397,7 +1397,7 @@ func (p *parser) parseHypertable(block *hclsyntax.Block) error {
 	if err != nil {
 		return err
 	}
-	p.db.Hypertables = append(p.db.Hypertables, goschema.Hypertable{
+	p.db.Hypertables = append(p.db.Hypertables, schemamodel.Hypertable{
 		Table:         qualifyHypertableName(schema, table),
 		Column:        column,
 		ChunkInterval: chunkInterval,
@@ -1408,7 +1408,7 @@ func (p *parser) parseHypertable(block *hclsyntax.Block) error {
 }
 
 // qualifyHypertableName folds the schema back into the table name, which is how
-// [go.5x5.cz/ptah/core/goschema.Hypertable] carries it: the declaration names a
+// [go.5x5.cz/ptah/core/schemamodel.Hypertable] carries it: the declaration names a
 // TABLE, and a table is named the way every other reference to one is.
 func qualifyHypertableName(schema, table string) string {
 	if strings.TrimSpace(schema) == "" {
@@ -1428,7 +1428,7 @@ func (p *parser) rejectUnsupportedHypertableAttrs(block *hclsyntax.Block) error 
 }
 
 // parseContinuousAggregate parses a top-level continuous_aggregate block into a
-// goschema.ContinuousAggregate.
+// schemamodel.ContinuousAggregate.
 //
 // Unlike a hypertable this object has a name of its own, so the block's label
 // is that name and `schema` says where it lives -- the same shape a view block
@@ -1455,7 +1455,7 @@ func (p *parser) parseContinuousAggregate(block *hclsyntax.Block) error {
 		return p.blockError(block,
 			"continuous_aggregate %q requires an `as` body; a continuous aggregate is its SELECT", name)
 	}
-	p.db.ContinuousAggregates = append(p.db.ContinuousAggregates, goschema.ContinuousAggregate{
+	p.db.ContinuousAggregates = append(p.db.ContinuousAggregates, schemamodel.ContinuousAggregate{
 		Name:             name,
 		Schema:           schema,
 		Body:             body,

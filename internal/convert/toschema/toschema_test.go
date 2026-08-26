@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/toschema"
 )
 
@@ -15,13 +15,13 @@ func TestToField_BasicProperties(t *testing.T) {
 		name       string
 		column     *ast.ColumnNode
 		structName string
-		expected   func(goschema.Field) bool
+		expected   func(schemamodel.Field) bool
 	}{
 		{
 			name:       "basic field with name and type",
 			column:     ast.NewColumn("email", "VARCHAR(255)"),
 			structName: "User",
-			expected: func(field goschema.Field) bool {
+			expected: func(field schemamodel.Field) bool {
 				return field.Name == "email" &&
 					field.Type == "VARCHAR(255)" &&
 					field.StructName == "User" &&
@@ -32,7 +32,7 @@ func TestToField_BasicProperties(t *testing.T) {
 			name:       "non-nullable field",
 			column:     ast.NewColumn("id", "INTEGER").SetNotNull(),
 			structName: "User",
-			expected: func(field goschema.Field) bool {
+			expected: func(field schemamodel.Field) bool {
 				return field.Name == "id" &&
 					field.Type == "INTEGER" &&
 					field.Nullable == false
@@ -42,7 +42,7 @@ func TestToField_BasicProperties(t *testing.T) {
 			name:       "primary key field",
 			column:     ast.NewColumn("id", "SERIAL").SetPrimary(),
 			structName: "User",
-			expected: func(field goschema.Field) bool {
+			expected: func(field schemamodel.Field) bool {
 				return field.Name == "id" &&
 					field.Primary == true
 			},
@@ -51,7 +51,7 @@ func TestToField_BasicProperties(t *testing.T) {
 			name:       "unique field",
 			column:     ast.NewColumn("username", "VARCHAR(50)").SetUnique(),
 			structName: "User",
-			expected: func(field goschema.Field) bool {
+			expected: func(field schemamodel.Field) bool {
 				return field.Name == "username" &&
 					field.Unique == true
 			},
@@ -60,7 +60,7 @@ func TestToField_BasicProperties(t *testing.T) {
 			name:       "auto-increment field",
 			column:     ast.NewColumn("id", "INTEGER").SetAutoIncrement(),
 			structName: "User",
-			expected: func(field goschema.Field) bool {
+			expected: func(field schemamodel.Field) bool {
 				return field.Name == "id" &&
 					field.AutoInc == true
 			},
@@ -69,7 +69,7 @@ func TestToField_BasicProperties(t *testing.T) {
 			name:       "identity field",
 			column:     ast.NewColumn("id", "INTEGER").SetIdentity("ALWAYS", "10", "5").SetIdentityOptions("START WITH 10 INCREMENT BY 5 CACHE 3"),
 			structName: "User",
-			expected: func(field goschema.Field) bool {
+			expected: func(field schemamodel.Field) bool {
 				return field.AutoInc == true &&
 					field.IdentityGeneration == "ALWAYS" &&
 					field.IdentityStart == "10" &&
@@ -81,7 +81,7 @@ func TestToField_BasicProperties(t *testing.T) {
 			name:       "generated field",
 			column:     ast.NewColumn("slug", "TEXT").SetGenerated("lower(name)", "STORED"),
 			structName: "User",
-			expected: func(field goschema.Field) bool {
+			expected: func(field schemamodel.Field) bool {
 				return field.GeneratedExpression == "lower(name)" &&
 					field.GeneratedKind == "STORED"
 			},
@@ -91,7 +91,7 @@ func TestToField_BasicProperties(t *testing.T) {
 			column: ast.NewColumn("updated_at", "TIMESTAMP").
 				SetUpdateExpression("CURRENT_TIMESTAMP"),
 			structName: "User",
-			expected: func(field goschema.Field) bool {
+			expected: func(field schemamodel.Field) bool {
 				return field.UpdateExpression == "CURRENT_TIMESTAMP"
 			},
 		},
@@ -101,7 +101,7 @@ func TestToField_BasicProperties(t *testing.T) {
 				SetCharset("hebrew").
 				SetCollate("hebrew_general_ci"),
 			structName: "User",
-			expected: func(field goschema.Field) bool {
+			expected: func(field schemamodel.Field) bool {
 				return field.Charset == "hebrew" &&
 					field.Collate == "hebrew_general_ci"
 			},
@@ -122,13 +122,13 @@ func TestToField_DefaultValues(t *testing.T) {
 		name       string
 		column     *ast.ColumnNode
 		structName string
-		expected   func(goschema.Field) bool
+		expected   func(schemamodel.Field) bool
 	}{
 		{
 			name:       "literal default value",
 			column:     ast.NewColumn("status", "VARCHAR(20)").SetDefault("'active'"),
 			structName: "User",
-			expected: func(field goschema.Field) bool {
+			expected: func(field schemamodel.Field) bool {
 				return field.Default == "'active'" && field.DefaultSet && field.DefaultExpr == ""
 			},
 		},
@@ -136,7 +136,7 @@ func TestToField_DefaultValues(t *testing.T) {
 			name:       "empty literal default value",
 			column:     ast.NewColumn("status", "VARCHAR(20)").SetDefault(""),
 			structName: "User",
-			expected: func(field goschema.Field) bool {
+			expected: func(field schemamodel.Field) bool {
 				return field.Default == "" && field.DefaultSet && field.DefaultExpr == ""
 			},
 		},
@@ -144,7 +144,7 @@ func TestToField_DefaultValues(t *testing.T) {
 			name:       "expression default value",
 			column:     ast.NewColumn("created_at", "TIMESTAMP").SetDefaultExpression("NOW()"),
 			structName: "User",
-			expected: func(field goschema.Field) bool {
+			expected: func(field schemamodel.Field) bool {
 				return field.DefaultExpr == "NOW()" && field.Default == ""
 			},
 		},
@@ -152,7 +152,7 @@ func TestToField_DefaultValues(t *testing.T) {
 			name:       "no default value",
 			column:     ast.NewColumn("description", "TEXT"),
 			structName: "User",
-			expected: func(field goschema.Field) bool {
+			expected: func(field schemamodel.Field) bool {
 				return field.Default == "" && !field.DefaultSet && field.DefaultExpr == ""
 			},
 		},
@@ -172,13 +172,13 @@ func TestToField_ForeignKeys(t *testing.T) {
 		name       string
 		column     *ast.ColumnNode
 		structName string
-		expected   func(goschema.Field) bool
+		expected   func(schemamodel.Field) bool
 	}{
 		{
 			name:       "foreign key with table and column",
 			column:     ast.NewColumn("user_id", "INTEGER").SetForeignKey("users", "id", ""),
 			structName: "Post",
-			expected: func(field goschema.Field) bool {
+			expected: func(field schemamodel.Field) bool {
 				return field.Foreign == "users(id)" && field.ForeignKeyName == ""
 			},
 		},
@@ -186,7 +186,7 @@ func TestToField_ForeignKeys(t *testing.T) {
 			name:       "foreign key with custom name",
 			column:     ast.NewColumn("user_id", "INTEGER").SetForeignKey("users", "id", "fk_posts_user"),
 			structName: "Post",
-			expected: func(field goschema.Field) bool {
+			expected: func(field schemamodel.Field) bool {
 				return field.Foreign == "users(id)" && field.ForeignKeyName == "fk_posts_user"
 			},
 		},
@@ -194,7 +194,7 @@ func TestToField_ForeignKeys(t *testing.T) {
 			name:       "foreign key with table only",
 			column:     ast.NewColumn("category_id", "INTEGER").SetForeignKey("categories", "", ""),
 			structName: "Product",
-			expected: func(field goschema.Field) bool {
+			expected: func(field schemamodel.Field) bool {
 				return field.Foreign == "categories"
 			},
 		},
@@ -202,7 +202,7 @@ func TestToField_ForeignKeys(t *testing.T) {
 			name:       "no foreign key",
 			column:     ast.NewColumn("title", "VARCHAR(255)"),
 			structName: "Post",
-			expected: func(field goschema.Field) bool {
+			expected: func(field schemamodel.Field) bool {
 				return field.Foreign == ""
 			},
 		},
@@ -222,13 +222,13 @@ func TestToField_CheckAndComment(t *testing.T) {
 		name       string
 		column     *ast.ColumnNode
 		structName string
-		expected   func(goschema.Field) bool
+		expected   func(schemamodel.Field) bool
 	}{
 		{
 			name:       "field with check constraint",
 			column:     ast.NewColumn("age", "INTEGER").SetCheck("age >= 0"),
 			structName: "User",
-			expected: func(field goschema.Field) bool {
+			expected: func(field schemamodel.Field) bool {
 				return field.Check == "age >= 0"
 			},
 		},
@@ -236,7 +236,7 @@ func TestToField_CheckAndComment(t *testing.T) {
 			name:       "field with comment",
 			column:     ast.NewColumn("email", "VARCHAR(255)").SetComment("User email address"),
 			structName: "User",
-			expected: func(field goschema.Field) bool {
+			expected: func(field schemamodel.Field) bool {
 				return field.Comment == "User email address"
 			},
 		},
@@ -246,7 +246,7 @@ func TestToField_CheckAndComment(t *testing.T) {
 				SetCheck("price > 0").
 				SetComment("Product price in USD"),
 			structName: "Product",
-			expected: func(field goschema.Field) bool {
+			expected: func(field schemamodel.Field) bool {
 				return field.Check == "price > 0" && field.Comment == "Product price in USD"
 			},
 		},
@@ -279,12 +279,12 @@ func TestToTable_BasicTable(t *testing.T) {
 		name           string
 		table          *ast.CreateTableNode
 		sourcePlatform string
-		expected       func(goschema.Table) bool
+		expected       func(schemamodel.Table) bool
 	}{
 		{
 			name:  "basic table",
 			table: ast.NewCreateTable("users"),
-			expected: func(table goschema.Table) bool {
+			expected: func(table schemamodel.Table) bool {
 				return table.Name == "users" &&
 					table.StructName == "User" &&
 					table.Comment == "" &&
@@ -298,7 +298,7 @@ func TestToTable_BasicTable(t *testing.T) {
 				table.Comment = "Product catalog"
 				return table
 			}(),
-			expected: func(table goschema.Table) bool {
+			expected: func(table schemamodel.Table) bool {
 				return table.Name == "products" &&
 					table.StructName == "Product" &&
 					table.Comment == "Product catalog"
@@ -307,7 +307,7 @@ func TestToTable_BasicTable(t *testing.T) {
 		{
 			name:  "table with engine",
 			table: ast.NewCreateTable("logs").SetOption("ENGINE", "InnoDB"),
-			expected: func(table goschema.Table) bool {
+			expected: func(table schemamodel.Table) bool {
 				return table.Name == "logs" &&
 					table.StructName == "Log" &&
 					table.Engine == "InnoDB"
@@ -322,7 +322,7 @@ func TestToTable_BasicTable(t *testing.T) {
 				table.Comment = "Product catalog"
 				return table
 			}(),
-			expected: func(table goschema.Table) bool {
+			expected: func(table schemamodel.Table) bool {
 				return table.Name == "products" &&
 					table.Engine == "InnoDB" &&
 					table.Comment == "Product catalog"
@@ -334,7 +334,7 @@ func TestToTable_BasicTable(t *testing.T) {
 				SetOption("STRICT", "true").
 				SetOption("WITHOUT_ROWID", "true"),
 			sourcePlatform: "sqlite",
-			expected: func(table goschema.Table) bool {
+			expected: func(table schemamodel.Table) bool {
 				return table.Name == "events" &&
 					table.Strict &&
 					table.WithoutRowID
@@ -346,7 +346,7 @@ func TestToTable_BasicTable(t *testing.T) {
 				SetOption("STRICT", "false").
 				SetOption("WITHOUT_ROWID", "false"),
 			sourcePlatform: "sqlite",
-			expected: func(table goschema.Table) bool {
+			expected: func(table schemamodel.Table) bool {
 				return table.Name == "events" &&
 					!table.Strict &&
 					!table.WithoutRowID
@@ -366,7 +366,7 @@ func TestToTable_BasicTable(t *testing.T) {
 				return table
 			}(),
 			sourcePlatform: "postgres",
-			expected: func(table goschema.Table) bool {
+			expected: func(table schemamodel.Table) bool {
 				return table.Partition != nil &&
 					table.Partition.Type == "RANGE" &&
 					len(table.Partition.Parts) == 2 &&
@@ -417,7 +417,7 @@ func TestToTable_PrimaryKeyParts(t *testing.T) {
 	result := toschema.ToTable(table, "")
 
 	c.Assert(result.PrimaryKey, qt.DeepEquals, []string{"id"})
-	c.Assert(result.PrimaryKeyParts, qt.DeepEquals, []goschema.PrimaryKeyPart{{
+	c.Assert(result.PrimaryKeyParts, qt.DeepEquals, []schemamodel.PrimaryKeyPart{{
 		Name:   "id",
 		Prefix: "7",
 		Desc:   true,
@@ -438,7 +438,7 @@ func TestToTable_PrimaryKeyInclude(t *testing.T) {
 	result := toschema.ToTable(table, "")
 
 	c.Assert(result.PrimaryKey, qt.DeepEquals, []string{"id"})
-	c.Assert(result.PrimaryKeyParts, qt.DeepEquals, []goschema.PrimaryKeyPart{{Name: "id"}})
+	c.Assert(result.PrimaryKeyParts, qt.DeepEquals, []schemamodel.PrimaryKeyPart{{Name: "id"}})
 	c.Assert(result.PrimaryKeyInclude, qt.DeepEquals, []string{"covering"})
 }
 
@@ -466,12 +466,12 @@ func TestToIndex_BasicIndex(t *testing.T) {
 	tests := []struct {
 		name     string
 		index    *ast.IndexNode
-		expected func(goschema.Index) bool
+		expected func(schemamodel.Index) bool
 	}{
 		{
 			name:  "simple index",
 			index: ast.NewIndex("idx_users_email", "users", "email"),
-			expected: func(index goschema.Index) bool {
+			expected: func(index schemamodel.Index) bool {
 				return index.Name == "idx_users_email" &&
 					index.StructName == "users" &&
 					len(index.Fields) == 1 &&
@@ -482,7 +482,7 @@ func TestToIndex_BasicIndex(t *testing.T) {
 		{
 			name:  "unique index",
 			index: ast.NewIndex("idx_users_username", "users", "username").SetUnique(),
-			expected: func(index goschema.Index) bool {
+			expected: func(index schemamodel.Index) bool {
 				return index.Name == "idx_users_username" &&
 					index.Unique == true
 			},
@@ -490,7 +490,7 @@ func TestToIndex_BasicIndex(t *testing.T) {
 		{
 			name:  "composite index",
 			index: ast.NewIndex("idx_posts_user_created", "posts", "user_id", "created_at"),
-			expected: func(index goschema.Index) bool {
+			expected: func(index schemamodel.Index) bool {
 				return index.Name == "idx_posts_user_created" &&
 					index.StructName == "posts" &&
 					len(index.Fields) == 2 &&
@@ -505,7 +505,7 @@ func TestToIndex_BasicIndex(t *testing.T) {
 				index.Comment = "Index for price range queries"
 				return index
 			}(),
-			expected: func(index goschema.Index) bool {
+			expected: func(index schemamodel.Index) bool {
 				return index.Name == "idx_products_price" &&
 					index.Comment == "Index for price range queries"
 			},
@@ -518,7 +518,7 @@ func TestToIndex_BasicIndex(t *testing.T) {
 				index.Parser = "ngram"
 				return index
 			}(),
-			expected: func(index goschema.Index) bool {
+			expected: func(index schemamodel.Index) bool {
 				return index.Name == "idx_users_bio" &&
 					index.Type == "FULLTEXT" &&
 					index.Parser == "ngram"
@@ -531,15 +531,15 @@ func TestToIndex_BasicIndex(t *testing.T) {
 					{Name: "rank", Operator: "bpchar_ops", Prefix: "7", Desc: true},
 					{Expr: "lower(name)", Operator: "text_pattern_ops"},
 				}),
-			expected: func(index goschema.Index) bool {
+			expected: func(index schemamodel.Index) bool {
 				return index.Name == "idx_users_rank_name" &&
 					index.StructName == "users" &&
 					len(index.Fields) == 2 &&
 					index.Fields[0] == "rank" &&
 					index.Fields[1] == "lower(name)" &&
 					len(index.Parts) == 2 &&
-					index.Parts[0] == (goschema.IndexPart{Name: "rank", Operator: "bpchar_ops", Prefix: "7", Desc: true}) &&
-					index.Parts[1] == (goschema.IndexPart{Expr: "lower(name)", Operator: "text_pattern_ops"})
+					index.Parts[0] == (schemamodel.IndexPart{Name: "rank", Operator: "bpchar_ops", Prefix: "7", Desc: true}) &&
+					index.Parts[1] == (schemamodel.IndexPart{Expr: "lower(name)", Operator: "text_pattern_ops"})
 			},
 		},
 		{
@@ -549,7 +549,7 @@ func TestToIndex_BasicIndex(t *testing.T) {
 				index.IncludeColumns = []string{"active"}
 				return index
 			}(),
-			expected: func(index goschema.Index) bool {
+			expected: func(index schemamodel.Index) bool {
 				return index.Name == "idx_users_name" &&
 					index.StructName == "users" &&
 					index.Fields[0] == "name" &&
@@ -564,7 +564,7 @@ func TestToIndex_BasicIndex(t *testing.T) {
 				index.StorageParams = map[string]string{"pages_per_range": "2"}
 				return index
 			}(),
-			expected: func(index goschema.Index) bool {
+			expected: func(index schemamodel.Index) bool {
 				return index.Name == "idx_users_c" &&
 					index.StructName == "users" &&
 					index.Fields[0] == "c" &&
@@ -580,7 +580,7 @@ func TestToIndex_BasicIndex(t *testing.T) {
 				index.NullsDistinct = &nullsDistinct
 				return index
 			}(),
-			expected: func(index goschema.Index) bool {
+			expected: func(index schemamodel.Index) bool {
 				return index.Name == "idx_users_c" &&
 					index.Unique &&
 					index.NullsDistinct != nil &&
@@ -602,12 +602,12 @@ func TestToEnum_BasicEnum(t *testing.T) {
 	tests := []struct {
 		name     string
 		enum     *ast.EnumNode
-		expected func(goschema.Enum) bool
+		expected func(schemamodel.Enum) bool
 	}{
 		{
 			name: "simple enum",
 			enum: ast.NewEnum("status_type", "active", "inactive", "pending"),
-			expected: func(enum goschema.Enum) bool {
+			expected: func(enum schemamodel.Enum) bool {
 				return enum.Name == "status_type" &&
 					len(enum.Values) == 3 &&
 					enum.Values[0] == "active" &&
@@ -618,7 +618,7 @@ func TestToEnum_BasicEnum(t *testing.T) {
 		{
 			name: "user role enum",
 			enum: ast.NewEnum("user_role", "admin", "moderator", "user", "guest"),
-			expected: func(enum goschema.Enum) bool {
+			expected: func(enum schemamodel.Enum) bool {
 				return enum.Name == "user_role" &&
 					len(enum.Values) == 4 &&
 					enum.Values[0] == "admin" &&
@@ -628,7 +628,7 @@ func TestToEnum_BasicEnum(t *testing.T) {
 		{
 			name: "empty enum",
 			enum: ast.NewEnum("empty_enum"),
-			expected: func(enum goschema.Enum) bool {
+			expected: func(enum schemamodel.Enum) bool {
 				return enum.Name == "empty_enum" &&
 					len(enum.Values) == 0
 			},
@@ -734,13 +734,13 @@ func TestToDatabase_EmptySchema(t *testing.T) {
 func TestMergeFieldOverrides_BasicMerging(t *testing.T) {
 	c := qt.New(t)
 
-	baseField := goschema.Field{
+	baseField := schemamodel.Field{
 		Name:    "data",
 		Type:    "JSONB",
 		Comment: "JSON data",
 	}
 
-	platformFields := map[string]goschema.Field{
+	platformFields := map[string]schemamodel.Field{
 		"mysql": {
 			Name:    "data",
 			Type:    "JSON",
@@ -774,11 +774,11 @@ func TestMergeFieldOverrides_BasicMerging(t *testing.T) {
 func TestMergeFieldOverrides_CharsetCollate(t *testing.T) {
 	c := qt.New(t)
 
-	baseField := goschema.Field{
+	baseField := schemamodel.Field{
 		Name: "name",
 		Type: "VARCHAR(255)",
 	}
-	platformFields := map[string]goschema.Field{
+	platformFields := map[string]schemamodel.Field{
 		"mysql": {
 			Name:    "name",
 			Type:    "VARCHAR(255)",
@@ -796,13 +796,13 @@ func TestMergeFieldOverrides_CharsetCollate(t *testing.T) {
 func TestMergeFieldOverrides_DefaultValues(t *testing.T) {
 	c := qt.New(t)
 
-	baseField := goschema.Field{
+	baseField := schemamodel.Field{
 		Name:        "created_at",
 		Type:        "TIMESTAMP",
 		DefaultExpr: "CURRENT_TIMESTAMP",
 	}
 
-	platformFields := map[string]goschema.Field{
+	platformFields := map[string]schemamodel.Field{
 		"mysql": {
 			Name:        "created_at",
 			Type:        "TIMESTAMP",
@@ -824,12 +824,12 @@ func TestMergeFieldOverrides_DefaultValues(t *testing.T) {
 func TestMergeFieldOverrides_EmptyPlatforms(t *testing.T) {
 	c := qt.New(t)
 
-	baseField := goschema.Field{
+	baseField := schemamodel.Field{
 		Name: "data",
 		Type: "JSONB",
 	}
 
-	result := toschema.MergeFieldOverrides(baseField, make(map[string]goschema.Field))
+	result := toschema.MergeFieldOverrides(baseField, make(map[string]schemamodel.Field))
 
 	c.Assert(result.Name, qt.Equals, "data")
 	c.Assert(result.Type, qt.Equals, "JSONB")
@@ -839,13 +839,13 @@ func TestMergeFieldOverrides_EmptyPlatforms(t *testing.T) {
 func TestMergeTableOverrides_BasicMerging(t *testing.T) {
 	c := qt.New(t)
 
-	baseTable := goschema.Table{
+	baseTable := schemamodel.Table{
 		Name:    "products",
 		Engine:  "InnoDB",
 		Comment: "Product catalog",
 	}
 
-	platformTables := map[string]goschema.Table{
+	platformTables := map[string]schemamodel.Table{
 		"mariadb": {
 			Name:    "products",
 			Engine:  "InnoDB",

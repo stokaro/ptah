@@ -20,7 +20,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/dbexprprobe"
@@ -274,7 +274,7 @@ func resolveGeneratedExpressions(
 	opts *options,
 	connectTimeout time.Duration,
 	info catalog.ServerInfo,
-	declared *goschema.Database,
+	declared *schemamodel.Database,
 ) (*config.CompareOptions, error) {
 	probes, err := genexprprobe.For(info.Dialect, info.Capabilities, declared)
 	if err != nil {

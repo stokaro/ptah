@@ -9,8 +9,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemaload"
 )
 
@@ -316,7 +316,7 @@ CREATE POLICY p ON Ä FOR ALL TO PUBLIC USING (tenant_id = 1);
 
 // tableNames projects the loaded tables onto their declared names, so a
 // fixture can say which relations exist without asserting the whole schema.
-func tableNames(tables []goschema.Table) []string {
+func tableNames(tables []schemamodel.Table) []string {
 	names := make([]string, 0, len(tables))
 	for _, table := range tables {
 		names = append(names, table.QualifiedName())

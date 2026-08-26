@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -124,13 +124,13 @@ func TestRebuiltTableDoesNotAlsoGetItsIndexAndTriggerRecreated(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			generated := identityRebuildSchema(test.tableSchema)
-			generated.Indexes = []goschema.Index{{
+			desired := identityRebuildSchema(test.tableSchema)
+			desired.Indexes = []schemamodel.Index{{
 				StructName: "Note",
 				Name:       "idx_notes_body",
 				Fields:     []string{"body"},
 			}}
-			generated.Triggers = []goschema.Trigger{{
+			desired.Triggers = []schemamodel.Trigger{{
 				StructName: "Note",
 				Name:       "trg_notes_touch",
 				Table:      test.refTableName,
@@ -158,7 +158,7 @@ func TestRebuiltTableDoesNotAlsoGetItsIndexAndTriggerRecreated(t *testing.T) {
 				}},
 			}
 
-			statements, err := planner.GenerateSchemaDiffSQLStatements(diff, generated, "sqlite")
+			statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, "sqlite")
 			c.Assert(err, qt.IsNil)
 			plan := strings.Join(statements, "\n")
 			c.Assert(strings.Count(plan, "CREATE INDEX"), qt.Equals, 1, qt.Commentf("plan:\n%s", plan))

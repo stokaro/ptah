@@ -15,8 +15,8 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/planner"
@@ -98,7 +98,7 @@ func TestOracleRoleCatalogIsNotDescribedWithoutPrivilegeE2E(t *testing.T) {
 // case, an object type spelled the catalog's way rather than the declaration's
 // -- and only the comparison says whether there is anything left to do. The
 // VIEW row is in the declaration for exactly that reason: ALL_TAB_PRIVS calls
-// its type VIEW, goschema.Grant spells every relation target OnTable, and a
+// its type VIEW, schemamodel.Grant spells every relation target OnTable, and a
 // reader passing the type through unmapped converges on the table and not on
 // the view.
 func TestOracleRolesAndGrantsAreReadWithPrivilegeE2E(t *testing.T) {
@@ -176,12 +176,12 @@ type oracleDeclaredGrant struct {
 // the renderer refuses a declaration asking one for LOGIN or a password, and
 // the reader reports neither. An empty schema means the grants are left out
 // entirely, which is what the unprivileged half wants.
-func oracleRoleDeclaration(role, schema string, grants []oracleDeclaredGrant) *goschema.Database {
-	declared := &goschema.Database{
-		Roles: []goschema.Role{{Name: role, Inherit: true}},
+func oracleRoleDeclaration(role, schema string, grants []oracleDeclaredGrant) *schemamodel.Database {
+	declared := &schemamodel.Database{
+		Roles: []schemamodel.Role{{Name: role, Inherit: true}},
 	}
 	for _, grant := range grants {
-		declared.Grants = append(declared.Grants, goschema.Grant{
+		declared.Grants = append(declared.Grants, schemamodel.Grant{
 			Role:       role,
 			Privileges: grant.privileges,
 			OnTable:    schema + "." + grant.table,
@@ -382,14 +382,14 @@ func TestOracleRoleManagementPlansAndConvergesE2E(t *testing.T) {
 
 // oracleRoleManagementDeclaration declares one table, one role and the two
 // privileges the role holds on it.
-func oracleRoleManagementDeclaration(schema, role string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "RM", Name: "rm_docs"}},
-		Fields: []goschema.Field{
+func oracleRoleManagementDeclaration(schema, role string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "RM", Name: "rm_docs"}},
+		Fields: []schemamodel.Field{
 			{StructName: "RM", Name: "id", Type: "INT", Primary: true},
 		},
-		Roles: []goschema.Role{{StructName: "RM", Name: role, Inherit: true}},
-		Grants: []goschema.Grant{{
+		Roles: []schemamodel.Role{{StructName: "RM", Name: role, Inherit: true}},
+		Grants: []schemamodel.Grant{{
 			StructName: "RM", Role: role,
 			Privileges: []string{"SELECT", "INSERT"},
 			OnTable:    schema + ".rm_docs",

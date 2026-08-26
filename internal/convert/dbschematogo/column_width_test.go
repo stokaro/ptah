@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 )
 
@@ -85,7 +85,7 @@ func TestConvert_CarriesTheWidthIntoTheDescription(t *testing.T) {
 // convertedFieldTypes names the types the conversion produced, so the
 // assertion reads as one value rather than as an index into a slice that may
 // be empty.
-func convertedFieldTypes(fields []goschema.Field) []string {
+func convertedFieldTypes(fields []schemamodel.Field) []string {
 	types := make([]string, 0, len(fields))
 	for _, field := range fields {
 		types = append(types, field.Type)

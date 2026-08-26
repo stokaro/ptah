@@ -6,10 +6,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -20,17 +20,17 @@ import (
 // statement even though the comparator had recorded the difference.
 func TestPlannerRendersRLSEnablementFromDiff(t *testing.T) {
 	tests := []struct {
-		name      string
-		diff      *difftypes.SchemaDiff
-		generated *goschema.Database
-		want      []string
+		name    string
+		diff    *difftypes.SchemaDiff
+		desired *schemamodel.Database
+		want    []string
 	}{
 		{
 			name: "enablement recorded for an existing table",
 			diff: &difftypes.SchemaDiff{
 				RLSEnabledTablesAdded: []string{"other.secured"},
 			},
-			generated: &goschema.Database{},
+			desired: &schemamodel.Database{},
 			want: []string{
 				"-- Enable RLS for other.secured table",
 				`ALTER TABLE "other"."secured" ENABLE ROW LEVEL SECURITY;`,
@@ -41,7 +41,7 @@ func TestPlannerRendersRLSEnablementFromDiff(t *testing.T) {
 			diff: &difftypes.SchemaDiff{
 				RLSEnabledTablesRemoved: []string{"public.p"},
 			},
-			generated: &goschema.Database{},
+			desired: &schemamodel.Database{},
 			want: []string{
 				"-- Disable RLS for public.p table",
 				`ALTER TABLE "public"."p" DISABLE ROW LEVEL SECURITY;`,
@@ -53,7 +53,7 @@ func TestPlannerRendersRLSEnablementFromDiff(t *testing.T) {
 				RLSEnabledTablesAdded:   []string{"other.secured"},
 				RLSEnabledTablesRemoved: []string{"public.p"},
 			},
-			generated: &goschema.Database{},
+			desired: &schemamodel.Database{},
 			want: []string{
 				"-- Enable RLS for other.secured table",
 				`ALTER TABLE "other"."secured" ENABLE ROW LEVEL SECURITY;`,
@@ -67,10 +67,10 @@ func TestPlannerRendersRLSEnablementFromDiff(t *testing.T) {
 				TablesAdded:      []string{"tenants"},
 				RLSPoliciesAdded: []difftypes.RLSPolicyRef{{PolicyName: "tenant_isolation", TableName: "tenants"}},
 			},
-			generated: &goschema.Database{
-				Tables: []goschema.Table{{Name: "tenants", StructName: "Tenant"}},
-				Fields: []goschema.Field{{Name: "id", StructName: "Tenant", Type: "TEXT"}},
-				RLSPolicies: []goschema.RLSPolicy{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{{Name: "tenants", StructName: "Tenant"}},
+				Fields: []schemamodel.Field{{Name: "id", StructName: "Tenant", Type: "TEXT"}},
+				RLSPolicies: []schemamodel.RLSPolicy{
 					{Name: "tenant_isolation", Table: "tenants", PolicyFor: "ALL", ToRoles: "app"},
 				},
 			},
@@ -96,10 +96,10 @@ func TestPlannerRendersRLSEnablementFromDiff(t *testing.T) {
 					{PolicyName: "tenant_isolation", TableName: "tenants"},
 				},
 			},
-			generated: &goschema.Database{
-				Tables: []goschema.Table{{Name: "tenants", StructName: "Tenant"}},
-				Fields: []goschema.Field{{Name: "id", StructName: "Tenant", Type: "TEXT"}},
-				RLSPolicies: []goschema.RLSPolicy{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{{Name: "tenants", StructName: "Tenant"}},
+				Fields: []schemamodel.Field{{Name: "id", StructName: "Tenant", Type: "TEXT"}},
+				RLSPolicies: []schemamodel.RLSPolicy{
 					{Name: "tenant_isolation", Table: "tenants", PolicyFor: "ALL", ToRoles: "app"},
 				},
 			},
@@ -123,8 +123,8 @@ func TestPlannerRendersRLSEnablementFromDiff(t *testing.T) {
 					{PolicyName: "tenant_isolation", TableName: "tenants", Changes: map[string]string{"using": "a -> b"}},
 				},
 			},
-			generated: &goschema.Database{
-				RLSPolicies: []goschema.RLSPolicy{
+			desired: &schemamodel.Database{
+				RLSPolicies: []schemamodel.RLSPolicy{
 					{Name: "tenant_isolation", Table: "tenants", PolicyFor: "ALL", ToRoles: "app"},
 				},
 			},
@@ -141,7 +141,7 @@ func TestPlannerRendersRLSEnablementFromDiff(t *testing.T) {
 				TablesRemoved:           []string{"public.legacy"},
 				RLSEnabledTablesRemoved: []string{"public.legacy"},
 			},
-			generated: &goschema.Database{},
+			desired: &schemamodel.Database{},
 			want: []string{
 				"-- WARNING: This will delete all data!",
 				`DROP TABLE IF EXISTS "public"."legacy" CASCADE;`,
@@ -152,7 +152,7 @@ func TestPlannerRendersRLSEnablementFromDiff(t *testing.T) {
 			diff: &difftypes.SchemaDiff{
 				RLSPoliciesRemoved: []difftypes.RLSPolicyRef{{PolicyName: "tenant_isolation", TableName: "tenants"}},
 			},
-			generated: &goschema.Database{},
+			desired: &schemamodel.Database{},
 			want: []string{
 				"-- Drop RLS policy tenant_isolation from table tenants",
 				`DROP POLICY IF EXISTS "tenant_isolation" ON "tenants";`,
@@ -165,7 +165,7 @@ func TestPlannerRendersRLSEnablementFromDiff(t *testing.T) {
 				RLSPoliciesRemoved:      []difftypes.RLSPolicyRef{{PolicyName: "tenant_isolation", TableName: "tenants"}},
 				RLSEnabledTablesRemoved: []string{"tenants"},
 			},
-			generated: &goschema.Database{},
+			desired: &schemamodel.Database{},
 			want: []string{
 				"-- Drop RLS policy tenant_isolation from table tenants",
 				`DROP POLICY IF EXISTS "tenant_isolation" ON "tenants";`,
@@ -178,7 +178,7 @@ func TestPlannerRendersRLSEnablementFromDiff(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := postgres.New().GenerateMigrationAST(test.diff, test.generated)
+			nodes, err := postgres.New().GenerateMigrationAST(test.diff, test.desired)
 			c.Assert(err, qt.IsNil)
 
 			sql, err := renderer.RenderSQL("postgres", nodes...)
@@ -212,7 +212,7 @@ func TestPlannerNamesRLSItCannotCarry(t *testing.T) {
 	}
 
 	nodes, err := postgres.NewForDialect(platform.Spanner, capability.SpannerPostgres()).
-		GenerateMigrationAST(diff, &goschema.Database{})
+		GenerateMigrationAST(diff, &schemamodel.Database{})
 	c.Assert(err, qt.IsNil)
 
 	sql, err := renderer.RenderSQL(platform.Spanner, nodes...)

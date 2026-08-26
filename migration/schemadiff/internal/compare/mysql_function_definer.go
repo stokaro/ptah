@@ -5,9 +5,9 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/mysqlroutine"
 	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
@@ -27,13 +27,13 @@ import (
 // FunctionsWithSemantics or the planner. The latter would see the unsafe diff
 // only after comparison had already represented it as an executable change.
 func ValidateMySQLFunctionDefinerReplacements(
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	dialect string,
 	semantics identifier.Semantics,
 ) error {
-	if !isMySQLFamily(dialect) || generated == nil || database == nil || diff == nil ||
+	if !isMySQLFamily(dialect) || desired == nil || database == nil || diff == nil ||
 		len(diff.FunctionsModified) == 0 {
 		return nil
 	}
@@ -44,7 +44,7 @@ func ValidateMySQLFunctionDefinerReplacements(
 	}
 
 	semantics = semantics.Normalize("")
-	for _, desired := range generated.Functions {
+	for _, desired := range desired.Functions {
 		if _, ok := modified[desired.Name]; !ok {
 			continue
 		}
@@ -90,7 +90,7 @@ func ValidateMySQLFunctionDefinerReplacements(
 }
 
 func findCurrentFunctionForDesired(
-	desired goschema.Function,
+	desired schemamodel.Function,
 	current []catalog.Function,
 	dialect string,
 	semantics identifier.Semantics,

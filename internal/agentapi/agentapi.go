@@ -30,9 +30,9 @@ package agentapi
 import (
 	"context"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/agentdiag"
 	"go.5x5.cz/ptah/internal/agenttarget"
@@ -104,7 +104,7 @@ func (s SchemaSource) empty() bool {
 	return len(s.RootDirs) == 0 && len(s.SchemaFiles) == 0
 }
 
-func (s SchemaSource) load(ctx context.Context, dialect string) (*goschema.Database, error) {
+func (s SchemaSource) load(ctx context.Context, dialect string) (*schemamodel.Database, error) {
 	if s.empty() {
 		return nil, agentdiag.Errorf(agentdiag.CodeInvalidRequest,
 			"no schema source: name at least one root_dirs entry or schema_files entry")

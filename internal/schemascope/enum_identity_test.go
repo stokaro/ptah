@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemascope"
 )
 
@@ -13,11 +13,11 @@ import (
 // whose column is typed with it. The table carries schema="public" on purpose:
 // scoping an unqualified table with --schema refuses for either spelling, so a
 // fixture without the qualifier coincides instead of discriminating.
-func scopedEnumSchema(enumName string) *goschema.Database {
-	return &goschema.Database{
-		Enums:  []goschema.Enum{{Name: enumName, Values: []string{"active", "archived"}}},
-		Tables: []goschema.Table{{StructName: "User", Schema: "public", Name: "users"}},
-		Fields: []goschema.Field{
+func scopedEnumSchema(enumName string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Enums:  []schemamodel.Enum{{Name: enumName, Values: []string{"active", "archived"}}},
+		Tables: []schemamodel.Table{{StructName: "User", Schema: "public", Name: "users"}},
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "BIGINT", Primary: true},
 			{StructName: "User", Name: "s", Type: enumName},
 		},
@@ -65,7 +65,7 @@ func TestFilterGeneratedWithDefaultSchema_DropsAnUnreferencedEnum(t *testing.T) 
 	c := qt.New(t)
 
 	db := scopedEnumSchema("status_kind")
-	db.Enums = append(db.Enums, goschema.Enum{Name: "unused_kind", Values: []string{"a"}})
+	db.Enums = append(db.Enums, schemamodel.Enum{Name: "unused_kind", Values: []string{"a"}})
 
 	got := schemascope.FilterGeneratedWithDefaultSchema(db, []string{"public"}, "public")
 

@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/migration/internal/shadowdb"
 	"go.5x5.cz/ptah/migration/migrationfile"
@@ -413,7 +413,7 @@ type runner struct {
 	migrationsDir string
 	migrationsFS  fs.FS
 	dirFormat     migrationfile.DirFormat
-	desiredSchema *goschema.Database
+	desiredSchema *schemamodel.Database
 	seedDir       string
 	// revisionsSchema is the schema the migrate_to migrator records revisions
 	// in. Empty keeps the connection default.
@@ -429,7 +429,7 @@ type runner struct {
 	// are nil for a run that never sees one; a case using the step then fails
 	// with the reason rather than skipping the state it meant to establish
 	// (stokaro/ptah#1211).
-	resolveSchema func(url string) (*goschema.Database, error)
+	resolveSchema func(url string) (*schemamodel.Database, error)
 	applyPlan     func(ctx context.Context, conn *dbschema.DatabaseConnection, url string) error
 }
 

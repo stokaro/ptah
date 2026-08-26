@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // enums renders one block per enum type, sorted by (schema, name).
@@ -61,8 +61,8 @@ func (b *builder) tables() []string {
 }
 
 // selected is the tables this render covers, sorted by identity.
-func (b *builder) selected() []goschema.Table {
-	tables := make([]goschema.Table, 0, len(b.db.Tables))
+func (b *builder) selected() []schemamodel.Table {
+	tables := make([]schemamodel.Table, 0, len(b.db.Tables))
 	for _, table := range b.db.Tables {
 		if !b.covers(table.Name) {
 			continue
@@ -91,8 +91,8 @@ func (b *builder) covers(name string) bool {
 }
 
 // fieldsOf is the table's columns, in declaration order.
-func (b *builder) fieldsOf(table goschema.Table) []goschema.Field {
-	fields := make([]goschema.Field, 0, 8)
+func (b *builder) fieldsOf(table schemamodel.Table) []schemamodel.Field {
+	fields := make([]schemamodel.Field, 0, 8)
 	for _, field := range b.db.Fields {
 		if field.StructName != table.StructName {
 			continue
@@ -103,7 +103,7 @@ func (b *builder) fieldsOf(table goschema.Table) []goschema.Field {
 }
 
 // column renders one column line with its settings.
-func column(field goschema.Field) string {
+func column(field schemamodel.Field) string {
 	line := fmt.Sprintf("%s %s", quote(field.Name), columnType(field))
 	settings := columnSettings(field)
 	if len(settings) == 0 {
@@ -114,7 +114,7 @@ func column(field goschema.Field) string {
 
 // columnType is the column's declared type, quoted when it names an enum so a
 // reader can tell a type name from a keyword.
-func columnType(field goschema.Field) string {
+func columnType(field schemamodel.Field) string {
 	if len(field.Enum) > 0 {
 		return quote(field.Type)
 	}
@@ -123,7 +123,7 @@ func columnType(field goschema.Field) string {
 
 // columnSettings is the bracketed list, in a fixed order so the same column
 // always renders the same way.
-func columnSettings(field goschema.Field) []string {
+func columnSettings(field schemamodel.Field) []string {
 	settings := make([]string, 0, 6)
 	if field.Primary {
 		settings = append(settings, "pk")
@@ -152,7 +152,7 @@ func columnSettings(field goschema.Field) []string {
 // difference is not cosmetic: `default: 'now()'` is the six-character string,
 // and `default: `now()“ is the call. A renderer that emitted one for the other
 // would change what the column does.
-func defaultSetting(field goschema.Field) (string, bool) {
+func defaultSetting(field schemamodel.Field) (string, bool) {
 	if field.DefaultExpr != "" {
 		return "default: `" + field.DefaultExpr + "`", true
 	}
@@ -163,7 +163,7 @@ func defaultSetting(field goschema.Field) (string, bool) {
 }
 
 // indexesOf renders the table's indexes, sorted by name.
-func (b *builder) indexesOf(table goschema.Table) []string {
+func (b *builder) indexesOf(table schemamodel.Table) []string {
 	lines := make([]string, 0, 4)
 	for _, index := range b.db.Indexes {
 		if index.StructName != table.StructName {
@@ -176,7 +176,7 @@ func (b *builder) indexesOf(table goschema.Table) []string {
 }
 
 // indexLine renders one index entry.
-func indexLine(index goschema.Index) string {
+func indexLine(index schemamodel.Index) string {
 	columns := make([]string, 0, len(index.Fields))
 	for _, field := range index.Fields {
 		columns = append(columns, quote(field))

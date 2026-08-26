@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashcl"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 	"go.5x5.cz/ptah/internal/fsdurable"
@@ -78,7 +79,7 @@ type exportPlan struct {
 }
 
 type renderedExport struct {
-	database    *goschema.Database
+	database    *schemamodel.Database
 	hcl         []byte
 	diagnostics []atlashclrender.Diagnostic
 }
@@ -273,7 +274,7 @@ func renderExport(plan exportPlan) (renderedExport, error) {
 	}, nil
 }
 
-func databaseHasSchemaObjects(db *goschema.Database) bool {
+func databaseHasSchemaObjects(db *schemamodel.Database) bool {
 	objectCount := len(db.Schemas) +
 		len(db.Tables) +
 		len(db.Fields) +
@@ -298,7 +299,7 @@ func databaseHasSchemaObjects(db *goschema.Database) bool {
 	return objectCount > 0
 }
 
-func bindSnapshotManagedDataSourceRoot(values []goschema.ManagedData, root string) {
+func bindSnapshotManagedDataSourceRoot(values []schemamodel.ManagedData, root string) {
 	for i := range values {
 		if filepath.IsAbs(values[i].SourceDir) {
 			continue
@@ -309,7 +310,7 @@ func bindSnapshotManagedDataSourceRoot(values []goschema.ManagedData, root strin
 	}
 }
 
-func (p exportPlan) validatePublication(managedData []goschema.ManagedData) error {
+func (p exportPlan) validatePublication(managedData []schemamodel.ManagedData) error {
 	if err := p.snapshot.Revalidate(); err != nil {
 		return fmt.Errorf("revalidate Go annotation sources before HCL publication: %w", err)
 	}
@@ -338,7 +339,7 @@ func (p exportPlan) validatePublication(managedData []goschema.ManagedData) erro
 	return nil
 }
 
-func managedDataSourceAlias(values []goschema.ManagedData, outputPath string) (string, error) {
+func managedDataSourceAlias(values []schemamodel.ManagedData, outputPath string) (string, error) {
 	outputInfo, err := os.Stat(outputPath)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return "", fmt.Errorf("stat HCL output %s: %w", outputPath, err)
@@ -373,7 +374,7 @@ func managedDataSourceAlias(values []goschema.ManagedData, outputPath string) (s
 	return "", nil
 }
 
-func rebaseManagedDataFiles(values []goschema.ManagedData, outputPath string) error {
+func rebaseManagedDataFiles(values []schemamodel.ManagedData, outputPath string) error {
 	outputDir := filepath.Dir(outputPath)
 	for i := range values {
 		sourcePath := values[i].File
@@ -440,7 +441,7 @@ func resolvePaths(opts Options) (rootDir, outputPath string, err error) {
 	return rootDir, outputPath, nil
 }
 
-func canonicalRoundTrip(data []byte) ([]byte, *goschema.Database, error) {
+func canonicalRoundTrip(data []byte) ([]byte, *schemamodel.Database, error) {
 	parsed, err := atlashcl.Parse(data, "schema.hcl")
 	if err != nil {
 		return nil, nil, fmt.Errorf("%w: parse generated schema: %v", ErrInvalidHCL, err)
@@ -486,13 +487,13 @@ func lossyCleanupError(diagnostics []atlashclrender.Diagnostic) error {
 	return fmt.Errorf("%w:%s", ErrLossyCleanup, builder.String())
 }
 
-func hasRolePasswords(roles []goschema.Role) bool {
-	return slices.ContainsFunc(roles, func(role goschema.Role) bool {
+func hasRolePasswords(roles []schemamodel.Role) bool {
+	return slices.ContainsFunc(roles, func(role schemamodel.Role) bool {
 		return role.Password != ""
 	})
 }
 
-func stageOutput(path string, data []byte, roles []goschema.Role) (stagedOutput, error) {
+func stageOutput(path string, data []byte, roles []schemamodel.Role) (stagedOutput, error) {
 	parentPath := filepath.Dir(path)
 	if err := os.MkdirAll(parentPath, 0o755); err != nil {
 		return stagedOutput{}, fmt.Errorf("create HCL output directory: %w", err)
@@ -562,7 +563,7 @@ func stageOutput(path string, data []byte, roles []goschema.Role) (stagedOutput,
 func captureOutputState(
 	parent *pathguard.OpenedDirectory,
 	targetName, outputPath string,
-	roles []goschema.Role,
+	roles []schemamodel.Role,
 ) (outputState, os.FileMode, error) {
 	info, data, err := readOutputFile(parent, targetName, outputPath)
 	if errors.Is(err, os.ErrNotExist) {

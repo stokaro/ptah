@@ -1,7 +1,7 @@
 // Package toschema provides converters for transforming AST nodes back into goschema types.
 //
 // This package serves as the reverse bridge from low-level AST nodes that represent SQL DDL
-// statements back to high-level schema definitions (goschema.Field, goschema.Table, etc.).
+// statements back to high-level schema definitions (schemamodel.Field, schemamodel.Table, etc.).
 // The converters handle the extraction of schema metadata from concrete SQL structures and
 // can reconstruct platform-specific overrides when multiple platform variants are provided.
 //
@@ -36,7 +36,7 @@
 //	// Convert multiple platform variants to reconstruct overrides
 //	mysqlField := toschema.ToField(mysqlColumn, "User", "mysql")
 //	postgresField := toschema.ToField(postgresColumn, "User", "postgres")
-//	mergedField := toschema.MergeFieldOverrides(postgresField, map[string]goschema.Field{
+//	mergedField := toschema.MergeFieldOverrides(postgresField, map[string]schemamodel.Field{
 //		"mysql": mysqlField,
 //	})
 package toschema
@@ -47,10 +47,10 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
-// ToField converts an ast.ColumnNode to a goschema.Field with comprehensive attribute extraction.
+// ToField converts an ast.ColumnNode to a schemamodel.Field with comprehensive attribute extraction.
 //
 // This function transforms a low-level column AST node back into a high-level field definition,
 // extracting all supported column attributes including constraints, defaults, foreign keys,
@@ -81,7 +81,7 @@ import (
 //		SetUnique().
 //		SetComment("User email address")
 //	field := ToField(column, "User", "")
-//	// Results in: goschema.Field{
+//	// Results in: schemamodel.Field{
 //	//   Name: "email", Type: "VARCHAR(255)", Nullable: false,
 //	//   Unique: true, Comment: "User email address"
 //	// }
@@ -92,7 +92,7 @@ import (
 //		SetNotNull().
 //		SetForeignKey("users", "id", "fk_posts_user")
 //	field := ToField(column, "Post", "")
-//	// Results in: goschema.Field{
+//	// Results in: schemamodel.Field{
 //	//   Name: "user_id", Type: "INTEGER", Nullable: false,
 //	//   Foreign: "users(id)", ForeignKeyName: "fk_posts_user"
 //	// }
@@ -103,7 +103,7 @@ import (
 //		SetNotNull().
 //		SetDefaultExpression("NOW()")
 //	field := ToField(column, "User", "")
-//	// Results in: goschema.Field{
+//	// Results in: schemamodel.Field{
 //	//   Name: "created_at", Type: "TIMESTAMP", Nullable: false,
 //	//   DefaultExpr: "NOW()"
 //	// }
@@ -121,10 +121,10 @@ import (
 //
 // # Return Value
 //
-// Returns a fully configured goschema.Field with all attributes extracted from the AST node.
+// Returns a fully configured schemamodel.Field with all attributes extracted from the AST node.
 // The StructName is set to the provided structName parameter.
-func ToField(column *ast.ColumnNode, structName, sourcePlatform string) goschema.Field {
-	field := goschema.Field{
+func ToField(column *ast.ColumnNode, structName, sourcePlatform string) schemamodel.Field {
+	field := schemamodel.Field{
 		StructName:          structName,
 		FieldName:           "", // This would need to be set separately as it's not in the AST
 		Name:                normalizeSQLIdentifier(column.Name),
@@ -194,7 +194,7 @@ func ToField(column *ast.ColumnNode, structName, sourcePlatform string) goschema
 	return field
 }
 
-// ToTable converts an ast.CreateTableNode to a goschema.Table with all associated metadata.
+// ToTable converts an ast.CreateTableNode to a schemamodel.Table with all associated metadata.
 //
 // This function extracts table-level properties from a CREATE TABLE AST node, including
 // table options, comments, and composite constraints. It does not extract individual
@@ -220,7 +220,7 @@ func ToField(column *ast.ColumnNode, structName, sourcePlatform string) goschema
 //		SetOption("ENGINE", "InnoDB").
 //		SetComment("User accounts")
 //	tableSchema := ToTable(table, "")
-//	// Results in: goschema.Table{
+//	// Results in: schemamodel.Table{
 //	//   Name: "users", Engine: "InnoDB", Comment: "User accounts"
 //	// }
 //
@@ -229,7 +229,7 @@ func ToField(column *ast.ColumnNode, structName, sourcePlatform string) goschema
 //	table := ast.NewCreateTable("user_roles").
 //		AddConstraint(ast.NewPrimaryKeyConstraint("user_id", "role_id"))
 //	tableSchema := ToTable(table, "")
-//	// Results in: goschema.Table{
+//	// Results in: schemamodel.Table{
 //	//   Name: "user_roles", PrimaryKey: []string{"user_id", "role_id"}
 //	// }
 //
@@ -249,11 +249,11 @@ func ToField(column *ast.ColumnNode, structName, sourcePlatform string) goschema
 //
 // # Return Value
 //
-// Returns a goschema.Table with all table-level attributes extracted from the AST node.
+// Returns a schemamodel.Table with all table-level attributes extracted from the AST node.
 // The StructName field is derived from the table name using basic naming conventions.
-func ToTable(table *ast.CreateTableNode, sourcePlatform string) goschema.Table {
+func ToTable(table *ast.CreateTableNode, sourcePlatform string) schemamodel.Table {
 	tableSchemaName, tableName := normalizeSQLTableIdentifier(table.Name)
-	tableSchema := goschema.Table{
+	tableSchema := schemamodel.Table{
 		StructName: tableStructName(table.Name),
 		Name:       tableName,
 		Schema:     tableSchemaName,
@@ -330,31 +330,31 @@ func ToTable(table *ast.CreateTableNode, sourcePlatform string) goschema.Table {
 	return tableSchema
 }
 
-func toSchemaPartition(partition *ast.PartitionSpec) *goschema.PartitionSpec {
+func toSchemaPartition(partition *ast.PartitionSpec) *schemamodel.PartitionSpec {
 	if partition == nil {
 		return nil
 	}
-	parts := make([]goschema.PartitionPart, 0, len(partition.Parts))
+	parts := make([]schemamodel.PartitionPart, 0, len(partition.Parts))
 	for _, part := range partition.Parts {
-		parts = append(parts, goschema.PartitionPart{
+		parts = append(parts, schemamodel.PartitionPart{
 			Name: normalizeSQLIdentifier(part.Name),
 			Expr: part.Expr,
 		})
 	}
-	return &goschema.PartitionSpec{Type: partition.Type, Parts: parts}
+	return &schemamodel.PartitionSpec{Type: partition.Type, Parts: parts}
 }
 
-func toPrimaryKeyParts(constraint *ast.ConstraintNode) []goschema.PrimaryKeyPart {
+func toPrimaryKeyParts(constraint *ast.ConstraintNode) []schemamodel.PrimaryKeyPart {
 	if len(constraint.ColumnParts) == 0 {
-		parts := make([]goschema.PrimaryKeyPart, 0, len(constraint.Columns))
+		parts := make([]schemamodel.PrimaryKeyPart, 0, len(constraint.Columns))
 		for _, column := range constraint.Columns {
-			parts = append(parts, goschema.PrimaryKeyPart{Name: normalizeSQLIdentifier(column)})
+			parts = append(parts, schemamodel.PrimaryKeyPart{Name: normalizeSQLIdentifier(column)})
 		}
 		return parts
 	}
-	parts := make([]goschema.PrimaryKeyPart, 0, len(constraint.ColumnParts))
+	parts := make([]schemamodel.PrimaryKeyPart, 0, len(constraint.ColumnParts))
 	for _, column := range constraint.ColumnParts {
-		parts = append(parts, goschema.PrimaryKeyPart{
+		parts = append(parts, schemamodel.PrimaryKeyPart{
 			Name:   normalizeSQLIdentifier(column.Name),
 			Prefix: column.Prefix,
 			Desc:   column.Desc,
@@ -363,7 +363,7 @@ func toPrimaryKeyParts(constraint *ast.ConstraintNode) []goschema.PrimaryKeyPart
 	return parts
 }
 
-// ToIndex converts an ast.IndexNode to a goschema.Index for database index definitions.
+// ToIndex converts an ast.IndexNode to a schemamodel.Index for database index definitions.
 //
 // This function extracts index metadata from an AST node, including index name,
 // target table, column list, uniqueness constraints, and comments.
@@ -386,7 +386,7 @@ func toPrimaryKeyParts(constraint *ast.ConstraintNode) []goschema.PrimaryKeyPart
 //	index := ast.NewIndex("idx_users_email", "users", "email").
 //		SetComment("Index for email lookups")
 //	indexSchema := ToIndex(index)
-//	// Results in: goschema.Index{
+//	// Results in: schemamodel.Index{
 //	//   Name: "idx_users_email", StructName: "users",
 //	//   Fields: []string{"email"}, Comment: "Index for email lookups"
 //	// }
@@ -397,7 +397,7 @@ func toPrimaryKeyParts(constraint *ast.ConstraintNode) []goschema.PrimaryKeyPart
 //		SetUnique().
 //		SetComment("Ensure unique user-role combinations")
 //	indexSchema := ToIndex(index)
-//	// Results in: goschema.Index{
+//	// Results in: schemamodel.Index{
 //	//   Name: "idx_user_roles_unique", StructName: "user_roles",
 //	//   Fields: []string{"user_id", "role_id"}, Unique: true,
 //	//   Comment: "Ensure unique user-role combinations"
@@ -405,15 +405,15 @@ func toPrimaryKeyParts(constraint *ast.ConstraintNode) []goschema.PrimaryKeyPart
 //
 // # Return Value
 //
-// Returns a goschema.Index with all index attributes extracted from the AST node.
+// Returns a schemamodel.Index with all index attributes extracted from the AST node.
 // The StructName is set to match the table name for proper association.
-func ToIndex(index *ast.IndexNode) goschema.Index {
+func ToIndex(index *ast.IndexNode) schemamodel.Index {
 	tableSchema, tableName := normalizeSQLTableIdentifier(index.Table)
 	// The parts decide the field names rather than being derived alongside
 	// them. A key that carried a suffix is named by its column, not by the
 	// element text the suffix is part of.
 	parts := indexParts(index)
-	return goschema.Index{
+	return schemamodel.Index{
 		Name:       normalizeSQLIdentifier(index.Name),
 		StructName: tableName,
 		Fields:     indexFieldNames(index, parts),
@@ -434,11 +434,11 @@ func ToIndex(index *ast.IndexNode) goschema.Index {
 		IncludeColumns: normalizeSQLIdentifiers(index.IncludeColumns),
 		NullsDistinct:  cloneBoolPtr(index.NullsDistinct),
 		StorageParams:  maps.Clone(index.StorageParams),
-		TableName:      goschema.QualifyTableName(tableSchema, tableName),
+		TableName:      schemamodel.QualifyTableName(tableSchema, tableName),
 	}
 }
 
-func indexParts(index *ast.IndexNode) []goschema.IndexPart {
+func indexParts(index *ast.IndexNode) []schemamodel.IndexPart {
 	if len(index.Parts) > 0 {
 		return toSchemaIndexParts(index.Parts)
 	}
@@ -449,17 +449,17 @@ func indexParts(index *ast.IndexNode) []goschema.IndexPart {
 	if decomposed := decomposeIndexKeyList(index.Columns); decomposed != nil {
 		return decomposed
 	}
-	parts := make([]goschema.IndexPart, 0, len(index.Columns))
+	parts := make([]schemamodel.IndexPart, 0, len(index.Columns))
 	hasExpression := false
 	for _, column := range index.Columns {
 		if isSQLIdentifierReference(column) {
-			parts = append(parts, goschema.IndexPart{
+			parts = append(parts, schemamodel.IndexPart{
 				Name: normalizeSQLIdentifierReference(column),
 			})
 			continue
 		}
 		hasExpression = true
-		parts = append(parts, goschema.IndexPart{Expr: column})
+		parts = append(parts, schemamodel.IndexPart{Expr: column})
 	}
 	if !hasExpression {
 		return nil
@@ -467,7 +467,7 @@ func indexParts(index *ast.IndexNode) []goschema.IndexPart {
 	return parts
 }
 
-func indexFieldNames(index *ast.IndexNode, parts []goschema.IndexPart) []string {
+func indexFieldNames(index *ast.IndexNode, parts []schemamodel.IndexPart) []string {
 	if len(parts) == 0 {
 		return normalizeSQLIdentifierReferences(index.Columns)
 	}
@@ -482,10 +482,10 @@ func indexFieldNames(index *ast.IndexNode, parts []goschema.IndexPart) []string 
 	return fields
 }
 
-func toSchemaIndexParts(parts []ast.IndexPart) []goschema.IndexPart {
-	schemaParts := make([]goschema.IndexPart, 0, len(parts))
+func toSchemaIndexParts(parts []ast.IndexPart) []schemamodel.IndexPart {
+	schemaParts := make([]schemamodel.IndexPart, 0, len(parts))
 	for _, part := range parts {
-		schemaParts = append(schemaParts, goschema.IndexPart{
+		schemaParts = append(schemaParts, schemamodel.IndexPart{
 			Name:     normalizeSQLIdentifier(part.Name),
 			Expr:     part.Expr,
 			Operator: part.Operator,
@@ -496,14 +496,14 @@ func toSchemaIndexParts(parts []ast.IndexPart) []goschema.IndexPart {
 			// the same key read out of the catalog on a property neither side
 			// could see, which is a rebuild of an identical index. The three
 			// IndexPart shapes deliberately spell the value the same way; see
-			// [go.5x5.cz/ptah/core/goschema.NullsOrderFirst].
+			// [go.5x5.cz/ptah/core/schemamodel.NullsOrderFirst].
 			NullsOrder: part.NullsOrder,
 		})
 	}
 	return schemaParts
 }
 
-// ToExtension converts an ast.ExtensionNode to a goschema.Extension for database extension definitions.
+// ToExtension converts an ast.ExtensionNode to a schemamodel.Extension for database extension definitions.
 //
 // This function extracts extension metadata from an AST node, including the extension name,
 // installation schema, version requirements, and configuration options.
@@ -526,7 +526,7 @@ func toSchemaIndexParts(parts []ast.IndexPart) []goschema.IndexPart {
 //
 //	extension := ast.NewExtension("pg_trgm").SetIfNotExists()
 //	extensionSchema := ToExtension(extension)
-//	// Results in: goschema.Extension{
+//	// Results in: schemamodel.Extension{
 //	//   Name: "pg_trgm", IfNotExists: true
 //	// }
 //
@@ -537,16 +537,16 @@ func toSchemaIndexParts(parts []ast.IndexPart) []goschema.IndexPart {
 //		SetVersion("3.0").
 //		SetComment("Geographic data support")
 //	extensionSchema := ToExtension(extension)
-//	// Results in: goschema.Extension{
+//	// Results in: schemamodel.Extension{
 //	//   Name: "postgis", Schema: "extensions", Version: "3.0",
 //	//   Comment: "Geographic data support"
 //	// }
 //
 // # Return Value
 //
-// Returns a goschema.Extension with all extension attributes extracted from the AST node.
-func ToExtension(extension *ast.ExtensionNode) goschema.Extension {
-	return goschema.Extension{
+// Returns a schemamodel.Extension with all extension attributes extracted from the AST node.
+func ToExtension(extension *ast.ExtensionNode) schemamodel.Extension {
+	return schemamodel.Extension{
 		Name:        catalogPostgresIdentifierPart(strings.TrimSpace(extension.Name)),
 		Schema:      catalogPostgresIdentifierPart(strings.TrimSpace(extension.Schema)),
 		IfNotExists: extension.IfNotExists,
@@ -555,7 +555,7 @@ func ToExtension(extension *ast.ExtensionNode) goschema.Extension {
 	}
 }
 
-// ToEnum converts an ast.EnumNode to a goschema.Enum for database enum type definitions.
+// ToEnum converts an ast.EnumNode to a schemamodel.Enum for database enum type definitions.
 //
 // This function extracts enum metadata from an AST node, including the enum name
 // and the list of allowed values.
@@ -570,7 +570,7 @@ func ToExtension(extension *ast.ExtensionNode) goschema.Extension {
 //
 //	enum := ast.NewEnum("status_type", "active", "inactive", "pending")
 //	enumSchema := ToEnum(enum)
-//	// Results in: goschema.Enum{
+//	// Results in: schemamodel.Enum{
 //	//   Name: "status_type", Values: []string{"active", "inactive", "pending"}
 //	// }
 //
@@ -578,7 +578,7 @@ func ToExtension(extension *ast.ExtensionNode) goschema.Extension {
 //
 //	enum := ast.NewEnum("user_role", "admin", "moderator", "user", "guest")
 //	enumSchema := ToEnum(enum)
-//	// Results in: goschema.Enum{
+//	// Results in: schemamodel.Enum{
 //	//   Name: "user_role", Values: []string{"admin", "moderator", "user", "guest"}
 //	// }
 //
@@ -592,15 +592,15 @@ func ToExtension(extension *ast.ExtensionNode) goschema.Extension {
 //
 // # Return Value
 //
-// Returns a goschema.Enum with the enum name and values extracted from the AST node.
-func ToEnum(enum *ast.EnumNode) goschema.Enum {
-	return goschema.Enum{
+// Returns a schemamodel.Enum with the enum name and values extracted from the AST node.
+func ToEnum(enum *ast.EnumNode) schemamodel.Enum {
+	return schemamodel.Enum{
 		Name:   normalizeSQLIdentifier(enum.Name),
 		Values: enum.Values,
 	}
 }
 
-// ToDatabase converts an ast.StatementList to a complete goschema.Database schema.
+// ToDatabase converts an ast.StatementList to a complete schemamodel.Database schema.
 //
 // This function processes all statements in the AST statement list and extracts
 // the complete database schema including tables, fields, indexes, and enums.
@@ -632,11 +632,11 @@ func ToEnum(enum *ast.EnumNode) goschema.Enum {
 //		},
 //	}
 //	database := ToDatabase(statements)
-//	// Results in: goschema.Database{
-//	//   Enums: []goschema.Enum{{Name: "user_status", Values: [...]}},
-//	//   Tables: []goschema.Table{{Name: "users", StructName: "User"}},
-//	//   Fields: []goschema.Field{{Name: "id", Type: "SERIAL", Primary: true}},
-//	//   Indexes: []goschema.Index{{Name: "idx_users_status", StructName: "users"}},
+//	// Results in: schemamodel.Database{
+//	//   Enums: []schemamodel.Enum{{Name: "user_status", Values: [...]}},
+//	//   Tables: []schemamodel.Table{{Name: "users", StructName: "User"}},
+//	//   Fields: []schemamodel.Field{{Name: "id", Type: "SERIAL", Primary: true}},
+//	//   Indexes: []schemamodel.Index{{Name: "idx_users_status", StructName: "users"}},
 //	// }
 //
 // # Field Extraction
@@ -647,20 +647,20 @@ func ToEnum(enum *ast.EnumNode) goschema.Enum {
 //
 // # Return Value
 //
-// Returns a complete goschema.Database with all schema elements extracted and
+// Returns a complete schemamodel.Database with all schema elements extracted and
 // properly categorized from the AST statement list.
 // sourcePlatform names the dialect the statements were parsed as. It decides
 // whether a table's platform-specific options survive the conversion: a table
 // carries them in Overrides, keyed by platform, and an empty platform has
 // nowhere to put them. Passing "" here silently dropped every ClickHouse
 // MergeTree clause a .sql file declared (stokaro/ptah#1571).
-func ToDatabase(statements *ast.StatementList, sourcePlatform string) goschema.Database {
-	database := goschema.Database{
-		Schemas: make([]goschema.Schema, 0),
-		Tables:  make([]goschema.Table, 0),
-		Fields:  make([]goschema.Field, 0),
-		Indexes: make([]goschema.Index, 0),
-		Enums:   make([]goschema.Enum, 0),
+func ToDatabase(statements *ast.StatementList, sourcePlatform string) schemamodel.Database {
+	database := schemamodel.Database{
+		Schemas: make([]schemamodel.Schema, 0),
+		Tables:  make([]schemamodel.Table, 0),
+		Fields:  make([]schemamodel.Field, 0),
+		Indexes: make([]schemamodel.Index, 0),
+		Enums:   make([]schemamodel.Enum, 0),
 	}
 
 	// Process all statements and categorize them
@@ -681,10 +681,10 @@ func ToDatabase(statements *ast.StatementList, sourcePlatform string) goschema.D
 // case here: a node with no case is accepted by the parser and then silently
 // dropped, which is what issue #932 reported for views, domains, composite and
 // range types, extensions, functions and triggers.
-func appendStatement(database *goschema.Database, stmt ast.Node, sourcePlatform string) {
+func appendStatement(database *schemamodel.Database, stmt ast.Node, sourcePlatform string) {
 	switch node := stmt.(type) {
 	case *ast.CreateSchemaNode:
-		database.Schemas = append(database.Schemas, goschema.Schema{
+		database.Schemas = append(database.Schemas, schemamodel.Schema{
 			Name:    normalizeSQLIdentifier(node.Name),
 			Comment: node.Comment,
 			Charset: node.Charset,
@@ -725,7 +725,7 @@ func appendStatement(database *goschema.Database, stmt ast.Node, sourcePlatform 
 	}
 }
 
-func appendCreateTable(database *goschema.Database, node *ast.CreateTableNode, sourcePlatform string) {
+func appendCreateTable(database *schemamodel.Database, node *ast.CreateTableNode, sourcePlatform string) {
 	tableSchema := ToTable(node, sourcePlatform)
 	database.Tables = append(database.Tables, tableSchema)
 
@@ -762,9 +762,9 @@ func appendCreateTable(database *goschema.Database, node *ast.CreateTableNode, s
 // appendAlterTableConstraints captures constraints added by
 // ALTER TABLE ... ADD CONSTRAINT, such as the foreign keys ORM schema exporters
 // emit as separate statements after the CREATE TABLEs.
-func appendAlterTableConstraints(database *goschema.Database, node *ast.AlterTableNode) {
+func appendAlterTableConstraints(database *schemamodel.Database, node *ast.AlterTableNode) {
 	tableSchemaName, tableName := normalizeSQLTableIdentifier(node.Name)
-	qualifiedTableName := goschema.QualifyTableName(tableSchemaName, tableName)
+	qualifiedTableName := schemamodel.QualifyTableName(tableSchemaName, tableName)
 	structName := tableStructName(node.Name)
 	for _, op := range node.Operations {
 		switch typed := op.(type) {
@@ -785,7 +785,7 @@ func appendAlterTableConstraints(database *goschema.Database, node *ast.AlterTab
 			// is how the ClickHouse renderer writes one. Dropping it here left
 			// the statement parsed and then unrendered, which is the shape a
 			// parse-only check cannot see (stokaro/ptah#1574).
-			database.Indexes = append(database.Indexes, goschema.Index{
+			database.Indexes = append(database.Indexes, schemamodel.Index{
 				Name:       normalizeSQLIdentifier(typed.Name),
 				StructName: tableName,
 				// The expression is one element, not a column list: it can be
@@ -810,7 +810,7 @@ func appendAlterTableConstraints(database *goschema.Database, node *ast.AlterTab
 // on a table the source never asked to be strict. The dialects that do imply
 // NOT NULL from PRIMARY KEY apply that rule in their own renderer and in the
 // comparator, where it can be applied per dialect. See stokaro/ptah#1235.
-func markPrimaryFields(fields []goschema.Field, columns []string) {
+func markPrimaryFields(fields []schemamodel.Field, columns []string) {
 	if len(columns) != 1 {
 		return
 	}
@@ -822,10 +822,10 @@ func markPrimaryFields(fields []goschema.Field, columns []string) {
 	}
 }
 
-func ToConstraint(constraint *ast.ConstraintNode, structName, tableName string) (goschema.Constraint, bool) {
+func ToConstraint(constraint *ast.ConstraintNode, structName, tableName string) (schemamodel.Constraint, bool) {
 	switch constraint.Type {
 	case ast.UniqueConstraint:
-		return goschema.Constraint{
+		return schemamodel.Constraint{
 			StructName: structName,
 			Name:       normalizeSQLIdentifier(constraint.Name),
 			Type:       "UNIQUE",
@@ -837,7 +837,7 @@ func ToConstraint(constraint *ast.ConstraintNode, structName, tableName string) 
 			NullsDistinct: cloneBoolPtr(constraint.NullsDistinct),
 		}, true
 	case ast.ForeignKeyConstraint:
-		fk := goschema.Constraint{
+		fk := schemamodel.Constraint{
 			StructName: structName,
 			Name:       normalizeSQLIdentifier(constraint.Name),
 			Type:       "FOREIGN KEY",
@@ -853,7 +853,7 @@ func ToConstraint(constraint *ast.ConstraintNode, structName, tableName string) 
 		}
 		return fk, true
 	case ast.CheckConstraint:
-		return goschema.Constraint{
+		return schemamodel.Constraint{
 			StructName:      structName,
 			Name:            normalizeSQLIdentifier(constraint.Name),
 			Type:            "CHECK",
@@ -861,7 +861,7 @@ func ToConstraint(constraint *ast.ConstraintNode, structName, tableName string) 
 			CheckExpression: constraint.Expression,
 		}, true
 	case ast.ExcludeConstraint:
-		return goschema.Constraint{
+		return schemamodel.Constraint{
 			StructName:      structName,
 			Name:            normalizeSQLIdentifier(constraint.Name),
 			Type:            "EXCLUDE",
@@ -872,12 +872,12 @@ func ToConstraint(constraint *ast.ConstraintNode, structName, tableName string) 
 		}, true
 	case ast.PrimaryKeyConstraint:
 		// The only kind this deliberately declines. A table-level PRIMARY KEY
-		// is carried on [goschema.Table.PrimaryKey] and, when it names one
+		// is carried on [schemamodel.Table.PrimaryKey] and, when it names one
 		// column, on that column's Primary flag -- see markPrimaryFields. A
 		// second copy here would declare it twice.
-		return goschema.Constraint{}, false
+		return schemamodel.Constraint{}, false
 	default:
-		return goschema.Constraint{}, false
+		return schemamodel.Constraint{}, false
 	}
 }
 
@@ -911,10 +911,10 @@ func cloneBoolPtr(value *bool) *bool {
 //
 // Reconstructing platform overrides:
 //
-//	baseField := goschema.Field{
+//	baseField := schemamodel.Field{
 //		Name: "data", Type: "JSONB", Comment: "JSON data"
 //	}
-//	platformFields := map[string]goschema.Field{
+//	platformFields := map[string]schemamodel.Field{
 //		"mysql": {
 //			Name: "data", Type: "JSON", Comment: "JSON data"
 //		},
@@ -928,7 +928,7 @@ func cloneBoolPtr(value *bool) *bool {
 // # Return Value
 //
 // Returns the base field with the Overrides map populated with platform-specific differences.
-func MergeFieldOverrides(baseField goschema.Field, platformFields map[string]goschema.Field) goschema.Field {
+func MergeFieldOverrides(baseField schemamodel.Field, platformFields map[string]schemamodel.Field) schemamodel.Field {
 	if len(platformFields) == 0 {
 		return baseField
 	}
@@ -1006,10 +1006,10 @@ func MergeFieldOverrides(baseField goschema.Field, platformFields map[string]gos
 //
 // Reconstructing table platform overrides:
 //
-//	baseTable := goschema.Table{
+//	baseTable := schemamodel.Table{
 //		Name: "products", Engine: "InnoDB", Comment: "Product catalog"
 //	}
-//	platformTables := map[string]goschema.Table{
+//	platformTables := map[string]schemamodel.Table{
 //		"mariadb": {
 //			Name: "products", Engine: "InnoDB", Comment: "MariaDB product catalog"
 //		},
@@ -1020,7 +1020,7 @@ func MergeFieldOverrides(baseField goschema.Field, platformFields map[string]gos
 // # Return Value
 //
 // Returns the base table with the Overrides map populated with platform-specific differences.
-func MergeTableOverrides(baseTable goschema.Table, platformTables map[string]goschema.Table) goschema.Table {
+func MergeTableOverrides(baseTable schemamodel.Table, platformTables map[string]schemamodel.Table) schemamodel.Table {
 	if len(platformTables) == 0 {
 		return baseTable
 	}

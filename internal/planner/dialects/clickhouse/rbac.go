@@ -54,7 +54,7 @@ func createRoles(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 // plans no statement for it.
 //
 // There is no attribute to change, so any difference the comparison found is
-// between the PostgreSQL-shaped attributes [goschema.Role] carries and whatever
+// between the PostgreSQL-shaped attributes [schemamodel.Role] carries and whatever
 // the ClickHouse reader answered for them. ClickHouse's own ALTER ROLE renames a
 // role or attaches settings profiles, neither of which is what
 // [difftypes.RoleDiff] describes.

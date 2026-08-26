@@ -8,11 +8,11 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 func TestIndexIncludeSupportedDialects(t *testing.T) {
@@ -287,14 +287,14 @@ func TestIndexIncludeEmptyModelColumnFailsClosed(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `index "idx_accounts_email" has an empty INCLUDE column at position 2`)
 }
 
-func indexIncludeSchema(method string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Account", Name: "accounts"}},
-		Fields: []goschema.Field{
+func indexIncludeSchema(method string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Account", Name: "accounts"}},
+		Fields: []schemamodel.Field{
 			{StructName: "Account", Name: "email", Type: "TEXT"},
 			{StructName: "Account", Name: "display_name", Type: "TEXT"},
 		},
-		Indexes: []goschema.Index{{
+		Indexes: []schemamodel.Index{{
 			StructName:     "Account",
 			Name:           "idx_accounts_email",
 			Fields:         []string{"email"},

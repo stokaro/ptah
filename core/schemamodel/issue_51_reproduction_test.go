@@ -1,4 +1,4 @@
-package goschema_test
+package schemamodel_test
 
 import (
 	"slices"
@@ -7,8 +7,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -21,14 +21,14 @@ func TestIssue51ExactReproduction(t *testing.T) {
 
 	// Recreate the exact scenario from issue #51
 	// This represents the TenantAwareEntityID embedded struct pattern
-	db := &goschema.Database{
-		Tables: []goschema.Table{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: "tenants", StructName: "Tenant"},
 			{Name: "users", StructName: "User"},
 			{Name: "locations", StructName: "Location"},
 			{Name: "areas", StructName: "Area"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			// Tenants table (no dependencies)
 			{StructName: "Tenant", Name: "id", Type: "TEXT", Primary: true},
 			{StructName: "Tenant", Name: "name", Type: "TEXT"},
@@ -54,7 +54,7 @@ func TestIssue51ExactReproduction(t *testing.T) {
 			{StructName: "Area", Name: "name", Type: "TEXT"},
 		},
 		Dependencies:               make(map[string][]string),
-		SelfReferencingForeignKeys: make(map[string][]goschema.SelfReferencingFK),
+		SelfReferencingForeignKeys: make(map[string][]schemamodel.SelfReferencingFK),
 	}
 
 	// Build dependency graph using the new algorithm
@@ -177,7 +177,7 @@ func TestIssue51ExactReproduction(t *testing.T) {
 }
 
 // Helper functions for the test (simplified versions of the actual implementation)
-func buildDependencyGraphIssue51(r *goschema.Database) {
+func buildDependencyGraphIssue51(r *schemamodel.Database) {
 	// Initialize dependencies map for all tables
 	for _, table := range r.Tables {
 		r.Dependencies[table.Name] = make([]string, 0)
@@ -185,7 +185,7 @@ func buildDependencyGraphIssue51(r *goschema.Database) {
 
 	// Initialize self-referencing foreign keys tracking
 	if r.SelfReferencingForeignKeys == nil {
-		r.SelfReferencingForeignKeys = make(map[string][]goschema.SelfReferencingFK)
+		r.SelfReferencingForeignKeys = make(map[string][]schemamodel.SelfReferencingFK)
 	}
 
 	// Analyze foreign key relationships
@@ -205,7 +205,7 @@ func buildDependencyGraphIssue51(r *goschema.Database) {
 			// Check if this is a self-referencing foreign key
 			if table.Name == refTable {
 				// Track self-referencing foreign key for deferred constraint creation
-				r.SelfReferencingForeignKeys[table.Name] = append(r.SelfReferencingForeignKeys[table.Name], goschema.SelfReferencingFK{
+				r.SelfReferencingForeignKeys[table.Name] = append(r.SelfReferencingForeignKeys[table.Name], schemamodel.SelfReferencingFK{
 					FieldName:      field.Name,
 					Foreign:        field.Foreign,
 					ForeignKeyName: field.ForeignKeyName,
@@ -222,9 +222,9 @@ func buildDependencyGraphIssue51(r *goschema.Database) {
 	}
 }
 
-func sortTablesByDependenciesIssue51(r *goschema.Database) {
+func sortTablesByDependenciesIssue51(r *schemamodel.Database) {
 	// Simple topological sort implementation
-	var sorted []goschema.Table
+	var sorted []schemamodel.Table
 	inDegree := make(map[string]int)
 
 	for tableName := range r.Dependencies {
@@ -241,7 +241,7 @@ func sortTablesByDependenciesIssue51(r *goschema.Database) {
 		}
 	}
 
-	tableMap := make(map[string]goschema.Table)
+	tableMap := make(map[string]schemamodel.Table)
 	for _, table := range r.Tables {
 		tableMap[table.Name] = table
 	}

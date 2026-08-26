@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 )
 
@@ -53,7 +53,7 @@ func TestRenderInspectedKeepsADatabaseScopedPropertyAtDatabaseScope(t *testing.T
 	c := qt.New(t)
 
 	db := sqlServerObjects()
-	db.ExtendedProperties = append(db.ExtendedProperties, goschema.ExtendedProperty{
+	db.ExtendedProperties = append(db.ExtendedProperties, schemamodel.ExtendedProperty{
 		Name: "ptah_flag", Value: "database scope",
 	})
 
@@ -65,18 +65,18 @@ func TestRenderInspectedKeepsADatabaseScopedPropertyAtDatabaseScope(t *testing.T
 }
 
 // sqlServerObjects is one table with a synonym and a column property on it.
-func sqlServerObjects() *goschema.Database {
-	return &goschema.Database{
-		Schemas: []goschema.Schema{{Name: "dbo"}},
-		Tables:  []goschema.Table{{StructName: "T", Name: "users", Schema: "dbo"}},
-		Fields: []goschema.Field{
+func sqlServerObjects() *schemamodel.Database {
+	return &schemamodel.Database{
+		Schemas: []schemamodel.Schema{{Name: "dbo"}},
+		Tables:  []schemamodel.Table{{StructName: "T", Name: "users", Schema: "dbo"}},
+		Fields: []schemamodel.Field{
 			{StructName: "T", Name: "id", Type: "INT", Primary: true},
 			{StructName: "T", Name: "title", Type: "NVARCHAR(50)"},
 		},
-		Synonyms: []goschema.Synonym{{
+		Synonyms: []schemamodel.Synonym{{
 			Name: "s_users", Schema: "dbo", Target: "other.dbo.users",
 		}},
-		ExtendedProperties: []goschema.ExtendedProperty{{
+		ExtendedProperties: []schemamodel.ExtendedProperty{{
 			Name: "MS_Description", Schema: "dbo", Table: "users",
 			Column: "title", Value: "the title",
 		}},

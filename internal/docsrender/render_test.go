@@ -6,26 +6,26 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/docsrender"
 )
 
-func usersSchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func usersSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "User", Name: "users", Comment: "People who can sign in."},
 			{StructName: "Post", Name: "posts"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "BIGINT", Primary: true},
 			{StructName: "User", Name: "email", Type: "TEXT", Unique: true, Comment: "Login identity."},
 			{StructName: "User", Name: "status", Type: "TEXT", Default: "'active'", Nullable: true},
 			{StructName: "Post", Name: "author_id", Type: "BIGINT", Foreign: "users(id)"},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{StructName: "User", Name: "idx_users_email", Fields: []string{"email"}, Unique: true},
 		},
-		Enums: []goschema.Enum{{Name: "status", Values: []string{"active", "banned"}}},
+		Enums: []schemamodel.Enum{{Name: "status", Values: []string{"active", "banned"}}},
 	}
 }
 
@@ -57,9 +57,9 @@ func TestRenderDocumentsEveryColumnOfEveryTable(t *testing.T) {
 // source and silently wrong on the other.
 func TestRenderReportsADefaultFromEitherSource(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "T", Name: "t"}},
-		Fields: []goschema.Field{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "T", Name: "t"}},
+		Fields: []schemamodel.Field{
 			{StructName: "T", Name: "from_yaml", Type: "TEXT", Default: "'a'"},
 			{StructName: "T", Name: "from_go", Type: "TEXT", Default: "'b'", DefaultSet: true},
 			{StructName: "T", Name: "empty_on_purpose", Type: "TEXT", DefaultSet: true},
@@ -94,9 +94,9 @@ func TestRenderSaysSoWhenTheSelectionMatchesNothing(t *testing.T) {
 
 func TestRenderEscapesAPipeRatherThanBreakingTheRow(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "T", Name: "t"}},
-		Fields: []goschema.Field{{StructName: "T", Name: "c", Type: "TEXT", Comment: "a | b"}},
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "T", Name: "t"}},
+		Fields: []schemamodel.Field{{StructName: "T", Name: "c", Type: "TEXT", Comment: "a | b"}},
 	}
 
 	result, err := docsrender.Render(db, docsrender.Options{})

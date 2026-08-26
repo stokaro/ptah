@@ -13,7 +13,7 @@ import (
 // BLOCKS, and the parse result counts SCHEMAS.
 //
 // The two differ exactly when a document declares one schema twice.
-// `goschema.Finalize` folds those into one entry in Database.Schemas, while the
+// `schemamodel.Finalize` folds those into one entry in Database.Schemas, while the
 // pinned Atlas community binary v1.3.0 counts two: measured with
 // `schema inspect -u file://<schema "main" twice>.hcl --dev-url sqlite://dv?mode=memory`,
 // that binary exits 1 with `cannot use HCL with more than 1 schema when dev-url

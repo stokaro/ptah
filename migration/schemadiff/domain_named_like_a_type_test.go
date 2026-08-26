@@ -6,8 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
@@ -53,9 +53,9 @@ func TestCompareWithDialect_PostgresDomainNamedLikeATypeStillReportsARealChange(
 		},
 	}
 
-	desired := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "T", Name: "t"}},
-		Fields: []goschema.Field{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "T", Name: "t"}},
+		Fields: []schemamodel.Field{
 			{StructName: "T", Name: "a", Type: "BIGINT"},
 			{StructName: "T", Name: "b", Type: "TEXT"},
 		},

@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -25,16 +25,16 @@ func TestPlanner_GenerateMigrationAST_SchemaObjectsModified(t *testing.T) {
 	c := qt.New(t)
 	planner := postgres.New()
 
-	generated := &goschema.Database{
-		Views: []goschema.View{{
+	desired := &schemamodel.Database{
+		Views: []schemamodel.View{{
 			Name: "active_users",
 			Body: "SELECT id FROM users WHERE deleted_at IS NULL",
 		}},
-		MaterializedViews: []goschema.MaterializedView{{
+		MaterializedViews: []schemamodel.MaterializedView{{
 			Name: "user_stats",
 			Body: "SELECT id, COUNT(*) FROM users GROUP BY id",
 		}},
-		Triggers: []goschema.Trigger{{
+		Triggers: []schemamodel.Trigger{{
 			Name:   "set_updated_at",
 			Table:  "users",
 			Timing: "BEFORE",
@@ -51,7 +51,7 @@ func TestPlanner_GenerateMigrationAST_SchemaObjectsModified(t *testing.T) {
 		TriggersModified:          []difftypes.TriggerDiff{{TriggerName: "set_updated_at", TableName: "users", Changes: map[string]string{"body": "old -> new"}}},
 	}
 
-	nodes, err := planner.GenerateMigrationAST(diff, generated)
+	nodes, err := planner.GenerateMigrationAST(diff, desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -149,8 +149,8 @@ func TestPlanner_GenerateMigrationAST_ModifiedViewDropsWhenReplaceWouldBeRefused
 			c := qt.New(t)
 			planner := postgres.New()
 
-			generated := &goschema.Database{
-				Views: []goschema.View{{Name: "active_users", Body: tc.nextBody}},
+			desired := &schemamodel.Database{
+				Views: []schemamodel.View{{Name: "active_users", Body: tc.nextBody}},
 			}
 			diff := &difftypes.SchemaDiff{
 				ViewsModified: []difftypes.ViewDiff{{
@@ -160,7 +160,7 @@ func TestPlanner_GenerateMigrationAST_ModifiedViewDropsWhenReplaceWouldBeRefused
 				}},
 			}
 
-			nodes, err := planner.GenerateMigrationAST(diff, generated)
+			nodes, err := planner.GenerateMigrationAST(diff, desired)
 			c.Assert(err, qt.IsNil)
 			sql, err := renderer.RenderSQL("postgres", nodes...)
 			c.Assert(err, qt.IsNil)
@@ -297,8 +297,8 @@ func TestPlanner_GenerateMigrationAST_UndecidableViewBodyFollowsTheDirection(t *
 			c := qt.New(t)
 			planner := postgres.New()
 
-			generated := &goschema.Database{
-				Views: []goschema.View{{Name: "active_users", Body: tc.nextBody}},
+			desired := &schemamodel.Database{
+				Views: []schemamodel.View{{Name: "active_users", Body: tc.nextBody}},
 			}
 			diff := &difftypes.SchemaDiff{
 				ViewsModified: []difftypes.ViewDiff{{
@@ -309,7 +309,7 @@ func TestPlanner_GenerateMigrationAST_UndecidableViewBodyFollowsTheDirection(t *
 				}},
 			}
 
-			nodes, err := planner.GenerateMigrationAST(diff, generated)
+			nodes, err := planner.GenerateMigrationAST(diff, desired)
 			c.Assert(err, qt.IsNil)
 			sql, err := renderer.RenderSQL("postgres", nodes...)
 			c.Assert(err, qt.IsNil)
@@ -389,8 +389,8 @@ func TestPlanner_GenerateMigrationAST_SameStarOverSameRelationsKeepsTheReplace(t
 			c := qt.New(t)
 			planner := postgres.New()
 
-			generated := &goschema.Database{
-				Views: []goschema.View{{Name: "active_users", Body: tc.nextBody}},
+			desired := &schemamodel.Database{
+				Views: []schemamodel.View{{Name: "active_users", Body: tc.nextBody}},
 			}
 			diff := &difftypes.SchemaDiff{
 				ViewsModified: []difftypes.ViewDiff{{
@@ -401,7 +401,7 @@ func TestPlanner_GenerateMigrationAST_SameStarOverSameRelationsKeepsTheReplace(t
 				}},
 			}
 
-			nodes, err := planner.GenerateMigrationAST(diff, generated)
+			nodes, err := planner.GenerateMigrationAST(diff, desired)
 			c.Assert(err, qt.IsNil)
 			sql, err := renderer.RenderSQL("postgres", nodes...)
 			c.Assert(err, qt.IsNil)
@@ -423,8 +423,8 @@ func TestPlanner_GenerateMigrationAST_ModifiedViewsDropInDependencyOrder(t *test
 	c := qt.New(t)
 	planner := postgres.New()
 
-	generated := &goschema.Database{
-		Views: []goschema.View{
+	desired := &schemamodel.Database{
+		Views: []schemamodel.View{
 			{Name: "a_report", Body: "SELECT id FROM z_base"},
 			{Name: "z_base", Body: "SELECT id FROM users"},
 		},
@@ -436,7 +436,7 @@ func TestPlanner_GenerateMigrationAST_ModifiedViewsDropInDependencyOrder(t *test
 		},
 	}
 
-	nodes, err := planner.GenerateMigrationAST(diff, generated)
+	nodes, err := planner.GenerateMigrationAST(diff, desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -460,14 +460,14 @@ func TestPlanner_GenerateMigrationAST_DroppedViewRebuildsDeclaredDependents(t *t
 	c := qt.New(t)
 	planner := postgres.New()
 
-	generated := &goschema.Database{
-		Views: []goschema.View{
+	desired := &schemamodel.Database{
+		Views: []schemamodel.View{
 			{Name: "base_view", Body: "SELECT id, email FROM users"},
 			{Name: "mid_view", Body: "SELECT id FROM base_view"},
 			{Name: "leaf_view", Body: "SELECT id FROM mid_view"},
 			{Name: "unrelated_view", Body: "SELECT id FROM accounts"},
 		},
-		MaterializedViews: []goschema.MaterializedView{
+		MaterializedViews: []schemamodel.MaterializedView{
 			{Name: "mid_stats", Body: "SELECT count(*) AS total FROM base_view"},
 		},
 	}
@@ -481,7 +481,7 @@ func TestPlanner_GenerateMigrationAST_DroppedViewRebuildsDeclaredDependents(t *t
 		}},
 	}
 
-	nodes, err := planner.GenerateMigrationAST(diff, generated)
+	nodes, err := planner.GenerateMigrationAST(diff, desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -518,14 +518,14 @@ func TestPlanner_GenerateMigrationAST_CascadeRebuildReadsCodeNotText(t *testing.
 	c := qt.New(t)
 	planner := postgres.New()
 
-	generated := &goschema.Database{
-		Views: []goschema.View{
+	desired := &schemamodel.Database{
+		Views: []schemamodel.View{
 			{Name: "base_view", Body: "SELECT id, email FROM users"},
 			{Name: "reader_view", Body: "SELECT id FROM base_view"},
 			{Name: "label_view", Body: "SELECT id, 'base_view' AS label FROM accounts"},
 			{Name: "note_view", Body: "SELECT id FROM accounts -- was base_view once\n"},
 		},
-		MaterializedViews: []goschema.MaterializedView{
+		MaterializedViews: []schemamodel.MaterializedView{
 			{Name: "label_stats", Body: "SELECT 'base_view' AS label, count(*) AS total FROM accounts"},
 			{Name: "reader_stats", Body: "SELECT count(*) AS total FROM base_view"},
 		},
@@ -540,7 +540,7 @@ func TestPlanner_GenerateMigrationAST_CascadeRebuildReadsCodeNotText(t *testing.
 		}},
 	}
 
-	nodes, err := planner.GenerateMigrationAST(diff, generated)
+	nodes, err := planner.GenerateMigrationAST(diff, desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -617,8 +617,8 @@ func TestPlanner_GenerateMigrationAST_QuotedRelationCaseIsNotFolded(t *testing.T
 			c := qt.New(t)
 			planner := postgres.New()
 
-			generated := &goschema.Database{
-				Views: []goschema.View{{Name: "probe_view", Body: tc.nextBody}},
+			desired := &schemamodel.Database{
+				Views: []schemamodel.View{{Name: "probe_view", Body: tc.nextBody}},
 			}
 			diff := &difftypes.SchemaDiff{
 				ViewsModified: []difftypes.ViewDiff{{
@@ -629,7 +629,7 @@ func TestPlanner_GenerateMigrationAST_QuotedRelationCaseIsNotFolded(t *testing.T
 				}},
 			}
 
-			nodes, err := planner.GenerateMigrationAST(diff, generated)
+			nodes, err := planner.GenerateMigrationAST(diff, desired)
 			c.Assert(err, qt.IsNil)
 			sql, err := renderer.RenderSQL("postgres", nodes...)
 			c.Assert(err, qt.IsNil)
@@ -647,8 +647,8 @@ func TestPlanner_GenerateMigrationAST_DuplicateTriggerNamesUseDistinctFunctions(
 	c := qt.New(t)
 	planner := postgres.New()
 
-	generated := &goschema.Database{
-		Triggers: []goschema.Trigger{
+	desired := &schemamodel.Database{
+		Triggers: []schemamodel.Trigger{
 			{
 				Name:   "set_updated_at",
 				Table:  "users",
@@ -672,7 +672,7 @@ func TestPlanner_GenerateMigrationAST_DuplicateTriggerNamesUseDistinctFunctions(
 		},
 	}
 
-	nodes, err := planner.GenerateMigrationAST(diff, generated)
+	nodes, err := planner.GenerateMigrationAST(diff, desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -694,8 +694,8 @@ func TestPlanner_GenerateMigrationAST_MaterializedViewPlansNoRefresh(t *testing.
 	c := qt.New(t)
 	planner := postgres.New()
 
-	generated := &goschema.Database{
-		MaterializedViews: []goschema.MaterializedView{{
+	desired := &schemamodel.Database{
+		MaterializedViews: []schemamodel.MaterializedView{{
 			Name: "user_stats",
 			Body: "SELECT id, COUNT(*) FROM users GROUP BY id",
 		}},
@@ -704,7 +704,7 @@ func TestPlanner_GenerateMigrationAST_MaterializedViewPlansNoRefresh(t *testing.
 		MaterializedViewsAdded: []string{"user_stats"},
 	}
 
-	nodes, err := planner.GenerateMigrationAST(diff, generated)
+	nodes, err := planner.GenerateMigrationAST(diff, desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -716,8 +716,8 @@ func TestPlanner_GenerateMigrationAST_OrdersFunctionsByDependencies(t *testing.T
 	c := qt.New(t)
 	planner := postgres.New()
 
-	generated := &goschema.Database{
-		Functions: []goschema.Function{
+	desired := &schemamodel.Database{
+		Functions: []schemamodel.Function{
 			{
 				Name:       "a_child",
 				Parameters: "",
@@ -741,7 +741,7 @@ func TestPlanner_GenerateMigrationAST_OrdersFunctionsByDependencies(t *testing.T
 		FunctionsAdded: []string{"a_child", "z_parent"},
 	}
 
-	nodes, err := planner.GenerateMigrationAST(diff, generated)
+	nodes, err := planner.GenerateMigrationAST(diff, desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -754,12 +754,12 @@ func TestPlanner_GenerateMigrationAST_OrdersViewLikeObjectsByDependencies(t *tes
 	c := qt.New(t)
 	planner := postgres.New()
 
-	generated := &goschema.Database{
-		Views: []goschema.View{{
+	desired := &schemamodel.Database{
+		Views: []schemamodel.View{{
 			Name: "a_report",
 			Body: "SELECT id FROM z_base",
 		}},
-		MaterializedViews: []goschema.MaterializedView{{
+		MaterializedViews: []schemamodel.MaterializedView{{
 			Name: "z_base",
 			Body: "SELECT id FROM users",
 		}},
@@ -769,7 +769,7 @@ func TestPlanner_GenerateMigrationAST_OrdersViewLikeObjectsByDependencies(t *tes
 		MaterializedViewsAdded: []string{"z_base"},
 	}
 
-	nodes, err := planner.GenerateMigrationAST(diff, generated)
+	nodes, err := planner.GenerateMigrationAST(diff, desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -782,8 +782,8 @@ func TestPlanner_GenerateMigrationAST_ModifiesRLSPolicies(t *testing.T) {
 	c := qt.New(t)
 	planner := postgres.New()
 
-	generated := &goschema.Database{
-		RLSPolicies: []goschema.RLSPolicy{{
+	desired := &schemamodel.Database{
+		RLSPolicies: []schemamodel.RLSPolicy{{
 			Name:            "tenant_isolation",
 			Table:           "accounts",
 			PolicyFor:       "SELECT",
@@ -799,7 +799,7 @@ func TestPlanner_GenerateMigrationAST_ModifiesRLSPolicies(t *testing.T) {
 		}},
 	}
 
-	nodes, err := planner.GenerateMigrationAST(diff, generated)
+	nodes, err := planner.GenerateMigrationAST(diff, desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)

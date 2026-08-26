@@ -788,8 +788,8 @@ func oracleGrantTarget(object string) string {
 //
 // Skipped rather than refused, which is the difference between this and
 // VisitAlterRole above. A refusal fails the whole render, and
-// goschema.ExtendedProperty carries no dialect scope -- exactly as
-// goschema.Synonym does not -- so refusing here would make one schema
+// schemamodel.ExtendedProperty carries no dialect scope -- exactly as
+// schemamodel.Synonym does not -- so refusing here would make one schema
 // renderable on five targets and fatal on the sixth. Every other renderer
 // writes this comment; Oracle answering differently would be the asymmetry,
 // not the consistency.

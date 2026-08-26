@@ -31,7 +31,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
@@ -423,7 +423,7 @@ func findLiveColumn(c *qt.C, tables []catalog.Table, table, column string) catal
 	return catalog.Column{}
 }
 
-func findConvertedField(c *qt.C, converted *goschema.Database, column string) goschema.Field {
+func findConvertedField(c *qt.C, converted *schemamodel.Database, column string) schemamodel.Field {
 	c.Helper()
 
 	for _, field := range converted.Fields {
@@ -432,5 +432,5 @@ func findConvertedField(c *qt.C, converted *goschema.Database, column string) go
 		}
 	}
 	c.Fatalf("converted schema has no field %q", column)
-	return goschema.Field{}
+	return schemamodel.Field{}
 }

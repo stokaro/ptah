@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashcl"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 )
@@ -30,14 +30,14 @@ import (
 func TestRenderInspected_ARoutineIsWrittenAsWhatItIs(t *testing.T) {
 	tests := []struct {
 		name     string
-		routine  goschema.Function
+		routine  schemamodel.Function
 		want     string
 		unwanted string
 	}{
 		{
 			name: "a procedure is a procedure block",
-			routine: goschema.Function{
-				Name: "p_touch", Kind: goschema.FunctionKindProcedure,
+			routine: schemamodel.Function{
+				Name: "p_touch", Kind: schemamodel.FunctionKindProcedure,
 				Language: "plpgsql", Body: "BEGIN END;",
 			},
 			want:     `procedure "p_touch" {`,
@@ -45,7 +45,7 @@ func TestRenderInspected_ARoutineIsWrittenAsWhatItIs(t *testing.T) {
 		},
 		{
 			name: "a function is still a function block",
-			routine: goschema.Function{
+			routine: schemamodel.Function{
 				Name: "f_one", Returns: "integer", Language: "sql", Body: "SELECT 1",
 			},
 			want:     `function "f_one" {`,
@@ -53,7 +53,7 @@ func TestRenderInspected_ARoutineIsWrittenAsWhatItIs(t *testing.T) {
 		},
 		{
 			name: "a function keeps the return type that identifies it",
-			routine: goschema.Function{
+			routine: schemamodel.Function{
 				Name: "f_one", Returns: "integer", Language: "sql", Body: "SELECT 1",
 			},
 			want:     `return = "integer"`,
@@ -65,8 +65,8 @@ func TestRenderInspected_ARoutineIsWrittenAsWhatItIs(t *testing.T) {
 			// a return type describes an object no engine can create, and the
 			// renderer must not pass it on just because the field was set.
 			name: "a procedure carrying a return type is still written without one",
-			routine: goschema.Function{
-				Name: "p_touch", Kind: goschema.FunctionKindProcedure,
+			routine: schemamodel.Function{
+				Name: "p_touch", Kind: schemamodel.FunctionKindProcedure,
 				Returns: "integer", Language: "plpgsql", Body: "BEGIN END;",
 			},
 			want:     `procedure "p_touch" {`,
@@ -77,7 +77,7 @@ func TestRenderInspected_ARoutineIsWrittenAsWhatItIs(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db := &goschema.Database{Functions: []goschema.Function{test.routine}}
+			db := &schemamodel.Database{Functions: []schemamodel.Function{test.routine}}
 
 			result, err := atlashclrender.RenderInspected(db, platform.Postgres, "public")
 
@@ -100,14 +100,14 @@ func TestRenderInspected_AProcedureSurvivesItsOwnDescription(t *testing.T) {
 		name string
 		kind string
 	}{
-		{name: "a procedure comes back a procedure", kind: goschema.FunctionKindProcedure},
+		{name: "a procedure comes back a procedure", kind: schemamodel.FunctionKindProcedure},
 		{name: "a function comes back a function", kind: ""},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db := &goschema.Database{Functions: []goschema.Function{{
+			db := &schemamodel.Database{Functions: []schemamodel.Function{{
 				Name:       "public.r",
 				Kind:       test.kind,
 				Parameters: "a integer",

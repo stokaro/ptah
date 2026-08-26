@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // This file converts the schema objects beyond tables, indexes and enums that
@@ -12,8 +12,8 @@ import (
 // the end of ToDatabase's switch, so a CREATE VIEW in a --schema-file parsed
 // cleanly and then vanished from the rendered schema.
 
-func toSequence(node *ast.CreateSequenceNode) goschema.Sequence {
-	return goschema.Sequence{
+func toSequence(node *ast.CreateSequenceNode) schemamodel.Sequence {
+	return schemamodel.Sequence{
 		Name:        normalizeSQLIdentifier(node.Name),
 		Schema:      normalizeSQLIdentifier(node.Schema),
 		AsType:      normalizeSQLIdentifier(node.AsType),
@@ -29,8 +29,8 @@ func toSequence(node *ast.CreateSequenceNode) goschema.Sequence {
 	}
 }
 
-func toRole(node *ast.CreateRoleNode) goschema.Role {
-	return goschema.Role{
+func toRole(node *ast.CreateRoleNode) schemamodel.Role {
+	return schemamodel.Role{
 		Name:        normalizeSQLIdentifier(node.Name),
 		Login:       node.Login,
 		Password:    node.Password,
@@ -43,8 +43,8 @@ func toRole(node *ast.CreateRoleNode) goschema.Role {
 	}
 }
 
-func toGrant(node *ast.GrantPrivilegeNode) goschema.Grant {
-	grant := goschema.Grant{
+func toGrant(node *ast.GrantPrivilegeNode) schemamodel.Grant {
+	grant := schemamodel.Grant{
 		Role:       normalizeSQLIdentifier(node.Role),
 		Privileges: node.Privileges,
 		WithOption: node.WithOption,
@@ -72,8 +72,8 @@ func toGrant(node *ast.GrantPrivilegeNode) goschema.Grant {
 // ORDERS` name different relations, so keeping the raw spelling left the rest
 // of the pipeline to guess -- and the guess secured a relation the author did
 // not name (stokaro/ptah#1311).
-func toRLSPolicy(node *ast.CreatePolicyNode) goschema.RLSPolicy {
-	return goschema.RLSPolicy{
+func toRLSPolicy(node *ast.CreatePolicyNode) schemamodel.RLSPolicy {
+	return schemamodel.RLSPolicy{
 		Name:                normalizeSQLIdentifier(node.Name),
 		Table:               catalogPostgresTableReference(node.Table),
 		PolicyFor:           node.PolicyFor,
@@ -100,15 +100,15 @@ func normalizeRoleList(roles string) string {
 // toRLSEnabledTable resolves its table the same way [toRLSPolicy] does. The
 // enablement and the policies on it have to name one relation, or the render
 // turns row-level security on for one table and protects another.
-func toRLSEnabledTable(node *ast.AlterTableEnableRLSNode) goschema.RLSEnabledTable {
-	return goschema.RLSEnabledTable{
+func toRLSEnabledTable(node *ast.AlterTableEnableRLSNode) schemamodel.RLSEnabledTable {
+	return schemamodel.RLSEnabledTable{
 		Table:   catalogPostgresTableReference(node.Table),
 		Comment: node.Comment,
 	}
 }
 
-func toView(node *ast.CreateViewNode) goschema.View {
-	return goschema.View{
+func toView(node *ast.CreateViewNode) schemamodel.View {
+	return schemamodel.View{
 		Name:      normalizeSQLTableReference(node.Name),
 		Body:      strings.TrimSpace(node.Body),
 		WithCheck: node.WithCheck,
@@ -116,8 +116,8 @@ func toView(node *ast.CreateViewNode) goschema.View {
 	}
 }
 
-func toMaterializedView(node *ast.CreateMaterializedViewNode) goschema.MaterializedView {
-	view := goschema.MaterializedView{
+func toMaterializedView(node *ast.CreateMaterializedViewNode) schemamodel.MaterializedView {
+	view := schemamodel.MaterializedView{
 		Name:    normalizeSQLTableReference(node.Name),
 		Body:    strings.TrimSpace(node.Body),
 		Comment: node.Comment,
@@ -125,8 +125,8 @@ func toMaterializedView(node *ast.CreateMaterializedViewNode) goschema.Materiali
 	return view
 }
 
-func toFunction(node *ast.CreateFunctionNode) goschema.Function {
-	function := goschema.Function{
+func toFunction(node *ast.CreateFunctionNode) schemamodel.Function {
+	function := schemamodel.Function{
 		Name:       normalizeSQLTableReference(node.Name),
 		Parameters: node.Parameters,
 		Returns:    node.Returns,
@@ -140,8 +140,8 @@ func toFunction(node *ast.CreateFunctionNode) goschema.Function {
 	return function
 }
 
-func toTrigger(node *ast.CreateTriggerNode) goschema.Trigger {
-	trigger := goschema.Trigger{
+func toTrigger(node *ast.CreateTriggerNode) schemamodel.Trigger {
+	trigger := schemamodel.Trigger{
 		Name:    normalizeSQLIdentifier(node.Name),
 		Table:   normalizeSQLTableReference(node.Table),
 		Timing:  node.Timing,
@@ -159,12 +159,12 @@ func toTrigger(node *ast.CreateTriggerNode) goschema.Trigger {
 
 // appendCreateType routes a CREATE TYPE node to the bucket its type definition
 // belongs in. CREATE DOMAIN also arrives here, as a DomainTypeDef.
-func appendCreateType(database *goschema.Database, node *ast.CreateTypeNode) {
+func appendCreateType(database *schemamodel.Database, node *ast.CreateTypeNode) {
 	schema, name := normalizeSQLTableIdentifier(node.Name)
 	switch definition := node.TypeDef.(type) {
 	case *ast.EnumTypeDef:
-		database.Enums = append(database.Enums, goschema.Enum{
-			Name:   goschema.QualifyTableName(schema, name),
+		database.Enums = append(database.Enums, schemamodel.Enum{
+			Name:   schemamodel.QualifyTableName(schema, name),
 			Values: definition.Values,
 		})
 	case *ast.CompositeTypeDef:
@@ -176,15 +176,15 @@ func appendCreateType(database *goschema.Database, node *ast.CreateTypeNode) {
 	}
 }
 
-func toCompositeType(schema, name string, node *ast.CreateTypeNode, definition *ast.CompositeTypeDef) goschema.CompositeType {
-	fields := make([]goschema.CompositeTypeField, 0, len(definition.Fields))
+func toCompositeType(schema, name string, node *ast.CreateTypeNode, definition *ast.CompositeTypeDef) schemamodel.CompositeType {
+	fields := make([]schemamodel.CompositeField, 0, len(definition.Fields))
 	for _, field := range definition.Fields {
-		fields = append(fields, goschema.CompositeTypeField{
+		fields = append(fields, schemamodel.CompositeField{
 			Name: normalizeSQLIdentifier(field.Name),
 			Type: field.Type,
 		})
 	}
-	composite := goschema.CompositeType{
+	composite := schemamodel.CompositeType{
 		Name:    name,
 		Schema:  schema,
 		Fields:  fields,
@@ -194,8 +194,8 @@ func toCompositeType(schema, name string, node *ast.CreateTypeNode, definition *
 	return composite
 }
 
-func toRange(schema, name string, node *ast.CreateTypeNode, definition *ast.RangeTypeDef) goschema.Range {
-	rangeType := goschema.Range{
+func toRange(schema, name string, node *ast.CreateTypeNode, definition *ast.RangeTypeDef) schemamodel.Range {
+	rangeType := schemamodel.Range{
 		Name:           name,
 		Schema:         schema,
 		Subtype:        definition.Subtype,
@@ -209,8 +209,8 @@ func toRange(schema, name string, node *ast.CreateTypeNode, definition *ast.Rang
 	return rangeType
 }
 
-func toDomain(schema, name string, node *ast.CreateTypeNode, definition *ast.DomainTypeDef) goschema.Domain {
-	domain := goschema.Domain{
+func toDomain(schema, name string, node *ast.CreateTypeNode, definition *ast.DomainTypeDef) schemamodel.Domain {
+	domain := schemamodel.Domain{
 		Name:     name,
 		Schema:   schema,
 		BaseType: definition.BaseType,
@@ -229,7 +229,7 @@ func toDomain(schema, name string, node *ast.CreateTypeNode, definition *ast.Dom
 // applyRoleComment attaches a COMMENT ON ROLE statement to the role it names.
 // PostgreSQL has no inline role comment, so Ptah's renderer emits the comment
 // as a second statement; reading it back is what keeps the pair round-tripping.
-func applyRoleComment(database *goschema.Database, node *ast.CommentNode) {
+func applyRoleComment(database *schemamodel.Database, node *ast.CommentNode) {
 	name, comment, ok := parseRoleComment(node.Text)
 	if !ok {
 		return
@@ -271,7 +271,7 @@ func unquoteSQLStringLiteral(value string) string {
 // trigger that owns it. Rendering a trigger for PostgreSQL emits a
 // CREATE FUNCTION plus a CREATE TRIGGER pair, so reading that SQL back has to
 // recombine the two or the next render would emit the function twice.
-func adoptTriggerFunctions(database *goschema.Database) {
+func adoptTriggerFunctions(database *schemamodel.Database) {
 	if len(database.Triggers) == 0 || len(database.Functions) == 0 {
 		return
 	}
@@ -298,7 +298,7 @@ func adoptTriggerFunctions(database *goschema.Database) {
 		return
 	}
 
-	functions := make([]goschema.Function, 0, len(database.Functions))
+	functions := make([]schemamodel.Function, 0, len(database.Functions))
 	for _, function := range database.Functions {
 		if !owned[function.Name] {
 			functions = append(functions, function)

@@ -6,8 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
@@ -272,13 +272,13 @@ func mysqlConnectionInfo(dialect, schema string) catalog.ServerInfo {
 
 // mysqlForeignKeyDesired builds a desired side whose foreign key is declared on
 // the field, which is how an Atlas HCL `foreign_key` block arrives.
-func mysqlForeignKeyDesired(schema string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func mysqlForeignKeyDesired(schema string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Users", Name: "users", Schema: schema},
 			{StructName: "Posts", Name: "posts", Schema: schema},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Users", Name: "id", Type: "BIGINT", Nullable: false},
 			{StructName: "Posts", Name: "id", Type: "BIGINT", Nullable: false},
 			{

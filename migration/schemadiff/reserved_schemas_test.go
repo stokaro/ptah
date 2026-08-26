@@ -6,8 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
@@ -18,7 +18,7 @@ func TestCompareWithDatabaseInfoRefusesADeclaredSystemSchema(t *testing.T) {
 	c := qt.New(t)
 
 	diff, err := schemadiff.CompareWithDatabaseInfo(
-		&goschema.Database{Schemas: []goschema.Schema{{Name: "pg_catalog"}}},
+		&schemamodel.Database{Schemas: []schemamodel.Schema{{Name: "pg_catalog"}}},
 		&catalog.Database{},
 		catalog.ServerInfo{Dialect: "postgres", Schema: "public"},
 		nil,
@@ -34,7 +34,7 @@ func TestCompareWithDatabaseInfoKeepsAQuotedSystemSchemaLookalike(t *testing.T) 
 	c := qt.New(t)
 
 	diff, err := schemadiff.CompareWithDatabaseInfo(
-		&goschema.Database{Schemas: []goschema.Schema{{Name: "PG_CATALOG"}}},
+		&schemamodel.Database{Schemas: []schemamodel.Schema{{Name: "PG_CATALOG"}}},
 		&catalog.Database{},
 		catalog.ServerInfo{Dialect: "postgres", Schema: "public"},
 		nil,

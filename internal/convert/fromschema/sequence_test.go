@@ -6,15 +6,15 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 )
 
 func TestFromSequence(t *testing.T) {
 	c := qt.New(t)
 
-	node := fromschema.FromSequence(goschema.Sequence{
+	node := fromschema.FromSequence(schemamodel.Sequence{
 		Name:        "order_seq",
 		Schema:      "app",
 		AsType:      "bigint",
@@ -46,14 +46,14 @@ func TestFromSequence(t *testing.T) {
 func TestFromDatabase_SequenceOrdering(t *testing.T) {
 	c := qt.New(t)
 
-	database := goschema.Database{
-		Sequences: []goschema.Sequence{
+	database := schemamodel.Database{
+		Sequences: []schemamodel.Sequence{
 			{Name: "order_seq", OwnedBy: "orders.id"},
 		},
-		Tables: []goschema.Table{
+		Tables: []schemamodel.Table{
 			{StructName: "Order", Name: "orders"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Order", Name: "id", Type: "BIGINT", Primary: true},
 		},
 	}
@@ -76,7 +76,7 @@ func TestFromDatabase_SequenceOrdering(t *testing.T) {
 func TestFromGrant_OnSequence(t *testing.T) {
 	c := qt.New(t)
 
-	node := fromschema.FromGrant(goschema.Grant{
+	node := fromschema.FromGrant(schemamodel.Grant{
 		Role:       "app_user",
 		Privileges: []string{"USAGE", "SELECT"},
 		OnSequence: "order_seq",
@@ -97,8 +97,8 @@ func TestFromGrant_OnSequence(t *testing.T) {
 func TestFromDatabase_SequenceReachesTheMySQLRendererToBeRefused(t *testing.T) {
 	c := qt.New(t)
 
-	database := goschema.Database{
-		Sequences: []goschema.Sequence{{Name: "order_seq"}},
+	database := schemamodel.Database{
+		Sequences: []schemamodel.Sequence{{Name: "order_seq"}},
 	}
 
 	statements := fromschema.FromDatabase(database, platform.MySQL)
@@ -135,8 +135,8 @@ func TestFromDatabase_SequenceReachesEveryDialectsRenderer(t *testing.T) {
 	for _, spelling := range acceptedSpellings(c) {
 		t.Run(spelling, func(t *testing.T) {
 			c := qt.New(t)
-			database := goschema.Database{
-				Sequences: []goschema.Sequence{{Name: "order_seq"}},
+			database := schemamodel.Database{
+				Sequences: []schemamodel.Sequence{{Name: "order_seq"}},
 			}
 
 			statements := fromschema.FromDatabase(database, spelling)

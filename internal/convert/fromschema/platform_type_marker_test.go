@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 )
 
@@ -26,22 +26,22 @@ import (
 func TestFromField_ATypeAlreadyTheTargetsOwnSkipsThePortableMapping(t *testing.T) {
 	tests := []struct {
 		name  string
-		field goschema.Field
+		field schemamodel.Field
 		want  string
 	}{
 		{
 			name:  "a native TEXT named with sql()",
-			field: goschema.Field{Name: "c", Type: "TEXT", TypeRawSQL: true},
+			field: schemamodel.Field{Name: "c", Type: "TEXT", TypeRawSQL: true},
 			want:  "TEXT",
 		},
 		{
 			name:  "a native TEXT read from the catalog",
-			field: goschema.Field{Name: "c", Type: "TEXT", TypeIsDeclaredText: true},
+			field: schemamodel.Field{Name: "c", Type: "TEXT", TypeIsDeclaredText: true},
 			want:  "TEXT",
 		},
 		{
 			name:  "a native bare VARCHAR named with sql()",
-			field: goschema.Field{Name: "c", Type: "VARCHAR", TypeRawSQL: true},
+			field: schemamodel.Field{Name: "c", Type: "VARCHAR", TypeRawSQL: true},
 			want:  "VARCHAR",
 		},
 		{
@@ -49,17 +49,17 @@ func TestFromField_ATypeAlreadyTheTargetsOwnSkipsThePortableMapping(t *testing.T
 			// written for several engines means by it, and deciding that
 			// differently is what a too-wide fix breaks.
 			name:  "a portable TEXT",
-			field: goschema.Field{Name: "c", Type: "TEXT"},
+			field: schemamodel.Field{Name: "c", Type: "TEXT"},
 			want:  "NVARCHAR(MAX)",
 		},
 		{
 			name:  "a portable bare VARCHAR",
-			field: goschema.Field{Name: "c", Type: "VARCHAR"},
+			field: schemamodel.Field{Name: "c", Type: "VARCHAR"},
 			want:  "NVARCHAR(MAX)",
 		},
 		{
 			name:  "a portable SERIAL",
-			field: goschema.Field{Name: "c", Type: "SERIAL"},
+			field: schemamodel.Field{Name: "c", Type: "SERIAL"},
 			want:  "INT",
 		},
 	}
@@ -82,9 +82,9 @@ func TestFromField_TheMarkerSurvivesWithTheType(t *testing.T) {
 	c := qt.New(t)
 
 	raw := fromschema.FromField(
-		goschema.Field{Name: "c", Type: "TEXT", TypeRawSQL: true}, nil, "sqlserver")
+		schemamodel.Field{Name: "c", Type: "TEXT", TypeRawSQL: true}, nil, "sqlserver")
 	native := fromschema.FromField(
-		goschema.Field{Name: "c", Type: "TEXT", TypeIsDeclaredText: true}, nil, "sqlserver")
+		schemamodel.Field{Name: "c", Type: "TEXT", TypeIsDeclaredText: true}, nil, "sqlserver")
 
 	c.Assert(raw.TypeRawSQL, qt.IsTrue)
 	c.Assert(native.TypeIsDeclaredText, qt.IsTrue)

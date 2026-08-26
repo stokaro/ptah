@@ -7,10 +7,10 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 func TestGetOrderedCreateStatements_MutualForeignKeysUseTwoPhases(t *testing.T) {
@@ -49,19 +49,19 @@ func TestGetOrderedCreateStatements_SQLiteKeepsMutualForeignKeysInline(t *testin
 
 func TestGetOrderedCreateStatements_QualifiesSameSchemaForeignKeys(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{
-		Schemas: []goschema.Schema{{Name: "app"}},
-		Tables: []goschema.Table{
+	database := &schemamodel.Database{
+		Schemas: []schemamodel.Schema{{Name: "app"}},
+		Tables: []schemamodel.Table{
 			{StructName: "User", Schema: "app", Name: "users"},
 			{StructName: "Order", Schema: "app", Name: "orders"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Order", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Order", Name: "user_id", Type: "INTEGER", Foreign: "users(id)"},
 		},
 	}
-	goschema.Finalize(database)
+	schemamodel.Finalize(database)
 
 	statements, err := renderer.GetOrderedCreateStatements(database, "postgres")
 
@@ -73,17 +73,17 @@ func TestGetOrderedCreateStatements_QualifiesSameSchemaForeignKeys(t *testing.T)
 
 func TestGetOrderedCreateStatements_ValidatesMaterializedEmbeddedForeignKey(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{
-		Tables: []goschema.Table{
+	database := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Tenant", Name: "tenants"},
 			{StructName: "Order", Name: "orders"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Tenant", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Order", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Ownership", Name: "tenant_id", Type: "INTEGER", Foreign: "tenants(id)"},
 		},
-		EmbeddedFields: []goschema.EmbeddedField{{
+		EmbeddedFields: []schemamodel.EmbeddedField{{
 			StructName:       "Order",
 			EmbeddedTypeName: "Ownership",
 			Mode:             "inline",
@@ -98,14 +98,14 @@ func TestGetOrderedCreateStatements_ValidatesMaterializedEmbeddedForeignKey(t *t
 
 func TestGetOrderedCreateStatements_CompositeSelfForeignKeyIsEmittedOnce(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Node", Name: "nodes"}},
-		Fields: []goschema.Field{
+	database := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Node", Name: "nodes"}},
+		Fields: []schemamodel.Field{
 			{StructName: "Node", Name: "tenant_id", Type: "INTEGER", Primary: true},
 			{StructName: "Node", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Node", Name: "parent_id", Type: "INTEGER"},
 		},
-		Constraints: []goschema.Constraint{{
+		Constraints: []schemamodel.Constraint{{
 			StructName:     "Node",
 			Type:           "FOREIGN KEY",
 			Columns:        []string{"tenant_id", "parent_id"},
@@ -113,7 +113,7 @@ func TestGetOrderedCreateStatements_CompositeSelfForeignKeyIsEmittedOnce(t *test
 			ForeignColumns: []string{"tenant_id", "id"},
 		}},
 	}
-	goschema.Finalize(database)
+	schemamodel.Finalize(database)
 
 	statements, err := renderer.GetOrderedCreateStatements(database, "postgres")
 
@@ -206,12 +206,12 @@ func TestValidateSchema_FailurePath(t *testing.T) {
 }
 
 func TestGetOrderedCreateStatements_CompositeForeignKeyCardinalityMismatch_FailurePath(t *testing.T) {
-	database := &goschema.Database{
-		Tables: []goschema.Table{
+	database := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Parent", Name: "parents"},
 			{StructName: "Child", Name: "children"},
 		},
-		Constraints: []goschema.Constraint{{
+		Constraints: []schemamodel.Constraint{{
 			StructName:     "Child",
 			Name:           "fk_children_parents",
 			Type:           "FOREIGN KEY",
@@ -360,7 +360,7 @@ func TestGetOrderedCreateStatements_UnderscoreActionReachesDialectGate_FailurePa
 func TestGetOrderedCreateStatements_SpannerMutualCompositeForeignKeys(t *testing.T) {
 	c := qt.New(t)
 	database := mutualCompositeForeignKeyDatabase()
-	goschema.Finalize(database)
+	schemamodel.Finalize(database)
 
 	statements, err := renderer.GetOrderedCreateStatements(database, "spanner")
 
@@ -375,18 +375,18 @@ func TestGetOrderedCreateStatements_SpannerMutualCompositeForeignKeys(t *testing
 
 func TestGetOrderedCreateStatements_UnnamedForeignKeyNamesAreUnique(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{
-		Tables: []goschema.Table{
+	database := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "FirstParent", Name: "first_parents"},
 			{StructName: "SecondParent", Name: "second_parents"},
 			{StructName: "Child", Name: "children"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "FirstParent", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "SecondParent", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Child", Name: "parent_id", Type: "INTEGER"},
 		},
-		Constraints: []goschema.Constraint{
+		Constraints: []schemamodel.Constraint{
 			{StructName: "Child", Type: "FOREIGN KEY", Columns: []string{"parent_id"}, ForeignTable: "first_parents", ForeignColumns: []string{"id"}},
 			{StructName: "Child", Type: "FOREIGN KEY", Columns: []string{"parent_id"}, ForeignTable: "second_parents", ForeignColumns: []string{"id"}},
 		},
@@ -711,9 +711,9 @@ func TestRendererRender_FailedValidationClearsPreviousOutput(t *testing.T) {
 
 func TestGetOrderedCreateStatements_UnknownForeignKeyTarget_FailurePath(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Child", Name: "children"}},
-		Fields: []goschema.Field{
+	database := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Child", Name: "children"}},
+		Fields: []schemamodel.Field{
 			{StructName: "Child", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Child", Name: "parent_id", Type: "INTEGER", Foreign: "missing(id)"},
 		},
@@ -755,7 +755,7 @@ func TestGetOrderedCreateStatements_MySQLPrefixIndexIsNotReferencedKey_FailurePa
 	c := qt.New(t)
 	database := indexedForeignKeyDatabase()
 	database.Indexes[0].Fields = nil
-	database.Indexes[0].Parts = []goschema.IndexPart{
+	database.Indexes[0].Parts = []schemamodel.IndexPart{
 		{Name: "tenant_id"},
 		{Name: "code", Prefix: "4"},
 	}
@@ -774,7 +774,7 @@ func TestGetOrderedCreateStatements_MySQLPrefixIndexIsNotReferencedKey_FailurePa
 func TestGetOrderedCreateStatements_MariaDBAllowsIndexedLeftPrefix(t *testing.T) {
 	c := qt.New(t)
 	database := indexedForeignKeyDatabase()
-	database.Fields = append(database.Fields, goschema.Field{
+	database.Fields = append(database.Fields, schemamodel.Field{
 		StructName: "Parent",
 		Name:       "region_id",
 		Type:       "INTEGER",
@@ -877,7 +877,7 @@ func TestGetOrderedCreateStatements_SQLiteRejectsUnverifiableStandaloneUniqueInd
 	c := qt.New(t)
 	database := simpleForeignKeyDatabase("INTEGER", "INTEGER")
 	database.Fields[0].Primary = false
-	database.Indexes = []goschema.Index{{
+	database.Indexes = []schemamodel.Index{{
 		StructName: "Parent",
 		Name:       "uq_parents_id",
 		Fields:     []string{"id"},
@@ -1263,13 +1263,13 @@ func TestGetOrderedCreateStatements_SchemaScopedForeignKeyNamesTreatDefaultSchem
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			database := &goschema.Database{
-				Tables: []goschema.Table{
+			database := &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{StructName: "Parent", Name: "parents"},
 					{StructName: "Child", Name: "children"},
 					{StructName: "Audit", Schema: test.defaultSchema, Name: "audit_entries"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{StructName: "Parent", Name: "id", Type: "INTEGER", Primary: true},
 					{
 						StructName:     "Child",
@@ -1347,13 +1347,13 @@ func TestGetOrderedCreateStatements_SQLServerMultipleCascadePaths_FailurePath(t 
 	c.Assert(statements, qt.IsNil)
 }
 
-func mutualForeignKeyDatabase() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func mutualForeignKeyDatabase() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Left", Name: "left_nodes"},
 			{StructName: "Right", Name: "right_nodes"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Left", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Left", Name: "right_id", Type: "INTEGER", Foreign: "right_nodes(id)", ForeignKeyName: "fk_left_right"},
 			{StructName: "Right", Name: "id", Type: "INTEGER", Primary: true},
@@ -1362,13 +1362,13 @@ func mutualForeignKeyDatabase() *goschema.Database {
 	}
 }
 
-func foreignKeyActionDatabase(onDelete, onUpdate string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func foreignKeyActionDatabase(onDelete, onUpdate string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Parent", Name: "parents"},
 			{StructName: "Child", Name: "children"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Parent", Name: "id", Type: "INTEGER", Primary: true},
 			{
 				StructName:     "Child",
@@ -1384,13 +1384,13 @@ func foreignKeyActionDatabase(onDelete, onUpdate string) *goschema.Database {
 	}
 }
 
-func mutualCompositeForeignKeyDatabase() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func mutualCompositeForeignKeyDatabase() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Left", Name: "left_nodes", PrimaryKey: []string{"tenant_id", "id"}},
 			{StructName: "Right", Name: "right_nodes", PrimaryKey: []string{"tenant_id", "id"}},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Left", Name: "tenant_id", Type: "BIGINT"},
 			{StructName: "Left", Name: "id", Type: "BIGINT"},
 			{StructName: "Left", Name: "right_id", Type: "BIGINT"},
@@ -1398,30 +1398,30 @@ func mutualCompositeForeignKeyDatabase() *goschema.Database {
 			{StructName: "Right", Name: "id", Type: "BIGINT"},
 			{StructName: "Right", Name: "left_id", Type: "BIGINT"},
 		},
-		Constraints: []goschema.Constraint{
+		Constraints: []schemamodel.Constraint{
 			{StructName: "Left", Name: "fk_left_right", Type: "FOREIGN KEY", Columns: []string{"tenant_id", "right_id"}, ForeignTable: "right_nodes", ForeignColumns: []string{"tenant_id", "id"}},
 			{StructName: "Right", Name: "fk_right_left", Type: "FOREIGN KEY", Columns: []string{"tenant_id", "left_id"}, ForeignTable: "left_nodes", ForeignColumns: []string{"tenant_id", "id"}},
 		},
 	}
 }
 
-func indexedForeignKeyDatabase() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func indexedForeignKeyDatabase() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Parent", Name: "parents"},
 			{StructName: "Child", Name: "children"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Parent", Name: "tenant_id", Type: "INTEGER"},
 			{StructName: "Parent", Name: "code", Type: "INTEGER"},
 			{StructName: "Child", Name: "tenant_id", Type: "INTEGER"},
 			{StructName: "Child", Name: "parent_code", Type: "INTEGER"},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{StructName: "Parent", Name: "idx_parents_tenant_code", Fields: []string{"tenant_id", "code"}},
 			{StructName: "Child", Name: "idx_children_tenant_parent_code", Fields: []string{"tenant_id", "parent_code"}},
 		},
-		Constraints: []goschema.Constraint{{
+		Constraints: []schemamodel.Constraint{{
 			StructName:     "Child",
 			Name:           "fk_children_parents",
 			Type:           "FOREIGN KEY",
@@ -1450,15 +1450,15 @@ func foreignKeyAlterNode(onDelete, onUpdate string) *ast.AlterTableNode {
 	}
 }
 
-func sqlServerDiamondCascadeDatabase() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func sqlServerDiamondCascadeDatabase() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Root", Name: "roots"},
 			{StructName: "Left", Name: "left_nodes"},
 			{StructName: "Right", Name: "right_nodes"},
 			{StructName: "Leaf", Name: "leaves"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Root", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Left", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Left", Name: "root_id", Type: "INTEGER", Foreign: "roots(id)", OnDelete: "CASCADE"},
@@ -1471,14 +1471,14 @@ func sqlServerDiamondCascadeDatabase() *goschema.Database {
 	}
 }
 
-func duplicateForeignKeyNameDatabase() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func duplicateForeignKeyNameDatabase() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Parent", Name: "parents"},
 			{StructName: "FirstChild", Name: "first_children"},
 			{StructName: "SecondChild", Name: "second_children"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Parent", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "FirstChild", Name: "parent_id", Type: "INTEGER", Foreign: "parents(id)", ForeignKeyName: "fk_shared_parent"},
 			{StructName: "SecondChild", Name: "parent_id", Type: "INTEGER", Foreign: "parents(id)", ForeignKeyName: "fk_shared_parent"},
@@ -1486,13 +1486,13 @@ func duplicateForeignKeyNameDatabase() *goschema.Database {
 	}
 }
 
-func simpleForeignKeyDatabase(parentType, childType string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func simpleForeignKeyDatabase(parentType, childType string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Parent", Name: "parents"},
 			{StructName: "Child", Name: "children"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Parent", Name: "id", Type: parentType, Primary: true},
 			{StructName: "Child", Name: "parent_id", Type: childType, Foreign: "parents(id)"},
 		},

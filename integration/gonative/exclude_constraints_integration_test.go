@@ -9,8 +9,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -18,21 +18,21 @@ import (
 func TestExcludeConstraints_EndToEnd_PostgreSQL(t *testing.T) {
 	tests := []struct {
 		name        string
-		generated   *goschema.Database
+		desired     *schemamodel.Database
 		database    *catalog.Database
 		expectedSQL []string
 	}{
 		{
 			name: "EXCLUDE constraint with WHERE clause",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{Name: "user_sessions", StructName: "UserSession"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{Name: "user_id", Type: "BIGINT", StructName: "UserSession", Nullable: false},
 					{Name: "is_active", Type: "BOOLEAN", StructName: "UserSession", Nullable: false},
 				},
-				Constraints: []goschema.Constraint{
+				Constraints: []schemamodel.Constraint{
 					{
 						StructName:      "UserSession",
 						Name:            "one_active_session_per_user",
@@ -61,15 +61,15 @@ func TestExcludeConstraints_EndToEnd_PostgreSQL(t *testing.T) {
 		},
 		{
 			name: "EXCLUDE constraint without WHERE clause",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{Name: "bookings", StructName: "Booking"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{Name: "room_id", Type: "INTEGER", StructName: "Booking", Nullable: false},
 					{Name: "during", Type: "TSRANGE", StructName: "Booking", Nullable: false},
 				},
-				Constraints: []goschema.Constraint{
+				Constraints: []schemamodel.Constraint{
 					{
 						StructName:      "Booking",
 						Name:            "no_overlapping_bookings",
@@ -97,17 +97,17 @@ func TestExcludeConstraints_EndToEnd_PostgreSQL(t *testing.T) {
 		},
 		{
 			name: "Multiple constraint types",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{Name: "products", StructName: "Product"},
 					{Name: "users", StructName: "User"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{Name: "price", Type: "DECIMAL", StructName: "Product", Nullable: false},
 					{Name: "user_id", Type: "BIGINT", StructName: "User", Nullable: false},
 					{Name: "email", Type: "VARCHAR(255)", StructName: "User", Nullable: false},
 				},
-				Constraints: []goschema.Constraint{
+				Constraints: []schemamodel.Constraint{
 					{
 						StructName:      "Product",
 						Name:            "positive_price",
@@ -153,13 +153,13 @@ func TestExcludeConstraints_EndToEnd_PostgreSQL(t *testing.T) {
 			c := qt.New(t)
 
 			// Step 1: Compare schemas to detect differences
-			diff := schemadiff.Compare(tt.generated, tt.database)
+			diff := schemadiff.Compare(tt.desired, tt.database)
 
 			// Step 2: Verify that constraints are detected as added
 			c.Assert(diff.ConstraintsAdded, qt.HasLen, len(tt.expectedSQL))
 
 			// Step 3: Generate migration AST using PostgreSQL planner
-			nodes, err := planner.GenerateSchemaDiffAST(diff, tt.generated, "postgres")
+			nodes, err := planner.GenerateSchemaDiffAST(diff, tt.desired, "postgres")
 			c.Assert(err, qt.IsNil)
 
 			// Step 4: Render AST to SQL
@@ -196,14 +196,14 @@ func TestExcludeConstraints_EndToEnd_MySQL(t *testing.T) {
 	c := qt.New(t)
 
 	// Test that EXCLUDE constraints generate warnings for MySQL
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: "user_sessions", StructName: "UserSession"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{Name: "user_id", Type: "BIGINT", StructName: "UserSession", Nullable: false},
 		},
-		Constraints: []goschema.Constraint{
+		Constraints: []schemamodel.Constraint{
 			{
 				StructName:      "UserSession",
 				Name:            "one_active_session_per_user",
@@ -227,10 +227,10 @@ func TestExcludeConstraints_EndToEnd_MySQL(t *testing.T) {
 	}
 
 	// Step 1: Compare schemas
-	diff := schemadiff.Compare(generated, database)
+	diff := schemadiff.Compare(desired, database)
 
 	// Step 2: Generate migration AST using MySQL planner
-	nodes, err := planner.GenerateSchemaDiffAST(diff, generated, "mysql")
+	nodes, err := planner.GenerateSchemaDiffAST(diff, desired, "mysql")
 	c.Assert(err, qt.IsNil)
 
 	// Step 3: Render AST to SQL
@@ -247,8 +247,8 @@ func TestExcludeConstraints_SchemaComparison(t *testing.T) {
 	c := qt.New(t)
 
 	// Test that schema comparison correctly identifies constraint changes
-	generated := &goschema.Database{
-		Constraints: []goschema.Constraint{
+	desired := &schemamodel.Database{
+		Constraints: []schemamodel.Constraint{
 			{
 				StructName:      "Booking",
 				Name:            "no_overlapping_bookings",
@@ -271,7 +271,7 @@ func TestExcludeConstraints_SchemaComparison(t *testing.T) {
 		// Empty database - no existing constraints
 	}
 
-	diff := schemadiff.Compare(generated, database)
+	diff := schemadiff.Compare(desired, database)
 
 	// Verify that both constraints are detected as additions
 	c.Assert(diff.ConstraintsAdded, qt.HasLen, 2)
@@ -286,13 +286,13 @@ func TestExcludeConstraints_EmptySchema(t *testing.T) {
 	c := qt.New(t)
 
 	// Test with empty schemas
-	generated := &goschema.Database{
-		Constraints: make([]goschema.Constraint, 0),
+	desired := &schemamodel.Database{
+		Constraints: make([]schemamodel.Constraint, 0),
 	}
 
 	database := &catalog.Database{}
 
-	diff := schemadiff.Compare(generated, database)
+	diff := schemadiff.Compare(desired, database)
 
 	// Verify no changes detected
 	c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
@@ -300,7 +300,7 @@ func TestExcludeConstraints_EmptySchema(t *testing.T) {
 	c.Assert(diff.HasChanges(), qt.IsFalse)
 
 	// Generate migration AST - should be empty
-	nodes, err := planner.GenerateSchemaDiffAST(diff, generated, "postgres")
+	nodes, err := planner.GenerateSchemaDiffAST(diff, desired, "postgres")
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 0)
 }

@@ -12,7 +12,7 @@ import (
 )
 
 // ExampleParse reads a YAML document into the schema model and reports what the
-// model holds. The result is a *goschema.Database, the same type Go annotations,
+// model holds. The result is a *schemamodel.Database, the same type Go annotations,
 // HCL, SQL, and DBML produce.
 func ExampleParse() {
 	document := []byte(`

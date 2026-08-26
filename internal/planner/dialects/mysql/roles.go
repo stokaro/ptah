@@ -2,8 +2,8 @@ package mysql
 
 import (
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -18,12 +18,12 @@ import (
 // The capability is the switch, not the dialect name. MySQL and MariaDB leave
 // RoleManagement off and keep the named skip reportUnsupportedRoutinesAndRoles
 // writes; SQL Server turns it on (stokaro/ptah#1698).
-func (p *Planner) planRoles(result []ast.Node, diff *difftypes.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) planRoles(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
 	if !p.capabilities().Has(capability.RoleManagement) {
 		return result
 	}
-	declared := make(map[string]goschema.Role)
-	for _, role := range generated.Roles {
+	declared := make(map[string]schemamodel.Role)
+	for _, role := range desired.Roles {
 		declared[role.Name] = role
 	}
 	for _, name := range diff.RolesAdded {

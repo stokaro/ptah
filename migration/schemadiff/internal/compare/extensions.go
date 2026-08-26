@@ -7,9 +7,9 @@ import (
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
@@ -82,19 +82,19 @@ import (
 // Results are sorted alphabetically for consistent output across multiple runs,
 // ensuring deterministic migration generation and reliable testing.
 func Extensions(
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	opts *config.CompareOptions,
 	cov Coverage,
 ) {
-	ExtensionsWithSemantics(generated, database, diff, opts, cov, identifier.ForDialect(platform.Postgres))
+	ExtensionsWithSemantics(desired, database, diff, opts, cov, identifier.ForDialect(platform.Postgres))
 }
 
 // ExtensionsWithSemantics compares extension identity and installation schema
 // using the target database's resolved default schema and identifier rules.
 func ExtensionsWithSemantics(
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	opts *config.CompareOptions,
@@ -120,8 +120,8 @@ func ExtensionsWithSemantics(
 	diff.ExtensionsModified = make([]difftypes.ExtensionDiff, 0)
 
 	// Create maps for quick lookup, filtering out ignored extensions
-	genExtensions := make(map[string]goschema.Extension)
-	for _, extension := range generated.Extensions {
+	genExtensions := make(map[string]schemamodel.Extension)
+	for _, extension := range desired.Extensions {
 		if !opts.IsExtensionIgnored(extension.Name) {
 			genExtensions[extension.Name] = extension
 		}

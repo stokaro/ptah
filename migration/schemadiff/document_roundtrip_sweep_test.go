@@ -11,23 +11,23 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 	"go.5x5.cz/ptah/internal/schemafile"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
-// roundTripRow is one object family of [goschema.Database], and what has to be
+// roundTripRow is one object family of [schemamodel.Database], and what has to be
 // true of it after the document Ptah writes is read back.
 type roundTripRow struct {
-	// field is the goschema.Database field name, and the key the reflection
+	// field is the schemamodel.Database field name, and the key the reflection
 	// guard matches against.
 	field string
 	// seed puts one object of this family into a schema.
-	seed func(*goschema.Database)
+	seed func(*schemamodel.Database)
 	// count reads the family back out of the parsed document.
-	count func(*goschema.Database) int
+	count func(*schemamodel.Database) int
 }
 
 // roundTripRows is one row per object family the HCL document could carry.
@@ -40,148 +40,152 @@ func roundTripRows() []roundTripRow {
 	return []roundTripRow{
 		{
 			field: "Enums",
-			seed: func(d *goschema.Database) {
-				d.Enums = append(d.Enums, goschema.Enum{Name: "mood", Values: []string{"a", "b"}})
+			seed: func(d *schemamodel.Database) {
+				d.Enums = append(d.Enums, schemamodel.Enum{Name: "mood", Values: []string{"a", "b"}})
 			},
-			count: func(d *goschema.Database) int { return len(d.Enums) },
+			count: func(d *schemamodel.Database) int { return len(d.Enums) },
 		},
 		{
 			field: "Extensions",
-			seed:  func(d *goschema.Database) { d.Extensions = append(d.Extensions, goschema.Extension{Name: "citext"}) },
-			count: func(d *goschema.Database) int { return len(d.Extensions) },
+			seed: func(d *schemamodel.Database) {
+				d.Extensions = append(d.Extensions, schemamodel.Extension{Name: "citext"})
+			},
+			count: func(d *schemamodel.Database) int { return len(d.Extensions) },
 		},
 		{
 			field: "Functions",
-			seed: func(d *goschema.Database) {
-				d.Functions = append(d.Functions, goschema.Function{
+			seed: func(d *schemamodel.Database) {
+				d.Functions = append(d.Functions, schemamodel.Function{
 					StructName: "F", Name: "fn", Returns: "integer", Language: "sql", Body: "SELECT 1",
 				})
 			},
-			count: func(d *goschema.Database) int { return len(d.Functions) },
+			count: func(d *schemamodel.Database) int { return len(d.Functions) },
 		},
 		{
 			field: "Sequences",
-			seed: func(d *goschema.Database) {
-				d.Sequences = append(d.Sequences, goschema.Sequence{StructName: "S", Name: "s1"})
+			seed: func(d *schemamodel.Database) {
+				d.Sequences = append(d.Sequences, schemamodel.Sequence{StructName: "S", Name: "s1"})
 			},
-			count: func(d *goschema.Database) int { return len(d.Sequences) },
+			count: func(d *schemamodel.Database) int { return len(d.Sequences) },
 		},
 		{
 			field: "Domains",
-			seed: func(d *goschema.Database) {
-				d.Domains = append(d.Domains, goschema.Domain{StructName: "D", Name: "d1", BaseType: "text"})
+			seed: func(d *schemamodel.Database) {
+				d.Domains = append(d.Domains, schemamodel.Domain{StructName: "D", Name: "d1", BaseType: "text"})
 			},
-			count: func(d *goschema.Database) int { return len(d.Domains) },
+			count: func(d *schemamodel.Database) int { return len(d.Domains) },
 		},
 		{
 			field: "CompositeTypes",
-			seed: func(d *goschema.Database) {
-				d.CompositeTypes = append(d.CompositeTypes, goschema.CompositeType{
+			seed: func(d *schemamodel.Database) {
+				d.CompositeTypes = append(d.CompositeTypes, schemamodel.CompositeType{
 					StructName: "C", Name: "c1",
-					Fields: []goschema.CompositeTypeField{{Name: "a", Type: "integer"}},
+					Fields: []schemamodel.CompositeField{{Name: "a", Type: "integer"}},
 				})
 			},
-			count: func(d *goschema.Database) int { return len(d.CompositeTypes) },
+			count: func(d *schemamodel.Database) int { return len(d.CompositeTypes) },
 		},
 		{
 			field: "Ranges",
-			seed: func(d *goschema.Database) {
-				d.Ranges = append(d.Ranges, goschema.Range{StructName: "R", Name: "r1", Subtype: "integer"})
+			seed: func(d *schemamodel.Database) {
+				d.Ranges = append(d.Ranges, schemamodel.Range{StructName: "R", Name: "r1", Subtype: "integer"})
 			},
-			count: func(d *goschema.Database) int { return len(d.Ranges) },
+			count: func(d *schemamodel.Database) int { return len(d.Ranges) },
 		},
 		{
 			field: "Views",
-			seed: func(d *goschema.Database) {
-				d.Views = append(d.Views, goschema.View{StructName: "V", Name: "v1", Body: "SELECT 1"})
+			seed: func(d *schemamodel.Database) {
+				d.Views = append(d.Views, schemamodel.View{StructName: "V", Name: "v1", Body: "SELECT 1"})
 			},
-			count: func(d *goschema.Database) int { return len(d.Views) },
+			count: func(d *schemamodel.Database) int { return len(d.Views) },
 		},
 		{
 			field: "MaterializedViews",
-			seed: func(d *goschema.Database) {
-				d.MaterializedViews = append(d.MaterializedViews, goschema.MaterializedView{
+			seed: func(d *schemamodel.Database) {
+				d.MaterializedViews = append(d.MaterializedViews, schemamodel.MaterializedView{
 					StructName: "M", Name: "m1", Body: "SELECT 1",
 				})
 			},
-			count: func(d *goschema.Database) int { return len(d.MaterializedViews) },
+			count: func(d *schemamodel.Database) int { return len(d.MaterializedViews) },
 		},
 		{
 			field: "Triggers",
-			seed: func(d *goschema.Database) {
-				d.Triggers = append(d.Triggers, goschema.Trigger{
+			seed: func(d *schemamodel.Database) {
+				d.Triggers = append(d.Triggers, schemamodel.Trigger{
 					StructName: "G", Name: "g1", Table: "users", Timing: "BEFORE", Event: "INSERT",
 					ForEach: "ROW", Body: "BEGIN RETURN NEW; END;",
 				})
 			},
-			count: func(d *goschema.Database) int { return len(d.Triggers) },
+			count: func(d *schemamodel.Database) int { return len(d.Triggers) },
 		},
 		{
 			field: "RLSPolicies",
-			seed: func(d *goschema.Database) {
-				d.RLSPolicies = append(d.RLSPolicies, goschema.RLSPolicy{
+			seed: func(d *schemamodel.Database) {
+				d.RLSPolicies = append(d.RLSPolicies, schemamodel.RLSPolicy{
 					StructName: "P", Name: "p1", Table: "users", PolicyFor: "ALL",
 					ToRoles: "app", UsingExpression: "true",
 				})
 			},
-			count: func(d *goschema.Database) int { return len(d.RLSPolicies) },
+			count: func(d *schemamodel.Database) int { return len(d.RLSPolicies) },
 		},
 		{
 			field: "RLSEnabledTables",
-			seed: func(d *goschema.Database) {
-				d.RLSEnabledTables = append(d.RLSEnabledTables, goschema.RLSEnabledTable{
+			seed: func(d *schemamodel.Database) {
+				d.RLSEnabledTables = append(d.RLSEnabledTables, schemamodel.RLSEnabledTable{
 					StructName: "T", Table: "users",
 				})
 			},
-			count: func(d *goschema.Database) int { return len(d.RLSEnabledTables) },
+			count: func(d *schemamodel.Database) int { return len(d.RLSEnabledTables) },
 		},
 		{
 			field: "Roles",
-			seed:  func(d *goschema.Database) { d.Roles = append(d.Roles, goschema.Role{StructName: "R", Name: "app"}) },
-			count: func(d *goschema.Database) int { return len(d.Roles) },
+			seed: func(d *schemamodel.Database) {
+				d.Roles = append(d.Roles, schemamodel.Role{StructName: "R", Name: "app"})
+			},
+			count: func(d *schemamodel.Database) int { return len(d.Roles) },
 		},
 		{
 			field: "Grants",
-			seed: func(d *goschema.Database) {
-				d.Grants = append(d.Grants, goschema.Grant{
+			seed: func(d *schemamodel.Database) {
+				d.Grants = append(d.Grants, schemamodel.Grant{
 					StructName: "G", Role: "app", Privileges: []string{"SELECT"}, OnTable: "users",
 				})
 			},
-			count: func(d *goschema.Database) int { return len(d.Grants) },
+			count: func(d *schemamodel.Database) int { return len(d.Grants) },
 		},
 		{
 			field: "Hypertables",
-			seed: func(d *goschema.Database) {
-				d.Hypertables = append(d.Hypertables, goschema.Hypertable{
+			seed: func(d *schemamodel.Database) {
+				d.Hypertables = append(d.Hypertables, schemamodel.Hypertable{
 					Table: "users", Column: "created_at",
 				})
 			},
-			count: func(d *goschema.Database) int { return len(d.Hypertables) },
+			count: func(d *schemamodel.Database) int { return len(d.Hypertables) },
 		},
 		{
 			field: "ContinuousAggregates",
-			seed: func(d *goschema.Database) {
-				d.ContinuousAggregates = append(d.ContinuousAggregates, goschema.ContinuousAggregate{
+			seed: func(d *schemamodel.Database) {
+				d.ContinuousAggregates = append(d.ContinuousAggregates, schemamodel.ContinuousAggregate{
 					Name: "hourly", Body: "SELECT time_bucket('1 hour', created_at) AS bucket FROM users GROUP BY bucket",
 				})
 			},
-			count: func(d *goschema.Database) int { return len(d.ContinuousAggregates) },
+			count: func(d *schemamodel.Database) int { return len(d.ContinuousAggregates) },
 		},
 		{
 			field: "Synonyms",
-			seed: func(d *goschema.Database) {
-				d.Synonyms = append(d.Synonyms, goschema.Synonym{Name: "s1", Target: "other.dbo.users"})
+			seed: func(d *schemamodel.Database) {
+				d.Synonyms = append(d.Synonyms, schemamodel.Synonym{Name: "s1", Target: "other.dbo.users"})
 			},
-			count: func(d *goschema.Database) int { return len(d.Synonyms) },
+			count: func(d *schemamodel.Database) int { return len(d.Synonyms) },
 		},
 		{
 			field: "ExtendedProperties",
-			seed: func(d *goschema.Database) {
-				d.ExtendedProperties = append(d.ExtendedProperties, goschema.ExtendedProperty{
+			seed: func(d *schemamodel.Database) {
+				d.ExtendedProperties = append(d.ExtendedProperties, schemamodel.ExtendedProperty{
 					Name: "MS_Description", Value: "the users", Schema: "public", Table: "users",
 				})
 			},
-			count: func(d *goschema.Database) int { return len(d.ExtendedProperties) },
+			count: func(d *schemamodel.Database) int { return len(d.ExtendedProperties) },
 		},
 	}
 }
@@ -271,7 +275,7 @@ func TestYAMLDocument_RecordsExactlyWhatTheSurfaceCannotName(t *testing.T) {
 // yamlRecordsKind answers whether a parsed document declines one kind, and
 // answers false for the zero kind so a family the surface carries has one
 // question rather than two.
-func yamlRecordsKind(parsed *goschema.Database, kind coverage.Kind) bool {
+func yamlRecordsKind(parsed *schemamodel.Database, kind coverage.Kind) bool {
 	if kind == "" {
 		return false
 	}
@@ -279,7 +283,7 @@ func yamlRecordsKind(parsed *goschema.Database, kind coverage.Kind) bool {
 }
 
 // loadYAMLDocument writes and loads the smallest YAML schema there is.
-func loadYAMLDocument(c *qt.C) *goschema.Database {
+func loadYAMLDocument(c *qt.C) *schemamodel.Database {
 	c.Helper()
 	path := filepath.Join(c.TB.(*testing.T).TempDir(), "schema.yaml")
 	const document = "tables:\n" +
@@ -295,7 +299,7 @@ func loadYAMLDocument(c *qt.C) *goschema.Database {
 	return parsed
 }
 
-// nonObjectDatabaseFields are the slice fields of [goschema.Database] that no
+// nonObjectDatabaseFields are the slice fields of [schemamodel.Database] that no
 // document omits on its own.
 //
 // Tables, columns, indexes and constraints are absent because a description
@@ -343,7 +347,7 @@ func TestRoundTrip_EveryObjectFamilySurvives(t *testing.T) {
 // TestRoundTrip_SweepCoversEveryObjectFamily is the guard that makes the test
 // above a sweep rather than a list someone remembered to extend.
 //
-// A family added to [goschema.Database] has no row until somebody writes one,
+// A family added to [schemamodel.Database] has no row until somebody writes one,
 // and this names it -- which is how the next unwritable object gets noticed
 // before an apply drops it.
 func TestRoundTrip_SweepCoversEveryObjectFamily(t *testing.T) {
@@ -362,7 +366,7 @@ func TestRoundTrip_SweepCoversEveryObjectFamily(t *testing.T) {
 // databaseSliceFields derives the family list from the struct rather than
 // repeating it.
 func databaseSliceFields() []string {
-	databaseType := reflect.TypeFor[goschema.Database]()
+	databaseType := reflect.TypeFor[schemamodel.Database]()
 	fields := make([]string, 0, databaseType.NumField())
 	for field := range databaseType.Fields() {
 		if field.Type.Kind() != reflect.Slice {
@@ -376,22 +380,22 @@ func databaseSliceFields() []string {
 
 // roundTripFixture is the smallest schema a rendered document needs: one schema
 // and one table, so every row's object has somewhere to hang.
-func roundTripFixture() *goschema.Database {
-	return &goschema.Database{
-		Schemas: []goschema.Schema{{Name: "public"}},
-		Tables:  []goschema.Table{{StructName: "T", Name: "users", Schema: "public"}},
-		Fields:  []goschema.Field{{StructName: "T", Name: "id", Type: "INT", Primary: true}},
+func roundTripFixture() *schemamodel.Database {
+	return &schemamodel.Database{
+		Schemas: []schemamodel.Schema{{Name: "public"}},
+		Tables:  []schemamodel.Table{{StructName: "T", Name: "users", Schema: "public"}},
+		Fields:  []schemamodel.Field{{StructName: "T", Name: "id", Type: "INT", Primary: true}},
 	}
 }
 
-func renderPostgresDocument(c *qt.C, db *goschema.Database) []byte {
+func renderPostgresDocument(c *qt.C, db *schemamodel.Database) []byte {
 	c.Helper()
 	result, err := atlashclrender.RenderInspected(db, platform.Postgres, "public")
 	c.Assert(err, qt.IsNil)
 	return result.Data
 }
 
-func loadPostgresDocument(c *qt.C, document []byte) *goschema.Database {
+func loadPostgresDocument(c *qt.C, document []byte) *schemamodel.Database {
 	c.Helper()
 	path := filepath.Join(c.TB.(*testing.T).TempDir(), "sweep.hcl")
 	c.Assert(os.WriteFile(path, document, 0o600), qt.IsNil)

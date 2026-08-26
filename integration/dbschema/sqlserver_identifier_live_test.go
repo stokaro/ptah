@@ -13,9 +13,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/planner"
@@ -60,7 +60,7 @@ CREATE TABLE [dbo].[users] (
 	)
 	c.Assert(err, qt.IsNil)
 
-	target := &goschema.Database{Indexes: []goschema.Index{
+	target := &schemamodel.Database{Indexes: []schemamodel.Index{
 		{
 			Name:      "IDX_Email",
 			TableName: "dbo.users",
@@ -127,7 +127,7 @@ CREATE TABLE [dbo].[users] (
 	)
 	c.Assert(err, qt.IsNil)
 
-	target := &goschema.Database{Indexes: []goschema.Index{
+	target := &schemamodel.Database{Indexes: []schemamodel.Index{
 		{
 			Name:      "idx_users_lookup",
 			TableName: "dbo.users",
@@ -194,12 +194,12 @@ CREATE TABLE [dbo].[users] (
 	)
 	c.Assert(err, qt.IsNil)
 
-	target := &goschema.Database{Indexes: []goschema.Index{
+	target := &schemamodel.Database{Indexes: []schemamodel.Index{
 		{
 			Name:      "idx_users_lookup",
 			TableName: "dbo.users",
 			Fields:    []string{"email", "status"},
-			Parts: []goschema.IndexPart{
+			Parts: []schemamodel.IndexPart{
 				{Name: "email", Desc: true},
 				{Name: "status"},
 			},
@@ -277,7 +277,7 @@ CREATE TABLE [dbo].[users] (
 	)
 	c.Assert(err, qt.IsNil)
 
-	target := &goschema.Database{Indexes: []goschema.Index{
+	target := &schemamodel.Database{Indexes: []schemamodel.Index{
 		{
 			Name:      "idx_active_users",
 			TableName: "dbo.users",
@@ -347,7 +347,7 @@ CREATE TABLE [dbo].[users] (
 )`)
 	c.Assert(err, qt.IsNil)
 
-	target := &goschema.Database{Indexes: []goschema.Index{
+	target := &schemamodel.Database{Indexes: []schemamodel.Index{
 		{
 			Name:      "idx_active_users",
 			TableName: "dbo.users",
@@ -413,7 +413,7 @@ CREATE TABLE [dbo].[users] (
 	_, err = conn.ExecContext(ctx, `CREATE INDEX [idx_email] ON [dbo].[users] ([email])`)
 	c.Assert(err, qt.IsNil)
 
-	target := &goschema.Database{Indexes: []goschema.Index{
+	target := &schemamodel.Database{Indexes: []schemamodel.Index{
 		{Name: "idx_email", TableName: "dbo.users", Fields: []string{"email"}},
 		{Name: "IDX_Email", TableName: "dbo.users", Fields: []string{"status"}},
 	}}
@@ -554,8 +554,8 @@ func TestSQLServerLiveIdentifierSemantics_TargetTableCollision_FailurePath(t *te
 	c := qt.New(t)
 	dbURL := provisionSQLServerCollationDatabase(c, sqlServerCICollation)
 	conn := connectSQLServerCollationDatabase(c, dbURL)
-	target := &goschema.Database{
-		Tables: []goschema.Table{
+	target := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "LowerUsers", Schema: "dbo", Name: "users"},
 			{StructName: "UpperUsers", Schema: "dbo", Name: "Users"},
 		},
@@ -577,15 +577,15 @@ func TestSQLServerLiveIdentifierSemantics_EmbeddedColumnCollision_FailurePath(t 
 	c := qt.New(t)
 	dbURL := provisionSQLServerCollationDatabase(c, sqlServerCICollation)
 	conn := connectSQLServerCollationDatabase(c, dbURL)
-	target := &goschema.Database{
-		Tables: []goschema.Table{
+	target := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "User", Schema: "dbo", Name: "users"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "email", Type: "NVARCHAR(255)"},
 			{StructName: "Contact", Name: "Email", Type: "NVARCHAR(255)"},
 		},
-		EmbeddedFields: []goschema.EmbeddedField{
+		EmbeddedFields: []schemamodel.EmbeddedField{
 			{
 				StructName:       "User",
 				Mode:             "inline",

@@ -7,9 +7,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -19,13 +19,13 @@ import (
 //
 // The table index is not decoration: it is what separates "the view's index
 // moved" from "every index moved".
-func materializedViewIndexSchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func materializedViewIndexSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "T", Name: "t"},
 			{StructName: "C", Name: "child"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "T", Name: "id", Type: "INT", Primary: true},
 			{StructName: "T", Name: "code", Type: "INT"},
 			{StructName: "C", Name: "id", Type: "INT", Primary: true},
@@ -34,10 +34,10 @@ func materializedViewIndexSchema() *goschema.Database {
 				Foreign: "t(code)", ForeignKeyName: "fk_child_t",
 			},
 		},
-		MaterializedViews: []goschema.MaterializedView{{
+		MaterializedViews: []schemamodel.MaterializedView{{
 			StructName: "MV", Name: "mv", Body: "SELECT id FROM t",
 		}},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{StructName: "MV", Name: "mv_uk", Fields: []string{"id"}, Unique: true},
 			// Unique, and referenced by the foreign key above: PostgreSQL
 			// accepts a unique index as a foreign key's referenced key, so this
@@ -136,7 +136,7 @@ func TestRender_AnIndexNamingNothingKeepsItsStructNameFallback(t *testing.T) {
 	c := qt.New(t)
 	description := materializedViewIndexSchema()
 	description.Indexes = append(description.Indexes,
-		goschema.Index{StructName: "t", Name: "legacy_ix", Fields: []string{"id"}})
+		schemamodel.Index{StructName: "t", Name: "legacy_ix", Fields: []string{"id"}})
 
 	statements, err := renderer.GetOrderedCreateStatements(description, platform.Postgres)
 
@@ -154,13 +154,13 @@ func TestRender_AnIndexNamingNothingKeepsItsStructNameFallback(t *testing.T) {
 // retarget an existing index at a view.
 func TestRender_OneStructDeclaringBothResolvesToTheTable(t *testing.T) {
 	c := qt.New(t)
-	description := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Both", Name: "both_t"}},
-		Fields: []goschema.Field{{StructName: "Both", Name: "id", Type: "INT", Primary: true}},
-		MaterializedViews: []goschema.MaterializedView{{
+	description := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Both", Name: "both_t"}},
+		Fields: []schemamodel.Field{{StructName: "Both", Name: "id", Type: "INT", Primary: true}},
+		MaterializedViews: []schemamodel.MaterializedView{{
 			StructName: "Both", Name: "both_mv", Body: "SELECT id FROM both_t",
 		}},
-		Indexes: []goschema.Index{{StructName: "Both", Name: "both_ix", Fields: []string{"id"}}},
+		Indexes: []schemamodel.Index{{StructName: "Both", Name: "both_ix", Fields: []string{"id"}}},
 	}
 
 	statements, err := renderer.GetOrderedCreateStatements(description, platform.Postgres)
@@ -180,11 +180,11 @@ func TestRender_OneStructDeclaringBothResolvesToTheTable(t *testing.T) {
 // resolver would make it one.
 func TestResolveIndexTableNames_DoesNotSeeMaterializedViews(t *testing.T) {
 	c := qt.New(t)
-	indexes := []goschema.Index{{StructName: "MV", Name: "mv_uk", Fields: []string{"id"}, Unique: true}}
-	views := []goschema.MaterializedView{{StructName: "MV", Name: "mv", Body: "SELECT 1"}}
+	indexes := []schemamodel.Index{{StructName: "MV", Name: "mv_uk", Fields: []string{"id"}, Unique: true}}
+	views := []schemamodel.MaterializedView{{StructName: "MV", Name: "mv", Body: "SELECT 1"}}
 
-	tableOnly := goschema.ResolveIndexTableNames(indexes, nil)
-	withViews := goschema.ResolveIndexOwners(indexes, nil, views)
+	tableOnly := schemamodel.ResolveIndexTableNames(indexes, nil)
+	withViews := schemamodel.ResolveIndexOwners(indexes, nil, views)
 
 	c.Assert(tableOnly, qt.DeepEquals, []string{""})
 	c.Assert(withViews, qt.DeepEquals, []string{"mv"})

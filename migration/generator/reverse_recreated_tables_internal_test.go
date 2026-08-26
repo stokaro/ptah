@@ -14,7 +14,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
@@ -145,10 +145,10 @@ func TestGenerateDownMigration_DropTable_KeepsWhatTableCreationCannotRestore(t *
 // one constraint of every kind the reverse has to decide about: a primary key
 // and a single-column foreign key (both restored by the re-created table), and
 // a CHECK and a named UNIQUE (neither of which is).
-func droppedTableFixtures(dialect string) (*goschema.Database, *catalog.Database) {
-	target := &goschema.Database{
-		Tables: []goschema.Table{{Name: "widgets", StructName: "Widget"}},
-		Fields: []goschema.Field{
+func droppedTableFixtures(dialect string) (*schemamodel.Database, *catalog.Database) {
+	target := &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "widgets", StructName: "Widget"}},
+		Fields: []schemamodel.Field{
 			{Name: "id", Type: droppedTableIntType(dialect), StructName: "Widget", Primary: true},
 		},
 	}
@@ -191,10 +191,10 @@ func droppedTableIntType(dialect string) string {
 // table and a pre-change database holding two the re-created CREATE TABLE
 // cannot fully restore: `nodes` with a self-referencing foreign key, and
 // `pairs` with a composite primary key and a two-column foreign key.
-func selfAndCompositeForeignKeyFixtures() (*goschema.Database, *catalog.Database) {
-	target := &goschema.Database{
-		Tables: []goschema.Table{{Name: "widgets", StructName: "Widget"}},
-		Fields: []goschema.Field{
+func selfAndCompositeForeignKeyFixtures() (*schemamodel.Database, *catalog.Database) {
+	target := &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "widgets", StructName: "Widget"}},
+		Fields: []schemamodel.Field{
 			{Name: "id", Type: "integer", StructName: "Widget", Primary: true},
 		},
 	}

@@ -7,8 +7,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/timescale"
 )
 
@@ -21,11 +21,11 @@ import (
 // `relation ... already exists` halfway through the script.
 func TestValidateLive_RefusesADeclarationThatWantsAnAggregatesName(t *testing.T) {
 	tests := []struct {
-		name      string
-		dialect   string
-		generated *goschema.Database
-		database  *catalog.Database
-		wantErr   string
+		name     string
+		dialect  string
+		desired  *schemamodel.Database
+		database *catalog.Database
+		wantErr  string
 		// wantProblems is how many refusals the row expects. It is here
 		// because qt.Contains with an empty substring matches ANY string, so
 		// the rows that expect no refusal would assert nothing without it.
@@ -34,8 +34,8 @@ func TestValidateLive_RefusesADeclarationThatWantsAnAggregatesName(t *testing.T)
 		{
 			name:    "a declared view with the aggregate's name",
 			dialect: platform.Postgres,
-			generated: &goschema.Database{
-				Views: []goschema.View{{Name: "conditions_hourly", Body: "SELECT 1"}},
+			desired: &schemamodel.Database{
+				Views: []schemamodel.View{{Name: "conditions_hourly", Body: "SELECT 1"}},
 			},
 			database:     liveWithAggregate(),
 			wantErr:      `declared view "conditions_hourly" is a TimescaleDB continuous aggregate`,
@@ -44,8 +44,8 @@ func TestValidateLive_RefusesADeclarationThatWantsAnAggregatesName(t *testing.T)
 		{
 			name:    "a declared table with the aggregate's name",
 			dialect: platform.Postgres,
-			generated: &goschema.Database{
-				Tables: []goschema.Table{{StructName: "C", Name: "conditions_hourly"}},
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "C", Name: "conditions_hourly"}},
 			},
 			database:     liveWithAggregate(),
 			wantErr:      `declared table "conditions_hourly" is a TimescaleDB continuous aggregate`,
@@ -54,8 +54,8 @@ func TestValidateLive_RefusesADeclarationThatWantsAnAggregatesName(t *testing.T)
 		{
 			name:    "a declared materialized view with the aggregate's name",
 			dialect: platform.Postgres,
-			generated: &goschema.Database{
-				MaterializedViews: []goschema.MaterializedView{
+			desired: &schemamodel.Database{
+				MaterializedViews: []schemamodel.MaterializedView{
 					{Name: "conditions_hourly", Body: "SELECT 1"},
 				},
 			},
@@ -69,8 +69,8 @@ func TestValidateLive_RefusesADeclarationThatWantsAnAggregatesName(t *testing.T)
 			// strings would let the collision through.
 			name:    "the schema is folded on both sides",
 			dialect: platform.Postgres,
-			generated: &goschema.Database{
-				Views: []goschema.View{{Name: "APP.Conditions_Hourly", Body: "SELECT 1"}},
+			desired: &schemamodel.Database{
+				Views: []schemamodel.View{{Name: "APP.Conditions_Hourly", Body: "SELECT 1"}},
 			},
 			database: &catalog.Database{ContinuousAggregates: []catalog.ContinuousAggregate{{
 				Schema: "app", Name: "conditions_hourly",
@@ -80,16 +80,16 @@ func TestValidateLive_RefusesADeclarationThatWantsAnAggregatesName(t *testing.T)
 			wantProblems: 1,
 		},
 		{
-			name:      "a declaration that wants a different name",
-			dialect:   platform.Postgres,
-			generated: &goschema.Database{Views: []goschema.View{{Name: "other", Body: "SELECT 1"}}},
-			database:  liveWithAggregate(),
+			name:     "a declaration that wants a different name",
+			dialect:  platform.Postgres,
+			desired:  &schemamodel.Database{Views: []schemamodel.View{{Name: "other", Body: "SELECT 1"}}},
+			database: liveWithAggregate(),
 		},
 		{
 			name:    "a server with no continuous aggregates",
 			dialect: platform.Postgres,
-			generated: &goschema.Database{
-				Views: []goschema.View{{Name: "conditions_hourly", Body: "SELECT 1"}},
+			desired: &schemamodel.Database{
+				Views: []schemamodel.View{{Name: "conditions_hourly", Body: "SELECT 1"}},
 			},
 			database: &catalog.Database{},
 		},
@@ -98,8 +98,8 @@ func TestValidateLive_RefusesADeclarationThatWantsAnAggregatesName(t *testing.T)
 			// comparison must not be asked about it.
 			name:    "another dialect entirely",
 			dialect: platform.MySQL,
-			generated: &goschema.Database{
-				Views: []goschema.View{{Name: "conditions_hourly", Body: "SELECT 1"}},
+			desired: &schemamodel.Database{
+				Views: []schemamodel.View{{Name: "conditions_hourly", Body: "SELECT 1"}},
 			},
 			database: liveWithAggregate(),
 		},
@@ -108,7 +108,7 @@ func TestValidateLive_RefusesADeclarationThatWantsAnAggregatesName(t *testing.T)
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			err := timescale.ValidateLive(test.dialect, test.generated, test.database)
+			err := timescale.ValidateLive(test.dialect, test.desired, test.database)
 
 			c.Assert(errText(err), qt.Contains, test.wantErr)
 			c.Assert(problemCount(err), qt.Equals, test.wantProblems)

@@ -62,11 +62,11 @@ func TestReader_ReadsBothSpellingsOfAGeneratedColumn(t *testing.T) {
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(schema.Tables, qt.HasLen, 1)
-			generated := schema.Tables[0].Columns[2]
-			c.Assert(generated.Name, qt.Equals, "scaled")
-			c.Assert(generated.GeneratedExpression, qt.IsNotNil)
-			c.Assert(*generated.GeneratedExpression, qt.Equals, tt.expression)
-			c.Assert(generated.GeneratedKind, qt.Equals, tt.kind)
+			desired := schema.Tables[0].Columns[2]
+			c.Assert(desired.Name, qt.Equals, "scaled")
+			c.Assert(desired.GeneratedExpression, qt.IsNotNil)
+			c.Assert(*desired.GeneratedExpression, qt.Equals, tt.expression)
+			c.Assert(desired.GeneratedKind, qt.Equals, tt.kind)
 		})
 	}
 }
