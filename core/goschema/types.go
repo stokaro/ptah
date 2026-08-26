@@ -3,6 +3,7 @@ package goschema
 import (
 	"fmt"
 	"hash/fnv"
+	"slices"
 	"strings"
 
 	"go.5x5.cz/ptah/core/ast"
@@ -877,9 +878,30 @@ type Range struct {
 	SubtypeDiff    string // Optional subtype difference function
 	Comment        string // Optional comment for documentation
 
+	// ClearedAttributes names the optional attributes this declaration writes
+	// as empty, which is how it asks for none of them.
+	//
+	// An omitted attribute and an attribute written empty are the same string
+	// in the fields above, and the comparator has to tell them apart. Omission
+	// means "say nothing about this", so adopting Ptah over a database whose
+	// range carries a SUBTYPE_DIFF does not plan its removal; `subtype_diff=""`
+	// means "this range has none", which is a difference from a catalog that
+	// holds one (stokaro/ptah#2223).
+	//
+	// Only a surface that can spell an empty value fills this. A `CREATE TYPE
+	// ... AS RANGE` statement has no way to write one, so a range read from SQL
+	// never clears anything.
+	ClearedAttributes []string `json:",omitempty"`
+
 	// Dialects scopes this declaration to the named target dialects. See
 	// [ScopeToDialect].
 	Dialects []string `json:",omitempty"`
+}
+
+// Clears reports whether the declaration asks for this attribute to be absent,
+// as opposed to saying nothing about it.
+func (r Range) Clears(attribute string) bool {
+	return slices.Contains(r.ClearedAttributes, attribute)
 }
 
 // Canonicalize normalizes range-type attributes for downstream consumers.

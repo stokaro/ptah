@@ -520,22 +520,37 @@ func rangeChanges(target goschema.Range, current types.DBRange) map[string]strin
 	if target.Subtype != "" && canonicalizePostgresType(target.Subtype) != canonicalizePostgresType(current.Subtype) {
 		changes["subtype"] = fmt.Sprintf("%s -> %s", current.Subtype, target.Subtype)
 	}
-	addDeclaredRangeChange(changes, "subtype_opclass", target.SubtypeOpClass, current.SubtypeOpClass)
-	addDeclaredRangeChange(changes, "collation", target.Collation, current.Collation)
-	addDeclaredRangeChange(changes, "canonical", target.Canonical, current.Canonical)
-	addDeclaredRangeChange(changes, "subtype_diff", target.SubtypeDiff, current.SubtypeDiff)
+	addDeclaredRangeChange(changes, target, "subtype_opclass", target.SubtypeOpClass, current.SubtypeOpClass)
+	addDeclaredRangeChange(changes, target, "collation", target.Collation, current.Collation)
+	addDeclaredRangeChange(changes, target, "canonical", target.Canonical, current.Canonical)
+	addDeclaredRangeChange(changes, target, "subtype_diff", target.SubtypeDiff, current.SubtypeDiff)
 	return changes
 }
 
-// addDeclaredRangeChange records a difference only when the target declares the
-// attribute. PostgreSQL reports these as bare identifiers, so the comparison is
-// case-insensitive on trimmed text rather than type canonicalization.
-func addDeclaredRangeChange(changes map[string]string, key, declared, current string) {
+// addDeclaredRangeChange records a difference only when the target says
+// something about the attribute. PostgreSQL reports these as bare identifiers,
+// so the comparison is case-insensitive on trimmed text rather than type
+// canonicalization.
+//
+// A declaration says something in two ways, and they are not the same:
+//
+//   - it names a value, which is a difference from anything else;
+//   - it writes the attribute empty, which is a difference from a catalog that
+//     holds one and agreement with a catalog that holds none.
+//
+// Omitting the attribute is the third case and stays silent. That is what makes
+// adopting Ptah over an existing database safe: a range carrying a
+// SUBTYPE_DIFF the author never heard of is not planned away by a declaration
+// that does not mention it -- and for a range the plan is DROP TYPE plus
+// CREATE TYPE, which fails while the type is in use and rebuilds it without the
+// function when it is not (stokaro/ptah#2223).
+func addDeclaredRangeChange(changes map[string]string, target goschema.Range, key, declared, current string) {
 	declared = strings.TrimSpace(declared)
-	if declared == "" {
+	current = strings.TrimSpace(current)
+	if declared == "" && !target.Clears(key) {
 		return
 	}
-	if strings.EqualFold(declared, strings.TrimSpace(current)) {
+	if strings.EqualFold(declared, current) {
 		return
 	}
 	changes[key] = fmt.Sprintf("%s -> %s", current, declared)

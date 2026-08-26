@@ -346,6 +346,23 @@ Declares a PostgreSQL range type.
 | `subtype_diff` | No | Subtype difference function. |
 | `subtype_opclass` | No | Operator class for the subtype. |
 
+**Omitting an attribute and writing it empty are different instructions.**
+Omission says nothing about the attribute, so a range in an existing database
+that carries a `SUBTYPE_DIFF` keeps it when the declaration does not mention
+one — which is what makes pointing Ptah at a database somebody else built safe.
+Writing the attribute empty says the range has none, and is the spelling that
+removes one:
+
+```go
+//ptah:schema:range name="measurement" subtype="int8" subtype_diff=""
+type Measurement struct{}
+```
+
+This applies to `canonical`, `collation`, `subtype_diff` and `subtype_opclass`.
+PostgreSQL has no `ALTER TYPE … AS RANGE`, so removing one is planned as a drop
+and a create: the drop is non-`CASCADE` and fails while the type is in use.
+That is the reason omission cannot mean removal.
+
 ## Database objects
 
 ### `//ptah:schema:schema`

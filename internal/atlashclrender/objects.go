@@ -160,13 +160,30 @@ func (r *renderer) renderRange(rangeType goschema.Range) {
 		r.rawAttr(1, "schema", r.schemaRef(schema))
 	}
 	r.rawAttr(1, "subtype", userTypeExpr(rangeType.Subtype))
-	r.stringAttr(1, "subtype_opclass", rangeType.SubtypeOpClass)
-	r.stringAttr(1, "collation", rangeType.Collation)
-	r.stringAttr(1, "canonical", rangeType.Canonical)
-	r.stringAttr(1, "subtype_diff", rangeType.SubtypeDiff)
+	r.rangeAttr(rangeType, "subtype_opclass", rangeType.SubtypeOpClass)
+	r.rangeAttr(rangeType, "collation", rangeType.Collation)
+	r.rangeAttr(rangeType, "canonical", rangeType.Canonical)
+	r.rangeAttr(rangeType, "subtype_diff", rangeType.SubtypeDiff)
 	r.stringAttr(1, "comment", rangeType.Comment)
 	r.line("}")
 	r.line("")
+}
+
+// rangeAttr writes one optional range attribute, keeping an explicit empty
+// value that a declaration wrote on purpose.
+//
+// [goschema.Range.Clears] is filled only by a declaration -- a catalog read
+// carries the values the server reported and clears nothing -- so this never
+// changes what `schema inspect` emits. What it keeps is a declaration's
+// meaning: `subtype_diff = ""` says the range has none, and dropping the
+// attribute on the way out would turn that into "say nothing about it", which
+// is a different instruction (stokaro/ptah#2223).
+func (r *renderer) rangeAttr(rangeType goschema.Range, name, value string) {
+	if value == "" && rangeType.Clears(name) {
+		r.rawAttr(1, name, quote(""))
+		return
+	}
+	r.stringAttr(1, name, value)
 }
 
 func (r *renderer) renderManagedData() {

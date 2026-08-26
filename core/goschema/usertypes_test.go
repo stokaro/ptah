@@ -102,6 +102,41 @@ type FloatRange struct{}
 	c.Assert(r.SubtypeDiff, qt.Equals, "float8mi")
 }
 
+// TestParseRangeAnnotation_AnEmptyAttributeIsToldFromAnAbsentOne pins the
+// distinction the comparator needs.
+//
+// An omitted attribute and one written `key=""` reach the same empty string in
+// Range, and only the key's presence separates them. Omission means "say
+// nothing about this", which is what keeps adoption over an existing database
+// from planning away a SUBTYPE_DIFF the author never mentioned; an empty value
+// means "this range has none", which is the only spelling that removes one
+// (stokaro/ptah#2223).
+func TestParseRangeAnnotation_AnEmptyAttributeIsToldFromAnAbsentOne(t *testing.T) {
+	const src = `package fixture
+
+//ptah:schema:range name="floatrange" subtype="float8" subtype_diff="" canonical="float8canon"
+type FloatRange struct{}
+`
+	c := qt.New(t)
+	db := mustParseSource(c, "fixture.go", src)
+	c.Assert(db.Ranges, qt.HasLen, 1)
+	r := db.Ranges[0]
+
+	// Written empty: cleared.
+	c.Assert(r.SubtypeDiff, qt.Equals, "")
+	c.Assert(r.Clears("subtype_diff"), qt.IsTrue)
+
+	// Written with a value: not cleared, and the value survives.
+	c.Assert(r.Canonical, qt.Equals, "float8canon")
+	c.Assert(r.Clears("canonical"), qt.IsFalse)
+
+	// Never written at all: not cleared either, which is the case that must not
+	// be confused with the first.
+	c.Assert(r.Collation, qt.Equals, "")
+	c.Assert(r.Clears("collation"), qt.IsFalse)
+	c.Assert(r.ClearedAttributes, qt.DeepEquals, []string{"subtype_diff"})
+}
+
 func TestParseRangeAnnotation_MissingSubtypeRejected(t *testing.T) {
 	const src = `package fixture
 

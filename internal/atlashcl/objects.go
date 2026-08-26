@@ -1166,10 +1166,31 @@ func (p *parser) parseRange(block *hclsyntax.Block) error {
 		Canonical:      p.optionalString(block.Body.Attributes["canonical"]),
 		SubtypeDiff:    p.optionalString(block.Body.Attributes["subtype_diff"]),
 		Comment:        p.optionalString(block.Body.Attributes["comment"]),
+
+		ClearedAttributes: p.clearedRangeAttributes(block),
 	}
 	rng.Canonicalize()
 	p.db.Ranges = append(p.db.Ranges, rng)
 	return nil
+}
+
+// clearedRangeAttributes lists the range attributes the block writes as an
+// empty string, which is how a declaration says the type has none of them.
+//
+// An attribute the block omits and one written `subtype_diff = ""` both reach
+// the same empty string in [goschema.Range], and only the attribute's presence
+// separates them. Omission says nothing about the attribute, so adopting Ptah
+// over a database whose range carries a SUBTYPE_DIFF does not plan its removal
+// (stokaro/ptah#2223).
+func (p *parser) clearedRangeAttributes(block *hclsyntax.Block) []string {
+	var cleared []string
+	for _, attribute := range []string{"subtype_opclass", "collation", "canonical", "subtype_diff"} {
+		declared, present := block.Body.Attributes[attribute]
+		if present && strings.TrimSpace(p.optionalString(declared)) == "" {
+			cleared = append(cleared, attribute)
+		}
+	}
+	return cleared
 }
 
 func (p *parser) rejectUnsupportedRangeAttrs(block *hclsyntax.Block) error {

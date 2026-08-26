@@ -1463,34 +1463,48 @@ The rule is stated where it is applied, in `domainChanges`
 (`migration/schemadiff/internal/compare/usertypes.go`), and `rangeChanges`
 follows it.
 
-The rule has a cost, and it is worth stating rather than leaving to be
-discovered. For attributes the model carries as a bare string, an empty value is
-indistinguishable from an absent one — so there is no spelling that removes
-them, not merely no removal by omission:
+The rule has a cost, and where it is still paid is worth stating rather than
+leaving to be discovered. For an attribute the model carries as a bare string,
+an empty value is indistinguishable from an absent one — so there is no
+spelling that removes it, not merely no removal by omission.
+
+A range's attributes are no longer in that position: the declaration records
+which of them it wrote empty, so `subtype_diff = ""` says the range has none
+while omitting the attribute still says nothing about it. A domain's `check` and
+`default` are still only removable out of band.
 
 | Object | Attribute | Removable through a declaration |
 | --- | --- | --- |
-| `range` | `canonical` | No |
-| `range` | `subtype_diff` | No |
+| `range` | `canonical` | Yes, by writing it empty |
+| `range` | `collation` | Yes, by writing it empty |
+| `range` | `subtype_diff` | Yes, by writing it empty |
+| `range` | `subtype_opclass` | Yes, by writing it empty |
 | `domain` | `check` | No |
 | `domain` | `default` | No |
 
-Measured on PostgreSQL 18.6, two of the four rows — the other two reach the
-same early return in the same helper. A range type created with
-`SUBTYPE_DIFF = f8diff`, described, and applied back with the `subtype_diff`
-line deleted answers `Schema is synced, no changes to be made.` while
-`pg_range.rngsubdiff` still holds the function; a domain created with
-`CHECK (VALUE > 0)` and applied back without its `check` line answers the same.
-Changing the attribute plans normally — `subtype_diff = "f8diff2"` against the
-same database plans the type's replacement — so it is removal alone that has no
-spelling.
+Measured on PostgreSQL 18.6. A range type created with `SUBTYPE_DIFF = f8diff`,
+described, and applied back with the `subtype_diff` line **deleted** answers
+`Schema is synced, no changes to be made.` while `pg_range.rngsubdiff` still
+holds the function — which is the adoption rule working, not a defect. Applied
+back with `subtype_diff = ""` it plans the type's replacement, and the recreated
+type has no function. A domain created with `CHECK (VALUE > 0)` and applied back
+without its `check` line answers the first way and has no second spelling yet.
 
-Removing one is done out of band, with `ALTER TYPE` or `ALTER DOMAIN` against
-the database. Whether that stays is
-[`stokaro/ptah#2223`](https://github.com/stokaro/ptah/issues/2223): the
-alternatives are to report the difference without planning it, or to let a
-declaration say "none" explicitly by distinguishing an absent value from an
-empty one, the way `config.DomainExpression` already does on its own side.
+Changing an attribute has always planned normally — `subtype_diff = "f8diff2"`
+against the same database plans the type's replacement — so it was removal alone
+that had no spelling.
+
+Why the empty spelling and not the omission: PostgreSQL has no
+`ALTER TYPE … AS RANGE`, so removing a range attribute is planned as `DROP TYPE`
+plus `CREATE TYPE`. That drop is non-`CASCADE` — it errors while the type is in
+use and rebuilds the type without the function when it is not — which is why
+reading an omitted attribute as a removal would be the wrong default for anyone
+pointing Ptah at a database somebody else built.
+
+A domain's expressions are resolved through the server before they are compared
+and a `CHECK` is removed by name with `ALTER DOMAIN … DROP CONSTRAINT`, so that
+half is a different path; removing one is still done out of band, and
+[`stokaro/ptah#2223`](https://github.com/stokaro/ptah/issues/2223) carries it.
 
 ## SQLite: A Primary Key Is Not A NOT NULL
 
