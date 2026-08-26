@@ -6658,6 +6658,7 @@ type Capabilities map[Capability]bool
     func Postgres13() Capabilities
     func Postgres16() Capabilities
     func Postgres17() Capabilities
+    func Postgres18() Capabilities
     func SQLServer2022() Capabilities
     func SQLite3() Capabilities
     func SQLite324() Capabilities
@@ -6718,6 +6719,7 @@ func Oracle23() Capabilities
 func Postgres13() Capabilities
 func Postgres16() Capabilities
 func Postgres17() Capabilities
+func Postgres18() Capabilities
 func SQLServer2022() Capabilities
 func SQLite3() Capabilities
 func SQLite324() Capabilities

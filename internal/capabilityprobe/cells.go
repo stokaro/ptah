@@ -296,10 +296,12 @@ var Cells = []Cell{
 	// 2026-11-12, so it is the next line due to move to legacy-tested.
 	{
 		Dialect: platform.Postgres, Line: "18",
-		Preset: capability.Postgres17, PresetName: "Postgres17",
+		Preset: capability.Postgres18, PresetName: "Postgres18",
 		Refinement: RefinedByVersion, Support: capability.Certified, Image: "postgres:18",
-		Note: "measured live on PostgreSQL 18.4 in capability-matrix run 31615442780: all 25 observed " +
-			"capability rows agree with Postgres17",
+		Note: "measured live on PostgreSQL 18.4 in capability-matrix run 32948628838: 52 rows, of " +
+			"which 45 agree, 6 are undecidable and one disagreed with Postgres17 -- " +
+			"named_not_null_constraints, which the server does and 17 does not. Postgres18 is " +
+			"Postgres17 plus that key, so the line now agrees on every decided row",
 	},
 	{
 		Dialect: platform.Postgres, Line: "17",
