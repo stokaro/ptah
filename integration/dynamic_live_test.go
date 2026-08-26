@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	ptahintegration "go.5x5.cz/ptah/internal/integrationharness"
 )
@@ -66,7 +66,7 @@ func TestDynamicScenariosWithRealDatabase(t *testing.T) {
 	c.Assert(report.SkippedTests, qt.Equals, 0)
 }
 
-func tableNames(schema *goschema.Database) map[string]bool {
+func tableNames(schema *schemamodel.Database) map[string]bool {
 	names := make(map[string]bool, len(schema.Tables))
 	for _, table := range schema.Tables {
 		names[table.Name] = true
@@ -74,7 +74,7 @@ func tableNames(schema *goschema.Database) map[string]bool {
 	return names
 }
 
-func enumNames(schema *goschema.Database) map[string]bool {
+func enumNames(schema *schemamodel.Database) map[string]bool {
 	names := make(map[string]bool, len(schema.Enums))
 	for _, enum := range schema.Enums {
 		names[enum.Name] = true

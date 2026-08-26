@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // Options carries what the caller knows that the document does not.
@@ -37,8 +37,8 @@ func (o Options) diagnosef(format string, args ...any) {
 // The whole document is read before anything is returned, so a file with two
 // mistakes reports the first rather than a cascade -- and the position it
 // reports is the token's own, not the parser's recovery point.
-func Parse(source string, opts Options) (*goschema.Database, error) {
-	p := &parser{lex: newLexer(source), opts: opts, file: opts.File, db: &goschema.Database{}}
+func Parse(source string, opts Options) (*schemamodel.Database, error) {
+	p := &parser{lex: newLexer(source), opts: opts, file: opts.File, db: &schemamodel.Database{}}
 	if err := p.prime(); err != nil {
 		return nil, err
 	}
@@ -55,7 +55,7 @@ type parser struct {
 	opts Options
 	file string
 	tok  token
-	db   *goschema.Database
+	db   *schemamodel.Database
 	// tables indexes the struct name a table was recorded under, so a column
 	// can find the table it belongs to without a second pass.
 	tableStruct map[string]string

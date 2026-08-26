@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
@@ -81,10 +81,10 @@ func tableCommentDiff(desired string) *difftypes.SchemaDiff {
 	}
 }
 
-func commentedTableSchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{Name: "users", StructName: "User"}},
-		Fields: []goschema.Field{
+func commentedTableSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "users", StructName: "User"}},
+		Fields: []schemamodel.Field{
 			{Name: "id", StructName: "User", Type: "INT", Primary: true},
 			{Name: "email", StructName: "User", Type: "VARCHAR(255)", Comment: "primary contact"},
 		},

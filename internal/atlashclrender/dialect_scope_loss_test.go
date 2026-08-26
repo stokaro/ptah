@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 )
 
@@ -22,14 +22,14 @@ import (
 func TestRender_ADialectScopeIsReportedAsAnExportLoss(t *testing.T) {
 	tests := []struct {
 		name string
-		db   *goschema.Database
+		db   *schemamodel.Database
 		want []atlashclrender.Diagnostic
 	}{
 		{
 			name: "a scoped function",
-			db: &goschema.Database{
-				Schemas: []goschema.Schema{{Name: "public"}},
-				Functions: []goschema.Function{{
+			db: &schemamodel.Database{
+				Schemas: []schemamodel.Schema{{Name: "public"}},
+				Functions: []schemamodel.Function{{
 					StructName: "Fn", Name: "tenant_id", Returns: "text",
 					Language: "sql", Body: "SELECT 'x'", Dialects: []string{"postgres"},
 				}},
@@ -42,9 +42,9 @@ func TestRender_ADialectScopeIsReportedAsAnExportLoss(t *testing.T) {
 		},
 		{
 			name: "a scoped role naming several dialects",
-			db: &goschema.Database{
-				Schemas: []goschema.Schema{{Name: "public"}},
-				Roles: []goschema.Role{{
+			db: &schemamodel.Database{
+				Schemas: []schemamodel.Schema{{Name: "public"}},
+				Roles: []schemamodel.Role{{
 					StructName: "Rol", Name: "app_reader", Inherit: true,
 					Dialects: []string{"cockroachdb", "postgres"},
 				}},
@@ -57,9 +57,9 @@ func TestRender_ADialectScopeIsReportedAsAnExportLoss(t *testing.T) {
 		},
 		{
 			name: "an unscoped schema reports no scope loss",
-			db: &goschema.Database{
-				Schemas: []goschema.Schema{{Name: "public"}},
-				Roles: []goschema.Role{{
+			db: &schemamodel.Database{
+				Schemas: []schemamodel.Schema{{Name: "public"}},
+				Roles: []schemamodel.Role{{
 					StructName: "Rol", Name: "app_reader", Inherit: true,
 				}},
 			},

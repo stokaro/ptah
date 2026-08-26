@@ -11,9 +11,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -156,12 +156,12 @@ func TestSQLServerLiveRoleRefusesWhatTheRendererDeclines(t *testing.T) {
 
 // sqlServerRoleSchema declares one attribute-free role, a table, and two grants
 // on it -- one plain, one carrying the grant option.
-func sqlServerRoleSchema(role, table string) *goschema.Database {
-	return &goschema.Database{
-		Roles:  []goschema.Role{{StructName: "Access", Name: role, Inherit: true}},
-		Tables: []goschema.Table{{StructName: "T", Name: table, Schema: "dbo"}},
-		Fields: []goschema.Field{{StructName: "T", Name: "id", Type: "INT", Primary: true}},
-		Grants: []goschema.Grant{
+func sqlServerRoleSchema(role, table string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Roles:  []schemamodel.Role{{StructName: "Access", Name: role, Inherit: true}},
+		Tables: []schemamodel.Table{{StructName: "T", Name: table, Schema: "dbo"}},
+		Fields: []schemamodel.Field{{StructName: "T", Name: "id", Type: "INT", Primary: true}},
+		Grants: []schemamodel.Grant{
 			{StructName: "Access", Role: role, Privileges: []string{"SELECT"}, OnTable: "dbo." + table},
 			{
 				StructName: "Access", Role: role, Privileges: []string{"INSERT"},
@@ -268,9 +268,9 @@ func TestSQLServerLiveReaderClassifiesDenyAndSchemaGrants(t *testing.T) {
 	// And the comparator does not plan a REVOKE of the DENY. It is not a grant
 	// to revoke: the role already does not hold that privilege, and revoking it
 	// would remove the exception instead.
-	description := &goschema.Database{
-		Roles:  []goschema.Role{{StructName: "A", Name: role, Inherit: true}},
-		Grants: []goschema.Grant{{StructName: "A", Role: role, Privileges: []string{"SELECT"}, OnTable: "dbo." + table}},
+	description := &schemamodel.Database{
+		Roles:  []schemamodel.Role{{StructName: "A", Name: role, Inherit: true}},
+		Grants: []schemamodel.Grant{{StructName: "A", Role: role, Privileges: []string{"SELECT"}, OnTable: "dbo." + table}},
 	}
 	diff := schemadiff.CompareWithDialect(description, live, platform.SQLServer)
 	for _, ref := range grantsFor(diff.GrantsRemoved, role) {

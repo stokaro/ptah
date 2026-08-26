@@ -32,10 +32,10 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/indexscope"
 	"go.5x5.cz/ptah/internal/planner/objectlookup"
@@ -88,17 +88,17 @@ func (p *Planner) capabilities() capability.Capabilities {
 // each to a named `-- CLICKHOUSE: ... is not supported` comment, in the order
 // `schema render` produces for the same model. Plain-view, role and grant nodes
 // are executable and retain what they declare.
-func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, generated *goschema.Database) ([]ast.Node, error) {
+func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *schemamodel.Database) ([]ast.Node, error) {
 	var result []ast.Node
 
-	if generated == nil {
-		generated = &goschema.Database{}
+	if desired == nil {
+		desired = &schemamodel.Database{}
 	}
 	indexes, err := indexscope.NewResolverWithSemantics(
 		platform.ClickHouse,
 		diff.EffectiveIdentifierSemantics(platform.ClickHouse),
 		diff,
-		generated,
+		desired,
 	)
 	if err != nil {
 		return nil, err
@@ -109,9 +109,9 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, generated *go
 	}
 
 	result = reportUnsupportedObjectsBeforeTables(result, diff)
-	result = p.addNewTables(result, diff, generated)
-	result = p.modifyExistingTables(result, diff, generated)
-	result, err = planObjectsAfterTables(result, diff, generated, p.capabilities())
+	result = p.addNewTables(result, diff, desired)
+	result = p.modifyExistingTables(result, diff, desired)
+	result, err = planObjectsAfterTables(result, diff, desired, p.capabilities())
 	if err != nil {
 		return nil, err
 	}
@@ -136,42 +136,42 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, generated *go
 // comparator's spelling while `table.QualifiedName()` carries the declaration's,
 // and a table whose two sides disagree got no CREATE TABLE at all -- no
 // statement, no comment, and a plan that exits 0 having created nothing.
-func (p *Planner) addNewTables(result []ast.Node, diff *difftypes.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) addNewTables(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
 	if len(diff.TablesAdded) == 0 {
 		return result
 	}
 	semantics := diff.EffectiveIdentifierSemantics(platform.ClickHouse)
 
-	for _, table := range generated.Tables {
+	for _, table := range desired.Tables {
 		if !objectlookup.Contains(diff.TablesAdded, table.QualifiedName(), semantics) {
 			continue
 		}
 		// FromTable applies platform.clickhouse.* overrides into the AST
 		// node's Options map (uppercased), which the renderer then reads
 		// to build the ENGINE clause.
-		tableNode := fromschema.FromTable(table, generated.Fields, generated.Enums, platform.ClickHouse)
+		tableNode := fromschema.FromTable(table, desired.Fields, desired.Enums, platform.ClickHouse)
 		result = append(result, tableNode)
 	}
 
 	return result
 }
 
-func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(platform.ClickHouse)
 	for _, td := range diff.TablesModified {
-		structName := lookupStructName(generated, td.TableName, semantics)
+		structName := lookupStructName(desired, td.TableName, semantics)
 		if structName == "" {
 			result = append(result, ast.NewComment(fmt.Sprintf("WARNING: ClickHouse planner could not find struct for table %s; skipping modifications", td.TableName)))
 			continue
 		}
 
 		for _, colName := range td.ColumnsAdded {
-			field := lookupField(generated, structName, colName)
+			field := lookupField(desired, structName, colName)
 			if field == nil {
 				result = append(result, ast.NewComment(fmt.Sprintf("WARNING: ClickHouse planner could not find field %s.%s; skipping ADD COLUMN", td.TableName, colName)))
 				continue
 			}
-			col := fromschema.FromField(*field, generated.Enums, platform.ClickHouse)
+			col := fromschema.FromField(*field, desired.Enums, platform.ClickHouse)
 			result = append(result, &ast.AlterTableNode{
 				Name:       td.TableName,
 				Operations: []ast.AlterOperation{&ast.AddColumnOperation{Column: col}},
@@ -179,12 +179,12 @@ func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.Schema
 		}
 
 		for _, colDiff := range td.ColumnsModified {
-			field := lookupField(generated, structName, colDiff.ColumnName)
+			field := lookupField(desired, structName, colDiff.ColumnName)
 			if field == nil {
 				result = append(result, ast.NewComment(fmt.Sprintf("WARNING: ClickHouse planner could not find field %s.%s; skipping MODIFY COLUMN", td.TableName, colDiff.ColumnName)))
 				continue
 			}
-			col := fromschema.FromField(*field, generated.Enums, platform.ClickHouse)
+			col := fromschema.FromField(*field, desired.Enums, platform.ClickHouse)
 			result = append(result, &ast.AlterTableNode{
 				Name: td.TableName,
 				Operations: []ast.AlterOperation{&ast.ModifyColumnOperation{
@@ -265,21 +265,21 @@ func (p *Planner) removeTables(result []ast.Node, diff *difftypes.SchemaDiff) []
 }
 
 func lookupStructName(
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	tableName string,
 	semantics identifier.Semantics,
 ) string {
-	table := objectlookup.Qualified(generated.Tables, tableName, semantics)
+	table := objectlookup.Qualified(desired.Tables, tableName, semantics)
 	if table == nil {
 		return ""
 	}
 	return table.StructName
 }
 
-func lookupField(generated *goschema.Database, structName, columnName string) *goschema.Field {
-	for i := range generated.Fields {
-		if generated.Fields[i].StructName == structName && generated.Fields[i].Name == columnName {
-			return &generated.Fields[i]
+func lookupField(desired *schemamodel.Database, structName, columnName string) *schemamodel.Field {
+	for i := range desired.Fields {
+		if desired.Fields[i].StructName == structName && desired.Fields[i].Name == columnName {
+			return &desired.Fields[i]
 		}
 	}
 	return nil

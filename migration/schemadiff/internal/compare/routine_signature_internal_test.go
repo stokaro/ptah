@@ -12,7 +12,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // TestNormalizeRoutineSignatureAgreesWithTheCatalog is the measured regression
@@ -80,8 +80,8 @@ func TestNormalizeRoutineSignatureKeepsDistinctSignaturesApart(t *testing.T) {
 	}
 }
 
-func declaredFn(parameters, body string) goschema.Function {
-	return goschema.Function{Name: "f", Parameters: parameters, Body: body}
+func declaredFn(parameters, body string) schemamodel.Function {
+	return schemamodel.Function{Name: "f", Parameters: parameters, Body: body}
 }
 
 func recordedFn(identityArguments, body string) catalog.Function {
@@ -99,7 +99,7 @@ func recordedFn(identityArguments, body string) catalog.Function {
 func TestPairRoutineOverloads(t *testing.T) {
 	tests := []struct {
 		name          string
-		declared      []goschema.Function
+		declared      []schemamodel.Function
 		recorded      []catalog.Function
 		wantPairs     int
 		wantAdded     int
@@ -108,14 +108,14 @@ func TestPairRoutineOverloads(t *testing.T) {
 	}{
 		{
 			name:          "one on each side pairs without reading the signature",
-			declared:      []goschema.Function{declaredFn("a whatever-this-is", "SELECT 1")},
+			declared:      []schemamodel.Function{declaredFn("a whatever-this-is", "SELECT 1")},
 			recorded:      []catalog.Function{recordedFn("a integer", "SELECT 1")},
 			wantPairs:     1,
 			wantFirstPair: "SELECT 1",
 		},
 		{
 			name: "an overload set pairs on the signature, not on order",
-			declared: []goschema.Function{
+			declared: []schemamodel.Function{
 				declaredFn("a text", "text body"),
 				declaredFn("a int", "int body"),
 			},
@@ -128,7 +128,7 @@ func TestPairRoutineOverloads(t *testing.T) {
 		},
 		{
 			name:          "a declared overload the database lacks is an addition",
-			declared:      []goschema.Function{declaredFn("a int", "x"), declaredFn("a text", "y")},
+			declared:      []schemamodel.Function{declaredFn("a int", "x"), declaredFn("a text", "y")},
 			recorded:      []catalog.Function{recordedFn("a integer", "x")},
 			wantPairs:     1,
 			wantAdded:     1,
@@ -136,7 +136,7 @@ func TestPairRoutineOverloads(t *testing.T) {
 		},
 		{
 			name:          "a recorded overload the schema lacks is a removal",
-			declared:      []goschema.Function{declaredFn("a int", "x")},
+			declared:      []schemamodel.Function{declaredFn("a int", "x")},
 			recorded:      []catalog.Function{recordedFn("a integer", "x"), recordedFn("a text", "y")},
 			wantPairs:     1,
 			wantRemoved:   1,
@@ -150,7 +150,7 @@ func TestPairRoutineOverloads(t *testing.T) {
 		},
 		{
 			name:      "a routine the database does not have at all",
-			declared:  []goschema.Function{declaredFn("a int", "x")},
+			declared:  []schemamodel.Function{declaredFn("a int", "x")},
 			recorded:  nil,
 			wantAdded: 1,
 		},

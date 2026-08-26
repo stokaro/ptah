@@ -9,8 +9,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/go-sql-driver/mysql"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	mysqlreader "go.5x5.cz/ptah/internal/dbschema/mysql"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -39,12 +39,12 @@ func TestDefaultsTypesConformanceFixture_RoundTrip_MySQL(t *testing.T) {
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 }
 
-func defaultsTypesConformanceSchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func defaultsTypesConformanceSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Invoice", Name: "invoices"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Invoice", Name: "id", Type: "SERIAL", Primary: true},
 			{
 				StructName: "Invoice",

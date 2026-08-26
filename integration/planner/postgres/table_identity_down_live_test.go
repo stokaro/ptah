@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
@@ -56,16 +56,16 @@ func TestDownMigrationRestoresDroppedColumnLive(t *testing.T) {
 				`INSERT INTO users (id, email, legacy_note) VALUES (1, 'a@example.com', 'keep')`,
 			})
 
-			generated := downColumnTarget(test.targetSchema)
+			desired := downColumnTarget(test.targetSchema)
 			database := downColumnDatabase(test.dbSchema)
 
-			forward := schemadiff.CompareWithDialect(generated, database, "postgres")
-			up, err := planner.GenerateSchemaDiffSQLStatements(forward, generated, "postgres")
+			forward := schemadiff.CompareWithDialect(desired, database, "postgres")
+			up, err := planner.GenerateSchemaDiffSQLStatements(forward, desired, "postgres")
 			c.Assert(err, qt.IsNil)
 			executeSQL(c, dbURL, up)
 			c.Assert(usersColumns(c, dbURL), qt.DeepEquals, []string{"email", "id"})
 
-			down := planDownStatements(c, generated, database)
+			down := planDownStatements(c, desired, database)
 			c.Logf("down plan:\n%s", strings.Join(down, "\n"))
 			executeSQL(c, dbURL, down)
 			c.Assert(usersColumns(c, dbURL), qt.DeepEquals, []string{"email", "id", "legacy_note"})
@@ -93,15 +93,15 @@ func TestModifiedUserTypeDropWithoutRecreateLive(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		generated *goschema.Database
+		desired   *schemamodel.Database
 		wantTypes []string
 	}{
 		{
 			// Control: the definition resolves, so the pair runs and the domain
 			// is present afterwards with its new base type.
 			name: "a resolvable modification leaves the domain in place",
-			generated: &goschema.Database{
-				Domains: []goschema.Domain{{Name: "zip", Schema: "app", BaseType: "VARCHAR(10)"}},
+			desired: &schemamodel.Database{
+				Domains: []schemamodel.Domain{{Name: "zip", Schema: "app", BaseType: "VARCHAR(10)"}},
 			},
 			wantTypes: []string{"app.zip"},
 		},
@@ -109,8 +109,8 @@ func TestModifiedUserTypeDropWithoutRecreateLive(t *testing.T) {
 			// The definition does not resolve. Nothing is dropped, because
 			// nothing could be put back.
 			name: "an unresolvable modification leaves the domain in place",
-			generated: &goschema.Database{
-				Domains: []goschema.Domain{{Name: "other", Schema: "app", BaseType: "TEXT"}},
+			desired: &schemamodel.Database{
+				Domains: []schemamodel.Domain{{Name: "other", Schema: "app", BaseType: "TEXT"}},
 			},
 			wantTypes: []string{"app.zip"},
 		},
@@ -128,7 +128,7 @@ func TestModifiedUserTypeDropWithoutRecreateLive(t *testing.T) {
 
 			statements, err := planner.GenerateSchemaDiffSQLStatements(
 				modifiedZipDomainDiff(),
-				test.generated,
+				test.desired,
 				"postgres",
 			)
 			c.Assert(err, qt.IsNil)

@@ -197,7 +197,7 @@ func errorText(err error) string {
 //
 // Parse canonicalizes what it stores, so a scope that came from an annotation
 // holds "postgres" whatever the author wrote. A Go caller building a
-// goschema.Database by hand reaches these fields directly and has no exported
+// schemamodel.Database by hand reaches these fields directly and has no exported
 // parser to canonicalize with, so its scope holds exactly the spelling it was
 // given. Comparing that spelling literally against the normalized target scoped
 // the object away from the very dialect it names.

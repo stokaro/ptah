@@ -12,10 +12,10 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/migration/diffpolicy"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
@@ -78,18 +78,18 @@ func TestPlanGeneratedMigrationSpecs_SkipDropIndexPreservesPostgresSchemaMove(t 
 	diff.SetIndexRemovals([]difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "app.users"},
 	})
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Order", Schema: "app", Name: "orders"},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{StructName: "Order", Name: "idx_shared", Fields: []string{"reference"}},
 		},
 	}
 
 	specs, _, err := planGeneratedMigrationSpecs(
 		diff,
-		generated,
+		desired,
 		&catalog.Database{
 			Tables: []catalog.Table{
 				{Name: "users", Schema: "app", Type: "BASE TABLE"},
@@ -214,7 +214,7 @@ func TestGenerateDownMigrationSQL_SQLServerPreservesFilteredIndexPredicate(t *te
 			{Name: "idx_active_users", TableName: "dbo.users"},
 		},
 	}
-	generated := &goschema.Database{Indexes: []goschema.Index{
+	desired := &schemamodel.Database{Indexes: []schemamodel.Index{
 		{
 			Name:      "idx_active_users",
 			TableName: "dbo.users",
@@ -242,7 +242,7 @@ func TestGenerateDownMigrationSQL_SQLServerPreservesFilteredIndexPredicate(t *te
 
 	sql, err := generateDownMigrationSQL(
 		diff,
-		generated,
+		desired,
 		database,
 		platform.SQLServer,
 		capability.SQLServer2022(),

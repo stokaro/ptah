@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlasurl"
@@ -345,11 +345,11 @@ func newSQLiteMigrationOptions(
 		c.Check(conn.Close(), qt.IsNil)
 	})
 	return generator.GenerateMigrationOptions{
-		Generated: &goschema.Database{
-			Tables: []goschema.Table{
+		Generated: &schemamodel.Database{
+			Tables: []schemamodel.Table{
 				{StructName: "User", Name: "users"},
 			},
-			Fields: []goschema.Field{
+			Fields: []schemamodel.Field{
 				{
 					StructName: "User",
 					FieldName:  "ID",

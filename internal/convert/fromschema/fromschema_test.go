@@ -8,9 +8,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 )
 
@@ -34,7 +34,7 @@ func countColumns(table *ast.CreateTableNode, name string) int {
 	return count
 }
 
-func countFields(fields []goschema.Field, structName, name string) int {
+func countFields(fields []schemamodel.Field, structName, name string) int {
 	count := 0
 	for _, field := range fields {
 		if field.StructName == structName && field.Name == name {
@@ -182,21 +182,21 @@ func foreignKeyConstraintNames(statements *ast.StatementList) []string {
 	return names
 }
 
-func databaseWithGeneratedForeignKeys(tableName string, fieldNames ...string) goschema.Database {
-	fields := []goschema.Field{
+func databaseWithGeneratedForeignKeys(tableName string, fieldNames ...string) schemamodel.Database {
+	fields := []schemamodel.Field{
 		{StructName: "Parent", Name: "id", Type: "INTEGER", Primary: true},
 		{StructName: "Child", Name: "id", Type: "INTEGER", Primary: true},
 	}
 	for _, fieldName := range fieldNames {
-		fields = append(fields, goschema.Field{
+		fields = append(fields, schemamodel.Field{
 			StructName: "Child",
 			Name:       fieldName,
 			Type:       "INTEGER",
 			Foreign:    "parents(id)",
 		})
 	}
-	return goschema.Database{
-		Tables: []goschema.Table{
+	return schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Parent", Name: "parents"},
 			{StructName: "Child", Name: tableName},
 		},
@@ -207,13 +207,13 @@ func databaseWithGeneratedForeignKeys(tableName string, fieldNames ...string) go
 func TestFromField_BasicProperties(t *testing.T) {
 	tests := []struct {
 		name           string
-		field          goschema.Field
+		field          schemamodel.Field
 		targetPlatform string
 		expected       func(*ast.ColumnNode) bool
 	}{
 		{
 			name: "basic field with name and type",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name:     "email",
 				Type:     "VARCHAR(255)",
 				Nullable: true, // Explicitly set to true
@@ -224,7 +224,7 @@ func TestFromField_BasicProperties(t *testing.T) {
 		},
 		{
 			name: "non-nullable field",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name:     "id",
 				Type:     "INTEGER",
 				Nullable: false,
@@ -235,7 +235,7 @@ func TestFromField_BasicProperties(t *testing.T) {
 		},
 		{
 			name: "primary key field",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name:    "id",
 				Type:    "SERIAL",
 				Primary: true,
@@ -246,7 +246,7 @@ func TestFromField_BasicProperties(t *testing.T) {
 		},
 		{
 			name: "unique field",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name:   "username",
 				Type:   "VARCHAR(50)",
 				Unique: true,
@@ -257,7 +257,7 @@ func TestFromField_BasicProperties(t *testing.T) {
 		},
 		{
 			name: "auto-increment field",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name:    "id",
 				Type:    "INTEGER",
 				AutoInc: true,
@@ -268,7 +268,7 @@ func TestFromField_BasicProperties(t *testing.T) {
 		},
 		{
 			name: "identity field",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name:               "id",
 				Type:               "INTEGER",
 				IdentityGeneration: "ALWAYS",
@@ -286,7 +286,7 @@ func TestFromField_BasicProperties(t *testing.T) {
 		},
 		{
 			name: "generated field",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name:                "slug",
 				Type:                "TEXT",
 				GeneratedExpression: "lower(name)",
@@ -298,7 +298,7 @@ func TestFromField_BasicProperties(t *testing.T) {
 		},
 		{
 			name: "PostgreSQL generated field defaults to stored",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name:                "slug",
 				Type:                "TEXT",
 				GeneratedExpression: "lower(name)",
@@ -310,7 +310,7 @@ func TestFromField_BasicProperties(t *testing.T) {
 		},
 		{
 			name: "PostgreSQL explicit virtual generated field is preserved",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name:                "slug",
 				Type:                "TEXT",
 				GeneratedExpression: "lower(name)",
@@ -323,7 +323,7 @@ func TestFromField_BasicProperties(t *testing.T) {
 		},
 		{
 			name: "MySQL generated field defaults to virtual",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name:                "slug",
 				Type:                "TEXT",
 				GeneratedExpression: "lower(name)",
@@ -335,7 +335,7 @@ func TestFromField_BasicProperties(t *testing.T) {
 		},
 		{
 			name: "SQLite generated field defaults to virtual",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name:                "slug",
 				Type:                "TEXT",
 				GeneratedExpression: "lower(name)",
@@ -347,7 +347,7 @@ func TestFromField_BasicProperties(t *testing.T) {
 		},
 		{
 			name: "column update expression",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name:             "updated_at",
 				Type:             "TIMESTAMP",
 				UpdateExpression: "CURRENT_TIMESTAMP",
@@ -358,7 +358,7 @@ func TestFromField_BasicProperties(t *testing.T) {
 		},
 		{
 			name: "column charset and collate",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name:    "name",
 				Type:    "VARCHAR(255)",
 				Charset: "hebrew",
@@ -383,12 +383,12 @@ func TestFromField_BasicProperties(t *testing.T) {
 func TestFromField_DefaultValues(t *testing.T) {
 	tests := []struct {
 		name     string
-		field    goschema.Field
+		field    schemamodel.Field
 		expected func(*ast.ColumnNode) bool
 	}{
 		{
 			name: "literal default value",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name:    "status",
 				Type:    "VARCHAR(20)",
 				Default: "'active'",
@@ -400,7 +400,7 @@ func TestFromField_DefaultValues(t *testing.T) {
 		},
 		{
 			name: "empty literal default value",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name:       "status",
 				Type:       "VARCHAR(20)",
 				DefaultSet: true,
@@ -412,7 +412,7 @@ func TestFromField_DefaultValues(t *testing.T) {
 		},
 		{
 			name: "expression default value",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name:        "created_at",
 				Type:        "TIMESTAMP",
 				DefaultExpr: "NOW()",
@@ -423,7 +423,7 @@ func TestFromField_DefaultValues(t *testing.T) {
 		},
 		{
 			name: "no default value",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name: "description",
 				Type: "TEXT",
 			},
@@ -446,12 +446,12 @@ func TestFromField_DefaultValues(t *testing.T) {
 func TestFromField_ForeignKeys(t *testing.T) {
 	tests := []struct {
 		name     string
-		field    goschema.Field
+		field    schemamodel.Field
 		expected func(*ast.ColumnNode) bool
 	}{
 		{
 			name: "foreign key with table and column",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name:    "user_id",
 				Type:    "INTEGER",
 				Foreign: "users(id)",
@@ -464,7 +464,7 @@ func TestFromField_ForeignKeys(t *testing.T) {
 		},
 		{
 			name: "foreign key with table only (defaults to id)",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name:    "category_id",
 				Type:    "INTEGER",
 				Foreign: "categories",
@@ -477,7 +477,7 @@ func TestFromField_ForeignKeys(t *testing.T) {
 		},
 		{
 			name: "foreign key with custom name",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name:           "user_id",
 				Type:           "INTEGER",
 				Foreign:        "users(id)",
@@ -490,7 +490,7 @@ func TestFromField_ForeignKeys(t *testing.T) {
 		},
 		{
 			name: "no foreign key",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name: "title",
 				Type: "VARCHAR(255)",
 			},
@@ -500,7 +500,7 @@ func TestFromField_ForeignKeys(t *testing.T) {
 		},
 		{
 			name: "foreign key with ON DELETE CASCADE (issue #117)",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name:           "commodity_id",
 				Type:           "TEXT",
 				Foreign:        "commodities(id)",
@@ -515,7 +515,7 @@ func TestFromField_ForeignKeys(t *testing.T) {
 		},
 		{
 			name: "foreign key with ON DELETE SET NULL and ON UPDATE CASCADE",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name:           "owner_id",
 				Type:           "INTEGER",
 				Foreign:        "users(id)",
@@ -544,19 +544,19 @@ func TestFromField_ForeignKeys(t *testing.T) {
 func TestFromField_EnumConversion(t *testing.T) {
 	tests := []struct {
 		name           string
-		field          goschema.Field
-		enums          []goschema.Enum
+		field          schemamodel.Field
+		enums          []schemamodel.Enum
 		targetPlatform string
 		expectedType   string
 		expectedCheck  string
 	}{
 		{
 			name: "PostgreSQL keeps enum type name",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name: "status",
 				Type: "enum_user_status",
 			},
-			enums: []goschema.Enum{
+			enums: []schemamodel.Enum{
 				{Name: "enum_user_status", Values: []string{"active", "inactive", "suspended"}},
 			},
 			targetPlatform: "postgres",
@@ -564,11 +564,11 @@ func TestFromField_EnumConversion(t *testing.T) {
 		},
 		{
 			name: "MySQL converts to inline enum",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name: "status",
 				Type: "enum_user_status",
 			},
-			enums: []goschema.Enum{
+			enums: []schemamodel.Enum{
 				{Name: "enum_user_status", Values: []string{"active", "inactive", "suspended"}},
 			},
 			targetPlatform: "mysql",
@@ -576,11 +576,11 @@ func TestFromField_EnumConversion(t *testing.T) {
 		},
 		{
 			name: "MariaDB converts to inline enum",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name: "status",
 				Type: "enum_user_status",
 			},
-			enums: []goschema.Enum{
+			enums: []schemamodel.Enum{
 				{Name: "enum_user_status", Values: []string{"active", "inactive", "suspended"}},
 			},
 			targetPlatform: "mariadb",
@@ -588,11 +588,11 @@ func TestFromField_EnumConversion(t *testing.T) {
 		},
 		{
 			name: "SQLite converts enum to text with check",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name: "status",
 				Type: "enum_user_status",
 			},
-			enums: []goschema.Enum{
+			enums: []schemamodel.Enum{
 				{Name: "enum_user_status", Values: []string{"active", "inactive", "suspended"}},
 			},
 			targetPlatform: "sqlite",
@@ -601,12 +601,12 @@ func TestFromField_EnumConversion(t *testing.T) {
 		},
 		{
 			name: "SQLite preserves explicit check when adding enum check",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name:  "status",
 				Type:  "enum_user_status",
 				Check: "status <> 'suspended'",
 			},
-			enums: []goschema.Enum{
+			enums: []schemamodel.Enum{
 				{Name: "enum_user_status", Values: []string{"active", "inactive", "suspended"}},
 			},
 			targetPlatform: "sqlite",
@@ -615,7 +615,7 @@ func TestFromField_EnumConversion(t *testing.T) {
 		},
 		{
 			name: "Non-enum field unchanged",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name: "name",
 				Type: "VARCHAR(255)",
 			},
@@ -625,11 +625,11 @@ func TestFromField_EnumConversion(t *testing.T) {
 		},
 		{
 			name: "Enum field without matching enum definition unchanged",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name: "status",
 				Type: "enum_unknown_status",
 			},
-			enums: []goschema.Enum{
+			enums: []schemamodel.Enum{
 				{Name: "enum_user_status", Values: []string{"active", "inactive"}},
 			},
 			targetPlatform: "mysql",
@@ -651,12 +651,12 @@ func TestFromField_EnumConversion(t *testing.T) {
 func TestFromField_CheckAndComment(t *testing.T) {
 	tests := []struct {
 		name     string
-		field    goschema.Field
+		field    schemamodel.Field
 		expected func(*ast.ColumnNode) bool
 	}{
 		{
 			name: "field with check constraint",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name:  "age",
 				Type:  "INTEGER",
 				Check: "age >= 0",
@@ -667,7 +667,7 @@ func TestFromField_CheckAndComment(t *testing.T) {
 		},
 		{
 			name: "field with comment",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name:    "email",
 				Type:    "VARCHAR(255)",
 				Comment: "User email address",
@@ -678,7 +678,7 @@ func TestFromField_CheckAndComment(t *testing.T) {
 		},
 		{
 			name: "field with both check and comment",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name:    "price",
 				Type:    "DECIMAL(10,2)",
 				Check:   "price > 0",
@@ -703,17 +703,17 @@ func TestFromField_CheckAndComment(t *testing.T) {
 func TestFromTable_BasicTable(t *testing.T) {
 	tests := []struct {
 		name     string
-		table    goschema.Table
-		fields   []goschema.Field
+		table    schemamodel.Table
+		fields   []schemamodel.Field
 		expected func(*ast.CreateTableNode) bool
 	}{
 		{
 			name: "basic table with columns",
-			table: goschema.Table{
+			table: schemamodel.Table{
 				StructName: "User",
 				Name:       "users",
 			},
-			fields: []goschema.Field{
+			fields: []schemamodel.Field{
 				{
 					StructName: "User",
 					Name:       "id",
@@ -736,12 +736,12 @@ func TestFromTable_BasicTable(t *testing.T) {
 		},
 		{
 			name: "table with comment",
-			table: goschema.Table{
+			table: schemamodel.Table{
 				StructName: "Product",
 				Name:       "products",
 				Comment:    "Product catalog",
 			},
-			fields: []goschema.Field{
+			fields: []schemamodel.Field{
 				{
 					StructName: "Product",
 					Name:       "id",
@@ -757,12 +757,12 @@ func TestFromTable_BasicTable(t *testing.T) {
 		},
 		{
 			name: "table with engine option",
-			table: goschema.Table{
+			table: schemamodel.Table{
 				StructName: "Log",
 				Name:       "logs",
 				Engine:     "InnoDB",
 			},
-			fields: []goschema.Field{
+			fields: []schemamodel.Field{
 				{
 					StructName: "Log",
 					Name:       "id",
@@ -778,12 +778,12 @@ func TestFromTable_BasicTable(t *testing.T) {
 		},
 		{
 			name: "table with auto increment option",
-			table: goschema.Table{
+			table: schemamodel.Table{
 				StructName:    "User",
 				Name:          "users",
 				AutoIncrement: "1000",
 			},
-			fields: []goschema.Field{
+			fields: []schemamodel.Field{
 				{
 					StructName: "User",
 					Name:       "id",
@@ -800,13 +800,13 @@ func TestFromTable_BasicTable(t *testing.T) {
 		},
 		{
 			name: "table with charset and collate options",
-			table: goschema.Table{
+			table: schemamodel.Table{
 				StructName: "User",
 				Name:       "users",
 				Charset:    "utf8mb4",
 				Collate:    "utf8mb4_bin",
 			},
-			fields: []goschema.Field{
+			fields: []schemamodel.Field{
 				{
 					StructName: "User",
 					Name:       "name",
@@ -835,13 +835,13 @@ func TestFromTable_BasicTable(t *testing.T) {
 func TestFromTable_CompositePrimaryKey(t *testing.T) {
 	c := qt.New(t)
 
-	table := goschema.Table{
+	table := schemamodel.Table{
 		StructName: "UserRole",
 		Name:       "user_roles",
 		PrimaryKey: []string{"user_id", "role_id"},
 	}
 
-	fields := []goschema.Field{
+	fields := []schemamodel.Field{
 		{
 			StructName: "UserRole",
 			Name:       "user_id",
@@ -868,7 +868,7 @@ func TestFromTable_CompositePrimaryKey(t *testing.T) {
 
 func TestFromTablePreservesSQLiteVirtualTableIdentifierWhitespace(t *testing.T) {
 	c := qt.New(t)
-	table := goschema.Table{
+	table := schemamodel.Table{
 		StructName:       "VirtualDocs",
 		Schema:           " aux ",
 		Name:             " docs ",
@@ -888,11 +888,11 @@ func TestFromTablePreservesSQLiteVirtualTableIdentifierWhitespace(t *testing.T) 
 func TestFromTable_FieldForeignKeyWithoutNameUsesTableColumnConvention(t *testing.T) {
 	c := qt.New(t)
 
-	table := goschema.Table{
+	table := schemamodel.Table{
 		StructName: "Book",
 		Name:       "books",
 	}
-	fields := []goschema.Field{
+	fields := []schemamodel.Field{
 		{
 			StructName: "Book",
 			Name:       "author_id",
@@ -911,17 +911,17 @@ func TestFromTable_FieldForeignKeyWithoutNameUsesTableColumnConvention(t *testin
 func TestFromTable_PrimaryKeyParts(t *testing.T) {
 	c := qt.New(t)
 
-	table := goschema.Table{
+	table := schemamodel.Table{
 		StructName: "Token",
 		Name:       "tokens",
 		PrimaryKey: []string{"id"},
-		PrimaryKeyParts: []goschema.PrimaryKeyPart{{
+		PrimaryKeyParts: []schemamodel.PrimaryKeyPart{{
 			Name:   "id",
 			Prefix: "7",
 			Desc:   true,
 		}},
 	}
-	fields := []goschema.Field{{
+	fields := []schemamodel.Field{{
 		StructName: "Token",
 		Name:       "id",
 		Type:       "tinytext",
@@ -945,13 +945,13 @@ func TestFromTable_PrimaryKeyParts(t *testing.T) {
 func TestFromTable_PrimaryKeyInclude(t *testing.T) {
 	c := qt.New(t)
 
-	table := goschema.Table{
+	table := schemamodel.Table{
 		StructName:        "User",
 		Name:              "users",
 		PrimaryKey:        []string{"id"},
 		PrimaryKeyInclude: []string{"covering"},
 	}
-	fields := []goschema.Field{
+	fields := []schemamodel.Field{
 		{
 			StructName: "User",
 			Name:       "id",
@@ -978,17 +978,17 @@ func TestFromTable_PrimaryKeyInclude(t *testing.T) {
 func TestFromDatabase_TableLevelConstraints(t *testing.T) {
 	c := qt.New(t)
 
-	db := goschema.Database{
-		Tables: []goschema.Table{{
+	db := schemamodel.Database{
+		Tables: []schemamodel.Table{{
 			StructName: "User",
 			Name:       "users",
 		}},
-		Fields: []goschema.Field{{
+		Fields: []schemamodel.Field{{
 			StructName: "User",
 			Name:       "email",
 			Type:       "VARCHAR(255)",
 		}},
-		Constraints: []goschema.Constraint{{
+		Constraints: []schemamodel.Constraint{{
 			StructName:      "User",
 			Name:            "chk_users_email",
 			Type:            "CHECK",
@@ -1010,18 +1010,18 @@ func TestFromDatabase_TableLevelConstraints(t *testing.T) {
 func TestFromDatabase_TableLevelForeignKeysAreTwoPhase(t *testing.T) {
 	c := qt.New(t)
 
-	db := goschema.Database{
-		Tables: []goschema.Table{
+	db := schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Account", Name: "accounts"},
 			{StructName: "Profile", Name: "profiles"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Account", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Account", Name: "profile_id", Type: "INTEGER"},
 			{StructName: "Profile", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Profile", Name: "account_id", Type: "INTEGER"},
 		},
-		Constraints: []goschema.Constraint{
+		Constraints: []schemamodel.Constraint{
 			{
 				StructName:     "Account",
 				Name:           "fk_accounts_profiles",
@@ -1070,17 +1070,17 @@ func TestFromDatabase_TableLevelForeignKeysAreTwoPhase(t *testing.T) {
 func TestFromDatabase_ExtensionsPrecedeTablesAndIndexes(t *testing.T) {
 	c := qt.New(t)
 
-	db := goschema.Database{
-		Extensions: []goschema.Extension{{Name: "citext", IfNotExists: true}},
-		Tables: []goschema.Table{{
+	db := schemamodel.Database{
+		Extensions: []schemamodel.Extension{{Name: "citext", IfNotExists: true}},
+		Tables: []schemamodel.Table{{
 			StructName: "User",
 			Name:       "users",
 		}},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "User", Name: "email", Type: "CITEXT"},
 		},
-		Indexes: []goschema.Index{{
+		Indexes: []schemamodel.Index{{
 			StructName: "User",
 			Name:       "uq_users_email",
 			Fields:     []string{"email"},
@@ -1104,25 +1104,25 @@ func TestFromDatabase_ExtensionsPrecedeTablesAndIndexes(t *testing.T) {
 func TestFromDatabase_UniqueIndexesPrecedeForeignKeys(t *testing.T) {
 	c := qt.New(t)
 
-	db := goschema.Database{
-		Functions: []goschema.Function{{
+	db := schemamodel.Database{
+		Functions: []schemamodel.Function{{
 			Name:       "normalize_code",
 			Parameters: "value TEXT",
 			Returns:    "TEXT",
 			Language:   "sql",
 			Body:       "SELECT lower(value)",
 		}},
-		Tables: []goschema.Table{
+		Tables: []schemamodel.Table{
 			{StructName: "Parent", Name: "parents"},
 			{StructName: "Child", Name: "children"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Parent", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Parent", Name: "code", Type: "TEXT"},
 			{StructName: "Child", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Child", Name: "parent_code", Type: "TEXT", Foreign: "parents(code)", ForeignKeyName: "fk_children_parent_code"},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{StructName: "Child", Name: "idx_children_parent_code", Fields: []string{"parent_code"}},
 			{StructName: "Parent", Name: "uq_parents_code", Fields: []string{"code"}, Unique: true},
 		},
@@ -1147,17 +1147,17 @@ func TestFromDatabase_UniqueIndexesPrecedeForeignKeys(t *testing.T) {
 func TestFromDatabase_DefaultForeignKeyNamesDoNotCollideAcrossSources(t *testing.T) {
 	c := qt.New(t)
 
-	database := goschema.Database{
-		Tables: []goschema.Table{
+	database := schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Parent", Name: "parents"},
 			{StructName: "Child", Name: "children"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Parent", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Child", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Child", Name: "parent_id", Type: "INTEGER", Foreign: "parents(id)"},
 		},
-		Constraints: []goschema.Constraint{{
+		Constraints: []schemamodel.Constraint{{
 			StructName:    "Child",
 			Type:          "FOREIGN KEY",
 			Columns:       []string{"parent_id"},
@@ -1180,17 +1180,17 @@ func TestFromDatabase_DefaultForeignKeyNamesDoNotCollideAcrossSources(t *testing
 func TestFromDatabase_ExplicitForeignKeyNameReservesAutomaticName(t *testing.T) {
 	c := qt.New(t)
 
-	database := goschema.Database{
-		Tables: []goschema.Table{
+	database := schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Parent", Name: "parents"},
 			{StructName: "Child", Name: "children"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Parent", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Child", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Child", Name: "parent_id", Type: "INTEGER", Foreign: "parents(id)"},
 		},
-		Constraints: []goschema.Constraint{{
+		Constraints: []schemamodel.Constraint{{
 			StructName:    "Child",
 			Name:          "fk_children_parent_id",
 			Type:          "FOREIGN KEY",
@@ -1211,20 +1211,20 @@ func TestFromDatabase_ExplicitForeignKeyNameReservesAutomaticName(t *testing.T) 
 }
 
 func TestFromDatabase_MySQLFamilyExplicitForeignKeyNameReservesCaseInsensitiveAutomaticName(t *testing.T) {
-	database := goschema.Database{
-		Tables: []goschema.Table{
+	database := schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Parent", Name: "parents"},
 			{StructName: "Child", Name: "children"},
 			{StructName: "Audit", Name: "audit_entries"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Parent", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Child", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Child", Name: "parent_id", Type: "INTEGER", Foreign: "parents(id)"},
 			{StructName: "Audit", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Audit", Name: "parent_id", Type: "INTEGER"},
 		},
-		Constraints: []goschema.Constraint{{
+		Constraints: []schemamodel.Constraint{{
 			StructName:    "Audit",
 			Name:          "FK_CHILDREN_PARENT_ID",
 			Type:          "FOREIGN KEY",
@@ -1352,13 +1352,13 @@ func TestFromDatabase_SchemaScopedForeignKeyNamesReserveExplicitNames(t *testing
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			database := goschema.Database{
-				Tables: []goschema.Table{
+			database := schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{StructName: "Parent", Name: "parents"},
 					{StructName: "Child", Name: "children"},
 					{StructName: "Audit", Schema: test.explicitSchema, Name: "audit_entries"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{StructName: "Parent", Name: "id", Type: "INTEGER", Primary: true},
 					{StructName: "Child", Name: "parent_id", Type: "INTEGER", Foreign: "parents(id)"},
 					{
@@ -1392,13 +1392,13 @@ func TestFromDatabase_SchemaScopedForeignKeyNamesMayRepeatAcrossSchemas(t *testi
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			database := goschema.Database{
-				Tables: []goschema.Table{
+			database := schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{StructName: "Parent", Name: "parents"},
 					{StructName: "TenantChild", Schema: "tenant", Name: "children"},
 					{StructName: "ArchiveChild", Schema: "archive", Name: "children"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{StructName: "Parent", Name: "id", Type: "INTEGER", Primary: true},
 					{StructName: "TenantChild", Name: "parent_id", Type: "INTEGER", Foreign: "parents(id)"},
 					{StructName: "ArchiveChild", Name: "parent_id", Type: "INTEGER", Foreign: "parents(id)"},
@@ -1414,19 +1414,19 @@ func TestFromDatabase_SchemaScopedForeignKeyNamesMayRepeatAcrossSchemas(t *testi
 
 func TestAssignDefaultForeignKeyNames_IsIdempotentAndCloneOnly(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{
-		Tables: []goschema.Table{
+	database := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Location", Name: "locations"},
 			{StructName: "Area", Name: "areas"},
 		},
-		Fields: []goschema.Field{{
+		Fields: []schemamodel.Field{{
 			StructName:     "Ownable",
 			Name:           "tenant_id",
 			Type:           "INTEGER",
 			Foreign:        "tenants(id)",
 			ForeignKeyName: "fk_entity_tenant",
 		}},
-		EmbeddedFields: []goschema.EmbeddedField{
+		EmbeddedFields: []schemamodel.EmbeddedField{
 			{StructName: "Location", Mode: "inline", EmbeddedTypeName: "Ownable"},
 			{StructName: "Area", Mode: "inline", EmbeddedTypeName: "Ownable"},
 		},
@@ -1436,7 +1436,7 @@ func TestAssignDefaultForeignKeyNames_IsIdempotentAndCloneOnly(t *testing.T) {
 	second := fromschema.AssignDefaultForeignKeyNames(first, platform.MySQL)
 
 	c.Assert(second, qt.DeepEquals, first)
-	c.Assert(database.Fields, qt.DeepEquals, []goschema.Field{{
+	c.Assert(database.Fields, qt.DeepEquals, []schemamodel.Field{{
 		StructName:     "Ownable",
 		Name:           "tenant_id",
 		Type:           "INTEGER",
@@ -1468,18 +1468,18 @@ func TestFromDatabase_GeneratedForeignKeyNamesAreDeterministic(t *testing.T) {
 func TestFromDatabase_SQLiteForeignKeysAreInline(t *testing.T) {
 	c := qt.New(t)
 
-	db := goschema.Database{
-		Tables: []goschema.Table{
+	db := schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Account", Name: "accounts"},
 			{StructName: "Profile", Name: "profiles"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Account", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Account", Name: "profile_id", Type: "INTEGER", Foreign: "profiles(id)", OnDelete: "CASCADE"},
 			{StructName: "Profile", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Profile", Name: "account_id", Type: "INTEGER"},
 		},
-		Constraints: []goschema.Constraint{{
+		Constraints: []schemamodel.Constraint{{
 			StructName:    "Profile",
 			Type:          "FOREIGN KEY",
 			Columns:       []string{"account_id"},
@@ -1507,12 +1507,12 @@ func TestFromDatabase_SQLiteForeignKeysAreInline(t *testing.T) {
 func TestFromDatabase_Schemas(t *testing.T) {
 	c := qt.New(t)
 
-	db := goschema.Database{
-		Schemas: []goschema.Schema{{
+	db := schemamodel.Database{
+		Schemas: []schemamodel.Schema{{
 			Name:    "public",
 			Comment: "Application schema",
 		}},
-		Tables: []goschema.Table{{
+		Tables: []schemamodel.Table{{
 			StructName: "User",
 			Name:       "users",
 			Schema:     "public",
@@ -1532,12 +1532,12 @@ func TestFromDatabase_Schemas(t *testing.T) {
 func TestFromTable_FiltersByStructName(t *testing.T) {
 	c := qt.New(t)
 
-	table := goschema.Table{
+	table := schemamodel.Table{
 		StructName: "User",
 		Name:       "users",
 	}
 
-	fields := []goschema.Field{
+	fields := []schemamodel.Field{
 		{
 			StructName: "User",
 			Name:       "id",
@@ -1567,12 +1567,12 @@ func TestFromTable_FiltersByStructName(t *testing.T) {
 func TestFromIndex_BasicIndex(t *testing.T) {
 	tests := []struct {
 		name     string
-		index    goschema.Index
+		index    schemamodel.Index
 		expected func(*ast.IndexNode) bool
 	}{
 		{
 			name: "simple index",
-			index: goschema.Index{
+			index: schemamodel.Index{
 				Name:       "idx_users_email",
 				StructName: "users",
 				Fields:     []string{"email"},
@@ -1587,7 +1587,7 @@ func TestFromIndex_BasicIndex(t *testing.T) {
 		},
 		{
 			name: "unique index",
-			index: goschema.Index{
+			index: schemamodel.Index{
 				Name:       "idx_users_username",
 				StructName: "users",
 				Fields:     []string{"username"},
@@ -1600,7 +1600,7 @@ func TestFromIndex_BasicIndex(t *testing.T) {
 		},
 		{
 			name: "composite index",
-			index: goschema.Index{
+			index: schemamodel.Index{
 				Name:       "idx_posts_user_created",
 				StructName: "posts",
 				Fields:     []string{"user_id", "created_at"},
@@ -1615,7 +1615,7 @@ func TestFromIndex_BasicIndex(t *testing.T) {
 		},
 		{
 			name: "index with comment",
-			index: goschema.Index{
+			index: schemamodel.Index{
 				Name:       "idx_products_price",
 				StructName: "products",
 				Fields:     []string{"price"},
@@ -1628,7 +1628,7 @@ func TestFromIndex_BasicIndex(t *testing.T) {
 		},
 		{
 			name: "fulltext index with parser",
-			index: goschema.Index{
+			index: schemamodel.Index{
 				Name:       "idx_users_bio",
 				StructName: "users",
 				Fields:     []string{"bio"},
@@ -1643,11 +1643,11 @@ func TestFromIndex_BasicIndex(t *testing.T) {
 		},
 		{
 			name: "structured index parts",
-			index: goschema.Index{
+			index: schemamodel.Index{
 				Name:       "idx_users_rank_name",
 				StructName: "users",
 				Fields:     []string{"stale_rank", "stale_name"},
-				Parts: []goschema.IndexPart{
+				Parts: []schemamodel.IndexPart{
 					{Name: "rank", Operator: "bpchar_ops", Prefix: "7", Desc: true},
 					{Expr: "lower(name)", Operator: "text_pattern_ops"},
 				},
@@ -1665,7 +1665,7 @@ func TestFromIndex_BasicIndex(t *testing.T) {
 		},
 		{
 			name: "index include columns",
-			index: goschema.Index{
+			index: schemamodel.Index{
 				Name:           "idx_users_name",
 				StructName:     "users",
 				Fields:         []string{"name"},
@@ -1680,7 +1680,7 @@ func TestFromIndex_BasicIndex(t *testing.T) {
 		},
 		{
 			name: "index storage params",
-			index: goschema.Index{
+			index: schemamodel.Index{
 				Name:          "idx_users_c",
 				StructName:    "users",
 				Fields:        []string{"c"},
@@ -1697,9 +1697,9 @@ func TestFromIndex_BasicIndex(t *testing.T) {
 		},
 		{
 			name: "index nulls not distinct",
-			index: func() goschema.Index {
+			index: func() schemamodel.Index {
 				nullsDistinct := false
-				return goschema.Index{
+				return schemamodel.Index{
 					Name:          "idx_users_c",
 					StructName:    "users",
 					Fields:        []string{"c"},
@@ -1728,15 +1728,15 @@ func TestFromIndex_BasicIndex(t *testing.T) {
 
 func TestFromDatabase_IndexIncludeColumns(t *testing.T) {
 	c := qt.New(t)
-	db := goschema.Database{
-		Tables: []goschema.Table{
+	db := schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: "users", StructName: "User"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{Name: "name", Type: "text", StructName: "User"},
 			{Name: "active", Type: "boolean", StructName: "User"},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{
 				Name:           "users_name",
 				StructName:     "User",
@@ -1764,7 +1764,7 @@ func TestFromConstraint_UniqueNullsNotDistinct(t *testing.T) {
 	c := qt.New(t)
 	nullsDistinct := false
 
-	node := fromschema.FromConstraint(goschema.Constraint{
+	node := fromschema.FromConstraint(schemamodel.Constraint{
 		Name:           "users_c_key",
 		Type:           "UNIQUE",
 		Columns:        []string{"c"},
@@ -1781,12 +1781,12 @@ func TestFromConstraint_UniqueNullsNotDistinct(t *testing.T) {
 func TestFromEnum_BasicEnum(t *testing.T) {
 	tests := []struct {
 		name     string
-		enum     goschema.Enum
+		enum     schemamodel.Enum
 		expected func(*ast.EnumNode) bool
 	}{
 		{
 			name: "simple enum",
-			enum: goschema.Enum{
+			enum: schemamodel.Enum{
 				Name:   "status_type",
 				Values: []string{"active", "inactive", "pending"},
 			},
@@ -1800,7 +1800,7 @@ func TestFromEnum_BasicEnum(t *testing.T) {
 		},
 		{
 			name: "user role enum",
-			enum: goschema.Enum{
+			enum: schemamodel.Enum{
 				Name:   "user_role",
 				Values: []string{"admin", "moderator", "user", "guest"},
 			},
@@ -1813,7 +1813,7 @@ func TestFromEnum_BasicEnum(t *testing.T) {
 		},
 		{
 			name: "empty enum",
-			enum: goschema.Enum{
+			enum: schemamodel.Enum{
 				Name:   "empty_enum",
 				Values: make([]string, 0),
 			},
@@ -1837,14 +1837,14 @@ func TestFromEnum_BasicEnum(t *testing.T) {
 func TestFromDatabase_CompleteSchema(t *testing.T) {
 	c := qt.New(t)
 
-	database := goschema.Database{
-		Enums: []goschema.Enum{
+	database := schemamodel.Database{
+		Enums: []schemamodel.Enum{
 			{
 				Name:   "user_status",
 				Values: []string{"active", "inactive"},
 			},
 		},
-		Tables: []goschema.Table{
+		Tables: []schemamodel.Table{
 			{
 				StructName: "User",
 				Name:       "users",
@@ -1856,7 +1856,7 @@ func TestFromDatabase_CompleteSchema(t *testing.T) {
 				Comment:    "Blog posts",
 			},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{
 				StructName: "User",
 				Name:       "id",
@@ -1882,7 +1882,7 @@ func TestFromDatabase_CompleteSchema(t *testing.T) {
 				Foreign:    "users(id)",
 			},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{
 				Name:       "idx_users_status",
 				StructName: "users",
@@ -1930,11 +1930,11 @@ func TestFromDatabase_CompleteSchema(t *testing.T) {
 func TestFromDatabase_EmptySchema(t *testing.T) {
 	c := qt.New(t)
 
-	database := goschema.Database{
-		Enums:   make([]goschema.Enum, 0),
-		Tables:  make([]goschema.Table, 0),
-		Fields:  make([]goschema.Field, 0),
-		Indexes: make([]goschema.Index, 0),
+	database := schemamodel.Database{
+		Enums:   make([]schemamodel.Enum, 0),
+		Tables:  make([]schemamodel.Table, 0),
+		Fields:  make([]schemamodel.Field, 0),
+		Indexes: make([]schemamodel.Index, 0),
 	}
 
 	result := fromschema.FromDatabase(database, "")
@@ -1944,16 +1944,16 @@ func TestFromDatabase_EmptySchema(t *testing.T) {
 }
 
 func TestFromDatabase_InlineEnumDialectsOmitStandaloneEnumStatements(t *testing.T) {
-	database := goschema.Database{
-		Enums: []goschema.Enum{{
+	database := schemamodel.Database{
+		Enums: []schemamodel.Enum{{
 			Name:   "enum_account_status",
 			Values: []string{"active", "suspended", "deleted"},
 		}},
-		Tables: []goschema.Table{{
+		Tables: []schemamodel.Table{{
 			StructName: "Account",
 			Name:       "accounts",
 		}},
-		Fields: []goschema.Field{{
+		Fields: []schemamodel.Field{{
 			StructName: "Account",
 			Name:       "status",
 			Type:       "enum_account_status",
@@ -2009,16 +2009,16 @@ func TestFromDatabase_InlineEnumDialectsOmitStandaloneEnumStatements(t *testing.
 func TestFromDatabase_PostgresKeepsStandaloneEnumStatements(t *testing.T) {
 	c := qt.New(t)
 
-	database := goschema.Database{
-		Enums: []goschema.Enum{{
+	database := schemamodel.Database{
+		Enums: []schemamodel.Enum{{
 			Name:   "enum_account_status",
 			Values: []string{"active", "suspended", "deleted"},
 		}},
-		Tables: []goschema.Table{{
+		Tables: []schemamodel.Table{{
 			StructName: "Account",
 			Name:       "accounts",
 		}},
-		Fields: []goschema.Field{{
+		Fields: []schemamodel.Field{{
 			StructName: "Account",
 			Name:       "status",
 			Type:       "enum_account_status",
@@ -2040,12 +2040,12 @@ func TestFromDatabase_PostgresKeepsStandaloneEnumStatements(t *testing.T) {
 func TestFromDatabase_MySQLIncludesViewsAndTriggers(t *testing.T) {
 	c := qt.New(t)
 
-	database := goschema.Database{
-		Views: []goschema.View{{
+	database := schemamodel.Database{
+		Views: []schemamodel.View{{
 			Name: "active_users",
 			Body: "SELECT id FROM users WHERE deleted_at IS NULL",
 		}},
-		Triggers: []goschema.Trigger{{
+		Triggers: []schemamodel.Trigger{{
 			Name:   "set_updated_at",
 			Table:  "users",
 			Timing: "BEFORE",
@@ -2069,12 +2069,12 @@ func TestFromDatabase_MySQLIncludesViewsAndTriggers(t *testing.T) {
 func TestFromDatabase_SQLiteIncludesViewsAndTriggers(t *testing.T) {
 	c := qt.New(t)
 
-	database := goschema.Database{
-		Views: []goschema.View{{
+	database := schemamodel.Database{
+		Views: []schemamodel.View{{
 			Name: "active_users",
 			Body: "SELECT id FROM users WHERE deleted_at IS NULL",
 		}},
-		Triggers: []goschema.Trigger{{
+		Triggers: []schemamodel.Trigger{{
 			Name:   "set_updated_at",
 			Table:  "users",
 			Timing: "BEFORE",
@@ -2098,13 +2098,13 @@ func TestFromDatabase_SQLiteIncludesViewsAndTriggers(t *testing.T) {
 func TestFromField_PlatformOverrides(t *testing.T) {
 	tests := []struct {
 		name           string
-		field          goschema.Field
+		field          schemamodel.Field
 		targetPlatform string
 		expected       func(*ast.ColumnNode) bool
 	}{
 		{
 			name: "MySQL type override",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name: "data",
 				Type: "JSONB",
 				Overrides: map[string]map[string]string{
@@ -2118,7 +2118,7 @@ func TestFromField_PlatformOverrides(t *testing.T) {
 		},
 		{
 			name: "MariaDB type and check override",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name:  "data",
 				Type:  "JSONB",
 				Check: "",
@@ -2138,7 +2138,7 @@ func TestFromField_PlatformOverrides(t *testing.T) {
 		},
 		{
 			name: "PostgreSQL no override (uses default)",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name: "data",
 				Type: "JSONB",
 				Overrides: map[string]map[string]string{
@@ -2152,7 +2152,7 @@ func TestFromField_PlatformOverrides(t *testing.T) {
 		},
 		{
 			name: "Comment override",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name:    "status",
 				Type:    "VARCHAR(20)",
 				Comment: "Default comment",
@@ -2168,7 +2168,7 @@ func TestFromField_PlatformOverrides(t *testing.T) {
 		},
 		{
 			name: "Default value override",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name:    "created_at",
 				Type:    "TIMESTAMP",
 				Default: "CURRENT_TIMESTAMP",
@@ -2185,7 +2185,7 @@ func TestFromField_PlatformOverrides(t *testing.T) {
 		},
 		{
 			name: "Default expression override",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name:        "updated_at",
 				Type:        "TIMESTAMP",
 				DefaultExpr: "CURRENT_TIMESTAMP",
@@ -2202,7 +2202,7 @@ func TestFromField_PlatformOverrides(t *testing.T) {
 		},
 		{
 			name: "No platform specified (uses defaults)",
-			field: goschema.Field{
+			field: schemamodel.Field{
 				Name: "data",
 				Type: "JSONB",
 				Overrides: map[string]map[string]string{
@@ -2229,14 +2229,14 @@ func TestFromField_PlatformOverrides(t *testing.T) {
 func TestFromTable_PlatformOverrides(t *testing.T) {
 	tests := []struct {
 		name           string
-		table          goschema.Table
-		fields         []goschema.Field
+		table          schemamodel.Table
+		fields         []schemamodel.Field
 		targetPlatform string
 		expected       func(*ast.CreateTableNode) bool
 	}{
 		{
 			name: "MySQL engine and comment override",
-			table: goschema.Table{
+			table: schemamodel.Table{
 				StructName:    "Product",
 				Name:          "products",
 				Comment:       "Default comment",
@@ -2250,7 +2250,7 @@ func TestFromTable_PlatformOverrides(t *testing.T) {
 					},
 				},
 			},
-			fields:         make([]goschema.Field, 0),
+			fields:         make([]schemamodel.Field, 0),
 			targetPlatform: "mysql",
 			expected: func(table *ast.CreateTableNode) bool {
 				return table.Name == "products" &&
@@ -2261,7 +2261,7 @@ func TestFromTable_PlatformOverrides(t *testing.T) {
 		},
 		{
 			name: "MariaDB charset override",
-			table: goschema.Table{
+			table: schemamodel.Table{
 				StructName: "User",
 				Name:       "users",
 				Overrides: map[string]map[string]string{
@@ -2272,7 +2272,7 @@ func TestFromTable_PlatformOverrides(t *testing.T) {
 					},
 				},
 			},
-			fields:         make([]goschema.Field, 0),
+			fields:         make([]schemamodel.Field, 0),
 			targetPlatform: "mariadb",
 			expected: func(table *ast.CreateTableNode) bool {
 				return table.Name == "users" &&
@@ -2283,7 +2283,7 @@ func TestFromTable_PlatformOverrides(t *testing.T) {
 		},
 		{
 			name: "PostgreSQL no override (uses defaults)",
-			table: goschema.Table{
+			table: schemamodel.Table{
 				StructName: "Log",
 				Name:       "logs",
 				Comment:    "Default comment",
@@ -2292,7 +2292,7 @@ func TestFromTable_PlatformOverrides(t *testing.T) {
 					"mysql": {"engine": "MyISAM"},
 				},
 			},
-			fields:         make([]goschema.Field, 0),
+			fields:         make([]schemamodel.Field, 0),
 			targetPlatform: "postgres",
 			expected: func(table *ast.CreateTableNode) bool {
 				return table.Name == "logs" &&
@@ -2302,7 +2302,7 @@ func TestFromTable_PlatformOverrides(t *testing.T) {
 		},
 		{
 			name: "No platform specified (uses defaults)",
-			table: goschema.Table{
+			table: schemamodel.Table{
 				StructName: "Category",
 				Name:       "categories",
 				Comment:    "Default comment",
@@ -2310,7 +2310,7 @@ func TestFromTable_PlatformOverrides(t *testing.T) {
 					"mysql": {"comment": "MySQL comment"},
 				},
 			},
-			fields:         make([]goschema.Field, 0),
+			fields:         make([]schemamodel.Field, 0),
 			targetPlatform: "",
 			expected: func(table *ast.CreateTableNode) bool {
 				return table.Name == "categories" &&
@@ -2319,13 +2319,13 @@ func TestFromTable_PlatformOverrides(t *testing.T) {
 		},
 		{
 			name: "SQLite strict and without rowid options",
-			table: goschema.Table{
+			table: schemamodel.Table{
 				StructName:   "Event",
 				Name:         "events",
 				Strict:       true,
 				WithoutRowID: true,
 			},
-			fields:         make([]goschema.Field, 0),
+			fields:         make([]schemamodel.Field, 0),
 			targetPlatform: "sqlite",
 			expected: func(table *ast.CreateTableNode) bool {
 				return table.Name == "events" &&
@@ -2335,7 +2335,7 @@ func TestFromTable_PlatformOverrides(t *testing.T) {
 		},
 		{
 			name: "SQLite table options use platform overrides",
-			table: goschema.Table{
+			table: schemamodel.Table{
 				StructName:   "Event",
 				Name:         "events",
 				Strict:       true,
@@ -2347,7 +2347,7 @@ func TestFromTable_PlatformOverrides(t *testing.T) {
 					},
 				},
 			},
-			fields:         make([]goschema.Field, 0),
+			fields:         make([]schemamodel.Field, 0),
 			targetPlatform: "sqlite",
 			expected: func(table *ast.CreateTableNode) bool {
 				_, strict := table.Options["STRICT"]
@@ -2357,18 +2357,18 @@ func TestFromTable_PlatformOverrides(t *testing.T) {
 		},
 		{
 			name: "PostgreSQL partition",
-			table: goschema.Table{
+			table: schemamodel.Table{
 				StructName: "Metric",
 				Name:       "metrics",
-				Partition: &goschema.PartitionSpec{
+				Partition: &schemamodel.PartitionSpec{
 					Type: "RANGE",
-					Parts: []goschema.PartitionPart{
+					Parts: []schemamodel.PartitionPart{
 						{Name: "x"},
 						{Expr: "floor(y)"},
 					},
 				},
 			},
-			fields:         make([]goschema.Field, 0),
+			fields:         make([]schemamodel.Field, 0),
 			targetPlatform: "postgres",
 			expected: func(table *ast.CreateTableNode) bool {
 				return table.Partition != nil &&
@@ -2393,8 +2393,8 @@ func TestFromTable_PlatformOverrides(t *testing.T) {
 func TestFromDatabase_PlatformOverrides(t *testing.T) {
 	c := qt.New(t)
 
-	database := goschema.Database{
-		Tables: []goschema.Table{
+	database := schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{
 				StructName: "Product",
 				Name:       "products",
@@ -2403,7 +2403,7 @@ func TestFromDatabase_PlatformOverrides(t *testing.T) {
 				},
 			},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{
 				StructName: "Product",
 				Name:       "data",
@@ -2413,8 +2413,8 @@ func TestFromDatabase_PlatformOverrides(t *testing.T) {
 				},
 			},
 		},
-		Indexes: make([]goschema.Index, 0),
-		Enums:   make([]goschema.Enum, 0),
+		Indexes: make([]schemamodel.Index, 0),
+		Enums:   make([]schemamodel.Enum, 0),
 	}
 
 	// Test MySQL platform
@@ -2445,19 +2445,19 @@ func TestFromDatabase_PlatformOverrides(t *testing.T) {
 func TestFromDatabase_EmbeddedFields_InlineMode(t *testing.T) {
 	tests := []struct {
 		name     string
-		database goschema.Database
+		database schemamodel.Database
 		expected func(*ast.StatementList) bool
 	}{
 		{
 			name: "inline mode without prefix",
-			database: goschema.Database{
-				Tables: []goschema.Table{
+			database: schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{
 						StructName: "User",
 						Name:       "users",
 					},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{
 						StructName: "User",
 						Name:       "id",
@@ -2477,7 +2477,7 @@ func TestFromDatabase_EmbeddedFields_InlineMode(t *testing.T) {
 						Nullable:   false,
 					},
 				},
-				EmbeddedFields: []goschema.EmbeddedField{
+				EmbeddedFields: []schemamodel.EmbeddedField{
 					{
 						StructName:       "User",
 						Mode:             "inline",
@@ -2503,14 +2503,14 @@ func TestFromDatabase_EmbeddedFields_InlineMode(t *testing.T) {
 		},
 		{
 			name: "inline mode with prefix",
-			database: goschema.Database{
-				Tables: []goschema.Table{
+			database: schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{
 						StructName: "Article",
 						Name:       "articles",
 					},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{
 						StructName: "Article",
 						Name:       "id",
@@ -2528,7 +2528,7 @@ func TestFromDatabase_EmbeddedFields_InlineMode(t *testing.T) {
 						Type:       "TEXT",
 					},
 				},
-				EmbeddedFields: []goschema.EmbeddedField{
+				EmbeddedFields: []schemamodel.EmbeddedField{
 					{
 						StructName:       "Article",
 						Mode:             "inline",
@@ -2568,19 +2568,19 @@ func TestFromDatabase_EmbeddedFields_InlineMode(t *testing.T) {
 func TestFromDatabase_EmbeddedFields_JsonMode(t *testing.T) {
 	tests := []struct {
 		name     string
-		database goschema.Database
+		database schemamodel.Database
 		expected func(*ast.StatementList) bool
 	}{
 		{
 			name: "json mode with explicit name and type",
-			database: goschema.Database{
-				Tables: []goschema.Table{
+			database: schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{
 						StructName: "User",
 						Name:       "users",
 					},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{
 						StructName: "User",
 						Name:       "id",
@@ -2588,7 +2588,7 @@ func TestFromDatabase_EmbeddedFields_JsonMode(t *testing.T) {
 						Primary:    true,
 					},
 				},
-				EmbeddedFields: []goschema.EmbeddedField{
+				EmbeddedFields: []schemamodel.EmbeddedField{
 					{
 						StructName:       "User",
 						Mode:             "json",
@@ -2618,14 +2618,14 @@ func TestFromDatabase_EmbeddedFields_JsonMode(t *testing.T) {
 		},
 		{
 			name: "json mode with auto-generated name and default type",
-			database: goschema.Database{
-				Tables: []goschema.Table{
+			database: schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{
 						StructName: "Product",
 						Name:       "products",
 					},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{
 						StructName: "Product",
 						Name:       "id",
@@ -2633,7 +2633,7 @@ func TestFromDatabase_EmbeddedFields_JsonMode(t *testing.T) {
 						Primary:    true,
 					},
 				},
-				EmbeddedFields: []goschema.EmbeddedField{
+				EmbeddedFields: []schemamodel.EmbeddedField{
 					{
 						StructName:       "Product",
 						Mode:             "json",
@@ -2659,14 +2659,14 @@ func TestFromDatabase_EmbeddedFields_JsonMode(t *testing.T) {
 		},
 		{
 			name: "json mode with platform overrides",
-			database: goschema.Database{
-				Tables: []goschema.Table{
+			database: schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{
 						StructName: "Article",
 						Name:       "articles",
 					},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{
 						StructName: "Article",
 						Name:       "id",
@@ -2674,7 +2674,7 @@ func TestFromDatabase_EmbeddedFields_JsonMode(t *testing.T) {
 						Primary:    true,
 					},
 				},
-				EmbeddedFields: []goschema.EmbeddedField{
+				EmbeddedFields: []schemamodel.EmbeddedField{
 					{
 						StructName:       "Article",
 						Mode:             "json",
@@ -2718,12 +2718,12 @@ func TestFromDatabase_EmbeddedFields_JsonMode(t *testing.T) {
 
 func TestFromDatabase_EmbeddedFields_JsonModeDoesNotDuplicateAlreadyProcessedField(t *testing.T) {
 	c := qt.New(t)
-	database := goschema.Database{
-		Tables: []goschema.Table{{
+	database := schemamodel.Database{
+		Tables: []schemamodel.Table{{
 			StructName: "User",
 			Name:       "users",
 		}},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{
 				StructName: "User",
 				Name:       "id",
@@ -2738,7 +2738,7 @@ func TestFromDatabase_EmbeddedFields_JsonModeDoesNotDuplicateAlreadyProcessedFie
 				Nullable:   false,
 			},
 		},
-		EmbeddedFields: []goschema.EmbeddedField{{
+		EmbeddedFields: []schemamodel.EmbeddedField{{
 			StructName:       "User",
 			Mode:             "json",
 			Name:             "metadata",
@@ -2758,7 +2758,7 @@ func TestFromDatabase_EmbeddedFields_JsonModeDoesNotDuplicateAlreadyProcessedFie
 
 func TestProcessEmbeddedFields_PropagatesNestedPlatformOverrides(t *testing.T) {
 	c := qt.New(t)
-	fields := []goschema.Field{{
+	fields := []schemamodel.Field{{
 		StructName: "Ownership",
 		Name:       "label",
 		Type:       "TEXT",
@@ -2766,7 +2766,7 @@ func TestProcessEmbeddedFields_PropagatesNestedPlatformOverrides(t *testing.T) {
 			"postgres": {"type": "CITEXT"},
 		},
 	}}
-	embeddedFields := []goschema.EmbeddedField{
+	embeddedFields := []schemamodel.EmbeddedField{
 		{
 			StructName:       "Order",
 			EmbeddedTypeName: "Ownership",
@@ -2810,19 +2810,19 @@ func TestProcessEmbeddedFields_PropagatesNestedPlatformOverrides(t *testing.T) {
 func TestFromDatabase_EmbeddedFields_RelationMode(t *testing.T) {
 	tests := []struct {
 		name     string
-		database goschema.Database
+		database schemamodel.Database
 		expected func(*ast.StatementList) bool
 	}{
 		{
 			name: "relation mode with integer reference",
-			database: goschema.Database{
-				Tables: []goschema.Table{
+			database: schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{
 						StructName: "Post",
 						Name:       "posts",
 					},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{
 						StructName: "Post",
 						Name:       "id",
@@ -2830,7 +2830,7 @@ func TestFromDatabase_EmbeddedFields_RelationMode(t *testing.T) {
 						Primary:    true,
 					},
 				},
-				EmbeddedFields: []goschema.EmbeddedField{
+				EmbeddedFields: []schemamodel.EmbeddedField{
 					{
 						StructName:       "Post",
 						Mode:             "relation",
@@ -2862,14 +2862,14 @@ func TestFromDatabase_EmbeddedFields_RelationMode(t *testing.T) {
 		},
 		{
 			name: "relation mode with UUID reference",
-			database: goschema.Database{
-				Tables: []goschema.Table{
+			database: schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{
 						StructName: "Order",
 						Name:       "orders",
 					},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{
 						StructName: "Order",
 						Name:       "id",
@@ -2877,7 +2877,7 @@ func TestFromDatabase_EmbeddedFields_RelationMode(t *testing.T) {
 						Primary:    true,
 					},
 				},
-				EmbeddedFields: []goschema.EmbeddedField{
+				EmbeddedFields: []schemamodel.EmbeddedField{
 					{
 						StructName:       "Order",
 						Mode:             "relation",
@@ -2909,14 +2909,14 @@ func TestFromDatabase_EmbeddedFields_RelationMode(t *testing.T) {
 		},
 		{
 			name: "relation mode with incomplete definition (should be skipped)",
-			database: goschema.Database{
-				Tables: []goschema.Table{
+			database: schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{
 						StructName: "Comment",
 						Name:       "comments",
 					},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{
 						StructName: "Comment",
 						Name:       "id",
@@ -2924,7 +2924,7 @@ func TestFromDatabase_EmbeddedFields_RelationMode(t *testing.T) {
 						Primary:    true,
 					},
 				},
-				EmbeddedFields: []goschema.EmbeddedField{
+				EmbeddedFields: []schemamodel.EmbeddedField{
 					{
 						StructName:       "Comment",
 						Mode:             "relation",
@@ -2963,19 +2963,19 @@ func TestFromDatabase_EmbeddedFields_RelationMode(t *testing.T) {
 func TestFromDatabase_EmbeddedFields_SkipAndDefaultModes(t *testing.T) {
 	tests := []struct {
 		name     string
-		database goschema.Database
+		database schemamodel.Database
 		expected func(*ast.StatementList) bool
 	}{
 		{
 			name: "skip mode ignores embedded field",
-			database: goschema.Database{
-				Tables: []goschema.Table{
+			database: schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{
 						StructName: "User",
 						Name:       "users",
 					},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{
 						StructName: "User",
 						Name:       "id",
@@ -2988,7 +2988,7 @@ func TestFromDatabase_EmbeddedFields_SkipAndDefaultModes(t *testing.T) {
 						Type:       "TEXT",
 					},
 				},
-				EmbeddedFields: []goschema.EmbeddedField{
+				EmbeddedFields: []schemamodel.EmbeddedField{
 					{
 						StructName:       "User",
 						Mode:             "skip",
@@ -3012,14 +3012,14 @@ func TestFromDatabase_EmbeddedFields_SkipAndDefaultModes(t *testing.T) {
 		},
 		{
 			name: "default mode falls back to inline behavior",
-			database: goschema.Database{
-				Tables: []goschema.Table{
+			database: schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{
 						StructName: "User",
 						Name:       "users",
 					},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{
 						StructName: "User",
 						Name:       "id",
@@ -3033,7 +3033,7 @@ func TestFromDatabase_EmbeddedFields_SkipAndDefaultModes(t *testing.T) {
 						Nullable:   false,
 					},
 				},
-				EmbeddedFields: []goschema.EmbeddedField{
+				EmbeddedFields: []schemamodel.EmbeddedField{
 					{
 						StructName:       "User",
 						Mode:             "", // Empty mode should default to inline
@@ -3058,14 +3058,14 @@ func TestFromDatabase_EmbeddedFields_SkipAndDefaultModes(t *testing.T) {
 		},
 		{
 			name: "unrecognized mode falls back to inline behavior",
-			database: goschema.Database{
-				Tables: []goschema.Table{
+			database: schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{
 						StructName: "Product",
 						Name:       "products",
 					},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{
 						StructName: "Product",
 						Name:       "id",
@@ -3078,7 +3078,7 @@ func TestFromDatabase_EmbeddedFields_SkipAndDefaultModes(t *testing.T) {
 						Type:       "VARCHAR(100)",
 					},
 				},
-				EmbeddedFields: []goschema.EmbeddedField{
+				EmbeddedFields: []schemamodel.EmbeddedField{
 					{
 						StructName:       "Product",
 						Mode:             "unknown_mode", // Unrecognized mode
@@ -3117,15 +3117,15 @@ func TestFromDatabase_EmbeddedFields_ComplexScenario(t *testing.T) {
 	c := qt.New(t)
 
 	// Complex scenario with multiple embedded fields using different modes
-	database := goschema.Database{
-		Tables: []goschema.Table{
+	database := schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{
 				StructName: "Article",
 				Name:       "articles",
 				Comment:    "Blog articles",
 			},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			// Article fields
 			{
 				StructName: "Article",
@@ -3164,7 +3164,7 @@ func TestFromDatabase_EmbeddedFields_ComplexScenario(t *testing.T) {
 				Type:       "TEXT",
 			},
 		},
-		EmbeddedFields: []goschema.EmbeddedField{
+		EmbeddedFields: []schemamodel.EmbeddedField{
 			// Mode 1: inline without prefix
 			{
 				StructName:       "Article",
@@ -3315,19 +3315,19 @@ func TestFromField_EnumConversion_SQLInjectionPrevention(t *testing.T) {
 			c := qt.New(t)
 
 			// Create enum definition
-			enum := goschema.Enum{
+			enum := schemamodel.Enum{
 				Name:   "enum_test_status",
 				Values: tt.enumValues,
 			}
 
 			// Create field that uses this enum
-			field := goschema.Field{
+			field := schemamodel.Field{
 				Name: "status",
 				Type: "enum_test_status",
 			}
 
 			// Convert field with enum conversion
-			result := fromschema.FromField(field, []goschema.Enum{enum}, tt.platform)
+			result := fromschema.FromField(field, []schemamodel.Enum{enum}, tt.platform)
 
 			// Verify the type was properly escaped
 			c.Assert(result.Type, qt.Equals, tt.expectedType)
@@ -3347,16 +3347,16 @@ func TestFromField_EnumConversion_SQLInjectionPrevention(t *testing.T) {
 func TestFromDatabase_EmbeddedRelationFKActions(t *testing.T) {
 	c := qt.New(t)
 
-	db := goschema.Database{
-		Tables: []goschema.Table{
+	db := schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "User", Name: "users"},
 			{StructName: "Post", Name: "posts"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "Post", Name: "id", Type: "SERIAL", Primary: true},
 		},
-		EmbeddedFields: []goschema.EmbeddedField{
+		EmbeddedFields: []schemamodel.EmbeddedField{
 			{
 				StructName:       "Post",
 				EmbeddedTypeName: "User",

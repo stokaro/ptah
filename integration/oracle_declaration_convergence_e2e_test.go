@@ -15,10 +15,10 @@ import (
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/dbexprprobe"
@@ -208,7 +208,7 @@ func TestOracleGeneratedExpressionChangeIsStillReportedE2E(t *testing.T) {
 
 // withGeneratedExpression rewrites one column's generated expression, leaving
 // the declaration otherwise as it was.
-func withGeneratedExpression(declared *goschema.Database, column, expression string) *goschema.Database {
+func withGeneratedExpression(declared *schemamodel.Database, column, expression string) *schemamodel.Database {
 	for i := range declared.Fields {
 		if declared.Fields[i].Name == column {
 			declared.Fields[i].GeneratedExpression = expression
@@ -228,7 +228,7 @@ func oracleGeneratedExpressionOptions(
 	ctx context.Context,
 	c *qt.C,
 	conn *dbschema.DatabaseConnection,
-	declared *goschema.Database,
+	declared *schemamodel.Database,
 ) *config.CompareOptions {
 	devURL := dbtarget.URL(c.TB.(*testing.T), dbtarget.OracleDev)
 	dev, err := dbschema.ConnectToDatabase(ctx, devURL)
@@ -301,13 +301,13 @@ func oracleDiffSummary(diff *difftypes.SchemaDiff) []string {
 // Each column is here because a different part of the read side has to survive
 // it: an identity column, a type with no Oracle counterpart, a decimal that
 // keeps its scale, a foreign key, and a CHECK the declaration does not name.
-func oracleConvergenceDeclaration() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func oracleConvergenceDeclaration() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Author", Name: "ora_authors"},
 			{StructName: "Post", Name: "ora_posts"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Author", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "Author", Name: "email", Type: "VARCHAR(255)", Unique: true},
 			{StructName: "Author", Name: "bio", Type: "TEXT", Nullable: true},
@@ -324,7 +324,7 @@ func oracleConvergenceDeclaration() *goschema.Database {
 				GeneratedKind:       "VIRTUAL",
 			},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{
 				StructName: "Post",
 				// TableName is the owner identity the planner applies before
@@ -341,13 +341,13 @@ func oracleConvergenceDeclaration() *goschema.Database {
 // oracleConvergenceNodes renders the declaration into the nodes the Oracle
 // renderer takes.
 //
-// The declaration is a goschema.Database rather than a hand-built node list so
+// The declaration is a schemamodel.Database rather than a hand-built node list so
 // that ONE declaration reaches both halves of the round trip: the same value is
 // rendered here and compared against the catalog below. A node list would need
 // a second spelling of the same schema for the comparison, and two spellings of
 // one schema is how a round trip comes to agree with itself while disagreeing
 // with the database.
-func oracleConvergenceNodes(declared *goschema.Database) []ast.Node {
+func oracleConvergenceNodes(declared *schemamodel.Database) []ast.Node {
 	nodes := make([]ast.Node, 0, len(declared.Tables)+len(declared.Indexes))
 	for _, table := range declared.Tables {
 		nodes = append(nodes, fromschema.FromTable(table, declared.Fields, declared.Enums, platform.Oracle))

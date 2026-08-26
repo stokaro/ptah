@@ -6,9 +6,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // TestRender_ADeclaredExtensionIsTheOfflineEvidence pins that a render produces
@@ -51,21 +51,21 @@ func TestRender_WithoutTheExtensionTheCallIsSkipped(t *testing.T) {
 
 // hypertableDocumentDeclaringTheExtension is the same document plus the
 // extension that makes the call available.
-func hypertableDocumentDeclaringTheExtension() *goschema.Database {
+func hypertableDocumentDeclaringTheExtension() *schemamodel.Database {
 	database := hypertableDocument()
-	database.Extensions = []goschema.Extension{{Name: "timescaledb"}}
+	database.Extensions = []schemamodel.Extension{{Name: "timescaledb"}}
 	return database
 }
 
 // hypertableDocument declares one partitioned table and nothing else.
-func hypertableDocument() *goschema.Database {
-	return &goschema.Database{
-		Schemas: []goschema.Schema{{Name: "public"}},
-		Tables:  []goschema.Table{{StructName: "T", Name: "readings", Schema: "public"}},
-		Fields: []goschema.Field{
+func hypertableDocument() *schemamodel.Database {
+	return &schemamodel.Database{
+		Schemas: []schemamodel.Schema{{Name: "public"}},
+		Tables:  []schemamodel.Table{{StructName: "T", Name: "readings", Schema: "public"}},
+		Fields: []schemamodel.Field{
 			{StructName: "T", Name: "time", Type: "TIMESTAMPTZ", Primary: true},
 		},
-		Hypertables: []goschema.Hypertable{{
+		Hypertables: []schemamodel.Hypertable{{
 			StructName: "T", Table: "public.readings", Column: "time",
 		}},
 	}

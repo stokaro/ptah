@@ -6,8 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -38,15 +38,15 @@ func unresolvedTargetSemantics() identifier.Semantics {
 func TestGrantsWithSemantics_UnresolvedTablesAreNotOneTable(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Grants: []goschema.Grant{
+	desired := &schemamodel.Database{
+		Grants: []schemamodel.Grant{
 			{Role: "app", Privileges: []string{"SELECT"}, OnTable: "alpha"},
 			{Role: "app", Privileges: []string{"SELECT"}, OnTable: "beta"},
 		},
 	}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.GrantsWithSemantics(generated, &catalog.Database{}, diff, unresolvedTargetSemantics())
+	compare.GrantsWithSemantics(desired, &catalog.Database{}, diff, unresolvedTargetSemantics())
 
 	granted := make([]string, 0, len(diff.GrantsAdded))
 	for _, grant := range diff.GrantsAdded {
@@ -60,8 +60,8 @@ func TestGrantsWithSemantics_UnresolvedTablesAreNotOneTable(t *testing.T) {
 func TestRLSEnabledTablesWithSemantics_UnresolvedTablesAreNotOneTable(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		RLSEnabledTables: []goschema.RLSEnabledTable{
+	desired := &schemamodel.Database{
+		RLSEnabledTables: []schemamodel.RLSEnabledTable{
 			{Table: "alpha"},
 			{Table: "beta"},
 		},
@@ -69,7 +69,7 @@ func TestRLSEnabledTablesWithSemantics_UnresolvedTablesAreNotOneTable(t *testing
 	diff := &difftypes.SchemaDiff{}
 
 	compare.RLSEnabledTablesWithSemantics(
-		generated, &catalog.Database{}, diff, unresolvedTargetSemantics(),
+		desired, &catalog.Database{}, diff, unresolvedTargetSemantics(),
 	)
 
 	c.Assert(diff.RLSEnabledTablesAdded, qt.DeepEquals, []string{"alpha", "beta"})
@@ -85,19 +85,19 @@ func TestRLSEnabledTablesWithSemantics_UnresolvedTablesAreNotOneTable(t *testing
 func TestConstraintsWithSemantics_UnresolvedTablesAreNotOneTable(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Alpha", Name: "alpha"},
 			{StructName: "Beta", Name: "beta"},
 		},
-		Constraints: []goschema.Constraint{
+		Constraints: []schemamodel.Constraint{
 			{StructName: "Alpha", Name: "ck", Table: "alpha", Type: "CHECK", CheckExpression: "id > 0"},
 			{StructName: "Beta", Name: "ck", Table: "beta", Type: "CHECK", CheckExpression: "id > 0"},
 		},
 	}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.ConstraintsWithSemantics(generated, &catalog.Database{}, diff, nil, unresolvedTargetSemantics())
+	compare.ConstraintsWithSemantics(desired, &catalog.Database{}, diff, nil, unresolvedTargetSemantics())
 
 	tables := make([]string, 0, len(diff.ConstraintsAddedWithTables))
 	for _, constraint := range diff.ConstraintsAddedWithTables {

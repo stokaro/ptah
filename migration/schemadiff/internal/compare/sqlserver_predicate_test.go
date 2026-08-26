@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -22,65 +22,65 @@ func TestIndexes_SQLServerFilteredPredicateSpelling(t *testing.T) {
 	}
 	tests := []struct {
 		name          string
-		generated     string
+		desired       string
 		database      string
 		wantAdditions []difftypes.IndexRef
 		wantRemovals  []difftypes.IndexRef
 	}{
 		{
-			name:      "natural spelling matches canonical numeric filter",
-			generated: "status = 1",
-			database:  "([status]=(1))",
+			name:     "natural spelling matches canonical numeric filter",
+			desired:  "status = 1",
+			database: "([status]=(1))",
 		},
 		{
-			name:      "IS NULL matches bracket-quoted catalog spelling",
-			generated: "deleted_at IS NULL",
-			database:  "([deleted_at] IS NULL)",
+			name:     "IS NULL matches bracket-quoted catalog spelling",
+			desired:  "deleted_at IS NULL",
+			database: "([deleted_at] IS NULL)",
 		},
 		{
-			name:      "canonical spelling matches itself",
-			generated: "([status]=(2))",
-			database:  "([status]=(2))",
+			name:     "canonical spelling matches itself",
+			desired:  "([status]=(2))",
+			database: "([status]=(2))",
 		},
 		{
-			name:      "negative literal matches canonical parenthesized form",
-			generated: "balance > -1.5",
-			database:  "([balance]>(-1.5))",
+			name:     "negative literal matches canonical parenthesized form",
+			desired:  "balance > -1.5",
+			database: "([balance]>(-1.5))",
 		},
 		{
-			name:      "string literal comparison keeps quote escapes",
-			generated: "note = 'it''s [a] (1)'",
-			database:  "([note]='it''s [a] (1)')",
+			name:     "string literal comparison keeps quote escapes",
+			desired:  "note = 'it''s [a] (1)'",
+			database: "([note]='it''s [a] (1)')",
 		},
 		{
-			name:      "compound predicate matches canonical spelling",
-			generated: "status = 1 AND deleted_at IS NULL",
-			database:  "([status]=(1) AND [deleted_at] IS NULL)",
+			name:     "compound predicate matches canonical spelling",
+			desired:  "status = 1 AND deleted_at IS NULL",
+			database: "([status]=(1) AND [deleted_at] IS NULL)",
 		},
 		{
 			name:          "changed literal still replaces",
-			generated:     "status = 2",
+			desired:       "status = 2",
 			database:      "([status]=(1))",
 			wantAdditions: replacementRefs,
 			wantRemovals:  replacementRefs,
 		},
 		{
 			name:          "predicate added to unfiltered index replaces",
-			generated:     "status = 1",
+			desired:       "status = 1",
 			database:      "",
 			wantAdditions: replacementRefs,
 			wantRemovals:  replacementRefs,
 		},
 		{
 			name:          "predicate removed from filtered index replaces",
-			generated:     "",
+			desired:       "",
 			database:      "([status]=(1))",
 			wantAdditions: replacementRefs,
 			wantRemovals:  replacementRefs,
 		},
 		{
 			name:          "string literal content stays significant",
-			generated:     "note = 'active'",
+			desired:       "note = 'active'",
 			database:      "([note]='archived')",
 			wantAdditions: replacementRefs,
 			wantRemovals:  replacementRefs,
@@ -90,12 +90,12 @@ func TestIndexes_SQLServerFilteredPredicateSpelling(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			generated := &goschema.Database{
-				Indexes: []goschema.Index{{
+			desired := &schemamodel.Database{
+				Indexes: []schemamodel.Index{{
 					Name:      "idx_users_filtered",
 					TableName: "dbo.users",
 					Fields:    []string{"status"},
-					Condition: test.generated,
+					Condition: test.desired,
 				}},
 			}
 			database := &catalog.Database{
@@ -109,7 +109,7 @@ func TestIndexes_SQLServerFilteredPredicateSpelling(t *testing.T) {
 			}
 			diff := &difftypes.SchemaDiff{}
 
-			compare.IndexesWithDialect(generated, database, diff, "sqlserver")
+			compare.IndexesWithDialect(desired, database, diff, "sqlserver")
 
 			c.Assert(diff.IndexAdditions(), qt.DeepEquals, test.wantAdditions)
 			c.Assert(diff.IndexRemovals(), qt.DeepEquals, test.wantRemovals)
@@ -123,8 +123,8 @@ func TestIndexes_SQLServerFilteredPredicateSpelling(t *testing.T) {
 // participating in predicate comparison.
 func TestIndexes_PredicateBracketSpellingStaysSignificantOutsideSQLServer(t *testing.T) {
 	c := qt.New(t)
-	generated := &goschema.Database{
-		Indexes: []goschema.Index{{
+	desired := &schemamodel.Database{
+		Indexes: []schemamodel.Index{{
 			Name:      "idx_users_filtered",
 			TableName: "users",
 			Fields:    []string{"tags"},
@@ -141,7 +141,7 @@ func TestIndexes_PredicateBracketSpellingStaysSignificantOutsideSQLServer(t *tes
 	}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.IndexesWithDialect(generated, database, diff, "postgres")
+	compare.IndexesWithDialect(desired, database, diff, "postgres")
 
 	ref := []difftypes.IndexRef{{Name: "idx_users_filtered", TableName: "users"}}
 	c.Assert(diff.IndexAdditions(), qt.DeepEquals, ref)

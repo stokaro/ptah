@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
@@ -32,7 +32,7 @@ func TestPlanner_GenerateMigrationAST_CompositeForeignKeyAddition(t *testing.T) 
 		},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff, &goschema.Database{})
+	nodes, err := postgres.New().GenerateMigrationAST(diff, &schemamodel.Database{})
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -46,7 +46,7 @@ func TestPlanner_GenerateMigrationAST_ConstraintsAdded(t *testing.T) {
 	tests := []struct {
 		name        string
 		diff        *difftypes.SchemaDiff
-		generated   *goschema.Database
+		desired     *schemamodel.Database
 		expectedSQL []string
 	}{
 		{
@@ -54,8 +54,8 @@ func TestPlanner_GenerateMigrationAST_ConstraintsAdded(t *testing.T) {
 			diff: &difftypes.SchemaDiff{
 				ConstraintsAdded: []string{"no_overlapping_bookings"},
 			},
-			generated: &goschema.Database{
-				Constraints: []goschema.Constraint{
+			desired: &schemamodel.Database{
+				Constraints: []schemamodel.Constraint{
 					{
 						StructName:      "Booking",
 						Name:            "no_overlapping_bookings",
@@ -76,8 +76,8 @@ func TestPlanner_GenerateMigrationAST_ConstraintsAdded(t *testing.T) {
 			diff: &difftypes.SchemaDiff{
 				ConstraintsAdded: []string{"unique_locations"},
 			},
-			generated: &goschema.Database{
-				Constraints: []goschema.Constraint{
+			desired: &schemamodel.Database{
+				Constraints: []schemamodel.Constraint{
 					{
 						StructName:      "Location",
 						Name:            "unique_locations",
@@ -97,8 +97,8 @@ func TestPlanner_GenerateMigrationAST_ConstraintsAdded(t *testing.T) {
 			diff: &difftypes.SchemaDiff{
 				ConstraintsAdded: []string{"positive_price"},
 			},
-			generated: &goschema.Database{
-				Constraints: []goschema.Constraint{
+			desired: &schemamodel.Database{
+				Constraints: []schemamodel.Constraint{
 					{
 						StructName:      "Product",
 						Name:            "positive_price",
@@ -117,8 +117,8 @@ func TestPlanner_GenerateMigrationAST_ConstraintsAdded(t *testing.T) {
 			diff: &difftypes.SchemaDiff{
 				ConstraintsAdded: []string{"unique_user_email"},
 			},
-			generated: &goschema.Database{
-				Constraints: []goschema.Constraint{
+			desired: &schemamodel.Database{
+				Constraints: []schemamodel.Constraint{
 					{
 						StructName: "User",
 						Name:       "unique_user_email",
@@ -137,8 +137,8 @@ func TestPlanner_GenerateMigrationAST_ConstraintsAdded(t *testing.T) {
 			diff: &difftypes.SchemaDiff{
 				ConstraintsAdded: []string{"fk_user"},
 			},
-			generated: &goschema.Database{
-				Constraints: []goschema.Constraint{
+			desired: &schemamodel.Database{
+				Constraints: []schemamodel.Constraint{
 					{
 						StructName:    "Order",
 						Name:          "fk_user",
@@ -160,8 +160,8 @@ func TestPlanner_GenerateMigrationAST_ConstraintsAdded(t *testing.T) {
 			diff: &difftypes.SchemaDiff{
 				ConstraintsAdded: []string{"no_overlapping_bookings", "positive_price"},
 			},
-			generated: &goschema.Database{
-				Constraints: []goschema.Constraint{
+			desired: &schemamodel.Database{
+				Constraints: []schemamodel.Constraint{
 					{
 						StructName:      "Booking",
 						Name:            "no_overlapping_bookings",
@@ -191,7 +191,7 @@ func TestPlanner_GenerateMigrationAST_ConstraintsAdded(t *testing.T) {
 			c := qt.New(t)
 
 			planner := postgres.New()
-			nodes, err := planner.GenerateMigrationAST(tt.diff, tt.generated)
+			nodes, err := planner.GenerateMigrationAST(tt.diff, tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			// Convert AST nodes to SQL for verification
@@ -253,7 +253,7 @@ func TestPlanner_GenerateMigrationAST_ModifiedFK_ScopesDropToHostTable(t *testin
 			},
 		}
 
-		nodes, err := postgres.New().GenerateMigrationAST(diff, &goschema.Database{})
+		nodes, err := postgres.New().GenerateMigrationAST(diff, &schemamodel.Database{})
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -307,7 +307,7 @@ func TestPlanner_GenerateMigrationAST_ModifiedFK_ScopesDropToHostTable(t *testin
 			},
 		}
 
-		nodes, err := postgres.New().GenerateMigrationAST(diff, &goschema.Database{})
+		nodes, err := postgres.New().GenerateMigrationAST(diff, &schemamodel.Database{})
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -349,13 +349,13 @@ func TestPlanner_GenerateMigrationAST_ModifiedNonFKConstraint_ScopesDropToHostTa
 				{Name: "uq_slug", TableName: "articles", Type: "UNIQUE"},
 			},
 		}
-		generated := &goschema.Database{
-			Constraints: []goschema.Constraint{
+		desired := &schemamodel.Database{
+			Constraints: []schemamodel.Constraint{
 				{StructName: "Article", Name: "uq_slug", Type: "UNIQUE", Table: "articles", Columns: []string{"slug", "locale"}},
 			},
 		}
 
-		nodes, err := postgres.New().GenerateMigrationAST(diff, generated)
+		nodes, err := postgres.New().GenerateMigrationAST(diff, desired)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -392,13 +392,13 @@ func TestPlanner_GenerateMigrationAST_ModifiedNonFKConstraint_ScopesDropToHostTa
 			ConstraintsAdded:   []string{"legacy_check"},
 			ConstraintsRemoved: []string{"legacy_check"},
 		}
-		generated := &goschema.Database{
-			Constraints: []goschema.Constraint{
+		desired := &schemamodel.Database{
+			Constraints: []schemamodel.Constraint{
 				{StructName: "Thing", Name: "legacy_check", Type: "CHECK", Table: "things", CheckExpression: "x > 0"},
 			},
 		}
 
-		nodes, err := postgres.New().GenerateMigrationAST(diff, generated)
+		nodes, err := postgres.New().GenerateMigrationAST(diff, desired)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -453,7 +453,7 @@ func TestPlanner_GenerateMigrationAST_SharedConstraintName_ModifiedOnOneTablePur
 			},
 		}
 
-		nodes, err := postgres.New().GenerateMigrationAST(diff, &goschema.Database{})
+		nodes, err := postgres.New().GenerateMigrationAST(diff, &schemamodel.Database{})
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -501,13 +501,13 @@ func TestPlanner_GenerateMigrationAST_SharedConstraintName_ModifiedOnOneTablePur
 				{Name: "shared_check", TableName: "pages", Type: "CHECK"},
 			},
 		}
-		generated := &goschema.Database{
-			Constraints: []goschema.Constraint{
+		desired := &schemamodel.Database{
+			Constraints: []schemamodel.Constraint{
 				{StructName: "Article", Name: "shared_check", Type: "CHECK", Table: "articles", CheckExpression: "status IN ('draft', 'published')"},
 			},
 		}
 
-		nodes, err := postgres.New().GenerateMigrationAST(diff, generated)
+		nodes, err := postgres.New().GenerateMigrationAST(diff, desired)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -559,13 +559,13 @@ func TestPlanner_GenerateMigrationAST_ModifyDrop_ScopesToHostWhenAddedHostsAbsen
 			{Name: "chk_down", TableName: "things", Type: "CHECK"},
 		},
 	}
-	generated := &goschema.Database{
-		Constraints: []goschema.Constraint{
+	desired := &schemamodel.Database{
+		Constraints: []schemamodel.Constraint{
 			{StructName: "Thing", Name: "chk_down", Type: "CHECK", Table: "things", CheckExpression: "qty >= 0"},
 		},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff, generated)
+	nodes, err := postgres.New().GenerateMigrationAST(diff, desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -590,10 +590,10 @@ func TestPlanner_GenerateMigrationAST_ConstraintsRemoved(t *testing.T) {
 	diff := &difftypes.SchemaDiff{
 		ConstraintsRemoved: []string{"old_constraint"},
 	}
-	generated := &goschema.Database{}
+	desired := &schemamodel.Database{}
 
 	pl := postgres.New()
-	nodes, err := pl.GenerateMigrationAST(diff, generated)
+	nodes, err := pl.GenerateMigrationAST(diff, desired)
 	c.Assert(err, qt.IsNil)
 
 	// One DO block per removed constraint. The previous implementation emitted
@@ -630,7 +630,7 @@ func TestPlanner_GenerateMigrationAST_ConstraintsRemoved_MultipleSplitCleanly(t 
 	diff := &difftypes.SchemaDiff{
 		ConstraintsRemoved: []string{"first_constraint", "second_constraint"},
 	}
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, &goschema.Database{}, "postgres")
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, &schemamodel.Database{}, "postgres")
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 2,
 		qt.Commentf("each DO block must end up as its own statement after SQL splitting; got %d statements:\n%s",
@@ -650,7 +650,7 @@ func TestPlanner_GenerateMigrationAST_ConstraintsRemoved_EscapesSingleQuoteInNam
 		ConstraintsRemoved: []string{"don't_drop"},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff, &goschema.Database{})
+	nodes, err := postgres.New().GenerateMigrationAST(diff, &schemamodel.Database{})
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 1)
 
@@ -693,7 +693,7 @@ func TestPlanner_GenerateMigrationAST_ConstraintsRemoved_RejectsUnsafeName(t *te
 		t.Run(tc.input, func(t *testing.T) {
 			c := qt.New(t)
 			diff := &difftypes.SchemaDiff{ConstraintsRemoved: []string{tc.input}}
-			nodes, err := postgres.New().GenerateMigrationAST(diff, &goschema.Database{})
+			nodes, err := postgres.New().GenerateMigrationAST(diff, &schemamodel.Database{})
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.HasLen, 1)
 

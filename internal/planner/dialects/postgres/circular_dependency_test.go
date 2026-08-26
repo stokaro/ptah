@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -18,16 +18,16 @@ func TestTwoPhaseTableCreationWithSelfReference(t *testing.T) {
 	c := qt.New(t)
 
 	// Create a schema with self-referencing foreign key (like the issue #51 scenario)
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: "users", StructName: "User"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "TEXT", Primary: true},
 			{StructName: "User", Name: "parent_id", Type: "TEXT", Foreign: "users(id)", ForeignKeyName: "fk_users_parent", Nullable: true},
 			{StructName: "User", Name: "email", Type: "TEXT"},
 		},
-		SelfReferencingForeignKeys: map[string][]goschema.SelfReferencingFK{
+		SelfReferencingForeignKeys: map[string][]schemamodel.SelfReferencingFK{
 			"users": {
 				{
 					FieldName:      "parent_id",
@@ -45,7 +45,7 @@ func TestTwoPhaseTableCreationWithSelfReference(t *testing.T) {
 
 	// Generate AST nodes using PostgreSQL planner
 	planner := &postgres.Planner{}
-	nodes, err := planner.GenerateMigrationAST(diff, generated)
+	nodes, err := planner.GenerateMigrationAST(diff, desired)
 	c.Assert(err, qt.IsNil)
 
 	// Render the nodes to SQL
@@ -85,14 +85,14 @@ func TestComplexDependencyChainTwoPhase(t *testing.T) {
 	c := qt.New(t)
 
 	// Recreate the scenario from issue #51
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: "tenants", StructName: "Tenant"},
 			{Name: "users", StructName: "User"},
 			{Name: "locations", StructName: "Location"},
 			{Name: "areas", StructName: "Area"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			// Tenants table
 			{StructName: "Tenant", Name: "id", Type: "TEXT", Primary: true},
 			{StructName: "Tenant", Name: "name", Type: "TEXT"},
@@ -116,7 +116,7 @@ func TestComplexDependencyChainTwoPhase(t *testing.T) {
 			{StructName: "Area", Name: "location_id", Type: "TEXT", Foreign: "locations(id)", ForeignKeyName: "fk_area_location"},
 			{StructName: "Area", Name: "name", Type: "TEXT"},
 		},
-		SelfReferencingForeignKeys: map[string][]goschema.SelfReferencingFK{
+		SelfReferencingForeignKeys: map[string][]schemamodel.SelfReferencingFK{
 			"users": {
 				{
 					FieldName:      "user_id",
@@ -134,7 +134,7 @@ func TestComplexDependencyChainTwoPhase(t *testing.T) {
 
 	// Generate AST nodes using PostgreSQL planner
 	planner := &postgres.Planner{}
-	nodes, err := planner.GenerateMigrationAST(diff, generated)
+	nodes, err := planner.GenerateMigrationAST(diff, desired)
 	c.Assert(err, qt.IsNil)
 
 	// Render the nodes to SQL
@@ -195,19 +195,19 @@ func TestNoForeignKeysInCreateTable(t *testing.T) {
 	c := qt.New(t)
 
 	// Create a simple schema with regular foreign keys
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: "users", StructName: "User"},
 			{Name: "posts", StructName: "Post"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "TEXT", Primary: true},
 			{StructName: "User", Name: "email", Type: "TEXT"},
 			{StructName: "Post", Name: "id", Type: "TEXT", Primary: true},
 			{StructName: "Post", Name: "user_id", Type: "TEXT", Foreign: "users(id)", ForeignKeyName: "fk_posts_user"},
 			{StructName: "Post", Name: "title", Type: "TEXT"},
 		},
-		SelfReferencingForeignKeys: make(map[string][]goschema.SelfReferencingFK),
+		SelfReferencingForeignKeys: make(map[string][]schemamodel.SelfReferencingFK),
 	}
 
 	// Create a schema diff that adds both tables
@@ -217,7 +217,7 @@ func TestNoForeignKeysInCreateTable(t *testing.T) {
 
 	// Generate AST nodes using PostgreSQL planner
 	planner := &postgres.Planner{}
-	nodes, err := planner.GenerateMigrationAST(diff, generated)
+	nodes, err := planner.GenerateMigrationAST(diff, desired)
 	c.Assert(err, qt.IsNil)
 
 	// Render the nodes to SQL

@@ -7,8 +7,8 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -27,36 +27,36 @@ import (
 // relies on PostgreSQL defaults does not churn against the catalog's fully
 // populated values.
 func Sequences(
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
 ) {
-	sequencesWithSemantics(generated, database, diff, cov, identifier.ForDialect(""))
+	sequencesWithSemantics(desired, database, diff, cov, identifier.ForDialect(""))
 }
 
 // SequencesWithSemantics compares sequence identity using the target
 // database's resolved default schema and identifier rules.
 func SequencesWithSemantics(
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
 	semantics identifier.Semantics,
 ) {
-	sequencesWithSemantics(generated, database, diff, cov, semantics.Normalize(""))
+	sequencesWithSemantics(desired, database, diff, cov, semantics.Normalize(""))
 }
 
 func sequencesWithSemantics(
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
 	semantics identifier.Semantics,
 ) {
-	generatedSequences := make(map[objectIdentity]goschema.Sequence, len(generated.Sequences))
-	generatedNames := make(map[objectIdentity]string, len(generated.Sequences))
-	for _, sequence := range generated.Sequences {
+	generatedSequences := make(map[objectIdentity]schemamodel.Sequence, len(desired.Sequences))
+	generatedNames := make(map[objectIdentity]string, len(desired.Sequences))
+	for _, sequence := range desired.Sequences {
 		identity := newObjectIdentity(objectidentity.KindSequence, sequence.Schema, sequence.Name, semantics)
 		generatedSequences[identity] = sequence
 		generatedNames[identity] = sequence.QualifiedName()
@@ -119,7 +119,7 @@ func sequencesWithSemantics(
 // sequenceChanges records the option-by-option transitions between a declared
 // sequence and its introspected counterpart. Unset (nil) target options are
 // skipped so that only explicitly declared options are managed.
-func sequenceChanges(target goschema.Sequence, current catalog.Sequence) map[string]string {
+func sequenceChanges(target schemamodel.Sequence, current catalog.Sequence) map[string]string {
 	changes := make(map[string]string)
 
 	if target.AsType != "" && !strings.EqualFold(target.AsType, current.DataType) {

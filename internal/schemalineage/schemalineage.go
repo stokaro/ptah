@@ -23,7 +23,7 @@ import (
 	"sort"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // Edge is one column-to-column dependency: a base column feeding a view column.
@@ -60,7 +60,7 @@ type Result struct {
 // Edges are sorted, so two runs over the same schema produce the same document
 // and a diff of two schemas is a diff of their lineage rather than of Go's map
 // iteration order.
-func Derive(db *goschema.Database) Result {
+func Derive(db *schemamodel.Database) Result {
 	if db == nil {
 		return Result{}
 	}
@@ -98,7 +98,7 @@ func (r *Result) absorb(other Result) {
 
 // columnsByTable indexes the declared columns of every table, which is what
 // lets `SELECT *` resolve to names instead of being abandoned.
-func columnsByTable(db *goschema.Database) map[string][]string {
+func columnsByTable(db *schemamodel.Database) map[string][]string {
 	byStruct := make(map[string][]string, len(db.Tables))
 	for _, field := range db.Fields {
 		byStruct[field.StructName] = append(byStruct[field.StructName], field.Name)

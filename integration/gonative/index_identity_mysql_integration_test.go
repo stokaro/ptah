@@ -11,8 +11,8 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/dbschema/mysql"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -116,13 +116,13 @@ func readMySQLFamilyIndexIdentitySchema(c *qt.C, db *sql.DB) *catalog.Database {
 	return live
 }
 
-func tableQualifiedIndexTarget() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func tableQualifiedIndexTarget() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "IndexIdentityUser", Name: indexIdentityUsersTable},
 			{StructName: "IndexIdentityOrder", Name: indexIdentityOrdersTable},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{
 				StructName: "IndexIdentityUser",
 				Name:       indexIdentityName,
@@ -137,13 +137,13 @@ func tableQualifiedIndexTarget() *goschema.Database {
 	}
 }
 
-func tableQualifiedIndexTargetWithoutOrdersIndex() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func tableQualifiedIndexTargetWithoutOrdersIndex() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "IndexIdentityUser", Name: indexIdentityUsersTable},
 			{StructName: "IndexIdentityOrder", Name: indexIdentityOrdersTable},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{
 				StructName: "IndexIdentityUser",
 				Name:       indexIdentityName,

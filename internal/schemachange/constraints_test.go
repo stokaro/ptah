@@ -8,7 +8,7 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemachange"
 )
 
@@ -46,7 +46,7 @@ func TestAClauseConstraintIsPlanned(t *testing.T) {
 		},
 		{
 			name: "a primary key the database does not have",
-			description: constrainedWidget(goschema.Constraint{
+			description: constrainedWidget(schemamodel.Constraint{
 				StructName: "Widget", Name: "pk_widget", Type: "PRIMARY KEY",
 				Columns: []string{"id"},
 			}),
@@ -83,7 +83,7 @@ func TestAClauseConstraintIsPlanned(t *testing.T) {
 // pair a replacement produces.
 type constraintCase struct {
 	name           string
-	description    *goschema.Database
+	description    *schemamodel.Database
 	currentCatalog *catalog.Database
 	wantOperation  schemachange.Operation
 	wantChanged    []string
@@ -178,7 +178,7 @@ func TestAConstraintInAnUndescribedSchemaIsNotDropped(t *testing.T) {
 // path deliberately does NOT match the shipping planner, and the divergence is
 // measured rather than argued.
 //
-// goschema.Constraint.Table is documented as optional -- "Table name (if
+// schemamodel.Constraint.Table is documented as optional -- "Table name (if
 // different from struct name)" -- and CHECK and PRIMARY KEY honour that. The
 // shipping planner's EXCLUDE route reads the field directly, with no fallback
 // to the struct, and renders `ALTER TABLE ""`. Filed as stokaro/ptah#2008.
@@ -195,8 +195,8 @@ func TestAnExclusionNamesTheTableItsStructDeclares(t *testing.T) {
 	c.Assert(schemachange.Statements(operations)[0], qt.Contains, "EXCLUDE USING gist (room WITH =)")
 }
 
-func checkConstraint(expression string) goschema.Constraint {
-	return goschema.Constraint{
+func checkConstraint(expression string) schemamodel.Constraint {
+	return schemamodel.Constraint{
 		StructName: "Widget", Name: "ck_widget_price", Type: "CHECK", CheckExpression: expression,
 	}
 }
@@ -208,8 +208,8 @@ func catalogCheck(clause string) catalog.Constraint {
 	}
 }
 
-func exclusionConstraint(elements string) goschema.Constraint {
-	return goschema.Constraint{
+func exclusionConstraint(elements string) schemamodel.Constraint {
+	return schemamodel.Constraint{
 		StructName: "Widget", Name: "ex_widget_room", Type: "EXCLUDE",
 		UsingMethod: "gist", ExcludeElements: elements,
 	}
@@ -224,11 +224,11 @@ func catalogExclusion(elements string) catalog.Constraint {
 }
 
 // constrainedWidget is a table carrying the given table-level constraints.
-func constrainedWidget(constraints ...goschema.Constraint) *goschema.Database {
+func constrainedWidget(constraints ...schemamodel.Constraint) *schemamodel.Database {
 	description := describedTable(
-		goschema.Field{StructName: "Widget", Name: "id", Type: "int"},
-		goschema.Field{StructName: "Widget", Name: "price", Type: "int", Nullable: true},
-		goschema.Field{StructName: "Widget", Name: "room", Type: "int", Nullable: true},
+		schemamodel.Field{StructName: "Widget", Name: "id", Type: "int"},
+		schemamodel.Field{StructName: "Widget", Name: "price", Type: "int", Nullable: true},
+		schemamodel.Field{StructName: "Widget", Name: "room", Type: "int", Nullable: true},
 	)
 	description.Constraints = append(description.Constraints, constraints...)
 	return description

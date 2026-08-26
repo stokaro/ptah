@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashcl"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 )
@@ -19,14 +19,14 @@ import (
 // [withoutTargetTable] takes the referenced block back out. That pair is the
 // single thing under test -- everything else is held fixed, so a difference
 // between the two renders is attributable to nothing else.
-func crossSchemaDocument() *goschema.Database {
-	return &goschema.Database{
-		Schemas: []goschema.Schema{{Name: "public"}, {Name: "other"}},
-		Tables: []goschema.Table{
+func crossSchemaDocument() *schemamodel.Database {
+	return &schemamodel.Database{
+		Schemas: []schemamodel.Schema{{Name: "public"}, {Name: "other"}},
+		Tables: []schemamodel.Table{
 			{StructName: "Post", Name: "posts", Schema: "public"},
 			{StructName: "User", Name: "users", Schema: "other"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{
 				StructName:     "Post",
 				Name:           "author_id",
@@ -36,7 +36,7 @@ func crossSchemaDocument() *goschema.Database {
 			},
 			{StructName: "User", Name: "id", Type: "bigint"},
 		},
-		Triggers: []goschema.Trigger{{
+		Triggers: []schemamodel.Trigger{{
 			Name:    "users_touch",
 			Table:   "other.users",
 			Timing:  "BEFORE",
@@ -44,19 +44,19 @@ func crossSchemaDocument() *goschema.Database {
 			ForEach: "ROW",
 			Body:    "RETURN NEW;",
 		}},
-		RLSPolicies: []goschema.RLSPolicy{{
+		RLSPolicies: []schemamodel.RLSPolicy{{
 			Name:            "users_policy",
 			Table:           "other.users",
 			PolicyFor:       "SELECT",
 			UsingExpression: "true",
 		}},
-		Roles: []goschema.Role{{Name: "app_user"}},
-		Grants: []goschema.Grant{{
+		Roles: []schemamodel.Role{{Name: "app_user"}},
+		Grants: []schemamodel.Grant{{
 			Role:       "app_user",
 			Privileges: []string{"SELECT"},
 			OnTable:    "other.users",
 		}},
-		ManagedData: []goschema.ManagedData{{
+		ManagedData: []schemamodel.ManagedData{{
 			Table:  "users",
 			Schema: "other",
 			Keys:   []string{"id"},
@@ -69,11 +69,11 @@ func crossSchemaDocument() *goschema.Database {
 // every reference to it in place. That is a filtered export or an orphan
 // trigger: the references are still meant, and nothing in the document says
 // which schema they meant.
-func withoutTargetTable(db *goschema.Database) *goschema.Database {
-	db.Tables = slices.DeleteFunc(db.Tables, func(table goschema.Table) bool {
+func withoutTargetTable(db *schemamodel.Database) *schemamodel.Database {
+	db.Tables = slices.DeleteFunc(db.Tables, func(table schemamodel.Table) bool {
 		return table.StructName == "User"
 	})
-	db.Fields = slices.DeleteFunc(db.Fields, func(field goschema.Field) bool {
+	db.Fields = slices.DeleteFunc(db.Fields, func(field schemamodel.Field) bool {
 		return field.StructName == "User"
 	})
 	return db
@@ -177,22 +177,22 @@ func TestRenderKeepsQualifiedReferenceWhenDocumentCannotResolveIt(t *testing.T) 
 	tests := []struct {
 		name string
 		// db returns a document referring to `other.users` from `public.posts`.
-		db func() *goschema.Database
+		db func() *schemamodel.Database
 		// why records what the short form would cost here.
 		why string
 	}{
 		{
 			name: "target table absent",
-			db:   func() *goschema.Database { return withoutTargetTable(crossSchemaDocument()) },
+			db:   func() *schemamodel.Database { return withoutTargetTable(crossSchemaDocument()) },
 			why: "no block carries the schema, so dropping it loses it for good:" +
 				" a filtered export or an orphan trigger has nothing to resolve against",
 		},
 		{
 			name: "name declared in two schemas",
-			db: func() *goschema.Database {
+			db: func() *schemamodel.Database {
 				db := crossSchemaDocument()
-				db.Tables = append(db.Tables, goschema.Table{StructName: "PublicUser", Name: "users", Schema: "public"})
-				db.Fields = append(db.Fields, goschema.Field{StructName: "PublicUser", Name: "id", Type: "bigint"})
+				db.Tables = append(db.Tables, schemamodel.Table{StructName: "PublicUser", Name: "users", Schema: "public"})
+				db.Fields = append(db.Fields, schemamodel.Field{StructName: "PublicUser", Name: "id", Type: "bigint"})
 				return db
 			},
 			why: "two tables of one name are legal, and the pinned binary refuses the short form" +
@@ -201,10 +201,10 @@ func TestRenderKeepsQualifiedReferenceWhenDocumentCannotResolveIt(t *testing.T) 
 		},
 		{
 			name: "only a same-named table in another schema",
-			db: func() *goschema.Database {
+			db: func() *schemamodel.Database {
 				db := withoutTargetTable(crossSchemaDocument())
-				db.Tables = append(db.Tables, goschema.Table{StructName: "PublicUser", Name: "users", Schema: "public"})
-				db.Fields = append(db.Fields, goschema.Field{StructName: "PublicUser", Name: "id", Type: "bigint"})
+				db.Tables = append(db.Tables, schemamodel.Table{StructName: "PublicUser", Name: "users", Schema: "public"})
+				db.Fields = append(db.Fields, schemamodel.Field{StructName: "PublicUser", Name: "id", Type: "bigint"})
 				return db
 			},
 			why: "the one `users` block this document declares is a DIFFERENT table," +
@@ -255,13 +255,13 @@ func TestRenderKeepsQualifiedReferenceWhenDocumentCannotResolveIt(t *testing.T) 
 // [renderer.tableRef] shortens the reference and this test says so.
 func TestRenderKeepsQualifiedSequenceTarget(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Schemas:   []goschema.Schema{{Name: "app"}},
-		Sequences: []goschema.Sequence{{Name: "order_seq", Schema: "app"}},
-		Tables:    []goschema.Table{{StructName: "OrderSeq", Name: "order_seq", Schema: "app"}},
-		Fields:    []goschema.Field{{StructName: "OrderSeq", Name: "id", Type: "bigint"}},
-		Roles:     []goschema.Role{{Name: "app_user"}},
-		Grants: []goschema.Grant{{
+	db := &schemamodel.Database{
+		Schemas:   []schemamodel.Schema{{Name: "app"}},
+		Sequences: []schemamodel.Sequence{{Name: "order_seq", Schema: "app"}},
+		Tables:    []schemamodel.Table{{StructName: "OrderSeq", Name: "order_seq", Schema: "app"}},
+		Fields:    []schemamodel.Field{{StructName: "OrderSeq", Name: "id", Type: "bigint"}},
+		Roles:     []schemamodel.Role{{Name: "app_user"}},
+		Grants: []schemamodel.Grant{{
 			Role:       "app_user",
 			Privileges: []string{"USAGE"},
 			OnSequence: "app.order_seq",

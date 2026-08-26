@@ -1,4 +1,4 @@
-package goschema
+package schemamodel
 
 import (
 	"log/slog"
@@ -205,7 +205,7 @@ func insertSortedTableComponent(queue []int, componentIndex int, components [][]
 	return slices.Insert(queue, position, componentIndex)
 }
 
-// buildDependencyGraph analyzes foreign key relationships to build a dependency graph.
+// BuildDependencyGraph analyzes foreign key relationships to build a dependency graph.
 //
 // This method examines all fields and embedded fields to identify foreign key relationships
 // and builds a dependency graph that maps each table to the tables it depends on. This
@@ -226,7 +226,7 @@ func insertSortedTableComponent(queue []int, componentIndex int, components [][]
 //
 // The resulting dependency graph is stored in the Dependencies field and used by
 // sortTablesByDependencies() to perform topological sorting.
-func buildDependencyGraph(r *Database) {
+func BuildDependencyGraph(r *Database) {
 	resetDependencyMaps(r)
 	analyzeFieldForeignKeys(r)
 	analyzeEmbeddedFieldRelations(r)
@@ -241,16 +241,24 @@ func buildDependencyGraph(r *Database) {
 // foreign keys, and dependency-ordered tables/functions.
 func Finalize(r *Database) {
 	restoreCompositeHelperDefinitions(r)
-	r.Fields = processEmbeddedFields(r.EmbeddedFields, r.Fields)
-	normalizeTableScopedNames(r)
-	deduplicate(r)
+	r.Fields = ProcessEmbeddedFields(r.EmbeddedFields, r.Fields)
+	NormalizeTableScopedNames(r)
+	Deduplicate(r)
 	stashCompositeHelperDefinitions(r)
-	buildDependencyGraph(r)
+	BuildDependencyGraph(r)
 	sortTablesByDependencies(r)
 	sortFunctionsByDependencies(r)
 }
 
-func normalizeTableScopedNames(r *Database) {
+// NormalizeTableScopedNames resolves the names an index or constraint carries
+// against the table that owns it, so two objects that name one table by
+// different spellings resolve to the same owner.
+//
+// It is exported because the split put the parser in another package and the
+// parser runs it as the last step of building a database: a description whose
+// scoped names were never resolved compares by spelling, which is the drift
+// object identity exists to prevent (stokaro/ptah#2246 section 2.1).
+func NormalizeTableScopedNames(r *Database) {
 	if r == nil {
 		return
 	}
@@ -659,10 +667,10 @@ func generateForeignKeyName(tableName, fieldName string) string {
 	return "fk_" + strings.ToLower(tableName) + "_" + strings.ToLower(fieldName)
 }
 
-// processEmbeddedFields processes embedded fields and generates corresponding schema fields based on embedding modes.
+// ProcessEmbeddedFields processes embedded fields and generates corresponding schema fields based on embedding modes.
 //
 // This function expands embedded struct fields into individual database fields according to their embedding mode.
-// It's essential to call this BEFORE buildDependencyGraph() to ensure that foreign keys from embedded fields
+// It's essential to call this BEFORE BuildDependencyGraph() to ensure that foreign keys from embedded fields
 // are properly included in the dependency analysis.
 //
 // Supported embedding modes:
@@ -677,7 +685,7 @@ func generateForeignKeyName(tableName, fieldName string) string {
 //
 // Returns:
 //   - Combined slice of Field containing both original fields and generated fields from embedded processing
-func processEmbeddedFields(embeddedFields []EmbeddedField, originalFields []Field) []Field {
+func ProcessEmbeddedFields(embeddedFields []EmbeddedField, originalFields []Field) []Field {
 	sourceFields := make([]Field, 0, len(originalFields))
 	for _, field := range originalFields {
 		if !field.GeneratedFromEmbedded {
@@ -1132,7 +1140,7 @@ func isFunctionInSorted(function Function, sorted []Function) bool {
 	return false
 }
 
-// deduplicate removes duplicate entities that may be defined in multiple files.
+// Deduplicate removes duplicate entities that may be defined in multiple files.
 //
 // During recursive parsing, the same entity might be encountered multiple times
 // if it's defined in different files or referenced across packages. This method
@@ -1161,7 +1169,7 @@ func isFunctionInSorted(function Function, sorted []Function) bool {
 // This method modifies the Database in-place, replacing the original
 // slices with deduplicated versions. The order of entities may change during
 // this process, but dependency ordering is handled separately.
-func deduplicate(r *Database) {
+func Deduplicate(r *Database) {
 	deduplicateDatabase(r, structDeduplicationScope)
 }
 
@@ -1529,7 +1537,7 @@ func deduplicateTriggers(triggers []Trigger) []Trigger {
 
 // deduplicateConstraints dedups table-level constraints by their declared
 // table scope when table= is explicit, otherwise by the declaring Go type.
-// The fallback is needed before normalizeTableScopedNames fills .Table for
+// The fallback is needed before NormalizeTableScopedNames fills .Table for
 // annotations that rely on struct association.
 func deduplicateConstraints(constraints []Constraint) []Constraint {
 	seen := make(map[string]bool)
@@ -1582,7 +1590,7 @@ func constraintIdentity(scope string, constraint Constraint) string {
 // deduplicateGrants dedups by role + privileges + target (table, schema, or
 // sequence). The grant option is part of identity: a plain grant and a grant
 // WITH GRANT OPTION must both survive. Privilege order is normalized only for
-// the key, so logically identical grants deduplicate even when annotations list
+// the key, so logically identical grants Deduplicate even when annotations list
 // privileges in a different order.
 func deduplicateGrants(grants []Grant) []Grant {
 	seen := make(map[grantKey]bool)

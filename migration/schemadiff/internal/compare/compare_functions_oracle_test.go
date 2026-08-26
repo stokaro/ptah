@@ -6,16 +6,16 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
 
 // oracleDeclaredFunction is the declaration the cases below compare against
 // what the Oracle catalog reports for the routine it created.
-func oracleDeclaredFunction(parameters string) goschema.Function {
-	return goschema.Function{
+func oracleDeclaredFunction(parameters string) schemamodel.Function {
+	return schemamodel.Function{
 		Name:       "fn_double",
 		Parameters: parameters,
 		Returns:    "NUMBER",
@@ -121,11 +121,11 @@ func TestFunctionDefinitions_OracleKeepsOUTAndINOUT(t *testing.T) {
 // every run of an unchanged schema.
 func TestFunctions_OracleMatchesADeclarationToTheUpperCaseNameItCreated(t *testing.T) {
 	c := qt.New(t)
-	generated := &goschema.Database{Functions: []goschema.Function{oracleDeclaredFunction("p IN NUMBER")}}
+	desired := &schemamodel.Database{Functions: []schemamodel.Function{oracleDeclaredFunction("p IN NUMBER")}}
 	database := &catalog.Database{Functions: []catalog.Function{oracleLiveFunction()}}
 
 	diff := &difftypes.SchemaDiff{}
-	compare.FunctionsWithDialect(generated, database, diff, platform.Oracle)
+	compare.FunctionsWithDialect(desired, database, diff, platform.Oracle)
 
 	c.Assert(diff.FunctionsAdded, qt.HasLen, 0)
 	c.Assert(diff.FunctionsRemoved, qt.HasLen, 0)
@@ -138,11 +138,11 @@ func TestFunctions_OracleStillReportsAFunctionThatIsNotThere(t *testing.T) {
 	c := qt.New(t)
 	declared := oracleDeclaredFunction("p IN NUMBER")
 	declared.Name = "fn_triple"
-	generated := &goschema.Database{Functions: []goschema.Function{declared}}
+	desired := &schemamodel.Database{Functions: []schemamodel.Function{declared}}
 	database := &catalog.Database{Functions: []catalog.Function{oracleLiveFunction()}}
 
 	diff := &difftypes.SchemaDiff{}
-	compare.FunctionsWithDialect(generated, database, diff, platform.Oracle)
+	compare.FunctionsWithDialect(desired, database, diff, platform.Oracle)
 
 	c.Assert(diff.FunctionsAdded, qt.DeepEquals, []string{"fn_triple"})
 	c.Assert(diff.FunctionsRemoved, qt.DeepEquals, []string{"FN_DOUBLE"})

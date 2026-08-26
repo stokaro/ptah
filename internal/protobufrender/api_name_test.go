@@ -6,13 +6,13 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/protobufrender"
 )
 
 // aliasedColumn is a column published under a name of its own.
-func aliasedColumn(name, apiName, columnType string) goschema.Field {
-	return goschema.Field{Name: name, APIName: apiName, Type: columnType}
+func aliasedColumn(name, apiName, columnType string) schemamodel.Field {
+	return schemamodel.Field{Name: name, APIName: apiName, Type: columnType}
 }
 
 // The declared API name is what the protobuf field is called.
@@ -107,8 +107,8 @@ func TestRenamingTheAPINameReservesTheOldIdentity(t *testing.T) {
 func TestMessageUsesTheDeclaredTableAPIName(t *testing.T) {
 	c := qt.New(t)
 
-	out := mustRenderText(c, &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Thing", Name: "billing_invoices", APIName: "invoices"}},
+	out := mustRenderText(c, &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Thing", Name: "billing_invoices", APIName: "invoices"}},
 		Fields: columns("Thing", column("id", "BIGINT")),
 	}, baseOptions())
 
@@ -117,8 +117,8 @@ func TestMessageUsesTheDeclaredTableAPIName(t *testing.T) {
 }
 
 // typedColumn is a column exported as a type other than its own.
-func typedColumn(name, columnType, apiType string) goschema.Field {
-	return goschema.Field{Name: name, Type: columnType, APIType: apiType}
+func typedColumn(name, columnType, apiType string) schemamodel.Field {
+	return schemamodel.Field{Name: name, Type: columnType, APIType: apiType}
 }
 
 // The override decides the wire type, and this is the case it exists for: the
@@ -225,9 +225,9 @@ func TestChangingTheColumnUnderAPITypeKeepsTheWireType(t *testing.T) {
 
 // enumFixture is a schema with one declared enum and the four ways a column can
 // meet it.
-func enumFixture(fields ...goschema.Field) *goschema.Database {
+func enumFixture(fields ...schemamodel.Field) *schemamodel.Database {
 	db := oneTable(fields...)
-	db.Enums = []goschema.Enum{{Name: "invoice_state", Values: []string{"draft", "sent"}}}
+	db.Enums = []schemamodel.Enum{{Name: "invoice_state", Values: []string{"draft", "sent"}}}
 	return db
 }
 
@@ -261,7 +261,7 @@ func TestAPITypeOverridesInlineEnumValues(t *testing.T) {
 
 	out := mustRenderText(c, oneTable(
 		column("id", "BIGINT"),
-		goschema.Field{Name: "state", Type: "VARCHAR(16)", Enum: []string{"draft", "sent"}, APIType: "TEXT"},
+		schemamodel.Field{Name: "state", Type: "VARCHAR(16)", Enum: []string{"draft", "sent"}, APIType: "TEXT"},
 	), baseOptions())
 
 	c.Assert(section(out, "message Thing {"), qt.Equals,
@@ -271,11 +271,11 @@ func TestAPITypeOverridesInlineEnumValues(t *testing.T) {
 
 // protoNamedColumn is a column published under a name that applies to the wire
 // only.
-func protoNamedColumn(name, apiName, protoName, columnType string) goschema.Field {
-	return goschema.Field{
+func protoNamedColumn(name, apiName, protoName, columnType string) schemamodel.Field {
+	return schemamodel.Field{
 		Name:     name,
 		APIName:  apiName,
-		APINames: goschema.TargetNames{Protobuf: protoName},
+		APINames: schemamodel.TargetNames{Protobuf: protoName},
 		Type:     columnType,
 	}
 }
@@ -337,12 +337,12 @@ func TestRenamingTheProtoNameIsRefusedAsARemoval(t *testing.T) {
 }
 
 // protoNamedTable is a table whose message name applies to the wire only.
-func protoNamedTable(name, apiName, protoName string, fields ...goschema.Field) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{
+func protoNamedTable(name, apiName, protoName string, fields ...schemamodel.Field) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{
 			StructName: "Thing", Name: name,
 			APIName:  apiName,
-			APINames: goschema.TargetNames{Protobuf: protoName},
+			APINames: schemamodel.TargetNames{Protobuf: protoName},
 		}},
 		Fields: columns("Thing", fields...),
 	}

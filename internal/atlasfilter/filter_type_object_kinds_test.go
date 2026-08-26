@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 )
 
@@ -310,11 +310,11 @@ func TestExcludeDatabaseReport_StillNamesASelectorThatMatchedNoTypeObject(t *tes
 // removed from the introspected side alone comes back as a CREATE.
 func TestExcludeGenerated_SubtractsTheSameTypeObjectKinds(t *testing.T) {
 	c := qt.New(t)
-	schema := &goschema.Database{
-		Sequences:      []goschema.Sequence{{Name: "order_seq"}, {Schema: "app", Name: "app_seq"}},
-		Domains:        []goschema.Domain{{Name: "positive_int", BaseType: "integer"}, {Schema: "app", Name: "app_int", BaseType: "integer"}},
-		CompositeTypes: []goschema.CompositeType{{Name: "addr"}, {Schema: "app", Name: "app_addr"}},
-		Ranges:         []goschema.Range{{Name: "intrange", Subtype: "integer"}, {Schema: "app", Name: "app_range", Subtype: "integer"}},
+	schema := &schemamodel.Database{
+		Sequences:      []schemamodel.Sequence{{Name: "order_seq"}, {Schema: "app", Name: "app_seq"}},
+		Domains:        []schemamodel.Domain{{Name: "positive_int", BaseType: "integer"}, {Schema: "app", Name: "app_int", BaseType: "integer"}},
+		CompositeTypes: []schemamodel.CompositeType{{Name: "addr"}, {Schema: "app", Name: "app_addr"}},
+		Ranges:         []schemamodel.Range{{Name: "intrange", Subtype: "integer"}, {Schema: "app", Name: "app_range", Subtype: "integer"}},
 	}
 
 	got, report, err := atlasfilter.ExcludeGeneratedReport(
@@ -330,7 +330,7 @@ func TestExcludeGenerated_SubtractsTheSameTypeObjectKinds(t *testing.T) {
 	c.Assert(generatedRangeNames(got.Ranges), qt.DeepEquals, []string{"app.app_range"})
 }
 
-func generatedDomainNames(domains []goschema.Domain) []string {
+func generatedDomainNames(domains []schemamodel.Domain) []string {
 	names := make([]string, 0, len(domains))
 	for _, domain := range domains {
 		names = append(names, catalog.QualifyTableName(domain.Schema, domain.Name))
@@ -338,7 +338,7 @@ func generatedDomainNames(domains []goschema.Domain) []string {
 	return names
 }
 
-func generatedCompositeNames(types []goschema.CompositeType) []string {
+func generatedCompositeNames(types []schemamodel.CompositeType) []string {
 	names := make([]string, 0, len(types))
 	for _, composite := range types {
 		names = append(names, catalog.QualifyTableName(composite.Schema, composite.Name))
@@ -346,7 +346,7 @@ func generatedCompositeNames(types []goschema.CompositeType) []string {
 	return names
 }
 
-func generatedRangeNames(ranges []goschema.Range) []string {
+func generatedRangeNames(ranges []schemamodel.Range) []string {
 	names := make([]string, 0, len(ranges))
 	for _, value := range ranges {
 		names = append(names, catalog.QualifyTableName(value.Schema, value.Name))

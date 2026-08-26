@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 	"go.5x5.cz/ptah/internal/atlassource"
@@ -66,13 +66,13 @@ type InspectSourceOptions struct {
 	// schema sources before the dev database is reset. Live database and
 	// migration-directory inspection are descriptions, not authored desired
 	// schema documents, and do not use this hook.
-	ValidateDesiredSchema func(*goschema.Database) error
+	ValidateDesiredSchema func(*schemamodel.Database) error
 	// ValidateRenderedVirtualTables applies to the SQLite virtual tables whose
 	// module declaration the chosen rendering dropped.
 	ValidateRenderedVirtualTables func(names []string) error
 	// ValidateInspectedSchema applies after live or dev-database introspection,
 	// before output or file exports.
-	ValidateInspectedSchema func(*goschema.Database) error
+	ValidateInspectedSchema func(*schemamodel.Database) error
 	// PrepareInspectedSchema normalizes and validates the exact introspected
 	// database snapshot that rendering and file exports consume.
 	PrepareInspectedSchema func(*catalog.Database) (*catalog.Database, error)
@@ -287,7 +287,7 @@ func inspectOnDev(
 
 	// Load and verify the source before the dev database is touched, so bad
 	// sources fail without a destructive reset.
-	var desired *goschema.Database
+	var desired *schemamodel.Database
 	var migrationSnapshot fs.FS
 	switch set.Kind {
 	case atlassource.KindLocalFile:
@@ -435,7 +435,7 @@ func validateInspectLocalSources(set atlassource.Set, validate func(string) erro
 	return nil
 }
 
-func validateInspectDesiredSchema(desired *goschema.Database, validate func(*goschema.Database) error) error {
+func validateInspectDesiredSchema(desired *schemamodel.Database, validate func(*schemamodel.Database) error) error {
 	if desired == nil || validate == nil {
 		return nil
 	}
@@ -461,7 +461,7 @@ func prepareInspectMigrationSnapshot(
 func withMaterializedDevSchema(
 	ctx context.Context,
 	devConn *dbschema.DatabaseConnection,
-	desired *goschema.Database,
+	desired *schemamodel.Database,
 	diag io.Writer,
 	consume func(*dbschema.DatabaseConnection) error,
 ) (resultErr error) {
@@ -508,7 +508,7 @@ func withMaterializedDevSchema(
 func materializeOnDev(
 	ctx context.Context,
 	devConn *dbschema.DatabaseConnection,
-	desired *goschema.Database,
+	desired *schemamodel.Database,
 	diag io.Writer,
 ) error {
 	info := devConn.Info()
@@ -552,9 +552,9 @@ func materializeOnDev(
 // dev database, or report what the source declared.
 func devMaterializableSchema(ctx context.Context,
 	devConn *dbschema.DatabaseConnection,
-	desired *goschema.Database,
+	desired *schemamodel.Database,
 	diag io.Writer,
-) (*goschema.Database, error) {
+) (*schemamodel.Database, error) {
 	if desired == nil || len(desired.Roles) == 0 {
 		return desired, nil
 	}

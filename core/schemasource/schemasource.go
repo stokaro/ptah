@@ -18,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/core/yamlschema"
 	"go.5x5.cz/ptah/internal/atlashcl"
 	"go.5x5.cz/ptah/internal/convert/toschema"
@@ -54,7 +54,7 @@ type Command struct {
 
 // Run executes cmd and parses its standard output into a desired schema. It
 // bounds execution with a timeout, and on failure surfaces the program's stderr.
-func Run(ctx context.Context, cmd Command) (*goschema.Database, error) {
+func Run(ctx context.Context, cmd Command) (*schemamodel.Database, error) {
 	if len(cmd.Args) == 0 || strings.TrimSpace(cmd.Args[0]) == "" {
 		return nil, errors.New("schema command is empty")
 	}
@@ -103,7 +103,7 @@ func Run(ctx context.Context, cmd Command) (*goschema.Database, error) {
 	return db, nil
 }
 
-func parseOutput(data []byte, format, dialect string) (*goschema.Database, error) {
+func parseOutput(data []byte, format, dialect string) (*schemamodel.Database, error) {
 	switch format {
 	case "sql":
 		return parseSQL(data, dialect)
@@ -203,12 +203,12 @@ func stderrSuffix(s string) string {
 	return ": " + s
 }
 
-func parseSQL(data []byte, dialect string) (*goschema.Database, error) {
+func parseSQL(data []byte, dialect string) (*schemamodel.Database, error) {
 	statements, err := parser.NewParser(string(data), parser.WithDialect(dialect)).Parse()
 	if err != nil {
 		return nil, err
 	}
 	db := toschema.ToDatabase(statements, dialect)
-	goschema.Finalize(&db)
+	schemamodel.Finalize(&db)
 	return &db, nil
 }

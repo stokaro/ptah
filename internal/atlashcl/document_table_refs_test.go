@@ -57,7 +57,7 @@ table "users" {
 // The first row is the one that made this code exist: it is the pinned Atlas
 // community binary v1.3.0's OWN inspect output for a cross-schema foreign key,
 // and Ptah used to read it as `users(id)` -- the schema silently gone. The
-// multi-column form of the same key never lost it, because goschema.Finalize
+// multi-column form of the same key never lost it, because schemamodel.Finalize
 // resolves a Constraint's ForeignTable and nothing resolved a Field's Foreign.
 func TestParseReadsForeignKeySchemaOffTheReferencedBlock(t *testing.T) {
 	tests := []struct {
@@ -149,7 +149,7 @@ schema "billing" {
 }
 
 // TestParseReadsManagedDataSchemaOffTheReferencedBlock covers the other
-// position goschema.Finalize does not reach.
+// position schemamodel.Finalize does not reach.
 //
 // A `data` block has no owning table, so nothing else in it carries a schema:
 // either the referenced block supplies one or the block points at whichever

@@ -5,9 +5,9 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/clickhouserbac"
 	"go.5x5.cz/ptah/internal/sqlident"
 )
@@ -65,7 +65,7 @@ import (
 // its Go zero value, so `&ast.CreateRoleNode{Name: "r"}` is indistinguishable at
 // this boundary from a node that declared inherit="false". The distinction
 // survives one layer up, where [clickhouserbac.ValidateDeclared] reads
-// [goschema.Role] and the annotation parser has already defaulted it to true.
+// [schemamodel.Role] and the annotation parser has already defaulted it to true.
 func (r *Renderer) VisitCreateRole(node *ast.CreateRoleNode) error {
 	if !r.capabilities().Has(capability.RoleManagement) {
 		r.notSupported("CREATE ROLE", node.Name)
@@ -236,7 +236,7 @@ func roleTarget(operation, name string) (string, error) {
 // selected when the migration is applied — a grant is an access-control decision
 // and resolving it against the wrong database is not a formatting mistake.
 func grantScope(operation, role, objectType, objectName string) (clickhouserbac.Scope, error) {
-	grant := goschema.Grant{Role: role}
+	grant := schemamodel.Grant{Role: role}
 	switch strings.ToUpper(strings.TrimSpace(objectType)) {
 	case "TABLE":
 		grant.OnTable = objectName

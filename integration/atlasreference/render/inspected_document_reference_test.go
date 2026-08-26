@@ -12,8 +12,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 )
 
@@ -250,27 +250,27 @@ func twoSchemaReferenceMutations() []inspectedReferenceMutation {
 // which is what a reader does with everything in the schema it is reading. That
 // asymmetry is deliberate: it is the pair that says the rule holds whether or
 // not the name carries a schema.
-func inspectedReferenceTwoSchemaDocument(schema string) *goschema.Database {
-	return &goschema.Database{
-		Schemas: []goschema.Schema{{Name: schema}, {Name: twoSchemaReferenceOther}},
-		Tables: []goschema.Table{
+func inspectedReferenceTwoSchemaDocument(schema string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Schemas: []schemamodel.Schema{{Name: schema}, {Name: twoSchemaReferenceOther}},
+		Tables: []schemamodel.Table{
 			{StructName: "T", Name: "t", Schema: schema},
 			{StructName: "OtherT", Name: "t", Schema: twoSchemaReferenceOther},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "T", Name: "id", Type: "integer", Primary: true},
 			{StructName: "OtherT", Name: "id", Type: "integer", Primary: true},
 		},
-		Views: []goschema.View{
+		Views: []schemamodel.View{
 			{Name: "v", Body: "SELECT id FROM t"},
 			{Name: twoSchemaReferenceOther + ".v", Body: "SELECT id FROM " + twoSchemaReferenceOther + ".t"},
 		},
-		Roles: []goschema.Role{{Name: "app"}},
-		Grants: []goschema.Grant{
+		Roles: []schemamodel.Role{{Name: "app"}},
+		Grants: []schemamodel.Grant{
 			{Role: "app", OnTable: "v", Privileges: []string{"SELECT"}},
 			{Role: "app", OnTable: twoSchemaReferenceOther + ".v", Privileges: []string{"SELECT"}},
 		},
-		Triggers: []goschema.Trigger{{
+		Triggers: []schemamodel.Trigger{{
 			Name:    "v_ins",
 			Table:   twoSchemaReferenceOther + ".v",
 			Timing:  "INSTEAD OF",
@@ -292,7 +292,7 @@ type inspectedReferenceMutation struct {
 // inspectedReferenceDocuments are the inspected shapes put to the binary whole.
 var inspectedReferenceDocuments = []struct {
 	name string
-	db   func(schema string) *goschema.Database
+	db   func(schema string) *schemamodel.Database
 	// wantContains are the spellings this document exists to measure. They are
 	// asserted before the binary runs, so a render that stopped emitting one
 	// fails here rather than passing an reference row that no longer covers it.
@@ -354,7 +354,7 @@ var inspectedReferenceDocuments = []struct {
 		// unconditionally, and the one the pinned binary answered with
 		// `There is no variable named "role"`.
 		name: "a table whose roles were excluded",
-		db: func(schema string) *goschema.Database {
+		db: func(schema string) *schemamodel.Database {
 			db := inspectedReferenceTableDocument(schema)
 			db.Roles = nil
 			return db
@@ -436,15 +436,15 @@ var inspectedReferenceDocuments = []struct {
 // grantee with no role block, which is what `--exclude '*[type=role]'` leaves
 // behind -- grants are children of the object granted on, so excluding roles
 // removes the blocks and keeps every reference to them.
-func inspectedReferenceTableDocument(schema string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "T", Name: "t"}},
-		Fields: []goschema.Field{
+func inspectedReferenceTableDocument(schema string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "T", Name: "t"}},
+		Fields: []schemamodel.Field{
 			{StructName: "T", Name: "id", Type: "integer", Primary: true},
 			{StructName: "T", Name: "name", Type: "varchar(100)"},
 		},
-		Roles: []goschema.Role{{Name: "app"}},
-		Grants: []goschema.Grant{
+		Roles: []schemamodel.Role{{Name: "app"}},
+		Grants: []schemamodel.Grant{
 			{Role: "PUBLIC", OnSchema: schema, Privileges: []string{"USAGE"}},
 			{Role: "app", OnTable: schema + ".t", Privileges: []string{"SELECT"}, WithOption: true},
 			{Role: "reporting", OnTable: schema + ".t", Privileges: []string{"SELECT"}},
@@ -459,10 +459,10 @@ func inspectedReferenceTableDocument(schema string) *goschema.Database {
 // the reader drops the schema of everything in the read's own schema. So the
 // renderer cannot learn the block type from the IR field or from the name -- it
 // has to read it off the block the document declares.
-func inspectedReferenceViewDocument(schema string) *goschema.Database {
+func inspectedReferenceViewDocument(schema string) *schemamodel.Database {
 	db := inspectedReferenceTableDocument(schema)
-	db.Views = []goschema.View{{Name: "v", Body: "SELECT id FROM t"}}
-	db.Grants = append(db.Grants, goschema.Grant{
+	db.Views = []schemamodel.View{{Name: "v", Body: "SELECT id FROM t"}}
+	db.Grants = append(db.Grants, schemamodel.Grant{
 		Role: "app", OnTable: "v", Privileges: []string{"SELECT"},
 	})
 	return db
@@ -470,9 +470,9 @@ func inspectedReferenceViewDocument(schema string) *goschema.Database {
 
 // inspectedReferenceGrantOnlyDocument is what an empty PostgreSQL database
 // inspects to: one grant on the schema, and nothing else at all.
-func inspectedReferenceGrantOnlyDocument(schema string) *goschema.Database {
-	return &goschema.Database{
-		Grants: []goschema.Grant{
+func inspectedReferenceGrantOnlyDocument(schema string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Grants: []schemamodel.Grant{
 			{Role: "PUBLIC", OnSchema: schema, Privileges: []string{"USAGE"}},
 		},
 	}

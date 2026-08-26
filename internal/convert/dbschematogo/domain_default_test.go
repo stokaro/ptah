@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 )
 
@@ -63,7 +63,7 @@ func TestConvert_ADomainDefaultKeepsItsKind(t *testing.T) {
 				}},
 			})
 
-			c.Assert(converted.Domains, qt.DeepEquals, []goschema.Domain{{
+			c.Assert(converted.Domains, qt.DeepEquals, []schemamodel.Domain{{
 				Name: "email", Schema: "app", BaseType: "character varying(120)",
 				DefaultExpr: test.wantExpr, Default: test.wantLit,
 			}})

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // getDependencyInfo returns human-readable dependency information for debugging.
@@ -39,7 +39,7 @@ import (
 //	2. categories
 //	3. products
 //	4. orders
-func getDependencyInfo(r *goschema.Database) string {
+func getDependencyInfo(r *schemamodel.Database) string {
 	var info strings.Builder
 	info.WriteString("Table Dependencies:\n")
 	info.WriteString("==================\n")

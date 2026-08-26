@@ -1,4 +1,4 @@
-package goschema
+package schemamodel
 
 import (
 	"fmt"
@@ -828,8 +828,8 @@ func (d Domain) QualifiedName() string {
 	return QualifyTableName(d.Schema, d.Name)
 }
 
-// CompositeTypeField is a single named field of a composite type.
-type CompositeTypeField struct {
+// CompositeField is a single named field of a composite type.
+type CompositeField struct {
 	Name string // Field name
 	Type string // Field data type
 }
@@ -842,11 +842,11 @@ type CompositeTypeField struct {
 //	//ptah:schema:composite name="address" fields="street:TEXT,city:TEXT,zip:VARCHAR(10)"
 //	type AddressType struct{}
 type CompositeType struct {
-	StructName string               // Name of the Go struct this type is associated with
-	Name       string               // Composite type name (e.g., "address")
-	Schema     string               // Optional schema/namespace (PostgreSQL-style)
-	Fields     []CompositeTypeField // Ordered fields of the composite type
-	Comment    string               // Optional comment for documentation
+	StructName string           // Name of the Go struct this type is associated with
+	Name       string           // Composite type name (e.g., "address")
+	Schema     string           // Optional schema/namespace (PostgreSQL-style)
+	Fields     []CompositeField // Ordered fields of the composite type
+	Comment    string           // Optional comment for documentation
 
 	// Dialects scopes this declaration to the named target dialects. See
 	// [ScopeToDialect].
@@ -1707,15 +1707,4 @@ type SelfReferencingFK struct {
 	ForeignKeyName string // Name of the foreign key constraint (e.g., "fk_users_parent")
 	OnDelete       string // ON DELETE action (CASCADE, SET NULL, RESTRICT, NO ACTION)
 	OnUpdate       string // ON UPDATE action (CASCADE, SET NULL, RESTRICT, NO ACTION)
-}
-
-func normalizeIdentityGeneration(value string) string {
-	switch strings.ToUpper(strings.ReplaceAll(value, " ", "_")) {
-	case "ALWAYS":
-		return "ALWAYS"
-	case "BY_DEFAULT":
-		return "BY_DEFAULT"
-	default:
-		return ""
-	}
 }

@@ -10,8 +10,8 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlasreport"
 )
 
@@ -197,15 +197,15 @@ func TestSplitRefusesAMalformedRecordRatherThanDroppingIt(t *testing.T) {
 // declares the record the split has to carry.
 func coverageSplitReport() *atlasreport.SchemaInspectReport {
 	return atlasreport.NewSchemaInspectReport(
-		&goschema.Database{
-			Schemas: []goschema.Schema{{Name: "public"}},
-			Tables:  []goschema.Table{{StructName: "Ticket", Name: "ticket", Schema: "public"}},
-			Fields: []goschema.Field{
+		&schemamodel.Database{
+			Schemas: []schemamodel.Schema{{Name: "public"}},
+			Tables:  []schemamodel.Table{{StructName: "Ticket", Name: "ticket", Schema: "public"}},
+			Fields: []schemamodel.Field{
 				{StructName: "Ticket", Name: "id", Type: "INTEGER", Primary: true},
 			},
-			Extensions: []goschema.Extension{{Name: "pgcrypto", IfNotExists: true}},
-			Sequences:  []goschema.Sequence{{Name: "ticket_seq", Schema: "public"}},
-			RLSPolicies: []goschema.RLSPolicy{
+			Extensions: []schemamodel.Extension{{Name: "pgcrypto", IfNotExists: true}},
+			Sequences:  []schemamodel.Sequence{{Name: "ticket_seq", Schema: "public"}},
+			RLSPolicies: []schemamodel.RLSPolicy{
 				{Name: "ticket_read", Table: "ticket", PolicyFor: "SELECT", UsingExpression: "true"},
 			},
 		},

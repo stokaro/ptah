@@ -4,7 +4,7 @@ import (
 	"slices"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // suppressScopedAway removes from the current schema every object a scope kept
@@ -26,7 +26,7 @@ import (
 // The current schema is cloned rather than filtered in place. Callers hand over
 // a snapshot they may still be holding, and a comparison is not entitled to
 // edit it.
-func suppressScopedAway(current *catalog.Database, omitted []goschema.ScopedObject) *catalog.Database {
+func suppressScopedAway(current *catalog.Database, omitted []schemamodel.ScopedObject) *catalog.Database {
 	if current == nil || len(omitted) == 0 {
 		return current
 	}

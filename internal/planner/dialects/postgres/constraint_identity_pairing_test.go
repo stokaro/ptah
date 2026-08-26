@@ -6,9 +6,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -59,23 +59,23 @@ func TestPlanner_AModifiedConstraintIsPairedByIdentityNotSpelling(t *testing.T) 
 
 // widgetDeclaringScopeConstraint is the desired state the addition is resolved
 // against, spelling the table the way a description does: without a schema.
-func widgetDeclaringScopeConstraint() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Widget", Name: "widget"}},
-		Fields: []goschema.Field{
+func widgetDeclaringScopeConstraint() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Widget", Name: "widget"}},
+		Fields: []schemamodel.Field{
 			{StructName: "Widget", Name: "tenant", Type: "int"},
 			{StructName: "Widget", Name: "code", Type: "text", Nullable: true},
 		},
-		Constraints: []goschema.Constraint{{
+		Constraints: []schemamodel.Constraint{{
 			StructName: "Widget", Name: "uq_widget_scope",
 			Type: "UNIQUE", Columns: []string{"tenant"},
 		}},
 	}
 }
 
-func renderedPlan(c *qt.C, diff *difftypes.SchemaDiff, generated *goschema.Database) string {
+func renderedPlan(c *qt.C, diff *difftypes.SchemaDiff, desired *schemamodel.Database) string {
 	c.Helper()
-	nodes, err := postgres.New().GenerateMigrationAST(diff, generated)
+	nodes, err := postgres.New().GenerateMigrationAST(diff, desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)

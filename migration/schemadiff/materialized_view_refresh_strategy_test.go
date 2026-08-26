@@ -6,8 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
@@ -70,8 +70,8 @@ func TestCompareWithDatabaseInfoReportsABodyChangeWithoutARefreshKey(t *testing.
 	c.Assert(hasRefreshKey, qt.IsFalse)
 }
 
-func materializedViewDesired() *goschema.Database {
-	return &goschema.Database{MaterializedViews: []goschema.MaterializedView{{
+func materializedViewDesired() *schemamodel.Database {
+	return &schemamodel.Database{MaterializedViews: []schemamodel.MaterializedView{{
 		Name: "analytics.user_counts",
 		Body: "SELECT count(*) AS total FROM analytics.users"}}}
 }

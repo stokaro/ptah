@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemaviz"
 )
 
@@ -25,7 +25,7 @@ func TestSecurityAnnotations(t *testing.T) {
 	tests := []struct {
 		name     string
 		opts     options
-		database *goschema.Database
+		database *schemamodel.Database
 		// wantAnnotated maps a table to the severity its node is drawn in.
 		wantAnnotated map[string]string
 		// wantUnattached is what no node could carry, in order.
@@ -34,8 +34,8 @@ func TestSecurityAnnotations(t *testing.T) {
 		{
 			name: "off, nothing is analyzed",
 			opts: options{security: false, dialect: "postgres"},
-			database: &goschema.Database{
-				Grants: []goschema.Grant{{Role: "PUBLIC", Privileges: []string{"SELECT"}, OnTable: "audit_log"}},
+			database: &schemamodel.Database{
+				Grants: []schemamodel.Grant{{Role: "PUBLIC", Privileges: []string{"SELECT"}, OnTable: "audit_log"}},
 			},
 			wantAnnotated:  make(map[string]string),
 			wantUnattached: make([]string, 0),
@@ -43,9 +43,9 @@ func TestSecurityAnnotations(t *testing.T) {
 		{
 			name: "a table finding marks its node",
 			opts: options{security: true, dialect: "postgres"},
-			database: &goschema.Database{
-				Grants:           []goschema.Grant{{Role: "PUBLIC", Privileges: []string{"SELECT"}, OnTable: "audit_log"}},
-				RLSEnabledTables: []goschema.RLSEnabledTable{{Table: "audit_log"}},
+			database: &schemamodel.Database{
+				Grants:           []schemamodel.Grant{{Role: "PUBLIC", Privileges: []string{"SELECT"}, OnTable: "audit_log"}},
+				RLSEnabledTables: []schemamodel.RLSEnabledTable{{Table: "audit_log"}},
 			},
 			wantAnnotated: map[string]string{"audit_log": "warning"},
 			wantUnattached: []string{
@@ -58,8 +58,8 @@ func TestSecurityAnnotations(t *testing.T) {
 		{
 			name: "a routine finding has no node and is named anyway",
 			opts: options{security: true, dialect: "postgres"},
-			database: &goschema.Database{
-				Functions: []goschema.Function{{Name: "escalate", Security: "DEFINER", Language: "plpgsql"}},
+			database: &schemamodel.Database{
+				Functions: []schemamodel.Function{{Name: "escalate", Security: "DEFINER", Language: "plpgsql"}},
 			},
 			wantAnnotated: make(map[string]string),
 			wantUnattached: []string{
@@ -75,8 +75,8 @@ func TestSecurityAnnotations(t *testing.T) {
 			// rules is not drawn in whichever one happened to sort first.
 			name: "two findings on one table keep the worse severity",
 			opts: options{security: true, dialect: "postgres"},
-			database: &goschema.Database{
-				Grants: []goschema.Grant{{Role: "PUBLIC", Privileges: []string{"SELECT"}, OnTable: "audit_log"}},
+			database: &schemamodel.Database{
+				Grants: []schemamodel.Grant{{Role: "PUBLIC", Privileges: []string{"SELECT"}, OnTable: "audit_log"}},
 			},
 			wantAnnotated: map[string]string{"audit_log": "warning"},
 			wantUnattached: []string{
@@ -89,8 +89,8 @@ func TestSecurityAnnotations(t *testing.T) {
 		{
 			name: "a rule that cannot run here is reported, not skipped silently",
 			opts: options{security: true, dialect: "mysql"},
-			database: &goschema.Database{
-				Grants: []goschema.Grant{{Role: "app_user", Privileges: []string{"SELECT"}, OnTable: "users"}},
+			database: &schemamodel.Database{
+				Grants: []schemamodel.Grant{{Role: "app_user", Privileges: []string{"SELECT"}, OnTable: "users"}},
 			},
 			wantAnnotated: make(map[string]string),
 			wantUnattached: []string{
@@ -155,9 +155,9 @@ func TestHigherSeverity(t *testing.T) {
 // annotation reaches the drawing rather than only the map.
 func TestSecurityAnnotations_RenderThroughTheDiagram(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "AuditLog", Name: "audit_log"}},
-		Grants: []goschema.Grant{{Role: "PUBLIC", Privileges: []string{"SELECT"}, OnTable: "audit_log"}},
+	database := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "AuditLog", Name: "audit_log"}},
+		Grants: []schemamodel.Grant{{Role: "PUBLIC", Privileges: []string{"SELECT"}, OnTable: "audit_log"}},
 	}
 
 	annotations, unattached, analyzeErr := securityAnnotations(database, options{security: true, dialect: "postgres"})

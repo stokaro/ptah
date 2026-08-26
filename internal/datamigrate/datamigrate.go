@@ -23,6 +23,7 @@ import (
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/migration/datadiff"
 	"go.5x5.cz/ptah/migration/safety"
@@ -97,7 +98,7 @@ type Options struct {
 //
 // Each table is read and rendered under the schema declared on its
 // //ptah:schema:data annotation (the "schema" attribute, carried on
-// goschema.ManagedData); an empty schema targets the connection's default
+// schemamodel.ManagedData); an empty schema targets the connection's default
 // schema. The schema qualifies both the live-row read and the generated DML.
 func Generate(ctx context.Context, conn *dbschema.DatabaseConnection, opts Options) (upSQL, downSQL string, err error) {
 	if conn == nil {
@@ -115,7 +116,7 @@ func Generate(ctx context.Context, conn *dbschema.DatabaseConnection, opts Optio
 	}
 
 	managed := slices.Clone(db.ManagedData)
-	slices.SortFunc(managed, func(a, b goschema.ManagedData) int {
+	slices.SortFunc(managed, func(a, b schemamodel.ManagedData) int {
 		if c := cmp.Compare(a.Table, b.Table); c != 0 {
 			return c
 		}
@@ -195,8 +196,8 @@ func mergeByTable(changes []tableChange) []tableChange {
 // projection, and compute the row-level diff. Rendering happens later, in
 // composeByPhase, once every table's diff is known and can be ordered by
 // dependency.
-func computeTable(ctx context.Context, conn *dbschema.DatabaseConnection, rootDir string, md goschema.ManagedData) (*datadiff.DataDiff, error) {
-	desired, err := goschema.LoadManagedRows(rootDir, md)
+func computeTable(ctx context.Context, conn *dbschema.DatabaseConnection, rootDir string, md schemamodel.ManagedData) (*datadiff.DataDiff, error) {
+	desired, err := schemamodel.LoadManagedRows(rootDir, md)
 	if err != nil {
 		return nil, err
 	}
@@ -225,7 +226,7 @@ func computeTable(ctx context.Context, conn *dbschema.DatabaseConnection, rootDi
 // restore — every other column. So the projection widens to the table's full
 // non-generated column set (see [fullNonGeneratedColumns]); an empty desired set
 // against an empty table stays a clean no-op because the read returns no rows.
-func readColumns(ctx context.Context, conn *dbschema.DatabaseConnection, md goschema.ManagedData, desired []map[string]any) ([]string, error) {
+func readColumns(ctx context.Context, conn *dbschema.DatabaseConnection, md schemamodel.ManagedData, desired []map[string]any) ([]string, error) {
 	if len(desired) == 0 {
 		return fullNonGeneratedColumns(ctx, conn, md.Schema, md.Table, md.Keys)
 	}
@@ -405,7 +406,7 @@ func findManagedTable(dbSchema *catalog.Database, wantSchema, defaultSchema, tab
 // with no schema-object definition — and any left after a circular dependency —
 // keep a stable alphabetical order after the known ones, so output stays
 // deterministic.
-func orderByDependency(db *goschema.Database, diffs []*datadiff.DataDiff) {
+func orderByDependency(db *schemamodel.Database, diffs []*datadiff.DataDiff) {
 	// Index the dependency-sorted tables by their fully-qualified name, and also
 	// by bare name where that name is unambiguous across the schema. The bare
 	// index is a fallback for when a //ptah:schema:data annotation omits the
@@ -643,7 +644,7 @@ func managedColumns(rows []map[string]any, keys []string) []string {
 // qualifiedName returns the canonical table identity used for lookups and
 // human-readable block labels.
 func qualifiedName(schema, table string) string {
-	return goschema.QualifyTableName(schema, table)
+	return schemamodel.QualifyTableName(schema, table)
 }
 
 // tableBlock prefixes a rendered script with a "-- data: <label>" comment (the

@@ -9,7 +9,7 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/cmd/internal/schemaops"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/core/schemasource"
 	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
@@ -49,26 +49,26 @@ func TestCompare_ValidatesVirtualDropToggleBeforeExternalSchema(t *testing.T) {
 func TestFilterGeneratedTables_RemovesTableScopedObjects(t *testing.T) {
 	c := qt.New(t)
 
-	db := &goschema.Database{
-		Tables: []goschema.Table{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "User", Name: "users"},
 			{StructName: "AuditLog", Name: "audit_log"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "INTEGER"},
 			{StructName: "AuditLog", Name: "status", Type: "enum_auditlog_status"},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{StructName: "AuditLog", Name: "idx_audit_log_status"},
 			{StructName: "User", Name: "idx_users_id"},
 		},
-		Constraints: []goschema.Constraint{
+		Constraints: []schemamodel.Constraint{
 			{StructName: "AuditLog", Name: "audit_log_status_check"},
 		},
-		Enums: []goschema.Enum{
+		Enums: []schemamodel.Enum{
 			{Name: "enum_auditlog_status", Values: []string{"ok", "failed"}},
 		},
-		RLSEnabledTables: []goschema.RLSEnabledTable{
+		RLSEnabledTables: []schemamodel.RLSEnabledTable{
 			{Table: "audit_log"},
 		},
 		Dependencies: map[string][]string{
@@ -79,9 +79,9 @@ func TestFilterGeneratedTables_RemovesTableScopedObjects(t *testing.T) {
 
 	filtered := schemaops.FilterGeneratedTables(db, []string{"audit_log"})
 
-	c.Assert(filtered.Tables, qt.DeepEquals, []goschema.Table{{StructName: "User", Name: "users"}})
-	c.Assert(filtered.Fields, qt.DeepEquals, []goschema.Field{{StructName: "User", Name: "id", Type: "INTEGER"}})
-	c.Assert(filtered.Indexes, qt.DeepEquals, []goschema.Index{{StructName: "User", Name: "idx_users_id"}})
+	c.Assert(filtered.Tables, qt.DeepEquals, []schemamodel.Table{{StructName: "User", Name: "users"}})
+	c.Assert(filtered.Fields, qt.DeepEquals, []schemamodel.Field{{StructName: "User", Name: "id", Type: "INTEGER"}})
+	c.Assert(filtered.Indexes, qt.DeepEquals, []schemamodel.Index{{StructName: "User", Name: "idx_users_id"}})
 	c.Assert(filtered.Constraints, qt.HasLen, 0)
 	c.Assert(filtered.Enums, qt.HasLen, 0)
 	c.Assert(filtered.RLSEnabledTables, qt.HasLen, 0)
@@ -91,28 +91,28 @@ func TestFilterGeneratedTables_RemovesTableScopedObjects(t *testing.T) {
 func TestFilterGeneratedTables_RemovesSchemaQualifiedTableScopedObjects(t *testing.T) {
 	c := qt.New(t)
 
-	db := &goschema.Database{
-		Tables: []goschema.Table{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "User", Schema: "auth", Name: "users"},
 			{StructName: "Invoice", Schema: "billing", Name: "invoices"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "status", Type: "enum_user_status"},
 			{StructName: "Invoice", Name: "id", Type: "INTEGER"},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{StructName: "User", Name: "idx_users_status", TableName: "auth.users"},
 			{StructName: "Invoice", Name: "idx_invoices_id", TableName: "billing.invoices"},
 		},
-		Constraints: []goschema.Constraint{
+		Constraints: []schemamodel.Constraint{
 			{StructName: "User", Name: "users_status_check", Table: "auth.users"},
 			{StructName: "Invoice", Name: "invoices_id_check", Table: "billing.invoices"},
 		},
-		Enums: []goschema.Enum{
+		Enums: []schemamodel.Enum{
 			{Name: "enum_user_status", Values: []string{"active"}},
 			{Name: "orphan_enum", Values: []string{"kept"}},
 		},
-		RLSEnabledTables: []goschema.RLSEnabledTable{
+		RLSEnabledTables: []schemamodel.RLSEnabledTable{
 			{Table: "auth.users"},
 			{Table: "billing.invoices"},
 		},
@@ -120,7 +120,7 @@ func TestFilterGeneratedTables_RemovesSchemaQualifiedTableScopedObjects(t *testi
 			"auth.users":       {"billing.invoices"},
 			"billing.invoices": {"auth.users"},
 		},
-		SelfReferencingForeignKeys: map[string][]goschema.SelfReferencingFK{
+		SelfReferencingForeignKeys: map[string][]schemamodel.SelfReferencingFK{
 			"auth.users":       {{FieldName: "parent_id"}},
 			"billing.invoices": {{FieldName: "parent_id"}},
 		},
@@ -128,14 +128,14 @@ func TestFilterGeneratedTables_RemovesSchemaQualifiedTableScopedObjects(t *testi
 
 	filtered := schemaops.FilterGeneratedTables(db, []string{"auth.users"})
 
-	c.Assert(filtered.Tables, qt.DeepEquals, []goschema.Table{{StructName: "Invoice", Schema: "billing", Name: "invoices"}})
-	c.Assert(filtered.Fields, qt.DeepEquals, []goschema.Field{{StructName: "Invoice", Name: "id", Type: "INTEGER"}})
-	c.Assert(filtered.Indexes, qt.DeepEquals, []goschema.Index{{StructName: "Invoice", Name: "idx_invoices_id", TableName: "billing.invoices"}})
-	c.Assert(filtered.Constraints, qt.DeepEquals, []goschema.Constraint{{StructName: "Invoice", Name: "invoices_id_check", Table: "billing.invoices"}})
-	c.Assert(filtered.Enums, qt.DeepEquals, []goschema.Enum{{Name: "orphan_enum", Values: []string{"kept"}}})
-	c.Assert(filtered.RLSEnabledTables, qt.DeepEquals, []goschema.RLSEnabledTable{{Table: "billing.invoices"}})
+	c.Assert(filtered.Tables, qt.DeepEquals, []schemamodel.Table{{StructName: "Invoice", Schema: "billing", Name: "invoices"}})
+	c.Assert(filtered.Fields, qt.DeepEquals, []schemamodel.Field{{StructName: "Invoice", Name: "id", Type: "INTEGER"}})
+	c.Assert(filtered.Indexes, qt.DeepEquals, []schemamodel.Index{{StructName: "Invoice", Name: "idx_invoices_id", TableName: "billing.invoices"}})
+	c.Assert(filtered.Constraints, qt.DeepEquals, []schemamodel.Constraint{{StructName: "Invoice", Name: "invoices_id_check", Table: "billing.invoices"}})
+	c.Assert(filtered.Enums, qt.DeepEquals, []schemamodel.Enum{{Name: "orphan_enum", Values: []string{"kept"}}})
+	c.Assert(filtered.RLSEnabledTables, qt.DeepEquals, []schemamodel.RLSEnabledTable{{Table: "billing.invoices"}})
 	c.Assert(filtered.Dependencies, qt.DeepEquals, map[string][]string{"billing.invoices": {}})
-	c.Assert(filtered.SelfReferencingForeignKeys, qt.DeepEquals, map[string][]goschema.SelfReferencingFK{
+	c.Assert(filtered.SelfReferencingForeignKeys, qt.DeepEquals, map[string][]schemamodel.SelfReferencingFK{
 		"billing.invoices": {{FieldName: "parent_id"}},
 	})
 }

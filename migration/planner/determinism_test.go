@@ -8,7 +8,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -17,7 +17,7 @@ import (
 // issue #59: several tables, each with a row-level-security policy. Table
 // names are deliberately declared out of alphabetical order so that any
 // order-sensitive code path has to sort rather than rely on input order.
-func multiTenantRLSSchema() *goschema.Database {
+func multiTenantRLSSchema() *schemamodel.Database {
 	tables := []struct {
 		table      string
 		structName string
@@ -30,14 +30,14 @@ func multiTenantRLSSchema() *goschema.Database {
 		{"commodities", "Commodity"},
 	}
 
-	db := &goschema.Database{}
+	db := &schemamodel.Database{}
 	for _, tbl := range tables {
-		db.Tables = append(db.Tables, goschema.Table{Name: tbl.table, StructName: tbl.structName})
+		db.Tables = append(db.Tables, schemamodel.Table{Name: tbl.table, StructName: tbl.structName})
 		db.Fields = append(db.Fields,
-			goschema.Field{StructName: tbl.structName, Name: "id", Type: "TEXT", Primary: true},
-			goschema.Field{StructName: tbl.structName, Name: "tenant_id", Type: "TEXT"},
+			schemamodel.Field{StructName: tbl.structName, Name: "id", Type: "TEXT", Primary: true},
+			schemamodel.Field{StructName: tbl.structName, Name: "tenant_id", Type: "TEXT"},
 		)
-		db.RLSPolicies = append(db.RLSPolicies, goschema.RLSPolicy{
+		db.RLSPolicies = append(db.RLSPolicies, schemamodel.RLSPolicy{
 			StructName:      tbl.structName,
 			Name:            tbl.table + "_tenant_isolation",
 			Table:           tbl.table,
@@ -45,14 +45,14 @@ func multiTenantRLSSchema() *goschema.Database {
 			ToRoles:         "app_role",
 			UsingExpression: "tenant_id = get_current_tenant_id()",
 		})
-		db.RLSEnabledTables = append(db.RLSEnabledTables, goschema.RLSEnabledTable{
+		db.RLSEnabledTables = append(db.RLSEnabledTables, schemamodel.RLSEnabledTable{
 			StructName: tbl.structName,
 			Table:      tbl.table,
 		})
 	}
 	db.Roles = append(db.Roles,
-		goschema.Role{Name: "app_role", Login: true, CreateDB: true, Inherit: true},
-		goschema.Role{Name: "readonly_role", Login: true, CreateRole: true, Inherit: true},
+		schemamodel.Role{Name: "app_role", Login: true, CreateDB: true, Inherit: true},
+		schemamodel.Role{Name: "readonly_role", Login: true, CreateRole: true, Inherit: true},
 	)
 	return db
 }
@@ -62,7 +62,7 @@ func multiTenantRLSSchema() *goschema.Database {
 // properties (the "Modify column" comment ranges over the Changes map), roles
 // with 2+ changed attributes (ALTER ROLE operation order), removed policies
 // (the disable-RLS warning comments) and removed constraints.
-func driftedDatabase(gen *goschema.Database) *catalog.Database {
+func driftedDatabase(gen *schemamodel.Database) *catalog.Database {
 	db := &catalog.Database{}
 	for _, tbl := range gen.Tables {
 		db.Tables = append(db.Tables, catalog.Table{
@@ -134,16 +134,16 @@ func TestGenerateSchemaDiffSQL_Deterministic(t *testing.T) {
 	}
 }
 
-func determinismInputsForDialect(generated *goschema.Database, database *catalog.Database, dialect string) (*goschema.Database, *catalog.Database) {
+func determinismInputsForDialect(desired *schemamodel.Database, current *catalog.Database, dialect string) (*schemamodel.Database, *catalog.Database) {
 	if dialect != "mysql" && dialect != "mariadb" {
-		return generated, database
+		return desired, current
 	}
 	// MySQL-family roles have their own deterministic fail-closed control. Keep
 	// them out of this fixture so it continues to measure the unrelated table,
 	// constraint and RLS ordering paths after the role refusal.
-	generatedClone := *generated
+	generatedClone := *desired
 	generatedClone.Roles = nil
-	databaseClone := *database
+	databaseClone := *current
 	databaseClone.Roles = nil
 	return &generatedClone, &databaseClone
 }

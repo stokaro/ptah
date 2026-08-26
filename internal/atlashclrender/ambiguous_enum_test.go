@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashcl"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 )
@@ -21,10 +21,10 @@ import (
 //	CREATE SCHEMA other;
 //	CREATE TYPE public.mood AS ENUM ('happy','sad');
 //	CREATE TYPE other.mood  AS ENUM ('happy','sad');
-func twoSchemaEnumRealm() *goschema.Database {
-	return &goschema.Database{
-		Schemas: []goschema.Schema{{Name: "public"}, {Name: "other"}},
-		Enums: []goschema.Enum{
+func twoSchemaEnumRealm() *schemamodel.Database {
+	return &schemamodel.Database{
+		Schemas: []schemamodel.Schema{{Name: "public"}, {Name: "other"}},
+		Enums: []schemamodel.Enum{
 			{Name: "mood", Schema: "public", Values: []string{"happy", "sad"}},
 			{Name: "mood", Schema: "other", Values: []string{"happy", "sad"}},
 		},
@@ -78,7 +78,7 @@ func renderedLinesWithPrefix(hcl, prefix string) []string {
 func TestRenderLabelsAnAmbiguousEnumWithItsSchema(t *testing.T) {
 	tests := []struct {
 		name string
-		db   *goschema.Database
+		db   *schemamodel.Database
 		// wantBlocks is every enum block header the document must hold, and
 		// wantTypes every enum reference a column is typed by. Both are the
 		// whole set: a label the renderer added is as much a failure as one it
@@ -94,9 +94,9 @@ func TestRenderLabelsAnAmbiguousEnumWithItsSchema(t *testing.T) {
 		},
 		{
 			name: "an unambiguous name keeps one label",
-			db: &goschema.Database{
-				Schemas: []goschema.Schema{{Name: "public"}},
-				Enums: []goschema.Enum{
+			db: &schemamodel.Database{
+				Schemas: []schemamodel.Schema{{Name: "public"}},
+				Enums: []schemamodel.Enum{
 					{Name: "mood", Schema: "public", Values: []string{"happy", "sad"}},
 				},
 			},
@@ -109,9 +109,9 @@ func TestRenderLabelsAnAmbiguousEnumWithItsSchema(t *testing.T) {
 			// a schema label would hide the repeat behind two blocks that look
 			// different, which is the opposite of what this change is for.
 			name: "one schema twice keeps one label",
-			db: &goschema.Database{
-				Schemas: []goschema.Schema{{Name: "public"}},
-				Enums: []goschema.Enum{
+			db: &schemamodel.Database{
+				Schemas: []schemamodel.Schema{{Name: "public"}},
+				Enums: []schemamodel.Enum{
 					{Name: "mood", Schema: "public", Values: []string{"happy", "sad"}},
 					{Name: "mood", Schema: "public", Values: []string{"happy", "sad"}},
 				},
@@ -125,11 +125,11 @@ func TestRenderLabelsAnAmbiguousEnumWithItsSchema(t *testing.T) {
 			// pinned binary for the same realm: `type = enum.public.mood` and
 			// `type = enum.other.mood`.
 			name: "a column typed by an ambiguous enum references it by schema",
-			db: &goschema.Database{
-				Schemas: []goschema.Schema{{Name: "public"}, {Name: "other"}},
-				Tables:  []goschema.Table{{StructName: "O", Name: "o", Schema: "other"}},
-				Fields:  []goschema.Field{{StructName: "O", Name: "m", Type: "other.mood"}},
-				Enums: []goschema.Enum{
+			db: &schemamodel.Database{
+				Schemas: []schemamodel.Schema{{Name: "public"}, {Name: "other"}},
+				Tables:  []schemamodel.Table{{StructName: "O", Name: "o", Schema: "other"}},
+				Fields:  []schemamodel.Field{{StructName: "O", Name: "m", Type: "other.mood"}},
+				Enums: []schemamodel.Enum{
 					{Name: "mood", Schema: "public", Values: []string{"happy", "sad"}},
 					{Name: "mood", Schema: "other", Values: []string{"happy", "sad"}},
 				},
@@ -142,11 +142,11 @@ func TestRenderLabelsAnAmbiguousEnumWithItsSchema(t *testing.T) {
 			// document has. Without this row the qualification could apply
 			// unconditionally and every reference in the tree would change.
 			name: "a column typed by an unambiguous enum references it by name",
-			db: &goschema.Database{
-				Schemas: []goschema.Schema{{Name: "public"}},
-				Tables:  []goschema.Table{{StructName: "P", Name: "p", Schema: "public"}},
-				Fields:  []goschema.Field{{StructName: "P", Name: "m", Type: "mood"}},
-				Enums: []goschema.Enum{
+			db: &schemamodel.Database{
+				Schemas: []schemamodel.Schema{{Name: "public"}},
+				Tables:  []schemamodel.Table{{StructName: "P", Name: "p", Schema: "public"}},
+				Fields:  []schemamodel.Field{{StructName: "P", Name: "m", Type: "mood"}},
+				Enums: []schemamodel.Enum{
 					{Name: "mood", Schema: "public", Values: []string{"happy", "sad"}},
 				},
 			},
@@ -159,7 +159,7 @@ func TestRenderLabelsAnAmbiguousEnumWithItsSchema(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			db := test.db
-			goschema.Finalize(db)
+			schemamodel.Finalize(db)
 
 			rendered, err := atlashclrender.RenderInspected(db, "postgres", "public")
 
@@ -185,7 +185,7 @@ func TestInspectedTwoSchemaEnumsRoundTrip(t *testing.T) {
 	t.Setenv(atlashcl.SchemaScopedEnumsEnvVar, "1")
 
 	inspected := twoSchemaEnumRealm()
-	goschema.Finalize(inspected)
+	schemamodel.Finalize(inspected)
 	first, err := atlashclrender.RenderInspected(inspected, "postgres", "public")
 	c.Assert(err, qt.IsNil)
 
@@ -210,7 +210,7 @@ func TestInspectedTwoSchemaEnumsAreRefusedByDefault(t *testing.T) {
 	c := qt.New(t)
 
 	inspected := twoSchemaEnumRealm()
-	goschema.Finalize(inspected)
+	schemamodel.Finalize(inspected)
 	rendered, err := atlashclrender.RenderInspected(inspected, "postgres", "public")
 	c.Assert(err, qt.IsNil)
 
@@ -229,12 +229,12 @@ func TestInspectedTwoSchemaEnumsAreRefusedByDefault(t *testing.T) {
 func TestFinalizeKeepsTwoSchemaEnums(t *testing.T) {
 	tests := []struct {
 		name  string
-		enums []goschema.Enum
+		enums []schemamodel.Enum
 		want  int
 	}{
 		{
 			name: "one name in two schemas is two enums",
-			enums: []goschema.Enum{
+			enums: []schemamodel.Enum{
 				{Name: "mood", Schema: "public", Values: []string{"happy"}},
 				{Name: "mood", Schema: "other", Values: []string{"happy"}},
 			},
@@ -242,7 +242,7 @@ func TestFinalizeKeepsTwoSchemaEnums(t *testing.T) {
 		},
 		{
 			name: "one name twice in one schema is one enum",
-			enums: []goschema.Enum{
+			enums: []schemamodel.Enum{
 				{Name: "mood", Schema: "public", Values: []string{"happy"}},
 				{Name: "mood", Schema: "public", Values: []string{"happy"}},
 			},
@@ -250,7 +250,7 @@ func TestFinalizeKeepsTwoSchemaEnums(t *testing.T) {
 		},
 		{
 			name: "one unschemad name twice is one enum",
-			enums: []goschema.Enum{
+			enums: []schemamodel.Enum{
 				{Name: "mood", Values: []string{"happy"}},
 				{Name: "mood", Values: []string{"happy"}},
 			},
@@ -261,9 +261,9 @@ func TestFinalizeKeepsTwoSchemaEnums(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db := &goschema.Database{Enums: test.enums}
+			db := &schemamodel.Database{Enums: test.enums}
 
-			goschema.Finalize(db)
+			schemamodel.Finalize(db)
 
 			c.Assert(db.Enums, qt.HasLen, test.want)
 		})

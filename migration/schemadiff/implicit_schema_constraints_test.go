@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
@@ -184,8 +184,8 @@ func TestCompareWithDialect_ImplicitDatabaseSchemaMatchesTriggers(t *testing.T) 
 			t.Parallel()
 			c := qt.New(t)
 
-			generated := implicitSchemaDesired(test.genSchema)
-			generated.Triggers = []goschema.Trigger{{
+			desired := implicitSchemaDesired(test.genSchema)
+			desired.Triggers = []schemamodel.Trigger{{
 				StructName: "Users",
 				Name:       "users_audit",
 				Table:      qualify(test.genSchema, "users"),
@@ -203,7 +203,7 @@ func TestCompareWithDialect_ImplicitDatabaseSchemaMatchesTriggers(t *testing.T) 
 				Body:   "SELECT 1",
 			}}
 
-			diff := schemadiff.CompareWithDialect(generated, database, test.dialect)
+			diff := schemadiff.CompareWithDialect(desired, database, test.dialect)
 
 			c.Assert(len(diff.TriggersRemoved) == 0, qt.Equals, test.wantSame,
 				qt.Commentf("removed: %#v", diff.TriggersRemoved))
@@ -215,15 +215,15 @@ func TestCompareWithDialect_ImplicitDatabaseSchemaMatchesTriggers(t *testing.T) 
 
 // implicitSchemaDesired builds the desired side: one table with a table-level
 // primary key, in the named schema.
-func implicitSchemaDesired(schema string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{
+func implicitSchemaDesired(schema string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{
 			StructName: "Users",
 			Name:       "users",
 			Schema:     schema,
 			PrimaryKey: []string{"id"},
 		}},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Users", Name: "id", Type: "INTEGER", Nullable: false},
 			{StructName: "Users", Name: "email", Type: "TEXT", Nullable: true},
 		},

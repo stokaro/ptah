@@ -12,7 +12,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
@@ -22,14 +22,14 @@ import (
 // MariaDB does -- against a desired state that names the same object as a PLAIN
 // index. That is a real change to one object, and index comparison states it as
 // a replacement.
-func constraintBackedIndexFixtures() (*goschema.Database, *catalog.Database) {
-	generated := &goschema.Database{
-		Tables: []goschema.Table{{Name: "users", StructName: "User"}},
-		Fields: []goschema.Field{
+func constraintBackedIndexFixtures() (*schemamodel.Database, *catalog.Database) {
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "users", StructName: "User"}},
+		Fields: []schemamodel.Field{
 			{Name: "id", Type: "BIGINT", StructName: "User", Primary: true, AutoInc: true},
 			{Name: "email", Type: "VARCHAR(255)", StructName: "User", Nullable: false},
 		},
-		Indexes: []goschema.Index{{
+		Indexes: []schemamodel.Index{{
 			StructName: "User",
 			Name:       "uq_users_email",
 			TableName:  "users",
@@ -67,7 +67,7 @@ func constraintBackedIndexFixtures() (*goschema.Database, *catalog.Database) {
 			ColumnNames: []string{"email"},
 		}},
 	}
-	return generated, database
+	return desired, database
 }
 
 // constraintBackedIndexDialects carries the per-dialect spelling of the same
@@ -131,20 +131,20 @@ var constraintBackedIndexDialects = []struct {
 // `Error 1061 (42000): Duplicate key name 'uq_users_email'` otherwise -- and the
 // planners emit constraint additions before index removals.
 func TestGenerateMigration_ConstraintBackedIndexReplacement_DownRestoresTheConstraint(t *testing.T) {
-	generated, database := constraintBackedIndexFixtures()
+	desired, database := constraintBackedIndexFixtures()
 
 	for _, test := range constraintBackedIndexDialects {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := schemadiff.CompareWithDialect(generated, database, test.name)
+			diff := schemadiff.CompareWithDialect(desired, database, test.name)
 			c.Assert(diff.ConstraintBackedIndexRemovals, qt.HasLen, 1)
 
-			up, err := generateUpMigrationSQL(diff, generated, test.name)
+			up, err := generateUpMigrationSQL(diff, desired, test.name)
 			c.Assert(err, qt.IsNil)
 			assertOrderedPair(c, up, test.upDrop, test.create)
 
-			down, err := generateDownMigrationSQL(diff, generated, database, test.name)
+			down, err := generateDownMigrationSQL(diff, desired, database, test.name)
 			c.Assert(err, qt.IsNil)
 			assertOrderedPair(c, down, test.downDro, test.restore)
 		})
@@ -157,8 +157,8 @@ func TestGenerateMigration_ConstraintBackedIndexReplacement_DownRestoresTheConst
 // Turning every removal into a constraint restoration would emit an
 // ADD CONSTRAINT for a constraint the database never had.
 func TestGenerateMigration_PlainIndexReplacement_DownRebuildsTheIndex(t *testing.T) {
-	generated, database := constraintBackedIndexFixtures()
-	generated.Indexes[0].Name = "idx_users_email"
+	desired, database := constraintBackedIndexFixtures()
+	desired.Indexes[0].Name = "idx_users_email"
 	database.Indexes[0].Name = "idx_users_email"
 	database.Indexes[0].IsUnique = true
 	database.Constraints = nil
@@ -167,10 +167,10 @@ func TestGenerateMigration_PlainIndexReplacement_DownRebuildsTheIndex(t *testing
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := schemadiff.CompareWithDialect(generated, database, test.name)
+			diff := schemadiff.CompareWithDialect(desired, database, test.name)
 			c.Assert(diff.ConstraintBackedIndexRemovals, qt.HasLen, 0)
 
-			down, err := generateDownMigrationSQL(diff, generated, database, test.name)
+			down, err := generateDownMigrationSQL(diff, desired, database, test.name)
 			c.Assert(err, qt.IsNil)
 			c.Assert(down, qt.Not(qt.Contains), "ADD CONSTRAINT")
 			c.Assert(strings.Contains(down, "UNIQUE INDEX") ||

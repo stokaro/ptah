@@ -6,7 +6,7 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -31,13 +31,13 @@ import (
 // change on every run for a declaration that asked for whatever the server
 // chose.
 func Hypertables(
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
 ) {
-	declared := make(map[string]goschema.Hypertable, len(generated.Hypertables))
-	for _, hypertable := range generated.Hypertables {
+	declared := make(map[string]schemamodel.Hypertable, len(desired.Hypertables))
+	for _, hypertable := range desired.Hypertables {
 		declared[hypertableKey(hypertable.Table)] = hypertable
 	}
 	live := make(map[string]catalog.Hypertable, len(database.Hypertables))
@@ -82,7 +82,7 @@ func Hypertables(
 // hypertableChange reports how a declaration differs from the catalog, or nil
 // when it does not.
 func hypertableChange(
-	declared goschema.Hypertable,
+	declared schemamodel.Hypertable,
 	reported catalog.Hypertable,
 ) *difftypes.HypertableDiff {
 	sameColumn := strings.EqualFold(

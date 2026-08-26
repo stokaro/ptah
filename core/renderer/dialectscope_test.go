@@ -6,21 +6,21 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // scopedSchema is one table every target can host plus one PostgreSQL-only
 // function, a role no MySQL-family target will plan, and an extension, all
 // scoped to postgres.
-func scopedSchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Tenant", Name: "tenants"}},
-		Fields: []goschema.Field{{StructName: "Tenant", Name: "id", Type: "INTEGER", Primary: true}},
-		Extensions: []goschema.Extension{
+func scopedSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Tenant", Name: "tenants"}},
+		Fields: []schemamodel.Field{{StructName: "Tenant", Name: "id", Type: "INTEGER", Primary: true}},
+		Extensions: []schemamodel.Extension{
 			{Name: "pgcrypto", Dialects: []string{"postgres"}},
 		},
-		Functions: []goschema.Function{{
+		Functions: []schemamodel.Function{{
 			StructName: "Fn",
 			Name:       "get_current_tenant_id",
 			Returns:    "TEXT",
@@ -28,7 +28,7 @@ func scopedSchema() *goschema.Database {
 			Body:       "BEGIN RETURN 'x'; END;",
 			Dialects:   []string{"postgres"},
 		}},
-		Roles: []goschema.Role{
+		Roles: []schemamodel.Role{
 			{StructName: "Rol", Name: "app_reader", Inherit: true, Dialects: []string{"postgres"}},
 		},
 	}

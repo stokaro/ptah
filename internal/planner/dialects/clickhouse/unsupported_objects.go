@@ -5,11 +5,11 @@ import (
 	"slices"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/deporder"
 	"go.5x5.cz/ptah/internal/planner/objectlookup"
@@ -54,18 +54,18 @@ func reportUnsupportedObjectsBeforeTables(result []ast.Node, diff *difftypes.Sch
 func planObjectsAfterTables(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	caps capability.Capabilities,
 ) ([]ast.Node, error) {
 	result = planRoles(result, diff)
 	result = reportFunctions(result, diff)
 	var err error
-	result, err = reportViewLikes(result, diff, generated, caps)
+	result, err = reportViewLikes(result, diff, desired, caps)
 	if err != nil {
 		return nil, err
 	}
 	result = reportRowLevelSecurity(result, diff, caps)
-	result = planRowPolicies(result, diff, generated, caps)
+	result = planRowPolicies(result, diff, desired, caps)
 	result = planGrants(result, diff)
 	result = reportTriggers(result, diff)
 	return result, nil
@@ -174,7 +174,7 @@ func identityOf(object deporder.ViewLike) viewLikeIdentity {
 //	-> Code: 16. DB::Exception: Column total does not exist in the
 //	   materialized view's inner table. (NO_SUCH_COLUMN_IN_TABLE)
 //
-// A goschema.MaterializedView carries a body and no column list, and nothing
+// A schemamodel.MaterializedView carries a body and no column list, and nothing
 // here parses the select, so the planner cannot tell offline which of the two a
 // given body change is. Drop and create is the shape that covers both, and what
 // it costs is the stored rows. See the discussion on #1519.
@@ -198,7 +198,7 @@ func identityOf(object deporder.ViewLike) viewLikeIdentity {
 func reportViewLikes(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	caps capability.Capabilities,
 ) ([]ast.Node, error) {
 	semantics := diff.EffectiveIdentifierSemantics(platform.ClickHouse)
@@ -225,7 +225,7 @@ func reportViewLikes(
 	}
 
 	for _, name := range diff.ViewsAdded {
-		object, node, err := clickHouseViewChange(generated, name, semantics, caps)
+		object, node, err := clickHouseViewChange(desired, name, semantics, caps)
 		if err != nil {
 			return nil, err
 		}
@@ -233,7 +233,7 @@ func reportViewLikes(
 		nodes[identityOf(object)] = node
 	}
 	for _, view := range diff.ViewsModified {
-		object, node, err := clickHouseViewChange(generated, view.ViewName, semantics, caps)
+		object, node, err := clickHouseViewChange(desired, view.ViewName, semantics, caps)
 		if err != nil {
 			return nil, err
 		}
@@ -242,7 +242,7 @@ func reportViewLikes(
 		nodes[identityOf(object)] = node
 	}
 	for _, name := range diff.MaterializedViewsAdded {
-		object, node, err := clickHouseMaterializedViewChange(generated, name, semantics, caps)
+		object, node, err := clickHouseMaterializedViewChange(desired, name, semantics, caps)
 		if err != nil {
 			return nil, err
 		}
@@ -257,7 +257,7 @@ func reportViewLikes(
 			continue
 		}
 		object, node, err := clickHouseMaterializedViewChange(
-			generated,
+			desired,
 			view.ViewName,
 			semantics,
 			caps,
@@ -333,7 +333,7 @@ func appendMaterializedViewReplacementDrop(
 // declaration for an object that will never be emitted would fail a plan that
 // the render path completes.
 func clickHouseViewChange(
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	name string,
 	semantics identifier.Semantics,
 	caps capability.Capabilities,
@@ -341,7 +341,7 @@ func clickHouseViewChange(
 	if !caps.Has(capability.Views) {
 		return deporder.ViewLike{Name: name}, ast.NewCreateView(name), nil
 	}
-	view := objectlookup.View(generated.Views, name, semantics)
+	view := objectlookup.View(desired.Views, name, semantics)
 	if view == nil {
 		return deporder.ViewLike{}, nil, fmt.Errorf(
 			"%w: ClickHouse view %q named by diff is missing from the desired schema",
@@ -357,7 +357,7 @@ func clickHouseViewChange(
 // kind; the Materialized flag is what keeps the two apart in the shared
 // dependency order and in the node map.
 func clickHouseMaterializedViewChange(
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	name string,
 	semantics identifier.Semantics,
 	caps capability.Capabilities,
@@ -367,7 +367,7 @@ func clickHouseMaterializedViewChange(
 			ast.NewCreateMaterializedView(name),
 			nil
 	}
-	view := objectlookup.MaterializedView(generated.MaterializedViews, name, semantics)
+	view := objectlookup.MaterializedView(desired.MaterializedViews, name, semantics)
 	if view == nil {
 		return deporder.ViewLike{}, nil, fmt.Errorf(
 			"%w: ClickHouse materialized view %q named by diff is missing from the desired schema",

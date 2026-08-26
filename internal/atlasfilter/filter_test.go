@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 )
 
@@ -233,8 +233,8 @@ func TestExcludeDatabase_RetainsUnfilteredObjectKinds(t *testing.T) {
 
 func TestExcludeGenerated_RemovesEnums(t *testing.T) {
 	c := qt.New(t)
-	schema := &goschema.Database{
-		Enums: []goschema.Enum{
+	schema := &schemamodel.Database{
+		Enums: []schemamodel.Enum{
 			{Name: "user_status", Values: []string{"active"}},
 			{Name: "invoice_status", Values: []string{"open"}},
 		},
@@ -251,12 +251,12 @@ func TestExcludeGenerated_EnumIdentityIncludesSchema(t *testing.T) {
 	tests := []struct {
 		name    string
 		pattern string
-		want    []goschema.Enum
+		want    []schemamodel.Enum
 	}{
 		{
 			name:    "explicit schema",
 			pattern: "app.color",
-			want: []goschema.Enum{
+			want: []schemamodel.Enum{
 				{Schema: "public", Name: "color"},
 				{Name: "legacy.state"},
 			},
@@ -264,7 +264,7 @@ func TestExcludeGenerated_EnumIdentityIncludesSchema(t *testing.T) {
 		{
 			name:    "legacy qualifier in name",
 			pattern: "legacy.state",
-			want: []goschema.Enum{
+			want: []schemamodel.Enum{
 				{Schema: "app", Name: "color"},
 				{Schema: "public", Name: "color"},
 			},
@@ -272,7 +272,7 @@ func TestExcludeGenerated_EnumIdentityIncludesSchema(t *testing.T) {
 		{
 			name:    "wrong schema",
 			pattern: "other.color",
-			want: []goschema.Enum{
+			want: []schemamodel.Enum{
 				{Schema: "app", Name: "color"},
 				{Schema: "public", Name: "color"},
 				{Name: "legacy.state"},
@@ -283,8 +283,8 @@ func TestExcludeGenerated_EnumIdentityIncludesSchema(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			got, err := atlasfilter.ExcludeGeneratedWithDefaultSchema(&goschema.Database{
-				Enums: []goschema.Enum{
+			got, err := atlasfilter.ExcludeGeneratedWithDefaultSchema(&schemamodel.Database{
+				Enums: []schemamodel.Enum{
 					{Schema: "app", Name: "color"},
 					{Schema: "public", Name: "color"},
 					{Name: "legacy.state"},
@@ -364,8 +364,8 @@ func TestExcludeDatabase_SchemaQualifiedExtensionVersionFieldSelector(t *testing
 // inspection.
 func TestExcludeGenerated_ExtensionVersionFieldSelector(t *testing.T) {
 	c := qt.New(t)
-	schema := &goschema.Database{
-		Extensions: []goschema.Extension{
+	schema := &schemamodel.Database{
+		Extensions: []schemamodel.Extension{
 			{Name: "pg_trgm", Version: "1.6"},
 			{Name: "citext", Version: "1.6"},
 		},
@@ -412,29 +412,29 @@ func TestExcludeDatabase_NonFinalTypeSelectorRejected(t *testing.T) {
 
 func TestExcludeGenerated_RemovesTableAndDependentObjects(t *testing.T) {
 	c := qt.New(t)
-	schema := &goschema.Database{
-		Tables: []goschema.Table{
+	schema := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "User", Schema: "auth", Name: "users", Engine: "InnoDB", PrimaryKey: []string{"id"}},
 			{StructName: "AuditLog", Schema: "auth", Name: "audit_log"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "INTEGER"},
 			{StructName: "User", Name: "email", Type: "TEXT"},
 			{StructName: "AuditLog", Name: "id", Type: "INTEGER"},
 			{StructName: "AuditLog", Name: "user_id", Type: "INTEGER", Foreign: "users(id)"},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{StructName: "User", Name: "users_email_key", Fields: []string{"email"}},
 			{StructName: "AuditLog", Name: "audit_log_user_idx", Fields: []string{"user_id"}},
 		},
-		Constraints: []goschema.Constraint{
+		Constraints: []schemamodel.Constraint{
 			{StructName: "AuditLog", Name: "audit_log_user_fk", Type: "FOREIGN KEY", Columns: []string{"user_id"}, ForeignTable: "users", ForeignColumn: "id"},
 		},
-		Triggers: []goschema.Trigger{
+		Triggers: []schemamodel.Trigger{
 			{StructName: "User", Table: "users", Name: "users_updated_at"},
 			{StructName: "AuditLog", Table: "audit_log", Name: "audit_log_updated_at"},
 		},
-		Grants: []goschema.Grant{
+		Grants: []schemamodel.Grant{
 			{Role: "app", Privileges: []string{"SELECT"}, OnTable: "auth.users"},
 			{Role: "app", Privileges: []string{"SELECT"}, OnTable: "auth.audit_log"},
 		},
@@ -455,18 +455,18 @@ func TestExcludeGenerated_RemovesTableAndDependentObjects(t *testing.T) {
 
 func TestExcludeGenerated_ColumnFilterRemovesDependentObjects(t *testing.T) {
 	c := qt.New(t)
-	schema := &goschema.Database{
-		Tables: []goschema.Table{
+	schema := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "User", Schema: "auth", Name: "users", PrimaryKey: []string{"id", "email"}},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "INTEGER"},
 			{StructName: "User", Name: "email", Type: "TEXT"},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{StructName: "User", Name: "users_email_key", Fields: []string{"email"}},
 		},
-		Constraints: []goschema.Constraint{
+		Constraints: []schemamodel.Constraint{
 			{StructName: "User", Name: "users_email_check", Type: "CHECK", Columns: []string{"email"}},
 		},
 	}
@@ -482,12 +482,12 @@ func TestExcludeGenerated_ColumnFilterRemovesDependentObjects(t *testing.T) {
 
 func TestExcludeGenerated_ReferencedColumnFilterRemovesFieldForeignKey(t *testing.T) {
 	c := qt.New(t)
-	schema := &goschema.Database{
-		Tables: []goschema.Table{
+	schema := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "User", Schema: "auth", Name: "users"},
 			{StructName: "Invoice", Schema: "billing", Name: "invoices"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "INTEGER"},
 			{StructName: "User", Name: "email", Type: "TEXT"},
 			{StructName: "Invoice", Name: "id", Type: "INTEGER"},
@@ -504,12 +504,12 @@ func TestExcludeGenerated_ReferencedColumnFilterRemovesFieldForeignKey(t *testin
 
 func TestExcludeGenerated_PreservesSelfReferencingForeignKeyMetadata(t *testing.T) {
 	c := qt.New(t)
-	schema := &goschema.Database{
-		Tables: []goschema.Table{
+	schema := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Node", Name: "nodes"},
 			{StructName: "AuditLog", Name: "audit_log"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Node", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Node", Name: "parent_id", Type: "INTEGER", Foreign: "nodes(id)", ForeignKeyName: "nodes_parent_fk"},
 			{StructName: "AuditLog", Name: "id", Type: "INTEGER", Primary: true},
@@ -586,7 +586,7 @@ func roleNames(roles []catalog.Role) []string {
 	return names
 }
 
-func generatedTableNames(tables []goschema.Table) []string {
+func generatedTableNames(tables []schemamodel.Table) []string {
 	names := make([]string, 0, len(tables))
 	for _, table := range tables {
 		names = append(names, table.QualifiedName())
@@ -594,7 +594,7 @@ func generatedTableNames(tables []goschema.Table) []string {
 	return names
 }
 
-func generatedFieldNames(fields []goschema.Field) []string {
+func generatedFieldNames(fields []schemamodel.Field) []string {
 	names := make([]string, 0, len(fields))
 	for _, field := range fields {
 		names = append(names, field.StructName+"."+field.Name)
@@ -602,7 +602,7 @@ func generatedFieldNames(fields []goschema.Field) []string {
 	return names
 }
 
-func generatedIndexNames(indexes []goschema.Index) []string {
+func generatedIndexNames(indexes []schemamodel.Index) []string {
 	names := make([]string, 0, len(indexes))
 	for _, index := range indexes {
 		names = append(names, index.Name)
@@ -610,7 +610,7 @@ func generatedIndexNames(indexes []goschema.Index) []string {
 	return names
 }
 
-func generatedConstraintNames(constraints []goschema.Constraint) []string {
+func generatedConstraintNames(constraints []schemamodel.Constraint) []string {
 	names := make([]string, 0, len(constraints))
 	for _, constraint := range constraints {
 		names = append(names, constraint.Name)
@@ -618,7 +618,7 @@ func generatedConstraintNames(constraints []goschema.Constraint) []string {
 	return names
 }
 
-func generatedTriggerNames(triggers []goschema.Trigger) []string {
+func generatedTriggerNames(triggers []schemamodel.Trigger) []string {
 	names := make([]string, 0, len(triggers))
 	for _, trigger := range triggers {
 		names = append(names, trigger.Name)
@@ -626,7 +626,7 @@ func generatedTriggerNames(triggers []goschema.Trigger) []string {
 	return names
 }
 
-func generatedGrantTargets(grants []goschema.Grant) []string {
+func generatedGrantTargets(grants []schemamodel.Grant) []string {
 	names := make([]string, 0, len(grants))
 	for _, grant := range grants {
 		names = append(names, grant.OnTable)

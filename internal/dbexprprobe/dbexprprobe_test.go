@@ -107,11 +107,11 @@ func TestResolversAnswerNilForADialectThatStoresWhatItWasGiven(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(aggregates, qt.IsNil)
 
-	generated, err := dbexprprobe.ResolveGeneratedExpressions(ctx, conn,
+	desired, err := dbexprprobe.ResolveGeneratedExpressions(ctx, conn,
 		[]dbexprprobe.GeneratedExpressionProbe{{Table: "t", ProbeTable: "p",
 			Create: "CREATE TABLE p (id INTEGER)", Generated: []string{"g"}}})
 	c.Assert(err, qt.IsNil)
-	c.Assert(generated, qt.IsNil)
+	c.Assert(desired, qt.IsNil)
 }
 
 // TestGeneratedExpressionProbeTable pins the two facts the name exists for:

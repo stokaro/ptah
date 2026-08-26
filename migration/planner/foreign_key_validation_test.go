@@ -5,10 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -18,7 +18,7 @@ func TestGenerateSchemaDiffAST_ValidatesTargetForeignKeys_FailurePath(t *testing
 		name    string
 		dialect string
 		diff    *difftypes.SchemaDiff
-		schema  *goschema.Database
+		schema  *schemamodel.Database
 		wantIs  error
 		wantErr string
 	}{
@@ -72,24 +72,24 @@ func plannerSQLServerDiff() *difftypes.SchemaDiff {
 	return &difftypes.SchemaDiff{IdentifierSemantics: &semantics}
 }
 
-func plannerIndexedForeignKeyDatabase() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func plannerIndexedForeignKeyDatabase() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Parent", Name: "parents"},
 			{StructName: "Child", Name: "children"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Parent", Name: "tenant_id", Type: "INTEGER"},
 			{StructName: "Parent", Name: "code", Type: "INTEGER"},
 			{StructName: "Child", Name: "tenant_id", Type: "INTEGER"},
 			{StructName: "Child", Name: "parent_code", Type: "INTEGER"},
 		},
-		Indexes: []goschema.Index{{
+		Indexes: []schemamodel.Index{{
 			StructName: "Parent",
 			Name:       "idx_parents_tenant_code",
 			Fields:     []string{"tenant_id", "code"},
 		}},
-		Constraints: []goschema.Constraint{{
+		Constraints: []schemamodel.Constraint{{
 			StructName:     "Child",
 			Name:           "fk_children_parents",
 			Type:           "FOREIGN KEY",
@@ -100,13 +100,13 @@ func plannerIndexedForeignKeyDatabase() *goschema.Database {
 	}
 }
 
-func plannerCascadeCycleDatabase() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func plannerCascadeCycleDatabase() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Left", Name: "left_nodes"},
 			{StructName: "Right", Name: "right_nodes"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Left", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Left", Name: "right_id", Type: "INTEGER", Foreign: "right_nodes(id)", OnDelete: "CASCADE"},
 			{StructName: "Right", Name: "id", Type: "INTEGER", Primary: true},
@@ -115,13 +115,13 @@ func plannerCascadeCycleDatabase() *goschema.Database {
 	}
 }
 
-func plannerTypeMismatchDatabase() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func plannerTypeMismatchDatabase() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Parent", Name: "parents"},
 			{StructName: "Child", Name: "children"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Parent", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Child", Name: "parent_id", Type: "BIGINT", Foreign: "parents(id)"},
 		},

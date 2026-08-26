@@ -13,7 +13,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/planner"
@@ -67,9 +67,9 @@ func executeSQL(c *qt.C, dbURL string, statements []string) {
 // database enforces afterwards, so the plan is executed and the catalog is
 // asked; a string assertion on the SQL cannot distinguish a policy that
 // protects rows from one that is inert.
-func planAndApply(c *qt.C, dbURL string, diff *difftypes.SchemaDiff, generated *goschema.Database) []string {
+func planAndApply(c *qt.C, dbURL string, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []string {
 	c.Helper()
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, generated, "postgres")
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, "postgres")
 	c.Assert(err, qt.IsNil)
 	c.Logf("planned SQL:\n%s", strings.Join(statements, "\n"))
 	executeSQL(c, dbURL, statements)
@@ -122,14 +122,14 @@ func queryStrings(c *qt.C, dbURL, query string) []string {
 
 // ordersSchema returns the target schema for a single `orders` table whose
 // policy names the owning table with policyTable.
-func ordersSchema(tableSchema, policyTable string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{Name: "orders", Schema: tableSchema, StructName: "Order"}},
-		Fields: []goschema.Field{
+func ordersSchema(tableSchema, policyTable string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "orders", Schema: tableSchema, StructName: "Order"}},
+		Fields: []schemamodel.Field{
 			{Name: "id", StructName: "Order", Type: "INTEGER", Primary: true},
 			{Name: "tenant_id", StructName: "Order", Type: "INTEGER"},
 		},
-		RLSPolicies: []goschema.RLSPolicy{{
+		RLSPolicies: []schemamodel.RLSPolicy{{
 			Name:            "tenant_isolation",
 			Table:           policyTable,
 			PolicyFor:       "ALL",
@@ -164,9 +164,9 @@ func TestPlannerEnablesRowSecurityForANewTableWhoseSpellingDiffersLivePostgres(t
 		name string
 		// seed runs against the fresh database before the plan, for rows whose
 		// subject is a table the diff does not create.
-		seed      []string
-		diff      *difftypes.SchemaDiff
-		generated *goschema.Database
+		seed    []string
+		diff    *difftypes.SchemaDiff
+		desired *schemamodel.Database
 		// wantPolicies and wantRowSecurity are the catalog after the plan ran.
 		// A row that expects neither spells `[]string{}` rather than leaving the
 		// field out, because qt.DeepEquals separates an empty slice from a nil
@@ -182,7 +182,7 @@ func TestPlannerEnablesRowSecurityForANewTableWhoseSpellingDiffersLivePostgres(t
 					{PolicyName: "tenant_isolation", TableName: "public.orders"},
 				},
 			},
-			generated:       ordersSchema("", "public.orders"),
+			desired:         ordersSchema("", "public.orders"),
 			wantPolicies:    []string{"public/orders/tenant_isolation"},
 			wantRowSecurity: []string{"public/orders"},
 		},
@@ -194,7 +194,7 @@ func TestPlannerEnablesRowSecurityForANewTableWhoseSpellingDiffersLivePostgres(t
 					{PolicyName: "tenant_isolation", TableName: "orders"},
 				},
 			},
-			generated:       ordersSchema("public", "orders"),
+			desired:         ordersSchema("public", "orders"),
 			wantPolicies:    []string{"public/orders/tenant_isolation"},
 			wantRowSecurity: []string{"public/orders"},
 		},
@@ -206,7 +206,7 @@ func TestPlannerEnablesRowSecurityForANewTableWhoseSpellingDiffersLivePostgres(t
 					{PolicyName: "tenant_isolation", TableName: "orders"},
 				},
 			},
-			generated:       ordersSchema("", "orders"),
+			desired:         ordersSchema("", "orders"),
 			wantPolicies:    []string{"public/orders/tenant_isolation"},
 			wantRowSecurity: []string{"public/orders"},
 		},
@@ -223,16 +223,16 @@ func TestPlannerEnablesRowSecurityForANewTableWhoseSpellingDiffersLivePostgres(t
 			diff: &difftypes.SchemaDiff{
 				TablesAdded: []string{"shipments"},
 			},
-			generated: &goschema.Database{
-				Tables: []goschema.Table{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{Name: "shipments", StructName: "Shipment"},
 					{Name: "legacy", StructName: "Legacy"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{Name: "id", StructName: "Shipment", Type: "INTEGER", Primary: true},
 					{Name: "id", StructName: "Legacy", Type: "INTEGER", Primary: true},
 				},
-				RLSPolicies: []goschema.RLSPolicy{{
+				RLSPolicies: []schemamodel.RLSPolicy{{
 					Name:            "tenant_isolation",
 					Table:           "legacy",
 					PolicyFor:       "ALL",
@@ -250,7 +250,7 @@ func TestPlannerEnablesRowSecurityForANewTableWhoseSpellingDiffersLivePostgres(t
 			c := qt.New(t)
 			dbURL := createRLSEnableDatabase(c, adminURL)
 			executeSQL(c, dbURL, test.seed)
-			planAndApply(c, dbURL, test.diff, test.generated)
+			planAndApply(c, dbURL, test.diff, test.desired)
 			c.Assert(rlsPolicyRelations(c, dbURL), qt.DeepEquals, test.wantPolicies)
 			c.Assert(rowSecurityRelations(c, dbURL), qt.DeepEquals, test.wantRowSecurity)
 		})

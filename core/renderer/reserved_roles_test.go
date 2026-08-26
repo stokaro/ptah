@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/reservedrole"
 )
 
@@ -23,17 +23,17 @@ import (
 func TestGetOrderedCreateStatementsRefusesAReservedRole(t *testing.T) {
 	tests := []struct {
 		name    string
-		roles   []goschema.Role
+		roles   []schemamodel.Role
 		wantErr string
 	}{
 		{
 			name:    "the reserved prefix",
-			roles:   []goschema.Role{{Name: "pg_monitor"}},
+			roles:   []schemamodel.Role{{Name: "pg_monitor"}},
 			wantErr: `.*declares reserved PostgreSQL role "pg_monitor".*SQLSTATE 42939.*`,
 		},
 		{
 			name:    "the bootstrap superuser",
-			roles:   []goschema.Role{{Name: "postgres", Login: true}},
+			roles:   []schemamodel.Role{{Name: "postgres", Login: true}},
 			wantErr: `.*declares reserved PostgreSQL role "postgres".*SQLSTATE 42710.*`,
 		},
 	}
@@ -42,7 +42,7 @@ func TestGetOrderedCreateStatementsRefusesAReservedRole(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			statements, err := renderer.GetOrderedCreateStatements(
-				&goschema.Database{Roles: test.roles},
+				&schemamodel.Database{Roles: test.roles},
 				"postgres",
 			)
 
@@ -63,7 +63,7 @@ func TestValidateSchemaRefusesAReservedRole(t *testing.T) {
 	c := qt.New(t)
 
 	err := renderer.ValidateSchema(
-		&goschema.Database{Roles: []goschema.Role{{Name: "pg_monitor"}}},
+		&schemamodel.Database{Roles: []schemamodel.Role{{Name: "pg_monitor"}}},
 		"postgres",
 	)
 
@@ -76,18 +76,18 @@ func TestValidateSchemaRefusesAReservedRole(t *testing.T) {
 func TestGetOrderedCreateStatementsStillRendersAnOrdinaryRole(t *testing.T) {
 	tests := []struct {
 		name string
-		role goschema.Role
+		role schemamodel.Role
 		want string
 	}{
 		{
 			name: "an ordinary application role",
-			role: goschema.Role{Name: "app_user", Login: true},
+			role: schemamodel.Role{Name: "app_user", Login: true},
 			want: `CREATE ROLE "app_user" WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION;
 `,
 		},
 		{
 			name: "pgbouncer, whose underscore-free name is not the prefix",
-			role: goschema.Role{Name: "pgbouncer", Login: true},
+			role: schemamodel.Role{Name: "pgbouncer", Login: true},
 			want: `CREATE ROLE "pgbouncer" WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION;
 `,
 		},
@@ -97,7 +97,7 @@ func TestGetOrderedCreateStatementsStillRendersAnOrdinaryRole(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			statements, err := renderer.GetOrderedCreateStatements(
-				&goschema.Database{Roles: []goschema.Role{test.role}},
+				&schemamodel.Database{Roles: []schemamodel.Role{test.role}},
 				"postgres",
 			)
 
@@ -116,7 +116,7 @@ func TestGetOrderedCreateStatementsOptInRendersTheReservedRoleAnyway(t *testing.
 	c.Setenv(reservedrole.AllowEnvVar, "1")
 
 	statements, err := renderer.GetOrderedCreateStatements(
-		&goschema.Database{Roles: []goschema.Role{{Name: "postgres"}}},
+		&schemamodel.Database{Roles: []schemamodel.Role{{Name: "postgres"}}},
 		"postgres",
 	)
 

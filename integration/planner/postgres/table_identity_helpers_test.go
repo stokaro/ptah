@@ -6,17 +6,17 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/migration/generator"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
-func downColumnTarget(tableSchema string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "User", Name: "users", Schema: tableSchema}},
-		Fields: []goschema.Field{
+func downColumnTarget(tableSchema string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Name: "users", Schema: tableSchema}},
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "User", Name: "email", Type: "TEXT"},
 		},
@@ -36,13 +36,13 @@ func downColumnDatabase(tableSchema string) *catalog.Database {
 	}
 }
 
-func planDownStatements(c *qt.C, generated *goschema.Database, database *catalog.Database) []string {
+func planDownStatements(c *qt.C, desired *schemamodel.Database, current *catalog.Database) []string {
 	c.Helper()
-	diff := schemadiff.CompareWithDialect(generated, database, "postgres")
+	diff := schemadiff.CompareWithDialect(desired, current, "postgres")
 	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
 		Diff:          diff,
-		DesiredSchema: generated,
-		CurrentSchema: database,
+		DesiredSchema: desired,
+		CurrentSchema: current,
 		Dialect:       "postgres",
 		Policy: generator.BidirectionalPlanPolicy{
 			Create: generator.ConcurrentIndexDisabled,
@@ -52,7 +52,7 @@ func planDownStatements(c *qt.C, generated *goschema.Database, database *catalog
 	c.Assert(err, qt.IsNil)
 	statements, err := planner.GenerateSchemaDiffSQLStatements(
 		plan.Reverse.Diff,
-		dbschematogo.ConvertDBSchemaToGoSchema(database),
+		dbschematogo.ConvertDBSchemaToGoSchema(current),
 		"postgres",
 	)
 	c.Assert(err, qt.IsNil)

@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 )
 
@@ -17,7 +17,7 @@ import (
 func TestFromView_CarriesTheAttributes(t *testing.T) {
 	c := qt.New(t)
 
-	node := fromschema.FromView(goschema.View{
+	node := fromschema.FromView(schemamodel.View{
 		Name:       "dbo.bound_orders",
 		Body:       "SELECT id FROM dbo.orders",
 		Attributes: []string{"SCHEMABINDING", "VIEW_METADATA"},
@@ -31,7 +31,7 @@ func TestFromView_CarriesTheAttributes(t *testing.T) {
 func TestFromView_WithoutAttributesCarriesNone(t *testing.T) {
 	c := qt.New(t)
 
-	node := fromschema.FromView(goschema.View{Name: "dbo.v", Body: "SELECT id FROM dbo.t"})
+	node := fromschema.FromView(schemamodel.View{Name: "dbo.v", Body: "SELECT id FROM dbo.t"})
 
 	c.Assert(node.Attributes, qt.IsNil)
 }

@@ -12,20 +12,20 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
 // desiredPolicyOnOrders is the desired state for the rollback tests: one policy
 // on one table, spelled however the caller writes it, with the USING expression
 // the migration is changing to.
-func desiredPolicyOnOrders(spelling string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{Name: "orders", StructName: "Order"}},
-		RLSEnabledTables: []goschema.RLSEnabledTable{
+func desiredPolicyOnOrders(spelling string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "orders", StructName: "Order"}},
+		RLSEnabledTables: []schemamodel.RLSEnabledTable{
 			{Table: spelling, StructName: "Order"},
 		},
-		RLSPolicies: []goschema.RLSPolicy{{
+		RLSPolicies: []schemamodel.RLSPolicy{{
 			Name:            "tenant_isolation",
 			Table:           spelling,
 			StructName:      "Order",

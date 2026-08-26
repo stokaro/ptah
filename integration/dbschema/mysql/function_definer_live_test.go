@@ -11,9 +11,9 @@ import (
 	qt "github.com/frankban/quicktest"
 	mysqldriver "github.com/go-sql-driver/mysql"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/sqlident"
@@ -72,7 +72,7 @@ func TestForeignDefinerReplacementRefusal_Live(t *testing.T) {
 			c.Assert(live.Functions[0].Definer, qt.Contains, owner+"@")
 			c.Assert(live.Functions[0].CurrentAccount, qt.Not(qt.Equals), live.Functions[0].Definer)
 
-			desired := &goschema.Database{Functions: []goschema.Function{{
+			desired := &schemamodel.Database{Functions: []schemamodel.Function{{
 				Name: "f", Returns: "int", Language: "sql", Security: "DEFINER",
 				Volatility: "IMMUTABLE", Body: "RETURN 2",
 			}}}

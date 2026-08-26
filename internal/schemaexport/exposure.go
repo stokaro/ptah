@@ -5,7 +5,7 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // Shape is the direction of an API contract: what a caller reads back, or what
@@ -136,13 +136,13 @@ func ParseFieldPolicy(value string) (FieldPolicy, error) {
 // something without saying so is indistinguishable from a schema that never had
 // it.
 func ExposedFields(
-	db *goschema.Database,
-	table goschema.Table,
+	db *schemamodel.Database,
+	table schemamodel.Table,
 	shape Shape,
 	policy FieldPolicy,
-) ([]goschema.Field, []Diagnostic, error) {
+) ([]schemamodel.Field, []Diagnostic, error) {
 	fields := FieldsFor(db, table)
-	exposed := make([]goschema.Field, 0, len(fields))
+	exposed := make([]schemamodel.Field, 0, len(fields))
 	diagnostics := make([]Diagnostic, 0)
 	for _, field := range fields {
 		declared, err := ParseExposure(field.APIExpose)
@@ -163,8 +163,8 @@ func ExposedFields(
 // decideExposure answers one column, and reports the withholding an author
 // would otherwise have to infer from an absence.
 func decideExposure(
-	table goschema.Table,
-	field goschema.Field,
+	table schemamodel.Table,
+	field schemamodel.Field,
 	declared Exposure,
 	shape Shape,
 	policy FieldPolicy,
@@ -195,7 +195,7 @@ func decideExposure(
 
 // ExposesAnyShape reports whether a column reaches either contract, which is
 // what a cross-shape concern such as a Protobuf field number depends on.
-func ExposesAnyShape(field goschema.Field, policy FieldPolicy) bool {
+func ExposesAnyShape(field schemamodel.Field, policy FieldPolicy) bool {
 	declared, err := ParseExposure(field.APIExpose)
 	if err != nil {
 		return false

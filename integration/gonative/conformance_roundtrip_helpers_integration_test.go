@@ -9,13 +9,13 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 )
 
-func renderConformanceSQL(c *qt.C, target *goschema.Database, dialect string) string {
+func renderConformanceSQL(c *qt.C, target *schemamodel.Database, dialect string) string {
 	createAST := fromschema.FromDatabase(*target, dialect)
 	createSQL, err := renderer.RenderSQL(dialect, createAST.Statements...)
 	c.Assert(err, qt.IsNil)

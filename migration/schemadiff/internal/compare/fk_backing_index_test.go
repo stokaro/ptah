@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -66,8 +66,8 @@ func TestIndexes_ForeignKeyBackingIndexIdempotency(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			generated := &goschema.Database{
-				Indexes: []goschema.Index{
+			desired := &schemamodel.Database{
+				Indexes: []schemamodel.Index{
 					{Name: test.indexName, TableName: "posts", Fields: []string{"user_id"}},
 				},
 			}
@@ -80,7 +80,7 @@ func TestIndexes_ForeignKeyBackingIndexIdempotency(t *testing.T) {
 			}
 			diff := &difftypes.SchemaDiff{}
 
-			compare.IndexesWithDialect(generated, database, diff, "mysql")
+			compare.IndexesWithDialect(desired, database, diff, "mysql")
 
 			c.Assert(diff.IndexAdditions(), qt.HasLen, 0)
 			c.Assert(diff.IndexRemovals(), qt.HasLen, 0)
@@ -100,16 +100,16 @@ func TestIndexes_ForeignKeyBackingIndexDrift(t *testing.T) {
 	unrelatedIndex := catalog.Index{
 		Name: "idx_posts_created", TableName: "posts", Columns: []string{"created_at"},
 	}
-	declaredBackingIndex := goschema.Index{
+	declaredBackingIndex := schemamodel.Index{
 		Name: "fk_posts_user", TableName: "posts", Fields: []string{"user_id"},
 	}
-	declaredUnrelatedIndex := goschema.Index{
+	declaredUnrelatedIndex := schemamodel.Index{
 		Name: "idx_posts_created", TableName: "posts", Fields: []string{"created_at"},
 	}
 
 	tests := []struct {
 		name          string
-		generated     []goschema.Index
+		desired       []schemamodel.Index
 		database      []catalog.Index
 		wantAdditions []difftypes.IndexRef
 		wantRemovals  []difftypes.IndexRef
@@ -117,9 +117,9 @@ func TestIndexes_ForeignKeyBackingIndexDrift(t *testing.T) {
 		{
 			// A genuinely missing index is still reported even though the table
 			// also carries a foreign key whose backing index shares its name.
-			name:      "index the database lacks is still added",
-			generated: []goschema.Index{declaredBackingIndex, declaredUnrelatedIndex},
-			database:  []catalog.Index{backingIndex},
+			name:     "index the database lacks is still added",
+			desired:  []schemamodel.Index{declaredBackingIndex, declaredUnrelatedIndex},
+			database: []catalog.Index{backingIndex},
 			wantAdditions: []difftypes.IndexRef{
 				{Name: "idx_posts_created", TableName: "posts"},
 			},
@@ -128,15 +128,15 @@ func TestIndexes_ForeignKeyBackingIndexDrift(t *testing.T) {
 			// The reason the filter exists. A desired state that never mentions
 			// the backing index must not plan a DROP INDEX: MySQL refuses to drop
 			// the index a live foreign key needs (Error 1553).
-			name:      "undeclared backing index is not dropped",
-			generated: nil,
-			database:  []catalog.Index{backingIndex},
+			name:     "undeclared backing index is not dropped",
+			desired:  nil,
+			database: []catalog.Index{backingIndex},
 		},
 		{
 			// Narrowing the filter must not make an unrelated index immortal.
-			name:      "unrelated index the desired state dropped is still removed",
-			generated: []goschema.Index{declaredBackingIndex},
-			database:  []catalog.Index{backingIndex, unrelatedIndex},
+			name:     "unrelated index the desired state dropped is still removed",
+			desired:  []schemamodel.Index{declaredBackingIndex},
+			database: []catalog.Index{backingIndex, unrelatedIndex},
 			wantRemovals: []difftypes.IndexRef{
 				{Name: "idx_posts_created", TableName: "posts"},
 			},
@@ -145,23 +145,23 @@ func TestIndexes_ForeignKeyBackingIndexDrift(t *testing.T) {
 			// Both halves at once: the backing index the desired state stopped
 			// declaring stays hidden, while the index it still declares is
 			// compared normally.
-			name:      "dropping only the backing index declaration changes nothing",
-			generated: []goschema.Index{declaredUnrelatedIndex},
-			database:  []catalog.Index{backingIndex, unrelatedIndex},
+			name:     "dropping only the backing index declaration changes nothing",
+			desired:  []schemamodel.Index{declaredUnrelatedIndex},
+			database: []catalog.Index{backingIndex, unrelatedIndex},
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			generated := &goschema.Database{Indexes: test.generated}
+			desired := &schemamodel.Database{Indexes: test.desired}
 			database := &catalog.Database{
 				Constraints: postsForeignKey(),
 				Indexes:     test.database,
 			}
 			diff := &difftypes.SchemaDiff{}
 
-			compare.IndexesWithDialect(generated, database, diff, "mysql")
+			compare.IndexesWithDialect(desired, database, diff, "mysql")
 
 			c.Assert(diff.IndexAdditions(), qt.DeepEquals, test.wantAdditions)
 			c.Assert(diff.IndexRemovals(), qt.DeepEquals, test.wantRemovals)
@@ -186,8 +186,8 @@ func TestIndexes_ForeignKeyBackingIndexDialects(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			generated := &goschema.Database{
-				Indexes: []goschema.Index{
+			desired := &schemamodel.Database{
+				Indexes: []schemamodel.Index{
 					{Name: "fk_posts_user", TableName: "posts", Fields: []string{"user_id"}},
 				},
 			}
@@ -199,7 +199,7 @@ func TestIndexes_ForeignKeyBackingIndexDialects(t *testing.T) {
 			}
 			diff := &difftypes.SchemaDiff{}
 
-			compare.IndexesWithDialect(generated, database, diff, test.dialect)
+			compare.IndexesWithDialect(desired, database, diff, test.dialect)
 
 			c.Assert(diff.IndexAdditions(), qt.HasLen, 0)
 			c.Assert(diff.IndexRemovals(), qt.HasLen, 0)

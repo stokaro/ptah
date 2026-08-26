@@ -12,8 +12,8 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/planner"
@@ -115,12 +115,12 @@ func TestTimescaleHypertableRefusesWhatTheServerCannotUndoE2E(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		declare func() *goschema.Database
+		declare func() *schemamodel.Database
 		want    string
 	}{
 		{
 			name: "the declaration stops naming it",
-			declare: func() *goschema.Database {
+			declare: func() *schemamodel.Database {
 				schema := hypertableSchema(schemaName, table, "time", "")
 				schema.Hypertables = nil
 				return schema
@@ -129,7 +129,7 @@ func TestTimescaleHypertableRefusesWhatTheServerCannotUndoE2E(t *testing.T) {
 		},
 		{
 			name: "the declaration moves the dimension",
-			declare: func() *goschema.Database {
+			declare: func() *schemamodel.Database {
 				return hypertableSchema(schemaName, table, "device", "")
 			},
 			want: "TimescaleDB has no statement that repartitions an existing hypertable",
@@ -149,17 +149,17 @@ func TestTimescaleHypertableRefusesWhatTheServerCannotUndoE2E(t *testing.T) {
 }
 
 // hypertableSchema declares one table and asks for it to be partitioned.
-func hypertableSchema(schemaName, table, column, interval string) *goschema.Database {
-	return &goschema.Database{
-		Schemas: []goschema.Schema{{Name: schemaName}},
-		Tables:  []goschema.Table{{StructName: "T", Name: table, Schema: schemaName}},
-		Fields: []goschema.Field{
+func hypertableSchema(schemaName, table, column, interval string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Schemas: []schemamodel.Schema{{Name: schemaName}},
+		Tables:  []schemamodel.Table{{StructName: "T", Name: table, Schema: schemaName}},
+		Fields: []schemamodel.Field{
 			{StructName: "T", Name: "time", Type: "TIMESTAMPTZ"},
 			{StructName: "T", Name: "device", Type: "INTEGER"},
 			{StructName: "T", Name: "value", Type: "INTEGER"},
 		},
-		Extensions: []goschema.Extension{{Name: "timescaledb", IfNotExists: true}},
-		Hypertables: []goschema.Hypertable{{
+		Extensions: []schemamodel.Extension{{Name: "timescaledb", IfNotExists: true}},
+		Hypertables: []schemamodel.Hypertable{{
 			StructName: "T", Table: schemaName + "." + table, Column: column,
 			ChunkInterval: interval, IfNotExists: true,
 		}},
@@ -194,7 +194,7 @@ func dropTimescaleSchema(ctx context.Context, conn *dbschema.DatabaseConnection,
 func planTimescale(
 	c *qt.C,
 	conn *dbschema.DatabaseConnection,
-	declared *goschema.Database,
+	declared *schemamodel.Database,
 	schemaName string,
 ) []string {
 	c.Helper()
@@ -207,7 +207,7 @@ func planTimescale(
 func planTimescaleReportingError(
 	c *qt.C,
 	conn *dbschema.DatabaseConnection,
-	declared *goschema.Database,
+	declared *schemamodel.Database,
 	schemaName string,
 ) ([]string, error) {
 	c.Helper()

@@ -7,10 +7,10 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/constraintscope"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -137,16 +137,16 @@ func TestGenerateDownMigrationSQL_Issue43_RLSPolicyTableNames(t *testing.T) {
 
 	// Create a generated schema that includes the RLS policies with table names
 	// This simulates the original generated schema that was used to create the up migration
-	generatedSchema := &goschema.Database{
-		Tables: []goschema.Table{
+	generatedSchema := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: "areas"},
 			{Name: "commodities"},
 		},
-		RLSEnabledTables: []goschema.RLSEnabledTable{
+		RLSEnabledTables: []schemamodel.RLSEnabledTable{
 			{Table: "areas"},
 			{Table: "commodities"},
 		},
-		RLSPolicies: []goschema.RLSPolicy{
+		RLSPolicies: []schemamodel.RLSPolicy{
 			{
 				Name:            "area_user_isolation",
 				Table:           "areas",
@@ -211,16 +211,16 @@ func TestGenerateDownMigrationSQL_Issue57_MissingTableNames(t *testing.T) {
 
 	// Create a generated schema that includes the RLS policies with table names
 	// This simulates the original generated schema that was used to create the up migration
-	generatedSchema := &goschema.Database{
-		Tables: []goschema.Table{
+	generatedSchema := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: "areas"},
 			{Name: "commodities"},
 		},
-		RLSEnabledTables: []goschema.RLSEnabledTable{
+		RLSEnabledTables: []schemamodel.RLSEnabledTable{
 			{Table: "areas"},
 			{Table: "commodities"},
 		},
-		RLSPolicies: []goschema.RLSPolicy{
+		RLSPolicies: []schemamodel.RLSPolicy{
 			{
 				Name:            "area_tenant_isolation",
 				Table:           "areas",
@@ -395,17 +395,17 @@ func TestGenerateDownMigrationSQL_DropsFKDiamondLeavesBeforeRoot(t *testing.T) {
 
 func TestGenerateDownMigrationSQL_DropsSchemaQualifiedTableLevelFKChildBeforeParent(t *testing.T) {
 	c := qt.New(t)
-	schema := &goschema.Database{
-		Tables: []goschema.Table{
+	schema := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Account", Schema: "app", Name: "accounts"},
 			{StructName: "Project", Schema: "app", Name: "projects"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Account", Name: "id", Type: "VARCHAR(36)", Primary: true},
 			{StructName: "Project", Name: "id", Type: "VARCHAR(36)", Primary: true},
 			{StructName: "Project", Name: "account_id", Type: "VARCHAR(36)"},
 		},
-		Constraints: []goschema.Constraint{
+		Constraints: []schemamodel.Constraint{
 			{
 				Name:           "fk_projects_account",
 				Type:           "FOREIGN KEY",
@@ -429,7 +429,7 @@ func TestGenerateDownMigrationSQL_DropsMySQLFamilyFKChainInDependencyOrder(t *te
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			schema := fkOrderSchema()
-			goschema.Finalize(schema)
+			schemamodel.Finalize(schema)
 			upDiff := schemadiff.CompareWithDialect(schema, &catalog.Database{}, dialect)
 
 			downSQL, err := generateDownMigrationSQL(upDiff, schema, &catalog.Database{}, dialect)
@@ -449,7 +449,7 @@ func TestGenerateDownMigrationSQL_DropsMySQLFamilyFKDiamondInDependencyOrder(t *
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			schema := fkOrderSchema()
-			goschema.Finalize(schema)
+			schemamodel.Finalize(schema)
 			upDiff := schemadiff.CompareWithDialect(schema, &catalog.Database{}, dialect)
 
 			downSQL, err := generateDownMigrationSQL(upDiff, schema, &catalog.Database{}, dialect)
@@ -472,7 +472,7 @@ func TestGenerateDownMigrationSQL_DropsMySQLFamilyMutualFKCycleTogether(t *testi
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			schema := mutualFKCycleSchema()
-			goschema.Finalize(schema)
+			schemamodel.Finalize(schema)
 			upDiff := schemadiff.CompareWithDialect(schema, &catalog.Database{}, dialect)
 
 			downSQL, err := generateDownMigrationSQL(upDiff, schema, &catalog.Database{}, dialect)
@@ -496,7 +496,7 @@ func TestReverseSchemaDiff_GrantOptionUpgradeDownRevokesOnlyOption(t *testing.T)
 	}
 
 	downDiff := reverseSchemaDiff(upDiff)
-	nodes, err := postgres.New().GenerateMigrationAST(downDiff, &goschema.Database{})
+	nodes, err := postgres.New().GenerateMigrationAST(downDiff, &schemamodel.Database{})
 	c.Assert(err, qt.IsNil)
 	downSQL, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -741,9 +741,9 @@ func TestReverseSchemaDiff_ConstraintReversal(t *testing.T) {
 func TestReverseSchemaDiff_FieldLevelCheckRemovalsWithTables(t *testing.T) {
 	c := qt.New(t)
 
-	generatedSchema := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "File", Name: "files"}},
-		Fields: []goschema.Field{
+	generatedSchema := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "File", Name: "files"}},
+		Fields: []schemamodel.Field{
 			{
 				StructName: "File",
 				Name:       "category",
@@ -780,13 +780,13 @@ func TestReverseSchemaDiff_FieldLevelCheckRemovalsWithTables(t *testing.T) {
 func TestReverseSchemaDiff_AddedTableForeignKeyRemovalsWithTables(t *testing.T) {
 	c := qt.New(t)
 
-	generatedSchema := &goschema.Database{
-		Tables: []goschema.Table{
+	generatedSchema := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Account", Schema: "app", Name: "accounts"},
 			{StructName: "Project", Schema: "app", Name: "projects"},
 			{StructName: "Audit", Schema: "app", Name: "audits"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Project", Name: "account_id", Type: "INTEGER", Foreign: "app.accounts(id)"},
 			{
 				StructName:     "Project",
@@ -797,10 +797,10 @@ func TestReverseSchemaDiff_AddedTableForeignKeyRemovalsWithTables(t *testing.T) 
 			},
 			{StructName: "Audit", Name: "project_id", Type: "INTEGER", Foreign: "app.projects(id)"},
 		},
-		EmbeddedFields: []goschema.EmbeddedField{
+		EmbeddedFields: []schemamodel.EmbeddedField{
 			{StructName: "Project", Mode: "relation", Field: "owner_id", Ref: "app.accounts(id)"},
 		},
-		Constraints: []goschema.Constraint{
+		Constraints: []schemamodel.Constraint{
 			{
 				StructName:     "Project",
 				Type:           "FOREIGN KEY",
@@ -868,12 +868,12 @@ func TestReverseSchemaDiff_MySQLSparseForeignKeyAdditionUsesCaseInsensitiveSchem
 			Name: "fk_parent_code", TableName: "children", Type: "FOREIGN KEY",
 		}},
 	}
-	desired := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Parent", Name: "parents"},
 			{StructName: "Child", Name: "children"},
 		},
-		Fields: []goschema.Field{{
+		Fields: []schemamodel.Field{{
 			StructName: "Child", Name: "parent_code", Type: "VARCHAR(36)",
 			Foreign: "parents(code)", ForeignKeyName: "FK_PARENT_CODE",
 		}},
@@ -891,15 +891,15 @@ func TestReverseSchemaDiff_MySQLSparseForeignKeyAdditionUsesCaseInsensitiveSchem
 	}})
 }
 
-func fkOrderSchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func fkOrderSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "PtahFKOrderAccount", Name: "ptah_fk_order_accounts"},
 			{StructName: "PtahFKOrderProject", Name: "ptah_fk_order_projects"},
 			{StructName: "PtahFKOrderMembership", Name: "ptah_fk_order_memberships"},
 			{StructName: "PtahFKOrderTask", Name: "ptah_fk_order_tasks"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "PtahFKOrderAccount", Name: "id", Type: "VARCHAR(36)", Primary: true},
 			{StructName: "PtahFKOrderProject", Name: "id", Type: "VARCHAR(36)", Primary: true},
 			{
@@ -936,13 +936,13 @@ func fkOrderSchema() *goschema.Database {
 	}
 }
 
-func mutualFKCycleSchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func mutualFKCycleSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "LeftNode", Name: "left_nodes"},
 			{StructName: "RightNode", Name: "right_nodes"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "LeftNode", Name: "id", Type: "INTEGER", Primary: true},
 			{
 				StructName:     "LeftNode",
@@ -986,12 +986,12 @@ func TestGenerateDownMigrationSQL_Issue189_RestoresPriorForeignKeyAction(t *test
 	varcharLength := 255
 
 	// Generated (target) schema: file_id FK now uses ON DELETE SET NULL.
-	generatedSchema := &goschema.Database{
-		Tables: []goschema.Table{
+	generatedSchema := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Export", Name: "exports"},
 			{StructName: "File", Name: "files"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "File", Name: "id", Type: "VARCHAR(255)", Primary: true},
 			{StructName: "Export", Name: "id", Type: "VARCHAR(255)", Primary: true},
 			{
@@ -1079,9 +1079,9 @@ func TestGenerateDownMigrationSQL_Issue189_RestoresPriorForeignKeyAction(t *test
 // acceptance test for issue #194: adding a field-level CHECK on an existing
 // column must generate a non-empty MySQL/MariaDB DOWN that drops the CHECK.
 func TestGenerateDownMigrationSQL_Issue194_DropsFieldLevelCheckMySQLFamily(t *testing.T) {
-	generatedSchema := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "File", Name: "files"}},
-		Fields: []goschema.Field{
+	generatedSchema := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "File", Name: "files"}},
+		Fields: []schemamodel.Field{
 			{
 				StructName: "File",
 				Name:       "category",
@@ -1126,7 +1126,7 @@ func TestGenerateDownMigrationSQL_Issue194_DropsFieldLevelCheckMySQLFamily(t *te
 }
 
 func TestGenerateDownMigrationSQL_MySQLFamilyDropsGeneratedForeignKeyBackingIndex(t *testing.T) {
-	generatedSchema := &goschema.Database{}
+	generatedSchema := &schemamodel.Database{}
 	upDiff := &difftypes.SchemaDiff{
 		ConstraintsAdded: []string{"fk_users_account_id"},
 		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
@@ -1225,8 +1225,8 @@ func TestGenerateDownMigrationSQL_SequenceAdded(t *testing.T) {
 	dbSchema := &catalog.Database{
 		Sequences: []catalog.Sequence{{Name: "order_seq", DataType: "bigint"}},
 	}
-	generatedSchema := &goschema.Database{
-		Sequences: []goschema.Sequence{{Name: "order_seq", AsType: "bigint"}},
+	generatedSchema := &schemamodel.Database{
+		Sequences: []schemamodel.Sequence{{Name: "order_seq", AsType: "bigint"}},
 	}
 
 	downSQL, err := generateDownMigrationSQL(upDiff, generatedSchema, dbSchema, "postgres")

@@ -229,24 +229,24 @@ func TestQueriesExcludeTheRecycleBin(t *testing.T) {
 // one does have a counterpart to compare against.
 func TestWithoutGeneratedKeys_KeepsWhatTheDeclarationCanMatch(t *testing.T) {
 	tests := []struct {
-		name      string
-		generated map[string]bool
-		want      []string
+		name    string
+		desired map[string]bool
+		want    []string
 	}{
 		{
-			name:      "an inline key Oracle named is dropped",
-			generated: map[string]bool{"SYS_C008644": true},
-			want:      []string{"orders_total_check", "uq_email", "fk_author"},
+			name:    "an inline key Oracle named is dropped",
+			desired: map[string]bool{"SYS_C008644": true},
+			want:    []string{"orders_total_check", "uq_email", "fk_author"},
 		},
 		{
-			name:      "nothing generated leaves the list alone",
-			generated: make(map[string]bool),
-			want:      []string{"SYS_C008644", "orders_total_check", "uq_email", "fk_author"},
+			name:    "nothing generated leaves the list alone",
+			desired: make(map[string]bool),
+			want:    []string{"SYS_C008644", "orders_total_check", "uq_email", "fk_author"},
 		},
 		{
-			name:      "a user-named unique is kept even beside a generated one",
-			generated: map[string]bool{"SYS_C008644": true, "SYS_C008700": true},
-			want:      []string{"orders_total_check", "uq_email", "fk_author"},
+			name:    "a user-named unique is kept even beside a generated one",
+			desired: map[string]bool{"SYS_C008644": true, "SYS_C008700": true},
+			want:    []string{"orders_total_check", "uq_email", "fk_author"},
 		},
 	}
 
@@ -261,7 +261,7 @@ func TestWithoutGeneratedKeys_KeepsWhatTheDeclarationCanMatch(t *testing.T) {
 				{Name: "fk_author", Type: "FOREIGN KEY"},
 			}
 
-			kept := withoutGeneratedKeys(constraints, tt.generated)
+			kept := withoutGeneratedKeys(constraints, tt.desired)
 
 			names := make([]string, 0, len(kept))
 			for _, constraint := range kept {

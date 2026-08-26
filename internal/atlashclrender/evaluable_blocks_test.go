@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashcl"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 )
@@ -32,16 +32,16 @@ import (
 func TestRenderWritesEveryBlockBodyAsEvaluableHCL(t *testing.T) {
 	tests := []struct {
 		name    string
-		db      func() *goschema.Database
+		db      func() *schemamodel.Database
 		want    []string
 		notWant []string
 	}{
 		{
 			// `type = bigint` -> There is no variable named "bigint".
 			name: "a sequence type",
-			db: func() *goschema.Database {
+			db: func() *schemamodel.Database {
 				db := inspectedEnumTable()
-				db.Sequences = []goschema.Sequence{{Name: "order_seq", AsType: "bigint"}}
+				db.Sequences = []schemamodel.Sequence{{Name: "order_seq", AsType: "bigint"}}
 				return db
 			},
 			want:    []string{"\n  type = \"bigint\"\n"},
@@ -52,9 +52,9 @@ func TestRenderWritesEveryBlockBodyAsEvaluableHCL(t *testing.T) {
 			// `return` is the one that looks like a type position and is not:
 			// a bare `bigint` evaluates as a column type and fails here.
 			name: "every function attribute",
-			db: func() *goschema.Database {
+			db: func() *schemamodel.Database {
 				db := inspectedEnumTable()
-				db.Functions = []goschema.Function{{
+				db.Functions = []schemamodel.Function{{
 					Name:       "touch_users",
 					Language:   "plpgsql",
 					Returns:    "trigger",
@@ -80,9 +80,9 @@ func TestRenderWritesEveryBlockBodyAsEvaluableHCL(t *testing.T) {
 		{
 			// `for = ROW` -> There is no variable named "ROW".
 			name: "a trigger for-each",
-			db: func() *goschema.Database {
+			db: func() *schemamodel.Database {
 				db := inspectedEnumTable()
-				db.Triggers = []goschema.Trigger{{
+				db.Triggers = []schemamodel.Trigger{{
 					Name:    "users_touch",
 					Table:   "users",
 					Timing:  "BEFORE",
@@ -99,9 +99,9 @@ func TestRenderWritesEveryBlockBodyAsEvaluableHCL(t *testing.T) {
 			// The default is rendered through the same attribute, so an IR that
 			// carries no ForEach must not reintroduce the bare word.
 			name: "a trigger for-each Ptah defaults",
-			db: func() *goschema.Database {
+			db: func() *schemamodel.Database {
 				db := inspectedEnumTable()
-				db.Triggers = []goschema.Trigger{{
+				db.Triggers = []schemamodel.Trigger{{
 					Name:   "users_touch",
 					Table:  "users",
 					Timing: "BEFORE",
@@ -116,10 +116,10 @@ func TestRenderWritesEveryBlockBodyAsEvaluableHCL(t *testing.T) {
 		{
 			// `for = ALL` -> There is no variable named "ALL".
 			name: "a policy for",
-			db: func() *goschema.Database {
+			db: func() *schemamodel.Database {
 				db := inspectedEnumTable()
-				db.Roles = []goschema.Role{{Name: "rdr"}}
-				db.RLSPolicies = []goschema.RLSPolicy{{
+				db.Roles = []schemamodel.Role{{Name: "rdr"}}
+				db.RLSPolicies = []schemamodel.RLSPolicy{{
 					Name:            "users_read",
 					Table:           "users",
 					PolicyFor:       "ALL",
@@ -188,7 +188,7 @@ func TestEvaluableBlocksRoundTripThroughPtahsOwnParser(t *testing.T) {
 		t.Parallel()
 		c := qt.New(t)
 		db := inspectedEnumTable()
-		db.Sequences = []goschema.Sequence{{Name: "order_seq", AsType: "bigint"}}
+		db.Sequences = []schemamodel.Sequence{{Name: "order_seq", AsType: "bigint"}}
 
 		parsed := renderAndParse(c, db)
 
@@ -200,7 +200,7 @@ func TestEvaluableBlocksRoundTripThroughPtahsOwnParser(t *testing.T) {
 		t.Parallel()
 		c := qt.New(t)
 		db := inspectedEnumTable()
-		db.Functions = []goschema.Function{{
+		db.Functions = []schemamodel.Function{{
 			Name:       "touch_users",
 			Language:   "plpgsql",
 			Returns:    "trigger",
@@ -228,7 +228,7 @@ func TestEvaluableBlocksRoundTripThroughPtahsOwnParser(t *testing.T) {
 		t.Parallel()
 		c := qt.New(t)
 		db := inspectedEnumTable()
-		db.Triggers = []goschema.Trigger{{
+		db.Triggers = []schemamodel.Trigger{{
 			Name:    "users_touch",
 			Table:   "users",
 			Timing:  "BEFORE",
@@ -248,8 +248,8 @@ func TestEvaluableBlocksRoundTripThroughPtahsOwnParser(t *testing.T) {
 		t.Parallel()
 		c := qt.New(t)
 		db := inspectedEnumTable()
-		db.Roles = []goschema.Role{{Name: "rdr"}}
-		db.RLSPolicies = []goschema.RLSPolicy{{
+		db.Roles = []schemamodel.Role{{Name: "rdr"}}
+		db.RLSPolicies = []schemamodel.RLSPolicy{{
 			Name:            "users_read",
 			Table:           "users",
 			PolicyFor:       "ALL",
@@ -284,7 +284,7 @@ func TestEvaluableBlocksRoundTripThroughPtahsOwnParser(t *testing.T) {
 
 // renderAndParse renders db and reads the result back with Ptah's own parser,
 // which is the round trip each case above inspects one construct of.
-func renderAndParse(c *qt.C, db *goschema.Database) *goschema.Database {
+func renderAndParse(c *qt.C, db *schemamodel.Database) *schemamodel.Database {
 	c.Helper()
 	result, err := atlashclrender.RenderInspected(db, platform.Postgres, "public")
 	c.Assert(err, qt.IsNil)
@@ -362,27 +362,27 @@ func TestRenderedSchemaIsStableAcrossAParseAndRerender(t *testing.T) {
 func TestEnumTypedColumnKeepsANameThatIsAlsoAnotherDeclaration(t *testing.T) {
 	tests := []struct {
 		name    string
-		declare func(*goschema.Database)
+		declare func(*schemamodel.Database)
 	}{
 		{
 			name: "a domain",
-			declare: func(db *goschema.Database) {
-				db.Domains = []goschema.Domain{{Name: "status", BaseType: "text"}}
+			declare: func(db *schemamodel.Database) {
+				db.Domains = []schemamodel.Domain{{Name: "status", BaseType: "text"}}
 			},
 		},
 		{
 			name: "a composite type",
-			declare: func(db *goschema.Database) {
-				db.CompositeTypes = []goschema.CompositeType{{
+			declare: func(db *schemamodel.Database) {
+				db.CompositeTypes = []schemamodel.CompositeType{{
 					Name:   "status",
-					Fields: []goschema.CompositeTypeField{{Name: "a", Type: "text"}},
+					Fields: []schemamodel.CompositeField{{Name: "a", Type: "text"}},
 				}}
 			},
 		},
 		{
 			name: "a range type",
-			declare: func(db *goschema.Database) {
-				db.Ranges = []goschema.Range{{Name: "status", Subtype: "int4"}}
+			declare: func(db *schemamodel.Database) {
+				db.Ranges = []schemamodel.Range{{Name: "status", Subtype: "int4"}}
 			},
 		},
 	}
@@ -413,7 +413,7 @@ func TestEnumTypedColumnKeepsANameThatIsAlsoAnotherDeclaration(t *testing.T) {
 func TestRenderInspectedDeclaresTheSchemaAnEnumOnlyReadReferences(t *testing.T) {
 	c := qt.New(t)
 
-	db := &goschema.Database{Enums: []goschema.Enum{{Name: "status", Values: []string{"active"}}}}
+	db := &schemamodel.Database{Enums: []schemamodel.Enum{{Name: "status", Values: []string{"active"}}}}
 
 	result, err := atlashclrender.RenderInspected(db, platform.Postgres, "public")
 
@@ -425,11 +425,11 @@ func TestRenderInspectedDeclaresTheSchemaAnEnumOnlyReadReferences(t *testing.T) 
 // inspectedEnumTable builds the IR a PostgreSQL read produces for a table with
 // an enum-typed column: the enum carries no schema of its own, and the column
 // carries the type name with no record of how it was written.
-func inspectedEnumTable() *goschema.Database {
-	return &goschema.Database{
-		Enums:  []goschema.Enum{{Name: "status", Values: []string{"active", "inactive"}}},
-		Tables: []goschema.Table{{StructName: "Users", Name: "users"}},
-		Fields: []goschema.Field{
+func inspectedEnumTable() *schemamodel.Database {
+	return &schemamodel.Database{
+		Enums:  []schemamodel.Enum{{Name: "status", Values: []string{"active", "inactive"}}},
+		Tables: []schemamodel.Table{{StructName: "Users", Name: "users"}},
+		Fields: []schemamodel.Field{
 			{StructName: "Users", Name: "id", Type: "bigint", Primary: true},
 			{StructName: "Users", Name: "state", Type: "status"},
 		},
@@ -438,11 +438,11 @@ func inspectedEnumTable() *goschema.Database {
 
 // everyTouchedConstruct is inspectedEnumTable plus one of every block this
 // change re-spelled, so the stability assertion covers all of them at once.
-func everyTouchedConstruct() *goschema.Database {
+func everyTouchedConstruct() *schemamodel.Database {
 	db := inspectedEnumTable()
-	db.Roles = []goschema.Role{{Name: "rdr"}}
-	db.Sequences = []goschema.Sequence{{Name: "order_seq", AsType: "bigint"}}
-	db.Functions = []goschema.Function{{
+	db.Roles = []schemamodel.Role{{Name: "rdr"}}
+	db.Sequences = []schemamodel.Sequence{{Name: "order_seq", AsType: "bigint"}}
+	db.Functions = []schemamodel.Function{{
 		Name:       "touch_users",
 		Language:   "plpgsql",
 		Returns:    "trigger",
@@ -450,7 +450,7 @@ func everyTouchedConstruct() *goschema.Database {
 		Volatility: "VOLATILE",
 		Body:       "BEGIN RETURN NEW; END;",
 	}}
-	db.Triggers = []goschema.Trigger{{
+	db.Triggers = []schemamodel.Trigger{{
 		Name:    "users_touch",
 		Table:   "users",
 		Timing:  "BEFORE",
@@ -458,7 +458,7 @@ func everyTouchedConstruct() *goschema.Database {
 		ForEach: "ROW",
 		Body:    "BEGIN RETURN NEW; END;",
 	}}
-	db.RLSPolicies = []goschema.RLSPolicy{{
+	db.RLSPolicies = []schemamodel.RLSPolicy{{
 		Name:            "users_read",
 		Table:           "users",
 		PolicyFor:       "ALL",

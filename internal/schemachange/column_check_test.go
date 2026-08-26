@@ -6,18 +6,18 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/schemastate"
 )
 
 // checkedColumnWidget is a table whose column carries a CHECK, named or not.
-func checkedColumnWidget(checkName string) *goschema.Database {
+func checkedColumnWidget(checkName string) *schemamodel.Database {
 	return describedTable(
-		goschema.Field{StructName: "Widget", Name: "id", Type: "int"},
-		goschema.Field{StructName: "Widget", Name: "b", Type: "int", Nullable: true,
+		schemamodel.Field{StructName: "Widget", Name: "id", Type: "int"},
+		schemamodel.Field{StructName: "Widget", Name: "b", Type: "int", Nullable: true,
 			Check: "b > 0", CheckName: checkName},
 	)
 }
@@ -120,16 +120,16 @@ func TestAColumnCheckWhoseConditionChangedIsStillPlanned(t *testing.T) {
 // column list.
 //
 // A table-level `CHECK (b > 0)` is declared with no column list --
-// goschema.Constraint.Columns is what a UNIQUE fills in -- and PostgreSQL 18.6
+// schemamodel.Constraint.Columns is what a UNIQUE fills in -- and PostgreSQL 18.6
 // reports `["b"]` for it, derived from the condition. Comparing the two called
 // the constraint changed on every run over a fact the declaration never stated.
 func TestATableLevelCheckIsNotModifiedByItsDerivedColumns(t *testing.T) {
 	c := qt.New(t)
 	description := describedTable(
-		goschema.Field{StructName: "Widget", Name: "id", Type: "int"},
-		goschema.Field{StructName: "Widget", Name: "b", Type: "int", Nullable: true},
+		schemamodel.Field{StructName: "Widget", Name: "id", Type: "int"},
+		schemamodel.Field{StructName: "Widget", Name: "b", Type: "int", Nullable: true},
 	)
-	description.Constraints = []goschema.Constraint{{
+	description.Constraints = []schemamodel.Constraint{{
 		StructName: "Widget", Name: "b_positive", Type: "CHECK", CheckExpression: "b > 0",
 	}}
 

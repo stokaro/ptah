@@ -66,8 +66,8 @@
 package objectlookup
 
 import (
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/tableref"
 )
 
@@ -116,18 +116,18 @@ func Contains(names []string, name string, semantics identifier.Semantics) bool 
 
 // View returns the declared view a diff entry names, or nil when the schema
 // holds no single view under that name.
-func View(views []goschema.View, name string, semantics identifier.Semantics) *goschema.View {
-	return Find(views, name, semantics, func(view goschema.View) string { return view.Name })
+func View(views []schemamodel.View, name string, semantics identifier.Semantics) *schemamodel.View {
+	return Find(views, name, semantics, func(view schemamodel.View) string { return view.Name })
 }
 
 // MaterializedView returns the declared materialized view a diff entry names, on
 // the same terms as [View].
 func MaterializedView(
-	views []goschema.MaterializedView,
+	views []schemamodel.MaterializedView,
 	name string,
 	semantics identifier.Semantics,
-) *goschema.MaterializedView {
-	return Find(views, name, semantics, func(view goschema.MaterializedView) string { return view.Name })
+) *schemamodel.MaterializedView {
+	return Find(views, name, semantics, func(view schemamodel.MaterializedView) string { return view.Name })
 }
 
 // Qualified returns the single declared object a diff entry names, for any type
@@ -149,10 +149,10 @@ func Qualified[T interface{ QualifiedName() string }](
 // comparison rule, because a dialect that folds a table name folds a trigger
 // name with it.
 func Trigger(
-	triggers []goschema.Trigger,
+	triggers []schemamodel.Trigger,
 	tableName, triggerName string,
 	semantics identifier.Semantics,
-) *goschema.Trigger {
+) *schemamodel.Trigger {
 	for i := range triggers {
 		if triggers[i].Name == triggerName && triggers[i].Table == tableName {
 			return &triggers[i]
@@ -160,13 +160,13 @@ func Trigger(
 	}
 
 	wanted := semantics.TableIdentityKey(triggerName)
-	named := make([]goschema.Trigger, 0, len(triggers))
+	named := make([]schemamodel.Trigger, 0, len(triggers))
 	for _, trigger := range triggers {
 		if semantics.TableIdentityKey(trigger.Name) == wanted {
 			named = append(named, trigger)
 		}
 	}
-	return Find(named, tableName, semantics, func(trigger goschema.Trigger) string { return trigger.Table })
+	return Find(named, tableName, semantics, func(trigger schemamodel.Trigger) string { return trigger.Table })
 }
 
 // unique returns the only item the tier accepts, or nil when none or more than

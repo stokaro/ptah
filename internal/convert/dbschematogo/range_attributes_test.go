@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 )
 
@@ -16,7 +16,7 @@ func rangeSchema(rangeType catalog.Range) *catalog.Database {
 }
 
 // onlyRange returns the single converted range.
-func onlyRange(c *qt.C, database *goschema.Database) goschema.Range {
+func onlyRange(c *qt.C, database *schemamodel.Database) schemamodel.Range {
 	c.Helper()
 	c.Assert(database.Ranges, qt.HasLen, 1)
 	return database.Ranges[0]

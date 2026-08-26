@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 )
 
@@ -41,44 +41,44 @@ import (
 func TestRenderInspectedAttributesEverySchemaScopedBlock(t *testing.T) {
 	tests := []struct {
 		name    string
-		declare func(*goschema.Database)
+		declare func(*schemamodel.Database)
 		want    string
 	}{
 		{
 			name: "a sequence",
-			declare: func(db *goschema.Database) {
-				db.Sequences = []goschema.Sequence{{Name: "seq1"}}
+			declare: func(db *schemamodel.Database) {
+				db.Sequences = []schemamodel.Sequence{{Name: "seq1"}}
 			},
 			want: "sequence \"seq1\" {\n  schema = schema.public\n",
 		},
 		{
 			name: "a domain",
-			declare: func(db *goschema.Database) {
-				db.Domains = []goschema.Domain{{Name: "positive_int", BaseType: "integer"}}
+			declare: func(db *schemamodel.Database) {
+				db.Domains = []schemamodel.Domain{{Name: "positive_int", BaseType: "integer"}}
 			},
 			want: "domain \"positive_int\" {\n  schema = schema.public\n",
 		},
 		{
 			name: "a composite type",
-			declare: func(db *goschema.Database) {
-				db.CompositeTypes = []goschema.CompositeType{{
+			declare: func(db *schemamodel.Database) {
+				db.CompositeTypes = []schemamodel.CompositeType{{
 					Name:   "addr",
-					Fields: []goschema.CompositeTypeField{{Name: "street", Type: "text"}},
+					Fields: []schemamodel.CompositeField{{Name: "street", Type: "text"}},
 				}}
 			},
 			want: "composite \"addr\" {\n  schema = schema.public\n",
 		},
 		{
 			name: "a range type",
-			declare: func(db *goschema.Database) {
-				db.Ranges = []goschema.Range{{Name: "numrng", Subtype: "numeric"}}
+			declare: func(db *schemamodel.Database) {
+				db.Ranges = []schemamodel.Range{{Name: "numrng", Subtype: "numeric"}}
 			},
 			want: "range \"numrng\" {\n  schema = schema.public\n",
 		},
 		{
 			name: "a function",
-			declare: func(db *goschema.Database) {
-				db.Functions = []goschema.Function{{
+			declare: func(db *schemamodel.Database) {
+				db.Functions = []schemamodel.Function{{
 					Name: "f", Returns: "integer", Language: "sql", Body: "SELECT 1",
 				}}
 			},
@@ -86,15 +86,15 @@ func TestRenderInspectedAttributesEverySchemaScopedBlock(t *testing.T) {
 		},
 		{
 			name: "a view",
-			declare: func(db *goschema.Database) {
-				db.Views = []goschema.View{{Name: "v", Body: "SELECT id FROM t"}}
+			declare: func(db *schemamodel.Database) {
+				db.Views = []schemamodel.View{{Name: "v", Body: "SELECT id FROM t"}}
 			},
 			want: "view \"v\" {\n  schema = schema.public\n",
 		},
 		{
 			name: "a materialized view",
-			declare: func(db *goschema.Database) {
-				db.MaterializedViews = []goschema.MaterializedView{{
+			declare: func(db *schemamodel.Database) {
+				db.MaterializedViews = []schemamodel.MaterializedView{{
 					Name: "mv", Body: "SELECT id FROM t",
 				}}
 			},
@@ -104,8 +104,8 @@ func TestRenderInspectedAttributesEverySchemaScopedBlock(t *testing.T) {
 			// Already correct before stokaro/ptah#1138, and here so the table
 			// says so rather than leaving it to be rediscovered.
 			name: "an enum",
-			declare: func(db *goschema.Database) {
-				db.Enums = []goschema.Enum{{Name: "mood", Values: []string{"sad", "ok"}}}
+			declare: func(db *schemamodel.Database) {
+				db.Enums = []schemamodel.Enum{{Name: "mood", Values: []string{"sad", "ok"}}}
 			},
 			want: "enum \"mood\" {\n  schema = schema.public\n",
 		},
@@ -118,14 +118,14 @@ func TestRenderInspectedAttributesEverySchemaScopedBlock(t *testing.T) {
 			// [TestRenderInspectedKeepsADatabaseScopedPropertyAtDatabaseScope]
 			// measures.
 			name: "a synonym",
-			declare: func(db *goschema.Database) {
-				db.Synonyms = []goschema.Synonym{{Name: "s_users", Target: "other.dbo.users"}}
+			declare: func(db *schemamodel.Database) {
+				db.Synonyms = []schemamodel.Synonym{{Name: "s_users", Target: "other.dbo.users"}}
 			},
 			want: "synonym \"s_users\" {\n  schema = schema.public\n",
 		},
 		{
 			name:    "a table",
-			declare: func(_ *goschema.Database) {},
+			declare: func(_ *schemamodel.Database) {},
 			want:    "table \"t\" {\n  schema = schema.public\n",
 		},
 	}
@@ -156,20 +156,20 @@ func TestRenderInspectedAttributesEverySchemaScopedBlock(t *testing.T) {
 func TestRenderInspectedKeepsASchemaTheReaderReported(t *testing.T) {
 	tests := []struct {
 		name    string
-		declare func(*goschema.Database)
+		declare func(*schemamodel.Database)
 		want    string
 	}{
 		{
 			name: "a sequence",
-			declare: func(db *goschema.Database) {
-				db.Sequences = []goschema.Sequence{{Name: "seq1", Schema: "reporting"}}
+			declare: func(db *schemamodel.Database) {
+				db.Sequences = []schemamodel.Sequence{{Name: "seq1", Schema: "reporting"}}
 			},
 			want: "sequence \"seq1\" {\n  schema = schema.reporting\n",
 		},
 		{
 			name: "a domain",
-			declare: func(db *goschema.Database) {
-				db.Domains = []goschema.Domain{{
+			declare: func(db *schemamodel.Database) {
+				db.Domains = []schemamodel.Domain{{
 					Name: "positive_int", Schema: "reporting", BaseType: "integer",
 				}}
 			},
@@ -177,19 +177,19 @@ func TestRenderInspectedKeepsASchemaTheReaderReported(t *testing.T) {
 		},
 		{
 			name: "a composite type",
-			declare: func(db *goschema.Database) {
-				db.CompositeTypes = []goschema.CompositeType{{
+			declare: func(db *schemamodel.Database) {
+				db.CompositeTypes = []schemamodel.CompositeType{{
 					Name:   "addr",
 					Schema: "reporting",
-					Fields: []goschema.CompositeTypeField{{Name: "street", Type: "text"}},
+					Fields: []schemamodel.CompositeField{{Name: "street", Type: "text"}},
 				}}
 			},
 			want: "composite \"addr\" {\n  schema = schema.reporting\n",
 		},
 		{
 			name: "a range type",
-			declare: func(db *goschema.Database) {
-				db.Ranges = []goschema.Range{{
+			declare: func(db *schemamodel.Database) {
+				db.Ranges = []schemamodel.Range{{
 					Name: "numrng", Schema: "reporting", Subtype: "numeric",
 				}}
 			},
@@ -197,8 +197,8 @@ func TestRenderInspectedKeepsASchemaTheReaderReported(t *testing.T) {
 		},
 		{
 			name: "a function",
-			declare: func(db *goschema.Database) {
-				db.Functions = []goschema.Function{{
+			declare: func(db *schemamodel.Database) {
+				db.Functions = []schemamodel.Function{{
 					Name: "reporting.f", Returns: "integer", Language: "sql", Body: "SELECT 1",
 				}}
 			},
@@ -206,15 +206,15 @@ func TestRenderInspectedKeepsASchemaTheReaderReported(t *testing.T) {
 		},
 		{
 			name: "a view",
-			declare: func(db *goschema.Database) {
-				db.Views = []goschema.View{{Name: "reporting.v", Body: "SELECT id FROM t"}}
+			declare: func(db *schemamodel.Database) {
+				db.Views = []schemamodel.View{{Name: "reporting.v", Body: "SELECT id FROM t"}}
 			},
 			want: "view \"v\" {\n  schema = schema.reporting\n",
 		},
 		{
 			name: "a materialized view",
-			declare: func(db *goschema.Database) {
-				db.MaterializedViews = []goschema.MaterializedView{{
+			declare: func(db *schemamodel.Database) {
+				db.MaterializedViews = []schemamodel.MaterializedView{{
 					Name: "reporting.mv", Body: "SELECT id FROM t",
 				}}
 			},
@@ -222,8 +222,8 @@ func TestRenderInspectedKeepsASchemaTheReaderReported(t *testing.T) {
 		},
 		{
 			name: "an enum",
-			declare: func(db *goschema.Database) {
-				db.Enums = []goschema.Enum{{
+			declare: func(db *schemamodel.Database) {
+				db.Enums = []schemamodel.Enum{{
 					Name: "mood", Schema: "reporting", Values: []string{"sad", "ok"},
 				}}
 			},
@@ -231,8 +231,8 @@ func TestRenderInspectedKeepsASchemaTheReaderReported(t *testing.T) {
 		},
 		{
 			name: "a synonym",
-			declare: func(db *goschema.Database) {
-				db.Synonyms = []goschema.Synonym{{
+			declare: func(db *schemamodel.Database) {
+				db.Synonyms = []schemamodel.Synonym{{
 					Name: "s_users", Schema: "reporting", Target: "other.dbo.users",
 				}}
 			},
@@ -242,8 +242,8 @@ func TestRenderInspectedKeepsASchemaTheReaderReported(t *testing.T) {
 			// The property does not take the fallback, so this is the whole of
 			// what it promises: a schema the read DID report is written.
 			name: "an extended property",
-			declare: func(db *goschema.Database) {
-				db.ExtendedProperties = []goschema.ExtendedProperty{{
+			declare: func(db *schemamodel.Database) {
+				db.ExtendedProperties = []schemamodel.ExtendedProperty{{
 					Name: "MS_Description", Schema: "reporting", Table: "t", Value: "the table",
 				}}
 			},

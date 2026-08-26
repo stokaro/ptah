@@ -14,7 +14,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // TestDropClusterScopedTestState pins the reported omission, byte for byte.
@@ -31,15 +31,15 @@ import (
 func TestDropClusterScopedTestState(t *testing.T) {
 	tests := []struct {
 		name   string
-		schema func() *goschema.Database
+		schema func() *schemamodel.Database
 		want   string
 	}{
 		{
 			name: "one role and one grant",
-			schema: func() *goschema.Database {
-				return &goschema.Database{
-					Roles: []goschema.Role{{Name: "app_reader"}},
-					Grants: []goschema.Grant{
+			schema: func() *schemamodel.Database {
+				return &schemamodel.Database{
+					Roles: []schemamodel.Role{{Name: "app_reader"}},
+					Grants: []schemamodel.Grant{
 						{Role: "PUBLIC", Privileges: []string{"USAGE"}, OnSchema: "public"},
 					},
 				}
@@ -49,9 +49,9 @@ func TestDropClusterScopedTestState(t *testing.T) {
 		},
 		{
 			name: "grants only, pluralized",
-			schema: func() *goschema.Database {
-				return &goschema.Database{
-					Grants: []goschema.Grant{
+			schema: func() *schemamodel.Database {
+				return &schemamodel.Database{
+					Grants: []schemamodel.Grant{
 						{Role: "PUBLIC", Privileges: []string{"USAGE"}, OnSchema: "public"},
 						{Role: "app_reader", Privileges: []string{"SELECT"}, OnTable: "public.orders"},
 					},
@@ -62,7 +62,7 @@ func TestDropClusterScopedTestState(t *testing.T) {
 		},
 		{
 			name:   "nothing to drop stays silent",
-			schema: func() *goschema.Database { return &goschema.Database{} },
+			schema: func() *schemamodel.Database { return &schemamodel.Database{} },
 			want:   "",
 		},
 	}

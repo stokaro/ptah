@@ -10,9 +10,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/planner"
@@ -67,13 +67,13 @@ func TestPostgresLiveDomainCheckConverges(t *testing.T) {
 	// is public here, so a declaration that left it out would be a different
 	// object entirely -- one addition and one removal, and none of the steps
 	// below would be measuring anything.
-	declared := func(check string) *goschema.Database {
-		return &goschema.Database{
-			Domains: []goschema.Domain{
+	declared := func(check string) *schemamodel.Database {
+		return &schemamodel.Database{
+			Domains: []schemamodel.Domain{
 				{Name: "grade", Schema: schemaName, BaseType: "text", Check: check},
 			},
-			Tables: []goschema.Table{{StructName: "S", Name: "s", Schema: schemaName}},
-			Fields: []goschema.Field{
+			Tables: []schemamodel.Table{{StructName: "S", Name: "s", Schema: schemaName}},
+			Fields: []schemamodel.Field{
 				{StructName: "S", Name: "id", Type: "INT", Primary: true},
 				{StructName: "S", Name: "mark", Type: schemaName + ".grade"},
 			},
@@ -132,7 +132,7 @@ func compareLiveDomains(
 	c *qt.C,
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
-	declared *goschema.Database,
+	declared *schemamodel.Database,
 	schemaName string,
 ) *difftypes.SchemaDiff {
 	c.Helper()

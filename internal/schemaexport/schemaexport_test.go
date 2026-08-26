@@ -5,24 +5,24 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemaexport"
 )
 
-func fixture() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func fixture() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Author", Name: "authors"},
 			{StructName: "Book", Name: "books"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Author", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "Author", Name: "name", Type: "VARCHAR(255)"},
 			{StructName: "Book", Name: "id", Type: "BIGSERIAL", Primary: true},
 			{StructName: "Book", Name: "author_id", Type: "INTEGER", Foreign: "authors(id)"},
 			{StructName: "Book", Name: "status", Type: "enum_book_status"},
 		},
-		Enums: []goschema.Enum{{Name: "enum_book_status", Values: []string{"draft", "published"}}},
+		Enums: []schemamodel.Enum{{Name: "enum_book_status", Values: []string{"draft", "published"}}},
 	}
 }
 
@@ -57,7 +57,7 @@ func TestFieldsForAndPrimaryKey(t *testing.T) {
 	c.Assert(schemaexport.EffectivePrimaryKey(books, fields), qt.DeepEquals, []string{"id"})
 
 	// Composite primary key comes from the table.
-	composite := goschema.Table{StructName: "M", Name: "m", PrimaryKey: []string{"a", "b"}}
+	composite := schemamodel.Table{StructName: "M", Name: "m", PrimaryKey: []string{"a", "b"}}
 	c.Assert(schemaexport.EffectivePrimaryKey(composite, nil), qt.DeepEquals, []string{"a", "b"})
 }
 
@@ -65,17 +65,17 @@ func TestResolveEnumValues(t *testing.T) {
 	c := qt.New(t)
 	enums := schemaexport.EnumIndex(fixture())
 
-	inline := goschema.Field{Type: "whatever", Enum: []string{"a", "b"}}
+	inline := schemamodel.Field{Type: "whatever", Enum: []string{"a", "b"}}
 	values, ok := schemaexport.ResolveEnumValues(inline, enums)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(values, qt.DeepEquals, []string{"a", "b"})
 
-	named := goschema.Field{Type: "enum_book_status"}
+	named := schemamodel.Field{Type: "enum_book_status"}
 	values, ok = schemaexport.ResolveEnumValues(named, enums)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(values, qt.DeepEquals, []string{"draft", "published"})
 
-	_, ok = schemaexport.ResolveEnumValues(goschema.Field{Type: "VARCHAR(255)"}, enums)
+	_, ok = schemaexport.ResolveEnumValues(schemamodel.Field{Type: "VARCHAR(255)"}, enums)
 	c.Assert(ok, qt.IsFalse)
 }
 
@@ -166,7 +166,7 @@ func TestNormalizeType(t *testing.T) {
 	c.Assert(args, qt.DeepEquals, []string{"10", "2"})
 }
 
-func names(tables []goschema.Table) []string {
+func names(tables []schemamodel.Table) []string {
 	out := make([]string, len(tables))
 	for i, table := range tables {
 		out[i] = table.Name

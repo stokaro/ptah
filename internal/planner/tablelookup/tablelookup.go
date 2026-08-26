@@ -4,19 +4,19 @@ package tablelookup
 import (
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/tableref"
 )
 
 // ResolveReference returns the canonical identity of a referenced table when
 // the reference can be resolved without guessing.
-func ResolveReference(tables []goschema.Table, current goschema.Table, reference string) string {
+func ResolveReference(tables []schemamodel.Table, current schemamodel.Table, reference string) string {
 	ref, ok := tableref.Parse(reference)
 	if !ok {
 		return reference
 	}
 	if ref.Qualified {
-		return goschema.QualifyTableName(ref.Schema, ref.Name)
+		return schemamodel.QualifyTableName(ref.Schema, ref.Name)
 	}
 
 	currentSchema := strings.TrimSpace(current.Schema)

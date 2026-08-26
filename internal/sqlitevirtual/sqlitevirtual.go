@@ -127,10 +127,10 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/envbool"
 	"go.5x5.cz/ptah/internal/planner/objectlookup"
@@ -366,7 +366,7 @@ func (t Table) String() string {
 // has said it removes every one of them.
 func ValidateComparison(
 	dialect string,
-	desired *goschema.Database,
+	desired *schemamodel.Database,
 	database *catalog.Database,
 	policy Policy,
 ) error {
@@ -560,7 +560,7 @@ func ValidateComparison(
 // the rebuild half of the harm is exactly what the post-diff gate reads, and
 // `skip drop_table` does not filter a modification.
 func validateDatabaseIsClassifiable(
-	desired *goschema.Database,
+	desired *schemamodel.Database,
 	database *catalog.Database,
 	registered sqlitemodule.Set,
 	semantics identifier.Semantics,
@@ -1122,7 +1122,7 @@ func quotedStrings(values []string) string {
 // [pairSides] gives it, and it keeps a nil desired state from being mistaken
 // for one that declared everything.
 func someLiveTableIsUndeclared(
-	desired *goschema.Database,
+	desired *schemamodel.Database,
 	database *catalog.Database,
 	semantics identifier.Semantics,
 ) bool {
@@ -1156,8 +1156,8 @@ func someLiveTableIsUndeclared(
 //     built by something other than the SQLite reader -- a test, a future
 //     producer -- cannot walk past this by leaving the field empty. A zero
 //     value must not read as "every module is present".
-func liveUnregistered(database *catalog.Database, registered sqlitemodule.Set) []Table {
-	if database == nil {
+func liveUnregistered(current *catalog.Database, registered sqlitemodule.Set) []Table {
+	if current == nil {
 		return nil
 	}
 	seen := make(map[string]struct{})
@@ -1172,10 +1172,10 @@ func liveUnregistered(database *catalog.Database, registered sqlitemodule.Set) [
 		seen[schema+"\x00"+name] = struct{}{}
 		unclassified = append(unclassified, Table{Schema: schema, Name: name, Module: module})
 	}
-	for _, table := range database.UnregisteredVirtualTables {
+	for _, table := range current.UnregisteredVirtualTables {
 		add(table.Schema, table.Name, table.Module)
 	}
-	for _, table := range database.Tables {
+	for _, table := range current.Tables {
 		add(table.Schema, table.Name, table.VirtualModule)
 	}
 	sortTables(unclassified)
@@ -1306,7 +1306,7 @@ func (s pairedSide) declarationsMatch(semantics identifier.Semantics) bool {
 // pairSides joins the two sides of the comparison on table identity, keeping
 // only the names at least one side calls a virtual table.
 func pairSides(
-	desired *goschema.Database,
+	desired *schemamodel.Database,
 	database *catalog.Database,
 	semantics identifier.Semantics,
 ) []pairedSide {
@@ -1487,12 +1487,12 @@ func useVerb(count int) string {
 }
 
 // Tables lists the virtual tables a database schema holds, in a stable order.
-func Tables(database *catalog.Database) []Table {
-	if database == nil {
+func Tables(current *catalog.Database) []Table {
+	if current == nil {
 		return nil
 	}
 	var virtual []Table
-	for _, table := range database.Tables {
+	for _, table := range current.Tables {
 		if table.VirtualModule == "" {
 			continue
 		}

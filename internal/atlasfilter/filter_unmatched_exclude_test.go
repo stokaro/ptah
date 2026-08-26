@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 )
@@ -280,15 +280,15 @@ func TestExcludeDatabaseReport_TypeSelectorReportsItsWrittenSpelling(t *testing.
 // the object counts, not one of them.
 func TestExcludeReport_ChildOfARemovedTableIsAskedOnBothSides(t *testing.T) {
 	c := qt.New(t)
-	schema := &goschema.Database{
-		Tables:  []goschema.Table{{StructName: "User", Name: "users"}},
-		Indexes: []goschema.Index{{StructName: "User", Name: "users_id_idx", Fields: []string{"id"}}},
+	schema := &schemamodel.Database{
+		Tables:  []schemamodel.Table{{StructName: "User", Name: "users"}},
+		Indexes: []schemamodel.Index{{StructName: "User", Name: "users_id_idx", Fields: []string{"id"}}},
 	}
 
-	filteredGenerated, generated, err := atlasfilter.ExcludeGeneratedReport(
+	filteredGenerated, desired, err := atlasfilter.ExcludeGeneratedReport(
 		schema, []string{"users", "users.users_id_idx"}, "public")
 	c.Assert(err, qt.IsNil)
-	c.Assert(generated.Unmatched, qt.IsNil)
+	c.Assert(desired.Unmatched, qt.IsNil)
 	c.Assert(filteredGenerated.Tables, qt.HasLen, 0)
 	c.Assert(filteredGenerated.Indexes, qt.HasLen, 0)
 
@@ -303,5 +303,5 @@ func TestExcludeReport_ChildOfARemovedTableIsAskedOnBothSides(t *testing.T) {
 	c.Assert(filteredDatabase.Tables, qt.HasLen, 0)
 	c.Assert(filteredDatabase.Indexes, qt.HasLen, 0)
 
-	c.Assert(atlasfilter.UnmatchedAcrossStates(database, generated), qt.IsNil)
+	c.Assert(atlasfilter.UnmatchedAcrossStates(database, desired), qt.IsNil)
 }

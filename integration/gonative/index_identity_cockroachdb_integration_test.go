@@ -10,8 +10,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/planner"
@@ -138,13 +138,13 @@ func readCockroachIndexIdentitySchema(c *qt.C, t *testing.T, dsn string) *catalo
 	return live
 }
 
-func cockroachIndexIdentityOrdersTarget() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func cockroachIndexIdentityOrdersTarget() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: cockroachIndexIdentityUsersTable, StructName: "CockroachIndexUser"},
 			{Name: cockroachIndexIdentityOrdersTable, StructName: "CockroachIndexOrder"},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{
 				Name:      cockroachIndexIdentityName,
 				TableName: cockroachIndexIdentityOrdersTable,
@@ -154,9 +154,9 @@ func cockroachIndexIdentityOrdersTarget() *goschema.Database {
 	}
 }
 
-func cockroachIndexIdentityBothTarget() *goschema.Database {
+func cockroachIndexIdentityBothTarget() *schemamodel.Database {
 	target := cockroachIndexIdentityOrdersTarget()
-	target.Indexes = append(target.Indexes, goschema.Index{
+	target.Indexes = append(target.Indexes, schemamodel.Index{
 		Name:      cockroachIndexIdentityName,
 		TableName: cockroachIndexIdentityUsersTable,
 		Fields:    []string{"email"},

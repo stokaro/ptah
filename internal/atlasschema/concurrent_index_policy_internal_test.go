@@ -10,15 +10,15 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
-func concurrentDesired() *goschema.Database {
-	return &goschema.Database{
-		Tables:  []goschema.Table{{StructName: "Widget", Name: "widget"}},
-		Indexes: []goschema.Index{{StructName: "Widget", Name: "idx_widget_a", Fields: []string{"a"}, Concurrently: true}},
+func concurrentDesired() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables:  []schemamodel.Table{{StructName: "Widget", Name: "widget"}},
+		Indexes: []schemamodel.Index{{StructName: "Widget", Name: "idx_widget_a", Fields: []string{"a"}, Concurrently: true}},
 	}
 }
 

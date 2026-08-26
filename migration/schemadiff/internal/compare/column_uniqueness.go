@@ -3,8 +3,8 @@ package compare
 import (
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/tableref"
 )
@@ -38,27 +38,27 @@ type (
 // constraint. Live objects alone cannot suppress a column difference because
 // database-side index filters may intentionally exclude backing indexes.
 func collectGeneratedObjectOwnedUniqueColumns(
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	semantics identifier.Semantics,
 ) map[columnIdentity]struct{} {
 	columns := make(map[columnIdentity]struct{})
-	collectGeneratedUniqueIndexColumns(columns, generated, semantics)
-	collectGeneratedUniqueConstraintColumns(columns, generated, semantics)
+	collectGeneratedUniqueIndexColumns(columns, desired, semantics)
+	collectGeneratedUniqueConstraintColumns(columns, desired, semantics)
 	return columns
 }
 
 func collectGeneratedUniqueIndexColumns(
 	columns map[columnIdentity]struct{},
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	semantics identifier.Semantics,
 ) {
-	owners := goschema.ResolveIndexTableNames(generated.Indexes, generated.Tables)
-	for position, index := range generated.Indexes {
+	owners := schemamodel.ResolveIndexTableNames(desired.Indexes, desired.Tables)
+	for position, index := range desired.Indexes {
 		column, ok := singleGeneratedUniqueIndexColumn(index)
 		if !ok || owners[position] == "" {
 			continue
 		}
-		table, ok := generatedIndexTable(index, owners[position], generated.Tables)
+		table, ok := generatedIndexTable(index, owners[position], desired.Tables)
 		if !ok {
 			continue
 		}
@@ -72,11 +72,11 @@ func collectGeneratedUniqueIndexColumns(
 }
 
 func generatedIndexTable(
-	index goschema.Index,
+	index schemamodel.Index,
 	owner string,
-	tables []goschema.Table,
-) (goschema.Table, bool) {
-	var match goschema.Table
+	tables []schemamodel.Table,
+) (schemamodel.Table, bool) {
+	var match schemamodel.Table
 	matchCount := 0
 	for _, table := range tables {
 		if table.QualifiedName() != owner {
@@ -89,7 +89,7 @@ func generatedIndexTable(
 		return match, true
 	}
 	if matchCount == 0 || index.StructName == "" {
-		return goschema.Table{}, false
+		return schemamodel.Table{}, false
 	}
 
 	matchCount = 0
@@ -103,7 +103,7 @@ func generatedIndexTable(
 	return match, matchCount == 1
 }
 
-func singleGeneratedUniqueIndexColumn(index goschema.Index) (string, bool) {
+func singleGeneratedUniqueIndexColumn(index schemamodel.Index) (string, bool) {
 	if !index.Unique || strings.TrimSpace(index.Condition) != "" {
 		return "", false
 	}
@@ -121,11 +121,11 @@ func singleGeneratedUniqueIndexColumn(index goschema.Index) (string, bool) {
 
 func collectGeneratedUniqueConstraintColumns(
 	columns map[columnIdentity]struct{},
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	semantics identifier.Semantics,
 ) {
-	for _, constraint := range generated.Constraints {
-		table, ok := generatedConstraintTable(constraint, generated.Tables)
+	for _, constraint := range desired.Constraints {
+		table, ok := generatedConstraintTable(constraint, desired.Tables)
 		if !strings.EqualFold(constraint.Type, "UNIQUE") ||
 			!ok ||
 			len(constraint.Columns) != 1 {
@@ -141,8 +141,8 @@ func collectGeneratedUniqueConstraintColumns(
 }
 
 func generatedConstraintTableName(
-	constraint goschema.Constraint,
-	tables []goschema.Table,
+	constraint schemamodel.Constraint,
+	tables []schemamodel.Table,
 ) string {
 	table, ok := generatedConstraintTable(constraint, tables)
 	if !ok {
@@ -152,11 +152,11 @@ func generatedConstraintTableName(
 }
 
 func generatedConstraintTable(
-	constraint goschema.Constraint,
-	tables []goschema.Table,
-) (goschema.Table, bool) {
+	constraint schemamodel.Constraint,
+	tables []schemamodel.Table,
+) (schemamodel.Table, bool) {
 	tableName := strings.TrimSpace(constraint.Table)
-	var owner goschema.Table
+	var owner schemamodel.Table
 	found := false
 	for _, table := range tables {
 		if constraint.StructName != "" && table.StructName != constraint.StructName {
@@ -168,7 +168,7 @@ func generatedConstraintTable(
 			continue
 		}
 		if found {
-			return goschema.Table{}, false
+			return schemamodel.Table{}, false
 		}
 		owner = table
 		found = true

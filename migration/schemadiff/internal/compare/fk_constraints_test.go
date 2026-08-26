@@ -7,7 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
@@ -16,7 +16,7 @@ import (
 // TestConstraints_FieldLevelForeignKey covers issue #189 — on_delete /
 // on_update drift on a field-level `foreign=` annotation against an
 // already-applied schema must surface as a migration. The compare layer
-// synthesizes a goschema.Constraint of type FOREIGN KEY from the field (for
+// synthesizes a schemamodel.Constraint of type FOREIGN KEY from the field (for
 // columns that already exist in the introspected database) and lets the
 // matching DB-side FK through, so an action change runs through the standard
 // Constraints() → foreignKeyConstraintChanged path as a drop+add. An unchanged
@@ -49,11 +49,11 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 	}
 
 	tests := []struct {
-		name      string
-		generated *goschema.Database
-		database  *catalog.Database
-		expected  *difftypes.SchemaDiff
-		wantSQL   []string
+		name     string
+		desired  *schemamodel.Database
+		database *catalog.Database
+		expected *difftypes.SchemaDiff
+		wantSQL  []string
 	}{
 		{
 			// A column can already exist before the Go annotation gains
@@ -61,12 +61,12 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 			// entry and the planner must render that entry, otherwise #136
 			// regresses silently.
 			name: "field-level FK added to existing column reaches planner output",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{StructName: "File", Name: "files"},
 					{StructName: "Export", Name: "exports"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{StructName: "File", Name: "id", Type: "TEXT", Primary: true},
 					{StructName: "Export", Name: "id", Type: "TEXT", Primary: true},
 					{
@@ -98,9 +98,9 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 			// The headline bug: model says SET NULL, the live FK is NO ACTION.
 			// Expect a drop + add so a non-empty up/down migration is produced.
 			name: "on_delete NO ACTION -> SET NULL surfaces as drop + add",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{{StructName: "Export", Name: "exports"}},
-				Fields: []goschema.Field{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "Export", Name: "exports"}},
+				Fields: []schemamodel.Field{
 					{StructName: "Export", Name: "id", Type: "TEXT", Primary: true},
 					{
 						StructName:     "Export",
@@ -124,9 +124,9 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 		{
 			// Idempotency #1: SET NULL == SET NULL is a no-op.
 			name: "on_delete SET NULL matches existing — no diff (idempotent)",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{{StructName: "Export", Name: "exports"}},
-				Fields: []goschema.Field{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "Export", Name: "exports"}},
+				Fields: []schemamodel.Field{
 					{StructName: "Export", Name: "id", Type: "TEXT", Primary: true},
 					{
 						StructName:     "Export",
@@ -148,9 +148,9 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 			// Atlas-style underscore action spelling is equivalent to the
 			// spaced SQL spelling reported by information_schema.
 			name: "on_delete SET_NULL matches existing SET NULL — no diff (idempotent)",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{{StructName: "Export", Name: "exports"}},
-				Fields: []goschema.Field{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "Export", Name: "exports"}},
+				Fields: []schemamodel.Field{
 					{StructName: "Export", Name: "id", Type: "TEXT", Primary: true},
 					{
 						StructName:     "Export",
@@ -174,9 +174,9 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 			// ACTION, trim + upper-case) must make this a no-op, otherwise every
 			// `generate` would churn the same FK forever.
 			name: "empty action == NO ACTION — no diff (idempotent)",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{{StructName: "Export", Name: "exports"}},
-				Fields: []goschema.Field{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "Export", Name: "exports"}},
+				Fields: []schemamodel.Field{
 					{StructName: "Export", Name: "id", Type: "TEXT", Primary: true},
 					{
 						StructName:     "Export",
@@ -198,9 +198,9 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 			// Atlas-style underscore action spelling is equivalent to the
 			// spaced SQL spelling reported by information_schema.
 			name: "on_update NO_ACTION matches existing NO ACTION — no diff (idempotent)",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{{StructName: "Export", Name: "exports"}},
-				Fields: []goschema.Field{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "Export", Name: "exports"}},
+				Fields: []schemamodel.Field{
 					{StructName: "Export", Name: "id", Type: "TEXT", Primary: true},
 					{
 						StructName:     "Export",
@@ -222,9 +222,9 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 			// Casing / whitespace differences between the model and the
 			// introspected rule must not register as drift.
 			name: "case-insensitive action match — no diff (idempotent)",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{{StructName: "Export", Name: "exports"}},
-				Fields: []goschema.Field{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "Export", Name: "exports"}},
+				Fields: []schemamodel.Field{
 					{StructName: "Export", Name: "id", Type: "TEXT", Primary: true},
 					{
 						StructName:     "Export",
@@ -245,9 +245,9 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 		{
 			// on_update drift is detected independently of on_delete.
 			name: "on_update CASCADE drift surfaces as drop + add",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{{StructName: "Export", Name: "exports"}},
-				Fields: []goschema.Field{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "Export", Name: "exports"}},
+				Fields: []schemamodel.Field{
 					{StructName: "Export", Name: "id", Type: "TEXT", Primary: true},
 					{
 						StructName:     "Export",
@@ -274,9 +274,9 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 			// name. The DB FK is introspected under that same generated name, so
 			// the action change still matches and surfaces.
 			name: "fallback fk_<table>_<column> name still matches and detects drift",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{{StructName: "Export", Name: "exports"}},
-				Fields: []goschema.Field{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "Export", Name: "exports"}},
+				Fields: []schemamodel.Field{
 					{StructName: "Export", Name: "id", Type: "TEXT", Primary: true},
 					{
 						StructName: "Export",
@@ -312,9 +312,9 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 			// same table. Changing on_delete must surface just like any other
 			// field-level FK.
 			name: "self-referencing field-level FK action drift surfaces",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{{StructName: "Category", Name: "categories"}},
-				Fields: []goschema.Field{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "Category", Name: "categories"}},
+				Fields: []schemamodel.Field{
 					{StructName: "Category", Name: "id", Type: "TEXT", Primary: true},
 					{
 						StructName:     "Category",
@@ -358,9 +358,9 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 			// inline with the CREATE TABLE / ADD COLUMN, so emitting an ADD
 			// CONSTRAINT here would double-create it. No diff expected.
 			name: "field-level FK on column not yet in DB → no synthesized constraint",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{{StructName: "Export", Name: "exports"}},
-				Fields: []goschema.Field{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "Export", Name: "exports"}},
+				Fields: []schemamodel.Field{
 					{StructName: "Export", Name: "id", Type: "TEXT", Primary: true},
 					{
 						StructName:     "Export",
@@ -382,9 +382,9 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 			// Changing the referenced column (files(id) -> files(uuid)) is a
 			// definitional change and must also surface as drop + add.
 			name: "referenced column change surfaces as drop + add",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{{StructName: "Export", Name: "exports"}},
-				Fields: []goschema.Field{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "Export", Name: "exports"}},
+				Fields: []schemamodel.Field{
 					{StructName: "Export", Name: "id", Type: "TEXT", Primary: true},
 					{
 						StructName:     "Export",
@@ -411,7 +411,7 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 			c := qt.New(t)
 
 			diff := &difftypes.SchemaDiff{}
-			compare.Constraints(tt.generated, tt.database, diff, nil)
+			compare.Constraints(tt.desired, tt.database, diff, nil)
 
 			c.Assert(diff.ConstraintsAdded, qt.HasLen, len(tt.expected.ConstraintsAdded),
 				qt.Commentf("ConstraintsAdded=%v", diff.ConstraintsAdded))
@@ -426,7 +426,7 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 			}
 
 			if len(tt.wantSQL) > 0 {
-				statements, err := planner.GenerateSchemaDiffSQLStatements(diff, tt.generated, "postgres")
+				statements, err := planner.GenerateSchemaDiffSQLStatements(diff, tt.desired, "postgres")
 				c.Assert(err, qt.IsNil)
 				sql := strings.Join(statements, "\n")
 				for _, expected := range tt.wantSQL {
@@ -439,9 +439,9 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 
 func TestConstraints_FieldLevelForeignKeyDeduplicatesRepeatedIntrospectionColumns(t *testing.T) {
 	c := qt.New(t)
-	generated := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Area", Name: "ptah_area"}},
-		Fields: []goschema.Field{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Area", Name: "ptah_area"}},
+		Fields: []schemamodel.Field{
 			{StructName: "Area", Name: "id", Type: "TEXT", Primary: true},
 			{
 				StructName:     "Area",
@@ -473,7 +473,7 @@ func TestConstraints_FieldLevelForeignKeyDeduplicatesRepeatedIntrospectionColumn
 	}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.Constraints(generated, database, diff, nil)
+	compare.Constraints(desired, database, diff, nil)
 
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("added=%v removed=%v", diff.ConstraintsAdded, diff.ConstraintsRemoved))
 }

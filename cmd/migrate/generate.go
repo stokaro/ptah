@@ -13,7 +13,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/core/schemasource"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
@@ -454,7 +454,7 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	generated, err := loadGenerateSchema(cmd, rootDirs, schemaFiles, commands, dialect)
+	desired, err := loadGenerateSchema(cmd, rootDirs, schemaFiles, commands, dialect)
 	if err != nil {
 		return err
 	}
@@ -475,7 +475,7 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	}
 
 	generateOpts := generator.GenerateMigrationOptions{
-		Generated:         generated,
+		Generated:         desired,
 		DatabaseURL:       targetURL,
 		MigrationName:     name,
 		OutputDir:         migrationsDir,
@@ -569,7 +569,7 @@ func loadGenerateSchema(
 	rootDirs, schemaFiles []string,
 	commands []schemasource.Command,
 	dialect string,
-) (*goschema.Database, error) {
+) (*schemamodel.Database, error) {
 	plainHTTP, err := cmd.Flags().GetBool(dbcli.PlainHTTPFlagName)
 	if err != nil {
 		return nil, err

@@ -17,6 +17,7 @@ import (
 
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/core/schemasource"
 	"go.5x5.cz/ptah/internal/atlassource"
 	"go.5x5.cz/ptah/internal/ociartifact"
@@ -80,7 +81,7 @@ type OCI struct {
 // OCI is populated only when the desired state came from exactly one OCI
 // schema artifact, so callers cannot attach metadata to an ambiguous subject.
 type Result struct {
-	Database *goschema.Database
+	Database *schemamodel.Database
 	OCI      *OCI
 }
 
@@ -110,7 +111,7 @@ func (o Options) Sources() string {
 // Load resolves the desired schema described by opts using a background context.
 // It is a convenience wrapper over LoadContext for callers that do not run
 // external schema commands or do not need cancellation.
-func Load(opts Options) (*goschema.Database, error) {
+func Load(opts Options) (*schemamodel.Database, error) {
 	return LoadContext(context.Background(), opts)
 }
 
@@ -118,7 +119,7 @@ func Load(opts Options) (*goschema.Database, error) {
 // all it defaults to scanning the current directory for Go entities (the
 // historical behavior). Multiple sources of any kind are merged into one
 // composite schema. Any external schema commands are run under ctx.
-func LoadContext(ctx context.Context, opts Options) (*goschema.Database, error) {
+func LoadContext(ctx context.Context, opts Options) (*schemamodel.Database, error) {
 	result, err := LoadResult(ctx, opts)
 	if err != nil {
 		return nil, err
@@ -139,7 +140,7 @@ func LoadResult(ctx context.Context, opts Options) (*Result, error) {
 	return &Result{Database: database}, nil
 }
 
-func loadContext(ctx context.Context, opts Options) (*goschema.Database, error) {
+func loadContext(ctx context.Context, opts Options) (*schemamodel.Database, error) {
 	rootDirs := opts.RootDirs
 	schemaFiles, commands, err := opts.expandEnvSchemaFiles(opts.SchemaFiles, opts.Commands)
 	if err != nil {
@@ -171,9 +172,9 @@ func (o Options) loadCompositeContext(
 	ctx context.Context,
 	rootDirs, schemaFiles []string,
 	commands []schemasource.Command,
-) (*goschema.Database, error) {
+) (*schemamodel.Database, error) {
 	// Parse Go roots un-finalized so Merge runs a single finalize pass.
-	var sources []*goschema.Database
+	var sources []*schemamodel.Database
 	if len(rootDirs) > 0 {
 		absRoots, err := resolveRootDirs(rootDirs)
 		if err != nil {
@@ -206,7 +207,7 @@ func (o Options) loadCompositeContext(
 		sources = append(sources, commandDB)
 	}
 
-	result, err := goschema.Merge(sources...)
+	result, err := schemamodel.Merge(sources...)
 	if err != nil {
 		return nil, fmt.Errorf("error merging composite schema: %w", err)
 	}
@@ -223,7 +224,7 @@ func singleOCIReference(opts Options) (string, bool) {
 
 // loadGoRoots parses one or more Go entity roots into a finalized composite
 // schema.
-func (o Options) loadGoRoots(rootDirs []string) (*goschema.Database, error) {
+func (o Options) loadGoRoots(rootDirs []string) (*schemamodel.Database, error) {
 	absRoots, err := resolveRootDirs(rootDirs)
 	if err != nil {
 		return nil, err
@@ -242,7 +243,7 @@ func (o Options) loadGoRoots(rootDirs []string) (*goschema.Database, error) {
 
 // loadCommand runs an external schema command and returns its parsed output. The
 // resolver's dialect hint is applied when the command does not set its own.
-func (o Options) loadCommand(ctx context.Context, command schemasource.Command) (*goschema.Database, error) {
+func (o Options) loadCommand(ctx context.Context, command schemasource.Command) (*schemamodel.Database, error) {
 	if command.Dialect == "" {
 		command.Dialect = o.Dialect
 	}
@@ -371,7 +372,7 @@ func SupportedExtensionList() string {
 		", and " + supportedExtensions[len(supportedExtensions)-1]
 }
 
-func (o Options) loadSchemaFile(ctx context.Context, schemaFile string) (*goschema.Database, error) {
+func (o Options) loadSchemaFile(ctx context.Context, schemaFile string) (*schemamodel.Database, error) {
 	if strings.HasPrefix(schemaFile, ociartifact.Scheme) {
 		return o.loadOCI(ctx, schemaFile)
 	}
@@ -479,7 +480,7 @@ func rejectEnvReference(schemaFile, envSelectorFlag string) error {
 	)
 }
 
-func (o Options) loadOCI(ctx context.Context, raw string) (*goschema.Database, error) {
+func (o Options) loadOCI(ctx context.Context, raw string) (*schemamodel.Database, error) {
 	result, err := o.loadOCIResult(ctx, raw)
 	if err != nil {
 		return nil, err
@@ -523,7 +524,7 @@ func (o Options) loadOCIResult(ctx context.Context, raw string) (*Result, error)
 // It is recorded here rather than in the parser because the parser answers what
 // a SOURCE declares and its answer is rendered back out; a limit invented
 // during parsing would surface as a directive nobody wrote.
-func withGoAnnotationLimits(database *goschema.Database) *goschema.Database {
+func withGoAnnotationLimits(database *schemamodel.Database) *schemamodel.Database {
 	if database == nil {
 		return nil
 	}

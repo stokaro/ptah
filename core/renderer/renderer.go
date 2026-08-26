@@ -45,7 +45,6 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/platform/identifier"
@@ -58,6 +57,7 @@ import (
 	"go.5x5.cz/ptah/core/renderer/internal/dialects/oracle"
 	"go.5x5.cz/ptah/core/renderer/internal/dialects/postgres"
 	"go.5x5.cz/ptah/core/renderer/internal/dialects/sqlite"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/clickhouserbac"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/crdbttl"
@@ -822,12 +822,12 @@ func foreignKeysUnsupportedError(dialect string) error {
 // The function validates foreign key shape, actions, and target capabilities
 // before rendering. Unsupported or malformed constraints return an error and
 // no partial statement list.
-func GetOrderedCreateStatements(r *goschema.Database, dialect string) ([]string, error) {
+func GetOrderedCreateStatements(r *schemamodel.Database, dialect string) ([]string, error) {
 	return GetOrderedCreateStatementsWithCapabilities(r, dialect, capability.ForDialect(dialect))
 }
 
 // declaredExtensionNames is what a document says the target will have.
-func declaredExtensionNames(r *goschema.Database) []string {
+func declaredExtensionNames(r *schemamodel.Database) []string {
 	if r == nil {
 		return nil
 	}
@@ -840,14 +840,14 @@ func declaredExtensionNames(r *goschema.Database) []string {
 
 // ValidateSchema validates a complete schema against the default capability
 // preset for dialect without rendering SQL.
-func ValidateSchema(r *goschema.Database, dialect string) error {
+func ValidateSchema(r *schemamodel.Database, dialect string) error {
 	return ValidateSchemaWithCapabilities(r, dialect, capability.ForDialect(dialect))
 }
 
 // ValidateSchemaWithCapabilities validates a complete schema against a
 // concrete server capability set without rendering SQL.
 func ValidateSchemaWithCapabilities(
-	r *goschema.Database,
+	r *schemamodel.Database,
 	dialect string,
 	caps capability.Capabilities,
 ) error {
@@ -869,7 +869,7 @@ func ValidateSchemaWithCapabilities(
 // for a concrete server capability set. It has the same two-phase and
 // fail-closed guarantees as GetOrderedCreateStatements.
 func GetOrderedCreateStatementsWithCapabilities(
-	r *goschema.Database,
+	r *schemamodel.Database,
 	dialect string,
 	caps capability.Capabilities,
 ) ([]string, error) {
@@ -914,10 +914,10 @@ func GetOrderedCreateStatementsWithCapabilities(
 }
 
 func prepareDatabaseForRendering(
-	database *goschema.Database,
+	database *schemamodel.Database,
 	dialect string,
 	caps capability.Capabilities,
-) (goschema.Database, error) {
+) (schemamodel.Database, error) {
 	// The declared scope is resolved before anything else looks at the schema.
 	// An object this target was not declared for is not part of the desired
 	// state here, so it must not be validated against this target's
@@ -926,11 +926,11 @@ func prepareDatabaseForRendering(
 	//
 	// This is the render half of the seam. The compare half is in
 	// [go.5x5.cz/ptah/migration/schemadiff.CompareReportingUndecidedAdditions],
-	// and both go through [goschema.ScopeToDialect] so `schema render` and
+	// and both go through [schemamodel.ScopeToDialect] so `schema render` and
 	// `schema apply` cannot disagree about which objects a target has.
-	database = goschema.ScopeToDialect(database, dialect)
+	database = schemamodel.ScopeToDialect(database, dialect)
 	if err := validateDatabaseDeclarations(dialect, caps, database); err != nil {
-		return goschema.Database{}, err
+		return schemamodel.Database{}, err
 	}
 
 	prepared := *database
@@ -947,12 +947,12 @@ func prepareDatabaseForRendering(
 		}
 		hasForeignKeys = true
 		if err := validateFieldForeignKey(*field, dialect); err != nil {
-			return goschema.Database{}, err
+			return schemamodel.Database{}, err
 		}
 		var err error
 		field.OnDelete, field.OnUpdate, err = normalizeReferentialActions(dialect, field.OnDelete, field.OnUpdate)
 		if err != nil {
-			return goschema.Database{}, err
+			return schemamodel.Database{}, err
 		}
 	}
 	for i := range prepared.EmbeddedFields {
@@ -962,7 +962,7 @@ func prepareDatabaseForRendering(
 		}
 		hasForeignKeys = true
 		if err := validateForeignKeyReference(embedded.Ref); err != nil {
-			return goschema.Database{}, &ptaherr.RenderError{
+			return schemamodel.Database{}, &ptaherr.RenderError{
 				Dialect: dialect,
 				Err:     ptaherr.ErrInvalidSchemaDiff,
 				Message: fmt.Sprintf("invalid embedded foreign key on field %q: %s", embedded.Field, err),
@@ -971,7 +971,7 @@ func prepareDatabaseForRendering(
 		var err error
 		embedded.OnDelete, embedded.OnUpdate, err = normalizeReferentialActions(dialect, embedded.OnDelete, embedded.OnUpdate)
 		if err != nil {
-			return goschema.Database{}, err
+			return schemamodel.Database{}, err
 		}
 	}
 	for i := range prepared.Constraints {
@@ -981,19 +981,19 @@ func prepareDatabaseForRendering(
 		}
 		hasForeignKeys = true
 		if err := validateTableForeignKey(*constraint, dialect); err != nil {
-			return goschema.Database{}, err
+			return schemamodel.Database{}, err
 		}
 		var err error
 		constraint.OnDelete, constraint.OnUpdate, err = normalizeReferentialActions(dialect, constraint.OnDelete, constraint.OnUpdate)
 		if err != nil {
-			return goschema.Database{}, err
+			return schemamodel.Database{}, err
 		}
 	}
 	if hasForeignKeys && !caps.Has(capability.ForeignKeys) {
-		return goschema.Database{}, foreignKeysUnsupportedError(dialect)
+		return schemamodel.Database{}, foreignKeysUnsupportedError(dialect)
 	}
 	if err := validateSchemaForeignKeys(prepared, dialect, caps); err != nil {
-		return goschema.Database{}, err
+		return schemamodel.Database{}, err
 	}
 	if hasForeignKeys {
 		makeMySQLForeignKeyTableEnginesExplicit(&prepared, dialect)
@@ -1004,7 +1004,7 @@ func prepareDatabaseForRendering(
 func validateDatabaseDeclarations(
 	dialect string,
 	caps capability.Capabilities,
-	database *goschema.Database,
+	database *schemamodel.Database,
 ) error {
 	if err := systemschema.ValidateDeclaredPostgresSystemSchemas(dialect, database.Schemas); err != nil {
 		return err
@@ -1093,7 +1093,7 @@ func validateDatabaseDeclarations(
 // SAME name are the existing duplicate-definition case, which
 // core/goschema already answers -- and answers better, because it allows
 // byte-identical repeats.
-func validateRoutineIdentityCollisions(dialect string, functions []goschema.Function) error {
+func validateRoutineIdentityCollisions(dialect string, functions []schemamodel.Function) error {
 	if !routineNamesAreCaseInsensitive(dialect) {
 		return nil
 	}
@@ -1162,7 +1162,7 @@ func routineNamesAreCaseInsensitive(dialect string) bool {
 	}
 }
 
-func validateExtensionInstallationSchemas(dialect string, extensions []goschema.Extension) error {
+func validateExtensionInstallationSchemas(dialect string, extensions []schemamodel.Extension) error {
 	if !extensionInstallationSchemaRejected(dialect) {
 		return nil
 	}
@@ -1177,7 +1177,7 @@ func validateExtensionInstallationSchemas(dialect string, extensions []goschema.
 func validateDeclaredIndexIncludes(
 	dialect string,
 	caps capability.Capabilities,
-	indexes []goschema.Index,
+	indexes []schemamodel.Index,
 ) error {
 	for _, index := range indexes {
 		if err := validateIndexInclude(dialect, caps, index.Name, index.Type, index.IncludeColumns); err != nil {
@@ -1270,7 +1270,7 @@ func validateIndexInclude(
 	}
 }
 
-func makeMySQLForeignKeyTableEnginesExplicit(database *goschema.Database, dialect string) {
+func makeMySQLForeignKeyTableEnginesExplicit(database *schemamodel.Database, dialect string) {
 	normalizedDialect := platform.NormalizeDialect(dialect)
 	if normalizedDialect != platform.MySQL && normalizedDialect != platform.MariaDB {
 		return
@@ -1296,7 +1296,7 @@ func makeMySQLForeignKeyTableEnginesExplicit(database *goschema.Database, dialec
 	}
 }
 
-func mysqlForeignKeyTableParticipants(database goschema.Database) map[string]struct{} {
+func mysqlForeignKeyTableParticipants(database schemamodel.Database) map[string]struct{} {
 	participants := make(map[string]struct{})
 	fields := fromschema.ProcessEmbeddedFields(database.EmbeddedFields, database.Fields)
 	for _, field := range fields {
@@ -1327,7 +1327,7 @@ func mysqlForeignKeyTableParticipants(database goschema.Database) map[string]str
 	return participants
 }
 
-func configuredTableEngine(table goschema.Table, dialect string) (string, bool) {
+func configuredTableEngine(table schemamodel.Table, dialect string) (string, bool) {
 	if overrides := table.Overrides[dialect]; overrides != nil {
 		if engine, found := overrides["engine"]; found {
 			return engine, true
@@ -1336,7 +1336,7 @@ func configuredTableEngine(table goschema.Table, dialect string) (string, bool) 
 	return table.Engine, false
 }
 
-func validateFieldForeignKey(field goschema.Field, dialect string) error {
+func validateFieldForeignKey(field schemamodel.Field, dialect string) error {
 	if err := validateForeignKeyReference(field.Foreign); err != nil {
 		return &ptaherr.RenderError{
 			Dialect: dialect,
@@ -1359,7 +1359,7 @@ func validateForeignKeyReference(reference string) error {
 	return nil
 }
 
-func validateTableForeignKey(constraint goschema.Constraint, dialect string) error {
+func validateTableForeignKey(constraint schemamodel.Constraint, dialect string) error {
 	localColumns := constraint.Columns
 	foreignColumns := constraint.ForeignColumnsOrDefault()
 	if strings.TrimSpace(constraint.ForeignTable) == "" || len(localColumns) == 0 || len(foreignColumns) == 0 || len(localColumns) != len(foreignColumns) {
@@ -1429,7 +1429,7 @@ func invalidReferentialActionError(dialect, clause, action string) error {
 }
 
 func validateSchemaForeignKeys(
-	database goschema.Database,
+	database schemamodel.Database,
 	dialect string,
 	caps capability.Capabilities,
 ) error {
@@ -1534,7 +1534,7 @@ func validateSchemaForeignKeys(
 	return nil
 }
 
-func isEmbeddedHelperStruct(embeddedFields []goschema.EmbeddedField, structName string) bool {
+func isEmbeddedHelperStruct(embeddedFields []schemamodel.EmbeddedField, structName string) bool {
 	for _, embedded := range embeddedFields {
 		if embedded.StructName == structName || embedded.EmbeddedTypeName == structName {
 			return true
@@ -1546,7 +1546,7 @@ func isEmbeddedHelperStruct(embeddedFields []goschema.EmbeddedField, structName 
 func reserveExplicitForeignKeyName(
 	reserved map[string]map[string]struct{},
 	dialect string,
-	table goschema.Table,
+	table schemamodel.Table,
 	name string,
 ) error {
 	if name == "" {
@@ -1590,7 +1590,7 @@ func validateExplicitForeignKeyName(dialect, name string) error {
 	return fmt.Errorf("foreign-key name %q exceeds the %s identifier limit of %s", name, normalizedDialect, limit)
 }
 
-func foreignKeyNameScope(dialect string, table goschema.Table, name string) (scope, normalizedName string) {
+func foreignKeyNameScope(dialect string, table schemamodel.Table, name string) (scope, normalizedName string) {
 	normalizedDialect := platform.NormalizeDialect(dialect)
 	switch normalizedDialect {
 	case platform.MySQL, platform.MariaDB:
@@ -1615,11 +1615,11 @@ type foreignKeyBinding struct {
 }
 
 func validateSchemaForeignKeyColumns(
-	fields []goschema.Field,
+	fields []schemamodel.Field,
 	dialect string,
-	owner goschema.Table,
+	owner schemamodel.Table,
 	localColumns []string,
-	target goschema.Table,
+	target schemamodel.Table,
 	referencedColumns []string,
 	onDelete,
 	onUpdate string,
@@ -1660,12 +1660,12 @@ func validateSchemaForeignKeyColumns(
 	return nil
 }
 
-func validateForeignKeyTableStorage(dialect string, owner, target goschema.Table) error {
+func validateForeignKeyTableStorage(dialect string, owner, target schemamodel.Table) error {
 	normalizedDialect := platform.NormalizeDialect(dialect)
 	if normalizedDialect != platform.MySQL && normalizedDialect != platform.MariaDB {
 		return nil
 	}
-	for _, table := range []goschema.Table{owner, target} {
+	for _, table := range []schemamodel.Table{owner, target} {
 		engine := effectiveTableEngine(table, normalizedDialect)
 		if !strings.EqualFold(engine, "InnoDB") {
 			return invalidSchemaForeignKeyError(
@@ -1682,7 +1682,7 @@ func validateForeignKeyTableStorage(dialect string, owner, target goschema.Table
 	return nil
 }
 
-func effectiveTableEngine(table goschema.Table, dialect string) string {
+func effectiveTableEngine(table schemamodel.Table, dialect string) string {
 	configured, _ := configuredTableEngine(table, dialect)
 	engine := strings.TrimSpace(configured)
 	if engine == "" {
@@ -1693,10 +1693,10 @@ func effectiveTableEngine(table goschema.Table, dialect string) string {
 
 func validateForeignKeyColumnCompatibility(
 	dialect string,
-	owner goschema.Table,
-	local goschema.Field,
-	target goschema.Table,
-	referenced goschema.Field,
+	owner schemamodel.Table,
+	local schemamodel.Field,
+	target schemamodel.Table,
+	referenced schemamodel.Field,
 	onDelete,
 	onUpdate string,
 ) error {
@@ -1769,10 +1769,10 @@ func validateForeignKeyColumnCompatibility(
 
 func incompatibleForeignKeyColumnTypesError(
 	dialect string,
-	owner goschema.Table,
-	local goschema.Field,
-	target goschema.Table,
-	referenced goschema.Field,
+	owner schemamodel.Table,
+	local schemamodel.Field,
+	target schemamodel.Table,
+	referenced schemamodel.Field,
 ) error {
 	return invalidSchemaForeignKeyError(
 		dialect,
@@ -1790,15 +1790,15 @@ func incompatibleForeignKeyColumnTypesError(
 
 func validateMySQLFamilyGeneratedForeignKey(
 	dialect string,
-	owner goschema.Table,
-	local goschema.Field,
-	target goschema.Table,
-	referenced goschema.Field,
+	owner schemamodel.Table,
+	local schemamodel.Field,
+	target schemamodel.Table,
+	referenced schemamodel.Field,
 	onDelete,
 	onUpdate string,
 ) error {
-	generated := local.GeneratedExpression != "" || referenced.GeneratedExpression != ""
-	if !generated {
+	desired := local.GeneratedExpression != "" || referenced.GeneratedExpression != ""
+	if !desired {
 		return nil
 	}
 	normalizedDialect := platform.NormalizeDialect(dialect)
@@ -1830,7 +1830,7 @@ func validateMySQLFamilyGeneratedForeignKey(
 	return nil
 }
 
-func generatedForeignKeyColumnsAreStored(fields ...goschema.Field) bool {
+func generatedForeignKeyColumnsAreStored(fields ...schemamodel.Field) bool {
 	for _, field := range fields {
 		if field.GeneratedExpression == "" {
 			continue
@@ -1852,10 +1852,10 @@ func referentialActionOrDefault(action string) string {
 
 func validateMySQLForeignKeyTextMetadata(
 	dialect string,
-	owner goschema.Table,
-	local goschema.Field,
-	target goschema.Table,
-	referenced goschema.Field,
+	owner schemamodel.Table,
+	local schemamodel.Field,
+	target schemamodel.Table,
+	referenced schemamodel.Field,
 ) error {
 	localCharset := effectiveColumnMetadata(local.Charset, effectiveTableMetadata(owner, dialect, "charset"))
 	referencedCharset := effectiveColumnMetadata(
@@ -1894,7 +1894,7 @@ func validateMySQLForeignKeyTextMetadata(
 	return nil
 }
 
-func effectiveTableMetadata(table goschema.Table, dialect, key string) string {
+func effectiveTableMetadata(table schemamodel.Table, dialect, key string) string {
 	value := table.Charset
 	if key == "collate" {
 		value = table.Collate
@@ -1918,11 +1918,11 @@ func effectiveColumnMetadata(columnValue, tableValue string) string {
 func incompatibleForeignKeyTextMetadataError(
 	dialect,
 	metadata string,
-	owner goschema.Table,
-	local goschema.Field,
+	owner schemamodel.Table,
+	local schemamodel.Field,
 	localValue string,
-	target goschema.Table,
-	referenced goschema.Field,
+	target schemamodel.Table,
+	referenced schemamodel.Field,
 	referencedValue string,
 ) error {
 	return invalidSchemaForeignKeyError(
@@ -2043,16 +2043,16 @@ func isSpannerNonKeyType(fieldType string) bool {
 		strings.HasPrefix(fieldType, "ARRAY<") || strings.HasSuffix(fieldType, "[]")
 }
 
-func tableColumn(fields []goschema.Field, table goschema.Table, column string) goschema.Field {
+func tableColumn(fields []schemamodel.Field, table schemamodel.Table, column string) schemamodel.Field {
 	for _, field := range fields {
 		if field.StructName == table.StructName && field.Name == column {
 			return field
 		}
 	}
-	return goschema.Field{}
+	return schemamodel.Field{}
 }
 
-func firstMissingTableColumn(fields []goschema.Field, table goschema.Table, columns []string) string {
+func firstMissingTableColumn(fields []schemamodel.Field, table schemamodel.Table, columns []string) string {
 	available := make(map[string]struct{})
 	for _, field := range fields {
 		if field.StructName == table.StructName {
@@ -2068,10 +2068,10 @@ func firstMissingTableColumn(fields []goschema.Field, table goschema.Table, colu
 }
 
 func validateReferencedKeyPolicy(
-	database goschema.Database,
+	database schemamodel.Database,
 	dialect string,
 	caps capability.Capabilities,
-	target goschema.Table,
+	target schemamodel.Table,
 	columns []string,
 ) error {
 	switch {
@@ -2089,7 +2089,7 @@ func validateReferencedKeyPolicy(
 	return nil
 }
 
-func tableByStructName(tables []goschema.Table, structName string) *goschema.Table {
+func tableByStructName(tables []schemamodel.Table, structName string) *schemamodel.Table {
 	for i := range tables {
 		if tables[i].StructName == structName {
 			return &tables[i]
@@ -2098,7 +2098,7 @@ func tableByStructName(tables []goschema.Table, structName string) *goschema.Tab
 	return nil
 }
 
-func constraintOwnerTable(tables []goschema.Table, constraint goschema.Constraint) *goschema.Table {
+func constraintOwnerTable(tables []schemamodel.Table, constraint schemamodel.Constraint) *schemamodel.Table {
 	if constraint.Table != "" {
 		for i := range tables {
 			if tables[i].QualifiedName() == constraint.Table || tables[i].Name == constraint.Table {
@@ -2109,7 +2109,7 @@ func constraintOwnerTable(tables []goschema.Table, constraint goschema.Constrain
 	return tableByStructName(tables, constraint.StructName)
 }
 
-func referencedTable(tables []goschema.Table, owner goschema.Table, reference string) *goschema.Table {
+func referencedTable(tables []schemamodel.Table, owner schemamodel.Table, reference string) *schemamodel.Table {
 	resolved := tablelookup.ResolveReference(tables, owner, reference)
 	for i := range tables {
 		if tables[i].QualifiedName() == resolved {
@@ -2119,20 +2119,20 @@ func referencedTable(tables []goschema.Table, owner goschema.Table, reference st
 	return nil
 }
 
-func tableHasUniqueKey(database goschema.Database, dialect string, table goschema.Table, columns []string) bool {
+func tableHasUniqueKey(database schemamodel.Database, dialect string, table schemamodel.Table, columns []string) bool {
 	return tablePrimaryKeyEquals(table, columns) ||
 		tableFieldsHaveUniqueKey(allDatabaseFields(database), table, columns) ||
 		tableConstraintsHaveUniqueKey(database, table, columns) ||
 		tableIndexesHaveUniqueKey(database, dialect, table, columns)
 }
 
-func tablePrimaryKeyEquals(table goschema.Table, columns []string) bool {
+func tablePrimaryKeyEquals(table schemamodel.Table, columns []string) bool {
 	return slices.Equal(table.PrimaryKey, columns) ||
 		(primaryKeyPartsAreFullColumns(table.PrimaryKeyParts) &&
 			slices.Equal(primaryKeyPartNames(table.PrimaryKeyParts), columns))
 }
 
-func tableFieldsHaveUniqueKey(fields []goschema.Field, table goschema.Table, columns []string) bool {
+func tableFieldsHaveUniqueKey(fields []schemamodel.Field, table schemamodel.Table, columns []string) bool {
 	var primaryFields []string
 	for _, field := range fields {
 		if field.StructName != table.StructName {
@@ -2149,8 +2149,8 @@ func tableFieldsHaveUniqueKey(fields []goschema.Field, table goschema.Table, col
 }
 
 func tableConstraintsHaveUniqueKey(
-	database goschema.Database,
-	table goschema.Table,
+	database schemamodel.Database,
+	table schemamodel.Table,
 	columns []string,
 ) bool {
 	for _, constraint := range database.Constraints {
@@ -2165,9 +2165,9 @@ func tableConstraintsHaveUniqueKey(
 }
 
 func tableIndexesHaveUniqueKey(
-	database goschema.Database,
+	database schemamodel.Database,
 	dialect string,
-	table goschema.Table,
+	table schemamodel.Table,
 	columns []string,
 ) bool {
 	// SQLite's IR does not preserve per-index-part collation. Accepting a
@@ -2176,7 +2176,7 @@ func tableIndexesHaveUniqueKey(
 	if platform.NormalizeDialect(dialect) == platform.SQLite {
 		return false
 	}
-	indexOwners := goschema.ResolveIndexTableNames(database.Indexes, database.Tables)
+	indexOwners := schemamodel.ResolveIndexTableNames(database.Indexes, database.Tables)
 	for i, index := range database.Indexes {
 		indexColumns, valid := fullIndexColumnNames(index)
 		if index.Unique && valid && strings.TrimSpace(index.Condition) == "" &&
@@ -2187,7 +2187,7 @@ func tableIndexesHaveUniqueKey(
 	return false
 }
 
-func tableHasIndexedKey(database goschema.Database, table goschema.Table, columns []string) bool {
+func tableHasIndexedKey(database schemamodel.Database, table schemamodel.Table, columns []string) bool {
 	if isColumnPrefix(table.PrimaryKey, columns) ||
 		(primaryKeyPartsAreFullColumns(table.PrimaryKeyParts) &&
 			isColumnPrefix(primaryKeyPartNames(table.PrimaryKeyParts), columns)) {
@@ -2218,7 +2218,7 @@ func tableHasIndexedKey(database goschema.Database, table goschema.Table, column
 			return true
 		}
 	}
-	indexOwners := goschema.ResolveIndexTableNames(database.Indexes, database.Tables)
+	indexOwners := schemamodel.ResolveIndexTableNames(database.Indexes, database.Tables)
 	for i, index := range database.Indexes {
 		if indexOwners[i] == table.QualifiedName() && indexHasFullColumnPrefix(index, columns) {
 			return true
@@ -2227,7 +2227,7 @@ func tableHasIndexedKey(database goschema.Database, table goschema.Table, column
 	return false
 }
 
-func allDatabaseFields(database goschema.Database) []goschema.Field {
+func allDatabaseFields(database schemamodel.Database) []schemamodel.Field {
 	return fromschema.ProcessEmbeddedFields(database.EmbeddedFields, database.Fields)
 }
 
@@ -2236,7 +2236,7 @@ func isColumnPrefix(keyColumns, referencedColumns []string) bool {
 		slices.Equal(keyColumns[:len(referencedColumns)], referencedColumns)
 }
 
-func primaryKeyPartsAreFullColumns(parts []goschema.PrimaryKeyPart) bool {
+func primaryKeyPartsAreFullColumns(parts []schemamodel.PrimaryKeyPart) bool {
 	if len(parts) == 0 {
 		return false
 	}
@@ -2248,7 +2248,7 @@ func primaryKeyPartsAreFullColumns(parts []goschema.PrimaryKeyPart) bool {
 	return true
 }
 
-func primaryKeyPartNames(parts []goschema.PrimaryKeyPart) []string {
+func primaryKeyPartNames(parts []schemamodel.PrimaryKeyPart) []string {
 	names := make([]string, 0, len(parts))
 	for _, part := range parts {
 		names = append(names, part.Name)
@@ -2256,7 +2256,7 @@ func primaryKeyPartNames(parts []goschema.PrimaryKeyPart) []string {
 	return names
 }
 
-func fullIndexColumnNames(index goschema.Index) ([]string, bool) {
+func fullIndexColumnNames(index schemamodel.Index) ([]string, bool) {
 	if len(index.Parts) == 0 {
 		return index.Fields, len(index.Fields) > 0
 	}
@@ -2271,7 +2271,7 @@ func fullIndexColumnNames(index goschema.Index) ([]string, bool) {
 	return names, true
 }
 
-func indexHasFullColumnPrefix(index goschema.Index, columns []string) bool {
+func indexHasFullColumnPrefix(index schemamodel.Index, columns []string) bool {
 	if strings.TrimSpace(index.Condition) != "" || len(columns) == 0 {
 		return false
 	}
@@ -2295,7 +2295,7 @@ func indexHasFullColumnPrefix(index goschema.Index, columns []string) bool {
 	return true
 }
 
-func uniqueReferenceError(dialect string, table goschema.Table, columns []string) error {
+func uniqueReferenceError(dialect string, table schemamodel.Table, columns []string) error {
 	return &ptaherr.CapabilityError{
 		Dialect: dialect,
 		Feature: "foreign key referenced key uniqueness",
@@ -2309,7 +2309,7 @@ func uniqueReferenceError(dialect string, table goschema.Table, columns []string
 	}
 }
 
-func indexedReferenceError(dialect string, table goschema.Table, columns []string) error {
+func indexedReferenceError(dialect string, table schemamodel.Table, columns []string) error {
 	return &ptaherr.CapabilityError{
 		Dialect: dialect,
 		Feature: "foreign key referenced key index",
@@ -2386,7 +2386,7 @@ func validateSQLServerCascadeActionGraph(
 
 // rowTTLTables projects the schema's tables into the pairs internal/crdbttl
 // validates, so that package needs no knowledge of goschema.
-func rowTTLTables(database *goschema.Database) []crdbttl.TableTTL {
+func rowTTLTables(database *schemamodel.Database) []crdbttl.TableTTL {
 	tables := make([]crdbttl.TableTTL, 0, len(database.Tables))
 	for _, table := range database.Tables {
 		tables = append(tables, crdbttl.TableTTL{Name: table.Name, RowTTL: table.RowTTL})

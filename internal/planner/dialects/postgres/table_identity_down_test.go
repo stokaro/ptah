@@ -7,7 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/migration/generator"
 	"go.5x5.cz/ptah/migration/planner"
@@ -17,10 +17,10 @@ import (
 
 // downColumnTarget returns the desired schema for a `users` table that has
 // dropped the `legacy_note` column, spelling the table's schema as given.
-func downColumnTarget(tableSchema string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "User", Name: "users", Schema: tableSchema}},
-		Fields: []goschema.Field{
+func downColumnTarget(tableSchema string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Name: "users", Schema: tableSchema}},
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "User", Name: "email", Type: "TEXT"},
 		},
@@ -46,13 +46,13 @@ func downColumnDatabase(tableSchema string) *catalog.Database {
 // planDownStatements runs the whole forward-then-reverse path a `.down.sql` file
 // is produced by: compare, reverse, and plan the reversal against the pre-change
 // database converted back to a schema.
-func planDownStatements(c *qt.C, generated *goschema.Database, database *catalog.Database) []string {
+func planDownStatements(c *qt.C, desired *schemamodel.Database, current *catalog.Database) []string {
 	c.Helper()
-	diff := schemadiff.CompareWithDialect(generated, database, "postgres")
+	diff := schemadiff.CompareWithDialect(desired, current, "postgres")
 	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
 		Diff:          diff,
-		DesiredSchema: generated,
-		CurrentSchema: database,
+		DesiredSchema: desired,
+		CurrentSchema: current,
 		Dialect:       "postgres",
 		Policy: generator.BidirectionalPlanPolicy{
 			Create: generator.ConcurrentIndexDisabled,
@@ -62,7 +62,7 @@ func planDownStatements(c *qt.C, generated *goschema.Database, database *catalog
 	c.Assert(err, qt.IsNil)
 	statements, err := planner.GenerateSchemaDiffSQLStatements(
 		plan.Reverse.Diff,
-		dbschematogo.ConvertDBSchemaToGoSchema(database),
+		dbschematogo.ConvertDBSchemaToGoSchema(current),
 		"postgres",
 	)
 	c.Assert(err, qt.IsNil)
@@ -157,12 +157,12 @@ func TestDownMigrationRestoresDroppedColumnAcrossSchemaSpellings(t *testing.T) {
 func TestPlannerColumnLookupDoesNotGuessBetweenSchemas(t *testing.T) {
 	t.Run("a named non-default schema selects its own table", func(t *testing.T) {
 		c := qt.New(t)
-		generated := &goschema.Database{
-			Tables: []goschema.Table{
+		desired := &schemamodel.Database{
+			Tables: []schemamodel.Table{
 				{StructName: "PublicUser", Name: "users", Schema: "public"},
 				{StructName: "AppUser", Name: "users", Schema: "app"},
 			},
-			Fields: []goschema.Field{
+			Fields: []schemamodel.Field{
 				{StructName: "PublicUser", Name: "id", Type: "INTEGER", Primary: true},
 				{StructName: "AppUser", Name: "id", Type: "INTEGER", Primary: true},
 				{StructName: "AppUser", Name: "note", Type: "TEXT"},
@@ -184,8 +184,8 @@ func TestPlannerColumnLookupDoesNotGuessBetweenSchemas(t *testing.T) {
 				},
 			},
 		}
-		diff := schemadiff.CompareWithDialect(generated, database, "postgres")
-		statements, err := planner.GenerateSchemaDiffSQLStatements(diff, generated, "postgres")
+		diff := schemadiff.CompareWithDialect(desired, database, "postgres")
+		statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, "postgres")
 		c.Assert(err, qt.IsNil)
 		c.Assert(
 			containsStatement(statements, `ALTER TABLE "app"."users" ADD COLUMN "note"`),
@@ -201,16 +201,16 @@ func TestPlannerColumnLookupDoesNotGuessBetweenSchemas(t *testing.T) {
 
 	t.Run("a table the schema does not declare gets no column DDL", func(t *testing.T) {
 		c := qt.New(t)
-		generated := &goschema.Database{
-			Tables: []goschema.Table{{StructName: "Other", Name: "other", Schema: "public"}},
-			Fields: []goschema.Field{{StructName: "Other", Name: "id", Type: "INTEGER", Primary: true}},
+		desired := &schemamodel.Database{
+			Tables: []schemamodel.Table{{StructName: "Other", Name: "other", Schema: "public"}},
+			Fields: []schemamodel.Field{{StructName: "Other", Name: "id", Type: "INTEGER", Primary: true}},
 		}
 		statements, err := planner.GenerateSchemaDiffSQLStatements(
 			&difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:    "reporting.users",
 				ColumnsAdded: []string{"note"},
 			}}},
-			generated,
+			desired,
 			"postgres",
 		)
 		c.Assert(err, qt.IsNil)

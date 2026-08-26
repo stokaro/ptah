@@ -10,8 +10,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/planner"
@@ -66,7 +66,7 @@ func TestExtensionVersionAndSchemaConvergeLive(t *testing.T) {
 
 	// 1. A raised pin is seen at all. This is the assertion the whole issue is
 	// about: before it, the comparison reported nothing.
-	declared := &goschema.Database{Extensions: []goschema.Extension{{
+	declared := &schemamodel.Database{Extensions: []schemamodel.Extension{{
 		Name: "pg_trgm", Schema: home, Version: "1.6",
 	}}}
 	live, err := conn.Reader().ReadSchemaContext(ctx)
@@ -94,7 +94,7 @@ func TestExtensionVersionAndSchemaConvergeLive(t *testing.T) {
 	c.Assert(after.ExtensionsRemoved, qt.HasLen, 0)
 
 	// 4. The schema move, which used to be refused for every target.
-	moved := &goschema.Database{Extensions: []goschema.Extension{{
+	moved := &schemamodel.Database{Extensions: []schemamodel.Extension{{
 		Name: "pg_trgm", Schema: away, Version: "1.6",
 	}}}
 	move := schemadiff.CompareWithDialect(moved, settled, platform.Postgres)

@@ -37,7 +37,7 @@ const dynamicIteratorAttr = "iterator"
 // own iteration bound and the parser evaluates attributes lazily against
 // [parser.ctx].
 func (p *parser) expandDynamic(block *hclsyntax.Block, emit func(*hclsyntax.Block) error) error {
-	generated, err := p.dynamicGeneratedType(block)
+	desired, err := p.dynamicGeneratedType(block)
 	if err != nil {
 		return err
 	}
@@ -45,7 +45,7 @@ func (p *parser) expandDynamic(block *hclsyntax.Block, emit func(*hclsyntax.Bloc
 	if err != nil {
 		return err
 	}
-	iterator, err := p.dynamicIteratorName(block, generated)
+	iterator, err := p.dynamicIteratorName(block, desired)
 	if err != nil {
 		return err
 	}
@@ -68,7 +68,7 @@ func (p *parser) expandDynamic(block *hclsyntax.Block, emit func(*hclsyntax.Bloc
 			return err
 		}
 		if err := emit(&hclsyntax.Block{
-			Type:            generated,
+			Type:            desired,
 			Labels:          labels,
 			Body:            content.Body,
 			TypeRange:       block.TypeRange,
@@ -85,10 +85,10 @@ func (p *parser) expandDynamic(block *hclsyntax.Block, emit func(*hclsyntax.Bloc
 // dynamicIteratorName answers which root name the generated body reads its
 // iteration from: the `iterator` attribute when written, and the block's label
 // otherwise.
-func (p *parser) dynamicIteratorName(block *hclsyntax.Block, generated string) (string, error) {
+func (p *parser) dynamicIteratorName(block *hclsyntax.Block, desired string) (string, error) {
 	attr, ok := block.Body.Attributes[dynamicIteratorAttr]
 	if !ok {
-		return generated, nil
+		return desired, nil
 	}
 	traversal, diags := hcl.AbsTraversalForExpr(attr.Expr)
 	if diags.HasErrors() || len(traversal) != 1 {

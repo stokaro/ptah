@@ -9,7 +9,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/dbschema/sqlite"
 	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
@@ -34,7 +34,7 @@ func TestCompareRefusesToPlanDroppingALiveVirtualTable(t *testing.T) {
 	tests := []struct {
 		name            string
 		env             func(testing.TB)
-		desired         []goschema.Table
+		desired         []schemamodel.Table
 		wantErr         bool
 		wantRemoved     []string
 		wantErrContains string
@@ -42,21 +42,21 @@ func TestCompareRefusesToPlanDroppingALiveVirtualTable(t *testing.T) {
 		{
 			name:            "the virtual table alone is refused, not planned",
 			env:             envbooltest.Unset(sqlitevirtual.AllowDropEnvVar),
-			desired:         []goschema.Table{{StructName: "User", Name: "users"}, {StructName: "Note", Name: "notes"}},
+			desired:         []schemamodel.Table{{StructName: "User", Name: "users"}, {StructName: "Note", Name: "notes"}},
 			wantErr:         true,
 			wantErrContains: `virtual table "docs" (module fts5)`,
 		},
 		{
 			name:            "an ordinary table declared with the virtual table's name is refused",
 			env:             envbooltest.Unset(sqlitevirtual.AllowDropEnvVar),
-			desired:         []goschema.Table{{StructName: "User", Name: "users"}, {StructName: "Doc", Name: "docs"}, {StructName: "Note", Name: "notes"}},
+			desired:         []schemamodel.Table{{StructName: "User", Name: "users"}, {StructName: "Doc", Name: "docs"}, {StructName: "Note", Name: "notes"}},
 			wantErr:         true,
 			wantErrContains: "cannot convert one kind into the other",
 		},
 		{
 			name:    "the opt-in plans the drop again",
 			env:     envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "1"),
-			desired: []goschema.Table{{StructName: "User", Name: "users"}, {StructName: "Note", Name: "notes"}},
+			desired: []schemamodel.Table{{StructName: "User", Name: "users"}, {StructName: "Note", Name: "notes"}},
 			wantErr: false,
 			// notes is the control: with the opt-in set the comparison is the
 			// one master made, and it still plans the ordinary removal beside
@@ -66,7 +66,7 @@ func TestCompareRefusesToPlanDroppingALiveVirtualTable(t *testing.T) {
 		{
 			name:        "an ordinary removal is planned while the virtual table is declared out of scope",
 			env:         envbooltest.Unset(sqlitevirtual.AllowDropEnvVar),
-			desired:     []goschema.Table{{StructName: "User", Name: "users"}, {StructName: "Doc", Name: "docs"}},
+			desired:     []schemamodel.Table{{StructName: "User", Name: "users"}, {StructName: "Doc", Name: "docs"}},
 			wantErr:     true,
 			wantRemoved: nil,
 			// Reaching the collision refusal, not the removal one, even though
@@ -81,10 +81,10 @@ func TestCompareRefusesToPlanDroppingALiveVirtualTable(t *testing.T) {
 			tt.env(t)
 
 			database := readLiveVirtualTableFixture(t)
-			generated := &goschema.Database{Tables: tt.desired}
+			desired := &schemamodel.Database{Tables: tt.desired}
 
 			diff, err := schemadiff.CompareWithDatabaseInfo(
-				generated,
+				desired,
 				database,
 				catalog.ServerInfo{Dialect: "sqlite"},
 				nil,

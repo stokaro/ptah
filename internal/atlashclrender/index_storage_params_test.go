@@ -6,21 +6,21 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashcl"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 	"go.5x5.cz/ptah/internal/pgindexstorage"
 )
 
 // indexedSchema is one table with one index carrying storage parameters.
-func indexedSchema(params map[string]string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Doc", Name: "documents"}},
-		Fields: []goschema.Field{
+func indexedSchema(params map[string]string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Doc", Name: "documents"}},
+		Fields: []schemamodel.Field{
 			{StructName: "Doc", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Doc", Name: "body", Type: "TEXT"},
 		},
-		Indexes: []goschema.Index{{
+		Indexes: []schemamodel.Index{{
 			StructName:    "Doc",
 			Name:          "documents_body_idx",
 			Fields:        []string{"body"},

@@ -5,9 +5,9 @@ package identifiervalidation
 import (
 	"fmt"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/indexscope"
 	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/migration/internal/generatedschema"
@@ -33,46 +33,46 @@ func ValidateCoverage(
 
 // ValidateTarget rejects unresolved or colliding target identifiers.
 func ValidateTarget(
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	dialect string,
 	semantics identifier.Semantics,
 ) error {
-	if generated == nil {
+	if desired == nil {
 		return nil
 	}
 	if err := ValidateCoverage(
 		semantics,
-		targetIdentifierNames(generated, semantics.DefaultSchema),
+		targetIdentifierNames(desired, semantics.DefaultSchema),
 	); err != nil {
 		return err
 	}
-	if err := validateTablesAndColumns(generated, semantics); err != nil {
+	if err := validateTablesAndColumns(desired, semantics); err != nil {
 		return err
 	}
 	_, err := indexscope.NewResolverWithSemantics(
 		dialect,
 		semantics,
 		&difftypes.SchemaDiff{},
-		generated,
+		desired,
 	)
 	return err
 }
 
 func targetIdentifierNames(
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	defaultSchema string,
 ) []string {
 	names := []string{defaultSchema}
-	for _, field := range generated.Fields {
+	for _, field := range desired.Fields {
 		names = append(names, field.Name)
 	}
-	for _, table := range generated.Tables {
+	for _, table := range desired.Tables {
 		names = append(names, table.Schema, table.Name)
-		for _, field := range generatedschema.FieldsForTable(generated, table) {
+		for _, field := range generatedschema.FieldsForTable(desired, table) {
 			names = append(names, field.Name)
 		}
 	}
-	for _, index := range generated.Indexes {
+	for _, index := range desired.Indexes {
 		names = append(names, index.Name)
 		names = appendQualifiedIdentifier(names, index.TableName)
 		names = append(names, index.Fields...)
@@ -96,11 +96,11 @@ func appendQualifiedIdentifier(names []string, value string) []string {
 }
 
 func validateTablesAndColumns(
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	semantics identifier.Semantics,
 ) error {
-	tables := make(map[string]string, len(generated.Tables))
-	for _, table := range generated.Tables {
+	tables := make(map[string]string, len(desired.Tables))
+	for _, table := range desired.Tables {
 		rawName := table.QualifiedName()
 		conflictKey := semantics.QualifiedTableConflictKey(rawName)
 		if previous, exists := tables[conflictKey]; exists &&
@@ -115,9 +115,9 @@ func validateTablesAndColumns(
 		tables[conflictKey] = rawName
 	}
 
-	for _, table := range generated.Tables {
+	for _, table := range desired.Tables {
 		columns := make(map[string]string)
-		for _, field := range generatedschema.FieldsForTable(generated, table) {
+		for _, field := range generatedschema.FieldsForTable(desired, table) {
 			conflictKey := semantics.ColumnConflictKey(field.Name)
 			if previous, exists := columns[conflictKey]; exists &&
 				previous != field.Name {

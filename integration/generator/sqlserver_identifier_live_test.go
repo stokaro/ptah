@@ -14,7 +14,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/generator"
@@ -74,21 +74,21 @@ CREATE INDEX [idx_users_status] ON [dbo].[users] ([status] ASC);`)
 	c.Assert(readSQLServerGeneratorIndexDirection(c, target), qt.IsTrue)
 }
 
-func sqlServerGeneratorTargetSchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func sqlServerGeneratorTargetSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "User", Schema: "dbo", Name: "users"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "INT"},
 			{StructName: "User", Name: "status", Type: "INT"},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{
 				StructName: "User",
 				Name:       "idx_users_status",
 				Fields:     []string{"status"},
-				Parts: []goschema.IndexPart{
+				Parts: []schemamodel.IndexPart{
 					{Name: "status", Desc: true},
 				},
 			},

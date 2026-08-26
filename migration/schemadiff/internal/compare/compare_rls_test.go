@@ -6,15 +6,15 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
 
 func TestRLSEnabledTables_MatchesSchemaQualifiedTables(t *testing.T) {
 	c := qt.New(t)
-	generated := &goschema.Database{
-		RLSEnabledTables: []goschema.RLSEnabledTable{
+	desired := &schemamodel.Database{
+		RLSEnabledTables: []schemamodel.RLSEnabledTable{
 			{Table: "auth.users"},
 		},
 	}
@@ -25,7 +25,7 @@ func TestRLSEnabledTables_MatchesSchemaQualifiedTables(t *testing.T) {
 	}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.RLSEnabledTables(generated, database, diff)
+	compare.RLSEnabledTables(desired, database, diff)
 
 	c.Assert(diff.RLSEnabledTablesAdded, qt.HasLen, 0)
 	c.Assert(diff.RLSEnabledTablesRemoved, qt.HasLen, 0)

@@ -16,7 +16,7 @@ func TestRLSMigrationGeneration(t *testing.T) {
 	c := qt.New(t)
 
 	// Parse the test entities with RLS annotations
-	generated, err := goschema.ParseDir("../../integration/fixtures/entities/016-rls-multiple-files")
+	desired, err := goschema.ParseDir("../../integration/fixtures/entities/016-rls-multiple-files")
 	c.Assert(err, qt.IsNil)
 
 	// Create an empty database schema (simulating a fresh database)
@@ -26,10 +26,10 @@ func TestRLSMigrationGeneration(t *testing.T) {
 	}
 
 	// Generate schema diff
-	diff := schemadiff.Compare(generated, dbSchema)
+	diff := schemadiff.Compare(desired, dbSchema)
 
 	// Generate migration SQL
-	sql, err := planner.GenerateSchemaDiffSQL(diff, generated, platform.Postgres)
+	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 

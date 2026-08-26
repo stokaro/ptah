@@ -7,7 +7,7 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
@@ -52,13 +52,13 @@ func newExtendedPropertyKey(schema, table, column, name string) extendedProperty
 // destroy a value no declaration could restore. Reporting it and leaving it
 // alone is the only answer that neither lies about it nor damages it.
 func ExtendedProperties(
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
 ) {
-	declared := make(map[extendedPropertyKey]goschema.ExtendedProperty, len(generated.ExtendedProperties))
-	for _, property := range generated.ExtendedProperties {
+	declared := make(map[extendedPropertyKey]schemamodel.ExtendedProperty, len(desired.ExtendedProperties))
+	for _, property := range desired.ExtendedProperties {
 		key := newExtendedPropertyKey(property.Schema, property.Table, property.Column, property.Name)
 		declared[key] = property
 	}
@@ -117,7 +117,7 @@ func ExtendedProperties(
 		})
 }
 
-func refFromDeclaredProperty(property goschema.ExtendedProperty) difftypes.ExtendedPropertyRef {
+func refFromDeclaredProperty(property schemamodel.ExtendedProperty) difftypes.ExtendedPropertyRef {
 	return difftypes.ExtendedPropertyRef{
 		Name:   property.Name,
 		Schema: property.Schema,

@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashcl"
 )
 
@@ -46,7 +46,7 @@ func TestParseReducesSQLRawExpressionToItsSQL(t *testing.T) {
 	tests := []struct {
 		name string
 		hcl  string
-		read func(db *goschema.Database) []string
+		read func(db *schemamodel.Database) []string
 		want []string
 	}{
 		{
@@ -314,76 +314,76 @@ func projectStrings[T any](items []T, read func(item T) string) []string {
 	return out
 }
 
-func checkExpressions(db *goschema.Database) []string {
-	return projectStrings(db.Constraints, func(item goschema.Constraint) string { return item.CheckExpression })
+func checkExpressions(db *schemamodel.Database) []string {
+	return projectStrings(db.Constraints, func(item schemamodel.Constraint) string { return item.CheckExpression })
 }
 
-func indexConditions(db *goschema.Database) []string {
-	return projectStrings(db.Indexes, func(item goschema.Index) string { return item.Condition })
+func indexConditions(db *schemamodel.Database) []string {
+	return projectStrings(db.Indexes, func(item schemamodel.Index) string { return item.Condition })
 }
 
-func indexComments(db *goschema.Database) []string {
-	return projectStrings(db.Indexes, func(item goschema.Index) string { return item.Comment })
+func indexComments(db *schemamodel.Database) []string {
+	return projectStrings(db.Indexes, func(item schemamodel.Index) string { return item.Comment })
 }
 
-func indexPartExpressions(db *goschema.Database) []string {
-	return projectStrings(indexParts(db), func(item goschema.IndexPart) string { return item.Expr })
+func indexPartExpressions(db *schemamodel.Database) []string {
+	return projectStrings(indexParts(db), func(item schemamodel.IndexPart) string { return item.Expr })
 }
 
-func indexPartPrefixes(db *goschema.Database) []string {
-	return projectStrings(indexParts(db), func(item goschema.IndexPart) string { return item.Prefix })
+func indexPartPrefixes(db *schemamodel.Database) []string {
+	return projectStrings(indexParts(db), func(item schemamodel.IndexPart) string { return item.Prefix })
 }
 
-func indexParts(db *goschema.Database) []goschema.IndexPart {
-	var parts []goschema.IndexPart
+func indexParts(db *schemamodel.Database) []schemamodel.IndexPart {
+	var parts []schemamodel.IndexPart
 	for _, index := range db.Indexes {
 		parts = append(parts, index.Parts...)
 	}
 	return parts
 }
 
-func fieldGeneratedExpressions(db *goschema.Database) []string {
-	return projectStrings(db.Fields, func(item goschema.Field) string { return item.GeneratedExpression })
+func fieldGeneratedExpressions(db *schemamodel.Database) []string {
+	return projectStrings(db.Fields, func(item schemamodel.Field) string { return item.GeneratedExpression })
 }
 
-func fieldTypes(db *goschema.Database) []string {
-	return projectStrings(db.Fields, func(item goschema.Field) string { return item.Type })
+func fieldTypes(db *schemamodel.Database) []string {
+	return projectStrings(db.Fields, func(item schemamodel.Field) string { return item.Type })
 }
 
-func fieldComments(db *goschema.Database) []string {
-	return projectStrings(db.Fields, func(item goschema.Field) string { return item.Comment })
+func fieldComments(db *schemamodel.Database) []string {
+	return projectStrings(db.Fields, func(item schemamodel.Field) string { return item.Comment })
 }
 
-func fieldDefaultExpressions(db *goschema.Database) []string {
-	return projectStrings(db.Fields, func(item goschema.Field) string { return item.DefaultExpr })
+func fieldDefaultExpressions(db *schemamodel.Database) []string {
+	return projectStrings(db.Fields, func(item schemamodel.Field) string { return item.DefaultExpr })
 }
 
-func fieldDefaults(db *goschema.Database) []string {
-	return projectStrings(db.Fields, func(item goschema.Field) string { return item.Default })
+func fieldDefaults(db *schemamodel.Database) []string {
+	return projectStrings(db.Fields, func(item schemamodel.Field) string { return item.Default })
 }
 
-func tableComments(db *goschema.Database) []string {
-	return projectStrings(db.Tables, func(item goschema.Table) string { return item.Comment })
+func tableComments(db *schemamodel.Database) []string {
+	return projectStrings(db.Tables, func(item schemamodel.Table) string { return item.Comment })
 }
 
-func tableSchemas(db *goschema.Database) []string {
-	return projectStrings(db.Tables, func(item goschema.Table) string { return item.Schema })
+func tableSchemas(db *schemamodel.Database) []string {
+	return projectStrings(db.Tables, func(item schemamodel.Table) string { return item.Schema })
 }
 
-func viewBodies(db *goschema.Database) []string {
-	return projectStrings(db.Views, func(item goschema.View) string { return item.Body })
+func viewBodies(db *schemamodel.Database) []string {
+	return projectStrings(db.Views, func(item schemamodel.View) string { return item.Body })
 }
 
-func functionBodies(db *goschema.Database) []string {
-	return projectStrings(db.Functions, func(item goschema.Function) string { return item.Body })
+func functionBodies(db *schemamodel.Database) []string {
+	return projectStrings(db.Functions, func(item schemamodel.Function) string { return item.Body })
 }
 
-func functionReturns(db *goschema.Database) []string {
-	return projectStrings(db.Functions, func(item goschema.Function) string { return item.Returns })
+func functionReturns(db *schemamodel.Database) []string {
+	return projectStrings(db.Functions, func(item schemamodel.Function) string { return item.Returns })
 }
 
-func functionParameters(db *goschema.Database) []string {
-	return projectStrings(db.Functions, func(item goschema.Function) string { return item.Parameters })
+func functionParameters(db *schemamodel.Database) []string {
+	return projectStrings(db.Functions, func(item schemamodel.Function) string { return item.Parameters })
 }
 
 // A sql() call Ptah cannot reduce to SQL text is refused outright rather than

@@ -6,8 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/schemastate"
 )
@@ -22,24 +22,24 @@ import (
 func TestFromDescriptionReadsEverySpellingOfAUniquenessGuarantee(t *testing.T) {
 	tests := []struct {
 		name        string
-		description *goschema.Database
+		description *schemamodel.Database
 		wantColumns []string
 	}{
 		{
 			name: "a field's own flag",
 			description: describedWidget(
-				[]goschema.Field{{StructName: "Widget", Name: "code", Type: "text", Unique: true}}),
+				[]schemamodel.Field{{StructName: "Widget", Name: "code", Type: "text", Unique: true}}),
 			wantColumns: []string{"code"},
 		},
 		{
 			name: "a field's primary key",
 			description: describedWidget(
-				[]goschema.Field{{StructName: "Widget", Name: "id", Type: "int", Primary: true}}),
+				[]schemamodel.Field{{StructName: "Widget", Name: "id", Type: "int", Primary: true}}),
 			wantColumns: []string{"id"},
 		},
 		{
 			name: "a table-level composite key",
-			description: withTableKey(describedWidget([]goschema.Field{
+			description: withTableKey(describedWidget([]schemamodel.Field{
 				{StructName: "Widget", Name: "tenant", Type: "int"},
 				{StructName: "Widget", Name: "id", Type: "int"},
 			}), []string{"tenant", "id"}),
@@ -47,10 +47,10 @@ func TestFromDescriptionReadsEverySpellingOfAUniquenessGuarantee(t *testing.T) {
 		},
 		{
 			name: "a named UNIQUE constraint",
-			description: withConstraint(describedWidget([]goschema.Field{
+			description: withConstraint(describedWidget([]schemamodel.Field{
 				{StructName: "Widget", Name: "tenant", Type: "int"},
 				{StructName: "Widget", Name: "code", Type: "text"},
-			}), goschema.Constraint{
+			}), schemamodel.Constraint{
 				StructName: "Widget", Name: "uq_widget_scope",
 				Type: "UNIQUE", Columns: []string{"tenant", "code"},
 			}),
@@ -58,10 +58,10 @@ func TestFromDescriptionReadsEverySpellingOfAUniquenessGuarantee(t *testing.T) {
 		},
 		{
 			name: "a unique index",
-			description: withIndex(describedWidget([]goschema.Field{
+			description: withIndex(describedWidget([]schemamodel.Field{
 				{StructName: "Widget", Name: "tenant", Type: "int"},
 				{StructName: "Widget", Name: "code", Type: "text"},
-			}), goschema.Index{
+			}), schemamodel.Index{
 				StructName: "Widget", Name: "idx_widget_scope",
 				Fields: []string{"tenant", "code"}, Unique: true,
 			}),
@@ -89,7 +89,7 @@ func TestFromDescriptionRecordsNoGuaranteeWhereNoneIsDeclared(t *testing.T) {
 	c := qt.New(t)
 
 	state, err := schemastate.FromDescription(
-		describedWidget([]goschema.Field{{StructName: "Widget", Name: "code", Type: "text"}}),
+		describedWidget([]schemamodel.Field{{StructName: "Widget", Name: "code", Type: "text"}}),
 		"postgres", identifier.ForDialect("postgres"))
 
 	c.Assert(err, qt.IsNil)
@@ -170,24 +170,24 @@ func appendUniqueKey(columns [][]string, object schemastate.Object) [][]string {
 	}[object.UniqueKey != nil]()
 }
 
-func describedWidget(fields []goschema.Field) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Widget", Name: "widget"}},
+func describedWidget(fields []schemamodel.Field) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Widget", Name: "widget"}},
 		Fields: fields,
 	}
 }
 
-func withTableKey(description *goschema.Database, key []string) *goschema.Database {
+func withTableKey(description *schemamodel.Database, key []string) *schemamodel.Database {
 	description.Tables[0].PrimaryKey = key
 	return description
 }
 
-func withConstraint(description *goschema.Database, constraint goschema.Constraint) *goschema.Database {
+func withConstraint(description *schemamodel.Database, constraint schemamodel.Constraint) *schemamodel.Database {
 	description.Constraints = append(description.Constraints, constraint)
 	return description
 }
 
-func withIndex(description *goschema.Database, index goschema.Index) *goschema.Database {
+func withIndex(description *schemamodel.Database, index schemamodel.Index) *schemamodel.Database {
 	description.Indexes = append(description.Indexes, index)
 	return description
 }

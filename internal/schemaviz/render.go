@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/tableref"
 )
@@ -65,7 +65,7 @@ type relationship struct {
 }
 
 // Render emits a schema graph in DOT or Mermaid erDiagram format.
-func Render(db *goschema.Database, opts Options) ([]byte, error) {
+func Render(db *schemamodel.Database, opts Options) ([]byte, error) {
 	opts = normalizeOptions(opts)
 	if opts.Format != FormatDOT && opts.Format != FormatMermaid {
 		return nil, fmt.Errorf("unsupported visualization format %q: expected dot or mermaid", opts.Format)
@@ -86,8 +86,8 @@ func Render(db *goschema.Database, opts Options) ([]byte, error) {
 }
 
 type graphModel struct {
-	Tables        []goschema.Table
-	FieldsByTable map[string][]goschema.Field
+	Tables        []schemamodel.Table
+	FieldsByTable map[string][]schemamodel.Field
 	Relationships []relationship
 }
 
@@ -103,10 +103,10 @@ func normalizeOptions(opts Options) Options {
 	return opts
 }
 
-func buildModel(db *goschema.Database, excludeTables []string) graphModel {
+func buildModel(db *schemamodel.Database, excludeTables []string) graphModel {
 	excluded := tableSet(excludeTables)
-	tables := make([]goschema.Table, 0, len(db.Tables))
-	tableByStruct := make(map[string]goschema.Table)
+	tables := make([]schemamodel.Table, 0, len(db.Tables))
+	tableByStruct := make(map[string]schemamodel.Table)
 	tableNames := make(map[string]struct{})
 	for _, table := range db.Tables {
 		if isExcludedTable(excluded, table.QualifiedName()) {
@@ -118,7 +118,7 @@ func buildModel(db *goschema.Database, excludeTables []string) graphModel {
 	}
 
 	fields := fromschema.ProcessEmbeddedFields(db.EmbeddedFields, db.Fields)
-	fieldsByTable := make(map[string][]goschema.Field)
+	fieldsByTable := make(map[string][]schemamodel.Field)
 	seenFields := make(map[string]struct{})
 	for _, field := range fields {
 		table, ok := tableByStruct[field.StructName]
@@ -157,7 +157,7 @@ func buildModel(db *goschema.Database, excludeTables []string) graphModel {
 	}
 }
 
-func fieldRelationships(tables []goschema.Table, fieldsByTable map[string][]goschema.Field, tableNames map[string]struct{}) []relationship {
+func fieldRelationships(tables []schemamodel.Table, fieldsByTable map[string][]schemamodel.Field, tableNames map[string]struct{}) []relationship {
 	relationships := make([]relationship, 0)
 	for _, table := range tables {
 		for _, field := range fieldsByTable[table.QualifiedName()] {
@@ -182,8 +182,8 @@ func fieldRelationships(tables []goschema.Table, fieldsByTable map[string][]gosc
 	return relationships
 }
 
-func constraintRelationships(tables []goschema.Table, constraints []goschema.Constraint, tableNames map[string]struct{}) []relationship {
-	tableByStruct := make(map[string]goschema.Table)
+func constraintRelationships(tables []schemamodel.Table, constraints []schemamodel.Constraint, tableNames map[string]struct{}) []relationship {
+	tableByStruct := make(map[string]schemamodel.Table)
 	for _, table := range tables {
 		tableByStruct[table.StructName] = table
 	}
@@ -227,10 +227,10 @@ func uniqueRelationships(relationships []relationship) []relationship {
 }
 
 func tableForConstraint(
-	tables []goschema.Table,
-	tableByStruct map[string]goschema.Table,
-	constraint goschema.Constraint,
-) (goschema.Table, bool) {
+	tables []schemamodel.Table,
+	tableByStruct map[string]schemamodel.Table,
+	constraint schemamodel.Constraint,
+) (schemamodel.Table, bool) {
 	if constraint.Table != "" {
 		for _, table := range tables {
 			if table.QualifiedName() == constraint.Table {
@@ -239,19 +239,19 @@ func tableForConstraint(
 		}
 		ref, ok := tableref.Parse(constraint.Table)
 		if !ok || ref.Qualified {
-			return goschema.Table{}, false
+			return schemamodel.Table{}, false
 		}
 		if table, ok := tableByStruct[constraint.StructName]; ok && table.Name == ref.Name {
 			return table, true
 		}
-		var match goschema.Table
+		var match schemamodel.Table
 		found := false
 		for _, table := range tables {
 			if table.Name != ref.Name {
 				continue
 			}
 			if found {
-				return goschema.Table{}, false
+				return schemamodel.Table{}, false
 			}
 			match = table
 			found = true
@@ -263,9 +263,9 @@ func tableForConstraint(
 }
 
 func resolveReferenceTable(
-	tables []goschema.Table,
+	tables []schemamodel.Table,
 	tableNames map[string]struct{},
-	current goschema.Table,
+	current schemamodel.Table,
 	foreign string,
 ) string {
 	refTable := strings.TrimSpace(foreign)
@@ -280,13 +280,13 @@ func resolveReferenceTable(
 		return ""
 	}
 	if ref.Qualified {
-		qualified := goschema.QualifyTableName(ref.Schema, ref.Name)
+		qualified := schemamodel.QualifyTableName(ref.Schema, ref.Name)
 		if _, exists := tableNames[qualified]; exists {
 			return qualified
 		}
 		return ""
 	}
-	qualified := goschema.QualifyTableName(current.Schema, ref.Name)
+	qualified := schemamodel.QualifyTableName(current.Schema, ref.Name)
 	if _, ok := tableNames[qualified]; ok {
 		return qualified
 	}
@@ -358,7 +358,7 @@ func annotationColor(severity, theme string) string {
 	}
 }
 
-func dotTableLabel(table goschema.Table, fields []goschema.Field, opts Options) string {
+func dotTableLabel(table schemamodel.Table, fields []schemamodel.Field, opts Options) string {
 	borderColor := "#64748b"
 	headerColor := "#e2e8f0"
 	rowColor := "#f8fafc"
@@ -457,7 +457,7 @@ func renderMermaid(model graphModel, opts Options) string {
 	return b.String()
 }
 
-func mermaidNames(tables []goschema.Table) map[string]string {
+func mermaidNames(tables []schemamodel.Table) map[string]string {
 	used := make(map[string]struct{}, len(tables))
 	names := make(map[string]string, len(tables))
 	for _, table := range tables {
@@ -476,7 +476,7 @@ func mermaidNames(tables []goschema.Table) map[string]string {
 	return names
 }
 
-func fieldLabel(field goschema.Field) string {
+func fieldLabel(field schemamodel.Field) string {
 	labels := make([]string, 0, 2)
 	if field.Primary {
 		labels = append(labels, "PK")
@@ -491,7 +491,7 @@ func fieldLabel(field goschema.Field) string {
 	return fmt.Sprintf("%s : %s%s", field.Name, field.Type, suffix)
 }
 
-func mermaidFieldKeySuffix(field goschema.Field) string {
+func mermaidFieldKeySuffix(field schemamodel.Field) string {
 	labels := make([]string, 0, 2)
 	if field.Primary {
 		labels = append(labels, "PK")

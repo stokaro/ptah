@@ -9,18 +9,19 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 func TestParseExtensionComment(t *testing.T) {
 	tests := []struct {
 		name     string
 		comment  string
-		expected goschema.Extension
+		expected schemamodel.Extension
 	}{
 		{
 			name:    "basic extension",
 			comment: "//ptah:schema:extension name=\"pg_trgm\"",
-			expected: goschema.Extension{
+			expected: schemamodel.Extension{
 				Name:        "pg_trgm",
 				IfNotExists: false,
 				Version:     "",
@@ -30,7 +31,7 @@ func TestParseExtensionComment(t *testing.T) {
 		{
 			name:    "extension with if_not_exists",
 			comment: "//ptah:schema:extension name=\"pg_trgm\" if_not_exists=\"true\"",
-			expected: goschema.Extension{
+			expected: schemamodel.Extension{
 				Name:        "pg_trgm",
 				IfNotExists: true,
 				Version:     "",
@@ -40,7 +41,7 @@ func TestParseExtensionComment(t *testing.T) {
 		{
 			name:    "extension with version",
 			comment: "//ptah:schema:extension name=\"postgis\" version=\"3.0\" if_not_exists=\"true\"",
-			expected: goschema.Extension{
+			expected: schemamodel.Extension{
 				Name:        "postgis",
 				IfNotExists: true,
 				Version:     "3.0",
@@ -50,7 +51,7 @@ func TestParseExtensionComment(t *testing.T) {
 		{
 			name:    "extension with installation schema",
 			comment: "//ptah:schema:extension name=\"postgis\" schema=\"extensions\" version=\"3.0\"",
-			expected: goschema.Extension{
+			expected: schemamodel.Extension{
 				Name:    "postgis",
 				Schema:  "extensions",
 				Version: "3.0",
@@ -59,7 +60,7 @@ func TestParseExtensionComment(t *testing.T) {
 		{
 			name:    "extension with comment",
 			comment: "//ptah:schema:extension name=\"btree_gin\" comment=\"Enable GIN indexes on btree types\"",
-			expected: goschema.Extension{
+			expected: schemamodel.Extension{
 				Name:        "btree_gin",
 				IfNotExists: false,
 				Version:     "",
@@ -97,12 +98,12 @@ func TestParseIndexWithPostgreSQLFeatures(t *testing.T) {
 	tests := []struct {
 		name     string
 		comment  string
-		expected goschema.Index
+		expected schemamodel.Index
 	}{
 		{
 			name:    "GIN index",
 			comment: "//ptah:schema:index name=\"idx_tags\" fields=\"tags\" type=\"GIN\"",
-			expected: goschema.Index{
+			expected: schemamodel.Index{
 				Name:      "idx_tags",
 				Fields:    []string{"tags"},
 				Type:      "GIN",
@@ -114,7 +115,7 @@ func TestParseIndexWithPostgreSQLFeatures(t *testing.T) {
 		{
 			name:    "partial index",
 			comment: "//ptah:schema:index name=\"idx_active\" fields=\"status\" condition=\"deleted_at IS NULL\"",
-			expected: goschema.Index{
+			expected: schemamodel.Index{
 				Name:      "idx_active",
 				Fields:    []string{"status"},
 				Type:      "",
@@ -126,7 +127,7 @@ func TestParseIndexWithPostgreSQLFeatures(t *testing.T) {
 		{
 			name:    "partial index with atlas-style where alias",
 			comment: "//ptah:schema:index name=\"idx_active\" fields=\"status\" where=\"deleted_at IS NULL\"",
-			expected: goschema.Index{
+			expected: schemamodel.Index{
 				Name:      "idx_active",
 				Fields:    []string{"status"},
 				Type:      "",
@@ -138,7 +139,7 @@ func TestParseIndexWithPostgreSQLFeatures(t *testing.T) {
 		{
 			name:    "trigram index",
 			comment: "//ptah:schema:index name=\"idx_name_trgm\" fields=\"name\" type=\"GIN\" ops=\"gin_trgm_ops\"",
-			expected: goschema.Index{
+			expected: schemamodel.Index{
 				Name:      "idx_name_trgm",
 				Fields:    []string{"name"},
 				Type:      "GIN",
@@ -150,7 +151,7 @@ func TestParseIndexWithPostgreSQLFeatures(t *testing.T) {
 		{
 			name:    "covering index preserves trimmed include order",
 			comment: "//ptah:schema:index name=\"idx_name_covering\" fields=\"name\" include=\" display_name, created_at \"",
-			expected: goschema.Index{
+			expected: schemamodel.Index{
 				Name:           "idx_name_covering",
 				Fields:         []string{"name"},
 				IncludeColumns: []string{"display_name", "created_at"},
@@ -159,7 +160,7 @@ func TestParseIndexWithPostgreSQLFeatures(t *testing.T) {
 		{
 			name:    "cross-table index",
 			comment: "//ptah:schema:index name=\"idx_external\" fields=\"name,status\" table=\"products\"",
-			expected: goschema.Index{
+			expected: schemamodel.Index{
 				Name:      "idx_external",
 				Fields:    []string{"name", "status"},
 				Type:      "",
@@ -171,7 +172,7 @@ func TestParseIndexWithPostgreSQLFeatures(t *testing.T) {
 		{
 			name:    "complex index with all features",
 			comment: "//ptah:schema:index name=\"idx_complex\" fields=\"name,tags\" type=\"GIN\" condition=\"status = 'active'\" table=\"products\"",
-			expected: goschema.Index{
+			expected: schemamodel.Index{
 				Name:      "idx_complex",
 				Fields:    []string{"name", "tags"},
 				Type:      "GIN",
@@ -260,12 +261,12 @@ func TestParseGeneratedColumnField(t *testing.T) {
 	tests := []struct {
 		name     string
 		comment  string
-		expected goschema.Field
+		expected schemamodel.Field
 	}{
 		{
 			name:    "stored generated column",
 			comment: "//ptah:schema:field name=\"full_name\" type=\"TEXT\" generated=\"first_name || ' ' || last_name\" stored=\"true\"",
-			expected: goschema.Field{
+			expected: schemamodel.Field{
 				Name:                "full_name",
 				Type:                "TEXT",
 				GeneratedExpression: "first_name || ' ' || last_name",
@@ -275,7 +276,7 @@ func TestParseGeneratedColumnField(t *testing.T) {
 		{
 			name:    "explicit generated kind",
 			comment: "//ptah:schema:field name=\"full_name\" type=\"TEXT\" generated=\"concat(first_name, ' ', last_name)\" generated_kind=\"virtual\"",
-			expected: goschema.Field{
+			expected: schemamodel.Field{
 				Name:                "full_name",
 				Type:                "TEXT",
 				GeneratedExpression: "concat(first_name, ' ', last_name)",
@@ -412,7 +413,7 @@ type Product struct {
 }
 
 // Helper function to parse a string as a Go file
-func parseStringAsGoFile(c *qt.C, content string) goschema.Database {
+func parseStringAsGoFile(c *qt.C, content string) schemamodel.Database {
 	// Write content to a temporary file
 	tmpFile := c.TempDir() + "/test.go"
 	err := writeFile(tmpFile, content)

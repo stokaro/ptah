@@ -6,30 +6,30 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
 func TestCompare_ImplicitExtensionSchemaMatchesPostgreSQLDefault(t *testing.T) {
 	c := qt.New(t)
-	generated := &goschema.Database{Extensions: []goschema.Extension{{Name: "pgcrypto"}}}
+	desired := &schemamodel.Database{Extensions: []schemamodel.Extension{{Name: "pgcrypto"}}}
 	database := &catalog.Database{
 		Extensions: []catalog.Extension{{Name: "pgcrypto", Schema: "public"}},
 	}
 
-	diff := schemadiff.Compare(generated, database)
+	diff := schemadiff.Compare(desired, database)
 
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %#v", diff))
 }
 
 func TestCompareWithOptions_ImplicitExtensionSchemaMatchesPostgreSQLDefault(t *testing.T) {
 	c := qt.New(t)
-	generated := &goschema.Database{Extensions: []goschema.Extension{{Name: "pgcrypto"}}}
+	desired := &schemamodel.Database{Extensions: []schemamodel.Extension{{Name: "pgcrypto"}}}
 	database := &catalog.Database{
 		Extensions: []catalog.Extension{{Name: "pgcrypto", Schema: "public"}},
 	}
 
-	diff := schemadiff.CompareWithOptions(generated, database, nil)
+	diff := schemadiff.CompareWithOptions(desired, database, nil)
 
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %#v", diff))
 }

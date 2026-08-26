@@ -12,9 +12,9 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/planner"
@@ -203,11 +203,11 @@ func TestSQLServerLiveSequenceRefusesWhatTheRendererDeclines(t *testing.T) {
 
 // sqlServerSequenceSchema declares three sequences: one naming every option,
 // one naming none, and one bounded.
-func sqlServerSequenceSchema(schemaName string) *goschema.Database {
+func sqlServerSequenceSchema(schemaName string) *schemamodel.Database {
 	start, increment, cache := int64(1000), int64(5), int64(20)
 	minValue, maxValue := int64(1), int64(9999)
-	return &goschema.Database{
-		Sequences: []goschema.Sequence{
+	return &schemamodel.Database{
+		Sequences: []schemamodel.Sequence{
 			{
 				StructName: "Order", Name: "order_number_seq", Schema: schemaName,
 				AsType: "bigint", Start: &start, Increment: &increment, Cache: &cache, Cycle: true,

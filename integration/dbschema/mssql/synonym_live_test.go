@@ -7,8 +7,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/dbschema/mssql"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -94,7 +94,7 @@ func TestSynonymsDiffToZero_Live(t *testing.T) {
 	schema, err := reader.ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 
-	declared := &goschema.Database{Synonyms: []goschema.Synonym{
+	declared := &schemamodel.Database{Synonyms: []schemamodel.Synonym{
 		{StructName: "OrdersAlias", Name: "orders_alias", Schema: "app", Target: "dbo.orders"},
 		{StructName: "RemoteAlias", Name: "remote_alias", Schema: "app", Target: "other_db.dbo.orders"},
 	}}

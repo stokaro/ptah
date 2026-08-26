@@ -1,4 +1,4 @@
-package goschema_test
+package schemamodel_test
 
 import (
 	"reflect"
@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // scopedKind describes one object kind that can carry a dialect scope: how to
@@ -17,122 +17,122 @@ type scopedKind struct {
 	// field a reader can go and look at.
 	name string
 	// declare puts exactly one object of this kind, scoped to scope, into db.
-	declare func(db *goschema.Database, scope []string)
+	declare func(db *schemamodel.Database, scope []string)
 	// count reports how many objects of this kind db holds.
-	count func(db *goschema.Database) int
+	count func(db *schemamodel.Database) int
 }
 
 func scopedKinds() []scopedKind {
 	return []scopedKind{
 		{
 			name: "Extensions",
-			declare: func(db *goschema.Database, scope []string) {
-				db.Extensions = []goschema.Extension{{Name: "pgcrypto", Dialects: scope}}
+			declare: func(db *schemamodel.Database, scope []string) {
+				db.Extensions = []schemamodel.Extension{{Name: "pgcrypto", Dialects: scope}}
 			},
-			count: func(db *goschema.Database) int { return len(db.Extensions) },
+			count: func(db *schemamodel.Database) int { return len(db.Extensions) },
 		},
 		{
 			name: "Functions",
-			declare: func(db *goschema.Database, scope []string) {
-				db.Functions = []goschema.Function{{
+			declare: func(db *schemamodel.Database, scope []string) {
+				db.Functions = []schemamodel.Function{{
 					StructName: "Fn", Name: "tenant_id", Returns: "TEXT",
 					Language: "plpgsql", Body: "BEGIN RETURN 'x'; END;", Dialects: scope,
 				}}
 			},
-			count: func(db *goschema.Database) int { return len(db.Functions) },
+			count: func(db *schemamodel.Database) int { return len(db.Functions) },
 		},
 		{
 			name: "Sequences",
-			declare: func(db *goschema.Database, scope []string) {
-				db.Sequences = []goschema.Sequence{{StructName: "Seq", Name: "order_seq", Dialects: scope}}
+			declare: func(db *schemamodel.Database, scope []string) {
+				db.Sequences = []schemamodel.Sequence{{StructName: "Seq", Name: "order_seq", Dialects: scope}}
 			},
-			count: func(db *goschema.Database) int { return len(db.Sequences) },
+			count: func(db *schemamodel.Database) int { return len(db.Sequences) },
 		},
 		{
 			name: "Domains",
-			declare: func(db *goschema.Database, scope []string) {
-				db.Domains = []goschema.Domain{{StructName: "Dom", Name: "email_t", BaseType: "TEXT", Dialects: scope}}
+			declare: func(db *schemamodel.Database, scope []string) {
+				db.Domains = []schemamodel.Domain{{StructName: "Dom", Name: "email_t", BaseType: "TEXT", Dialects: scope}}
 			},
-			count: func(db *goschema.Database) int { return len(db.Domains) },
+			count: func(db *schemamodel.Database) int { return len(db.Domains) },
 		},
 		{
 			name: "CompositeTypes",
-			declare: func(db *goschema.Database, scope []string) {
-				db.CompositeTypes = []goschema.CompositeType{{
+			declare: func(db *schemamodel.Database, scope []string) {
+				db.CompositeTypes = []schemamodel.CompositeType{{
 					StructName: "Comp", Name: "address",
-					Fields:   []goschema.CompositeTypeField{{Name: "city", Type: "TEXT"}},
+					Fields:   []schemamodel.CompositeField{{Name: "city", Type: "TEXT"}},
 					Dialects: scope,
 				}}
 			},
-			count: func(db *goschema.Database) int { return len(db.CompositeTypes) },
+			count: func(db *schemamodel.Database) int { return len(db.CompositeTypes) },
 		},
 		{
 			name: "Ranges",
-			declare: func(db *goschema.Database, scope []string) {
-				db.Ranges = []goschema.Range{{StructName: "Rng", Name: "floatrange", Subtype: "float8", Dialects: scope}}
+			declare: func(db *schemamodel.Database, scope []string) {
+				db.Ranges = []schemamodel.Range{{StructName: "Rng", Name: "floatrange", Subtype: "float8", Dialects: scope}}
 			},
-			count: func(db *goschema.Database) int { return len(db.Ranges) },
+			count: func(db *schemamodel.Database) int { return len(db.Ranges) },
 		},
 		{
 			name: "Views",
-			declare: func(db *goschema.Database, scope []string) {
-				db.Views = []goschema.View{{StructName: "V", Name: "active", Body: "SELECT 1", Dialects: scope}}
+			declare: func(db *schemamodel.Database, scope []string) {
+				db.Views = []schemamodel.View{{StructName: "V", Name: "active", Body: "SELECT 1", Dialects: scope}}
 			},
-			count: func(db *goschema.Database) int { return len(db.Views) },
+			count: func(db *schemamodel.Database) int { return len(db.Views) },
 		},
 		{
 			name: "MaterializedViews",
-			declare: func(db *goschema.Database, scope []string) {
-				db.MaterializedViews = []goschema.MaterializedView{{
+			declare: func(db *schemamodel.Database, scope []string) {
+				db.MaterializedViews = []schemamodel.MaterializedView{{
 					StructName: "MV", Name: "stats", Body: "SELECT 1",
 					Dialects: scope,
 				}}
 			},
-			count: func(db *goschema.Database) int { return len(db.MaterializedViews) },
+			count: func(db *schemamodel.Database) int { return len(db.MaterializedViews) },
 		},
 		{
 			name: "Triggers",
-			declare: func(db *goschema.Database, scope []string) {
-				db.Triggers = []goschema.Trigger{{
+			declare: func(db *schemamodel.Database, scope []string) {
+				db.Triggers = []schemamodel.Trigger{{
 					StructName: "T", Name: "touch", Table: "tenants",
 					Timing: "BEFORE", Event: "UPDATE", Body: "RETURN NEW;", Dialects: scope,
 				}}
 			},
-			count: func(db *goschema.Database) int { return len(db.Triggers) },
+			count: func(db *schemamodel.Database) int { return len(db.Triggers) },
 		},
 		{
 			name: "RLSPolicies",
-			declare: func(db *goschema.Database, scope []string) {
-				db.RLSPolicies = []goschema.RLSPolicy{{
+			declare: func(db *schemamodel.Database, scope []string) {
+				db.RLSPolicies = []schemamodel.RLSPolicy{{
 					StructName: "P", Name: "isolation", Table: "tenants",
 					PolicyFor: "ALL", UsingExpression: "true", Dialects: scope,
 				}}
 			},
-			count: func(db *goschema.Database) int { return len(db.RLSPolicies) },
+			count: func(db *schemamodel.Database) int { return len(db.RLSPolicies) },
 		},
 		{
 			name: "RLSEnabledTables",
-			declare: func(db *goschema.Database, scope []string) {
-				db.RLSEnabledTables = []goschema.RLSEnabledTable{{StructName: "E", Table: "tenants", Dialects: scope}}
+			declare: func(db *schemamodel.Database, scope []string) {
+				db.RLSEnabledTables = []schemamodel.RLSEnabledTable{{StructName: "E", Table: "tenants", Dialects: scope}}
 			},
-			count: func(db *goschema.Database) int { return len(db.RLSEnabledTables) },
+			count: func(db *schemamodel.Database) int { return len(db.RLSEnabledTables) },
 		},
 		{
 			name: "Roles",
-			declare: func(db *goschema.Database, scope []string) {
-				db.Roles = []goschema.Role{{StructName: "R", Name: "app_reader", Dialects: scope}}
+			declare: func(db *schemamodel.Database, scope []string) {
+				db.Roles = []schemamodel.Role{{StructName: "R", Name: "app_reader", Dialects: scope}}
 			},
-			count: func(db *goschema.Database) int { return len(db.Roles) },
+			count: func(db *schemamodel.Database) int { return len(db.Roles) },
 		},
 		{
 			name: "Grants",
-			declare: func(db *goschema.Database, scope []string) {
-				db.Grants = []goschema.Grant{{
+			declare: func(db *schemamodel.Database, scope []string) {
+				db.Grants = []schemamodel.Grant{{
 					StructName: "G", Role: "app_reader",
 					Privileges: []string{"SELECT"}, OnTable: "tenants", Dialects: scope,
 				}}
 			},
-			count: func(db *goschema.Database) int { return len(db.Grants) },
+			count: func(db *schemamodel.Database) int { return len(db.Grants) },
 		},
 	}
 }
@@ -149,12 +149,12 @@ func TestScopeToDialect_EveryScopableKindIsProjected(t *testing.T) {
 		t.Run(kind.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db := &goschema.Database{}
+			db := &schemamodel.Database{}
 			kind.declare(db, []string{"postgres"})
 
-			c.Assert(kind.count(goschema.ScopeToDialect(db, "postgres")), qt.Equals, 1)
-			c.Assert(kind.count(goschema.ScopeToDialect(db, "mysql")), qt.Equals, 0)
-			c.Assert(kind.count(goschema.ScopeToDialect(db, "postgresql")), qt.Equals, 1)
+			c.Assert(kind.count(schemamodel.ScopeToDialect(db, "postgres")), qt.Equals, 1)
+			c.Assert(kind.count(schemamodel.ScopeToDialect(db, "mysql")), qt.Equals, 0)
+			c.Assert(kind.count(schemamodel.ScopeToDialect(db, "postgresql")), qt.Equals, 1)
 		})
 	}
 }
@@ -189,11 +189,11 @@ func TestScopeToDialect_AnUnscopedSchemaIsUnchanged(t *testing.T) {
 		t.Run(kind.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db := &goschema.Database{}
+			db := &schemamodel.Database{}
 			kind.declare(db, nil)
 
 			for _, dialect := range []string{"postgres", "mysql", "mariadb", "sqlite", "clickhouse", "sqlserver"} {
-				c.Assert(kind.count(goschema.ScopeToDialect(db, dialect)), qt.Equals, 1)
+				c.Assert(kind.count(schemamodel.ScopeToDialect(db, dialect)), qt.Equals, 1)
 			}
 		})
 	}
@@ -205,16 +205,16 @@ func TestScopeToDialect_AnUnscopedSchemaIsUnchanged(t *testing.T) {
 func TestScopeToDialect_KeepsWhatTheScopeDoesNotName(t *testing.T) {
 	c := qt.New(t)
 
-	db := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Tenant", Name: "tenants"}},
-		Fields: []goschema.Field{{StructName: "Tenant", Name: "id", Type: "INTEGER", Primary: true}},
-		Functions: []goschema.Function{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Tenant", Name: "tenants"}},
+		Fields: []schemamodel.Field{{StructName: "Tenant", Name: "id", Type: "INTEGER", Primary: true}},
+		Functions: []schemamodel.Function{
 			{StructName: "Scoped", Name: "pg_only", Returns: "TEXT", Language: "plpgsql", Body: "BEGIN RETURN 'x'; END;", Dialects: []string{"postgres"}},
 			{StructName: "Shared", Name: "everywhere", Returns: "TEXT", Language: "sql", Body: "SELECT 'x'"},
 		},
 	}
 
-	projected := goschema.ScopeToDialect(db, "mysql")
+	projected := schemamodel.ScopeToDialect(db, "mysql")
 
 	c.Assert(projected.Tables, qt.HasLen, 1)
 	c.Assert(projected.Fields, qt.HasLen, 1)
@@ -230,25 +230,25 @@ func TestScopeToDialect_KeepsWhatTheScopeDoesNotName(t *testing.T) {
 func TestScopeToDialect_DoesNotMutateTheCallersSchema(t *testing.T) {
 	c := qt.New(t)
 
-	db := &goschema.Database{
-		Functions: []goschema.Function{{
+	db := &schemamodel.Database{
+		Functions: []schemamodel.Function{{
 			StructName: "Scoped", Name: "pg_only", Returns: "TEXT",
 			Language: "plpgsql", Body: "BEGIN RETURN 'x'; END;", Dialects: []string{"postgres"},
 		}},
 	}
 
-	c.Assert(goschema.ScopeToDialect(db, "mysql").Functions, qt.HasLen, 0)
+	c.Assert(schemamodel.ScopeToDialect(db, "mysql").Functions, qt.HasLen, 0)
 	c.Assert(db.Functions, qt.HasLen, 1)
-	c.Assert(goschema.ScopeToDialect(db, "postgres").Functions, qt.HasLen, 1)
+	c.Assert(schemamodel.ScopeToDialect(db, "postgres").Functions, qt.HasLen, 1)
 }
 
 // TestOmissionsForDialect_NamesWhatLeftAndWhyItLeft covers the report the
 // commands print. An absent object is indistinguishable from one that was never
 // declared, so the projection alone cannot tell an operator anything.
 func TestOmissionsForDialect_NamesWhatLeftAndWhyItLeft(t *testing.T) {
-	db := &goschema.Database{
-		Extensions: []goschema.Extension{{Name: "pgcrypto", Dialects: []string{"postgres"}}},
-		Functions: []goschema.Function{
+	db := &schemamodel.Database{
+		Extensions: []schemamodel.Extension{{Name: "pgcrypto", Dialects: []string{"postgres"}}},
+		Functions: []schemamodel.Function{
 			{StructName: "Scoped", Name: "pg_only", Dialects: []string{"cockroachdb", "postgres"}},
 			{StructName: "Shared", Name: "everywhere"},
 		},
@@ -257,12 +257,12 @@ func TestOmissionsForDialect_NamesWhatLeftAndWhyItLeft(t *testing.T) {
 	tests := []struct {
 		name    string
 		dialect string
-		want    []goschema.ScopedObject
+		want    []schemamodel.ScopedObject
 	}{
 		{
 			name:    "the excluded target is told what it is not getting",
 			dialect: "mysql",
-			want: []goschema.ScopedObject{
+			want: []schemamodel.ScopedObject{
 				{Kind: "extension", Name: "pgcrypto", Dialects: []string{"postgres"}},
 				{Kind: "function", Name: "pg_only", Dialects: []string{"cockroachdb", "postgres"}},
 			},
@@ -275,7 +275,7 @@ func TestOmissionsForDialect_NamesWhatLeftAndWhyItLeft(t *testing.T) {
 		{
 			name:    "a partially named target hears only about what it lost",
 			dialect: "cockroachdb",
-			want: []goschema.ScopedObject{
+			want: []schemamodel.ScopedObject{
 				{Kind: "extension", Name: "pgcrypto", Dialects: []string{"postgres"}},
 			},
 		},
@@ -290,7 +290,7 @@ func TestOmissionsForDialect_NamesWhatLeftAndWhyItLeft(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(goschema.OmissionsForDialect(db, test.dialect), qt.DeepEquals, test.want)
+			c.Assert(schemamodel.OmissionsForDialect(db, test.dialect), qt.DeepEquals, test.want)
 		})
 	}
 }
@@ -300,22 +300,22 @@ func TestOmissionsForDialect_NamesWhatLeftAndWhyItLeft(t *testing.T) {
 func TestScopedObjects_ReportsEveryScopeRegardlessOfTarget(t *testing.T) {
 	c := qt.New(t)
 
-	db := &goschema.Database{
-		Roles: []goschema.Role{
+	db := &schemamodel.Database{
+		Roles: []schemamodel.Role{
 			{StructName: "R", Name: "app_reader", Dialects: []string{"postgres"}},
 			{StructName: "S", Name: "unscoped"},
 		},
 	}
 
-	c.Assert(goschema.ScopedObjects(db), qt.DeepEquals, []goschema.ScopedObject{
+	c.Assert(schemamodel.ScopedObjects(db), qt.DeepEquals, []schemamodel.ScopedObject{
 		{Kind: "role", Name: "app_reader", Dialects: []string{"postgres"}},
 	})
 }
 
-// databaseFieldsDeclaringScope names every [goschema.Database] field whose
+// databaseFieldsDeclaringScope names every [schemamodel.Database] field whose
 // element type declares a Dialects scope, in declaration order.
 func databaseFieldsDeclaringScope() []string {
-	databaseType := reflect.TypeFor[goschema.Database]()
+	databaseType := reflect.TypeFor[schemamodel.Database]()
 	names := make([]string, 0, databaseType.NumField())
 	for field := range databaseType.Fields() {
 		names = append(names, map[bool][]string{true: {field.Name}}[declaresScope(field.Type)]...)

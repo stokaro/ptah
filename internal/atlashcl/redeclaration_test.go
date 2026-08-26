@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashcl"
 )
 
@@ -120,7 +120,7 @@ type documentCounts struct {
 
 // countDocument projects a parsed document onto the kinds these fixtures
 // declare. It asserts nothing; it is how a row states its verdict as data.
-func countDocument(db *goschema.Database) documentCounts {
+func countDocument(db *schemamodel.Database) documentCounts {
 	return documentCounts{
 		Schemas:           len(db.Schemas),
 		Tables:            len(db.Tables),
@@ -236,7 +236,7 @@ table "users" {
 		},
 		{
 			// The member the class fix missed. A SINGLE-column foreign key is not
-			// a goschema.Constraint at all -- it is written onto the referencing
+			// a schemamodel.Constraint at all -- it is written onto the referencing
 			// field -- so a ledger built from db.Constraints could never see it,
 			// and the document was exit 0 with one key rendered. Measured on the
 			// pinned binary: `create "posts" table: pq: constraint

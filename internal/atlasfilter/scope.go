@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemascope"
 )
 
@@ -392,7 +392,7 @@ func validateIncludeSelectorTypesAgainst(
 // object, the projection is returned together with an [EmptySelectionError].
 // The projection is valid — it is empty — so callers that tolerate an empty
 // selection keep using it, and callers that refuse one have the error.
-func ScopeGenerated(db *goschema.Database, scope Scope) (*goschema.Database, error) {
+func ScopeGenerated(db *schemamodel.Database, scope Scope) (*schemamodel.Database, error) {
 	filtered, _, err := ScopeGeneratedReport(db, scope)
 	return filtered, err
 }
@@ -403,7 +403,7 @@ func ScopeGenerated(db *goschema.Database, scope Scope) (*goschema.Database, err
 // --include that already dropped an object is not the exclude selector naming
 // nothing; asking the projection instead would report a selector as empty
 // whenever a positive selection had removed its object first.
-func ScopeGeneratedReport(db *goschema.Database, scope Scope) (*goschema.Database, ExcludeReport, error) {
+func ScopeGeneratedReport(db *schemamodel.Database, scope Scope) (*schemamodel.Database, ExcludeReport, error) {
 	filtered, reports, err := ScopeGeneratedSelectionReport(db, scope)
 	return filtered, reports.Exclude, err
 }
@@ -426,9 +426,9 @@ type ScopeReports struct {
 // selection outcome needed when a comparison aggregates matches across both
 // sides.
 func ScopeGeneratedSelectionReport(
-	db *goschema.Database,
+	db *schemamodel.Database,
 	scope Scope,
-) (*goschema.Database, ScopeReports, error) {
+) (*schemamodel.Database, ScopeReports, error) {
 	return scopeReport(db, scope, ExcludeGeneratedScopeReport,
 		(*scopeSelection).projectGenerated, validateGeneratedScope)
 }

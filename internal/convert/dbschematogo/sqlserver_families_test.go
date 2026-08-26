@@ -7,7 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 )
 
@@ -21,7 +21,7 @@ import (
 //
 // The target is the second half of the claim. `Synonym.Target` is
 // base_object_name exactly as the catalog records it, brackets included, and
-// [goschema.Synonym.Target] is what will be emitted. Copying the catalog's form
+// [schemamodel.Synonym.Target] is what will be emitted. Copying the catalog's form
 // would put `[other].[dbo].[gauge]` in a document and render it again as a name
 // with brackets inside it.
 func TestConvert_CarriesSynonyms(t *testing.T) {
@@ -104,21 +104,21 @@ func TestConvert_CarriesEveryPropertyScopeExceptTheOneItCannotWrite(t *testing.T
 	tests := []struct {
 		name     string
 		property catalog.ExtendedProperty
-		want     []goschema.ExtendedProperty
+		want     []schemamodel.ExtendedProperty
 	}{
 		{
 			name: "database scope",
 			property: catalog.ExtendedProperty{
 				Name: "ptah_db", Value: "on", ValueType: "nvarchar",
 			},
-			want: []goschema.ExtendedProperty{{Name: "ptah_db", Value: "on"}},
+			want: []schemamodel.ExtendedProperty{{Name: "ptah_db", Value: "on"}},
 		},
 		{
 			name: "schema scope",
 			property: catalog.ExtendedProperty{
 				Name: "ptah_schema", Schema: "dbo", Value: "on", ValueType: "nvarchar",
 			},
-			want: []goschema.ExtendedProperty{{Name: "ptah_schema", Schema: "dbo", Value: "on"}},
+			want: []schemamodel.ExtendedProperty{{Name: "ptah_schema", Schema: "dbo", Value: "on"}},
 		},
 		{
 			name: "table scope",
@@ -126,7 +126,7 @@ func TestConvert_CarriesEveryPropertyScopeExceptTheOneItCannotWrite(t *testing.T
 				Name: "ptah_table", Schema: "dbo", Table: "gauge",
 				Value: "on", ValueType: "nvarchar",
 			},
-			want: []goschema.ExtendedProperty{{
+			want: []schemamodel.ExtendedProperty{{
 				Name: "ptah_table", Schema: "dbo", Table: "gauge", Value: "on",
 			}},
 		},
@@ -136,7 +136,7 @@ func TestConvert_CarriesEveryPropertyScopeExceptTheOneItCannotWrite(t *testing.T
 				Name: "ptah_column", Schema: "dbo", Table: "gauge", Column: "title",
 				Value: "on", ValueType: "nvarchar",
 			},
-			want: []goschema.ExtendedProperty{{
+			want: []schemamodel.ExtendedProperty{{
 				Name: "ptah_column", Schema: "dbo", Table: "gauge", Column: "title", Value: "on",
 			}},
 		},
@@ -192,7 +192,7 @@ func TestConvert_DecidesEveryFamilyTheReadCanCarry(t *testing.T) {
 // mapping to a field the IR does not have would satisfy the guard above while
 // naming nothing.
 func TestConvert_NamesAnIRFieldThatExists(t *testing.T) {
-	irType := reflect.TypeFor[goschema.Database]()
+	irType := reflect.TypeFor[schemamodel.Database]()
 	for _, irField := range convertedFamilies {
 		t.Run(irField, func(t *testing.T) {
 			c := qt.New(t)
@@ -270,7 +270,7 @@ func TestConvert_CarriesTheContinuousAggregateBodyTheCatalogKept(t *testing.T) {
 		}},
 	})
 
-	c.Assert(converted.ContinuousAggregates, qt.DeepEquals, []goschema.ContinuousAggregate{{
+	c.Assert(converted.ContinuousAggregates, qt.DeepEquals, []schemamodel.ContinuousAggregate{{
 		Name: "hourly", Schema: "public", MaterializedOnly: new(true),
 		Body: "SELECT time_bucket('01:00:00'::interval, \"time\") FROM readings",
 	}})

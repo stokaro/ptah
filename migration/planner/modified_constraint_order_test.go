@@ -8,8 +8,8 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -87,9 +87,9 @@ func TestGenerateSchemaDiffSQLStatements_AModifiedConstraintDropsBeforeItAdds(t 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			generated := widgetDeclaredWithoutASchema()
+			desired := widgetDeclaredWithoutASchema()
 
-			statements := planModifiedConstraint(c, generated, test.dialect, test.schema)
+			statements := planModifiedConstraint(c, desired, test.dialect, test.schema)
 
 			drops := statementIndexesContaining(statements, test.wantDrop)
 			adds := statementIndexesContaining(statements, test.wantAdd)
@@ -114,9 +114,9 @@ func TestGenerateSchemaDiffSQLStatements_AModifiedConstraintDropsBeforeItAdds(t 
 // table does not exist.
 func TestGenerateSchemaDiffSQLStatements_SQLiteRebuildsTheTableOnce(t *testing.T) {
 	c := qt.New(t)
-	generated := widgetDeclaredWithoutASchema()
+	desired := widgetDeclaredWithoutASchema()
 
-	statements := planModifiedConstraint(c, generated, "sqlite", "main")
+	statements := planModifiedConstraint(c, desired, "sqlite", "main")
 
 	rebuilds := 0
 	for _, statement := range statements {
@@ -128,15 +128,15 @@ func TestGenerateSchemaDiffSQLStatements_SQLiteRebuildsTheTableOnce(t *testing.T
 // widgetDeclaredWithoutASchema is what `//ptah:schema:constraint` on a struct
 // with no explicit schema produces: a table spelled bare, and a named UNIQUE
 // constraint over one column.
-func widgetDeclaredWithoutASchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "W", Name: "widget"}},
-		Fields: []goschema.Field{
+func widgetDeclaredWithoutASchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "W", Name: "widget"}},
+		Fields: []schemamodel.Field{
 			{StructName: "W", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "W", Name: "tenant", Type: "TEXT"},
 			{StructName: "W", Name: "code", Type: "TEXT"},
 		},
-		Constraints: []goschema.Constraint{{
+		Constraints: []schemamodel.Constraint{{
 			StructName: "W", Name: "uq_widget_scope", Type: "UNIQUE",
 			Table: "widget", Columns: []string{"tenant"},
 		}},
@@ -151,7 +151,7 @@ func widgetDeclaredWithoutASchema() *goschema.Database {
 // cannot name it on MySQL, MariaDB or Oracle -- offline, the dialect string is
 // all there is -- so a comparison run without them reports the table itself as
 // added and removed, which is a different question from this one.
-func planModifiedConstraint(c *qt.C, generated *goschema.Database, dialect, schema string) []string {
+func planModifiedConstraint(c *qt.C, desired *schemamodel.Database, dialect, schema string) []string {
 	c.Helper()
 	database := &catalog.Database{
 		Tables: []catalog.Table{{Schema: schema, Name: "widget", Columns: []catalog.Column{
@@ -169,10 +169,10 @@ func planModifiedConstraint(c *qt.C, generated *goschema.Database, dialect, sche
 	opts := config.DefaultCompareOptions()
 	opts.Dialect = dialect
 	opts.IdentifierSemantics = &semantics
-	diff := schemadiff.CompareWithOptions(generated, database, opts)
+	diff := schemadiff.CompareWithOptions(desired, database, opts)
 	diff.IdentifierSemantics = &semantics
 
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, generated, dialect)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, dialect)
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.TablesAdded, qt.HasLen, 0, qt.Commentf("the table itself must pair"))
 	c.Assert(diff.TablesRemoved, qt.HasLen, 0, qt.Commentf("the table itself must pair"))

@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/deporder"
 )
 
@@ -23,8 +23,8 @@ func TestTablesForCreate_PreservesStructuralIdentity(t *testing.T) {
 func TestGeneratedTableDependencies_PreservesStructuralIdentity(t *testing.T) {
 	c := qt.New(t)
 	schema := referenceCollisionSchema()
-	schema.Tables = append(schema.Tables, goschema.Table{StructName: "Child", Name: "children"})
-	schema.Fields = []goschema.Field{
+	schema.Tables = append(schema.Tables, schemamodel.Table{StructName: "Child", Name: "children"})
+	schema.Fields = []schemamodel.Field{
 		{StructName: "Child", Name: "literal_id", Type: "INTEGER", Foreign: `"tenant.data"(id)`},
 		{StructName: "Child", Name: "qualified_id", Type: "INTEGER", Foreign: "tenant.data(id)"},
 	}
@@ -34,9 +34,9 @@ func TestGeneratedTableDependencies_PreservesStructuralIdentity(t *testing.T) {
 	c.Assert(dependencies["children"], qt.DeepEquals, []string{`"tenant.data"`, "tenant.data"})
 }
 
-func referenceCollisionSchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func referenceCollisionSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Literal", Name: "tenant.data"},
 			{StructName: "Qualified", Schema: "tenant", Name: "data"},
 		},

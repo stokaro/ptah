@@ -13,8 +13,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
@@ -57,7 +57,7 @@ func TestReverseSchemaDiff_AccountsForEverySchemaDiffField(t *testing.T) {
 func assertReverseCoverageField(
 	c *qt.C,
 	baseline *difftypes.SchemaDiff,
-	schema *goschema.Database,
+	schema *schemamodel.Database,
 	dbSchema *catalog.Database,
 	field reflect.StructField,
 	fieldIndex int,
@@ -196,22 +196,22 @@ const (
 	modifiedCategoryPriorMatViewBody = "SELECT count(*) AS total FROM rev_named_users"
 )
 
-func modifiedCategoryContext() (*goschema.Database, *catalog.Database) {
-	schema := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "RevNamedUser", Name: modifiedCategoryTable}},
-		Fields: []goschema.Field{
+func modifiedCategoryContext() (*schemamodel.Database, *catalog.Database) {
+	schema := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "RevNamedUser", Name: modifiedCategoryTable}},
+		Fields: []schemamodel.Field{
 			{StructName: "RevNamedUser", Name: "id", Type: "BIGINT", Primary: true},
 			{StructName: "RevNamedUser", Name: "email", Type: "TEXT"},
 		},
-		Views: []goschema.View{
+		Views: []schemamodel.View{
 			{StructName: "RevNamedActive", Name: modifiedCategoryView, Body: modifiedCategoryTargetViewBody},
 		},
-		MaterializedViews: []goschema.MaterializedView{{
+		MaterializedViews: []schemamodel.MaterializedView{{
 			StructName: "RevNamedStats",
 			Name:       modifiedCategoryMatView,
 			Body:       "SELECT count(*) AS total FROM rev_named_users WHERE id > 0",
 		}},
-		Triggers: []goschema.Trigger{{
+		Triggers: []schemamodel.Trigger{{
 			StructName: "RevNamedUser",
 			Name:       modifiedCategoryTrigger,
 			Table:      modifiedCategoryTable,
@@ -221,7 +221,7 @@ func modifiedCategoryContext() (*goschema.Database, *catalog.Database) {
 			Body:       "RETURN NEW;",
 		}},
 	}
-	goschema.Finalize(schema)
+	schemamodel.Finalize(schema)
 
 	dbSchema := &catalog.Database{
 		Tables: []catalog.Table{{
@@ -334,13 +334,13 @@ const (
 // reverseCoverageContext supplies the generated schema and the pre-change
 // database the reverse builder consults for the fields it derives rather than
 // swaps.
-func reverseCoverageContext() (*goschema.Database, *catalog.Database) {
+func reverseCoverageContext() (*schemamodel.Database, *catalog.Database) {
 	checkClause := "id > 0"
 
-	schema := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "RevCoverageHost", Name: revCoverageTable}},
-		Fields: []goschema.Field{{StructName: "RevCoverageHost", Name: "id", Type: "BIGINT", Primary: true}},
-		Constraints: []goschema.Constraint{{
+	schema := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "RevCoverageHost", Name: revCoverageTable}},
+		Fields: []schemamodel.Field{{StructName: "RevCoverageHost", Name: "id", Type: "BIGINT", Primary: true}},
+		Constraints: []schemamodel.Constraint{{
 			StructName:      "RevCoverageHost",
 			Name:            revCoverageCheckName,
 			Table:           revCoverageTable,
@@ -348,7 +348,7 @@ func reverseCoverageContext() (*goschema.Database, *catalog.Database) {
 			CheckExpression: checkClause,
 		}},
 	}
-	goschema.Finalize(schema)
+	schemamodel.Finalize(schema)
 
 	dbSchema := &catalog.Database{
 		Tables: []catalog.Table{{
@@ -441,8 +441,8 @@ func distinctLabel(parent, name string) string {
 func TestReverseSchemaDiff_ADroppedOverloadKeepsItsSignature(t *testing.T) {
 	c := qt.New(t)
 
-	schema := &goschema.Database{
-		Functions: []goschema.Function{
+	schema := &schemamodel.Database{
+		Functions: []schemamodel.Function{
 			{Name: "f", Parameters: "a text", Returns: "text", Body: "SELECT $1"},
 		},
 	}
@@ -461,7 +461,7 @@ func TestReverseSchemaDiff_ARoutineTheSchemaNoLongerDeclaresDropsByName(t *testi
 	c := qt.New(t)
 
 	reversed := reverseSchemaDiffWithSchema(
-		&difftypes.SchemaDiff{FunctionsAdded: []string{"gone"}}, &goschema.Database{}, nil)
+		&difftypes.SchemaDiff{FunctionsAdded: []string{"gone"}}, &schemamodel.Database{}, nil)
 
 	c.Assert(reversed.FunctionsRemovedWithSignatures, qt.DeepEquals,
 		[]difftypes.RoutineRemoval{{Name: "gone", Signature: ""}})

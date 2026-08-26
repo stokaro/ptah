@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemafile"
 )
 
@@ -26,7 +26,7 @@ func writeSchemaDir(c *qt.C, files map[string]string) string {
 	return dir
 }
 
-func tableNames(db *goschema.Database) []string {
+func tableNames(db *schemamodel.Database) []string {
 	names := make([]string, 0, len(db.Tables))
 	for _, table := range db.Tables {
 		names = append(names, table.Name)

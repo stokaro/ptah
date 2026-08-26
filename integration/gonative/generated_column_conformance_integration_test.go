@@ -10,8 +10,8 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	mysqlreader "go.5x5.cz/ptah/internal/dbschema/mysql"
 	postgresreader "go.5x5.cz/ptah/internal/dbschema/postgres"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -65,12 +65,12 @@ func TestGeneratedColumnConformanceFixture_RoundTrip_MySQL(t *testing.T) {
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 }
 
-func generatedColumnConformanceSchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func generatedColumnConformanceSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Contact", Name: "contacts"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Contact", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "Contact", Name: "email", Type: "VARCHAR(255)", Nullable: false},
 			{
@@ -81,7 +81,7 @@ func generatedColumnConformanceSchema() *goschema.Database {
 				GeneratedKind:       "stored",
 			},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{StructName: "Contact", Name: "idx_contacts_email_normalized", Fields: []string{"email_normalized"}},
 		},
 	}

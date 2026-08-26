@@ -7,7 +7,7 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -41,15 +41,15 @@ import (
 func TestAGuardedNonExtensionCreationSurvivesAReadThatDidNotLook(t *testing.T) {
 	tests := []struct {
 		name        string
-		desired     func() *goschema.Database
+		desired     func() *schemamodel.Database
 		read        func(*difftypes.SchemaDiff) []string
 		wantPlanned []string
 	}{
 		{
 			name: "a sequence the desired state declares with if_not_exists",
-			desired: func() *goschema.Database {
-				return &goschema.Database{
-					Sequences: []goschema.Sequence{{Name: "s1", Schema: "public", IfNotExists: true}},
+			desired: func() *schemamodel.Database {
+				return &schemamodel.Database{
+					Sequences: []schemamodel.Sequence{{Name: "s1", Schema: "public", IfNotExists: true}},
 				}
 			},
 			read:        func(diff *difftypes.SchemaDiff) []string { return diff.SequencesAdded },
@@ -77,7 +77,7 @@ func TestUnknownCurrentExtensionIsWithheldRegardlessOfCreationGuard(t *testing.T
 	for _, ifNotExists := range []bool{false, true} {
 		t.Run(map[bool]string{false: "unguarded", true: "guarded"}[ifNotExists], func(t *testing.T) {
 			c := qt.New(t)
-			desired := &goschema.Database{Extensions: []goschema.Extension{{
+			desired := &schemamodel.Database{Extensions: []schemamodel.Extension{{
 				Name:        "citext",
 				Schema:      "extensions",
 				IfNotExists: ifNotExists,
@@ -104,9 +104,9 @@ func TestUnknownCurrentExtensionIsWithheldRegardlessOfCreationGuard(t *testing.T
 func TestAPolicyAdditionSurvivesAReadThatDidNotLook(t *testing.T) {
 	c := qt.New(t)
 
-	desired := &goschema.Database{
-		Tables: []goschema.Table{{Name: "guarded", StructName: "Guarded"}},
-		RLSPolicies: []goschema.RLSPolicy{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "guarded", StructName: "Guarded"}},
+		RLSPolicies: []schemamodel.RLSPolicy{
 			{Name: "p", Table: "guarded", PolicyFor: "SELECT", UsingExpression: "true"},
 		},
 	}
@@ -128,15 +128,15 @@ func TestAPolicyAdditionSurvivesAReadThatDidNotLook(t *testing.T) {
 func TestAnUnguardedCreationIsWithheldAndNamed(t *testing.T) {
 	tests := []struct {
 		name         string
-		desired      func() *goschema.Database
+		desired      func() *schemamodel.Database
 		notDescribed coverage.Set
 		read         func(*difftypes.SchemaDiff) []string
 		wantWithheld []coverage.Object
 	}{
 		{
 			name: "a sequence declared without if_not_exists",
-			desired: func() *goschema.Database {
-				return &goschema.Database{Sequences: []goschema.Sequence{{Name: "s1", Schema: "public"}}}
+			desired: func() *schemamodel.Database {
+				return &schemamodel.Database{Sequences: []schemamodel.Sequence{{Name: "s1", Schema: "public"}}}
 			},
 			notDescribed: coverage.Set{}.WithKind(coverage.Sequence),
 			read:         func(diff *difftypes.SchemaDiff) []string { return diff.SequencesAdded },
@@ -144,8 +144,8 @@ func TestAnUnguardedCreationIsWithheldAndNamed(t *testing.T) {
 		},
 		{
 			name: "an extension declared without if_not_exists",
-			desired: func() *goschema.Database {
-				return &goschema.Database{Extensions: []goschema.Extension{{Name: "citext"}}}
+			desired: func() *schemamodel.Database {
+				return &schemamodel.Database{Extensions: []schemamodel.Extension{{Name: "citext"}}}
 			},
 			notDescribed: coverage.Set{}.WithKind(coverage.Extension),
 			read:         func(diff *difftypes.SchemaDiff) []string { return diff.ExtensionsAdded },
@@ -153,8 +153,8 @@ func TestAnUnguardedCreationIsWithheldAndNamed(t *testing.T) {
 		},
 		{
 			name: "a role, which has no conditional creation at all",
-			desired: func() *goschema.Database {
-				return &goschema.Database{Roles: []goschema.Role{{Name: "admin_user", Login: true}}}
+			desired: func() *schemamodel.Database {
+				return &schemamodel.Database{Roles: []schemamodel.Role{{Name: "admin_user", Login: true}}}
 			},
 			notDescribed: coverage.Set{}.WithObject(coverage.Role, "admin_user"),
 			read:         func(diff *difftypes.SchemaDiff) []string { return diff.RolesAdded },
@@ -162,9 +162,9 @@ func TestAnUnguardedCreationIsWithheldAndNamed(t *testing.T) {
 		},
 		{
 			name: "a table in a schema the read never opened",
-			desired: func() *goschema.Database {
-				return &goschema.Database{
-					Tables: []goschema.Table{{Name: "b", Schema: "extra", StructName: "B"}},
+			desired: func() *schemamodel.Database {
+				return &schemamodel.Database{
+					Tables: []schemamodel.Table{{Name: "b", Schema: "extra", StructName: "B"}},
 				}
 			},
 			notDescribed: coverage.Set{}.WithObject(coverage.Schema, "extra"),
@@ -194,39 +194,39 @@ func TestAnUnguardedCreationIsWithheldAndNamed(t *testing.T) {
 func TestAnUndeclaredReadPlansEveryAdditionAndWithholdsNothing(t *testing.T) {
 	tests := []struct {
 		name        string
-		desired     func() *goschema.Database
+		desired     func() *schemamodel.Database
 		read        func(*difftypes.SchemaDiff) []string
 		wantPlanned []string
 	}{
 		{
 			name: "a sequence declared without if_not_exists",
-			desired: func() *goschema.Database {
-				return &goschema.Database{Sequences: []goschema.Sequence{{Name: "s1", Schema: "public"}}}
+			desired: func() *schemamodel.Database {
+				return &schemamodel.Database{Sequences: []schemamodel.Sequence{{Name: "s1", Schema: "public"}}}
 			},
 			read:        func(diff *difftypes.SchemaDiff) []string { return diff.SequencesAdded },
 			wantPlanned: []string{"public.s1"},
 		},
 		{
 			name: "an extension declared without if_not_exists",
-			desired: func() *goschema.Database {
-				return &goschema.Database{Extensions: []goschema.Extension{{Name: "citext"}}}
+			desired: func() *schemamodel.Database {
+				return &schemamodel.Database{Extensions: []schemamodel.Extension{{Name: "citext"}}}
 			},
 			read:        func(diff *difftypes.SchemaDiff) []string { return diff.ExtensionsAdded },
 			wantPlanned: []string{"citext"},
 		},
 		{
 			name: "a role",
-			desired: func() *goschema.Database {
-				return &goschema.Database{Roles: []goschema.Role{{Name: "admin_user", Login: true}}}
+			desired: func() *schemamodel.Database {
+				return &schemamodel.Database{Roles: []schemamodel.Role{{Name: "admin_user", Login: true}}}
 			},
 			read:        func(diff *difftypes.SchemaDiff) []string { return diff.RolesAdded },
 			wantPlanned: []string{"admin_user"},
 		},
 		{
 			name: "a table in another schema",
-			desired: func() *goschema.Database {
-				return &goschema.Database{
-					Tables: []goschema.Table{{Name: "b", Schema: "extra", StructName: "B"}},
+			desired: func() *schemamodel.Database {
+				return &schemamodel.Database{
+					Tables: []schemamodel.Table{{Name: "b", Schema: "extra", StructName: "B"}},
 				}
 			},
 			read:        func(diff *difftypes.SchemaDiff) []string { return diff.TablesAdded },
@@ -255,7 +255,7 @@ func TestAnUndeclaredReadPlansEveryAdditionAndWithholdsNothing(t *testing.T) {
 func TestWithheldAdditionsAreNotChanges(t *testing.T) {
 	c := qt.New(t)
 
-	desired := &goschema.Database{Sequences: []goschema.Sequence{{Name: "s1", Schema: "public"}}}
+	desired := &schemamodel.Database{Sequences: []schemamodel.Sequence{{Name: "s1", Schema: "public"}}}
 	database := &catalog.Database{}
 	database.NotDescribed = coverage.Set{}.WithKind(coverage.Sequence)
 
@@ -272,9 +272,9 @@ func TestWithheldAdditionsAreNotChanges(t *testing.T) {
 func TestWithheldAdditionsAreOrdered(t *testing.T) {
 	c := qt.New(t)
 
-	desired := &goschema.Database{
-		Extensions: []goschema.Extension{{Name: "citext"}, {Name: "btree_gist"}},
-		Sequences: []goschema.Sequence{
+	desired := &schemamodel.Database{
+		Extensions: []schemamodel.Extension{{Name: "citext"}, {Name: "btree_gist"}},
+		Sequences: []schemamodel.Sequence{
 			{Name: "b_seq", Schema: "public"},
 			{Name: "a_seq", Schema: "public"},
 		},
@@ -299,7 +299,7 @@ func TestWithheldAdditionsAreOrdered(t *testing.T) {
 func TestAGuardIsNotAnExcuseToIgnoreARemovalRecord(t *testing.T) {
 	c := qt.New(t)
 
-	desired := &goschema.Database{}
+	desired := &schemamodel.Database{}
 	desired.NotDescribed = coverage.Set{}.WithKind(coverage.Extension)
 	database := &catalog.Database{Extensions: []catalog.Extension{{Name: "pgcrypto", Schema: "public"}}}
 

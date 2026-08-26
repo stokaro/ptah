@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlasreport"
 )
 
@@ -144,7 +144,7 @@ func TestRenderSchemaInspect_JSONRealmDocument(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			report := atlasreport.NewSchemaInspectReport(
-				&goschema.Database{},
+				&schemamodel.Database{},
 				test.schema,
 				test.info,
 				nil,

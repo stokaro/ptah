@@ -38,7 +38,7 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // ImpliesNotNull reports whether SQLite makes field NOT NULL because table's
@@ -48,7 +48,7 @@ import (
 // a parameter rather than something recomputed here so a caller that already
 // knows the key -- because it just resolved embedded fields, say -- does not
 // have to spell the table's key twice.
-func ImpliesNotNull(table goschema.Table, keyColumns []string, field goschema.Field) bool {
+func ImpliesNotNull(table schemamodel.Table, keyColumns []string, field schemamodel.Field) bool {
 	if !coversColumn(keyColumns, field.Name) {
 		return false
 	}
@@ -64,7 +64,7 @@ func ImpliesNotNull(table goschema.Table, keyColumns []string, field goschema.Fi
 // KeyColumns returns every column table's primary key covers, reading the
 // table-level key where the table declares one and the columns that declare
 // `primary` themselves otherwise. It returns nil for a table with no key.
-func KeyColumns(table goschema.Table, fields []goschema.Field) []string {
+func KeyColumns(table schemamodel.Table, fields []schemamodel.Field) []string {
 	if columns := tableLevelKeyColumns(table); len(columns) > 0 {
 		return columns
 	}
@@ -77,7 +77,7 @@ func KeyColumns(table goschema.Table, fields []goschema.Field) []string {
 	return columns
 }
 
-func tableLevelKeyColumns(table goschema.Table) []string {
+func tableLevelKeyColumns(table schemamodel.Table) []string {
 	var columns []string
 	for _, part := range table.PrimaryKeyParts {
 		if name := strings.TrimSpace(part.Name); name != "" {
@@ -109,7 +109,7 @@ func tableLevelKeyColumns(table goschema.Table) []string {
 // so a model that answered NOT NULL for it would plan a rebuild on every run and
 // never converge. The DESC that goes missing is its own defect, in the renderer,
 // and it has to be fixed there rather than modeled around here.
-func isRowidAlias(keyColumns []string, field goschema.Field) bool {
+func isRowidAlias(keyColumns []string, field schemamodel.Field) bool {
 	if len(keyColumns) != 1 {
 		return false
 	}

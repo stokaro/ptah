@@ -8,8 +8,8 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -97,9 +97,9 @@ func TestGenerateSchemaDiffSQLStatements_TheSchemaComesBeforeTheObject(t *testin
 // be.
 func TestGenerateSchemaDiffSQLStatements_ASingleSchemaApplyCreatesNoSchema(t *testing.T) {
 	c := qt.New(t)
-	declared := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "W", Name: "widget"}},
-		Fields: []goschema.Field{{StructName: "W", Name: "id", Type: "INT", Primary: true}},
+	declared := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "W", Name: "widget"}},
+		Fields: []schemamodel.Field{{StructName: "W", Name: "id", Type: "INT", Primary: true}},
 	}
 
 	statements := planWithSQLServer(c, declared, &catalog.Database{})
@@ -119,35 +119,35 @@ func TestGenerateSchemaDiffSQLStatements_ASingleSchemaApplyCreatesNoSchema(t *te
 func TestGenerateSchemaDiffSQLStatements_EveryAddedFamilyNamesItsSchema(t *testing.T) {
 	tests := []struct {
 		name    string
-		declare func(*goschema.Database)
+		declare func(*schemamodel.Database)
 	}{
 		{
 			name: "a table",
-			declare: func(d *goschema.Database) {
-				d.Tables = append(d.Tables, goschema.Table{StructName: "W", Name: "widget", Schema: "extra"})
-				d.Fields = append(d.Fields, goschema.Field{StructName: "W", Name: "id", Type: "INT", Primary: true})
+			declare: func(d *schemamodel.Database) {
+				d.Tables = append(d.Tables, schemamodel.Table{StructName: "W", Name: "widget", Schema: "extra"})
+				d.Fields = append(d.Fields, schemamodel.Field{StructName: "W", Name: "id", Type: "INT", Primary: true})
 			},
 		},
 		{
 			name: "a view",
-			declare: func(d *goschema.Database) {
-				d.Views = append(d.Views, goschema.View{
+			declare: func(d *schemamodel.Database) {
+				d.Views = append(d.Views, schemamodel.View{
 					StructName: "V", Name: "extra.v1", Body: "SELECT 1 AS one",
 				})
 			},
 		},
 		{
 			name: "a synonym",
-			declare: func(d *goschema.Database) {
-				d.Synonyms = append(d.Synonyms, goschema.Synonym{
+			declare: func(d *schemamodel.Database) {
+				d.Synonyms = append(d.Synonyms, schemamodel.Synonym{
 					Name: "s1", Schema: "extra", Target: "other.dbo.widget",
 				})
 			},
 		},
 		{
 			name: "an extended property",
-			declare: func(d *goschema.Database) {
-				d.ExtendedProperties = append(d.ExtendedProperties, goschema.ExtendedProperty{
+			declare: func(d *schemamodel.Database) {
+				d.ExtendedProperties = append(d.ExtendedProperties, schemamodel.ExtendedProperty{
 					Name: "ptah_flag", Schema: "extra", Value: "on",
 				})
 			},
@@ -157,7 +157,7 @@ func TestGenerateSchemaDiffSQLStatements_EveryAddedFamilyNamesItsSchema(t *testi
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			declared := &goschema.Database{Schemas: []goschema.Schema{{Name: "dbo"}, {Name: "extra"}}}
+			declared := &schemamodel.Database{Schemas: []schemamodel.Schema{{Name: "dbo"}, {Name: "extra"}}}
 			test.declare(declared)
 
 			statements := planWithSQLServer(c, declared, &catalog.Database{
@@ -173,23 +173,23 @@ func TestGenerateSchemaDiffSQLStatements_EveryAddedFamilyNamesItsSchema(t *testi
 // not have, which is the shape the issue reported.
 func planSchemaPrecondition(c *qt.C, dialect, home string) []string {
 	c.Helper()
-	declared := &goschema.Database{
-		Schemas: []goschema.Schema{{Name: home}, {Name: "extra"}},
-		Tables:  []goschema.Table{{StructName: "W", Name: "widget", Schema: "extra"}},
-		Fields:  []goschema.Field{{StructName: "W", Name: "id", Type: "INT", Primary: true}},
+	declared := &schemamodel.Database{
+		Schemas: []schemamodel.Schema{{Name: home}, {Name: "extra"}},
+		Tables:  []schemamodel.Table{{StructName: "W", Name: "widget", Schema: "extra"}},
+		Fields:  []schemamodel.Field{{StructName: "W", Name: "id", Type: "INT", Primary: true}},
 	}
 	live := &catalog.Database{Schemas: []catalog.Schema{{Name: home}}}
 	return planForDialect(c, declared, live, dialect, home)
 }
 
-func planWithSQLServer(c *qt.C, declared *goschema.Database, live *catalog.Database) []string {
+func planWithSQLServer(c *qt.C, declared *schemamodel.Database, live *catalog.Database) []string {
 	c.Helper()
 	return planForDialect(c, declared, live, "sqlserver", "dbo")
 }
 
 func planForDialect(
 	c *qt.C,
-	declared *goschema.Database,
+	declared *schemamodel.Database,
 	live *catalog.Database,
 	dialect, home string,
 ) []string {

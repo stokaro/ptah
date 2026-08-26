@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 )
 
@@ -26,7 +26,7 @@ func triggerSchema(executeFunction string) *catalog.Database {
 }
 
 // onlyTrigger returns the single converted trigger.
-func onlyTrigger(c *qt.C, database *goschema.Database) goschema.Trigger {
+func onlyTrigger(c *qt.C, database *schemamodel.Database) schemamodel.Trigger {
 	c.Helper()
 	c.Assert(database.Triggers, qt.HasLen, 1)
 	return database.Triggers[0]

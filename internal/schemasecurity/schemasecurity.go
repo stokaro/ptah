@@ -31,8 +31,8 @@ import (
 	"strconv"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/risk"
 )
 
@@ -224,9 +224,9 @@ type Options struct {
 // A nil database is analyzed as an empty one: a caller that read nothing gets
 // an empty report rather than an error, and an empty report is a true statement
 // about an empty schema.
-func Analyze(db *goschema.Database, opts Options) Report {
+func Analyze(db *schemamodel.Database, opts Options) Report {
 	if db == nil {
-		db = &goschema.Database{}
+		db = &schemamodel.Database{}
 	}
 
 	report := Report{Findings: make([]Finding, 0), SkippedRules: make([]SkippedRule, 0)}
@@ -286,7 +286,7 @@ func Analyze(db *goschema.Database, opts Options) Report {
 // A grant to PUBLIC reaches every current and future role, including ones
 // created after the grant was written, so it is the one privilege statement
 // whose blast radius is not visible from the statement.
-func findPublicGrants(db *goschema.Database) []Finding {
+func findPublicGrants(db *schemamodel.Database) []Finding {
 	findings := make([]Finding, 0)
 	for _, grant := range db.Grants {
 		if !strings.EqualFold(strings.TrimSpace(grant.Role), publicRole) {
@@ -319,7 +319,7 @@ func findPublicGrants(db *goschema.Database) []Finding {
 // of the setting and also its risk, which is why this is info rather than
 // warning: the finding is "this exists and is worth reading", not "this is
 // wrong".
-func findDefinerRoutines(db *goschema.Database) []Finding {
+func findDefinerRoutines(db *schemamodel.Database) []Finding {
 	findings := make([]Finding, 0)
 	for _, function := range db.Functions {
 		if !strings.EqualFold(strings.TrimSpace(function.Security), "DEFINER") {
@@ -345,7 +345,7 @@ func findDefinerRoutines(db *goschema.Database) []Finding {
 // policy narrows it. On a target that models row-level security, that is a
 // decision worth making explicitly rather than by omission -- so the finding is
 // info: plenty of tables are meant to be read whole.
-func findGrantedTablesWithoutRLS(db *goschema.Database) []Finding {
+func findGrantedTablesWithoutRLS(db *schemamodel.Database) []Finding {
 	protected := make(map[string]bool, len(db.RLSEnabledTables))
 	for _, enabled := range db.RLSEnabledTables {
 		protected[enabled.Table] = true
@@ -399,7 +399,7 @@ func findGrantedTablesWithoutRLS(db *goschema.Database) []Finding {
 // CREATE on that schema is NOT excluded, because PostgreSQL 15 revoked it from
 // PUBLIC by default, so a database that still grants it is stating something
 // rather than inheriting it.
-func isShippedDefaultPublicGrant(grant goschema.Grant) bool {
+func isShippedDefaultPublicGrant(grant schemamodel.Grant) bool {
 	if !strings.EqualFold(strings.TrimSpace(grant.OnSchema), "public") {
 		return false
 	}
@@ -474,7 +474,7 @@ func setOfOwners(owned map[string]map[string]bool) map[string]bool {
 // Severity is Warning rather than Error: the signal is a window, and a window
 // is evidence of absence only for as long as it covers. A quarterly job that
 // did not run inside it holds a privilege this rule will name.
-func findGrantsOnUnusedObjects(db *goschema.Database, usage []RoleObjectUsage) []Finding {
+func findGrantsOnUnusedObjects(db *schemamodel.Database, usage []RoleObjectUsage) []Finding {
 	used := make(map[string]bool, len(usage))
 	for _, observation := range usage {
 		role := strings.TrimSpace(observation.Role)
@@ -530,7 +530,7 @@ func usageKey(role, kind, name string) string {
 //
 // A login role with no members is NOT reported. It is its own principal, and
 // reporting every application account would bury the rule that matters.
-func findRolesWithNoMembers(db *goschema.Database, memberships []RoleMembership) []Finding {
+func findRolesWithNoMembers(db *schemamodel.Database, memberships []RoleMembership) []Finding {
 	held := make(map[string]bool, len(memberships))
 	for _, membership := range memberships {
 		if !heldForItsPrivileges(membership) {
@@ -587,7 +587,7 @@ func heldForItsPrivileges(membership RoleMembership) bool {
 // privileges, and at least half of the smaller role's set. One shared privilege
 // is a coincidence on any real schema, and a fraction below half describes
 // roles that genuinely differ.
-func findOverlappingRoles(db *goschema.Database, memberships []RoleMembership) []Finding {
+func findOverlappingRoles(db *schemamodel.Database, memberships []RoleMembership) []Finding {
 	privileges := make(map[string]map[string]bool, len(db.Roles))
 	for _, role := range db.Roles {
 		privileges[strings.TrimSpace(role.Name)] = privilegeSetOfRole(db, strings.TrimSpace(role.Name))
@@ -631,7 +631,7 @@ func findOverlappingRoles(db *goschema.Database, memberships []RoleMembership) [
 // privilegeSetOfRole is every privilege a role holds, keyed by privilege and
 // object so that SELECT on one table and SELECT on another are different
 // members.
-func privilegeSetOfRole(db *goschema.Database, role string) map[string]bool {
+func privilegeSetOfRole(db *schemamodel.Database, role string) map[string]bool {
 	held := make(map[string]bool)
 	for _, grant := range db.Grants {
 		if strings.TrimSpace(grant.Role) != role {
@@ -649,7 +649,7 @@ func privilegeSetOfRole(db *goschema.Database, role string) map[string]bool {
 }
 
 // privilegesOfRole is the sorted privilege list for a finding's detail.
-func privilegesOfRole(db *goschema.Database, role string) []string {
+func privilegesOfRole(db *schemamodel.Database, role string) []string {
 	return sortedKeys(privilegeSetOfRole(db, role))
 }
 
@@ -682,7 +682,7 @@ func setOf(byMember map[string][]string) map[string]bool {
 }
 
 // grantTarget names what a grant is on, and the kind of that object.
-func grantTarget(grant goschema.Grant) (name, kind string) {
+func grantTarget(grant schemamodel.Grant) (name, kind string) {
 	switch {
 	case strings.TrimSpace(grant.OnTable) != "":
 		return strings.TrimSpace(grant.OnTable), "table"

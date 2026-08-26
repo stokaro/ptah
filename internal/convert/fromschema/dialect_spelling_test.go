@@ -13,6 +13,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 )
 
@@ -55,7 +56,7 @@ func acceptedSpellings(c *qt.C) []string {
 // folded into the compared string instead of failing the test, so a dialect that
 // refuses part of the fixture still contributes a value both spellings of that
 // engine must agree on.
-func convertedStatements(database goschema.Database, dialect string) []string {
+func convertedStatements(database schemamodel.Database, dialect string) []string {
 	nodes := fromschema.FromDatabase(database, dialect)
 	rendered := make([]string, 0, len(nodes.Statements))
 	for _, node := range nodes.Statements {
@@ -65,7 +66,7 @@ func convertedStatements(database goschema.Database, dialect string) []string {
 	return rendered
 }
 
-func spellingFixture(c *qt.C) goschema.Database {
+func spellingFixture(c *qt.C) schemamodel.Database {
 	database, err := goschema.ParseDir("testdata/dialectspellings")
 	c.Assert(err, qt.IsNil)
 	c.Assert(database, qt.IsNotNil)
@@ -133,7 +134,7 @@ func TestFromDatabase_EveryAcceptedSpellingConvertsLikeItsCanonicalName(t *testi
 // converter's whole output as far as this comparison cares: which object kinds
 // were emitted, in which order. Rendering is deliberately not involved -- see
 // the test below for why.
-func nodeKinds(database goschema.Database, dialect string) []string {
+func nodeKinds(database schemamodel.Database, dialect string) []string {
 	nodes := fromschema.FromDatabase(database, dialect)
 	kinds := make([]string, 0, len(nodes.Statements))
 	for _, node := range nodes.Statements {

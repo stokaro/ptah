@@ -8,8 +8,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // writeTestFile writes a parseable Go source file into a directory this test
@@ -243,7 +243,7 @@ type TestTable struct {
 }
 
 // Helper functions
-func findFunction(functions []goschema.Function, name string) *goschema.Function {
+func findFunction(functions []schemamodel.Function, name string) *schemamodel.Function {
 	for _, f := range functions {
 		if f.Name == name {
 			return &f
@@ -252,7 +252,7 @@ func findFunction(functions []goschema.Function, name string) *goschema.Function
 	return nil
 }
 
-func findRLSEnabledTable(tables []goschema.RLSEnabledTable, tableName string) *goschema.RLSEnabledTable {
+func findRLSEnabledTable(tables []schemamodel.RLSEnabledTable, tableName string) *schemamodel.RLSEnabledTable {
 	for _, t := range tables {
 		if t.Table == tableName {
 			return &t
@@ -261,7 +261,7 @@ func findRLSEnabledTable(tables []goschema.RLSEnabledTable, tableName string) *g
 	return nil
 }
 
-func findRLSPolicy(policies []goschema.RLSPolicy, name string) *goschema.RLSPolicy {
+func findRLSPolicy(policies []schemamodel.RLSPolicy, name string) *schemamodel.RLSPolicy {
 	for _, p := range policies {
 		if p.Name == name {
 			return &p

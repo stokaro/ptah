@@ -7,7 +7,7 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemachange"
 )
 
@@ -19,7 +19,7 @@ import (
 func TestAUniqueConstraintIsPlanned(t *testing.T) {
 	tests := []struct {
 		name           string
-		description    *goschema.Database
+		description    *schemamodel.Database
 		currentCatalog *catalog.Database
 		wantOperation  schemachange.Operation
 		wantRisk       schemachange.Risk
@@ -77,7 +77,7 @@ func TestAUniqueConstraintIsPlanned(t *testing.T) {
 func TestAGuaranteeInTheColumnSyntaxIsNotAConstraintChange(t *testing.T) {
 	tests := []struct {
 		name        string
-		description *goschema.Database
+		description *schemamodel.Database
 		// wantKinds is every family the row plans, in order. A unique INDEX
 		// plans two changes -- the table and the index -- and the point of the
 		// row is that neither of them is a CONSTRAINT change.
@@ -86,8 +86,8 @@ func TestAGuaranteeInTheColumnSyntaxIsNotAConstraintChange(t *testing.T) {
 		{
 			name: "a column's own flag",
 			description: describedTable(
-				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
-				goschema.Field{
+				schemamodel.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				schemamodel.Field{
 					StructName: "Widget", Name: "code", Type: "text", Nullable: true, Unique: true,
 				}),
 			wantKinds: []string{"table"},
@@ -95,15 +95,15 @@ func TestAGuaranteeInTheColumnSyntaxIsNotAConstraintChange(t *testing.T) {
 		{
 			name: "a table-level primary key",
 			description: describedTableWithKey([]string{"id", "code"},
-				goschema.Field{StructName: "Widget", Name: "id", Type: "int"},
-				goschema.Field{StructName: "Widget", Name: "code", Type: "text"}),
+				schemamodel.Field{StructName: "Widget", Name: "id", Type: "int"},
+				schemamodel.Field{StructName: "Widget", Name: "code", Type: "text"}),
 			wantKinds: []string{"table"},
 		},
 		{
 			name: "a unique index",
 			description: withUniqueIndex(describedTable(
-				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
-				goschema.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true},
+				schemamodel.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				schemamodel.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true},
 			), "idx_widget_code", "code"),
 			// The index is its own object and its own change. What the row
 			// asserts is that it is not ALSO a constraint change: the
@@ -129,21 +129,21 @@ func TestAGuaranteeInTheColumnSyntaxIsNotAConstraintChange(t *testing.T) {
 
 // scopedWidget is a table whose named UNIQUE constraint covers the given
 // columns, or which declares none when they are absent.
-func scopedWidget(columns []string) *goschema.Database {
+func scopedWidget(columns []string) *schemamodel.Database {
 	description := describedTable(
-		goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
-		goschema.Field{StructName: "Widget", Name: "tenant", Type: "int", Nullable: true},
-		goschema.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true},
+		schemamodel.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+		schemamodel.Field{StructName: "Widget", Name: "tenant", Type: "int", Nullable: true},
+		schemamodel.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true},
 	)
 	return withUniqueConstraint(description, columns)
 }
 
 // withUniqueConstraint adds the named guarantee, or none for an empty list.
-func withUniqueConstraint(description *goschema.Database, columns []string) *goschema.Database {
-	return map[bool]func() *goschema.Database{
-		true: func() *goschema.Database { return description },
-		false: func() *goschema.Database {
-			description.Constraints = append(description.Constraints, goschema.Constraint{
+func withUniqueConstraint(description *schemamodel.Database, columns []string) *schemamodel.Database {
+	return map[bool]func() *schemamodel.Database{
+		true: func() *schemamodel.Database { return description },
+		false: func() *schemamodel.Database {
+			description.Constraints = append(description.Constraints, schemamodel.Constraint{
 				StructName: "Widget", Name: "uq_widget_scope", Type: "UNIQUE", Columns: columns,
 			})
 			return description
@@ -152,8 +152,8 @@ func withUniqueConstraint(description *goschema.Database, columns []string) *gos
 }
 
 // withUniqueIndex adds a unique index over one column.
-func withUniqueIndex(description *goschema.Database, name, column string) *goschema.Database {
-	description.Indexes = append(description.Indexes, goschema.Index{
+func withUniqueIndex(description *schemamodel.Database, name, column string) *schemamodel.Database {
+	description.Indexes = append(description.Indexes, schemamodel.Index{
 		StructName: "Widget", Name: name, Fields: []string{column}, Unique: true,
 	})
 	return description

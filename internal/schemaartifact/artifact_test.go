@@ -11,7 +11,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"oras.land/oras-go/v2/content/memory"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemaartifact"
 )
 
@@ -19,7 +19,7 @@ func TestPushToPullFrom_RoundTrip(t *testing.T) {
 	c := qt.New(t)
 	store := memory.New()
 	db := usersDatabase()
-	db.Sequences = []goschema.Sequence{{Name: "users_id_seq"}}
+	db.Sequences = []schemamodel.Sequence{{Name: "users_id_seq"}}
 
 	pushed, err := schemaartifact.PushTo(context.Background(), store, db, schemaartifact.PushOptions{
 		Tags:             []string{"stable"},
@@ -64,7 +64,7 @@ func TestCapture_FailurePath(t *testing.T) {
 	t.Run("managed data", func(t *testing.T) {
 		c := qt.New(t)
 		db := usersDatabase()
-		db.ManagedData = []goschema.ManagedData{{Table: "users"}}
+		db.ManagedData = []schemamodel.ManagedData{{Table: "users"}}
 		snapshot, err := schemaartifact.Capture(db)
 		c.Assert(err, qt.ErrorMatches, "schema artifact cannot represent managed data without loss")
 		c.Assert(snapshot, qt.IsNil)
@@ -73,7 +73,7 @@ func TestCapture_FailurePath(t *testing.T) {
 	t.Run("role password", func(t *testing.T) {
 		c := qt.New(t)
 		db := usersDatabase()
-		db.Roles = []goschema.Role{{Name: "app_user", Password: "secret"}}
+		db.Roles = []schemamodel.Role{{Name: "app_user", Password: "secret"}}
 		snapshot, err := schemaartifact.Capture(db)
 		c.Assert(err, qt.ErrorMatches, `schema artifact cannot contain password for role "app_user"`)
 		c.Assert(snapshot, qt.IsNil)
@@ -82,7 +82,7 @@ func TestCapture_FailurePath(t *testing.T) {
 	t.Run("lossy HCL export", func(t *testing.T) {
 		c := qt.New(t)
 		db := usersDatabase()
-		db.Indexes = []goschema.Index{{Name: "missing_idx", TableName: "missing"}}
+		db.Indexes = []schemamodel.Index{{Name: "missing_idx", TableName: "missing"}}
 		snapshot, err := schemaartifact.Capture(db)
 		c.Assert(err, qt.ErrorMatches, "(?s).*schema artifact cannot be rendered without loss:.*index missing_idx.*")
 		c.Assert(snapshot, qt.IsNil)
@@ -91,7 +91,7 @@ func TestCapture_FailurePath(t *testing.T) {
 
 func TestCapturePreservesSystemExtensionPlacementWithoutDeclaringIt(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{Extensions: []goschema.Extension{{
+	db := &schemamodel.Database{Extensions: []schemamodel.Extension{{
 		Name: "plpgsql", Schema: "pg_catalog", Version: "1.0", IfNotExists: true,
 	}}}
 
@@ -120,15 +120,15 @@ func TestPullToFile_RejectsExistingOutputBeforeNetwork(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, "schema artifact output already exists: .*")
 }
 
-func usersDatabase() *goschema.Database {
-	db := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "User", Name: "users"}},
-		Fields: []goschema.Field{
+func usersDatabase() *schemamodel.Database {
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
+		Fields: []schemamodel.Field{
 			{StructName: "User", FieldName: "ID", Name: "id", Type: "bigint", Primary: true},
 			{StructName: "User", FieldName: "Email", Name: "email", Type: "text", Unique: true},
 		},
 	}
-	goschema.Finalize(db)
+	schemamodel.Finalize(db)
 	return db
 }
 

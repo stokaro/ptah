@@ -15,6 +15,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlassource"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/devdocker"
@@ -203,7 +204,7 @@ func runSchemaTest(ctx context.Context, out, diag io.Writer, opts testOptions) e
 // [goschema.ParseDir] the runner would have run. Every branch funnels through
 // scopeTestDesiredSchema so the selection cannot apply to some sources and be
 // silently ignored on others.
-func resolveTestDesiredSchema(ctx context.Context, diag io.Writer, opts testOptions) (*goschema.Database, error) {
+func resolveTestDesiredSchema(ctx context.Context, diag io.Writer, opts testOptions) (*schemamodel.Database, error) {
 	selection := schemascope.SplitNames(opts.schemas)
 	set, err := atlassource.ClassifySet("--"+testRootDirFlag, []string{opts.rootDir}, atlassource.ProjectEnv{})
 	if err == nil && set.Kind == atlassource.KindDatabase {
@@ -248,10 +249,10 @@ func resolveTestDesiredSchema(ctx context.Context, diag io.Writer, opts testOpti
 // missing relation, which reports the symptom and hides the cause -- the
 // zero-match false green that stokaro/ptah#979 exists to prevent.
 func scopeTestDesiredSchema(
-	database *goschema.Database,
+	database *schemamodel.Database,
 	selection []string,
 	defaultSchema string,
-) (*goschema.Database, error) {
+) (*schemamodel.Database, error) {
 	if len(selection) == 0 || database == nil {
 		return database, nil
 	}
@@ -277,7 +278,7 @@ func resolveTestDesiredDatabase(
 	opts testOptions,
 	set atlassource.Set,
 	selection []string,
-) (*goschema.Database, error) {
+) (*schemamodel.Database, error) {
 	devDialect, err := ensureTestDevDialect(set, opts.dbURL)
 	if err != nil {
 		return nil, err
@@ -341,7 +342,7 @@ func ensureTestDevDialect(set atlassource.Set, dbURL string) (string, error) {
 // It is reported on diag, never on the report stream. --report json and
 // --report html are consumed by machines, and a note printed alongside them
 // leaves a passing run unparseable while still exiting 0.
-func dropClusterScopedTestState(diag io.Writer, schema *goschema.Database) error {
+func dropClusterScopedTestState(diag io.Writer, schema *schemamodel.Database) error {
 	roles, grants := len(schema.Roles), len(schema.Grants)
 	if roles == 0 && grants == 0 {
 		return nil

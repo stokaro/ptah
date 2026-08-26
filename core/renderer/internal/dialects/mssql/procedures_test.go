@@ -6,8 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer/internal/dialects/mssql"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // SQL Server hosts stored procedures, and Ptah rendered them as a named skip
@@ -18,7 +18,7 @@ import (
 func renderProcedure(c *qt.C, parameters, body string) string {
 	c.Helper()
 	node := ast.NewCreateFunction("dbo.p_report").
-		SetKind(goschema.FunctionKindProcedure).
+		SetKind(schemamodel.FunctionKindProcedure).
 		SetParameters(parameters).
 		SetLanguage("sql").
 		SetBody(body)
@@ -83,7 +83,7 @@ func TestRenderer_FunctionKeepsItsOwnSpelling(t *testing.T) {
 // the wrong one with "does not exist" about an object that is right there.
 func TestRenderer_DropUsesTheMatchingVerb(t *testing.T) {
 	c := qt.New(t)
-	procedure := ast.NewDropFunction("dbo.p_report").SetKind(goschema.FunctionKindProcedure).SetIfExists()
+	procedure := ast.NewDropFunction("dbo.p_report").SetKind(schemamodel.FunctionKindProcedure).SetIfExists()
 	function := ast.NewDropFunction("dbo.f_add").SetIfExists()
 
 	procedureSQL, procedureErr := mssql.New().Render(procedure)

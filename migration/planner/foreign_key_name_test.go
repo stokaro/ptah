@@ -8,8 +8,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -21,7 +21,7 @@ func TestGenerateSchemaDiffSQL_AssignsLengthLimitedForeignKeyNames(t *testing.T)
 	tableName := strings.Repeat("children_", 6) + "records"
 	fieldName := strings.Repeat("parent_", 5) + "id"
 	schema := plannerForeignKeyNameSchema(tableName, fieldName)
-	goschema.Finalize(schema)
+	schemamodel.Finalize(schema)
 	diff := &difftypes.SchemaDiff{TablesAdded: []string{"parents", tableName}}
 
 	sql, err := planner.GenerateSchemaDiffSQL(diff, schema, platform.MySQL)
@@ -36,14 +36,14 @@ func TestGenerateSchemaDiffSQL_AssignsLengthLimitedForeignKeyNames(t *testing.T)
 func TestGenerateSchemaDiffSQL_AvoidsExplicitAndGeneratedForeignKeyNameCollision(t *testing.T) {
 	c := qt.New(t)
 	schema := plannerForeignKeyNameSchema("children", "parent_id")
-	schema.Fields = append(schema.Fields, goschema.Field{
+	schema.Fields = append(schema.Fields, schemamodel.Field{
 		StructName:     "Child",
 		Name:           "backup_parent_id",
 		Type:           "INTEGER",
 		Foreign:        "parents(id)",
 		ForeignKeyName: "FK_CHILDREN_PARENT_ID",
 	})
-	goschema.Finalize(schema)
+	schemamodel.Finalize(schema)
 	diff := &difftypes.SchemaDiff{TablesAdded: []string{"parents", "children"}}
 
 	sql, err := planner.GenerateSchemaDiffSQL(diff, schema, platform.MySQL)
@@ -55,13 +55,13 @@ func TestGenerateSchemaDiffSQL_AvoidsExplicitAndGeneratedForeignKeyNameCollision
 	c.Assert(schema.Fields[2].ForeignKeyName, qt.Equals, "")
 }
 
-func plannerForeignKeyNameSchema(tableName, fieldName string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func plannerForeignKeyNameSchema(tableName, fieldName string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Parent", Name: "parents"},
 			{StructName: "Child", Name: tableName},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Parent", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Child", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Child", Name: fieldName, Type: "INTEGER", Foreign: "parents(id)"},

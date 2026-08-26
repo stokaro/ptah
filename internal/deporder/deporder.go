@@ -10,8 +10,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/internal/tableref"
 )
@@ -259,7 +259,7 @@ func StableReverseDependencySort(nodes []string, dependencies map[string][]strin
 
 // TablesForCreate returns target tables in dependency order for CREATE TABLE
 // operations. It accepts either qualified or unqualified table names.
-func TablesForCreate(schema *goschema.Database, tableNames []string) []goschema.Table {
+func TablesForCreate(schema *schemamodel.Database, tableNames []string) []schemamodel.Table {
 	if schema == nil || len(tableNames) == 0 {
 		return nil
 	}
@@ -268,7 +268,7 @@ func TablesForCreate(schema *goschema.Database, tableNames []string) []goschema.
 	keys := tableKeysInInputOrder(schema.Tables, tableNames)
 	orderedKeys := StableTopologicalSort(keys, GeneratedTableDependencies(schema))
 
-	tables := make([]goschema.Table, 0, len(orderedKeys))
+	tables := make([]schemamodel.Table, 0, len(orderedKeys))
 	for _, key := range orderedKeys {
 		if table, ok := tablesByKey[key]; ok {
 			tables = append(tables, table)
@@ -279,7 +279,7 @@ func TablesForCreate(schema *goschema.Database, tableNames []string) []goschema.
 
 // TableDropOrder returns table names in child-before-parent order for DROP
 // TABLE operations. Output names match the caller's input spelling.
-func TableDropOrder(tableNames []string, schema *goschema.Database) []string {
+func TableDropOrder(tableNames []string, schema *schemamodel.Database) []string {
 	ordered := append([]string(nil), tableNames...)
 	if schema == nil || len(ordered) < 2 {
 		return ordered
@@ -306,7 +306,7 @@ func TableDropOrder(tableNames []string, schema *goschema.Database) []string {
 
 // GeneratedTableDependencies returns table dependency edges derived from
 // finalized metadata plus inline field and table-level FK definitions.
-func GeneratedTableDependencies(schema *goschema.Database) map[string][]string {
+func GeneratedTableDependencies(schema *schemamodel.Database) map[string][]string {
 	dependencies := make(map[string][]string, len(schema.Tables))
 	for _, table := range schema.Tables {
 		dependencies[table.QualifiedName()] = append([]string(nil), schema.Dependencies[table.QualifiedName()]...)
@@ -349,12 +349,12 @@ func GeneratedTableDependencies(schema *goschema.Database) map[string][]string {
 }
 
 // FunctionsForCreate returns target functions in dependency order.
-func FunctionsForCreate(schema *goschema.Database, functionNames []string) []goschema.Function {
+func FunctionsForCreate(schema *schemamodel.Database, functionNames []string) []schemamodel.Function {
 	if schema == nil || len(functionNames) == 0 {
 		return nil
 	}
 
-	functionByName := make(map[string]goschema.Function, len(schema.Functions))
+	functionByName := make(map[string]schemamodel.Function, len(schema.Functions))
 	requested := make(map[string]struct{}, len(functionNames))
 	for _, functionName := range functionNames {
 		requested[functionName] = struct{}{}
@@ -369,7 +369,7 @@ func FunctionsForCreate(schema *goschema.Database, functionNames []string) []gos
 
 	orderedNames := StableTopologicalSort(names, schema.FunctionDependencies)
 
-	functions := make([]goschema.Function, 0, len(orderedNames))
+	functions := make([]schemamodel.Function, 0, len(orderedNames))
 	for _, name := range orderedNames {
 		if fn, ok := functionByName[name]; ok {
 			functions = append(functions, fn)
@@ -585,15 +585,15 @@ func appendStable(queue []string, node string, index map[string]int) []string {
 	return queue
 }
 
-func mapTablesByQualifiedName(tables []goschema.Table) map[string]goschema.Table {
-	result := make(map[string]goschema.Table, len(tables))
+func mapTablesByQualifiedName(tables []schemamodel.Table) map[string]schemamodel.Table {
+	result := make(map[string]schemamodel.Table, len(tables))
 	for _, table := range tables {
 		result[table.QualifiedName()] = table
 	}
 	return result
 }
 
-func tableKeysInInputOrder(tables []goschema.Table, tableNames []string) []string {
+func tableKeysInInputOrder(tables []schemamodel.Table, tableNames []string) []string {
 	keys := make([]string, 0, len(tableNames))
 	seen := make(map[string]struct{}, len(tableNames))
 	for _, tableName := range tableNames {
@@ -610,14 +610,14 @@ func tableKeysInInputOrder(tables []goschema.Table, tableNames []string) []strin
 	return keys
 }
 
-func resolveTableKey(tables []goschema.Table, tableName string) string {
+func resolveTableKey(tables []schemamodel.Table, tableName string) string {
 	if table := generatedTableByName(tables, tableName); table != nil {
 		return table.QualifiedName()
 	}
 	return tableName
 }
 
-func generatedTableByName(tables []goschema.Table, tableName string) *goschema.Table {
+func generatedTableByName(tables []schemamodel.Table, tableName string) *schemamodel.Table {
 	tableName = strings.TrimSpace(tableName)
 	for i := range tables {
 		if tables[i].QualifiedName() == tableName {
@@ -628,7 +628,7 @@ func generatedTableByName(tables []goschema.Table, tableName string) *goschema.T
 	if !ok || ref.Qualified {
 		return nil
 	}
-	var match *goschema.Table
+	var match *schemamodel.Table
 	for i := range tables {
 		if tables[i].Name != ref.Name {
 			continue
@@ -641,7 +641,7 @@ func generatedTableByName(tables []goschema.Table, tableName string) *goschema.T
 	return match
 }
 
-func generatedTableByStructName(tables []goschema.Table, structName string) *goschema.Table {
+func generatedTableByStructName(tables []schemamodel.Table, structName string) *schemamodel.Table {
 	for i := range tables {
 		if tables[i].StructName == structName {
 			return &tables[i]
@@ -650,7 +650,7 @@ func generatedTableByStructName(tables []goschema.Table, structName string) *gos
 	return nil
 }
 
-func generatedTableReference(tables []goschema.Table, structName, tableName string) *goschema.Table {
+func generatedTableReference(tables []schemamodel.Table, structName, tableName string) *schemamodel.Table {
 	tableName = strings.TrimSpace(tableName)
 	if tableName == "" {
 		return generatedTableByStructName(tables, structName)
@@ -674,8 +674,8 @@ func generatedTableReference(tables []goschema.Table, structName, tableName stri
 
 func addGeneratedTableDependency(
 	dependencies map[string][]string,
-	tables []goschema.Table,
-	table goschema.Table,
+	tables []schemamodel.Table,
+	table schemamodel.Table,
 	refTable string,
 ) {
 	tableName := table.QualifiedName()
@@ -686,18 +686,18 @@ func addGeneratedTableDependency(
 	dependencies[tableName] = append(dependencies[tableName], refTable)
 }
 
-func resolveGeneratedReferenceTableName(tables []goschema.Table, table goschema.Table, refTable string) string {
+func resolveGeneratedReferenceTableName(tables []schemamodel.Table, table schemamodel.Table, refTable string) string {
 	refTable = strings.TrimSpace(refTable)
 	ref, ok := tableref.Parse(refTable)
 	if !ok {
 		return refTable
 	}
 	if ref.Qualified {
-		return goschema.QualifyTableName(ref.Schema, ref.Name)
+		return schemamodel.QualifyTableName(ref.Schema, ref.Name)
 	}
 
 	if table.Schema != "" {
-		schemaQualified := goschema.QualifyTableName(table.Schema, ref.Name)
+		schemaQualified := schemamodel.QualifyTableName(table.Schema, ref.Name)
 		if ref := generatedTableByName(tables, schemaQualified); ref != nil {
 			return ref.QualifiedName()
 		}

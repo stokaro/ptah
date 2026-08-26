@@ -7,7 +7,7 @@
 // per-family slice. `TablesAdded []string` says a table appeared and nothing
 // about what is in it, which is why the planner's signature is
 //
-//	GenerateSchemaDiffAST(diff *types.SchemaDiff, generated *goschema.Database, dialect string)
+//	GenerateSchemaDiffAST(diff *types.SchemaDiff, generated *schemamodel.Database, dialect string)
 //
 // -- the second parameter is where the planner recovers what the diff dropped.
 // A planner that can read the desired description can also disagree with the

@@ -9,11 +9,11 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/indexscope"
 	"go.5x5.cz/ptah/internal/planner/objectlookup"
@@ -50,15 +50,15 @@ func (p *Planner) capabilities() capability.Capabilities {
 	return p.caps
 }
 
-func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, generated *goschema.Database) ([]ast.Node, error) {
-	if generated == nil {
-		generated = &goschema.Database{}
+func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *schemamodel.Database) ([]ast.Node, error) {
+	if desired == nil {
+		desired = &schemamodel.Database{}
 	}
 	indexes, err := indexscope.NewResolverWithSemantics(
 		DialectName,
 		diff.EffectiveIdentifierSemantics(DialectName),
 		diff,
-		generated,
+		desired,
 	)
 	if err != nil {
 		return nil, err
@@ -70,26 +70,26 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, generated *go
 		return nil, err
 	}
 	semantics := diff.EffectiveIdentifierSemantics(DialectName)
-	rebuilds, err := planTableRebuilds(diff, generated, semantics)
+	rebuilds, err := planTableRebuilds(diff, desired, semantics)
 	if err != nil {
 		return nil, err
 	}
 
 	var result []ast.Node
-	addedTables, err := p.addTables(diff, generated, semantics)
+	addedTables, err := p.addTables(diff, desired, semantics)
 	if err != nil {
 		return nil, err
 	}
 	result = append(result, addedTables...)
-	modifiedTables, err := p.modifyTables(diff, generated, rebuilds)
+	modifiedTables, err := p.modifyTables(diff, desired, rebuilds)
 	if err != nil {
 		return nil, err
 	}
 	result = append(result, modifiedTables...)
-	result = append(result, p.addViews(diff, generated, semantics)...)
-	result = append(result, p.modifyViews(diff, generated, semantics)...)
-	result = append(result, p.addTriggers(diff, generated, rebuilds, semantics)...)
-	result = append(result, p.modifyTriggers(diff, generated, rebuilds, semantics)...)
+	result = append(result, p.addViews(diff, desired, semantics)...)
+	result = append(result, p.modifyViews(diff, desired, semantics)...)
+	result = append(result, p.addTriggers(diff, desired, rebuilds, semantics)...)
+	result = append(result, p.modifyTriggers(diff, desired, rebuilds, semantics)...)
 	addedIndexes, err := p.addIndexes(diff, indexes, rebuilds)
 	if err != nil {
 		return nil, err
@@ -199,7 +199,7 @@ func identity(name string) string { return name }
 // is still refused, because there is nothing to rebuild.
 func planTableRebuilds(
 	diff *difftypes.SchemaDiff,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	semantics identifier.Semantics,
 ) (tableRebuilds, error) {
 	rebuilds := tableRebuilds{targets: make(map[string]rebuildTarget), semantics: semantics}
@@ -229,7 +229,7 @@ func planTableRebuilds(
 	// tool that writes rebuild plans (stokaro/ptah#1707).
 	for _, table := range diff.TablesModified {
 		for _, columnName := range table.ColumnsAdded {
-			column := findColumn(generated, table.TableName, columnName)
+			column := findColumn(desired, table.TableName, columnName)
 			if column == nil || !addedColumnNeedsRebuild(column) {
 				continue
 			}
@@ -429,16 +429,16 @@ func roleAndGrantNames(diff *difftypes.SchemaDiff) []string {
 
 func (p *Planner) addTables(
 	diff *difftypes.SchemaDiff,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	semantics identifier.Semantics,
 ) ([]ast.Node, error) {
 	var result []ast.Node
-	for _, table := range generated.Tables {
+	for _, table := range desired.Tables {
 		if !objectlookup.Contains(diff.TablesAdded, table.QualifiedName(), semantics) {
 			continue
 		}
-		node := fromschema.FromTable(table, generated.Fields, generated.Enums, DialectName)
-		if err := addInlineConstraints(node, table, generated.Constraints); err != nil {
+		node := fromschema.FromTable(table, desired.Fields, desired.Enums, DialectName)
+		if err := addInlineConstraints(node, table, desired.Constraints); err != nil {
 			return nil, err
 		}
 		result = append(result, node)
@@ -446,7 +446,7 @@ func (p *Planner) addTables(
 	return result, nil
 }
 
-func addInlineConstraints(node *ast.CreateTableNode, table goschema.Table, constraints []goschema.Constraint) error {
+func addInlineConstraints(node *ast.CreateTableNode, table schemamodel.Table, constraints []schemamodel.Constraint) error {
 	for _, constraint := range constraints {
 		if !constraintBelongsToTable(constraint, table) {
 			continue
@@ -474,14 +474,14 @@ func addInlineConstraints(node *ast.CreateTableNode, table goschema.Table, const
 	return nil
 }
 
-func constraintBelongsToTable(constraint goschema.Constraint, table goschema.Table) bool {
+func constraintBelongsToTable(constraint schemamodel.Constraint, table schemamodel.Table) bool {
 	if constraint.Table != "" {
 		return constraint.Table == table.QualifiedName()
 	}
 	return constraint.StructName == table.StructName
 }
 
-func withDefaultForeignKeyName(tableName string, constraint goschema.Constraint) goschema.Constraint {
+func withDefaultForeignKeyName(tableName string, constraint schemamodel.Constraint) schemamodel.Constraint {
 	columnName := "foreign_key"
 	if len(constraint.Columns) > 0 {
 		columnName = constraint.Columns[0]
@@ -492,14 +492,14 @@ func withDefaultForeignKeyName(tableName string, constraint goschema.Constraint)
 
 func (p *Planner) modifyTables(
 	diff *difftypes.SchemaDiff,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	rebuilds tableRebuilds,
 ) ([]ast.Node, error) {
 	var result []ast.Node
 	emitted := make(map[string]bool, len(rebuilds.order))
 	for _, tableDiff := range diff.TablesModified {
 		if target, ok := rebuilds.target(tableDiff.TableName); ok {
-			nodes, err := p.rebuildTable(target, diff, generated)
+			nodes, err := p.rebuildTable(target, diff, desired)
 			if err != nil {
 				return nil, err
 			}
@@ -508,7 +508,7 @@ func (p *Planner) modifyTables(
 			continue
 		}
 		for _, columnName := range tableDiff.ColumnsAdded {
-			if column := findColumn(generated, tableDiff.TableName, columnName); column != nil {
+			if column := findColumn(desired, tableDiff.TableName, columnName); column != nil {
 				result = append(result, &ast.AlterTableNode{
 					Name:       tableDiff.TableName,
 					Operations: []ast.AlterOperation{&ast.AddColumnOperation{Column: column}},
@@ -522,7 +522,7 @@ func (p *Planner) modifyTables(
 		if emitted[tableName] {
 			continue
 		}
-		nodes, err := p.rebuildTable(rebuilds.targets[tableName], diff, generated)
+		nodes, err := p.rebuildTable(rebuilds.targets[tableName], diff, desired)
 		if err != nil {
 			return nil, err
 		}
@@ -539,27 +539,27 @@ func (p *Planner) modifyTables(
 func (p *Planner) rebuildTable(
 	target rebuildTarget,
 	diff *difftypes.SchemaDiff,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 ) ([]ast.Node, error) {
-	table := findTable(generated.Tables, target.tableName, diff.EffectiveIdentifierSemantics(DialectName))
+	table := findTable(desired.Tables, target.tableName, diff.EffectiveIdentifierSemantics(DialectName))
 	if table == nil {
 		return nil, unsupportedFeaturef(
 			"rebuilding table %s requires its desired definition, and the declaration does not contain it. "+
 				"Declare the table, or drop it instead of changing it",
 			target.tableName)
 	}
-	tempName, err := availableRebuildTableName(*table, diff, generated)
+	tempName, err := availableRebuildTableName(*table, diff, desired)
 	if err != nil {
 		return nil, err
 	}
 
-	createNode := fromschema.FromTable(*table, generated.Fields, generated.Enums, DialectName)
-	if err := addInlineConstraints(createNode, *table, generated.Constraints); err != nil {
+	createNode := fromschema.FromTable(*table, desired.Fields, desired.Enums, DialectName)
+	if err := addInlineConstraints(createNode, *table, desired.Constraints); err != nil {
 		return nil, err
 	}
 	createNode.Name = qualifyLikeTable(*table, tempName)
 
-	columns, err := rebuildCopiedColumns(*table, generated.Fields, target.addedColumns)
+	columns, err := rebuildCopiedColumns(*table, desired.Fields, target.addedColumns)
 	if err != nil {
 		return nil, err
 	}
@@ -581,8 +581,8 @@ func (p *Planner) rebuildTable(
 		ast.NewRawSQL("ALTER TABLE " + quoteQualifiedIdentifier(createNode.Name) +
 			" RENAME TO " + quoteIdentifier(table.Name) + ";"),
 	}
-	nodes = append(nodes, p.recreateTableIndexes(*table, generated)...)
-	triggers, err := p.recreateTableTriggers(*table, generated)
+	nodes = append(nodes, p.recreateTableIndexes(*table, desired)...)
+	triggers, err := p.recreateTableTriggers(*table, desired)
 	if err != nil {
 		return nil, err
 	}
@@ -610,9 +610,9 @@ const rebuildTableNameAttempts = 100
 // the declaration no longer holds it, because the drop and the rebuild are in
 // one plan and their order is not this function's to assume.
 func availableRebuildTableName(
-	table goschema.Table,
+	table schemamodel.Table,
 	diff *difftypes.SchemaDiff,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 ) (string, error) {
 	base := "__ptah_rebuild_" + table.Name
 	for attempt := range rebuildTableNameAttempts {
@@ -620,7 +620,7 @@ func availableRebuildTableName(
 		if attempt > 0 {
 			candidate = base + "_" + strconv.Itoa(attempt)
 		}
-		if tableNameCollides(generated.Tables, table, candidate) {
+		if tableNameCollides(desired.Tables, table, candidate) {
 			continue
 		}
 		if removedTableNameCollides(diff.TablesRemoved, table, candidate) {
@@ -634,11 +634,11 @@ func availableRebuildTableName(
 		table.QualifiedName(), base, rebuildTableNameAttempts-1)
 }
 
-func findTable(tables []goschema.Table, name string, semantics identifier.Semantics) *goschema.Table {
+func findTable(tables []schemamodel.Table, name string, semantics identifier.Semantics) *schemamodel.Table {
 	return objectlookup.Qualified(tables, name, semantics)
 }
 
-func tableNameCollides(tables []goschema.Table, target goschema.Table, name string) bool {
+func tableNameCollides(tables []schemamodel.Table, target schemamodel.Table, name string) bool {
 	for _, table := range tables {
 		if table.Schema == target.Schema && table.Name == name {
 			return true
@@ -647,7 +647,7 @@ func tableNameCollides(tables []goschema.Table, target goschema.Table, name stri
 	return false
 }
 
-func removedTableNameCollides(removed []string, target goschema.Table, name string) bool {
+func removedTableNameCollides(removed []string, target schemamodel.Table, name string) bool {
 	qualified := qualifyLikeTable(target, name)
 	for _, tableName := range removed {
 		if tableName == name || tableName == qualified {
@@ -657,8 +657,8 @@ func removedTableNameCollides(removed []string, target goschema.Table, name stri
 	return false
 }
 
-func qualifyLikeTable(table goschema.Table, name string) string {
-	return goschema.QualifyTableName(table.Schema, name)
+func qualifyLikeTable(table schemamodel.Table, name string) string {
+	return schemamodel.QualifyTableName(table.Schema, name)
 }
 
 // copiedColumn is one column of the rebuilt table that carries data over from
@@ -693,8 +693,8 @@ func copiedColumnSelectList(columns []copiedColumn) string {
 // default would violate the new table on the very first row, so it is refused
 // rather than emitted.
 func rebuildCopiedColumns(
-	table goschema.Table,
-	fields []goschema.Field,
+	table schemamodel.Table,
+	fields []schemamodel.Field,
 	addedColumns []string,
 ) ([]copiedColumn, error) {
 	added := make(map[string]bool, len(addedColumns))
@@ -724,7 +724,7 @@ func rebuildCopiedColumns(
 // rebuildSelectExpression backfills a column that the desired schema makes NOT
 // NULL while giving it a default. Rows already holding NULL would otherwise
 // abort the copy, so the default is substituted in flight.
-func rebuildSelectExpression(field goschema.Field) string {
+func rebuildSelectExpression(field schemamodel.Field) string {
 	quoted := quoteIdentifier(field.Name)
 	if field.Nullable || field.Primary {
 		return quoted
@@ -736,7 +736,7 @@ func rebuildSelectExpression(field goschema.Field) string {
 	return "IFNULL(" + quoted + ", " + backfill + ") AS " + quoted
 }
 
-func rebuildBackfillValue(field goschema.Field) string {
+func rebuildBackfillValue(field schemamodel.Field) string {
 	if value := strings.TrimSpace(field.Default); value != "" && !isNullLiteral(value) {
 		return value
 	}
@@ -746,7 +746,7 @@ func rebuildBackfillValue(field goschema.Field) string {
 	return ""
 }
 
-func validateRebuiltAddedColumn(table goschema.Table, field goschema.Field) error {
+func validateRebuiltAddedColumn(table schemamodel.Table, field schemamodel.Field) error {
 	if field.Nullable || field.Primary || field.AutoInc {
 		return nil
 	}
@@ -765,10 +765,10 @@ func validateRebuiltAddedColumn(table goschema.Table, field goschema.Field) erro
 	)
 }
 
-func (p *Planner) recreateTableIndexes(table goschema.Table, generated *goschema.Database) []ast.Node {
-	tableMap := structToTableMap(generated.Tables)
+func (p *Planner) recreateTableIndexes(table schemamodel.Table, desired *schemamodel.Database) []ast.Node {
+	tableMap := structToTableMap(desired.Tables)
 	var nodes []ast.Node
-	for _, index := range generated.Indexes {
+	for _, index := range desired.Indexes {
 		tableName := generatedIndexTableName(index, tableMap)
 		if tableName == table.QualifiedName() {
 			nodes = append(nodes, fromschema.FromIndexWithTableMapping(index, tableMap))
@@ -777,14 +777,14 @@ func (p *Planner) recreateTableIndexes(table goschema.Table, generated *goschema
 	return nodes
 }
 
-func generatedIndexTableName(index goschema.Index, tableMap map[string]string) string {
+func generatedIndexTableName(index schemamodel.Index, tableMap map[string]string) string {
 	if strings.TrimSpace(index.TableName) != "" {
 		return index.TableName
 	}
 	return tableMap[index.StructName]
 }
 
-func structToTableMap(tables []goschema.Table) map[string]string {
+func structToTableMap(tables []schemamodel.Table) map[string]string {
 	out := make(map[string]string, len(tables))
 	for _, table := range tables {
 		out[table.StructName] = table.QualifiedName()
@@ -792,9 +792,9 @@ func structToTableMap(tables []goschema.Table) map[string]string {
 	return out
 }
 
-func (p *Planner) recreateTableTriggers(table goschema.Table, generated *goschema.Database) ([]ast.Node, error) {
+func (p *Planner) recreateTableTriggers(table schemamodel.Table, desired *schemamodel.Database) ([]ast.Node, error) {
 	var nodes []ast.Node
-	for _, trigger := range generated.Triggers {
+	for _, trigger := range desired.Triggers {
 		if trigger.Table == table.QualifiedName() {
 			if triggerBodyContainsCreateTrigger(trigger.Body) {
 				return nil, unsupportedFeaturef(
@@ -895,14 +895,14 @@ func isNullLiteral(value string) bool {
 	return strings.EqualFold(strings.TrimSpace(value), "NULL")
 }
 
-func findColumn(generated *goschema.Database, tableName, columnName string) *ast.ColumnNode {
-	for _, table := range generated.Tables {
+func findColumn(desired *schemamodel.Database, tableName, columnName string) *ast.ColumnNode {
+	for _, table := range desired.Tables {
 		if table.Name != tableName && table.QualifiedName() != tableName {
 			continue
 		}
-		for _, field := range generated.Fields {
+		for _, field := range desired.Fields {
 			if field.StructName == table.StructName && field.Name == columnName {
-				return fromschema.FromField(field, generated.Enums, DialectName)
+				return fromschema.FromField(field, desired.Enums, DialectName)
 			}
 		}
 	}
@@ -968,12 +968,12 @@ func (p *Planner) removeTables(diff *difftypes.SchemaDiff) []ast.Node {
 
 func (p *Planner) addViews(
 	diff *difftypes.SchemaDiff,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	semantics identifier.Semantics,
 ) []ast.Node {
 	var result []ast.Node
 	for _, name := range diff.ViewsAdded {
-		if view := findView(generated.Views, name, semantics); view != nil {
+		if view := findView(desired.Views, name, semantics); view != nil {
 			result = append(result, fromschema.FromView(*view))
 		}
 	}
@@ -982,12 +982,12 @@ func (p *Planner) addViews(
 
 func (p *Planner) modifyViews(
 	diff *difftypes.SchemaDiff,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	semantics identifier.Semantics,
 ) []ast.Node {
 	var result []ast.Node
 	for _, viewDiff := range diff.ViewsModified {
-		if view := findView(generated.Views, viewDiff.ViewName, semantics); view != nil {
+		if view := findView(desired.Views, viewDiff.ViewName, semantics); view != nil {
 			result = append(result, fromschema.FromView(*view).SetReplace())
 		}
 	}
@@ -1002,13 +1002,13 @@ func (p *Planner) removeViews(diff *difftypes.SchemaDiff) []ast.Node {
 	return result
 }
 
-func findView(views []goschema.View, name string, semantics identifier.Semantics) *goschema.View {
+func findView(views []schemamodel.View, name string, semantics identifier.Semantics) *schemamodel.View {
 	return objectlookup.View(views, name, semantics)
 }
 
 func (p *Planner) addTriggers(
 	diff *difftypes.SchemaDiff,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	rebuilds tableRebuilds,
 	semantics identifier.Semantics,
 ) []ast.Node {
@@ -1019,7 +1019,7 @@ func (p *Planner) addTriggers(
 		if rebuilds.contains(ref.TableName) {
 			continue
 		}
-		if trigger := findTrigger(generated.Triggers, ref.TableName, ref.TriggerName, semantics); trigger != nil {
+		if trigger := findTrigger(desired.Triggers, ref.TableName, ref.TriggerName, semantics); trigger != nil {
 			result = append(result, fromschema.FromTrigger(*trigger))
 		}
 	}
@@ -1028,7 +1028,7 @@ func (p *Planner) addTriggers(
 
 func (p *Planner) modifyTriggers(
 	diff *difftypes.SchemaDiff,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	rebuilds tableRebuilds,
 	semantics identifier.Semantics,
 ) []ast.Node {
@@ -1037,7 +1037,7 @@ func (p *Planner) modifyTriggers(
 		if rebuilds.contains(triggerDiff.TableName) {
 			continue
 		}
-		if trigger := findTrigger(generated.Triggers, triggerDiff.TableName, triggerDiff.TriggerName, semantics); trigger != nil {
+		if trigger := findTrigger(desired.Triggers, triggerDiff.TableName, triggerDiff.TriggerName, semantics); trigger != nil {
 			result = append(result, fromschema.FromTrigger(*trigger).SetReplace())
 		}
 	}
@@ -1053,10 +1053,10 @@ func (p *Planner) removeTriggers(diff *difftypes.SchemaDiff) []ast.Node {
 }
 
 func findTrigger(
-	triggers []goschema.Trigger,
+	triggers []schemamodel.Trigger,
 	tableName, triggerName string,
 	semantics identifier.Semantics,
-) *goschema.Trigger {
+) *schemamodel.Trigger {
 	return objectlookup.Trigger(triggers, tableName, triggerName, semantics)
 }
 

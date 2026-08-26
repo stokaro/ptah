@@ -143,7 +143,7 @@ func TestVisitCreateFunction_LanguageDecidesWhetherTheBodyCanRun(t *testing.T) {
 // TestVisitCreateFunction_SkipNamesTheCanonicalizeDefault pins the part of the
 // skip message that is new.
 //
-// [goschema.Function.Canonicalize] defaults an UNSET language to plpgsql, so a
+// [schemamodel.Function.Canonicalize] defaults an UNSET language to plpgsql, so a
 // function annotated without `language=` reaches the skip branch and is passed
 // over when it should have been generated. Measured on MySQL 26.7.0 and MariaDB
 // 12.3.2, `schema apply` then exits 0 having created nothing and the diff asks

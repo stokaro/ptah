@@ -7,7 +7,7 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
@@ -68,7 +68,7 @@ func TestWithheldAdditionCarriesTheReasonTheReadRecorded(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			desired := &goschema.Database{Extensions: []goschema.Extension{{
+			desired := &schemamodel.Database{Extensions: []schemamodel.Extension{{
 				Name:   "citext",
 				Schema: "extensions",
 			}}}
@@ -93,7 +93,7 @@ func TestWithheldAdditionCarriesTheReasonTheReadRecorded(t *testing.T) {
 // it from a record about tables would find none and report nothing.
 func TestWithheldTableCarriesTheSchemaRecordsReason(t *testing.T) {
 	c := qt.New(t)
-	desired := &goschema.Database{Tables: []goschema.Table{
+	desired := &schemamodel.Database{Tables: []schemamodel.Table{
 		{Name: "reports", StructName: "Reports", Schema: "extra"},
 	}}
 	current := &catalog.Database{NotDescribed: coverage.Set{}.With(coverage.Object{
@@ -120,7 +120,7 @@ func TestWithheldTableCarriesTheSchemaRecordsReason(t *testing.T) {
 // a user needs.
 func TestWithheldAdditionCarriesTheReasonOfTheRecordThatCoveredIt(t *testing.T) {
 	c := qt.New(t)
-	desired := &goschema.Database{Extensions: []goschema.Extension{{
+	desired := &schemamodel.Database{Extensions: []schemamodel.Extension{{
 		Name:   "citext",
 		Schema: "extensions",
 	}}}

@@ -7,7 +7,7 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -23,14 +23,14 @@ import (
 func TestHypertables_ComparesByTheTableItPartitions(t *testing.T) {
 	tests := []struct {
 		name        string
-		declared    []goschema.Hypertable
+		declared    []schemamodel.Hypertable
 		live        []catalog.Hypertable
 		wantAdded   []string
 		wantRemoved []string
 	}{
 		{
 			name:      "declared and absent",
-			declared:  []goschema.Hypertable{{Table: "conditions", Column: "time"}},
+			declared:  []schemamodel.Hypertable{{Table: "conditions", Column: "time"}},
 			wantAdded: []string{"conditions"},
 		},
 		{
@@ -38,7 +38,7 @@ func TestHypertables_ComparesByTheTableItPartitions(t *testing.T) {
 			// which is what a Go-annotated schema against PostgreSQL looks
 			// like. One table, two spellings.
 			name:     "an unqualified declaration of a qualified row",
-			declared: []goschema.Hypertable{{Table: "conditions", Column: "time"}},
+			declared: []schemamodel.Hypertable{{Table: "conditions", Column: "time"}},
 			live: []catalog.Hypertable{{
 				Schema: "public", Name: "conditions", PrimaryDimension: "time", Dimensions: 1,
 			}},
@@ -57,7 +57,7 @@ func TestHypertables_ComparesByTheTableItPartitions(t *testing.T) {
 			c := qt.New(t)
 			diff := &difftypes.SchemaDiff{}
 
-			declared := &goschema.Database{Hypertables: test.declared}
+			declared := &schemamodel.Database{Hypertables: test.declared}
 			live := &catalog.Database{Hypertables: test.live}
 
 			compare.Hypertables(declared, live, diff, compare.CoverageOf(declared, live))
@@ -80,13 +80,13 @@ func TestHypertables_ComparesByTheTableItPartitions(t *testing.T) {
 func TestHypertables_AnOmittedIntervalIsNotAChange(t *testing.T) {
 	tests := []struct {
 		name     string
-		declared goschema.Hypertable
+		declared schemamodel.Hypertable
 		live     catalog.Hypertable
 		want     []difftypes.HypertableDiff
 	}{
 		{
 			name:     "no interval declared",
-			declared: goschema.Hypertable{Table: "conditions", Column: "time"},
+			declared: schemamodel.Hypertable{Table: "conditions", Column: "time"},
 			live: catalog.Hypertable{
 				Schema: "public", Name: "conditions",
 				PrimaryDimension: "time", ChunkInterval: "7 days", Dimensions: 1,
@@ -94,7 +94,7 @@ func TestHypertables_AnOmittedIntervalIsNotAChange(t *testing.T) {
 		},
 		{
 			name: "the declared interval matches",
-			declared: goschema.Hypertable{
+			declared: schemamodel.Hypertable{
 				Table: "conditions", Column: "time", ChunkInterval: "1 day",
 			},
 			live: catalog.Hypertable{
@@ -104,7 +104,7 @@ func TestHypertables_AnOmittedIntervalIsNotAChange(t *testing.T) {
 		},
 		{
 			name: "the declared interval differs",
-			declared: goschema.Hypertable{
+			declared: schemamodel.Hypertable{
 				Table: "conditions", Column: "time", ChunkInterval: "1 hour",
 			},
 			live: catalog.Hypertable{
@@ -118,7 +118,7 @@ func TestHypertables_AnOmittedIntervalIsNotAChange(t *testing.T) {
 		},
 		{
 			name: "the dimension moved",
-			declared: goschema.Hypertable{
+			declared: schemamodel.Hypertable{
 				Table: "conditions", Column: "recorded_at",
 			},
 			live: catalog.Hypertable{
@@ -137,7 +137,7 @@ func TestHypertables_AnOmittedIntervalIsNotAChange(t *testing.T) {
 			c := qt.New(t)
 			diff := &difftypes.SchemaDiff{}
 
-			declared := &goschema.Database{Hypertables: []goschema.Hypertable{test.declared}}
+			declared := &schemamodel.Database{Hypertables: []schemamodel.Hypertable{test.declared}}
 			live := &catalog.Database{Hypertables: []catalog.Hypertable{test.live}}
 
 			compare.Hypertables(declared, live, diff, compare.CoverageOf(declared, live))
@@ -163,7 +163,7 @@ func TestHypertables_ADescriptionThatCouldNotSayItDoesNotUndoIt(t *testing.T) {
 	live := &catalog.Database{Hypertables: []catalog.Hypertable{{
 		Schema: "public", Name: "conditions", PrimaryDimension: "time", Dimensions: 1,
 	}}}
-	silent := &goschema.Database{NotDescribed: coverage.Set{}.With(coverage.Object{
+	silent := &schemamodel.Database{NotDescribed: coverage.Set{}.With(coverage.Object{
 		Kind:       coverage.Hypertable,
 		Reason:     coverage.Unsupported,
 		Provenance: coverage.DerivedFromFact,
@@ -174,7 +174,7 @@ func TestHypertables_ADescriptionThatCouldNotSayItDoesNotUndoIt(t *testing.T) {
 	c.Assert(diff.HypertablesRemoved, qt.HasLen, 0)
 
 	// The control: a description that COULD have named one still removes.
-	speaking := &goschema.Database{}
+	speaking := &schemamodel.Database{}
 	plain := &difftypes.SchemaDiff{}
 	compare.Hypertables(speaking, live, plain, compare.CoverageOf(speaking, live))
 	c.Assert(plain.HypertablesRemoved, qt.DeepEquals, []string{"public.conditions"})

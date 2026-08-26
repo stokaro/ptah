@@ -6,38 +6,38 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/protobufrender"
 )
 
 // commentedSchema carries one internal table comment and one sensitive column
 // comment. Both are written for whoever maintains the database, and neither is
 // something a consumer of the published contract has any business reading.
-func commentedSchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{
+func commentedSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{
 			StructName: "User",
 			Name:       "users",
 			Comment:    "Internal: sharded by tenant_id; see runbook RB-42",
 		}},
 		Fields: columns("User",
-			goschema.Field{Name: "id", Type: "SERIAL", Primary: true},
-			goschema.Field{Name: "email", Type: "VARCHAR(255)"},
-			goschema.Field{Name: "password_hash", Type: "VARCHAR(255)", Comment: "bcrypt hash, never expose"},
+			schemamodel.Field{Name: "id", Type: "SERIAL", Primary: true},
+			schemamodel.Field{Name: "email", Type: "VARCHAR(255)"},
+			schemamodel.Field{Name: "password_hash", Type: "VARCHAR(255)", Comment: "bcrypt hash, never expose"},
 		),
 	}
 }
 
 // retiredSchema replaces the users table entirely, so the previous export's
 // User message can only survive as a tombstone.
-func retiredSchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{
+func retiredSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{
 			StructName: "Audit",
 			Name:       "audits",
 			Comment:    "Internal: retention is 30 days, enforced by cron",
 		}},
-		Fields: columns("Audit", goschema.Field{Name: "id", Type: "BIGINT"}),
+		Fields: columns("Audit", schemamodel.Field{Name: "id", Type: "BIGINT"}),
 	}
 }
 

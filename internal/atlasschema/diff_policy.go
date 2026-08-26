@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/concurrentindex"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -47,7 +47,7 @@ type DiffPolicy struct {
 func declaredConcurrentIndexRefs(
 	policy DiffPolicy,
 	diff *difftypes.SchemaDiff,
-	desired *goschema.Database,
+	desired *schemamodel.Database,
 	current *catalog.Database,
 	dialect string,
 	capabilities capability.Capabilities,

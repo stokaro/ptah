@@ -6,17 +6,17 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/graphqlrender"
 )
 
-func fixture() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func fixture() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Author", Name: "authors"},
 			{StructName: "Book", Name: "books"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Author", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "Author", Name: "name", Type: "VARCHAR(255)"},
 			{StructName: "Author", Name: "status", Type: "enum_author_status", Nullable: true, Enum: []string{"active", "retired"}},
@@ -28,7 +28,7 @@ func fixture() *goschema.Database {
 			{StructName: "Book", Name: "author_id", Type: "INTEGER", Foreign: "authors(id)"},
 			{StructName: "Book", Name: "metadata", Type: "JSONB", Nullable: true},
 		},
-		Enums: []goschema.Enum{{Name: "enum_author_status", Values: []string{"active", "retired"}}},
+		Enums: []schemamodel.Enum{{Name: "enum_author_status", Values: []string{"active", "retired"}}},
 	}
 }
 
@@ -167,9 +167,9 @@ func TestRenderCreateAndUpdateInputsAreDistinct(t *testing.T) {
 // exporter used to recognize.
 func TestRenderWriteProjectionExcludesServerOwnedColumns(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Row", Name: "rows"}},
-		Fields: []goschema.Field{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Row", Name: "rows"}},
+		Fields: []schemamodel.Field{
 			{StructName: "Row", Name: "id", Type: "BIGINT", Primary: true, IdentityGeneration: "ALWAYS"},
 			{StructName: "Row", Name: "counter", Type: "INTEGER", AutoInc: true},
 			{StructName: "Row", Name: "legacy_seq", Type: "SERIAL"},
@@ -196,9 +196,9 @@ func TestRenderWriteProjectionExcludesServerOwnedColumns(t *testing.T) {
 // write projection would drop a column the caller may legitimately set.
 func TestRenderIdentityByDefaultStaysAssignable(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Row", Name: "rows"}},
-		Fields: []goschema.Field{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Row", Name: "rows"}},
+		Fields: []schemamodel.Field{
 			{StructName: "Row", Name: "id", Type: "BIGINT", Primary: true, IdentityGeneration: "BY_DEFAULT"},
 			{StructName: "Row", Name: "note", Type: "TEXT"},
 		},
@@ -257,9 +257,9 @@ func TestRenderRelationToExcludedTableIsOmitted(t *testing.T) {
 
 func TestRenderInvalidEnumFallsBackToString(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "T", Name: "t"}},
-		Fields: []goschema.Field{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "T", Name: "t"}},
+		Fields: []schemamodel.Field{
 			{StructName: "T", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "T", Name: "phase", Type: "enum_phase", Enum: []string{"in-progress", "done"}},
 		},
@@ -274,9 +274,9 @@ func TestRenderInvalidEnumFallsBackToString(t *testing.T) {
 
 func TestRenderSanitizesInvalidNames(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "T", Name: "2fa_tokens"}},
-		Fields: []goschema.Field{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "T", Name: "2fa_tokens"}},
+		Fields: []schemamodel.Field{
 			{StructName: "T", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "T", Name: "2fa_enabled", Type: "BOOLEAN"},
 			{StructName: "T", Name: "user-agent", Type: "TEXT", Nullable: true},
@@ -294,9 +294,9 @@ func TestRenderSanitizesInvalidNames(t *testing.T) {
 
 func TestRenderArrayColumn(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "T", Name: "posts"}},
-		Fields: []goschema.Field{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "T", Name: "posts"}},
+		Fields: []schemamodel.Field{
 			{StructName: "T", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "T", Name: "tags", Type: "TEXT[]", Nullable: true},
 			{StructName: "T", Name: "scores", Type: "INTEGER[]"},
@@ -338,9 +338,9 @@ func TestRenderEmptySelectionKeepsQueryParsable(t *testing.T) {
 // by-id field naming it would reference a field that does not exist.
 func TestRenderByIDOmittedWhenKeyColumnIsNotPublished(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "T", Name: "widgets"}},
-		Fields: []goschema.Field{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "T", Name: "widgets"}},
+		Fields: []schemamodel.Field{
 			// Both sanitize to "a_b"; the second one loses and is dropped, and it
 			// is the declared primary key.
 			{StructName: "T", Name: "a_b", Type: "TEXT"},
@@ -363,9 +363,9 @@ func TestRenderByIDOmittedWhenKeyColumnIsNotPublished(t *testing.T) {
 // not an ID, and declaring it as one would describe a schema Ptah did not emit.
 func TestRenderByIDArgumentMatchesPublishedColumn(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "T", Name: "widgets"}},
-		Fields: []goschema.Field{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "T", Name: "widgets"}},
+		Fields: []schemamodel.Field{
 			{StructName: "T", Name: "key", Type: "SOME_UNKNOWN_TYPE", Primary: true},
 			{StructName: "T", Name: "note", Type: "TEXT"},
 		},
@@ -383,9 +383,9 @@ func TestRenderByIDArgumentMatchesPublishedColumn(t *testing.T) {
 // key cannot be expressed as one argument.
 func TestRenderCompositeKeyHasNoByIDQuery(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "T", Name: "memberships", PrimaryKey: []string{"user_id", "group_id"}}},
-		Fields: []goschema.Field{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "T", Name: "memberships", PrimaryKey: []string{"user_id", "group_id"}}},
+		Fields: []schemamodel.Field{
 			{StructName: "T", Name: "user_id", Type: "BIGINT"},
 			{StructName: "T", Name: "group_id", Type: "BIGINT"},
 		},
@@ -405,9 +405,9 @@ func TestRenderCompositeKeyHasNoByIDQuery(t *testing.T) {
 // out of the output when every column is server-owned.
 func TestRenderInputOmittedWhenProjectionIsEmpty(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "T", Name: "counters"}},
-		Fields: []goschema.Field{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "T", Name: "counters"}},
+		Fields: []schemamodel.Field{
 			{StructName: "T", Name: "id", Type: "SERIAL", Primary: true},
 		},
 	}
@@ -420,7 +420,7 @@ func TestRenderInputOmittedWhenProjectionIsEmpty(t *testing.T) {
 	c.Assert(diagnosticText(res), qt.Contains, "the update projection is empty; input omitted")
 }
 
-func mustRender(c *qt.C, db *goschema.Database) []byte {
+func mustRender(c *qt.C, db *schemamodel.Database) []byte {
 	c.Helper()
 	res, err := graphqlrender.Render(db, graphqlrender.Options{})
 	c.Assert(err, qt.IsNil)

@@ -11,7 +11,7 @@ import (
 
 	yaml "go.yaml.in/yaml/v3"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemaexport"
 )
 
@@ -22,7 +22,7 @@ const (
 )
 
 // withheldOnly keeps the diagnostics whose column reached neither shape.
-func withheldOnly(diagnostics []schemaexport.Diagnostic, emitted []goschema.Field) []schemaexport.Diagnostic {
+func withheldOnly(diagnostics []schemaexport.Diagnostic, emitted []schemamodel.Field) []schemaexport.Diagnostic {
 	present := make(map[string]bool, len(emitted))
 	for _, field := range emitted {
 		present[field.Name] = true
@@ -46,7 +46,7 @@ func withheldOnly(diagnostics []schemaexport.Diagnostic, emitted []goschema.Fiel
 // absent from it. The returned order keeps the read columns in their schema
 // order and appends the write-only ones, so a document does not reshuffle when
 // an exposure changes.
-func mergeWriteOnly(read, write []goschema.Field) (all []goschema.Field, writeOnly, readOnly map[string]bool) {
+func mergeWriteOnly(read, write []schemamodel.Field) (all []schemamodel.Field, writeOnly, readOnly map[string]bool) {
 	readNames := make(map[string]bool, len(read))
 	for _, field := range read {
 		readNames[field.Name] = true
@@ -55,7 +55,7 @@ func mergeWriteOnly(read, write []goschema.Field) (all []goschema.Field, writeOn
 	for _, field := range write {
 		writeNames[field.Name] = true
 	}
-	all = append([]goschema.Field(nil), read...)
+	all = append([]schemamodel.Field(nil), read...)
 	writeOnly = make(map[string]bool)
 	readOnly = make(map[string]bool)
 	for _, field := range write {
@@ -92,7 +92,7 @@ type Result struct {
 }
 
 // Render renders db as a deterministic OpenAPI 3.0 YAML document.
-func Render(db *goschema.Database, opts Options) (Result, error) {
+func Render(db *schemamodel.Database, opts Options) (Result, error) {
 	if db == nil {
 		return Result{}, fmt.Errorf("schema database is nil")
 	}
@@ -213,7 +213,7 @@ func Render(db *goschema.Database, opts Options) (Result, error) {
 // columnSchema builds the Schema Object for one column, resolving enums and
 // mapping the SQL type. It returns a diagnostic when a type could not be
 // resolved and was defaulted to string.
-func columnSchema(table goschema.Table, field goschema.Field, enums map[string][]string, pk map[string]bool) (*schemaObject, *schemaexport.Diagnostic) {
+func columnSchema(table schemamodel.Table, field schemamodel.Field, enums map[string][]string, pk map[string]bool) (*schemaObject, *schemaexport.Diagnostic) {
 	// A primary-key column is NOT NULL by SQL rule, regardless of how the
 	// nullability was declared on the source annotation.
 	nullable := field.Nullable && !pk[field.Name]

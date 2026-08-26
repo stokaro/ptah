@@ -7,7 +7,7 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -16,8 +16,8 @@ func TestCompare_DefaultBehavior(t *testing.T) {
 	c := qt.New(t)
 
 	// Setup test data with plpgsql in database but not in generated schema
-	generated := &goschema.Database{
-		Extensions: []goschema.Extension{
+	desired := &schemamodel.Database{
+		Extensions: []schemamodel.Extension{
 			{Name: "pg_trgm", IfNotExists: true},
 		},
 	}
@@ -28,7 +28,7 @@ func TestCompare_DefaultBehavior(t *testing.T) {
 	}
 
 	// Test default behavior (should ignore plpgsql)
-	diff := schemadiff.Compare(generated, database)
+	diff := schemadiff.Compare(desired, database)
 
 	// plpgsql should be ignored by default, so no extensions should be removed
 	c.Assert(diff.ExtensionsAdded, qt.DeepEquals, []string{"pg_trgm"})
@@ -40,12 +40,12 @@ func TestCompareWithDialect_MySQLFamilyInlineEnumsMatchGeneratedEnumFields(t *te
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			generated := &goschema.Database{
-				Tables: []goschema.Table{{
+			desired := &schemamodel.Database{
+				Tables: []schemamodel.Table{{
 					Name:       "products",
 					StructName: "Product",
 				}},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{StructName: "Product", Name: "id", Type: "int", Primary: true},
 					{
 						StructName: "Product",
@@ -55,7 +55,7 @@ func TestCompareWithDialect_MySQLFamilyInlineEnumsMatchGeneratedEnumFields(t *te
 						Nullable:   false,
 					},
 				},
-				Enums: []goschema.Enum{{
+				Enums: []schemamodel.Enum{{
 					Name:   "enum_product_status",
 					Values: []string{"draft", "active"},
 				}},
@@ -75,7 +75,7 @@ func TestCompareWithDialect_MySQLFamilyInlineEnumsMatchGeneratedEnumFields(t *te
 				}},
 			}
 
-			diff := schemadiff.CompareWithDialect(generated, database, dialect)
+			diff := schemadiff.CompareWithDialect(desired, database, dialect)
 			c.Assert(diff.EnumsAdded, qt.HasLen, 0)
 			c.Assert(diff.EnumsRemoved, qt.HasLen, 0)
 			c.Assert(diff.TablesModified, qt.HasLen, 0)
@@ -100,9 +100,9 @@ func TestCompareWithDialect_GeneratedColumnDefaultKindMatchesDialect(t *testing.
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 			expression := "lower(email)"
-			generated := &goschema.Database{
-				Tables: []goschema.Table{{Name: "users", StructName: "User"}},
-				Fields: []goschema.Field{
+			desired := &schemamodel.Database{
+				Tables: []schemamodel.Table{{Name: "users", StructName: "User"}},
+				Fields: []schemamodel.Field{
 					{StructName: "User", Name: "email_lc", Type: "TEXT", Nullable: true, GeneratedExpression: expression},
 				},
 			}
@@ -120,7 +120,7 @@ func TestCompareWithDialect_GeneratedColumnDefaultKindMatchesDialect(t *testing.
 				}},
 			}
 
-			diff := schemadiff.CompareWithDialect(generated, database, tt.dialect)
+			diff := schemadiff.CompareWithDialect(desired, database, tt.dialect)
 			c.Assert(diff.TablesModified, qt.HasLen, 0)
 		})
 	}
@@ -187,9 +187,9 @@ func TestCompareWithDialect_GeneratedColumnCatalogExpressionsMatch(t *testing.T)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			generated := &goschema.Database{
-				Tables: []goschema.Table{{Name: "contacts", StructName: "Contact"}},
-				Fields: []goschema.Field{
+			desired := &schemamodel.Database{
+				Tables: []schemamodel.Table{{Name: "contacts", StructName: "Contact"}},
+				Fields: []schemamodel.Field{
 					{
 						StructName:          "Contact",
 						Name:                "email_normalized",
@@ -215,7 +215,7 @@ func TestCompareWithDialect_GeneratedColumnCatalogExpressionsMatch(t *testing.T)
 				}},
 			}
 
-			diff := schemadiff.CompareWithDialect(generated, database, tt.dialect)
+			diff := schemadiff.CompareWithDialect(desired, database, tt.dialect)
 			c.Assert(diff.TablesModified, qt.HasLen, 0)
 		})
 	}
@@ -223,9 +223,9 @@ func TestCompareWithDialect_GeneratedColumnCatalogExpressionsMatch(t *testing.T)
 
 func TestCompareWithDialect_GeneratedColumnStringLiteralMismatchIsAGap(t *testing.T) {
 	c := qt.New(t)
-	generated := &goschema.Database{
-		Tables: []goschema.Table{{Name: "contacts", StructName: "Contact"}},
-		Fields: []goschema.Field{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "contacts", StructName: "Contact"}},
+		Fields: []schemamodel.Field{
 			{
 				StructName:          "Contact",
 				Name:                "email_normalized",
@@ -251,7 +251,7 @@ func TestCompareWithDialect_GeneratedColumnStringLiteralMismatchIsAGap(t *testin
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(generated, database, "mysql")
+	diff := schemadiff.CompareWithDialect(desired, database, "mysql")
 	c.Assert(diff.TablesModified, qt.HasLen, 1)
 	c.Assert(diff.TablesModified[0].ColumnsModified, qt.HasLen, 1)
 	c.Assert(diff.TablesModified[0].ColumnsModified[0].Changes["generated"], qt.Contains, "'ACTIVE'")
@@ -259,9 +259,9 @@ func TestCompareWithDialect_GeneratedColumnStringLiteralMismatchIsAGap(t *testin
 
 func TestCompareWithDialect_GeneratedColumnEscapedStringLiteralMismatchIsAGap(t *testing.T) {
 	c := qt.New(t)
-	generated := &goschema.Database{
-		Tables: []goschema.Table{{Name: "contacts", StructName: "Contact"}},
-		Fields: []goschema.Field{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "contacts", StructName: "Contact"}},
+		Fields: []schemamodel.Field{
 			{
 				StructName:          "Contact",
 				Name:                "email_normalized",
@@ -287,7 +287,7 @@ func TestCompareWithDialect_GeneratedColumnEscapedStringLiteralMismatchIsAGap(t 
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(generated, database, "mariadb")
+	diff := schemadiff.CompareWithDialect(desired, database, "mariadb")
 
 	c.Assert(diff.TablesModified, qt.HasLen, 1)
 	c.Assert(diff.TablesModified[0].ColumnsModified, qt.HasLen, 1)
@@ -296,9 +296,9 @@ func TestCompareWithDialect_GeneratedColumnEscapedStringLiteralMismatchIsAGap(t 
 
 func TestCompareWithDialect_GeneratedColumnDoubleQuotedStringLiteralMismatchIsAGap(t *testing.T) {
 	c := qt.New(t)
-	generated := &goschema.Database{
-		Tables: []goschema.Table{{Name: "contacts", StructName: "Contact"}},
-		Fields: []goschema.Field{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "contacts", StructName: "Contact"}},
+		Fields: []schemamodel.Field{
 			{
 				StructName:          "Contact",
 				Name:                "email_normalized",
@@ -324,7 +324,7 @@ func TestCompareWithDialect_GeneratedColumnDoubleQuotedStringLiteralMismatchIsAG
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(generated, database, "mariadb")
+	diff := schemadiff.CompareWithDialect(desired, database, "mariadb")
 
 	c.Assert(diff.TablesModified, qt.HasLen, 1)
 	c.Assert(diff.TablesModified[0].ColumnsModified, qt.HasLen, 1)
@@ -334,8 +334,8 @@ func TestCompareWithDialect_GeneratedColumnDoubleQuotedStringLiteralMismatchIsAG
 func TestCompareWithDialect_MariaDBViewBodyMatchesCatalogReadback(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Views: []goschema.View{{
+	desired := &schemamodel.Database{
+		Views: []schemamodel.View{{
 			Name: "live_products",
 			Body: "SELECT id, name FROM products WHERE archived = false",
 		}},
@@ -349,7 +349,7 @@ func TestCompareWithDialect_MariaDBViewBodyMatchesCatalogReadback(t *testing.T) 
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(generated, database, "mariadb")
+	diff := schemadiff.CompareWithDialect(desired, database, "mariadb")
 
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 }
@@ -357,8 +357,8 @@ func TestCompareWithDialect_MariaDBViewBodyMatchesCatalogReadback(t *testing.T) 
 func TestCompareWithDialect_MariaDBViewPredicateDriftStillDiffs(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Views: []goschema.View{{
+	desired := &schemamodel.Database{
+		Views: []schemamodel.View{{
 			Name: "live_products",
 			Body: "SELECT id, name FROM products WHERE archived = false",
 		}},
@@ -372,7 +372,7 @@ func TestCompareWithDialect_MariaDBViewPredicateDriftStillDiffs(t *testing.T) {
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(generated, database, "mariadb")
+	diff := schemadiff.CompareWithDialect(desired, database, "mariadb")
 
 	c.Assert(diff.ViewsModified, qt.HasLen, 1)
 	c.Assert(diff.ViewsModified[0].Changes["body"], qt.Not(qt.Equals), "")
@@ -381,8 +381,8 @@ func TestCompareWithDialect_MariaDBViewPredicateDriftStillDiffs(t *testing.T) {
 func TestCompareWithDialect_MariaDBViewWrongSchemaQualifierStillDiffs(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Views: []goschema.View{{
+	desired := &schemamodel.Database{
+		Views: []schemamodel.View{{
 			Name: "live_products",
 			Body: "SELECT id, name FROM products WHERE archived = false",
 		}},
@@ -396,7 +396,7 @@ func TestCompareWithDialect_MariaDBViewWrongSchemaQualifierStillDiffs(t *testing
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(generated, database, "mariadb")
+	diff := schemadiff.CompareWithDialect(desired, database, "mariadb")
 
 	c.Assert(diff.ViewsModified, qt.HasLen, 1)
 	c.Assert(diff.ViewsModified[0].Changes["body"], qt.Not(qt.Equals), "")
@@ -405,8 +405,8 @@ func TestCompareWithDialect_MariaDBViewWrongSchemaQualifierStillDiffs(t *testing
 func TestCompareWithDialect_MariaDBViewWrongSchemaRelationStillDiffs(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Views: []goschema.View{{
+	desired := &schemamodel.Database{
+		Views: []schemamodel.View{{
 			Name: "live_products",
 			Body: "SELECT id, name FROM products WHERE archived = false",
 		}},
@@ -420,7 +420,7 @@ func TestCompareWithDialect_MariaDBViewWrongSchemaRelationStillDiffs(t *testing.
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(generated, database, "mariadb")
+	diff := schemadiff.CompareWithDialect(desired, database, "mariadb")
 
 	c.Assert(diff.ViewsModified, qt.HasLen, 1)
 	c.Assert(diff.ViewsModified[0].Changes["body"], qt.Not(qt.Equals), "")
@@ -429,8 +429,8 @@ func TestCompareWithDialect_MariaDBViewWrongSchemaRelationStillDiffs(t *testing.
 func TestCompareWithDialect_MariaDBViewStringLiteralDriftStillDiffs(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Views: []goschema.View{{
+	desired := &schemamodel.Database{
+		Views: []schemamodel.View{{
 			Name: "view_notes",
 			Body: "SELECT 'archived = false' AS note",
 		}},
@@ -442,7 +442,7 @@ func TestCompareWithDialect_MariaDBViewStringLiteralDriftStillDiffs(t *testing.T
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(generated, database, "mariadb")
+	diff := schemadiff.CompareWithDialect(desired, database, "mariadb")
 
 	c.Assert(diff.ViewsModified, qt.HasLen, 1)
 	c.Assert(diff.ViewsModified[0].Changes["body"], qt.Not(qt.Equals), "")
@@ -451,8 +451,8 @@ func TestCompareWithDialect_MariaDBViewStringLiteralDriftStillDiffs(t *testing.T
 func TestCompareWithDialect_MariaDBViewEscapedStringLiteralDriftStillDiffs(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Views: []goschema.View{{
+	desired := &schemamodel.Database{
+		Views: []schemamodel.View{{
 			Name: "view_notes",
 			Body: `SELECT 'can\'t = false' AS note`,
 		}},
@@ -464,7 +464,7 @@ func TestCompareWithDialect_MariaDBViewEscapedStringLiteralDriftStillDiffs(t *te
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(generated, database, "mariadb")
+	diff := schemadiff.CompareWithDialect(desired, database, "mariadb")
 
 	c.Assert(diff.ViewsModified, qt.HasLen, 1)
 	c.Assert(diff.ViewsModified[0].Changes["body"], qt.Not(qt.Equals), "")
@@ -473,8 +473,8 @@ func TestCompareWithDialect_MariaDBViewEscapedStringLiteralDriftStillDiffs(t *te
 func TestCompareWithDialect_MariaDBViewDoubleQuotedStringLiteralDriftStillDiffs(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Views: []goschema.View{{
+	desired := &schemamodel.Database{
+		Views: []schemamodel.View{{
 			Name: "view_notes",
 			Body: `SELECT "archived = false" AS note`,
 		}},
@@ -486,7 +486,7 @@ func TestCompareWithDialect_MariaDBViewDoubleQuotedStringLiteralDriftStillDiffs(
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(generated, database, "mariadb")
+	diff := schemadiff.CompareWithDialect(desired, database, "mariadb")
 
 	c.Assert(diff.ViewsModified, qt.HasLen, 1)
 	c.Assert(diff.ViewsModified[0].Changes["body"], qt.Not(qt.Equals), "")
@@ -513,9 +513,9 @@ func TestCompareWithDialect_SQLServerGeneratedExpressionNormalizesCatalogDefinit
 			c := qt.New(t)
 			generatedExpression := tt.generatedExpression
 			databaseExpression := tt.databaseExpression
-			generated := &goschema.Database{
-				Tables: []goschema.Table{{Name: "users", Schema: "dbo", StructName: "User"}},
-				Fields: []goschema.Field{{
+			desired := &schemamodel.Database{
+				Tables: []schemamodel.Table{{Name: "users", Schema: "dbo", StructName: "User"}},
+				Fields: []schemamodel.Field{{
 					StructName:          "User",
 					Name:                "email_lc",
 					Type:                "NVARCHAR(320)",
@@ -540,7 +540,7 @@ func TestCompareWithDialect_SQLServerGeneratedExpressionNormalizesCatalogDefinit
 				}},
 			}
 
-			diff := schemadiff.CompareWithDialect(generated, database, "sqlserver")
+			diff := schemadiff.CompareWithDialect(desired, database, "sqlserver")
 			c.Assert(diff.TablesModified, qt.HasLen, 0)
 		})
 	}
@@ -553,9 +553,9 @@ func TestCompareWithDialect_MySQLDefaultsTypesFixtureMatchesCatalogReadback(t *t
 	issuedAtDefault := "current_timestamp()"
 	paidDefault := "0"
 
-	generated := &goschema.Database{
-		Tables: []goschema.Table{{Name: "invoices", StructName: "Invoice"}},
-		Fields: []goschema.Field{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "invoices", StructName: "Invoice"}},
+		Fields: []schemamodel.Field{
 			{StructName: "Invoice", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "Invoice", Name: "invoice_number", Type: "VARCHAR(32)", Nullable: false, Unique: true},
 			{
@@ -642,7 +642,7 @@ func TestCompareWithDialect_MySQLDefaultsTypesFixtureMatchesCatalogReadback(t *t
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(generated, database, "mysql")
+	diff := schemadiff.CompareWithDialect(desired, database, "mysql")
 	c.Assert(diff.TablesModified, qt.HasLen, 0)
 }
 
@@ -655,12 +655,12 @@ func TestCompareWithDialect_MySQLConstraintsActionsFixtureMatchesCatalogReadback
 	deleteRule := "CASCADE"
 	updateRule := "RESTRICT"
 
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: "organizations", StructName: "Organization"},
 			{Name: "projects", StructName: "Project"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Organization", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "Organization", Name: "slug", Type: "VARCHAR(64)", Nullable: false, Unique: true},
 			{StructName: "Project", Name: "id", Type: "SERIAL", Primary: true},
@@ -693,7 +693,7 @@ func TestCompareWithDialect_MySQLConstraintsActionsFixtureMatchesCatalogReadback
 				CheckName:   "projects_budget_nonnegative",
 			},
 		},
-		Constraints: []goschema.Constraint{
+		Constraints: []schemamodel.Constraint{
 			{
 				StructName: "Project",
 				Name:       "projects_org_slug_unique",
@@ -770,7 +770,7 @@ func TestCompareWithDialect_MySQLConstraintsActionsFixtureMatchesCatalogReadback
 		},
 	}
 
-	diff := schemadiff.CompareWithDialect(generated, database, "mysql")
+	diff := schemadiff.CompareWithDialect(desired, database, "mysql")
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 }
 
@@ -778,9 +778,9 @@ func TestCompareWithDialect_MySQLCharsetEscapedStringLiteralMatchesGeneratedEsca
 	c := qt.New(t)
 	checkClause := "(`name` <> _latin1\\'owner\\'s\\')"
 
-	generated := &goschema.Database{
-		Tables: []goschema.Table{{Name: "projects", StructName: "Project"}},
-		Constraints: []goschema.Constraint{{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "projects", StructName: "Project"}},
+		Constraints: []schemamodel.Constraint{{
 			StructName:      "Project",
 			Name:            "projects_name_check",
 			Type:            "CHECK",
@@ -798,19 +798,19 @@ func TestCompareWithDialect_MySQLCharsetEscapedStringLiteralMatchesGeneratedEsca
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(generated, database, "mysql")
+	diff := schemadiff.CompareWithDialect(desired, database, "mysql")
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 }
 
 func TestCompareWithDialect_SQLiteInlineEnumsMatchGeneratedEnumFields(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Tables: []goschema.Table{{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{
 			Name:       "products",
 			StructName: "Product",
 		}},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Product", Name: "id", Type: "INTEGER", Primary: true},
 			{
 				StructName: "Product",
@@ -820,7 +820,7 @@ func TestCompareWithDialect_SQLiteInlineEnumsMatchGeneratedEnumFields(t *testing
 				Nullable:   false,
 			},
 		},
-		Enums: []goschema.Enum{{
+		Enums: []schemamodel.Enum{{
 			Name:   "enum_product_status",
 			Values: []string{"draft", "active"},
 		}},
@@ -843,7 +843,7 @@ func TestCompareWithDialect_SQLiteInlineEnumsMatchGeneratedEnumFields(t *testing
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(generated, database, "sqlite")
+	diff := schemadiff.CompareWithDialect(desired, database, "sqlite")
 	c.Assert(diff.EnumsAdded, qt.HasLen, 0)
 	c.Assert(diff.EnumsRemoved, qt.HasLen, 0)
 	c.Assert(diff.TablesModified, qt.HasLen, 0)
@@ -983,16 +983,16 @@ func TestCompareWithDialect_SQLiteDeclaredTypeDriftStillDiffs(t *testing.T) {
 func TestCompareWithDialect_SQLiteUniqueConstraintAutoindexIsIgnored(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Tables: []goschema.Table{{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{
 			Name:       "projects",
 			StructName: "Project",
 		}},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Project", Name: "organization_id", Type: "INTEGER", Nullable: false},
 			{StructName: "Project", Name: "slug", Type: "VARCHAR(64)", Nullable: false},
 		},
-		Constraints: []goschema.Constraint{{
+		Constraints: []schemamodel.Constraint{{
 			Name:       "projects_org_slug_unique",
 			Type:       "UNIQUE",
 			Table:      "projects",
@@ -1024,7 +1024,7 @@ func TestCompareWithDialect_SQLiteUniqueConstraintAutoindexIsIgnored(t *testing.
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(generated, database, "sqlite")
+	diff := schemadiff.CompareWithDialect(desired, database, "sqlite")
 
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 }
@@ -1032,8 +1032,8 @@ func TestCompareWithDialect_SQLiteUniqueConstraintAutoindexIsIgnored(t *testing.
 func TestCompareWithDialect_NonSQLiteAutoindexNameIsCompared(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Tables: []goschema.Table{{Name: "projects", StructName: "Project"}},
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "projects", StructName: "Project"}},
 	}
 	database := &catalog.Database{
 		Tables: []catalog.Table{{Name: "projects", Type: "TABLE"}},
@@ -1045,7 +1045,7 @@ func TestCompareWithDialect_NonSQLiteAutoindexNameIsCompared(t *testing.T) {
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(generated, database, "postgres")
+	diff := schemadiff.CompareWithDialect(desired, database, "postgres")
 
 	c.Assert(diff.IndexesRemoved, qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "sqlite_autoindex_projects_1", TableName: "projects"},
@@ -1055,13 +1055,13 @@ func TestCompareWithDialect_NonSQLiteAutoindexNameIsCompared(t *testing.T) {
 func TestCompareWithDialect_SQLServerInlineEnumsMatchGeneratedEnumFields(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Tables: []goschema.Table{{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{
 			Name:       "products",
 			Schema:     "dbo",
 			StructName: "Product",
 		}},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Product", Name: "id", Type: "INT", Primary: true},
 			{
 				StructName: "Product",
@@ -1072,7 +1072,7 @@ func TestCompareWithDialect_SQLServerInlineEnumsMatchGeneratedEnumFields(t *test
 				CheckName:  "products_status_check",
 			},
 		},
-		Enums: []goschema.Enum{{
+		Enums: []schemamodel.Enum{{
 			Name:   "enum_product_status",
 			Values: []string{"draft", "active"},
 		}},
@@ -1097,7 +1097,7 @@ func TestCompareWithDialect_SQLServerInlineEnumsMatchGeneratedEnumFields(t *test
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(generated, database, "sqlserver")
+	diff := schemadiff.CompareWithDialect(desired, database, "sqlserver")
 	c.Assert(diff.EnumsAdded, qt.HasLen, 0)
 	c.Assert(diff.EnumsRemoved, qt.HasLen, 0)
 	c.Assert(diff.TablesModified, qt.HasLen, 0)
@@ -1105,13 +1105,13 @@ func TestCompareWithDialect_SQLServerInlineEnumsMatchGeneratedEnumFields(t *test
 	c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0)
 }
 
-func sqliteColumnGeneratedSchema(columnType string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{
+func sqliteColumnGeneratedSchema(columnType string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{
 			Name:       "users",
 			StructName: "User",
 		}},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "User", Name: "value", Type: columnType, Nullable: false},
 		},
@@ -1135,8 +1135,8 @@ func TestCompareWithOptions_CustomIgnoreList(t *testing.T) {
 	c := qt.New(t)
 
 	// Setup test data
-	generated := &goschema.Database{
-		Extensions: []goschema.Extension{
+	desired := &schemamodel.Database{
+		Extensions: []schemamodel.Extension{
 			{Name: "pg_trgm", IfNotExists: true},
 		},
 	}
@@ -1149,7 +1149,7 @@ func TestCompareWithOptions_CustomIgnoreList(t *testing.T) {
 
 	// Test with custom ignore list (ignore adminpack but not plpgsql)
 	opts := config.WithIgnoredExtensions("adminpack")
-	diff := schemadiff.CompareWithOptions(generated, database, opts)
+	diff := schemadiff.CompareWithOptions(desired, database, opts)
 
 	// adminpack should be ignored, plpgsql should be marked for removal
 	c.Assert(diff.ExtensionsAdded, qt.DeepEquals, []string{"pg_trgm"})
@@ -1160,8 +1160,8 @@ func TestCompareWithOptions_NoIgnoredExtensions(t *testing.T) {
 	c := qt.New(t)
 
 	// Setup test data
-	generated := &goschema.Database{
-		Extensions: []goschema.Extension{
+	desired := &schemamodel.Database{
+		Extensions: []schemamodel.Extension{
 			{Name: "pg_trgm", IfNotExists: true},
 		},
 	}
@@ -1174,7 +1174,7 @@ func TestCompareWithOptions_NoIgnoredExtensions(t *testing.T) {
 
 	// Test with no ignored extensions (manage all extensions)
 	opts := config.WithIgnoredExtensions() // Empty list
-	diff := schemadiff.CompareWithOptions(generated, database, opts)
+	diff := schemadiff.CompareWithOptions(desired, database, opts)
 
 	// All database extensions should be marked for removal
 	c.Assert(diff.ExtensionsAdded, qt.DeepEquals, []string{"pg_trgm"})
@@ -1185,8 +1185,8 @@ func TestCompareWithOptions_AdditionalIgnoredExtensions(t *testing.T) {
 	c := qt.New(t)
 
 	// Setup test data
-	generated := &goschema.Database{
-		Extensions: []goschema.Extension{
+	desired := &schemamodel.Database{
+		Extensions: []schemamodel.Extension{
 			{Name: "pg_trgm", IfNotExists: true},
 		},
 	}
@@ -1200,7 +1200,7 @@ func TestCompareWithOptions_AdditionalIgnoredExtensions(t *testing.T) {
 
 	// Test with additional ignored extensions (default + adminpack)
 	opts := config.WithAdditionalIgnoredExtensions("adminpack")
-	diff := schemadiff.CompareWithOptions(generated, database, opts)
+	diff := schemadiff.CompareWithOptions(desired, database, opts)
 
 	// plpgsql and adminpack should be ignored, only pg_stat_statements should be removed
 	c.Assert(diff.ExtensionsAdded, qt.DeepEquals, []string{"pg_trgm"})
@@ -1211,8 +1211,8 @@ func TestCompareWithOptions_NilOptions(t *testing.T) {
 	c := qt.New(t)
 
 	// Setup test data
-	generated := &goschema.Database{
-		Extensions: []goschema.Extension{
+	desired := &schemamodel.Database{
+		Extensions: []schemamodel.Extension{
 			{Name: "pg_trgm", IfNotExists: true},
 		},
 	}
@@ -1223,7 +1223,7 @@ func TestCompareWithOptions_NilOptions(t *testing.T) {
 	}
 
 	// Test with nil options (should use defaults)
-	diff := schemadiff.CompareWithOptions(generated, database, nil)
+	diff := schemadiff.CompareWithOptions(desired, database, nil)
 
 	// Should behave the same as Compare() - ignore plpgsql by default
 	c.Assert(diff.ExtensionsAdded, qt.DeepEquals, []string{"pg_trgm"})
@@ -1232,8 +1232,8 @@ func TestCompareWithOptions_NilOptions(t *testing.T) {
 
 func TestLibraryUsageExamples(t *testing.T) {
 	// Example data
-	generated := &goschema.Database{
-		Extensions: []goschema.Extension{
+	desired := &schemamodel.Database{
+		Extensions: []schemamodel.Extension{
 			{Name: "pg_trgm", IfNotExists: true},
 			{Name: "btree_gin", IfNotExists: true},
 		},
@@ -1248,7 +1248,7 @@ func TestLibraryUsageExamples(t *testing.T) {
 	t.Run("simple usage with defaults", func(t *testing.T) {
 		// Most common usage - just compare with defaults
 		c := qt.New(t)
-		diff := schemadiff.Compare(generated, database)
+		diff := schemadiff.Compare(desired, database)
 
 		c.Assert(diff.ExtensionsAdded, qt.DeepEquals, []string{"btree_gin"})
 		c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, make([]string, 0)) // plpgsql ignored
@@ -1258,7 +1258,7 @@ func TestLibraryUsageExamples(t *testing.T) {
 		// User wants to ignore specific extensions
 		c := qt.New(t)
 		opts := config.WithIgnoredExtensions("plpgsql", "adminpack")
-		diff := schemadiff.CompareWithOptions(generated, database, opts)
+		diff := schemadiff.CompareWithOptions(desired, database, opts)
 
 		c.Assert(diff.ExtensionsAdded, qt.DeepEquals, []string{"btree_gin"})
 		c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, make([]string, 0))
@@ -1268,7 +1268,7 @@ func TestLibraryUsageExamples(t *testing.T) {
 		// User wants to manage all extensions (no ignoring)
 		c := qt.New(t)
 		opts := config.WithIgnoredExtensions()
-		diff := schemadiff.CompareWithOptions(generated, database, opts)
+		diff := schemadiff.CompareWithOptions(desired, database, opts)
 
 		c.Assert(diff.ExtensionsAdded, qt.DeepEquals, []string{"btree_gin"})
 		c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, []string{"plpgsql"})
@@ -1278,7 +1278,7 @@ func TestLibraryUsageExamples(t *testing.T) {
 		// User wants defaults plus additional ignored extensions
 		c := qt.New(t)
 		opts := config.WithAdditionalIgnoredExtensions("uuid-ossp")
-		diff := schemadiff.CompareWithOptions(generated, database, opts)
+		diff := schemadiff.CompareWithOptions(desired, database, opts)
 
 		c.Assert(diff.ExtensionsAdded, qt.DeepEquals, []string{"btree_gin"})
 		c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, make([]string, 0)) // plpgsql still ignored
@@ -1367,13 +1367,13 @@ func TestCompareWithDialect_SpannerFoldDoesNotReachOtherTargets(t *testing.T) {
 // spannerForeignKeySchemas is the pair a Spanner foreign key produces: the
 // constraint, and the index Spanner built to enforce it under the name Spanner
 // chose.
-func spannerForeignKeySchemas(indexName string) (*goschema.Database, *catalog.Database) {
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+func spannerForeignKeySchemas(indexName string) (*schemamodel.Database, *catalog.Database) {
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: "parents", StructName: "Parent"},
 			{Name: "children", StructName: "Child"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Parent", Name: "id", Type: "BIGINT", Primary: true},
 			{StructName: "Child", Name: "id", Type: "BIGINT", Primary: true},
 			{StructName: "Child", Name: "parent_id", Type: "BIGINT", Foreign: "parents(id)",
@@ -1406,7 +1406,7 @@ func spannerForeignKeySchemas(indexName string) (*goschema.Database, *catalog.Da
 			Columns:   []string{"parent_id"},
 		}},
 	}
-	return generated, database
+	return desired, database
 }
 
 // TestCompareWithDialect_SpannerForeignKeyBackingIndexIsNotDrift pins that the
@@ -1423,9 +1423,9 @@ func spannerForeignKeySchemas(indexName string) (*goschema.Database, *catalog.Da
 // afterwards, with a plan that never changed (stokaro/ptah#2076).
 func TestCompareWithDialect_SpannerForeignKeyBackingIndexIsNotDrift(t *testing.T) {
 	c := qt.New(t)
-	generated, database := spannerForeignKeySchemas("IDX_children_parent_id_FBF4366D73F2084A")
+	desired, database := spannerForeignKeySchemas("IDX_children_parent_id_FBF4366D73F2084A")
 
-	diff := schemadiff.CompareWithDialect(generated, database, "spanner")
+	diff := schemadiff.CompareWithDialect(desired, database, "spanner")
 
 	c.Assert(diff.IndexesRemoved, qt.HasLen, 0, qt.Commentf("diff: %+v", diff))
 }
@@ -1439,9 +1439,9 @@ func TestCompareWithDialect_SpannerForeignKeyBackingIndexIsNotDrift(t *testing.T
 // wrote would have become impossible to remove through Ptah.
 func TestCompareWithDialect_SpannerStillDropsAnIndexAPersonWrote(t *testing.T) {
 	c := qt.New(t)
-	generated, database := spannerForeignKeySchemas("children_parent_idx")
+	desired, database := spannerForeignKeySchemas("children_parent_idx")
 
-	diff := schemadiff.CompareWithDialect(generated, database, "spanner")
+	diff := schemadiff.CompareWithDialect(desired, database, "spanner")
 
 	c.Assert(diff.IndexesRemoved, qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "children_parent_idx", TableName: "children"},
@@ -1453,9 +1453,9 @@ func TestCompareWithDialect_SpannerStillDropsAnIndexAPersonWrote(t *testing.T) {
 // PostgreSQL index carrying that name is a person's and is dropped.
 func TestCompareWithDialect_SpannerBackingIndexRuleStaysOnSpanner(t *testing.T) {
 	c := qt.New(t)
-	generated, database := spannerForeignKeySchemas("IDX_children_parent_id_FBF4366D73F2084A")
+	desired, database := spannerForeignKeySchemas("IDX_children_parent_id_FBF4366D73F2084A")
 
-	diff := schemadiff.CompareWithDialect(generated, database, "postgres")
+	diff := schemadiff.CompareWithDialect(desired, database, "postgres")
 
 	c.Assert(diff.IndexesRemoved, qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "IDX_children_parent_id_FBF4366D73F2084A", TableName: "children"},
@@ -1492,12 +1492,12 @@ func TestCompareWithDialect_SQLiteBooleanDefaultMatchesWhatTheRendererWrites(t *
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			generated := sqliteColumnGeneratedSchema(tt.columnType)
-			generated.Fields[1].Default = tt.declared
+			desired := sqliteColumnGeneratedSchema(tt.columnType)
+			desired.Fields[1].Default = tt.declared
 			database := sqliteColumnDatabaseSchema(tt.columnType)
 			database.Tables[0].Columns[1].ColumnDefault = &tt.live
 
-			diff := schemadiff.CompareWithDialect(generated, database, "sqlite")
+			diff := schemadiff.CompareWithDialect(desired, database, "sqlite")
 
 			c.Assert(!diff.HasChanges(), qt.Equals, tt.wantNoChanges, qt.Commentf("diff: %+v", diff))
 		})

@@ -929,8 +929,8 @@ env "local" {
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
 	c.Assert(stdout, qt.Equals, "")
 	c.Assert(stderr, qt.Equals, "")
-	generated := generatedMigrationName(c, project.templateDir, "added")
-	generatedSQL, err := os.ReadFile(filepath.Join(project.templateDir, generated))
+	desired := generatedMigrationName(c, project.templateDir, "added")
+	generatedSQL, err := os.ReadFile(filepath.Join(project.templateDir, desired))
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(generatedSQL), qt.Contains, `CREATE TABLE "added"`)
 	currentTemplate, err := os.ReadFile(filepath.Join(project.templateDir, "1_init.sql"))
@@ -1048,8 +1048,8 @@ func executeCompatProjectCommand(args ...string) (stdout, stderr string, err err
 
 func assertTemplateDirectoryMigrationCreated(c *qt.C, dir, name string, expectedSumEntries int) {
 	c.Helper()
-	generated := generatedMigrationName(c, dir, name)
-	contents, err := os.ReadFile(filepath.Join(dir, generated))
+	desired := generatedMigrationName(c, dir, name)
+	contents, err := os.ReadFile(filepath.Join(dir, desired))
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(contents), qt.Equals, "")
 	assertMigrationDirectorySum(c, dir, expectedSumEntries)
@@ -1060,16 +1060,16 @@ func generatedMigrationName(c *qt.C, dir, name string) string {
 	entries, err := os.ReadDir(dir)
 	c.Assert(err, qt.IsNil)
 	pattern := `^\d{14}_` + regexp.QuoteMeta(name) + `\.sql$`
-	var generated []string
+	var desired []string
 	for _, entry := range entries {
 		if matched, matchErr := regexp.MatchString(pattern, entry.Name()); matched {
-			generated = append(generated, entry.Name())
+			desired = append(desired, entry.Name())
 		} else {
 			c.Assert(matchErr, qt.IsNil)
 		}
 	}
-	c.Assert(generated, qt.HasLen, 1)
-	return generated[0]
+	c.Assert(desired, qt.HasLen, 1)
+	return desired[0]
 }
 
 func assertMigrationDirectorySum(c *qt.C, dir string, expectedEntries int) {

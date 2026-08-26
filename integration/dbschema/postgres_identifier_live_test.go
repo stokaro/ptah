@@ -11,7 +11,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -97,10 +97,10 @@ func TestPostgresLiveConnection_ASelectedSchemaComparesEqualToItself(t *testing.
 	live, err := dbschema.ReadSchemaWithSchemasContext(t.Context(), conn, []string{selected})
 	c.Assert(err, qt.IsNil)
 
-	declared := &goschema.Database{
-		Schemas: []goschema.Schema{{Name: selected}},
-		Tables:  []goschema.Table{{StructName: "W", Name: "widget", Schema: selected}},
-		Fields: []goschema.Field{
+	declared := &schemamodel.Database{
+		Schemas: []schemamodel.Schema{{Name: selected}},
+		Tables:  []schemamodel.Table{{StructName: "W", Name: "widget", Schema: selected}},
+		Fields: []schemamodel.Field{
 			{StructName: "W", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "W", Name: "tenant", Type: "TEXT"},
 		},

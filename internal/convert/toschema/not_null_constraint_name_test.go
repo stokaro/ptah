@@ -5,19 +5,19 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/toschema"
 	"go.5x5.cz/ptah/internal/parser"
 )
 
 // fieldNamed resolves one field of the parsed schema by column name.
-func fieldNamed(c *qt.C, sql, column string) goschema.Field {
+func fieldNamed(c *qt.C, sql, column string) schemamodel.Field {
 	c.Helper()
 
 	statements, err := parser.NewParser(sql, parser.WithDialect("postgres")).Parse()
 	c.Assert(err, qt.IsNil)
 	database := toschema.ToDatabase(statements, "postgres")
-	goschema.Finalize(&database)
+	schemamodel.Finalize(&database)
 
 	for _, field := range database.Fields {
 		if field.Name == column {
@@ -25,14 +25,14 @@ func fieldNamed(c *qt.C, sql, column string) goschema.Field {
 		}
 	}
 	c.Fatalf("no field named %q in the parsed schema", column)
-	return goschema.Field{}
+	return schemamodel.Field{}
 }
 
 // TestToDatabase_CarriesTheNotNullConstraintName is the step the pipeline lost
 // it at.
 //
 // The parser read the name into the AST node and the conversion to
-// goschema.Field did not carry it, so every layer below saw an unnamed NOT
+// schemamodel.Field did not carry it, so every layer below saw an unnamed NOT
 // NULL. Nothing failed: the AST assertion passed, the comparator compared two
 // empty strings and agreed, and the planner emitted no rename for a name that
 // had drifted. Only a run through the whole path showed it

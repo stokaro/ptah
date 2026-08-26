@@ -9,8 +9,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/planner"
@@ -126,7 +126,7 @@ func compareSQLServerIndexIdentitySchema(
 	c *qt.C,
 	t *testing.T,
 	dsn string,
-	target *goschema.Database,
+	target *schemamodel.Database,
 ) (*catalog.Database, *difftypes.SchemaDiff) {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(t.Context(), dsn)
@@ -139,9 +139,9 @@ func compareSQLServerIndexIdentitySchema(
 	return live, diff
 }
 
-func sqlServerIndexIdentityOrdersTarget() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func sqlServerIndexIdentityOrdersTarget() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{
 				StructName: "SQLServerIndexUser",
 				Schema:     sqlServerIndexIdentitySchema,
@@ -153,7 +153,7 @@ func sqlServerIndexIdentityOrdersTarget() *goschema.Database {
 				Name:       sqlServerIndexIdentityOrdersTable,
 			},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{
 				StructName: "SQLServerIndexOrder",
 				Name:       sqlServerIndexIdentityName,
@@ -163,9 +163,9 @@ func sqlServerIndexIdentityOrdersTarget() *goschema.Database {
 	}
 }
 
-func sqlServerIndexIdentityBothTarget() *goschema.Database {
+func sqlServerIndexIdentityBothTarget() *schemamodel.Database {
 	target := sqlServerIndexIdentityOrdersTarget()
-	target.Indexes = append(target.Indexes, goschema.Index{
+	target.Indexes = append(target.Indexes, schemamodel.Index{
 		StructName: "SQLServerIndexUser",
 		Name:       sqlServerIndexIdentityName,
 		Fields:     []string{"email"},

@@ -4,7 +4,7 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // projectGenerated applies the schema universe and include selectors to the
@@ -13,42 +13,42 @@ import (
 // referenced support objects (enums, domains, composite types, ranges,
 // sequences owned by selected tables, roles named by selected grants) are
 // retained as dependencies even when no selector names them.
-func (s *scopeSelection) projectGenerated(db *goschema.Database) *goschema.Database {
+func (s *scopeSelection) projectGenerated(db *schemamodel.Database) *schemamodel.Database {
 	out := cloneGenerated(db)
-	out.Tables = keep(db.Tables, func(table goschema.Table) bool {
+	out.Tables = keep(db.Tables, func(table schemamodel.Table) bool {
 		return s.selected(typeList("table"), table.Schema, table.Name)
 	})
 	keptByStruct := generatedTableByStruct(out.Tables)
 
-	out.Fields = keep(db.Fields, func(field goschema.Field) bool {
+	out.Fields = keep(db.Fields, func(field schemamodel.Field) bool {
 		_, ok := keptByStruct[field.StructName]
 		return ok
 	})
-	out.EmbeddedFields = keep(db.EmbeddedFields, func(field goschema.EmbeddedField) bool {
+	out.EmbeddedFields = keep(db.EmbeddedFields, func(field schemamodel.EmbeddedField) bool {
 		_, ok := keptByStruct[field.StructName]
 		return ok
 	})
-	out.Indexes = keep(db.Indexes, func(index goschema.Index) bool {
+	out.Indexes = keep(db.Indexes, func(index schemamodel.Index) bool {
 		_, ok := generatedIndexTable(keptByStruct, index)
 		return ok
 	})
-	out.Constraints = keep(db.Constraints, func(constraint goschema.Constraint) bool {
+	out.Constraints = keep(db.Constraints, func(constraint schemamodel.Constraint) bool {
 		_, ok := generatedConstraintTable(keptByStruct, constraint)
 		return ok
 	})
-	out.Triggers = keep(db.Triggers, func(trigger goschema.Trigger) bool {
+	out.Triggers = keep(db.Triggers, func(trigger schemamodel.Trigger) bool {
 		_, ok := generatedObjectTable(keptByStruct, trigger.StructName, trigger.Table)
 		return ok
 	})
-	out.RLSPolicies = keep(db.RLSPolicies, func(policy goschema.RLSPolicy) bool {
+	out.RLSPolicies = keep(db.RLSPolicies, func(policy schemamodel.RLSPolicy) bool {
 		_, ok := generatedObjectTable(keptByStruct, policy.StructName, policy.Table)
 		return ok
 	})
-	out.RLSEnabledTables = keep(db.RLSEnabledTables, func(table goschema.RLSEnabledTable) bool {
+	out.RLSEnabledTables = keep(db.RLSEnabledTables, func(table schemamodel.RLSEnabledTable) bool {
 		_, ok := generatedObjectTable(keptByStruct, table.StructName, table.Table)
 		return ok
 	})
-	out.ManagedData = keep(db.ManagedData, func(data goschema.ManagedData) bool {
+	out.ManagedData = keep(db.ManagedData, func(data schemamodel.ManagedData) bool {
 		return generatedTableNameKept(out.Tables, data.Table)
 	})
 
@@ -60,7 +60,7 @@ func (s *scopeSelection) projectGenerated(db *goschema.Database) *goschema.Datab
 	out.Dependencies = nil
 	out.FunctionDependencies = nil
 	out.SelfReferencingForeignKeys = nil
-	goschema.Finalize(out)
+	schemamodel.Finalize(out)
 	return out
 }
 
@@ -70,18 +70,18 @@ func (s *scopeSelection) projectGenerated(db *goschema.Database) *goschema.Datab
 // "schema." name prefix. Roles are database-scoped and skip the schema
 // universe. Extensions are projected after support objects, when the selection
 // knows whether a non-extension resource matched.
-func (s *scopeSelection) projectGeneratedTopLevel(db, out *goschema.Database) {
-	out.Views = keep(db.Views, func(view goschema.View) bool {
+func (s *scopeSelection) projectGeneratedTopLevel(db, out *schemamodel.Database) {
+	out.Views = keep(db.Views, func(view schemamodel.View) bool {
 		return s.selectedQualifiedName(typeList("view"), view.Name)
 	})
-	out.MaterializedViews = keep(db.MaterializedViews, func(view goschema.MaterializedView) bool {
+	out.MaterializedViews = keep(db.MaterializedViews, func(view schemamodel.MaterializedView) bool {
 		return s.selectedQualifiedName(typeList("materialized_view"), view.Name)
 	})
-	out.Synonyms = keep(db.Synonyms, func(synonym goschema.Synonym) bool {
+	out.Synonyms = keep(db.Synonyms, func(synonym schemamodel.Synonym) bool {
 		return s.selectedQualifiedName(typeList("synonym"), synonym.QualifiedName())
 	})
 	out.ExtendedProperties = keep(db.ExtendedProperties,
-		func(property goschema.ExtendedProperty) bool {
+		func(property schemamodel.ExtendedProperty) bool {
 			if property.Schema == "" {
 				return s.selectedDatabaseProperty(property.Name)
 			}
@@ -91,19 +91,19 @@ func (s *scopeSelection) projectGeneratedTopLevel(db, out *goschema.Database) {
 			return s.selected(typeList("extended_property"), property.Schema, property.Name) ||
 				(property.Table != "" && generatedTableNameKept(out.Tables, property.Table))
 		})
-	out.Functions = keep(db.Functions, func(function goschema.Function) bool {
+	out.Functions = keep(db.Functions, func(function schemamodel.Function) bool {
 		return s.selectedQualifiedName(typeList("function"), function.Name)
 	})
-	out.Sequences = keep(db.Sequences, func(sequence goschema.Sequence) bool {
+	out.Sequences = keep(db.Sequences, func(sequence schemamodel.Sequence) bool {
 		if s.selected(typeList("sequence"), sequence.Schema, sequence.Name) {
 			return true
 		}
 		return generatedTableNameKept(out.Tables, sequenceOwnerReference(sequence.OwnedBy))
 	})
-	out.Grants = keep(db.Grants, func(grant goschema.Grant) bool {
+	out.Grants = keep(db.Grants, func(grant schemamodel.Grant) bool {
 		return s.generatedGrantSelected(out, grant)
 	})
-	out.Roles = keep(db.Roles, func(role goschema.Role) bool {
+	out.Roles = keep(db.Roles, func(role schemamodel.Role) bool {
 		if s.selectedNames(typeList("role"), role.Name) {
 			return true
 		}
@@ -111,7 +111,7 @@ func (s *scopeSelection) projectGeneratedTopLevel(db, out *goschema.Database) {
 	})
 }
 
-func (s *scopeSelection) projectGeneratedExtensions(db, out *goschema.Database) {
+func (s *scopeSelection) projectGeneratedExtensions(db, out *schemamodel.Database) {
 	if s.extensionSupport || s.nonExtensionMatched {
 		for _, extension := range db.Extensions {
 			s.selectedExtension(extension.Schema, extension.Name)
@@ -119,7 +119,7 @@ func (s *scopeSelection) projectGeneratedExtensions(db, out *goschema.Database) 
 		out.Extensions = slices.Clone(db.Extensions)
 		return
 	}
-	out.Extensions = keep(db.Extensions, func(extension goschema.Extension) bool {
+	out.Extensions = keep(db.Extensions, func(extension schemamodel.Extension) bool {
 		return s.selectedExtension(extension.Schema, extension.Name)
 	})
 }
@@ -127,16 +127,16 @@ func (s *scopeSelection) projectGeneratedExtensions(db, out *goschema.Database) 
 // projectGeneratedSupport retains type objects used by selected tables even
 // when no selector names them: enums, domains, composite types, and ranges
 // referenced by kept column types.
-func (s *scopeSelection) projectGeneratedSupport(db, out *goschema.Database) {
+func (s *scopeSelection) projectGeneratedSupport(db, out *schemamodel.Database) {
 	referenced := generatedFieldTypeSet(out.Fields)
 	out.Enums = keepEnumObjects(s, db.Enums, referenced,
-		func(e goschema.Enum) (string, string) { return e.Schema, e.Name })
+		func(e schemamodel.Enum) (string, string) { return e.Schema, e.Name })
 	out.Domains = keepTypeObjects(s, db.Domains, "domain", referenced,
-		func(d goschema.Domain) (string, string) { return d.Schema, d.Name })
+		func(d schemamodel.Domain) (string, string) { return d.Schema, d.Name })
 	out.CompositeTypes = keepTypeObjects(s, db.CompositeTypes, "composite_type", referenced,
-		func(c goschema.CompositeType) (string, string) { return c.Schema, c.Name })
+		func(c schemamodel.CompositeType) (string, string) { return c.Schema, c.Name })
 	out.Ranges = keepTypeObjects(s, db.Ranges, "range", referenced,
-		func(r goschema.Range) (string, string) { return r.Schema, r.Name })
+		func(r schemamodel.Range) (string, string) { return r.Schema, r.Name })
 }
 
 // keepEnumObjects keeps enums that are either selected by the scope or
@@ -187,7 +187,7 @@ func keepTypeObjects[T any](
 // Table and sequence grants ride along with their kept target. Schema-level
 // grants ride along with the schema universe; when include selectors narrow
 // the selection they are kept only for schemas named by --schema.
-func (s *scopeSelection) generatedGrantSelected(out *goschema.Database, grant goschema.Grant) bool {
+func (s *scopeSelection) generatedGrantSelected(out *schemamodel.Database, grant schemamodel.Grant) bool {
 	switch {
 	case grant.OnTable != "":
 		return generatedTableNameKept(out.Tables, grant.OnTable)
@@ -210,7 +210,7 @@ func (s *scopeSelection) generatedGrantSelected(out *goschema.Database, grant go
 // keepGeneratedSchemas keeps schema declarations that own selected objects,
 // so CREATE SCHEMA statements survive for everything the projection kept.
 // Without include selectors every universe schema stays.
-func (s *scopeSelection) keepGeneratedSchemas(db, out *goschema.Database) []goschema.Schema {
+func (s *scopeSelection) keepGeneratedSchemas(db, out *schemamodel.Database) []schemamodel.Schema {
 	owning := make(map[string]struct{})
 	for _, table := range out.Tables {
 		owning[s.effectiveSchema(table.Schema)] = struct{}{}
@@ -246,7 +246,7 @@ func (s *scopeSelection) keepGeneratedSchemas(db, out *goschema.Database) []gosc
 	for _, extension := range out.Extensions {
 		owning[s.effectiveExtensionSchema(extension.Schema)] = struct{}{}
 	}
-	return keep(db.Schemas, func(schema goschema.Schema) bool {
+	return keep(db.Schemas, func(schema schemamodel.Schema) bool {
 		if !s.schemaAllowed(schema.Name) {
 			return false
 		}
@@ -260,7 +260,7 @@ func (s *scopeSelection) keepGeneratedSchemas(db, out *goschema.Database) []gosc
 
 // generatedTableNameKept reports whether name refers to one of the kept
 // tables, resolving unqualified references like table annotations do.
-func generatedTableNameKept(tables []goschema.Table, name string) bool {
+func generatedTableNameKept(tables []schemamodel.Table, name string) bool {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return false
@@ -283,7 +283,7 @@ func sequenceOwnerReference(ownedBy string) string {
 	return strings.Join(parts[:len(parts)-1], ".")
 }
 
-func generatedSequenceNameKept(sequences []goschema.Sequence, name string) bool {
+func generatedSequenceNameKept(sequences []schemamodel.Sequence, name string) bool {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return false
@@ -296,7 +296,7 @@ func generatedSequenceNameKept(sequences []goschema.Sequence, name string) bool 
 	return false
 }
 
-func generatedGrantRoleReferenced(grants []goschema.Grant, role string) bool {
+func generatedGrantRoleReferenced(grants []schemamodel.Grant, role string) bool {
 	for _, grant := range grants {
 		if strings.EqualFold(grant.Role, role) {
 			return true
@@ -307,7 +307,7 @@ func generatedGrantRoleReferenced(grants []goschema.Grant, role string) bool {
 
 // generatedFieldTypeSet collects lowercase column type spellings of the kept
 // fields, so type objects those columns use can be retained as dependencies.
-func generatedFieldTypeSet(fields []goschema.Field) map[string]struct{} {
+func generatedFieldTypeSet(fields []schemamodel.Field) map[string]struct{} {
 	types := make(map[string]struct{}, len(fields))
 	for _, field := range fields {
 		normalized := normalizeTypeReference(field.Type)

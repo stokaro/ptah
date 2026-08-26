@@ -7,9 +7,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // TestMaterializedViewRenderingEmitsNoRefresh is what this file asserts now,
@@ -82,8 +82,8 @@ func materializedViewNode() *ast.CreateMaterializedViewNode {
 		SetBody("SELECT count(*) AS total FROM analytics.users")
 }
 
-func materializedViewDatabase() *goschema.Database {
-	return &goschema.Database{MaterializedViews: []goschema.MaterializedView{{
+func materializedViewDatabase() *schemamodel.Database {
+	return &schemamodel.Database{MaterializedViews: []schemamodel.MaterializedView{{
 		Name: "analytics.user_counts",
 		Body: "SELECT count(*) AS total FROM analytics.users"}}}
 }

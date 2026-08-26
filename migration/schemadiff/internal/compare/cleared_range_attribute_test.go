@@ -6,23 +6,23 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
 // clearedRangeSchemas builds one declared range and one catalog range for a
 // comparison.
-func clearedRangeSchemas(declared goschema.Range, current catalog.Range) (*goschema.Database, *catalog.Database) {
+func clearedRangeSchemas(declared schemamodel.Range, current catalog.Range) (*schemamodel.Database, *catalog.Database) {
 	declared.Name = "measurement"
 	current.Name = "measurement"
 	current.Subtype = "int8"
 	declared.Subtype = "int8"
-	return &goschema.Database{Ranges: []goschema.Range{declared}},
+	return &schemamodel.Database{Ranges: []schemamodel.Range{declared}},
 		&catalog.Database{Ranges: []catalog.Range{current}}
 }
 
 // rangeIsModified reports whether the comparison plans to change the range.
-func rangeIsModified(c *qt.C, declared goschema.Range, current catalog.Range) bool {
+func rangeIsModified(c *qt.C, declared schemamodel.Range, current catalog.Range) bool {
 	c.Helper()
 
 	target, currentSchema := clearedRangeSchemas(declared, current)
@@ -41,7 +41,7 @@ func TestCompare_AnOmittedRangeAttributeIsNotARemoval(t *testing.T) {
 	c := qt.New(t)
 
 	modified := rangeIsModified(c,
-		goschema.Range{},
+		schemamodel.Range{},
 		catalog.Range{SubtypeDiff: "int8_subdiff", Canonical: "int8_canonical"})
 
 	c.Assert(modified, qt.IsFalse)
@@ -95,7 +95,7 @@ func TestCompare_AClearedRangeAttributeIsARemoval(t *testing.T) {
 			c := qt.New(t)
 
 			modified := rangeIsModified(c,
-				goschema.Range{ClearedAttributes: test.cleared},
+				schemamodel.Range{ClearedAttributes: test.cleared},
 				test.current)
 
 			c.Assert(modified, qt.Equals, test.wantPlan)

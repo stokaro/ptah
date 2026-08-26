@@ -55,7 +55,7 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
@@ -65,24 +65,24 @@ func main() {
 	fmt.Println()
 
 	// Create sample data for demonstration
-	generated := createSampleGeneratedSchema()
+	desired := createSampleGeneratedSchema()
 	database := createSampleDatabaseSchema()
 
 	fmt.Println("Sample Data:")
-	fmt.Printf("Generated schema extensions: %v\n", getExtensionNames(generated.Extensions))
+	fmt.Printf("Generated schema extensions: %v\n", getExtensionNames(desired.Extensions))
 	fmt.Printf("Database schema extensions: %v\n", getDatabaseExtensionNames(database.Extensions))
 	fmt.Println()
 
 	// Demonstrate different configuration options
-	demonstrateDefaultBehavior(generated, database)
-	demonstrateCustomIgnoreList(generated, database)
-	demonstrateAdditionalIgnoredExtensions(generated, database)
-	demonstrateManageAllExtensions(generated, database)
+	demonstrateDefaultBehavior(desired, database)
+	demonstrateCustomIgnoreList(desired, database)
+	demonstrateAdditionalIgnoredExtensions(desired, database)
+	demonstrateManageAllExtensions(desired, database)
 }
 
-func createSampleGeneratedSchema() *goschema.Database {
-	return &goschema.Database{
-		Extensions: []goschema.Extension{
+func createSampleGeneratedSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Extensions: []schemamodel.Extension{
 			{Name: "pg_trgm", IfNotExists: true, Comment: "Trigram similarity search"},
 			{Name: "btree_gin", IfNotExists: true, Comment: "GIN indexes for btree types"},
 		},
@@ -99,7 +99,7 @@ func createSampleDatabaseSchema() *catalog.Database {
 	}
 }
 
-func getExtensionNames(extensions []goschema.Extension) []string {
+func getExtensionNames(extensions []schemamodel.Extension) []string {
 	names := make([]string, len(extensions))
 	for i, ext := range extensions {
 		names[i] = ext.Name
@@ -115,11 +115,11 @@ func getDatabaseExtensionNames(extensions []catalog.Extension) []string {
 	return names
 }
 
-func demonstrateDefaultBehavior(generated *goschema.Database, database *catalog.Database) {
+func demonstrateDefaultBehavior(desired *schemamodel.Database, current *catalog.Database) {
 	fmt.Println("1. Default Behavior (ignores 'plpgsql'):")
 	fmt.Println("   Code: schemadiff.Compare(generated, database)")
 
-	diff := schemadiff.Compare(generated, database)
+	diff := schemadiff.Compare(desired, current)
 
 	fmt.Printf("   Extensions to add: %v\n", diff.ExtensionsAdded)
 	fmt.Printf("   Extensions to remove: %v\n", diff.ExtensionsRemoved)
@@ -127,12 +127,12 @@ func demonstrateDefaultBehavior(generated *goschema.Database, database *catalog.
 	fmt.Println()
 }
 
-func demonstrateCustomIgnoreList(generated *goschema.Database, database *catalog.Database) {
+func demonstrateCustomIgnoreList(desired *schemamodel.Database, current *catalog.Database) {
 	fmt.Println("2. Custom Ignore List (ignore 'adminpack' only):")
 	fmt.Println("   Code: config.WithIgnoredExtensions(\"adminpack\")")
 
 	opts := config.WithIgnoredExtensions("adminpack")
-	diff := schemadiff.CompareWithOptions(generated, database, opts)
+	diff := schemadiff.CompareWithOptions(desired, current, opts)
 
 	fmt.Printf("   Extensions to add: %v\n", diff.ExtensionsAdded)
 	fmt.Printf("   Extensions to remove: %v\n", diff.ExtensionsRemoved)
@@ -140,12 +140,12 @@ func demonstrateCustomIgnoreList(generated *goschema.Database, database *catalog
 	fmt.Println()
 }
 
-func demonstrateAdditionalIgnoredExtensions(generated *goschema.Database, database *catalog.Database) {
+func demonstrateAdditionalIgnoredExtensions(desired *schemamodel.Database, current *catalog.Database) {
 	fmt.Println("3. Additional Ignored Extensions (default + 'adminpack'):")
 	fmt.Println("   Code: config.WithAdditionalIgnoredExtensions(\"adminpack\")")
 
 	opts := config.WithAdditionalIgnoredExtensions("adminpack")
-	diff := schemadiff.CompareWithOptions(generated, database, opts)
+	diff := schemadiff.CompareWithOptions(desired, current, opts)
 
 	fmt.Printf("   Extensions to add: %v\n", diff.ExtensionsAdded)
 	fmt.Printf("   Extensions to remove: %v\n", diff.ExtensionsRemoved)
@@ -153,12 +153,12 @@ func demonstrateAdditionalIgnoredExtensions(generated *goschema.Database, databa
 	fmt.Println()
 }
 
-func demonstrateManageAllExtensions(generated *goschema.Database, database *catalog.Database) {
+func demonstrateManageAllExtensions(desired *schemamodel.Database, current *catalog.Database) {
 	fmt.Println("4. Manage All Extensions (no ignoring):")
 	fmt.Println("   Code: config.WithIgnoredExtensions() // empty list")
 
 	opts := config.WithIgnoredExtensions() // Empty list - manage everything
-	diff := schemadiff.CompareWithOptions(generated, database, opts)
+	diff := schemadiff.CompareWithOptions(desired, current, opts)
 
 	fmt.Printf("   Extensions to add: %v\n", diff.ExtensionsAdded)
 	fmt.Printf("   Extensions to remove: %v\n", diff.ExtensionsRemoved)

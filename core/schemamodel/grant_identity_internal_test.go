@@ -1,4 +1,4 @@
-package goschema
+package schemamodel
 
 // White-box testing required: deduplicateGrants is package-local and the fact
 // under test is its identity key, which nothing outside the package can see. A

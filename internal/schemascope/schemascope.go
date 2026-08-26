@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/tableref"
 )
 
@@ -31,7 +31,7 @@ func SplitNames(values []string) []string {
 
 // FilterGenerated returns a shallow copy of db containing only objects in the
 // selected schemas. Empty schema filters leave db unchanged.
-func FilterGenerated(db *goschema.Database, schemas []string) *goschema.Database {
+func FilterGenerated(db *schemamodel.Database, schemas []string) *schemamodel.Database {
 	return FilterGeneratedWithDefaultSchema(db, schemas, "")
 }
 
@@ -39,10 +39,10 @@ func FilterGenerated(db *goschema.Database, schemas []string) *goschema.Database
 // objects in the selected schemas, treating unqualified objects as belonging to
 // defaultSchema when it is set.
 func FilterGeneratedWithDefaultSchema(
-	db *goschema.Database,
+	db *schemamodel.Database,
 	schemas []string,
 	defaultSchema string,
-) *goschema.Database {
+) *schemamodel.Database {
 	if db == nil {
 		return nil
 	}
@@ -53,8 +53,8 @@ func FilterGeneratedWithDefaultSchema(
 
 	filtered := *db
 	keptStructs := make(map[string]struct{})
-	keptTables := make(map[string]goschema.Table)
-	filtered.Tables = keep(db.Tables, func(table goschema.Table) bool {
+	keptTables := make(map[string]schemamodel.Table)
+	filtered.Tables = keep(db.Tables, func(table schemamodel.Table) bool {
 		if !schemaAllowed(allowed, effectiveSchema(table.Schema, defaultSchema)) {
 			return false
 		}
@@ -62,51 +62,51 @@ func FilterGeneratedWithDefaultSchema(
 		keptTables[table.QualifiedName()] = table
 		return true
 	})
-	filtered.Schemas = keep(db.Schemas, func(schema goschema.Schema) bool {
+	filtered.Schemas = keep(db.Schemas, func(schema schemamodel.Schema) bool {
 		return schemaAllowed(allowed, effectiveSchema(schema.Name, defaultSchema))
 	})
 	// Extensions are database-wide identities. Their schema is installation
 	// placement, not ownership, so a schema allow-list must retain them: a
 	// selected table may depend on an extension installed in another schema.
-	filtered.Fields = keep(db.Fields, func(field goschema.Field) bool {
+	filtered.Fields = keep(db.Fields, func(field schemamodel.Field) bool {
 		if _, ok := keptStructs[field.StructName]; !ok {
 			return false
 		}
 		return true
 	})
 	filtered.Fields = stripOutOfScopeFieldFKs(filtered.Fields, keptTables)
-	filtered.Indexes = keep(db.Indexes, func(index goschema.Index) bool {
+	filtered.Indexes = keep(db.Indexes, func(index schemamodel.Index) bool {
 		return generatedStructOrTableAllowed(keptStructs, keptTables, index.StructName, index.TableName)
 	})
-	filtered.Constraints = keep(db.Constraints, func(constraint goschema.Constraint) bool {
+	filtered.Constraints = keep(db.Constraints, func(constraint schemamodel.Constraint) bool {
 		if !generatedStructOrTableAllowed(keptStructs, keptTables, constraint.StructName, constraint.Table) {
 			return false
 		}
 		return foreignTableAllowed(keptTables, constraint.ForeignTable)
 	})
-	filtered.EmbeddedFields = keep(db.EmbeddedFields, func(field goschema.EmbeddedField) bool {
+	filtered.EmbeddedFields = keep(db.EmbeddedFields, func(field schemamodel.EmbeddedField) bool {
 		_, ok := keptStructs[field.StructName]
 		return ok
 	})
-	filtered.Functions = keep(db.Functions, func(function goschema.Function) bool {
+	filtered.Functions = keep(db.Functions, func(function schemamodel.Function) bool {
 		return generatedNamedObjectAllowed(allowed, keptStructs, function.StructName, function.Name, defaultSchema)
 	})
-	filtered.Views = keep(db.Views, func(view goschema.View) bool {
+	filtered.Views = keep(db.Views, func(view schemamodel.View) bool {
 		return generatedNamedObjectAllowed(allowed, keptStructs, view.StructName, view.Name, defaultSchema)
 	})
-	filtered.MaterializedViews = keep(db.MaterializedViews, func(view goschema.MaterializedView) bool {
+	filtered.MaterializedViews = keep(db.MaterializedViews, func(view schemamodel.MaterializedView) bool {
 		return generatedNamedObjectAllowed(allowed, keptStructs, view.StructName, view.Name, defaultSchema)
 	})
-	filtered.Triggers = keep(db.Triggers, func(trigger goschema.Trigger) bool {
+	filtered.Triggers = keep(db.Triggers, func(trigger schemamodel.Trigger) bool {
 		return tableReferenceAllowed(keptTables, trigger.Table)
 	})
-	filtered.RLSPolicies = keep(db.RLSPolicies, func(policy goschema.RLSPolicy) bool {
+	filtered.RLSPolicies = keep(db.RLSPolicies, func(policy schemamodel.RLSPolicy) bool {
 		return tableReferenceAllowed(keptTables, policy.Table)
 	})
-	filtered.RLSEnabledTables = keep(db.RLSEnabledTables, func(table goschema.RLSEnabledTable) bool {
+	filtered.RLSEnabledTables = keep(db.RLSEnabledTables, func(table schemamodel.RLSEnabledTable) bool {
 		return tableReferenceAllowed(keptTables, table.Table)
 	})
-	filtered.Grants = keep(db.Grants, func(grant goschema.Grant) bool {
+	filtered.Grants = keep(db.Grants, func(grant schemamodel.Grant) bool {
 		return grantAllowed(allowed, keptTables, grant, defaultSchema)
 	})
 	filtered.Enums = keepReferencedGeneratedEnums(db.Enums, filtered.Fields)
@@ -215,7 +215,7 @@ func keep[T any](items []T, shouldKeep func(T) bool) []T {
 
 func generatedStructOrTableAllowed(
 	keptStructs map[string]struct{},
-	keptTables map[string]goschema.Table,
+	keptTables map[string]schemamodel.Table,
 	structName,
 	tableName string,
 ) bool {
@@ -241,7 +241,7 @@ func generatedNamedObjectAllowed(
 	return schemaAllowed(allowed, effectiveSchema(schemaFromQualifiedName(name), defaultSchema))
 }
 
-func tableReferenceAllowed(keptTables map[string]goschema.Table, tableName string) bool {
+func tableReferenceAllowed(keptTables map[string]schemamodel.Table, tableName string) bool {
 	tableName = strings.TrimSpace(tableName)
 	if tableName == "" {
 		return false
@@ -261,7 +261,7 @@ func tableReferenceAllowed(keptTables map[string]goschema.Table, tableName strin
 	return false
 }
 
-func foreignTableAllowed(keptTables map[string]goschema.Table, foreignTable string) bool {
+func foreignTableAllowed(keptTables map[string]schemamodel.Table, foreignTable string) bool {
 	foreignTable = strings.TrimSpace(foreignTable)
 	if foreignTable == "" {
 		return true
@@ -269,8 +269,8 @@ func foreignTableAllowed(keptTables map[string]goschema.Table, foreignTable stri
 	return tableReferenceAllowed(keptTables, foreignTable)
 }
 
-func stripOutOfScopeFieldFKs(fields []goschema.Field, keptTables map[string]goschema.Table) []goschema.Field {
-	out := append([]goschema.Field(nil), fields...)
+func stripOutOfScopeFieldFKs(fields []schemamodel.Field, keptTables map[string]schemamodel.Table) []schemamodel.Field {
+	out := append([]schemamodel.Field(nil), fields...)
 	for i := range out {
 		refTable := foreignReferenceTable(out[i].Foreign)
 		if refTable == "" || tableReferenceAllowed(keptTables, refTable) {
@@ -303,8 +303,8 @@ func schemaFromQualifiedName(name string) string {
 
 func grantAllowed(
 	allowed map[string]struct{},
-	keptTables map[string]goschema.Table,
-	grant goschema.Grant,
+	keptTables map[string]schemamodel.Table,
+	grant schemamodel.Grant,
 	defaultSchema string,
 ) bool {
 	if grant.OnSchema != "" {
@@ -355,7 +355,7 @@ func dbTableReferenceAllowed(keptTables map[string]struct{}, tableName string) b
 	return false
 }
 
-func keepReferencedGeneratedEnums(enums []goschema.Enum, fields []goschema.Field) []goschema.Enum {
+func keepReferencedGeneratedEnums(enums []schemamodel.Enum, fields []schemamodel.Field) []schemamodel.Enum {
 	// Every field type is a candidate reference; the keep below intersects them
 	// with the names the schema actually declares as enums, so a type that names
 	// something else simply never matches.
@@ -370,7 +370,7 @@ func keepReferencedGeneratedEnums(enums []goschema.Enum, fields []goschema.Field
 	for _, field := range fields {
 		referenced[field.Type] = struct{}{}
 	}
-	return keep(enums, func(enum goschema.Enum) bool {
+	return keep(enums, func(enum schemamodel.Enum) bool {
 		_, ok := referenced[enum.Name]
 		return ok
 	})
@@ -410,7 +410,7 @@ func databaseEnumRef(column catalog.Column) (string, bool) {
 	}
 }
 
-func filterDependencies(in map[string][]string, keptTables map[string]goschema.Table) map[string][]string {
+func filterDependencies(in map[string][]string, keptTables map[string]schemamodel.Table) map[string][]string {
 	if in == nil {
 		return nil
 	}
@@ -447,13 +447,13 @@ func filterNamedDependencies(
 }
 
 func filterSelfReferencingForeignKeys(
-	in map[string][]goschema.SelfReferencingFK,
-	keptTables map[string]goschema.Table,
-) map[string][]goschema.SelfReferencingFK {
+	in map[string][]schemamodel.SelfReferencingFK,
+	keptTables map[string]schemamodel.Table,
+) map[string][]schemamodel.SelfReferencingFK {
 	if in == nil {
 		return nil
 	}
-	out := make(map[string][]goschema.SelfReferencingFK, len(in))
+	out := make(map[string][]schemamodel.SelfReferencingFK, len(in))
 	for table, refs := range in {
 		if tableReferenceAllowed(keptTables, table) {
 			out[table] = refs

@@ -4668,15 +4668,15 @@ func atlasSQLFiles(c *qt.C, dir string) []string {
 }
 
 func nonInitialAtlasMigration(c *qt.C, files []string) string {
-	var generated string
+	var desired string
 	for _, file := range files {
 		if filepath.Base(file) != "1_init.sql" {
-			generated = file
+			desired = file
 			break
 		}
 	}
-	c.Assert(generated, qt.Not(qt.Equals), "", qt.Commentf("generated migration file not found in %v", files))
-	return generated
+	c.Assert(desired, qt.Not(qt.Equals), "", qt.Commentf("generated migration file not found in %v", files))
+	return desired
 }
 
 func assertSQLiteTableExists(c *qt.C, dbPath, table string) {

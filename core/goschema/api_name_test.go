@@ -8,6 +8,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // The exported API name is declared on the field annotation, and this is the
@@ -174,13 +175,13 @@ func TestParseFileReadsThePerTargetNames(t *testing.T) {
 		name  string
 		field string
 		table string
-		want  goschema.TargetNames
+		want  schemamodel.TargetNames
 	}{
 		{
 			name:  "all three, declared together",
 			field: `name="amount" type="INTEGER" openapi_name="amount" graphql_name="amountMinor" proto_name="amount_minor"`,
 			table: `name="billing_invoices" openapi_name="invoices" graphql_name="Invoice" proto_name="invoice_records"`,
-			want: goschema.TargetNames{
+			want: schemamodel.TargetNames{
 				OpenAPI:  "amount",
 				GraphQL:  "amountMinor",
 				Protobuf: "amount_minor",
@@ -193,13 +194,13 @@ func TestParseFileReadsThePerTargetNames(t *testing.T) {
 			name:  "one alone leaves the others empty",
 			field: `name="amount" type="INTEGER" graphql_name="amountMinor"`,
 			table: `name="billing_invoices" graphql_name="Invoice"`,
-			want:  goschema.TargetNames{GraphQL: "amountMinor"},
+			want:  schemamodel.TargetNames{GraphQL: "amountMinor"},
 		},
 		{
 			name:  "none declared is the zero value",
 			field: `name="amount" type="INTEGER"`,
 			table: `name="billing_invoices"`,
-			want:  goschema.TargetNames{},
+			want:  schemamodel.TargetNames{},
 		},
 	}
 
@@ -246,7 +247,7 @@ func TestParseFileReadsThePerTargetTableNames(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
-	c.Assert(db.Tables[0].APINames, qt.Equals, goschema.TargetNames{
+	c.Assert(db.Tables[0].APINames, qt.Equals, schemamodel.TargetNames{
 		OpenAPI:  "invoices",
 		GraphQL:  "Invoice",
 		Protobuf: "invoice_records",

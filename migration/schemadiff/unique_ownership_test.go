@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -14,10 +14,10 @@ import (
 func TestCompareWithDialect_UniqueIndexOwnsColumnUniqueness(t *testing.T) {
 	c := qt.New(t)
 
-	generated := uniqueIndexGeneratedSchema()
+	desired := uniqueIndexGeneratedSchema()
 	database := uniqueIndexDatabaseSchema()
 
-	diff := schemadiff.CompareWithDialect(generated, database, "sqlite")
+	diff := schemadiff.CompareWithDialect(desired, database, "sqlite")
 
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 }
@@ -25,11 +25,11 @@ func TestCompareWithDialect_UniqueIndexOwnsColumnUniqueness(t *testing.T) {
 func TestCompareWithDialect_ResolvedUniqueIndexOwnerOverridesImportedStructName(t *testing.T) {
 	c := qt.New(t)
 
-	generated := uniqueIndexGeneratedSchema()
-	generated.Indexes[0].StructName = "users"
+	desired := uniqueIndexGeneratedSchema()
+	desired.Indexes[0].StructName = "users"
 	database := uniqueIndexDatabaseSchema()
 
-	diff := schemadiff.CompareWithDialect(generated, database, "sqlite")
+	diff := schemadiff.CompareWithDialect(desired, database, "sqlite")
 
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 }
@@ -37,12 +37,12 @@ func TestCompareWithDialect_ResolvedUniqueIndexOwnerOverridesImportedStructName(
 func TestCompareWithDialect_UniqueIndexAdditionDoesNotModifyColumn(t *testing.T) {
 	c := qt.New(t)
 
-	generated := uniqueIndexGeneratedSchema()
+	desired := uniqueIndexGeneratedSchema()
 	database := uniqueIndexDatabaseSchema()
 	database.Indexes = nil
 	database.Tables[0].Columns[0].IsUnique = false
 
-	diff := schemadiff.CompareWithDialect(generated, database, "sqlite")
+	diff := schemadiff.CompareWithDialect(desired, database, "sqlite")
 
 	c.Assert(diff.TablesModified, qt.HasLen, 0)
 	c.Assert(diff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{{
@@ -55,11 +55,11 @@ func TestCompareWithDialect_UniqueIndexAdditionDoesNotModifyColumn(t *testing.T)
 func TestCompareWithDialect_UniqueIndexRemovalKeepsColumnDifferenceVisible(t *testing.T) {
 	c := qt.New(t)
 
-	generated := uniqueIndexGeneratedSchema()
-	generated.Indexes = nil
+	desired := uniqueIndexGeneratedSchema()
+	desired.Indexes = nil
 	database := uniqueIndexDatabaseSchema()
 
-	diff := schemadiff.CompareWithDialect(generated, database, "sqlite")
+	diff := schemadiff.CompareWithDialect(desired, database, "sqlite")
 
 	c.Assert(diff.TablesModified, qt.HasLen, 1)
 	c.Assert(diff.TablesModified[0].ColumnsModified, qt.DeepEquals, []difftypes.ColumnDiff{{
@@ -76,14 +76,14 @@ func TestCompareWithDialect_UniqueIndexRemovalKeepsColumnDifferenceVisible(t *te
 func TestCompareWithDialect_FieldUniqueStillOwnsMissingUniqueness(t *testing.T) {
 	c := qt.New(t)
 
-	generated := uniqueIndexGeneratedSchema()
-	generated.Indexes = nil
-	generated.Fields[0].Unique = true
+	desired := uniqueIndexGeneratedSchema()
+	desired.Indexes = nil
+	desired.Fields[0].Unique = true
 	database := uniqueIndexDatabaseSchema()
 	database.Indexes = nil
 	database.Tables[0].Columns[0].IsUnique = false
 
-	diff := schemadiff.CompareWithDialect(generated, database, "sqlite")
+	diff := schemadiff.CompareWithDialect(desired, database, "sqlite")
 
 	c.Assert(diff.TablesModified, qt.HasLen, 1)
 	c.Assert(diff.TablesModified[0].ColumnsModified, qt.DeepEquals, []difftypes.ColumnDiff{{
@@ -95,9 +95,9 @@ func TestCompareWithDialect_FieldUniqueStillOwnsMissingUniqueness(t *testing.T) 
 func TestCompareWithDialect_SingleColumnUniqueConstraintOwnsUniqueness(t *testing.T) {
 	c := qt.New(t)
 
-	generated := uniqueIndexGeneratedSchema()
-	generated.Indexes = nil
-	generated.Constraints = []goschema.Constraint{{
+	desired := uniqueIndexGeneratedSchema()
+	desired.Indexes = nil
+	desired.Constraints = []schemamodel.Constraint{{
 		StructName: "User",
 		Name:       "users_email_key",
 		Type:       "UNIQUE",
@@ -120,7 +120,7 @@ func TestCompareWithDialect_SingleColumnUniqueConstraintOwnsUniqueness(t *testin
 		ColumnNames: []string{"email"},
 	}}
 
-	diff := schemadiff.CompareWithDialect(generated, database, "sqlite")
+	diff := schemadiff.CompareWithDialect(desired, database, "sqlite")
 
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 }
@@ -128,9 +128,9 @@ func TestCompareWithDialect_SingleColumnUniqueConstraintOwnsUniqueness(t *testin
 func TestCompareWithDialect_StructOwnedUniqueConstraintOwnsUniqueness(t *testing.T) {
 	c := qt.New(t)
 
-	generated := uniqueIndexGeneratedSchema()
-	generated.Indexes = nil
-	generated.Constraints = []goschema.Constraint{{
+	desired := uniqueIndexGeneratedSchema()
+	desired.Indexes = nil
+	desired.Constraints = []schemamodel.Constraint{{
 		StructName: "User",
 		Name:       "users_email_key",
 		Type:       "UNIQUE",
@@ -152,7 +152,7 @@ func TestCompareWithDialect_StructOwnedUniqueConstraintOwnsUniqueness(t *testing
 		ColumnNames: []string{"email"},
 	}}
 
-	diff := schemadiff.CompareWithDialect(generated, database, "sqlite")
+	diff := schemadiff.CompareWithDialect(desired, database, "sqlite")
 
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 }
@@ -160,10 +160,10 @@ func TestCompareWithDialect_StructOwnedUniqueConstraintOwnsUniqueness(t *testing
 func TestCompareWithDialect_SchemaQualifiedStructOwnedUniqueConstraintOwnsUniqueness(t *testing.T) {
 	c := qt.New(t)
 
-	generated := uniqueIndexGeneratedSchema()
-	generated.Tables[0].Schema = "audit"
-	generated.Indexes = nil
-	generated.Constraints = []goschema.Constraint{{
+	desired := uniqueIndexGeneratedSchema()
+	desired.Tables[0].Schema = "audit"
+	desired.Indexes = nil
+	desired.Constraints = []schemamodel.Constraint{{
 		StructName: "User",
 		Name:       "users_email_key",
 		Type:       "UNIQUE",
@@ -188,7 +188,7 @@ func TestCompareWithDialect_SchemaQualifiedStructOwnedUniqueConstraintOwnsUnique
 		ColumnNames: []string{"email"},
 	}}
 
-	diff := schemadiff.CompareWithDialect(generated, database, "postgres")
+	diff := schemadiff.CompareWithDialect(desired, database, "postgres")
 
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 }
@@ -196,12 +196,12 @@ func TestCompareWithDialect_SchemaQualifiedStructOwnedUniqueConstraintOwnsUnique
 func TestCompareWithDialect_LiteralDotUsesStructuralTableIdentity(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Tables: []goschema.Table{{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{
 			StructName: "TenantData",
 			Name:       "tenant.data",
 		}},
-		Fields: []goschema.Field{{
+		Fields: []schemamodel.Field{{
 			StructName: "TenantData",
 			Name:       "event.id",
 			Type:       "INTEGER",
@@ -220,7 +220,7 @@ func TestCompareWithDialect_LiteralDotUsesStructuralTableIdentity(t *testing.T) 
 		}},
 	}}}
 
-	diff := schemadiff.CompareWithDialect(generated, database, "postgres")
+	diff := schemadiff.CompareWithDialect(desired, database, "postgres")
 
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 }
@@ -228,7 +228,7 @@ func TestCompareWithDialect_LiteralDotUsesStructuralTableIdentity(t *testing.T) 
 func TestCompareWithDialect_LiteralDotDoesNotMatchSchemaQualification(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{Tables: []goschema.Table{{
+	desired := &schemamodel.Database{Tables: []schemamodel.Table{{
 		Name: "tenant.data",
 	}}}
 	database := &catalog.Database{Tables: []catalog.Table{{
@@ -237,7 +237,7 @@ func TestCompareWithDialect_LiteralDotDoesNotMatchSchemaQualification(t *testing
 		Type:   "TABLE",
 	}}}
 
-	diff := schemadiff.CompareWithDialect(generated, database, "postgres")
+	diff := schemadiff.CompareWithDialect(desired, database, "postgres")
 
 	c.Assert(diff.TablesAdded, qt.DeepEquals, []string{`"tenant.data"`})
 	c.Assert(diff.TablesRemoved, qt.DeepEquals, []string{"tenant.data"})
@@ -247,12 +247,12 @@ func TestCompareWithDialect_LiteralDotDoesNotMatchSchemaQualification(t *testing
 func TestCompareWithDialect_LiteralDotAndQualifiedTablesRemainDistinct(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{Tables: []goschema.Table{
+	desired := &schemamodel.Database{Tables: []schemamodel.Table{
 		{StructName: "Literal", Name: "tenant.data"},
 		{StructName: "Qualified", Schema: "tenant", Name: "data"},
 	}}
 
-	diff := schemadiff.CompareWithDialect(generated, &catalog.Database{}, "postgres")
+	diff := schemadiff.CompareWithDialect(desired, &catalog.Database{}, "postgres")
 
 	c.Assert(diff.TablesAdded, qt.DeepEquals, []string{`"tenant.data"`, "tenant.data"})
 }
@@ -260,12 +260,12 @@ func TestCompareWithDialect_LiteralDotAndQualifiedTablesRemainDistinct(t *testin
 func TestCompareWithDialect_ConstraintMembersPreserveStructuralIdentity(t *testing.T) {
 	c := qt.New(t)
 	checkClause := "id > 0"
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Literal", Name: "tenant.data"},
 			{StructName: "Qualified", Schema: "tenant.data", Name: "payload"},
 		},
-		Constraints: []goschema.Constraint{{
+		Constraints: []schemamodel.Constraint{{
 			StructName:      "Qualified",
 			Name:            "guard",
 			Type:            "CHECK",
@@ -286,7 +286,7 @@ func TestCompareWithDialect_ConstraintMembersPreserveStructuralIdentity(t *testi
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(generated, database, "postgres")
+	diff := schemadiff.CompareWithDialect(desired, database, "postgres")
 
 	c.Assert(diff.ConstraintsAdded, qt.DeepEquals, []string{"guard"})
 	c.Assert(diff.ConstraintsRemoved, qt.DeepEquals, []string{"payload.guard"})
@@ -318,18 +318,18 @@ func TestCompareWithDialect_ConstraintMembersPreserveStructuralIdentity(t *testi
 func TestCompareWithDialect_LiteralDotUniqueIndexOwnsColumnUniqueness(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Tables: []goschema.Table{{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{
 			StructName: "TenantData",
 			Name:       "tenant.data",
 		}},
-		Fields: []goschema.Field{{
+		Fields: []schemamodel.Field{{
 			StructName: "TenantData",
 			Name:       "event.id",
 			Type:       "TEXT",
 			Nullable:   false,
 		}},
-		Indexes: []goschema.Index{{
+		Indexes: []schemamodel.Index{{
 			StructName: "TenantData",
 			Name:       "event.lookup",
 			TableName:  `"tenant.data"`,
@@ -358,7 +358,7 @@ func TestCompareWithDialect_LiteralDotUniqueIndexOwnsColumnUniqueness(t *testing
 		}},
 	}
 
-	diff := schemadiff.CompareWithDialect(generated, database, "postgres")
+	diff := schemadiff.CompareWithDialect(desired, database, "postgres")
 
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 }
@@ -366,12 +366,12 @@ func TestCompareWithDialect_LiteralDotUniqueIndexOwnsColumnUniqueness(t *testing
 func TestCompareWithDialect_FilteredDatabaseIndexCannotHideUniqueRemoval(t *testing.T) {
 	c := qt.New(t)
 
-	generated := uniqueIndexGeneratedSchema()
-	generated.Indexes = nil
+	desired := uniqueIndexGeneratedSchema()
+	desired.Indexes = nil
 	database := uniqueIndexDatabaseSchema()
 	database.Indexes[0].Name = "users_email_key"
 
-	diff := schemadiff.CompareWithDialect(generated, database, "postgres")
+	diff := schemadiff.CompareWithDialect(desired, database, "postgres")
 
 	c.Assert(diff.TablesModified, qt.HasLen, 1)
 	c.Assert(diff.TablesModified[0].ColumnsModified, qt.DeepEquals, []difftypes.ColumnDiff{{
@@ -384,12 +384,12 @@ func TestCompareWithDialect_FilteredDatabaseIndexCannotHideUniqueRemoval(t *test
 func TestCompareWithDialect_PartialUniqueIndexDoesNotOwnColumnUniqueness(t *testing.T) {
 	c := qt.New(t)
 
-	generated := uniqueIndexGeneratedSchema()
-	generated.Indexes = nil
+	desired := uniqueIndexGeneratedSchema()
+	desired.Indexes = nil
 	database := uniqueIndexDatabaseSchema()
 	database.Indexes[0].Condition = "email IS NOT NULL"
 
-	diff := schemadiff.CompareWithDialect(generated, database, "sqlite")
+	diff := schemadiff.CompareWithDialect(desired, database, "sqlite")
 
 	c.Assert(diff.TablesModified, qt.HasLen, 1)
 	c.Assert(diff.TablesModified[0].ColumnsModified, qt.DeepEquals, []difftypes.ColumnDiff{{
@@ -398,19 +398,19 @@ func TestCompareWithDialect_PartialUniqueIndexDoesNotOwnColumnUniqueness(t *test
 	}})
 }
 
-func uniqueIndexGeneratedSchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{
+func uniqueIndexGeneratedSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{
 			Name:       "users",
 			StructName: "User",
 		}},
-		Fields: []goschema.Field{{
+		Fields: []schemamodel.Field{{
 			StructName: "User",
 			Name:       "email",
 			Type:       "TEXT",
 			Nullable:   false,
 		}},
-		Indexes: []goschema.Index{{
+		Indexes: []schemamodel.Index{{
 			StructName: "User",
 			Name:       "idx_users_email",
 			TableName:  "users",

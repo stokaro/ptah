@@ -15,8 +15,8 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
@@ -72,7 +72,7 @@ func (p Policy) IgnoreUnknownHCLNames() bool {
 // cannot represent when strict mode is selected. Full compatibility remains a
 // no-op so every Pro-like and best-effort capability stays reachable by
 // default on the same compatibility surface.
-func (p Policy) ValidateDesiredSchema(database *goschema.Database) error {
+func (p Policy) ValidateDesiredSchema(database *schemamodel.Database) error {
 	return p.validateSchemaObjects(database, "desired")
 }
 
@@ -80,7 +80,7 @@ func (p Policy) ValidateDesiredSchema(database *goschema.Database) error {
 // inspector does not describe. It closes live-database and migration-replay
 // paths that do not pass through desired-schema loading, while full mode keeps
 // Ptah's richer inspection output unchanged.
-func (p Policy) ValidateInspectedSchema(database *goschema.Database) error {
+func (p Policy) ValidateInspectedSchema(database *schemamodel.Database) error {
 	if !p.strictCE || database == nil {
 		return nil
 	}
@@ -97,27 +97,27 @@ func (p Policy) ValidateInspectedSchema(database *goschema.Database) error {
 // Community Edition inspector does not expose, then validates the exact state
 // that downstream inspection renders. Full mode returns the original snapshot
 // unchanged so its richer round-trip remains available by default.
-func (p Policy) PrepareInspectedSchema(database *catalog.Database) (*catalog.Database, error) {
-	if !p.strictCE || database == nil {
-		return database, nil
+func (p Policy) PrepareInspectedSchema(current *catalog.Database) (*catalog.Database, error) {
+	if !p.strictCE || current == nil {
+		return current, nil
 	}
-	inspected := dbSchemaWithoutInspectedPostgresBaselines(database)
+	inspected := dbSchemaWithoutInspectedPostgresBaselines(current)
 	if err := p.validateSchemaObjects(dbschematogo.ConvertDBSchemaToGoSchema(inspected), "inspected"); err != nil {
 		return nil, err
 	}
 	return inspected, nil
 }
 
-func dbSchemaWithoutInspectedPostgresBaselines(database *catalog.Database) *catalog.Database {
-	inspected := *database
+func dbSchemaWithoutInspectedPostgresBaselines(current *catalog.Database) *catalog.Database {
+	inspected := *current
 	inspected.Extensions = slices.DeleteFunc(
-		slices.Clone(database.Extensions),
+		slices.Clone(current.Extensions),
 		func(extension catalog.Extension) bool {
 			return strings.EqualFold(strings.TrimSpace(extension.Name), "plpgsql")
 		},
 	)
 	inspected.Grants = slices.DeleteFunc(
-		slices.Clone(database.Grants),
+		slices.Clone(current.Grants),
 		func(grant catalog.Grant) bool {
 			return strings.EqualFold(strings.TrimSpace(grant.Role), "PUBLIC") &&
 				strings.EqualFold(strings.TrimSpace(grant.Privilege), "USAGE") &&
@@ -129,11 +129,11 @@ func dbSchemaWithoutInspectedPostgresBaselines(database *catalog.Database) *cata
 	return &inspected
 }
 
-func schemaWithoutInspectedPostgresBaselines(database *goschema.Database) goschema.Database {
+func schemaWithoutInspectedPostgresBaselines(database *schemamodel.Database) schemamodel.Database {
 	inspected := *database
 	inspected.Extensions = slices.DeleteFunc(
 		slices.Clone(database.Extensions),
-		func(extension goschema.Extension) bool {
+		func(extension schemamodel.Extension) bool {
 			return strings.EqualFold(strings.TrimSpace(extension.Name), "plpgsql")
 		},
 	)
@@ -150,7 +150,7 @@ func schemaWithoutInspectedPostgresBaselines(database *goschema.Database) gosche
 	return inspected
 }
 
-func isPostgresPublicUsageBaseline(grant goschema.Grant) bool {
+func isPostgresPublicUsageBaseline(grant schemamodel.Grant) bool {
 	return strings.EqualFold(strings.TrimSpace(grant.Role), "PUBLIC") &&
 		strings.EqualFold(strings.TrimSpace(grant.OnSchema), "public") &&
 		strings.TrimSpace(grant.OnTable) == "" &&
@@ -160,7 +160,7 @@ func isPostgresPublicUsageBaseline(grant goschema.Grant) bool {
 		strings.EqualFold(strings.TrimSpace(grant.Privileges[0]), "USAGE")
 }
 
-func (p Policy) validateSchemaObjects(database *goschema.Database, source string) error {
+func (p Policy) validateSchemaObjects(database *schemamodel.Database, source string) error {
 	if !p.strictCE || database == nil {
 		return nil
 	}
@@ -270,7 +270,7 @@ func (p Policy) ValidateLiveSchemaObject(object LiveSchemaObject) error {
 // checked by [Policy.ValidateSchemaCleanObject]; this check closes collateral
 // deletion and omission paths for dependent catalog state such as triggers and
 // row-level security policies.
-func (p Policy) ValidateSchemaCleanSnapshot(database *goschema.Database) error {
+func (p Policy) ValidateSchemaCleanSnapshot(database *schemamodel.Database) error {
 	if !p.strictCE || database == nil {
 		return nil
 	}
@@ -540,7 +540,7 @@ func firstNonemptyLine(source string) string {
 
 // containsFunction reports whether the collection holds a routine that returns
 // a value.
-func containsFunction(routines []goschema.Function) bool {
+func containsFunction(routines []schemamodel.Function) bool {
 	for _, routine := range routines {
 		if !routine.IsProcedure() {
 			return true
@@ -551,7 +551,7 @@ func containsFunction(routines []goschema.Function) bool {
 
 // containsProcedure reports whether the collection holds a routine that returns
 // nothing.
-func containsProcedure(routines []goschema.Function) bool {
+func containsProcedure(routines []schemamodel.Function) bool {
 	for _, routine := range routines {
 		if routine.IsProcedure() {
 			return true
@@ -565,7 +565,7 @@ type strictCEDesiredObject struct {
 	present bool
 }
 
-func strictCEUnsupportedDesiredObjects(database *goschema.Database) []strictCEDesiredObject {
+func strictCEUnsupportedDesiredObjects(database *schemamodel.Database) []strictCEDesiredObject {
 	return []strictCEDesiredObject{
 		{name: "extensions", present: len(database.Extensions) > 0},
 		// The two routine kinds are named apart. They share one collection --
@@ -591,7 +591,7 @@ func strictCEUnsupportedDesiredObjects(database *goschema.Database) []strictCEDe
 	}
 }
 
-func strictCEUnsupportedCleanupSnapshotObjects(database *goschema.Database) []strictCEDesiredObject {
+func strictCEUnsupportedCleanupSnapshotObjects(database *schemamodel.Database) []strictCEDesiredObject {
 	return []strictCEDesiredObject{
 		{name: "extensions", present: len(database.Extensions) > 0},
 		{name: "triggers", present: len(database.Triggers) > 0},
@@ -604,16 +604,16 @@ func strictCEUnsupportedCleanupSnapshotObjects(database *goschema.Database) []st
 	}
 }
 
-func hasTablePartitioning(database *goschema.Database) bool {
-	return slices.ContainsFunc(database.Tables, func(table goschema.Table) bool {
+func hasTablePartitioning(database *schemamodel.Database) bool {
+	return slices.ContainsFunc(database.Tables, func(table schemamodel.Table) bool {
 		return table.Partition != nil
 	})
 }
 
-func hasPlatformOverrides(database *goschema.Database) bool {
-	return slices.ContainsFunc(database.Tables, func(table goschema.Table) bool {
+func hasPlatformOverrides(database *schemamodel.Database) bool {
+	return slices.ContainsFunc(database.Tables, func(table schemamodel.Table) bool {
 		return len(table.Overrides) > 0
-	}) || slices.ContainsFunc(database.Fields, func(field goschema.Field) bool {
+	}) || slices.ContainsFunc(database.Fields, func(field schemamodel.Field) bool {
 		return len(field.Overrides) > 0
 	})
 }

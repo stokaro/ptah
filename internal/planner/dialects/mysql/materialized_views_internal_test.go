@@ -8,9 +8,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
@@ -73,8 +73,8 @@ func TestRejectMaterializedViews_SaysNothingWhenTheDiffCarriesNone(t *testing.T)
 func TestMaterializedViewPlanning_EmitsTheThreeStatementsAChangeNeeds(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		MaterializedViews: []goschema.MaterializedView{
+	desired := &schemamodel.Database{
+		MaterializedViews: []schemamodel.MaterializedView{
 			{Name: "order_totals", Body: "SELECT id, amount FROM orders"},
 		},
 	}
@@ -82,12 +82,12 @@ func TestMaterializedViewPlanning_EmitsTheThreeStatementsAChangeNeeds(t *testing
 
 	added := planner.addNewMaterializedViews(nil, &difftypes.SchemaDiff{
 		MaterializedViewsAdded: []string{"order_totals"},
-	}, generated)
+	}, desired)
 	c.Assert(added, qt.HasLen, 1)
 
 	modified := planner.modifyExistingMaterializedViews(nil, &difftypes.SchemaDiff{
 		MaterializedViewsModified: []difftypes.MaterializedViewDiff{{ViewName: "order_totals"}},
-	}, generated)
+	}, desired)
 	c.Assert(modified, qt.HasLen, 2)
 
 	removed := planner.removeMaterializedViews(nil, &difftypes.SchemaDiff{
@@ -99,5 +99,5 @@ func TestMaterializedViewPlanning_EmitsTheThreeStatementsAChangeNeeds(t *testing
 	// node the renderer would have to survive.
 	c.Assert(planner.addNewMaterializedViews(nil, &difftypes.SchemaDiff{
 		MaterializedViewsAdded: []string{"absent"},
-	}, generated), qt.HasLen, 0)
+	}, desired), qt.HasLen, 0)
 }

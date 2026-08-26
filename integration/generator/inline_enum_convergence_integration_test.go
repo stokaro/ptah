@@ -12,6 +12,7 @@ import (
 
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/planner"
@@ -24,14 +25,14 @@ import (
 //
 // The description is built by the parser rather than by hand: an enum field
 // only renders its values once the schema has been finalized, so a
-// hand-assembled goschema.Database emits a bare ENUM and measures the fixture
+// hand-assembled schemamodel.Database emits a bare ENUM and measures the fixture
 // instead of the product.
 //
 // In memory, because ParseFS takes an fs.FS and needs nothing else. The
 // neighbouring drift tests write real files for a reason this one does not
 // share: they hand a DIRECTORY PATH to generator.GenerateMigration, which
 // cannot take a filesystem.
-func inlineEnumEntities(c *qt.C, values string) *goschema.Database {
+func inlineEnumEntities(c *qt.C, values string) *schemamodel.Database {
 	c.Helper()
 	source := `package entities
 
@@ -130,7 +131,7 @@ func TestInlineEnumConvergence_Integration(t *testing.T) {
 func inlineEnumDiff(
 	c *qt.C,
 	conn *dbschema.DatabaseConnection,
-	description *goschema.Database,
+	description *schemamodel.Database,
 ) *difftypes.SchemaDiff {
 	c.Helper()
 	live, err := conn.Reader().ReadSchemaContext(c.Context())
@@ -147,7 +148,7 @@ func inlineEnumDiffCount(
 	c *qt.C,
 	conn *dbschema.DatabaseConnection,
 	dialect string,
-	description *goschema.Database,
+	description *schemamodel.Database,
 ) int {
 	c.Helper()
 	diff := inlineEnumDiff(c, conn, description)
@@ -162,7 +163,7 @@ func applyInlineEnum(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	dialect string,
-	description *goschema.Database,
+	description *schemamodel.Database,
 ) {
 	c.Helper()
 	_ = dialect

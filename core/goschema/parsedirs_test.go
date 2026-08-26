@@ -8,6 +8,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 func writeGoFile(c *qt.C, dir, name, content string) {
@@ -71,7 +72,7 @@ func TestParseDirRawFeedsMerge(t *testing.T) {
 	rawB, err := goschema.ParseDirRaw(rootB)
 	c.Assert(err, qt.IsNil)
 
-	merged, err := goschema.Merge(rawA, rawB)
+	merged, err := schemamodel.Merge(rawA, rawB)
 	c.Assert(err, qt.IsNil)
 	c.Assert(merged.Tables, qt.HasLen, 2)
 	c.Assert(tableIndex(merged, "users") < tableIndex(merged, "orders"), qt.IsTrue)
