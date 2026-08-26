@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -98,7 +99,7 @@ func newSQLiteTxtarMigrator(t *testing.T, seededRows int, migrationSQL string) (
 		fstest.MapFS{
 			"1_add_users_email.sql": &fstest.MapFile{Data: []byte(migrationSQL)},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	m = m.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
@@ -352,7 +353,7 @@ func newSQLiteTxtarWedgeMigrator(t *testing.T) (*dbschema.DatabaseConnection, *m
 				"CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);\nINSERT INTO users (id, name) VALUES (1, 'alice');\n")},
 			"2_add_users_email.sql": &fstest.MapFile{Data: []byte(txtarCheckedAddEmail)},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	m = m.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
@@ -474,7 +475,7 @@ func TestMigrateUp_FailingCheckOnNoTransactionPathWritesNoRevisionRow(t *testing
 				"-- atlas:txtar\n\n-- checks.sql --\nSELECT NOT EXISTS (SELECT * FROM users);\n\n" +
 					"-- migration.sql --\n-- +ptah no_transaction\nALTER TABLE users ADD COLUMN email TEXT;\n")},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	m = m.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
@@ -508,7 +509,7 @@ SELECT 1;
 SELECT 1;
 `)},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.ErrorMatches, `.*duplicate checks.sql section.*`)
 }
@@ -535,7 +536,7 @@ SELECT 2;
 SELECT 3;
 `)},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.ErrorMatches, `.*duplicate checks/users.sql section.*`)
 }
@@ -557,7 +558,7 @@ func newSQLiteDryRunMigrator(c *qt.C, first, second string) (*dbschema.DatabaseC
 			"1_create_users.sql":    &fstest.MapFile{Data: []byte(first)},
 			"2_add_users_email.sql": &fstest.MapFile{Data: []byte(second)},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	m = m.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)

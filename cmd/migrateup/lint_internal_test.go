@@ -17,6 +17,7 @@ import (
 	"go.5x5.cz/ptah/internal/migrationlintgate"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/migration/lint"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -165,7 +166,7 @@ func TestCapturedMigrationsFeedProviderAndDestructiveGateFromSameBytes(t *testin
 	c.Assert(err, qt.IsNil)
 	provider, err := migrator.NewFSMigrationProvider(
 		snapshot,
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatPtah),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatPtah),
 	)
 	c.Assert(err, qt.IsNil)
 	findings, err := lintPendingDestructive(snapshot, []int64{1}, "sqlite", "")

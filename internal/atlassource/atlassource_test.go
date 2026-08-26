@@ -13,7 +13,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/pathguard"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // resolvedPath mirrors the resolver's pathguard resolution (symlinks such as
@@ -32,7 +32,7 @@ func writeMigrationDir(t *testing.T) string {
 	dir := t.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(dir, "1_init.sql"),
 		[]byte("CREATE TABLE replayed_users (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
-	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(dir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	return dir
 }

@@ -7,14 +7,14 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/migration/lint"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // declaredRuleOptions runs a directory with one declared rule.
 func declaredRuleOptions(code string, config lint.RuleConfig, dialect string) lint.Options {
 	return lint.Options{
 		Dialect:     dialect,
-		DirFormat:   migrator.MigrationDirFormatAtlas,
+		DirFormat:   migrationfile.DirFormatAtlas,
 		RuleConfigs: map[string]lint.RuleConfig{code: config},
 	}
 }
@@ -170,7 +170,7 @@ func TestDeclaredRule_DownDirection(t *testing.T) {
 			config := varcharRule()
 			config.AppliesToDown = test.appliesToDown
 			opts := declaredRuleOptions("NOVARCHAR", config, "postgres")
-			opts.DirFormat = migrator.MigrationDirFormatPtah
+			opts.DirFormat = migrationfile.DirFormatPtah
 
 			analysis, err := lint.AnalyzeFS(fsys, opts)
 
@@ -303,7 +303,7 @@ func TestDeclaredRule_ConfiguringAnExistingRuleStillWorks(t *testing.T) {
 	fsys := fstest.MapFS{"1_drop.sql": {Data: []byte("DROP TABLE users;")}}
 
 	analysis, err := lint.AnalyzeFS(fsys, lint.Options{
-		DirFormat:   migrator.MigrationDirFormatAtlas,
+		DirFormat:   migrationfile.DirFormatAtlas,
 		RuleConfigs: map[string]lint.RuleConfig{"DS101": {Severity: lint.SeverityError}},
 	})
 

@@ -13,6 +13,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlasreport"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -193,13 +194,13 @@ func TestBuildMigrationFileContents_TxModeRoundTrip(t *testing.T) {
 
 	provider, err := migrator.NewFSMigrationProvider(
 		os.DirFS(dir),
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	migrations := provider.Migrations()
 	c.Assert(migrations, qt.HasLen, 2)
 	c.Assert(migrations[0].Version, qt.Equals, int64(1))
-	c.Assert(migrations[0].UpTxMode, qt.Equals, migrator.MigrationFileTxModeUnspecified)
+	c.Assert(migrations[0].UpTxMode, qt.Equals, migrationfile.FileTxModeUnspecified)
 	c.Assert(migrations[1].Version, qt.Equals, int64(2))
-	c.Assert(migrations[1].UpTxMode, qt.Equals, migrator.MigrationFileTxModeNone)
+	c.Assert(migrations[1].UpTxMode, qt.Equals, migrationfile.FileTxModeNone)
 }

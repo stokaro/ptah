@@ -35,7 +35,7 @@ import (
 
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/migrationartifact"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // ociStoredBlob is one content-addressed object the in-process registry serves.
@@ -164,7 +164,7 @@ func writeHashedProvenanceDir(c *qt.C, table string) string {
 	for name, content := range files {
 		c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
 	}
-	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatPtah)
+	_, err := migratesum.WriteWithFormat(dir, migrationfile.DirFormatPtah)
 	c.Assert(err, qt.IsNil)
 	return dir
 }
@@ -177,7 +177,7 @@ func pushProvenanceArtifact(c *qt.C, store *ociMemoryStore, dir, tag string) str
 		os.DirFS(dir),
 		migrationartifact.PushOptions{
 			Tags:        []string{tag},
-			DirFormat:   migrator.MigrationDirFormatPtah,
+			DirFormat:   migrationfile.DirFormatPtah,
 			Annotations: map[string]string{ocispec.AnnotationCreated: "2026-08-01T00:00:00Z"},
 		},
 	)

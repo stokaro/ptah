@@ -12,7 +12,7 @@ import (
 	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/testutils"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // checkpointFlagFixture writes a hashed two-migration Atlas directory and
@@ -32,7 +32,7 @@ func checkpointFlagFixture(c *qt.C) (migrationsDir, devURL string) {
 		[]byte("CREATE TABLE ck_orders (id INTEGER PRIMARY KEY);\n"),
 		0o600,
 	), qt.IsNil)
-	_, err := migratesum.WriteWithFormat(migrationsDir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(migrationsDir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	return migrationsDir, "sqlite://" + filepath.Join(root, "shadow.db")
 }

@@ -7,17 +7,17 @@ func ParseAtlasHCL(data []byte, filename string) (*goschema.Database, error)
 func ParseAtlasHCLFile(path string) (*goschema.Database, error)
 func ParseSQL(sql string, opts ParseSQLOptions) (*ast.StatementList, error)
 func SchemaToAST(database goschema.Database, targetPlatform string) *ast.StatementList
-func SumFileNameForFormat(format migrator.MigrationDirFormat) (string, error)
+func SumFileNameForFormat(format migrationfile.DirFormat) (string, error)
 func WriteSumBytes(dir, name string, sum *SumFile) error
 type ParseSQLOptions struct{ ... }
 type SumEntry struct{ ... }
 type SumFile struct{ ... }
-    func ComputeSum(fsys fs.FS, format migrator.MigrationDirFormat) (*SumFile, error)
+    func ComputeSum(fsys fs.FS, format migrationfile.DirFormat) (*SumFile, error)
     func ParseSum(data []byte) (*SumFile, error)
-    func WriteSum(dir string, format migrator.MigrationDirFormat) (*SumFile, error)
+    func WriteSum(dir string, format migrationfile.DirFormat) (*SumFile, error)
 type SumResult struct{ ... }
-    func VerifySum(fsys fs.FS, format migrator.MigrationDirFormat) (*SumResult, error)
-    func VerifySumDir(dir string, format migrator.MigrationDirFormat) (*SumResult, error)
+    func VerifySum(fsys fs.FS, format migrationfile.DirFormat) (*SumResult, error)
+    func VerifySumDir(dir string, format migrationfile.DirFormat) (*SumResult, error)
 
 ### go.5x5.cz/ptah/atlascompat.ParseSQLOptions
 
@@ -62,9 +62,9 @@ type SumFile struct {
 }
     SumFile is a migration-directory integrity file.
 
-func ComputeSum(fsys fs.FS, format migrator.MigrationDirFormat) (*SumFile, error)
+func ComputeSum(fsys fs.FS, format migrationfile.DirFormat) (*SumFile, error)
 func ParseSum(data []byte) (*SumFile, error)
-func WriteSum(dir string, format migrator.MigrationDirFormat) (*SumFile, error)
+func WriteSum(dir string, format migrationfile.DirFormat) (*SumFile, error)
 func (s *SumFile) Bytes() []byte
 
 ### go.5x5.cz/ptah/atlascompat.SumResult
@@ -86,8 +86,8 @@ type SumResult struct {
 }
     SumResult is the outcome of a migration-directory integrity verification.
 
-func VerifySum(fsys fs.FS, format migrator.MigrationDirFormat) (*SumResult, error)
-func VerifySumDir(dir string, format migrator.MigrationDirFormat) (*SumResult, error)
+func VerifySum(fsys fs.FS, format migrationfile.DirFormat) (*SumResult, error)
+func VerifySumDir(dir string, format migrationfile.DirFormat) (*SumResult, error)
 func (r *SumResult) Describe() string
 func (r *SumResult) OK() bool
 
@@ -9090,7 +9090,7 @@ type Options struct {
     // DirFormat selects how MigrationsDir is parsed. The zero value defaults to
     // the Ptah directory format (not the migrator's own "auto" default), so a
     // direct caller that wants format auto-detection must set it explicitly.
-    DirFormat migrator.MigrationDirFormat
+    DirFormat migrationfile.DirFormat
     // RevisionsSchema places the revision table a migrate_to step writes in a
     // named schema instead of the connection's default one. It matters when the
     // throwaway database already holds a revision table the run must not touch,
@@ -9541,7 +9541,7 @@ type EmptyMigrationOptions struct {
     AllowedOutputRoot string
     // DirFormat selects the generated migration file layout. Empty generates
     // Ptah paired up/down files.
-    DirFormat migrator.MigrationDirFormat
+    DirFormat migrationfile.DirFormat
 }
     EmptyMigrationOptions contains options for skeleton migration creation.
 
@@ -10216,9 +10216,9 @@ type Options struct {
     Selection VersionSelection
     // DirFormat selects the migration filename/parser rules used by file-form
     // linting. Empty uses auto detection.
-    DirFormat migrator.MigrationDirFormat
+    DirFormat migrationfile.DirFormat
     // AtlasTemplateData supplies data for Atlas SQL template migrations.
-    // When nil, templates render with migrator.AtlasTemplateData{}.
+    // When nil, templates render with migrationfile.AtlasTemplateData{}.
     AtlasTemplateData any
     // ExtraRules appends caller-provided rules to the built-in registry for
     // this run. It is the preferred API for out-of-tree analyzers that should
@@ -10503,20 +10503,256 @@ type VersionSelection struct {
     between no selector and an explicitly empty changeset.
 
 
+## go.5x5.cz/ptah/migration/migrationfile
+
+const AtlasTxtarDirective = "-- atlas:txtar" ...
+const DirectiveNoTransaction = "no_transaction"
+func CheckDirectiveArgs(body string) (args string, ok bool)
+func CheckpointFileName(version int64, description, direction string) string
+func FileName(version int64, description, direction string) string
+func LooksAtlasTemplateSQL(sql string) bool
+func NextVersion() int64
+func ParseDirectives(sql string) map[string]string
+func ParseDirectivesForDialect(sql, dialect string) map[string]string
+func RenderAtlasTemplateSQL(fsys fs.FS, filename string, data any) (sql string, rendered bool, err error)
+type AtlasTemplateData struct{ ... }
+type AtlasTxModeDirectiveError struct{ ... }
+    func NewAtlasTxModeDirectiveError(message string) *AtlasTxModeDirectiveError
+type AtlasTxtar struct{ ... }
+    func ParseAtlasTxtar(filename, sql string) (AtlasTxtar, bool, error)
+type AtlasTxtarCheckFile struct{ ... }
+type DirFormat string
+    const DirFormatAuto DirFormat = "auto" ...
+    func ParseDirFormat(value string) (DirFormat, error)
+type File struct{ ... }
+    func Discover(fsys fs.FS, format DirFormat) ([]File, error)
+    func ParseAtlasFileName(filename string) (*File, error)
+    func ParseAtlasFileNameForAutoDetection(filename string) (*File, error)
+    func ParseFileName(filename string) (*File, error)
+type FileTxMode string
+    const FileTxModeUnspecified FileTxMode = "" ...
+type FileTxModeSource uint8
+    const FileTxModeSourcePtah FileTxModeSource = iota + 1 ...
+type MisplacedDirective struct{ ... }
+    func MisplacedDirectives(sql, dialect string) []MisplacedDirective
+type ParsedFileTxMode struct{ ... }
+    func ParseFileTxMode(filename, sql string) ParsedFileTxMode
+    func ParseFileTxModeForDialect(filename, sql, dialect string) ParsedFileTxMode
+type ParsedUp struct{ ... }
+    func ParseUp(filename, sql string) (ParsedUp, error)
+    func ParseUpForAnalysis(filename, sql string) (ParsedUp, error)
+type Timeouts struct{ ... }
+    func ParseTimeouts(sql string) (Timeouts, error)
+    func ParseTimeoutsForDialect(sql, dialect string) (Timeouts, error)
+
+### go.5x5.cz/ptah/migration/migrationfile.AtlasTemplateData
+
+package migrationfile // import "go.5x5.cz/ptah/migration/migrationfile"
+
+type AtlasTemplateData struct {
+    Env string
+}
+    AtlasTemplateData is the default data object used for Atlas SQL templates.
+
+
+### go.5x5.cz/ptah/migration/migrationfile.AtlasTxModeDirectiveError
+
+package migrationfile // import "go.5x5.cz/ptah/migration/migrationfile"
+
+type AtlasTxModeDirectiveError struct {
+    // Has unexported fields.
+}
+    AtlasTxModeDirectiveError reports an invalid or conflicting Atlas
+    transaction-mode file directive.
+
+func NewAtlasTxModeDirectiveError(message string) *AtlasTxModeDirectiveError
+func (e *AtlasTxModeDirectiveError) Error() string
+
+### go.5x5.cz/ptah/migration/migrationfile.AtlasTxtar
+
+package migrationfile // import "go.5x5.cz/ptah/migration/migrationfile"
+
+type AtlasTxtar struct {
+    // MigrationSQL is the migration.sql section: the executable up SQL.
+    MigrationSQL string
+    // MigrationLineOffset maps line numbers in MigrationSQL back to the
+    // source file.
+    MigrationLineOffset int
+    // DownSQL is the down.sql section; meaningful only when HasDown is true.
+    DownSQL string
+    // CheckFiles are the checks.sql and checks/*.sql sections, in file order.
+    CheckFiles []AtlasTxtarCheckFile
+    // HasDown reports whether the archive carries a down.sql section.
+    HasDown bool
+}
+    AtlasTxtar is the parsed view of an Atlas txtar migration archive: one file
+    whose `-- atlas:txtar` first line introduces named sections for the up SQL,
+    an optional down SQL, and embedded check files.
+
+func ParseAtlasTxtar(filename, sql string) (AtlasTxtar, bool, error)
+
+### go.5x5.cz/ptah/migration/migrationfile.AtlasTxtarCheckFile
+
+package migrationfile // import "go.5x5.cz/ptah/migration/migrationfile"
+
+type AtlasTxtarCheckFile struct {
+    // Name is the section name, such as "checks.sql" or "checks/users.sql".
+    Name string
+    // SQL is the section's content.
+    SQL string
+}
+    AtlasTxtarCheckFile is one embedded check file of an Atlas txtar archive.
+
+
+### go.5x5.cz/ptah/migration/migrationfile.DirFormat
+
+package migrationfile // import "go.5x5.cz/ptah/migration/migrationfile"
+
+type DirFormat string
+    DirFormat selects how a filesystem migration directory is parsed.
+
+const DirFormatAuto DirFormat = "auto" ...
+func ParseDirFormat(value string) (DirFormat, error)
+
+### go.5x5.cz/ptah/migration/migrationfile.File
+
+package migrationfile // import "go.5x5.cz/ptah/migration/migrationfile"
+
+type File struct {
+    Path      string
+    Version   int64
+    Name      string
+    Direction string
+    Extension string
+    Format    DirFormat
+
+    // RevisionDescription is the raw, unnormalized description token an Atlas
+    // file name carries, exactly as the revision table records it. Ptah files
+    // leave it empty.
+    RevisionDescription string
+    // Repeatable marks Flyway-style repeatable migrations imported by Atlas.
+    // Atlas records them under an opaque string token such as "R" or "2R".
+    Repeatable bool
+    // IsCheckpoint marks a checkpoint migration whose up body is the full
+    // cumulative schema at its version. A fresh database bootstraps from the
+    // newest checkpoint instead of replaying pre-checkpoint history; an
+    // already-migrated database ignores it. The Ptah marker is spelled
+    // NNNNNNNNNN_description.checkpoint.(up|down).sql and is recognized here
+    // at name-parse time. Atlas-format checkpoints instead carry a first-line
+    // `-- atlas:checkpoint` file directive, which name parsing cannot see;
+    // the migrator's FSMigrationProvider detects it from file content when
+    // loading, so this
+    // field stays false for Atlas files parsed by name alone.
+    IsCheckpoint bool
+    // Has unexported fields.
+}
+    File represents the parsed components of a migration file name
+
+func Discover(fsys fs.FS, format DirFormat) ([]File, error)
+func ParseAtlasFileName(filename string) (*File, error)
+func ParseAtlasFileNameForAutoDetection(filename string) (*File, error)
+func ParseFileName(filename string) (*File, error)
+func (f File) RevisionVersion() string
+
+### go.5x5.cz/ptah/migration/migrationfile.FileTxMode
+
+package migrationfile // import "go.5x5.cz/ptah/migration/migrationfile"
+
+type FileTxMode string
+    FileTxMode controls transaction handling for one migration file.
+
+const FileTxModeUnspecified FileTxMode = "" ...
+
+### go.5x5.cz/ptah/migration/migrationfile.FileTxModeSource
+
+package migrationfile // import "go.5x5.cz/ptah/migration/migrationfile"
+
+type FileTxModeSource uint8
+    FileTxModeSource names the directive family a parsed transaction mode came
+    from. The zero value means no directive set a mode.
+
+const FileTxModeSourcePtah FileTxModeSource = iota + 1 ...
+
+### go.5x5.cz/ptah/migration/migrationfile.MisplacedDirective
+
+package migrationfile // import "go.5x5.cz/ptah/migration/migrationfile"
+
+type MisplacedDirective struct {
+    // Line is the 1-based line number in the migration file.
+    Line int
+    // Text is the source line, trimmed.
+    Text string
+    // Remedy names what the operator can do about it.
+    Remedy string
+    // Err is set when the directive's key is one the merged parser recognizes
+    // and its VALUE is one no parser can read. Position and value are separate
+    // facts about a line, and a malformed value stays an error wherever the
+    // Line sits -- see [misplacedDirectiveError].
+    Err error
+}
+    MisplacedDirective is one directive line the migrator recognized but did not
+    honor, because it sits outside the region where its family is significant.
+
+func MisplacedDirectives(sql, dialect string) []MisplacedDirective
+
+### go.5x5.cz/ptah/migration/migrationfile.ParsedFileTxMode
+
+package migrationfile // import "go.5x5.cz/ptah/migration/migrationfile"
+
+type ParsedFileTxMode struct {
+    Mode   FileTxMode
+    Source FileTxModeSource
+    Err    error
+}
+    ParsedFileTxMode is the outcome of reading a file's transaction-mode
+    directives: the mode, which directive family set it, and the error a
+    malformed or misplaced directive raised. Mode and Source are meaningful only
+    when Err is nil.
+
+func ParseFileTxMode(filename, sql string) ParsedFileTxMode
+func ParseFileTxModeForDialect(filename, sql, dialect string) ParsedFileTxMode
+
+### go.5x5.cz/ptah/migration/migrationfile.ParsedUp
+
+package migrationfile // import "go.5x5.cz/ptah/migration/migrationfile"
+
+type ParsedUp struct {
+    // SQL is the plain file or the migration.sql section of a txtar file.
+    SQL string
+    // TxMode is the explicit transaction mode found in SQL.
+    TxMode FileTxMode
+    // SourceLineOffset maps line numbers in SQL back to the source file.
+    SourceLineOffset int
+}
+    Atlas txtar migration file.
+
+func ParseUp(filename, sql string) (ParsedUp, error)
+func ParseUpForAnalysis(filename, sql string) (ParsedUp, error)
+
+### go.5x5.cz/ptah/migration/migrationfile.Timeouts
+
+package migrationfile // import "go.5x5.cz/ptah/migration/migrationfile"
+
+type Timeouts struct {
+    LockTimeout         time.Duration
+    StatementTimeout    time.Duration
+    HasLockTimeout      bool
+    HasStatementTimeout bool
+}
+    Timeouts configures per-migration database safety timeouts. Empty values
+    mean no timeout is configured.
+
+func ParseTimeouts(sql string) (Timeouts, error)
+func ParseTimeoutsForDialect(sql, dialect string) (Timeouts, error)
+func (t Timeouts) IsZero() bool
+
 ## go.5x5.cz/ptah/migration/migrator
 
 const ConvertedFlywayRepeatableVersion int64 = math.MaxInt64
-const DirectiveNoTransaction = "no_transaction"
 var ErrMigrationTagNotFound = errors.New("migration tag not found")
-func GenerateCheckpointMigrationFileName(version int64, description, direction string) string
-func GenerateMigrationFileName(version int64, description, direction string) string
-func GetNextMigrationVersion() int64
 func IsDirtyMigration(err error) bool
 func IsMigrationLockTimeout(err error) bool
-func LooksAtlasTemplateSQL(sql string) bool
 func NoopMigrationFunc(_ctx context.Context, _conn *dbschema.DatabaseConnection) error
-func ParseFileDirectives(sql string) map[string]string
-func RenderAtlasTemplateSQL(fsys fs.FS, filename string, data any) (sql string, rendered bool, err error)
 type AtlasCheckpointTxtarConflictError struct{ ... }
 type AtlasDownNotImplementedError struct{ ... }
 type AtlasRevisionChange struct{ ... }
@@ -10525,8 +10761,6 @@ type AtlasRevisionSetResult struct{ ... }
 type AtlasRevisionType uint
     const AtlasRevisionTypeUnknown AtlasRevisionType = iota ...
 type AtlasRevisionVersionComparator func(left, right AtlasRevisionOrderIdentity) (order int, ok bool)
-type AtlasTemplateData struct{ ... }
-type AtlasTxModeDirectiveError struct{ ... }
 type BaselineOptions struct{ ... }
 type Check struct{ ... }
     func ParseChecks(source, dialect string) ([]Check, error)
@@ -10546,26 +10780,16 @@ type FSProviderOption func(*FSMigrationProvider)
     func WithAtlasRevisionTypes(types map[int64]AtlasRevisionType) FSProviderOption
     func WithAtlasRevisionVersions(versions map[int64]string) FSProviderOption
     func WithAtlasTemplateData(data any) FSProviderOption
-    func WithMigrationDirFormat(format MigrationDirFormat) FSProviderOption
+    func WithMigrationDirFormat(format migrationfile.DirFormat) FSProviderOption
     func WithStatementInterceptor(interceptor StatementInterceptor) FSProviderOption
     func WithStatementObserver(observer StatementObserver) FSProviderOption
     func WithStatementValidator(validator StatementValidator) FSProviderOption
 type MigrateUpOptions struct{ ... }
 type Migration struct{ ... }
     func CreateMigrationFromSQL(version int64, description, upSQL, downSQL string) *Migration
-type MigrationDirFormat string
-    const MigrationDirFormatAuto MigrationDirFormat = "auto" ...
-    func ParseMigrationDirFormat(value string) (MigrationDirFormat, error)
 type MigrationDirection string
     const MigrationDirectionUp MigrationDirection = "up" ...
 type MigrationExecutionError struct{ ... }
-type MigrationFile struct{ ... }
-    func DiscoverMigrationFiles(fsys fs.FS, format MigrationDirFormat) ([]MigrationFile, error)
-    func ParseAtlasMigrationFileName(filename string) (*MigrationFile, error)
-    func ParseAtlasMigrationFileNameForAutoDetection(filename string) (*MigrationFile, error)
-    func ParseMigrationFileName(filename string) (*MigrationFile, error)
-type MigrationFileTxMode string
-    const MigrationFileTxModeUnspecified MigrationFileTxMode = "" ...
 type MigrationFunc func(context.Context, *dbschema.DatabaseConnection) error
 type MigrationLockTimeoutError struct{ ... }
 type MigrationPlan struct{ ... }
@@ -10575,10 +10799,9 @@ type MigrationRevision struct{ ... }
 type MigrationStatus struct{ ... }
 type MigrationStatusSnapshot struct{ ... }
 type MigrationTag struct{ ... }
-type MigrationTimeouts struct{ ... }
 type MigrationTxMode string
     const MigrationTxModeFile MigrationTxMode = "file" ...
-    func ResolveAtlasDirectiveTxMode(global MigrationTxMode, file MigrationFileTxMode, source string) (MigrationTxMode, error)
+    func ResolveAtlasDirectiveTxMode(global MigrationTxMode, file migrationfile.FileTxMode, source string) (MigrationTxMode, error)
 type Migrator struct{ ... }
     func NewFSMigrator(conn *dbschema.DatabaseConnection, fsys fs.FS, opts ...FSProviderOption) (*Migrator, error)
     func NewMigrator(conn *dbschema.DatabaseConnection, provider MigrationProvider) *Migrator
@@ -10589,9 +10812,6 @@ type Observer interface{ ... }
 type OnFail string
     const OnFailAbort OnFail = "abort"
 type OutOfOrderError struct{ ... }
-type ParsedMigrationUp struct{ ... }
-    func ParseMigrationUp(filename, sql string) (ParsedMigrationUp, error)
-    func ParseMigrationUpForAnalysis(filename, sql string) (ParsedMigrationUp, error)
 type PreMigrationHook func(ctx context.Context, plan MigrationPlan) error
 type RegisteredMigrationProvider struct{ ... }
     func NewRegisteredMigrationProvider(migrations ...*Migration) *RegisteredMigrationProvider
@@ -10711,28 +10931,6 @@ type AtlasRevisionVersionComparator func(
     result is false when persisted metadata lacks the role or tie-breaker needed
     to establish that relationship.
 
-
-### go.5x5.cz/ptah/migration/migrator.AtlasTemplateData
-
-package migrator // import "go.5x5.cz/ptah/migration/migrator"
-
-type AtlasTemplateData struct {
-    Env string
-}
-    AtlasTemplateData is the default data object used for Atlas SQL templates.
-
-
-### go.5x5.cz/ptah/migration/migrator.AtlasTxModeDirectiveError
-
-package migrator // import "go.5x5.cz/ptah/migration/migrator"
-
-type AtlasTxModeDirectiveError struct {
-    // Has unexported fields.
-}
-    AtlasTxModeDirectiveError reports an invalid or conflicting Atlas
-    transaction-mode file directive.
-
-func (e *AtlasTxModeDirectiveError) Error() string
 
 ### go.5x5.cz/ptah/migration/migrator.BaselineOptions
 
@@ -10891,7 +11089,7 @@ func WithAtlasRevisionChecksums(checksums map[int64]string) FSProviderOption
 func WithAtlasRevisionTypes(types map[int64]AtlasRevisionType) FSProviderOption
 func WithAtlasRevisionVersions(versions map[int64]string) FSProviderOption
 func WithAtlasTemplateData(data any) FSProviderOption
-func WithMigrationDirFormat(format MigrationDirFormat) FSProviderOption
+func WithMigrationDirFormat(format migrationfile.DirFormat) FSProviderOption
 func WithStatementInterceptor(interceptor StatementInterceptor) FSProviderOption
 func WithStatementObserver(observer StatementObserver) FSProviderOption
 func WithStatementValidator(validator StatementValidator) FSProviderOption
@@ -10957,16 +11155,16 @@ type Migration struct {
     Down         MigrationFunc
     UpSQL        string
     DownSQL      string
-    UpTimeouts   MigrationTimeouts
-    DownTimeouts MigrationTimeouts
+    UpTimeouts   migrationfile.Timeouts
+    DownTimeouts migrationfile.Timeouts
 
     // UpTxMode is the up file's explicit transaction mode. The zero value uses
     // the migrator's global mode. File and none override global file or none;
     // any explicit file mode conflicts with global all.
-    UpTxMode MigrationFileTxMode
+    UpTxMode migrationfile.FileTxMode
     // DownTxMode is the down-direction counterpart to UpTxMode. Rollback has no
     // global transaction-mode flag, so the zero value behaves like file.
-    DownTxMode MigrationFileTxMode
+    DownTxMode migrationfile.FileTxMode
 
     // IsCheckpoint marks a checkpoint migration whose up body is the full
     // cumulative schema at its version. On a fresh database the migrator
@@ -10984,16 +11182,6 @@ type Migration struct {
 func CreateMigrationFromSQL(version int64, description, upSQL, downSQL string) *Migration
 func (m *Migration) RevisionVersion() string
 func (m *Migration) UpForReplay(ctx context.Context, conn *dbschema.DatabaseConnection) error
-
-### go.5x5.cz/ptah/migration/migrator.MigrationDirFormat
-
-package migrator // import "go.5x5.cz/ptah/migration/migrator"
-
-type MigrationDirFormat string
-    MigrationDirFormat selects how a filesystem migration directory is parsed.
-
-const MigrationDirFormatAuto MigrationDirFormat = "auto" ...
-func ParseMigrationDirFormat(value string) (MigrationDirFormat, error)
 
 ### go.5x5.cz/ptah/migration/migrator.MigrationDirection
 
@@ -11019,50 +11207,6 @@ type MigrationExecutionError struct {
 
 func (e *MigrationExecutionError) Error() string
 func (e *MigrationExecutionError) Unwrap() error
-
-### go.5x5.cz/ptah/migration/migrator.MigrationFile
-
-package migrator // import "go.5x5.cz/ptah/migration/migrator"
-
-type MigrationFile struct {
-    Path      string
-    Version   int64
-    Name      string
-    Direction string
-    Extension string
-    Format    MigrationDirFormat
-
-    // Repeatable marks Flyway-style repeatable migrations imported by Atlas.
-    // Atlas records them under an opaque string token such as "R" or "2R".
-    Repeatable bool
-    // IsCheckpoint marks a checkpoint migration whose up body is the full
-    // cumulative schema at its version. A fresh database bootstraps from the
-    // newest checkpoint instead of replaying pre-checkpoint history; an
-    // already-migrated database ignores it. The Ptah marker is spelled
-    // NNNNNNNNNN_description.checkpoint.(up|down).sql and is recognized here
-    // at name-parse time. Atlas-format checkpoints instead carry a first-line
-    // `-- atlas:checkpoint` file directive, which name parsing cannot see;
-    // FSMigrationProvider detects it from file content when loading, so this
-    // field stays false for Atlas files parsed by name alone.
-    IsCheckpoint bool
-    // Has unexported fields.
-}
-    MigrationFile represents the parsed components of a migration file name
-
-func DiscoverMigrationFiles(fsys fs.FS, format MigrationDirFormat) ([]MigrationFile, error)
-func ParseAtlasMigrationFileName(filename string) (*MigrationFile, error)
-func ParseAtlasMigrationFileNameForAutoDetection(filename string) (*MigrationFile, error)
-func ParseMigrationFileName(filename string) (*MigrationFile, error)
-func (f MigrationFile) RevisionVersion() string
-
-### go.5x5.cz/ptah/migration/migrator.MigrationFileTxMode
-
-package migrator // import "go.5x5.cz/ptah/migration/migrator"
-
-type MigrationFileTxMode string
-    MigrationFileTxMode controls transaction handling for one migration file.
-
-const MigrationFileTxModeUnspecified MigrationFileTxMode = "" ...
 
 ### go.5x5.cz/ptah/migration/migrator.MigrationFunc
 
@@ -11216,21 +11360,6 @@ type MigrationTag struct {
     MigrationTag records a directory tag and the schema version it selects.
 
 
-### go.5x5.cz/ptah/migration/migrator.MigrationTimeouts
-
-package migrator // import "go.5x5.cz/ptah/migration/migrator"
-
-type MigrationTimeouts struct {
-    LockTimeout         time.Duration
-    StatementTimeout    time.Duration
-    HasLockTimeout      bool
-    HasStatementTimeout bool
-}
-    MigrationTimeouts configures per-migration database safety timeouts.
-    Empty values mean no timeout is configured.
-
-func (t MigrationTimeouts) IsZero() bool
-
 ### go.5x5.cz/ptah/migration/migrator.MigrationTxMode
 
 package migrator // import "go.5x5.cz/ptah/migration/migrator"
@@ -11240,7 +11369,7 @@ type MigrationTxMode string
     transactions.
 
 const MigrationTxModeFile MigrationTxMode = "file" ...
-func ResolveAtlasDirectiveTxMode(global MigrationTxMode, file MigrationFileTxMode, source string) (MigrationTxMode, error)
+func ResolveAtlasDirectiveTxMode(global MigrationTxMode, file migrationfile.FileTxMode, source string) (MigrationTxMode, error)
 
 ### go.5x5.cz/ptah/migration/migrator.Migrator
 
@@ -11280,7 +11409,7 @@ func (m *Migrator) ResolveMigrationTag(ctx context.Context, tag string) (int64, 
 func (m *Migrator) SetAtlasRevision(ctx context.Context, version int64) (AtlasRevisionSetResult, error)
 func (m *Migrator) SetRevision(ctx context.Context, version int64) (AtlasRevisionSetResult, error)
 func (m *Migrator) WithAtlasRevisionVersionComparator(compare AtlasRevisionVersionComparator) *Migrator
-func (m *Migrator) WithDefaultTimeouts(timeouts MigrationTimeouts) *Migrator
+func (m *Migrator) WithDefaultTimeouts(timeouts migrationfile.Timeouts) *Migrator
 func (m *Migrator) WithExecOrder(execOrder ExecOrder) *Migrator
 func (m *Migrator) WithLogger(l *slog.Logger) *Migrator
 func (m *Migrator) WithMigrationLockName(name string) *Migrator
@@ -11374,24 +11503,6 @@ type OutOfOrderError struct {
 
 func (e *OutOfOrderError) Error() string
 
-### go.5x5.cz/ptah/migration/migrator.ParsedMigrationUp
-
-package migrator // import "go.5x5.cz/ptah/migration/migrator"
-
-type ParsedMigrationUp struct {
-    // SQL is the plain file or the migration.sql section of a txtar file.
-    SQL string
-    // TxMode is the explicit transaction mode found in SQL.
-    TxMode MigrationFileTxMode
-    // SourceLineOffset maps line numbers in SQL back to the source file.
-    SourceLineOffset int
-}
-    ParsedMigrationUp is the executable up-direction view of a plain SQL or
-    Atlas txtar migration file.
-
-func ParseMigrationUp(filename, sql string) (ParsedMigrationUp, error)
-func ParseMigrationUpForAnalysis(filename, sql string) (ParsedMigrationUp, error)
-
 ### go.5x5.cz/ptah/migration/migrator.PreMigrationHook
 
 package migrator // import "go.5x5.cz/ptah/migration/migrator"
@@ -11473,9 +11584,9 @@ type StatementInterceptor interface {
 
     ExecuteStatement receives one statement (comments stripped) together
     with the file-level directives of the migration it came from (see
-    ParseFileDirectives). It returns handled=true when it fully executed the
-    statement itself; on handled=false the migrator executes the statement
-    normally. A non-nil error aborts the migration.
+    migrationfile.ParseDirectives). It returns handled=true when it fully
+    executed the statement itself; on handled=false the migrator executes the
+    statement normally. A non-nil error aborts the migration.
 
 
 ### go.5x5.cz/ptah/migration/migrator.StatementObservationError

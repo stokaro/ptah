@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/migration/lint"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // analyzeRename runs one fixture under both command surfaces so a test can
@@ -17,13 +17,13 @@ func analyzeRename(c *qt.C, files map[string]string) (native, atlas []lint.Findi
 	c.Helper()
 	fsys := fixture(files)
 	nativeAnalysis, err := lint.AnalyzeFS(fsys, lint.Options{
-		DirFormat: migrator.MigrationDirFormatAtlas,
+		DirFormat: migrationfile.DirFormatAtlas,
 		Dialect:   "postgres",
 	})
 	c.Assert(err, qt.IsNil)
 	atlasAnalysis, err := lint.AnalyzeFS(fsys, lint.Options{
 		Compatibility: lint.CompatibilityProfileAtlas,
-		DirFormat:     migrator.MigrationDirFormatAtlas,
+		DirFormat:     migrationfile.DirFormatAtlas,
 		Dialect:       "postgres",
 	})
 	c.Assert(err, qt.IsNil)
@@ -522,7 +522,7 @@ func TestAnalyzeFS_TableRenameIsTwoSchemaChanges(t *testing.T) {
 			c := qt.New(t)
 			analysis, err := lint.AnalyzeFS(
 				fixture(map[string]string{"1_rename.sql": test.sql + "\n"}),
-				lint.Options{DirFormat: migrator.MigrationDirFormatAtlas, Dialect: "postgres"},
+				lint.Options{DirFormat: migrationfile.DirFormatAtlas, Dialect: "postgres"},
 			)
 			c.Assert(err, qt.IsNil)
 			files := analysis.Files()

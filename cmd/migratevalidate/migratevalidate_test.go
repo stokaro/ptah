@@ -14,7 +14,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
 	"go.5x5.cz/ptah/cmd/migratevalidate"
 	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 func execute(args ...string) (stdout, stderr string, err error) {
@@ -66,7 +66,7 @@ func TestValidate_AutoReadsAtlasSum(t *testing.T) {
 	dir := t.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(dir, "1_initial.sql"),
 		[]byte("CREATE TABLE t (id INT);\n"), 0o600), qt.IsNil)
-	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(dir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 
 	stdout, _, err := execute("--dir", dir)
@@ -266,7 +266,7 @@ func TestValidate_AtlasIntegrityDriftMatchesAtlasStreams(t *testing.T) {
 	dir := t.TempDir()
 	migrationPath := filepath.Join(dir, "1_initial.sql")
 	c.Assert(os.WriteFile(migrationPath, []byte("CREATE TABLE t (id INT);\n"), 0o600), qt.IsNil)
-	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(dir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.WriteFile(migrationPath, []byte("CREATE TABLE t (id BIGINT);\n"), 0o600), qt.IsNil)
 
@@ -285,7 +285,7 @@ func TestValidate_AtlasAddedMigrationMatchesAtlasStreams(t *testing.T) {
 	dir := t.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(dir, "1_initial.sql"),
 		[]byte("CREATE TABLE t (id INT);\n"), 0o600), qt.IsNil)
-	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(dir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(dir, "2_second.sql"),
 		[]byte("CREATE TABLE u (id INT);\n"), 0o600), qt.IsNil)
@@ -307,7 +307,7 @@ func TestValidate_AtlasRemovedMigrationMatchesAtlasStreams(t *testing.T) {
 	c.Assert(os.WriteFile(firstMigration, []byte("CREATE TABLE t (id INT);\n"), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(dir, "2_second.sql"),
 		[]byte("CREATE TABLE u (id INT);\n"), 0o600), qt.IsNil)
-	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(dir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.Remove(firstMigration), qt.IsNil)
 
@@ -436,7 +436,7 @@ func malformedAtlasDirectory(c *qt.C) string {
 func cleanAtlasDirectory(c *qt.C) string {
 	c.Helper()
 	dir := atlasDirectoryWithoutSum(c)
-	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(dir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	return dir
 }
@@ -454,7 +454,7 @@ func duplicateAtlasSumDirectory(c *qt.C) string {
 	dir := c.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(dir, "1_initial.sql"),
 		[]byte("CREATE TABLE t (id INT);\n"), 0o600), qt.IsNil)
-	sum, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
+	sum, err := migratesum.WriteWithFormat(dir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	duplicate := []byte(sum.Entries[0].Name + " " + sum.Entries[0].Hash + "\n")
 	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.sum"),

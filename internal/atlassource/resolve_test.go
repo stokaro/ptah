@@ -13,7 +13,7 @@ import (
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlassource"
 	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // seedSQLite creates a SQLite database file with the given DDL and returns
@@ -106,7 +106,7 @@ CREATE VIEW user_ids AS SELECT id FROM users;
 `), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(dir, "2_invalid.sql"),
 		[]byte("THIS IS NOT SQL;\n"), 0o600), qt.IsNil)
-	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(dir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	devURL := "sqlite://" + filepath.Join(t.TempDir(), "dev.db")
 	set := classifySingle(t, "--to", "file://"+dir)
@@ -238,7 +238,7 @@ func TestResolve_MigrationDirFiltersRevisionTable(t *testing.T) {
 	c.Assert(os.WriteFile(filepath.Join(dir, "1_init.sql"), []byte(
 		"CREATE TABLE kept (id INTEGER PRIMARY KEY);\n"+
 			"CREATE TABLE atlas_schema_revisions (version TEXT PRIMARY KEY);\n"), 0o600), qt.IsNil)
-	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(dir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	devURL := "sqlite://" + filepath.Join(t.TempDir(), "dev.db")
 	set := classifySingle(t, "--to", "file://"+dir)

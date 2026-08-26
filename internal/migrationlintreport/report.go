@@ -30,6 +30,7 @@ import (
 	"go.5x5.cz/ptah/internal/pathguard"
 	"go.5x5.cz/ptah/internal/schemaselection"
 	"go.5x5.cz/ptah/migration/lint"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 	"go.5x5.cz/ptah/migration/risk"
 )
@@ -236,7 +237,7 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 			Restricted:  selection.restricted,
 		},
 		DirFormat:         prepared.dirFormat,
-		AtlasTemplateData: migrator.AtlasTemplateData{Env: opts.AtlasEnv},
+		AtlasTemplateData: migrationfile.AtlasTemplateData{Env: opts.AtlasEnv},
 		RuleConfigs:       cfg.Rules,
 	})
 	findings := analysis.Findings()
@@ -262,7 +263,7 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 
 type preparedSourceOptions struct {
 	options    Options
-	dirFormat  migrator.MigrationDirFormat
+	dirFormat  migrationfile.DirFormat
 	devDialect string
 }
 
@@ -284,7 +285,7 @@ func prepareSourceOptions(
 	if err != nil {
 		return preparedSourceOptions{}, err
 	}
-	dirFormat, err := migrator.ParseMigrationDirFormat(opts.DirFormat)
+	dirFormat, err := migrationfile.ParseDirFormat(opts.DirFormat)
 	if err != nil {
 		return preparedSourceOptions{}, err
 	}
@@ -424,7 +425,7 @@ func lintDirectory(
 	ctx context.Context,
 	opts Options,
 	fsys fs.FS,
-	dirFormat migrator.MigrationDirFormat,
+	dirFormat migrationfile.DirFormat,
 	lintOptions lint.Options,
 ) (lint.Analysis, replayedSchemas, error) {
 	analysis, err := lint.AnalyzeFS(fsys, lintOptions)
@@ -438,7 +439,7 @@ func lintDirectory(
 		DirFormat:         dirFormat,
 		DevURL:            opts.DevURL,
 		FS:                analysis.SnapshotFS(),
-		AtlasTemplateData: migrator.AtlasTemplateData{Env: opts.AtlasEnv},
+		AtlasTemplateData: migrationfile.AtlasTemplateData{Env: opts.AtlasEnv},
 		RevisionVersions:  opts.RevisionVersions,
 		ObserveVersion:    replayVersionObserver(baseline, capture),
 		ObserveReplayed:   capture.replayedObserver(ctx),
@@ -668,7 +669,7 @@ func lintVersions(
 		if latest <= 0 {
 			return lintVersionSelection{}, fmt.Errorf("--latest must be greater than zero")
 		}
-		dirFormat, err := migrator.ParseMigrationDirFormat(opts.DirFormat)
+		dirFormat, err := migrationfile.ParseDirFormat(opts.DirFormat)
 		if err != nil {
 			return lintVersionSelection{}, err
 		}
@@ -677,7 +678,7 @@ func lintVersions(
 		return selection, err
 	}
 	if git.ok {
-		dirFormat, err := migrator.ParseMigrationDirFormat(opts.DirFormat)
+		dirFormat, err := migrationfile.ParseDirFormat(opts.DirFormat)
 		if err != nil {
 			return lintVersionSelection{}, err
 		}
@@ -703,7 +704,7 @@ func newLintVersionSelection() lintVersionSelection {
 	}
 }
 
-func (s *lintVersionSelection) add(file migrator.MigrationFile) {
+func (s *lintVersionSelection) add(file migrationfile.File) {
 	key := file.RevisionVersion()
 	if key != "" {
 		if _, ok := s.seenKey[key]; !ok {
@@ -856,7 +857,7 @@ func gitChangedMigrationSelection(
 	migrationsDir,
 	gitBase,
 	gitDir string,
-	dirFormat migrator.MigrationDirFormat,
+	dirFormat migrationfile.DirFormat,
 ) (lintVersionSelection, error) {
 	repoRoot, err := gitOutput(ctx, gitDir, "rev-parse", "--show-toplevel")
 	if err != nil {
@@ -953,7 +954,7 @@ func gitOutput(ctx context.Context, dir string, args ...string) (string, error) 
 	return strings.TrimSpace(string(output)), nil
 }
 
-func migrationSelectionFromChangedPaths(changed string, dirFormat migrator.MigrationDirFormat) (lintVersionSelection, error) {
+func migrationSelectionFromChangedPaths(changed string, dirFormat migrationfile.DirFormat) (lintVersionSelection, error) {
 	selection := newLintVersionSelection()
 	var unversioned []string
 	for name := range strings.Lines(changed) {
@@ -978,20 +979,20 @@ func migrationSelectionFromChangedPaths(changed string, dirFormat migrator.Migra
 	return selection, nil
 }
 
-func parseChangedMigrationName(name string, dirFormat migrator.MigrationDirFormat) (*migrator.MigrationFile, error) {
+func parseChangedMigrationName(name string, dirFormat migrationfile.DirFormat) (*migrationfile.File, error) {
 	switch dirFormat {
-	case migrator.MigrationDirFormatPtah:
-		return migrator.ParseMigrationFileName(name)
-	case migrator.MigrationDirFormatAtlas:
-		return migrator.ParseAtlasMigrationFileName(name)
+	case migrationfile.DirFormatPtah:
+		return migrationfile.ParseFileName(name)
+	case migrationfile.DirFormatAtlas:
+		return migrationfile.ParseAtlasFileName(name)
 	}
-	if parsed, err := migrator.ParseMigrationFileName(name); err == nil {
+	if parsed, err := migrationfile.ParseFileName(name); err == nil {
 		return parsed, nil
 	}
-	return migrator.ParseAtlasMigrationFileNameForAutoDetection(name)
+	return migrationfile.ParseAtlasFileNameForAutoDetection(name)
 }
 
-func latestMigrationSelection(fsys fs.FS, latest uint, dirFormat migrator.MigrationDirFormat) (lintVersionSelection, error) {
+func latestMigrationSelection(fsys fs.FS, latest uint, dirFormat migrationfile.DirFormat) (lintVersionSelection, error) {
 	unversioned, err := unversionedSQLFiles(fsys, dirFormat)
 	if err != nil {
 		return lintVersionSelection{}, err
@@ -999,7 +1000,7 @@ func latestMigrationSelection(fsys fs.FS, latest uint, dirFormat migrator.Migrat
 	if len(unversioned) > 0 {
 		return lintVersionSelection{}, fmt.Errorf("--latest requires versioned migration files; unversioned SQL files found: %s", strings.Join(unversioned, ", "))
 	}
-	files, err := migrator.DiscoverMigrationFiles(fsys, dirFormat)
+	files, err := migrationfile.Discover(fsys, dirFormat)
 	if err != nil {
 		return lintVersionSelection{}, err
 	}
@@ -1023,8 +1024,8 @@ func latestMigrationSelection(fsys fs.FS, latest uint, dirFormat migrator.Migrat
 	return selection, nil
 }
 
-func latestMigrationSelectionFromFiles(files []migrator.MigrationFile, latest uint) lintVersionSelection {
-	candidates := make([]migrator.MigrationFile, 0, len(files))
+func latestMigrationSelectionFromFiles(files []migrationfile.File, latest uint) lintVersionSelection {
+	candidates := make([]migrationfile.File, 0, len(files))
 	maxVersion := maxMigrationFileVersion(files)
 	for _, file := range files {
 		if file.Version <= 0 && !file.Repeatable {
@@ -1032,14 +1033,14 @@ func latestMigrationSelectionFromFiles(files []migrator.MigrationFile, latest ui
 		}
 		candidates = append(candidates, file)
 	}
-	slices.SortStableFunc(candidates, func(a, b migrator.MigrationFile) int {
+	slices.SortStableFunc(candidates, func(a, b migrationfile.File) int {
 		return cmp.Or(
 			cmp.Compare(migrationFileVersionRank(a, maxVersion), migrationFileVersionRank(b, maxVersion)),
 			strings.Compare(a.Name, b.Name),
 		)
 	})
 
-	unique := make([]migrator.MigrationFile, 0, len(candidates))
+	unique := make([]migrationfile.File, 0, len(candidates))
 	seen := make(map[string]struct{})
 	for _, file := range candidates {
 		key := file.RevisionVersion()
@@ -1060,7 +1061,7 @@ func latestMigrationSelectionFromFiles(files []migrator.MigrationFile, latest ui
 	return selection
 }
 
-func maxMigrationFileVersion(files []migrator.MigrationFile) int64 {
+func maxMigrationFileVersion(files []migrationfile.File) int64 {
 	var maxVersion int64
 	for _, file := range files {
 		if file.Version > maxVersion {
@@ -1070,14 +1071,14 @@ func maxMigrationFileVersion(files []migrator.MigrationFile) int64 {
 	return maxVersion
 }
 
-func migrationFileVersionRank(file migrator.MigrationFile, maxVersion int64) int64 {
+func migrationFileVersionRank(file migrationfile.File, maxVersion int64) int64 {
 	if file.Repeatable && file.Version == 0 {
 		return maxVersion + 1
 	}
 	return file.Version
 }
 
-func unversionedSQLFiles(fsys fs.FS, dirFormat migrator.MigrationDirFormat) ([]string, error) {
+func unversionedSQLFiles(fsys fs.FS, dirFormat migrationfile.DirFormat) ([]string, error) {
 	var names []string
 	hasAtlasSum := false
 	err := fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, walkErr error) error {
@@ -1101,9 +1102,9 @@ func unversionedSQLFiles(fsys fs.FS, dirFormat migrator.MigrationDirFormat) ([]s
 	}
 
 	var unversioned []string
-	parseAtlasName := migrator.ParseAtlasMigrationFileNameForAutoDetection
-	if hasAtlasSum || dirFormat == migrator.MigrationDirFormatAtlas {
-		parseAtlasName = migrator.ParseAtlasMigrationFileName
+	parseAtlasName := migrationfile.ParseAtlasFileNameForAutoDetection
+	if hasAtlasSum || dirFormat == migrationfile.DirFormatAtlas {
+		parseAtlasName = migrationfile.ParseAtlasFileName
 	}
 	for _, name := range names {
 		known, err := knownVersionedMigration(fsys, name, dirFormat, parseAtlasName)
@@ -1121,16 +1122,16 @@ func unversionedSQLFiles(fsys fs.FS, dirFormat migrator.MigrationDirFormat) ([]s
 func knownVersionedMigration(
 	fsys fs.FS,
 	name string,
-	dirFormat migrator.MigrationDirFormat,
-	parseAtlasName func(string) (*migrator.MigrationFile, error),
+	dirFormat migrationfile.DirFormat,
+	parseAtlasName func(string) (*migrationfile.File, error),
 ) (bool, error) {
 	base := path.Base(name)
-	if dirFormat != migrator.MigrationDirFormatAtlas {
-		if _, err := migrator.ParseMigrationFileName(base); err == nil {
+	if dirFormat != migrationfile.DirFormatAtlas {
+		if _, err := migrationfile.ParseFileName(base); err == nil {
 			return true, nil
 		}
 	}
-	if dirFormat == migrator.MigrationDirFormatPtah {
+	if dirFormat == migrationfile.DirFormatPtah {
 		return false, nil
 	}
 	if _, err := parseAtlasName(base); err == nil {
@@ -1142,7 +1143,7 @@ func knownVersionedMigration(
 		return false, fmt.Errorf("failed to read %s: %w", name, err)
 	}
 	sql := string(raw)
-	return migrator.LooksAtlasTemplateSQL(sql) && strings.Contains(sql, "define "), nil
+	return migrationfile.LooksAtlasTemplateSQL(sql) && strings.Contains(sql, "define "), nil
 }
 
 func shouldFail(findings []lint.Finding, failOn string) bool {

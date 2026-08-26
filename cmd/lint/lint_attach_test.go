@@ -28,7 +28,7 @@ import (
 	"go.5x5.cz/ptah/internal/lintartifact"
 	"go.5x5.cz/ptah/internal/migrationartifact"
 	"go.5x5.cz/ptah/internal/ociartifact"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 const testOCIReference = "oci://registry.example/acme/migrations:latest"
@@ -185,7 +185,7 @@ func newTestRegistry(c *qt.C, migrations fs.FS) *testRegistryTransport {
 	store := memory.New()
 	pushed, err := migrationartifact.PushTo(ctx, store, migrations, migrationartifact.PushOptions{
 		Tags:      []string{ociartifact.DefaultTag},
-		DirFormat: migrator.MigrationDirFormatPtah,
+		DirFormat: migrationfile.DirFormatPtah,
 	})
 	c.Assert(err, qt.IsNil)
 	manifestBytes, err := content.FetchAll(ctx, store, pushed.Descriptor)

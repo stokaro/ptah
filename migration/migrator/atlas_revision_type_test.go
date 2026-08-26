@@ -10,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -92,7 +93,7 @@ func TestWithAtlasRevisionTypes_PreservesConvertedBaselineMarker(t *testing.T) {
 		fstest.MapFS{
 			"10_base.sql": {Data: []byte("CREATE TABLE baseline_marker (id INTEGER PRIMARY KEY);\n")},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 		migrator.WithAtlasRevisionVersions(map[int64]string{10: "2"}),
 		migrator.WithAtlasRevisionTypes(map[int64]migrator.AtlasRevisionType{
 			10: migrator.AtlasRevisionTypeBaseline | migrator.AtlasRevisionTypeApplied,
@@ -125,7 +126,7 @@ func TestAtlasExecutedBaselineMarkerDoesNotCreateImplicitHistoryBoundary(t *test
 			"5_lower.sql": {Data: []byte("CREATE TABLE lower_pending (id INTEGER PRIMARY KEY);\n")},
 			"10_base.sql": {Data: []byte("CREATE TABLE executed_baseline (id INTEGER PRIMARY KEY);\n")},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 		migrator.WithAtlasRevisionVersions(map[int64]string{5: "1", 10: "2"}),
 		migrator.WithAtlasRevisionTypes(map[int64]migrator.AtlasRevisionType{
 			10: migrator.AtlasRevisionTypeBaseline | migrator.AtlasRevisionTypeApplied,
@@ -159,7 +160,7 @@ func TestMigrationRevision_DirtyFlagInPublicSnapshots(t *testing.T) {
 		fstest.MapFS{
 			"1_create_accounts.sql": &fstest.MapFile{Data: []byte("SELECT 1;\n")},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
@@ -203,7 +204,7 @@ func TestAtlasMigrationExecutionPreservesStartTimestamp(t *testing.T) {
 		fstest.MapFS{
 			"1_create_users.sql": &fstest.MapFile{Data: []byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n")},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
@@ -251,7 +252,7 @@ func TestAtlasMigrationExecutionTimeline_TxModeAllSuccess(t *testing.T) {
 				Data: []byte("SELECT length(randomblob(67108864));\n"),
 			},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	mig = mig.
@@ -299,7 +300,7 @@ INSERT INTO missing_table (id) VALUES (1);
 `),
 			},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	mig = mig.
@@ -351,7 +352,7 @@ CREATE TABLE users (id INTEGER PRIMARY KEY);
 DROP TABLE missing_users;
 `)},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)

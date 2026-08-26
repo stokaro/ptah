@@ -18,6 +18,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/integrationfixture"
 	"go.5x5.cz/ptah/internal/testsummary"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -607,7 +608,7 @@ func (vem *VersionedEntityManager) ApplyMigrationFromEntities(ctx context.Contex
 
 	migration := migrator.CreateMigrationFromSQL(int64(vem.version), description, upSQL.String(), downSQL)
 	if noTransaction {
-		migration.UpTxMode = migrator.MigrationFileTxModeNone
+		migration.UpTxMode = migrationfile.FileTxModeNone
 	}
 
 	p := migrator.NewRegisteredMigrationProvider(migration)

@@ -14,7 +14,7 @@ import (
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/internal/migrationversion"
 	"go.5x5.cz/ptah/internal/pathguard"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // This file holds the generator's writer transactions -- creating a skeleton
@@ -172,7 +172,7 @@ func bindPlannedMigrationDir(
 func writeEmptyMigration(
 	root *pathguard.OpenedDirectory,
 	outputDir, name string,
-	dirFormat migrator.MigrationDirFormat,
+	dirFormat migrationfile.DirFormat,
 ) (*MigrationFiles, error) {
 	writer, err := bindMigrationOutputDir(root, outputDir)
 	if err != nil {
@@ -195,13 +195,13 @@ func writeEmptyMigration(
 func writeEmptyMigrationFiles(
 	writer *atlasmigrate.MigrationWriter,
 	name string,
-	dirFormat migrator.MigrationDirFormat,
+	dirFormat migrationfile.DirFormat,
 ) (*MigrationFiles, error) {
 	names, err := migrationDirNames(writer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read output directory: %w", err)
 	}
-	if dirFormat == migrator.MigrationDirFormatAtlas {
+	if dirFormat == migrationfile.DirFormatAtlas {
 		return writeEmptyAtlasMigration(writer, names, name)
 	}
 	return writeEmptyPtahMigration(writer, names, name)
@@ -223,7 +223,7 @@ func writeEmptyAtlasMigration(
 	for {
 		// The retry below advances the version, so the bound is re-checked here
 		// rather than only on the value the scan chose.
-		if err := migrationversion.Check(version, migrator.MigrationDirFormatAtlas); err != nil {
+		if err := migrationversion.Check(version, migrationfile.DirFormatAtlas); err != nil {
 			return nil, err
 		}
 		fileName := atlasEmptyMigrationFileName(version, name)
@@ -236,7 +236,7 @@ func writeEmptyAtlasMigration(
 		if err != nil {
 			return nil, fmt.Errorf("failed to write atlas migration file: %w", err)
 		}
-		if err := publishMigrationDirSum(writer, migrator.MigrationDirFormatAtlas); err != nil {
+		if err := publishMigrationDirSum(writer, migrationfile.DirFormatAtlas); err != nil {
 			return nil, errors.Join(
 				fmt.Errorf("failed to write atlas migration checksum: %w", err),
 				writer.Remove(fileName),
@@ -260,18 +260,18 @@ func writeEmptyPtahMigration(
 	generatedAt := time.Now().UTC().Format(time.RFC3339)
 	upSQL := emptyMigrationSQL(name, generatedAt, "UP")
 	downSQL := emptyMigrationSQL(name, generatedAt, "DOWN")
-	version, err := nextAvailablePtahVersion(names, migrator.GetNextMigrationVersion(), name)
+	version, err := nextAvailablePtahVersion(names, migrationfile.NextVersion(), name)
 	if err != nil {
 		return nil, err
 	}
 	for {
 		// The two retries below advance the version, so the bound is re-checked
 		// here rather than only on the value the scan chose.
-		if err := migrationversion.Check(version, migrator.MigrationDirFormatPtah); err != nil {
+		if err := migrationversion.Check(version, migrationfile.DirFormatPtah); err != nil {
 			return nil, err
 		}
-		upName := migrator.GenerateMigrationFileName(version, name, "up")
-		downName := migrator.GenerateMigrationFileName(version, name, "down")
+		upName := migrationfile.FileName(version, name, "up")
+		downName := migrationfile.FileName(version, name, "down")
 		notifyMigrationFileNamesChosen(upName, downName)
 
 		upErr := writer.WriteNew(upName, upSQL)
@@ -315,7 +315,7 @@ func writeEmptyPtahMigration(
 // transaction created its files in.
 func publishMigrationDirSum(
 	writer *atlasmigrate.MigrationWriter,
-	format migrator.MigrationDirFormat,
+	format migrationfile.DirFormat,
 ) error {
 	fsys, err := writer.FS()
 	if err != nil {
@@ -372,7 +372,7 @@ func writeRootedAtlasCheckpoint(
 	}
 	if sumErr := publishAuthorizedMigrationDirSum(
 		writer,
-		migrator.MigrationDirFormatAtlas,
+		migrationfile.DirFormatAtlas,
 		authorized,
 		map[string][]byte{name: []byte(contents)},
 	); sumErr != nil {
@@ -445,13 +445,13 @@ func writeRootedMigrationPair(
 		)
 	}
 
-	sumName, err := migratesum.FileNameForFormat(migrator.MigrationDirFormatPtah)
+	sumName, err := migratesum.FileNameForFormat(migrationfile.DirFormatPtah)
 	if err != nil {
 		return "", "", err
 	}
 	if sumErr := publishAuthorizedMigrationDirSum(
 		writer,
-		migrator.MigrationDirFormatPtah,
+		migrationfile.DirFormatPtah,
 		authorized,
 		map[string][]byte{
 			upName:   []byte(upSQL),
@@ -515,7 +515,7 @@ func verifyAuthorizedMigrationSnapshot(
 
 func publishAuthorizedMigrationDirSum(
 	writer *atlasmigrate.MigrationWriter,
-	format migrator.MigrationDirFormat,
+	format migrationfile.DirFormat,
 	authorized authorizedMigrationState,
 	newFiles map[string][]byte,
 ) error {

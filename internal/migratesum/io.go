@@ -7,19 +7,19 @@ import (
 	"path/filepath"
 
 	"go.5x5.cz/ptah/internal/fsdurable"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // Write computes the sum of the migrations directory at dir and writes it to
 // dir/ptah.sum, returning the computed sum. The ptah.sum file is excluded from
 // its own hash because it is not a migration file.
 func Write(dir string) (*SumFile, error) {
-	return WriteWithFormat(dir, migrator.MigrationDirFormatAuto)
+	return WriteWithFormat(dir, migrationfile.DirFormatAuto)
 }
 
 // WriteWithFormat computes the sum of the migrations directory at dir using
 // format and writes it to the format's integrity file.
-func WriteWithFormat(dir string, format migrator.MigrationDirFormat) (*SumFile, error) {
+func WriteWithFormat(dir string, format migrationfile.DirFormat) (*SumFile, error) {
 	sum, err := ComputeWithFormat(os.DirFS(dir), format)
 	if err != nil {
 		return nil, err
@@ -38,7 +38,7 @@ func WriteWithFormat(dir string, format migrator.MigrationDirFormat) (*SumFile, 
 // format without reading the live migration directory again.
 func WritePrecomputedWithFormat(
 	dir string,
-	format migrator.MigrationDirFormat,
+	format migrationfile.DirFormat,
 	sum *SumFile,
 ) error {
 	if sum == nil {
@@ -116,11 +116,11 @@ func removeFile(path string) error {
 
 // VerifyDir verifies the migrations directory at dir against its ptah.sum.
 func VerifyDir(dir string) (*Result, error) {
-	return VerifyDirWithFormat(dir, migrator.MigrationDirFormatAuto)
+	return VerifyDirWithFormat(dir, migrationfile.DirFormatAuto)
 }
 
 // VerifyDirWithFormat verifies the migrations directory at dir against the
 // selected format's integrity file.
-func VerifyDirWithFormat(dir string, format migrator.MigrationDirFormat) (*Result, error) {
+func VerifyDirWithFormat(dir string, format migrationfile.DirFormat) (*Result, error) {
 	return VerifyWithFormat(os.DirFS(dir), format)
 }

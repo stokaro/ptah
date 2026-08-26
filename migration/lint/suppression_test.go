@@ -8,7 +8,7 @@ import (
 
 	"go.5x5.cz/ptah/internal/atlaslint"
 	"go.5x5.cz/ptah/migration/lint"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // TestRules_EveryCompatibilityCodeIsSuppressibleByThatCode is the coverage
@@ -94,7 +94,7 @@ ALTER TABLE accounts ALTER COLUMN note TYPE varchar(10);
 				"1_collision.sql": test.sql,
 			}), lint.Options{
 				Compatibility: lint.CompatibilityProfileAtlas,
-				DirFormat:     migrator.MigrationDirFormatAtlas,
+				DirFormat:     migrationfile.DirFormatAtlas,
 				Dialect:       "postgres",
 			})
 			c.Assert(err, qt.IsNil)
@@ -137,7 +137,7 @@ func TestAnalyzeFS_AtlasMF103SelectorReachesBothProducers(t *testing.T) {
 					"ALTER TABLE accounts ADD COLUMN tenant_id INTEGER NOT NULL;\n",
 			}), lint.Options{
 				Compatibility: lint.CompatibilityProfileAtlas,
-				DirFormat:     migrator.MigrationDirFormatPtah,
+				DirFormat:     migrationfile.DirFormatPtah,
 				Dialect:       "postgres",
 			})
 			c.Assert(err, qt.IsNil)
@@ -184,7 +184,7 @@ func TestAnalyzeFS_AtlasNoLintSelectorsAgreeAcrossSurfaces(t *testing.T) {
 			})
 
 			native, err := lint.AnalyzeFS(fsys, lint.Options{
-				DirFormat: migrator.MigrationDirFormatAtlas,
+				DirFormat: migrationfile.DirFormatAtlas,
 				Dialect:   "postgres",
 			})
 			c.Assert(err, qt.IsNil)
@@ -192,7 +192,7 @@ func TestAnalyzeFS_AtlasNoLintSelectorsAgreeAcrossSurfaces(t *testing.T) {
 
 			atlas, err := lint.AnalyzeFS(fsys, lint.Options{
 				Compatibility: lint.CompatibilityProfileAtlas,
-				DirFormat:     migrator.MigrationDirFormatAtlas,
+				DirFormat:     migrationfile.DirFormatAtlas,
 				Dialect:       "postgres",
 			})
 			c.Assert(err, qt.IsNil)
@@ -240,7 +240,7 @@ func TestAnalyzeFS_AtlasSelectorsMatchTheCommunityBinaryOnADroppedColumn(t *test
 				"1_drop.sql": test.directive + "ALTER TABLE t DROP COLUMN legacy;\n",
 			}), lint.Options{
 				Compatibility: lint.CompatibilityProfileAtlas,
-				DirFormat:     migrator.MigrationDirFormatAtlas,
+				DirFormat:     migrationfile.DirFormatAtlas,
 				Dialect:       "postgres",
 			})
 			c.Assert(err, qt.IsNil)
@@ -296,7 +296,7 @@ ALTER TABLE t DROP COLUMN legacy;
 				"1_gap.sql": test.sql,
 			}), lint.Options{
 				Compatibility: lint.CompatibilityProfileAtlas,
-				DirFormat:     migrator.MigrationDirFormatAtlas,
+				DirFormat:     migrationfile.DirFormatAtlas,
 				Dialect:       "postgres",
 			})
 			c.Assert(err, qt.IsNil)

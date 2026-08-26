@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/migration/lint"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // analyzeScoped analyzes one selected up migration under a schema scope.
@@ -22,7 +22,7 @@ func analyzeScoped(c *qt.C, base, sql, scope string) lint.Analysis {
 		"2.sql": sql,
 	}), lint.Options{
 		Compatibility: lint.CompatibilityProfileAtlas,
-		DirFormat:     migrator.MigrationDirFormatAtlas,
+		DirFormat:     migrationfile.DirFormatAtlas,
 		Dialect:       "postgres",
 		SchemaScope:   scope,
 		Selection:     lint.VersionSelection{Versions: []int64{2}, Restricted: true},

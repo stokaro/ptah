@@ -11,7 +11,7 @@ import (
 	"go.5x5.cz/ptah/cmd/migratestatus"
 	"go.5x5.cz/ptah/cmd/migratevalidate"
 	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // These tests pin the apply-time integrity gate from stokaro/ptah#955 and the
@@ -37,7 +37,7 @@ func writeHashedAtlasDirFiles(c *qt.C, files map[string]string) string {
 	for name, content := range files {
 		c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
 	}
-	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(dir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	return dir
 }
@@ -61,7 +61,7 @@ func writeHashedPtahDir(c *qt.C) string {
 	for name, content := range files {
 		c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
 	}
-	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatPtah)
+	_, err := migratesum.WriteWithFormat(dir, migrationfile.DirFormatPtah)
 	c.Assert(err, qt.IsNil)
 	return dir
 }

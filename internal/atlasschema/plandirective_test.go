@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/internal/atlasschema"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // TestParsePlanDirectiveAcceptsEverySpellingOfALine covers the two ways one
@@ -214,32 +214,32 @@ func TestPlanTxModeReadsTheHeaderAndNothingBelowIt(t *testing.T) {
 	tests := []struct {
 		name      string
 		migration string
-		want      migrator.MigrationFileTxMode
+		want      migrationfile.FileTxMode
 	}{
 		{
 			name:      "first line",
 			migration: "-- atlas:txmode none\n\n" + statement,
-			want:      migrator.MigrationFileTxModeNone,
+			want:      migrationfile.FileTxModeNone,
 		},
 		{
 			name:      "second comment line",
 			migration: "-- planned by hand\n-- atlas:txmode none\n\n" + statement,
-			want:      migrator.MigrationFileTxModeNone,
+			want:      migrationfile.FileTxModeNone,
 		},
 		{
 			name:      "file mode",
 			migration: "-- atlas:txmode file\n\n" + statement,
-			want:      migrator.MigrationFileTxModeFile,
+			want:      migrationfile.FileTxModeFile,
 		},
 		{
 			name:      "below the statement",
 			migration: statement + "-- atlas:txmode none\n",
-			want:      migrator.MigrationFileTxModeUnspecified,
+			want:      migrationfile.FileTxModeUnspecified,
 		},
 		{
 			name:      "no directive",
 			migration: statement,
-			want:      migrator.MigrationFileTxModeUnspecified,
+			want:      migrationfile.FileTxModeUnspecified,
 		},
 		{
 			// A directive this layer does not own is not this layer's to
@@ -247,7 +247,7 @@ func TestPlanTxModeReadsTheHeaderAndNothingBelowIt(t *testing.T) {
 			// lint` reads it out of the same text.
 			name:      "another family's directive",
 			migration: "-- atlas:nolint destructive\n\n" + statement,
-			want:      migrator.MigrationFileTxModeUnspecified,
+			want:      migrationfile.FileTxModeUnspecified,
 		},
 	}
 
@@ -273,5 +273,5 @@ func TestPlanTxModeRefusesAnUnreadableValueInThePlan(t *testing.T) {
 		"hand.plan.hcl", "-- atlas:txmode all\n\nCREATE TABLE t (id INTEGER PRIMARY KEY);\n")
 
 	c.Assert(err, qt.ErrorMatches, `txmode "all" is not allowed in file directive "hand.plan.hcl".*`)
-	c.Assert(mode, qt.Equals, migrator.MigrationFileTxModeUnspecified)
+	c.Assert(mode, qt.Equals, migrationfile.FileTxModeUnspecified)
 }

@@ -16,7 +16,7 @@ import (
 	"go.5x5.cz/ptah/internal/agentworkspace"
 	"go.5x5.cz/ptah/internal/mcpserver"
 	"go.5x5.cz/ptah/internal/migrateops"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // workspaceFixture is a project with one hashed migration pair, and the
@@ -40,7 +40,7 @@ func newWorkspace(c *qt.C, write agentpolicy.Verdict, approver agentpolicy.Appro
 	c.Assert(writeFile(dir, "1700000000_init.up.sql",
 		"CREATE TABLE users (id BIGINT PRIMARY KEY);\n"), qt.IsNil)
 	c.Assert(writeFile(dir, "1700000000_init.down.sql", "DROP TABLE users;\n"), qt.IsNil)
-	_, err := migrateops.Rehash(dir, migrator.MigrationDirFormatAuto)
+	_, err := migrateops.Rehash(dir, migrationfile.DirFormatAuto)
 	c.Assert(err, qt.IsNil)
 
 	workspace, err := agentworkspace.Open(agentworkspace.Config{

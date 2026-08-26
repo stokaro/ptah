@@ -24,6 +24,7 @@ import (
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/generator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 	"go.5x5.cz/ptah/migration/safety"
 )
@@ -89,7 +90,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.BoolVar(&opts.dryRun, dryRunFlag, false, "Show the metadata rows that would be inserted without writing them")
 	flags.StringVar(&opts.shadowDB, shadowDBFlag, "", "Disposable shadow database URL used to verify baselined migrations reproduce the target schema")
 	flags.StringVar(&opts.rootDir, rootDirFlag, "./", "Root directory to scan for Go entities when --shadow-db is not set")
-	flags.StringVar(&opts.dirFormat, dirFormatFlag, string(migrator.MigrationDirFormatAuto), "Migration directory format: auto, ptah, or atlas")
+	flags.StringVar(&opts.dirFormat, dirFormatFlag, string(migrationfile.DirFormatAuto), "Migration directory format: auto, ptah, or atlas")
 	flags.StringVar(&opts.atlasEnv, atlasEnvFlag, "", "Value exposed as .Env when rendering Atlas SQL template migrations")
 	flags.StringVar(&opts.lockTimeout, lockTimeoutFlag, "", "Timeout for acquiring the session-level migration advisory lock, such as 10s or 2m")
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
@@ -120,7 +121,7 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error
 		return fmt.Errorf("migrations directory is required")
 	}
 
-	dirFormat, err := migrator.ParseMigrationDirFormat(opts.dirFormat)
+	dirFormat, err := migrationfile.ParseDirFormat(opts.dirFormat)
 	if err != nil {
 		return err
 	}
@@ -145,7 +146,7 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error
 	}
 	providerOpts := []migrator.FSProviderOption{
 		migrator.WithMigrationDirFormat(dirFormat),
-		migrator.WithAtlasTemplateData(migrator.AtlasTemplateData{Env: opts.atlasEnv}),
+		migrator.WithAtlasTemplateData(migrationfile.AtlasTemplateData{Env: opts.atlasEnv}),
 	}
 	provider, err := migrator.NewFSMigrationProvider(migrationsFS, providerOpts...)
 	if err != nil {

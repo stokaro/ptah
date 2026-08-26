@@ -10,6 +10,7 @@ import (
 
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -595,7 +596,7 @@ func TestPrepareApplyExecute_ValidationErrorUsesLockedPlan(t *testing.T) {
 		},
 	)
 
-	var txModeErr *migrator.AtlasTxModeDirectiveError
+	var txModeErr *migrationfile.AtlasTxModeDirectiveError
 	c.Assert(err, qt.ErrorAs, &txModeErr)
 	c.Assert(err, qt.ErrorMatches, `unknown txmode "bogus" found in file directive "2_invalid.sql"`)
 	c.Assert(result.Applied, qt.IsFalse)

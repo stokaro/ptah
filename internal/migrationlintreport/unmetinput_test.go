@@ -9,7 +9,7 @@ import (
 
 	"go.5x5.cz/ptah/internal/migrationlintreport"
 	"go.5x5.cz/ptah/migration/lint"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // unmetInputAnalysis returns an analysis of a column rename with the baseline
@@ -26,7 +26,7 @@ func unmetInputAnalysis(c *qt.C, baseline []lint.BaselineColumn) lint.Analysis {
 	}, lint.Options{
 		Compatibility: lint.CompatibilityProfileAtlas,
 		Dialect:       "postgres",
-		DirFormat:     migrator.MigrationDirFormatAtlas,
+		DirFormat:     migrationfile.DirFormatAtlas,
 		Selection:     lint.VersionSelection{Versions: []int64{2}, Restricted: true},
 		Baseline:      baseline,
 	})

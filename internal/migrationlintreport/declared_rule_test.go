@@ -9,7 +9,7 @@ import (
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/internal/migrationlintreport"
 	migrationlint "go.5x5.cz/ptah/migration/lint"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // buildWithProjectRules runs a lint report over one migration with the project
@@ -26,7 +26,7 @@ func buildWithProjectRules(
 	return migrationlintreport.Build(c.TB.Context(), migrationlintreport.Options{
 		Dir:       "unused",
 		FS:        fstest.MapFS{"1_init.sql": {Data: []byte(sql)}},
-		DirFormat: string(migrator.MigrationDirFormatAtlas),
+		DirFormat: string(migrationfile.DirFormatAtlas),
 		Dialect:   "postgres",
 		FailOn:    migrationlintreport.FailOnNone,
 		Changed:   migrationlintreport.ChangedOptions{Dialect: true},

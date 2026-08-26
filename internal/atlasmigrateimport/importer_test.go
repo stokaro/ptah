@@ -13,7 +13,7 @@ import (
 
 	"go.5x5.cz/ptah/atlascompat"
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 func TestLoadFS_RejectsUnsupportedSourceFiles(t *testing.T) {
@@ -503,7 +503,7 @@ func baseNames(paths []string) []string {
 func assertAtlasSumOK(c *qt.C, dir, sumFile string) {
 	c.Helper()
 	c.Assert(filepath.Base(sumFile), qt.Equals, atlascompat.AtlasSumFileName)
-	result, err := atlascompat.VerifySumDir(dir, migrator.MigrationDirFormatAtlas)
+	result, err := atlascompat.VerifySumDir(dir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.OK(), qt.Equals, true)
 }

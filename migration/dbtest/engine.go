@@ -16,6 +16,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/migration/internal/shadowdb"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 	"go.5x5.cz/ptah/migration/seeder"
 )
@@ -46,7 +47,7 @@ type Options struct {
 	// DirFormat selects how MigrationsDir is parsed. The zero value defaults to
 	// the Ptah directory format (not the migrator's own "auto" default), so a
 	// direct caller that wants format auto-detection must set it explicitly.
-	DirFormat migrator.MigrationDirFormat
+	DirFormat migrationfile.DirFormat
 	// RevisionsSchema places the revision table a migrate_to step writes in a
 	// named schema instead of the connection's default one. It matters when the
 	// throwaway database already holds a revision table the run must not touch,
@@ -271,7 +272,7 @@ func RunMigrationTest(ctx context.Context, opts Options) (*Report, error) {
 
 	dirFormat := opts.DirFormat
 	if dirFormat == "" {
-		dirFormat = migrator.MigrationDirFormatPtah
+		dirFormat = migrationfile.DirFormatPtah
 	}
 
 	run := func(ctx context.Context, conn *dbschema.DatabaseConnection, c Case) (CaseResult, error) {
@@ -411,7 +412,7 @@ type runner struct {
 	conn          *dbschema.DatabaseConnection
 	migrationsDir string
 	migrationsFS  fs.FS
-	dirFormat     migrator.MigrationDirFormat
+	dirFormat     migrationfile.DirFormat
 	desiredSchema *goschema.Database
 	seedDir       string
 	// revisionsSchema is the schema the migrate_to migrator records revisions

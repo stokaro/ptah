@@ -3,7 +3,7 @@ package generator
 import (
 	"io/fs"
 
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // WriteDataMigrationFiles writes an ordinary migration pair
@@ -19,7 +19,7 @@ import (
 // declarative reference/seed data pipeline (ptah migrations data): the SQL
 // bodies are the concatenated datadiff DML for every managed table.
 func WriteDataMigrationFiles(outputDir string, version int64, description, upSQL, downSQL string) (upPath, downPath string, err error) {
-	return writeMigrationPair(outputDir, version, description, upSQL, downSQL, "migration", migrator.GenerateMigrationFileName)
+	return writeMigrationPair(outputDir, version, description, upSQL, downSQL, "migration", migrationfile.FileName)
 }
 
 // writeMigrationPair writes an up/down migration file pair, named by nameFor,

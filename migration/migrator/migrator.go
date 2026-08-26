@@ -19,6 +19,7 @@ import (
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/sqliterebuild"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // MigrationStatus represents the current state of migrations
@@ -130,7 +131,7 @@ type Migrator struct {
 	conn                 *dbschema.DatabaseConnection
 	noTransactionSession *dbschema.DatabaseConnection
 	migrationProvider    MigrationProvider
-	defaultTimeouts      MigrationTimeouts
+	defaultTimeouts      migrationfile.Timeouts
 	migrationsTable      string
 	migrationsSchema     string
 	migrationsEngine     string
@@ -235,13 +236,13 @@ func (m *Migrator) migrationCheckGroups(
 	dialect := m.connectionDialect()
 	groups := make([]checkGroup, 0, len(migration.atlasCheckFiles)+1)
 	for _, file := range migration.atlasCheckFiles {
-		mode := atlasCheckFileMode(file.sql, dialect)
-		checks := parseAtlasTxtarChecks(file.name, file.sql, dialect)
+		mode := atlasCheckFileMode(file.SQL, dialect)
+		checks := parseAtlasTxtarChecks(file.Name, file.SQL, dialect)
 		if len(checks) == 0 && mode != checkGroupOneOf {
 			continue
 		}
 		groups = append(groups, checkGroup{
-			name:   file.name,
+			name:   file.Name,
 			checks: checks,
 			mode:   mode,
 		})
@@ -1350,6 +1351,17 @@ type rowScanner interface {
 	Scan(dest ...any) error
 }
 
+// allDigitsToken reports whether value is one or more ASCII digits, the shape
+// the numeric prefix of a repeatable revision token must have.
+func allDigitsToken(value string) bool {
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return value != ""
+}
+
 func parseAtlasRevisionVersion(version string) (int64, error) {
 	trimmed := strings.TrimSpace(version)
 	parsed, err := strconv.ParseInt(trimmed, 10, 64)
@@ -1359,7 +1371,7 @@ func parseAtlasRevisionVersion(version string) (int64, error) {
 	if trimmed == "R" {
 		return 0, nil
 	}
-	if prefix, ok := strings.CutSuffix(trimmed, "R"); ok && allDigits(prefix) {
+	if prefix, ok := strings.CutSuffix(trimmed, "R"); ok && allDigitsToken(prefix) {
 		parsed, parseErr := strconv.ParseInt(prefix, 10, 64)
 		if parseErr == nil {
 			return parsed, nil
@@ -2164,11 +2176,12 @@ func (m *Migrator) reportMisplacedDirectives(migrations []*Migration, direction 
 		if direction == MigrationDirectionDown {
 			source, sourcePath = migration.DownSQL, migration.downSourcePath
 		}
-		for _, misplaced := range misplacedDirectives(source, dialect) {
-			if misplaced.err != nil {
-				// Reported as the run's refusal by [misplacedDirectiveError],
-				// which names the line too. Warning about it here as well would
-				// print the same line twice on a run that is about to abort.
+		for _, misplaced := range migrationfile.MisplacedDirectives(source, dialect) {
+			if misplaced.Err != nil {
+				// Reported as the run's refusal by the toolkit's tx-mode
+				// parsing, which names the line too. Warning about it here as
+				// well would print the same line twice on a run that is about
+				// to abort.
 				continue
 			}
 			m.logger.Warn(
@@ -2176,9 +2189,9 @@ func (m *Migrator) reportMisplacedDirectives(migrations []*Migration, direction 
 				"version", migration.Version,
 				"direction", string(direction),
 				"file", migrationTxModeSourceName(sourcePath, migration.Description),
-				"line", misplaced.line,
-				"directive", misplaced.text,
-				"remedy", misplaced.remedy,
+				"line", misplaced.Line,
+				"directive", misplaced.Text,
+				"remedy", misplaced.Remedy,
 			)
 		}
 	}
@@ -2301,7 +2314,7 @@ func (m *Migrator) runBatchPreMigrationChecks(ctx context.Context, migrations []
 }
 
 func (m *Migrator) validateUpTransactionMode(migrations []*Migration) error {
-	resolvedTimeouts := make(map[*Migration]MigrationTimeouts, len(migrations))
+	resolvedTimeouts := make(map[*Migration]migrationfile.Timeouts, len(migrations))
 	for _, migration := range migrations {
 		timeouts, err := m.effectiveUpTimeouts(migration)
 		if err != nil {
@@ -2336,7 +2349,7 @@ func (m *Migrator) validateUpTransactionMode(migrations []*Migration) error {
 	case MigrationTxModeNone:
 		for _, migration := range migrations {
 			fileMode := migration.parsedUpTxModeForDialect(m.connectionDialect())
-			if fileMode.mode == MigrationFileTxModeFile || fileMode.err != nil {
+			if fileMode.Mode == migrationfile.FileTxModeFile || fileMode.Err != nil {
 				continue
 			}
 			if !resolvedTimeouts[migration].IsZero() {
@@ -2347,10 +2360,10 @@ func (m *Migrator) validateUpTransactionMode(migrations []*Migration) error {
 	return nil
 }
 
-func (m *Migrator) effectiveUpTimeouts(migration *Migration) (MigrationTimeouts, error) {
+func (m *Migrator) effectiveUpTimeouts(migration *Migration) (migrationfile.Timeouts, error) {
 	timeouts, err := migration.upTimeoutsForDialect(m.connectionDialect())
 	if err != nil {
-		return MigrationTimeouts{}, fmt.Errorf(
+		return migrationfile.Timeouts{}, fmt.Errorf(
 			"migration %d has invalid timeout directives: %w",
 			migration.Version,
 			err,
@@ -2359,10 +2372,10 @@ func (m *Migrator) effectiveUpTimeouts(migration *Migration) (MigrationTimeouts,
 	return mergeMigrationTimeouts(m.defaultTimeouts, timeouts), nil
 }
 
-func (m *Migrator) effectiveDownTimeouts(migration *Migration) (MigrationTimeouts, error) {
+func (m *Migrator) effectiveDownTimeouts(migration *Migration) (migrationfile.Timeouts, error) {
 	timeouts, err := migration.downTimeoutsForDialect(m.connectionDialect())
 	if err != nil {
-		return MigrationTimeouts{}, fmt.Errorf(
+		return migrationfile.Timeouts{}, fmt.Errorf(
 			"migration %d has invalid timeout directives: %w",
 			migration.Version,
 			err,
@@ -3222,7 +3235,7 @@ func (m *Migrator) failMigrationWithDirtyStateWithMode(
 	return fmt.Errorf("%s: %w", prefix, failure)
 }
 
-func ensureNoTransactionHasNoTimeouts(version int64, timeouts MigrationTimeouts) error {
+func ensureNoTransactionHasNoTimeouts(version int64, timeouts migrationfile.Timeouts) error {
 	if timeouts.IsZero() {
 		return nil
 	}

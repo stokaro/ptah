@@ -7,6 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -76,8 +77,8 @@ func TestNewFSMigrator_LoadsNoTransactionDirective(t *testing.T) {
 	m, err := migrator.NewFSMigrator(nil, fsys)
 	c.Assert(err, qt.IsNil)
 	migration := m.MigrationProvider().Migrations()[0]
-	c.Assert(migration.UpTxMode, qt.Equals, migrator.MigrationFileTxModeNone)
-	c.Assert(migration.DownTxMode, qt.Equals, migrator.MigrationFileTxModeUnspecified)
+	c.Assert(migration.UpTxMode, qt.Equals, migrationfile.FileTxModeNone)
+	c.Assert(migration.DownTxMode, qt.Equals, migrationfile.FileTxModeUnspecified)
 }
 
 func TestNewFSMigrator_LoadsDirectionalDownNoTransactionDirective(t *testing.T) {
@@ -95,8 +96,8 @@ func TestNewFSMigrator_LoadsDirectionalDownNoTransactionDirective(t *testing.T) 
 	m, err := migrator.NewFSMigrator(nil, fsys)
 	c.Assert(err, qt.IsNil)
 	migration := m.MigrationProvider().Migrations()[0]
-	c.Assert(migration.UpTxMode, qt.Equals, migrator.MigrationFileTxModeUnspecified)
-	c.Assert(migration.DownTxMode, qt.Equals, migrator.MigrationFileTxModeNone)
+	c.Assert(migration.UpTxMode, qt.Equals, migrationfile.FileTxModeUnspecified)
+	c.Assert(migration.DownTxMode, qt.Equals, migrationfile.FileTxModeNone)
 }
 
 func TestNewFSMigrator_InvalidNoTransactionDirective(t *testing.T) {

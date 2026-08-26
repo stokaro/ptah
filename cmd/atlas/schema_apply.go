@@ -33,6 +33,7 @@ import (
 	"go.5x5.cz/ptah/internal/schemafile"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	migrationlint "go.5x5.cz/ptah/migration/lint"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -792,7 +793,7 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	if planMode != migrator.MigrationFileTxModeUnspecified {
+	if planMode != migrationfile.FileTxModeUnspecified {
 		txMode, err = migrator.ResolveAtlasDirectiveTxMode(txMode, planMode, path)
 		if err != nil {
 			return cmdutil.Fail(cmd, err)

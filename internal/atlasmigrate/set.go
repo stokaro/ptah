@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -21,7 +22,7 @@ type SetOptions struct {
 	RevisionsTable string
 	// DirFormat selects the migration directory layout. Empty keeps the Atlas
 	// layout, preserving the Atlas-compatible caller's behavior.
-	DirFormat migrator.MigrationDirFormat
+	DirFormat migrationfile.DirFormat
 	// RevisionFormat selects the revision table layout. Empty keeps the Atlas
 	// layout, preserving the Atlas-compatible caller's behavior.
 	RevisionFormat migrator.RevisionTableFormat
@@ -64,7 +65,7 @@ func Set(
 	}
 	dirFormat := opts.DirFormat
 	if dirFormat == "" {
-		dirFormat = migrator.MigrationDirFormatAtlas
+		dirFormat = migrationfile.DirFormatAtlas
 	}
 	revisionFormat := opts.RevisionFormat
 	if revisionFormat == "" {
@@ -75,7 +76,7 @@ func Set(
 		conn,
 		opts.FS,
 		migrator.WithMigrationDirFormat(dirFormat),
-		migrator.WithAtlasTemplateData(migrator.AtlasTemplateData{Env: opts.AtlasEnv}),
+		migrator.WithAtlasTemplateData(migrationfile.AtlasTemplateData{Env: opts.AtlasEnv}),
 		migrator.WithAtlasRevisionVersions(opts.RevisionVersions),
 		migrator.WithAtlasRevisionChecksums(opts.RevisionChecksums),
 		migrator.WithAtlasRevisionTypes(opts.RevisionTypes),

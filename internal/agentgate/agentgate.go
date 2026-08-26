@@ -40,7 +40,7 @@ import (
 	"go.5x5.cz/ptah/internal/schemavalidate"
 	"go.5x5.cz/ptah/internal/sqllint"
 	"go.5x5.cz/ptah/migration/dbtest"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // Gate names. They are stable identifiers a report is keyed by, so a client can
@@ -183,7 +183,7 @@ type Options struct {
 	Capabilities capability.Capabilities
 	// DirFormat selects the migration directory layout. The zero value lets the
 	// integrity check detect it.
-	DirFormat migrator.MigrationDirFormat
+	DirFormat migrationfile.DirFormat
 }
 
 // Runner runs the gates for one artifact class.

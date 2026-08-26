@@ -18,6 +18,7 @@ import (
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -69,7 +70,7 @@ after a manual intervention. It never runs or reverts migration SQL; use
 	flags.StringVar(&opts.dbURL, dbURLFlag, "", "Database URL (required). Example: postgres://localhost:5432/dbname")
 	flags.StringVar(&opts.migrationsDir, migrationsFlag, "", "Local directory containing migration files (required)")
 	flags.StringVar(&opts.version, versionFlag, "", "Migration version the revision boundary is moved to (required)")
-	flags.StringVar(&opts.dirFormat, dirFormatFlag, string(migrator.MigrationDirFormatAuto), "Migration directory format: auto, ptah, or atlas")
+	flags.StringVar(&opts.dirFormat, dirFormatFlag, string(migrationfile.DirFormatAuto), "Migration directory format: auto, ptah, or atlas")
 	flags.StringVar(&opts.atlasEnv, atlasEnvFlag, "", "Value exposed as .Env when rendering Atlas SQL template migrations")
 	flags.BoolVar(&opts.dryRun, dryRunFlag, false, "Validate inputs and report the target version without changing revision metadata")
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
@@ -146,7 +147,7 @@ func runMigrateSet(cmd *cobra.Command, opts options) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	dirFormat, err := migrator.ParseMigrationDirFormat(opts.dirFormat)
+	dirFormat, err := migrationfile.ParseDirFormat(opts.dirFormat)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

@@ -10,7 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 func TestNextAvailablePtahVersionSkipsVersionWhenEitherDirectionExists(t *testing.T) {
@@ -24,19 +24,19 @@ func TestNextAvailablePtahVersionSkipsVersionWhenEitherDirectionExists(t *testin
 		{name: "empty directory", names: nil, want: 42},
 		{
 			name:  "only the up half exists",
-			names: []string{migrator.GenerateMigrationFileName(42, name, "up")},
+			names: []string{migrationfile.FileName(42, name, "up")},
 			want:  43,
 		},
 		{
 			name:  "only the down half exists",
-			names: []string{migrator.GenerateMigrationFileName(42, name, "down")},
+			names: []string{migrationfile.FileName(42, name, "down")},
 			want:  43,
 		},
 		{
 			name: "both halves exist",
 			names: []string{
-				migrator.GenerateMigrationFileName(42, name, "up"),
-				migrator.GenerateMigrationFileName(42, name, "down"),
+				migrationfile.FileName(42, name, "up"),
+				migrationfile.FileName(42, name, "down"),
 			},
 			want: 43,
 		},

@@ -24,7 +24,7 @@ import (
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/migrationversion"
 	"go.5x5.cz/ptah/internal/pathguard"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 const (
@@ -404,7 +404,7 @@ func computePublicationSum(
 	format atlasmigrateimport.Format,
 ) (*migratesum.SumFile, error) {
 	if ReadsNativeAtlasDir(format) {
-		return migratesum.ComputeWithFormat(fsys, migrator.MigrationDirFormatAtlas)
+		return migratesum.ComputeWithFormat(fsys, migrationfile.DirFormatAtlas)
 	}
 	names, err := atlasmigrateimport.SumFileNames(fsys, format)
 	if err != nil {
@@ -1512,7 +1512,7 @@ func stageRootedFile(
 func MigrationVersion() int64 {
 	version, err := strconv.ParseInt(migrationVersionClock().Format("20060102150405"), 10, 64)
 	if err != nil {
-		return migrator.GetNextMigrationVersion()
+		return migrationfile.NextVersion()
 	}
 	return version
 }
@@ -1537,7 +1537,7 @@ var migrationVersionClock = func() time.Time { return time.Now().UTC() }
 // version+1 (see BuildMigrationFileContents), both land there otherwise
 // (stokaro/ptah#938).
 func nextMigrationVersionFS(fsys fs.FS, count int) (int64, error) {
-	files, err := migrator.DiscoverMigrationFiles(fsys, migrator.MigrationDirFormatAtlas)
+	files, err := migrationfile.Discover(fsys, migrationfile.DirFormatAtlas)
 	if err != nil {
 		return 0, err
 	}
@@ -1553,7 +1553,7 @@ func nextMigrationVersionFS(fsys fs.FS, count int) (int64, error) {
 // against a real second.
 func firstFreeMigrationVersionRun(taken map[int64]struct{}, version int64, count int) (int64, error) {
 	for {
-		base, err := migrationversion.WritableRun(version, count, migrator.MigrationDirFormatAtlas)
+		base, err := migrationversion.WritableRun(version, count, migrationfile.DirFormatAtlas)
 		if err != nil {
 			return 0, err
 		}

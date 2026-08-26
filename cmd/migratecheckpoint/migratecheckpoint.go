@@ -27,6 +27,7 @@ import (
 	"go.5x5.cz/ptah/internal/migrationversion"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/generator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -97,7 +98,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.description, descriptionFlag, "checkpoint", "Checkpoint description used in the file name")
 	flags.StringVar(&opts.version, versionFlag, "", "Checkpoint version; defaults to one above the newest migration")
 	flags.BoolVar(&opts.dryRun, dryRunFlag, false, "Print the checkpoint SQL instead of writing files")
-	flags.StringVar(&opts.dirFormat, dirFormatFlag, string(migrator.MigrationDirFormatPtah), "Migration directory format")
+	flags.StringVar(&opts.dirFormat, dirFormatFlag, string(migrationfile.DirFormatPtah), "Migration directory format")
 	flags.StringVar(&opts.qualifier, qualifierFlag, "", "Qualify every object in the checkpoint with a custom schema qualifier (single-schema checkpoints only)")
 	flags.BoolVar(&opts.edit, editFlag, false, "Open the written checkpoint files in an editor before reporting them (the directory checksum is refreshed afterwards)")
 	flags.StringVar(&opts.editor, editorFlag, "", "Editor command used with --edit (defaults to $VISUAL, then $EDITOR)")
@@ -131,7 +132,7 @@ func migrateCheckpointCommand(cmd *cobra.Command, _ []string, opts *options) err
 		return cmdutil.Fail(cmd, fmt.Errorf("migrations directory is required"))
 	}
 
-	dirFormat, err := migrator.ParseMigrationDirFormat(opts.dirFormat)
+	dirFormat, err := migrationfile.ParseDirFormat(opts.dirFormat)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -143,11 +144,11 @@ func migrateCheckpointCommand(cmd *cobra.Command, _ []string, opts *options) err
 	// which integrity file the directory wants, leaving a mixed-format
 	// directory with a stale sum. Refuse it up front rather than reporting
 	// success and corrupting the directory.
-	if dirFormat == migrator.MigrationDirFormatAuto {
+	if dirFormat == migrationfile.DirFormatAuto {
 		return cmdutil.Fail(cmd, fmt.Errorf(
 			"checkpoint cannot write under --%s=%s: name the target convention with %s or %s",
-			dirFormatFlag, migrator.MigrationDirFormatAuto,
-			migrator.MigrationDirFormatPtah, migrator.MigrationDirFormatAtlas,
+			dirFormatFlag, migrationfile.DirFormatAuto,
+			migrationfile.DirFormatPtah, migrationfile.DirFormatAtlas,
 		))
 	}
 	if err := checkIntegrityFileConflict(opts.migrationsDir, dirFormat); err != nil {
@@ -217,13 +218,13 @@ func migrateCheckpointCommand(cmd *cobra.Command, _ []string, opts *options) err
 		return err
 	}
 
-	if dirFormat == migrator.MigrationDirFormatAtlas {
+	if dirFormat == migrationfile.DirFormatAtlas {
 		return writeAtlasCheckpoint(cmd, out, opts, version, upSQL, migrationsFS)
 	}
 
 	if opts.dryRun {
-		upName := migrator.GenerateCheckpointMigrationFileName(version, opts.description, "up")
-		downName := migrator.GenerateCheckpointMigrationFileName(version, opts.description, "down")
+		upName := migrationfile.CheckpointFileName(version, opts.description, "up")
+		downName := migrationfile.CheckpointFileName(version, opts.description, "down")
 		fmt.Fprintf(out, "-- checkpoint version %d (dry run, no files written)\n\n-- %s\n%s\n\n-- %s\n%s\n",
 			version, upName, upSQL, downName, downSQL)
 		return nil
@@ -314,7 +315,7 @@ func checkEditPreconditions(cmd *cobra.Command, opts *options) error {
 func editWrittenCheckpoint(
 	cmd *cobra.Command,
 	opts *options,
-	dirFormat migrator.MigrationDirFormat,
+	dirFormat migrationfile.DirFormat,
 	authorizedMigrations fs.FS,
 	paths ...string,
 ) error {
@@ -349,8 +350,8 @@ func editWrittenCheckpoint(
 	return nil
 }
 
-func integrityFileName(dirFormat migrator.MigrationDirFormat) string {
-	if dirFormat == migrator.MigrationDirFormatAtlas {
+func integrityFileName(dirFormat migrationfile.DirFormat) string {
+	if dirFormat == migrationfile.DirFormatAtlas {
 		return migratesum.AtlasFileName
 	}
 	return migratesum.FileName
@@ -384,7 +385,7 @@ func writeAtlasCheckpoint(
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	if err := editWrittenCheckpoint(cmd, opts, migrator.MigrationDirFormatAtlas, migrationsFS, path); err != nil {
+	if err := editWrittenCheckpoint(cmd, opts, migrationfile.DirFormatAtlas, migrationsFS, path); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	fmt.Fprintf(out, "Wrote checkpoint version %d:\n  %s\n", version, path)
@@ -400,16 +401,16 @@ func writeAtlasCheckpoint(
 // checkpoint command would otherwise exit 0 and surface the damage on some
 // later command instead. Writing the checkpoint is the step that creates the
 // second file, so it is the step that refuses.
-func checkIntegrityFileConflict(migrationsDir string, dirFormat migrator.MigrationDirFormat) error {
+func checkIntegrityFileConflict(migrationsDir string, dirFormat migrationfile.DirFormat) error {
 	writes, foreign := migratesum.AtlasFileName, migratesum.FileName
-	if dirFormat == migrator.MigrationDirFormatPtah {
+	if dirFormat == migrationfile.DirFormatPtah {
 		writes, foreign = migratesum.FileName, migratesum.AtlasFileName
 	}
 	switch _, err := os.Stat(filepath.Join(migrationsDir, foreign)); {
 	case err == nil:
 		return fmt.Errorf(
 			"cannot write %s-format checkpoint files into a directory that already has %s: it would leave both %s and %s behind, which --%s=%s refuses to read; re-hash the directory into one format first",
-			dirFormat, foreign, foreign, writes, dirFormatFlag, migrator.MigrationDirFormatAuto,
+			dirFormat, foreign, foreign, writes, dirFormatFlag, migrationfile.DirFormatAuto,
 		)
 	case !errors.Is(err, os.ErrNotExist):
 		return fmt.Errorf("failed to inspect migrations directory: %w", err)
@@ -429,21 +430,21 @@ func checkIntegrityFileConflict(migrationsDir string, dirFormat migrator.Migrati
 // and permanently integrity-covered, which is worse than either failure alone.
 //
 // The test is content-shaped, so it holds for both. A ptah file name carries a
-// direction component that ParseMigrationFileName requires, so a pure Atlas
+// direction component that migrationfile.ParseFileName requires, so a pure Atlas
 // directory yields zero matches and never trips this.
 //
 // The converse (Atlas-shaped files under --dir-format=ptah) is NOT symmetric
 // and is deliberately not checked here: the Atlas name grammar also accepts
 // ptah's own `NNNNNNNNNN_name.up.sql`, so every ptah directory would match it
 // and the guard would refuse the format's ordinary use.
-func checkPtahFileConflict(migrationsDir string, dirFormat migrator.MigrationDirFormat) error {
-	if dirFormat != migrator.MigrationDirFormatAtlas {
+func checkPtahFileConflict(migrationsDir string, dirFormat migrationfile.DirFormat) error {
+	if dirFormat != migrationfile.DirFormatAtlas {
 		return nil
 	}
-	ptahFiles, err := migrator.DiscoverMigrationFiles(os.DirFS(migrationsDir), migrator.MigrationDirFormatPtah)
+	ptahFiles, err := migrationfile.Discover(os.DirFS(migrationsDir), migrationfile.DirFormatPtah)
 	if err != nil || len(ptahFiles) == 0 {
 		// A directory with no readable ptah files is exactly the case this
-		// guard must let through, and DiscoverMigrationFiles reports "nothing
+		// guard must let through, and migrationfile.Discover reports "nothing
 		// matched this format" as an error, so a failure here is not evidence
 		// of a conflict.
 		return nil
@@ -452,7 +453,7 @@ func checkPtahFileConflict(migrationsDir string, dirFormat migrator.MigrationDir
 		"cannot write %s-format checkpoint files into a directory that holds ptah-format migrations (%s): "+
 			"the checkpoint would be invisible to format auto-detection, which reads the ptah files instead; "+
 			"convert the directory first or pass --%s=%s",
-		dirFormat, ptahFiles[0].Path, dirFormatFlag, migrator.MigrationDirFormatPtah,
+		dirFormat, ptahFiles[0].Path, dirFormatFlag, migrationfile.DirFormatPtah,
 	)
 }
 
@@ -492,8 +493,8 @@ const ptahVersionWidth = 10
 // checkpoint would overwrite history, collide with an ordinary migration, or
 // fail to squash it — so those are rejected up front rather than producing a
 // directory that only breaks on a later command.
-func resolveCheckpointVersion(explicit, migrationsDir string, dirFormat migrator.MigrationDirFormat) (int64, error) {
-	files, err := migrator.DiscoverMigrationFiles(os.DirFS(migrationsDir), dirFormat)
+func resolveCheckpointVersion(explicit, migrationsDir string, dirFormat migrationfile.DirFormat) (int64, error) {
+	files, err := migrationfile.Discover(os.DirFS(migrationsDir), dirFormat)
 	if err != nil {
 		return 0, fmt.Errorf("failed to scan migrations directory: %w", err)
 	}
@@ -504,16 +505,16 @@ func resolveCheckpointVersion(explicit, migrationsDir string, dirFormat migrator
 		}
 	}
 
-	atlas := dirFormat == migrator.MigrationDirFormatAtlas
+	atlas := dirFormat == migrationfile.DirFormatAtlas
 
 	if explicit == "" {
 		if atlas {
 			if version := generator.ResolveAtlasCheckpointVersion(migrationsDir); version > latest {
 				return version, nil
 			}
-			return migrationversion.Advance(latest, migrator.MigrationDirFormatAtlas)
+			return migrationversion.Advance(latest, migrationfile.DirFormatAtlas)
 		}
-		return migrationversion.Advance(latest, migrator.MigrationDirFormatPtah)
+		return migrationversion.Advance(latest, migrationfile.DirFormatPtah)
 	}
 
 	version, err := strconv.ParseInt(explicit, 10, 64)

@@ -40,7 +40,7 @@ import (
 	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/internal/txrequire"
 	"go.5x5.cz/ptah/migration/diffpolicy"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/safety"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -218,7 +218,7 @@ type EmptyMigrationOptions struct {
 	AllowedOutputRoot string
 	// DirFormat selects the generated migration file layout. Empty generates
 	// Ptah paired up/down files.
-	DirFormat migrator.MigrationDirFormat
+	DirFormat migrationfile.DirFormat
 }
 
 // GenerateEmptyMigration creates skeleton migration files for manual SQL
@@ -236,7 +236,7 @@ func GenerateEmptyMigration(opts EmptyMigrationOptions) (*MigrationFiles, error)
 	if strings.TrimSpace(opts.OutputDir) == "" {
 		return nil, fmt.Errorf("output directory is required")
 	}
-	dirFormat, err := migrator.ParseMigrationDirFormat(string(opts.DirFormat))
+	dirFormat, err := migrationfile.ParseDirFormat(string(opts.DirFormat))
 	if err != nil {
 		return nil, err
 	}
@@ -249,7 +249,7 @@ func GenerateEmptyMigration(opts EmptyMigrationOptions) (*MigrationFiles, error)
 	// accepts an empty one, so only the paired layout validates it here -- and
 	// it validates before the directory is bound, so a rejected name never
 	// creates a directory.
-	if dirFormat != migrator.MigrationDirFormatAtlas {
+	if dirFormat != migrationfile.DirFormatAtlas {
 		if err := validateEmptyMigrationName(name); err != nil {
 			return nil, err
 		}
@@ -274,7 +274,7 @@ var atlasVersionClock = func() time.Time { return time.Now().UTC() }
 func nextAtlasMigrationVersion() int64 {
 	version, err := strconv.ParseInt(atlasVersionClock().Format("20060102150405"), 10, 64)
 	if err != nil {
-		return migrator.GetNextMigrationVersion()
+		return migrationfile.NextVersion()
 	}
 	return version
 }
@@ -312,7 +312,7 @@ func nextAvailableAtlasMigrationVersion(outputDir string, version int64) int64 {
 // refuses -- and a second checkpoint then wrote 29991231235961 on top of it.
 func nextAvailableAtlasVersion(names []string, version int64) (int64, error) {
 	if latest := latestAtlasVersionIn(names); latest >= version {
-		next, err := migrationversion.Advance(latest, migrator.MigrationDirFormatAtlas)
+		next, err := migrationversion.Advance(latest, migrationfile.DirFormatAtlas)
 		if err != nil {
 			return 0, err
 		}
@@ -320,7 +320,7 @@ func nextAvailableAtlasVersion(names []string, version int64) (int64, error) {
 	}
 	taken := nameSet(names)
 	for taken[atlasEmptyMigrationFileName(version, "")] {
-		next, err := migrationversion.Advance(version, migrator.MigrationDirFormatAtlas)
+		next, err := migrationversion.Advance(version, migrationfile.DirFormatAtlas)
 		if err != nil {
 			return 0, err
 		}
@@ -350,7 +350,7 @@ func nextAvailableAtlasVersion(names []string, version int64) (int64, error) {
 func firstFreeAtlasVersion(names []string, version int64) (int64, error) {
 	taken := atlasVersionsIn(names)
 	for {
-		free, err := migrationversion.Writable(version, migrator.MigrationDirFormatAtlas)
+		free, err := migrationversion.Writable(version, migrationfile.DirFormatAtlas)
 		if err != nil {
 			return 0, err
 		}
@@ -368,7 +368,7 @@ func firstFreeAtlasVersion(names []string, version int64) (int64, error) {
 func atlasVersionsIn(names []string) map[int64]struct{} {
 	taken := make(map[int64]struct{}, len(names))
 	for _, name := range names {
-		migrationFile, err := migrator.ParseAtlasMigrationFileName(name)
+		migrationFile, err := migrationfile.ParseAtlasFileName(name)
 		if err != nil {
 			continue
 		}
@@ -380,7 +380,7 @@ func atlasVersionsIn(names []string) map[int64]struct{} {
 func latestAtlasVersionIn(names []string) int64 {
 	var latest int64
 	for _, name := range names {
-		migrationFile, err := migrator.ParseAtlasMigrationFileName(name)
+		migrationFile, err := migrationfile.ParseAtlasFileName(name)
 		if err != nil {
 			continue
 		}
@@ -464,7 +464,7 @@ func isAtlasMigrationNameChar(r rune) bool {
 // migration it just wrote.
 //
 // Writing the name verbatim means it can now reach the Atlas file-name grammar,
-// and one suffix collides with it: [migrator.ParseAtlasMigrationFileName]
+// and one suffix collides with it: [migrationfile.ParseAtlasFileName]
 // classifies `<version>_x.down.sql` as the down half of a pair, because Atlas
 // importers emit that spelling for golang-migrate directories. So `migrate new
 // "x.down"` would write a file `migrate status` then refuses with `Atlas
@@ -486,7 +486,7 @@ func checkAtlasEmptyMigrationNameReadable(name string) error {
 	// rather than a version no caller asked for.
 	const probeVersion = 1
 	fileName := atlasEmptyMigrationFileName(probeVersion, name)
-	parsed, err := migrator.ParseAtlasMigrationFileName(fileName)
+	parsed, err := migrationfile.ParseAtlasFileName(fileName)
 	if err == nil && parsed.Version == probeVersion && parsed.Direction == "up" {
 		return nil
 	}
@@ -503,7 +503,7 @@ func validateEmptyMigrationName(name string) error {
 		return fmt.Errorf("migration name is required")
 	}
 
-	fileName := migrator.GenerateMigrationFileName(1, name, "up")
+	fileName := migrationfile.FileName(1, name, "up")
 	if strings.HasPrefix(fileName, "0000000001_.") {
 		return fmt.Errorf("migration name must contain letters, digits, or underscores")
 	}
@@ -613,7 +613,7 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 	// 4. Generate migration version (timestamp). The scan for a free version
 	// reads the bound handle rather than the pathname, so the names this plan
 	// avoids colliding with are the ones in the directory it will publish into.
-	version := migrator.GetNextMigrationVersion()
+	version := migrationfile.NextVersion()
 	version, err = nextAvailableMigrationVersion(writer, version, opts.MigrationName)
 	if err != nil {
 		return nil, fmt.Errorf("error reading migration directory: %w", err)
@@ -3572,12 +3572,12 @@ func nextAvailableMigrationVersion(
 // What did move is the arithmetic. The bump is bounded by what a ten-digit
 // NNNNNNNNNN prefix can hold, because past it the writer produced an
 // eleven-digit name -- `10000000000_addposts.up.sql` -- that
-// [migrator.ParseMigrationFileName] refuses, so discovery dropped the file with
+// [migrationfile.ParseFileName] refuses, so discovery dropped the file with
 // no diagnostic and `migrations up` reported success without running it
 // (stokaro/ptah#938).
 func nextAvailablePtahVersion(names []string, version int64, migrationName string) (int64, error) {
 	if latest := latestPtahVersionIn(names); latest >= version {
-		next, err := migrationversion.Next(latest, migrator.MigrationDirFormatPtah)
+		next, err := migrationversion.Next(latest, migrationfile.DirFormatPtah)
 		if err != nil {
 			return 0, err
 		}
@@ -3585,11 +3585,11 @@ func nextAvailablePtahVersion(names []string, version int64, migrationName strin
 	}
 	taken := nameSet(names)
 	for {
-		if err := migrationversion.Check(version, migrator.MigrationDirFormatPtah); err != nil {
+		if err := migrationversion.Check(version, migrationfile.DirFormatPtah); err != nil {
 			return 0, err
 		}
-		upName := migrator.GenerateMigrationFileName(version, migrationName, "up")
-		downName := migrator.GenerateMigrationFileName(version, migrationName, "down")
+		upName := migrationfile.FileName(version, migrationName, "up")
+		downName := migrationfile.FileName(version, migrationName, "down")
 		if !taken[upName] && !taken[downName] {
 			return version, nil
 		}
@@ -3600,7 +3600,7 @@ func nextAvailablePtahVersion(names []string, version int64, migrationName strin
 func latestPtahVersionIn(names []string) int64 {
 	var latest int64
 	for _, name := range names {
-		migrationFile, err := migrator.ParseMigrationFileName(name)
+		migrationFile, err := migrationfile.ParseFileName(name)
 		if err != nil {
 			continue
 		}
@@ -3642,10 +3642,10 @@ func withNoTransactionDirective(sql string) string {
 	if strings.TrimSpace(sql) == "" {
 		return sql
 	}
-	if directive, ok := migrator.ParseFileDirectives(sql)[migrator.DirectiveNoTransaction]; ok && directive == "true" {
+	if directive, ok := migrationfile.ParseDirectives(sql)[migrationfile.DirectiveNoTransaction]; ok && directive == "true" {
 		return sql
 	}
-	return "-- +ptah " + migrator.DirectiveNoTransaction + "\n" + sql
+	return "-- +ptah " + migrationfile.DirectiveNoTransaction + "\n" + sql
 }
 
 func renderMigrationArtifacts(
@@ -3655,8 +3655,8 @@ func renderMigrationArtifacts(
 	artifacts := make([]atlasmigrate.PublicationArtifact, 0, len(specs)*3)
 	pairs := make([]MigrationFilePair, 0, len(specs))
 	for _, spec := range specs {
-		upName := migrator.GenerateMigrationFileName(spec.Version, spec.Name, "up")
-		downName := migrator.GenerateMigrationFileName(spec.Version, spec.Name, "down")
+		upName := migrationfile.FileName(spec.Version, spec.Name, "up")
+		downName := migrationfile.FileName(spec.Version, spec.Name, "down")
 		pair := MigrationFilePair{
 			UpFile:        filepath.Join(outputDir, upName),
 			DownFile:      filepath.Join(outputDir, downName),

@@ -13,7 +13,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/migration/generator"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // These rows pin stokaro/ptah#938 on the verb that creates a migration file:
@@ -63,7 +63,7 @@ func atlasFileVersions(c *qt.C, dir string) []int64 {
 	c.Assert(err, qt.IsNil)
 	versions := make([]int64, 0, len(entries))
 	for _, entry := range entries {
-		parsed, parseErr := migrator.ParseAtlasMigrationFileName(entry.Name())
+		parsed, parseErr := migrationfile.ParseAtlasFileName(entry.Name())
 		if parseErr != nil {
 			continue
 		}
@@ -89,7 +89,7 @@ func TestGenerateEmptyMigration_AtlasStampsTheClockBesideAFutureMigration(t *tes
 	files, err := generator.GenerateEmptyMigration(generator.EmptyMigrationOptions{
 		MigrationName: "hello",
 		OutputDir:     dir,
-		DirFormat:     migrator.MigrationDirFormatAtlas,
+		DirFormat:     migrationfile.DirFormatAtlas,
 	})
 	after := atlasStamp(c, time.Now())
 
@@ -124,7 +124,7 @@ func TestGenerateEmptyMigration_AtlasSurvivesAMaxInt64Neighbor(t *testing.T) {
 	files, err := generator.GenerateEmptyMigration(generator.EmptyMigrationOptions{
 		MigrationName: "addposts",
 		OutputDir:     dir,
-		DirFormat:     migrator.MigrationDirFormatAtlas,
+		DirFormat:     migrationfile.DirFormatAtlas,
 	})
 
 	c.Assert(err, qt.IsNil)
@@ -175,7 +175,7 @@ func TestGenerateEmptyMigration_PtahRefusesPastTheTenDigitCeiling(t *testing.T) 
 	files, err := generator.GenerateEmptyMigration(generator.EmptyMigrationOptions{
 		MigrationName: "addposts",
 		OutputDir:     dir,
-		DirFormat:     migrator.MigrationDirFormatPtah,
+		DirFormat:     migrationfile.DirFormatPtah,
 	})
 
 	c.Assert(err, qt.IsNotNil)
@@ -207,7 +207,7 @@ func TestGenerateEmptyMigration_PtahStillCountsUpBelowTheCeiling(t *testing.T) {
 	files, err := generator.GenerateEmptyMigration(generator.EmptyMigrationOptions{
 		MigrationName: "addposts",
 		OutputDir:     dir,
-		DirFormat:     migrator.MigrationDirFormatPtah,
+		DirFormat:     migrationfile.DirFormatPtah,
 	})
 
 	c.Assert(err, qt.IsNil)

@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -66,7 +67,7 @@ func newAtlasCheckpointConn(c *qt.C) *dbschema.DatabaseConnection {
 
 func newAtlasFormatMigrator(c *qt.C, conn *dbschema.DatabaseConnection, fsys fstest.MapFS) *migrator.Migrator {
 	c.Helper()
-	m, err := migrator.NewFSMigrator(conn, fsys, migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas))
+	m, err := migrator.NewFSMigrator(conn, fsys, migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas))
 	c.Assert(err, qt.IsNil)
 	return m
 }
@@ -128,7 +129,7 @@ func TestAtlasCheckpointDirective_Detection_HappyPath(t *testing.T) {
 			fsys := atlasCheckpointFS(c, map[string]string{
 				"20260801100335_checkpoint.sql": test.sql,
 			})
-			provider, err := migrator.NewFSMigrationProvider(fsys, migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas))
+			provider, err := migrator.NewFSMigrationProvider(fsys, migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas))
 			c.Assert(err, qt.IsNil)
 			migrations := provider.Migrations()
 			c.Assert(migrations, qt.HasLen, 1)
@@ -166,7 +167,7 @@ func TestAtlasCheckpointDirective_NotACheckpoint(t *testing.T) {
 			fsys := atlasCheckpointFS(c, map[string]string{
 				"20260801100335_checkpoint.sql": test.sql,
 			})
-			provider, err := migrator.NewFSMigrationProvider(fsys, migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas))
+			provider, err := migrator.NewFSMigrationProvider(fsys, migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas))
 			c.Assert(err, qt.IsNil)
 			migrations := provider.Migrations()
 			c.Assert(migrations, qt.HasLen, 1)
@@ -201,7 +202,7 @@ func TestAtlasCheckpointDirective_TxtarConflict_FailurePath(t *testing.T) {
 				"20260801100335_checkpoint.sql": test.sql,
 			})
 			var conflict *migrator.AtlasCheckpointTxtarConflictError
-			_, err := migrator.NewFSMigrationProvider(fsys, migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas))
+			_, err := migrator.NewFSMigrationProvider(fsys, migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas))
 			c.Assert(err, qt.ErrorAs, &conflict)
 			c.Assert(conflict.Path, qt.Equals, "20260801100335_checkpoint.sql")
 		})
@@ -217,7 +218,7 @@ func TestAtlasCheckpointDirective_TxtarSectionContentIsNotAConflict(t *testing.T
 		"20260801100335_widgets.sql": "-- atlas:txtar\n\n-- migration.sql --\n-- atlas:checkpoint\nCREATE TABLE widgets (id INTEGER PRIMARY KEY);\n",
 	})
 
-	provider, err := migrator.NewFSMigrationProvider(fsys, migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas))
+	provider, err := migrator.NewFSMigrationProvider(fsys, migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas))
 
 	c.Assert(err, qt.IsNil)
 	migrations := provider.Migrations()

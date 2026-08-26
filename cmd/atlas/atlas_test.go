@@ -26,7 +26,7 @@ import (
 	"go.5x5.cz/ptah/internal/schemaclean"
 	"go.5x5.cz/ptah/internal/testutils"
 	migrationlint "go.5x5.cz/ptah/migration/lint"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 func TestSchemaCleanScopeCarriesAnExplicitSchemaSequenceWithItsDefaultSchemaTable(t *testing.T) {
@@ -3807,7 +3807,7 @@ CREATE TABLE users (
   id INTEGER PRIMARY KEY
 );
 `), 0o600), qt.IsNil)
-	_, err := migratesum.WriteWithFormat(migrationsDir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(migrationsDir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(migrationsDir, "1_init.sql"), []byte(`
 CREATE TABLE users (
@@ -4001,7 +4001,7 @@ func TestCompatCommand_MigrateValidateResolvesProjectRelativeMigrationDir(t *tes
 	c.Assert(os.MkdirAll(outsideDir, 0755), qt.IsNil)
 	t.Chdir(outsideDir)
 	writeAtlasApplyMigration(c, migrationsDir, "1_validate_relative.sql", "CREATE TABLE validate_relative_users (id INTEGER PRIMARY KEY);")
-	_, err := migratesum.WriteWithFormat(migrationsDir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(migrationsDir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(projectDir, "atlas.hcl"), []byte(`env "local" {
   migration {
@@ -4637,7 +4637,7 @@ func writeAtlasApplyMigration(c *qt.C, dir, name, sql string) {
 // hashAtlasApplyDir (re)writes atlas.sum over dir's current contents.
 func hashAtlasApplyDir(c *qt.C, dir string) {
 	c.Helper()
-	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(dir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 }
 

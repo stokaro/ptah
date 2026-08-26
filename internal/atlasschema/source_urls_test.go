@@ -11,6 +11,7 @@ import (
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -31,7 +32,7 @@ func writeAtlasMigrationDir(t *testing.T, ddl string) string {
 	c := qt.New(t)
 	dir := t.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(dir, "1_init.sql"), []byte(ddl), 0o600), qt.IsNil)
-	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(dir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	return dir
 }

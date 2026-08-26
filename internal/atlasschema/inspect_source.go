@@ -22,7 +22,7 @@ import (
 	"go.5x5.cz/ptah/internal/migrationreplay"
 	"go.5x5.cz/ptah/internal/rolescope"
 	"go.5x5.cz/ptah/internal/schemafile"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 const inspectDevCleanupTimeout = 30 * time.Second
@@ -376,7 +376,7 @@ func inspectOnDev(
 			ctx,
 			devConn,
 			migrationSnapshot,
-			migrator.MigrationDirFormatAtlas,
+			migrationfile.DirFormatAtlas,
 			func(replayConn *dbschema.DatabaseConnection) error {
 				schema, validatedOpts, err := readValidatedInspectDevSchema(ctx, replayConn, inspectDevReadOptions{
 					inspect:         inspectOpts,

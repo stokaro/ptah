@@ -17,7 +17,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	migrationlint "go.5x5.cz/ptah/migration/lint"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 func fixedZeroClock() func() time.Time {
@@ -158,7 +158,7 @@ func analyzeMigrationsWithBaseline(
 	for name, body := range files {
 		fsys[name] = &fstest.MapFile{Data: []byte(body)}
 	}
-	discovery, err := migrationlint.AnalyzeFS(fsys, migrationlint.Options{DirFormat: migrator.MigrationDirFormatAtlas})
+	discovery, err := migrationlint.AnalyzeFS(fsys, migrationlint.Options{DirFormat: migrationfile.DirFormatAtlas})
 	c.Assert(err, qt.IsNil)
 	seen := make(map[int64]struct{})
 	for _, file := range discovery.Files() {
@@ -178,7 +178,7 @@ func analyzeMigrationsWithBaseline(
 
 	analysis, err := migrationlint.AnalyzeFS(fsys, migrationlint.Options{
 		Compatibility: migrationlint.CompatibilityProfileAtlas,
-		DirFormat:     migrator.MigrationDirFormatAtlas,
+		DirFormat:     migrationfile.DirFormatAtlas,
 		Dialect:       "sqlite",
 		Selection:     migrationlint.VersionSelection{Versions: versions, Restricted: true},
 		Baseline:      baseline,
@@ -717,7 +717,7 @@ func TestWriteMigrateLintText_RendersAtlasRepeatableVersionKey(t *testing.T) {
 		"2R_drop_users.sql":  {Data: []byte("DROP TABLE users;\n")},
 	}, migrationlint.Options{
 		Compatibility: migrationlint.CompatibilityProfileAtlas,
-		DirFormat:     migrator.MigrationDirFormatAtlas,
+		DirFormat:     migrationfile.DirFormatAtlas,
 		Dialect:       "sqlite",
 		Selection: migrationlint.VersionSelection{
 			Versions:   []int64{2},
@@ -753,7 +753,7 @@ func TestWriteMigrateLintText_RendersAtlasBareRepeatableVersionKey(t *testing.T)
 		"R__drop_users.sql": {Data: []byte("DROP TABLE users;\n")},
 	}, migrationlint.Options{
 		Compatibility: migrationlint.CompatibilityProfileAtlas,
-		DirFormat:     migrator.MigrationDirFormatAtlas,
+		DirFormat:     migrationfile.DirFormatAtlas,
 		Dialect:       "sqlite",
 	})
 	c.Assert(err, qt.IsNil)
@@ -786,7 +786,7 @@ func TestWriteMigrateLintText_RendersMappedEmptyFlywayRepeatableVersion(t *testi
 		"2_drop_users.sql":   {Data: []byte("DROP TABLE users;\n")},
 	}, migrationlint.Options{
 		Compatibility: migrationlint.CompatibilityProfileAtlas,
-		DirFormat:     migrator.MigrationDirFormatAtlas,
+		DirFormat:     migrationfile.DirFormatAtlas,
 		Dialect:       "sqlite",
 		Selection: migrationlint.VersionSelection{
 			Versions:   []int64{2},

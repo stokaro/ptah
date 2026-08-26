@@ -14,7 +14,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
 	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // This file holds the atlas.sum integrity gate for NATIVE Atlas migration
@@ -255,7 +255,7 @@ func verifyNativeAtlasDirChecksum(cmd *cobra.Command, fsys fs.FS) error {
 // whose only SQL sits in a subdirectory lands, so leaving it uncovered would
 // keep the silence for the shape stokaro/ptah#976 is about.
 func checkNativeAtlasDirChecksum(cmd *cobra.Command, fsys fs.FS) error {
-	result, hashed, err := migratesum.VerifyHashed(fsys, migrator.MigrationDirFormatAtlas)
+	result, hashed, err := migratesum.VerifyHashed(fsys, migrationfile.DirFormatAtlas)
 	switch {
 	case errors.Is(err, migratesum.ErrSumFileMalformed):
 		// A malformed atlas.sum has no entry-level mismatch to point at; the

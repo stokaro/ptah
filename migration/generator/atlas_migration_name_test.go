@@ -8,7 +8,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/migration/generator"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // TestGenerateEmptyMigrationKeepsTheAtlasNameVerbatim pins the file name
@@ -67,7 +67,7 @@ func TestGenerateEmptyMigrationKeepsTheAtlasNameVerbatim(t *testing.T) {
 			files, err := generator.GenerateEmptyMigration(generator.EmptyMigrationOptions{
 				MigrationName: tt.migrationName,
 				OutputDir:     t.TempDir(),
-				DirFormat:     migrator.MigrationDirFormatAtlas,
+				DirFormat:     migrationfile.DirFormatAtlas,
 			})
 			c.Assert(err, qt.IsNil)
 			c.Assert(files.Files, qt.HasLen, 1)
@@ -82,7 +82,7 @@ func TestGenerateEmptyMigrationKeepsTheAtlasNameVerbatim(t *testing.T) {
 // keeps writing the name verbatim from producing a directory Ptah's own reader
 // rejects.
 //
-// `migrator.ParseAtlasMigrationFileName` classifies `<version>_x.down.sql` as
+// `migrationfile.ParseAtlasFileName` classifies `<version>_x.down.sql` as
 // the down half of a pair, because Atlas importers emit that spelling for
 // golang-migrate directories. Without this refusal `migrate new "x.down"` wrote
 // a file `migrate status` then answered `Atlas migration version <version> has
@@ -100,7 +100,7 @@ func TestGenerateEmptyMigrationRefusesAnAtlasNameItCannotReadBack(t *testing.T) 
 	_, err := generator.GenerateEmptyMigration(generator.EmptyMigrationOptions{
 		MigrationName: "x.down",
 		OutputDir:     dir,
-		DirFormat:     migrator.MigrationDirFormatAtlas,
+		DirFormat:     migrationfile.DirFormatAtlas,
 	})
 	c.Assert(err, qt.ErrorMatches,
 		`migration name "x.down" composes the file name <version>_x\.down\.sql, `+

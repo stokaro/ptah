@@ -10,7 +10,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/migrateedit"
 	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 func fixture(t *testing.T) string {
@@ -22,7 +22,7 @@ func fixture(t *testing.T) string {
 	if err := os.WriteFile(filepath.Join(dir, "0000000001_first.down.sql"), []byte("DROP TABLE t;\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatPtah); err != nil {
+	if _, err := migratesum.WriteWithFormat(dir, migrationfile.DirFormatPtah); err != nil {
 		t.Fatal(err)
 	}
 	return dir

@@ -15,7 +15,7 @@ import (
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/migrationintegrity"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // These tests pin the integrity gate on `ptah migrations down`.
@@ -54,7 +54,7 @@ func writeHashedWidgetsDir(c *qt.C) string {
 	for name, content := range files {
 		c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
 	}
-	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatPtah)
+	_, err := migratesum.WriteWithFormat(dir, migrationfile.DirFormatPtah)
 	c.Assert(err, qt.IsNil)
 	return dir
 }

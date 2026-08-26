@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // PlanDirectiveComment is the comment marker a directive line carries. A
@@ -117,11 +117,11 @@ func (d PlanDirective) key() string {
 // missing accessor -- it is the guarantee that `-- atlas:txmode none` cannot
 // come to mean one thing in a migration file and another in a plan, and that
 // the placement rule has one implementation.
-func (d PlanDirective) txMode() (migrator.MigrationFileTxMode, error) {
-	parsed, err := migrator.ParseMigrationUp(
+func (d PlanDirective) txMode() (migrationfile.FileTxMode, error) {
+	parsed, err := migrationfile.ParseUp(
 		planDirectiveProbeName, d.Line()+"\n\n"+planDirectiveProbeStatement)
 	if err != nil {
-		return migrator.MigrationFileTxModeUnspecified, err
+		return migrationfile.FileTxModeUnspecified, err
 	}
 	return parsed.TxMode, nil
 }
@@ -191,14 +191,14 @@ func PlanDirectiveHeader(directives []PlanDirective) string {
 // a FILE mode: the plan states how it wants to be executed, and how that
 // combines with an operator's `--tx-mode` is
 // cmd/internal/migrateflags.ResolveAtlasDirectiveTxMode's decision rather than
-// this function's. [migrator.MigrationFileTxModeUnspecified] means it states
+// this function's. [migrationfile.FileTxModeUnspecified] means it states
 // nothing.
 //
 // source names the plan for a refused value's diagnostic.
-func PlanTxMode(source, migration string) (migrator.MigrationFileTxMode, error) {
-	parsed, err := migrator.ParseMigrationUp(source, migration)
+func PlanTxMode(source, migration string) (migrationfile.FileTxMode, error) {
+	parsed, err := migrationfile.ParseUp(source, migration)
 	if err != nil {
-		return migrator.MigrationFileTxModeUnspecified, err
+		return migrationfile.FileTxModeUnspecified, err
 	}
 	return parsed.TxMode, nil
 }

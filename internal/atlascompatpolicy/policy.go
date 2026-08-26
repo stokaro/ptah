@@ -23,6 +23,7 @@ import (
 	"go.5x5.cz/ptah/internal/dialectlexer"
 	"go.5x5.cz/ptah/internal/envbool"
 	"go.5x5.cz/ptah/internal/ptahdirective"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -492,7 +493,7 @@ func (p Policy) ValidateMigrationSourceForDialect(fsys fs.FS, dialect string) er
 		if hasOtherDirective {
 			return fmt.Errorf("Atlas Community Edition strict compatibility does not support Ptah migration directives in %s", name)
 		}
-		if migrator.LooksAtlasTemplateSQL(source) {
+		if migrationfile.LooksAtlasTemplateSQL(source) {
 			return fmt.Errorf("Atlas Community Edition strict compatibility does not support SQL template migration %s", name)
 		}
 		return nil

@@ -13,7 +13,7 @@ import (
 
 	"go.5x5.cz/ptah/internal/migrationartifact"
 	"go.5x5.cz/ptah/internal/ociartifact"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 func TestVersionTag(t *testing.T) {
@@ -36,7 +36,7 @@ func TestCapture_IncludesOnlyMigrationInputs(t *testing.T) {
 		"ptah.sum":                       {Data: []byte("h1:example\n")},
 	}
 
-	snapshot, err := migrationartifact.Capture(source, migrator.MigrationDirFormatPtah)
+	snapshot, err := migrationartifact.Capture(source, migrationfile.DirFormatPtah)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(fstest.TestFS(snapshot, "0000000001_create_users.up.sql", "ptah.sum"), qt.IsNil)
@@ -55,7 +55,7 @@ func TestPushToAndPullFrom_RoundTrip(t *testing.T) {
 
 	pushed, err := migrationartifact.PushTo(ctx, store, source, migrationartifact.PushOptions{
 		Tags:      []string{"v1"},
-		DirFormat: migrator.MigrationDirFormatPtah,
+		DirFormat: migrationfile.DirFormatPtah,
 		Annotations: map[string]string{
 			ocispec.AnnotationCreated: "2026-07-27T12:00:00Z",
 		},
@@ -65,7 +65,7 @@ func TestPushToAndPullFrom_RoundTrip(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(pulled.Descriptor.Digest, qt.Equals, pushed.Descriptor.Digest)
-	c.Assert(pulled.DirFormat, qt.Equals, migrator.MigrationDirFormatPtah)
+	c.Assert(pulled.DirFormat, qt.Equals, migrationfile.DirFormatPtah)
 	c.Assert(fstest.TestFS(pulled.FileSystem, "0000000001_create_users.up.sql", "ptah.sum"), qt.IsNil)
 }
 
@@ -74,7 +74,7 @@ func TestCapture_FailurePath(t *testing.T) {
 		c := qt.New(t)
 		_, err := migrationartifact.Capture(
 			fstest.MapFS{"ptah.sum": {Data: []byte("h1:example\n")}},
-			migrator.MigrationDirFormatPtah,
+			migrationfile.DirFormatPtah,
 		)
 		c.Assert(err, qt.ErrorMatches, "migration artifact contains no migration files")
 	})
@@ -83,7 +83,7 @@ func TestCapture_FailurePath(t *testing.T) {
 		c := qt.New(t)
 		_, err := migrationartifact.Capture(
 			fstest.MapFS{"001.sql": {Data: []byte("SELECT 1;\n")}},
-			migrator.MigrationDirFormat("invalid"),
+			migrationfile.DirFormat("invalid"),
 		)
 		c.Assert(err, qt.ErrorMatches, `unknown migration directory format "invalid".*`)
 	})
@@ -97,7 +97,7 @@ func TestCapture_FailurePath(t *testing.T) {
 					Mode: fs.ModeSymlink,
 				},
 			},
-			migrator.MigrationDirFormatPtah,
+			migrationfile.DirFormatPtah,
 		)
 		c.Assert(err, qt.ErrorIs, ociartifact.ErrUnsafeArtifactPath)
 	})

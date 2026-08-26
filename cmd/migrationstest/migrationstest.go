@@ -19,7 +19,7 @@ import (
 	"go.5x5.cz/ptah/internal/migrationintegrity"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/migration/dbtest"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 const (
@@ -90,7 +90,7 @@ The command exits non-zero if any case fails.`,
 	flags.StringVar(&opts.rootDir, rootDirFlag, "./models", "Root directory to scan for apply_schema Go annotations")
 	flags.StringVar(&opts.seedDir, seedDirFlag, "", "Default directory for seed steps that omit dir")
 	flags.StringVar(&opts.dbURL, dbURLFlag, "", "Throwaway database URL (optional). An ephemeral SQLite database is used when empty.")
-	flags.StringVar(&opts.dirFormat, dirFormatFlag, string(migrator.MigrationDirFormatPtah), "Migration directory format: auto, ptah, or atlas")
+	flags.StringVar(&opts.dirFormat, dirFormatFlag, string(migrationfile.DirFormatPtah), "Migration directory format: auto, ptah, or atlas")
 	flags.StringVar(&opts.report, reportFlag, reportFormatText, "Report format: text, json, or html")
 	flags.StringVar(&opts.runPattern, runFlag, "", "Run only case names matching this Go regular expression")
 	dbcli.RegisterMigrationsSchemaFlag(flags, &opts.migrationsSchema)
@@ -108,7 +108,7 @@ func run(ctx context.Context, out, notice io.Writer, opts options) error {
 		return fmt.Errorf("unsupported report format %q: want text, json, or html", opts.report)
 	}
 
-	dirFormat, err := migrator.ParseMigrationDirFormat(opts.dirFormat)
+	dirFormat, err := migrationfile.ParseDirFormat(opts.dirFormat)
 	if err != nil {
 		return err
 	}

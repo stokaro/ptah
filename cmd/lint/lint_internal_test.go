@@ -12,7 +12,7 @@ import (
 
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/internal/migrationlintreport"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 func TestPrepareReportOptions_PresentEmptyDirSuppressesDefault(t *testing.T) {
@@ -53,7 +53,7 @@ func TestPrepareReportOptions_CapturesLocalDirectoryBeforeBuild(t *testing.T) {
 		cmd,
 		migrationlintreport.Options{
 			Dir:       dir,
-			DirFormat: string(migrator.MigrationDirFormatAtlas),
+			DirFormat: string(migrationfile.DirFormatAtlas),
 			FailOn:    migrationlintreport.FailOnNone,
 			Changed: migrationlintreport.ChangedOptions{
 				Dir:       true,

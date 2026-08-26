@@ -22,7 +22,7 @@ import (
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/migrationvalidate"
 	"go.5x5.cz/ptah/internal/ociartifact"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 const (
@@ -140,7 +140,7 @@ Run it in CI to guarantee already-committed migrations are never changed.`,
 		},
 	}
 	cmd.Flags().StringVar(&src.dir, "dir", "./migrations", dirUsage)
-	cmd.Flags().StringVar(&src.dirFormat, "dir-format", string(migrator.MigrationDirFormatAuto), "Migration directory format: auto, ptah, or atlas")
+	cmd.Flags().StringVar(&src.dirFormat, "dir-format", string(migrationfile.DirFormatAuto), "Migration directory format: auto, ptah, or atlas")
 	cmd.Flags().StringVar(&src.devURL, "dev-url", "", "Dev database URL used to clean and replay migrations for SQL validation")
 	cmd.SetFlagErrorFunc(cmdutil.FlagErrorFunc)
 	return cmd
@@ -293,7 +293,7 @@ func validate(ctx context.Context, src *source) (checkedSource, error) {
 		return checkedSource{}, err
 	}
 
-	dirFormat, err := migrator.ParseMigrationDirFormat(src.dirFormat)
+	dirFormat, err := migrationfile.ParseDirFormat(src.dirFormat)
 	if err != nil {
 		return checkedSource{}, err
 	}
@@ -317,7 +317,7 @@ func validate(ctx context.Context, src *source) (checkedSource, error) {
 // requested one — an artifact records the format it was published with, and
 // `--dir-format auto` against a registry has no directory to sniff.
 func validateArtifact(ctx context.Context, src *source) (checkedSource, error) {
-	dirFormat, err := migrator.ParseMigrationDirFormat(src.dirFormat)
+	dirFormat, err := migrationfile.ParseDirFormat(src.dirFormat)
 	if err != nil {
 		return checkedSource{}, err
 	}

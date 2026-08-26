@@ -16,7 +16,7 @@ import (
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/datamigrate"
 	"go.5x5.cz/ptah/migration/generator"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 const (
@@ -140,8 +140,8 @@ func migrateDataCommand(cmd *cobra.Command, opts *options) error {
 	}
 
 	if opts.dryRun {
-		upName := migrator.GenerateMigrationFileName(version, opts.description, "up")
-		downName := migrator.GenerateMigrationFileName(version, opts.description, "down")
+		upName := migrationfile.FileName(version, opts.description, "up")
+		downName := migrationfile.FileName(version, opts.description, "down")
 		fmt.Fprintf(out, "-- data migration version %d (dry run, no files written)\n\n-- %s\n%s\n\n-- %s\n%s\n",
 			version, upName, upSQL, downName, downSQL)
 		return nil
@@ -211,7 +211,7 @@ func latestMigrationVersion(migrationsDir string) (int64, error) {
 		return 0, fmt.Errorf("%q exists and is not a directory", migrationsDir)
 	}
 
-	files, err := migrator.DiscoverMigrationFiles(os.DirFS(migrationsDir), migrator.MigrationDirFormatPtah)
+	files, err := migrationfile.Discover(os.DirFS(migrationsDir), migrationfile.DirFormatPtah)
 	if err != nil {
 		return 0, fmt.Errorf("failed to scan migrations directory: %w", err)
 	}

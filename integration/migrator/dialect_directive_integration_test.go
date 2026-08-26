@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -59,10 +60,10 @@ func TestSQLMigrationDirectiveBoundariesUseTargetDialect(t *testing.T) {
 func TestSQLMigrationDirectiveBoundaryIsDecidedByTheTargetDialect(t *testing.T) {
 	c := qt.New(t)
 
-	parsed, err := migrator.ParseMigrationUp("1_ambiguous.sql", sqliteDirectiveBoundarySQL("dialect_probe"))
+	parsed, err := migrationfile.ParseUp("1_ambiguous.sql", sqliteDirectiveBoundarySQL("dialect_probe"))
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(parsed.TxMode, qt.Equals, migrator.MigrationFileTxModeUnspecified)
+	c.Assert(parsed.TxMode, qt.Equals, migrationfile.FileTxModeUnspecified)
 }
 
 // TestSQLMigrationWellFormedDirectiveBelowTheStatementIsNotHonored separates

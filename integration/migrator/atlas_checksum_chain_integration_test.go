@@ -12,6 +12,7 @@ import (
 
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -83,7 +84,7 @@ func issue1241AtlasFS(t *testing.T, files map[string]string) fstest.MapFS {
 	for name, body := range files {
 		fsys[name] = &fstest.MapFile{Data: []byte(body)}
 	}
-	sum, err := migratesum.ComputeWithFormat(fsys, migrator.MigrationDirFormatAtlas)
+	sum, err := migratesum.ComputeWithFormat(fsys, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	fsys[migratesum.AtlasFileName] = &fstest.MapFile{Data: sum.Bytes()}
 	return fsys
@@ -99,7 +100,7 @@ func issue1241Migrator(
 	m, err := migrator.NewFSMigrator(
 		conn,
 		fsys,
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	return m.WithMigrationsTable("", issue1241RevisionTable).

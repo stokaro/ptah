@@ -3,6 +3,8 @@ package migrator
 import (
 	"fmt"
 	"strings"
+
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // atlasCheckpointDirective is the file directive Atlas writes as the first
@@ -28,7 +30,7 @@ type AtlasCheckpointTxtarConflictError struct {
 func (e *AtlasCheckpointTxtarConflictError) Error() string {
 	return fmt.Sprintf(
 		"invalid Atlas migration %s: file declares both %s and %s directives; checkpoint semantics for txtar archives are undefined, split the file",
-		e.Path, atlasCheckpointDirective, atlasTxtarDirective,
+		e.Path, atlasCheckpointDirective, migrationfile.AtlasTxtarDirective,
 	)
 }
 
@@ -62,7 +64,7 @@ func validateAtlasCheckpointTxtarExclusive(path, sql string) error {
 		if isAtlasCheckpointDirectiveLine(line) {
 			sawCheckpoint = true
 		}
-		if trimmed == atlasTxtarDirective {
+		if trimmed == migrationfile.AtlasTxtarDirective {
 			sawTxtar = true
 		}
 		if sawCheckpoint && sawTxtar {

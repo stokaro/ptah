@@ -18,7 +18,7 @@ import (
 
 	"go.5x5.cz/ptah/internal/fsdurable"
 	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // TestPublishDirSum_RefusesADestinationReplacedInsideTheCommitWindow is the
@@ -45,7 +45,7 @@ func TestPublishDirSum_RefusesADestinationReplacedInsideTheCommitWindow(t *testi
 
 	tests := []struct {
 		name    string
-		format  migrator.MigrationDirFormat
+		format  migrationfile.DirFormat
 		sumName string
 		// existingSums is what the directory already holds at sumName when the
 		// commit captures its destination, and it decides which branch runs: no
@@ -56,23 +56,23 @@ func TestPublishDirSum_RefusesADestinationReplacedInsideTheCommitWindow(t *testi
 	}{
 		{
 			name:    "atlas.sum, absent when the commit captured its destination",
-			format:  migrator.MigrationDirFormatAtlas,
+			format:  migrationfile.DirFormatAtlas,
 			sumName: migratesum.AtlasFileName,
 		},
 		{
 			name:         "atlas.sum, present when the commit captured its destination",
-			format:       migrator.MigrationDirFormatAtlas,
+			format:       migrationfile.DirFormatAtlas,
 			sumName:      migratesum.AtlasFileName,
 			existingSums: []string{"h1:stale=\n"},
 		},
 		{
 			name:    "ptah.sum, absent when the commit captured its destination",
-			format:  migrator.MigrationDirFormatPtah,
+			format:  migrationfile.DirFormatPtah,
 			sumName: migratesum.FileName,
 		},
 		{
 			name:         "ptah.sum, present when the commit captured its destination",
-			format:       migrator.MigrationDirFormatPtah,
+			format:       migrationfile.DirFormatPtah,
 			sumName:      migratesum.FileName,
 			existingSums: []string{"h1:stale=\n"},
 		},
@@ -125,17 +125,17 @@ func TestPublishDirSum_RefusesADestinationReplacedInsideTheCommitWindow(t *testi
 func TestPublishDirSum_CommitsWhenNothingReplacedTheDestination(t *testing.T) {
 	tests := []struct {
 		name    string
-		format  migrator.MigrationDirFormat
+		format  migrationfile.DirFormat
 		sumName string
 	}{
 		{
 			name:    "atlas.sum",
-			format:  migrator.MigrationDirFormatAtlas,
+			format:  migrationfile.DirFormatAtlas,
 			sumName: migratesum.AtlasFileName,
 		},
 		{
 			name:    "ptah.sum",
-			format:  migrator.MigrationDirFormatPtah,
+			format:  migrationfile.DirFormatPtah,
 			sumName: migratesum.FileName,
 		},
 	}

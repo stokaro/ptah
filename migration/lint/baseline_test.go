@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/migration/lint"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // renameBaselineFS is the fixture every case below analyzes: one file creates a
@@ -24,7 +24,7 @@ func renameBaselineOptions(baseline []lint.BaselineColumn) lint.Options {
 	return lint.Options{
 		Compatibility: lint.CompatibilityProfileAtlas,
 		Dialect:       "postgres",
-		DirFormat:     migrator.MigrationDirFormatAtlas,
+		DirFormat:     migrationfile.DirFormatAtlas,
 		Selection:     lint.VersionSelection{Versions: []int64{2}, Restricted: true},
 		Baseline:      baseline,
 	}

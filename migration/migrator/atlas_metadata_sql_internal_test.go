@@ -15,6 +15,7 @@ import (
 
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/internal/revisiontable"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 func TestWithAtlasRepeatableVersionsIsExplicitAndCloned(t *testing.T) {
@@ -24,7 +25,7 @@ func TestWithAtlasRepeatableVersionsIsExplicitAndCloned(t *testing.T) {
 		fstest.MapFS{
 			"1_converted.sql": &fstest.MapFile{Data: []byte("SELECT 1;\n")},
 		},
-		WithMigrationDirFormat(MigrationDirFormatAtlas),
+		WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 		WithAtlasRevisionVersions(map[int64]string{1: ""}),
 		WithAtlasRepeatableVersions(versions),
 	)
@@ -37,7 +38,7 @@ func TestWithAtlasRepeatableVersionsIsExplicitAndCloned(t *testing.T) {
 		fstest.MapFS{
 			"1_converted.sql": &fstest.MapFile{Data: []byte("SELECT 1;\n")},
 		},
-		WithMigrationDirFormat(MigrationDirFormatAtlas),
+		WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 		WithAtlasRevisionVersions(map[int64]string{1: ""}),
 	)
 	c.Assert(err, qt.IsNil)
@@ -52,7 +53,7 @@ func TestUnownedExactAtlasRevisionsAboveKeepsLoadedUnmappedMigration(t *testing.
 			"2_loaded.sql":  {Data: []byte("SELECT 2;\n")},
 			"10_target.sql": {Data: []byte("SELECT 10;\n")},
 		},
-		WithMigrationDirFormat(MigrationDirFormatAtlas),
+		WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 		WithAtlasRevisionVersions(map[int64]string{10: "1"}),
 	)
 	c.Assert(err, qt.IsNil)
@@ -76,7 +77,7 @@ func TestUnownedExactAtlasRevisionsAboveRefusesWithoutSourceComparator(t *testin
 		fstest.MapFS{
 			"10_target.sql": {Data: []byte("SELECT 10;\n")},
 		},
-		WithMigrationDirFormat(MigrationDirFormatAtlas),
+		WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 		WithAtlasRevisionVersions(map[int64]string{10: "1"}),
 	)
 	c.Assert(err, qt.IsNil)
@@ -101,7 +102,7 @@ func TestUnownedExactAtlasRevisionsAbovePassesPersistedRoleFactsToComparator(t *
 		fstest.MapFS{
 			"10_target.sql": {Data: []byte("SELECT 10;\n")},
 		},
-		WithMigrationDirFormat(MigrationDirFormatAtlas),
+		WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 		WithAtlasRevisionVersions(map[int64]string{10: "10"}),
 	)
 	c.Assert(err, qt.IsNil)
@@ -181,7 +182,7 @@ func TestAtlasVersionNumberExpression_MapsOpaqueRevisionIdentitiesToRuntimeOrder
 		"0000000000000000020_dotted.sql": {Data: []byte("SELECT 2;")},
 		"0000000000000000030_named.sql":  {Data: []byte("SELECT 3;")},
 		"0000000000000000040_repeat.sql": {Data: []byte("SELECT 4;")},
-	}, WithMigrationDirFormat(MigrationDirFormatAtlas), WithAtlasRevisionVersions(map[int64]string{
+	}, WithMigrationDirFormat(migrationfile.DirFormatAtlas), WithAtlasRevisionVersions(map[int64]string{
 		10: "01",
 		20: "1.5",
 		30: "x'y",
@@ -223,7 +224,7 @@ func TestAtlasRuntimeVersionKeepsRetiredExactHistorySeparateFromNativeParsing(t 
 	exact, err := NewFSMigrator(
 		nil,
 		fstest.MapFS{"2_plain.sql": {Data: []byte("SELECT 2;")}},
-		WithMigrationDirFormat(MigrationDirFormatAtlas),
+		WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 		WithAtlasRevisionVersions(make(map[int64]string)),
 	)
 	c.Assert(err, qt.IsNil)
@@ -335,7 +336,7 @@ func TestAtlasVersionNumberExpression_UsesHighestRuntimeForRepeatedHistoricalIde
 	c := qt.New(t)
 	m, err := NewFSMigrator(nil, fstest.MapFS{
 		"0000000000000000010_baseline.sql": {Data: []byte("SELECT 1;")},
-	}, WithMigrationDirFormat(MigrationDirFormatAtlas), WithAtlasRevisionVersions(map[int64]string{
+	}, WithMigrationDirFormat(migrationfile.DirFormatAtlas), WithAtlasRevisionVersions(map[int64]string{
 		10: "2",
 		20: "2",
 	}))
@@ -423,7 +424,7 @@ func TestAtlasFilteredRevisionSQL_IncludesRetiredDotIdentityAndExcludesKnownMeta
 			c := qt.New(t)
 			m, err := NewFSMigrator(nil, fstest.MapFS{
 				"10_dot.sql": {Data: []byte("SELECT 1;")},
-			}, WithMigrationDirFormat(MigrationDirFormatAtlas), WithAtlasRevisionVersions(map[int64]string{
+			}, WithMigrationDirFormat(migrationfile.DirFormatAtlas), WithAtlasRevisionVersions(map[int64]string{
 				10: ".foo",
 			}))
 			c.Assert(err, qt.IsNil)
@@ -454,7 +455,7 @@ func TestAtlasFilteredRevisionSQL_IncludesSquashedHistoricalDotIdentity(t *testi
 	c := qt.New(t)
 	m, err := NewFSMigrator(nil, fstest.MapFS{
 		"20_baseline.sql": {Data: []byte("SELECT 2;")},
-	}, WithMigrationDirFormat(MigrationDirFormatAtlas), WithAtlasRevisionVersions(map[int64]string{
+	}, WithMigrationDirFormat(migrationfile.DirFormatAtlas), WithAtlasRevisionVersions(map[int64]string{
 		10: ".foo",
 		20: "2",
 	}))

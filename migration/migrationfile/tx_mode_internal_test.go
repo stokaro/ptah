@@ -1,4 +1,4 @@
-package migrator
+package migrationfile
 
 // White-box testing required: transaction-mode source precedence, conservative
 // loading, and target-dialect deferral are internal decisions whose exact
@@ -8,40 +8,38 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-
-	"go.5x5.cz/ptah/core/platform"
 )
 
 func Test_parseAtlasFileTxMode_HappyPath(t *testing.T) {
 	tests := []struct {
 		name string
 		sql  string
-		want MigrationFileTxMode
+		want FileTxMode
 	}{
 		{
 			name: "file",
 			sql:  "-- atlas:txmode file\n\nCREATE TABLE users (id BIGINT);",
-			want: MigrationFileTxModeFile,
+			want: FileTxModeFile,
 		},
 		{
 			name: "none",
 			sql:  "-- atlas:txmode none\n\nCREATE INDEX users_id_idx ON users (id);",
-			want: MigrationFileTxModeNone,
+			want: FileTxModeNone,
 		},
 		{
 			name: "ordinary comment text before key",
 			sql:  "-- generated migration\n-- metadata: atlas:txmode none\n\nSELECT 1;",
-			want: MigrationFileTxModeNone,
+			want: FileTxModeNone,
 		},
 		{
 			name: "captured value is trimmed",
 			sql:  "-- metadata atlas:txmode   file \t\n-- generated migration\n\nSELECT 1;",
-			want: MigrationFileTxModeFile,
+			want: FileTxModeFile,
 		},
 		{
 			name: "whitespace-only header separator",
 			sql:  "-- atlas:txmode none\n \t\r\nSELECT 1;",
-			want: MigrationFileTxModeNone,
+			want: FileTxModeNone,
 		},
 		{
 			// The header ends at the first statement, not only at a blank line.
@@ -50,12 +48,12 @@ func Test_parseAtlasFileTxMode_HappyPath(t *testing.T) {
 			// author is most likely to write it.
 			name: "statement immediately after the directive",
 			sql:  "-- atlas:txmode none\nCREATE INDEX CONCURRENTLY i ON t (c);",
-			want: MigrationFileTxModeNone,
+			want: FileTxModeNone,
 		},
 		{
 			name: "statement immediately after a multi-line header",
 			sql:  "-- generated migration\n-- atlas:txmode none\nSELECT 1;",
-			want: MigrationFileTxModeNone,
+			want: FileTxModeNone,
 		},
 		{
 			// Same rule from the other side: the directive was already read
@@ -63,7 +61,7 @@ func Test_parseAtlasFileTxMode_HappyPath(t *testing.T) {
 			// LATER line cannot un-write it.
 			name: "indented line after the directive",
 			sql:  "-- atlas:txmode none\n  -- generated migration\n\nSELECT 1;",
-			want: MigrationFileTxModeNone,
+			want: FileTxModeNone,
 		},
 	}
 
@@ -133,7 +131,7 @@ func Test_parseAtlasFileTxMode_FailurePath(t *testing.T) {
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(err.Error(), qt.Equals, test.wantErr)
 			c.Assert(found, qt.IsTrue)
-			c.Assert(mode, qt.Equals, MigrationFileTxModeUnspecified)
+			c.Assert(mode, qt.Equals, FileTxModeUnspecified)
 		})
 	}
 }
@@ -187,7 +185,7 @@ func Test_parseAtlasFileTxMode_Ignored(t *testing.T) {
 			mode, found, err := parseAtlasFileTxMode("001_create_users.sql", test.sql)
 			c.Assert(err, qt.IsNil)
 			c.Assert(found, qt.IsFalse)
-			c.Assert(mode, qt.Equals, MigrationFileTxModeUnspecified)
+			c.Assert(mode, qt.Equals, FileTxModeUnspecified)
 		})
 	}
 }
@@ -204,10 +202,10 @@ func Test_classifyAtlasTxtarDirective_HappyPath(t *testing.T) {
 	c.Assert(misplaced, qt.IsFalse)
 }
 
-func TestParseMigrationUp_TxtarSourceLineOffset(t *testing.T) {
+func TestParseUp_TxtarSourceLineOffset(t *testing.T) {
 	c := qt.New(t)
 
-	parsed, err := ParseMigrationUp("1_drop.sql", `-- atlas:txtar
+	parsed, err := ParseUp("1_drop.sql", `-- atlas:txtar
 
 -- migration.sql --
 DROP TABLE users;
@@ -215,7 +213,7 @@ DROP TABLE users;
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.SQL, qt.Equals, "DROP TABLE users;\n")
-	c.Assert(parsed.TxMode, qt.Equals, MigrationFileTxModeUnspecified)
+	c.Assert(parsed.TxMode, qt.Equals, FileTxModeUnspecified)
 	c.Assert(parsed.SourceLineOffset, qt.Equals, 3)
 }
 
@@ -244,180 +242,72 @@ func Test_classifyAtlasTxtarDirective_FailurePath(t *testing.T) {
 	}
 }
 
-func Test_parseMigrationFileTxMode_CoexistenceHappyPath(t *testing.T) {
+func TestParseFileTxMode_CoexistenceHappyPath(t *testing.T) {
 	tests := []struct {
 		name       string
 		sql        string
-		wantMode   MigrationFileTxMode
-		wantSource migrationFileTxModeSource
+		wantMode   FileTxMode
+		wantSource FileTxModeSource
 	}{
 		{
 			name:       "native true overrides Atlas file",
 			sql:        "-- atlas:txmode file\n-- +ptah no_transaction\n\nSELECT 1;\n",
-			wantMode:   MigrationFileTxModeNone,
-			wantSource: migrationFileTxModeSourcePtah,
+			wantMode:   FileTxModeNone,
+			wantSource: FileTxModeSourcePtah,
 		},
 		{
 			name:       "native false leaves Atlas none",
 			sql:        "-- atlas:txmode none\n-- +ptah no_transaction=false\n\nSELECT 1;\n",
-			wantMode:   MigrationFileTxModeNone,
-			wantSource: migrationFileTxModeSourceAtlas,
+			wantMode:   FileTxModeNone,
+			wantSource: FileTxModeSourceAtlas,
 		},
 		{
 			name:       "native false leaves Atlas file",
 			sql:        "-- atlas:txmode file\n-- +ptah no_transaction=false\n\nSELECT 1;\n",
-			wantMode:   MigrationFileTxModeFile,
-			wantSource: migrationFileTxModeSourceAtlas,
+			wantMode:   FileTxModeFile,
+			wantSource: FileTxModeSourceAtlas,
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			got := parseMigrationFileTxMode("1_coexist.sql", test.sql)
-			c.Assert(got.err, qt.IsNil)
-			c.Assert(got.mode, qt.Equals, test.wantMode)
-			c.Assert(got.source, qt.Equals, test.wantSource)
+			got := ParseFileTxMode("1_coexist.sql", test.sql)
+			c.Assert(got.Err, qt.IsNil)
+			c.Assert(got.Mode, qt.Equals, test.wantMode)
+			c.Assert(got.Source, qt.Equals, test.wantSource)
 		})
 	}
 }
 
-func Test_parseMigrationFileTxMode_CoexistenceFailurePath(t *testing.T) {
+func TestParseFileTxMode_CoexistenceFailurePath(t *testing.T) {
 	tests := []struct {
 		name       string
 		sql        string
 		wantErr    string
-		wantSource migrationFileTxModeSource
+		wantSource FileTxModeSource
 	}{
 		{
 			name:       "invalid Atlas mode is not hidden by native true",
 			sql:        "-- atlas:txmode bogus\n-- +ptah no_transaction\n\nSELECT 1;\n",
 			wantErr:    `unknown txmode "bogus" found in file directive "1_coexist.sql"`,
-			wantSource: migrationFileTxModeSourceAtlas,
+			wantSource: FileTxModeSourceAtlas,
 		},
 		{
 			name:       "invalid native value is not hidden by Atlas none",
 			sql:        "-- atlas:txmode none\n-- +ptah no_transaction=maybe\n\nSELECT 1;\n",
 			wantErr:    `invalid \+ptah no_transaction value "maybe": expected true or false`,
-			wantSource: migrationFileTxModeSourcePtah,
+			wantSource: FileTxModeSourcePtah,
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			got := parseMigrationFileTxMode("1_coexist.sql", test.sql)
-			c.Assert(got.err, qt.ErrorMatches, test.wantErr)
-			c.Assert(got.mode, qt.Equals, MigrationFileTxModeUnspecified)
-			c.Assert(got.source, qt.Equals, test.wantSource)
+			got := ParseFileTxMode("1_coexist.sql", test.sql)
+			c.Assert(got.Err, qt.ErrorMatches, test.wantErr)
+			c.Assert(got.Mode, qt.Equals, FileTxModeUnspecified)
+			c.Assert(got.Source, qt.Equals, test.wantSource)
 		})
 	}
-}
-
-// dialectAmbiguousMarker is a `-- +ptah` line that only one dialect's string
-// rules leave outside a string literal.
-//
-// With PostgreSQL's standard-conforming strings the backslash is an ordinary
-// character, so the quote after it CLOSES the literal and the next line is a
-// real line comment. MySQL treats the backslash as an escape, so the same bytes
-// are one multi-line string and the marker is data.
-//
-// The line can only sit below executable SQL -- a string literal is executable
-// SQL, and a marker inside one has to follow the statement that opens it. Under
-// the header rule it is therefore inert on every dialect, which is the stronger
-// property and the one asserted first. The dialect still decides for ordered
-// checks, which are file-wide by design.
-func dialectAmbiguousMarker(body string) string {
-	return "SELECT 'prefix \\'\n-- +ptah " + body + "\nsuffix';\n"
-}
-
-// TestWellFormedDirectiveBelowTheStatementIsInertOnEveryDialect separates the
-// two verdicts a misplaced directive earns.
-//
-// A WELL-FORMED directive below the statement is not honored and not refused --
-// refusing it would remove behavior this tree shipped. The malformed sibling in
-// the next test is refused. Both are reported.
-func TestWellFormedDirectiveBelowTheStatementIsInertOnEveryDialect(t *testing.T) {
-	c := qt.New(t)
-	wellFormed := dialectAmbiguousMarker("no_transaction")
-
-	loaded, err := migrationFuncFromSQLStringWithMetadata("1_ambiguous.sql", wellFormed, statementExecutionHooks{})
-	c.Assert(err, qt.IsNil)
-	c.Check(loaded.txMode, qt.Equals, MigrationFileTxModeUnspecified)
-	c.Check(loaded.txModeErr, qt.IsNil)
-
-	migration := &Migration{Description: "ambiguous"}
-	setMigrationUp(migration, loaded)
-	// Both dialects, because the position decided before the quoting did.
-	mysqlMode := migration.parsedUpTxModeForDialect(platform.MySQL)
-	c.Check(mysqlMode.err, qt.IsNil)
-	c.Check(mysqlMode.mode, qt.Equals, MigrationFileTxModeUnspecified)
-	postgresMode := migration.parsedUpTxModeForDialect(platform.Postgres)
-	c.Check(postgresMode.err, qt.IsNil)
-	c.Check(postgresMode.mode, qt.Equals, MigrationFileTxModeUnspecified)
-
-	// It is a directive a reader would recognize, so it is reported rather than
-	// dropped -- but only on the dialect that sees it outside a string.
-	c.Check(misplacedDirectives(wellFormed, platform.Postgres), qt.HasLen, 1)
-	c.Check(misplacedDirectives(wellFormed, platform.MySQL), qt.HasLen, 0)
-}
-
-// TestMigrationTxModeParsingDefersDialectSpecificStringsToTarget is the
-// property the tagged contour protects, measured where it is live.
-//
-// A malformed VALUE is refused wherever the line sits, so the refusal still
-// depends entirely on whether the target dialect's lexer sees a directive or a
-// string literal. Without a dialect the conservative scan keeps nothing, which
-// is why load time defers rather than refuses.
-func TestMigrationTxModeParsingDefersDialectSpecificStringsToTarget(t *testing.T) {
-	c := qt.New(t)
-	invalidForPostgres := dialectAmbiguousMarker("no_transaction=maybe")
-
-	loaded, err := migrationFuncFromSQLStringWithMetadata("1_ambiguous.sql", invalidForPostgres, statementExecutionHooks{})
-	c.Assert(err, qt.IsNil)
-	c.Assert(loaded.txMode, qt.Equals, MigrationFileTxModeUnspecified)
-	c.Assert(loaded.txModeErr, qt.IsNil)
-
-	migration := &Migration{Description: "ambiguous"}
-	setMigrationUp(migration, loaded)
-	mysqlMode := migration.parsedUpTxModeForDialect(platform.MySQL)
-	c.Assert(mysqlMode.err, qt.IsNil)
-	c.Assert(mysqlMode.mode, qt.Equals, MigrationFileTxModeUnspecified)
-	postgresMode := migration.parsedUpTxModeForDialect(platform.Postgres)
-	c.Assert(postgresMode.err, qt.ErrorMatches,
-		`invalid \+ptah no_transaction value "maybe": expected true or false `+
-			`\(on line 2, below the first SQL statement, where it would not have been honored\)`)
-	c.Assert(postgresMode.source, qt.Equals, migrationFileTxModeSourcePtah)
-
-	parsed, err := ParseMigrationUp("1_ambiguous.sql", invalidForPostgres)
-	c.Assert(err, qt.IsNil)
-	c.Assert(parsed.TxMode, qt.Equals, MigrationFileTxModeUnspecified)
-}
-
-func TestMigrationTxModeParsingKeepsMisplacedMarkerInertForTargetDialect(t *testing.T) {
-	c := qt.New(t)
-	markerForPostgres := dialectAmbiguousMarker("no_transaction")
-	migration := CreateMigrationFromSQL(1, "target-aware", markerForPostgres, markerForPostgres)
-
-	mysqlMode := migration.parsedUpTxModeForDialect(platform.MySQL)
-	c.Assert(mysqlMode.err, qt.IsNil)
-	c.Assert(mysqlMode.mode, qt.Equals, MigrationFileTxModeUnspecified)
-	postgresMode := migration.parsedUpTxModeForDialect(platform.Postgres)
-	c.Assert(postgresMode.err, qt.IsNil)
-	c.Assert(postgresMode.mode, qt.Equals, MigrationFileTxModeUnspecified)
-	mysqlDownMode := migration.parsedDownTxModeForDialect(platform.MySQL)
-	c.Assert(mysqlDownMode.err, qt.IsNil)
-	c.Assert(mysqlDownMode.mode, qt.Equals, MigrationFileTxModeUnspecified)
-	postgresDownMode := migration.parsedDownTxModeForDialect(platform.Postgres)
-	c.Assert(postgresDownMode.err, qt.IsNil)
-	c.Assert(postgresDownMode.mode, qt.Equals, MigrationFileTxModeUnspecified)
-
-	migration.UpTxMode = MigrationFileTxModeFile
-	migration.DownTxMode = MigrationFileTxModeFile
-	overridden := migration.parsedUpTxModeForDialect(platform.Postgres)
-	c.Assert(overridden.mode, qt.Equals, MigrationFileTxModeFile)
-	c.Assert(overridden.err, qt.IsNil)
-	overriddenDown := migration.parsedDownTxModeForDialect(platform.Postgres)
-	c.Assert(overriddenDown.mode, qt.Equals, MigrationFileTxModeFile)
-	c.Assert(overriddenDown.err, qt.IsNil)
 }

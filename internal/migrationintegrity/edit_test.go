@@ -14,11 +14,11 @@ import (
 	"go.5x5.cz/ptah/internal/migrationintegrity"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/migration/generator"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 type editedCheckpointFixture struct {
-	format   migrator.MigrationDirFormat
+	format   migrationfile.DirFormat
 	editName string
 	seed     func(*qt.C, string) string
 	write    func(*qt.C, string, fs.FS) []string
@@ -27,7 +27,7 @@ type editedCheckpointFixture struct {
 func TestRefreshEditedCheckpointIntegrity(t *testing.T) {
 	tests := map[string]editedCheckpointFixture{
 		"ptah": {
-			format:   migrator.MigrationDirFormatPtah,
+			format:   migrationfile.DirFormatPtah,
 			editName: "0000000002_snapshot.checkpoint.up.sql",
 			seed: func(c *qt.C, dir string) string {
 				path := filepath.Join(dir, "0000000001_init.up.sql")
@@ -49,7 +49,7 @@ func TestRefreshEditedCheckpointIntegrity(t *testing.T) {
 			},
 		},
 		"atlas": {
-			format:   migrator.MigrationDirFormatAtlas,
+			format:   migrationfile.DirFormatAtlas,
 			editName: "2_snapshot.sql",
 			seed: func(c *qt.C, dir string) string {
 				path := filepath.Join(dir, "1_init.sql")
@@ -212,7 +212,7 @@ func openEditedCheckpointWriter(c *qt.C, dir string) *atlasmigrate.MigrationWrit
 func assertMigrationIntegrity(
 	c *qt.C,
 	dir string,
-	format migrator.MigrationDirFormat,
+	format migrationfile.DirFormat,
 	wantOK bool,
 ) {
 	c.Helper()

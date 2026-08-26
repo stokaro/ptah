@@ -18,7 +18,7 @@ import (
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/migrationartifact"
 	"go.5x5.cz/ptah/internal/ociartifact"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // TestAtlasRegistryMigrationDirE2E is the live acceptance for resolving an
@@ -221,7 +221,7 @@ func pushAtlasMigrationArtifact(
 	c.Helper()
 	dir := c.TB.(*testing.T).TempDir()
 	c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(sql+"\n"), 0o600), qt.IsNil)
-	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(dir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 
 	client, err := ociartifact.NewClient(ociartifact.ClientOptions{PlainHTTP: true})
@@ -235,7 +235,7 @@ func pushAtlasMigrationArtifact(
 		client,
 		fmt.Sprintf("oci://%s/%s:%s", registry, repository, tag),
 		os.DirFS(dir),
-		migrationartifact.PushOptions{DirFormat: migrator.MigrationDirFormatAtlas},
+		migrationartifact.PushOptions{DirFormat: migrationfile.DirFormatAtlas},
 	)
 	c.Assert(err, qt.IsNil)
 }

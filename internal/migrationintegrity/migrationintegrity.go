@@ -82,7 +82,7 @@ import (
 	"go.5x5.cz/ptah/internal/fsnapshot"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // ErrAuthorizedHistoryChanged reports that migration history changed after a
@@ -98,7 +98,7 @@ var ErrAuthorizedHistoryChanged = errors.New("migration history changed while ed
 type CheckpointEditAuthorization struct {
 	snapshot    fsnapshot.Snapshot
 	editedNames []string
-	format      migrator.MigrationDirFormat
+	format      migrationfile.DirFormat
 	writer      *atlasmigrate.MigrationWriter
 }
 
@@ -210,7 +210,7 @@ func Resolve() (Policy, error) {
 func GateWithPolicy(
 	notice io.Writer,
 	fsys fs.FS,
-	format migrator.MigrationDirFormat,
+	format migrationfile.DirFormat,
 	policy Policy,
 	opts Options,
 ) (string, error) {
@@ -254,7 +254,7 @@ func GateWithPolicy(
 func AuthorizeCheckpointEdit(
 	ctx context.Context,
 	writer *atlasmigrate.MigrationWriter,
-	format migrator.MigrationDirFormat,
+	format migrationfile.DirFormat,
 	authorized fs.FS,
 	editedPaths ...string,
 ) (CheckpointEditAuthorization, error) {

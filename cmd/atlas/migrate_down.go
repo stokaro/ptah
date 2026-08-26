@@ -27,6 +27,7 @@ import (
 	"go.5x5.cz/ptah/internal/envbool"
 	"go.5x5.cz/ptah/internal/migrationintegrity"
 	"go.5x5.cz/ptah/migration/generator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -199,7 +200,7 @@ func runAtlasMigrateDownFormat(
 	} else if _, err := migrationintegrity.GateWithPolicy(
 		cmd.ErrOrStderr(),
 		source.FileSystem,
-		migrator.MigrationDirFormatAtlas,
+		migrationfile.DirFormatAtlas,
 		integrityPolicy,
 		migrationintegrity.Options{},
 	); err != nil {
@@ -268,7 +269,7 @@ func runAtlasMigrateDownFormat(
 			CurrentVersion:    plan.CurrentVersion,
 			TargetVersion:     targetVersion,
 			ProviderOptions: []migrator.FSProviderOption{
-				migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+				migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 			},
 			ConnectTimeout: dbcli.DefaultConnectTimeout,
 		})
@@ -575,7 +576,7 @@ func resolveAtlasDownFormatTag(
 		return 0, fmt.Errorf("--to-version and --to-tag both name where to stop; pass one")
 	}
 	resolver, err := migrator.NewFSMigrator(conn, migrations,
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas))
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas))
 	if err != nil {
 		return 0, fmt.Errorf("error registering migrations: %w", err)
 	}

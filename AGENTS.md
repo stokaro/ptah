@@ -58,6 +58,9 @@ meets first. `docs/public_api.md` is the authority on what is public.
 - `dbschema` — connection management plus schema reading and writing against a
   live database.
 - `migration/generator` — migration file generation from schema diffs.
+- `migration/migrationfile` — the migration file layout: names, directory
+  formats, directives, txtar archives, and templates; no database, no
+  execution.
 - `migration/migrator` — migration execution with rollback.
 - `migration/planner` — migration planning and SQL generation.
 - `migration/schemadiff` — schema comparison; the entry point is

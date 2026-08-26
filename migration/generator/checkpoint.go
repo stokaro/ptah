@@ -15,6 +15,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	schemadifftypes "go.5x5.cz/ptah/migration/schemadiff/types"
@@ -152,7 +153,7 @@ func WriteCheckpointFilesWithOptions(
 		upSQL,
 		downSQL,
 		"checkpoint",
-		migrator.GenerateCheckpointMigrationFileName,
+		migrationfile.CheckpointFileName,
 		opts.AuthorizedMigrationsFS,
 	)
 }

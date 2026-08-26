@@ -17,7 +17,7 @@ import (
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/migrationreplay"
 	"go.5x5.cz/ptah/internal/sqlident"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 func TestWithReplayedSnapshot_ClickHouseLive(t *testing.T) {
@@ -37,7 +37,7 @@ CREATE MATERIALIZED VIEW event_rollup ENGINE = MergeTree ORDER BY id AS SELECT i
 		t.Context(),
 		realm,
 		snapshot,
-		migrator.MigrationDirFormatAtlas,
+		migrationfile.DirFormatAtlas,
 		func(conn *dbschema.DatabaseConnection) error {
 			var objectCount uint64
 			queryErr := conn.QueryRowContext(
@@ -78,7 +78,7 @@ CREATE MATERIALIZED VIEW event_rollup ENGINE = MergeTree ORDER BY id AS SELECT i
 		t.Context(),
 		realm,
 		unsafeSnapshot,
-		migrator.MigrationDirFormatAtlas,
+		migrationfile.DirFormatAtlas,
 		func(*dbschema.DatabaseConnection) error {
 			return nil
 		},
@@ -125,7 +125,7 @@ CREATE SEQUENCE app.event_sequence AS BIGINT START WITH 1;
 		t.Context(),
 		realm,
 		snapshot,
-		migrator.MigrationDirFormatAtlas,
+		migrationfile.DirFormatAtlas,
 		func(conn *dbschema.DatabaseConnection) error {
 			var objectCount int
 			queryErr := conn.QueryRowContext(t.Context(), `
@@ -165,7 +165,7 @@ WHERE is_ms_shipped = 0
 		t.Context(),
 		realm,
 		unsafeSnapshot,
-		migrator.MigrationDirFormatAtlas,
+		migrationfile.DirFormatAtlas,
 		func(*dbschema.DatabaseConnection) error {
 			return nil
 		},

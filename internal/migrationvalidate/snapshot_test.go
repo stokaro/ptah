@@ -11,7 +11,7 @@ import (
 
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/migrationvalidate"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // This file covers [migrationvalidate.Options.FS]: validation of a migration
@@ -34,7 +34,7 @@ func hashedSnapshot(c *qt.C) fstest.MapFS {
 		"0000000001_init.up.sql":   {Data: []byte("CREATE TABLE snapshot_widgets (id INTEGER PRIMARY KEY);\n")},
 		"0000000001_init.down.sql": {Data: []byte("DROP TABLE snapshot_widgets;\n")},
 	}
-	sum, err := migratesum.ComputeWithFormat(files, migrator.MigrationDirFormatPtah)
+	sum, err := migratesum.ComputeWithFormat(files, migrationfile.DirFormatPtah)
 	c.Assert(err, qt.IsNil)
 	files[migratesum.FileName] = &fstest.MapFile{Data: sum.Bytes()}
 	return files
@@ -46,7 +46,7 @@ func TestValidate_VerifiesTheSuppliedSnapshotRatherThanTheDirPath(t *testing.T) 
 	result, err := migrationvalidate.Validate(context.Background(), migrationvalidate.Options{
 		Dir:       unreadableArtifactDir,
 		FS:        hashedSnapshot(c),
-		DirFormat: migrator.MigrationDirFormatPtah,
+		DirFormat: migrationfile.DirFormatPtah,
 	})
 
 	c.Assert(err, qt.IsNil)
@@ -64,7 +64,7 @@ func TestValidate_ReportsDriftInsideTheSuppliedSnapshot(t *testing.T) {
 	result, err := migrationvalidate.Validate(context.Background(), migrationvalidate.Options{
 		Dir:       unreadableArtifactDir,
 		FS:        files,
-		DirFormat: migrator.MigrationDirFormatPtah,
+		DirFormat: migrationfile.DirFormatPtah,
 	})
 
 	c.Assert(err, qt.IsNil)
@@ -80,7 +80,7 @@ func TestValidate_ReportsAMissingSumInsideTheSuppliedSnapshot(t *testing.T) {
 	_, err := migrationvalidate.Validate(context.Background(), migrationvalidate.Options{
 		Dir:       unreadableArtifactDir,
 		FS:        files,
-		DirFormat: migrator.MigrationDirFormatPtah,
+		DirFormat: migrationfile.DirFormatPtah,
 	})
 
 	c.Assert(err, qt.ErrorIs, migratesum.ErrSumFileMissing)
@@ -99,7 +99,7 @@ func TestValidate_ReplaysTheSuppliedSnapshotOnTheDevDatabase(t *testing.T) {
 	result, err := migrationvalidate.Validate(context.Background(), migrationvalidate.Options{
 		Dir:       unreadableArtifactDir,
 		FS:        hashedSnapshot(c),
-		DirFormat: migrator.MigrationDirFormatPtah,
+		DirFormat: migrationfile.DirFormatPtah,
 		DevURL:    "sqlite://" + devDBPath,
 	})
 
@@ -118,7 +118,7 @@ func TestValidate_WithoutSnapshotStillReadsTheDirPath(t *testing.T) {
 
 	result, err := migrationvalidate.Validate(context.Background(), migrationvalidate.Options{
 		Dir:       dir,
-		DirFormat: migrator.MigrationDirFormatPtah,
+		DirFormat: migrationfile.DirFormatPtah,
 	})
 
 	c.Assert(err, qt.IsNil)

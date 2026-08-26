@@ -14,7 +14,7 @@ import (
 	"go.5x5.cz/ptah/core/renderer"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/lint"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -117,7 +117,7 @@ func TestMigrationIntegrityAndLint(t *testing.T) {
 		},
 	}
 
-	sum, err := atlascompat.ComputeSum(fsys, migrator.MigrationDirFormatPtah)
+	sum, err := atlascompat.ComputeSum(fsys, migrationfile.DirFormatPtah)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sum.Entries, qt.HasLen, 2)
 

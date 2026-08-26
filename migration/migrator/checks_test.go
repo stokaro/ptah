@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -216,6 +217,6 @@ func TestParseFileDirectivesIgnoresChecks(t *testing.T) {
 	c := qt.New(t)
 	sql := `-- +ptah check name="x" assert="SELECT count(*) = 0 FROM users"` + "\n" +
 		"-- +ptah no_transaction\nDROP TABLE users;\n"
-	directives := migrator.ParseFileDirectives(sql)
+	directives := migrationfile.ParseDirectives(sql)
 	c.Assert(directives, qt.DeepEquals, map[string]string{"no_transaction": "true"})
 }

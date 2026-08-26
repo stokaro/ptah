@@ -11,6 +11,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -297,7 +298,7 @@ DROP TABLE atlas_archive;
 	observer := newStatementObserverRecorder()
 	provider, err := migrator.NewFSMigrationProvider(
 		fsys,
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 		migrator.WithStatementObserver(observer),
 	)
 	c.Assert(err, qt.IsNil)
@@ -834,7 +835,7 @@ func TestStatementObserver_NoTransactionExecutionIsObserved(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	migrations := provider.Migrations()
 	c.Assert(migrations, qt.HasLen, 1)
-	c.Assert(migrations[0].UpTxMode, qt.Equals, migrator.MigrationFileTxModeNone)
+	c.Assert(migrations[0].UpTxMode, qt.Equals, migrationfile.FileTxModeNone)
 	conn := openStatementObserverSQLite(t)
 
 	c.Assert(migrations[0].Up(context.Background(), conn), qt.IsNil)

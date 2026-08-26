@@ -20,6 +20,7 @@ import (
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/testutils"
 	"go.5x5.cz/ptah/migration/lint"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -317,7 +318,7 @@ func resetMigrateUpCommandForTest(c *qt.C, cmd interface{ Flag(string) *pflag.Fl
 	setMigrateUpFlagForTest(c, cmd, dryRunFlag, "false")
 	setMigrateUpFlagForTest(c, cmd, verboseFlag, "false")
 	setMigrateUpFlagForTest(c, cmd, verifySumFlag, "false")
-	setMigrateUpFlagForTest(c, cmd, dirFormatFlag, string(migrator.MigrationDirFormatAuto))
+	setMigrateUpFlagForTest(c, cmd, dirFormatFlag, string(migrationfile.DirFormatAuto))
 	setMigrateUpFlagForTest(c, cmd, atlasEnvFlag, "")
 	setMigrateUpFlagForTest(c, cmd, execOrderFlag, string(migrator.ExecOrderLinear))
 	setMigrateUpFlagForTest(c, cmd, txModeFlag, string(migrator.MigrationTxModeFile))

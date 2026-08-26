@@ -27,7 +27,7 @@ import (
 	"go.5x5.cz/ptah/internal/schemaload"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/generator"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 const (
@@ -79,7 +79,7 @@ repository alone.`,
 	flags.String(generateShadowDBFlag, "", "Shadow database URL used to verify generated migrations before writing files")
 	flags.Bool(generateReplayFlag, false, "Derive the current state by replaying --migrations-dir on the --dev-url database instead of introspecting --db-url")
 	flags.String(generateDevURLFlag, "", "Disposable dev database URL the migration directory is replayed on with --replay; it is reset destructively")
-	flags.String(generateDirFormatFlag, string(migrator.MigrationDirFormatAuto), "Migration directory format used by --replay: auto, ptah, or atlas")
+	flags.String(generateDirFormatFlag, string(migrationfile.DirFormatAuto), "Migration directory format used by --replay: auto, ptah, or atlas")
 	flags.String(generateQualifierFlag, "", "Qualify every object in the generated statements with a custom schema qualifier (single-schema plans only)")
 	flags.Bool(generateCheckDestructiveFlag, false, "Fail when generated migration SQL contains destructive statements")
 	flags.Bool(generateAllowDestructiveFlag, false, "Allow destructive statements when --check-destructive is set")
@@ -128,10 +128,10 @@ func captureGeneratePriorMigrations(
 	ctx context.Context,
 	notice io.Writer,
 	opts generatePriorMigrationOptions,
-) (fs.FS, migrator.MigrationDirFormat, error) {
-	dirFormat := migrator.MigrationDirFormatPtah
+) (fs.FS, migrationfile.DirFormat, error) {
+	dirFormat := migrationfile.DirFormatPtah
 	if opts.replay {
-		parsed, err := migrator.ParseMigrationDirFormat(opts.dirFormat)
+		parsed, err := migrationfile.ParseDirFormat(opts.dirFormat)
 		if err != nil {
 			return nil, "", err
 		}
@@ -164,7 +164,7 @@ func recoverAndCaptureGeneratePriorMigrations(
 	ctx context.Context,
 	notice io.Writer,
 	migrationsDir string,
-	dirFormat migrator.MigrationDirFormat,
+	dirFormat migrationfile.DirFormat,
 	policy migrationintegrity.Policy,
 ) (fs.FS, error) {
 	var priorSnapshot fs.FS
@@ -187,7 +187,7 @@ func recoverAndCaptureGeneratePriorMigrations(
 func captureAndAuthorizeGeneratePriorMigrations(
 	notice io.Writer,
 	migrationsDir string,
-	dirFormat migrator.MigrationDirFormat,
+	dirFormat migrationfile.DirFormat,
 	policy migrationintegrity.Policy,
 ) (fs.FS, error) {
 	priorSnapshot, err := migrationsnapshot.CaptureDirectory(migrationsDir)
@@ -207,7 +207,7 @@ func captureAndAuthorizeGeneratePriorMigrations(
 type generateReplayOptions struct {
 	migrationsDir  string
 	devURL         string
-	dirFormat      migrator.MigrationDirFormat
+	dirFormat      migrationfile.DirFormat
 	connectTimeout time.Duration
 	policy         migrationintegrity.Policy
 }

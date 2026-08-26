@@ -18,7 +18,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // TestNextAvailableMigrationVersionReadsTheHeldDirectory pins the half of the
@@ -49,11 +49,11 @@ func TestNextAvailableMigrationVersionReadsTheHeldDirectory(t *testing.T) {
 	c.Assert(os.MkdirAll(bound, 0o755), qt.IsNil)
 	c.Assert(os.MkdirAll(decoy, 0o755), qt.IsNil)
 	c.Assert(os.WriteFile(
-		filepath.Join(bound, migrator.GenerateMigrationFileName(105, "add_email", "up")),
+		filepath.Join(bound, migrationfile.FileName(105, "add_email", "up")),
 		[]byte("SELECT 1;\n"), 0o600,
 	), qt.IsNil)
 	c.Assert(os.WriteFile(
-		filepath.Join(decoy, migrator.GenerateMigrationFileName(900, "decoy", "up")),
+		filepath.Join(decoy, migrationfile.FileName(900, "decoy", "up")),
 		[]byte("SELECT 1;\n"), 0o600,
 	), qt.IsNil)
 	selected := filepath.Join(root, "migrations")
@@ -101,7 +101,7 @@ func heldDirectoryPlan(c *qt.C) (plan *MigrationPlan, root, selected, aside stri
 	selected = filepath.Join(root, "migrations")
 	c.Assert(os.MkdirAll(selected, 0o755), qt.IsNil)
 	c.Assert(os.WriteFile(
-		filepath.Join(selected, migrator.GenerateMigrationFileName(105, "add_email", "up")),
+		filepath.Join(selected, migrationfile.FileName(105, "add_email", "up")),
 		[]byte(upSQL), 0o600,
 	), qt.IsNil)
 
@@ -116,7 +116,7 @@ func heldDirectoryPlan(c *qt.C) (plan *MigrationPlan, root, selected, aside stri
 	c.Assert(os.Rename(selected, aside), qt.IsNil)
 	c.Assert(os.MkdirAll(selected, 0o755), qt.IsNil)
 	c.Assert(os.WriteFile(
-		filepath.Join(selected, migrator.GenerateMigrationFileName(900, "decoy", "up")),
+		filepath.Join(selected, migrationfile.FileName(900, "decoy", "up")),
 		[]byte(upSQL), 0o600,
 	), qt.IsNil)
 
@@ -162,10 +162,10 @@ func TestMigrationPlanRefusesPublicationWhileTheImpostorHoldsThePathname(t *test
 	c.Assert(err, qt.ErrorIs, ErrMigrationDirectoryChanged)
 	c.Assert(files, qt.IsNil)
 	c.Assert(generatorDirNames(c, aside), qt.DeepEquals, []string{
-		migrator.GenerateMigrationFileName(105, "add_email", "up"),
+		migrationfile.FileName(105, "add_email", "up"),
 	})
 	c.Assert(generatorDirNames(c, selected), qt.DeepEquals, []string{
-		migrator.GenerateMigrationFileName(900, "decoy", "up"),
+		migrationfile.FileName(900, "decoy", "up"),
 	})
 }
 
@@ -191,12 +191,12 @@ func TestMigrationPlanPublishesIntoTheHeldDirectoryWhenThePathnameReturns(t *tes
 	c.Assert(files.Files, qt.HasLen, 1)
 	c.Assert(files.Files[0].Version, qt.Equals, int64(106))
 	c.Assert(generatorDirNames(c, selected), qt.DeepEquals, []string{
-		migrator.GenerateMigrationFileName(105, "add_email", "up"),
-		migrator.GenerateMigrationFileName(106, "add_email", "down"),
-		migrator.GenerateMigrationFileName(106, "add_email", "up"),
+		migrationfile.FileName(105, "add_email", "up"),
+		migrationfile.FileName(106, "add_email", "down"),
+		migrationfile.FileName(106, "add_email", "up"),
 	})
 	c.Assert(generatorDirNames(c, impostor), qt.DeepEquals, []string{
-		migrator.GenerateMigrationFileName(900, "decoy", "up"),
+		migrationfile.FileName(900, "decoy", "up"),
 	})
 }
 
@@ -254,7 +254,7 @@ func TestGenerateEmptyMigrationReplacedDirectoryCannotRedirectTheWrite(t *testin
 		// shape where an explicit absolute directory is the operator's own
 		// choice of destination.
 		allowedRoot func(root string) string
-		dirFormat   migrator.MigrationDirFormat
+		dirFormat   migrationfile.DirFormat
 		// selectedDir is the directory the run is pointed at, relative to the
 		// temporary root, and it is staged before the run.
 		selectedDir string
@@ -280,7 +280,7 @@ func TestGenerateEmptyMigrationReplacedDirectoryCannotRedirectTheWrite(t *testin
 		{
 			name:        "the migration directory is replaced, under an allowed root",
 			allowedRoot: func(root string) string { return root },
-			dirFormat:   migrator.MigrationDirFormatAtlas,
+			dirFormat:   migrationfile.DirFormatAtlas,
 			selectedDir: "migrations",
 			replacedDir: "migrations",
 			wantFiles:   2,
@@ -288,7 +288,7 @@ func TestGenerateEmptyMigrationReplacedDirectoryCannotRedirectTheWrite(t *testin
 		{
 			name:        "the migration directory is replaced, with no allowed root",
 			allowedRoot: func(string) string { return "" },
-			dirFormat:   migrator.MigrationDirFormatAtlas,
+			dirFormat:   migrationfile.DirFormatAtlas,
 			selectedDir: "migrations",
 			replacedDir: "migrations",
 			wantFiles:   2,
@@ -296,7 +296,7 @@ func TestGenerateEmptyMigrationReplacedDirectoryCannotRedirectTheWrite(t *testin
 		{
 			name:        "the migration directory is replaced, paired layout",
 			allowedRoot: func(root string) string { return root },
-			dirFormat:   migrator.MigrationDirFormatPtah,
+			dirFormat:   migrationfile.DirFormatPtah,
 			selectedDir: "migrations",
 			replacedDir: "migrations",
 			wantFiles:   2,
@@ -304,7 +304,7 @@ func TestGenerateEmptyMigrationReplacedDirectoryCannotRedirectTheWrite(t *testin
 		{
 			name:             "an ancestor directory is replaced",
 			allowedRoot:      func(root string) string { return root },
-			dirFormat:        migrator.MigrationDirFormatAtlas,
+			dirFormat:        migrationfile.DirFormatAtlas,
 			selectedDir:      filepath.Join("nest", "migrations"),
 			replacedDir:      "nest",
 			retainedSubdir:   "migrations",
@@ -368,7 +368,7 @@ func TestGenerateEmptyMigrationCreatesMissingDirectoryThroughTheBoundParent(t *t
 		MigrationName:     "added",
 		OutputDir:         selected,
 		AllowedOutputRoot: root,
-		DirFormat:         migrator.MigrationDirFormatAtlas,
+		DirFormat:         migrationfile.DirFormatAtlas,
 	})
 
 	c.Assert(err, qt.IsNil)
@@ -416,7 +416,7 @@ func TestGenerateEmptyMigrationCreatesMissingDirectoryThroughTheBoundParent(t *t
 func TestGenerateEmptyMigrationScansTheHeldDirectoryForItsVersion(t *testing.T) {
 	tests := []struct {
 		name      string
-		dirFormat migrator.MigrationDirFormat
+		dirFormat migrationfile.DirFormat
 		// boundFile is the migration already in the directory the run binds,
 		// and impostorFile the one in the directory that takes over its
 		// pathname before the scan runs.
@@ -445,7 +445,7 @@ func TestGenerateEmptyMigrationScansTheHeldDirectoryForItsVersion(t *testing.T) 
 			// The bound reading has to step past it; the pathname reading, where
 			// that second is free, does not.
 			name:                "atlas layout",
-			dirFormat:           migrator.MigrationDirFormatAtlas,
+			dirFormat:           migrationfile.DirFormatAtlas,
 			boundFile:           atlasEmptyMigrationFileName(29990101000001, "seed"),
 			impostorFile:        atlasEmptyMigrationFileName(29991231235959, "impostor"),
 			atlasClock:          time.Date(2999, time.January, 1, 0, 0, 1, 0, time.UTC),
@@ -462,19 +462,19 @@ func TestGenerateEmptyMigrationScansTheHeldDirectoryForItsVersion(t *testing.T) 
 		},
 		{
 			name:                "paired layout",
-			dirFormat:           migrator.MigrationDirFormatPtah,
-			boundFile:           migrator.GenerateMigrationFileName(3000000005, "seed", "up"),
-			impostorFile:        migrator.GenerateMigrationFileName(3999999999, "impostor", "up"),
+			dirFormat:           migrationfile.DirFormatPtah,
+			boundFile:           migrationfile.FileName(3000000005, "seed", "up"),
+			impostorFile:        migrationfile.FileName(3999999999, "impostor", "up"),
 			atlasClock:          time.Date(2999, time.January, 1, 0, 0, 1, 0, time.UTC),
 			wantVersion:         3000000006,
 			wantPathnameVersion: 4000000000,
 			pathnameScan: func(names []string) (int64, error) {
-				return nextAvailablePtahVersion(names, migrator.GetNextMigrationVersion(), "added")
+				return nextAvailablePtahVersion(names, migrationfile.NextVersion(), "added")
 			},
 			wantRetained: []string{
-				migrator.GenerateMigrationFileName(3000000005, "seed", "up"),
-				migrator.GenerateMigrationFileName(3000000006, "added", "down"),
-				migrator.GenerateMigrationFileName(3000000006, "added", "up"),
+				migrationfile.FileName(3000000005, "seed", "up"),
+				migrationfile.FileName(3000000006, "added", "down"),
+				migrationfile.FileName(3000000006, "added", "up"),
 			},
 		},
 	}

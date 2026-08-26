@@ -26,7 +26,7 @@ import (
 	"go.5x5.cz/ptah/cmd/root"
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 const (
@@ -1079,7 +1079,7 @@ func assertMigrationDirectorySum(c *qt.C, dir string, expectedEntries int) {
 	sum, err := migratesum.Parse(sumBytes)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sum.Entries, qt.HasLen, expectedEntries)
-	verification, err := migratesum.VerifyWithFormat(os.DirFS(dir), migrator.MigrationDirFormatAtlas)
+	verification, err := migratesum.VerifyWithFormat(os.DirFS(dir), migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	c.Assert(verification.OK(), qt.IsTrue)
 }

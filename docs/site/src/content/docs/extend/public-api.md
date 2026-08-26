@@ -37,6 +37,7 @@ equal to it.
 | `migration/generator` | Migration file generation. |
 | `migration/importer` | Converts migration directories from other versioned-migration tools into Ptah's native layout. |
 | `migration/lint` | Migration SQL linting rules, immutable analysis snapshots, and findings. |
+| `migration/migrationfile` | Migration file names, directory formats, directives, and per-file transaction modes. |
 | `migration/migrator` | Migration providers, revision metadata, dry-run plans, and execution. |
 | `migration/planner` | Schema change planning. |
 | `migration/risk` | Migration risk classification. |

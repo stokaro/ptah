@@ -20,7 +20,7 @@ import (
 	"go.5x5.cz/ptah/internal/migrationlintreport"
 	"go.5x5.cz/ptah/internal/ociartifact"
 	migrationlint "go.5x5.cz/ptah/migration/lint"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 const (
@@ -96,7 +96,7 @@ Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 	}
 
 	cmd.Flags().StringVar(&dir, "dir", "./migrations", "Local directory or oci:// reference containing migration files")
-	cmd.Flags().StringVar(&dirFormat, "dir-format", string(migrator.MigrationDirFormatAuto), "Migration directory format: auto, ptah, or atlas")
+	cmd.Flags().StringVar(&dirFormat, "dir-format", string(migrationfile.DirFormatAuto), "Migration directory format: auto, ptah, or atlas")
 	cmd.Flags().StringVar(&dialect, "dialect", "", "Target dialect gating dialect-specific rules: "+lintdialect.Expected+" (empty runs every rule)")
 	cmd.Flags().StringVar(&format, "format", formatText, "Output format: text, json, github-actions, sarif")
 	cmd.Flags().StringVar(&configPath, "config", "", "Path to a lint config file (default: <dir>/"+migrationlint.ConfigFileName+" when present)")
@@ -176,7 +176,7 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 	if _, err := migrationintegrity.GateWithPolicy(
 		cmd.ErrOrStderr(),
 		reportOpts.FS,
-		migrator.MigrationDirFormat(reportOpts.DirFormat),
+		migrationfile.DirFormat(reportOpts.DirFormat),
 		integrityPolicy,
 		migrationintegrity.Options{},
 	); err != nil {
@@ -246,7 +246,7 @@ func prepareReportOptions(
 			return migrationlintreport.Options{}, nil, err
 		}
 		source, err := migrationsource.Resolve(cmd.Context(), prepared.Dir, migrationsource.Options{
-			DirFormat: migrator.MigrationDirFormat(prepared.DirFormat),
+			DirFormat: migrationfile.DirFormat(prepared.DirFormat),
 			PlainHTTP: sourceOpts.plainHTTP,
 		})
 		if err != nil {
@@ -276,7 +276,7 @@ func prepareReportOptions(
 		projectCfg.StringValue(projectconfig.StringMigrationFormat),
 	)
 	source, err := migrationsource.Resolve(cmd.Context(), effectiveDir, migrationsource.Options{
-		DirFormat: migrator.MigrationDirFormat(effectiveDirFormat),
+		DirFormat: migrationfile.DirFormat(effectiveDirFormat),
 		PlainHTTP: sourceOpts.plainHTTP,
 	})
 	if err != nil {
