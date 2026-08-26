@@ -276,6 +276,11 @@ type Field struct {
 	Enum      []string // Enum values for ENUM type fields
 	Check     string   // Check constraint expression
 	CheckName string   // Optional constraint name for the column-level CHECK; defaults to "<table>_<column>_check"
+	// NotNullConstraintName is an optional explicit constraint name for the
+	// column's NOT NULL, carried only where the target persists one as an
+	// addressable catalog object. See
+	// [go.5x5.cz/ptah/core/ast.ColumnNode.NotNullConstraintName].
+	NotNullConstraintName string
 	// GeneratedExpression stores the raw SQL expression for generated columns.
 	GeneratedExpression string
 	// GeneratedKind stores the generated column kind, such as VIRTUAL or STORED.

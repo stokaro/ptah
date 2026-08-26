@@ -130,17 +130,20 @@ func toDBColumn(field goschema.Field, ordinal int) dbschematypes.DBColumn {
 		nullable = "YES"
 	}
 	column := dbschematypes.DBColumn{
-		Name:            field.Name,
-		DataType:        field.Type,
-		ColumnType:      field.Type,
-		IsNullable:      nullable,
-		OrdinalPosition: ordinal,
-		IsAutoIncrement: field.AutoInc || field.IdentityGeneration != "",
-		IsPrimaryKey:    field.Primary,
-		IsUnique:        field.Unique,
-		Charset:         field.Charset,
-		Collate:         field.Collate,
-		GeneratedKind:   field.GeneratedKind,
+		Name:       field.Name,
+		DataType:   field.Type,
+		ColumnType: field.Type,
+		IsNullable: nullable,
+		// A description's own name for the NOT NULL, so a comparison between
+		// two descriptions sees it the way it sees one read from a catalog.
+		NotNullConstraintName: field.NotNullConstraintName,
+		OrdinalPosition:       ordinal,
+		IsAutoIncrement:       field.AutoInc || field.IdentityGeneration != "",
+		IsPrimaryKey:          field.Primary,
+		IsUnique:              field.Unique,
+		Charset:               field.Charset,
+		Collate:               field.Collate,
+		GeneratedKind:         field.GeneratedKind,
 	}
 	if field.DefaultSet {
 		column.ColumnDefault = new(field.Default)

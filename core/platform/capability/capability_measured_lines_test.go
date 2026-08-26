@@ -24,12 +24,19 @@ type answer struct {
 // measuredLine is a release line whose capability answers were read off a live
 // server rather than inherited from the line below it.
 //
-// PostgreSQL 18, MySQL 26.7 and MariaDB 12.3 are those lines. Each of them
-// resolves onto the preset of the line beneath it — Postgres17, MySQL84 and
-// MariaDB1011 — and that equality is this table's subject: it is what the
-// servers answered, not an assumption. The only way to keep it honest is to
-// hold the resolved set against the observations rather than against the
-// preset it resembles.
+// PostgreSQL 18, MySQL 26.7 and MariaDB 12.3 are those lines. MySQL 26.7 and
+// MariaDB 12.3 resolve onto the preset of the line beneath them — MySQL84 and
+// MariaDB1011 — and that equality is this table's subject for them: it is what
+// the servers answered, not an assumption.
+//
+// PostgreSQL 18 is what the table is FOR. It resolved onto Postgres17 until a
+// probe asked the question that separates them, and the answer came back
+// different: the server keeps a NOT NULL constraint name and 17 does not. It
+// has its own preset now, which is a conclusion this table produced rather than
+// a premise it rests on (stokaro/ptah#2161).
+//
+// The only way to keep any of it honest is to hold the resolved set against the
+// observations rather than against the preset it resembles.
 type measuredLine struct {
 	// dialect is what a caller passes to ResolveServerVersion beside the
 	// banner, so the row resolves the way a live connection does.
@@ -58,10 +65,8 @@ type measuredLine struct {
 // release line against the server it was measured on, key by key, along the
 // path an operator actually gets: the banner the server reports goes into
 // ResolveServerVersion, and the capability set that call returns is what every
-// row below is checked against. There is no per-line preset function to check
-// instead — these three lines resolve onto the preset of the line beneath them
-// — so the resolver is both the subject and the only honest source of the set,
-// and the assertion covers the whole chain from reported version to resolved
+// row below is checked against. The resolver is both the subject and the only
+// honest source of the set, and the assertion covers the whole chain from reported version to resolved
 // capabilities rather than a preset a caller would never reach.
 //
 // Without this table, nothing distinguishes "measured and found identical to
@@ -115,7 +120,7 @@ func TestMeasuredLines_ResolveToTheRowsTheServersAnswered(t *testing.T) {
 // release line (VersionSpecific) and not by running off the top of a ladder
 // (Saturated). Without it the rows above would still pass for a banner the
 // resolver had never heard of, because every ladder's open-topped arm hands
-// back exactly the preset these three lines were found equal to — so a table
+// back the topmost preset — so a table
 // of real observations could sit beside a resolver that had quietly stopped
 // recognizing the line that produced them.
 //
@@ -174,12 +179,18 @@ func measuredLines() map[string]measuredLine {
 				capability.Functions:                          {true, "ACCEPTED CREATE FUNCTION fn() RETURNS int LANGUAGE sql AS 'SELECT 1'"},
 				capability.IndexIncludeSPGiST:                 {true, "ACCEPTED CREATE INDEX iis_idx ON iis USING SPGIST (k) INCLUDE (payload), and pg_index reported indnkeyatts 1 with indnatts 2"},
 				capability.MaterializedViews:                  {true, "ACCEPTED CREATE MATERIALIZED VIEW mvw AS SELECT COUNT(*) AS c FROM mvs, and SELECT c FROM mvw was unchanged by an INSERT into mvs"},
-				capability.RoleManagement:                     {true, "ACCEPTED GRANT SELECT ON rm_t TO ptah_capprobe_role after ACCEPTED CREATE ROLE ptah_capprobe_role"},
-				capability.RowLevelSecurity:                   {true, "ACCEPTED CREATE POLICY rls_p ON rls USING (true) after ACCEPTED ALTER TABLE rls ENABLE ROW LEVEL SECURITY"},
-				capability.Sequences:                          {true, "ACCEPTED CREATE SEQUENCE sq and CREATE TABLE ser (id SERIAL PRIMARY KEY)"},
-				capability.Triggers:                           {true, "ACCEPTED CREATE TRIGGER trg BEFORE INSERT ON trg_t FOR EACH ROW EXECUTE FUNCTION trg_fn()"},
-				capability.Views:                              {true, "ACCEPTED CREATE VIEW vw AS SELECT n FROM vsrc"},
-				capability.XMLType:                            {true, "ACCEPTED CREATE TABLE xmlt (c XML)"},
+				capability.NamedNotNullConstraints: {true, "ACCEPTED CREATE TABLE nnn (id int CONSTRAINT nnn_named NOT NULL), then " +
+					"ACCEPTED SELECT COUNT(*) FROM pg_constraint WHERE conname = 'nnn_named' returning the row -- " +
+					"measured in capability-matrix run 32948628838, later than this line's other rows, because the " +
+					"probe that asks it did not exist when they were taken. The catalog read is what decides the key: " +
+					"a server that accepts the clause and discards the name accepts the CREATE TABLE just the same, " +
+					"which is exactly what PostgreSQL 17 does (stokaro/ptah#2161)"},
+				capability.RoleManagement:   {true, "ACCEPTED GRANT SELECT ON rm_t TO ptah_capprobe_role after ACCEPTED CREATE ROLE ptah_capprobe_role"},
+				capability.RowLevelSecurity: {true, "ACCEPTED CREATE POLICY rls_p ON rls USING (true) after ACCEPTED ALTER TABLE rls ENABLE ROW LEVEL SECURITY"},
+				capability.Sequences:        {true, "ACCEPTED CREATE SEQUENCE sq and CREATE TABLE ser (id SERIAL PRIMARY KEY)"},
+				capability.Triggers:         {true, "ACCEPTED CREATE TRIGGER trg BEFORE INSERT ON trg_t FOR EACH ROW EXECUTE FUNCTION trg_fn()"},
+				capability.Views:            {true, "ACCEPTED CREATE VIEW vw AS SELECT n FROM vsrc"},
+				capability.XMLType:          {true, "ACCEPTED CREATE TABLE xmlt (c XML)"},
 			},
 			carried: map[capability.Capability]string{
 				capability.ContinuousAggregates: "this run predates the key and sent no CREATE MATERIALIZED VIEW " +
@@ -208,8 +219,6 @@ func measuredLines() map[string]measuredLine {
 				capability.CatalogDefaultPrivileges: "the key names pg_default_acl, which this run never read: the artifact records no ALTER DEFAULT PRIVILEGES, and a server having the relation would not tell this line apart from the preset below",
 				capability.RowLevelTTL: "this run predates the key and sent no TTL statement. PostgreSQL is the engine the key is false FOR, so a refusal here would restate the premise rather than measure this line; " +
 					"what decides the key is CockroachDB accepting the parameter, which internal/capabilityprobe asks on the CockroachDB cells (stokaro/ptah#1027)",
-				capability.NamedNotNullConstraints: "this run predates the key and asked no NOT NULL question. The value carried here is false, which is what the preset beneath holds; " +
-					"a hand measurement on 18.6 says the server does report the name, and the probe now asks it, so the next matrix run decides this line rather than this table (stokaro/ptah#2161)",
 				capability.RowDeletionPolicy: "the key names a table clause only Spanner has, and PostgreSQL 18 answers `syntax error` to a construct that is not in its grammar -- which measures the grammar, not this line. " +
 					"What decides the key is Spanner STORING the clause and reading it back from information_schema.tables.row_deletion_policy_expression, which is asked on the Spanner cells (stokaro/ptah#2236)",
 				capability.CheckGrantStatement:             "the key names ClickHouse's CHECK GRANT, which this server has no spelling of; its answer would be to a different question. What decides the key is ClickHouse accepting the statement on one declared line and refusing it as a syntax error on another, which internal/capabilityprobe asks on the ClickHouse cells (stokaro/ptah#916)",

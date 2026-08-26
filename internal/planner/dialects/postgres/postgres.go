@@ -823,6 +823,7 @@ func (p *Planner) modifyExistingTableColumns(
 		// is already NOT NULL, which is noise the operator has to read past
 		// and a write to a table nothing needed to write to (stokaro/ptah#2168).
 		result = appendColumnComment(result, tableDiff.TableName, colDiff)
+		result = p.appendNotNullConstraintRename(result, tableDiff.TableName, colDiff)
 		if len(colDiff.Changes) == 0 {
 			continue
 		}
@@ -850,6 +851,63 @@ func (p *Planner) modifyExistingTableColumns(
 		result = append(result, astCommentNode)
 	}
 	return result
+}
+
+// appendNotNullConstraintRename emits the column's NOT NULL constraint name
+// transition, if it has one and the target can keep a name at all.
+//
+// A rename rather than a drop and an add, because for a NOT NULL those are not
+// equivalent: PostgreSQL generates a name for an unnamed one, so re-adding
+// through `ALTER COLUMN ... SET NOT NULL` lands on the generated name rather
+// than the declared one, and the column is momentarily nullable in between.
+//
+// Like a comment, it sits beside the column's other changes rather than inside
+// them, so a column whose only difference is the constraint's name gets no
+// ALTER COLUMN at all.
+//
+// The gate is the capability rather than the dialect name: the comparator can
+// only produce this change from a description that named the constraint, and a
+// target that does not persist the name has no constraint to rename
+// (stokaro/ptah#2161).
+func (p *Planner) appendNotNullConstraintRename(
+	result []ast.Node,
+	table string,
+	colDiff difftypes.ColumnDiff,
+) []ast.Node {
+	if colDiff.NotNullConstraintNameChange == nil {
+		return result
+	}
+	// A target that does not persist the name says so, rather than dropping the
+	// declaration on the floor. The renderer refuses this at CREATE TABLE; a
+	// column that already exists never reaches that path, so without this the
+	// declared name simply vanished from the plan with no diagnostic -- the
+	// silent drop this whole path exists to prevent.
+	//
+	// A comment rather than an error, following the precedent one function
+	// down: a capability-gated change the planner cannot make is stated in the
+	// plan, naming the key and the release that added it.
+	if !p.caps.Has(capability.NamedNotNullConstraints) {
+		return append(result, ast.NewComment(fmt.Sprintf(
+			"WARNING: Column %s.%s declares NOT NULL constraint name %q, but naming a NOT NULL requires target capability %s, unavailable on this target (PostgreSQL added it in 18); the constraint is applied without the name.",
+			table,
+			colDiff.ColumnName,
+			colDiff.NotNullConstraintNameChange.Desired,
+			capability.NamedNotNullConstraints,
+		)))
+	}
+	// Nothing to rename FROM. The catalog reported no name, so the constraint
+	// has to be established under the declared one instead, which is the
+	// column's own NOT NULL change rather than a rename.
+	if colDiff.NotNullConstraintNameChange.Current == "" {
+		return result
+	}
+	return append(result, &ast.AlterTableNode{
+		Name: table,
+		Operations: []ast.AlterOperation{&ast.RenameConstraintOperation{
+			From: colDiff.NotNullConstraintNameChange.Current,
+			To:   colDiff.NotNullConstraintNameChange.Desired,
+		}},
+	})
 }
 
 // appendColumnComment emits the column's comment transition, if it has one.

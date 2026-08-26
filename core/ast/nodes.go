@@ -409,6 +409,21 @@ type ColumnNode struct {
 	// when matching against introspected constraints, a deterministic
 	// "<table>_<column>_check" identifier.
 	CheckName string
+	// NotNullConstraintName is an optional explicit constraint name for the
+	// column's NOT NULL.
+	//
+	// It is only meaningful where the target PERSISTS that name as an
+	// addressable catalog object -- PostgreSQL 18 records one per NOT NULL in
+	// pg_constraint with contype 'n', keyed to the column through conkey, and
+	// can drop, add and rename it by name. PostgreSQL 17 accepts the same
+	// syntax and stores nothing, and MariaDB 12.3 refuses it outright, so the
+	// name is gated on [capability.NamedNotNullConstraints] rather than on the
+	// syntax being parseable (stokaro/ptah#2161).
+	//
+	// Empty means the declaration did not name the constraint, which is not the
+	// same as naming it whatever the engine generated: an omitted name leaves
+	// the actual name unmanaged, under the repository's omitted-attribute rule.
+	NotNullConstraintName string
 	// GeneratedExpression stores the raw SQL expression for generated columns.
 	GeneratedExpression string
 	// GeneratedKind stores the generated column kind, such as VIRTUAL or STORED.
@@ -585,6 +600,17 @@ func (n *ColumnNode) SetCheck(expression string) *ColumnNode {
 // required (e.g. for drift detection on field-level CHECKs).
 func (n *ColumnNode) SetCheckName(name string) *ColumnNode {
 	n.CheckName = name
+	return n
+}
+
+// SetNotNullConstraintName sets the constraint name used to emit
+// `CONSTRAINT <name> NOT NULL` instead of the bare form.
+//
+// It does not itself mark the column NOT NULL: a name describes a constraint
+// that [ColumnNode.SetNotNull] establishes, and setting one on a nullable
+// column names nothing.
+func (n *ColumnNode) SetNotNullConstraintName(name string) *ColumnNode {
+	n.NotNullConstraintName = name
 	return n
 }
 

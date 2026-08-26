@@ -171,6 +171,7 @@ func TestPresets_AllValid_AndCoverEveryRegisteredCapability(t *testing.T) {
 		"MariaDB1011":    capability.MariaDB1011(),
 		"MariaDBLegacy":  capability.MariaDBLegacy(),
 		"Postgres17":     capability.Postgres17(),
+		"Postgres18":     capability.Postgres18(),
 		"Postgres16":     capability.Postgres16(),
 		"Postgres13":     capability.Postgres13(),
 		"ClickHouse24":   capability.ClickHouse24(),
@@ -597,12 +598,16 @@ func TestResolveServerVersionReportsSaturation(t *testing.T) {
 			"mysql", "5.5.5-12.3.0-MariaDB", capability.MariaDB1011(), true, false, "12.3",
 		},
 
-		// PostgreSQL: Postgres17 is the top preset and is measured through 18.
+		// PostgreSQL: Postgres18 is the top preset, and 18 is the newest
+		// measured line. 17 and 18 are separate arms because a live PostgreSQL
+		// 18 disagreed with Postgres17 on exactly one key --
+		// named_not_null_constraints -- and agreed on the other 45 decided
+		// rows (stokaro/ptah#2161).
 		{"postgres below", "postgres", "PostgreSQL 13.14 (Debian)", capability.Postgres13(), true, false, "18.x"},
 		{"postgres inside", "postgres", "PostgreSQL 16.3 (Debian)", capability.Postgres16(), true, false, "18.x"},
 		{"postgres former current line", "postgres", "PostgreSQL 17.5", capability.Postgres17(), true, false, "18.x"},
-		{"postgres at the newest measured line", "postgres", "PostgreSQL 18.4 (Debian)", capability.Postgres17(), true, false, "18.x"},
-		{"postgres far above", "postgres", "PostgreSQL 99.0", capability.Postgres17(), false, true, "18.x"},
+		{"postgres at the newest measured line", "postgres", "PostgreSQL 18.4 (Debian)", capability.Postgres18(), true, false, "18.x"},
+		{"postgres far above", "postgres", "PostgreSQL 99.0", capability.Postgres18(), false, true, "18.x"},
 
 		// Controls. An unparseable version never reports saturation, and a
 		// dialect with no version ladder reports neither a ceiling nor
@@ -736,7 +741,13 @@ func TestForServerVersionResultDoesNotSaturateSilently(t *testing.T) {
 	}{
 		{"mysql 26.7.0 against 8.4.0 (#791)", "mysql", "26.7.0", "8.4.0", true, true},
 		{"mariadb 12.3.0 against 10.11.6 (#108)", "mariadb", "12.3.0-MariaDB", "10.11.6-MariaDB", true, true},
-		{"postgres 18.4 against 17.5 (CI runs postgres:18)", "postgres", "PostgreSQL 18.4", "PostgreSQL 17.5", true, true},
+		// PostgreSQL answers the criterion the other way, and more strongly:
+		// the two lines no longer resolve to the same set at all. A live
+		// PostgreSQL 18 disagreed with Postgres17 on named_not_null_constraints
+		// and agreed on every other decided row, so 18 has its own preset and
+		// the question of saturating silently cannot arise here
+		// (stokaro/ptah#2161).
+		{"postgres 18.4 against 17.5 (CI runs postgres:18)", "postgres", "PostgreSQL 18.4", "PostgreSQL 17.5", false, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
