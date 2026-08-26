@@ -183,11 +183,11 @@ derived rather than restated here.
 
 ## Verbs Beyond the CE Pin
 
-`atlas migrate ls`, `atlas migrate show`, `atlas schema stats`, and
-`atlas schema validate` appear in current Atlas documentation but are entirely
-absent from the pinned conformance Atlas CE v1.3.0 binary (each resolves to
-`unknown command`, not a community-version abort stub), so they are outside the
-CLI-surface parity target today.
+`atlas migrate ls`, `atlas migrate show`, `atlas schema stats`,
+`atlas schema validate`, `atlas script` and `atlas cloud` appear in current
+Atlas documentation but are entirely absent from the pinned conformance Atlas CE
+v1.3.0 binary (each resolves to `unknown command`, not a community-version abort
+stub), so they are outside the CLI-surface parity target today.
 
 Outside the parity target is not the same as unbuilt. `migrate ls` and
 `migrate show` are implemented, as native verbs with a compatibility spelling
@@ -202,6 +202,30 @@ conformance Atlas pin advances past v1.3.0:
 | `migrate show` | Print the contents of one or more migration files. | Implemented: `ptah migrations show` prints a stored migration's SQL with no database, and `ptah-compat migrate show {name \| version}...` forwards to it. |
 | `schema stats` | Inspect database schema statistics in OpenMetrics format. | Out of scope: statistics monitoring is a metrics/observability surface, not schema management; Ptah's schema-state surface is `ptah schema compare` and `ptah schema drift`. |
 | `schema validate` | Check that a schema definition parses and loads, optionally against `--dev-url`. | Covered by native: `ptah schema render` parses and loads the desired schema and fails on invalid input; `ptah schema test` and `schema apply --dry-run` exercise it against a throwaway database. |
+| `script loop\|query\|exec` | Declare data operations as code: transactional mutations, masked queries, batched loops. | Declined; see below. |
+| `cloud` | Manage registry repositories, databases and deployment history from the terminal. | Declined; see below. |
+
+### Why the two v1.3.0 verb groups are declined
+
+Neither is a parity gap. Both are unregistered in the pinned binary — `atlas
+script` and `atlas cloud` each answer `unknown command`, the same way a nonsense
+root verb does — so there is no CE behavior for `ptah-compat` to match and
+nothing local to measure a spelling against.
+
+`script` is also a different surface. Running mutations, masked reads and
+batched loops over rows is data manipulation, where Ptah's target is the schema
+and the migrations that change it. `ptah migrations` has no row-level
+counterpart, and declining this is not a step toward one
+([`stokaro/ptah#1017`](https://github.com/stokaro/ptah/issues/1017)).
+
+`cloud` is a client for a hosted registry service, so neither half of the usual
+measurement exists: no CE behavior, and no endpoint a conformance run could
+reach. Ptah's own registry surface is OCI — `ptah schema push` and `ptah schema
+pull`, documented in [OCI registry](oci_registry.md) — which is an open protocol
+anyone can host
+([`stokaro/ptah#1018`](https://github.com/stokaro/ptah/issues/1018)).
+
+Both revisit if the conformance pin advances to a build that registers them.
 
 ## Never a Copied Defect
 
