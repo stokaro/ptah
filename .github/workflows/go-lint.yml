@@ -77,6 +77,9 @@ jobs:
       - name: Check public Go API docs sync
         run: scripts/check-public-api-docs-sync.sh
 
+      - name: Check public Go API doc comments
+        run: scripts/check-exported-docs.sh
+
       - name: Check annotation JSON Schema freshness
         run: |
           go run ./cmd/ptah schema annotations --out schemas/ptah-annotations.schema.json
