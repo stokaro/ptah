@@ -110,48 +110,8 @@ func FromCatalog(schema *dbschematypes.DBSchema, dialect string, semantics ident
 		}
 	}
 
-	for _, constraint := range schema.Constraints {
-		if isTableConstraint(constraint.Type) {
-			if err := addTableConstraint(state, builder, constraint.Schema, constraint.TableName,
-				constraint.Name, &TableConstraint{
-					Kind:               strings.ToUpper(strings.TrimSpace(constraint.Type)),
-					ConstraintName:     constraint.Name,
-					Table:              builder.TableParts(constraint.Schema, constraint.TableName),
-					Expression:         derefOrEmpty(constraint.CheckClause),
-					Columns:            constraint.ColumnNamesOrDefault(),
-					UsingMethod:        derefOrEmpty(constraint.UsingMethod),
-					Elements:           derefOrEmpty(constraint.ExcludeElements),
-					Where:              derefOrEmpty(constraint.WhereCondition),
-					RequiresExtensions: constraint.RequiresExtensions,
-				}, coverage.Observed, "information_schema.table_constraints"); err != nil {
-				return nil, err
-			}
-		}
-		if guaranteesUniqueness(constraint.Type) {
-			if err := addUniqueKey(state, builder,
-				constraint.Schema, constraint.TableName, constraint.Name,
-				constraint.ColumnNamesOrDefault(), coverage.Observed, "information_schema.table_constraints",
-				strings.EqualFold(constraint.Type, uniqueConstraintType),
-			); err != nil {
-				return nil, err
-			}
-			continue
-		}
-		if !strings.EqualFold(constraint.Type, foreignKeyConstraintType) {
-			continue
-		}
-		key, err := foreignKeyFromCatalog(constraint, builder)
-		if err != nil {
-			return nil, err
-		}
-		id := builder.ConstraintParts(constraint.Schema, constraint.TableName, constraint.Name)
-		if existing, collided := state.Add(Object{
-			ID:         id,
-			ForeignKey: key,
-			Provenance: Provenance{Source: coverage.Observed, Location: "information_schema.table_constraints"},
-		}); collided {
-			return nil, fmt.Errorf("catalog reports two foreign keys with one identity: %s and %s", existing.ID, id)
-		}
+	if err := catalogConstraints(state, builder, schema); err != nil {
+		return nil, err
 	}
 	for _, index := range schema.Indexes {
 		if notAddressableAsAnIndex(index, dialect) {
@@ -800,11 +760,19 @@ func addTableConstraint(
 ) error {
 	identityName := constraintIdentityName(constraint.Kind, table, name)
 	id := builder.ConstraintParts(schema, table, identityName)
-	if strings.EqualFold(strings.TrimSpace(constraint.Kind), checkConstraintType) {
+	if isCheckKind(constraint.Kind) {
 		// A CHECK is identified by its condition rather than its name: the
 		// server names an unnamed one itself, differently per engine, so a
 		// name key would make one guarantee two objects (stokaro/ptah#1663).
-		id = builder.CheckConstraintParts(schema, table, identityName, constraint.Expression)
+		condition := builder.CheckConstraintParts(schema, table, identityName, constraint.Expression)
+		// Unless the condition is already spoken for. `CHECK (b > 0)` written
+		// twice on one table is legal SQL and a server keeps both rows, so a
+		// second one keeps its own NAME as identity: it is then a constraint
+		// the description does not declare, which is a removal a reader can
+		// see, rather than a collision that fails the whole read.
+		if _, taken := state.Get(condition); !taken {
+			id = condition
+		}
 	}
 	if strings.TrimSpace(id.Name.Normalized) == "" {
 		return nil
@@ -817,6 +785,91 @@ func addTableConstraint(
 		return fmt.Errorf("two constraints carry one identity: %s and %s", existing.ID, id)
 	}
 	return nil
+}
+
+// catalogConstraints records the constraints a catalog reports, which is three
+// families reading one list: the clause kinds, the uniqueness guarantees and
+// the foreign keys.
+//
+// Split out of [FromCatalog] because it is the only part of that function with
+// a shape of its own -- three questions asked of every row -- and reading it
+// there meant reading it past the tables, the columns and the indexes.
+func catalogConstraints(
+	state *State,
+	builder objectidentity.Builder,
+	schema *dbschematypes.DBSchema,
+) error {
+	for _, constraint := range schema.Constraints {
+		if isTableConstraint(constraint.Type) && !isNotNullRow(constraint) {
+			if err := addTableConstraint(state, builder, constraint.Schema, constraint.TableName,
+				constraint.Name, &TableConstraint{
+					Kind:               strings.ToUpper(strings.TrimSpace(constraint.Type)),
+					ConstraintName:     constraint.Name,
+					Table:              builder.TableParts(constraint.Schema, constraint.TableName),
+					Expression:         derefOrEmpty(constraint.CheckClause),
+					Columns:            constraint.ColumnNamesOrDefault(),
+					UsingMethod:        derefOrEmpty(constraint.UsingMethod),
+					Elements:           derefOrEmpty(constraint.ExcludeElements),
+					Where:              derefOrEmpty(constraint.WhereCondition),
+					RequiresExtensions: constraint.RequiresExtensions,
+				}, coverage.Observed, "information_schema.table_constraints"); err != nil {
+				return err
+			}
+		}
+		if guaranteesUniqueness(constraint.Type) {
+			if err := addUniqueKey(state, builder,
+				constraint.Schema, constraint.TableName, constraint.Name,
+				constraint.ColumnNamesOrDefault(), coverage.Observed, "information_schema.table_constraints",
+				strings.EqualFold(constraint.Type, uniqueConstraintType),
+			); err != nil {
+				return err
+			}
+			continue
+		}
+		if !strings.EqualFold(constraint.Type, foreignKeyConstraintType) {
+			continue
+		}
+		key, err := foreignKeyFromCatalog(constraint, builder)
+		if err != nil {
+			return err
+		}
+		id := builder.ConstraintParts(constraint.Schema, constraint.TableName, constraint.Name)
+		if existing, collided := state.Add(Object{
+			ID:         id,
+			ForeignKey: key,
+			Provenance: Provenance{Source: coverage.Observed, Location: "information_schema.table_constraints"},
+		}); collided {
+			return fmt.Errorf("catalog reports two foreign keys with one identity: %s and %s", existing.ID, id)
+		}
+	}
+	return nil
+}
+
+// isCheckKind reports the family whose identity is its condition.
+func isCheckKind(kind string) bool {
+	return strings.EqualFold(strings.TrimSpace(kind), checkConstraintType)
+}
+
+// isNotNullRow reports whether a catalog row typed CHECK is a column's
+// nullability rather than a check constraint.
+//
+// PostgreSQL 18 catalogs NOT NULL as a constraint. Measured against Ptah's own
+// reader on 18.6, a table with `id int PRIMARY KEY, d int NOT NULL` reports two
+// extra rows typed CHECK -- `probe_widget_id_not_null` and
+// `probe_widget_d_not_null` -- each naming its column and carrying NO condition
+// at all.
+//
+// Recording them makes every not-null column a constraint no description
+// declares, which the comparator reads as a constraint to DROP: an apply would
+// strip the nullability off every column that has it. Nullability is a column
+// fact and it is compared as one, on [Column.Nullable].
+//
+// The rule is the absence of a condition rather than the name, which is a
+// server's convention and would be a different guess on every target: a CHECK
+// with nothing to check is not a check.
+func isNotNullRow(constraint dbschematypes.DBConstraint) bool {
+	return isCheckKind(constraint.Type) &&
+		strings.TrimSpace(derefOrEmpty(constraint.CheckClause)) == ""
 }
 
 // primaryKeyConstraintName is the identity a PRIMARY KEY gets: one per table,
