@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 )
 
@@ -19,10 +19,10 @@ import (
 func TestConvert_TheUpdateExpressionSurvivesTheConversion(t *testing.T) {
 	c := qt.New(t)
 
-	converted := dbschematogo.ConvertDBSchemaToGoSchema(&dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{{
+	converted := dbschematogo.ConvertDBSchemaToGoSchema(&catalog.Database{
+		Tables: []catalog.Table{{
 			Name: "person", Schema: "sweep",
-			Columns: []dbschematypes.DBColumn{{
+			Columns: []catalog.Column{{
 				Name: "updated_at", DataType: "datetime", IsNullable: "YES",
 				UpdateExpression: "CURRENT_TIMESTAMP",
 			}},
@@ -40,10 +40,10 @@ func TestConvert_TheUpdateExpressionSurvivesTheConversion(t *testing.T) {
 func TestConvert_AColumnWithoutTheClauseCarriesNothing(t *testing.T) {
 	c := qt.New(t)
 
-	converted := dbschematogo.ConvertDBSchemaToGoSchema(&dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{{
+	converted := dbschematogo.ConvertDBSchemaToGoSchema(&catalog.Database{
+		Tables: []catalog.Table{{
 			Name: "person", Schema: "sweep",
-			Columns: []dbschematypes.DBColumn{{
+			Columns: []catalog.Column{{
 				Name: "created_at", DataType: "timestamp", IsNullable: "NO",
 			}},
 		}},

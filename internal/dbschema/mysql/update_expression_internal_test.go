@@ -4,9 +4,12 @@ package mysql
 // API reports what it made of one column's metadata string.
 
 import (
+	"database/sql"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/catalog"
 )
 
 // TestMySQLUpdateExpression_ReadsTheClauseOutOfExtra is the defect.
@@ -78,6 +81,54 @@ func TestMySQLUpdateExpression_IsEmptyForEveryOtherExtra(t *testing.T) {
 			c := qt.New(t)
 
 			c.Assert(mysqlUpdateExpression(test.extra), qt.Equals, "")
+		})
+	}
+}
+
+// TestApplyMySQLColumnMetadata_PutsTheClauseOnTheColumn is the wiring.
+//
+// Reading the clause out of a string proves nothing about the column reaching a
+// renderer with it. This calls the function the row scan calls, with the EXTRA
+// a server sends, and asserts the column carries it -- and that the other facts
+// on the same string still land where they did.
+func TestApplyMySQLColumnMetadata_PutsTheClauseOnTheColumn(t *testing.T) {
+	tests := []struct {
+		name              string
+		extra             string
+		wantExpression    string
+		wantAutoIncrement bool
+		wantGeneratedKind string
+	}{
+		{
+			name:           "a self-maintaining column",
+			extra:          "DEFAULT_GENERATED on update CURRENT_TIMESTAMP",
+			wantExpression: "CURRENT_TIMESTAMP",
+		},
+		{
+			name:              "an auto-increment column",
+			extra:             "auto_increment",
+			wantAutoIncrement: true,
+		},
+		{
+			name:              "a stored generated column",
+			extra:             "STORED GENERATED",
+			wantGeneratedKind: "STORED",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			column := catalog.Column{Name: "updated_at"}
+
+			applyMySQLColumnMetadata(&column,
+				sql.NullString{}, sql.NullInt64{}, sql.NullInt64{}, sql.NullInt64{},
+				sql.NullString{}, sql.NullString{},
+				sql.NullString{String: test.extra, Valid: true},
+				sql.NullString{})
+
+			c.Assert(column.UpdateExpression, qt.Equals, test.wantExpression)
+			c.Assert(column.IsAutoIncrement, qt.Equals, test.wantAutoIncrement)
+			c.Assert(column.GeneratedKind, qt.Equals, test.wantGeneratedKind)
 		})
 	}
 }
