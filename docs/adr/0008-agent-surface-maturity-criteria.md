@@ -33,6 +33,13 @@ A criterion is satisfied when something in the repository fails if the property
 stops holding. A criterion satisfied by a document, a review, or a maintainer's
 recollection is not satisfied.
 
+**The state column is a snapshot, and the tests are the authority.** A record
+that claimed to track state would go stale on its first merge — three of the
+criteria below were being closed while this was written. What does not go stale
+is the criterion and the file that measures it: to read the current answer, run
+the tests named in the last column. [#1490](https://github.com/stokaro/ptah/issues/1490)
+tracks the remaining boxes.
+
 ### 2.1 The criteria, and what measures each
 
 | # | Criterion | State | Measured by |
@@ -43,9 +50,9 @@ recollection is not satisfied.
 | 4 | A repeated loop terminates, and the iteration limit holds | met | `internal/assistloop/assistloop_test.go`, end to end in `cmd/assist/{explain,context,jsonl}_test.go` |
 | 5 | No credential reaches a response, a log, or a session record | met | `internal/agentapi/credential_sweep_test.go`, `credential_redaction_test.go`, `internal/assistsession/redact_test.go`, `internal/aiprovider/transport_test.go` |
 | 6 | An artifact edited concurrently is refused rather than silently overwritten | met | `internal/mcpserver/artifact_test.go`, `concurrent_previews_test.go` with its retry control, `internal/agentpatch/agentpatch_test.go` |
-| 7 | Every dialect the surface accepts is answered, and answered differently | **partial** | `internal/mcpserver/multi_dialect_corpus_test.go` — six of ten dialects |
-| 8 | Untrusted repository content does not steer the surface | **partial** | `internal/mcpserver/adversarial_content_test.go` — one fixture, one channel, no model in the loop |
-| 9 | A workspace that moves underneath a session is refused, not retargeted | **partial** | measured one layer down in `internal/pathguard`; never through the agent surface |
+| 7 | Every dialect the surface accepts is answered, and answered differently | partial when written | `internal/mcpserver/multi_dialect_corpus_test.go` — six of ten dialects, and no workflow axis |
+| 8 | Untrusted repository content does not steer the surface | partial when written | `internal/mcpserver/adversarial_content_test.go` — one fixture, one channel, no model in the loop |
+| 9 | A workspace that moves underneath a session is refused, not retargeted | partial when written | measured one layer down in `internal/pathguard`; not yet through the agent surface |
 | 10 | These criteria exist and are current | met | this record, and `check-adr-index.sh` over `docs/adr/README.md` |
 
 Criterion 10 is not a formality. Criteria 1 to 6 were all satisfied before
@@ -78,14 +85,15 @@ product decision about what "stable" promises.
 
 ## 3. Consequences
 
-The three partial criteria are the remaining work, and each has a branch of its
-own rather than a plan: the dialect corpus, the untrusted-content channels, and
-the moved-workspace refusal.
+The criteria marked partial above were each in flight as this was written — the
+dialect corpus, the untrusted-content channels, and the moved-workspace refusal
+— so those three rows describe a moment rather than a backlog.
 
 Until they close, the honest statement about these surfaces is that they are
 experimental — and this record is what makes that statement checkable instead of
 a matter of opinion. When they close, the two open questions in §2.2 are what
-stands between the criteria being met and the label being changed.
+stands between the criteria being met and the label being changed: **answering
+those two changes the label; closing the boxes does not.**
 
 Two smaller gaps were found while auditing and are recorded here so they are not
 lost, neither of them named by a criterion above:
