@@ -2417,14 +2417,23 @@ func (p *Parser) parseColumnConstraintOrAttribute(table *ast.CreateTableNode, co
 // PRIMARY KEY are read into the table-level constraint they describe, which is
 // the level the model can carry a name for.
 //
-// NOT NULL and DEFAULT are refused, and deliberately. `Nullable` is a boolean
-// and a default is a value, with nowhere to keep a name and no table-level form
-// to read one into. The reader does not return one either: measured on
-// PostgreSQL 18.6, a column written `CONSTRAINT c_keep NOT NULL` reads back as
-// a bare `NOT NULL`. Reading the file would drop the name, the renderer would
-// emit an unnamed constraint, and every later comparison would report a
+// NOT NULL is read into [ast.ColumnNode.NotNullConstraintName], which exists
+// because PostgreSQL 18 persists the name as an addressable catalog object --
+// pg_constraint contype 'n', keyed to the column through conkey, droppable and
+// renamable by name. Whether the target can keep it is decided by
+// [capability.NamedNotNullConstraints] at validation and rendering, not here:
+// see the NOT branch below.
+//
+// DEFAULT is refused, and deliberately. A default is a value with nowhere to
+// keep a name and no table-level form to read one into, and PostgreSQL records
+// nothing for it at all. Reading the file would drop the name, the renderer
+// would emit an unnamed default, and every later comparison would report a
 // difference no apply can settle. A refusal is worse than reading the file and
 // better than permanent drift.
+//
+// SQL Server is the exception and is NOT covered here: sys.default_constraints
+// carries the name, the owning column and is_system_named, so the identity is
+// real there. That is its own vertical slice.
 func (p *Parser) handleColumnConstraint(table *ast.CreateTableNode, column *ast.ColumnNode) error {
 	p.advance()
 	p.skipWhitespace()
@@ -2448,6 +2457,18 @@ func (p *Parser) handleColumnConstraint(table *ast.CreateTableNode, column *ast.
 		return nil
 	case p.current.MatchIdentifierValue("UNIQUE"):
 		return p.namedSingleColumnConstraint(table, column, name, ast.UniqueConstraint)
+	case p.current.MatchIdentifierValue("NOT"):
+		// Read since the model gained somewhere to keep it. The name is taken
+		// on every dialect and refused later, by the layer that knows the
+		// target: a parser that refused here would reject a file PostgreSQL 18
+		// accepts and round-trips, and one that dialect-gated here would refuse
+		// a `.sql` file being read for a target it was not written against
+		// (stokaro/ptah#2161).
+		if err := p.handleNotNull(column); err != nil {
+			return err
+		}
+		column.SetNotNullConstraintName(name)
+		return nil
 	case p.current.MatchIdentifierValue("PRIMARY"):
 		// Read only since stokaro/ptah#2180. Before it, the renderer collapsed
 		// a single-column primary key back into the column and the name was
@@ -2458,28 +2479,20 @@ func (p *Parser) handleColumnConstraint(table *ast.CreateTableNode, column *ast.
 		// surviving, reading it is what keeps it.
 		return p.namedSingleColumnPrimaryKey(table, column, name)
 	default:
-		// NOT NULL and DEFAULT stay refused: ColumnNode keeps Nullable and the
-		// default with nowhere to put a constraint name, and neither has a
-		// table-level form to read the name into the way UNIQUE and PRIMARY KEY
-		// do (stokaro/ptah#2161).
+		// DEFAULT stays refused: a default is a value with nowhere to put a
+		// constraint name and no table-level form to read one into the way
+		// UNIQUE and PRIMARY KEY have (stokaro/ptah#2161).
 		//
-		// The advice is to drop the name rather than to move it, because the
-		// name has nowhere to go on either side. The reader does not bring one
-		// back: measured on PostgreSQL 18.6, `a integer CONSTRAINT c_keep NOT
-		// NULL` reads back as a bare `a integer NOT NULL`. Accepting a name the
-		// reader cannot return would make every later comparison report a
-		// difference no apply can settle.
-		//
-		// What differs per engine is whether the name exists at all, and only
-		// for NOT NULL. PostgreSQL 18 records it -- pg_constraint contype 'n',
-		// dropped and added by name -- while PostgreSQL 17 stores nothing and
-		// MariaDB 12.3 refuses the syntax outright. A DEFAULT is recorded
-		// nowhere on any of them.
+		// The advice is to drop the name rather than to move it, because on
+		// PostgreSQL the name has nowhere to go on either side -- it accepts the
+		// syntax and records nothing. Accepting a name no reader can return
+		// would make every later comparison report a difference no apply can
+		// settle.
 		return fmt.Errorf(
 			"named column constraint %q at position %d: Ptah has nowhere to keep a "+
 				"name on %s, and does not read one back from a database, so write the "+
-				"constraint without a name; a name is kept on CHECK, REFERENCES, "+
-				"UNIQUE and PRIMARY KEY",
+				"constraint without a name; a name is kept on NOT NULL, CHECK, "+
+				"REFERENCES, UNIQUE and PRIMARY KEY",
 			name, p.current.Start, p.refusedColumnConstraintKeyword(),
 		)
 	}
@@ -2487,19 +2500,13 @@ func (p *Parser) handleColumnConstraint(table *ast.CreateTableNode, column *ast.
 
 // refusedColumnConstraintKeyword spells the constraint a refusal is about.
 //
-// The cursor sits on one token, and for a NOT NULL that token is `NOT` -- so
-// the refusal read `on NOT the name has nowhere to live`, which names half a
-// keyword and reads like a truncated message rather than a constraint. `NOT` is
-// the start of no other column constraint in the grammar reached here: CHECK,
-// REFERENCES, UNIQUE and PRIMARY KEY are taken by the branches above, and a
-// referential `NOT DEFERRABLE` is consumed by the REFERENCES branch
-// (stokaro/ptah#2161).
+// Every branch above returns, so the only keyword that reaches the refusal is
+// one none of them took -- DEFAULT in practice. It carried a `NOT` -> `NOT NULL`
+// case while a named NOT NULL was refused, because the cursor sits on one token
+// and `on NOT` names half a keyword; that case is gone with the refusal it
+// served (stokaro/ptah#2161).
 func (p *Parser) refusedColumnConstraintKeyword() string {
-	keyword := strings.ToUpper(p.current.Value)
-	if keyword == "NOT" {
-		return "NOT NULL"
-	}
-	return keyword
+	return strings.ToUpper(p.current.Value)
 }
 
 // namedSingleColumnPrimaryKey reads `CONSTRAINT <name> PRIMARY KEY` on a column,

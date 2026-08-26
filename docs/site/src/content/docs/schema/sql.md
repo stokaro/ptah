@@ -106,28 +106,33 @@ CREATE TABLE "pets" (
   `sqlite: adding column email to table users requires a table rebuild plan`.
 - Unsupported DDL constructs fail with a parse error naming the statement.
   Treat the error as a compatibility gap and check the conformance reports.
-- A constraint name on `NOT NULL` or `DEFAULT` is refused. Ptah keeps a name on
+- A constraint name on `DEFAULT` is refused. Ptah keeps a name on `NOT NULL`,
   `CHECK`, `REFERENCES`, `UNIQUE` and `PRIMARY KEY`; the last two are read as
-  the table constraint they describe, which is the level a name lives at. The
-  other two have no such level:
+  the table constraint they describe, which is the level a name lives at. A
+  default has no such level and no engine Ptah supports records one:
 
   ```sql
-  CREATE TABLE t (b INTEGER CONSTRAINT c_x NOT NULL);
+  CREATE TABLE t (b INTEGER CONSTRAINT c_x DEFAULT 1);
   ```
 
   ```text
   named column constraint "c_x" at position 41: Ptah has nowhere to keep a name
-  on NOT NULL, and does not read one back from a database, so write the
-  constraint without a name; a name is kept on CHECK, REFERENCES, UNIQUE and
-  PRIMARY KEY
+  on DEFAULT, and does not read one back from a database, so write the
+  constraint without a name; a name is kept on NOT NULL, CHECK, REFERENCES,
+  UNIQUE and PRIMARY KEY
   ```
 
-  Write `b INTEGER NOT NULL` instead. Whether the name even exists on the server
-  depends on the engine — PostgreSQL 18 records it in `pg_constraint`, PostgreSQL
-  17 stores nothing, and MariaDB 12.3 answers `ERROR 1064 (42000)` for the syntax
-  — but `schema inspect` returns a bare `NOT NULL` from all of them. A name Ptah
-  accepts and cannot read back would make every later comparison report a
-  difference no apply can settle.
+  Write `b INTEGER DEFAULT 1` instead. A name Ptah accepts and cannot read back
+  would make every later comparison report a difference no apply can settle.
+
+- A constraint name on `NOT NULL` is carried where the target **persists** it.
+  The distinction is not whether the syntax parses: PostgreSQL 17 accepts
+  `CONSTRAINT c_x NOT NULL` and stores nothing, while PostgreSQL 18 records one
+  row per `NOT NULL` in `pg_constraint` with `contype = 'n'`, keyed to the
+  column through `conkey`, and can drop, add and rename it by name. MariaDB 12.3
+  answers `ERROR 1064 (42000)` for the syntax outright. So the name is gated on
+  the target's measured capability, and a target that cannot keep it refuses the
+  declaration rather than silently dropping the name.
 
 ## Next steps
 
