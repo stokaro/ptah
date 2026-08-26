@@ -331,6 +331,36 @@ in `atlas.hcl` tags such files with the Atlas `-- atlas:txmode none` directive
 instead ([Atlas migrate commands](../../atlas/migrate-commands/)); the
 migrator honors both directives.
 
+### A declared CONCURRENTLY is honored
+
+The paragraph above is the heuristic: Ptah choosing `CONCURRENTLY` for you. A
+desired state can also ask for it directly, and that request is carried through
+to the plan:
+
+```sql
+CREATE INDEX CONCURRENTLY idx_widget_a ON widget (a);
+```
+
+`ptah schema diff` and `ptah schema apply` plan that index with `CONCURRENTLY`,
+on a PostgreSQL-family target that has the capability, without any
+`diff.concurrent_index` setting. The apply path refuses the statement inside a
+transaction with an actionable message rather than failing at the server, so
+`--tx-mode none` is the answer it names.
+
+Two things bound it, and they are the same two the heuristic uses:
+
+- **A partitioned parent is excluded**, not refused. PostgreSQL has no
+  concurrent index form for `relkind` `'p'`, and refusing would leave a project
+  with a partitioned table unable to plan an index change at all.
+- **`diff.concurrent_index.create = false` turns it off.** An explicit `false`
+  is an instruction, and a description does not overrule it. Leaving the setting
+  out is not the same answer: it leaves the description in charge.
+
+The heuristic's "table already holds rows" test does not apply here. That test
+exists because the heuristic is guessing what you would have wanted; a
+declaration is not guessing, so an index declared concurrent on an empty table
+is still built concurrently.
+
 ### What "populated" means when the database cannot say
 
 The decision reads `pg_class.reltuples` and `pg_stat_all_tables.n_live_tup`,

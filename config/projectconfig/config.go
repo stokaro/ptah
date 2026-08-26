@@ -767,6 +767,18 @@ func (c DiffConfig) ConcurrentIndexCreate() bool {
 	return c.ConcurrentIndex.Create.Value
 }
 
+// ConcurrentIndexCreateDisabled reports the operator having turned concurrent
+// index builds OFF, which is not the same as never having asked for them.
+//
+// The distinction exists because a desired description can ask for
+// `CREATE INDEX CONCURRENTLY` on its own, and that request is honored by default
+// (stokaro/ptah#2019). An absent `create` leaves the description in charge; an
+// explicit `create = false` is an instruction that overrules it. Reading the
+// value alone collapses the two and makes the setting unable to express "no".
+func (c DiffConfig) ConcurrentIndexCreateDisabled() bool {
+	return c.ConcurrentIndex.Create.Set && !c.ConcurrentIndex.Create.Value
+}
+
 // ConcurrentIndexDrop reports whether the policy requests
 // DROP INDEX CONCURRENTLY for removed indexes.
 func (c DiffConfig) ConcurrentIndexDrop() bool {

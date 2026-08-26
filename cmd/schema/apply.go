@@ -148,9 +148,10 @@ apply rather than reporting a synced schema for work that did not happen.`,
 // schema-apply planning policy.
 func nativeDiffPolicy(cfg projectconfig.Config) atlasschema.DiffPolicy {
 	return atlasschema.DiffPolicy{
-		SkipDropTable:         slices.Contains(cfg.Diff.SkipChangeKinds(), diffpolicy.DropTable),
-		ConcurrentIndexCreate: cfg.Diff.ConcurrentIndexCreate(),
-		ConcurrentIndexDrop:   cfg.Diff.ConcurrentIndexDrop(),
+		SkipDropTable:                 slices.Contains(cfg.Diff.SkipChangeKinds(), diffpolicy.DropTable),
+		ConcurrentIndexCreate:         cfg.Diff.ConcurrentIndexCreate(),
+		ConcurrentIndexDrop:           cfg.Diff.ConcurrentIndexDrop(),
+		ConcurrentIndexCreateDisabled: cfg.Diff.ConcurrentIndexCreateDisabled(),
 	}
 }
 
