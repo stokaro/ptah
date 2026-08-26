@@ -3,7 +3,6 @@ package atlasscript_test
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"strings"
 	"testing"
 
@@ -150,7 +149,7 @@ script "exec" "guarded" {
 	_, err := atlasscript.RunExec(context.Background(), db, scripts[0],
 		atlasscript.RunOptions{Now: fixedClock()})
 
-	c.Assert(errors.Is(err, atlasscript.ErrConditionFalse), qt.IsTrue)
+	c.Assert(err, qt.ErrorIs, atlasscript.ErrConditionFalse)
 	c.Assert(countUsers(c, db), qt.Equals, 2)
 }
 
@@ -210,7 +209,7 @@ script "exec" "guarded" {
 	_, err := atlasscript.RunExec(context.Background(), db, scripts[0],
 		atlasscript.RunOptions{Now: fixedClock()})
 
-	c.Assert(errors.Is(err, atlasscript.ErrConditionFalse), qt.IsTrue)
+	c.Assert(err, qt.ErrorIs, atlasscript.ErrConditionFalse)
 	c.Assert(countUsers(c, db), qt.Equals, 2)
 }
 
