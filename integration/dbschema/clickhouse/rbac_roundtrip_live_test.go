@@ -13,10 +13,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/migration/planner"
@@ -77,7 +77,7 @@ func TestClickHouseRoleAndGrantLifecycleRoundTripsLive(t *testing.T) {
 
 	created := readClickHouseRBAC(c, conn)
 	c.Assert(describedClickHouseRoleNames(created), qt.Contains, role)
-	c.Assert(clickHouseGrantsOfRole(created, role), qt.DeepEquals, []dbschematypes.DBGrant{
+	c.Assert(clickHouseGrantsOfRole(created, role), qt.DeepEquals, []catalog.Grant{
 		clickHouseSelectGrant(role, database, table, false),
 	})
 
@@ -108,7 +108,7 @@ func TestClickHouseRoleAndGrantLifecycleRoundTripsLive(t *testing.T) {
 	applyClickHouseRBACPlan(c, conn, optionStatements)
 
 	optioned := readClickHouseRBAC(c, conn)
-	c.Assert(clickHouseGrantsOfRole(optioned, role), qt.DeepEquals, []dbschematypes.DBGrant{
+	c.Assert(clickHouseGrantsOfRole(optioned, role), qt.DeepEquals, []catalog.Grant{
 		clickHouseSelectGrant(role, database, table, true),
 	})
 	_, optionConverged := planClickHouseRBAC(c, conn, withOption)
@@ -125,7 +125,7 @@ func TestClickHouseRoleAndGrantLifecycleRoundTripsLive(t *testing.T) {
 	applyClickHouseRBACPlan(c, conn, downgradeStatements)
 
 	downgraded := readClickHouseRBAC(c, conn)
-	c.Assert(clickHouseGrantsOfRole(downgraded, role), qt.DeepEquals, []dbschematypes.DBGrant{
+	c.Assert(clickHouseGrantsOfRole(downgraded, role), qt.DeepEquals, []catalog.Grant{
 		clickHouseSelectGrant(role, database, table, false),
 	})
 
@@ -200,10 +200,10 @@ func TestClickHouseUnmanagedRoleAndGrantSurviveAComparisonLive(t *testing.T) {
 
 	after := readClickHouseRBAC(c, conn)
 	c.Assert(knownClickHouseRoleNames(after), qt.Contains, unmanaged)
-	c.Assert(clickHouseGrantsOfRole(after, unmanaged), qt.DeepEquals, []dbschematypes.DBGrant{
+	c.Assert(clickHouseGrantsOfRole(after, unmanaged), qt.DeepEquals, []catalog.Grant{
 		clickHouseSelectGrant(unmanaged, database, table, false),
 	})
-	c.Assert(clickHouseGrantsOfRole(after, role), qt.DeepEquals, []dbschematypes.DBGrant{
+	c.Assert(clickHouseGrantsOfRole(after, role), qt.DeepEquals, []catalog.Grant{
 		clickHouseSelectGrant(role, database, table, false),
 	})
 }
@@ -267,7 +267,7 @@ func TestClickHouseDescriptionCarriesNoCredentialLive(t *testing.T) {
 	// would render as the empty string, so a leaked user grant is a grant naming
 	// a principal no role list reports. This catches it whatever the name is.
 	c.Assert(clickHouseGrantsNamingNoKnownRole(described), qt.HasLen, 0)
-	// Every attribute types.DBRole carries beyond a name is a PostgreSQL notion
+	// Every attribute types.Role carries beyond a name is a PostgreSQL notion
 	// ClickHouse has no column for. HasPassword is the one that would be a
 	// credential claim rather than a harmless false, and it is asserted together
 	// with the rest so that a reader which started answering any of them from
@@ -413,15 +413,15 @@ func clickHouseRoleOnlyDeclaration(role string) *goschema.Database {
 // ClickHouse has no object-type keyword -- the shape of the two-part pattern
 // `db`.`t` against `db`.* IS the object type -- so the kind is read back off the
 // table column and written into ObjectType, and the two kinds then fill
-// DIFFERENT fields, exactly as the shared types.DBGrant contract says: a
+// DIFFERENT fields, exactly as the shared types.Grant contract says: a
 // TABLE-typed row carries the database in Schema and the table in ObjectName,
 // while a SCHEMA-typed row carries the database in ObjectName with Schema empty
 // (see [clickHouseSelectDatabaseGrant]).
 //
 // Reading them positionally instead is what made every database-scope grant
 // compare unequal to the row it had just created.
-func clickHouseSelectGrant(role, database, table string, withOption bool) dbschematypes.DBGrant {
-	return dbschematypes.DBGrant{
+func clickHouseSelectGrant(role, database, table string, withOption bool) catalog.Grant {
+	return catalog.Grant{
 		Role:       role,
 		Privilege:  "SELECT",
 		ObjectType: "TABLE",
@@ -445,11 +445,11 @@ func clickHouseSelectGrant(role, database, table string, withOption bool) dbsche
 // "does this role exist", which is a different question from "does this
 // description define it" and the one a comparator has to ask before it plans a
 // CREATE ROLE.
-func readClickHouseRBAC(c *qt.C, conn *dbschema.DatabaseConnection) *dbschematypes.DBSchema {
+func readClickHouseRBAC(c *qt.C, conn *dbschema.DatabaseConnection) *catalog.Database {
 	c.Helper()
 	schema, err := conn.Reader().ReadSchemaContext(c.Context())
 	c.Assert(err, qt.IsNil)
-	return &dbschematypes.DBSchema{
+	return &catalog.Database{
 		Roles:           schema.Roles,
 		RolesOutOfScope: schema.RolesOutOfScope,
 		Grants:          schema.Grants,
@@ -530,18 +530,18 @@ func applyClickHouseRBACPlan(c *qt.C, conn *dbschema.DatabaseConnection, stateme
 }
 
 // describedClickHouseRoleNames names the roles the description defines.
-func describedClickHouseRoleNames(schema *dbschematypes.DBSchema) []string {
+func describedClickHouseRoleNames(schema *catalog.Database) []string {
 	return clickHouseRoleNames(schema.Roles)
 }
 
 // knownClickHouseRoleNames names every role the description reports, defined or
 // deliberately left out of the definition. Existence is the question this one
 // answers.
-func knownClickHouseRoleNames(schema *dbschematypes.DBSchema) []string {
+func knownClickHouseRoleNames(schema *catalog.Database) []string {
 	return clickHouseRoleNames(slices.Concat(schema.Roles, schema.RolesOutOfScope))
 }
 
-func clickHouseRoleNames(roles []dbschematypes.DBRole) []string {
+func clickHouseRoleNames(roles []catalog.Role) []string {
 	names := make([]string, 0, len(roles))
 	for _, role := range roles {
 		names = append(names, role.Name)
@@ -550,8 +550,8 @@ func clickHouseRoleNames(roles []dbschematypes.DBRole) []string {
 }
 
 // clickHouseGrantsOfRole returns the described grants one principal holds.
-func clickHouseGrantsOfRole(schema *dbschematypes.DBSchema, role string) []dbschematypes.DBGrant {
-	return slices.DeleteFunc(slices.Clone(schema.Grants), func(grant dbschematypes.DBGrant) bool {
+func clickHouseGrantsOfRole(schema *catalog.Database, role string) []catalog.Grant {
+	return slices.DeleteFunc(slices.Clone(schema.Grants), func(grant catalog.Grant) bool {
 		return grant.Role != role
 	})
 }
@@ -559,9 +559,9 @@ func clickHouseGrantsOfRole(schema *dbschematypes.DBSchema, role string) []dbsch
 // clickHouseGrantsNamingNoKnownRole returns the described grants whose principal
 // the same description does not report as a role -- the shape a privilege read
 // out of the user catalog would arrive in.
-func clickHouseGrantsNamingNoKnownRole(schema *dbschematypes.DBSchema) []dbschematypes.DBGrant {
+func clickHouseGrantsNamingNoKnownRole(schema *catalog.Database) []catalog.Grant {
 	known := knownClickHouseRoleNames(schema)
-	return slices.DeleteFunc(slices.Clone(schema.Grants), func(grant dbschematypes.DBGrant) bool {
+	return slices.DeleteFunc(slices.Clone(schema.Grants), func(grant catalog.Grant) bool {
 		return slices.Contains(known, grant.Role)
 	})
 }
@@ -573,10 +573,10 @@ func clickHouseGrantsNamingNoKnownRole(schema *dbschematypes.DBSchema) []dbschem
 // ClickHouse role always inherits from the roles granted to it and there is no
 // NOINHERIT to read, so a description answering false would put every role at
 // odds with its own declaration.
-func clickHouseRolesCarryingAnAttribute(schema *dbschematypes.DBSchema) []dbschematypes.DBRole {
+func clickHouseRolesCarryingAnAttribute(schema *catalog.Database) []catalog.Role {
 	all := slices.Concat(schema.Roles, schema.RolesOutOfScope)
-	return slices.DeleteFunc(all, func(role dbschematypes.DBRole) bool {
-		return role == (dbschematypes.DBRole{Name: role.Name, Inherit: true})
+	return slices.DeleteFunc(all, func(role catalog.Role) bool {
+		return role == (catalog.Role{Name: role.Name, Inherit: true})
 	})
 }
 
@@ -585,7 +585,7 @@ func clickHouseRolesCarryingAnAttribute(schema *dbschematypes.DBSchema) []dbsche
 // defect through the first review.
 //
 // A `db`.* grant is not a `db`.`t` grant with a field left empty. ClickHouse
-// records it with `table = NULL`, and the shared types.DBGrant contract puts a
+// records it with `table = NULL`, and the shared types.Grant contract puts a
 // SCHEMA-typed row's target in ObjectName with Schema empty — the opposite
 // field from a table row. A reader that filled it positionally produced a
 // description that compared unequal to the row it had just created: the plan
@@ -612,7 +612,7 @@ func TestClickHouseDatabaseScopeGrantRoundTripsLive(t *testing.T) {
 	// The read has to report the row the way every shared consumer expects it,
 	// not merely report something.
 	created := readClickHouseRBAC(c, conn)
-	c.Assert(clickHouseGrantsOfRole(created, role), qt.DeepEquals, []dbschematypes.DBGrant{
+	c.Assert(clickHouseGrantsOfRole(created, role), qt.DeepEquals, []catalog.Grant{
 		clickHouseSelectDatabaseGrant(role, database),
 	})
 
@@ -656,8 +656,8 @@ func clickHouseDatabaseScopeDeclaration(role, database string) *goschema.Databas
 //
 // Contrast [clickHouseSelectGrant]: the database is in ObjectName here and in
 // Schema there, because the object type decides which field carries the target.
-func clickHouseSelectDatabaseGrant(role, database string) dbschematypes.DBGrant {
-	return dbschematypes.DBGrant{
+func clickHouseSelectDatabaseGrant(role, database string) catalog.Grant {
+	return catalog.Grant{
 		Role:       role,
 		Privilege:  "SELECT",
 		ObjectType: "SCHEMA",

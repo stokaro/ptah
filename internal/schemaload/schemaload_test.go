@@ -9,9 +9,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/schemasource"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/schemaload"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -434,7 +434,7 @@ tables:
 	c.Assert(err, qt.IsNil)
 	c.Assert(compositeRender, qt.DeepEquals, handMergedRender)
 
-	emptyDatabase := &dbschematypes.DBSchema{}
+	emptyDatabase := &catalog.Database{}
 	compositeDiff := schemadiff.CompareWithDialect(composite, emptyDatabase, "postgres")
 	handMergedDiff := schemadiff.CompareWithDialect(handMerged, emptyDatabase, "postgres")
 	c.Assert(compositeDiff, qt.DeepEquals, handMergedDiff)

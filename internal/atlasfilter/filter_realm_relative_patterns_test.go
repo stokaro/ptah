@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 )
 
@@ -120,7 +120,7 @@ func errorMessage(err error) string {
 
 // scopedTableNames is [tableNames] for a result that may be absent, so a
 // refusal row states its outcome as a value instead of branching the test.
-func scopedTableNames(schema *dbschematypes.DBSchema) []string {
+func scopedTableNames(schema *catalog.Database) []string {
 	if schema == nil {
 		return nil
 	}
@@ -130,7 +130,7 @@ func scopedTableNames(schema *dbschematypes.DBSchema) []string {
 // usersColumnNames returns the columns of the fixture's users table, or nil
 // when the table itself left -- or when the run was refused and there is no
 // schema to look in.
-func usersColumnNames(schema *dbschematypes.DBSchema) []string {
+func usersColumnNames(schema *catalog.Database) []string {
 	if schema == nil {
 		return nil
 	}

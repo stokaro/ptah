@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 	"go.5x5.cz/ptah/internal/atlasreport"
 )
@@ -95,8 +95,8 @@ func sqlTerminatorInspectReport() *atlasreport.SchemaInspectReport {
 				Name: "idx_users_email", TableName: "users", Fields: []string{"email"},
 			}},
 		},
-		&types.DBSchema{},
-		types.DBInfo{Dialect: platform.SQLite, Schema: "main"},
+		&catalog.Database{},
+		catalog.ServerInfo{Dialect: platform.SQLite, Schema: "main"},
 		nil,
 		atlasreport.SchemaInspectReportOptions{DescribeSchemas: true},
 	)

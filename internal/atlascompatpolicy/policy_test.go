@@ -6,10 +6,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlascompatpolicy"
 	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 )
@@ -302,9 +302,9 @@ func TestStrictCEIgnoresOnlyInspectedPostgresPublicUsageBaseline(t *testing.T) {
 
 func TestPrepareInspectedSchemaRemovesOnlyStrictPostgresBaselines(t *testing.T) {
 	c := qt.New(t)
-	baseline := &dbschematypes.DBSchema{
-		Extensions: []dbschematypes.DBExtension{{Name: "plpgsql"}},
-		Grants: []dbschematypes.DBGrant{{
+	baseline := &catalog.Database{
+		Extensions: []catalog.Extension{{Name: "plpgsql"}},
+		Grants: []catalog.Grant{{
 			Role:       "PUBLIC",
 			Privilege:  "USAGE",
 			ObjectType: "SCHEMA",

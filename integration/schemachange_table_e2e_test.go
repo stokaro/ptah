@@ -11,8 +11,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/schemachange"
 )
@@ -24,7 +24,7 @@ import (
 // Every offline test for this family asserts against a fixture somebody wrote,
 // and the statement-level differential test asserts against another renderer's
 // text. Both can agree on SQL no server accepts. This is the test that cannot:
-// the statements are executed, and the catalog is asked what they produced
+// the statements are executed, and the currentCatalog is asked what they produced
 // rather than the plan being trusted (stokaro/ptah#1662).
 func TestSchemaChangeTablePipelinePostgresE2E(t *testing.T) {
 	c := qt.New(t)
@@ -47,7 +47,7 @@ func TestSchemaChangeTablePipelinePostgresE2E(t *testing.T) {
 	profile := livePostgresProfile()
 
 	// The creation, columns and key included.
-	creation := planFor(c, liveWidget(nil), &dbschematypes.DBSchema{}, profile)
+	creation := planFor(c, liveWidget(nil), &catalog.Database{}, profile)
 	c.Assert(creation, qt.HasLen, 1)
 	execute(c, ctx, db, creation)
 	// The TYPES as well as the names: a CREATE TABLE that rendered every
@@ -67,7 +67,7 @@ func TestSchemaChangeTablePipelinePostgresE2E(t *testing.T) {
 	c.Assert(liveColumns(c, ctx, db, "widget"), qt.DeepEquals, []string{"code text", "id integer", "label text"})
 
 	// A column the desired schema no longer declares.
-	removal := planFor(c, liveWidget(nil), liveWidgetCatalog([]dbschematypes.DBColumn{{
+	removal := planFor(c, liveWidget(nil), liveWidgetCatalog([]catalog.Column{{
 		Name: "label", DataType: "text", IsNullable: "YES",
 	}}), profile)
 	c.Assert(removal, qt.HasLen, 1)
@@ -84,7 +84,7 @@ func TestSchemaChangeTablePipelinePostgresE2E(t *testing.T) {
 // TestSchemaChangeNotNullColumnRefusalIsTheEnginesPostgresE2E pins that the
 // blocked answer for a NOT NULL addition matches what the engine does.
 //
-// The offline rule reads the catalog's row estimate and blocks. Here the same
+// The offline rule reads the currentCatalog's row estimate and blocks. Here the same
 // statement is handed to PostgreSQL with a row in the table, which must refuse
 // it -- otherwise the block is Ptah refusing something the target accepts.
 func TestSchemaChangeNotNullColumnRefusalIsTheEnginesPostgresE2E(t *testing.T) {
@@ -110,14 +110,14 @@ func TestSchemaChangeNotNullColumnRefusalIsTheEnginesPostgresE2E(t *testing.T) {
 	_, err = db.ExecContext(ctx, `INSERT INTO widget (id, code) VALUES (1, 'a')`)
 	c.Assert(err, qt.IsNil)
 
-	// The catalog as a read of THIS database reports it: one row, statistics
+	// The currentCatalog as a read of THIS database reports it: one row, statistics
 	// available.
-	catalog := liveWidgetCatalog(nil)
-	catalog.Tables[0].EstimatedRows = 1
+	currentCatalog := liveWidgetCatalog(nil)
+	currentCatalog.Tables[0].EstimatedRows = 1
 
 	changes := changesFor(c, liveWidget([]goschema.Field{{
 		StructName: "Widget", Name: "label", Type: "text",
-	}}), catalog, livePostgresProfile())
+	}}), currentCatalog, livePostgresProfile())
 
 	c.Assert(changes, qt.HasLen, 1)
 	c.Assert(changes[0].Status, qt.Equals, schemachange.Blocked)
@@ -141,15 +141,15 @@ func liveWidget(extra []goschema.Field) *goschema.Database {
 	}
 }
 
-// liveWidgetCatalog is that table as a catalog read reports it, plus whatever
+// liveWidgetCatalog is that table as a currentCatalog read reports it, plus whatever
 // else a step has added.
-func liveWidgetCatalog(extra []dbschematypes.DBColumn) *dbschematypes.DBSchema {
-	columns := []dbschematypes.DBColumn{
+func liveWidgetCatalog(extra []catalog.Column) *catalog.Database {
+	columns := []catalog.Column{
 		{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
 		{Name: "code", DataType: "text", IsNullable: "YES"},
 	}
-	return &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{{
+	return &catalog.Database{
+		Tables: []catalog.Table{{
 			Name: "widget", Schema: "public", Columns: append(columns, extra...),
 		}},
 	}
@@ -164,7 +164,7 @@ func execute(c *qt.C, ctx context.Context, db *sql.DB, operations []schemachange
 	}
 }
 
-// liveColumns is what the catalog says the table has -- each column and its
+// liveColumns is what the currentCatalog says the table has -- each column and its
 // type -- sorted, so the assertion is about the set rather than about ordinal
 // position.
 func liveColumns(c *qt.C, ctx context.Context, db *sql.DB, table string) []string {

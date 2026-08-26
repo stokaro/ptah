@@ -5,16 +5,16 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/internal/dbschema/sqlite"
 )
 
 // onlyForeignKey returns the one FOREIGN KEY constraint in the schema. The
 // primary keys of both tables are constraints too, and they are not what any
 // case here is about.
-func onlyForeignKey(c *qt.C, constraints []dbschematypes.DBConstraint) dbschematypes.DBConstraint {
+func onlyForeignKey(c *qt.C, constraints []catalog.Constraint) catalog.Constraint {
 	c.Helper()
-	var found []dbschematypes.DBConstraint
+	var found []catalog.Constraint
 	for _, constraint := range constraints {
 		if constraint.Type == "FOREIGN KEY" {
 			found = append(found, constraint)

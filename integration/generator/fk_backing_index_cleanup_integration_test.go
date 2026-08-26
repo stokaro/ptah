@@ -8,9 +8,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
@@ -356,7 +356,7 @@ func foreignKeyBackingSchema(withForeignKey bool, indexName string) *goschema.Da
 	return database
 }
 
-func hasNamedForeignKey(schema *dbschematypes.DBSchema, table, name string) bool {
+func hasNamedForeignKey(schema *catalog.Database, table, name string) bool {
 	for _, constraint := range schema.Constraints {
 		if constraint.TableName == table && constraint.Name == name && constraint.Type == "FOREIGN KEY" {
 			return true
@@ -365,7 +365,7 @@ func hasNamedForeignKey(schema *dbschematypes.DBSchema, table, name string) bool
 	return false
 }
 
-func hasNamedIndex(schema *dbschematypes.DBSchema, table, name string) bool {
+func hasNamedIndex(schema *catalog.Database, table, name string) bool {
 	for _, index := range schema.Indexes {
 		if index.TableName == table && index.Name == name {
 			return true
@@ -374,7 +374,7 @@ func hasNamedIndex(schema *dbschematypes.DBSchema, table, name string) bool {
 	return false
 }
 
-func hasNamedColumn(schema *dbschematypes.DBSchema, table, name string) bool {
+func hasNamedColumn(schema *catalog.Database, table, name string) bool {
 	for _, candidate := range schema.Tables {
 		if candidate.Name != table {
 			continue

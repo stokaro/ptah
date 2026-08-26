@@ -2,7 +2,7 @@
 
 const AtlasSumFileName = "atlas.sum"
 const PtahSumFileName = "ptah.sum"
-func DBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Database
+func DBSchemaToGoSchema(dbSchema *catalog.Database) *goschema.Database
 func ParseAtlasHCL(data []byte, filename string) (*goschema.Database, error)
 func ParseAtlasHCLFile(path string) (*goschema.Database, error)
 func ParseSQL(sql string, opts ParseSQLOptions) (*ast.StatementList, error)
@@ -90,6 +90,1406 @@ func VerifySum(fsys fs.FS, format migrationfile.DirFormat) (*SumResult, error)
 func VerifySumDir(dir string, format migrationfile.DirFormat) (*SumResult, error)
 func (r *SumResult) Describe() string
 func (r *SumResult) OK() bool
+
+## go.5x5.cz/ptah/catalog
+
+const NullsOrderFirst = "FIRST" ...
+func QualifyTableName(schema, table string) string
+type Column struct{ ... }
+type CompositeField struct{ ... }
+type CompositeType struct{ ... }
+type Constraint struct{ ... }
+type ContinuousAggregate struct{ ... }
+type Database struct{ ... }
+type Domain struct{ ... }
+type DomainCheck struct{ ... }
+type Enum struct{ ... }
+type ExtendedProperty struct{ ... }
+type Extension struct{ ... }
+type Function struct{ ... }
+type Grant struct{ ... }
+type Hypertable struct{ ... }
+type Index struct{ ... }
+type IndexPart struct{ ... }
+type MaterializedView struct{ ... }
+type ObjectOwner struct{ ... }
+type RLSPolicy struct{ ... }
+type Range struct{ ... }
+type Role struct{ ... }
+type RoleMembership struct{ ... }
+type Schema struct{ ... }
+type SchemaExecutor interface{ ... }
+type SchemaReader interface{ ... }
+type SchemaTransaction interface{ ... }
+type SchemaWriter interface{ ... }
+type Sequence struct{ ... }
+type ServerInfo struct{ ... }
+type Synonym struct{ ... }
+type Table struct{ ... }
+type Trigger struct{ ... }
+type View struct{ ... }
+type VirtualTable struct{ ... }
+
+### go.5x5.cz/ptah/catalog.Column
+
+package catalog // import "go.5x5.cz/ptah/catalog"
+
+type Column struct {
+    Name               string  `json:"name"`
+    DataType           string  `json:"data_type"`
+    UDTName            string  `json:"udt_name"`                 // For PostgreSQL enum types
+    FormattedType      string  `json:"formatted_type,omitempty"` // Server's own spelling, where the catalog cannot express it
+    ColumnType         string  `json:"column_type"`              // For MySQL ENUM syntax
+    IsNullable         string  `json:"is_nullable"`              // YES/NO
+    ColumnDefault      *string `json:"column_default"`           // Can be NULL
+    CharacterMaxLength *int    `json:"character_max_length"`     // For VARCHAR, etc.
+    Charset            string  `json:"charset,omitempty"`        // MySQL/MariaDB column character set
+    Collate            string  `json:"collate,omitempty"`        // MySQL/MariaDB column collation
+    // Comment is the column's own comment, where the target has one and the
+    // reader reads it. It is empty for a column nobody commented, which is why
+    // it is omitted from the encoding rather than written as "".
+    Comment string `json:"comment,omitempty"`
+    // NotNullConstraintName is the name the target keeps for this column's NOT
+    // NULL, where it keeps one as an addressable catalog object.
+    //
+    // PostgreSQL 18 records one row per NOT NULL in pg_constraint with
+    // contype 'n', keyed to the column through conkey. PostgreSQL 17 stores
+    // nothing, so this is empty there and the read is not even attempted --
+    // see the capability gate on the reader's projection.
+    //
+    // PostgreSQL 18 names EVERY NOT NULL and provides no catalog flag
+    // separating an author-supplied name from a generated one, so a faithful
+    // read returns all of them. Suppressing names that look generated would
+    // silently lose a supplied name that happens to use the same pattern
+    // (stokaro/ptah#2161).
+    NotNullConstraintName string `json:"not_null_constraint_name,omitempty"`
+    NumericPrecision      *int   `json:"numeric_precision"` // For DECIMAL, etc.
+    NumericScale          *int   `json:"numeric_scale"`     // For DECIMAL, etc.
+    OrdinalPosition       int    `json:"ordinal_position"`
+    IsAutoIncrement       bool   `json:"is_auto_increment"` // Derived field
+    IsPrimaryKey          bool   `json:"is_primary_key"`    // Derived field
+    IsUnique              bool   `json:"is_unique"`         // Derived field
+
+    // TypeIsDeclaredText records that DataType must be written back as it
+    // stands, because canonicalizing it would describe a different column.
+    //
+    // The name records where the fact was first found. SQLite keeps the
+    // declaration and derives an affinity from it at use time, so `VARCHAR(80)`
+    // comes back as `VARCHAR(80)` and means TEXT -- the text an author wrote,
+    // stored verbatim. A description that rewrote it to `TEXT` replayed as a
+    // different table, and the comparison planned a rebuild that changed
+    // nothing (stokaro/ptah#2040).
+    //
+    // The contract is broader than that origin, and two more engines need it
+    // for a reason of their own: their catalog answers with a NATIVE type whose
+    // name Ptah's portable mapping also uses for something else.
+    //
+    //   - SQL Server: `varchar` is one byte per character. The portable mapping
+    //     turns a declared VARCHAR into NVARCHAR, which is two, so a native
+    //     varchar re-rendered bare comes back Unicode (stokaro/ptah#2147).
+    //   - ClickHouse: `DateTime` is second precision and four bytes wide. The
+    //     portable mapping turns a declared DATETIME into DateTime64(3), which
+    //     is millisecond precision and eight (stokaro/ptah#2142).
+    //
+    // PostgreSQL, MySQL, MariaDB and Oracle do not set it: their catalogs
+    // answer with types whose names the portable mapping leaves alone, so there
+    // is nothing for the flag to protect.
+    //
+    // A renderer reads it to decide whether it may canonicalize the spelling.
+    // It must not.
+    TypeIsDeclaredText bool `json:"type_is_declared_text,omitempty"`
+
+    // DomainName names the domain a column is declared with, empty for every
+    // column whose declared type is not a domain (PostgreSQL only today).
+    //
+    // It is a separate fact rather than something read back out of
+    // FormattedType, because FormattedType is filled for arrays as well and the
+    // two shapes want opposite answers: an array's spelling is a TYPE, which may
+    // be compared and normalized like any other, while a domain's spelling is an
+    // IDENTIFIER its author chose and must only ever be compared by identity.
+    // Nothing but the catalog can tell them apart -- a domain over an array is
+    // reported with data_type "ARRAY" exactly like a plain array column
+    // (stokaro/ptah#1138).
+    DomainName string `json:"domain_name,omitempty"`
+
+    // DomainSchema names the schema holding that domain, empty for every column
+    // whose declared type is not a domain.
+    //
+    // A domain's identity is (schema, name), and the name alone is not it:
+    // public.status and other.status are two different types with different
+    // CHECK constraints over possibly different base types. A comparator handed
+    // only "status" for both calls a column that must be converted unchanged,
+    // while the plan still drops the domain the desired schema no longer
+    // declares -- so DROP DOMAIN ... CASCADE takes the column and its data with
+    // nothing having converted it first (stokaro/ptah#1138).
+    //
+    // It is recorded raw, exactly as information_schema.columns.domain_schema
+    // reports it, rather than blanked for the schema being read: the domain a
+    // column is declared with may live in a schema the read never visits, and
+    // blanking it there erases the very distinction this field exists for.
+    // FormattedType cannot stand in, because the server writes a qualifier
+    // there only when the search path forces one.
+    DomainSchema string `json:"domain_schema,omitempty"`
+
+    // GeneratedExpression holds the generated-column expression. Nil for plain
+    // columns.
+    GeneratedExpression *string `json:"generated_expression,omitempty"`
+    // GeneratedKind names the generated-column kind, for example STORED,
+    // VIRTUAL, MATERIALIZED, ALIAS, or EPHEMERAL. Empty for plain columns.
+    GeneratedKind string `json:"generated_kind,omitempty"`
+
+    // IdentityGeneration records an identity column's generation mode, mirroring
+    // the goschema-side field: "ALWAYS" (GENERATED ALWAYS AS IDENTITY, which
+    // rejects explicit inserts), "BY_DEFAULT" (GENERATED BY DEFAULT AS IDENTITY,
+    // which accepts them), or "" for non-identity columns. Populated by readers
+    // for dialects that expose identity metadata (currently PostgreSQL via
+    // pg_attribute.attidentity).
+    IdentityGeneration string `json:"identity_generation,omitempty"`
+
+    // IdentityStart and IdentityIncrement are the first value an identity
+    // column issues and the step between values, as the catalog spells them.
+    //
+    // They are strings rather than numbers because that is what the model they
+    // feed uses, and because the value is not always an int64: SQL Server
+    // allows DECIMAL(38,0) IDENTITY, whose seed does not fit one. Carrying the
+    // digits keeps a reader from having to choose between rounding and
+    // refusing.
+    //
+    // Empty for a non-identity column, and for an identity column whose reader
+    // does not report them.
+    IdentityStart     string `json:"identity_start,omitempty"`
+    IdentityIncrement string `json:"identity_increment,omitempty"`
+}
+    Column represents a database column.
+
+    GeneratedKind / GeneratedExpression are populated by readers for dialects
+    that expose generated column metadata. Schema comparison matches these
+    fields when the goschema-side model also carries generated column metadata.
+
+    DomainName and FormattedType are a pair. DataType reports a domain column's
+    BASE type, so it alone cannot say that the declared type was a domain:
+    DomainName carries that fact and FormattedType carries the spelling the
+    server uses for it, schema-qualified where the search path needs that.
+    Everything that answers "what type is this column declared as" -- the
+    desired-state conversion, the Atlas-compatible JSON inspect output, and the
+    comparator's database side -- must consult DomainName rather than infer the
+    answer from DataType, which reports the base type and drops the domain's
+    constraints with it. See stokaro/ptah#1242.
+
+func (c Column) RawType() string
+
+### go.5x5.cz/ptah/catalog.CompositeField
+
+package catalog // import "go.5x5.cz/ptah/catalog"
+
+type CompositeField struct {
+    Name string `json:"name"`
+    Type string `json:"type"`
+}
+    CompositeField is a single field of a composite type read from the database.
+
+
+### go.5x5.cz/ptah/catalog.CompositeType
+
+package catalog // import "go.5x5.cz/ptah/catalog"
+
+type CompositeType struct {
+    Name   string           `json:"name"`
+    Schema string           `json:"schema,omitempty"`
+    Fields []CompositeField `json:"fields"`
+}
+    CompositeType represents a PostgreSQL composite type read from the database.
+
+func (c CompositeType) QualifiedName() string
+
+### go.5x5.cz/ptah/catalog.Constraint
+
+package catalog // import "go.5x5.cz/ptah/catalog"
+
+type Constraint struct {
+    Name           string   `json:"name"`
+    TableName      string   `json:"table_name"`
+    Schema         string   `json:"schema,omitempty"`
+    Type           string   `json:"type"` // PRIMARY KEY, FOREIGN KEY, UNIQUE, CHECK, EXCLUDE
+    ColumnName     string   `json:"column_name"`
+    ColumnNames    []string `json:"column_names,omitempty"`
+    ForeignTable   *string  `json:"foreign_table"` // For foreign keys
+    ForeignSchema  string   `json:"foreign_schema,omitempty"`
+    ForeignColumn  *string  `json:"foreign_column"` // For foreign keys
+    ForeignColumns []string `json:"foreign_columns,omitempty"`
+    DeleteRule     *string  `json:"delete_rule"` // CASCADE, RESTRICT, etc.
+    UpdateRule     *string  `json:"update_rule"` // CASCADE, RESTRICT, etc.
+    // Deferrable reports a foreign key whose check may be postponed to the end
+    // of a transaction, read from pg_constraint.condeferrable.
+    Deferrable bool `json:"deferrable,omitempty"`
+    // Initially is the default timing of a deferrable check -- "deferred" or
+    // "immediate" -- read from pg_constraint.condeferred. It is empty for a
+    // constraint that is not deferrable, so a schema that never asked for one
+    // reads back exactly as it did before (stokaro/ptah#1624).
+    Initially   string  `json:"initially,omitempty"`
+    CheckClause *string `json:"check_clause"` // For CHECK constraints
+    // NullsDistinct carries PostgreSQL UNIQUE NULLS [NOT] DISTINCT state.
+    // Nil means the clause was not present in the definition.
+    NullsDistinct *bool `json:"nulls_distinct,omitempty"`
+    // IncludeColumns carries PostgreSQL INCLUDE columns for covering UNIQUE
+    // and PRIMARY KEY constraints.
+    IncludeColumns []string `json:"include_columns,omitempty"`
+    // EXCLUDE constraint specific fields (PostgreSQL only)
+    UsingMethod     *string `json:"using_method"`     // Index method: gist, btree, etc.
+    ExcludeElements *string `json:"exclude_elements"` // Elements with operators: "room_id WITH =, during WITH &&"
+    WhereCondition  *string `json:"where_condition"`  // Optional WHERE clause for EXCLUDE constraints
+
+    // RequiresExtensions names the extensions the index backing this constraint
+    // cannot be built without, read from that index exactly as
+    // [Index.RequiresExtensions] is.
+    //
+    // It is a separate field rather than a lookup because the backing index is
+    // not part of the entity model: a constraint owns its index, and the
+    // converter drops the index row so the constraint is rendered once. The
+    // dependency is as hard to read off the text here as on a plain index, and
+    // for the same reason. Measured on PostgreSQL 17.10,
+    // `EXCLUDE USING gist (room WITH =, during WITH &&)` over an integer column
+    // needs btree_gist and pg_get_constraintdef prints no token of it, while
+    // `EXCLUDE USING gist (txt gist_trgm_ops WITH =)` needs pg_trgm and prints
+    // the class, because a class is printed exactly when it is not the default
+    // (stokaro/ptah#1286).
+    RequiresExtensions []string `json:"requires_extensions,omitempty"`
+}
+    Constraint represents a database constraint
+
+func (c Constraint) ColumnNamesOrDefault() []string
+func (c Constraint) ForeignColumnsOrDefault() []string
+func (c Constraint) QualifiedForeignTableName() string
+func (c Constraint) QualifiedTableName() string
+
+### go.5x5.cz/ptah/catalog.ContinuousAggregate
+
+package catalog // import "go.5x5.cz/ptah/catalog"
+
+type ContinuousAggregate struct {
+    Schema string `json:"schema"` // Schema holding the aggregate
+    Name   string `json:"name"`   // Aggregate name, which is also the view name
+
+    // HypertableSchema and HypertableName name the hypertable the aggregate
+    // materializes from, which is the object it depends on.
+    HypertableSchema string `json:"hypertable_schema"`
+    HypertableName   string `json:"hypertable_name"`
+
+    // MaterializedOnly reports whether the aggregate reads only materialized
+    // data, rather than combining it with the raw rows since the last refresh.
+    MaterializedOnly bool `json:"materialized_only"`
+
+    // Definition is the SELECT the aggregate was declared with.
+    Definition string `json:"definition"`
+}
+    ContinuousAggregate is one TimescaleDB continuous aggregate.
+
+    To PostgreSQL it is a view: pg_class reports relkind 'v', and a reader that
+    asks only PostgreSQL describes it as one. That is wrong in both directions,
+    and both were measured on TimescaleDB 2.29.2 / PostgreSQL 17.11.
+
+    A plan that drops it emits DROP VIEW, and the server answers `cannot drop
+    continuous aggregate using DROP VIEW`, hinting at DROP MATERIALIZED VIEW.
+    So the plan cannot apply, and the next run reports the same pending change.
+
+    A plan that creates it emits CREATE VIEW with the body pg_get_viewdef
+    answers, which is not the body anybody wrote: TimescaleDB rewrites the
+    definition to select from the materialization hypertable, so the emitted
+    view names a relation in a schema the extension owns.
+
+    Definition is therefore the catalog's own view_definition -- the SELECT as
+    it was written -- and not pg_get_viewdef's.
+
+func (a ContinuousAggregate) QualifiedName() string
+
+### go.5x5.cz/ptah/catalog.Database
+
+package catalog // import "go.5x5.cz/ptah/catalog"
+
+type Database struct {
+    Schemas     []Schema           `json:"schemas"`
+    Tables      []Table            `json:"tables"`
+    Enums       []Enum             `json:"enums"`
+    Indexes     []Index            `json:"indexes"`
+    Constraints []Constraint       `json:"constraints"`
+    Extensions  []Extension        `json:"extensions"` // PostgreSQL extensions
+    Functions   []Function         `json:"functions"`  // PostgreSQL custom functions
+    Sequences   []Sequence         `json:"sequences"`  // PostgreSQL standalone sequences
+    Domains     []Domain           `json:"domains"`    // PostgreSQL domain types
+    Composites  []CompositeType    `json:"composites"` // PostgreSQL composite types
+    Ranges      []Range            `json:"ranges"`     // PostgreSQL range types
+    Views       []View             `json:"views"`      // Database views
+    MatViews    []MaterializedView `json:"matviews"`   // Database materialized views
+    Synonyms    []Synonym          `json:"synonyms"`   // SQL Server synonyms
+    // ExtendedProperties are the SQL Server extended properties this
+    // description covers: schema-, table- and column-scoped ones. See
+    // [ExtendedProperty] for what is deliberately not in it.
+    ExtendedProperties []ExtendedProperty `json:"extended_properties,omitempty"`
+
+    // ContinuousAggregates are the TimescaleDB continuous aggregates this read
+    // found. See [ContinuousAggregate] for why they are not views.
+    ContinuousAggregates []ContinuousAggregate `json:"continuous_aggregates,omitempty"`
+
+    // Hypertables are the TimescaleDB hypertables among the tables above.
+    //
+    // They are recorded BESIDE the tables rather than instead of them, because
+    // a hypertable is an ordinary PostgreSQL table as far as this description
+    // goes: pg_class reports relkind 'r', the columns are the columns, and
+    // every statement Ptah renders for it is correct. What is missing is that
+    // it is partitioned, and no declaration syntax can say so yet -- so this
+    // list exists to be REPORTED rather than compared, and its consumer is the
+    // note that tells an operator the description they are reading is not the
+    // whole truth about these tables (stokaro/ptah#1026).
+    Hypertables []Hypertable `json:"hypertables,omitempty"`
+    Triggers    []Trigger    `json:"triggers"`     // Database triggers
+    RLSPolicies []RLSPolicy  `json:"rls_policies"` // PostgreSQL RLS policies
+    Roles       []Role       `json:"roles"`        // PostgreSQL roles
+    Grants      []Grant      `json:"grants"`       // PostgreSQL privilege grants
+
+    // ObjectOwners are the owners of the objects this read covers, one row per
+    // object, on the engines that have an owner to report.
+    //
+    // Like RoleMemberships it is read for ANALYSIS rather than for planning:
+    // Ptah renders no OWNER TO and no CREATE SCHEMA ... AUTHORIZATION, and
+    // treating ownership as part of the description is what made an inspect
+    // describe the connecting superuser and plan a CREATE ROLE for it
+    // (stokaro/ptah#1950).
+    ObjectOwners []ObjectOwner `json:"object_owners,omitempty"`
+
+    // RoleMemberships are the role-in-role edges the server holds between the
+    // roles Ptah manages: who inherits whose privileges.
+    //
+    // It is read for ANALYSIS rather than for planning. A membership is a
+    // cluster-wide fact on the PostgreSQL family, and Ptah neither renders nor
+    // diffs one today, so this list describes the server rather than the
+    // desired state -- which is why it is omitted when empty and why nothing
+    // in the comparator reads it (stokaro/ptah#1950).
+    RoleMemberships []RoleMembership `json:"role_memberships,omitempty"`
+
+    // RolesOutOfScope lists roles that exist on the server but that this
+    // description deliberately does not define, because nothing in the
+    // schemas being read refers to them.
+    //
+    // PostgreSQL roles belong to the cluster rather than to one database, so
+    // "the reader did not describe this role" and "this role does not exist"
+    // are different facts, and a comparator that cannot tell them apart plans
+    // CREATE ROLE for a role that is already there. Roles and RolesOutOfScope
+    // partition the roles Ptah manages, so their union answers the
+    // comparator's question -- does this role exist -- whatever scoping rule
+    // decided the description. See stokaro/ptah#1267 and stokaro/ptah#1276.
+    //
+    // The partition is over managed roles, not over the whole catalog. A
+    // PostgreSQL reader leaves the reserved pg_ roles and the bootstrap
+    // superuser out of both lists, because Ptah manages neither in either
+    // direction, so the union is not every role the server has and must not be
+    // described as if it were. A desired schema that names one of them is
+    // refused before anything is compared or planned, naming the role and the
+    // rule, rather than compared against nothing. See stokaro/ptah#1312.
+    //
+    // This field is not part of the description: it carries role names from
+    // outside the inspected scope, so it is never serialized and never
+    // rendered. Only Roles reaches output.
+    RolesOutOfScope []Role `json:"-"`
+
+    // NotDescribed records what this read did not look at, so a comparator can
+    // tell an object the database does not have from one the reader was never
+    // asked about. The zero value claims the read covered everything; see
+    // [go.5x5.cz/ptah/core/coverage].
+    NotDescribed coverage.Set `json:"not_described,omitzero"`
+
+    // UnregisteredVirtualTables lists the SQLite virtual tables this read found
+    // whose module the reading build does not register.
+    //
+    // It is the description's own statement that part of this database could
+    // not be classified. SQLite reports a table as `shadow` only when the
+    // module that owns it is loaded and claims the name, so with the module
+    // absent a virtual table is still recognized as virtual while its private
+    // storage arrives as ordinary user tables. Tables therefore holds objects
+    // that are not user tables, and no field on any of them says so -- the fact
+    // belongs to the read, not to a row.
+    //
+    // A comparator that ignores this plans DROP TABLE for a module's storage.
+    // Measured on stokaro/ptah#1028: against an fts4 database this build cannot
+    // load, `ptah schema apply` planned and executed five drops at exit 0 and
+    // `MATCH` went from returning a row to `SQL logic error`.
+    //
+    // It is separate from Tables on purpose, because narrowing survives it. The
+    // tables at risk are not the virtual table an operator would exclude, so a
+    // selection that removes the virtual table leaves every dangerous row in
+    // place; a signal carried on the excluded row would vanish exactly when it
+    // matters. See [go.5x5.cz/ptah/internal/sqlitevirtual].
+    //
+    // It is never serialized: the same database read by a build that registers
+    // the module yields an empty list, so this describes the reader rather than
+    // the database, and a description that carried it would not be portable.
+    UnregisteredVirtualTables []VirtualTable `json:"-"`
+}
+    Database represents the complete schema read from a database
+
+
+### go.5x5.cz/ptah/catalog.Domain
+
+package catalog // import "go.5x5.cz/ptah/catalog"
+
+type Domain struct {
+    Name     string `json:"name"`
+    Schema   string `json:"schema,omitempty"`
+    BaseType string `json:"base_type"`
+    NotNull  bool   `json:"not_null"`
+    Default  string `json:"default,omitempty"`
+    Check    string `json:"check,omitempty"`
+    // CheckConstraints names each CHECK the catalog holds for this domain,
+    // alongside the expression the server stores for it. Check above is the
+    // same expressions joined with AND, which is what a renderer needs and
+    // what a comparison of the whole domain reads; a constraint cannot be
+    // altered by that joined form, because ALTER DOMAIN ... DROP CONSTRAINT
+    // takes a name.
+    //
+    // It is a reader-only execution fact, like Function.IdentityArguments:
+    // a serialized schema description declares what a domain must enforce,
+    // not what the server happened to name the constraint enforcing it.
+    CheckConstraints []DomainCheck `json:"-"`
+}
+    Domain represents a PostgreSQL domain type read from the database.
+
+func (d Domain) QualifiedName() string
+
+### go.5x5.cz/ptah/catalog.DomainCheck
+
+package catalog // import "go.5x5.cz/ptah/catalog"
+
+type DomainCheck struct {
+    Name       string
+    Expression string
+}
+    DomainCheck is one named CHECK constraint of a domain, as the catalog holds
+    it. Expression is the server's own rewritten form -- PostgreSQL reparses and
+    prints a CHECK rather than storing the text it was given -- so it compares
+    equal only to another expression that made the same round trip.
+
+
+### go.5x5.cz/ptah/catalog.Enum
+
+package catalog // import "go.5x5.cz/ptah/catalog"
+
+type Enum struct {
+    Name string `json:"name"`
+    // Schema owns the enum. Readers blank it for the connection's own schema,
+    // exactly as they do for tables, views and domains, so a filter or a
+    // comparison reconstructs the qualified spelling from the connection's
+    // default. Without it a schema-qualified `--exclude app.color` matched
+    // nothing and silently kept the enum (stokaro/ptah#933).
+    Schema string   `json:"schema,omitempty"`
+    Values []string `json:"values"`
+}
+    Enum represents a database enum type (PostgreSQL)
+
+func (e Enum) QualifiedName() string
+
+### go.5x5.cz/ptah/catalog.ExtendedProperty
+
+package catalog // import "go.5x5.cz/ptah/catalog"
+
+type ExtendedProperty struct {
+    Name   string `json:"name"`             // Property name, as sys.extended_properties records it
+    Schema string `json:"schema"`           // Schema owning the addressed object, or the addressed schema
+    Table  string `json:"table,omitempty"`  // Table the property is on; empty for a schema-scoped property
+    Column string `json:"column,omitempty"` // Column the property is on; requires Table
+    Value  string `json:"value"`            // The value, when ValueType names one this description can carry
+
+    // ValueType is the sql_variant base type SQL_VARIANT_PROPERTY reports:
+    // nvarchar, int, date, and so on.
+    ValueType string `json:"value_type"`
+
+    // ValueNotRepresentable marks a property whose value is stored under a base
+    // type Ptah cannot write back.
+    //
+    // sp_addextendedproperty takes a sql_variant, so a property may hold an int
+    // or a date as well as a string -- measured on SQL Server 2022, @value=42
+    // stores base type `int` and a DATE stores `date`. The renderer writes an
+    // N'' literal, so re-emitting either of those would change its type, and
+    // CONVERT(NVARCHAR, value) on the date answers `Jan  2 2026`, which is a
+    // locale-dependent rendering rather than the value.
+    //
+    // The row is reported rather than dropped so that a description says the
+    // property is there, and the comparator declines it in both directions:
+    // nothing is planned to add it, and nothing is planned to take it away.
+    // Ptah leaves it exactly as it found it.
+    ValueNotRepresentable bool `json:"value_not_representable,omitempty"`
+}
+    ExtendedProperty is one SQL Server extended property read from
+    sys.extended_properties.
+
+    SQL Server hangs a property off a three-level address, and this type carries
+    it. No level at all is a DATABASE-scoped property (class 0); Schema alone is
+    a schema-scoped one (class 3); Schema and Table together are object-scoped,
+    and adding Column addresses a column of it (class 1, minor_id 0 or the
+    column's id).
+
+    A database-scoped property is in no schema, so a read narrowed to one
+    still carries it -- the rule an extension already follows, where placement
+    is not ownership. Dropping it from a narrowed description would plan
+    sp_dropextendedproperty for a property the declaration still names.
+
+    MS_Description is not read here, because Ptah already models it: the reader
+    turns it into the object's Comment, and reporting it twice would let the
+    comment comparator and this one plan the same change from two places.
+    The declaration side refuses it by name for the same reason, and says to use
+    the comment instead.
+
+func (p ExtendedProperty) QualifiedOwner() string
+
+### go.5x5.cz/ptah/catalog.Extension
+
+package catalog // import "go.5x5.cz/ptah/catalog"
+
+type Extension struct {
+    Name             string  `json:"name"`              // Extension name (pg_trgm, postgis, etc.)
+    Version          string  `json:"version"`           // Installed version
+    Schema           string  `json:"schema"`            // Schema where extension is installed
+    Relocatable      bool    `json:"relocatable"`       // Whether extension can be moved between schemas
+    Comment          *string `json:"comment"`           // Extension comment/description
+    DefaultVersion   *string `json:"default_version"`   // Default version available
+    InstalledVersion *string `json:"installed_version"` // Currently installed version (may differ from default)
+
+    // Provides lists the catalog names this extension supplies -- its types,
+    // functions, relations, operator classes and operator families -- read from
+    // pg_depend. It answers "what would stop resolving if this extension were
+    // not here", which is a different question from the extension's own name and
+    // usually a disjoint set of words: `isn` supplies the type `isbn`, and
+    // `pgcrypto` supplies the function `gen_salt`.
+    //
+    // Names pg_catalog also supplies are excluded, because a document using one
+    // resolves it with the extension dropped. This matters because contrib
+    // extensions mostly supply overloads of core functions: unfiltered, `citext`
+    // contributes `max`, `min`, `strpos`, `replace` and `split_part`, and
+    // `pgcrypto` contributes `gen_random_uuid`, which core has supplied since
+    // PostgreSQL 13.
+    //
+    // A function name pg_get_keywords() reports as a SQL keyword is excluded too,
+    // because a name read out of SQL text carries no position: `hstore` supplies
+    // three functions named `delete`, and `DELETE FROM audit` in a plpgsql body
+    // is indistinguishable from a call to `delete(h, 'k')`. That exclusion is
+    // conditional on the redundancy that makes it free -- the same extension
+    // must also contribute to this list a type appearing in that function's
+    // signature, so a genuine call spells the type and the type entry answers
+    // for it. An extension supplying `merge(text, text)` and no type has its
+    // only evidence in the name, and the name is kept.
+    //
+    // Empty means not measured rather than "supplies nothing" -- every extension
+    // supplies something, and readers that do not consult a catalog (Go
+    // annotations, YAML) leave this unset.
+    Provides []string `json:"provides,omitempty"`
+}
+    Extension represents a PostgreSQL extension installed in the database
+
+
+### go.5x5.cz/ptah/catalog.Function
+
+package catalog // import "go.5x5.cz/ptah/catalog"
+
+type Function struct {
+    Name string `json:"name"` // Function name
+    // Kind separates a function from a procedure. Empty means function, which
+    // is what every description written before procedures existed meant.
+    Kind string `json:"kind,omitempty"`
+    // Schema owns the function. Readers blank it for the connection's own
+    // schema, the same convention tables, views and domains follow, so a
+    // filter reconstructs the qualified spelling from the connection's
+    // default. Without it a schema-qualified `--exclude app.fn_app` matched
+    // nothing and silently kept the function (stokaro/ptah#933).
+    Schema     string `json:"schema,omitempty"`
+    Parameters string `json:"parameters"` // Full declaration parameters (e.g., "tenant_id_param TEXT DEFAULT 'public'")
+    // IdentityArguments is PostgreSQL's canonical input-argument type list for
+    // identifying an overload in ALTER or DROP FUNCTION. It deliberately stays
+    // separate from Parameters: declaration parameters may contain names,
+    // defaults, and OUT-only arguments that are not part of a function's drop
+    // identity. Nil means a reader did not capture the identity; a non-nil empty
+    // string is the valid identity of a zero-input or OUT-only function. This
+    // reader-only execution fact is not part of serialized schema descriptions.
+    IdentityArguments *string `json:"-"`
+    // Definer is the MySQL-family account that owns the routine. It is a
+    // reader-only execution fact: replacing a foreign SQL SECURITY DEFINER
+    // routine without preserving this account silently changes the principal
+    // under which its body runs.
+    Definer string `json:"-"`
+    // CurrentAccount is the MySQL-family CURRENT_USER() value for the connection
+    // that read this routine. Together with Definer it lets database-aware
+    // comparison distinguish a same-owner replacement from a principal change.
+    CurrentAccount string `json:"-"`
+    Returns        string `json:"returns"`    // Return type (e.g., "VOID", "TEXT")
+    Language       string `json:"language"`   // Function language (e.g., "plpgsql", "sql")
+    Security       string `json:"security"`   // Security context (e.g., "DEFINER", "INVOKER")
+    Volatility     string `json:"volatility"` // Function volatility (e.g., "STABLE", "IMMUTABLE", "VOLATILE")
+    Body           string `json:"body"`       // Function body/implementation
+    Comment        string `json:"comment"`    // Function comment/description
+}
+    Function represents a custom function read from the database.
+
+func (f Function) QualifiedName() string
+
+### go.5x5.cz/ptah/catalog.Grant
+
+package catalog // import "go.5x5.cz/ptah/catalog"
+
+type Grant struct {
+    Role       string `json:"role"`                 // Role receiving the privilege
+    Privilege  string `json:"privilege"`            // Granted privilege, e.g. SELECT or USAGE
+    ObjectType string `json:"object_type"`          // TABLE, SCHEMA, or SEQUENCE
+    Schema     string `json:"schema,omitempty"`     // Schema containing the target object
+    ObjectName string `json:"object_name"`          // Target table or schema name
+    WithOption bool   `json:"with_option"`          // Whether the grant has WITH GRANT OPTION
+    GrantedBy  string `json:"granted_by,omitempty"` // Grantor role
+
+    // IsPartialRevoke marks a row that SUBTRACTS from a broader grant rather
+    // than adding one. Only ClickHouse produces it, and only the ClickHouse
+    // reader sets it: `GRANT SELECT ON db.* TO r` followed by
+    // `REVOKE SELECT ON db.t FROM r` leaves two rows in system.grants, the
+    // second with is_partial_revoke = 1, and SHOW GRANTS prints both lines.
+    //
+    // Ptah does not manage that shape — a grant minus exceptions has no
+    // declaration to compare against — so nothing plans one. The field exists
+    // so the reader reports the row instead of dropping it, which is what lets
+    // a live validation refuse a managed role whose effective privileges are
+    // quietly narrower than its grant row alone would say.
+    //
+    // omitempty keeps every PostgreSQL serialization byte-identical.
+    IsPartialRevoke bool `json:"is_partial_revoke,omitempty"`
+}
+    Grant represents a privilege grant read from the database.
+
+func (g Grant) QualifiedTarget() string
+
+### go.5x5.cz/ptah/catalog.Hypertable
+
+package catalog // import "go.5x5.cz/ptah/catalog"
+
+type Hypertable struct {
+    Schema string `json:"schema"` // Schema holding the hypertable
+    Name   string `json:"name"`   // Table name, which is an ordinary table name
+
+    // PrimaryDimension is the column the hypertable partitions on first, and
+    // PrimaryDimensionType is that column's type as the catalog spells it.
+    PrimaryDimension     string `json:"primary_dimension"`
+    PrimaryDimensionType string `json:"primary_dimension_type"`
+
+    // ChunkInterval is the width of one chunk on the primary dimension, in the
+    // server's own spelling -- `7 days`, `1 day`. It is empty for a dimension
+    // the catalog reports no time interval for, which is every hash dimension
+    // and an integer range one.
+    //
+    // The server's spelling is what a declaration has to carry: a value
+    // converted to compare would differ from the catalog on every run.
+    ChunkInterval string `json:"chunk_interval,omitempty"`
+
+    // Dimensions counts the partitioning dimensions, so a note can say that a
+    // table has more than the one it names.
+    Dimensions int `json:"dimensions"`
+}
+    Hypertable is a TimescaleDB hypertable, as the extension's own catalog
+    describes it.
+
+    It carries the primary dimension and nothing else about the partitioning,
+    which is a scope decision rather than an oversight: this description is read
+    to be NAMED, not to be replayed, and the column a hypertable is partitioned
+    on is what makes the note concrete enough to act on. Representing the full
+    dimension set is what a declaration syntax would need, and that is the slice
+    after this one.
+
+func (h Hypertable) QualifiedName() string
+
+### go.5x5.cz/ptah/catalog.Index
+
+package catalog // import "go.5x5.cz/ptah/catalog"
+
+type Index struct {
+    Name      string   `json:"name"`
+    TableName string   `json:"table_name"`
+    Schema    string   `json:"schema,omitempty"`
+    Columns   []string `json:"columns"`
+    // Parts preserves key order and direction when the database exposes it.
+    // Empty means the reader supplied only the legacy ascending Columns form.
+    Parts      []IndexPart `json:"parts,omitempty"`
+    IsUnique   bool        `json:"is_unique"`
+    IsPrimary  bool        `json:"is_primary"`
+    Definition string      `json:"definition"` // Full index definition
+    // KeyPartsIncomplete reports that the catalog described a key part this
+    // reader cannot name, so Columns (and Parts) list fewer parts than the key
+    // actually has. The MySQL reader sets it for a functional key part --
+    // `KEY idx ((b + 1))` -- whose information_schema.STATISTICS row carries a
+    // NULL COLUMN_NAME and an EXPRESSION column that MariaDB does not have.
+    //
+    // A comparison must not read the key columns of such an index as the whole
+    // key: it would plan a rebuild on every run for a key that never changed.
+    // Everything else about the index is reported normally.
+    KeyPartsIncomplete bool `json:"key_parts_incomplete,omitempty"`
+    // Condition is the WHERE clause for partial indexes when the dialect
+    // exposes one structurally.
+    Condition string `json:"condition,omitempty"`
+    // Comment is the index's own object comment, as PostgreSQL keeps it in
+    // pg_description for the index relation and reports through
+    // obj_description(indexrelid, 'pg_class').
+    //
+    // It is the index's, not the table's: COMMENT ON INDEX and COMMENT ON TABLE
+    // address different objects, and an index has a slot for one on every
+    // surface below this model -- goschema.Index.Comment, the Atlas-compatible
+    // HCL reader's `comment` attribute, and the HCL writer's. Before #1242 this
+    // field did not exist, so a comment the server reported was dropped between
+    // the catalog and the model and every surface below it saw an index that
+    // had none. Empty means the object carries no comment.
+    Comment string `json:"comment,omitempty"`
+    // NullsDistinct carries PostgreSQL UNIQUE INDEX NULLS [NOT] DISTINCT
+    // state. Nil means the clause was not present in the definition.
+    NullsDistinct *bool `json:"nulls_distinct,omitempty"`
+
+    // Method is the index access method as the server spells it -- btree,
+    // gin, gist, brin, hash. It is deliberately not Type: Type is the
+    // ClickHouse data-skipping-index type below, a different concept that
+    // happens to share a slot in the annotation surface, and overloading one
+    // field with both would make a ClickHouse "bloom_filter" and a PostgreSQL
+    // "gin" indistinguishable at this layer. Empty means the reader did not
+    // report an access method.
+    //
+    // A dropped access method is not always a quiet degradation: an index on
+    // a type with no btree operator class, such as point, does not replay at
+    // all without it. See #1242.
+    Method string `json:"method,omitempty"`
+    // IncludeColumns carries PostgreSQL INCLUDE payload columns, the
+    // non-key columns stored in the index for index-only scans.
+    IncludeColumns []string `json:"include_columns,omitempty"`
+    // StorageParams carries the index's WITH (...) storage parameters, keyed by
+    // parameter name with the value as the server spells it.
+    //
+    // A reader records only the parameters the rest of the model can carry back
+    // out again. A parameter recorded here but dropped by one of the surfaces
+    // the model passes through would make every such index differ from its own
+    // inspected document forever, and the rebuild that difference plans would
+    // drop the parameter it was meant to protect. See #1242 and
+    // docs/conformance.md for the ones a PostgreSQL reader deliberately omits.
+    StorageParams map[string]string `json:"storage_params,omitempty"`
+
+    // RequiresExtensions names the extensions this index cannot be built
+    // without, as the catalog resolved them rather than as the DDL spells them.
+    //
+    // An index key names an operator class only when that class is not the
+    // default for its type on its access method, so an index whose default
+    // class comes from an extension refers to that extension with no token at
+    // all. Measured on PostgreSQL 17.10: with btree_gin installed,
+    // CREATE INDEX t_gin ON t USING gin (n int4_ops) over an integer column is
+    // stored, and rendered back, as CREATE INDEX t_gin ON public.t USING gin
+    // (n) -- and replaying that on a database without btree_gin fails with
+    // `data type integer has no default operator class for access method
+    // "gin"`. pg_index.indclass holds the class each key actually resolved to,
+    // so the reader answers the question exactly (stokaro/ptah#1286).
+    //
+    // The index's access method is read the same way, from pg_class.relam. An
+    // access method the catalog owns, `gin` or `gist`, belongs to no extension
+    // and pins nothing; one an extension supplies, such as bloom's `bloom`,
+    // resolves to that extension.
+    //
+    // The edge is recorded whether or not the DDL prints the class. It does print
+    // a non-default one -- pg_trgm's gin_trgm_ops arrives as
+    // CREATE INDEX w_trgm ON public.w USING gin (txt gin_trgm_ops) -- and that
+    // index resolves to pg_trgm here as well. This field answers "which
+    // extension owns what this index resolved to", not "which dependency the DDL
+    // omitted".
+    //
+    // Empty means the reader found no such edge, which is the ordinary case:
+    // core supplies the default operator class for every core type its access
+    // methods index. Readers with no catalog to ask leave it unset.
+    RequiresExtensions []string `json:"requires_extensions,omitempty"`
+
+    // Type is the ClickHouse data-skipping-index type. One of
+    // "minmax" / "set(N)" / "bloom_filter" / "bloom_filter(p)" /
+    // "tokenbf_v1(...)" / "ngrambf_v1(...)" etc. Empty on non-ClickHouse
+    // readers.
+    Type string `json:"type,omitempty"`
+    // Expression is the full ClickHouse skipping-index expression
+    // (column reference, function call, tuple, etc.). The reader also writes
+    // the expression into Columns[0] for back-compat with the existing diff
+    // layer; Expression is the canonical field for richer diffing once
+    // that's wired up. Empty on non-ClickHouse readers.
+    Expression string `json:"expression,omitempty"`
+    // Granularity is the GRANULARITY value the index was declared with.
+    // Non-zero only on ClickHouse skipping indexes.
+    Granularity int `json:"granularity,omitempty"`
+
+    // PartitionAttached reports that this index is a partition's copy of an
+    // index on its partitioned parent, attached to that parent index rather
+    // than standing on its own.
+    //
+    // PostgreSQL creates one such index per partition whenever an index is
+    // created on a partitioned parent, names it itself
+    // (events_2026_tenant_idx), and refuses to drop it alone:
+    // DROP INDEX "events_2026_tenant_idx" answers `cannot drop index
+    // events_2026_tenant_idx because index idx_events_tenant requires it`
+    // (SQLSTATE 2BP01). It is the index equivalent of a constraint's backing
+    // index -- a real catalog row that no standalone statement addresses --
+    // and a comparison that reads it as an ordinary index plans a DROP the
+    // server refuses.
+    //
+    // The parent index is not marked: it is the object the DDL names, and on
+    // PostgreSQL it is relkind 'I' while a partition's copy is relkind 'i'.
+    // Only readers that can ask the catalog (pg_inherits over index
+    // relations) set this; everything else leaves it false.
+    PartitionAttached bool `json:"partition_attached,omitempty"`
+}
+    Index represents a database index.
+
+    Most fields are dialect-neutral. The Type/Expression/Granularity trio is
+    populated only by the ClickHouse reader for data-skipping indexes; other
+    readers leave them at their zero values so the diff layer does not start
+    emitting spurious type/granularity changes for PostgreSQL or MySQL indexes.
+
+func (i Index) QualifiedTableName() string
+
+### go.5x5.cz/ptah/catalog.IndexPart
+
+package catalog // import "go.5x5.cz/ptah/catalog"
+
+type IndexPart struct {
+    Name string `json:"name"`
+    // Expr is a raw indexed expression, such as lower(name). It is mutually
+    // exclusive with Name: an expression is not an identifier, and a reader
+    // that reports one in Name makes the renderer quote it into a column
+    // reference that does not exist.
+    Expr string `json:"expr,omitempty"`
+    // Operator is the operator class this key was built with, for example
+    // text_pattern_ops, together with its parameters when it has any, for
+    // example tsvector_ops(siglen=64). Empty means the key uses its type's
+    // default class with no parameters, which is the only case where omitting
+    // it from emitted DDL reproduces the index. See #1242.
+    //
+    // A parameterised class is carried even when it is the type's default,
+    // because the class name is the only place its parameters can hang.
+    Operator string `json:"operator,omitempty"`
+    Desc     bool   `json:"desc,omitempty"`
+    // NullsOrder is an explicit NULLS ordering for this key: "FIRST", "LAST",
+    // or empty when the key uses the direction's default. PostgreSQL defaults
+    // to NULLS LAST for ASC and NULLS FIRST for DESC, so only the deviating
+    // spelling has to be carried.
+    NullsOrder string `json:"nulls_order,omitempty"`
+    // Prefix is the number of leading characters this key indexes, which MySQL
+    // spells `INDEX (notes(20))`. Empty means the key covers the whole column.
+    //
+    // It is REQUIRED for a BLOB or TEXT column there -- MySQL refuses an index
+    // on one without a length -- so a key that loses it produces a description
+    // that cannot be applied (stokaro/ptah#2112).
+    Prefix string `json:"prefix,omitempty"`
+}
+    IndexPart represents one ordered key column in an introspected index.
+
+
+### go.5x5.cz/ptah/catalog.MaterializedView
+
+package catalog // import "go.5x5.cz/ptah/catalog"
+
+type MaterializedView struct {
+    Name    string `json:"name"`    // Materialized view name
+    Schema  string `json:"schema"`  // Schema where the materialized view is defined
+    Body    string `json:"body"`    // SELECT query used as the materialized view definition
+    Comment string `json:"comment"` // Materialized view comment/description
+
+    // Refresh is the ClickHouse refresh schedule read back from the server,
+    // nil for a view that has none.
+    //
+    // It is read from create_table_query, which is the only place the schedule
+    // survives: system.tables.as_select is byte-identical for a plain view and
+    // a refreshable one (stokaro/ptah#1802).
+    Refresh *ast.MatViewRefreshSpec
+}
+    MaterializedView represents a PostgreSQL materialized view read from the
+    database.
+
+func (v MaterializedView) QualifiedName() string
+
+### go.5x5.cz/ptah/catalog.ObjectOwner
+
+package catalog // import "go.5x5.cz/ptah/catalog"
+
+type ObjectOwner struct {
+    // Kind is the object kind.
+    Kind string `json:"kind"`
+    // Schema is the schema the object lives in, empty for a schema itself.
+    Schema string `json:"schema,omitempty"`
+    // Name is the object's name.
+    Name string `json:"name"`
+    // Owner is the role that owns it.
+    Owner string `json:"owner"`
+    // OwnerCanLogin reports whether that role can log in, read from the
+    // catalog beside the owner rather than inferred from the described roles:
+    // the owner of everything on a default PostgreSQL database is the
+    // bootstrap superuser, which Ptah deliberately does not describe, and an
+    // analysis that had to look it up in the role list would go quiet exactly
+    // where the question matters.
+    OwnerCanLogin bool `json:"owner_can_login"`
+}
+    ObjectOwner is the owner of one schema object.
+
+    Kind is the object kind in Ptah's own vocabulary -- table, view,
+    materialized view, sequence, schema -- rather than the catalog's letter,
+    so a consumer need not know pg_class.relkind to read it.
+
+
+### go.5x5.cz/ptah/catalog.RLSPolicy
+
+package catalog // import "go.5x5.cz/ptah/catalog"
+
+type RLSPolicy struct {
+    Name                string `json:"name"`                  // Policy name
+    Table               string `json:"table"`                 // Target table name
+    PolicyFor           string `json:"policy_for"`            // Operations policy applies to (e.g., "ALL", "SELECT")
+    ToRoles             string `json:"to_roles"`              // Target roles (e.g., "app_user", "PUBLIC")
+    UsingExpression     string `json:"using_expression"`      // USING clause expression
+    WithCheckExpression string `json:"with_check_expression"` // WITH CHECK clause expression
+    Comment             string `json:"comment"`               // Policy comment/description
+}
+    RLSPolicy represents a PostgreSQL RLS policy read from the database
+
+
+### go.5x5.cz/ptah/catalog.Range
+
+package catalog // import "go.5x5.cz/ptah/catalog"
+
+type Range struct {
+    Name    string `json:"name"`
+    Schema  string `json:"schema,omitempty"`
+    Subtype string `json:"subtype"`
+    // SubtypeOpClass is the operator class backing the subtype's ordering
+    // (pg_range.rngsubopc). Always populated by the catalog, including when the
+    // author never named one, so the comparator only consults it when the
+    // desired schema declares one.
+    SubtypeOpClass string `json:"subtype_opclass,omitempty"`
+    // Collation is the subtype collation (pg_range.rngcollation), empty for
+    // non-collatable subtypes.
+    Collation string `json:"collation,omitempty"`
+    // Canonical is the canonicalization function (pg_range.rngcanonical), empty
+    // when the range has none.
+    Canonical string `json:"canonical,omitempty"`
+    // SubtypeDiff is the subtype difference function (pg_range.rngsubdiff),
+    // empty when the range has none.
+    SubtypeDiff string `json:"subtype_diff,omitempty"`
+}
+    Range represents a PostgreSQL range type read from the database.
+
+    Everything after Subtype exists so a change to an EXISTING range type
+    can be detected. While the reader returned only the name and subtype, the
+    comparator had nothing to compare and reported a changed range as converged
+    (stokaro/ptah#931 item 2).
+
+func (r Range) QualifiedName() string
+
+### go.5x5.cz/ptah/catalog.Role
+
+package catalog // import "go.5x5.cz/ptah/catalog"
+
+type Role struct {
+    Name        string `json:"name"`         // Role name
+    Login       bool   `json:"login"`        // Whether role can login
+    Superuser   bool   `json:"superuser"`    // Whether role is superuser
+    CreateDB    bool   `json:"create_db"`    // Whether role can create databases
+    CreateRole  bool   `json:"create_role"`  // Whether role can create other roles
+    Inherit     bool   `json:"inherit"`      // Whether role inherits privileges
+    Replication bool   `json:"replication"`  // Whether role can initiate replication
+    HasPassword bool   `json:"has_password"` // Whether role has a password set
+    Comment     string `json:"comment"`      // Role comment/description
+}
+    Role represents a PostgreSQL role read from the database
+
+
+### go.5x5.cz/ptah/catalog.RoleMembership
+
+package catalog // import "go.5x5.cz/ptah/catalog"
+
+type RoleMembership struct {
+    // Role is the role whose privileges are granted.
+    Role string `json:"role"`
+    // Member is the role that receives them.
+    Member string `json:"member"`
+    // AdminOption reports whether Member may grant Role onward.
+    AdminOption bool `json:"admin_option"`
+}
+    RoleMembership is one role-in-role edge: Member holds everything Role
+    grants, subject to Role's inheritance setting.
+
+    The two names are read from the same catalog the roles come from, and both
+    are roles Ptah manages -- reserved system roles are excluded on both sides,
+    for the same reason they are excluded from Roles.
+
+
+### go.5x5.cz/ptah/catalog.Schema
+
+package catalog // import "go.5x5.cz/ptah/catalog"
+
+type Schema struct {
+    Name    string `json:"name"`
+    Comment string `json:"comment,omitempty"`
+    Charset string `json:"charset,omitempty"`
+    Collate string `json:"collate,omitempty"`
+}
+    Schema represents a database schema/namespace.
+
+
+### go.5x5.cz/ptah/catalog.SchemaExecutor
+
+package catalog // import "go.5x5.cz/ptah/catalog"
+
+type SchemaExecutor interface {
+    ExecuteSQL(ctx context.Context, sql string, args ...any) error
+    IsDryRun() bool
+}
+    SchemaExecutor executes SQL statements produced by schema operations.
+
+    ExecuteSQL accepts a context and an optional slice of arguments that are
+    bound as native driver parameters, mirroring database/sql's ExecContext.
+    Use placeholders (`?` or the dialect-native form such as `$1`/`$2`
+    for PostgreSQL) instead of interpolating values into the SQL string;
+    this prevents the SQL injection class of bugs that the no-args signature
+    used to invite (see issue #130). Identifiers (table/column names) cannot be
+    parameterized — route them through a validated escape helper instead.
+
+
+### go.5x5.cz/ptah/catalog.SchemaReader
+
+package catalog // import "go.5x5.cz/ptah/catalog"
+
+type SchemaReader interface {
+    ReadSchema() (*Database, error)
+    ReadSchemaContext(ctx context.Context) (*Database, error)
+}
+    SchemaReader reads a live database schema, in the two forms this package
+    offers every other database call in: a context-free one and a Context one.
+
+    ReadSchemaContext governs every catalog query the read issues with the
+    provided context: canceling it, or letting its deadline pass, makes the read
+    return promptly with an error rather than running the remaining queries.
+
+    The context is part of the contract rather than a convenience. A schema read
+    is dozens of round trips against a server that may be slow or unreachable,
+    and it is what the migration generator's own documented context contract
+    bottoms out in, so a caller with no way to say "stop" has no way to bound
+    either one (stokaro/ptah#2246).
+
+    ReadSchema is that same read under context.Background(), and is what a
+    caller with no context to hand writes. It is the pairing database/sql itself
+    uses and that dbschema.DatabaseConnection already follows -- Exec beside
+    ExecContext, Query beside QueryContext, QueryRow beside QueryRowContext
+    -- so a reader implements both and the choice is the caller's. Prefer
+    ReadSchemaContext: only it can be stopped.
+
+    Both are part of the interface rather than one being a helper beside it,
+    because an implementation of SchemaReader can live outside this module.
+    stokaro/ptah-testkit is one such consumer: a separate module that builds
+    against the last published release, so the read it issues has to be spelled
+    a way that release carries.
+
+
+### go.5x5.cz/ptah/catalog.SchemaTransaction
+
+package catalog // import "go.5x5.cz/ptah/catalog"
+
+type SchemaTransaction interface {
+    SchemaExecutor
+    Commit() error
+    Rollback() error
+}
+    SchemaTransaction executes schema changes inside a database transaction.
+
+    It deliberately owns transaction lifecycle instead of storing the active
+    transaction on the parent SchemaWriter. That keeps dialect writers
+    reentrant: concurrent callers may begin independent transactions without
+    racing over shared writer state.
+
+
+### go.5x5.cz/ptah/catalog.SchemaWriter
+
+package catalog // import "go.5x5.cz/ptah/catalog"
+
+type SchemaWriter interface {
+    SchemaExecutor
+    // DropAllTables removes supported user objects from the writer's configured
+    // schema or database. Implementations must refuse cleanup when dependencies
+    // or database-global ownership prevent them from confining the destructive
+    // effect to that scope. The context governs object discovery and DDL.
+    // Implementations may use a short, bounded cleanup context after
+    // cancellation to restore connection-local settings before returning.
+    DropAllTables(ctx context.Context) error
+    BeginTransaction(ctx context.Context) (SchemaTransaction, error)
+    SetDryRun(dryRun bool)
+}
+    SchemaWriter writes schemas to databases.
+
+
+### go.5x5.cz/ptah/catalog.Sequence
+
+package catalog // import "go.5x5.cz/ptah/catalog"
+
+type Sequence struct {
+    Name      string `json:"name"`                // Sequence name
+    Schema    string `json:"schema,omitempty"`    // Schema containing the sequence
+    DataType  string `json:"data_type,omitempty"` // Underlying integer type (e.g. "bigint")
+    Start     *int64 `json:"start,omitempty"`     // START WITH value
+    Increment *int64 `json:"increment,omitempty"` // INCREMENT BY value
+    MinValue  *int64 `json:"min_value,omitempty"` // MINVALUE bound
+    MaxValue  *int64 `json:"max_value,omitempty"` // MAXVALUE bound
+    Cache     *int64 `json:"cache,omitempty"`     // CACHE size
+    Cycle     bool   `json:"cycle"`               // Whether the sequence uses CYCLE
+    OwnedBy   string `json:"owned_by,omitempty"`  // Owning table.column, if any
+    Comment   string `json:"comment,omitempty"`   // Sequence comment/description
+}
+    Sequence represents a standalone PostgreSQL sequence read from the database.
+
+    Only user-declared, standalone sequences appear here. Implicit sequences
+    that back SERIAL / BIGSERIAL / identity columns (those OWNED BY a column via
+    an internal/auto dependency) are deliberately excluded so that declaring a
+    plain SERIAL column does not surface as a spurious standalone sequence.
+
+func (s Sequence) QualifiedName() string
+
+### go.5x5.cz/ptah/catalog.ServerInfo
+
+package catalog // import "go.5x5.cz/ptah/catalog"
+
+type ServerInfo struct {
+    Dialect string `json:"dialect"` // postgres, mysql, mariadb
+    Version string `json:"version"`
+    Schema  string `json:"schema"` // public, database name, etc.
+
+    // URL is the database connection URL the connection was opened from, with
+    // whatever credentials it carried. Callers that reconnect to the same
+    // target read it -- a dev-database URL, a second session for an online DDL
+    // tool, a realm-scope decision that depends on the URL's path.
+    //
+    // It is excluded from JSON because every other field here is tagged, and a
+    // struct whose tags invite marshalling must not carry one field that turns
+    // a marshal into a credential disclosure: `json.Marshal(conn.Info())` is
+    // the obvious thing to do with a ServerInfo, and it must not write the
+    // database password into whatever the caller does with the bytes. Marshal
+    // [ServerInfo.RedactedURL] instead -- it names the same target with the
+    // secrets removed (stokaro/ptah#2246).
+    URL string `json:"-"`
+
+    // RedactedURL is URL with every secret it carries replaced, suitable for a
+    // log line, an error message or a serialized report. It occupies the `url`
+    // JSON name so a consumer that marshals ServerInfo still learns which target
+    // the description came from.
+    RedactedURL string `json:"url"`
+
+    Capabilities        capability.Capabilities `json:"capabilities"`         // resolved from Dialect + Version for live connections
+    IdentifierSemantics identifier.Semantics    `json:"identifier_semantics"` // catalog identifier metadata and static rules
+}
+    ServerInfo contains connection and metadata information
+
+
+### go.5x5.cz/ptah/catalog.Synonym
+
+package catalog // import "go.5x5.cz/ptah/catalog"
+
+type Synonym struct {
+    Name   string `json:"name"`   // Synonym name (the alias)
+    Schema string `json:"schema"` // Schema the alias lives in
+    // Target is base_object_name exactly as the catalog records it, including
+    // the server's own bracket quoting.
+    Target string `json:"target"`
+    // TargetServer, TargetDatabase, TargetSchema and TargetObject are the
+    // parsed parts of Target. Absent leading parts are empty.
+    TargetServer   string `json:"target_server,omitempty"`
+    TargetDatabase string `json:"target_database,omitempty"`
+    TargetSchema   string `json:"target_schema,omitempty"`
+    TargetObject   string `json:"target_object"`
+    Comment        string `json:"comment,omitempty"` // Synonym comment/description
+}
+    Synonym represents a SQL Server synonym read from the database.
+
+    A synonym is an alias, and the thing it aliases may not be in this database.
+    SQL Server records the target as a name of one to four parts, and the shape
+    of that name is the whole question a dependency ordering has to answer:
+    a two-part target names an object here, and a three- or four-part target
+    names one in another database or behind a linked server.
+
+    The raw catalog value is kept alongside the parsed parts, because it is
+    what the server will resolve and what has to be written back unchanged. The
+    parts exist so that ordering can tell local from remote without re-parsing,
+    and External is derived from them rather than stored, so the two cannot
+    disagree.
+
+func (s Synonym) IsExternal() bool
+func (s Synonym) QualifiedName() string
+func (s Synonym) TargetQualifiedName() string
+
+### go.5x5.cz/ptah/catalog.Table
+
+package catalog // import "go.5x5.cz/ptah/catalog"
+
+type Table struct {
+    Name            string   `json:"name"`
+    Schema          string   `json:"schema,omitempty"`
+    Type            string   `json:"type"` // TABLE, VIEW, etc.
+    Comment         string   `json:"comment"`
+    Columns         []Column `json:"columns"`
+    EstimatedRows   int64    `json:"estimated_rows,omitempty"`    // Best-effort planner estimate from database statistics
+    RowStatsUnknown bool     `json:"row_stats_unknown,omitempty"` // The database reports no usable row statistics; EstimatedRows is not a row count
+    Partitioned     bool     `json:"partitioned,omitempty"`       // PostgreSQL declaratively partitioned parent (pg_class.relkind = 'p')
+    RLSEnabled      bool     `json:"rls_enabled"`                 // Whether RLS is enabled on this table (PostgreSQL)
+    Strict          bool     `json:"strict,omitempty"`            // SQLite STRICT table option
+    WithoutRowID    bool     `json:"without_rowid,omitempty"`     // SQLite WITHOUT ROWID table option
+    // ClickHouseSortingKey is the ORDER BY a MergeTree table sorts by, when
+    // that is not simply its primary-key columns.
+    //
+    // The two are usually the same and the renderer derives the ORDER BY from
+    // the primary key, so this stays empty. They come apart when a table
+    // declares `PRIMARY KEY (a) ORDER BY (a, b)`: the primary key alone would
+    // describe a table that sorts differently from the one being read, and
+    // applying that description would create one (stokaro/ptah#1603).
+    ClickHouseSortingKey string `json:"clickhouse_sorting_key,omitempty"`
+    // ClickHouseOrderBy is the ORDER BY exactly as system.tables reports it,
+    // including when it equals the primary key.
+    //
+    // ClickHouseSortingKey above deliberately omits that case, because the
+    // renderer can derive the clause from the primary key -- but it derives the
+    // COLUMNS, not their order, and a table sorted `(day, id)` came back sorted
+    // `(id, day)`. That is a different physical layout: every range scan the
+    // original order served becomes a full scan (stokaro/ptah#2198).
+    ClickHouseOrderBy string `json:"clickhouse_order_by,omitempty"`
+    // ClickHouseEngine is the table engine with its parameters, as
+    // system.tables spells it -- "ReplacingMergeTree(ver)", not the bare family
+    // name the `engine` column reports.
+    //
+    // A description without it takes the renderer's default of MergeTree, so a
+    // ReplacingMergeTree read and replayed loses the deduplicating merge the
+    // table exists for (stokaro/ptah#2198).
+    ClickHouseEngine string `json:"clickhouse_engine,omitempty"`
+    // ClickHousePartitionKey and ClickHouseSamplingKey are the PARTITION BY and
+    // SAMPLE BY expressions, empty for a table that declares neither.
+    ClickHousePartitionKey string `json:"clickhouse_partition_key,omitempty"`
+    ClickHouseSamplingKey  string `json:"clickhouse_sampling_key,omitempty"`
+    // ClickHousePrimaryKey is the PRIMARY KEY a MergeTree table declares when
+    // it is not the whole sorting key, and empty when the two agree.
+    //
+    // A primary key that is a prefix of the ORDER BY is how a MergeTree table is
+    // tuned: the sparse index holds one mark per granule of the prefix, and the
+    // rest of the sorting key only orders rows within it. Measured on ClickHouse
+    // 26.7.5.10, `PRIMARY KEY (id) ORDER BY (id, s)` read and replayed came back
+    // as `PRIMARY KEY (id, s)` -- a wider index over the same data, which is a
+    // different table and says nothing about it (stokaro/ptah#2198).
+    ClickHousePrimaryKey string `json:"clickhouse_primary_key,omitempty"`
+    // ClickHouseTTL is the table's TTL expression, empty for a table with none.
+    // It is the retention rule: a table replayed without it keeps rows it was
+    // configured to delete.
+    ClickHouseTTL string `json:"clickhouse_ttl,omitempty"`
+    // ClickHouseSettings is the SETTINGS clause body.
+    //
+    // The server resolves one whether or not the author wrote it -- every
+    // MergeTree table reports at least index_granularity -- so this is what the
+    // table HAS rather than what was declared.
+    ClickHouseSettings string `json:"clickhouse_settings,omitempty"`
+    // RowTTL is the CockroachDB row-level TTL this table carries, nil for a
+    // table with none and for every target without capability.RowLevelTTL.
+    //
+    // omitzero keeps every other dialect's serialization byte-identical, which
+    // matters because a description is compared, fingerprinted and replayed
+    // (stokaro/ptah#1027).
+    RowTTL *ast.RowTTLSpec `json:"row_ttl,omitzero"`
+    // RowDeletionPolicy is the row deletion policy this table carries, nil for
+    // a table with none (stokaro/ptah#2236).
+    RowDeletionPolicy *ast.RowDeletionPolicySpec `json:"row_deletion_policy,omitzero"`
+    // VirtualModule is the SQLite module that owns this table, from the USING
+    // clause of the CREATE VIRTUAL TABLE statement that created it -- `fts5`,
+    // `rtree`, `geopoly`, or any other module a build registers. It is empty
+    // for an ordinary table, and a non-empty value means the table cannot be
+    // described by CREATE TABLE at all: it has no column list of its own, and
+    // a plain table of the same name is a different object. See
+    // stokaro/ptah#1028.
+    VirtualModule string `json:"virtual_module,omitempty"`
+    // VirtualArguments is the text between the module's parentheses, verbatim.
+    // Module arguments are not SQL -- only the module interprets them -- so
+    // they are carried unparsed and reproduced byte for byte.
+    VirtualArguments string `json:"virtual_arguments,omitempty"`
+}
+    Table represents a database table
+
+    EstimatedRows and RowStatsUnknown are a pair, and reading EstimatedRows
+    alone is a mistake: PostgreSQL spells "nobody has ever counted this table"
+    as pg_class.reltuples = -1, which floors to the same 0 a genuinely empty
+    table reports. RowStatsUnknown carries that distinction so a caller choosing
+    between a blocking and a non-blocking index build can fail safe instead of
+    reading an absent statistic as an empty table. Readers that never collect
+    row statistics leave both fields zero, which claims nothing.
+
+    Partitioned marks a PostgreSQL declaratively partitioned parent (relkind
+    'p'). information_schema.tables reports it as an ordinary BASE TABLE,
+    so Type cannot carry it, and the distinction decides which statements
+    are legal: PostgreSQL rejects CREATE INDEX CONCURRENTLY and DROP INDEX
+    CONCURRENTLY on a partitioned relation with SQLSTATE 0A000.
+
+func (t Table) QualifiedName() string
+
+### go.5x5.cz/ptah/catalog.Trigger
+
+package catalog // import "go.5x5.cz/ptah/catalog"
+
+type Trigger struct {
+    Name    string `json:"name"`    // Trigger name
+    Schema  string `json:"schema"`  // Schema where the trigger is defined
+    Table   string `json:"table"`   // Target table
+    Timing  string `json:"timing"`  // BEFORE, AFTER, or INSTEAD OF
+    Event   string `json:"event"`   // INSERT, UPDATE, DELETE, or TRUNCATE
+    ForEach string `json:"for"`     // ROW or STATEMENT
+    Body    string `json:"body"`    // Trigger body
+    Comment string `json:"comment"` // Trigger comment/description
+
+    // ExecuteFunction is the name of the function the trigger runs, as the
+    // catalog reports it.
+    //
+    // PostgreSQL has no inline trigger body: `CREATE TRIGGER ... EXECUTE
+    // FUNCTION f()` always names a function, and Ptah writes one per trigger
+    // when the declaration carries a body. Reading only that function's source
+    // and discarding its NAME made every trigger look like one Ptah owns, so a
+    // function shared by several triggers was described once per trigger and
+    // replayed as that many copies (stokaro/ptah#2210).
+    ExecuteFunction string `json:"execute_function,omitempty"`
+}
+    Trigger represents a database trigger read from the database.
+
+func (t Trigger) QualifiedTable() string
+
+### go.5x5.cz/ptah/catalog.View
+
+package catalog // import "go.5x5.cz/ptah/catalog"
+
+type View struct {
+    Name        string `json:"name"`         // View name
+    Schema      string `json:"schema"`       // Schema where the view is defined
+    Body        string `json:"body"`         // SELECT query used as the view definition
+    CheckOption string `json:"check_option"` // NONE, LOCAL, CASCADED, or dialect equivalent
+    Comment     string `json:"comment"`      // View comment/description
+    // Attributes carries the view's own WITH clause -- SQL Server's
+    // SCHEMABINDING and VIEW_METADATA -- uppercased, in the order the server
+    // wrote them.
+    //
+    // They belong to the view rather than to its body: SCHEMABINDING binds it
+    // to the tables it names, so they cannot be altered under it, and an
+    // indexed view requires it. The reader cuts the header off to get at the
+    // body, and nothing kept this, so a replayed view came back unbound with
+    // no diagnostic anywhere (stokaro/ptah#2125).
+    Attributes []string `json:"attributes,omitempty"`
+}
+    View represents a database view read from the database.
+
+func (v View) QualifiedName() string
+
+### go.5x5.cz/ptah/catalog.VirtualTable
+
+package catalog // import "go.5x5.cz/ptah/catalog"
+
+type VirtualTable struct {
+    Schema string
+    Name   string
+    Module string
+}
+    VirtualTable identifies one SQLite virtual table and the module that owns
+    it, for the lists that talk about virtual tables rather than describe them.
+
 
 ## go.5x5.cz/ptah/config
 
@@ -5117,9 +6517,9 @@ type Constraint struct {
     Initially string
 
     // RequiresExtensions names the extensions the index backing this constraint
-    // cannot be built without, as the catalog resolved them rather than as
+    // cannot be built without, as the currentCatalog resolved them rather than as
     // ExcludeElements spells them. It is filled in for EXCLUDE constraints read
-    // from a live PostgreSQL catalog, where an element prints its operator and
+    // from a live PostgreSQL currentCatalog, where an element prints its operator and
     // prints its operator class only when that class is not the default:
     // `EXCLUDE USING gist (room WITH =, during WITH &&)` over an integer column
     // needs btree_gist and says so nowhere, while
@@ -5174,7 +6574,7 @@ type ContinuousAggregate struct {
     // whatever the server defaults to. The default is not a constant --
     // measured on 2.29.2, an aggregate created without the option is reported
     // `materialized_only = t` -- so comparing an unset declaration against the
-    // catalog as if it said false would report a change on every run, and the
+    // currentCatalog as if it said false would report a change on every run, and the
     // plan for that change drops the aggregate and its materialization.
     MaterializedOnly *bool
     Comment          string // Optional comment for documentation
@@ -5190,8 +6590,8 @@ type ContinuousAggregate struct {
     answers, which selects from the materialization hypertable in a schema the
     extension owns (stokaro/ptah#1026).
 
-    Body is the SELECT as it was WRITTEN. The catalog stores a
-    rewritten one -- `time_bucket('1 hour', time)` comes back as
+    Body is the SELECT as it was WRITTEN. The currentCatalog stores
+    a rewritten one -- `time_bucket('1 hour', time)` comes back as
     `time_bucket('01:00:00'::interval, "time")` -- so the two are compared by
     putting the declaration through the same rewrite rather than by folding the
     text; the comparison's expression probes (internal/dbexprprobe) do that.
@@ -5490,9 +6890,9 @@ type Extension struct {
     Version     string // Specific version requirement (optional)
     Comment     string // Extension comment/description
 
-    // Provides lists the catalog names this extension supplies -- types,
+    // Provides lists the currentCatalog names this extension supplies -- types,
     // functions, relations, operator classes and operator families. It is filled
-    // in when the schema was read from a live PostgreSQL catalog and answers
+    // in when the schema was read from a live PostgreSQL currentCatalog and answers
     // "what stops resolving without this extension", which is almost never the
     // extension's own name: `isn` supplies the type `isbn`.
     //
@@ -5512,7 +6912,7 @@ type Extension struct {
     // no such type entry exists -- an extension supplying `merge(text, text)`
     // and no type at all -- the name is the only evidence there is and it stays.
     //
-    // Empty means not measured. Annotation and YAML sources have no catalog to
+    // Empty means not measured. Annotation and YAML sources have no currentCatalog to
     // ask and leave it unset.
     Provides []string
 
@@ -5591,7 +6991,7 @@ type Field struct {
     // (`There is no type named "USER_DEFINED"`) and accepts only the call.
     TypeRawSQL bool
     // TypeIsDeclaredText records that Type is the text an author wrote, read
-    // back from a catalog that stored it verbatim rather than resolving it.
+    // back from a currentCatalog that stored it verbatim rather than resolving it.
     //
     // SQLite is the only engine where a read can say that. A renderer honors
     // it by writing the type as it stands instead of canonicalizing the
@@ -5640,7 +7040,7 @@ type Field struct {
     CheckName string   // Optional constraint name for the column-level CHECK; defaults to "<table>_<column>_check"
     // NotNullConstraintName is an optional explicit constraint name for the
     // column's NOT NULL, carried only where the target persists one as an
-    // addressable catalog object. See
+    // addressable currentCatalog object. See
     // [go.5x5.cz/ptah/core/ast.ColumnNode.NotNullConstraintName].
     NotNullConstraintName string
     // GeneratedExpression stores the raw SQL expression for generated columns.
@@ -5701,7 +7101,7 @@ type Function struct {
     // Kind separates a function from a procedure. Empty means "function",
     // which is what every declaration written before procedures existed meant.
     //
-    // The two are one model because they are one catalog row on both engines
+    // The two are one model because they are one currentCatalog row on both engines
     // that have them -- pg_proc with prokind 'f' or 'p', ROUTINE_TYPE FUNCTION
     // or PROCEDURE -- and they differ in exactly one property a schema can
     // state: a procedure returns nothing and is invoked with CALL
@@ -5805,7 +7205,7 @@ type Hypertable struct {
     // It is a string rather than a duration because the server's own spelling
     // is what `timescaledb_information.dimensions` reports back, and a
     // declaration that had to be converted to compare would differ from the
-    // catalog on every run.
+    // currentCatalog on every run.
     ChunkInterval string
     // IfNotExists renders `if_not_exists => TRUE`, which turns the server's
     // `table "x" is already a hypertable` error into a skipped notice.
@@ -5820,13 +7220,13 @@ type Hypertable struct {
     table's own definition, and a target that does not have the extension has a
     table without it rather than a different table.
 
-    Nothing outside TimescaleDB's own catalog can see one. Measured on 2.29.2 /
-    PostgreSQL 17.11 after `create_hypertable('conditions', by_range('time'))`,
-    `pg_class.relkind` answers `r`, `pg_depend` reports no extension ownership,
-    and the index the call created carries `deptype 'a'` -- the same as an
-    ordinary user index on an ordinary table. So a description that does not
-    carry this says the table is not partitioned, and replaying it produces a
-    table that is not (stokaro/ptah#1026).
+    Nothing outside TimescaleDB's own currentCatalog can see one. Measured
+    on 2.29.2 / PostgreSQL 17.11 after `create_hypertable('conditions',
+    by_range('time'))`, `pg_class.relkind` answers `r`, `pg_depend` reports no
+    extension ownership, and the index the call created carries `deptype 'a'` --
+    the same as an ordinary user index on an ordinary table. So a description
+    that does not carry this says the table is not partitioned, and replaying it
+    produces a table that is not (stokaro/ptah#1026).
 
     One range dimension. A second is a separate call -- `add_dimension` with
     `by_hash` -- and a separate concept; the read counts them and says how many
@@ -5892,7 +7292,7 @@ type Index struct {
     Granularity int
 
     // RequiresExtensions names the extensions this index cannot be built
-    // without, as the catalog resolved them rather than as the index's own DDL
+    // without, as the currentCatalog resolved them rather than as the index's own DDL
     // spells them. It is filled in when the schema was read from a live
     // PostgreSQL catalog.
     //
@@ -5900,15 +7300,15 @@ type Index struct {
     // type on the index's access method, so an index resting on a default class
     // an extension supplies spells no token of that extension: `USING gin (n)`
     // over an integer column needs btree_gin, and `isbn` at least says a word
-    // [Extension.Provides] can match. The catalog is asked instead of the text
+    // [Extension.Provides] can match. The currentCatalog is asked instead of the text
     // (stokaro/ptah#1286).
     //
     // A printed class such as pg_trgm's `gin_trgm_ops` is recorded here too. The
-    // field is the catalog's answer, not "the part the DDL left out", so a reader
+    // field is the currentCatalog's answer, not "the part the DDL left out", so a reader
     // of it must not conclude that the document names nothing behind the edge.
     //
     // Empty means not measured or nothing to report. Annotation and YAML sources
-    // have no catalog to ask and leave it unset.
+    // have no currentCatalog to ask and leave it unset.
     RequiresExtensions []string
 }
     Index represents a database index definition parsed from Go struct
@@ -6219,7 +7619,7 @@ type Range struct {
     // in the fields above, and the comparator has to tell them apart. Omission
     // means "say nothing about this", so adopting Ptah over a database whose
     // range carries a SUBTYPE_DIFF does not plan its removal; `subtype_diff=""`
-    // means "this range has none", which is a difference from a catalog that
+    // means "this range has none", which is a difference from a currentCatalog that
     // holds one (stokaro/ptah#2223).
     //
     // Only a surface that can spell an empty value fills this. A `CREATE TYPE
@@ -6547,7 +7947,7 @@ type Table struct {
 
     Platform-specific configurations can be specified using overrides:
 
-        //ptah:schema:table name="products" platform.mysql.engine="InnoDB" platform.mysql.comment="Product catalog"
+        //ptah:schema:table name="products" platform.mysql.engine="InnoDB" platform.mysql.comment="Product currentCatalog"
         type Product struct {
             // ... fields
         }
@@ -6637,7 +8037,7 @@ type View struct {
 
     // Attributes carries a view's own WITH clause on the targets that have one
     // -- SQL Server's SCHEMABINDING and VIEW_METADATA. See
-    // [go.5x5.cz/ptah/dbschema/types.DBView] for why they are the view's rather
+    // [go.5x5.cz/ptah/catalog.View] for why they are the view's rather
     // than its body's (stokaro/ptah#2125).
     Attributes []string `json:",omitempty"`
 
@@ -8130,8 +9530,8 @@ func ParseFile(path string) (*goschema.Database, error)
 ## go.5x5.cz/ptah/dbschema
 
 func CloseAndWarn(conn *DatabaseConnection)
-func ReadSchemaWithSchemas(conn *DatabaseConnection, schemas []string) (*types.DBSchema, error)
-func ReadSchemaWithSchemasContext(ctx context.Context, conn *DatabaseConnection, schemas []string) (*types.DBSchema, error)
+func ReadSchemaWithSchemas(conn *DatabaseConnection, schemas []string) (*catalog.Database, error)
+func ReadSchemaWithSchemasContext(ctx context.Context, conn *DatabaseConnection, schemas []string) (*catalog.Database, error)
 func ReadTableRows(ctx context.Context, conn *DatabaseConnection, schema, table string, ...) ([]map[string]any, error)
 type DatabaseConnection struct{ ... }
     func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, error)
@@ -8152,21 +9552,21 @@ func (dc *DatabaseConnection) Close() error
 func (dc *DatabaseConnection) Conn(ctx context.Context) (*sql.Conn, error)
 func (dc *DatabaseConnection) Exec(query string, args ...any) (sql.Result, error)
 func (dc *DatabaseConnection) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
-func (dc *DatabaseConnection) Info() types.DBInfo
+func (dc *DatabaseConnection) Info() catalog.ServerInfo
 func (dc *DatabaseConnection) Query(query string, args ...any) (*sql.Rows, error)
 func (dc *DatabaseConnection) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 func (dc *DatabaseConnection) QueryRow(query string, args ...any) *sql.Row
 func (dc *DatabaseConnection) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
-func (dc *DatabaseConnection) Reader() types.SchemaReader
+func (dc *DatabaseConnection) Reader() catalog.SchemaReader
 func (dc *DatabaseConnection) ResolveIdentifierSemantics(ctx context.Context, names []string) (identifier.Semantics, error)
-func (dc *DatabaseConnection) SchemaWriter() types.SchemaWriter
-func (dc *DatabaseConnection) WithExecutor(executor types.SchemaExecutor) *DatabaseConnection
+func (dc *DatabaseConnection) SchemaWriter() catalog.SchemaWriter
+func (dc *DatabaseConnection) WithExecutor(executor catalog.SchemaExecutor) *DatabaseConnection
 func (dc *DatabaseConnection) WithIsolatedQuerySession(ctx context.Context, opts *sql.TxOptions, use func(IsolatedQueryer) error) (resultErr error)
 func (dc *DatabaseConnection) WithRolledBackTransaction(ctx context.Context, label string, ...) (ran bool, resultErr error)
 func (dc *DatabaseConnection) WithSession(ctx context.Context, use func(*DatabaseConnection) error) (resultErr error)
 func (dc *DatabaseConnection) WithSessionOrCurrent(ctx context.Context, use func(*DatabaseConnection) error) error
 func (dc *DatabaseConnection) WithUntrustedSQLSession(ctx context.Context, use func(*DatabaseConnection) error) error
-func (dc *DatabaseConnection) Writer() types.SchemaExecutor
+func (dc *DatabaseConnection) Writer() catalog.SchemaExecutor
 
 ### go.5x5.cz/ptah/dbschema.IsolatedQueryer
 
@@ -8179,1407 +9579,6 @@ type IsolatedQueryer interface {
     physical database session. It deliberately omits transaction control
     and schema writers so the callback cannot commit or acquire an auxiliary
     connection through Ptah.
-
-
-## go.5x5.cz/ptah/dbschema/types
-
-const NullsOrderFirst = "FIRST" ...
-func QualifyTableName(schema, table string) string
-type DBColumn struct{ ... }
-type DBComposite struct{ ... }
-type DBCompositeField struct{ ... }
-type DBConstraint struct{ ... }
-type DBContinuousAggregate struct{ ... }
-type DBDomain struct{ ... }
-type DBDomainCheck struct{ ... }
-type DBEnum struct{ ... }
-type DBExtendedProperty struct{ ... }
-type DBExtension struct{ ... }
-type DBFunction struct{ ... }
-type DBGrant struct{ ... }
-type DBHypertable struct{ ... }
-type DBIndex struct{ ... }
-type DBIndexPart struct{ ... }
-type DBInfo struct{ ... }
-type DBMatView struct{ ... }
-type DBObjectOwner struct{ ... }
-type DBRLSPolicy struct{ ... }
-type DBRange struct{ ... }
-type DBRole struct{ ... }
-type DBRoleMembership struct{ ... }
-type DBSchema struct{ ... }
-type DBSchemaInfo struct{ ... }
-type DBSequence struct{ ... }
-type DBSynonym struct{ ... }
-type DBTable struct{ ... }
-type DBTrigger struct{ ... }
-type DBView struct{ ... }
-type DBVirtualTable struct{ ... }
-type SchemaExecutor interface{ ... }
-type SchemaReader interface{ ... }
-type SchemaTransaction interface{ ... }
-type SchemaWriter interface{ ... }
-
-### go.5x5.cz/ptah/dbschema/types.DBColumn
-
-package types // import "go.5x5.cz/ptah/dbschema/types"
-
-type DBColumn struct {
-    Name               string  `json:"name"`
-    DataType           string  `json:"data_type"`
-    UDTName            string  `json:"udt_name"`                 // For PostgreSQL enum types
-    FormattedType      string  `json:"formatted_type,omitempty"` // Server's own spelling, where the catalog cannot express it
-    ColumnType         string  `json:"column_type"`              // For MySQL ENUM syntax
-    IsNullable         string  `json:"is_nullable"`              // YES/NO
-    ColumnDefault      *string `json:"column_default"`           // Can be NULL
-    CharacterMaxLength *int    `json:"character_max_length"`     // For VARCHAR, etc.
-    Charset            string  `json:"charset,omitempty"`        // MySQL/MariaDB column character set
-    Collate            string  `json:"collate,omitempty"`        // MySQL/MariaDB column collation
-    // Comment is the column's own comment, where the target has one and the
-    // reader reads it. It is empty for a column nobody commented, which is why
-    // it is omitted from the encoding rather than written as "".
-    Comment string `json:"comment,omitempty"`
-    // NotNullConstraintName is the name the target keeps for this column's NOT
-    // NULL, where it keeps one as an addressable catalog object.
-    //
-    // PostgreSQL 18 records one row per NOT NULL in pg_constraint with
-    // contype 'n', keyed to the column through conkey. PostgreSQL 17 stores
-    // nothing, so this is empty there and the read is not even attempted --
-    // see the capability gate on the reader's projection.
-    //
-    // PostgreSQL 18 names EVERY NOT NULL and provides no catalog flag
-    // separating an author-supplied name from a generated one, so a faithful
-    // read returns all of them. Suppressing names that look generated would
-    // silently lose a supplied name that happens to use the same pattern
-    // (stokaro/ptah#2161).
-    NotNullConstraintName string `json:"not_null_constraint_name,omitempty"`
-    NumericPrecision      *int   `json:"numeric_precision"` // For DECIMAL, etc.
-    NumericScale          *int   `json:"numeric_scale"`     // For DECIMAL, etc.
-    OrdinalPosition       int    `json:"ordinal_position"`
-    IsAutoIncrement       bool   `json:"is_auto_increment"` // Derived field
-    IsPrimaryKey          bool   `json:"is_primary_key"`    // Derived field
-    IsUnique              bool   `json:"is_unique"`         // Derived field
-
-    // TypeIsDeclaredText records that DataType must be written back as it
-    // stands, because canonicalizing it would describe a different column.
-    //
-    // The name records where the fact was first found. SQLite keeps the
-    // declaration and derives an affinity from it at use time, so `VARCHAR(80)`
-    // comes back as `VARCHAR(80)` and means TEXT -- the text an author wrote,
-    // stored verbatim. A description that rewrote it to `TEXT` replayed as a
-    // different table, and the comparison planned a rebuild that changed
-    // nothing (stokaro/ptah#2040).
-    //
-    // The contract is broader than that origin, and two more engines need it
-    // for a reason of their own: their catalog answers with a NATIVE type whose
-    // name Ptah's portable mapping also uses for something else.
-    //
-    //   - SQL Server: `varchar` is one byte per character. The portable mapping
-    //     turns a declared VARCHAR into NVARCHAR, which is two, so a native
-    //     varchar re-rendered bare comes back Unicode (stokaro/ptah#2147).
-    //   - ClickHouse: `DateTime` is second precision and four bytes wide. The
-    //     portable mapping turns a declared DATETIME into DateTime64(3), which
-    //     is millisecond precision and eight (stokaro/ptah#2142).
-    //
-    // PostgreSQL, MySQL, MariaDB and Oracle do not set it: their catalogs
-    // answer with types whose names the portable mapping leaves alone, so there
-    // is nothing for the flag to protect.
-    //
-    // A renderer reads it to decide whether it may canonicalize the spelling.
-    // It must not.
-    TypeIsDeclaredText bool `json:"type_is_declared_text,omitempty"`
-
-    // DomainName names the domain a column is declared with, empty for every
-    // column whose declared type is not a domain (PostgreSQL only today).
-    //
-    // It is a separate fact rather than something read back out of
-    // FormattedType, because FormattedType is filled for arrays as well and the
-    // two shapes want opposite answers: an array's spelling is a TYPE, which may
-    // be compared and normalized like any other, while a domain's spelling is an
-    // IDENTIFIER its author chose and must only ever be compared by identity.
-    // Nothing but the catalog can tell them apart -- a domain over an array is
-    // reported with data_type "ARRAY" exactly like a plain array column
-    // (stokaro/ptah#1138).
-    DomainName string `json:"domain_name,omitempty"`
-
-    // DomainSchema names the schema holding that domain, empty for every column
-    // whose declared type is not a domain.
-    //
-    // A domain's identity is (schema, name), and the name alone is not it:
-    // public.status and other.status are two different types with different
-    // CHECK constraints over possibly different base types. A comparator handed
-    // only "status" for both calls a column that must be converted unchanged,
-    // while the plan still drops the domain the desired schema no longer
-    // declares -- so DROP DOMAIN ... CASCADE takes the column and its data with
-    // nothing having converted it first (stokaro/ptah#1138).
-    //
-    // It is recorded raw, exactly as information_schema.columns.domain_schema
-    // reports it, rather than blanked for the schema being read: the domain a
-    // column is declared with may live in a schema the read never visits, and
-    // blanking it there erases the very distinction this field exists for.
-    // FormattedType cannot stand in, because the server writes a qualifier
-    // there only when the search path forces one.
-    DomainSchema string `json:"domain_schema,omitempty"`
-
-    // GeneratedExpression holds the generated-column expression. Nil for plain
-    // columns.
-    GeneratedExpression *string `json:"generated_expression,omitempty"`
-    // GeneratedKind names the generated-column kind, for example STORED,
-    // VIRTUAL, MATERIALIZED, ALIAS, or EPHEMERAL. Empty for plain columns.
-    GeneratedKind string `json:"generated_kind,omitempty"`
-
-    // IdentityGeneration records an identity column's generation mode, mirroring
-    // the goschema-side field: "ALWAYS" (GENERATED ALWAYS AS IDENTITY, which
-    // rejects explicit inserts), "BY_DEFAULT" (GENERATED BY DEFAULT AS IDENTITY,
-    // which accepts them), or "" for non-identity columns. Populated by readers
-    // for dialects that expose identity metadata (currently PostgreSQL via
-    // pg_attribute.attidentity).
-    IdentityGeneration string `json:"identity_generation,omitempty"`
-
-    // IdentityStart and IdentityIncrement are the first value an identity
-    // column issues and the step between values, as the catalog spells them.
-    //
-    // They are strings rather than numbers because that is what the model they
-    // feed uses, and because the value is not always an int64: SQL Server
-    // allows DECIMAL(38,0) IDENTITY, whose seed does not fit one. Carrying the
-    // digits keeps a reader from having to choose between rounding and
-    // refusing.
-    //
-    // Empty for a non-identity column, and for an identity column whose reader
-    // does not report them.
-    IdentityStart     string `json:"identity_start,omitempty"`
-    IdentityIncrement string `json:"identity_increment,omitempty"`
-}
-    DBColumn represents a database column.
-
-    GeneratedKind / GeneratedExpression are populated by readers for dialects
-    that expose generated column metadata. Schema comparison matches these
-    fields when the goschema-side model also carries generated column metadata.
-
-    DomainName and FormattedType are a pair. DataType reports a domain column's
-    BASE type, so it alone cannot say that the declared type was a domain:
-    DomainName carries that fact and FormattedType carries the spelling the
-    server uses for it, schema-qualified where the search path needs that.
-    Everything that answers "what type is this column declared as" -- the
-    desired-state conversion, the Atlas-compatible JSON inspect output, and the
-    comparator's database side -- must consult DomainName rather than infer the
-    answer from DataType, which reports the base type and drops the domain's
-    constraints with it. See stokaro/ptah#1242.
-
-func (c DBColumn) RawType() string
-
-### go.5x5.cz/ptah/dbschema/types.DBComposite
-
-package types // import "go.5x5.cz/ptah/dbschema/types"
-
-type DBComposite struct {
-    Name   string             `json:"name"`
-    Schema string             `json:"schema,omitempty"`
-    Fields []DBCompositeField `json:"fields"`
-}
-    DBComposite represents a PostgreSQL composite type read from the database.
-
-func (c DBComposite) QualifiedName() string
-
-### go.5x5.cz/ptah/dbschema/types.DBCompositeField
-
-package types // import "go.5x5.cz/ptah/dbschema/types"
-
-type DBCompositeField struct {
-    Name string `json:"name"`
-    Type string `json:"type"`
-}
-    DBCompositeField is a single field of a composite type read from the
-    database.
-
-
-### go.5x5.cz/ptah/dbschema/types.DBConstraint
-
-package types // import "go.5x5.cz/ptah/dbschema/types"
-
-type DBConstraint struct {
-    Name           string   `json:"name"`
-    TableName      string   `json:"table_name"`
-    Schema         string   `json:"schema,omitempty"`
-    Type           string   `json:"type"` // PRIMARY KEY, FOREIGN KEY, UNIQUE, CHECK, EXCLUDE
-    ColumnName     string   `json:"column_name"`
-    ColumnNames    []string `json:"column_names,omitempty"`
-    ForeignTable   *string  `json:"foreign_table"` // For foreign keys
-    ForeignSchema  string   `json:"foreign_schema,omitempty"`
-    ForeignColumn  *string  `json:"foreign_column"` // For foreign keys
-    ForeignColumns []string `json:"foreign_columns,omitempty"`
-    DeleteRule     *string  `json:"delete_rule"` // CASCADE, RESTRICT, etc.
-    UpdateRule     *string  `json:"update_rule"` // CASCADE, RESTRICT, etc.
-    // Deferrable reports a foreign key whose check may be postponed to the end
-    // of a transaction, read from pg_constraint.condeferrable.
-    Deferrable bool `json:"deferrable,omitempty"`
-    // Initially is the default timing of a deferrable check -- "deferred" or
-    // "immediate" -- read from pg_constraint.condeferred. It is empty for a
-    // constraint that is not deferrable, so a schema that never asked for one
-    // reads back exactly as it did before (stokaro/ptah#1624).
-    Initially   string  `json:"initially,omitempty"`
-    CheckClause *string `json:"check_clause"` // For CHECK constraints
-    // NullsDistinct carries PostgreSQL UNIQUE NULLS [NOT] DISTINCT state.
-    // Nil means the clause was not present in the definition.
-    NullsDistinct *bool `json:"nulls_distinct,omitempty"`
-    // IncludeColumns carries PostgreSQL INCLUDE columns for covering UNIQUE
-    // and PRIMARY KEY constraints.
-    IncludeColumns []string `json:"include_columns,omitempty"`
-    // EXCLUDE constraint specific fields (PostgreSQL only)
-    UsingMethod     *string `json:"using_method"`     // Index method: gist, btree, etc.
-    ExcludeElements *string `json:"exclude_elements"` // Elements with operators: "room_id WITH =, during WITH &&"
-    WhereCondition  *string `json:"where_condition"`  // Optional WHERE clause for EXCLUDE constraints
-
-    // RequiresExtensions names the extensions the index backing this constraint
-    // cannot be built without, read from that index exactly as
-    // [DBIndex.RequiresExtensions] is.
-    //
-    // It is a separate field rather than a lookup because the backing index is
-    // not part of the entity model: a constraint owns its index, and the
-    // converter drops the index row so the constraint is rendered once. The
-    // dependency is as hard to read off the text here as on a plain index, and
-    // for the same reason. Measured on PostgreSQL 17.10,
-    // `EXCLUDE USING gist (room WITH =, during WITH &&)` over an integer column
-    // needs btree_gist and pg_get_constraintdef prints no token of it, while
-    // `EXCLUDE USING gist (txt gist_trgm_ops WITH =)` needs pg_trgm and prints
-    // the class, because a class is printed exactly when it is not the default
-    // (stokaro/ptah#1286).
-    RequiresExtensions []string `json:"requires_extensions,omitempty"`
-}
-    DBConstraint represents a database constraint
-
-func (c DBConstraint) ColumnNamesOrDefault() []string
-func (c DBConstraint) ForeignColumnsOrDefault() []string
-func (c DBConstraint) QualifiedForeignTableName() string
-func (c DBConstraint) QualifiedTableName() string
-
-### go.5x5.cz/ptah/dbschema/types.DBContinuousAggregate
-
-package types // import "go.5x5.cz/ptah/dbschema/types"
-
-type DBContinuousAggregate struct {
-    Schema string `json:"schema"` // Schema holding the aggregate
-    Name   string `json:"name"`   // Aggregate name, which is also the view name
-
-    // HypertableSchema and HypertableName name the hypertable the aggregate
-    // materializes from, which is the object it depends on.
-    HypertableSchema string `json:"hypertable_schema"`
-    HypertableName   string `json:"hypertable_name"`
-
-    // MaterializedOnly reports whether the aggregate reads only materialized
-    // data, rather than combining it with the raw rows since the last refresh.
-    MaterializedOnly bool `json:"materialized_only"`
-
-    // Definition is the SELECT the aggregate was declared with.
-    Definition string `json:"definition"`
-}
-    DBContinuousAggregate is one TimescaleDB continuous aggregate.
-
-    To PostgreSQL it is a view: pg_class reports relkind 'v', and a reader that
-    asks only PostgreSQL describes it as one. That is wrong in both directions,
-    and both were measured on TimescaleDB 2.29.2 / PostgreSQL 17.11.
-
-    A plan that drops it emits DROP VIEW, and the server answers `cannot drop
-    continuous aggregate using DROP VIEW`, hinting at DROP MATERIALIZED VIEW.
-    So the plan cannot apply, and the next run reports the same pending change.
-
-    A plan that creates it emits CREATE VIEW with the body pg_get_viewdef
-    answers, which is not the body anybody wrote: TimescaleDB rewrites the
-    definition to select from the materialization hypertable, so the emitted
-    view names a relation in a schema the extension owns.
-
-    Definition is therefore the catalog's own view_definition -- the SELECT as
-    it was written -- and not pg_get_viewdef's.
-
-func (a DBContinuousAggregate) QualifiedName() string
-
-### go.5x5.cz/ptah/dbschema/types.DBDomain
-
-package types // import "go.5x5.cz/ptah/dbschema/types"
-
-type DBDomain struct {
-    Name     string `json:"name"`
-    Schema   string `json:"schema,omitempty"`
-    BaseType string `json:"base_type"`
-    NotNull  bool   `json:"not_null"`
-    Default  string `json:"default,omitempty"`
-    Check    string `json:"check,omitempty"`
-    // CheckConstraints names each CHECK the catalog holds for this domain,
-    // alongside the expression the server stores for it. Check above is the
-    // same expressions joined with AND, which is what a renderer needs and
-    // what a comparison of the whole domain reads; a constraint cannot be
-    // altered by that joined form, because ALTER DOMAIN ... DROP CONSTRAINT
-    // takes a name.
-    //
-    // It is a reader-only execution fact, like DBFunction.IdentityArguments:
-    // a serialized schema description declares what a domain must enforce,
-    // not what the server happened to name the constraint enforcing it.
-    CheckConstraints []DBDomainCheck `json:"-"`
-}
-    DBDomain represents a PostgreSQL domain type read from the database.
-
-func (d DBDomain) QualifiedName() string
-
-### go.5x5.cz/ptah/dbschema/types.DBDomainCheck
-
-package types // import "go.5x5.cz/ptah/dbschema/types"
-
-type DBDomainCheck struct {
-    Name       string
-    Expression string
-}
-    DBDomainCheck is one named CHECK constraint of a domain, as the catalog
-    holds it. Expression is the server's own rewritten form -- PostgreSQL
-    reparses and prints a CHECK rather than storing the text it was given -- so
-    it compares equal only to another expression that made the same round trip.
-
-
-### go.5x5.cz/ptah/dbschema/types.DBEnum
-
-package types // import "go.5x5.cz/ptah/dbschema/types"
-
-type DBEnum struct {
-    Name string `json:"name"`
-    // Schema owns the enum. Readers blank it for the connection's own schema,
-    // exactly as they do for tables, views and domains, so a filter or a
-    // comparison reconstructs the qualified spelling from the connection's
-    // default. Without it a schema-qualified `--exclude app.color` matched
-    // nothing and silently kept the enum (stokaro/ptah#933).
-    Schema string   `json:"schema,omitempty"`
-    Values []string `json:"values"`
-}
-    DBEnum represents a database enum type (PostgreSQL)
-
-func (e DBEnum) QualifiedName() string
-
-### go.5x5.cz/ptah/dbschema/types.DBExtendedProperty
-
-package types // import "go.5x5.cz/ptah/dbschema/types"
-
-type DBExtendedProperty struct {
-    Name   string `json:"name"`             // Property name, as sys.extended_properties records it
-    Schema string `json:"schema"`           // Schema owning the addressed object, or the addressed schema
-    Table  string `json:"table,omitempty"`  // Table the property is on; empty for a schema-scoped property
-    Column string `json:"column,omitempty"` // Column the property is on; requires Table
-    Value  string `json:"value"`            // The value, when ValueType names one this description can carry
-
-    // ValueType is the sql_variant base type SQL_VARIANT_PROPERTY reports:
-    // nvarchar, int, date, and so on.
-    ValueType string `json:"value_type"`
-
-    // ValueNotRepresentable marks a property whose value is stored under a base
-    // type Ptah cannot write back.
-    //
-    // sp_addextendedproperty takes a sql_variant, so a property may hold an int
-    // or a date as well as a string -- measured on SQL Server 2022, @value=42
-    // stores base type `int` and a DATE stores `date`. The renderer writes an
-    // N'' literal, so re-emitting either of those would change its type, and
-    // CONVERT(NVARCHAR, value) on the date answers `Jan  2 2026`, which is a
-    // locale-dependent rendering rather than the value.
-    //
-    // The row is reported rather than dropped so that a description says the
-    // property is there, and the comparator declines it in both directions:
-    // nothing is planned to add it, and nothing is planned to take it away.
-    // Ptah leaves it exactly as it found it.
-    ValueNotRepresentable bool `json:"value_not_representable,omitempty"`
-}
-    DBExtendedProperty is one SQL Server extended property read from
-    sys.extended_properties.
-
-    SQL Server hangs a property off a three-level address, and this type carries
-    it. No level at all is a DATABASE-scoped property (class 0); Schema alone is
-    a schema-scoped one (class 3); Schema and Table together are object-scoped,
-    and adding Column addresses a column of it (class 1, minor_id 0 or the
-    column's id).
-
-    A database-scoped property is in no schema, so a read narrowed to one
-    still carries it -- the rule an extension already follows, where placement
-    is not ownership. Dropping it from a narrowed description would plan
-    sp_dropextendedproperty for a property the declaration still names.
-
-    MS_Description is not read here, because Ptah already models it: the reader
-    turns it into the object's Comment, and reporting it twice would let the
-    comment comparator and this one plan the same change from two places.
-    The declaration side refuses it by name for the same reason, and says to use
-    the comment instead.
-
-func (p DBExtendedProperty) QualifiedOwner() string
-
-### go.5x5.cz/ptah/dbschema/types.DBExtension
-
-package types // import "go.5x5.cz/ptah/dbschema/types"
-
-type DBExtension struct {
-    Name             string  `json:"name"`              // Extension name (pg_trgm, postgis, etc.)
-    Version          string  `json:"version"`           // Installed version
-    Schema           string  `json:"schema"`            // Schema where extension is installed
-    Relocatable      bool    `json:"relocatable"`       // Whether extension can be moved between schemas
-    Comment          *string `json:"comment"`           // Extension comment/description
-    DefaultVersion   *string `json:"default_version"`   // Default version available
-    InstalledVersion *string `json:"installed_version"` // Currently installed version (may differ from default)
-
-    // Provides lists the catalog names this extension supplies -- its types,
-    // functions, relations, operator classes and operator families -- read from
-    // pg_depend. It answers "what would stop resolving if this extension were
-    // not here", which is a different question from the extension's own name and
-    // usually a disjoint set of words: `isn` supplies the type `isbn`, and
-    // `pgcrypto` supplies the function `gen_salt`.
-    //
-    // Names pg_catalog also supplies are excluded, because a document using one
-    // resolves it with the extension dropped. This matters because contrib
-    // extensions mostly supply overloads of core functions: unfiltered, `citext`
-    // contributes `max`, `min`, `strpos`, `replace` and `split_part`, and
-    // `pgcrypto` contributes `gen_random_uuid`, which core has supplied since
-    // PostgreSQL 13.
-    //
-    // A function name pg_get_keywords() reports as a SQL keyword is excluded too,
-    // because a name read out of SQL text carries no position: `hstore` supplies
-    // three functions named `delete`, and `DELETE FROM audit` in a plpgsql body
-    // is indistinguishable from a call to `delete(h, 'k')`. That exclusion is
-    // conditional on the redundancy that makes it free -- the same extension
-    // must also contribute to this list a type appearing in that function's
-    // signature, so a genuine call spells the type and the type entry answers
-    // for it. An extension supplying `merge(text, text)` and no type has its
-    // only evidence in the name, and the name is kept.
-    //
-    // Empty means not measured rather than "supplies nothing" -- every extension
-    // supplies something, and readers that do not consult a catalog (Go
-    // annotations, YAML) leave this unset.
-    Provides []string `json:"provides,omitempty"`
-}
-    DBExtension represents a PostgreSQL extension installed in the database
-
-
-### go.5x5.cz/ptah/dbschema/types.DBFunction
-
-package types // import "go.5x5.cz/ptah/dbschema/types"
-
-type DBFunction struct {
-    Name string `json:"name"` // Function name
-    // Kind separates a function from a procedure. Empty means function, which
-    // is what every description written before procedures existed meant.
-    Kind string `json:"kind,omitempty"`
-    // Schema owns the function. Readers blank it for the connection's own
-    // schema, the same convention tables, views and domains follow, so a
-    // filter reconstructs the qualified spelling from the connection's
-    // default. Without it a schema-qualified `--exclude app.fn_app` matched
-    // nothing and silently kept the function (stokaro/ptah#933).
-    Schema     string `json:"schema,omitempty"`
-    Parameters string `json:"parameters"` // Full declaration parameters (e.g., "tenant_id_param TEXT DEFAULT 'public'")
-    // IdentityArguments is PostgreSQL's canonical input-argument type list for
-    // identifying an overload in ALTER or DROP FUNCTION. It deliberately stays
-    // separate from Parameters: declaration parameters may contain names,
-    // defaults, and OUT-only arguments that are not part of a function's drop
-    // identity. Nil means a reader did not capture the identity; a non-nil empty
-    // string is the valid identity of a zero-input or OUT-only function. This
-    // reader-only execution fact is not part of serialized schema descriptions.
-    IdentityArguments *string `json:"-"`
-    // Definer is the MySQL-family account that owns the routine. It is a
-    // reader-only execution fact: replacing a foreign SQL SECURITY DEFINER
-    // routine without preserving this account silently changes the principal
-    // under which its body runs.
-    Definer string `json:"-"`
-    // CurrentAccount is the MySQL-family CURRENT_USER() value for the connection
-    // that read this routine. Together with Definer it lets database-aware
-    // comparison distinguish a same-owner replacement from a principal change.
-    CurrentAccount string `json:"-"`
-    Returns        string `json:"returns"`    // Return type (e.g., "VOID", "TEXT")
-    Language       string `json:"language"`   // Function language (e.g., "plpgsql", "sql")
-    Security       string `json:"security"`   // Security context (e.g., "DEFINER", "INVOKER")
-    Volatility     string `json:"volatility"` // Function volatility (e.g., "STABLE", "IMMUTABLE", "VOLATILE")
-    Body           string `json:"body"`       // Function body/implementation
-    Comment        string `json:"comment"`    // Function comment/description
-}
-    DBFunction represents a custom function read from the database.
-
-func (f DBFunction) QualifiedName() string
-
-### go.5x5.cz/ptah/dbschema/types.DBGrant
-
-package types // import "go.5x5.cz/ptah/dbschema/types"
-
-type DBGrant struct {
-    Role       string `json:"role"`                 // Role receiving the privilege
-    Privilege  string `json:"privilege"`            // Granted privilege, e.g. SELECT or USAGE
-    ObjectType string `json:"object_type"`          // TABLE, SCHEMA, or SEQUENCE
-    Schema     string `json:"schema,omitempty"`     // Schema containing the target object
-    ObjectName string `json:"object_name"`          // Target table or schema name
-    WithOption bool   `json:"with_option"`          // Whether the grant has WITH GRANT OPTION
-    GrantedBy  string `json:"granted_by,omitempty"` // Grantor role
-
-    // IsPartialRevoke marks a row that SUBTRACTS from a broader grant rather
-    // than adding one. Only ClickHouse produces it, and only the ClickHouse
-    // reader sets it: `GRANT SELECT ON db.* TO r` followed by
-    // `REVOKE SELECT ON db.t FROM r` leaves two rows in system.grants, the
-    // second with is_partial_revoke = 1, and SHOW GRANTS prints both lines.
-    //
-    // Ptah does not manage that shape — a grant minus exceptions has no
-    // declaration to compare against — so nothing plans one. The field exists
-    // so the reader reports the row instead of dropping it, which is what lets
-    // a live validation refuse a managed role whose effective privileges are
-    // quietly narrower than its grant row alone would say.
-    //
-    // omitempty keeps every PostgreSQL serialization byte-identical.
-    IsPartialRevoke bool `json:"is_partial_revoke,omitempty"`
-}
-    DBGrant represents a privilege grant read from the database.
-
-func (g DBGrant) QualifiedTarget() string
-
-### go.5x5.cz/ptah/dbschema/types.DBHypertable
-
-package types // import "go.5x5.cz/ptah/dbschema/types"
-
-type DBHypertable struct {
-    Schema string `json:"schema"` // Schema holding the hypertable
-    Name   string `json:"name"`   // Table name, which is an ordinary table name
-
-    // PrimaryDimension is the column the hypertable partitions on first, and
-    // PrimaryDimensionType is that column's type as the catalog spells it.
-    PrimaryDimension     string `json:"primary_dimension"`
-    PrimaryDimensionType string `json:"primary_dimension_type"`
-
-    // ChunkInterval is the width of one chunk on the primary dimension, in the
-    // server's own spelling -- `7 days`, `1 day`. It is empty for a dimension
-    // the catalog reports no time interval for, which is every hash dimension
-    // and an integer range one.
-    //
-    // The server's spelling is what a declaration has to carry: a value
-    // converted to compare would differ from the catalog on every run.
-    ChunkInterval string `json:"chunk_interval,omitempty"`
-
-    // Dimensions counts the partitioning dimensions, so a note can say that a
-    // table has more than the one it names.
-    Dimensions int `json:"dimensions"`
-}
-    DBHypertable is a TimescaleDB hypertable, as the extension's own catalog
-    describes it.
-
-    It carries the primary dimension and nothing else about the partitioning,
-    which is a scope decision rather than an oversight: this description is read
-    to be NAMED, not to be replayed, and the column a hypertable is partitioned
-    on is what makes the note concrete enough to act on. Representing the full
-    dimension set is what a declaration syntax would need, and that is the slice
-    after this one.
-
-func (h DBHypertable) QualifiedName() string
-
-### go.5x5.cz/ptah/dbschema/types.DBIndex
-
-package types // import "go.5x5.cz/ptah/dbschema/types"
-
-type DBIndex struct {
-    Name      string   `json:"name"`
-    TableName string   `json:"table_name"`
-    Schema    string   `json:"schema,omitempty"`
-    Columns   []string `json:"columns"`
-    // Parts preserves key order and direction when the database exposes it.
-    // Empty means the reader supplied only the legacy ascending Columns form.
-    Parts      []DBIndexPart `json:"parts,omitempty"`
-    IsUnique   bool          `json:"is_unique"`
-    IsPrimary  bool          `json:"is_primary"`
-    Definition string        `json:"definition"` // Full index definition
-    // KeyPartsIncomplete reports that the catalog described a key part this
-    // reader cannot name, so Columns (and Parts) list fewer parts than the key
-    // actually has. The MySQL reader sets it for a functional key part --
-    // `KEY idx ((b + 1))` -- whose information_schema.STATISTICS row carries a
-    // NULL COLUMN_NAME and an EXPRESSION column that MariaDB does not have.
-    //
-    // A comparison must not read the key columns of such an index as the whole
-    // key: it would plan a rebuild on every run for a key that never changed.
-    // Everything else about the index is reported normally.
-    KeyPartsIncomplete bool `json:"key_parts_incomplete,omitempty"`
-    // Condition is the WHERE clause for partial indexes when the dialect
-    // exposes one structurally.
-    Condition string `json:"condition,omitempty"`
-    // Comment is the index's own object comment, as PostgreSQL keeps it in
-    // pg_description for the index relation and reports through
-    // obj_description(indexrelid, 'pg_class').
-    //
-    // It is the index's, not the table's: COMMENT ON INDEX and COMMENT ON TABLE
-    // address different objects, and an index has a slot for one on every
-    // surface below this model -- goschema.Index.Comment, the Atlas-compatible
-    // HCL reader's `comment` attribute, and the HCL writer's. Before #1242 this
-    // field did not exist, so a comment the server reported was dropped between
-    // the catalog and the model and every surface below it saw an index that
-    // had none. Empty means the object carries no comment.
-    Comment string `json:"comment,omitempty"`
-    // NullsDistinct carries PostgreSQL UNIQUE INDEX NULLS [NOT] DISTINCT
-    // state. Nil means the clause was not present in the definition.
-    NullsDistinct *bool `json:"nulls_distinct,omitempty"`
-
-    // Method is the index access method as the server spells it -- btree,
-    // gin, gist, brin, hash. It is deliberately not Type: Type is the
-    // ClickHouse data-skipping-index type below, a different concept that
-    // happens to share a slot in the annotation surface, and overloading one
-    // field with both would make a ClickHouse "bloom_filter" and a PostgreSQL
-    // "gin" indistinguishable at this layer. Empty means the reader did not
-    // report an access method.
-    //
-    // A dropped access method is not always a quiet degradation: an index on
-    // a type with no btree operator class, such as point, does not replay at
-    // all without it. See #1242.
-    Method string `json:"method,omitempty"`
-    // IncludeColumns carries PostgreSQL INCLUDE payload columns, the
-    // non-key columns stored in the index for index-only scans.
-    IncludeColumns []string `json:"include_columns,omitempty"`
-    // StorageParams carries the index's WITH (...) storage parameters, keyed by
-    // parameter name with the value as the server spells it.
-    //
-    // A reader records only the parameters the rest of the model can carry back
-    // out again. A parameter recorded here but dropped by one of the surfaces
-    // the model passes through would make every such index differ from its own
-    // inspected document forever, and the rebuild that difference plans would
-    // drop the parameter it was meant to protect. See #1242 and
-    // docs/conformance.md for the ones a PostgreSQL reader deliberately omits.
-    StorageParams map[string]string `json:"storage_params,omitempty"`
-
-    // RequiresExtensions names the extensions this index cannot be built
-    // without, as the catalog resolved them rather than as the DDL spells them.
-    //
-    // An index key names an operator class only when that class is not the
-    // default for its type on its access method, so an index whose default
-    // class comes from an extension refers to that extension with no token at
-    // all. Measured on PostgreSQL 17.10: with btree_gin installed,
-    // CREATE INDEX t_gin ON t USING gin (n int4_ops) over an integer column is
-    // stored, and rendered back, as CREATE INDEX t_gin ON public.t USING gin
-    // (n) -- and replaying that on a database without btree_gin fails with
-    // `data type integer has no default operator class for access method
-    // "gin"`. pg_index.indclass holds the class each key actually resolved to,
-    // so the reader answers the question exactly (stokaro/ptah#1286).
-    //
-    // The index's access method is read the same way, from pg_class.relam. An
-    // access method the catalog owns, `gin` or `gist`, belongs to no extension
-    // and pins nothing; one an extension supplies, such as bloom's `bloom`,
-    // resolves to that extension.
-    //
-    // The edge is recorded whether or not the DDL prints the class. It does print
-    // a non-default one -- pg_trgm's gin_trgm_ops arrives as
-    // CREATE INDEX w_trgm ON public.w USING gin (txt gin_trgm_ops) -- and that
-    // index resolves to pg_trgm here as well. This field answers "which
-    // extension owns what this index resolved to", not "which dependency the DDL
-    // omitted".
-    //
-    // Empty means the reader found no such edge, which is the ordinary case:
-    // core supplies the default operator class for every core type its access
-    // methods index. Readers with no catalog to ask leave it unset.
-    RequiresExtensions []string `json:"requires_extensions,omitempty"`
-
-    // Type is the ClickHouse data-skipping-index type. One of
-    // "minmax" / "set(N)" / "bloom_filter" / "bloom_filter(p)" /
-    // "tokenbf_v1(...)" / "ngrambf_v1(...)" etc. Empty on non-ClickHouse
-    // readers.
-    Type string `json:"type,omitempty"`
-    // Expression is the full ClickHouse skipping-index expression
-    // (column reference, function call, tuple, etc.). The reader also writes
-    // the expression into Columns[0] for back-compat with the existing diff
-    // layer; Expression is the canonical field for richer diffing once
-    // that's wired up. Empty on non-ClickHouse readers.
-    Expression string `json:"expression,omitempty"`
-    // Granularity is the GRANULARITY value the index was declared with.
-    // Non-zero only on ClickHouse skipping indexes.
-    Granularity int `json:"granularity,omitempty"`
-
-    // PartitionAttached reports that this index is a partition's copy of an
-    // index on its partitioned parent, attached to that parent index rather
-    // than standing on its own.
-    //
-    // PostgreSQL creates one such index per partition whenever an index is
-    // created on a partitioned parent, names it itself
-    // (events_2026_tenant_idx), and refuses to drop it alone:
-    // DROP INDEX "events_2026_tenant_idx" answers `cannot drop index
-    // events_2026_tenant_idx because index idx_events_tenant requires it`
-    // (SQLSTATE 2BP01). It is the index equivalent of a constraint's backing
-    // index -- a real catalog row that no standalone statement addresses --
-    // and a comparison that reads it as an ordinary index plans a DROP the
-    // server refuses.
-    //
-    // The parent index is not marked: it is the object the DDL names, and on
-    // PostgreSQL it is relkind 'I' while a partition's copy is relkind 'i'.
-    // Only readers that can ask the catalog (pg_inherits over index
-    // relations) set this; everything else leaves it false.
-    PartitionAttached bool `json:"partition_attached,omitempty"`
-}
-    DBIndex represents a database index.
-
-    Most fields are dialect-neutral. The Type/Expression/Granularity trio is
-    populated only by the ClickHouse reader for data-skipping indexes; other
-    readers leave them at their zero values so the diff layer does not start
-    emitting spurious type/granularity changes for PostgreSQL or MySQL indexes.
-
-func (i DBIndex) QualifiedTableName() string
-
-### go.5x5.cz/ptah/dbschema/types.DBIndexPart
-
-package types // import "go.5x5.cz/ptah/dbschema/types"
-
-type DBIndexPart struct {
-    Name string `json:"name"`
-    // Expr is a raw indexed expression, such as lower(name). It is mutually
-    // exclusive with Name: an expression is not an identifier, and a reader
-    // that reports one in Name makes the renderer quote it into a column
-    // reference that does not exist.
-    Expr string `json:"expr,omitempty"`
-    // Operator is the operator class this key was built with, for example
-    // text_pattern_ops, together with its parameters when it has any, for
-    // example tsvector_ops(siglen=64). Empty means the key uses its type's
-    // default class with no parameters, which is the only case where omitting
-    // it from emitted DDL reproduces the index. See #1242.
-    //
-    // A parameterised class is carried even when it is the type's default,
-    // because the class name is the only place its parameters can hang.
-    Operator string `json:"operator,omitempty"`
-    Desc     bool   `json:"desc,omitempty"`
-    // NullsOrder is an explicit NULLS ordering for this key: "FIRST", "LAST",
-    // or empty when the key uses the direction's default. PostgreSQL defaults
-    // to NULLS LAST for ASC and NULLS FIRST for DESC, so only the deviating
-    // spelling has to be carried.
-    NullsOrder string `json:"nulls_order,omitempty"`
-    // Prefix is the number of leading characters this key indexes, which MySQL
-    // spells `INDEX (notes(20))`. Empty means the key covers the whole column.
-    //
-    // It is REQUIRED for a BLOB or TEXT column there -- MySQL refuses an index
-    // on one without a length -- so a key that loses it produces a description
-    // that cannot be applied (stokaro/ptah#2112).
-    Prefix string `json:"prefix,omitempty"`
-}
-    DBIndexPart represents one ordered key column in an introspected index.
-
-
-### go.5x5.cz/ptah/dbschema/types.DBInfo
-
-package types // import "go.5x5.cz/ptah/dbschema/types"
-
-type DBInfo struct {
-    Dialect string `json:"dialect"` // postgres, mysql, mariadb
-    Version string `json:"version"`
-    Schema  string `json:"schema"` // public, database name, etc.
-
-    // URL is the database connection URL the connection was opened from, with
-    // whatever credentials it carried. Callers that reconnect to the same
-    // target read it -- a dev-database URL, a second session for an online DDL
-    // tool, a realm-scope decision that depends on the URL's path.
-    //
-    // It is excluded from JSON because every other field here is tagged, and a
-    // struct whose tags invite marshalling must not carry one field that turns
-    // a marshal into a credential disclosure: `json.Marshal(conn.Info())` is
-    // the obvious thing to do with a DBInfo, and it must not write the
-    // database password into whatever the caller does with the bytes. Marshal
-    // [DBInfo.RedactedURL] instead -- it names the same target with the
-    // secrets removed (stokaro/ptah#2246).
-    URL string `json:"-"`
-
-    // RedactedURL is URL with every secret it carries replaced, suitable for a
-    // log line, an error message or a serialized report. It occupies the `url`
-    // JSON name so a consumer that marshals DBInfo still learns which target
-    // the description came from.
-    RedactedURL string `json:"url"`
-
-    Capabilities        capability.Capabilities `json:"capabilities"`         // resolved from Dialect + Version for live connections
-    IdentifierSemantics identifier.Semantics    `json:"identifier_semantics"` // catalog identifier metadata and static rules
-}
-    DBInfo contains connection and metadata information
-
-
-### go.5x5.cz/ptah/dbschema/types.DBMatView
-
-package types // import "go.5x5.cz/ptah/dbschema/types"
-
-type DBMatView struct {
-    Name    string `json:"name"`    // Materialized view name
-    Schema  string `json:"schema"`  // Schema where the materialized view is defined
-    Body    string `json:"body"`    // SELECT query used as the materialized view definition
-    Comment string `json:"comment"` // Materialized view comment/description
-
-    // Refresh is the ClickHouse refresh schedule read back from the server,
-    // nil for a view that has none.
-    //
-    // It is read from create_table_query, which is the only place the schedule
-    // survives: system.tables.as_select is byte-identical for a plain view and
-    // a refreshable one (stokaro/ptah#1802).
-    Refresh *ast.MatViewRefreshSpec
-}
-    DBMatView represents a PostgreSQL materialized view read from the database.
-
-func (v DBMatView) QualifiedName() string
-
-### go.5x5.cz/ptah/dbschema/types.DBObjectOwner
-
-package types // import "go.5x5.cz/ptah/dbschema/types"
-
-type DBObjectOwner struct {
-    // Kind is the object kind.
-    Kind string `json:"kind"`
-    // Schema is the schema the object lives in, empty for a schema itself.
-    Schema string `json:"schema,omitempty"`
-    // Name is the object's name.
-    Name string `json:"name"`
-    // Owner is the role that owns it.
-    Owner string `json:"owner"`
-    // OwnerCanLogin reports whether that role can log in, read from the
-    // catalog beside the owner rather than inferred from the described roles:
-    // the owner of everything on a default PostgreSQL database is the
-    // bootstrap superuser, which Ptah deliberately does not describe, and an
-    // analysis that had to look it up in the role list would go quiet exactly
-    // where the question matters.
-    OwnerCanLogin bool `json:"owner_can_login"`
-}
-    DBObjectOwner is the owner of one schema object.
-
-    Kind is the object kind in Ptah's own vocabulary -- table, view,
-    materialized view, sequence, schema -- rather than the catalog's letter,
-    so a consumer need not know pg_class.relkind to read it.
-
-
-### go.5x5.cz/ptah/dbschema/types.DBRLSPolicy
-
-package types // import "go.5x5.cz/ptah/dbschema/types"
-
-type DBRLSPolicy struct {
-    Name                string `json:"name"`                  // Policy name
-    Table               string `json:"table"`                 // Target table name
-    PolicyFor           string `json:"policy_for"`            // Operations policy applies to (e.g., "ALL", "SELECT")
-    ToRoles             string `json:"to_roles"`              // Target roles (e.g., "app_user", "PUBLIC")
-    UsingExpression     string `json:"using_expression"`      // USING clause expression
-    WithCheckExpression string `json:"with_check_expression"` // WITH CHECK clause expression
-    Comment             string `json:"comment"`               // Policy comment/description
-}
-    DBRLSPolicy represents a PostgreSQL RLS policy read from the database
-
-
-### go.5x5.cz/ptah/dbschema/types.DBRange
-
-package types // import "go.5x5.cz/ptah/dbschema/types"
-
-type DBRange struct {
-    Name    string `json:"name"`
-    Schema  string `json:"schema,omitempty"`
-    Subtype string `json:"subtype"`
-    // SubtypeOpClass is the operator class backing the subtype's ordering
-    // (pg_range.rngsubopc). Always populated by the catalog, including when the
-    // author never named one, so the comparator only consults it when the
-    // desired schema declares one.
-    SubtypeOpClass string `json:"subtype_opclass,omitempty"`
-    // Collation is the subtype collation (pg_range.rngcollation), empty for
-    // non-collatable subtypes.
-    Collation string `json:"collation,omitempty"`
-    // Canonical is the canonicalization function (pg_range.rngcanonical), empty
-    // when the range has none.
-    Canonical string `json:"canonical,omitempty"`
-    // SubtypeDiff is the subtype difference function (pg_range.rngsubdiff),
-    // empty when the range has none.
-    SubtypeDiff string `json:"subtype_diff,omitempty"`
-}
-    DBRange represents a PostgreSQL range type read from the database.
-
-    Everything after Subtype exists so a change to an EXISTING range type
-    can be detected. While the reader returned only the name and subtype, the
-    comparator had nothing to compare and reported a changed range as converged
-    (stokaro/ptah#931 item 2).
-
-func (r DBRange) QualifiedName() string
-
-### go.5x5.cz/ptah/dbschema/types.DBRole
-
-package types // import "go.5x5.cz/ptah/dbschema/types"
-
-type DBRole struct {
-    Name        string `json:"name"`         // Role name
-    Login       bool   `json:"login"`        // Whether role can login
-    Superuser   bool   `json:"superuser"`    // Whether role is superuser
-    CreateDB    bool   `json:"create_db"`    // Whether role can create databases
-    CreateRole  bool   `json:"create_role"`  // Whether role can create other roles
-    Inherit     bool   `json:"inherit"`      // Whether role inherits privileges
-    Replication bool   `json:"replication"`  // Whether role can initiate replication
-    HasPassword bool   `json:"has_password"` // Whether role has a password set
-    Comment     string `json:"comment"`      // Role comment/description
-}
-    DBRole represents a PostgreSQL role read from the database
-
-
-### go.5x5.cz/ptah/dbschema/types.DBRoleMembership
-
-package types // import "go.5x5.cz/ptah/dbschema/types"
-
-type DBRoleMembership struct {
-    // Role is the role whose privileges are granted.
-    Role string `json:"role"`
-    // Member is the role that receives them.
-    Member string `json:"member"`
-    // AdminOption reports whether Member may grant Role onward.
-    AdminOption bool `json:"admin_option"`
-}
-    DBRoleMembership is one role-in-role edge: Member holds everything Role
-    grants, subject to Role's inheritance setting.
-
-    The two names are read from the same catalog the roles come from, and both
-    are roles Ptah manages -- reserved system roles are excluded on both sides,
-    for the same reason they are excluded from Roles.
-
-
-### go.5x5.cz/ptah/dbschema/types.DBSchema
-
-package types // import "go.5x5.cz/ptah/dbschema/types"
-
-type DBSchema struct {
-    Schemas     []DBSchemaInfo `json:"schemas"`
-    Tables      []DBTable      `json:"tables"`
-    Enums       []DBEnum       `json:"enums"`
-    Indexes     []DBIndex      `json:"indexes"`
-    Constraints []DBConstraint `json:"constraints"`
-    Extensions  []DBExtension  `json:"extensions"` // PostgreSQL extensions
-    Functions   []DBFunction   `json:"functions"`  // PostgreSQL custom functions
-    Sequences   []DBSequence   `json:"sequences"`  // PostgreSQL standalone sequences
-    Domains     []DBDomain     `json:"domains"`    // PostgreSQL domain types
-    Composites  []DBComposite  `json:"composites"` // PostgreSQL composite types
-    Ranges      []DBRange      `json:"ranges"`     // PostgreSQL range types
-    Views       []DBView       `json:"views"`      // Database views
-    MatViews    []DBMatView    `json:"matviews"`   // Database materialized views
-    Synonyms    []DBSynonym    `json:"synonyms"`   // SQL Server synonyms
-    // ExtendedProperties are the SQL Server extended properties this
-    // description covers: schema-, table- and column-scoped ones. See
-    // [DBExtendedProperty] for what is deliberately not in it.
-    ExtendedProperties []DBExtendedProperty `json:"extended_properties,omitempty"`
-
-    // ContinuousAggregates are the TimescaleDB continuous aggregates this read
-    // found. See [DBContinuousAggregate] for why they are not views.
-    ContinuousAggregates []DBContinuousAggregate `json:"continuous_aggregates,omitempty"`
-
-    // Hypertables are the TimescaleDB hypertables among the tables above.
-    //
-    // They are recorded BESIDE the tables rather than instead of them, because
-    // a hypertable is an ordinary PostgreSQL table as far as this description
-    // goes: pg_class reports relkind 'r', the columns are the columns, and
-    // every statement Ptah renders for it is correct. What is missing is that
-    // it is partitioned, and no declaration syntax can say so yet -- so this
-    // list exists to be REPORTED rather than compared, and its consumer is the
-    // note that tells an operator the description they are reading is not the
-    // whole truth about these tables (stokaro/ptah#1026).
-    Hypertables []DBHypertable `json:"hypertables,omitempty"`
-    Triggers    []DBTrigger    `json:"triggers"`     // Database triggers
-    RLSPolicies []DBRLSPolicy  `json:"rls_policies"` // PostgreSQL RLS policies
-    Roles       []DBRole       `json:"roles"`        // PostgreSQL roles
-    Grants      []DBGrant      `json:"grants"`       // PostgreSQL privilege grants
-
-    // ObjectOwners are the owners of the objects this read covers, one row per
-    // object, on the engines that have an owner to report.
-    //
-    // Like RoleMemberships it is read for ANALYSIS rather than for planning:
-    // Ptah renders no OWNER TO and no CREATE SCHEMA ... AUTHORIZATION, and
-    // treating ownership as part of the description is what made an inspect
-    // describe the connecting superuser and plan a CREATE ROLE for it
-    // (stokaro/ptah#1950).
-    ObjectOwners []DBObjectOwner `json:"object_owners,omitempty"`
-
-    // RoleMemberships are the role-in-role edges the server holds between the
-    // roles Ptah manages: who inherits whose privileges.
-    //
-    // It is read for ANALYSIS rather than for planning. A membership is a
-    // cluster-wide fact on the PostgreSQL family, and Ptah neither renders nor
-    // diffs one today, so this list describes the server rather than the
-    // desired state -- which is why it is omitted when empty and why nothing
-    // in the comparator reads it (stokaro/ptah#1950).
-    RoleMemberships []DBRoleMembership `json:"role_memberships,omitempty"`
-
-    // RolesOutOfScope lists roles that exist on the server but that this
-    // description deliberately does not define, because nothing in the
-    // schemas being read refers to them.
-    //
-    // PostgreSQL roles belong to the cluster rather than to one database, so
-    // "the reader did not describe this role" and "this role does not exist"
-    // are different facts, and a comparator that cannot tell them apart plans
-    // CREATE ROLE for a role that is already there. Roles and RolesOutOfScope
-    // partition the roles Ptah manages, so their union answers the
-    // comparator's question -- does this role exist -- whatever scoping rule
-    // decided the description. See stokaro/ptah#1267 and stokaro/ptah#1276.
-    //
-    // The partition is over managed roles, not over the whole catalog. A
-    // PostgreSQL reader leaves the reserved pg_ roles and the bootstrap
-    // superuser out of both lists, because Ptah manages neither in either
-    // direction, so the union is not every role the server has and must not be
-    // described as if it were. A desired schema that names one of them is
-    // refused before anything is compared or planned, naming the role and the
-    // rule, rather than compared against nothing. See stokaro/ptah#1312.
-    //
-    // This field is not part of the description: it carries role names from
-    // outside the inspected scope, so it is never serialized and never
-    // rendered. Only Roles reaches output.
-    RolesOutOfScope []DBRole `json:"-"`
-
-    // NotDescribed records what this read did not look at, so a comparator can
-    // tell an object the database does not have from one the reader was never
-    // asked about. The zero value claims the read covered everything; see
-    // [go.5x5.cz/ptah/core/coverage].
-    NotDescribed coverage.Set `json:"not_described,omitzero"`
-
-    // UnregisteredVirtualTables lists the SQLite virtual tables this read found
-    // whose module the reading build does not register.
-    //
-    // It is the description's own statement that part of this database could
-    // not be classified. SQLite reports a table as `shadow` only when the
-    // module that owns it is loaded and claims the name, so with the module
-    // absent a virtual table is still recognized as virtual while its private
-    // storage arrives as ordinary user tables. Tables therefore holds objects
-    // that are not user tables, and no field on any of them says so -- the fact
-    // belongs to the read, not to a row.
-    //
-    // A comparator that ignores this plans DROP TABLE for a module's storage.
-    // Measured on stokaro/ptah#1028: against an fts4 database this build cannot
-    // load, `ptah schema apply` planned and executed five drops at exit 0 and
-    // `MATCH` went from returning a row to `SQL logic error`.
-    //
-    // It is separate from Tables on purpose, because narrowing survives it. The
-    // tables at risk are not the virtual table an operator would exclude, so a
-    // selection that removes the virtual table leaves every dangerous row in
-    // place; a signal carried on the excluded row would vanish exactly when it
-    // matters. See [go.5x5.cz/ptah/internal/sqlitevirtual].
-    //
-    // It is never serialized: the same database read by a build that registers
-    // the module yields an empty list, so this describes the reader rather than
-    // the database, and a description that carried it would not be portable.
-    UnregisteredVirtualTables []DBVirtualTable `json:"-"`
-}
-    DBSchema represents the complete schema read from a database
-
-
-### go.5x5.cz/ptah/dbschema/types.DBSchemaInfo
-
-package types // import "go.5x5.cz/ptah/dbschema/types"
-
-type DBSchemaInfo struct {
-    Name    string `json:"name"`
-    Comment string `json:"comment,omitempty"`
-    Charset string `json:"charset,omitempty"`
-    Collate string `json:"collate,omitempty"`
-}
-    DBSchemaInfo represents a database schema/namespace.
-
-
-### go.5x5.cz/ptah/dbschema/types.DBSequence
-
-package types // import "go.5x5.cz/ptah/dbschema/types"
-
-type DBSequence struct {
-    Name      string `json:"name"`                // Sequence name
-    Schema    string `json:"schema,omitempty"`    // Schema containing the sequence
-    DataType  string `json:"data_type,omitempty"` // Underlying integer type (e.g. "bigint")
-    Start     *int64 `json:"start,omitempty"`     // START WITH value
-    Increment *int64 `json:"increment,omitempty"` // INCREMENT BY value
-    MinValue  *int64 `json:"min_value,omitempty"` // MINVALUE bound
-    MaxValue  *int64 `json:"max_value,omitempty"` // MAXVALUE bound
-    Cache     *int64 `json:"cache,omitempty"`     // CACHE size
-    Cycle     bool   `json:"cycle"`               // Whether the sequence uses CYCLE
-    OwnedBy   string `json:"owned_by,omitempty"`  // Owning table.column, if any
-    Comment   string `json:"comment,omitempty"`   // Sequence comment/description
-}
-    DBSequence represents a standalone PostgreSQL sequence read from the
-    database.
-
-    Only user-declared, standalone sequences appear here. Implicit sequences
-    that back SERIAL / BIGSERIAL / identity columns (those OWNED BY a column via
-    an internal/auto dependency) are deliberately excluded so that declaring a
-    plain SERIAL column does not surface as a spurious standalone sequence.
-
-func (s DBSequence) QualifiedName() string
-
-### go.5x5.cz/ptah/dbschema/types.DBSynonym
-
-package types // import "go.5x5.cz/ptah/dbschema/types"
-
-type DBSynonym struct {
-    Name   string `json:"name"`   // Synonym name (the alias)
-    Schema string `json:"schema"` // Schema the alias lives in
-    // Target is base_object_name exactly as the catalog records it, including
-    // the server's own bracket quoting.
-    Target string `json:"target"`
-    // TargetServer, TargetDatabase, TargetSchema and TargetObject are the
-    // parsed parts of Target. Absent leading parts are empty.
-    TargetServer   string `json:"target_server,omitempty"`
-    TargetDatabase string `json:"target_database,omitempty"`
-    TargetSchema   string `json:"target_schema,omitempty"`
-    TargetObject   string `json:"target_object"`
-    Comment        string `json:"comment,omitempty"` // Synonym comment/description
-}
-    DBSynonym represents a SQL Server synonym read from the database.
-
-    A synonym is an alias, and the thing it aliases may not be in this database.
-    SQL Server records the target as a name of one to four parts, and the shape
-    of that name is the whole question a dependency ordering has to answer:
-    a two-part target names an object here, and a three- or four-part target
-    names one in another database or behind a linked server.
-
-    The raw catalog value is kept alongside the parsed parts, because it is
-    what the server will resolve and what has to be written back unchanged. The
-    parts exist so that ordering can tell local from remote without re-parsing,
-    and External is derived from them rather than stored, so the two cannot
-    disagree.
-
-func (s DBSynonym) IsExternal() bool
-func (s DBSynonym) QualifiedName() string
-func (s DBSynonym) TargetQualifiedName() string
-
-### go.5x5.cz/ptah/dbschema/types.DBTable
-
-package types // import "go.5x5.cz/ptah/dbschema/types"
-
-type DBTable struct {
-    Name            string     `json:"name"`
-    Schema          string     `json:"schema,omitempty"`
-    Type            string     `json:"type"` // TABLE, VIEW, etc.
-    Comment         string     `json:"comment"`
-    Columns         []DBColumn `json:"columns"`
-    EstimatedRows   int64      `json:"estimated_rows,omitempty"`    // Best-effort planner estimate from database statistics
-    RowStatsUnknown bool       `json:"row_stats_unknown,omitempty"` // The database reports no usable row statistics; EstimatedRows is not a row count
-    Partitioned     bool       `json:"partitioned,omitempty"`       // PostgreSQL declaratively partitioned parent (pg_class.relkind = 'p')
-    RLSEnabled      bool       `json:"rls_enabled"`                 // Whether RLS is enabled on this table (PostgreSQL)
-    Strict          bool       `json:"strict,omitempty"`            // SQLite STRICT table option
-    WithoutRowID    bool       `json:"without_rowid,omitempty"`     // SQLite WITHOUT ROWID table option
-    // ClickHouseSortingKey is the ORDER BY a MergeTree table sorts by, when
-    // that is not simply its primary-key columns.
-    //
-    // The two are usually the same and the renderer derives the ORDER BY from
-    // the primary key, so this stays empty. They come apart when a table
-    // declares `PRIMARY KEY (a) ORDER BY (a, b)`: the primary key alone would
-    // describe a table that sorts differently from the one being read, and
-    // applying that description would create one (stokaro/ptah#1603).
-    ClickHouseSortingKey string `json:"clickhouse_sorting_key,omitempty"`
-    // ClickHouseOrderBy is the ORDER BY exactly as system.tables reports it,
-    // including when it equals the primary key.
-    //
-    // ClickHouseSortingKey above deliberately omits that case, because the
-    // renderer can derive the clause from the primary key -- but it derives the
-    // COLUMNS, not their order, and a table sorted `(day, id)` came back sorted
-    // `(id, day)`. That is a different physical layout: every range scan the
-    // original order served becomes a full scan (stokaro/ptah#2198).
-    ClickHouseOrderBy string `json:"clickhouse_order_by,omitempty"`
-    // ClickHouseEngine is the table engine with its parameters, as
-    // system.tables spells it -- "ReplacingMergeTree(ver)", not the bare family
-    // name the `engine` column reports.
-    //
-    // A description without it takes the renderer's default of MergeTree, so a
-    // ReplacingMergeTree read and replayed loses the deduplicating merge the
-    // table exists for (stokaro/ptah#2198).
-    ClickHouseEngine string `json:"clickhouse_engine,omitempty"`
-    // ClickHousePartitionKey and ClickHouseSamplingKey are the PARTITION BY and
-    // SAMPLE BY expressions, empty for a table that declares neither.
-    ClickHousePartitionKey string `json:"clickhouse_partition_key,omitempty"`
-    ClickHouseSamplingKey  string `json:"clickhouse_sampling_key,omitempty"`
-    // ClickHousePrimaryKey is the PRIMARY KEY a MergeTree table declares when
-    // it is not the whole sorting key, and empty when the two agree.
-    //
-    // A primary key that is a prefix of the ORDER BY is how a MergeTree table is
-    // tuned: the sparse index holds one mark per granule of the prefix, and the
-    // rest of the sorting key only orders rows within it. Measured on ClickHouse
-    // 26.7.5.10, `PRIMARY KEY (id) ORDER BY (id, s)` read and replayed came back
-    // as `PRIMARY KEY (id, s)` -- a wider index over the same data, which is a
-    // different table and says nothing about it (stokaro/ptah#2198).
-    ClickHousePrimaryKey string `json:"clickhouse_primary_key,omitempty"`
-    // ClickHouseTTL is the table's TTL expression, empty for a table with none.
-    // It is the retention rule: a table replayed without it keeps rows it was
-    // configured to delete.
-    ClickHouseTTL string `json:"clickhouse_ttl,omitempty"`
-    // ClickHouseSettings is the SETTINGS clause body.
-    //
-    // The server resolves one whether or not the author wrote it -- every
-    // MergeTree table reports at least index_granularity -- so this is what the
-    // table HAS rather than what was declared.
-    ClickHouseSettings string `json:"clickhouse_settings,omitempty"`
-    // RowTTL is the CockroachDB row-level TTL this table carries, nil for a
-    // table with none and for every target without capability.RowLevelTTL.
-    //
-    // omitzero keeps every other dialect's serialization byte-identical, which
-    // matters because a description is compared, fingerprinted and replayed
-    // (stokaro/ptah#1027).
-    RowTTL *ast.RowTTLSpec `json:"row_ttl,omitzero"`
-    // RowDeletionPolicy is the row deletion policy this table carries, nil for
-    // a table with none (stokaro/ptah#2236).
-    RowDeletionPolicy *ast.RowDeletionPolicySpec `json:"row_deletion_policy,omitzero"`
-    // VirtualModule is the SQLite module that owns this table, from the USING
-    // clause of the CREATE VIRTUAL TABLE statement that created it -- `fts5`,
-    // `rtree`, `geopoly`, or any other module a build registers. It is empty
-    // for an ordinary table, and a non-empty value means the table cannot be
-    // described by CREATE TABLE at all: it has no column list of its own, and
-    // a plain table of the same name is a different object. See
-    // stokaro/ptah#1028.
-    VirtualModule string `json:"virtual_module,omitempty"`
-    // VirtualArguments is the text between the module's parentheses, verbatim.
-    // Module arguments are not SQL -- only the module interprets them -- so
-    // they are carried unparsed and reproduced byte for byte.
-    VirtualArguments string `json:"virtual_arguments,omitempty"`
-}
-    DBTable represents a database table
-
-    EstimatedRows and RowStatsUnknown are a pair, and reading EstimatedRows
-    alone is a mistake: PostgreSQL spells "nobody has ever counted this table"
-    as pg_class.reltuples = -1, which floors to the same 0 a genuinely empty
-    table reports. RowStatsUnknown carries that distinction so a caller choosing
-    between a blocking and a non-blocking index build can fail safe instead of
-    reading an absent statistic as an empty table. Readers that never collect
-    row statistics leave both fields zero, which claims nothing.
-
-    Partitioned marks a PostgreSQL declaratively partitioned parent (relkind
-    'p'). information_schema.tables reports it as an ordinary BASE TABLE,
-    so Type cannot carry it, and the distinction decides which statements
-    are legal: PostgreSQL rejects CREATE INDEX CONCURRENTLY and DROP INDEX
-    CONCURRENTLY on a partitioned relation with SQLSTATE 0A000.
-
-func (t DBTable) QualifiedName() string
-
-### go.5x5.cz/ptah/dbschema/types.DBTrigger
-
-package types // import "go.5x5.cz/ptah/dbschema/types"
-
-type DBTrigger struct {
-    Name    string `json:"name"`    // Trigger name
-    Schema  string `json:"schema"`  // Schema where the trigger is defined
-    Table   string `json:"table"`   // Target table
-    Timing  string `json:"timing"`  // BEFORE, AFTER, or INSTEAD OF
-    Event   string `json:"event"`   // INSERT, UPDATE, DELETE, or TRUNCATE
-    ForEach string `json:"for"`     // ROW or STATEMENT
-    Body    string `json:"body"`    // Trigger body
-    Comment string `json:"comment"` // Trigger comment/description
-
-    // ExecuteFunction is the name of the function the trigger runs, as the
-    // catalog reports it.
-    //
-    // PostgreSQL has no inline trigger body: `CREATE TRIGGER ... EXECUTE
-    // FUNCTION f()` always names a function, and Ptah writes one per trigger
-    // when the declaration carries a body. Reading only that function's source
-    // and discarding its NAME made every trigger look like one Ptah owns, so a
-    // function shared by several triggers was described once per trigger and
-    // replayed as that many copies (stokaro/ptah#2210).
-    ExecuteFunction string `json:"execute_function,omitempty"`
-}
-    DBTrigger represents a database trigger read from the database.
-
-func (t DBTrigger) QualifiedTable() string
-
-### go.5x5.cz/ptah/dbschema/types.DBView
-
-package types // import "go.5x5.cz/ptah/dbschema/types"
-
-type DBView struct {
-    Name        string `json:"name"`         // View name
-    Schema      string `json:"schema"`       // Schema where the view is defined
-    Body        string `json:"body"`         // SELECT query used as the view definition
-    CheckOption string `json:"check_option"` // NONE, LOCAL, CASCADED, or dialect equivalent
-    Comment     string `json:"comment"`      // View comment/description
-    // Attributes carries the view's own WITH clause -- SQL Server's
-    // SCHEMABINDING and VIEW_METADATA -- uppercased, in the order the server
-    // wrote them.
-    //
-    // They belong to the view rather than to its body: SCHEMABINDING binds it
-    // to the tables it names, so they cannot be altered under it, and an
-    // indexed view requires it. The reader cuts the header off to get at the
-    // body, and nothing kept this, so a replayed view came back unbound with
-    // no diagnostic anywhere (stokaro/ptah#2125).
-    Attributes []string `json:"attributes,omitempty"`
-}
-    DBView represents a database view read from the database.
-
-func (v DBView) QualifiedName() string
-
-### go.5x5.cz/ptah/dbschema/types.DBVirtualTable
-
-package types // import "go.5x5.cz/ptah/dbschema/types"
-
-type DBVirtualTable struct {
-    Schema string
-    Name   string
-    Module string
-}
-    DBVirtualTable identifies one SQLite virtual table and the module that owns
-    it, for the lists that talk about virtual tables rather than describe them.
-
-
-### go.5x5.cz/ptah/dbschema/types.SchemaExecutor
-
-package types // import "go.5x5.cz/ptah/dbschema/types"
-
-type SchemaExecutor interface {
-    ExecuteSQL(ctx context.Context, sql string, args ...any) error
-    IsDryRun() bool
-}
-    SchemaExecutor executes SQL statements produced by schema operations.
-
-    ExecuteSQL accepts a context and an optional slice of arguments that are
-    bound as native driver parameters, mirroring database/sql's ExecContext.
-    Use placeholders (`?` or the dialect-native form such as `$1`/`$2`
-    for PostgreSQL) instead of interpolating values into the SQL string;
-    this prevents the SQL injection class of bugs that the no-args signature
-    used to invite (see issue #130). Identifiers (table/column names) cannot be
-    parameterized — route them through a validated escape helper instead.
-
-
-### go.5x5.cz/ptah/dbschema/types.SchemaReader
-
-package types // import "go.5x5.cz/ptah/dbschema/types"
-
-type SchemaReader interface {
-    ReadSchema() (*DBSchema, error)
-    ReadSchemaContext(ctx context.Context) (*DBSchema, error)
-}
-    SchemaReader reads a live database schema, in the two forms this package
-    offers every other database call in: a context-free one and a Context one.
-
-    ReadSchemaContext governs every catalog query the read issues with the
-    provided context: canceling it, or letting its deadline pass, makes the read
-    return promptly with an error rather than running the remaining queries.
-
-    The context is part of the contract rather than a convenience. A schema read
-    is dozens of round trips against a server that may be slow or unreachable,
-    and it is what the migration generator's own documented context contract
-    bottoms out in, so a caller with no way to say "stop" has no way to bound
-    either one (stokaro/ptah#2246).
-
-    ReadSchema is that same read under context.Background(), and is what a
-    caller with no context to hand writes. It is the pairing database/sql itself
-    uses and that dbschema.DatabaseConnection already follows -- Exec beside
-    ExecContext, Query beside QueryContext, QueryRow beside QueryRowContext
-    -- so a reader implements both and the choice is the caller's. Prefer
-    ReadSchemaContext: only it can be stopped.
-
-    Both are part of the interface rather than one being a helper beside it,
-    because an implementation of SchemaReader can live outside this module.
-    stokaro/ptah-testkit is one such consumer: a separate module that builds
-    against the last published release, so the read it issues has to be spelled
-    a way that release carries.
-
-
-### go.5x5.cz/ptah/dbschema/types.SchemaTransaction
-
-package types // import "go.5x5.cz/ptah/dbschema/types"
-
-type SchemaTransaction interface {
-    SchemaExecutor
-    Commit() error
-    Rollback() error
-}
-    SchemaTransaction executes schema changes inside a database transaction.
-
-    It deliberately owns transaction lifecycle instead of storing the active
-    transaction on the parent SchemaWriter. That keeps dialect writers
-    reentrant: concurrent callers may begin independent transactions without
-    racing over shared writer state.
-
-
-### go.5x5.cz/ptah/dbschema/types.SchemaWriter
-
-package types // import "go.5x5.cz/ptah/dbschema/types"
-
-type SchemaWriter interface {
-    SchemaExecutor
-    // DropAllTables removes supported user objects from the writer's configured
-    // schema or database. Implementations must refuse cleanup when dependencies
-    // or database-global ownership prevent them from confining the destructive
-    // effect to that scope. The context governs object discovery and DDL.
-    // Implementations may use a short, bounded cleanup context after
-    // cancellation to restore connection-local settings before returning.
-    DropAllTables(ctx context.Context) error
-    BeginTransaction(ctx context.Context) (SchemaTransaction, error)
-    SetDryRun(dryRun bool)
-}
-    SchemaWriter writes schemas to databases.
 
 
 ## go.5x5.cz/ptah/docs
@@ -10045,7 +10044,7 @@ type BidirectionalSchemaPlan struct {
     Dialect       string
     Capabilities  capability.Capabilities
     DesiredSchema *goschema.Database
-    CurrentSchema *dbschematypes.DBSchema
+    CurrentSchema *catalog.Database
     Policy        BidirectionalPlanPolicy
     Forward       SchemaDirectionPlan
     Reverse       SchemaDirectionPlan
@@ -10066,7 +10065,7 @@ package generator // import "go.5x5.cz/ptah/migration/generator"
 type BidirectionalSchemaPlanOptions struct {
     Diff          *difftypes.SchemaDiff
     DesiredSchema *goschema.Database
-    CurrentSchema *dbschematypes.DBSchema
+    CurrentSchema *catalog.Database
     Dialect       string
     Capabilities  capability.Capabilities
     Policy        BidirectionalPlanPolicy
@@ -12421,14 +12420,14 @@ func AssessSQL(statement string) StatementAssessment
 
 ## go.5x5.cz/ptah/migration/schemadiff
 
-func Compare(generated *goschema.Database, database *types.DBSchema) *difftypes.SchemaDiff
-func CompareReportingUndecidedAdditions(generated *goschema.Database, database *types.DBSchema, ...) (*difftypes.SchemaDiff, []coverage.Object)
+func Compare(generated *goschema.Database, database *catalog.Database) *difftypes.SchemaDiff
+func CompareReportingUndecidedAdditions(generated *goschema.Database, database *catalog.Database, ...) (*difftypes.SchemaDiff, []coverage.Object)
 func CompareSchemas(desired, current *goschema.Database, dialect string) *difftypes.SchemaDiff
 func CompareWithDatabase(ctx context.Context, conn *dbschema.DatabaseConnection, ...) (*difftypes.SchemaDiff, error)
-func CompareWithDatabaseInfo(generated *goschema.Database, database *types.DBSchema, info types.DBInfo, ...) (*difftypes.SchemaDiff, error)
+func CompareWithDatabaseInfo(generated *goschema.Database, database *catalog.Database, ...) (*difftypes.SchemaDiff, error)
 func CompareWithDatabaseReportingUndecidedAdditions(ctx context.Context, conn *dbschema.DatabaseConnection, ...) (*difftypes.SchemaDiff, []coverage.Object, error)
-func CompareWithDialect(generated *goschema.Database, database *types.DBSchema, dialect string) *difftypes.SchemaDiff
-func CompareWithOptions(generated *goschema.Database, database *types.DBSchema, ...) *difftypes.SchemaDiff
+func CompareWithDialect(generated *goschema.Database, database *catalog.Database, dialect string) *difftypes.SchemaDiff
+func CompareWithOptions(generated *goschema.Database, database *catalog.Database, ...) *difftypes.SchemaDiff
 
 ## go.5x5.cz/ptah/migration/schemadiff/difftypes
 

@@ -8,8 +8,8 @@ import (
 
 	mysqldriver "github.com/go-sql-driver/mysql"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/dbschema/types"
 )
 
 // readRoles reports the roles this server holds, and nothing else that lives in
@@ -32,7 +32,7 @@ import (
 // scoped by the connected schema the way a table read is. That is a property of
 // the object: a role is a server principal, and there is no per-database one to
 // read instead.
-func (r *Reader) readRoles(ctx context.Context) ([]types.DBRole, error) {
+func (r *Reader) readRoles(ctx context.Context) ([]catalog.Role, error) {
 	predicate, err := r.rolePredicate(ctx)
 	if err != nil {
 		return nil, err
@@ -48,17 +48,17 @@ func (r *Reader) readRoles(ctx context.Context) ([]types.DBRole, error) {
 	}
 	defer rows.Close()
 
-	var roles []types.DBRole
+	var roles []catalog.Role
 	for rows.Next() {
 		var name string
 		if err := rows.Scan(&name); err != nil {
 			return nil, err
 		}
-		// Every attribute a DBRole can carry is a PostgreSQL one, and a
+		// Every attribute a Role can carry is a PostgreSQL one, and a
 		// MySQL-family role carries none of them: CREATE ROLE takes a name and
 		// nothing else. Reporting them false is not a default standing in for
 		// an unread value -- it is what the object is.
-		roles = append(roles, types.DBRole{Name: name})
+		roles = append(roles, catalog.Role{Name: name})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -98,7 +98,7 @@ func (r *Reader) rolePredicate(ctx context.Context) (string, error) {
 // [grantQuery] says why those rather than the grant tables. A grant on another
 // database is not reported, because the description this reader produces is of
 // one database and a grant elsewhere is not part of it.
-func (r *Reader) readGrants(ctx context.Context, dbName string) ([]types.DBGrant, error) {
+func (r *Reader) readGrants(ctx context.Context, dbName string) ([]catalog.Grant, error) {
 	predicate, err := r.rolePredicate(ctx)
 	if err != nil {
 		return nil, err
@@ -110,13 +110,13 @@ func (r *Reader) readGrants(ctx context.Context, dbName string) ([]types.DBGrant
 	}
 	defer rows.Close()
 
-	var grants []types.DBGrant
+	var grants []catalog.Grant
 	for rows.Next() {
 		var role, objectSchema, object, privilege, grantable, objectType string
 		if err := rows.Scan(&role, &objectSchema, &object, &privilege, &grantable, &objectType); err != nil {
 			return nil, err
 		}
-		grant := types.DBGrant{
+		grant := catalog.Grant{
 			Role:       role,
 			Privilege:  strings.ToUpper(strings.TrimSpace(privilege)),
 			ObjectType: objectType,
@@ -199,7 +199,7 @@ func isRoleReadDenied(err error) bool {
 // it did not look, so a declared role is reported as an undecided addition
 // instead of planned from nothing. Nothing destructive follows either: role and
 // grant removals are decided from live rows, and there are none.
-func (r *Reader) readRolesInto(ctx context.Context, schema *types.DBSchema, dbName string) error {
+func (r *Reader) readRolesInto(ctx context.Context, schema *catalog.Database, dbName string) error {
 	roles, err := r.readRoles(ctx)
 	if err != nil {
 		if !isRoleReadDenied(err) {
@@ -289,12 +289,12 @@ func (r *Reader) membershipTable(ctx context.Context) (query string, found bool,
 // answers an empty list rather than an error: roles arrived in MySQL 8.0 and
 // MariaDB 10.0.5, and a 5.7 server is describing a world where the question
 // does not exist.
-func (r *Reader) readRoleMemberships(ctx context.Context) ([]types.DBRoleMembership, error) {
+func (r *Reader) readRoleMemberships(ctx context.Context) ([]catalog.RoleMembership, error) {
 	query, found, err := r.membershipTable(ctx)
 	if err != nil {
 		return nil, err
 	}
-	memberships := make([]types.DBRoleMembership, 0)
+	memberships := make([]catalog.RoleMembership, 0)
 	if !found {
 		return memberships, nil
 	}
@@ -306,7 +306,7 @@ func (r *Reader) readRoleMemberships(ctx context.Context) ([]types.DBRoleMembers
 	defer rows.Close()
 
 	for rows.Next() {
-		var membership types.DBRoleMembership
+		var membership catalog.RoleMembership
 		if err := rows.Scan(&membership.Role, &membership.Member, &membership.AdminOption); err != nil {
 			return nil, err
 		}

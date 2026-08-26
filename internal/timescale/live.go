@@ -8,9 +8,9 @@ import (
 	"slices"
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema/types"
 )
 
 // ValidateLive refuses a declaration that names a relation the server holds as
@@ -29,7 +29,7 @@ import (
 // as a materialized view, which is the natural mistake: PostgreSQL calls it one.
 // The `continuous_aggregate` block and `//ptah:schema:continuousaggregate`
 // declare the object itself, and neither reaches this refusal.
-func ValidateLive(dialect string, generated *goschema.Database, database *types.DBSchema) error {
+func ValidateLive(dialect string, generated *goschema.Database, database *catalog.Database) error {
 	if !platform.IsPostgresFamily(dialect) {
 		return nil
 	}
@@ -37,7 +37,7 @@ func ValidateLive(dialect string, generated *goschema.Database, database *types.
 		return nil
 	}
 
-	live := make(map[string]types.DBContinuousAggregate, len(database.ContinuousAggregates))
+	live := make(map[string]catalog.ContinuousAggregate, len(database.ContinuousAggregates))
 	for _, aggregate := range database.ContinuousAggregates {
 		live[foldQualified(aggregate.Schema, aggregate.Name)] = aggregate
 	}
@@ -62,7 +62,7 @@ func ValidateLive(dialect string, generated *goschema.Database, database *types.
 // continuous aggregate on the server.
 func appendAggregateClash(
 	problems []error,
-	live map[string]types.DBContinuousAggregate,
+	live map[string]catalog.ContinuousAggregate,
 	kind, declared string,
 ) []error {
 	schema, name := splitQualified(declared)

@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 )
 
 // TestSynonyms_ModelAndIntrospectionLandTogether is a tripwire, not a feature
@@ -32,10 +32,10 @@ func TestSynonyms_ModelAndIntrospectionLandTogether(t *testing.T) {
 	c := qt.New(t)
 
 	_, modelled := reflect.TypeFor[goschema.Database]().FieldByName("Synonyms")
-	_, introspected := reflect.TypeFor[dbschematypes.DBSchema]().FieldByName("Synonyms")
+	_, introspected := reflect.TypeFor[catalog.Database]().FieldByName("Synonyms")
 
 	c.Assert(modelled, qt.Equals, introspected, qt.Commentf(
-		"goschema.Database declares Synonyms: %t, dbschema/types.DBSchema declares them: %t. "+
+		"goschema.Database declares Synonyms: %t, catalog.Database declares them: %t. "+
 			"The SQL Server renderer emits CREATE SYNONYM, so a model that declares the object "+
 			"while introspection cannot read it back makes every apply re-create it",
 		modelled, introspected))

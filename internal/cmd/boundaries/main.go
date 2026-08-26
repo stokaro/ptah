@@ -238,7 +238,7 @@ func constructsSourceDescription(pkg *packages.Package) []finding {
 // wrote it, which a pipeline stage should receive rather than build.
 var sourceDescriptionTypes = []string{
 	modulePath + "/core/goschema.Database",
-	modulePath + "/dbschema/types.DBSchema",
+	modulePath + "/catalog.Database",
 }
 
 func isSourceDescription(typ types.Type) bool {

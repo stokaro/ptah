@@ -9,9 +9,9 @@ import (
 	"slices"
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/internal/sqlrunner"
 )
@@ -191,7 +191,7 @@ func (w *Writer) ExecuteSQL(ctx context.Context, sqlExpr string, args ...any) er
 // are experimental and require explicit opt-in per session; the migration
 // engine has no protection model that depends on them, so this is left
 // as a no-op rather than silently enabling experimental flags.
-func (w *Writer) BeginTransaction(_ context.Context) (types.SchemaTransaction, error) {
+func (w *Writer) BeginTransaction(_ context.Context) (catalog.SchemaTransaction, error) {
 	if w.dryRun {
 		slog.Info("[DRY RUN] Would begin transaction (no-op on ClickHouse)")
 	}

@@ -10,10 +10,10 @@ import (
 	"strings"
 	"sync"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/internal/sqlrunner"
 )
@@ -194,7 +194,7 @@ func (w *PostgreSQLWriter) ExecuteSQL(ctx context.Context, sqlExpr string, args 
 
 // BeginTransaction starts a transaction and returns a transaction-scoped
 // writer. The parent writer keeps no active transaction state.
-func (w *PostgreSQLWriter) BeginTransaction(ctx context.Context) (types.SchemaTransaction, error) {
+func (w *PostgreSQLWriter) BeginTransaction(ctx context.Context) (catalog.SchemaTransaction, error) {
 	if w.dryRun {
 		slog.Info("[DRY RUN] Would begin transaction")
 		return &postgresTransactionWriter{schema: w.schema, dryRun: true}, nil

@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/internal/sqlrunner"
@@ -41,16 +41,16 @@ func NewSQLiteReader(db sqlrunner.Runner, schema string) *Reader {
 }
 
 // ReadSchema is [Reader.ReadSchemaContext] under context.Background(), the
-// context-free half of the pair [types.SchemaReader] declares. Prefer the
+// context-free half of the pair [catalog.SchemaReader] declares. Prefer the
 // Context form: only it can be told to stop.
-func (r *Reader) ReadSchema() (*types.DBSchema, error) {
+func (r *Reader) ReadSchema() (*catalog.Database, error) {
 	return r.ReadSchemaContext(context.Background())
 }
 
 // ReadSchemaContext reads user tables, indexes, constraints, views, and
 // triggers.
-func (r *Reader) ReadSchemaContext(ctx context.Context) (*types.DBSchema, error) {
-	catalog, err := r.readSchemaCatalog(ctx)
+func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, error) {
+	sqliteCatalog, err := r.readSchemaCatalog(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +61,7 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*types.DBSchema, error)
 	// module to answer, so a single virtual table whose module this build does
 	// not register fails the whole batch with `no such module: <name>` and
 	// takes the rest of the schema down with it.
-	skipped := catalog.nonOrdinaryTableNames()
+	skipped := sqliteCatalog.nonOrdinaryTableNames()
 
 	columnsByTable, err := r.readColumnsByTable(ctx, skipped)
 	if err != nil {
@@ -69,25 +69,25 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*types.DBSchema, error)
 	}
 
 	indexesByTable, uniqueConstraintsByTable, err := r.readIndexesByTable(ctx,
-		catalog.indexDDLByName, catalog.tableDDLByName, skipped,
+		sqliteCatalog.indexDDLByName, sqliteCatalog.tableDDLByName, skipped,
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	foreignKeysByTable, err := r.readForeignKeysByTable(ctx, catalog.tableDDLByName, skipped)
+	foreignKeysByTable, err := r.readForeignKeysByTable(ctx, sqliteCatalog.tableDDLByName, skipped)
 	if err != nil {
 		return nil, err
 	}
 
-	var schema types.DBSchema
-	for _, tableName := range catalog.tableNames {
-		if spec, ok := catalog.virtualTables[tableName]; ok {
+	var schema catalog.Database
+	for _, tableName := range sqliteCatalog.tableNames {
+		if spec, ok := sqliteCatalog.virtualTables[tableName]; ok {
 			schema.Tables = append(schema.Tables, r.readVirtualTable(tableName, spec))
 			continue
 		}
 
-		ddl := catalog.tableDDLByName[tableName]
+		ddl := sqliteCatalog.tableDDLByName[tableName]
 		table := r.readTable(tableName, columnsByTable[tableName], ddl)
 		schema.Tables = append(schema.Tables, table)
 
@@ -98,8 +98,8 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*types.DBSchema, error)
 		schema.Constraints = append(schema.Constraints, constraints...)
 	}
 
-	schema.Views = catalog.views(r.outputSchema())
-	schema.Triggers = catalog.triggers(r.outputSchema())
+	schema.Views = sqliteCatalog.views(r.outputSchema())
+	schema.Triggers = sqliteCatalog.triggers(r.outputSchema())
 	reconcileColumnUniqueness(&schema)
 
 	// Recorded last, on the schema rather than on any table, because it is a
@@ -107,7 +107,7 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*types.DBSchema, error)
 	// missing, the tables above include that module's private storage described
 	// as ordinary tables, and nothing on those rows can say so -- SQLite did not
 	// mark them, which is the whole condition. See stokaro/ptah#1028.
-	unregistered, err := r.readUnregisteredVirtualTables(catalog.virtualTables)
+	unregistered, err := r.readUnregisteredVirtualTables(sqliteCatalog.virtualTables)
 	if err != nil {
 		return nil, err
 	}
@@ -168,10 +168,10 @@ type sqliteSchemaObject struct {
 	ddl       string
 }
 
-func (c sqliteSchemaCatalog) views(schema string) []types.DBView {
-	views := make([]types.DBView, 0, len(c.viewObjects))
+func (c sqliteSchemaCatalog) views(schema string) []catalog.View {
+	views := make([]catalog.View, 0, len(c.viewObjects))
 	for _, object := range c.viewObjects {
-		views = append(views, types.DBView{
+		views = append(views, catalog.View{
 			Name:        object.name,
 			Schema:      schema,
 			Body:        viewBody(object.ddl),
@@ -181,8 +181,8 @@ func (c sqliteSchemaCatalog) views(schema string) []types.DBView {
 	return views
 }
 
-func (c sqliteSchemaCatalog) triggers(schema string) []types.DBTrigger {
-	triggers := make([]types.DBTrigger, 0, len(c.triggerObjects))
+func (c sqliteSchemaCatalog) triggers(schema string) []catalog.Trigger {
+	triggers := make([]catalog.Trigger, 0, len(c.triggerObjects))
 	for _, object := range c.triggerObjects {
 		trigger := parseTriggerDDL(object.name, object.tableName, schema, object.ddl)
 		triggers = append(triggers, trigger)
@@ -210,7 +210,7 @@ func (r *Reader) readSchemaCatalog(ctx context.Context) (sqliteSchemaCatalog, er
 	}
 	defer rows.Close()
 
-	catalog := sqliteSchemaCatalog{
+	sqliteCatalog := sqliteSchemaCatalog{
 		tableDDLByName: make(map[string]string),
 		indexDDLByName: make(map[string]string),
 		virtualTables:  make(map[string]virtualTableSpec),
@@ -230,10 +230,10 @@ func (r *Reader) readSchemaCatalog(ctx context.Context) (sqliteSchemaCatalog, er
 				// CREATE TABLE in front of an operator for an object SQLite
 				// creates itself, which then collides with the virtual table
 				// that owns it. See stokaro/ptah#1028.
-				catalog.shadowTableNames = append(catalog.shadowTableNames, name)
+				sqliteCatalog.shadowTableNames = append(sqliteCatalog.shadowTableNames, name)
 				continue
 			case virtual:
-				catalog.virtualTables[name] = spec
+				sqliteCatalog.virtualTables[name] = spec
 			case kinds[name] == tableKindVirtual:
 				// SQLite says this is a virtual table but its own recorded
 				// statement does not parse as one. Ptah cannot say which
@@ -244,8 +244,8 @@ func (r *Reader) readSchemaCatalog(ctx context.Context) (sqliteSchemaCatalog, er
 					name, ddl.String,
 				)
 			}
-			catalog.tableNames = append(catalog.tableNames, name)
-			catalog.tableDDLByName[name] = ddl.String
+			sqliteCatalog.tableNames = append(sqliteCatalog.tableNames, name)
+			sqliteCatalog.tableDDLByName[name] = ddl.String
 		case "index":
 			if kinds[tableName] == tableKindShadow && ddl.Valid {
 				return sqliteSchemaCatalog{}, fmt.Errorf(
@@ -255,15 +255,15 @@ func (r *Reader) readSchemaCatalog(ctx context.Context) (sqliteSchemaCatalog, er
 					tableName,
 				)
 			}
-			catalog.indexDDLByName[name] = ddl.String
+			sqliteCatalog.indexDDLByName[name] = ddl.String
 		case "view":
-			catalog.viewObjects = append(catalog.viewObjects, sqliteSchemaObject{
+			sqliteCatalog.viewObjects = append(sqliteCatalog.viewObjects, sqliteSchemaObject{
 				name:      name,
 				tableName: tableName,
 				ddl:       ddl.String,
 			})
 		case "trigger":
-			catalog.triggerObjects = append(catalog.triggerObjects, sqliteSchemaObject{
+			sqliteCatalog.triggerObjects = append(sqliteCatalog.triggerObjects, sqliteSchemaObject{
 				name:      name,
 				tableName: tableName,
 				ddl:       ddl.String,
@@ -273,22 +273,22 @@ func (r *Reader) readSchemaCatalog(ctx context.Context) (sqliteSchemaCatalog, er
 	if err := rows.Err(); err != nil {
 		return sqliteSchemaCatalog{}, fmt.Errorf("sqlite: iterate schema catalog: %w", err)
 	}
-	sort.Strings(catalog.tableNames)
-	sort.Slice(catalog.viewObjects, func(i, j int) bool {
-		return catalog.viewObjects[i].name < catalog.viewObjects[j].name
+	sort.Strings(sqliteCatalog.tableNames)
+	sort.Slice(sqliteCatalog.viewObjects, func(i, j int) bool {
+		return sqliteCatalog.viewObjects[i].name < sqliteCatalog.viewObjects[j].name
 	})
-	sort.Slice(catalog.triggerObjects, func(i, j int) bool {
-		if catalog.triggerObjects[i].tableName != catalog.triggerObjects[j].tableName {
-			return catalog.triggerObjects[i].tableName < catalog.triggerObjects[j].tableName
+	sort.Slice(sqliteCatalog.triggerObjects, func(i, j int) bool {
+		if sqliteCatalog.triggerObjects[i].tableName != sqliteCatalog.triggerObjects[j].tableName {
+			return sqliteCatalog.triggerObjects[i].tableName < sqliteCatalog.triggerObjects[j].tableName
 		}
-		return catalog.triggerObjects[i].name < catalog.triggerObjects[j].name
+		return sqliteCatalog.triggerObjects[i].name < sqliteCatalog.triggerObjects[j].name
 	})
-	return catalog, nil
+	return sqliteCatalog, nil
 }
 
-func (r *Reader) readTable(name string, columns []types.DBColumn, ddl string) types.DBTable {
+func (r *Reader) readTable(name string, columns []catalog.Column, ddl string) catalog.Table {
 	strict, withoutRowID := sqliteTableOptions(ddl)
-	return types.DBTable{
+	return catalog.Table{
 		Name:         name,
 		Schema:       r.outputSchema(),
 		Type:         "TABLE",
@@ -307,8 +307,8 @@ func (r *Reader) readTable(name string, columns []types.DBColumn, ddl string) ty
 // the module is not registered in this build, SQLite cannot report the columns
 // at all, so a description built from them would be empty for exactly the
 // databases that need it most.
-func (r *Reader) readVirtualTable(name string, spec virtualTableSpec) types.DBTable {
-	return types.DBTable{
+func (r *Reader) readVirtualTable(name string, spec virtualTableSpec) catalog.Table {
+	return catalog.Table{
 		Name:             name,
 		Schema:           r.outputSchema(),
 		Type:             "TABLE",
@@ -341,7 +341,7 @@ func (r *Reader) schemaObject(name string) string {
 	return sqlident.Qualified("sqlite", schema, name)
 }
 
-func (r *Reader) readColumnsByTable(ctx context.Context, skipped []string) (map[string][]types.DBColumn, error) {
+func (r *Reader) readColumnsByTable(ctx context.Context, skipped []string) (map[string][]catalog.Column, error) {
 	exclusion, exclusionArguments := excludeTablesFilter(skipped)
 	query := fmt.Sprintf(`
 		SELECT m.name, x.cid, x.name, x.type, x."notnull", x.dflt_value, x.pk, x.hidden, m.sql
@@ -363,7 +363,7 @@ func (r *Reader) readColumnsByTable(ctx context.Context, skipped []string) (map[
 		generatedExpressions map[string]string
 	}
 	ddlMetadataByTable := make(map[string]tableDDLMetadata)
-	columnsByTable := make(map[string][]types.DBColumn)
+	columnsByTable := make(map[string][]catalog.Column)
 	for rows.Next() {
 		var (
 			tableName  string
@@ -390,7 +390,7 @@ func (r *Reader) readColumnsByTable(ctx context.Context, skipped []string) (map[
 			}
 			ddlMetadataByTable[tableName] = ddlMetadata
 		}
-		column := types.DBColumn{
+		column := catalog.Column{
 			Name:                name,
 			DataType:            normalizeSQLiteType(dataType),
 			TypeIsDeclaredText:  true,
@@ -479,8 +479,8 @@ func (r *Reader) readIndexesByTable(ctx context.Context,
 	tableDDLByName map[string]string,
 	skipped []string,
 ) (
-	map[string][]types.DBIndex,
-	map[string][]types.DBConstraint,
+	map[string][]catalog.Index,
+	map[string][]catalog.Constraint,
 	error,
 ) {
 	entriesByTable, err := r.readIndexEntriesByTable(ctx, skipped)
@@ -493,8 +493,8 @@ func (r *Reader) readIndexesByTable(ctx context.Context,
 		return nil, nil, err
 	}
 
-	indexesByTable := make(map[string][]types.DBIndex, len(entriesByTable))
-	constraintsByTable := make(map[string][]types.DBConstraint, len(entriesByTable))
+	indexesByTable := make(map[string][]catalog.Index, len(entriesByTable))
+	constraintsByTable := make(map[string][]catalog.Constraint, len(entriesByTable))
 	for tableName, entries := range entriesByTable {
 		indexes, constraints := r.buildIndexesForTable(tableName, entries, indexDDLByName, tableDDLByName, columnsByIndex)
 		indexesByTable[tableName] = indexes
@@ -541,10 +541,10 @@ func (r *Reader) buildIndexesForTable(
 	indexDDLByName,
 	tableDDLByName map[string]string,
 	columnsByIndex map[string]sqliteIndexColumns,
-) ([]types.DBIndex, []types.DBConstraint) {
+) ([]catalog.Index, []catalog.Constraint) {
 	ddl := tableDDLByName[tableName]
-	var indexes []types.DBIndex
-	var constraints []types.DBConstraint
+	var indexes []catalog.Index
+	var constraints []catalog.Constraint
 	uniqueDefs := extractUniqueDefinitions(ddl)
 	uniqueDefsByColumns := uniqueDefinitionsByColumns(uniqueDefs)
 	uniqueOrdinal := 0
@@ -566,7 +566,7 @@ func (r *Reader) buildIndexesForTable(
 				constraintName = uniqueDef.name
 			}
 		}
-		index := types.DBIndex{
+		index := catalog.Index{
 			Name:       entry.name,
 			TableName:  tableName,
 			Schema:     r.outputSchema(),
@@ -584,7 +584,7 @@ func (r *Reader) buildIndexesForTable(
 			if uniqueDef, ok := uniqueDefsByColumns[strings.Join(columns, ",")]; ok && uniqueDef.name != "" {
 				constraintName = uniqueDef.name
 			}
-			constraints = append(constraints, types.DBConstraint{
+			constraints = append(constraints, catalog.Constraint{
 				Name:        constraintName,
 				TableName:   tableName,
 				Schema:      r.outputSchema(),
@@ -715,7 +715,7 @@ func (r *Reader) readIndexColumnsByIndex(ctx context.Context, skipped []string) 
 // catalog reported, so an expression key is recorded as an expression rather
 // than as a column nothing will find.
 //
-// It answers nil unless every key lines up, which leaves DBIndex.Parts empty
+// It answers nil unless every key lines up, which leaves Index.Parts empty
 // and keeps the columns-only representation rather than guessing -- the same
 // rule the PostgreSQL reader follows when its attnum list does not match.
 //
@@ -726,11 +726,11 @@ func (r *Reader) readIndexColumnsByIndex(ctx context.Context, skipped []string) 
 // the STRING `"(lower(email))"` -- silently, because SQLite reads a
 // double-quoted name that matches no column as a string literal. An index over
 // a constant is the same value for every row (stokaro/ptah#2088).
-func sqliteIndexParts(keys []sqliteIndexKey, keyTexts []string) []types.DBIndexPart {
+func sqliteIndexParts(keys []sqliteIndexKey, keyTexts []string) []catalog.IndexPart {
 	if len(keys) == 0 || len(keys) != len(keyTexts) {
 		return nil
 	}
-	parts := make([]types.DBIndexPart, len(keys))
+	parts := make([]catalog.IndexPart, len(keys))
 	for position, key := range keys {
 		if key.expression {
 			// An expression key's text comes from the DDL rather than from the
@@ -738,10 +738,10 @@ func sqliteIndexParts(keys []sqliteIndexKey, keyTexts []string) []types.DBIndexP
 			// for `lower(c) DESC` IS "lower(c) DESC". Setting Desc as well
 			// renders `lower(c) DESC DESC`, which SQLite refuses. Measured, and
 			// the reason this branch does not carry the flag its neighbour does.
-			parts[position] = types.DBIndexPart{Expr: keyTexts[position]}
+			parts[position] = catalog.IndexPart{Expr: keyTexts[position]}
 			continue
 		}
-		parts[position] = types.DBIndexPart{Name: keyTexts[position], Desc: key.desc}
+		parts[position] = catalog.IndexPart{Name: keyTexts[position], Desc: key.desc}
 	}
 	return parts
 }
@@ -812,11 +812,11 @@ type sqliteIndexEntry struct {
 
 func (r *Reader) readTableConstraints(
 	tableName string,
-	columns []types.DBColumn,
+	columns []catalog.Column,
 	ddl string,
-	foreignKeys []types.DBConstraint,
-) []types.DBConstraint {
-	var constraints []types.DBConstraint
+	foreignKeys []catalog.Constraint,
+) []catalog.Constraint {
+	var constraints []catalog.Constraint
 	if primary := primaryKeyConstraint(tableName, r.outputSchema(), columns, ddl); primary != nil {
 		constraints = append(constraints, *primary)
 	}
@@ -826,12 +826,12 @@ func (r *Reader) readTableConstraints(
 	return constraints
 }
 
-func primaryKeyConstraint(tableName, schema string, columns []types.DBColumn, ddl string) *types.DBConstraint {
+func primaryKeyConstraint(tableName, schema string, columns []catalog.Column, ddl string) *catalog.Constraint {
 	if name, names := extractPrimaryKeyDefinition(ddl); len(names) > 0 {
 		if name == "" {
 			name = tableName + "_pkey"
 		}
-		return &types.DBConstraint{
+		return &catalog.Constraint{
 			Name:        name,
 			TableName:   tableName,
 			Schema:      schema,
@@ -859,7 +859,7 @@ func primaryKeyConstraint(tableName, schema string, columns []types.DBColumn, dd
 	for i, column := range pk {
 		names[i] = column.name
 	}
-	return &types.DBConstraint{
+	return &catalog.Constraint{
 		Name:        tableName + "_pkey",
 		TableName:   tableName,
 		Schema:      schema,
@@ -872,7 +872,7 @@ func primaryKeyConstraint(tableName, schema string, columns []types.DBColumn, dd
 func (r *Reader) readForeignKeysByTable(ctx context.Context,
 	tableDDLByName map[string]string,
 	skipped []string,
-) (map[string][]types.DBConstraint, error) {
+) (map[string][]catalog.Constraint, error) {
 	exclusion, exclusionArguments := excludeTablesFilter(skipped)
 	query := fmt.Sprintf(`
 		SELECT m.name, fk.id, fk.seq, fk."table", fk."from", fk."to", fk.on_update, fk.on_delete, fk.match
@@ -889,7 +889,7 @@ func (r *Reader) readForeignKeysByTable(ctx context.Context,
 	}
 	defer rows.Close()
 
-	groupsByTable := make(map[string]map[int]*types.DBConstraint)
+	groupsByTable := make(map[string]map[int]*catalog.Constraint)
 	for rows.Next() {
 		var (
 			tableName string
@@ -907,7 +907,7 @@ func (r *Reader) readForeignKeysByTable(ctx context.Context,
 		}
 		groups := groupsByTable[tableName]
 		if groups == nil {
-			groups = make(map[int]*types.DBConstraint)
+			groups = make(map[int]*catalog.Constraint)
 			groupsByTable[tableName] = groups
 		}
 		constraint := groups[id]
@@ -915,7 +915,7 @@ func (r *Reader) readForeignKeysByTable(ctx context.Context,
 			refTableCopy := refTable
 			deleteRule := normalizeSQLiteAction(onDelete)
 			updateRule := normalizeSQLiteAction(onUpdate)
-			constraint = &types.DBConstraint{
+			constraint = &catalog.Constraint{
 				TableName:    tableName,
 				Schema:       r.outputSchema(),
 				Type:         "FOREIGN KEY",
@@ -940,7 +940,7 @@ func (r *Reader) readForeignKeysByTable(ctx context.Context,
 		return nil, fmt.Errorf("sqlite: iterate foreign keys: %w", err)
 	}
 
-	out := make(map[string][]types.DBConstraint, len(groupsByTable))
+	out := make(map[string][]catalog.Constraint, len(groupsByTable))
 	for tableName, groups := range groupsByTable {
 		details := extractForeignKeyDetails(tableDDLByName[tableName])
 		ids := make([]int, 0, len(groups))
@@ -948,7 +948,7 @@ func (r *Reader) readForeignKeysByTable(ctx context.Context,
 			ids = append(ids, id)
 		}
 		sort.Ints(ids)
-		constraints := make([]types.DBConstraint, 0, len(ids))
+		constraints := make([]catalog.Constraint, 0, len(ids))
 		for _, id := range ids {
 			constraint := groups[id]
 			applyForeignKeyDetail(constraint, details)
@@ -966,7 +966,7 @@ func (r *Reader) readForeignKeysByTable(ctx context.Context,
 // says: the name the author gave it, and the deferral SQLite's catalog does not
 // report at all (stokaro/ptah#2202).
 func applyForeignKeyDetail(
-	constraint *types.DBConstraint,
+	constraint *catalog.Constraint,
 	details map[foreignKeySignature]foreignKeyDetail,
 ) {
 	if constraint.ForeignTable == nil {
@@ -1009,7 +1009,7 @@ func first(values []string) string {
 // `origin` for every index: `u` for the implicit index behind a declared UNIQUE
 // constraint, and `c` for one an author created with `CREATE UNIQUE INDEX`.
 // Only the first is part of the column's declaration; the reader turns those
-// into [types.DBConstraint] rows of type UNIQUE, which is the signal used here.
+// into [catalog.Constraint] rows of type UNIQUE, which is the signal used here.
 //
 // Keying off `schema.Indexes` instead folded a standalone `CREATE UNIQUE INDEX`
 // into the column while leaving the index itself in the schema, so rendering the
@@ -1019,7 +1019,7 @@ func first(values []string) string {
 // a column came from a named index produced four indexes where the source had
 // three: the extra one was a phantom `sqlite_autoindex` the source never had.
 // See stokaro/ptah#1235 finding 5.2.
-func reconcileColumnUniqueness(schema *types.DBSchema) {
+func reconcileColumnUniqueness(schema *catalog.Database) {
 	uniqueColumns := make(map[tableColumnKey]struct{})
 	for _, constraint := range schema.Constraints {
 		if constraint.Type != "UNIQUE" {
@@ -1104,8 +1104,8 @@ func splitTopLevelComma(value string) []string {
 	return parts
 }
 
-func extractCheckConstraints(tableName, schema, ddl string) []types.DBConstraint {
-	var constraints []types.DBConstraint
+func extractCheckConstraints(tableName, schema, ddl string) []catalog.Constraint {
+	var constraints []catalog.Constraint
 	for idx, part := range splitTopLevelComma(tableBody(ddl)) {
 		name, rest := optionalConstraintName(part)
 		if name == "" {
@@ -1118,7 +1118,7 @@ func extractCheckConstraints(tableName, schema, ddl string) []types.DBConstraint
 		if name == "" {
 			name = inferCheckName(tableName, expr, idx+1)
 		}
-		constraints = append(constraints, types.DBConstraint{
+		constraints = append(constraints, catalog.Constraint{
 			Name:        name,
 			TableName:   tableName,
 			Schema:      schema,
@@ -1686,8 +1686,8 @@ func viewBody(ddl string) string {
 	return strings.TrimSpace(ddl[idx+len("AS"):])
 }
 
-func parseTriggerDDL(name, table, schema, ddl string) types.DBTrigger {
-	trigger := types.DBTrigger{
+func parseTriggerDDL(name, table, schema, ddl string) catalog.Trigger {
+	trigger := catalog.Trigger{
 		Name:    name,
 		Schema:  schema,
 		Table:   table,

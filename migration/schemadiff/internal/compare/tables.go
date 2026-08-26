@@ -3,13 +3,13 @@ package compare
 import (
 	"sort"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/crdbttl"
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/spannerttl"
@@ -76,7 +76,7 @@ import (
 //
 // Results are sorted alphabetically for consistent output across multiple runs,
 // ensuring deterministic migration generation and reliable testing.
-func TablesAndColumns(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
+func TablesAndColumns(generated *goschema.Database, database *catalog.Database, diff *difftypes.SchemaDiff) {
 	TablesAndColumnsWithDialect(generated, database, diff, "")
 }
 
@@ -84,7 +84,7 @@ func TablesAndColumns(generated *goschema.Database, database *types.DBSchema, di
 // dialect-aware normalization for surfaces whose catalogs rewrite expressions.
 func TablesAndColumnsWithDialect(
 	generated *goschema.Database,
-	database *types.DBSchema,
+	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	dialect string,
 ) {
@@ -102,7 +102,7 @@ func TablesAndColumnsWithDialect(
 // identifier rules while retaining target spelling in the produced diff.
 func TablesAndColumnsWithSemantics(
 	generated *goschema.Database,
-	database *types.DBSchema,
+	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	dialect string,
 	semantics identifier.Semantics,
@@ -118,7 +118,7 @@ func TablesAndColumnsWithSemantics(
 // six-argument form passes. See [config.CompareOptions.GeneratedExpressions].
 func TablesAndColumnsWithGeneratedExpressions(
 	generated *goschema.Database,
-	database *types.DBSchema,
+	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	dialect string,
 	semantics identifier.Semantics,
@@ -131,7 +131,7 @@ func TablesAndColumnsWithGeneratedExpressions(
 		genTables[tableMapIdentity(table.Schema, table.Name, dialect, semantics)] = table
 	}
 
-	dbTables := make(map[tableIdentity]types.DBTable)
+	dbTables := make(map[tableIdentity]catalog.Table)
 	for _, table := range database.Tables {
 		dbTables[tableMapIdentity(table.Schema, table.Name, dialect, semantics)] = table
 	}
@@ -276,7 +276,7 @@ func tableDiffName(schema, name, dialect string) string {
 	if platform.NormalizeDialect(dialect) == platform.SQLite {
 		return tableref.CanonicalExact(schema, name)
 	}
-	return types.QualifyTableName(schema, name)
+	return catalog.QualifyTableName(schema, name)
 }
 
 // rowTTLChange reports the row-level TTL transition between a declaration and a

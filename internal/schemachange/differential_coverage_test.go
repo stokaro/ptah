@@ -138,7 +138,7 @@ func namesAnIndexOrConstraint(field string) bool {
 func categoriesCoveredByDifferentialRows() map[string]bool {
 	covered := make(map[string]bool)
 	for _, fixture := range statementDifferentialFixtures() {
-		diff := schemadiff.CompareWithDialect(fixture.description, fixture.catalog, "postgres")
+		diff := schemadiff.CompareWithDialect(fixture.description, fixture.currentCatalog, "postgres")
 		recordFilledCategories(covered, diff)
 	}
 	return covered

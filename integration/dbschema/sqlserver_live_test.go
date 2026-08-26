@@ -11,11 +11,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -352,7 +352,7 @@ WHERE s.name = @p1 AND t.name = @p2
 	return count > 0
 }
 
-func findSQLServerTable(tables []dbschematypes.DBTable, schemaName, tableName string) *dbschematypes.DBTable {
+func findSQLServerTable(tables []catalog.Table, schemaName, tableName string) *catalog.Table {
 	for i := range tables {
 		if tables[i].Schema == schemaName && tables[i].Name == tableName {
 			return &tables[i]
@@ -361,7 +361,7 @@ func findSQLServerTable(tables []dbschematypes.DBTable, schemaName, tableName st
 	return nil
 }
 
-func findSQLServerColumn(columns []dbschematypes.DBColumn, columnName string) *dbschematypes.DBColumn {
+func findSQLServerColumn(columns []catalog.Column, columnName string) *catalog.Column {
 	for i := range columns {
 		if columns[i].Name == columnName {
 			return &columns[i]
@@ -370,7 +370,7 @@ func findSQLServerColumn(columns []dbschematypes.DBColumn, columnName string) *d
 	return nil
 }
 
-func findSQLServerIndex(indexes []dbschematypes.DBIndex, schemaName, tableName, indexName string) *dbschematypes.DBIndex {
+func findSQLServerIndex(indexes []catalog.Index, schemaName, tableName, indexName string) *catalog.Index {
 	for i := range indexes {
 		if indexes[i].Schema == schemaName && indexes[i].TableName == tableName && indexes[i].Name == indexName {
 			return &indexes[i]
@@ -379,7 +379,7 @@ func findSQLServerIndex(indexes []dbschematypes.DBIndex, schemaName, tableName, 
 	return nil
 }
 
-func findSQLServerConstraint(constraints []dbschematypes.DBConstraint, schemaName, tableName, constraintName string) *dbschematypes.DBConstraint {
+func findSQLServerConstraint(constraints []catalog.Constraint, schemaName, tableName, constraintName string) *catalog.Constraint {
 	for i := range constraints {
 		if constraints[i].Schema == schemaName && constraints[i].TableName == tableName && constraints[i].Name == constraintName {
 			return &constraints[i]

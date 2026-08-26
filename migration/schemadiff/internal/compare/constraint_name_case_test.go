@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -90,13 +90,13 @@ func widgetDeclaringLowerCaseConstraint() *goschema.Database {
 
 // widgetReportingUpperCaseConstraint is the same table as a catalog holding the
 // constraint under the other spelling reports it.
-func widgetReportingUpperCaseConstraint() *types.DBSchema {
-	return &types.DBSchema{
-		Tables: []types.DBTable{{Name: "widget", Columns: []types.DBColumn{
+func widgetReportingUpperCaseConstraint() *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{{Name: "widget", Columns: []catalog.Column{
 			{Name: "id", DataType: "integer", IsPrimaryKey: true, IsNullable: "NO"},
 			{Name: "tenant", DataType: "text", IsNullable: "NO"},
 		}}},
-		Constraints: []types.DBConstraint{{
+		Constraints: []catalog.Constraint{{
 			TableName: "widget", Name: "UQ_WIDGET_SCOPE",
 			Type: "UNIQUE", ColumnNames: []string{"tenant"},
 		}},
@@ -167,19 +167,19 @@ func widgetReferencingParent() *goschema.Database {
 
 // parentAndWidgetHoldingForeignKey is the pair as a catalog reports it, with the
 // foreign key under the given spelling and its body otherwise identical.
-func parentAndWidgetHoldingForeignKey(name string) *types.DBSchema {
+func parentAndWidgetHoldingForeignKey(name string) *catalog.Database {
 	parent, id := "parent", "id"
-	return &types.DBSchema{
-		Tables: []types.DBTable{
-			{Name: "parent", Columns: []types.DBColumn{
+	return &catalog.Database{
+		Tables: []catalog.Table{
+			{Name: "parent", Columns: []catalog.Column{
 				{Name: "id", DataType: "integer", IsPrimaryKey: true, IsNullable: "NO"},
 			}},
-			{Name: "widget", Columns: []types.DBColumn{
+			{Name: "widget", Columns: []catalog.Column{
 				{Name: "id", DataType: "integer", IsPrimaryKey: true, IsNullable: "NO"},
 				{Name: "parent", DataType: "integer", IsNullable: "NO"},
 			}},
 		},
-		Constraints: []types.DBConstraint{{
+		Constraints: []catalog.Constraint{{
 			TableName: "widget", Name: name, Type: "FOREIGN KEY",
 			ColumnName: "parent", ColumnNames: []string{"parent"},
 			ForeignTable: &parent, ForeignColumn: &id, ForeignColumns: []string{"id"},

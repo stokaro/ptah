@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/mysqlroutine"
 	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
@@ -28,7 +28,7 @@ import (
 // only after comparison had already represented it as an executable change.
 func ValidateMySQLFunctionDefinerReplacements(
 	generated *goschema.Database,
-	database *types.DBSchema,
+	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	dialect string,
 	semantics identifier.Semantics,
@@ -91,12 +91,12 @@ func ValidateMySQLFunctionDefinerReplacements(
 
 func findCurrentFunctionForDesired(
 	desired goschema.Function,
-	current []types.DBFunction,
+	current []catalog.Function,
 	dialect string,
 	semantics identifier.Semantics,
-) (types.DBFunction, bool) {
+) (catalog.Function, bool) {
 	if semantics.DefaultSchema != "" {
-		byIdentity := make(map[objectIdentity]types.DBFunction, len(current))
+		byIdentity := make(map[objectIdentity]catalog.Function, len(current))
 		for _, function := range current {
 			identity := newObjectIdentity(
 				routineIdentityKind(function.Kind),
@@ -115,8 +115,8 @@ func findCurrentFunctionForDesired(
 		return function, ok
 	}
 
-	byName := make(map[string][]types.DBFunction, len(current))
-	byQualifiedName := make(map[string]types.DBFunction, len(current))
+	byName := make(map[string][]catalog.Function, len(current))
+	byQualifiedName := make(map[string]catalog.Function, len(current))
 	for _, function := range current {
 		key := routineIdentityKey(function.Name, dialect)
 		byName[routineKeyWithKind(function.Kind, key)] = append(byName[routineKeyWithKind(function.Kind, key)], function)

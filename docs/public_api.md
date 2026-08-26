@@ -28,7 +28,7 @@ These packages are intended for application and tool embedders:
 - `go.5x5.cz/ptah/core/sqlutil`
 - `go.5x5.cz/ptah/core/yamlschema`
 - `go.5x5.cz/ptah/dbschema`
-- `go.5x5.cz/ptah/dbschema/types`
+- `go.5x5.cz/ptah/catalog`
 - `go.5x5.cz/ptah/docs`
 - `go.5x5.cz/ptah/migration/datadiff`
 - `go.5x5.cz/ptah/migration/dbtest`
@@ -127,7 +127,7 @@ default schema. Embedders should preserve the field when converting or copying
 schema IR; dropping it can move an extension into the wrong namespace.
 
 `core/coverage` carries what a schema description does **not** claim to
-describe. `goschema.Database.NotDescribed` and `dbschema/types.DBSchema.NotDescribed`
+describe. `goschema.Database.NotDescribed` and `catalog.Database.NotDescribed`
 hold one, and schema comparison consults both: the desired state's record gates
 removals and the introspected state's record gates additions. Its zero value
 claims everything, so an embedder that never sets one gets exactly the
@@ -143,7 +143,7 @@ default comparison options. Command adapters use that report for warnings;
 embedders can choose their own diagnostic policy.
 
 MySQL-family readers populate the JSON-hidden
-`dbschema/types.DBFunction.Definer` and `CurrentAccount` execution facts.
+`catalog.Function.Definer` and `CurrentAccount` execution facts.
 Database-aware `schemadiff.CompareWithDatabase` entry points use them to refuse
 a modified `SQL SECURITY DEFINER` routine when recreating it would change the
 executing account. Custom readers that supply a modified definer routine must

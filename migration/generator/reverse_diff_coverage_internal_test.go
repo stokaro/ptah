@@ -12,9 +12,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
@@ -58,7 +58,7 @@ func assertReverseCoverageField(
 	c *qt.C,
 	baseline *difftypes.SchemaDiff,
 	schema *goschema.Database,
-	dbSchema *dbschematypes.DBSchema,
+	dbSchema *catalog.Database,
 	field reflect.StructField,
 	fieldIndex int,
 ) {
@@ -196,7 +196,7 @@ const (
 	modifiedCategoryPriorMatViewBody = "SELECT count(*) AS total FROM rev_named_users"
 )
 
-func modifiedCategoryContext() (*goschema.Database, *dbschematypes.DBSchema) {
+func modifiedCategoryContext() (*goschema.Database, *catalog.Database) {
 	schema := &goschema.Database{
 		Tables: []goschema.Table{{StructName: "RevNamedUser", Name: modifiedCategoryTable}},
 		Fields: []goschema.Field{
@@ -223,25 +223,25 @@ func modifiedCategoryContext() (*goschema.Database, *dbschematypes.DBSchema) {
 	}
 	goschema.Finalize(schema)
 
-	dbSchema := &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{{
+	dbSchema := &catalog.Database{
+		Tables: []catalog.Table{{
 			Name:   modifiedCategoryTable,
 			Schema: modifiedCategorySchema,
 			Type:   "TABLE",
-			Columns: []dbschematypes.DBColumn{
+			Columns: []catalog.Column{
 				{Name: "id", DataType: "bigint", IsNullable: "NO", IsPrimaryKey: true, OrdinalPosition: 1},
 				{Name: "email", DataType: "text", IsNullable: "NO", OrdinalPosition: 2},
 			},
 		}},
-		Views: []dbschematypes.DBView{
+		Views: []catalog.View{
 			{Name: modifiedCategoryView, Schema: modifiedCategorySchema, Body: modifiedCategoryPriorViewBody},
 		},
-		MatViews: []dbschematypes.DBMatView{{
+		MatViews: []catalog.MaterializedView{{
 			Name:   modifiedCategoryMatView,
 			Schema: modifiedCategorySchema,
 			Body:   modifiedCategoryPriorMatViewBody,
 		}},
-		Triggers: []dbschematypes.DBTrigger{{
+		Triggers: []catalog.Trigger{{
 			Name:    modifiedCategoryTrigger,
 			Table:   modifiedCategoryTable,
 			Schema:  modifiedCategorySchema,
@@ -334,7 +334,7 @@ const (
 // reverseCoverageContext supplies the generated schema and the pre-change
 // database the reverse builder consults for the fields it derives rather than
 // swaps.
-func reverseCoverageContext() (*goschema.Database, *dbschematypes.DBSchema) {
+func reverseCoverageContext() (*goschema.Database, *catalog.Database) {
 	checkClause := "id > 0"
 
 	schema := &goschema.Database{
@@ -350,15 +350,15 @@ func reverseCoverageContext() (*goschema.Database, *dbschematypes.DBSchema) {
 	}
 	goschema.Finalize(schema)
 
-	dbSchema := &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{{
+	dbSchema := &catalog.Database{
+		Tables: []catalog.Table{{
 			Name: revCoverageTable,
 			Type: "TABLE",
-			Columns: []dbschematypes.DBColumn{
+			Columns: []catalog.Column{
 				{Name: "id", DataType: "bigint", IsNullable: "NO", IsPrimaryKey: true, OrdinalPosition: 1},
 			},
 		}},
-		Constraints: []dbschematypes.DBConstraint{
+		Constraints: []catalog.Constraint{
 			{
 				Name:        revCoverageCheckName,
 				TableName:   revCoverageTable,

@@ -1,10 +1,10 @@
 package compare
 
 import (
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/indexscope"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -87,7 +87,7 @@ func generatedIndexIdentities(
 // share an identity to hand off, and the reader's autoindex rows are dropped
 // before the pools are built ([unaddressableDatabaseIndex]).
 func uniqueConstraintOwnedByDeclaredIndex(
-	constraint types.DBConstraint,
+	constraint catalog.Constraint,
 	dialect string,
 	declaredIndexes map[difftypes.IndexRef]struct{},
 	semantics identifier.Semantics,

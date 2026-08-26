@@ -32,9 +32,9 @@ import (
 	clickhousedriver "github.com/ClickHouse/clickhouse-go/v2"
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 )
 
@@ -115,7 +115,7 @@ func refuseColumnsAddedAfter2410(query string) error {
 }
 
 // refuseSecretBearingSurface refuses any statement that reaches for a
-// credential-bearing catalog or command.
+// credential-bearing currentCatalog or command.
 func refuseSecretBearingSurface(query string) error {
 	upper := strings.ToUpper(query)
 	for _, surface := range secretBearingSurfaces {
@@ -143,7 +143,7 @@ const (
 // narrows the read in a way the fake ignores is answered as though it did not
 // narrow it, and the test then passes on a description the server would never
 // have produced. `AND is_partial_revoke = 0` is the concrete one -- it drops the
-// rows that record a grant minus exceptions, which types.DBGrant.IsPartialRevoke
+// rows that record a grant minus exceptions, which catalog.Grant.IsPartialRevoke
 // exists to report -- and it walked past every test in this file until the fake
 // started reading the clauses instead of searching for them.
 var knownGrantRestrictions = []string{
@@ -271,7 +271,7 @@ func orderedGrantRows(query string, rows []grantRow) []grantRow {
 	return ordered
 }
 
-// answerRoles hands back the whole catalog, and refuses a statement that tried
+// answerRoles hands back the whole currentCatalog, and refuses a statement that tried
 // to narrow it.
 //
 // Narrowing in SQL is not wrong in itself; answering it here without evaluating
@@ -295,7 +295,7 @@ func answerRoles(query string, rows []roleRow) (dbtest.QueryResult, error) {
 	return result, nil
 }
 
-// uint8OfBool renders a Go bool the way the catalog stores one: system.grants
+// uint8OfBool renders a Go bool the way the currentCatalog stores one: system.grants
 // carries is_partial_revoke and grant_option as UInt8, which is what the reader
 // scans them into.
 var uint8OfBool = map[bool]uint8{false: 0, true: 1}
@@ -317,7 +317,7 @@ func answerClickHouse(query string, args []driver.NamedValue, server rbacServer)
 		return answerGrants(query, args, server.grants)
 	// The reader describes row policies now that ClickHouse carries
 	// capability.RowLevelSecurity. These tests are about roles and grants, so
-	// the catalog answers empty rather than falling to the unexpected-statement
+	// the currentCatalog answers empty rather than falling to the unexpected-statement
 	// arm, which would report an RBAC failure for a policy statement
 	// (stokaro/ptah#1736).
 	case strings.Contains(query, "FROM system.row_policies"):
@@ -334,7 +334,7 @@ func answerClickHouse(query string, args []driver.NamedValue, server rbacServer)
 }
 
 // newRBACServer returns a reader connected to rbacDatabase on a server holding
-// the given catalog, plus every statement it sends, in order.
+// the given currentCatalog, plus every statement it sends, in order.
 func newRBACServer(c *qt.C, server rbacServer, caps capability.Capabilities) (*Reader, *[]string) {
 	var sent []string
 	db := dbtest.Open(c, func(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
@@ -388,14 +388,14 @@ func TestReadGrantsDescribesTheConnectedDatabase(t *testing.T) {
 	tests := []struct {
 		name   string
 		grants []grantRow
-		want   []types.DBGrant
+		want   []catalog.Grant
 	}{
 		{
 			name: "a database-wide grant",
 			grants: []grantRow{
 				{roleName: "reader", privilege: "SELECT", database: rbacDatabase},
 			},
-			want: []types.DBGrant{
+			want: []catalog.Grant{
 				{Role: "reader", Privilege: "SELECT", ObjectType: "SCHEMA", ObjectName: rbacDatabase},
 			},
 		},
@@ -404,7 +404,7 @@ func TestReadGrantsDescribesTheConnectedDatabase(t *testing.T) {
 			grants: []grantRow{
 				{roleName: "reader", privilege: "SELECT", database: rbacDatabase, table: "events"},
 			},
-			want: []types.DBGrant{
+			want: []catalog.Grant{
 				{
 					Role: "reader", Privilege: "SELECT", ObjectType: "TABLE",
 					Schema: rbacDatabase, ObjectName: "events",
@@ -416,7 +416,7 @@ func TestReadGrantsDescribesTheConnectedDatabase(t *testing.T) {
 			grants: []grantRow{
 				{roleName: "reader", privilege: "SELECT", database: rbacDatabase, table: "events", grantOption: true},
 			},
-			want: []types.DBGrant{
+			want: []catalog.Grant{
 				{
 					Role: "reader", Privilege: "SELECT", ObjectType: "TABLE",
 					Schema: rbacDatabase, ObjectName: "events", WithOption: true,
@@ -433,7 +433,7 @@ func TestReadGrantsDescribesTheConnectedDatabase(t *testing.T) {
 				{roleName: "reader", privilege: "SELECT", database: rbacDatabase},
 				{roleName: "reader", privilege: "SELECT", database: rbacDatabase, table: "events", partialRevoke: true},
 			},
-			want: []types.DBGrant{
+			want: []catalog.Grant{
 				{Role: "reader", Privilege: "SELECT", ObjectType: "SCHEMA", ObjectName: rbacDatabase},
 				{
 					Role: "reader", Privilege: "SELECT", ObjectType: "TABLE",
@@ -589,7 +589,7 @@ func TestReadRolesReportsTheOnlyAttributeClickHouseHas(t *testing.T) {
 	described, _, err := reader.readRoles(t.Context(), grants)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(described, qt.DeepEquals, []types.DBRole{{Name: "reader", Inherit: true}})
+	c.Assert(described, qt.DeepEquals, []catalog.Role{{Name: "reader", Inherit: true}})
 }
 
 func TestReadSchemaFillsTheDescriptionUnderTheCapability(t *testing.T) {
@@ -602,7 +602,7 @@ func TestReadSchemaFillsTheDescriptionUnderTheCapability(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(roleNames(schema.Roles), qt.DeepEquals, []string{"analyst", "reader"})
 	c.Assert(roleNames(schema.RolesOutOfScope), qt.DeepEquals, []string{"configured", "elsewhere", "ungranted"})
-	c.Assert(schema.Grants, qt.DeepEquals, []types.DBGrant{
+	c.Assert(schema.Grants, qt.DeepEquals, []catalog.Grant{
 		{Role: "analyst", Privilege: "SELECT", ObjectType: "TABLE", Schema: rbacDatabase, ObjectName: "events"},
 		{Role: "configured", Privilege: "SELECT", ObjectType: "SCHEMA", ObjectName: rbacDatabase},
 		{Role: "reader", Privilege: "SELECT", ObjectType: "SCHEMA", ObjectName: rbacDatabase},
@@ -617,24 +617,24 @@ func TestReadSchemaFillsTheDescriptionUnderTheCapability(t *testing.T) {
 // Measured on 26.7.3.19 with an account holding only SELECT, SHOW TABLES and
 // SHOW COLUMNS on one database: both RBAC catalogs answer Code 497
 // ACCESS_DENIED while system.tables answers normally.
-func accessDenied(catalog string) error {
+func accessDenied(currentCatalog string) error {
 	return &clickhousedriver.Exception{
 		Code: 497,
 		Name: "ACCESS_DENIED",
 		Message: "lowpriv: Not enough privileges. To execute this query, it's necessary to have " +
-			"the grant SELECT for at least one column on " + catalog + ".",
+			"the grant SELECT for at least one column on " + currentCatalog + ".",
 	}
 }
 
-// newRBACServerFailing is [newRBACServer] on a server that answers one catalog
+// newRBACServerFailing is [newRBACServer] on a server that answers one currentCatalog
 // with the given error and everything else normally.
 func newRBACServerFailing(
-	c *qt.C, server rbacServer, caps capability.Capabilities, catalog string, failure error,
+	c *qt.C, server rbacServer, caps capability.Capabilities, currentCatalog string, failure error,
 ) (*Reader, *[]string) {
 	var sent []string
 	db := dbtest.Open(c, func(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
 		sent = append(sent, query)
-		if strings.Contains(query, catalog) {
+		if strings.Contains(query, currentCatalog) {
 			return dbtest.QueryResult{}, failure
 		}
 		return answerClickHouse(query, args, server)
@@ -642,7 +642,7 @@ func newRBACServerFailing(
 	return NewClickHouseReaderWithCapabilities(db.SQL, rbacDatabase, "26.7.3.19", caps), &sent
 }
 
-// unknownIdentifier is a catalog error that is NOT a privilege refusal: the
+// unknownIdentifier is a currentCatalog error that is NOT a privilege refusal: the
 // shape a system table changing under Ptah would produce.
 func unknownIdentifier() error {
 	return &clickhousedriver.Exception{
@@ -666,11 +666,11 @@ func unknownIdentifier() error {
 // comparator would plan CREATE ROLE for every declared one.
 func TestReadSchemaDegradesWhenTheAccountMayNotReadTheAccessCatalog(t *testing.T) {
 	tests := []struct {
-		name    string
-		catalog string
+		name           string
+		currentCatalog string
 	}{
-		{name: "system.grants is refused", catalog: "system.grants"},
-		{name: "system.roles is refused", catalog: "system.roles"},
+		{name: "system.grants is refused", currentCatalog: "system.grants"},
+		{name: "system.roles is refused", currentCatalog: "system.roles"},
 	}
 
 	for _, test := range tests {
@@ -678,7 +678,7 @@ func TestReadSchemaDegradesWhenTheAccountMayNotReadTheAccessCatalog(t *testing.T
 			c := qt.New(t)
 
 			reader, _ := newRBACServerFailing(
-				c, mixedServer(), withRoleManagement(), test.catalog, accessDenied(test.catalog),
+				c, mixedServer(), withRoleManagement(), test.currentCatalog, accessDenied(test.currentCatalog),
 			)
 
 			schema, err := reader.ReadSchemaContext(t.Context())
@@ -689,7 +689,7 @@ func TestReadSchemaDegradesWhenTheAccountMayNotReadTheAccessCatalog(t *testing.T
 			c.Assert(schema.Grants, qt.HasLen, 0)
 			c.Assert(schema.NotDescribed.Describes(coverage.Role, "reader"), qt.IsFalse,
 				qt.Commentf("a read that could not look must not claim the role is absent"))
-			// And it says why: Ptah watched this server refuse the catalog, so
+			// And it says why: Ptah watched this server refuse the currentCatalog, so
 			// a surface can tell the user to grant the privilege rather than
 			// only that something was held back (stokaro/ptah#1346).
 			c.Assert(schema.NotDescribed.Objects, qt.DeepEquals,
@@ -700,7 +700,7 @@ func TestReadSchemaDegradesWhenTheAccountMayNotReadTheAccessCatalog(t *testing.T
 
 // TestReadSchemaFailsOnEveryOtherRBACError is the control on the degradation
 // above. Without it a reader that swallowed every RBAC failure would satisfy
-// that test completely, and a catalog that changed shape under Ptah would read
+// that test completely, and a currentCatalog that changed shape under Ptah would read
 // as a server with no roles.
 func TestReadSchemaFailsOnEveryOtherRBACError(t *testing.T) {
 	c := qt.New(t)
@@ -822,7 +822,7 @@ func TestRBACReadsTouchNoCredentialBearingSurface(t *testing.T) {
 		name    string
 		surface string
 	}{
-		{name: "the users catalog", surface: "system.users"},
+		{name: "the users currentCatalog", surface: "system.users"},
 		{name: "the authentication parameters", surface: "auth_params"},
 		{name: "SHOW CREATE, which renders IDENTIFIED WITH", surface: "SHOW CREATE"},
 		{name: "SHOW GRANTS, whose user form names a user", surface: "SHOW GRANTS"},
@@ -871,7 +871,7 @@ func TestTheSimulatedServerRefusesWhatItMustRefuse(t *testing.T) {
 			wantErr: "simulated 24.10.4.191: SELECT \\* over system.grants answers 8 columns here and 10 on 26.7",
 		},
 		{
-			name:    "the users catalog",
+			name:    "the users currentCatalog",
 			query:   "SELECT name, auth_params FROM system.users",
 			wantErr: "the reader must never name SYSTEM.USERS",
 		},
@@ -909,7 +909,7 @@ func TestTheSimulatedServerRefusesWhatItMustRefuse(t *testing.T) {
 func TestOnServerNamesTheVersionOnlyWhenThereIsOne(t *testing.T) {
 	// The version is carried for the diagnostic and for nothing else: the
 	// projection names the columns the oldest declared line has, so no read
-	// branches on it. What it buys is that a catalog failure says which server
+	// branches on it. What it buys is that a currentCatalog failure says which server
 	// refused, since a failure here is far more likely to be about the version
 	// than about the schema.
 	tests := []struct {
@@ -931,7 +931,7 @@ func TestOnServerNamesTheVersionOnlyWhenThereIsOne(t *testing.T) {
 	}
 }
 
-func roleNames(roles []types.DBRole) []string {
+func roleNames(roles []catalog.Role) []string {
 	if len(roles) == 0 {
 		return nil
 	}

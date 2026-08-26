@@ -5,15 +5,15 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 )
 
 // envReferenceSchema is a database with two tables, so a selector that works
 // can be told apart from one that matches nothing.
-func envReferenceSchema() *dbschematypes.DBSchema {
-	return &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
+func envReferenceSchema() *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{
 			{Name: "keepme", Schema: "public"},
 			{Name: "skipme", Schema: "public"},
 		},
@@ -101,7 +101,7 @@ func TestInclude_AnOrdinaryPatternStillWorks(t *testing.T) {
 func TestExclude_APatternThatMerelyContainsTheSchemeIsNotRefused(t *testing.T) {
 	c := qt.New(t)
 	schema := envReferenceSchema()
-	schema.Tables = append(schema.Tables, dbschematypes.DBTable{Name: "my_env_table", Schema: "public"})
+	schema.Tables = append(schema.Tables, catalog.Table{Name: "my_env_table", Schema: "public"})
 
 	filtered, err := atlasfilter.ExcludeDatabase(schema, []string{"my_env*"})
 

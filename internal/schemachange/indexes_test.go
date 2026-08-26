@@ -5,10 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/schemachange"
 	"go.5x5.cz/ptah/internal/schemastate"
 )
@@ -21,37 +21,37 @@ import (
 
 func TestAnIndexIsPlanned(t *testing.T) {
 	tests := []struct {
-		name          string
-		description   *goschema.Database
-		catalog       *dbschematypes.DBSchema
-		wantOperation schemachange.Operation
-		wantChanged   []string
+		name           string
+		description    *goschema.Database
+		currentCatalog *catalog.Database
+		wantOperation  schemachange.Operation
+		wantChanged    []string
 	}{
 		{
-			name:          "declared and absent from the database",
-			description:   indexedWidget(false, "a", "b"),
-			catalog:       indexedWidgetCatalog(false),
-			wantOperation: schemachange.Add,
+			name:           "declared and absent from the database",
+			description:    indexedWidget(false, "a", "b"),
+			currentCatalog: indexedWidgetCatalog(false),
+			wantOperation:  schemachange.Add,
 		},
 		{
-			name:          "present and no longer declared",
-			description:   indexedWidget(false),
-			catalog:       indexedWidgetCatalog(false, "a", "b"),
-			wantOperation: schemachange.Remove,
+			name:           "present and no longer declared",
+			description:    indexedWidget(false),
+			currentCatalog: indexedWidgetCatalog(false, "a", "b"),
+			wantOperation:  schemachange.Remove,
 		},
 		{
-			name:          "declared over different columns",
-			description:   indexedWidget(false, "a"),
-			catalog:       indexedWidgetCatalog(false, "a", "b"),
-			wantOperation: schemachange.Modify,
-			wantChanged:   []string{"columns"},
+			name:           "declared over different columns",
+			description:    indexedWidget(false, "a"),
+			currentCatalog: indexedWidgetCatalog(false, "a", "b"),
+			wantOperation:  schemachange.Modify,
+			wantChanged:    []string{"columns"},
 		},
 		{
-			name:          "declared unique where the database has it plain",
-			description:   indexedWidget(true, "a", "b"),
-			catalog:       indexedWidgetCatalog(false, "a", "b"),
-			wantOperation: schemachange.Modify,
-			wantChanged:   []string{"uniqueness"},
+			name:           "declared unique where the database has it plain",
+			description:    indexedWidget(true, "a", "b"),
+			currentCatalog: indexedWidgetCatalog(false, "a", "b"),
+			wantOperation:  schemachange.Modify,
+			wantChanged:    []string{"uniqueness"},
 		},
 	}
 
@@ -59,7 +59,7 @@ func TestAnIndexIsPlanned(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			changes := changesFor(c, test.description, test.catalog)
+			changes := changesFor(c, test.description, test.currentCatalog)
 
 			c.Assert(changes, qt.HasLen, 1)
 			c.Assert(string(changes[0].ID.Kind), qt.Equals, "index")
@@ -91,10 +91,10 @@ func TestAnUnchangedIndexIsNotAChange(t *testing.T) {
 // the part the reader could not see.
 func TestAKeyTheReaderCouldNotNameIsNotRebuilt(t *testing.T) {
 	c := qt.New(t)
-	catalog := indexedWidgetCatalog(false, "a")
-	catalog.Indexes[0].KeyPartsIncomplete = true
+	currentCatalog := indexedWidgetCatalog(false, "a")
+	currentCatalog.Indexes[0].KeyPartsIncomplete = true
 
-	changes := changesFor(c, indexedWidget(false, "a", "b"), catalog)
+	changes := changesFor(c, indexedWidget(false, "a", "b"), currentCatalog)
 
 	c.Assert(changes, qt.HasLen, 0)
 }
@@ -141,29 +141,29 @@ func withDeclaredIndex(
 	}[len(columns) == 0]()
 }
 
-// indexedWidgetCatalog is that table as a catalog read reports it.
-func indexedWidgetCatalog(unique bool, columns ...string) *dbschematypes.DBSchema {
-	catalog := catalogTable(
-		dbschematypes.DBColumn{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
-		dbschematypes.DBColumn{Name: "a", DataType: "text", IsNullable: "YES"},
-		dbschematypes.DBColumn{Name: "b", DataType: "text", IsNullable: "YES"},
+// indexedWidgetCatalog is that table as a currentCatalog read reports it.
+func indexedWidgetCatalog(unique bool, columns ...string) *catalog.Database {
+	currentCatalog := catalogTable(
+		catalog.Column{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
+		catalog.Column{Name: "a", DataType: "text", IsNullable: "YES"},
+		catalog.Column{Name: "b", DataType: "text", IsNullable: "YES"},
 	)
-	return withCatalogIndex(catalog, unique, columns)
+	return withCatalogIndex(currentCatalog, unique, columns)
 }
 
 func withCatalogIndex(
-	catalog *dbschematypes.DBSchema,
+	currentCatalog *catalog.Database,
 	unique bool,
 	columns []string,
-) *dbschematypes.DBSchema {
-	return map[bool]func() *dbschematypes.DBSchema{
-		true: func() *dbschematypes.DBSchema { return catalog },
-		false: func() *dbschematypes.DBSchema {
-			catalog.Indexes = append(catalog.Indexes, dbschematypes.DBIndex{
+) *catalog.Database {
+	return map[bool]func() *catalog.Database{
+		true: func() *catalog.Database { return currentCatalog },
+		false: func() *catalog.Database {
+			currentCatalog.Indexes = append(currentCatalog.Indexes, catalog.Index{
 				Name: "idx_widget_ab", TableName: "widget", Schema: "public",
 				Columns: columns, IsUnique: unique,
 			})
-			return catalog
+			return currentCatalog
 		},
 	}[len(columns) == 0]()
 }

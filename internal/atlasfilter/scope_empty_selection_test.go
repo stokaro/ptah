@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 )
 
@@ -32,14 +32,14 @@ func includeOutcomeGenerated() *goschema.Database {
 
 // includeOutcomeDatabase mirrors includeOutcomeGenerated for the introspected
 // side, so one row set covers both projections.
-func includeOutcomeDatabase() *dbschematypes.DBSchema {
-	return &dbschematypes.DBSchema{
-		Schemas: []dbschematypes.DBSchemaInfo{{Name: "main"}},
-		Tables: []dbschematypes.DBTable{
+func includeOutcomeDatabase() *catalog.Database {
+	return &catalog.Database{
+		Schemas: []catalog.Schema{{Name: "main"}},
+		Tables: []catalog.Table{
 			{
 				Schema: "main",
 				Name:   "users",
-				Columns: []dbschematypes.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "id", DataType: "integer"},
 					{Name: "email", DataType: "text"},
 				},
@@ -47,7 +47,7 @@ func includeOutcomeDatabase() *dbschematypes.DBSchema {
 			{
 				Schema: "main",
 				Name:   "a.b.c",
-				Columns: []dbschematypes.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "id", DataType: "integer"},
 				},
 			},
@@ -72,7 +72,7 @@ func outcomeGeneratedTableNames(db *goschema.Database) []string {
 	return names
 }
 
-func outcomeDatabaseTableNames(db *dbschematypes.DBSchema) []string {
+func outcomeDatabaseTableNames(db *catalog.Database) []string {
 	var names []string
 	if db == nil {
 		return nil

@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
@@ -40,12 +40,12 @@ import (
 func TestCompareWithDialect_PostgresDomainNamedLikeATypeStillReportsARealChange(t *testing.T) {
 	c := qt.New(t)
 
-	database := &types.DBSchema{
-		Tables: []types.DBTable{
+	database := &catalog.Database{
+		Tables: []catalog.Table{
 			{
 				Name: "t",
 				Type: "TABLE",
-				Columns: []types.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "a", DataType: "integer", UDTName: "int4", FormattedType: "waypoint", IsNullable: "NO"},
 					{Name: "b", DataType: "integer", UDTName: "int4", FormattedType: "context", IsNullable: "NO"},
 				},

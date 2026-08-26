@@ -10,9 +10,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
 )
 
 // deferrableGenerated and deferrableDatabase are the two sides of one foreign
@@ -31,10 +31,10 @@ func deferrableGenerated(deferrable bool, initially string) goschema.Constraint 
 	}
 }
 
-func deferrableDatabase(deferrable bool, initially string) types.DBConstraint {
+func deferrableDatabase(deferrable bool, initially string) catalog.Constraint {
 	foreignTable := "parent"
 	foreignColumn := "id"
-	return types.DBConstraint{
+	return catalog.Constraint{
 		Name:           "fk_child_parent",
 		Type:           "FOREIGN KEY",
 		TableName:      "child",
@@ -67,7 +67,7 @@ func TestForeignKeyConstraintChanged_Deferral(t *testing.T) {
 	tests := []struct {
 		name        string
 		generated   goschema.Constraint
-		database    types.DBConstraint
+		database    catalog.Constraint
 		wantChanged bool
 	}{
 		{

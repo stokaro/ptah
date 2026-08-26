@@ -6,9 +6,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -22,13 +22,13 @@ import (
 // column under its BASE type with domain_name/domain_schema naming the domain,
 // and the reader blanks a domain's own schema for the schema it is reading, so
 // the current side's domain carries no schema of its own.
-func crossSchemaDomainColumn() (*goschema.Database, *types.DBSchema) {
-	database := &types.DBSchema{
-		Domains: []types.DBDomain{{Name: "status", BaseType: "text", Check: "VALUE IN ('open','closed')"}},
-		Tables: []types.DBTable{{
+func crossSchemaDomainColumn() (*goschema.Database, *catalog.Database) {
+	database := &catalog.Database{
+		Domains: []catalog.Domain{{Name: "status", BaseType: "text", Check: "VALUE IN ('open','closed')"}},
+		Tables: []catalog.Table{{
 			Name: "t",
 			Type: "TABLE",
-			Columns: []types.DBColumn{
+			Columns: []catalog.Column{
 				{Name: "id", DataType: "integer", UDTName: "int4", IsNullable: "NO", IsPrimaryKey: true, IsAutoIncrement: true},
 				{
 					Name: "s", DataType: "text", UDTName: "text",

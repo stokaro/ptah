@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/dbschema/types"
 )
 
 // readSequences reports the standalone sequences the connected database holds.
@@ -30,7 +30,7 @@ import (
 // not a NEXTVAL, and next_not_cached_value is unchanged afterwards. A read that
 // advanced the sequence would be a description with a side effect, which is the
 // one thing a reader must never be.
-func (r *Reader) readSequences(ctx context.Context, dbName string) ([]types.DBSequence, error) {
+func (r *Reader) readSequences(ctx context.Context, dbName string) ([]catalog.Sequence, error) {
 	if !r.caps.Has(capability.Sequences) {
 		return nil, nil
 	}
@@ -39,7 +39,7 @@ func (r *Reader) readSequences(ctx context.Context, dbName string) ([]types.DBSe
 		return nil, err
 	}
 
-	sequences := make([]types.DBSequence, 0, len(names))
+	sequences := make([]catalog.Sequence, 0, len(names))
 	for _, name := range names {
 		sequence, err := r.readSequenceOptions(ctx, dbName, name)
 		if err != nil {
@@ -88,8 +88,8 @@ func (r *Reader) sequenceNames(ctx context.Context, dbName string) ([]string, er
 // safe on SQL Server -- the comparator compares only the options a DECLARATION
 // sets and treats an unset one as unmanaged, so a fully populated read against a
 // declaration that named nothing produces no change.
-func (r *Reader) readSequenceOptions(ctx context.Context, dbName, name string) (types.DBSequence, error) {
-	sequence := types.DBSequence{Name: name, Schema: dbName, DataType: "bigint"}
+func (r *Reader) readSequenceOptions(ctx context.Context, dbName, name string) (catalog.Sequence, error) {
+	sequence := catalog.Sequence{Name: name, Schema: dbName, DataType: "bigint"}
 	var start, increment, minValue, maxValue, cache int64
 	var cycle bool
 
@@ -99,7 +99,7 @@ func (r *Reader) readSequenceOptions(ctx context.Context, dbName, name string) (
 	)
 	err := r.db.QueryRowContext(ctx, query).Scan(&start, &increment, &minValue, &maxValue, &cache, &cycle)
 	if err != nil {
-		return types.DBSequence{}, fmt.Errorf("failed to read sequence %s: %w", name, err)
+		return catalog.Sequence{}, fmt.Errorf("failed to read sequence %s: %w", name, err)
 	}
 
 	sequence.Start = &start

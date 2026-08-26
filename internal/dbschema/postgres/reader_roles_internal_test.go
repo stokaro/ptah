@@ -41,8 +41,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 	"go.5x5.cz/ptah/internal/rolescope"
@@ -421,7 +421,7 @@ func fullCluster() []clusterRole {
 	}
 }
 
-func roleNames(roles []types.DBRole) []string {
+func roleNames(roles []catalog.Role) []string {
 	names := make([]string, 0, len(roles))
 	for _, role := range roles {
 		names = append(names, role.Name)
@@ -809,7 +809,7 @@ func TestReadRolesKeepsOrdinaryRolesTheReservedPrefixWouldSwallow(t *testing.T) 
 	tests := []struct {
 		name    string
 		cluster []clusterRole
-		read    func(*Reader, context.Context) ([]types.DBRole, error)
+		read    func(*Reader, context.Context) ([]catalog.Role, error)
 	}{
 		{
 			name: "the scoped read describes it when the scope uses it",
@@ -939,7 +939,7 @@ func TestReadRolesIntoScopesTheDescriptionByDefault(t *testing.T) {
 	// every surface produces unless an operator asks for the other one.
 	envbooltest.Unset(rolescope.DescribeAllEnvVar)(c)
 	reader := newRolesServer(c, fullCluster(), []string{"public"}, capability.Postgres16())
-	schema := &types.DBSchema{}
+	schema := &catalog.Database{}
 
 	c.Assert(reader.readRolesInto(t.Context(), schema), qt.IsNil)
 
@@ -995,7 +995,7 @@ func TestReadRolesIntoRefusesAMalformedOptIn(t *testing.T) {
 			c := qt.New(t)
 			test.env(c)
 			reader := newRolesServer(c, fullCluster(), test.schemas, capability.Postgres16())
-			schema := &types.DBSchema{}
+			schema := &catalog.Database{}
 
 			err := reader.readRolesInto(t.Context(), schema)
 
@@ -1027,7 +1027,7 @@ func TestReadRolesIntoDescribesEveryManagedRoleUnderTheOptIn(t *testing.T) {
 	// worse answer than the scoping it undoes.
 	c.Setenv(rolescope.DescribeAllEnvVar, "1")
 	reader := newRolesServer(c, fullCluster(), []string{"public"}, capability.Postgres16())
-	schema := &types.DBSchema{}
+	schema := &catalog.Database{}
 
 	c.Assert(reader.readRolesInto(t.Context(), schema), qt.IsNil)
 
@@ -1075,7 +1075,7 @@ func TestReadRolesIntoLeavesTheComparatorsAnswerAlone(t *testing.T) {
 			c := qt.New(t)
 			test.env(c)
 			reader := newRolesServer(c, fullCluster(), test.schemas, capability.Postgres16())
-			schema := &types.DBSchema{}
+			schema := &catalog.Database{}
 
 			c.Assert(reader.readRolesInto(t.Context(), schema), qt.IsNil)
 

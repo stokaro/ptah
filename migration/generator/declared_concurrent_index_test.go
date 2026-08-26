@@ -5,11 +5,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/generator"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -157,8 +157,8 @@ func usersSchemaDeclaring(concurrently bool) *goschema.Database {
 
 // emptyUsersTable is the read: a table holding no rows, so the automatic
 // heuristic would choose the plain build for it on its own.
-func emptyUsersTable(partitioned bool) *dbschematypes.DBSchema {
-	return &dbschematypes.DBSchema{Tables: []dbschematypes.DBTable{{
+func emptyUsersTable(partitioned bool) *catalog.Database {
+	return &catalog.Database{Tables: []catalog.Table{{
 		Name: "users", Type: "BASE TABLE", EstimatedRows: 0, Partitioned: partitioned,
 	}}}
 }

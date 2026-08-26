@@ -5,8 +5,8 @@ package postgres_test
 import (
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	dbtypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/migration/generator"
 	"go.5x5.cz/ptah/migration/planner"
@@ -23,11 +23,11 @@ func downColumnTarget(tableSchema string) *goschema.Database {
 	}
 }
 
-func downColumnDatabase(tableSchema string) *dbtypes.DBSchema {
-	return &dbtypes.DBSchema{
-		Tables: []dbtypes.DBTable{{
+func downColumnDatabase(tableSchema string) *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{{
 			Name: "users", Schema: tableSchema, Type: "BASE TABLE",
-			Columns: []dbtypes.DBColumn{
+			Columns: []catalog.Column{
 				{Name: "id", DataType: "integer", IsNullable: "NO", OrdinalPosition: 1, IsPrimaryKey: true},
 				{Name: "email", DataType: "text", IsNullable: "YES", OrdinalPosition: 2},
 				{Name: "legacy_note", DataType: "text", IsNullable: "YES", OrdinalPosition: 3},
@@ -36,7 +36,7 @@ func downColumnDatabase(tableSchema string) *dbtypes.DBSchema {
 	}
 }
 
-func planDownStatements(c *qt.C, generated *goschema.Database, database *dbtypes.DBSchema) []string {
+func planDownStatements(c *qt.C, generated *goschema.Database, database *catalog.Database) []string {
 	c.Helper()
 	diff := schemadiff.CompareWithDialect(generated, database, "postgres")
 	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{

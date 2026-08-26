@@ -2,7 +2,7 @@ package postgres
 
 // White-box testing required: readCapabilityGatedObjects is unexported, and the
 // record it makes is not reachable through ReadSchema without a live server --
-// the exported path returns a whole DBSchema whose other members would have to
+// the exported path returns a whole Database whose other members would have to
 // be faked to reach this one field.
 //
 // A preset without pg_catalog's introspection helpers means this reader cannot
@@ -18,9 +18,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 )
 
@@ -58,7 +58,7 @@ func TestExtensionsAreRecordedAsUnsupportedWhereTheCatalogCannotBeAsked(t *testi
 			})
 			reader := NewPostgreSQLReaderWithCapabilities(db.SQL, "public", test.caps)
 
-			schema := &types.DBSchema{}
+			schema := &catalog.Database{}
 			c.Assert(reader.readCapabilityGatedObjects(t.Context(), schema), qt.IsNil)
 
 			c.Assert(schema.NotDescribed.Objects, qt.DeepEquals, test.want)

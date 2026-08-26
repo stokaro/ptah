@@ -10,12 +10,12 @@ import (
 	"strings"
 	"time"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/atlasschema"
@@ -154,7 +154,7 @@ type DiffOptions struct {
 type BidirectionalPlanInput struct {
 	Diff                  *difftypes.SchemaDiff
 	DesiredSchema         *goschema.Database
-	CurrentSchema         *dbschematypes.DBSchema
+	CurrentSchema         *catalog.Database
 	Dialect               string
 	Capabilities          capability.Capabilities
 	ConcurrentIndexCreate bool
@@ -188,7 +188,7 @@ type devSchemaReader func(
 	conn *dbschema.DatabaseConnection,
 	readNames []string,
 	defaultSchema string,
-) (*dbschematypes.DBSchema, error)
+) (*catalog.Database, error)
 
 type replaySnapshotConsumer func(
 	context.Context,
@@ -286,7 +286,7 @@ func generateDiff(
 	}
 	var (
 		diff    *difftypes.SchemaDiff
-		current *dbschematypes.DBSchema
+		current *catalog.Database
 	)
 	if err := runtime.withReplayedSnapshot(
 		ctx,
@@ -527,8 +527,8 @@ func resolveDesiredState(
 func planDiffFileContents(
 	diff *difftypes.SchemaDiff,
 	desired *goschema.Database,
-	current *dbschematypes.DBSchema,
-	info dbschematypes.DBInfo,
+	current *catalog.Database,
+	info catalog.ServerInfo,
 	format string,
 	opts DiffOptions,
 ) ([]MigrationFileContent, error) {
@@ -641,7 +641,7 @@ func compareReplayedState(
 	diagnostics io.Writer,
 	validateLiveObject func(atlasschema.LiveSchemaObject) error,
 	policy atlasschema.DiffPolicy,
-) (*dbschematypes.DBSchema, *difftypes.SchemaDiff, error) {
+) (*catalog.Database, *difftypes.SchemaDiff, error) {
 	readNames, err := schemascope.ReadNames(ctx, replayConn.Info(), schemas, replayConn)
 	if err != nil {
 		return nil, nil, fmt.Errorf("read dev database schema: %w", err)
@@ -683,7 +683,7 @@ func readScopedDevSchema(ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	readNames []string,
 	defaultSchema string,
-) (*dbschematypes.DBSchema, error) {
+) (*catalog.Database, error) {
 	current, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, readNames)
 	if err != nil {
 		return nil, fmt.Errorf("read dev database schema: %w", err)
@@ -747,18 +747,18 @@ func verifyMigrationDirUnchanged(w *migrationWriterDir, expected fsnapshot.Snaps
 	return nil
 }
 
-func withoutRevisionTable(schema *dbschematypes.DBSchema) *dbschematypes.DBSchema {
+func withoutRevisionTable(schema *catalog.Database) *catalog.Database {
 	if schema == nil {
-		return &dbschematypes.DBSchema{}
+		return &catalog.Database{}
 	}
 	out := *schema
-	out.Tables = filterByTable(out.Tables, func(table dbschematypes.DBTable) bool {
+	out.Tables = filterByTable(out.Tables, func(table catalog.Table) bool {
 		return !strings.EqualFold(table.Name, revisionTableName)
 	})
-	out.Indexes = filterByTable(out.Indexes, func(index dbschematypes.DBIndex) bool {
+	out.Indexes = filterByTable(out.Indexes, func(index catalog.Index) bool {
 		return !strings.EqualFold(index.TableName, revisionTableName)
 	})
-	out.Constraints = filterByTable(out.Constraints, func(constraint dbschematypes.DBConstraint) bool {
+	out.Constraints = filterByTable(out.Constraints, func(constraint catalog.Constraint) bool {
 		return !strings.EqualFold(constraint.TableName, revisionTableName)
 	})
 	return &out

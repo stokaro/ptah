@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -16,9 +16,9 @@ import (
 // desired schema declaring the same column with desiredType, and returns the
 // table diffs the comparator reported. It builds fixtures and asserts nothing,
 // so both halves of this file read the same two sides.
-func domainColumnTableDiffs(column types.DBColumn, desiredType string, desiredDomains []goschema.Domain) []difftypes.TableDiff {
-	database := &types.DBSchema{
-		Tables: []types.DBTable{{Name: "t", Type: "TABLE", Columns: []types.DBColumn{column}}},
+func domainColumnTableDiffs(column catalog.Column, desiredType string, desiredDomains []goschema.Domain) []difftypes.TableDiff {
+	database := &catalog.Database{
+		Tables: []catalog.Table{{Name: "t", Type: "TABLE", Columns: []catalog.Column{column}}},
 	}
 	desired := &goschema.Database{
 		Tables:  []goschema.Table{{StructName: "T", Name: "t"}},
@@ -53,7 +53,7 @@ func TestCompareWithDialect_PostgresDomainColumnIdentityReportsAChange(t *testin
 	tests := []struct {
 		name string
 		// column is the database side: one column of table t.
-		column types.DBColumn
+		column catalog.Column
 		// desiredType is what the desired schema declares for that column.
 		desiredType string
 		// desiredDomains are the domains the desired schema declares. It is the
@@ -69,20 +69,20 @@ func TestCompareWithDialect_PostgresDomainColumnIdentityReportsAChange(t *testin
 			// "waypoint" contains "int", so the normalizer called this equal to
 			// a desired BIGINT and planned nothing.
 			name:        "a domain whose name contains a type name is still a change",
-			column:      types.DBColumn{Name: "a", DataType: "integer", UDTName: "int4", FormattedType: "waypoint", DomainName: "waypoint", IsNullable: "NO"},
+			column:      catalog.Column{Name: "a", DataType: "integer", UDTName: "int4", FormattedType: "waypoint", DomainName: "waypoint", IsNullable: "NO"},
 			desiredType: "BIGINT",
 			wantChange:  "waypoint -> BIGINT",
 		},
 		{
 			// CREATE DOMAIN context AS integer; "context" contains "text".
 			name:        "a domain named context is not text",
-			column:      types.DBColumn{Name: "b", DataType: "integer", UDTName: "int4", FormattedType: "context", DomainName: "context", IsNullable: "NO"},
+			column:      catalog.Column{Name: "b", DataType: "integer", UDTName: "int4", FormattedType: "context", DomainName: "context", IsNullable: "NO"},
 			desiredType: "TEXT",
 			wantChange:  "context -> TEXT",
 		},
 		{
 			name:        "another domain over the same base type is a change",
-			column:      types.DBColumn{Name: "a", DataType: "integer", UDTName: "int4", FormattedType: "waypoint", DomainName: "waypoint", IsNullable: "NO"},
+			column:      catalog.Column{Name: "a", DataType: "integer", UDTName: "int4", FormattedType: "waypoint", DomainName: "waypoint", IsNullable: "NO"},
 			desiredType: "milestone",
 			wantChange:  "waypoint -> milestone",
 		},
@@ -98,7 +98,7 @@ func TestCompareWithDialect_PostgresDomainColumnIdentityReportsAChange(t *testin
 			// completed successfully", and left the table with only its id
 			// column.
 			name:        "a domain in another schema is a different domain",
-			column:      types.DBColumn{Name: "s", DataType: "text", UDTName: "text", FormattedType: "status", DomainName: "status", DomainSchema: "public", IsNullable: "NO"},
+			column:      catalog.Column{Name: "s", DataType: "text", UDTName: "text", FormattedType: "status", DomainName: "status", DomainSchema: "public", IsNullable: "NO"},
 			desiredType: "other.status",
 			wantChange:  "status -> other.status",
 		},
@@ -109,7 +109,7 @@ func TestCompareWithDialect_PostgresDomainColumnIdentityReportsAChange(t *testin
 			// than data loss -- the column is never converted and re-running
 			// never converges.
 			name:           "a column from another schema against the declared one is a change",
-			column:         types.DBColumn{Name: "s", DataType: "text", UDTName: "text", FormattedType: "other.status", DomainName: "status", DomainSchema: "other", IsNullable: "NO"},
+			column:         catalog.Column{Name: "s", DataType: "text", UDTName: "text", FormattedType: "other.status", DomainName: "status", DomainSchema: "other", IsNullable: "NO"},
 			desiredType:    "status",
 			desiredDomains: []goschema.Domain{{Name: "status", BaseType: "TEXT"}},
 			wantChange:     "other.status -> status",
@@ -119,14 +119,14 @@ func TestCompareWithDialect_PostgresDomainColumnIdentityReportsAChange(t *testin
 			// desired schema that declares its status in another schema means
 			// that one even when the column spells the name bare.
 			name:           "an unqualified reference means the domain that is declared",
-			column:         types.DBColumn{Name: "s", DataType: "text", UDTName: "text", FormattedType: "status", DomainName: "status", DomainSchema: "public", IsNullable: "NO"},
+			column:         catalog.Column{Name: "s", DataType: "text", UDTName: "text", FormattedType: "status", DomainName: "status", DomainSchema: "public", IsNullable: "NO"},
 			desiredType:    "status",
 			desiredDomains: []goschema.Domain{{Name: "status", Schema: "other", BaseType: "TEXT"}},
 			wantChange:     "status -> status",
 		},
 		{
 			name:        "the same bare name in another schema is a different domain",
-			column:      types.DBColumn{Name: "c", DataType: "USER-DEFINED", UDTName: "cube", FormattedType: "alt.alt_dom", DomainName: "alt_dom", IsNullable: "NO"},
+			column:      catalog.Column{Name: "c", DataType: "USER-DEFINED", UDTName: "cube", FormattedType: "alt.alt_dom", DomainName: "alt_dom", IsNullable: "NO"},
 			desiredType: "other.alt_dom",
 			wantChange:  "alt.alt_dom -> other.alt_dom",
 		},
@@ -136,7 +136,7 @@ func TestCompareWithDialect_PostgresDomainColumnIdentityReportsAChange(t *testin
 			// and "waypoints" normalizes to "integer" just like the desired
 			// BIGINT[] does.
 			name:        "a domain over an array is a domain, not an array",
-			column:      types.DBColumn{Name: "d", DataType: "ARRAY", UDTName: "_int4", FormattedType: "waypoints", DomainName: "waypoints", IsNullable: "NO"},
+			column:      catalog.Column{Name: "d", DataType: "ARRAY", UDTName: "_int4", FormattedType: "waypoints", DomainName: "waypoints", IsNullable: "NO"},
 			desiredType: "BIGINT[]",
 			wantChange:  "waypoints -> BIGINT[]",
 		},
@@ -147,7 +147,7 @@ func TestCompareWithDialect_PostgresDomainColumnIdentityReportsAChange(t *testin
 			// the domain's own base type, so normalization calls it equal and
 			// the width rule sees nothing to report either.
 			name:        "the domain name alone decides",
-			column:      types.DBColumn{Name: "a", DataType: "integer", UDTName: "int4", DomainName: "waypoint", IsNullable: "NO"},
+			column:      catalog.Column{Name: "a", DataType: "integer", UDTName: "int4", DomainName: "waypoint", IsNullable: "NO"},
 			desiredType: "INTEGER",
 			wantChange:  "int4 -> INTEGER",
 		},
@@ -155,13 +155,13 @@ func TestCompareWithDialect_PostgresDomainColumnIdentityReportsAChange(t *testin
 			// And so is the server's spelling on its own, which is what a
 			// caller built before domain_name was read carries.
 			name:        "the server's spelling alone decides",
-			column:      types.DBColumn{Name: "a", DataType: "integer", UDTName: "int4", FormattedType: "waypoint", IsNullable: "NO"},
+			column:      catalog.Column{Name: "a", DataType: "integer", UDTName: "int4", FormattedType: "waypoint", IsNullable: "NO"},
 			desiredType: "BIGINT",
 			wantChange:  "waypoint -> BIGINT",
 		},
 		{
 			name:        "a plain array that really changed is reported",
-			column:      types.DBColumn{Name: "e", DataType: "ARRAY", UDTName: "_varchar", FormattedType: "character varying(100)[]", IsNullable: "NO"},
+			column:      catalog.Column{Name: "e", DataType: "ARRAY", UDTName: "_varchar", FormattedType: "character varying(100)[]", IsNullable: "NO"},
 			desiredType: "TEXT[]",
 			wantChange:  "character varying(100)[] -> text",
 		},
@@ -173,7 +173,7 @@ func TestCompareWithDialect_PostgresDomainColumnIdentityReportsAChange(t *testin
 			// normalize to "integer", so without the declaration the desired
 			// domain is invisible here.
 			name:           "a plain column against a desired domain is a change",
-			column:         types.DBColumn{Name: "a", DataType: "integer", UDTName: "int4", IsNullable: "NO"},
+			column:         catalog.Column{Name: "a", DataType: "integer", UDTName: "int4", IsNullable: "NO"},
 			desiredType:    "waypoint",
 			desiredDomains: []goschema.Domain{{Name: "waypoint", BaseType: "INTEGER", Check: "VALUE > 0"}},
 			wantChange:     "int4 -> waypoint",
@@ -202,13 +202,13 @@ func TestCompareWithDialect_PostgresDomainColumnIdentityReportsAChange(t *testin
 func TestCompareWithDialect_PostgresDomainColumnIdentityReportsNoChange(t *testing.T) {
 	tests := []struct {
 		name           string
-		column         types.DBColumn
+		column         catalog.Column
 		desiredType    string
 		desiredDomains []goschema.Domain
 	}{
 		{
 			name:        "the same domain is not a change",
-			column:      types.DBColumn{Name: "a", DataType: "integer", UDTName: "int4", FormattedType: "waypoint", DomainName: "waypoint", IsNullable: "NO"},
+			column:      catalog.Column{Name: "a", DataType: "integer", UDTName: "int4", FormattedType: "waypoint", DomainName: "waypoint", IsNullable: "NO"},
 			desiredType: "waypoint",
 		},
 		{
@@ -216,7 +216,7 @@ func TestCompareWithDialect_PostgresDomainColumnIdentityReportsNoChange(t *testi
 			// change": one domain, spelled qualified on the desired side and
 			// reported by the catalog as the schema it is in.
 			name:        "the same domain named with its schema is not a change",
-			column:      types.DBColumn{Name: "s", DataType: "text", UDTName: "text", FormattedType: "status", DomainName: "status", DomainSchema: "public", IsNullable: "NO"},
+			column:      catalog.Column{Name: "s", DataType: "text", UDTName: "text", FormattedType: "status", DomainName: "status", DomainSchema: "public", IsNullable: "NO"},
 			desiredType: "public.status",
 		},
 		{
@@ -225,7 +225,7 @@ func TestCompareWithDialect_PostgresDomainColumnIdentityReportsNoChange(t *testi
 			// reports for it. This is the ordinary single-schema case and it
 			// must stay a no-op.
 			name:           "a domain declared without a schema is the one in the default schema",
-			column:         types.DBColumn{Name: "s", DataType: "text", UDTName: "text", FormattedType: "status", DomainName: "status", DomainSchema: "public", IsNullable: "NO"},
+			column:         catalog.Column{Name: "s", DataType: "text", UDTName: "text", FormattedType: "status", DomainName: "status", DomainSchema: "public", IsNullable: "NO"},
 			desiredType:    "status",
 			desiredDomains: []goschema.Domain{{Name: "status", BaseType: "TEXT"}},
 		},
@@ -240,7 +240,7 @@ func TestCompareWithDialect_PostgresDomainColumnIdentityReportsNoChange(t *testi
 			// the desired column to carry its domain's schema rather than a
 			// type string, which is a model change (stokaro/ptah#1138).
 			name:           "two same-named domains leave an unqualified reference undecided",
-			column:         types.DBColumn{Name: "b", DataType: "integer", UDTName: "int4", FormattedType: "other.status", DomainName: "status", DomainSchema: "other", IsNullable: "NO"},
+			column:         catalog.Column{Name: "b", DataType: "integer", UDTName: "int4", FormattedType: "other.status", DomainName: "status", DomainSchema: "other", IsNullable: "NO"},
 			desiredType:    "status",
 			desiredDomains: []goschema.Domain{{Name: "status", BaseType: "TEXT"}, {Name: "status", Schema: "other", BaseType: "INTEGER"}},
 		},
@@ -251,7 +251,7 @@ func TestCompareWithDialect_PostgresDomainColumnIdentityReportsNoChange(t *testi
 			// domain, so with nothing on the desired side to resolve the bare
 			// spelling the two name one domain.
 			name:        "a qualified spelling and a bare one name one domain",
-			column:      types.DBColumn{Name: "c", DataType: "USER-DEFINED", UDTName: "cube", FormattedType: "alt.alt_dom", DomainName: "alt_dom", IsNullable: "NO"},
+			column:      catalog.Column{Name: "c", DataType: "USER-DEFINED", UDTName: "cube", FormattedType: "alt.alt_dom", DomainName: "alt_dom", IsNullable: "NO"},
 			desiredType: "alt_dom",
 		},
 		{
@@ -259,12 +259,12 @@ func TestCompareWithDialect_PostgresDomainColumnIdentityReportsNoChange(t *testi
 			// keep normalizing like one, or every array column would report a
 			// change against a desired schema that spells it differently.
 			name:        "a plain array still compares as a type",
-			column:      types.DBColumn{Name: "e", DataType: "ARRAY", UDTName: "_varchar", FormattedType: "character varying(100)[]", IsNullable: "NO"},
+			column:      catalog.Column{Name: "e", DataType: "ARRAY", UDTName: "_varchar", FormattedType: "character varying(100)[]", IsNullable: "NO"},
 			desiredType: "character varying(100)[]",
 		},
 		{
 			name:        "a plain column is untouched",
-			column:      types.DBColumn{Name: "id", DataType: "integer", UDTName: "int4", IsNullable: "NO"},
+			column:      catalog.Column{Name: "id", DataType: "integer", UDTName: "int4", IsNullable: "NO"},
 			desiredType: "INTEGER",
 		},
 		{
@@ -273,12 +273,12 @@ func TestCompareWithDialect_PostgresDomainColumnIdentityReportsNoChange(t *testi
 			// desired schema that means the domain has to declare it, which is
 			// what every source Ptah reads does.
 			name:        "an undeclared name is not a domain",
-			column:      types.DBColumn{Name: "a", DataType: "integer", UDTName: "int4", IsNullable: "NO"},
+			column:      catalog.Column{Name: "a", DataType: "integer", UDTName: "int4", IsNullable: "NO"},
 			desiredType: "waypoint",
 		},
 		{
 			name:           "a domain declared on both sides is not a change",
-			column:         types.DBColumn{Name: "a", DataType: "integer", UDTName: "int4", FormattedType: "waypoint", DomainName: "waypoint", IsNullable: "NO"},
+			column:         catalog.Column{Name: "a", DataType: "integer", UDTName: "int4", FormattedType: "waypoint", DomainName: "waypoint", IsNullable: "NO"},
 			desiredType:    "waypoint",
 			desiredDomains: []goschema.Domain{{Name: "waypoint", BaseType: "INTEGER", Check: "VALUE > 0"}},
 		},

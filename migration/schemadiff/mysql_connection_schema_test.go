@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
@@ -260,10 +260,10 @@ func TestCompareWithDialect_PrimaryKeyKeepsTheNameTheDatabaseGaveIt(t *testing.T
 // the connected database as the schema, and the same value as the default
 // schema that owns unqualified objects. getDatabaseInfo pins the second field
 // from the first; dbschema's live test covers that it does.
-func mysqlConnectionInfo(dialect, schema string) types.DBInfo {
+func mysqlConnectionInfo(dialect, schema string) catalog.ServerInfo {
 	semantics := identifier.ForDialect(dialect)
 	semantics.DefaultSchema = schema
-	return types.DBInfo{
+	return catalog.ServerInfo{
 		Dialect:             dialect,
 		Schema:              schema,
 		IdentifierSemantics: semantics,
@@ -295,14 +295,14 @@ func mysqlForeignKeyDesired(schema string) *goschema.Database {
 
 // mysqlForeignKeyDatabase builds the matching database side as a MySQL reader
 // reports it.
-func mysqlForeignKeyDatabase(schema string) *types.DBSchema {
-	return &types.DBSchema{
-		Tables: []types.DBTable{
+func mysqlForeignKeyDatabase(schema string) *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{
 			{
 				Name:   "users",
 				Schema: schema,
 				Type:   "TABLE",
-				Columns: []types.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "id", DataType: "BIGINT", IsNullable: "NO"},
 				},
 			},
@@ -310,13 +310,13 @@ func mysqlForeignKeyDatabase(schema string) *types.DBSchema {
 				Name:   "posts",
 				Schema: schema,
 				Type:   "TABLE",
-				Columns: []types.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "id", DataType: "BIGINT", IsNullable: "NO"},
 					{Name: "user_id", DataType: "BIGINT", IsNullable: "NO"},
 				},
 			},
 		},
-		Constraints: []types.DBConstraint{{
+		Constraints: []catalog.Constraint{{
 			Name:          "fk_posts_user",
 			TableName:     "posts",
 			Schema:        schema,

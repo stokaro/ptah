@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/internal/dbschema/sqlite"
 )
 
@@ -44,7 +44,7 @@ func openRebuildDB(t *testing.T) *sql.DB {
 
 // beginRebuild starts the session-scoped transaction and guarantees it is
 // closed even when an assertion below it fails.
-func beginRebuild(t *testing.T, writer *sqlite.Writer) types.SchemaTransaction {
+func beginRebuild(t *testing.T, writer *sqlite.Writer) catalog.SchemaTransaction {
 	t.Helper()
 
 	tx, err := writer.BeginTransactionWithoutForeignKeys(boundedContext(t))

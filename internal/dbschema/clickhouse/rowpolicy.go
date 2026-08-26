@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"strings"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 )
 
 // readRowPolicies reads the row policies the connected database declares.
@@ -27,7 +27,7 @@ import (
 // them the same. This renderer writes AS PERMISSIVE explicitly so its own
 // policies are never that ambiguous, and managing a restrictive one is left
 // undone rather than half-done (stokaro/ptah#1736).
-func (r *Reader) readRowPolicies(ctx context.Context, dbName string) ([]types.DBRLSPolicy, error) {
+func (r *Reader) readRowPolicies(ctx context.Context, dbName string) ([]catalog.RLSPolicy, error) {
 	query := `
 		SELECT short_name, table, select_filter, apply_to_all, apply_to_list, apply_to_except
 		FROM system.row_policies
@@ -39,7 +39,7 @@ func (r *Reader) readRowPolicies(ctx context.Context, dbName string) ([]types.DB
 	}
 	defer rows.Close()
 
-	var policies []types.DBRLSPolicy
+	var policies []catalog.RLSPolicy
 	for rows.Next() {
 		var name, table string
 		var filter sql.NullString
@@ -48,7 +48,7 @@ func (r *Reader) readRowPolicies(ctx context.Context, dbName string) ([]types.DB
 		if err := rows.Scan(&name, &table, &filter, &applyToAll, &applyTo, &applyToExcept); err != nil {
 			return nil, err
 		}
-		policies = append(policies, types.DBRLSPolicy{
+		policies = append(policies, catalog.RLSPolicy{
 			Name:  name,
 			Table: table,
 			// A policy with no TO clause applies to nobody in particular, and

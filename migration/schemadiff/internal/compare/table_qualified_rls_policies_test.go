@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -33,12 +33,12 @@ func generatedSharedPolicyName() *goschema.Database {
 func TestRLSPoliciesWithSemantics_TableQualifiedAdditions(t *testing.T) {
 	tests := []struct {
 		name     string
-		database *types.DBSchema
+		database *catalog.Database
 		want     []difftypes.RLSPolicyRef
 	}{
 		{
 			name:     "both policies missing",
-			database: &types.DBSchema{},
+			database: &catalog.Database{},
 			want: []difftypes.RLSPolicyRef{
 				{PolicyName: "tenant_isolation", TableName: "alpha_orders"},
 				{PolicyName: "tenant_isolation", TableName: "zeta_orders"},
@@ -46,8 +46,8 @@ func TestRLSPoliciesWithSemantics_TableQualifiedAdditions(t *testing.T) {
 		},
 		{
 			name: "one table has the policy",
-			database: &types.DBSchema{
-				RLSPolicies: []types.DBRLSPolicy{
+			database: &catalog.Database{
+				RLSPolicies: []catalog.RLSPolicy{
 					{Name: "tenant_isolation", Table: "public.alpha_orders", PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "tenant_id = 1"},
 				},
 			},
@@ -57,8 +57,8 @@ func TestRLSPoliciesWithSemantics_TableQualifiedAdditions(t *testing.T) {
 		},
 		{
 			name: "both tables have the policy",
-			database: &types.DBSchema{
-				RLSPolicies: []types.DBRLSPolicy{
+			database: &catalog.Database{
+				RLSPolicies: []catalog.RLSPolicy{
 					{Name: "tenant_isolation", Table: "public.alpha_orders", PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "tenant_id = 1"},
 					{Name: "tenant_isolation", Table: "public.zeta_orders", PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "tenant_id = 1"},
 				},
@@ -101,13 +101,13 @@ func TestRLSPoliciesWithSemantics_TableQualifiedRemovals(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		database *types.DBSchema
+		database *catalog.Database
 		want     []difftypes.RLSPolicyRef
 	}{
 		{
 			name: "same name on an undeclared table is removed",
-			database: &types.DBSchema{
-				RLSPolicies: []types.DBRLSPolicy{
+			database: &catalog.Database{
+				RLSPolicies: []catalog.RLSPolicy{
 					{Name: "tenant_isolation", Table: "public.alpha_orders", PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "tenant_id = 1"},
 					{Name: "tenant_isolation", Table: "public.zeta_orders", PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "tenant_id = 1"},
 				},
@@ -118,8 +118,8 @@ func TestRLSPoliciesWithSemantics_TableQualifiedRemovals(t *testing.T) {
 		},
 		{
 			name: "distinct name on an undeclared table is removed",
-			database: &types.DBSchema{
-				RLSPolicies: []types.DBRLSPolicy{
+			database: &catalog.Database{
+				RLSPolicies: []catalog.RLSPolicy{
 					{Name: "tenant_isolation", Table: "public.alpha_orders", PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "tenant_id = 1"},
 					{Name: "zeta_only", Table: "public.zeta_orders", PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "tenant_id = 1"},
 				},
@@ -130,8 +130,8 @@ func TestRLSPoliciesWithSemantics_TableQualifiedRemovals(t *testing.T) {
 		},
 		{
 			name: "the declared policy alone is kept",
-			database: &types.DBSchema{
-				RLSPolicies: []types.DBRLSPolicy{
+			database: &catalog.Database{
+				RLSPolicies: []catalog.RLSPolicy{
 					{Name: "tenant_isolation", Table: "public.alpha_orders", PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "tenant_id = 1"},
 				},
 			},
@@ -170,8 +170,8 @@ func TestRLSPoliciesWithSemantics_ModificationMatchesTheSameTable(t *testing.T) 
 			{Name: "tenant_isolation", Table: "alpha_orders", PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "tenant_id = 1"},
 		},
 	}
-	database := &types.DBSchema{
-		RLSPolicies: []types.DBRLSPolicy{
+	database := &catalog.Database{
+		RLSPolicies: []catalog.RLSPolicy{
 			{Name: "tenant_isolation", Table: "public.alpha_orders", PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "tenant_id = 99"},
 			{Name: "tenant_isolation", Table: "public.zeta_orders", PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "tenant_id = 1"},
 		},
@@ -204,8 +204,8 @@ func TestRLSPoliciesWithSemantics_ImplicitSchemaStillMatches(t *testing.T) {
 			{Name: "tenant_isolation", Table: "public.alpha_orders", PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "tenant_id = 1"},
 		},
 	}
-	database := &types.DBSchema{
-		RLSPolicies: []types.DBRLSPolicy{
+	database := &catalog.Database{
+		RLSPolicies: []catalog.RLSPolicy{
 			{Name: "tenant_isolation", Table: "alpha_orders", PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "tenant_id = 1"},
 		},
 	}
@@ -224,8 +224,8 @@ func TestRLSPoliciesWithSemantics_ImplicitSchemaStillMatches(t *testing.T) {
 func TestRLSPolicies_DelegatesWithDialectlessSemantics(t *testing.T) {
 	c := qt.New(t)
 
-	database := &types.DBSchema{
-		RLSPolicies: []types.DBRLSPolicy{
+	database := &catalog.Database{
+		RLSPolicies: []catalog.RLSPolicy{
 			{Name: "tenant_isolation", Table: "alpha_orders", PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "tenant_id = 1"},
 		},
 	}
@@ -264,8 +264,8 @@ func TestRLSPoliciesWithSemantics_OrdersRefsByTableFirst(t *testing.T) {
 			{Name: "alpha_policy", Table: "alpha_orders", PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "tenant_id = 3"},
 		},
 	}
-	database := &types.DBSchema{
-		RLSPolicies: []types.DBRLSPolicy{
+	database := &catalog.Database{
+		RLSPolicies: []catalog.RLSPolicy{
 			{Name: "zeta_policy", Table: "public.zeta_orders", PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "tenant_id = 4"},
 			{Name: "alpha_extra", Table: "public.alpha_orders", PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "tenant_id = 5"},
 		},

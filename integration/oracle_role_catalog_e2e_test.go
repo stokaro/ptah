@@ -13,11 +13,11 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/sijms/go-ora/v3"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -213,7 +213,7 @@ func oracleRoleDiffSummary(diff *difftypes.SchemaDiff) []string {
 }
 
 // oracleGrantSummary renders one role's grants in a stable order.
-func oracleGrantSummary(grants []dbschematypes.DBGrant, role string) []string {
+func oracleGrantSummary(grants []catalog.Grant, role string) []string {
 	var summary []string
 	for _, grant := range grants {
 		summary = appendOracleGrant(summary, grant, role)
@@ -222,14 +222,14 @@ func oracleGrantSummary(grants []dbschematypes.DBGrant, role string) []string {
 	return summary
 }
 
-func appendOracleGrant(summary []string, grant dbschematypes.DBGrant, role string) []string {
+func appendOracleGrant(summary []string, grant catalog.Grant, role string) []string {
 	if grant.Role != role {
 		return summary
 	}
 	return append(summary, grant.ObjectType+" "+grant.QualifiedTarget()+" "+grant.Privilege)
 }
 
-func oracleRoleNames(roles []dbschematypes.DBRole) []string {
+func oracleRoleNames(roles []catalog.Role) []string {
 	names := make([]string, 0, len(roles))
 	for _, role := range roles {
 		names = append(names, role.Name)
@@ -237,7 +237,7 @@ func oracleRoleNames(roles []dbschematypes.DBRole) []string {
 	return names
 }
 
-func oracleRoleByName(c *qt.C, roles []dbschematypes.DBRole, name string) dbschematypes.DBRole {
+func oracleRoleByName(c *qt.C, roles []catalog.Role, name string) catalog.Role {
 	c.Helper()
 	for _, role := range roles {
 		if role.Name == name {
@@ -245,7 +245,7 @@ func oracleRoleByName(c *qt.C, roles []dbschematypes.DBRole, name string) dbsche
 		}
 	}
 	c.Fatalf("role %q is absent from the read schema", name)
-	return dbschematypes.DBRole{}
+	return catalog.Role{}
 }
 
 // oracleURLAs re-points an Oracle URL at another account.

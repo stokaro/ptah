@@ -12,9 +12,9 @@ import (
 	qt "github.com/frankban/quicktest"
 	mysqldriver "github.com/go-sql-driver/mysql"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/sqlutil"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 )
 
@@ -231,17 +231,17 @@ func TestMySQLReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 func TestEnhanceTablesWithPrimaryKeys(t *testing.T) {
 	c := qt.New(t)
 
-	tables := []types.DBTable{
+	tables := []catalog.Table{
 		{
 			Name: "memberships",
-			Columns: []types.DBColumn{
+			Columns: []catalog.Column{
 				{Name: "org_id"},
 				{Name: "user_id"},
 				{Name: "role"},
 			},
 		},
 	}
-	constraints := []types.DBConstraint{
+	constraints := []catalog.Constraint{
 		{
 			TableName:   "memberships",
 			Type:        "PRIMARY KEY",
@@ -259,7 +259,7 @@ func TestEnhanceTablesWithPrimaryKeys(t *testing.T) {
 func TestApplyMySQLColumnMetadataKeepsGeneratedExpressionWithoutExtra(t *testing.T) {
 	c := qt.New(t)
 
-	var col types.DBColumn
+	var col catalog.Column
 	applyMySQLColumnMetadata(
 		&col,
 		sql.NullString{String: "default", Valid: true},
@@ -341,7 +341,7 @@ func TestNormalizeMySQLColumnDefaultQuotesCatalogStringLiterals(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			col := &types.DBColumn{
+			col := &catalog.Column{
 				ColumnType: test.columnType,
 				DataType:   test.dataType,
 			}
@@ -616,7 +616,7 @@ func TestMySQLWriter_UtilityMethods(t *testing.T) {
 func TestMySQLWriter_SchemaWriterInterface(t *testing.T) {
 	c := qt.New(t)
 	writer := NewMySQLWriter(nil, "test", platform.MySQL)
-	var _ types.SchemaWriter = writer
+	var _ catalog.SchemaWriter = writer
 	c.Assert(writer, qt.IsNotNil)
 }
 

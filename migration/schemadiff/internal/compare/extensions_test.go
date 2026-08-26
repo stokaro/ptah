@@ -5,10 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -17,14 +17,14 @@ func TestExtensions(t *testing.T) {
 	tests := []struct {
 		name                string
 		generatedExtensions []goschema.Extension
-		databaseExtensions  []types.DBExtension
+		databaseExtensions  []catalog.Extension
 		expectedAdded       []string
 		expectedRemoved     []string
 	}{
 		{
 			name:                "no extensions in either schema",
 			generatedExtensions: make([]goschema.Extension, 0),
-			databaseExtensions:  make([]types.DBExtension, 0),
+			databaseExtensions:  make([]catalog.Extension, 0),
 			expectedAdded:       make([]string, 0),
 			expectedRemoved:     make([]string, 0),
 		},
@@ -33,14 +33,14 @@ func TestExtensions(t *testing.T) {
 			generatedExtensions: []goschema.Extension{
 				{Name: "pg_trgm", IfNotExists: true},
 			},
-			databaseExtensions: make([]types.DBExtension, 0),
+			databaseExtensions: make([]catalog.Extension, 0),
 			expectedAdded:      []string{"pg_trgm"},
 			expectedRemoved:    make([]string, 0),
 		},
 		{
 			name:                "extension needs to be removed",
 			generatedExtensions: make([]goschema.Extension, 0),
-			databaseExtensions: []types.DBExtension{
+			databaseExtensions: []catalog.Extension{
 				{Name: "btree_gin", Version: "1.3", Schema: "public"},
 			},
 			expectedAdded:   make([]string, 0),
@@ -51,7 +51,7 @@ func TestExtensions(t *testing.T) {
 			generatedExtensions: []goschema.Extension{
 				{Name: "pg_trgm", IfNotExists: true},
 			},
-			databaseExtensions: []types.DBExtension{
+			databaseExtensions: []catalog.Extension{
 				{Name: "pg_trgm", Version: "1.6", Schema: "public"},
 			},
 			expectedAdded:   make([]string, 0),
@@ -64,7 +64,7 @@ func TestExtensions(t *testing.T) {
 				{Name: "btree_gin", IfNotExists: true},
 				{Name: "postgis", Version: "3.0"},
 			},
-			databaseExtensions: []types.DBExtension{
+			databaseExtensions: []catalog.Extension{
 				{Name: "pg_trgm", Version: "1.6", Schema: "public"},
 				{Name: "uuid-ossp", Version: "1.1", Schema: "public"},
 			},
@@ -76,7 +76,7 @@ func TestExtensions(t *testing.T) {
 			generatedExtensions: []goschema.Extension{
 				{Name: "postgis", Version: "3.1"},
 			},
-			databaseExtensions: []types.DBExtension{
+			databaseExtensions: []catalog.Extension{
 				{Name: "postgis", Version: "3.0", Schema: "public"},
 			},
 			expectedAdded:   make([]string, 0),
@@ -89,7 +89,7 @@ func TestExtensions(t *testing.T) {
 				{Name: "a_extension", IfNotExists: true},
 				{Name: "m_extension", IfNotExists: true},
 			},
-			databaseExtensions: []types.DBExtension{
+			databaseExtensions: []catalog.Extension{
 				{Name: "z_old_ext", Version: "1.0", Schema: "public"},
 				{Name: "a_old_ext", Version: "1.0", Schema: "public"},
 			},
@@ -107,7 +107,7 @@ func TestExtensions(t *testing.T) {
 				Extensions: tt.generatedExtensions,
 			}
 
-			database := &types.DBSchema{
+			database := &catalog.Database{
 				Extensions: tt.databaseExtensions,
 			}
 
@@ -128,25 +128,25 @@ func TestExtensionsWithSemanticsComparesInstallationSchema(t *testing.T) {
 	tests := []struct {
 		name      string
 		generated goschema.Extension
-		database  types.DBExtension
+		database  catalog.Extension
 		want      []difftypes.ExtensionDiff
 	}{
 		{
 			name:      "implicit default matches explicit public",
 			generated: goschema.Extension{Name: "pgcrypto"},
-			database:  types.DBExtension{Name: "pgcrypto", Schema: "public"},
+			database:  catalog.Extension{Name: "pgcrypto", Schema: "public"},
 			want:      make([]difftypes.ExtensionDiff, 0),
 		},
 		{
 			name:      "identical nondefault schema is synced",
 			generated: goschema.Extension{Name: "pgcrypto", Schema: "extensions"},
-			database:  types.DBExtension{Name: "pgcrypto", Schema: "extensions"},
+			database:  catalog.Extension{Name: "pgcrypto", Schema: "extensions"},
 			want:      make([]difftypes.ExtensionDiff, 0),
 		},
 		{
 			name:      "placement change is not synced",
 			generated: goschema.Extension{Name: "pgcrypto", Schema: "extensions"},
-			database:  types.DBExtension{Name: "pgcrypto", Schema: "public"},
+			database:  catalog.Extension{Name: "pgcrypto", Schema: "public"},
 			want: []difftypes.ExtensionDiff{{
 				Name:       "pgcrypto",
 				FromSchema: "public",
@@ -159,7 +159,7 @@ func TestExtensionsWithSemanticsComparesInstallationSchema(t *testing.T) {
 			c := qt.New(t)
 			diff := &difftypes.SchemaDiff{}
 			generated := &goschema.Database{Extensions: []goschema.Extension{test.generated}}
-			database := &types.DBSchema{Extensions: []types.DBExtension{test.database}}
+			database := &catalog.Database{Extensions: []catalog.Extension{test.database}}
 			compare.ExtensionsWithSemantics(
 				generated,
 				database,
@@ -182,7 +182,7 @@ func TestExtensionsWithSemanticsComparesInstallationSchema(t *testing.T) {
 func TestExtensionsWrapperUsesPostgreSQLDefaultSchema(t *testing.T) {
 	c := qt.New(t)
 	generated := &goschema.Database{Extensions: []goschema.Extension{{Name: "pgcrypto"}}}
-	database := &types.DBSchema{Extensions: []types.DBExtension{{Name: "pgcrypto", Schema: "public"}}}
+	database := &catalog.Database{Extensions: []catalog.Extension{{Name: "pgcrypto", Schema: "public"}}}
 	diff := &difftypes.SchemaDiff{}
 
 	compare.Extensions(generated, database, diff, nil, compare.CoverageOf(generated, database))
@@ -194,7 +194,7 @@ func TestExtensions_RealWorldScenarios(t *testing.T) {
 	tests := []struct {
 		name        string
 		description string
-		setup       func() (*goschema.Database, *types.DBSchema)
+		setup       func() (*goschema.Database, *catalog.Database)
 		// The whole sorted set is expected, not a membership sample: an
 		// extension the comparison invents on top of the ones a row names is a
 		// CREATE EXTENSION nobody asked for, and a "contains" claim cannot see
@@ -205,7 +205,7 @@ func TestExtensions_RealWorldScenarios(t *testing.T) {
 		{
 			name:        "fresh database setup",
 			description: "Setting up PostgreSQL extensions on a fresh database",
-			setup: func() (*goschema.Database, *types.DBSchema) {
+			setup: func() (*goschema.Database, *catalog.Database) {
 				generated := &goschema.Database{
 					Extensions: []goschema.Extension{
 						{Name: "pg_trgm", IfNotExists: true, Comment: "Trigram similarity"},
@@ -213,8 +213,8 @@ func TestExtensions_RealWorldScenarios(t *testing.T) {
 						{Name: "postgis", Version: "3.0", Comment: "Geographic data"},
 					},
 				}
-				database := &types.DBSchema{
-					Extensions: make([]types.DBExtension, 0), // Fresh database
+				database := &catalog.Database{
+					Extensions: make([]catalog.Extension, 0), // Fresh database
 				}
 				return generated, database
 			},
@@ -224,14 +224,14 @@ func TestExtensions_RealWorldScenarios(t *testing.T) {
 		{
 			name:        "production database cleanup",
 			description: "Removing unused extensions from production database",
-			setup: func() (*goschema.Database, *types.DBSchema) {
+			setup: func() (*goschema.Database, *catalog.Database) {
 				generated := &goschema.Database{
 					Extensions: []goschema.Extension{
 						{Name: "pg_trgm", IfNotExists: true},
 					},
 				}
-				database := &types.DBSchema{
-					Extensions: []types.DBExtension{
+				database := &catalog.Database{
+					Extensions: []catalog.Extension{
 						{Name: "pg_trgm", Version: "1.6", Schema: "public"},
 						{Name: "uuid-ossp", Version: "1.1", Schema: "public"},
 						{Name: "postgis", Version: "3.0", Schema: "public"},
@@ -246,7 +246,7 @@ func TestExtensions_RealWorldScenarios(t *testing.T) {
 		{
 			name:        "incremental extension addition",
 			description: "Adding new extensions to existing setup",
-			setup: func() (*goschema.Database, *types.DBSchema) {
+			setup: func() (*goschema.Database, *catalog.Database) {
 				generated := &goschema.Database{
 					Extensions: []goschema.Extension{
 						{Name: "pg_trgm", IfNotExists: true},
@@ -255,8 +255,8 @@ func TestExtensions_RealWorldScenarios(t *testing.T) {
 						{Name: "uuid-ossp", IfNotExists: true},
 					},
 				}
-				database := &types.DBSchema{
-					Extensions: []types.DBExtension{
+				database := &catalog.Database{
+					Extensions: []catalog.Extension{
 						{Name: "pg_trgm", Version: "1.6", Schema: "public"},
 						{Name: "btree_gin", Version: "1.3", Schema: "public"},
 					},
@@ -288,7 +288,7 @@ func TestExtensions_EdgeCases(t *testing.T) {
 		name        string
 		description string
 		generated   *goschema.Database
-		database    *types.DBSchema
+		database    *catalog.Database
 		expectPanic bool
 	}{
 		{
@@ -297,8 +297,8 @@ func TestExtensions_EdgeCases(t *testing.T) {
 			generated: &goschema.Database{
 				Extensions: nil,
 			},
-			database: &types.DBSchema{
-				Extensions: []types.DBExtension{
+			database: &catalog.Database{
+				Extensions: []catalog.Extension{
 					{Name: "pg_trgm", Version: "1.6", Schema: "public"},
 				},
 			},
@@ -312,7 +312,7 @@ func TestExtensions_EdgeCases(t *testing.T) {
 					{Name: "pg_trgm", IfNotExists: true},
 				},
 			},
-			database: &types.DBSchema{
+			database: &catalog.Database{
 				Extensions: nil,
 			},
 			expectPanic: false,
@@ -326,8 +326,8 @@ func TestExtensions_EdgeCases(t *testing.T) {
 					{Name: "pg_trgm", IfNotExists: true},
 				},
 			},
-			database: &types.DBSchema{
-				Extensions: []types.DBExtension{
+			database: &catalog.Database{
+				Extensions: []catalog.Extension{
 					{Name: "", Version: "1.0", Schema: "public"},
 				},
 			},
@@ -361,7 +361,7 @@ func TestExtensions_WithIgnoreConfiguration(t *testing.T) {
 	tests := []struct {
 		name                string
 		generatedExtensions []goschema.Extension
-		databaseExtensions  []types.DBExtension
+		databaseExtensions  []catalog.Extension
 		options             *config.CompareOptions
 		expectedAdded       []string
 		expectedRemoved     []string
@@ -371,7 +371,7 @@ func TestExtensions_WithIgnoreConfiguration(t *testing.T) {
 			generatedExtensions: []goschema.Extension{
 				{Name: "pg_trgm", IfNotExists: true},
 			},
-			databaseExtensions: []types.DBExtension{
+			databaseExtensions: []catalog.Extension{
 				{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"},
 				{Name: "pg_trgm", Version: "1.6", Schema: "public"},
 			},
@@ -384,7 +384,7 @@ func TestExtensions_WithIgnoreConfiguration(t *testing.T) {
 			generatedExtensions: []goschema.Extension{
 				{Name: "pg_trgm", IfNotExists: true},
 			},
-			databaseExtensions: []types.DBExtension{
+			databaseExtensions: []catalog.Extension{
 				{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"},
 			},
 			options:         nil, // Use defaults (ignores plpgsql)
@@ -396,7 +396,7 @@ func TestExtensions_WithIgnoreConfiguration(t *testing.T) {
 			generatedExtensions: []goschema.Extension{
 				{Name: "pg_trgm", IfNotExists: true},
 			},
-			databaseExtensions: []types.DBExtension{
+			databaseExtensions: []catalog.Extension{
 				{Name: "adminpack", Version: "2.1", Schema: "public"},
 				{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"},
 			},
@@ -409,7 +409,7 @@ func TestExtensions_WithIgnoreConfiguration(t *testing.T) {
 			generatedExtensions: []goschema.Extension{
 				{Name: "pg_trgm", IfNotExists: true},
 			},
-			databaseExtensions: []types.DBExtension{
+			databaseExtensions: []catalog.Extension{
 				{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"},
 				{Name: "adminpack", Version: "2.1", Schema: "public"},
 				{Name: "pg_stat_statements", Version: "1.9", Schema: "public"},
@@ -423,7 +423,7 @@ func TestExtensions_WithIgnoreConfiguration(t *testing.T) {
 			generatedExtensions: []goschema.Extension{
 				{Name: "pg_trgm", IfNotExists: true},
 			},
-			databaseExtensions: []types.DBExtension{
+			databaseExtensions: []catalog.Extension{
 				{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"},
 				{Name: "adminpack", Version: "2.1", Schema: "public"},
 			},
@@ -436,7 +436,7 @@ func TestExtensions_WithIgnoreConfiguration(t *testing.T) {
 			generatedExtensions: []goschema.Extension{
 				{Name: "pg_trgm", IfNotExists: true},
 			},
-			databaseExtensions: []types.DBExtension{
+			databaseExtensions: []catalog.Extension{
 				{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"},
 				{Name: "adminpack", Version: "2.1", Schema: "public"},
 				{Name: "pg_stat_statements", Version: "1.9", Schema: "public"},
@@ -455,7 +455,7 @@ func TestExtensions_WithIgnoreConfiguration(t *testing.T) {
 			generated := &goschema.Database{
 				Extensions: tt.generatedExtensions,
 			}
-			database := &types.DBSchema{
+			database := &catalog.Database{
 				Extensions: tt.databaseExtensions,
 			}
 

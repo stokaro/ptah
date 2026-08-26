@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 )
 
 func TestReaderOutputSchema_DefaultSchemaUnscoped(t *testing.T) {
@@ -58,12 +58,12 @@ func TestNormalizeDefault(t *testing.T) {
 
 func TestReconcileColumnFlags_PreservesStructuralTableIdentity(t *testing.T) {
 	c := qt.New(t)
-	schema := &types.DBSchema{
-		Tables: []types.DBTable{
-			{Name: "tenant.data", Columns: []types.DBColumn{{Name: "id"}}},
-			{Schema: "tenant", Name: "data", Columns: []types.DBColumn{{Name: "id"}}},
+	schema := &catalog.Database{
+		Tables: []catalog.Table{
+			{Name: "tenant.data", Columns: []catalog.Column{{Name: "id"}}},
+			{Schema: "tenant", Name: "data", Columns: []catalog.Column{{Name: "id"}}},
 		},
-		Constraints: []types.DBConstraint{
+		Constraints: []catalog.Constraint{
 			{TableName: "tenant.data", Type: "PRIMARY KEY", ColumnNames: []string{"id"}},
 			{Schema: "tenant", TableName: "data", Type: "UNIQUE", ColumnNames: []string{"id"}},
 		},

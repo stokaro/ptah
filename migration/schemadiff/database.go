@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbexprprobe"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/internal/tableref"
@@ -23,7 +23,7 @@ func CompareWithDatabase(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	generated *goschema.Database,
-	database *dbschematypes.DBSchema,
+	database *catalog.Database,
 	opts *config.CompareOptions,
 ) (*difftypes.SchemaDiff, error) {
 	diff, _, err := CompareWithDatabaseReportingUndecidedAdditions(
@@ -44,7 +44,7 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	generated *goschema.Database,
-	database *dbschematypes.DBSchema,
+	database *catalog.Database,
 	opts *config.CompareOptions,
 ) (*difftypes.SchemaDiff, []coverage.Object, error) {
 	if conn == nil {
@@ -168,7 +168,7 @@ func resolveDomainExpressions(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	generated *goschema.Database,
-	database *dbschematypes.DBSchema,
+	database *catalog.Database,
 ) (map[string]config.DomainExpression, error) {
 	if generated == nil || database == nil {
 		return nil, nil
@@ -222,7 +222,7 @@ func resolveCheckExpressions(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	generated *goschema.Database,
-	database *dbschematypes.DBSchema,
+	database *catalog.Database,
 ) (map[string]config.CheckExpression, error) {
 	if generated == nil || database == nil {
 		return nil, nil
@@ -275,7 +275,7 @@ func resolvePolicyExpressions(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	generated *goschema.Database,
-	database *dbschematypes.DBSchema,
+	database *catalog.Database,
 ) (map[string]config.PolicyExpression, error) {
 	if generated == nil || database == nil {
 		return nil, nil
@@ -324,7 +324,7 @@ func resolveIndexExpressions(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	generated *goschema.Database,
-	database *dbschematypes.DBSchema,
+	database *catalog.Database,
 ) (map[string]config.IndexExpression, error) {
 	if generated == nil || database == nil {
 		return nil, nil
@@ -397,7 +397,7 @@ func declaredIndexExpression(index goschema.Index) (expression string, parts []s
 
 // liveTableColumns projects every live table's columns into the shape a probe
 // needs, keyed by the table's bare name.
-func liveTableColumns(database *dbschematypes.DBSchema) map[string][]dbexprprobe.CheckProbeColumn {
+func liveTableColumns(database *catalog.Database) map[string][]dbexprprobe.CheckProbeColumn {
 	columns := make(map[string][]dbexprprobe.CheckProbeColumn, len(database.Tables))
 	for _, table := range database.Tables {
 		probeColumns := make([]dbexprprobe.CheckProbeColumn, 0, len(table.Columns))
@@ -441,7 +441,7 @@ func resolveContinuousAggregateBodies(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	generated *goschema.Database,
-	database *dbschematypes.DBSchema,
+	database *catalog.Database,
 ) (map[string]config.ContinuousAggregateBody, error) {
 	if generated == nil || database == nil {
 		return nil, nil
@@ -487,7 +487,7 @@ func quoteDomainDefaultLiteral(literal string) string {
 
 func collectIdentifierNames(
 	generated *goschema.Database,
-	database *dbschematypes.DBSchema,
+	database *catalog.Database,
 	defaultSchema string,
 ) []string {
 	names := []string{defaultSchema}
@@ -525,7 +525,7 @@ func appendGeneratedIdentifierNames(
 
 func appendDatabaseIdentifierNames(
 	names []string,
-	database *dbschematypes.DBSchema,
+	database *catalog.Database,
 ) []string {
 	if database == nil {
 		return names

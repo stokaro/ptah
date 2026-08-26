@@ -6,10 +6,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	dbtypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -153,13 +153,13 @@ func widgetDeclaredWithoutASchema() *goschema.Database {
 // added and removed, which is a different question from this one.
 func planModifiedConstraint(c *qt.C, generated *goschema.Database, dialect, schema string) []string {
 	c.Helper()
-	database := &dbtypes.DBSchema{
-		Tables: []dbtypes.DBTable{{Schema: schema, Name: "widget", Columns: []dbtypes.DBColumn{
+	database := &catalog.Database{
+		Tables: []catalog.Table{{Schema: schema, Name: "widget", Columns: []catalog.Column{
 			{Name: "id", DataType: "integer", IsPrimaryKey: true, IsNullable: "NO"},
 			{Name: "tenant", DataType: "text", IsNullable: "NO"},
 			{Name: "code", DataType: "text", IsNullable: "NO"},
 		}}},
-		Constraints: []dbtypes.DBConstraint{{
+		Constraints: []catalog.Constraint{{
 			Schema: schema, TableName: "widget", Name: "uq_widget_scope",
 			Type: "UNIQUE", ColumnNames: []string{"tenant", "code"},
 		}},

@@ -1,7 +1,18 @@
-// Package types defines the database-agnostic model of an introspected live
-// schema (DBSchema and its tables, columns, indexes, and constraints) shared by
+// Package catalog defines the database-agnostic model of an introspected live
+// schema (Database and its tables, columns, indexes, and constraints) shared by
 // the dbschema readers and writers and consumed by schema diffing.
-package types
+//
+// The name says which side of the comparison this is. A schema Ptah reads from
+// a server is the CURRENT state; what an authoring source declares is the
+// DESIRED one, and that lives in core/goschema. Under the old name the two
+// were both `types`, one of them nested under `dbschema/`, and a reader had to
+// know which import a file had picked to tell them apart -- while the type
+// named `Database` here is a catalog and the type named `DBSchema` was not a
+// schema (stokaro/ptah#2246 section 2.1).
+//
+// The DB prefix went with it. It repeated the package for every type, so
+// `types.DBTable` said "table" twice and `catalog.Table` says it once.
+package catalog
 
 import (
 	"context"
@@ -16,30 +27,30 @@ import (
 	"go.5x5.cz/ptah/internal/tableref"
 )
 
-// DBSchema represents the complete schema read from a database
-type DBSchema struct {
-	Schemas     []DBSchemaInfo `json:"schemas"`
-	Tables      []DBTable      `json:"tables"`
-	Enums       []DBEnum       `json:"enums"`
-	Indexes     []DBIndex      `json:"indexes"`
-	Constraints []DBConstraint `json:"constraints"`
-	Extensions  []DBExtension  `json:"extensions"` // PostgreSQL extensions
-	Functions   []DBFunction   `json:"functions"`  // PostgreSQL custom functions
-	Sequences   []DBSequence   `json:"sequences"`  // PostgreSQL standalone sequences
-	Domains     []DBDomain     `json:"domains"`    // PostgreSQL domain types
-	Composites  []DBComposite  `json:"composites"` // PostgreSQL composite types
-	Ranges      []DBRange      `json:"ranges"`     // PostgreSQL range types
-	Views       []DBView       `json:"views"`      // Database views
-	MatViews    []DBMatView    `json:"matviews"`   // Database materialized views
-	Synonyms    []DBSynonym    `json:"synonyms"`   // SQL Server synonyms
+// Database represents the complete schema read from a database
+type Database struct {
+	Schemas     []Schema           `json:"schemas"`
+	Tables      []Table            `json:"tables"`
+	Enums       []Enum             `json:"enums"`
+	Indexes     []Index            `json:"indexes"`
+	Constraints []Constraint       `json:"constraints"`
+	Extensions  []Extension        `json:"extensions"` // PostgreSQL extensions
+	Functions   []Function         `json:"functions"`  // PostgreSQL custom functions
+	Sequences   []Sequence         `json:"sequences"`  // PostgreSQL standalone sequences
+	Domains     []Domain           `json:"domains"`    // PostgreSQL domain types
+	Composites  []CompositeType    `json:"composites"` // PostgreSQL composite types
+	Ranges      []Range            `json:"ranges"`     // PostgreSQL range types
+	Views       []View             `json:"views"`      // Database views
+	MatViews    []MaterializedView `json:"matviews"`   // Database materialized views
+	Synonyms    []Synonym          `json:"synonyms"`   // SQL Server synonyms
 	// ExtendedProperties are the SQL Server extended properties this
 	// description covers: schema-, table- and column-scoped ones. See
-	// [DBExtendedProperty] for what is deliberately not in it.
-	ExtendedProperties []DBExtendedProperty `json:"extended_properties,omitempty"`
+	// [ExtendedProperty] for what is deliberately not in it.
+	ExtendedProperties []ExtendedProperty `json:"extended_properties,omitempty"`
 
 	// ContinuousAggregates are the TimescaleDB continuous aggregates this read
-	// found. See [DBContinuousAggregate] for why they are not views.
-	ContinuousAggregates []DBContinuousAggregate `json:"continuous_aggregates,omitempty"`
+	// found. See [ContinuousAggregate] for why they are not views.
+	ContinuousAggregates []ContinuousAggregate `json:"continuous_aggregates,omitempty"`
 
 	// Hypertables are the TimescaleDB hypertables among the tables above.
 	//
@@ -51,11 +62,11 @@ type DBSchema struct {
 	// list exists to be REPORTED rather than compared, and its consumer is the
 	// note that tells an operator the description they are reading is not the
 	// whole truth about these tables (stokaro/ptah#1026).
-	Hypertables []DBHypertable `json:"hypertables,omitempty"`
-	Triggers    []DBTrigger    `json:"triggers"`     // Database triggers
-	RLSPolicies []DBRLSPolicy  `json:"rls_policies"` // PostgreSQL RLS policies
-	Roles       []DBRole       `json:"roles"`        // PostgreSQL roles
-	Grants      []DBGrant      `json:"grants"`       // PostgreSQL privilege grants
+	Hypertables []Hypertable `json:"hypertables,omitempty"`
+	Triggers    []Trigger    `json:"triggers"`     // Database triggers
+	RLSPolicies []RLSPolicy  `json:"rls_policies"` // PostgreSQL RLS policies
+	Roles       []Role       `json:"roles"`        // PostgreSQL roles
+	Grants      []Grant      `json:"grants"`       // PostgreSQL privilege grants
 
 	// ObjectOwners are the owners of the objects this read covers, one row per
 	// object, on the engines that have an owner to report.
@@ -65,7 +76,7 @@ type DBSchema struct {
 	// treating ownership as part of the description is what made an inspect
 	// describe the connecting superuser and plan a CREATE ROLE for it
 	// (stokaro/ptah#1950).
-	ObjectOwners []DBObjectOwner `json:"object_owners,omitempty"`
+	ObjectOwners []ObjectOwner `json:"object_owners,omitempty"`
 
 	// RoleMemberships are the role-in-role edges the server holds between the
 	// roles Ptah manages: who inherits whose privileges.
@@ -75,7 +86,7 @@ type DBSchema struct {
 	// diffs one today, so this list describes the server rather than the
 	// desired state -- which is why it is omitted when empty and why nothing
 	// in the comparator reads it (stokaro/ptah#1950).
-	RoleMemberships []DBRoleMembership `json:"role_memberships,omitempty"`
+	RoleMemberships []RoleMembership `json:"role_memberships,omitempty"`
 
 	// RolesOutOfScope lists roles that exist on the server but that this
 	// description deliberately does not define, because nothing in the
@@ -100,7 +111,7 @@ type DBSchema struct {
 	// This field is not part of the description: it carries role names from
 	// outside the inspected scope, so it is never serialized and never
 	// rendered. Only Roles reaches output.
-	RolesOutOfScope []DBRole `json:"-"`
+	RolesOutOfScope []Role `json:"-"`
 
 	// NotDescribed records what this read did not look at, so a comparator can
 	// tell an object the database does not have from one the reader was never
@@ -133,26 +144,26 @@ type DBSchema struct {
 	// It is never serialized: the same database read by a build that registers
 	// the module yields an empty list, so this describes the reader rather than
 	// the database, and a description that carried it would not be portable.
-	UnregisteredVirtualTables []DBVirtualTable `json:"-"`
+	UnregisteredVirtualTables []VirtualTable `json:"-"`
 }
 
-// DBVirtualTable identifies one SQLite virtual table and the module that owns
+// VirtualTable identifies one SQLite virtual table and the module that owns
 // it, for the lists that talk about virtual tables rather than describe them.
-type DBVirtualTable struct {
+type VirtualTable struct {
 	Schema string
 	Name   string
 	Module string
 }
 
-// DBSchemaInfo represents a database schema/namespace.
-type DBSchemaInfo struct {
+// Schema represents a database schema/namespace.
+type Schema struct {
 	Name    string `json:"name"`
 	Comment string `json:"comment,omitempty"`
 	Charset string `json:"charset,omitempty"`
 	Collate string `json:"collate,omitempty"`
 }
 
-// DBTable represents a database table
+// Table represents a database table
 //
 // EstimatedRows and RowStatsUnknown are a pair, and reading EstimatedRows
 // alone is a mistake: PostgreSQL spells "nobody has ever counted this table"
@@ -167,18 +178,18 @@ type DBSchemaInfo struct {
 // Type cannot carry it, and the distinction decides which statements are legal:
 // PostgreSQL rejects CREATE INDEX CONCURRENTLY and DROP INDEX CONCURRENTLY on
 // a partitioned relation with SQLSTATE 0A000.
-type DBTable struct {
-	Name            string     `json:"name"`
-	Schema          string     `json:"schema,omitempty"`
-	Type            string     `json:"type"` // TABLE, VIEW, etc.
-	Comment         string     `json:"comment"`
-	Columns         []DBColumn `json:"columns"`
-	EstimatedRows   int64      `json:"estimated_rows,omitempty"`    // Best-effort planner estimate from database statistics
-	RowStatsUnknown bool       `json:"row_stats_unknown,omitempty"` // The database reports no usable row statistics; EstimatedRows is not a row count
-	Partitioned     bool       `json:"partitioned,omitempty"`       // PostgreSQL declaratively partitioned parent (pg_class.relkind = 'p')
-	RLSEnabled      bool       `json:"rls_enabled"`                 // Whether RLS is enabled on this table (PostgreSQL)
-	Strict          bool       `json:"strict,omitempty"`            // SQLite STRICT table option
-	WithoutRowID    bool       `json:"without_rowid,omitempty"`     // SQLite WITHOUT ROWID table option
+type Table struct {
+	Name            string   `json:"name"`
+	Schema          string   `json:"schema,omitempty"`
+	Type            string   `json:"type"` // TABLE, VIEW, etc.
+	Comment         string   `json:"comment"`
+	Columns         []Column `json:"columns"`
+	EstimatedRows   int64    `json:"estimated_rows,omitempty"`    // Best-effort planner estimate from database statistics
+	RowStatsUnknown bool     `json:"row_stats_unknown,omitempty"` // The database reports no usable row statistics; EstimatedRows is not a row count
+	Partitioned     bool     `json:"partitioned,omitempty"`       // PostgreSQL declaratively partitioned parent (pg_class.relkind = 'p')
+	RLSEnabled      bool     `json:"rls_enabled"`                 // Whether RLS is enabled on this table (PostgreSQL)
+	Strict          bool     `json:"strict,omitempty"`            // SQLite STRICT table option
+	WithoutRowID    bool     `json:"without_rowid,omitempty"`     // SQLite WITHOUT ROWID table option
 	// ClickHouseSortingKey is the ORDER BY a MergeTree table sorts by, when
 	// that is not simply its primary-key columns.
 	//
@@ -291,7 +302,7 @@ type DBTable struct {
 // the whole of #1138's comparator half. An array's spelling is a type. A
 // domain's spelling is the identifier its author chose, and a caller comparing
 // types keeps it away from type normalization for that reason.
-func (c DBColumn) RawType() string {
+func (c Column) RawType() string {
 	rawType := strings.TrimSpace(c.FormattedType)
 	if rawType == "" {
 		rawType = strings.TrimSpace(c.ColumnType)
@@ -319,7 +330,7 @@ func (c DBColumn) RawType() string {
 // declared width from the live column. PostgreSQL keeps both widths in the same
 // `character_maximum_length` the varchar family uses, and the reader already
 // carries it (stokaro/ptah#2034).
-func withTypeSize(rawType string, column DBColumn) string {
+func withTypeSize(rawType string, column Column) string {
 	// The fold is normalize.Type's, not a second list of spellings: `character
 	// varying` and `varchar` are one type and only that package says so.
 	switch normalize.Type(rawType) {
@@ -340,7 +351,7 @@ func withTypeSize(rawType string, column DBColumn) string {
 }
 
 // QualifiedName returns schema.table when Schema is set, or Name otherwise.
-func (t DBTable) QualifiedName() string {
+func (t Table) QualifiedName() string {
 	return QualifyTableName(t.Schema, t.Name)
 }
 
@@ -349,7 +360,7 @@ func QualifyTableName(schema, table string) string {
 	return tableref.Canonical(schema, table)
 }
 
-// DBColumn represents a database column.
+// Column represents a database column.
 //
 // GeneratedKind / GeneratedExpression are populated by readers for dialects
 // that expose generated column metadata. Schema comparison matches these fields
@@ -364,7 +375,7 @@ func QualifyTableName(schema, table string) string {
 // comparator's database side -- must consult DomainName rather than infer the
 // answer from DataType, which reports the base type and drops the domain's
 // constraints with it. See stokaro/ptah#1242.
-type DBColumn struct {
+type Column struct {
 	Name               string  `json:"name"`
 	DataType           string  `json:"data_type"`
 	UDTName            string  `json:"udt_name"`                 // For PostgreSQL enum types
@@ -491,8 +502,8 @@ type DBColumn struct {
 	IdentityIncrement string `json:"identity_increment,omitempty"`
 }
 
-// DBEnum represents a database enum type (PostgreSQL)
-type DBEnum struct {
+// Enum represents a database enum type (PostgreSQL)
+type Enum struct {
 	Name string `json:"name"`
 	// Schema owns the enum. Readers blank it for the connection's own schema,
 	// exactly as they do for tables, views and domains, so a filter or a
@@ -504,10 +515,10 @@ type DBEnum struct {
 }
 
 // QualifiedName returns schema.name when Schema is set, or Name otherwise.
-func (e DBEnum) QualifiedName() string { return QualifyTableName(e.Schema, e.Name) }
+func (e Enum) QualifiedName() string { return QualifyTableName(e.Schema, e.Name) }
 
-// DBDomain represents a PostgreSQL domain type read from the database.
-type DBDomain struct {
+// Domain represents a PostgreSQL domain type read from the database.
+type Domain struct {
 	Name     string `json:"name"`
 	Schema   string `json:"schema,omitempty"`
 	BaseType string `json:"base_type"`
@@ -521,47 +532,47 @@ type DBDomain struct {
 	// altered by that joined form, because ALTER DOMAIN ... DROP CONSTRAINT
 	// takes a name.
 	//
-	// It is a reader-only execution fact, like DBFunction.IdentityArguments:
+	// It is a reader-only execution fact, like Function.IdentityArguments:
 	// a serialized schema description declares what a domain must enforce,
 	// not what the server happened to name the constraint enforcing it.
-	CheckConstraints []DBDomainCheck `json:"-"`
+	CheckConstraints []DomainCheck `json:"-"`
 }
 
-// DBDomainCheck is one named CHECK constraint of a domain, as the catalog
+// DomainCheck is one named CHECK constraint of a domain, as the catalog
 // holds it. Expression is the server's own rewritten form -- PostgreSQL
 // reparses and prints a CHECK rather than storing the text it was given -- so
 // it compares equal only to another expression that made the same round trip.
-type DBDomainCheck struct {
+type DomainCheck struct {
 	Name       string
 	Expression string
 }
 
 // QualifiedName returns schema.name when Schema is set, or Name otherwise.
-func (d DBDomain) QualifiedName() string { return QualifyTableName(d.Schema, d.Name) }
+func (d Domain) QualifiedName() string { return QualifyTableName(d.Schema, d.Name) }
 
-// DBCompositeField is a single field of a composite type read from the database.
-type DBCompositeField struct {
+// CompositeField is a single field of a composite type read from the database.
+type CompositeField struct {
 	Name string `json:"name"`
 	Type string `json:"type"`
 }
 
-// DBComposite represents a PostgreSQL composite type read from the database.
-type DBComposite struct {
-	Name   string             `json:"name"`
-	Schema string             `json:"schema,omitempty"`
-	Fields []DBCompositeField `json:"fields"`
+// CompositeType represents a PostgreSQL composite type read from the database.
+type CompositeType struct {
+	Name   string           `json:"name"`
+	Schema string           `json:"schema,omitempty"`
+	Fields []CompositeField `json:"fields"`
 }
 
 // QualifiedName returns schema.name when Schema is set, or Name otherwise.
-func (c DBComposite) QualifiedName() string { return QualifyTableName(c.Schema, c.Name) }
+func (c CompositeType) QualifiedName() string { return QualifyTableName(c.Schema, c.Name) }
 
-// DBRange represents a PostgreSQL range type read from the database.
+// Range represents a PostgreSQL range type read from the database.
 //
 // Everything after Subtype exists so a change to an EXISTING range type can be
 // detected. While the reader returned only the name and subtype, the comparator
 // had nothing to compare and reported a changed range as converged
 // (stokaro/ptah#931 item 2).
-type DBRange struct {
+type Range struct {
 	Name    string `json:"name"`
 	Schema  string `json:"schema,omitempty"`
 	Subtype string `json:"subtype"`
@@ -582,10 +593,10 @@ type DBRange struct {
 }
 
 // QualifiedName returns schema.name when Schema is set, or Name otherwise.
-func (r DBRange) QualifiedName() string { return QualifyTableName(r.Schema, r.Name) }
+func (r Range) QualifiedName() string { return QualifyTableName(r.Schema, r.Name) }
 
-// DBIndexPart represents one ordered key column in an introspected index.
-type DBIndexPart struct {
+// IndexPart represents one ordered key column in an introspected index.
+type IndexPart struct {
 	Name string `json:"name"`
 	// Expr is a raw indexed expression, such as lower(name). It is mutually
 	// exclusive with Name: an expression is not an identifier, and a reader
@@ -616,30 +627,30 @@ type DBIndexPart struct {
 	Prefix string `json:"prefix,omitempty"`
 }
 
-// Index NULLS ordering spellings for DBIndexPart.NullsOrder.
+// Index NULLS ordering spellings for IndexPart.NullsOrder.
 const (
 	NullsOrderFirst = "FIRST"
 	NullsOrderLast  = "LAST"
 )
 
-// DBIndex represents a database index.
+// Index represents a database index.
 //
 // Most fields are dialect-neutral. The Type/Expression/Granularity trio is
 // populated only by the ClickHouse reader for data-skipping indexes; other
 // readers leave them at their zero values so the diff layer does not start
 // emitting spurious type/granularity changes for PostgreSQL or MySQL
 // indexes.
-type DBIndex struct {
+type Index struct {
 	Name      string   `json:"name"`
 	TableName string   `json:"table_name"`
 	Schema    string   `json:"schema,omitempty"`
 	Columns   []string `json:"columns"`
 	// Parts preserves key order and direction when the database exposes it.
 	// Empty means the reader supplied only the legacy ascending Columns form.
-	Parts      []DBIndexPart `json:"parts,omitempty"`
-	IsUnique   bool          `json:"is_unique"`
-	IsPrimary  bool          `json:"is_primary"`
-	Definition string        `json:"definition"` // Full index definition
+	Parts      []IndexPart `json:"parts,omitempty"`
+	IsUnique   bool        `json:"is_unique"`
+	IsPrimary  bool        `json:"is_primary"`
+	Definition string      `json:"definition"` // Full index definition
 	// KeyPartsIncomplete reports that the catalog described a key part this
 	// reader cannot name, so Columns (and Parts) list fewer parts than the key
 	// actually has. The MySQL reader sets it for a functional key part --
@@ -763,12 +774,12 @@ type DBIndex struct {
 }
 
 // QualifiedTableName returns schema.table when Schema is set, or TableName otherwise.
-func (i DBIndex) QualifiedTableName() string {
+func (i Index) QualifiedTableName() string {
 	return QualifyTableName(i.Schema, i.TableName)
 }
 
-// DBConstraint represents a database constraint
-type DBConstraint struct {
+// Constraint represents a database constraint
+type Constraint struct {
 	Name           string   `json:"name"`
 	TableName      string   `json:"table_name"`
 	Schema         string   `json:"schema,omitempty"`
@@ -803,7 +814,7 @@ type DBConstraint struct {
 
 	// RequiresExtensions names the extensions the index backing this constraint
 	// cannot be built without, read from that index exactly as
-	// [DBIndex.RequiresExtensions] is.
+	// [Index.RequiresExtensions] is.
 	//
 	// It is a separate field rather than a lookup because the backing index is
 	// not part of the entity model: a constraint owns its index, and the
@@ -819,12 +830,12 @@ type DBConstraint struct {
 }
 
 // QualifiedTableName returns schema.table when Schema is set, or TableName otherwise.
-func (c DBConstraint) QualifiedTableName() string {
+func (c Constraint) QualifiedTableName() string {
 	return QualifyTableName(c.Schema, c.TableName)
 }
 
 // QualifiedForeignTableName returns schema.table for a foreign key target.
-func (c DBConstraint) QualifiedForeignTableName() string {
+func (c Constraint) QualifiedForeignTableName() string {
 	if c.ForeignTable == nil {
 		return ""
 	}
@@ -833,7 +844,7 @@ func (c DBConstraint) QualifiedForeignTableName() string {
 
 // ColumnNamesOrDefault returns all local constraint columns, falling back to
 // the legacy single-column field for callers that have not populated slices.
-func (c DBConstraint) ColumnNamesOrDefault() []string {
+func (c Constraint) ColumnNamesOrDefault() []string {
 	if len(c.ColumnNames) > 0 {
 		return c.ColumnNames
 	}
@@ -845,7 +856,7 @@ func (c DBConstraint) ColumnNamesOrDefault() []string {
 
 // ForeignColumnsOrDefault returns all referenced FK columns, falling back to
 // the legacy single-column field for older readers and test fixtures.
-func (c DBConstraint) ForeignColumnsOrDefault() []string {
+func (c Constraint) ForeignColumnsOrDefault() []string {
 	if len(c.ForeignColumns) > 0 {
 		return c.ForeignColumns
 	}
@@ -855,8 +866,8 @@ func (c DBConstraint) ForeignColumnsOrDefault() []string {
 	return nil
 }
 
-// DBExtension represents a PostgreSQL extension installed in the database
-type DBExtension struct {
+// Extension represents a PostgreSQL extension installed in the database
+type Extension struct {
 	Name             string  `json:"name"`              // Extension name (pg_trgm, postgis, etc.)
 	Version          string  `json:"version"`           // Installed version
 	Schema           string  `json:"schema"`            // Schema where extension is installed
@@ -895,13 +906,13 @@ type DBExtension struct {
 	Provides []string `json:"provides,omitempty"`
 }
 
-// DBSequence represents a standalone PostgreSQL sequence read from the database.
+// Sequence represents a standalone PostgreSQL sequence read from the database.
 //
 // Only user-declared, standalone sequences appear here. Implicit sequences that
 // back SERIAL / BIGSERIAL / identity columns (those OWNED BY a column via an
 // internal/auto dependency) are deliberately excluded so that declaring a plain
 // SERIAL column does not surface as a spurious standalone sequence.
-type DBSequence struct {
+type Sequence struct {
 	Name      string `json:"name"`                // Sequence name
 	Schema    string `json:"schema,omitempty"`    // Schema containing the sequence
 	DataType  string `json:"data_type,omitempty"` // Underlying integer type (e.g. "bigint")
@@ -916,12 +927,12 @@ type DBSequence struct {
 }
 
 // QualifiedName returns schema.sequence when Schema is set, or Name otherwise.
-func (s DBSequence) QualifiedName() string {
+func (s Sequence) QualifiedName() string {
 	return QualifyTableName(s.Schema, s.Name)
 }
 
-// DBInfo contains connection and metadata information
-type DBInfo struct {
+// ServerInfo contains connection and metadata information
+type ServerInfo struct {
 	Dialect string `json:"dialect"` // postgres, mysql, mariadb
 	Version string `json:"version"`
 	Schema  string `json:"schema"` // public, database name, etc.
@@ -934,15 +945,15 @@ type DBInfo struct {
 	// It is excluded from JSON because every other field here is tagged, and a
 	// struct whose tags invite marshalling must not carry one field that turns
 	// a marshal into a credential disclosure: `json.Marshal(conn.Info())` is
-	// the obvious thing to do with a DBInfo, and it must not write the
+	// the obvious thing to do with a ServerInfo, and it must not write the
 	// database password into whatever the caller does with the bytes. Marshal
-	// [DBInfo.RedactedURL] instead -- it names the same target with the
+	// [ServerInfo.RedactedURL] instead -- it names the same target with the
 	// secrets removed (stokaro/ptah#2246).
 	URL string `json:"-"`
 
 	// RedactedURL is URL with every secret it carries replaced, suitable for a
 	// log line, an error message or a serialized report. It occupies the `url`
-	// JSON name so a consumer that marshals DBInfo still learns which target
+	// JSON name so a consumer that marshals ServerInfo still learns which target
 	// the description came from.
 	RedactedURL string `json:"url"`
 
@@ -976,8 +987,8 @@ type DBInfo struct {
 // against the last published release, so the read it issues has to be spelled
 // a way that release carries.
 type SchemaReader interface {
-	ReadSchema() (*DBSchema, error)
-	ReadSchemaContext(ctx context.Context) (*DBSchema, error)
+	ReadSchema() (*Database, error)
+	ReadSchemaContext(ctx context.Context) (*Database, error)
 }
 
 // SchemaExecutor executes SQL statements produced by schema operations.
@@ -1020,8 +1031,8 @@ type SchemaTransaction interface {
 	Rollback() error
 }
 
-// DBFunction represents a custom function read from the database.
-type DBFunction struct {
+// Function represents a custom function read from the database.
+type Function struct {
 	Name string `json:"name"` // Function name
 	// Kind separates a function from a procedure. Empty means function, which
 	// is what every description written before procedures existed meant.
@@ -1059,10 +1070,10 @@ type DBFunction struct {
 }
 
 // QualifiedName returns schema.name when Schema is set, or Name otherwise.
-func (f DBFunction) QualifiedName() string { return QualifyTableName(f.Schema, f.Name) }
+func (f Function) QualifiedName() string { return QualifyTableName(f.Schema, f.Name) }
 
-// DBView represents a database view read from the database.
-type DBView struct {
+// View represents a database view read from the database.
+type View struct {
 	Name        string `json:"name"`         // View name
 	Schema      string `json:"schema"`       // Schema where the view is defined
 	Body        string `json:"body"`         // SELECT query used as the view definition
@@ -1081,11 +1092,11 @@ type DBView struct {
 }
 
 // QualifiedName returns schema.view when Schema is set, or Name otherwise.
-func (v DBView) QualifiedName() string {
+func (v View) QualifiedName() string {
 	return QualifyTableName(v.Schema, v.Name)
 }
 
-// DBSynonym represents a SQL Server synonym read from the database.
+// Synonym represents a SQL Server synonym read from the database.
 //
 // A synonym is an alias, and the thing it aliases may not be in this database.
 // SQL Server records the target as a name of one to four parts, and the shape
@@ -1097,7 +1108,7 @@ func (v DBView) QualifiedName() string {
 // the server will resolve and what has to be written back unchanged. The parts
 // exist so that ordering can tell local from remote without re-parsing, and
 // External is derived from them rather than stored, so the two cannot disagree.
-type DBSynonym struct {
+type Synonym struct {
 	Name   string `json:"name"`   // Synonym name (the alias)
 	Schema string `json:"schema"` // Schema the alias lives in
 	// Target is base_object_name exactly as the catalog records it, including
@@ -1112,7 +1123,7 @@ type DBSynonym struct {
 	Comment        string `json:"comment,omitempty"` // Synonym comment/description
 }
 
-// DBContinuousAggregate is one TimescaleDB continuous aggregate.
+// ContinuousAggregate is one TimescaleDB continuous aggregate.
 //
 // To PostgreSQL it is a view: pg_class reports relkind 'v', and a reader that
 // asks only PostgreSQL describes it as one. That is wrong in both directions,
@@ -1130,7 +1141,7 @@ type DBSynonym struct {
 //
 // Definition is therefore the catalog's own view_definition -- the SELECT as
 // it was written -- and not pg_get_viewdef's.
-type DBContinuousAggregate struct {
+type ContinuousAggregate struct {
 	Schema string `json:"schema"` // Schema holding the aggregate
 	Name   string `json:"name"`   // Aggregate name, which is also the view name
 
@@ -1148,11 +1159,11 @@ type DBContinuousAggregate struct {
 }
 
 // QualifiedName returns schema.name when Schema is set, or Name otherwise.
-func (a DBContinuousAggregate) QualifiedName() string {
+func (a ContinuousAggregate) QualifiedName() string {
 	return QualifyTableName(a.Schema, a.Name)
 }
 
-// DBHypertable is a TimescaleDB hypertable, as the extension's own catalog
+// Hypertable is a TimescaleDB hypertable, as the extension's own catalog
 // describes it.
 //
 // It carries the primary dimension and nothing else about the partitioning,
@@ -1161,7 +1172,7 @@ func (a DBContinuousAggregate) QualifiedName() string {
 // on is what makes the note concrete enough to act on. Representing the full
 // dimension set is what a declaration syntax would need, and that is the slice
 // after this one.
-type DBHypertable struct {
+type Hypertable struct {
 	Schema string `json:"schema"` // Schema holding the hypertable
 	Name   string `json:"name"`   // Table name, which is an ordinary table name
 
@@ -1185,11 +1196,11 @@ type DBHypertable struct {
 }
 
 // QualifiedName returns schema.name when Schema is set, or Name otherwise.
-func (h DBHypertable) QualifiedName() string {
+func (h Hypertable) QualifiedName() string {
 	return QualifyTableName(h.Schema, h.Name)
 }
 
-// DBExtendedProperty is one SQL Server extended property read from
+// ExtendedProperty is one SQL Server extended property read from
 // sys.extended_properties.
 //
 // SQL Server hangs a property off a three-level address, and this type carries
@@ -1208,7 +1219,7 @@ func (h DBHypertable) QualifiedName() string {
 // the comment comparator and this one plan the same change from two places.
 // The declaration side refuses it by name for the same reason, and says to use
 // the comment instead.
-type DBExtendedProperty struct {
+type ExtendedProperty struct {
 	Name   string `json:"name"`             // Property name, as sys.extended_properties records it
 	Schema string `json:"schema"`           // Schema owning the addressed object, or the addressed schema
 	Table  string `json:"table,omitempty"`  // Table the property is on; empty for a schema-scoped property
@@ -1242,7 +1253,7 @@ type DBExtendedProperty struct {
 // A property with no levels is the database's own, and says so rather than
 // rendering as an empty string: it appears in diagnostics beside properties
 // that do name an object, and "" beside "app.docs" reads as a bug.
-func (p DBExtendedProperty) QualifiedOwner() string {
+func (p ExtendedProperty) QualifiedOwner() string {
 	if p.Schema == "" {
 		return "(database)"
 	}
@@ -1257,7 +1268,7 @@ func (p DBExtendedProperty) QualifiedOwner() string {
 }
 
 // QualifiedName returns schema.synonym when Schema is set, or Name otherwise.
-func (s DBSynonym) QualifiedName() string {
+func (s Synonym) QualifiedName() string {
 	return QualifyTableName(s.Schema, s.Name)
 }
 
@@ -1268,7 +1279,7 @@ func (s DBSynonym) QualifiedName() string {
 // What External changes is dependency ordering -- a local target is an object
 // the same plan may create or drop, and a remote one is not something this
 // plan can order against at all.
-func (s DBSynonym) IsExternal() bool {
+func (s Synonym) IsExternal() bool {
 	return s.TargetServer != "" || s.TargetDatabase != ""
 }
 
@@ -1279,15 +1290,15 @@ func (s DBSynonym) IsExternal() bool {
 // external target is deliberate: an ordering that matched on the object name
 // alone would make a synonym for another database's `orders` table depend on
 // the local table of the same name, which is a dependency that does not exist.
-func (s DBSynonym) TargetQualifiedName() string {
+func (s Synonym) TargetQualifiedName() string {
 	if s.IsExternal() || s.TargetObject == "" {
 		return ""
 	}
 	return QualifyTableName(s.TargetSchema, s.TargetObject)
 }
 
-// DBMatView represents a PostgreSQL materialized view read from the database.
-type DBMatView struct {
+// MaterializedView represents a PostgreSQL materialized view read from the database.
+type MaterializedView struct {
 	Name    string `json:"name"`    // Materialized view name
 	Schema  string `json:"schema"`  // Schema where the materialized view is defined
 	Body    string `json:"body"`    // SELECT query used as the materialized view definition
@@ -1303,12 +1314,12 @@ type DBMatView struct {
 }
 
 // QualifiedName returns schema.materialized_view when Schema is set, or Name otherwise.
-func (v DBMatView) QualifiedName() string {
+func (v MaterializedView) QualifiedName() string {
 	return QualifyTableName(v.Schema, v.Name)
 }
 
-// DBTrigger represents a database trigger read from the database.
-type DBTrigger struct {
+// Trigger represents a database trigger read from the database.
+type Trigger struct {
 	Name    string `json:"name"`    // Trigger name
 	Schema  string `json:"schema"`  // Schema where the trigger is defined
 	Table   string `json:"table"`   // Target table
@@ -1331,12 +1342,12 @@ type DBTrigger struct {
 }
 
 // QualifiedTable returns schema.table when Schema is set, or Table otherwise.
-func (t DBTrigger) QualifiedTable() string {
+func (t Trigger) QualifiedTable() string {
 	return QualifyTableName(t.Schema, t.Table)
 }
 
-// DBRLSPolicy represents a PostgreSQL RLS policy read from the database
-type DBRLSPolicy struct {
+// RLSPolicy represents a PostgreSQL RLS policy read from the database
+type RLSPolicy struct {
 	Name                string `json:"name"`                  // Policy name
 	Table               string `json:"table"`                 // Target table name
 	PolicyFor           string `json:"policy_for"`            // Operations policy applies to (e.g., "ALL", "SELECT")
@@ -1346,8 +1357,8 @@ type DBRLSPolicy struct {
 	Comment             string `json:"comment"`               // Policy comment/description
 }
 
-// DBRole represents a PostgreSQL role read from the database
-type DBRole struct {
+// Role represents a PostgreSQL role read from the database
+type Role struct {
 	Name        string `json:"name"`         // Role name
 	Login       bool   `json:"login"`        // Whether role can login
 	Superuser   bool   `json:"superuser"`    // Whether role is superuser
@@ -1359,12 +1370,12 @@ type DBRole struct {
 	Comment     string `json:"comment"`      // Role comment/description
 }
 
-// DBObjectOwner is the owner of one schema object.
+// ObjectOwner is the owner of one schema object.
 //
 // Kind is the object kind in Ptah's own vocabulary -- table, view,
 // materialized view, sequence, schema -- rather than the catalog's letter, so a
 // consumer need not know pg_class.relkind to read it.
-type DBObjectOwner struct {
+type ObjectOwner struct {
 	// Kind is the object kind.
 	Kind string `json:"kind"`
 	// Schema is the schema the object lives in, empty for a schema itself.
@@ -1382,13 +1393,13 @@ type DBObjectOwner struct {
 	OwnerCanLogin bool `json:"owner_can_login"`
 }
 
-// DBRoleMembership is one role-in-role edge: Member holds everything Role
+// RoleMembership is one role-in-role edge: Member holds everything Role
 // grants, subject to Role's inheritance setting.
 //
 // The two names are read from the same catalog the roles come from, and both
 // are roles Ptah manages -- reserved system roles are excluded on both sides,
 // for the same reason they are excluded from Roles.
-type DBRoleMembership struct {
+type RoleMembership struct {
 	// Role is the role whose privileges are granted.
 	Role string `json:"role"`
 	// Member is the role that receives them.
@@ -1397,8 +1408,8 @@ type DBRoleMembership struct {
 	AdminOption bool `json:"admin_option"`
 }
 
-// DBGrant represents a privilege grant read from the database.
-type DBGrant struct {
+// Grant represents a privilege grant read from the database.
+type Grant struct {
 	Role       string `json:"role"`                 // Role receiving the privilege
 	Privilege  string `json:"privilege"`            // Granted privilege, e.g. SELECT or USAGE
 	ObjectType string `json:"object_type"`          // TABLE, SCHEMA, or SEQUENCE
@@ -1425,7 +1436,7 @@ type DBGrant struct {
 
 // QualifiedTarget returns schema.object for table grants and the schema name
 // itself for schema grants.
-func (g DBGrant) QualifiedTarget() string {
+func (g Grant) QualifiedTarget() string {
 	if strings.EqualFold(g.ObjectType, "SCHEMA") {
 		return g.ObjectName
 	}

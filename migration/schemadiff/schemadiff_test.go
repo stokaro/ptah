@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -21,8 +21,8 @@ func TestCompare_DefaultBehavior(t *testing.T) {
 			{Name: "pg_trgm", IfNotExists: true},
 		},
 	}
-	database := &types.DBSchema{
-		Extensions: []types.DBExtension{
+	database := &catalog.Database{
+		Extensions: []catalog.Extension{
 			{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"},
 		},
 	}
@@ -60,16 +60,16 @@ func TestCompareWithDialect_MySQLFamilyInlineEnumsMatchGeneratedEnumFields(t *te
 					Values: []string{"draft", "active"},
 				}},
 			}
-			database := &types.DBSchema{
-				Tables: []types.DBTable{{
+			database := &catalog.Database{
+				Tables: []catalog.Table{{
 					Name: "products",
 					Type: "TABLE",
-					Columns: []types.DBColumn{
+					Columns: []catalog.Column{
 						{Name: "id", DataType: "int", IsNullable: "NO", IsPrimaryKey: true},
 						{Name: "status", DataType: "enum('draft','active')", IsNullable: "NO"},
 					},
 				}},
-				Enums: []types.DBEnum{{
+				Enums: []catalog.Enum{{
 					Name:   "enum_draft_active",
 					Values: []string{"draft", "active"},
 				}},
@@ -106,11 +106,11 @@ func TestCompareWithDialect_GeneratedColumnDefaultKindMatchesDialect(t *testing.
 					{StructName: "User", Name: "email_lc", Type: "TEXT", Nullable: true, GeneratedExpression: expression},
 				},
 			}
-			database := &types.DBSchema{
-				Tables: []types.DBTable{{
+			database := &catalog.Database{
+				Tables: []catalog.Table{{
 					Name: "users",
 					Type: "TABLE",
-					Columns: []types.DBColumn{{
+					Columns: []catalog.Column{{
 						Name:                "email_lc",
 						DataType:            "TEXT",
 						IsNullable:          "YES",
@@ -200,11 +200,11 @@ func TestCompareWithDialect_GeneratedColumnCatalogExpressionsMatch(t *testing.T)
 					},
 				},
 			}
-			database := &types.DBSchema{
-				Tables: []types.DBTable{{
+			database := &catalog.Database{
+				Tables: []catalog.Table{{
 					Name: "contacts",
 					Type: "TABLE",
-					Columns: []types.DBColumn{{
+					Columns: []catalog.Column{{
 						Name:                "email_normalized",
 						DataType:            tt.databaseType,
 						ColumnType:          tt.databaseColumnType,
@@ -237,11 +237,11 @@ func TestCompareWithDialect_GeneratedColumnStringLiteralMismatchIsAGap(t *testin
 		},
 	}
 	databaseExpression := "concat(`email`, 'active')"
-	database := &types.DBSchema{
-		Tables: []types.DBTable{{
+	database := &catalog.Database{
+		Tables: []catalog.Table{{
 			Name: "contacts",
 			Type: "TABLE",
-			Columns: []types.DBColumn{{
+			Columns: []catalog.Column{{
 				Name:                "email_normalized",
 				DataType:            "text",
 				IsNullable:          "YES",
@@ -273,11 +273,11 @@ func TestCompareWithDialect_GeneratedColumnEscapedStringLiteralMismatchIsAGap(t 
 		},
 	}
 	databaseExpression := `concat(` + "`email`" + `, 'can\'t lower(email)')`
-	database := &types.DBSchema{
-		Tables: []types.DBTable{{
+	database := &catalog.Database{
+		Tables: []catalog.Table{{
 			Name: "contacts",
 			Type: "TABLE",
-			Columns: []types.DBColumn{{
+			Columns: []catalog.Column{{
 				Name:                "email_normalized",
 				DataType:            "text",
 				IsNullable:          "YES",
@@ -310,11 +310,11 @@ func TestCompareWithDialect_GeneratedColumnDoubleQuotedStringLiteralMismatchIsAG
 		},
 	}
 	databaseExpression := `concat(` + "`email`" + `, "lower(email)")`
-	database := &types.DBSchema{
-		Tables: []types.DBTable{{
+	database := &catalog.Database{
+		Tables: []catalog.Table{{
 			Name: "contacts",
 			Type: "TABLE",
-			Columns: []types.DBColumn{{
+			Columns: []catalog.Column{{
 				Name:                "email_normalized",
 				DataType:            "text",
 				IsNullable:          "YES",
@@ -340,8 +340,8 @@ func TestCompareWithDialect_MariaDBViewBodyMatchesCatalogReadback(t *testing.T) 
 			Body: "SELECT id, name FROM products WHERE archived = false",
 		}},
 	}
-	database := &types.DBSchema{
-		Views: []types.DBView{{
+	database := &catalog.Database{
+		Views: []catalog.View{{
 			Name:   "live_products",
 			Schema: "conf",
 			Body: "select `conf`.`products`.`id` AS `id`,`conf`.`products`.`name` AS `name` " +
@@ -363,8 +363,8 @@ func TestCompareWithDialect_MariaDBViewPredicateDriftStillDiffs(t *testing.T) {
 			Body: "SELECT id, name FROM products WHERE archived = false",
 		}},
 	}
-	database := &types.DBSchema{
-		Views: []types.DBView{{
+	database := &catalog.Database{
+		Views: []catalog.View{{
 			Name:   "live_products",
 			Schema: "conf",
 			Body: "select `conf`.`products`.`id` AS `id`,`conf`.`products`.`name` AS `name` " +
@@ -387,8 +387,8 @@ func TestCompareWithDialect_MariaDBViewWrongSchemaQualifierStillDiffs(t *testing
 			Body: "SELECT id, name FROM products WHERE archived = false",
 		}},
 	}
-	database := &types.DBSchema{
-		Views: []types.DBView{{
+	database := &catalog.Database{
+		Views: []catalog.View{{
 			Name:   "live_products",
 			Schema: "conf",
 			Body: "select `otherdb`.`products`.`id` AS `id`,`otherdb`.`products`.`name` AS `name` " +
@@ -411,8 +411,8 @@ func TestCompareWithDialect_MariaDBViewWrongSchemaRelationStillDiffs(t *testing.
 			Body: "SELECT id, name FROM products WHERE archived = false",
 		}},
 	}
-	database := &types.DBSchema{
-		Views: []types.DBView{{
+	database := &catalog.Database{
+		Views: []catalog.View{{
 			Name:   "live_products",
 			Schema: "conf",
 			Body: "select `products`.`id` AS `id`,`products`.`name` AS `name` " +
@@ -435,8 +435,8 @@ func TestCompareWithDialect_MariaDBViewStringLiteralDriftStillDiffs(t *testing.T
 			Body: "SELECT 'archived = false' AS note",
 		}},
 	}
-	database := &types.DBSchema{
-		Views: []types.DBView{{
+	database := &catalog.Database{
+		Views: []catalog.View{{
 			Name: "view_notes",
 			Body: "select 'archived = 0' AS `note`",
 		}},
@@ -457,8 +457,8 @@ func TestCompareWithDialect_MariaDBViewEscapedStringLiteralDriftStillDiffs(t *te
 			Body: `SELECT 'can\'t = false' AS note`,
 		}},
 	}
-	database := &types.DBSchema{
-		Views: []types.DBView{{
+	database := &catalog.Database{
+		Views: []catalog.View{{
 			Name: "view_notes",
 			Body: `select 'can\'t = 0' AS ` + "`note`",
 		}},
@@ -479,8 +479,8 @@ func TestCompareWithDialect_MariaDBViewDoubleQuotedStringLiteralDriftStillDiffs(
 			Body: `SELECT "archived = false" AS note`,
 		}},
 	}
-	database := &types.DBSchema{
-		Views: []types.DBView{{
+	database := &catalog.Database{
+		Views: []catalog.View{{
 			Name: "view_notes",
 			Body: `select "archived = 0" AS ` + "`note`",
 		}},
@@ -524,12 +524,12 @@ func TestCompareWithDialect_SQLServerGeneratedExpressionNormalizesCatalogDefinit
 					GeneratedKind:       "",
 				}},
 			}
-			database := &types.DBSchema{
-				Tables: []types.DBTable{{
+			database := &catalog.Database{
+				Tables: []catalog.Table{{
 					Name:   "users",
 					Schema: "dbo",
 					Type:   "TABLE",
-					Columns: []types.DBColumn{{
+					Columns: []catalog.Column{{
 						Name:                "email_lc",
 						DataType:            "NVARCHAR",
 						ColumnType:          "NVARCHAR(320)",
@@ -590,11 +590,11 @@ func TestCompareWithDialect_MySQLDefaultsTypesFixtureMatchesCatalogReadback(t *t
 			},
 		},
 	}
-	database := &types.DBSchema{
-		Tables: []types.DBTable{{
+	database := &catalog.Database{
+		Tables: []catalog.Table{{
 			Name: "invoices",
 			Type: "TABLE",
-			Columns: []types.DBColumn{
+			Columns: []catalog.Column{
 				{
 					Name:            "id",
 					DataType:        "int",
@@ -710,12 +710,12 @@ func TestCompareWithDialect_MySQLConstraintsActionsFixtureMatchesCatalogReadback
 			},
 		},
 	}
-	database := &types.DBSchema{
-		Tables: []types.DBTable{
+	database := &catalog.Database{
+		Tables: []catalog.Table{
 			{
 				Name: "organizations",
 				Type: "TABLE",
-				Columns: []types.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "id", DataType: "int", ColumnType: "int", IsNullable: "NO", IsPrimaryKey: true, IsAutoIncrement: true},
 					{Name: "slug", DataType: "varchar(64)", ColumnType: "varchar(64)", IsNullable: "NO", IsUnique: true},
 				},
@@ -723,7 +723,7 @@ func TestCompareWithDialect_MySQLConstraintsActionsFixtureMatchesCatalogReadback
 			{
 				Name: "projects",
 				Type: "TABLE",
-				Columns: []types.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "id", DataType: "int", ColumnType: "int", IsNullable: "NO", IsPrimaryKey: true, IsAutoIncrement: true},
 					{Name: "organization_id", DataType: "int", ColumnType: "int", IsNullable: "NO"},
 					{Name: "slug", DataType: "varchar(64)", ColumnType: "varchar(64)", IsNullable: "NO"},
@@ -732,7 +732,7 @@ func TestCompareWithDialect_MySQLConstraintsActionsFixtureMatchesCatalogReadback
 				},
 			},
 		},
-		Constraints: []types.DBConstraint{
+		Constraints: []catalog.Constraint{
 			{Name: "PRIMARY", TableName: "organizations", Type: "PRIMARY KEY", ColumnName: "id", ColumnNames: []string{"id"}},
 			{Name: "slug", TableName: "organizations", Type: "UNIQUE", ColumnName: "slug", ColumnNames: []string{"slug"}},
 			{Name: "PRIMARY", TableName: "projects", Type: "PRIMARY KEY", ColumnName: "id", ColumnNames: []string{"id"}},
@@ -788,9 +788,9 @@ func TestCompareWithDialect_MySQLCharsetEscapedStringLiteralMatchesGeneratedEsca
 			CheckExpression: "name <> 'owner''s'",
 		}},
 	}
-	database := &types.DBSchema{
-		Tables: []types.DBTable{{Name: "projects", Type: "TABLE"}},
-		Constraints: []types.DBConstraint{{
+	database := &catalog.Database{
+		Tables: []catalog.Table{{Name: "projects", Type: "TABLE"}},
+		Constraints: []catalog.Constraint{{
 			Name:        "projects_name_check",
 			TableName:   "projects",
 			Type:        "CHECK",
@@ -826,16 +826,16 @@ func TestCompareWithDialect_SQLiteInlineEnumsMatchGeneratedEnumFields(t *testing
 		}},
 	}
 	check := "status IN ('draft', 'active')"
-	database := &types.DBSchema{
-		Tables: []types.DBTable{{
+	database := &catalog.Database{
+		Tables: []catalog.Table{{
 			Name: "products",
 			Type: "TABLE",
-			Columns: []types.DBColumn{
+			Columns: []catalog.Column{
 				{Name: "id", DataType: "INTEGER", IsNullable: "NO", IsPrimaryKey: true},
 				{Name: "status", DataType: "TEXT", IsNullable: "NO"},
 			},
 		}},
-		Constraints: []types.DBConstraint{{
+		Constraints: []catalog.Constraint{{
 			Name:        "products_status_check",
 			TableName:   "products",
 			Type:        "CHECK",
@@ -1000,22 +1000,22 @@ func TestCompareWithDialect_SQLiteUniqueConstraintAutoindexIsIgnored(t *testing.
 			Columns:    []string{"organization_id", "slug"},
 		}},
 	}
-	database := &types.DBSchema{
-		Tables: []types.DBTable{{
+	database := &catalog.Database{
+		Tables: []catalog.Table{{
 			Name: "projects",
 			Type: "TABLE",
-			Columns: []types.DBColumn{
+			Columns: []catalog.Column{
 				{Name: "organization_id", DataType: "INTEGER", ColumnType: "INTEGER", IsNullable: "NO"},
 				{Name: "slug", DataType: "TEXT", ColumnType: "TEXT", IsNullable: "NO"},
 			},
 		}},
-		Indexes: []types.DBIndex{{
+		Indexes: []catalog.Index{{
 			Name:      "sqlite_autoindex_projects_1",
 			TableName: "projects",
 			Columns:   []string{"organization_id", "slug"},
 			IsUnique:  true,
 		}},
-		Constraints: []types.DBConstraint{{
+		Constraints: []catalog.Constraint{{
 			Name:        "projects_org_slug_unique",
 			TableName:   "projects",
 			Type:        "UNIQUE",
@@ -1035,9 +1035,9 @@ func TestCompareWithDialect_NonSQLiteAutoindexNameIsCompared(t *testing.T) {
 	generated := &goschema.Database{
 		Tables: []goschema.Table{{Name: "projects", StructName: "Project"}},
 	}
-	database := &types.DBSchema{
-		Tables: []types.DBTable{{Name: "projects", Type: "TABLE"}},
-		Indexes: []types.DBIndex{{
+	database := &catalog.Database{
+		Tables: []catalog.Table{{Name: "projects", Type: "TABLE"}},
+		Indexes: []catalog.Index{{
 			Name:      "sqlite_autoindex_projects_1",
 			TableName: "projects",
 			Columns:   []string{"slug"},
@@ -1078,17 +1078,17 @@ func TestCompareWithDialect_SQLServerInlineEnumsMatchGeneratedEnumFields(t *test
 		}},
 	}
 	check := "[status] IN ('draft', 'active')"
-	database := &types.DBSchema{
-		Tables: []types.DBTable{{
+	database := &catalog.Database{
+		Tables: []catalog.Table{{
 			Name:   "products",
 			Schema: "dbo",
 			Type:   "TABLE",
-			Columns: []types.DBColumn{
+			Columns: []catalog.Column{
 				{Name: "id", DataType: "INT", IsNullable: "NO", IsPrimaryKey: true},
 				{Name: "status", DataType: "NVARCHAR", ColumnType: "NVARCHAR(255)", IsNullable: "NO"},
 			},
 		}},
-		Constraints: []types.DBConstraint{{
+		Constraints: []catalog.Constraint{{
 			Name:        "products_status_check",
 			Schema:      "dbo",
 			TableName:   "products",
@@ -1118,12 +1118,12 @@ func sqliteColumnGeneratedSchema(columnType string) *goschema.Database {
 	}
 }
 
-func sqliteColumnDatabaseSchema(columnType string) *types.DBSchema {
-	return &types.DBSchema{
-		Tables: []types.DBTable{{
+func sqliteColumnDatabaseSchema(columnType string) *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{{
 			Name: "users",
 			Type: "TABLE",
-			Columns: []types.DBColumn{
+			Columns: []catalog.Column{
 				{Name: "id", DataType: "INTEGER", ColumnType: "INTEGER", IsNullable: "NO", IsPrimaryKey: true},
 				{Name: "value", DataType: columnType, ColumnType: columnType, IsNullable: "NO"},
 			},
@@ -1140,8 +1140,8 @@ func TestCompareWithOptions_CustomIgnoreList(t *testing.T) {
 			{Name: "pg_trgm", IfNotExists: true},
 		},
 	}
-	database := &types.DBSchema{
-		Extensions: []types.DBExtension{
+	database := &catalog.Database{
+		Extensions: []catalog.Extension{
 			{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"},
 			{Name: "adminpack", Version: "2.1", Schema: "public"},
 		},
@@ -1165,8 +1165,8 @@ func TestCompareWithOptions_NoIgnoredExtensions(t *testing.T) {
 			{Name: "pg_trgm", IfNotExists: true},
 		},
 	}
-	database := &types.DBSchema{
-		Extensions: []types.DBExtension{
+	database := &catalog.Database{
+		Extensions: []catalog.Extension{
 			{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"},
 			{Name: "adminpack", Version: "2.1", Schema: "public"},
 		},
@@ -1190,8 +1190,8 @@ func TestCompareWithOptions_AdditionalIgnoredExtensions(t *testing.T) {
 			{Name: "pg_trgm", IfNotExists: true},
 		},
 	}
-	database := &types.DBSchema{
-		Extensions: []types.DBExtension{
+	database := &catalog.Database{
+		Extensions: []catalog.Extension{
 			{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"},
 			{Name: "adminpack", Version: "2.1", Schema: "public"},
 			{Name: "pg_stat_statements", Version: "1.9", Schema: "public"},
@@ -1216,8 +1216,8 @@ func TestCompareWithOptions_NilOptions(t *testing.T) {
 			{Name: "pg_trgm", IfNotExists: true},
 		},
 	}
-	database := &types.DBSchema{
-		Extensions: []types.DBExtension{
+	database := &catalog.Database{
+		Extensions: []catalog.Extension{
 			{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"},
 		},
 	}
@@ -1238,8 +1238,8 @@ func TestLibraryUsageExamples(t *testing.T) {
 			{Name: "btree_gin", IfNotExists: true},
 		},
 	}
-	database := &types.DBSchema{
-		Extensions: []types.DBExtension{
+	database := &catalog.Database{
+		Extensions: []catalog.Extension{
 			{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"},
 			{Name: "pg_trgm", Version: "1.6", Schema: "public"},
 		},
@@ -1367,7 +1367,7 @@ func TestCompareWithDialect_SpannerFoldDoesNotReachOtherTargets(t *testing.T) {
 // spannerForeignKeySchemas is the pair a Spanner foreign key produces: the
 // constraint, and the index Spanner built to enforce it under the name Spanner
 // chose.
-func spannerForeignKeySchemas(indexName string) (*goschema.Database, *types.DBSchema) {
+func spannerForeignKeySchemas(indexName string) (*goschema.Database, *catalog.Database) {
 	generated := &goschema.Database{
 		Tables: []goschema.Table{
 			{Name: "parents", StructName: "Parent"},
@@ -1380,17 +1380,17 @@ func spannerForeignKeySchemas(indexName string) (*goschema.Database, *types.DBSc
 				ForeignKeyName: "children_parent_fk"},
 		},
 	}
-	database := &types.DBSchema{
-		Tables: []types.DBTable{
-			{Name: "parents", Type: "TABLE", Columns: []types.DBColumn{
+	database := &catalog.Database{
+		Tables: []catalog.Table{
+			{Name: "parents", Type: "TABLE", Columns: []catalog.Column{
 				{Name: "id", DataType: "bigint", ColumnType: "bigint", IsNullable: "NO", IsPrimaryKey: true},
 			}},
-			{Name: "children", Type: "TABLE", Columns: []types.DBColumn{
+			{Name: "children", Type: "TABLE", Columns: []catalog.Column{
 				{Name: "id", DataType: "bigint", ColumnType: "bigint", IsNullable: "NO", IsPrimaryKey: true},
 				{Name: "parent_id", DataType: "bigint", ColumnType: "bigint", IsNullable: "NO"},
 			}},
 		},
-		Constraints: []types.DBConstraint{{
+		Constraints: []catalog.Constraint{{
 			Name:           "children_parent_fk",
 			TableName:      "children",
 			Type:           "FOREIGN KEY",
@@ -1400,7 +1400,7 @@ func spannerForeignKeySchemas(indexName string) (*goschema.Database, *types.DBSc
 			ForeignColumn:  new("id"),
 			ForeignColumns: []string{"id"},
 		}},
-		Indexes: []types.DBIndex{{
+		Indexes: []catalog.Index{{
 			Name:      indexName,
 			TableName: "children",
 			Columns:   []string{"parent_id"},

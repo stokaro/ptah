@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 )
@@ -71,7 +71,7 @@ func TestExcludeDatabaseReport_NamesSelectorsThatMatchedNothing(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			schema := qualifiedKindsFixture()
-			schema.Indexes = []dbschematypes.DBIndex{
+			schema.Indexes = []catalog.Index{
 				{TableName: "users", Name: "users_id_idx", Columns: []string{"id"}},
 			}
 
@@ -256,7 +256,7 @@ func TestExcludeDatabaseReport_TypeSelectorReportsItsWrittenSpelling(t *testing.
 	c := qt.New(t)
 
 	_, report, err := atlasfilter.ExcludeDatabaseReport(
-		&dbschematypes.DBSchema{Enums: []dbschematypes.DBEnum{{Name: "mood"}}},
+		&catalog.Database{Enums: []catalog.Enum{{Name: "mood"}}},
 		[]string{"nosuch*[type=table]"},
 		"public")
 
@@ -293,9 +293,9 @@ func TestExcludeReport_ChildOfARemovedTableIsAskedOnBothSides(t *testing.T) {
 	c.Assert(filteredGenerated.Indexes, qt.HasLen, 0)
 
 	filteredDatabase, database, err := atlasfilter.ExcludeDatabaseReport(
-		&dbschematypes.DBSchema{
-			Tables:  []dbschematypes.DBTable{{Name: "users", Columns: []dbschematypes.DBColumn{{Name: "id"}}}},
-			Indexes: []dbschematypes.DBIndex{{TableName: "users", Name: "users_id_idx", Columns: []string{"id"}}},
+		&catalog.Database{
+			Tables:  []catalog.Table{{Name: "users", Columns: []catalog.Column{{Name: "id"}}}},
+			Indexes: []catalog.Index{{TableName: "users", Name: "users_id_idx", Columns: []string{"id"}}},
 		},
 		[]string{"users", "users.users_id_idx"}, "public")
 	c.Assert(err, qt.IsNil)

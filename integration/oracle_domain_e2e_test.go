@@ -11,11 +11,11 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/sijms/go-ora/v3"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -191,7 +191,7 @@ func dropOracleDomains(ctx context.Context, conn *dbschema.DatabaseConnection) {
 }
 
 // oracleDomainSummary renders each read domain in one line.
-func oracleDomainSummary(read *dbschematypes.DBSchema) []string {
+func oracleDomainSummary(read *catalog.Database) []string {
 	summary := make([]string, 0, len(read.Domains))
 	for _, domain := range read.Domains {
 		line := domain.Name + " " + domain.BaseType

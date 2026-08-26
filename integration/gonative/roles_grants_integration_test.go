@@ -14,12 +14,12 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/cmd/readdb"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/dbschema/postgres"
 	"go.5x5.cz/ptah/internal/rolescope"
@@ -39,7 +39,7 @@ func TestPostgreSQLRolesGrantsRoundTripAndBehaviorIntegration(t *testing.T) {
 	c.Cleanup(func() { cleanupRolesGrantsIntegration(c, db) })
 
 	target := rolesGrantsTarget()
-	diff := schemadiff.Compare(target, &dbschematypes.DBSchema{})
+	diff := schemadiff.Compare(target, &catalog.Database{})
 	c.Assert(diff.HasChanges(), qt.IsTrue)
 
 	nodes, err := planner.GenerateSchemaDiffAST(diff, target, "postgres")
@@ -280,7 +280,7 @@ $ptah_cleanup_role$;`)
 	c.Check(err, qt.IsNil)
 }
 
-func filterRolesGrantsIntegrationSchema(in *dbschematypes.DBSchema) *dbschematypes.DBSchema {
+func filterRolesGrantsIntegrationSchema(in *catalog.Database) *catalog.Database {
 	keepTables := map[string]struct{}{
 		"ptah_grants_users":     {},
 		"ptah_grants_audit_log": {},
@@ -290,7 +290,7 @@ func filterRolesGrantsIntegrationSchema(in *dbschematypes.DBSchema) *dbschematyp
 		"ptah_grants_writer": {},
 	}
 
-	out := &dbschematypes.DBSchema{
+	out := &catalog.Database{
 		Tables:      filterTables(in.Tables, keepTables),
 		Indexes:     filterIndexes(in.Indexes, keepTables),
 		Constraints: filterConstraints(in.Constraints, keepTables),
@@ -301,8 +301,8 @@ func filterRolesGrantsIntegrationSchema(in *dbschematypes.DBSchema) *dbschematyp
 	return out
 }
 
-func filterRoles(in []dbschematypes.DBRole, keep map[string]struct{}) []dbschematypes.DBRole {
-	out := make([]dbschematypes.DBRole, 0, len(in))
+func filterRoles(in []catalog.Role, keep map[string]struct{}) []catalog.Role {
+	out := make([]catalog.Role, 0, len(in))
 	for _, role := range in {
 		if _, ok := keep[role.Name]; ok {
 			out = append(out, role)
@@ -311,8 +311,8 @@ func filterRoles(in []dbschematypes.DBRole, keep map[string]struct{}) []dbschema
 	return out
 }
 
-func filterGrants(in []dbschematypes.DBGrant, keepRoles map[string]struct{}) []dbschematypes.DBGrant {
-	out := make([]dbschematypes.DBGrant, 0, len(in))
+func filterGrants(in []catalog.Grant, keepRoles map[string]struct{}) []catalog.Grant {
+	out := make([]catalog.Grant, 0, len(in))
 	for _, grant := range in {
 		if _, ok := keepRoles[grant.Role]; !ok {
 			continue
@@ -444,7 +444,7 @@ ALTER TABLE ptah_ref_untouched_137 OWNER TO ptah_ref_owner_137;`)
 // and the pinned Atlas community binary v1.3.0 reads it at exit 0. That is a
 // property of who connected, not of the description, and a guard that fails on
 // a legitimate connection is a guard that gets switched off.
-func rolesNamedByDescription(schema *dbschematypes.DBSchema) []string {
+func rolesNamedByDescription(schema *catalog.Database) []string {
 	var named []string
 	for _, grant := range schema.Grants {
 		named = append(named, grant.Role)
@@ -525,7 +525,7 @@ func TestPostgreSQLRoleOutOfScopeIsPresentNotAbsentIntegration(t *testing.T) {
 	}
 	// Compare against the role facts alone: the rest of this shared database
 	// belongs to other tests, and the decision under test is the role one.
-	rolesOnly := &dbschematypes.DBSchema{
+	rolesOnly := &catalog.Database{
 		Roles:           live.Roles,
 		RolesOutOfScope: live.RolesOutOfScope,
 	}
@@ -547,7 +547,7 @@ func TestPostgreSQLRoleOutOfScopeIsPresentNotAbsentIntegration(t *testing.T) {
 }
 
 // integrationRoleNames lists the names of introspected roles.
-func integrationRoleNames(roles []dbschematypes.DBRole) []string {
+func integrationRoleNames(roles []catalog.Role) []string {
 	names := make([]string, 0, len(roles))
 	for _, role := range roles {
 		names = append(names, role.Name)
@@ -713,7 +713,7 @@ CREATE ROLE pgbouncer_undescribed_137 LOGIN;`)
 			{Name: "ptah_undescribed_absent_137", Login: true, Inherit: true},
 		},
 	}
-	diff := schemadiff.Compare(desired, &dbschematypes.DBSchema{
+	diff := schemadiff.Compare(desired, &catalog.Database{
 		Roles:           full.Roles,
 		RolesOutOfScope: full.RolesOutOfScope,
 	})

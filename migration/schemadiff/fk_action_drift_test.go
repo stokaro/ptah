@@ -6,9 +6,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -35,24 +35,24 @@ func exportsSchema(onDelete string) *goschema.Database {
 
 // exportsDBSchema returns an introspected DB schema for the exports table whose
 // existing FK carries the given delete rule (empty string == NO ACTION default).
-func exportsDBSchema(deleteRule string) *types.DBSchema {
+func exportsDBSchema(deleteRule string) *catalog.Database {
 	if deleteRule == "" {
 		deleteRule = "NO ACTION"
 	}
-	return &types.DBSchema{
-		Tables: []types.DBTable{
+	return &catalog.Database{
+		Tables: []catalog.Table{
 			{
 				Name: "exports",
 				// Realistic column shapes so the column comparator is silent
 				// and the FK action is the only variable under test. id is the
 				// applied TEXT primary key; file_id is a nullable TEXT FK column.
-				Columns: []types.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "id", DataType: "text", IsNullable: "NO", IsPrimaryKey: true},
 					{Name: "file_id", DataType: "text", IsNullable: "YES"},
 				},
 			},
 		},
-		Constraints: []types.DBConstraint{
+		Constraints: []catalog.Constraint{
 			{
 				Name:          "fk_export_file",
 				TableName:     "exports",

@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/internal/dbschema/postgres"
 )
 
@@ -116,13 +116,13 @@ func TestParseExcludeConstraintDefinition(t *testing.T) {
 func TestEnhanceExcludeConstraints(t *testing.T) {
 	tests := []struct {
 		name                string
-		basicConstraints    []types.DBConstraint
+		basicConstraints    []catalog.Constraint
 		mockQueryResults    []mockExcludeConstraint
-		expectedConstraints []types.DBConstraint
+		expectedConstraints []catalog.Constraint
 	}{
 		{
 			name: "enhance EXCLUDE constraint with full details",
-			basicConstraints: []types.DBConstraint{
+			basicConstraints: []catalog.Constraint{
 				{
 					Name:      "no_overlapping_bookings",
 					TableName: "bookings",
@@ -136,7 +136,7 @@ func TestEnhanceExcludeConstraints(t *testing.T) {
 					definition:     "EXCLUDE USING gist (room_id WITH =, during WITH &&) WHERE (is_active = true)",
 				},
 			},
-			expectedConstraints: []types.DBConstraint{
+			expectedConstraints: []catalog.Constraint{
 				{
 					Name:            "no_overlapping_bookings",
 					TableName:       "bookings",
@@ -149,7 +149,7 @@ func TestEnhanceExcludeConstraints(t *testing.T) {
 		},
 		{
 			name: "enhance EXCLUDE constraint without WHERE clause",
-			basicConstraints: []types.DBConstraint{
+			basicConstraints: []catalog.Constraint{
 				{
 					Name:      "unique_locations",
 					TableName: "locations",
@@ -163,7 +163,7 @@ func TestEnhanceExcludeConstraints(t *testing.T) {
 					definition:     "EXCLUDE USING gist (location WITH &&)",
 				},
 			},
-			expectedConstraints: []types.DBConstraint{
+			expectedConstraints: []catalog.Constraint{
 				{
 					Name:            "unique_locations",
 					TableName:       "locations",
@@ -176,7 +176,7 @@ func TestEnhanceExcludeConstraints(t *testing.T) {
 		},
 		{
 			name: "mixed constraint types - only EXCLUDE enhanced",
-			basicConstraints: []types.DBConstraint{
+			basicConstraints: []catalog.Constraint{
 				{
 					Name:      "no_overlapping_bookings",
 					TableName: "bookings",
@@ -195,7 +195,7 @@ func TestEnhanceExcludeConstraints(t *testing.T) {
 					definition:     "EXCLUDE USING gist (room_id WITH =)",
 				},
 			},
-			expectedConstraints: []types.DBConstraint{
+			expectedConstraints: []catalog.Constraint{
 				{
 					Name:            "no_overlapping_bookings",
 					TableName:       "bookings",

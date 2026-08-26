@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -98,8 +98,8 @@ func TestIndexes_SQLServerFilteredPredicateSpelling(t *testing.T) {
 					Condition: test.generated,
 				}},
 			}
-			database := &types.DBSchema{
-				Indexes: []types.DBIndex{{
+			database := &catalog.Database{
+				Indexes: []catalog.Index{{
 					Name:      "idx_users_filtered",
 					TableName: "users",
 					Schema:    "dbo",
@@ -131,8 +131,8 @@ func TestIndexes_PredicateBracketSpellingStaysSignificantOutsideSQLServer(t *tes
 			Condition: "tags[1] = 'admin'",
 		}},
 	}
-	database := &types.DBSchema{
-		Indexes: []types.DBIndex{{
+	database := &catalog.Database{
+		Indexes: []catalog.Index{{
 			Name:      "idx_users_filtered",
 			TableName: "users",
 			Columns:   []string{"tags"},

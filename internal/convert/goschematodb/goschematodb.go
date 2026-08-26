@@ -9,9 +9,9 @@ import (
 	"maps"
 	"slices"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/tableref"
 )
@@ -27,9 +27,9 @@ import (
 // target and the ClickHouse data-skipping-index type on ClickHouse, and the DB
 // shape keeps those apart in Method and Type. An empty dialect converts as if
 // no target were known and leaves Method unset.
-func ToDBSchema(db *goschema.Database, dialect string) *dbschematypes.DBSchema {
+func ToDBSchema(db *goschema.Database, dialect string) *catalog.Database {
 	if db == nil {
-		return &dbschematypes.DBSchema{}
+		return &catalog.Database{}
 	}
 
 	tableByStruct := make(map[string]goschema.Table, len(db.Tables))
@@ -37,7 +37,7 @@ func ToDBSchema(db *goschema.Database, dialect string) *dbschematypes.DBSchema {
 		tableByStruct[table.StructName] = table
 	}
 
-	out := &dbschematypes.DBSchema{
+	out := &catalog.Database{
 		Schemas:     toDBSchemas(db.Schemas),
 		Tables:      toDBTables(db.Tables, db.Fields, db.RLSEnabledTables),
 		Enums:       toDBEnums(db.Enums),
@@ -64,10 +64,10 @@ func ToDBSchema(db *goschema.Database, dialect string) *dbschematypes.DBSchema {
 	return out
 }
 
-func toDBSchemas(schemas []goschema.Schema) []dbschematypes.DBSchemaInfo {
-	out := make([]dbschematypes.DBSchemaInfo, 0, len(schemas))
+func toDBSchemas(schemas []goschema.Schema) []catalog.Schema {
+	out := make([]catalog.Schema, 0, len(schemas))
 	for _, schema := range schemas {
-		out = append(out, dbschematypes.DBSchemaInfo{
+		out = append(out, catalog.Schema{
 			Name:    schema.Name,
 			Comment: schema.Comment,
 			Charset: schema.Charset,
@@ -81,15 +81,15 @@ func toDBTables(
 	tables []goschema.Table,
 	fields []goschema.Field,
 	rlsEnabledTables []goschema.RLSEnabledTable,
-) []dbschematypes.DBTable {
+) []catalog.Table {
 	fieldsByStruct := make(map[string][]goschema.Field)
 	for _, field := range fields {
 		fieldsByStruct[field.StructName] = append(fieldsByStruct[field.StructName], field)
 	}
 
-	out := make([]dbschematypes.DBTable, 0, len(tables))
+	out := make([]catalog.Table, 0, len(tables))
 	for _, table := range tables {
-		out = append(out, dbschematypes.DBTable{
+		out = append(out, catalog.Table{
 			Name:         table.Name,
 			Schema:       table.Schema,
 			Type:         "TABLE",
@@ -116,20 +116,20 @@ func tableRLSEnabled(table goschema.Table, enabledTables []goschema.RLSEnabledTa
 	})
 }
 
-func toDBColumns(fields []goschema.Field) []dbschematypes.DBColumn {
-	out := make([]dbschematypes.DBColumn, 0, len(fields))
+func toDBColumns(fields []goschema.Field) []catalog.Column {
+	out := make([]catalog.Column, 0, len(fields))
 	for i, field := range fields {
 		out = append(out, toDBColumn(field, i+1))
 	}
 	return out
 }
 
-func toDBColumn(field goschema.Field, ordinal int) dbschematypes.DBColumn {
+func toDBColumn(field goschema.Field, ordinal int) catalog.Column {
 	nullable := "NO"
 	if field.Nullable {
 		nullable = "YES"
 	}
-	column := dbschematypes.DBColumn{
+	column := catalog.Column{
 		Name:       field.Name,
 		DataType:   field.Type,
 		ColumnType: field.Type,
@@ -156,7 +156,7 @@ func toDBColumn(field goschema.Field, ordinal int) dbschematypes.DBColumn {
 	return column
 }
 
-func applyTablePrimaryKeys(schema *dbschematypes.DBSchema, tables []goschema.Table) {
+func applyTablePrimaryKeys(schema *catalog.Database, tables []goschema.Table) {
 	primaryByTable := make(map[string]map[string]struct{})
 	for _, table := range tables {
 		if len(table.PrimaryKey) == 0 {
@@ -181,10 +181,10 @@ func applyTablePrimaryKeys(schema *dbschematypes.DBSchema, tables []goschema.Tab
 	}
 }
 
-func toDBEnums(enums []goschema.Enum) []dbschematypes.DBEnum {
-	out := make([]dbschematypes.DBEnum, 0, len(enums))
+func toDBEnums(enums []goschema.Enum) []catalog.Enum {
+	out := make([]catalog.Enum, 0, len(enums))
 	for _, enum := range enums {
-		out = append(out, dbschematypes.DBEnum{Name: enum.Name, Values: append([]string(nil), enum.Values...)})
+		out = append(out, catalog.Enum{Name: enum.Name, Values: append([]string(nil), enum.Values...)})
 	}
 	return out
 }
@@ -201,11 +201,11 @@ func toDBIndexes(
 	indexes []goschema.Index,
 	tables map[string]goschema.Table,
 	dialect string,
-) []dbschematypes.DBIndex {
-	out := make([]dbschematypes.DBIndex, 0, len(indexes))
+) []catalog.Index {
+	out := make([]catalog.Index, 0, len(indexes))
 	for _, index := range indexes {
 		tableName, schema := indexTable(index.StructName, index.TableName, tables)
-		out = append(out, dbschematypes.DBIndex{
+		out = append(out, catalog.Index{
 			Name:           index.Name,
 			TableName:      tableName,
 			Schema:         schema,
@@ -227,7 +227,7 @@ func toDBIndexes(
 // indexAccessMethod reports goschema.Index.Type as an access method only where
 // that is what it means. On ClickHouse the same field carries the
 // data-skipping-index type, which is a different concept the DB shape keeps in
-// DBIndex.Type.
+// Index.Type.
 func indexAccessMethod(indexType, dialect string) string {
 	if !platform.IsPostgresFamily(dialect) {
 		return ""
@@ -239,17 +239,17 @@ func indexAccessMethod(indexType, dialect string) string {
 // operator class the way the renderer applies it: a part without its own class
 // inherits the index's, so the DB shape -- which has no index-level slot --
 // records the resolved value per part.
-func toDBIndexParts(parts []goschema.IndexPart, indexOperator string) []dbschematypes.DBIndexPart {
+func toDBIndexParts(parts []goschema.IndexPart, indexOperator string) []catalog.IndexPart {
 	if len(parts) == 0 {
 		return nil
 	}
-	converted := make([]dbschematypes.DBIndexPart, len(parts))
+	converted := make([]catalog.IndexPart, len(parts))
 	for position, part := range parts {
 		operator := part.Operator
 		if operator == "" {
 			operator = indexOperator
 		}
-		converted[position] = dbschematypes.DBIndexPart{
+		converted[position] = catalog.IndexPart{
 			Name:       part.Name,
 			Expr:       part.Expr,
 			Operator:   operator,
@@ -265,20 +265,20 @@ func toDBConstraints(
 	fields []goschema.Field,
 	constraints []goschema.Constraint,
 	tables map[string]goschema.Table,
-) []dbschematypes.DBConstraint {
+) []catalog.Constraint {
 	fieldsByStruct := make(map[string][]goschema.Field)
 	for _, field := range fields {
 		fieldsByStruct[field.StructName] = append(fieldsByStruct[field.StructName], field)
 	}
 
-	out := make([]dbschematypes.DBConstraint, 0, len(constraints)+len(tablesList)+len(fields))
+	out := make([]catalog.Constraint, 0, len(constraints)+len(tablesList)+len(fields))
 	type constraintIdentity struct {
 		schema string
 		table  string
 		name   string
 	}
 	seen := make(map[constraintIdentity]struct{})
-	appendConstraint := func(constraint dbschematypes.DBConstraint) {
+	appendConstraint := func(constraint catalog.Constraint) {
 		key := constraintIdentity{
 			schema: constraint.Schema,
 			table:  constraint.TableName,
@@ -295,7 +295,7 @@ func toDBConstraints(
 		if len(table.PrimaryKey) == 0 {
 			continue
 		}
-		appendConstraint(dbschematypes.DBConstraint{
+		appendConstraint(catalog.Constraint{
 			Name:        tablePrimaryKeyName(table),
 			TableName:   table.Name,
 			Schema:      table.Schema,
@@ -306,7 +306,7 @@ func toDBConstraints(
 	}
 	for _, constraint := range constraints {
 		tableName, schema := indexTable(constraint.StructName, constraint.Table, tables)
-		dbConstraint := dbschematypes.DBConstraint{
+		dbConstraint := catalog.Constraint{
 			Name:           constraint.Name,
 			TableName:      tableName,
 			Schema:         schema,
@@ -343,14 +343,14 @@ func toDBConstraints(
 	return out
 }
 
-func toDBFieldConstraints(table goschema.Table, field goschema.Field) []dbschematypes.DBConstraint {
-	var out []dbschematypes.DBConstraint
+func toDBFieldConstraints(table goschema.Table, field goschema.Field) []catalog.Constraint {
+	var out []catalog.Constraint
 	if field.Check != "" {
 		name := field.CheckName
 		if name == "" {
 			name = table.Name + "_" + field.Name + "_check"
 		}
-		out = append(out, dbschematypes.DBConstraint{
+		out = append(out, catalog.Constraint{
 			Name:        name,
 			TableName:   table.Name,
 			Schema:      table.Schema,
@@ -370,7 +370,7 @@ func toDBFieldConstraints(table goschema.Table, field goschema.Field) []dbschema
 			name = fromschema.GenerateForeignKeyName(table.Name, field.Name)
 		}
 		foreignTable, foreignSchema := splitTableIdentity(fkRef.Table)
-		out = append(out, dbschematypes.DBConstraint{
+		out = append(out, catalog.Constraint{
 			Name:           name,
 			TableName:      table.Name,
 			Schema:         table.Schema,
@@ -414,10 +414,10 @@ func splitTableIdentity(value string) (name, schema string) {
 	return ref.Name, ref.Schema
 }
 
-func toDBExtensions(extensions []goschema.Extension) []dbschematypes.DBExtension {
-	out := make([]dbschematypes.DBExtension, 0, len(extensions))
+func toDBExtensions(extensions []goschema.Extension) []catalog.Extension {
+	out := make([]catalog.Extension, 0, len(extensions))
 	for _, extension := range extensions {
-		out = append(out, dbschematypes.DBExtension{
+		out = append(out, catalog.Extension{
 			Name:    extension.Name,
 			Schema:  extension.Schema,
 			Version: extension.Version,
@@ -429,10 +429,10 @@ func toDBExtensions(extensions []goschema.Extension) []dbschematypes.DBExtension
 	return out
 }
 
-func toDBSequences(sequences []goschema.Sequence) []dbschematypes.DBSequence {
-	out := make([]dbschematypes.DBSequence, 0, len(sequences))
+func toDBSequences(sequences []goschema.Sequence) []catalog.Sequence {
+	out := make([]catalog.Sequence, 0, len(sequences))
 	for _, sequence := range sequences {
-		out = append(out, dbschematypes.DBSequence{
+		out = append(out, catalog.Sequence{
 			Name:      sequence.Name,
 			Schema:    sequence.Schema,
 			DataType:  sequence.AsType,
@@ -449,14 +449,14 @@ func toDBSequences(sequences []goschema.Sequence) []dbschematypes.DBSequence {
 	return out
 }
 
-func toDBDomains(domains []goschema.Domain) []dbschematypes.DBDomain {
-	out := make([]dbschematypes.DBDomain, 0, len(domains))
+func toDBDomains(domains []goschema.Domain) []catalog.Domain {
+	out := make([]catalog.Domain, 0, len(domains))
 	for _, domain := range domains {
 		defaultValue := domain.Default
 		if domain.DefaultExpr != "" {
 			defaultValue = domain.DefaultExpr
 		}
-		out = append(out, dbschematypes.DBDomain{
+		out = append(out, catalog.Domain{
 			Name:     domain.Name,
 			Schema:   domain.Schema,
 			BaseType: domain.BaseType,
@@ -468,17 +468,17 @@ func toDBDomains(domains []goschema.Domain) []dbschematypes.DBDomain {
 	return out
 }
 
-func toDBCompositeTypes(composites []goschema.CompositeType) []dbschematypes.DBComposite {
-	out := make([]dbschematypes.DBComposite, 0, len(composites))
+func toDBCompositeTypes(composites []goschema.CompositeType) []catalog.CompositeType {
+	out := make([]catalog.CompositeType, 0, len(composites))
 	for _, composite := range composites {
-		fields := make([]dbschematypes.DBCompositeField, 0, len(composite.Fields))
+		fields := make([]catalog.CompositeField, 0, len(composite.Fields))
 		for _, field := range composite.Fields {
-			fields = append(fields, dbschematypes.DBCompositeField{
+			fields = append(fields, catalog.CompositeField{
 				Name: field.Name,
 				Type: field.Type,
 			})
 		}
-		out = append(out, dbschematypes.DBComposite{
+		out = append(out, catalog.CompositeType{
 			Name:   composite.Name,
 			Schema: composite.Schema,
 			Fields: fields,
@@ -487,10 +487,10 @@ func toDBCompositeTypes(composites []goschema.CompositeType) []dbschematypes.DBC
 	return out
 }
 
-func toDBRanges(ranges []goschema.Range) []dbschematypes.DBRange {
-	out := make([]dbschematypes.DBRange, 0, len(ranges))
+func toDBRanges(ranges []goschema.Range) []catalog.Range {
+	out := make([]catalog.Range, 0, len(ranges))
 	for _, rangeType := range ranges {
-		out = append(out, dbschematypes.DBRange{
+		out = append(out, catalog.Range{
 			Name:    rangeType.Name,
 			Schema:  rangeType.Schema,
 			Subtype: rangeType.Subtype,
@@ -499,12 +499,12 @@ func toDBRanges(ranges []goschema.Range) []dbschematypes.DBRange {
 	return out
 }
 
-func toDBFunctions(functions []goschema.Function) []dbschematypes.DBFunction {
-	out := make([]dbschematypes.DBFunction, 0, len(functions))
+func toDBFunctions(functions []goschema.Function) []catalog.Function {
+	out := make([]catalog.Function, 0, len(functions))
 	for _, function := range functions {
 		function.Canonicalize()
 		name, schema := splitTableIdentity(function.Name)
-		out = append(out, dbschematypes.DBFunction{
+		out = append(out, catalog.Function{
 			Name:       name,
 			Schema:     schema,
 			Parameters: function.Parameters,
@@ -519,15 +519,15 @@ func toDBFunctions(functions []goschema.Function) []dbschematypes.DBFunction {
 	return out
 }
 
-func toDBViews(views []goschema.View) []dbschematypes.DBView {
-	out := make([]dbschematypes.DBView, 0, len(views))
+func toDBViews(views []goschema.View) []catalog.View {
+	out := make([]catalog.View, 0, len(views))
 	for _, view := range views {
 		name, schema := splitTableIdentity(view.Name)
 		checkOption := "NONE"
 		if view.WithCheck {
 			checkOption = "LOCAL"
 		}
-		out = append(out, dbschematypes.DBView{
+		out = append(out, catalog.View{
 			Name:        name,
 			Schema:      schema,
 			Body:        view.Body,
@@ -538,11 +538,11 @@ func toDBViews(views []goschema.View) []dbschematypes.DBView {
 	return out
 }
 
-func toDBMaterializedViews(views []goschema.MaterializedView) []dbschematypes.DBMatView {
-	out := make([]dbschematypes.DBMatView, 0, len(views))
+func toDBMaterializedViews(views []goschema.MaterializedView) []catalog.MaterializedView {
+	out := make([]catalog.MaterializedView, 0, len(views))
 	for _, view := range views {
 		name, schema := splitTableIdentity(view.Name)
-		out = append(out, dbschematypes.DBMatView{
+		out = append(out, catalog.MaterializedView{
 			Name:    name,
 			Schema:  schema,
 			Body:    view.Body,
@@ -552,12 +552,12 @@ func toDBMaterializedViews(views []goschema.MaterializedView) []dbschematypes.DB
 	return out
 }
 
-func toDBTriggers(triggers []goschema.Trigger, tables map[string]goschema.Table) []dbschematypes.DBTrigger {
-	out := make([]dbschematypes.DBTrigger, 0, len(triggers))
+func toDBTriggers(triggers []goschema.Trigger, tables map[string]goschema.Table) []catalog.Trigger {
+	out := make([]catalog.Trigger, 0, len(triggers))
 	for _, trigger := range triggers {
 		trigger.Canonicalize()
 		tableName, schema := indexTable(trigger.StructName, trigger.Table, tables)
-		out = append(out, dbschematypes.DBTrigger{
+		out = append(out, catalog.Trigger{
 			Name:    trigger.Name,
 			Schema:  schema,
 			Table:   tableName,
@@ -571,10 +571,10 @@ func toDBTriggers(triggers []goschema.Trigger, tables map[string]goschema.Table)
 	return out
 }
 
-func toDBRLSPolicies(policies []goschema.RLSPolicy) []dbschematypes.DBRLSPolicy {
-	out := make([]dbschematypes.DBRLSPolicy, 0, len(policies))
+func toDBRLSPolicies(policies []goschema.RLSPolicy) []catalog.RLSPolicy {
+	out := make([]catalog.RLSPolicy, 0, len(policies))
 	for _, policy := range policies {
-		out = append(out, dbschematypes.DBRLSPolicy{
+		out = append(out, catalog.RLSPolicy{
 			Name:                policy.Name,
 			Table:               policy.Table,
 			PolicyFor:           policy.PolicyFor,
@@ -587,10 +587,10 @@ func toDBRLSPolicies(policies []goschema.RLSPolicy) []dbschematypes.DBRLSPolicy 
 	return out
 }
 
-func toDBRoles(roles []goschema.Role) []dbschematypes.DBRole {
-	out := make([]dbschematypes.DBRole, 0, len(roles))
+func toDBRoles(roles []goschema.Role) []catalog.Role {
+	out := make([]catalog.Role, 0, len(roles))
 	for _, role := range roles {
-		out = append(out, dbschematypes.DBRole{
+		out = append(out, catalog.Role{
 			Name:        role.Name,
 			Login:       role.Login,
 			Superuser:   role.Superuser,
@@ -605,8 +605,8 @@ func toDBRoles(roles []goschema.Role) []dbschematypes.DBRole {
 	return out
 }
 
-func toDBGrants(grants []goschema.Grant) []dbschematypes.DBGrant {
-	var out []dbschematypes.DBGrant
+func toDBGrants(grants []goschema.Grant) []catalog.Grant {
+	var out []catalog.Grant
 	for _, grant := range grants {
 		grant.Canonicalize()
 		for _, privilege := range grant.Privileges {
@@ -623,7 +623,7 @@ func toDBGrants(grants []goschema.Grant) []dbschematypes.DBGrant {
 			default:
 				objectName, objectSchema = splitTableIdentity(objectName)
 			}
-			out = append(out, dbschematypes.DBGrant{
+			out = append(out, catalog.Grant{
 				Role:       grant.Role,
 				Privilege:  privilege,
 				ObjectType: objectType,

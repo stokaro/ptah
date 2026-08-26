@@ -10,10 +10,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasurl"
 )
 
@@ -166,14 +166,14 @@ func compatForeignKeyNames(c *qt.C, dbPath, table string) []string {
 	return names
 }
 
-func compatForeignKeyName(constraint dbschematypes.DBConstraint, table string) []string {
+func compatForeignKeyName(constraint catalog.Constraint, table string) []string {
 	if constraint.Type != "FOREIGN KEY" || constraint.TableName != table {
 		return nil
 	}
 	return []string{constraint.Name}
 }
 
-func compatReadSchema(c *qt.C, dbPath string) *dbschematypes.DBSchema {
+func compatReadSchema(c *qt.C, dbPath string) *catalog.Database {
 	c.Helper()
 	conn := compatConnect(c, dbPath)
 	defer dbschema.CloseAndWarn(conn)

@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -42,14 +42,14 @@ func multiColumnDeferrableDeclaration(deferrable bool, initially string) *gosche
 
 // emptyChildCatalog is the same two tables with no foreign key at all, so the
 // declared one is recorded as an addition.
-func emptyChildCatalog() *types.DBSchema {
-	return &types.DBSchema{
-		Tables: []types.DBTable{
-			{Name: "parent", Type: "BASE TABLE", Columns: []types.DBColumn{
+func emptyChildCatalog() *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{
+			{Name: "parent", Type: "BASE TABLE", Columns: []catalog.Column{
 				{Name: "a", DataType: "integer", IsNullable: "NO"},
 				{Name: "b", DataType: "integer", IsNullable: "NO"},
 			}},
-			{Name: "child", Type: "BASE TABLE", Columns: []types.DBColumn{
+			{Name: "child", Type: "BASE TABLE", Columns: []catalog.Column{
 				{Name: "pa", DataType: "integer", IsNullable: "NO"},
 				{Name: "pb", DataType: "integer", IsNullable: "NO"},
 			}},

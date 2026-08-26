@@ -7,10 +7,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -118,14 +118,14 @@ func applyStatements(c *qt.C, conn *dbschema.DatabaseConnection, statements []st
 	}
 }
 
-func readLive(c *qt.C, conn *dbschema.DatabaseConnection) *dbschematypes.DBSchema {
+func readLive(c *qt.C, conn *dbschema.DatabaseConnection) *catalog.Database {
 	c.Helper()
 	live, err := conn.Reader().ReadSchemaContext(c.Context())
 	c.Assert(err, qt.IsNil)
 	return live
 }
 
-func sortingKeyOf(live *dbschematypes.DBSchema, table string) string {
+func sortingKeyOf(live *catalog.Database, table string) string {
 	for _, candidate := range live.Tables {
 		if candidate.Name == table {
 			return candidate.ClickHouseSortingKey

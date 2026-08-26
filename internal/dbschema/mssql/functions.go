@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 )
 
 // readFunctions recovers the functions the connected database declares.
@@ -34,7 +34,7 @@ import (
 // because SQL Server records defaults for CLR parameters only. A declaration
 // carrying one therefore reads back without it and would be replanned forever,
 // which is why the renderer refuses that shape up front instead.
-func (r *Reader) readFunctions(ctx context.Context) ([]types.DBFunction, error) {
+func (r *Reader) readFunctions(ctx context.Context) ([]catalog.Function, error) {
 	parameters, returns, err := r.readRoutineSignatures(ctx)
 	if err != nil {
 		return nil, err
@@ -56,7 +56,7 @@ func (r *Reader) readFunctions(ctx context.Context) ([]types.DBFunction, error) 
 	}
 	defer rows.Close()
 
-	var functions []types.DBFunction
+	var functions []catalog.Function
 	for rows.Next() {
 		var schema, name, objectType, definition, executeAs string
 		var deterministic int
@@ -65,7 +65,7 @@ func (r *Reader) readFunctions(ctx context.Context) ([]types.DBFunction, error) 
 			return nil, err
 		}
 		key := routineKey{schema: schema, name: name}
-		functions = append(functions, types.DBFunction{
+		functions = append(functions, catalog.Function{
 			Name:       name,
 			Kind:       routineKind(objectType),
 			Schema:     r.outputSchema(schema),

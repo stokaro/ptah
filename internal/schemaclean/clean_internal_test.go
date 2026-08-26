@@ -19,7 +19,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/internal/revisiontable"
 )
 
@@ -133,7 +133,7 @@ func TestEmptyPlanStillRunsExecutionBoundaryValidation(t *testing.T) {
 	called := false
 
 	err := ApplyPlanWithOptions(t.Context(), nil, Plan{}, ApplyPlanOptions{
-		ValidateBeforeExecute: func(dbschematypes.SchemaExecutor) error {
+		ValidateBeforeExecute: func(catalog.SchemaExecutor) error {
 			called = true
 			return wantErr
 		},

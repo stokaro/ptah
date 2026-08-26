@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/rlspolicy"
 )
@@ -98,7 +98,7 @@ func resolvePolicyTable(
 }
 
 // PoliciesFromCatalog adds the policies a catalog reports.
-func PoliciesFromCatalog(state *State, schema *dbschematypes.DBSchema, builder objectidentity.Builder) error {
+func PoliciesFromCatalog(state *State, schema *catalog.Database, builder objectidentity.Builder) error {
 	for _, policy := range schema.RLSPolicies {
 		owner := builder.Table(policy.Table)
 		id := builder.PolicyParts(owner.Schema.Source, owner.Name.Source, policy.Name)
@@ -197,7 +197,7 @@ func grantTarget(declared goschema.Grant) (schema, object string) {
 }
 
 // GrantsFromCatalog adds the privilege grants a catalog reports.
-func GrantsFromCatalog(state *State, schema *dbschematypes.DBSchema, builder objectidentity.Builder) error {
+func GrantsFromCatalog(state *State, schema *catalog.Database, builder objectidentity.Builder) error {
 	for _, reported := range schema.Grants {
 		if reported.IsPartialRevoke {
 			// A row that subtracts from a broader grant is not a grant, and
@@ -222,7 +222,7 @@ func GrantsFromCatalog(state *State, schema *dbschematypes.DBSchema, builder obj
 	return nil
 }
 
-func catalogGrantTarget(reported dbschematypes.DBGrant) (schema, object string) {
+func catalogGrantTarget(reported catalog.Grant) (schema, object string) {
 	if strings.EqualFold(reported.ObjectType, grantObjectTypeSchema) {
 		return reported.ObjectName, ""
 	}
@@ -249,7 +249,7 @@ func RolesFromDescription(state *State, description *goschema.Database, builder 
 }
 
 // RolesFromCatalog adds the roles a catalog reports.
-func RolesFromCatalog(state *State, schema *dbschematypes.DBSchema, builder objectidentity.Builder) error {
+func RolesFromCatalog(state *State, schema *catalog.Database, builder objectidentity.Builder) error {
 	for _, role := range schema.Roles {
 		id := builder.Role(role.Name)
 		if existing, collided := state.Add(Object{

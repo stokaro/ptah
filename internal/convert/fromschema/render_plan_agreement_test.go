@@ -8,13 +8,13 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -116,7 +116,7 @@ func assertRenderAndPlanAgree(c *qt.C, dialect string) {
 		fromschema.FromDatabase(desired, dialect).Statements)
 
 	planNodes, err := planner.GenerateSchemaDiffAST(
-		schemadiff.CompareWithDialect(&desired, &dbschematypes.DBSchema{}, dialect),
+		schemadiff.CompareWithDialect(&desired, &catalog.Database{}, dialect),
 		&desired,
 		dialect,
 	)
@@ -190,7 +190,7 @@ func assertBothSurfacesRefuseTheDomain(c *qt.C, dialect string, desired *goschem
 		return false
 	}
 	_, planErr := planner.GenerateSchemaDiffAST(
-		schemadiff.CompareWithDialect(desired, &dbschematypes.DBSchema{}, dialect), desired, dialect)
+		schemadiff.CompareWithDialect(desired, &catalog.Database{}, dialect), desired, dialect)
 	renderErr := renderer.ValidateSchema(desired, dialect)
 	c.Assert(planErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(renderErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)

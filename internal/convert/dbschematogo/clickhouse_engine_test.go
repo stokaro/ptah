@@ -8,17 +8,17 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 )
 
 // engineTable is one ClickHouse table as the reader reports it.
-func engineTable(table types.DBTable) *types.DBSchema {
+func engineTable(table catalog.Table) *catalog.Database {
 	table.Name = "events"
 	table.Type = "TABLE"
-	table.Columns = []types.DBColumn{{Name: "id", DataType: "UInt64", IsNullable: "NO"}}
-	return &types.DBSchema{Tables: []types.DBTable{table}}
+	table.Columns = []catalog.Column{{Name: "id", DataType: "UInt64", IsNullable: "NO"}}
+	return &catalog.Database{Tables: []catalog.Table{table}}
 }
 
 // clickHouseOverrides returns the converted table's ClickHouse override group.
@@ -40,7 +40,7 @@ func clickHouseOverrides(c *qt.C, database *goschema.Database) map[string]string
 func TestConvert_CarriesEveryClickHouseEngineClause(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(engineTable(types.DBTable{
+	database := dbschematogo.ConvertDBSchemaToGoSchema(engineTable(catalog.Table{
 		ClickHouseEngine:       "ReplacingMergeTree(ver)",
 		ClickHouseOrderBy:      "day, id",
 		ClickHousePartitionKey: "toYYYYMM(day)",
@@ -68,7 +68,7 @@ func TestConvert_CarriesEveryClickHouseEngineClause(t *testing.T) {
 // clause the map was the place it stopped: #2198 added six keys and left the
 // primary key behind, so `PRIMARY KEY (id) ORDER BY (id, s)` replayed with the
 // index widened to the whole sorting key. This walks the struct instead of the
-// map, so a field added to types.DBTable without a key here reddens.
+// map, so a field added to catalog.Table without a key here reddens.
 func TestConvert_EveryClickHouseTableFieldReachesTheOverrides(t *testing.T) {
 	c := qt.New(t)
 
@@ -83,13 +83,13 @@ func TestConvert_EveryClickHouseTableFieldReachesTheOverrides(t *testing.T) {
 }
 
 // clickHouseTableWithEveryFieldMarked fills every ClickHouse string field of
-// types.DBTable with a value naming the field, and reports which ones it set.
+// catalog.Table with a value naming the field, and reports which ones it set.
 //
 // ClickHouseSortingKey is left out deliberately: it answers "does the ORDER BY
 // say more than the primary key", and ClickHouseOrderBy carries the clause
 // itself. Two override keys for one clause would put the expression in twice.
-func clickHouseTableWithEveryFieldMarked() (types.DBTable, []string) {
-	var table types.DBTable
+func clickHouseTableWithEveryFieldMarked() (catalog.Table, []string) {
+	var table catalog.Table
 	value := reflect.ValueOf(&table).Elem()
 	fields := value.Type()
 
@@ -133,7 +133,7 @@ func markedFields(overrides map[string]string) []string {
 func TestConvert_CarriesTheOrderByEvenWhenItMatchesThePrimaryKey(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(engineTable(types.DBTable{
+	database := dbschematogo.ConvertDBSchemaToGoSchema(engineTable(catalog.Table{
 		ClickHouseEngine:  "MergeTree",
 		ClickHouseOrderBy: "day, id",
 		// Empty on purpose: this is what the reader reports when the sorting key
@@ -153,7 +153,7 @@ func TestConvert_CarriesTheOrderByEvenWhenItMatchesThePrimaryKey(t *testing.T) {
 func TestConvert_LeavesATableWithNoEngineFactsAlone(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(engineTable(types.DBTable{}))
+	database := dbschematogo.ConvertDBSchemaToGoSchema(engineTable(catalog.Table{}))
 
 	c.Assert(database.Tables, qt.HasLen, 1)
 	c.Assert(database.Tables[0].Overrides, qt.HasLen, 0)

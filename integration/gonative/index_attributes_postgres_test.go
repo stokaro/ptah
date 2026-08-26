@@ -9,10 +9,10 @@
 // the index attribute's pg_attribute.attoptions -- and three relation-level
 // ones: pg_class.reloptions, pg_am.amname and the index's own
 // obj_description. The fake server in internal/dbschema/postgres models those
-// joins rather than merely checking that a catalog column is named, so it does
+// joins rather than merely checking that a currentCatalog column is named, so it does
 // catch a query that reaches the table relation instead of the index one. What
 // it cannot do is prove the MODEL is right: it answers what the file says
-// PostgreSQL answers. This is the guard that reads the real catalog, and every
+// PostgreSQL answers. This is the guard that reads the real currentCatalog, and every
 // value the fake asserts was measured here first.
 //
 // Each fixture is one throwaway database holding one table, so a failure names
@@ -27,8 +27,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 )
 
 // indexAttributeSeed builds the whole set of #1242 shapes in one database. They
@@ -45,7 +45,7 @@ func indexAttributeSeed() []string {
 		// The table's own comment. It is here so the index-comment test below
 		// is measuring the index's object and not whichever comment the query
 		// happened to reach: obj_description(t.oid, 'pg_class') is the same
-		// function on the same catalog, and against a table with no comment it
+		// function on the same currentCatalog, and against a table with no comment it
 		// returns the empty string and looks like a reader that simply found
 		// none.
 		"COMMENT ON TABLE t IS 'the table, not the index'",
@@ -75,7 +75,7 @@ func indexAttributeSeed() []string {
 // returns every index the reader found in it. It asserts that its own
 // arrangement succeeded and nothing else, so a failure inside it is the
 // arrangement and never the attribute the caller is about to measure.
-func readIndexAttributeIndexes(c *qt.C, dsn string) []dbschematypes.DBIndex {
+func readIndexAttributeIndexes(c *qt.C, dsn string) []catalog.Index {
 	c.Helper()
 
 	dbURL := newBoundaryDatabase(c, dsn, boundaryCase{
@@ -109,7 +109,7 @@ func TestPostgreSQLIndexAttributes_PlainBtreeControlCarriesNothingExtra(t *testi
 	index := findLiveIndex(c, readIndexAttributeIndexes(c, dsn), "i_plain")
 
 	c.Assert(index.Method, qt.Equals, "btree")
-	c.Assert(index.Parts, qt.DeepEquals, []dbschematypes.DBIndexPart{{Name: "name"}})
+	c.Assert(index.Parts, qt.DeepEquals, []catalog.IndexPart{{Name: "name"}})
 	c.Assert(index.IncludeColumns, qt.IsNil)
 	c.Assert(index.StorageParams, qt.IsNil)
 	c.Assert(index.Comment, qt.Equals, "",
@@ -119,7 +119,7 @@ func TestPostgreSQLIndexAttributes_PlainBtreeControlCarriesNothingExtra(t *testi
 // TestPostgreSQLIndexAttributes_KeyVectorSurvivesTheRead covers the attributes
 // that live inside a key rather than beside it. An operator class, an
 // expression, a sort direction, a nulls ordering and a per-key operator class
-// parameter are all fields of one DBIndexPart, so the key vector is the whole
+// parameter are all fields of one IndexPart, so the key vector is the whole
 // claim each row makes.
 func TestPostgreSQLIndexAttributes_KeyVectorSurvivesTheRead(t *testing.T) {
 	dsn := skipIfNoPostgreSQL(t)
@@ -133,34 +133,34 @@ func TestPostgreSQLIndexAttributes_KeyVectorSurvivesTheRead(t *testing.T) {
 		// wantParts is the WHOLE Parts slice rather than one field of it, so an
 		// attribute that leaks onto a key it does not belong to reddens the row
 		// that owns the key as well as the row that owns the attribute.
-		wantParts []dbschematypes.DBIndexPart
+		wantParts []catalog.IndexPart
 	}{
 		{
 			name:  "operator class",
 			index: "i_opclass",
-			wantParts: []dbschematypes.DBIndexPart{
+			wantParts: []catalog.IndexPart{
 				{Name: "code", Operator: "text_pattern_ops"},
 			},
 		},
 		{
 			name:  "expression key",
 			index: "i_expr",
-			wantParts: []dbschematypes.DBIndexPart{
+			wantParts: []catalog.IndexPart{
 				{Expr: "lower(name)"},
 			},
 		},
 		{
 			name:  "sort direction and nulls ordering",
 			index: "i_desc",
-			wantParts: []dbschematypes.DBIndexPart{
-				{Name: "created_at", Desc: true, NullsOrder: dbschematypes.NullsOrderLast},
+			wantParts: []catalog.IndexPart{
+				{Name: "created_at", Desc: true, NullsOrder: catalog.NullsOrderLast},
 			},
 		},
 		{
 			name:  "nulls first on an ascending key",
 			index: "i_nullsfirst",
-			wantParts: []dbschematypes.DBIndexPart{
-				{Name: "score", NullsOrder: dbschematypes.NullsOrderFirst},
+			wantParts: []catalog.IndexPart{
+				{Name: "score", NullsOrder: catalog.NullsOrderFirst},
 			},
 		},
 		{
@@ -169,7 +169,7 @@ func TestPostgreSQLIndexAttributes_KeyVectorSurvivesTheRead(t *testing.T) {
 			// this row.
 			name:  "each key keeps its own operator class parameters",
 			index: "i_opclass_params_perkey",
-			wantParts: []dbschematypes.DBIndexPart{
+			wantParts: []catalog.IndexPart{
 				{Name: "tsv2", Operator: "tsvector_ops(siglen=32)"},
 				{Name: "tsv3", Operator: "tsvector_ops(siglen=64)"},
 			},
@@ -211,13 +211,13 @@ func TestPostgreSQLIndexAttributes_AccessMethodAndKeyVectorSurviveTheRead(t *tes
 		// wantParts is the WHOLE Parts slice rather than one field of it, so an
 		// attribute that leaks onto a key it does not belong to reddens the row
 		// that owns the key as well as the row that owns the attribute.
-		wantParts []dbschematypes.DBIndexPart
+		wantParts []catalog.IndexPart
 	}{
 		{
 			name:       "access method",
 			index:      "i_gin",
 			wantMethod: "gin",
-			wantParts:  []dbschematypes.DBIndexPart{{Name: "doc"}},
+			wantParts:  []catalog.IndexPart{{Name: "doc"}},
 		},
 		{
 			// The parameters come from the INDEX relation's pg_attribute row,
@@ -225,7 +225,7 @@ func TestPostgreSQLIndexAttributes_AccessMethodAndKeyVectorSurviveTheRead(t *tes
 			name:       "operator class parameters",
 			index:      "i_opclass_params",
 			wantMethod: "gist",
-			wantParts: []dbschematypes.DBIndexPart{
+			wantParts: []catalog.IndexPart{
 				{Name: "tsv", Operator: "tsvector_ops(siglen=64)"},
 			},
 		},
@@ -239,7 +239,7 @@ func TestPostgreSQLIndexAttributes_AccessMethodAndKeyVectorSurviveTheRead(t *tes
 			name:       "operator class parameters on a key that is not the first",
 			index:      "i_opclass_params_multikey",
 			wantMethod: "gist",
-			wantParts: []dbschematypes.DBIndexPart{
+			wantParts: []catalog.IndexPart{
 				{Name: "tsv2"},
 				{Name: "tsv3", Operator: "tsvector_ops(siglen=64)"},
 			},
@@ -268,7 +268,7 @@ func TestPostgreSQLIndexAttributes_IncludePayloadSurvivesTheRead(t *testing.T) {
 	index := findLiveIndex(c, readIndexAttributeIndexes(c, dsn), "i_include")
 
 	c.Assert(index.IncludeColumns, qt.DeepEquals, []string{"c"})
-	c.Assert(index.Parts, qt.DeepEquals, []dbschematypes.DBIndexPart{
+	c.Assert(index.Parts, qt.DeepEquals, []catalog.IndexPart{
 		{Name: "a"}, {Name: "b"},
 	})
 }
@@ -385,7 +385,7 @@ func indexStatements(statements []string) []string {
 	return out
 }
 
-func findLiveIndex(c *qt.C, indexes []dbschematypes.DBIndex, name string) dbschematypes.DBIndex {
+func findLiveIndex(c *qt.C, indexes []catalog.Index, name string) catalog.Index {
 	c.Helper()
 
 	for _, index := range indexes {
@@ -394,5 +394,5 @@ func findLiveIndex(c *qt.C, indexes []dbschematypes.DBIndex, name string) dbsche
 		}
 	}
 	c.Fatalf("index %q was not read at all; the reader saw %d indexes", name, len(indexes))
-	return dbschematypes.DBIndex{}
+	return catalog.Index{}
 }

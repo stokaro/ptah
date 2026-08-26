@@ -6,8 +6,8 @@ import (
 	"slices"
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 )
 
 // RolesToCreateOnDev splits the roles a desired schema declares into the ones a
@@ -51,7 +51,7 @@ import (
 // and a pg_roles row.
 func RolesToCreateOnDev(
 	declared []goschema.Role,
-	present []dbschematypes.DBRole,
+	present []catalog.Role,
 ) (create, alreadyOnServer []goschema.Role) {
 	if len(declared) == 0 {
 		return declared, nil

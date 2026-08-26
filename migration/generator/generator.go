@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
@@ -24,7 +25,6 @@ import (
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/concurrentindex"
@@ -663,7 +663,7 @@ func verifyPlannedShadowMigration(
 	ctx context.Context,
 	opts GenerateMigrationOptions,
 	conn *dbschema.DatabaseConnection,
-	info dbschematypes.DBInfo,
+	info catalog.ServerInfo,
 	diff *difftypes.SchemaDiff,
 	specs []generatedMigrationSpec,
 	generated *goschema.Database,
@@ -1109,8 +1109,8 @@ type generatedMigrationSpec struct {
 func planGeneratedMigrationSpecs(
 	diff *difftypes.SchemaDiff,
 	generated *goschema.Database,
-	dbSchema *dbschematypes.DBSchema,
-	info dbschematypes.DBInfo,
+	dbSchema *catalog.Database,
+	info catalog.ServerInfo,
 	version int64,
 	migrationName string,
 	policy DiffPolicy,
@@ -1431,8 +1431,8 @@ func containsUnsplittableNoTransactionNode(nodes []ast.Node) bool {
 // downgrades instead -- see [concurrentIndexRefsForPopulatedTables].
 func concurrentIndexRefsForPolicy(
 	diff *difftypes.SchemaDiff,
-	dbSchema *dbschematypes.DBSchema,
-	info dbschematypes.DBInfo,
+	dbSchema *catalog.Database,
+	info catalog.ServerInfo,
 	policy DiffPolicy,
 ) ([]difftypes.IndexRef, error) {
 	if !policy.ConcurrentIndex {
@@ -1479,7 +1479,7 @@ var (
 // generated it.
 func refusePartitionedConcurrentIndexRefs(
 	refs []difftypes.IndexRef,
-	dbSchema *dbschematypes.DBSchema,
+	dbSchema *catalog.Database,
 	kind concurrentIndexPolicyKind,
 ) error {
 	tables := concurrentindex.IndexTableFacts(dbSchema)
@@ -1522,8 +1522,8 @@ func refusePartitionedConcurrentIndexRefs(
 // marker, which the no-transaction diff does not carry.
 func concurrentIndexDropRefsForPolicy(
 	diff *difftypes.SchemaDiff,
-	dbSchema *dbschematypes.DBSchema,
-	info dbschematypes.DBInfo,
+	dbSchema *catalog.Database,
+	info catalog.ServerInfo,
 	policy DiffPolicy,
 ) ([]difftypes.IndexRef, error) {
 	if !policy.ConcurrentIndexDrop {
@@ -1568,8 +1568,8 @@ func concurrentIndexDropRefsForPolicy(
 // to generate an index migration at all.
 func concurrentIndexRefsForPopulatedTables(
 	diff *difftypes.SchemaDiff,
-	dbSchema *dbschematypes.DBSchema,
-	info dbschematypes.DBInfo,
+	dbSchema *catalog.Database,
+	info catalog.ServerInfo,
 ) []difftypes.IndexRef {
 	if !platform.IsPostgresFamily(info.Dialect) || !info.Capabilities.Has(capability.CreateIndexConcurrently) {
 		return nil
@@ -1820,7 +1820,7 @@ func generateUpMigrationSQLWithOptions(
 func generateDownMigrationSQL(
 	diff *difftypes.SchemaDiff,
 	generated *goschema.Database,
-	dbSchema *dbschematypes.DBSchema,
+	dbSchema *catalog.Database,
 	dialect string,
 	capsOverride ...capability.Capabilities,
 ) (string, error) {
@@ -1830,7 +1830,7 @@ func generateDownMigrationSQL(
 func generateDownMigrationSQLWithOptions(
 	diff *difftypes.SchemaDiff,
 	generated *goschema.Database,
-	dbSchema *dbschematypes.DBSchema,
+	dbSchema *catalog.Database,
 	dialect string,
 	directiveOpts generatedDirectiveOptions,
 	capsOverride ...capability.Capabilities,
@@ -1858,7 +1858,7 @@ type downMigrationOptions struct {
 func generateDownMigrationSQLQualified(
 	diff *difftypes.SchemaDiff,
 	generated *goschema.Database,
-	dbSchema *dbschematypes.DBSchema,
+	dbSchema *catalog.Database,
 	dialect string,
 	opts downMigrationOptions,
 ) (string, error) {
@@ -2035,7 +2035,7 @@ func reverseSchemaDiff(diff *difftypes.SchemaDiff) *difftypes.SchemaDiff {
 // direction. TestReverseSchemaDiff_AccountsForEverySchemaDiffField enforces
 // that by reflection: it zeroes one field of a fully populated diff at a time
 // and fails when doing so leaves the reverse plan unchanged.
-func reverseSchemaDiffWithSchema(diff *difftypes.SchemaDiff, schema *goschema.Database, dbSchema *dbschematypes.DBSchema) *difftypes.SchemaDiff {
+func reverseSchemaDiffWithSchema(diff *difftypes.SchemaDiff, schema *goschema.Database, dbSchema *catalog.Database) *difftypes.SchemaDiff {
 	return reverseSchemaDiffWithSchemaForDialect(diff, schema, dbSchema, "")
 }
 
@@ -2126,7 +2126,7 @@ func reverseProceduresRemoved(added []string, schema *goschema.Database) []strin
 func reverseSchemaDiffWithSchemaForDialect(
 	diff *difftypes.SchemaDiff,
 	schema *goschema.Database,
-	dbSchema *dbschematypes.DBSchema,
+	dbSchema *catalog.Database,
 	dialect string,
 ) *difftypes.SchemaDiff {
 	// The identity the two producers agree on. The reversed diff carries the
@@ -2354,7 +2354,7 @@ func reverseExtensionDiffs(diffs []difftypes.ExtensionDiff) []difftypes.Extensio
 // to restore is worse than one that refuses to be generated.
 func reverseIndexRemovals(
 	diff *difftypes.SchemaDiff,
-	dbSchema *dbschematypes.DBSchema,
+	dbSchema *catalog.Database,
 ) (additions []difftypes.IndexRef, restored []difftypes.ConstraintAdditionInfo) {
 	removals := diff.IndexRemovals()
 	constraintBacked := diff.ConstraintBackedIndexRemovalSet()
@@ -2389,9 +2389,9 @@ func reverseIndexRemovals(
 // the host table and name an IndexRef names, which is the identity the
 // comparator marked the removal under.
 func introspectedUniqueConstraintsByHost(
-	dbSchema *dbschematypes.DBSchema,
-) map[tableMemberKey]dbschematypes.DBConstraint {
-	constraints := make(map[tableMemberKey]dbschematypes.DBConstraint)
+	dbSchema *catalog.Database,
+) map[tableMemberKey]catalog.Constraint {
+	constraints := make(map[tableMemberKey]catalog.Constraint)
 	if dbSchema == nil {
 		return constraints
 	}
@@ -2462,7 +2462,7 @@ func generatedTableReference(tables []goschema.Table, structName, tableName stri
 // planners fall back to the name-only field scan.
 func reverseConstraintAdditions(
 	diff *difftypes.SchemaDiff,
-	dbSchema *dbschematypes.DBSchema,
+	dbSchema *catalog.Database,
 	semantics identifier.Semantics,
 ) []difftypes.ConstraintAdditionInfo {
 	if dbSchema == nil || len(diff.ConstraintsRemovedWithTables) == 0 {
@@ -2473,7 +2473,7 @@ func reverseConstraintAdditions(
 	// addition restores the body from the exact host it was removed from. A
 	// mixin-shared FK name legitimately repeats across host tables, so a
 	// name-only key would collapse them onto one host.
-	dbConstraintByTableName := make(map[tableMemberKey]dbschematypes.DBConstraint)
+	dbConstraintByTableName := make(map[tableMemberKey]catalog.Constraint)
 	for _, c := range dbSchema.Constraints {
 		if c.Type != "FOREIGN KEY" && c.Type != "PRIMARY KEY" && c.Type != "CHECK" && c.Type != "UNIQUE" {
 			continue
@@ -2547,7 +2547,7 @@ func cloneBoolPtr(value *bool) *bool {
 // migration restores exactly the prior ON DELETE / ON UPDATE behavior.
 func foreignKeyAdditionFromDBConstraint(
 	name, table string,
-	dbFK dbschematypes.DBConstraint,
+	dbFK catalog.Constraint,
 	semantics identifier.Semantics,
 ) difftypes.ConstraintAdditionInfo {
 	info := difftypes.ConstraintAdditionInfo{

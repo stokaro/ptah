@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -18,8 +18,8 @@ func TestViews_DetectsBodyChange(t *testing.T) {
 
 	compare.Views(&goschema.Database{
 		Views: []goschema.View{{Name: "active_users", Body: "SELECT id FROM users WHERE deleted_at IS NULL"}},
-	}, &dbschematypes.DBSchema{
-		Views: []dbschematypes.DBView{{Name: "active_users", Body: "SELECT id FROM users WHERE deleted_at IS NULL AND enabled = true"}},
+	}, &catalog.Database{
+		Views: []catalog.View{{Name: "active_users", Body: "SELECT id FROM users WHERE deleted_at IS NULL AND enabled = true"}},
 	}, diff)
 
 	c.Assert(diff.ViewsModified, qt.HasLen, 1)
@@ -32,8 +32,8 @@ func TestViews_IgnoresDatabaseOnlyQualification(t *testing.T) {
 
 	compare.Views(&goschema.Database{
 		Views: []goschema.View{{Name: "active_users", Body: "SELECT id FROM users WHERE deleted_at IS NULL"}},
-	}, &dbschematypes.DBSchema{
-		Views: []dbschematypes.DBView{{Name: "active_users", Body: "SELECT users.id FROM users WHERE users.deleted_at IS NULL"}},
+	}, &catalog.Database{
+		Views: []catalog.View{{Name: "active_users", Body: "SELECT users.id FROM users WHERE users.deleted_at IS NULL"}},
 	}, diff)
 
 	c.Assert(diff.ViewsModified, qt.HasLen, 0)
@@ -45,8 +45,8 @@ func TestViews_MatchesGeneratedQualifiedNameToDatabaseSchema(t *testing.T) {
 
 	compare.Views(&goschema.Database{
 		Views: []goschema.View{{Name: "tenant.active_users", Body: "SELECT id FROM tenant.users WHERE deleted_at IS NULL"}},
-	}, &dbschematypes.DBSchema{
-		Views: []dbschematypes.DBView{{
+	}, &catalog.Database{
+		Views: []catalog.View{{
 			Name:   "active_users",
 			Schema: "tenant",
 			Body:   "SELECT id FROM tenant.users WHERE deleted_at IS NULL",
@@ -65,8 +65,8 @@ func TestViews_PreservesLiteralDotAndQualifiedIdentities(t *testing.T) {
 			{Name: `"tenant.data"`, Body: "SELECT 'literal'"},
 			{Name: "tenant.data", Body: "SELECT 'qualified'"},
 		},
-	}, &dbschematypes.DBSchema{
-		Views: []dbschematypes.DBView{
+	}, &catalog.Database{
+		Views: []catalog.View{
 			{Name: "tenant.data", Body: "SELECT 'literal'"},
 			{Name: "data", Schema: "tenant", Body: "SELECT 'qualified'"},
 		},
@@ -81,8 +81,8 @@ func TestViews_DetectsAmbiguousDatabaseSchemasForUnqualifiedGeneratedView(t *tes
 
 	compare.Views(&goschema.Database{
 		Views: []goschema.View{{Name: "active_users", Body: "SELECT id FROM users"}},
-	}, &dbschematypes.DBSchema{
-		Views: []dbschematypes.DBView{
+	}, &catalog.Database{
+		Views: []catalog.View{
 			{Name: "active_users", Schema: "tenant", Body: "SELECT id FROM tenant.users"},
 			{Name: "active_users", Schema: "other", Body: "SELECT id FROM other.users"},
 		},
@@ -99,8 +99,8 @@ func TestViews_IgnoresMySQLCanonicalViewBody(t *testing.T) {
 
 	compare.Views(&goschema.Database{
 		Views: []goschema.View{{Name: "live_products", Body: "SELECT id, name FROM products WHERE archived = false"}},
-	}, &dbschematypes.DBSchema{
-		Views: []dbschematypes.DBView{{
+	}, &catalog.Database{
+		Views: []catalog.View{{
 			Name:   "live_products",
 			Schema: "ptah_issue_502",
 			Body: "select `ptah_issue_502`.`products`.`id` AS `id`,`ptah_issue_502`.`products`.`name` AS `name` " +
@@ -117,8 +117,8 @@ func TestViews_DetectsMySQLCanonicalPredicateChange(t *testing.T) {
 
 	compare.Views(&goschema.Database{
 		Views: []goschema.View{{Name: "live_products", Body: "SELECT id, name FROM products WHERE archived = false"}},
-	}, &dbschematypes.DBSchema{
-		Views: []dbschematypes.DBView{{
+	}, &catalog.Database{
+		Views: []catalog.View{{
 			Name: "live_products",
 			Body: "select `ptah_issue_502`.`products`.`id` AS `id`,`ptah_issue_502`.`products`.`name` AS `name` " +
 				"from `ptah_issue_502`.`products` where (`ptah_issue_502`.`products`.`archived` = true)",
@@ -135,8 +135,8 @@ func TestViews_DetectsExplicitQualifierChange(t *testing.T) {
 
 	compare.Views(&goschema.Database{
 		Views: []goschema.View{{Name: "active_users", Body: "SELECT users.id FROM users JOIN posts ON posts.user_id = users.id"}},
-	}, &dbschematypes.DBSchema{
-		Views: []dbschematypes.DBView{{Name: "active_users", Body: "SELECT posts.id FROM users JOIN posts ON posts.user_id = users.id"}},
+	}, &catalog.Database{
+		Views: []catalog.View{{Name: "active_users", Body: "SELECT posts.id FROM users JOIN posts ON posts.user_id = users.id"}},
 	}, diff)
 
 	c.Assert(diff.ViewsModified, qt.HasLen, 1)
@@ -152,8 +152,8 @@ func TestMaterializedViews_DetectsBodyChange(t *testing.T) {
 			Name: "user_stats",
 			Body: "SELECT id, COUNT(*) FROM users GROUP BY id",
 		}},
-	}, &dbschematypes.DBSchema{
-		MatViews: []dbschematypes.DBMatView{{
+	}, &catalog.Database{
+		MatViews: []catalog.MaterializedView{{
 			Name: "user_stats",
 			Body: "SELECT id, COUNT(*) FROM users WHERE enabled GROUP BY id",
 		}},
@@ -185,8 +185,8 @@ func TestMaterializedViews_ReportsNoDriftForAnUnchangedView(t *testing.T) {
 			Name: "user_stats",
 			Body: "SELECT id, COUNT(*) FROM users GROUP BY id",
 		}},
-	}, &dbschematypes.DBSchema{
-		MatViews: []dbschematypes.DBMatView{{
+	}, &catalog.Database{
+		MatViews: []catalog.MaterializedView{{
 			Name: "user_stats",
 			Body: "SELECT id, COUNT(*) FROM users GROUP BY id",
 		}},
@@ -204,8 +204,8 @@ func TestMaterializedViews_IgnoresPostgreSQLDefaultAggregateAlias(t *testing.T) 
 			Name: "user_stats",
 			Body: "SELECT id, COUNT(*) FROM users GROUP BY id",
 		}},
-	}, &dbschematypes.DBSchema{
-		MatViews: []dbschematypes.DBMatView{{
+	}, &catalog.Database{
+		MatViews: []catalog.MaterializedView{{
 			Name: "user_stats",
 			Body: "SELECT id,\n    count(*) AS count\n   FROM users\n  GROUP BY id;",
 		}},
@@ -237,13 +237,13 @@ func TestMaterializedViews_IgnoresCatalogAddedSchemaQualifier(t *testing.T) {
 			Name: "analytics.user_counts_plain",
 			Body: "SELECT count(*) AS c FROM users",
 		}},
-	}, &dbschematypes.DBSchema{
-		MatViews: []dbschematypes.DBMatView{{
+	}, &catalog.Database{
+		MatViews: []catalog.MaterializedView{{
 			Name:   "user_counts",
 			Schema: "analytics",
 			Body:   "SELECT count(*) AS c FROM analytics.users",
 		}},
-		Views: []dbschematypes.DBView{{
+		Views: []catalog.View{{
 			Name:   "user_counts_plain",
 			Schema: "analytics",
 			Body:   "SELECT count(*) AS c FROM analytics.users",
@@ -269,8 +269,8 @@ func TestMaterializedViews_DetectsAuthoredSchemaQualifierChange(t *testing.T) {
 			Name: "analytics.user_counts",
 			Body: "SELECT count(*) AS c FROM archive.users",
 		}},
-	}, &dbschematypes.DBSchema{
-		MatViews: []dbschematypes.DBMatView{{
+	}, &catalog.Database{
+		MatViews: []catalog.MaterializedView{{
 			Name:   "user_counts",
 			Schema: "analytics",
 			Body:   "SELECT count(*) AS c FROM analytics.users",
@@ -307,13 +307,13 @@ func TestMaterializedViews_IgnoresCatalogQualifierWhenTheBodyAliasesItsSource(t 
 			Name: "analytics.user_ids_plain",
 			Body: "SELECT u.id AS id FROM users AS u",
 		}},
-	}, &dbschematypes.DBSchema{
-		MatViews: []dbschematypes.DBMatView{{
+	}, &catalog.Database{
+		MatViews: []catalog.MaterializedView{{
 			Name:   "user_ids",
 			Schema: "analytics",
 			Body:   "SELECT u.id AS id FROM analytics.users AS u",
 		}},
-		Views: []dbschematypes.DBView{{
+		Views: []catalog.View{{
 			Name:   "user_ids_plain",
 			Schema: "analytics",
 			Body:   "SELECT u.id AS id FROM analytics.users AS u",
@@ -337,8 +337,8 @@ func TestViews_IgnoresCatalogQualifierWhenTheBodyAliasesItsSource(t *testing.T) 
 			Name: "analytics.user_ids_plain",
 			Body: "SELECT u.id AS id FROM users AS u",
 		}},
-	}, &dbschematypes.DBSchema{
-		Views: []dbschematypes.DBView{{
+	}, &catalog.Database{
+		Views: []catalog.View{{
 			Name:   "user_ids_plain",
 			Schema: "analytics",
 			Body:   "SELECT u.id AS id FROM analytics.users AS u",
@@ -366,8 +366,8 @@ func TestMaterializedViews_DetectsAColumnQualifierChange(t *testing.T) {
 			Name: "analytics.joined_ids",
 			Body: "SELECT a.id AS id FROM users AS a, accounts AS b",
 		}},
-	}, &dbschematypes.DBSchema{
-		MatViews: []dbschematypes.DBMatView{{
+	}, &catalog.Database{
+		MatViews: []catalog.MaterializedView{{
 			Name:   "joined_ids",
 			Schema: "analytics",
 			Body:   "SELECT b.id AS id FROM analytics.users AS a, analytics.accounts AS b",
@@ -403,13 +403,13 @@ func TestMaterializedViews_IgnoresCatalogQualifierWhenTheAliasIsTheSchemaName(t 
 			Name: "analytics.user_ids_plain",
 			Body: "SELECT analytics.id AS id FROM users AS analytics",
 		}},
-	}, &dbschematypes.DBSchema{
-		MatViews: []dbschematypes.DBMatView{{
+	}, &catalog.Database{
+		MatViews: []catalog.MaterializedView{{
 			Name:   "user_ids",
 			Schema: "analytics",
 			Body:   "SELECT analytics.id AS id FROM analytics.users AS analytics",
 		}},
-		Views: []dbschematypes.DBView{{
+		Views: []catalog.View{{
 			Name:   "user_ids_plain",
 			Schema: "analytics",
 			Body:   "SELECT analytics.id AS id FROM analytics.users AS analytics",
@@ -444,13 +444,13 @@ func TestMaterializedViews_MatchesUnqualifiedNameToTheOnlyDatabaseSchema(t *test
 			Name: "active_users",
 			Body: "SELECT id FROM users",
 		}},
-	}, &dbschematypes.DBSchema{
-		MatViews: []dbschematypes.DBMatView{{
+	}, &catalog.Database{
+		MatViews: []catalog.MaterializedView{{
 			Name:   "user_stats",
 			Schema: "ptah_test",
 			Body:   "SELECT count() AS c FROM ptah_test.users",
 		}},
-		Views: []dbschematypes.DBView{{
+		Views: []catalog.View{{
 			Name:   "active_users",
 			Schema: "ptah_test",
 			Body:   "SELECT id FROM ptah_test.users",
@@ -476,8 +476,8 @@ func TestMaterializedViews_DetectsAmbiguousDatabaseSchemasForUnqualifiedName(t *
 			Name: "user_stats",
 			Body: "SELECT count() AS c FROM users",
 		}},
-	}, &dbschematypes.DBSchema{
-		MatViews: []dbschematypes.DBMatView{
+	}, &catalog.Database{
+		MatViews: []catalog.MaterializedView{
 			{Name: "user_stats", Schema: "tenant", Body: "SELECT count() AS c FROM tenant.users"},
 			{Name: "user_stats", Schema: "other", Body: "SELECT count() AS c FROM other.users"},
 		},
@@ -501,8 +501,8 @@ func TestTriggers_KeyedByTableAndDetectsBodyChange(t *testing.T) {
 			ForEach: "ROW",
 			Body:    "NEW.updated_at = NOW(); RETURN NEW;",
 		}},
-	}, &dbschematypes.DBSchema{
-		Triggers: []dbschematypes.DBTrigger{{
+	}, &catalog.Database{
+		Triggers: []catalog.Trigger{{
 			Name:    "set_updated_at",
 			Table:   "users",
 			Timing:  "BEFORE",
@@ -530,8 +530,8 @@ func TestTriggers_DetectsNewOldQualifierChange(t *testing.T) {
 			ForEach: "ROW",
 			Body:    "NEW.updated_at = NOW(); RETURN NEW;",
 		}},
-	}, &dbschematypes.DBSchema{
-		Triggers: []dbschematypes.DBTrigger{{
+	}, &catalog.Database{
+		Triggers: []catalog.Trigger{{
 			Name:    "set_updated_at",
 			Table:   "users",
 			Timing:  "BEFORE",
@@ -558,8 +558,8 @@ func refreshComparison(
 		MaterializedViews: []goschema.MaterializedView{{
 			Name: "mv", Body: body, Refresh: declared,
 		}},
-	}, &dbschematypes.DBSchema{
-		MatViews: []dbschematypes.DBMatView{{
+	}, &catalog.Database{
+		MatViews: []catalog.MaterializedView{{
 			Name: "mv", Schema: "ptah_test", Body: body, Refresh: stored,
 		}},
 	}, diff)

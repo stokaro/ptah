@@ -14,8 +14,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
@@ -249,7 +249,7 @@ func liveColumnTypes(c *qt.C, ctx context.Context, dbURL string) map[string]stri
 }
 
 // readColumnTypes is the same question asked of Ptah's description.
-func readColumnTypes(schema *dbschematypes.DBSchema, table string) map[string]string {
+func readColumnTypes(schema *catalog.Database, table string) map[string]string {
 	types := make(map[string]string)
 	for _, dbTable := range schema.Tables {
 		if dbTable.Name != table {
@@ -267,7 +267,7 @@ func readColumnTypes(schema *dbschematypes.DBSchema, table string) map[string]st
 
 // readTypeColumnCount counts what the read carries, so a vacuous comparison
 // cannot pass for a healthy one.
-func readTypeColumnCount(schema *dbschematypes.DBSchema, table string) int {
+func readTypeColumnCount(schema *catalog.Database, table string) int {
 	for _, dbTable := range schema.Tables {
 		if dbTable.Name == table {
 			return len(dbTable.Columns)

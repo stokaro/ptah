@@ -13,9 +13,9 @@ import (
 	qt "github.com/frankban/quicktest"
 	moderncsqlite "modernc.org/sqlite"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbschema/sqlite"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -484,7 +484,7 @@ func sqliteRoundTripSchema() *goschema.Database {
 	}
 }
 
-func findTable(tables []types.DBTable, name string) *types.DBTable {
+func findTable(tables []catalog.Table, name string) *catalog.Table {
 	for i := range tables {
 		if tables[i].Name == name {
 			return &tables[i]
@@ -493,16 +493,16 @@ func findTable(tables []types.DBTable, name string) *types.DBTable {
 	return nil
 }
 
-func findColumn(columns []types.DBColumn, name string) types.DBColumn {
+func findColumn(columns []catalog.Column, name string) catalog.Column {
 	for _, column := range columns {
 		if column.Name == name {
 			return column
 		}
 	}
-	return types.DBColumn{}
+	return catalog.Column{}
 }
 
-func findIndex(indexes []types.DBIndex, name string) *types.DBIndex {
+func findIndex(indexes []catalog.Index, name string) *catalog.Index {
 	for i := range indexes {
 		if indexes[i].Name == name {
 			return &indexes[i]
@@ -511,7 +511,7 @@ func findIndex(indexes []types.DBIndex, name string) *types.DBIndex {
 	return nil
 }
 
-func findConstraint(constraints []types.DBConstraint, name string) *types.DBConstraint {
+func findConstraint(constraints []catalog.Constraint, name string) *catalog.Constraint {
 	for i := range constraints {
 		if constraints[i].Name == name {
 			return &constraints[i]

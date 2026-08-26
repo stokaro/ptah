@@ -12,6 +12,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/sijms/go-ora/v3"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
@@ -19,7 +20,6 @@ import (
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/dbexprprobe"
 	"go.5x5.cz/ptah/internal/dbtarget"
@@ -381,7 +381,7 @@ func splitOracleStatements(rendered string) []string {
 	return statements
 }
 
-func oracleTableByName(c *qt.C, tables []dbschematypes.DBTable, name string) dbschematypes.DBTable {
+func oracleTableByName(c *qt.C, tables []catalog.Table, name string) catalog.Table {
 	c.Helper()
 	for _, table := range tables {
 		if table.Name == name {
@@ -389,10 +389,10 @@ func oracleTableByName(c *qt.C, tables []dbschematypes.DBTable, name string) dbs
 		}
 	}
 	c.Fatalf("table %q is absent from the read schema", name)
-	return dbschematypes.DBTable{}
+	return catalog.Table{}
 }
 
-func oracleColumnByName(c *qt.C, columns []dbschematypes.DBColumn, name string) dbschematypes.DBColumn {
+func oracleColumnByName(c *qt.C, columns []catalog.Column, name string) catalog.Column {
 	c.Helper()
 	for _, column := range columns {
 		if column.Name == name {
@@ -400,5 +400,5 @@ func oracleColumnByName(c *qt.C, columns []dbschematypes.DBColumn, name string) 
 		}
 	}
 	c.Fatalf("column %q is absent from the read table", name)
-	return dbschematypes.DBColumn{}
+	return catalog.Column{}
 }

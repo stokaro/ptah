@@ -14,8 +14,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 )
 
@@ -55,7 +55,7 @@ func informationSchemaConstraintCatalog() dbtest.QueryResult {
 	}
 }
 
-func constraintNamed(constraints []types.DBConstraint, name string) *types.DBConstraint {
+func constraintNamed(constraints []catalog.Constraint, name string) *catalog.Constraint {
 	for position := range constraints {
 		if constraints[position].Name == name {
 			return &constraints[position]
@@ -242,28 +242,28 @@ func TestConstraintAndViewReadsPickTheCatalogTheServerHas(t *testing.T) {
 // constraintType, constraintColumn, constraintDelete and constraintCheck read a
 // field from a constraint that may be absent, so one assertion covers the row
 // that survives and the row that is filtered out.
-func constraintType(constraint *types.DBConstraint) string {
+func constraintType(constraint *catalog.Constraint) string {
 	if constraint == nil {
 		return ""
 	}
 	return constraint.Type
 }
 
-func constraintColumn(constraint *types.DBConstraint) string {
+func constraintColumn(constraint *catalog.Constraint) string {
 	if constraint == nil {
 		return ""
 	}
 	return constraint.ColumnName
 }
 
-func constraintDelete(constraint *types.DBConstraint) *string {
+func constraintDelete(constraint *catalog.Constraint) *string {
 	if constraint == nil {
 		return nil
 	}
 	return constraint.DeleteRule
 }
 
-func constraintCheck(constraint *types.DBConstraint) *string {
+func constraintCheck(constraint *catalog.Constraint) *string {
 	if constraint == nil {
 		return nil
 	}

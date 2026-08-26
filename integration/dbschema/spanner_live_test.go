@@ -11,11 +11,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/migrator"
@@ -123,7 +123,7 @@ func TestSpannerLiveRefusesDDLInsideATransaction(t *testing.T) {
 }
 
 // spannerLiveTableNames lists the table names a catalog read reported.
-func spannerLiveTableNames(tables []dbschematypes.DBTable) []string {
+func spannerLiveTableNames(tables []catalog.Table) []string {
 	names := make([]string, 0, len(tables))
 	for _, table := range tables {
 		names = append(names, table.Name)
@@ -253,7 +253,7 @@ func TestSpannerLiveRefusesTheSequenceOptionClauses(t *testing.T) {
 }
 
 // spannerLiveSequenceNames lists the sequence names a schema read returned.
-func spannerLiveSequenceNames(sequences []dbschematypes.DBSequence) []string {
+func spannerLiveSequenceNames(sequences []catalog.Sequence) []string {
 	names := make([]string, 0, len(sequences))
 	for _, sequence := range sequences {
 		names = append(names, sequence.Name)

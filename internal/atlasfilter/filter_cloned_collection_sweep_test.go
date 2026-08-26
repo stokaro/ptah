@@ -7,8 +7,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 )
 
@@ -23,9 +23,9 @@ import (
 // fails `schema apply` while asserting something factually false. The rows are
 // checked against the struct by reflection in
 // TestExcludeDatabaseReport_SweepCoversEveryClonedCollection, so a collection
-// added to [dbschematypes.DBSchema] reddens this file until it is answered here.
+// added to [catalog.Database] reddens this file until it is answered here.
 type clonedCollectionRow struct {
-	// field is the [dbschematypes.DBSchema] field name, and the key the
+	// field is the [catalog.Database] field name, and the key the
 	// reflection guard matches against.
 	field string
 	// present names a real object of this kind in sweptCollectionFixture.
@@ -35,46 +35,46 @@ type clonedCollectionRow struct {
 	// which would satisfy every present row and lose the refusal entirely.
 	absent string
 	// seed puts this row's objects into the shared fixture.
-	seed func(*dbschematypes.DBSchema)
+	seed func(*catalog.Database)
 }
 
 func clonedCollectionRows() []clonedCollectionRow {
 	return []clonedCollectionRow{
 		{
 			field: "Schemas", present: "app", absent: "nosuch_schema",
-			seed: func(s *dbschematypes.DBSchema) {
+			seed: func(s *catalog.Database) {
 				s.Schemas = append(s.Schemas,
-					dbschematypes.DBSchemaInfo{Name: "public"},
-					dbschematypes.DBSchemaInfo{Name: "app"})
+					catalog.Schema{Name: "public"},
+					catalog.Schema{Name: "app"})
 			},
 		},
 		{
 			field: "Tables", present: "users", absent: "nosuch_table",
-			seed: func(s *dbschematypes.DBSchema) {
-				s.Tables = append(s.Tables, dbschematypes.DBTable{
+			seed: func(s *catalog.Database) {
+				s.Tables = append(s.Tables, catalog.Table{
 					Name:    "users",
-					Columns: []dbschematypes.DBColumn{{Name: "id"}, {Name: "name"}},
+					Columns: []catalog.Column{{Name: "id"}, {Name: "name"}},
 				})
 			},
 		},
 		{
 			field: "Enums", present: "mood", absent: "nosuch_enum",
-			seed: func(s *dbschematypes.DBSchema) {
-				s.Enums = append(s.Enums, dbschematypes.DBEnum{Name: "mood"})
+			seed: func(s *catalog.Database) {
+				s.Enums = append(s.Enums, catalog.Enum{Name: "mood"})
 			},
 		},
 		{
 			field: "Indexes", present: "users.users_name_idx", absent: "users.nosuch_idx",
-			seed: func(s *dbschematypes.DBSchema) {
-				s.Indexes = append(s.Indexes, dbschematypes.DBIndex{
+			seed: func(s *catalog.Database) {
+				s.Indexes = append(s.Indexes, catalog.Index{
 					Name: "users_name_idx", TableName: "users", Columns: []string{"name"},
 				})
 			},
 		},
 		{
 			field: "Constraints", present: "users.users_name_chk", absent: "users.nosuch_chk",
-			seed: func(s *dbschematypes.DBSchema) {
-				s.Constraints = append(s.Constraints, dbschematypes.DBConstraint{
+			seed: func(s *catalog.Database) {
+				s.Constraints = append(s.Constraints, catalog.Constraint{
 					Name: "users_name_chk", TableName: "users", Type: "CHECK",
 				})
 			},
@@ -86,21 +86,21 @@ func clonedCollectionRows() []clonedCollectionRow {
 			// let a description carry the fact for a table it does not carry
 			// (stokaro/ptah#1026).
 			field: "Hypertables", present: "readings", absent: "nosuch_hypertable",
-			seed: func(s *dbschematypes.DBSchema) {
-				s.Tables = append(s.Tables, dbschematypes.DBTable{
+			seed: func(s *catalog.Database) {
+				s.Tables = append(s.Tables, catalog.Table{
 					Name:    "readings",
-					Columns: []dbschematypes.DBColumn{{Name: "time"}},
+					Columns: []catalog.Column{{Name: "time"}},
 				})
-				s.Hypertables = append(s.Hypertables, dbschematypes.DBHypertable{
+				s.Hypertables = append(s.Hypertables, catalog.Hypertable{
 					Name: "readings", PrimaryDimension: "time", Dimensions: 1,
 				})
 			},
 		},
 		{
 			field: "ContinuousAggregates", present: "hourly_totals", absent: "nosuch_aggregate",
-			seed: func(s *dbschematypes.DBSchema) {
+			seed: func(s *catalog.Database) {
 				s.ContinuousAggregates = append(s.ContinuousAggregates,
-					dbschematypes.DBContinuousAggregate{
+					catalog.ContinuousAggregate{
 						Name: "hourly_totals", HypertableName: "readings",
 						Definition: "SELECT 1",
 					})
@@ -108,93 +108,93 @@ func clonedCollectionRows() []clonedCollectionRow {
 		},
 		{
 			field: "ExtendedProperties", present: "ptah_flag", absent: "nosuch_property",
-			seed: func(s *dbschematypes.DBSchema) {
+			seed: func(s *catalog.Database) {
 				s.ExtendedProperties = append(s.ExtendedProperties,
-					dbschematypes.DBExtendedProperty{
+					catalog.ExtendedProperty{
 						Name: "ptah_flag", Table: "users", Value: "enabled", ValueType: "nvarchar",
 					})
 			},
 		},
 		{
 			field: "Extensions", present: "pgcrypto", absent: "nosuch_extension",
-			seed: func(s *dbschematypes.DBSchema) {
-				s.Extensions = append(s.Extensions, dbschematypes.DBExtension{Name: "pgcrypto"})
+			seed: func(s *catalog.Database) {
+				s.Extensions = append(s.Extensions, catalog.Extension{Name: "pgcrypto"})
 			},
 		},
 		{
 			field: "Functions", present: "fn_audit", absent: "nosuch_function",
-			seed: func(s *dbschematypes.DBSchema) {
-				s.Functions = append(s.Functions, dbschematypes.DBFunction{Name: "fn_audit"})
+			seed: func(s *catalog.Database) {
+				s.Functions = append(s.Functions, catalog.Function{Name: "fn_audit"})
 			},
 		},
 		{
 			field: "Sequences", present: "order_seq", absent: "nosuch_sequence",
-			seed: func(s *dbschematypes.DBSchema) {
-				s.Sequences = append(s.Sequences, dbschematypes.DBSequence{Name: "order_seq"})
+			seed: func(s *catalog.Database) {
+				s.Sequences = append(s.Sequences, catalog.Sequence{Name: "order_seq"})
 			},
 		},
 		{
 			field: "Domains", present: "positive_int", absent: "nosuch_domain",
-			seed: func(s *dbschematypes.DBSchema) {
-				s.Domains = append(s.Domains, dbschematypes.DBDomain{
+			seed: func(s *catalog.Database) {
+				s.Domains = append(s.Domains, catalog.Domain{
 					Name: "positive_int", BaseType: "integer",
 				})
 			},
 		},
 		{
 			field: "Composites", present: "addr", absent: "nosuch_composite",
-			seed: func(s *dbschematypes.DBSchema) {
-				s.Composites = append(s.Composites, dbschematypes.DBComposite{Name: "addr"})
+			seed: func(s *catalog.Database) {
+				s.Composites = append(s.Composites, catalog.CompositeType{Name: "addr"})
 			},
 		},
 		{
 			field: "Ranges", present: "intrange", absent: "nosuch_range",
-			seed: func(s *dbschematypes.DBSchema) {
-				s.Ranges = append(s.Ranges, dbschematypes.DBRange{
+			seed: func(s *catalog.Database) {
+				s.Ranges = append(s.Ranges, catalog.Range{
 					Name: "intrange", Subtype: "integer",
 				})
 			},
 		},
 		{
 			field: "Views", present: "v_users", absent: "nosuch_view",
-			seed: func(s *dbschematypes.DBSchema) {
-				s.Views = append(s.Views, dbschematypes.DBView{Name: "v_users"})
+			seed: func(s *catalog.Database) {
+				s.Views = append(s.Views, catalog.View{Name: "v_users"})
 			},
 		},
 		{
 			field: "Synonyms", present: "s_users", absent: "nosuch_synonym",
-			seed: func(s *dbschematypes.DBSchema) {
-				s.Synonyms = append(s.Synonyms, dbschematypes.DBSynonym{
+			seed: func(s *catalog.Database) {
+				s.Synonyms = append(s.Synonyms, catalog.Synonym{
 					Name: "s_users", Target: "dbo.users", TargetSchema: "dbo", TargetObject: "users",
 				})
 			},
 		},
 		{
 			field: "MatViews", present: "mv_users", absent: "nosuch_matview",
-			seed: func(s *dbschematypes.DBSchema) {
-				s.MatViews = append(s.MatViews, dbschematypes.DBMatView{Name: "mv_users"})
+			seed: func(s *catalog.Database) {
+				s.MatViews = append(s.MatViews, catalog.MaterializedView{Name: "mv_users"})
 			},
 		},
 		{
 			field: "Triggers", present: "users.users_audit_trg", absent: "users.nosuch_trg",
-			seed: func(s *dbschematypes.DBSchema) {
-				s.Triggers = append(s.Triggers, dbschematypes.DBTrigger{
+			seed: func(s *catalog.Database) {
+				s.Triggers = append(s.Triggers, catalog.Trigger{
 					Name: "users_audit_trg", Table: "users",
 				})
 			},
 		},
 		{
 			field: "RLSPolicies", present: "users.users_policy", absent: "users.nosuch_policy",
-			seed: func(s *dbschematypes.DBSchema) {
-				s.RLSPolicies = append(s.RLSPolicies, dbschematypes.DBRLSPolicy{
+			seed: func(s *catalog.Database) {
+				s.RLSPolicies = append(s.RLSPolicies, catalog.RLSPolicy{
 					Name: "users_policy", Table: "users",
 				})
 			},
 		},
 		{
 			field: "Roles", present: "app_role", absent: "nosuch_role",
-			seed: func(s *dbschematypes.DBSchema) {
-				s.Roles = append(s.Roles, dbschematypes.DBRole{Name: "app_role"})
+			seed: func(s *catalog.Database) {
+				s.Roles = append(s.Roles, catalog.Role{Name: "app_role"})
 			},
 		},
 		{
@@ -202,8 +202,8 @@ func clonedCollectionRows() []clonedCollectionRow {
 			// that owns and the object owned. This row names the object, and
 			// the owner is a name no other row uses.
 			field: "ObjectOwners", present: "owned_table", absent: "nosuch_owned_object",
-			seed: func(s *dbschematypes.DBSchema) {
-				s.ObjectOwners = append(s.ObjectOwners, dbschematypes.DBObjectOwner{
+			seed: func(s *catalog.Database) {
+				s.ObjectOwners = append(s.ObjectOwners, catalog.ObjectOwner{
 					Kind: "table", Name: "owned_table", Owner: "owner_role", OwnerCanLogin: true,
 				})
 			},
@@ -214,8 +214,8 @@ func clonedCollectionRows() []clonedCollectionRow {
 			// role name is one no other row uses, so this row's selector can
 			// only be matched by the membership filter.
 			field: "RoleMemberships", present: "reporting_role", absent: "nosuch_role_membership",
-			seed: func(s *dbschematypes.DBSchema) {
-				s.RoleMemberships = append(s.RoleMemberships, dbschematypes.DBRoleMembership{
+			seed: func(s *catalog.Database) {
+				s.RoleMemberships = append(s.RoleMemberships, catalog.RoleMembership{
 					Role: "reporting_role", Member: "app_role",
 				})
 			},
@@ -224,8 +224,8 @@ func clonedCollectionRows() []clonedCollectionRow {
 			// The role-qualified target names the grant and nothing else; the
 			// bare object name would be answered by the table instead.
 			field: "Grants", present: "app_role.users", absent: "app_role.nosuch_table",
-			seed: func(s *dbschematypes.DBSchema) {
-				s.Grants = append(s.Grants, dbschematypes.DBGrant{
+			seed: func(s *catalog.Database) {
+				s.Grants = append(s.Grants, catalog.Grant{
 					Role: "app_role", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "users",
 				})
 			},
@@ -236,8 +236,8 @@ func clonedCollectionRows() []clonedCollectionRow {
 			// ASKED, because "this selector protected nothing" is false for an
 			// object that is already out.
 			field: "RolesOutOfScope", present: "cluster_role", absent: "nosuch_cluster_role",
-			seed: func(s *dbschematypes.DBSchema) {
-				s.RolesOutOfScope = append(s.RolesOutOfScope, dbschematypes.DBRole{Name: "cluster_role"})
+			seed: func(s *catalog.Database) {
+				s.RolesOutOfScope = append(s.RolesOutOfScope, catalog.Role{Name: "cluster_role"})
 			},
 		},
 		{
@@ -250,9 +250,9 @@ func clonedCollectionRows() []clonedCollectionRow {
 			// not reported as protecting nothing while the run is refused over
 			// the object `docs` names.
 			field: "UnregisteredVirtualTables", present: "legacy_docs", absent: "nosuch_virtual_table",
-			seed: func(s *dbschematypes.DBSchema) {
+			seed: func(s *catalog.Database) {
 				s.UnregisteredVirtualTables = append(s.UnregisteredVirtualTables,
-					dbschematypes.DBVirtualTable{Name: "legacy_docs", Module: "fts4"})
+					catalog.VirtualTable{Name: "legacy_docs", Module: "fts4"})
 			},
 		},
 	}
@@ -261,8 +261,8 @@ func clonedCollectionRows() []clonedCollectionRow {
 // sweptCollectionFixture holds one real object of every collection
 // cloneDatabase copies, so each row's selector is tested against a state that
 // also contains every other kind.
-func sweptCollectionFixture() *dbschematypes.DBSchema {
-	schema := &dbschematypes.DBSchema{}
+func sweptCollectionFixture() *catalog.Database {
+	schema := &catalog.Database{}
 	for _, row := range clonedCollectionRows() {
 		row.seed(schema)
 	}
@@ -271,11 +271,11 @@ func sweptCollectionFixture() *dbschematypes.DBSchema {
 
 // clonedDatabaseCollectionFields derives the collection list from the struct
 // rather than repeating it, so the sweep cannot silently fall behind
-// [dbschematypes.DBSchema]. Every slice-typed field is a collection
+// [catalog.Database]. Every slice-typed field is a collection
 // cloneDatabase copies; NotDescribed is a coverage set rather than a slice and
 // carries no objects a selector could name.
 func clonedDatabaseCollectionFields() []string {
-	schemaType := reflect.TypeFor[dbschematypes.DBSchema]()
+	schemaType := reflect.TypeFor[catalog.Database]()
 	fields := make([]string, 0, schemaType.NumField())
 	for field := range schemaType.Fields() {
 		if field.Type.Kind() != reflect.Slice {
@@ -289,7 +289,7 @@ func clonedDatabaseCollectionFields() []string {
 
 // TestExcludeDatabaseReport_SweepCoversEveryClonedCollection is the guard that
 // makes the rest of this file a sweep rather than a list someone remembered to
-// extend. A collection added to [dbschematypes.DBSchema] has no row here until
+// extend. A collection added to [catalog.Database] has no row here until
 // somebody writes one, and this test names it.
 func TestExcludeDatabaseReport_SweepCoversEveryClonedCollection(t *testing.T) {
 	c := qt.New(t)
@@ -347,20 +347,20 @@ func TestExcludeDatabaseReport_EveryClonedCollectionStillReportsAnAbsentSelector
 
 // schemaScopedFixture holds objects in the default schema and in a second one,
 // so a schema selector's reach can be asserted rather than assumed.
-func schemaScopedFixture() *dbschematypes.DBSchema {
-	return &dbschematypes.DBSchema{
-		Schemas: []dbschematypes.DBSchemaInfo{{Name: "public"}, {Name: "app"}},
-		Tables: []dbschematypes.DBTable{
-			{Name: "users", Columns: []dbschematypes.DBColumn{{Name: "id"}}},
-			{Schema: "app", Name: "orders", Columns: []dbschematypes.DBColumn{{Name: "id"}}},
+func schemaScopedFixture() *catalog.Database {
+	return &catalog.Database{
+		Schemas: []catalog.Schema{{Name: "public"}, {Name: "app"}},
+		Tables: []catalog.Table{
+			{Name: "users", Columns: []catalog.Column{{Name: "id"}}},
+			{Schema: "app", Name: "orders", Columns: []catalog.Column{{Name: "id"}}},
 		},
-		Enums: []dbschematypes.DBEnum{
+		Enums: []catalog.Enum{
 			{Name: "mood"},
 			{Schema: "app", Name: "color"},
 		},
-		Sequences: []dbschematypes.DBSequence{{Schema: "app", Name: "app_seq"}},
-		Views:     []dbschematypes.DBView{{Schema: "app", Name: "v_orders"}},
-		Grants: []dbschematypes.DBGrant{
+		Sequences: []catalog.Sequence{{Schema: "app", Name: "app_seq"}},
+		Views:     []catalog.View{{Schema: "app", Name: "v_orders"}},
+		Grants: []catalog.Grant{
 			{Role: "app_role", Privilege: "USAGE", ObjectType: "SCHEMA", ObjectName: "app"},
 		},
 	}
@@ -370,18 +370,18 @@ func schemaScopedFixture() *dbschematypes.DBSchema {
 // schema, so a row can tell "the object in app left" from "the object in public
 // left". The package's existing databaseEnumNames reports the bare name, which
 // cannot distinguish the two enums this fixture holds.
-func databaseTableNames(tables []dbschematypes.DBTable) []string {
+func databaseTableNames(tables []catalog.Table) []string {
 	names := make([]string, 0, len(tables))
 	for _, table := range tables {
-		names = append(names, dbschematypes.QualifyTableName(table.Schema, table.Name))
+		names = append(names, catalog.QualifyTableName(table.Schema, table.Name))
 	}
 	return names
 }
 
-func databaseQualifiedEnumNames(enums []dbschematypes.DBEnum) []string {
+func databaseQualifiedEnumNames(enums []catalog.Enum) []string {
 	names := make([]string, 0, len(enums))
 	for _, value := range enums {
-		names = append(names, dbschematypes.QualifyTableName(value.Schema, value.Name))
+		names = append(names, catalog.QualifyTableName(value.Schema, value.Name))
 	}
 	return names
 }

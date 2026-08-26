@@ -9,10 +9,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
@@ -81,7 +81,7 @@ func cleanupPostgresIndexIdentity(t *testing.T, db *sql.DB) {
 	_, _ = db.Exec(`DROP SCHEMA IF EXISTS ` + postgresIndexIdentitySchemaB + ` CASCADE`)
 }
 
-func readPostgresIndexIdentitySchema(c *qt.C, t *testing.T, dsn string) *dbschematypes.DBSchema {
+func readPostgresIndexIdentitySchema(c *qt.C, t *testing.T, dsn string) *catalog.Database {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(t.Context(), dsn)
 	c.Assert(err, qt.IsNil)
@@ -91,16 +91,16 @@ func readPostgresIndexIdentitySchema(c *qt.C, t *testing.T, dsn string) *dbschem
 		postgresIndexIdentitySchemaB,
 	})
 	c.Assert(err, qt.IsNil)
-	tables := slices.DeleteFunc(live.Tables, func(table dbschematypes.DBTable) bool {
+	tables := slices.DeleteFunc(live.Tables, func(table catalog.Table) bool {
 		return table.Schema != postgresIndexIdentitySchemaA && table.Schema != postgresIndexIdentitySchemaB
 	})
-	indexes := slices.DeleteFunc(live.Indexes, func(index dbschematypes.DBIndex) bool {
+	indexes := slices.DeleteFunc(live.Indexes, func(index catalog.Index) bool {
 		return index.Schema != postgresIndexIdentitySchemaA && index.Schema != postgresIndexIdentitySchemaB
 	})
-	constraints := slices.DeleteFunc(live.Constraints, func(constraint dbschematypes.DBConstraint) bool {
+	constraints := slices.DeleteFunc(live.Constraints, func(constraint catalog.Constraint) bool {
 		return constraint.Schema != postgresIndexIdentitySchemaA && constraint.Schema != postgresIndexIdentitySchemaB
 	})
-	return &dbschematypes.DBSchema{
+	return &catalog.Database{
 		Tables:      tables,
 		Indexes:     indexes,
 		Constraints: constraints,

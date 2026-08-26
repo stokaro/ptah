@@ -125,12 +125,12 @@ import (
 	"sort"
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/envbool"
 	"go.5x5.cz/ptah/internal/planner/objectlookup"
@@ -367,7 +367,7 @@ func (t Table) String() string {
 func ValidateComparison(
 	dialect string,
 	desired *goschema.Database,
-	database *types.DBSchema,
+	database *catalog.Database,
 	policy Policy,
 ) error {
 	if platform.NormalizeDialect(dialect) != platform.SQLite {
@@ -561,7 +561,7 @@ func ValidateComparison(
 // `skip drop_table` does not filter a modification.
 func validateDatabaseIsClassifiable(
 	desired *goschema.Database,
-	database *types.DBSchema,
+	database *catalog.Database,
 	registered sqlitemodule.Set,
 	semantics identifier.Semantics,
 	policy Policy,
@@ -691,7 +691,7 @@ func refuseUncreatableAdditions(wanted []Table, registered sqlitemodule.Set) err
 // dialect.
 func ValidatePlannedChanges(
 	dialect string,
-	database *types.DBSchema,
+	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	policy Policy,
 ) error {
@@ -758,7 +758,7 @@ func ValidatePlannedChanges(
 // already stands for.
 func ValidatePlannedRollback(
 	dialect string,
-	database *types.DBSchema,
+	database *catalog.Database,
 	forward,
 	reverse *difftypes.SchemaDiff,
 ) error {
@@ -869,7 +869,7 @@ var (
 // refusePlanTouchingUnclassifiedStorage is the one refusal both directions
 // raise, so the rule cannot be stated twice and drift.
 func refusePlanTouchingUnclassifiedStorage(
-	database *types.DBSchema,
+	database *catalog.Database,
 	touched []string,
 	subject planSubject,
 ) error {
@@ -1123,7 +1123,7 @@ func quotedStrings(values []string) string {
 // for one that declared everything.
 func someLiveTableIsUndeclared(
 	desired *goschema.Database,
-	database *types.DBSchema,
+	database *catalog.Database,
 	semantics identifier.Semantics,
 ) bool {
 	if database == nil {
@@ -1148,15 +1148,15 @@ func someLiveTableIsUndeclared(
 // It reads two sources and unions them, because they answer at different times
 // and only one of them survives narrowing:
 //
-//   - [types.DBSchema.UnregisteredVirtualTables] is the reader's own statement,
+//   - [catalog.Database.UnregisteredVirtualTables] is the reader's own statement,
 //     recorded before any selection ran. It is the source that still speaks
 //     after `--exclude docs` has removed the virtual table, which is exactly
 //     the run that plans the drops.
-//   - the tables still in the description are checked directly, so a DBSchema
+//   - the tables still in the description are checked directly, so a Database
 //     built by something other than the SQLite reader -- a test, a future
 //     producer -- cannot walk past this by leaving the field empty. A zero
 //     value must not read as "every module is present".
-func liveUnregistered(database *types.DBSchema, registered sqlitemodule.Set) []Table {
+func liveUnregistered(database *catalog.Database, registered sqlitemodule.Set) []Table {
 	if database == nil {
 		return nil
 	}
@@ -1307,7 +1307,7 @@ func (s pairedSide) declarationsMatch(semantics identifier.Semantics) bool {
 // only the names at least one side calls a virtual table.
 func pairSides(
 	desired *goschema.Database,
-	database *types.DBSchema,
+	database *catalog.Database,
 	semantics identifier.Semantics,
 ) []pairedSide {
 	sides := make(map[string]*pairedSide)
@@ -1405,7 +1405,7 @@ func Names(tables []Table) []string {
 // stream"; the note is then dropped rather than panicking. Write errors are
 // dropped too: a diagnostic that fails to print must not fail a read that
 // succeeded.
-func ReportUnclassified(w io.Writer, schema *types.DBSchema) {
+func ReportUnclassified(w io.Writer, schema *catalog.Database) {
 	if w == nil || schema == nil || len(schema.UnregisteredVirtualTables) == 0 {
 		return
 	}
@@ -1487,7 +1487,7 @@ func useVerb(count int) string {
 }
 
 // Tables lists the virtual tables a database schema holds, in a stable order.
-func Tables(database *types.DBSchema) []Table {
+func Tables(database *catalog.Database) []Table {
 	if database == nil {
 		return nil
 	}

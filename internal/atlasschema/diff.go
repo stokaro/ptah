@@ -7,11 +7,11 @@ import (
 	"io/fs"
 	"time"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/atlassource"
@@ -413,7 +413,7 @@ func prepareDiffSources(opts DiffOptions) (preparedDiffSources, error) {
 
 type scopedDiffState struct {
 	schema       *goschema.Database
-	database     *types.DBSchema
+	database     *catalog.Database
 	report       atlasfilter.ExcludeReport
 	selection    atlasfilter.SelectionReport
 	selectionErr error
@@ -535,7 +535,7 @@ func diffPatternScope(dialect string, fromState, toState atlassource.State) (def
 //
 // The empty default database matches the native seam's, so one set of
 // declarations cannot be accepted by one surface and refused by the other.
-func validateClickHouseRBAC(dialect string, to *goschema.Database, from *types.DBSchema) error {
+func validateClickHouseRBAC(dialect string, to *goschema.Database, from *catalog.Database) error {
 	if to == nil {
 		return nil
 	}

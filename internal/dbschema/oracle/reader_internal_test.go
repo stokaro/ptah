@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 )
 
 func number(value int64) sql.NullInt64 { return sql.NullInt64{Int64: value, Valid: true} }
@@ -101,7 +101,7 @@ func TestAssignDefault_SeparatesOraclesOwnBookkeeping(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			var column types.DBColumn
+			var column catalog.Column
 			assignDefault(&column, test.identity, test.virtual, test.value)
 
 			c.Assert(stringValue(column.ColumnDefault), qt.Equals, test.wantDefault)
@@ -254,7 +254,7 @@ func TestWithoutGeneratedKeys_KeepsWhatTheDeclarationCanMatch(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			constraints := []types.DBConstraint{
+			constraints := []catalog.Constraint{
 				{Name: "SYS_C008644", Type: "PRIMARY KEY"},
 				{Name: "orders_total_check", Type: "CHECK"},
 				{Name: "uq_email", Type: "UNIQUE"},

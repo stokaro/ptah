@@ -19,11 +19,11 @@ package concurrentindex
 import (
 	"slices"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/indexscope"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -59,7 +59,7 @@ func (idx TableIndex) Lookup(tableName string) (TableFacts, bool) {
 }
 
 // IndexTableFacts indexes a read schema by both spellings an index ref can use.
-func IndexTableFacts(dbSchema *dbschematypes.DBSchema) TableIndex {
+func IndexTableFacts(dbSchema *catalog.Database) TableIndex {
 	index := TableIndex{
 		qualified: make(map[string]TableFacts),
 		bare:      make(map[string]TableFacts),
@@ -129,8 +129,8 @@ func mergeTableFacts(into map[string]TableFacts, key string, facts TableFacts) {
 func DeclaredRefs(
 	diff *difftypes.SchemaDiff,
 	desired *goschema.Database,
-	dbSchema *dbschematypes.DBSchema,
-	info dbschematypes.DBInfo,
+	dbSchema *catalog.Database,
+	info catalog.ServerInfo,
 ) []difftypes.IndexRef {
 	if !platform.IsPostgresFamily(info.Dialect) || !info.Capabilities.Has(capability.CreateIndexConcurrently) {
 		return nil

@@ -11,8 +11,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
@@ -22,7 +22,7 @@ import (
 // MariaDB does -- against a desired state that names the same object as a PLAIN
 // index. That is a real change to one object, and index comparison states it as
 // a replacement.
-func constraintBackedIndexFixtures() (*goschema.Database, *dbschematypes.DBSchema) {
+func constraintBackedIndexFixtures() (*goschema.Database, *catalog.Database) {
 	generated := &goschema.Database{
 		Tables: []goschema.Table{{Name: "users", StructName: "User"}},
 		Fields: []goschema.Field{
@@ -38,11 +38,11 @@ func constraintBackedIndexFixtures() (*goschema.Database, *dbschematypes.DBSchem
 		}},
 	}
 	emailLength := 255
-	database := &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{{
+	database := &catalog.Database{
+		Tables: []catalog.Table{{
 			Name: "users",
 			Type: "BASE TABLE",
-			Columns: []dbschematypes.DBColumn{
+			Columns: []catalog.Column{
 				{Name: "id", DataType: "bigint", IsNullable: "NO", IsPrimaryKey: true, IsAutoIncrement: true},
 				{
 					Name:               "email",
@@ -53,13 +53,13 @@ func constraintBackedIndexFixtures() (*goschema.Database, *dbschematypes.DBSchem
 				},
 			},
 		}},
-		Indexes: []dbschematypes.DBIndex{{
+		Indexes: []catalog.Index{{
 			Name:      "uq_users_email",
 			TableName: "users",
 			Columns:   []string{"email"},
 			IsUnique:  true,
 		}},
-		Constraints: []dbschematypes.DBConstraint{{
+		Constraints: []catalog.Constraint{{
 			Name:        "uq_users_email",
 			TableName:   "users",
 			Type:        "UNIQUE",

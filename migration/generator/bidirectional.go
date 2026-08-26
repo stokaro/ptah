@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"maps"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/concurrentindex"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
@@ -62,7 +62,7 @@ type BidirectionalSchemaPlan struct {
 	Dialect       string
 	Capabilities  capability.Capabilities
 	DesiredSchema *goschema.Database
-	CurrentSchema *dbschematypes.DBSchema
+	CurrentSchema *catalog.Database
 	Policy        BidirectionalPlanPolicy
 	Forward       SchemaDirectionPlan
 	Reverse       SchemaDirectionPlan
@@ -73,7 +73,7 @@ type BidirectionalSchemaPlan struct {
 type BidirectionalSchemaPlanOptions struct {
 	Diff          *difftypes.SchemaDiff
 	DesiredSchema *goschema.Database
-	CurrentSchema *dbschematypes.DBSchema
+	CurrentSchema *catalog.Database
 	Dialect       string
 	Capabilities  capability.Capabilities
 	Policy        BidirectionalPlanPolicy
@@ -126,7 +126,7 @@ func PlanBidirectionalSchemaDiff(
 		opts.Diff,
 		opts.DesiredSchema,
 		opts.CurrentSchema,
-		dbschematypes.DBInfo{Dialect: dialect, Capabilities: caps},
+		catalog.ServerInfo{Dialect: dialect, Capabilities: caps},
 		opts.Policy.Create,
 	)
 	if err != nil {
@@ -135,7 +135,7 @@ func PlanBidirectionalSchemaDiff(
 	dropRefs, err := concurrentIndexRemovalRefs(
 		opts.Diff,
 		opts.CurrentSchema,
-		dbschematypes.DBInfo{Dialect: dialect, Capabilities: caps},
+		catalog.ServerInfo{Dialect: dialect, Capabilities: caps},
 		opts.Policy.Drop,
 	)
 	if err != nil {
@@ -261,8 +261,8 @@ func planBidirectionalSchemaDiffWithRefs(
 func concurrentIndexCreateRefs(
 	diff *difftypes.SchemaDiff,
 	desired *goschema.Database,
-	current *dbschematypes.DBSchema,
-	info dbschematypes.DBInfo,
+	current *catalog.Database,
+	info catalog.ServerInfo,
 	mode ConcurrentIndexMode,
 ) ([]difftypes.IndexRef, error) {
 	switch mode {
@@ -294,8 +294,8 @@ func concurrentIndexCreateRefs(
 
 func concurrentIndexRemovalRefs(
 	diff *difftypes.SchemaDiff,
-	current *dbschematypes.DBSchema,
-	info dbschematypes.DBInfo,
+	current *catalog.Database,
+	info catalog.ServerInfo,
 	mode ConcurrentIndexMode,
 ) ([]difftypes.IndexRef, error) {
 	switch mode {

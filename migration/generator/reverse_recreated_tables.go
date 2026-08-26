@@ -3,8 +3,8 @@ package generator
 import (
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/deporder"
@@ -64,7 +64,7 @@ import (
 func dropReverseConstraintsRestoredByTableCreation(
 	reversed *difftypes.SchemaDiff,
 	removedWithTables []difftypes.ConstraintRemovalInfo,
-	dbSchema *dbschematypes.DBSchema,
+	dbSchema *catalog.Database,
 ) {
 	if reversed == nil || dbSchema == nil || len(reversed.TablesAdded) == 0 {
 		return

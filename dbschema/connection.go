@@ -16,11 +16,11 @@ import (
 	_ "github.com/sijms/go-ora/v3"                       // Oracle driver
 	_ "github.com/tursodatabase/libsql-client-go/libsql" // libsql (Turso) driver
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/dbschema/clickhouse"
 	"go.5x5.cz/ptah/internal/dbschema/mssql"
@@ -36,7 +36,7 @@ import (
 // ConnectToDatabase creates a database connection from a URL.
 //
 // The provided context governs the initial Ping used to verify the connection
-// and the metadata queries issued to populate [DBInfo]. Canceling the context
+// and the metadata queries issued to populate [ServerInfo]. Canceling the context
 // before or during the call causes ConnectToDatabase to return promptly with
 // the context error wrapped in a descriptive message. The context does not
 // affect the lifetime of the returned *DatabaseConnection; callers are
@@ -111,10 +111,10 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 	var newWriter schemaWriterFactory
 	switch dialectProtocol {
 	case "pgx":
-		newReader = func(runner sqlrunner.Runner) types.SchemaReader {
+		newReader = func(runner sqlrunner.Runner) catalog.SchemaReader {
 			return postgres.NewPostgreSQLReaderWithCapabilities(runner, info.Schema, info.Capabilities)
 		}
-		newWriter = func(runner sqlrunner.Runner, _ *sql.Conn) types.SchemaWriter {
+		newWriter = func(runner sqlrunner.Runner, _ *sql.Conn) catalog.SchemaWriter {
 			// The set decides whether cleanup may take a transaction: Spanner
 			// refuses DDL inside one, and the writer cannot ask the server
 			// without opening the transaction it is trying to avoid.
@@ -122,14 +122,14 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 				runner, info.Schema, info.Capabilities)
 		}
 	case "mysql":
-		newReader = func(runner sqlrunner.Runner) types.SchemaReader {
+		newReader = func(runner sqlrunner.Runner) catalog.SchemaReader {
 			// The set decides which spelling of the CHECK_CONSTRAINTS read is
 			// asked first. MySQL's view has no TABLE_NAME -- that column is a
 			// MariaDB extension -- so without this every MySQL schema read
 			// spent a round trip being told error 1054 (stokaro/ptah#916).
 			return mysql.NewMySQLReaderWithCapabilities(runner, info.Schema, info.Capabilities)
 		}
-		newWriter = func(runner sqlrunner.Runner, session *sql.Conn) types.SchemaWriter {
+		newWriter = func(runner sqlrunner.Runner, session *sql.Conn) catalog.SchemaWriter {
 			if session != nil {
 				return mysql.NewMySQLWriterForPinnedRunner(
 					runner,
@@ -143,7 +143,7 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 			return mysql.NewMySQLWriterForRunner(runner, db, info.Schema, info.Dialect, info.Version)
 		}
 	case "clickhouse":
-		newReader = func(runner sqlrunner.Runner) types.SchemaReader {
+		newReader = func(runner sqlrunner.Runner) catalog.SchemaReader {
 			// Capabilities and version travel with the reader so that roles
 			// and grants are read only where RoleManagement says they exist,
 			// and so the diagnostic can name the server it read. Without them
@@ -154,7 +154,7 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 				runner, info.Schema, info.Version, info.Capabilities,
 			)
 		}
-		newWriter = func(runner sqlrunner.Runner, _ *sql.Conn) types.SchemaWriter {
+		newWriter = func(runner sqlrunner.Runner, _ *sql.Conn) catalog.SchemaWriter {
 			// The capabilities travel with the writer for the same reason
 			// they travel with the reader above: the realm-cleanup gate is a
 			// capability question, and resolving it here means the banner is
@@ -166,27 +166,27 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 	// libsql reaches a remote server, but the schema it serves is SQLite's, so
 	// it takes SQLite's reader, writer and executor unchanged.
 	case "sqlite", "libsql":
-		newReader = func(runner sqlrunner.Runner) types.SchemaReader {
+		newReader = func(runner sqlrunner.Runner) catalog.SchemaReader {
 			return sqlite.NewSQLiteReader(runner, info.Schema)
 		}
-		newWriter = func(runner sqlrunner.Runner, session *sql.Conn) types.SchemaWriter {
+		newWriter = func(runner sqlrunner.Runner, session *sql.Conn) catalog.SchemaWriter {
 			if session != nil {
 				return sqlite.NewSQLiteWriterForPinnedRunner(runner, session, info.Schema)
 			}
 			return sqlite.NewSQLiteWriterForRunner(runner, info.Schema)
 		}
 	case "sqlserver":
-		newReader = func(runner sqlrunner.Runner) types.SchemaReader {
+		newReader = func(runner sqlrunner.Runner) catalog.SchemaReader {
 			return mssql.NewSQLServerReader(runner, info.Schema)
 		}
-		newWriter = func(runner sqlrunner.Runner, _ *sql.Conn) types.SchemaWriter {
+		newWriter = func(runner sqlrunner.Runner, _ *sql.Conn) catalog.SchemaWriter {
 			return mssql.NewSQLServerWriterForRunner(runner, info.Schema)
 		}
 	case "oracle":
-		newReader = func(runner sqlrunner.Runner) types.SchemaReader {
+		newReader = func(runner sqlrunner.Runner) catalog.SchemaReader {
 			return oracle.NewOracleReaderWithCapabilities(runner, info.Schema, info.Capabilities)
 		}
-		newWriter = func(runner sqlrunner.Runner, _ *sql.Conn) types.SchemaWriter {
+		newWriter = func(runner sqlrunner.Runner, _ *sql.Conn) catalog.SchemaWriter {
 			return oracle.NewOracleWriterForRunner(runner, info.Schema)
 		}
 	default:
@@ -297,10 +297,10 @@ func getDatabaseInfoWithCapabilities(
 	parsedURL *url.URL,
 	dbURL string,
 	resolveSchema schemaResolver,
-) (types.DBInfo, capability.VersionResolution, error) {
+) (catalog.ServerInfo, capability.VersionResolution, error) {
 	info, err := getDatabaseInfo(ctx, db, dialect, parsedURL, dbURL, resolveSchema)
 	if err != nil {
-		return types.DBInfo{}, capability.VersionResolution{}, err
+		return catalog.ServerInfo{}, capability.VersionResolution{}, err
 	}
 	resolution := resolveDatabaseCapabilities(info)
 	info.Capabilities = refineExtensionCapabilities(ctx, db, info.Dialect, resolution.Capabilities)
@@ -366,7 +366,7 @@ func refineExtensionCapabilities(
 // `--log-level debug` prints these lines. Surfacing an unrefined version to
 // the user on a channel of its own is criterion 6 of issue #916 and belongs
 // with the CLI work that owns that channel.
-func reportCapabilityResolution(info types.DBInfo, resolution capability.VersionResolution) {
+func reportCapabilityResolution(info catalog.ServerInfo, resolution capability.VersionResolution) {
 	if resolution.Saturated {
 		slog.Debug(
 			"server is newer than the newest measured capability line; planning with that line's preset",
@@ -385,7 +385,7 @@ func reportCapabilityResolution(info types.DBInfo, resolution capability.Version
 	}
 }
 
-func resolveDatabaseCapabilities(info types.DBInfo) capability.VersionResolution {
+func resolveDatabaseCapabilities(info catalog.ServerInfo) capability.VersionResolution {
 	// Root metadata must describe the conservative server-version baseline.
 	// Session variables can differ between pooled physical connections, so
 	// session-specific relaxations are detected only after WithSession pins the
@@ -493,10 +493,10 @@ func databaseDriverConfig(dialect, dbURL string) (driverName, dataSourceName str
 type DatabaseConnection struct {
 	db             *sql.DB
 	runner         sqlrunner.Runner
-	info           types.DBInfo
-	reader         types.SchemaReader
-	writer         types.SchemaWriter
-	executor       types.SchemaExecutor
+	info           catalog.ServerInfo
+	reader         catalog.SchemaReader
+	writer         catalog.SchemaWriter
+	executor       catalog.SchemaExecutor
 	newReader      schemaReaderFactory
 	newWriter      schemaWriterFactory
 	pinned         bool
@@ -510,8 +510,8 @@ type DatabaseConnection struct {
 	session *sql.Conn
 }
 
-type schemaReaderFactory func(sqlrunner.Runner) types.SchemaReader
-type schemaWriterFactory func(sqlrunner.Runner, *sql.Conn) types.SchemaWriter
+type schemaReaderFactory func(sqlrunner.Runner) catalog.SchemaReader
+type schemaWriterFactory func(sqlrunner.Runner, *sql.Conn) catalog.SchemaWriter
 
 // IsolatedQueryer is the query-only surface exposed inside an isolated physical
 // database session. It deliberately omits transaction control and schema
@@ -570,7 +570,7 @@ func ReadSchemaWithSchemasContext(
 	ctx context.Context,
 	conn *DatabaseConnection,
 	schemas []string,
-) (*types.DBSchema, error) {
+) (*catalog.Database, error) {
 	reader, restore := conn.readerScopedTo(schemas)
 	defer restore()
 	schema, err := reader.ReadSchemaContext(ctx)
@@ -589,7 +589,7 @@ func ReadSchemaWithSchemasContext(
 // is database/sql's own. Prefer ReadSchemaWithSchemasContext: a schema read is
 // dozens of round trips against a server that may be slow or unreachable, and
 // only the Context form can be told to stop.
-func ReadSchemaWithSchemas(conn *DatabaseConnection, schemas []string) (*types.DBSchema, error) {
+func ReadSchemaWithSchemas(conn *DatabaseConnection, schemas []string) (*catalog.Database, error) {
 	return ReadSchemaWithSchemasContext(context.Background(), conn, schemas)
 }
 
@@ -602,7 +602,7 @@ func ReadSchemaWithSchemas(conn *DatabaseConnection, schemas []string) (*types.D
 // one inside this package, since the struct's fields are unexported -- falls
 // back to scoping the shared reader and restoring it afterwards, which is the
 // behavior that cannot be made concurrency-safe.
-func (dc *DatabaseConnection) readerScopedTo(schemas []string) (types.SchemaReader, func()) {
+func (dc *DatabaseConnection) readerScopedTo(schemas []string) (catalog.SchemaReader, func()) {
 	if dc.newReader != nil {
 		reader := dc.newReader(dc.sqlRunner())
 		if scoped, ok := reader.(schemaScopedReader); ok {
@@ -640,7 +640,7 @@ func (dc *DatabaseConnection) readerScopedTo(schemas []string) (types.SchemaRead
 // It sits here rather than in the reader because this is where the dialect is
 // known: the PostgreSQL-family reader is shared by five engines and is
 // configured with capabilities rather than with a dialect name.
-func recordUnmodeledObjectKinds(schema *types.DBSchema, dialect string) *types.DBSchema {
+func recordUnmodeledObjectKinds(schema *catalog.Database, dialect string) *catalog.Database {
 	if schema == nil || platform.NormalizeDialect(dialect) != platform.Spanner {
 		return schema
 	}
@@ -653,7 +653,7 @@ func recordUnmodeledObjectKinds(schema *types.DBSchema, dialect string) *types.D
 }
 
 // Info returns the database connection information
-func (dc *DatabaseConnection) Info() types.DBInfo {
+func (dc *DatabaseConnection) Info() catalog.ServerInfo {
 	info := dc.info
 	info.Capabilities = info.Capabilities.Clone()
 	info.IdentifierSemantics = info.IdentifierSemantics.Clone()
@@ -661,14 +661,14 @@ func (dc *DatabaseConnection) Info() types.DBInfo {
 }
 
 // Reader returns the schema reader
-func (dc *DatabaseConnection) Reader() types.SchemaReader {
+func (dc *DatabaseConnection) Reader() catalog.SchemaReader {
 	return dc.reader
 }
 
 // Writer returns the active schema SQL executor. Transaction-scoped connection
 // copies return their transaction executor here; root connections return the
 // root schema writer.
-func (dc *DatabaseConnection) Writer() types.SchemaExecutor {
+func (dc *DatabaseConnection) Writer() catalog.SchemaExecutor {
 	if dc.executor != nil {
 		return dc.executor
 	}
@@ -678,7 +678,7 @@ func (dc *DatabaseConnection) Writer() types.SchemaExecutor {
 // SchemaWriter returns the schema writer bound to this connection's SQL
 // session. Transaction-scoped executors do not replace the administrative
 // writer.
-func (dc *DatabaseConnection) SchemaWriter() types.SchemaWriter {
+func (dc *DatabaseConnection) SchemaWriter() catalog.SchemaWriter {
 	return dc.writer
 }
 
@@ -688,7 +688,7 @@ func (dc *DatabaseConnection) SchemaWriter() types.SchemaWriter {
 //
 // This is used to pass transaction-scoped writers into migration callbacks
 // without storing the active transaction on the root writer.
-func (dc *DatabaseConnection) WithExecutor(executor types.SchemaExecutor) *DatabaseConnection {
+func (dc *DatabaseConnection) WithExecutor(executor catalog.SchemaExecutor) *DatabaseConnection {
 	cloned := *dc
 	cloned.executor = executor
 	provider, ok := executor.(schemaTransactionRunnerProvider)
@@ -1085,8 +1085,8 @@ func getDatabaseInfo(
 	parsedURL *url.URL,
 	originalURL string,
 	resolveSchema schemaResolver,
-) (types.DBInfo, error) {
-	info := types.DBInfo{
+) (catalog.ServerInfo, error) {
+	info := catalog.ServerInfo{
 		Dialect:             dialect,
 		URL:                 originalURL,
 		RedactedURL:         dburldisplay.Format(originalURL),
@@ -1233,8 +1233,8 @@ func getOracleDatabaseInfo(
 	ctx context.Context,
 	db *sql.DB,
 	parsedURL *url.URL,
-	info types.DBInfo,
-) (types.DBInfo, error) {
+	info catalog.ServerInfo,
+) (catalog.ServerInfo, error) {
 	var version string
 	const versionQuery = `SELECT version_full FROM product_component_version WHERE ROWNUM = 1`
 	if err := db.QueryRowContext(ctx, versionQuery).Scan(&version); err != nil {
@@ -1260,8 +1260,8 @@ func getSQLServerDatabaseInfo(
 	ctx context.Context,
 	db *sql.DB,
 	parsedURL *url.URL,
-	info types.DBInfo,
-) (types.DBInfo, error) {
+	info catalog.ServerInfo,
+) (catalog.ServerInfo, error) {
 	var version string
 	if err := db.QueryRowContext(ctx, "SELECT @@VERSION").Scan(&version); err != nil {
 		return info, fmt.Errorf("failed to get SQL Server version: %w", err)
