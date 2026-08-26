@@ -209,8 +209,15 @@ type Column struct {
 	Charset string
 	Collate string
 	// UpdateExpression is MySQL's `ON UPDATE <expr>` clause. It is carried for
-	// rendering only, because no catalog read reports it: dropping it from a
-	// CREATE builds a column that silently stops maintaining itself.
+	// rendering and not compared.
+	//
+	// Both sides have it. `information_schema.COLUMNS.EXTRA` reports it plainly
+	// -- measured on MySQL 8.4, a column declared `DATETIME ON UPDATE
+	// CURRENT_TIMESTAMP` comes back with EXTRA `on update CURRENT_TIMESTAMP` --
+	// so a read carries it and a render writes it. A render that dropped it
+	// would build a column that silently stops maintaining itself, which is
+	// what makes carrying it worth doing even where nothing compares it
+	// (stokaro/ptah#1215).
 	UpdateExpression string
 	// Check is the column-level CHECK expression the source wrote, empty for a
 	// column with none.
