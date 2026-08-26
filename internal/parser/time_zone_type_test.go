@@ -131,3 +131,45 @@ func TestParseColumnType_TheColumnAfterAQualifiedTypeIsStillRead(t *testing.T) {
 	c.Assert(table.Columns[2].Type, qt.Equals, "INTEGER")
 	c.Assert(table.Columns[2].Nullable, qt.IsFalse)
 }
+
+// TestParseColumnType_ATruncatedQualifierDoesNotEatTheNextColumn is what the
+// ZONE and TIME checks are for.
+//
+// `timestamp with time` is not a type any server accepts, and a parser is still
+// not entitled to corrupt the rest of the statement over it: without the
+// checks, the qualifier appends whatever token follows -- the comma -- and the
+// column after it is lost. The rows stop at the last word that was really
+// there and leave the list intact.
+func TestParseColumnType_ATruncatedQualifierDoesNotEatTheNextColumn(t *testing.T) {
+	tests := []struct {
+		name     string
+		sql      string
+		wantType string
+	}{
+		{
+			name:     "ZONE is missing",
+			sql:      `CREATE TABLE z (id BIGINT, a timestamp with time, b INTEGER);`,
+			wantType: "timestamp with time",
+		},
+		{
+			name:     "TIME ZONE is missing",
+			sql:      `CREATE TABLE z (id BIGINT, a timestamp with, b INTEGER);`,
+			wantType: "timestamp with",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements, err := parser.NewParser(test.sql, parser.WithDialect(platform.Postgres)).Parse()
+
+			c.Assert(err, qt.IsNil)
+			table, ok := statements.Statements[0].(*ast.CreateTableNode)
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(table.Columns, qt.HasLen, 3)
+			c.Assert(table.Columns[1].Type, qt.Equals, test.wantType)
+			c.Assert(table.Columns[2].Name, qt.Equals, "b")
+			c.Assert(table.Columns[2].Type, qt.Equals, "INTEGER")
+		})
+	}
+}
