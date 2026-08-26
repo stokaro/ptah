@@ -620,18 +620,21 @@ func TestTableStatementsMatchTheExistingPlanner(t *testing.T) {
 		// existing planner renders a locking build, so a row asserting they
 		// agree would assert a defect.
 		//
-		// The exclusion was re-measured rather than trusted. stokaro/ptah#2019
-		// is the defect, and it was closed -- but its fix landed in
+		// The exclusion was re-measured rather than trusted, and it survived.
+		// stokaro/ptah#2019 was closed, but its fix landed in
 		// `migration/generator`, and the declarative verbs go through
-		// `migration/planner`, which still takes concurrency only from options
-		// its CALLER sets. Driving the issue's own reproduction on master:
+		// `migration/planner`. Driving the issue's own reproduction on master:
 		//
 		//	declaration Concurrently = true
 		//	CREATE INDEX IF NOT EXISTS "idx_widget_a" ON "widget" ("a")
 		//
-		// so the issue is reopened and this row waits for the other half. The
-		// CHANGES slice does carry the shape: the two paths agree on WHICH
-		// object changes, and disagree only on the words.
+		// #2019 is reopened with the measurement, and this row waits for the
+		// other half. Where the remaining half belongs is settled: NOT in the
+		// planner. Deriving the refs there from the description alone breaks
+		// two rules the generator's own tests hold -- an operator who turned
+		// concurrent builds off is not overruled by a description, and a
+		// partitioned parent has no concurrent form and is known only from the
+		// catalog, which the planner does not have.
 		{
 			name:        "adding a unique index",
 			description: indexedWidget(true, "a"),
