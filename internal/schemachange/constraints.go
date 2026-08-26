@@ -62,16 +62,28 @@ func compareTableConstraints(
 
 // changedConstraint reports which parts of two constraints differ.
 //
-// The body is compared as the source wrote it, folded for whitespace and case
-// only. Deciding that `price > 0` and `(price > 0)` are one condition is a
-// TARGET's rule -- the server rewrites what it stores -- and it belongs to
-// normalization rather than here, where a second copy of it would drift.
+// A body other than a CHECK's is compared as the source wrote it, folded for
+// whitespace and case only: deciding what a target rewrites is that target's
+// rule, and a second copy of it here would drift.
+//
+// A CHECK is the exception, and it is compared through the fold that already
+// pairs it -- [objectidentity.FoldCheckExpression]. Both sides describe one
+// condition and neither is wrong about it: measured against Ptah's own reader
+// on PostgreSQL 18.6, a declaration's `b > 0` arrives as `(b > 0)`. Read
+// verbatim the pair matched as one object and then reported its condition
+// changed, which renders a drop and an add -- on every run, which is the
+// rebuild identity by condition exists to stop.
 func changedConstraint(before, after schemastate.TableConstraint) []string {
 	changed := make([]string, 0, 3)
-	if !equalClause(before.Expression, after.Expression) {
+	if !equalCondition(before, after) {
 		changed = append(changed, "expression")
 	}
-	if !slices.Equal(before.Columns, after.Columns) {
+	// A CHECK's columns are not part of its definition. The catalog derives a
+	// list from the condition -- measured on PostgreSQL 18.6, `["d","e"]` for
+	// `CHECK (d > 0 AND e > 0)` -- and a declaration fills one in only when the
+	// check sits on a column, so comparing them reported every table-level
+	// check changed over a fact the description never stated.
+	if !isCheck(after) && !slices.Equal(before.Columns, after.Columns) {
 		changed = append(changed, "columns")
 	}
 	if !equalClause(before.UsingMethod, after.UsingMethod) ||
@@ -101,7 +113,7 @@ func changedConstraint(before, after schemastate.TableConstraint) []string {
 // declared without a name does -- comparing that against the catalog's
 // `widget_pkey` reported a rename to nothing.
 func renamedCheck(before, after schemastate.TableConstraint) bool {
-	if !strings.EqualFold(strings.TrimSpace(after.Kind), excludeCheckKind) {
+	if !isCheck(after) {
 		return false
 	}
 	desired := strings.TrimSpace(after.ConstraintName)
@@ -110,6 +122,21 @@ func renamedCheck(before, after schemastate.TableConstraint) bool {
 
 func equalClause(before, after string) bool {
 	return strings.EqualFold(strings.TrimSpace(before), strings.TrimSpace(after))
+}
+
+// equalCondition compares two bodies, folding a CHECK's the way its identity
+// folds it.
+func equalCondition(before, after schemastate.TableConstraint) bool {
+	if isCheck(before) && isCheck(after) {
+		return objectidentity.FoldCheckExpression(before.Expression) ==
+			objectidentity.FoldCheckExpression(after.Expression)
+	}
+	return equalClause(before.Expression, after.Expression)
+}
+
+// isCheck reports the kind whose identity is its condition.
+func isCheck(constraint schemastate.TableConstraint) bool {
+	return strings.EqualFold(strings.TrimSpace(constraint.Kind), excludeCheckKind)
 }
 
 func constraintAddition(object schemastate.Object) Change {

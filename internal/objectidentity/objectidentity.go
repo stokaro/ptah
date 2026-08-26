@@ -480,7 +480,7 @@ func (b Builder) ConstraintParts(schema, table, constraint string) ID {
 // folded condition.
 func (b Builder) CheckConstraintParts(schema, table, constraint, expression string) ID {
 	id := b.ConstraintParts(schema, table, constraint)
-	folded := foldCheckExpression(expression)
+	folded := FoldCheckExpression(expression)
 	if folded == "" {
 		return id
 	}
@@ -488,15 +488,28 @@ func (b Builder) CheckConstraintParts(schema, table, constraint, expression stri
 	return id
 }
 
-// foldCheckExpression reduces a condition to the form two sources can be
-// compared on: case-insensitive, with whitespace collapsed and the parentheses
-// a server adds around the whole expression removed.
+// FoldCheckExpression reduces a condition to the form two sources can be
+// compared on: case-insensitive, with whitespace collapsed, the parentheses a
+// server adds around the whole expression removed, and the keyword a definition
+// carries dropped.
 //
 // It folds for COMPARISON only. What a renderer writes is the source text, for
 // the reason the type folds separately from what it emits: writing the folded
 // form into DDL would put Ptah's normalization into the author's schema.
-func foldCheckExpression(expression string) string {
+//
+// Exported because the identity is not the only place one condition arrives in
+// two spellings. A comparator holding `b > 0` against a catalog's `(b > 0)`
+// reports a change nobody asked for, and a SECOND fold written there would be
+// free to disagree with this one -- which is a pair that matches as one object
+// and then rebuilds itself on every run.
+func FoldCheckExpression(expression string) string {
 	trimmed := strings.TrimSpace(expression)
+	// A reader taking the DEFINITION rather than the clause returns the keyword
+	// with it -- `CHECK ((b > 0))` -- and the word has to go before the outer
+	// pair is the outer pair.
+	if strings.HasPrefix(strings.ToUpper(trimmed), checkKeyword) {
+		trimmed = strings.TrimSpace(trimmed[len(checkKeyword):])
+	}
 	for strings.HasPrefix(trimmed, "(") && strings.HasSuffix(trimmed, ")") {
 		inner := strings.TrimSpace(trimmed[1 : len(trimmed)-1])
 		if !balancedParentheses(inner) {
@@ -506,6 +519,9 @@ func foldCheckExpression(expression string) string {
 	}
 	return strings.ToLower(strings.Join(strings.Fields(trimmed), " "))
 }
+
+// checkKeyword is the word a definition carries and a clause does not.
+const checkKeyword = "CHECK"
 
 // balancedParentheses reports whether every parenthesis in the value closes,
 // so `(a > 0) and (b > 0)` is not mistaken for a wrapped expression.
