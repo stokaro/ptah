@@ -111,6 +111,7 @@ verdict on any of it.
 | `oci tag` | none | none | — | asks a registry to move a tag onto an artifact it already holds; nothing is uploaded |
 | `oci tags` | none | none | — | asks a registry for the tags one repository carries and prints them |
 | `oci verify` | none | none | — | checks an artifact against a verification policy before anything consumes it |
+| `project inspect` | none | none | — | reads a project file and reports which of its settings Ptah acts on and which it read and ignored; it opens no database |
 | `schema annotations` | none | none | — | exports the Go annotation metadata compiled into the binary, as JSON or a JSON Schema |
 | `schema apply` | **writes** | **rewrites** | `--db-url`, `--dev-url` | applies a desired schema to the target; the dev database is where "the plan is rehearsed on before touching the target" |
 | `schema approve` | none | none | — | signs a saved plan file with an SSH key and writes the signature beside it |
@@ -182,6 +183,7 @@ permission.
 | `oci tag` | asks a registry to move a tag onto an artifact it already holds; nothing is uploaded |
 | `oci tags` | asks a registry for the tags one repository carries and prints them |
 | `oci verify` | checks an artifact against a verification policy before anything consumes it |
+| `project inspect` | reads a project file and reports which of its settings Ptah acts on and which it read and ignored; it opens no database |
 | `schema annotations` | exports the Go annotation metadata compiled into the binary, as JSON or a JSON Schema |
 | `schema approve` | signs a saved plan file with an SSH key and writes the signature beside it |
 | `schema compare` | reads the target and reports the difference; on Oracle alone it creates a probe table in the dev database and drops it again, to learn how that engine spells a declared generated-column expression |
