@@ -334,11 +334,34 @@ func applyMySQLColumnMetadata(
 		case strings.Contains(extraValue, "virtual generated"):
 			col.GeneratedKind = "VIRTUAL"
 		}
+		col.UpdateExpression = mysqlUpdateExpression(extra.String)
 	}
 	if generatedExpression.Valid && generatedExpression.String != "" {
 		expression := generatedExpression.String
 		col.GeneratedExpression = &expression
 	}
+}
+
+// mysqlUpdateExpression reads the `ON UPDATE` clause out of a column's EXTRA.
+//
+// EXTRA is a list of facts about the column, and this is one of them: measured
+// on MySQL 8.4, `DATETIME ON UPDATE CURRENT_TIMESTAMP` reports `on update
+// CURRENT_TIMESTAMP`, and `TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE
+// CURRENT_TIMESTAMP(3)` reports `DEFAULT_GENERATED on update
+// CURRENT_TIMESTAMP(3)`. The expression is what follows the two words, taken as
+// the server spelled it -- the engine writes the parameterized form back, and
+// rewriting it here would be Ptah deciding what the column says.
+//
+// Matched case-insensitively on the keyword and returned verbatim, because the
+// keyword's case is the server's convention and the expression's is the
+// author's.
+func mysqlUpdateExpression(extra string) string {
+	const keyword = "on update "
+	index := strings.Index(strings.ToLower(extra), keyword)
+	if index < 0 {
+		return ""
+	}
+	return strings.TrimSpace(extra[index+len(keyword):])
 }
 
 // isAbsentColumnDefault reports whether the catalog's answer means "no default"
