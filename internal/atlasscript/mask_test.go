@@ -1,7 +1,6 @@
 package atlasscript_test
 
 import (
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -116,7 +115,7 @@ func TestMask_HashWithNoSaltStillHashes(t *testing.T) {
 	got := mask.Apply("ada@example.com")
 
 	c.Assert(got, qt.Not(qt.Equals), "ada@example.com")
-	c.Assert(len(got), qt.Equals, 64)
+	c.Assert([]byte(got), qt.HasLen, 64)
 }
 
 // A broken mask is refused before a database is touched.
@@ -223,5 +222,5 @@ func TestMaskSet_CompileReportsTheBrokenRule(t *testing.T) {
 	err := set.Compile()
 
 	c.Assert(err, qt.ErrorMatches, `.*"broken".*`)
-	c.Assert(strings.Contains(err.Error(), "also-broken"), qt.IsFalse)
+	c.Assert(err.Error(), qt.Not(qt.Contains), "also-broken")
 }
