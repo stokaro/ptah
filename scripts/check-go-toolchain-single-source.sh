@@ -198,9 +198,9 @@ input_default() {
 # detector independent of which key setup-go prefers: the step passes only when
 # NEITHER key can select a module other than the root go.mod.
 #
-# Naming a file is not enough on its own: `go-version-file: testkit/go.mod`
-# derives honestly and still selects the wrong toolchain, because testkit is a
-# separately released module that carries a compatibility floor and no
+# Naming a file is not enough on its own: `go-version-file:` pointed at a
+# nested module's go.mod derives honestly and still selects the wrong
+# toolchain, because such a module carries a compatibility floor and no
 # `toolchain` directive, so setup-go would fall back to its `go` line. The job
 # would quietly build a patch release behind, which is the exact drift this gate
 # exists to stop. Only the root go.mod carries the toolchain, so only the root

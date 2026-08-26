@@ -319,7 +319,7 @@ func validateRepositoryIntegrationLayout(ctx context.Context, config Config) err
 			return fmt.Errorf("integration test file %s has a build constraint that can select it without integration", relativePath)
 		}
 		if policy.required && !allowedPath {
-			return fmt.Errorf("integration test file %s must live under integration/ or testkit/integration/", relativePath)
+			return fmt.Errorf("integration test file %s must live under integration/", relativePath)
 		}
 		if allowedPath && !policy.required {
 			return fmt.Errorf(
@@ -340,7 +340,7 @@ func validateRepositoryIntegrationLayout(ctx context.Context, config Config) err
 }
 
 func integrationTestPathAllowed(path string) bool {
-	return strings.HasPrefix(path, "integration/") || strings.HasPrefix(path, "testkit/integration/")
+	return strings.HasPrefix(path, "integration/")
 }
 
 func validateIntegrationFilePackage(path, relativePath string) error {
