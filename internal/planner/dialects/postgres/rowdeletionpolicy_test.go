@@ -147,7 +147,7 @@ func TestPlanner_RowDeletionPolicyIsNotPlannedWithoutTheCapability(t *testing.T)
 			c := qt.New(t)
 			planner := postgres.NewForDialect(test.dialect, test.caps)
 
-			nodes, err := planner.GenerateMigrationASTChecked(policyDiff(
+			nodes, err := planner.GenerateMigrationAST(policyDiff(
 				&ast.RowDeletionPolicySpec{Column: "created_at", Interval: "30 days"}, nil), nil)
 
 			c.Assert(err, qt.IsNil)
@@ -161,7 +161,7 @@ func planRowDeletionPolicy(c *qt.C, diff *difftypes.SchemaDiff) []string {
 	c.Helper()
 
 	planner := postgres.NewForDialect(platform.Spanner, capability.SpannerPostgres())
-	nodes, err := planner.GenerateMigrationASTChecked(diff, nil)
+	nodes, err := planner.GenerateMigrationAST(diff, nil)
 	c.Assert(err, qt.IsNil)
 
 	return renderedStatements(c, nodes, capability.SpannerPostgres(), platform.Spanner)

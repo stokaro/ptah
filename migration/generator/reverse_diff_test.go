@@ -496,7 +496,7 @@ func TestReverseSchemaDiff_GrantOptionUpgradeDownRevokesOnlyOption(t *testing.T)
 	}
 
 	downDiff := reverseSchemaDiff(upDiff)
-	nodes, err := postgres.New().GenerateMigrationASTChecked(downDiff, &goschema.Database{})
+	nodes, err := postgres.New().GenerateMigrationAST(downDiff, &goschema.Database{})
 	c.Assert(err, qt.IsNil)
 	downSQL, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)

@@ -62,7 +62,7 @@ func (p *Planner) capabilities() capability.Capabilities {
 	return p.caps
 }
 
-// GenerateMigrationASTChecked produces the AST node sequence that, when rendered
+// GenerateMigrationAST produces the AST node sequence that, when rendered
 // against the ClickHouse renderer, brings the database from its current
 // state (described by diff) to the target schema (described by generated).
 //
@@ -88,7 +88,7 @@ func (p *Planner) capabilities() capability.Capabilities {
 // each to a named `-- CLICKHOUSE: ... is not supported` comment, in the order
 // `schema render` produces for the same model. Plain-view, role and grant nodes
 // are executable and retain what they declare.
-func (p *Planner) GenerateMigrationASTChecked(diff *difftypes.SchemaDiff, generated *goschema.Database) ([]ast.Node, error) {
+func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, generated *goschema.Database) ([]ast.Node, error) {
 	var result []ast.Node
 
 	if generated == nil {

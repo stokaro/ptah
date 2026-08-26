@@ -51,7 +51,7 @@ func TestPlanner_GenerateMigrationAST_SchemaObjectsModified(t *testing.T) {
 		TriggersModified:          []difftypes.TriggerDiff{{TriggerName: "set_updated_at", TableName: "users", Changes: map[string]string{"body": "old -> new"}}},
 	}
 
-	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	nodes, err := planner.GenerateMigrationAST(diff, generated)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -160,7 +160,7 @@ func TestPlanner_GenerateMigrationAST_ModifiedViewDropsWhenReplaceWouldBeRefused
 				}},
 			}
 
-			nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+			nodes, err := planner.GenerateMigrationAST(diff, generated)
 			c.Assert(err, qt.IsNil)
 			sql, err := renderer.RenderSQL("postgres", nodes...)
 			c.Assert(err, qt.IsNil)
@@ -309,7 +309,7 @@ func TestPlanner_GenerateMigrationAST_UndecidableViewBodyFollowsTheDirection(t *
 				}},
 			}
 
-			nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+			nodes, err := planner.GenerateMigrationAST(diff, generated)
 			c.Assert(err, qt.IsNil)
 			sql, err := renderer.RenderSQL("postgres", nodes...)
 			c.Assert(err, qt.IsNil)
@@ -401,7 +401,7 @@ func TestPlanner_GenerateMigrationAST_SameStarOverSameRelationsKeepsTheReplace(t
 				}},
 			}
 
-			nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+			nodes, err := planner.GenerateMigrationAST(diff, generated)
 			c.Assert(err, qt.IsNil)
 			sql, err := renderer.RenderSQL("postgres", nodes...)
 			c.Assert(err, qt.IsNil)
@@ -436,7 +436,7 @@ func TestPlanner_GenerateMigrationAST_ModifiedViewsDropInDependencyOrder(t *test
 		},
 	}
 
-	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	nodes, err := planner.GenerateMigrationAST(diff, generated)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -481,7 +481,7 @@ func TestPlanner_GenerateMigrationAST_DroppedViewRebuildsDeclaredDependents(t *t
 		}},
 	}
 
-	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	nodes, err := planner.GenerateMigrationAST(diff, generated)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -540,7 +540,7 @@ func TestPlanner_GenerateMigrationAST_CascadeRebuildReadsCodeNotText(t *testing.
 		}},
 	}
 
-	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	nodes, err := planner.GenerateMigrationAST(diff, generated)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -629,7 +629,7 @@ func TestPlanner_GenerateMigrationAST_QuotedRelationCaseIsNotFolded(t *testing.T
 				}},
 			}
 
-			nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+			nodes, err := planner.GenerateMigrationAST(diff, generated)
 			c.Assert(err, qt.IsNil)
 			sql, err := renderer.RenderSQL("postgres", nodes...)
 			c.Assert(err, qt.IsNil)
@@ -672,7 +672,7 @@ func TestPlanner_GenerateMigrationAST_DuplicateTriggerNamesUseDistinctFunctions(
 		},
 	}
 
-	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	nodes, err := planner.GenerateMigrationAST(diff, generated)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -704,7 +704,7 @@ func TestPlanner_GenerateMigrationAST_MaterializedViewPlansNoRefresh(t *testing.
 		MaterializedViewsAdded: []string{"user_stats"},
 	}
 
-	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	nodes, err := planner.GenerateMigrationAST(diff, generated)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -741,7 +741,7 @@ func TestPlanner_GenerateMigrationAST_OrdersFunctionsByDependencies(t *testing.T
 		FunctionsAdded: []string{"a_child", "z_parent"},
 	}
 
-	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	nodes, err := planner.GenerateMigrationAST(diff, generated)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -769,7 +769,7 @@ func TestPlanner_GenerateMigrationAST_OrdersViewLikeObjectsByDependencies(t *tes
 		MaterializedViewsAdded: []string{"z_base"},
 	}
 
-	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	nodes, err := planner.GenerateMigrationAST(diff, generated)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -799,7 +799,7 @@ func TestPlanner_GenerateMigrationAST_ModifiesRLSPolicies(t *testing.T) {
 		}},
 	}
 
-	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	nodes, err := planner.GenerateMigrationAST(diff, generated)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)

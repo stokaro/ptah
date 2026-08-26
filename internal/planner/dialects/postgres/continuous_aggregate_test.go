@@ -26,7 +26,7 @@ func TestPlanner_ReplacesAContinuousAggregateInThatOrder(t *testing.T) {
 		{Name: "hourly", Schema: "public", Body: "SELECT 2"},
 	}}
 
-	nodes, err := postgres.New().GenerateMigrationASTChecked(&difftypes.SchemaDiff{
+	nodes, err := postgres.New().GenerateMigrationAST(&difftypes.SchemaDiff{
 		ContinuousAggregatesModified: []difftypes.ContinuousAggregateDiff{{
 			Name: "public.hourly", OldBody: "SELECT 1", NewBody: "SELECT 2",
 		}},
@@ -41,7 +41,7 @@ func TestPlanner_ReplacesAContinuousAggregateInThatOrder(t *testing.T) {
 func TestPlanner_DropsAnUndeclaredContinuousAggregate(t *testing.T) {
 	c := qt.New(t)
 
-	nodes, err := postgres.New().GenerateMigrationASTChecked(
+	nodes, err := postgres.New().GenerateMigrationAST(
 		&difftypes.SchemaDiff{ContinuousAggregatesRemoved: []string{"public.hourly"}},
 		&goschema.Database{})
 
@@ -65,7 +65,7 @@ func TestPlanner_CreatesAnAggregateAfterTheHypertableItReads(t *testing.T) {
 		},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationASTChecked(&difftypes.SchemaDiff{
+	nodes, err := postgres.New().GenerateMigrationAST(&difftypes.SchemaDiff{
 		HypertablesAdded:          []string{"readings"},
 		ContinuousAggregatesAdded: []string{"hourly"},
 	}, declared)

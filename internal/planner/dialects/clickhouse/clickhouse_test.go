@@ -61,7 +61,7 @@ func TestGenerateMigrationAST_AddTableDropTableAndAlter(t *testing.T) {
 	)
 
 	p := clickhouse.New()
-	nodes, err := p.GenerateMigrationASTChecked(diff, gen)
+	nodes, err := p.GenerateMigrationAST(diff, gen)
 	c.Assert(err, qt.IsNil)
 
 	// Expected order: CREATE events, ALTER existing (add), ALTER existing (modify),
@@ -110,7 +110,7 @@ func TestGenerateMigrationAST_IndexAddRemove(t *testing.T) {
 	}
 
 	p := clickhouse.New()
-	nodes, err := p.GenerateMigrationASTChecked(diff, gen)
+	nodes, err := p.GenerateMigrationAST(diff, gen)
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 2)
 	idx, ok := nodes[0].(*ast.IndexNode)
@@ -129,7 +129,7 @@ func TestGenerateMigrationAST_EnumChangesAreSurfacedAsComment(t *testing.T) {
 		EnumsAdded: []string{"status"},
 	}
 	p := clickhouse.New()
-	nodes, err := p.GenerateMigrationASTChecked(diff, mkDB())
+	nodes, err := p.GenerateMigrationAST(diff, mkDB())
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 1)
 	comment, ok := nodes[0].(*ast.CommentNode)
@@ -137,7 +137,7 @@ func TestGenerateMigrationAST_EnumChangesAreSurfacedAsComment(t *testing.T) {
 	c.Assert(comment.Text, qt.Contains, "enum changes")
 }
 
-func TestGenerateMigrationASTChecked_IndexUnresolvedStructRejected(t *testing.T) {
+func TestGenerateMigrationAST_IndexUnresolvedStructRejected(t *testing.T) {
 	c := qt.New(t)
 	gen := mkDB()
 	gen.Indexes = []goschema.Index{
@@ -148,7 +148,7 @@ func TestGenerateMigrationASTChecked_IndexUnresolvedStructRejected(t *testing.T)
 	}}
 
 	p := clickhouse.New()
-	nodes, err := p.GenerateMigrationASTChecked(diff, gen)
+	nodes, err := p.GenerateMigrationAST(diff, gen)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 	c.Assert(nodes, qt.IsNil)
@@ -169,7 +169,7 @@ func TestGenerateMigrationAST_IndexExplicitTableNameWins(t *testing.T) {
 	}}
 
 	p := clickhouse.New()
-	nodes, err := p.GenerateMigrationASTChecked(diff, gen)
+	nodes, err := p.GenerateMigrationAST(diff, gen)
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 1)
 	idx, ok := nodes[0].(*ast.IndexNode)
@@ -197,7 +197,7 @@ func TestGenerateMigrationAST_IndexTypeAndGranularityPropagate(t *testing.T) {
 	}}
 
 	p := clickhouse.New()
-	nodes, err := p.GenerateMigrationASTChecked(diff, gen)
+	nodes, err := p.GenerateMigrationAST(diff, gen)
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 1)
 	idx, ok := nodes[0].(*ast.IndexNode)
@@ -206,16 +206,16 @@ func TestGenerateMigrationAST_IndexTypeAndGranularityPropagate(t *testing.T) {
 	c.Assert(idx.Granularity, qt.Equals, 64)
 }
 
-func TestGenerateMigrationASTChecked_NilSchemaHappyPath(t *testing.T) {
+func TestGenerateMigrationAST_NilSchemaHappyPath(t *testing.T) {
 	c := qt.New(t)
 	p := clickhouse.New()
 
-	nodes, err := p.GenerateMigrationASTChecked(&difftypes.SchemaDiff{}, nil)
+	nodes, err := p.GenerateMigrationAST(&difftypes.SchemaDiff{}, nil)
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 0)
 }
 
-func TestGenerateMigrationASTChecked_MissingDesiredViewRejected(t *testing.T) {
+func TestGenerateMigrationAST_MissingDesiredViewRejected(t *testing.T) {
 	tests := []struct {
 		name string
 		diff *difftypes.SchemaDiff
@@ -233,7 +233,7 @@ func TestGenerateMigrationASTChecked_MissingDesiredViewRejected(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := clickhouse.New().GenerateMigrationASTChecked(test.diff, &goschema.Database{})
+			nodes, err := clickhouse.New().GenerateMigrationAST(test.diff, &goschema.Database{})
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 			c.Assert(nodes, qt.IsNil)
@@ -241,7 +241,7 @@ func TestGenerateMigrationASTChecked_MissingDesiredViewRejected(t *testing.T) {
 	}
 }
 
-func TestGenerateMigrationASTChecked_DisabledViewsNeedNoDesiredDeclaration(t *testing.T) {
+func TestGenerateMigrationAST_DisabledViewsNeedNoDesiredDeclaration(t *testing.T) {
 	planner := clickhouse.NewWithCapabilities(capability.Capabilities{})
 	tests := []struct {
 		name        string
@@ -262,7 +262,7 @@ func TestGenerateMigrationASTChecked_DisabledViewsNeedNoDesiredDeclaration(t *te
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := planner.GenerateMigrationASTChecked(test.diff, &goschema.Database{})
+			nodes, err := planner.GenerateMigrationAST(test.diff, &goschema.Database{})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.HasLen, 1)
@@ -279,7 +279,7 @@ func TestNewWithCapabilities_NilIsConservative(t *testing.T) {
 	c := qt.New(t)
 	planner := clickhouse.NewWithCapabilities(nil)
 
-	nodes, err := planner.GenerateMigrationASTChecked(
+	nodes, err := planner.GenerateMigrationAST(
 		&difftypes.SchemaDiff{ViewsAdded: []string{"analytics.report"}},
 		&goschema.Database{Views: []goschema.View{{
 			Name: "analytics.report",
@@ -307,7 +307,7 @@ func TestGenerateMigrationAST_TableAdditionPreservesStructuralIdentity(t *testin
 		},
 	}
 
-	nodes, err := clickhouse.New().GenerateMigrationASTChecked(
+	nodes, err := clickhouse.New().GenerateMigrationAST(
 		&difftypes.SchemaDiff{TablesAdded: []string{"tenant.data"}},
 		generated,
 	)
@@ -319,12 +319,12 @@ func TestGenerateMigrationAST_TableAdditionPreservesStructuralIdentity(t *testin
 	c.Assert(table.Name, qt.Equals, "tenant.data")
 }
 
-// TestGenerateMigrationASTChecked_MaterializedViewCreateCarriesItsBody pins the
+// TestGenerateMigrationAST_MaterializedViewCreateCarriesItsBody pins the
 // planner arm rather than the renderer: on master the diff produced a
 // CreateMaterializedViewNode carrying identity only, which rendered as a
 // diagnostic no matter what the renderer could emit. The body assertion is what
 // separates a planned object from a named one.
-func TestGenerateMigrationASTChecked_MaterializedViewCreateCarriesItsBody(t *testing.T) {
+func TestGenerateMigrationAST_MaterializedViewCreateCarriesItsBody(t *testing.T) {
 	c := qt.New(t)
 	generated := &goschema.Database{MaterializedViews: []goschema.MaterializedView{{
 		StructName: "UserCounts",
@@ -332,7 +332,7 @@ func TestGenerateMigrationASTChecked_MaterializedViewCreateCarriesItsBody(t *tes
 		Body:       "SELECT count() AS c FROM analytics.users",
 	}}}
 
-	nodes, err := clickhouse.New().GenerateMigrationASTChecked(
+	nodes, err := clickhouse.New().GenerateMigrationAST(
 		&difftypes.SchemaDiff{MaterializedViewsAdded: []string{"analytics.user_counts"}},
 		generated,
 	)
@@ -345,7 +345,7 @@ func TestGenerateMigrationASTChecked_MaterializedViewCreateCarriesItsBody(t *tes
 	c.Assert(view.Body, qt.Equals, "SELECT count() AS c FROM analytics.users")
 }
 
-// TestGenerateMigrationASTChecked_MaterializedViewChangeDropsBeforeCreating
+// TestGenerateMigrationAST_MaterializedViewChangeDropsBeforeCreating
 // pins the order and the count. A plan that emitted the create alone would be
 // refused by the server, which answers "Table ... already exists" while the old
 // object still owns the name, so the old query would stay in place.
@@ -355,7 +355,7 @@ func TestGenerateMigrationASTChecked_MaterializedViewCreateCarriesItsBody(t *tes
 // rows but refuses any select whose output columns differ, and a
 // goschema.MaterializedView carries no column list for the planner to compare.
 // See the comment on reportViewLikes.
-func TestGenerateMigrationASTChecked_MaterializedViewChangeDropsBeforeCreating(t *testing.T) {
+func TestGenerateMigrationAST_MaterializedViewChangeDropsBeforeCreating(t *testing.T) {
 	c := qt.New(t)
 	generated := &goschema.Database{MaterializedViews: []goschema.MaterializedView{{
 		StructName: "UserCounts",
@@ -363,7 +363,7 @@ func TestGenerateMigrationASTChecked_MaterializedViewChangeDropsBeforeCreating(t
 		Body:       "SELECT count() AS c FROM analytics.users WHERE active",
 	}}}
 
-	nodes, err := clickhouse.New().GenerateMigrationASTChecked(
+	nodes, err := clickhouse.New().GenerateMigrationAST(
 		&difftypes.SchemaDiff{MaterializedViewsModified: []difftypes.MaterializedViewDiff{{
 			ViewName: "analytics.user_counts",
 			Changes:  map[string]string{"body": "old -> new"},
@@ -382,7 +382,7 @@ func TestGenerateMigrationASTChecked_MaterializedViewChangeDropsBeforeCreating(t
 	c.Assert(create.Body, qt.Equals, "SELECT count() AS c FROM analytics.users WHERE active")
 }
 
-// TestGenerateMigrationASTChecked_ViewReadingAMaterializedViewIsOrderedAfterIt
+// TestGenerateMigrationAST_ViewReadingAMaterializedViewIsOrderedAfterIt
 // pins that the two kinds share one dependency order rather than being planned
 // one kind at a time.
 //
@@ -390,7 +390,7 @@ func TestGenerateMigrationASTChecked_MaterializedViewChangeDropsBeforeCreating(t
 // materialized views would emit the reader before the object it reads, and
 // ClickHouse refuses that: it resolves the query at CREATE time with
 // "Unknown table expression identifier ... (UNKNOWN_TABLE)".
-func TestGenerateMigrationASTChecked_ViewReadingAMaterializedViewIsOrderedAfterIt(t *testing.T) {
+func TestGenerateMigrationAST_ViewReadingAMaterializedViewIsOrderedAfterIt(t *testing.T) {
 	c := qt.New(t)
 	generated := &goschema.Database{
 		Views: []goschema.View{{
@@ -405,7 +405,7 @@ func TestGenerateMigrationASTChecked_ViewReadingAMaterializedViewIsOrderedAfterI
 		}},
 	}
 
-	nodes, err := clickhouse.New().GenerateMigrationASTChecked(
+	nodes, err := clickhouse.New().GenerateMigrationAST(
 		&difftypes.SchemaDiff{
 			ViewsAdded:             []string{"analytics.reader"},
 			MaterializedViewsAdded: []string{"analytics.user_counts"},
@@ -423,10 +423,10 @@ func TestGenerateMigrationASTChecked_ViewReadingAMaterializedViewIsOrderedAfterI
 	c.Assert(reader.Name, qt.Equals, "analytics.reader")
 }
 
-func TestGenerateMigrationASTChecked_MaterializedViewRemovalIsGuarded(t *testing.T) {
+func TestGenerateMigrationAST_MaterializedViewRemovalIsGuarded(t *testing.T) {
 	c := qt.New(t)
 
-	nodes, err := clickhouse.New().GenerateMigrationASTChecked(
+	nodes, err := clickhouse.New().GenerateMigrationAST(
 		&difftypes.SchemaDiff{MaterializedViewsRemoved: []string{"analytics.user_counts"}},
 		&goschema.Database{},
 	)
@@ -439,7 +439,7 @@ func TestGenerateMigrationASTChecked_MaterializedViewRemovalIsGuarded(t *testing
 	c.Assert(drop.IfExists, qt.IsTrue)
 }
 
-func TestGenerateMigrationASTChecked_MissingDesiredMaterializedViewRejected(t *testing.T) {
+func TestGenerateMigrationAST_MissingDesiredMaterializedViewRejected(t *testing.T) {
 	tests := []struct {
 		name string
 		diff *difftypes.SchemaDiff
@@ -459,7 +459,7 @@ func TestGenerateMigrationASTChecked_MissingDesiredMaterializedViewRejected(t *t
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := clickhouse.New().GenerateMigrationASTChecked(test.diff, &goschema.Database{})
+			nodes, err := clickhouse.New().GenerateMigrationAST(test.diff, &goschema.Database{})
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 			c.Assert(nodes, qt.IsNil)
@@ -467,11 +467,11 @@ func TestGenerateMigrationASTChecked_MissingDesiredMaterializedViewRejected(t *t
 	}
 }
 
-// TestGenerateMigrationASTChecked_DisabledMaterializedViewsNeedNoDeclaration
+// TestGenerateMigrationAST_DisabledMaterializedViewsNeedNoDeclaration
 // keeps the diagnostic branch reachable: a capability set without
 // materialized_views still names the object instead of failing on a desired
 // declaration it was never going to read.
-func TestGenerateMigrationASTChecked_DisabledMaterializedViewsNeedNoDeclaration(t *testing.T) {
+func TestGenerateMigrationAST_DisabledMaterializedViewsNeedNoDeclaration(t *testing.T) {
 	planner := clickhouse.NewWithCapabilities(
 		capability.ClickHouse24().With(capability.MaterializedViews, false),
 	)
@@ -494,7 +494,7 @@ func TestGenerateMigrationASTChecked_DisabledMaterializedViewsNeedNoDeclaration(
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := planner.GenerateMigrationASTChecked(test.diff, &goschema.Database{})
+			nodes, err := planner.GenerateMigrationAST(test.diff, &goschema.Database{})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.HasLen, 1)
@@ -506,7 +506,7 @@ func TestGenerateMigrationASTChecked_DisabledMaterializedViewsNeedNoDeclaration(
 	}
 }
 
-// TestGenerateMigrationASTChecked_KindChangeDropsTheLiveObjectFirst pins the
+// TestGenerateMigrationAST_KindChangeDropsTheLiveObjectFirst pins the
 // order for a name that changes kind without changing its name.
 //
 // The plain-view and materialized-view comparators are independent, so the same
@@ -521,7 +521,7 @@ func TestGenerateMigrationASTChecked_DisabledMaterializedViewsNeedNoDeclaration(
 // the catalog's qualified spelling while the addition carries the declaration's
 // bare one. That pairing is what migration/schemadiff really produces here, so
 // exact string matching would find no replacement at all.
-func TestGenerateMigrationASTChecked_KindChangeDropsTheLiveObjectFirst(t *testing.T) {
+func TestGenerateMigrationAST_KindChangeDropsTheLiveObjectFirst(t *testing.T) {
 	viewDesired := &goschema.Database{Views: []goschema.View{{
 		StructName: "UserCounts",
 		Name:       "user_counts",
@@ -574,7 +574,7 @@ func TestGenerateMigrationASTChecked_KindChangeDropsTheLiveObjectFirst(t *testin
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := clickhouse.New().GenerateMigrationASTChecked(test.diff, test.generated)
+			nodes, err := clickhouse.New().GenerateMigrationAST(test.diff, test.generated)
 
 			c.Assert(err, qt.IsNil)
 			// The whole plan, in order and exactly two statements: the
@@ -585,12 +585,12 @@ func TestGenerateMigrationASTChecked_KindChangeDropsTheLiveObjectFirst(t *testin
 	}
 }
 
-// TestGenerateMigrationASTChecked_UnrelatedRemovalStaysAfterTheCreates is the
+// TestGenerateMigrationAST_UnrelatedRemovalStaysAfterTheCreates is the
 // non-interference control for the kind-change reordering above.
 //
 // A removal whose name no addition claims keeps its place after the create
 // pass, so the reordering cannot be satisfied by hoisting every drop.
-func TestGenerateMigrationASTChecked_UnrelatedRemovalStaysAfterTheCreates(t *testing.T) {
+func TestGenerateMigrationAST_UnrelatedRemovalStaysAfterTheCreates(t *testing.T) {
 	c := qt.New(t)
 	generated := &goschema.Database{Views: []goschema.View{{
 		StructName: "Reader",
@@ -598,7 +598,7 @@ func TestGenerateMigrationASTChecked_UnrelatedRemovalStaysAfterTheCreates(t *tes
 		Body:       "SELECT id FROM analytics.users",
 	}}}
 
-	nodes, err := clickhouse.New().GenerateMigrationASTChecked(
+	nodes, err := clickhouse.New().GenerateMigrationAST(
 		&difftypes.SchemaDiff{
 			ViewsAdded:               []string{"analytics.reader"},
 			MaterializedViewsRemoved: []string{"analytics.user_counts"},
@@ -616,7 +616,7 @@ func TestGenerateMigrationASTChecked_UnrelatedRemovalStaysAfterTheCreates(t *tes
 	c.Assert(drop.Name, qt.Equals, "analytics.user_counts")
 }
 
-func TestGenerateMigrationASTChecked_NilDiffFailurePath(t *testing.T) {
+func TestGenerateMigrationAST_NilDiffFailurePath(t *testing.T) {
 	p := clickhouse.New()
 	tests := []struct {
 		name      string
@@ -629,7 +629,7 @@ func TestGenerateMigrationASTChecked_NilDiffFailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := p.GenerateMigrationASTChecked(nil, test.generated)
+			nodes, err := p.GenerateMigrationAST(nil, test.generated)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 			c.Assert(nodes, qt.IsNil)
@@ -674,7 +674,7 @@ func TestGenerateMigrationAST_RefreshOnlyChangeAltersInPlace(t *testing.T) {
 		&ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "1 HOUR"},
 	)
 
-	nodes, err := clickhouse.New().GenerateMigrationASTChecked(diff, matViewRefreshSchema())
+	nodes, err := clickhouse.New().GenerateMigrationAST(diff, matViewRefreshSchema())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 1)
@@ -736,7 +736,7 @@ func TestGenerateMigrationAST_RefreshTransitionsThatCannotBeAltered(t *testing.T
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			nodes, err := clickhouse.New().GenerateMigrationASTChecked(test.diff, matViewRefreshSchema())
+			nodes, err := clickhouse.New().GenerateMigrationAST(test.diff, matViewRefreshSchema())
 
 			c.Assert(err, qt.IsNil)
 			kinds := nodeKinds(nodes)

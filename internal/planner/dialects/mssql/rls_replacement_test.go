@@ -30,7 +30,7 @@ func planModifiedPolicy(c *qt.C, policyFor, withCheck string) string {
 		}},
 	}
 
-	nodes, err := mssql.New().GenerateMigrationASTChecked(diff, generated)
+	nodes, err := mssql.New().GenerateMigrationAST(diff, generated)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("sqlserver", nodes...)
 	c.Assert(err, qt.IsNil)

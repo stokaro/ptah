@@ -75,7 +75,7 @@ func widgetDeclaringScopeConstraint() *goschema.Database {
 
 func renderedPlan(c *qt.C, diff *difftypes.SchemaDiff, generated *goschema.Database) string {
 	c.Helper()
-	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
+	nodes, err := postgres.New().GenerateMigrationAST(diff, generated)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)

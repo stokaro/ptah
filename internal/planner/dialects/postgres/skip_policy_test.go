@@ -30,7 +30,7 @@ func skipPolicyFixture() (*difftypes.SchemaDiff, *goschema.Database) {
 }
 
 func renderPostgresSkip(c *qt.C, planner *postgres.Planner, diff *difftypes.SchemaDiff, generated *goschema.Database) string {
-	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	nodes, err := planner.GenerateMigrationAST(diff, generated)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)

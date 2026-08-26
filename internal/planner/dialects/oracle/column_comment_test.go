@@ -23,7 +23,7 @@ import (
 func TestPlanner_OraclePlansAColumnCommentOnItsOwn(t *testing.T) {
 	c := qt.New(t)
 
-	nodes, err := oracleplanner.New().GenerateMigrationASTChecked(
+	nodes, err := oracleplanner.New().GenerateMigrationAST(
 		columnCommentDiff("primary contact"),
 		commentedColumnSchema(),
 	)
@@ -39,7 +39,7 @@ func TestPlanner_OraclePlansAColumnCommentOnItsOwn(t *testing.T) {
 func TestPlanner_OraclePlansAColumnCommentRemoval(t *testing.T) {
 	c := qt.New(t)
 
-	nodes, err := oracleplanner.New().GenerateMigrationASTChecked(
+	nodes, err := oracleplanner.New().GenerateMigrationAST(
 		columnCommentDiff(""),
 		commentedColumnSchema(),
 	)
@@ -58,7 +58,7 @@ func TestPlanner_OracleStillModifiesAColumnThatChanged(t *testing.T) {
 		"nullable": "true -> false",
 	}
 
-	nodes, err := oracleplanner.New().GenerateMigrationASTChecked(diff, commentedColumnSchema())
+	nodes, err := oracleplanner.New().GenerateMigrationAST(diff, commentedColumnSchema())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(setCommentOperations(nodes), qt.HasLen, 1)

@@ -93,7 +93,7 @@ func TestPlanner_AltersDomainsInPlaceRatherThanRebuildingThem(t *testing.T) {
 			planner := postgres.New()
 
 			diff := &difftypes.SchemaDiff{DomainsModified: []difftypes.DomainDiff{test.modified}}
-			nodes, err := planner.GenerateMigrationASTChecked(diff, alterDomainSchema())
+			nodes, err := planner.GenerateMigrationAST(diff, alterDomainSchema())
 			c.Assert(err, qt.IsNil)
 			sql, err := renderer.RenderSQL("postgres", nodes...)
 			c.Assert(err, qt.IsNil)
@@ -121,7 +121,7 @@ func TestPlanner_RebuildsADomainWhoseBaseTypeChanged(t *testing.T) {
 		CurrentCheckConstraints: []string{"positive_check"},
 	}}}
 
-	nodes, err := planner.GenerateMigrationASTChecked(diff, alterDomainSchema())
+	nodes, err := planner.GenerateMigrationAST(diff, alterDomainSchema())
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -152,7 +152,7 @@ func TestPlanner_RebuildsADomainThatMixesAnAlterableChangeWithARebuild(t *testin
 		CurrentCheckConstraints: []string{"positive_check"},
 	}}}
 
-	nodes, err := planner.GenerateMigrationASTChecked(diff, alterDomainSchema())
+	nodes, err := planner.GenerateMigrationAST(diff, alterDomainSchema())
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)

@@ -60,7 +60,7 @@ const (
 //	}
 //
 //	// Generate migration AST nodes
-//	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+//	nodes, err := planner.GenerateMigrationAST(diff, generated)
 //	if err != nil {
 //		return err
 //	}
@@ -1515,7 +1515,7 @@ func findRange(ranges []goschema.Range, name string, semantics identifier.Semant
 	return objectlookup.Qualified(ranges, name, semantics)
 }
 
-// GenerateMigrationASTChecked generates PostgreSQL-specific migration AST statements from schema differences.
+// GenerateMigrationAST generates PostgreSQL-specific migration AST statements from schema differences.
 //
 // This method transforms the schema differences captured in the SchemaDiff into executable
 // PostgreSQL AST statements that can be applied to bring the database schema in line with the target
@@ -1567,7 +1567,7 @@ func findRange(ranges []goschema.Range, name string, semantics identifier.Semant
 //		},
 //	}
 //
-//	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+//	nodes, err := planner.GenerateMigrationAST(diff, generated)
 //	if err != nil {
 //		return err
 //	}
@@ -1604,7 +1604,7 @@ func findRange(ranges []goschema.Range, name string, semantics identifier.Semant
 // through. Keeping that answer in one place prevents the plan path from
 // silently dropping an unsupported object while `schema render` reports it
 // differently (stokaro/ptah#929).
-func (p *Planner) GenerateMigrationASTChecked(diff *difftypes.SchemaDiff, generated *goschema.Database) ([]ast.Node, error) {
+func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, generated *goschema.Database) ([]ast.Node, error) {
 	var result []ast.Node
 	if generated == nil {
 		generated = &goschema.Database{}

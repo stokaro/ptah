@@ -50,7 +50,7 @@ func (p *Planner) capabilities() capability.Capabilities {
 	return p.caps
 }
 
-func (p *Planner) GenerateMigrationASTChecked(diff *difftypes.SchemaDiff, generated *goschema.Database) ([]ast.Node, error) {
+func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, generated *goschema.Database) ([]ast.Node, error) {
 	if generated == nil {
 		generated = &goschema.Database{}
 	}

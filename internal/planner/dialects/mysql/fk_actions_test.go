@@ -161,7 +161,7 @@ func TestPlanner_FieldLevelForeignKeyActions(t *testing.T) {
 				diff = &difftypes.SchemaDiff{TablesAdded: tablesAdded}
 			}
 
-			nodes, err := mysql.New().GenerateMigrationASTChecked(diff, tt.generated)
+			nodes, err := mysql.New().GenerateMigrationAST(diff, tt.generated)
 			c.Assert(err, qt.IsNil)
 			sql, err := renderer.RenderSQL("mysql", nodes...)
 			c.Assert(err, qt.IsNil)

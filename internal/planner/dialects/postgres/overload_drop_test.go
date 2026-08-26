@@ -16,7 +16,7 @@ import (
 func droppedRoutineSQL(c *qt.C, diff *difftypes.SchemaDiff) string {
 	c.Helper()
 
-	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, &goschema.Database{})
+	nodes, err := postgres.New().GenerateMigrationAST(diff, &goschema.Database{})
 	c.Assert(err, qt.IsNil)
 
 	var statements []string

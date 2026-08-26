@@ -38,7 +38,7 @@ func TestPlanner_GenerateMigrationAST_ViewsAndTriggersModified(t *testing.T) {
 		TriggersModified: []difftypes.TriggerDiff{{TriggerName: "set_updated_at", TableName: "users", Changes: map[string]string{"body": "old -> new"}}},
 	}
 
-	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	nodes, err := planner.GenerateMigrationAST(diff, generated)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("mysql", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -48,7 +48,7 @@ func TestPlanner_GenerateMigrationAST_ViewsAndTriggersModified(t *testing.T) {
 	c.Assert(sql, qt.Contains, "CREATE TRIGGER set_updated_at BEFORE UPDATE ON users FOR EACH ROW SET NEW.updated_at = NOW();")
 }
 
-func TestPlanner_GenerateMigrationASTChecked_RejectsUniqueIncludeColumns(t *testing.T) {
+func TestPlanner_GenerateMigrationAST_RejectsUniqueIncludeColumns(t *testing.T) {
 	c := qt.New(t)
 	planner := mysql.New()
 
@@ -73,7 +73,7 @@ func TestPlanner_GenerateMigrationASTChecked_RejectsUniqueIncludeColumns(t *test
 		}},
 	}
 
-	_, err := planner.GenerateMigrationASTChecked(diff, generated)
+	_, err := planner.GenerateMigrationAST(diff, generated)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(err, qt.ErrorMatches, "MySQL-family does not support PostgreSQL INCLUDE columns on UNIQUE constraints.*")
@@ -127,7 +127,7 @@ func TestPlanner_GenerateMigrationAST_RejectsMaterializedViews(t *testing.T) {
 		}},
 	}
 
-	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	nodes, err := planner.GenerateMigrationAST(diff, generated)
 	c.Assert(nodes, qt.IsNil)
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(err, qt.ErrorMatches, "materialized views are not supported by MySQL or MariaDB.*")
@@ -180,7 +180,7 @@ func TestPlanner_GenerateMigrationAST_RoutesEveryRoleChangeToItsStatement(t *tes
 			// The addition is planned from the declaration, so the desired
 			// schema has to hold what the diff names or the phase contributes
 			// nothing (stokaro/ptah#1762).
-			nodes, err := planner.GenerateMigrationASTChecked(test.diff,
+			nodes, err := planner.GenerateMigrationAST(test.diff,
 				&goschema.Database{Roles: []goschema.Role{{Name: "app_role"}}})
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.HasLen, 1)

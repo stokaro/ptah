@@ -22,7 +22,7 @@ func TestPlanner_MySQLFamilyPlansATableCommentChange(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			nodes, err := test.planner.GenerateMigrationASTChecked(
+			nodes, err := test.planner.GenerateMigrationAST(
 				tableCommentDiff("customers of record"),
 				commentedTableSchema(),
 			)
@@ -42,7 +42,7 @@ func TestPlanner_MySQLFamilyPlansATableCommentRemoval(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			nodes, err := test.planner.GenerateMigrationASTChecked(
+			nodes, err := test.planner.GenerateMigrationAST(
 				tableCommentDiff(""),
 				commentedTableSchema(),
 			)
@@ -61,7 +61,7 @@ func TestPlanner_MySQLFamilyPlansNoCommentWithoutAChange(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			nodes, err := test.planner.GenerateMigrationASTChecked(
+			nodes, err := test.planner.GenerateMigrationAST(
 				&difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{TableName: "users"}}},
 				commentedTableSchema(),
 			)
@@ -122,7 +122,7 @@ func TestPlanner_MySQLFamilyCarriesAColumnCommentInTheModify(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			nodes, err := test.planner.GenerateMigrationASTChecked(
+			nodes, err := test.planner.GenerateMigrationAST(
 				columnCommentOnlyDiff(),
 				commentedTableSchema(),
 			)

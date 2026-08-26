@@ -64,7 +64,7 @@ func TestPlanner_RLSPolicyRefs_CreatesThePolicyOnTheNamedTable(t *testing.T) {
 			c := qt.New(t)
 			diff := &difftypes.SchemaDiff{RLSPoliciesAdded: test.added}
 
-			nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generatedSharedPolicyName())
+			nodes, err := postgres.New().GenerateMigrationAST(diff, generatedSharedPolicyName())
 			c.Assert(err, qt.IsNil)
 
 			var tables []string
@@ -149,7 +149,7 @@ func TestPlanner_RLSPolicyRefs_RefusesAPolicyTheDesiredSchemaDoesNotHold(t *test
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			nodes, err := postgres.New().GenerateMigrationASTChecked(test.diff, generatedSharedPolicyName())
+			nodes, err := postgres.New().GenerateMigrationAST(test.diff, generatedSharedPolicyName())
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
@@ -173,7 +173,7 @@ func TestPlanner_RLSPolicyRefs_PlansARemovalThatNeedsNoDeclaration(t *testing.T)
 		},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generatedSharedPolicyName())
+	nodes, err := postgres.New().GenerateMigrationAST(diff, generatedSharedPolicyName())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 2)
@@ -221,7 +221,7 @@ func TestPlanner_RLSPolicyRefs_ResolvesTheDefaultSchemaSpelling(t *testing.T) {
 				},
 			}
 
-			nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
+			nodes, err := postgres.New().GenerateMigrationAST(diff, generated)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.HasLen, 1)
