@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -111,13 +111,13 @@ func commentedDeclaration(table, column string) *goschema.Database {
 	}
 }
 
-func commentedDatabase(table, column string) *types.DBSchema {
-	return &types.DBSchema{
-		Tables: []types.DBTable{{
+func commentedDatabase(table, column string) *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{{
 			Name:    "users",
 			Type:    "TABLE",
 			Comment: table,
-			Columns: []types.DBColumn{
+			Columns: []catalog.Column{
 				{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
 				{Name: "email", DataType: "varchar(255)", IsNullable: "NO", Comment: column},
 			},

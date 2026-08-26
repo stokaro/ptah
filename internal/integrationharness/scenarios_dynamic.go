@@ -9,13 +9,13 @@ import (
 	"strings"
 	"time"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -2253,7 +2253,7 @@ func testDynamicEmbeddedFields(ctx context.Context, conn *dbschema.DatabaseConne
 		}
 
 		// Verify that embedded fields are present in the users table
-		var usersTable *types.DBTable
+		var usersTable *catalog.Table
 		for i, table := range schema.Tables {
 			if table.Name == "users" {
 				usersTable = &schema.Tables[i]
@@ -2294,7 +2294,7 @@ func testDynamicEmbeddedFields(ctx context.Context, conn *dbschema.DatabaseConne
 		fmt.Printf("Successfully verified embedded fields in users table\n")
 
 		// Also verify products table has embedded fields
-		var productsTable *types.DBTable
+		var productsTable *catalog.Table
 		for i, table := range schema.Tables {
 			if table.Name == "products" {
 				productsTable = &schema.Tables[i]
@@ -2324,7 +2324,7 @@ func testDynamicEmbeddedFields(ctx context.Context, conn *dbschema.DatabaseConne
 		fmt.Printf("Successfully verified embedded fields in products table\n")
 
 		// Verify comprehensive embedding modes in articles table
-		var articlesTable *types.DBTable
+		var articlesTable *catalog.Table
 		for i, table := range schema.Tables {
 			if table.Name == "articles" {
 				articlesTable = &schema.Tables[i]
@@ -2390,7 +2390,7 @@ func testDynamicEmbeddedFields(ctx context.Context, conn *dbschema.DatabaseConne
 		fmt.Printf("  ✓ Mode 5 (skip): SkippedInfo fields correctly omitted\n")
 
 		// Verify pointer embedded fields in blog_posts table
-		var blogPostsTable *types.DBTable
+		var blogPostsTable *catalog.Table
 		for i, table := range schema.Tables {
 			if table.Name == "blog_posts" {
 				blogPostsTable = &schema.Tables[i]

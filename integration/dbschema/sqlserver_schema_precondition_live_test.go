@@ -9,9 +9,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -127,7 +127,7 @@ func planSQLServerAgainstLive(
 
 // sqlServerTableNames is the read's table list, for an assertion that says
 // which table rather than how many.
-func sqlServerTableNames(tables []dbschematypes.DBTable) []string {
+func sqlServerTableNames(tables []catalog.Table) []string {
 	names := make([]string, 0, len(tables))
 	for _, table := range tables {
 		names = append(names, table.Name)

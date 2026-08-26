@@ -5,10 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/schemastate"
 )
@@ -23,10 +23,10 @@ func checkedColumnWidget(checkName string) *goschema.Database {
 }
 
 // checkedColumnCatalog is what a server reports back for it.
-func checkedColumnCatalog(constraints ...dbschematypes.DBConstraint) *dbschematypes.DBSchema {
-	return &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
-			{Name: "widget", Schema: "public", Columns: []dbschematypes.DBColumn{
+func checkedColumnCatalog(constraints ...catalog.Constraint) *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{
+			{Name: "widget", Schema: "public", Columns: []catalog.Column{
 				{Name: "id", DataType: "integer", IsNullable: "NO"},
 				{Name: "b", DataType: "integer", IsNullable: "YES"},
 			}},
@@ -42,8 +42,8 @@ func checkedColumnCatalog(constraints ...dbschematypes.DBConstraint) *dbschematy
 // columns its condition mentions, derived by the server -- `["b"]` for
 // `b int CHECK (b > 0)` and `["d","e"]` for a table-level `CHECK (d > 0 AND
 // e > 0)`. A fixture leaving them out is not the shape this has to survive.
-func catalogColumnCheck(name, clause string, columns ...string) dbschematypes.DBConstraint {
-	row := dbschematypes.DBConstraint{
+func catalogColumnCheck(name, clause string, columns ...string) catalog.Constraint {
+	row := catalog.Constraint{
 		Name: name, TableName: "widget", Schema: "public",
 		Type: "CHECK", ColumnNames: columns,
 	}

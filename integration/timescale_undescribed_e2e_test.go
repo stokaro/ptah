@@ -13,8 +13,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/timescale"
 )
@@ -189,7 +189,7 @@ func dropTimescaleFixture(ctx context.Context, conn *dbschema.DatabaseConnection
 	_ = conn.SchemaWriter().ExecuteSQL(ctx, "DROP TABLE IF EXISTS "+table)
 }
 
-func describedTableNames(schema *dbschematypes.DBSchema) []string {
+func describedTableNames(schema *catalog.Database) []string {
 	names := make([]string, 0, len(schema.Tables))
 	for _, table := range schema.Tables {
 		names = append(names, strings.ToLower(table.Name))
@@ -197,7 +197,7 @@ func describedTableNames(schema *dbschematypes.DBSchema) []string {
 	return names
 }
 
-func describedHypertableNames(schema *dbschematypes.DBSchema) []string {
+func describedHypertableNames(schema *catalog.Database) []string {
 	names := make([]string, 0, len(schema.Hypertables))
 	for _, hypertable := range schema.Hypertables {
 		names = append(names, strings.ToLower(hypertable.Name))
@@ -205,7 +205,7 @@ func describedHypertableNames(schema *dbschematypes.DBSchema) []string {
 	return names
 }
 
-func describedViewNames(schema *dbschematypes.DBSchema) []string {
+func describedViewNames(schema *catalog.Database) []string {
 	names := make([]string, 0, len(schema.Views))
 	for _, view := range schema.Views {
 		names = append(names, strings.ToLower(view.Name))
@@ -213,7 +213,7 @@ func describedViewNames(schema *dbschematypes.DBSchema) []string {
 	return names
 }
 
-func describedMatViewNames(schema *dbschematypes.DBSchema) []string {
+func describedMatViewNames(schema *catalog.Database) []string {
 	names := make([]string, 0, len(schema.MatViews))
 	for _, view := range schema.MatViews {
 		names = append(names, strings.ToLower(view.Name))
@@ -221,7 +221,7 @@ func describedMatViewNames(schema *dbschematypes.DBSchema) []string {
 	return names
 }
 
-func describedAggregateNames(schema *dbschematypes.DBSchema) []string {
+func describedAggregateNames(schema *catalog.Database) []string {
 	names := make([]string, 0, len(schema.ContinuousAggregates))
 	for _, aggregate := range schema.ContinuousAggregates {
 		names = append(names, strings.ToLower(aggregate.Name))
@@ -235,7 +235,7 @@ func describedAggregateNames(schema *dbschematypes.DBSchema) []string {
 // It returns the definition rather than a found flag so a caller asserts on the
 // value: a helper that answered "absent" quietly would let a comparison test
 // pass over an aggregate nobody read.
-func describedAggregateDefinition(schema *dbschematypes.DBSchema, name string) string {
+func describedAggregateDefinition(schema *catalog.Database, name string) string {
 	for _, aggregate := range schema.ContinuousAggregates {
 		if strings.EqualFold(aggregate.Name, name) {
 			return aggregate.Definition

@@ -15,8 +15,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 )
 
@@ -158,7 +158,7 @@ func TestReadIndexesForSchemaPicksTheCatalogTheServerHas(t *testing.T) {
 }
 
 // indexNamed returns the read index with this name, or nil.
-func indexNamed(indexes []types.DBIndex, name string) *types.DBIndex {
+func indexNamed(indexes []catalog.Index, name string) *catalog.Index {
 	for position := range indexes {
 		if indexes[position].Name == name {
 			return &indexes[position]

@@ -10,8 +10,8 @@ import (
 
 	mysqldriver "github.com/go-sql-driver/mysql"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/mysqlroutine"
 	"go.5x5.cz/ptah/internal/sqlrunner"
 )
@@ -71,15 +71,15 @@ func NewMySQLReaderWithCapabilities(db sqlrunner.Runner, schema string, caps cap
 }
 
 // ReadSchema is [Reader.ReadSchemaContext] under context.Background(), the
-// context-free half of the pair [types.SchemaReader] declares. Prefer the
+// context-free half of the pair [catalog.SchemaReader] declares. Prefer the
 // Context form: only it can be told to stop.
-func (r *Reader) ReadSchema() (*types.DBSchema, error) {
+func (r *Reader) ReadSchema() (*catalog.Database, error) {
 	return r.ReadSchemaContext(context.Background())
 }
 
 // ReadSchemaContext reads the complete schema from MySQL/MariaDB
-func (r *Reader) ReadSchemaContext(ctx context.Context) (*types.DBSchema, error) {
-	schema := &types.DBSchema{}
+func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, error) {
+	schema := &catalog.Database{}
 
 	// Get current database name
 	var dbName string
@@ -168,7 +168,7 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*types.DBSchema, error)
 
 // readTables reads all tables and their columns using bulk information_schema
 // queries.
-func (r *Reader) readTables(ctx context.Context, dbName string) ([]types.DBTable, error) {
+func (r *Reader) readTables(ctx context.Context, dbName string) ([]catalog.Table, error) {
 	columnsByTable, err := r.readColumnsByTable(ctx, dbName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read columns: %w", err)
@@ -188,9 +188,9 @@ func (r *Reader) readTables(ctx context.Context, dbName string) ([]types.DBTable
 	}
 	defer rows.Close()
 
-	var tables []types.DBTable
+	var tables []catalog.Table
 	for rows.Next() {
-		var table types.DBTable
+		var table catalog.Table
 		if err := rows.Scan(&table.Name, &table.Type, &table.Comment); err != nil {
 			return nil, err
 		}
@@ -204,7 +204,7 @@ func (r *Reader) readTables(ctx context.Context, dbName string) ([]types.DBTable
 	return tables, nil
 }
 
-func (r *Reader) readColumnsByTable(ctx context.Context, dbName string) (map[string][]types.DBColumn, error) {
+func (r *Reader) readColumnsByTable(ctx context.Context, dbName string) (map[string][]catalog.Column, error) {
 	query := `
 		SELECT
 			TABLE_NAME,
@@ -233,9 +233,9 @@ func (r *Reader) readColumnsByTable(ctx context.Context, dbName string) (map[str
 	}
 	defer rows.Close()
 
-	columnsByTable := make(map[string][]types.DBColumn)
+	columnsByTable := make(map[string][]catalog.Column)
 	for rows.Next() {
-		var col types.DBColumn
+		var col catalog.Column
 		var tableName string
 		var defaultValue sql.NullString
 		var characterMaxLength, numericPrecision, numericScale sql.NullInt64
@@ -293,7 +293,7 @@ func (r *Reader) readColumnsByTable(ctx context.Context, dbName string) (map[str
 }
 
 func applyMySQLColumnMetadata(
-	col *types.DBColumn,
+	col *catalog.Column,
 	defaultValue sql.NullString,
 	characterMaxLength,
 	numericPrecision,
@@ -370,7 +370,7 @@ func isAbsentColumnDefault(value string) bool {
 	return strings.EqualFold(strings.TrimSpace(value), "NULL")
 }
 
-func normalizeMySQLColumnDefault(col *types.DBColumn, defaultValue string) string {
+func normalizeMySQLColumnDefault(col *catalog.Column, defaultValue string) string {
 	value := strings.TrimSpace(defaultValue)
 	if value == "" || isQuotedMySQLDefault(value) || !mysqlDefaultNeedsLiteralQuotes(col, value) {
 		return defaultValue
@@ -384,7 +384,7 @@ func isQuotedMySQLDefault(value string) bool {
 			(strings.HasPrefix(value, `"`) && strings.HasSuffix(value, `"`)))
 }
 
-func mysqlDefaultNeedsLiteralQuotes(col *types.DBColumn, value string) bool {
+func mysqlDefaultNeedsLiteralQuotes(col *catalog.Column, value string) bool {
 	if isMySQLDefaultExpression(value) {
 		return false
 	}
@@ -431,7 +431,7 @@ func quoteMySQLDefaultLiteral(value string) string {
 // overrides the DDL-parser heuristic, which cannot tell a plain non-unique
 // KEY/INDEX from a UNIQUE one and would over-report uniqueness for FK-backing
 // and other non-unique indexes.
-func reconcileColumnUniqueness(schema *types.DBSchema) {
+func reconcileColumnUniqueness(schema *catalog.Database) {
 	// Set of table.column covered by a single-column unique (non-primary) index.
 	uniqueColumns := make(map[tableColumnKey]struct{})
 	for _, idx := range schema.Indexes {
@@ -451,7 +451,7 @@ func reconcileColumnUniqueness(schema *types.DBSchema) {
 	}
 }
 
-func enhanceTablesWithPrimaryKeys(tables []types.DBTable, constraints []types.DBConstraint) {
+func enhanceTablesWithPrimaryKeys(tables []catalog.Table, constraints []catalog.Constraint) {
 	primaryKeys := make(map[string]map[string]struct{})
 	for _, constraint := range constraints {
 		if constraint.Type != "PRIMARY KEY" {
@@ -479,7 +479,7 @@ func enhanceTablesWithPrimaryKeys(tables []types.DBTable, constraints []types.DB
 	}
 }
 
-func (r *Reader) readViews(ctx context.Context, dbName string) ([]types.DBView, error) {
+func (r *Reader) readViews(ctx context.Context, dbName string) ([]catalog.View, error) {
 	query := `
 		SELECT TABLE_NAME, VIEW_DEFINITION, CHECK_OPTION
 		FROM information_schema.VIEWS
@@ -493,9 +493,9 @@ func (r *Reader) readViews(ctx context.Context, dbName string) ([]types.DBView, 
 	}
 	defer rows.Close()
 
-	var views []types.DBView
+	var views []catalog.View
 	for rows.Next() {
-		var view types.DBView
+		var view catalog.View
 		err := rows.Scan(&view.Name, &view.Body, &view.CheckOption)
 		if err != nil {
 			return nil, err
@@ -527,7 +527,7 @@ func (r *Reader) readViews(ctx context.Context, dbName string) ([]types.DBView, 
 //
 // A body the connected account may not see is refused rather than reported as
 // empty; see [errFunctionBodyHidden].
-func (r *Reader) readFunctions(ctx context.Context, dbName string) ([]types.DBFunction, error) {
+func (r *Reader) readFunctions(ctx context.Context, dbName string) ([]catalog.Function, error) {
 	parameters, err := r.readRoutineParameters(ctx, dbName)
 	if err != nil {
 		return nil, err
@@ -559,10 +559,10 @@ func (r *Reader) readFunctions(ctx context.Context, dbName string) ([]types.DBFu
 	}
 	defer rows.Close()
 
-	var functions []types.DBFunction
+	var functions []catalog.Function
 	for rows.Next() {
 		var (
-			fn              types.DBFunction
+			fn              catalog.Function
 			isDeterministic string
 			sqlDataAccess   string
 			body            sql.NullString
@@ -704,7 +704,7 @@ func routineKind(routineType string) string {
 	return "function"
 }
 
-func (r *Reader) readTriggers(ctx context.Context, dbName string) ([]types.DBTrigger, error) {
+func (r *Reader) readTriggers(ctx context.Context, dbName string) ([]catalog.Trigger, error) {
 	query := `
 		SELECT
 			TRIGGER_NAME,
@@ -723,9 +723,9 @@ func (r *Reader) readTriggers(ctx context.Context, dbName string) ([]types.DBTri
 	}
 	defer rows.Close()
 
-	var triggers []types.DBTrigger
+	var triggers []catalog.Trigger
 	for rows.Next() {
-		var trigger types.DBTrigger
+		var trigger catalog.Trigger
 		err := rows.Scan(
 			&trigger.Name,
 			&trigger.Table,
@@ -761,7 +761,7 @@ func (r *Reader) readTriggers(ctx context.Context, dbName string) ([]types.DBTri
 // database does not record. The comparison is unaffected either way -- the
 // MySQL family folds a declared enum into its column's type before comparing,
 // so this list is what INSPECTION reports, not what convergence rests on.
-func (r *Reader) readEnums(ctx context.Context, dbName string) ([]types.DBEnum, error) {
+func (r *Reader) readEnums(ctx context.Context, dbName string) ([]catalog.Enum, error) {
 	query := `
 		SELECT
 			TABLE_NAME,
@@ -778,7 +778,7 @@ func (r *Reader) readEnums(ctx context.Context, dbName string) ([]types.DBEnum, 
 	}
 	defer rows.Close()
 
-	var enums []types.DBEnum
+	var enums []catalog.Enum
 	for rows.Next() {
 		var tableName, columnName, columnType string
 		if err := rows.Scan(&tableName, &columnName, &columnType); err != nil {
@@ -790,7 +790,7 @@ func (r *Reader) readEnums(ctx context.Context, dbName string) ([]types.DBEnum, 
 		if len(values) == 0 {
 			continue
 		}
-		enums = append(enums, types.DBEnum{
+		enums = append(enums, catalog.Enum{
 			Name:   tableName + "_" + columnName,
 			Values: values,
 		})
@@ -841,7 +841,7 @@ const indexKeyPartsQuery = `
 		ORDER BY s.TABLE_NAME, s.INDEX_NAME, s.SEQ_IN_INDEX`
 
 // readIndexes reads all indexes, assembling each key from its parts.
-func (r *Reader) readIndexes(ctx context.Context, dbName string) ([]types.DBIndex, error) {
+func (r *Reader) readIndexes(ctx context.Context, dbName string) ([]catalog.Index, error) {
 	rows, err := r.db.QueryContext(ctx, indexKeyPartsQuery, dbName)
 	if err != nil {
 		return nil, err
@@ -849,7 +849,7 @@ func (r *Reader) readIndexes(ctx context.Context, dbName string) ([]types.DBInde
 	defer rows.Close()
 
 	var (
-		indexes    []types.DBIndex
+		indexes    []catalog.Index
 		indexTypes []string
 		positions  = make(map[indexKey]int)
 	)
@@ -871,7 +871,7 @@ func (r *Reader) readIndexes(ctx context.Context, dbName string) ([]types.DBInde
 		if !started {
 			position = len(indexes)
 			positions[key] = position
-			indexes = append(indexes, types.DBIndex{
+			indexes = append(indexes, catalog.Index{
 				Name:      name,
 				TableName: tableName,
 				IsUnique:  nonUnique == 0,
@@ -908,14 +908,14 @@ func (r *Reader) readIndexes(ctx context.Context, dbName string) ([]types.DBInde
 // does not have, so this reader cannot name it. It is recorded as a part that
 // is missing from Columns rather than dropped silently: a comparison that read
 // Columns as the whole key would plan a rebuild of a key that never changed.
-// See [types.DBIndex.KeyPartsIncomplete].
-func addIndexKeyPart(index *types.DBIndex, columnName sql.NullString, subPart sql.NullInt64) {
+// See [catalog.Index.KeyPartsIncomplete].
+func addIndexKeyPart(index *catalog.Index, columnName sql.NullString, subPart sql.NullInt64) {
 	if !columnName.Valid {
 		index.KeyPartsIncomplete = true
 		return
 	}
 	index.Columns = append(index.Columns, columnName.String)
-	index.Parts = append(index.Parts, types.DBIndexPart{
+	index.Parts = append(index.Parts, catalog.IndexPart{
 		Name:   columnName.String,
 		Prefix: indexKeyPrefix(subPart),
 	})
@@ -930,7 +930,7 @@ func addIndexKeyPart(index *types.DBIndex, columnName sql.NullString, subPart sq
 // second part was dropped would render as a key over the first column alone.
 // Once the key is complete, a Parts list carrying nothing but the column names
 // is dropped, which leaves every ordinary index reported exactly as it was.
-func dropUninformativeParts(index *types.DBIndex) {
+func dropUninformativeParts(index *catalog.Index) {
 	for _, part := range index.Parts {
 		if part.Prefix != "" {
 			return
@@ -954,7 +954,7 @@ func indexKeyPrefix(subPart sql.NullInt64) string {
 }
 
 // readConstraints reads all constraints
-func (r *Reader) readConstraints(ctx context.Context, dbName string) ([]types.DBConstraint, error) {
+func (r *Reader) readConstraints(ctx context.Context, dbName string) ([]catalog.Constraint, error) {
 	checkClauses, err := r.readCheckConstraintClauses(ctx, dbName)
 	if err != nil {
 		return nil, fmt.Errorf("read check constraint clauses: %w", err)
@@ -988,7 +988,7 @@ func (r *Reader) readConstraints(ctx context.Context, dbName string) ([]types.DB
 	defer rows.Close()
 
 	// Use a map to group constraints by their unique identifier
-	constraintMap := make(map[constraintKey]*types.DBConstraint)
+	constraintMap := make(map[constraintKey]*catalog.Constraint)
 
 	for rows.Next() {
 		var constraintName, tableName, constraintType, columnName string
@@ -1045,7 +1045,7 @@ func (r *Reader) readConstraints(ctx context.Context, dbName string) ([]types.DB
 	}
 
 	// Convert map to slice
-	var constraints []types.DBConstraint
+	var constraints []catalog.Constraint
 	for _, constraint := range constraintMap {
 		constraints = append(constraints, *constraint)
 	}
@@ -1060,8 +1060,8 @@ type constraintRefs struct {
 	updateRule       string
 }
 
-func newConstraint(name, tableName, constraintType string, refs constraintRefs, checkClauses checkConstraintClauses) *types.DBConstraint {
-	constraint := &types.DBConstraint{
+func newConstraint(name, tableName, constraintType string, refs constraintRefs, checkClauses checkConstraintClauses) *catalog.Constraint {
+	constraint := &catalog.Constraint{
 		Name:      name,
 		TableName: tableName,
 		Type:      constraintType,

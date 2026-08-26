@@ -5,16 +5,16 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
 func TestCompare_ImplicitExtensionSchemaMatchesPostgreSQLDefault(t *testing.T) {
 	c := qt.New(t)
 	generated := &goschema.Database{Extensions: []goschema.Extension{{Name: "pgcrypto"}}}
-	database := &dbschematypes.DBSchema{
-		Extensions: []dbschematypes.DBExtension{{Name: "pgcrypto", Schema: "public"}},
+	database := &catalog.Database{
+		Extensions: []catalog.Extension{{Name: "pgcrypto", Schema: "public"}},
 	}
 
 	diff := schemadiff.Compare(generated, database)
@@ -25,8 +25,8 @@ func TestCompare_ImplicitExtensionSchemaMatchesPostgreSQLDefault(t *testing.T) {
 func TestCompareWithOptions_ImplicitExtensionSchemaMatchesPostgreSQLDefault(t *testing.T) {
 	c := qt.New(t)
 	generated := &goschema.Database{Extensions: []goschema.Extension{{Name: "pgcrypto"}}}
-	database := &dbschematypes.DBSchema{
-		Extensions: []dbschematypes.DBExtension{{Name: "pgcrypto", Schema: "public"}},
+	database := &catalog.Database{
+		Extensions: []catalog.Extension{{Name: "pgcrypto", Schema: "public"}},
 	}
 
 	diff := schemadiff.CompareWithOptions(generated, database, nil)

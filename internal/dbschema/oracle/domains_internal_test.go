@@ -11,7 +11,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 )
 
 // TestNotNullRestatement_MatchesTheColumnTheCatalogNames pins the recognition,
@@ -85,7 +85,7 @@ func TestNotNullRestatement_MatchesTheColumnTheCatalogNames(t *testing.T) {
 func TestDeclaredDomainChecks_KeepsWhatADeclarationCouldHaveWritten(t *testing.T) {
 	c := qt.New(t)
 
-	kept := declaredDomainChecks([]types.DBDomainCheck{
+	kept := declaredDomainChecks([]catalog.DomainCheck{
 		{Name: "SYS_DOMAIN_C0043", Expression: `"EMAIL_D" IS NOT NULL`},
 		{Name: "SYS_DOMAIN_C0045", Expression: "VALUE <> 'zzz'"},
 		{Name: "SCORE_RANGE", Expression: "VALUE BETWEEN 0 AND 100"},
@@ -94,7 +94,7 @@ func TestDeclaredDomainChecks_KeepsWhatADeclarationCouldHaveWritten(t *testing.T
 	// The unnamed user CHECK stays: GENERATED does not separate it from the
 	// NOT NULL restatement -- measured, an unnamed user CHECK is also
 	// `GENERATED NAME` -- so the condition is what decides.
-	c.Assert(kept, qt.DeepEquals, []types.DBDomainCheck{
+	c.Assert(kept, qt.DeepEquals, []catalog.DomainCheck{
 		{Name: "SYS_DOMAIN_C0045", Expression: "VALUE <> 'zzz'"},
 		{Name: "SCORE_RANGE", Expression: "VALUE BETWEEN 0 AND 100"},
 	})

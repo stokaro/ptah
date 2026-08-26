@@ -10,12 +10,12 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/migration/diffpolicy"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
@@ -54,11 +54,11 @@ func TestConcurrentIndexRefsForPopulatedTables_SelectsExactIndex(t *testing.T) {
 
 	got := concurrentIndexRefsForPopulatedTables(
 		diff,
-		&dbschematypes.DBSchema{Tables: []dbschematypes.DBTable{
+		&catalog.Database{Tables: []catalog.Table{
 			{Name: "users", EstimatedRows: 12},
 			{Name: "orders", EstimatedRows: 0},
 		}},
-		dbschematypes.DBInfo{
+		catalog.ServerInfo{
 			Dialect:      platform.Postgres,
 			Capabilities: capability.Postgres16(),
 		},
@@ -90,11 +90,11 @@ func TestPlanGeneratedMigrationSpecs_SkipDropIndexPreservesPostgresSchemaMove(t 
 	specs, _, err := planGeneratedMigrationSpecs(
 		diff,
 		generated,
-		&dbschematypes.DBSchema{
-			Tables: []dbschematypes.DBTable{
+		&catalog.Database{
+			Tables: []catalog.Table{
 				{Name: "users", Schema: "app", Type: "BASE TABLE"},
 			},
-			Indexes: []dbschematypes.DBIndex{
+			Indexes: []catalog.Index{
 				{
 					Name:      "idx_shared",
 					TableName: "users",
@@ -103,7 +103,7 @@ func TestPlanGeneratedMigrationSpecs_SkipDropIndexPreservesPostgresSchemaMove(t 
 				},
 			},
 		},
-		dbschematypes.DBInfo{
+		catalog.ServerInfo{
 			Dialect:      platform.Postgres,
 			Capabilities: capability.Postgres17(),
 		},
@@ -222,14 +222,14 @@ func TestGenerateDownMigrationSQL_SQLServerPreservesFilteredIndexPredicate(t *te
 			Condition: "[status] = 2",
 		},
 	}}
-	database := &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
+	database := &catalog.Database{
+		Tables: []catalog.Table{
 			{
 				Name:   "users",
 				Schema: "dbo",
 			},
 		},
-		Indexes: []dbschematypes.DBIndex{
+		Indexes: []catalog.Index{
 			{
 				Name:      "idx_active_users",
 				TableName: "users",
@@ -273,7 +273,7 @@ func TestAddMySQLFamilyForeignKeyBackingIndexRemovals_PreservesDuplicateNames(t 
 	err := addMySQLFamilyForeignKeyBackingIndexRemovals(
 		reverseDiff,
 		upDiff,
-		&dbschematypes.DBSchema{},
+		&catalog.Database{},
 		platform.MySQL,
 		[]ast.Node{
 			foreignKeyAdditionNode("orders", "fk_tenant", "tenant_id"),
@@ -300,8 +300,8 @@ func TestAddMySQLFamilyForeignKeyBackingIndexRemovals_DoesNotCollideOnDots(t *te
 			{Name: "c", TableName: "a.b", Type: "FOREIGN KEY"},
 		},
 	}
-	live := &dbschematypes.DBSchema{
-		Indexes: []dbschematypes.DBIndex{
+	live := &catalog.Database{
+		Indexes: []catalog.Index{
 			{Name: "b.c", TableName: "a"},
 		},
 	}

@@ -10,11 +10,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -202,11 +202,11 @@ func sqlServerRLSSchema(schemaName string) *goschema.Database {
 }
 
 // sqlServerTableNamed returns the table a catalog read reports under a name.
-func sqlServerTableNamed(tables []dbschematypes.DBTable, name string) dbschematypes.DBTable {
+func sqlServerTableNamed(tables []catalog.Table, name string) catalog.Table {
 	for _, table := range tables {
 		if table.Name == name {
 			return table
 		}
 	}
-	return dbschematypes.DBTable{}
+	return catalog.Table{}
 }

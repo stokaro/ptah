@@ -5,10 +5,10 @@ import (
 	"sort"
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -28,7 +28,7 @@ import (
 // populated values.
 func Sequences(
 	generated *goschema.Database,
-	database *types.DBSchema,
+	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
 ) {
@@ -39,7 +39,7 @@ func Sequences(
 // database's resolved default schema and identifier rules.
 func SequencesWithSemantics(
 	generated *goschema.Database,
-	database *types.DBSchema,
+	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
 	semantics identifier.Semantics,
@@ -49,7 +49,7 @@ func SequencesWithSemantics(
 
 func sequencesWithSemantics(
 	generated *goschema.Database,
-	database *types.DBSchema,
+	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
 	semantics identifier.Semantics,
@@ -62,7 +62,7 @@ func sequencesWithSemantics(
 		generatedNames[identity] = sequence.QualifiedName()
 	}
 
-	databaseSequences := make(map[objectIdentity]types.DBSequence, len(database.Sequences))
+	databaseSequences := make(map[objectIdentity]catalog.Sequence, len(database.Sequences))
 	databaseNames := make(map[objectIdentity]string, len(database.Sequences))
 	for _, sequence := range database.Sequences {
 		identity := newObjectIdentity(objectidentity.KindSequence, sequence.Schema, sequence.Name, semantics)
@@ -119,7 +119,7 @@ func sequencesWithSemantics(
 // sequenceChanges records the option-by-option transitions between a declared
 // sequence and its introspected counterpart. Unset (nil) target options are
 // skipped so that only explicitly declared options are managed.
-func sequenceChanges(target goschema.Sequence, current types.DBSequence) map[string]string {
+func sequenceChanges(target goschema.Sequence, current catalog.Sequence) map[string]string {
 	changes := make(map[string]string)
 
 	if target.AsType != "" && !strings.EqualFold(target.AsType, current.DataType) {

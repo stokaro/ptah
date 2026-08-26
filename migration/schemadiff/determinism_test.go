@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
@@ -19,7 +19,7 @@ import (
 // alphabetical order so ordering must come from sorting, not from input
 // order, and multi-entry Changes maps catch consumers that range over them
 // unsorted.
-func driftedSchemas() (*goschema.Database, *types.DBSchema) {
+func driftedSchemas() (*goschema.Database, *catalog.Database) {
 	tableNames := []struct {
 		table      string
 		structName string
@@ -31,7 +31,7 @@ func driftedSchemas() (*goschema.Database, *types.DBSchema) {
 	}
 
 	gen := &goschema.Database{}
-	db := &types.DBSchema{}
+	db := &catalog.Database{}
 
 	for _, tbl := range tableNames {
 		gen.Tables = append(gen.Tables, goschema.Table{Name: tbl.table, StructName: tbl.structName})
@@ -43,9 +43,9 @@ func driftedSchemas() (*goschema.Database, *types.DBSchema) {
 			// Missing from the database -> ColumnsAdded.
 			goschema.Field{StructName: tbl.structName, Name: "extra", Type: "TEXT", Nullable: true},
 		)
-		db.Tables = append(db.Tables, types.DBTable{
+		db.Tables = append(db.Tables, catalog.Table{
 			Name: tbl.table,
-			Columns: []types.DBColumn{
+			Columns: []catalog.Column{
 				{Name: "id", DataType: "text", IsNullable: "NO", IsPrimaryKey: true},
 				{Name: "flag", DataType: "varchar", IsNullable: "YES"},
 			},
@@ -59,7 +59,7 @@ func driftedSchemas() (*goschema.Database, *types.DBSchema) {
 			CheckExpression: "flag <> ''",
 		})
 		// Present only in the database -> ConstraintsRemoved.
-		db.Constraints = append(db.Constraints, types.DBConstraint{
+		db.Constraints = append(db.Constraints, catalog.Constraint{
 			Name:      "obsolete_" + tbl.table + "_check",
 			TableName: tbl.table,
 			Type:      "CHECK",
@@ -69,14 +69,14 @@ func driftedSchemas() (*goschema.Database, *types.DBSchema) {
 	for _, enumName := range []string{"enum_status", "enum_kind", "enum_area_type"} {
 		gen.Enums = append(gen.Enums, goschema.Enum{Name: enumName, Values: []string{"a", "b", "c"}})
 		// Missing value "c" -> EnumsModified.
-		db.Enums = append(db.Enums, types.DBEnum{Name: enumName, Values: []string{"a", "b"}})
+		db.Enums = append(db.Enums, catalog.Enum{Name: enumName, Values: []string{"a", "b"}})
 	}
 
 	// Both roles drift in 2+ attributes -> RolesModified with multi-entry
 	// Changes maps.
 	for _, roleName := range []string{"app_role", "admin_role"} {
 		gen.Roles = append(gen.Roles, goschema.Role{Name: roleName, Login: true, CreateDB: true, Inherit: true})
-		db.Roles = append(db.Roles, types.DBRole{Name: roleName, Login: false, CreateDB: false, Inherit: true})
+		db.Roles = append(db.Roles, catalog.Role{Name: roleName, Login: false, CreateDB: false, Inherit: true})
 	}
 
 	for _, fnName := range []string{"set_tenant_context", "get_current_tenant_id", "audit_row"} {
@@ -84,7 +84,7 @@ func driftedSchemas() (*goschema.Database, *types.DBSchema) {
 			Name: fnName, Returns: "TEXT", Language: "plpgsql", Body: "BEGIN RETURN 'x'; END;",
 		})
 		// Different return type -> FunctionsModified.
-		db.Functions = append(db.Functions, types.DBFunction{
+		db.Functions = append(db.Functions, catalog.Function{
 			Name: fnName, Returns: "VOID", Language: "plpgsql", Body: "BEGIN RETURN 'x'; END;",
 		})
 	}
@@ -96,7 +96,7 @@ func driftedSchemas() (*goschema.Database, *types.DBSchema) {
 			UsingExpression: "tenant_id = get_current_tenant_id()",
 		})
 		// Different FOR clause -> RLSPoliciesModified.
-		db.RLSPolicies = append(db.RLSPolicies, types.DBRLSPolicy{
+		db.RLSPolicies = append(db.RLSPolicies, catalog.RLSPolicy{
 			Name: policyName, Table: tbl, PolicyFor: "SELECT", ToRoles: "app_role",
 			UsingExpression: "tenant_id = get_current_tenant_id()",
 		})

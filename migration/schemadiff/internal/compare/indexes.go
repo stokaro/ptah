@@ -3,11 +3,11 @@ package compare
 import (
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/indexscope"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -177,7 +177,7 @@ func isMySQLConstraintBasedUniqueIndex(indexName, tableName string) bool {
 // - Time Complexity: O(n + m) where n=generated indexes, m=database indexes
 // - Space Complexity: O(n + m) for the identity maps
 // - Index operations can be expensive on large tables in production
-func Indexes(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
+func Indexes(generated *goschema.Database, database *catalog.Database, diff *difftypes.SchemaDiff) {
 	IndexesWithDialect(generated, database, diff, "")
 }
 
@@ -188,7 +188,7 @@ type generatedIndexEntry struct {
 
 type databaseIndexEntry struct {
 	ref   difftypes.IndexRef
-	index types.DBIndex
+	index catalog.Index
 	// constraintBacked reports that a UNIQUE constraint of this identity
 	// enforces the index, so the object is the constraint's and both directions
 	// of a plan have to say so. See [uniqueConstraintEnforcesTheIndex].
@@ -199,14 +199,14 @@ type databaseIndexEntry struct {
 	partitionAttached bool
 }
 
-func IndexesWithDialect(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff, dialect string) {
+func IndexesWithDialect(generated *goschema.Database, database *catalog.Database, diff *difftypes.SchemaDiff, dialect string) {
 	IndexesWithSemantics(generated, database, diff, dialect, identifier.ForDialect(dialect), nil)
 }
 
 // IndexesWithSemantics compares indexes using explicit identifier semantics.
 func IndexesWithSemantics(
 	generated *goschema.Database,
-	database *types.DBSchema,
+	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	dialect string,
 	semantics identifier.Semantics,
@@ -284,7 +284,7 @@ type constraintOwnedIndexes struct {
 }
 
 func constraintBackedIndexIdentities(
-	database *types.DBSchema,
+	database *catalog.Database,
 	dialect string,
 	semantics identifier.Semantics,
 ) constraintOwnedIndexes {
@@ -349,8 +349,8 @@ func constraintBackedIndexIdentities(
 // identity the desired state declares as an index never reaches the ownership
 // filter at all, which is the rule collectDatabaseIndexes states below.
 func spannerForeignKeyBackingIndexes(
-	database *types.DBSchema,
-	constraint types.DBConstraint,
+	database *catalog.Database,
+	constraint catalog.Constraint,
 	semantics identifier.Semantics,
 ) []difftypes.IndexRef {
 	columns := uniqueStringsPreserveOrder(constraint.ColumnNamesOrDefault())
@@ -384,7 +384,7 @@ func spannerForeignKeyBackingIndexes(
 // foreign key whose columns are the primary key is enforced by that key rather
 // than by an index of its own.
 func spannerIndexEnforces(
-	index types.DBIndex,
+	index catalog.Index,
 	table string,
 	columns []string,
 	semantics identifier.Semantics,
@@ -477,7 +477,7 @@ func isHexDigit(b byte) bool {
 // MySQL and MariaDB, and the restoration through it everywhere. See
 // [uniqueConstraintEnforcesTheIndex].
 func collectDatabaseIndexes(
-	database *types.DBSchema,
+	database *catalog.Database,
 	dialect string,
 	semantics identifier.Semantics,
 	declared map[difftypes.IndexRef]generatedIndexEntry,
@@ -509,14 +509,14 @@ func collectDatabaseIndexes(
 
 // uniqueConstraintEnforcesTheIndex reports whether a UNIQUE constraint of this
 // identity enforces the database index -- whether, in other words, the object
-// the removal names belongs to the constraint catalog and not only the index
+// the removal names belongs to the constraint currentCatalog and not only the index
 // catalog.
 //
 // It is a fact about the object, not a spelling, and the two consumers of the
 // mark need it for opposite reasons:
 //
 //   - The UP drop is spelled per engine. On MySQL and MariaDB a unique key and
-//     its constraint are one catalog row and `ALTER TABLE ... DROP INDEX`
+//     its constraint are one currentCatalog row and `ALTER TABLE ... DROP INDEX`
 //     removes it, which is what the pinned community binary v1.3.0 plans there,
 //     so their planners ignore the mark. Everywhere else the constraint is an
 //     object of its own that owns the index and the server refuses to drop the
@@ -527,7 +527,7 @@ func collectDatabaseIndexes(
 //   - The DOWN direction has to put the object back, and there the engines do
 //     not split. What was dropped was a UNIQUE constraint on every one of them,
 //     so the statement that restores it is ADD CONSTRAINT ... UNIQUE; on MySQL
-//     and MariaDB that lands the same catalog row `CREATE UNIQUE INDEX` would.
+//     and MariaDB that lands the same currentCatalog row `CREATE UNIQUE INDEX` would.
 //     Reversing the removal into an index addition instead loses the constraint
 //     on PostgreSQL and fails outright on MySQL, because the down direction's
 //     target schema omits a constraint-backed index by construction
@@ -553,7 +553,7 @@ func uniqueConstraintEnforcesTheIndex(
 // with the key, and SQLite's sqlite_autoindex_* rows name an internal structure
 // no statement can refer to. Neither can be declared by a desired state, so
 // neither is narrowed by one.
-func unaddressableDatabaseIndex(index types.DBIndex, dialect string) bool {
+func unaddressableDatabaseIndex(index catalog.Index, dialect string) bool {
 	return index.IsPrimary || isSQLiteInternalAutoindex(index.Name, dialect)
 }
 
@@ -578,7 +578,7 @@ func unaddressableDatabaseIndex(index types.DBIndex, dialect string) bool {
 // row for `EXCLUDE USING gist (room WITH =)` reports indisprimary false and
 // indisunique false -- indistinguishable from an ordinary index -- and only
 // pg_constraint.conindid ties the two together, which is why the identity comes
-// from the constraint catalog here. Dropping it is refused:
+// from the constraint currentCatalog here. Dropping it is refused:
 //
 //	ERROR:  cannot drop index ex_widget_room because constraint ex_widget_room
 //	        on table widget requires it
@@ -587,7 +587,7 @@ func unaddressableDatabaseIndex(index types.DBIndex, dialect string) bool {
 // other clause constraint and is enforced with no index, so it gets no arm.
 //
 // The name-pattern arm is a guess about a naming convention where the identity
-// arms are facts read from the catalog, but they are alike in what they mean
+// arms are facts read from the currentCatalog, but they are alike in what they mean
 // for the comparison, and all four are subject to the declaration narrowing in
 // [collectDatabaseIndexes] -- the FOREIGN KEY arm since
 // [#1258](https://github.com/stokaro/ptah/issues/1258), the EXCLUDE arm since
@@ -598,7 +598,7 @@ func unaddressableDatabaseIndex(index types.DBIndex, dialect string) bool {
 // reaching a removal at all means the desired state declared an index under the
 // constraint's name, which is a separate question from this one.
 func constraintOwnedDatabaseIndex(
-	index types.DBIndex,
+	index catalog.Index,
 	dialect string,
 	identity difftypes.IndexRef,
 	owned constraintOwnedIndexes,
@@ -729,7 +729,7 @@ func indexReplacementRequired(
 
 func indexDefinitionsChanged(
 	generated goschema.Index,
-	database types.DBIndex,
+	database catalog.Index,
 	dialect string,
 	semantics identifier.Semantics,
 	resolved config.IndexExpression,
@@ -750,7 +750,7 @@ func indexDefinitionsChanged(
 	}
 	// Every other property is compared per dialect, because "these two indexes
 	// are the same index" is a dialect question. Adding a dialect here means
-	// deciding what its catalog reports and what it leaves implicit; a dialect
+	// deciding what its currentCatalog reports and what it leaves implicit; a dialect
 	// that has not been measured keeps the name-only comparison rather than
 	// getting guessed semantics (issue #1272 scope).
 	switch platform.NormalizeDialect(dialect) {
@@ -796,7 +796,7 @@ func indexDefinitionsChanged(
 // to remove. Those are reader gaps, recorded as such.
 func mysqlIndexDefinitionChanged(
 	generated goschema.Index,
-	database types.DBIndex,
+	database catalog.Index,
 	semantics identifier.Semantics,
 ) bool {
 	return generated.Unique != database.IsUnique ||
@@ -810,7 +810,7 @@ func mysqlIndexDefinitionChanged(
 // A key the reader could not read whole is compared as far as it was read. The
 // MySQL reader reports a functional key part -- `KEY idx ((b + 1))` -- as a
 // part missing from Columns, because the expression lives in a STATISTICS
-// column MariaDB does not have; see [types.DBIndex.KeyPartsIncomplete]. Reading
+// column MariaDB does not have; see [catalog.Index.KeyPartsIncomplete]. Reading
 // what is left as the whole key would find the key short by one part on every
 // run and plan a rebuild forever, on a database the pinned community binary
 // v1.3.0 reports synced -- but declining the comparison outright reported
@@ -819,7 +819,7 @@ func mysqlIndexDefinitionChanged(
 // names that were read are compared; see [mysqlNamedKeyPartsContradict].
 func mysqlIndexKeyColumnsChanged(
 	generated goschema.Index,
-	database types.DBIndex,
+	database catalog.Index,
 	semantics identifier.Semantics,
 ) bool {
 	if database.KeyPartsIncomplete {
@@ -864,7 +864,7 @@ func mysqlIndexKeyColumnsChanged(
 // Recorded in docs/conformance.md.
 func mysqlNamedKeyPartsContradict(
 	generated goschema.Index,
-	database types.DBIndex,
+	database catalog.Index,
 	semantics identifier.Semantics,
 ) bool {
 	generatedParts := effectiveGeneratedIndexParts(generated)
@@ -918,7 +918,7 @@ func mysqlNamedKeyPartsContradict(
 // binary plans and the one the server accepts.
 func postgresIndexDefinitionChanged(
 	generated goschema.Index,
-	database types.DBIndex,
+	database catalog.Index,
 	semantics identifier.Semantics,
 	resolved config.IndexExpression,
 ) bool {
@@ -979,7 +979,7 @@ func postgresAccessMethod(method string) string {
 
 func postgresIndexKeysChanged(
 	generated goschema.Index,
-	database types.DBIndex,
+	database catalog.Index,
 	semantics identifier.Semantics,
 	resolved config.IndexExpression,
 ) bool {
@@ -1063,15 +1063,15 @@ type postgresIndexKey struct {
 // report one.
 func (k postgresIndexKey) resolvedNullsOrder(order string) string {
 	switch strings.ToUpper(strings.TrimSpace(order)) {
-	case types.NullsOrderFirst:
-		return types.NullsOrderFirst
-	case types.NullsOrderLast:
-		return types.NullsOrderLast
+	case catalog.NullsOrderFirst:
+		return catalog.NullsOrderFirst
+	case catalog.NullsOrderLast:
+		return catalog.NullsOrderLast
 	}
 	if k.desc {
-		return types.NullsOrderFirst
+		return catalog.NullsOrderFirst
 	}
-	return types.NullsOrderLast
+	return catalog.NullsOrderLast
 }
 
 // postgresGeneratedIndexKey reduces one desired key.
@@ -1097,7 +1097,7 @@ func postgresGeneratedIndexKey(
 // no index-level operator class slot, so every class it reports is already
 // per-key.
 func postgresDatabaseIndexKey(
-	part types.DBIndexPart,
+	part catalog.IndexPart,
 	semantics identifier.Semantics,
 ) postgresIndexKey {
 	key := postgresIndexKey{
@@ -1137,7 +1137,7 @@ func postgresIndexKeyTarget(
 // binary v1.3.0, which resolves type defaults and reported "Schemas are synced"
 // for that fixture on PostgreSQL 17.10 where Ptah plans a rebuild. Ptah does
 // not resolve default operator classes, and inventing the resolution from a
-// version-pinned catalog table would be worse than the churn: the alternative
+// version-pinned currentCatalog table would be worse than the churn: the alternative
 // is to ignore a named class, which would silently accept a real operator-class
 // change. Neither binary's `schema inspect` emits a default class, so no
 // round trip reaches this branch. Recorded in docs/conformance.md.
@@ -1177,7 +1177,7 @@ func postgresIncludeColumnsChanged(
 
 func indexKeyPartsChanged(
 	generated goschema.Index,
-	database types.DBIndex,
+	database catalog.Index,
 	semantics identifier.Semantics,
 ) bool {
 	generatedParts := effectiveGeneratedIndexParts(generated)
@@ -1207,13 +1207,13 @@ func effectiveGeneratedIndexParts(index goschema.Index) []goschema.IndexPart {
 	return parts
 }
 
-func effectiveDatabaseIndexParts(index types.DBIndex) []types.DBIndexPart {
+func effectiveDatabaseIndexParts(index catalog.Index) []catalog.IndexPart {
 	if len(index.Parts) > 0 {
 		return index.Parts
 	}
-	parts := make([]types.DBIndexPart, len(index.Columns))
+	parts := make([]catalog.IndexPart, len(index.Columns))
 	for position, column := range index.Columns {
-		parts[position] = types.DBIndexPart{Name: column}
+		parts[position] = catalog.IndexPart{Name: column}
 	}
 	return parts
 }
@@ -1229,7 +1229,7 @@ func indexPredicateChanged(generated, database, dialect string) bool {
 }
 
 // normalizePredicate reduces an index predicate to a spelling-insensitive
-// comparison key. SQL Server additionally strips the catalog's canonical
+// comparison key. SQL Server additionally strips the currentCatalog's canonical
 // filter_definition decorations (bracket quoting, parenthesized numeric
 // literals) so user-authored predicates converge with introspected ones
 // instead of planning a replacement on every run.

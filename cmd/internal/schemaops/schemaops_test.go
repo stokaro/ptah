@@ -7,10 +7,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/cmd/internal/schemaops"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/schemasource"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
 )
@@ -143,33 +143,33 @@ func TestFilterGeneratedTables_RemovesSchemaQualifiedTableScopedObjects(t *testi
 func TestFilterDatabaseTables_RemovesOnlyIgnoredTableEnums(t *testing.T) {
 	c := qt.New(t)
 
-	db := &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
+	db := &catalog.Database{
+		Tables: []catalog.Table{
 			{
 				Name: "users",
-				Columns: []dbschematypes.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "status", DataType: "USER-DEFINED", UDTName: "enum_user_status"},
 				},
 			},
 			{
 				Name: "audit_log",
-				Columns: []dbschematypes.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "statuses", DataType: "ARRAY", UDTName: "_enum_auditlog_status"},
 				},
 			},
 		},
-		Enums: []dbschematypes.DBEnum{
+		Enums: []catalog.Enum{
 			{Name: "enum_user_status", Values: []string{"active"}},
 			{Name: "enum_auditlog_status", Values: []string{"ok"}},
 			{Name: "orphan_enum", Values: []string{"kept"}},
 		},
-		Indexes: []dbschematypes.DBIndex{
+		Indexes: []catalog.Index{
 			{Name: "idx_audit_log_status", TableName: "audit_log"},
 		},
-		Constraints: []dbschematypes.DBConstraint{
+		Constraints: []catalog.Constraint{
 			{Name: "audit_log_status_check", TableName: "audit_log"},
 		},
-		RLSPolicies: []dbschematypes.DBRLSPolicy{
+		RLSPolicies: []catalog.RLSPolicy{
 			{Name: "audit_rls", Table: "audit_log"},
 		},
 	}
@@ -181,7 +181,7 @@ func TestFilterDatabaseTables_RemovesOnlyIgnoredTableEnums(t *testing.T) {
 	c.Assert(filtered.Indexes, qt.HasLen, 0)
 	c.Assert(filtered.Constraints, qt.HasLen, 0)
 	c.Assert(filtered.RLSPolicies, qt.HasLen, 0)
-	c.Assert(filtered.Enums, qt.DeepEquals, []dbschematypes.DBEnum{
+	c.Assert(filtered.Enums, qt.DeepEquals, []catalog.Enum{
 		{Name: "enum_user_status", Values: []string{"active"}},
 		{Name: "orphan_enum", Values: []string{"kept"}},
 	})
@@ -190,37 +190,37 @@ func TestFilterDatabaseTables_RemovesOnlyIgnoredTableEnums(t *testing.T) {
 func TestFilterDatabaseTables_RemovesSchemaQualifiedTableScopedObjects(t *testing.T) {
 	c := qt.New(t)
 
-	db := &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
+	db := &catalog.Database{
+		Tables: []catalog.Table{
 			{
 				Schema: "auth",
 				Name:   "users",
-				Columns: []dbschematypes.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "status", DataType: "USER-DEFINED", UDTName: "enum_user_status"},
 				},
 			},
 			{
 				Schema: "billing",
 				Name:   "invoices",
-				Columns: []dbschematypes.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "state", DataType: "USER-DEFINED", UDTName: "enum_invoice_state"},
 				},
 			},
 		},
-		Enums: []dbschematypes.DBEnum{
+		Enums: []catalog.Enum{
 			{Name: "enum_user_status", Values: []string{"active"}},
 			{Name: "enum_invoice_state", Values: []string{"open"}},
 			{Name: "orphan_enum", Values: []string{"kept"}},
 		},
-		Indexes: []dbschematypes.DBIndex{
+		Indexes: []catalog.Index{
 			{Name: "idx_users_status", Schema: "auth", TableName: "users"},
 			{Name: "idx_invoices_state", Schema: "billing", TableName: "invoices"},
 		},
-		Constraints: []dbschematypes.DBConstraint{
+		Constraints: []catalog.Constraint{
 			{Name: "users_status_check", Schema: "auth", TableName: "users"},
 			{Name: "invoices_state_check", Schema: "billing", TableName: "invoices"},
 		},
-		RLSPolicies: []dbschematypes.DBRLSPolicy{
+		RLSPolicies: []catalog.RLSPolicy{
 			{Name: "users_rls", Table: "auth.users"},
 			{Name: "invoices_rls", Table: "billing.invoices"},
 		},
@@ -228,17 +228,17 @@ func TestFilterDatabaseTables_RemovesSchemaQualifiedTableScopedObjects(t *testin
 
 	filtered := schemaops.FilterDatabaseTables(db, []string{"auth.users"})
 
-	c.Assert(filtered.Tables, qt.DeepEquals, []dbschematypes.DBTable{{
+	c.Assert(filtered.Tables, qt.DeepEquals, []catalog.Table{{
 		Schema: "billing",
 		Name:   "invoices",
-		Columns: []dbschematypes.DBColumn{
+		Columns: []catalog.Column{
 			{Name: "state", DataType: "USER-DEFINED", UDTName: "enum_invoice_state"},
 		},
 	}})
-	c.Assert(filtered.Indexes, qt.DeepEquals, []dbschematypes.DBIndex{{Name: "idx_invoices_state", Schema: "billing", TableName: "invoices"}})
-	c.Assert(filtered.Constraints, qt.DeepEquals, []dbschematypes.DBConstraint{{Name: "invoices_state_check", Schema: "billing", TableName: "invoices"}})
-	c.Assert(filtered.RLSPolicies, qt.DeepEquals, []dbschematypes.DBRLSPolicy{{Name: "invoices_rls", Table: "billing.invoices"}})
-	c.Assert(filtered.Enums, qt.DeepEquals, []dbschematypes.DBEnum{
+	c.Assert(filtered.Indexes, qt.DeepEquals, []catalog.Index{{Name: "idx_invoices_state", Schema: "billing", TableName: "invoices"}})
+	c.Assert(filtered.Constraints, qt.DeepEquals, []catalog.Constraint{{Name: "invoices_state_check", Schema: "billing", TableName: "invoices"}})
+	c.Assert(filtered.RLSPolicies, qt.DeepEquals, []catalog.RLSPolicy{{Name: "invoices_rls", Table: "billing.invoices"}})
+	c.Assert(filtered.Enums, qt.DeepEquals, []catalog.Enum{
 		{Name: "enum_invoice_state", Values: []string{"open"}},
 		{Name: "orphan_enum", Values: []string{"kept"}},
 	})
@@ -247,16 +247,16 @@ func TestFilterDatabaseTables_RemovesSchemaQualifiedTableScopedObjects(t *testin
 func TestFilterDatabaseTables_IgnoresNonEnumUDTNames(t *testing.T) {
 	c := qt.New(t)
 
-	db := &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
+	db := &catalog.Database{
+		Tables: []catalog.Table{
 			{
 				Name: "audit_log",
-				Columns: []dbschematypes.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "status_text", DataType: "text", UDTName: "enum_auditlog_status"},
 				},
 			},
 		},
-		Enums: []dbschematypes.DBEnum{
+		Enums: []catalog.Enum{
 			{Name: "enum_auditlog_status", Values: []string{"kept"}},
 		},
 	}

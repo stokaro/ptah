@@ -5,24 +5,24 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/schemachange"
 	"go.5x5.cz/ptah/internal/schemastate"
 )
 
 // grantCatalog is a database where role `reporting` holds SELECT on a table.
-func grantCatalog(withOption bool) *dbschematypes.DBSchema {
-	return &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
-			{Name: "orders", Schema: "public", Columns: []dbschematypes.DBColumn{
+func grantCatalog(withOption bool) *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{
+			{Name: "orders", Schema: "public", Columns: []catalog.Column{
 				{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
 			}},
 		},
-		Roles: []dbschematypes.DBRole{{Name: "reporting"}},
-		Grants: []dbschematypes.DBGrant{{
+		Roles: []catalog.Role{{Name: "reporting"}},
+		Grants: []catalog.Grant{{
 			Role: "reporting", Privilege: "SELECT", ObjectType: "TABLE",
 			Schema: "public", ObjectName: "orders", WithOption: withOption,
 		}},
@@ -45,12 +45,12 @@ func grantDescription(roles []string, grants []goschema.Grant) *goschema.Databas
 	return description
 }
 
-func grantChanges(c *qt.C, description *goschema.Database, catalog *dbschematypes.DBSchema) []schemachange.Change {
+func grantChanges(c *qt.C, description *goschema.Database, currentCatalog *catalog.Database) []schemachange.Change {
 	c.Helper()
 	profile := postgresProfile()
 	rawDesired, err := schemastate.FromDescription(description, profile.Dialect, profile.Semantics)
 	c.Assert(err, qt.IsNil)
-	rawCurrent, err := schemastate.FromCatalog(catalog, profile.Dialect, profile.Semantics)
+	rawCurrent, err := schemastate.FromCatalog(currentCatalog, profile.Dialect, profile.Semantics)
 	c.Assert(err, qt.IsNil)
 	desired, err := schemastate.Normalize(rawDesired, profile)
 	c.Assert(err, qt.IsNil)
@@ -123,7 +123,7 @@ func TestGrantIsNotRevokedWhenTheRoleFamilyIsNotDescribed(t *testing.T) {
 // TestGrantDeclaredOnBothSidesIsNoChange pins that the two sources resolve one
 // grant to one identity.
 //
-// They do not spell it the same way: the catalog qualifies the object with the
+// They do not spell it the same way: the currentCatalog qualifies the object with the
 // schema it found it in, and the declaration writes the bare table name. Keyed
 // raw, one grant becomes two -- a GRANT and a REVOKE on every run of an
 // unchanged schema, which is stokaro/ptah#1232 in a comparator that builds its
@@ -158,7 +158,7 @@ func TestGrantOptionChangeIsAModification(t *testing.T) {
 // TestGrantIdentityKeepsTwoPrivilegesApart pins that a declaration naming two
 // privileges is two grants.
 //
-// That is what the target holds: `GRANT SELECT, INSERT` is two catalog rows,
+// That is what the target holds: `GRANT SELECT, INSERT` is two currentCatalog rows,
 // and revoking one leaves the other. A model carrying the pair as one object
 // cannot express the state that follows.
 func TestGrantIdentityKeepsTwoPrivilegesApart(t *testing.T) {
@@ -203,10 +203,10 @@ func TestSchemaGrantDoesNotCollideWithATableGrant(t *testing.T) {
 func TestPartialRevokeIsNotAGrant(t *testing.T) {
 	c := qt.New(t)
 	profile := postgresProfile()
-	catalog := grantCatalog(false)
-	catalog.Grants[0].IsPartialRevoke = true
+	currentCatalog := grantCatalog(false)
+	currentCatalog.Grants[0].IsPartialRevoke = true
 
-	state, err := schemastate.FromCatalog(catalog, profile.Dialect, profile.Semantics)
+	state, err := schemastate.FromCatalog(currentCatalog, profile.Dialect, profile.Semantics)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(state.OfKind(objectidentity.KindGrant), qt.HasLen, 0)
@@ -234,25 +234,25 @@ func TestGrantIdentityKeepsTwoObjectsApart(t *testing.T) {
 	c.Assert(state.OfKind(objectidentity.KindGrant), qt.HasLen, 2)
 }
 
-// TestCatalogSchemaGrantMatchesADeclaredSchemaGrant pins that the catalog side
+// TestCatalogSchemaGrantMatchesADeclaredSchemaGrant pins that the currentCatalog side
 // puts a schema grant's target in the same slot the declaration does.
 //
-// A catalog reports a schema grant with the schema in its object-name column
+// A currentCatalog reports a schema grant with the schema in its object-name column
 // and nothing in its schema column. Reading that object name as a table in an
 // unqualified schema produces a table-shaped identity, and the declared grant
 // and the held one then look like two grants: one to add and one to revoke, on
 // every run of an unchanged schema.
 func TestCatalogSchemaGrantMatchesADeclaredSchemaGrant(t *testing.T) {
 	c := qt.New(t)
-	catalog := grantCatalog(false)
-	catalog.Grants = []dbschematypes.DBGrant{{
+	currentCatalog := grantCatalog(false)
+	currentCatalog.Grants = []catalog.Grant{{
 		Role: "reporting", Privilege: "USAGE", ObjectType: "SCHEMA", ObjectName: "app",
 	}}
 	description := grantDescription([]string{"reporting"}, []goschema.Grant{{
 		StructName: "Access", Role: "reporting", Privileges: []string{"USAGE"}, OnSchema: "app",
 	}})
 
-	changes := grantChanges(c, description, catalog)
+	changes := grantChanges(c, description, currentCatalog)
 
 	c.Assert(changes, qt.HasLen, 0)
 }

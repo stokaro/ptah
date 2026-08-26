@@ -6,9 +6,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/planner/dialects/mysql"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
@@ -74,8 +74,8 @@ func ownableMixinSchema(hostTables ...string) *goschema.Database {
 // ownableMixinColumnsOnlyDB builds the introspected DB for the given host
 // tables with the mixin columns present but the FKs missing (so they surface as
 // additions).
-func ownableMixinColumnsOnlyDB(hostTables ...string) *types.DBSchema {
-	db := &types.DBSchema{}
+func ownableMixinColumnsOnlyDB(hostTables ...string) *catalog.Database {
+	db := &catalog.Database{}
 	for _, ht := range hostTables {
 		db.Tables = append(db.Tables, ownableHostTable(ht))
 	}
@@ -85,12 +85,12 @@ func ownableMixinColumnsOnlyDB(hostTables ...string) *types.DBSchema {
 // ownableMixinConvergedDB builds the introspected DB for the given host tables
 // with both the mixin columns and the tenant/created_by FKs already present
 // (NO ACTION), i.e. the schema is converged.
-func ownableMixinConvergedDB(hostTables ...string) *types.DBSchema {
+func ownableMixinConvergedDB(hostTables ...string) *catalog.Database {
 	db := ownableMixinColumnsOnlyDB(hostTables...)
 	for _, ht := range hostTables {
 		db.Constraints = append(db.Constraints,
-			types.DBConstraint{Name: "fk_entity_tenant", TableName: ht, Type: "FOREIGN KEY", ColumnName: "tenant_id", ForeignTable: new("tenants"), ForeignColumn: new("id"), DeleteRule: new("NO ACTION"), UpdateRule: new("NO ACTION")},
-			types.DBConstraint{Name: "fk_entity_created_by", TableName: ht, Type: "FOREIGN KEY", ColumnName: "created_by_user_id", ForeignTable: new("users"), ForeignColumn: new("id"), DeleteRule: new("NO ACTION"), UpdateRule: new("NO ACTION")},
+			catalog.Constraint{Name: "fk_entity_tenant", TableName: ht, Type: "FOREIGN KEY", ColumnName: "tenant_id", ForeignTable: new("tenants"), ForeignColumn: new("id"), DeleteRule: new("NO ACTION"), UpdateRule: new("NO ACTION")},
+			catalog.Constraint{Name: "fk_entity_created_by", TableName: ht, Type: "FOREIGN KEY", ColumnName: "created_by_user_id", ForeignTable: new("users"), ForeignColumn: new("id"), DeleteRule: new("NO ACTION"), UpdateRule: new("NO ACTION")},
 		)
 	}
 	return db
@@ -112,10 +112,10 @@ func ownableMixinSchemaWithTenantOnDelete(onDelete string, hostTables ...string)
 	return db
 }
 
-func ownableHostTable(name string) types.DBTable {
-	return types.DBTable{
+func ownableHostTable(name string) catalog.Table {
+	return catalog.Table{
 		Name: name,
-		Columns: []types.DBColumn{
+		Columns: []catalog.Column{
 			{Name: "id", DataType: "text", IsNullable: "NO", IsPrimaryKey: true},
 			{Name: "tenant_id", DataType: "text", IsNullable: "NO"},
 			{Name: "created_by_user_id", DataType: "text", IsNullable: "NO"},
@@ -283,7 +283,7 @@ func ownableMixinConvergedDBForDialect(
 	generated *goschema.Database,
 	dialect string,
 	hostTables ...string,
-) *types.DBSchema {
+) *catalog.Database {
 	database := ownableMixinConvergedDB(hostTables...)
 	for i := range database.Constraints {
 		constraint := &database.Constraints[i]
@@ -328,14 +328,14 @@ func TestEmbeddedInlineMixinFK_MixedModifyAndAdd_NoPhantomDrop(t *testing.T) {
 	dbSchema := ownableMixinColumnsOnlyDB(allHosts...)
 	for _, h := range modifyHosts {
 		dbSchema.Constraints = append(dbSchema.Constraints,
-			types.DBConstraint{Name: "fk_entity_tenant", TableName: h, Type: "FOREIGN KEY", ColumnName: "tenant_id", ForeignTable: new("tenants"), ForeignColumn: new("id"), DeleteRule: new("NO ACTION"), UpdateRule: new("NO ACTION")},
-			types.DBConstraint{Name: "fk_entity_created_by", TableName: h, Type: "FOREIGN KEY", ColumnName: "created_by_user_id", ForeignTable: new("users"), ForeignColumn: new("id"), DeleteRule: new("NO ACTION"), UpdateRule: new("NO ACTION")},
+			catalog.Constraint{Name: "fk_entity_tenant", TableName: h, Type: "FOREIGN KEY", ColumnName: "tenant_id", ForeignTable: new("tenants"), ForeignColumn: new("id"), DeleteRule: new("NO ACTION"), UpdateRule: new("NO ACTION")},
+			catalog.Constraint{Name: "fk_entity_created_by", TableName: h, Type: "FOREIGN KEY", ColumnName: "created_by_user_id", ForeignTable: new("users"), ForeignColumn: new("id"), DeleteRule: new("NO ACTION"), UpdateRule: new("NO ACTION")},
 		)
 	}
 	// commodities also needs the created_by FK present so only tenant differs;
 	// otherwise created_by would surface as an extra pure-add and muddy the test.
 	dbSchema.Constraints = append(dbSchema.Constraints,
-		types.DBConstraint{Name: "fk_entity_created_by", TableName: addHost, Type: "FOREIGN KEY", ColumnName: "created_by_user_id", ForeignTable: new("users"), ForeignColumn: new("id"), DeleteRule: new("NO ACTION"), UpdateRule: new("NO ACTION")},
+		catalog.Constraint{Name: "fk_entity_created_by", TableName: addHost, Type: "FOREIGN KEY", ColumnName: "created_by_user_id", ForeignTable: new("users"), ForeignColumn: new("id"), DeleteRule: new("NO ACTION"), UpdateRule: new("NO ACTION")},
 	)
 
 	gen := ownableMixinSchemaWithTenantOnDelete("CASCADE", allHosts...)
@@ -363,12 +363,12 @@ func TestEmbeddedInlineMixinFK_MixedModifyAndAdd_NoPhantomDrop(t *testing.T) {
 // ownableMixinConvergedTenantOnDelete is ownableMixinConvergedDB but with the
 // tenant FK already carrying the given delete rule, used to prove idempotency
 // of the multi-host modify (after apply, the database agrees with generated).
-func ownableMixinConvergedTenantOnDelete(deleteRule string, hostTables ...string) *types.DBSchema {
+func ownableMixinConvergedTenantOnDelete(deleteRule string, hostTables ...string) *catalog.Database {
 	db := ownableMixinColumnsOnlyDB(hostTables...)
 	for _, ht := range hostTables {
 		db.Constraints = append(db.Constraints,
-			types.DBConstraint{Name: "fk_entity_tenant", TableName: ht, Type: "FOREIGN KEY", ColumnName: "tenant_id", ForeignTable: new("tenants"), ForeignColumn: new("id"), DeleteRule: new(deleteRule), UpdateRule: new("NO ACTION")},
-			types.DBConstraint{Name: "fk_entity_created_by", TableName: ht, Type: "FOREIGN KEY", ColumnName: "created_by_user_id", ForeignTable: new("users"), ForeignColumn: new("id"), DeleteRule: new("NO ACTION"), UpdateRule: new("NO ACTION")},
+			catalog.Constraint{Name: "fk_entity_tenant", TableName: ht, Type: "FOREIGN KEY", ColumnName: "tenant_id", ForeignTable: new("tenants"), ForeignColumn: new("id"), DeleteRule: new(deleteRule), UpdateRule: new("NO ACTION")},
+			catalog.Constraint{Name: "fk_entity_created_by", TableName: ht, Type: "FOREIGN KEY", ColumnName: "created_by_user_id", ForeignTable: new("users"), ForeignColumn: new("id"), DeleteRule: new("NO ACTION"), UpdateRule: new("NO ACTION")},
 		)
 	}
 	return db

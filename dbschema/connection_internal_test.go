@@ -18,9 +18,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 	"go.5x5.cz/ptah/internal/sqlrunner"
 )
@@ -47,7 +47,7 @@ func (w *connectionTestWriter) DropAllTables(context.Context) error {
 	return nil
 }
 
-func (w *connectionTestWriter) BeginTransaction(context.Context) (types.SchemaTransaction, error) {
+func (w *connectionTestWriter) BeginTransaction(context.Context) (catalog.SchemaTransaction, error) {
 	return nil, nil
 }
 
@@ -97,8 +97,8 @@ func TestDatabaseConnectionWithExecutor_PreservesRootWriterForNarrowExecutor(t *
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(executor.executed, qt.Equals, "DIRECT")
-	c.Assert(scoped.SchemaWriter(), qt.Equals, types.SchemaWriter(root))
-	c.Assert(scoped.Writer(), qt.Equals, types.SchemaExecutor(executor))
+	c.Assert(scoped.SchemaWriter(), qt.Equals, catalog.SchemaWriter(root))
+	c.Assert(scoped.Writer(), qt.Equals, catalog.SchemaExecutor(executor))
 }
 
 func TestDatabaseConnectionWithExecutor_RebindsReaderToQueryableExecutor(t *testing.T) {
@@ -118,7 +118,7 @@ func TestDatabaseConnectionWithExecutor_RebindsReaderToQueryableExecutor(t *test
 		},
 	)
 	runner := sqlrunner.Runner(db.SQL)
-	newReader := func(readerRunner sqlrunner.Runner) types.SchemaReader {
+	newReader := func(readerRunner sqlrunner.Runner) catalog.SchemaReader {
 		return &connectionSessionReader{runner: readerRunner}
 	}
 	conn := &DatabaseConnection{newReader: newReader}
@@ -132,7 +132,7 @@ func TestDatabaseConnectionWithExecutor_RebindsReaderToQueryableExecutor(t *test
 	c.Assert(execErr, qt.IsNil)
 	c.Assert(queried, qt.IsTrue)
 	c.Assert(executor.executed, qt.Equals, "SET search_path = app")
-	c.Assert(scoped.Writer(), qt.Equals, types.SchemaExecutor(executor))
+	c.Assert(scoped.Writer(), qt.Equals, catalog.SchemaExecutor(executor))
 }
 
 func TestDatabaseConnectionWithExecutor_DoesNotRebindUnavailableRunner(t *testing.T) {
@@ -140,7 +140,7 @@ func TestDatabaseConnectionWithExecutor_DoesNotRebindUnavailableRunner(t *testin
 	root := &connectionSessionReader{}
 	conn := &DatabaseConnection{
 		reader: root,
-		newReader: func(runner sqlrunner.Runner) types.SchemaReader {
+		newReader: func(runner sqlrunner.Runner) catalog.SchemaReader {
 			return &connectionSessionReader{runner: runner}
 		},
 	}
@@ -148,22 +148,22 @@ func TestDatabaseConnectionWithExecutor_DoesNotRebindUnavailableRunner(t *testin
 
 	scoped := conn.WithExecutor(executor)
 
-	c.Assert(scoped.Reader(), qt.Equals, types.SchemaReader(root))
-	c.Assert(scoped.Writer(), qt.Equals, types.SchemaExecutor(executor))
+	c.Assert(scoped.Reader(), qt.Equals, catalog.SchemaReader(root))
+	c.Assert(scoped.Writer(), qt.Equals, catalog.SchemaExecutor(executor))
 }
 
 type connectionSessionReader struct {
 	runner sqlrunner.Runner
 }
 
-func (r *connectionSessionReader) ReadSchema() (*types.DBSchema, error) {
+func (r *connectionSessionReader) ReadSchema() (*catalog.Database, error) {
 	return r.ReadSchemaContext(context.Background())
 }
 
-func (r *connectionSessionReader) ReadSchemaContext(ctx context.Context) (*types.DBSchema, error) {
+func (r *connectionSessionReader) ReadSchemaContext(ctx context.Context) (*catalog.Database, error) {
 	var value int
 	err := r.runner.QueryRowContext(ctx, "SELECT 1").Scan(&value)
-	return &types.DBSchema{}, err
+	return &catalog.Database{}, err
 }
 
 type connectionSessionWriter struct {
@@ -183,7 +183,7 @@ func (w *connectionSessionWriter) DropAllTables(context.Context) error {
 	return nil
 }
 
-func (w *connectionSessionWriter) BeginTransaction(context.Context) (types.SchemaTransaction, error) {
+func (w *connectionSessionWriter) BeginTransaction(context.Context) (catalog.SchemaTransaction, error) {
 	return nil, nil
 }
 
@@ -208,10 +208,10 @@ func TestDatabaseConnectionWithSession_RebindsAllDatabaseOperations(t *testing.T
 		},
 	)
 	db.SQL.SetMaxOpenConns(1)
-	newReader := func(runner sqlrunner.Runner) types.SchemaReader {
+	newReader := func(runner sqlrunner.Runner) catalog.SchemaReader {
 		return &connectionSessionReader{runner: runner}
 	}
-	newWriter := func(runner sqlrunner.Runner, _ *sql.Conn) types.SchemaWriter {
+	newWriter := func(runner sqlrunner.Runner, _ *sql.Conn) catalog.SchemaWriter {
 		return &connectionSessionWriter{runner: runner}
 	}
 	rootRunner := sqlrunner.Runner(db.SQL)
@@ -256,7 +256,7 @@ func TestDatabaseConnectionWithSession_RebindsAllDatabaseOperations(t *testing.T
 func TestResolveDatabaseCapabilities_MySQLKeepsVersionBaseline(t *testing.T) {
 	c := qt.New(t)
 
-	got := resolveDatabaseCapabilities(types.DBInfo{
+	got := resolveDatabaseCapabilities(catalog.ServerInfo{
 		Dialect: "mysql",
 		Version: "8.4.0",
 	})
@@ -277,7 +277,7 @@ const defaultCLILogLevel = slog.LevelWarn
 
 // captureResolutionReport runs the reporter with a default logger writing to a
 // buffer at the given threshold, and returns everything it wrote.
-func captureResolutionReport(t *testing.T, level slog.Level, info types.DBInfo) string {
+func captureResolutionReport(t *testing.T, level slog.Level, info catalog.ServerInfo) string {
 	t.Helper()
 	var output bytes.Buffer
 	previousLogger := slog.Default()
@@ -302,49 +302,49 @@ func captureResolutionReport(t *testing.T, level slog.Level, info types.DBInfo) 
 func TestReportCapabilityResolution(t *testing.T) {
 	tests := []struct {
 		name           string
-		info           types.DBInfo
+		info           catalog.ServerInfo
 		wantDebug      []string
 		wantDebugQuiet bool
 	}{
 		{
 			name: "mysql inside the measured line says nothing at all",
-			info: types.DBInfo{Dialect: "mysql", Version: "9.7.1"},
+			info: catalog.ServerInfo{Dialect: "mysql", Version: "9.7.1"},
 			// The integration matrix runs mysql:9.7.
 			wantDebugQuiet: true,
 		},
 		{
 			name:           "mysql current measured line says nothing at all",
-			info:           types.DBInfo{Dialect: "mysql", Version: "26.7.0"},
+			info:           catalog.ServerInfo{Dialect: "mysql", Version: "26.7.0"},
 			wantDebugQuiet: true,
 		},
 		{
 			name:           "mariadb current measured line says nothing at all",
-			info:           types.DBInfo{Dialect: "mariadb", Version: "12.3.0-MariaDB"},
+			info:           catalog.ServerInfo{Dialect: "mariadb", Version: "12.3.0-MariaDB"},
 			wantDebugQuiet: true,
 		},
 		{
 			name:           "postgres current measured line says nothing at all",
-			info:           types.DBInfo{Dialect: "postgres", Version: "PostgreSQL 18.4 (Debian)"},
+			info:           catalog.ServerInfo{Dialect: "postgres", Version: "PostgreSQL 18.4 (Debian)"},
 			wantDebugQuiet: true,
 		},
 		{
 			name:      "mysql past the newest measured line is recorded at debug",
-			info:      types.DBInfo{Dialect: "mysql", Version: "99.0"},
+			info:      catalog.ServerInfo{Dialect: "mysql", Version: "99.0"},
 			wantDebug: []string{"level=DEBUG", "newest measured capability line", "dialect=mysql", "version=99.0", "newest_measured=26.7"},
 		},
 		{
 			name:      "mariadb past the newest measured line is recorded at debug",
-			info:      types.DBInfo{Dialect: "mariadb", Version: "99.0-MariaDB"},
+			info:      catalog.ServerInfo{Dialect: "mariadb", Version: "99.0-MariaDB"},
 			wantDebug: []string{"level=DEBUG", "dialect=mariadb", "version=99.0-MariaDB", "newest_measured=12.3"},
 		},
 		{
 			name:      "postgres past the newest measured line is recorded at debug",
-			info:      types.DBInfo{Dialect: "postgres", Version: "PostgreSQL 99.0"},
+			info:      catalog.ServerInfo{Dialect: "postgres", Version: "PostgreSQL 99.0"},
 			wantDebug: []string{"level=DEBUG", "dialect=postgres", "newest_measured=18.x"},
 		},
 		{
 			name:      "an unparseable version stays a debug-level fallback",
-			info:      types.DBInfo{Dialect: "mysql", Version: "who knows"},
+			info:      catalog.ServerInfo{Dialect: "mysql", Version: "who knows"},
 			wantDebug: []string{"level=DEBUG", "falling back from an unmeasured server version"},
 		},
 	}
@@ -373,10 +373,10 @@ func TestDatabaseConnectionWithSession_MySQLRelaxationIsCallbackScoped(t *testin
 		}, nil
 	})
 	db.SQL.SetMaxOpenConns(1)
-	newReader := func(runner sqlrunner.Runner) types.SchemaReader {
+	newReader := func(runner sqlrunner.Runner) catalog.SchemaReader {
 		return &connectionSessionReader{runner: runner}
 	}
-	newWriter := func(runner sqlrunner.Runner, _ *sql.Conn) types.SchemaWriter {
+	newWriter := func(runner sqlrunner.Runner, _ *sql.Conn) catalog.SchemaWriter {
 		return &connectionSessionWriter{runner: runner}
 	}
 	baseline := capability.MySQL84()
@@ -384,7 +384,7 @@ func TestDatabaseConnectionWithSession_MySQLRelaxationIsCallbackScoped(t *testin
 	conn := &DatabaseConnection{
 		db:     db.SQL,
 		runner: rootRunner,
-		info: types.DBInfo{
+		info: catalog.ServerInfo{
 			Dialect:      "mysql",
 			Version:      "8.4.0",
 			Capabilities: baseline,
@@ -980,7 +980,7 @@ func TestDatabaseConnectionInfoClonesCapabilities(t *testing.T) {
 	c := qt.New(t)
 
 	conn := &DatabaseConnection{
-		info: types.DBInfo{
+		info: catalog.ServerInfo{
 			Dialect:      "cockroachdb",
 			Capabilities: capability.CockroachDB23(),
 		},

@@ -13,9 +13,9 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -134,7 +134,7 @@ func modifiedColumnSummaries(diff *difftypes.SchemaDiff) []string {
 
 // readColumnCount counts the columns a read carries for one table, so a
 // vacuous comparison cannot pass for a healthy one.
-func readColumnCount(schema *dbschematypes.DBSchema, table string) int {
+func readColumnCount(schema *catalog.Database, table string) int {
 	for _, dbTable := range schema.Tables {
 		if dbTable.Name == table {
 			return len(dbTable.Columns)

@@ -4,8 +4,8 @@ package schemascope
 import (
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/tableref"
 )
 
@@ -119,7 +119,7 @@ func FilterGeneratedWithDefaultSchema(
 
 // FilterDatabase returns a shallow copy of db containing only objects in the
 // selected schemas. Empty schema filters leave db unchanged.
-func FilterDatabase(db *dbschematypes.DBSchema, schemas []string) *dbschematypes.DBSchema {
+func FilterDatabase(db *catalog.Database, schemas []string) *catalog.Database {
 	return FilterDatabaseWithDefaultSchema(db, schemas, "")
 }
 
@@ -127,10 +127,10 @@ func FilterDatabase(db *dbschematypes.DBSchema, schemas []string) *dbschematypes
 // objects in the selected schemas, treating unqualified objects as belonging to
 // defaultSchema when it is set.
 func FilterDatabaseWithDefaultSchema(
-	db *dbschematypes.DBSchema,
+	db *catalog.Database,
 	schemas []string,
 	defaultSchema string,
-) *dbschematypes.DBSchema {
+) *catalog.Database {
 	if db == nil {
 		return nil
 	}
@@ -141,17 +141,17 @@ func FilterDatabaseWithDefaultSchema(
 
 	filtered := *db
 	keptTables := make(map[string]struct{})
-	filtered.Tables = keep(db.Tables, func(table dbschematypes.DBTable) bool {
+	filtered.Tables = keep(db.Tables, func(table catalog.Table) bool {
 		if !schemaAllowed(allowed, effectiveSchema(table.Schema, defaultSchema)) {
 			return false
 		}
 		keptTables[table.QualifiedName()] = struct{}{}
 		return true
 	})
-	filtered.Indexes = keep(db.Indexes, func(index dbschematypes.DBIndex) bool {
+	filtered.Indexes = keep(db.Indexes, func(index catalog.Index) bool {
 		return schemaAllowed(allowed, effectiveSchema(index.Schema, defaultSchema))
 	})
-	filtered.Constraints = keep(db.Constraints, func(constraint dbschematypes.DBConstraint) bool {
+	filtered.Constraints = keep(db.Constraints, func(constraint catalog.Constraint) bool {
 		if !schemaAllowed(allowed, effectiveSchema(constraint.Schema, defaultSchema)) {
 			return false
 		}
@@ -161,20 +161,20 @@ func FilterDatabaseWithDefaultSchema(
 	// Keep every extension for the same database-wide identity reason as the
 	// generated projection above. Filtering only one side invents additions or
 	// removals when a selected object uses an extension placed elsewhere.
-	filtered.Views = keep(db.Views, func(view dbschematypes.DBView) bool {
+	filtered.Views = keep(db.Views, func(view catalog.View) bool {
 		return schemaAllowed(allowed, effectiveSchema(view.Schema, defaultSchema))
 	})
-	filtered.MatViews = keep(db.MatViews, func(view dbschematypes.DBMatView) bool {
+	filtered.MatViews = keep(db.MatViews, func(view catalog.MaterializedView) bool {
 		return schemaAllowed(allowed, effectiveSchema(view.Schema, defaultSchema))
 	})
-	filtered.Triggers = keep(db.Triggers, func(trigger dbschematypes.DBTrigger) bool {
+	filtered.Triggers = keep(db.Triggers, func(trigger catalog.Trigger) bool {
 		return schemaAllowed(allowed, effectiveSchema(trigger.Schema, defaultSchema)) &&
 			tableKeyAllowed(keptTables, trigger.QualifiedTable())
 	})
-	filtered.RLSPolicies = keep(db.RLSPolicies, func(policy dbschematypes.DBRLSPolicy) bool {
+	filtered.RLSPolicies = keep(db.RLSPolicies, func(policy catalog.RLSPolicy) bool {
 		return dbTableReferenceAllowed(keptTables, policy.Table)
 	})
-	filtered.Grants = keep(db.Grants, func(grant dbschematypes.DBGrant) bool {
+	filtered.Grants = keep(db.Grants, func(grant catalog.Grant) bool {
 		return dbGrantAllowed(allowed, keptTables, grant, defaultSchema)
 	})
 	filtered.Enums = keepReferencedDatabaseEnums(db.Enums, filtered.Tables)
@@ -319,7 +319,7 @@ func grantAllowed(
 func dbGrantAllowed(
 	allowed,
 	keptTables map[string]struct{},
-	grant dbschematypes.DBGrant,
+	grant catalog.Grant,
 	defaultSchema string,
 ) bool {
 	if strings.EqualFold(grant.ObjectType, "SCHEMA") {
@@ -376,7 +376,7 @@ func keepReferencedGeneratedEnums(enums []goschema.Enum, fields []goschema.Field
 	})
 }
 
-func keepReferencedDatabaseEnums(enums []dbschematypes.DBEnum, tables []dbschematypes.DBTable) []dbschematypes.DBEnum {
+func keepReferencedDatabaseEnums(enums []catalog.Enum, tables []catalog.Table) []catalog.Enum {
 	referenced := make(map[string]struct{})
 	for _, table := range tables {
 		for _, column := range table.Columns {
@@ -386,13 +386,13 @@ func keepReferencedDatabaseEnums(enums []dbschematypes.DBEnum, tables []dbschema
 			}
 		}
 	}
-	return keep(enums, func(enum dbschematypes.DBEnum) bool {
+	return keep(enums, func(enum catalog.Enum) bool {
 		_, ok := referenced[enum.Name]
 		return ok
 	})
 }
 
-func databaseEnumRef(column dbschematypes.DBColumn) (string, bool) {
+func databaseEnumRef(column catalog.Column) (string, bool) {
 	if column.UDTName == "" {
 		return "", false
 	}

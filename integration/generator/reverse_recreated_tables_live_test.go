@@ -10,9 +10,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
@@ -127,7 +127,7 @@ func rrtPriorSchema() *goschema.Database {
 }
 
 // rrtHasTable reports whether the dropped table is present in the catalog.
-func rrtHasTable(db *dbschematypes.DBSchema) bool {
+func rrtHasTable(db *catalog.Database) bool {
 	for _, table := range db.Tables {
 		if table.Name == rrtGadgets {
 			return true
@@ -146,7 +146,7 @@ func rrtHasTable(db *dbschematypes.DBSchema) bool {
 // anybody declared — the server synthesizes one per non-null column and names
 // it after the table's OID, so a table that is dropped and re-created gets a
 // new OID and new names for constraints whose meaning never changed.
-func rrtCatalog(db *dbschematypes.DBSchema) []string {
+func rrtCatalog(db *catalog.Database) []string {
 	var lines []string
 	for _, constraint := range db.Constraints {
 		if constraint.TableName != rrtGadgets || rrtSyntheticNotNull(constraint) {
@@ -161,7 +161,7 @@ func rrtCatalog(db *dbschematypes.DBSchema) []string {
 
 // rrtSyntheticNotNull reports the server-generated per-column NOT NULL check,
 // under the same rule the schema converter applies to it.
-func rrtSyntheticNotNull(constraint dbschematypes.DBConstraint) bool {
+func rrtSyntheticNotNull(constraint catalog.Constraint) bool {
 	if constraint.CheckClause == nil || !strings.HasSuffix(constraint.Name, "_not_null") {
 		return false
 	}

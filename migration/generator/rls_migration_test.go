@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -20,9 +20,9 @@ func TestRLSMigrationGeneration(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	// Create an empty database schema (simulating a fresh database)
-	dbSchema := &types.DBSchema{
-		Tables:      make([]types.DBTable, 0),
-		RLSPolicies: make([]types.DBRLSPolicy, 0),
+	dbSchema := &catalog.Database{
+		Tables:      make([]catalog.Table, 0),
+		RLSPolicies: make([]catalog.RLSPolicy, 0),
 	}
 
 	// Generate schema diff

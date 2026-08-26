@@ -10,11 +10,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
@@ -192,7 +192,7 @@ func grantsFor(refs []difftypes.GrantRef, role string) []difftypes.GrantRef {
 }
 
 // grantRow returns the row a role holds for one privilege, or nil.
-func grantRow(grants []dbschematypes.DBGrant, role, privilege string) *dbschematypes.DBGrant {
+func grantRow(grants []catalog.Grant, role, privilege string) *catalog.Grant {
 	for i := range grants {
 		if grants[i].Role == role && grants[i].Privilege == privilege {
 			return &grants[i]
@@ -280,7 +280,7 @@ func TestSQLServerLiveReaderClassifiesDenyAndSchemaGrants(t *testing.T) {
 
 // grantsHeldBy collects what one role holds, and which of those carry the grant
 // option.
-func grantsHeldBy(grants []dbschematypes.DBGrant, role string) (held, withOption map[string]bool) {
+func grantsHeldBy(grants []catalog.Grant, role string) (held, withOption map[string]bool) {
 	held = make(map[string]bool)
 	withOption = make(map[string]bool)
 	for _, grant := range grants {

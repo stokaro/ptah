@@ -6,10 +6,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 	"go.5x5.cz/ptah/internal/atlasreport"
 )
@@ -50,8 +50,8 @@ func TestCompatibilityHCLFraming_PopulatedDocumentKeepsOnlyOneMarkerOccurrence(t
 			Tables: []goschema.Table{{StructName: "User", Name: "users", Schema: "main"}},
 			Fields: []goschema.Field{{StructName: "User", Name: "id", Type: "INTEGER", Primary: true}},
 		},
-		&types.DBSchema{},
-		types.DBInfo{Dialect: platform.SQLite, Schema: "main"},
+		&catalog.Database{},
+		catalog.ServerInfo{Dialect: platform.SQLite, Schema: "main"},
 		nil,
 		atlasreport.SchemaInspectReportOptions{
 			DescribeSchemas:         true,
@@ -79,8 +79,8 @@ func TestCompatibilityHCLFraming_PreservesPostgreSQLCoverageDirectives(t *testin
 			Fields:     []goschema.Field{{StructName: "User", Name: "id", Type: "bigint"}},
 			Extensions: []goschema.Extension{{Name: "pgcrypto"}},
 		},
-		&types.DBSchema{},
-		types.DBInfo{Dialect: platform.Postgres, Schema: "public"},
+		&catalog.Database{},
+		catalog.ServerInfo{Dialect: platform.Postgres, Schema: "public"},
 		nil,
 		atlasreport.SchemaInspectReportOptions{
 			OmitAtlasRefusedBlocks:  true,
@@ -110,8 +110,8 @@ func TestCompatibilityHCLFraming_IsIndependentOfBlockPolicy(t *testing.T) {
 			Schemas:    []goschema.Schema{{Name: "public"}},
 			Extensions: []goschema.Extension{{Name: "pgcrypto"}},
 		},
-		&types.DBSchema{},
-		types.DBInfo{Dialect: platform.Postgres, Schema: "public"},
+		&catalog.Database{},
+		catalog.ServerInfo{Dialect: platform.Postgres, Schema: "public"},
 		nil,
 		atlasreport.SchemaInspectReportOptions{
 			OmitAtlasRefusedBlocks:  false,
@@ -158,8 +158,8 @@ func TestCompatibilityHCLFraming_NativeDocumentIsByteIdentical(t *testing.T) {
 func emptySQLiteInspectReport(compatibilityHCLFraming bool) *atlasreport.SchemaInspectReport {
 	return atlasreport.NewSchemaInspectReport(
 		&goschema.Database{Schemas: []goschema.Schema{{Name: "main"}}},
-		&types.DBSchema{Schemas: []types.DBSchemaInfo{{Name: "main"}}},
-		types.DBInfo{Dialect: platform.SQLite, Schema: "main"},
+		&catalog.Database{Schemas: []catalog.Schema{{Name: "main"}}},
+		catalog.ServerInfo{Dialect: platform.SQLite, Schema: "main"},
 		nil,
 		atlasreport.SchemaInspectReportOptions{
 			DescribeSchemas:         true,

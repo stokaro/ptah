@@ -6,10 +6,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	dbtypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -102,7 +102,7 @@ func TestGenerateSchemaDiffSQLStatements_ASingleSchemaApplyCreatesNoSchema(t *te
 		Fields: []goschema.Field{{StructName: "W", Name: "id", Type: "INT", Primary: true}},
 	}
 
-	statements := planWithSQLServer(c, declared, &dbtypes.DBSchema{})
+	statements := planWithSQLServer(c, declared, &catalog.Database{})
 
 	c.Assert(schemaStatements(statements), qt.HasLen, 0, qt.Commentf("%v", statements))
 	// Non-vacuity: the table really is planned, so an empty plan cannot pass.
@@ -160,8 +160,8 @@ func TestGenerateSchemaDiffSQLStatements_EveryAddedFamilyNamesItsSchema(t *testi
 			declared := &goschema.Database{Schemas: []goschema.Schema{{Name: "dbo"}, {Name: "extra"}}}
 			test.declare(declared)
 
-			statements := planWithSQLServer(c, declared, &dbtypes.DBSchema{
-				Schemas: []dbtypes.DBSchemaInfo{{Name: "dbo"}},
+			statements := planWithSQLServer(c, declared, &catalog.Database{
+				Schemas: []catalog.Schema{{Name: "dbo"}},
 			})
 
 			c.Assert(schemaStatements(statements), qt.HasLen, 1, qt.Commentf("%v", statements))
@@ -178,11 +178,11 @@ func planSchemaPrecondition(c *qt.C, dialect, home string) []string {
 		Tables:  []goschema.Table{{StructName: "W", Name: "widget", Schema: "extra"}},
 		Fields:  []goschema.Field{{StructName: "W", Name: "id", Type: "INT", Primary: true}},
 	}
-	live := &dbtypes.DBSchema{Schemas: []dbtypes.DBSchemaInfo{{Name: home}}}
+	live := &catalog.Database{Schemas: []catalog.Schema{{Name: home}}}
 	return planForDialect(c, declared, live, dialect, home)
 }
 
-func planWithSQLServer(c *qt.C, declared *goschema.Database, live *dbtypes.DBSchema) []string {
+func planWithSQLServer(c *qt.C, declared *goschema.Database, live *catalog.Database) []string {
 	c.Helper()
 	return planForDialect(c, declared, live, "sqlserver", "dbo")
 }
@@ -190,7 +190,7 @@ func planWithSQLServer(c *qt.C, declared *goschema.Database, live *dbtypes.DBSch
 func planForDialect(
 	c *qt.C,
 	declared *goschema.Database,
-	live *dbtypes.DBSchema,
+	live *catalog.Database,
 	dialect, home string,
 ) []string {
 	c.Helper()

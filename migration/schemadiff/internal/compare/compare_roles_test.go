@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/reservedrole"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
@@ -16,7 +16,7 @@ func TestRolesComparison(t *testing.T) {
 	t.Run("no roles in either schema", func(t *testing.T) {
 		c := qt.New(t)
 		generated := &goschema.Database{Roles: make([]goschema.Role, 0)}
-		database := &types.DBSchema{Roles: make([]types.DBRole, 0)}
+		database := &catalog.Database{Roles: make([]catalog.Role, 0)}
 		diff := &difftypes.SchemaDiff{}
 
 		compare.Roles(generated, database, diff, compare.CoverageOf(generated, database))
@@ -34,7 +34,7 @@ func TestRolesComparison(t *testing.T) {
 				{Name: "admin_user", Login: true, Superuser: true},
 			},
 		}
-		database := &types.DBSchema{Roles: make([]types.DBRole, 0)}
+		database := &catalog.Database{Roles: make([]catalog.Role, 0)}
 		diff := &difftypes.SchemaDiff{}
 
 		compare.Roles(generated, database, diff, compare.CoverageOf(generated, database))
@@ -49,8 +49,8 @@ func TestRolesComparison(t *testing.T) {
 	t.Run("roles not automatically removed", func(t *testing.T) {
 		c := qt.New(t)
 		generated := &goschema.Database{Roles: make([]goschema.Role, 0)}
-		database := &types.DBSchema{
-			Roles: []types.DBRole{
+		database := &catalog.Database{
+			Roles: []catalog.Role{
 				{Name: "old_role", Login: true},
 				{Name: "legacy_role", Login: false},
 			},
@@ -72,8 +72,8 @@ func TestRolesComparison(t *testing.T) {
 				{Name: "app_user", Login: true, CreateDB: true},
 			},
 		}
-		database := &types.DBSchema{
-			Roles: []types.DBRole{
+		database := &catalog.Database{
+			Roles: []catalog.Role{
 				{Name: "app_user", Login: false, CreateDB: false},
 			},
 		}
@@ -99,8 +99,8 @@ func TestRolesComparison(t *testing.T) {
 				{Name: "unchanged_role", Login: false}, // Unchanged
 			},
 		}
-		database := &types.DBSchema{
-			Roles: []types.DBRole{
+		database := &catalog.Database{
+			Roles: []catalog.Role{
 				{Name: "app_user", Login: false},       // Modified
 				{Name: "old_role", Login: true},        // Removed
 				{Name: "unchanged_role", Login: false}, // Unchanged
@@ -130,8 +130,8 @@ func TestRolesComparison(t *testing.T) {
 				{Name: "m_role", Login: true, CreateDB: true},
 			},
 		}
-		database := &types.DBSchema{
-			Roles: []types.DBRole{
+		database := &catalog.Database{
+			Roles: []catalog.Role{
 				{Name: "z_old", Login: true},
 				{Name: "a_old", Login: true},
 				{Name: "m_role", Login: false, CreateDB: false},
@@ -166,9 +166,9 @@ func TestRolesTreatsOutOfScopeRolesAsPresent(t *testing.T) {
 		generated := &goschema.Database{
 			Roles: []goschema.Role{{Name: "admin_user", Login: true, Superuser: true}},
 		}
-		database := &types.DBSchema{
-			Roles: make([]types.DBRole, 0),
-			RolesOutOfScope: []types.DBRole{
+		database := &catalog.Database{
+			Roles: make([]catalog.Role, 0),
+			RolesOutOfScope: []catalog.Role{
 				{Name: "admin_user", Login: true, Superuser: true},
 			},
 		}
@@ -189,8 +189,8 @@ func TestRolesTreatsOutOfScopeRolesAsPresent(t *testing.T) {
 				{Name: "brand_new_user", Login: true},
 			},
 		}
-		database := &types.DBSchema{
-			RolesOutOfScope: []types.DBRole{{Name: "admin_user", Login: true}},
+		database := &catalog.Database{
+			RolesOutOfScope: []catalog.Role{{Name: "admin_user", Login: true}},
 		}
 		diff := &difftypes.SchemaDiff{}
 
@@ -207,8 +207,8 @@ func TestRolesTreatsOutOfScopeRolesAsPresent(t *testing.T) {
 		generated := &goschema.Database{
 			Roles: []goschema.Role{{Name: "admin_user", Login: true, Superuser: true}},
 		}
-		database := &types.DBSchema{
-			RolesOutOfScope: []types.DBRole{{Name: "admin_user", Login: false, Superuser: false}},
+		database := &catalog.Database{
+			RolesOutOfScope: []catalog.Role{{Name: "admin_user", Login: false, Superuser: false}},
 		}
 		diff := &difftypes.SchemaDiff{}
 
@@ -226,9 +226,9 @@ func TestRolesTreatsOutOfScopeRolesAsPresent(t *testing.T) {
 		generated := &goschema.Database{
 			Roles: []goschema.Role{{Name: "app_user", Login: true}},
 		}
-		database := &types.DBSchema{
-			Roles:           []types.DBRole{{Name: "app_user", Login: true}},
-			RolesOutOfScope: []types.DBRole{{Name: "other_tenant_user", Login: true}},
+		database := &catalog.Database{
+			Roles:           []catalog.Role{{Name: "app_user", Login: true}},
+			RolesOutOfScope: []catalog.Role{{Name: "other_tenant_user", Login: true}},
 		}
 		diff := &difftypes.SchemaDiff{}
 
@@ -244,16 +244,16 @@ func TestRolesTreatsOutOfScopeRolesAsPresent(t *testing.T) {
 		// The same NAME in both lists, which is the only shape that can show
 		// which one the comparison reads. A PostgreSQL reader's two lists are
 		// disjoint, so this decides nothing there; it decides for every other
-		// producer of a DBSchema, and the attributes have to come from the
+		// producer of a Database, and the attributes have to come from the
 		// description rather than from whichever loop happens to run last.
 		// The out-of-scope copy is stale on every attribute, so reading it
 		// would plan an ALTER ROLE that changes nothing back.
 		generated := &goschema.Database{
 			Roles: []goschema.Role{{Name: "app_user", Login: true, CreateDB: true}},
 		}
-		database := &types.DBSchema{
-			Roles:           []types.DBRole{{Name: "app_user", Login: true, CreateDB: true}},
-			RolesOutOfScope: []types.DBRole{{Name: "app_user", Login: false, CreateDB: false}},
+		database := &catalog.Database{
+			Roles:           []catalog.Role{{Name: "app_user", Login: true, CreateDB: true}},
+			RolesOutOfScope: []catalog.Role{{Name: "app_user", Login: false, CreateDB: false}},
 		}
 		diff := &difftypes.SchemaDiff{}
 
@@ -286,15 +286,15 @@ func TestRolesAnswerIsTheSameWhicheverListTheRoleWasReadInto(t *testing.T) {
 			{Name: "nowhere_at_all", Login: true},
 		},
 	}
-	scoped := &types.DBSchema{
-		Roles: []types.DBRole{{Name: "app_user", Login: true}},
-		RolesOutOfScope: []types.DBRole{
+	scoped := &catalog.Database{
+		Roles: []catalog.Role{{Name: "app_user", Login: true}},
+		RolesOutOfScope: []catalog.Role{
 			{Name: "scoped_out", Login: true},
 			{Name: "other_tenant_user", Login: true},
 		},
 	}
-	described := &types.DBSchema{
-		Roles: []types.DBRole{
+	described := &catalog.Database{
+		Roles: []catalog.Role{
 			{Name: "app_user", Login: true},
 			{Name: "other_tenant_user", Login: true},
 			{Name: "scoped_out", Login: true},
@@ -347,9 +347,9 @@ func TestRolesReservedNameIsRefusedBeforeThisComparisonRunsAtAll(t *testing.T) {
 			{Name: "app_user", Login: true},
 		},
 	}
-	database := &types.DBSchema{
-		Roles:           []types.DBRole{{Name: "app_user", Login: true}},
-		RolesOutOfScope: []types.DBRole{{Name: "other_tenant_user", Login: true}},
+	database := &catalog.Database{
+		Roles:           []catalog.Role{{Name: "app_user", Login: true}},
+		RolesOutOfScope: []catalog.Role{{Name: "other_tenant_user", Login: true}},
 	}
 	diff := &difftypes.SchemaDiff{}
 
@@ -378,7 +378,7 @@ func TestRoleDefinitionsComparison(t *testing.T) {
 			Inherit:     true,
 			Replication: false,
 		}
-		database := types.DBRole{
+		database := catalog.Role{
 			Name:        "test_role",
 			Login:       true,
 			Superuser:   false,
@@ -406,7 +406,7 @@ func TestRoleDefinitionsComparison(t *testing.T) {
 			Inherit:     false,
 			Replication: true,
 		}
-		database := types.DBRole{
+		database := catalog.Role{
 			Name:        "test_role",
 			Login:       false,
 			Superuser:   false,
@@ -435,7 +435,7 @@ func TestRoleDefinitionsComparison(t *testing.T) {
 			Name:  "test_role",
 			Login: true,
 		}
-		database := types.DBRole{
+		database := catalog.Role{
 			Name:  "test_role",
 			Login: false,
 		}
@@ -453,7 +453,7 @@ func TestRoleDefinitionsComparison(t *testing.T) {
 			Name:     "test_role",
 			Password: "new_password",
 		}
-		database := types.DBRole{
+		database := catalog.Role{
 			Name: "test_role",
 		}
 
@@ -470,7 +470,7 @@ func TestRoleDefinitionsComparison(t *testing.T) {
 			Name:     "test_role",
 			Password: "", // No password in target
 		}
-		database := types.DBRole{
+		database := catalog.Role{
 			Name:        "test_role",
 			HasPassword: true, // Database role has a password
 		}
@@ -492,7 +492,7 @@ func TestGrantsComparison(t *testing.T) {
 				{Role: "app_role", Privileges: []string{"USAGE"}, OnSchema: "public"},
 			},
 		}
-		database := &types.DBSchema{}
+		database := &catalog.Database{}
 		diff := &difftypes.SchemaDiff{}
 
 		compare.Grants(generated, database, diff)
@@ -513,8 +513,8 @@ func TestGrantsComparison(t *testing.T) {
 				{Role: "app_role", Privileges: []string{"select", "insert"}, OnTable: "public.users"},
 			},
 		}
-		database := &types.DBSchema{
-			Grants: []types.DBGrant{
+		database := &catalog.Database{
+			Grants: []catalog.Grant{
 				{Role: "app_role", Privilege: "INSERT", ObjectType: "TABLE", Schema: "public", ObjectName: "users"},
 				{Role: "app_role", Privilege: "SELECT", ObjectType: "TABLE", Schema: "public", ObjectName: "users"},
 			},
@@ -533,8 +533,8 @@ func TestGrantsComparison(t *testing.T) {
 			Roles:  []goschema.Role{{Name: "app_role"}},
 			Grants: []goschema.Grant{{Role: "app_role", Privileges: []string{"SELECT"}, OnTable: "users"}},
 		}
-		database := &types.DBSchema{
-			Grants: []types.DBGrant{
+		database := &catalog.Database{
+			Grants: []catalog.Grant{
 				{Role: "app_role", Privilege: "DELETE", ObjectType: "TABLE", ObjectName: "users"},
 				{Role: "external_role", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "users"},
 			},
@@ -554,8 +554,8 @@ func TestGrantsComparison(t *testing.T) {
 		generated := &goschema.Database{
 			Grants: []goschema.Grant{{Role: "external_role", Privileges: []string{"SELECT"}, OnTable: "users"}},
 		}
-		database := &types.DBSchema{
-			Grants: []types.DBGrant{
+		database := &catalog.Database{
+			Grants: []catalog.Grant{
 				{Role: "external_role", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "users"},
 				{Role: "external_role", Privilege: "DELETE", ObjectType: "TABLE", ObjectName: "users"},
 			},
@@ -574,8 +574,8 @@ func TestGrantsComparison(t *testing.T) {
 			Roles:  []goschema.Role{{Name: "app_role"}},
 			Grants: []goschema.Grant{{Role: "app_role", Privileges: []string{"SELECT"}, OnTable: "users"}},
 		}
-		database := &types.DBSchema{
-			Grants: []types.DBGrant{
+		database := &catalog.Database{
+			Grants: []catalog.Grant{
 				{Role: "app_role", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "users", WithOption: true},
 			},
 		}
@@ -598,8 +598,8 @@ func TestGrantsComparison(t *testing.T) {
 				{Role: "app_role", Privileges: []string{"SELECT"}, OnTable: "users", WithOption: true},
 			},
 		}
-		database := &types.DBSchema{
-			Grants: []types.DBGrant{
+		database := &catalog.Database{
+			Grants: []catalog.Grant{
 				{Role: "app_role", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "users"},
 			},
 		}
@@ -618,8 +618,8 @@ func TestGrantsComparison(t *testing.T) {
 	t.Run("removing a grant with grant option still revokes the full privilege", func(t *testing.T) {
 		c := qt.New(t)
 		generated := &goschema.Database{Roles: []goschema.Role{{Name: "app_role"}}}
-		database := &types.DBSchema{
-			Grants: []types.DBGrant{
+		database := &catalog.Database{
+			Grants: []catalog.Grant{
 				{Role: "app_role", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "users", WithOption: true},
 			},
 		}

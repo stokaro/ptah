@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/normalize"
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/tableref"
@@ -74,7 +74,7 @@ func guaranteesUniqueness(constraintType string) bool {
 // one way and internal/convert/fromschema the other -- and ADR 0001 decision 6
 // deletes the direction question by having both readers produce this state
 // directly.
-func FromCatalog(schema *dbschematypes.DBSchema, dialect string, semantics identifier.Semantics) (*State, error) {
+func FromCatalog(schema *catalog.Database, dialect string, semantics identifier.Semantics) (*State, error) {
 	// The read's own record of what it did not look at travels with it, for
 	// the reason [FromDescription] carries the description's: a state that
 	// dropped it would be silent about a family the reader never opened, and a
@@ -146,7 +146,7 @@ func FromCatalog(schema *dbschematypes.DBSchema, dialect string, semantics ident
 // columnsFromCatalog collects a table's columns, keyed through the identity
 // model so the two sources resolve one column to one identity.
 func columnsFromCatalog(
-	table dbschematypes.DBTable,
+	table catalog.Table,
 	builder objectidentity.Builder,
 ) []Column {
 	columns := make([]Column, 0, len(table.Columns))
@@ -189,7 +189,7 @@ func columnsFromCatalog(
 // than carried as a string. The alternative is a plan that renders a clause
 // whose behavior on delete nobody in this codebase can state.
 func foreignKeyFromCatalog(
-	constraint dbschematypes.DBConstraint,
+	constraint catalog.Constraint,
 	builder objectidentity.Builder,
 ) (*ForeignKey, error) {
 	if constraint.ForeignTable == nil {
@@ -736,7 +736,7 @@ func addIndex(
 // object as an index, because which representation wins is the description's to
 // decide. Here there is nothing to yield to -- the object is not addressable as
 // an index for either side.
-func notAddressableAsAnIndex(index dbschematypes.DBIndex, dialect string) bool {
+func notAddressableAsAnIndex(index catalog.Index, dialect string) bool {
 	return index.IsPrimary ||
 		(platform.NormalizeDialect(dialect) == platform.SQLite &&
 			strings.HasPrefix(index.Name, "sqlite_autoindex_"))
@@ -797,7 +797,7 @@ func addTableConstraint(
 func catalogConstraints(
 	state *State,
 	builder objectidentity.Builder,
-	schema *dbschematypes.DBSchema,
+	schema *catalog.Database,
 ) error {
 	for _, constraint := range schema.Constraints {
 		if isTableConstraint(constraint.Type) && !isNotNullRow(constraint) {
@@ -867,7 +867,7 @@ func isCheckKind(kind string) bool {
 // The rule is the absence of a condition rather than the name, which is a
 // server's convention and would be a different guess on every target: a CHECK
 // with nothing to check is not a check.
-func isNotNullRow(constraint dbschematypes.DBConstraint) bool {
+func isNotNullRow(constraint catalog.Constraint) bool {
 	return isCheckKind(constraint.Type) &&
 		strings.TrimSpace(derefOrEmpty(constraint.CheckClause)) == ""
 }

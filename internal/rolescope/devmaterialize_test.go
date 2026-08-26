@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/rolescope"
 )
 
@@ -40,28 +40,28 @@ func TestRolesToCreateOnDevSkipsWhatTheServerAlreadyHas(t *testing.T) {
 	tests := []struct {
 		name             string
 		declared         []goschema.Role
-		present          []dbschematypes.DBRole
+		present          []catalog.Role
 		wantCreate       []string
 		wantAlreadyThere []string
 	}{
 		{
 			name:             "the grantee and the owner a one-GRANT description names",
 			declared:         []goschema.Role{{Name: "ptah_user"}, {Name: "app_reader"}},
-			present:          []dbschematypes.DBRole{{Name: "ptah_user"}, {Name: "app_reader"}},
+			present:          []catalog.Role{{Name: "ptah_user"}, {Name: "app_reader"}},
 			wantCreate:       nil,
 			wantAlreadyThere: []string{"ptah_user", "app_reader"},
 		},
 		{
 			name:             "a role the server has never seen is still created",
 			declared:         []goschema.Role{{Name: "brand_new"}},
-			present:          []dbschematypes.DBRole{{Name: "ptah_user"}},
+			present:          []catalog.Role{{Name: "ptah_user"}},
 			wantCreate:       []string{"brand_new"},
 			wantAlreadyThere: nil,
 		},
 		{
 			name:             "a mixed document creates only the missing half",
 			declared:         []goschema.Role{{Name: "app_reader"}, {Name: "brand_new"}},
-			present:          []dbschematypes.DBRole{{Name: "app_reader"}},
+			present:          []catalog.Role{{Name: "app_reader"}},
 			wantCreate:       []string{"brand_new"},
 			wantAlreadyThere: []string{"app_reader"},
 		},
@@ -75,14 +75,14 @@ func TestRolesToCreateOnDevSkipsWhatTheServerAlreadyHas(t *testing.T) {
 		{
 			name:             "a document declaring no role asks the server for nothing",
 			declared:         nil,
-			present:          []dbschematypes.DBRole{{Name: "ptah_user"}},
+			present:          []catalog.Role{{Name: "ptah_user"}},
 			wantCreate:       nil,
 			wantAlreadyThere: nil,
 		},
 		{
 			name:             "role names match by exact spelling",
 			declared:         []goschema.Role{{Name: "App_Reader"}},
-			present:          []dbschematypes.DBRole{{Name: "app_reader"}},
+			present:          []catalog.Role{{Name: "app_reader"}},
 			wantCreate:       []string{"App_Reader"},
 			wantAlreadyThere: nil,
 		},
@@ -113,7 +113,7 @@ func TestRolesToCreateOnDevKeepsTheDeclaredAttributes(t *testing.T) {
 			{Name: "app_reader", Login: true, CreateDB: true},
 			{Name: "brand_new", Superuser: true},
 		},
-		[]dbschematypes.DBRole{{Name: "app_reader"}},
+		[]catalog.Role{{Name: "app_reader"}},
 	)
 
 	c.Assert(alreadyThere, qt.DeepEquals, []goschema.Role{{Name: "app_reader", Login: true, CreateDB: true}})

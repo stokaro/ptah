@@ -10,8 +10,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbschema/postgres"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -30,7 +30,7 @@ func TestSchemaObjects_RoundTripAndBodyChange_PostgreSQL_Integration(t *testing.
 	defer cleanupSchemaObjects(t, db)
 
 	target := schemaObjectsTarget()
-	diff := schemadiff.Compare(target, &dbschematypes.DBSchema{})
+	diff := schemadiff.Compare(target, &catalog.Database{})
 	c.Assert(diff.HasChanges(), qt.IsTrue)
 
 	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, target, "postgres")
@@ -138,8 +138,8 @@ func cleanupSchemaObjects(t *testing.T, db *sql.DB) {
 	_, _ = db.Exec("DROP FUNCTION IF EXISTS ptah_trigger_ptah_schema_objects_users_ptah_schema_objects_set_updated_at()")
 }
 
-func filterSchemaObjects(in *dbschematypes.DBSchema) *dbschematypes.DBSchema {
-	out := &dbschematypes.DBSchema{}
+func filterSchemaObjects(in *catalog.Database) *catalog.Database {
+	out := &catalog.Database{}
 	for _, table := range in.Tables {
 		if table.Name == "ptah_schema_objects_users" {
 			out.Tables = append(out.Tables, table)

@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 )
 
@@ -25,22 +25,22 @@ func TestConvert_CarriesTheWidthIntoTheDescription(t *testing.T) {
 	precision, scale := 12, 4
 	tests := []struct {
 		name     string
-		column   dbschematypes.DBColumn
+		column   catalog.Column
 		wantType string
 	}{
 		{
 			name:     "varchar",
-			column:   dbschematypes.DBColumn{Name: "c", DataType: "character varying", CharacterMaxLength: &width},
+			column:   catalog.Column{Name: "c", DataType: "character varying", CharacterMaxLength: &width},
 			wantType: "VARCHAR(8)",
 		},
 		{
 			name:     "char",
-			column:   dbschematypes.DBColumn{Name: "c", DataType: "character", CharacterMaxLength: &width},
+			column:   catalog.Column{Name: "c", DataType: "character", CharacterMaxLength: &width},
 			wantType: "CHAR(8)",
 		},
 		{
 			name:     "bit",
-			column:   dbschematypes.DBColumn{Name: "c", DataType: "bit", CharacterMaxLength: &width},
+			column:   catalog.Column{Name: "c", DataType: "bit", CharacterMaxLength: &width},
 			wantType: "BIT(8)",
 		},
 		{
@@ -48,12 +48,12 @@ func TestConvert_CarriesTheWidthIntoTheDescription(t *testing.T) {
 			// reaches the document through sql() carrying the case it has
 			// here, and that binary's type names are case sensitive.
 			name:     "bit varying",
-			column:   dbschematypes.DBColumn{Name: "c", DataType: "bit varying", CharacterMaxLength: &width},
+			column:   catalog.Column{Name: "c", DataType: "bit varying", CharacterMaxLength: &width},
 			wantType: "bit varying(8)",
 		},
 		{
 			name: "numeric",
-			column: dbschematypes.DBColumn{
+			column: catalog.Column{
 				Name: "c", DataType: "numeric",
 				NumericPrecision: &precision, NumericScale: &scale,
 			},
@@ -62,7 +62,7 @@ func TestConvert_CarriesTheWidthIntoTheDescription(t *testing.T) {
 		{
 			// The control: a type that keeps no width must not grow one.
 			name:     "a type with no width",
-			column:   dbschematypes.DBColumn{Name: "c", DataType: "integer"},
+			column:   catalog.Column{Name: "c", DataType: "integer"},
 			wantType: "integer",
 		},
 	}
@@ -71,9 +71,9 @@ func TestConvert_CarriesTheWidthIntoTheDescription(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			converted := dbschematogo.ConvertDBSchemaToGoSchema(&dbschematypes.DBSchema{
-				Tables: []dbschematypes.DBTable{{
-					Name: "probe", Schema: "public", Columns: []dbschematypes.DBColumn{test.column},
+			converted := dbschematogo.ConvertDBSchemaToGoSchema(&catalog.Database{
+				Tables: []catalog.Table{{
+					Name: "probe", Schema: "public", Columns: []catalog.Column{test.column},
 				}},
 			})
 

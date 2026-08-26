@@ -4,9 +4,9 @@ import (
 	"sort"
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -32,7 +32,7 @@ import (
 // chose.
 func Hypertables(
 	generated *goschema.Database,
-	database *types.DBSchema,
+	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
 ) {
@@ -40,7 +40,7 @@ func Hypertables(
 	for _, hypertable := range generated.Hypertables {
 		declared[hypertableKey(hypertable.Table)] = hypertable
 	}
-	live := make(map[string]types.DBHypertable, len(database.Hypertables))
+	live := make(map[string]catalog.Hypertable, len(database.Hypertables))
 	for _, hypertable := range database.Hypertables {
 		live[hypertableKey(hypertable.QualifiedName())] = hypertable
 	}
@@ -83,7 +83,7 @@ func Hypertables(
 // when it does not.
 func hypertableChange(
 	declared goschema.Hypertable,
-	reported types.DBHypertable,
+	reported catalog.Hypertable,
 ) *difftypes.HypertableDiff {
 	sameColumn := strings.EqualFold(
 		strings.TrimSpace(declared.Column),

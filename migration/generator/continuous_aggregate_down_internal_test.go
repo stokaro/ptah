@@ -10,10 +10,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
@@ -52,8 +52,8 @@ func TestGenerateDownMigration_ContinuousAggregate(t *testing.T) {
 		},
 	}
 
-	database := &dbschematypes.DBSchema{
-		ContinuousAggregates: []dbschematypes.DBContinuousAggregate{{
+	database := &catalog.Database{
+		ContinuousAggregates: []catalog.ContinuousAggregate{{
 			Schema: "public", Name: "hourly",
 			HypertableSchema: "public", HypertableName: "readings",
 			Definition: "SELECT time_bucket('01:00:00'::interval, \"time\") FROM readings",

@@ -4,9 +4,9 @@ import (
 	"sort"
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -20,7 +20,7 @@ const grantObjectTypeSchema = "SCHEMA"
 // Callers holding a live connection should use [GrantsWithSemantics] instead:
 // on MySQL and MariaDB a schema is a database, so nothing offline can name the
 // one that owns an unqualified target.
-func Grants(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
+func Grants(generated *goschema.Database, database *catalog.Database, diff *difftypes.SchemaDiff) {
 	GrantsWithSemantics(generated, database, diff, identifier.ForDialect(""))
 }
 
@@ -28,7 +28,7 @@ func Grants(generated *goschema.Database, database *types.DBSchema, diff *diffty
 //
 // The two sides do not spell a target the same way, and until they were
 // normalized they could not match. A grant read from the catalog reports the
-// object through [types.DBGrant.QualifiedTarget], which qualifies it with the
+// object through [catalog.Grant.QualifiedTarget], which qualifies it with the
 // schema the reader found -- `"public"."granted"`. A grant declared in Go
 // annotations or HCL carries whatever the author wrote, which is normally the
 // bare `granted`. Keyed raw, one grant became two: the declared one absent from
@@ -39,7 +39,7 @@ func Grants(generated *goschema.Database, database *types.DBSchema, diff *diffty
 // builds its own key, and one of the instances collected in stokaro/ptah#1276.
 func GrantsWithSemantics(
 	generated *goschema.Database,
-	database *types.DBSchema,
+	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	semantics identifier.Semantics,
 ) {
@@ -136,7 +136,7 @@ func grantRefsFromGenerated(grant goschema.Grant) []difftypes.GrantRef {
 	return refs
 }
 
-func grantRefFromDatabase(grant types.DBGrant) difftypes.GrantRef {
+func grantRefFromDatabase(grant catalog.Grant) difftypes.GrantRef {
 	objectType := strings.ToUpper(strings.TrimSpace(grant.ObjectType))
 	objectName := grant.QualifiedTarget()
 	if objectType == grantObjectTypeSchema {

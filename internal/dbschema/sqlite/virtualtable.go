@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/internal/sqlitemodule"
 )
 
@@ -97,7 +97,7 @@ func (r *Reader) readTableKinds(ctx context.Context) (map[string]tableKind, erro
 // description contains no module-owned storage.
 func (r *Reader) readUnregisteredVirtualTables(
 	virtualTables map[string]virtualTableSpec,
-) ([]types.DBVirtualTable, error) {
+) ([]catalog.VirtualTable, error) {
 	if len(virtualTables) == 0 {
 		// No virtual table means no module to resolve. Skipping the query here
 		// is not only an optimization: it keeps a reader pointed at a build or
@@ -109,12 +109,12 @@ func (r *Reader) readUnregisteredVirtualTables(
 	if err != nil {
 		return nil, err
 	}
-	var unregistered []types.DBVirtualTable
+	var unregistered []catalog.VirtualTable
 	for name, spec := range virtualTables {
 		if registered.Registers(spec.Module) {
 			continue
 		}
-		unregistered = append(unregistered, types.DBVirtualTable{
+		unregistered = append(unregistered, catalog.VirtualTable{
 			Schema: r.outputSchema(),
 			Name:   name,
 			Module: spec.Module,

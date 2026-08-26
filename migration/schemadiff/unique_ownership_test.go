@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -105,14 +105,14 @@ func TestCompareWithDialect_SingleColumnUniqueConstraintOwnsUniqueness(t *testin
 		Columns:    []string{"email"},
 	}}
 	database := uniqueIndexDatabaseSchema()
-	database.Indexes = []types.DBIndex{{
+	database.Indexes = []catalog.Index{{
 		Name:       "sqlite_autoindex_users_1",
 		TableName:  "users",
 		Columns:    []string{"email"},
 		IsUnique:   true,
 		Definition: "",
 	}}
-	database.Constraints = []types.DBConstraint{{
+	database.Constraints = []catalog.Constraint{{
 		Name:        "users_email_key",
 		TableName:   "users",
 		Type:        "UNIQUE",
@@ -137,14 +137,14 @@ func TestCompareWithDialect_StructOwnedUniqueConstraintOwnsUniqueness(t *testing
 		Columns:    []string{"email"},
 	}}
 	database := uniqueIndexDatabaseSchema()
-	database.Indexes = []types.DBIndex{{
+	database.Indexes = []catalog.Index{{
 		Name:       "sqlite_autoindex_users_1",
 		TableName:  "users",
 		Columns:    []string{"email"},
 		IsUnique:   true,
 		Definition: "",
 	}}
-	database.Constraints = []types.DBConstraint{{
+	database.Constraints = []catalog.Constraint{{
 		Name:        "users_email_key",
 		TableName:   "users",
 		Type:        "UNIQUE",
@@ -171,7 +171,7 @@ func TestCompareWithDialect_SchemaQualifiedStructOwnedUniqueConstraintOwnsUnique
 	}}
 	database := uniqueIndexDatabaseSchema()
 	database.Tables[0].Schema = "audit"
-	database.Indexes = []types.DBIndex{{
+	database.Indexes = []catalog.Index{{
 		Name:       "users_email_key",
 		Schema:     "audit",
 		TableName:  "users",
@@ -179,7 +179,7 @@ func TestCompareWithDialect_SchemaQualifiedStructOwnedUniqueConstraintOwnsUnique
 		IsUnique:   true,
 		Definition: "",
 	}}
-	database.Constraints = []types.DBConstraint{{
+	database.Constraints = []catalog.Constraint{{
 		Name:        "users_email_key",
 		Schema:      "audit",
 		TableName:   "users",
@@ -208,10 +208,10 @@ func TestCompareWithDialect_LiteralDotUsesStructuralTableIdentity(t *testing.T) 
 			Nullable:   true,
 		}},
 	}
-	database := &types.DBSchema{Tables: []types.DBTable{{
+	database := &catalog.Database{Tables: []catalog.Table{{
 		Name: "tenant.data",
 		Type: "TABLE",
-		Columns: []types.DBColumn{{
+		Columns: []catalog.Column{{
 			Name:          "event.id",
 			DataType:      "INTEGER",
 			ColumnType:    "INTEGER",
@@ -231,7 +231,7 @@ func TestCompareWithDialect_LiteralDotDoesNotMatchSchemaQualification(t *testing
 	generated := &goschema.Database{Tables: []goschema.Table{{
 		Name: "tenant.data",
 	}}}
-	database := &types.DBSchema{Tables: []types.DBTable{{
+	database := &catalog.Database{Tables: []catalog.Table{{
 		Schema: "tenant",
 		Name:   "data",
 		Type:   "TABLE",
@@ -252,7 +252,7 @@ func TestCompareWithDialect_LiteralDotAndQualifiedTablesRemainDistinct(t *testin
 		{StructName: "Qualified", Schema: "tenant", Name: "data"},
 	}}
 
-	diff := schemadiff.CompareWithDialect(generated, &types.DBSchema{}, "postgres")
+	diff := schemadiff.CompareWithDialect(generated, &catalog.Database{}, "postgres")
 
 	c.Assert(diff.TablesAdded, qt.DeepEquals, []string{`"tenant.data"`, "tenant.data"})
 }
@@ -273,12 +273,12 @@ func TestCompareWithDialect_ConstraintMembersPreserveStructuralIdentity(t *testi
 			CheckExpression: checkClause,
 		}},
 	}
-	database := &types.DBSchema{
-		Tables: []types.DBTable{
+	database := &catalog.Database{
+		Tables: []catalog.Table{
 			{Name: "tenant.data", Type: "TABLE"},
 			{Schema: "tenant.data", Name: "payload", Type: "TABLE"},
 		},
-		Constraints: []types.DBConstraint{{
+		Constraints: []catalog.Constraint{{
 			Name:        "payload.guard",
 			TableName:   "tenant.data",
 			Type:        "CHECK",
@@ -337,11 +337,11 @@ func TestCompareWithDialect_LiteralDotUniqueIndexOwnsColumnUniqueness(t *testing
 			Unique:     true,
 		}},
 	}
-	database := &types.DBSchema{
-		Tables: []types.DBTable{{
+	database := &catalog.Database{
+		Tables: []catalog.Table{{
 			Name: "tenant.data",
 			Type: "TABLE",
-			Columns: []types.DBColumn{{
+			Columns: []catalog.Column{{
 				Name:       "event.id",
 				DataType:   "TEXT",
 				ColumnType: "TEXT",
@@ -349,7 +349,7 @@ func TestCompareWithDialect_LiteralDotUniqueIndexOwnsColumnUniqueness(t *testing
 				IsUnique:   true,
 			}},
 		}},
-		Indexes: []types.DBIndex{{
+		Indexes: []catalog.Index{{
 			Name:       "event.lookup",
 			TableName:  "tenant.data",
 			Columns:    []string{"event.id"},
@@ -420,12 +420,12 @@ func uniqueIndexGeneratedSchema() *goschema.Database {
 	}
 }
 
-func uniqueIndexDatabaseSchema() *types.DBSchema {
-	return &types.DBSchema{
-		Tables: []types.DBTable{{
+func uniqueIndexDatabaseSchema() *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{{
 			Name: "users",
 			Type: "TABLE",
-			Columns: []types.DBColumn{{
+			Columns: []catalog.Column{{
 				Name:       "email",
 				DataType:   "TEXT",
 				ColumnType: "TEXT",
@@ -433,7 +433,7 @@ func uniqueIndexDatabaseSchema() *types.DBSchema {
 				IsUnique:   true,
 			}},
 		}},
-		Indexes: []types.DBIndex{{
+		Indexes: []catalog.Index{{
 			Name:       "idx_users_email",
 			TableName:  "users",
 			Columns:    []string{"email"},

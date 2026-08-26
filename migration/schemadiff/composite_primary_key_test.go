@@ -5,25 +5,25 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
 func TestCompareWithDialect_TableLevelCompositePrimaryKeyMatchesIntrospectedPostgresPrimaryKey(t *testing.T) {
 	c := qt.New(t)
 	generated := compositePrimaryKeySchema()
-	database := &types.DBSchema{
-		Tables: []types.DBTable{{
+	database := &catalog.Database{
+		Tables: []catalog.Table{{
 			Name: "memberships",
 			Type: "TABLE",
-			Columns: []types.DBColumn{
+			Columns: []catalog.Column{
 				{Name: "org_id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
 				{Name: "user_id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
 				{Name: "role", DataType: "text", IsNullable: "NO"},
 			},
 		}},
-		Constraints: []types.DBConstraint{{
+		Constraints: []catalog.Constraint{{
 			Name:        "memberships_pkey",
 			TableName:   "memberships",
 			Type:        "PRIMARY KEY",
@@ -39,11 +39,11 @@ func TestCompareWithDialect_TableLevelCompositePrimaryKeyMissingFromExistingTabl
 	c := qt.New(t)
 
 	generated := compositePrimaryKeySchema()
-	database := &types.DBSchema{
-		Tables: []types.DBTable{{
+	database := &catalog.Database{
+		Tables: []catalog.Table{{
 			Name: "memberships",
 			Type: "TABLE",
-			Columns: []types.DBColumn{
+			Columns: []catalog.Column{
 				{Name: "org_id", DataType: "integer", IsNullable: "NO"},
 				{Name: "user_id", DataType: "integer", IsNullable: "NO"},
 				{Name: "role", DataType: "text", IsNullable: "NO"},
@@ -74,11 +74,11 @@ func TestCompareWithDialect_BlankTablePrimaryKeyDoesNotSynthesizeConstraint(t *t
 			{StructName: "User", Name: "email", Type: "TEXT", Nullable: false},
 		},
 	}
-	database := &types.DBSchema{
-		Tables: []types.DBTable{{
+	database := &catalog.Database{
+		Tables: []catalog.Table{{
 			Name: "users",
 			Type: "TABLE",
-			Columns: []types.DBColumn{
+			Columns: []catalog.Column{
 				{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
 				{Name: "email", DataType: "text", IsNullable: "NO"},
 			},
@@ -109,16 +109,16 @@ func TestCompareWithDialect_SingleColumnFieldLevelPrimaryKeyIsNotDuplicated(t *t
 			{StructName: "Pet", Name: "name", Type: "TEXT", Nullable: false},
 		},
 	}
-	database := &types.DBSchema{
-		Tables: []types.DBTable{{
+	database := &catalog.Database{
+		Tables: []catalog.Table{{
 			Name: "pets",
 			Type: "TABLE",
-			Columns: []types.DBColumn{
+			Columns: []catalog.Column{
 				{Name: "id", DataType: "bigint", IsNullable: "NO", IsPrimaryKey: true},
 				{Name: "name", DataType: "text", IsNullable: "NO"},
 			},
 		}},
-		Constraints: []types.DBConstraint{{
+		Constraints: []catalog.Constraint{{
 			Name:        "pets_pkey",
 			TableName:   "pets",
 			Type:        "PRIMARY KEY",
@@ -149,11 +149,11 @@ func TestCompareWithDialect_SingleColumnFieldLevelPrimaryKeyMissingFromDBIsDetec
 			{StructName: "Pet", Name: "name", Type: "TEXT", Nullable: false},
 		},
 	}
-	database := &types.DBSchema{
-		Tables: []types.DBTable{{
+	database := &catalog.Database{
+		Tables: []catalog.Table{{
 			Name: "pets",
 			Type: "TABLE",
-			Columns: []types.DBColumn{
+			Columns: []catalog.Column{
 				{Name: "id", DataType: "bigint", IsNullable: "NO"},
 				{Name: "name", DataType: "text", IsNullable: "NO"},
 			},

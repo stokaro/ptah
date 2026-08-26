@@ -12,7 +12,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 )
 
@@ -33,7 +33,7 @@ func TestReadRoleMemberships_ReadsTheTableThisEngineHas(t *testing.T) {
 		hasRoleEdges bool
 		hasRolesMap  bool
 		rows         [][]driver.Value
-		want         []types.DBRoleMembership
+		want         []catalog.RoleMembership
 	}{
 		{
 			name:         "MySQL, through role_edges",
@@ -42,7 +42,7 @@ func TestReadRoleMemberships_ReadsTheTableThisEngineHas(t *testing.T) {
 				{"reader", "alice", true},
 				{"reader", "root", false},
 			},
-			want: []types.DBRoleMembership{
+			want: []catalog.RoleMembership{
 				{Role: "reader", Member: "alice", AdminOption: true},
 				{Role: "reader", Member: "root", AdminOption: false},
 			},
@@ -54,7 +54,7 @@ func TestReadRoleMemberships_ReadsTheTableThisEngineHas(t *testing.T) {
 				{"reader", "root", true},
 				{"reader", "alice", false},
 			},
-			want: []types.DBRoleMembership{
+			want: []catalog.RoleMembership{
 				{Role: "reader", Member: "root", AdminOption: true},
 				{Role: "reader", Member: "alice", AdminOption: false},
 			},
@@ -64,7 +64,7 @@ func TestReadRoleMemberships_ReadsTheTableThisEngineHas(t *testing.T) {
 			// neither table is describing a world where the question does not
 			// exist, and answers an empty list rather than an error.
 			name: "a server with neither table",
-			want: make([]types.DBRoleMembership, 0),
+			want: make([]catalog.RoleMembership, 0),
 		},
 	}
 

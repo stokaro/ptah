@@ -8,10 +8,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -127,7 +127,7 @@ func compareSQLServerIndexIdentitySchema(
 	t *testing.T,
 	dsn string,
 	target *goschema.Database,
-) (*dbschematypes.DBSchema, *difftypes.SchemaDiff) {
+) (*catalog.Database, *difftypes.SchemaDiff) {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(t.Context(), dsn)
 	c.Assert(err, qt.IsNil)

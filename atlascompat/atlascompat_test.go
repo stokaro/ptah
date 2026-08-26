@@ -10,9 +10,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/atlascompat"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
@@ -96,10 +96,10 @@ func TestSchemaToAST(t *testing.T) {
 
 func TestDBSchemaToGoSchema(t *testing.T) {
 	c := qt.New(t)
-	db := atlascompat.DBSchemaToGoSchema(&dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{{
+	db := atlascompat.DBSchemaToGoSchema(&catalog.Database{
+		Tables: []catalog.Table{{
 			Name: "users",
-			Columns: []dbschematypes.DBColumn{{
+			Columns: []catalog.Column{{
 				Name:         "id",
 				DataType:     "integer",
 				IsNullable:   "NO",

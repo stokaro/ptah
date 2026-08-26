@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/convert/goschematodb"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -61,13 +61,13 @@ func TestToDBSchema_PreservesExtendedSchemaObjects(t *testing.T) {
 	c.Assert(got.Schemas, qt.HasLen, 1)
 	c.Assert(got.Schemas[0].Comment, qt.Equals, "Application")
 	c.Assert(got.Tables[0].RLSEnabled, qt.IsTrue)
-	c.Assert(got.Extensions, qt.DeepEquals, []dbschematypes.DBExtension{{Name: "pgcrypto", Schema: "app"}})
+	c.Assert(got.Extensions, qt.DeepEquals, []catalog.Extension{{Name: "pgcrypto", Schema: "app"}})
 	c.Assert(got.Sequences, qt.HasLen, 1)
 	c.Assert(got.Sequences[0].Increment, qt.DeepEquals, new(int64(2)))
 	c.Assert(got.Domains, qt.HasLen, 1)
 	c.Assert(got.Domains[0].NotNull, qt.IsTrue)
 	c.Assert(got.Composites, qt.HasLen, 1)
-	c.Assert(got.Composites[0].Fields, qt.DeepEquals, []dbschematypes.DBCompositeField{{
+	c.Assert(got.Composites[0].Fields, qt.DeepEquals, []catalog.CompositeField{{
 		Name: "city",
 		Type: "text",
 	}})

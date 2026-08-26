@@ -53,9 +53,9 @@ package main
 import (
 	"fmt"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
@@ -89,9 +89,9 @@ func createSampleGeneratedSchema() *goschema.Database {
 	}
 }
 
-func createSampleDatabaseSchema() *types.DBSchema {
-	return &types.DBSchema{
-		Extensions: []types.DBExtension{
+func createSampleDatabaseSchema() *catalog.Database {
+	return &catalog.Database{
+		Extensions: []catalog.Extension{
 			{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"},
 			{Name: "adminpack", Version: "2.1", Schema: "public"},
 			{Name: "pg_trgm", Version: "1.6", Schema: "public"},
@@ -107,7 +107,7 @@ func getExtensionNames(extensions []goschema.Extension) []string {
 	return names
 }
 
-func getDatabaseExtensionNames(extensions []types.DBExtension) []string {
+func getDatabaseExtensionNames(extensions []catalog.Extension) []string {
 	names := make([]string, len(extensions))
 	for i, ext := range extensions {
 		names[i] = ext.Name
@@ -115,7 +115,7 @@ func getDatabaseExtensionNames(extensions []types.DBExtension) []string {
 	return names
 }
 
-func demonstrateDefaultBehavior(generated *goschema.Database, database *types.DBSchema) {
+func demonstrateDefaultBehavior(generated *goschema.Database, database *catalog.Database) {
 	fmt.Println("1. Default Behavior (ignores 'plpgsql'):")
 	fmt.Println("   Code: schemadiff.Compare(generated, database)")
 
@@ -127,7 +127,7 @@ func demonstrateDefaultBehavior(generated *goschema.Database, database *types.DB
 	fmt.Println()
 }
 
-func demonstrateCustomIgnoreList(generated *goschema.Database, database *types.DBSchema) {
+func demonstrateCustomIgnoreList(generated *goschema.Database, database *catalog.Database) {
 	fmt.Println("2. Custom Ignore List (ignore 'adminpack' only):")
 	fmt.Println("   Code: config.WithIgnoredExtensions(\"adminpack\")")
 
@@ -140,7 +140,7 @@ func demonstrateCustomIgnoreList(generated *goschema.Database, database *types.D
 	fmt.Println()
 }
 
-func demonstrateAdditionalIgnoredExtensions(generated *goschema.Database, database *types.DBSchema) {
+func demonstrateAdditionalIgnoredExtensions(generated *goschema.Database, database *catalog.Database) {
 	fmt.Println("3. Additional Ignored Extensions (default + 'adminpack'):")
 	fmt.Println("   Code: config.WithAdditionalIgnoredExtensions(\"adminpack\")")
 
@@ -153,7 +153,7 @@ func demonstrateAdditionalIgnoredExtensions(generated *goschema.Database, databa
 	fmt.Println()
 }
 
-func demonstrateManageAllExtensions(generated *goschema.Database, database *types.DBSchema) {
+func demonstrateManageAllExtensions(generated *goschema.Database, database *catalog.Database) {
 	fmt.Println("4. Manage All Extensions (no ignoring):")
 	fmt.Println("   Code: config.WithIgnoredExtensions() // empty list")
 

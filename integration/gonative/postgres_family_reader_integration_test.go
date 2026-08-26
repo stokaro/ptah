@@ -10,10 +10,10 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/cmd/atlas"
 	"go.5x5.cz/ptah/cmd/readdb"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
@@ -56,7 +56,7 @@ type postgresFamilyReaderFixture struct {
 }
 
 type postgresFamilyReaderResult struct {
-	schema *dbschematypes.DBSchema
+	schema *catalog.Database
 }
 
 func cockroachReaderFixture() postgresFamilyReaderFixture {
@@ -185,7 +185,7 @@ func readPostgresFamilyReaderSchema(
 	t *testing.T,
 	sourceURL,
 	schema string,
-) *dbschematypes.DBSchema {
+) *catalog.Database {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(t.Context(), sourceURL)
 	c.Assert(err, qt.IsNil)
@@ -236,7 +236,7 @@ func runPostgresFamilyCompatInspect(
 
 func assertPostgresFamilyReaderCatalog(
 	c *qt.C,
-	schema *dbschematypes.DBSchema,
+	schema *catalog.Database,
 	fixture postgresFamilyReaderFixture,
 ) {
 	c.Helper()
@@ -258,7 +258,7 @@ func assertPostgresFamilyReaderOutput(c *qt.C, output string, fixture postgresFa
 	c.Assert(output, qt.Contains, fixture.materializedView)
 }
 
-func postgresFamilyCatalogHasTable(schema *dbschematypes.DBSchema, schemaName, tableName string) bool {
+func postgresFamilyCatalogHasTable(schema *catalog.Database, schemaName, tableName string) bool {
 	for _, table := range schema.Tables {
 		if table.Schema == schemaName && table.Name == tableName {
 			return true
@@ -267,7 +267,7 @@ func postgresFamilyCatalogHasTable(schema *dbschematypes.DBSchema, schemaName, t
 	return false
 }
 
-func postgresFamilyCatalogHasView(schema *dbschematypes.DBSchema, schemaName, viewName string) bool {
+func postgresFamilyCatalogHasView(schema *catalog.Database, schemaName, viewName string) bool {
 	for _, view := range schema.Views {
 		if view.Schema == schemaName && view.Name == viewName {
 			return true
@@ -277,7 +277,7 @@ func postgresFamilyCatalogHasView(schema *dbschematypes.DBSchema, schemaName, vi
 }
 
 func postgresFamilyCatalogHasMaterializedView(
-	schema *dbschematypes.DBSchema,
+	schema *catalog.Database,
 	schemaName,
 	viewName string,
 ) bool {
@@ -290,7 +290,7 @@ func postgresFamilyCatalogHasMaterializedView(
 }
 
 func postgresFamilyCatalogHasIndex(
-	schema *dbschematypes.DBSchema,
+	schema *catalog.Database,
 	schemaName,
 	tableName,
 	indexName string,
@@ -303,7 +303,7 @@ func postgresFamilyCatalogHasIndex(
 	return false
 }
 
-func postgresFamilyCatalogHasSequence(schema *dbschematypes.DBSchema, schemaName, sequenceName string) bool {
+func postgresFamilyCatalogHasSequence(schema *catalog.Database, schemaName, sequenceName string) bool {
 	for _, sequence := range schema.Sequences {
 		if sequence.Schema == schemaName && sequence.Name == sequenceName {
 			return true
@@ -312,7 +312,7 @@ func postgresFamilyCatalogHasSequence(schema *dbschematypes.DBSchema, schemaName
 	return false
 }
 
-func postgresFamilyCatalogHasRLSEnabledTable(schema *dbschematypes.DBSchema, schemaName, tableName string) bool {
+func postgresFamilyCatalogHasRLSEnabledTable(schema *catalog.Database, schemaName, tableName string) bool {
 	for _, table := range schema.Tables {
 		if table.Schema == schemaName && table.Name == tableName && table.RLSEnabled {
 			return true
@@ -322,12 +322,12 @@ func postgresFamilyCatalogHasRLSEnabledTable(schema *dbschematypes.DBSchema, sch
 }
 
 func postgresFamilyCatalogHasRLSPolicy(
-	schema *dbschematypes.DBSchema,
+	schema *catalog.Database,
 	schemaName,
 	tableName,
 	policyName string,
 ) bool {
-	wantTable := dbschematypes.QualifyTableName(schemaName, tableName)
+	wantTable := catalog.QualifyTableName(schemaName, tableName)
 	for _, policy := range schema.RLSPolicies {
 		if policy.Table == wantTable && policy.Name == policyName && policy.ToRoles == "PUBLIC" {
 			return true

@@ -5,10 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -24,7 +24,7 @@ import (
 type rlsEnabledIdentityCase struct {
 	name        string
 	generated   []goschema.RLSEnabledTable
-	database    []types.DBTable
+	database    []catalog.Table
 	wantAdded   []string
 	wantRemoved []string
 }
@@ -33,7 +33,7 @@ type rlsEnabledIdentityCase struct {
 // enablement is matched by table identity rather than by the string the table
 // was written as.
 //
-// The database side comes from [types.DBTable.QualifiedName] and carries the
+// The database side comes from [catalog.Table.QualifiedName] and carries the
 // schema the reader found; a declaration carries whatever the author wrote. So
 // `secured` and `public.secured` were two tables, and an unchanged schema
 // planned ENABLE ROW LEVEL SECURITY on a table that already had it and DISABLE
@@ -46,18 +46,18 @@ func TestRLSEnabledTablesWithSemantics_QualifiedTableIdentity(t *testing.T) {
 		{
 			name:      "a bare declaration matches the qualified table the reader reports",
 			generated: []goschema.RLSEnabledTable{{Table: "secured"}},
-			database:  []types.DBTable{{Schema: "public", Name: "secured", RLSEnabled: true}},
+			database:  []catalog.Table{{Schema: "public", Name: "secured", RLSEnabled: true}},
 		},
 		{
 			name:      "a qualified declaration matches the same table",
 			generated: []goschema.RLSEnabledTable{{Table: "public.secured"}},
-			database:  []types.DBTable{{Schema: "public", Name: "secured", RLSEnabled: true}},
+			database:  []catalog.Table{{Schema: "public", Name: "secured", RLSEnabled: true}},
 		},
 		{
 			// The control against the fix becoming "everything matches".
 			name:        "the same table name in another schema is another table",
 			generated:   []goschema.RLSEnabledTable{{Table: "other.secured"}},
-			database:    []types.DBTable{{Schema: "public", Name: "secured", RLSEnabled: true}},
+			database:    []catalog.Table{{Schema: "public", Name: "secured", RLSEnabled: true}},
 			wantAdded:   []string{"other.secured"},
 			wantRemoved: []string{"public.secured"},
 		},
@@ -67,7 +67,7 @@ func TestRLSEnabledTablesWithSemantics_QualifiedTableIdentity(t *testing.T) {
 			// because that is what the planner renders.
 			name:      "a declared table the database has not enabled is still added",
 			generated: []goschema.RLSEnabledTable{{Table: "secured"}},
-			database:  []types.DBTable{{Schema: "public", Name: "secured"}},
+			database:  []catalog.Table{{Schema: "public", Name: "secured"}},
 			wantAdded: []string{"secured"},
 		},
 		{
@@ -75,7 +75,7 @@ func TestRLSEnabledTablesWithSemantics_QualifiedTableIdentity(t *testing.T) {
 			// reported for removal, under the qualified name the reader gave.
 			name:        "an undeclared enabled table is still removed",
 			generated:   nil,
-			database:    []types.DBTable{{Schema: "public", Name: "unmanaged", RLSEnabled: true}},
+			database:    []catalog.Table{{Schema: "public", Name: "unmanaged", RLSEnabled: true}},
 			wantRemoved: []string{"public.unmanaged"},
 		},
 	}
@@ -84,7 +84,7 @@ func TestRLSEnabledTablesWithSemantics_QualifiedTableIdentity(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			generated := &goschema.Database{RLSEnabledTables: test.generated}
-			database := &types.DBSchema{Tables: test.database}
+			database := &catalog.Database{Tables: test.database}
 			diff := &difftypes.SchemaDiff{}
 
 			compare.RLSEnabledTablesWithSemantics(

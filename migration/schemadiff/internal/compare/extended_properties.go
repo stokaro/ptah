@@ -5,9 +5,9 @@ import (
 	"slices"
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
@@ -53,7 +53,7 @@ func newExtendedPropertyKey(schema, table, column, name string) extendedProperty
 // alone is the only answer that neither lies about it nor damages it.
 func ExtendedProperties(
 	generated *goschema.Database,
-	database *types.DBSchema,
+	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
 ) {
@@ -63,7 +63,7 @@ func ExtendedProperties(
 		declared[key] = property
 	}
 
-	live := make(map[extendedPropertyKey]types.DBExtendedProperty, len(database.ExtendedProperties))
+	live := make(map[extendedPropertyKey]catalog.ExtendedProperty, len(database.ExtendedProperties))
 	for _, property := range database.ExtendedProperties {
 		key := newExtendedPropertyKey(property.Schema, property.Table, property.Column, property.Name)
 		live[key] = property
@@ -127,7 +127,7 @@ func refFromDeclaredProperty(property goschema.ExtendedProperty) difftypes.Exten
 	}
 }
 
-func refFromLiveProperty(property types.DBExtendedProperty) difftypes.ExtendedPropertyRef {
+func refFromLiveProperty(property catalog.ExtendedProperty) difftypes.ExtendedPropertyRef {
 	return difftypes.ExtendedPropertyRef{
 		Name:   property.Name,
 		Schema: property.Schema,

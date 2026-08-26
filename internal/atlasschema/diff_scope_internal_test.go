@@ -15,11 +15,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 	"go.5x5.cz/ptah/internal/atlassource"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
@@ -29,9 +29,9 @@ import (
 
 func TestScopeDiffStatePreservesGeneratedDependencyValidation(t *testing.T) {
 	c := qt.New(t)
-	database := &types.DBSchema{
-		Tables: []types.DBTable{{Name: "users"}},
-		Views:  []types.DBView{{Name: "active_users", Body: "SELECT * FROM users"}},
+	database := &catalog.Database{
+		Tables: []catalog.Table{{Name: "users"}},
+		Views:  []catalog.View{{Name: "active_users", Body: "SELECT * FROM users"}},
 	}
 	state := diffDatabaseState(database)
 
@@ -49,10 +49,10 @@ func TestScopeDiffStatePreservesGeneratedDependencyValidation(t *testing.T) {
 
 func TestScopeDiffStatePreservesGeneratedDomainDependencies(t *testing.T) {
 	c := qt.New(t)
-	database := &types.DBSchema{
-		Tables: []types.DBTable{{
+	database := &catalog.Database{
+		Tables: []catalog.Table{{
 			Name: "measurements",
-			Columns: []types.DBColumn{{
+			Columns: []catalog.Column{{
 				Name:          "value",
 				DataType:      "integer",
 				UDTName:       "int4",
@@ -60,7 +60,7 @@ func TestScopeDiffStatePreservesGeneratedDomainDependencies(t *testing.T) {
 				FormattedType: "doms.positive",
 			}},
 		}},
-		Domains: []types.DBDomain{{
+		Domains: []catalog.Domain{{
 			Name:     "positive",
 			Schema:   "doms",
 			BaseType: "integer",
@@ -87,9 +87,9 @@ func TestScopeDiffStatePreservesGeneratedDomainDependencies(t *testing.T) {
 
 func TestScopeDiffStatePreservesQualifiedDatabaseFunctionIdentity(t *testing.T) {
 	c := qt.New(t)
-	database := &types.DBSchema{
-		Schemas: []types.DBSchemaInfo{{Name: "extra"}},
-		Functions: []types.DBFunction{{
+	database := &catalog.Database{
+		Schemas: []catalog.Schema{{Name: "extra"}},
+		Functions: []catalog.Function{{
 			Schema:   "extra",
 			Name:     "fn",
 			Returns:  "integer",
@@ -115,9 +115,9 @@ func TestScopeDiffStatePreservesQualifiedDatabaseFunctionIdentity(t *testing.T) 
 
 func TestScopeDiffStateExcludesQualifiedDatabaseEnumSymmetrically(t *testing.T) {
 	c := qt.New(t)
-	database := &types.DBSchema{
-		Schemas: []types.DBSchemaInfo{{Name: "app"}},
-		Enums:   []types.DBEnum{{Schema: "app", Name: "color", Values: []string{"red"}}},
+	database := &catalog.Database{
+		Schemas: []catalog.Schema{{Name: "app"}},
+		Enums:   []catalog.Enum{{Schema: "app", Name: "color", Values: []string{"red"}}},
 	}
 	state := diffDatabaseState(database)
 
@@ -137,9 +137,9 @@ func TestScopeDiffStateExcludesQualifiedDatabaseEnumSymmetrically(t *testing.T) 
 
 func TestScopeDiffStatesBareExcludePreservesCatalogSchemaSpelling(t *testing.T) {
 	c := qt.New(t)
-	current := &types.DBSchema{
-		Schemas: []types.DBSchemaInfo{{Name: "Sales"}},
-		Tables:  []types.DBTable{{Schema: "Sales", Name: "orders"}},
+	current := &catalog.Database{
+		Schemas: []catalog.Schema{{Name: "Sales"}},
+		Tables:  []catalog.Table{{Schema: "Sales", Name: "orders"}},
 	}
 	scope := atlasfilter.Scope{Exclude: []string{"Sales"}, DefaultSchema: "dbo"}
 
@@ -161,17 +161,17 @@ func TestScopeDiffStatesBareExcludePreservesCatalogSchemaSpelling(t *testing.T) 
 
 func TestScopeDiffStateDoesNotMergeUnrelatedCatalogType(t *testing.T) {
 	c := qt.New(t)
-	database := &types.DBSchema{
-		Tables: []types.DBTable{{
+	database := &catalog.Database{
+		Tables: []catalog.Table{{
 			Name:   "users",
 			Schema: "public",
-			Columns: []types.DBColumn{{
+			Columns: []catalog.Column{{
 				Name:     "id",
 				DataType: "integer",
 				UDTName:  "int4",
 			}},
 		}},
-		Domains: []types.DBDomain{{
+		Domains: []catalog.Domain{{
 			Name:     "int4",
 			Schema:   "app",
 			BaseType: "integer",
@@ -193,8 +193,8 @@ func TestScopeDiffStateDoesNotMergeUnrelatedCatalogType(t *testing.T) {
 
 func TestScopeDiffStateUsesDatabaseIdentityForSelectionOutcome(t *testing.T) {
 	c := qt.New(t)
-	database := &types.DBSchema{
-		Extensions: []types.DBExtension{{
+	database := &catalog.Database{
+		Extensions: []catalog.Extension{{
 			Name:    "pgcrypto",
 			Schema:  "extensions",
 			Version: "1.3",
@@ -226,16 +226,16 @@ func TestScopeDiffStateUsesDatabaseIdentityForSelectionOutcome(t *testing.T) {
 
 func TestScopeDiffStatePreservesDatabaseWideExtensionsAcrossSchemaUniverse(t *testing.T) {
 	c := qt.New(t)
-	database := &types.DBSchema{
-		Schemas: []types.DBSchemaInfo{{Name: "app"}, {Name: "extensions"}, {Name: "other"}},
-		Tables: []types.DBTable{{
+	database := &catalog.Database{
+		Schemas: []catalog.Schema{{Name: "app"}, {Name: "extensions"}, {Name: "other"}},
+		Tables: []catalog.Table{{
 			Schema: "app",
 			Name:   "users",
-			Columns: []types.DBColumn{{
+			Columns: []catalog.Column{{
 				Name: "email", DataType: "USER-DEFINED", UDTName: "citext", FormattedType: "extensions.citext",
 			}},
 		}},
-		Extensions: []types.DBExtension{
+		Extensions: []catalog.Extension{
 			{Name: "pgcrypto"},
 			{Schema: "extensions", Name: "citext"},
 			{Schema: "other", Name: "unrelated"},
@@ -261,7 +261,7 @@ func TestScopeDiffStatePreservesDatabaseWideExtensionsAcrossSchemaUniverse(t *te
 	c.Assert(got.schema.Fields, qt.HasLen, 1)
 	c.Assert(got.schema.Fields[0].Type, qt.Equals, "extensions.citext")
 
-	diff := schemadiff.CompareWithDialect(got.schema, &types.DBSchema{}, platform.Postgres)
+	diff := schemadiff.CompareWithDialect(got.schema, &catalog.Database{}, platform.Postgres)
 	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, got.schema, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	sql := strings.Join(statements, ";\n")
@@ -273,9 +273,9 @@ func TestScopeDiffStatePreservesDatabaseWideExtensionsAcrossSchemaUniverse(t *te
 
 func TestNonExtensionScopeDoesNotRemoveUnmentionedCurrentExtension(t *testing.T) {
 	c := qt.New(t)
-	current := &types.DBSchema{
-		Tables: []types.DBTable{{Schema: "app", Name: "users"}},
-		Extensions: []types.DBExtension{
+	current := &catalog.Database{
+		Tables: []catalog.Table{{Schema: "app", Name: "users"}},
+		Extensions: []catalog.Extension{
 			{Schema: "extensions", Name: "citext"},
 			{Name: "pgcrypto"},
 		},
@@ -310,9 +310,9 @@ func TestNonExtensionScopeDoesNotRemoveUnmentionedCurrentExtension(t *testing.T)
 
 func TestCurrentOnlyNonExtensionMatchDoesNotRemoveUnrelatedExtension(t *testing.T) {
 	c := qt.New(t)
-	current := &types.DBSchema{
-		Tables:     []types.DBTable{{Schema: "app", Name: "users"}},
-		Extensions: []types.DBExtension{{Name: "pgcrypto"}},
+	current := &catalog.Database{
+		Tables:     []catalog.Table{{Schema: "app", Name: "users"}},
+		Extensions: []catalog.Extension{{Name: "pgcrypto"}},
 	}
 	scope := atlasfilter.Scope{Include: []string{"app.users"}, DefaultSchema: "public"}
 
@@ -335,7 +335,7 @@ func TestCurrentOnlyNonExtensionMatchDoesNotRemoveUnrelatedExtension(t *testing.
 
 func TestDesiredOnlyNonExtensionMatchStillAddsDeclaredExtension(t *testing.T) {
 	c := qt.New(t)
-	current := &types.DBSchema{}
+	current := &catalog.Database{}
 	desired := &goschema.Database{
 		Tables:     []goschema.Table{{StructName: "User", Schema: "app", Name: "users"}},
 		Extensions: []goschema.Extension{{Schema: "extensions", Name: "citext"}},
@@ -362,7 +362,7 @@ func TestDesiredOnlyNonExtensionMatchStillAddsDeclaredExtension(t *testing.T) {
 
 func TestDesiredOnlyNonExtensionMatchDoesNotReAddCurrentSupportExtension(t *testing.T) {
 	c := qt.New(t)
-	current := &types.DBSchema{Extensions: []types.DBExtension{
+	current := &catalog.Database{Extensions: []catalog.Extension{
 		{Schema: "extensions", Name: "citext"},
 		{Name: "pgcrypto"},
 	}}
@@ -398,7 +398,7 @@ func TestDesiredOnlyNonExtensionMatchDoesNotReAddCurrentSupportExtension(t *test
 
 func TestExtensionOnlyScopeStillRemovesSelectedExtension(t *testing.T) {
 	c := qt.New(t)
-	current := &types.DBSchema{Extensions: []types.DBExtension{{Name: "pgcrypto"}}}
+	current := &catalog.Database{Extensions: []catalog.Extension{{Name: "pgcrypto"}}}
 	desired := &goschema.Database{}
 	scope := atlasfilter.Scope{Include: []string{"pgcrypto"}, DefaultSchema: "public"}
 
@@ -475,13 +475,13 @@ func TestValidateDiffSystemSchemaStatesRefusesAuthoredStates(t *testing.T) {
 }
 
 func TestValidateDiffSystemSchemaStatesRefusesUnsafeObservedStates(t *testing.T) {
-	pgCatalog := diffDatabaseState(&types.DBSchema{Schemas: []types.DBSchemaInfo{{Name: "pg_catalog"}}})
+	pgCatalog := diffDatabaseState(&catalog.Database{Schemas: []catalog.Schema{{Name: "pg_catalog"}}})
 	pgCatalog.Kind = atlassource.KindDatabase
-	informationSchema := diffDatabaseState(&types.DBSchema{Schemas: []types.DBSchemaInfo{{Name: "information_schema"}}})
+	informationSchema := diffDatabaseState(&catalog.Database{Schemas: []catalog.Schema{{Name: "information_schema"}}})
 	informationSchema.Kind = atlassource.KindDatabase
-	crdbInternal := diffDatabaseState(&types.DBSchema{Schemas: []types.DBSchemaInfo{{Name: "crdb_internal"}}})
+	crdbInternal := diffDatabaseState(&catalog.Database{Schemas: []catalog.Schema{{Name: "crdb_internal"}}})
 	crdbInternal.Kind = atlassource.KindDatabase
-	replayedCatalog := diffDatabaseState(&types.DBSchema{Schemas: []types.DBSchemaInfo{{Name: "pg_catalog"}}})
+	replayedCatalog := diffDatabaseState(&catalog.Database{Schemas: []catalog.Schema{{Name: "pg_catalog"}}})
 	replayedCatalog.Kind = atlassource.KindMigrationDir
 	empty := atlassource.State{Schema: &goschema.Database{}}
 	tests := []struct {
@@ -527,7 +527,7 @@ func TestValidateDiffSystemSchemaStatesAllowsOrdinaryObservedStates(t *testing.T
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			database := &types.DBSchema{Schemas: []types.DBSchemaInfo{{Name: test.schema}}}
+			database := &catalog.Database{Schemas: []catalog.Schema{{Name: test.schema}}}
 			state := diffDatabaseState(database)
 			state.Kind = test.kind
 
@@ -538,7 +538,7 @@ func TestValidateDiffSystemSchemaStatesAllowsOrdinaryObservedStates(t *testing.T
 	}
 }
 
-func diffDatabaseState(database *types.DBSchema) atlassource.State {
+func diffDatabaseState(database *catalog.Database) atlassource.State {
 	return atlassource.State{
 		Schema:        dbschematogo.ConvertDBSchemaToGoSchema(database),
 		DB:            database,

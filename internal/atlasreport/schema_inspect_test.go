@@ -9,8 +9,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasreport"
 )
 
@@ -352,12 +352,12 @@ func TestRenderSchemaInspect_SplitRejectsNonSchemaOutput(t *testing.T) {
 func TestRenderSchemaInspect_JSONColumnTypeMatchesThePinnedBinary(t *testing.T) {
 	tests := []struct {
 		name   string
-		column types.DBColumn
+		column catalog.Column
 		want   string
 	}{
 		{
 			name: "domain column names the domain",
-			column: types.DBColumn{
+			column: catalog.Column{
 				Name: "qty", DataType: "integer", UDTName: "int4",
 				FormattedType: "positive", DomainName: "positive", IsNullable: "NO",
 			},
@@ -365,7 +365,7 @@ func TestRenderSchemaInspect_JSONColumnTypeMatchesThePinnedBinary(t *testing.T) 
 		},
 		{
 			name: "domain outside the search path keeps its qualifier",
-			column: types.DBColumn{
+			column: catalog.Column{
 				Name: "qty", DataType: "integer", UDTName: "int4",
 				FormattedType: "doms.positive", DomainName: "positive", IsNullable: "NO",
 			},
@@ -373,7 +373,7 @@ func TestRenderSchemaInspect_JSONColumnTypeMatchesThePinnedBinary(t *testing.T) 
 		},
 		{
 			name: "array column stays the bare category",
-			column: types.DBColumn{
+			column: catalog.Column{
 				Name: "tags", DataType: "ARRAY", UDTName: "_varchar",
 				FormattedType: "character varying(100)[]", IsNullable: "NO",
 			},
@@ -381,12 +381,12 @@ func TestRenderSchemaInspect_JSONColumnTypeMatchesThePinnedBinary(t *testing.T) 
 		},
 		{
 			name:   "plain column is untouched",
-			column: types.DBColumn{Name: "id", DataType: "integer", IsNullable: "NO"},
+			column: catalog.Column{Name: "id", DataType: "integer", IsNullable: "NO"},
 			want:   `{"name":"id","type":"integer"}`,
 		},
 		{
 			name: "a dialect that reports its own full spelling keeps it",
-			column: types.DBColumn{
+			column: catalog.Column{
 				Name: "mood", DataType: "enum", ColumnType: "enum('sad','ok')", IsNullable: "NO",
 			},
 			want: `{"name":"mood","type":"enum('sad','ok')"}`,
@@ -398,14 +398,14 @@ func TestRenderSchemaInspect_JSONColumnTypeMatchesThePinnedBinary(t *testing.T) 
 			c := qt.New(t)
 			report := atlasreport.NewSchemaInspectReport(
 				&goschema.Database{},
-				&types.DBSchema{
-					Tables: []types.DBTable{{
+				&catalog.Database{
+					Tables: []catalog.Table{{
 						Name:    "t",
 						Schema:  "public",
-						Columns: []types.DBColumn{test.column},
+						Columns: []catalog.Column{test.column},
 					}},
 				},
-				types.DBInfo{Dialect: "postgres", Schema: "public"},
+				catalog.ServerInfo{Dialect: "postgres", Schema: "public"},
 				nil,
 				// The run did not choose its own scope, so the SQL format would
 				// leave the schema row out. This case renders JSON, which
@@ -433,18 +433,18 @@ func sampleSchemaInspectReport() *atlasreport.SchemaInspectReport {
 				{StructName: "User", Name: "email", Type: "TEXT"},
 			},
 		},
-		&types.DBSchema{
-			Tables: []types.DBTable{
+		&catalog.Database{
+			Tables: []catalog.Table{
 				{
 					Name:   "users",
 					Schema: "main",
-					Columns: []types.DBColumn{
+					Columns: []catalog.Column{
 						{Name: "id", DataType: "integer", IsNullable: "NO"},
 					},
 				},
 			},
 		},
-		types.DBInfo{Dialect: "sqlite", Schema: "main"},
+		catalog.ServerInfo{Dialect: "sqlite", Schema: "main"},
 		nil,
 		atlasreport.SchemaInspectReportOptions{DescribeSchemas: true},
 	)

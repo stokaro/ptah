@@ -6,11 +6,11 @@ import (
 	"sort"
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -20,7 +20,7 @@ import (
 // undeclared attributes (which the catalog always populates) do not churn.
 func Domains(
 	generated *goschema.Database,
-	database *types.DBSchema,
+	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
 ) {
@@ -31,7 +31,7 @@ func Domains(
 // resolved default schema and identifier rules.
 func DomainsWithSemantics(
 	generated *goschema.Database,
-	database *types.DBSchema,
+	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
 	semantics identifier.Semantics,
@@ -42,7 +42,7 @@ func DomainsWithSemantics(
 
 func domainsWithSemantics(
 	generated *goschema.Database,
-	database *types.DBSchema,
+	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
 	semantics identifier.Semantics,
@@ -55,7 +55,7 @@ func domainsWithSemantics(
 		generatedDomains[identity] = domain
 		generatedNames[identity] = domain.QualifiedName()
 	}
-	databaseDomains := make(map[objectIdentity]types.DBDomain, len(database.Domains))
+	databaseDomains := make(map[objectIdentity]catalog.Domain, len(database.Domains))
 	databaseNames := make(map[objectIdentity]string, len(database.Domains))
 	for _, domain := range database.Domains {
 		identity := newObjectIdentity(objectidentity.KindDomain, domain.Schema, domain.Name, semantics)
@@ -133,7 +133,7 @@ func domainsWithSemantics(
 // database drop constraints nobody asked about.
 func domainChanges(
 	target goschema.Domain,
-	current types.DBDomain,
+	current catalog.Domain,
 	expression config.DomainExpression,
 ) map[string]string {
 	changes := make(map[string]string)
@@ -167,7 +167,7 @@ func domainChanges(
 // A domain the reader could not enumerate constraints for -- an older server
 // without the catalog functions -- falls back to the joined form, where a false
 // difference is still better than the silence it replaces.
-func domainCheckMatches(declared string, current types.DBDomain) bool {
+func domainCheckMatches(declared string, current catalog.Domain) bool {
 	if current.CheckConstraints == nil {
 		return declared == current.Check
 	}
@@ -177,7 +177,7 @@ func domainCheckMatches(declared string, current types.DBDomain) bool {
 
 // domainCheckConstraintNames lists the catalog's names for a domain's CHECK
 // constraints, so a planner can remove them by name.
-func domainCheckConstraintNames(current types.DBDomain) []string {
+func domainCheckConstraintNames(current catalog.Domain) []string {
 	if len(current.CheckConstraints) == 0 {
 		return nil
 	}
@@ -232,7 +232,7 @@ func canonicalizePostgresType(t string) string {
 // and the current database.
 func CompositeTypes(
 	generated *goschema.Database,
-	database *types.DBSchema,
+	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
 ) {
@@ -243,7 +243,7 @@ func CompositeTypes(
 // target database's resolved default schema and identifier rules.
 func CompositeTypesWithSemantics(
 	generated *goschema.Database,
-	database *types.DBSchema,
+	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
 	semantics identifier.Semantics,
@@ -253,7 +253,7 @@ func CompositeTypesWithSemantics(
 
 func compositeTypesWithSemantics(
 	generated *goschema.Database,
-	database *types.DBSchema,
+	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
 	semantics identifier.Semantics,
@@ -265,7 +265,7 @@ func compositeTypesWithSemantics(
 		generatedTypes[identity] = composite
 		generatedNames[identity] = composite.QualifiedName()
 	}
-	databaseTypes := make(map[objectIdentity]types.DBComposite, len(database.Composites))
+	databaseTypes := make(map[objectIdentity]catalog.CompositeType, len(database.Composites))
 	databaseNames := make(map[objectIdentity]string, len(database.Composites))
 	for _, composite := range database.Composites {
 		identity := newObjectIdentity(objectidentity.KindComposite, composite.Schema, composite.Name, semantics)
@@ -328,7 +328,7 @@ func compositeTypesWithSemantics(
 // (stokaro/ptah#1717).
 func compositeAttributeDelta(
 	target goschema.CompositeType,
-	current types.DBComposite,
+	current catalog.CompositeType,
 ) ([]difftypes.CompositeAttribute, []string) {
 	declaredTypes := make(map[string]string, len(target.Fields))
 	for _, field := range target.Fields {
@@ -395,7 +395,7 @@ func compositeFieldList(composite goschema.CompositeType) string {
 // dbCompositeFieldList these are not normalized: they are resolved against
 // other type names later, and canonicalization would rewrite a user-defined
 // name that happens to collide with a built-in alias.
-func dbCompositeFieldTypes(composite types.DBComposite) []string {
+func dbCompositeFieldTypes(composite catalog.CompositeType) []string {
 	fieldTypes := make([]string, len(composite.Fields))
 	for i, field := range composite.Fields {
 		fieldTypes[i] = field.Type
@@ -403,7 +403,7 @@ func dbCompositeFieldTypes(composite types.DBComposite) []string {
 	return fieldTypes
 }
 
-func dbCompositeFieldList(composite types.DBComposite) string {
+func dbCompositeFieldList(composite catalog.CompositeType) string {
 	parts := make([]string, len(composite.Fields))
 	for i, field := range composite.Fields {
 		parts[i] = strings.ToLower(field.Name) + " " + canonicalizePostgresType(field.Type)
@@ -425,7 +425,7 @@ func dbCompositeFieldList(composite types.DBComposite) string {
 // counts as a difference.
 func Ranges(
 	generated *goschema.Database,
-	database *types.DBSchema,
+	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
 ) {
@@ -436,7 +436,7 @@ func Ranges(
 // resolved default schema and identifier rules.
 func RangesWithSemantics(
 	generated *goschema.Database,
-	database *types.DBSchema,
+	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
 	semantics identifier.Semantics,
@@ -446,7 +446,7 @@ func RangesWithSemantics(
 
 func rangesWithSemantics(
 	generated *goschema.Database,
-	database *types.DBSchema,
+	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
 	semantics identifier.Semantics,
@@ -458,7 +458,7 @@ func rangesWithSemantics(
 		generatedRanges[identity] = rangeType
 		generatedNames[identity] = rangeType.QualifiedName()
 	}
-	databaseRanges := make(map[objectIdentity]types.DBRange, len(database.Ranges))
+	databaseRanges := make(map[objectIdentity]catalog.Range, len(database.Ranges))
 	databaseNames := make(map[objectIdentity]string, len(database.Ranges))
 	for _, rangeType := range database.Ranges {
 		identity := newObjectIdentity(objectidentity.KindRange, rangeType.Schema, rangeType.Name, semantics)
@@ -515,7 +515,7 @@ func rangesWithSemantics(
 // sets, so a changed subtype produced an empty plan and `schema apply` answered
 // "Schema is synced, no changes to be made." while the old definition was still
 // in the database (stokaro/ptah#931 item 2).
-func rangeChanges(target goschema.Range, current types.DBRange) map[string]string {
+func rangeChanges(target goschema.Range, current catalog.Range) map[string]string {
 	changes := make(map[string]string)
 	if target.Subtype != "" && canonicalizePostgresType(target.Subtype) != canonicalizePostgresType(current.Subtype) {
 		changes["subtype"] = fmt.Sprintf("%s -> %s", current.Subtype, target.Subtype)

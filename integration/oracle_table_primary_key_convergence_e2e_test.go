@@ -11,10 +11,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -112,7 +112,7 @@ func primaryKeyParts(columns []string) []goschema.PrimaryKeyPart {
 
 // oraclePrimaryKeyConstraintCount counts the PRIMARY KEY rows a read carries
 // for one table.
-func oraclePrimaryKeyConstraintCount(schema *dbschematypes.DBSchema, table string) int {
+func oraclePrimaryKeyConstraintCount(schema *catalog.Database, table string) int {
 	count := 0
 	for _, constraint := range schema.Constraints {
 		if constraint.Type == "PRIMARY KEY" && strings.EqualFold(constraint.TableName, table) {
@@ -123,7 +123,7 @@ func oraclePrimaryKeyConstraintCount(schema *dbschematypes.DBSchema, table strin
 }
 
 // oraclePrimaryKeyColumns names the columns a read marked as the key.
-func oraclePrimaryKeyColumns(schema *dbschematypes.DBSchema, table string) []string {
+func oraclePrimaryKeyColumns(schema *catalog.Database, table string) []string {
 	var columns []string
 	for _, dbTable := range schema.Tables {
 		if !strings.EqualFold(dbTable.Name, table) {

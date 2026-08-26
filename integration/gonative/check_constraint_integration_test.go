@@ -10,9 +10,9 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/dbschema/postgres"
 	"go.5x5.cz/ptah/migration/planner"
@@ -186,7 +186,7 @@ func TestFieldLevelCheckConstraint_Removal_Integration(t *testing.T) {
 		qt.Commentf("post-drop diff must be clean"))
 }
 
-func filterCheckConstraintSchema(in *dbschematypes.DBSchema, tableName string) *dbschematypes.DBSchema {
+func filterCheckConstraintSchema(in *catalog.Database, tableName string) *catalog.Database {
 	keepTables := map[string]struct{}{tableName: {}}
 	out := *in
 	out.Tables = filterTables(in.Tables, keepTables)

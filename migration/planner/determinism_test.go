@@ -7,8 +7,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	dbtypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -62,12 +62,12 @@ func multiTenantRLSSchema() *goschema.Database {
 // properties (the "Modify column" comment ranges over the Changes map), roles
 // with 2+ changed attributes (ALTER ROLE operation order), removed policies
 // (the disable-RLS warning comments) and removed constraints.
-func driftedDatabase(gen *goschema.Database) *dbtypes.DBSchema {
-	db := &dbtypes.DBSchema{}
+func driftedDatabase(gen *goschema.Database) *catalog.Database {
+	db := &catalog.Database{}
 	for _, tbl := range gen.Tables {
-		db.Tables = append(db.Tables, dbtypes.DBTable{
+		db.Tables = append(db.Tables, catalog.Table{
 			Name: tbl.Name,
-			Columns: []dbtypes.DBColumn{
+			Columns: []catalog.Column{
 				{Name: "id", DataType: "text", IsNullable: "NO", IsPrimaryKey: true},
 				// Generated side declares TEXT NOT NULL -> both a type and a
 				// nullability change on the same column.
@@ -75,22 +75,22 @@ func driftedDatabase(gen *goschema.Database) *dbtypes.DBSchema {
 			},
 		})
 		// Present only in the database -> ConstraintsRemoved.
-		db.Constraints = append(db.Constraints, dbtypes.DBConstraint{
+		db.Constraints = append(db.Constraints, catalog.Constraint{
 			Name:      "obsolete_" + tbl.Name + "_check",
 			TableName: tbl.Name,
 			Type:      "CHECK",
 		})
 		// Present only in the database -> RLSPoliciesRemoved (drives the
 		// disable-RLS warning comments in the postgres planner).
-		db.RLSPolicies = append(db.RLSPolicies, dbtypes.DBRLSPolicy{
+		db.RLSPolicies = append(db.RLSPolicies, catalog.RLSPolicy{
 			Name:  tbl.Name + "_zombie_policy",
 			Table: tbl.Name,
 		})
 	}
 	// Both roles drift in 2+ attributes -> multi-entry RoleDiff.Changes.
 	db.Roles = append(db.Roles,
-		dbtypes.DBRole{Name: "app_role", Login: false, CreateDB: false, Inherit: true},
-		dbtypes.DBRole{Name: "readonly_role", Login: false, CreateRole: false, Inherit: true},
+		catalog.Role{Name: "app_role", Login: false, CreateDB: false, Inherit: true},
+		catalog.Role{Name: "readonly_role", Login: false, CreateRole: false, Inherit: true},
 	)
 	return db
 }
@@ -106,9 +106,9 @@ func TestGenerateSchemaDiffSQL_Deterministic(t *testing.T) {
 
 	scenarios := []struct {
 		name string
-		db   *dbtypes.DBSchema
+		db   *catalog.Database
 	}{
-		{name: "fresh database", db: &dbtypes.DBSchema{}},
+		{name: "fresh database", db: &catalog.Database{}},
 		{name: "drifted database", db: driftedDatabase(gen)},
 	}
 
@@ -134,7 +134,7 @@ func TestGenerateSchemaDiffSQL_Deterministic(t *testing.T) {
 	}
 }
 
-func determinismInputsForDialect(generated *goschema.Database, database *dbtypes.DBSchema, dialect string) (*goschema.Database, *dbtypes.DBSchema) {
+func determinismInputsForDialect(generated *goschema.Database, database *catalog.Database, dialect string) (*goschema.Database, *catalog.Database) {
 	if dialect != "mysql" && dialect != "mariadb" {
 		return generated, database
 	}
@@ -189,7 +189,7 @@ func TestGenerateSchemaDiffSQL_EnableRLSSorted(t *testing.T) {
 	c := qt.New(t)
 
 	gen := multiTenantRLSSchema()
-	sql, err := planner.GenerateSchemaDiffSQL(schemadiff.Compare(gen, &dbtypes.DBSchema{}), gen, "postgres")
+	sql, err := planner.GenerateSchemaDiffSQL(schemadiff.Compare(gen, &catalog.Database{}), gen, "postgres")
 	c.Assert(err, qt.IsNil)
 
 	var enableStmts []string

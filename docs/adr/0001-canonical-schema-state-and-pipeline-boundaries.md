@@ -28,7 +28,7 @@ model as decided and builds on it rather than reopening it.
 
 ### 1.1 There are two schema states, not one
 
-| | `core/goschema.Database` | `dbschema/types.DBSchema` |
+| | `core/goschema.Database` | `catalog.Database` |
 | --- | --- | --- |
 | Role | Desired schema, from every authoring source | Current schema, from a live catalog |
 | Object slices | 21, plus three `map[string][]string` relations | 19, two of which are not object families |
@@ -505,7 +505,7 @@ delete.
 **Decision: the canonical model is internal until the prototype in #1350 is
 accepted.**
 
-`goschema.Database` and `dbschema/types.DBSchema` are both in
+`goschema.Database` and `catalog.Database` are both in
 `docs/public_api.snapshot`, so neither can be changed in place before GA. That
 is a constraint on the migration, not on the model: the canonical state lives
 under `internal/`, the two public types become projections of it, and their

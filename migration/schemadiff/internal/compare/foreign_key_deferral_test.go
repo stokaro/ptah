@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -38,19 +38,19 @@ func deferrableDeclaration(deferrable bool, initially string) *goschema.Database
 
 // deferrableCatalog is the same pair of tables as the server reports them, with
 // the given deferral on the foreign key.
-func deferrableCatalog(deferrable bool, initially string) *types.DBSchema {
+func deferrableCatalog(deferrable bool, initially string) *catalog.Database {
 	parent := "parent"
-	return &types.DBSchema{
-		Tables: []types.DBTable{
-			{Name: "parent", Type: "BASE TABLE", Columns: []types.DBColumn{
+	return &catalog.Database{
+		Tables: []catalog.Table{
+			{Name: "parent", Type: "BASE TABLE", Columns: []catalog.Column{
 				{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
 			}},
-			{Name: "child", Type: "BASE TABLE", Columns: []types.DBColumn{
+			{Name: "child", Type: "BASE TABLE", Columns: []catalog.Column{
 				{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
 				{Name: "pid", DataType: "integer", IsNullable: "NO"},
 			}},
 		},
-		Constraints: []types.DBConstraint{{
+		Constraints: []catalog.Constraint{{
 			TableName: "child", Name: "fk_child_pid", Type: "FOREIGN KEY",
 			ColumnNames: []string{"pid"}, ForeignTable: &parent,
 			ForeignColumns: []string{"id"},
@@ -60,7 +60,7 @@ func deferrableCatalog(deferrable bool, initially string) *types.DBSchema {
 }
 
 // deferralDiff compares one description against one catalog.
-func deferralDiff(c *qt.C, generated *goschema.Database, database *types.DBSchema) *difftypes.SchemaDiff {
+func deferralDiff(c *qt.C, generated *goschema.Database, database *catalog.Database) *difftypes.SchemaDiff {
 	c.Helper()
 	diff := &difftypes.SchemaDiff{}
 	compare.ConstraintsWithSemantics(generated, database, diff, nil, identifier.ForDialect("postgres"))

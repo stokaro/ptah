@@ -5,8 +5,8 @@
 //
 // The name is the one its callers already used. Before the package carried it,
 // `types` denoted two different packages in adjacent pipeline stages -- this one
-// and dbschema/types -- and one package could not keep its own spelling
-// straight: schemadiff.go imported dbschema/types bare while database.go beside
+// and catalog -- and one package could not keep its own spelling
+// straight: schemadiff.go imported catalog bare while database.go beside
 // it aliased the same import. Across the tree the alias outnumbered the real
 // name 36 to 28, so most call sites were already spelled this way
 // (stokaro/ptah#2246 section 2.1).

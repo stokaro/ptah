@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 )
 
@@ -19,7 +19,7 @@ import (
 // the document, so nothing that renders from a hand-built schema could see it
 // (stokaro/ptah#2001).
 //
-// The target is the second half of the claim. `DBSynonym.Target` is
+// The target is the second half of the claim. `Synonym.Target` is
 // base_object_name exactly as the catalog records it, brackets included, and
 // [goschema.Synonym.Target] is what will be emitted. Copying the catalog's form
 // would put `[other].[dbo].[gauge]` in a document and render it again as a name
@@ -27,12 +27,12 @@ import (
 func TestConvert_CarriesSynonyms(t *testing.T) {
 	tests := []struct {
 		name       string
-		synonym    dbschematypes.DBSynonym
+		synonym    catalog.Synonym
 		wantTarget string
 	}{
 		{
 			name: "a local target",
-			synonym: dbschematypes.DBSynonym{
+			synonym: catalog.Synonym{
 				Name: "s_gauge", Schema: "dbo",
 				Target:       "[dbo].[gauge]",
 				TargetSchema: "dbo", TargetObject: "gauge",
@@ -41,7 +41,7 @@ func TestConvert_CarriesSynonyms(t *testing.T) {
 		},
 		{
 			name: "another database",
-			synonym: dbschematypes.DBSynonym{
+			synonym: catalog.Synonym{
 				Name: "s_remote", Schema: "dbo",
 				Target:         "[other].[dbo].[gauge]",
 				TargetDatabase: "other", TargetSchema: "dbo", TargetObject: "gauge",
@@ -50,7 +50,7 @@ func TestConvert_CarriesSynonyms(t *testing.T) {
 		},
 		{
 			name: "a linked server",
-			synonym: dbschematypes.DBSynonym{
+			synonym: catalog.Synonym{
 				Name: "s_linked", Schema: "dbo",
 				Target:       "[srv].[other].[dbo].[gauge]",
 				TargetServer: "srv", TargetDatabase: "other",
@@ -63,7 +63,7 @@ func TestConvert_CarriesSynonyms(t *testing.T) {
 			// catalog's own form is better than an empty target: a declaration
 			// with no target is not a synonym.
 			name: "a target with no parsed parts",
-			synonym: dbschematypes.DBSynonym{
+			synonym: catalog.Synonym{
 				Name: "s_raw", Schema: "dbo", Target: "whatever_the_server_said",
 			},
 			wantTarget: "whatever_the_server_said",
@@ -74,8 +74,8 @@ func TestConvert_CarriesSynonyms(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			converted := dbschematogo.ConvertDBSchemaToGoSchema(&dbschematypes.DBSchema{
-				Synonyms: []dbschematypes.DBSynonym{test.synonym},
+			converted := dbschematogo.ConvertDBSchemaToGoSchema(&catalog.Database{
+				Synonyms: []catalog.Synonym{test.synonym},
 			})
 
 			c.Assert(converted.Synonyms, qt.HasLen, 1)
@@ -103,26 +103,26 @@ func TestConvert_CarriesSynonyms(t *testing.T) {
 func TestConvert_CarriesEveryPropertyScopeExceptTheOneItCannotWrite(t *testing.T) {
 	tests := []struct {
 		name     string
-		property dbschematypes.DBExtendedProperty
+		property catalog.ExtendedProperty
 		want     []goschema.ExtendedProperty
 	}{
 		{
 			name: "database scope",
-			property: dbschematypes.DBExtendedProperty{
+			property: catalog.ExtendedProperty{
 				Name: "ptah_db", Value: "on", ValueType: "nvarchar",
 			},
 			want: []goschema.ExtendedProperty{{Name: "ptah_db", Value: "on"}},
 		},
 		{
 			name: "schema scope",
-			property: dbschematypes.DBExtendedProperty{
+			property: catalog.ExtendedProperty{
 				Name: "ptah_schema", Schema: "dbo", Value: "on", ValueType: "nvarchar",
 			},
 			want: []goschema.ExtendedProperty{{Name: "ptah_schema", Schema: "dbo", Value: "on"}},
 		},
 		{
 			name: "table scope",
-			property: dbschematypes.DBExtendedProperty{
+			property: catalog.ExtendedProperty{
 				Name: "ptah_table", Schema: "dbo", Table: "gauge",
 				Value: "on", ValueType: "nvarchar",
 			},
@@ -132,7 +132,7 @@ func TestConvert_CarriesEveryPropertyScopeExceptTheOneItCannotWrite(t *testing.T
 		},
 		{
 			name: "column scope",
-			property: dbschematypes.DBExtendedProperty{
+			property: catalog.ExtendedProperty{
 				Name: "ptah_column", Schema: "dbo", Table: "gauge", Column: "title",
 				Value: "on", ValueType: "nvarchar",
 			},
@@ -142,7 +142,7 @@ func TestConvert_CarriesEveryPropertyScopeExceptTheOneItCannotWrite(t *testing.T
 		},
 		{
 			name: "a value no declaration could restore",
-			property: dbschematypes.DBExtendedProperty{
+			property: catalog.ExtendedProperty{
 				Name: "ptah_int", Schema: "dbo", Table: "gauge",
 				Value: "42", ValueType: "int", ValueNotRepresentable: true,
 			},
@@ -154,8 +154,8 @@ func TestConvert_CarriesEveryPropertyScopeExceptTheOneItCannotWrite(t *testing.T
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			converted := dbschematogo.ConvertDBSchemaToGoSchema(&dbschematypes.DBSchema{
-				ExtendedProperties: []dbschematypes.DBExtendedProperty{test.property},
+			converted := dbschematogo.ConvertDBSchemaToGoSchema(&catalog.Database{
+				ExtendedProperties: []catalog.ExtendedProperty{test.property},
 			})
 
 			c.Assert(converted.ExtendedProperties, qt.DeepEquals, test.want)
@@ -166,7 +166,7 @@ func TestConvert_CarriesEveryPropertyScopeExceptTheOneItCannotWrite(t *testing.T
 // TestConvert_DecidesEveryFamilyTheReadCanCarry is the guard the two families
 // stokaro/ptah#2001 lost would have needed.
 //
-// A family added to [dbschematypes.DBSchema] joins this conversion only if
+// A family added to [catalog.Database] joins this conversion only if
 // somebody remembers, and forgetting is silent: the read finds the objects, the
 // IR does not carry them, and `schema inspect` describes a database that is
 // missing part of itself.
@@ -205,7 +205,7 @@ func TestConvert_NamesAnIRFieldThatExists(t *testing.T) {
 // readSliceFields is every object family the read's shape carries, derived from
 // the struct rather than listed here.
 func readSliceFields() []string {
-	databaseType := reflect.TypeFor[dbschematypes.DBSchema]()
+	databaseType := reflect.TypeFor[catalog.Database]()
 	fields := make([]string, 0, databaseType.NumField())
 	for field := range databaseType.Fields() {
 		if field.Type.Kind() != reflect.Slice {
@@ -261,8 +261,8 @@ var unconvertedFamilies = map[string]string{
 func TestConvert_CarriesTheContinuousAggregateBodyTheCatalogKept(t *testing.T) {
 	c := qt.New(t)
 
-	converted := dbschematogo.ConvertDBSchemaToGoSchema(&dbschematypes.DBSchema{
-		ContinuousAggregates: []dbschematypes.DBContinuousAggregate{{
+	converted := dbschematogo.ConvertDBSchemaToGoSchema(&catalog.Database{
+		ContinuousAggregates: []catalog.ContinuousAggregate{{
 			Schema: "public", Name: "hourly",
 			HypertableSchema: "public", HypertableName: "readings",
 			MaterializedOnly: true,

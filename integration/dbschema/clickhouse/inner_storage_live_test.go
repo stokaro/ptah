@@ -13,8 +13,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	clickhousedb "go.5x5.cz/ptah/internal/dbschema/clickhouse"
 	"go.5x5.cz/ptah/internal/sqlident"
 )
@@ -188,7 +188,7 @@ func openLiveClickHouseOrdinaryDatabase(t *testing.T, environmentVariable string
 
 // clickHouseTableNames returns the names of the tables a read reported, in the
 // order the reader produced them.
-func clickHouseTableNames(schema *dbschematypes.DBSchema) []string {
+func clickHouseTableNames(schema *catalog.Database) []string {
 	names := make([]string, 0, len(schema.Tables))
 	for _, table := range schema.Tables {
 		names = append(names, table.Name)

@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -27,16 +27,16 @@ import (
 // `cannot drop index ex_widget_room because constraint ex_widget_room on table
 // widget requires it`, which failed the whole migration.
 func TestIndexes_ExclusionConstraintBackingIndex(t *testing.T) {
-	backingIndex := types.DBIndex{
+	backingIndex := catalog.Index{
 		Name: "ex_widget_room", TableName: "widget", Columns: []string{"room"},
 	}
-	unrelatedIndex := types.DBIndex{
+	unrelatedIndex := catalog.Index{
 		Name: "idx_widget_code", TableName: "widget", Columns: []string{"code"},
 	}
 
 	tests := []struct {
 		name          string
-		constraints   []types.DBConstraint
+		constraints   []catalog.Constraint
 		generated     []goschema.Index
 		wantAdditions int
 		wantRemovals  int
@@ -71,7 +71,7 @@ func TestIndexes_ExclusionConstraintBackingIndex(t *testing.T) {
 			// index at all, so an index that shares its name is an index
 			// somebody wrote, and dropping it is the whole point.
 			name: "a CHECK of the same name owns nothing",
-			constraints: []types.DBConstraint{{
+			constraints: []catalog.Constraint{{
 				Name: "ex_widget_room", TableName: "widget", Type: "CHECK",
 				CheckClause: new("room > 0"),
 			}},
@@ -85,9 +85,9 @@ func TestIndexes_ExclusionConstraintBackingIndex(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			generated := &goschema.Database{Indexes: test.generated}
-			database := &types.DBSchema{
+			database := &catalog.Database{
 				Constraints: test.constraints,
-				Indexes:     []types.DBIndex{backingIndex, unrelatedIndex},
+				Indexes:     []catalog.Index{backingIndex, unrelatedIndex},
 			}
 			diff := &difftypes.SchemaDiff{}
 
@@ -101,8 +101,8 @@ func TestIndexes_ExclusionConstraintBackingIndex(t *testing.T) {
 
 // widgetExclusion is the constraint as PostgreSQL reports it, beside the index
 // of the same name that the index catalog reports separately.
-func widgetExclusion() []types.DBConstraint {
-	return []types.DBConstraint{{
+func widgetExclusion() []catalog.Constraint {
+	return []catalog.Constraint{{
 		Name: "ex_widget_room", TableName: "widget", Type: "EXCLUDE",
 		UsingMethod: new("gist"), ExcludeElements: new("room WITH ="),
 	}}

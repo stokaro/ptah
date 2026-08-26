@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -72,14 +72,14 @@ func widgetDeclaringScopeOn(columns ...string) *goschema.Database {
 // widgetCatalogHoldingScopeOn is the read, which reports the table with its
 // schema the way a catalog does, and the constraint over other columns so the
 // pair is a modification rather than nothing.
-func widgetCatalogHoldingScopeOn(columns ...string) *types.DBSchema {
-	return &types.DBSchema{
-		Tables: []types.DBTable{{Schema: "public", Name: "widget", Columns: []types.DBColumn{
+func widgetCatalogHoldingScopeOn(columns ...string) *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{{Schema: "public", Name: "widget", Columns: []catalog.Column{
 			{Name: "id", DataType: "integer", IsPrimaryKey: true, IsNullable: "NO"},
 			{Name: "tenant", DataType: "text", IsNullable: "NO"},
 			{Name: "code", DataType: "text", IsNullable: "NO"},
 		}}},
-		Constraints: []types.DBConstraint{{
+		Constraints: []catalog.Constraint{{
 			Schema: "public", TableName: "widget", Name: "uq_widget_scope",
 			Type: "UNIQUE", ColumnNames: columns,
 		}},

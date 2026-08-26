@@ -12,9 +12,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
@@ -26,7 +26,7 @@ func TestGenerateUpMigrationSQL_AssignsLengthLimitedForeignKeyNames(t *testing.T
 	fieldName := strings.Repeat("parent_", 5) + "id"
 	schema := generatorForeignKeyNameSchema(tableName, fieldName)
 	goschema.Finalize(schema)
-	diff := schemadiff.CompareWithDialect(schema, &dbschematypes.DBSchema{}, platform.MySQL)
+	diff := schemadiff.CompareWithDialect(schema, &catalog.Database{}, platform.MySQL)
 
 	sql, err := generateUpMigrationSQL(diff, schema, platform.MySQL)
 
@@ -48,7 +48,7 @@ func TestGenerateUpMigrationSQL_AvoidsExplicitAndGeneratedForeignKeyNameCollisio
 		ForeignKeyName: "FK_CHILDREN_PARENT_ID",
 	})
 	goschema.Finalize(schema)
-	diff := schemadiff.CompareWithDialect(schema, &dbschematypes.DBSchema{}, platform.MySQL)
+	diff := schemadiff.CompareWithDialect(schema, &catalog.Database{}, platform.MySQL)
 
 	sql, err := generateUpMigrationSQL(diff, schema, platform.MySQL)
 

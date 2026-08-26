@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"strings"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 )
 
 // compositeQuery reads the object types this schema owns that Ptah's composite
@@ -47,7 +47,7 @@ WHERE t.owner = :1
   AND t.incomplete = 'NO'
 ORDER BY t.type_name`
 
-// compositeAttributeQuery reads the attributes of this schema's object types.
+// compositeAttributeQuery reads the attributes of this schema's object catalog.
 //
 // ATTR_NO is the declaration order, and it is the ORDER BY rather than the
 // name: a composite's fields are positional, and reading them alphabetically
@@ -58,14 +58,14 @@ FROM all_type_attrs a
 WHERE a.owner = :1
 ORDER BY a.type_name, a.attr_no`
 
-// readComposites reads the schema's composite types.
+// readComposites reads the schema's composite catalog.
 //
 // A type whose attributes this read finds none of is left out rather than
 // described as empty: the query above already excludes the incomplete shells,
 // so an object type with no attribute row is one the attribute read could not
 // see, and describing it as a composite with no fields would plan a
 // CREATE OR REPLACE that empties it.
-func (r *Reader) readComposites(ctx context.Context) ([]types.DBComposite, error) {
+func (r *Reader) readComposites(ctx context.Context) ([]catalog.CompositeType, error) {
 	attributes, err := r.readCompositeAttributes(ctx)
 	if err != nil {
 		return nil, err
@@ -77,7 +77,7 @@ func (r *Reader) readComposites(ctx context.Context) ([]types.DBComposite, error
 	}
 	defer rows.Close()
 
-	var composites []types.DBComposite
+	var composites []catalog.CompositeType
 	for rows.Next() {
 		var name string
 		if err := rows.Scan(&name); err != nil {
@@ -87,28 +87,28 @@ func (r *Reader) readComposites(ctx context.Context) ([]types.DBComposite, error
 		if len(fields) == 0 {
 			continue
 		}
-		composites = append(composites, types.DBComposite{Name: name, Fields: fields})
+		composites = append(composites, catalog.CompositeType{Name: name, Fields: fields})
 	}
 	return composites, rows.Err()
 }
 
 // readCompositeAttributes groups the attributes by type name, in declaration
 // order.
-func (r *Reader) readCompositeAttributes(ctx context.Context) (map[string][]types.DBCompositeField, error) {
+func (r *Reader) readCompositeAttributes(ctx context.Context) (map[string][]catalog.CompositeField, error) {
 	rows, err := r.db.QueryContext(ctx, compositeAttributeQuery, r.schema)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	attributes := make(map[string][]types.DBCompositeField)
+	attributes := make(map[string][]catalog.CompositeField)
 	for rows.Next() {
 		var typeName, attrName, dataType string
 		var length, precision, scale sql.NullInt64
 		if err := rows.Scan(&typeName, &attrName, &dataType, &length, &precision, &scale); err != nil {
 			return nil, err
 		}
-		attributes[typeName] = append(attributes[typeName], types.DBCompositeField{
+		attributes[typeName] = append(attributes[typeName], catalog.CompositeField{
 			Name: attrName,
 			// The same composition the column read uses, and for the same
 			// reason: ATTR_TYPE_NAME alone answers VARCHAR2 for a

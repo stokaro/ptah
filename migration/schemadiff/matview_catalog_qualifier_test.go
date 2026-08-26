@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
@@ -125,7 +125,7 @@ func TestCompareWithDialect_MaterializedViewAliasedRelationSchemaStillDiffs(t *t
 func aliasedMaterializedViewReadbackFixtures(
 	schema,
 	readbackSchema string,
-) (*goschema.Database, *types.DBSchema) {
+) (*goschema.Database, *catalog.Database) {
 	generated := &goschema.Database{
 		MaterializedViews: []goschema.MaterializedView{{
 			StructName: "UserIDs",
@@ -138,13 +138,13 @@ func aliasedMaterializedViewReadbackFixtures(
 			Body:       "SELECT u.id AS id FROM users AS u",
 		}},
 	}
-	database := &types.DBSchema{
-		MatViews: []types.DBMatView{{
+	database := &catalog.Database{
+		MatViews: []catalog.MaterializedView{{
 			Name:   "user_ids",
 			Schema: schema,
 			Body:   "SELECT u.id AS id FROM " + readbackSchema + ".users AS u",
 		}},
-		Views: []types.DBView{{
+		Views: []catalog.View{{
 			Name: "user_ids_plain",
 			// The plain view's readback always carries the object's own schema:
 			// it is the control for the normalization, not a second subject.
@@ -161,7 +161,7 @@ func aliasedMaterializedViewReadbackFixtures(
 func materializedViewReadbackFixtures(
 	schema,
 	readbackSchema string,
-) (*goschema.Database, *types.DBSchema) {
+) (*goschema.Database, *catalog.Database) {
 	generated := &goschema.Database{
 		MaterializedViews: []goschema.MaterializedView{{
 			StructName: "UserCounts",
@@ -174,13 +174,13 @@ func materializedViewReadbackFixtures(
 			Body:       "SELECT count(*) AS c FROM users",
 		}},
 	}
-	database := &types.DBSchema{
-		MatViews: []types.DBMatView{{
+	database := &catalog.Database{
+		MatViews: []catalog.MaterializedView{{
 			Name:   "user_counts",
 			Schema: schema,
 			Body:   "SELECT count(*) AS c FROM " + readbackSchema + ".users",
 		}},
-		Views: []types.DBView{{
+		Views: []catalog.View{{
 			Name: "user_counts_plain",
 			// The plain view's readback carries the object's own schema in
 			// every row: it is the control for the normalization, not a second

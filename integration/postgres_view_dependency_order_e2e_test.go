@@ -12,9 +12,9 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -115,7 +115,7 @@ func TestPostgresViewDependencyOrderE2E(t *testing.T) {
 
 // existingTablesOf carries the tables already in the database into the desired
 // schema, so the comparison plans views and nothing else.
-func existingTablesOf(read *dbschematypes.DBSchema) []goschema.Table {
+func existingTablesOf(read *catalog.Database) []goschema.Table {
 	tables := make([]goschema.Table, 0, len(read.Tables))
 	for _, table := range read.Tables {
 		tables = append(tables, goschema.Table{

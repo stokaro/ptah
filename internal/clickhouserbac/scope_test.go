@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/clickhouserbac"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 )
@@ -220,9 +220,9 @@ func TestScopeOf_FailurePath(t *testing.T) {
 // populated.
 //
 // The two object types put the database in DIFFERENT fields, and that is the
-// shared [types.DBGrant] contract rather than anything ClickHouse decided: a
+// shared [catalog.Grant] contract rather than anything ClickHouse decided: a
 // SCHEMA-typed row carries its target in ObjectName with Schema empty — which
-// is what [types.DBGrant.QualifiedTarget] returns, what the PostgreSQL reader
+// is what [catalog.Grant.QualifiedTarget] returns, what the PostgreSQL reader
 // writes, and what internal/convert/dbschematogo reads — while a TABLE-typed
 // row carries the schema in Schema and the table in ObjectName.
 //
@@ -233,29 +233,29 @@ func TestScopeOf_FailurePath(t *testing.T) {
 func TestScopeOfLive_ReadsTheCatalogShape(t *testing.T) {
 	tests := []struct {
 		name  string
-		grant types.DBGrant
+		grant catalog.Grant
 		want  clickhouserbac.Scope
 	}{
 		{
 			name:  "a table row",
-			grant: types.DBGrant{ObjectType: "TABLE", Schema: "shop", ObjectName: "orders"},
+			grant: catalog.Grant{ObjectType: "TABLE", Schema: "shop", ObjectName: "orders"},
 			want:  clickhouserbac.Scope{Database: "shop", Table: "orders"},
 		},
 		{
 			name:  "a database row, spelled the way the shared contract spells it",
-			grant: types.DBGrant{ObjectType: "SCHEMA", ObjectName: "shop"},
+			grant: catalog.Grant{ObjectType: "SCHEMA", ObjectName: "shop"},
 			want:  clickhouserbac.Scope{Database: "shop"},
 		},
 		{
 			name:  "the object type decides, whatever case it is written in",
-			grant: types.DBGrant{ObjectType: "schema", ObjectName: "shop"},
+			grant: catalog.Grant{ObjectType: "schema", ObjectName: "shop"},
 			want:  clickhouserbac.Scope{Database: "shop"},
 		},
 		{
 			// A row with no object type at all is a table row, because that is
 			// the only shape a reader that does not set the field can mean.
 			name:  "an untyped row falls back to the table spelling",
-			grant: types.DBGrant{Schema: "shop", ObjectName: "orders"},
+			grant: catalog.Grant{Schema: "shop", ObjectName: "orders"},
 			want:  clickhouserbac.Scope{Database: "shop", Table: "orders"},
 		},
 	}
@@ -280,19 +280,19 @@ func TestScopeOfLive_AgreesWithScopeOfAcrossTheBoundary(t *testing.T) {
 	tests := []struct {
 		name    string
 		grant   goschema.Grant
-		live    types.DBGrant
+		live    catalog.Grant
 		wantSQL string
 	}{
 		{
 			name:    "a database scope",
 			grant:   goschema.Grant{Role: "reader", Privileges: []string{"SELECT"}, OnSchema: "shop"},
-			live:    types.DBGrant{Role: "reader", Privilege: "SELECT", ObjectType: "SCHEMA", ObjectName: "shop"},
+			live:    catalog.Grant{Role: "reader", Privilege: "SELECT", ObjectType: "SCHEMA", ObjectName: "shop"},
 			wantSQL: "`shop`.*",
 		},
 		{
 			name:    "a table scope",
 			grant:   goschema.Grant{Role: "reader", Privileges: []string{"SELECT"}, OnTable: "shop.orders"},
-			live:    types.DBGrant{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", Schema: "shop", ObjectName: "orders"},
+			live:    catalog.Grant{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", Schema: "shop", ObjectName: "orders"},
 			wantSQL: "`shop`.`orders`",
 		},
 	}
@@ -315,7 +315,7 @@ func TestScopeOfLive_AgreesWithScopeOfAcrossTheBoundary(t *testing.T) {
 			// comparison, and a reader that filled the wrong field would break
 			// it while both assertions above still passed.
 			described := dbschematogo.ConvertDBSchemaToGoSchema(
-				&types.DBSchema{Grants: []types.DBGrant{test.live}},
+				&catalog.Database{Grants: []catalog.Grant{test.live}},
 			)
 			c.Assert(described.Grants, qt.HasLen, 1)
 			redeclared, err := clickhouserbac.ScopeOf(described.Grants[0], "")

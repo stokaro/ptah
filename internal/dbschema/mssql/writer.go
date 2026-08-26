@@ -11,8 +11,8 @@ import (
 	"strings"
 	"sync"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/internal/sqlrunner"
 )
@@ -116,7 +116,7 @@ func (w *Writer) ExecuteSQL(ctx context.Context, sqlExpr string, args ...any) er
 	return nil
 }
 
-func (w *Writer) BeginTransaction(ctx context.Context) (types.SchemaTransaction, error) {
+func (w *Writer) BeginTransaction(ctx context.Context) (catalog.SchemaTransaction, error) {
 	if w.dryRun {
 		slog.Info("[DRY RUN] Would begin transaction")
 		return &transactionWriter{dryRun: true}, nil
@@ -1337,7 +1337,7 @@ func (w *Writer) rejectExternalForeignKeys(foreignKeys []foreignKey) error {
 	)
 }
 
-func (w *Writer) listTables(ctx context.Context) ([]types.DBTable, error) {
+func (w *Writer) listTables(ctx context.Context) ([]catalog.Table, error) {
 	rows, err := w.db.QueryContext(ctx, `
 		SELECT s.name, t.name
 		FROM sys.tables AS t
@@ -1351,9 +1351,9 @@ func (w *Writer) listTables(ctx context.Context) ([]types.DBTable, error) {
 	}
 	defer rows.Close()
 
-	var tables []types.DBTable
+	var tables []catalog.Table
 	for rows.Next() {
-		var table types.DBTable
+		var table catalog.Table
 		if err := rows.Scan(&table.Schema, &table.Name); err != nil {
 			return nil, fmt.Errorf("sqlserver: scan table name: %w", err)
 		}

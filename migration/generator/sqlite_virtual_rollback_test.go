@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	dbtypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/generator"
@@ -128,19 +128,19 @@ func TestPlanBidirectionalSchemaDiffGatesTheRollbackItGenerates(t *testing.T) {
 // the virtual table is still recognized as virtual, and the module's private
 // storage arrives as an ordinary user table because only the module could have
 // said otherwise.
-func rollbackFTS4Database() *dbtypes.DBSchema {
-	return &dbtypes.DBSchema{
-		Tables: []dbtypes.DBTable{
+func rollbackFTS4Database() *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{
 			{Name: "docs", Type: "TABLE", VirtualModule: "fts4", VirtualArguments: "title, body"},
-			{Name: "docs_content", Type: "TABLE", Columns: []dbtypes.DBColumn{
+			{Name: "docs_content", Type: "TABLE", Columns: []catalog.Column{
 				{Name: "docid", DataType: "INTEGER", IsNullable: "YES", OrdinalPosition: 1},
 			}},
-			{Name: "users", Type: "TABLE", Columns: []dbtypes.DBColumn{
+			{Name: "users", Type: "TABLE", Columns: []catalog.Column{
 				{Name: "id", DataType: "INTEGER", IsNullable: "NO", OrdinalPosition: 1, IsPrimaryKey: true},
 				{Name: "name", DataType: "TEXT", IsNullable: "YES", OrdinalPosition: 2},
 			}},
 		},
-		UnregisteredVirtualTables: []dbtypes.DBVirtualTable{{Name: "docs", Module: "fts4"}},
+		UnregisteredVirtualTables: []catalog.VirtualTable{{Name: "docs", Module: "fts4"}},
 	}
 }
 

@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -58,9 +58,9 @@ func TestTableColumns_FloatSpellingsConverge(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			genTable := goschema.Table{StructName: "Reading", Name: "readings"}
-			dbTable := types.DBTable{
+			dbTable := catalog.Table{
 				Name:    "readings",
-				Columns: []types.DBColumn{{Name: "x", DataType: test.catalog, IsNullable: "YES"}},
+				Columns: []catalog.Column{{Name: "x", DataType: test.catalog, IsNullable: "YES"}},
 			}
 			generated := &goschema.Database{Fields: []goschema.Field{
 				{StructName: "Reading", Name: "x", Type: test.declared, Nullable: true},

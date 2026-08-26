@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 )
 
@@ -15,67 +15,67 @@ import (
 // connection's own schema, where every reader leaves Schema blank, and a second
 // one of each in "app", where readers report the schema. It is the shape the
 // live PostgreSQL reproduction of stokaro/ptah#933 uses.
-func grammarFixture() *dbschematypes.DBSchema {
-	return &dbschematypes.DBSchema{
-		Schemas: []dbschematypes.DBSchemaInfo{{Name: "public"}, {Name: "app"}},
-		Tables: []dbschematypes.DBTable{
-			{Name: "users", Comment: "a users comment", Columns: []dbschematypes.DBColumn{{Name: "id"}, {Name: "name"}}},
-			{Schema: "app", Name: "orders", Comment: "an orders comment", Columns: []dbschematypes.DBColumn{{Name: "id"}}},
+func grammarFixture() *catalog.Database {
+	return &catalog.Database{
+		Schemas: []catalog.Schema{{Name: "public"}, {Name: "app"}},
+		Tables: []catalog.Table{
+			{Name: "users", Comment: "a users comment", Columns: []catalog.Column{{Name: "id"}, {Name: "name"}}},
+			{Schema: "app", Name: "orders", Comment: "an orders comment", Columns: []catalog.Column{{Name: "id"}}},
 		},
-		Enums: []dbschematypes.DBEnum{
+		Enums: []catalog.Enum{
 			{Name: "mood", Values: []string{"a", "b"}},
 			{Schema: "app", Name: "color", Values: []string{"r"}},
 		},
-		Functions: []dbschematypes.DBFunction{
+		Functions: []catalog.Function{
 			{Name: "fn_audit"},
 			{Schema: "app", Name: "fn_app"},
 		},
-		Views: []dbschematypes.DBView{
+		Views: []catalog.View{
 			{Name: "v_users", Comment: "a view comment"},
 			{Schema: "app", Name: "v_orders", Comment: "another view comment"},
 		},
-		MatViews: []dbschematypes.DBMatView{
+		MatViews: []catalog.MaterializedView{
 			{Name: "mv_users", Comment: "a matview comment"},
 			{Schema: "app", Name: "mv_orders"},
 		},
-		Sequences: []dbschematypes.DBSequence{
+		Sequences: []catalog.Sequence{
 			{Name: "seq_pub"},
 			{Schema: "app", Name: "seq_app"},
 		},
-		Domains: []dbschematypes.DBDomain{
+		Domains: []catalog.Domain{
 			{Name: "dom_pub", BaseType: "text"},
 			{Schema: "app", Name: "dom_app", BaseType: "text"},
 		},
-		Composites: []dbschematypes.DBComposite{
+		Composites: []catalog.CompositeType{
 			{Name: "comp_pub"},
 			{Schema: "app", Name: "comp_app"},
 		},
-		Ranges: []dbschematypes.DBRange{
+		Ranges: []catalog.Range{
 			{Name: "rng_pub", Subtype: "int4"},
 			{Schema: "app", Name: "rng_app", Subtype: "int4"},
 		},
-		Extensions: []dbschematypes.DBExtension{
+		Extensions: []catalog.Extension{
 			{Schema: "public", Name: "pgcrypto", Version: "1.3"},
 			{Schema: "app", Name: "hstore", Version: "1.8"},
 		},
-		Indexes: []dbschematypes.DBIndex{
+		Indexes: []catalog.Index{
 			{TableName: "users", Name: "users_name_idx", Columns: []string{"name"}},
 			{Schema: "app", TableName: "orders", Name: "orders_id_idx", Columns: []string{"id"}},
 		},
-		Constraints: []dbschematypes.DBConstraint{
+		Constraints: []catalog.Constraint{
 			{TableName: "users", Name: "users_name_key", Type: "UNIQUE", ColumnNames: []string{"name"}},
 			{Schema: "app", TableName: "orders", Name: "orders_id_key", Type: "UNIQUE", ColumnNames: []string{"id"}},
 		},
-		Triggers: []dbschematypes.DBTrigger{
+		Triggers: []catalog.Trigger{
 			{Name: "users_trg", Table: "users"},
 			{Schema: "app", Name: "orders_trg", Table: "orders"},
 		},
-		RLSPolicies: []dbschematypes.DBRLSPolicy{
+		RLSPolicies: []catalog.RLSPolicy{
 			{Name: "users_pol", Table: "users"},
 			{Name: "orders_pol", Table: "app.orders"},
 		},
-		Roles: []dbschematypes.DBRole{{Name: "app_reader"}, {Name: "app_writer"}},
-		Grants: []dbschematypes.DBGrant{
+		Roles: []catalog.Role{{Name: "app_reader"}, {Name: "app_writer"}},
+		Grants: []catalog.Grant{
 			{Role: "app_reader", ObjectType: "TABLE", ObjectName: "orders", Schema: "app", Privilege: "SELECT"},
 		},
 	}
@@ -85,7 +85,7 @@ func grammarFixture() *dbschematypes.DBSchema {
 // "<kind> <name>", sorted. One census assertion per row covers every object
 // kind at once, so a filter that removes the wrong object fails the row that
 // named the right one.
-func grammarCensus(schema *dbschematypes.DBSchema) []string {
+func grammarCensus(schema *catalog.Database) []string {
 	var out []string
 	add := func(kind, name string) { out = append(out, kind+" "+name) }
 	for _, value := range schema.Tables {
@@ -95,10 +95,10 @@ func grammarCensus(schema *dbschematypes.DBSchema) []string {
 		}
 	}
 	for _, value := range schema.Enums {
-		add("enum", dbschematypes.QualifyTableName(value.Schema, value.Name))
+		add("enum", catalog.QualifyTableName(value.Schema, value.Name))
 	}
 	for _, value := range schema.Functions {
-		add("function", dbschematypes.QualifyTableName(value.Schema, value.Name))
+		add("function", catalog.QualifyTableName(value.Schema, value.Name))
 	}
 	for _, value := range schema.Views {
 		add("view", value.QualifiedName())
@@ -149,7 +149,7 @@ func grammarCensus(schema *dbschematypes.DBSchema) []string {
 // grammarRemoved states which fields a pattern subtracted -- the whole set, so
 // a selector that also emptied a neighbour's comment is a diff rather than an
 // assertion nobody thought to write.
-func grammarFieldCensus(schema *dbschematypes.DBSchema) []string {
+func grammarFieldCensus(schema *catalog.Database) []string {
 	var out []string
 	add := func(kind, name, field, value string) {
 		if value == "" {

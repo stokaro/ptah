@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 )
 
 type scopedReaderStub struct {
@@ -18,12 +18,12 @@ func (r *scopedReaderStub) SetSchemas(schemas []string) {
 	r.scopes = append(r.scopes, slices.Clone(schemas))
 }
 
-func (r *scopedReaderStub) ReadSchema() (*dbschematypes.DBSchema, error) {
+func (r *scopedReaderStub) ReadSchema() (*catalog.Database, error) {
 	return r.ReadSchemaContext(context.Background())
 }
 
-func (r *scopedReaderStub) ReadSchemaContext(context.Context) (*dbschematypes.DBSchema, error) {
-	return &dbschematypes.DBSchema{}, nil
+func (r *scopedReaderStub) ReadSchemaContext(context.Context) (*catalog.Database, error) {
+	return &catalog.Database{}, nil
 }
 
 // TestReadSchemaWithSchemas_ResetsScopedReader covers the fallback path: a

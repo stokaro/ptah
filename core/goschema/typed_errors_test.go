@@ -9,10 +9,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer"
-	dbtypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -122,7 +122,7 @@ func runEmbedPath(root string) error {
 	if err != nil {
 		return err
 	}
-	diff := schemadiff.Compare(generated, &dbtypes.DBSchema{})
+	diff := schemadiff.Compare(generated, &catalog.Database{})
 	nodes, err := planner.GenerateSchemaDiffAST(diff, generated, "postgres")
 	if err != nil {
 		return err

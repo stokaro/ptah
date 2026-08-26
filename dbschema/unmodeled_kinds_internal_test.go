@@ -9,9 +9,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema/types"
 )
 
 // TestRecordUnmodeledObjectKinds_SpannerChangeStreams pins that a description
@@ -58,7 +58,7 @@ func TestRecordUnmodeledObjectKinds_SpannerChangeStreams(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			schema := recordUnmodeledObjectKinds(&types.DBSchema{}, test.dialect)
+			schema := recordUnmodeledObjectKinds(&catalog.Database{}, test.dialect)
 
 			c.Assert(schema.NotDescribed.Describes(coverage.ChangeStream), qt.Equals, !test.declined)
 		})

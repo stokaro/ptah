@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -23,7 +23,7 @@ func TestEnumsWithSemantics_SchemaIdentity(t *testing.T) {
 	tests := []struct {
 		name      string
 		generated []goschema.Enum
-		database  []types.DBEnum
+		database  []catalog.Enum
 		semantics identifier.Semantics
 		want      difftypes.SchemaDiff
 	}{
@@ -35,7 +35,7 @@ func TestEnumsWithSemantics_SchemaIdentity(t *testing.T) {
 			// and a DROP of the same type.
 			name:      "an explicit default schema matches the reader's blank",
 			generated: []goschema.Enum{{Name: "p_color", Schema: "public", Values: []string{"red"}}},
-			database:  []types.DBEnum{{Name: "p_color", Values: []string{"red"}}},
+			database:  []catalog.Enum{{Name: "p_color", Values: []string{"red"}}},
 			semantics: identifier.Semantics{DefaultSchema: "public"},
 			want:      difftypes.SchemaDiff{},
 		},
@@ -44,7 +44,7 @@ func TestEnumsWithSemantics_SchemaIdentity(t *testing.T) {
 			// schema, and the read they are compared against names one.
 			name:      "a generated enum naming no schema matches a unique read",
 			generated: []goschema.Enum{{Name: "status_type", Values: []string{"a"}}},
-			database:  []types.DBEnum{{Name: "status_type", Schema: "brownfield", Values: []string{"a"}}},
+			database:  []catalog.Enum{{Name: "status_type", Schema: "brownfield", Values: []string{"a"}}},
 			semantics: identifier.Semantics{DefaultSchema: "public"},
 			want:      difftypes.SchemaDiff{},
 		},
@@ -54,7 +54,7 @@ func TestEnumsWithSemantics_SchemaIdentity(t *testing.T) {
 			// a guess would attribute the type to the wrong schema.
 			name:      "an ambiguous bare name matches nothing",
 			generated: []goschema.Enum{{Name: "mood", Values: []string{"a"}}},
-			database: []types.DBEnum{
+			database: []catalog.Enum{
 				{Name: "mood", Schema: "one", Values: []string{"a"}},
 				{Name: "mood", Schema: "two", Values: []string{"a"}},
 			},
@@ -74,7 +74,7 @@ func TestEnumsWithSemantics_SchemaIdentity(t *testing.T) {
 				{Name: "mood", Schema: "one", Values: []string{"a"}},
 				{Name: "mood", Schema: "two", Values: []string{"a", "b"}},
 			},
-			database: []types.DBEnum{
+			database: []catalog.Enum{
 				{Name: "mood", Schema: "one", Values: []string{"a"}},
 				{Name: "mood", Schema: "two", Values: []string{"a"}},
 			},
@@ -91,7 +91,7 @@ func TestEnumsWithSemantics_SchemaIdentity(t *testing.T) {
 			// the same name somewhere else.
 			name:      "a qualified name does not fall back to another schema",
 			generated: []goschema.Enum{{Name: "mood", Schema: "wanted", Values: []string{"a"}}},
-			database:  []types.DBEnum{{Name: "mood", Schema: "other", Values: []string{"a"}}},
+			database:  []catalog.Enum{{Name: "mood", Schema: "other", Values: []string{"a"}}},
 			semantics: identifier.Semantics{DefaultSchema: "public"},
 			want: difftypes.SchemaDiff{
 				EnumsAdded:   []string{"wanted.mood"},
@@ -107,7 +107,7 @@ func TestEnumsWithSemantics_SchemaIdentity(t *testing.T) {
 			diff := &difftypes.SchemaDiff{}
 			compare.EnumsWithSemantics(
 				&goschema.Database{Enums: test.generated},
-				&types.DBSchema{Enums: test.database},
+				&catalog.Database{Enums: test.database},
 				diff,
 				test.semantics,
 			)

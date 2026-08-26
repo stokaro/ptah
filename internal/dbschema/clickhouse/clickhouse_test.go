@@ -9,18 +9,18 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 )
 
 // TestClickHouseWriter_SchemaWriterInterface is a compile-time guard that
-// *Writer continues to satisfy types.SchemaWriter as that interface evolves
+// *Writer continues to satisfy catalog.SchemaWriter as that interface evolves
 // (e.g., the parameterized ExecuteSQL signature added in #130/#177). If the
 // interface drifts, this fails to compile rather than at integration-test
 // time. Mirrors the postgres / mysql convention.
 func TestClickHouseWriter_SchemaWriterInterface(t *testing.T) {
 	writer := NewClickHouseWriter(nil, "default")
-	var _ types.SchemaWriter = writer
+	var _ catalog.SchemaWriter = writer
 }
 
 func TestQuoteIdent(t *testing.T) {

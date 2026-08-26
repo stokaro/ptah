@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 	"go.5x5.cz/ptah/internal/schemascope"
 )
@@ -31,7 +31,7 @@ func TestReadNames(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		info       dbschematypes.DBInfo
+		info       catalog.ServerInfo
 		requested  []string
 		probe      func(query string, args []driver.NamedValue) (dbtest.QueryResult, error)
 		want       []string
@@ -40,7 +40,7 @@ func TestReadNames(t *testing.T) {
 	}{
 		{
 			name: "an explicit selection wins and asks the server nothing",
-			info: dbschematypes.DBInfo{
+			info: catalog.ServerInfo{
 				Dialect: "postgres",
 				URL:     "postgres://localhost/db?sslmode=disable",
 				Schema:  "public",
@@ -52,7 +52,7 @@ func TestReadNames(t *testing.T) {
 		},
 		{
 			name: "a comma-separated selection is split like the flag",
-			info: dbschematypes.DBInfo{
+			info: catalog.ServerInfo{
 				Dialect: "postgres",
 				URL:     "postgres://localhost/db",
 				Schema:  "public",
@@ -64,7 +64,7 @@ func TestReadNames(t *testing.T) {
 		},
 		{
 			name: "a plain PostgreSQL URL covers the whole realm",
-			info: dbschematypes.DBInfo{
+			info: catalog.ServerInfo{
 				Dialect: "postgres",
 				URL:     "postgres://localhost/db?sslmode=disable",
 				Schema:  "public",
@@ -75,7 +75,7 @@ func TestReadNames(t *testing.T) {
 		},
 		{
 			name: "a search_path URL covers the schema it pinned",
-			info: dbschematypes.DBInfo{
+			info: catalog.ServerInfo{
 				Dialect: "postgres",
 				URL:     "postgres://localhost/db?search_path=public",
 				Schema:  "public",
@@ -86,7 +86,7 @@ func TestReadNames(t *testing.T) {
 		},
 		{
 			name: "a comma-carrying search_path pins nothing and covers the realm",
-			info: dbschematypes.DBInfo{
+			info: catalog.ServerInfo{
 				Dialect: "postgres",
 				URL:     "postgres://localhost/db?search_path=public,extra",
 				Schema:  "public",
@@ -97,7 +97,7 @@ func TestReadNames(t *testing.T) {
 		},
 		{
 			name: "a MySQL connection covers the database it named",
-			info: dbschematypes.DBInfo{
+			info: catalog.ServerInfo{
 				Dialect: "mysql",
 				URL:     "mysql://root@tcp(127.0.0.1:3306)/app",
 				Schema:  "app",
@@ -108,7 +108,7 @@ func TestReadNames(t *testing.T) {
 		},
 		{
 			name: "SQLite has one namespace and covers it",
-			info: dbschematypes.DBInfo{
+			info: catalog.ServerInfo{
 				Dialect: "sqlite",
 				URL:     "sqlite://file?mode=memory",
 				Schema:  "main",
@@ -119,7 +119,7 @@ func TestReadNames(t *testing.T) {
 		},
 		{
 			name: "a connection reporting no schema leaves the reader its own default",
-			info: dbschematypes.DBInfo{
+			info: catalog.ServerInfo{
 				Dialect: "sqlite",
 				URL:     "sqlite://file?mode=memory",
 				Schema:  "   ",
@@ -130,7 +130,7 @@ func TestReadNames(t *testing.T) {
 		},
 		{
 			name: "a failing realm probe is an error, not an empty realm",
-			info: dbschematypes.DBInfo{
+			info: catalog.ServerInfo{
 				Dialect: "postgres",
 				URL:     "postgres://localhost/db",
 				Schema:  "public",

@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"io"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 )
 
@@ -47,10 +47,10 @@ func scopeGeneratedSide(
 // projection as scopeGeneratedSide, so both sides of a comparison always see
 // one selection.
 func scopeDatabaseSide(
-	db *types.DBSchema,
+	db *catalog.Database,
 	scope atlasfilter.Scope,
 	side string,
-) (*types.DBSchema, atlasfilter.ScopeReports, error) {
+) (*catalog.Database, atlasfilter.ScopeReports, error) {
 	if scope.Positive() {
 		filtered, reports, err := atlasfilter.ScopeDatabaseSelectionReport(db, scope)
 		if emptySelection(err) {

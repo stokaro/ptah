@@ -192,3 +192,17 @@ v0.2.0 go.5x5.cz/ptah/core/ast
 v0.2.0 go.5x5.cz/ptah/migration/schemadiff
 v0.2.0 go.5x5.cz/ptah/migration/safety
 v0.2.0 go.5x5.cz/ptah/migration/diffpolicy
+
+# The live-schema model is named for what it holds and which side of the
+# comparison it is. `dbschema/types` and `core/goschema` were both `types`-ish
+# names for models that answer opposite questions -- what a server HAS versus
+# what a source DECLARES -- and the type named `DBSchema` was a catalog rather
+# than a schema. The package is now `catalog`, its `Database` is the whole
+# catalog, and the DB prefix went with the move: it repeated the package on
+# every type, so `types.DBTable` said "table" twice.
+#
+# Every signature naming one of the thirty moved types changes its type's
+# import path and spelling; no field, method or behavior moves. See
+# stokaro/ptah#2246 section 2.1.
+v0.2.0 go.5x5.cz/ptah/catalog
+v0.2.0 go.5x5.cz/ptah/dbschema

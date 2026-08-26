@@ -9,10 +9,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -115,23 +115,23 @@ func cleanupCockroachIndexIdentity(db *sql.DB) {
 	_, _ = db.Exec(`DROP TABLE IF EXISTS ` + cockroachIndexIdentityUsersTable + ` CASCADE`)
 }
 
-func readCockroachIndexIdentitySchema(c *qt.C, t *testing.T, dsn string) *dbschematypes.DBSchema {
+func readCockroachIndexIdentitySchema(c *qt.C, t *testing.T, dsn string) *catalog.Database {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(t.Context(), dsn)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
 	live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, []string{"public"})
 	c.Assert(err, qt.IsNil)
-	live.Tables = slices.DeleteFunc(live.Tables, func(table dbschematypes.DBTable) bool {
+	live.Tables = slices.DeleteFunc(live.Tables, func(table catalog.Table) bool {
 		return table.Name != cockroachIndexIdentityUsersTable &&
 			table.Name != cockroachIndexIdentityOrdersTable
 	})
-	live.Indexes = slices.DeleteFunc(live.Indexes, func(index dbschematypes.DBIndex) bool {
+	live.Indexes = slices.DeleteFunc(live.Indexes, func(index catalog.Index) bool {
 		return index.IsPrimary ||
 			index.TableName != cockroachIndexIdentityUsersTable &&
 				index.TableName != cockroachIndexIdentityOrdersTable
 	})
-	live.Constraints = slices.DeleteFunc(live.Constraints, func(constraint dbschematypes.DBConstraint) bool {
+	live.Constraints = slices.DeleteFunc(live.Constraints, func(constraint catalog.Constraint) bool {
 		return constraint.TableName != cockroachIndexIdentityUsersTable &&
 			constraint.TableName != cockroachIndexIdentityOrdersTable
 	})

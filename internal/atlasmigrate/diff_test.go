@@ -11,8 +11,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlassource"
 	"go.5x5.cz/ptah/internal/migratesum"
@@ -544,7 +544,7 @@ func TestGenerateDiff_InvalidMigrationSnapshotDoesNotResetDevDatabase(t *testing
 	c.Assert(err, qt.ErrorMatches, `capture migration directory: capture filesystem snapshot: .*`)
 	c.Assert(result.MigrationPaths, qt.HasLen, 0)
 	c.Assert(readErr, qt.IsNil)
-	c.Assert(slices.ContainsFunc(devSchema.Tables, func(table dbschematypes.DBTable) bool {
+	c.Assert(slices.ContainsFunc(devSchema.Tables, func(table catalog.Table) bool {
 		return table.Name == "protected_users"
 	}), qt.IsTrue)
 }

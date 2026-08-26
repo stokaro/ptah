@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"slices"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema/types"
 )
 
 // ValidateLive refuses live ClickHouse state Ptah cannot compare against a
@@ -35,7 +35,7 @@ import (
 // migration/schemadiff/internal/compare draws for revocation: a partial revoke
 // on a role no declaration names is somebody else's arrangement and is left
 // alone.
-func ValidateLive(dialect string, generated *goschema.Database, database *types.DBSchema) error {
+func ValidateLive(dialect string, generated *goschema.Database, database *catalog.Database) error {
 	if platform.NormalizeDialect(dialect) != platform.ClickHouse {
 		return nil
 	}
@@ -48,10 +48,10 @@ func ValidateLive(dialect string, generated *goschema.Database, database *types.
 		managed[role.Name] = true
 	}
 
-	partial := slices.DeleteFunc(slices.Clone(database.Grants), func(grant types.DBGrant) bool {
+	partial := slices.DeleteFunc(slices.Clone(database.Grants), func(grant catalog.Grant) bool {
 		return !grant.IsPartialRevoke || !managed[grant.Role]
 	})
-	slices.SortFunc(partial, func(a, b types.DBGrant) int {
+	slices.SortFunc(partial, func(a, b catalog.Grant) int {
 		return cmp.Or(
 			cmp.Compare(a.Role, b.Role),
 			cmp.Compare(a.Privilege, b.Privilege),

@@ -12,8 +12,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 )
 
@@ -49,7 +49,7 @@ func TestReadObjectOwners_PassesOneArgumentPerSchema(t *testing.T) {
 	c.Assert(seen, qt.HasLen, 1)
 	// The catalog letters are mapped into the vocabulary the rest of Ptah
 	// speaks, so a consumer need not know what relkind 'S' is.
-	c.Assert(owners, qt.DeepEquals, []types.DBObjectOwner{
+	c.Assert(owners, qt.DeepEquals, []catalog.ObjectOwner{
 		{Kind: "table", Schema: "public", Name: "users", Owner: "app_user", OwnerCanLogin: true},
 		{Kind: "sequence", Schema: "public", Name: "users_id_seq", Owner: "app_user", OwnerCanLogin: true},
 		{Kind: "schema", Name: "public", Owner: "pg_database_owner"},

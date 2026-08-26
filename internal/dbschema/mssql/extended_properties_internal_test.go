@@ -12,7 +12,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 )
 
@@ -60,7 +60,7 @@ func TestReadExtendedProperties_CarriesTheAddressAndDeclinesTheValueItCannotWrit
 	properties, err := reader.readExtendedProperties(t.Context())
 	c.Assert(err, qt.IsNil)
 
-	c.Assert(properties, qt.DeepEquals, []types.DBExtendedProperty{
+	c.Assert(properties, qt.DeepEquals, []catalog.ExtendedProperty{
 		{Name: "ptah_db_prop", Value: "database scope", ValueType: "nvarchar"},
 		{Name: "ptah_schema_prop", Schema: "app", Value: "schema scope", ValueType: "nvarchar"},
 		{Name: "ptah_flag", Schema: "app", Table: "docs", Value: "enabled", ValueType: "nvarchar"},

@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -24,7 +24,7 @@ func TestCompositeTypes_AttributeDeltaOnlyWhenALTERReachesTheDeclaredShape(t *te
 	tests := []struct {
 		name        string
 		declared    []goschema.CompositeTypeField
-		current     []types.DBCompositeField
+		current     []catalog.CompositeField
 		wantAdded   []string
 		wantRemoved []string
 	}{
@@ -70,7 +70,7 @@ func TestCompositeTypes_AttributeDeltaOnlyWhenALTERReachesTheDeclaredShape(t *te
 			generated := &goschema.Database{CompositeTypes: []goschema.CompositeType{
 				{Name: "addr", Fields: test.declared},
 			}}
-			database := &types.DBSchema{Composites: []types.DBComposite{
+			database := &catalog.Database{Composites: []catalog.CompositeType{
 				{Name: "addr", Fields: test.current},
 			}}
 			diff := &difftypes.SchemaDiff{}
@@ -100,8 +100,8 @@ func TestCompositeTypes_AChangedFieldTypeIsNotAnAttributeDelta(t *testing.T) {
 			{Name: "city", Type: "text"},
 		}},
 	}}
-	database := &types.DBSchema{Composites: []types.DBComposite{
-		{Name: "addr", Fields: []types.DBCompositeField{
+	database := &catalog.Database{Composites: []catalog.CompositeType{
+		{Name: "addr", Fields: []catalog.CompositeField{
 			{Name: "street", Type: "text"},
 			{Name: "city", Type: "text"},
 		}},
@@ -125,10 +125,10 @@ func fields(names ...string) []goschema.CompositeTypeField {
 }
 
 // dbFields builds catalog text fields with the given names.
-func dbFields(names ...string) []types.DBCompositeField {
-	built := make([]types.DBCompositeField, 0, len(names))
+func dbFields(names ...string) []catalog.CompositeField {
+	built := make([]catalog.CompositeField, 0, len(names))
 	for _, name := range names {
-		built = append(built, types.DBCompositeField{Name: name, Type: "text"})
+		built = append(built, catalog.CompositeField{Name: name, Type: "text"})
 	}
 	return built
 }

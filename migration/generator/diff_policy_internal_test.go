@@ -10,8 +10,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform/capability"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/migration/diffpolicy"
 	"go.5x5.cz/ptah/migration/safety"
@@ -33,7 +33,7 @@ func TestPlanGeneratedMigrationSpecs_SkipDropTable(t *testing.T) {
 	specs, assessments, err := planGeneratedMigrationSpecs(
 		diff,
 		indexOnlyGeneratedSchema(),
-		&dbschematypes.DBSchema{},
+		&catalog.Database{},
 		postgresInfo(capability.Postgres17()),
 		100,
 		"drop_legacy",
@@ -56,12 +56,12 @@ func TestPlanGeneratedMigrationSpecs_SkipDropTableAlsoFiltersDown(t *testing.T) 
 	// The database still has `legacy`; the Go schema removed it. The dbSchema
 	// carries the table definition so the down path could reconstruct a
 	// CREATE TABLE — which it must not, since the up migration keeps the table.
-	dbSchema := &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
+	dbSchema := &catalog.Database{
+		Tables: []catalog.Table{
 			{
 				Name: "legacy",
 				Type: "BASE TABLE",
-				Columns: []dbschematypes.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "id", DataType: "integer", IsNullable: "NO", OrdinalPosition: 1},
 				},
 			},
@@ -114,9 +114,9 @@ func TestPlanGeneratedMigrationSpecs_SkipDropIndexKeepsRedefinition(t *testing.T
 		},
 	}
 	// users is populated, so the recreate is built concurrently and the split fires.
-	dbSchema := &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{{Name: "users", Type: "BASE TABLE", EstimatedRows: 100}},
-		Indexes: []dbschematypes.DBIndex{{
+	dbSchema := &catalog.Database{
+		Tables: []catalog.Table{{Name: "users", Type: "BASE TABLE", EstimatedRows: 100}},
+		Indexes: []catalog.Index{{
 			Name:      "idx_users_email",
 			TableName: "users",
 			Columns:   []string{"email"},
@@ -155,8 +155,8 @@ func TestPlanGeneratedMigrationSpecs_ConcurrentIndexPolicyForcesConcurrent(t *te
 
 	// An unpopulated table: the populated-table heuristic would keep plain
 	// CREATE INDEX, so any CONCURRENTLY must come from the policy.
-	dbSchema := &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{{Name: "users", Type: "BASE TABLE", EstimatedRows: 0}},
+	dbSchema := &catalog.Database{
+		Tables: []catalog.Table{{Name: "users", Type: "BASE TABLE", EstimatedRows: 0}},
 	}
 
 	specs, _, err := planGeneratedMigrationSpecs(

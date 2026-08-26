@@ -1,4 +1,4 @@
-package types_test
+package catalog_test
 
 import (
 	"encoding/json"
@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 )
 
 // credentialURL assembles a database URL carrying a password, without writing
@@ -24,7 +24,7 @@ func credentialURL(user, password string) string {
 // TestDBInfo_MarshalCarriesNoCredential holds the one rule the struct's tags
 // invite someone to break.
 //
-// Every other field on DBInfo is tagged for JSON, so marshalling the struct is
+// Every other field on ServerInfo is tagged for JSON, so marshalling the struct is
 // the obvious thing to do with it -- and while URL carried `json:"url"` that
 // marshal wrote the database password into whatever the caller did with the
 // bytes: a report, a log line, a cached artifact.
@@ -33,7 +33,7 @@ func TestDBInfo_MarshalCarriesNoCredential(t *testing.T) {
 
 	const password = "hunter2"
 	redacted := credentialURL("app", "***")
-	info := types.DBInfo{
+	info := catalog.ServerInfo{
 		Dialect:     "postgres",
 		Version:     "17.2",
 		Schema:      "public",
@@ -51,13 +51,13 @@ func TestDBInfo_MarshalCarriesNoCredential(t *testing.T) {
 }
 
 // TestDBInfo_MarshalCarriesNoCredentialWithoutARedactedSibling is the same rule
-// for a DBInfo nobody filled in completely. The exclusion is the tag, not the
-// value in RedactedURL, so a hand-assembled DBInfo cannot leak either.
+// for a ServerInfo nobody filled in completely. The exclusion is the tag, not the
+// value in RedactedURL, so a hand-assembled ServerInfo cannot leak either.
 func TestDBInfo_MarshalCarriesNoCredentialWithoutARedactedSibling(t *testing.T) {
 	c := qt.New(t)
 
 	const token = "s3cr3t-token"
-	info := types.DBInfo{
+	info := catalog.ServerInfo{
 		Dialect: "libsql",
 		URL:     "libsql://db.turso.io?authToken=" + token,
 	}

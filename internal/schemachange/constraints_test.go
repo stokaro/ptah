@@ -6,9 +6,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/schemachange"
 )
 
@@ -21,16 +21,16 @@ import (
 func TestAClauseConstraintIsPlanned(t *testing.T) {
 	tests := []constraintCase{
 		{
-			name:          "a check the database does not have",
-			description:   constrainedWidget(checkConstraint("price > 0")),
-			catalog:       constrainedCatalog(),
-			wantOperation: schemachange.Add,
+			name:           "a check the database does not have",
+			description:    constrainedWidget(checkConstraint("price > 0")),
+			currentCatalog: constrainedCatalog(),
+			wantOperation:  schemachange.Add,
 		},
 		{
-			name:          "a check the desired schema no longer declares",
-			description:   constrainedWidget(),
-			catalog:       constrainedCatalog(catalogCheck("price > 0")),
-			wantOperation: schemachange.Remove,
+			name:           "a check the desired schema no longer declares",
+			description:    constrainedWidget(),
+			currentCatalog: constrainedCatalog(catalogCheck("price > 0")),
+			wantOperation:  schemachange.Remove,
 		},
 		{
 			// A CHECK is identified by its condition, so a different condition
@@ -39,10 +39,10 @@ func TestAClauseConstraintIsPlanned(t *testing.T) {
 			// in place, so a modification rendered a drop and an add -- but the
 			// change now says which object goes and which arrives
 			// (stokaro/ptah#1663). Its two changes are asserted below.
-			name:        "a check whose condition changed",
-			description: constrainedWidget(checkConstraint("price >= 0")),
-			catalog:     constrainedCatalog(catalogCheck("price > 0")),
-			wantPair:    []schemachange.Operation{schemachange.Add, schemachange.Remove},
+			name:           "a check whose condition changed",
+			description:    constrainedWidget(checkConstraint("price >= 0")),
+			currentCatalog: constrainedCatalog(catalogCheck("price > 0")),
+			wantPair:       []schemachange.Operation{schemachange.Add, schemachange.Remove},
 		},
 		{
 			name: "a primary key the database does not have",
@@ -50,21 +50,21 @@ func TestAClauseConstraintIsPlanned(t *testing.T) {
 				StructName: "Widget", Name: "pk_widget", Type: "PRIMARY KEY",
 				Columns: []string{"id"},
 			}),
-			catalog:       constrainedCatalog(),
-			wantOperation: schemachange.Add,
+			currentCatalog: constrainedCatalog(),
+			wantOperation:  schemachange.Add,
 		},
 		{
-			name:          "an exclusion the database does not have",
-			description:   constrainedWidget(exclusionConstraint("room WITH =")),
-			catalog:       constrainedCatalog(),
-			wantOperation: schemachange.Add,
+			name:           "an exclusion the database does not have",
+			description:    constrainedWidget(exclusionConstraint("room WITH =")),
+			currentCatalog: constrainedCatalog(),
+			wantOperation:  schemachange.Add,
 		},
 		{
-			name:          "an exclusion whose elements changed",
-			description:   constrainedWidget(exclusionConstraint("room WITH =, id WITH =")),
-			catalog:       constrainedCatalog(catalogExclusion("room WITH =")),
-			wantOperation: schemachange.Modify,
-			wantChanged:   []string{"exclusion"},
+			name:           "an exclusion whose elements changed",
+			description:    constrainedWidget(exclusionConstraint("room WITH =, id WITH =")),
+			currentCatalog: constrainedCatalog(catalogExclusion("room WITH =")),
+			wantOperation:  schemachange.Modify,
+			wantChanged:    []string{"exclusion"},
 		},
 	}
 
@@ -72,7 +72,7 @@ func TestAClauseConstraintIsPlanned(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			changes := changesFor(c, test.description, test.catalog)
+			changes := changesFor(c, test.description, test.currentCatalog)
 
 			assertConstraintChanges(c, changes, test)
 		})
@@ -82,12 +82,12 @@ func TestAClauseConstraintIsPlanned(t *testing.T) {
 // constraintCase is one comparison, expecting either a single operation or the
 // pair a replacement produces.
 type constraintCase struct {
-	name          string
-	description   *goschema.Database
-	catalog       *dbschematypes.DBSchema
-	wantOperation schemachange.Operation
-	wantChanged   []string
-	wantPair      []schemachange.Operation
+	name           string
+	description    *goschema.Database
+	currentCatalog *catalog.Database
+	wantOperation  schemachange.Operation
+	wantChanged    []string
+	wantPair       []schemachange.Operation
 }
 
 // assertConstraintChanges reads one row's expectation, which is either a single
@@ -154,7 +154,7 @@ func TestAConstraintOfATableBeingCreatedIsNotItsOwnChange(t *testing.T) {
 	c := qt.New(t)
 
 	changes := changesFor(c,
-		constrainedWidget(checkConstraint("price > 0")), &dbschematypes.DBSchema{})
+		constrainedWidget(checkConstraint("price > 0")), &catalog.Database{})
 
 	c.Assert(kindsOf(changes), qt.DeepEquals, []string{"table"})
 }
@@ -201,8 +201,8 @@ func checkConstraint(expression string) goschema.Constraint {
 	}
 }
 
-func catalogCheck(clause string) dbschematypes.DBConstraint {
-	return dbschematypes.DBConstraint{
+func catalogCheck(clause string) catalog.Constraint {
+	return catalog.Constraint{
 		Name: "ck_widget_price", TableName: "widget", Schema: "public",
 		Type: "CHECK", CheckClause: &clause,
 	}
@@ -215,9 +215,9 @@ func exclusionConstraint(elements string) goschema.Constraint {
 	}
 }
 
-func catalogExclusion(elements string) dbschematypes.DBConstraint {
+func catalogExclusion(elements string) catalog.Constraint {
 	method := "gist"
-	return dbschematypes.DBConstraint{
+	return catalog.Constraint{
 		Name: "ex_widget_room", TableName: "widget", Schema: "public",
 		Type: "EXCLUDE", UsingMethod: &method, ExcludeElements: &elements,
 	}
@@ -234,13 +234,13 @@ func constrainedWidget(constraints ...goschema.Constraint) *goschema.Database {
 	return description
 }
 
-// constrainedCatalog is that table as a catalog read reports it.
-func constrainedCatalog(constraints ...dbschematypes.DBConstraint) *dbschematypes.DBSchema {
-	catalog := catalogTable(
-		dbschematypes.DBColumn{Name: "id", DataType: "integer", IsNullable: "NO"},
-		dbschematypes.DBColumn{Name: "price", DataType: "integer", IsNullable: "YES"},
-		dbschematypes.DBColumn{Name: "room", DataType: "integer", IsNullable: "YES"},
+// constrainedCatalog is that table as a currentCatalog read reports it.
+func constrainedCatalog(constraints ...catalog.Constraint) *catalog.Database {
+	currentCatalog := catalogTable(
+		catalog.Column{Name: "id", DataType: "integer", IsNullable: "NO"},
+		catalog.Column{Name: "price", DataType: "integer", IsNullable: "YES"},
+		catalog.Column{Name: "room", DataType: "integer", IsNullable: "YES"},
 	)
-	catalog.Constraints = append(catalog.Constraints, constraints...)
-	return catalog
+	currentCatalog.Constraints = append(currentCatalog.Constraints, constraints...)
+	return currentCatalog
 }

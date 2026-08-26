@@ -2,7 +2,7 @@ package postgres
 
 // White-box testing required: the projection under test is a fragment of the
 // SQL readTablesForSchema builds, and both answers produce the same
-// []types.DBTable for the rows a fake server hands back. Only the text of the
+// []catalog.Table for the rows a fake server hands back. Only the text of the
 // query the reader issued says which projection it chose, and
 // readTablesForSchema is unexported.
 
@@ -14,7 +14,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 )
 
@@ -65,7 +65,7 @@ func rowStatsFakeServer(
 
 // rowStatsReadResult is everything one fake-server table read produced.
 type rowStatsReadResult struct {
-	tables      []types.DBTable
+	tables      []catalog.Table
 	tablesQuery string
 	queries     int
 	err         error

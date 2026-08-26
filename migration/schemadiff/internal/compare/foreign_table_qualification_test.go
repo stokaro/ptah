@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -46,20 +46,20 @@ func compositeDeclaringForeignTable(foreignTable string) *goschema.Database {
 // The empty spelling is not hypothetical: a reader blanks the schema for the one
 // it was scoped to, so this is what a PostgreSQL read of the default schema
 // actually produces.
-func catalogReportingForeignTable(foreignSchema string) *types.DBSchema {
+func catalogReportingForeignTable(foreignSchema string) *catalog.Database {
 	parent := "parent"
-	return &types.DBSchema{
-		Tables: []types.DBTable{
-			{Name: "parent", Schema: "public", Type: "BASE TABLE", Columns: []types.DBColumn{
+	return &catalog.Database{
+		Tables: []catalog.Table{
+			{Name: "parent", Schema: "public", Type: "BASE TABLE", Columns: []catalog.Column{
 				{Name: "a", DataType: "integer", IsNullable: "NO"},
 				{Name: "b", DataType: "integer", IsNullable: "NO"},
 			}},
-			{Name: "child_multi", Schema: "public", Type: "BASE TABLE", Columns: []types.DBColumn{
+			{Name: "child_multi", Schema: "public", Type: "BASE TABLE", Columns: []catalog.Column{
 				{Name: "pa", DataType: "integer", IsNullable: "NO"},
 				{Name: "pb", DataType: "integer", IsNullable: "NO"},
 			}},
 		},
-		Constraints: []types.DBConstraint{{
+		Constraints: []catalog.Constraint{{
 			Schema: "public", TableName: "child_multi", Name: "fk_multi", Type: "FOREIGN KEY",
 			ColumnName:  "pa",
 			ColumnNames: []string{"pa", "pb"}, ForeignTable: &parent,
@@ -76,7 +76,7 @@ func noAction() *string {
 }
 
 // qualificationDiff compares one description against one catalog.
-func qualificationDiff(c *qt.C, generated *goschema.Database, database *types.DBSchema) *difftypes.SchemaDiff {
+func qualificationDiff(c *qt.C, generated *goschema.Database, database *catalog.Database) *difftypes.SchemaDiff {
 	c.Helper()
 	diff := &difftypes.SchemaDiff{}
 	compare.ConstraintsWithSemantics(generated, database, diff, nil, identifier.ForDialect("postgres"))

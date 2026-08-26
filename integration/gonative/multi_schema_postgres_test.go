@@ -8,11 +8,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
@@ -91,7 +91,7 @@ func cleanupMultiSchemaIntegration(t *testing.T, db *sql.DB) {
 	_, _ = db.Exec("DROP TABLE IF EXISTS ptah_ms_accounts CASCADE")
 }
 
-func filterMultiSchemaIntegrationTables(in *dbschematypes.DBSchema) *dbschematypes.DBSchema {
+func filterMultiSchemaIntegrationTables(in *catalog.Database) *catalog.Database {
 	keepTables := map[string]struct{}{
 		"ptah_ms_accounts":                 {},
 		"ptah_ms_auth.ptah_ms_users":       {},
@@ -105,8 +105,8 @@ func filterMultiSchemaIntegrationTables(in *dbschematypes.DBSchema) *dbschematyp
 	return &out
 }
 
-func filterTables(in []dbschematypes.DBTable, keep map[string]struct{}) []dbschematypes.DBTable {
-	out := make([]dbschematypes.DBTable, 0, len(in))
+func filterTables(in []catalog.Table, keep map[string]struct{}) []catalog.Table {
+	out := make([]catalog.Table, 0, len(in))
 	for _, table := range in {
 		if _, ok := keep[table.QualifiedName()]; ok {
 			out = append(out, table)
@@ -115,8 +115,8 @@ func filterTables(in []dbschematypes.DBTable, keep map[string]struct{}) []dbsche
 	return out
 }
 
-func filterIndexes(in []dbschematypes.DBIndex, keep map[string]struct{}) []dbschematypes.DBIndex {
-	out := make([]dbschematypes.DBIndex, 0, len(in))
+func filterIndexes(in []catalog.Index, keep map[string]struct{}) []catalog.Index {
+	out := make([]catalog.Index, 0, len(in))
 	for _, index := range in {
 		if _, ok := keep[index.QualifiedTableName()]; ok {
 			out = append(out, index)
@@ -125,8 +125,8 @@ func filterIndexes(in []dbschematypes.DBIndex, keep map[string]struct{}) []dbsch
 	return out
 }
 
-func filterConstraints(in []dbschematypes.DBConstraint, keep map[string]struct{}) []dbschematypes.DBConstraint {
-	out := make([]dbschematypes.DBConstraint, 0, len(in))
+func filterConstraints(in []catalog.Constraint, keep map[string]struct{}) []catalog.Constraint {
+	out := make([]catalog.Constraint, 0, len(in))
 	for _, constraint := range in {
 		if _, ok := keep[constraint.QualifiedTableName()]; ok {
 			out = append(out, constraint)
@@ -135,8 +135,8 @@ func filterConstraints(in []dbschematypes.DBConstraint, keep map[string]struct{}
 	return out
 }
 
-func filterRLSPolicies(in []dbschematypes.DBRLSPolicy, keep map[string]struct{}) []dbschematypes.DBRLSPolicy {
-	out := make([]dbschematypes.DBRLSPolicy, 0, len(in))
+func filterRLSPolicies(in []catalog.RLSPolicy, keep map[string]struct{}) []catalog.RLSPolicy {
+	out := make([]catalog.RLSPolicy, 0, len(in))
 	for _, policy := range in {
 		if _, ok := keep[policy.Table]; ok {
 			out = append(out, policy)

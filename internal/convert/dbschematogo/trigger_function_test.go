@@ -5,15 +5,15 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 )
 
 // triggerSchema is one trigger on table `a` running the named function.
-func triggerSchema(executeFunction string) *types.DBSchema {
-	return &types.DBSchema{
-		Triggers: []types.DBTrigger{{
+func triggerSchema(executeFunction string) *catalog.Database {
+	return &catalog.Database{
+		Triggers: []catalog.Trigger{{
 			Name:            "trg_a",
 			Table:           "a",
 			Timing:          "AFTER",

@@ -5,25 +5,25 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/reservedrole"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
 // postgresInfo is the connection metadata a PostgreSQL comparison carries.
-func postgresInfo() types.DBInfo {
-	return types.DBInfo{Dialect: "postgres", Schema: "public"}
+func postgresInfo() catalog.ServerInfo {
+	return catalog.ServerInfo{Dialect: "postgres", Schema: "public"}
 }
 
 // emptyPostgresDatabase is the target the reproduction used: an empty database
 // whose reader reported no role in either list, which is also what a reader
 // reports for a reserved role that does exist on the server.
-func emptyPostgresDatabase() *types.DBSchema {
-	return &types.DBSchema{
-		Roles:           []types.DBRole{{Name: "app_user", Login: true}},
-		RolesOutOfScope: []types.DBRole{{Name: "other_tenant_user", Login: true}},
+func emptyPostgresDatabase() *catalog.Database {
+	return &catalog.Database{
+		Roles:           []catalog.Role{{Name: "app_user", Login: true}},
+		RolesOutOfScope: []catalog.Role{{Name: "other_tenant_user", Login: true}},
 	}
 }
 
@@ -35,7 +35,7 @@ func emptyPostgresDatabase() *types.DBSchema {
 // `CREATE ROLE "pg_monitor" WITH NOLOGIN ...` and then exited 1 on
 // `role name "pg_monitor" is reserved (SQLSTATE 42939)`; declaring role
 // "postgres" printed the same shape and exited 1 on SQLSTATE 42710. Neither
-// name is in DBSchema.Roles or DBSchema.RolesOutOfScope, because the reader
+// name is in Database.Roles or Database.RolesOutOfScope, because the reader
 // excludes both from both reads, so the comparison read them as absent.
 func TestCompareWithDatabaseInfoRefusesAReservedRole(t *testing.T) {
 	tests := []struct {

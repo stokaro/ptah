@@ -12,8 +12,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/schemascope"
 )
@@ -150,7 +150,7 @@ func extensionOwnedSchemas(
 // at tables: most of the 51 relations the unfiltered read described were views
 // of the extension's information catalog, and a check that looked only at
 // tables would have called that read clean.
-func postgresRelationSchemas(read *dbschematypes.DBSchema) []string {
+func postgresRelationSchemas(read *catalog.Database) []string {
 	seen := map[string]bool{}
 	for _, table := range read.Tables {
 		seen[table.Schema] = true
@@ -169,7 +169,7 @@ func postgresRelationSchemas(read *dbschematypes.DBSchema) []string {
 	return names
 }
 
-func postgresSchemaNames(schemas []dbschematypes.DBSchemaInfo) []string {
+func postgresSchemaNames(schemas []catalog.Schema) []string {
 	names := make([]string, 0, len(schemas))
 	for _, schema := range schemas {
 		names = append(names, schema.Name)
@@ -177,7 +177,7 @@ func postgresSchemaNames(schemas []dbschematypes.DBSchemaInfo) []string {
 	return names
 }
 
-func postgresTableNames(tables []dbschematypes.DBTable) []string {
+func postgresTableNames(tables []catalog.Table) []string {
 	names := make([]string, 0, len(tables))
 	for _, table := range tables {
 		names = append(names, table.Name)
