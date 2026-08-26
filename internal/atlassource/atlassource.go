@@ -100,6 +100,15 @@ type Source struct {
 	// OCIReference is the registry reference a [KindRemoteSchema] source pulls,
 	// carrying the oci:// scheme every Ptah artifact API expects.
 	OCIReference string
+	// FileSystem is the directory a project file already registered, and is
+	// nil for every source that has a local path instead.
+	//
+	// A `migration.dir` naming a registry reference has NO local path: the
+	// project loader registers a lazily-pulled read-only filesystem and leaves
+	// an in-memory URL in its place. Resolving that URL as a path is what made
+	// such a project answer "only local file:// migration directories are
+	// supported" for a reference it was entitled to write (stokaro/ptah#1215).
+	FileSystem fs.FS
 	// Command is the resolved external schema program for external-schema
 	// sources; zero for every other kind. Its dialect hint is filled during
 	// resolution.
@@ -181,7 +190,7 @@ func (s Set) PrepareMigrationSource(validate func(fs.FS) error) (Set, error) {
 	if s.Kind != KindMigrationDir || validate == nil {
 		return s, nil
 	}
-	snapshot, err := CaptureVerifiedMigrationDir(s.Sources[0].Path)
+	snapshot, err := s.captureMigrationSource()
 	if err != nil {
 		return Set{}, err
 	}
@@ -190,6 +199,16 @@ func (s Set) PrepareMigrationSource(validate func(fs.FS) error) (Set, error) {
 	}
 	s.migrationSnapshot = snapshot
 	return s, nil
+}
+
+// captureMigrationSource captures the set's migration directory, whichever way
+// it arrived: a local path, or a filesystem the project loader registered.
+func (s Set) captureMigrationSource() (fs.FS, error) {
+	source := s.Sources[0]
+	if source.FileSystem != nil {
+		return CaptureVerifiedMigrationFS(source.FileSystem)
+	}
+	return CaptureVerifiedMigrationDir(source.Path)
 }
 
 // ValidateLocalSchemaSources applies validate to every local schema source in
@@ -758,6 +777,17 @@ func expandEnvMigrationDir(env ProjectEnv) ([]Source, error) {
 	value := strings.TrimSpace(env.Config.Migration.Dir)
 	if value == "" {
 		return nil, errors.New("the selected atlas.hcl env does not define migration.dir")
+	}
+	// A directory the loader registered is taken as the filesystem it is. The
+	// Raw value is the reference the PROJECT wrote rather than the in-memory
+	// URL standing in for it, so a diagnostic sends the reader to the line they
+	// can edit.
+	if registered, ok := env.Config.MigrationDirectorySource(value); ok {
+		return []Source{{
+			Raw:        registered.Path,
+			Kind:       KindMigrationDir,
+			FileSystem: registered.FileSystem,
+		}}, nil
 	}
 	path, err := atlasprojectpath.LocalDir(value, env.BaseDir)
 	if err != nil {
