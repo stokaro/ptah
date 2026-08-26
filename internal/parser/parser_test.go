@@ -4149,14 +4149,17 @@ func TestParser_ParseMultiWordTypes(t *testing.T) {
 			expectedType: "DOUBLE PRECISION",
 		},
 		{
+			// These two recorded the parser's answer rather than SQL's:
+			// the qualifier was prepended, so the expectation was a type no
+			// server accepts. See time_zone_type_test.go.
 			name:         "TIMESTAMP WITH TIME ZONE",
 			sql:          "CREATE TABLE test (ts TIMESTAMP WITH TIME ZONE);",
-			expectedType: "WITH TIMESTAMP TIME ZONE",
+			expectedType: "TIMESTAMP WITH TIME ZONE",
 		},
 		{
 			name:         "TIMESTAMP WITHOUT TIME ZONE",
 			sql:          "CREATE TABLE test (ts TIMESTAMP WITHOUT TIME ZONE);",
-			expectedType: "WITHOUT TIMESTAMP TIME ZONE",
+			expectedType: "TIMESTAMP WITHOUT TIME ZONE",
 		},
 	}
 
@@ -4506,7 +4509,7 @@ func TestParser_ParseExtendedPostgreSQLDemo(t *testing.T) {
 		}
 	}
 	c.Assert(timestampCol, qt.IsNotNil)
-	c.Assert(timestampCol.Type, qt.Equals, "WITH TIMESTAMP TIME ZONE")
+	c.Assert(timestampCol.Type, qt.Equals, "TIMESTAMP WITH TIME ZONE")
 
 	// Test parameterized array type
 	var scoresCol *ast.ColumnNode
