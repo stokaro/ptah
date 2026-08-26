@@ -45,6 +45,7 @@ equal to it.
 | `migration/schemadiff` | Desired/live schema diffing. |
 | `migration/schemadiff/types` | Shared schema-diff types. |
 | `migration/seeder` | Seed discovery and execution. |
+| `migration/shadow` | Migration verification against a live disposable database. |
 
 Import paths use the module prefix:
 
@@ -312,8 +313,8 @@ When its URL or connection selects SQLite, `PlanMigration` validates
 value therefore fails before filesystem work; non-SQLite plans do not consult
 the variable.
 
-`GenerateCheckpointFromShadow` and `VerifyBaselineShadow` apply the same
-SQLite-only validation before connecting to or mutating a shadow database.
+`generator.GenerateCheckpointFromShadow` and `shadow.VerifyBaseline` apply the
+same SQLite-only validation before connecting to or mutating a shadow database.
 The checkpoint path therefore cannot drop and replay a shadow database before
 reporting a malformed value.
 
@@ -334,14 +335,21 @@ API when an embedder needs the same machine-readable contract as
 `generator.GenerateMigrationOptions.ReportFormat` to `json` instead publishes
 one `.safety.json` artifact beside each generated migration pair.
 
+`migration/shadow` owns verification against a live disposable database:
+`VerifyMigration` measures a candidate migration, `VerifyBaseline` measures a
+replayed history against the target, `VerifyRollback` rehearses a rollback plan,
+and `PlanDynamicRollback` derives rollback statements from the schema a version
+defines rather than from a down body. `migration/generator` calls the first of
+these when `ShadowDatabaseURL` is set.
+
 When candidate or baseline shadow verification fails,
 `generator.PlanMigration`, `generator.GenerateMigration`, and
-`generator.VerifyBaselineShadow` preserve a typed
-`*generator.ShadowVerificationError`. Inspect it with `errors.As` instead of
+`shadow.VerifyBaseline` preserve a typed
+`*shadow.VerificationError`. Inspect it with `errors.As` instead of
 parsing `Error()`:
 
 ```go
-var shadowErr *generator.ShadowVerificationError
+var shadowErr *shadow.VerificationError
 if errors.As(err, &shadowErr) {
 	stage := shadowErr.Result.Stage
 	mismatches := shadowErr.Result.Mismatches
@@ -360,12 +368,12 @@ Baseline display text keeps the
 `baseline shadow check failed:` prefix expected by CLI users. A schema-match
 result contains every mismatch in deterministic category and object order, not
 only the first.
-Each `ShadowMismatch` has a stable `Kind`, a human-readable `Message`, and the
+Each `shadow.Mismatch` has a stable `Kind`, a human-readable `Message`, and the
 available object, table, column, constraint, or changed-property fields.
 Operational failures also preserve their underlying error through `Unwrap`;
 a structural schema mismatch has no wrapped error. A successful verification
-returns `nil` and continues planning; `ShadowVerificationResult` is only the
-structured failure payload carried by `ShadowVerificationError`.
+returns `nil` and continues planning; `shadow.VerificationResult` is only the
+structured failure payload carried by `shadow.VerificationError`.
 
 ## Error contracts
 
@@ -379,7 +387,7 @@ the error:
 - invalid schema diffs rejected during planning should support `errors.Is` with
   `ptaherr.ErrInvalidSchemaDiff`;
 - shadow candidate and baseline verification should support `errors.As` with
-  `*generator.ShadowVerificationError`;
+  `*shadow.VerificationError`;
 - command wrappers should preserve typed errors instead of replacing them with
   string-only errors.
 

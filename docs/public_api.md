@@ -42,6 +42,7 @@ These packages are intended for application and tool embedders:
 - `go.5x5.cz/ptah/migration/schemadiff`
 - `go.5x5.cz/ptah/migration/schemadiff/types`
 - `go.5x5.cz/ptah/migration/seeder`
+- `go.5x5.cz/ptah/migration/shadow`
 
 `atlascompat` is a narrow compatibility surface for external Atlas parity and
 conformance tooling. It intentionally wraps parser, HCL schema,
@@ -357,10 +358,18 @@ When its URL or connection selects SQLite, `PlanMigration` validates
 value therefore fails before filesystem work; non-SQLite plans do not consult
 the variable.
 
-`GenerateCheckpointFromShadow` and `VerifyBaselineShadow` apply the same
-SQLite-only validation before connecting to or mutating a shadow database.
-The checkpoint path therefore cannot drop and replay a shadow database before
-reporting a malformed value.
+`migration/shadow` verifies migrations against a live disposable database:
+`VerifyMigration` measures a candidate before its files are written,
+`VerifyBaseline` measures a replayed history against the target,
+`VerifyRollback` rehearses a rollback plan, and `PlanDynamicRollback` derives
+rollback statements from the schema a version defines rather than from a down
+body. Every entry point drops the shadow database clean and refuses a URL that
+resolves to the target's live realm.
+
+`migration/generator.GenerateCheckpointFromShadow` and
+`migration/shadow.VerifyBaseline` apply the same SQLite-only validation before
+connecting to or mutating a shadow database. The checkpoint path therefore
+cannot drop and replay a shadow database before reporting a malformed value.
 
 `migration/generator.PlanBidirectionalSchemaDiff` is the lower-level planning
 boundary for callers that already hold a schema diff. Its input binds the diff,
@@ -423,8 +432,8 @@ output. `GenerateMigrationOptions.ReportFormat: "json"` instead publishes one
 `.safety.json` file beside each generated migration pair.
 
 Candidate and baseline shadow failures preserve a typed
-`*generator.ShadowVerificationError` through `PlanMigration`,
-`GenerateMigration`, `VerifyBaselineShadow`, and command wrappers. Use
+`*shadow.VerificationError` through `PlanMigration`,
+`GenerateMigration`, `shadow.VerifyBaseline`, and command wrappers. Use
 `errors.As` to inspect `Result.Stage` and the structured `Result.Mismatches`;
 operational failures also expose their underlying error through `Unwrap`. A
 schema mismatch carries the complete, deterministically ordered mismatch list
@@ -435,7 +444,7 @@ boundaries. Baseline verification can additionally report `target-introspect`,
 `reset-schemas`, and `drop-metadata`; candidate-only `round-trip-down` and
 `round-trip-up` stages do not occur during baseline verification.
 
-`migration/generator.VerifyRollbackFromShadow` requires the caller's open
+`migration/shadow.VerifyRollback` requires the caller's open
 target `dbschema.DatabaseConnection`. It checks the target and shadow's live
 dialects and selected database realms before resetting the shadow, rather than
 trusting a caller-supplied dialect or URL-derived database name.

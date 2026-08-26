@@ -26,9 +26,9 @@ import (
 	"go.5x5.cz/ptah/internal/migrationintegrity"
 	"go.5x5.cz/ptah/internal/onlineddl"
 	"go.5x5.cz/ptah/internal/preflight"
-	"go.5x5.cz/ptah/migration/generator"
 	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/shadow"
 )
 
 const (
@@ -540,7 +540,7 @@ func verifyRollbackOnShadow(
 	}
 	defer releaseShadow()
 
-	err = generator.VerifyRollbackFromShadow(ctx, generator.RollbackFromShadowOptions{
+	err = shadow.VerifyRollback(ctx, shadow.RollbackVerifyOptions{
 		TargetConnection:  v.targetConnection,
 		ShadowDatabaseURL: shadowDB,
 		FS:                v.migrationsFS,
@@ -730,7 +730,7 @@ func runDynamicRollback(cmd *cobra.Command, r dynamicRollback, emit cliobs.Emitt
 	}
 	defer releaseDev()
 
-	statements, err := generator.PlanDynamicRollback(cmd.Context(), generator.DynamicRollbackOptions{
+	statements, err := shadow.PlanDynamicRollback(cmd.Context(), shadow.DynamicRollbackOptions{
 		TargetConnection: r.conn,
 		DevDatabaseURL:   devURL,
 		FS:               r.migrationsFS,

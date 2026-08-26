@@ -23,10 +23,10 @@ import (
 	"go.5x5.cz/ptah/internal/migrationintegrity"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
-	"go.5x5.cz/ptah/migration/generator"
 	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 	"go.5x5.cz/ptah/migration/safety"
+	"go.5x5.cz/ptah/migration/shadow"
 )
 
 const (
@@ -239,7 +239,7 @@ type baselineVerifyOptions struct {
 func verifyBaseline(ctx context.Context, opts baselineVerifyOptions) error {
 	handler := verificationErrorHandler{force: opts.force}
 	if opts.shadowDB != "" {
-		err := generator.VerifyBaselineShadow(ctx, generator.BaselineShadowVerifyOptions{
+		err := shadow.VerifyBaseline(ctx, shadow.BaselineVerifyOptions{
 			ShadowDatabaseURL: opts.shadowDB,
 			TargetConn:        opts.conn,
 			MigrationsDir:     opts.migrationsDir,

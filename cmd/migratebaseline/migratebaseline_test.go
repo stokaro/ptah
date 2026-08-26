@@ -9,7 +9,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/migratebaseline"
 	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/migration/generator"
+	"go.5x5.cz/ptah/migration/shadow"
 )
 
 func TestMigrateBaselineCommandCreation(t *testing.T) {
@@ -120,10 +120,10 @@ func TestMigrateBaselineCommand_PreservesStructuredShadowFailure(t *testing.T) {
 	err = cmd.Execute()
 
 	c.Assert(err, qt.ErrorMatches, `baseline shadow check failed: shadow database must be distinct from target database`)
-	var shadowErr *generator.ShadowVerificationError
+	var shadowErr *shadow.VerificationError
 	c.Assert(err, qt.ErrorAs, &shadowErr)
 	c.Assert(shadowErr.Result.Stage, qt.Equals, "realm-check")
-	c.Assert(shadowErr.Result.Mismatches, qt.DeepEquals, []generator.ShadowMismatch{{
+	c.Assert(shadowErr.Result.Mismatches, qt.DeepEquals, []shadow.Mismatch{{
 		Kind:    "target_shadow_same_realm",
 		Message: "shadow database must be distinct from target database",
 	}})

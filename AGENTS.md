@@ -61,6 +61,10 @@ meets first. `docs/public_api.md` is the authority on what is public.
 - `migration/migrationfile` — the migration file layout: names, directory
   formats, directives, txtar archives, and templates; no database, no
   execution.
+
+- `migration/shadow` — verification of a migration against a live disposable
+  database: the candidate check the generator runs before it writes files,
+  baseline and rollback verification, and dynamic rollback planning.
 - `migration/migrator` — migration execution with rollback.
 - `migration/planner` — migration planning and SQL generation.
 - `migration/schemadiff` — schema comparison; the entry point is

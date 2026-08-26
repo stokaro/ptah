@@ -106,6 +106,15 @@
 //   - Error handling for invalid or dangerous operations
 //   - Dry-run capabilities through the underlying planner
 //
+// # Shadow Verification
+//
+// Setting GenerateMigrationOptions.ShadowDatabaseURL measures the candidate
+// against a live disposable database before any file is written. That
+// measurement is not this package's work. It belongs to ptah/migration/shadow,
+// which this package calls and whose structured verification error it returns
+// unchanged. What stays here is the offline half: a diff, a directory, and the
+// files published into it.
+//
 // # Integration with Ptah
 //
 // This package integrates with other Ptah components:
@@ -114,6 +123,7 @@
 //   - ptah/dbschema: Connects to database and reads current schema
 //   - ptah/migration/schemadiff: Calculates schema differences
 //   - ptah/migration/planner: Generates SQL statements from differences
+//   - ptah/migration/shadow: Verifies a candidate on a disposable database
 //   - ptah/migration/migrator: Applies generated migration files
 //
 // # Error Handling

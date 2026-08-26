@@ -1,5 +1,11 @@
-// Package shadowdb owns the connection lifecycle for disposable databases used
-// by migration workflows.
+// Package shadowdb owns the disposable databases migration workflows replay
+// into: the connection lifecycle, the history a replay applies, and the reset
+// that leaves the database holding the schema those migrations describe and
+// nothing else.
+//
+// Two packages reach for it. migration/shadow verifies against a disposable
+// database, and migration/generator renders a checkpoint from one, so the
+// plumbing they share lives here rather than in either of them.
 package shadowdb
 
 import (

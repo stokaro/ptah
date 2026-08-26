@@ -10,14 +10,14 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/internal/atlasurl"
-	"go.5x5.cz/ptah/migration/generator"
+	"go.5x5.cz/ptah/migration/shadow"
 )
 
-func TestVerifyRollbackFromShadow_FailurePathRejectsLiveDialectMismatch(t *testing.T) {
+func TestVerifyRollback_FailurePathRejectsLiveDialectMismatch(t *testing.T) {
 	c := qt.New(t)
 	targetConn := openRollbackTarget(c, requireRollbackPostgresURL(c))
 
-	err := generator.VerifyRollbackFromShadow(c.Context(), generator.RollbackFromShadowOptions{
+	err := shadow.VerifyRollback(c.Context(), shadow.RollbackVerifyOptions{
 		TargetConnection:  targetConn,
 		ShadowDatabaseURL: "sqlite://" + filepath.Join(t.TempDir(), "shadow.db"),
 		FS:                os.DirFS(t.TempDir()),
@@ -30,7 +30,7 @@ func TestVerifyRollbackFromShadow_FailurePathRejectsLiveDialectMismatch(t *testi
 	)
 }
 
-func TestVerifyRollbackFromShadow_FailurePathRejectsDriverOverrideAliasLive(t *testing.T) {
+func TestVerifyRollback_FailurePathRejectsDriverOverrideAliasLive(t *testing.T) {
 	c := qt.New(t)
 	targetURL := rollbackPostgresDatabaseURL(
 		c,
@@ -43,7 +43,7 @@ func TestVerifyRollbackFromShadow_FailurePathRejectsDriverOverrideAliasLive(t *t
 	c.Assert(err, qt.IsNil)
 	c.Assert(fastPathSame, qt.IsTrue)
 
-	err = generator.VerifyRollbackFromShadow(c.Context(), generator.RollbackFromShadowOptions{
+	err = shadow.VerifyRollback(c.Context(), shadow.RollbackVerifyOptions{
 		TargetConnection:  targetConn,
 		ShadowDatabaseURL: shadowURL,
 		FS:                os.DirFS(t.TempDir()),

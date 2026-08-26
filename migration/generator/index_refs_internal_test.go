@@ -328,29 +328,3 @@ func foreignKeyAdditionNode(table, name, column string) ast.Node {
 		}},
 	}
 }
-
-func TestCollectShadowMismatches_ReportsQualifiedIndex(t *testing.T) {
-	c := qt.New(t)
-	diff := &types.SchemaDiff{}
-	diff.SetIndexAdditions([]types.IndexRef{
-		{Name: "idx_shared", TableName: "users"},
-		{Name: "idx_shared", TableName: "orders"},
-	})
-
-	got := collectShadowMismatches(diff)
-
-	c.Assert(got, qt.DeepEquals, []ShadowMismatch{
-		{
-			Kind:    "missing_index",
-			Table:   "orders",
-			Object:  "orders.idx_shared",
-			Message: "missing index orders.idx_shared",
-		},
-		{
-			Kind:    "missing_index",
-			Table:   "users",
-			Object:  "users.idx_shared",
-			Message: "missing index users.idx_shared",
-		},
-	})
-}

@@ -1,4 +1,4 @@
-package generator
+package shadow
 
 import (
 	"context"
@@ -12,6 +12,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/devlock"
+	"go.5x5.cz/ptah/migration/internal/shadowdb"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -96,7 +97,7 @@ func PlanDynamicRollback(ctx context.Context, opts DynamicRollbackOptions) ([]st
 		return nil, fmt.Errorf("dynamic rollback planning failed: register migrations: %w", err)
 	}
 	if err := mig.MigrateTo(ctx, opts.TargetVersion); err != nil {
-		if description := describeReplayError(err); description != "" {
+		if description := shadowdb.DescribeReplayError(err); description != "" {
 			return nil, fmt.Errorf("dynamic rollback planning failed: replay migrations: %s", description)
 		}
 		return nil, fmt.Errorf("dynamic rollback planning failed: replay migrations: %w", err)
@@ -133,7 +134,7 @@ func PlanDynamicRollback(ctx context.Context, opts DynamicRollbackOptions) ([]st
 // openDistinctDevDatabase connects to the dev database and refuses one that
 // could be the target.
 //
-// The checks are the same ones VerifyRollbackFromShadow makes, and for a
+// The checks are the same ones VerifyRollback makes, and for a
 // stronger reason: that path replays into the dev database, while this one then
 // applies a DROP-heavy plan to whatever the target turns out to be. A dev URL
 // that resolves to the live database would compute a plan against itself and
@@ -152,13 +153,13 @@ func openDistinctDevDatabase(
 		return nil, fmt.Errorf(
 			"dynamic rollback planning failed: dev database must be distinct from target database")
 	}
-	connectCtx, cancelConnect := baselineShadowConnectContext(ctx, opts.ConnectTimeout)
+	connectCtx, cancelConnect := connectContext(ctx, opts.ConnectTimeout)
 	devConn, err := dbschema.ConnectToDatabase(connectCtx, opts.DevDatabaseURL)
 	cancelConnect()
 	if err != nil {
 		return nil, fmt.Errorf("dynamic rollback planning failed: connect to dev database: %w", err)
 	}
-	if !sameDialect(opts.TargetConnection.Info().Dialect, devConn.Info().Dialect) {
+	if !shadowdb.SameDialect(opts.TargetConnection.Info().Dialect, devConn.Info().Dialect) {
 		dialect := devConn.Info().Dialect
 		dbschema.CloseAndWarn(devConn)
 		return nil, fmt.Errorf(

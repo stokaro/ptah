@@ -17,10 +17,10 @@ import (
 	"go.5x5.cz/ptah/cmd/migratebaseline"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
-	"go.5x5.cz/ptah/migration/generator"
+	"go.5x5.cz/ptah/migration/shadow"
 )
 
-func TestVerifyBaselineShadowPostgresMismatchRequiresForce(t *testing.T) {
+func TestVerifyBaselinePostgresMismatchRequiresForce(t *testing.T) {
 	c := qt.New(t)
 	ctx := context.Background()
 
@@ -49,7 +49,7 @@ func TestVerifyBaselineShadowPostgresMismatchRequiresForce(t *testing.T) {
 	migrationsDir := c.TempDir()
 	writeBaselineShadowMigration(c, migrationsDir, schema)
 	info := conn.Info()
-	err = generator.VerifyBaselineShadow(ctx, generator.BaselineShadowVerifyOptions{
+	err = shadow.VerifyBaseline(ctx, shadow.BaselineVerifyOptions{
 		ShadowDatabaseURL: shadowDBURL,
 		TargetConn:        conn,
 		MigrationsDir:     migrationsDir,
@@ -77,7 +77,7 @@ func TestVerifyBaselineShadowPostgresMismatchRequiresForce(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 }
 
-func TestVerifyBaselineShadowPostgresMatchIgnoresShadowMetadata(t *testing.T) {
+func TestVerifyBaselinePostgresMatchIgnoresShadowMetadata(t *testing.T) {
 	c := qt.New(t)
 	ctx := context.Background()
 
@@ -103,7 +103,7 @@ func TestVerifyBaselineShadowPostgresMatchIgnoresShadowMetadata(t *testing.T) {
 	migrationsDir := c.TempDir()
 	writeBaselineShadowPublicMigration(c, migrationsDir)
 	info := targetConn.Info()
-	err = generator.VerifyBaselineShadow(ctx, generator.BaselineShadowVerifyOptions{
+	err = shadow.VerifyBaseline(ctx, shadow.BaselineVerifyOptions{
 		ShadowDatabaseURL: shadowDBURL,
 		TargetConn:        targetConn,
 		MigrationsDir:     migrationsDir,

@@ -9304,14 +9304,10 @@ func (c SkippedChange) Comment() string
 var ErrMigrationDirectoryChanged = errors.New("migration directory changed before publication") ...
 func AtlasCheckpointArtifact(version int64, description, upSQL string) (name, contents string)
 func GenerateCheckpointFromShadow(ctx context.Context, opts CheckpointFromShadowOptions) (upSQL, downSQL string, err error)
-func PlanDynamicRollback(ctx context.Context, opts DynamicRollbackOptions) ([]string, error)
 func ResolveAtlasCheckpointVersion(outputDir string) int64
-func VerifyBaselineShadow(ctx context.Context, opts BaselineShadowVerifyOptions) error
-func VerifyRollbackFromShadow(ctx context.Context, opts RollbackFromShadowOptions) error
 func WriteAtlasCheckpointFileWithOptions(outputDir string, version int64, description, upSQL string, ...) (path string, err error)
 func WriteCheckpointFilesWithOptions(outputDir string, version int64, description, upSQL, downSQL string, ...) (upPath, downPath string, err error)
 func WriteDataMigrationFiles(outputDir string, version int64, description, upSQL, downSQL string) (upPath, downPath string, err error)
-type BaselineShadowVerifyOptions struct{ ... }
 type BidirectionalPlanPolicy struct{ ... }
 type BidirectionalSchemaPlan struct{ ... }
     func PlanBidirectionalSchemaDiff(opts BidirectionalSchemaPlanOptions) (*BidirectionalSchemaPlan, error)
@@ -9321,7 +9317,6 @@ type CheckpointWriteOptions struct{ ... }
 type ConcurrentIndexMode uint8
     const ConcurrentIndexAutomatic ConcurrentIndexMode = iota ...
 type DiffPolicy struct{ ... }
-type DynamicRollbackOptions struct{ ... }
 type EmptyMigrationOptions struct{ ... }
 type GenerateMigrationOptions struct{ ... }
 type MigrationFilePair struct{ ... }
@@ -9330,34 +9325,7 @@ type MigrationFiles struct{ ... }
     func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*MigrationFiles, error)
 type MigrationPlan struct{ ... }
     func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*MigrationPlan, error)
-type RollbackFromShadowOptions struct{ ... }
 type SchemaDirectionPlan struct{ ... }
-type ShadowMismatch struct{ ... }
-type ShadowVerificationError struct{ ... }
-type ShadowVerificationResult struct{ ... }
-
-### go.5x5.cz/ptah/migration/generator.BaselineShadowVerifyOptions
-
-package generator // import "go.5x5.cz/ptah/migration/generator"
-
-type BaselineShadowVerifyOptions struct {
-    ShadowDatabaseURL string
-    TargetConn        *dbschema.DatabaseConnection
-    MigrationsDir     string
-    // MigrationsFS is the immutable migration history to replay. When nil,
-    // MigrationsDir is opened for compatibility with existing embedders.
-    MigrationsFS    fs.FS
-    Version         int64
-    Dialect         string
-    Capabilities    capability.Capabilities
-    CompareOptions  *config.CompareOptions
-    Schemas         []string
-    ProviderOptions []migrator.FSProviderOption
-    ConnectTimeout  time.Duration
-}
-    BaselineShadowVerifyOptions configures shadow verification before metadata
-    baselining.
-
 
 ### go.5x5.cz/ptah/migration/generator.BidirectionalPlanPolicy
 
@@ -9499,35 +9467,6 @@ type DiffPolicy struct {
     DiffPolicy is the generator-level view of the project diff policy.
 
 
-### go.5x5.cz/ptah/migration/generator.DynamicRollbackOptions
-
-package generator // import "go.5x5.cz/ptah/migration/generator"
-
-type DynamicRollbackOptions struct {
-    // TargetConnection is the live database the plan would be applied to. It is
-    // read, never written, by planning.
-    TargetConnection *dbschema.DatabaseConnection
-    // DevDatabaseURL is an ephemeral database the planner drops clean and
-    // replays the migration directory into, to materialize the target state.
-    // Its contents are discarded.
-    DevDatabaseURL string
-    // FS is the migration filesystem the target state is replayed from.
-    FS fs.FS
-    // TargetVersion is the version the database is being rolled back to. The
-    // dev database is migrated up to exactly this version, and the schema it
-    // then holds is what the plan drives the live database towards.
-    TargetVersion int64
-    // ProviderOptions are passed to the migration provider (e.g. dir format).
-    ProviderOptions []migrator.FSProviderOption
-    // ConnectTimeout bounds the dev database connection attempt.
-    ConnectTimeout time.Duration
-    // RevisionsTable names the revision table this run was configured with, so
-    // a non-default one is excluded from the comparison alongside the defaults.
-    RevisionsTable string
-}
-    DynamicRollbackOptions configures PlanDynamicRollback.
-
-
 ### go.5x5.cz/ptah/migration/generator.EmptyMigrationOptions
 
 package generator // import "go.5x5.cz/ptah/migration/generator"
@@ -9598,9 +9537,10 @@ type GenerateMigrationOptions struct {
     ReportFormat string
     // ShadowDatabaseURL enables pre-write verification on an ephemeral database
     // whose live database realm must be distinct from the target connection.
-    // The generator drops all objects in this database, replays existing
-    // migrations from OutputDir, applies the candidate migration, re-introspects
-    // the result, and aborts if it differs from the Go schema.
+    // The verification runs in [go.5x5.cz/ptah/migration/shadow]: it drops all
+    // objects in this database, replays existing migrations from OutputDir,
+    // applies the candidate migration, re-introspects the result, and aborts if
+    // it differs from the Go schema.
     ShadowDatabaseURL string
     // PriorMigrationsFS supplies the immutable, already-authorized migration
     // history used by shadow verification or another replay-based caller. When
@@ -9666,33 +9606,6 @@ func (p *MigrationPlan) Close()
 func (p *MigrationPlan) WriteFiles() (*MigrationFiles, error)
 func (p *MigrationPlan) WriteFilesContext(ctx context.Context) (*MigrationFiles, error)
 
-### go.5x5.cz/ptah/migration/generator.RollbackFromShadowOptions
-
-package generator // import "go.5x5.cz/ptah/migration/generator"
-
-type RollbackFromShadowOptions struct {
-    // TargetConnection is the already-open database the verified rollback
-    // would eventually modify. Its live realm must be distinct from the shadow
-    // database.
-    TargetConnection *dbschema.DatabaseConnection
-    // ShadowDatabaseURL is an ephemeral database the verification drops clean
-    // and replays the migration directory into. Its contents are discarded.
-    ShadowDatabaseURL string
-    // FS is the migration filesystem whose rollback plan is verified.
-    FS fs.FS
-    // CurrentVersion is the target database's current migration version. The
-    // shadow database is migrated up to it before the rollback is replayed.
-    CurrentVersion int64
-    // TargetVersion is the version the rollback plan lands on.
-    TargetVersion int64
-    // ProviderOptions are passed to the migration provider (e.g. dir format).
-    ProviderOptions []migrator.FSProviderOption
-    // ConnectTimeout bounds the shadow database connection attempt.
-    ConnectTimeout time.Duration
-}
-    RollbackFromShadowOptions configures VerifyRollbackFromShadow.
-
-
 ### go.5x5.cz/ptah/migration/generator.SchemaDirectionPlan
 
 package generator // import "go.5x5.cz/ptah/migration/generator"
@@ -9706,50 +9619,6 @@ type SchemaDirectionPlan struct {
 }
     SchemaDirectionPlan is one half of a bidirectional schema migration plan.
     Its slices and diff are planning inputs and must be treated as read-only.
-
-
-### go.5x5.cz/ptah/migration/generator.ShadowMismatch
-
-package generator // import "go.5x5.cz/ptah/migration/generator"
-
-type ShadowMismatch struct {
-    Kind       string            `json:"kind"`
-    Object     string            `json:"object,omitempty"`
-    Table      string            `json:"table,omitempty"`
-    Column     string            `json:"column,omitempty"`
-    Constraint string            `json:"constraint,omitempty"`
-    Changes    map[string]string `json:"changes,omitempty"`
-    Message    string            `json:"message"`
-}
-    ShadowMismatch describes one schema mismatch found during shadow
-    verification.
-
-
-### go.5x5.cz/ptah/migration/generator.ShadowVerificationError
-
-package generator // import "go.5x5.cz/ptah/migration/generator"
-
-type ShadowVerificationError struct {
-    Result ShadowVerificationResult `json:"result"`
-    Err    error                    `json:"-"`
-}
-    ShadowVerificationError wraps a structured shadow verification result.
-
-func (e *ShadowVerificationError) Error() string
-func (e *ShadowVerificationError) Unwrap() error
-
-### go.5x5.cz/ptah/migration/generator.ShadowVerificationResult
-
-package generator // import "go.5x5.cz/ptah/migration/generator"
-
-type ShadowVerificationResult struct {
-    Stage string `json:"stage"`
-    // Mismatches contains every structural mismatch in deterministic category and object order.
-    Mismatches []ShadowMismatch `json:"mismatches,omitempty"`
-}
-    ShadowVerificationResult describes one failed shadow-database verification.
-    Errors preserve the text form through ShadowVerificationError.Error while
-    exposing mismatches to callers that need machine-readable diagnostics.
 
 
 ## go.5x5.cz/ptah/migration/importer
@@ -13262,4 +13131,176 @@ type SeedFile struct {
 
 func Discover(fsys fs.FS) ([]SeedFile, error)
 func Select(seeds []SeedFile, env string) []SeedFile
+
+## go.5x5.cz/ptah/migration/shadow
+
+func PlanDynamicRollback(ctx context.Context, opts DynamicRollbackOptions) ([]string, error)
+func VerifyBaseline(ctx context.Context, opts BaselineVerifyOptions) error
+func VerifyMigration(ctx context.Context, opts MigrationVerifyOptions) error
+func VerifyRollback(ctx context.Context, opts RollbackVerifyOptions) error
+type BaselineVerifyOptions struct{ ... }
+type Candidate struct{ ... }
+type DynamicRollbackOptions struct{ ... }
+type MigrationVerifyOptions struct{ ... }
+type Mismatch struct{ ... }
+type RollbackVerifyOptions struct{ ... }
+type VerificationError struct{ ... }
+type VerificationResult struct{ ... }
+
+### go.5x5.cz/ptah/migration/shadow.BaselineVerifyOptions
+
+package shadow // import "go.5x5.cz/ptah/migration/shadow"
+
+type BaselineVerifyOptions struct {
+    ShadowDatabaseURL string
+    TargetConn        *dbschema.DatabaseConnection
+    MigrationsDir     string
+    // MigrationsFS is the immutable migration history to replay. When nil,
+    // MigrationsDir is opened for compatibility with existing embedders.
+    MigrationsFS    fs.FS
+    Version         int64
+    Dialect         string
+    Capabilities    capability.Capabilities
+    CompareOptions  *config.CompareOptions
+    Schemas         []string
+    ProviderOptions []migrator.FSProviderOption
+    ConnectTimeout  time.Duration
+}
+    BaselineVerifyOptions configures shadow verification before metadata
+    baselining.
+
+
+### go.5x5.cz/ptah/migration/shadow.Candidate
+
+package shadow // import "go.5x5.cz/ptah/migration/shadow"
+
+type Candidate struct {
+    Version int64
+    Name    string
+    UpSQL   string
+    DownSQL string
+}
+    Candidate is one migration under verification: a version, a name, and the
+    two bodies the replay applies and reverses. The caller has planned it but
+    not written it, which is the whole point of measuring it here.
+
+
+### go.5x5.cz/ptah/migration/shadow.DynamicRollbackOptions
+
+package shadow // import "go.5x5.cz/ptah/migration/shadow"
+
+type DynamicRollbackOptions struct {
+    // TargetConnection is the live database the plan would be applied to. It is
+    // read, never written, by planning.
+    TargetConnection *dbschema.DatabaseConnection
+    // DevDatabaseURL is an ephemeral database the planner drops clean and
+    // replays the migration directory into, to materialize the target state.
+    // Its contents are discarded.
+    DevDatabaseURL string
+    // FS is the migration filesystem the target state is replayed from.
+    FS fs.FS
+    // TargetVersion is the version the database is being rolled back to. The
+    // dev database is migrated up to exactly this version, and the schema it
+    // then holds is what the plan drives the live database towards.
+    TargetVersion int64
+    // ProviderOptions are passed to the migration provider (e.g. dir format).
+    ProviderOptions []migrator.FSProviderOption
+    // ConnectTimeout bounds the dev database connection attempt.
+    ConnectTimeout time.Duration
+    // RevisionsTable names the revision table this run was configured with, so
+    // a non-default one is excluded from the comparison alongside the defaults.
+    RevisionsTable string
+}
+    DynamicRollbackOptions configures PlanDynamicRollback.
+
+
+### go.5x5.cz/ptah/migration/shadow.MigrationVerifyOptions
+
+package shadow // import "go.5x5.cz/ptah/migration/shadow"
+
+type MigrationVerifyOptions struct {
+    ShadowDatabaseURL   string
+    TargetConnection    *dbschema.DatabaseConnection
+    MigrationsDir       string
+    MigrationsFS        fs.FS
+    Dialect             string
+    Capabilities        capability.Capabilities
+    IdentifierSemantics identifier.Semantics
+    Candidates          []Candidate
+    Generated           *goschema.Database
+    CompareOpts         *config.CompareOptions
+    Schemas             []string
+}
+    MigrationVerifyOptions configures VerifyMigration.
+
+
+### go.5x5.cz/ptah/migration/shadow.Mismatch
+
+package shadow // import "go.5x5.cz/ptah/migration/shadow"
+
+type Mismatch struct {
+    Kind       string            `json:"kind"`
+    Object     string            `json:"object,omitempty"`
+    Table      string            `json:"table,omitempty"`
+    Column     string            `json:"column,omitempty"`
+    Constraint string            `json:"constraint,omitempty"`
+    Changes    map[string]string `json:"changes,omitempty"`
+    Message    string            `json:"message"`
+}
+    Mismatch describes one schema mismatch found during shadow verification.
+
+
+### go.5x5.cz/ptah/migration/shadow.RollbackVerifyOptions
+
+package shadow // import "go.5x5.cz/ptah/migration/shadow"
+
+type RollbackVerifyOptions struct {
+    // TargetConnection is the already-open database the verified rollback
+    // would eventually modify. Its live realm must be distinct from the shadow
+    // database.
+    TargetConnection *dbschema.DatabaseConnection
+    // ShadowDatabaseURL is an ephemeral database the verification drops clean
+    // and replays the migration directory into. Its contents are discarded.
+    ShadowDatabaseURL string
+    // FS is the migration filesystem whose rollback plan is verified.
+    FS fs.FS
+    // CurrentVersion is the target database's current migration version. The
+    // shadow database is migrated up to it before the rollback is replayed.
+    CurrentVersion int64
+    // TargetVersion is the version the rollback plan lands on.
+    TargetVersion int64
+    // ProviderOptions are passed to the migration provider (e.g. dir format).
+    ProviderOptions []migrator.FSProviderOption
+    // ConnectTimeout bounds the shadow database connection attempt.
+    ConnectTimeout time.Duration
+}
+    RollbackVerifyOptions configures VerifyRollback.
+
+
+### go.5x5.cz/ptah/migration/shadow.VerificationError
+
+package shadow // import "go.5x5.cz/ptah/migration/shadow"
+
+type VerificationError struct {
+    Result VerificationResult `json:"result"`
+    Err    error              `json:"-"`
+}
+    VerificationError wraps a structured shadow verification result.
+
+func (e *VerificationError) Error() string
+func (e *VerificationError) Unwrap() error
+
+### go.5x5.cz/ptah/migration/shadow.VerificationResult
+
+package shadow // import "go.5x5.cz/ptah/migration/shadow"
+
+type VerificationResult struct {
+    Stage string `json:"stage"`
+    // Mismatches contains every structural mismatch in deterministic category and object order.
+    Mismatches []Mismatch `json:"mismatches,omitempty"`
+}
+    VerificationResult describes one failed shadow-database verification.
+    Errors preserve the text form through VerificationError.Error while exposing
+    mismatches to callers that need machine-readable diagnostics.
+
 
