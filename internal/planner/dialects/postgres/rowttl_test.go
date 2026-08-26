@@ -180,3 +180,65 @@ func renderedStatements(
 	}
 	return statements
 }
+
+// TestPlanner_TheTTLIsSetBeforeItsColumnIsDropped pins the ORDER, which the
+// per-transition table above cannot see.
+//
+// A plan that moves a TTL expression off a column and drops that column is one
+// plan, and the two statements only work in one order: CockroachDB will not
+// drop a column the policy still refers to. The step's own comment has always
+// said "before anything is dropped" — it sat below removeTableColumns, so that
+// was true of tables and not of columns (stokaro/ptah#2236 found it while
+// placing the row deletion policy, which carries the same constraint).
+func TestPlanner_TheTTLIsSetBeforeItsColumnIsDropped(t *testing.T) {
+	c := qt.New(t)
+
+	statements := planRowTTL(c, &types.SchemaDiff{
+		TablesModified: []types.TableDiff{{
+			TableName:      "sessions",
+			ColumnsRemoved: []string{"expires_at"},
+			RowTTLChange: &types.RowTTLChange{
+				Desired: &ast.RowTTLSpec{ExpirationExpression: "deleted_at"},
+				Current: &ast.RowTTLSpec{ExpirationExpression: "expires_at"},
+			},
+		}},
+	})
+
+	c.Assert(statementIndex(c, statements, "ttl_expiration_expression") <
+		statementIndex(c, statements, "DROP COLUMN"), qt.IsTrue,
+		qt.Commentf("statements were: %v", statements))
+}
+
+// TestPlanner_TheTTLIsResetBeforeItsColumnIsDropped is the same ordering for
+// the removal, which names no column and could look order-independent.
+func TestPlanner_TheTTLIsResetBeforeItsColumnIsDropped(t *testing.T) {
+	c := qt.New(t)
+
+	statements := planRowTTL(c, &types.SchemaDiff{
+		TablesModified: []types.TableDiff{{
+			TableName:      "sessions",
+			ColumnsRemoved: []string{"expires_at"},
+			RowTTLChange: &types.RowTTLChange{
+				Current: &ast.RowTTLSpec{ExpirationExpression: "expires_at"},
+			},
+		}},
+	})
+
+	c.Assert(statementIndex(c, statements, "RESET") <
+		statementIndex(c, statements, "DROP COLUMN"), qt.IsTrue,
+		qt.Commentf("statements were: %v", statements))
+}
+
+// statementIndex is where a statement containing fragment appears, failing the
+// test when none does — an ordering assertion between two statements that are
+// not both present would otherwise pass on a plan missing one.
+func statementIndex(c *qt.C, statements []string, fragment string) int {
+	c.Helper()
+	for i, statement := range statements {
+		if strings.Contains(statement, fragment) {
+			return i
+		}
+	}
+	c.Fatalf("no statement contains %q, in: %v", fragment, statements)
+	return -1
+}
