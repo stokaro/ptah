@@ -11,9 +11,17 @@ name: Capability Matrix Request
 #	/capability-matrix postgres            every PostgreSQL line
 #	/capability-matrix mysql, oracle-21    a mix of prefixes and exact ids
 #
-# It dispatches capability-matrix.yml against the pull request's head BRANCH, so
-# the probe checks attach to the head commit and appear on the pull request
-# itself.
+# It LABELS the pull request, which fires `pull_request: labeled` and runs
+# capability-matrix.yml in the pull request's own contour, so the probe checks
+# are checks OF THE PULL REQUEST: visible in its list and able to block a merge.
+#
+# It dispatched the workflow instead until stokaro/ptah#2297 showed what that
+# costs. The dispatch's check runs did attach to the head commit -- 38 names
+# there -- but a pull request's status rollup ignores a dispatch suite: `gh pr
+# checks` listed 32 and none of the six `probe postgres-*`. Where a name existed
+# on both sides the rollup reported the pull request's own SKIPPED `tier 2
+# report` while two newer FAILURES sat on the same commit unseen, so #2297 was
+# merged with `probe postgres-18` failing.
 #
 # WHY THE GUARDS ARE WHAT THEY ARE
 #
@@ -23,13 +31,17 @@ name: Capability Matrix Request
 # a fork against that token, so:
 #
 #   - the comment author must already have write access, read from
-#     author_association (OWNER, MEMBER or COLLABORATOR);
-#   - the pull request's head must live in THIS repository. A fork's branch is
-#     not a ref here, so `workflow_dispatch` could not target it anyway -- the
-#     check is there to answer the requester instead of failing obscurely.
+#     author_association (OWNER, MEMBER or COLLABORATOR).
 #
-# The same reasoning is why testkit-sync.yml restricts itself to same-repository
-# branches from named bots.
+# A fork's pull request is no longer refused. It was, because a dispatch targets
+# a ref in this repository and a fork branch is not one; a LABEL is not a ref,
+# and what it starts is an ordinary `pull_request` run -- read-only token, no
+# secrets, which is the context a fork's code already runs in here. The matrix
+# reads no secret (`grep secrets. capability-matrix.yml` finds none), so there
+# is nothing for that run to leak.
+#
+# The author check is applied again inside capability-matrix.yml rather than
+# trusted from here: a label can be added by anyone who can label.
 
 on:
   issue_comment:
@@ -40,7 +52,7 @@ permissions:
 
 jobs:
   dispatch:
-    name: Dispatch the capability matrix
+    name: Request the capability matrix
     # A comment on an issue carries no pull_request field. Checking the body
     # here as well keeps every unrelated comment on every pull request from
     # starting a runner just to decide it was not addressed to us.
@@ -50,7 +62,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
-      actions: write
+      # Labelling the pull request is what starts the run now, so the workflow
+      # no longer needs `actions: write` to dispatch one.
+      issues: write
       pull-requests: write
     steps:
       - name: Check the requester may run code in this repository
@@ -66,38 +80,6 @@ jobs:
               ;;
           esac
 
-      - name: Resolve the pull request's head
-        id: head
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR: ${{ github.event.issue.number }}
-          REPO: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          gh pr view "${PR}" --repo "${REPO}" \
-            --json headRefName,headRepositoryOwner,isCrossRepository >"${RUNNER_TEMP}/pr.json"
-          if [ "$(jq -r '.isCrossRepository' "${RUNNER_TEMP}/pr.json")" = "true" ]; then
-            echo "cross-repository=true" >>"${GITHUB_OUTPUT}"
-            exit 0
-          fi
-          {
-            echo "cross-repository=false"
-            echo "ref=$(jq -r '.headRefName' "${RUNNER_TEMP}/pr.json")"
-          } >>"${GITHUB_OUTPUT}"
-
-      - name: Say why a fork cannot be dispatched
-        if: steps.head.outputs.cross-repository == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR: ${{ github.event.issue.number }}
-          REPO: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          gh pr comment "${PR}" --repo "${REPO}" --body \
-            'The capability matrix cannot be dispatched for a fork: `workflow_dispatch` targets a ref in this repository, and a fork branch is not one. Push the branch here, or run the workflow from the Actions tab against a branch that lives here.'
-          echo "the pull request's head is in another repository; nothing dispatched" >&2
-          exit 1
-
       # The text after the command, if any. An empty request means every cell,
       # which is what the workflow's own default already is.
       - name: Read the requested cells
@@ -111,25 +93,47 @@ jobs:
           cells="$(printf '%s' "${cells}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
           echo "cells=${cells:-all}" >>"${GITHUB_OUTPUT}"
 
-      - name: Dispatch
+      # A LABEL rather than a dispatch, because a dispatch's checks are not the
+      # pull request's.
+      #
+      # `gh workflow run` did attach its check runs to the head commit -- 38
+      # names on the commit, measured on stokaro/ptah#2297 -- but a pull
+      # request's status rollup ignores a dispatch suite: `gh pr checks` showed
+      # 32 of them and none of the six `probe postgres-*`. Where a name existed
+      # on both sides the rollup reported the pull request's own SKIPPED
+      # `tier 2 report` while two newer FAILURES from the dispatch sat on the
+      # same commit. So a red matrix could neither be seen nor block a merge,
+      # and #2297 was merged with `probe postgres-18` failing.
+      #
+      # Labelling fires `pull_request: labeled`, which runs capability-matrix.yml
+      # in the pull request's own contour. Its cells job reads the cells back
+      # out of this comment, and re-applies the author check: a label can be
+      # added by anyone who can label.
+      - name: Request the fan-out on the pull request
         env:
           GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.issue.number }}
           REPO: ${{ github.repository }}
-          REF: ${{ steps.head.outputs.ref }}
-          CELLS: ${{ steps.request.outputs.cells }}
+          LABEL: capability-matrix
         run: |
           set -euo pipefail
-          gh workflow run capability-matrix.yml \
-            --repo "${REPO}" --ref "${REF}" --field "cells=${CELLS}"
+          # Created on demand so the label is not a piece of repository state
+          # somebody has to know to add by hand; an existing one is left alone.
+          gh label create "${LABEL}" --repo "${REPO}" \
+            --description 'Run the tier 2 capability probe fan-out on this pull request' \
+            --color BFD4F2 >/dev/null 2>&1 || true
+          # Removed first so a second request re-fires the event: adding a label
+          # that is already there is a no-op and would start nothing.
+          gh pr edit "${PR}" --repo "${REPO}" --remove-label "${LABEL}" >/dev/null 2>&1 || true
+          gh pr edit "${PR}" --repo "${REPO}" --add-label "${LABEL}"
 
       - name: Acknowledge
         env:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.issue.number }}
           REPO: ${{ github.repository }}
-          REF: ${{ steps.head.outputs.ref }}
           CELLS: ${{ steps.request.outputs.cells }}
         run: |
           set -euo pipefail
           gh pr comment "${PR}" --repo "${REPO}" --body \
-            "Capability matrix dispatched against \`${REF}\` for cells: \`${CELLS}\`. The \`probe *\` checks will appear on this pull request's head commit; a request that names nothing the matrix has fails the \`cells\` job rather than probing silently."
+            "Capability matrix requested on this pull request for cells: \`${CELLS}\`. The \`probe *\` checks run as checks OF THIS PULL REQUEST, so a red cell is visible here and blocks the merge; a request that names nothing the matrix has fails the \`cells\` job rather than probing silently."
