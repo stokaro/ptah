@@ -226,6 +226,37 @@ Both are being built, each in the shape its issue settled on:
   invocation points at the Ptah equivalent and exits non-zero
   ([`stokaro/ptah#1018`](https://github.com/stokaro/ptah/issues/1018)).
 
+### `cloud` points at what Ptah has, without becoming a command
+
+Declining the group is not the same as answering nothing. `ptah-compat cloud`
+answers `unknown command "cloud" for "atlas"` at exit 1, byte for byte with the
+pinned binary, and it still does — registering a `cloud` group would have ended
+that for the sake of a message. The pointer is appended to the unknown-command
+diagnostic instead, for that verb only:
+
+```console
+$ ptah-compat cloud database list
+Error: unknown command "cloud" for "atlas"
+Run 'atlas --help' for usage.
+
+Ptah has no hosted registry, so most of this group has no local equivalent.
+What it does have, locally and with no account:
+	ptah schema push         publish a schema to an OCI registry
+	ptah schema pull         fetch one back
+	ptah schema lineage      the lineage graph
+	ptah schema security     the security findings
+	ptah migrations status   what is applied where
+	ptah migrations ls       the migration history
+```
+
+The first two lines and the exit code are unchanged, and an unknown command with
+no local answer is unchanged entirely — which the existing unknown-command tests
+pin, and which are the control that this pointer is scoped rather than general.
+
+It names what Ptah does **not** have as well. A pointer listing commands without
+saying the rest of the group has no counterpart would read as a full mapping,
+and send a reader looking for the other half.
+
 ## Never a Copied Defect
 
 Matching the pinned Atlas CE binary is the floor, not the ceiling. Where its

@@ -409,11 +409,51 @@ func atlasRootArgs(cmd *cobra.Command, args []string) error {
 		diagnostic.WriteString("\n")
 	}
 	diagnostic.WriteString("Run 'atlas --help' for usage.\n")
+	diagnostic.WriteString(nativeEquivalentFor(args[0]))
 
 	if _, err := fmt.Fprint(cmd.ErrOrStderr(), diagnostic.String()); err != nil {
 		return exitcode.New(atlasErrorExitCode, fmt.Errorf("%w: write diagnostic: %w", unknownErr, err))
 	}
 	return exitcode.New(atlasErrorExitCode, unknownErr)
+}
+
+// nativeEquivalentFor names what Ptah has locally for a verb the community
+// binary does not register, or the empty string for anything else.
+//
+// The pointer is appended to the unknown-command diagnostic rather than
+// implemented as a command group, and that is the whole design. `ptah-compat
+// cloud` answers `unknown command "cloud" for "atlas"` at exit 1 today, byte
+// for byte with the community binary; registering a `cloud` group would end
+// that for the sake of a message. Appending keeps the first two lines, keeps
+// the exit code, and keeps an arbitrary unknown command answering exactly as it
+// does now -- which the two unknown-command tests already pin, and which are
+// the control that this pointer is scoped rather than general
+// (stokaro/ptah#1018).
+//
+// Only verbs with something real to point at are listed. A pointer that named a
+// Ptah command which does not do the job would be worse than the silence it
+// replaces: it sends a user to a second failure and spends their trust on the
+// way.
+func nativeEquivalentFor(verb string) string {
+	pointers := map[string]string{
+		// `cloud` is a client for a hosted registry, so most of it has no local
+		// counterpart and this says so instead of inventing one.
+		//
+		// What Ptah does have is a registry surface of its own -- OCI, an open
+		// protocol anyone can host, rather than one vendor's service -- plus the
+		// two graph exports and the deployment history, which are database facts
+		// rather than registry ones.
+		"cloud": "\n" +
+			"Ptah has no hosted registry, so most of this group has no local equivalent.\n" +
+			"What it does have, locally and with no account:\n" +
+			"\tptah schema push         publish a schema to an OCI registry\n" +
+			"\tptah schema pull         fetch one back\n" +
+			"\tptah schema lineage      the lineage graph\n" +
+			"\tptah schema security     the security findings\n" +
+			"\tptah migrations status   what is applied where\n" +
+			"\tptah migrations ls       the migration history\n",
+	}
+	return pointers[verb]
 }
 
 func installAtlasCompletionCommand(cmd *cobra.Command) {
