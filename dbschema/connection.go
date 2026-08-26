@@ -914,6 +914,20 @@ func (dc *DatabaseConnection) QueryRowContext(ctx context.Context, query string,
 }
 
 // Exec executes a query without returning any rows
+// BeginTx starts a transaction on the connection's pool.
+//
+// It sits beside Query and Exec above and delegates the same way. The caller
+// that needs it is `ptah-compat script`, whose exec and loop kinds run an
+// operator's statements as one unit: everything or nothing, which is a promise
+// only a transaction can keep (stokaro/ptah#1017).
+//
+// A schema operation should not reach for this. The writer and the executor
+// carry dialect handling, dry-run and the safety gates, and a caller driving a
+// transaction directly opts out of all three.
+func (dc *DatabaseConnection) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
+	return dc.db.BeginTx(ctx, opts)
+}
+
 func (dc *DatabaseConnection) Exec(query string, args ...any) (sql.Result, error) {
 	if executor, ok := dc.executor.(contextExecutor); ok {
 		return executor.ExecContext(context.Background(), query, args...)

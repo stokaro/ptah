@@ -352,8 +352,20 @@ func TestCompatURLDiagnostics_MatchThePinnedBinary(t *testing.T) {
 // does not have, so there is no wording to copy and their own diagnostics are
 // left alone. Rewording them would be inventing an oracle rather than matching
 // one; deleting the flags would remove a capability (AGENTS.md rule (c)).
+// The three script verbs join them for a stronger version of the same reason.
+// `migrate down` and `schema test` are registered in the pinned binary and
+// merely lack the flag; `script` is not registered there at all -- every
+// spelling answers `unknown command`. So there is no invocation of it that
+// could produce wording to copy, and a row pinning one would be pinning an
+// answer no binary gives (stokaro/ptah#1017).
 func compatURLVerbsWithoutOracleRow() []string {
-	return []string{"migrate down", "schema test"}
+	return []string{
+		"migrate down",
+		"schema test",
+		"script exec",
+		"script loop",
+		"script query",
+	}
 }
 
 // TestCompatURLDiagnostics_CoverEveryVerbRegisteringTheFlag closes the fixture.
