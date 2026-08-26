@@ -3,6 +3,14 @@ title: AI agents over MCP
 description: Connect an AI client to Ptah with ptah mcp, and decide what it may read, propose, and write.
 ---
 
+:::note[Experimental]
+This surface is experimental: the contract may change with `agentapi.Version`,
+and the capability names are not frozen. Read the version rather than assuming
+it. What has to be true before that ends is recorded as a decision record with
+the project's sources, and two of its criteria are still open questions rather
+than pending work.
+:::
+
 `ptah mcp` serves Ptah's operations to an AI client over the Model Context
 Protocol, on stdin and stdout. A client starts the process and speaks the
 protocol to it; it is not a command to run by hand.
