@@ -56,7 +56,7 @@ and no provenance.
 The consequence is visible in the planner's own signature:
 
 ```go
-func GenerateSchemaDiffAST(diff *types.SchemaDiff, generated *goschema.Database, dialect string) ([]ast.Node, error)
+func GenerateSchemaDiffAST(diff *difftypes.SchemaDiff, generated *goschema.Database, dialect string) ([]ast.Node, error)
 ```
 
 The planner takes the diff **and** the desired schema, because the diff does not
@@ -142,7 +142,7 @@ flowchart LR
 
   DESIRED --> CMP["migration/schemadiff<br/>compare + normalize"]
   CURRENT --> CMP
-  CMP --> DIFF["types.SchemaDiff<br/><i>name lists</i>"]
+  CMP --> DIFF["difftypes.SchemaDiff<br/><i>name lists</i>"]
   DIFF --> PLAN["migration/planner<br/>internal/planner/dialects/*"]
   DESIRED -- "second parameter" --> PLAN
   PLAN --> AST["core/ast"]
