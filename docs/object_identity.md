@@ -184,20 +184,16 @@ vocabulary — that is, when a reader of `compare` would not be surprised to see
 with no behavior change, and the equivalence tests in
 `internal/objectidentity/equivalence_test.go` are what make that safe to assert.
 
-**Verbatim constructors.** `TablePartsVerbatim` and `ConstraintPartsVerbatim`
-build identities without folding or trimming.
+**Verbatim constructors.** `TablePartsVerbatim` builds an identity without
+folding or trimming.
 
-`TablePartsVerbatim` is not temporary: quoted leading and trailing whitespace is
-part of a SQLite table name, so trimming there merges two distinct tables. It
-stays as long as SQLite does.
+It is not temporary: quoted leading and trailing whitespace is part of a SQLite
+table name, so trimming there merges two distinct tables. It stays as long as
+SQLite does.
 
-`ConstraintPartsVerbatim` **is** temporary. It exists because
-`types.SchemaDiff` carries constraint *spellings* rather than identities, so the
-planner cannot fold without folding a second time.
-
-*Delete when* `types.SchemaDiff` carries `objectidentity.ID` values for the
-objects it names. The planner then reads identities the comparator already
-built, no second fold is possible, and the constructor has no caller.
+There is no constraint counterpart. `types.SchemaDiff` names a constraint by
+`types.ConstraintIdentity` rather than by spelling, so the planner reads the
+identity the comparator already built and a second fold is not expressible.
 
 ## Adding a family
 

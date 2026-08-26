@@ -20,13 +20,17 @@ import (
 // TestTableChangesMatchTheExistingComparator is the differential test for this
 // family, and it compares CHANGES rather than statements.
 //
-// Statements are what the constraint slice compares, because that slice
-// renders. This one does not yet: [schemachange.Plan] answers ErrNotRendered
-// for a table or a column, so a statement comparison would compare one path's
-// output against nothing. What is comparable now is the decision -- which
-// objects change and in which direction -- and that is the half a name in a
-// slice already carries, so a divergence here is a divergence in the shipping
-// comparator's own terms rather than in a spelling.
+// The comparison is of decisions -- which objects change and in which
+// direction -- because that is the half a name in [difftypes.SchemaDiff]'s
+// per-family lists carries. The old path names an object; it does not say in
+// what words the object will be written. So a divergence here is a divergence
+// in the shipping comparator's own terms rather than in a spelling, which is
+// what makes it attributable.
+//
+// [TestTableStatementsMatchTheExistingPlanner] is the other half, and the two
+// are separate on purpose: a row that fails should say whether the paths chose
+// differently or only wrote differently. A concurrent index is exactly that
+// case -- same decision, different statement.
 //
 // A difference is either a defect in the new path or a decision the old one
 // makes that this one should not; both are worth finding before anything
@@ -611,12 +615,23 @@ func TestTableStatementsMatchTheExistingPlanner(t *testing.T) {
 			}),
 			catalog: constrainedCatalog(),
 		},
-		// A concurrent index has no row here: the canonical path plans
-		// `CREATE INDEX CONCURRENTLY` for a declaration that asks for it and
-		// the existing planner plans a locking build, because CONCURRENTLY is
-		// an option its CALLER sets rather than something the declaration can
-		// say. That is stokaro/ptah#2019, and a row asserting they agree would
-		// be asserting the defect.
+		// A concurrent index has no STATEMENT row: the canonical path renders
+		// `CREATE INDEX CONCURRENTLY` for a declaration asking for it and the
+		// existing planner renders a locking build, so a row asserting they
+		// agree would assert a defect.
+		//
+		// The exclusion was re-measured rather than trusted. stokaro/ptah#2019
+		// is the defect, and it was closed -- but its fix landed in
+		// `migration/generator`, and the declarative verbs go through
+		// `migration/planner`, which still takes concurrency only from options
+		// its CALLER sets. Driving the issue's own reproduction on master:
+		//
+		//	declaration Concurrently = true
+		//	CREATE INDEX IF NOT EXISTS "idx_widget_a" ON "widget" ("a")
+		//
+		// so the issue is reopened and this row waits for the other half. The
+		// CHANGES slice does carry the shape: the two paths agree on WHICH
+		// object changes, and disagree only on the words.
 		{
 			name:        "adding a unique index",
 			description: indexedWidget(true, "a"),
