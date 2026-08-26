@@ -874,8 +874,26 @@ func (p *Planner) appendNotNullConstraintRename(
 	table string,
 	colDiff difftypes.ColumnDiff,
 ) []ast.Node {
-	if colDiff.NotNullConstraintNameChange == nil || !p.caps.Has(capability.NamedNotNullConstraints) {
+	if colDiff.NotNullConstraintNameChange == nil {
 		return result
+	}
+	// A target that does not persist the name says so, rather than dropping the
+	// declaration on the floor. The renderer refuses this at CREATE TABLE; a
+	// column that already exists never reaches that path, so without this the
+	// declared name simply vanished from the plan with no diagnostic -- the
+	// silent drop this whole path exists to prevent.
+	//
+	// A comment rather than an error, following the precedent one function
+	// down: a capability-gated change the planner cannot make is stated in the
+	// plan, naming the key and the release that added it.
+	if !p.caps.Has(capability.NamedNotNullConstraints) {
+		return append(result, ast.NewComment(fmt.Sprintf(
+			"WARNING: Column %s.%s declares NOT NULL constraint name %q, but naming a NOT NULL requires target capability %s, unavailable on this target (PostgreSQL added it in 18); the constraint is applied without the name.",
+			table,
+			colDiff.ColumnName,
+			colDiff.NotNullConstraintNameChange.Desired,
+			capability.NamedNotNullConstraints,
+		)))
 	}
 	// Nothing to rename FROM. The catalog reported no name, so the constraint
 	// has to be established under the declared one instead, which is the
