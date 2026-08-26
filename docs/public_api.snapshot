@@ -1153,6 +1153,7 @@ type RawSQLNode struct{ ... }
 type RefreshMaterializedViewNode struct{ ... }
     func NewRefreshMaterializedView(name string) *RefreshMaterializedViewNode
 type RenameColumnOperation struct{ ... }
+type RenameConstraintOperation struct{ ... }
 type RenameEnumValueOperation struct{ ... }
     func NewRenameEnumValueOperation(oldValue, newValue string) *RenameEnumValueOperation
 type RenameTableOperation struct{ ... }
@@ -1554,6 +1555,21 @@ type ColumnNode struct {
     // when matching against introspected constraints, a deterministic
     // "<table>_<column>_check" identifier.
     CheckName string
+    // NotNullConstraintName is an optional explicit constraint name for the
+    // column's NOT NULL.
+    //
+    // It is only meaningful where the target PERSISTS that name as an
+    // addressable catalog object -- PostgreSQL 18 records one per NOT NULL in
+    // pg_constraint with contype 'n', keyed to the column through conkey, and
+    // can drop, add and rename it by name. PostgreSQL 17 accepts the same
+    // syntax and stores nothing, and MariaDB 12.3 refuses it outright, so the
+    // name is gated on [capability.NamedNotNullConstraints] rather than on the
+    // syntax being parseable (stokaro/ptah#2161).
+    //
+    // Empty means the declaration did not name the constraint, which is not the
+    // same as naming it whatever the engine generated: an omitted name leaves
+    // the actual name unmanaged, under the repository's omitted-attribute rule.
+    NotNullConstraintName string
     // GeneratedExpression stores the raw SQL expression for generated columns.
     GeneratedExpression string
     // GeneratedKind stores the generated column kind, such as VIRTUAL or STORED.
@@ -1590,6 +1606,7 @@ func (n *ColumnNode) SetGenerated(expression, kind string) *ColumnNode
 func (n *ColumnNode) SetIdentity(generation, start, increment string) *ColumnNode
 func (n *ColumnNode) SetIdentityOptions(options string) *ColumnNode
 func (n *ColumnNode) SetNotNull() *ColumnNode
+func (n *ColumnNode) SetNotNullConstraintName(name string) *ColumnNode
 func (n *ColumnNode) SetPrimary() *ColumnNode
 func (n *ColumnNode) SetUnique() *ColumnNode
 func (n *ColumnNode) SetUpdateExpression(expression string) *ColumnNode
@@ -3627,6 +3644,34 @@ type RenameColumnOperation struct {
 
 func (op *RenameColumnOperation) Accept(_visitor Visitor) error
 
+### go.5x5.cz/ptah/core/ast.RenameConstraintOperation
+
+package ast // import "go.5x5.cz/ptah/core/ast"
+
+type RenameConstraintOperation struct {
+    // From is the name the database holds.
+    From string
+    // To is the name the declaration asks for.
+    To string
+}
+    Accept implements the Node interface for SetCommentOperation.
+
+    The actual rendering is handled by the dialect's VisitAlterTable method;
+    this stub exists to satisfy the Node interface. RenameConstraintOperation
+    renames a constraint in place.
+
+    It exists for a NOT NULL constraint whose name drifted, which is the
+    one change where dropping and re-adding is not equivalent: PostgreSQL
+    generates a name for an unnamed NOT NULL, so `DROP CONSTRAINT` followed
+    by `ALTER COLUMN ... SET NOT NULL` would land on the generated name rather
+    than the declared one, and the column is momentarily nullable in between
+    (stokaro/ptah#2161).
+
+    The statement is PostgreSQL 18's, and callers gate it on
+    [capability.NamedNotNullConstraints] rather than on the dialect name.
+
+func (op *RenameConstraintOperation) Accept(_visitor Visitor) error
+
 ### go.5x5.cz/ptah/core/ast.RenameEnumValueOperation
 
 package ast // import "go.5x5.cz/ptah/core/ast"
@@ -5593,6 +5638,11 @@ type Field struct {
     Enum      []string // Enum values for ENUM type fields
     Check     string   // Check constraint expression
     CheckName string   // Optional constraint name for the column-level CHECK; defaults to "<table>_<column>_check"
+    // NotNullConstraintName is an optional explicit constraint name for the
+    // column's NOT NULL, carried only where the target persists one as an
+    // addressable catalog object. See
+    // [go.5x5.cz/ptah/core/ast.ColumnNode.NotNullConstraintName].
+    NotNullConstraintName string
     // GeneratedExpression stores the raw SQL expression for generated columns.
     GeneratedExpression string
     // GeneratedKind stores the generated column kind, such as VIRTUAL or STORED.
@@ -6637,6 +6687,7 @@ type Capabilities map[Capability]bool
     func Postgres13() Capabilities
     func Postgres16() Capabilities
     func Postgres17() Capabilities
+    func Postgres18() Capabilities
     func SQLServer2022() Capabilities
     func SQLite3() Capabilities
     func SQLite324() Capabilities
@@ -6697,6 +6748,7 @@ func Oracle23() Capabilities
 func Postgres13() Capabilities
 func Postgres16() Capabilities
 func Postgres17() Capabilities
+func Postgres18() Capabilities
 func SQLServer2022() Capabilities
 func SQLite3() Capabilities
 func SQLite324() Capabilities
@@ -8186,13 +8238,27 @@ type DBColumn struct {
     // Comment is the column's own comment, where the target has one and the
     // reader reads it. It is empty for a column nobody commented, which is why
     // it is omitted from the encoding rather than written as "".
-    Comment          string `json:"comment,omitempty"`
-    NumericPrecision *int   `json:"numeric_precision"` // For DECIMAL, etc.
-    NumericScale     *int   `json:"numeric_scale"`     // For DECIMAL, etc.
-    OrdinalPosition  int    `json:"ordinal_position"`
-    IsAutoIncrement  bool   `json:"is_auto_increment"` // Derived field
-    IsPrimaryKey     bool   `json:"is_primary_key"`    // Derived field
-    IsUnique         bool   `json:"is_unique"`         // Derived field
+    Comment string `json:"comment,omitempty"`
+    // NotNullConstraintName is the name the target keeps for this column's NOT
+    // NULL, where it keeps one as an addressable catalog object.
+    //
+    // PostgreSQL 18 records one row per NOT NULL in pg_constraint with
+    // contype 'n', keyed to the column through conkey. PostgreSQL 17 stores
+    // nothing, so this is empty there and the read is not even attempted --
+    // see the capability gate on the reader's projection.
+    //
+    // PostgreSQL 18 names EVERY NOT NULL and provides no catalog flag
+    // separating an author-supplied name from a generated one, so a faithful
+    // read returns all of them. Suppressing names that look generated would
+    // silently lose a supplied name that happens to use the same pattern
+    // (stokaro/ptah#2161).
+    NotNullConstraintName string `json:"not_null_constraint_name,omitempty"`
+    NumericPrecision      *int   `json:"numeric_precision"` // For DECIMAL, etc.
+    NumericScale          *int   `json:"numeric_scale"`     // For DECIMAL, etc.
+    OrdinalPosition       int    `json:"ordinal_position"`
+    IsAutoIncrement       bool   `json:"is_auto_increment"` // Derived field
+    IsPrimaryKey          bool   `json:"is_primary_key"`    // Derived field
+    IsUnique              bool   `json:"is_unique"`         // Derived field
 
     // TypeIsDeclaredText records that DataType must be written back as it
     // stands, because canonicalizing it would describe a different column.
@@ -12386,6 +12452,7 @@ type HypertableDiff struct{ ... }
 type IndexRef struct{ ... }
 type MatViewRefreshChange struct{ ... }
 type MaterializedViewDiff struct{ ... }
+type NotNullConstraintNameChange struct{ ... }
 type RLSPolicyDiff struct{ ... }
 type RLSPolicyRef struct{ ... }
 type RangeDiff struct{ ... }
@@ -12421,6 +12488,17 @@ type ColumnDiff struct {
     // separator, and it can be empty, which that format cannot tell from
     // absent. Both distinctions are the ones a planner needs.
     CommentChange *CommentChange `json:"comment_change,omitzero"`
+
+    // NotNullConstraintNameChange carries the column's NOT NULL constraint name
+    // transition, and is nil when the declaration does not manage the name.
+    //
+    // Nil is the common case and means "leave it alone", not "they match".
+    // PostgreSQL 18 names EVERY NOT NULL and provides no catalog flag
+    // separating an author-supplied name from a generated one, so a plain
+    // `NOT NULL` declaration sits opposite a server-generated name on every
+    // column. Comparing those would report a difference on every table nobody
+    // changed (stokaro/ptah#2161).
+    NotNullConstraintNameChange *NotNullConstraintNameChange `json:"not_null_constraint_name_change,omitzero"`
 }
     ColumnDiff represents specific property changes within a database column.
 
@@ -12995,6 +13073,24 @@ type MaterializedViewDiff struct {
     RefreshChange *MatViewRefreshChange `json:"refresh_change,omitzero"`
 }
     MaterializedViewDiff represents changes to a materialized view definition.
+
+
+### go.5x5.cz/ptah/migration/schemadiff/difftypes.NotNullConstraintNameChange
+
+package difftypes // import "go.5x5.cz/ptah/migration/schemadiff/difftypes"
+
+type NotNullConstraintNameChange struct {
+    // Current is the name the database holds.
+    Current string `json:"current"`
+    // Desired is the name the declaration asks for.
+    Desired string `json:"desired"`
+}
+    NotNullConstraintNameChange is one column's NOT NULL constraint name
+    transition.
+
+    Desired is never empty: an omitted name leaves the actual one unmanaged and
+    produces no change at all. Current may be empty on a target that had no name
+    to report.
 
 
 ### go.5x5.cz/ptah/migration/schemadiff/difftypes.RLSPolicyDiff

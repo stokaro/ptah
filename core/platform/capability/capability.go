@@ -1316,9 +1316,28 @@ func Postgres16() Capabilities {
 	}
 }
 
-// Postgres17 is the preset for PostgreSQL 17+.
+// Postgres17 is the preset for PostgreSQL 17.
 func Postgres17() Capabilities {
 	return Postgres16().With(AlterGeneratedColumnExpression, true)
+}
+
+// Postgres18 is the preset for PostgreSQL 18+.
+//
+// It differs from Postgres17 by one key. PostgreSQL 18 persists a NOT NULL
+// constraint as a named, addressable catalog object -- one pg_constraint row
+// per NOT NULL with contype 'n', keyed to the column through conkey, droppable
+// and renamable by name. PostgreSQL 17 accepts the identical
+// `CONSTRAINT c NOT NULL` syntax and stores nothing, which is why the key is
+// about persistence rather than about the syntax parsing.
+//
+// Measured, not assumed. The tier-2 probe against a live PostgreSQL 18 read
+// `named_not_null_constraints  preset says false  server does true [DISAGREES]`
+// as the ONLY disagreement in 52 rows -- 45 agreed and 6 were undecidable -- on
+// run 32948628838. Every other key on the line resolves as Postgres17 does,
+// which is what makes deriving the preset from it correct rather than
+// convenient (stokaro/ptah#2161).
+func Postgres18() Capabilities {
+	return Postgres17().With(NamedNotNullConstraints, true)
 }
 
 // Postgres13 is the preset for PostgreSQL 12–13: unlike Postgres16 it lacks
@@ -2263,6 +2282,7 @@ func NamedPresets() []NamedPreset {
 		{"Postgres13", Postgres13()},
 		{"Postgres16", Postgres16()},
 		{"Postgres17", Postgres17()},
+		{"Postgres18", Postgres18()},
 		{"ClickHouse24", ClickHouse24()},
 		{"ClickHouse2411", ClickHouse2411()},
 		{"CockroachDB23", CockroachDB23()},
@@ -3024,6 +3044,8 @@ func mysqlForVersion(v serverVersion) Capabilities {
 
 func postgresForVersion(v serverVersion) Capabilities {
 	switch {
+	case v.major >= 18:
+		return Postgres18()
 	case v.major >= 17:
 		return Postgres17()
 	case v.major >= 14:

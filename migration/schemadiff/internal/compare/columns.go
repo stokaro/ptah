@@ -190,7 +190,8 @@ func tableColumnsWithSemantics(
 			// still a difference: without the second condition a column whose
 			// comment was rewritten in the declaration never reached the
 			// planner (stokaro/ptah#2168).
-			if len(colDiff.Changes) > 0 || colDiff.CommentChange != nil {
+			if len(colDiff.Changes) > 0 || colDiff.CommentChange != nil ||
+				colDiff.NotNullConstraintNameChange != nil {
 				tableDiff.ColumnsModified = append(tableDiff.ColumnsModified, colDiff)
 			}
 		}
@@ -212,6 +213,29 @@ func tableColumnsWithSemantics(
 // comment the database holds and the declaration does not is a removal, and the
 // desired side alone cannot say so. This is the shape [rowTTLChange] uses, for
 // the same reason.
+// notNullConstraintNameChange applies the repository's omitted-attribute rule
+// to the NOT NULL constraint name: an explicit desired name is compared, an
+// omitted one leaves the actual name unmanaged.
+//
+// The empty-desired guard is load-bearing rather than defensive. PostgreSQL 18
+// names EVERY NOT NULL and offers no catalog flag separating an author-supplied
+// name from a generated one, so on that target the current side is populated
+// for every non-nullable column in the database. Comparing an omitted
+// declaration against it would report a rename on every column of every table
+// nobody touched, and no apply could settle it: the next read would return the
+// new generated name and report the difference again.
+//
+// It has the cost the rule always has, stated in stokaro/ptah#2260 for the
+// other optional attributes: removing a previously managed name by deleting it
+// from the declaration is not supported. Deleting it makes the name unmanaged;
+// it does not request a rename back to a generated one (stokaro/ptah#2161).
+func notNullConstraintNameChange(desired, current string) *difftypes.NotNullConstraintNameChange {
+	if desired == "" || desired == current {
+		return nil
+	}
+	return &difftypes.NotNullConstraintNameChange{Current: current, Desired: desired}
+}
+
 func commentChange(desired, current string) *difftypes.CommentChange {
 	if desired == current {
 		return nil
@@ -344,6 +368,8 @@ func columnsWithDesiredDomains(
 		ColumnName:    genCol.Name,
 		Changes:       make(map[string]string),
 		CommentChange: commentChange(genCol.Comment, dbCol.Comment),
+		NotNullConstraintNameChange: notNullConstraintNameChange(
+			genCol.NotNullConstraintName, dbCol.NotNullConstraintName),
 	}
 
 	// ClickHouse-only guard: older goschema models cannot express

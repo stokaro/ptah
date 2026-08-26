@@ -392,6 +392,28 @@ type SetCommentOperation struct {
 //
 // The actual rendering is handled by the dialect's VisitAlterTable method;
 // this stub exists to satisfy the Node interface.
+// RenameConstraintOperation renames a constraint in place.
+//
+// It exists for a NOT NULL constraint whose name drifted, which is the one
+// change where dropping and re-adding is not equivalent: PostgreSQL generates a
+// name for an unnamed NOT NULL, so `DROP CONSTRAINT` followed by
+// `ALTER COLUMN ... SET NOT NULL` would land on the generated name rather than
+// the declared one, and the column is momentarily nullable in between
+// (stokaro/ptah#2161).
+//
+// The statement is PostgreSQL 18's, and callers gate it on
+// [capability.NamedNotNullConstraints] rather than on the dialect name.
+type RenameConstraintOperation struct {
+	// From is the name the database holds.
+	From string
+	// To is the name the declaration asks for.
+	To string
+}
+
+func (op *RenameConstraintOperation) Accept(_visitor Visitor) error { return nil }
+
+func (op *RenameConstraintOperation) alterOperation() {}
+
 func (op *SetCommentOperation) Accept(_visitor Visitor) error { return nil }
 
 // alterOperation implements the marker method for type safety.

@@ -57,10 +57,10 @@ func TestParser_ColumnLevelUnnamedForeignKeyCarriesNoName(t *testing.T) {
 	c.Assert(table.Columns[0].ForeignKey.Table, qt.Equals, "parent")
 }
 
-// The four kinds with nowhere to keep a name are refused, and the refusal says
-// why rather than blaming the keyword after the name.
+// A DEFAULT is the one kind left with nowhere to keep a name, and the refusal
+// says why rather than blaming the keyword after the name.
 //
-// Reading them would drop the name, the renderer would emit an unnamed
+// Reading it would drop the name, the renderer would emit an unnamed
 // constraint, the server would generate its own, and the reader would bring
 // that back as a difference nobody can resolve. A refusal is worse than reading
 // the file and better than permanent drift.
@@ -73,11 +73,11 @@ func TestParser_ColumnLevelNamedConstraintWithNowhereToKeepTheName(t *testing.T)
 		// `on NOT` names half a keyword.
 		named string
 	}{
-		// NOT NULL and DEFAULT are what remain: ColumnNode keeps Nullable and
-		// the default with nowhere to put a constraint name, and neither has a
-		// table-level form to read the name into the way UNIQUE and PRIMARY KEY
-		// do.
-		{name: "not null", constraint: "NOT NULL", named: "NOT NULL"},
+		// A DEFAULT is what remains: it is a value with nowhere to put a
+		// constraint name and no table-level form to read one into the way
+		// UNIQUE and PRIMARY KEY have. No engine Ptah supports records one --
+		// which is what separates it from NOT NULL, whose name PostgreSQL 18
+		// keeps in pg_constraint and Ptah now carries.
 		{name: "default", constraint: "DEFAULT 1", named: "DEFAULT"},
 	}
 
@@ -90,9 +90,9 @@ func TestParser_ColumnLevelNamedConstraintWithNowhereToKeepTheName(t *testing.T)
 
 			c.Assert(err, qt.ErrorMatches, `.*named column constraint "c_x".*`)
 			c.Assert(err, qt.ErrorMatches, `.*name on `+tt.named+`,.*`)
-			c.Assert(err, qt.ErrorMatches, `.*CHECK, REFERENCES, UNIQUE and PRIMARY KEY.*`)
+			c.Assert(err, qt.ErrorMatches, `.*NOT NULL, CHECK, REFERENCES, UNIQUE and PRIMARY KEY.*`)
 			// The advice has to be one the reader can follow. There is no
-			// `ALTER TABLE ... ADD CONSTRAINT c NOT NULL` on any supported
+			// `ALTER TABLE ... ADD CONSTRAINT c DEFAULT` on any supported
 			// engine, so pointing at the table level would point at nothing.
 			c.Assert(err, qt.ErrorMatches, `.*write the constraint without a name.*`)
 		})
@@ -190,4 +190,39 @@ func TestParser_ColumnLevelNamedPrimaryRequiresKey(t *testing.T) {
 		`CREATE TABLE t (b INTEGER CONSTRAINT c_pk PRIMARY);`).Parse()
 
 	c.Assert(err, qt.ErrorMatches, `.*expected KEY after PRIMARY.*`)
+}
+
+// TestParser_ColumnLevelNamedNotNullIsRead is the other half of the table
+// above: the kind that moved out of it.
+//
+// The name is read on every dialect and refused later, by the layer that knows
+// the target. A parser that refused here would reject a file PostgreSQL 18
+// accepts and round-trips; one that gated on its own dialect would refuse a
+// `.sql` file being read for a target it was not written against
+// (stokaro/ptah#2161).
+func TestParser_ColumnLevelNamedNotNullIsRead(t *testing.T) {
+	c := qt.New(t)
+
+	statements, err := parser.NewParser(
+		`CREATE TABLE t (b INTEGER CONSTRAINT c_keep NOT NULL);`).Parse()
+
+	c.Assert(err, qt.IsNil)
+	table := statements.Statements[0].(*ast.CreateTableNode)
+	c.Assert(table.Columns[0].NotNullConstraintName, qt.Equals, "c_keep")
+	// The name describes a constraint the same clause establishes. Reading one
+	// without the other would name nothing.
+	c.Assert(table.Columns[0].Nullable, qt.IsFalse)
+}
+
+// TestParser_UnnamedNotNullCarriesNoName is the control. Without it, a parser
+// that stamped every NOT NULL with a name would pass the test above.
+func TestParser_UnnamedNotNullCarriesNoName(t *testing.T) {
+	c := qt.New(t)
+
+	statements, err := parser.NewParser(`CREATE TABLE t (b INTEGER NOT NULL);`).Parse()
+
+	c.Assert(err, qt.IsNil)
+	table := statements.Statements[0].(*ast.CreateTableNode)
+	c.Assert(table.Columns[0].NotNullConstraintName, qt.Equals, "")
+	c.Assert(table.Columns[0].Nullable, qt.IsFalse)
 }

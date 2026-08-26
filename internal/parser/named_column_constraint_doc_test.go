@@ -25,7 +25,7 @@ const sqlSchemaPage = "../../docs/site/src/content/docs/schema/sql.md"
 func TestNamedColumnConstraintRefusal_IsQuotedAsThePageSaysItIs(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := parser.NewParser(`CREATE TABLE t (b INTEGER CONSTRAINT c_x NOT NULL);`).Parse()
+	_, err := parser.NewParser(`CREATE TABLE t (b INTEGER CONSTRAINT c_x DEFAULT 1);`).Parse()
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(collapseWhitespace(readSQLSchemaPage(c)), qt.Contains, collapseWhitespace(err.Error()),
@@ -43,7 +43,7 @@ func TestNamedColumnConstraintRefusal_TheFixtureOnThePageIsTheOneThatFails(t *te
 	c := qt.New(t)
 
 	page := readSQLSchemaPage(c)
-	const fixture = "CREATE TABLE t (b INTEGER CONSTRAINT c_x NOT NULL);"
+	const fixture = "CREATE TABLE t (b INTEGER CONSTRAINT c_x DEFAULT 1);"
 
 	c.Assert(page, qt.Contains, fixture)
 

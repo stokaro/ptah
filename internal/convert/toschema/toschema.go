@@ -154,6 +154,13 @@ func ToField(column *ast.ColumnNode, structName, sourcePlatform string) goschema
 		field.CheckName = normalizeSQLIdentifier(column.CheckName)
 	}
 
+	// Same guarding, same reason: a name describes a constraint, and one on a
+	// nullable column names nothing. Carrying it would put a phantom name in
+	// front of a NOT NULL that is not there (stokaro/ptah#2161).
+	if !column.Nullable {
+		field.NotNullConstraintName = normalizeSQLIdentifier(column.NotNullConstraintName)
+	}
+
 	// Extract default values
 	if column.Default != nil {
 		if column.Default.HasLiteral() {

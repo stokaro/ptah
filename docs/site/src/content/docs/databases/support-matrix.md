@@ -125,7 +125,7 @@ the declared set cannot say one thing here and another in a workflow file.
 <!-- BEGIN GENERATED VERSION MATRIX -->
 | Dialect | Release line | Support | Capability preset | Probed |
 | --- | --- | --- | --- | --- |
-| `postgres` | 18 | certified | `Postgres17` | yes |
+| `postgres` | 18 | certified | `Postgres18` | yes |
 | `postgres` | 17 | certified | `Postgres17` | yes |
 | `postgres` | 16 | certified | `Postgres16` | yes |
 | `postgres` | 15 | certified | `Postgres16` | yes |
