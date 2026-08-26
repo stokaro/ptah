@@ -166,6 +166,20 @@ type ConstraintAdditionInfo struct {
 	Identity ConstraintIdentity `json:"identity,omitzero"`
 }
 
+// RoutineRemoval is one routine to drop, named the way a server can address it.
+//
+// The signature is not decoration: a routine name is not unique in a schema that
+// overloads, and the DROP statement has to say which one. It is the catalog's
+// own argument list where the reader fills one, and the declared parameters
+// otherwise (stokaro/ptah#2296).
+type RoutineRemoval struct {
+	// Name is the qualified routine name.
+	Name string `json:"name"`
+	// Signature is the argument list, empty when the routine is not overloaded
+	// and the reader supplied none.
+	Signature string `json:"signature,omitempty"`
+}
+
 // SchemaDiff represents comprehensive differences between two database schemas.
 //
 // This structure captures all types of schema changes that can occur between a target
@@ -275,6 +289,16 @@ type SchemaDiff struct {
 	// FunctionsRemoved contains names of PostgreSQL functions that exist in the current database
 	// but not in the target schema (potentially dangerous - may break existing functionality)
 	FunctionsRemoved []string `json:"functions_removed"`
+	// FunctionsRemovedWithSignatures names the same removals with the argument
+	// list each one needs to be addressable.
+	//
+	// FunctionsRemoved carries a bare name, and a name does not select an
+	// overload: PostgreSQL answers `DROP FUNCTION IF EXISTS f` with
+	// `function name "f" is not unique` whenever the schema holds more than
+	// one, and IF EXISTS does not help, because the refusal is about ambiguity
+	// rather than existence. A planner reads this list; the bare one stays for
+	// readers that have not moved (stokaro/ptah#2296).
+	FunctionsRemovedWithSignatures []RoutineRemoval `json:"functions_removed_with_signatures,omitempty"`
 	// ProceduresRemoved names the procedures the database holds and the desired
 	// state does not.
 	//
@@ -285,6 +309,9 @@ type SchemaDiff struct {
 	// stay in the function collections, where the planner reads the kind off the
 	// declaration it is building from (stokaro/ptah#1722).
 	ProceduresRemoved []string `json:"procedures_removed,omitempty"`
+	// ProceduresRemovedWithSignatures is [SchemaDiff.FunctionsRemovedWithSignatures]
+	// for the other routine kind, and exists for the same reason.
+	ProceduresRemovedWithSignatures []RoutineRemoval `json:"procedures_removed_with_signatures,omitempty"`
 
 	// FunctionsModified contains detailed information about functions that exist in both
 	// schemas but have different definitions (parameters, body, attributes, etc.)

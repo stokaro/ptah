@@ -164,7 +164,10 @@ func TestPairRoutineOverloads(t *testing.T) {
 
 			c.Assert(pairs, qt.HasLen, test.wantPairs)
 			c.Assert(added, qt.Equals, test.wantAdded)
-			c.Assert(removed, qt.Equals, test.wantRemoved)
+			// The removals are the routines themselves rather than a count,
+			// because only they carry the signature a DROP needs to address an
+			// overload (stokaro/ptah#2296).
+			c.Assert(removed, qt.HasLen, test.wantRemoved)
 			c.Assert(firstPairBody(pairs), qt.Equals, test.wantFirstPair)
 		})
 	}
