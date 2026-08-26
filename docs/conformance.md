@@ -202,30 +202,29 @@ conformance Atlas pin advances past v1.3.0:
 | `migrate show` | Print the contents of one or more migration files. | Implemented: `ptah migrations show` prints a stored migration's SQL with no database, and `ptah-compat migrate show {name \| version}...` forwards to it. |
 | `schema stats` | Inspect database schema statistics in OpenMetrics format. | Out of scope: statistics monitoring is a metrics/observability surface, not schema management; Ptah's schema-state surface is `ptah schema compare` and `ptah schema drift`. |
 | `schema validate` | Check that a schema definition parses and loads, optionally against `--dev-url`. | Covered by native: `ptah schema render` parses and loads the desired schema and fails on invalid input; `ptah schema test` and `schema apply --dry-run` exercise it against a throwaway database. |
-| `script loop\|query\|exec` | Declare data operations as code: transactional mutations, masked queries, batched loops. | Declined; see below. |
-| `cloud` | Manage registry repositories, databases and deployment history from the terminal. | Declined; see below. |
+| `script loop\|query\|exec` | Declare data operations as code: transactional mutations, masked queries, batched loops. | Being implemented best-effort from published information ([`stokaro/ptah#1017`](https://github.com/stokaro/ptah/issues/1017)). |
+| `cloud` | Manage registry repositories, databases and deployment history from the terminal. | Being implemented as a pointer rather than a command group ([`stokaro/ptah#1018`](https://github.com/stokaro/ptah/issues/1018)). |
 
-### Why the two v1.3.0 verb groups are declined
+### The two v1.3.0 verb groups, and why absence from the pin is not a verdict
 
-Neither is a parity gap. Both are unregistered in the pinned binary — `atlas
-script` and `atlas cloud` each answer `unknown command`, the same way a nonsense
-root verb does — so there is no CE behavior for `ptah-compat` to match and
-nothing local to measure a spelling against.
+Neither group is registered in the pinned binary: `atlas script` and `atlas
+cloud` each answer `unknown command`, the same way a nonsense root verb does. So
+there is no CE behavior for `ptah-compat` to match, and no drop-in gap.
 
-`script` is also a different surface. Running mutations, masked reads and
-batched loops over rows is data manipulation, where Ptah's target is the schema
-and the migrations that change it. `ptah migrations` has no row-level
-counterpart, and declining this is not a step toward one
-([`stokaro/ptah#1017`](https://github.com/stokaro/ptah/issues/1017)).
+That says what the parity target does not cover. It does not decide whether Ptah
+should have the capability, and this section previously read as though it did —
+recording both as declined. Absence from the pin is a scheduling fact about the
+compatibility surface, not a reason to leave a capability unbuilt.
 
-`cloud` is a client for a hosted registry service, so neither half of the usual
-measurement exists: no CE behavior, and no endpoint a conformance run could
-reach. Ptah's own registry surface is OCI — `ptah schema push` and `ptah schema
-pull`, documented in [OCI registry](oci_registry.md) — which is an open protocol
-anyone can host
-([`stokaro/ptah#1018`](https://github.com/stokaro/ptah/issues/1018)).
+Both are being built, each in the shape its issue settled on:
 
-Both revisit if the conformance pin advances to a build that registers them.
+- **`script`** — best-effort from published information, since the pinned binary
+  offers nothing to measure against
+  ([`stokaro/ptah#1017`](https://github.com/stokaro/ptah/issues/1017)).
+- **`cloud`** — not as a command group. Registering one would end the
+  byte-identical `unknown command` answer for the sake of a message, so the
+  invocation points at the Ptah equivalent and exits non-zero
+  ([`stokaro/ptah#1018`](https://github.com/stokaro/ptah/issues/1018)).
 
 ## Never a Copied Defect
 
