@@ -24,6 +24,8 @@
     "check:limitations:selftest": "node scripts/check-limitations.mjs --selftest",
     "check:responsive": "node scripts/check-responsive.mjs",
     "check:responsive:selftest": "node scripts/check-responsive.mjs --selftest",
+    "check:glossary": "node scripts/check-glossary.mjs",
+    "check:glossary:selftest": "node scripts/check-glossary.mjs --selftest",
     "versions:selftest": "node scripts/gen-versions.mjs --selftest"
   },
   "dependencies": {
