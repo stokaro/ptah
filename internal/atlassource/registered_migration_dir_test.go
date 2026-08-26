@@ -127,3 +127,50 @@ func readSnapshotFile(fsys fs.FS, name string) (string, error) {
 	body, err := fs.ReadFile(fsys, name)
 	return string(body), err
 }
+
+// TestPrepareMigrationSource_CapturesADirectoryWithNoLocalPath is what the
+// classification above exists for.
+//
+// Classifying a registered directory correctly and then capturing it from a
+// path would fail at the first read, so the capture has to reach the
+// filesystem. `data "template_dir"` is the offline way to register one: it
+// renders local files into an in-memory directory the same way a registry
+// reference registers a pulled one, and it needs no network.
+func TestPrepareMigrationSource_CapturesADirectoryWithNoLocalPath(t *testing.T) {
+	c := qt.New(t)
+	baseDir := c.TempDir()
+	templates := filepath.Join(baseDir, "templates")
+	c.Assert(os.MkdirAll(templates, 0o755), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(templates, "1_init.sql"),
+		[]byte("CREATE TABLE registered_dir_users (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
+	path := filepath.Join(baseDir, "atlas.hcl")
+	c.Assert(os.WriteFile(path, []byte(`
+data "template_dir" "rendered" {
+  path = "templates"
+}
+env "local" {
+  url = "postgres://localhost:5432/app?sslmode=disable"
+  migration {
+    dir = data.template_dir.rendered.url
+  }
+}
+`), 0o600), qt.IsNil)
+
+	config, err := projectconfig.Load(projectconfig.LoadOptions{
+		Context: c.Context(), AtlasPath: path, EnvName: "local", Verb: "test",
+	})
+	c.Assert(err, qt.IsNil)
+	set, err := atlassource.ClassifySet("--to", []string{"env://migration.dir"},
+		atlassource.ProjectEnv{Loaded: true, BaseDir: baseDir, Config: config})
+	c.Assert(err, qt.IsNil)
+
+	var captured string
+	_, err = set.PrepareMigrationSource(func(snapshot fs.FS) error {
+		body, readErr := fs.ReadFile(snapshot, "1_init.sql")
+		captured = string(body)
+		return readErr
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(captured, qt.Contains, "registered_dir_users")
+}
