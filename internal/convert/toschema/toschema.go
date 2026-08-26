@@ -852,6 +852,30 @@ func ToConstraint(constraint *ast.ConstraintNode, structName, tableName string) 
 			fk.OnUpdate = ref.OnUpdate
 		}
 		return fk, true
+	case ast.CheckConstraint:
+		return goschema.Constraint{
+			StructName:      structName,
+			Name:            normalizeSQLIdentifier(constraint.Name),
+			Type:            "CHECK",
+			Table:           normalizeSQLTableReference(tableName),
+			CheckExpression: constraint.Expression,
+		}, true
+	case ast.ExcludeConstraint:
+		return goschema.Constraint{
+			StructName:      structName,
+			Name:            normalizeSQLIdentifier(constraint.Name),
+			Type:            "EXCLUDE",
+			Table:           normalizeSQLTableReference(tableName),
+			UsingMethod:     constraint.UsingMethod,
+			ExcludeElements: constraint.ExcludeElements,
+			WhereCondition:  constraint.WhereCondition,
+		}, true
+	case ast.PrimaryKeyConstraint:
+		// The only kind this deliberately declines. A table-level PRIMARY KEY
+		// is carried on [goschema.Table.PrimaryKey] and, when it names one
+		// column, on that column's Primary flag -- see markPrimaryFields. A
+		// second copy here would declare it twice.
+		return goschema.Constraint{}, false
 	default:
 		return goschema.Constraint{}, false
 	}
