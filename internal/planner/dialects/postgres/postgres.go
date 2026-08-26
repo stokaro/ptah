@@ -2117,22 +2117,51 @@ func summarizeFunctionChanges(fnDiff types.FunctionDiff) string {
 	return strings.Join(slices.Sorted(maps.Keys(fnDiff.Changes)), ", ")
 }
 
+// routineRemovals prefers the list that carries signatures, falling back to the
+// bare names for a diff built by a producer that fills only those.
+//
+// The fallback is not a formality: a SchemaDiff can be decoded from JSON
+// written before the richer list existed, and a bare name still drops a routine
+// correctly on every schema that does not overload it.
+func routineRemovals(withSignatures []types.RoutineRemoval, names []string) []types.RoutineRemoval {
+	if len(withSignatures) > 0 {
+		return withSignatures
+	}
+	removals := make([]types.RoutineRemoval, 0, len(names))
+	for _, name := range names {
+		removals = append(removals, types.RoutineRemoval{Name: name})
+	}
+	return removals
+}
+
 func (p *Planner) removeFunctions(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
-	for _, functionName := range diff.FunctionsRemoved {
-		dropFunctionNode := ast.NewDropFunction(functionName).
+	// The signature is what makes the statement addressable. A name alone is
+	// refused with `function name "f" is not unique` on any schema that
+	// overloads, and IF EXISTS does not help because the refusal is about
+	// ambiguity rather than existence (stokaro/ptah#2296).
+	for _, removal := range routineRemovals(diff.FunctionsRemovedWithSignatures, diff.FunctionsRemoved) {
+		dropFunctionNode := ast.NewDropFunction(removal.Name).
 			SetIfExists().
 			SetComment("WARNING: Ensure no other objects depend on this function")
+		if removal.Signature != "" {
+			dropFunctionNode = dropFunctionNode.SetParameters(removal.Signature)
+		}
 		result = append(result, dropFunctionNode)
 	}
 	// A procedure is dropped with its own verb. PostgreSQL answers
 	// `DROP FUNCTION` aimed at one with `could not find a function named ...`,
 	// so the kind the comparator kept is what makes the statement run
 	// (stokaro/ptah#1722).
-	for _, procedureName := range diff.ProceduresRemoved {
-		result = append(result, ast.NewDropFunction(procedureName).
+	for _, removal := range routineRemovals(diff.ProceduresRemovedWithSignatures, diff.ProceduresRemoved) {
+		dropProcedureNode := ast.NewDropFunction(removal.Name).
 			SetKind(goschema.FunctionKindProcedure).
 			SetIfExists().
-			SetComment("WARNING: Ensure no other objects depend on this procedure"))
+			SetComment("WARNING: Ensure no other objects depend on this procedure")
+		// A procedure overloads too, and the same ambiguity refusal applies.
+		if removal.Signature != "" {
+			dropProcedureNode = dropProcedureNode.SetParameters(removal.Signature)
+		}
+		result = append(result, dropProcedureNode)
 	}
 	return result
 }

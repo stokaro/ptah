@@ -70,6 +70,19 @@ func assertReverseCoverageField(
 		// derived from the forward constraint additions and desired schema.
 		return
 	}
+	if field.Name == "FunctionsRemovedWithSignatures" || field.Name == "ProceduresRemovedWithSignatures" {
+		// These are OUTPUTS of the reverse rather than inputs to it. The
+		// reverse of a removal is an addition, and an addition is recorded by
+		// name -- the planner reads the rest off the declaration -- so zeroing
+		// the forward signatures cannot change the down plan.
+		//
+		// The down direction fills them itself, from the desired schema, for
+		// the reason the forward direction needs them: the rollback of an ADDED
+		// overload is as ambiguous as the forward drop was
+		// (stokaro/ptah#2296). TestReverseSchemaDiff_ADroppedOverloadKeepsIts
+		// Signature is what holds that, since this gate structurally cannot.
+		return
+	}
 	withoutField := reverseCoverageDiff()
 	reflect.ValueOf(withoutField).Elem().Field(fieldIndex).SetZero()
 
@@ -414,4 +427,42 @@ func distinctLabel(parent, name string) string {
 		return name
 	}
 	return parent + "_" + name
+}
+
+// TestReverseSchemaDiff_ADroppedOverloadKeepsItsSignature holds what the
+// coverage gate above structurally cannot.
+//
+// That gate zeroes an INPUT field and asks whether the down plan changed. These
+// two fields are outputs, so it is exempt from it — and an exemption with
+// nothing behind it is how a field stops being checked. This drives the reverse
+// directly: a routine added forward comes back as a removal, and that removal
+// has to name the overload or the rollback is refused with
+// `function name "f" is not unique` (stokaro/ptah#2296).
+func TestReverseSchemaDiff_ADroppedOverloadKeepsItsSignature(t *testing.T) {
+	c := qt.New(t)
+
+	schema := &goschema.Database{
+		Functions: []goschema.Function{
+			{Name: "f", Parameters: "a text", Returns: "text", Body: "SELECT $1"},
+		},
+	}
+
+	reversed := reverseSchemaDiffWithSchema(
+		&types.SchemaDiff{FunctionsAdded: []string{"f"}}, schema, nil)
+
+	c.Assert(reversed.FunctionsRemovedWithSignatures, qt.DeepEquals,
+		[]types.RoutineRemoval{{Name: "f", Signature: "a text"}})
+}
+
+// TestReverseSchemaDiff_ARoutineTheSchemaNoLongerDeclaresDropsByName is the
+// control: an empty signature is the answer the bare list already gave, and it
+// drops correctly wherever the name is unique.
+func TestReverseSchemaDiff_ARoutineTheSchemaNoLongerDeclaresDropsByName(t *testing.T) {
+	c := qt.New(t)
+
+	reversed := reverseSchemaDiffWithSchema(
+		&types.SchemaDiff{FunctionsAdded: []string{"gone"}}, &goschema.Database{}, nil)
+
+	c.Assert(reversed.FunctionsRemovedWithSignatures, qt.DeepEquals,
+		[]types.RoutineRemoval{{Name: "gone", Signature: ""}})
 }

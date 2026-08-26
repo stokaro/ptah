@@ -20,7 +20,9 @@ type categoryFixture struct {
 }
 
 var supplementalDiffCategories = map[string]string{
-	"ForeignKeysRemovedWithTables": "supplements matching ConstraintsRemovedWithTables entries with column identities for MySQL/MariaDB drop ordering; it creates no operation by itself and PostgreSQL deliberately ignores it",
+	"ForeignKeysRemovedWithTables":    "supplements matching ConstraintsRemovedWithTables entries with column identities for MySQL/MariaDB drop ordering; it creates no operation by itself and PostgreSQL deliberately ignores it",
+	"FunctionsRemovedWithSignatures":  "the same removals FunctionsRemoved names, with the argument list that makes each one addressable; the planner reads this list and falls back to the bare names, so it creates no operation of its own and a fixture would exercise the same DROP twice (stokaro/ptah#2296)",
+	"ProceduresRemovedWithSignatures": "ProceduresRemoved with signatures, supplemental for the same reason",
 }
 
 var refusedDiffCategories = map[string]string{

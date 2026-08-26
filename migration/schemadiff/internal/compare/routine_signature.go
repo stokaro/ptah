@@ -230,15 +230,15 @@ type routinePair struct {
 func pairRoutineOverloads(
 	declared []goschema.Function,
 	recorded []types.DBFunction,
-) (pairs []routinePair, unmatchedDeclared, unmatchedRecorded int) {
+) (pairs []routinePair, unmatchedDeclared int, removed []types.DBFunction) {
 	if len(declared) == 0 {
-		return nil, 0, len(recorded)
+		return nil, 0, recorded
 	}
 	if len(recorded) == 0 {
-		return nil, len(declared), 0
+		return nil, len(declared), nil
 	}
 	if len(declared) == 1 && len(recorded) == 1 {
-		return []routinePair{{declared: declared[0], recorded: recorded[0]}}, 0, 0
+		return []routinePair{{declared: declared[0], recorded: recorded[0]}}, 0, nil
 	}
 
 	used := make([]bool, len(recorded))
@@ -252,12 +252,18 @@ func pairRoutineOverloads(
 		used[index] = true
 		pairs = append(pairs, routinePair{declared: function, recorded: recorded[index]})
 	}
-	for _, taken := range used {
+	// The routines themselves rather than a count: a removal has to name the
+	// overload it removes, and only the recorded routine carries the signature
+	// that does. Returning how MANY were removed was enough to plan
+	// `DROP FUNCTION IF EXISTS f`, which PostgreSQL refuses with
+	// `function name "f" is not unique` whenever there is more than one
+	// (stokaro/ptah#2296).
+	for index, taken := range used {
 		if !taken {
-			unmatchedRecorded++
+			removed = append(removed, recorded[index])
 		}
 	}
-	return pairs, unmatchedDeclared, unmatchedRecorded
+	return pairs, unmatchedDeclared, removed
 }
 
 // matchRecordedRoutine finds the unused recorded routine whose signature equals
