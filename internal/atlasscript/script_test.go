@@ -79,21 +79,34 @@ script "exec" "s" {
 	c.Assert(withNone[0].Steps[0].ExpectRows, qt.IsNil)
 }
 
-// A `do` block's steps are the script's steps.
-func TestParse_DescendsIntoDo(t *testing.T) {
+// A `do` block's steps are the script's steps, in the position the block holds.
+//
+// The nesting must not reorder the program. A script that guards a purge with a
+// condition, wraps the purge in `do`, and reports afterwards has three steps in
+// one order, and flattening that into any other order runs the purge before its
+// guard. Steps outside the block on BOTH sides are what makes the assertion
+// able to fail: with only the inner steps, every flattening produces the same
+// list and the test passes for a parser that lost the position entirely.
+func TestParse_DescendsIntoDoWithoutReorderingTheProgram(t *testing.T) {
 	c := qt.New(t)
 
 	scripts := parse(c, `
 script "exec" "s" {
+  condition "guard" {
+    sql = "SELECT count(*) FROM t"
+  }
   do {
     exec "one" { sql = "DELETE FROM t" }
-    output { message = "done" }
+    output { message = "inner" }
   }
+  output { message = "after" }
 }
 `)
 
-	c.Assert(scripts[0].Steps, qt.HasLen, 2)
-	c.Assert(scripts[0].Steps[0].Name, qt.Equals, "one")
+	steps := scripts[0].Steps
+	c.Assert(steps, qt.HasLen, 4)
+	names := []string{steps[0].Name, steps[1].Name, steps[2].Message, steps[3].Message}
+	c.Assert(names, qt.DeepEquals, []string{"guard", "one", "inner", "after"})
 }
 
 // A reusable mask is resolved by name, and the order of `use` is kept.
