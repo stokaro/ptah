@@ -320,6 +320,51 @@ func FunctionsWithSemantics(
 	})
 }
 
+// canonicalizePostgresArguments maps each argument's type onto the spelling
+// format_type emits, leaving the argument's NAME alone.
+//
+// The rule is narrow on purpose: it rewrites the last word before any
+// parenthesized modifier, and nothing else. In PostgreSQL's parameter syntax an
+// argument is `type`, `name type` or `mode name type`, so that word is always
+// part of the type and never the name — a parameter called `float8` with type
+// `integer` reads as `float8 integer` and is left untouched, which a rule that
+// mapped any alias-looking token would have renamed.
+//
+//	float8                 -> double precision
+//	a float8               -> a double precision
+//	a decimal(10, 2)       -> a numeric(10,2)
+//	a double precision     -> a double precision
+//	float8 integer         -> float8 integer
+func canonicalizePostgresArguments(parameters string) string {
+	if parameters == "" {
+		return parameters
+	}
+	arguments := splitTopLevelArguments(parameters)
+	for i, argument := range arguments {
+		arguments[i] = canonicalizePostgresArgument(argument)
+	}
+	return strings.Join(arguments, ", ")
+}
+
+// canonicalizePostgresArgument canonicalizes one argument's type.
+func canonicalizePostgresArgument(argument string) string {
+	trimmed := strings.TrimSpace(argument)
+	head, modifier := trimmed, ""
+	if i := strings.IndexByte(trimmed, '('); i >= 0 {
+		head = strings.TrimSpace(trimmed[:i])
+		modifier = strings.ReplaceAll(trimmed[i:], " ", "")
+	}
+	fields := strings.Fields(head)
+	if len(fields) == 0 {
+		return trimmed
+	}
+	last := len(fields) - 1
+	if canonical, isAlias := pgTypeAliases[strings.ToLower(fields[last])]; isAlias {
+		fields[last] = canonical
+	}
+	return strings.Join(fields, " ") + modifier
+}
+
 // foldArgumentMode reduces each argument's mode to a single spelling.
 //
 // IN is removed outright: it is the default the grammar supplies when no mode
@@ -945,6 +990,18 @@ func FunctionDefinitionsWithDialect(
 	if isOracle(dialect) {
 		genFunction.Parameters = oracleroutine.FoldDefaultArgumentMode(genFunction.Parameters)
 		dbFunction.Parameters = oracleroutine.FoldDefaultArgumentMode(dbFunction.Parameters)
+	}
+
+	// A PostgreSQL type has aliases, and the two sides do not use the same
+	// ones: `float8` is what a server accepts and `double precision` is what
+	// it reports back. Compared as text, such a declaration plans
+	// CREATE OR REPLACE on every run, applies it, changes nothing -- the
+	// function is already what the statement says -- and plans it again. The
+	// range subtype and the domain base type already go through this
+	// canonicalization; parameters did not (stokaro/ptah#2273).
+	if platform.IsPostgresFamily(dialect) {
+		genFunction.Parameters = canonicalizePostgresArguments(genFunction.Parameters)
+		dbFunction.Parameters = canonicalizePostgresArguments(dbFunction.Parameters)
 	}
 
 	// Compare parameters
