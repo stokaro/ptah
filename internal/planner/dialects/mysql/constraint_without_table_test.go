@@ -8,7 +8,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/internal/planner/dialects/mysql"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestPlanner_TableLevelConstraintWithoutAnExplicitTable is issue #2008 on the
@@ -45,7 +45,7 @@ func TestPlanner_TableLevelConstraintWithoutAnExplicitTable(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := &types.SchemaDiff{ConstraintsAdded: []string{test.constraint.Name}}
+			diff := &difftypes.SchemaDiff{ConstraintsAdded: []string{test.constraint.Name}}
 			generated := &goschema.Database{
 				Tables:      []goschema.Table{{StructName: "Booking", Name: "bookings"}},
 				Constraints: []goschema.Constraint{test.constraint},
@@ -66,7 +66,7 @@ func TestPlanner_TableLevelConstraintWithoutAnExplicitTable(t *testing.T) {
 // something else so the two answers cannot be confused.
 func TestPlanner_TableLevelConstraintNamesItsOwnTable(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{ConstraintsAdded: []string{"positive_price"}}
+	diff := &difftypes.SchemaDiff{ConstraintsAdded: []string{"positive_price"}}
 	generated := &goschema.Database{
 		Tables: []goschema.Table{{StructName: "Booking", Name: "bookings"}},
 		Constraints: []goschema.Constraint{{

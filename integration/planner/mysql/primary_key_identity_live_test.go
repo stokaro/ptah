@@ -19,7 +19,7 @@ import (
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // liveMySQLAdminURLForPrimaryKeyIdentity returns the server-administration URL.
@@ -168,16 +168,16 @@ func TestPrimaryKeyIsPlannedOnceLiveMySQL(t *testing.T) {
 					{StructName: "Order", Name: "note", Type: "TEXT"},
 				},
 			}
-			diff := &types.SchemaDiff{
-				TablesModified: []types.TableDiff{{
+			diff := &difftypes.SchemaDiff{
+				TablesModified: []difftypes.TableDiff{{
 					TableName: withDatabase(test.diffTable, database),
-					ColumnsModified: []types.ColumnDiff{{
+					ColumnsModified: []difftypes.ColumnDiff{{
 						ColumnName: "id",
 						Changes:    map[string]string{"primary_key": "false -> true"},
 					}},
 				}},
 				ConstraintsAdded: []string{"pk_orders"},
-				ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
 					Name:      "pk_orders",
 					TableName: withDatabase(test.constraintTable, database),
 					Type:      "PRIMARY KEY",

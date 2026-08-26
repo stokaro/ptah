@@ -8,8 +8,8 @@ import (
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 func TestViews_DetectsBodyChange(t *testing.T) {

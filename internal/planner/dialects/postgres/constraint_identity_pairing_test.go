@@ -10,7 +10,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestPlanner_AModifiedConstraintIsPairedByIdentityNotSpelling measures, at the
@@ -32,16 +32,16 @@ import (
 func TestPlanner_AModifiedConstraintIsPairedByIdentityNotSpelling(t *testing.T) {
 	c := qt.New(t)
 	semantics := identifier.ForDialect("postgres")
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		ConstraintsAdded:   []string{"uq_widget_scope"},
 		ConstraintsRemoved: []string{"uq_widget_scope"},
-		ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
 			Name: "uq_widget_scope", TableName: "widget",
 			Type: "UNIQUE", Columns: []string{"tenant"},
 		}},
 		// The catalog's spelling of the same table, which is the whole point of
 		// the row: only a folded host makes these two one object.
-		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{{
+		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{{
 			Name: "uq_widget_scope", TableName: "public.widget", Type: "UNIQUE",
 		}},
 		IdentifierSemantics: &semantics,
@@ -73,7 +73,7 @@ func widgetDeclaringScopeConstraint() *goschema.Database {
 	}
 }
 
-func renderedPlan(c *qt.C, diff *types.SchemaDiff, generated *goschema.Database) string {
+func renderedPlan(c *qt.C, diff *difftypes.SchemaDiff, generated *goschema.Database) string {
 	c.Helper()
 	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
 	c.Assert(err, qt.IsNil)

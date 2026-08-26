@@ -39,7 +39,7 @@ import (
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/indexscope"
 	"go.5x5.cz/ptah/internal/planner/objectlookup"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // Planner implements the migration planner interface for ClickHouse.
@@ -88,7 +88,7 @@ func (p *Planner) capabilities() capability.Capabilities {
 // each to a named `-- CLICKHOUSE: ... is not supported` comment, in the order
 // `schema render` produces for the same model. Plain-view, role and grant nodes
 // are executable and retain what they declare.
-func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated *goschema.Database) ([]ast.Node, error) {
+func (p *Planner) GenerateMigrationASTChecked(diff *difftypes.SchemaDiff, generated *goschema.Database) ([]ast.Node, error) {
 	var result []ast.Node
 
 	if generated == nil {
@@ -136,7 +136,7 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 // comparator's spelling while `table.QualifiedName()` carries the declaration's,
 // and a table whose two sides disagree got no CREATE TABLE at all -- no
 // statement, no comment, and a plan that exits 0 having created nothing.
-func (p *Planner) addNewTables(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) addNewTables(result []ast.Node, diff *difftypes.SchemaDiff, generated *goschema.Database) []ast.Node {
 	if len(diff.TablesAdded) == 0 {
 		return result
 	}
@@ -156,7 +156,7 @@ func (p *Planner) addNewTables(result []ast.Node, diff *types.SchemaDiff, genera
 	return result
 }
 
-func (p *Planner) modifyExistingTables(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.SchemaDiff, generated *goschema.Database) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(platform.ClickHouse)
 	for _, td := range diff.TablesModified {
 		structName := lookupStructName(generated, td.TableName, semantics)
@@ -208,7 +208,7 @@ func (p *Planner) modifyExistingTables(result []ast.Node, diff *types.SchemaDiff
 
 func (p *Planner) addNewIndexes(
 	result []ast.Node,
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	indexes *indexscope.Resolver,
 ) ([]ast.Node, error) {
 	if len(diff.IndexesAdded) == 0 {
@@ -243,7 +243,7 @@ func (p *Planner) addNewIndexes(
 	return result, nil
 }
 
-func (p *Planner) removeIndexes(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) removeIndexes(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	replacements := indexscope.NewConflictSetWithSemantics(
 		diff.EffectiveIdentifierSemantics(platform.ClickHouse),
 		diff.IndexAdditions(),
@@ -257,7 +257,7 @@ func (p *Planner) removeIndexes(result []ast.Node, diff *types.SchemaDiff) []ast
 	return result
 }
 
-func (p *Planner) removeTables(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) removeTables(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, name := range diff.TablesRemoved {
 		result = append(result, ast.NewDropTable(name).SetIfExists().SetComment("WARNING: dropping table will delete all data"))
 	}

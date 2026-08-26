@@ -13,7 +13,7 @@ import (
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // ConcurrentIndexMode selects which index changes one direction plans with
@@ -45,10 +45,10 @@ type BidirectionalPlanPolicy struct {
 // SchemaDirectionPlan is one half of a bidirectional schema migration plan.
 // Its slices and diff are planning inputs and must be treated as read-only.
 type SchemaDirectionPlan struct {
-	Diff                    *types.SchemaDiff
+	Diff                    *difftypes.SchemaDiff
 	Nodes                   []ast.Node
-	ConcurrentIndexRefs     []types.IndexRef
-	ConcurrentIndexDropRefs []types.IndexRef
+	ConcurrentIndexRefs     []difftypes.IndexRef
+	ConcurrentIndexDropRefs []difftypes.IndexRef
 	RequiresNoTransaction   bool
 }
 
@@ -71,7 +71,7 @@ type BidirectionalSchemaPlan struct {
 // BidirectionalSchemaPlanOptions contains the complete state needed to plan a
 // schema change and the rollback that restores its pre-change state.
 type BidirectionalSchemaPlanOptions struct {
-	Diff          *types.SchemaDiff
+	Diff          *difftypes.SchemaDiff
 	DesiredSchema *goschema.Database
 	CurrentSchema *dbschematypes.DBSchema
 	Dialect       string
@@ -150,7 +150,7 @@ func planBidirectionalSchemaDiffWithRefs(
 	dialect string,
 	caps capability.Capabilities,
 	forwardCreateRefs,
-	forwardDropRefs []types.IndexRef,
+	forwardDropRefs []difftypes.IndexRef,
 ) (*BidirectionalSchemaPlan, error) {
 	if err := validateSelectedForwardConcurrentCapabilities(dialect, caps, forwardCreateRefs, forwardDropRefs); err != nil {
 		return nil, err
@@ -192,7 +192,7 @@ func planBidirectionalSchemaDiffWithRefs(
 	// different MySQL/MariaDB tables. The reverse modifier is capability-selected
 	// independently: lack of a counterpart concurrent operation does not make
 	// the ordinary reverse statement invalid.
-	var reverseCreate, reverseDrop []types.IndexRef
+	var reverseCreate, reverseDrop []difftypes.IndexRef
 	if caps.Has(capability.CreateIndexConcurrently) {
 		reverseCreate = selectIndexRefOccurrences(
 			reverseDiff.IndexAdditions(),
@@ -244,8 +244,8 @@ func planBidirectionalSchemaDiffWithRefs(
 		Forward: SchemaDirectionPlan{
 			Diff:                    opts.Diff,
 			Nodes:                   forwardNodes,
-			ConcurrentIndexRefs:     append([]types.IndexRef(nil), forwardCreateRefs...),
-			ConcurrentIndexDropRefs: append([]types.IndexRef(nil), forwardDropRefs...),
+			ConcurrentIndexRefs:     append([]difftypes.IndexRef(nil), forwardCreateRefs...),
+			ConcurrentIndexDropRefs: append([]difftypes.IndexRef(nil), forwardDropRefs...),
 			RequiresNoTransaction:   planner.RequiresNoTransaction(dialect, forwardNodes),
 		},
 		Reverse: SchemaDirectionPlan{
@@ -259,12 +259,12 @@ func planBidirectionalSchemaDiffWithRefs(
 }
 
 func concurrentIndexCreateRefs(
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	desired *goschema.Database,
 	current *dbschematypes.DBSchema,
 	info dbschematypes.DBInfo,
 	mode ConcurrentIndexMode,
-) ([]types.IndexRef, error) {
+) ([]difftypes.IndexRef, error) {
 	switch mode {
 	case ConcurrentIndexAutomatic:
 		return concurrentindex.MergeRefs(
@@ -293,11 +293,11 @@ func concurrentIndexCreateRefs(
 }
 
 func concurrentIndexRemovalRefs(
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	current *dbschematypes.DBSchema,
 	info dbschematypes.DBInfo,
 	mode ConcurrentIndexMode,
-) ([]types.IndexRef, error) {
+) ([]difftypes.IndexRef, error) {
 	switch mode {
 	case ConcurrentIndexAutomatic, ConcurrentIndexDisabled:
 		return nil, nil
@@ -343,7 +343,7 @@ func validateSelectedForwardConcurrentCapabilities(
 	dialect string,
 	caps capability.Capabilities,
 	forwardCreateRefs,
-	forwardDropRefs []types.IndexRef,
+	forwardDropRefs []difftypes.IndexRef,
 ) error {
 	if len(forwardCreateRefs) > 0 {
 		if err := requireConcurrentIndexCapability(
@@ -369,10 +369,10 @@ func validateSelectedForwardConcurrentCapabilities(
 }
 
 func selectIndexRefOccurrences(
-	refs []types.IndexRef,
-	selected map[types.IndexRef]struct{},
-) []types.IndexRef {
-	out := make([]types.IndexRef, 0, len(selected))
+	refs []difftypes.IndexRef,
+	selected map[difftypes.IndexRef]struct{},
+) []difftypes.IndexRef {
+	out := make([]difftypes.IndexRef, 0, len(selected))
 	for _, ref := range refs {
 		if _, ok := selected[ref]; ok {
 			out = append(out, ref)

@@ -16,7 +16,7 @@ import (
 	"go.5x5.cz/ptah/internal/sqlitekey"
 	"go.5x5.cz/ptah/internal/typechange"
 	"go.5x5.cz/ptah/migration/internal/generatedschema"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TableColumns performs detailed column-level comparison within a specific table.

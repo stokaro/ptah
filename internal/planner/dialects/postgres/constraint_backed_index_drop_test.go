@@ -8,17 +8,17 @@ import (
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // uniqueKeyRebuildDiff is a database `CONSTRAINT uq_users_email UNIQUE (email)`
 // against a desired state that names the same object as a plain index: one
 // object, replaced, which the comparator states as an index addition plus the
 // removal of the index it replaces.
-func uniqueKeyRebuildDiff(constraintBacked []types.IndexRef) *types.SchemaDiff {
-	return &types.SchemaDiff{
-		IndexesAdded:                  []types.IndexRef{{Name: "uq_users_email", TableName: "users"}},
-		IndexesRemoved:                []types.IndexRef{{Name: "uq_users_email", TableName: "users"}},
+func uniqueKeyRebuildDiff(constraintBacked []difftypes.IndexRef) *difftypes.SchemaDiff {
+	return &difftypes.SchemaDiff{
+		IndexesAdded:                  []difftypes.IndexRef{{Name: "uq_users_email", TableName: "users"}},
+		IndexesRemoved:                []difftypes.IndexRef{{Name: "uq_users_email", TableName: "users"}},
 		ConstraintBackedIndexRemovals: constraintBacked,
 	}
 }
@@ -43,7 +43,7 @@ func TestPlanner_ConstraintBackedIndexRebuildDropsTheConstraint(t *testing.T) {
 	c := qt.New(t)
 
 	nodes, err := postgres.New().GenerateMigrationASTChecked(
-		uniqueKeyRebuildDiff([]types.IndexRef{{Name: "uq_users_email", TableName: "users"}}),
+		uniqueKeyRebuildDiff([]difftypes.IndexRef{{Name: "uq_users_email", TableName: "users"}}),
 		uniqueKeyRebuildSchema(),
 	)
 
@@ -89,9 +89,9 @@ func TestPlanner_UnmarkedIndexRebuildStillDropsTheIndex(t *testing.T) {
 // either way, so the statement that removes it is the same one.
 func TestPlanner_ConstraintBackedStandaloneRemovalDropsTheConstraint(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{
-		IndexesRemoved:                []types.IndexRef{{Name: "uq_users_email", TableName: "users"}},
-		ConstraintBackedIndexRemovals: []types.IndexRef{{Name: "uq_users_email", TableName: "users"}},
+	diff := &difftypes.SchemaDiff{
+		IndexesRemoved:                []difftypes.IndexRef{{Name: "uq_users_email", TableName: "users"}},
+		ConstraintBackedIndexRemovals: []difftypes.IndexRef{{Name: "uq_users_email", TableName: "users"}},
 	}
 
 	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, &goschema.Database{})

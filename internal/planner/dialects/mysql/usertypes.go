@@ -5,7 +5,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // planDomains emits the CREATE DOMAIN statements a diff adds, where the target
@@ -24,7 +24,7 @@ import (
 // constraint, not changing a base type or a default -- so planning a rename of
 // the whole shape would emit a statement that changes something else. It stays
 // unplanned until there is a measurement to write it from.
-func (p *Planner) planDomains(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) planDomains(result []ast.Node, diff *difftypes.SchemaDiff, generated *goschema.Database) []ast.Node {
 	if !p.capabilities().Has(capability.DomainTypes) {
 		return result
 	}
@@ -58,7 +58,7 @@ func (p *Planner) planDomains(result []ast.Node, diff *types.SchemaDiff, generat
 // when the table is created.
 func (p *Planner) planCompositeTypes(
 	result []ast.Node,
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	generated *goschema.Database,
 ) []ast.Node {
 	if !p.capabilities().Has(capability.CompositeTypes) {
@@ -90,7 +90,7 @@ func (p *Planner) planCompositeTypes(
 // reason: on 23.26.2.0.0, dropping a type a column still uses answers
 // ORA-02303, so a drop emitted with the unsupported-object reports at step 0
 // would fail the plan halfway through.
-func (p *Planner) removeCompositeTypes(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) removeCompositeTypes(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	if !p.capabilities().Has(capability.CompositeTypes) {
 		return result
 	}
@@ -111,7 +111,7 @@ func (p *Planner) removeCompositeTypes(result []ast.Node, diff *types.SchemaDiff
 // and the first plan this issue produced hit exactly that: the drop was
 // emitted with the unsupported-object reports at step 0, which was harmless
 // while it rendered a comment and is not once it renders a statement.
-func (p *Planner) removeDomains(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) removeDomains(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	if !p.capabilities().Has(capability.DomainTypes) {
 		return result
 	}
@@ -138,7 +138,7 @@ func (p *Planner) removeDomains(result []ast.Node, diff *types.SchemaDiff) []ast
 // #1628 closed with grants and row-level security fixed and these three still
 // dropped in silence (stokaro/ptah#1708). A reader that learns them later gets
 // a sentence rather than nothing, without anyone remembering to come back here.
-func (p *Planner) reportRemovedUserTypes(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) reportRemovedUserTypes(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	// A target that HOSTS domains drops them late instead, after the tables
 	// whose columns are typed by them -- see removeDomains. Naming them here
 	// as well would emit the statement twice.

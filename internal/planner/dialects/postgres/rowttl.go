@@ -6,7 +6,7 @@ import (
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/internal/crdbttl"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // applyRowTTLChanges appends the statements each table's row-level TTL
@@ -29,7 +29,7 @@ import (
 // the last transition is one statement and not one per parameter. Measured, it
 // also succeeds against a table that never had a TTL, so the removal is
 // idempotent -- worth knowing because a plan may be replayed.
-func (p *Planner) applyRowTTLChanges(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) applyRowTTLChanges(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, tableDiff := range diff.TablesModified {
 		change := tableDiff.RowTTLChange
 		if change == nil {
@@ -55,7 +55,7 @@ func (p *Planner) applyRowTTLChanges(result []ast.Node, diff *types.SchemaDiff) 
 // but a fixed one is what makes the statement text a function of the two states
 // alone -- the migration layer fingerprints the plan, and a plan whose text
 // depended on map iteration would need re-approving on every run.
-func rowTTLOperations(change *types.RowTTLChange) []ast.AlterOperation {
+func rowTTLOperations(change *difftypes.RowTTLChange) []ast.AlterOperation {
 	if change.Desired.IsZero() {
 		// The whole policy goes, whatever it consisted of.
 		return []ast.AlterOperation{

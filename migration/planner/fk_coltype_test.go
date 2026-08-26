@@ -10,17 +10,17 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // fkColumnTypeChangeInputs is the shared scenario for issue #694: posts.user_id
 // widens from INTEGER to BIGINT while carrying a foreign key to users(id).
-func fkColumnTypeChangeInputs() (*types.SchemaDiff, *goschema.Database) {
-	diff := &types.SchemaDiff{
-		TablesModified: []types.TableDiff{
+func fkColumnTypeChangeInputs() (*difftypes.SchemaDiff, *goschema.Database) {
+	diff := &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{
 			{
 				TableName: "posts",
-				ColumnsModified: []types.ColumnDiff{
+				ColumnsModified: []difftypes.ColumnDiff{
 					{ColumnName: "user_id", Changes: map[string]string{"type": "INTEGER -> BIGINT"}},
 				},
 			},

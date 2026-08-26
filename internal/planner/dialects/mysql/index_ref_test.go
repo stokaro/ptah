@@ -12,7 +12,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/internal/planner/dialects/mysql"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 type mysqlFamilyPlannerCase struct {
@@ -28,8 +28,8 @@ func mysqlFamilyPlannerCases() []mysqlFamilyPlannerCase {
 }
 
 func TestPlanner_IndexRefs_MySQLFamilyRoutesDuplicateAdditions(t *testing.T) {
-	diff := &types.SchemaDiff{
-		IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "idx_shared", TableName: "orders"},
 			{Name: "idx_shared", TableName: "users"},
 		},
@@ -61,8 +61,8 @@ func TestPlanner_IndexRefs_MySQLFamilyRoutesDuplicateAdditions(t *testing.T) {
 }
 
 func TestPlanner_IndexRefs_MySQLFamilyRoutesDuplicateRemovals(t *testing.T) {
-	diff := &types.SchemaDiff{
-		IndexesRemoved: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_shared", TableName: "orders"},
 			{Name: "idx_shared", TableName: "users"},
 		},
@@ -88,9 +88,9 @@ func TestPlanner_IndexRefs_MySQLFamilyRoutesDuplicateRemovals(t *testing.T) {
 }
 
 func TestPlanner_IndexRefs_MySQLFamilyReplacesOnlyExactRef(t *testing.T) {
-	diff := &types.SchemaDiff{
-		IndexesAdded: []types.IndexRef{{Name: "idx_shared", TableName: "users"}},
-		IndexesRemoved: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: []difftypes.IndexRef{{Name: "idx_shared", TableName: "users"}},
+		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_shared", TableName: "users"},
 			{Name: "idx_shared", TableName: "orders"},
 		},
@@ -120,11 +120,11 @@ func TestPlanner_IndexRefs_MySQLFamilyReplacesOnlyExactRef(t *testing.T) {
 }
 
 func TestPlanner_IndexRefs_MySQLFamilyPreservesReplacementAddition(t *testing.T) {
-	diff := &types.SchemaDiff{
-		IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "idx_email", TableName: "users"},
 		},
-		IndexesRemoved: []types.IndexRef{
+		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_email", TableName: "users"},
 		},
 	}
@@ -154,11 +154,11 @@ func TestPlanner_IndexRefs_MySQLFamilyPreservesReplacementAddition(t *testing.T)
 }
 
 func TestPlanner_IndexRefs_MySQLFamilyCaseInsensitiveReplacementDropsFirst(t *testing.T) {
-	diff := &types.SchemaDiff{
-		IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "IDX_Email", TableName: "users"},
 		},
-		IndexesRemoved: []types.IndexRef{
+		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_email", TableName: "users"},
 		},
 	}
@@ -196,9 +196,9 @@ func TestPlanner_IndexRefs_SQLServerSharedPlannerRoutesDuplicateAdditions(t *tes
 		[]string{"records"},
 		[]string{"idx_shared"},
 	)
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		IdentifierSemantics: &semantics,
-		IndexesAdded: []types.IndexRef{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "idx_shared", TableName: "audit.records"},
 			{Name: "idx_shared", TableName: "dbo.records"},
 		},
@@ -225,8 +225,8 @@ func TestPlanner_IndexRefs_SQLServerSharedPlannerRoutesDuplicateAdditions(t *tes
 
 func TestPlanner_IndexRefs_SQLServerPreservesIndexPartDirection(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{
-		IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "idx_users_lookup", TableName: "dbo.users"},
 		},
 	}
@@ -257,11 +257,11 @@ func TestPlanner_IndexRefs_SQLServerPreservesIndexPartDirection(t *testing.T) {
 
 func TestPlanner_IndexRefs_SQLServerPreservesFilteredIndexPredicate(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{
-		IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "idx_active_users", TableName: "dbo.users"},
 		},
-		IndexesRemoved: []types.IndexRef{
+		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_active_users", TableName: "dbo.users"},
 		},
 	}
@@ -289,11 +289,11 @@ func TestPlanner_IndexRefs_SQLServerPreservesFilteredIndexPredicate(t *testing.T
 
 func TestPlanner_IndexRefs_SQLServerUnknownCollationOrdersPotentialReplacementSafely(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{
-		IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "IDX_Email", TableName: "dbo.users"},
 		},
-		IndexesRemoved: []types.IndexRef{
+		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_email", TableName: "dbo.users"},
 		},
 	}
@@ -324,12 +324,12 @@ func TestPlanner_IndexRefs_SQLServerCaseInsensitiveReplacementDropsFirst(t *test
 		[]string{"users"},
 		[]string{"idx_email", "IDX_Email"},
 	)
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		IdentifierSemantics: &semantics,
-		IndexesAdded: []types.IndexRef{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "IDX_Email", TableName: "dbo.users"},
 		},
-		IndexesRemoved: []types.IndexRef{
+		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_email", TableName: "dbo.users"},
 		},
 	}
@@ -359,12 +359,12 @@ func TestPlanner_IndexRefs_SQLServerCaseSensitiveVariantsRemainIndependent(t *te
 		[]string{"idx_email"},
 		[]string{"IDX_Email"},
 	)
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		IdentifierSemantics: &semantics,
-		IndexesAdded: []types.IndexRef{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "IDX_Email", TableName: "dbo.users"},
 		},
-		IndexesRemoved: []types.IndexRef{
+		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_email", TableName: "dbo.users"},
 		},
 	}

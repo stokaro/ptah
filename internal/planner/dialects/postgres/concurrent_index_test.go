@@ -10,11 +10,11 @@ import (
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
-func indexAdditionFixture() (*types.SchemaDiff, *goschema.Database) {
-	diff := &types.SchemaDiff{IndexesAdded: []types.IndexRef{
+func indexAdditionFixture() (*difftypes.SchemaDiff, *goschema.Database) {
+	diff := &difftypes.SchemaDiff{IndexesAdded: []difftypes.IndexRef{
 		{Name: "idx_users_email", TableName: "users"},
 	}}
 	generated := &goschema.Database{
@@ -81,7 +81,7 @@ func TestPlanner_ConcurrentIndexes(t *testing.T) {
 	t.Run("unique concurrent index", func(t *testing.T) {
 		c := qt.New(t)
 
-		uniqueDiff := &types.SchemaDiff{IndexesAdded: []types.IndexRef{
+		uniqueDiff := &difftypes.SchemaDiff{IndexesAdded: []difftypes.IndexRef{
 			{Name: "uq_users_email", TableName: "users"},
 		}}
 		uniqueGenerated := &goschema.Database{
@@ -117,8 +117,8 @@ func TestPlanner_ConcurrentIndexes(t *testing.T) {
 }
 
 func TestPlanner_ConcurrentIndexRefs(t *testing.T) {
-	diff := &types.SchemaDiff{
-		IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "idx_users_email", TableName: "users"},
 			{Name: "idx_users_name", TableName: "users"},
 		},
@@ -135,8 +135,8 @@ func TestPlanner_ConcurrentIndexRefs(t *testing.T) {
 		c := qt.New(t)
 
 		nodes, err := postgres.New().WithConcurrentIndexRefs(
-			types.IndexRef{},
-			types.IndexRef{Name: "idx_users_email", TableName: "users"},
+			difftypes.IndexRef{},
+			difftypes.IndexRef{Name: "idx_users_email", TableName: "users"},
 		).GenerateMigrationASTChecked(diff, generated)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
@@ -152,7 +152,7 @@ func TestPlanner_ConcurrentIndexRefs(t *testing.T) {
 
 		caps := capability.Postgres16().With(capability.CreateIndexConcurrently, false)
 		nodes, err := postgres.NewWithCapabilities(caps).WithConcurrentIndexRefs(
-			types.IndexRef{Name: "idx_users_email", TableName: "users"},
+			difftypes.IndexRef{Name: "idx_users_email", TableName: "users"},
 		).GenerateMigrationASTChecked(diff, generated)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
@@ -166,7 +166,7 @@ func TestPlanner_ConcurrentIndexRefs(t *testing.T) {
 		c := qt.New(t)
 
 		base := postgres.New()
-		_ = base.WithConcurrentIndexRefs(types.IndexRef{Name: "idx_users_email", TableName: "users"})
+		_ = base.WithConcurrentIndexRefs(difftypes.IndexRef{Name: "idx_users_email", TableName: "users"})
 		nodes, err := base.GenerateMigrationASTChecked(diff, generated)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
@@ -178,8 +178,8 @@ func TestPlanner_ConcurrentIndexRefs(t *testing.T) {
 
 	t.Run("preserves raw identifier spelling", func(t *testing.T) {
 		c := qt.New(t)
-		ref := types.IndexRef{Name: " idx users email ", TableName: "users"}
-		rawDiff := &types.SchemaDiff{IndexesAdded: []types.IndexRef{ref}}
+		ref := difftypes.IndexRef{Name: " idx users email ", TableName: "users"}
+		rawDiff := &difftypes.SchemaDiff{IndexesAdded: []difftypes.IndexRef{ref}}
 		rawGenerated := &goschema.Database{
 			Indexes: []goschema.Index{
 				{Name: ref.Name, TableName: ref.TableName, Fields: []string{"email"}},

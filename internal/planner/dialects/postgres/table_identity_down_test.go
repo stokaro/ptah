@@ -12,7 +12,7 @@ import (
 	"go.5x5.cz/ptah/migration/generator"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // downColumnTarget returns the desired schema for a `users` table that has
@@ -206,7 +206,7 @@ func TestPlannerColumnLookupDoesNotGuessBetweenSchemas(t *testing.T) {
 			Fields: []goschema.Field{{StructName: "Other", Name: "id", Type: "INTEGER", Primary: true}},
 		}
 		statements, err := planner.GenerateSchemaDiffSQLStatements(
-			&types.SchemaDiff{TablesModified: []types.TableDiff{{
+			&difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:    "reporting.users",
 				ColumnsAdded: []string{"note"},
 			}}},

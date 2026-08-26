@@ -10,7 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestSplitEnumValueAdditionDiff_MovesOnlyTheAdditions is the control for the
@@ -23,9 +23,9 @@ import (
 func TestSplitEnumValueAdditionDiff_MovesOnlyTheAdditions(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		TablesAdded: []string{"users"},
-		EnumsModified: []types.EnumDiff{{
+		EnumsModified: []difftypes.EnumDiff{{
 			EnumName:      "status",
 			ValuesAdded:   []string{"archived"},
 			ValuesRemoved: []string{"draft"},

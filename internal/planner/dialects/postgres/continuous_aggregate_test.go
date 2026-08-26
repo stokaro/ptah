@@ -8,7 +8,7 @@ import (
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestPlanner_ReplacesAContinuousAggregateInThatOrder pins the shape a changed
@@ -26,8 +26,8 @@ func TestPlanner_ReplacesAContinuousAggregateInThatOrder(t *testing.T) {
 		{Name: "hourly", Schema: "public", Body: "SELECT 2"},
 	}}
 
-	nodes, err := postgres.New().GenerateMigrationASTChecked(&types.SchemaDiff{
-		ContinuousAggregatesModified: []types.ContinuousAggregateDiff{{
+	nodes, err := postgres.New().GenerateMigrationASTChecked(&difftypes.SchemaDiff{
+		ContinuousAggregatesModified: []difftypes.ContinuousAggregateDiff{{
 			Name: "public.hourly", OldBody: "SELECT 1", NewBody: "SELECT 2",
 		}},
 	}, declared)
@@ -42,7 +42,7 @@ func TestPlanner_DropsAnUndeclaredContinuousAggregate(t *testing.T) {
 	c := qt.New(t)
 
 	nodes, err := postgres.New().GenerateMigrationASTChecked(
-		&types.SchemaDiff{ContinuousAggregatesRemoved: []string{"public.hourly"}},
+		&difftypes.SchemaDiff{ContinuousAggregatesRemoved: []string{"public.hourly"}},
 		&goschema.Database{})
 
 	c.Assert(err, qt.IsNil)
@@ -65,7 +65,7 @@ func TestPlanner_CreatesAnAggregateAfterTheHypertableItReads(t *testing.T) {
 		},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationASTChecked(&types.SchemaDiff{
+	nodes, err := postgres.New().GenerateMigrationASTChecked(&difftypes.SchemaDiff{
 		HypertablesAdded:          []string{"readings"},
 		ContinuousAggregatesAdded: []string{"hourly"},
 	}, declared)

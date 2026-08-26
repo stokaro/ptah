@@ -22,8 +22,8 @@ import (
 	"go.5x5.cz/ptah/internal/systemschema"
 	"go.5x5.cz/ptah/internal/timescale"
 	"go.5x5.cz/ptah/migration/internal/identifiervalidation"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 // Compare performs schema comparison between generated and database schemas using default options.

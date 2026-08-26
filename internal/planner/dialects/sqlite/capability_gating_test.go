@@ -9,22 +9,22 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
 	sqliteplanner "go.5x5.cz/ptah/internal/planner/dialects/sqlite"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // viewFixture916 and triggerFixture916 are the two diffs the table below plans.
 // Each names exactly one object kind so a refusal can only come from that
 // kind's own gate.
-func viewFixture916() (*types.SchemaDiff, *goschema.Database) {
-	return &types.SchemaDiff{ViewsAdded: []string{"active_notes"}},
+func viewFixture916() (*difftypes.SchemaDiff, *goschema.Database) {
+	return &difftypes.SchemaDiff{ViewsAdded: []string{"active_notes"}},
 		&goschema.Database{Views: []goschema.View{{
 			Name: "active_notes",
 			Body: "SELECT id FROM notes WHERE body IS NOT NULL",
 		}}}
 }
 
-func triggerFixture916() (*types.SchemaDiff, *goschema.Database) {
-	return &types.SchemaDiff{TriggersAdded: []types.TriggerRef{{TriggerName: "touch", TableName: "notes"}}},
+func triggerFixture916() (*difftypes.SchemaDiff, *goschema.Database) {
+	return &difftypes.SchemaDiff{TriggersAdded: []difftypes.TriggerRef{{TriggerName: "touch", TableName: "notes"}}},
 		&goschema.Database{Triggers: []goschema.Trigger{{
 			StructName: "Note",
 			Name:       "touch",
@@ -48,7 +48,7 @@ func TestSQLitePlanner_RefusesObjectKindsTheTargetDeclines(t *testing.T) {
 	tests := []struct {
 		name      string
 		caps      capability.Capabilities
-		diff      *types.SchemaDiff
+		diff      *difftypes.SchemaDiff
 		generated *goschema.Database
 		wantError string
 	}{

@@ -17,7 +17,7 @@ import (
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestPostgresLiveCompositeAttributeConverges is the composite half of

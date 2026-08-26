@@ -11,7 +11,7 @@ import (
 	"go.5x5.cz/ptah/core/renderer"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/generator"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // A desired state may ask for PostgreSQL's non-locking index build in its own
@@ -90,8 +90,8 @@ func TestPlanBidirectionalSchemaDiff_DeclaredConcurrentIndex(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := &types.SchemaDiff{}
-			diff.SetIndexAdditions([]types.IndexRef{{Name: "idx_users_reference", TableName: "users"}})
+			diff := &difftypes.SchemaDiff{}
+			diff.SetIndexAdditions([]difftypes.IndexRef{{Name: "idx_users_reference", TableName: "users"}})
 
 			plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
 				Diff:          diff,
@@ -128,8 +128,8 @@ func TestPlanBidirectionalSchemaDiff_DeclaredConcurrentIndex(t *testing.T) {
 // set claims, so a statement carrying CONCURRENTLY is one MySQL rejects.
 func TestPlanBidirectionalSchemaDiff_DeclaredConcurrentIndexIsPostgresOnly(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{}
-	diff.SetIndexAdditions([]types.IndexRef{{Name: "idx_users_reference", TableName: "users"}})
+	diff := &difftypes.SchemaDiff{}
+	diff.SetIndexAdditions([]difftypes.IndexRef{{Name: "idx_users_reference", TableName: "users"}})
 
 	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
 		Diff:          diff,

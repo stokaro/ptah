@@ -9,7 +9,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestPlanner_FieldLevelForeignKeyActions verifies that on_delete / on_update
@@ -23,7 +23,7 @@ import (
 func TestPlanner_FieldLevelForeignKeyActions(t *testing.T) {
 	tests := []struct {
 		name      string
-		diff      *types.SchemaDiff
+		diff      *difftypes.SchemaDiff
 		generated *goschema.Database
 		mustEmit  string
 		// constraintMarker filters the negative check so it only inspects the
@@ -123,8 +123,8 @@ func TestPlanner_FieldLevelForeignKeyActions(t *testing.T) {
 		},
 		{
 			name: "ALTER TABLE ADD COLUMN with FK carries ON DELETE RESTRICT",
-			diff: &types.SchemaDiff{
-				TablesModified: []types.TableDiff{
+			diff: &difftypes.SchemaDiff{
+				TablesModified: []difftypes.TableDiff{
 					{TableName: "posts", ColumnsAdded: []string{"owner_id"}},
 				},
 			},
@@ -165,7 +165,7 @@ func TestPlanner_FieldLevelForeignKeyActions(t *testing.T) {
 				for _, table := range tt.generated.Tables {
 					tablesAdded = append(tablesAdded, table.Name)
 				}
-				diff = &types.SchemaDiff{TablesAdded: tablesAdded}
+				diff = &difftypes.SchemaDiff{TablesAdded: tablesAdded}
 			}
 
 			nodes, err := postgres.New().GenerateMigrationASTChecked(diff, tt.generated)

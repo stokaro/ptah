@@ -22,7 +22,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/internal/indexscope"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // ChangeKind identifies a destructive schema change kind that a diff policy can
@@ -135,22 +135,22 @@ func (k ChangeKind) ddl() string {
 // that a kept table must retain, so the plan stays internally consistent. diff
 // is not mutated. A nil diff or empty skip set returns the input unchanged with
 // no skipped changes.
-func Apply(diff *types.SchemaDiff, skip SkipSet) (*types.SchemaDiff, []SkippedChange) {
+func Apply(diff *difftypes.SchemaDiff, skip SkipSet) (*difftypes.SchemaDiff, []SkippedChange) {
 	return apply(diff, skip, "")
 }
 
 // ApplyForDialect is Apply with index-replacement detection matched to the
 // target dialect's index-name namespace. This preserves required drop/create
 // pairs without treating table-scoped same-name indexes as replacements.
-func ApplyForDialect(diff *types.SchemaDiff, skip SkipSet, dialect string) (*types.SchemaDiff, []SkippedChange) {
+func ApplyForDialect(diff *difftypes.SchemaDiff, skip SkipSet, dialect string) (*difftypes.SchemaDiff, []SkippedChange) {
 	return apply(diff, skip, dialect)
 }
 
 func apply(
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	skip SkipSet,
 	dialect string,
-) (*types.SchemaDiff, []SkippedChange) {
+) (*difftypes.SchemaDiff, []SkippedChange) {
 	if diff == nil || skip.Empty() {
 		return diff, nil
 	}
@@ -172,7 +172,7 @@ func apply(
 			filtered.EffectiveIdentifierSemantics(dialect),
 			filtered.IndexAdditions(),
 		)
-		var kept []types.IndexRef
+		var kept []difftypes.IndexRef
 		for _, ref := range filtered.IndexRemovals() {
 			// Preserve replacements (dropped then recreated under the same
 			// dialect-specific index namespace); skip only standalone removals.
@@ -202,38 +202,38 @@ func apply(
 // Only table-level grants are suppressed here; a revoke on an object owned by a
 // kept table (for example its serial sequence) is left in place, which is
 // harmless because the owned object is retained with the table.
-func dropTableDependents(diff types.SchemaDiff, removedTables []string) types.SchemaDiff {
+func dropTableDependents(diff difftypes.SchemaDiff, removedTables []string) difftypes.SchemaDiff {
 	tables := sliceSet(removedTables)
 
-	indexRemovals := slices.DeleteFunc(diff.IndexRemovals(), func(ref types.IndexRef) bool {
+	indexRemovals := slices.DeleteFunc(diff.IndexRemovals(), func(ref difftypes.IndexRef) bool {
 		return hasKey(tables, ref.TableName)
 	})
 	diff.SetIndexRemovals(indexRemovals)
 
-	removedConstraintNames := namesForRemovedTables(diff.ConstraintsRemovedWithTables, tables, func(info types.ConstraintRemovalInfo) (string, string) {
+	removedConstraintNames := namesForRemovedTables(diff.ConstraintsRemovedWithTables, tables, func(info difftypes.ConstraintRemovalInfo) (string, string) {
 		return info.Name, info.TableName
 	})
-	diff.ConstraintsRemovedWithTables = slices.DeleteFunc(slices.Clone(diff.ConstraintsRemovedWithTables), func(info types.ConstraintRemovalInfo) bool {
+	diff.ConstraintsRemovedWithTables = slices.DeleteFunc(slices.Clone(diff.ConstraintsRemovedWithTables), func(info difftypes.ConstraintRemovalInfo) bool {
 		return hasKey(tables, info.TableName)
 	})
 	diff.ConstraintsRemoved = deleteNames(diff.ConstraintsRemoved, removedConstraintNames)
 
-	diff.TriggersRemoved = slices.DeleteFunc(slices.Clone(diff.TriggersRemoved), func(ref types.TriggerRef) bool {
+	diff.TriggersRemoved = slices.DeleteFunc(slices.Clone(diff.TriggersRemoved), func(ref difftypes.TriggerRef) bool {
 		return hasKey(tables, ref.TableName)
 	})
-	diff.RLSPoliciesRemoved = slices.DeleteFunc(slices.Clone(diff.RLSPoliciesRemoved), func(ref types.RLSPolicyRef) bool {
+	diff.RLSPoliciesRemoved = slices.DeleteFunc(slices.Clone(diff.RLSPoliciesRemoved), func(ref difftypes.RLSPolicyRef) bool {
 		return hasKey(tables, ref.TableName)
 	})
 	diff.RLSEnabledTablesRemoved = slices.DeleteFunc(slices.Clone(diff.RLSEnabledTablesRemoved), func(name string) bool {
 		return hasKey(tables, name)
 	})
-	diff.GrantsRemoved = slices.DeleteFunc(slices.Clone(diff.GrantsRemoved), func(ref types.GrantRef) bool {
+	diff.GrantsRemoved = slices.DeleteFunc(slices.Clone(diff.GrantsRemoved), func(ref difftypes.GrantRef) bool {
 		return strings.EqualFold(ref.ObjectType, "TABLE") && hasKey(tables, ref.ObjectName)
 	})
 	return diff
 }
 
-func indexRefObject(ref types.IndexRef) string {
+func indexRefObject(ref difftypes.IndexRef) string {
 	if ref.TableName == "" {
 		return ref.Name
 	}
@@ -262,7 +262,7 @@ func deleteNames(names []string, remove map[string]struct{}) []string {
 	})
 }
 
-func skipColumnRemovals(tables []types.TableDiff, skipped []SkippedChange) ([]types.TableDiff, []SkippedChange) {
+func skipColumnRemovals(tables []difftypes.TableDiff, skipped []SkippedChange) ([]difftypes.TableDiff, []SkippedChange) {
 	out := slices.Clone(tables)
 	for i := range out {
 		if len(out[i].ColumnsRemoved) == 0 {

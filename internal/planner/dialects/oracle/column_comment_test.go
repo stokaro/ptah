@@ -8,7 +8,7 @@ import (
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
 	oracleplanner "go.5x5.cz/ptah/internal/planner/dialects/oracle"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // Oracle emits a column's comment as a statement of its own, and emits no
@@ -65,14 +65,14 @@ func TestPlanner_OracleStillModifiesAColumnThatChanged(t *testing.T) {
 	c.Assert(modifyColumnOperations(nodes), qt.HasLen, 1)
 }
 
-func columnCommentDiff(desired string) *types.SchemaDiff {
-	return &types.SchemaDiff{
-		TablesModified: []types.TableDiff{{
+func columnCommentDiff(desired string) *difftypes.SchemaDiff {
+	return &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{{
 			TableName: "USERS",
-			ColumnsModified: []types.ColumnDiff{{
+			ColumnsModified: []difftypes.ColumnDiff{{
 				ColumnName:    "EMAIL",
 				Changes:       make(map[string]string),
-				CommentChange: &types.CommentChange{Current: "login address", Desired: desired},
+				CommentChange: &difftypes.CommentChange{Current: "login address", Desired: desired},
 			}},
 		}},
 	}

@@ -7,7 +7,7 @@ import (
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/internal/tableref"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // planSchemaPreconditions creates the schemas the added objects are declared
@@ -47,7 +47,7 @@ import (
 // declared schema should be created is a question about what a schema
 // declaration means, and it is the same question on both dialects; answering it
 // on one would make them disagree.
-func (p *Planner) planSchemaPreconditions(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) planSchemaPreconditions(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	if p.targetDialect() != platform.SQLServer {
 		return result
 	}
@@ -72,7 +72,7 @@ func (p *Planner) planSchemaPreconditions(result []ast.Node, diff *types.SchemaD
 // place a schema is needed without any object being created in it -- a
 // property on a schema names `@level0name = N'app'` and answers the same Msg
 // 2760 when `app` is absent.
-func schemasAddedObjectsNeed(diff *types.SchemaDiff) []string {
+func schemasAddedObjectsNeed(diff *difftypes.SchemaDiff) []string {
 	qualified := make([]string, 0, len(diff.TablesAdded))
 	qualified = append(qualified, diff.TablesAdded...)
 	qualified = append(qualified, diff.ViewsAdded...)

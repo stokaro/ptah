@@ -12,7 +12,7 @@ import (
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	schemadifftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // SchemaOptions configures a single [RunSchemaTest] invocation.
@@ -206,7 +206,7 @@ func applyDesiredSchema(
 // schema; that live state is outside this step's ownership and must not be
 // dropped. Desired additions and modifications are still applied, including
 // replacements represented by matching remove/add pairs.
-func preserveUnmanagedObjects(diff *schemadifftypes.SchemaDiff, dialect string) {
+func preserveUnmanagedObjects(diff *difftypes.SchemaDiff, dialect string) {
 	semantics := diff.EffectiveIdentifierSemantics(dialect)
 	diff.TablesRemoved = nil
 	diff.EnumsRemoved = nil
@@ -275,12 +275,12 @@ func matchingNames(removed, added []string, key func(string) string) []string {
 
 func matchingIndexRefs(
 	removed,
-	added []schemadifftypes.IndexRef,
+	added []difftypes.IndexRef,
 	semantics identifier.Semantics,
-) []schemadifftypes.IndexRef {
-	matching := make([]schemadifftypes.IndexRef, 0, len(removed))
+) []difftypes.IndexRef {
+	matching := make([]difftypes.IndexRef, 0, len(removed))
 	for _, ref := range removed {
-		position := slices.IndexFunc(added, func(addedRef schemadifftypes.IndexRef) bool {
+		position := slices.IndexFunc(added, func(addedRef difftypes.IndexRef) bool {
 			return indexRefsEqual(ref, addedRef, semantics)
 		})
 		if position >= 0 {
@@ -290,20 +290,20 @@ func matchingIndexRefs(
 	return matching
 }
 
-func indexRefsEqual(left, right schemadifftypes.IndexRef, semantics identifier.Semantics) bool {
+func indexRefsEqual(left, right difftypes.IndexRef, semantics identifier.Semantics) bool {
 	return semantics.IndexIdentityKey(left.Name) == semantics.IndexIdentityKey(right.Name) &&
 		semantics.QualifiedTableIdentityKey(left.TableName) ==
 			semantics.QualifiedTableIdentityKey(right.TableName)
 }
 
 func matchingConstraintRemovals(
-	removed []schemadifftypes.ConstraintRemovalInfo,
-	added []schemadifftypes.ConstraintAdditionInfo,
+	removed []difftypes.ConstraintRemovalInfo,
+	added []difftypes.ConstraintAdditionInfo,
 	semantics identifier.Semantics,
-) []schemadifftypes.ConstraintRemovalInfo {
-	matching := make([]schemadifftypes.ConstraintRemovalInfo, 0, len(removed))
+) []difftypes.ConstraintRemovalInfo {
+	matching := make([]difftypes.ConstraintRemovalInfo, 0, len(removed))
 	for _, removal := range removed {
-		position := slices.IndexFunc(added, func(addition schemadifftypes.ConstraintAdditionInfo) bool {
+		position := slices.IndexFunc(added, func(addition difftypes.ConstraintAdditionInfo) bool {
 			return constraintRefsEqual(removal, addition, semantics)
 		})
 		if position >= 0 {
@@ -317,8 +317,8 @@ func matchingConstraintRemovals(
 }
 
 func constraintRefsEqual(
-	removal schemadifftypes.ConstraintRemovalInfo,
-	addition schemadifftypes.ConstraintAdditionInfo,
+	removal difftypes.ConstraintRemovalInfo,
+	addition difftypes.ConstraintAdditionInfo,
 	semantics identifier.Semantics,
 ) bool {
 	return semantics.IndexIdentityKey(addition.Name) == semantics.IndexIdentityKey(removal.Name) &&
@@ -326,7 +326,7 @@ func constraintRefsEqual(
 			semantics.QualifiedTableIdentityKey(removal.TableName)
 }
 
-func constraintRemovalNames(removals []schemadifftypes.ConstraintRemovalInfo) []string {
+func constraintRemovalNames(removals []difftypes.ConstraintRemovalInfo) []string {
 	names := make([]string, 0, len(removals))
 	for _, removal := range removals {
 		if !slices.Contains(names, removal.Name) {

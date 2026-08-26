@@ -14,7 +14,7 @@ import (
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/spannerttl"
 	"go.5x5.cz/ptah/internal/tableref"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TablesAndColumns performs comprehensive table and column comparison between generated and database schemas.

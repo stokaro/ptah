@@ -8,7 +8,7 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestRebuildResolvesTheRetainedTableAcrossSchemaSpellings pins sqlite's
@@ -54,9 +54,9 @@ func TestRebuildResolvesTheRetainedTableAcrossSchemaSpellings(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := &types.SchemaDiff{TablesModified: []types.TableDiff{{
+			diff := &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName: test.diffTableName,
-				ColumnsModified: []types.ColumnDiff{{
+				ColumnsModified: []difftypes.ColumnDiff{{
 					ColumnName: "body",
 					Changes:    map[string]string{"type": "TEXT -> BLOB"},
 				}},
@@ -140,19 +140,19 @@ func TestRebuiltTableDoesNotAlsoGetItsIndexAndTriggerRecreated(t *testing.T) {
 				ForEach:    "ROW",
 			}}
 
-			diff := &types.SchemaDiff{
-				TablesModified: []types.TableDiff{{
+			diff := &difftypes.SchemaDiff{
+				TablesModified: []difftypes.TableDiff{{
 					TableName: test.diffTableName,
-					ColumnsModified: []types.ColumnDiff{{
+					ColumnsModified: []difftypes.ColumnDiff{{
 						ColumnName: "body",
 						Changes:    map[string]string{"type": "TEXT -> BLOB"},
 					}},
 				}},
-				IndexesAdded: []types.IndexRef{{
+				IndexesAdded: []difftypes.IndexRef{{
 					Name:      "idx_notes_body",
 					TableName: test.refTableName,
 				}},
-				TriggersAdded: []types.TriggerRef{{
+				TriggersAdded: []difftypes.TriggerRef{{
 					TriggerName: "trg_notes_touch",
 					TableName:   test.refTableName,
 				}},
@@ -174,9 +174,9 @@ func TestRebuiltTableDoesNotAlsoGetItsIndexAndTriggerRecreated(t *testing.T) {
 func TestRebuildDoesNotResolveATableInAnotherSchema(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{TablesModified: []types.TableDiff{{
+	diff := &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 		TableName: "attached.notes",
-		ColumnsModified: []types.ColumnDiff{{
+		ColumnsModified: []difftypes.ColumnDiff{{
 			ColumnName: "body",
 			Changes:    map[string]string{"type": "TEXT -> BLOB"},
 		}},

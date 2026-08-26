@@ -9,15 +9,15 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestPlanner_LiteralDotAndQualifiedTablesRemainDistinct(t *testing.T) {
 	c := qt.New(t)
 	generated := literalDotAndQualifiedSchema()
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		TablesAdded: []string{`"tenant.data"`, "tenant.data"},
-		IndexesAdded: []types.IndexRef{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "literal_lookup", TableName: `"tenant.data"`},
 			{Name: "qualified_lookup", TableName: "tenant.data"},
 		},
@@ -37,7 +37,7 @@ func TestPlanner_LiteralDotAndQualifiedTablesRemainDistinct(t *testing.T) {
 
 func TestPlanner_LiteralDotAndQualifiedTableRemovalsRemainDistinct(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		TablesRemoved: []string{`"tenant.data"`, "tenant.data"},
 	}
 

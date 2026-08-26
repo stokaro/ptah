@@ -9,15 +9,15 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestGenerateSchemaDiffSQL_SQLServerCreatesTSQL(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		TablesAdded: []string{"users"},
-		IndexesAdded: []types.IndexRef{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "idx_users_email", TableName: "dbo.users"},
 		},
 	}
@@ -81,10 +81,10 @@ func TestGetPlanner_SQLServerAlias(t *testing.T) {
 func TestGenerateSchemaDiffSQL_SQLServerRejectsUnsupportedColumnDrift(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
-		TablesModified: []types.TableDiff{{
+	diff := &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{{
 			TableName: "users",
-			ColumnsModified: []types.ColumnDiff{{
+			ColumnsModified: []difftypes.ColumnDiff{{
 				ColumnName: "status",
 				Changes: map[string]string{
 					"default": "'inactive' -> 'active'",
@@ -107,8 +107,8 @@ func TestGenerateSchemaDiffSQL_SQLServerRejectsUnsupportedColumnDrift(t *testing
 func TestGenerateSchemaDiffSQL_SQLServerAddsColumnToQualifiedTable(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
-		TablesModified: []types.TableDiff{{
+	diff := &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{{
 			TableName:    "dbo.users",
 			ColumnsAdded: []string{"nickname"},
 		}},
@@ -129,10 +129,10 @@ func TestGenerateSchemaDiffSQL_SQLServerAddsColumnToQualifiedTable(t *testing.T)
 func TestGenerateSchemaDiffSQL_SQLServerModifiesColumnOnQualifiedTable(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
-		TablesModified: []types.TableDiff{{
+	diff := &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{{
 			TableName: "dbo.users",
-			ColumnsModified: []types.ColumnDiff{{
+			ColumnsModified: []difftypes.ColumnDiff{{
 				ColumnName: "email",
 				Changes: map[string]string{
 					"type":     "NVARCHAR(100) -> NVARCHAR(320)",
@@ -158,8 +158,8 @@ func TestGenerateSchemaDiffSQL_SQLServerModifiesColumnOnQualifiedTable(t *testin
 func TestGenerateSchemaDiffSQL_SQLServerRejectsColumnRemoval(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
-		TablesModified: []types.TableDiff{{
+	diff := &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{{
 			TableName:      "users",
 			ColumnsRemoved: []string{"legacy_id"},
 		}},
@@ -179,11 +179,11 @@ func TestGenerateSchemaDiffSQL_SQLServerRejectsColumnRemoval(t *testing.T) {
 func TestGenerateSchemaDiffSQL_SQLServerFilteredIndexPredicateChange(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
-		IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "idx_active_users", TableName: "dbo.users"},
 		},
-		IndexesRemoved: []types.IndexRef{
+		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_active_users", TableName: "dbo.users"},
 		},
 	}
@@ -223,8 +223,8 @@ func TestGenerateSchemaDiffSQL_SQLServerFilteredIndexPredicateChange(t *testing.
 func TestGenerateSchemaDiffSQL_SQLServerUnfilteredIndexStaysWithoutWhere(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
-		IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "idx_users_status", TableName: "dbo.users"},
 		},
 	}

@@ -45,7 +45,7 @@ import (
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/safety"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/shadow"
 )
 
@@ -664,7 +664,7 @@ func verifyPlannedShadowMigration(
 	opts GenerateMigrationOptions,
 	conn *dbschema.DatabaseConnection,
 	info dbschematypes.DBInfo,
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	specs []generatedMigrationSpec,
 	generated *goschema.Database,
 ) error {
@@ -1107,7 +1107,7 @@ type generatedMigrationSpec struct {
 }
 
 func planGeneratedMigrationSpecs(
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	generated *goschema.Database,
 	dbSchema *dbschematypes.DBSchema,
 	info dbschematypes.DBInfo,
@@ -1190,7 +1190,7 @@ func planGeneratedMigrationSpecs(
 		bidirectional.Forward.ConcurrentIndexDropRefs,
 	)
 	ordered := []struct {
-		diff   *types.SchemaDiff
+		diff   *difftypes.SchemaDiff
 		suffix string
 	}{
 		{enumGroups.noTransaction, "_enum_values"},
@@ -1318,7 +1318,7 @@ func buildGeneratedMigrationSpec(opts generatedMigrationSpecOptions) (generatedM
 
 func bidirectionalSubplan(
 	full *BidirectionalSchemaPlan,
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 ) (*BidirectionalSchemaPlan, error) {
 	createRefs := selectIndexRefOccurrences(
 		diff.IndexAdditions(),
@@ -1430,11 +1430,11 @@ func containsUnsplittableNoTransactionNode(nodes []ast.Node) bool {
 // for a non-blocking build a blocking one without saying so. The heuristic path
 // downgrades instead -- see [concurrentIndexRefsForPopulatedTables].
 func concurrentIndexRefsForPolicy(
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	dbSchema *dbschematypes.DBSchema,
 	info dbschematypes.DBInfo,
 	policy DiffPolicy,
-) ([]types.IndexRef, error) {
+) ([]difftypes.IndexRef, error) {
 	if !policy.ConcurrentIndex {
 		return concurrentIndexRefsForPopulatedTables(diff, dbSchema, info), nil
 	}
@@ -1478,7 +1478,7 @@ var (
 // arrives against a production database instead of against the developer who
 // generated it.
 func refusePartitionedConcurrentIndexRefs(
-	refs []types.IndexRef,
+	refs []difftypes.IndexRef,
 	dbSchema *dbschematypes.DBSchema,
 	kind concurrentIndexPolicyKind,
 ) error {
@@ -1521,11 +1521,11 @@ func refusePartitionedConcurrentIndexRefs(
 // that statement. Routing it into the no-transaction file would also strand the
 // marker, which the no-transaction diff does not carry.
 func concurrentIndexDropRefsForPolicy(
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	dbSchema *dbschematypes.DBSchema,
 	info dbschematypes.DBInfo,
 	policy DiffPolicy,
-) ([]types.IndexRef, error) {
+) ([]difftypes.IndexRef, error) {
 	if !policy.ConcurrentIndexDrop {
 		return nil, nil
 	}
@@ -1541,7 +1541,7 @@ func concurrentIndexDropRefsForPolicy(
 		diff.IndexAdditions(),
 	)
 	constraintBacked := diff.ConstraintBackedIndexRemovalSet()
-	var refs []types.IndexRef
+	var refs []difftypes.IndexRef
 	for _, ref := range diff.IndexRemovals() {
 		if additions.Contains(ref) {
 			continue
@@ -1567,15 +1567,15 @@ func concurrentIndexDropRefsForPolicy(
 // build. Refusing instead would leave a project with a partitioned table unable
 // to generate an index migration at all.
 func concurrentIndexRefsForPopulatedTables(
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	dbSchema *dbschematypes.DBSchema,
 	info dbschematypes.DBInfo,
-) []types.IndexRef {
+) []difftypes.IndexRef {
 	if !platform.IsPostgresFamily(info.Dialect) || !info.Capabilities.Has(capability.CreateIndexConcurrently) {
 		return nil
 	}
 	tables := concurrentindex.IndexTableFacts(dbSchema)
-	var refs []types.IndexRef
+	var refs []difftypes.IndexRef
 	for _, ref := range diff.IndexAdditions() {
 		facts, known := tables.Lookup(ref.TableName)
 		if !known || facts.Partitioned || !facts.Populated {
@@ -1587,17 +1587,17 @@ func concurrentIndexRefsForPopulatedTables(
 }
 
 type splitSchemaDiffs struct {
-	transactional *types.SchemaDiff
-	noTransaction *types.SchemaDiff
+	transactional *difftypes.SchemaDiff
+	noTransaction *difftypes.SchemaDiff
 }
 
 func splitConcurrentIndexDiff(
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	concurrentIndexRefs,
-	concurrentIndexDropRefs []types.IndexRef,
+	concurrentIndexDropRefs []difftypes.IndexRef,
 ) splitSchemaDiffs {
 	txDiff := cloneSchemaDiff(diff)
-	noTxDiff := &types.SchemaDiff{
+	noTxDiff := &difftypes.SchemaDiff{
 		IdentifierSemantics: cloneIdentifierSemantics(diff.IdentifierSemantics),
 	}
 	addTx, addNoTx := partitionIndexRefs(diff.IndexAdditions(), concurrentIndexRefs)
@@ -1618,7 +1618,7 @@ func splitConcurrentIndexDiff(
 // partitionIndexRefs splits refs into the ones that stay in the transactional
 // migration and the ones that move to the no_transaction migration, preserving
 // the input order within each group so file contents stay deterministic.
-func partitionIndexRefs(refs, selected []types.IndexRef) (transactional, noTransaction []types.IndexRef) {
+func partitionIndexRefs(refs, selected []difftypes.IndexRef) (transactional, noTransaction []difftypes.IndexRef) {
 	set := indexRefSet(selected)
 	for _, ref := range refs {
 		if _, ok := set[ref]; ok {
@@ -1630,15 +1630,15 @@ func partitionIndexRefs(refs, selected []types.IndexRef) (transactional, noTrans
 	return transactional, noTransaction
 }
 
-func indexRefSet(values []types.IndexRef) map[types.IndexRef]struct{} {
-	out := make(map[types.IndexRef]struct{}, len(values))
+func indexRefSet(values []difftypes.IndexRef) map[difftypes.IndexRef]struct{} {
+	out := make(map[difftypes.IndexRef]struct{}, len(values))
 	for _, value := range values {
 		out[value] = struct{}{}
 	}
 	return out
 }
 
-func cloneSchemaDiff(diff *types.SchemaDiff) *types.SchemaDiff {
+func cloneSchemaDiff(diff *difftypes.SchemaDiff) *difftypes.SchemaDiff {
 	clone := *diff
 	clone.IdentifierSemantics = cloneIdentifierSemantics(diff.IdentifierSemantics)
 	clone.TablesAdded = slices.Clone(diff.TablesAdded)
@@ -1709,7 +1709,7 @@ func cloneSchemaDiff(diff *types.SchemaDiff) *types.SchemaDiff {
 	return &clone
 }
 
-func cloneForeignKeyRemovalInfos(values []types.ForeignKeyRemovalInfo) []types.ForeignKeyRemovalInfo {
+func cloneForeignKeyRemovalInfos(values []difftypes.ForeignKeyRemovalInfo) []difftypes.ForeignKeyRemovalInfo {
 	cloned := slices.Clone(values)
 	for position := range cloned {
 		cloned[position].Columns = slices.Clone(cloned[position].Columns)
@@ -1773,7 +1773,7 @@ func hasActualSQLStatements(statements []string) bool {
 
 // generateUpMigrationSQL generates the SQL for the up migration.
 func generateUpMigrationSQL(
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	generated *goschema.Database,
 	dialect string,
 	capsOverride ...capability.Capabilities,
@@ -1786,7 +1786,7 @@ type generatedDirectiveOptions struct {
 }
 
 func generateUpMigrationSQLWithOptions(
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	generated *goschema.Database,
 	dialect string,
 	directiveOpts generatedDirectiveOptions,
@@ -1818,7 +1818,7 @@ func generateUpMigrationSQLWithOptions(
 
 // generateDownMigrationSQL generates the SQL for the down migration by reversing the diff.
 func generateDownMigrationSQL(
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	generated *goschema.Database,
 	dbSchema *dbschematypes.DBSchema,
 	dialect string,
@@ -1828,7 +1828,7 @@ func generateDownMigrationSQL(
 }
 
 func generateDownMigrationSQLWithOptions(
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	generated *goschema.Database,
 	dbSchema *dbschematypes.DBSchema,
 	dialect string,
@@ -1851,12 +1851,12 @@ type downMigrationOptions struct {
 	// concurrentIndexRefs and concurrentIndexDropRefs are expressed in DOWN
 	// direction terms: they name indexes the down file builds and drops, which
 	// are the mirror image of the up file's own two sets.
-	concurrentIndexRefs     []types.IndexRef
-	concurrentIndexDropRefs []types.IndexRef
+	concurrentIndexRefs     []difftypes.IndexRef
+	concurrentIndexDropRefs []difftypes.IndexRef
 }
 
 func generateDownMigrationSQLQualified(
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	generated *goschema.Database,
 	dbSchema *dbschematypes.DBSchema,
 	dialect string,
@@ -1923,7 +1923,7 @@ func generateDownMigrationSQLQualified(
 // with one, the plan is generated as AST first so the qualifier rewrite runs
 // before rendering, mirroring the up direction.
 func planDownMigrationStatements(
-	reverseDiff *types.SchemaDiff,
+	reverseDiff *difftypes.SchemaDiff,
 	dbAsGoSchema *goschema.Database,
 	dialect string,
 	plannerOpts planner.Options,
@@ -1983,7 +1983,7 @@ func supportsGeneratedTimeoutDirectives(dialect string) bool {
 // reverseSchemaDiff creates a reverse diff for generating down migrations
 //
 // Deprecated: Use reverseSchemaDiffWithSchema for proper RLS policy table name resolution
-func reverseSchemaDiff(diff *types.SchemaDiff) *types.SchemaDiff {
+func reverseSchemaDiff(diff *difftypes.SchemaDiff) *difftypes.SchemaDiff {
 	return reverseSchemaDiffWithSchema(diff, nil, nil)
 }
 
@@ -2035,16 +2035,16 @@ func reverseSchemaDiff(diff *types.SchemaDiff) *types.SchemaDiff {
 // direction. TestReverseSchemaDiff_AccountsForEverySchemaDiffField enforces
 // that by reflection: it zeroes one field of a fully populated diff at a time
 // and fails when doing so leaves the reverse plan unchanged.
-func reverseSchemaDiffWithSchema(diff *types.SchemaDiff, schema *goschema.Database, dbSchema *dbschematypes.DBSchema) *types.SchemaDiff {
+func reverseSchemaDiffWithSchema(diff *difftypes.SchemaDiff, schema *goschema.Database, dbSchema *dbschematypes.DBSchema) *difftypes.SchemaDiff {
 	return reverseSchemaDiffWithSchemaForDialect(diff, schema, dbSchema, "")
 }
 
 // bareRoutineRemovals is the answer when there is no schema to read parameters
 // from, which is the behavior the bare name list already had.
-func bareRoutineRemovals(names []string) []types.RoutineRemoval {
-	removals := make([]types.RoutineRemoval, 0, len(names))
+func bareRoutineRemovals(names []string) []difftypes.RoutineRemoval {
+	removals := make([]difftypes.RoutineRemoval, 0, len(names))
 	for _, name := range names {
-		removals = append(removals, types.RoutineRemoval{Name: name})
+		removals = append(removals, difftypes.RoutineRemoval{Name: name})
 	}
 	return removals
 }
@@ -2057,7 +2057,7 @@ func bareRoutineRemovals(names []string) []types.RoutineRemoval {
 // by name. A routine the schema no longer declares gets an empty signature,
 // which drops correctly wherever the name is unique and is the same answer the
 // bare list gave before (stokaro/ptah#2296).
-func routineRemovalsWithSignatures(names []string, schema *goschema.Database) []types.RoutineRemoval {
+func routineRemovalsWithSignatures(names []string, schema *goschema.Database) []difftypes.RoutineRemoval {
 	if len(names) == 0 {
 		return nil
 	}
@@ -2068,9 +2068,9 @@ func routineRemovalsWithSignatures(names []string, schema *goschema.Database) []
 	for _, routine := range schema.Functions {
 		declared[strings.ToLower(routine.Name)] = routine.Parameters
 	}
-	removals := make([]types.RoutineRemoval, 0, len(names))
+	removals := make([]difftypes.RoutineRemoval, 0, len(names))
 	for _, name := range names {
-		removals = append(removals, types.RoutineRemoval{
+		removals = append(removals, difftypes.RoutineRemoval{
 			Name:      name,
 			Signature: declared[strings.ToLower(name)],
 		})
@@ -2124,16 +2124,16 @@ func reverseProceduresRemoved(added []string, schema *goschema.Database) []strin
 }
 
 func reverseSchemaDiffWithSchemaForDialect(
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	schema *goschema.Database,
 	dbSchema *dbschematypes.DBSchema,
 	dialect string,
-) *types.SchemaDiff {
+) *difftypes.SchemaDiff {
 	// The identity the two producers agree on. The reversed diff carries the
 	// same rules the forward one was compared under, so a down migration pairs
 	// its drops exactly as the up migration it undoes did.
 	semantics := diff.EffectiveIdentifierSemantics(dialect)
-	reversed := &types.SchemaDiff{
+	reversed := &difftypes.SchemaDiff{
 		IdentifierSemantics: cloneIdentifierSemantics(diff.IdentifierSemantics),
 
 		// Reverse table operations
@@ -2309,13 +2309,13 @@ func reverseSchemaDiffWithSchemaForDialect(
 	return reversed
 }
 
-func reverseExtensionDiffs(diffs []types.ExtensionDiff) []types.ExtensionDiff {
+func reverseExtensionDiffs(diffs []difftypes.ExtensionDiff) []difftypes.ExtensionDiff {
 	if diffs == nil {
 		return nil
 	}
-	reversed := make([]types.ExtensionDiff, len(diffs))
+	reversed := make([]difftypes.ExtensionDiff, len(diffs))
 	for i, diff := range diffs {
-		reversed[i] = types.ExtensionDiff{
+		reversed[i] = difftypes.ExtensionDiff{
 			Name:       diff.Name,
 			FromSchema: diff.ToSchema,
 			ToSchema:   diff.FromSchema,
@@ -2353,9 +2353,9 @@ func reverseExtensionDiffs(diffs []types.ExtensionDiff) []types.ExtensionDiff {
 // down migration that silently omits the uniqueness protection it is supposed
 // to restore is worse than one that refuses to be generated.
 func reverseIndexRemovals(
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	dbSchema *dbschematypes.DBSchema,
-) (additions []types.IndexRef, restored []types.ConstraintAdditionInfo) {
+) (additions []difftypes.IndexRef, restored []difftypes.ConstraintAdditionInfo) {
 	removals := diff.IndexRemovals()
 	constraintBacked := diff.ConstraintBackedIndexRemovalSet()
 	if len(constraintBacked) == 0 {
@@ -2373,7 +2373,7 @@ func reverseIndexRemovals(
 			additions = append(additions, ref)
 			continue
 		}
-		restored = append(restored, types.ConstraintAdditionInfo{
+		restored = append(restored, difftypes.ConstraintAdditionInfo{
 			Name:           ref.Name,
 			TableName:      ref.TableName,
 			Type:           "UNIQUE",
@@ -2461,10 +2461,10 @@ func generatedTableReference(tables []goschema.Table, structName, tableName stri
 // dbSchema is nil, the names still flow through ConstraintsAdded and the
 // planners fall back to the name-only field scan.
 func reverseConstraintAdditions(
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	dbSchema *dbschematypes.DBSchema,
 	semantics identifier.Semantics,
-) []types.ConstraintAdditionInfo {
+) []difftypes.ConstraintAdditionInfo {
 	if dbSchema == nil || len(diff.ConstraintsRemovedWithTables) == 0 {
 		return nil
 	}
@@ -2481,7 +2481,7 @@ func reverseConstraintAdditions(
 		dbConstraintByTableName[tableMemberKey{table: c.QualifiedTableName(), member: c.Name}] = c
 	}
 
-	var infos []types.ConstraintAdditionInfo
+	var infos []difftypes.ConstraintAdditionInfo
 	for _, removed := range diff.ConstraintsRemovedWithTables {
 		if removed.TableName == "" {
 			continue
@@ -2499,7 +2499,7 @@ func reverseConstraintAdditions(
 			infos = append(infos, foreignKeyAdditionFromDBConstraint(removed.Name, removed.TableName, dbConstraint, semantics))
 		case "PRIMARY KEY":
 			if columns := dbConstraint.ColumnNamesOrDefault(); len(columns) > 0 {
-				infos = append(infos, types.ConstraintAdditionInfo{
+				infos = append(infos, difftypes.ConstraintAdditionInfo{
 					Name:      removed.Name,
 					TableName: removed.TableName,
 					Identity:  constraintscope.Identity(semantics, removed.TableName, removed.Name),
@@ -2509,7 +2509,7 @@ func reverseConstraintAdditions(
 			}
 		case "CHECK":
 			if dbConstraint.CheckClause != nil && *dbConstraint.CheckClause != "" {
-				infos = append(infos, types.ConstraintAdditionInfo{
+				infos = append(infos, difftypes.ConstraintAdditionInfo{
 					Name:            removed.Name,
 					TableName:       removed.TableName,
 					Identity:        constraintscope.Identity(semantics, removed.TableName, removed.Name),
@@ -2519,7 +2519,7 @@ func reverseConstraintAdditions(
 			}
 		case "UNIQUE":
 			if columns := dbConstraint.ColumnNamesOrDefault(); len(columns) > 0 {
-				infos = append(infos, types.ConstraintAdditionInfo{
+				infos = append(infos, difftypes.ConstraintAdditionInfo{
 					Name:           removed.Name,
 					TableName:      removed.TableName,
 					Identity:       constraintscope.Identity(semantics, removed.TableName, removed.Name),
@@ -2549,8 +2549,8 @@ func foreignKeyAdditionFromDBConstraint(
 	name, table string,
 	dbFK dbschematypes.DBConstraint,
 	semantics identifier.Semantics,
-) types.ConstraintAdditionInfo {
-	info := types.ConstraintAdditionInfo{
+) difftypes.ConstraintAdditionInfo {
+	info := difftypes.ConstraintAdditionInfo{
 		Name:      name,
 		TableName: table,
 		Identity:  constraintscope.Identity(semantics, table, name),
@@ -2602,10 +2602,10 @@ func derefString(s *string) string {
 // the down migration. When the schema is unavailable, the names still flow
 // through ConstraintsRemoved; only the richer per-table info is omitted.
 func reverseConstraintRemovals(
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	schema *goschema.Database,
 	semantics identifier.Semantics,
-) []types.ConstraintRemovalInfo {
+) []difftypes.ConstraintRemovalInfo {
 	if schema == nil {
 		return nil
 	}
@@ -2625,14 +2625,14 @@ func reverseConstraintRemovals(
 	// carries the concrete table for each addition, so the down side drops the
 	// FK from exactly the table the up side added it to. Names present here are
 	// recorded so the field-scan fallback below does not double-emit them.
-	var infos []types.ConstraintRemovalInfo
+	var infos []difftypes.ConstraintRemovalInfo
 	seen := make(map[tableMemberKey]struct{})
 	handled := make(map[string]struct{})
 	for _, add := range diff.ConstraintsAddedWithTables {
 		if add.TableName == "" {
 			continue
 		}
-		infos = appendConstraintRemovalInfo(infos, seen, types.ConstraintRemovalInfo{
+		infos = appendConstraintRemovalInfo(infos, seen, difftypes.ConstraintRemovalInfo{
 			Name: add.Name, TableName: add.TableName, Type: add.Type,
 			// Carried, not re-derived: this record IS the forward addition,
 			// turned around. Deriving it again would be a second answer to a
@@ -2682,23 +2682,23 @@ func reverseConstraintRemovals(
 		switch {
 		case tableConstraints[name].Name != "":
 			c := tableConstraints[name]
-			infos = appendConstraintRemovalInfo(infos, seen, types.ConstraintRemovalInfo{Name: name, TableName: c.Table, Type: c.Type, Identity: constraintscope.Identity(semantics, c.Table, name)})
+			infos = appendConstraintRemovalInfo(infos, seen, difftypes.ConstraintRemovalInfo{Name: name, TableName: c.Table, Type: c.Type, Identity: constraintscope.Identity(semantics, c.Table, name)})
 		case fkTables[name] != "":
-			infos = appendConstraintRemovalInfo(infos, seen, types.ConstraintRemovalInfo{
+			infos = appendConstraintRemovalInfo(infos, seen, difftypes.ConstraintRemovalInfo{
 				Name: name, TableName: fkTables[name], Type: "FOREIGN KEY",
 			})
 		case checkTables[name] != "":
-			infos = appendConstraintRemovalInfo(infos, seen, types.ConstraintRemovalInfo{Name: name, TableName: checkTables[name], Type: "CHECK", Identity: constraintscope.Identity(semantics, checkTables[name], name)})
+			infos = appendConstraintRemovalInfo(infos, seen, difftypes.ConstraintRemovalInfo{Name: name, TableName: checkTables[name], Type: "CHECK", Identity: constraintscope.Identity(semantics, checkTables[name], name)})
 		}
 	}
 	return infos
 }
 
 func reverseForeignKeyRemovals(
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	schema *goschema.Database,
 	dialect string,
-) []types.ForeignKeyRemovalInfo {
+) []difftypes.ForeignKeyRemovalInfo {
 	if diff == nil || schema == nil {
 		return nil
 	}
@@ -2710,23 +2710,23 @@ func reverseForeignKeyRemovals(
 }
 
 type reverseForeignKeyRemovalCollector struct {
-	diff        *types.SchemaDiff
+	diff        *difftypes.SchemaDiff
 	semantics   identifier.Semantics
-	removals    map[tableMemberKey]types.ForeignKeyRemovalInfo
+	removals    map[tableMemberKey]difftypes.ForeignKeyRemovalInfo
 	addedNames  map[string]struct{}
 	addedHosts  map[tableMemberKey]struct{}
 	addedTables map[string]struct{}
 }
 
 func newReverseForeignKeyRemovalCollector(
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	dialect string,
 ) *reverseForeignKeyRemovalCollector {
 	semantics := diff.EffectiveIdentifierSemantics(dialect)
 	collector := &reverseForeignKeyRemovalCollector{
 		diff:        diff,
 		semantics:   semantics,
-		removals:    make(map[tableMemberKey]types.ForeignKeyRemovalInfo),
+		removals:    make(map[tableMemberKey]difftypes.ForeignKeyRemovalInfo),
 		addedNames:  make(map[string]struct{}, len(diff.ConstraintsAdded)),
 		addedHosts:  make(map[tableMemberKey]struct{}, len(diff.ConstraintsAddedWithTables)),
 		addedTables: stringSet(diff.TablesAdded),
@@ -2738,7 +2738,7 @@ func newReverseForeignKeyRemovalCollector(
 }
 
 func (c *reverseForeignKeyRemovalCollector) addQualifiedAdditions(
-	constraints []types.ConstraintAdditionInfo,
+	constraints []difftypes.ConstraintAdditionInfo,
 ) {
 	for _, constraint := range constraints {
 		if !strings.EqualFold(constraint.Type, "FOREIGN KEY") {
@@ -2749,7 +2749,7 @@ func (c *reverseForeignKeyRemovalCollector) addQualifiedAdditions(
 		if len(foreignColumns) == 0 && constraint.ForeignColumn != "" {
 			foreignColumns = []string{constraint.ForeignColumn}
 		}
-		c.add(types.ForeignKeyRemovalInfo{
+		c.add(difftypes.ForeignKeyRemovalInfo{
 			Name: constraint.Name, TableName: constraint.TableName,
 			Columns: slices.Clone(constraint.Columns), ForeignTable: constraint.ForeignTable,
 			ForeignColumns: foreignColumns,
@@ -2778,7 +2778,7 @@ func (c *reverseForeignKeyRemovalCollector) addFieldForeignKeys(schema *goschema
 		if ref == nil {
 			continue
 		}
-		c.add(types.ForeignKeyRemovalInfo{
+		c.add(difftypes.ForeignKeyRemovalInfo{
 			Name: name, TableName: table.QualifiedName(), Columns: []string{field.Name},
 			ForeignTable: ref.Table, ForeignColumns: slices.Clone(ref.ReferencedColumns()),
 			Identity: constraintscope.Identity(c.semantics, table.QualifiedName(), name),
@@ -2806,7 +2806,7 @@ func (c *reverseForeignKeyRemovalCollector) addTableForeignKeys(schema *goschema
 		if !c.selectedTableForeignKey(*table, tableName, name) {
 			continue
 		}
-		c.add(types.ForeignKeyRemovalInfo{
+		c.add(difftypes.ForeignKeyRemovalInfo{
 			Name: name, TableName: tableName, Columns: slices.Clone(constraint.Columns),
 			ForeignTable:   constraint.ForeignTable,
 			ForeignColumns: slices.Clone(constraint.ForeignColumnsOrDefault()),
@@ -2839,7 +2839,7 @@ func (c *reverseForeignKeyRemovalCollector) namedOrHostedAddition(table, name st
 	return named || hosted
 }
 
-func (c *reverseForeignKeyRemovalCollector) add(info types.ForeignKeyRemovalInfo) {
+func (c *reverseForeignKeyRemovalCollector) add(info difftypes.ForeignKeyRemovalInfo) {
 	if !completeForeignKeyRemovalInfo(info) {
 		return
 	}
@@ -2847,12 +2847,12 @@ func (c *reverseForeignKeyRemovalCollector) add(info types.ForeignKeyRemovalInfo
 	c.removals[key] = info
 }
 
-func (c *reverseForeignKeyRemovalCollector) result() []types.ForeignKeyRemovalInfo {
-	result := make([]types.ForeignKeyRemovalInfo, 0, len(c.removals))
+func (c *reverseForeignKeyRemovalCollector) result() []difftypes.ForeignKeyRemovalInfo {
+	result := make([]difftypes.ForeignKeyRemovalInfo, 0, len(c.removals))
 	for _, removal := range c.removals {
 		result = append(result, removal)
 	}
-	slices.SortFunc(result, func(a, b types.ForeignKeyRemovalInfo) int {
+	slices.SortFunc(result, func(a, b difftypes.ForeignKeyRemovalInfo) int {
 		if order := strings.Compare(a.TableName, b.TableName); order != 0 {
 			return order
 		}
@@ -2872,7 +2872,7 @@ func canonicalTableMemberKey(
 	}
 }
 
-func completeForeignKeyRemovalInfo(info types.ForeignKeyRemovalInfo) bool {
+func completeForeignKeyRemovalInfo(info difftypes.ForeignKeyRemovalInfo) bool {
 	return info.Name != "" && info.TableName != "" && len(info.Columns) > 0 &&
 		info.ForeignTable != "" && len(info.ForeignColumns) > 0
 }
@@ -2885,7 +2885,7 @@ func stringSet(values []string) map[string]struct{} {
 	return set
 }
 
-func tableDiffAddsColumn(tableDiffs []types.TableDiff, table goschema.Table, column string) bool {
+func tableDiffAddsColumn(tableDiffs []difftypes.TableDiff, table goschema.Table, column string) bool {
 	for _, tableDiff := range tableDiffs {
 		if (tableDiff.TableName == table.Name || tableDiff.TableName == table.QualifiedName() ||
 			tableDiff.TableName == table.StructName) && slices.Contains(tableDiff.ColumnsAdded, column) {
@@ -2896,11 +2896,11 @@ func tableDiffAddsColumn(tableDiffs []types.TableDiff, table goschema.Table, col
 }
 
 func appendAddedColumnForeignKeyRemovals(
-	infos []types.ConstraintRemovalInfo,
+	infos []difftypes.ConstraintRemovalInfo,
 	seen map[tableMemberKey]struct{},
-	tableDiffs []types.TableDiff,
+	tableDiffs []difftypes.TableDiff,
 	schema *goschema.Database,
-) []types.ConstraintRemovalInfo {
+) []difftypes.ConstraintRemovalInfo {
 	for _, tableDiff := range tableDiffs {
 		if len(tableDiff.ColumnsAdded) == 0 {
 			continue
@@ -2919,7 +2919,7 @@ func appendAddedColumnForeignKeyRemovals(
 			if name == "" {
 				name = fromschema.GenerateForeignKeyName(table.Name, field.Name)
 			}
-			info := types.ConstraintRemovalInfo{
+			info := difftypes.ConstraintRemovalInfo{
 				Name: name, TableName: table.QualifiedName(), Type: "FOREIGN KEY",
 			}
 			infos = appendConstraintRemovalInfo(infos, seen, info)
@@ -2929,11 +2929,11 @@ func appendAddedColumnForeignKeyRemovals(
 }
 
 func appendAddedTableForeignKeyRemovals(
-	infos []types.ConstraintRemovalInfo,
+	infos []difftypes.ConstraintRemovalInfo,
 	seen map[tableMemberKey]struct{},
 	tableNames []string,
 	schema *goschema.Database,
-) []types.ConstraintRemovalInfo {
+) []difftypes.ConstraintRemovalInfo {
 	addedTables := make(map[string]struct{}, len(tableNames))
 	for _, tableName := range tableNames {
 		addedTables[tableName] = struct{}{}
@@ -2955,7 +2955,7 @@ func appendAddedTableForeignKeyRemovals(
 		if name == "" {
 			name = fromschema.GenerateForeignKeyName(table.Name, field.Name)
 		}
-		info := types.ConstraintRemovalInfo{Name: name, TableName: tableName, Type: "FOREIGN KEY"}
+		info := difftypes.ConstraintRemovalInfo{Name: name, TableName: tableName, Type: "FOREIGN KEY"}
 		infos = appendConstraintRemovalInfo(infos, seen, info)
 	}
 
@@ -2975,7 +2975,7 @@ func appendAddedTableForeignKeyRemovals(
 		if name == "" {
 			name = defaultForeignKeyConstraintName(table.Name, constraint.Columns)
 		}
-		infos = appendConstraintRemovalInfo(infos, seen, types.ConstraintRemovalInfo{
+		infos = appendConstraintRemovalInfo(infos, seen, difftypes.ConstraintRemovalInfo{
 			Name: name, TableName: tableName, Type: "FOREIGN KEY",
 		})
 	}
@@ -2990,10 +2990,10 @@ func generatedTableInSet(table goschema.Table, tableNames map[string]struct{}) b
 }
 
 func appendConstraintRemovalInfo(
-	infos []types.ConstraintRemovalInfo,
+	infos []difftypes.ConstraintRemovalInfo,
 	seen map[tableMemberKey]struct{},
-	info types.ConstraintRemovalInfo,
-) []types.ConstraintRemovalInfo {
+	info difftypes.ConstraintRemovalInfo,
+) []difftypes.ConstraintRemovalInfo {
 	if info.Name == "" || info.TableName == "" {
 		return infos
 	}
@@ -3019,10 +3019,10 @@ func defaultForeignKeyConstraintName(tableName string, columns []string) string 
 }
 
 // reverseTableDiffs reverses table modifications for down migrations
-func reverseTableDiffs(tableDiffs []types.TableDiff) []types.TableDiff {
-	reversed := make([]types.TableDiff, len(tableDiffs))
+func reverseTableDiffs(tableDiffs []difftypes.TableDiff) []difftypes.TableDiff {
+	reversed := make([]difftypes.TableDiff, len(tableDiffs))
 	for i, tableDiff := range tableDiffs {
-		reversed[i] = types.TableDiff{
+		reversed[i] = difftypes.TableDiff{
 			TableName:       tableDiff.TableName,
 			ColumnsAdded:    tableDiff.ColumnsRemoved, // Columns to remove become columns to add
 			ColumnsRemoved:  tableDiff.ColumnsAdded,   // Columns to add become columns to remove
@@ -3033,8 +3033,8 @@ func reverseTableDiffs(tableDiffs []types.TableDiff) []types.TableDiff {
 }
 
 // reverseColumnDiffs reverses column modifications for down migrations
-func reverseColumnDiffs(columnDiffs []types.ColumnDiff) []types.ColumnDiff {
-	reversed := make([]types.ColumnDiff, len(columnDiffs))
+func reverseColumnDiffs(columnDiffs []difftypes.ColumnDiff) []difftypes.ColumnDiff {
+	reversed := make([]difftypes.ColumnDiff, len(columnDiffs))
 	for i, columnDiff := range columnDiffs {
 		// For column changes, we need to reverse the direction of changes
 		reversedChanges := make(map[string]string)
@@ -3049,7 +3049,7 @@ func reverseColumnDiffs(columnDiffs []types.ColumnDiff) []types.ColumnDiff {
 			}
 		}
 
-		reversed[i] = types.ColumnDiff{
+		reversed[i] = difftypes.ColumnDiff{
 			ColumnName: columnDiff.ColumnName,
 			Changes:    reversedChanges,
 		}
@@ -3058,10 +3058,10 @@ func reverseColumnDiffs(columnDiffs []types.ColumnDiff) []types.ColumnDiff {
 }
 
 // reverseEnumDiffs reverses enum modifications for down migrations
-func reverseEnumDiffs(enumDiffs []types.EnumDiff) []types.EnumDiff {
-	reversed := make([]types.EnumDiff, len(enumDiffs))
+func reverseEnumDiffs(enumDiffs []difftypes.EnumDiff) []difftypes.EnumDiff {
+	reversed := make([]difftypes.EnumDiff, len(enumDiffs))
 	for i, enumDiff := range enumDiffs {
-		reversed[i] = types.EnumDiff{
+		reversed[i] = difftypes.EnumDiff{
 			EnumName:      enumDiff.EnumName,
 			ValuesAdded:   enumDiff.ValuesRemoved, // Values to remove become values to add
 			ValuesRemoved: enumDiff.ValuesAdded,   // Values to add become values to remove
@@ -3071,8 +3071,8 @@ func reverseEnumDiffs(enumDiffs []types.EnumDiff) []types.EnumDiff {
 }
 
 // reverseFunctionDiffs reverses function modifications for down migrations
-func reverseFunctionDiffs(functionDiffs []types.FunctionDiff) []types.FunctionDiff {
-	reversed := make([]types.FunctionDiff, len(functionDiffs))
+func reverseFunctionDiffs(functionDiffs []difftypes.FunctionDiff) []difftypes.FunctionDiff {
+	reversed := make([]difftypes.FunctionDiff, len(functionDiffs))
 	for i, functionDiff := range functionDiffs {
 		// For function changes, we need to reverse the direction of changes
 		reversedChanges := make(map[string]string)
@@ -3087,7 +3087,7 @@ func reverseFunctionDiffs(functionDiffs []types.FunctionDiff) []types.FunctionDi
 			}
 		}
 
-		reversed[i] = types.FunctionDiff{
+		reversed[i] = difftypes.FunctionDiff{
 			FunctionName: functionDiff.FunctionName,
 			Changes:      reversedChanges,
 		}
@@ -3096,8 +3096,8 @@ func reverseFunctionDiffs(functionDiffs []types.FunctionDiff) []types.FunctionDi
 }
 
 // reverseSequenceDiffs reverses sequence modifications for down migrations.
-func reverseSequenceDiffs(sequenceDiffs []types.SequenceDiff) []types.SequenceDiff {
-	reversed := make([]types.SequenceDiff, len(sequenceDiffs))
+func reverseSequenceDiffs(sequenceDiffs []difftypes.SequenceDiff) []difftypes.SequenceDiff {
+	reversed := make([]difftypes.SequenceDiff, len(sequenceDiffs))
 	for i, sequenceDiff := range sequenceDiffs {
 		reversedChanges := make(map[string]string)
 		for key, change := range sequenceDiff.Changes {
@@ -3110,7 +3110,7 @@ func reverseSequenceDiffs(sequenceDiffs []types.SequenceDiff) []types.SequenceDi
 			}
 		}
 
-		reversed[i] = types.SequenceDiff{
+		reversed[i] = difftypes.SequenceDiff{
 			SequenceName: sequenceDiff.SequenceName,
 			Changes:      reversedChanges,
 		}
@@ -3138,10 +3138,10 @@ func reverseChangeMap(changes map[string]string) map[string]string {
 // the up migration created. schema is the up direction's target, so that is
 // where the down direction's from-side lives. A nil schema leaves it empty and
 // the drop ordering falls back to declaration order.
-func reverseDomainDiffs(domainDiffs []types.DomainDiff, schema *goschema.Database) []types.DomainDiff {
-	reversed := make([]types.DomainDiff, len(domainDiffs))
+func reverseDomainDiffs(domainDiffs []difftypes.DomainDiff, schema *goschema.Database) []difftypes.DomainDiff {
+	reversed := make([]difftypes.DomainDiff, len(domainDiffs))
 	for i, domainDiff := range domainDiffs {
-		reversed[i] = types.DomainDiff{
+		reversed[i] = difftypes.DomainDiff{
 			DomainName:      domainDiff.DomainName,
 			Changes:         reverseChangeMap(domainDiff.Changes),
 			CurrentBaseType: targetDomainBaseType(schema, domainDiff.DomainName),
@@ -3177,11 +3177,11 @@ func reverseDomainDiffs(domainDiffs []types.DomainDiff, schema *goschema.Databas
 // target the database had before the up migration ran.
 // reverseExtendedPropertyDiffs swaps the two values of every modified extended
 // property, so the down direction restores what the database held.
-func reverseExtendedPropertyDiffs(diffs []types.ExtendedPropertyDiff) []types.ExtendedPropertyDiff {
+func reverseExtendedPropertyDiffs(diffs []difftypes.ExtendedPropertyDiff) []difftypes.ExtendedPropertyDiff {
 	if len(diffs) == 0 {
 		return nil
 	}
-	reversed := make([]types.ExtendedPropertyDiff, 0, len(diffs))
+	reversed := make([]difftypes.ExtendedPropertyDiff, 0, len(diffs))
 	for _, diff := range diffs {
 		restored := diff
 		restored.Value = diff.OldValue
@@ -3193,10 +3193,10 @@ func reverseExtendedPropertyDiffs(diffs []types.ExtendedPropertyDiff) []types.Ex
 
 // reverseHypertableDiffs swaps the two sides of each partitioning change, so a
 // rollback describes the partitioning the database had.
-func reverseHypertableDiffs(changes []types.HypertableDiff) []types.HypertableDiff {
-	reversed := make([]types.HypertableDiff, 0, len(changes))
+func reverseHypertableDiffs(changes []difftypes.HypertableDiff) []difftypes.HypertableDiff {
+	reversed := make([]difftypes.HypertableDiff, 0, len(changes))
 	for _, change := range changes {
-		reversed = append(reversed, types.HypertableDiff{
+		reversed = append(reversed, difftypes.HypertableDiff{
 			Table:            change.Table,
 			OldColumn:        change.NewColumn,
 			NewColumn:        change.OldColumn,
@@ -3209,10 +3209,10 @@ func reverseHypertableDiffs(changes []types.HypertableDiff) []types.HypertableDi
 
 // reverseContinuousAggregateDiffs swaps the two sides of each aggregate change,
 // so a rollback restores the body and the option the database had.
-func reverseContinuousAggregateDiffs(changes []types.ContinuousAggregateDiff) []types.ContinuousAggregateDiff {
-	reversed := make([]types.ContinuousAggregateDiff, 0, len(changes))
+func reverseContinuousAggregateDiffs(changes []difftypes.ContinuousAggregateDiff) []difftypes.ContinuousAggregateDiff {
+	reversed := make([]difftypes.ContinuousAggregateDiff, 0, len(changes))
 	for _, change := range changes {
-		reversed = append(reversed, types.ContinuousAggregateDiff{
+		reversed = append(reversed, difftypes.ContinuousAggregateDiff{
 			Name:                change.Name,
 			OldBody:             change.NewBody,
 			NewBody:             change.OldBody,
@@ -3223,13 +3223,13 @@ func reverseContinuousAggregateDiffs(changes []types.ContinuousAggregateDiff) []
 	return reversed
 }
 
-func reverseSynonymDiffs(diffs []types.SynonymDiff) []types.SynonymDiff {
+func reverseSynonymDiffs(diffs []difftypes.SynonymDiff) []difftypes.SynonymDiff {
 	if len(diffs) == 0 {
 		return nil
 	}
-	reversed := make([]types.SynonymDiff, 0, len(diffs))
+	reversed := make([]difftypes.SynonymDiff, 0, len(diffs))
 	for _, diff := range diffs {
-		reversed = append(reversed, types.SynonymDiff{
+		reversed = append(reversed, difftypes.SynonymDiff{
 			SynonymName: diff.SynonymName,
 			OldTarget:   diff.NewTarget,
 			NewTarget:   diff.OldTarget,
@@ -3238,10 +3238,10 @@ func reverseSynonymDiffs(diffs []types.SynonymDiff) []types.SynonymDiff {
 	return reversed
 }
 
-func reverseViewDiffs(viewDiffs []types.ViewDiff, schema *goschema.Database) []types.ViewDiff {
-	reversed := make([]types.ViewDiff, len(viewDiffs))
+func reverseViewDiffs(viewDiffs []difftypes.ViewDiff, schema *goschema.Database) []difftypes.ViewDiff {
+	reversed := make([]difftypes.ViewDiff, len(viewDiffs))
 	for i, viewDiff := range viewDiffs {
-		reversed[i] = types.ViewDiff{
+		reversed[i] = difftypes.ViewDiff{
 			ViewName:     viewDiff.ViewName,
 			Changes:      reverseChangeMap(viewDiff.Changes),
 			PreviousBody: generatedViewBody(schema, viewDiff.ViewName),
@@ -3252,10 +3252,10 @@ func reverseViewDiffs(viewDiffs []types.ViewDiff, schema *goschema.Database) []t
 }
 
 // reverseRangeDiffs mirrors reverseDomainDiffs for range types.
-func reverseRangeDiffs(rangeDiffs []types.RangeDiff, schema *goschema.Database) []types.RangeDiff {
-	reversed := make([]types.RangeDiff, len(rangeDiffs))
+func reverseRangeDiffs(rangeDiffs []difftypes.RangeDiff, schema *goschema.Database) []difftypes.RangeDiff {
+	reversed := make([]difftypes.RangeDiff, len(rangeDiffs))
 	for i, rangeDiff := range rangeDiffs {
-		reversed[i] = types.RangeDiff{
+		reversed[i] = difftypes.RangeDiff{
 			RangeName:      rangeDiff.RangeName,
 			Changes:        reverseChangeMap(rangeDiff.Changes),
 			CurrentSubtype: targetRangeSubtype(schema, rangeDiff.RangeName),
@@ -3292,10 +3292,10 @@ func targetRangeSubtype(schema *goschema.Database, name string) string {
 // down direction, on the same terms as reverseViewDiffs. A materialized view
 // has no in-place replace at all, so there is no prior body to record: both
 // directions drop and recreate it.
-func reverseMaterializedViewDiffs(viewDiffs []types.MaterializedViewDiff) []types.MaterializedViewDiff {
-	reversed := make([]types.MaterializedViewDiff, len(viewDiffs))
+func reverseMaterializedViewDiffs(viewDiffs []difftypes.MaterializedViewDiff) []difftypes.MaterializedViewDiff {
+	reversed := make([]difftypes.MaterializedViewDiff, len(viewDiffs))
 	for i, viewDiff := range viewDiffs {
-		reversed[i] = types.MaterializedViewDiff{ViewName: viewDiff.ViewName, Changes: reverseChangeMap(viewDiff.Changes)}
+		reversed[i] = difftypes.MaterializedViewDiff{ViewName: viewDiff.ViewName, Changes: reverseChangeMap(viewDiff.Changes)}
 	}
 	return reversed
 }
@@ -3305,10 +3305,10 @@ func reverseMaterializedViewDiffs(viewDiffs []types.MaterializedViewDiff) []type
 // rather than a changed value, so it is preserved. PostgreSQL 17.10 accepts
 // CREATE OR REPLACE TRIGGER even for a timing change, so a trigger needs no
 // legality test of its own.
-func reverseTriggerDiffs(triggerDiffs []types.TriggerDiff) []types.TriggerDiff {
-	reversed := make([]types.TriggerDiff, len(triggerDiffs))
+func reverseTriggerDiffs(triggerDiffs []difftypes.TriggerDiff) []difftypes.TriggerDiff {
+	reversed := make([]difftypes.TriggerDiff, len(triggerDiffs))
 	for i, triggerDiff := range triggerDiffs {
-		reversed[i] = types.TriggerDiff{
+		reversed[i] = difftypes.TriggerDiff{
 			TriggerName: triggerDiff.TriggerName,
 			TableName:   triggerDiff.TableName,
 			Changes:     reverseChangeMap(triggerDiff.Changes),
@@ -3318,10 +3318,10 @@ func reverseTriggerDiffs(triggerDiffs []types.TriggerDiff) []types.TriggerDiff {
 }
 
 // reverseCompositeTypeDiffs mirrors reverseDomainDiffs for composite types.
-func reverseCompositeTypeDiffs(compositeDiffs []types.CompositeTypeDiff, schema *goschema.Database) []types.CompositeTypeDiff {
-	reversed := make([]types.CompositeTypeDiff, len(compositeDiffs))
+func reverseCompositeTypeDiffs(compositeDiffs []difftypes.CompositeTypeDiff, schema *goschema.Database) []difftypes.CompositeTypeDiff {
+	reversed := make([]difftypes.CompositeTypeDiff, len(compositeDiffs))
 	for i, compositeDiff := range compositeDiffs {
-		reversed[i] = types.CompositeTypeDiff{
+		reversed[i] = difftypes.CompositeTypeDiff{
 			TypeName:          compositeDiff.TypeName,
 			Changes:           reverseChangeMap(compositeDiff.Changes),
 			CurrentFieldTypes: targetCompositeFieldTypes(schema, compositeDiff.TypeName),
@@ -3360,8 +3360,8 @@ func targetCompositeFieldTypes(schema *goschema.Database, name string) []string 
 }
 
 // reverseRLSPolicyDiffs reverses RLS policy modifications for down migrations
-func reverseRLSPolicyDiffs(policyDiffs []types.RLSPolicyDiff) []types.RLSPolicyDiff {
-	reversed := make([]types.RLSPolicyDiff, len(policyDiffs))
+func reverseRLSPolicyDiffs(policyDiffs []difftypes.RLSPolicyDiff) []difftypes.RLSPolicyDiff {
+	reversed := make([]difftypes.RLSPolicyDiff, len(policyDiffs))
 	for i, policyDiff := range policyDiffs {
 		// For policy changes, we need to reverse the direction of changes
 		reversedChanges := make(map[string]string)
@@ -3376,7 +3376,7 @@ func reverseRLSPolicyDiffs(policyDiffs []types.RLSPolicyDiff) []types.RLSPolicyD
 			}
 		}
 
-		reversed[i] = types.RLSPolicyDiff{
+		reversed[i] = difftypes.RLSPolicyDiff{
 			PolicyName: policyDiff.PolicyName,
 			TableName:  policyDiff.TableName,
 			Changes:    reversedChanges,
@@ -3386,8 +3386,8 @@ func reverseRLSPolicyDiffs(policyDiffs []types.RLSPolicyDiff) []types.RLSPolicyD
 }
 
 // reverseRoleDiffs reverses role modifications for down migrations
-func reverseRoleDiffs(roleDiffs []types.RoleDiff) []types.RoleDiff {
-	reversed := make([]types.RoleDiff, len(roleDiffs))
+func reverseRoleDiffs(roleDiffs []difftypes.RoleDiff) []difftypes.RoleDiff {
+	reversed := make([]difftypes.RoleDiff, len(roleDiffs))
 	for i, roleDiff := range roleDiffs {
 		// For role changes, we need to reverse the direction of changes
 		reversedChanges := make(map[string]string)
@@ -3402,7 +3402,7 @@ func reverseRoleDiffs(roleDiffs []types.RoleDiff) []types.RoleDiff {
 			}
 		}
 
-		reversed[i] = types.RoleDiff{
+		reversed[i] = difftypes.RoleDiff{
 			RoleName: roleDiff.RoleName,
 			Changes:  reversedChanges,
 		}

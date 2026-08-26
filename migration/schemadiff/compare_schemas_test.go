@@ -9,7 +9,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/internal/convert/goschematodb"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // usersV1 is the current side of the CompareSchemas fixtures: one table with a

@@ -9,7 +9,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/capability"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/concurrentindex"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // desiredWithConcurrentIndex is one table and one index on it, with the
@@ -22,9 +22,9 @@ func desiredWithConcurrentIndex(concurrently bool) *goschema.Database {
 }
 
 // diffAddingIndex is the comparison that adds the index above.
-func diffAddingIndex() *types.SchemaDiff {
-	return &types.SchemaDiff{
-		IndexesAdded: []types.IndexRef{{Name: "idx_widget_a", TableName: "widget"}},
+func diffAddingIndex() *difftypes.SchemaDiff {
+	return &difftypes.SchemaDiff{
+		IndexesAdded: []difftypes.IndexRef{{Name: "idx_widget_a", TableName: "widget"}},
 	}
 }
 
@@ -39,7 +39,7 @@ func TestDeclaredRefs_HonorsTheDeclaration(t *testing.T) {
 
 	refs := concurrentindex.DeclaredRefs(diffAddingIndex(), desiredWithConcurrentIndex(true), nil, postgresInfo())
 
-	c.Assert(refs, qt.DeepEquals, []types.IndexRef{{Name: "idx_widget_a", TableName: "widget"}})
+	c.Assert(refs, qt.DeepEquals, []difftypes.IndexRef{{Name: "idx_widget_a", TableName: "widget"}})
 }
 
 // TestDeclaredRefs_LeavesAnUndeclaredIndexAlone is the control for the test
@@ -141,9 +141,9 @@ func TestDeclaredRefs_DoesNotApplyThePopulatedTableFilter(t *testing.T) {
 
 func TestMergeRefs_IsAUnionKeepingFirstOrder(t *testing.T) {
 	c := qt.New(t)
-	a := types.IndexRef{Name: "a", TableName: "t"}
-	b := types.IndexRef{Name: "b", TableName: "t"}
+	a := difftypes.IndexRef{Name: "a", TableName: "t"}
+	b := difftypes.IndexRef{Name: "b", TableName: "t"}
 
-	c.Assert(concurrentindex.MergeRefs([]types.IndexRef{a}, []types.IndexRef{b, a}), qt.DeepEquals,
-		[]types.IndexRef{a, b})
+	c.Assert(concurrentindex.MergeRefs([]difftypes.IndexRef{a}, []difftypes.IndexRef{b, a}), qt.DeepEquals,
+		[]difftypes.IndexRef{a, b})
 }

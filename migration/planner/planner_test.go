@@ -17,7 +17,7 @@ import (
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/safety"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 var externalPlannerDialectSeq atomic.Int64
@@ -160,7 +160,7 @@ func TestGetPlannerRejectsFactoryReturningNil(t *testing.T) {
 func TestGenerateSchemaDiffSQL_UnsupportedDialectReturnsError(t *testing.T) {
 	c := qt.New(t)
 
-	nodes, err := planner.GenerateSchemaDiffAST(&types.SchemaDiff{}, &goschema.Database{}, "db2")
+	nodes, err := planner.GenerateSchemaDiffAST(&difftypes.SchemaDiff{}, &goschema.Database{}, "db2")
 	c.Assert(nodes, qt.IsNil)
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedDialect)
 
@@ -168,7 +168,7 @@ func TestGenerateSchemaDiffSQL_UnsupportedDialectReturnsError(t *testing.T) {
 	c.Assert(err, qt.ErrorAs, &astPlanErr)
 	c.Assert(astPlanErr.Dialect, qt.Equals, "db2")
 
-	sql, err := planner.GenerateSchemaDiffSQL(&types.SchemaDiff{}, &goschema.Database{}, "db2")
+	sql, err := planner.GenerateSchemaDiffSQL(&difftypes.SchemaDiff{}, &goschema.Database{}, "db2")
 	c.Assert(sql, qt.Equals, "")
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedDialect)
 
@@ -180,7 +180,7 @@ func TestGenerateSchemaDiffSQL_UnsupportedDialectReturnsError(t *testing.T) {
 func TestGenerateSchemaDiffAST_WrapsPlannerFailures(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{TablesModified: []types.TableDiff{
+	diff := &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{
 		{TableName: "users", ColumnsRemoved: []string{"name"}},
 	}}
 
@@ -258,7 +258,7 @@ func nextExternalPlannerDialect(prefix string) string {
 }
 
 func (p externalPlanner) GenerateMigrationASTChecked(
-	_ *types.SchemaDiff,
+	_ *difftypes.SchemaDiff,
 	_ *goschema.Database,
 ) ([]ast.Node, error) {
 	return []ast.Node{ast.NewComment("external planner")}, nil
@@ -301,8 +301,8 @@ func TestGeneratedNarrowingTypeChangeIsDestructive(t *testing.T) {
 func TestGeneratedRLSPolicyRemovalIsDestructive(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
-		RLSPoliciesRemoved: []types.RLSPolicyRef{
+	diff := &difftypes.SchemaDiff{
+		RLSPoliciesRemoved: []difftypes.RLSPolicyRef{
 			{PolicyName: "tenant_isolation", TableName: "accounts"},
 		},
 	}
@@ -320,13 +320,13 @@ func TestGenerateMigrationASTChecked(t *testing.T) {
 	tests := []struct {
 		name      string
 		dialect   string
-		diff      *types.SchemaDiff
+		diff      *difftypes.SchemaDiff
 		generated *goschema.Database
 	}{
 		{
 			name:    "postgres migration generation",
 			dialect: platform.Postgres,
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				TablesAdded: []string{"users"},
 			},
 			generated: &goschema.Database{
@@ -341,7 +341,7 @@ func TestGenerateMigrationASTChecked(t *testing.T) {
 		{
 			name:    "mysql migration generation",
 			dialect: platform.MySQL,
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				TablesAdded: []string{"users"},
 			},
 			generated: &goschema.Database{

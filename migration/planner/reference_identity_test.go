@@ -9,15 +9,15 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestGenerateSchemaDiffSQL_TableModificationUsesStructuralIdentity(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{
-		TablesModified: []types.TableDiff{{
+	diff := &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{{
 			TableName: "tenant.data",
-			ColumnsModified: []types.ColumnDiff{{
+			ColumnsModified: []difftypes.ColumnDiff{{
 				ColumnName: "payload",
 				Changes:    map[string]string{"type": "TEXT -> BIGINT"},
 			}},
@@ -37,8 +37,8 @@ func TestGenerateSchemaDiffSQL_TableModificationUsesStructuralIdentity(t *testin
 
 func TestGenerateSchemaDiffSQL_SQLiteRebuildUsesStructuralIdentity(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{
-		TablesModified: []types.TableDiff{{
+	diff := &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{{
 			TableName:      "tenant.data",
 			ColumnsRemoved: []string{"obsolete"},
 		}},
@@ -70,7 +70,7 @@ func TestGenerateSchemaDiffSQL_SQLiteTableCreationUsesStructuralIdentity(t *test
 			CheckExpression: "payload > 0",
 		},
 	}
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		TablesAdded: []string{`"tenant.data"`, "tenant.data"},
 	}
 
@@ -108,7 +108,7 @@ func TestGenerateSchemaDiffSQL_ForeignKeyPreservesStructuralIdentity(t *testing.
 			c := qt.New(t)
 			generated := referenceCollisionForeignKeySchema()
 			sql, err := planner.GenerateSchemaDiffSQL(
-				&types.SchemaDiff{TablesAdded: []string{`"tenant.data"`, "tenant.data"}},
+				&difftypes.SchemaDiff{TablesAdded: []string{`"tenant.data"`, "tenant.data"}},
 				generated,
 				tt.dialect,
 			)
@@ -134,10 +134,10 @@ func TestGenerateSchemaDiffSQL_MySQLSelfForeignKeyTypeChangePreservesStructuralI
 			ForeignKeyName: "fk_qualified_parent",
 		}},
 	}
-	diff := &types.SchemaDiff{
-		TablesModified: []types.TableDiff{{
+	diff := &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{{
 			TableName: "tenant.data",
-			ColumnsModified: []types.ColumnDiff{{
+			ColumnsModified: []difftypes.ColumnDiff{{
 				ColumnName: "parent_id",
 				Changes:    map[string]string{"type": "INTEGER -> BIGINT"},
 			}},
@@ -166,8 +166,8 @@ func TestGenerateSchemaDiffSQL_PostgresEnumRemovalPreservesLiteralDotIdentity(t 
 			Type:       `"tenant.data"`,
 		}},
 	}
-	diff := &types.SchemaDiff{
-		EnumsModified: []types.EnumDiff{{
+	diff := &difftypes.SchemaDiff{
+		EnumsModified: []difftypes.EnumDiff{{
 			EnumName:      `"tenant.data"`,
 			ValuesRemoved: []string{"retired"},
 		}},
@@ -184,7 +184,7 @@ func TestGenerateSchemaDiffSQL_PostgresEnumRemovalPreservesLiteralDotIdentity(t 
 
 func TestGenerateSchemaDiffSQL_PostgresSequenceRemovalPreservesLiteralDotIdentity(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		SequencesRemoved: []string{`"tenant.data"`},
 	}
 

@@ -13,7 +13,7 @@ import (
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/deporder"
 	"go.5x5.cz/ptah/internal/planner/objectlookup"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // reportUnsupportedObjectsBeforeTables and planObjectsAfterTables append the
@@ -34,7 +34,7 @@ import (
 // their bodies through fromschema, and share one deporder.ViewLikesForCreate
 // pass so dependencies precede the objects that read them. Diagnostic comments
 // are stripped before execution by atlasschema.SplitApplyStatements.
-func reportUnsupportedObjectsBeforeTables(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func reportUnsupportedObjectsBeforeTables(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	result = reportRemovedUserTypes(result, diff)
 	result = reportExtensions(result, diff)
 	result = reportSequences(result, diff)
@@ -53,7 +53,7 @@ func reportUnsupportedObjectsBeforeTables(result []ast.Node, diff *types.SchemaD
 // emits them -- the two surfaces have to agree on order, not merely on content.
 func planObjectsAfterTables(
 	result []ast.Node,
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	generated *goschema.Database,
 	caps capability.Capabilities,
 ) ([]ast.Node, error) {
@@ -85,7 +85,7 @@ func planObjectsAfterTables(
 // unwalked, which is how #1628 closed with grants and row-level security fixed
 // and these three still silent (stokaro/ptah#1708). Writing it now means a
 // reader that learns them later produces a sentence rather than nothing.
-func reportRemovedUserTypes(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func reportRemovedUserTypes(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, name := range diff.DomainsRemoved {
 		result = append(result, ast.NewDropType(name).SetDomain())
 	}
@@ -98,7 +98,7 @@ func reportRemovedUserTypes(result []ast.Node, diff *types.SchemaDiff) []ast.Nod
 	return result
 }
 
-func reportExtensions(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func reportExtensions(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, name := range diff.ExtensionsAdded {
 		result = append(result, ast.NewExtension(name))
 	}
@@ -111,7 +111,7 @@ func reportExtensions(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
 	return result
 }
 
-func reportSequences(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func reportSequences(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, name := range diff.SequencesAdded {
 		result = append(result, ast.NewCreateSequence(name))
 	}
@@ -124,7 +124,7 @@ func reportSequences(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
 	return result
 }
 
-func reportFunctions(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func reportFunctions(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, name := range diff.FunctionsAdded {
 		result = append(result, ast.NewCreateFunction(name))
 	}
@@ -197,7 +197,7 @@ func identityOf(object deporder.ViewLike) viewLikeIdentity {
 // still names each object exactly once.
 func reportViewLikes(
 	result []ast.Node,
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	generated *goschema.Database,
 	caps capability.Capabilities,
 ) ([]ast.Node, error) {
@@ -381,7 +381,7 @@ func clickHouseMaterializedViewChange(
 
 func reportRowLevelSecurity(
 	result []ast.Node,
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	caps capability.Capabilities,
 ) []ast.Node {
 	if caps.Has(capability.RowLevelSecurity) {
@@ -408,7 +408,7 @@ func reportRowLevelSecurity(
 	return result
 }
 
-func reportTriggers(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func reportTriggers(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, trigger := range diff.TriggersAdded {
 		result = append(result, ast.NewCreateTrigger(trigger.TriggerName, trigger.TableName))
 	}
@@ -434,7 +434,7 @@ func reportTriggers(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
 //
 // A change that also touches the body falls through for the same reason: the
 // body is what a drop and a create exist to replace.
-func clickHouseRefreshAlter(view types.MaterializedViewDiff) ast.Node {
+func clickHouseRefreshAlter(view difftypes.MaterializedViewDiff) ast.Node {
 	change := view.RefreshChange
 	if change == nil || change.Desired == nil || change.Current == nil {
 		return nil

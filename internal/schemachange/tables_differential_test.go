@@ -14,7 +14,7 @@ import (
 	"go.5x5.cz/ptah/internal/schemachange"
 	"go.5x5.cz/ptah/internal/schemastate"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestTableChangesMatchTheExistingComparator is the differential test for this

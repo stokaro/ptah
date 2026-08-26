@@ -5,7 +5,7 @@ import (
 
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // alterableDomainChanges names the domain attributes PostgreSQL changes in
@@ -28,7 +28,7 @@ var alterableDomainChanges = map[string]struct{}{
 // alterable: the rebuild carries the whole declaration, so emitting an ALTER
 // beside it would be a statement against a domain that no longer exists by the
 // time it runs.
-func domainIsAlterableInPlace(domainDiff types.DomainDiff) bool {
+func domainIsAlterableInPlace(domainDiff difftypes.DomainDiff) bool {
 	if len(domainDiff.Changes) == 0 {
 		return false
 	}
@@ -46,7 +46,7 @@ func domainIsAlterableInPlace(domainDiff types.DomainDiff) bool {
 // Both halves have to hold: the comparator found a delta ALTER can reach, and
 // nothing this plan rebuilds is left depending on it.
 func compositeIsAlterableInPlace(
-	compositeDiff types.CompositeTypeDiff,
+	compositeDiff difftypes.CompositeTypeDiff,
 	rebuilt map[string]struct{},
 ) bool {
 	if !compositeHasAttributeDelta(compositeDiff) {
@@ -66,7 +66,7 @@ func compositeIsAlterableInPlace(
 // (stokaro/ptah#1717).
 func (p *Planner) alterModifiedDomains(
 	result []ast.Node,
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	generated *goschema.Database,
 ) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
@@ -94,7 +94,7 @@ func (p *Planner) alterModifiedDomains(
 // The order of the operations is the order they have to run in. A replaced
 // CHECK drops the old constraint before adding the new one, and NOT NULL is set
 // after the CHECK it may depend on rather than before it.
-func alterDomainNode(domainDiff types.DomainDiff, domain goschema.Domain) ast.Node {
+func alterDomainNode(domainDiff difftypes.DomainDiff, domain goschema.Domain) ast.Node {
 	node := ast.NewAlterType(domainDiff.DomainName)
 	operations := 0
 
@@ -164,7 +164,7 @@ func quoteDomainDefaultLiteral(literal string) string {
 // The comparator sets the delta only when applying it lands exactly on the
 // declared shape, so this is a presence check rather than a second judgement
 // about ordering (stokaro/ptah#1717).
-func compositeHasAttributeDelta(compositeDiff types.CompositeTypeDiff) bool {
+func compositeHasAttributeDelta(compositeDiff difftypes.CompositeTypeDiff) bool {
 	return len(compositeDiff.AttributesAdded) > 0 || len(compositeDiff.AttributesRemoved) > 0
 }
 
@@ -185,7 +185,7 @@ func compositeHasAttributeDelta(compositeDiff types.CompositeTypeDiff) bool {
 //
 // The closure runs to a fixpoint because the references chain: a composite over
 // a composite over a rebuilt domain is two steps from the cause.
-func rebuiltUserTypes(diff *types.SchemaDiff) map[string]struct{} {
+func rebuiltUserTypes(diff *difftypes.SchemaDiff) map[string]struct{} {
 	rebuilt := make(map[string]struct{})
 	for _, domainDiff := range diff.DomainsModified {
 		if !domainIsAlterableInPlace(domainDiff) {
@@ -262,7 +262,7 @@ func bareTypeName(name string) string {
 // recreating it, which is the one thing the engine will not do there.
 func (p *Planner) alterModifiedCompositeTypes(
 	result []ast.Node,
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	generated *goschema.Database,
 ) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())

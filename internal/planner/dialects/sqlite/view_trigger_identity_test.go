@@ -8,7 +8,7 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestViewAndTriggerLookupsDoNotCrossSchemas pins sqlite's findView and
@@ -19,7 +19,7 @@ func TestViewAndTriggerLookupsDoNotCrossSchemas(t *testing.T) {
 	tests := []struct {
 		name        string
 		generated   *goschema.Database
-		diff        *types.SchemaDiff
+		diff        *difftypes.SchemaDiff
 		unwantedSQL string
 	}{
 		{
@@ -30,7 +30,7 @@ func TestViewAndTriggerLookupsDoNotCrossSchemas(t *testing.T) {
 					Body: "SELECT id FROM notes WHERE body IS NOT NULL",
 				}},
 			},
-			diff: &types.SchemaDiff{ViewsModified: []types.ViewDiff{{
+			diff: &difftypes.SchemaDiff{ViewsModified: []difftypes.ViewDiff{{
 				ViewName:     "main.active_notes",
 				PreviousBody: "SELECT id FROM notes",
 				Changes:      map[string]string{"body": "changed"},
@@ -50,7 +50,7 @@ func TestViewAndTriggerLookupsDoNotCrossSchemas(t *testing.T) {
 					Body:       "SELECT 1;",
 				}},
 			},
-			diff: &types.SchemaDiff{TriggersAdded: []types.TriggerRef{{
+			diff: &difftypes.SchemaDiff{TriggersAdded: []difftypes.TriggerRef{{
 				TriggerName: "touch",
 				TableName:   "main.notes",
 			}}},
@@ -77,7 +77,7 @@ func TestViewAndTriggerLookupsFoldASCIICase(t *testing.T) {
 	tests := []struct {
 		name      string
 		generated *goschema.Database
-		diff      *types.SchemaDiff
+		diff      *difftypes.SchemaDiff
 		wantSQL   string
 	}{
 		{
@@ -88,7 +88,7 @@ func TestViewAndTriggerLookupsFoldASCIICase(t *testing.T) {
 					Body: "SELECT id FROM notes WHERE body IS NOT NULL",
 				}},
 			},
-			diff: &types.SchemaDiff{ViewsModified: []types.ViewDiff{{
+			diff: &difftypes.SchemaDiff{ViewsModified: []difftypes.ViewDiff{{
 				ViewName:     "active_notes",
 				PreviousBody: "SELECT id FROM notes",
 				Changes:      map[string]string{"body": "changed"},
@@ -108,7 +108,7 @@ func TestViewAndTriggerLookupsFoldASCIICase(t *testing.T) {
 					Body:       "SELECT 1;",
 				}},
 			},
-			diff: &types.SchemaDiff{TriggersAdded: []types.TriggerRef{{
+			diff: &difftypes.SchemaDiff{TriggersAdded: []difftypes.TriggerRef{{
 				TriggerName: "touch",
 				TableName:   "notes",
 			}}},

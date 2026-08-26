@@ -11,7 +11,7 @@ import (
 	"go.5x5.cz/ptah/internal/indexscope"
 	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/migration/internal/generatedschema"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // ValidateCoverage rejects catalog-resolved snapshots that omit a candidate.

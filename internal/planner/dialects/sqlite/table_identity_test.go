@@ -8,7 +8,7 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // identityRebuildSchema declares one `notes` table whose schema is spelled as
@@ -78,13 +78,13 @@ func TestRebuildCarriesAddedColumnsAcrossSchemaSpellings(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := &types.SchemaDiff{
-				TablesModified: []types.TableDiff{{
+			diff := &difftypes.SchemaDiff{
+				TablesModified: []difftypes.TableDiff{{
 					TableName:    test.diffTableName,
 					ColumnsAdded: []string{"author"},
 				}},
 				ConstraintsAdded: []string{"ck_notes_body"},
-				ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
 					Name:            "ck_notes_body",
 					TableName:       test.constraintTable,
 					Type:            "CHECK",
@@ -135,10 +135,10 @@ func TestConstraintOnACreatedTableIsNotAlsoRebuilt(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := &types.SchemaDiff{
+			diff := &difftypes.SchemaDiff{
 				TablesAdded:      []string{test.addedTableName},
 				ConstraintsAdded: []string{"ck_notes_body"},
-				ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
 					Name:            "ck_notes_body",
 					TableName:       test.constraintTable,
 					Type:            "CHECK",

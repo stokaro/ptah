@@ -13,7 +13,7 @@ import (
 	"go.5x5.cz/ptah/internal/planner/dialects/mysql"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // reverseConstraintDiff mirrors the constraint half of the generator's down

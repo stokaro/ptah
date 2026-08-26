@@ -1,27 +1,27 @@
-package types_test
+package difftypes_test
 
 import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestSchemaDiff_HasChanges(t *testing.T) {
 	tests := []struct {
 		name     string
-		diff     *types.SchemaDiff
+		diff     *difftypes.SchemaDiff
 		expected bool
 	}{
 		{
 			name:     "no changes",
-			diff:     &types.SchemaDiff{},
+			diff:     &difftypes.SchemaDiff{},
 			expected: false,
 		},
 		{
 			name: "supplemental foreign key removal metadata is not a change",
-			diff: &types.SchemaDiff{ForeignKeysRemovedWithTables: []types.ForeignKeyRemovalInfo{{
+			diff: &difftypes.SchemaDiff{ForeignKeysRemovedWithTables: []difftypes.ForeignKeyRemovalInfo{{
 				Name: "fk_parent", TableName: "children", Columns: []string{"parent_id"},
 				ForeignTable: "parents", ForeignColumns: []string{"id"},
 			}}},
@@ -29,22 +29,22 @@ func TestSchemaDiff_HasChanges(t *testing.T) {
 		},
 		{
 			name: "tables added",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				TablesAdded: []string{"users"},
 			},
 			expected: true,
 		},
 		{
 			name: "tables removed",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				TablesRemoved: []string{"old_table"},
 			},
 			expected: true,
 		},
 		{
 			name: "tables modified",
-			diff: &types.SchemaDiff{
-				TablesModified: []types.TableDiff{
+			diff: &difftypes.SchemaDiff{
+				TablesModified: []difftypes.TableDiff{
 					{TableName: "users", ColumnsAdded: []string{"email"}},
 				},
 			},
@@ -52,22 +52,22 @@ func TestSchemaDiff_HasChanges(t *testing.T) {
 		},
 		{
 			name: "enums added",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				EnumsAdded: []string{"status_enum"},
 			},
 			expected: true,
 		},
 		{
 			name: "enums removed",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				EnumsRemoved: []string{"old_enum"},
 			},
 			expected: true,
 		},
 		{
 			name: "enums modified",
-			diff: &types.SchemaDiff{
-				EnumsModified: []types.EnumDiff{
+			diff: &difftypes.SchemaDiff{
+				EnumsModified: []difftypes.EnumDiff{
 					{EnumName: "status", ValuesAdded: []string{"pending"}},
 				},
 			},
@@ -75,8 +75,8 @@ func TestSchemaDiff_HasChanges(t *testing.T) {
 		},
 		{
 			name: "indexes added",
-			diff: &types.SchemaDiff{
-				IndexesAdded: []types.IndexRef{
+			diff: &difftypes.SchemaDiff{
+				IndexesAdded: []difftypes.IndexRef{
 					{Name: "idx_user_email", TableName: "users"},
 				},
 			},
@@ -84,8 +84,8 @@ func TestSchemaDiff_HasChanges(t *testing.T) {
 		},
 		{
 			name: "indexes removed",
-			diff: &types.SchemaDiff{
-				IndexesRemoved: []types.IndexRef{
+			diff: &difftypes.SchemaDiff{
+				IndexesRemoved: []difftypes.IndexRef{
 					{Name: "old_index", TableName: "users"},
 				},
 			},
@@ -93,14 +93,14 @@ func TestSchemaDiff_HasChanges(t *testing.T) {
 		},
 		{
 			name: "extensions added",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				ExtensionsAdded: []string{"pg_trgm"},
 			},
 			expected: true,
 		},
 		{
 			name: "extensions removed",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				ExtensionsRemoved: []string{"btree_gin"},
 			},
 			expected: true,

@@ -8,8 +8,8 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	dbtypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 // oracleDeclaredFunction is the declaration the cases below compare against

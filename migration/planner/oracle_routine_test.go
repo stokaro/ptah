@@ -10,7 +10,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestGenerateSchemaDiffSQLStatements_KeepsAnOracleRoutineInOneStatement is the
@@ -64,7 +64,7 @@ func TestGenerateSchemaDiffSQLStatements_KeepsAnOracleRoutineInOneStatement(t *t
 				Volatility: "VOLATILE",
 				Body:       test.body,
 			}}}
-			diff := &types.SchemaDiff{FunctionsAdded: []string{"fn_double"}}
+			diff := &difftypes.SchemaDiff{FunctionsAdded: []string{"fn_double"}}
 
 			statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 				diff, generated, platform.Oracle,
@@ -96,7 +96,7 @@ func TestGenerateSchemaDiffSQLStatements_OracleReplacesARoutineWithBothHalves(t 
 		Volatility: "VOLATILE",
 		Body:       "BEGIN\n  RETURN p * 3;\nEND;",
 	}}}
-	diff := &types.SchemaDiff{FunctionsModified: []types.FunctionDiff{{
+	diff := &difftypes.SchemaDiff{FunctionsModified: []difftypes.FunctionDiff{{
 		FunctionName: "fn_double",
 		Changes:      map[string]string{"body": "old -> new"},
 	}}}
@@ -131,7 +131,7 @@ func TestGenerateSchemaDiffSQLStatements_OracleDropsNothingItCannotRecreate(t *t
 		Volatility: "VOLATILE",
 		Body:       "BEGIN RETURN p * 3; END;",
 	}}}
-	diff := &types.SchemaDiff{FunctionsModified: []types.FunctionDiff{{
+	diff := &difftypes.SchemaDiff{FunctionsModified: []difftypes.FunctionDiff{{
 		FunctionName: "fn_double",
 		Changes:      map[string]string{"body": "old -> new"},
 	}}}

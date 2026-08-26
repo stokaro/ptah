@@ -11,7 +11,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/internal/planner/dialects/clickhouse"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func mkDB() *goschema.Database {
@@ -39,14 +39,14 @@ func mkDB() *goschema.Database {
 func TestGenerateMigrationAST_AddTableDropTableAndAlter(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		TablesAdded:   []string{"events"},
 		TablesRemoved: []string{"legacy"},
-		TablesModified: []types.TableDiff{
+		TablesModified: []difftypes.TableDiff{
 			{
 				TableName:    "existing",
 				ColumnsAdded: []string{"new_col"},
-				ColumnsModified: []types.ColumnDiff{
+				ColumnsModified: []difftypes.ColumnDiff{
 					{ColumnName: "id", Changes: map[string]string{"type": "Int64"}},
 				},
 				ColumnsRemoved: []string{"old_col"},
@@ -100,11 +100,11 @@ func TestGenerateMigrationAST_IndexAddRemove(t *testing.T) {
 	gen.Indexes = []goschema.Index{
 		{StructName: "Event", Name: "idx_e_payload", Fields: []string{"payload"}},
 	}
-	diff := &types.SchemaDiff{
-		IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "idx_e_payload", TableName: "events"},
 		},
-		IndexesRemoved: []types.IndexRef{
+		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_old", TableName: "events"},
 		},
 	}
@@ -125,7 +125,7 @@ func TestGenerateMigrationAST_IndexAddRemove(t *testing.T) {
 
 func TestGenerateMigrationAST_EnumChangesAreSurfacedAsComment(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		EnumsAdded: []string{"status"},
 	}
 	p := clickhouse.New()
@@ -143,7 +143,7 @@ func TestGenerateMigrationASTChecked_IndexUnresolvedStructRejected(t *testing.T)
 	gen.Indexes = []goschema.Index{
 		{StructName: "GhostStruct", Name: "idx_orphan", Fields: []string{"x"}},
 	}
-	diff := &types.SchemaDiff{IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{IndexesAdded: []difftypes.IndexRef{
 		{Name: "idx_orphan", TableName: "ghosts"},
 	}}
 
@@ -164,7 +164,7 @@ func TestGenerateMigrationAST_IndexExplicitTableNameWins(t *testing.T) {
 	gen.Indexes = []goschema.Index{
 		{StructName: "DoesNotMatter", Name: "idx_cross", Fields: []string{"x"}, TableName: "events"},
 	}
-	diff := &types.SchemaDiff{IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{IndexesAdded: []difftypes.IndexRef{
 		{Name: "idx_cross", TableName: "events"},
 	}}
 
@@ -192,7 +192,7 @@ func TestGenerateMigrationAST_IndexTypeAndGranularityPropagate(t *testing.T) {
 			Granularity: 64,
 		},
 	}
-	diff := &types.SchemaDiff{IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{IndexesAdded: []difftypes.IndexRef{
 		{Name: "idx_e_payload", TableName: "events"},
 	}}
 
@@ -210,7 +210,7 @@ func TestGenerateMigrationASTChecked_NilSchemaHappyPath(t *testing.T) {
 	c := qt.New(t)
 	p := clickhouse.New()
 
-	nodes, err := p.GenerateMigrationASTChecked(&types.SchemaDiff{}, nil)
+	nodes, err := p.GenerateMigrationASTChecked(&difftypes.SchemaDiff{}, nil)
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 0)
 }
@@ -218,15 +218,15 @@ func TestGenerateMigrationASTChecked_NilSchemaHappyPath(t *testing.T) {
 func TestGenerateMigrationASTChecked_MissingDesiredViewRejected(t *testing.T) {
 	tests := []struct {
 		name string
-		diff *types.SchemaDiff
+		diff *difftypes.SchemaDiff
 	}{
 		{
 			name: "addition",
-			diff: &types.SchemaDiff{ViewsAdded: []string{"analytics.missing"}},
+			diff: &difftypes.SchemaDiff{ViewsAdded: []string{"analytics.missing"}},
 		},
 		{
 			name: "modification",
-			diff: &types.SchemaDiff{ViewsModified: []types.ViewDiff{{ViewName: "analytics.missing"}}},
+			diff: &difftypes.SchemaDiff{ViewsModified: []difftypes.ViewDiff{{ViewName: "analytics.missing"}}},
 		},
 	}
 
@@ -245,16 +245,16 @@ func TestGenerateMigrationASTChecked_DisabledViewsNeedNoDesiredDeclaration(t *te
 	planner := clickhouse.NewWithCapabilities(capability.Capabilities{})
 	tests := []struct {
 		name        string
-		diff        *types.SchemaDiff
+		diff        *difftypes.SchemaDiff
 		wantReplace bool
 	}{
 		{
 			name: "addition",
-			diff: &types.SchemaDiff{ViewsAdded: []string{"analytics.missing"}},
+			diff: &difftypes.SchemaDiff{ViewsAdded: []string{"analytics.missing"}},
 		},
 		{
 			name:        "modification",
-			diff:        &types.SchemaDiff{ViewsModified: []types.ViewDiff{{ViewName: "analytics.missing"}}},
+			diff:        &difftypes.SchemaDiff{ViewsModified: []difftypes.ViewDiff{{ViewName: "analytics.missing"}}},
 			wantReplace: true,
 		},
 	}
@@ -280,7 +280,7 @@ func TestNewWithCapabilities_NilIsConservative(t *testing.T) {
 	planner := clickhouse.NewWithCapabilities(nil)
 
 	nodes, err := planner.GenerateMigrationASTChecked(
-		&types.SchemaDiff{ViewsAdded: []string{"analytics.report"}},
+		&difftypes.SchemaDiff{ViewsAdded: []string{"analytics.report"}},
 		&goschema.Database{Views: []goschema.View{{
 			Name: "analytics.report",
 			Body: "SELECT 1",
@@ -308,7 +308,7 @@ func TestGenerateMigrationAST_TableAdditionPreservesStructuralIdentity(t *testin
 	}
 
 	nodes, err := clickhouse.New().GenerateMigrationASTChecked(
-		&types.SchemaDiff{TablesAdded: []string{"tenant.data"}},
+		&difftypes.SchemaDiff{TablesAdded: []string{"tenant.data"}},
 		generated,
 	)
 
@@ -333,7 +333,7 @@ func TestGenerateMigrationASTChecked_MaterializedViewCreateCarriesItsBody(t *tes
 	}}}
 
 	nodes, err := clickhouse.New().GenerateMigrationASTChecked(
-		&types.SchemaDiff{MaterializedViewsAdded: []string{"analytics.user_counts"}},
+		&difftypes.SchemaDiff{MaterializedViewsAdded: []string{"analytics.user_counts"}},
 		generated,
 	)
 
@@ -364,7 +364,7 @@ func TestGenerateMigrationASTChecked_MaterializedViewChangeDropsBeforeCreating(t
 	}}}
 
 	nodes, err := clickhouse.New().GenerateMigrationASTChecked(
-		&types.SchemaDiff{MaterializedViewsModified: []types.MaterializedViewDiff{{
+		&difftypes.SchemaDiff{MaterializedViewsModified: []difftypes.MaterializedViewDiff{{
 			ViewName: "analytics.user_counts",
 			Changes:  map[string]string{"body": "old -> new"},
 		}}},
@@ -406,7 +406,7 @@ func TestGenerateMigrationASTChecked_ViewReadingAMaterializedViewIsOrderedAfterI
 	}
 
 	nodes, err := clickhouse.New().GenerateMigrationASTChecked(
-		&types.SchemaDiff{
+		&difftypes.SchemaDiff{
 			ViewsAdded:             []string{"analytics.reader"},
 			MaterializedViewsAdded: []string{"analytics.user_counts"},
 		},
@@ -427,7 +427,7 @@ func TestGenerateMigrationASTChecked_MaterializedViewRemovalIsGuarded(t *testing
 	c := qt.New(t)
 
 	nodes, err := clickhouse.New().GenerateMigrationASTChecked(
-		&types.SchemaDiff{MaterializedViewsRemoved: []string{"analytics.user_counts"}},
+		&difftypes.SchemaDiff{MaterializedViewsRemoved: []string{"analytics.user_counts"}},
 		&goschema.Database{},
 	)
 
@@ -442,15 +442,15 @@ func TestGenerateMigrationASTChecked_MaterializedViewRemovalIsGuarded(t *testing
 func TestGenerateMigrationASTChecked_MissingDesiredMaterializedViewRejected(t *testing.T) {
 	tests := []struct {
 		name string
-		diff *types.SchemaDiff
+		diff *difftypes.SchemaDiff
 	}{
 		{
 			name: "addition",
-			diff: &types.SchemaDiff{MaterializedViewsAdded: []string{"analytics.missing"}},
+			diff: &difftypes.SchemaDiff{MaterializedViewsAdded: []string{"analytics.missing"}},
 		},
 		{
 			name: "modification",
-			diff: &types.SchemaDiff{MaterializedViewsModified: []types.MaterializedViewDiff{{
+			diff: &difftypes.SchemaDiff{MaterializedViewsModified: []difftypes.MaterializedViewDiff{{
 				ViewName: "analytics.missing",
 			}}},
 		},
@@ -477,15 +477,15 @@ func TestGenerateMigrationASTChecked_DisabledMaterializedViewsNeedNoDeclaration(
 	)
 	tests := []struct {
 		name string
-		diff *types.SchemaDiff
+		diff *difftypes.SchemaDiff
 	}{
 		{
 			name: "addition",
-			diff: &types.SchemaDiff{MaterializedViewsAdded: []string{"analytics.missing"}},
+			diff: &difftypes.SchemaDiff{MaterializedViewsAdded: []string{"analytics.missing"}},
 		},
 		{
 			name: "modification",
-			diff: &types.SchemaDiff{MaterializedViewsModified: []types.MaterializedViewDiff{{
+			diff: &difftypes.SchemaDiff{MaterializedViewsModified: []difftypes.MaterializedViewDiff{{
 				ViewName: "analytics.missing",
 			}}},
 		},
@@ -535,13 +535,13 @@ func TestGenerateMigrationASTChecked_KindChangeDropsTheLiveObjectFirst(t *testin
 
 	tests := []struct {
 		name      string
-		diff      *types.SchemaDiff
+		diff      *difftypes.SchemaDiff
 		generated *goschema.Database
 		wantNodes []ast.Node
 	}{
 		{
 			name: "materialized view becomes a plain view",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				ViewsAdded:               []string{"user_counts"},
 				MaterializedViewsRemoved: []string{"analytics.user_counts"},
 			},
@@ -556,7 +556,7 @@ func TestGenerateMigrationASTChecked_KindChangeDropsTheLiveObjectFirst(t *testin
 		},
 		{
 			name: "plain view becomes a materialized view",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				MaterializedViewsAdded: []string{"user_counts"},
 				ViewsRemoved:           []string{"analytics.user_counts"},
 			},
@@ -599,7 +599,7 @@ func TestGenerateMigrationASTChecked_UnrelatedRemovalStaysAfterTheCreates(t *tes
 	}}}
 
 	nodes, err := clickhouse.New().GenerateMigrationASTChecked(
-		&types.SchemaDiff{
+		&difftypes.SchemaDiff{
 			ViewsAdded:               []string{"analytics.reader"},
 			MaterializedViewsRemoved: []string{"analytics.user_counts"},
 		},
@@ -639,12 +639,12 @@ func TestGenerateMigrationASTChecked_NilDiffFailurePath(t *testing.T) {
 
 // matViewRefreshDiff is a materialized view whose only change is its refresh
 // schedule, with both sides supplied the way the comparator supplies them.
-func matViewRefreshDiff(desired, current *ast.MatViewRefreshSpec) *types.SchemaDiff {
-	return &types.SchemaDiff{
-		MaterializedViewsModified: []types.MaterializedViewDiff{{
+func matViewRefreshDiff(desired, current *ast.MatViewRefreshSpec) *difftypes.SchemaDiff {
+	return &difftypes.SchemaDiff{
+		MaterializedViewsModified: []difftypes.MaterializedViewDiff{{
 			ViewName:      "mv",
 			Changes:       map[string]string{"refresh": "x -> y"},
-			RefreshChange: &types.MatViewRefreshChange{Desired: desired, Current: current},
+			RefreshChange: &difftypes.MatViewRefreshChange{Desired: desired, Current: current},
 		}},
 	}
 }
@@ -712,7 +712,7 @@ func TestGenerateMigrationAST_RefreshTransitionsThatCannotBeAltered(t *testing.T
 	}
 	tests := []struct {
 		name string
-		diff *types.SchemaDiff
+		diff *difftypes.SchemaDiff
 	}{
 		{
 			name: "a plain view gaining its first schedule",
@@ -724,7 +724,7 @@ func TestGenerateMigrationAST_RefreshTransitionsThatCannotBeAltered(t *testing.T
 		},
 		{
 			name: "the body changed too",
-			diff: func() *types.SchemaDiff {
+			diff: func() *difftypes.SchemaDiff {
 				d := matViewRefreshDiff(every("2 HOUR"), every("1 HOUR"))
 				d.MaterializedViewsModified[0].Changes["body"] = "a -> b"
 				return d

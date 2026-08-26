@@ -165,7 +165,7 @@
 //
 // This package integrates with other Ptah components:
 //
-//   - ptah/migration/schemadiff/types: Consumes schema difference data
+//   - ptah/migration/schemadiff/difftypes: Consumes schema difference data
 //   - ptah/core/goschema: Uses generated schema information
 //   - ptah/core/ast: Generates AST nodes for SQL representation
 //   - ptah/core/renderer: Converts AST nodes to dialect-specific SQL

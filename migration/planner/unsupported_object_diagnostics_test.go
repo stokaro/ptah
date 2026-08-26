@@ -11,7 +11,7 @@ import (
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // unhostableSchema declares one of every object kind a non-PostgreSQL target
@@ -57,8 +57,8 @@ func unhostableSchema() *goschema.Database {
 // unhostableCreationDiff is the diff `schema apply` computes for
 // unhostableSchema against an empty database: every declared object is an
 // addition.
-func unhostableCreationDiff() *types.SchemaDiff {
-	return &types.SchemaDiff{
+func unhostableCreationDiff() *difftypes.SchemaDiff {
+	return &difftypes.SchemaDiff{
 		ExtensionsAdded:        []string{"pg_trgm"},
 		SequencesAdded:         []string{"order_number_seq"},
 		RolesAdded:             []string{"app_role"},
@@ -67,11 +67,11 @@ func unhostableCreationDiff() *types.SchemaDiff {
 		ViewsAdded:             []string{"v1"},
 		MaterializedViewsAdded: []string{"mv1"},
 		RLSEnabledTablesAdded:  []string{"t"},
-		RLSPoliciesAdded:       []types.RLSPolicyRef{{PolicyName: "p1", TableName: "t"}},
-		GrantsAdded: []types.GrantRef{{
+		RLSPoliciesAdded:       []difftypes.RLSPolicyRef{{PolicyName: "p1", TableName: "t"}},
+		GrantsAdded: []difftypes.GrantRef{{
 			Role: "app_role", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "app.t",
 		}},
-		TriggersAdded: []types.TriggerRef{{TriggerName: "trg1", TableName: "t"}},
+		TriggersAdded: []difftypes.TriggerRef{{TriggerName: "trg1", TableName: "t"}},
 	}
 }
 
@@ -102,7 +102,7 @@ func diagnosticLines(statements []string) []string {
 	return lines
 }
 
-func planStatements(c *qt.C, diff *types.SchemaDiff, generated *goschema.Database, dialect string) []string {
+func planStatements(c *qt.C, diff *difftypes.SchemaDiff, generated *goschema.Database, dialect string) []string {
 	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, generated, dialect)
 	c.Assert(err, qt.IsNil)
 	return statements
@@ -196,7 +196,7 @@ func TestPlan_ClickHouseViewAloneIsNotReportedAsSynced(t *testing.T) {
 	generated := &goschema.Database{
 		Views: []goschema.View{{StructName: "V", Name: "v_only", Body: "SELECT 1"}},
 	}
-	diff := &types.SchemaDiff{ViewsAdded: []string{"v_only"}}
+	diff := &difftypes.SchemaDiff{ViewsAdded: []string{"v_only"}}
 
 	statements := planStatements(c, diff, generated, platform.ClickHouse)
 
@@ -210,7 +210,7 @@ func TestPlan_ClickHouseViewAloneIsNotReportedAsSynced(t *testing.T) {
 func TestPlan_ClickHouseNamesRemovedObjectsToo(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		ExtensionsRemoved:        []string{"pg_trgm"},
 		SequencesRemoved:         []string{"order_number_seq"},
 		DomainsRemoved:           []string{"email"},
@@ -221,11 +221,11 @@ func TestPlan_ClickHouseNamesRemovedObjectsToo(t *testing.T) {
 		ViewsRemoved:             []string{"v1"},
 		MaterializedViewsRemoved: []string{"mv1"},
 		RLSEnabledTablesRemoved:  []string{"t"},
-		RLSPoliciesRemoved:       []types.RLSPolicyRef{{PolicyName: "p1", TableName: "t"}},
-		GrantsRemoved: []types.GrantRef{{
+		RLSPoliciesRemoved:       []difftypes.RLSPolicyRef{{PolicyName: "p1", TableName: "t"}},
+		GrantsRemoved: []difftypes.GrantRef{{
 			Role: "app_role", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "app.t",
 		}},
-		TriggersRemoved: []types.TriggerRef{{TriggerName: "trg1", TableName: "t"}},
+		TriggersRemoved: []difftypes.TriggerRef{{TriggerName: "trg1", TableName: "t"}},
 	}
 
 	planned := strings.Join(planStatements(c, diff, &goschema.Database{}, platform.ClickHouse), "\n")
@@ -316,8 +316,8 @@ func mysqlFamilySchema() *goschema.Database {
 	}
 }
 
-func mysqlFamilyCreationDiff() *types.SchemaDiff {
-	return &types.SchemaDiff{
+func mysqlFamilyCreationDiff() *difftypes.SchemaDiff {
+	return &difftypes.SchemaDiff{
 		ExtensionsAdded: []string{"pg_trgm"},
 		SequencesAdded:  []string{"order_number_seq"},
 		TablesAdded:     []string{"t"},
@@ -410,7 +410,7 @@ func sequenceDiagnosticIn(statements, want string) bool {
 // carries four kinds: DROP TYPE for a domain sends the reader looking for
 // something never declared under that word.
 func TestPlan_MySQLFamilyNamesTheUserTypesItNoLongerDeclares(t *testing.T) {
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		DomainsRemoved:        []string{"email"},
 		CompositeTypesRemoved: []string{"addr"},
 		RangesRemoved:         []string{"tsr"},
@@ -431,7 +431,7 @@ func TestPlan_MySQLFamilyNamesTheUserTypesItNoLongerDeclares(t *testing.T) {
 }
 
 func TestPlan_NonPostgreSQLTargetsDoNotLoseExtensionPlacementDrift(t *testing.T) {
-	diff := &types.SchemaDiff{ExtensionsModified: []types.ExtensionDiff{{
+	diff := &difftypes.SchemaDiff{ExtensionsModified: []difftypes.ExtensionDiff{{
 		Name: "pgcrypto", FromSchema: "public", ToSchema: "extensions",
 	}}}
 
@@ -454,7 +454,7 @@ func TestPlan_NonPostgreSQLTargetsDoNotLoseExtensionPlacementDrift(t *testing.T)
 }
 
 func TestPlan_ExtensionInstallationSchemaSupportedTargets(t *testing.T) {
-	diff := &types.SchemaDiff{ExtensionsAdded: []string{"pgcrypto"}}
+	diff := &difftypes.SchemaDiff{ExtensionsAdded: []string{"pgcrypto"}}
 	generated := &goschema.Database{
 		Extensions: []goschema.Extension{{Name: "pgcrypto", Schema: "extensions"}},
 	}
@@ -474,7 +474,7 @@ func TestPlan_ExtensionInstallationSchemaSupportedTargets(t *testing.T) {
 }
 
 func TestPlan_ExtensionInstallationSchemaUnsupportedTargetsFailBeforeAST(t *testing.T) {
-	diff := &types.SchemaDiff{ExtensionsAdded: []string{"pgcrypto"}}
+	diff := &difftypes.SchemaDiff{ExtensionsAdded: []string{"pgcrypto"}}
 	generated := &goschema.Database{
 		Extensions: []goschema.Extension{{Name: "pgcrypto", Schema: "extensions"}},
 	}
@@ -492,7 +492,7 @@ func TestPlan_ExtensionInstallationSchemaUnsupportedTargetsFailBeforeAST(t *test
 }
 
 func TestPlan_WhitespaceOnlyExtensionInstallationSchemaUnsupportedTargetsFailBeforeAST(t *testing.T) {
-	diff := &types.SchemaDiff{ExtensionsAdded: []string{"pgcrypto"}}
+	diff := &difftypes.SchemaDiff{ExtensionsAdded: []string{"pgcrypto"}}
 	generated := &goschema.Database{
 		Extensions: []goschema.Extension{{Name: "pgcrypto", Schema: " "}},
 	}
@@ -602,7 +602,7 @@ func TestPlan_MySQLFamilyRoleRefusalNamesTheSameRoleAtEitherGate(t *testing.T) {
 				c := qt.New(t)
 
 				statements, err := planner.GenerateSchemaDiffSQLStatements(
-					&types.SchemaDiff{RolesAdded: added}, test.generated, dialect)
+					&difftypes.SchemaDiff{RolesAdded: added}, test.generated, dialect)
 
 				c.Assert(statements, qt.HasLen, 0)
 				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
@@ -642,11 +642,11 @@ func roleFamilySchema() *goschema.Database {
 	}
 }
 
-func roleFamilyCreationDiff() *types.SchemaDiff {
-	return &types.SchemaDiff{
+func roleFamilyCreationDiff() *difftypes.SchemaDiff {
+	return &difftypes.SchemaDiff{
 		RolesAdded:  []string{"app_reader"},
 		TablesAdded: []string{"t"},
-		GrantsAdded: []types.GrantRef{{
+		GrantsAdded: []difftypes.GrantRef{{
 			Role: "app_reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t",
 		}},
 	}

@@ -1,4 +1,4 @@
-package types_test
+package difftypes_test
 
 import (
 	"encoding/json"
@@ -6,28 +6,28 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestSchemaDiff_SetIndexAdditionsPreservesDuplicateMultiset(t *testing.T) {
 	c := qt.New(t)
-	refs := []types.IndexRef{
+	refs := []difftypes.IndexRef{
 		{TableName: "zeta.accounts", Name: "idx_shared"},
 		{TableName: "alpha.users", Name: "idx_z"},
 		{TableName: "alpha.orders", Name: "idx_shared"},
 		{TableName: "alpha.users", Name: "idx_a"},
 	}
-	diff := &types.SchemaDiff{}
+	diff := &difftypes.SchemaDiff{}
 
 	diff.SetIndexAdditions(refs)
 
-	c.Assert(diff.IndexesAdded, qt.DeepEquals, []types.IndexRef{
+	c.Assert(diff.IndexesAdded, qt.DeepEquals, []difftypes.IndexRef{
 		{TableName: "alpha.orders", Name: "idx_shared"},
 		{TableName: "alpha.users", Name: "idx_a"},
 		{TableName: "alpha.users", Name: "idx_z"},
 		{TableName: "zeta.accounts", Name: "idx_shared"},
 	})
-	c.Assert(diff.IndexAdditions(), qt.DeepEquals, []types.IndexRef{
+	c.Assert(diff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{
 		{TableName: "alpha.orders", Name: "idx_shared"},
 		{TableName: "alpha.users", Name: "idx_a"},
 		{TableName: "alpha.users", Name: "idx_z"},
@@ -38,33 +38,33 @@ func TestSchemaDiff_SetIndexAdditionsPreservesDuplicateMultiset(t *testing.T) {
 
 func TestSchemaDiff_SetIndexRefsAreSymmetricAndCloneInputs(t *testing.T) {
 	c := qt.New(t)
-	additionRefs := []types.IndexRef{
+	additionRefs := []difftypes.IndexRef{
 		{TableName: "zeta.accounts", Name: "idx_shared"},
 		{TableName: "alpha.orders", Name: "idx_shared"},
 	}
-	removalRefs := []types.IndexRef{
+	removalRefs := []difftypes.IndexRef{
 		{TableName: "alpha.orders", Name: "idx_shared"},
 		{TableName: "zeta.accounts", Name: "idx_shared"},
 	}
-	additions := &types.SchemaDiff{}
-	removals := &types.SchemaDiff{}
+	additions := &difftypes.SchemaDiff{}
+	removals := &difftypes.SchemaDiff{}
 
 	additions.SetIndexAdditions(additionRefs)
 	removals.SetIndexRemovals(removalRefs)
-	c.Assert(additionRefs, qt.DeepEquals, []types.IndexRef{
+	c.Assert(additionRefs, qt.DeepEquals, []difftypes.IndexRef{
 		{TableName: "zeta.accounts", Name: "idx_shared"},
 		{TableName: "alpha.orders", Name: "idx_shared"},
 	})
-	c.Assert(removalRefs, qt.DeepEquals, []types.IndexRef{
+	c.Assert(removalRefs, qt.DeepEquals, []difftypes.IndexRef{
 		{TableName: "alpha.orders", Name: "idx_shared"},
 		{TableName: "zeta.accounts", Name: "idx_shared"},
 	})
-	additionRefs[0] = types.IndexRef{TableName: "mutated", Name: "mutated"}
-	removalRefs[0] = types.IndexRef{TableName: "mutated", Name: "mutated"}
+	additionRefs[0] = difftypes.IndexRef{TableName: "mutated", Name: "mutated"}
+	removalRefs[0] = difftypes.IndexRef{TableName: "mutated", Name: "mutated"}
 
 	c.Assert(additions.IndexesAdded, qt.DeepEquals, removals.IndexesRemoved)
 	c.Assert(additions.IndexAdditions(), qt.DeepEquals, removals.IndexRemovals())
-	c.Assert(additions.IndexesAdded, qt.DeepEquals, []types.IndexRef{
+	c.Assert(additions.IndexesAdded, qt.DeepEquals, []difftypes.IndexRef{
 		{TableName: "alpha.orders", Name: "idx_shared"},
 		{TableName: "zeta.accounts", Name: "idx_shared"},
 	})
@@ -74,11 +74,11 @@ func TestSchemaDiff_SetIndexRefsAreSymmetricAndCloneInputs(t *testing.T) {
 
 func TestSchemaDiff_IndexAccessorsReturnClones(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{
-		IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: []difftypes.IndexRef{
 			{TableName: "public.users", Name: "idx_users_email"},
 		},
-		IndexesRemoved: []types.IndexRef{
+		IndexesRemoved: []difftypes.IndexRef{
 			{TableName: "public.orders", Name: "idx_orders_reference"},
 		},
 	}
@@ -88,21 +88,21 @@ func TestSchemaDiff_IndexAccessorsReturnClones(t *testing.T) {
 	additions[0].TableName = "mutated"
 	removals[0].TableName = "mutated"
 
-	c.Assert(diff.IndexesAdded, qt.DeepEquals, []types.IndexRef{
+	c.Assert(diff.IndexesAdded, qt.DeepEquals, []difftypes.IndexRef{
 		{TableName: "public.users", Name: "idx_users_email"},
 	})
-	c.Assert(diff.IndexesRemoved, qt.DeepEquals, []types.IndexRef{
+	c.Assert(diff.IndexesRemoved, qt.DeepEquals, []difftypes.IndexRef{
 		{TableName: "public.orders", Name: "idx_orders_reference"},
 	})
 }
 
 func TestSchemaDiff_IndexRefsJSONShape(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{}
-	diff.SetIndexAdditions([]types.IndexRef{
+	diff := &difftypes.SchemaDiff{}
+	diff.SetIndexAdditions([]difftypes.IndexRef{
 		{TableName: "public.users", Name: "idx_email"},
 	})
-	diff.SetIndexRemovals([]types.IndexRef{
+	diff.SetIndexRemovals([]difftypes.IndexRef{
 		{TableName: "audit.users", Name: "idx_email"},
 	})
 
@@ -110,16 +110,16 @@ func TestSchemaDiff_IndexRefsJSONShape(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	var got struct {
-		IndexesAdded   []types.IndexRef `json:"indexes_added"`
-		IndexesRemoved []types.IndexRef `json:"indexes_removed"`
+		IndexesAdded   []difftypes.IndexRef `json:"indexes_added"`
+		IndexesRemoved []difftypes.IndexRef `json:"indexes_removed"`
 	}
 	err = json.Unmarshal(data, &got)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(got.IndexesAdded, qt.DeepEquals, []types.IndexRef{
+	c.Assert(got.IndexesAdded, qt.DeepEquals, []difftypes.IndexRef{
 		{TableName: "public.users", Name: "idx_email"},
 	})
-	c.Assert(got.IndexesRemoved, qt.DeepEquals, []types.IndexRef{
+	c.Assert(got.IndexesRemoved, qt.DeepEquals, []difftypes.IndexRef{
 		{TableName: "audit.users", Name: "idx_email"},
 	})
 	var fields map[string]json.RawMessage

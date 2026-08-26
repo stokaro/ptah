@@ -9,7 +9,7 @@ import (
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/deporder"
 	"go.5x5.cz/ptah/internal/planner/tablelookup"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // dropReverseConstraintsRestoredByTableCreation removes, from a reverse plan,
@@ -62,8 +62,8 @@ import (
 // the restored body from: the caller then has no table bodies to compare
 // against and the conservative answer is the behavior that was there before.
 func dropReverseConstraintsRestoredByTableCreation(
-	reversed *types.SchemaDiff,
-	removedWithTables []types.ConstraintRemovalInfo,
+	reversed *difftypes.SchemaDiff,
+	removedWithTables []difftypes.ConstraintRemovalInfo,
 	dbSchema *dbschematypes.DBSchema,
 ) {
 	if reversed == nil || dbSchema == nil || len(reversed.TablesAdded) == 0 {
@@ -75,7 +75,7 @@ func dropReverseConstraintsRestoredByTableCreation(
 	}
 
 	keptNames := make(map[string]struct{}, len(reversed.ConstraintsAddedWithTables))
-	keptAdditions := make([]types.ConstraintAdditionInfo, 0, len(reversed.ConstraintsAddedWithTables))
+	keptAdditions := make([]difftypes.ConstraintAdditionInfo, 0, len(reversed.ConstraintsAddedWithTables))
 	for _, addition := range reversed.ConstraintsAddedWithTables {
 		if restored.covers(addition.TableName, addition.Name, addition.Type) {
 			continue
@@ -96,7 +96,7 @@ func dropReverseConstraintsRestoredByTableCreation(
 	// one of the re-created tables that restores it. A constraint name shared
 	// across host tables — the mixin case ConstraintsAddedWithTables exists for
 	// — keeps its name whenever any host still needs it.
-	hostsByName := make(map[string][]types.ConstraintRemovalInfo, len(removedWithTables))
+	hostsByName := make(map[string][]difftypes.ConstraintRemovalInfo, len(removedWithTables))
 	for _, removal := range removedWithTables {
 		hostsByName[removal.Name] = append(hostsByName[removal.Name], removal)
 	}
@@ -209,7 +209,7 @@ func (r recreatedTableRestores) covers(tableName, constraintName, constraintType
 func (r recreatedTableRestores) coversEveryHost(
 	name string,
 	keptNames map[string]struct{},
-	hosts []types.ConstraintRemovalInfo,
+	hosts []difftypes.ConstraintRemovalInfo,
 ) bool {
 	if _, kept := keptNames[name]; kept {
 		return false

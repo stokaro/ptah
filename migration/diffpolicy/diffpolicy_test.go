@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/migration/diffpolicy"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestParseChangeKind(t *testing.T) {
@@ -55,7 +55,7 @@ func TestApplyNilOrEmptyReturnsInput(t *testing.T) {
 	c.Assert(got, qt.IsNil)
 	c.Assert(skipped, qt.HasLen, 0)
 
-	diff := &types.SchemaDiff{TablesRemoved: []string{"users"}}
+	diff := &difftypes.SchemaDiff{TablesRemoved: []string{"users"}}
 	got, skipped = diffpolicy.Apply(diff, nil)
 	c.Assert(got, qt.Equals, diff)
 	c.Assert(skipped, qt.HasLen, 0)
@@ -64,30 +64,30 @@ func TestApplyNilOrEmptyReturnsInput(t *testing.T) {
 func TestApplyDropTableRemovesDependents(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		TablesRemoved: []string{"users"},
-		TablesModified: []types.TableDiff{
+		TablesModified: []difftypes.TableDiff{
 			{TableName: "orders", ColumnsRemoved: []string{"note"}},
 		},
-		IndexesRemoved: []types.IndexRef{
+		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_users_email", TableName: "users"},
 			{Name: "idx_orders_total", TableName: "orders"},
 		},
 		ConstraintsRemoved: []string{"uq_users_email", "chk_orders_total"},
-		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 			{Name: "uq_users_email", TableName: "users", Type: "UNIQUE"},
 			{Name: "chk_orders_total", TableName: "orders", Type: "CHECK"},
 		},
-		TriggersRemoved: []types.TriggerRef{
+		TriggersRemoved: []difftypes.TriggerRef{
 			{TriggerName: "trg_users", TableName: "users"},
 			{TriggerName: "trg_orders", TableName: "orders"},
 		},
-		RLSPoliciesRemoved: []types.RLSPolicyRef{
+		RLSPoliciesRemoved: []difftypes.RLSPolicyRef{
 			{PolicyName: "p_users", TableName: "users"},
 			{PolicyName: "p_orders", TableName: "orders"},
 		},
 		RLSEnabledTablesRemoved: []string{"users", "orders"},
-		GrantsRemoved: []types.GrantRef{
+		GrantsRemoved: []difftypes.GrantRef{
 			{Role: "app", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "users"},
 			{Role: "app", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "orders"},
 			{Role: "app", Privilege: "USAGE", ObjectType: "SCHEMA", ObjectName: "public"},
@@ -99,7 +99,7 @@ func TestApplyDropTableRemovesDependents(t *testing.T) {
 	// The dropped table and only its dependents are removed; the kept table's
 	// removals (orders) and the schema-level grant survive.
 	c.Assert(got.TablesRemoved, qt.HasLen, 0)
-	c.Assert(got.IndexesRemoved, qt.DeepEquals, []types.IndexRef{
+	c.Assert(got.IndexesRemoved, qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "idx_orders_total", TableName: "orders"},
 	})
 	c.Assert(got.ConstraintsRemoved, qt.DeepEquals, []string{"chk_orders_total"})
@@ -123,8 +123,8 @@ func TestApplyDropTableRemovesDependents(t *testing.T) {
 func TestApplyDropColumn(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
-		TablesModified: []types.TableDiff{
+	diff := &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{
 			{TableName: "users", ColumnsAdded: []string{"age"}, ColumnsRemoved: []string{"legacy", "old"}},
 		},
 	}
@@ -143,13 +143,13 @@ func TestApplyDropColumn(t *testing.T) {
 func TestApplyDropIndexPreservesReplacements(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		// idx_rebuild is dropped and recreated (a replacement); idx_gone is a
 		// genuine standalone removal.
-		IndexesAdded: []types.IndexRef{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "idx_rebuild", TableName: "users"},
 		},
-		IndexesRemoved: []types.IndexRef{
+		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_rebuild", TableName: "users"},
 			{Name: "idx_gone", TableName: "legacy"},
 		},
@@ -157,7 +157,7 @@ func TestApplyDropIndexPreservesReplacements(t *testing.T) {
 
 	got, skipped := diffpolicy.Apply(diff, diffpolicy.NewSkipSet(diffpolicy.DropIndex))
 
-	c.Assert(got.IndexesRemoved, qt.DeepEquals, []types.IndexRef{
+	c.Assert(got.IndexesRemoved, qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "idx_rebuild", TableName: "users"},
 	})
 	c.Assert(skipped, qt.HasLen, 1)
@@ -168,7 +168,7 @@ func TestApplyDropIndexPreservesReplacements(t *testing.T) {
 func TestApplyDropEnum(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{EnumsRemoved: []string{"status", "kind"}}
+	diff := &difftypes.SchemaDiff{EnumsRemoved: []string{"status", "kind"}}
 
 	got, skipped := diffpolicy.Apply(diff, diffpolicy.NewSkipSet(diffpolicy.DropEnum))
 

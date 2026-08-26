@@ -25,7 +25,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/identifier"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/indexscope"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TableFacts is what the live catalog says about one table, reduced to the two
@@ -127,11 +127,11 @@ func mergeTableFacts(into map[string]TableFacts, key string, facts TableFacts) {
 // would have wanted; a declaration is not guessing, so an index declared
 // concurrent on an empty table is still built concurrently.
 func DeclaredRefs(
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	desired *goschema.Database,
 	dbSchema *dbschematypes.DBSchema,
 	info dbschematypes.DBInfo,
-) []types.IndexRef {
+) []difftypes.IndexRef {
 	if !platform.IsPostgresFamily(info.Dialect) || !info.Capabilities.Has(capability.CreateIndexConcurrently) {
 		return nil
 	}
@@ -140,7 +140,7 @@ func DeclaredRefs(
 		return nil
 	}
 	tables := IndexTableFacts(dbSchema)
-	var refs []types.IndexRef
+	var refs []difftypes.IndexRef
 	for _, ref := range diff.IndexAdditions() {
 		identity := indexscope.IdentityKeyWithSemantics(identifier.ForDialect(info.Dialect), ref)
 		if _, asked := declared[identity]; !asked {
@@ -166,17 +166,17 @@ func DeclaredRefs(
 func declaredIdentities(
 	desired *goschema.Database,
 	semantics identifier.Semantics,
-) map[types.IndexRef]struct{} {
+) map[difftypes.IndexRef]struct{} {
 	if desired == nil {
 		return nil
 	}
 	owners := goschema.ResolveIndexOwners(desired.Indexes, desired.Tables, desired.MaterializedViews)
-	identities := make(map[types.IndexRef]struct{})
+	identities := make(map[difftypes.IndexRef]struct{})
 	for position, index := range desired.Indexes {
 		if !index.Concurrently {
 			continue
 		}
-		identities[indexscope.IdentityKeyWithSemantics(semantics, types.IndexRef{
+		identities[indexscope.IdentityKeyWithSemantics(semantics, difftypes.IndexRef{
 			Name:      index.Name,
 			TableName: owners[position],
 		})] = struct{}{}
@@ -186,12 +186,12 @@ func declaredIdentities(
 
 // MergeRefs is the union of two ref lists, in the order the first names them and
 // then the second, without repeating one both name.
-func MergeRefs(first, second []types.IndexRef) []types.IndexRef {
+func MergeRefs(first, second []difftypes.IndexRef) []difftypes.IndexRef {
 	if len(second) == 0 {
 		return first
 	}
-	seen := make(map[types.IndexRef]struct{}, len(first)+len(second))
-	merged := make([]types.IndexRef, 0, len(first)+len(second))
+	seen := make(map[difftypes.IndexRef]struct{}, len(first)+len(second))
+	merged := make([]difftypes.IndexRef, 0, len(first)+len(second))
 	for _, ref := range slices.Concat(first, second) {
 		if _, repeated := seen[ref]; repeated {
 			continue

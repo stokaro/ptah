@@ -14,7 +14,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func postgresIndexDBInfo() dbschematypes.DBInfo {
@@ -37,12 +37,12 @@ func TestConcurrentIndexRefsForPopulatedTables_PartitionedAndUnknownStats(t *tes
 	tests := []struct {
 		name   string
 		tables []dbschematypes.DBTable
-		want   []types.IndexRef
+		want   []difftypes.IndexRef
 	}{
 		{
 			name:   "populated ordinary table builds concurrently",
 			tables: []dbschematypes.DBTable{{Name: "events", EstimatedRows: 5000}},
-			want:   []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
+			want:   []difftypes.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
 		},
 		{
 			// The discriminating row: an exclusion keyed on "the schema contains
@@ -53,7 +53,7 @@ func TestConcurrentIndexRefsForPopulatedTables_PartitionedAndUnknownStats(t *tes
 				{Name: "events", EstimatedRows: 5000},
 				{Name: "measurements", EstimatedRows: 5000, Partitioned: true},
 			},
-			want: []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
+			want: []difftypes.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
 		},
 		{
 			name:   "reported empty table stays transactional",
@@ -63,7 +63,7 @@ func TestConcurrentIndexRefsForPopulatedTables_PartitionedAndUnknownStats(t *tes
 		{
 			name:   "unreported row statistics build concurrently",
 			tables: []dbschematypes.DBTable{{Name: "events", EstimatedRows: 0, RowStatsUnknown: true}},
-			want:   []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
+			want:   []difftypes.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
 		},
 		{
 			name:   "populated partitioned parent stays transactional",
@@ -85,8 +85,8 @@ func TestConcurrentIndexRefsForPopulatedTables_PartitionedAndUnknownStats(t *tes
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := &types.SchemaDiff{}
-			diff.SetIndexAdditions([]types.IndexRef{
+			diff := &difftypes.SchemaDiff{}
+			diff.SetIndexAdditions([]difftypes.IndexRef{
 				{Name: "idx_events_tenant", TableName: "events"},
 			})
 
@@ -108,8 +108,8 @@ func TestConcurrentIndexRefsForPopulatedTables_PartitionedAndUnknownStats(t *tes
 // before a migration file, its checksum, and its commit exist.
 func TestConcurrentIndexPolicy_RefusesPartitionedParent(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{}
-	diff.SetIndexAdditions([]types.IndexRef{
+	diff := &difftypes.SchemaDiff{}
+	diff.SetIndexAdditions([]difftypes.IndexRef{
 		{Name: "idx_events_tenant", TableName: "events"},
 	})
 
@@ -134,12 +134,12 @@ func TestConcurrentIndexPolicy_HonorsATableTheBuildIsLegalOn(t *testing.T) {
 	tests := []struct {
 		name   string
 		tables []dbschematypes.DBTable
-		want   []types.IndexRef
+		want   []difftypes.IndexRef
 	}{
 		{
 			name:   "create over an ordinary table is honored",
 			tables: []dbschematypes.DBTable{{Name: "events"}},
-			want:   []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
+			want:   []difftypes.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
 		},
 		{
 			// The discriminating row: a refusal keyed on "the schema contains a
@@ -150,15 +150,15 @@ func TestConcurrentIndexPolicy_HonorsATableTheBuildIsLegalOn(t *testing.T) {
 				{Name: "events"},
 				{Name: "measurements", Partitioned: true},
 			},
-			want: []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
+			want: []difftypes.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := &types.SchemaDiff{}
-			diff.SetIndexAdditions([]types.IndexRef{
+			diff := &difftypes.SchemaDiff{}
+			diff.SetIndexAdditions([]difftypes.IndexRef{
 				{Name: "idx_events_tenant", TableName: "events"},
 			})
 
@@ -182,8 +182,8 @@ func TestConcurrentIndexPolicy_HonorsATableTheBuildIsLegalOn(t *testing.T) {
 // build is -- and a rollback nobody ran is where that goes unnoticed.
 func TestConcurrentIndexDropPolicy_RefusesPartitionedParent(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{}
-	diff.SetIndexRemovals([]types.IndexRef{
+	diff := &difftypes.SchemaDiff{}
+	diff.SetIndexRemovals([]difftypes.IndexRef{
 		{Name: "idx_events_tenant", TableName: "events"},
 	})
 
@@ -208,12 +208,12 @@ func TestConcurrentIndexDropPolicy_HonorsATableTheDropIsLegalOn(t *testing.T) {
 	tests := []struct {
 		name   string
 		tables []dbschematypes.DBTable
-		want   []types.IndexRef
+		want   []difftypes.IndexRef
 	}{
 		{
 			name:   "drop over an ordinary table is honored",
 			tables: []dbschematypes.DBTable{{Name: "events"}},
-			want:   []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
+			want:   []difftypes.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
 		},
 		{
 			name: "an unrelated partitioned table does not refuse the run",
@@ -221,15 +221,15 @@ func TestConcurrentIndexDropPolicy_HonorsATableTheDropIsLegalOn(t *testing.T) {
 				{Name: "events"},
 				{Name: "measurements", Partitioned: true},
 			},
-			want: []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
+			want: []difftypes.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := &types.SchemaDiff{}
-			diff.SetIndexRemovals([]types.IndexRef{
+			diff := &difftypes.SchemaDiff{}
+			diff.SetIndexRemovals([]difftypes.IndexRef{
 				{Name: "idx_events_tenant", TableName: "events"},
 			})
 
