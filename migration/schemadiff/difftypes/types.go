@@ -971,6 +971,30 @@ type ColumnDiff struct {
 	// separator, and it can be empty, which that format cannot tell from
 	// absent. Both distinctions are the ones a planner needs.
 	CommentChange *CommentChange `json:"comment_change,omitzero"`
+
+	// NotNullConstraintNameChange carries the column's NOT NULL constraint name
+	// transition, and is nil when the declaration does not manage the name.
+	//
+	// Nil is the common case and means "leave it alone", not "they match".
+	// PostgreSQL 18 names EVERY NOT NULL and provides no catalog flag
+	// separating an author-supplied name from a generated one, so a plain
+	// `NOT NULL` declaration sits opposite a server-generated name on every
+	// column. Comparing those would report a difference on every table nobody
+	// changed (stokaro/ptah#2161).
+	NotNullConstraintNameChange *NotNullConstraintNameChange `json:"not_null_constraint_name_change,omitzero"`
+}
+
+// NotNullConstraintNameChange is one column's NOT NULL constraint name
+// transition.
+//
+// Desired is never empty: an omitted name leaves the actual one unmanaged and
+// produces no change at all. Current may be empty on a target that had no name
+// to report.
+type NotNullConstraintNameChange struct {
+	// Current is the name the database holds.
+	Current string `json:"current"`
+	// Desired is the name the declaration asks for.
+	Desired string `json:"desired"`
 }
 
 // CommentChange is one object's comment transition.

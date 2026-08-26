@@ -889,8 +889,13 @@ func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
 			if err := r.writeRowExpiryOperation(node, operation); err != nil {
 				return err
 			}
-		case *ast.SetCommentOperation:
-			r.writeSetComment(node.Name, op)
+		case *ast.SetCommentOperation, *ast.RenameConstraintOperation:
+			// Both render a complete statement of their own rather than an
+			// ALTER TABLE clause, and they share one branch for the same reason
+			// the row-expiry operations above do: this switch has a complexity
+			// budget, and writeStandaloneOperation re-selects between them
+			// (stokaro/ptah#2161).
+			r.writeStandaloneOperation(node.Name, operation)
 		default:
 			return fmt.Errorf("unknown alter operation type: %T", operation)
 		}
@@ -932,6 +937,30 @@ func (r *Renderer) writeSetComment(table string, op *ast.SetCommentOperation) {
 		target += "." + r.escapeIdentifier(op.Column)
 	}
 	r.w.WriteLinef("COMMENT ON %s %s IS %s;", kind, target, r.commentLiteral(op.Comment))
+}
+
+// writeStandaloneOperation renders an operation that is a statement in its own
+// right rather than a clause of the surrounding ALTER TABLE.
+func (r *Renderer) writeStandaloneOperation(table string, operation ast.AlterOperation) {
+	switch op := operation.(type) {
+	case *ast.SetCommentOperation:
+		r.writeSetComment(table, op)
+	case *ast.RenameConstraintOperation:
+		r.writeRenameConstraint(table, op)
+	}
+}
+
+// writeRenameConstraint renames a constraint in place.
+//
+// One statement rather than a drop and an add, because for a NOT NULL the two
+// are not equivalent: PostgreSQL generates a name for an unnamed one, so the
+// re-add would land on the generated name rather than the declared one, and the
+// column is momentarily nullable in between (stokaro/ptah#2161).
+func (r *Renderer) writeRenameConstraint(table string, op *ast.RenameConstraintOperation) {
+	r.w.WriteLinef("ALTER TABLE %s RENAME CONSTRAINT %s TO %s;",
+		r.escapeQualifiedIdentifier(table),
+		r.escapeIdentifier(op.From),
+		r.escapeIdentifier(op.To))
 }
 
 // commentLiteral spells a comment for a COMMENT ON statement, with NULL for
