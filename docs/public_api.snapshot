@@ -8207,13 +8207,27 @@ type DBColumn struct {
     // Comment is the column's own comment, where the target has one and the
     // reader reads it. It is empty for a column nobody commented, which is why
     // it is omitted from the encoding rather than written as "".
-    Comment          string `json:"comment,omitempty"`
-    NumericPrecision *int   `json:"numeric_precision"` // For DECIMAL, etc.
-    NumericScale     *int   `json:"numeric_scale"`     // For DECIMAL, etc.
-    OrdinalPosition  int    `json:"ordinal_position"`
-    IsAutoIncrement  bool   `json:"is_auto_increment"` // Derived field
-    IsPrimaryKey     bool   `json:"is_primary_key"`    // Derived field
-    IsUnique         bool   `json:"is_unique"`         // Derived field
+    Comment string `json:"comment,omitempty"`
+    // NotNullConstraintName is the name the target keeps for this column's NOT
+    // NULL, where it keeps one as an addressable catalog object.
+    //
+    // PostgreSQL 18 records one row per NOT NULL in pg_constraint with
+    // contype 'n', keyed to the column through conkey. PostgreSQL 17 stores
+    // nothing, so this is empty there and the read is not even attempted --
+    // see the capability gate on the reader's projection.
+    //
+    // PostgreSQL 18 names EVERY NOT NULL and provides no catalog flag
+    // separating an author-supplied name from a generated one, so a faithful
+    // read returns all of them. Suppressing names that look generated would
+    // silently lose a supplied name that happens to use the same pattern
+    // (stokaro/ptah#2161).
+    NotNullConstraintName string `json:"not_null_constraint_name,omitempty"`
+    NumericPrecision      *int   `json:"numeric_precision"` // For DECIMAL, etc.
+    NumericScale          *int   `json:"numeric_scale"`     // For DECIMAL, etc.
+    OrdinalPosition       int    `json:"ordinal_position"`
+    IsAutoIncrement       bool   `json:"is_auto_increment"` // Derived field
+    IsPrimaryKey          bool   `json:"is_primary_key"`    // Derived field
+    IsUnique              bool   `json:"is_unique"`         // Derived field
 
     // TypeIsDeclaredText records that DataType must be written back as it
     // stands, because canonicalizing it would describe a different column.

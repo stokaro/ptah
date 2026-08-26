@@ -162,15 +162,20 @@ func convertTablesAndFields(
 				Comment:            dbColumn.Comment,
 				TypeIsDeclaredText: dbColumn.TypeIsDeclaredText,
 				Nullable:           dbColumn.IsNullable == "YES",
-				Primary:            dbColumn.IsPrimaryKey && !tablePKColumns[dbTable.QualifiedName()][dbColumn.Name],
-				AutoInc:            dbColumn.IsAutoIncrement,
-				Unique:             dbColumn.IsUnique,
-				Charset:            dbColumn.Charset,
-				Collate:            dbColumn.Collate,
-				GeneratedKind:      dbColumn.GeneratedKind,
-				IdentityGeneration: dbColumn.IdentityGeneration,
-				IdentityStart:      dbColumn.IdentityStart,
-				IdentityIncrement:  dbColumn.IdentityIncrement,
+				// Carried from the catalog rather than derived. PostgreSQL 18
+				// names every NOT NULL and flags none of them as generated, so
+				// a faithful description returns what the catalog holds
+				// (stokaro/ptah#2161).
+				NotNullConstraintName: dbColumn.NotNullConstraintName,
+				Primary:               dbColumn.IsPrimaryKey && !tablePKColumns[dbTable.QualifiedName()][dbColumn.Name],
+				AutoInc:               dbColumn.IsAutoIncrement,
+				Unique:                dbColumn.IsUnique,
+				Charset:               dbColumn.Charset,
+				Collate:               dbColumn.Collate,
+				GeneratedKind:         dbColumn.GeneratedKind,
+				IdentityGeneration:    dbColumn.IdentityGeneration,
+				IdentityStart:         dbColumn.IdentityStart,
+				IdentityIncrement:     dbColumn.IdentityIncrement,
 			}
 			if dbColumn.GeneratedExpression != nil {
 				field.GeneratedExpression = *dbColumn.GeneratedExpression

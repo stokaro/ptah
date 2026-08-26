@@ -543,6 +543,35 @@ func (r *Reader) columnCommentExpr() string {
 	return "COALESCE(col_description(cls.oid, a.attnum), '') AS column_comment"
 }
 
+// notNullConstraintNameExpr reads the name PostgreSQL 18 keeps for a column's
+// NOT NULL.
+//
+// A correlated subquery rather than a join, deliberately. This projection is
+// already several joins deep, and PGAdapter refuses a query past twenty of them
+// outright -- one extra reference took a whole catalog read with it once
+// (stokaro/ptah#2101 has the shape, stokaro/ptah#2161 the key).
+//
+// conkey holds one element for a NOT NULL, which is what makes the array
+// equality an identity rather than a containment test: a multi-column
+// constraint sharing the column would not match, and must not, because it is a
+// different constraint.
+//
+// A target without the capability reports every name empty. That is not a
+// degradation: PostgreSQL 17 records nothing to report, so the read would find
+// nothing to return even if it ran.
+func (r *Reader) notNullConstraintNameExpr() string {
+	if !r.caps.Has(capability.NamedNotNullConstraints) {
+		return "'' AS not_null_constraint_name"
+	}
+	return `COALESCE((
+				SELECT con.conname
+				FROM pg_constraint con
+				WHERE con.conrelid = cls.oid
+					AND con.contype = 'n'
+					AND con.conkey = ARRAY[a.attnum]
+			), '') AS not_null_constraint_name`
+}
+
 func (r *Reader) ownedSequenceExpr() string {
 	if !r.caps.Has(capability.Sequences) || !r.caps.Has(capability.PostgresCatalogFunctions) {
 		return "'' AS owned_sequence_name"
@@ -761,6 +790,7 @@ func (r *Reader) readColumnsForSchema(ctx context.Context, schemaName string) (m
 			` + r.generatedExpressionExpr() + `,
 			COALESCE(a.attidentity, '') AS identity_kind,
 			` + r.columnCommentExpr() + `,
+			` + r.notNullConstraintNameExpr() + `,
 			` + r.ownedSequenceExpr() + `
 		FROM information_schema.columns col
 		JOIN information_schema.tables tbl ON tbl.table_schema = col.table_schema
@@ -809,6 +839,7 @@ func (r *Reader) readColumnsForSchema(ctx context.Context, schemaName string) (m
 			&generatedExpression,
 			&identityKind,
 			&col.Comment,
+			&col.NotNullConstraintName,
 			&ownedSequenceName,
 		)
 		if err != nil {

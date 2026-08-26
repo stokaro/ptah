@@ -1250,6 +1250,82 @@ func (r *Renderer) VisitDropType(node *ast.DropTypeNode) error {
 }
 
 // renderColumn overrides base column rendering with PostgreSQL-specific handling
+// columnKeyAndNullability spells the primary key, uniqueness and nullability of
+// one column, in the order PostgreSQL takes them.
+//
+// Extracted so each branch reads as one decision. It returns an error rather
+// than dropping anything, because every failure here is a declaration naming a
+// constraint that will not exist, and a silent drop is the failure this path
+// exists to prevent (stokaro/ptah#2161).
+func (r *Renderer) columnKeyAndNullability(column *ast.ColumnNode) ([]string, error) {
+	if column.Primary {
+		if column.NotNullConstraintName != "" {
+			// The NOT NULL emitted here is synthesized for comparison, not
+			// declared -- the primary key is the constraint the column actually
+			// has, and its own name is the addressable one. Naming a constraint
+			// Ptah invents would hand back a name no catalog answers to.
+			return nil, fmt.Errorf(
+				"postgres column %s: a NOT NULL constraint name (%s) cannot be kept on a "+
+					"primary-key column, whose NOT NULL is implied by the key; name the "+
+					"primary key instead",
+				column.Name, column.NotNullConstraintName)
+		}
+		// Primary keys are always NOT NULL in PostgreSQL, show it explicitly for
+		// schema comparison.
+		return []string{"PRIMARY KEY", "NOT NULL"}, nil
+	}
+
+	var parts []string
+	if column.Unique {
+		parts = append(parts, "UNIQUE")
+	}
+	if column.Nullable {
+		if column.NotNullConstraintName != "" {
+			// A name describes a constraint that is not there. Dropping it
+			// would render a nullable column and report success.
+			return nil, fmt.Errorf(
+				"postgres column %s: a NOT NULL constraint name (%s) is set on a nullable "+
+					"column, which names no constraint",
+				column.Name, column.NotNullConstraintName)
+		}
+		return parts, nil
+	}
+	clause, err := r.notNullClause(column)
+	if err != nil {
+		return nil, err
+	}
+	return append(parts, clause), nil
+}
+
+// notNullClause spells the column's NOT NULL, named when the declaration named
+// it and the target can keep the name.
+//
+// The gate is [capability.NamedNotNullConstraints], and it is about the target
+// PERSISTING the name rather than accepting the syntax. PostgreSQL 17 accepts
+// `CONSTRAINT c NOT NULL` and stores nothing, so rendering the name there would
+// produce DDL that applies, reads back bare, and leaves every later comparison
+// reporting a difference no apply can settle. PostgreSQL 18 records the name in
+// pg_constraint with contype 'n' and answers to it (stokaro/ptah#2161).
+//
+// A target that cannot keep it REFUSES rather than dropping the name, because
+// dropping it silently is the failure this whole path exists to prevent. The
+// default renderer resolves Postgres17(), so a caller that pinned no server
+// version is refused here and pins one.
+func (r *Renderer) notNullClause(column *ast.ColumnNode) (string, error) {
+	if column.NotNullConstraintName == "" {
+		return "NOT NULL", nil
+	}
+	if !r.capabilities().Has(capability.NamedNotNullConstraints) {
+		return "", fmt.Errorf(
+			"postgres column %s: this target does not keep a NOT NULL constraint name (%s); "+
+				"it accepts the syntax and records nothing, so the name would be lost on the "+
+				"way in. Write the constraint without a name, or target a server that persists "+
+				"one (PostgreSQL 18 and later)",
+			column.Name, column.NotNullConstraintName)
+	}
+	return fmt.Sprintf("CONSTRAINT %s NOT NULL", r.escapeIdentifier(column.NotNullConstraintName)), nil
+}
+
 func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 	var parts []string
 
@@ -1263,18 +1339,11 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 	parts = append(parts, fmt.Sprintf("  %s %s", r.escapeIdentifier(column.Name), columnType))
 
 	// Column constraints - PostgreSQL order: PRIMARY KEY, then NOT NULL, then UNIQUE
-	if column.Primary {
-		parts = append(parts, "PRIMARY KEY")
-		// Primary keys are always NOT NULL in PostgreSQL, show it explicitly for schema comparison
-		parts = append(parts, "NOT NULL")
-	} else {
-		if column.Unique {
-			parts = append(parts, "UNIQUE")
-		}
-		if !column.Nullable {
-			parts = append(parts, "NOT NULL")
-		}
+	keyParts, err := r.columnKeyAndNullability(column)
+	if err != nil {
+		return "", err
 	}
+	parts = append(parts, keyParts...)
 
 	if column.IdentityGeneration != "" {
 		if column.GeneratedExpression != "" {
