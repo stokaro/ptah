@@ -184,8 +184,9 @@ func (ib *IndexBuilder) Build() *ast.IndexNode {
 // configuration methods but returns to a SchemaBuilder context when End() is called.
 //
 // This builder is used when constructing indexes as part of a larger schema definition,
-// allowing seamless navigation between schema and index contexts. It embeds IndexBuilder
-// to inherit all index configuration functionality.
+// allowing seamless navigation between schema and index contexts. It offers the
+// same index configuration methods as IndexBuilder, each returning a
+// SchemaIndexBuilder so that the chain stays inside the schema.
 //
 // Example usage within a schema:
 //
@@ -207,8 +208,11 @@ func (ib *IndexBuilder) Build() *ast.IndexNode {
 // All methods return the SchemaIndexBuilder instance for chaining, except:
 //   - End() returns the parent SchemaBuilder to continue schema construction
 type SchemaIndexBuilder struct {
-	// IndexBuilder provides all index configuration methods
-	*IndexBuilder
+	// indexBuilder holds the index configuration methods. It is a named field
+	// rather than an embedded one so that a schema-scoped chain cannot leave
+	// the schema: an embedded *IndexBuilder would promote Build, and would
+	// publish the standalone builder as a field of the public type.
+	indexBuilder *IndexBuilder
 	// schema is the parent schema builder for returning context
 	schema *SchemaBuilder
 }
@@ -217,7 +221,7 @@ type SchemaIndexBuilder struct {
 //
 // Unique indexes enforce uniqueness constraints on the indexed columns,
 // preventing duplicate values. They also provide performance benefits for
-// lookups. This method delegates to the embedded IndexBuilder.
+// lookups. This method delegates to the wrapped IndexBuilder.
 //
 // Examples:
 //
@@ -227,14 +231,14 @@ type SchemaIndexBuilder struct {
 //	// Unique composite index within schema
 //	schema.Index("idx_user_posts_slug", "posts", "user_id", "slug").Unique()
 func (sib *SchemaIndexBuilder) Unique() *SchemaIndexBuilder {
-	sib.IndexBuilder.Unique()
+	sib.indexBuilder.Unique()
 	return sib
 }
 
 // IfNotExists marks the index to use IF NOT EXISTS clause and returns the SchemaIndexBuilder for chaining.
 //
 // This makes the CREATE INDEX statement idempotent, allowing it to be safely executed
-// multiple times without failing if the index already exists. This method delegates to the embedded IndexBuilder.
+// multiple times without failing if the index already exists. This method delegates to the wrapped IndexBuilder.
 //
 // Examples:
 //
@@ -244,7 +248,7 @@ func (sib *SchemaIndexBuilder) Unique() *SchemaIndexBuilder {
 //	// Unique idempotent index within schema
 //	schema.Index("idx_users_username", "users", "username").Unique().IfNotExists()
 func (sib *SchemaIndexBuilder) IfNotExists() *SchemaIndexBuilder {
-	sib.IndexBuilder.IfNotExists()
+	sib.indexBuilder.IfNotExists()
 	return sib
 }
 
@@ -252,7 +256,7 @@ func (sib *SchemaIndexBuilder) IfNotExists() *SchemaIndexBuilder {
 //
 // The index type determines the underlying data structure and algorithm used
 // for the index. Different types are optimized for different query patterns
-// and data characteristics. This method delegates to the embedded IndexBuilder.
+// and data characteristics. This method delegates to the wrapped IndexBuilder.
 //
 // Common index types:
 //   - "BTREE": Balanced tree (default, good for range queries and equality)
@@ -269,14 +273,14 @@ func (sib *SchemaIndexBuilder) IfNotExists() *SchemaIndexBuilder {
 //	// PostgreSQL GIN index within schema
 //	schema.Index("idx_products_tags", "products", "tags").Type("GIN")
 func (sib *SchemaIndexBuilder) Type(indexType string) *SchemaIndexBuilder {
-	sib.IndexBuilder.Type(indexType)
+	sib.indexBuilder.Type(indexType)
 	return sib
 }
 
 // Comment sets a descriptive comment for the index and returns the SchemaIndexBuilder for chaining.
 //
 // Comments are useful for documenting the purpose, usage patterns, or performance
-// characteristics of an index. This method delegates to the embedded IndexBuilder.
+// characteristics of an index. This method delegates to the wrapped IndexBuilder.
 //
 // Examples:
 //
@@ -286,7 +290,7 @@ func (sib *SchemaIndexBuilder) Type(indexType string) *SchemaIndexBuilder {
 //	schema.Index("idx_orders_status_date", "orders", "status", "created_at").
 //		Comment("Composite index for order status reports and date range queries")
 func (sib *SchemaIndexBuilder) Comment(comment string) *SchemaIndexBuilder {
-	sib.IndexBuilder.Comment(comment)
+	sib.indexBuilder.Comment(comment)
 	return sib
 }
 
@@ -312,6 +316,6 @@ func (sib *SchemaIndexBuilder) Comment(comment string) *SchemaIndexBuilder {
 //			Column("id", "SERIAL").Primary().End().
 //		End()
 func (sib *SchemaIndexBuilder) End() *SchemaBuilder {
-	sib.schema.statements = append(sib.schema.statements, sib.IndexBuilder.Build())
+	sib.schema.statements = append(sib.schema.statements, sib.indexBuilder.Build())
 	return sib.schema
 }

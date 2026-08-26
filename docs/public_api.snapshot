@@ -4209,6 +4209,510 @@ type Visitor interface {
     their specific database dialect (PostgreSQL, MySQL, MariaDB, etc.).
 
 
+## go.5x5.cz/ptah/core/astbuilder
+
+type ColumnBuilder struct{ ... }
+type ForeignKeyBuilder struct{ ... }
+type IndexBuilder struct{ ... }
+    func NewIndex(name, table string, columns ...string) *IndexBuilder
+type SchemaBuilder struct{ ... }
+    func NewSchema() *SchemaBuilder
+type SchemaColumnBuilder struct{ ... }
+type SchemaForeignKeyBuilder struct{ ... }
+type SchemaIndexBuilder struct{ ... }
+type SchemaTableBuilder struct{ ... }
+type TableBuilder struct{ ... }
+    func NewTable(name string) *TableBuilder
+
+### go.5x5.cz/ptah/core/astbuilder.ColumnBuilder
+
+package astbuilder // import "go.5x5.cz/ptah/core/astbuilder"
+
+type ColumnBuilder struct {
+    // Has unexported fields.
+}
+    ColumnBuilder provides a fluent API for building column definitions within
+    table contexts.
+
+    ColumnBuilder wraps an AST ColumnNode and provides a convenient fluent
+    interface for configuring column properties such as constraints, default
+    values, and foreign key references. It maintains a reference to its parent
+    TableBuilder to enable method chaining that returns to the table context.
+
+    The builder supports all standard SQL column attributes:
+      - Primary key designation
+      - NULL/NOT NULL constraints
+      - Unique constraints
+      - Auto-increment behavior
+      - Default values (literal and expressions)
+      - Check constraints
+      - MySQL-compatible character sets and collations
+      - Comments
+      - Foreign key references
+
+    Example usage:
+
+        table := astbuilder.NewTable("users").
+            Column("id", "SERIAL").Primary().AutoIncrement().Comment("Primary key").End().
+            Column("email", "VARCHAR(255)").NotNull().Unique().End().
+            Column("status", "VARCHAR(20)").NotNull().Default("'active'").
+                Check("status IN ('active', 'inactive')").End().
+            Column("user_id", "INTEGER").NotNull().
+                ForeignKey("users", "id", "fk_posts_user").
+                OnDelete("CASCADE").End()
+
+    All methods return the ColumnBuilder instance for chaining, except:
+      - ForeignKey() returns a ForeignKeyBuilder for configuring referential
+        actions
+      - End() returns the parent TableBuilder to continue table construction
+
+func (cb *ColumnBuilder) AutoIncrement() *ColumnBuilder
+func (cb *ColumnBuilder) Charset(charset string) *ColumnBuilder
+func (cb *ColumnBuilder) Check(expression string) *ColumnBuilder
+func (cb *ColumnBuilder) Collate(collate string) *ColumnBuilder
+func (cb *ColumnBuilder) Comment(comment string) *ColumnBuilder
+func (cb *ColumnBuilder) Default(value string) *ColumnBuilder
+func (cb *ColumnBuilder) DefaultExpression(fn string) *ColumnBuilder
+func (cb *ColumnBuilder) End() *TableBuilder
+func (cb *ColumnBuilder) ForeignKey(table, column, name string) *ForeignKeyBuilder
+func (cb *ColumnBuilder) Generated(expression, kind string) *ColumnBuilder
+func (cb *ColumnBuilder) NotNull() *ColumnBuilder
+func (cb *ColumnBuilder) Nullable() *ColumnBuilder
+func (cb *ColumnBuilder) Primary() *ColumnBuilder
+func (cb *ColumnBuilder) Unique() *ColumnBuilder
+func (cb *ColumnBuilder) UpdateExpression(expression string) *ColumnBuilder
+
+### go.5x5.cz/ptah/core/astbuilder.ForeignKeyBuilder
+
+package astbuilder // import "go.5x5.cz/ptah/core/astbuilder"
+
+type ForeignKeyBuilder struct {
+    // Has unexported fields.
+}
+    ForeignKeyBuilder provides a fluent API for configuring foreign key
+    constraints within table contexts.
+
+    ForeignKeyBuilder is returned by ColumnBuilder.ForeignKey() and allows
+    configuration of referential integrity actions (ON DELETE and ON UPDATE)
+    for foreign key constraints. It wraps an AST ForeignKeyRef and maintains a
+    reference to the parent TableBuilder to enable method chaining back to the
+    table context.
+
+    Foreign key constraints enforce referential integrity between tables by
+    ensuring that values in the referencing column(s) exist in the referenced
+    table's column(s). The builder allows configuration of what happens when
+    referenced rows are updated or deleted.
+
+    Supported referential actions:
+      - CASCADE: Automatically update/delete referencing rows when referenced
+        row changes
+      - RESTRICT: Prevent update/delete of referenced row if referencing rows
+        exist
+      - SET NULL: Set referencing columns to NULL when referenced row is
+        updated/deleted
+      - SET DEFAULT: Set referencing columns to their default values
+      - NO ACTION: No action (database-specific behavior, often same as
+        RESTRICT)
+
+    Example usage:
+
+        table := astbuilder.NewTable("posts").
+            Column("user_id", "INTEGER").NotNull().
+                ForeignKey("users", "id", "fk_posts_user").
+                OnDelete("CASCADE").
+                OnUpdate("RESTRICT").
+                End().
+            Column("category_id", "INTEGER").
+                ForeignKey("categories", "id", "fk_posts_category").
+                OnDelete("SET NULL").
+                End()
+
+    All methods return the ForeignKeyBuilder instance for chaining, except:
+      - End() returns the parent TableBuilder to continue table construction
+
+func (fkb *ForeignKeyBuilder) End() *TableBuilder
+func (fkb *ForeignKeyBuilder) OnDelete(action string) *ForeignKeyBuilder
+func (fkb *ForeignKeyBuilder) OnUpdate(action string) *ForeignKeyBuilder
+
+### go.5x5.cz/ptah/core/astbuilder.IndexBuilder
+
+package astbuilder // import "go.5x5.cz/ptah/core/astbuilder"
+
+type IndexBuilder struct {
+    // Has unexported fields.
+}
+    IndexBuilder provides a fluent API for building CREATE INDEX statements.
+
+    IndexBuilder wraps an AST IndexNode and provides a convenient fluent
+    interface for configuring index properties such as uniqueness, index type,
+    and comments. It can be used standalone or as part of a larger schema
+    definition.
+
+    Indexes improve query performance by creating optimized data structures that
+    allow faster lookups on specified columns. They can be unique (enforcing
+    uniqueness constraints) or non-unique (for performance only).
+
+    Index types vary by database system:
+      - BTREE: Balanced tree index (default for most databases)
+      - HASH: Hash-based index for equality lookups
+      - GIN/GIST: PostgreSQL specialized indexes
+      - FULLTEXT: Full-text search indexes
+
+    Example usage:
+
+        // Simple index
+        index := astbuilder.NewIndex("idx_users_email", "users", "email")
+
+        // Unique index with type and comment
+        index := astbuilder.NewIndex("idx_users_username", "users", "username").
+            Unique().
+            Type("BTREE").
+            Comment("Unique index for username lookups")
+
+        // Multi-column index
+        index := astbuilder.NewIndex("idx_posts_user_date", "posts", "user_id", "created_at").
+            Type("BTREE").
+            Comment("Composite index for user posts by date")
+
+    All methods return the IndexBuilder instance for chaining, except:
+      - Build() returns the completed AST IndexNode
+
+func NewIndex(name, table string, columns ...string) *IndexBuilder
+func (ib *IndexBuilder) Build() *ast.IndexNode
+func (ib *IndexBuilder) Comment(comment string) *IndexBuilder
+func (ib *IndexBuilder) IfNotExists() *IndexBuilder
+func (ib *IndexBuilder) Type(indexType string) *IndexBuilder
+func (ib *IndexBuilder) Unique() *IndexBuilder
+
+### go.5x5.cz/ptah/core/astbuilder.SchemaBuilder
+
+package astbuilder // import "go.5x5.cz/ptah/core/astbuilder"
+
+type SchemaBuilder struct {
+    // Has unexported fields.
+}
+    SchemaBuilder provides a fluent API for building complete database schemas.
+
+    SchemaBuilder is the top-level builder in the astbuilder package hierarchy
+    and serves as the entry point for constructing comprehensive database
+    schemas. It maintains a collection of AST statements (tables, indexes,
+    enums, comments) and provides methods to add various schema elements in a
+    fluent, chainable manner.
+
+    The builder supports all major schema elements:
+      - Comments: Documentation and schema descriptions
+      - Enums: Custom data types (PostgreSQL-specific)
+      - Tables: Complete table definitions with columns and constraints
+      - Indexes: Performance optimization indexes
+
+    Schema construction follows a hierarchical pattern where the SchemaBuilder
+    delegates to specialized builders (SchemaTableBuilder, SchemaIndexBuilder)
+    that can return to the schema context when their definitions are complete.
+
+    Example usage:
+
+        schema := astbuilder.NewSchema().
+            Comment("User management and content system").
+            Enum("user_status", "active", "inactive", "suspended").
+            Table("users").
+                Column("id", "SERIAL").Primary().End().
+                Column("email", "VARCHAR(255)").NotNull().Unique().End().
+                Column("status", "user_status").NotNull().Default("'active'").End().
+                Column("created_at", "TIMESTAMP").NotNull().DefaultExpression("NOW()").End().
+            End().
+            Table("posts").
+                Column("id", "SERIAL").Primary().End().
+                Column("user_id", "INTEGER").NotNull().
+                    ForeignKey("users", "id", "fk_posts_user").
+                    OnDelete("CASCADE").End().
+                Column("title", "VARCHAR(255)").NotNull().End().
+                Column("content", "TEXT").End().
+                Column("created_at", "TIMESTAMP").NotNull().DefaultExpression("NOW()").End().
+            End().
+            Index("idx_posts_user_date", "posts", "user_id", "created_at").
+                Type("BTREE").
+                Comment("Index for user posts by date").
+                End().
+            Index("idx_users_email", "users", "email").
+                Unique().
+                Comment("Unique index for email lookups").
+                End()
+
+        result := schema.Build()
+
+    All methods return the SchemaBuilder instance for chaining, except:
+      - Table() returns a SchemaTableBuilder for table construction
+      - Index() returns a SchemaIndexBuilder for index construction
+      - Build() returns the completed AST StatementList
+
+func NewSchema() *SchemaBuilder
+func (sb *SchemaBuilder) Build() *ast.StatementList
+func (sb *SchemaBuilder) Comment(text string) *SchemaBuilder
+func (sb *SchemaBuilder) Enum(name string, values ...string) *SchemaBuilder
+func (sb *SchemaBuilder) Index(name, table string, columns ...string) *SchemaIndexBuilder
+func (sb *SchemaBuilder) Table(name string) *SchemaTableBuilder
+
+### go.5x5.cz/ptah/core/astbuilder.SchemaColumnBuilder
+
+package astbuilder // import "go.5x5.cz/ptah/core/astbuilder"
+
+type SchemaColumnBuilder struct {
+    // Has unexported fields.
+}
+    SchemaColumnBuilder provides a fluent API for building column definitions
+    within schema contexts.
+
+    SchemaColumnBuilder is similar to ColumnBuilder but operates within the
+    context of a SchemaBuilder rather than a standalone TableBuilder. It wraps
+    an AST ColumnNode and provides the same column configuration methods,
+    but returns to a SchemaTableBuilder context when End() is called.
+
+    This builder is used when constructing tables as part of a larger schema
+    definition, allowing seamless navigation between schema, table, and column
+    contexts.
+
+    Example usage within a schema:
+
+        schema := astbuilder.NewSchema().
+            Table("users").
+                Column("id", "SERIAL").Primary().AutoIncrement().End().
+                Column("email", "VARCHAR(255)").NotNull().Unique().End().
+            End().
+            Table("posts").
+                Column("user_id", "INTEGER").NotNull().
+                    ForeignKey("users", "id", "fk_posts_user").
+                    OnDelete("CASCADE").End().
+            End()
+
+    All methods return the SchemaColumnBuilder instance for chaining, except:
+      - ForeignKey() returns a SchemaForeignKeyBuilder for configuring
+        referential actions
+      - End() returns the parent SchemaTableBuilder to continue table
+        construction
+
+func (scb *SchemaColumnBuilder) AutoIncrement() *SchemaColumnBuilder
+func (scb *SchemaColumnBuilder) Charset(charset string) *SchemaColumnBuilder
+func (scb *SchemaColumnBuilder) Check(expression string) *SchemaColumnBuilder
+func (scb *SchemaColumnBuilder) Collate(collate string) *SchemaColumnBuilder
+func (scb *SchemaColumnBuilder) Comment(comment string) *SchemaColumnBuilder
+func (scb *SchemaColumnBuilder) Default(value string) *SchemaColumnBuilder
+func (scb *SchemaColumnBuilder) DefaultExpression(fn string) *SchemaColumnBuilder
+func (scb *SchemaColumnBuilder) End() *SchemaTableBuilder
+func (scb *SchemaColumnBuilder) ForeignKey(table, column, name string) *SchemaForeignKeyBuilder
+func (scb *SchemaColumnBuilder) Generated(expression, kind string) *SchemaColumnBuilder
+func (scb *SchemaColumnBuilder) NotNull() *SchemaColumnBuilder
+func (scb *SchemaColumnBuilder) Nullable() *SchemaColumnBuilder
+func (scb *SchemaColumnBuilder) Primary() *SchemaColumnBuilder
+func (scb *SchemaColumnBuilder) Unique() *SchemaColumnBuilder
+func (scb *SchemaColumnBuilder) UpdateExpression(expression string) *SchemaColumnBuilder
+
+### go.5x5.cz/ptah/core/astbuilder.SchemaForeignKeyBuilder
+
+package astbuilder // import "go.5x5.cz/ptah/core/astbuilder"
+
+type SchemaForeignKeyBuilder struct {
+    // Has unexported fields.
+}
+    SchemaForeignKeyBuilder provides a fluent API for configuring foreign key
+    constraints within schema contexts.
+
+    SchemaForeignKeyBuilder is similar to ForeignKeyBuilder but operates within
+    the context of a SchemaBuilder rather than a standalone TableBuilder.
+    It is returned by SchemaColumnBuilder.ForeignKey() and allows configuration
+    of referential integrity actions (ON DELETE and ON UPDATE) for foreign key
+    constraints within schema definitions.
+
+    This builder is used when constructing foreign keys as part of a larger
+    schema definition, allowing seamless navigation between schema, table,
+    column, and foreign key contexts.
+
+    Example usage within a schema:
+
+        schema := astbuilder.NewSchema().
+            Table("users").
+                Column("id", "SERIAL").Primary().End().
+            End().
+            Table("posts").
+                Column("user_id", "INTEGER").NotNull().
+                    ForeignKey("users", "id", "fk_posts_user").
+                    OnDelete("CASCADE").
+                    OnUpdate("RESTRICT").
+                    End().
+                Column("category_id", "INTEGER").
+                    ForeignKey("categories", "id", "fk_posts_category").
+                    OnDelete("SET NULL").
+                    End().
+            End()
+
+    All methods return the SchemaForeignKeyBuilder instance for chaining,
+    except:
+      - End() returns the parent SchemaTableBuilder to continue table
+        construction
+
+func (sfkb *SchemaForeignKeyBuilder) End() *SchemaTableBuilder
+func (sfkb *SchemaForeignKeyBuilder) OnDelete(action string) *SchemaForeignKeyBuilder
+func (sfkb *SchemaForeignKeyBuilder) OnUpdate(action string) *SchemaForeignKeyBuilder
+
+### go.5x5.cz/ptah/core/astbuilder.SchemaIndexBuilder
+
+package astbuilder // import "go.5x5.cz/ptah/core/astbuilder"
+
+type SchemaIndexBuilder struct {
+    // Has unexported fields.
+}
+    SchemaIndexBuilder provides a fluent API for building indexes within schema
+    contexts.
+
+    SchemaIndexBuilder wraps an IndexBuilder and operates within the context
+    of a SchemaBuilder rather than standalone usage. It provides the same index
+    configuration methods but returns to a SchemaBuilder context when End() is
+    called.
+
+    This builder is used when constructing indexes as part of a larger schema
+    definition, allowing seamless navigation between schema and index contexts.
+    It offers the same index configuration methods as IndexBuilder, each
+    returning a SchemaIndexBuilder so that the chain stays inside the schema.
+
+    Example usage within a schema:
+
+        schema := astbuilder.NewSchema().
+            Table("users").
+                Column("id", "SERIAL").Primary().End().
+                Column("email", "VARCHAR(255)").NotNull().Unique().End().
+            End().
+            Index("idx_users_email", "users", "email").
+                Unique().
+                Type("BTREE").
+                Comment("Unique index for email lookups").
+                End().
+            Index("idx_users_created", "users", "created_at").
+                Type("BTREE").
+                Comment("Index for date-based queries").
+                End()
+
+    All methods return the SchemaIndexBuilder instance for chaining, except:
+      - End() returns the parent SchemaBuilder to continue schema construction
+
+func (sib *SchemaIndexBuilder) Comment(comment string) *SchemaIndexBuilder
+func (sib *SchemaIndexBuilder) End() *SchemaBuilder
+func (sib *SchemaIndexBuilder) IfNotExists() *SchemaIndexBuilder
+func (sib *SchemaIndexBuilder) Type(indexType string) *SchemaIndexBuilder
+func (sib *SchemaIndexBuilder) Unique() *SchemaIndexBuilder
+
+### go.5x5.cz/ptah/core/astbuilder.SchemaTableBuilder
+
+package astbuilder // import "go.5x5.cz/ptah/core/astbuilder"
+
+type SchemaTableBuilder struct {
+    // Has unexported fields.
+}
+    SchemaTableBuilder provides a fluent API for building tables within schema
+    contexts.
+
+    SchemaTableBuilder wraps a TableBuilder and operates within the context
+    of a SchemaBuilder rather than standalone usage. It offers the same table
+    configuration methods as TableBuilder, each returning a SchemaTableBuilder
+    so that the chain stays inside the schema, and provides schema-specific
+    column building that returns to the schema context.
+
+    This builder is used when constructing tables as part of a larger schema
+    definition, allowing seamless navigation between schema, table, and column
+    contexts. It provides the same table configuration methods as TableBuilder
+    but with schema-aware navigation.
+
+    Example usage within a schema:
+
+        schema := astbuilder.NewSchema().
+            Comment("E-commerce database schema").
+            Table("users").
+                Comment("Customer accounts").
+                Engine("InnoDB").
+                Option("CHARSET", "utf8mb4").
+                Column("id", "SERIAL").Primary().AutoIncrement().End().
+                Column("email", "VARCHAR(255)").NotNull().Unique().End().
+                Column("created_at", "TIMESTAMP").NotNull().DefaultExpression("NOW()").End().
+                PrimaryKey("id").
+                Unique("uk_users_email", "email").
+            End().
+            Table("orders").
+                Column("id", "SERIAL").Primary().End().
+                Column("user_id", "INTEGER").NotNull().
+                    ForeignKey("users", "id", "fk_orders_user").
+                    OnDelete("RESTRICT").End().
+            End()
+
+    All methods return the SchemaTableBuilder instance for chaining, except:
+      - Column() returns a SchemaColumnBuilder for schema-aware column
+        construction
+      - ForeignKey() returns a SchemaForeignKeyBuilder for referential actions
+      - End() returns the parent SchemaBuilder to continue schema construction
+
+func (stb *SchemaTableBuilder) Column(name, dataType string) *SchemaColumnBuilder
+func (stb *SchemaTableBuilder) Comment(comment string) *SchemaTableBuilder
+func (stb *SchemaTableBuilder) End() *SchemaBuilder
+func (stb *SchemaTableBuilder) Engine(engine string) *SchemaTableBuilder
+func (stb *SchemaTableBuilder) ForeignKey(name string, columns []string, refTable, refColumn string) *SchemaForeignKeyBuilder
+func (stb *SchemaTableBuilder) Option(key, value string) *SchemaTableBuilder
+func (stb *SchemaTableBuilder) PrimaryKey(columns ...string) *SchemaTableBuilder
+func (stb *SchemaTableBuilder) Unique(name string, columns ...string) *SchemaTableBuilder
+
+### go.5x5.cz/ptah/core/astbuilder.TableBuilder
+
+package astbuilder // import "go.5x5.cz/ptah/core/astbuilder"
+
+type TableBuilder struct {
+    // Has unexported fields.
+}
+    TableBuilder provides a fluent API for building CREATE TABLE statements.
+
+    TableBuilder wraps an AST CreateTableNode and provides a convenient fluent
+    interface for configuring table properties such as columns, constraints,
+    comments, and database-specific options. It can be used standalone or as
+    part of a larger schema definition.
+
+    The builder supports all standard SQL table elements:
+      - Columns: Individual column definitions with constraints
+      - Table-level constraints: Primary keys, unique constraints, foreign keys
+      - Comments: Table documentation
+      - Database-specific options: Engine, charset, collation, etc.
+
+    Table construction follows a hierarchical pattern where the TableBuilder
+    delegates to specialized builders (ColumnBuilder, ForeignKeyBuilder) that
+    can return to the table context when their definitions are complete.
+
+    Example usage:
+
+        table := astbuilder.NewTable("users").
+            Comment("User account information").
+            Engine("InnoDB").
+            Option("CHARSET", "utf8mb4").
+            Column("id", "SERIAL").Primary().AutoIncrement().Comment("Primary key").End().
+            Column("email", "VARCHAR(255)").NotNull().Unique().Comment("Login email").End().
+            Column("username", "VARCHAR(50)").NotNull().End().
+            Column("password_hash", "VARCHAR(255)").NotNull().End().
+            Column("created_at", "TIMESTAMP").NotNull().DefaultExpression("NOW()").End().
+            Column("updated_at", "TIMESTAMP").DefaultExpression("NOW()").End().
+            PrimaryKey("id").
+            Unique("uk_users_email", "email").
+            Unique("uk_users_username", "username")
+
+        result := table.Build()
+
+    All methods return the TableBuilder instance for chaining, except:
+      - Column() returns a ColumnBuilder for column construction
+      - ForeignKey() returns a ForeignKeyBuilder for foreign key construction
+      - Build() returns the completed AST CreateTableNode
+
+func NewTable(name string) *TableBuilder
+func (tb *TableBuilder) Build() *ast.CreateTableNode
+func (tb *TableBuilder) Column(name, dataType string) *ColumnBuilder
+func (tb *TableBuilder) Comment(comment string) *TableBuilder
+func (tb *TableBuilder) Engine(engine string) *TableBuilder
+func (tb *TableBuilder) ForeignKey(name string, columns []string, refTable, refColumn string) *ForeignKeyBuilder
+func (tb *TableBuilder) Option(key, value string) *TableBuilder
+func (tb *TableBuilder) PrimaryKey(columns ...string) *TableBuilder
+func (tb *TableBuilder) Unique(name string, columns ...string) *TableBuilder
+
 ## go.5x5.cz/ptah/core/coverage
 
 const DirectiveMarker = "ptah:not-described"
@@ -7492,6 +7996,11 @@ type SourceStatement struct {
     executor would normalize it.
 
 func SplitSourceStatements(sql, dialect string) []SourceStatement
+
+## go.5x5.cz/ptah/core/yamlschema
+
+func Parse(data []byte) (*goschema.Database, error)
+func ParseFile(path string) (*goschema.Database, error)
 
 ## go.5x5.cz/ptah/dbschema
 

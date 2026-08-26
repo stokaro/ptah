@@ -1,4 +1,51 @@
-// Package yamlschema parses language-agnostic YAML schema files into goschema.
+// Package yamlschema reads a desired schema written in Ptah's YAML format.
+//
+// # One of the authoring formats
+//
+// A desired schema reaches Ptah as a *goschema.Database, and YAML is one of the
+// formats that produce it. Go annotations, YAML, HCL, SQL, and DBML each have a
+// reader of their own, each returns the same model, and everything downstream —
+// rendering, diffing, planning, linting, migration generation — sees only that
+// model and cannot tell which reader filled it. A schema authored in YAML is
+// therefore as complete an input as one authored in Go: it is a peer of the
+// other four, not a convenience wrapper over one of them.
+//
+// This package is the YAML reader. Parse takes the document as bytes, ParseFile
+// reads it from a path; both return the model:
+//
+//	db, err := yamlschema.ParseFile("schema.yaml")
+//	if err != nil {
+//		return err
+//	}
+//	statements, err := renderer.GetOrderedCreateStatements(db, "postgres")
+//
+// ptah/core/schemasource covers the other direction, running an external
+// program that writes YAML, HCL, or SQL to its standard output. It parses that
+// output through this package. Reach for it when the schema is produced by
+// another tool; reach for this package when the YAML is already in hand.
+//
+// # What the document holds
+//
+// The top level is a set of object collections, each keyed by name: tables,
+// indexes, constraints, enums, extensions, functions, rls_policies,
+// rls_enabled_tables (also accepted as rls_enabled), roles, grants, views,
+// matviews, and triggers. A table carries its columns in declaration order,
+// along with its primary key, checks, engine, comment, and per-platform
+// overrides. A column carries the type, its nullability, key and uniqueness
+// flags, defaults, generated and identity expressions, a foreign key with its
+// referential actions, character set and collation, and its own per-platform
+// overrides.
+//
+// # Strictness
+//
+// Parsing is strict in two ways that a permissive YAML reader is not. An
+// unknown key is an error rather than a silent drop, so a misspelled attribute
+// cannot pass as an intentional setting. A second YAML document in the same
+// stream is refused rather than ignored, so a schema split across a `---`
+// separator cannot half-apply.
+//
+// Errors are returned, never printed, and a decoding failure carries the parse
+// position the YAML decoder reported.
 package yamlschema
 
 import (

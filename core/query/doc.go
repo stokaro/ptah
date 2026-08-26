@@ -4,11 +4,12 @@
 // SQL.
 //
 // It is the DML counterpart to the DDL story split across core/ast (the node
-// tree) and core/renderer (the visitor engine): where those model CREATE TABLE
-// and friends, this package models data statements. A builder produces a
-// *SelectStatement, which RenderSelect turns into a SQL string plus its
-// positional arguments for the PostgreSQL family, MySQL, MariaDB, SQLite,
-// ClickHouse, SQL Server, and Oracle.
+// tree), core/astbuilder (the fluent constructors) and core/renderer (the
+// visitor engine): where those model CREATE TABLE and friends, this package
+// models data statements. A builder produces a *SelectStatement, which
+// RenderSelect turns into a SQL string plus its positional arguments for the
+// PostgreSQL family, MySQL, MariaDB, SQLite, ClickHouse, SQL Server, and
+// Oracle.
 //
 // # Scope
 //

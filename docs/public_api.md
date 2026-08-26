@@ -15,6 +15,7 @@ These packages are intended for application and tool embedders:
 - `go.5x5.cz/ptah/config`
 - `go.5x5.cz/ptah/config/projectconfig`
 - `go.5x5.cz/ptah/core/ast`
+- `go.5x5.cz/ptah/core/astbuilder`
 - `go.5x5.cz/ptah/core/coverage`
 - `go.5x5.cz/ptah/core/goschema`
 - `go.5x5.cz/ptah/core/platform`
@@ -25,6 +26,7 @@ These packages are intended for application and tool embedders:
 - `go.5x5.cz/ptah/core/renderer`
 - `go.5x5.cz/ptah/core/schemasource`
 - `go.5x5.cz/ptah/core/sqlutil`
+- `go.5x5.cz/ptah/core/yamlschema`
 - `go.5x5.cz/ptah/dbschema`
 - `go.5x5.cz/ptah/dbschema/types`
 - `go.5x5.cz/ptah/docs`
@@ -94,6 +96,27 @@ whole DML language: the SELECT / INSERT / UPDATE / DELETE statement and
 expression tree, the fluent builders that produce it, and `RenderSelect`,
 `RenderInsert`, `RenderUpdate`, and `RenderDelete`, which return parameterized
 SQL plus its positional arguments for a named dialect.
+
+`core/astbuilder` builds `core/ast` nodes by method chaining instead of by
+nested struct literals. `NewTable` and `NewIndex` return one statement node;
+`NewSchema` returns an `*ast.StatementList`. The builders return AST types and
+nothing of their own, so a chain and a hand-written literal mix freely, and a
+node the builders do not model stays reachable through `core/ast` directly. The
+schema-scoped types — `SchemaTableBuilder` and its siblings — carry the same
+configuration methods as the standalone ones and differ in where `End` returns.
+Nothing here validates: an unknown type, an unresolved foreign key, or an
+unparsable default reaches the AST and is reported by `core/renderer` or by the
+database.
+
+`core/yamlschema` reads a desired schema written in Ptah's YAML format. `Parse`
+takes the document as bytes and `ParseFile` reads it from a path; both return
+the `*goschema.Database` that Go annotations, HCL, SQL, and DBML also produce,
+and nothing downstream can tell which reader filled it. Parsing is strict in
+two ways: an unknown key is an error rather than a silent drop, and a second
+YAML document in the same stream is refused rather than ignored.
+`core/schemasource` covers the other direction — an external program that
+writes YAML to its standard output — and parses that output through this
+package.
 
 `goschema.Extension.Schema` records a PostgreSQL extension's installation
 schema. `ast.ExtensionNode.Schema` and `SetSchema` carry the same intent into
