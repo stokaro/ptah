@@ -113,6 +113,10 @@ var verbs = map[string]Verb{
 			"\"used to clean and replay migrations for SQL validation\""},
 
 	// project.
+	"project adopt": {TargetNone, ScratchNone,
+		"classifies every construct a project file declares as exact, compat-only or " +
+			"unsupported and reports whether the project is native-ready; --check is required, " +
+			"it opens no database and it writes no file"},
 	"project inspect": {TargetNone, ScratchNone,
 		"reads a project file and reports which of its settings Ptah acts on and which it " +
 			"read and ignored; it opens no database"},
