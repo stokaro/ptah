@@ -35,6 +35,7 @@ looks exactly like one that works.`,
 		},
 	}
 	cmd.AddCommand(newProjectInspectCommand())
+	cmd.AddCommand(newProjectAdoptCommand())
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd
 }
