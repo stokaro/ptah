@@ -470,6 +470,31 @@ const (
 	// than as text; a declaration compared as text could never converge.
 	RowDeletionPolicy Capability = "row_deletion_policy"
 
+	// NamedNotNullConstraints marks that a NOT NULL constraint carries a name
+	// the catalog reports back.
+	//
+	// PostgreSQL 18 catalogues every NOT NULL as a pg_constraint row with
+	// contype 'n'. Before it, `CONSTRAINT my_nn NOT NULL` was accepted and the
+	// name went nowhere, so a declaration could write one and nothing could
+	// read it. Measured by hand on both, one table carrying a named and an
+	// unnamed column (stokaro/ptah#2161):
+	//
+	//	18.6  pg_constraint -> my_nn, t_s_not_null   both contype 'n'
+	//	17    pg_constraint -> 0 rows
+	//
+	// The second name in that first row is the server's own, invented for the
+	// column nobody named, and it is why this key gates a READ as much as a
+	// render: a reader carrying every name would report one on every ordinary
+	// column. What makes that safe is the rule the comparator already applies
+	// -- an omitted attribute is not compared -- so a name nobody declared is
+	// never looked at.
+	//
+	// The key is false in every preset here. It is decided by the capability
+	// probe rather than by this file, and the preset that carries it true
+	// follows once a matrix run has the observation: adding it now would
+	// present a measurement no run made.
+	NamedNotNullConstraints Capability = "named_not_null_constraints"
+
 	// MigrationTimeouts marks that Ptah can bound a migration with a lock and a
 	// statement timeout on this target.
 	//
@@ -833,6 +858,9 @@ var registry = map[Capability]spec{
 	RowDeletionPolicy: {
 		doc: "a table clause declaring an interval and a timestamp column after which the engine deletes a row (Spanner row deletion policy)",
 	},
+	NamedNotNullConstraints: {
+		doc: "a NOT NULL constraint carries a name the catalog reports back (PostgreSQL 18+)",
+	},
 	CheckGrantStatement: {
 		doc: "a statement answering whether the connected account holds a privilege (ClickHouse CHECK GRANT)",
 	},
@@ -1059,6 +1087,7 @@ func MySQL84() Capabilities {
 		AdvisoryLocks:                      false,
 		RowLevelTTL:                        false,
 		RowDeletionPolicy:                  false,
+		NamedNotNullConstraints:            false,
 		MigrationTimeouts:                  true,
 		TransactionalDDL:                   false,
 		CatalogPartitions:                  true,
@@ -1192,6 +1221,7 @@ func MariaDB1011() Capabilities {
 		AdvisoryLocks:                   false,
 		RowLevelTTL:                     false,
 		RowDeletionPolicy:               false,
+		NamedNotNullConstraints:         false,
 		MigrationTimeouts:               true,
 		TransactionalDDL:                false,
 		CatalogPartitions:               true,
@@ -1270,6 +1300,7 @@ func Postgres16() Capabilities {
 		AdvisoryLocks:                      true,
 		RowLevelTTL:                        false,
 		RowDeletionPolicy:                  false,
+		NamedNotNullConstraints:            false,
 		MigrationTimeouts:                  true,
 		TransactionalDDL:                   true,
 		CatalogPartitions:                  true,
@@ -1435,6 +1466,7 @@ func ClickHouse24() Capabilities {
 		// syntax error here. Measured both ways on 26.7.3.19.
 		RowLevelTTL:                     false,
 		RowDeletionPolicy:               false,
+		NamedNotNullConstraints:         false,
 		MigrationTimeouts:               false,
 		TransactionalDDL:                false,
 		DDLInsideTransaction:            false,
@@ -1512,6 +1544,7 @@ func SQLite3() Capabilities {
 		AdvisoryLocks:                      false,
 		RowLevelTTL:                        false,
 		RowDeletionPolicy:                  false,
+		NamedNotNullConstraints:            false,
 		MigrationTimeouts:                  false,
 		TransactionalDDL:                   true,
 		CatalogPartitions:                  true,
@@ -1662,6 +1695,7 @@ func SQLServer2022() Capabilities {
 		AdvisoryLocks:                   false,
 		RowLevelTTL:                     false,
 		RowDeletionPolicy:               false,
+		NamedNotNullConstraints:         false,
 		MigrationTimeouts:               false,
 		TransactionalDDL:                false,
 		CatalogPartitions:               true,
@@ -2128,10 +2162,11 @@ func Oracle23() Capabilities {
 		XMLType: true,
 		// pg_advisory_lock is ORA-00904: invalid identifier. Oracle's lock
 		// package is not these functions.
-		AdvisoryLocks:     false,
-		RowLevelTTL:       false,
-		RowDeletionPolicy: false,
-		MigrationTimeouts: false,
+		AdvisoryLocks:           false,
+		RowLevelTTL:             false,
+		RowDeletionPolicy:       false,
+		NamedNotNullConstraints: false,
+		MigrationTimeouts:       false,
 		// A CREATE TABLE inside an explicit transaction survives ROLLBACK:
 		// Oracle commits the transaction in progress before every schema
 		// statement, so there is nothing left to roll back. --tx-mode all

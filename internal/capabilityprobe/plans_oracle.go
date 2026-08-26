@@ -233,6 +233,8 @@ func oraclePlan() plan {
 		capability.RowDeletionPolicy: "the key names a table clause Ptah renders, reads and plans only " +
 			"for Spanner, whose PostgreSQL interface stores it; this server has no such clause, so its " +
 			"refusal would answer a different question",
+		capability.NamedNotNullConstraints: "the key names a PostgreSQL 18 catalog behavior; this " +
+			"server names no NOT NULL constraint at all, so its answer would be to a different question",
 		capability.Hypertables: "create_hypertable is a TimescaleDB function, and TimescaleDB is a PostgreSQL " +
 			"extension Oracle has no spelling of; its refusal would answer a different question",
 		capability.ContinuousAggregates: "a TimescaleDB continuous aggregate is a PostgreSQL materialized " +
