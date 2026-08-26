@@ -17,6 +17,15 @@ const (
 	Oracle      = "oracle"
 )
 
+// NormalizeDialect folds every spelling of a target onto the one constant the
+// rest of Ptah compares against, and returns "" for a name it does not know.
+//
+// The empty answer is load-bearing: a caller that treats it as a dialect asks
+// every layer below to render for a target nobody implemented. Check it.
+//
+// A name added here becomes valid in every layer that switches on the result,
+// including the ones that cannot handle it yet: a renderer, a reader and a
+// planner each carry their own list, and none of them is derived from this one.
 func NormalizeDialect(dialect string) string {
 	switch strings.ToLower(strings.TrimSpace(dialect)) {
 	case "pgx", "postgresql", "postgres":
@@ -51,6 +60,13 @@ func NormalizeDialect(dialect string) string {
 	}
 }
 
+// IsPostgresFamily reports whether a target speaks the PostgreSQL wire protocol
+// and catalog, which is what lets one reader and one renderer serve all four.
+//
+// It answers a question about the DIALECT, not about a feature: CockroachDB,
+// YugabyteDB and Spanner are in the family and each refuses things PostgreSQL
+// accepts. A caller deciding whether a capability exists reads the capability,
+// not this.
 func IsPostgresFamily(dialect string) bool {
 	switch NormalizeDialect(dialect) {
 	case Postgres, CockroachDB, YugabyteDB, Spanner:

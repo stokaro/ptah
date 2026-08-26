@@ -1698,6 +1698,11 @@ type CreateViewNode struct {
 	Attributes []string
 }
 
+// NewCreateView starts a CREATE VIEW for a named view.
+//
+// The body is set separately, through [CreateViewNode.SetBody], because a view
+// without one is a node under construction rather than an error: the parser
+// fills the name from the statement's head and the body from its tail.
 func NewCreateView(name string) *CreateViewNode {
 	return &CreateViewNode{Name: name}
 }
@@ -1734,6 +1739,9 @@ type DropViewNode struct {
 	Comment  string
 }
 
+// NewDropView starts a DROP VIEW for a named view. IF EXISTS and CASCADE are
+// added through the setters, because a target that does not accept them takes
+// the node without.
 func NewDropView(name string) *DropViewNode {
 	return &DropViewNode{Name: name}
 }
@@ -2117,6 +2125,11 @@ func (s *MatViewRefreshSpec) Clone() *MatViewRefreshSpec {
 	return &cloned
 }
 
+// NewCreateMaterializedView starts a CREATE MATERIALIZED VIEW for a named view.
+//
+// It is a separate node from [CreateViewNode] rather than a flag on it: a
+// materialized view is stored, so it carries facts a view does not -- WITH
+// DATA, a storage target, and the dependency list a refresh order needs.
 func NewCreateMaterializedView(name string) *CreateMaterializedViewNode {
 	return &CreateMaterializedViewNode{Name: name}
 }
@@ -2143,6 +2156,7 @@ type DropMaterializedViewNode struct {
 	Comment  string
 }
 
+// NewDropMaterializedView starts a DROP MATERIALIZED VIEW for a named view.
 func NewDropMaterializedView(name string) *DropMaterializedViewNode {
 	return &DropMaterializedViewNode{Name: name}
 }
@@ -2204,6 +2218,12 @@ type RefreshMaterializedViewNode struct {
 	Comment      string
 }
 
+// NewRefreshMaterializedView starts a REFRESH MATERIALIZED VIEW for a named
+// view.
+//
+// Refreshing is not a schema change and appears in a plan for the data it
+// rebuilds. CONCURRENTLY is a setter rather than a parameter because it needs a
+// unique index on the view, which the node cannot check.
 func NewRefreshMaterializedView(name string) *RefreshMaterializedViewNode {
 	return &RefreshMaterializedViewNode{Name: name}
 }
@@ -2242,6 +2262,13 @@ type CreateTriggerNode struct {
 	Comment          string
 }
 
+// NewCreateTrigger starts a CREATE TRIGGER on a named table.
+//
+// ForEach starts at ROW rather than empty; [CreateTriggerNode.SetForEach]
+// changes it, and a target that renders no other value says so. Everything a
+// trigger still needs -- the timing, the events, the body or the function it
+// calls -- is set through the other setters, which is why the constructor takes
+// only the two names a trigger cannot exist without.
 func NewCreateTrigger(name, table string) *CreateTriggerNode {
 	return &CreateTriggerNode{Name: name, Table: table, ForEach: "ROW"}
 }
@@ -2302,6 +2329,9 @@ type DropTriggerNode struct {
 	Comment      string
 }
 
+// NewDropTrigger starts a DROP TRIGGER on a named table. The table travels with
+// the trigger because PostgreSQL requires it in the statement -- a trigger name
+// is unique to its table, not to the schema.
 func NewDropTrigger(name, table string) *DropTriggerNode {
 	return &DropTriggerNode{Name: name, Table: table}
 }

@@ -802,6 +802,15 @@ func (s *schemaParseState) processFieldComments(structDecl structDeclaration) er
 	return nil
 }
 
+// ParseFile parses one annotated Go file and returns the schema it declares.
+//
+// It is the single-file member of the parse family: [ParseSource] takes the
+// same file as bytes a caller already holds, and [ParseDir], [ParseDirs] and
+// [ParseFS] walk a tree. A file naming another file's struct declares a schema
+// that is incomplete on purpose -- the join is by struct name -- so a caller
+// reading one file of a package gets that package's fields and no others.
+//
+// A file that does not parse as Go returns a [ptaherr.ParseError] naming it.
 func ParseFile(filename string) (Database, error) {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, filename, nil, parser.ParseComments)

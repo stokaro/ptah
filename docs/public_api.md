@@ -668,7 +668,7 @@ the same reviewed change.
 
 ## Compatibility Guard
 
-CI runs three public API checks:
+CI runs four public API checks:
 
 - `scripts/check-public-api.sh` fails when `go list ./...` finds a
   non-command, non-example, non-fixture package that is importable from outside
@@ -687,6 +687,12 @@ CI runs three public API checks:
   `v0.x` tag exists, the script reports that no released baseline is available
   and exits successfully. Once a `v0.x` tag exists, CI checks out repository
   tags and uses that real release tag as the baseline.
+- `scripts/check-exported-docs.sh` fails when a package listed here carries an
+  exported function or type with no doc comment. The three checks above measure
+  the shape of the surface and none of them can see a comment: the snapshot is
+  byte-identical whether a declaration is documented or not. Methods are exempt,
+  because an implementation of a documented interface repeats what the interface
+  already says.
 
 ## Intentional API Changes Before v1
 
