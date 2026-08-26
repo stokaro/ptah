@@ -211,6 +211,8 @@ func (ct ConstraintType) String() string {
 		return "FOREIGN KEY"
 	case CheckConstraint:
 		return "CHECK"
+	case ExcludeConstraint:
+		return "EXCLUDE"
 	default:
 		return "UNKNOWN"
 	}
