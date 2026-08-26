@@ -9,6 +9,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/concurrentindex"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/planner"
@@ -266,9 +267,9 @@ func concurrentIndexCreateRefs(
 ) ([]types.IndexRef, error) {
 	switch mode {
 	case ConcurrentIndexAutomatic:
-		return mergeIndexRefs(
+		return concurrentindex.MergeRefs(
 			concurrentIndexRefsForPopulatedTables(diff, current, info),
-			declaredConcurrentIndexRefs(diff, desired, current, info),
+			concurrentindex.DeclaredRefs(diff, desired, current, info),
 		), nil
 	case ConcurrentIndexDisabled:
 		return nil, nil

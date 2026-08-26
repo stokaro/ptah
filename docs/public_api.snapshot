@@ -616,6 +616,7 @@ type DiffConfig struct {
     DiffConfig holds Atlas diff policy blocks.
 
 func (c DiffConfig) ConcurrentIndexCreate() bool
+func (c DiffConfig) ConcurrentIndexCreateDisabled() bool
 func (c DiffConfig) ConcurrentIndexDrop() bool
 func (c DiffConfig) SkipChangeKinds() []diffpolicy.ChangeKind
 

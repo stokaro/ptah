@@ -238,6 +238,9 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 			Capabilities:         target.Capabilities,
 			ConcurrentIndexes:    opts.Policy.ConcurrentIndexCreate,
 			ConcurrentIndexDrops: opts.Policy.ConcurrentIndexDrop,
+			ConcurrentIndexRefs: declaredConcurrentIndexRefs(
+				opts.Policy, diff, to, fromSide.database, dialect, target.Capabilities,
+			),
 		})
 		if err != nil {
 			return atlasreport.SchemaDiff{}, nil, fmt.Errorf("generate schema diff SQL: %w", err)
