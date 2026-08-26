@@ -15,6 +15,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/atlassource"
+	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 const (
@@ -120,7 +121,7 @@ func runSchemaDiff(cmd *cobra.Command, opts schemaDiffOptions) error {
 		return cmdutil.Fail(cmd, err)
 	}
 
-	report, err := atlasschema.Diff(cmd.Context(), atlasschema.DiffOptions{
+	report, changes, err := atlasschema.DiffReportingChanges(cmd.Context(), atlasschema.DiffOptions{
 		FromURLs:       opts.fromURLs,
 		ToURLs:         opts.toURLs,
 		DevURL:         opts.devURL,
@@ -136,7 +137,7 @@ func runSchemaDiff(cmd *cobra.Command, opts schemaDiffOptions) error {
 		return cmdutil.Fail(cmd, err)
 	}
 	if format == "json" {
-		return writeSchemaDiffJSON(cmd, report)
+		return writeSchemaDiffJSON(cmd, report, changes)
 	}
 	if err := atlasreport.WriteSchemaDiff(cmd.OutOrStdout(), atlasreport.NormalizeSchemaDiffFormat(""), report); err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -173,15 +174,48 @@ func validateSchemaDiffSources(opts schemaDiffOptions) error {
 	return toSet.EnsureDevDatabase(opts.devURL)
 }
 
-// writeSchemaDiffJSON renders the diff as a stable JSON document: an array of
-// migration statements under "statements" (empty when the schemas are
-// synced), for machine consumption in CI.
-func writeSchemaDiffJSON(cmd *cobra.Command, report atlasreport.SchemaDiff) error {
+// schemaDiffDocument is the native `schema diff --format json` document.
+//
+// It carries one comparison under two readings. "statements" is the DDL a
+// migration would run, which answers "what will happen"; "changes" is the
+// structural comparison those statements were planned from, which answers "what
+// differs" -- a table name, a column, an enum value, each as its own field
+// rather than a sentence a consumer has to parse back out of SQL.
+//
+// A consumer that only has the statements has to write a SQL parser to decide
+// whether a diff touches one table, and that parser is wrong for every dialect
+// it was not tested against (stokaro/ptah#1229).
+type schemaDiffDocument struct {
+	// FormatVersion is this document's, and it rises when a field's meaning
+	// changes rather than when one is added. It matches the native plan
+	// document's spelling so that a consumer reading both reads them the same
+	// way.
+	FormatVersion int `json:"format_version"`
+
+	// Statements is empty, never absent, when the schemas are synced: an empty
+	// array is a comparison that found nothing, and null would be a comparison
+	// that did not run.
+	Statements []string `json:"statements"`
+
+	// Changes is the comparator's own model, serialized as it stands.
+	Changes *difftypes.SchemaDiff `json:"changes"`
+}
+
+// schemaDiffFormatVersion is the version stamped on the document above.
+const schemaDiffFormatVersion = 1
+
+// writeSchemaDiffJSON renders the diff as a stable JSON document for machine
+// consumption in CI.
+func writeSchemaDiffJSON(cmd *cobra.Command, report atlasreport.SchemaDiff, changes *difftypes.SchemaDiff) error {
 	statements := make([]string, 0, len(report.Changes))
 	for _, change := range report.Changes {
 		statements = append(statements, change.Cmd)
 	}
-	document, err := json.MarshalIndent(map[string][]string{"statements": statements}, "", "  ")
+	document, err := json.MarshalIndent(schemaDiffDocument{
+		FormatVersion: schemaDiffFormatVersion,
+		Statements:    statements,
+		Changes:       changes,
+	}, "", "  ")
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("render schema diff JSON: %w", err))
 	}

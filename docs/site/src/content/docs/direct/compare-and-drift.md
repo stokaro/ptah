@@ -230,9 +230,47 @@ ptah schema diff \
 The SQL dialect is pinned by `--dev-url` first, then by `--from`/`--to`
 database URLs; schema files alone still require `--dev-url` (a disposable
 database that is reset destructively). `--format json` emits a stable
-`{"statements": [...]}` document, and `--schemas`, `--include`, and
+document, described below, and `--schemas`, `--include`, and
 `--exclude` scope both sides. Synced states print
 `Schemas are synced, no changes to be made.`
+
+### The JSON document
+
+`--format json` answers one comparison two ways:
+
+```json
+{
+  "format_version": 1,
+  "statements": [
+    "CREATE TABLE \"orders\" (\n  \"id\" INTEGER PRIMARY KEY\n)",
+    "ALTER TABLE \"users\" ADD COLUMN \"email\" TEXT"
+  ],
+  "changes": {
+    "tables_added": ["orders"],
+    "tables_modified": [
+      {"table_name": "users", "columns_added": ["email"]}
+    ]
+  }
+}
+```
+
+`statements` is the DDL a migration would run — what will happen. `changes` is
+the structural comparison those statements were planned from — what differs,
+with tables, columns, enums, indexes, constraints, views, triggers, roles and
+grants each under their own key. A check like "does this diff drop a column"
+reads a field; deciding it from `statements` means parsing DDL, and a DDL parser
+is wrong for every dialect it was not tested against.
+
+The two halves always agree. `changes` reports the comparison after
+[diff policy](../../reference/configuration/) has been applied, so a diff run
+with `skip.drop_table` shows neither a `DROP TABLE` statement nor the removed
+table.
+
+Both keys are always present. An empty `statements` is a comparison that found
+nothing to do; `changes` is present and empty when the schemas are synced, so a
+CI check reads the same fields either way. Within `changes`, a collection with
+no members encodes as `null` or `[]` — read both as empty. `format_version`
+rises when a field's meaning changes, not when one is added.
 
 An explicit `--include` selection that matches neither side is invalid. The
 command prints no diff and exits 2 instead of reporting a synced schema. This
