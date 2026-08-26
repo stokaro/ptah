@@ -2672,53 +2672,44 @@ func (p *Parser) handleMultiWordType(typeName string) string {
 			typeName += " " + p.current.Value
 			p.advance()
 		}
-	case "TIME":
+	case "TIME", "TIMESTAMP":
 		if secondWord != "WITH" && secondWord != "WITHOUT" {
 			break
 		}
-
-		typeName = p.current.Value + " " + typeName
-		p.advance()
-		p.skipWhitespace()
-
-		if !p.current.MatchIdentifierValue("TIME") {
-			break
-		}
-
-		typeName += " " + p.current.Value
-		p.advance()
-		p.skipWhitespace()
-		if !p.current.MatchIdentifierValue("ZONE") {
-			break
-		}
-
-		typeName += " " + p.current.Value
-		p.advance()
-	case "TIMESTAMP":
-		if secondWord != "WITH" && secondWord != "WITHOUT" {
-			break
-		}
-
-		typeName = p.current.Value + " " + typeName
-		p.advance()
-		p.skipWhitespace()
-
-		if !p.current.MatchIdentifierValue("TIME") {
-			break
-		}
-
-		typeName += " " + p.current.Value
-		p.advance()
-		p.skipWhitespace()
-
-		if !p.current.MatchIdentifierValue("ZONE") {
-			break
-		}
-
-		typeName += " " + p.current.Value
-		p.advance()
+		typeName = p.appendTimeZoneQualifier(typeName)
 	}
 
+	return typeName
+}
+
+// appendTimeZoneQualifier consumes `WITH TIME ZONE` or `WITHOUT TIME ZONE` onto
+// a TIME or TIMESTAMP.
+//
+// The words go on the END, which is where SQL puts them. This prepended them:
+// `timestamp with time zone` parsed to `with timestamp time zone`, which is not
+// a type any server accepts -- so the SQL `ptah schema inspect` renders for one
+// of PostgreSQL's most common column types could not be applied back
+// (`ERROR: syntax error at or near "with"`).
+//
+// TIME and TIMESTAMP share this rather than carrying a copy each. They had a
+// copy each, both wrong the same way, which is how a fix reaches one of them.
+func (p *Parser) appendTimeZoneQualifier(typeName string) string {
+	typeName += " " + p.current.Value
+	p.advance()
+	p.skipWhitespace()
+
+	if !p.current.MatchIdentifierValue("TIME") {
+		return typeName
+	}
+	typeName += " " + p.current.Value
+	p.advance()
+	p.skipWhitespace()
+
+	if !p.current.MatchIdentifierValue("ZONE") {
+		return typeName
+	}
+	typeName += " " + p.current.Value
+	p.advance()
 	return typeName
 }
 
