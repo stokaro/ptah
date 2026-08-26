@@ -464,6 +464,67 @@ func (b Builder) ConstraintParts(schema, table, constraint string) ID {
 	}
 }
 
+// CheckConstraintParts builds the identity of a CHECK, which is its condition
+// rather than its name.
+//
+// A CHECK written on a column is named by the server when the author does not
+// name it, and differently per engine: `widget_a_check` on PostgreSQL,
+// `widget_chk_1` on MySQL. Keying such a constraint by name would make a
+// description and the catalog describing one guarantee two objects, forever.
+// The condition is what both sides have and what the guarantee IS, so it is the
+// identity, and the name travels as an attribute a change can carry
+// (stokaro/ptah#1663).
+//
+// The name is kept as the identity's Source so a diagnostic still says
+// `b_positive` rather than an expression; only the comparison value is the
+// folded condition.
+func (b Builder) CheckConstraintParts(schema, table, constraint, expression string) ID {
+	id := b.ConstraintParts(schema, table, constraint)
+	folded := foldCheckExpression(expression)
+	if folded == "" {
+		return id
+	}
+	id.Name = Part{Source: strings.TrimSpace(constraint), Normalized: folded}
+	return id
+}
+
+// foldCheckExpression reduces a condition to the form two sources can be
+// compared on: case-insensitive, with whitespace collapsed and the parentheses
+// a server adds around the whole expression removed.
+//
+// It folds for COMPARISON only. What a renderer writes is the source text, for
+// the reason the type folds separately from what it emits: writing the folded
+// form into DDL would put Ptah's normalization into the author's schema.
+func foldCheckExpression(expression string) string {
+	trimmed := strings.TrimSpace(expression)
+	for strings.HasPrefix(trimmed, "(") && strings.HasSuffix(trimmed, ")") {
+		inner := strings.TrimSpace(trimmed[1 : len(trimmed)-1])
+		if !balancedParentheses(inner) {
+			break
+		}
+		trimmed = inner
+	}
+	return strings.ToLower(strings.Join(strings.Fields(trimmed), " "))
+}
+
+// balancedParentheses reports whether every parenthesis in the value closes,
+// so `(a > 0) and (b > 0)` is not mistaken for a wrapped expression.
+func balancedParentheses(value string) bool {
+	depth := 0
+	for _, r := range value {
+		switch r {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth < 0 {
+				return false
+			}
+		}
+	}
+	return depth == 0
+}
+
 // Role builds the identity of a role, which no dialect Ptah targets qualifies
 // by schema.
 func (b Builder) Role(role string) ID {
