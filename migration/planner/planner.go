@@ -8,11 +8,11 @@ import (
 	"sync"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/planner/dialects/clickhouse"
@@ -24,7 +24,7 @@ import (
 	"go.5x5.cz/ptah/internal/txrequire"
 	"go.5x5.cz/ptah/migration/diffpolicy"
 	"go.5x5.cz/ptah/migration/internal/identifiervalidation"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 var builtInPlannerRegistration struct {
@@ -58,7 +58,7 @@ var plannerRegistry struct {
 // # Parameters
 //
 //   - diff: Contains the differences between target and current schemas
-//   - generated: The target schema derived from Go struct annotations
+//   - desired: the schema an authoring source declared
 //
 // # Return Value
 //
@@ -68,24 +68,24 @@ var plannerRegistry struct {
 // # Example Implementation Pattern
 //
 //	func (p *PostgresPlanner) GenerateMigrationASTChecked(
-//		diff *types.SchemaDiff,
-//		generated *goschema.Database,
+//		diff *difftypes.SchemaDiff,
+//		desired *schemamodel.Database,
 //	) ([]ast.Node, error) {
 //		var nodes []ast.Node
 //
 //		// 1. Create enum types first (PostgreSQL-specific)
-//		nodes = append(nodes, p.generateEnumCreations(diff, generated)...)
+//		nodes = append(nodes, p.generateEnumCreations(diff, desired)...)
 //
 //		// 2. Create tables in dependency order
-//		nodes = append(nodes, p.generateTableCreations(diff, generated)...)
+//		nodes = append(nodes, p.generateTableCreations(diff, desired)...)
 //
 //		// 3. Add indexes and constraints
-//		nodes = append(nodes, p.generateIndexCreations(diff, generated)...)
+//		nodes = append(nodes, p.generateIndexCreations(diff, desired)...)
 //
 //		return nodes, nil
 //	}
 type Planner interface {
-	GenerateMigrationASTChecked(diff *types.SchemaDiff, generated *goschema.Database) ([]ast.Node, error)
+	GenerateMigrationASTChecked(diff *difftypes.SchemaDiff, desired *schemamodel.Database) ([]ast.Node, error)
 }
 
 // Options configures high-level planner helpers.
@@ -99,7 +99,7 @@ type Options struct {
 	// ConcurrentIndexRefs requests PostgreSQL CREATE INDEX CONCURRENTLY for
 	// exactly these table-qualified newly added indexes when the target
 	// supports it.
-	ConcurrentIndexRefs []types.IndexRef
+	ConcurrentIndexRefs []difftypes.IndexRef
 	// ConcurrentIndexDrops requests PostgreSQL DROP INDEX CONCURRENTLY for all
 	// standalone index removals when the target supports it. It is separate
 	// from ConcurrentIndexes so enabling concurrent index builds never silently
@@ -107,7 +107,7 @@ type Options struct {
 	ConcurrentIndexDrops bool
 	// ConcurrentIndexDropRefs requests PostgreSQL DROP INDEX CONCURRENTLY for
 	// exactly these table-qualified removed indexes when the target supports it.
-	ConcurrentIndexDropRefs []types.IndexRef
+	ConcurrentIndexDropRefs []difftypes.IndexRef
 	// SkipChangeKinds lists destructive change kinds the planner must omit from
 	// the plan (emitting a clearly-marked comment in their place) instead of
 	// deferring to the coarse destructive gate. Currently honored by the
@@ -194,7 +194,7 @@ func RegisteredDialects() ([]string, error) {
 //	}
 //
 //	// Generate migration AST
-//	nodes, err := pgPlanner.GenerateMigrationASTChecked(diff, generated)
+//	nodes, err := pgPlanner.GenerateMigrationASTChecked(diff, desired)
 //	if err != nil {
 //		log.Fatal(err)
 //	}
@@ -212,7 +212,7 @@ func GetPlanner(dialect string) (Planner, error) {
 
 // GetPlannerWithOptions returns a dialect-specific migration planner with
 // explicit high-level generation policy. Live database paths should set
-// Options.Capabilities from DBInfo.Capabilities so planning uses the same
+// Options.Capabilities from catalog.ServerInfo.Capabilities so planning uses the same
 // server-version preset as readers and renderers; offline callers can leave
 // it nil to fall back to the dialect's default preset.
 func GetPlannerWithOptions(dialect string, opts Options) (Planner, error) {
@@ -357,7 +357,7 @@ func normalizeRegistryDialect(dialect string) string {
 // # Parameters
 //
 //   - diff: Schema differences identified by the schemadiff package
-//   - generated: Target schema parsed from Go struct annotations
+//   - desired: the schema an authoring source declared
 //   - dialect: Database dialect identifier (use constants from platform package)
 //
 // # Return Value
@@ -370,7 +370,7 @@ func normalizeRegistryDialect(dialect string) string {
 //	import "go.5x5.cz/ptah/core/platform"
 //
 //	// Generate AST nodes for PostgreSQL
-//	nodes, err := planner.GenerateSchemaDiffAST(diff, generated, platform.Postgres)
+//	nodes, err := planner.GenerateSchemaDiffAST(diff, desired, platform.Postgres)
 //	if err != nil {
 //		return err
 //	}
@@ -385,8 +385,8 @@ func normalizeRegistryDialect(dialect string) string {
 //   - GenerateSchemaDiffSQL: For complete SQL string generation
 //   - GenerateSchemaDiffSQLStatements: For individual SQL statements
 //   - GetPlanner: For direct planner access
-func GenerateSchemaDiffAST(diff *types.SchemaDiff, generated *goschema.Database, dialect string) ([]ast.Node, error) {
-	return GenerateSchemaDiffASTWithOptions(diff, generated, dialect, Options{
+func GenerateSchemaDiffAST(diff *difftypes.SchemaDiff, desired *schemamodel.Database, dialect string) ([]ast.Node, error) {
+	return GenerateSchemaDiffASTWithOptions(diff, desired, dialect, Options{
 		Capabilities: capability.ForDialect(dialect),
 	})
 }
@@ -394,8 +394,8 @@ func GenerateSchemaDiffAST(diff *types.SchemaDiff, generated *goschema.Database,
 // GenerateSchemaDiffASTWithOptions generates AST nodes with explicit planning
 // options.
 func GenerateSchemaDiffASTWithOptions(
-	diff *types.SchemaDiff,
-	generated *goschema.Database,
+	diff *difftypes.SchemaDiff,
+	desired *schemamodel.Database,
 	dialect string,
 	opts Options,
 ) ([]ast.Node, error) {
@@ -406,7 +406,7 @@ func GenerateSchemaDiffASTWithOptions(
 	// declaration does, and every dialect planner reads its columns out of this
 	// one value (stokaro/ptah#1138).
 	preparedGenerated := fromschema.QualifyDeclaredUserTypes(
-		fromschema.AssignDefaultForeignKeyNames(generated, dialect),
+		fromschema.AssignDefaultForeignKeyNames(desired, dialect),
 		dialect,
 	)
 	if diff != nil &&
@@ -479,7 +479,7 @@ func RequiresNoTransaction(dialect string, nodes []ast.Node) bool {
 // # Parameters
 //
 //   - diff: Schema differences identified by the schemadiff package
-//   - generated: Target schema parsed from Go struct annotations
+//   - desired: the schema an authoring source declared
 //   - dialect: Database dialect identifier (use constants from platform package)
 //
 // # Return Value
@@ -501,7 +501,7 @@ func RequiresNoTransaction(dialect string, nodes []ast.Node) bool {
 //	import "go.5x5.cz/ptah/core/platform"
 //
 //	// Generate SQL statements for MySQL
-//	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, generated, platform.MySQL)
+//	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, platform.MySQL)
 //	if err != nil {
 //		return err
 //	}
@@ -517,8 +517,8 @@ func RequiresNoTransaction(dialect string, nodes []ast.Node) bool {
 //
 //   - GenerateSchemaDiffSQL: For complete SQL string without splitting
 //   - GenerateSchemaDiffAST: For AST nodes without rendering
-func GenerateSchemaDiffSQLStatements(diff *types.SchemaDiff, generated *goschema.Database, dialect string) ([]string, error) {
-	output, err := GenerateSchemaDiffSQLWithOptions(diff, generated, dialect, Options{
+func GenerateSchemaDiffSQLStatements(diff *difftypes.SchemaDiff, desired *schemamodel.Database, dialect string) ([]string, error) {
+	output, err := GenerateSchemaDiffSQLWithOptions(diff, desired, dialect, Options{
 		Capabilities: capability.ForDialect(dialect),
 	})
 	if err != nil {
@@ -531,12 +531,12 @@ func GenerateSchemaDiffSQLStatements(diff *types.SchemaDiff, generated *goschema
 // GenerateSchemaDiffSQLStatementsWithOptions generates individual SQL
 // statements using explicit planning options.
 func GenerateSchemaDiffSQLStatementsWithOptions(
-	diff *types.SchemaDiff,
-	generated *goschema.Database,
+	diff *difftypes.SchemaDiff,
+	desired *schemamodel.Database,
 	dialect string,
 	opts Options,
 ) ([]string, error) {
-	output, err := GenerateSchemaDiffSQLWithOptions(diff, generated, dialect, opts)
+	output, err := GenerateSchemaDiffSQLWithOptions(diff, desired, dialect, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -558,7 +558,7 @@ func GenerateSchemaDiffSQLStatementsWithOptions(
 // # Parameters
 //
 //   - diff: Schema differences identified by the schemadiff package
-//   - generated: Target schema parsed from Go struct annotations
+//   - desired: the schema an authoring source declared
 //   - dialect: Database dialect identifier (use constants from platform package)
 //
 // # Return Value
@@ -586,7 +586,7 @@ func GenerateSchemaDiffSQLStatementsWithOptions(
 //	import "go.5x5.cz/ptah/core/platform"
 //
 //	// Generate complete SQL script for PostgreSQL
-//	sql, err := planner.GenerateSchemaDiffSQL(diff, generated, platform.Postgres)
+//	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.Postgres)
 //	if err != nil {
 //		return err
 //	}
@@ -605,8 +605,8 @@ func GenerateSchemaDiffSQLStatementsWithOptions(
 //
 //   - GenerateSchemaDiffSQLStatements: For individual SQL statements
 //   - GenerateSchemaDiffAST: For AST nodes without rendering
-func GenerateSchemaDiffSQL(diff *types.SchemaDiff, generated *goschema.Database, dialect string) (string, error) {
-	return GenerateSchemaDiffSQLWithOptions(diff, generated, dialect, Options{
+func GenerateSchemaDiffSQL(diff *difftypes.SchemaDiff, desired *schemamodel.Database, dialect string) (string, error) {
+	return GenerateSchemaDiffSQLWithOptions(diff, desired, dialect, Options{
 		Capabilities: capability.ForDialect(dialect),
 	})
 }
@@ -614,8 +614,8 @@ func GenerateSchemaDiffSQL(diff *types.SchemaDiff, generated *goschema.Database,
 // GenerateSchemaDiffSQLWithOptions generates complete SQL using explicit
 // planning options.
 func GenerateSchemaDiffSQLWithOptions(
-	diff *types.SchemaDiff,
-	generated *goschema.Database,
+	diff *difftypes.SchemaDiff,
+	desired *schemamodel.Database,
 	dialect string,
 	opts Options,
 ) (string, error) {
@@ -625,8 +625,8 @@ func GenerateSchemaDiffSQLWithOptions(
 	// set alone would emit `CREATE EXTENSION "timescaledb"` and then skip the
 	// create_hypertable that needs it (stokaro/ptah#1026).
 	caps := capability.WithDeclaredExtensions(
-		opts.CapabilitiesFor(dialect), declaredExtensionNames(generated))
-	astNodes, err := GenerateSchemaDiffASTWithOptions(diff, generated, dialect, opts)
+		opts.CapabilitiesFor(dialect), declaredExtensionNames(desired))
+	astNodes, err := GenerateSchemaDiffASTWithOptions(diff, desired, dialect, opts)
 	if err != nil {
 		return "", err
 	}
@@ -639,12 +639,12 @@ func GenerateSchemaDiffSQLWithOptions(
 
 // declaredExtensionNames is what the desired schema says the target will have
 // by the time these statements run.
-func declaredExtensionNames(generated *goschema.Database) []string {
-	if generated == nil {
+func declaredExtensionNames(desired *schemamodel.Database) []string {
+	if desired == nil {
 		return nil
 	}
-	names := make([]string, 0, len(generated.Extensions))
-	for _, extension := range generated.Extensions {
+	names := make([]string, 0, len(desired.Extensions))
+	for _, extension := range desired.Extensions {
 		names = append(names, extension.Name)
 	}
 	return names

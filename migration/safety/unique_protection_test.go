@@ -7,7 +7,7 @@ import (
 
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/migration/safety"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestClassifySchemaDiff_UniqueProtectionRemovalIsDestructive covers the loss of
@@ -23,10 +23,10 @@ import (
 func TestClassifySchemaDiff_UniqueProtectionRemovalIsDestructive(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
-		IndexesAdded:   []types.IndexRef{{Name: "uq_users_email", TableName: "users"}},
-		IndexesRemoved: []types.IndexRef{{Name: "uq_users_email", TableName: "users"}},
-		ConstraintBackedIndexRemovals: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded:   []difftypes.IndexRef{{Name: "uq_users_email", TableName: "users"}},
+		IndexesRemoved: []difftypes.IndexRef{{Name: "uq_users_email", TableName: "users"}},
+		ConstraintBackedIndexRemovals: []difftypes.IndexRef{
 			{Name: "uq_users_email", TableName: "users"},
 		},
 	}
@@ -48,8 +48,8 @@ func TestClassifySchemaDiff_UniqueProtectionRemovalIsDestructive(t *testing.T) {
 func TestClassifySchemaDiff_PlainIndexRemovalStaysAWarning(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
-		IndexesRemoved: []types.IndexRef{{Name: "idx_users_email", TableName: "users"}},
+	diff := &difftypes.SchemaDiff{
+		IndexesRemoved: []difftypes.IndexRef{{Name: "idx_users_email", TableName: "users"}},
 	}
 
 	findings := safety.ClassifySchemaDiff(diff)

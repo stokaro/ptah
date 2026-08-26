@@ -115,7 +115,7 @@ func testDynamicFunctionAttributeModification(ctx context.Context, conn *dbschem
 		// entries — i.e. PR #129's planner emit path landed and is
 		// idempotent over body / SECURITY / volatility / language /
 		// parameters / returns.
-		generated, err := vem.GenerateSchemaFromEntities()
+		desired, err := vem.GenerateSchemaFromEntities()
 		if err != nil {
 			return fmt.Errorf("failed to parse entities: %w", err)
 		}
@@ -123,7 +123,7 @@ func testDynamicFunctionAttributeModification(ctx context.Context, conn *dbschem
 		if err != nil {
 			return fmt.Errorf("failed to read database schema: %w", err)
 		}
-		diff, err := schemadiff.CompareWithDatabase(ctx, conn, generated, dbSchema, nil)
+		diff, err := schemadiff.CompareWithDatabase(ctx, conn, desired, dbSchema, nil)
 		if err != nil {
 			return fmt.Errorf("failed to compare schemas: %w", err)
 		}

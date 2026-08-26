@@ -5,10 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -21,11 +21,11 @@ func TestCompareWithDatabaseReportingUndecidedAdditionsUsesDatabaseDefaults(t *t
 	)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
-	desired := &goschema.Database{
-		Sequences: []goschema.Sequence{{Name: "order_seq"}},
+	desired := &schemamodel.Database{
+		Sequences: []schemamodel.Sequence{{Name: "order_seq"}},
 	}
-	current := &types.DBSchema{
-		Extensions:   []types.DBExtension{{Name: "plpgsql"}},
+	current := &catalog.Database{
+		Extensions:   []catalog.Extension{{Name: "plpgsql"}},
 		NotDescribed: coverage.Set{}.WithKind(coverage.Sequence),
 	}
 

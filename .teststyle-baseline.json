@@ -7,18 +7,6 @@
       "count": 1
     },
     {
-      "path": "core/goschema/dependency_fix_test.go",
-      "function": "TestDependencyOrderingWithEmbeddedFields",
-      "kind": "if",
-      "count": 4
-    },
-    {
-      "path": "core/goschema/dependency_fix_test.go",
-      "function": "TestEmbeddedFieldProcessingModes",
-      "kind": "if",
-      "count": 8
-    },
-    {
       "path": "core/goschema/embedded_bug_reproduction_test.go",
       "function": "TestEmbeddedEntityIDBugReproduction",
       "kind": "if",
@@ -67,24 +55,6 @@
       "count": 5
     },
     {
-      "path": "core/goschema/issue_51_reproduction_test.go",
-      "function": "TestIssue51ExactReproduction",
-      "kind": "if",
-      "count": 6
-    },
-    {
-      "path": "core/goschema/mysql_type_compatibility_test.go",
-      "function": "TestMySQLMigrationGeneratesCompatibleTypes",
-      "kind": "if",
-      "count": 3
-    },
-    {
-      "path": "core/goschema/mysql_type_compatibility_test.go",
-      "function": "TestMySQLTypeCompatibilityForEmbeddedRelations",
-      "kind": "if",
-      "count": 1
-    },
-    {
       "path": "core/goschema/parser_test.go",
       "function": "TestParseDir_EmbeddedRelationFKActions",
       "kind": "if",
@@ -131,18 +101,6 @@
       "function": "TestRLSPolicyParsingRobustness",
       "kind": "if",
       "count": 2
-    },
-    {
-      "path": "core/goschema/utils_test.go",
-      "function": "TestDeduplicate_FieldOrderPreservation",
-      "kind": "if",
-      "count": 1
-    },
-    {
-      "path": "core/goschema/utils_test.go",
-      "function": "TestDeduplicate_MultipleStructsFieldOrder",
-      "kind": "switch",
-      "count": 1
     },
     {
       "path": "core/goschema/walker_test.go",
@@ -209,6 +167,48 @@
       "function": "TestPlatformSpecificOverrides",
       "kind": "if",
       "count": 3
+    },
+    {
+      "path": "core/schemamodel/dependency_fix_test.go",
+      "function": "TestDependencyOrderingWithEmbeddedFields",
+      "kind": "if",
+      "count": 4
+    },
+    {
+      "path": "core/schemamodel/dependency_fix_test.go",
+      "function": "TestEmbeddedFieldProcessingModes",
+      "kind": "if",
+      "count": 8
+    },
+    {
+      "path": "core/schemamodel/issue_51_reproduction_test.go",
+      "function": "TestIssue51ExactReproduction",
+      "kind": "if",
+      "count": 6
+    },
+    {
+      "path": "core/schemamodel/mysql_type_compatibility_test.go",
+      "function": "TestMySQLMigrationGeneratesCompatibleTypes",
+      "kind": "if",
+      "count": 3
+    },
+    {
+      "path": "core/schemamodel/mysql_type_compatibility_test.go",
+      "function": "TestMySQLTypeCompatibilityForEmbeddedRelations",
+      "kind": "if",
+      "count": 1
+    },
+    {
+      "path": "core/schemamodel/utils_test.go",
+      "function": "TestDeduplicate_FieldOrderPreservation",
+      "kind": "if",
+      "count": 1
+    },
+    {
+      "path": "core/schemamodel/utils_test.go",
+      "function": "TestDeduplicate_MultipleStructsFieldOrder",
+      "kind": "switch",
+      "count": 1
     },
     {
       "path": "integration/gonative/check_constraint_integration_test.go",
@@ -879,11 +879,6 @@
     {
       "path": "cmd/migrateup/migrateup_test.go",
       "package": "migrateup",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
-      "path": "core/goschema/embedded_bug_reproduction_test.go",
-      "package": "goschema",
       "reason": "same-package test file is not named *_internal_test.go"
     },
     {

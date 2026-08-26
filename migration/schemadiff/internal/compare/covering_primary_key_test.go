@@ -5,24 +5,24 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 // coveringDeclaration is a description whose table declares a primary key with
 // the given INCLUDE payload.
-func coveringDeclaration(include []string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{
+func coveringDeclaration(include []string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{
 			StructName:        "Covering",
 			Name:              "covering",
 			PrimaryKey:        []string{"a", "b"},
 			PrimaryKeyInclude: include,
 		}},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Covering", Name: "a", Type: "INTEGER"},
 			{StructName: "Covering", Name: "b", Type: "INTEGER"},
 			{StructName: "Covering", Name: "payload", Type: "TEXT", Nullable: true},
@@ -32,17 +32,17 @@ func coveringDeclaration(include []string) *goschema.Database {
 
 // coveringCatalog is the same table as the server reports it, with the given
 // payload on its primary key.
-func coveringCatalog(include []string) *types.DBSchema {
-	return &types.DBSchema{
-		Tables: []types.DBTable{{
+func coveringCatalog(include []string) *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{{
 			Name: "covering", Schema: "public", Type: "BASE TABLE",
-			Columns: []types.DBColumn{
+			Columns: []catalog.Column{
 				{Name: "a", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
 				{Name: "b", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
 				{Name: "payload", DataType: "text", IsNullable: "YES"},
 			},
 		}},
-		Constraints: []types.DBConstraint{{
+		Constraints: []catalog.Constraint{{
 			Schema: "public", TableName: "covering", Name: "covering_pkey",
 			Type: "PRIMARY KEY", ColumnNames: []string{"a", "b"}, IncludeColumns: include,
 		}},
@@ -50,10 +50,10 @@ func coveringCatalog(include []string) *types.DBSchema {
 }
 
 // constraintDiff compares one description against one catalog.
-func constraintDiff(c *qt.C, generated *goschema.Database, database *types.DBSchema) *difftypes.SchemaDiff {
+func constraintDiff(c *qt.C, desired *schemamodel.Database, current *catalog.Database) *difftypes.SchemaDiff {
 	c.Helper()
 	diff := &difftypes.SchemaDiff{}
-	compare.ConstraintsWithSemantics(generated, database, diff, nil, identifier.ForDialect("postgres"))
+	compare.ConstraintsWithSemantics(desired, current, diff, nil, identifier.ForDialect("postgres"))
 	return diff
 }
 

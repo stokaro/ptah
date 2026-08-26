@@ -5,26 +5,26 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 )
 
 // coveringSchema is one table whose primary key covers the given columns and
 // carries the given INCLUDE payload.
-func coveringSchema(keyColumns, include []string) *types.DBSchema {
-	columns := make([]types.DBColumn, 0, len(keyColumns)+1)
+func coveringSchema(keyColumns, include []string) *catalog.Database {
+	columns := make([]catalog.Column, 0, len(keyColumns)+1)
 	for _, name := range keyColumns {
-		columns = append(columns, types.DBColumn{
+		columns = append(columns, catalog.Column{
 			Name: name, DataType: "integer", IsNullable: "NO", IsPrimaryKey: true,
 		})
 	}
-	columns = append(columns, types.DBColumn{Name: "payload", DataType: "text", IsNullable: "YES"})
-	return &types.DBSchema{
-		Tables: []types.DBTable{{
+	columns = append(columns, catalog.Column{Name: "payload", DataType: "text", IsNullable: "YES"})
+	return &catalog.Database{
+		Tables: []catalog.Table{{
 			Name: "covering", Type: "BASE TABLE", Columns: columns,
 		}},
-		Constraints: []types.DBConstraint{{
+		Constraints: []catalog.Constraint{{
 			TableName:      "covering",
 			Name:           "covering_pkey",
 			Type:           "PRIMARY KEY",
@@ -35,7 +35,7 @@ func coveringSchema(keyColumns, include []string) *types.DBSchema {
 }
 
 // coveringTable returns the converted table the key is on.
-func coveringTable(c *qt.C, database *goschema.Database) goschema.Table {
+func coveringTable(c *qt.C, database *schemamodel.Database) schemamodel.Table {
 	c.Helper()
 	for _, table := range database.Tables {
 		if table.Name == "covering" {
@@ -43,11 +43,11 @@ func coveringTable(c *qt.C, database *goschema.Database) goschema.Table {
 		}
 	}
 	c.Fatalf("no covering table in %+v", database.Tables)
-	return goschema.Table{}
+	return schemamodel.Table{}
 }
 
 // primaryField returns the converted column named, for the flag assertions.
-func primaryField(c *qt.C, database *goschema.Database, name string) goschema.Field {
+func primaryField(c *qt.C, database *schemamodel.Database, name string) schemamodel.Field {
 	c.Helper()
 	for _, field := range database.Fields {
 		if field.Name == name {
@@ -55,13 +55,13 @@ func primaryField(c *qt.C, database *goschema.Database, name string) goschema.Fi
 		}
 	}
 	c.Fatalf("no %s field in %+v", name, database.Fields)
-	return goschema.Field{}
+	return schemamodel.Field{}
 }
 
 // TestConvert_KeepsTheIncludePayloadOfACoveringPrimaryKey pins that the payload
 // survives the description.
 //
-// It did not. The reader fills DBConstraint.IncludeColumns for every constraint
+// It did not. The reader fills catalog.Constraint.IncludeColumns for every constraint
 // kind, and the conversion then refuses to carry a primary key as a constraint
 // at all -- deliberately, because a primary key is carried as Table.PrimaryKey
 // so it renders once -- while the path that does carry primary keys read only
@@ -86,7 +86,7 @@ func TestConvert_KeepsTheIncludePayloadOfACoveringPrimaryKey(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			database := dbschematogo.ConvertDBSchemaToGoSchema(coveringSchema(tt.keyColumns, []string{"payload"}))
+			database := dbschematogo.ConvertCatalogToSchema(coveringSchema(tt.keyColumns, []string{"payload"}))
 
 			table := coveringTable(c, database)
 			c.Assert(table.PrimaryKey, qt.DeepEquals, tt.keyColumns)
@@ -120,7 +120,7 @@ func TestConvert_LeavesAPlainPrimaryKeyAsItWas(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			database := dbschematogo.ConvertDBSchemaToGoSchema(coveringSchema(tt.keyColumns, nil))
+			database := dbschematogo.ConvertCatalogToSchema(coveringSchema(tt.keyColumns, nil))
 
 			table := coveringTable(c, database)
 			c.Assert(table.PrimaryKey, qt.DeepEquals, tt.wantTableLevel)

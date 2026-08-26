@@ -5,10 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/internal/identifiervalidation"
 )
 
@@ -44,20 +44,20 @@ func TestValidateCoverage_IncompleteCatalogSnapshot_FailurePath(t *testing.T) {
 
 func TestValidateTarget_HappyPath(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{
-		Tables: []goschema.Table{
+	database := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "User", Schema: "public", Name: "users"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "email", Type: "VARCHAR(320)"},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{
 				Name:           "idx_users_email",
 				TableName:      "public.users",
 				Fields:         []string{"email"},
 				IncludeColumns: []string{"status"},
-				Parts: []goschema.IndexPart{
+				Parts: []schemamodel.IndexPart{
 					{Name: "email"},
 				},
 			},
@@ -87,8 +87,8 @@ func TestValidateTarget_NilDatabase(t *testing.T) {
 
 func TestValidateTarget_IncompleteCatalogSnapshot_FailurePath(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{
-		Tables: []goschema.Table{
+	database := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "User", Schema: "dbo", Name: "users"},
 		},
 	}
@@ -108,8 +108,8 @@ func TestValidateTarget_IncompleteCatalogSnapshot_FailurePath(t *testing.T) {
 
 func TestValidateTarget_TableCollision_FailurePath(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{
-		Tables: []goschema.Table{
+	database := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "LowerUser", Schema: "dbo", Name: "users"},
 			{StructName: "UpperUser", Schema: "dbo", Name: "Users"},
 		},
@@ -136,11 +136,11 @@ func TestValidateTarget_TableCollision_FailurePath(t *testing.T) {
 
 func TestValidateTarget_ColumnCollision_FailurePath(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{
-		Tables: []goschema.Table{
+	database := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "User", Schema: "dbo", Name: "users"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "email", Type: "NVARCHAR(320)"},
 			{StructName: "User", Name: "Email", Type: "NVARCHAR(320)"},
 		},
@@ -168,14 +168,14 @@ func TestValidateTarget_ColumnCollision_FailurePath(t *testing.T) {
 
 func TestValidateTarget_IndexCollision_FailurePath(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{
-		Tables: []goschema.Table{
+	database := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "User", Schema: "dbo", Name: "users"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "email", Type: "NVARCHAR(320)"},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{
 				Name:      "idx_email",
 				TableName: "dbo.users",

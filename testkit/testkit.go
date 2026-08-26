@@ -22,10 +22,10 @@ import (
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/dbschema"
-	dbtypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -488,14 +488,14 @@ func requireNoError(t testing.TB, err error, action string) {
 	}
 }
 
-func normalizeSchema(schema *dbtypes.DBSchema) {
-	schema.Tables = slices.DeleteFunc(schema.Tables, func(table dbtypes.DBTable) bool {
+func normalizeSchema(schema *catalog.Database) {
+	schema.Tables = slices.DeleteFunc(schema.Tables, func(table catalog.Table) bool {
 		return isMigrationMetadataTable(table.Name)
 	})
-	schema.Indexes = slices.DeleteFunc(schema.Indexes, func(index dbtypes.DBIndex) bool {
+	schema.Indexes = slices.DeleteFunc(schema.Indexes, func(index catalog.Index) bool {
 		return isMigrationMetadataTable(index.TableName)
 	})
-	schema.Constraints = slices.DeleteFunc(schema.Constraints, func(constraint dbtypes.DBConstraint) bool {
+	schema.Constraints = slices.DeleteFunc(schema.Constraints, func(constraint catalog.Constraint) bool {
 		return isMigrationMetadataTable(constraint.TableName)
 	})
 
@@ -503,7 +503,7 @@ func normalizeSchema(schema *dbtypes.DBSchema) {
 		// EstimatedRows depends on whether autovacuum happened to have analyzed
 		// the table before the read, which no test controls.
 		//
-		// DBTable.RowStatsUnknown (stokaro/ptah#997) is nondeterministic for the
+		// catalog.Table.RowStatsUnknown (stokaro/ptah#997) is nondeterministic for the
 		// same reason and belongs here too, but this module compiles against the
 		// PUBLISHED go.5x5.cz/ptah, so the field cannot be named until a release
 		// carries it. Add it when this module's ptah requirement is bumped.
@@ -511,40 +511,40 @@ func normalizeSchema(schema *dbtypes.DBSchema) {
 		slices.SortFunc(schema.Tables[idx].Columns, compareColumns)
 	}
 
-	slices.SortFunc(schema.Tables, func(a, b dbtypes.DBTable) int {
+	slices.SortFunc(schema.Tables, func(a, b catalog.Table) int {
 		return strings.Compare(a.QualifiedName(), b.QualifiedName())
 	})
-	slices.SortFunc(schema.Enums, func(a, b dbtypes.DBEnum) int {
+	slices.SortFunc(schema.Enums, func(a, b catalog.Enum) int {
 		return strings.Compare(a.Name, b.Name)
 	})
-	slices.SortFunc(schema.Indexes, func(a, b dbtypes.DBIndex) int {
+	slices.SortFunc(schema.Indexes, func(a, b catalog.Index) int {
 		return strings.Compare(a.QualifiedTableName()+"."+a.Name, b.QualifiedTableName()+"."+b.Name)
 	})
-	slices.SortFunc(schema.Constraints, func(a, b dbtypes.DBConstraint) int {
+	slices.SortFunc(schema.Constraints, func(a, b catalog.Constraint) int {
 		return strings.Compare(a.QualifiedTableName()+"."+a.Name, b.QualifiedTableName()+"."+b.Name)
 	})
-	slices.SortFunc(schema.Extensions, func(a, b dbtypes.DBExtension) int {
+	slices.SortFunc(schema.Extensions, func(a, b catalog.Extension) int {
 		return strings.Compare(a.Schema+"."+a.Name, b.Schema+"."+b.Name)
 	})
-	slices.SortFunc(schema.Functions, func(a, b dbtypes.DBFunction) int {
+	slices.SortFunc(schema.Functions, func(a, b catalog.Function) int {
 		return strings.Compare(a.Name+"("+a.Parameters+")", b.Name+"("+b.Parameters+")")
 	})
-	slices.SortFunc(schema.Views, func(a, b dbtypes.DBView) int {
+	slices.SortFunc(schema.Views, func(a, b catalog.View) int {
 		return strings.Compare(a.QualifiedName(), b.QualifiedName())
 	})
-	slices.SortFunc(schema.MatViews, func(a, b dbtypes.DBMatView) int {
+	slices.SortFunc(schema.MatViews, func(a, b catalog.MaterializedView) int {
 		return strings.Compare(a.QualifiedName(), b.QualifiedName())
 	})
-	slices.SortFunc(schema.Triggers, func(a, b dbtypes.DBTrigger) int {
+	slices.SortFunc(schema.Triggers, func(a, b catalog.Trigger) int {
 		return strings.Compare(a.QualifiedTable()+"."+a.Name, b.QualifiedTable()+"."+b.Name)
 	})
-	slices.SortFunc(schema.RLSPolicies, func(a, b dbtypes.DBRLSPolicy) int {
+	slices.SortFunc(schema.RLSPolicies, func(a, b catalog.RLSPolicy) int {
 		return strings.Compare(a.Table+"."+a.Name, b.Table+"."+b.Name)
 	})
-	slices.SortFunc(schema.Roles, func(a, b dbtypes.DBRole) int {
+	slices.SortFunc(schema.Roles, func(a, b catalog.Role) int {
 		return strings.Compare(a.Name, b.Name)
 	})
-	slices.SortFunc(schema.Grants, func(a, b dbtypes.DBGrant) int {
+	slices.SortFunc(schema.Grants, func(a, b catalog.Grant) int {
 		return strings.Compare(a.Role+"."+a.ObjectType+"."+a.QualifiedTarget()+"."+a.Privilege, b.Role+"."+b.ObjectType+"."+b.QualifiedTarget()+"."+b.Privilege)
 	})
 }
@@ -558,7 +558,7 @@ func isMigrationMetadataTable(name string) bool {
 	}
 }
 
-func compareColumns(a, b dbtypes.DBColumn) int {
+func compareColumns(a, b catalog.Column) int {
 	if a.OrdinalPosition != b.OrdinalPosition {
 		return a.OrdinalPosition - b.OrdinalPosition
 	}

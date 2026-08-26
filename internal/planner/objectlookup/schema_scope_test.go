@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/objectlookup"
 )
 
@@ -28,7 +28,7 @@ import (
 func TestUnqualifiedTierOnlySuppliesAnUnstatedSchema(t *testing.T) {
 	tests := []struct {
 		name      string
-		tables    []goschema.Table
+		tables    []schemamodel.Table
 		lookup    string
 		semantics identifier.Semantics
 		wantNil   bool
@@ -37,7 +37,7 @@ func TestUnqualifiedTierOnlySuppliesAnUnstatedSchema(t *testing.T) {
 		{
 			// The measured shape. Both sides name a schema and the two disagree.
 			name:      "PostgreSQL declines two stated schemas that differ",
-			tables:    []goschema.Table{{StructName: "User", Name: "users", Schema: "reporting"}},
+			tables:    []schemamodel.Table{{StructName: "User", Name: "users", Schema: "reporting"}},
 			lookup:    "app.users",
 			semantics: identifier.ForDialect("postgres"),
 			wantNil:   true,
@@ -46,7 +46,7 @@ func TestUnqualifiedTierOnlySuppliesAnUnstatedSchema(t *testing.T) {
 			// The same shape with the sides swapped: the declaration is the one
 			// naming the schema the diff does not.
 			name:      "PostgreSQL declines the reverse direction too",
-			tables:    []goschema.Table{{StructName: "User", Name: "users", Schema: "app"}},
+			tables:    []schemamodel.Table{{StructName: "User", Name: "users", Schema: "app"}},
 			lookup:    "reporting.users",
 			semantics: identifier.ForDialect("postgres"),
 			wantNil:   true,
@@ -56,7 +56,7 @@ func TestUnqualifiedTierOnlySuppliesAnUnstatedSchema(t *testing.T) {
 			// only tier that can join a reader's `mydb.v` to a bare declaration.
 			// The gate must not take that away.
 			name:      "MySQL still resolves a database-qualified name to a bare declaration",
-			tables:    []goschema.Table{{StructName: "View", Name: "v"}},
+			tables:    []schemamodel.Table{{StructName: "View", Name: "v"}},
 			lookup:    "mydb.v",
 			semantics: identifier.ForDialect("mysql"),
 			wantNil:   false,
@@ -66,7 +66,7 @@ func TestUnqualifiedTierOnlySuppliesAnUnstatedSchema(t *testing.T) {
 			// Two databases are two objects on MySQL exactly as two schemas are
 			// on PostgreSQL, and neither side left anything unstated.
 			name:      "MySQL declines two stated databases that differ",
-			tables:    []goschema.Table{{StructName: "View", Name: "v", Schema: "db2"}},
+			tables:    []schemamodel.Table{{StructName: "View", Name: "v", Schema: "db2"}},
 			lookup:    "db1.v",
 			semantics: identifier.ForDialect("mysql"),
 			wantNil:   true,
@@ -75,7 +75,7 @@ func TestUnqualifiedTierOnlySuppliesAnUnstatedSchema(t *testing.T) {
 			// SQLite carries a default schema, so `main` is reachable through
 			// tier 2; a named non-default schema is not reachable at all.
 			name:      "SQLite declines a named schema that is not the diff's",
-			tables:    []goschema.Table{{StructName: "Note", Name: "notes", Schema: "attached"}},
+			tables:    []schemamodel.Table{{StructName: "Note", Name: "notes", Schema: "attached"}},
 			lookup:    "main.notes",
 			semantics: identifier.ForDialect("sqlite"),
 			wantNil:   true,
@@ -85,7 +85,7 @@ func TestUnqualifiedTierOnlySuppliesAnUnstatedSchema(t *testing.T) {
 			// PostgreSQL reader qualifies every object outside the schema it
 			// read, and the declaration left the schema to the search path.
 			name:      "PostgreSQL still supplies a schema the declaration left unstated",
-			tables:    []goschema.Table{{StructName: "User", Name: "users"}},
+			tables:    []schemamodel.Table{{StructName: "User", Name: "users"}},
 			lookup:    "app.users",
 			semantics: identifier.ForDialect("postgres"),
 			wantNil:   false,
@@ -93,7 +93,7 @@ func TestUnqualifiedTierOnlySuppliesAnUnstatedSchema(t *testing.T) {
 		},
 		{
 			name:      "PostgreSQL still supplies a schema the diff left unstated",
-			tables:    []goschema.Table{{StructName: "User", Name: "users", Schema: "app"}},
+			tables:    []schemamodel.Table{{StructName: "User", Name: "users", Schema: "app"}},
 			lookup:    "users",
 			semantics: identifier.ForDialect("postgres"),
 			wantNil:   false,
@@ -113,7 +113,7 @@ func TestUnqualifiedTierOnlySuppliesAnUnstatedSchema(t *testing.T) {
 
 // namedTable reports the table's own name, or the empty string for no table, so
 // a row states its expectation without branching in the test body.
-func namedTable(table *goschema.Table) string {
+func namedTable(table *schemamodel.Table) string {
 	if table == nil {
 		return ""
 	}

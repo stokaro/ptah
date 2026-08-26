@@ -10,13 +10,13 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/go-sql-driver/mysql"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/dbschema/mysql"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 const (
@@ -106,23 +106,23 @@ func testMySQLFamilyTableQualifiedIndexIdentityRoundTrip(t *testing.T, dsn, dial
 	c.Assert(finalDiff.IndexRemovals(), qt.HasLen, 0)
 }
 
-func readMySQLFamilyIndexIdentitySchema(c *qt.C, db *sql.DB) *dbschematypes.DBSchema {
+func readMySQLFamilyIndexIdentitySchema(c *qt.C, db *sql.DB) *catalog.Database {
 	c.Helper()
 	live, err := mysql.NewMySQLReader(db, "").ReadSchemaContext(c.Context())
 	c.Assert(err, qt.IsNil)
-	live.Indexes = slices.DeleteFunc(live.Indexes, func(index dbschematypes.DBIndex) bool {
+	live.Indexes = slices.DeleteFunc(live.Indexes, func(index catalog.Index) bool {
 		return index.TableName != indexIdentityUsersTable && index.TableName != indexIdentityOrdersTable
 	})
 	return live
 }
 
-func tableQualifiedIndexTarget() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func tableQualifiedIndexTarget() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "IndexIdentityUser", Name: indexIdentityUsersTable},
 			{StructName: "IndexIdentityOrder", Name: indexIdentityOrdersTable},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{
 				StructName: "IndexIdentityUser",
 				Name:       indexIdentityName,
@@ -137,13 +137,13 @@ func tableQualifiedIndexTarget() *goschema.Database {
 	}
 }
 
-func tableQualifiedIndexTargetWithoutOrdersIndex() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func tableQualifiedIndexTargetWithoutOrdersIndex() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "IndexIdentityUser", Name: indexIdentityUsersTable},
 			{StructName: "IndexIdentityOrder", Name: indexIdentityOrdersTable},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{
 				StructName: "IndexIdentityUser",
 				Name:       indexIdentityName,

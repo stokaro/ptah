@@ -36,8 +36,8 @@ the database has".
 
 ```mermaid
 flowchart LR
-  GO["Go annotations<br/>goschema.Database"] --> ADAPT
-  CAT["Live catalog<br/>types.DBSchema"] --> ADAPT
+  GO["Go annotations<br/>schemamodel.Database"] --> ADAPT
+  CAT["Live catalog<br/>catalog.Database"] --> ADAPT
   ADAPT["schemastate adapters<br/>peers, not converters"] --> STATE["Canonical state<br/>identity-keyed"]
   PROFILE["Profile<br/>dialect + semantics + capabilities"] --> NORM
   STATE --> NORM["Normalize<br/>once, explicitly"]
@@ -58,7 +58,7 @@ func Plan(changes []Change, profile schemastate.Profile) ([]PlannedOperation, er
 against the existing path's
 
 ```go
-func GenerateSchemaDiffAST(diff *types.SchemaDiff, generated *goschema.Database, dialect string) ([]ast.Node, error)
+func GenerateSchemaDiffAST(diff *difftypes.SchemaDiff, desired *schemamodel.Database, dialect string) ([]ast.Node, error)
 ```
 
 The second parameter there is where the planner recovers what a diff of name
@@ -270,7 +270,7 @@ criteria:
 | Issue | Families | Retires |
 | --- | --- | --- |
 | [#1662](https://github.com/stokaro/ptah/issues/1662) | Tables and columns | Both `internal/convert` direction packages, and the planner's second parameter |
-| [#1663](https://github.com/stokaro/ptah/issues/1663) | Indexes and the remaining constraint kinds | Retired: `objectidentity.ConstraintPartsVerbatim` is gone, and both planners' constraint host keys are aliases of `types.ConstraintIdentity` |
+| [#1663](https://github.com/stokaro/ptah/issues/1663) | Indexes and the remaining constraint kinds | Retired: `objectidentity.ConstraintPartsVerbatim` is gone, and both planners' constraint host keys are aliases of `difftypes.ConstraintIdentity` |
 | [#1664](https://github.com/stokaro/ptah/issues/1664) | The schema-scoped families | `core/goschema` parse-time keys, the third and fourth `tableMemberKey` copies, and routine overload identity |
 
 ## What this does not do
@@ -280,7 +280,7 @@ criteria:
   constraint kinds are planned: `nodesFor` dispatches on the change's kind and
   each has a renderer.
 - No source adapter other than Go annotations and the catalog. HCL and YAML
-  reach `goschema.Database` first, so they are covered transitively rather than
+  reach `schemamodel.Database` first, so they are covered transitively rather than
   directly, and a native adapter for each is per-family migration work.
 - No integration with the CLI, the migration generator, or versioned execution.
   ADR 0001 decision 9 puts that boundary deliberately outside the prototype.

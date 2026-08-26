@@ -12,7 +12,7 @@ package schemadiff_test
 // The two paths live in different packages and neither package's own tests can
 // see the disagreement: dbschematogo's tests assert what the desired side
 // answers and compare's tests supply a desired side by hand. This file joins
-// them, which is the only place the property is a property. Every DBColumn
+// them, which is the only place the property is a property. Every catalog.Column
 // below is one column as the PostgreSQL 17.10 reader reports it, values
 // measured from information_schema.columns and pg_catalog rather than invented.
 
@@ -21,7 +21,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -40,12 +40,12 @@ import (
 func TestCompare_DomainColumnSelfDiffPlansNothing(t *testing.T) {
 	tests := []struct {
 		name   string
-		column types.DBColumn
+		column catalog.Column
 	}{
 		{
 			// CREATE DOMAIN positive AS integer CHECK (VALUE > 0);
 			name: "domain over a built-in base type",
-			column: types.DBColumn{
+			column: catalog.Column{
 				Name:          "qty",
 				DataType:      "integer",
 				UDTName:       "int4",
@@ -58,7 +58,7 @@ func TestCompare_DomainColumnSelfDiffPlansNothing(t *testing.T) {
 			// CREATE DOMAIN doms.positive AS integer; a domain off the search
 			// path keeps its qualifier on both sides or neither.
 			name: "domain outside the search path",
-			column: types.DBColumn{
+			column: catalog.Column{
 				Name:          "qty",
 				DataType:      "integer",
 				UDTName:       "int4",
@@ -71,7 +71,7 @@ func TestCompare_DomainColumnSelfDiffPlansNothing(t *testing.T) {
 			// CREATE TYPE color AS ENUM ('r','g','b');
 			// CREATE DOMAIN d_enum AS color CHECK (VALUE <> 'b');
 			name: "domain over an enum",
-			column: types.DBColumn{
+			column: catalog.Column{
 				Name:          "c",
 				DataType:      "USER-DEFINED",
 				UDTName:       "color",
@@ -84,7 +84,7 @@ func TestCompare_DomainColumnSelfDiffPlansNothing(t *testing.T) {
 			// CREATE TYPE addr AS (street text, city text);
 			// CREATE DOMAIN d_comp AS addr;
 			name: "domain over a composite type",
-			column: types.DBColumn{
+			column: catalog.Column{
 				Name:          "a",
 				DataType:      "USER-DEFINED",
 				UDTName:       "addr",
@@ -97,7 +97,7 @@ func TestCompare_DomainColumnSelfDiffPlansNothing(t *testing.T) {
 			// CREATE TYPE myrange AS RANGE (subtype=integer);
 			// CREATE DOMAIN d_range AS myrange;
 			name: "domain over a range type",
-			column: types.DBColumn{
+			column: catalog.Column{
 				Name:          "r",
 				DataType:      "USER-DEFINED",
 				UDTName:       "myrange",
@@ -111,12 +111,12 @@ func TestCompare_DomainColumnSelfDiffPlansNothing(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			database := &types.DBSchema{
-				Tables: []types.DBTable{{Name: "t", Columns: []types.DBColumn{test.column}}},
+			current := &catalog.Database{
+				Tables: []catalog.Table{{Name: "t", Columns: []catalog.Column{test.column}}},
 			}
 
 			diff := schemadiff.CompareWithDialect(
-				dbschematogo.ConvertDBSchemaToGoSchema(database), database, "postgres",
+				dbschematogo.ConvertCatalogToSchema(current), current, "postgres",
 			)
 
 			c.Assert(diff.TablesModified, qt.HasLen, 0)
@@ -137,11 +137,11 @@ func TestCompare_DomainColumnSelfDiffPlansNothing(t *testing.T) {
 func TestCompare_NonDomainColumnSelfDiffPlansNothing(t *testing.T) {
 	tests := []struct {
 		name   string
-		column types.DBColumn
+		column catalog.Column
 	}{
 		{
 			name: "plain enum column",
-			column: types.DBColumn{
+			column: catalog.Column{
 				Name:       "m",
 				DataType:   "USER-DEFINED",
 				UDTName:    "mood",
@@ -150,7 +150,7 @@ func TestCompare_NonDomainColumnSelfDiffPlansNothing(t *testing.T) {
 		},
 		{
 			name: "plain composite column",
-			column: types.DBColumn{
+			column: catalog.Column{
 				Name:       "p",
 				DataType:   "USER-DEFINED",
 				UDTName:    "pt",
@@ -159,7 +159,7 @@ func TestCompare_NonDomainColumnSelfDiffPlansNothing(t *testing.T) {
 		},
 		{
 			name: "plain integer column under its catalog spelling",
-			column: types.DBColumn{
+			column: catalog.Column{
 				Name:       "id",
 				DataType:   "integer",
 				UDTName:    "int4",
@@ -171,12 +171,12 @@ func TestCompare_NonDomainColumnSelfDiffPlansNothing(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			database := &types.DBSchema{
-				Tables: []types.DBTable{{Name: "t", Columns: []types.DBColumn{test.column}}},
+			current := &catalog.Database{
+				Tables: []catalog.Table{{Name: "t", Columns: []catalog.Column{test.column}}},
 			}
 
 			diff := schemadiff.CompareWithDialect(
-				dbschematogo.ConvertDBSchemaToGoSchema(database), database, "postgres",
+				dbschematogo.ConvertCatalogToSchema(current), current, "postgres",
 			)
 
 			c.Assert(diff.TablesModified, qt.HasLen, 0)

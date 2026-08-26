@@ -6,9 +6,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestPlanner_ReplacesAContinuousAggregateInThatOrder pins the shape a changed
@@ -22,12 +22,12 @@ import (
 // out create-then-drop and end with no aggregate at all.
 func TestPlanner_ReplacesAContinuousAggregateInThatOrder(t *testing.T) {
 	c := qt.New(t)
-	declared := &goschema.Database{ContinuousAggregates: []goschema.ContinuousAggregate{
+	declared := &schemamodel.Database{ContinuousAggregates: []schemamodel.ContinuousAggregate{
 		{Name: "hourly", Schema: "public", Body: "SELECT 2"},
 	}}
 
-	nodes, err := postgres.New().GenerateMigrationASTChecked(&types.SchemaDiff{
-		ContinuousAggregatesModified: []types.ContinuousAggregateDiff{{
+	nodes, err := postgres.New().GenerateMigrationASTChecked(&difftypes.SchemaDiff{
+		ContinuousAggregatesModified: []difftypes.ContinuousAggregateDiff{{
 			Name: "public.hourly", OldBody: "SELECT 1", NewBody: "SELECT 2",
 		}},
 	}, declared)
@@ -42,8 +42,8 @@ func TestPlanner_DropsAnUndeclaredContinuousAggregate(t *testing.T) {
 	c := qt.New(t)
 
 	nodes, err := postgres.New().GenerateMigrationASTChecked(
-		&types.SchemaDiff{ContinuousAggregatesRemoved: []string{"public.hourly"}},
-		&goschema.Database{})
+		&difftypes.SchemaDiff{ContinuousAggregatesRemoved: []string{"public.hourly"}},
+		&schemamodel.Database{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(continuousAggregateVerbs(nodes), qt.DeepEquals, []string{"drop:public.hourly"})
@@ -58,14 +58,14 @@ func TestPlanner_DropsAnUndeclaredContinuousAggregate(t *testing.T) {
 // migration it belongs to.
 func TestPlanner_CreatesAnAggregateAfterTheHypertableItReads(t *testing.T) {
 	c := qt.New(t)
-	declared := &goschema.Database{
-		Hypertables: []goschema.Hypertable{{Table: "readings", Column: "time"}},
-		ContinuousAggregates: []goschema.ContinuousAggregate{
+	declared := &schemamodel.Database{
+		Hypertables: []schemamodel.Hypertable{{Table: "readings", Column: "time"}},
+		ContinuousAggregates: []schemamodel.ContinuousAggregate{
 			{Name: "hourly", Body: "SELECT 1"},
 		},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationASTChecked(&types.SchemaDiff{
+	nodes, err := postgres.New().GenerateMigrationASTChecked(&difftypes.SchemaDiff{
 		HypertablesAdded:          []string{"readings"},
 		ContinuousAggregatesAdded: []string{"hourly"},
 	}, declared)

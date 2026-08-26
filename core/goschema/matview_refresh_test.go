@@ -7,12 +7,13 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/chrefresh"
 )
 
 // parseMatViewRefreshSource parses one file declaring a materialized view with
 // the given refresh attribute.
-func parseMatViewRefreshSource(c *qt.C, attribute string) (*goschema.Database, error) {
+func parseMatViewRefreshSource(c *qt.C, attribute string) (*schemamodel.Database, error) {
 	c.Helper()
 	dir := c.TB.TempDir()
 	source := "package models\n\n" +

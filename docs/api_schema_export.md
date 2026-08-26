@@ -2,7 +2,7 @@
 
 Ptah exports a desired schema to API-facing formats: OpenAPI 3.0 component
 schemas, GraphQL SDL, and Protobuf definitions. The parsed
-`goschema.Database` already carries types, nullability, enums and foreign keys,
+`schemamodel.Database` already carries types, nullability, enums and foreign keys,
 so each format is a direct projection of that intermediate representation.
 That intermediate representation is also what makes the source format
 interchangeable: `--root-dir` reads Go annotations and `--schema-file` reads a

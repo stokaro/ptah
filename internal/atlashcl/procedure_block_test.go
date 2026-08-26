@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashcl"
 )
 
@@ -30,7 +30,7 @@ procedure "p" {
   as     = "BEGIN END"
 }
 `,
-			kind: goschema.FunctionKindProcedure,
+			kind: schemamodel.FunctionKindProcedure,
 		},
 		{
 			// The control. Empty is what every declaration written before

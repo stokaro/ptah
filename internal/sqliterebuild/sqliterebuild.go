@@ -11,17 +11,17 @@ import (
 	"context"
 	"slices"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/sqliteforeignkeys"
 )
 
 // foreignKeyScopedTransactor is a schema writer that can suspend foreign-key
 // enforcement on the connection its transaction runs on.
 type foreignKeyScopedTransactor interface {
-	BeginTransactionWithoutForeignKeys(ctx context.Context) (types.SchemaTransaction, error)
+	BeginTransactionWithoutForeignKeys(ctx context.Context) (catalog.SchemaTransaction, error)
 }
 
 // BeginTransaction opens the transaction that statements will be applied in.
@@ -42,7 +42,7 @@ func BeginTransaction(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	statements []string,
-) (types.SchemaTransaction, error) {
+) (catalog.SchemaTransaction, error) {
 	if unwrapped, ok := beginWithoutTransaction(conn.Info().Capabilities, conn.Writer()); ok {
 		return unwrapped, nil
 	}
@@ -58,7 +58,7 @@ func BeginTransactionForSQL(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	sqlText string,
-) (types.SchemaTransaction, error) {
+) (catalog.SchemaTransaction, error) {
 	if unwrapped, ok := beginWithoutTransaction(conn.Info().Capabilities, conn.Writer()); ok {
 		return unwrapped, nil
 	}
@@ -75,7 +75,7 @@ func BeginTransactionForAnySQL(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	sqlTexts []string,
-) (types.SchemaTransaction, error) {
+) (catalog.SchemaTransaction, error) {
 	if unwrapped, ok := beginWithoutTransaction(conn.Info().Capabilities, conn.Writer()); ok {
 		return unwrapped, nil
 	}
@@ -106,8 +106,8 @@ func BeginTransactionForAnySQL(
 // answer belongs here rather than in each writer.
 func beginWithoutTransaction(
 	caps capability.Capabilities,
-	writer types.SchemaExecutor,
-) (types.SchemaTransaction, bool) {
+	writer catalog.SchemaExecutor,
+) (catalog.SchemaTransaction, bool) {
 	if writer == nil || caps.Has(capability.DDLInsideTransaction) {
 		return nil, false
 	}
@@ -123,7 +123,7 @@ func beginWithoutTransaction(
 // without transactional DDL offers and what capability.TransactionalDDL
 // records separately.
 type unwrappedTransaction struct {
-	writer types.SchemaExecutor
+	writer catalog.SchemaExecutor
 }
 
 func (t unwrappedTransaction) ExecuteSQL(ctx context.Context, sqlExpr string, args ...any) error {
@@ -145,7 +145,7 @@ func (t unwrappedTransaction) Rollback() error { return nil }
 func beginWithoutForeignKeys(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
-) (types.SchemaTransaction, error) {
+) (catalog.SchemaTransaction, error) {
 	writer := conn.SchemaWriter()
 	scoped, ok := writer.(foreignKeyScopedTransactor)
 	if !ok || platform.NormalizeDialect(conn.Info().Dialect) != platform.SQLite {

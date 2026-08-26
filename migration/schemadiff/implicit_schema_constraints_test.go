@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
@@ -184,8 +184,8 @@ func TestCompareWithDialect_ImplicitDatabaseSchemaMatchesTriggers(t *testing.T) 
 			t.Parallel()
 			c := qt.New(t)
 
-			generated := implicitSchemaDesired(test.genSchema)
-			generated.Triggers = []goschema.Trigger{{
+			desired := implicitSchemaDesired(test.genSchema)
+			desired.Triggers = []schemamodel.Trigger{{
 				StructName: "Users",
 				Name:       "users_audit",
 				Table:      qualify(test.genSchema, "users"),
@@ -193,8 +193,8 @@ func TestCompareWithDialect_ImplicitDatabaseSchemaMatchesTriggers(t *testing.T) 
 				Event:      "INSERT",
 				Body:       "SELECT 1",
 			}}
-			database := implicitSchemaDatabase(test.dbSchema, "users")
-			database.Triggers = []types.DBTrigger{{
+			current := implicitSchemaDatabase(test.dbSchema, "users")
+			current.Triggers = []catalog.Trigger{{
 				Name:   "users_audit",
 				Table:  "users",
 				Schema: test.dbSchema,
@@ -203,7 +203,7 @@ func TestCompareWithDialect_ImplicitDatabaseSchemaMatchesTriggers(t *testing.T) 
 				Body:   "SELECT 1",
 			}}
 
-			diff := schemadiff.CompareWithDialect(generated, database, test.dialect)
+			diff := schemadiff.CompareWithDialect(desired, current, test.dialect)
 
 			c.Assert(len(diff.TriggersRemoved) == 0, qt.Equals, test.wantSame,
 				qt.Commentf("removed: %#v", diff.TriggersRemoved))
@@ -215,15 +215,15 @@ func TestCompareWithDialect_ImplicitDatabaseSchemaMatchesTriggers(t *testing.T) 
 
 // implicitSchemaDesired builds the desired side: one table with a table-level
 // primary key, in the named schema.
-func implicitSchemaDesired(schema string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{
+func implicitSchemaDesired(schema string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{
 			StructName: "Users",
 			Name:       "users",
 			Schema:     schema,
 			PrimaryKey: []string{"id"},
 		}},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Users", Name: "id", Type: "INTEGER", Nullable: false},
 			{StructName: "Users", Name: "email", Type: "TEXT", Nullable: true},
 		},
@@ -232,18 +232,18 @@ func implicitSchemaDesired(schema string) *goschema.Database {
 
 // implicitSchemaDatabase builds the database side: the same table, as a reader
 // reports it.
-func implicitSchemaDatabase(schema, table string) *types.DBSchema {
-	return &types.DBSchema{
-		Tables: []types.DBTable{{
+func implicitSchemaDatabase(schema, table string) *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{{
 			Name:   table,
 			Schema: schema,
 			Type:   "TABLE",
-			Columns: []types.DBColumn{
+			Columns: []catalog.Column{
 				{Name: "id", DataType: "INTEGER", IsNullable: "NO", IsPrimaryKey: true},
 				{Name: "email", DataType: "TEXT", IsNullable: "YES"},
 			},
 		}},
-		Constraints: []types.DBConstraint{{
+		Constraints: []catalog.Constraint{{
 			Name:        table + "_pkey",
 			TableName:   table,
 			Schema:      schema,

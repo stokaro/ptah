@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
-	dbtypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
 
@@ -56,8 +56,8 @@ func TestFunctionDefinitions_AParameterTypeIsComparedByWhatItMeans(t *testing.T)
 			c := qt.New(t)
 
 			diff := compare.FunctionDefinitionsWithDialect(
-				goschema.Function{Name: "f", Parameters: test.declared, Body: "SELECT 1"},
-				dbtypes.DBFunction{Name: "f", Parameters: test.reported, Body: "SELECT 1"},
+				schemamodel.Function{Name: "f", Parameters: test.declared, Body: "SELECT 1"},
+				catalog.Function{Name: "f", Parameters: test.reported, Body: "SELECT 1"},
 				platform.Postgres,
 			)
 
@@ -77,8 +77,8 @@ func TestFunctionDefinitions_AParameterNameIsNotATypeAlias(t *testing.T) {
 	c := qt.New(t)
 
 	diff := compare.FunctionDefinitionsWithDialect(
-		goschema.Function{Name: "f", Parameters: "float8 integer", Body: "SELECT 1"},
-		dbtypes.DBFunction{Name: "f", Parameters: "float8 integer", Body: "SELECT 1"},
+		schemamodel.Function{Name: "f", Parameters: "float8 integer", Body: "SELECT 1"},
+		catalog.Function{Name: "f", Parameters: "float8 integer", Body: "SELECT 1"},
 		platform.Postgres,
 	)
 
@@ -104,8 +104,8 @@ func TestFunctionDefinitions_AGenuinelyDifferentParameterTypeIsStillAChange(t *t
 			c := qt.New(t)
 
 			diff := compare.FunctionDefinitionsWithDialect(
-				goschema.Function{Name: "f", Parameters: test.declared, Body: "SELECT 1"},
-				dbtypes.DBFunction{Name: "f", Parameters: test.reported, Body: "SELECT 1"},
+				schemamodel.Function{Name: "f", Parameters: test.declared, Body: "SELECT 1"},
+				catalog.Function{Name: "f", Parameters: test.reported, Body: "SELECT 1"},
 				platform.Postgres,
 			)
 
@@ -121,8 +121,8 @@ func TestFunctionDefinitions_TheAliasFoldIsPostgresOnly(t *testing.T) {
 	c := qt.New(t)
 
 	diff := compare.FunctionDefinitionsWithDialect(
-		goschema.Function{Name: "f", Parameters: "a float8", Body: "SELECT 1"},
-		dbtypes.DBFunction{Name: "f", Parameters: "a double precision", Body: "SELECT 1"},
+		schemamodel.Function{Name: "f", Parameters: "a float8", Body: "SELECT 1"},
+		catalog.Function{Name: "f", Parameters: "a double precision", Body: "SELECT 1"},
 		platform.MySQL,
 	)
 

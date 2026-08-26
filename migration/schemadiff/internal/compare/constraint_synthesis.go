@@ -1,16 +1,16 @@
 package compare
 
 import (
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/migration/internal/generatedschema"
 )
 
 // synthesizeFieldLevelCheckConstraints turns each field-level `check=`
 // annotation on an existing database column into a synthetic
-// goschema.Constraint of type CHECK so the standard Constraints() diff path
+// schemamodel.Constraint of type CHECK so the standard Constraints() diff path
 // can compare it against the introspected CHECK from pg_constraint.
 //
 // The constraint name follows the user-provided `check_name=` value when set,
@@ -29,28 +29,28 @@ import (
 // name wins — synthesis never clobbers it. See the guard in
 // Constraints() where genConstraints is populated.
 func synthesizeFieldLevelCheckConstraints(
-	generated *goschema.Database,
-	database *types.DBSchema,
+	desired *schemamodel.Database,
+	current *catalog.Database,
 	semantics identifier.Semantics,
-) []goschema.Constraint {
-	if generated == nil || database == nil {
+) []schemamodel.Constraint {
+	if desired == nil || current == nil {
 		return nil
 	}
 
-	structToTable := make(map[string]goschema.Table, len(generated.Tables))
-	for _, t := range generated.Tables {
+	structToTable := make(map[string]schemamodel.Table, len(desired.Tables))
+	for _, t := range desired.Tables {
 		structToTable[t.StructName] = t
 	}
 
 	dbColumns := make(map[tableMemberKey]struct{}, 16)
-	for _, t := range database.Tables {
+	for _, t := range current.Tables {
 		for _, c := range t.Columns {
 			dbColumns[newTableMemberKey(t.QualifiedName(), c.Name, semantics)] = struct{}{}
 		}
 	}
 
-	var synthesized []goschema.Constraint
-	for _, f := range generated.Fields {
+	var synthesized []schemamodel.Constraint
+	for _, f := range desired.Fields {
 		if f.Check == "" {
 			continue
 		}
@@ -68,7 +68,7 @@ func synthesizeFieldLevelCheckConstraints(
 		if name == "" {
 			name = tableLeafName + "_" + f.Name + "_check"
 		}
-		synthesized = append(synthesized, goschema.Constraint{
+		synthesized = append(synthesized, schemamodel.Constraint{
 			StructName:      f.StructName,
 			Name:            name,
 			Type:            "CHECK",
@@ -80,22 +80,22 @@ func synthesizeFieldLevelCheckConstraints(
 }
 
 func synthesizeTablePrimaryKeyConstraints(
-	generated *goschema.Database,
-	database *types.DBSchema,
+	desired *schemamodel.Database,
+	current *catalog.Database,
 	dialect string,
 	semantics identifier.Semantics,
-) []goschema.Constraint {
-	if generated == nil || database == nil {
+) []schemamodel.Constraint {
+	if desired == nil || current == nil {
 		return nil
 	}
 
-	dbTables := make(map[tableIdentity]struct{}, len(database.Tables))
-	for _, table := range database.Tables {
+	dbTables := make(map[tableIdentity]struct{}, len(current.Tables))
+	for _, table := range current.Tables {
 		dbTables[newQualifiedTableIdentity(table.QualifiedName(), semantics)] = struct{}{}
 	}
 
-	var synthesized []goschema.Constraint
-	for _, table := range generated.Tables {
+	var synthesized []schemamodel.Constraint
+	for _, table := range desired.Tables {
 		columns := tablePrimaryKeyColumns(table)
 		if len(columns) == 0 {
 			continue
@@ -104,7 +104,7 @@ func synthesizeTablePrimaryKeyConstraints(
 		if _, exists := dbTables[identity]; !exists {
 			continue
 		}
-		if livePrimaryKeyIsOnTheColumns(database, identity, columns, semantics) {
+		if livePrimaryKeyIsOnTheColumns(current, identity, columns, semantics) {
 			// The key is already there and the read carries it on the columns
 			// rather than as a constraint row, so there is nothing to compare a
 			// synthesized constraint against and an addition would be planned
@@ -120,8 +120,8 @@ func synthesizeTablePrimaryKeyConstraints(
 			continue
 		}
 
-		name := tablePrimaryKeyConstraintName(table, database.Constraints, dialect, semantics)
-		synthesized = append(synthesized, goschema.Constraint{
+		name := tablePrimaryKeyConstraintName(table, current.Constraints, dialect, semantics)
+		synthesized = append(synthesized, schemamodel.Constraint{
 			StructName: table.StructName,
 			Name:       name,
 			Type:       "PRIMARY KEY",
@@ -146,12 +146,12 @@ func synthesizeTablePrimaryKeyConstraints(
 // columns that does not MATCH the declared one is a real change and has to be
 // planned, so the column set is compared and not merely counted.
 func livePrimaryKeyIsOnTheColumns(
-	database *types.DBSchema,
+	current *catalog.Database,
 	identity tableIdentity,
 	declared []string,
 	semantics identifier.Semantics,
 ) bool {
-	for _, constraint := range database.Constraints {
+	for _, constraint := range current.Constraints {
 		if constraint.Type != "PRIMARY KEY" {
 			continue
 		}
@@ -159,7 +159,7 @@ func livePrimaryKeyIsOnTheColumns(
 			return false
 		}
 	}
-	live := livePrimaryKeyColumns(database, identity, semantics)
+	live := livePrimaryKeyColumns(current, identity, semantics)
 	if len(live) == 0 {
 		return false
 	}
@@ -169,11 +169,11 @@ func livePrimaryKeyIsOnTheColumns(
 // livePrimaryKeyColumns names the columns the read marked as this table's
 // primary key.
 func livePrimaryKeyColumns(
-	database *types.DBSchema,
+	current *catalog.Database,
 	identity tableIdentity,
 	semantics identifier.Semantics,
 ) []string {
-	for _, table := range database.Tables {
+	for _, table := range current.Tables {
 		if newQualifiedTableIdentity(table.QualifiedName(), semantics) != identity {
 			continue
 		}
@@ -223,8 +223,8 @@ func columnSetsMatch(declared, live []string, semantics identifier.Semantics) bo
 // dropping the real constraint and adding a differently named one
 // (stokaro/ptah#1244).
 func tablePrimaryKeyConstraintName(
-	table goschema.Table,
-	dbConstraints []types.DBConstraint,
+	table schemamodel.Table,
+	dbConstraints []catalog.Constraint,
 	dialect string,
 	semantics identifier.Semantics,
 ) string {
@@ -246,7 +246,7 @@ func tablePrimaryKeyConstraintName(
 
 // synthesizeFieldLevelForeignKeyConstraints turns each field-level `foreign=`
 // annotation on an existing database column into a synthetic
-// goschema.Constraint of type FOREIGN KEY so the standard Constraints() diff
+// schemamodel.Constraint of type FOREIGN KEY so the standard Constraints() diff
 // path can compare it against the introspected FK from
 // information_schema.referential_constraints. This is what makes on_delete /
 // on_update drift on a pre-existing field-level FK observable (issue #189).
@@ -267,16 +267,16 @@ func tablePrimaryKeyConstraintName(
 // `//ptah:schema:constraint` that happens to share the synthesized name
 // wins — synthesis never clobbers it (see the guard in Constraints()).
 func synthesizeFieldLevelForeignKeyConstraints(
-	generated *goschema.Database,
-	database *types.DBSchema,
+	desired *schemamodel.Database,
+	current *catalog.Database,
 	semantics identifier.Semantics,
-) []goschema.Constraint {
-	if generated == nil || database == nil {
+) []schemamodel.Constraint {
+	if desired == nil || current == nil {
 		return nil
 	}
 
 	dbColumns := make(map[tableMemberKey]struct{}, 16)
-	for _, t := range database.Tables {
+	for _, t := range current.Tables {
 		for _, c := range t.Columns {
 			dbColumns[newTableMemberKey(t.QualifiedName(), c.Name, semantics)] = struct{}{}
 		}
@@ -297,8 +297,8 @@ func synthesizeFieldLevelForeignKeyConstraints(
 	// dedupe guards against a host that both declares a field directly and
 	// inherits one of the same (table, constraint name) from a mixin.
 	dedupe := make(map[tableMemberKey]struct{})
-	var synthesized []goschema.Constraint
-	for _, f := range resolveTableFields(generated) {
+	var synthesized []schemamodel.Constraint
+	for _, f := range resolveTableFields(desired) {
 		if f.Foreign == "" {
 			continue
 		}
@@ -331,7 +331,7 @@ func synthesizeFieldLevelForeignKeyConstraints(
 			continue
 		}
 		dedupe[dedupeKey] = struct{}{}
-		synthesized = append(synthesized, goschema.Constraint{
+		synthesized = append(synthesized, schemamodel.Constraint{
 			StructName:     f.StructName,
 			Name:           name,
 			Type:           "FOREIGN KEY",
@@ -355,12 +355,12 @@ func synthesizeFieldLevelForeignKeyConstraints(
 	return synthesized
 }
 
-// resolvedField is a goschema.Field paired with the concrete database table it
+// resolvedField is a schemamodel.Field paired with the concrete database table it
 // materializes on. Fields declared directly on a table struct carry that
 // table's name; fields contributed by an embedded inline / inline-relation
 // mixin are expanded once per embedding host and carry the host table's name.
 type resolvedField struct {
-	goschema.Field
+	schemamodel.Field
 	tableName          string
 	qualifiedTableName string
 }
@@ -374,14 +374,14 @@ type resolvedField struct {
 // `foreign=` annotation on a mixin that is never embedded, or on a struct that
 // is not a //ptah:schema:table, has no concrete table and must not be
 // synthesized.
-func resolveTableFields(generated *goschema.Database) []resolvedField {
-	if generated == nil {
+func resolveTableFields(desired *schemamodel.Database) []resolvedField {
+	if desired == nil {
 		return nil
 	}
 
 	var resolved []resolvedField
-	for _, table := range generated.Tables {
-		for _, f := range generatedschema.FieldsForTable(generated, table) {
+	for _, table := range desired.Tables {
+		for _, f := range generatedschema.FieldsForTable(desired, table) {
 			resolved = append(resolved, resolvedField{Field: f, tableName: table.Name, qualifiedTableName: table.QualifiedName()})
 		}
 	}

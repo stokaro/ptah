@@ -28,7 +28,7 @@ import (
 // is, and a declaration is the only place the language can come from.
 const Language = "plsql"
 
-// Volatility values, spelled as [go.5x5.cz/ptah/core/goschema.Function.Canonicalize] leaves them.
+// Volatility values, spelled as [go.5x5.cz/ptah/core/schemamodel.Function.Canonicalize] leaves them.
 const (
 	Immutable = "IMMUTABLE"
 	Stable    = "STABLE"

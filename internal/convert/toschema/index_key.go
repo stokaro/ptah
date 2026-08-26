@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/lexer"
 )
 
@@ -47,8 +47,8 @@ import (
 // partial conversion would silently re-quote or reorder keys nothing asked it
 // to touch, and converting a plain key list would change how existing documents
 // render for no gain.
-func decomposeIndexKeyList(columns []string) []goschema.IndexPart {
-	parts := make([]goschema.IndexPart, 0, len(columns))
+func decomposeIndexKeyList(columns []string) []schemamodel.IndexPart {
+	parts := make([]schemamodel.IndexPart, 0, len(columns))
 	suffixed := false
 	for _, column := range columns {
 		part, hasSuffix, ok := decomposeIndexKeyElement(column)
@@ -67,17 +67,17 @@ func decomposeIndexKeyList(columns []string) []goschema.IndexPart {
 // decomposeIndexKeyElement splits one key list element into its reference and
 // its suffixes. It reports whether the element carried a suffix at all, and
 // whether it was understood well enough to replace the raw text.
-func decomposeIndexKeyElement(column string) (part goschema.IndexPart, suffixed, ok bool) {
+func decomposeIndexKeyElement(column string) (part schemamodel.IndexPart, suffixed, ok bool) {
 	tokens := indexKeyTokens(column)
 	if len(tokens) == 0 {
-		return goschema.IndexPart{}, false, false
+		return schemamodel.IndexPart{}, false, false
 	}
 	// A per-key COLLATE is a suffix this model has no slot for. Leaving the
 	// element opaque keeps it in the text where a reader can still see it,
 	// which is strictly better than dropping it on the way through.
 	for _, token := range tokens {
 		if token.MatchIdentifierValue("COLLATE") {
-			return goschema.IndexPart{}, false, false
+			return schemamodel.IndexPart{}, false, false
 		}
 	}
 
@@ -107,7 +107,7 @@ func decomposeIndexKeyElement(column string) (part goschema.IndexPart, suffixed,
 		part.Expr = strings.TrimSpace(column[head[0].End:head[len(head)-1].Start])
 		return part, suffixed, part.Expr != ""
 	default:
-		return goschema.IndexPart{}, false, false
+		return schemamodel.IndexPart{}, false, false
 	}
 }
 
@@ -152,9 +152,9 @@ func trailingNullsOrder(tokens []lexer.Token) (string, int) {
 	}
 	switch {
 	case tokens[len(tokens)-1].MatchIdentifierValue("FIRST"):
-		return goschema.NullsOrderFirst, 2
+		return schemamodel.NullsOrderFirst, 2
 	case tokens[len(tokens)-1].MatchIdentifierValue("LAST"):
-		return goschema.NullsOrderLast, 2
+		return schemamodel.NullsOrderLast, 2
 	default:
 		return "", 0
 	}

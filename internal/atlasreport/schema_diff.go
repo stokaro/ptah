@@ -7,7 +7,7 @@ import (
 	"strings"
 	"text/template"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/envbool"
 )
 
@@ -40,8 +40,8 @@ Schemas are synced, no changes to be made.
 const migrateDiffDefaultFormat = `{{ sql . "  " }}`
 
 type SchemaDiff struct {
-	From    *goschema.Database
-	To      *goschema.Database
+	From    *schemamodel.Database
+	To      *schemamodel.Database
 	Changes []SchemaDiffChange
 }
 
@@ -51,7 +51,7 @@ type SchemaChange struct {
 
 type SchemaDiffChange = SchemaChange
 
-func NewSchemaDiff(from, to *goschema.Database, statements []string) SchemaDiff {
+func NewSchemaDiff(from, to *schemamodel.Database, statements []string) SchemaDiff {
 	return SchemaDiff{
 		From:    from,
 		To:      to,

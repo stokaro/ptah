@@ -8,21 +8,21 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	clickhousedb "go.5x5.cz/ptah/internal/dbschema/clickhouse"
 	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
-func readClickHouseViews(t *testing.T, db *sql.DB, database string) *dbschematypes.DBSchema {
+func readClickHouseViews(t *testing.T, db *sql.DB, database string) *catalog.Database {
 	c := qt.New(t)
 	t.Helper()
 	schema, err := clickhousedb.NewClickHouseReader(db, database).ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
-	return &dbschematypes.DBSchema{Views: schema.Views}
+	return &catalog.Database{Views: schema.Views}
 }
 
 func executeClickHouseViewPlan(t *testing.T, db *sql.DB, statements []string) {
@@ -45,7 +45,7 @@ func TestViewLifecycleRoundTripsLive(t *testing.T) {
 	)
 	c.Assert(err, qt.IsNil)
 
-	created := &goschema.Database{Views: []goschema.View{{
+	created := &schemamodel.Database{Views: []schemamodel.View{{
 		StructName: "ActiveUsers",
 		Name:       viewName,
 		Body:       "SELECT id FROM " + sourceTable + " WHERE active = true",
@@ -74,7 +74,7 @@ func TestViewLifecycleRoundTripsLive(t *testing.T) {
 		qt.IsFalse,
 	)
 
-	replaced := &goschema.Database{Views: []goschema.View{{
+	replaced := &schemamodel.Database{Views: []schemamodel.View{{
 		StructName: "ActiveUsers",
 		Name:       viewName,
 		Body:       "SELECT id FROM " + sourceTable + " WHERE active = false",
@@ -102,14 +102,14 @@ func TestViewLifecycleRoundTripsLive(t *testing.T) {
 	)
 
 	removalDiff := schemadiff.CompareWithDialect(
-		&goschema.Database{},
+		&schemamodel.Database{},
 		replacedReadback,
 		platform.ClickHouse,
 	)
 	c.Assert(removalDiff.ViewsRemoved, qt.DeepEquals, []string{viewName})
 	dropStatements, err := planner.GenerateSchemaDiffSQLStatements(
 		removalDiff,
-		&goschema.Database{},
+		&schemamodel.Database{},
 		platform.ClickHouse,
 	)
 	c.Assert(err, qt.IsNil)
@@ -120,7 +120,7 @@ func TestViewLifecycleRoundTripsLive(t *testing.T) {
 	removedReadback := readClickHouseViews(t, db, database)
 	c.Assert(removedReadback.Views, qt.HasLen, 0)
 	c.Assert(
-		schemadiff.CompareWithDialect(&goschema.Database{}, removedReadback, platform.ClickHouse).HasChanges(),
+		schemadiff.CompareWithDialect(&schemamodel.Database{}, removedReadback, platform.ClickHouse).HasChanges(),
 		qt.IsFalse,
 	)
 }

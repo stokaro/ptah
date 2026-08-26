@@ -6,28 +6,28 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/mysql"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // mixedSharedFKDiff is the issue #207 mixed scenario (shared_fk modified on
 // articles, purely removed from pages), reused here to prove the capability
 // gating composes with the exactly-once drop discipline instead of replacing
 // it.
-func mixedSharedFKDiff() *types.SchemaDiff {
-	return &types.SchemaDiff{
+func mixedSharedFKDiff() *difftypes.SchemaDiff {
+	return &difftypes.SchemaDiff{
 		ConstraintsAdded:   []string{"shared_fk"},
 		ConstraintsRemoved: []string{"shared_fk"},
-		ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{
+		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
 			{
 				Name: "shared_fk", TableName: "articles", Type: "FOREIGN KEY",
 				Columns: []string{"author_id"}, ForeignTable: "users", ForeignColumn: "id", OnDelete: "CASCADE",
 			},
 		},
-		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 			{Name: "shared_fk", TableName: "articles", Type: "FOREIGN KEY"},
 			{Name: "shared_fk", TableName: "pages", Type: "FOREIGN KEY"},
 		},
@@ -42,7 +42,7 @@ func mixedSharedFKDiff() *types.SchemaDiff {
 func TestPlanner_CapabilityGating_MariaDBGuardedConstraintDrops(t *testing.T) {
 	c := qt.New(t)
 
-	nodes, err := mysql.NewWithCapabilities(capability.MariaDB1011()).GenerateMigrationASTChecked(mixedSharedFKDiff(), &goschema.Database{})
+	nodes, err := mysql.NewWithCapabilities(capability.MariaDB1011()).GenerateMigrationASTChecked(mixedSharedFKDiff(), &schemamodel.Database{})
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("mariadb", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -74,7 +74,7 @@ func TestPlanner_CapabilityGating_MariaDBGuardedConstraintDrops(t *testing.T) {
 func TestPlanner_CapabilityGating_RendererStripsGuardsForMySQL(t *testing.T) {
 	c := qt.New(t)
 
-	nodes, err := mysql.NewWithCapabilities(capability.MariaDB1011()).GenerateMigrationASTChecked(mixedSharedFKDiff(), &goschema.Database{})
+	nodes, err := mysql.NewWithCapabilities(capability.MariaDB1011()).GenerateMigrationASTChecked(mixedSharedFKDiff(), &schemamodel.Database{})
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("mysql", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -92,7 +92,7 @@ func TestPlanner_CapabilityGating_RendererStripsGuardsForMySQL(t *testing.T) {
 func TestPlanner_CapabilityGating_MySQLPlannerEmitsNoGuardIntent(t *testing.T) {
 	c := qt.New(t)
 
-	nodes, err := mysql.New().GenerateMigrationASTChecked(mixedSharedFKDiff(), &goschema.Database{})
+	nodes, err := mysql.New().GenerateMigrationASTChecked(mixedSharedFKDiff(), &schemamodel.Database{})
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("mariadb", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -110,14 +110,14 @@ func TestPlanner_CapabilityGating_MySQLPlannerEmitsNoGuardIntent(t *testing.T) {
 func TestPlanner_CapabilityGating_DropCheckSpellingWithoutGenericClause(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		ConstraintsRemoved: []string{"chk_qty"},
-		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 			{Name: "chk_qty", TableName: "things", Type: "CHECK"},
 		},
 	}
 
-	nodes, err := mysql.NewWithCapabilities(capability.MySQL8016()).GenerateMigrationASTChecked(diff, &goschema.Database{})
+	nodes, err := mysql.NewWithCapabilities(capability.MySQL8016()).GenerateMigrationASTChecked(diff, &schemamodel.Database{})
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("mysql", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -129,7 +129,7 @@ func TestPlanner_CapabilityGating_DropCheckSpellingWithoutGenericClause(t *testi
 		qt.Commentf("the generic clause must not be emitted for this target; got:\n%s", sql))
 
 	// The current MySQL line keeps the generic clause.
-	nodes, err = mysql.New().GenerateMigrationASTChecked(diff, &goschema.Database{})
+	nodes, err = mysql.New().GenerateMigrationASTChecked(diff, &schemamodel.Database{})
 	c.Assert(err, qt.IsNil)
 	sql, err = renderer.RenderSQL("mysql", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -148,9 +148,9 @@ func TestPlanner_CapabilityGating_NoGenericClauseFallbacks(t *testing.T) {
 	t.Run("unique removal uses DROP INDEX", func(t *testing.T) {
 		c := qt.New(t)
 
-		diff := &types.SchemaDiff{
+		diff := &difftypes.SchemaDiff{
 			ConstraintsRemoved: []string{"uq_email"},
-			ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+			ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 				{Name: "uq_email", TableName: "users", Type: "UNIQUE"},
 			},
 		}
@@ -158,7 +158,7 @@ func TestPlanner_CapabilityGating_NoGenericClauseFallbacks(t *testing.T) {
 		// preset uses it — including targets without the generic clause,
 		// where DROP CONSTRAINT would be invalid SQL.
 		for _, caps := range []capability.Capabilities{capability.MySQL8016(), capability.MySQL84()} {
-			nodes, err := mysql.NewWithCapabilities(caps).GenerateMigrationASTChecked(diff, &goschema.Database{})
+			nodes, err := mysql.NewWithCapabilities(caps).GenerateMigrationASTChecked(diff, &schemamodel.Database{})
 			c.Assert(err, qt.IsNil)
 			sql, err := renderer.RenderSQL("mysql", nodes...)
 			c.Assert(err, qt.IsNil)
@@ -173,13 +173,13 @@ func TestPlanner_CapabilityGating_NoGenericClauseFallbacks(t *testing.T) {
 	t.Run("check removal without any valid spelling warns", func(t *testing.T) {
 		c := qt.New(t)
 
-		diff := &types.SchemaDiff{
+		diff := &difftypes.SchemaDiff{
 			ConstraintsRemoved: []string{"chk_qty"},
-			ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+			ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 				{Name: "chk_qty", TableName: "things", Type: "CHECK"},
 			},
 		}
-		nodes, err := mysql.NewWithCapabilities(capability.MySQLLegacy()).GenerateMigrationASTChecked(diff, &goschema.Database{})
+		nodes, err := mysql.NewWithCapabilities(capability.MySQLLegacy()).GenerateMigrationASTChecked(diff, &schemamodel.Database{})
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("mysql", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -203,14 +203,14 @@ func TestPlanner_CapabilityGating_CheckAddSkippedWhenUnenforced(t *testing.T) {
 	t.Run("table-level constraint", func(t *testing.T) {
 		c := qt.New(t)
 
-		diff := &types.SchemaDiff{ConstraintsAdded: []string{"positive_price"}}
-		generated := &goschema.Database{
-			Constraints: []goschema.Constraint{
+		diff := &difftypes.SchemaDiff{ConstraintsAdded: []string{"positive_price"}}
+		desired := &schemamodel.Database{
+			Constraints: []schemamodel.Constraint{
 				{StructName: "Product", Name: "positive_price", Type: "CHECK", Table: "products", CheckExpression: "price > 0"},
 			},
 		}
 
-		nodes, err := mysql.NewWithCapabilities(capability.MySQLLegacy()).GenerateMigrationASTChecked(diff, generated)
+		nodes, err := mysql.NewWithCapabilities(capability.MySQLLegacy()).GenerateMigrationASTChecked(diff, desired)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("mysql", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -222,7 +222,7 @@ func TestPlanner_CapabilityGating_CheckAddSkippedWhenUnenforced(t *testing.T) {
 			qt.Commentf("the skip must be loud; got:\n%s", sql))
 
 		// The enforcing window (8.0.16+) emits the constraint as usual.
-		nodes, err = mysql.NewWithCapabilities(capability.MySQL8016()).GenerateMigrationASTChecked(diff, generated)
+		nodes, err = mysql.NewWithCapabilities(capability.MySQL8016()).GenerateMigrationASTChecked(diff, desired)
 		c.Assert(err, qt.IsNil)
 		sql, err = renderer.RenderSQL("mysql", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -234,18 +234,18 @@ func TestPlanner_CapabilityGating_CheckAddSkippedWhenUnenforced(t *testing.T) {
 	t.Run("field-level synthesized constraint", func(t *testing.T) {
 		c := qt.New(t)
 
-		diff := &types.SchemaDiff{
+		diff := &difftypes.SchemaDiff{
 			ConstraintsAdded:   []string{"things_qty_check"},
 			ConstraintsRemoved: make([]string, 0),
 		}
-		generated := &goschema.Database{
-			Tables: []goschema.Table{{StructName: "Thing", Name: "things"}},
-			Fields: []goschema.Field{
+		desired := &schemamodel.Database{
+			Tables: []schemamodel.Table{{StructName: "Thing", Name: "things"}},
+			Fields: []schemamodel.Field{
 				{StructName: "Thing", Name: "qty", Type: "INT", Check: "qty >= 0"},
 			},
 		}
 
-		nodes, err := mysql.NewWithCapabilities(capability.MySQLLegacy()).GenerateMigrationASTChecked(diff, generated)
+		nodes, err := mysql.NewWithCapabilities(capability.MySQLLegacy()).GenerateMigrationASTChecked(diff, desired)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("mysql", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -258,7 +258,7 @@ func TestPlanner_CapabilityGating_CheckAddSkippedWhenUnenforced(t *testing.T) {
 
 		// Positive control at the unit level: an enforcing target emits the
 		// field-level ADD as before.
-		nodes, err = mysql.New().GenerateMigrationASTChecked(diff, generated)
+		nodes, err = mysql.New().GenerateMigrationASTChecked(diff, desired)
 		c.Assert(err, qt.IsNil)
 		sql, err = renderer.RenderSQL("mysql", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -278,25 +278,25 @@ func TestPlanner_CapabilityGating_CheckAddSkippedWhenUnenforced(t *testing.T) {
 func TestPlanner_CapabilityGating_ZeroValuePlannerBehavesLikeNew(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		ConstraintsAdded:   []string{"positive_price"},
 		ConstraintsRemoved: []string{"chk_old"},
-		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 			{Name: "chk_old", TableName: "things", Type: "CHECK"},
 		},
 	}
-	generated := &goschema.Database{
-		Constraints: []goschema.Constraint{
+	desired := &schemamodel.Database{
+		Constraints: []schemamodel.Constraint{
 			{StructName: "Product", Name: "positive_price", Type: "CHECK", Table: "products", CheckExpression: "price > 0"},
 		},
 	}
 
 	zero := &mysql.Planner{}
-	zeroNodes, err := zero.GenerateMigrationASTChecked(diff, generated)
+	zeroNodes, err := zero.GenerateMigrationASTChecked(diff, desired)
 	c.Assert(err, qt.IsNil)
 	zeroSQL, err := renderer.RenderSQL("mysql", zeroNodes...)
 	c.Assert(err, qt.IsNil)
-	newNodes, err := mysql.New().GenerateMigrationASTChecked(diff, generated)
+	newNodes, err := mysql.New().GenerateMigrationASTChecked(diff, desired)
 	c.Assert(err, qt.IsNil)
 	newSQL, err := renderer.RenderSQL("mysql", newNodes...)
 	c.Assert(err, qt.IsNil)
@@ -319,13 +319,13 @@ func TestPlanner_CapabilityGating_ZeroValuePlannerBehavesLikeNew(t *testing.T) {
 func TestPlanner_CapabilityGating_DropCheckDegradesOnMariaDBRenderer(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		ConstraintsRemoved: []string{"chk_qty"},
-		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 			{Name: "chk_qty", TableName: "things", Type: "CHECK"},
 		},
 	}
-	nodes, err := mysql.NewWithCapabilities(capability.MySQL8016()).GenerateMigrationASTChecked(diff, &goschema.Database{})
+	nodes, err := mysql.NewWithCapabilities(capability.MySQL8016()).GenerateMigrationASTChecked(diff, &schemamodel.Database{})
 	c.Assert(err, qt.IsNil)
 
 	sql, err := renderer.RenderSQL("mariadb", nodes...)
@@ -347,14 +347,14 @@ func TestPlanner_CapabilityGating_DropCheckDegradesOnMariaDBRenderer(t *testing.
 func TestPlanner_CapabilityGating_DropIndexGuard(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
-		IndexesRemoved: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_things_qty", TableName: "things"},
 		},
 	}
 
 	// MariaDB-preset planner: intent recorded.
-	nodes, err := mysql.NewWithCapabilities(capability.MariaDB1011()).GenerateMigrationASTChecked(diff, &goschema.Database{})
+	nodes, err := mysql.NewWithCapabilities(capability.MariaDB1011()).GenerateMigrationASTChecked(diff, &schemamodel.Database{})
 	c.Assert(err, qt.IsNil)
 
 	sqlMariaDB, err := renderer.RenderSQL("mariadb", nodes...)
@@ -372,7 +372,7 @@ func TestPlanner_CapabilityGating_DropIndexGuard(t *testing.T) {
 
 	// MySQL-preset planner: no intent, so even the guard-capable mariadb
 	// renderer emits the plain form — the capability is a real knob.
-	nodes, err = mysql.New().GenerateMigrationASTChecked(diff, &goschema.Database{})
+	nodes, err = mysql.New().GenerateMigrationASTChecked(diff, &schemamodel.Database{})
 	c.Assert(err, qt.IsNil)
 	sqlMariaDB, err = renderer.RenderSQL("mariadb", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -392,9 +392,9 @@ func TestPlanner_CapabilityGating_DropIndexGuard(t *testing.T) {
 // removals stay skipped. On MariaDB the spelling carries the IF EXISTS guard
 // (verified live: MariaDB 10.11 accepts it, MySQL 9.7 rejects it).
 func TestPlanner_UniqueConstraintRemoval_UsesDropIndex(t *testing.T) {
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		ConstraintsRemoved: []string{"uq_email", "fk_posts_user", "pk_legacy"},
-		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 			{Name: "uq_email", TableName: "users", Type: "UNIQUE"},
 			{Name: "fk_posts_user", TableName: "posts", Type: "FOREIGN KEY"},
 			{Name: "pk_legacy", TableName: "legacy", Type: "PRIMARY KEY"},
@@ -404,7 +404,7 @@ func TestPlanner_UniqueConstraintRemoval_UsesDropIndex(t *testing.T) {
 	t.Run("mysql", func(t *testing.T) {
 		c := qt.New(t)
 
-		nodes, err := mysql.New().GenerateMigrationASTChecked(diff, &goschema.Database{})
+		nodes, err := mysql.New().GenerateMigrationASTChecked(diff, &schemamodel.Database{})
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("mysql", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -423,7 +423,7 @@ func TestPlanner_UniqueConstraintRemoval_UsesDropIndex(t *testing.T) {
 	t.Run("mariadb preset", func(t *testing.T) {
 		c := qt.New(t)
 
-		nodes, err := mysql.NewWithCapabilities(capability.MariaDB1011()).GenerateMigrationASTChecked(diff, &goschema.Database{})
+		nodes, err := mysql.NewWithCapabilities(capability.MariaDB1011()).GenerateMigrationASTChecked(diff, &schemamodel.Database{})
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("mariadb", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -453,9 +453,9 @@ func TestPlanner_UniqueConstraintRemoval_UsesDropIndex(t *testing.T) {
 func TestPlanner_UniqueDropGuard_FollowsIndexCapability(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		ConstraintsRemoved: []string{"uq_email", "fk_posts_user"},
-		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 			{Name: "uq_email", TableName: "users", Type: "UNIQUE"},
 			{Name: "fk_posts_user", TableName: "posts", Type: "FOREIGN KEY"},
 		},
@@ -464,7 +464,7 @@ func TestPlanner_UniqueDropGuard_FollowsIndexCapability(t *testing.T) {
 	// Index guards off, constraint guards on: FK guarded, UNIQUE not.
 	caps := capability.MariaDB1011().With(capability.DropIndexIfExists, false)
 	c.Assert(caps.Validate(), qt.IsNil)
-	nodes, err := mysql.NewWithCapabilities(caps).GenerateMigrationASTChecked(diff, &goschema.Database{})
+	nodes, err := mysql.NewWithCapabilities(caps).GenerateMigrationASTChecked(diff, &schemamodel.Database{})
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("mariadb", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -479,7 +479,7 @@ func TestPlanner_UniqueDropGuard_FollowsIndexCapability(t *testing.T) {
 	// Constraint guards off, index guards on: UNIQUE guarded, FK not.
 	caps = capability.MariaDB1011().With(capability.DropConstraintIfExists, false)
 	c.Assert(caps.Validate(), qt.IsNil)
-	nodes, err = mysql.NewWithCapabilities(caps).GenerateMigrationASTChecked(diff, &goschema.Database{})
+	nodes, err = mysql.NewWithCapabilities(caps).GenerateMigrationASTChecked(diff, &schemamodel.Database{})
 	c.Assert(err, qt.IsNil)
 	sql, err = renderer.RenderSQL("mariadb", nodes...)
 	c.Assert(err, qt.IsNil)

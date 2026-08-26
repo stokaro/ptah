@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
@@ -68,11 +68,11 @@ func TestWithheldAdditionCarriesTheReasonTheReadRecorded(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			desired := &goschema.Database{Extensions: []goschema.Extension{{
+			desired := &schemamodel.Database{Extensions: []schemamodel.Extension{{
 				Name:   "citext",
 				Schema: "extensions",
 			}}}
-			current := &types.DBSchema{NotDescribed: test.notDescribed}
+			current := &catalog.Database{NotDescribed: test.notDescribed}
 
 			diff, undecided := schemadiff.CompareReportingUndecidedAdditions(desired, current, nil)
 
@@ -93,10 +93,10 @@ func TestWithheldAdditionCarriesTheReasonTheReadRecorded(t *testing.T) {
 // it from a record about tables would find none and report nothing.
 func TestWithheldTableCarriesTheSchemaRecordsReason(t *testing.T) {
 	c := qt.New(t)
-	desired := &goschema.Database{Tables: []goschema.Table{
+	desired := &schemamodel.Database{Tables: []schemamodel.Table{
 		{Name: "reports", StructName: "Reports", Schema: "extra"},
 	}}
-	current := &types.DBSchema{NotDescribed: coverage.Set{}.With(coverage.Object{
+	current := &catalog.Database{NotDescribed: coverage.Set{}.With(coverage.Object{
 		Kind:       coverage.Schema,
 		Name:       "extra",
 		Reason:     coverage.OutsideScope,
@@ -120,11 +120,11 @@ func TestWithheldTableCarriesTheSchemaRecordsReason(t *testing.T) {
 // a user needs.
 func TestWithheldAdditionCarriesTheReasonOfTheRecordThatCoveredIt(t *testing.T) {
 	c := qt.New(t)
-	desired := &goschema.Database{Extensions: []goschema.Extension{{
+	desired := &schemamodel.Database{Extensions: []schemamodel.Extension{{
 		Name:   "citext",
 		Schema: "extensions",
 	}}}
-	current := &types.DBSchema{NotDescribed: coverage.Set{}.
+	current := &catalog.Database{NotDescribed: coverage.Set{}.
 		With(coverage.Object{
 			Kind:       coverage.Extension,
 			Name:       "citext",

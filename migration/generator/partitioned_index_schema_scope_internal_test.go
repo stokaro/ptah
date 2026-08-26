@@ -11,17 +11,17 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // concurrentIndexOutcome is what the three concurrent-index selectors made of
 // one index ref against one read schema.
 type concurrentIndexOutcome struct {
-	heuristic []types.IndexRef
-	policy    []types.IndexRef
+	heuristic []difftypes.IndexRef
+	policy    []difftypes.IndexRef
 	policyErr error
-	dropRefs  []types.IndexRef
+	dropRefs  []difftypes.IndexRef
 	dropErr   error
 }
 
@@ -46,65 +46,65 @@ type concurrentIndexOutcome struct {
 func TestConcurrentIndexSelectors_ResolveARefToTheOrdinaryTableItNames(t *testing.T) {
 	tests := []struct {
 		name   string
-		tables []dbschematypes.DBTable
-		ref    types.IndexRef
+		tables []catalog.Table
+		ref    difftypes.IndexRef
 		// One want per selector. The heuristic reads EstimatedRows and the two
 		// policy selectors are explicit requests, so a single expectation would
 		// let one selector stop answering behind another that still does.
-		wantHeuristic []types.IndexRef
-		wantPolicy    []types.IndexRef
-		wantDropRefs  []types.IndexRef
+		wantHeuristic []difftypes.IndexRef
+		wantPolicy    []difftypes.IndexRef
+		wantDropRefs  []difftypes.IndexRef
 	}{
 		{
 			// One partitioned table must not poison every ordinary table that
 			// shares its bare name. A pooled set fails this row three times.
 			name: "a partitioned parent in another schema does not answer for a bare ref",
-			tables: []dbschematypes.DBTable{
+			tables: []catalog.Table{
 				{Name: "events", Schema: "app", Partitioned: true, EstimatedRows: 5000},
 				{Name: "events", Schema: "public", EstimatedRows: 5000},
 			},
-			ref:           types.IndexRef{Name: "idx_events_tenant", TableName: "events"},
-			wantHeuristic: []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
-			wantPolicy:    []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
-			wantDropRefs:  []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
+			ref:           difftypes.IndexRef{Name: "idx_events_tenant", TableName: "events"},
+			wantHeuristic: []difftypes.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
+			wantPolicy:    []difftypes.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
+			wantDropRefs:  []difftypes.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
 		},
 		{
 			// The shape the PostgreSQL reader actually produces: it blanks the
 			// schema of the connection's own schema, so the ordinary table is
 			// the one the bare spelling names exactly.
 			name: "a bare ref prefers the table whose own spelling is bare",
-			tables: []dbschematypes.DBTable{
+			tables: []catalog.Table{
 				{Name: "events", EstimatedRows: 5000},
 				{Name: "events", Schema: "app", Partitioned: true, EstimatedRows: 5000},
 			},
-			ref:           types.IndexRef{Name: "idx_events_tenant", TableName: "events"},
-			wantHeuristic: []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
-			wantPolicy:    []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
-			wantDropRefs:  []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
+			ref:           difftypes.IndexRef{Name: "idx_events_tenant", TableName: "events"},
+			wantHeuristic: []difftypes.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
+			wantPolicy:    []difftypes.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
+			wantDropRefs:  []difftypes.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
 		},
 		{
 			name: "a bare ref reaching one ordinary schema-qualified table builds concurrently",
-			tables: []dbschematypes.DBTable{
+			tables: []catalog.Table{
 				{Name: "events", Schema: "app", EstimatedRows: 5000},
 			},
-			ref:           types.IndexRef{Name: "idx_events_tenant", TableName: "events"},
-			wantHeuristic: []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
-			wantPolicy:    []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
-			wantDropRefs:  []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
+			ref:           difftypes.IndexRef{Name: "idx_events_tenant", TableName: "events"},
+			wantHeuristic: []difftypes.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
+			wantPolicy:    []difftypes.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
+			wantDropRefs:  []difftypes.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
 		},
 		{
 			// One populated candidate is enough to prefer the concurrent build:
 			// a blocking build on a table that turns out to hold rows is the
 			// unrecoverable side of the guess.
 			name: "a bare ref with one populated candidate builds concurrently",
-			tables: []dbschematypes.DBTable{
+			tables: []catalog.Table{
 				{Name: "events", Schema: "app", EstimatedRows: 0},
 				{Name: "events", Schema: "reporting", EstimatedRows: 5000},
 			},
-			ref:           types.IndexRef{Name: "idx_events_tenant", TableName: "events"},
-			wantHeuristic: []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
-			wantPolicy:    []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
-			wantDropRefs:  []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
+			ref:           difftypes.IndexRef{Name: "idx_events_tenant", TableName: "events"},
+			wantHeuristic: []difftypes.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
+			wantPolicy:    []difftypes.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
+			wantDropRefs:  []difftypes.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
 		},
 	}
 
@@ -136,8 +136,8 @@ func TestConcurrentIndexSelectors_ResolveARefToTheOrdinaryTableItNames(t *testin
 func TestConcurrentIndexSelectors_RefuseARefNamingAPartitionedParent(t *testing.T) {
 	tests := []struct {
 		name   string
-		tables []dbschematypes.DBTable
-		ref    types.IndexRef
+		tables []catalog.Table
+		ref    difftypes.IndexRef
 		// wantOffending is the offending entry the refusal lists, which is the
 		// ref's own spelling of the table it resolved to.
 		wantOffending string
@@ -147,11 +147,11 @@ func TestConcurrentIndexSelectors_RefuseARefNamingAPartitionedParent(t *testing.
 			// parent this ref names exactly, and publish a statement the server
 			// answers with SQLSTATE 0A000.
 			name: "a qualified ref finds its own partitioned parent",
-			tables: []dbschematypes.DBTable{
+			tables: []catalog.Table{
 				{Name: "events", EstimatedRows: 5000},
 				{Name: "events", Schema: "app", Partitioned: true, EstimatedRows: 5000},
 			},
-			ref:           types.IndexRef{Name: "idx_events_tenant", TableName: "app.events"},
+			ref:           difftypes.IndexRef{Name: "idx_events_tenant", TableName: "app.events"},
 			wantOffending: `"idx_events_tenant" on "app.events"`,
 		},
 		{
@@ -159,21 +159,21 @@ func TestConcurrentIndexSelectors_RefuseARefNamingAPartitionedParent(t *testing.
 			// spelling can name is a partitioned parent, the statement is
 			// unexecutable whichever one it meant.
 			name: "a bare ref every candidate answers as partitioned is still refused",
-			tables: []dbschematypes.DBTable{
+			tables: []catalog.Table{
 				{Name: "events", Schema: "app", Partitioned: true, EstimatedRows: 5000},
 				{Name: "events", Schema: "reporting", Partitioned: true, EstimatedRows: 5000},
 			},
-			ref:           types.IndexRef{Name: "idx_events_tenant", TableName: "events"},
+			ref:           difftypes.IndexRef{Name: "idx_events_tenant", TableName: "events"},
 			wantOffending: `"idx_events_tenant" on "events"`,
 		},
 		{
 			// The bare fallback still has to reach a schema-qualified table --
 			// the two sides of a diff do not have to agree on the spelling.
 			name: "a bare ref reaching one schema-qualified parent is refused",
-			tables: []dbschematypes.DBTable{
+			tables: []catalog.Table{
 				{Name: "events", Schema: "app", Partitioned: true, EstimatedRows: 5000},
 			},
-			ref:           types.IndexRef{Name: "idx_events_tenant", TableName: "events"},
+			ref:           difftypes.IndexRef{Name: "idx_events_tenant", TableName: "events"},
 			wantOffending: `"idx_events_tenant" on "events"`,
 		},
 	}
@@ -203,19 +203,19 @@ func TestConcurrentIndexSelectors_RefuseARefNamingAPartitionedParent(t *testing.
 // one read schema. Each selector gets its own diff because they read different
 // halves of it.
 func runConcurrentIndexSelectors(
-	tables []dbschematypes.DBTable,
-	ref types.IndexRef,
+	tables []catalog.Table,
+	ref difftypes.IndexRef,
 ) concurrentIndexOutcome {
-	dbSchema := func() *dbschematypes.DBSchema {
-		return &dbschematypes.DBSchema{Tables: tables}
+	dbSchema := func() *catalog.Database {
+		return &catalog.Database{Tables: tables}
 	}
-	additions := func() *types.SchemaDiff {
-		diff := &types.SchemaDiff{}
-		diff.SetIndexAdditions([]types.IndexRef{ref})
+	additions := func() *difftypes.SchemaDiff {
+		diff := &difftypes.SchemaDiff{}
+		diff.SetIndexAdditions([]difftypes.IndexRef{ref})
 		return diff
 	}
-	removals := &types.SchemaDiff{}
-	removals.SetIndexRemovals([]types.IndexRef{ref})
+	removals := &difftypes.SchemaDiff{}
+	removals.SetIndexRemovals([]difftypes.IndexRef{ref})
 
 	var out concurrentIndexOutcome
 	out.heuristic = concurrentIndexRefsForPopulatedTables(

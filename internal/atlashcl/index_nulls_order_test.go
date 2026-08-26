@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashcl"
 )
 
@@ -31,18 +31,18 @@ func TestParseIndexPartNullsOrder(t *testing.T) {
 		{
 			name: "nulls first on an ascending key",
 			attr: "nulls_first = true",
-			want: goschema.NullsOrderFirst,
+			want: schemamodel.NullsOrderFirst,
 		},
 		{
 			name: "nulls last on an ascending key",
 			attr: "nulls_last = true",
-			want: goschema.NullsOrderLast,
+			want: schemamodel.NullsOrderLast,
 		},
 		{
 			name:     "nulls last on a descending key",
 			attr:     "desc = true\n    nulls_last = true",
 			wantDesc: true,
-			want:     goschema.NullsOrderLast,
+			want:     schemamodel.NullsOrderLast,
 		},
 		{
 			// An absent ordering is the direction's default and stays

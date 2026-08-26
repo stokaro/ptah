@@ -5,26 +5,26 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 func TestDomains_AddRemoveModify(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{Domains: []goschema.Domain{
+	desired := &schemamodel.Database{Domains: []schemamodel.Domain{
 		{Name: "email", BaseType: "TEXT", NotNull: true},
 		{Name: "changed", BaseType: "INTEGER", NotNull: true},
 	}}
-	database := &types.DBSchema{Domains: []types.DBDomain{
+	current := &catalog.Database{Domains: []catalog.Domain{
 		{Name: "changed", BaseType: "integer", NotNull: false}, // not_null differs
 		{Name: "legacy", BaseType: "TEXT"},
 	}}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.Domains(generated, database, diff, compare.CoverageOf(generated, database))
+	compare.Domains(desired, current, diff, compare.CoverageOf(desired, current))
 
 	c.Assert(diff.DomainsAdded, qt.DeepEquals, []string{"email"})
 	c.Assert(diff.DomainsRemoved, qt.DeepEquals, []string{"legacy"})
@@ -36,11 +36,11 @@ func TestDomains_AddRemoveModify(t *testing.T) {
 func TestDomains_TypeCaseInsensitiveNoChurn(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{Domains: []goschema.Domain{{Name: "email", BaseType: "TEXT"}}}
-	database := &types.DBSchema{Domains: []types.DBDomain{{Name: "email", BaseType: "text"}}}
+	desired := &schemamodel.Database{Domains: []schemamodel.Domain{{Name: "email", BaseType: "TEXT"}}}
+	current := &catalog.Database{Domains: []catalog.Domain{{Name: "email", BaseType: "text"}}}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.Domains(generated, database, diff, compare.CoverageOf(generated, database))
+	compare.Domains(desired, current, diff, compare.CoverageOf(desired, current))
 
 	c.Assert(diff.DomainsAdded, qt.IsNil)
 	c.Assert(diff.DomainsModified, qt.IsNil)
@@ -51,17 +51,17 @@ func TestDomains_CanonicalTypeSpellingNoChurn(t *testing.T) {
 
 	// Declared VARCHAR(255)/float8 must not churn against the catalog's
 	// canonical character varying(255)/double precision spellings.
-	generated := &goschema.Database{Domains: []goschema.Domain{
+	desired := &schemamodel.Database{Domains: []schemamodel.Domain{
 		{Name: "code", BaseType: "VARCHAR(255)"},
 		{Name: "amount", BaseType: "float8"},
 	}}
-	database := &types.DBSchema{Domains: []types.DBDomain{
+	current := &catalog.Database{Domains: []catalog.Domain{
 		{Name: "code", BaseType: "character varying(255)"},
 		{Name: "amount", BaseType: "double precision"},
 	}}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.Domains(generated, database, diff, compare.CoverageOf(generated, database))
+	compare.Domains(desired, current, diff, compare.CoverageOf(desired, current))
 
 	c.Assert(diff.DomainsAdded, qt.IsNil)
 	c.Assert(diff.DomainsRemoved, qt.IsNil)
@@ -73,11 +73,11 @@ func TestDomains_CheckIsCreateOnly(t *testing.T) {
 
 	// A declared CHECK vs the PostgreSQL-rewritten readback must NOT be reported
 	// as a modification (create-only), to avoid a phantom drop+recreate.
-	generated := &goschema.Database{Domains: []goschema.Domain{{Name: "email", BaseType: "TEXT", Check: "VALUE ~ '@'"}}}
-	database := &types.DBSchema{Domains: []types.DBDomain{{Name: "email", BaseType: "text", Check: "(VALUE ~ '@'::text)"}}}
+	desired := &schemamodel.Database{Domains: []schemamodel.Domain{{Name: "email", BaseType: "TEXT", Check: "VALUE ~ '@'"}}}
+	current := &catalog.Database{Domains: []catalog.Domain{{Name: "email", BaseType: "text", Check: "(VALUE ~ '@'::text)"}}}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.Domains(generated, database, diff, compare.CoverageOf(generated, database))
+	compare.Domains(desired, current, diff, compare.CoverageOf(desired, current))
 
 	c.Assert(diff.DomainsModified, qt.IsNil)
 }
@@ -85,15 +85,15 @@ func TestDomains_CheckIsCreateOnly(t *testing.T) {
 func TestCompositeTypes_AddRemoveModify(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{CompositeTypes: []goschema.CompositeType{
-		{Name: "address", Fields: []goschema.CompositeTypeField{{Name: "street", Type: "TEXT"}, {Name: "zip", Type: "INTEGER"}}},
+	desired := &schemamodel.Database{CompositeTypes: []schemamodel.CompositeType{
+		{Name: "address", Fields: []schemamodel.CompositeField{{Name: "street", Type: "TEXT"}, {Name: "zip", Type: "INTEGER"}}},
 	}}
-	database := &types.DBSchema{Composites: []types.DBComposite{
-		{Name: "address", Fields: []types.DBCompositeField{{Name: "street", Type: "text"}}}, // field count differs
+	current := &catalog.Database{Composites: []catalog.CompositeType{
+		{Name: "address", Fields: []catalog.CompositeField{{Name: "street", Type: "text"}}}, // field count differs
 	}}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.CompositeTypes(generated, database, diff, compare.CoverageOf(generated, database))
+	compare.CompositeTypes(desired, current, diff, compare.CoverageOf(desired, current))
 
 	c.Assert(diff.CompositeTypesModified, qt.HasLen, 1)
 	c.Assert(diff.CompositeTypesModified[0].TypeName, qt.Equals, "address")
@@ -102,14 +102,14 @@ func TestCompositeTypes_AddRemoveModify(t *testing.T) {
 func TestCompositeTypes_UnchangedNoChurn(t *testing.T) {
 	c := qt.New(t)
 
-	fields := []goschema.CompositeTypeField{{Name: "street", Type: "TEXT"}, {Name: "zip", Type: "INTEGER"}}
-	generated := &goschema.Database{CompositeTypes: []goschema.CompositeType{{Name: "address", Fields: fields}}}
-	database := &types.DBSchema{Composites: []types.DBComposite{
-		{Name: "address", Fields: []types.DBCompositeField{{Name: "street", Type: "text"}, {Name: "zip", Type: "integer"}}},
+	fields := []schemamodel.CompositeField{{Name: "street", Type: "TEXT"}, {Name: "zip", Type: "INTEGER"}}
+	desired := &schemamodel.Database{CompositeTypes: []schemamodel.CompositeType{{Name: "address", Fields: fields}}}
+	current := &catalog.Database{Composites: []catalog.CompositeType{
+		{Name: "address", Fields: []catalog.CompositeField{{Name: "street", Type: "text"}, {Name: "zip", Type: "integer"}}},
 	}}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.CompositeTypes(generated, database, diff, compare.CoverageOf(generated, database))
+	compare.CompositeTypes(desired, current, diff, compare.CoverageOf(desired, current))
 
 	c.Assert(diff.CompositeTypesAdded, qt.IsNil)
 	c.Assert(diff.CompositeTypesModified, qt.IsNil)
@@ -131,23 +131,23 @@ func TestCompositeTypes_UnchangedNoChurn(t *testing.T) {
 func TestUserTypes_ModifiedCarryTheirCurrentShape(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Domains: []goschema.Domain{{Name: "qty", BaseType: "bigint"}},
-		CompositeTypes: []goschema.CompositeType{
-			{Name: "meas", Fields: []goschema.CompositeTypeField{{Name: "q", Type: "bigint"}, {Name: "label", Type: "TEXT"}}},
+	desired := &schemamodel.Database{
+		Domains: []schemamodel.Domain{{Name: "qty", BaseType: "bigint"}},
+		CompositeTypes: []schemamodel.CompositeType{
+			{Name: "meas", Fields: []schemamodel.CompositeField{{Name: "q", Type: "bigint"}, {Name: "label", Type: "TEXT"}}},
 		},
 	}
-	database := &types.DBSchema{
-		Domains: []types.DBDomain{{Name: "qty", BaseType: "integer"}},
-		Composites: []types.DBComposite{
-			{Name: "meas", Fields: []types.DBCompositeField{{Name: "q", Type: "qty"}, {Name: "label", Type: "text"}}},
+	current := &catalog.Database{
+		Domains: []catalog.Domain{{Name: "qty", BaseType: "integer"}},
+		Composites: []catalog.CompositeType{
+			{Name: "meas", Fields: []catalog.CompositeField{{Name: "q", Type: "qty"}, {Name: "label", Type: "text"}}},
 		},
 	}
 	diff := &difftypes.SchemaDiff{}
-	coverage := compare.CoverageOf(generated, database)
+	coverage := compare.CoverageOf(desired, current)
 
-	compare.Domains(generated, database, diff, coverage)
-	compare.CompositeTypes(generated, database, diff, coverage)
+	compare.Domains(desired, current, diff, coverage)
+	compare.CompositeTypes(desired, current, diff, coverage)
 
 	c.Assert(diff.DomainsModified, qt.HasLen, 1)
 	c.Assert(diff.DomainsModified[0].CurrentBaseType, qt.Equals, "integer")
@@ -165,23 +165,23 @@ func TestUserTypes_ModifiedCarryTheirCurrentShape(t *testing.T) {
 func TestUserTypes_CurrentShapeKeepsTheCatalogSpelling(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Domains: []goschema.Domain{{Name: "d", BaseType: "text"}},
-		CompositeTypes: []goschema.CompositeType{
-			{Name: "holder", Fields: []goschema.CompositeTypeField{{Name: "v", Type: "TEXT"}}},
+	desired := &schemamodel.Database{
+		Domains: []schemamodel.Domain{{Name: "d", BaseType: "text"}},
+		CompositeTypes: []schemamodel.CompositeType{
+			{Name: "holder", Fields: []schemamodel.CompositeField{{Name: "v", Type: "TEXT"}}},
 		},
 	}
-	database := &types.DBSchema{
-		Domains: []types.DBDomain{{Name: "d", BaseType: "decimal"}},
-		Composites: []types.DBComposite{
-			{Name: "holder", Fields: []types.DBCompositeField{{Name: "v", Type: "decimal"}}},
+	current := &catalog.Database{
+		Domains: []catalog.Domain{{Name: "d", BaseType: "decimal"}},
+		Composites: []catalog.CompositeType{
+			{Name: "holder", Fields: []catalog.CompositeField{{Name: "v", Type: "decimal"}}},
 		},
 	}
 	diff := &difftypes.SchemaDiff{}
-	coverage := compare.CoverageOf(generated, database)
+	coverage := compare.CoverageOf(desired, current)
 
-	compare.Domains(generated, database, diff, coverage)
-	compare.CompositeTypes(generated, database, diff, coverage)
+	compare.Domains(desired, current, diff, coverage)
+	compare.CompositeTypes(desired, current, diff, coverage)
 
 	c.Assert(diff.DomainsModified, qt.HasLen, 1)
 	c.Assert(diff.DomainsModified[0].CurrentBaseType, qt.Equals, "decimal")
@@ -192,12 +192,12 @@ func TestUserTypes_CurrentShapeKeepsTheCatalogSpelling(t *testing.T) {
 func TestRanges_AddRemoveByNameOnly(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{Ranges: []goschema.Range{{Name: "floatrange", Subtype: "float8"}}}
+	desired := &schemamodel.Database{Ranges: []schemamodel.Range{{Name: "floatrange", Subtype: "float8"}}}
 	// Subtype spelling differs (float8 vs double precision) but ranges compare by name only.
-	database := &types.DBSchema{Ranges: []types.DBRange{{Name: "floatrange", Subtype: "double precision"}, {Name: "legacy", Subtype: "integer"}}}
+	current := &catalog.Database{Ranges: []catalog.Range{{Name: "floatrange", Subtype: "double precision"}, {Name: "legacy", Subtype: "integer"}}}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.Ranges(generated, database, diff, compare.CoverageOf(generated, database))
+	compare.Ranges(desired, current, diff, compare.CoverageOf(desired, current))
 
 	c.Assert(diff.RangesAdded, qt.IsNil)
 	c.Assert(diff.RangesRemoved, qt.DeepEquals, []string{"legacy"})

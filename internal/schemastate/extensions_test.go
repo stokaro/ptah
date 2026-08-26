@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/schemastate"
 )
@@ -35,26 +35,26 @@ func TestTheExtensionAnIndexNeedsSurvivesBothAdapters(t *testing.T) {
 		{
 			name: "a read resolved it",
 			build: func() (*schemastate.State, error) {
-				catalog := catalogWidget(
-					[]dbschematypes.DBColumn{{Name: "n", DataType: "integer", IsNullable: "YES"}},
+				current := catalogWidget(
+					[]catalog.Column{{Name: "n", DataType: "integer", IsNullable: "YES"}},
 					nil,
 				)
-				catalog.Indexes = []dbschematypes.DBIndex{{
+				current.Indexes = []catalog.Index{{
 					Name: "widget_gin", TableName: "widget", Schema: "public",
 					Columns: []string{"n"}, RequiresExtensions: []string{"btree_gin"},
 				}}
 				return schemastate.FromCatalog(
-					catalog, "postgres", identifier.ForDialect("postgres"))
+					current, "postgres", identifier.ForDialect("postgres"))
 			},
 		},
 		{
 			name: "a description carries it",
 			build: func() (*schemastate.State, error) {
 				description := withIndex(
-					describedWidget([]goschema.Field{
+					describedWidget([]schemamodel.Field{
 						{StructName: "Widget", Name: "n", Type: "int", Nullable: true},
 					}),
-					goschema.Index{
+					schemamodel.Index{
 						StructName: "Widget", Name: "widget_gin", Fields: []string{"n"},
 						RequiresExtensions: []string{"btree_gin"},
 					},
@@ -87,8 +87,8 @@ func TestTheExtensionAConstraintsIndexNeedsSurvivesBothAdapters(t *testing.T) {
 			build: func() (*schemastate.State, error) {
 				return schemastate.FromCatalog(
 					catalogWidget(
-						[]dbschematypes.DBColumn{{Name: "room", DataType: "integer", IsNullable: "YES"}},
-						[]dbschematypes.DBConstraint{{
+						[]catalog.Column{{Name: "room", DataType: "integer", IsNullable: "YES"}},
+						[]catalog.Constraint{{
 							Name: "ex_widget_room", TableName: "widget", Schema: "public",
 							Type: "EXCLUDE", UsingMethod: new("gist"),
 							ExcludeElements:    new("room WITH ="),
@@ -103,10 +103,10 @@ func TestTheExtensionAConstraintsIndexNeedsSurvivesBothAdapters(t *testing.T) {
 			build: func() (*schemastate.State, error) {
 				return schemastate.FromDescription(
 					withConstraint(
-						describedWidget([]goschema.Field{
+						describedWidget([]schemamodel.Field{
 							{StructName: "Widget", Name: "room", Type: "int", Nullable: true},
 						}),
-						goschema.Constraint{
+						schemamodel.Constraint{
 							StructName: "Widget", Name: "ex_widget_room", Type: "EXCLUDE",
 							UsingMethod: "gist", ExcludeElements: "room WITH =",
 							RequiresExtensions: []string{"btree_gist"},

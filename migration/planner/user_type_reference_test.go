@@ -5,10 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestGenerateSchemaDiffSQLQualifiesDeclaredUserTypes pins the second of the
@@ -66,7 +66,7 @@ func TestGenerateSchemaDiffSQLQualifiesDeclaredUserTypes(t *testing.T) {
 			c := qt.New(t)
 
 			schema := plannerUserTypeSchema(test.columnType)
-			diff := &types.SchemaDiff{TablesAdded: []string{"t"}}
+			diff := &difftypes.SchemaDiff{TablesAdded: []string{"t"}}
 
 			sql, err := planner.GenerateSchemaDiffSQL(diff, schema, platform.Postgres)
 
@@ -121,15 +121,15 @@ func TestGenerateSchemaDiffSQLLeavesABuiltInTypeAlone(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
 
-			schema := &goschema.Database{
-				Tables: []goschema.Table{{StructName: "T", Name: "t", Schema: "advm"}},
-				Fields: []goschema.Field{{StructName: "T", Name: "c", Type: test.columnType}},
-				Domains: []goschema.Domain{
+			schema := &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "T", Name: "t", Schema: "advm"}},
+				Fields: []schemamodel.Field{{StructName: "T", Name: "c", Type: test.columnType}},
+				Domains: []schemamodel.Domain{
 					{Name: "money", Schema: "advm", BaseType: "numeric(12,2)"},
 					{Name: "positive_int", Schema: "advm", BaseType: "integer"},
 				},
 			}
-			diff := &types.SchemaDiff{TablesAdded: []string{"t"}}
+			diff := &difftypes.SchemaDiff{TablesAdded: []string{"t"}}
 
 			sql, err := planner.GenerateSchemaDiffSQL(diff, schema, platform.Postgres)
 
@@ -139,14 +139,14 @@ func TestGenerateSchemaDiffSQLLeavesABuiltInTypeAlone(t *testing.T) {
 	}
 }
 
-func plannerUserTypeSchema(columnType string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "T", Name: "t", Schema: "app"}},
-		Fields: []goschema.Field{{StructName: "T", Name: "c", Type: columnType}},
-		Enums: []goschema.Enum{{
+func plannerUserTypeSchema(columnType string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "T", Name: "t", Schema: "app"}},
+		Fields: []schemamodel.Field{{StructName: "T", Name: "c", Type: columnType}},
+		Enums: []schemamodel.Enum{{
 			Name: "mood", Schema: "app", Values: []string{"sad", "ok"},
 		}},
-		Domains: []goschema.Domain{{
+		Domains: []schemamodel.Domain{{
 			Name: "positive_int", Schema: "app", BaseType: "integer",
 		}},
 	}

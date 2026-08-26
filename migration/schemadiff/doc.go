@@ -24,7 +24,7 @@
 // # Core Functionality
 //
 // Every comparison has the same shape -- a desired schema and a current schema
-// in, a *types.SchemaDiff out. The entry points differ in what the caller can
+// in, a *difftypes.SchemaDiff out. The entry points differ in what the caller can
 // supply and in what they report back:
 //
 //   - Compare: the desired schema against a database schema, under
@@ -45,8 +45,8 @@
 //
 // # Comparison Categories
 //
-// The comparison covers every object kind types.SchemaDiff carries, which is
-// what types.SchemaDiff.HasChanges reads:
+// The comparison covers every object kind difftypes.SchemaDiff carries, which is
+// what difftypes.SchemaDiff.HasChanges reads:
 //
 //   - Tables: new, removed, and modified table structures
 //   - Columns: added, removed, and modified column definitions
@@ -68,8 +68,8 @@
 //
 // Basic schema comparison:
 //
-//	// Parse Go entities to get desired schema
-//	generated, err := goschema.ParseDir("./entities")
+//	// Parse Go entities to get the desired schema
+//	desired, err := goschema.ParseDir("./entities")
 //	if err != nil {
 //		log.Fatal(err)
 //	}
@@ -81,13 +81,13 @@
 //	}
 //	defer dbschema.CloseAndWarn(conn)
 //
-//	database, err := conn.Reader().ReadSchemaContext(ctx)
+//	current, err := conn.Reader().ReadSchemaContext(ctx)
 //	if err != nil {
 //		log.Fatal(err)
 //	}
 //
 //	// Compare schemas
-//	diff := schemadiff.Compare(generated, database)
+//	diff := schemadiff.Compare(desired, current)
 //
 //	// Check if there are any changes
 //	if diff.HasChanges() {
@@ -99,8 +99,8 @@
 //
 // The comparison produces different types of changes:
 //
-//   - TablesAdded: Tables that exist in generated schema but not in database
-//   - TablesRemoved: Tables that exist in database but not in generated schema
+//   - TablesAdded: Tables that exist in the desired schema but not in the current one
+//   - TablesRemoved: Tables that exist in the current schema but not in the desired one
 //   - TablesModified: Tables that exist in both but have structural differences
 //   - EnumsAdded/EnumsRemoved/EnumsModified: Enum type changes
 //   - IndexesAdded/IndexesRemoved: Index changes
@@ -151,8 +151,8 @@
 //
 // This package integrates with other Ptah components:
 //
-//   - ptah/core/goschema: Consumes generated schema from Go entities
-//   - ptah/dbschema/types: Consumes database schema from introspection
+//   - ptah/core/schemamodel: Consumes the desired schema every reader produces
+//   - ptah/catalog: Consumes database schema from introspection
 //   - ptah/migration/planner: Provides difference data for migration planning
 //   - ptah/migration/generator: Used in migration file generation
 //

@@ -9,7 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/migration/schemadiff"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // excludedIndexOrConstraintCategories are the categories no differential row
@@ -138,7 +138,7 @@ func namesAnIndexOrConstraint(field string) bool {
 func categoriesCoveredByDifferentialRows() map[string]bool {
 	covered := make(map[string]bool)
 	for _, fixture := range statementDifferentialFixtures() {
-		diff := schemadiff.CompareWithDialect(fixture.description, fixture.catalog, "postgres")
+		diff := schemadiff.CompareWithDialect(fixture.description, fixture.current, "postgres")
 		recordFilledCategories(covered, diff)
 	}
 	return covered

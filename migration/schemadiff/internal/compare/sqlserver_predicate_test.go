@@ -5,10 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 // TestIndexes_SQLServerFilteredPredicateSpelling proves that filtered-index
@@ -90,16 +90,16 @@ func TestIndexes_SQLServerFilteredPredicateSpelling(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			generated := &goschema.Database{
-				Indexes: []goschema.Index{{
+			desired := &schemamodel.Database{
+				Indexes: []schemamodel.Index{{
 					Name:      "idx_users_filtered",
 					TableName: "dbo.users",
 					Fields:    []string{"status"},
 					Condition: test.generated,
 				}},
 			}
-			database := &types.DBSchema{
-				Indexes: []types.DBIndex{{
+			current := &catalog.Database{
+				Indexes: []catalog.Index{{
 					Name:      "idx_users_filtered",
 					TableName: "users",
 					Schema:    "dbo",
@@ -109,7 +109,7 @@ func TestIndexes_SQLServerFilteredPredicateSpelling(t *testing.T) {
 			}
 			diff := &difftypes.SchemaDiff{}
 
-			compare.IndexesWithDialect(generated, database, diff, "sqlserver")
+			compare.IndexesWithDialect(desired, current, diff, "sqlserver")
 
 			c.Assert(diff.IndexAdditions(), qt.DeepEquals, test.wantAdditions)
 			c.Assert(diff.IndexRemovals(), qt.DeepEquals, test.wantRemovals)
@@ -123,16 +123,16 @@ func TestIndexes_SQLServerFilteredPredicateSpelling(t *testing.T) {
 // participating in predicate comparison.
 func TestIndexes_PredicateBracketSpellingStaysSignificantOutsideSQLServer(t *testing.T) {
 	c := qt.New(t)
-	generated := &goschema.Database{
-		Indexes: []goschema.Index{{
+	desired := &schemamodel.Database{
+		Indexes: []schemamodel.Index{{
 			Name:      "idx_users_filtered",
 			TableName: "users",
 			Fields:    []string{"tags"},
 			Condition: "tags[1] = 'admin'",
 		}},
 	}
-	database := &types.DBSchema{
-		Indexes: []types.DBIndex{{
+	current := &catalog.Database{
+		Indexes: []catalog.Index{{
 			Name:      "idx_users_filtered",
 			TableName: "users",
 			Columns:   []string{"tags"},
@@ -141,7 +141,7 @@ func TestIndexes_PredicateBracketSpellingStaysSignificantOutsideSQLServer(t *tes
 	}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.IndexesWithDialect(generated, database, diff, "postgres")
+	compare.IndexesWithDialect(desired, current, diff, "postgres")
 
 	ref := []difftypes.IndexRef{{Name: "idx_users_filtered", TableName: "users"}}
 	c.Assert(diff.IndexAdditions(), qt.DeepEquals, ref)

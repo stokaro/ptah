@@ -11,10 +11,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/schemachange"
 	"go.5x5.cz/ptah/internal/schemastate"
@@ -141,12 +141,12 @@ func livePostgresProfile() schemastate.Profile {
 // planFor runs the whole prototype and returns its rendered operations.
 func planFor(
 	c *qt.C,
-	description *goschema.Database,
-	catalog *dbschematypes.DBSchema,
+	description *schemamodel.Database,
+	current *catalog.Database,
 	profile schemastate.Profile,
 ) []schemachange.PlannedOperation {
 	c.Helper()
-	operations, err := schemachange.Plan(changesFor(c, description, catalog, profile), profile)
+	operations, err := schemachange.Plan(changesFor(c, description, current, profile), profile)
 	c.Assert(err, qt.IsNil)
 	return operations
 }
@@ -155,14 +155,14 @@ func planFor(
 // asserts on a blocked change rather than on statements.
 func changesFor(
 	c *qt.C,
-	description *goschema.Database,
-	catalog *dbschematypes.DBSchema,
+	description *schemamodel.Database,
+	currentCatalog *catalog.Database,
 	profile schemastate.Profile,
 ) []schemachange.Change {
 	c.Helper()
 	rawDesired, err := schemastate.FromDescription(description, profile.Dialect, profile.Semantics)
 	c.Assert(err, qt.IsNil)
-	rawCurrent, err := schemastate.FromCatalog(catalog, profile.Dialect, profile.Semantics)
+	rawCurrent, err := schemastate.FromCatalog(currentCatalog, profile.Dialect, profile.Semantics)
 	c.Assert(err, qt.IsNil)
 	desired, err := schemastate.Normalize(rawDesired, profile)
 	c.Assert(err, qt.IsNil)
@@ -177,13 +177,13 @@ func changesFor(
 	return ordered
 }
 
-func liveDescription(onDelete string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func liveDescription(onDelete string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Parent", Name: "parent"},
 			{StructName: "Child", Name: "child"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Parent", Name: "id", Type: "integer", Primary: true},
 			{StructName: "Child", Name: "id", Type: "integer", Primary: true},
 			{
@@ -204,7 +204,7 @@ func liveDescription(onDelete string) *goschema.Database {
 	}
 }
 
-func liveDescriptionWithoutForeignKey() *goschema.Database {
+func liveDescriptionWithoutForeignKey() *schemamodel.Database {
 	description := liveDescription("")
 	description.Fields[2].Foreign = ""
 	description.Fields[2].ForeignKeyName = ""
@@ -213,13 +213,13 @@ func liveDescriptionWithoutForeignKey() *goschema.Database {
 
 // liveCatalog is the database as it stands before each step. A nil delete rule
 // means the foreign key is not there yet.
-func liveCatalog(deleteRule *string) *dbschematypes.DBSchema {
-	schema := &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
-			{Name: "parent", Schema: "public", Columns: []dbschematypes.DBColumn{
+func liveCatalog(deleteRule *string) *catalog.Database {
+	schema := &catalog.Database{
+		Tables: []catalog.Table{
+			{Name: "parent", Schema: "public", Columns: []catalog.Column{
 				{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
 			}},
-			{Name: "child", Schema: "public", Columns: []dbschematypes.DBColumn{
+			{Name: "child", Schema: "public", Columns: []catalog.Column{
 				{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
 				{Name: "parent_id", DataType: "integer", IsNullable: "YES"},
 			}},
@@ -230,7 +230,7 @@ func liveCatalog(deleteRule *string) *dbschematypes.DBSchema {
 	}
 	parent := "parent"
 	column := "id"
-	schema.Constraints = []dbschematypes.DBConstraint{{
+	schema.Constraints = []catalog.Constraint{{
 		Name:          "fk_child_parent",
 		TableName:     "child",
 		Schema:        "public",

@@ -1,5 +1,5 @@
 // Package dbschematogo converts an introspected database schema
-// (dbschema/types.DBSchema) into the goschema entity model, so live databases
+// (catalog.Database) into the goschema entity model, so live databases
 // can flow through the same diff and planning pipeline as annotated Go
 // sources.
 package dbschematogo
@@ -10,13 +10,13 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
-// ConvertDBSchemaToGoSchema converts a database schema to goschema format
+// ConvertCatalogToSchema converts a live catalog read into the goschema model.
 // This is needed for down migrations where we use the current DB state as the target
-func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Database {
+func ConvertCatalogToSchema(dbSchema *catalog.Database) *schemamodel.Database {
 	database := newDatabase()
 	convertSchemas(database, dbSchema.Schemas)
 	convertEnums(database, dbSchema.Enums)
@@ -26,7 +26,7 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 	// actions. This is what lets a down migration restore the prior ON DELETE /
 	// ON UPDATE action of a field-level FK (issue #189): the down path treats
 	// the introspected (pre-change) database as the target, so the old action
-	// must survive the round-trip into goschema.
+	// must survive the round-trip into the schema model.
 	fkByColumn := indexForeignKeysByColumn(dbSchema)
 	tablePrimaryKeys := primaryKeysByTable(dbSchema)
 	tablePKColumns := primaryKeyColumnSets(tablePrimaryKeys)
@@ -58,9 +58,9 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 	return database
 }
 
-func convertSchemas(database *goschema.Database, schemas []dbschematypes.DBSchemaInfo) {
+func convertSchemas(database *schemamodel.Database, schemas []catalog.Schema) {
 	for _, schema := range schemas {
-		database.Schemas = append(database.Schemas, goschema.Schema{
+		database.Schemas = append(database.Schemas, schemamodel.Schema{
 			Name:    schema.Name,
 			Comment: schema.Comment,
 			Charset: schema.Charset,
@@ -69,27 +69,27 @@ func convertSchemas(database *goschema.Database, schemas []dbschematypes.DBSchem
 	}
 }
 
-func newDatabase() *goschema.Database {
-	return &goschema.Database{
-		Schemas:           make([]goschema.Schema, 0),
-		Tables:            make([]goschema.Table, 0),
-		Fields:            make([]goschema.Field, 0),
-		Indexes:           make([]goschema.Index, 0),
-		Constraints:       make([]goschema.Constraint, 0),
-		Enums:             make([]goschema.Enum, 0),
-		Extensions:        make([]goschema.Extension, 0),
-		Functions:         make([]goschema.Function, 0),
-		Sequences:         make([]goschema.Sequence, 0),
-		Domains:           make([]goschema.Domain, 0),
-		CompositeTypes:    make([]goschema.CompositeType, 0),
-		Ranges:            make([]goschema.Range, 0),
-		Views:             make([]goschema.View, 0),
-		MaterializedViews: make([]goschema.MaterializedView, 0),
-		Triggers:          make([]goschema.Trigger, 0),
-		RLSPolicies:       make([]goschema.RLSPolicy, 0),
-		RLSEnabledTables:  make([]goschema.RLSEnabledTable, 0),
-		Roles:             make([]goschema.Role, 0),
-		Grants:            make([]goschema.Grant, 0),
+func newDatabase() *schemamodel.Database {
+	return &schemamodel.Database{
+		Schemas:           make([]schemamodel.Schema, 0),
+		Tables:            make([]schemamodel.Table, 0),
+		Fields:            make([]schemamodel.Field, 0),
+		Indexes:           make([]schemamodel.Index, 0),
+		Constraints:       make([]schemamodel.Constraint, 0),
+		Enums:             make([]schemamodel.Enum, 0),
+		Extensions:        make([]schemamodel.Extension, 0),
+		Functions:         make([]schemamodel.Function, 0),
+		Sequences:         make([]schemamodel.Sequence, 0),
+		Domains:           make([]schemamodel.Domain, 0),
+		CompositeTypes:    make([]schemamodel.CompositeType, 0),
+		Ranges:            make([]schemamodel.Range, 0),
+		Views:             make([]schemamodel.View, 0),
+		MaterializedViews: make([]schemamodel.MaterializedView, 0),
+		Triggers:          make([]schemamodel.Trigger, 0),
+		RLSPolicies:       make([]schemamodel.RLSPolicy, 0),
+		RLSEnabledTables:  make([]schemamodel.RLSEnabledTable, 0),
+		Roles:             make([]schemamodel.Role, 0),
+		Grants:            make([]schemamodel.Grant, 0),
 		Dependencies:      make(map[string][]string),
 	}
 }
@@ -102,9 +102,9 @@ func newDatabase() *goschema.Database {
 // claim about a type the database does not hold: `extra.mood` was described as
 // `public.mood`, applying the description built the type in `public`, and the
 // column in `extra` that uses it was typed against it (stokaro/ptah#1276).
-func convertEnums(database *goschema.Database, dbEnums []dbschematypes.DBEnum) {
+func convertEnums(database *schemamodel.Database, dbEnums []catalog.Enum) {
 	for _, dbEnum := range dbEnums {
-		database.Enums = append(database.Enums, goschema.Enum{
+		database.Enums = append(database.Enums, schemamodel.Enum{
 			Name:   dbEnum.Name,
 			Schema: dbEnum.Schema,
 			Values: dbEnum.Values,
@@ -113,8 +113,8 @@ func convertEnums(database *goschema.Database, dbEnums []dbschematypes.DBEnum) {
 }
 
 func convertTablesAndFields(
-	database *goschema.Database,
-	dbSchema *dbschematypes.DBSchema,
+	database *schemamodel.Database,
+	dbSchema *catalog.Database,
 	fkByColumn map[tableMemberKey]foreignKeyInfo,
 	tablePrimaryKeys map[string]tablePrimaryKey,
 	tablePKColumns map[string]map[string]bool,
@@ -126,7 +126,7 @@ func convertTablesAndFields(
 		tableStructNames[dbTable.QualifiedName()] = structName
 		primaryKey := tablePrimaryKeys[dbTable.QualifiedName()]
 
-		table := goschema.Table{
+		table := schemamodel.Table{
 			StructName: structName,
 			Name:       dbTable.Name,
 			Schema:     dbTable.Schema,
@@ -154,7 +154,7 @@ func convertTablesAndFields(
 
 		// Convert columns to fields
 		for _, dbColumn := range dbTable.Columns {
-			field := goschema.Field{
+			field := schemamodel.Field{
 				StructName:         structName,
 				FieldName:          generateFieldName(dbColumn.Name),
 				Name:               dbColumn.Name,
@@ -197,7 +197,7 @@ func convertTablesAndFields(
 	return tableStructNames
 }
 
-func tableNameCounts(tables []dbschematypes.DBTable) map[string]int {
+func tableNameCounts(tables []catalog.Table) map[string]int {
 	counts := make(map[string]int, len(tables))
 	for _, table := range tables {
 		counts[table.Name]++
@@ -205,16 +205,16 @@ func tableNameCounts(tables []dbschematypes.DBTable) map[string]int {
 	return counts
 }
 
-func dbTableStructName(table dbschematypes.DBTable, tableNameCounts map[string]int) string {
+func dbTableStructName(table catalog.Table, tableNameCounts map[string]int) string {
 	if tableNameCounts[table.Name] > 1 && strings.TrimSpace(table.Schema) != "" {
 		return generateStructName(table.Schema + "_" + table.Name)
 	}
 	return generateStructName(table.Name)
 }
 
-func convertIndexes(dbSchema *dbschematypes.DBSchema, tableStructNames map[string]string) []goschema.Index {
+func convertIndexes(dbSchema *catalog.Database, tableStructNames map[string]string) []schemamodel.Index {
 	constraintBackedIndexes := constraintBackedIndexesByTable(dbSchema)
-	indexes := make([]goschema.Index, 0, len(dbSchema.Indexes))
+	indexes := make([]schemamodel.Index, 0, len(dbSchema.Indexes))
 	for _, dbIndex := range dbSchema.Indexes {
 		// Skip primary key indexes as they're handled by primary key fields
 		if dbIndex.IsPrimary {
@@ -224,7 +224,7 @@ func convertIndexes(dbSchema *dbschematypes.DBSchema, tableStructNames map[strin
 			continue
 		}
 
-		index := goschema.Index{
+		index := schemamodel.Index{
 			StructName:    structNameForTable(tableStructNames, dbIndex.QualifiedTableName(), dbIndex.TableName),
 			Name:          dbIndex.Name,
 			TableName:     dbIndex.QualifiedTableName(),
@@ -249,25 +249,25 @@ func convertIndexes(dbSchema *dbschematypes.DBSchema, tableStructNames map[strin
 	return indexes
 }
 
-// indexType picks the value goschema.Index.Type carries for an introspected
+// indexType picks the value schemamodel.Index.Type carries for an introspected
 // index. goschema keeps one field for two concepts the database layer keeps
 // apart: the PostgreSQL access method (btree/gin/gist/brin/hash) and the
 // ClickHouse data-skipping-index type (minmax/bloom_filter/...). No reader
 // sets both, so the choice is unambiguous.
-func indexType(index dbschematypes.DBIndex) string {
+func indexType(index catalog.Index) string {
 	if index.Method != "" {
 		return index.Method
 	}
 	return index.Type
 }
 
-func convertIndexParts(parts []dbschematypes.DBIndexPart) []goschema.IndexPart {
+func convertIndexParts(parts []catalog.IndexPart) []schemamodel.IndexPart {
 	if len(parts) == 0 {
 		return nil
 	}
-	converted := make([]goschema.IndexPart, len(parts))
+	converted := make([]schemamodel.IndexPart, len(parts))
 	for position, part := range parts {
-		converted[position] = goschema.IndexPart{
+		converted[position] = schemamodel.IndexPart{
 			Name:       part.Name,
 			Expr:       part.Expr,
 			Operator:   part.Operator,
@@ -279,9 +279,9 @@ func convertIndexParts(parts []dbschematypes.DBIndexPart) []goschema.IndexPart {
 	return converted
 }
 
-func convertExtensions(database *goschema.Database, dbExtensions []dbschematypes.DBExtension) {
+func convertExtensions(database *schemamodel.Database, dbExtensions []catalog.Extension) {
 	for _, dbExtension := range dbExtensions {
-		extension := goschema.Extension{
+		extension := schemamodel.Extension{
 			Name:        dbExtension.Name,
 			Schema:      dbExtension.Schema,
 			IfNotExists: true, // Default to true for down migrations for safety
@@ -302,12 +302,12 @@ func convertExtensions(database *goschema.Database, dbExtensions []dbschematypes
 }
 
 func convertRLSPolicies(
-	database *goschema.Database,
-	dbPolicies []dbschematypes.DBRLSPolicy,
+	database *schemamodel.Database,
+	dbPolicies []catalog.RLSPolicy,
 	tableStructNames map[string]string,
 ) {
 	for _, dbPolicy := range dbPolicies {
-		policy := goschema.RLSPolicy{
+		policy := schemamodel.RLSPolicy{
 			StructName:          structNameForTable(tableStructNames, dbPolicy.Table, dbPolicy.Table),
 			Name:                dbPolicy.Name,
 			Table:               dbPolicy.Table,
@@ -322,7 +322,7 @@ func convertRLSPolicies(
 }
 
 // convertFunctions carries the schema the reader recorded, in Name, which is
-// where goschema.Function keeps it -- the same place views and materialized
+// where schemamodel.Function keeps it -- the same place views and materialized
 // views keep theirs, and the same place the HCL parser already writes it from a
 // `function` block's `schema` attribute.
 //
@@ -331,9 +331,9 @@ func convertRLSPolicies(
 // function in whatever schema the connection defaulted to. On a read covering
 // more than one schema, `extra.f_extra` came back as `public.f_extra`
 // (stokaro/ptah#1276).
-func convertFunctions(database *goschema.Database, dbFunctions []dbschematypes.DBFunction) {
+func convertFunctions(database *schemamodel.Database, dbFunctions []catalog.Function) {
 	for _, dbFunction := range dbFunctions {
-		function := goschema.Function{
+		function := schemamodel.Function{
 			StructName: "", // Functions are not associated with specific structs in DB schema
 			Name:       dbFunction.QualifiedName(),
 			// The kind travels with the routine. Dropping it here would turn
@@ -352,9 +352,9 @@ func convertFunctions(database *goschema.Database, dbFunctions []dbschematypes.D
 	}
 }
 
-func convertUserTypes(database *goschema.Database, dbSchema *dbschematypes.DBSchema) {
+func convertUserTypes(database *schemamodel.Database, dbSchema *catalog.Database) {
 	for _, domain := range dbSchema.Domains {
-		converted := goschema.Domain{
+		converted := schemamodel.Domain{
 			Name:     domain.Name,
 			Schema:   domain.Schema,
 			BaseType: domain.BaseType,
@@ -365,18 +365,18 @@ func convertUserTypes(database *goschema.Database, dbSchema *dbschematypes.DBSch
 		database.Domains = append(database.Domains, converted)
 	}
 	for _, composite := range dbSchema.Composites {
-		fields := make([]goschema.CompositeTypeField, 0, len(composite.Fields))
+		fields := make([]schemamodel.CompositeField, 0, len(composite.Fields))
 		for _, field := range composite.Fields {
-			fields = append(fields, goschema.CompositeTypeField{Name: field.Name, Type: field.Type})
+			fields = append(fields, schemamodel.CompositeField{Name: field.Name, Type: field.Type})
 		}
-		database.CompositeTypes = append(database.CompositeTypes, goschema.CompositeType{
+		database.CompositeTypes = append(database.CompositeTypes, schemamodel.CompositeType{
 			Name:   composite.Name,
 			Schema: composite.Schema,
 			Fields: fields,
 		})
 	}
 	for _, rangeType := range dbSchema.Ranges {
-		database.Ranges = append(database.Ranges, goschema.Range{
+		database.Ranges = append(database.Ranges, schemamodel.Range{
 			Name:    rangeType.Name,
 			Schema:  rangeType.Schema,
 			Subtype: rangeType.Subtype,
@@ -396,9 +396,9 @@ func convertUserTypes(database *goschema.Database, dbSchema *dbschematypes.DBSch
 	}
 }
 
-func convertSequences(database *goschema.Database, dbSequences []dbschematypes.DBSequence) {
+func convertSequences(database *schemamodel.Database, dbSequences []catalog.Sequence) {
 	for _, dbSequence := range dbSequences {
-		database.Sequences = append(database.Sequences, goschema.Sequence{
+		database.Sequences = append(database.Sequences, schemamodel.Sequence{
 			Name:      dbSequence.Name,
 			Schema:    dbSequence.Schema,
 			AsType:    dbSequence.DataType,
@@ -420,9 +420,9 @@ func convertSequences(database *goschema.Database, dbSequences []dbschematypes.D
 // Only the primary dimension is carried, because only it is declarable. A
 // table with more than one is described with the first, and the note the reader
 // emits says how many it did not describe.
-func convertHypertables(database *goschema.Database, hypertables []dbschematypes.DBHypertable) {
+func convertHypertables(database *schemamodel.Database, hypertables []catalog.Hypertable) {
 	for _, hypertable := range hypertables {
-		database.Hypertables = append(database.Hypertables, goschema.Hypertable{
+		database.Hypertables = append(database.Hypertables, schemamodel.Hypertable{
 			Table:         hypertable.QualifiedName(),
 			Column:        hypertable.PrimaryDimension,
 			ChunkInterval: hypertable.ChunkInterval,
@@ -439,8 +439,8 @@ func convertHypertables(database *goschema.Database, hypertables []dbschematypes
 // schema the extension owns, and a down migration built from it would create an
 // aggregate over an internal relation.
 func convertContinuousAggregates(
-	database *goschema.Database,
-	aggregates []dbschematypes.DBContinuousAggregate,
+	database *schemamodel.Database,
+	aggregates []catalog.ContinuousAggregate,
 ) {
 	for _, aggregate := range aggregates {
 		// The catalog always reports a value, so the converted declaration
@@ -448,7 +448,7 @@ func convertContinuousAggregates(
 		// recreates the aggregate from, and leaving the option unset there
 		// would take the server default rather than the value that was there.
 		materializedOnly := aggregate.MaterializedOnly
-		database.ContinuousAggregates = append(database.ContinuousAggregates, goschema.ContinuousAggregate{
+		database.ContinuousAggregates = append(database.ContinuousAggregates, schemamodel.ContinuousAggregate{
 			Name:             aggregate.Name,
 			Schema:           aggregate.Schema,
 			Body:             aggregate.Definition,
@@ -467,13 +467,13 @@ func convertContinuousAggregates(
 //
 // The target is rebuilt from the PARSED parts rather than copied. `Target` is
 // base_object_name exactly as the catalog records it, brackets included, and
-// [go.5x5.cz/ptah/core/goschema.Synonym.Target] is the spelling that will be
+// [go.5x5.cz/ptah/core/schemamodel.Synonym.Target] is the spelling that will be
 // emitted: one to four dot-separated parts, unquoted. Copying the catalog's
 // form would put `[other].[dbo].[gauge]` in a document and render it again as
 // a name with brackets inside it.
-func convertSynonyms(database *goschema.Database, synonyms []dbschematypes.DBSynonym) {
+func convertSynonyms(database *schemamodel.Database, synonyms []catalog.Synonym) {
 	for _, synonym := range synonyms {
-		database.Synonyms = append(database.Synonyms, goschema.Synonym{
+		database.Synonyms = append(database.Synonyms, schemamodel.Synonym{
 			Name:    synonym.Name,
 			Schema:  synonym.Schema,
 			Target:  synonymTarget(synonym),
@@ -485,7 +485,7 @@ func convertSynonyms(database *goschema.Database, synonyms []dbschematypes.DBSyn
 // synonymTarget joins the parsed target parts back into the spelling a
 // declaration uses. Absent leading parts are empty, so joining what is present
 // gives the one-to-four part name without inventing a level.
-func synonymTarget(synonym dbschematypes.DBSynonym) string {
+func synonymTarget(synonym catalog.Synonym) string {
 	parts := make([]string, 0, 4)
 	for _, part := range []string{
 		synonym.TargetServer,
@@ -517,17 +517,17 @@ func synonymTarget(synonym dbschematypes.DBSynonym) string {
 // declines those in both directions; describing one would undo that by turning
 // the description into a declaration that asks for the string.
 //
-// The read still reports it, so it is not invisible: [dbschematypes.DBExtendedProperty]
+// The read still reports it, so it is not invisible: [catalog.ExtendedProperty]
 // carries the row and the flag, and nothing is planned to remove it.
 func convertExtendedProperties(
-	database *goschema.Database,
-	properties []dbschematypes.DBExtendedProperty,
+	database *schemamodel.Database,
+	properties []catalog.ExtendedProperty,
 ) {
 	for _, property := range properties {
 		if property.ValueNotRepresentable {
 			continue
 		}
-		database.ExtendedProperties = append(database.ExtendedProperties, goschema.ExtendedProperty{
+		database.ExtendedProperties = append(database.ExtendedProperties, schemamodel.ExtendedProperty{
 			Name:   property.Name,
 			Schema: property.Schema,
 			Table:  property.Table,
@@ -537,9 +537,9 @@ func convertExtendedProperties(
 	}
 }
 
-func convertViews(database *goschema.Database, dbViews []dbschematypes.DBView) {
+func convertViews(database *schemamodel.Database, dbViews []catalog.View) {
 	for _, dbView := range dbViews {
-		database.Views = append(database.Views, goschema.View{
+		database.Views = append(database.Views, schemamodel.View{
 			Name:       dbView.QualifiedName(),
 			Body:       dbView.Body,
 			WithCheck:  strings.EqualFold(dbView.CheckOption, "LOCAL") || strings.EqualFold(dbView.CheckOption, "CASCADED"),
@@ -549,9 +549,9 @@ func convertViews(database *goschema.Database, dbViews []dbschematypes.DBView) {
 	}
 }
 
-func convertMaterializedViews(database *goschema.Database, dbViews []dbschematypes.DBMatView) {
+func convertMaterializedViews(database *schemamodel.Database, dbViews []catalog.MaterializedView) {
 	for _, dbView := range dbViews {
-		materializedView := goschema.MaterializedView{
+		materializedView := schemamodel.MaterializedView{
 			Name:    dbView.QualifiedName(),
 			Body:    dbView.Body,
 			Comment: dbView.Comment,
@@ -561,9 +561,9 @@ func convertMaterializedViews(database *goschema.Database, dbViews []dbschematyp
 	}
 }
 
-func convertTriggers(database *goschema.Database, dbTriggers []dbschematypes.DBTrigger) {
+func convertTriggers(database *schemamodel.Database, dbTriggers []catalog.Trigger) {
 	for _, dbTrigger := range dbTriggers {
-		trigger := goschema.Trigger{
+		trigger := schemamodel.Trigger{
 			Name:    dbTrigger.Name,
 			Table:   dbTrigger.QualifiedTable(),
 			Timing:  dbTrigger.Timing,
@@ -598,13 +598,13 @@ func convertTriggers(database *goschema.Database, dbTriggers []dbschematypes.DBT
 	}
 }
 
-func convertRoles(database *goschema.Database, dbRoles []dbschematypes.DBRole) {
+func convertRoles(database *schemamodel.Database, dbRoles []catalog.Role) {
 	for _, dbRole := range dbRoles {
-		role := goschema.Role{
+		role := schemamodel.Role{
 			StructName:  "", // Roles are not associated with specific structs in DB schema
 			Name:        dbRole.Name,
 			Login:       dbRole.Login,
-			Password:    "", // Not available in current DBRole for security
+			Password:    "", // Not available in current catalog.Role for security
 			Superuser:   dbRole.Superuser,
 			CreateDB:    dbRole.CreateDB,
 			CreateRole:  dbRole.CreateRole,
@@ -617,13 +617,13 @@ func convertRoles(database *goschema.Database, dbRoles []dbschematypes.DBRole) {
 }
 
 func convertRLSEnabledTables(
-	database *goschema.Database,
-	dbTables []dbschematypes.DBTable,
+	database *schemamodel.Database,
+	dbTables []catalog.Table,
 	tableStructNames map[string]string,
 ) {
 	for _, dbTable := range dbTables {
 		if dbTable.RLSEnabled {
-			rlsEnabledTable := goschema.RLSEnabledTable{
+			rlsEnabledTable := schemamodel.RLSEnabledTable{
 				StructName: structNameForTable(tableStructNames, dbTable.QualifiedName(), dbTable.Name),
 				// Qualified, like every other table reference this file
 				// produces -- convertRLSPolicies carries the reader's already
@@ -638,7 +638,7 @@ func convertRLSEnabledTables(
 				// table with a policy that was never enforced
 				// (stokaro/ptah#2201).
 				Table:   dbTable.QualifiedName(),
-				Comment: "", // Comment not available in DBTable for RLS enablement
+				Comment: "", // Comment not available in catalog.Table for RLS enablement
 			}
 			database.RLSEnabledTables = append(database.RLSEnabledTables, rlsEnabledTable)
 		}
@@ -677,7 +677,7 @@ func primaryKeyColumnSets(primaryKeysByTable map[string]tablePrimaryKey) map[str
 // `PRIMARY KEY (a, b) INCLUDE (payload)`, and the column-count test alone
 // dropped the first of them before it reached this map at all
 // (stokaro/ptah#2199).
-func primaryKeysByTable(dbSchema *dbschematypes.DBSchema) map[string]tablePrimaryKey {
+func primaryKeysByTable(dbSchema *catalog.Database) map[string]tablePrimaryKey {
 	result := make(map[string]tablePrimaryKey)
 	for _, constraint := range dbSchema.Constraints {
 		if !strings.EqualFold(constraint.Type, "PRIMARY KEY") {
@@ -706,7 +706,7 @@ func primaryKeysByTable(dbSchema *dbschematypes.DBSchema) map[string]tablePrimar
 // a constraint `<table>_<column>_key`, and MySQL and MariaDB name it after the
 // column. Anything else is a name somebody chose, and choosing one is the only
 // reason to write a table-level constraint for a single column.
-func generatedUniqueConstraintName(constraint dbschematypes.DBConstraint, columns []string) bool {
+func generatedUniqueConstraintName(constraint catalog.Constraint, columns []string) bool {
 	if len(columns) != 1 {
 		return false
 	}
@@ -722,7 +722,7 @@ func generatedUniqueConstraintName(constraint dbschematypes.DBConstraint, column
 //
 // Both spellings mean one constraint, so writing both would put two of them in
 // the document and plan a duplicate on apply.
-func clearColumnUniqueForNamedConstraints(database *goschema.Database) {
+func clearColumnUniqueForNamedConstraints(database *schemamodel.Database) {
 	named := make(map[tableMemberKey]struct{}, len(database.Constraints))
 	for _, constraint := range database.Constraints {
 		if !strings.EqualFold(constraint.Type, "UNIQUE") || len(constraint.Columns) != 1 {
@@ -738,8 +738,8 @@ func clearColumnUniqueForNamedConstraints(database *goschema.Database) {
 	}
 }
 
-func convertConstraints(dbSchema *dbschematypes.DBSchema, tableStructNames map[string]string) []goschema.Constraint {
-	constraints := make([]goschema.Constraint, 0, len(dbSchema.Constraints))
+func convertConstraints(dbSchema *catalog.Database, tableStructNames map[string]string) []schemamodel.Constraint {
+	constraints := make([]schemamodel.Constraint, 0, len(dbSchema.Constraints))
 	for _, dbConstraint := range dbSchema.Constraints {
 		constraint, ok := convertConstraint(dbConstraint, tableStructNames)
 		if ok {
@@ -749,15 +749,15 @@ func convertConstraints(dbSchema *dbschematypes.DBSchema, tableStructNames map[s
 	return constraints
 }
 
-func convertConstraint(dbConstraint dbschematypes.DBConstraint, tableStructNames map[string]string) (goschema.Constraint, bool) {
+func convertConstraint(dbConstraint catalog.Constraint, tableStructNames map[string]string) (schemamodel.Constraint, bool) {
 	constraintType := strings.ToUpper(dbConstraint.Type)
 	columns := dbConstraint.ColumnNamesOrDefault()
 	switch constraintType {
 	case "PRIMARY KEY":
-		return goschema.Constraint{}, false
+		return schemamodel.Constraint{}, false
 	case "FOREIGN KEY":
 		if len(columns) <= 1 {
-			return goschema.Constraint{}, false
+			return schemamodel.Constraint{}, false
 		}
 	case "UNIQUE":
 		// A single-column UNIQUE is normally carried by the column's own
@@ -769,24 +769,24 @@ func convertConstraint(dbConstraint dbschematypes.DBConstraint, tableStructNames
 		// interface: it appears in every violation error the application sees
 		// (stokaro/ptah#2102).
 		if len(columns) <= 1 && generatedUniqueConstraintName(dbConstraint, columns) {
-			return goschema.Constraint{}, false
+			return schemamodel.Constraint{}, false
 		}
 	case "CHECK":
 		if dbConstraint.CheckClause == nil || strings.TrimSpace(*dbConstraint.CheckClause) == "" {
-			return goschema.Constraint{}, false
+			return schemamodel.Constraint{}, false
 		}
 		if isPostgresSyntheticNotNullCheck(dbConstraint) {
-			return goschema.Constraint{}, false
+			return schemamodel.Constraint{}, false
 		}
 	case "EXCLUDE":
 		if dbConstraint.UsingMethod == nil || dbConstraint.ExcludeElements == nil {
-			return goschema.Constraint{}, false
+			return schemamodel.Constraint{}, false
 		}
 	default:
-		return goschema.Constraint{}, false
+		return schemamodel.Constraint{}, false
 	}
 
-	return goschema.Constraint{
+	return schemamodel.Constraint{
 		StructName:      structNameForTable(tableStructNames, dbConstraint.QualifiedTableName(), dbConstraint.TableName),
 		Name:            dbConstraint.Name,
 		Type:            constraintType,
@@ -811,7 +811,7 @@ func convertConstraint(dbConstraint dbschematypes.DBConstraint, tableStructNames
 	}, true
 }
 
-func constraintBackedIndexesByTable(dbSchema *dbschematypes.DBSchema) map[tableMemberKey]struct{} {
+func constraintBackedIndexesByTable(dbSchema *catalog.Database) map[tableMemberKey]struct{} {
 	result := make(map[tableMemberKey]struct{}, len(dbSchema.Constraints))
 	for _, constraint := range dbSchema.Constraints {
 		switch strings.ToUpper(constraint.Type) {
@@ -822,7 +822,7 @@ func constraintBackedIndexesByTable(dbSchema *dbschematypes.DBSchema) map[tableM
 	return result
 }
 
-func isPostgresSyntheticNotNullCheck(constraint dbschematypes.DBConstraint) bool {
+func isPostgresSyntheticNotNullCheck(constraint catalog.Constraint) bool {
 	if constraint.CheckClause == nil || !strings.HasSuffix(constraint.Name, "_not_null") {
 		return false
 	}
@@ -854,7 +854,7 @@ func firstString(values []string) string {
 	return values[0]
 }
 
-func goSchemaFieldType(dbColumn dbschematypes.DBColumn) string {
+func goSchemaFieldType(dbColumn catalog.Column) string {
 	if serialType := postgresSerialType(dbColumn); serialType != "" {
 		return serialType
 	}
@@ -923,7 +923,7 @@ func goSchemaFieldType(dbColumn dbschematypes.DBColumn) string {
 // v1.3.0 reports `type = sql("positive")` with the nextval default beside it,
 // and Ptah reported `type = serial` with no default at all. See
 // stokaro/ptah#1242.
-func postgresSerialType(dbColumn dbschematypes.DBColumn) string {
+func postgresSerialType(dbColumn catalog.Column) string {
 	if dbColumn.DomainName != "" {
 		return ""
 	}
@@ -951,7 +951,7 @@ func postgresSerialType(dbColumn dbschematypes.DBColumn) string {
 // on PostgreSQL 17.11, three bits of every value gone. A `bit varying(8)` came
 // back unlimited, and applying the document to the SOURCE database removed the
 // declared width from the live column (stokaro/ptah#2034).
-func sizedColumnType(dbColumn dbschematypes.DBColumn) string {
+func sizedColumnType(dbColumn catalog.Column) string {
 	dataType := strings.ToLower(strings.TrimSpace(dbColumn.DataType))
 	switch dataType {
 	case "character varying", "varchar":
@@ -987,7 +987,7 @@ func sizedColumnType(dbColumn dbschematypes.DBColumn) string {
 	return ""
 }
 
-func setFieldDefaultFromDB(field *goschema.Field, defaultSQL string) {
+func setFieldDefaultFromDB(field *schemamodel.Field, defaultSQL string) {
 	if dbDefaultLooksLikeExpression(defaultSQL) {
 		field.DefaultExpr = defaultSQL
 		return
@@ -998,7 +998,7 @@ func setFieldDefaultFromDB(field *goschema.Field, defaultSQL string) {
 // setDomainDefaultFromDB routes a domain's catalog default the way a column's
 // is routed, which is the whole of the fix for stokaro/ptah#2037.
 //
-// [goschema.Domain] keeps a literal and an expression apart because the
+// [schemamodel.Domain] keeps a literal and an expression apart because the
 // renderer does: an expression becomes `sql(...)` and a literal becomes a
 // quoted string. Assigning the catalog's answer to the literal field wrote a
 // quoted default, which reads back as a 26-character string, so `apply` planned
@@ -1011,7 +1011,7 @@ func setFieldDefaultFromDB(field *goschema.Field, defaultSQL string) {
 // DEFAULT 'x' comes back with a cast -- so in practice this routes all of them
 // to the expression side. The literal branch is kept because the field exists
 // and a caller building a description by hand may use it.
-func setDomainDefaultFromDB(domain *goschema.Domain, defaultSQL string) {
+func setDomainDefaultFromDB(domain *schemamodel.Domain, defaultSQL string) {
 	if strings.TrimSpace(defaultSQL) == "" {
 		return
 	}
@@ -1037,9 +1037,9 @@ func dbDefaultLooksLikeExpression(defaultSQL string) bool {
 
 // convertGrants describes live grant rows as declarations.
 //
-// A row marked [dbschematypes.DBGrant.IsPartialRevoke] is skipped, because it
+// A row marked [catalog.Grant.IsPartialRevoke] is skipped, because it
 // is not a grant: it SUBTRACTS a privilege from a broader grant, and only
-// ClickHouse produces one. Describing it as a [goschema.Grant] would state the
+// ClickHouse produces one. Describing it as a [schemamodel.Grant] would state the
 // exact opposite of what the row says — a document telling an operator the role
 // HOLDS a privilege the server records it as having lost — and applying that
 // document would grant it for real.
@@ -1054,13 +1054,13 @@ func dbDefaultLooksLikeExpression(defaultSQL string) bool {
 // [go.5x5.cz/ptah/internal/clickhouserbac.ValidateLive] refuses to compare a
 // managed role carrying one at all rather than leaving this function to
 // approximate it.
-func convertGrants(dbGrants []dbschematypes.DBGrant) []goschema.Grant {
-	grants := make([]goschema.Grant, 0, len(dbGrants))
+func convertGrants(dbGrants []catalog.Grant) []schemamodel.Grant {
+	grants := make([]schemamodel.Grant, 0, len(dbGrants))
 	for _, dbGrant := range dbGrants {
 		if dbGrant.IsPartialRevoke {
 			continue
 		}
-		grant := goschema.Grant{
+		grant := schemamodel.Grant{
 			Role:       dbGrant.Role,
 			Privileges: []string{dbGrant.Privilege},
 			WithOption: dbGrant.WithOption,
@@ -1100,7 +1100,7 @@ type tableMemberKey struct {
 // single-column FOREIGN KEY constraint in the database schema. Multi-column FKs
 // are not field-level and are skipped (they are represented as table-level
 // constraints, which this converter does not yet round-trip).
-func indexForeignKeysByColumn(dbSchema *dbschematypes.DBSchema) map[tableMemberKey]foreignKeyInfo {
+func indexForeignKeysByColumn(dbSchema *catalog.Database) map[tableMemberKey]foreignKeyInfo {
 	result := make(map[tableMemberKey]foreignKeyInfo)
 	for _, c := range dbSchema.Constraints {
 		if c.Type != "FOREIGN KEY" || c.ColumnName == "" || c.ForeignTable == nil || len(c.ColumnNamesOrDefault()) != 1 {
@@ -1160,14 +1160,14 @@ func generateFieldName(columnName string) string {
 }
 
 // clickHouseTableOverrides carries the ClickHouse engine facts a description
-// needs that have no field of their own on goschema.Table, and returns nil when
+// needs that have no field of their own on schemamodel.Table, and returns nil when
 // there are none.
 //
 // Only the sorting key is here so far. It reaches the renderer as the
 // `order_by` platform override, which is the same key a declaration writes, so
 // a read description and a hand-written one produce the same statement
 // (stokaro/ptah#1603).
-func clickHouseTableOverrides(dbTable dbschematypes.DBTable) map[string]map[string]string {
+func clickHouseTableOverrides(dbTable catalog.Table) map[string]map[string]string {
 	// Every clause the engine spec resolves, under the key the renderer reads.
 	// An unknown override key becomes a node option under its upper-cased name,
 	// which is what resolveTableEngineSpec looks up.

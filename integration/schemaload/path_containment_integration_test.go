@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemaload"
 )
 
@@ -48,7 +48,7 @@ func newContainmentFixture(t *testing.T, c *qt.C) containmentFixture {
 	return containmentFixture{root: root, outside: outside}
 }
 
-func assertReachedTable(c *qt.C, database *goschema.Database, err error, name string) {
+func assertReachedTable(c *qt.C, database *schemamodel.Database, err error, name string) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(database, qt.IsNotNil)
 	c.Assert(database.Tables, qt.HasLen, 1)

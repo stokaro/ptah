@@ -7,31 +7,31 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/clickhouse"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestPlanner_IndexRefs_RendersDuplicateNamesOnExactTables(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{
-		IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "idx_shared", TableName: "events"},
 			{Name: "idx_shared", TableName: "metrics"},
 		},
-		IndexesRemoved: []types.IndexRef{
+		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_shared", TableName: "events"},
 			{Name: "idx_shared", TableName: "archive"},
 		},
 	}
-	generated := &goschema.Database{Indexes: []goschema.Index{
+	desired := &schemamodel.Database{Indexes: []schemamodel.Index{
 		{Name: "idx_shared", TableName: "metrics", Fields: []string{"metric_id"}, Type: "minmax"},
 		{Name: "idx_shared", TableName: "events", Fields: []string{"event_id"}, Type: "minmax"},
 	}}
 
-	nodes, err := clickhouse.New().GenerateMigrationASTChecked(diff, generated)
+	nodes, err := clickhouse.New().GenerateMigrationASTChecked(diff, desired)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(nodes, qt.HasLen, 4)

@@ -6,9 +6,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/renderer"
-	dbtypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -24,7 +24,7 @@ import (
 func TestGenerateMigration_AClearedRangeAttributeIsRecreatedWithoutIt(t *testing.T) {
 	c := qt.New(t)
 
-	sql := clearedRangeMigrationSQL(c, goschema.Range{
+	sql := clearedRangeMigrationSQL(c, schemamodel.Range{
 		Name:              "measurement",
 		Subtype:           "int8",
 		ClearedAttributes: []string{"subtype_diff"},
@@ -46,18 +46,18 @@ func TestGenerateMigration_AClearedRangeAttributeIsRecreatedWithoutIt(t *testing
 func TestGenerateMigration_AnOmittedRangeAttributeIsPlannedAway(t *testing.T) {
 	c := qt.New(t)
 
-	sql := clearedRangeMigrationSQL(c, goschema.Range{Name: "measurement", Subtype: "int8"})
+	sql := clearedRangeMigrationSQL(c, schemamodel.Range{Name: "measurement", Subtype: "int8"})
 
 	c.Assert(sql, qt.Equals, "")
 }
 
 // clearedRangeMigrationSQL plans the declaration against a catalog whose range
 // carries a subtype_diff, and returns the statements as one string.
-func clearedRangeMigrationSQL(c *qt.C, declared goschema.Range) string {
+func clearedRangeMigrationSQL(c *qt.C, declared schemamodel.Range) string {
 	c.Helper()
 
-	target := &goschema.Database{Ranges: []goschema.Range{declared}}
-	current := &dbtypes.DBSchema{Ranges: []dbtypes.DBRange{{
+	target := &schemamodel.Database{Ranges: []schemamodel.Range{declared}}
+	current := &catalog.Database{Ranges: []catalog.Range{{
 		Name:        "measurement",
 		Subtype:     "int8",
 		SubtypeDiff: "int8_subdiff",

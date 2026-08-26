@@ -7,17 +7,17 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/clickhouse"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // rbacGrant is the reference this file grants and revokes with. Every field is
 // spelled out because ObjectType is what tells a ClickHouse renderer whether the
 // scope is `db`.`t` or `db`.*, and a row that left it empty would assert nothing
 // about the half of the node that decides the statement's meaning.
-func rbacGrant(privilege string) types.GrantRef {
-	return types.GrantRef{
+func rbacGrant(privilege string) difftypes.GrantRef {
+	return difftypes.GrantRef{
 		Role:       "reporting",
 		Privilege:  privilege,
 		ObjectType: "TABLE",
@@ -36,8 +36,8 @@ func nodeTypes(nodes []ast.Node) []string {
 	return kinds
 }
 
-func planClickHouse(c *qt.C, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
-	nodes, err := clickhouse.New().GenerateMigrationASTChecked(diff, generated)
+func planClickHouse(c *qt.C, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
+	nodes, err := clickhouse.New().GenerateMigrationASTChecked(diff, desired)
 	c.Assert(err, qt.IsNil)
 	return nodes
 }
@@ -54,19 +54,19 @@ func planClickHouse(c *qt.C, diff *types.SchemaDiff, generated *goschema.Databas
 func TestGenerateMigrationAST_ClickHouseGrantsArePlannedAsGrantNodes(t *testing.T) {
 	tests := []struct {
 		name           string
-		diff           *types.SchemaDiff
+		diff           *difftypes.SchemaDiff
 		wantPrivileges []string
 		wantWithOption bool
 	}{
 		{
 			name:           "new grant without option",
-			diff:           &types.SchemaDiff{GrantsAdded: []types.GrantRef{rbacGrant("SELECT")}},
+			diff:           &difftypes.SchemaDiff{GrantsAdded: []difftypes.GrantRef{rbacGrant("SELECT")}},
 			wantPrivileges: []string{"SELECT"},
 			wantWithOption: false,
 		},
 		{
 			name: "new grant carrying the option",
-			diff: &types.SchemaDiff{GrantsAdded: []types.GrantRef{{
+			diff: &difftypes.SchemaDiff{GrantsAdded: []difftypes.GrantRef{{
 				Role:       "reporting",
 				Privilege:  "SELECT",
 				ObjectType: "TABLE",
@@ -78,7 +78,7 @@ func TestGenerateMigrationAST_ClickHouseGrantsArePlannedAsGrantNodes(t *testing.
 		},
 		{
 			name:           "grant option added to a privilege already held",
-			diff:           &types.SchemaDiff{GrantOptionsAdded: []types.GrantRef{rbacGrant("INSERT")}},
+			diff:           &difftypes.SchemaDiff{GrantOptionsAdded: []difftypes.GrantRef{rbacGrant("INSERT")}},
 			wantPrivileges: []string{"INSERT"},
 			wantWithOption: true,
 		},
@@ -88,7 +88,7 @@ func TestGenerateMigrationAST_ClickHouseGrantsArePlannedAsGrantNodes(t *testing.
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			nodes := planClickHouse(c, test.diff, &goschema.Database{})
+			nodes := planClickHouse(c, test.diff, &schemamodel.Database{})
 
 			c.Assert(nodes, qt.HasLen, 1)
 			node, ok := nodes[0].(*ast.GrantPrivilegeNode)
@@ -114,19 +114,19 @@ func TestGenerateMigrationAST_ClickHouseGrantsArePlannedAsGrantNodes(t *testing.
 func TestGenerateMigrationAST_ClickHouseRevokesArePlannedAsRevokeNodes(t *testing.T) {
 	tests := []struct {
 		name               string
-		diff               *types.SchemaDiff
+		diff               *difftypes.SchemaDiff
 		wantPrivileges     []string
 		wantGrantOptionFor bool
 	}{
 		{
 			name:               "grant no longer declared",
-			diff:               &types.SchemaDiff{GrantsRemoved: []types.GrantRef{rbacGrant("SELECT")}},
+			diff:               &difftypes.SchemaDiff{GrantsRemoved: []difftypes.GrantRef{rbacGrant("SELECT")}},
 			wantPrivileges:     []string{"SELECT"},
 			wantGrantOptionFor: false,
 		},
 		{
 			name:               "grant option withdrawn from a privilege that stays",
-			diff:               &types.SchemaDiff{GrantOptionsRevoked: []types.GrantRef{rbacGrant("INSERT")}},
+			diff:               &difftypes.SchemaDiff{GrantOptionsRevoked: []difftypes.GrantRef{rbacGrant("INSERT")}},
 			wantPrivileges:     []string{"INSERT"},
 			wantGrantOptionFor: true,
 		},
@@ -136,7 +136,7 @@ func TestGenerateMigrationAST_ClickHouseRevokesArePlannedAsRevokeNodes(t *testin
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			nodes := planClickHouse(c, test.diff, &goschema.Database{})
+			nodes := planClickHouse(c, test.diff, &schemamodel.Database{})
 
 			c.Assert(nodes, qt.HasLen, 1)
 			node, ok := nodes[0].(*ast.RevokePrivilegeNode)
@@ -180,7 +180,7 @@ func TestGenerateMigrationAST_ClickHouseCreateRoleCarriesOnlyTheName(t *testing.
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			nodes := planClickHouse(c, &types.SchemaDiff{RolesAdded: test.roles}, &goschema.Database{})
+			nodes := planClickHouse(c, &difftypes.SchemaDiff{RolesAdded: test.roles}, &schemamodel.Database{})
 
 			c.Assert(nodes, qt.HasLen, len(test.want))
 			got := make([]string, 0, len(nodes))
@@ -214,13 +214,13 @@ func TestGenerateMigrationAST_ClickHouseCreateRoleCarriesOnlyTheName(t *testing.
 func TestGenerateMigrationAST_ClickHouseRolesArePlannedBeforeTheGrantsThatNameThem(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		TablesAdded:         []string{"events"},
 		RolesAdded:          []string{"reporting"},
-		GrantsRemoved:       []types.GrantRef{rbacGrant("DROP")},
-		GrantOptionsRevoked: []types.GrantRef{rbacGrant("ALTER")},
-		GrantsAdded:         []types.GrantRef{rbacGrant("SELECT")},
-		GrantOptionsAdded:   []types.GrantRef{rbacGrant("INSERT")},
+		GrantsRemoved:       []difftypes.GrantRef{rbacGrant("DROP")},
+		GrantOptionsRevoked: []difftypes.GrantRef{rbacGrant("ALTER")},
+		GrantsAdded:         []difftypes.GrantRef{rbacGrant("SELECT")},
+		GrantOptionsAdded:   []difftypes.GrantRef{rbacGrant("INSERT")},
 	}
 
 	nodes := planClickHouse(c, diff, mkDB())
@@ -273,22 +273,22 @@ func TestGenerateMigrationAST_ClickHouseRolesArePlannedBeforeTheGrantsThatNameTh
 func TestGenerateMigrationAST_ClickHouseGrantsKeepTheSlotTheRenderPathUsesForThem(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		RolesAdded:            []string{"reporting"},
 		FunctionsAdded:        []string{"bump"},
 		RLSEnabledTablesAdded: []string{"events"},
-		RLSPoliciesAdded:      []types.RLSPolicyRef{{PolicyName: "p1", TableName: "events"}},
-		GrantsAdded:           []types.GrantRef{rbacGrant("SELECT")},
-		TriggersAdded:         []types.TriggerRef{{TriggerName: "trg1", TableName: "events"}},
+		RLSPoliciesAdded:      []difftypes.RLSPolicyRef{{PolicyName: "p1", TableName: "events"}},
+		GrantsAdded:           []difftypes.GrantRef{rbacGrant("SELECT")},
+		TriggersAdded:         []difftypes.TriggerRef{{TriggerName: "trg1", TableName: "events"}},
 	}
 
 	// The row-policy phase plans from the declaration now that ClickHouse
 	// carries capability.RowLevelSecurity, so the desired schema has to hold
 	// what the diff names or the phase contributes nothing and the ordering
 	// this test is about cannot be seen (stokaro/ptah#1736).
-	nodes := planClickHouse(c, diff, &goschema.Database{
-		RLSEnabledTables: []goschema.RLSEnabledTable{{Table: "events"}},
-		RLSPolicies: []goschema.RLSPolicy{{
+	nodes := planClickHouse(c, diff, &schemamodel.Database{
+		RLSEnabledTables: []schemamodel.RLSEnabledTable{{Table: "events"}},
+		RLSPolicies: []schemamodel.RLSPolicy{{
 			Name: "p1", Table: "events", UsingExpression: "true",
 		}},
 	})
@@ -308,7 +308,7 @@ func TestGenerateMigrationAST_ClickHouseGrantsKeepTheSlotTheRenderPathUsesForThe
 //
 // A modification cannot be planned because a ClickHouse role has no attribute to
 // alter, so whatever the comparison found is a disagreement about fields
-// goschema.Role carries for PostgreSQL. A removal is not planned because a role
+// schemamodel.Role carries for PostgreSQL. A removal is not planned because a role
 // is cluster-wide while Ptah manages one database, and dropping one would take
 // away grants no declaration here describes -- stokaro/ptah#1025 lists that as a
 // non-goal, and migration/schemadiff never produces the category anyway.
@@ -319,12 +319,12 @@ func TestGenerateMigrationAST_ClickHouseGrantsKeepTheSlotTheRenderPathUsesForThe
 func TestGenerateMigrationAST_ClickHouseRoleChangesWithNoStatementAreNamed(t *testing.T) {
 	tests := []struct {
 		name string
-		diff *types.SchemaDiff
+		diff *difftypes.SchemaDiff
 		want string
 	}{
 		{
 			name: "modified role",
-			diff: &types.SchemaDiff{RolesModified: []types.RoleDiff{{
+			diff: &difftypes.SchemaDiff{RolesModified: []difftypes.RoleDiff{{
 				RoleName: "reporting",
 				Changes:  map[string]string{"login": "false -> true"},
 			}}},
@@ -332,7 +332,7 @@ func TestGenerateMigrationAST_ClickHouseRoleChangesWithNoStatementAreNamed(t *te
 		},
 		{
 			name: "removed role",
-			diff: &types.SchemaDiff{RolesRemoved: []string{"reporting"}},
+			diff: &difftypes.SchemaDiff{RolesRemoved: []string{"reporting"}},
 			want: `CLICKHOUSE: role "reporting" exists on the server and not in the schema; Ptah does not drop ClickHouse roles`,
 		},
 	}
@@ -341,7 +341,7 @@ func TestGenerateMigrationAST_ClickHouseRoleChangesWithNoStatementAreNamed(t *te
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			nodes := planClickHouse(c, test.diff, &goschema.Database{})
+			nodes := planClickHouse(c, test.diff, &schemamodel.Database{})
 
 			c.Assert(nodes, qt.HasLen, 1)
 			comment, ok := nodes[0].(*ast.CommentNode)

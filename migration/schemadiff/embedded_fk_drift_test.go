@@ -6,14 +6,14 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/planner/dialects/mysql"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // reverseConstraintDiff mirrors the constraint half of the generator's down
@@ -40,9 +40,9 @@ func reverseConstraintDiff(up *difftypes.SchemaDiff) *difftypes.SchemaDiff {
 // created_by_user_id, each with an explicit shared foreign_key_name). The mixin
 // is embedded inline into the named host tables, so each host materializes the
 // same columns + the same FK names.
-func ownableMixinSchema(hostTables ...string) *goschema.Database {
-	db := &goschema.Database{
-		Fields: []goschema.Field{
+func ownableMixinSchema(hostTables ...string) *schemamodel.Database {
+	db := &schemamodel.Database{
+		Fields: []schemamodel.Field{
 			{
 				StructName:     "Ownable",
 				Name:           "tenant_id",
@@ -62,9 +62,9 @@ func ownableMixinSchema(hostTables ...string) *goschema.Database {
 	for _, ht := range hostTables {
 		// Derive a struct name from the table name for the test (e.g. locations -> Locations).
 		structName := strings.ToUpper(ht[:1]) + ht[1:]
-		db.Tables = append(db.Tables, goschema.Table{StructName: structName, Name: ht})
-		db.Fields = append(db.Fields, goschema.Field{StructName: structName, Name: "id", Type: "TEXT", Primary: true})
-		db.EmbeddedFields = append(db.EmbeddedFields, goschema.EmbeddedField{
+		db.Tables = append(db.Tables, schemamodel.Table{StructName: structName, Name: ht})
+		db.Fields = append(db.Fields, schemamodel.Field{StructName: structName, Name: "id", Type: "TEXT", Primary: true})
+		db.EmbeddedFields = append(db.EmbeddedFields, schemamodel.EmbeddedField{
 			StructName: structName, Mode: "inline", EmbeddedTypeName: "Ownable",
 		})
 	}
@@ -74,8 +74,8 @@ func ownableMixinSchema(hostTables ...string) *goschema.Database {
 // ownableMixinColumnsOnlyDB builds the introspected DB for the given host
 // tables with the mixin columns present but the FKs missing (so they surface as
 // additions).
-func ownableMixinColumnsOnlyDB(hostTables ...string) *types.DBSchema {
-	db := &types.DBSchema{}
+func ownableMixinColumnsOnlyDB(hostTables ...string) *catalog.Database {
+	db := &catalog.Database{}
 	for _, ht := range hostTables {
 		db.Tables = append(db.Tables, ownableHostTable(ht))
 	}
@@ -85,12 +85,12 @@ func ownableMixinColumnsOnlyDB(hostTables ...string) *types.DBSchema {
 // ownableMixinConvergedDB builds the introspected DB for the given host tables
 // with both the mixin columns and the tenant/created_by FKs already present
 // (NO ACTION), i.e. the schema is converged.
-func ownableMixinConvergedDB(hostTables ...string) *types.DBSchema {
+func ownableMixinConvergedDB(hostTables ...string) *catalog.Database {
 	db := ownableMixinColumnsOnlyDB(hostTables...)
 	for _, ht := range hostTables {
 		db.Constraints = append(db.Constraints,
-			types.DBConstraint{Name: "fk_entity_tenant", TableName: ht, Type: "FOREIGN KEY", ColumnName: "tenant_id", ForeignTable: new("tenants"), ForeignColumn: new("id"), DeleteRule: new("NO ACTION"), UpdateRule: new("NO ACTION")},
-			types.DBConstraint{Name: "fk_entity_created_by", TableName: ht, Type: "FOREIGN KEY", ColumnName: "created_by_user_id", ForeignTable: new("users"), ForeignColumn: new("id"), DeleteRule: new("NO ACTION"), UpdateRule: new("NO ACTION")},
+			catalog.Constraint{Name: "fk_entity_tenant", TableName: ht, Type: "FOREIGN KEY", ColumnName: "tenant_id", ForeignTable: new("tenants"), ForeignColumn: new("id"), DeleteRule: new("NO ACTION"), UpdateRule: new("NO ACTION")},
+			catalog.Constraint{Name: "fk_entity_created_by", TableName: ht, Type: "FOREIGN KEY", ColumnName: "created_by_user_id", ForeignTable: new("users"), ForeignColumn: new("id"), DeleteRule: new("NO ACTION"), UpdateRule: new("NO ACTION")},
 		)
 	}
 	return db
@@ -102,7 +102,7 @@ func ownableMixinConvergedDB(hostTables ...string) *types.DBSchema {
 // action change (issue #197 MODIFY path): the generated action differs from the
 // converged NO ACTION database, so the comparator routes fk_entity_tenant into
 // ConstraintsAdded + ConstraintsRemoved for each host table at once.
-func ownableMixinSchemaWithTenantOnDelete(onDelete string, hostTables ...string) *goschema.Database {
+func ownableMixinSchemaWithTenantOnDelete(onDelete string, hostTables ...string) *schemamodel.Database {
 	db := ownableMixinSchema(hostTables...)
 	for i := range db.Fields {
 		if db.Fields[i].StructName == "Ownable" && db.Fields[i].Name == "tenant_id" {
@@ -112,10 +112,10 @@ func ownableMixinSchemaWithTenantOnDelete(onDelete string, hostTables ...string)
 	return db
 }
 
-func ownableHostTable(name string) types.DBTable {
-	return types.DBTable{
+func ownableHostTable(name string) catalog.Table {
+	return catalog.Table{
 		Name: name,
-		Columns: []types.DBColumn{
+		Columns: []catalog.Column{
 			{Name: "id", DataType: "text", IsNullable: "NO", IsPrimaryKey: true},
 			{Name: "tenant_id", DataType: "text", IsNullable: "NO"},
 			{Name: "created_by_user_id", DataType: "text", IsNullable: "NO"},
@@ -280,20 +280,20 @@ func TestEmbeddedInlineMixinFK_MultiHostActionDrift(t *testing.T) {
 }
 
 func ownableMixinConvergedDBForDialect(
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	dialect string,
 	hostTables ...string,
-) *types.DBSchema {
-	database := ownableMixinConvergedDB(hostTables...)
-	for i := range database.Constraints {
-		constraint := &database.Constraints[i]
-		constraint.Name = assignedForeignKeyName(generated, dialect, constraint.TableName, constraint.ColumnName)
+) *catalog.Database {
+	current := ownableMixinConvergedDB(hostTables...)
+	for i := range current.Constraints {
+		constraint := &current.Constraints[i]
+		constraint.Name = assignedForeignKeyName(desired, dialect, constraint.TableName, constraint.ColumnName)
 	}
-	return database
+	return current
 }
 
-func assignedForeignKeyName(generated *goschema.Database, dialect, tableName, columnName string) string {
-	assigned := fromschema.AssignDefaultForeignKeyNames(generated, dialect)
+func assignedForeignKeyName(desired *schemamodel.Database, dialect, tableName, columnName string) string {
+	assigned := fromschema.AssignDefaultForeignKeyNames(desired, dialect)
 	structName := ""
 	for _, table := range assigned.Tables {
 		if table.Name == tableName {
@@ -328,14 +328,14 @@ func TestEmbeddedInlineMixinFK_MixedModifyAndAdd_NoPhantomDrop(t *testing.T) {
 	dbSchema := ownableMixinColumnsOnlyDB(allHosts...)
 	for _, h := range modifyHosts {
 		dbSchema.Constraints = append(dbSchema.Constraints,
-			types.DBConstraint{Name: "fk_entity_tenant", TableName: h, Type: "FOREIGN KEY", ColumnName: "tenant_id", ForeignTable: new("tenants"), ForeignColumn: new("id"), DeleteRule: new("NO ACTION"), UpdateRule: new("NO ACTION")},
-			types.DBConstraint{Name: "fk_entity_created_by", TableName: h, Type: "FOREIGN KEY", ColumnName: "created_by_user_id", ForeignTable: new("users"), ForeignColumn: new("id"), DeleteRule: new("NO ACTION"), UpdateRule: new("NO ACTION")},
+			catalog.Constraint{Name: "fk_entity_tenant", TableName: h, Type: "FOREIGN KEY", ColumnName: "tenant_id", ForeignTable: new("tenants"), ForeignColumn: new("id"), DeleteRule: new("NO ACTION"), UpdateRule: new("NO ACTION")},
+			catalog.Constraint{Name: "fk_entity_created_by", TableName: h, Type: "FOREIGN KEY", ColumnName: "created_by_user_id", ForeignTable: new("users"), ForeignColumn: new("id"), DeleteRule: new("NO ACTION"), UpdateRule: new("NO ACTION")},
 		)
 	}
 	// commodities also needs the created_by FK present so only tenant differs;
 	// otherwise created_by would surface as an extra pure-add and muddy the test.
 	dbSchema.Constraints = append(dbSchema.Constraints,
-		types.DBConstraint{Name: "fk_entity_created_by", TableName: addHost, Type: "FOREIGN KEY", ColumnName: "created_by_user_id", ForeignTable: new("users"), ForeignColumn: new("id"), DeleteRule: new("NO ACTION"), UpdateRule: new("NO ACTION")},
+		catalog.Constraint{Name: "fk_entity_created_by", TableName: addHost, Type: "FOREIGN KEY", ColumnName: "created_by_user_id", ForeignTable: new("users"), ForeignColumn: new("id"), DeleteRule: new("NO ACTION"), UpdateRule: new("NO ACTION")},
 	)
 
 	gen := ownableMixinSchemaWithTenantOnDelete("CASCADE", allHosts...)
@@ -363,12 +363,12 @@ func TestEmbeddedInlineMixinFK_MixedModifyAndAdd_NoPhantomDrop(t *testing.T) {
 // ownableMixinConvergedTenantOnDelete is ownableMixinConvergedDB but with the
 // tenant FK already carrying the given delete rule, used to prove idempotency
 // of the multi-host modify (after apply, the database agrees with generated).
-func ownableMixinConvergedTenantOnDelete(deleteRule string, hostTables ...string) *types.DBSchema {
+func ownableMixinConvergedTenantOnDelete(deleteRule string, hostTables ...string) *catalog.Database {
 	db := ownableMixinColumnsOnlyDB(hostTables...)
 	for _, ht := range hostTables {
 		db.Constraints = append(db.Constraints,
-			types.DBConstraint{Name: "fk_entity_tenant", TableName: ht, Type: "FOREIGN KEY", ColumnName: "tenant_id", ForeignTable: new("tenants"), ForeignColumn: new("id"), DeleteRule: new(deleteRule), UpdateRule: new("NO ACTION")},
-			types.DBConstraint{Name: "fk_entity_created_by", TableName: ht, Type: "FOREIGN KEY", ColumnName: "created_by_user_id", ForeignTable: new("users"), ForeignColumn: new("id"), DeleteRule: new("NO ACTION"), UpdateRule: new("NO ACTION")},
+			catalog.Constraint{Name: "fk_entity_tenant", TableName: ht, Type: "FOREIGN KEY", ColumnName: "tenant_id", ForeignTable: new("tenants"), ForeignColumn: new("id"), DeleteRule: new(deleteRule), UpdateRule: new("NO ACTION")},
+			catalog.Constraint{Name: "fk_entity_created_by", TableName: ht, Type: "FOREIGN KEY", ColumnName: "created_by_user_id", ForeignTable: new("users"), ForeignColumn: new("id"), DeleteRule: new("NO ACTION"), UpdateRule: new("NO ACTION")},
 		)
 	}
 	return db

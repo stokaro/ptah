@@ -6,10 +6,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestCompareWithDialect_TheBareConstraintListsAgreeWithTheHostedOnes pins that
@@ -31,8 +31,8 @@ func TestCompareWithDialect_TheBareConstraintListsAgreeWithTheHostedOnes(t *test
 	rows := []struct {
 		name     string
 		dialect  string
-		desired  func() *goschema.Database
-		current  func() *types.DBSchema
+		desired  func() *schemamodel.Database
+		current  func() *catalog.Database
 		wantAdds []string
 		wantDrop []string
 	}{
@@ -99,17 +99,17 @@ func TestCompareWithDialect_TheBareConstraintListsAgreeWithTheHostedOnes(t *test
 
 // constraintSchema builds a desired schema with one table and the named CHECK
 // constraints on it.
-func constraintSchema(table string, constraints ...string) func() *goschema.Database {
-	return func() *goschema.Database {
-		schema := &goschema.Database{
-			Tables: []goschema.Table{{StructName: "Order", Name: table}},
-			Fields: []goschema.Field{
+func constraintSchema(table string, constraints ...string) func() *schemamodel.Database {
+	return func() *schemamodel.Database {
+		schema := &schemamodel.Database{
+			Tables: []schemamodel.Table{{StructName: "Order", Name: table}},
+			Fields: []schemamodel.Field{
 				{StructName: "Order", Name: "id", Type: "INTEGER", Primary: true},
 				{StructName: "Order", Name: "total", Type: "INTEGER", Nullable: false},
 			},
 		}
 		for _, name := range constraints {
-			schema.Constraints = append(schema.Constraints, goschema.Constraint{
+			schema.Constraints = append(schema.Constraints, schemamodel.Constraint{
 				StructName:      "Order",
 				Name:            name,
 				Table:           table,
@@ -122,8 +122,8 @@ func constraintSchema(table string, constraints ...string) func() *goschema.Data
 }
 
 // dbConstraint is one introspected CHECK constraint.
-func dbConstraint(table, name, expression string) types.DBConstraint {
-	return types.DBConstraint{
+func dbConstraint(table, name, expression string) catalog.Constraint {
+	return catalog.Constraint{
 		Name:        name,
 		TableName:   table,
 		Type:        "CHECK",
@@ -133,20 +133,20 @@ func dbConstraint(table, name, expression string) types.DBConstraint {
 
 // constraintDatabase builds an introspected schema holding the two tables the
 // fixtures name and the constraints given.
-func constraintDatabase(constraints ...types.DBConstraint) func() *types.DBSchema {
-	return func() *types.DBSchema {
-		table := func(name string) types.DBTable {
-			return types.DBTable{
+func constraintDatabase(constraints ...catalog.Constraint) func() *catalog.Database {
+	return func() *catalog.Database {
+		table := func(name string) catalog.Table {
+			return catalog.Table{
 				Name: name,
 				Type: "TABLE",
-				Columns: []types.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
 					{Name: "total", DataType: "integer", IsNullable: "NO"},
 				},
 			}
 		}
-		return &types.DBSchema{
-			Tables:      []types.DBTable{table("orders"), table("invoices")},
+		return &catalog.Database{
+			Tables:      []catalog.Table{table("orders"), table("invoices")},
 			Constraints: slices.Clone(constraints),
 		}
 	}

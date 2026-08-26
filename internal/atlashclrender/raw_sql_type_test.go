@@ -6,9 +6,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashcl"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
@@ -136,9 +136,9 @@ table "t" {
 func TestRenderKeepsOrdinaryColumnTypesBare(t *testing.T) {
 	c := qt.New(t)
 
-	db := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "T", Name: "t"}},
-		Fields: []goschema.Field{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "T", Name: "t"}},
+		Fields: []schemamodel.Field{
 			{StructName: "T", Name: "plain", Type: "text"},
 			{StructName: "T", Name: "sized", Type: "varchar(10)"},
 			{StructName: "T", Name: "hatched", Type: "USER_DEFINED", TypeRawSQL: true},

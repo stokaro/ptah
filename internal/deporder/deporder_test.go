@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/deporder"
 )
 
@@ -56,13 +56,13 @@ func TestStableReverseDependencySort_OrdersDependentsBeforeParents(t *testing.T)
 
 func TestTablesForCreate_DerivesForeignKeyDependencies(t *testing.T) {
 	c := qt.New(t)
-	schema := &goschema.Database{
-		Tables: []goschema.Table{
+	schema := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Task", Name: "tasks"},
 			{StructName: "Project", Name: "projects"},
 			{StructName: "Account", Name: "accounts"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Task", Name: "project_id", Foreign: "projects(id)"},
 			{StructName: "Project", Name: "account_id", Foreign: "accounts(id)"},
 		},
@@ -75,13 +75,13 @@ func TestTablesForCreate_DerivesForeignKeyDependencies(t *testing.T) {
 
 func TestTableDropOrder_DerivesForeignKeyDependencies(t *testing.T) {
 	c := qt.New(t)
-	schema := &goschema.Database{
-		Tables: []goschema.Table{
+	schema := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Account", Name: "accounts"},
 			{StructName: "Project", Name: "projects"},
 			{StructName: "Task", Name: "tasks"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Task", Name: "project_id", Foreign: "projects(id)"},
 			{StructName: "Project", Name: "account_id", Foreign: "accounts(id)"},
 		},
@@ -94,13 +94,13 @@ func TestTableDropOrder_DerivesForeignKeyDependencies(t *testing.T) {
 
 func TestTablesForCreate_ResolvesUnqualifiedForeignKeyWithinCurrentSchema(t *testing.T) {
 	c := qt.New(t)
-	schema := &goschema.Database{
-		Tables: []goschema.Table{
+	schema := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "AuditAccount", Schema: "audit", Name: "accounts"},
 			{StructName: "AppProject", Schema: "app", Name: "projects"},
 			{StructName: "AppAccount", Schema: "app", Name: "accounts"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "AppProject", Name: "account_id", Foreign: "accounts(id)"},
 		},
 	}
@@ -112,7 +112,7 @@ func TestTablesForCreate_ResolvesUnqualifiedForeignKeyWithinCurrentSchema(t *tes
 
 func TestTablesForCreate_KeepsLiteralDotAndQualifiedTablesDistinct(t *testing.T) {
 	c := qt.New(t)
-	schema := &goschema.Database{Tables: []goschema.Table{
+	schema := &schemamodel.Database{Tables: []schemamodel.Table{
 		{StructName: "Literal", Name: "tenant.data"},
 		{StructName: "Qualified", Schema: "tenant", Name: "data"},
 	}}
@@ -124,8 +124,8 @@ func TestTablesForCreate_KeepsLiteralDotAndQualifiedTablesDistinct(t *testing.T)
 
 func TestFunctionsForCreate_UsesFunctionDependencyMap(t *testing.T) {
 	c := qt.New(t)
-	schema := &goschema.Database{
-		Functions: []goschema.Function{
+	schema := &schemamodel.Database{
+		Functions: []schemamodel.Function{
 			{Name: "a_child"},
 			{Name: "z_parent"},
 		},
@@ -141,8 +141,8 @@ func TestFunctionsForCreate_UsesFunctionDependencyMap(t *testing.T) {
 
 func TestFunctionsForCreate_FallsBackToGeneratedFunctionOrder(t *testing.T) {
 	c := qt.New(t)
-	schema := &goschema.Database{
-		Functions: []goschema.Function{
+	schema := &schemamodel.Database{
+		Functions: []schemamodel.Function{
 			{Name: "z_parent"},
 			{Name: "a_child"},
 		},
@@ -390,7 +390,7 @@ func TestViewLikesForCreate_IgnoresNamesInsideLiteralsAndComments(t *testing.T) 
 	c.Assert(viewLikeNames(objects), qt.DeepEquals, []string{"a_report", "z_base"})
 }
 
-func tableNames(tables []goschema.Table) []string {
+func tableNames(tables []schemamodel.Table) []string {
 	names := make([]string, 0, len(tables))
 	for _, table := range tables {
 		names = append(names, table.Name)
@@ -398,7 +398,7 @@ func tableNames(tables []goschema.Table) []string {
 	return names
 }
 
-func qualifiedTableNames(tables []goschema.Table) []string {
+func qualifiedTableNames(tables []schemamodel.Table) []string {
 	names := make([]string, 0, len(tables))
 	for _, table := range tables {
 		names = append(names, table.QualifiedName())
@@ -406,7 +406,7 @@ func qualifiedTableNames(tables []goschema.Table) []string {
 	return names
 }
 
-func functionNames(functions []goschema.Function) []string {
+func functionNames(functions []schemamodel.Function) []string {
 	names := make([]string, 0, len(functions))
 	for _, fn := range functions {
 		names = append(names, fn.Name)

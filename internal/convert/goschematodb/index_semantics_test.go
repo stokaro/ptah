@@ -5,38 +5,38 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/goschematodb"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
 // postgresIndexDatabase is the desired state behind both tests: one index
 // carrying every property issue #1272 made the PostgreSQL comparator read.
-func postgresIndexDatabase() *goschema.Database {
-	db := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "T", Name: "t"}},
-		Fields: []goschema.Field{
+func postgresIndexDatabase() *schemamodel.Database {
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "T", Name: "t"}},
+		Fields: []schemamodel.Field{
 			{StructName: "T", Name: "a", Type: "text"},
 			{StructName: "T", Name: "b", Type: "text"},
 			{StructName: "T", Name: "c", Type: "text"},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{
 				StructName:     "T",
 				Name:           "i",
 				Fields:         []string{"a", "b"},
 				Type:           "btree",
 				IncludeColumns: []string{"c"},
-				Parts: []goschema.IndexPart{
-					{Name: "a", Operator: "text_pattern_ops", Desc: true, NullsOrder: goschema.NullsOrderLast},
-					{Name: "b", NullsOrder: goschema.NullsOrderFirst},
+				Parts: []schemamodel.IndexPart{
+					{Name: "a", Operator: "text_pattern_ops", Desc: true, NullsOrder: schemamodel.NullsOrderLast},
+					{Name: "b", NullsOrder: schemamodel.NullsOrderFirst},
 				},
 			},
 		},
 	}
-	goschema.Finalize(db)
+	schemamodel.Finalize(db)
 	return db
 }
 
@@ -51,15 +51,15 @@ func postgresIndexDatabase() *goschema.Database {
 func TestToDBSchema_CarriesPostgresIndexSemantics(t *testing.T) {
 	c := qt.New(t)
 
-	got := goschematodb.ToDBSchema(postgresIndexDatabase(), platform.Postgres)
+	got := goschematodb.ToCatalog(postgresIndexDatabase(), platform.Postgres)
 
 	c.Assert(got.Indexes, qt.HasLen, 1)
 	index := got.Indexes[0]
 	c.Assert(index.Method, qt.Equals, "btree")
 	c.Assert(index.IncludeColumns, qt.DeepEquals, []string{"c"})
-	c.Assert(index.Parts, qt.DeepEquals, []dbschematypes.DBIndexPart{
-		{Name: "a", Operator: "text_pattern_ops", Desc: true, NullsOrder: dbschematypes.NullsOrderLast},
-		{Name: "b", NullsOrder: dbschematypes.NullsOrderFirst},
+	c.Assert(index.Parts, qt.DeepEquals, []catalog.IndexPart{
+		{Name: "a", Operator: "text_pattern_ops", Desc: true, NullsOrder: catalog.NullsOrderLast},
+		{Name: "b", NullsOrder: catalog.NullsOrderFirst},
 	})
 }
 
@@ -72,7 +72,7 @@ func TestToDBSchema_PostgresIndexSemanticsAreIdempotent(t *testing.T) {
 	c := qt.New(t)
 	db := postgresIndexDatabase()
 
-	current := goschematodb.ToDBSchema(db, platform.Postgres)
+	current := goschematodb.ToCatalog(db, platform.Postgres)
 	diff := schemadiff.CompareWithDialect(db, current, platform.Postgres)
 
 	c.Assert(diff.IndexAdditions(), qt.HasLen, 0)
@@ -80,16 +80,16 @@ func TestToDBSchema_PostgresIndexSemanticsAreIdempotent(t *testing.T) {
 }
 
 // TestToDBSchema_ClickHouseSkippingIndexTypeIsNotAnAccessMethod keeps the two
-// concepts goschema.Index.Type carries apart. On ClickHouse the field is the
-// data-skipping-index type, which the DB shape keeps in DBIndex.Type; reporting
+// concepts schemamodel.Index.Type carries apart. On ClickHouse the field is the
+// data-skipping-index type, which the DB shape keeps in catalog.Index.Type; reporting
 // it as a PostgreSQL access method would make a ClickHouse "bloom_filter" and a
 // PostgreSQL "gin" indistinguishable at the comparison layer.
 func TestToDBSchema_ClickHouseSkippingIndexTypeIsNotAnAccessMethod(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "E", Name: "events"}},
-		Fields: []goschema.Field{{StructName: "E", Name: "payload", Type: "String"}},
-		Indexes: []goschema.Index{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "E", Name: "events"}},
+		Fields: []schemamodel.Field{{StructName: "E", Name: "payload", Type: "String"}},
+		Indexes: []schemamodel.Index{
 			{
 				StructName:  "E",
 				Name:        "idx_events_payload",
@@ -99,9 +99,9 @@ func TestToDBSchema_ClickHouseSkippingIndexTypeIsNotAnAccessMethod(t *testing.T)
 			},
 		},
 	}
-	goschema.Finalize(db)
+	schemamodel.Finalize(db)
 
-	got := goschematodb.ToDBSchema(db, platform.ClickHouse)
+	got := goschematodb.ToCatalog(db, platform.ClickHouse)
 
 	c.Assert(got.Indexes, qt.HasLen, 1)
 	c.Assert(got.Indexes[0].Method, qt.Equals, "")

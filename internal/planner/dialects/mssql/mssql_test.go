@@ -5,18 +5,18 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestNewWithCapabilitiesUsesSQLServerDialect(t *testing.T) {
 	c := qt.New(t)
 
 	plan := New()
-	diff := &types.SchemaDiff{
-		TablesModified: []types.TableDiff{{
+	diff := &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{{
 			TableName: "users",
-			ColumnsModified: []types.ColumnDiff{{
+			ColumnsModified: []difftypes.ColumnDiff{{
 				ColumnName: "status",
 				Changes: map[string]string{
 					"default": "'inactive' -> 'active'",
@@ -24,14 +24,14 @@ func TestNewWithCapabilitiesUsesSQLServerDialect(t *testing.T) {
 			}},
 		}},
 	}
-	generated := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "User", Name: "users"}},
-		Fields: []goschema.Field{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "status", Type: "NVARCHAR(255)", Default: "active"},
 		},
 	}
 
-	_, err := plan.GenerateMigrationASTChecked(diff, generated)
+	_, err := plan.GenerateMigrationASTChecked(diff, desired)
 
 	c.Assert(err, qt.ErrorMatches, `.*SQL Server planner only supports ALTER COLUMN for type/nullability changes on users\.status; unsupported changes: default.*`)
 }
@@ -40,17 +40,17 @@ func TestNewWithCapabilitiesRejectsSQLServerColumnRemoval(t *testing.T) {
 	c := qt.New(t)
 
 	plan := New()
-	diff := &types.SchemaDiff{
-		TablesModified: []types.TableDiff{{
+	diff := &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{{
 			TableName:      "users",
 			ColumnsRemoved: []string{"legacy_id"},
 		}},
 	}
-	generated := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "User", Name: "users"}},
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
 	}
 
-	_, err := plan.GenerateMigrationASTChecked(diff, generated)
+	_, err := plan.GenerateMigrationASTChecked(diff, desired)
 
 	c.Assert(err, qt.ErrorMatches, `.*SQL Server planner does not support automatic DROP COLUMN for users; write an explicit migration that drops dependent constraints and indexes first.*`)
 }

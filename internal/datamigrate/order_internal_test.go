@@ -10,7 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/datadiff"
 )
 
@@ -30,8 +30,8 @@ func TestOrderByDependency(t *testing.T) {
 	// db.Tables is already dependency-sorted parents-first (authors before
 	// articles); note "articles" < "authors" alphabetically, so any path that
 	// falls back to alphabetical order would wrongly put the child first.
-	depSorted := func() *goschema.Database {
-		return &goschema.Database{Tables: []goschema.Table{
+	depSorted := func() *schemamodel.Database {
+		return &schemamodel.Database{Tables: []schemamodel.Table{
 			{Name: "authors", Schema: "app"},
 			{Name: "articles", Schema: "app"},
 		}}
@@ -62,7 +62,7 @@ func TestOrderByDependency(t *testing.T) {
 		// with no qualified match either, both rank last and sort alphabetically
 		// by qualified name ("t" < "z.t").
 		c := qt.New(t)
-		db := &goschema.Database{Tables: []goschema.Table{
+		db := &schemamodel.Database{Tables: []schemamodel.Table{
 			{Name: "t", Schema: "b"},
 			{Name: "t", Schema: "a"},
 		}}

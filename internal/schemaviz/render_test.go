@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemaviz"
 )
 
@@ -50,9 +50,9 @@ func TestRenderDeduplicatesConcreteFieldsAndRelationships(t *testing.T) {
 	c := qt.New(t)
 	db := sampleDatabase()
 	db.Fields = append(db.Fields,
-		goschema.Field{StructName: "Post", Name: "author_id", Type: "INTEGER", Foreign: "users(id)", ForeignKeyName: "fk_posts_author"},
+		schemamodel.Field{StructName: "Post", Name: "author_id", Type: "INTEGER", Foreign: "users(id)", ForeignKeyName: "fk_posts_author"},
 	)
-	db.Constraints = append(db.Constraints, goschema.Constraint{
+	db.Constraints = append(db.Constraints, schemamodel.Constraint{
 		StructName:    "Post",
 		Name:          "fk_posts_author",
 		Type:          "FOREIGN KEY",
@@ -74,13 +74,13 @@ func TestRenderDeduplicatesConcreteFieldsAndRelationships(t *testing.T) {
 
 func TestRenderMermaidAvoidsSanitizedNameCollisions(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Tables: []goschema.Table{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "AuthUser", Schema: "auth", Name: "users"},
 			{StructName: "AuditUser", Name: "auth_users"},
 			{StructName: "ArchiveUser", Name: "auth_users_2"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "AuthUser", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "AuditUser", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "AuditUser", Name: "user_id", Type: "INTEGER", Foreign: "auth.users(id)"},
@@ -100,16 +100,16 @@ func TestRenderMermaidAvoidsSanitizedNameCollisions(t *testing.T) {
 
 func TestRenderDOTPreservesStructuralTableIdentity(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Tables: []goschema.Table{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Qualified", Schema: "tenant", Name: "data"},
 			{StructName: "Literal", Name: "tenant.data"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Qualified", Name: "id", Type: "INTEGER"},
 			{StructName: "Literal", Name: "id", Type: "INTEGER"},
 		},
-		Constraints: []goschema.Constraint{
+		Constraints: []schemamodel.Constraint{
 			{
 				StructName:    "Qualified",
 				Name:          "qualified_to_literal",
@@ -141,8 +141,8 @@ func TestRenderDOTPreservesStructuralTableIdentity(t *testing.T) {
 
 func TestRenderDOTUnqualifiedExclusionDoesNotHideLiteralDotTable(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Tables: []goschema.Table{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Qualified", Schema: "tenant", Name: "data"},
 			{StructName: "Literal", Name: "tenant.data"},
 		},
@@ -169,14 +169,14 @@ func TestRenderRejectsBadOptions(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `unsupported visualization theme "sepia": expected light or dark`)
 }
 
-func sampleDatabase() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func sampleDatabase() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "User", Name: "users"},
 			{StructName: "Post", Name: "posts"},
 			{StructName: "AuditLog", Name: "audit_logs"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "User", Name: "email", Type: "TEXT"},
 			{StructName: "Post", Name: "id", Type: "SERIAL", Primary: true},
@@ -190,7 +190,7 @@ func sampleDatabase() *goschema.Database {
 			{StructName: "AuditLog", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "AuditLog", Name: "user_id", Type: "INTEGER"},
 		},
-		Constraints: []goschema.Constraint{{
+		Constraints: []schemamodel.Constraint{{
 			StructName:    "AuditLog",
 			Type:          "FOREIGN KEY",
 			Columns:       []string{"user_id"},

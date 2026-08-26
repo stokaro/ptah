@@ -5,13 +5,13 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/devclean"
 )
 
 func TestReplayGuardSQLite_HappyPath(t *testing.T) {
-	guard := devclean.NewReplayGuard(types.DBInfo{Dialect: platform.SQLite})
+	guard := devclean.NewReplayGuard(catalog.ServerInfo{Dialect: platform.SQLite})
 	tests := []struct {
 		name      string
 		statement string
@@ -48,7 +48,7 @@ func TestReplayGuardSQLite_HappyPath(t *testing.T) {
 }
 
 func TestReplayGuardSQLite_FailurePath(t *testing.T) {
-	guard := devclean.NewReplayGuard(types.DBInfo{Dialect: platform.SQLite})
+	guard := devclean.NewReplayGuard(catalog.ServerInfo{Dialect: platform.SQLite})
 	tests := []struct {
 		name      string
 		statement string

@@ -13,10 +13,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // indexOfFragment reports where a fragment starts, so an ordering assertion can
@@ -29,24 +29,24 @@ func indexOfFragment(sql, fragment string) int {
 // off. It exists in the database before and after every case below, so a
 // DROP TABLE ... CASCADE can never be what removes the view, the materialized
 // view or the trigger: the down migration has to name them itself.
-func viewLikeTable() goschema.Table {
-	return goschema.Table{StructName: "RevViewUser", Name: "rev_view_users"}
+func viewLikeTable() schemamodel.Table {
+	return schemamodel.Table{StructName: "RevViewUser", Name: "rev_view_users"}
 }
 
-func viewLikeFields() []goschema.Field {
-	return []goschema.Field{
+func viewLikeFields() []schemamodel.Field {
+	return []schemamodel.Field{
 		{StructName: "RevViewUser", Name: "id", Type: "BIGINT", Primary: true},
 		{StructName: "RevViewUser", Name: "email", Type: "TEXT"},
 	}
 }
 
-func viewLikeDBWithTableOnly() *dbschematypes.DBSchema {
-	return &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
+func viewLikeDBWithTableOnly() *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{
 			{
 				Name: "rev_view_users",
 				Type: "TABLE",
-				Columns: []dbschematypes.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "id", DataType: "bigint", IsNullable: "NO", IsPrimaryKey: true, OrdinalPosition: 1},
 					{Name: "email", DataType: "text", IsNullable: "NO", OrdinalPosition: 2},
 				},
@@ -55,21 +55,21 @@ func viewLikeDBWithTableOnly() *dbschematypes.DBSchema {
 	}
 }
 
-func viewLikeGoSchemaWithObjects(viewBody, matViewBody, triggerBody string) *goschema.Database {
-	schema := &goschema.Database{
-		Tables: []goschema.Table{viewLikeTable()},
+func viewLikeGoSchemaWithObjects(viewBody, matViewBody, triggerBody string) *schemamodel.Database {
+	schema := &schemamodel.Database{
+		Tables: []schemamodel.Table{viewLikeTable()},
 		Fields: viewLikeFields(),
-		Views: []goschema.View{
+		Views: []schemamodel.View{
 			{StructName: "RevActiveUsers", Name: "rev_active_users", Body: viewBody},
 		},
-		MaterializedViews: []goschema.MaterializedView{
+		MaterializedViews: []schemamodel.MaterializedView{
 			{
 				StructName: "RevUserStats",
 				Name:       "rev_user_stats",
 				Body:       matViewBody,
 			},
 		},
-		Triggers: []goschema.Trigger{
+		Triggers: []schemamodel.Trigger{
 			{
 				StructName: "RevViewUser",
 				Name:       "rev_touch",
@@ -81,19 +81,19 @@ func viewLikeGoSchemaWithObjects(viewBody, matViewBody, triggerBody string) *gos
 			},
 		},
 	}
-	goschema.Finalize(schema)
+	schemamodel.Finalize(schema)
 	return schema
 }
 
-func viewLikeDBWithObjects(viewBody, matViewBody, triggerBody string) *dbschematypes.DBSchema {
+func viewLikeDBWithObjects(viewBody, matViewBody, triggerBody string) *catalog.Database {
 	db := viewLikeDBWithTableOnly()
-	db.Views = []dbschematypes.DBView{
+	db.Views = []catalog.View{
 		{Name: "rev_active_users", Body: viewBody},
 	}
-	db.MatViews = []dbschematypes.DBMatView{
+	db.MatViews = []catalog.MaterializedView{
 		{Name: "rev_user_stats", Body: matViewBody},
 	}
-	db.Triggers = []dbschematypes.DBTrigger{
+	db.Triggers = []catalog.Trigger{
 		{
 			Name:    "rev_touch",
 			Table:   "rev_view_users",
@@ -126,7 +126,7 @@ func TestGenerateDownMigrationSQL_DropsViewLikeObjectsCreatedByUp(t *testing.T) 
 
 	c.Assert(upDiff.ViewsAdded, qt.DeepEquals, []string{"rev_active_users"})
 	c.Assert(upDiff.MaterializedViewsAdded, qt.DeepEquals, []string{"rev_user_stats"})
-	c.Assert(upDiff.TriggersAdded, qt.DeepEquals, []types.TriggerRef{
+	c.Assert(upDiff.TriggersAdded, qt.DeepEquals, []difftypes.TriggerRef{
 		{TriggerName: "rev_touch", TableName: "rev_view_users"},
 	})
 
@@ -162,18 +162,18 @@ func TestGenerateDownMigrationSQL_DropsViewLikeObjectsCreatedByUp(t *testing.T) 
 func TestGenerateDownMigrationSQL_RestoresViewLikeObjectsDroppedByUp(t *testing.T) {
 	c := qt.New(t)
 
-	schema := &goschema.Database{
-		Tables: []goschema.Table{viewLikeTable()},
+	schema := &schemamodel.Database{
+		Tables: []schemamodel.Table{viewLikeTable()},
 		Fields: viewLikeFields(),
 	}
-	goschema.Finalize(schema)
+	schemamodel.Finalize(schema)
 	db := viewLikeDBWithObjects(revViewBody, revMatViewBody, revTriggerBody)
 
 	upDiff := schemadiff.CompareWithDialect(schema, db, "postgres")
 
 	c.Assert(upDiff.ViewsRemoved, qt.DeepEquals, []string{"rev_active_users"})
 	c.Assert(upDiff.MaterializedViewsRemoved, qt.DeepEquals, []string{"rev_user_stats"})
-	c.Assert(upDiff.TriggersRemoved, qt.DeepEquals, []types.TriggerRef{
+	c.Assert(upDiff.TriggersRemoved, qt.DeepEquals, []difftypes.TriggerRef{
 		{TriggerName: "rev_touch", TableName: "rev_view_users"},
 	})
 
@@ -342,14 +342,14 @@ func TestGenerateDownMigrationSQL_ModifiedMatViewAndTriggerRollback(t *testing.T
 // not consume this map, but the diff is serialized into reports, so an
 // unreversed "old -> new" would describe the up migration on a down plan.
 func TestReverseSchemaDiff_ReversesViewLikeChangeDescriptions(t *testing.T) {
-	input := &types.SchemaDiff{
-		ViewsModified: []types.ViewDiff{
+	input := &difftypes.SchemaDiff{
+		ViewsModified: []difftypes.ViewDiff{
 			{ViewName: "v", Changes: map[string]string{"body": "OLD -> NEW"}},
 		},
-		MaterializedViewsModified: []types.MaterializedViewDiff{
+		MaterializedViewsModified: []difftypes.MaterializedViewDiff{
 			{ViewName: "mv", Changes: map[string]string{"body": "OLD -> NEW"}},
 		},
-		TriggersModified: []types.TriggerDiff{
+		TriggersModified: []difftypes.TriggerDiff{
 			{TriggerName: "trg", TableName: "t", Changes: map[string]string{"timing": "BEFORE -> AFTER"}},
 		},
 	}

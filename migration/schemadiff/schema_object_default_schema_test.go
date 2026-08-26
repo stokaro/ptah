@@ -5,26 +5,26 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestCompareWithDialect_ImplicitSchemaMatchesSchemaObjects(t *testing.T) {
 	c := qt.New(t)
-	generated, database := schemaObjectIdentityFixtures("public", "")
+	desired, current := schemaObjectIdentityFixtures("public", "")
 
-	diff := schemadiff.CompareWithDialect(generated, database, "postgres")
+	diff := schemadiff.CompareWithDialect(desired, current, "postgres")
 
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %#v", diff))
 }
 
 func TestCompareWithDialect_DifferentSchemaDoesNotMatchSchemaObjects(t *testing.T) {
 	c := qt.New(t)
-	generated, database := schemaObjectIdentityFixtures("public", "reporting")
+	desired, current := schemaObjectIdentityFixtures("public", "reporting")
 
-	diff := schemadiff.CompareWithDialect(generated, database, "postgres")
+	diff := schemadiff.CompareWithDialect(desired, current, "postgres")
 
 	c.Assert(diff.FunctionsAdded, qt.DeepEquals, []string{"public.f_ctl"})
 	c.Assert(diff.FunctionsRemoved, qt.DeepEquals, []string{"reporting.f_ctl"})
@@ -53,9 +53,9 @@ func TestCompareWithDialect_DifferentSchemaDoesNotMatchSchemaObjects(t *testing.
 func schemaObjectIdentityFixtures(
 	desiredSchema,
 	currentSchema string,
-) (*goschema.Database, *types.DBSchema) {
-	generated := &goschema.Database{
-		Functions: []goschema.Function{{
+) (*schemamodel.Database, *catalog.Database) {
+	desired := &schemamodel.Database{
+		Functions: []schemamodel.Function{{
 			Name:       desiredSchema + ".f_ctl",
 			Returns:    "integer",
 			Language:   "sql",
@@ -63,35 +63,35 @@ func schemaObjectIdentityFixtures(
 			Volatility: "VOLATILE",
 			Body:       "SELECT 1",
 		}},
-		Sequences: []goschema.Sequence{{
+		Sequences: []schemamodel.Sequence{{
 			Name:   "s_ctl",
 			Schema: desiredSchema,
 			AsType: "bigint",
 		}},
-		Domains: []goschema.Domain{{
+		Domains: []schemamodel.Domain{{
 			Name:     "d_ctl",
 			Schema:   desiredSchema,
 			BaseType: "text",
 		}},
-		CompositeTypes: []goschema.CompositeType{{
+		CompositeTypes: []schemamodel.CompositeType{{
 			Name:   "c_ctl",
 			Schema: desiredSchema,
-			Fields: []goschema.CompositeTypeField{{Name: "value", Type: "text"}},
+			Fields: []schemamodel.CompositeField{{Name: "value", Type: "text"}},
 		}},
-		Ranges: []goschema.Range{{
+		Ranges: []schemamodel.Range{{
 			Name:    "r_ctl",
 			Schema:  desiredSchema,
 			Subtype: "integer",
 		}},
-		Views: []goschema.View{{
+		Views: []schemamodel.View{{
 			Name: desiredSchema + ".v_ctl",
 			Body: "SELECT 1",
 		}},
-		MaterializedViews: []goschema.MaterializedView{{
+		MaterializedViews: []schemamodel.MaterializedView{{
 			Name: desiredSchema + ".mv_ctl",
 			Body: "SELECT 1",
 		}},
-		Triggers: []goschema.Trigger{{
+		Triggers: []schemamodel.Trigger{{
 			Name:    "tr_ctl",
 			Table:   desiredSchema + ".items",
 			Timing:  "BEFORE",
@@ -100,8 +100,8 @@ func schemaObjectIdentityFixtures(
 			Body:    "SELECT 1",
 		}},
 	}
-	database := &types.DBSchema{
-		Functions: []types.DBFunction{{
+	current := &catalog.Database{
+		Functions: []catalog.Function{{
 			Name:       "f_ctl",
 			Schema:     currentSchema,
 			Returns:    "integer",
@@ -110,38 +110,38 @@ func schemaObjectIdentityFixtures(
 			Volatility: "VOLATILE",
 			Body:       "SELECT 1",
 		}},
-		Sequences: []types.DBSequence{{
+		Sequences: []catalog.Sequence{{
 			Name:     "s_ctl",
 			Schema:   currentSchema,
 			DataType: "bigint",
 		}},
-		Domains: []types.DBDomain{{
+		Domains: []catalog.Domain{{
 			Name:     "d_ctl",
 			Schema:   currentSchema,
 			BaseType: "text",
 		}},
-		Composites: []types.DBComposite{{
+		Composites: []catalog.CompositeType{{
 			Name:   "c_ctl",
 			Schema: currentSchema,
-			Fields: []types.DBCompositeField{{Name: "value", Type: "text"}},
+			Fields: []catalog.CompositeField{{Name: "value", Type: "text"}},
 		}},
-		Ranges: []types.DBRange{{
+		Ranges: []catalog.Range{{
 			Name:    "r_ctl",
 			Schema:  currentSchema,
 			Subtype: "integer",
 		}},
-		Views: []types.DBView{{
+		Views: []catalog.View{{
 			Name:        "v_ctl",
 			Schema:      currentSchema,
 			Body:        "SELECT 1",
 			CheckOption: "NONE",
 		}},
-		MatViews: []types.DBMatView{{
+		MatViews: []catalog.MaterializedView{{
 			Name:   "mv_ctl",
 			Schema: currentSchema,
 			Body:   "SELECT 1",
 		}},
-		Triggers: []types.DBTrigger{{
+		Triggers: []catalog.Trigger{{
 			Name:    "tr_ctl",
 			Schema:  currentSchema,
 			Table:   "items",
@@ -151,5 +151,5 @@ func schemaObjectIdentityFixtures(
 			Body:    "SELECT 1",
 		}},
 	}
-	return generated, database
+	return desired, current
 }

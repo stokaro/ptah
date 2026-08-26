@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlasreport"
 )
 
@@ -23,8 +23,8 @@ import (
 func TestRenderSchemaInspect_JSONRealmDocument(t *testing.T) {
 	tests := []struct {
 		name   string
-		schema *types.DBSchema
-		info   types.DBInfo
+		schema *catalog.Database
+		info   catalog.ServerInfo
 		want   string
 	}{
 		{
@@ -32,12 +32,12 @@ func TestRenderSchemaInspect_JSONRealmDocument(t *testing.T) {
 			// its tables, so no table meant no schema, and `omitempty` then
 			// removed the key entirely.
 			name: "empty postgres database still reports its schema",
-			schema: &types.DBSchema{
-				Schemas: []types.DBSchemaInfo{
+			schema: &catalog.Database{
+				Schemas: []catalog.Schema{
 					{Name: "public", Comment: "standard public schema"},
 				},
 			},
-			info: types.DBInfo{Dialect: "postgres", Schema: "public"},
+			info: catalog.ServerInfo{Dialect: "postgres", Schema: "public"},
 			want: `{"schemas":[{"name":"public","comment":"standard public schema"}]}`,
 		},
 		{
@@ -45,72 +45,72 @@ func TestRenderSchemaInspect_JSONRealmDocument(t *testing.T) {
 			// order, embedded fields included, so this row is what pins the
 			// attributes to the end of the struct.
 			name: "schema comment follows the tables",
-			schema: &types.DBSchema{
-				Schemas: []types.DBSchemaInfo{
+			schema: &catalog.Database{
+				Schemas: []catalog.Schema{
 					{Name: "public", Comment: "standard public schema"},
 				},
-				Tables: []types.DBTable{
+				Tables: []catalog.Table{
 					{
 						Name:    "a",
-						Columns: []types.DBColumn{{Name: "id", DataType: "integer", IsNullable: "YES"}},
+						Columns: []catalog.Column{{Name: "id", DataType: "integer", IsNullable: "YES"}},
 					},
 				},
 			},
-			info: types.DBInfo{Dialect: "postgres", Schema: "public"},
+			info: catalog.ServerInfo{Dialect: "postgres", Schema: "public"},
 			want: `{"schemas":[{"name":"public","tables":[{"name":"a","columns":[{"name":"id","type":"integer","null":true}]}],"comment":"standard public schema"}]}`,
 		},
 		{
 			// Realm scope: a schema that is not the connection's own keeps its
 			// tables, and the two come back in byte order.
 			name: "realm scope keeps every schema",
-			schema: &types.DBSchema{
-				Schemas: []types.DBSchemaInfo{
+			schema: &catalog.Database{
+				Schemas: []catalog.Schema{
 					{Name: "public", Comment: "standard public schema"},
 					{Name: "extra"},
 				},
-				Tables: []types.DBTable{
+				Tables: []catalog.Table{
 					{
 						Name:    "a",
-						Columns: []types.DBColumn{{Name: "id", DataType: "integer", IsNullable: "YES"}},
+						Columns: []catalog.Column{{Name: "id", DataType: "integer", IsNullable: "YES"}},
 					},
 					{
 						Name:    "b",
 						Schema:  "extra",
-						Columns: []types.DBColumn{{Name: "id", DataType: "integer", IsNullable: "YES"}},
+						Columns: []catalog.Column{{Name: "id", DataType: "integer", IsNullable: "YES"}},
 					},
 				},
 			},
-			info: types.DBInfo{Dialect: "postgres", Schema: "public"},
+			info: catalog.ServerInfo{Dialect: "postgres", Schema: "public"},
 			want: `{"schemas":[{"name":"extra","tables":[{"name":"b","columns":[{"name":"id","type":"integer","null":true}]}]},{"name":"public","tables":[{"name":"a","columns":[{"name":"id","type":"integer","null":true}]}],"comment":"standard public schema"}]}`,
 		},
 		{
 			// A table comment sits after the columns for the same reason a
 			// schema comment sits after the tables.
 			name: "table attributes follow the columns",
-			schema: &types.DBSchema{
-				Schemas: []types.DBSchemaInfo{{Name: "app", Comment: "app schema comment"}},
-				Tables: []types.DBTable{
+			schema: &catalog.Database{
+				Schemas: []catalog.Schema{{Name: "app", Comment: "app schema comment"}},
+				Tables: []catalog.Table{
 					{
 						Name:    "t",
 						Schema:  "app",
 						Comment: "table comment",
-						Columns: []types.DBColumn{{Name: "id", DataType: "integer", IsNullable: "YES"}},
+						Columns: []catalog.Column{{Name: "id", DataType: "integer", IsNullable: "YES"}},
 					},
 				},
 			},
-			info: types.DBInfo{Dialect: "postgres", Schema: "app"},
+			info: catalog.ServerInfo{Dialect: "postgres", Schema: "app"},
 			want: `{"schemas":[{"name":"app","tables":[{"name":"t","columns":[{"name":"id","type":"integer","null":true}],"comment":"table comment"}],"comment":"app schema comment"}]}`,
 		},
 		{
 			// MySQL-family schemas carry a character set and a collation
 			// instead of a comment, in the same position.
 			name: "empty mysql database reports charset and collation",
-			schema: &types.DBSchema{
-				Schemas: []types.DBSchemaInfo{
+			schema: &catalog.Database{
+				Schemas: []catalog.Schema{
 					{Name: "shop", Charset: "utf8mb4", Collate: "utf8mb4_0900_ai_ci"},
 				},
 			},
-			info: types.DBInfo{Dialect: "mysql", Schema: "shop"},
+			info: catalog.ServerInfo{Dialect: "mysql", Schema: "shop"},
 			want: `{"schemas":[{"name":"shop","charset":"utf8mb4","collate":"utf8mb4_0900_ai_ci"}]}`,
 		},
 		{
@@ -119,23 +119,23 @@ func TestRenderSchemaInspect_JSONRealmDocument(t *testing.T) {
 			// `--schema nope`. Reporting a schema here would describe one the
 			// operator was told does not exist.
 			name:   "a selection that matched nothing stays empty",
-			schema: &types.DBSchema{},
-			info:   types.DBInfo{Dialect: "postgres", Schema: "public"},
+			schema: &catalog.Database{},
+			info:   catalog.ServerInfo{Dialect: "postgres", Schema: "public"},
 			want:   `{}`,
 		},
 		{
 			// A reader that describes no schemas keeps rendering its tables, so
 			// the schema list can never cost a table.
 			name: "tables without a described schema keep their schema",
-			schema: &types.DBSchema{
-				Tables: []types.DBTable{
+			schema: &catalog.Database{
+				Tables: []catalog.Table{
 					{
 						Name:    "users",
-						Columns: []types.DBColumn{{Name: "id", DataType: "integer", IsNullable: "NO"}},
+						Columns: []catalog.Column{{Name: "id", DataType: "integer", IsNullable: "NO"}},
 					},
 				},
 			},
-			info: types.DBInfo{Dialect: "sqlite", Schema: "main"},
+			info: catalog.ServerInfo{Dialect: "sqlite", Schema: "main"},
 			want: `{"schemas":[{"name":"main","tables":[{"name":"users","columns":[{"name":"id","type":"integer"}]}]}]}`,
 		},
 	}
@@ -144,7 +144,7 @@ func TestRenderSchemaInspect_JSONRealmDocument(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			report := atlasreport.NewSchemaInspectReport(
-				&goschema.Database{},
+				&schemamodel.Database{},
 				test.schema,
 				test.info,
 				nil,

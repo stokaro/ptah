@@ -7,11 +7,11 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/constraintscope"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/deporder"
@@ -22,7 +22,7 @@ import (
 	"go.5x5.cz/ptah/internal/systemschema"
 	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/migration/diffpolicy"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 const (
@@ -47,14 +47,14 @@ const (
 //	}
 //
 //	// Target schema from Go struct parsing
-//	generated := &goschema.Database{
-//		Enums: []goschema.Enum{
+//	generated := &schemamodel.Database{
+//		Enums: []schemamodel.Enum{
 //			{Name: "user_status", Values: []string{"active", "inactive"}},
 //		},
-//		Tables: []goschema.Table{
+//		Tables: []schemamodel.Table{
 //			{Name: "users", StructName: "User"},
 //		},
-//		Fields: []goschema.Field{
+//		Fields: []schemamodel.Field{
 //			{Name: "id", Type: "SERIAL", StructName: "User", Primary: true},
 //		},
 //	}
@@ -90,7 +90,7 @@ type Planner struct {
 	// concurrentIndexRefs requests CREATE INDEX CONCURRENTLY only for the
 	// listed newly added indexes. Table-qualified identity lets the generator
 	// target one of two same-named indexes in different schemas.
-	concurrentIndexRefs map[types.IndexRef]struct{}
+	concurrentIndexRefs map[difftypes.IndexRef]struct{}
 	// concurrentIndexDrops requests DROP INDEX CONCURRENTLY for every standalone
 	// index removal. Like concurrentIndexes it is a POLICY choice and is gated
 	// on capability.DropIndexConcurrently.
@@ -101,7 +101,7 @@ type Planner struct {
 	// reverses a concurrent build; an up file honors an explicit drop policy),
 	// and folding them together would make a concurrent build silently rewrite
 	// unrelated drops in the same plan.
-	concurrentIndexDropRefs map[types.IndexRef]struct{}
+	concurrentIndexDropRefs map[difftypes.IndexRef]struct{}
 	// skip lists destructive change kinds this planner omits from the plan,
 	// emitting a clearly-marked comment in their place. See diffpolicy.
 	skip diffpolicy.SkipSet
@@ -167,11 +167,11 @@ func (p *Planner) WithConcurrentIndexes() *Planner {
 // WithConcurrentIndexRefs returns a copy of the planner that emits
 // CREATE [UNIQUE] INDEX CONCURRENTLY only for the listed newly added indexes,
 // provided the target capability set includes capability.CreateIndexConcurrently.
-func (p *Planner) WithConcurrentIndexRefs(indexRefs ...types.IndexRef) *Planner {
+func (p *Planner) WithConcurrentIndexRefs(indexRefs ...difftypes.IndexRef) *Planner {
 	cp := *p
 	cp.concurrentIndexRefs = maps.Clone(p.concurrentIndexRefs)
 	if cp.concurrentIndexRefs == nil {
-		cp.concurrentIndexRefs = make(map[types.IndexRef]struct{}, len(indexRefs))
+		cp.concurrentIndexRefs = make(map[difftypes.IndexRef]struct{}, len(indexRefs))
 	}
 	for _, ref := range indexRefs {
 		if strings.TrimSpace(ref.Name) != "" && strings.TrimSpace(ref.TableName) != "" {
@@ -198,11 +198,11 @@ func (p *Planner) WithConcurrentIndexDrops() *Planner {
 // target capability set includes capability.DropIndexConcurrently. Concurrent
 // drops cannot run inside a transaction block; callers must arrange
 // no_transaction execution for such statements.
-func (p *Planner) WithConcurrentIndexDropRefs(indexRefs ...types.IndexRef) *Planner {
+func (p *Planner) WithConcurrentIndexDropRefs(indexRefs ...difftypes.IndexRef) *Planner {
 	cp := *p
 	cp.concurrentIndexDropRefs = maps.Clone(p.concurrentIndexDropRefs)
 	if cp.concurrentIndexDropRefs == nil {
-		cp.concurrentIndexDropRefs = make(map[types.IndexRef]struct{}, len(indexRefs))
+		cp.concurrentIndexDropRefs = make(map[difftypes.IndexRef]struct{}, len(indexRefs))
 	}
 	for _, ref := range indexRefs {
 		if strings.TrimSpace(ref.Name) != "" && strings.TrimSpace(ref.TableName) != "" {
@@ -229,7 +229,7 @@ func (p *Planner) WithSkipChangeKinds(kinds ...diffpolicy.ChangeKind) *Planner {
 	return &cp
 }
 
-func (p *Planner) usesConcurrentIndex(ref types.IndexRef) bool {
+func (p *Planner) usesConcurrentIndex(ref difftypes.IndexRef) bool {
 	if p.concurrentIndexes {
 		return true
 	}
@@ -241,7 +241,7 @@ func (p *Planner) usesConcurrentIndex(ref types.IndexRef) bool {
 // as DROP INDEX CONCURRENTLY. The drop side has its own policy flag and its own
 // ref set, so turning on concurrent index BUILDS never rewrites a drop the
 // caller did not ask for.
-func (p *Planner) usesConcurrentIndexDrop(ref types.IndexRef) bool {
+func (p *Planner) usesConcurrentIndexDrop(ref difftypes.IndexRef) bool {
 	if p.concurrentIndexDrops {
 		return true
 	}
@@ -249,7 +249,7 @@ func (p *Planner) usesConcurrentIndexDrop(ref types.IndexRef) bool {
 	return ok
 }
 
-func (p *Planner) addNewEnums(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) addNewEnums(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, enumName := range diff.EnumsAdded {
 		// The diff names enums by qualified name, so the lookup does too --
@@ -257,7 +257,7 @@ func (p *Planner) addNewEnums(result []ast.Node, diff *types.SchemaDiff, generat
 		// the node through fromschema.FromEnum keeps the CREATE TYPE identifier
 		// and the column type that references it derived from one place
 		// (stokaro/ptah#1276).
-		if enum := objectlookup.Qualified(generated.Enums, enumName, semantics); enum != nil {
+		if enum := objectlookup.Qualified(desired.Enums, enumName, semantics); enum != nil {
 			result = append(result, fromschema.FromEnum(*enum))
 		}
 	}
@@ -272,11 +272,11 @@ type postgresEnumColumnUsage struct {
 	DefaultExpr string
 }
 
-func (p *Planner) modifyExistingEnums(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) modifyExistingEnums(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, enumDiff := range diff.EnumsModified {
 		if len(enumDiff.ValuesRemoved) > 0 {
-			values, ok := postgresEnumValues(generated, enumDiff.EnumName, semantics)
+			values, ok := postgresEnumValues(desired, enumDiff.EnumName, semantics)
 			if !ok {
 				result = append(result, ast.NewComment(fmt.Sprintf(
 					"WARNING: Cannot remove enum values %v from %s because the target enum definition was not found",
@@ -288,7 +288,7 @@ func (p *Planner) modifyExistingEnums(result []ast.Node, diff *types.SchemaDiff,
 			result = append(result, ast.NewRawSQL(postgresEnumValueRemovalSQL(
 				enumDiff.EnumName,
 				values,
-				postgresEnumColumnUsages(generated, enumDiff.EnumName),
+				postgresEnumColumnUsages(desired, enumDiff.EnumName),
 			)))
 			continue
 		}
@@ -304,26 +304,26 @@ func (p *Planner) modifyExistingEnums(result []ast.Node, diff *types.SchemaDiff,
 }
 
 func postgresEnumValues(
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	enumName string,
 	semantics identifier.Semantics,
 ) ([]string, bool) {
-	if generated == nil {
+	if desired == nil {
 		return nil, false
 	}
-	enum := objectlookup.Qualified(generated.Enums, enumName, semantics)
+	enum := objectlookup.Qualified(desired.Enums, enumName, semantics)
 	if enum == nil {
 		return nil, false
 	}
 	return append([]string(nil), enum.Values...), true
 }
 
-func postgresEnumColumnUsages(generated *goschema.Database, enumName string) []postgresEnumColumnUsage {
-	if generated == nil {
+func postgresEnumColumnUsages(desired *schemamodel.Database, enumName string) []postgresEnumColumnUsage {
+	if desired == nil {
 		return nil
 	}
-	tablesByStruct := make(map[string]goschema.Table, len(generated.Tables))
-	for _, table := range generated.Tables {
+	tablesByStruct := make(map[string]schemamodel.Table, len(desired.Tables))
+	for _, table := range desired.Tables {
 		tablesByStruct[table.StructName] = table
 	}
 
@@ -335,7 +335,7 @@ func postgresEnumColumnUsages(generated *goschema.Database, enumName string) []p
 	// see the residual note on stokaro/ptah#1276.
 	bareName := postgresBaseName(enumName)
 	usages := make([]postgresEnumColumnUsage, 0)
-	for _, field := range generated.Fields {
+	for _, field := range desired.Fields {
 		if field.Type != enumName && field.Type != bareName {
 			continue
 		}
@@ -450,17 +450,17 @@ func quotePostgresIdentifier(name string) string {
 	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }
 
-func (p *Planner) addNewTables(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
-	orderedTables := deporder.TablesForCreate(generated, diff.TablesAdded)
+func (p *Planner) addNewTables(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
+	orderedTables := deporder.TablesForCreate(desired, diff.TablesAdded)
 
 	// Phase 1: Create tables without foreign key constraints
-	result = p.createTablesWithoutForeignKeys(result, generated, orderedTables)
+	result = p.createTablesWithoutForeignKeys(result, desired, orderedTables)
 
 	return result
 }
 
-func (p *Planner) addForeignKeyConstraintsForNewTables(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
-	return p.addForeignKeyConstraints(result, generated, deporder.TablesForCreate(generated, diff.TablesAdded))
+func (p *Planner) addForeignKeyConstraintsForNewTables(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
+	return p.addForeignKeyConstraints(result, desired, deporder.TablesForCreate(desired, diff.TablesAdded))
 }
 
 // addSchemaPreconditions creates every schema this migration is about to put an
@@ -490,8 +490,8 @@ func (p *Planner) addForeignKeyConstraintsForNewTables(result []ast.Node, diff *
 // no schema contribute none, which is every name on a single-schema migration.
 func (p *Planner) addSchemaPreconditions(
 	result []ast.Node,
-	diff *types.SchemaDiff,
-	generated *goschema.Database,
+	diff *difftypes.SchemaDiff,
+	desired *schemamodel.Database,
 ) []ast.Node {
 	names := make([]string, 0, len(diff.TablesAdded))
 	names = append(names, diff.TablesAdded...)
@@ -531,7 +531,7 @@ func (p *Planner) addSchemaPreconditions(
 		schemas = append(schemas, schema)
 	}
 	for _, name := range diff.ExtensionsAdded {
-		for _, extension := range generated.Extensions {
+		for _, extension := range desired.Extensions {
 			if extension.Name != name || extension.Schema == "" ||
 				systemschema.IsUncreatableSchema(p.dialect, extension.Schema) {
 				continue
@@ -551,11 +551,11 @@ func (p *Planner) addSchemaPreconditions(
 }
 
 // createTablesWithoutForeignKeys creates all tables without foreign key constraints
-func (p *Planner) createTablesWithoutForeignKeys(result []ast.Node, generated *goschema.Database, tables []goschema.Table) []ast.Node {
-	allFields := generated.Fields
+func (p *Planner) createTablesWithoutForeignKeys(result []ast.Node, desired *schemamodel.Database, tables []schemamodel.Table) []ast.Node {
+	allFields := desired.Fields
 
 	for _, table := range tables {
-		astNode := fromschema.FromTable(table, allFields, generated.Enums, DialectName)
+		astNode := fromschema.FromTable(table, allFields, desired.Enums, DialectName)
 		for _, column := range astNode.Columns {
 			column.ForeignKey = nil
 		}
@@ -566,18 +566,18 @@ func (p *Planner) createTablesWithoutForeignKeys(result []ast.Node, generated *g
 }
 
 // addForeignKeyConstraints adds foreign key constraints via ALTER TABLE statements
-func (p *Planner) addForeignKeyConstraints(result []ast.Node, generated *goschema.Database, tables []goschema.Table) []ast.Node {
+func (p *Planner) addForeignKeyConstraints(result []ast.Node, desired *schemamodel.Database, tables []schemamodel.Table) []ast.Node {
 	for _, table := range tables {
-		result = p.addRegularForeignKeys(result, generated, table)
-		result = p.addSelfReferencingForeignKeys(result, generated, table)
+		result = p.addRegularForeignKeys(result, desired, table)
+		result = p.addSelfReferencingForeignKeys(result, desired, table)
 	}
 
 	return result
 }
 
 // addRegularForeignKeys adds regular (non-self-referencing) foreign key constraints
-func (p *Planner) addRegularForeignKeys(result []ast.Node, generated *goschema.Database, table goschema.Table) []ast.Node {
-	for _, field := range generated.Fields {
+func (p *Planner) addRegularForeignKeys(result []ast.Node, desired *schemamodel.Database, table schemamodel.Table) []ast.Node {
+	for _, field := range desired.Fields {
 		if !isRegularForeignKeyField(field, table) {
 			continue
 		}
@@ -586,7 +586,7 @@ func (p *Planner) addRegularForeignKeys(result []ast.Node, generated *goschema.D
 		if fkRef == nil {
 			continue
 		}
-		qualifyForeignKeyRef(generated, table, fkRef)
+		qualifyForeignKeyRef(desired, table, fkRef)
 		if foreignKeyTargetsTable(fkRef, table) {
 			continue
 		}
@@ -597,17 +597,17 @@ func (p *Planner) addRegularForeignKeys(result []ast.Node, generated *goschema.D
 	return result
 }
 
-func foreignKeyTargetsTable(fkRef *ast.ForeignKeyRef, table goschema.Table) bool {
+func foreignKeyTargetsTable(fkRef *ast.ForeignKeyRef, table schemamodel.Table) bool {
 	return fkRef.Table == table.QualifiedName()
 }
 
-func qualifyForeignKeyRef(generated *goschema.Database, current goschema.Table, fkRef *ast.ForeignKeyRef) {
-	fkRef.Table = tablelookup.ResolveReference(generated.Tables, current, fkRef.Table)
+func qualifyForeignKeyRef(desired *schemamodel.Database, current schemamodel.Table, fkRef *ast.ForeignKeyRef) {
+	fkRef.Table = tablelookup.ResolveReference(desired.Tables, current, fkRef.Table)
 }
 
 // addSelfReferencingForeignKeys adds self-referencing foreign key constraints
-func (p *Planner) addSelfReferencingForeignKeys(result []ast.Node, generated *goschema.Database, table goschema.Table) []ast.Node {
-	selfRefFKs, exists := generated.SelfReferencingForeignKeys[table.QualifiedName()]
+func (p *Planner) addSelfReferencingForeignKeys(result []ast.Node, desired *schemamodel.Database, table schemamodel.Table) []ast.Node {
+	selfRefFKs, exists := desired.SelfReferencingForeignKeys[table.QualifiedName()]
 	if !exists {
 		return result
 	}
@@ -615,7 +615,7 @@ func (p *Planner) addSelfReferencingForeignKeys(result []ast.Node, generated *go
 	for _, selfRefFK := range selfRefFKs {
 		fkRef := fromschema.ParseForeignKeyReference(selfRefFK.Foreign)
 		if fkRef != nil {
-			qualifyForeignKeyRef(generated, table, fkRef)
+			qualifyForeignKeyRef(desired, table, fkRef)
 			fkRef.OnDelete = selfRefFK.OnDelete
 			fkRef.OnUpdate = selfRefFK.OnUpdate
 			result = append(result, p.createForeignKeyAlterStatement(table.QualifiedName(), selfReferencingForeignKeyName(table.Name, selfRefFK), []string{selfRefFK.FieldName}, fkRef))
@@ -629,7 +629,7 @@ func (p *Planner) addSelfReferencingForeignKeys(result []ast.Node, generated *go
 // self-referencing field-level foreign key, deriving the conventional
 // fk_<table>_<field> name when foreign_key_name= was omitted (same rule as the
 // regular field path in foreignKeyName).
-func selfReferencingForeignKeyName(tableName string, fk goschema.SelfReferencingFK) string {
+func selfReferencingForeignKeyName(tableName string, fk schemamodel.SelfReferencingFK) string {
 	if fk.ForeignKeyName != "" {
 		return fk.ForeignKeyName
 	}
@@ -646,7 +646,7 @@ func selfReferencingForeignKeyName(tableName string, fk goschema.SelfReferencing
 // created table was silently dropped from the migration, which made the
 // schemadiff comparator (which synthesizes the FK under the conventional name)
 // re-report it as missing forever (issue #189 round-trip failure).
-func isRegularForeignKeyField(field goschema.Field, table goschema.Table) bool {
+func isRegularForeignKeyField(field schemamodel.Field, table schemamodel.Table) bool {
 	return field.StructName == table.StructName && field.Foreign != ""
 }
 
@@ -654,7 +654,7 @@ func isRegularForeignKeyField(field goschema.Field, table goschema.Table) bool {
 // key: the explicit foreign_key_name= when set, otherwise the conventional
 // fk_<table>_<column> name shared with the schemadiff comparator and the down
 // path via fromschema.GenerateForeignKeyName.
-func foreignKeyName(tableName string, field goschema.Field) string {
+func foreignKeyName(tableName string, field schemamodel.Field) string {
 	if field.ForeignKeyName != "" {
 		return field.ForeignKeyName
 	}
@@ -674,23 +674,23 @@ func (p *Planner) createForeignKeyAlterStatement(tableName, constraintName strin
 
 func (p *Planner) addNewTableColumns(
 	result []ast.Node,
-	tableDiff types.TableDiff,
-	generated *goschema.Database,
+	tableDiff difftypes.TableDiff,
+	desired *schemamodel.Database,
 	semantics identifier.Semantics,
 ) []ast.Node {
 	for _, colName := range tableDiff.ColumnsAdded {
 		// Find the field definition for this column
 		// We need to find the struct name that corresponds to this table name
-		var targetField *goschema.Field
+		var targetField *schemamodel.Field
 		var targetStructName string
 
 		// First, find the struct name for this table
-		if table := findGeneratedTableByDiffName(generated, tableDiff.TableName, semantics); table != nil {
+		if table := findGeneratedTableByDiffName(desired, tableDiff.TableName, semantics); table != nil {
 			targetStructName = table.StructName
 		}
 
 		// Now find the field using the correct struct name
-		for _, field := range generated.Fields {
+		for _, field := range desired.Fields {
 			if field.StructName == targetStructName && field.Name == colName {
 				targetField = &field
 				break
@@ -698,7 +698,7 @@ func (p *Planner) addNewTableColumns(
 		}
 
 		if targetField != nil {
-			columnNode := fromschema.FromFieldWithoutForeignKeys(*targetField, generated.Enums, "postgres")
+			columnNode := fromschema.FromFieldWithoutForeignKeys(*targetField, desired.Enums, "postgres")
 
 			// Only add the column - foreign key constraints will be added separately
 			// to ensure proper dependency ordering (columns must exist before FK constraints)
@@ -719,26 +719,26 @@ func (p *Planner) addNewTableColumns(
 // This method is called after all columns have been added to ensure that referenced columns exist.
 func (p *Planner) addForeignKeyConstraintsForNewColumns(
 	result []ast.Node,
-	tableDiff types.TableDiff,
-	generated *goschema.Database,
+	tableDiff difftypes.TableDiff,
+	desired *schemamodel.Database,
 	semantics identifier.Semantics,
 ) []ast.Node {
 	for _, colName := range tableDiff.ColumnsAdded {
 		// Find the field definition for this column
-		var targetField *goschema.Field
+		var targetField *schemamodel.Field
 		var targetStructName string
 		var targetTableName string
-		var targetTable *goschema.Table
+		var targetTable *schemamodel.Table
 
 		// First, find the struct name for this table
-		if table := findGeneratedTableByDiffName(generated, tableDiff.TableName, semantics); table != nil {
+		if table := findGeneratedTableByDiffName(desired, tableDiff.TableName, semantics); table != nil {
 			targetTable = table
 			targetStructName = table.StructName
 			targetTableName = table.Name
 		}
 
 		// Now find the field using the correct struct name
-		for _, field := range generated.Fields {
+		for _, field := range desired.Fields {
 			if field.StructName == targetStructName && field.Name == colName {
 				targetField = &field
 				break
@@ -751,7 +751,7 @@ func (p *Planner) addForeignKeyConstraintsForNewColumns(
 			fkRef := fromschema.ParseForeignKeyReference(targetField.Foreign)
 			if fkRef != nil {
 				if targetTable != nil {
-					qualifyForeignKeyRef(generated, *targetTable, fkRef)
+					qualifyForeignKeyRef(desired, *targetTable, fkRef)
 				}
 				fkName := foreignKeyName(targetTableName, *targetField)
 				fkRef.Name = fkName
@@ -779,19 +779,19 @@ func (p *Planner) addForeignKeyConstraintsForNewColumns(
 
 func (p *Planner) modifyExistingTableColumns(
 	result []ast.Node,
-	tableDiff types.TableDiff,
-	generated *goschema.Database,
+	tableDiff difftypes.TableDiff,
+	desired *schemamodel.Database,
 	semantics identifier.Semantics,
 ) []ast.Node {
-	allFields := fromschema.ProcessEmbeddedFields(generated.EmbeddedFields, generated.Fields)
+	allFields := fromschema.ProcessEmbeddedFields(desired.EmbeddedFields, desired.Fields)
 	for _, colDiff := range tableDiff.ColumnsModified {
 		// Find the target field definition for this column
 		// We need to find the struct name that corresponds to this table name
-		var targetField *goschema.Field
+		var targetField *schemamodel.Field
 		var targetStructName string
 
 		// First, find the struct name for this table
-		if table := findGeneratedTableByDiffName(generated, tableDiff.TableName, semantics); table != nil {
+		if table := findGeneratedTableByDiffName(desired, tableDiff.TableName, semantics); table != nil {
 			targetStructName = table.StructName
 		}
 
@@ -810,7 +810,7 @@ func (p *Planner) modifyExistingTableColumns(
 		}
 
 		// Create a column definition with the target field properties
-		columnNode := fromschema.FromField(*targetField, generated.Enums, "postgres")
+		columnNode := fromschema.FromField(*targetField, desired.Enums, "postgres")
 		if isGeneratedColumnChange(colDiff) {
 			result = p.modifyGeneratedColumnExpression(result, tableDiff.TableName, colDiff, columnNode)
 			continue
@@ -853,7 +853,7 @@ func (p *Planner) modifyExistingTableColumns(
 }
 
 // appendColumnComment emits the column's comment transition, if it has one.
-func appendColumnComment(result []ast.Node, table string, colDiff types.ColumnDiff) []ast.Node {
+func appendColumnComment(result []ast.Node, table string, colDiff difftypes.ColumnDiff) []ast.Node {
 	if colDiff.CommentChange == nil {
 		return result
 	}
@@ -870,7 +870,7 @@ func appendColumnComment(result []ast.Node, table string, colDiff types.ColumnDi
 func (p *Planner) modifyGeneratedColumnExpression(
 	result []ast.Node,
 	tableName string,
-	colDiff types.ColumnDiff,
+	colDiff difftypes.ColumnDiff,
 	columnNode *ast.ColumnNode,
 ) []ast.Node {
 	if columnNode == nil || strings.TrimSpace(columnNode.GeneratedExpression) == "" {
@@ -913,7 +913,7 @@ func (p *Planner) modifyGeneratedColumnExpression(
 	return result
 }
 
-func isGeneratedColumnChange(colDiff types.ColumnDiff) bool {
+func isGeneratedColumnChange(colDiff difftypes.ColumnDiff) bool {
 	_, ok := colDiff.Changes["generated"]
 	return ok
 }
@@ -931,21 +931,21 @@ func isGeneratedColumnChange(colDiff types.ColumnDiff) bool {
 // omitted the ALTER TABLE ... ADD COLUMN that restores it, exited 0 and reported
 // success.
 func findGeneratedTableByDiffName(
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	tableName string,
 	semantics identifier.Semantics,
-) *goschema.Table {
-	return objectlookup.Qualified(generated.Tables, tableName, semantics)
+) *schemamodel.Table {
+	return objectlookup.Qualified(desired.Tables, tableName, semantics)
 }
 
 // findGeneratedTableByStructName resolves a declared table from the Go struct it
 // was declared on. A struct name is not a database identifier, so it carries no
 // schema and no folding rule: it is matched verbatim, and identifier semantics
 // have nothing to say about it.
-func findGeneratedTableByStructName(generated *goschema.Database, structName string) *goschema.Table {
-	for i := range generated.Tables {
-		if generated.Tables[i].StructName == structName {
-			return &generated.Tables[i]
+func findGeneratedTableByStructName(desired *schemamodel.Database, structName string) *schemamodel.Table {
+	for i := range desired.Tables {
+		if desired.Tables[i].StructName == structName {
+			return &desired.Tables[i]
 		}
 	}
 	return nil
@@ -964,7 +964,7 @@ func previousColumnNullable(change string) bool {
 	return ok && strings.TrimSpace(before) == "true"
 }
 
-func (p *Planner) removeTableColumnsFromDiff(result []ast.Node, tableDiff types.TableDiff) []ast.Node {
+func (p *Planner) removeTableColumnsFromDiff(result []ast.Node, tableDiff difftypes.TableDiff) []ast.Node {
 	for _, colName := range tableDiff.ColumnsRemoved {
 		// Generate DROP COLUMN statement using AST with CASCADE to handle dependencies
 		dropOp := &ast.DropColumnOperation{
@@ -983,7 +983,7 @@ func (p *Planner) removeTableColumnsFromDiff(result []ast.Node, tableDiff types.
 }
 
 // appendTableComment emits the table's comment transition, if it has one.
-func appendTableComment(result []ast.Node, tableDiff types.TableDiff) []ast.Node {
+func appendTableComment(result []ast.Node, tableDiff difftypes.TableDiff) []ast.Node {
 	if tableDiff.CommentChange == nil {
 		return result
 	}
@@ -996,7 +996,7 @@ func appendTableComment(result []ast.Node, tableDiff types.TableDiff) []ast.Node
 	})
 }
 
-func (p *Planner) addAndModifyTableColumns(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) addAndModifyTableColumns(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, tableDiff := range diff.TablesModified {
 		// The table's own comment is emitted before its columns' changes, so a
@@ -1009,10 +1009,10 @@ func (p *Planner) addAndModifyTableColumns(result []ast.Node, diff *types.Schema
 			initialLength := len(result)
 
 			// Add new columns
-			result = p.addNewTableColumns(result, tableDiff, generated, semantics)
+			result = p.addNewTableColumns(result, tableDiff, desired, semantics)
 
 			// Modify existing columns
-			result = p.modifyExistingTableColumns(result, tableDiff, generated, semantics)
+			result = p.modifyExistingTableColumns(result, tableDiff, desired, semantics)
 
 			// Only add the comment if actual operations were performed
 			if len(result) > initialLength {
@@ -1033,7 +1033,7 @@ func (p *Planner) addAndModifyTableColumns(result []ast.Node, diff *types.Schema
 // addForeignKeyConstraintsForModifiedTables adds foreign key constraints for all newly added columns
 // across all modified tables. This ensures that all columns exist before any foreign key constraints
 // are created, preventing dependency ordering issues.
-func (p *Planner) addForeignKeyConstraintsForModifiedTables(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) addForeignKeyConstraintsForModifiedTables(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, tableDiff := range diff.TablesModified {
 		if len(tableDiff.ColumnsAdded) > 0 {
@@ -1041,7 +1041,7 @@ func (p *Planner) addForeignKeyConstraintsForModifiedTables(result []ast.Node, d
 			initialLength := len(result)
 
 			// Add foreign key constraints for new columns
-			result = p.addForeignKeyConstraintsForNewColumns(result, tableDiff, generated, semantics)
+			result = p.addForeignKeyConstraintsForNewColumns(result, tableDiff, desired, semantics)
 
 			// Only add the comment if actual operations were performed
 			if len(result) > initialLength {
@@ -1059,7 +1059,7 @@ func (p *Planner) addForeignKeyConstraintsForModifiedTables(result []ast.Node, d
 	return result
 }
 
-func (p *Planner) removeTableColumns(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) removeTableColumns(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, tableDiff := range diff.TablesModified {
 		if len(tableDiff.ColumnsRemoved) > 0 {
 			astCommentNode := ast.NewComment(fmt.Sprintf("Remove columns from table: %s", tableDiff.TableName))
@@ -1074,7 +1074,7 @@ func (p *Planner) removeTableColumns(result []ast.Node, diff *types.SchemaDiff) 
 
 func (p *Planner) addNewIndexes(
 	result []ast.Node,
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	indexes *indexscope.Resolver,
 ) ([]ast.Node, error) {
 	indexRemovals := indexscope.NewConflictSetWithSemantics(
@@ -1120,7 +1120,7 @@ func (p *Planner) addNewIndexes(
 
 func (p *Planner) removeIndexes(
 	result []ast.Node,
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 ) []ast.Node {
 	// IF EXISTS on DROP INDEX is capability-gated intent, mirroring the MySQL
 	// planner (issue #226). Every supported PostgreSQL line has the guard, so
@@ -1184,7 +1184,7 @@ func (p *Planner) removeIndexes(
 // IF EXISTS is unconditional, matching removeConstraints: every supported
 // PostgreSQL line accepts it on DROP CONSTRAINT, and the DropIndexIfExists
 // capability speaks for the DROP INDEX spelling only.
-func (p *Planner) constraintBackedIndexDropNode(ref types.IndexRef) ast.Node {
+func (p *Planner) constraintBackedIndexDropNode(ref difftypes.IndexRef) ast.Node {
 	return &ast.AlterTableNode{
 		Name: ref.TableName,
 		Operations: []ast.AlterOperation{&ast.DropConstraintOperation{
@@ -1204,8 +1204,8 @@ func appendSkipComments(result []ast.Node, skipped []diffpolicy.SkippedChange) [
 	return result
 }
 
-func (p *Planner) removeTables(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
-	for _, tableName := range deporder.TableDropOrder(diff.TablesRemoved, generated) {
+func (p *Planner) removeTables(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
+	for _, tableName := range deporder.TableDropOrder(diff.TablesRemoved, desired) {
 		dropTableNode := ast.NewDropTable(tableName).
 			SetIfExists().
 			SetCascade().
@@ -1216,7 +1216,7 @@ func (p *Planner) removeTables(result []ast.Node, diff *types.SchemaDiff, genera
 	return result
 }
 
-func (p *Planner) removeEnums(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) removeEnums(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, enumName := range diff.EnumsRemoved {
 		dropTypeNode := ast.NewDropType(enumName).
 			SetIfExists().
@@ -1237,7 +1237,7 @@ type plannedUserType struct {
 }
 
 // addNewUserTypes emits CREATE DOMAIN / CREATE TYPE for newly added domains,
-// ranges, and composite types. It runs before tables so columns can reference
+// ranges, and composite difftypes. It runs before tables so columns can reference
 // them, and orders the three kinds against each other so a type is created
 // before whatever names it.
 //
@@ -1251,8 +1251,8 @@ type plannedUserType struct {
 //
 // Enums are not in the set: they carry no reference to another user-defined
 // type and are already emitted before this runs.
-func (p *Planner) addNewUserTypes(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
-	planned := p.plannedUserTypes(diff, generated, diff.EffectiveIdentifierSemantics(p.targetDialect()))
+func (p *Planner) addNewUserTypes(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
+	planned := p.plannedUserTypes(diff, desired, diff.EffectiveIdentifierSemantics(p.targetDialect()))
 	byName := make(map[string]ast.Node, len(planned))
 	deps := make([]deporder.UserType, 0, len(planned))
 	for _, userType := range planned {
@@ -1272,14 +1272,14 @@ func (p *Planner) addNewUserTypes(result []ast.Node, diff *types.SchemaDiff, gen
 // creates, newly added ones first and then the ones recreated in place of a
 // modification, each with the type spellings its definition names.
 func (p *Planner) plannedUserTypes(
-	diff *types.SchemaDiff,
-	generated *goschema.Database,
+	diff *difftypes.SchemaDiff,
+	desired *schemamodel.Database,
 	semantics identifier.Semantics,
 ) []plannedUserType {
 	rebuiltForAdd := rebuiltUserTypes(diff)
 	var planned []plannedUserType
 	for _, name := range diff.DomainsAdded {
-		if domain := findDomain(generated.Domains, name, semantics); domain != nil {
+		if domain := findDomain(desired.Domains, name, semantics); domain != nil {
 			planned = append(planned, plannedUserType{
 				dep:  deporder.UserType{Name: name, References: []string{domain.BaseType}},
 				node: fromschema.FromDomain(*domain),
@@ -1287,7 +1287,7 @@ func (p *Planner) plannedUserTypes(
 		}
 	}
 	for _, name := range diff.RangesAdded {
-		if rangeType := findRange(generated.Ranges, name, semantics); rangeType != nil {
+		if rangeType := findRange(desired.Ranges, name, semantics); rangeType != nil {
 			planned = append(planned, plannedUserType{
 				dep:  deporder.UserType{Name: name, References: []string{rangeType.Subtype}},
 				node: fromschema.FromRange(*rangeType),
@@ -1295,7 +1295,7 @@ func (p *Planner) plannedUserTypes(
 		}
 	}
 	for _, name := range diff.CompositeTypesAdded {
-		if composite := findCompositeType(generated.CompositeTypes, name, semantics); composite != nil {
+		if composite := findCompositeType(desired.CompositeTypes, name, semantics); composite != nil {
 			planned = append(planned, plannedUserType{
 				dep:  deporder.UserType{Name: name, References: compositeFieldTypes(*composite)},
 				node: fromschema.FromCompositeType(*composite),
@@ -1312,7 +1312,7 @@ func (p *Planner) plannedUserTypes(
 			// emitted, so there is nothing to put back.
 			continue
 		}
-		if domain := findDomain(generated.Domains, domainDiff.DomainName, semantics); domain != nil {
+		if domain := findDomain(desired.Domains, domainDiff.DomainName, semantics); domain != nil {
 			planned = append(planned, plannedUserType{
 				dep:  deporder.UserType{Name: domainDiff.DomainName, References: []string{domain.BaseType}},
 				node: fromschema.FromDomain(*domain).SetComment(fmt.Sprintf("Recreate domain %s", domainDiff.DomainName)),
@@ -1325,7 +1325,7 @@ func (p *Planner) plannedUserTypes(
 			// emitted, so there is nothing to put back.
 			continue
 		}
-		if composite := findCompositeType(generated.CompositeTypes, compositeDiff.TypeName, semantics); composite != nil {
+		if composite := findCompositeType(desired.CompositeTypes, compositeDiff.TypeName, semantics); composite != nil {
 			planned = append(planned, plannedUserType{
 				dep:  deporder.UserType{Name: compositeDiff.TypeName, References: compositeFieldTypes(*composite)},
 				node: fromschema.FromCompositeType(*composite).SetComment(fmt.Sprintf("Recreate composite type %s", compositeDiff.TypeName)),
@@ -1336,7 +1336,7 @@ func (p *Planner) plannedUserTypes(
 	// the same drop-and-recreate path domains and composites already use
 	// (stokaro/ptah#931 item 2).
 	for _, rangeDiff := range diff.RangesModified {
-		if rangeType := findRange(generated.Ranges, rangeDiff.RangeName, semantics); rangeType != nil {
+		if rangeType := findRange(desired.Ranges, rangeDiff.RangeName, semantics); rangeType != nil {
 			planned = append(planned, plannedUserType{
 				dep:  deporder.UserType{Name: rangeDiff.RangeName, References: []string{rangeType.Subtype}},
 				node: fromschema.FromRange(*rangeType).SetComment(fmt.Sprintf("Recreate range type %s", rangeDiff.RangeName)),
@@ -1346,7 +1346,7 @@ func (p *Planner) plannedUserTypes(
 	return planned
 }
 
-func compositeFieldTypes(composite goschema.CompositeType) []string {
+func compositeFieldTypes(composite schemamodel.CompositeType) []string {
 	references := make([]string, 0, len(composite.Fields))
 	for _, field := range composite.Fields {
 		references = append(references, field.Type)
@@ -1355,9 +1355,9 @@ func compositeFieldTypes(composite goschema.CompositeType) []string {
 }
 
 // removeUserTypes emits DROP DOMAIN / DROP TYPE for removed and modified
-// domains, ranges, and composite types. Modified objects are dropped here and
+// domains, ranges, and composite difftypes. Modified objects are dropped here and
 // recreated by addNewUserTypes (there is no in-place ALTER for these forms).
-func (p *Planner) removeUserTypes(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) removeUserTypes(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, name := range diff.DomainsRemoved {
 		result = append(result, ast.NewDropType(name).SetDomain().SetIfExists().SetCascade().
 			SetComment("WARNING: Make sure no columns use this domain!"))
@@ -1409,8 +1409,8 @@ func (p *Planner) removeUserTypes(result []ast.Node, diff *types.SchemaDiff) []a
 // not drop.
 func (p *Planner) dropModifiedUserTypes(
 	result []ast.Node,
-	diff *types.SchemaDiff,
-	generated *goschema.Database,
+	diff *difftypes.SchemaDiff,
+	desired *schemamodel.Database,
 ) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	rebuilt := rebuiltUserTypes(diff)
@@ -1425,7 +1425,7 @@ func (p *Planner) dropModifiedUserTypes(
 			// any domain a column uses.
 			continue
 		}
-		if findDomain(generated.Domains, domainDiff.DomainName, semantics) == nil {
+		if findDomain(desired.Domains, domainDiff.DomainName, semantics) == nil {
 			unresolved = append(unresolved, unrecreatableUserTypeComment("domain", domainDiff.DomainName))
 			continue
 		}
@@ -1440,7 +1440,7 @@ func (p *Planner) dropModifiedUserTypes(
 			// table column uses, which is the case the ALTER exists for.
 			continue
 		}
-		if findCompositeType(generated.CompositeTypes, compositeDiff.TypeName, semantics) == nil {
+		if findCompositeType(desired.CompositeTypes, compositeDiff.TypeName, semantics) == nil {
 			unresolved = append(unresolved, unrecreatableUserTypeComment("composite type", compositeDiff.TypeName))
 			continue
 		}
@@ -1449,7 +1449,7 @@ func (p *Planner) dropModifiedUserTypes(
 		deps = append(deps, deporder.UserType{Name: compositeDiff.TypeName, References: compositeDiff.CurrentFieldTypes})
 	}
 	for _, rangeDiff := range diff.RangesModified {
-		if findRange(generated.Ranges, rangeDiff.RangeName, semantics) == nil {
+		if findRange(desired.Ranges, rangeDiff.RangeName, semantics) == nil {
 			unresolved = append(unresolved, unrecreatableUserTypeComment("range type", rangeDiff.RangeName))
 			continue
 		}
@@ -1482,7 +1482,7 @@ func unrecreatableUserTypeComment(kind, name string) ast.Node {
 // or nothing when the diff does not carry one. It never reads Changes: that map
 // is a human-readable "old -> new" rendering, and recovering a type name by
 // splitting prose is not a basis for statement ordering.
-func currentDomainReferences(domainDiff types.DomainDiff) []string {
+func currentDomainReferences(domainDiff difftypes.DomainDiff) []string {
 	if domainDiff.CurrentBaseType == "" {
 		return nil
 	}
@@ -1492,26 +1492,26 @@ func currentDomainReferences(domainDiff types.DomainDiff) []string {
 // currentRangeReferences reports the from-side subtype of a modified range, for
 // the same reason and with the same Changes-is-prose caveat as
 // currentDomainReferences.
-func currentRangeReferences(rangeDiff types.RangeDiff) []string {
+func currentRangeReferences(rangeDiff difftypes.RangeDiff) []string {
 	if rangeDiff.CurrentSubtype == "" {
 		return nil
 	}
 	return []string{rangeDiff.CurrentSubtype}
 }
 
-func findDomain(domains []goschema.Domain, name string, semantics identifier.Semantics) *goschema.Domain {
+func findDomain(domains []schemamodel.Domain, name string, semantics identifier.Semantics) *schemamodel.Domain {
 	return objectlookup.Qualified(domains, name, semantics)
 }
 
 func findCompositeType(
-	composites []goschema.CompositeType,
+	composites []schemamodel.CompositeType,
 	name string,
 	semantics identifier.Semantics,
-) *goschema.CompositeType {
+) *schemamodel.CompositeType {
 	return objectlookup.Qualified(composites, name, semantics)
 }
 
-func findRange(ranges []goschema.Range, name string, semantics identifier.Semantics) *goschema.Range {
+func findRange(ranges []schemamodel.Range, name string, semantics identifier.Semantics) *schemamodel.Range {
 	return objectlookup.Qualified(ranges, name, semantics)
 }
 
@@ -1554,14 +1554,14 @@ func findRange(ranges []goschema.Range, name string, semantics identifier.Semant
 //		TablesAdded: []string{"users"},
 //	}
 //
-//	generated := &goschema.Database{
-//		Enums: []goschema.Enum{
+//	generated := &schemamodel.Database{
+//		Enums: []schemamodel.Enum{
 //			{Name: "user_status", Values: []string{"active", "inactive"}},
 //		},
-//		Tables: []goschema.Table{
+//		Tables: []schemamodel.Table{
 //			{Name: "users", StructName: "User"},
 //		},
-//		Fields: []goschema.Field{
+//		Fields: []schemamodel.Field{
 //			{Name: "id", Type: "SERIAL", StructName: "User", Primary: true},
 //			{Name: "status", Type: "user_status", StructName: "User"},
 //		},
@@ -1604,12 +1604,12 @@ func findRange(ranges []goschema.Range, name string, semantics identifier.Semant
 // through. Keeping that answer in one place prevents the plan path from
 // silently dropping an unsupported object while `schema render` reports it
 // differently (stokaro/ptah#929).
-func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated *goschema.Database) ([]ast.Node, error) {
+func (p *Planner) GenerateMigrationASTChecked(diff *difftypes.SchemaDiff, desired *schemamodel.Database) ([]ast.Node, error) {
 	var result []ast.Node
-	if generated == nil {
-		generated = &goschema.Database{}
+	if desired == nil {
+		desired = &schemamodel.Database{}
 	}
-	if err := p.validateExtensionInstallationSchemas(diff, generated); err != nil {
+	if err := p.validateExtensionInstallationSchemas(diff, desired); err != nil {
 		return nil, err
 	}
 	if err := p.refuseHypertableChanges(diff); err != nil {
@@ -1628,7 +1628,7 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 		p.targetDialect(),
 		semantics,
 		diff,
-		generated,
+		desired,
 	)
 	if err != nil {
 		return nil, err
@@ -1644,7 +1644,7 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 		p.targetDialect(),
 		semantics,
 		diff,
-		generated,
+		desired,
 	)
 	if err != nil {
 		return nil, err
@@ -1662,80 +1662,80 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	// 0. Create the schemas this migration adds objects to, before anything is
 	// created in them. Every phase below can name a schema, so this cannot sit
 	// inside one of them.
-	result = p.addSchemaPreconditions(result, diff, generated)
+	result = p.addSchemaPreconditions(result, diff, desired)
 
 	// 0b. Add new extensions (PostgreSQL extensions should be created before other objects)
-	result = p.addNewExtensions(result, diff, generated)
+	result = p.addNewExtensions(result, diff, desired)
 
 	// 1. Add new roles (roles may be referenced by RLS policies and functions)
-	result = p.addNewRoles(result, diff, generated)
+	result = p.addNewRoles(result, diff, desired)
 
 	// 2. Add new functions (functions may be used by RLS policies)
-	result = p.addNewFunctions(result, diff, generated)
+	result = p.addNewFunctions(result, diff, desired)
 
 	// 2b. Modify existing function definitions (body, volatility, security, language).
 	// PostgreSQL CREATE OR REPLACE FUNCTION updates the live definition in place
 	// without affecting policies or triggers that reference the function.
-	result = p.modifyExistingFunctions(result, diff, generated)
+	result = p.modifyExistingFunctions(result, diff, desired)
 
 	// 2c. Add new sequences before tables, since a table column may draw its
 	// DEFAULT from a sequence. OWNED BY is applied later, after tables exist.
-	result = p.addNewSequences(result, diff, generated)
+	result = p.addNewSequences(result, diff, desired)
 
 	// 3. Add new enums (PostgreSQL requires enum types to exist before tables use them)
-	result = p.addNewEnums(result, diff, generated)
+	result = p.addNewEnums(result, diff, desired)
 
 	// 3c. Recreate changed user-defined types (drop then create), then create
 	// new domains/ranges/composites before tables can reference them.
-	result = p.dropModifiedUserTypes(result, diff, generated)
-	result = p.addNewUserTypes(result, diff, generated)
+	result = p.dropModifiedUserTypes(result, diff, desired)
+	result = p.addNewUserTypes(result, diff, desired)
 
 	// 3d. Change in place the domains that need no rebuild. It follows the
 	// creations so that a domain added in this same plan is not also altered,
 	// and it stays ahead of the tables, whose columns take their default and
 	// their constraint from the domain as it is when the column is created.
-	result = p.alterModifiedDomains(result, diff, generated)
-	result = p.alterModifiedCompositeTypes(result, diff, generated)
+	result = p.alterModifiedDomains(result, diff, desired)
+	result = p.alterModifiedCompositeTypes(result, diff, desired)
 
 	// 4. Modify existing enums
-	result = p.modifyExistingEnums(result, diff, generated)
+	result = p.modifyExistingEnums(result, diff, desired)
 
 	// 5. Add new tables
-	result = p.addNewTables(result, diff, generated)
+	result = p.addNewTables(result, diff, desired)
 
 	// 6. Add and modify table columns (must be done before creating RLS policies that depend on columns)
-	result = p.addAndModifyTableColumns(result, diff, generated)
+	result = p.addAndModifyTableColumns(result, diff, desired)
 
 	// 6.5. Add foreign key constraints for newly added columns (must be done after all columns exist)
-	result = p.addForeignKeyConstraintsForModifiedTables(result, diff, generated)
+	result = p.addForeignKeyConstraintsForModifiedTables(result, diff, desired)
 
 	// 6.7. Associate added sequences with their owning table.column and apply
 	// option changes to existing sequences, now that tables exist.
-	result = p.addSequenceOwnership(result, diff, generated)
-	result = p.modifyExistingSequences(result, diff, generated)
+	result = p.addSequenceOwnership(result, diff, desired)
+	result = p.modifyExistingSequences(result, diff, desired)
 
 	// 6.6. Add and modify views, materialized views, and triggers after their tables/functions exist.
-	result = p.addNewViewLikeObjects(result, diff, generated)
-	result = p.modifyExistingViews(result, diff, generated)
-	result = p.retargetSynonyms(result, diff, generated)
-	result = p.addNewSynonyms(result, diff, generated)
-	result = p.addNewHypertables(result, diff, generated)
-	result = p.addNewContinuousAggregates(result, diff, generated)
-	result = p.modifyExistingContinuousAggregates(result, diff, generated)
+	result = p.addNewViewLikeObjects(result, diff, desired)
+	result = p.modifyExistingViews(result, diff, desired)
+	result = p.retargetSynonyms(result, diff, desired)
+	result = p.addNewSynonyms(result, diff, desired)
+	result = p.addNewHypertables(result, diff, desired)
+	result = p.addNewContinuousAggregates(result, diff, desired)
+	result = p.modifyExistingContinuousAggregates(result, diff, desired)
 	result = p.addExtendedProperties(result, diff)
-	result = p.modifyExistingMaterializedViews(result, diff, generated)
-	result = p.addNewTriggers(result, diff, generated)
-	result = p.modifyExistingTriggers(result, diff, generated)
+	result = p.modifyExistingMaterializedViews(result, diff, desired)
+	result = p.addNewTriggers(result, diff, desired)
+	result = p.modifyExistingTriggers(result, diff, desired)
 
 	// 7. Modify existing roles (must be done before RLS policies that reference them)
-	result = p.modifyExistingRoles(result, diff, generated)
+	result = p.modifyExistingRoles(result, diff, desired)
 
 	// 7.5. Revoke removed grants before adding replacement grants.
 	result = p.removeGrants(result, diff)
 	result = p.revokeGrantOptions(result, diff)
 
 	// 8. Enable RLS on tables (must be done after table creation and modification)
-	result = p.enableRLSOnTables(result, diff, generated, semantics)
+	result = p.enableRLSOnTables(result, diff, desired, semantics)
 
 	// 9. Add RLS policies (must be done after RLS is enabled and columns exist)
 	result, err = p.addNewRLSPolicies(result, diff, policies)
@@ -1757,11 +1757,11 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	}
 
 	// 10.5. Add new constraints (must be done after tables and columns exist)
-	result = p.addNewConstraints(result, diff, generated)
+	result = p.addNewConstraints(result, diff, desired)
 
 	// 10.6. Add field-level foreign keys for new tables after referenced
 	// unique indexes and constraints have been created.
-	result = p.addForeignKeyConstraintsForNewTables(result, diff, generated)
+	result = p.addForeignKeyConstraintsForNewTables(result, diff, desired)
 
 	// 11. Remove indexes (safe operations)
 	result = p.removeIndexes(result, diff)
@@ -1810,7 +1810,7 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	result = p.removeSynonyms(result, diff)
 
 	// 13. Remove tables (dangerous!)
-	result = p.removeTables(result, diff, generated)
+	result = p.removeTables(result, diff, desired)
 
 	// 13.5. Remove standalone sequences after tables that may default from them.
 	result = p.removeSequences(result, diff)
@@ -1831,12 +1831,12 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	return result, nil
 }
 
-func (p *Planner) validateExtensionInstallationSchemas(diff *types.SchemaDiff, generated *goschema.Database) error {
+func (p *Planner) validateExtensionInstallationSchemas(diff *difftypes.SchemaDiff, desired *schemamodel.Database) error {
 	if p.targetDialect() == platform.Postgres || p.targetDialect() == platform.YugabyteDB || diff == nil {
 		return nil
 	}
 	for _, name := range diff.ExtensionsAdded {
-		for _, extension := range generated.Extensions {
+		for _, extension := range desired.Extensions {
 			if extension.Name == name && extension.Schema != "" {
 				return fmt.Errorf(
 					"%w: %s does not support PostgreSQL extension installation schema %q for extension %q",
@@ -1860,10 +1860,10 @@ func (p *Planner) validateExtensionInstallationSchemas(diff *types.SchemaDiff, g
 	return nil
 }
 
-func (p *Planner) addNewRoles(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) addNewRoles(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
 	for _, roleName := range diff.RolesAdded {
 		// Find the role definition
-		for _, role := range generated.Roles {
+		for _, role := range desired.Roles {
 			if role.Name == roleName {
 				roleNode := fromschema.FromRole(role)
 				result = append(result, roleNode)
@@ -1874,9 +1874,9 @@ func (p *Planner) addNewRoles(result []ast.Node, diff *types.SchemaDiff, generat
 	return result
 }
 
-func (p *Planner) modifyExistingRoles(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) modifyExistingRoles(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
 	for _, roleDiff := range diff.RolesModified {
-		targetRole := p.findTargetRole(roleDiff.RoleName, generated)
+		targetRole := p.findTargetRole(roleDiff.RoleName, desired)
 		if targetRole == nil {
 			continue // Skip if role not found in target schema
 		}
@@ -1891,8 +1891,8 @@ func (p *Planner) modifyExistingRoles(result []ast.Node, diff *types.SchemaDiff,
 }
 
 // findTargetRole finds a role by name in the generated database schema
-func (p *Planner) findTargetRole(roleName string, generated *goschema.Database) *goschema.Role {
-	for _, role := range generated.Roles {
+func (p *Planner) findTargetRole(roleName string, desired *schemamodel.Database) *schemamodel.Role {
+	for _, role := range desired.Roles {
 		if role.Name == roleName {
 			return &role
 		}
@@ -1901,7 +1901,7 @@ func (p *Planner) findTargetRole(roleName string, generated *goschema.Database) 
 }
 
 // buildAlterRoleNode creates an ALTER ROLE node with operations based on role changes
-func (p *Planner) buildAlterRoleNode(roleDiff types.RoleDiff, targetRole *goschema.Role) *ast.AlterRoleNode {
+func (p *Planner) buildAlterRoleNode(roleDiff difftypes.RoleDiff, targetRole *schemamodel.Role) *ast.AlterRoleNode {
 	alterRoleNode := ast.NewAlterRole(roleDiff.RoleName)
 
 	// Sorted key order keeps the ALTER ROLE operation order deterministic
@@ -1914,7 +1914,7 @@ func (p *Planner) buildAlterRoleNode(roleDiff types.RoleDiff, targetRole *gosche
 }
 
 // addRoleOperation adds the appropriate operation to the ALTER ROLE node based on change type and value
-func (p *Planner) addRoleOperation(alterRoleNode *ast.AlterRoleNode, changeType, changeValue string, targetRole *goschema.Role) {
+func (p *Planner) addRoleOperation(alterRoleNode *ast.AlterRoleNode, changeType, changeValue string, targetRole *schemamodel.Role) {
 	switch changeType {
 	case "login":
 		p.addLoginOperation(alterRoleNode, changeValue)
@@ -1988,7 +1988,7 @@ func (p *Planner) addReplicationOperation(alterRoleNode *ast.AlterRoleNode, chan
 }
 
 // addPasswordOperation adds a password operation to the ALTER ROLE node
-func (p *Planner) addPasswordOperation(alterRoleNode *ast.AlterRoleNode, changeValue string, targetRole *goschema.Role) {
+func (p *Planner) addPasswordOperation(alterRoleNode *ast.AlterRoleNode, changeValue string, targetRole *schemamodel.Role) {
 	if changeValue == "password_update_required" {
 		// Use the target role to get the new password
 		if targetRole != nil && targetRole.Password != "" {
@@ -1997,7 +1997,7 @@ func (p *Planner) addPasswordOperation(alterRoleNode *ast.AlterRoleNode, changeV
 	}
 }
 
-func (p *Planner) removeRoles(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) removeRoles(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, roleName := range diff.RolesRemoved {
 		dropRoleNode := ast.NewDropRole(roleName).
 			SetIfExists().
@@ -2007,7 +2007,7 @@ func (p *Planner) removeRoles(result []ast.Node, diff *types.SchemaDiff) []ast.N
 	return result
 }
 
-func (p *Planner) addNewGrants(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) addNewGrants(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, grant := range diff.GrantsAdded {
 		node := ast.NewGrantPrivilege(grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege}).
 			SetWithOption(grant.WithOption)
@@ -2021,7 +2021,7 @@ func (p *Planner) addNewGrants(result []ast.Node, diff *types.SchemaDiff) []ast.
 	return result
 }
 
-func (p *Planner) removeGrants(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) removeGrants(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, grant := range diff.GrantsRemoved {
 		node := ast.NewRevokePrivilege(grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege})
 		result = append(result, node)
@@ -2029,7 +2029,7 @@ func (p *Planner) removeGrants(result []ast.Node, diff *types.SchemaDiff) []ast.
 	return result
 }
 
-func (p *Planner) revokeGrantOptions(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) revokeGrantOptions(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, grant := range diff.GrantOptionsRevoked {
 		node := ast.NewRevokePrivilege(grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege}).
 			SetGrantOptionFor(true)
@@ -2038,10 +2038,10 @@ func (p *Planner) revokeGrantOptions(result []ast.Node, diff *types.SchemaDiff) 
 	return result
 }
 
-func (p *Planner) addNewExtensions(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) addNewExtensions(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
 	for _, extensionName := range diff.ExtensionsAdded {
 		// Find the extension definition
-		for _, ext := range generated.Extensions {
+		for _, ext := range desired.Extensions {
 			if ext.Name == extensionName {
 				extensionNode := fromschema.FromExtension(ext)
 				result = append(result, extensionNode)
@@ -2052,7 +2052,7 @@ func (p *Planner) addNewExtensions(result []ast.Node, diff *types.SchemaDiff, ge
 	return result
 }
 
-func (p *Planner) removeExtensions(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) removeExtensions(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	// Generate DROP EXTENSION statements with comprehensive safety warnings
 	// Extension removal is potentially dangerous and requires careful consideration
 	for i, extensionName := range diff.ExtensionsRemoved {
@@ -2081,22 +2081,22 @@ func (p *Planner) removeExtensions(result []ast.Node, diff *types.SchemaDiff) []
 	return result
 }
 
-func (p *Planner) addNewFunctions(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
-	for _, fn := range deporder.FunctionsForCreate(generated, diff.FunctionsAdded) {
+func (p *Planner) addNewFunctions(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
+	for _, fn := range deporder.FunctionsForCreate(desired, diff.FunctionsAdded) {
 		result = append(result, fromschema.FromFunction(fn))
 	}
 	return result
 }
 
-func (p *Planner) modifyExistingFunctions(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) modifyExistingFunctions(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
 	for _, fnDiff := range diff.FunctionsModified {
 		// Find the target function definition. Without it we can't emit a
 		// faithful CREATE OR REPLACE, so skip silently (the diff alone would
 		// not tell us the new body/attributes).
-		var target *goschema.Function
-		for i := range generated.Functions {
-			if generated.Functions[i].Name == fnDiff.FunctionName {
-				target = &generated.Functions[i]
+		var target *schemamodel.Function
+		for i := range desired.Functions {
+			if desired.Functions[i].Name == fnDiff.FunctionName {
+				target = &desired.Functions[i]
 				break
 			}
 		}
@@ -2113,7 +2113,7 @@ func (p *Planner) modifyExistingFunctions(result []ast.Node, diff *types.SchemaD
 
 // summarizeFunctionChanges produces a deterministic one-line summary of the
 // changed attributes for use as a SQL comment.
-func summarizeFunctionChanges(fnDiff types.FunctionDiff) string {
+func summarizeFunctionChanges(fnDiff difftypes.FunctionDiff) string {
 	return strings.Join(slices.Sorted(maps.Keys(fnDiff.Changes)), ", ")
 }
 
@@ -2123,18 +2123,18 @@ func summarizeFunctionChanges(fnDiff types.FunctionDiff) string {
 // The fallback is not a formality: a SchemaDiff can be decoded from JSON
 // written before the richer list existed, and a bare name still drops a routine
 // correctly on every schema that does not overload it.
-func routineRemovals(withSignatures []types.RoutineRemoval, names []string) []types.RoutineRemoval {
+func routineRemovals(withSignatures []difftypes.RoutineRemoval, names []string) []difftypes.RoutineRemoval {
 	if len(withSignatures) > 0 {
 		return withSignatures
 	}
-	removals := make([]types.RoutineRemoval, 0, len(names))
+	removals := make([]difftypes.RoutineRemoval, 0, len(names))
 	for _, name := range names {
-		removals = append(removals, types.RoutineRemoval{Name: name})
+		removals = append(removals, difftypes.RoutineRemoval{Name: name})
 	}
 	return removals
 }
 
-func (p *Planner) removeFunctions(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) removeFunctions(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	// The signature is what makes the statement addressable. A name alone is
 	// refused with `function name "f" is not unique` on any schema that
 	// overloads, and IF EXISTS does not help because the refusal is about
@@ -2154,7 +2154,7 @@ func (p *Planner) removeFunctions(result []ast.Node, diff *types.SchemaDiff) []a
 	// (stokaro/ptah#1722).
 	for _, removal := range routineRemovals(diff.ProceduresRemovedWithSignatures, diff.ProceduresRemoved) {
 		dropProcedureNode := ast.NewDropFunction(removal.Name).
-			SetKind(goschema.FunctionKindProcedure).
+			SetKind(schemamodel.FunctionKindProcedure).
 			SetIfExists().
 			SetComment("WARNING: Ensure no other objects depend on this procedure")
 		// A procedure overloads too, and the same ambiguity refusal applies.
@@ -2169,10 +2169,10 @@ func (p *Planner) removeFunctions(result []ast.Node, diff *types.SchemaDiff) []a
 // findSequence returns the generated sequence the diff entry names, under the
 // identifier rules of the target dialect.
 func findSequence(
-	sequences []goschema.Sequence,
+	sequences []schemamodel.Sequence,
 	name string,
 	semantics identifier.Semantics,
-) *goschema.Sequence {
+) *schemamodel.Sequence {
 	return objectlookup.Qualified(sequences, name, semantics)
 }
 
@@ -2181,10 +2181,10 @@ func findSequence(
 // addSequenceOwnership, because a sequence referenced by a column DEFAULT must
 // be created before its table while OWNED BY requires the table to already
 // exist.
-func (p *Planner) addNewSequences(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) addNewSequences(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, name := range diff.SequencesAdded {
-		sequence := findSequence(generated.Sequences, name, semantics)
+		sequence := findSequence(desired.Sequences, name, semantics)
 		if sequence == nil {
 			continue
 		}
@@ -2197,10 +2197,10 @@ func (p *Planner) addNewSequences(result []ast.Node, diff *types.SchemaDiff, gen
 
 // addSequenceOwnership emits ALTER SEQUENCE ... OWNED BY for newly added
 // sequences that declare an owner, after their owning tables exist.
-func (p *Planner) addSequenceOwnership(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) addSequenceOwnership(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, name := range diff.SequencesAdded {
-		sequence := findSequence(generated.Sequences, name, semantics)
+		sequence := findSequence(desired.Sequences, name, semantics)
 		if sequence == nil || sequence.OwnedBy == "" {
 			continue
 		}
@@ -2215,10 +2215,10 @@ func (p *Planner) addSequenceOwnership(result []ast.Node, diff *types.SchemaDiff
 
 // modifyExistingSequences emits ALTER SEQUENCE for sequences whose options
 // changed. Only the changed options (per the diff) are emitted.
-func (p *Planner) modifyExistingSequences(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) modifyExistingSequences(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, sequenceDiff := range diff.SequencesModified {
-		sequence := findSequence(generated.Sequences, sequenceDiff.SequenceName, semantics)
+		sequence := findSequence(desired.Sequences, sequenceDiff.SequenceName, semantics)
 		if sequence == nil {
 			continue
 		}
@@ -2231,7 +2231,7 @@ func (p *Planner) modifyExistingSequences(result []ast.Node, diff *types.SchemaD
 
 // alterSequenceFromDiff builds an ALTER SEQUENCE node carrying only the options
 // that the diff reports as changed, sourced from the target definition.
-func alterSequenceFromDiff(target goschema.Sequence, changes map[string]string) *ast.AlterSequenceNode {
+func alterSequenceFromDiff(target schemamodel.Sequence, changes map[string]string) *ast.AlterSequenceNode {
 	node := ast.NewAlterSequence(target.Name)
 	if target.Schema != "" {
 		node.SetSchema(target.Schema)
@@ -2265,14 +2265,14 @@ func alterSequenceFromDiff(target goschema.Sequence, changes map[string]string) 
 
 // summarizeSequenceChanges produces a deterministic one-line summary of the
 // changed options for use as a SQL comment.
-func summarizeSequenceChanges(sequenceDiff types.SequenceDiff) string {
+func summarizeSequenceChanges(sequenceDiff difftypes.SequenceDiff) string {
 	return strings.Join(slices.Sorted(maps.Keys(sequenceDiff.Changes)), ", ")
 }
 
 // removeSequences emits DROP SEQUENCE for sequences no longer present in the
 // target schema. It runs after table removal so a table that draws a column
 // default from the sequence is gone first.
-func (p *Planner) removeSequences(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) removeSequences(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, name := range diff.SequencesRemoved {
 		schemaName, sequenceName := splitQualifiedSequenceName(name)
 		dropSequence := ast.NewDropSequence(sequenceName).
@@ -2296,16 +2296,16 @@ func splitQualifiedSequenceName(name string) (schema, sequence string) {
 	return ref.Schema, ref.Name
 }
 
-func (p *Planner) addNewViewLikeObjects(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) addNewViewLikeObjects(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	objects := make([]deporder.ViewLike, 0, len(diff.ViewsAdded)+len(diff.MaterializedViewsAdded))
 	for _, viewName := range diff.ViewsAdded {
-		if view := findView(generated.Views, viewName, semantics); view != nil {
+		if view := findView(desired.Views, viewName, semantics); view != nil {
 			objects = append(objects, deporder.ViewLike{Name: view.Name, Body: view.Body})
 		}
 	}
 	for _, viewName := range diff.MaterializedViewsAdded {
-		if view := findMaterializedView(generated.MaterializedViews, viewName, semantics); view != nil {
+		if view := findMaterializedView(desired.MaterializedViews, viewName, semantics); view != nil {
 			objects = append(objects, deporder.ViewLike{Name: view.Name, Body: view.Body, Materialized: true})
 		}
 	}
@@ -2317,12 +2317,12 @@ func (p *Planner) addNewViewLikeObjects(result []ast.Node, diff *types.SchemaDif
 	// renders cleanly and fails when it runs.
 	for _, object := range deporder.ViewLikesForCreateForDialect(objects, p.targetDialect()) {
 		if object.Materialized {
-			if view := findMaterializedView(generated.MaterializedViews, object.Name, semantics); view != nil {
+			if view := findMaterializedView(desired.MaterializedViews, object.Name, semantics); view != nil {
 				result = append(result, fromschema.FromMaterializedView(*view))
 			}
 			continue
 		}
-		if view := findView(generated.Views, object.Name, semantics); view != nil {
+		if view := findView(desired.Views, object.Name, semantics); view != nil {
 			result = append(result, fromschema.FromView(*view))
 		}
 	}
@@ -2370,12 +2370,12 @@ func (p *Planner) addNewViewLikeObjects(result []ast.Node, diff *types.SchemaDif
 // pushing the view into ViewsRemoved and ViewsAdded. The plan runs additions
 // before removals, so a modification expressed from outside comes out
 // create-then-drop and ends with no view at all.
-func (p *Planner) modifyExistingViews(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) modifyExistingViews(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	var dropped []string
 	replaced := make([]deporder.ViewLike, 0, len(diff.ViewsModified))
 	for _, viewDiff := range diff.ViewsModified {
-		view := objectlookup.View(generated.Views, viewDiff.ViewName, semantics)
+		view := objectlookup.View(desired.Views, viewDiff.ViewName, semantics)
 		if view == nil {
 			continue
 		}
@@ -2392,7 +2392,7 @@ func (p *Planner) modifyExistingViews(result []ast.Node, diff *types.SchemaDiff,
 
 	// A view on the replace path can also be a dependent of one on the drop
 	// path, in which case it is on both lists and must still be rendered once.
-	recreate := viewLikesLostToCascade(generated, dropped, semantics)
+	recreate := viewLikesLostToCascade(desired, dropped, semantics)
 	named := make(map[string]bool, len(recreate))
 	for _, object := range recreate {
 		named[object.Name] = true
@@ -2404,7 +2404,7 @@ func (p *Planner) modifyExistingViews(result []ast.Node, diff *types.SchemaDiff,
 	}
 
 	for _, object := range deporder.ViewLikesForCreateForDialect(recreate, p.targetDialect()) {
-		result = p.appendViewLikeRecreate(result, generated, object, dropped, semantics)
+		result = p.appendViewLikeRecreate(result, desired, object, dropped, semantics)
 	}
 	return result
 }
@@ -2419,13 +2419,13 @@ func (p *Planner) modifyExistingViews(result []ast.Node, diff *types.SchemaDiff,
 // view has no in-place replace, so it is dropped first for the same reason.
 func (p *Planner) appendViewLikeRecreate(
 	result []ast.Node,
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	object deporder.ViewLike,
 	dropped []string,
 	semantics identifier.Semantics,
 ) []ast.Node {
 	if object.Materialized {
-		view := objectlookup.MaterializedView(generated.MaterializedViews, object.Name, semantics)
+		view := objectlookup.MaterializedView(desired.MaterializedViews, object.Name, semantics)
 		if view == nil {
 			return result
 		}
@@ -2433,7 +2433,7 @@ func (p *Planner) appendViewLikeRecreate(
 		return append(result, fromschema.FromMaterializedView(*view))
 	}
 
-	view := objectlookup.View(generated.Views, object.Name, semantics)
+	view := objectlookup.View(desired.Views, object.Name, semantics)
 	if view == nil {
 		return result
 	}
@@ -2446,7 +2446,7 @@ func (p *Planner) appendViewLikeRecreate(
 // viewReplaceKeepsDependents decides whether one modified view keeps the
 // in-place replace, which is the statement that leaves dependents and grants
 // alone. The table in modifyExistingViews explains the three answers.
-func viewReplaceKeepsDependents(viewDiff types.ViewDiff, targetBody string) bool {
+func viewReplaceKeepsDependents(viewDiff difftypes.ViewDiff, targetBody string) bool {
 	switch viewReplaceLegality(viewDiff.PreviousBody, targetBody) {
 	case viewReplaceAppendsColumns:
 		return true
@@ -2473,7 +2473,7 @@ func viewReplaceKeepsDependents(viewDiff types.ViewDiff, targetBody string) bool
 // dependent view, a unique index and a GRANT off an object no part of the
 // migration touched -- none of them declared, so nothing put them back.
 func viewLikesLostToCascade(
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	dropped []string,
 	semantics identifier.Semantics,
 ) []deporder.ViewLike {
@@ -2481,11 +2481,11 @@ func viewLikesLostToCascade(
 		return nil
 	}
 
-	candidates := make([]deporder.ViewLike, 0, len(generated.Views)+len(generated.MaterializedViews))
-	for _, view := range generated.Views {
+	candidates := make([]deporder.ViewLike, 0, len(desired.Views)+len(desired.MaterializedViews))
+	for _, view := range desired.Views {
 		candidates = append(candidates, deporder.ViewLike{Name: view.Name, Body: view.Body})
 	}
-	for _, view := range generated.MaterializedViews {
+	for _, view := range desired.MaterializedViews {
 		candidates = append(candidates, deporder.ViewLike{Name: view.Name, Body: view.Body, Materialized: true})
 	}
 
@@ -2498,7 +2498,7 @@ func viewLikesLostToCascade(
 		}
 		taken[name] = true
 		frontier = append(frontier, name)
-		if view := objectlookup.View(generated.Views, name, semantics); view != nil {
+		if view := objectlookup.View(desired.Views, name, semantics); view != nil {
 			lost = append(lost, deporder.ViewLike{Name: view.Name, Body: view.Body})
 		}
 	}
@@ -2518,17 +2518,17 @@ func viewLikesLostToCascade(
 	return lost
 }
 
-func (p *Planner) removeViews(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) removeViews(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, viewName := range diff.ViewsRemoved {
 		result = append(result, ast.NewDropView(viewName).SetIfExists().SetCascade())
 	}
 	return result
 }
 
-func (p *Planner) modifyExistingMaterializedViews(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) modifyExistingMaterializedViews(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, viewDiff := range diff.MaterializedViewsModified {
-		if view := findMaterializedView(generated.MaterializedViews, viewDiff.ViewName, semantics); view != nil {
+		if view := findMaterializedView(desired.MaterializedViews, viewDiff.ViewName, semantics); view != nil {
 			result = append(result, ast.NewDropMaterializedView(view.Name).SetIfExists().SetCascade())
 			result = append(result, fromschema.FromMaterializedView(*view))
 		}
@@ -2536,7 +2536,7 @@ func (p *Planner) modifyExistingMaterializedViews(result []ast.Node, diff *types
 	return result
 }
 
-func (p *Planner) removeMaterializedViews(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) removeMaterializedViews(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, viewName := range diff.MaterializedViewsRemoved {
 		result = append(result, ast.NewDropMaterializedView(viewName).SetIfExists().SetCascade())
 	}
@@ -2561,11 +2561,11 @@ func (p *Planner) removeMaterializedViews(result []ast.Node, diff *types.SchemaD
 // or too late would leave the table ordinary either way.
 func (p *Planner) addNewHypertables(
 	result []ast.Node,
-	diff *types.SchemaDiff,
-	generated *goschema.Database,
+	diff *difftypes.SchemaDiff,
+	desired *schemamodel.Database,
 ) []ast.Node {
 	for _, table := range diff.HypertablesAdded {
-		if hypertable := findHypertable(generated.Hypertables, table); hypertable != nil {
+		if hypertable := findHypertable(desired.Hypertables, table); hypertable != nil {
 			result = append(result, fromschema.FromHypertable(*hypertable))
 		}
 	}
@@ -2582,11 +2582,11 @@ func (p *Planner) addNewHypertables(
 // partitioned would fail the migration it belongs to.
 func (p *Planner) addNewContinuousAggregates(
 	result []ast.Node,
-	diff *types.SchemaDiff,
-	generated *goschema.Database,
+	diff *difftypes.SchemaDiff,
+	desired *schemamodel.Database,
 ) []ast.Node {
 	for _, name := range diff.ContinuousAggregatesAdded {
-		if aggregate := findContinuousAggregate(generated.ContinuousAggregates, name); aggregate != nil {
+		if aggregate := findContinuousAggregate(desired.ContinuousAggregates, name); aggregate != nil {
 			result = append(result, fromschema.FromContinuousAggregate(*aggregate))
 		}
 	}
@@ -2604,11 +2604,11 @@ func (p *Planner) addNewContinuousAggregates(
 // create-then-drop and end with no aggregate at all.
 func (p *Planner) modifyExistingContinuousAggregates(
 	result []ast.Node,
-	diff *types.SchemaDiff,
-	generated *goschema.Database,
+	diff *difftypes.SchemaDiff,
+	desired *schemamodel.Database,
 ) []ast.Node {
 	for _, change := range diff.ContinuousAggregatesModified {
-		aggregate := findContinuousAggregate(generated.ContinuousAggregates, change.Name)
+		aggregate := findContinuousAggregate(desired.ContinuousAggregates, change.Name)
 		if aggregate == nil {
 			continue
 		}
@@ -2625,7 +2625,7 @@ func (p *Planner) modifyExistingContinuousAggregates(
 // The statement is DROP MATERIALIZED VIEW on the server's own instruction:
 // DROP VIEW answers `cannot drop continuous aggregate using DROP VIEW`, and a
 // plan that emitted it would never apply.
-func (p *Planner) removeContinuousAggregates(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) removeContinuousAggregates(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, name := range diff.ContinuousAggregatesRemoved {
 		result = append(result, ast.NewDropContinuousAggregate(name).SetIfExists())
 	}
@@ -2634,7 +2634,7 @@ func (p *Planner) removeContinuousAggregates(result []ast.Node, diff *types.Sche
 
 // dropContinuousAggregate is the removal half of a replacement, addressed the
 // way the declaration addresses the object.
-func dropContinuousAggregate(aggregate goschema.ContinuousAggregate) *ast.DropContinuousAggregateNode {
+func dropContinuousAggregate(aggregate schemamodel.ContinuousAggregate) *ast.DropContinuousAggregateNode {
 	return ast.NewDropContinuousAggregate(aggregate.Name).
 		SetSchema(aggregate.Schema).
 		SetIfExists()
@@ -2643,9 +2643,9 @@ func dropContinuousAggregate(aggregate goschema.ContinuousAggregate) *ast.DropCo
 // findContinuousAggregate resolves a declared aggregate by the name a diff
 // carries, which is qualified when the declaration names a schema.
 func findContinuousAggregate(
-	aggregates []goschema.ContinuousAggregate,
+	aggregates []schemamodel.ContinuousAggregate,
 	name string,
-) *goschema.ContinuousAggregate {
+) *schemamodel.ContinuousAggregate {
 	for i := range aggregates {
 		if aggregates[i].QualifiedName() == name || aggregates[i].Name == name {
 			return &aggregates[i]
@@ -2664,7 +2664,7 @@ func findContinuousAggregate(
 // Planning nothing would be worse than refusing. The table stays partitioned,
 // the description says it is not, and the next diff reports the same change
 // forever -- while an operator reading "no changes" believes the two agree.
-func (p *Planner) refuseHypertableChanges(diff *types.SchemaDiff) error {
+func (p *Planner) refuseHypertableChanges(diff *difftypes.SchemaDiff) error {
 	if diff == nil {
 		return nil
 	}
@@ -2686,7 +2686,7 @@ func (p *Planner) refuseHypertableChanges(diff *types.SchemaDiff) error {
 }
 
 // findHypertable resolves a declared hypertable by the table it partitions.
-func findHypertable(hypertables []goschema.Hypertable, table string) *goschema.Hypertable {
+func findHypertable(hypertables []schemamodel.Hypertable, table string) *schemamodel.Hypertable {
 	for i := range hypertables {
 		if hypertables[i].Table == table {
 			return &hypertables[i]
@@ -2695,9 +2695,9 @@ func findHypertable(hypertables []goschema.Hypertable, table string) *goschema.H
 	return nil
 }
 
-func (p *Planner) addNewSynonyms(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) addNewSynonyms(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
 	for _, name := range diff.SynonymsAdded {
-		if synonym := findSynonym(generated.Synonyms, name); synonym != nil {
+		if synonym := findSynonym(desired.Synonyms, name); synonym != nil {
 			result = append(result, fromschema.FromSynonym(*synonym))
 		}
 	}
@@ -2706,9 +2706,9 @@ func (p *Planner) addNewSynonyms(result []ast.Node, diff *types.SchemaDiff, gene
 
 // retargetSynonyms drops and recreates a synonym whose target changed, in that
 // order, because no dialect has an ALTER SYNONYM to do it in one statement.
-func (p *Planner) retargetSynonyms(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) retargetSynonyms(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
 	for _, synonymDiff := range diff.SynonymsModified {
-		synonym := findSynonym(generated.Synonyms, synonymDiff.SynonymName)
+		synonym := findSynonym(desired.Synonyms, synonymDiff.SynonymName)
 		if synonym == nil {
 			continue
 		}
@@ -2718,7 +2718,7 @@ func (p *Planner) retargetSynonyms(result []ast.Node, diff *types.SchemaDiff, ge
 	return result
 }
 
-func (p *Planner) removeSynonyms(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) removeSynonyms(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, name := range diff.SynonymsRemoved {
 		result = append(result, ast.NewDropSynonym(name).SetIfExists())
 	}
@@ -2736,7 +2736,7 @@ func (p *Planner) removeSynonyms(result []ast.Node, diff *types.SchemaDiff) []as
 // An update rather than a drop and an add, because SQL Server has the
 // statement and dropping first would take the property away for the length of
 // the script.
-func (p *Planner) addExtendedProperties(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) addExtendedProperties(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, ref := range diff.ExtendedPropertiesAdded {
 		result = append(result, extendedPropertyNode(ast.ExtendedPropertyAdd, ref))
 	}
@@ -2753,7 +2753,7 @@ func (p *Planner) addExtendedProperties(result []ast.Node, diff *types.SchemaDif
 // the table takes its properties with it, and a sp_dropextendedproperty that
 // runs afterwards answers `Property cannot be dropped. Property does not
 // exist`.
-func (p *Planner) removeExtendedProperties(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) removeExtendedProperties(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, ref := range diff.ExtendedPropertiesRemoved {
 		result = append(result, extendedPropertyNode(ast.ExtendedPropertyDrop, ref))
 	}
@@ -2763,7 +2763,7 @@ func (p *Planner) removeExtendedProperties(result []ast.Node, diff *types.Schema
 // extendedPropertyNode builds the node for one operation on one property.
 func extendedPropertyNode(
 	operation ast.ExtendedPropertyOperation,
-	ref types.ExtendedPropertyRef,
+	ref difftypes.ExtendedPropertyRef,
 ) *ast.ExtendedPropertyNode {
 	return ast.NewExtendedProperty(operation, ref.Name).
 		SetOwner(ref.Schema, ref.Table, ref.Column).
@@ -2771,7 +2771,7 @@ func extendedPropertyNode(
 }
 
 // findSynonym returns the declared synonym with the given qualified name.
-func findSynonym(synonyms []goschema.Synonym, name string) *goschema.Synonym {
+func findSynonym(synonyms []schemamodel.Synonym, name string) *schemamodel.Synonym {
 	for i := range synonyms {
 		if synonyms[i].QualifiedName() == name {
 			return &synonyms[i]
@@ -2780,29 +2780,29 @@ func findSynonym(synonyms []goschema.Synonym, name string) *goschema.Synonym {
 	return nil
 }
 
-func (p *Planner) addNewTriggers(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) addNewTriggers(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, triggerRef := range diff.TriggersAdded {
-		if trigger := findTrigger(generated.Triggers, triggerRef.TableName, triggerRef.TriggerName, semantics); trigger != nil {
+		if trigger := findTrigger(desired.Triggers, triggerRef.TableName, triggerRef.TriggerName, semantics); trigger != nil {
 			result = append(result, fromschema.FromTrigger(*trigger))
 		}
 	}
 	return result
 }
 
-func (p *Planner) modifyExistingTriggers(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) modifyExistingTriggers(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, triggerDiff := range diff.TriggersModified {
-		if trigger := findTrigger(generated.Triggers, triggerDiff.TableName, triggerDiff.TriggerName, semantics); trigger != nil {
+		if trigger := findTrigger(desired.Triggers, triggerDiff.TableName, triggerDiff.TriggerName, semantics); trigger != nil {
 			result = append(result, fromschema.FromTrigger(*trigger).SetReplace())
 		}
 	}
 	return result
 }
 
-func (p *Planner) removeTriggers(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) removeTriggers(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, triggerRef := range diff.TriggersRemoved {
-		functionName := goschema.Trigger{Name: triggerRef.TriggerName, Table: triggerRef.TableName}.FunctionName()
+		functionName := schemamodel.Trigger{Name: triggerRef.TriggerName, Table: triggerRef.TableName}.FunctionName()
 		result = append(result, ast.NewDropTrigger(triggerRef.TriggerName, triggerRef.TableName).
 			SetIfExists().
 			SetCascade().
@@ -2811,23 +2811,23 @@ func (p *Planner) removeTriggers(result []ast.Node, diff *types.SchemaDiff) []as
 	return result
 }
 
-func findView(views []goschema.View, name string, semantics identifier.Semantics) *goschema.View {
+func findView(views []schemamodel.View, name string, semantics identifier.Semantics) *schemamodel.View {
 	return objectlookup.View(views, name, semantics)
 }
 
 func findMaterializedView(
-	views []goschema.MaterializedView,
+	views []schemamodel.MaterializedView,
 	name string,
 	semantics identifier.Semantics,
-) *goschema.MaterializedView {
+) *schemamodel.MaterializedView {
 	return objectlookup.MaterializedView(views, name, semantics)
 }
 
 func findTrigger(
-	triggers []goschema.Trigger,
+	triggers []schemamodel.Trigger,
 	tableName, triggerName string,
 	semantics identifier.Semantics,
-) *goschema.Trigger {
+) *schemamodel.Trigger {
 	return objectlookup.Trigger(triggers, tableName, triggerName, semantics)
 }
 
@@ -2865,8 +2865,8 @@ func findTrigger(
 // object this plan is known to have produced.
 func (p *Planner) enableRLSOnTables(
 	result []ast.Node,
-	diff *types.SchemaDiff,
-	generated *goschema.Database,
+	diff *difftypes.SchemaDiff,
+	desired *schemamodel.Database,
 	semantics identifier.Semantics,
 ) []ast.Node {
 	tablesNeedingRLS := make(map[string]string)
@@ -2887,7 +2887,7 @@ func (p *Planner) enableRLSOnTables(
 			addedTables[key] = tableName
 		}
 	}
-	for _, policy := range generated.RLSPolicies {
+	for _, policy := range desired.RLSPolicies {
 		addedTable, isNew := addedTables[semantics.QualifiedTableIdentityKey(policy.Table)]
 		if !isNew {
 			continue
@@ -2917,7 +2917,7 @@ func (p *Planner) enableRLSOnTables(
 // enablement and no policy means, so a table with removed policies that the
 // comparator did not list for disablement keeps its enablement and gets the
 // comment.
-func (p *Planner) disableRLSOnTables(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) disableRLSOnTables(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	droppedTables := make(map[string]bool, len(diff.TablesRemoved))
 	for _, tableName := range diff.TablesRemoved {
 		droppedTables[tableName] = true
@@ -2970,7 +2970,7 @@ func (p *Planner) disableRLSOnTables(result []ast.Node, diff *types.SchemaDiff) 
 // protection the migration was generated to add (stokaro/ptah#1311).
 func (p *Planner) addNewRLSPolicies(
 	result []ast.Node,
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	policies *rlsscope.Resolver,
 ) ([]ast.Node, error) {
 	for _, policyRef := range diff.RLSPoliciesAdded {
@@ -2998,11 +2998,11 @@ func (p *Planner) addNewRLSPolicies(
 // changed on the way up and nothing put it back (stokaro/ptah#1311).
 func (p *Planner) modifyExistingRLSPolicies(
 	result []ast.Node,
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	policies *rlsscope.Resolver,
 ) ([]ast.Node, error) {
 	for _, policyDiff := range diff.RLSPoliciesModified {
-		policy, err := policies.Resolve(types.RLSPolicyRef{
+		policy, err := policies.Resolve(difftypes.RLSPolicyRef{
 			PolicyName: policyDiff.PolicyName,
 			TableName:  policyDiff.TableName,
 		})
@@ -3020,11 +3020,11 @@ func (p *Planner) modifyExistingRLSPolicies(
 	return result, nil
 }
 
-func summarizeRLSChanges(policyDiff types.RLSPolicyDiff) string {
+func summarizeRLSChanges(policyDiff difftypes.RLSPolicyDiff) string {
 	return strings.Join(slices.Sorted(maps.Keys(policyDiff.Changes)), ", ")
 }
 
-func (p *Planner) removeRLSPolicies(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) removeRLSPolicies(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, policyRef := range diff.RLSPoliciesRemoved {
 		// Now we have both policy name and table name, so we can generate proper DROP POLICY statements
 		dropPolicyNode := ast.NewDropPolicy(policyRef.PolicyName, policyRef.TableName).
@@ -3061,10 +3061,10 @@ func (p *Planner) removeRLSPolicies(result []ast.Node, diff *types.SchemaDiff) [
 //
 //	ALTER TABLE products ADD CONSTRAINT positive_price
 //	  CHECK (price > 0);
-func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) addNewConstraints(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
 	// Resolve struct → table name once for the field-level synthesis fallbacks.
-	structToTable := make(map[string]string, len(generated.Tables))
-	for _, t := range generated.Tables {
+	structToTable := make(map[string]string, len(desired.Tables))
+	for _, t := range desired.Tables {
 		structToTable[t.StructName] = t.QualifiedName()
 	}
 
@@ -3077,9 +3077,9 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 		state,
 		diff.IndexRemovalsRebuiltAsUniqueConstraints(),
 	)
-	result = p.addNamedConstraintsByKind(result, diff, generated, structToTable, state, nonForeignKeyConstraints)
+	result = p.addNamedConstraintsByKind(result, diff, desired, structToTable, state, nonForeignKeyConstraints)
 	result = p.addForeignKeyConstraintsWithTables(result, diff.ConstraintsAddedWithTables, state)
-	result = p.addNamedConstraintsByKind(result, diff, generated, structToTable, state, foreignKeyConstraints)
+	result = p.addNamedConstraintsByKind(result, diff, desired, structToTable, state, foreignKeyConstraints)
 	return result
 }
 
@@ -3095,8 +3095,8 @@ type constraintPlanState struct {
 	// carried so every key built here answers the same question it did.
 	semantics          identifier.Semantics
 	removedNames       map[string]struct{}
-	removalByTableName map[constraintHostKey]types.ConstraintRemovalInfo
-	removalsByName     map[string][]types.ConstraintRemovalInfo
+	removalByTableName map[constraintHostKey]difftypes.ConstraintRemovalInfo
+	removalsByName     map[string][]difftypes.ConstraintRemovalInfo
 	addedHostsByName   map[string]map[constraintHostKey]struct{}
 	handled            map[string]struct{}
 	droppedForModify   map[constraintHostKey]struct{}
@@ -3109,9 +3109,9 @@ type constraintPlanState struct {
 // planner. Two copies of "which constraint is this" is how one planner comes to
 // pair a drop with a different constraint than the other does
 // (stokaro/ptah#1345).
-type constraintHostKey = types.ConstraintIdentity
+type constraintHostKey = difftypes.ConstraintIdentity
 
-func newConstraintPlanState(diff *types.SchemaDiff, semantics identifier.Semantics) constraintPlanState {
+func newConstraintPlanState(diff *difftypes.SchemaDiff, semantics identifier.Semantics) constraintPlanState {
 	// One fold, at the door. A diff the comparator produced arrives with its
 	// identities resolved; one an embedder built by hand does not, and the zero
 	// identity is a single key -- every such constraint would pair with every
@@ -3149,7 +3149,7 @@ func newConstraintPlanState(diff *types.SchemaDiff, semantics identifier.Semanti
 	// `ALTER TABLE B DROP CONSTRAINT IF EXISTS <name>` for the pure-add host.
 	// Keying the drop decision on (table, name) — mirroring MySQL's
 	// removalByTableName — gives the pure-add host no drop.
-	removalByTableName := make(map[constraintHostKey]types.ConstraintRemovalInfo, len(diff.ConstraintsRemovedWithTables))
+	removalByTableName := make(map[constraintHostKey]difftypes.ConstraintRemovalInfo, len(diff.ConstraintsRemovedWithTables))
 	for _, info := range diff.ConstraintsRemovedWithTables {
 		removalByTableName[info.Identity] = info
 	}
@@ -3160,7 +3160,7 @@ func newConstraintPlanState(diff *types.SchemaDiff, semantics identifier.Semanti
 	// ConstraintsRemovedWithTables in lockstep with the bare ConstraintsRemoved
 	// list, so a modified constraint's host is normally known here even though
 	// the bare loop iterates names alone.
-	removalsByName := make(map[string][]types.ConstraintRemovalInfo, len(diff.ConstraintsRemovedWithTables))
+	removalsByName := make(map[string][]difftypes.ConstraintRemovalInfo, len(diff.ConstraintsRemovedWithTables))
 	for _, info := range diff.ConstraintsRemovedWithTables {
 		removalsByName[info.Name] = append(removalsByName[info.Name], info)
 	}
@@ -3209,8 +3209,8 @@ func newConstraintPlanState(diff *types.SchemaDiff, semantics identifier.Semanti
 
 func (p *Planner) addNamedConstraintsByKind(
 	result []ast.Node,
-	diff *types.SchemaDiff,
-	generated *goschema.Database,
+	diff *difftypes.SchemaDiff,
+	desired *schemamodel.Database,
 	structToTable map[string]string,
 	state constraintPlanState,
 	kind constraintKindFilter,
@@ -3221,7 +3221,7 @@ func (p *Planner) addNamedConstraintsByKind(
 		if _, done := state.handled[constraintName]; done {
 			continue
 		}
-		if p.constraintNameIsForeignKey(constraintName, generated, structToTable) != wantForeignKey {
+		if p.constraintNameIsForeignKey(constraintName, desired, structToTable) != wantForeignKey {
 			continue
 		}
 
@@ -3247,7 +3247,7 @@ func (p *Planner) addNamedConstraintsByKind(
 		// synthesizes those constraints into diff.ConstraintsAdded by name only
 		// — they never reach generated.Constraints, so without the fallbacks an
 		// ADD CONSTRAINT for an existing column would be silently dropped.
-		if node, ok := p.addConstraintNodeFor(constraintName, generated, structToTable); ok {
+		if node, ok := p.addConstraintNodeFor(constraintName, desired, structToTable); ok {
 			if node != nil {
 				result = append(result, node)
 			}
@@ -3259,7 +3259,7 @@ func (p *Planner) addNamedConstraintsByKind(
 
 func (p *Planner) addForeignKeyConstraintsWithTables(
 	result []ast.Node,
-	additions []types.ConstraintAdditionInfo,
+	additions []difftypes.ConstraintAdditionInfo,
 	state constraintPlanState,
 ) []ast.Node {
 	for _, add := range additions {
@@ -3279,13 +3279,13 @@ func (p *Planner) addForeignKeyConstraintsWithTables(
 	return result
 }
 
-func (p *Planner) constraintNameIsForeignKey(constraintName string, generated *goschema.Database, structToTable map[string]string) bool {
-	for _, constraint := range generated.Constraints {
+func (p *Planner) constraintNameIsForeignKey(constraintName string, desired *schemamodel.Database, structToTable map[string]string) bool {
+	for _, constraint := range desired.Constraints {
 		if constraint.Name == constraintName {
 			return strings.EqualFold(constraint.Type, "FOREIGN KEY")
 		}
 	}
-	for _, field := range generated.Fields {
+	for _, field := range desired.Fields {
 		if field.Foreign == "" {
 			continue
 		}
@@ -3302,9 +3302,9 @@ func (p *Planner) constraintNameIsForeignKey(constraintName string, generated *g
 
 func (p *Planner) addCheckAndUniqueConstraintsWithTables(
 	result []ast.Node,
-	additions []types.ConstraintAdditionInfo,
+	additions []difftypes.ConstraintAdditionInfo,
 	state constraintPlanState,
-	rebuiltIndexes map[types.IndexRef]struct{},
+	rebuiltIndexes map[difftypes.IndexRef]struct{},
 ) []ast.Node {
 	for _, add := range additions {
 		constraint := constraintAdditionNode(add)
@@ -3333,14 +3333,14 @@ func (p *Planner) addCheckAndUniqueConstraintsWithTables(
 // answers `relation "uq_users_email" already exists (SQLSTATE 42P07)`
 // otherwise. The pipeline emits constraint additions before index removals, so
 // the drop is emitted here and [Planner.removeIndexes] leaves it alone; see
-// [types.SchemaDiff.IndexRemovalsRebuiltAsUniqueConstraints] for the shape that
+// [difftypes.SchemaDiff.IndexRemovalsRebuiltAsUniqueConstraints] for the shape that
 // produces the collision.
 func (p *Planner) dropIndexRebuiltAsConstraint(
 	result []ast.Node,
-	add types.ConstraintAdditionInfo,
-	rebuiltIndexes map[types.IndexRef]struct{},
+	add difftypes.ConstraintAdditionInfo,
+	rebuiltIndexes map[difftypes.IndexRef]struct{},
 ) []ast.Node {
-	ref := types.IndexRef{Name: add.Name, TableName: add.TableName}
+	ref := difftypes.IndexRef{Name: add.Name, TableName: add.TableName}
 	if _, rebuilt := rebuiltIndexes[ref]; !rebuilt {
 		return result
 	}
@@ -3351,7 +3351,7 @@ func (p *Planner) dropIndexRebuiltAsConstraint(
 	return append(result, dropIndexNode)
 }
 
-func constraintAdditionNode(add types.ConstraintAdditionInfo) *ast.ConstraintNode {
+func constraintAdditionNode(add difftypes.ConstraintAdditionInfo) *ast.ConstraintNode {
 	if add.TableName == "" {
 		return nil
 	}
@@ -3380,7 +3380,7 @@ func constraintAdditionNode(add types.ConstraintAdditionInfo) *ast.ConstraintNod
 
 func (p *Planner) addPrimaryKeyConstraintsWithTables(
 	result []ast.Node,
-	additions []types.ConstraintAdditionInfo,
+	additions []difftypes.ConstraintAdditionInfo,
 	state constraintPlanState,
 ) []ast.Node {
 	for _, add := range additions {
@@ -3433,7 +3433,7 @@ func (p *Planner) addPrimaryKeyConstraintsWithTables(
 // entry.
 func (p *Planner) emitModifyDrop(
 	result []ast.Node,
-	add types.ConstraintAdditionInfo,
+	add difftypes.ConstraintAdditionInfo,
 	state constraintPlanState,
 ) []ast.Node {
 	return p.appendScopedDrop(result, add.TableName, add.Name, add.Identity, state)
@@ -3469,7 +3469,7 @@ func (p *Planner) emitModifyDrop(
 func (p *Planner) emitModifyDropForName(
 	result []ast.Node,
 	name string,
-	removalsByName map[string][]types.ConstraintRemovalInfo,
+	removalsByName map[string][]difftypes.ConstraintRemovalInfo,
 	addedHosts map[constraintHostKey]struct{},
 	state constraintPlanState,
 ) []ast.Node {
@@ -3543,7 +3543,7 @@ func (p *Planner) appendScopedDrop(
 // path is correct for FK names that repeat across the many tables embedding an
 // inline-relation mixin (issue #197), unlike the legacy field-scan fallback
 // that re-derived the table from a Go struct name.
-func (p *Planner) foreignKeyAdditionNode(add types.ConstraintAdditionInfo) *ast.AlterTableNode {
+func (p *Planner) foreignKeyAdditionNode(add difftypes.ConstraintAdditionInfo) *ast.AlterTableNode {
 	fkRef := &ast.ForeignKeyRef{
 		Table:      add.ForeignTable,
 		Column:     add.ForeignColumn,
@@ -3559,7 +3559,7 @@ func (p *Planner) foreignKeyAdditionNode(add types.ConstraintAdditionInfo) *ast.
 // declaredConstraintTable is the table a table-level constraint is on.
 //
 // A declaration names one only when it differs from the struct's own table --
-// that is what [goschema.Constraint.Table] documents -- so the ordinary
+// that is what [schemamodel.Constraint.Table] documents -- so the ordinary
 // declaration leaves it empty and the table has to come from the struct. Read
 // straight, the empty value reached the renderer and every kind came out as
 //
@@ -3568,7 +3568,7 @@ func (p *Planner) foreignKeyAdditionNode(add types.ConstraintAdditionInfo) *ast.
 // which no server takes (stokaro/ptah#2008). The struct's own name is the last
 // resort, which is the fallback the field-level paths beside this one already
 // use for the same question.
-func declaredConstraintTable(constraint goschema.Constraint, structToTable map[string]string) string {
+func declaredConstraintTable(constraint schemamodel.Constraint, structToTable map[string]string) string {
 	if constraint.Table != "" {
 		return constraint.Table
 	}
@@ -3584,8 +3584,8 @@ func declaredConstraintTable(constraint goschema.Constraint, structToTable map[s
 // The returned bool reports whether a matching definition was found; the node
 // may still be nil when a match exists but produces no valid AST -- a kind whose
 // own required fields are missing, such as an EXCLUDE with no element list.
-func (p *Planner) addConstraintNodeFor(constraintName string, generated *goschema.Database, structToTable map[string]string) (ast.Node, bool) {
-	for _, constraint := range generated.Constraints {
+func (p *Planner) addConstraintNodeFor(constraintName string, desired *schemamodel.Database, structToTable map[string]string) (ast.Node, bool) {
+	for _, constraint := range desired.Constraints {
 		if constraint.Name != constraintName {
 			continue
 		}
@@ -3598,11 +3598,11 @@ func (p *Planner) addConstraintNodeFor(constraintName string, generated *goschem
 		return nil, true
 	}
 
-	if node, ok := p.fieldLevelCheckConstraintNode(constraintName, generated, structToTable); ok {
+	if node, ok := p.fieldLevelCheckConstraintNode(constraintName, desired, structToTable); ok {
 		return node, true
 	}
 
-	return p.fieldLevelForeignKeyConstraintNode(constraintName, generated, structToTable)
+	return p.fieldLevelForeignKeyConstraintNode(constraintName, desired, structToTable)
 }
 
 // fieldLevelCheckConstraintNode builds the ADD CONSTRAINT node for a synthesized
@@ -3610,8 +3610,8 @@ func (p *Planner) addConstraintNodeFor(constraintName string, generated *goschem
 // by the inline CHECK in ALTER TABLE ADD COLUMN, and the comparator deliberately
 // skips synthesizing those, so only existing-column field-level CHECKs reach
 // here.
-func (p *Planner) fieldLevelCheckConstraintNode(constraintName string, generated *goschema.Database, structToTable map[string]string) (ast.Node, bool) {
-	for _, f := range generated.Fields {
+func (p *Planner) fieldLevelCheckConstraintNode(constraintName string, desired *schemamodel.Database, structToTable map[string]string) (ast.Node, bool) {
+	for _, f := range desired.Fields {
 		if f.Check == "" {
 			continue
 		}
@@ -3645,8 +3645,8 @@ func (p *Planner) fieldLevelCheckConstraintNode(constraintName string, generated
 // silently-broken migration. New columns/tables are handled by the inline FK in
 // CREATE TABLE / ALTER TABLE ADD COLUMN and the comparator deliberately skips
 // synthesizing those, so only existing-column FK action changes reach here.
-func (p *Planner) fieldLevelForeignKeyConstraintNode(constraintName string, generated *goschema.Database, structToTable map[string]string) (ast.Node, bool) {
-	for _, f := range generated.Fields {
+func (p *Planner) fieldLevelForeignKeyConstraintNode(constraintName string, desired *schemamodel.Database, structToTable map[string]string) (ast.Node, bool) {
+	for _, f := range desired.Fields {
 		if f.Foreign == "" {
 			continue
 		}
@@ -3662,8 +3662,8 @@ func (p *Planner) fieldLevelForeignKeyConstraintNode(constraintName string, gene
 		if fkRef == nil {
 			continue
 		}
-		if table := findGeneratedTableByStructName(generated, f.StructName); table != nil {
-			qualifyForeignKeyRef(generated, *table, fkRef)
+		if table := findGeneratedTableByStructName(desired, f.StructName); table != nil {
+			qualifyForeignKeyRef(desired, *table, fkRef)
 		}
 		fkRef.OnDelete = f.OnDelete
 		fkRef.OnUpdate = f.OnUpdate
@@ -3697,7 +3697,7 @@ func unqualifiedTableName(tableName string) string {
 //
 //	ALTER TABLE bookings DROP CONSTRAINT IF EXISTS no_overlapping_bookings;
 //	ALTER TABLE products DROP CONSTRAINT IF EXISTS positive_price;
-func (p *Planner) removeConstraints(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) removeConstraints(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	// The pure-removal path keys its hosts by the same rule addNewConstraints
 	// does, for the same reason: the two sides of a modify spell one table two
 	// ways, and a verbatim key answers that they are two (stokaro/ptah#1987).
@@ -3888,11 +3888,11 @@ $ptah$`, constraintName, escaped, escaped, escaped, escaped)
 	return ast.NewRawSQL(doBlock)
 }
 
-// convertConstraintToAST converts a goschema.Constraint to an ast.ConstraintNode.
+// convertConstraintToAST converts a schemamodel.Constraint to an ast.ConstraintNode.
 //
 // This helper method handles the conversion between the schema annotation representation
 // and the AST representation used for SQL generation.
-func (p *Planner) convertConstraintToAST(constraint goschema.Constraint) *ast.ConstraintNode {
+func (p *Planner) convertConstraintToAST(constraint schemamodel.Constraint) *ast.ConstraintNode {
 	switch constraint.Type {
 	case "EXCLUDE":
 		if constraint.UsingMethod == "" || constraint.ExcludeElements == "" {

@@ -10,13 +10,13 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestPostgresLiveProcedureConverges is what stokaro/ptah#1722 asked for on the
@@ -46,9 +46,9 @@ func TestPostgresLiveProcedureConverges(t *testing.T) {
 	_, err = conn.ExecContext(ctx, `SET search_path TO "`+schemaName+`"`)
 	c.Assert(err, qt.IsNil)
 
-	declared := &goschema.Database{Functions: []goschema.Function{{
+	declared := &schemamodel.Database{Functions: []schemamodel.Function{{
 		Name:       schemaName + ".bump",
-		Kind:       goschema.FunctionKindProcedure,
+		Kind:       schemamodel.FunctionKindProcedure,
 		Parameters: "n integer",
 		Language:   "sql",
 		Security:   "INVOKER",
@@ -76,12 +76,12 @@ func TestPostgresLiveProcedureConverges(t *testing.T) {
 
 	// 4. A removal is reported as a procedure and dropped with the verb the
 	//    server takes. DROP FUNCTION aimed at one is refused by name.
-	removed := compareLiveRoutines(c, ctx, conn, &goschema.Database{}, schemaName)
+	removed := compareLiveRoutines(c, ctx, conn, &schemamodel.Database{}, schemaName)
 	c.Assert(removed.ProceduresRemoved, qt.HasLen, 1)
 	c.Assert(removed.FunctionsRemoved, qt.HasLen, 0)
-	applyLiveRoutines(c, ctx, conn, removed, &goschema.Database{}, platform.Postgres)
+	applyLiveRoutines(c, ctx, conn, removed, &schemamodel.Database{}, platform.Postgres)
 
-	c.Assert(compareLiveRoutines(c, ctx, conn, &goschema.Database{}, schemaName).ProceduresRemoved, qt.HasLen, 0)
+	c.Assert(compareLiveRoutines(c, ctx, conn, &schemamodel.Database{}, schemaName).ProceduresRemoved, qt.HasLen, 0)
 }
 
 // TestMySQLLiveProcedureConverges is the same round trip on the other family,
@@ -101,9 +101,9 @@ func TestMySQLLiveProcedureConverges(t *testing.T) {
 		_, _ = conn.ExecContext(context.Background(), "DROP PROCEDURE IF EXISTS `"+name+"`")
 	}()
 
-	declared := &goschema.Database{Functions: []goschema.Function{{
+	declared := &schemamodel.Database{Functions: []schemamodel.Function{{
 		Name:       name,
-		Kind:       goschema.FunctionKindProcedure,
+		Kind:       schemamodel.FunctionKindProcedure,
 		Parameters: "n int",
 		Language:   "sql",
 		Security:   "INVOKER",
@@ -128,7 +128,7 @@ func compareLiveRoutines(
 	c *qt.C,
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
-	declared *goschema.Database,
+	declared *schemamodel.Database,
 	schemaName string,
 ) *difftypes.SchemaDiff {
 	c.Helper()
@@ -149,7 +149,7 @@ func applyLiveRoutines(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	diff *difftypes.SchemaDiff,
-	declared *goschema.Database,
+	declared *schemamodel.Database,
 	dialect string,
 ) {
 	c.Helper()

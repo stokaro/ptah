@@ -25,7 +25,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 func TestApplyReadScope(t *testing.T) {
@@ -33,15 +33,15 @@ func TestApplyReadScope(t *testing.T) {
 		name      string
 		requested []string
 		base      []string
-		desired   *goschema.Database
+		desired   *schemamodel.Database
 		want      []string
 	}{
 		{
 			name:      "explicit schemas outrank both the URL and the document",
 			requested: []string{"only_this"},
 			base:      []string{"extra", "public"},
-			desired: &goschema.Database{
-				Schemas: []goschema.Schema{{Name: "public"}, {Name: "extra"}},
+			desired: &schemamodel.Database{
+				Schemas: []schemamodel.Schema{{Name: "public"}, {Name: "extra"}},
 			},
 			want: []string{"only_this"},
 		},
@@ -49,60 +49,60 @@ func TestApplyReadScope(t *testing.T) {
 			name:      "a comma-separated selection is split like the flag",
 			requested: []string{"one,two"},
 			base:      []string{"public"},
-			desired:   &goschema.Database{},
+			desired:   &schemamodel.Database{},
 			want:      []string{"one", "two"},
 		},
 		{
 			name: "the URL's realm scope is read whether or not the document names it",
 			base: []string{"extra", "public"},
-			desired: &goschema.Database{
-				Schemas: []goschema.Schema{{Name: "public"}},
-				Tables:  []goschema.Table{{Name: "a", Schema: "public"}},
+			desired: &schemamodel.Database{
+				Schemas: []schemamodel.Schema{{Name: "public"}},
+				Tables:  []schemamodel.Table{{Name: "a", Schema: "public"}},
 			},
 			want: []string{"extra", "public"},
 		},
 		{
 			name: "a document qualifying nothing reads exactly the URL's scope",
 			base: []string{"public"},
-			desired: &goschema.Database{
-				Tables: []goschema.Table{{Name: "a"}},
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{{Name: "a"}},
 			},
 			want: []string{"public"},
 		},
 		{
 			name: "a schema block beyond a pinned URL widens the read",
 			base: []string{"public"},
-			desired: &goschema.Database{
-				Schemas: []goschema.Schema{{Name: "extra"}, {Name: "public"}},
-				Tables:  []goschema.Table{{Name: "a", Schema: "public"}, {Name: "b", Schema: "extra"}},
+			desired: &schemamodel.Database{
+				Schemas: []schemamodel.Schema{{Name: "extra"}, {Name: "public"}},
+				Tables:  []schemamodel.Table{{Name: "a", Schema: "public"}, {Name: "b", Schema: "extra"}},
 			},
 			want: []string{"extra", "public"},
 		},
 		{
 			name: "a qualified table alone widens the read",
 			base: []string{"public"},
-			desired: &goschema.Database{
-				Tables: []goschema.Table{{Name: "b", Schema: "extra"}},
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{{Name: "b", Schema: "extra"}},
 			},
 			want: []string{"extra", "public"},
 		},
 		{
 			name: "declarations other than tables name schemas too",
 			base: []string{"public"},
-			desired: &goschema.Database{
-				Sequences:      []goschema.Sequence{{Name: "s", Schema: "seqs"}},
-				Domains:        []goschema.Domain{{Name: "d", Schema: "doms"}},
-				CompositeTypes: []goschema.CompositeType{{Name: "c", Schema: "comps"}},
-				Ranges:         []goschema.Range{{Name: "r", Schema: "rngs"}},
+			desired: &schemamodel.Database{
+				Sequences:      []schemamodel.Sequence{{Name: "s", Schema: "seqs"}},
+				Domains:        []schemamodel.Domain{{Name: "d", Schema: "doms"}},
+				CompositeTypes: []schemamodel.CompositeType{{Name: "c", Schema: "comps"}},
+				Ranges:         []schemamodel.Range{{Name: "r", Schema: "rngs"}},
 			},
 			want: []string{"comps", "doms", "public", "rngs", "seqs"},
 		},
 		{
 			name: "blank names are not schemas",
 			base: []string{"public"},
-			desired: &goschema.Database{
-				Schemas: []goschema.Schema{{Name: "  "}},
-				Tables:  []goschema.Table{{Name: "a", Schema: ""}},
+			desired: &schemamodel.Database{
+				Schemas: []schemamodel.Schema{{Name: "  "}},
+				Tables:  []schemamodel.Table{{Name: "a", Schema: ""}},
 			},
 			want: []string{"public"},
 		},

@@ -616,7 +616,7 @@ Offline SQL generation has no server banner to inspect. Factories such as
 `planner.GetPlanner`, `renderer.NewRenderer`, and
 `planner.GenerateSchemaDiffSQLStatements` therefore use `ForDialect`, which is
 the current-version default for the normalized dialect. Use the
-`...WithCapabilities` variants when a caller has a live `DBInfo.Capabilities`
+`...WithCapabilities` variants when a caller has a live `catalog.ServerInfo.Capabilities`
 value or wants to pin a specific server version in tests/CI.
 
 `ptah schema render --server-version` and `ptah schema diff --server-version`

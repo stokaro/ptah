@@ -19,7 +19,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/schemaops"
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/migration/safety"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 const (

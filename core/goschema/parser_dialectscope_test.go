@@ -7,6 +7,7 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // TestParse_DialectsIsAcceptedOnEveryStandaloneObjectDirective walks every
@@ -21,85 +22,85 @@ func TestParse_DialectsIsAcceptedOnEveryStandaloneObjectDirective(t *testing.T) 
 	tests := []struct {
 		name  string
 		code  string
-		scope func(db goschema.Database) []string
+		scope func(db schemamodel.Database) []string
 	}{
 		{
 			name: "extension",
 			code: `//ptah:schema:extension name="pgcrypto" dialects="postgresql"
 type Ext struct{}`,
-			scope: func(db goschema.Database) []string { return db.Extensions[0].Dialects },
+			scope: func(db schemamodel.Database) []string { return db.Extensions[0].Dialects },
 		},
 		{
 			name: "function",
 			code: `//ptah:schema:function name="tenant_id" returns="TEXT" language="plpgsql" body="BEGIN RETURN 'x'; END;" dialects="postgresql"
 type Fn struct{}`,
-			scope: func(db goschema.Database) []string { return db.Functions[0].Dialects },
+			scope: func(db schemamodel.Database) []string { return db.Functions[0].Dialects },
 		},
 		{
 			name: "sequence",
 			code: `//ptah:schema:sequence name="order_seq" dialects="postgresql"
 type Seq struct{}`,
-			scope: func(db goschema.Database) []string { return db.Sequences[0].Dialects },
+			scope: func(db schemamodel.Database) []string { return db.Sequences[0].Dialects },
 		},
 		{
 			name: "domain",
 			code: `//ptah:schema:domain name="email_t" type="TEXT" dialects="postgresql"
 type Dom struct{}`,
-			scope: func(db goschema.Database) []string { return db.Domains[0].Dialects },
+			scope: func(db schemamodel.Database) []string { return db.Domains[0].Dialects },
 		},
 		{
 			name: "composite",
 			code: `//ptah:schema:composite name="address" fields="city:TEXT" dialects="postgresql"
 type Comp struct{}`,
-			scope: func(db goschema.Database) []string { return db.CompositeTypes[0].Dialects },
+			scope: func(db schemamodel.Database) []string { return db.CompositeTypes[0].Dialects },
 		},
 		{
 			name: "range",
 			code: `//ptah:schema:range name="floatrange" subtype="float8" dialects="postgresql"
 type Rng struct{}`,
-			scope: func(db goschema.Database) []string { return db.Ranges[0].Dialects },
+			scope: func(db schemamodel.Database) []string { return db.Ranges[0].Dialects },
 		},
 		{
 			name: "view",
 			code: `//ptah:schema:view name="active" body="SELECT 1" dialects="postgresql"
 type V struct{}`,
-			scope: func(db goschema.Database) []string { return db.Views[0].Dialects },
+			scope: func(db schemamodel.Database) []string { return db.Views[0].Dialects },
 		},
 		{
 			name: "matview",
 			code: `//ptah:schema:matview name="stats" body="SELECT 1" dialects="postgresql"
 type MV struct{}`,
-			scope: func(db goschema.Database) []string { return db.MaterializedViews[0].Dialects },
+			scope: func(db schemamodel.Database) []string { return db.MaterializedViews[0].Dialects },
 		},
 		{
 			name: "trigger",
 			code: `//ptah:schema:trigger name="touch" table="tenants" timing="BEFORE" event="UPDATE" body="RETURN NEW;" dialects="postgresql"
 type Trg struct{}`,
-			scope: func(db goschema.Database) []string { return db.Triggers[0].Dialects },
+			scope: func(db schemamodel.Database) []string { return db.Triggers[0].Dialects },
 		},
 		{
 			name: "rls policy",
 			code: `//ptah:schema:rls:policy name="isolation" table="tenants" for="ALL" using="true" dialects="postgresql"
 type Pol struct{}`,
-			scope: func(db goschema.Database) []string { return db.RLSPolicies[0].Dialects },
+			scope: func(db schemamodel.Database) []string { return db.RLSPolicies[0].Dialects },
 		},
 		{
 			name: "rls enable",
 			code: `//ptah:schema:rls:enable table="tenants" dialects="postgresql"
 type Ena struct{}`,
-			scope: func(db goschema.Database) []string { return db.RLSEnabledTables[0].Dialects },
+			scope: func(db schemamodel.Database) []string { return db.RLSEnabledTables[0].Dialects },
 		},
 		{
 			name: "role",
 			code: `//ptah:schema:role name="app_reader" dialects="postgresql"
 type Rol struct{}`,
-			scope: func(db goschema.Database) []string { return db.Roles[0].Dialects },
+			scope: func(db schemamodel.Database) []string { return db.Roles[0].Dialects },
 		},
 		{
 			name: "grant",
 			code: `//ptah:schema:grant role="app_reader" privilege="SELECT" on_table="tenants" dialects="postgresql"
 type Grn struct{}`,
-			scope: func(db goschema.Database) []string { return db.Grants[0].Dialects },
+			scope: func(db schemamodel.Database) []string { return db.Grants[0].Dialects },
 		},
 	}
 

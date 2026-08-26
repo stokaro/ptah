@@ -5,23 +5,23 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/schemachange"
 	"go.5x5.cz/ptah/internal/schemastate"
 )
 
 // policyCatalog is a database carrying one table and one policy on it.
-func policyCatalog() *dbschematypes.DBSchema {
-	return &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
-			{Name: "orders", Schema: "public", Columns: []dbschematypes.DBColumn{
+func policyCatalog() *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{
+			{Name: "orders", Schema: "public", Columns: []catalog.Column{
 				{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
 			}},
 		},
-		RLSPolicies: []dbschematypes.DBRLSPolicy{
+		RLSPolicies: []catalog.RLSPolicy{
 			{Name: "tenant_isolation", Table: "public.orders", PolicyFor: "ALL",
 				ToRoles: "app", UsingExpression: "tenant_id = current_setting('app.tenant')"},
 		},
@@ -30,14 +30,14 @@ func policyCatalog() *dbschematypes.DBSchema {
 
 // policyDescription is a desired schema declaring the table and, optionally,
 // the policy.
-func policyDescription(withPolicy bool) *goschema.Database {
-	description := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Order", Name: "orders"}},
-		Fields: []goschema.Field{
+func policyDescription(withPolicy bool) *schemamodel.Database {
+	description := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Order", Name: "orders"}},
+		Fields: []schemamodel.Field{
 			{StructName: "Order", Name: "id", Type: "integer", Primary: true},
 		},
 	}
-	policies := map[bool][]goschema.RLSPolicy{
+	policies := map[bool][]schemamodel.RLSPolicy{
 		true: {{
 			StructName: "Order", Name: "tenant_isolation", Table: "orders", PolicyFor: "ALL",
 			ToRoles: "app", UsingExpression: "tenant_id = current_setting('app.tenant')",
@@ -48,7 +48,7 @@ func policyDescription(withPolicy bool) *goschema.Database {
 	return description
 }
 
-func policyStates(c *qt.C, description *goschema.Database) (current, desired *schemastate.State) {
+func policyStates(c *qt.C, description *schemamodel.Database) (current, desired *schemastate.State) {
 	c.Helper()
 	profile := postgresProfile()
 	rawDesired, err := schemastate.FromDescription(description, profile.Dialect, profile.Semantics)
@@ -62,7 +62,7 @@ func policyStates(c *qt.C, description *goschema.Database) (current, desired *sc
 	return current, desired
 }
 
-func policyChanges(c *qt.C, description *goschema.Database) []schemachange.Change {
+func policyChanges(c *qt.C, description *schemamodel.Database) []schemachange.Change {
 	c.Helper()
 	current, desired := policyStates(c, description)
 	changes, err := schemachange.Compare(current, desired, postgresProfile())
@@ -132,12 +132,12 @@ func TestPolicyDeclaredOnBothSidesIsNoChange(t *testing.T) {
 func TestPolicyIdentityKeepsOneNameOnTwoTablesApart(t *testing.T) {
 	c := qt.New(t)
 	profile := postgresProfile()
-	description := &goschema.Database{
-		Tables: []goschema.Table{
+	description := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Order", Name: "orders"},
 			{StructName: "Invoice", Name: "invoices"},
 		},
-		RLSPolicies: []goschema.RLSPolicy{
+		RLSPolicies: []schemamodel.RLSPolicy{
 			{StructName: "Order", Name: "tenant_isolation", Table: "orders", PolicyFor: "ALL"},
 			{StructName: "Invoice", Name: "tenant_isolation", Table: "invoices", PolicyFor: "ALL"},
 		},
@@ -194,12 +194,12 @@ func TestPolicyChangeIsRefusedByThePlannerRatherThanDropped(t *testing.T) {
 func TestPolicyIdentityFromCatalogKeepsOneNameOnTwoTablesApart(t *testing.T) {
 	c := qt.New(t)
 	profile := postgresProfile()
-	catalog := policyCatalog()
-	catalog.RLSPolicies = append(catalog.RLSPolicies, dbschematypes.DBRLSPolicy{
+	current := policyCatalog()
+	current.RLSPolicies = append(current.RLSPolicies, catalog.RLSPolicy{
 		Name: "tenant_isolation", Table: "public.invoices", PolicyFor: "ALL",
 	})
 
-	state, err := schemastate.FromCatalog(catalog, profile.Dialect, profile.Semantics)
+	state, err := schemastate.FromCatalog(current, profile.Dialect, profile.Semantics)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(state.OfKind(objectidentity.KindPolicy), qt.HasLen, 2)

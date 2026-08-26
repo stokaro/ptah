@@ -6,10 +6,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/mysql"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestPlanner_FieldLevelForeignKeyActions verifies that on_delete / on_update
@@ -23,20 +23,20 @@ import (
 func TestPlanner_FieldLevelForeignKeyActions(t *testing.T) {
 	tests := []struct {
 		name             string
-		diff             *types.SchemaDiff
-		generated        *goschema.Database
+		diff             *difftypes.SchemaDiff
+		desired          *schemamodel.Database
 		mustEmit         string
 		constraintMarker string
 		mustNotHit       string
 	}{
 		{
 			name: "ON DELETE CASCADE on field annotation",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{StructName: "User", Name: "users"},
 					{StructName: "Post", Name: "posts"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{StructName: "User", Name: "id", Type: "INT", Primary: true, AutoInc: true},
 					{StructName: "Post", Name: "id", Type: "INT", Primary: true, AutoInc: true},
 					{
@@ -53,12 +53,12 @@ func TestPlanner_FieldLevelForeignKeyActions(t *testing.T) {
 		},
 		{
 			name: "ON DELETE SET NULL + ON UPDATE CASCADE",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{StructName: "User", Name: "users"},
 					{StructName: "Post", Name: "posts"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{StructName: "User", Name: "id", Type: "INT", Primary: true, AutoInc: true},
 					{StructName: "Post", Name: "id", Type: "INT", Primary: true, AutoInc: true},
 					{
@@ -76,12 +76,12 @@ func TestPlanner_FieldLevelForeignKeyActions(t *testing.T) {
 		},
 		{
 			name: "no FK actions still emits a clean REFERENCES (no ON DELETE/UPDATE)",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{StructName: "User", Name: "users"},
 					{StructName: "Post", Name: "posts"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{StructName: "User", Name: "id", Type: "INT", Primary: true, AutoInc: true},
 					{StructName: "Post", Name: "id", Type: "INT", Primary: true, AutoInc: true},
 					{
@@ -99,14 +99,14 @@ func TestPlanner_FieldLevelForeignKeyActions(t *testing.T) {
 		},
 		{
 			name: "self-referencing FK carries ON DELETE SET NULL",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{StructName: "Category", Name: "categories"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{StructName: "Category", Name: "id", Type: "INT", Primary: true, AutoInc: true},
 				},
-				SelfReferencingForeignKeys: map[string][]goschema.SelfReferencingFK{
+				SelfReferencingForeignKeys: map[string][]schemamodel.SelfReferencingFK{
 					"categories": {
 						{
 							FieldName:      "parent_id",
@@ -121,17 +121,17 @@ func TestPlanner_FieldLevelForeignKeyActions(t *testing.T) {
 		},
 		{
 			name: "ALTER TABLE ADD COLUMN with FK carries ON DELETE RESTRICT",
-			diff: &types.SchemaDiff{
-				TablesModified: []types.TableDiff{
+			diff: &difftypes.SchemaDiff{
+				TablesModified: []difftypes.TableDiff{
 					{TableName: "posts", ColumnsAdded: []string{"owner_id"}},
 				},
 			},
-			generated: &goschema.Database{
-				Tables: []goschema.Table{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{StructName: "User", Name: "users"},
 					{StructName: "Post", Name: "posts"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{StructName: "User", Name: "id", Type: "INT", Primary: true, AutoInc: true},
 					{StructName: "Post", Name: "id", Type: "INT", Primary: true, AutoInc: true},
 					{
@@ -154,14 +154,14 @@ func TestPlanner_FieldLevelForeignKeyActions(t *testing.T) {
 
 			diff := tt.diff
 			if diff == nil {
-				tablesAdded := make([]string, 0, len(tt.generated.Tables))
-				for _, table := range tt.generated.Tables {
+				tablesAdded := make([]string, 0, len(tt.desired.Tables))
+				for _, table := range tt.desired.Tables {
 					tablesAdded = append(tablesAdded, table.Name)
 				}
-				diff = &types.SchemaDiff{TablesAdded: tablesAdded}
+				diff = &difftypes.SchemaDiff{TablesAdded: tablesAdded}
 			}
 
-			nodes, err := mysql.New().GenerateMigrationASTChecked(diff, tt.generated)
+			nodes, err := mysql.New().GenerateMigrationASTChecked(diff, tt.desired)
 			c.Assert(err, qt.IsNil)
 			sql, err := renderer.RenderSQL("mysql", nodes...)
 			c.Assert(err, qt.IsNil)

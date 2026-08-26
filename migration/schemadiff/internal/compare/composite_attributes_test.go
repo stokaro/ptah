@@ -5,10 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 // TestCompositeTypes_AttributeDeltaOnlyWhenALTERReachesTheDeclaredShape pins the
@@ -23,8 +23,8 @@ import (
 func TestCompositeTypes_AttributeDeltaOnlyWhenALTERReachesTheDeclaredShape(t *testing.T) {
 	tests := []struct {
 		name        string
-		declared    []goschema.CompositeTypeField
-		current     []types.DBCompositeField
+		declared    []schemamodel.CompositeField
+		current     []catalog.CompositeField
 		wantAdded   []string
 		wantRemoved []string
 	}{
@@ -67,15 +67,15 @@ func TestCompositeTypes_AttributeDeltaOnlyWhenALTERReachesTheDeclaredShape(t *te
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			generated := &goschema.Database{CompositeTypes: []goschema.CompositeType{
+			desired := &schemamodel.Database{CompositeTypes: []schemamodel.CompositeType{
 				{Name: "addr", Fields: test.declared},
 			}}
-			database := &types.DBSchema{Composites: []types.DBComposite{
+			current := &catalog.Database{Composites: []catalog.CompositeType{
 				{Name: "addr", Fields: test.current},
 			}}
 			diff := &difftypes.SchemaDiff{}
 
-			compare.CompositeTypes(generated, database, diff, compare.CoverageOf(generated, database))
+			compare.CompositeTypes(desired, current, diff, compare.CoverageOf(desired, current))
 
 			c.Assert(diff.CompositeTypesModified, qt.HasLen, 1)
 			c.Assert(addedNames(diff.CompositeTypesModified[0]), qt.DeepEquals, test.wantAdded)
@@ -94,21 +94,21 @@ func TestCompositeTypes_AttributeDeltaOnlyWhenALTERReachesTheDeclaredShape(t *te
 func TestCompositeTypes_AChangedFieldTypeIsNotAnAttributeDelta(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{CompositeTypes: []goschema.CompositeType{
-		{Name: "addr", Fields: []goschema.CompositeTypeField{
+	desired := &schemamodel.Database{CompositeTypes: []schemamodel.CompositeType{
+		{Name: "addr", Fields: []schemamodel.CompositeField{
 			{Name: "street", Type: "varchar(80)"},
 			{Name: "city", Type: "text"},
 		}},
 	}}
-	database := &types.DBSchema{Composites: []types.DBComposite{
-		{Name: "addr", Fields: []types.DBCompositeField{
+	current := &catalog.Database{Composites: []catalog.CompositeType{
+		{Name: "addr", Fields: []catalog.CompositeField{
 			{Name: "street", Type: "text"},
 			{Name: "city", Type: "text"},
 		}},
 	}}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.CompositeTypes(generated, database, diff, compare.CoverageOf(generated, database))
+	compare.CompositeTypes(desired, current, diff, compare.CoverageOf(desired, current))
 
 	c.Assert(diff.CompositeTypesModified, qt.HasLen, 1)
 	c.Assert(diff.CompositeTypesModified[0].AttributesAdded, qt.HasLen, 0)
@@ -116,19 +116,19 @@ func TestCompositeTypes_AChangedFieldTypeIsNotAnAttributeDelta(t *testing.T) {
 }
 
 // fields builds declared text fields with the given names.
-func fields(names ...string) []goschema.CompositeTypeField {
-	built := make([]goschema.CompositeTypeField, 0, len(names))
+func fields(names ...string) []schemamodel.CompositeField {
+	built := make([]schemamodel.CompositeField, 0, len(names))
 	for _, name := range names {
-		built = append(built, goschema.CompositeTypeField{Name: name, Type: "text"})
+		built = append(built, schemamodel.CompositeField{Name: name, Type: "text"})
 	}
 	return built
 }
 
 // dbFields builds catalog text fields with the given names.
-func dbFields(names ...string) []types.DBCompositeField {
-	built := make([]types.DBCompositeField, 0, len(names))
+func dbFields(names ...string) []catalog.CompositeField {
+	built := make([]catalog.CompositeField, 0, len(names))
 	for _, name := range names {
-		built = append(built, types.DBCompositeField{Name: name, Type: "text"})
+		built = append(built, catalog.CompositeField{Name: name, Type: "text"})
 	}
 	return built
 }

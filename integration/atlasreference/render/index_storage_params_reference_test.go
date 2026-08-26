@@ -8,8 +8,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 )
 
@@ -75,14 +75,14 @@ func TestReferenceKeepsTheIndexStorageParameterPtahRenders(t *testing.T) {
 
 // brinStorageParamDocument is one BRIN index carrying the only index storage
 // parameter every surface in the chain can write.
-func brinStorageParamDocument(schema string) *goschema.Database {
-	db := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "T", Name: "t", Schema: schema}},
-		Fields: []goschema.Field{
+func brinStorageParamDocument(schema string) *schemamodel.Database {
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "T", Name: "t", Schema: schema}},
+		Fields: []schemamodel.Field{
 			{StructName: "T", Name: "id", Type: "integer", Primary: true},
 			{StructName: "T", Name: "ts", Type: "timestamptz", Nullable: true},
 		},
-		Indexes: []goschema.Index{{
+		Indexes: []schemamodel.Index{{
 			StructName:    "T",
 			Name:          "i",
 			Fields:        []string{"ts"},
@@ -90,6 +90,6 @@ func brinStorageParamDocument(schema string) *goschema.Database {
 			StorageParams: map[string]string{"pages_per_range": "32"},
 		}},
 	}
-	goschema.Finalize(db)
+	schemamodel.Finalize(db)
 	return db
 }

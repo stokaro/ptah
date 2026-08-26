@@ -5,21 +5,21 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 )
 
 func TestConvertDBSchemaToGoSchema_Extensions(t *testing.T) {
 	tests := []struct {
 		name     string
-		dbSchema *types.DBSchema
-		expected []goschema.Extension
+		dbSchema *catalog.Database
+		expected []schemamodel.Extension
 	}{
 		{
 			name: "single extension without comment",
-			dbSchema: &types.DBSchema{
-				Extensions: []types.DBExtension{
+			dbSchema: &catalog.Database{
+				Extensions: []catalog.Extension{
 					{
 						Name:    "pg_trgm",
 						Version: "1.6",
@@ -27,7 +27,7 @@ func TestConvertDBSchemaToGoSchema_Extensions(t *testing.T) {
 					},
 				},
 			},
-			expected: []goschema.Extension{
+			expected: []schemamodel.Extension{
 				{
 					Name:        "pg_trgm",
 					Schema:      "public",
@@ -39,8 +39,8 @@ func TestConvertDBSchemaToGoSchema_Extensions(t *testing.T) {
 		},
 		{
 			name: "single extension with comment",
-			dbSchema: &types.DBSchema{
-				Extensions: []types.DBExtension{
+			dbSchema: &catalog.Database{
+				Extensions: []catalog.Extension{
 					{
 						Name:    "postgis",
 						Version: "3.0",
@@ -49,7 +49,7 @@ func TestConvertDBSchemaToGoSchema_Extensions(t *testing.T) {
 					},
 				},
 			},
-			expected: []goschema.Extension{
+			expected: []schemamodel.Extension{
 				{
 					Name:        "postgis",
 					Schema:      "public",
@@ -61,8 +61,8 @@ func TestConvertDBSchemaToGoSchema_Extensions(t *testing.T) {
 		},
 		{
 			name: "multiple extensions",
-			dbSchema: &types.DBSchema{
-				Extensions: []types.DBExtension{
+			dbSchema: &catalog.Database{
+				Extensions: []catalog.Extension{
 					{
 						Name:    "pg_trgm",
 						Version: "1.6",
@@ -76,7 +76,7 @@ func TestConvertDBSchemaToGoSchema_Extensions(t *testing.T) {
 					},
 				},
 			},
-			expected: []goschema.Extension{
+			expected: []schemamodel.Extension{
 				{
 					Name:        "pg_trgm",
 					Schema:      "public",
@@ -95,17 +95,17 @@ func TestConvertDBSchemaToGoSchema_Extensions(t *testing.T) {
 		},
 		{
 			name: "no extensions",
-			dbSchema: &types.DBSchema{
-				Extensions: make([]types.DBExtension, 0),
+			dbSchema: &catalog.Database{
+				Extensions: make([]catalog.Extension, 0),
 			},
-			expected: make([]goschema.Extension, 0),
+			expected: make([]schemamodel.Extension, 0),
 		},
 		{
 			name: "nil extensions",
-			dbSchema: &types.DBSchema{
+			dbSchema: &catalog.Database{
 				Extensions: nil,
 			},
-			expected: make([]goschema.Extension, 0),
+			expected: make([]schemamodel.Extension, 0),
 		},
 	}
 
@@ -113,7 +113,7 @@ func TestConvertDBSchemaToGoSchema_Extensions(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			result := dbschematogo.ConvertDBSchemaToGoSchema(tt.dbSchema)
+			result := dbschematogo.ConvertCatalogToSchema(tt.dbSchema)
 
 			c.Assert(result.Extensions, qt.HasLen, len(tt.expected))
 			for i, expectedExt := range tt.expected {
@@ -132,11 +132,11 @@ func TestConvertDBSchemaToGoSchema_ExtensionsWithOtherElements(t *testing.T) {
 	c := qt.New(t)
 
 	// Test that extensions are properly converted alongside other schema elements
-	dbSchema := &types.DBSchema{
-		Tables: []types.DBTable{
+	dbSchema := &catalog.Database{
+		Tables: []catalog.Table{
 			{
 				Name: "users",
-				Columns: []types.DBColumn{
+				Columns: []catalog.Column{
 					{
 						Name:     "id",
 						DataType: "integer",
@@ -144,14 +144,14 @@ func TestConvertDBSchemaToGoSchema_ExtensionsWithOtherElements(t *testing.T) {
 				},
 			},
 		},
-		Extensions: []types.DBExtension{
+		Extensions: []catalog.Extension{
 			{
 				Name:    "pg_trgm",
 				Version: "1.6",
 				Schema:  "public",
 			},
 		},
-		Enums: []types.DBEnum{
+		Enums: []catalog.Enum{
 			{
 				Name:   "status_type",
 				Values: []string{"active", "inactive"},
@@ -159,7 +159,7 @@ func TestConvertDBSchemaToGoSchema_ExtensionsWithOtherElements(t *testing.T) {
 		},
 	}
 
-	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+	result := dbschematogo.ConvertCatalogToSchema(dbSchema)
 
 	// Verify extensions are converted
 	c.Assert(result.Extensions, qt.HasLen, 1)
@@ -176,16 +176,16 @@ func TestConvertDBSchemaToGoSchema_ExtensionsWithOtherElements(t *testing.T) {
 
 func TestConvertDBSchemaToGoSchema_Schemas(t *testing.T) {
 	c := qt.New(t)
-	dbSchema := &types.DBSchema{
-		Schemas: []types.DBSchemaInfo{
+	dbSchema := &catalog.Database{
+		Schemas: []catalog.Schema{
 			{Name: "auth", Comment: "Authentication objects"},
 			{Name: "billing", Charset: "utf8mb4", Collate: "utf8mb4_0900_ai_ci"},
 		},
 	}
 
-	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+	result := dbschematogo.ConvertCatalogToSchema(dbSchema)
 
-	c.Assert(result.Schemas, qt.DeepEquals, []goschema.Schema{
+	c.Assert(result.Schemas, qt.DeepEquals, []schemamodel.Schema{
 		{Name: "auth", Comment: "Authentication objects"},
 		{Name: "billing", Charset: "utf8mb4", Collate: "utf8mb4_0900_ai_ci"},
 	})
@@ -194,11 +194,11 @@ func TestConvertDBSchemaToGoSchema_Schemas(t *testing.T) {
 func TestConvertDBSchemaToGoSchema_GeneratedColumns(t *testing.T) {
 	c := qt.New(t)
 	expression := "lower(name)"
-	dbSchema := &types.DBSchema{
-		Tables: []types.DBTable{
+	dbSchema := &catalog.Database{
+		Tables: []catalog.Table{
 			{
 				Name: "users",
-				Columns: []types.DBColumn{
+				Columns: []catalog.Column{
 					{
 						Name:                "slug",
 						DataType:            "text",
@@ -210,7 +210,7 @@ func TestConvertDBSchemaToGoSchema_GeneratedColumns(t *testing.T) {
 		},
 	}
 
-	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+	result := dbschematogo.ConvertCatalogToSchema(dbSchema)
 
 	c.Assert(result.Fields, qt.HasLen, 1)
 	c.Assert(result.Fields[0].GeneratedExpression, qt.Equals, "lower(name)")
@@ -219,11 +219,11 @@ func TestConvertDBSchemaToGoSchema_GeneratedColumns(t *testing.T) {
 
 func TestConvertDBSchemaToGoSchema_PostgresUserDefinedColumnUsesUDTName(t *testing.T) {
 	c := qt.New(t)
-	dbSchema := &types.DBSchema{
-		Tables: []types.DBTable{
+	dbSchema := &catalog.Database{
+		Tables: []catalog.Table{
 			{
 				Name: "products",
-				Columns: []types.DBColumn{
+				Columns: []catalog.Column{
 					{
 						Name:     "status",
 						DataType: "USER-DEFINED",
@@ -234,7 +234,7 @@ func TestConvertDBSchemaToGoSchema_PostgresUserDefinedColumnUsesUDTName(t *testi
 		},
 	}
 
-	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+	result := dbschematogo.ConvertCatalogToSchema(dbSchema)
 
 	c.Assert(result.Fields, qt.HasLen, 1)
 	c.Assert(result.Fields[0].Type, qt.Equals, "enum_product_status")
@@ -252,12 +252,12 @@ func TestConvertDBSchemaToGoSchema_PostgresUserDefinedColumnUsesUDTName(t *testi
 func TestConvertDBSchemaToGoSchema_PostgresArrayColumnUsesTheServerSpelling(t *testing.T) {
 	tests := []struct {
 		name     string
-		column   types.DBColumn
+		column   catalog.Column
 		wantType string
 	}{
 		{
 			name: "a sized element type keeps its length",
-			column: types.DBColumn{
+			column: catalog.Column{
 				Name:          "records",
 				DataType:      "ARRAY",
 				UDTName:       "_varchar",
@@ -267,7 +267,7 @@ func TestConvertDBSchemaToGoSchema_PostgresArrayColumnUsesTheServerSpelling(t *t
 		},
 		{
 			name: "an unsized element type",
-			column: types.DBColumn{
+			column: catalog.Column{
 				Name:          "tags",
 				DataType:      "ARRAY",
 				UDTName:       "_text",
@@ -277,7 +277,7 @@ func TestConvertDBSchemaToGoSchema_PostgresArrayColumnUsesTheServerSpelling(t *t
 		},
 		{
 			name: "an enum element type is spelled by its own name",
-			column: types.DBColumn{
+			column: catalog.Column{
 				Name:          "statuses",
 				DataType:      "ARRAY",
 				UDTName:       "_status",
@@ -287,7 +287,7 @@ func TestConvertDBSchemaToGoSchema_PostgresArrayColumnUsesTheServerSpelling(t *t
 		},
 		{
 			name: "a column the server did not have to spell is untouched",
-			column: types.DBColumn{
+			column: catalog.Column{
 				Name:               "title",
 				DataType:           "character varying",
 				CharacterMaxLength: new(64),
@@ -299,11 +299,11 @@ func TestConvertDBSchemaToGoSchema_PostgresArrayColumnUsesTheServerSpelling(t *t
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			dbSchema := &types.DBSchema{
-				Tables: []types.DBTable{{Name: "logs", Columns: []types.DBColumn{test.column}}},
+			dbSchema := &catalog.Database{
+				Tables: []catalog.Table{{Name: "logs", Columns: []catalog.Column{test.column}}},
 			}
 
-			result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+			result := dbschematogo.ConvertCatalogToSchema(dbSchema)
 
 			c.Assert(result.Fields, qt.HasLen, 1)
 			c.Assert(result.Fields[0].Type, qt.Equals, test.wantType)
@@ -332,12 +332,12 @@ func TestConvertDBSchemaToGoSchema_PostgresArrayColumnUsesTheServerSpelling(t *t
 func TestConvertDBSchemaToGoSchema_PostgresDomainColumnKeepsTheDomain(t *testing.T) {
 	tests := []struct {
 		name     string
-		column   types.DBColumn
+		column   catalog.Column
 		wantType string
 	}{
 		{
 			name: "a domain over a built-in base",
-			column: types.DBColumn{
+			column: catalog.Column{
 				Name:          "c_domain",
 				DataType:      "integer",
 				UDTName:       "int4",
@@ -347,7 +347,7 @@ func TestConvertDBSchemaToGoSchema_PostgresDomainColumnKeepsTheDomain(t *testing
 		},
 		{
 			name: "a domain over a user-defined base",
-			column: types.DBColumn{
+			column: catalog.Column{
 				Name:          "c_point3d",
 				DataType:      "USER-DEFINED",
 				UDTName:       "cube",
@@ -357,7 +357,7 @@ func TestConvertDBSchemaToGoSchema_PostgresDomainColumnKeepsTheDomain(t *testing
 		},
 		{
 			name: "a domain over an array",
-			column: types.DBColumn{
+			column: catalog.Column{
 				Name:          "c_tags",
 				DataType:      "ARRAY",
 				UDTName:       "_text",
@@ -367,7 +367,7 @@ func TestConvertDBSchemaToGoSchema_PostgresDomainColumnKeepsTheDomain(t *testing
 		},
 		{
 			name: "a user-defined column that is not a domain still uses UDTName",
-			column: types.DBColumn{
+			column: catalog.Column{
 				Name:     "c_cube",
 				DataType: "USER-DEFINED",
 				UDTName:  "cube",
@@ -379,11 +379,11 @@ func TestConvertDBSchemaToGoSchema_PostgresDomainColumnKeepsTheDomain(t *testing
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			dbSchema := &types.DBSchema{
-				Tables: []types.DBTable{{Name: "scalars", Columns: []types.DBColumn{test.column}}},
+			dbSchema := &catalog.Database{
+				Tables: []catalog.Table{{Name: "scalars", Columns: []catalog.Column{test.column}}},
 			}
 
-			result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+			result := dbschematogo.ConvertCatalogToSchema(dbSchema)
 
 			c.Assert(result.Fields, qt.HasLen, 1)
 			c.Assert(result.Fields[0].Type, qt.Equals, test.wantType)
@@ -422,13 +422,13 @@ func TestConvertDBSchemaToGoSchema_PostgresDomainColumnKeepsItsDomain(t *testing
 
 	tests := []struct {
 		name            string
-		column          types.DBColumn
+		column          catalog.Column
 		wantType        string
 		wantDefaultExpr string
 	}{
 		{
 			name: "domain column keeps the domain, not its base type",
-			column: types.DBColumn{
+			column: catalog.Column{
 				Name:          "qty",
 				DataType:      "integer",
 				UDTName:       "int4",
@@ -439,7 +439,7 @@ func TestConvertDBSchemaToGoSchema_PostgresDomainColumnKeepsItsDomain(t *testing
 		},
 		{
 			name: "a domain outside the search path keeps its qualifier",
-			column: types.DBColumn{
+			column: catalog.Column{
 				Name:          "qty",
 				DataType:      "integer",
 				UDTName:       "int4",
@@ -450,7 +450,7 @@ func TestConvertDBSchemaToGoSchema_PostgresDomainColumnKeepsItsDomain(t *testing
 		},
 		{
 			name: "a domain column drawing from a sequence is not a SERIAL",
-			column: types.DBColumn{
+			column: catalog.Column{
 				Name:            "id",
 				DataType:        "integer",
 				UDTName:         "int4",
@@ -464,7 +464,7 @@ func TestConvertDBSchemaToGoSchema_PostgresDomainColumnKeepsItsDomain(t *testing
 		},
 		{
 			name: "a domain over an enum keeps the domain, not the enum",
-			column: types.DBColumn{
+			column: catalog.Column{
 				Name:          "c",
 				DataType:      "USER-DEFINED",
 				UDTName:       "color",
@@ -475,7 +475,7 @@ func TestConvertDBSchemaToGoSchema_PostgresDomainColumnKeepsItsDomain(t *testing
 		},
 		{
 			name: "a domain over a composite type keeps the domain",
-			column: types.DBColumn{
+			column: catalog.Column{
 				Name:          "a",
 				DataType:      "USER-DEFINED",
 				UDTName:       "addr",
@@ -486,7 +486,7 @@ func TestConvertDBSchemaToGoSchema_PostgresDomainColumnKeepsItsDomain(t *testing
 		},
 		{
 			name: "a domain over a range type keeps the domain",
-			column: types.DBColumn{
+			column: catalog.Column{
 				Name:          "r",
 				DataType:      "USER-DEFINED",
 				UDTName:       "myrange",
@@ -497,7 +497,7 @@ func TestConvertDBSchemaToGoSchema_PostgresDomainColumnKeepsItsDomain(t *testing
 		},
 		{
 			name: "a domain over an enum outside the search path keeps its qualifier",
-			column: types.DBColumn{
+			column: catalog.Column{
 				Name:          "c",
 				DataType:      "USER-DEFINED",
 				UDTName:       "color",
@@ -511,11 +511,11 @@ func TestConvertDBSchemaToGoSchema_PostgresDomainColumnKeepsItsDomain(t *testing
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			dbSchema := &types.DBSchema{
-				Tables: []types.DBTable{{Name: "t", Columns: []types.DBColumn{test.column}}},
+			dbSchema := &catalog.Database{
+				Tables: []catalog.Table{{Name: "t", Columns: []catalog.Column{test.column}}},
 			}
 
-			result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+			result := dbschematogo.ConvertCatalogToSchema(dbSchema)
 
 			c.Assert(result.Fields, qt.HasLen, 1)
 			c.Assert(result.Fields[0].Type, qt.Equals, test.wantType)
@@ -532,8 +532,8 @@ func TestConvertDBSchemaToGoSchema_SerialDetectionSurvivesTheDomainRule(t *testi
 	c := qt.New(t)
 	nextval := "nextval('t_id_seq'::regclass)"
 
-	dbSchema := &types.DBSchema{
-		Tables: []types.DBTable{{Name: "t", Columns: []types.DBColumn{{
+	dbSchema := &catalog.Database{
+		Tables: []catalog.Table{{Name: "t", Columns: []catalog.Column{{
 			Name:            "id",
 			DataType:        "integer",
 			UDTName:         "int4",
@@ -542,7 +542,7 @@ func TestConvertDBSchemaToGoSchema_SerialDetectionSurvivesTheDomainRule(t *testi
 		}}}},
 	}
 
-	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+	result := dbschematogo.ConvertCatalogToSchema(dbSchema)
 
 	c.Assert(result.Fields, qt.HasLen, 1)
 	c.Assert(result.Fields[0].Type, qt.Equals, "SERIAL")
@@ -553,17 +553,17 @@ func TestConvertDBSchemaToGoSchema_SchemaQualifiedObjectOwnersUseTableStructName
 	c := qt.New(t)
 	checkClause := "tenant_id > 0"
 	notNullCheck := "id IS NOT NULL"
-	dbSchema := &types.DBSchema{
-		Tables: []types.DBTable{
+	dbSchema := &catalog.Database{
+		Tables: []catalog.Table{
 			{
 				Schema: "tenant_a",
 				Name:   "orders",
-				Columns: []types.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "id", DataType: "integer"},
 				},
 			},
 		},
-		Indexes: []types.DBIndex{
+		Indexes: []catalog.Index{
 			{
 				Schema:    "tenant_a",
 				TableName: "orders",
@@ -578,7 +578,7 @@ func TestConvertDBSchemaToGoSchema_SchemaQualifiedObjectOwnersUseTableStructName
 				IsUnique:  true,
 			},
 		},
-		Constraints: []types.DBConstraint{
+		Constraints: []catalog.Constraint{
 			{
 				Schema:      "tenant_a",
 				TableName:   "orders",
@@ -603,7 +603,7 @@ func TestConvertDBSchemaToGoSchema_SchemaQualifiedObjectOwnersUseTableStructName
 				},
 			},
 		},
-		RLSPolicies: []types.DBRLSPolicy{
+		RLSPolicies: []catalog.RLSPolicy{
 			{
 				Name:            "orders_tenant_policy",
 				Table:           "tenant_a.orders",
@@ -614,7 +614,7 @@ func TestConvertDBSchemaToGoSchema_SchemaQualifiedObjectOwnersUseTableStructName
 		},
 	}
 
-	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+	result := dbschematogo.ConvertCatalogToSchema(dbSchema)
 
 	c.Assert(result.Tables, qt.HasLen, 1)
 	c.Assert(result.Tables[0].StructName, qt.Equals, "Orders")
@@ -638,12 +638,12 @@ func TestConvertDBSchemaToGoSchema_SchemaQualifiedObjectOwnersUseTableStructName
 
 func TestConvertDBSchemaToGoSchema_DuplicateTableNamesUseSchemaQualifiedStructNames(t *testing.T) {
 	c := qt.New(t)
-	dbSchema := &types.DBSchema{
-		Tables: []types.DBTable{
+	dbSchema := &catalog.Database{
+		Tables: []catalog.Table{
 			{
 				Schema: "auth",
 				Name:   "users",
-				Columns: []types.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "id", DataType: "integer"},
 					{Name: "email", DataType: "text"},
 				},
@@ -651,31 +651,31 @@ func TestConvertDBSchemaToGoSchema_DuplicateTableNamesUseSchemaQualifiedStructNa
 			{
 				Schema: "billing",
 				Name:   "users",
-				Columns: []types.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "id", DataType: "integer"},
 					{Name: "external_id", DataType: "text"},
 				},
 			},
 		},
-		Indexes: []types.DBIndex{
+		Indexes: []catalog.Index{
 			{Schema: "auth", TableName: "users", Name: "users_email_key", Columns: []string{"email"}, IsUnique: true},
 			{Schema: "billing", TableName: "users", Name: "users_external_id_key", Columns: []string{"external_id"}, IsUnique: true},
 		},
 	}
 
-	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+	result := dbschematogo.ConvertCatalogToSchema(dbSchema)
 
-	c.Assert(result.Tables, qt.DeepEquals, []goschema.Table{
+	c.Assert(result.Tables, qt.DeepEquals, []schemamodel.Table{
 		{StructName: "AuthUsers", Schema: "auth", Name: "users"},
 		{StructName: "BillingUsers", Schema: "billing", Name: "users"},
 	})
-	c.Assert(result.Fields, qt.DeepEquals, []goschema.Field{
+	c.Assert(result.Fields, qt.DeepEquals, []schemamodel.Field{
 		{StructName: "AuthUsers", FieldName: "Id", Name: "id", Type: "integer", Nullable: false},
 		{StructName: "AuthUsers", FieldName: "Email", Name: "email", Type: "text", Nullable: false},
 		{StructName: "BillingUsers", FieldName: "Id", Name: "id", Type: "integer", Nullable: false},
 		{StructName: "BillingUsers", FieldName: "ExternalId", Name: "external_id", Type: "text", Nullable: false},
 	})
-	c.Assert(result.Indexes, qt.DeepEquals, []goschema.Index{
+	c.Assert(result.Indexes, qt.DeepEquals, []schemamodel.Index{
 		{StructName: "AuthUsers", Name: "users_email_key", TableName: "auth.users", Fields: []string{"email"}, Unique: true},
 		{StructName: "BillingUsers", Name: "users_external_id_key", TableName: "billing.users", Fields: []string{"external_id"}, Unique: true},
 	})
@@ -683,17 +683,17 @@ func TestConvertDBSchemaToGoSchema_DuplicateTableNamesUseSchemaQualifiedStructNa
 
 func TestConvertDBSchemaToGoSchema_PreservesIndexPartDirection(t *testing.T) {
 	c := qt.New(t)
-	dbSchema := &types.DBSchema{
-		Tables: []types.DBTable{
+	dbSchema := &catalog.Database{
+		Tables: []catalog.Table{
 			{Schema: "dbo", Name: "users"},
 		},
-		Indexes: []types.DBIndex{
+		Indexes: []catalog.Index{
 			{
 				Schema:    "dbo",
 				TableName: "users",
 				Name:      "idx_users_lookup",
 				Columns:   []string{"email", "status"},
-				Parts: []types.DBIndexPart{
+				Parts: []catalog.IndexPart{
 					{Name: "email", Desc: true},
 					{Name: "status"},
 				},
@@ -701,11 +701,11 @@ func TestConvertDBSchemaToGoSchema_PreservesIndexPartDirection(t *testing.T) {
 		},
 	}
 
-	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+	result := dbschematogo.ConvertCatalogToSchema(dbSchema)
 
 	c.Assert(result.Indexes, qt.HasLen, 1)
 	c.Assert(result.Indexes[0].Fields, qt.DeepEquals, []string{"email", "status"})
-	c.Assert(result.Indexes[0].Parts, qt.DeepEquals, []goschema.IndexPart{
+	c.Assert(result.Indexes[0].Parts, qt.DeepEquals, []schemamodel.IndexPart{
 		{Name: "email", Desc: true},
 		{Name: "status"},
 	})
@@ -717,17 +717,17 @@ func TestConvertDBSchemaToGoSchema_PreservesIndexPartExpression(t *testing.T) {
 	// into Name makes the renderer quote it, and CREATE INDEX ... ("lower(name)")
 	// is rejected by PostgreSQL with `column "lower(name)" does not exist`.
 	// See #1242.
-	dbSchema := &types.DBSchema{
-		Tables: []types.DBTable{
+	dbSchema := &catalog.Database{
+		Tables: []catalog.Table{
 			{Schema: "public", Name: "users"},
 		},
-		Indexes: []types.DBIndex{
+		Indexes: []catalog.Index{
 			{
 				Schema:    "public",
 				TableName: "users",
 				Name:      "idx_users_lower_name",
 				Columns:   []string{"tenant_id", "lower(name)"},
-				Parts: []types.DBIndexPart{
+				Parts: []catalog.IndexPart{
 					{Name: "tenant_id"},
 					{Expr: "lower(name)"},
 				},
@@ -735,10 +735,10 @@ func TestConvertDBSchemaToGoSchema_PreservesIndexPartExpression(t *testing.T) {
 		},
 	}
 
-	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+	result := dbschematogo.ConvertCatalogToSchema(dbSchema)
 
 	c.Assert(result.Indexes, qt.HasLen, 1)
-	c.Assert(result.Indexes[0].Parts, qt.DeepEquals, []goschema.IndexPart{
+	c.Assert(result.Indexes[0].Parts, qt.DeepEquals, []schemamodel.IndexPart{
 		{Name: "tenant_id"},
 		{Expr: "lower(name)"},
 	})
@@ -760,9 +760,9 @@ func TestConvertDBSchemaToGoSchema_PreservesImplicitExtensionRequirements(t *tes
 	c := qt.New(t)
 	usingMethod := "gist"
 	elements := "room WITH =, during WITH &&"
-	dbSchema := &types.DBSchema{
-		Tables: []types.DBTable{{Schema: "public", Name: "booking"}},
-		Indexes: []types.DBIndex{
+	dbSchema := &catalog.Database{
+		Tables: []catalog.Table{{Schema: "public", Name: "booking"}},
+		Indexes: []catalog.Index{
 			{
 				Schema:             "public",
 				TableName:          "booking",
@@ -780,7 +780,7 @@ func TestConvertDBSchemaToGoSchema_PreservesImplicitExtensionRequirements(t *tes
 				RequiresExtensions: []string{"btree_gist"},
 			},
 		},
-		Constraints: []types.DBConstraint{{
+		Constraints: []catalog.Constraint{{
 			Schema:             "public",
 			TableName:          "booking",
 			Name:               "booking_room_during_excl",
@@ -791,7 +791,7 @@ func TestConvertDBSchemaToGoSchema_PreservesImplicitExtensionRequirements(t *tes
 		}},
 	}
 
-	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+	result := dbschematogo.ConvertCatalogToSchema(dbSchema)
 
 	c.Assert(result.Indexes, qt.HasLen, 1)
 	c.Assert(result.Indexes[0].Name, qt.Equals, "booking_room_gin")
@@ -805,11 +805,11 @@ func TestConvertDBSchemaToGoSchema_DBDefaultExpression(t *testing.T) {
 	c := qt.New(t)
 	statusDefault := "'draft'::enum_product_status"
 	nameDefault := "'unnamed'"
-	dbSchema := &types.DBSchema{
-		Tables: []types.DBTable{
+	dbSchema := &catalog.Database{
+		Tables: []catalog.Table{
 			{
 				Name: "products",
-				Columns: []types.DBColumn{
+				Columns: []catalog.Column{
 					{
 						Name:          "status",
 						DataType:      "USER-DEFINED",
@@ -826,7 +826,7 @@ func TestConvertDBSchemaToGoSchema_DBDefaultExpression(t *testing.T) {
 		},
 	}
 
-	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+	result := dbschematogo.ConvertCatalogToSchema(dbSchema)
 
 	c.Assert(result.Fields, qt.HasLen, 2)
 	c.Assert(result.Fields[0].Default, qt.Equals, "")
@@ -839,11 +839,11 @@ func TestConvertDBSchemaToGoSchema_PostgresSequenceSemantics(t *testing.T) {
 	c := qt.New(t)
 	serialDefault := "nextval('items_id_seq'::regclass)"
 	standaloneSequenceDefault := "nextval('shared_ids'::regclass)"
-	dbSchema := &types.DBSchema{
-		Tables: []types.DBTable{
+	dbSchema := &catalog.Database{
+		Tables: []catalog.Table{
 			{
 				Name: "items",
-				Columns: []types.DBColumn{
+				Columns: []catalog.Column{
 					{
 						Name:            "id",
 						DataType:        "bigint",
@@ -865,7 +865,7 @@ func TestConvertDBSchemaToGoSchema_PostgresSequenceSemantics(t *testing.T) {
 		},
 	}
 
-	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+	result := dbschematogo.ConvertCatalogToSchema(dbSchema)
 
 	c.Assert(result.Fields, qt.HasLen, 3)
 	c.Assert(result.Fields[0].Type, qt.Equals, "BIGSERIAL")
@@ -880,17 +880,17 @@ func TestConvertDBSchemaToGoSchema_PostgresSequenceSemantics(t *testing.T) {
 
 func TestConvertDBSchemaToGoSchema_CompositeForeignKeyBecomesTableConstraint(t *testing.T) {
 	c := qt.New(t)
-	dbSchema := &types.DBSchema{
-		Tables: []types.DBTable{
+	dbSchema := &catalog.Database{
+		Tables: []catalog.Table{
 			{
 				Name: "orders",
-				Columns: []types.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "tenant_id", DataType: "integer"},
 					{Name: "owner_id", DataType: "integer"},
 				},
 			},
 		},
-		Constraints: []types.DBConstraint{
+		Constraints: []catalog.Constraint{
 			{
 				Name:           "fk_orders_accounts",
 				TableName:      "orders",
@@ -904,14 +904,14 @@ func TestConvertDBSchemaToGoSchema_CompositeForeignKeyBecomesTableConstraint(t *
 		},
 	}
 
-	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+	result := dbschematogo.ConvertCatalogToSchema(dbSchema)
 
 	c.Assert(result.Fields, qt.HasLen, 2)
 	for _, field := range result.Fields {
 		c.Assert(field.Foreign, qt.Equals, "")
 		c.Assert(field.ForeignKeyName, qt.Equals, "")
 	}
-	c.Assert(result.Constraints, qt.DeepEquals, []goschema.Constraint{{
+	c.Assert(result.Constraints, qt.DeepEquals, []schemamodel.Constraint{{
 		StructName:     "Orders",
 		Name:           "fk_orders_accounts",
 		Type:           "FOREIGN KEY",
@@ -930,17 +930,17 @@ func TestConvertDBSchemaToGoSchema_TableLevelConstraintsAndSizedTypes(t *testing
 	scale := 2
 	checkClause := "price > 0"
 	nullsDistinct := false
-	dbSchema := &types.DBSchema{
-		Tables: []types.DBTable{{
+	dbSchema := &catalog.Database{
+		Tables: []catalog.Table{{
 			Name: "order_items",
-			Columns: []types.DBColumn{
+			Columns: []catalog.Column{
 				{Name: "tenant_id", DataType: "integer", IsPrimaryKey: true},
 				{Name: "order_id", DataType: "integer", IsPrimaryKey: true},
 				{Name: "sku", DataType: "character varying", CharacterMaxLength: &varcharLen},
 				{Name: "price", DataType: "numeric", NumericPrecision: &precision, NumericScale: &scale},
 			},
 		}},
-		Constraints: []types.DBConstraint{
+		Constraints: []catalog.Constraint{
 			{
 				Name:        "order_items_pkey",
 				TableName:   "order_items",
@@ -964,7 +964,7 @@ func TestConvertDBSchemaToGoSchema_TableLevelConstraintsAndSizedTypes(t *testing
 		},
 	}
 
-	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+	result := dbschematogo.ConvertCatalogToSchema(dbSchema)
 
 	c.Assert(result.Tables, qt.HasLen, 1)
 	c.Assert(result.Tables[0].PrimaryKey, qt.DeepEquals, []string{"tenant_id", "order_id"})
@@ -972,7 +972,7 @@ func TestConvertDBSchemaToGoSchema_TableLevelConstraintsAndSizedTypes(t *testing
 	c.Assert(result.Fields[1].Primary, qt.IsFalse)
 	c.Assert(result.Fields[2].Type, qt.Equals, "VARCHAR(255)")
 	c.Assert(result.Fields[3].Type, qt.Equals, "NUMERIC(10,2)")
-	c.Assert(result.Constraints, qt.DeepEquals, []goschema.Constraint{
+	c.Assert(result.Constraints, qt.DeepEquals, []schemamodel.Constraint{
 		{
 			StructName:     "OrderItems",
 			Name:           "order_items_sku_unique",
@@ -994,11 +994,11 @@ func TestConvertDBSchemaToGoSchema_TableLevelConstraintsAndSizedTypes(t *testing
 
 func TestConvertDBSchemaToGoSchema_ColumnCharsetCollate(t *testing.T) {
 	c := qt.New(t)
-	dbSchema := &types.DBSchema{
-		Tables: []types.DBTable{
+	dbSchema := &catalog.Database{
+		Tables: []catalog.Table{
 			{
 				Name: "users",
-				Columns: []types.DBColumn{
+				Columns: []catalog.Column{
 					{
 						Name:     "name",
 						DataType: "varchar(255)",
@@ -1010,7 +1010,7 @@ func TestConvertDBSchemaToGoSchema_ColumnCharsetCollate(t *testing.T) {
 		},
 	}
 
-	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+	result := dbschematogo.ConvertCatalogToSchema(dbSchema)
 
 	c.Assert(result.Fields, qt.HasLen, 1)
 	c.Assert(result.Fields[0].Charset, qt.Equals, "hebrew")
@@ -1019,12 +1019,12 @@ func TestConvertDBSchemaToGoSchema_ColumnCharsetCollate(t *testing.T) {
 
 func TestConvertDBSchemaToGoSchema_SQLiteTableOptions(t *testing.T) {
 	c := qt.New(t)
-	dbSchema := &types.DBSchema{
-		Tables: []types.DBTable{{
+	dbSchema := &catalog.Database{
+		Tables: []catalog.Table{{
 			Name:         "users",
 			Strict:       true,
 			WithoutRowID: true,
-			Columns: []types.DBColumn{{
+			Columns: []catalog.Column{{
 				Name:         "id",
 				DataType:     "TEXT",
 				IsPrimaryKey: true,
@@ -1032,7 +1032,7 @@ func TestConvertDBSchemaToGoSchema_SQLiteTableOptions(t *testing.T) {
 		}},
 	}
 
-	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+	result := dbschematogo.ConvertCatalogToSchema(dbSchema)
 
 	c.Assert(result.Tables, qt.HasLen, 1)
 	c.Assert(result.Tables[0].Strict, qt.IsTrue)
@@ -1043,11 +1043,11 @@ func TestConvertDBSchemaToGoSchema_PreservesStructuralMemberIdentity(t *testing.
 	c := qt.New(t)
 	foreignTable := "targets"
 	foreignColumn := "id"
-	dbSchema := &types.DBSchema{
-		Tables: []types.DBTable{
+	dbSchema := &catalog.Database{
+		Tables: []catalog.Table{
 			{
 				Name: "tenant.data",
-				Columns: []types.DBColumn{{
+				Columns: []catalog.Column{{
 					Name:     "payload.id",
 					DataType: "INTEGER",
 				}},
@@ -1055,17 +1055,17 @@ func TestConvertDBSchemaToGoSchema_PreservesStructuralMemberIdentity(t *testing.
 			{
 				Schema: "tenant.data",
 				Name:   "payload",
-				Columns: []types.DBColumn{{
+				Columns: []catalog.Column{{
 					Name:     "id",
 					DataType: "INTEGER",
 				}},
 			},
 		},
-		Indexes: []types.DBIndex{
+		Indexes: []catalog.Index{
 			{Name: "payload.lookup", TableName: "tenant.data", Columns: []string{"payload.id"}},
 			{Name: "lookup", Schema: "tenant.data", TableName: "payload", Columns: []string{"id"}},
 		},
-		Constraints: []types.DBConstraint{
+		Constraints: []catalog.Constraint{
 			{
 				Name:           "fk_literal",
 				TableName:      "tenant.data",
@@ -1097,7 +1097,7 @@ func TestConvertDBSchemaToGoSchema_PreservesStructuralMemberIdentity(t *testing.
 		},
 	}
 
-	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+	result := dbschematogo.ConvertCatalogToSchema(dbSchema)
 
 	c.Assert(result.Fields, qt.HasLen, 2)
 	c.Assert(result.Fields[0].ForeignKeyName, qt.Equals, "fk_literal")
@@ -1111,8 +1111,8 @@ func TestConvertDBSchemaToGoSchema_ExtensionDefaultValues(t *testing.T) {
 	c := qt.New(t)
 
 	// Test that extensions get proper default values
-	dbSchema := &types.DBSchema{
-		Extensions: []types.DBExtension{
+	dbSchema := &catalog.Database{
+		Extensions: []catalog.Extension{
 			{
 				Name:    "test_extension",
 				Version: "1.0",
@@ -1122,7 +1122,7 @@ func TestConvertDBSchemaToGoSchema_ExtensionDefaultValues(t *testing.T) {
 		},
 	}
 
-	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+	result := dbschematogo.ConvertCatalogToSchema(dbSchema)
 
 	c.Assert(result.Extensions, qt.HasLen, 1)
 	ext := result.Extensions[0]
@@ -1145,18 +1145,18 @@ func TestConvertDBSchemaToGoSchema_ExtensionDefaultValues(t *testing.T) {
 func TestConvertDBSchemaToGoSchema_GrantsDescribeTheTargetTheSharedContractNames(t *testing.T) {
 	tests := []struct {
 		name         string
-		grant        types.DBGrant
+		grant        catalog.Grant
 		wantOnSchema string
 		wantOnTable  string
 	}{
 		{
 			name:         "a schema grant",
-			grant:        types.DBGrant{Role: "reader", Privilege: "USAGE", ObjectType: "SCHEMA", ObjectName: "shop"},
+			grant:        catalog.Grant{Role: "reader", Privilege: "USAGE", ObjectType: "SCHEMA", ObjectName: "shop"},
 			wantOnSchema: "shop",
 		},
 		{
 			name:        "a table grant",
-			grant:       types.DBGrant{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", Schema: "shop", ObjectName: "orders"},
+			grant:       catalog.Grant{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", Schema: "shop", ObjectName: "orders"},
 			wantOnTable: "shop.orders",
 		},
 	}
@@ -1165,8 +1165,8 @@ func TestConvertDBSchemaToGoSchema_GrantsDescribeTheTargetTheSharedContractNames
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			converted := dbschematogo.ConvertDBSchemaToGoSchema(
-				&types.DBSchema{Grants: []types.DBGrant{test.grant}},
+			converted := dbschematogo.ConvertCatalogToSchema(
+				&catalog.Database{Grants: []catalog.Grant{test.grant}},
 			)
 
 			c.Assert(converted.Grants, qt.HasLen, 1)
@@ -1188,8 +1188,8 @@ func TestConvertDBSchemaToGoSchema_GrantsDescribeTheTargetTheSharedContractNames
 func TestConvertDBSchemaToGoSchema_PartialRevokeIsNotDescribedAsAGrant(t *testing.T) {
 	c := qt.New(t)
 
-	converted := dbschematogo.ConvertDBSchemaToGoSchema(&types.DBSchema{
-		Grants: []types.DBGrant{
+	converted := dbschematogo.ConvertCatalogToSchema(&catalog.Database{
+		Grants: []catalog.Grant{
 			{Role: "reader", Privilege: "SELECT", ObjectType: "SCHEMA", ObjectName: "shop"},
 			{
 				Role: "reader", Privilege: "SELECT", ObjectType: "TABLE",

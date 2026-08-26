@@ -1,9 +1,9 @@
 package compare
 
 import (
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/tableref"
 )
 
@@ -68,14 +68,14 @@ type Coverage struct {
 // CoverageOf reads the limits both sides declared. Either side may be nil,
 // which is a caller with nothing to compare rather than a caller claiming
 // nothing is described.
-func CoverageOf(generated *goschema.Database, database *types.DBSchema) Coverage {
+func CoverageOf(desired *schemamodel.Database, current *catalog.Database) Coverage {
 	undecided := make([]coverage.Object, 0)
 	cov := Coverage{undecided: &undecided}
-	if generated != nil {
-		cov.Desired = generated.NotDescribed
+	if desired != nil {
+		cov.Desired = desired.NotDescribed
 	}
-	if database != nil {
-		cov.Current = database.NotDescribed
+	if current != nil {
+		cov.Current = current.NotDescribed
 	}
 	return cov
 }

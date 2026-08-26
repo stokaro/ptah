@@ -6,10 +6,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/mysql"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // mysqlFamilyDialects renders the same planner output through both renderers
@@ -24,8 +24,8 @@ var mysqlFamilyDialects = []string{"mysql", "mariadb"}
 
 // renderMySQLFamily generates the migration AST once per invocation and
 // renders it with the given dialect.
-func renderMySQLFamily(c *qt.C, dialect string, diff *types.SchemaDiff, generated *goschema.Database) string {
-	nodes, err := mysql.New().GenerateMigrationASTChecked(diff, generated)
+func renderMySQLFamily(c *qt.C, dialect string, diff *difftypes.SchemaDiff, desired *schemamodel.Database) string {
+	nodes, err := mysql.New().GenerateMigrationASTChecked(diff, desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL(dialect, nodes...)
 	c.Assert(err, qt.IsNil)
@@ -46,9 +46,9 @@ func TestPlanner_GenerateMigrationAST_CompositeForeignKeyAddition(t *testing.T) 
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := &types.SchemaDiff{
+			diff := &difftypes.SchemaDiff{
 				ConstraintsAdded: []string{"fk_orders_accounts"},
-				ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{
+				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
 					{
 						Name:           "fk_orders_accounts",
 						TableName:      "orders",
@@ -62,7 +62,7 @@ func TestPlanner_GenerateMigrationAST_CompositeForeignKeyAddition(t *testing.T) 
 				},
 			}
 
-			sql := renderMySQLFamily(c, dialect, diff, &goschema.Database{})
+			sql := renderMySQLFamily(c, dialect, diff, &schemamodel.Database{})
 
 			c.Assert(sql, qt.Contains, "ALTER TABLE orders ADD CONSTRAINT fk_orders_accounts FOREIGN KEY (tenant_id, owner_id) REFERENCES accounts(tenant_id, id) ON DELETE CASCADE;",
 				qt.Commentf("composite FK addition must preserve all referenced columns; got:\n%s", sql))
@@ -75,19 +75,19 @@ func TestPlanner_GenerateMigrationAST_ForeignKeyIndexesDropAfterConstraints(t *t
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := &types.SchemaDiff{
+			diff := &difftypes.SchemaDiff{
 				ConstraintsRemoved: []string{"fk_users_account_id", "fk_users_manager_id"},
-				ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+				ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 					{Name: "fk_users_account_id", TableName: "users", Type: "FOREIGN KEY"},
 					{Name: "fk_users_manager_id", TableName: "users", Type: "FOREIGN KEY"},
 				},
-				IndexesRemoved: []types.IndexRef{
+				IndexesRemoved: []difftypes.IndexRef{
 					{Name: "fk_users_account_id", TableName: "users"},
 					{Name: "fk_users_manager_id", TableName: "users"},
 				},
 			}
 
-			sql := renderMySQLFamily(c, dialect, diff, &goschema.Database{})
+			sql := renderMySQLFamily(c, dialect, diff, &schemamodel.Database{})
 
 			assertContainsBefore(
 				c,
@@ -108,22 +108,22 @@ func TestPlanner_GenerateMigrationAST_ForeignKeyIndexesDropAfterConstraints(t *t
 func TestPlanner_GenerateMigrationAST_TableQualifiedCheckAndUniqueAdditions(t *testing.T) {
 	tests := []struct {
 		name     string
-		diff     *types.SchemaDiff
+		diff     *difftypes.SchemaDiff
 		wantDrop string
 		wantSQL  string
 	}{
 		{
 			name: "unique to check",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				ConstraintsAdded: []string{"products_quantity_guard"},
-				ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
 					Name:            "products_quantity_guard",
 					TableName:       "products",
 					Type:            "CHECK",
 					CheckExpression: "quantity > 10",
 				}},
 				ConstraintsRemoved: []string{"products_quantity_guard"},
-				ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{{
+				ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{{
 					Name:      "products_quantity_guard",
 					TableName: "products",
 					Type:      "UNIQUE",
@@ -134,16 +134,16 @@ func TestPlanner_GenerateMigrationAST_TableQualifiedCheckAndUniqueAdditions(t *t
 		},
 		{
 			name: "check to unique",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				ConstraintsAdded: []string{"accounts_identity"},
-				ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
 					Name:      "accounts_identity",
 					TableName: "accounts",
 					Type:      "UNIQUE",
 					Columns:   []string{"email", "region"},
 				}},
 				ConstraintsRemoved: []string{"accounts_identity"},
-				ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{{
+				ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{{
 					Name:      "accounts_identity",
 					TableName: "accounts",
 					Type:      "CHECK",
@@ -159,7 +159,7 @@ func TestPlanner_GenerateMigrationAST_TableQualifiedCheckAndUniqueAdditions(t *t
 			t.Run(dialect+"/"+tt.name, func(t *testing.T) {
 				c := qt.New(t)
 
-				sql := renderMySQLFamily(c, dialect, tt.diff, &goschema.Database{})
+				sql := renderMySQLFamily(c, dialect, tt.diff, &schemamodel.Database{})
 
 				assertContainsBefore(c, sql, tt.wantDrop, tt.wantSQL)
 				c.Assert(sql, qt.Contains, tt.wantSQL)
@@ -170,9 +170,9 @@ func TestPlanner_GenerateMigrationAST_TableQualifiedCheckAndUniqueAdditions(t *t
 }
 
 func TestPlanner_GenerateMigrationAST_DropsFKBeforeRemovingItsTable(t *testing.T) {
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		TablesRemoved: []string{"tasks", "projects", "accounts"},
-		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 			{Name: "fk_tasks_project", TableName: "tasks", Type: "FOREIGN KEY"},
 			{Name: "fk_projects_account", TableName: "projects", Type: "FOREIGN KEY"},
 		},
@@ -182,7 +182,7 @@ func TestPlanner_GenerateMigrationAST_DropsFKBeforeRemovingItsTable(t *testing.T
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			sql := renderMySQLFamily(c, dialect, diff, &goschema.Database{})
+			sql := renderMySQLFamily(c, dialect, diff, &schemamodel.Database{})
 
 			assertContainsBefore(c, sql, "ALTER TABLE tasks DROP FOREIGN KEY fk_tasks_project;", "DROP TABLE IF EXISTS tasks;")
 			assertContainsBefore(c, sql, "ALTER TABLE projects DROP FOREIGN KEY fk_projects_account;", "DROP TABLE IF EXISTS projects;")
@@ -211,7 +211,7 @@ func TestPlanner_GenerateMigrationAST_DropsFKBeforeRemovingItsTable(t *testing.T
 // matter, so every subtest runs with both orderings.
 func TestPlanner_GenerateMigrationAST_SharedConstraintName_ModifiedOnOneTablePurelyRemovedOnAnother(t *testing.T) {
 	t.Run("foreign key", func(t *testing.T) {
-		orderings := map[string][]types.ConstraintRemovalInfo{
+		orderings := map[string][]difftypes.ConstraintRemovalInfo{
 			"modified host listed first": {
 				{Name: "shared_fk", TableName: "articles", Type: "FOREIGN KEY"},
 				{Name: "shared_fk", TableName: "pages", Type: "FOREIGN KEY"},
@@ -226,10 +226,10 @@ func TestPlanner_GenerateMigrationAST_SharedConstraintName_ModifiedOnOneTablePur
 				t.Run(dialect+"/"+orderName, func(t *testing.T) {
 					c := qt.New(t)
 
-					diff := &types.SchemaDiff{
+					diff := &difftypes.SchemaDiff{
 						ConstraintsAdded:   []string{"shared_fk"},
 						ConstraintsRemoved: []string{"shared_fk"},
-						ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{
+						ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
 							{
 								Name: "shared_fk", TableName: "articles", Type: "FOREIGN KEY",
 								Columns: []string{"author_id"}, ForeignTable: "users", ForeignColumn: "id", OnDelete: "CASCADE",
@@ -238,7 +238,7 @@ func TestPlanner_GenerateMigrationAST_SharedConstraintName_ModifiedOnOneTablePur
 						ConstraintsRemovedWithTables: removals,
 					}
 
-					sql := renderMySQLFamily(c, dialect, diff, &goschema.Database{})
+					sql := renderMySQLFamily(c, dialect, diff, &schemamodel.Database{})
 
 					// The modified host is dropped exactly once with FK syntax and
 					// re-added exactly once, drop before add.
@@ -278,7 +278,7 @@ func TestPlanner_GenerateMigrationAST_SharedConstraintName_ModifiedOnOneTablePur
 	})
 
 	t.Run("check constraint", func(t *testing.T) {
-		orderings := map[string][]types.ConstraintRemovalInfo{
+		orderings := map[string][]difftypes.ConstraintRemovalInfo{
 			"modified host listed first": {
 				{Name: "shared_check", TableName: "articles", Type: "CHECK"},
 				{Name: "shared_check", TableName: "pages", Type: "CHECK"},
@@ -293,21 +293,21 @@ func TestPlanner_GenerateMigrationAST_SharedConstraintName_ModifiedOnOneTablePur
 				t.Run(dialect+"/"+orderName, func(t *testing.T) {
 					c := qt.New(t)
 
-					diff := &types.SchemaDiff{
+					diff := &difftypes.SchemaDiff{
 						ConstraintsAdded:   []string{"shared_check"},
 						ConstraintsRemoved: []string{"shared_check"},
-						ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{
+						ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
 							{Name: "shared_check", TableName: "articles", Type: "CHECK"},
 						},
 						ConstraintsRemovedWithTables: removals,
 					}
-					generated := &goschema.Database{
-						Constraints: []goschema.Constraint{
+					desired := &schemamodel.Database{
+						Constraints: []schemamodel.Constraint{
 							{StructName: "Article", Name: "shared_check", Type: "CHECK", Table: "articles", CheckExpression: "status IN ('draft', 'published')"},
 						},
 					}
 
-					sql := renderMySQLFamily(c, dialect, diff, generated)
+					sql := renderMySQLFamily(c, dialect, diff, desired)
 
 					// Modified host: dropped exactly once from ITS table (the
 					// name-keyed single-winner map could drop pages instead and
@@ -352,10 +352,10 @@ func TestPlanner_GenerateMigrationAST_ModifiedFK_EveryHostDroppedAndReadded(t *t
 			t.Run(dialect, func(t *testing.T) {
 				c := qt.New(t)
 
-				diff := &types.SchemaDiff{
+				diff := &difftypes.SchemaDiff{
 					ConstraintsAdded:   []string{"fk_customer"},
 					ConstraintsRemoved: []string{"fk_customer"},
-					ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{
+					ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
 						{
 							Name: "fk_customer", TableName: "orders", Type: "FOREIGN KEY",
 							Columns: []string{"customer_id"}, ForeignTable: "customers", ForeignColumn: "id", OnDelete: "CASCADE",
@@ -365,13 +365,13 @@ func TestPlanner_GenerateMigrationAST_ModifiedFK_EveryHostDroppedAndReadded(t *t
 							Columns: []string{"customer_id"}, ForeignTable: "customers", ForeignColumn: "id", OnDelete: "SET NULL",
 						},
 					},
-					ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+					ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 						{Name: "fk_customer", TableName: "orders", Type: "FOREIGN KEY"},
 						{Name: "fk_customer", TableName: "invoices", Type: "FOREIGN KEY"},
 					},
 				}
 
-				sql := renderMySQLFamily(c, dialect, diff, &goschema.Database{})
+				sql := renderMySQLFamily(c, dialect, diff, &schemamodel.Database{})
 
 				c.Assert(strings.Count(sql, "ALTER TABLE orders DROP FOREIGN KEY fk_customer;"), qt.Equals, 1,
 					qt.Commentf("orders host dropped exactly once; got:\n%s", sql))
@@ -398,21 +398,21 @@ func TestPlanner_GenerateMigrationAST_ModifiedFK_EveryHostDroppedAndReadded(t *t
 			t.Run(dialect, func(t *testing.T) {
 				c := qt.New(t)
 
-				diff := &types.SchemaDiff{
+				diff := &difftypes.SchemaDiff{
 					ConstraintsAdded:   []string{"fk_post_owner"},
 					ConstraintsRemoved: []string{"fk_post_owner"},
-					ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{
+					ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
 						{
 							Name: "fk_post_owner", TableName: "posts", Type: "FOREIGN KEY",
 							Columns: []string{"owner_id"}, ForeignTable: "users", ForeignColumn: "id", OnDelete: "SET NULL",
 						},
 					},
-					ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+					ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 						{Name: "fk_post_owner", TableName: "posts", Type: "FOREIGN KEY"},
 					},
 				}
 
-				sql := renderMySQLFamily(c, dialect, diff, &goschema.Database{})
+				sql := renderMySQLFamily(c, dialect, diff, &schemamodel.Database{})
 
 				c.Assert(strings.Count(sql, "ALTER TABLE posts DROP FOREIGN KEY fk_post_owner;"), qt.Equals, 1,
 					qt.Commentf("exactly one drop; got:\n%s", sql))
@@ -442,20 +442,20 @@ func TestPlanner_GenerateMigrationAST_ModifyDrop_HostScopedWhenAddedHostsAbsent(
 			t.Run(dialect, func(t *testing.T) {
 				c := qt.New(t)
 
-				diff := &types.SchemaDiff{
+				diff := &difftypes.SchemaDiff{
 					ConstraintsAdded:   []string{"chk_down"},
 					ConstraintsRemoved: []string{"chk_down"},
-					ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+					ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 						{Name: "chk_down", TableName: "things", Type: "CHECK"},
 					},
 				}
-				generated := &goschema.Database{
-					Constraints: []goschema.Constraint{
+				desired := &schemamodel.Database{
+					Constraints: []schemamodel.Constraint{
 						{StructName: "Thing", Name: "chk_down", Type: "CHECK", Table: "things", CheckExpression: "qty >= 0"},
 					},
 				}
 
-				sql := renderMySQLFamily(c, dialect, diff, generated)
+				sql := renderMySQLFamily(c, dialect, diff, desired)
 
 				// Exactly ONE drop in the whole plan: the add side owns it and
 				// removeConstraints must not emit a second, unguarded one.
@@ -491,21 +491,21 @@ func TestPlanner_GenerateMigrationAST_ModifyDrop_HostScopedWhenAddedHostsAbsent(
 			t.Run(dialect, func(t *testing.T) {
 				c := qt.New(t)
 
-				diff := &types.SchemaDiff{
+				diff := &difftypes.SchemaDiff{
 					ConstraintsAdded:   []string{"shared_check", "shared_check"},
 					ConstraintsRemoved: []string{"shared_check", "shared_check"},
-					ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+					ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 						{Name: "shared_check", TableName: "articles", Type: "CHECK"},
 						{Name: "shared_check", TableName: "pages", Type: "CHECK"},
 					},
 				}
-				generated := &goschema.Database{
-					Constraints: []goschema.Constraint{
+				desired := &schemamodel.Database{
+					Constraints: []schemamodel.Constraint{
 						{StructName: "Article", Name: "shared_check", Type: "CHECK", Table: "articles", CheckExpression: "qty >= 0"},
 					},
 				}
 
-				sql := renderMySQLFamily(c, dialect, diff, generated)
+				sql := renderMySQLFamily(c, dialect, diff, desired)
 
 				c.Assert(strings.Count(sql, "ALTER TABLE articles DROP CONSTRAINT shared_check;"), qt.Equals, 1,
 					qt.Commentf("first removal host must be dropped exactly once; got:\n%s", sql))
@@ -537,20 +537,20 @@ func TestPlanner_GenerateMigrationAST_ModifyDrop_HostScopedWhenAddedHostsAbsent(
 			t.Run(dialect, func(t *testing.T) {
 				c := qt.New(t)
 
-				diff := &types.SchemaDiff{
+				diff := &difftypes.SchemaDiff{
 					ConstraintsAdded:   []string{"chk_hostless"},
 					ConstraintsRemoved: []string{"chk_hostless"},
-					ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+					ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 						{Name: "chk_hostless", TableName: "", Type: "CHECK"},
 					},
 				}
-				generated := &goschema.Database{
-					Constraints: []goschema.Constraint{
+				desired := &schemamodel.Database{
+					Constraints: []schemamodel.Constraint{
 						{StructName: "Thing", Name: "chk_hostless", Type: "CHECK", Table: "things", CheckExpression: "qty >= 0"},
 					},
 				}
 
-				sql := renderMySQLFamily(c, dialect, diff, generated)
+				sql := renderMySQLFamily(c, dialect, diff, desired)
 
 				c.Assert(sql, qt.Not(qt.Contains), "DROP CONSTRAINT chk_hostless",
 					qt.Commentf("a hostless removal entry must be skipped, not dropped; got:\n%s", sql))
@@ -576,23 +576,23 @@ func TestPlanner_GenerateMigrationAST_ModifyDrop_HostScopedWhenAddedHostsAbsent(
 			t.Run(dialect, func(t *testing.T) {
 				c := qt.New(t)
 
-				diff := &types.SchemaDiff{
+				diff := &difftypes.SchemaDiff{
 					ConstraintsAdded:   []string{"chk_ghost"},
 					ConstraintsRemoved: []string{"chk_ghost"},
-					ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{
+					ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
 						{Name: "chk_ghost", TableName: "", Type: "CHECK"},
 					},
-					ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+					ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 						{Name: "chk_ghost", TableName: "things", Type: "CHECK"},
 					},
 				}
-				generated := &goschema.Database{
-					Constraints: []goschema.Constraint{
+				desired := &schemamodel.Database{
+					Constraints: []schemamodel.Constraint{
 						{StructName: "Thing", Name: "chk_ghost", Type: "CHECK", Table: "things", CheckExpression: "qty >= 0"},
 					},
 				}
 
-				sql := renderMySQLFamily(c, dialect, diff, generated)
+				sql := renderMySQLFamily(c, dialect, diff, desired)
 
 				c.Assert(strings.Count(sql, "ALTER TABLE things DROP CONSTRAINT chk_ghost;"), qt.Equals, 1,
 					qt.Commentf("the recorded removal host must be dropped exactly once; got:\n%s", sql))
@@ -611,19 +611,19 @@ func TestPlanner_GenerateMigrationAST_ModifyDrop_HostScopedWhenAddedHostsAbsent(
 			t.Run(dialect, func(t *testing.T) {
 				c := qt.New(t)
 
-				diff := &types.SchemaDiff{
+				diff := &difftypes.SchemaDiff{
 					ConstraintsAdded:   []string{"fk_post_owner"},
 					ConstraintsRemoved: []string{"fk_post_owner"},
-					ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+					ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 						{Name: "fk_post_owner", TableName: "posts", Type: "FOREIGN KEY"},
 					},
 				}
-				generated := &goschema.Database{
-					Tables: []goschema.Table{
+				desired := &schemamodel.Database{
+					Tables: []schemamodel.Table{
 						{StructName: "User", Name: "users"},
 						{StructName: "Post", Name: "posts"},
 					},
-					Fields: []goschema.Field{
+					Fields: []schemamodel.Field{
 						{
 							StructName:     "Post",
 							Name:           "owner_id",
@@ -635,7 +635,7 @@ func TestPlanner_GenerateMigrationAST_ModifyDrop_HostScopedWhenAddedHostsAbsent(
 					},
 				}
 
-				sql := renderMySQLFamily(c, dialect, diff, generated)
+				sql := renderMySQLFamily(c, dialect, diff, desired)
 
 				c.Assert(strings.Count(sql, "ALTER TABLE posts DROP FOREIGN KEY fk_post_owner;"), qt.Equals, 1,
 					qt.Commentf("the drop must be emitted exactly once across both planner phases; got:\n%s", sql))
@@ -661,12 +661,12 @@ func TestPlanner_GenerateMigrationAST_PureConstraintRemovals_TableQualified(t *t
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := &types.SchemaDiff{
+			diff := &difftypes.SchemaDiff{
 				TablesRemoved: []string{"obsolete"},
 				ConstraintsRemoved: []string{
 					"fk_orders_customer", "chk_qty", "pk_legacy", "chk_on_obsolete", "fk_orders_customer", "chk_orphan",
 				},
-				ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+				ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 					{Name: "fk_orders_customer", TableName: "orders", Type: "FOREIGN KEY"},
 					{Name: "chk_qty", TableName: "things", Type: "CHECK"},
 					{Name: "pk_legacy", TableName: "legacy", Type: "PRIMARY KEY"},
@@ -680,7 +680,7 @@ func TestPlanner_GenerateMigrationAST_PureConstraintRemovals_TableQualified(t *t
 				},
 			}
 
-			sql := renderMySQLFamily(c, dialect, diff, &goschema.Database{})
+			sql := renderMySQLFamily(c, dialect, diff, &schemamodel.Database{})
 
 			c.Assert(strings.Count(sql, "ALTER TABLE orders DROP FOREIGN KEY fk_orders_customer;"), qt.Equals, 1,
 				qt.Commentf("FK removal must be dropped exactly once (deduped) with FK syntax; got:\n%s", sql))
@@ -705,16 +705,16 @@ func TestPlanner_GenerateMigrationAST_TableQualifiedPrimaryKeyAddition(t *testin
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := &types.SchemaDiff{
-				TablesModified: []types.TableDiff{{
+			diff := &difftypes.SchemaDiff{
+				TablesModified: []difftypes.TableDiff{{
 					TableName: "memberships",
-					ColumnsModified: []types.ColumnDiff{
+					ColumnsModified: []difftypes.ColumnDiff{
 						{ColumnName: "org_id", Changes: map[string]string{"primary_key": "false -> true"}},
 						{ColumnName: "user_id", Changes: map[string]string{"primary_key": "false -> true"}},
 					},
 				}},
 				ConstraintsAdded: []string{"PRIMARY"},
-				ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
 					Name:      "PRIMARY",
 					TableName: "memberships",
 					Type:      "PRIMARY KEY",
@@ -722,7 +722,7 @@ func TestPlanner_GenerateMigrationAST_TableQualifiedPrimaryKeyAddition(t *testin
 				}},
 			}
 
-			sql := renderMySQLFamily(c, dialect, diff, &goschema.Database{})
+			sql := renderMySQLFamily(c, dialect, diff, &schemamodel.Database{})
 			c.Assert(sql, qt.Contains, "ALTER TABLE memberships ADD PRIMARY KEY (org_id, user_id);")
 			c.Assert(sql, qt.Not(qt.Contains), "MODIFY COLUMN org_id")
 			c.Assert(sql, qt.Not(qt.Contains), "MODIFY COLUMN user_id")
@@ -735,23 +735,23 @@ func TestPlanner_GenerateMigrationAST_TableQualifiedPrimaryKeyRemovalSuppressesC
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := &types.SchemaDiff{
-				TablesModified: []types.TableDiff{{
+			diff := &difftypes.SchemaDiff{
+				TablesModified: []difftypes.TableDiff{{
 					TableName: "memberships",
-					ColumnsModified: []types.ColumnDiff{
+					ColumnsModified: []difftypes.ColumnDiff{
 						{ColumnName: "org_id", Changes: map[string]string{"primary_key": "true -> false"}},
 						{ColumnName: "user_id", Changes: map[string]string{"primary_key": "true -> false"}},
 					},
 				}},
 				ConstraintsRemoved: []string{"PRIMARY"},
-				ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{{
+				ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{{
 					Name:      "PRIMARY",
 					TableName: "memberships",
 					Type:      "PRIMARY KEY",
 				}},
 			}
 
-			sql := renderMySQLFamily(c, dialect, diff, &goschema.Database{})
+			sql := renderMySQLFamily(c, dialect, diff, &schemamodel.Database{})
 			c.Assert(sql, qt.Contains, "ALTER TABLE memberships DROP PRIMARY KEY;")
 			c.Assert(sql, qt.Not(qt.Contains), "MODIFY COLUMN org_id")
 			c.Assert(sql, qt.Not(qt.Contains), "MODIFY COLUMN user_id")

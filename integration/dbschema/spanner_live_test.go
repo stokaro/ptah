@@ -11,11 +11,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/migrator"
@@ -32,14 +32,14 @@ import (
 // The varchar column is the point of the second assertion below: Spanner's
 // catalog reports data_type "character varying" with udt_name EMPTY, where
 // PostgreSQL answers "varchar" and never reaches that arm of the comparison.
-func spannerLiveSchema(table string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Author", Name: table}},
-		Fields: []goschema.Field{
+func spannerLiveSchema(table string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Author", Name: table}},
+		Fields: []schemamodel.Field{
 			{StructName: "Author", Name: "id", Type: "bigint", Primary: true},
 			{StructName: "Author", Name: "name", Type: "varchar(200)", Nullable: false},
 		},
-		Indexes: []goschema.Index{{
+		Indexes: []schemamodel.Index{{
 			StructName: "Author",
 			Name:       "idx_" + table + "_name",
 			Fields:     []string{"name"},
@@ -123,7 +123,7 @@ func TestSpannerLiveRefusesDDLInsideATransaction(t *testing.T) {
 }
 
 // spannerLiveTableNames lists the table names a catalog read reported.
-func spannerLiveTableNames(tables []dbschematypes.DBTable) []string {
+func spannerLiveTableNames(tables []catalog.Table) []string {
 	names := make([]string, 0, len(tables))
 	for _, table := range tables {
 		names = append(names, table.Name)
@@ -164,10 +164,10 @@ func TestSpannerLiveApplyPathRunsOutsideATransaction(t *testing.T) {
 
 // spannerLiveSequenceSchema declares one standalone sequence, stating only what
 // this target's CREATE SEQUENCE grammar takes.
-func spannerLiveSequenceSchema(name string) *goschema.Database {
+func spannerLiveSequenceSchema(name string) *schemamodel.Database {
 	start := int64(1000)
-	return &goschema.Database{
-		Sequences: []goschema.Sequence{{Name: name, AsType: "bigint", Start: &start}},
+	return &schemamodel.Database{
+		Sequences: []schemamodel.Sequence{{Name: name, AsType: "bigint", Start: &start}},
 	}
 }
 
@@ -231,8 +231,8 @@ func TestSpannerLiveRefusesTheSequenceOptionClauses(t *testing.T) {
 
 	increment := int64(2)
 	name := fmt.Sprintf("ptah_sqi_%d", time.Now().UnixNano())
-	description := &goschema.Database{
-		Sequences: []goschema.Sequence{{Name: name, Increment: &increment}},
+	description := &schemamodel.Database{
+		Sequences: []schemamodel.Sequence{{Name: name, Increment: &increment}},
 	}
 
 	statements, err := renderer.GetOrderedCreateStatements(description, platform.Spanner)
@@ -253,7 +253,7 @@ func TestSpannerLiveRefusesTheSequenceOptionClauses(t *testing.T) {
 }
 
 // spannerLiveSequenceNames lists the sequence names a schema read returned.
-func spannerLiveSequenceNames(sequences []dbschematypes.DBSequence) []string {
+func spannerLiveSequenceNames(sequences []catalog.Sequence) []string {
 	names := make([]string, 0, len(sequences))
 	for _, sequence := range sequences {
 		names = append(names, sequence.Name)

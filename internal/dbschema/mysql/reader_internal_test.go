@@ -16,7 +16,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 )
 
@@ -68,14 +68,14 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 		// want is the whole read rather than the one field a row is about.
 		// Assembly decides every field of every index it returns, so a row that
 		// named only its own leaves the rest free to change unobserved.
-		want []types.DBIndex
+		want []catalog.Index
 	}{
 		{
 			name: "column name containing a comma",
 			rows: [][]driver.Value{
 				{"idx_weird", "t2", "a,b", int64(1), "BTREE"},
 			},
-			want: []types.DBIndex{{
+			want: []catalog.Index{{
 				Name:       "idx_weird",
 				TableName:  "t2",
 				Columns:    []string{"a,b"},
@@ -85,7 +85,7 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 		{
 			name: "sixteen part key past group_concat_max_len",
 			rows: wideKeyRows(),
-			want: []types.DBIndex{{
+			want: []catalog.Index{{
 				Name:       "idx_wide",
 				TableName:  "wide",
 				Columns:    wideKeyColumnNames(),
@@ -98,7 +98,7 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 				{"idx_pair", "t", "b", int64(1), "BTREE", nil},
 				{"idx_pair", "t", "a", int64(1), "BTREE", nil},
 			},
-			want: []types.DBIndex{{
+			want: []catalog.Index{{
 				Name:       "idx_pair",
 				TableName:  "t",
 				Columns:    []string{"b", "a"},
@@ -114,11 +114,11 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 			rows: [][]driver.Value{
 				{"idx_notes", "orders", "notes", int64(1), "BTREE", int64(20)},
 			},
-			want: []types.DBIndex{{
+			want: []catalog.Index{{
 				Name:       "idx_notes",
 				TableName:  "orders",
 				Columns:    []string{"notes"},
-				Parts:      []types.DBIndexPart{{Name: "notes", Prefix: "20"}},
+				Parts:      []catalog.IndexPart{{Name: "notes", Prefix: "20"}},
 				Definition: "BTREE INDEX idx_notes ON orders (notes)",
 			}},
 		},
@@ -130,7 +130,7 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 			rows: [][]driver.Value{
 				{"idx_plain", "orders", "customer_id", int64(1), "BTREE", nil},
 			},
-			want: []types.DBIndex{{
+			want: []catalog.Index{{
 				Name:       "idx_plain",
 				TableName:  "orders",
 				Columns:    []string{"customer_id"},
@@ -145,11 +145,11 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 				{"idx_mixed", "orders", "customer_id", int64(1), "BTREE", nil},
 				{"idx_mixed", "orders", "notes", int64(1), "BTREE", int64(20)},
 			},
-			want: []types.DBIndex{{
+			want: []catalog.Index{{
 				Name:      "idx_mixed",
 				TableName: "orders",
 				Columns:   []string{"customer_id", "notes"},
-				Parts: []types.DBIndexPart{
+				Parts: []catalog.IndexPart{
 					{Name: "customer_id"},
 					{Name: "notes", Prefix: "20"},
 				},
@@ -162,7 +162,7 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 				{"idx_name", "orders", "reference", int64(1), "BTREE", nil},
 				{"idx_name", "users", "email", int64(0), "BTREE", nil},
 			},
-			want: []types.DBIndex{
+			want: []catalog.Index{
 				{
 					Name:       "idx_name",
 					TableName:  "orders",
@@ -183,7 +183,7 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 			rows: [][]driver.Value{
 				{"uq_users_email", "users", "email", int64(0), "BTREE", nil},
 			},
-			want: []types.DBIndex{{
+			want: []catalog.Index{{
 				Name:       "uq_users_email",
 				TableName:  "users",
 				Columns:    []string{"email"},
@@ -196,7 +196,7 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 			rows: [][]driver.Value{
 				{"PRIMARY", "users", "id", int64(0), "BTREE", nil},
 			},
-			want: []types.DBIndex{{
+			want: []catalog.Index{{
 				Name:       "PRIMARY",
 				TableName:  "users",
 				Columns:    []string{"id"},
@@ -231,14 +231,14 @@ func TestReadIndexes_ReportsAKeyPartItCannotName(t *testing.T) {
 	tests := []struct {
 		name string
 		rows [][]driver.Value
-		want []types.DBIndex
+		want []catalog.Index
 	}{
 		{
 			name: "whole key is an expression",
 			rows: [][]driver.Value{
 				{"idx_expr", "t3", nil, int64(1), "BTREE", nil},
 			},
-			want: []types.DBIndex{{
+			want: []catalog.Index{{
 				Name:               "idx_expr",
 				TableName:          "t3",
 				Definition:         "BTREE INDEX idx_expr ON t3 ()",
@@ -251,7 +251,7 @@ func TestReadIndexes_ReportsAKeyPartItCannotName(t *testing.T) {
 				{"idx_mixed", "t4", "b", int64(1), "BTREE", nil},
 				{"idx_mixed", "t4", nil, int64(1), "BTREE", nil},
 			},
-			want: []types.DBIndex{{
+			want: []catalog.Index{{
 				Name:               "idx_mixed",
 				TableName:          "t4",
 				Columns:            []string{"b"},
@@ -359,21 +359,21 @@ func TestReadEnums_NamesEachOneAfterItsColumn(t *testing.T) {
 	tests := []struct {
 		name string
 		rows [][]driver.Value
-		want []types.DBEnum
+		want []catalog.Enum
 	}{
 		{
 			name: "the name is the column, not the values",
 			rows: [][]driver.Value{
 				{"users", "state", "enum('active','inactive')"},
 			},
-			want: []types.DBEnum{{Name: "users_state", Values: []string{"active", "inactive"}}},
+			want: []catalog.Enum{{Name: "users_state", Values: []string{"active", "inactive"}}},
 		},
 		{
 			name: "adding a value leaves the name alone",
 			rows: [][]driver.Value{
 				{"users", "state", "enum('active','inactive','archived')"},
 			},
-			want: []types.DBEnum{{Name: "users_state", Values: []string{"active", "inactive", "archived"}}},
+			want: []catalog.Enum{{Name: "users_state", Values: []string{"active", "inactive", "archived"}}},
 		},
 		{
 			name: "one value list on two columns is two enums",
@@ -381,7 +381,7 @@ func TestReadEnums_NamesEachOneAfterItsColumn(t *testing.T) {
 				{"orders", "state", "enum('open','closed')"},
 				{"tickets", "state", "enum('open','closed')"},
 			},
-			want: []types.DBEnum{
+			want: []catalog.Enum{
 				{Name: "orders_state", Values: []string{"open", "closed"}},
 				{Name: "tickets_state", Values: []string{"open", "closed"}},
 			},
@@ -392,7 +392,7 @@ func TestReadEnums_NamesEachOneAfterItsColumn(t *testing.T) {
 				{"t", "kind", "enum('a','b')"},
 				{"t", "level", "enum('low','high')"},
 			},
-			want: []types.DBEnum{
+			want: []catalog.Enum{
 				{Name: "t_kind", Values: []string{"a", "b"}},
 				{Name: "t_level", Values: []string{"low", "high"}},
 			},
@@ -403,7 +403,7 @@ func TestReadEnums_NamesEachOneAfterItsColumn(t *testing.T) {
 				{"t", "broken", "enum()"},
 				{"t", "kind", "enum('a')"},
 			},
-			want: []types.DBEnum{{Name: "t_kind", Values: []string{"a"}}},
+			want: []catalog.Enum{{Name: "t_kind", Values: []string{"a"}}},
 		},
 	}
 

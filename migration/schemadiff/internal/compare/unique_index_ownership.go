@@ -1,12 +1,12 @@
 package compare
 
 import (
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/indexscope"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // generatedIndexIdentities is the identity of every index the desired state
@@ -15,10 +15,10 @@ import (
 // answers -- "does the desired state name this object as an index?" -- without
 // re-deriving index table resolution or identifier folding.
 func generatedIndexIdentities(
-	generated *goschema.Database,
+	desired *schemamodel.Database,
 	semantics identifier.Semantics,
 ) map[difftypes.IndexRef]struct{} {
-	declared, _ := collectGeneratedIndexes(generated, semantics)
+	declared, _ := collectGeneratedIndexes(desired, semantics)
 	identities := make(map[difftypes.IndexRef]struct{}, len(declared))
 	for identity := range declared {
 		identities[identity] = struct{}{}
@@ -52,7 +52,7 @@ func generatedIndexIdentities(
 //
 // Compared here, the object was reported removed while index comparison
 // reported the very same name added, because the desired state written as
-// `index { unique = true }` produces no [goschema.Constraint] to match it. The
+// `index { unique = true }` produces no [schemamodel.Constraint] to match it. The
 // resulting plan cannot be applied: measured on MySQL 9.7.1 and MariaDB
 // 11.8.8, the CREATE comes back as
 // `Error 1061 (42000): Duplicate key name 'uq_users_email'` and the apply exits
@@ -87,7 +87,7 @@ func generatedIndexIdentities(
 // share an identity to hand off, and the reader's autoindex rows are dropped
 // before the pools are built ([unaddressableDatabaseIndex]).
 func uniqueConstraintOwnedByDeclaredIndex(
-	constraint types.DBConstraint,
+	constraint catalog.Constraint,
 	dialect string,
 	declaredIndexes map[difftypes.IndexRef]struct{},
 	semantics identifier.Semantics,

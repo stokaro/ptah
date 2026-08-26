@@ -32,9 +32,9 @@ import (
 	clickhousedriver "github.com/ClickHouse/clickhouse-go/v2"
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 )
 
@@ -143,7 +143,7 @@ const (
 // narrows the read in a way the fake ignores is answered as though it did not
 // narrow it, and the test then passes on a description the server would never
 // have produced. `AND is_partial_revoke = 0` is the concrete one -- it drops the
-// rows that record a grant minus exceptions, which types.DBGrant.IsPartialRevoke
+// rows that record a grant minus exceptions, which catalog.Grant.IsPartialRevoke
 // exists to report -- and it walked past every test in this file until the fake
 // started reading the clauses instead of searching for them.
 var knownGrantRestrictions = []string{
@@ -388,14 +388,14 @@ func TestReadGrantsDescribesTheConnectedDatabase(t *testing.T) {
 	tests := []struct {
 		name   string
 		grants []grantRow
-		want   []types.DBGrant
+		want   []catalog.Grant
 	}{
 		{
 			name: "a database-wide grant",
 			grants: []grantRow{
 				{roleName: "reader", privilege: "SELECT", database: rbacDatabase},
 			},
-			want: []types.DBGrant{
+			want: []catalog.Grant{
 				{Role: "reader", Privilege: "SELECT", ObjectType: "SCHEMA", ObjectName: rbacDatabase},
 			},
 		},
@@ -404,7 +404,7 @@ func TestReadGrantsDescribesTheConnectedDatabase(t *testing.T) {
 			grants: []grantRow{
 				{roleName: "reader", privilege: "SELECT", database: rbacDatabase, table: "events"},
 			},
-			want: []types.DBGrant{
+			want: []catalog.Grant{
 				{
 					Role: "reader", Privilege: "SELECT", ObjectType: "TABLE",
 					Schema: rbacDatabase, ObjectName: "events",
@@ -416,7 +416,7 @@ func TestReadGrantsDescribesTheConnectedDatabase(t *testing.T) {
 			grants: []grantRow{
 				{roleName: "reader", privilege: "SELECT", database: rbacDatabase, table: "events", grantOption: true},
 			},
-			want: []types.DBGrant{
+			want: []catalog.Grant{
 				{
 					Role: "reader", Privilege: "SELECT", ObjectType: "TABLE",
 					Schema: rbacDatabase, ObjectName: "events", WithOption: true,
@@ -433,7 +433,7 @@ func TestReadGrantsDescribesTheConnectedDatabase(t *testing.T) {
 				{roleName: "reader", privilege: "SELECT", database: rbacDatabase},
 				{roleName: "reader", privilege: "SELECT", database: rbacDatabase, table: "events", partialRevoke: true},
 			},
-			want: []types.DBGrant{
+			want: []catalog.Grant{
 				{Role: "reader", Privilege: "SELECT", ObjectType: "SCHEMA", ObjectName: rbacDatabase},
 				{
 					Role: "reader", Privilege: "SELECT", ObjectType: "TABLE",
@@ -589,7 +589,7 @@ func TestReadRolesReportsTheOnlyAttributeClickHouseHas(t *testing.T) {
 	described, _, err := reader.readRoles(t.Context(), grants)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(described, qt.DeepEquals, []types.DBRole{{Name: "reader", Inherit: true}})
+	c.Assert(described, qt.DeepEquals, []catalog.Role{{Name: "reader", Inherit: true}})
 }
 
 func TestReadSchemaFillsTheDescriptionUnderTheCapability(t *testing.T) {
@@ -602,7 +602,7 @@ func TestReadSchemaFillsTheDescriptionUnderTheCapability(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(roleNames(schema.Roles), qt.DeepEquals, []string{"analyst", "reader"})
 	c.Assert(roleNames(schema.RolesOutOfScope), qt.DeepEquals, []string{"configured", "elsewhere", "ungranted"})
-	c.Assert(schema.Grants, qt.DeepEquals, []types.DBGrant{
+	c.Assert(schema.Grants, qt.DeepEquals, []catalog.Grant{
 		{Role: "analyst", Privilege: "SELECT", ObjectType: "TABLE", Schema: rbacDatabase, ObjectName: "events"},
 		{Role: "configured", Privilege: "SELECT", ObjectType: "SCHEMA", ObjectName: rbacDatabase},
 		{Role: "reader", Privilege: "SELECT", ObjectType: "SCHEMA", ObjectName: rbacDatabase},
@@ -617,24 +617,24 @@ func TestReadSchemaFillsTheDescriptionUnderTheCapability(t *testing.T) {
 // Measured on 26.7.3.19 with an account holding only SELECT, SHOW TABLES and
 // SHOW COLUMNS on one database: both RBAC catalogs answer Code 497
 // ACCESS_DENIED while system.tables answers normally.
-func accessDenied(catalog string) error {
+func accessDenied(catalogTable string) error {
 	return &clickhousedriver.Exception{
 		Code: 497,
 		Name: "ACCESS_DENIED",
 		Message: "lowpriv: Not enough privileges. To execute this query, it's necessary to have " +
-			"the grant SELECT for at least one column on " + catalog + ".",
+			"the grant SELECT for at least one column on " + catalogTable + ".",
 	}
 }
 
 // newRBACServerFailing is [newRBACServer] on a server that answers one catalog
 // with the given error and everything else normally.
 func newRBACServerFailing(
-	c *qt.C, server rbacServer, caps capability.Capabilities, catalog string, failure error,
+	c *qt.C, server rbacServer, caps capability.Capabilities, catalogTable string, failure error,
 ) (*Reader, *[]string) {
 	var sent []string
 	db := dbtest.Open(c, func(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
 		sent = append(sent, query)
-		if strings.Contains(query, catalog) {
+		if strings.Contains(query, catalogTable) {
 			return dbtest.QueryResult{}, failure
 		}
 		return answerClickHouse(query, args, server)
@@ -931,7 +931,7 @@ func TestOnServerNamesTheVersionOnlyWhenThereIsOne(t *testing.T) {
 	}
 }
 
-func roleNames(roles []types.DBRole) []string {
+func roleNames(roles []catalog.Role) []string {
 	if len(roles) == 0 {
 		return nil
 	}

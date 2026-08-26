@@ -5,10 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestPlanner_GenerateMigrationAST_DropsModifiedUserTypesAgainstTheCurrentShape
@@ -33,12 +33,12 @@ func TestPlanner_GenerateMigrationAST_DropsModifiedUserTypesAgainstTheCurrentSha
 	c := qt.New(t)
 	planner := postgres.New()
 
-	desired := &goschema.Database{
-		Domains: []goschema.Domain{
+	desired := &schemamodel.Database{
+		Domains: []schemamodel.Domain{
 			{Name: "dd", BaseType: "integer"},
 		},
-		CompositeTypes: []goschema.CompositeType{
-			{Name: "cc", Fields: []goschema.CompositeTypeField{{Name: "f", Type: "dd"}}},
+		CompositeTypes: []schemamodel.CompositeType{
+			{Name: "cc", Fields: []schemamodel.CompositeField{{Name: "f", Type: "dd"}}},
 		},
 	}
 	diff := &difftypes.SchemaDiff{
@@ -81,12 +81,12 @@ func TestPlanner_GenerateMigrationAST_DropsModifiedUserTypesTheDesiredShapeNoLon
 	c := qt.New(t)
 	planner := postgres.New()
 
-	desired := &goschema.Database{
-		Domains: []goschema.Domain{
+	desired := &schemamodel.Database{
+		Domains: []schemamodel.Domain{
 			{Name: "qty", BaseType: "bigint", Check: "VALUE > 0"},
 		},
-		CompositeTypes: []goschema.CompositeType{
-			{Name: "meas", Fields: []goschema.CompositeTypeField{{Name: "q", Type: "bigint"}, {Name: "label", Type: "text"}}},
+		CompositeTypes: []schemamodel.CompositeType{
+			{Name: "meas", Fields: []schemamodel.CompositeField{{Name: "q", Type: "bigint"}, {Name: "label", Type: "text"}}},
 		},
 	}
 	diff := &difftypes.SchemaDiff{
@@ -130,8 +130,8 @@ func TestPlanner_GenerateMigrationAST_DropsModifiedUserTypesWithinOneKind(t *tes
 	c := qt.New(t)
 	planner := postgres.New()
 
-	desired := &goschema.Database{
-		Domains: []goschema.Domain{
+	desired := &schemamodel.Database{
+		Domains: []schemamodel.Domain{
 			{Name: "d_base", BaseType: "text"},
 			{Name: "d_over", BaseType: "text"},
 		},
@@ -164,12 +164,12 @@ func TestPlanner_GenerateMigrationAST_DropsModifiedUserTypesInCallerOrderWithout
 	c := qt.New(t)
 	planner := postgres.New()
 
-	desired := &goschema.Database{
-		Domains: []goschema.Domain{
+	desired := &schemamodel.Database{
+		Domains: []schemamodel.Domain{
 			{Name: "dd", BaseType: "integer"},
 		},
-		CompositeTypes: []goschema.CompositeType{
-			{Name: "cc", Fields: []goschema.CompositeTypeField{{Name: "f", Type: "dd"}}},
+		CompositeTypes: []schemamodel.CompositeType{
+			{Name: "cc", Fields: []schemamodel.CompositeField{{Name: "f", Type: "dd"}}},
 		},
 	}
 	diff := &difftypes.SchemaDiff{

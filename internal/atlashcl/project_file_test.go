@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashcl"
 )
 
@@ -70,14 +70,14 @@ func TestParseProjectFileIsNotSilentlyErased(t *testing.T) {
 type projectFileCase struct {
 	name   string
 	hcl    string
-	assert func(c *qt.C, db *goschema.Database, err error)
+	assert func(c *qt.C, db *schemamodel.Database, err error)
 }
 
 // refusesAsProjectFile asserts the classification refusal: the file is rejected,
 // the message keeps the sentence the Atlas community binary emits, and it goes
 // past that binary by naming the offending construct and where it sits.
-func refusesAsProjectFile() func(c *qt.C, db *goschema.Database, err error) {
-	return func(c *qt.C, db *goschema.Database, err error) {
+func refusesAsProjectFile() func(c *qt.C, db *schemamodel.Database, err error) {
+	return func(c *qt.C, db *schemamodel.Database, err error) {
 		c.Assert(err, qt.IsNotNil)
 		c.Assert(db, qt.IsNil)
 		c.Assert(err.Error(), qt.Contains, `cannot parse project file "schema.hcl" as a schema file`)
@@ -88,8 +88,8 @@ func refusesAsProjectFile() func(c *qt.C, db *goschema.Database, err error) {
 
 // parsesWithUsersTable asserts the file is accepted and really produced the
 // table, so a row cannot pass by returning an empty IR.
-func parsesWithUsersTable() func(c *qt.C, db *goschema.Database, err error) {
-	return func(c *qt.C, db *goschema.Database, err error) {
+func parsesWithUsersTable() func(c *qt.C, db *schemamodel.Database, err error) {
+	return func(c *qt.C, db *schemamodel.Database, err error) {
 		c.Assert(err, qt.IsNil)
 		c.Assert(db, qt.IsNotNil)
 		c.Assert(db.Tables, qt.HasLen, 1)
@@ -99,8 +99,8 @@ func parsesWithUsersTable() func(c *qt.C, db *goschema.Database, err error) {
 
 // failsWith asserts an unrelated pre-existing error survives the change
 // untouched.
-func failsWith(want string) func(c *qt.C, db *goschema.Database, err error) {
-	return func(c *qt.C, db *goschema.Database, err error) {
+func failsWith(want string) func(c *qt.C, db *schemamodel.Database, err error) {
+	return func(c *qt.C, db *schemamodel.Database, err error) {
 		c.Assert(err, qt.IsNotNil)
 		c.Assert(err.Error(), qt.Contains, want)
 	}

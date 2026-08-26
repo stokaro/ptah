@@ -7,7 +7,7 @@ import (
 
 	clickhousedriver "github.com/ClickHouse/clickhouse-go/v2"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 )
 
 // grantsQuery reads the grants this description owns: rows held by a ROLE, on
@@ -132,7 +132,7 @@ const configuredRoleStorage = "users_xml"
 // the set from the described grants themselves rather than re-deriving it in SQL
 // is what keeps the two from disagreeing about scope -- there is one definition
 // of "described", and it is the grant list.
-func (r *Reader) readRBACInto(ctx context.Context, dbName string, schema *types.DBSchema) error {
+func (r *Reader) readRBACInto(ctx context.Context, dbName string, schema *catalog.Database) error {
 	grants, err := r.readGrants(ctx, dbName)
 	if err != nil {
 		return err
@@ -153,16 +153,16 @@ func (r *Reader) readRBACInto(ctx context.Context, dbName string, schema *types.
 // `GRANT SELECT ON db.* TO r` followed by `REVOKE SELECT ON db.t FROM r` leaves
 // two rows, the second with is_partial_revoke = 1, and dropping it would
 // describe a role whose effective privileges are quietly narrower than the
-// description says. Ptah plans no such shape; see types.DBGrant.IsPartialRevoke
+// description says. Ptah plans no such shape; see catalog.Grant.IsPartialRevoke
 // for why reporting it is still the reader's job.
-func (r *Reader) readGrants(ctx context.Context, dbName string) ([]types.DBGrant, error) {
+func (r *Reader) readGrants(ctx context.Context, dbName string) ([]catalog.Grant, error) {
 	rows, err := r.db.QueryContext(ctx, grantsQuery, dbName)
 	if err != nil {
 		return nil, fmt.Errorf("clickhouse: read grants%s: %w", r.onServer(), err)
 	}
 	defer rows.Close()
 
-	var grants []types.DBGrant
+	var grants []catalog.Grant
 	for rows.Next() {
 		var (
 			role, privilege, database, table string
@@ -187,8 +187,8 @@ func (r *Reader) readGrants(ctx context.Context, dbName string) ([]types.DBGrant
 // schema, which is what makes a database-wide grant a SCHEMA grant here.
 //
 // WHERE the database lands is not a free choice, and getting it wrong is not a
-// cosmetic difference. types.DBGrant carries a schema-scoped target in
-// ObjectName with Schema empty — that is what DBGrant.QualifiedTarget returns,
+// cosmetic difference. catalog.Grant carries a schema-scoped target in
+// ObjectName with Schema empty — that is what catalog.Grant.QualifiedTarget returns,
 // what the PostgreSQL reader writes, and what every shared consumer reads:
 // compare.grantRefFromDatabase, dbschematogo.convertGrants and
 // schemascope.dbGrantAllowed all take a SCHEMA grant's target out of
@@ -198,8 +198,8 @@ func (r *Reader) readGrants(ctx context.Context, dbName string) ([]types.DBGrant
 // removed on every run, the REVOKE it produced carried an empty scope and the
 // render refused it — and any `db.*` row held by anyone at all made
 // `ptah db read` exit 2 against that database.
-func liveGrant(role, privilege, database, table string, grantOption, partialRevoke uint8) types.DBGrant {
-	grant := types.DBGrant{
+func liveGrant(role, privilege, database, table string, grantOption, partialRevoke uint8) catalog.Grant {
+	grant := catalog.Grant{
 		Role:            role,
 		Privilege:       privilege,
 		ObjectType:      "TABLE",
@@ -235,7 +235,7 @@ func liveGrant(role, privilege, database, table string, grantOption, partialRevo
 // a CREATE ROLE for a role the server already has. Granting to a role that does
 // not exist fails at Code 511 (UNKNOWN_ROLE), so that distinction is what stands
 // between a plan and a refused statement.
-func (r *Reader) readRoles(ctx context.Context, grants []types.DBGrant) (described, outOfScope []types.DBRole, err error) {
+func (r *Reader) readRoles(ctx context.Context, grants []catalog.Grant) (described, outOfScope []catalog.Role, err error) {
 	rows, err := r.db.QueryContext(ctx, rolesQuery)
 	if err != nil {
 		return nil, nil, fmt.Errorf("clickhouse: read roles%s: %w", r.onServer(), err)
@@ -263,7 +263,7 @@ func (r *Reader) readRoles(ctx context.Context, grants []types.DBGrant) (describ
 
 // liveRole renders one system.roles row as the shared role model.
 //
-// Every attribute types.DBRole carries beyond the name is a PostgreSQL notion
+// Every attribute catalog.Role carries beyond the name is a PostgreSQL notion
 // ClickHouse has no column for, so they stay false -- and internal/clickhouserbac
 // refuses a declaration that sets one, rather than dropping it, so the two ends
 // agree that the attributes do not exist.
@@ -272,12 +272,12 @@ func (r *Reader) readRoles(ctx context.Context, grants []types.DBGrant) (describ
 // role always inherits from the roles granted to it, there is no NOINHERIT to
 // read, and the annotation parser defaults a declared role to inherit=true. A
 // live read of false would make every role differ from its own declaration.
-func liveRole(name string) types.DBRole {
-	return types.DBRole{Name: name, Inherit: true}
+func liveRole(name string) catalog.Role {
+	return catalog.Role{Name: name, Inherit: true}
 }
 
 // grantedRoleNames is the set of roles the described grants name.
-func grantedRoleNames(grants []types.DBGrant) map[string]bool {
+func grantedRoleNames(grants []catalog.Grant) map[string]bool {
 	names := make(map[string]bool, len(grants))
 	for _, grant := range grants {
 		names[grant.Role] = true

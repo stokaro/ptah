@@ -5,11 +5,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 // The semantics argument is not incidental: the plain [compare.Grants] entry
@@ -31,13 +31,13 @@ import (
 // carrying one before the comparison runs (stokaro/ptah#1698).
 func TestGrants_APartialRevokeIsNotAGrantToRevoke(t *testing.T) {
 	c := qt.New(t)
-	generated := &goschema.Database{
-		Roles:  []goschema.Role{{Name: "reporting"}},
-		Grants: []goschema.Grant{{Role: "reporting", Privileges: []string{"SELECT"}, OnTable: "orders"}},
+	desired := &schemamodel.Database{
+		Roles:  []schemamodel.Role{{Name: "reporting"}},
+		Grants: []schemamodel.Grant{{Role: "reporting", Privileges: []string{"SELECT"}, OnTable: "orders"}},
 	}
-	database := &types.DBSchema{
-		Roles: []types.DBRole{{Name: "reporting"}},
-		Grants: []types.DBGrant{
+	current := &catalog.Database{
+		Roles: []catalog.Role{{Name: "reporting"}},
+		Grants: []catalog.Grant{
 			{Role: "reporting", Privilege: "SELECT", ObjectType: "TABLE", Schema: "public", ObjectName: "orders"},
 			{
 				Role: "reporting", Privilege: "DELETE", ObjectType: "TABLE",
@@ -47,7 +47,7 @@ func TestGrants_APartialRevokeIsNotAGrantToRevoke(t *testing.T) {
 	}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.GrantsWithSemantics(generated, database, diff, identifier.ForDialect("postgres"))
+	compare.GrantsWithSemantics(desired, current, diff, identifier.ForDialect("postgres"))
 
 	c.Assert(diff.GrantsRemoved, qt.HasLen, 0)
 }
@@ -57,16 +57,16 @@ func TestGrants_APartialRevokeIsNotAGrantToRevoke(t *testing.T) {
 // revoke anything.
 func TestGrants_APlainGrantIsStillRevoked(t *testing.T) {
 	c := qt.New(t)
-	generated := &goschema.Database{Roles: []goschema.Role{{Name: "reporting"}}}
-	database := &types.DBSchema{
-		Roles: []types.DBRole{{Name: "reporting"}},
-		Grants: []types.DBGrant{
+	desired := &schemamodel.Database{Roles: []schemamodel.Role{{Name: "reporting"}}}
+	current := &catalog.Database{
+		Roles: []catalog.Role{{Name: "reporting"}},
+		Grants: []catalog.Grant{
 			{Role: "reporting", Privilege: "DELETE", ObjectType: "TABLE", Schema: "public", ObjectName: "orders"},
 		},
 	}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.GrantsWithSemantics(generated, database, diff, identifier.ForDialect("postgres"))
+	compare.GrantsWithSemantics(desired, current, diff, identifier.ForDialect("postgres"))
 
 	c.Assert(diff.GrantsRemoved, qt.HasLen, 1)
 	c.Assert(diff.GrantsRemoved[0].Privilege, qt.Equals, "DELETE")
@@ -77,20 +77,20 @@ func TestGrants_APlainGrantIsStillRevoked(t *testing.T) {
 // privilege look already satisfied.
 func TestGrants_APartialRevokeDoesNotSatisfyADeclaration(t *testing.T) {
 	c := qt.New(t)
-	generated := &goschema.Database{
-		Roles:  []goschema.Role{{Name: "reporting"}},
-		Grants: []goschema.Grant{{Role: "reporting", Privileges: []string{"DELETE"}, OnTable: "orders"}},
+	desired := &schemamodel.Database{
+		Roles:  []schemamodel.Role{{Name: "reporting"}},
+		Grants: []schemamodel.Grant{{Role: "reporting", Privileges: []string{"DELETE"}, OnTable: "orders"}},
 	}
-	database := &types.DBSchema{
-		Roles: []types.DBRole{{Name: "reporting"}},
-		Grants: []types.DBGrant{{
+	current := &catalog.Database{
+		Roles: []catalog.Role{{Name: "reporting"}},
+		Grants: []catalog.Grant{{
 			Role: "reporting", Privilege: "DELETE", ObjectType: "TABLE",
 			Schema: "public", ObjectName: "orders", IsPartialRevoke: true,
 		}},
 	}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.GrantsWithSemantics(generated, database, diff, identifier.ForDialect("postgres"))
+	compare.GrantsWithSemantics(desired, current, diff, identifier.ForDialect("postgres"))
 
 	c.Assert(diff.GrantsAdded, qt.HasLen, 1)
 	c.Assert(diff.GrantsAdded[0].Privilege, qt.Equals, "DELETE")

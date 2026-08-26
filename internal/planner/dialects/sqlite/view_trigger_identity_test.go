@@ -6,9 +6,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestViewAndTriggerLookupsDoNotCrossSchemas pins sqlite's findView and
@@ -18,19 +18,19 @@ import (
 func TestViewAndTriggerLookupsDoNotCrossSchemas(t *testing.T) {
 	tests := []struct {
 		name        string
-		generated   *goschema.Database
-		diff        *types.SchemaDiff
+		desired     *schemamodel.Database
+		diff        *difftypes.SchemaDiff
 		unwantedSQL string
 	}{
 		{
 			name: "a modified view declared in another schema is left alone",
-			generated: &goschema.Database{
-				Views: []goschema.View{{
+			desired: &schemamodel.Database{
+				Views: []schemamodel.View{{
 					Name: "attached.active_notes",
 					Body: "SELECT id FROM notes WHERE body IS NOT NULL",
 				}},
 			},
-			diff: &types.SchemaDiff{ViewsModified: []types.ViewDiff{{
+			diff: &difftypes.SchemaDiff{ViewsModified: []difftypes.ViewDiff{{
 				ViewName:     "main.active_notes",
 				PreviousBody: "SELECT id FROM notes",
 				Changes:      map[string]string{"body": "changed"},
@@ -39,8 +39,8 @@ func TestViewAndTriggerLookupsDoNotCrossSchemas(t *testing.T) {
 		},
 		{
 			name: "a trigger whose table is declared in another schema is left alone",
-			generated: &goschema.Database{
-				Triggers: []goschema.Trigger{{
+			desired: &schemamodel.Database{
+				Triggers: []schemamodel.Trigger{{
 					StructName: "Note",
 					Name:       "touch",
 					Table:      "attached.notes",
@@ -50,7 +50,7 @@ func TestViewAndTriggerLookupsDoNotCrossSchemas(t *testing.T) {
 					Body:       "SELECT 1;",
 				}},
 			},
-			diff: &types.SchemaDiff{TriggersAdded: []types.TriggerRef{{
+			diff: &difftypes.SchemaDiff{TriggersAdded: []difftypes.TriggerRef{{
 				TriggerName: "touch",
 				TableName:   "main.notes",
 			}}},
@@ -61,7 +61,7 @@ func TestViewAndTriggerLookupsDoNotCrossSchemas(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			statements, err := planner.GenerateSchemaDiffSQLStatements(test.diff, test.generated, "sqlite")
+			statements, err := planner.GenerateSchemaDiffSQLStatements(test.diff, test.desired, "sqlite")
 			c.Assert(err, qt.IsNil)
 			plan := strings.Join(statements, "\n")
 			c.Assert(plan, qt.Not(qt.Contains), test.unwantedSQL, qt.Commentf("plan:\n%s", plan))
@@ -75,20 +75,20 @@ func TestViewAndTriggerLookupsDoNotCrossSchemas(t *testing.T) {
 // them.
 func TestViewAndTriggerLookupsFoldASCIICase(t *testing.T) {
 	tests := []struct {
-		name      string
-		generated *goschema.Database
-		diff      *types.SchemaDiff
-		wantSQL   string
+		name    string
+		desired *schemamodel.Database
+		diff    *difftypes.SchemaDiff
+		wantSQL string
 	}{
 		{
 			name: "a modified view spelled in a different case",
-			generated: &goschema.Database{
-				Views: []goschema.View{{
+			desired: &schemamodel.Database{
+				Views: []schemamodel.View{{
 					Name: "Active_Notes",
 					Body: "SELECT id FROM notes WHERE body IS NOT NULL",
 				}},
 			},
-			diff: &types.SchemaDiff{ViewsModified: []types.ViewDiff{{
+			diff: &difftypes.SchemaDiff{ViewsModified: []difftypes.ViewDiff{{
 				ViewName:     "active_notes",
 				PreviousBody: "SELECT id FROM notes",
 				Changes:      map[string]string{"body": "changed"},
@@ -97,8 +97,8 @@ func TestViewAndTriggerLookupsFoldASCIICase(t *testing.T) {
 		},
 		{
 			name: "a trigger whose table is spelled in a different case",
-			generated: &goschema.Database{
-				Triggers: []goschema.Trigger{{
+			desired: &schemamodel.Database{
+				Triggers: []schemamodel.Trigger{{
 					StructName: "Note",
 					Name:       "touch",
 					Table:      "Notes",
@@ -108,7 +108,7 @@ func TestViewAndTriggerLookupsFoldASCIICase(t *testing.T) {
 					Body:       "SELECT 1;",
 				}},
 			},
-			diff: &types.SchemaDiff{TriggersAdded: []types.TriggerRef{{
+			diff: &difftypes.SchemaDiff{TriggersAdded: []difftypes.TriggerRef{{
 				TriggerName: "touch",
 				TableName:   "notes",
 			}}},
@@ -119,7 +119,7 @@ func TestViewAndTriggerLookupsFoldASCIICase(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			statements, err := planner.GenerateSchemaDiffSQLStatements(test.diff, test.generated, "sqlite")
+			statements, err := planner.GenerateSchemaDiffSQLStatements(test.diff, test.desired, "sqlite")
 			c.Assert(err, qt.IsNil)
 			plan := strings.Join(statements, "\n")
 			c.Assert(plan, qt.Contains, test.wantSQL, qt.Commentf("plan:\n%s", plan))

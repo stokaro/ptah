@@ -5,15 +5,15 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestPlanner_TableLevelConstraintWithoutAnExplicitTable pins issue #2008.
 //
-// `goschema.Constraint.Table` is documented "if different from struct name", so
+// `schemamodel.Constraint.Table` is documented "if different from struct name", so
 // the ordinary declaration leaves it empty -- and the empty value reached the
 // renderer:
 //
@@ -29,12 +29,12 @@ import (
 func TestPlanner_TableLevelConstraintWithoutAnExplicitTable(t *testing.T) {
 	tests := []struct {
 		name       string
-		constraint goschema.Constraint
+		constraint schemamodel.Constraint
 		wantSQL    string
 	}{
 		{
 			name: "EXCLUDE",
-			constraint: goschema.Constraint{
+			constraint: schemamodel.Constraint{
 				StructName: "Booking", Name: "no_overlap", Type: "EXCLUDE",
 				UsingMethod: "gist", ExcludeElements: "room WITH =",
 			},
@@ -42,7 +42,7 @@ func TestPlanner_TableLevelConstraintWithoutAnExplicitTable(t *testing.T) {
 		},
 		{
 			name: "CHECK",
-			constraint: goschema.Constraint{
+			constraint: schemamodel.Constraint{
 				StructName: "Booking", Name: "positive_price", Type: "CHECK",
 				CheckExpression: "price > 0",
 			},
@@ -50,7 +50,7 @@ func TestPlanner_TableLevelConstraintWithoutAnExplicitTable(t *testing.T) {
 		},
 		{
 			name: "UNIQUE",
-			constraint: goschema.Constraint{
+			constraint: schemamodel.Constraint{
 				StructName: "Booking", Name: "uq_booking_code", Type: "UNIQUE",
 				Columns: []string{"code"},
 			},
@@ -61,13 +61,13 @@ func TestPlanner_TableLevelConstraintWithoutAnExplicitTable(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := &types.SchemaDiff{ConstraintsAdded: []string{test.constraint.Name}}
-			generated := &goschema.Database{
-				Tables:      []goschema.Table{{StructName: "Booking", Name: "bookings"}},
-				Constraints: []goschema.Constraint{test.constraint},
+			diff := &difftypes.SchemaDiff{ConstraintsAdded: []string{test.constraint.Name}}
+			desired := &schemamodel.Database{
+				Tables:      []schemamodel.Table{{StructName: "Booking", Name: "bookings"}},
+				Constraints: []schemamodel.Constraint{test.constraint},
 			}
 
-			nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
+			nodes, err := postgres.New().GenerateMigrationASTChecked(diff, desired)
 
 			c.Assert(err, qt.IsNil)
 			sql, err := renderer.RenderSQL("postgres", nodes...)
@@ -82,16 +82,16 @@ func TestPlanner_TableLevelConstraintWithoutAnExplicitTable(t *testing.T) {
 // deliberately something else so the two answers cannot be confused.
 func TestPlanner_TableLevelConstraintNamesItsOwnTable(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{ConstraintsAdded: []string{"positive_price"}}
-	generated := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Booking", Name: "bookings"}},
-		Constraints: []goschema.Constraint{{
+	diff := &difftypes.SchemaDiff{ConstraintsAdded: []string{"positive_price"}}
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Booking", Name: "bookings"}},
+		Constraints: []schemamodel.Constraint{{
 			StructName: "Booking", Name: "positive_price", Type: "CHECK",
 			Table: "archived_bookings", CheckExpression: "price > 0",
 		}},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
+	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, desired)
 
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
@@ -111,15 +111,15 @@ func TestPlanner_TableLevelConstraintNamesItsOwnTable(t *testing.T) {
 // paths beside it already use.
 func TestPlanner_TableLevelConstraintWhoseStructDeclaresNoTable(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{ConstraintsAdded: []string{"positive_price"}}
-	generated := &goschema.Database{
-		Constraints: []goschema.Constraint{{
+	diff := &difftypes.SchemaDiff{ConstraintsAdded: []string{"positive_price"}}
+	desired := &schemamodel.Database{
+		Constraints: []schemamodel.Constraint{{
 			StructName: "Booking", Name: "positive_price", Type: "CHECK",
 			CheckExpression: "price > 0",
 		}},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
+	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, desired)
 
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)

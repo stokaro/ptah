@@ -12,10 +12,10 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/sijms/go-ora/v3"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -123,9 +123,9 @@ func TestOracleRoutinesPlanAndConvergeE2E(t *testing.T) {
 
 	// And the removal direction, whose verb has to match the object: measured,
 	// DROP FUNCTION on a procedure answers ORA-04043.
-	teardown, err := schemadiff.CompareWithDatabase(ctx, conn, &goschema.Database{}, after, nil)
+	teardown, err := schemadiff.CompareWithDatabase(ctx, conn, &schemamodel.Database{}, after, nil)
 	c.Assert(err, qt.IsNil)
-	teardownStatements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(teardown, &goschema.Database{}, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities})
+	teardownStatements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(teardown, &schemamodel.Database{}, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities})
 	c.Assert(err, qt.IsNil)
 	drops := oracleStatementsNamingRoutines(teardownStatements)
 	c.Assert(drops, qt.HasLen, 3)
@@ -144,8 +144,8 @@ func TestOracleRoutinesPlanAndConvergeE2E(t *testing.T) {
 // They differ on every axis the model carries: kind, volatility, security, the
 // argument modes, and whether the body has a declaration section. A fixture
 // varying one of them would leave the others unmeasured.
-func oracleRoutineDeclaration() *goschema.Database {
-	return &goschema.Database{Functions: []goschema.Function{
+func oracleRoutineDeclaration() *schemamodel.Database {
+	return &schemamodel.Database{Functions: []schemamodel.Function{
 		{
 			StructName: "R", Name: "fn_double",
 			Parameters: "p IN NUMBER", Returns: "NUMBER", Language: "plsql",
@@ -159,7 +159,7 @@ func oracleRoutineDeclaration() *goschema.Database {
 			Body: "x NUMBER := 0;\nBEGIN\n  x := p * 3;\n  RETURN x;\nEND;",
 		},
 		{
-			StructName: "R", Name: "pr_touch", Kind: goschema.FunctionKindProcedure,
+			StructName: "R", Name: "pr_touch", Kind: schemamodel.FunctionKindProcedure,
 			Parameters: "a IN NUMBER, b OUT NUMBER", Language: "plsql",
 			Security: "DEFINER", Volatility: "VOLATILE",
 			Body: "BEGIN\n  b := a;\nEND;",
@@ -180,7 +180,7 @@ func dropOracleRoutines(ctx context.Context, conn *dbschema.DatabaseConnection) 
 }
 
 // oracleRoutineSummary renders each read routine in one line, sorted by name.
-func oracleRoutineSummary(read *dbschematypes.DBSchema) []string {
+func oracleRoutineSummary(read *catalog.Database) []string {
 	summary := make([]string, 0, len(read.Functions))
 	for _, function := range read.Functions {
 		if !oracleDeclaredRoutineNames[strings.ToLower(function.Name)] {
@@ -188,7 +188,7 @@ func oracleRoutineSummary(read *dbschematypes.DBSchema) []string {
 		}
 		kind := function.Kind
 		if kind == "" {
-			kind = goschema.FunctionKindFunction
+			kind = schemamodel.FunctionKindFunction
 		}
 		summary = append(summary, strings.Join([]string{
 			function.Name + " " + kind + "(" + function.Parameters + ")",
@@ -247,13 +247,13 @@ func TestOracleTriggerCompilesE2E(t *testing.T) {
 
 	execOracle(ctx, c, conn, "CREATE TABLE ora_tr_items (id NUMBER PRIMARY KEY, n NUMBER)")
 
-	declared := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "T", Name: "ora_tr_items"}},
-		Fields: []goschema.Field{
+	declared := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "T", Name: "ora_tr_items"}},
+		Fields: []schemamodel.Field{
 			{StructName: "T", Name: "id", Type: "NUMBER", Primary: true},
 			{StructName: "T", Name: "n", Type: "NUMBER"},
 		},
-		Triggers: []goschema.Trigger{{
+		Triggers: []schemamodel.Trigger{{
 			StructName: "T", Name: "ora_tr_set_n", Table: "ora_tr_items",
 			Timing: "BEFORE", Event: "INSERT", ForEach: "ROW",
 			Body: "BEGIN\n  :NEW.n := 1;\nEND;",

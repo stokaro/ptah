@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 )
 
 // readRLSPolicies reads the security policies the connected database declares,
@@ -25,10 +25,10 @@ import (
 //
 // A SQL Server policy may carry predicates for several tables, while the
 // declaration model is one policy per table. The rows are grouped by target so
-// each pair becomes one [types.DBRLSPolicy], which is the shape the comparator
+// each pair becomes one [catalog.RLSPolicy], which is the shape the comparator
 // reads; a policy naming three tables therefore reads back as three entries
 // carrying the same name.
-func (r *Reader) readRLSPolicies(ctx context.Context) ([]types.DBRLSPolicy, error) {
+func (r *Reader) readRLSPolicies(ctx context.Context) ([]catalog.RLSPolicy, error) {
 	query := `
 		SELECT s.name, p.name, t.name, sp.predicate_definition,
 			   sp.predicate_type_desc, ISNULL(sp.operation_desc, '')
@@ -51,7 +51,7 @@ func (r *Reader) readRLSPolicies(ctx context.Context) ([]types.DBRLSPolicy, erro
 	// tables under one policy are two declarations that happen to share a name.
 	type pairKey struct{ policy, table string }
 	order := make([]pairKey, 0)
-	byPair := make(map[pairKey]*types.DBRLSPolicy)
+	byPair := make(map[pairKey]*catalog.RLSPolicy)
 
 	for rows.Next() {
 		var policySchema, policyName, tableName, definition, predicateType, operation string
@@ -75,7 +75,7 @@ func (r *Reader) readRLSPolicies(ctx context.Context) ([]types.DBRLSPolicy, erro
 			// predicate the catalog reports first: a policy whose block half
 			// is written first would otherwise have its operation overwritten
 			// by the filter half arriving second.
-			policy = &types.DBRLSPolicy{Name: policyName, Table: tableName, PolicyFor: "ALL"}
+			policy = &catalog.RLSPolicy{Name: policyName, Table: tableName, PolicyFor: "ALL"}
 			byPair[key] = policy
 			order = append(order, key)
 		}
@@ -90,7 +90,7 @@ func (r *Reader) readRLSPolicies(ctx context.Context) ([]types.DBRLSPolicy, erro
 		return nil, err
 	}
 
-	policies := make([]types.DBRLSPolicy, 0, len(order))
+	policies := make([]catalog.RLSPolicy, 0, len(order))
 	for _, key := range order {
 		policies = append(policies, *byPair[key])
 	}
@@ -123,7 +123,7 @@ func blockOperationPolicyFor(operation string) string {
 // when some enabled policy carries a predicate on it. Deriving it rather than
 // leaving it false is what lets the comparator see the same fact on both
 // engines instead of reporting a permanent difference on this one.
-func applyRLSEnabled(schema *types.DBSchema, enabled map[string]bool) {
+func applyRLSEnabled(schema *catalog.Database, enabled map[string]bool) {
 	for i := range schema.Tables {
 		if enabled[schema.Tables[i].Name] {
 			schema.Tables[i].RLSEnabled = true

@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/goschema"
-	dbtypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -34,20 +34,20 @@ import (
 // under test.
 func TestCompareForwardsEveryDiffSkipTheVirtualTableGuardReads(t *testing.T) {
 	tests := []struct {
-		name     string
-		database *dbtypes.DBSchema
-		desired  *goschema.Database
-		options  *config.CompareOptions
-		wantErr  bool
+		name    string
+		current *catalog.Database
+		desired *schemamodel.Database
+		options *config.CompareOptions
+		wantErr bool
 	}{
 		{
 			// The control for the pair below. `skip drop_table` alone leaves
 			// the column drop in the plan, and SQLite converges a removed
 			// column by rebuilding the table, which on the module's own
 			// storage destroys the index.
-			name:     "a column drop is refused when only table drops are skipped",
-			database: unclassifiableFTS4Database(),
-			desired:  desiredWithoutTheLegacyColumn(),
+			name:    "a column drop is refused when only table drops are skipped",
+			current: unclassifiableFTS4Database(),
+			desired: desiredWithoutTheLegacyColumn(),
 			options: &config.CompareOptions{
 				Dialect:        "sqlite",
 				SkipTableDrops: true,
@@ -55,9 +55,9 @@ func TestCompareForwardsEveryDiffSkipTheVirtualTableGuardReads(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:     "the same column drop is admitted when the caller skips column drops",
-			database: unclassifiableFTS4Database(),
-			desired:  desiredWithoutTheLegacyColumn(),
+			name:    "the same column drop is admitted when the caller skips column drops",
+			current: unclassifiableFTS4Database(),
+			desired: desiredWithoutTheLegacyColumn(),
 			options: &config.CompareOptions{
 				Dialect:         "sqlite",
 				SkipTableDrops:  true,
@@ -72,9 +72,9 @@ func TestCompareForwardsEveryDiffSkipTheVirtualTableGuardReads(t *testing.T) {
 			// fts4 database whose desired side no longer names an index on the
 			// module's storage, `ptah schema diff` planned
 			// `DROP INDEX IF EXISTS "docs_content_title_idx";` at exit 0.
-			name:     "an index drop is refused when only table drops are skipped",
-			database: unclassifiableFTS4DatabaseWithIndex(),
-			desired:  desiredWithoutTheIndex(),
+			name:    "an index drop is refused when only table drops are skipped",
+			current: unclassifiableFTS4DatabaseWithIndex(),
+			desired: desiredWithoutTheIndex(),
 			options: &config.CompareOptions{
 				Dialect:        "sqlite",
 				SkipTableDrops: true,
@@ -82,9 +82,9 @@ func TestCompareForwardsEveryDiffSkipTheVirtualTableGuardReads(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:     "the same index drop is admitted when the caller skips index drops",
-			database: unclassifiableFTS4DatabaseWithIndex(),
-			desired:  desiredWithoutTheIndex(),
+			name:    "the same index drop is admitted when the caller skips index drops",
+			current: unclassifiableFTS4DatabaseWithIndex(),
+			desired: desiredWithoutTheIndex(),
 			options: &config.CompareOptions{
 				Dialect:        "sqlite",
 				SkipTableDrops: true,
@@ -102,8 +102,8 @@ func TestCompareForwardsEveryDiffSkipTheVirtualTableGuardReads(t *testing.T) {
 
 			_, err := schemadiff.CompareWithDatabaseInfo(
 				tt.desired,
-				tt.database,
-				dbtypes.DBInfo{Dialect: "sqlite"},
+				tt.current,
+				catalog.ServerInfo{Dialect: "sqlite"},
 				tt.options,
 			)
 
@@ -116,20 +116,20 @@ func TestCompareForwardsEveryDiffSkipTheVirtualTableGuardReads(t *testing.T) {
 // for a database holding one: the virtual table itself, the module's storage
 // described as an ordinary table, and the reader's record of what it could not
 // classify.
-func unclassifiableFTS4Database() *dbtypes.DBSchema {
-	return &dbtypes.DBSchema{
-		Tables: []dbtypes.DBTable{
+func unclassifiableFTS4Database() *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{
 			{Name: "docs", Type: "TABLE", VirtualModule: "fts4", VirtualArguments: "title, body"},
-			{Name: "docs_content", Type: "TABLE", Columns: []dbtypes.DBColumn{
+			{Name: "docs_content", Type: "TABLE", Columns: []catalog.Column{
 				{Name: "docid", DataType: "INTEGER", IsNullable: "YES", OrdinalPosition: 1},
 			}},
-			{Name: "users", Type: "TABLE", Columns: []dbtypes.DBColumn{
+			{Name: "users", Type: "TABLE", Columns: []catalog.Column{
 				{Name: "id", DataType: "INTEGER", IsNullable: "NO", OrdinalPosition: 1, IsPrimaryKey: true},
 				{Name: "name", DataType: "TEXT", IsNullable: "YES", OrdinalPosition: 2},
 				{Name: "legacy", DataType: "TEXT", IsNullable: "YES", OrdinalPosition: 3},
 			}},
 		},
-		UnregisteredVirtualTables: []dbtypes.DBVirtualTable{
+		UnregisteredVirtualTables: []catalog.VirtualTable{
 			{Name: "docs", Module: "fts4"},
 		},
 	}
@@ -138,28 +138,28 @@ func unclassifiableFTS4Database() *dbtypes.DBSchema {
 // unclassifiableFTS4DatabaseWithIndex is the same database carrying an explicit
 // index on the module's storage. Nothing here can say whether the module put it
 // there, which is the point.
-func unclassifiableFTS4DatabaseWithIndex() *dbtypes.DBSchema {
-	database := unclassifiableFTS4Database()
-	database.Indexes = []dbtypes.DBIndex{{
+func unclassifiableFTS4DatabaseWithIndex() *catalog.Database {
+	current := unclassifiableFTS4Database()
+	current.Indexes = []catalog.Index{{
 		Name:      "docs_content_docid_idx",
 		TableName: "docs_content",
 		Columns:   []string{"docid"},
 	}}
-	return database
+	return current
 }
 
 // declaredLiveTables declares every live table this comparison must not be
 // refused for. The module's storage is declared on purpose: without it the
 // comparison never reaches the post-diff gate, because the pre-comparison half
 // refuses an undeclared live table first.
-func declaredLiveTables() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func declaredLiveTables() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Doc", Name: "docs", VirtualModule: "fts4", VirtualArguments: "title, body"},
 			{StructName: "DocContent", Name: "docs_content"},
 			{StructName: "User", Name: "users"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "DocContent", Name: "docid", Type: "INTEGER", Nullable: true},
 			{StructName: "User", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "User", Name: "name", Type: "TEXT", Nullable: true},
@@ -170,7 +170,7 @@ func declaredLiveTables() *goschema.Database {
 
 // desiredWithoutTheLegacyColumn drops one column from the ordinary table and
 // changes nothing else, so the diff carries exactly one ColumnsRemoved entry.
-func desiredWithoutTheLegacyColumn() *goschema.Database {
+func desiredWithoutTheLegacyColumn() *schemamodel.Database {
 	desired := declaredLiveTables()
 	desired.Fields = desired.Fields[:len(desired.Fields)-1]
 	return desired
@@ -179,6 +179,6 @@ func desiredWithoutTheLegacyColumn() *goschema.Database {
 // desiredWithoutTheIndex leaves every table and column as the database has
 // them and omits only the index, so the diff carries exactly one IndexesRemoved
 // entry and no table is dropped or rebuilt.
-func desiredWithoutTheIndex() *goschema.Database {
+func desiredWithoutTheIndex() *schemamodel.Database {
 	return declaredLiveTables()
 }

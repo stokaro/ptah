@@ -3,29 +3,29 @@
 package testutils
 
 import (
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // CreateTestParseResult creates a minimal PackageParseResult for testing
-func CreateTestParseResult() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func CreateTestParseResult() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: "test_table", StructName: "TestTable"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{Name: "id", Type: "int", StructName: "TestTable"},
 			{Name: "name", Type: "string", StructName: "TestTable"},
 		},
-		Indexes: make([]goschema.Index, 0),
-		Enums: []goschema.Enum{
+		Indexes: make([]schemamodel.Index, 0),
+		Enums: []schemamodel.Enum{
 			{Name: "test_status", Values: []string{"active", "inactive"}},
 		},
-		EmbeddedFields: make([]goschema.EmbeddedField, 0),
+		EmbeddedFields: make([]schemamodel.EmbeddedField, 0),
 	}
 }
 
-func FindColumn(columns []types.DBColumn, name string) *types.DBColumn {
+func FindColumn(columns []catalog.Column, name string) *catalog.Column {
 	for i := range columns {
 		if columns[i].Name == name {
 			return &columns[i]

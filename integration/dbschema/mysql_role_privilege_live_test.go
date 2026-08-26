@@ -10,9 +10,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
@@ -99,7 +99,7 @@ func replaceCredentials(dbURL, account, password string) string {
 }
 
 // tableNamesOf lists the table names a description holds.
-func tableNamesOf(tables []dbschematypes.DBTable) []string {
+func tableNamesOf(tables []catalog.Table) []string {
 	names := make([]string, 0, len(tables))
 	for _, table := range tables {
 		names = append(names, table.Name)

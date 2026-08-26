@@ -6,13 +6,13 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestCompareWithDatabaseInfo_SQLServerCaseInsensitiveIdentity(t *testing.T) {
@@ -24,14 +24,14 @@ func TestCompareWithDatabaseInfo_SQLServerCaseInsensitiveIdentity(t *testing.T) 
 		[]string{"email"},
 		[]string{"idx_email"},
 	)
-	generated := &goschema.Database{Indexes: []goschema.Index{
+	desired := &schemamodel.Database{Indexes: []schemamodel.Index{
 		{Name: "idx_email", TableName: "users", Fields: []string{"email"}},
 	}}
-	database := &types.DBSchema{Indexes: []types.DBIndex{
+	current := &catalog.Database{Indexes: []catalog.Index{
 		{Name: "idx_email", Schema: "dbo", TableName: "USERS", Columns: []string{"email"}},
 	}}
 
-	diff, err := schemadiff.CompareWithDatabaseInfo(generated, database, types.DBInfo{
+	diff, err := schemadiff.CompareWithDatabaseInfo(desired, current, catalog.ServerInfo{
 		Dialect:             "sqlserver",
 		IdentifierSemantics: semantics,
 	}, nil)
@@ -51,14 +51,14 @@ func TestCompareWithDatabaseInfo_SQLServerCaseOnlyRenamePreservesSpelling(t *tes
 		[]string{"email"},
 		[]string{"idx_email", "IDX_Email"},
 	)
-	generated := &goschema.Database{Indexes: []goschema.Index{
+	desired := &schemamodel.Database{Indexes: []schemamodel.Index{
 		{
 			Name:      "IDX_Email",
 			TableName: "dbo.users",
 			Fields:    []string{"email"},
 		},
 	}}
-	database := &types.DBSchema{Indexes: []types.DBIndex{
+	current := &catalog.Database{Indexes: []catalog.Index{
 		{
 			Name:      "idx_email",
 			Schema:    "dbo",
@@ -67,7 +67,7 @@ func TestCompareWithDatabaseInfo_SQLServerCaseOnlyRenamePreservesSpelling(t *tes
 		},
 	}}
 
-	diff, err := schemadiff.CompareWithDatabaseInfo(generated, database, types.DBInfo{
+	diff, err := schemadiff.CompareWithDatabaseInfo(desired, current, catalog.ServerInfo{
 		Dialect:             "sqlserver",
 		IdentifierSemantics: semantics,
 	}, nil)
@@ -91,10 +91,10 @@ func TestCompareWithDatabaseInfo_SQLServerDefinitionReplacement(t *testing.T) {
 		[]string{"status"},
 		[]string{"idx_users_lookup"},
 	)
-	generated := &goschema.Database{Indexes: []goschema.Index{
+	desired := &schemamodel.Database{Indexes: []schemamodel.Index{
 		{Name: "idx_users_lookup", TableName: "dbo.users", Fields: []string{"status"}},
 	}}
-	database := &types.DBSchema{Indexes: []types.DBIndex{
+	current := &catalog.Database{Indexes: []catalog.Index{
 		{
 			Name:      "idx_users_lookup",
 			Schema:    "dbo",
@@ -103,7 +103,7 @@ func TestCompareWithDatabaseInfo_SQLServerDefinitionReplacement(t *testing.T) {
 		},
 	}}
 
-	diff, err := schemadiff.CompareWithDatabaseInfo(generated, database, types.DBInfo{
+	diff, err := schemadiff.CompareWithDatabaseInfo(desired, current, catalog.ServerInfo{
 		Dialect:             "sqlserver",
 		IdentifierSemantics: semantics,
 	}, nil)
@@ -126,7 +126,7 @@ func TestCompareWithDatabaseInfo_SQLServerUniqueReplacement(t *testing.T) {
 		[]string{"email"},
 		[]string{"idx_users_email"},
 	)
-	generated := &goschema.Database{Indexes: []goschema.Index{
+	desired := &schemamodel.Database{Indexes: []schemamodel.Index{
 		{
 			Name:      "idx_users_email",
 			TableName: "dbo.users",
@@ -134,7 +134,7 @@ func TestCompareWithDatabaseInfo_SQLServerUniqueReplacement(t *testing.T) {
 			Unique:    true,
 		},
 	}}
-	database := &types.DBSchema{Indexes: []types.DBIndex{
+	current := &catalog.Database{Indexes: []catalog.Index{
 		{
 			Name:      "idx_users_email",
 			Schema:    "dbo",
@@ -143,7 +143,7 @@ func TestCompareWithDatabaseInfo_SQLServerUniqueReplacement(t *testing.T) {
 		},
 	}}
 
-	diff, err := schemadiff.CompareWithDatabaseInfo(generated, database, types.DBInfo{
+	diff, err := schemadiff.CompareWithDatabaseInfo(desired, current, catalog.ServerInfo{
 		Dialect:             "sqlserver",
 		IdentifierSemantics: semantics,
 	}, nil)
@@ -167,31 +167,31 @@ func TestCompareWithDatabaseInfo_SQLServerIndexPartDirectionIdentity(t *testing.
 		[]string{"status"},
 		[]string{"idx_users_lookup"},
 	)
-	generated := &goschema.Database{Indexes: []goschema.Index{
+	desired := &schemamodel.Database{Indexes: []schemamodel.Index{
 		{
 			Name:      "idx_users_lookup",
 			TableName: "dbo.users",
 			Fields:    []string{"email", "status"},
-			Parts: []goschema.IndexPart{
+			Parts: []schemamodel.IndexPart{
 				{Name: "email", Desc: true},
 				{Name: "status"},
 			},
 		},
 	}}
-	database := &types.DBSchema{Indexes: []types.DBIndex{
+	current := &catalog.Database{Indexes: []catalog.Index{
 		{
 			Name:      "idx_users_lookup",
 			Schema:    "dbo",
 			TableName: "users",
 			Columns:   []string{"email", "status"},
-			Parts: []types.DBIndexPart{
+			Parts: []catalog.IndexPart{
 				{Name: "email", Desc: true},
 				{Name: "status"},
 			},
 		},
 	}}
 
-	diff, err := schemadiff.CompareWithDatabaseInfo(generated, database, types.DBInfo{
+	diff, err := schemadiff.CompareWithDatabaseInfo(desired, current, catalog.ServerInfo{
 		Dialect:             "sqlserver",
 		IdentifierSemantics: semantics,
 	}, nil)
@@ -211,31 +211,31 @@ func TestCompareWithDatabaseInfo_SQLServerIndexPartDirectionReplacement(t *testi
 		[]string{"status"},
 		[]string{"idx_users_lookup"},
 	)
-	generated := &goschema.Database{Indexes: []goschema.Index{
+	desired := &schemamodel.Database{Indexes: []schemamodel.Index{
 		{
 			Name:      "idx_users_lookup",
 			TableName: "dbo.users",
 			Fields:    []string{"email", "status"},
-			Parts: []goschema.IndexPart{
+			Parts: []schemamodel.IndexPart{
 				{Name: "email", Desc: true},
 				{Name: "status"},
 			},
 		},
 	}}
-	database := &types.DBSchema{Indexes: []types.DBIndex{
+	current := &catalog.Database{Indexes: []catalog.Index{
 		{
 			Name:      "idx_users_lookup",
 			Schema:    "dbo",
 			TableName: "users",
 			Columns:   []string{"email", "status"},
-			Parts: []types.DBIndexPart{
+			Parts: []catalog.IndexPart{
 				{Name: "email"},
 				{Name: "status"},
 			},
 		},
 	}}
 
-	diff, err := schemadiff.CompareWithDatabaseInfo(generated, database, types.DBInfo{
+	diff, err := schemadiff.CompareWithDatabaseInfo(desired, current, catalog.ServerInfo{
 		Dialect:             "sqlserver",
 		IdentifierSemantics: semantics,
 	}, nil)
@@ -258,14 +258,14 @@ func TestCompareWithDatabaseInfo_SQLServerCaseSensitiveVariantsRemainDistinct(t 
 		[]string{"idx_email"},
 		[]string{"IDX_Email"},
 	)
-	generated := &goschema.Database{Indexes: []goschema.Index{
+	desired := &schemamodel.Database{Indexes: []schemamodel.Index{
 		{Name: "IDX_Email", TableName: "dbo.users", Fields: []string{"email"}},
 	}}
-	database := &types.DBSchema{Indexes: []types.DBIndex{
+	current := &catalog.Database{Indexes: []catalog.Index{
 		{Name: "idx_email", Schema: "dbo", TableName: "users", Columns: []string{"email"}},
 	}}
 
-	diff, err := schemadiff.CompareWithDatabaseInfo(generated, database, types.DBInfo{
+	diff, err := schemadiff.CompareWithDatabaseInfo(desired, current, catalog.ServerInfo{
 		Dialect:             "sqlserver",
 		IdentifierSemantics: semantics,
 	}, nil)
@@ -280,13 +280,13 @@ func TestCompareWithDatabaseInfo_SQLServerCaseSensitiveVariantsRemainDistinct(t 
 }
 
 func TestCompareWithDatabaseInfo_SQLServerCatalogTableIdentity(t *testing.T) {
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "User", Schema: "dbo", Name: "users"},
 		},
 	}
-	database := &types.DBSchema{
-		Tables: []types.DBTable{
+	current := &catalog.Database{
+		Tables: []catalog.Table{
 			{Schema: "dbo", Name: "Users"},
 		},
 	}
@@ -298,7 +298,7 @@ func TestCompareWithDatabaseInfo_SQLServerCatalogTableIdentity(t *testing.T) {
 			[]string{"dbo"},
 			[]string{"users", "Users"},
 		)
-		diff, err := schemadiff.CompareWithDatabaseInfo(generated, database, types.DBInfo{
+		diff, err := schemadiff.CompareWithDatabaseInfo(desired, current, catalog.ServerInfo{
 			Dialect:             "sqlserver",
 			IdentifierSemantics: semantics,
 		}, nil)
@@ -314,7 +314,7 @@ func TestCompareWithDatabaseInfo_SQLServerCatalogTableIdentity(t *testing.T) {
 			[]string{"users"},
 			[]string{"Users"},
 		)
-		diff, err := schemadiff.CompareWithDatabaseInfo(generated, database, types.DBInfo{
+		diff, err := schemadiff.CompareWithDatabaseInfo(desired, current, catalog.ServerInfo{
 			Dialect:             "sqlserver",
 			IdentifierSemantics: semantics,
 		}, nil)
@@ -332,27 +332,27 @@ func TestCompareWithDatabaseInfo_SQLServerCatalogColumnIdentity(t *testing.T) {
 		[]string{"users"},
 		[]string{"Email", "email"},
 	)
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "User", Schema: "dbo", Name: "users"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "Email", Type: "INT"},
 		},
 	}
-	database := &types.DBSchema{
-		Tables: []types.DBTable{
+	current := &catalog.Database{
+		Tables: []catalog.Table{
 			{
 				Schema: "dbo",
 				Name:   "users",
-				Columns: []types.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "email", DataType: "int"},
 				},
 			},
 		},
 	}
 
-	diff, err := schemadiff.CompareWithDatabaseInfo(generated, database, types.DBInfo{
+	diff, err := schemadiff.CompareWithDatabaseInfo(desired, current, catalog.ServerInfo{
 		Dialect:             "sqlserver",
 		IdentifierSemantics: semantics,
 	}, nil)
@@ -371,11 +371,11 @@ func TestCompareWithDatabaseInfo_SQLServerCaseInsensitiveTargetCollision_Failure
 		[]string{"status"},
 		[]string{"idx_email", "IDX_Email"},
 	)
-	generated := &goschema.Database{Indexes: []goschema.Index{
+	desired := &schemamodel.Database{Indexes: []schemamodel.Index{
 		{Name: "idx_email", TableName: "dbo.users", Fields: []string{"email"}},
 		{Name: "IDX_Email", TableName: "dbo.users", Fields: []string{"status"}},
 	}}
-	database := &types.DBSchema{Indexes: []types.DBIndex{
+	current := &catalog.Database{Indexes: []catalog.Index{
 		{
 			Name:      "IDX_Email",
 			Schema:    "dbo",
@@ -384,7 +384,7 @@ func TestCompareWithDatabaseInfo_SQLServerCaseInsensitiveTargetCollision_Failure
 		},
 	}}
 
-	diff, err := schemadiff.CompareWithDatabaseInfo(generated, database, types.DBInfo{
+	diff, err := schemadiff.CompareWithDatabaseInfo(desired, current, catalog.ServerInfo{
 		Dialect:             "sqlserver",
 		IdentifierSemantics: semantics,
 	}, nil)
@@ -403,14 +403,14 @@ func TestCompareWithDatabaseInfo_SQLServerIncompleteSnapshot_FailurePath(t *test
 		"SQL_Latin1_General_CP1_CI_AS",
 		[]string{"dbo"},
 	)
-	generated := &goschema.Database{Tables: []goschema.Table{
+	desired := &schemamodel.Database{Tables: []schemamodel.Table{
 		{StructName: "User", Schema: "dbo", Name: "Users"},
 	}}
-	database := &types.DBSchema{Tables: []types.DBTable{
+	current := &catalog.Database{Tables: []catalog.Table{
 		{Schema: "dbo", Name: "Orders"},
 	}}
 
-	diff, err := schemadiff.CompareWithDatabaseInfo(generated, database, types.DBInfo{
+	diff, err := schemadiff.CompareWithDatabaseInfo(desired, current, catalog.ServerInfo{
 		Dialect:             "sqlserver",
 		IdentifierSemantics: semantics,
 	}, nil)
@@ -427,9 +427,9 @@ func TestCompareWithDatabaseInfo_SQLServerInvalidSnapshot_FailurePath(t *testing
 	)
 
 	diff, err := schemadiff.CompareWithDatabaseInfo(
-		&goschema.Database{},
-		&types.DBSchema{},
-		types.DBInfo{
+		&schemamodel.Database{},
+		&catalog.Database{},
+		catalog.ServerInfo{
 			Dialect:             "sqlserver",
 			IdentifierSemantics: semantics,
 		},
@@ -447,17 +447,17 @@ func TestCompareWithOptions_SQLServerIncompleteSnapshotFallsBackConservatively(t
 		"SQL_Latin1_General_CP1_CI_AS",
 		[]string{"dbo"},
 	)
-	generated := &goschema.Database{Tables: []goschema.Table{
+	desired := &schemamodel.Database{Tables: []schemamodel.Table{
 		{StructName: "User", Schema: "dbo", Name: "Users"},
 	}}
-	database := &types.DBSchema{Tables: []types.DBTable{
+	current := &catalog.Database{Tables: []catalog.Table{
 		{Schema: "dbo", Name: "Orders"},
 	}}
 	opts := config.DefaultCompareOptions()
 	opts.Dialect = "sqlserver"
 	opts.IdentifierSemantics = &semantics
 
-	diff := schemadiff.CompareWithOptions(generated, database, opts)
+	diff := schemadiff.CompareWithOptions(desired, current, opts)
 
 	c.Assert(diff.TablesAdded, qt.DeepEquals, []string{"dbo.Users"})
 	c.Assert(diff.TablesRemoved, qt.DeepEquals, []string{"dbo.Orders"})
@@ -476,15 +476,15 @@ func TestCompareWithDatabaseInfo_SQLServerTableCollision_FailurePath(t *testing.
 		[]string{"dbo"},
 		[]string{"Users", "users"},
 	)
-	generated := &goschema.Database{Tables: []goschema.Table{
+	desired := &schemamodel.Database{Tables: []schemamodel.Table{
 		{StructName: "UpperUser", Schema: "dbo", Name: "Users"},
 		{StructName: "LowerUser", Schema: "dbo", Name: "users"},
 	}}
 
 	diff, err := schemadiff.CompareWithDatabaseInfo(
-		generated,
-		&types.DBSchema{},
-		types.DBInfo{
+		desired,
+		&catalog.Database{},
+		catalog.ServerInfo{
 			Dialect:             "sqlserver",
 			IdentifierSemantics: semantics,
 		},
@@ -504,20 +504,20 @@ func TestCompareWithDatabaseInfo_SQLServerColumnCollision_FailurePath(t *testing
 		[]string{"users"},
 		[]string{"Email", "email"},
 	)
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "User", Schema: "dbo", Name: "users"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "Email", Type: "INT"},
 			{StructName: "User", Name: "email", Type: "INT"},
 		},
 	}
 
 	diff, err := schemadiff.CompareWithDatabaseInfo(
-		generated,
-		&types.DBSchema{},
-		types.DBInfo{
+		desired,
+		&catalog.Database{},
+		catalog.ServerInfo{
 			Dialect:             "sqlserver",
 			IdentifierSemantics: semantics,
 		},
@@ -541,7 +541,7 @@ func TestCompareWithDatabaseInfo_SQLServerExplicitUniqueIndexNamedAfterColumn(t 
 		[]string{"users"},
 		[]string{"email"},
 	)
-	generated := &goschema.Database{Indexes: []goschema.Index{
+	desired := &schemamodel.Database{Indexes: []schemamodel.Index{
 		{
 			Name:      "email",
 			TableName: "dbo.users",
@@ -549,7 +549,7 @@ func TestCompareWithDatabaseInfo_SQLServerExplicitUniqueIndexNamedAfterColumn(t 
 			Unique:    true,
 		},
 	}}
-	database := &types.DBSchema{Indexes: []types.DBIndex{
+	current := &catalog.Database{Indexes: []catalog.Index{
 		{
 			Name:      "email",
 			Schema:    "dbo",
@@ -559,7 +559,7 @@ func TestCompareWithDatabaseInfo_SQLServerExplicitUniqueIndexNamedAfterColumn(t 
 		},
 	}}
 
-	diff, err := schemadiff.CompareWithDatabaseInfo(generated, database, types.DBInfo{
+	diff, err := schemadiff.CompareWithDatabaseInfo(desired, current, catalog.ServerInfo{
 		Dialect:             "sqlserver",
 		IdentifierSemantics: semantics,
 	}, nil)
@@ -578,15 +578,15 @@ func TestCompareWithDatabaseInfo_SQLServerExplicitIndexNamedAfterForeignKey(t *t
 		[]string{"customer_id"},
 		[]string{"fk_orders_customer"},
 	)
-	generated := &goschema.Database{Indexes: []goschema.Index{
+	desired := &schemamodel.Database{Indexes: []schemamodel.Index{
 		{
 			Name:      "fk_orders_customer",
 			TableName: "dbo.orders",
 			Fields:    []string{"customer_id"},
 		},
 	}}
-	database := &types.DBSchema{
-		Indexes: []types.DBIndex{
+	current := &catalog.Database{
+		Indexes: []catalog.Index{
 			{
 				Name:      "fk_orders_customer",
 				Schema:    "dbo",
@@ -594,7 +594,7 @@ func TestCompareWithDatabaseInfo_SQLServerExplicitIndexNamedAfterForeignKey(t *t
 				Columns:   []string{"customer_id"},
 			},
 		},
-		Constraints: []types.DBConstraint{
+		Constraints: []catalog.Constraint{
 			{
 				Name:      "fk_orders_customer",
 				Schema:    "dbo",
@@ -604,7 +604,7 @@ func TestCompareWithDatabaseInfo_SQLServerExplicitIndexNamedAfterForeignKey(t *t
 		},
 	}
 
-	diff, err := schemadiff.CompareWithDatabaseInfo(generated, database, types.DBInfo{
+	diff, err := schemadiff.CompareWithDatabaseInfo(desired, current, catalog.ServerInfo{
 		Dialect:             "sqlserver",
 		IdentifierSemantics: semantics,
 	}, nil)

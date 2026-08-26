@@ -17,7 +17,7 @@ import (
 // A column's MS_Description reaches the schema -- stokaro/ptah#2168.
 //
 // The query has always asked for it. There was nowhere to put the value until
-// types.DBColumn gained a Comment, so the scan read it and threw it away:
+// catalog.Column gained a Comment, so the scan read it and threw it away:
 //
 //	if comment.Valid {
 //	    _ = comment.String

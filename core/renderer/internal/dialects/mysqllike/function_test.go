@@ -21,7 +21,7 @@ func newRenderer(dialect string) *mysqllike.Renderer {
 // schema-qualified function name.
 //
 // A function read back from the catalog carries its database as a schema, and
-// the diff names removals by DBFunction.QualifiedName(), so the drop path is
+// the diff names removals by catalog.Function.QualifiedName(), so the drop path is
 // handed `ptah_test.f_c` rather than `f_c`. Quoting that whole string as one
 // identifier yields
 //
@@ -143,7 +143,7 @@ func TestVisitCreateFunction_LanguageDecidesWhetherTheBodyCanRun(t *testing.T) {
 // TestVisitCreateFunction_SkipNamesTheCanonicalizeDefault pins the part of the
 // skip message that is new.
 //
-// [goschema.Function.Canonicalize] defaults an UNSET language to plpgsql, so a
+// [schemamodel.Function.Canonicalize] defaults an UNSET language to plpgsql, so a
 // function annotated without `language=` reaches the skip branch and is passed
 // over when it should have been generated. Measured on MySQL 26.7.0 and MariaDB
 // 12.3.2, `schema apply` then exits 0 having created nothing and the diff asks

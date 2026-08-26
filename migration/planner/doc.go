@@ -40,7 +40,7 @@
 // The package provides a Planner interface for extensible dialect support:
 //
 //	type Planner interface {
-//		GenerateMigrationASTChecked(diff *types.SchemaDiff, generated *goschema.Database) ([]ast.Node, error)
+//		GenerateMigrationASTChecked(diff *difftypes.SchemaDiff, desired *schemamodel.Database) ([]ast.Node, error)
 //	}
 //
 // Each implementation handles dialect-specific features, constraints, and SQL generation patterns.
@@ -87,21 +87,21 @@
 // The three generation helpers sit at different levels of abstraction:
 //
 //	// High-level: individual SQL statements
-//	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, generated, "postgres")
+//	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, "postgres")
 //
 //	// Mid-level: one complete SQL string
-//	sql, err := planner.GenerateSchemaDiffSQL(diff, generated, "postgres")
+//	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, "postgres")
 //
 //	// Low-level: AST nodes for custom processing
-//	nodes, err := planner.GenerateSchemaDiffAST(diff, generated, "postgres")
+//	nodes, err := planner.GenerateSchemaDiffAST(diff, desired, "postgres")
 //
 // Basic migration planning:
 //
 //	// Compare schemas to get differences
-//	diff := schemadiff.Compare(generated, database)
+//	diff := schemadiff.Compare(desired, current)
 //
 //	// Generate SQL statements for PostgreSQL
-//	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, generated, "postgres")
+//	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, "postgres")
 //	if err != nil {
 //		log.Fatal(err)
 //	}
@@ -165,8 +165,8 @@
 //
 // This package integrates with other Ptah components:
 //
-//   - ptah/migration/schemadiff/types: Consumes schema difference data
-//   - ptah/core/goschema: Uses generated schema information
+//   - ptah/migration/schemadiff/difftypes: Consumes schema difference data
+//   - ptah/core/schemamodel: Uses the desired schema every reader produces
 //   - ptah/core/ast: Generates AST nodes for SQL representation
 //   - ptah/core/renderer: Converts AST nodes to dialect-specific SQL
 //   - ptah/core/sqlutil: Uses SQL parsing utilities for statement handling

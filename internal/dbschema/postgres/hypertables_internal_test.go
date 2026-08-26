@@ -13,7 +13,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 )
 
@@ -33,7 +33,7 @@ func TestReadHypertables_CarriesThePrimaryDimension(t *testing.T) {
 	hypertables, err := reader.readHypertables(t.Context(), timescaleInstalled())
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(hypertables, qt.DeepEquals, []types.DBHypertable{{
+	c.Assert(hypertables, qt.DeepEquals, []catalog.Hypertable{{
 		Name:                 "conditions",
 		PrimaryDimension:     "time",
 		PrimaryDimensionType: "timestamp with time zone",
@@ -56,7 +56,7 @@ func TestReadHypertables_AsksNothingWithoutTheExtension(t *testing.T) {
 	db := dbtest.Open(t, recordingQueries(&asked))
 	reader := NewPostgreSQLReader(db.SQL, "public")
 
-	hypertables, err := reader.readHypertables(t.Context(), []types.DBExtension{{Name: "plpgsql"}})
+	hypertables, err := reader.readHypertables(t.Context(), []catalog.Extension{{Name: "plpgsql"}})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(hypertables, qt.HasLen, 0)
@@ -96,7 +96,7 @@ func TestReadHypertables_TakesAHypertableWithNoDimensionReported(t *testing.T) {
 	hypertables, err := reader.readHypertables(t.Context(), timescaleInstalled())
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(hypertables, qt.DeepEquals, []types.DBHypertable{{
+	c.Assert(hypertables, qt.DeepEquals, []catalog.Hypertable{{
 		Name: "conditions", Dimensions: 1,
 	}})
 }
@@ -192,11 +192,11 @@ func hypertableRows() [][]driver.Value {
 // carry it on every supported release, and a query that went back to the newer
 // projection would otherwise be answered these rows anyway.
 func hypertableAnswer(query string, refusal error, rows [][]driver.Value) (dbtest.QueryResult, error) {
-	for _, catalog := range []string{
+	for _, view := range []string{
 		"timescaledb_information.hypertables",
 		"timescaledb_information.dimensions",
 	} {
-		if !strings.Contains(query, catalog) {
+		if !strings.Contains(query, view) {
 			return dbtest.QueryResult{}, fmt.Errorf("unexpected query: %s", query)
 		}
 	}

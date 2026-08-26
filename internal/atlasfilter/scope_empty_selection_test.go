@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 )
 
@@ -15,14 +15,14 @@ import (
 // a table whose name literally contains dots, which is the case a shape check
 // over selector text can never decide: `a.b.c` is both a legal table name and
 // the positional spelling of schema.table.column.
-func includeOutcomeGenerated() *goschema.Database {
-	return &goschema.Database{
-		Schemas: []goschema.Schema{{Name: "main"}},
-		Tables: []goschema.Table{
+func includeOutcomeGenerated() *schemamodel.Database {
+	return &schemamodel.Database{
+		Schemas: []schemamodel.Schema{{Name: "main"}},
+		Tables: []schemamodel.Table{
 			{StructName: "User", Schema: "main", Name: "users"},
 			{StructName: "Dotted", Schema: "main", Name: "a.b.c"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "INTEGER"},
 			{StructName: "User", Name: "email", Type: "TEXT"},
 			{StructName: "Dotted", Name: "id", Type: "INTEGER"},
@@ -32,14 +32,14 @@ func includeOutcomeGenerated() *goschema.Database {
 
 // includeOutcomeDatabase mirrors includeOutcomeGenerated for the introspected
 // side, so one row set covers both projections.
-func includeOutcomeDatabase() *dbschematypes.DBSchema {
-	return &dbschematypes.DBSchema{
-		Schemas: []dbschematypes.DBSchemaInfo{{Name: "main"}},
-		Tables: []dbschematypes.DBTable{
+func includeOutcomeDatabase() *catalog.Database {
+	return &catalog.Database{
+		Schemas: []catalog.Schema{{Name: "main"}},
+		Tables: []catalog.Table{
 			{
 				Schema: "main",
 				Name:   "users",
-				Columns: []dbschematypes.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "id", DataType: "integer"},
 					{Name: "email", DataType: "text"},
 				},
@@ -47,7 +47,7 @@ func includeOutcomeDatabase() *dbschematypes.DBSchema {
 			{
 				Schema: "main",
 				Name:   "a.b.c",
-				Columns: []dbschematypes.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "id", DataType: "integer"},
 				},
 			},
@@ -61,7 +61,7 @@ func includeOutcomeScope(include []string) atlasfilter.Scope {
 
 // outcomeGeneratedTableNames tolerates a nil projection so a row that expects
 // a projection still reports its assertion rather than panicking.
-func outcomeGeneratedTableNames(db *goschema.Database) []string {
+func outcomeGeneratedTableNames(db *schemamodel.Database) []string {
 	var names []string
 	if db == nil {
 		return nil
@@ -72,7 +72,7 @@ func outcomeGeneratedTableNames(db *goschema.Database) []string {
 	return names
 }
 
-func outcomeDatabaseTableNames(db *dbschematypes.DBSchema) []string {
+func outcomeDatabaseTableNames(db *catalog.Database) []string {
 	var names []string
 	if db == nil {
 		return nil

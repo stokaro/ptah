@@ -4,11 +4,11 @@ import (
 	"sort"
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/tableref"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // Hypertables compares declared TimescaleDB hypertables against the ones the
@@ -31,17 +31,17 @@ import (
 // change on every run for a declaration that asked for whatever the server
 // chose.
 func Hypertables(
-	generated *goschema.Database,
-	database *types.DBSchema,
+	desired *schemamodel.Database,
+	current *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
 ) {
-	declared := make(map[string]goschema.Hypertable, len(generated.Hypertables))
-	for _, hypertable := range generated.Hypertables {
+	declared := make(map[string]schemamodel.Hypertable, len(desired.Hypertables))
+	for _, hypertable := range desired.Hypertables {
 		declared[hypertableKey(hypertable.Table)] = hypertable
 	}
-	live := make(map[string]types.DBHypertable, len(database.Hypertables))
-	for _, hypertable := range database.Hypertables {
+	live := make(map[string]catalog.Hypertable, len(current.Hypertables))
+	for _, hypertable := range current.Hypertables {
 		live[hypertableKey(hypertable.QualifiedName())] = hypertable
 	}
 
@@ -82,8 +82,8 @@ func Hypertables(
 // hypertableChange reports how a declaration differs from the catalog, or nil
 // when it does not.
 func hypertableChange(
-	declared goschema.Hypertable,
-	reported types.DBHypertable,
+	declared schemamodel.Hypertable,
+	reported catalog.Hypertable,
 ) *difftypes.HypertableDiff {
 	sameColumn := strings.EqualFold(
 		strings.TrimSpace(declared.Column),

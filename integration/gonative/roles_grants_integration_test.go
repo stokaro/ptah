@@ -14,12 +14,13 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/cmd/readdb"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/dbschema/postgres"
 	"go.5x5.cz/ptah/internal/rolescope"
@@ -39,7 +40,7 @@ func TestPostgreSQLRolesGrantsRoundTripAndBehaviorIntegration(t *testing.T) {
 	c.Cleanup(func() { cleanupRolesGrantsIntegration(c, db) })
 
 	target := rolesGrantsTarget()
-	diff := schemadiff.Compare(target, &dbschematypes.DBSchema{})
+	diff := schemadiff.Compare(target, &catalog.Database{})
 	c.Assert(diff.HasChanges(), qt.IsTrue)
 
 	nodes, err := planner.GenerateSchemaDiffAST(diff, target, "postgres")
@@ -145,34 +146,34 @@ WHERE rolname = 'ptah_db_read_role_137'`).Scan(&comment)
 	c.Assert(comment, qt.Equals, "Database read replay role")
 }
 
-func rolesGrantsTarget() *goschema.Database {
-	target := &goschema.Database{
-		Tables: []goschema.Table{
+func rolesGrantsTarget() *schemamodel.Database {
+	target := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "RolesGrantUser", Name: "ptah_grants_users"},
 			{StructName: "RolesGrantAuditLog", Name: "ptah_grants_audit_log"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "RolesGrantUser", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "RolesGrantUser", Name: "tenant_id", Type: "INTEGER", Nullable: false},
 			{StructName: "RolesGrantUser", Name: "email", Type: "TEXT", Nullable: false},
 			{StructName: "RolesGrantAuditLog", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "RolesGrantAuditLog", Name: "message", Type: "TEXT", Nullable: false},
 		},
-		Roles: []goschema.Role{
+		Roles: []schemamodel.Role{
 			{Name: "ptah_grants_reader", Inherit: true, Comment: "Read tenant data"},
 			{Name: "ptah_grants_writer", Inherit: true, Comment: "Write tenant data"},
 		},
-		Grants: []goschema.Grant{
+		Grants: []schemamodel.Grant{
 			{Role: "ptah_grants_reader", Privileges: []string{"USAGE"}, OnSchema: "public"},
 			{Role: "ptah_grants_writer", Privileges: []string{"USAGE"}, OnSchema: "public"},
 			{Role: "ptah_grants_reader", Privileges: []string{"SELECT"}, OnTable: "ptah_grants_users"},
 			{Role: "ptah_grants_writer", Privileges: []string{"SELECT", "INSERT", "UPDATE", "DELETE"}, OnTable: "ptah_grants_users"},
 			{Role: "ptah_grants_writer", Privileges: []string{"INSERT"}, OnTable: "ptah_grants_audit_log"},
 		},
-		RLSEnabledTables: []goschema.RLSEnabledTable{
+		RLSEnabledTables: []schemamodel.RLSEnabledTable{
 			{Table: "ptah_grants_users"},
 		},
-		RLSPolicies: []goschema.RLSPolicy{
+		RLSPolicies: []schemamodel.RLSPolicy{
 			{
 				Name:                "ptah_grants_tenant_isolation",
 				Table:               "ptah_grants_users",
@@ -183,7 +184,7 @@ func rolesGrantsTarget() *goschema.Database {
 			},
 		},
 	}
-	goschema.Finalize(target)
+	schemamodel.Finalize(target)
 	return target
 }
 
@@ -280,7 +281,7 @@ $ptah_cleanup_role$;`)
 	c.Check(err, qt.IsNil)
 }
 
-func filterRolesGrantsIntegrationSchema(in *dbschematypes.DBSchema) *dbschematypes.DBSchema {
+func filterRolesGrantsIntegrationSchema(in *catalog.Database) *catalog.Database {
 	keepTables := map[string]struct{}{
 		"ptah_grants_users":     {},
 		"ptah_grants_audit_log": {},
@@ -290,7 +291,7 @@ func filterRolesGrantsIntegrationSchema(in *dbschematypes.DBSchema) *dbschematyp
 		"ptah_grants_writer": {},
 	}
 
-	out := &dbschematypes.DBSchema{
+	out := &catalog.Database{
 		Tables:      filterTables(in.Tables, keepTables),
 		Indexes:     filterIndexes(in.Indexes, keepTables),
 		Constraints: filterConstraints(in.Constraints, keepTables),
@@ -301,8 +302,8 @@ func filterRolesGrantsIntegrationSchema(in *dbschematypes.DBSchema) *dbschematyp
 	return out
 }
 
-func filterRoles(in []dbschematypes.DBRole, keep map[string]struct{}) []dbschematypes.DBRole {
-	out := make([]dbschematypes.DBRole, 0, len(in))
+func filterRoles(in []catalog.Role, keep map[string]struct{}) []catalog.Role {
+	out := make([]catalog.Role, 0, len(in))
 	for _, role := range in {
 		if _, ok := keep[role.Name]; ok {
 			out = append(out, role)
@@ -311,8 +312,8 @@ func filterRoles(in []dbschematypes.DBRole, keep map[string]struct{}) []dbschema
 	return out
 }
 
-func filterGrants(in []dbschematypes.DBGrant, keepRoles map[string]struct{}) []dbschematypes.DBGrant {
-	out := make([]dbschematypes.DBGrant, 0, len(in))
+func filterGrants(in []catalog.Grant, keepRoles map[string]struct{}) []catalog.Grant {
+	out := make([]catalog.Grant, 0, len(in))
 	for _, grant := range in {
 		if _, ok := keepRoles[grant.Role]; !ok {
 			continue
@@ -444,7 +445,7 @@ ALTER TABLE ptah_ref_untouched_137 OWNER TO ptah_ref_owner_137;`)
 // and the pinned Atlas community binary v1.3.0 reads it at exit 0. That is a
 // property of who connected, not of the description, and a guard that fails on
 // a legitimate connection is a guard that gets switched off.
-func rolesNamedByDescription(schema *dbschematypes.DBSchema) []string {
+func rolesNamedByDescription(schema *catalog.Database) []string {
 	var named []string
 	for _, grant := range schema.Grants {
 		named = append(named, grant.Role)
@@ -517,15 +518,15 @@ func TestPostgreSQLRoleOutOfScopeIsPresentNotAbsentIntegration(t *testing.T) {
 	c.Assert(integrationRoleNames(live.Roles), qt.Not(qt.Contains), "ptah_scope_outside_137")
 	c.Assert(integrationRoleNames(live.RolesOutOfScope), qt.Contains, "ptah_scope_outside_137")
 
-	desired := &goschema.Database{
-		Roles: []goschema.Role{
+	desired := &schemamodel.Database{
+		Roles: []schemamodel.Role{
 			{Name: "ptah_scope_outside_137", Login: true, Inherit: true},
 			{Name: "ptah_scope_absent_137", Login: true, Inherit: true},
 		},
 	}
 	// Compare against the role facts alone: the rest of this shared database
 	// belongs to other tests, and the decision under test is the role one.
-	rolesOnly := &dbschematypes.DBSchema{
+	rolesOnly := &catalog.Database{
 		Roles:           live.Roles,
 		RolesOutOfScope: live.RolesOutOfScope,
 	}
@@ -547,7 +548,7 @@ func TestPostgreSQLRoleOutOfScopeIsPresentNotAbsentIntegration(t *testing.T) {
 }
 
 // integrationRoleNames lists the names of introspected roles.
-func integrationRoleNames(roles []dbschematypes.DBRole) []string {
+func integrationRoleNames(roles []catalog.Role) []string {
 	names := make([]string, 0, len(roles))
 	for _, role := range roles {
 		names = append(names, role.Name)
@@ -707,13 +708,13 @@ CREATE ROLE pgbouncer_undescribed_137 LOGIN;`)
 	c.Assert(integrationRoleNames(full.Roles), qt.Contains, "ptah_undescribed_outside_137")
 	c.Assert(full.RolesOutOfScope, qt.HasLen, 0)
 
-	desired := &goschema.Database{
-		Roles: []goschema.Role{
+	desired := &schemamodel.Database{
+		Roles: []schemamodel.Role{
 			{Name: "ptah_undescribed_outside_137", Login: true, Inherit: true},
 			{Name: "ptah_undescribed_absent_137", Login: true, Inherit: true},
 		},
 	}
-	diff := schemadiff.Compare(desired, &dbschematypes.DBSchema{
+	diff := schemadiff.Compare(desired, &catalog.Database{
 		Roles:           full.Roles,
 		RolesOutOfScope: full.RolesOutOfScope,
 	})

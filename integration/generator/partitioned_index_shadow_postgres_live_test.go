@@ -9,8 +9,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/migration/generator"
 	"go.5x5.cz/ptah/migration/migrator"
@@ -57,7 +57,7 @@ func TestGenerateMigration_PartitionedParentShadowRoundTripWithRealPostgres(t *t
 	// Cycle 1: the parent, the table that becomes its partition, and the index
 	// on the parent -- verified on the shadow before a byte is written.
 	files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
-		Generated:         desired,
+		Desired:           desired,
 		DatabaseURL:       targetURL,
 		ShadowDatabaseURL: shadowURL,
 		MigrationName:     "create_partitioned_events",
@@ -95,7 +95,7 @@ func TestGenerateMigration_PartitionedParentShadowRoundTripWithRealPostgres(t *t
 	// Cycle 2 over the same surface: nothing left to plan, and the shadow is
 	// never asked to judge a statement that would have failed on the target.
 	second, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
-		Generated:         desired,
+		Desired:           desired,
 		DatabaseURL:       targetURL,
 		ShadowDatabaseURL: shadowURL,
 		MigrationName:     "second_cycle",
@@ -121,20 +121,20 @@ func TestGenerateMigration_PartitionedParentShadowRoundTripWithRealPostgres(t *t
 // partitionedParentDesiredSchema is the desired state both shadow cycles
 // compare against: a partitioned parent, a plain table an operator attaches to
 // it as a partition, and one index declared on the parent.
-func partitionedParentDesiredSchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func partitionedParentDesiredSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{
 				Name:       "events",
 				StructName: "Event",
-				Partition: &goschema.PartitionSpec{
+				Partition: &schemamodel.PartitionSpec{
 					Type:  "RANGE",
-					Parts: []goschema.PartitionPart{{Name: "created_at"}},
+					Parts: []schemamodel.PartitionPart{{Name: "created_at"}},
 				},
 			},
 			{Name: "events_2026", StructName: "Event2026"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Event", Name: "id", Type: "BIGINT"},
 			{StructName: "Event", Name: "tenant", Type: "TEXT"},
 			{StructName: "Event", Name: "created_at", Type: "DATE"},
@@ -142,7 +142,7 @@ func partitionedParentDesiredSchema() *goschema.Database {
 			{StructName: "Event2026", Name: "tenant", Type: "TEXT"},
 			{StructName: "Event2026", Name: "created_at", Type: "DATE"},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{Name: "idx_events_tenant", StructName: "Event", Fields: []string{"tenant"}},
 		},
 	}

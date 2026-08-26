@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"slices"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // ValidateDeclared refuses a schema declaring a domain, composite type or
@@ -25,7 +25,7 @@ import (
 //
 // The three kinds are asked separately because they do not travel together:
 // CockroachDB takes a composite and refuses a domain and a range.
-func ValidateDeclared(dialect string, caps capability.Capabilities, database *goschema.Database) error {
+func ValidateDeclared(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
 	if database == nil {
 		return nil
 	}
@@ -54,7 +54,7 @@ func ValidateDeclared(dialect string, caps capability.Capabilities, database *go
 	return nil
 }
 
-func domainNames(database *goschema.Database) []string {
+func domainNames(database *schemamodel.Database) []string {
 	names := make([]string, 0, len(database.Domains))
 	for _, domain := range database.Domains {
 		names = append(names, domain.Name)
@@ -62,7 +62,7 @@ func domainNames(database *goschema.Database) []string {
 	return names
 }
 
-func compositeNames(database *goschema.Database) []string {
+func compositeNames(database *schemamodel.Database) []string {
 	names := make([]string, 0, len(database.CompositeTypes))
 	for _, composite := range database.CompositeTypes {
 		names = append(names, composite.Name)
@@ -70,7 +70,7 @@ func compositeNames(database *goschema.Database) []string {
 	return names
 }
 
-func rangeNames(database *goschema.Database) []string {
+func rangeNames(database *schemamodel.Database) []string {
 	names := make([]string, 0, len(database.Ranges))
 	for _, rangeType := range database.Ranges {
 		names = append(names, rangeType.Name)

@@ -81,7 +81,7 @@ planning, checkpoint generation, and shadow verification. Shadow execution is
 rejected when the shadow catalog produces different equivalence classes.
 
 `CompareWithDatabaseInfo` is safe for offline comparison or when the caller
-already supplies a complete resolved `DBInfo.IdentifierSemantics` snapshot.
+already supplies a complete resolved `catalog.ServerInfo.IdentifierSemantics` snapshot.
 It returns an error when a non-zero snapshot is invalid, does not cover every
 candidate identifier, or reveals a target table, column, or index collision.
 Omitting the snapshot selects conservative dialect-only SQL Server rules.

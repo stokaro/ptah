@@ -11,10 +11,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -85,12 +85,12 @@ func TestOracleTablePrimaryKeyConvergesE2E(t *testing.T) {
 
 // oraclePrimaryKeyDeclaration declares the table with a TABLE-level key, the
 // way an HCL `primary_key` block does.
-func oraclePrimaryKeyDeclaration(table string, keyColumns []string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{
+func oraclePrimaryKeyDeclaration(table string, keyColumns []string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{
 			StructName: "K", Name: table, PrimaryKeyParts: primaryKeyParts(keyColumns),
 		}},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "K", Name: "id", Type: "NUMBER(10)"},
 			{StructName: "K", Name: "code", Type: "VARCHAR2(40)"},
 			// Declared with the scale Oracle does not keep. `NUMBER(8,0)` and
@@ -102,17 +102,17 @@ func oraclePrimaryKeyDeclaration(table string, keyColumns []string) *goschema.Da
 }
 
 // primaryKeyParts spells a column list the way a table-level key carries it.
-func primaryKeyParts(columns []string) []goschema.PrimaryKeyPart {
-	parts := make([]goschema.PrimaryKeyPart, 0, len(columns))
+func primaryKeyParts(columns []string) []schemamodel.PrimaryKeyPart {
+	parts := make([]schemamodel.PrimaryKeyPart, 0, len(columns))
 	for _, column := range columns {
-		parts = append(parts, goschema.PrimaryKeyPart{Name: column})
+		parts = append(parts, schemamodel.PrimaryKeyPart{Name: column})
 	}
 	return parts
 }
 
 // oraclePrimaryKeyConstraintCount counts the PRIMARY KEY rows a read carries
 // for one table.
-func oraclePrimaryKeyConstraintCount(schema *dbschematypes.DBSchema, table string) int {
+func oraclePrimaryKeyConstraintCount(schema *catalog.Database, table string) int {
 	count := 0
 	for _, constraint := range schema.Constraints {
 		if constraint.Type == "PRIMARY KEY" && strings.EqualFold(constraint.TableName, table) {
@@ -123,7 +123,7 @@ func oraclePrimaryKeyConstraintCount(schema *dbschematypes.DBSchema, table strin
 }
 
 // oraclePrimaryKeyColumns names the columns a read marked as the key.
-func oraclePrimaryKeyColumns(schema *dbschematypes.DBSchema, table string) []string {
+func oraclePrimaryKeyColumns(schema *catalog.Database, table string) []string {
 	var columns []string
 	for _, dbTable := range schema.Tables {
 		if !strings.EqualFold(dbTable.Name, table) {

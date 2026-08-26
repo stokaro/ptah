@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashcl"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 )
@@ -254,7 +254,7 @@ func TestRenderInspectedForAtlasCLIOmitsNothingOnSQLite(t *testing.T) {
 func TestRenderInspectedForAtlasCLIKeepsABlockTheDocumentNames(t *testing.T) {
 	tests := []struct {
 		name     string
-		database func() *goschema.Database
+		database func() *schemamodel.Database
 		want     string
 		wantPath string
 	}{
@@ -266,9 +266,9 @@ func TestRenderInspectedForAtlasCLIKeepsABlockTheDocumentNames(t *testing.T) {
 		},
 		{
 			name: "a view body selects from the sequence",
-			database: func() *goschema.Database {
+			database: func() *schemamodel.Database {
 				db := standaloneSequenceDatabase()
-				db.Views = []goschema.View{{
+				db.Views = []schemamodel.View{{
 					Name: "next_order",
 					Body: "SELECT nextval('order_seq') AS n",
 				}}
@@ -279,14 +279,14 @@ func TestRenderInspectedForAtlasCLIKeepsABlockTheDocumentNames(t *testing.T) {
 		},
 		{
 			name: "a permission block targets the sequence",
-			database: func() *goschema.Database {
+			database: func() *schemamodel.Database {
 				db := standaloneSequenceDatabase()
-				db.Roles = []goschema.Role{{Name: "app_reader", Inherit: true}}
+				db.Roles = []schemamodel.Role{{Name: "app_reader", Inherit: true}}
 				// PostgreSQL 17 introspection reports a GRANT on a sequence
 				// with the sequence in OnTable, so the rendered `permission`
 				// block carries a traversal naming it. Omitting the sequence
 				// under it leaves a reference to a block nothing declares.
-				db.Grants = []goschema.Grant{{
+				db.Grants = []schemamodel.Grant{{
 					Role:       "app_reader",
 					OnTable:    "order_seq",
 					Privileges: []string{"USAGE"},
@@ -303,10 +303,10 @@ func TestRenderInspectedForAtlasCLIKeepsABlockTheDocumentNames(t *testing.T) {
 			// The two rows below separate the label from what the extension
 			// supplies, which is what this rule actually has to get right.
 			name: "a column type is the type the extension supplies",
-			database: func() *goschema.Database {
+			database: func() *schemamodel.Database {
 				db := standaloneSequenceDatabase()
-				db.Extensions = []goschema.Extension{{Name: "citext", Provides: []string{"citext"}}}
-				db.Fields = append(db.Fields, goschema.Field{
+				db.Extensions = []schemamodel.Extension{{Name: "citext", Provides: []string{"citext"}}}
+				db.Fields = append(db.Fields, schemamodel.Field{
 					StructName: "Order", Name: "label", Type: "citext",
 				})
 				return db
@@ -322,13 +322,13 @@ func TestRenderInspectedForAtlasCLIKeepsABlockTheDocumentNames(t *testing.T) {
 			// could then read the result -- `type "isbn" does not exist`, exit 1
 			// from both -- so the omission was not even a compatibility win.
 			name: "a column type is supplied by an extension spelled differently",
-			database: func() *goschema.Database {
+			database: func() *schemamodel.Database {
 				db := standaloneSequenceDatabase()
-				db.Extensions = []goschema.Extension{{
+				db.Extensions = []schemamodel.Extension{{
 					Name:     "isn",
 					Provides: []string{"ean13", "isbn", "isbn13", "issn", "upc"},
 				}}
-				db.Fields = append(db.Fields, goschema.Field{
+				db.Fields = append(db.Fields, schemamodel.Field{
 					StructName: "Order", Name: "code", Type: "isbn",
 				})
 				return db
@@ -342,13 +342,13 @@ func TestRenderInspectedForAtlasCLIKeepsABlockTheDocumentNames(t *testing.T) {
 			// gen_salt is pgcrypto's and has no core equivalent, so a document
 			// that drops the extension stops resolving.
 			name: "a column default calls a function the extension supplies",
-			database: func() *goschema.Database {
+			database: func() *schemamodel.Database {
 				db := standaloneSequenceDatabase()
-				db.Extensions = []goschema.Extension{{
+				db.Extensions = []schemamodel.Extension{{
 					Name:     "pgcrypto",
 					Provides: []string{"crypt", "digest", "gen_salt", "hmac"},
 				}}
-				db.Fields = append(db.Fields, goschema.Field{
+				db.Fields = append(db.Fields, schemamodel.Field{
 					StructName: "Order", Name: "salt", Type: "text",
 					DefaultExpr: "gen_salt('bf'::text)",
 				})
@@ -408,11 +408,11 @@ func TestRenderInspectedForAtlasCLIOmitsAnExtensionNothingDependsOn(t *testing.T
 	c := qt.New(t)
 
 	db := standaloneSequenceDatabase()
-	db.Extensions = []goschema.Extension{{
+	db.Extensions = []schemamodel.Extension{{
 		Name:     "isn",
 		Provides: []string{"ean13", "isbn", "isbn13", "issn", "upc"},
 	}}
-	db.Fields = append(db.Fields, goschema.Field{
+	db.Fields = append(db.Fields, schemamodel.Field{
 		StructName: "Order", Name: "label", Type: "text",
 	})
 
@@ -458,7 +458,7 @@ func TestRenderInspectedForAtlasCLIOmitsAnExtensionNothingDependsOn(t *testing.T
 func TestRenderInspectedForAtlasCLIKeepsAnExtensionOnlyTheCatalogNames(t *testing.T) {
 	tests := []struct {
 		name     string
-		database func() *goschema.Database
+		database func() *schemamodel.Database
 		want     string
 		wantPath string
 	}{
@@ -522,7 +522,7 @@ func TestRenderInspectedForAtlasCLIKeepsAnExtensionOnlyTheCatalogNames(t *testin
 func TestRenderInspectedForAtlasCLIReportsAPrintedOperatorClassAsAName(t *testing.T) {
 	tests := []struct {
 		name      string
-		database  func() *goschema.Database
+		database  func() *schemamodel.Database
 		wantSpelt string
 	}{
 		{
@@ -629,7 +629,7 @@ func TestRenderInspectedForAtlasCLIOmitsAnExtensionNoIndexResolvesTo(t *testing.
 func TestRenderInspectedForAtlasCLIOmitsAnExtensionOnlyAnOrphanObjectResolvesTo(t *testing.T) {
 	tests := []struct {
 		name       string
-		database   func() *goschema.Database
+		database   func() *schemamodel.Database
 		block      string
 		blockPath  string
 		absentName string
@@ -689,7 +689,7 @@ func TestRenderInspectedForAtlasCLIOmitsAnExtensionOnlyAnOrphanObjectResolvesTo(
 func TestRenderInspectedForAtlasCLIOutputIsSelfConsistent(t *testing.T) {
 	tests := []struct {
 		name     string
-		database func() *goschema.Database
+		database func() *schemamodel.Database
 	}{
 		{name: "one object of every construct", database: inspectedRichDatabase},
 		{name: "a sequence behind a column default", database: sequenceBackedDefaultDatabase},
@@ -762,12 +762,12 @@ func nextvalSequenceNames(expr string) []string {
 
 // sequenceBackedDefaultDatabase is the shape that forced the reference rule:
 // a sequence, and a column whose default calls it.
-func sequenceBackedDefaultDatabase() *goschema.Database {
+func sequenceBackedDefaultDatabase() *schemamodel.Database {
 	start := int64(1)
-	return &goschema.Database{
-		Sequences: []goschema.Sequence{{Name: "order_seq", AsType: "bigint", Start: &start}},
-		Tables:    []goschema.Table{{StructName: "Order", Name: "orders", Schema: "public"}},
-		Fields: []goschema.Field{{
+	return &schemamodel.Database{
+		Sequences: []schemamodel.Sequence{{Name: "order_seq", AsType: "bigint", Start: &start}},
+		Tables:    []schemamodel.Table{{StructName: "Order", Name: "orders", Schema: "public"}},
+		Fields: []schemamodel.Field{{
 			StructName:  "Order",
 			Name:        "id",
 			Type:        "integer",
@@ -778,7 +778,7 @@ func sequenceBackedDefaultDatabase() *goschema.Database {
 
 // standaloneSequenceDatabase is the same database with the reference removed,
 // so a test can vary exactly one operand against sequenceBackedDefaultDatabase.
-func standaloneSequenceDatabase() *goschema.Database {
+func standaloneSequenceDatabase() *schemamodel.Database {
 	db := sequenceBackedDefaultDatabase()
 	db.Fields[0].DefaultExpr = ""
 	return db
@@ -793,18 +793,18 @@ func standaloneSequenceDatabase() *goschema.Database {
 // already removed the operator classes, whose names -- int4_ops and its 28
 // siblings -- pg_catalog also supplies. So no document can name anything here,
 // which is what makes the name scan the wrong instrument for this dependency.
-func implicitOpclassIndexDatabase() *goschema.Database {
-	return &goschema.Database{
-		Extensions: []goschema.Extension{{
+func implicitOpclassIndexDatabase() *schemamodel.Database {
+	return &schemamodel.Database{
+		Extensions: []schemamodel.Extension{{
 			Name:     "btree_gin",
 			Provides: []string{"gin_btree_consistent", "gin_extract_query_int4", "gin_extract_value_int4"},
 		}},
-		Tables: []goschema.Table{{StructName: "T", Name: "t", Schema: "public"}},
-		Fields: []goschema.Field{
+		Tables: []schemamodel.Table{{StructName: "T", Name: "t", Schema: "public"}},
+		Fields: []schemamodel.Field{
 			{StructName: "T", Name: "id", Type: "integer", Primary: true},
 			{StructName: "T", Name: "n", Type: "integer"},
 		},
-		Indexes: []goschema.Index{{
+		Indexes: []schemamodel.Index{{
 			StructName:         "T",
 			Name:               "t_gin",
 			Fields:             []string{"n"},
@@ -818,19 +818,19 @@ func implicitOpclassIndexDatabase() *goschema.Database {
 // exclusion constraint: `EXCLUDE USING gist (room WITH =, during WITH &&)` over
 // an integer column, which needs btree_gist for the integer half and prints
 // only the operator.
-func implicitOpclassConstraintDatabase() *goschema.Database {
-	return &goschema.Database{
-		Extensions: []goschema.Extension{{
+func implicitOpclassConstraintDatabase() *schemamodel.Database {
+	return &schemamodel.Database{
+		Extensions: []schemamodel.Extension{{
 			Name:     "btree_gist",
 			Provides: []string{"gbt_int4_compress", "gbt_int4_consistent", "gbtreekey8"},
 		}},
-		Tables: []goschema.Table{{StructName: "Booking", Name: "booking", Schema: "public"}},
-		Fields: []goschema.Field{
+		Tables: []schemamodel.Table{{StructName: "Booking", Name: "booking", Schema: "public"}},
+		Fields: []schemamodel.Field{
 			{StructName: "Booking", Name: "id", Type: "integer", Primary: true},
 			{StructName: "Booking", Name: "room", Type: "integer"},
 			{StructName: "Booking", Name: "during", Type: "tsrange"},
 		},
-		Constraints: []goschema.Constraint{{
+		Constraints: []schemamodel.Constraint{{
 			StructName:         "Booking",
 			Name:               "booking_room_during_excl",
 			Type:               "EXCLUDE",
@@ -854,22 +854,22 @@ func implicitOpclassConstraintDatabase() *goschema.Database {
 // RequiresExtensions is set as well, because the reader records the edge whether
 // or not the class is printed. Both answers are therefore available for this
 // fixture, which is exactly what makes it the test of which one is reported.
-func printedOpclassIndexDatabase() *goschema.Database {
-	return &goschema.Database{
-		Extensions: []goschema.Extension{{
+func printedOpclassIndexDatabase() *schemamodel.Database {
+	return &schemamodel.Database{
+		Extensions: []schemamodel.Extension{{
 			Name:     "pg_trgm",
 			Provides: []string{"gin_trgm_ops", "gist_trgm_ops", "gtrgm", "show_trgm", "similarity"},
 		}},
-		Tables: []goschema.Table{{StructName: "W", Name: "w", Schema: "public"}},
-		Fields: []goschema.Field{
+		Tables: []schemamodel.Table{{StructName: "W", Name: "w", Schema: "public"}},
+		Fields: []schemamodel.Field{
 			{StructName: "W", Name: "id", Type: "integer", Primary: true},
 			{StructName: "W", Name: "txt", Type: "text"},
 		},
-		Indexes: []goschema.Index{{
+		Indexes: []schemamodel.Index{{
 			StructName:         "W",
 			Name:               "w_trgm",
 			Type:               "gin",
-			Parts:              []goschema.IndexPart{{Name: "txt", Operator: "gin_trgm_ops"}},
+			Parts:              []schemamodel.IndexPart{{Name: "txt", Operator: "gin_trgm_ops"}},
 			RequiresExtensions: []string{"pg_trgm"},
 		}},
 	}
@@ -879,18 +879,18 @@ func printedOpclassIndexDatabase() *goschema.Database {
 // `EXCLUDE USING gist (txt gist_trgm_ops WITH =)`, which pg_get_constraintdef
 // prints with the class because gist_trgm_ops is not the default gist class for
 // text either. The class lands in the rendered `elements` string.
-func printedOpclassConstraintDatabase() *goschema.Database {
-	return &goschema.Database{
-		Extensions: []goschema.Extension{{
+func printedOpclassConstraintDatabase() *schemamodel.Database {
+	return &schemamodel.Database{
+		Extensions: []schemamodel.Extension{{
 			Name:     "pg_trgm",
 			Provides: []string{"gin_trgm_ops", "gist_trgm_ops", "gtrgm", "show_trgm", "similarity"},
 		}},
-		Tables: []goschema.Table{{StructName: "Y", Name: "y", Schema: "public"}},
-		Fields: []goschema.Field{
+		Tables: []schemamodel.Table{{StructName: "Y", Name: "y", Schema: "public"}},
+		Fields: []schemamodel.Field{
 			{StructName: "Y", Name: "id", Type: "integer", Primary: true},
 			{StructName: "Y", Name: "txt", Type: "text"},
 		},
-		Constraints: []goschema.Constraint{{
+		Constraints: []schemamodel.Constraint{{
 			StructName:         "Y",
 			Name:               "y_txt_excl",
 			Type:               "EXCLUDE",
@@ -911,23 +911,23 @@ func printedOpclassConstraintDatabase() *goschema.Database {
 // do is reach the document, because a `materialized` block carries no index and
 // the view is not a table: renderTables finds nothing to write the index into
 // and reports it as an orphan.
-func orphanOpclassIndexDatabase() *goschema.Database {
-	return &goschema.Database{
-		Extensions: []goschema.Extension{{
+func orphanOpclassIndexDatabase() *schemamodel.Database {
+	return &schemamodel.Database{
+		Extensions: []schemamodel.Extension{{
 			Name:     "btree_gin",
 			Provides: []string{"gin_btree_consistent", "gin_extract_query_int4", "gin_extract_value_int4"},
 		}},
-		Tables: []goschema.Table{{StructName: "Src", Name: "src", Schema: "public"}},
-		Fields: []goschema.Field{
+		Tables: []schemamodel.Table{{StructName: "Src", Name: "src", Schema: "public"}},
+		Fields: []schemamodel.Field{
 			{StructName: "Src", Name: "id", Type: "integer", Primary: true},
 			{StructName: "Src", Name: "n", Type: "integer"},
 		},
-		MaterializedViews: []goschema.MaterializedView{{
+		MaterializedViews: []schemamodel.MaterializedView{{
 			StructName: "Mv",
 			Name:       "mv",
 			Body:       "SELECT id, n FROM src",
 		}},
-		Indexes: []goschema.Index{{
+		Indexes: []schemamodel.Index{{
 			StructName:         "Mv",
 			Name:               "mv_gin",
 			TableName:          "public.mv",
@@ -947,10 +947,10 @@ func orphanOpclassIndexDatabase() *goschema.Database {
 // arm goes through, which is the point of the row: the collector and
 // renderTables have to agree for both object kinds, and an arm with no test is
 // where the next divergence lands.
-func orphanOpclassConstraintDatabase() *goschema.Database {
+func orphanOpclassConstraintDatabase() *schemamodel.Database {
 	db := implicitOpclassConstraintDatabase()
-	db.Tables = []goschema.Table{{StructName: "Src", Name: "src", Schema: "public"}}
-	db.Fields = []goschema.Field{
+	db.Tables = []schemamodel.Table{{StructName: "Src", Name: "src", Schema: "public"}}
+	db.Fields = []schemamodel.Field{
 		{StructName: "Src", Name: "id", Type: "integer", Primary: true},
 	}
 	db.Constraints[0].Table = "public.booking"
@@ -964,22 +964,22 @@ func orphanOpclassConstraintDatabase() *goschema.Database {
 // Nothing in it names the extension, the sequence or the policy, which is what
 // makes it the fixture for the omission tests: those three go because they are
 // unreferenced, not because of their block type alone.
-func inspectedRichDatabase() *goschema.Database {
+func inspectedRichDatabase() *schemamodel.Database {
 	start := int64(1)
-	return &goschema.Database{
-		Extensions: []goschema.Extension{{Name: "pgcrypto", Version: "1.3"}},
-		Sequences:  []goschema.Sequence{{Name: "order_seq", AsType: "bigint", Start: &start}},
-		Domains:    []goschema.Domain{{Name: "positive", BaseType: "integer"}},
-		CompositeTypes: []goschema.CompositeType{{
+	return &schemamodel.Database{
+		Extensions: []schemamodel.Extension{{Name: "pgcrypto", Version: "1.3"}},
+		Sequences:  []schemamodel.Sequence{{Name: "order_seq", AsType: "bigint", Start: &start}},
+		Domains:    []schemamodel.Domain{{Name: "positive", BaseType: "integer"}},
+		CompositeTypes: []schemamodel.CompositeType{{
 			Name:   "pair",
-			Fields: []goschema.CompositeTypeField{{Name: "a", Type: "integer"}},
+			Fields: []schemamodel.CompositeField{{Name: "a", Type: "integer"}},
 		}},
-		Ranges: []goschema.Range{{Name: "intrange", Subtype: "integer"}},
-		Enums:  []goschema.Enum{{Name: "status", Values: []string{"active", "inactive"}}},
-		Roles:  []goschema.Role{{Name: "app_reader", Inherit: true}},
-		Tables: []goschema.Table{{StructName: "Account", Name: "accounts", Schema: "public"}},
-		Fields: []goschema.Field{{StructName: "Account", Name: "id", Type: "bigint"}},
-		Functions: []goschema.Function{{
+		Ranges: []schemamodel.Range{{Name: "intrange", Subtype: "integer"}},
+		Enums:  []schemamodel.Enum{{Name: "status", Values: []string{"active", "inactive"}}},
+		Roles:  []schemamodel.Role{{Name: "app_reader", Inherit: true}},
+		Tables: []schemamodel.Table{{StructName: "Account", Name: "accounts", Schema: "public"}},
+		Fields: []schemamodel.Field{{StructName: "Account", Name: "id", Type: "bigint"}},
+		Functions: []schemamodel.Function{{
 			Name:     "touch_accounts",
 			Language: "plpgsql",
 			Returns:  "trigger",
@@ -988,32 +988,32 @@ func inspectedRichDatabase() *goschema.Database {
 			// A procedure, so that the block the native surface owes its
 			// reader is one this fixture actually produces (stokaro/ptah#2209).
 			Name:     "reap_accounts",
-			Kind:     goschema.FunctionKindProcedure,
+			Kind:     schemamodel.FunctionKindProcedure,
 			Language: "plpgsql",
 			Body:     "BEGIN END;",
 		}},
-		Views:             []goschema.View{{Name: "active_accounts", Body: "SELECT id FROM accounts"}},
-		MaterializedViews: []goschema.MaterializedView{{Name: "account_counts", Body: "SELECT id FROM accounts"}},
-		Triggers: []goschema.Trigger{{
+		Views:             []schemamodel.View{{Name: "active_accounts", Body: "SELECT id FROM accounts"}},
+		MaterializedViews: []schemamodel.MaterializedView{{Name: "account_counts", Body: "SELECT id FROM accounts"}},
+		Triggers: []schemamodel.Trigger{{
 			Name:   "accounts_touch",
 			Table:  "accounts",
 			Timing: "BEFORE",
 			Event:  "UPDATE",
 			Body:   "BEGIN RETURN NEW; END;",
 		}},
-		RLSEnabledTables: []goschema.RLSEnabledTable{{Table: "accounts"}},
-		RLSPolicies: []goschema.RLSPolicy{{
+		RLSEnabledTables: []schemamodel.RLSEnabledTable{{Table: "accounts"}},
+		RLSPolicies: []schemamodel.RLSPolicy{{
 			Name:            "accounts_all",
 			Table:           "accounts",
 			PolicyFor:       "ALL",
 			UsingExpression: "true",
 		}},
-		Grants: []goschema.Grant{{
+		Grants: []schemamodel.Grant{{
 			Role:       "app_reader",
 			OnTable:    "accounts",
 			Privileges: []string{"SELECT"},
 		}},
-		ManagedData: []goschema.ManagedData{{Table: "accounts", Keys: []string{"id"}, File: "accounts.csv"}},
+		ManagedData: []schemamodel.ManagedData{{Table: "accounts", Keys: []string{"id"}, File: "accounts.csv"}},
 	}
 }
 

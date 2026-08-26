@@ -5,10 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestCompareWithDialect_PartitionAttachedIndexIsNeverPlanned pins the object a
@@ -42,28 +42,28 @@ import (
 //
 // The attachment is the fact; the name is a coincidence in both directions.
 func TestCompareWithDialect_PartitionAttachedIndexIsNeverPlanned(t *testing.T) {
-	partitionTables := []types.DBTable{
+	partitionTables := []catalog.Table{
 		{Name: "events", Type: "TABLE", Partitioned: true},
 		{Name: "events_2026", Type: "TABLE"},
 	}
-	parentDeclaration := &goschema.Database{
-		Tables: []goschema.Table{
+	parentDeclaration := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: "events", StructName: "Event"},
 			{Name: "events_2026", StructName: "Event2026"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Event", Name: "tenant", Type: "TEXT"},
 			{StructName: "Event2026", Name: "tenant", Type: "TEXT"},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{Name: "idx_events_tenant", StructName: "Event", Fields: []string{"tenant"}},
 		},
 	}
 
 	tests := []struct {
-		name      string
-		generated *goschema.Database
-		database  *types.DBSchema
+		name    string
+		desired *schemamodel.Database
+		current *catalog.Database
 		// wantRemovals and wantAdditions are the whole plan for indexes, so a
 		// row that stops dropping one index cannot pass by staying silent about
 		// the others. Every row states both, including the rows that first
@@ -72,11 +72,11 @@ func TestCompareWithDialect_PartitionAttachedIndexIsNeverPlanned(t *testing.T) {
 		wantAdditions []difftypes.IndexRef
 	}{
 		{
-			name:      "the partition copy of a declared parent index is not dropped",
-			generated: parentDeclaration,
-			database: &types.DBSchema{
+			name:    "the partition copy of a declared parent index is not dropped",
+			desired: parentDeclaration,
+			current: &catalog.Database{
 				Tables: partitionTables,
-				Indexes: []types.DBIndex{
+				Indexes: []catalog.Index{
 					{
 						Name:      "idx_events_tenant",
 						TableName: "events",
@@ -92,11 +92,11 @@ func TestCompareWithDialect_PartitionAttachedIndexIsNeverPlanned(t *testing.T) {
 			},
 		},
 		{
-			name:      "an index created on the partition itself is still dropped",
-			generated: parentDeclaration,
-			database: &types.DBSchema{
+			name:    "an index created on the partition itself is still dropped",
+			desired: parentDeclaration,
+			current: &catalog.Database{
 				Tables: partitionTables,
-				Indexes: []types.DBIndex{
+				Indexes: []catalog.Index{
 					{
 						Name:      "idx_events_tenant",
 						TableName: "events",
@@ -120,11 +120,11 @@ func TestCompareWithDialect_PartitionAttachedIndexIsNeverPlanned(t *testing.T) {
 			},
 		},
 		{
-			name:      "a standalone partition index named like a copy is still dropped",
-			generated: parentDeclaration,
-			database: &types.DBSchema{
+			name:    "a standalone partition index named like a copy is still dropped",
+			desired: parentDeclaration,
+			current: &catalog.Database{
 				Tables: partitionTables,
-				Indexes: []types.DBIndex{
+				Indexes: []catalog.Index{
 					{
 						Name:      "idx_events_tenant",
 						TableName: "events",
@@ -142,11 +142,11 @@ func TestCompareWithDialect_PartitionAttachedIndexIsNeverPlanned(t *testing.T) {
 			},
 		},
 		{
-			name:      "a copy attached under a name of its own is not dropped",
-			generated: parentDeclaration,
-			database: &types.DBSchema{
+			name:    "a copy attached under a name of its own is not dropped",
+			desired: parentDeclaration,
+			current: &catalog.Database{
 				Tables: partitionTables,
-				Indexes: []types.DBIndex{
+				Indexes: []catalog.Index{
 					{
 						Name:      "idx_events_tenant",
 						TableName: "events",
@@ -163,24 +163,24 @@ func TestCompareWithDialect_PartitionAttachedIndexIsNeverPlanned(t *testing.T) {
 		},
 		{
 			name: "a declared index that the database reports as a partition copy is not replaced",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{Name: "events", StructName: "Event"},
 					{Name: "events_2026", StructName: "Event2026"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{StructName: "Event", Name: "tenant", Type: "TEXT"},
 					{StructName: "Event2026", Name: "tenant", Type: "TEXT"},
 					{StructName: "Event2026", Name: "id", Type: "BIGINT"},
 				},
-				Indexes: []goschema.Index{
+				Indexes: []schemamodel.Index{
 					{Name: "idx_events_tenant", StructName: "Event", Fields: []string{"tenant"}},
 					{Name: "events_2026_tenant_idx", StructName: "Event2026", Fields: []string{"id"}},
 				},
 			},
-			database: &types.DBSchema{
+			current: &catalog.Database{
 				Tables: partitionTables,
-				Indexes: []types.DBIndex{
+				Indexes: []catalog.Index{
 					{
 						Name:      "idx_events_tenant",
 						TableName: "events",
@@ -196,14 +196,14 @@ func TestCompareWithDialect_PartitionAttachedIndexIsNeverPlanned(t *testing.T) {
 			},
 		},
 		{
-			name:      "control: an ordinary undeclared index on an ordinary table is dropped",
-			generated: parentDeclaration,
-			database: &types.DBSchema{
+			name:    "control: an ordinary undeclared index on an ordinary table is dropped",
+			desired: parentDeclaration,
+			current: &catalog.Database{
 				Tables: append(
-					[]types.DBTable{{Name: "members", Type: "TABLE"}},
+					[]catalog.Table{{Name: "members", Type: "TABLE"}},
 					partitionTables...,
 				),
-				Indexes: []types.DBIndex{
+				Indexes: []catalog.Index{
 					{
 						Name:      "idx_events_tenant",
 						TableName: "events",
@@ -226,7 +226,7 @@ func TestCompareWithDialect_PartitionAttachedIndexIsNeverPlanned(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := schemadiff.CompareWithDialect(test.generated, test.database, "postgres")
+			diff := schemadiff.CompareWithDialect(test.desired, test.current, "postgres")
 
 			c.Assert(diff.IndexRemovals(), qt.DeepEquals, test.wantRemovals)
 			c.Assert(diff.IndexAdditions(), qt.DeepEquals, test.wantAdditions)

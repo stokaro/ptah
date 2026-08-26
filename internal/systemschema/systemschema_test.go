@@ -6,9 +6,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/systemschema"
 )
 
@@ -132,7 +132,7 @@ func TestValidateDeclaredPostgresSystemSchemasRefusesServerNamespaces(t *testing
 			c := qt.New(t)
 			err := systemschema.ValidateDeclaredPostgresSystemSchemas(
 				test.dialect,
-				[]goschema.Schema{{Name: test.schema}},
+				[]schemamodel.Schema{{Name: test.schema}},
 			)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 			c.Assert(err, qt.ErrorMatches,
@@ -158,7 +158,7 @@ func TestValidateDeclaredPostgresSystemSchemasKeepsUserNamespaces(t *testing.T) 
 			c := qt.New(t)
 			err := systemschema.ValidateDeclaredPostgresSystemSchemas(
 				test.dialect,
-				[]goschema.Schema{{Name: test.schema}},
+				[]schemamodel.Schema{{Name: test.schema}},
 			)
 			c.Assert(err, qt.IsNil)
 		})

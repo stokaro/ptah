@@ -10,9 +10,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
@@ -85,16 +85,16 @@ func TestReverseRecreatedTable_DropTableRollbackApplies_Integration(t *testing.T
 		qt.Commentf("down SQL:\n%s", downSQL))
 }
 
-func rrtTargetSchema() *goschema.Database {
+func rrtTargetSchema() *schemamodel.Database {
 	schema := rrtBaseSchema()
-	goschema.Finalize(schema)
+	schemamodel.Finalize(schema)
 	return schema
 }
 
-func rrtBaseSchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "RrtWidget", Name: rrtWidgets}},
-		Fields: []goschema.Field{
+func rrtBaseSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "RrtWidget", Name: rrtWidgets}},
+		Fields: []schemamodel.Field{
 			{StructName: "RrtWidget", Name: "id", Type: "BIGINT", Primary: true},
 		},
 	}
@@ -104,30 +104,30 @@ func rrtBaseSchema() *goschema.Database {
 // table carries one constraint of each kind the reverse has to decide about: a
 // primary key and a single-column foreign key, which its own CREATE TABLE
 // restores, and a CHECK, which nothing but an ALTER can restore.
-func rrtPriorSchema() *goschema.Database {
+func rrtPriorSchema() *schemamodel.Database {
 	schema := rrtBaseSchema()
-	schema.Tables = append(schema.Tables, goschema.Table{StructName: "RrtGadget", Name: rrtGadgets})
+	schema.Tables = append(schema.Tables, schemamodel.Table{StructName: "RrtGadget", Name: rrtGadgets})
 	schema.Fields = append(schema.Fields,
-		goschema.Field{StructName: "RrtGadget", Name: "id", Type: "BIGINT", Primary: true},
-		goschema.Field{StructName: "RrtGadget", Name: "qty", Type: "BIGINT"},
-		goschema.Field{
+		schemamodel.Field{StructName: "RrtGadget", Name: "id", Type: "BIGINT", Primary: true},
+		schemamodel.Field{StructName: "RrtGadget", Name: "qty", Type: "BIGINT"},
+		schemamodel.Field{
 			StructName: "RrtGadget", Name: "widget_id", Type: "BIGINT", Nullable: true,
 			Foreign: rrtWidgets + "(id)", ForeignKeyName: "ptah_rrt_gadget_widget_fk",
 		},
 	)
-	schema.Constraints = []goschema.Constraint{{
+	schema.Constraints = []schemamodel.Constraint{{
 		StructName:      "RrtGadget",
 		Table:           rrtGadgets,
 		Name:            "ptah_rrt_gadget_qty_ck",
 		Type:            "CHECK",
 		CheckExpression: "qty > 0",
 	}}
-	goschema.Finalize(schema)
+	schemamodel.Finalize(schema)
 	return schema
 }
 
 // rrtHasTable reports whether the dropped table is present in the catalog.
-func rrtHasTable(db *dbschematypes.DBSchema) bool {
+func rrtHasTable(db *catalog.Database) bool {
 	for _, table := range db.Tables {
 		if table.Name == rrtGadgets {
 			return true
@@ -146,7 +146,7 @@ func rrtHasTable(db *dbschematypes.DBSchema) bool {
 // anybody declared — the server synthesizes one per non-null column and names
 // it after the table's OID, so a table that is dropped and re-created gets a
 // new OID and new names for constraints whose meaning never changed.
-func rrtCatalog(db *dbschematypes.DBSchema) []string {
+func rrtCatalog(db *catalog.Database) []string {
 	var lines []string
 	for _, constraint := range db.Constraints {
 		if constraint.TableName != rrtGadgets || rrtSyntheticNotNull(constraint) {
@@ -161,7 +161,7 @@ func rrtCatalog(db *dbschematypes.DBSchema) []string {
 
 // rrtSyntheticNotNull reports the server-generated per-column NOT NULL check,
 // under the same rule the schema converter applies to it.
-func rrtSyntheticNotNull(constraint dbschematypes.DBConstraint) bool {
+func rrtSyntheticNotNull(constraint catalog.Constraint) bool {
 	if constraint.CheckClause == nil || !strings.HasSuffix(constraint.Name, "_not_null") {
 		return false
 	}

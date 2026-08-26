@@ -5,24 +5,24 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 )
 
 // uniqueSchema is one table with one single-column UNIQUE constraint under the
 // given name, and the column marked unique the way a reader marks it.
-func uniqueSchema(constraintName string) *types.DBSchema {
-	return &types.DBSchema{
-		Tables: []types.DBTable{{
+func uniqueSchema(constraintName string) *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{{
 			Name: "customers",
 			Type: "BASE TABLE",
-			Columns: []types.DBColumn{
+			Columns: []catalog.Column{
 				{Name: "id", DataType: "bigint", IsNullable: "NO", IsPrimaryKey: true},
 				{Name: "email", DataType: "character varying", IsNullable: "NO", IsUnique: true},
 			},
 		}},
-		Constraints: []types.DBConstraint{{
+		Constraints: []catalog.Constraint{{
 			TableName:   "customers",
 			Name:        constraintName,
 			Type:        "UNIQUE",
@@ -32,7 +32,7 @@ func uniqueSchema(constraintName string) *types.DBSchema {
 }
 
 // emailField returns the converted column the constraint is about.
-func emailField(c *qt.C, database *goschema.Database) goschema.Field {
+func emailField(c *qt.C, database *schemamodel.Database) schemamodel.Field {
 	c.Helper()
 	for _, field := range database.Fields {
 		if field.Name == "email" {
@@ -40,7 +40,7 @@ func emailField(c *qt.C, database *goschema.Database) goschema.Field {
 		}
 	}
 	c.Fatalf("no email field in %+v", database.Fields)
-	return goschema.Field{}
+	return schemamodel.Field{}
 }
 
 // TestConvert_KeepsAUniqueConstraintNameSomebodyChose pins that a name survives
@@ -56,7 +56,7 @@ func emailField(c *qt.C, database *goschema.Database) goschema.Field {
 func TestConvert_KeepsAUniqueConstraintNameSomebodyChose(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(uniqueSchema("customers_email_uq"))
+	database := dbschematogo.ConvertCatalogToSchema(uniqueSchema("customers_email_uq"))
 
 	c.Assert(database.Constraints, qt.HasLen, 1)
 	c.Assert(database.Constraints[0].Name, qt.Equals, "customers_email_uq")
@@ -85,7 +85,7 @@ func TestConvert_LeavesAGeneratedUniqueNameToTheColumn(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			database := dbschematogo.ConvertDBSchemaToGoSchema(uniqueSchema(tt.constraintName))
+			database := dbschematogo.ConvertCatalogToSchema(uniqueSchema(tt.constraintName))
 
 			c.Assert(database.Constraints, qt.HasLen, 0)
 			c.Assert(emailField(c, database).Unique, qt.IsTrue)

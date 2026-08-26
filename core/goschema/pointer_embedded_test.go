@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 func TestParseFile_PointerEmbeddedFields(t *testing.T) {
@@ -78,8 +78,8 @@ type RegularPost struct {
 	c.Assert(database.EmbeddedFields, qt.HasLen, 4)
 
 	// Check that pointer embedded fields are parsed correctly
-	var blogPostEmbedded []goschema.EmbeddedField
-	var regularPostEmbedded []goschema.EmbeddedField
+	var blogPostEmbedded []schemamodel.EmbeddedField
+	var regularPostEmbedded []schemamodel.EmbeddedField
 
 	for _, embedded := range database.EmbeddedFields {
 		switch embedded.StructName {

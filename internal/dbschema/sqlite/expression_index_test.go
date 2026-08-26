@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/internal/dbschema/sqlite"
 )
 
@@ -25,26 +25,26 @@ func TestReader_RecordsAnExpressionKeyAsAnExpression(t *testing.T) {
 	tests := []struct {
 		name  string
 		ddl   string
-		parts []dbschematypes.DBIndexPart
+		parts []catalog.IndexPart
 	}{
 		{
 			name:  "one expression",
 			ddl:   `CREATE INDEX accounts_lower_email_idx ON accounts (lower(email))`,
-			parts: []dbschematypes.DBIndexPart{{Expr: "lower(email)"}},
+			parts: []catalog.IndexPart{{Expr: "lower(email)"}},
 		},
 		{
 			// The control: a plain key keeps the column representation, so the
 			// document keeps its compact `columns = [...]` spelling.
 			name:  "one column",
 			ddl:   `CREATE INDEX accounts_email_idx ON accounts (email)`,
-			parts: []dbschematypes.DBIndexPart{{Name: "email"}},
+			parts: []catalog.IndexPart{{Name: "email"}},
 		},
 		{
 			// Key order has to survive, and the two kinds have to keep their
 			// positions within it.
 			name: "a column and an expression together",
 			ddl:  `CREATE INDEX accounts_mixed_idx ON accounts (status, lower(email))`,
-			parts: []dbschematypes.DBIndexPart{
+			parts: []catalog.IndexPart{
 				{Name: "status"},
 				{Expr: "lower(email)"},
 			},

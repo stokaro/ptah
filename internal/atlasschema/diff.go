@@ -7,11 +7,11 @@ import (
 	"io/fs"
 	"time"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/atlassource"
@@ -25,7 +25,7 @@ import (
 	"go.5x5.cz/ptah/internal/systemschema"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 type DiffOptions struct {
@@ -66,10 +66,10 @@ type DiffOptions struct {
 	IgnoreUnknownHCLNames bool
 	// ValidateSchema applies a caller-selected policy to both fully resolved
 	// authored states before comparison. Nil accepts every modeled object.
-	ValidateSchema func(*goschema.Database) error
+	ValidateSchema func(*schemamodel.Database) error
 	// ValidateInspectedSchema replaces ValidateSchema for live database and
 	// replayed migration-directory states.
-	ValidateInspectedSchema func(*goschema.Database) error
+	ValidateInspectedSchema func(*schemamodel.Database) error
 	// ValidateLiveObject applies a caller-selected policy to supplemental
 	// catalog objects in live database and replayed migration-directory sources.
 	// Nil performs no supplemental catalog reads.
@@ -412,8 +412,8 @@ func prepareDiffSources(opts DiffOptions) (preparedDiffSources, error) {
 }
 
 type scopedDiffState struct {
-	schema       *goschema.Database
-	database     *types.DBSchema
+	schema       *schemamodel.Database
+	database     *catalog.Database
 	report       atlasfilter.ExcludeReport
 	selection    atlasfilter.SelectionReport
 	selectionErr error
@@ -455,14 +455,14 @@ func scopeDiffState(
 	side,
 	dialect string,
 ) scopedDiffState {
-	generated, generatedReports, generatedErr := scopeGeneratedSide(state.Schema, scope, side)
+	desired, generatedReports, generatedErr := scopeGeneratedSide(state.Schema, scope, side)
 	if generatedErr != nil && !emptySelection(generatedErr) {
 		return scopedDiffState{report: generatedReports.Exclude, err: generatedErr}
 	}
 	if state.DB == nil {
 		return scopedDiffState{
-			schema:       generated,
-			database:     goschematodb.ToDBSchema(generated, dialect),
+			schema:       desired,
+			database:     goschematodb.ToCatalog(desired, dialect),
 			report:       generatedReports.Exclude,
 			selection:    generatedReports.Selection,
 			selectionErr: generatedErr,
@@ -475,7 +475,7 @@ func scopeDiffState(
 	}
 	if !scope.Positive() {
 		return scopedDiffState{
-			schema:       generated,
+			schema:       desired,
 			database:     filteredDatabase,
 			report:       databaseReports.Exclude,
 			selection:    databaseReports.Selection,
@@ -487,11 +487,11 @@ func scopeDiffState(
 	// conversion. Positive matches need no catalog compensation because every
 	// independently selectable identity survives conversion.
 	if emptySelection(databaseErr) {
-		generated = dbschematogo.ConvertDBSchemaToGoSchema(filteredDatabase)
+		desired = dbschematogo.ConvertCatalogToSchema(filteredDatabase)
 	}
 
 	return scopedDiffState{
-		schema:       generated,
+		schema:       desired,
 		database:     filteredDatabase,
 		report:       databaseReports.Exclude,
 		selection:    databaseReports.Selection,
@@ -535,7 +535,7 @@ func diffPatternScope(dialect string, fromState, toState atlassource.State) (def
 //
 // The empty default database matches the native seam's, so one set of
 // declarations cannot be accepted by one surface and refused by the other.
-func validateClickHouseRBAC(dialect string, to *goschema.Database, from *types.DBSchema) error {
+func validateClickHouseRBAC(dialect string, to *schemamodel.Database, from *catalog.Database) error {
 	if to == nil {
 		return nil
 	}
@@ -555,7 +555,7 @@ func validateClickHouseRBAC(dialect string, to *goschema.Database, from *types.D
 // connection, because either side of a `schema diff` may be a document and
 // there may be no server at all. That resolves to the dialect's newest preset,
 // which is the same answer `schema render` gives an offline declaration.
-func validateRowTTL(dialect string, to *goschema.Database) error {
+func validateRowTTL(dialect string, to *schemamodel.Database) error {
 	if to == nil {
 		return nil
 	}

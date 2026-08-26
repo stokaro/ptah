@@ -5,13 +5,13 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/graphqlrender"
 )
 
-func apiNameFixture(fields ...goschema.Field) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Invoice", Name: "invoices"}},
+func apiNameFixture(fields ...schemamodel.Field) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Invoice", Name: "invoices"}},
 		Fields: fields,
 	}
 }
@@ -22,8 +22,8 @@ func TestRenderPublishesTheDeclaredAPIName(t *testing.T) {
 	c := qt.New(t)
 
 	res, err := graphqlrender.Render(apiNameFixture(
-		goschema.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
-		goschema.Field{
+		schemamodel.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
+		schemamodel.Field{
 			StructName: "Invoice", Name: "billing_amount_minor",
 			APIName: "amount", Type: "INTEGER",
 		},
@@ -45,8 +45,8 @@ func TestRenderSanitizesAnIllegalAPIName(t *testing.T) {
 	c := qt.New(t)
 
 	res, err := graphqlrender.Render(apiNameFixture(
-		goschema.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
-		goschema.Field{
+		schemamodel.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
+		schemamodel.Field{
 			StructName: "Invoice", Name: "billing_amount_minor",
 			APIName: "amount-minor", Type: "INTEGER",
 		},
@@ -78,8 +78,8 @@ func TestRenderRefusesAnAPINameCollision(t *testing.T) {
 	c := qt.New(t)
 
 	res, err := graphqlrender.Render(apiNameFixture(
-		goschema.Field{StructName: "Invoice", Name: "amount", Type: "INTEGER"},
-		goschema.Field{
+		schemamodel.Field{StructName: "Invoice", Name: "amount", Type: "INTEGER"},
+		schemamodel.Field{
 			StructName: "Invoice", Name: "billing_amount_minor",
 			APIName: "amount", Type: "INTEGER",
 		},
@@ -95,9 +95,9 @@ func TestRenderRefusesAnAPINameCollision(t *testing.T) {
 func TestRenderDerivesTheTypeNameFromTheTableAPIName(t *testing.T) {
 	c := qt.New(t)
 
-	res, err := graphqlrender.Render(&goschema.Database{
-		Tables: []goschema.Table{{StructName: "Invoice", Name: "billing_invoices", APIName: "invoices"}},
-		Fields: []goschema.Field{
+	res, err := graphqlrender.Render(&schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Invoice", Name: "billing_invoices", APIName: "invoices"}},
+		Fields: []schemamodel.Field{
 			{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
 		},
 	}, graphqlrender.Options{})
@@ -113,12 +113,12 @@ func TestRenderDerivesTheTypeNameFromTheTableAPIName(t *testing.T) {
 func TestRenderRefusesATableAPINameCollision(t *testing.T) {
 	c := qt.New(t)
 
-	res, err := graphqlrender.Render(&goschema.Database{
-		Tables: []goschema.Table{
+	res, err := graphqlrender.Render(&schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Invoice", Name: "invoices"},
 			{StructName: "Billing", Name: "billing_invoices", APIName: "invoices"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
 			{StructName: "Billing", Name: "id", Type: "BIGSERIAL", Primary: true},
 		},
@@ -137,9 +137,9 @@ func TestRenderUsesTheDeclaredAPIType(t *testing.T) {
 	c := qt.New(t)
 
 	res, err := graphqlrender.Render(apiNameFixture(
-		goschema.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
-		goschema.Field{StructName: "Invoice", Name: "plain", Type: "DECIMAL(12,2)"},
-		goschema.Field{StructName: "Invoice", Name: "exact", Type: "DECIMAL(12,2)", APIType: "TEXT"},
+		schemamodel.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
+		schemamodel.Field{StructName: "Invoice", Name: "plain", Type: "DECIMAL(12,2)"},
+		schemamodel.Field{StructName: "Invoice", Name: "exact", Type: "DECIMAL(12,2)", APIType: "TEXT"},
 	), graphqlrender.Options{})
 	c.Assert(err, qt.IsNil)
 
@@ -155,8 +155,8 @@ func TestRenderRefusesAnUnknownAPIType(t *testing.T) {
 	c := qt.New(t)
 
 	res, err := graphqlrender.Render(apiNameFixture(
-		goschema.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
-		goschema.Field{StructName: "Invoice", Name: "amount", Type: "DECIMAL(12,2)", APIType: "money_ish"},
+		schemamodel.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
+		schemamodel.Field{StructName: "Invoice", Name: "amount", Type: "DECIMAL(12,2)", APIType: "money_ish"},
 	), graphqlrender.Options{})
 
 	c.Assert(err, qt.IsNotNil)
@@ -171,8 +171,8 @@ func TestRenderStillExportsAnUnknownColumnType(t *testing.T) {
 	c := qt.New(t)
 
 	res, err := graphqlrender.Render(apiNameFixture(
-		goschema.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
-		goschema.Field{StructName: "Invoice", Name: "quirk", Type: "money_ish"},
+		schemamodel.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
+		schemamodel.Field{StructName: "Invoice", Name: "quirk", Type: "money_ish"},
 	), graphqlrender.Options{})
 
 	c.Assert(err, qt.IsNil)
@@ -185,11 +185,11 @@ func TestRenderProjectsEnumsBothWays(t *testing.T) {
 	c := qt.New(t)
 
 	db := apiNameFixture(
-		goschema.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
-		goschema.Field{StructName: "Invoice", Name: "flattened", Type: "invoice_state", APIType: "TEXT"},
-		goschema.Field{StructName: "Invoice", Name: "promoted", Type: "VARCHAR(32)", APIType: "invoice_state"},
+		schemamodel.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
+		schemamodel.Field{StructName: "Invoice", Name: "flattened", Type: "invoice_state", APIType: "TEXT"},
+		schemamodel.Field{StructName: "Invoice", Name: "promoted", Type: "VARCHAR(32)", APIType: "invoice_state"},
 	)
-	db.Enums = []goschema.Enum{{Name: "invoice_state", Values: []string{"draft", "sent"}}}
+	db.Enums = []schemamodel.Enum{{Name: "invoice_state", Values: []string{"draft", "sent"}}}
 
 	res, err := graphqlrender.Render(db, graphqlrender.Options{})
 	c.Assert(err, qt.IsNil)
@@ -205,8 +205,8 @@ func TestRenderOverridesInlineEnumValues(t *testing.T) {
 	c := qt.New(t)
 
 	res, err := graphqlrender.Render(apiNameFixture(
-		goschema.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
-		goschema.Field{
+		schemamodel.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
+		schemamodel.Field{
 			StructName: "Invoice", Name: "state", Type: "VARCHAR(16)",
 			Enum: []string{"draft", "sent"}, APIType: "TEXT",
 		},
@@ -225,11 +225,11 @@ func TestRenderPrefersTheGraphQLName(t *testing.T) {
 	c := qt.New(t)
 
 	res, err := graphqlrender.Render(apiNameFixture(
-		goschema.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
-		goschema.Field{
+		schemamodel.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
+		schemamodel.Field{
 			StructName: "Invoice", Name: "billing_amount_minor", Type: "INTEGER",
 			APIName:  "amount",
-			APINames: goschema.TargetNames{GraphQL: "amountMinor"},
+			APINames: schemamodel.TargetNames{GraphQL: "amountMinor"},
 		},
 	), graphqlrender.Options{})
 	c.Assert(err, qt.IsNil)
@@ -246,10 +246,10 @@ func TestRenderIgnoresAnotherTargetsName(t *testing.T) {
 	c := qt.New(t)
 
 	db := apiNameFixture(
-		goschema.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
+		schemamodel.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
 	)
 	db.Tables[0].APIName = "invoices"
-	db.Tables[0].APINames = goschema.TargetNames{Protobuf: "invoice_records"}
+	db.Tables[0].APINames = schemamodel.TargetNames{Protobuf: "invoice_records"}
 
 	res, err := graphqlrender.Render(db, graphqlrender.Options{})
 	c.Assert(err, qt.IsNil)
@@ -266,11 +266,11 @@ func TestRenderSanitizesAnIllegalGraphQLName(t *testing.T) {
 	c := qt.New(t)
 
 	res, err := graphqlrender.Render(apiNameFixture(
-		goschema.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
-		goschema.Field{
+		schemamodel.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
+		schemamodel.Field{
 			StructName: "Invoice", Name: "billing_amount_minor", Type: "INTEGER",
 			APIName:  "amount",
-			APINames: goschema.TargetNames{GraphQL: "amount minor"},
+			APINames: schemamodel.TargetNames{GraphQL: "amount minor"},
 		},
 	), graphqlrender.Options{})
 	c.Assert(err, qt.IsNil)

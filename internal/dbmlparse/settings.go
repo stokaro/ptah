@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // setting is one entry of a bracketed list: a flag with no value, or a key and
@@ -103,7 +103,7 @@ func (p *parser) settingKey() (string, error) {
 // differently than it reads, and silently dropping the difference is how a
 // declared property disappears from a database (stokaro/ptah#2065 asks for
 // exactly this: an unsupported property fails rather than being removed).
-func applyColumnSettings(field *goschema.Field, settings []setting, schema string) error {
+func applyColumnSettings(field *schemamodel.Field, settings []setting, schema string) error {
 	for _, entry := range settings {
 		switch entry.key {
 		case "pk", "primary key":
@@ -146,7 +146,7 @@ func applyColumnSettings(field *goschema.Field, settings []setting, schema strin
 // DBML writes an expression in backticks and a literal in quotes, and the
 // difference decides what the column does: 'now()' is a six-character string
 // and `now()` is a call.
-func applyDefault(field *goschema.Field, entry setting) {
+func applyDefault(field *schemamodel.Field, entry setting) {
 	if entry.kind == tokenExpr {
 		field.DefaultExpr = entry.value
 		return
@@ -156,7 +156,7 @@ func applyDefault(field *goschema.Field, entry setting) {
 }
 
 // applyInlineRef reads the `ref: > table.column` form a column carries.
-func applyInlineRef(field *goschema.Field, entry setting, schema string) error {
+func applyInlineRef(field *schemamodel.Field, entry setting, schema string) error {
 	target := strings.TrimSpace(entry.value)
 	target = strings.TrimPrefix(target, ">")
 	target = strings.TrimSpace(target)

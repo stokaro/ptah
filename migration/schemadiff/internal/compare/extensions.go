@@ -4,16 +4,16 @@ import (
 	"sort"
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
-// Extensions performs comprehensive extension comparison between generated and database schemas.
+// Extensions performs comprehensive extension comparison between the desired and current schemas.
 //
 // This function compares PostgreSQL extensions defined in the target schema (from Go struct annotations)
 // with extensions currently installed in the database. It identifies which extensions need to be
@@ -51,8 +51,8 @@ import (
 //
 // # Parameters
 //
-//   - generated: Target schema parsed from Go struct annotations
-//   - database: Current database schema from executor introspection (includes extensions)
+//   - desired: the schema an authoring source declared
+//   - current: the schema a live database reported
 //   - diff: SchemaDiff structure to populate with discovered differences
 //   - opts: Configuration options for comparison (can be nil for defaults)
 //
@@ -75,27 +75,27 @@ import (
 //
 //	// Using custom ignore options
 //	opts := config.WithIgnoredExtensions("plpgsql", "adminpack")
-//	Extensions(generated, database, diff, opts)
+//	Extensions(desired, current, diff, opts)
 //
 // # Output Consistency
 //
 // Results are sorted alphabetically for consistent output across multiple runs,
 // ensuring deterministic migration generation and reliable testing.
 func Extensions(
-	generated *goschema.Database,
-	database *types.DBSchema,
+	desired *schemamodel.Database,
+	current *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	opts *config.CompareOptions,
 	cov Coverage,
 ) {
-	ExtensionsWithSemantics(generated, database, diff, opts, cov, identifier.ForDialect(platform.Postgres))
+	ExtensionsWithSemantics(desired, current, diff, opts, cov, identifier.ForDialect(platform.Postgres))
 }
 
 // ExtensionsWithSemantics compares extension identity and installation schema
 // using the target database's resolved default schema and identifier rules.
 func ExtensionsWithSemantics(
-	generated *goschema.Database,
-	database *types.DBSchema,
+	desired *schemamodel.Database,
+	current *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	opts *config.CompareOptions,
 	cov Coverage,
@@ -120,16 +120,16 @@ func ExtensionsWithSemantics(
 	diff.ExtensionsModified = make([]difftypes.ExtensionDiff, 0)
 
 	// Create maps for quick lookup, filtering out ignored extensions
-	genExtensions := make(map[string]goschema.Extension)
-	for _, extension := range generated.Extensions {
+	genExtensions := make(map[string]schemamodel.Extension)
+	for _, extension := range desired.Extensions {
 		if !opts.IsExtensionIgnored(extension.Name) {
 			genExtensions[extension.Name] = extension
 		}
 	}
 
 	// Create map of database extensions for efficient lookup, filtering out ignored extensions
-	dbExtensions := make(map[string]types.DBExtension)
-	for _, extension := range database.Extensions {
+	dbExtensions := make(map[string]catalog.Extension)
+	for _, extension := range current.Extensions {
 		if !opts.IsExtensionIgnored(extension.Name) {
 			dbExtensions[extension.Name] = extension
 		}

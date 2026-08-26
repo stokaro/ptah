@@ -4,11 +4,11 @@ import (
 	"sort"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/objectidentity"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // grantObjectTypeSchema is the one object type whose target is not a table.
@@ -20,15 +20,15 @@ const grantObjectTypeSchema = "SCHEMA"
 // Callers holding a live connection should use [GrantsWithSemantics] instead:
 // on MySQL and MariaDB a schema is a database, so nothing offline can name the
 // one that owns an unqualified target.
-func Grants(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
-	GrantsWithSemantics(generated, database, diff, identifier.ForDialect(""))
+func Grants(desired *schemamodel.Database, current *catalog.Database, diff *difftypes.SchemaDiff) {
+	GrantsWithSemantics(desired, current, diff, identifier.ForDialect(""))
 }
 
 // GrantsWithSemantics is [Grants] told which identifier rules the target has.
 //
 // The two sides do not spell a target the same way, and until they were
 // normalized they could not match. A grant read from the catalog reports the
-// object through [types.DBGrant.QualifiedTarget], which qualifies it with the
+// object through [catalog.Grant.QualifiedTarget], which qualifies it with the
 // schema the reader found -- `"public"."granted"`. A grant declared in Go
 // annotations or HCL carries whatever the author wrote, which is normally the
 // bare `granted`. Keyed raw, one grant became two: the declared one absent from
@@ -38,14 +38,14 @@ func Grants(generated *goschema.Database, database *types.DBSchema, diff *diffty
 // This is [tableMemberKey]'s defect (stokaro/ptah#1232) in a comparator that
 // builds its own key, and one of the instances collected in stokaro/ptah#1276.
 func GrantsWithSemantics(
-	generated *goschema.Database,
-	database *types.DBSchema,
+	desired *schemamodel.Database,
+	current *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	semantics identifier.Semantics,
 ) {
 	generatedGrantMap := make(map[grantIdentity]difftypes.GrantRef)
 	generatedGrantRoles := make(map[string]bool)
-	for _, grant := range generated.Grants {
+	for _, grant := range desired.Grants {
 		generatedGrantRoles[grant.Role] = true
 		for _, ref := range grantRefsFromGenerated(grant) {
 			generatedGrantMap[newGrantIdentity(ref, semantics)] = ref
@@ -53,13 +53,13 @@ func GrantsWithSemantics(
 	}
 
 	managedRoles := make(map[string]bool)
-	for _, role := range generated.Roles {
+	for _, role := range desired.Roles {
 		managedRoles[role.Name] = true
 	}
 
 	databaseGrantMapForAdditions := make(map[grantIdentity]difftypes.GrantRef)
 	databaseGrantMapForRemovals := make(map[grantIdentity]difftypes.GrantRef)
-	for _, grant := range database.Grants {
+	for _, grant := range current.Grants {
 		if grant.IsPartialRevoke {
 			// Not a grant. The row SUBTRACTS a privilege from a broader one --
 			// ClickHouse's partial revoke, SQL Server's DENY -- and entering it
@@ -111,7 +111,7 @@ func GrantsWithSemantics(
 	sortGrantRefs(diff.GrantOptionsRevoked)
 }
 
-func grantRefsFromGenerated(grant goschema.Grant) []difftypes.GrantRef {
+func grantRefsFromGenerated(grant schemamodel.Grant) []difftypes.GrantRef {
 	grant.Canonicalize()
 	objectType := "TABLE"
 	objectName := grant.OnTable
@@ -136,7 +136,7 @@ func grantRefsFromGenerated(grant goschema.Grant) []difftypes.GrantRef {
 	return refs
 }
 
-func grantRefFromDatabase(grant types.DBGrant) difftypes.GrantRef {
+func grantRefFromDatabase(grant catalog.Grant) difftypes.GrantRef {
 	objectType := strings.ToUpper(strings.TrimSpace(grant.ObjectType))
 	objectName := grant.QualifiedTarget()
 	if objectType == grantObjectTypeSchema {

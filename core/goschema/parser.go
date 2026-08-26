@@ -16,6 +16,7 @@ import (
 	ptahast "go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema/internal/parseutils"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/annotationmeta"
 	"go.5x5.cz/ptah/internal/chrefresh"
 	"go.5x5.cz/ptah/internal/crdbttl"
@@ -172,7 +173,7 @@ func (s *schemaParseState) parseFieldComment(
 		fieldType := kv["type"]
 		if len(enumRaw) > 0 && kv["type"] == "ENUM" {
 			enumName := "enum_" + strings.ToLower(structName) + "_" + strings.ToLower(name.Name)
-			s.globalEnumsMap[enumName] = Enum{
+			s.globalEnumsMap[enumName] = schemamodel.Enum{
 				Name:   enumName,
 				Values: enum,
 			}
@@ -195,7 +196,7 @@ func (s *schemaParseState) parseFieldComment(
 			identityGeneration = "BY_DEFAULT"
 		}
 		_, defaultSet := kv["default"]
-		s.schemaFields = append(s.schemaFields, Field{
+		s.schemaFields = append(s.schemaFields, schemamodel.Field{
 			StructName:          structName,
 			FieldName:           name.Name,
 			Name:                kv["name"],
@@ -276,7 +277,7 @@ func (s *schemaParseState) parseEmbeddedComment(comment *ast.Comment, field *ast
 		}
 	}
 
-	s.embeddedFields = append(s.embeddedFields, EmbeddedField{
+	s.embeddedFields = append(s.embeddedFields, schemamodel.EmbeddedField{
 		StructName:       structName,
 		Mode:             kv["mode"],
 		Prefix:           kv["prefix"],
@@ -362,7 +363,7 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 		granularity = n
 	}
 
-	s.schemaIndexes = append(s.schemaIndexes, Index{
+	s.schemaIndexes = append(s.schemaIndexes, schemamodel.Index{
 		StructName:     structName,
 		Name:           kv["name"],
 		Fields:         fields,
@@ -400,7 +401,7 @@ func (s *schemaParseState) parseConstraintComment(comment *ast.Comment, structNa
 	return nil
 }
 
-func parseConstraintComment(comment *ast.Comment, structName string) Constraint {
+func parseConstraintComment(comment *ast.Comment, structName string) schemamodel.Constraint {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
 
 	// Parse columns for UNIQUE/PRIMARY KEY constraints
@@ -419,7 +420,7 @@ func parseConstraintComment(comment *ast.Comment, structName string) Constraint 
 	// Determine target table name - use 'table' attribute if specified, otherwise leave empty for later resolution
 	tableName := kv["table"]
 
-	return Constraint{
+	return schemamodel.Constraint{
 		StructName: structName,
 		Name:       kv["name"],
 		Type:       strings.ToUpper(kv["type"]), // EXCLUDE, CHECK, UNIQUE, PRIMARY KEY, FOREIGN KEY
@@ -449,6 +450,19 @@ func parseConstraintComment(comment *ast.Comment, structName string) Constraint 
 	}
 }
 
+// normalizeIdentityGeneration folds the identity_generation attribute to the
+// two spellings the model records, and to the empty string for anything else.
+func normalizeIdentityGeneration(value string) string {
+	switch strings.ToUpper(strings.ReplaceAll(value, " ", "_")) {
+	case "ALWAYS":
+		return "ALWAYS"
+	case "BY_DEFAULT":
+		return "BY_DEFAULT"
+	default:
+		return ""
+	}
+}
+
 func parseBoolPtr(value string) *bool {
 	if strings.TrimSpace(value) == "" {
 		return nil
@@ -467,7 +481,7 @@ func (s *schemaParseState) parseExtensionComment(comment *ast.Comment) error {
 		return err
 	}
 
-	s.extensions = append(s.extensions, Extension{
+	s.extensions = append(s.extensions, schemamodel.Extension{
 		Name:        kv["name"],
 		Schema:      kv["schema"],
 		IfNotExists: kv["if_not_exists"] == "true",
@@ -493,7 +507,7 @@ func (s *schemaParseState) parseSchemaComment(comment *ast.Comment) error {
 		return err
 	}
 
-	s.schemas = append(s.schemas, Schema{
+	s.schemas = append(s.schemas, schemamodel.Schema{
 		Name:    kv["name"],
 		Comment: kv["comment"],
 	})
@@ -527,7 +541,7 @@ func (s *schemaParseState) parseTableComment(comment *ast.Comment, structName st
 	); err != nil {
 		return err
 	}
-	s.tableDirectives = append(s.tableDirectives, Table{
+	s.tableDirectives = append(s.tableDirectives, schemamodel.Table{
 		StructName: structName,
 		Name:       tableName,
 		APIName:    kv["api_name"],
@@ -581,31 +595,31 @@ type schemaParseState struct {
 	filename              string
 	fset                  *token.FileSet
 	tableNameToStructName map[string]string
-	globalEnumsMap        map[string]Enum
-	embeddedFields        []EmbeddedField
-	schemaFields          []Field
-	schemaIndexes         []Index
-	schemaConstraints     []Constraint
-	tableDirectives       []Table
-	extensions            []Extension
-	functions             []Function
-	sequences             []Sequence
-	domains               []Domain
-	compositeTypes        []CompositeType
-	ranges                []Range
-	views                 []View
-	synonyms              []Synonym
-	extendedProperties    []ExtendedProperty
-	materializedViews     []MaterializedView
-	triggers              []Trigger
-	rlsPolicies           []RLSPolicy
-	rlsEnabledTables      []RLSEnabledTable
-	hypertables           []Hypertable
-	continuousAggregates  []ContinuousAggregate
-	roles                 []Role
-	grants                []Grant
-	managedData           []ManagedData
-	schemas               []Schema
+	globalEnumsMap        map[string]schemamodel.Enum
+	embeddedFields        []schemamodel.EmbeddedField
+	schemaFields          []schemamodel.Field
+	schemaIndexes         []schemamodel.Index
+	schemaConstraints     []schemamodel.Constraint
+	tableDirectives       []schemamodel.Table
+	extensions            []schemamodel.Extension
+	functions             []schemamodel.Function
+	sequences             []schemamodel.Sequence
+	domains               []schemamodel.Domain
+	compositeTypes        []schemamodel.CompositeType
+	ranges                []schemamodel.Range
+	views                 []schemamodel.View
+	synonyms              []schemamodel.Synonym
+	extendedProperties    []schemamodel.ExtendedProperty
+	materializedViews     []schemamodel.MaterializedView
+	triggers              []schemamodel.Trigger
+	rlsPolicies           []schemamodel.RLSPolicy
+	rlsEnabledTables      []schemamodel.RLSEnabledTable
+	hypertables           []schemamodel.Hypertable
+	continuousAggregates  []schemamodel.ContinuousAggregate
+	roles                 []schemamodel.Role
+	grants                []schemamodel.Grant
+	managedData           []schemamodel.ManagedData
+	schemas               []schemamodel.Schema
 }
 
 type structDeclaration struct {
@@ -624,7 +638,7 @@ func newSchemaParseState(filename string, fset *token.FileSet) *schemaParseState
 		filename:              filename,
 		fset:                  fset,
 		tableNameToStructName: make(map[string]string),
-		globalEnumsMap:        make(map[string]Enum),
+		globalEnumsMap:        make(map[string]schemamodel.Enum),
 	}
 }
 
@@ -763,7 +777,7 @@ func (s *schemaParseState) parseEnumComment(comment *ast.Comment) error {
 		return err
 	}
 
-	s.globalEnumsMap[kv["name"]] = Enum{
+	s.globalEnumsMap[kv["name"]] = schemamodel.Enum{
 		Name:   kv["name"],
 		Values: splitCommaList(kv["values"]),
 	}
@@ -802,12 +816,12 @@ func (s *schemaParseState) processFieldComments(structDecl structDeclaration) er
 	return nil
 }
 
-func ParseFile(filename string) (Database, error) {
+func ParseFile(filename string) (schemamodel.Database, error) {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, filename, nil, parser.ParseComments)
 	if err != nil {
 		slog.Error("Failed to parse file", "error", err)
-		return Database{}, &ptaherr.ParseError{
+		return schemamodel.Database{}, &ptaherr.ParseError{
 			File:    filename,
 			Err:     err,
 			Message: fmt.Sprintf("parse Go file %q: %v", filename, err),
@@ -819,12 +833,12 @@ func ParseFile(filename string) (Database, error) {
 
 // ParseSource parses a Go source string and returns the database schema.
 // source can be a string, []byte, or io.Reader.
-func ParseSource(filename string, source any) (Database, error) {
+func ParseSource(filename string, source any) (schemamodel.Database, error) {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, filename, source, parser.ParseComments)
 	if err != nil {
 		slog.Error("Failed to parse file", "error", err)
-		return Database{}, &ptaherr.ParseError{
+		return schemamodel.Database{}, &ptaherr.ParseError{
 			File:    filename,
 			Err:     err,
 			Message: fmt.Sprintf("parse Go source %q: %v", filename, err),
@@ -834,13 +848,13 @@ func ParseSource(filename string, source any) (Database, error) {
 	return parseFileAST(filename, fset, f)
 }
 
-func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (Database, error) {
+func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (schemamodel.Database, error) {
 	state := newSchemaParseState(filename, fset)
 	if err := state.processFileAST(f); err != nil {
-		return Database{}, err
+		return schemamodel.Database{}, err
 	}
 
-	enums := make([]Enum, 0, len(state.globalEnumsMap))
+	enums := make([]schemamodel.Enum, 0, len(state.globalEnumsMap))
 	keys := make([]string, 0, len(state.globalEnumsMap))
 	for k := range state.globalEnumsMap {
 		keys = append(keys, k)
@@ -855,7 +869,7 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (Database, 
 		return state.extensions[i].Name < state.extensions[j].Name
 	})
 
-	result := Database{
+	result := schemamodel.Database{
 		Schemas:              state.schemas,
 		Tables:               state.tableDirectives,
 		Fields:               state.schemaFields,
@@ -883,8 +897,8 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (Database, 
 		ManagedData:          state.managedData,
 		Dependencies:         make(map[string][]string),
 	}
-	normalizeTableScopedNames(&result)
-	buildDependencyGraph(&result)
+	schemamodel.NormalizeTableScopedNames(&result)
+	schemamodel.BuildDependencyGraph(&result)
 	return result, nil
 }
 
@@ -951,7 +965,7 @@ func (s *schemaParseState) mapTableDirectiveStructName(comment *ast.Comment, str
 	}
 	s.tableNameToStructName[tableName] = structName
 	if schemaName := kv["schema"]; schemaName != "" {
-		s.tableNameToStructName[QualifyTableName(schemaName, tableName)] = structName
+		s.tableNameToStructName[schemamodel.QualifyTableName(schemaName, tableName)] = structName
 	}
 }
 
@@ -1061,7 +1075,7 @@ func (s *schemaParseState) parseFileScopedRLSPolicyComment(comment *ast.Comment,
 		return nil
 	}
 
-	s.rlsPolicies = append(s.rlsPolicies, RLSPolicy{
+	s.rlsPolicies = append(s.rlsPolicies, schemamodel.RLSPolicy{
 		StructName:          structName,
 		Name:                policyName,
 		Table:               tableName,
@@ -1099,7 +1113,7 @@ func (s *schemaParseState) parseFileScopedRLSEnableComment(comment *ast.Comment,
 		return nil
 	}
 
-	s.rlsEnabledTables = append(s.rlsEnabledTables, RLSEnabledTable{
+	s.rlsEnabledTables = append(s.rlsEnabledTables, schemamodel.RLSEnabledTable{
 		StructName: structName,
 		Table:      tableName,
 		Comment:    kv["comment"],
@@ -1147,7 +1161,7 @@ func (s *schemaParseState) parseProcedureComment(comment *ast.Comment, structNam
 				routine.Name, routine.Returns, ctx.location),
 		}
 	}
-	routine.Kind = FunctionKindProcedure
+	routine.Kind = schemamodel.FunctionKindProcedure
 	return nil
 }
 
@@ -1162,7 +1176,7 @@ func (s *schemaParseState) parseFunctionComment(comment *ast.Comment, structName
 		return err
 	}
 
-	fn := Function{
+	fn := schemamodel.Function{
 		StructName: structName,
 		Name:       kv["name"],
 		Parameters: kv["params"],
@@ -1196,7 +1210,7 @@ func (s *schemaParseState) parseSequenceComment(comment *ast.Comment, structName
 		return err
 	}
 
-	seq := Sequence{
+	seq := schemamodel.Sequence{
 		StructName:  structName,
 		Name:        kv["name"],
 		Schema:      kv["schema"],
@@ -1233,7 +1247,7 @@ func (s *schemaParseState) parseSequenceComment(comment *ast.Comment, structName
 	}
 
 	seq.Canonicalize()
-	if !IsValidSequenceType(seq.AsType) {
+	if !schemamodel.IsValidSequenceType(seq.AsType) {
 		return &ptaherr.ParseError{
 			File:      ctx.file,
 			Line:      ctx.line,
@@ -1277,7 +1291,7 @@ func (s *schemaParseState) parseDomainComment(comment *ast.Comment, structName s
 		return err
 	}
 
-	domain := Domain{
+	domain := schemamodel.Domain{
 		StructName:  structName,
 		Name:        kv["name"],
 		Schema:      kv["schema"],
@@ -1321,7 +1335,7 @@ func (s *schemaParseState) parseCompositeComment(comment *ast.Comment, structNam
 		return err
 	}
 
-	composite := CompositeType{
+	composite := schemamodel.CompositeType{
 		StructName: structName,
 		Name:       kv["name"],
 		Schema:     kv["schema"],
@@ -1337,8 +1351,8 @@ func (s *schemaParseState) parseCompositeComment(comment *ast.Comment, structNam
 // parseCompositeFields parses a "name:type,name:type" list into ordered fields.
 // Splitting is paren-aware so a parameterized type (e.g. NUMERIC(10,2)) whose
 // own comma would otherwise be read as a field separator survives intact.
-func parseCompositeFields(value string) ([]CompositeTypeField, error) {
-	var fields []CompositeTypeField
+func parseCompositeFields(value string) ([]schemamodel.CompositeField, error) {
+	var fields []schemamodel.CompositeField
 	for _, part := range splitTopLevelCommaList(value) {
 		name, typ, ok := strings.Cut(part, ":")
 		name = strings.TrimSpace(name)
@@ -1346,7 +1360,7 @@ func parseCompositeFields(value string) ([]CompositeTypeField, error) {
 		if !ok || name == "" || typ == "" {
 			return nil, fmt.Errorf("invalid composite field %q", part)
 		}
-		fields = append(fields, CompositeTypeField{Name: name, Type: typ})
+		fields = append(fields, schemamodel.CompositeField{Name: name, Type: typ})
 	}
 	if len(fields) == 0 {
 		return nil, fmt.Errorf("at least one field is required")
@@ -1398,7 +1412,7 @@ func (s *schemaParseState) parseRangeComment(comment *ast.Comment, structName st
 		return err
 	}
 
-	rangeType := Range{
+	rangeType := schemamodel.Range{
 		StructName:     structName,
 		Name:           kv["name"],
 		Schema:         kv["schema"],
@@ -1455,7 +1469,7 @@ func (s *schemaParseState) parseViewComment(comment *ast.Comment, structName str
 	if err != nil {
 		return err
 	}
-	s.views = append(s.views, View{
+	s.views = append(s.views, schemamodel.View{
 		StructName: structName,
 		Name:       kv["name"],
 		Body:       kv["body"],
@@ -1483,7 +1497,7 @@ func (s *schemaParseState) parseHypertableComment(comment *ast.Comment, structNa
 	if err := requireAttributes(kv, ctx); err != nil {
 		return err
 	}
-	s.hypertables = append(s.hypertables, Hypertable{
+	s.hypertables = append(s.hypertables, schemamodel.Hypertable{
 		StructName:    structName,
 		Table:         kv["table"],
 		Column:        kv["column"],
@@ -1516,7 +1530,7 @@ func (s *schemaParseState) parseContinuousAggregateComment(
 	if err := requireAttributes(kv, ctx); err != nil {
 		return err
 	}
-	s.continuousAggregates = append(s.continuousAggregates, ContinuousAggregate{
+	s.continuousAggregates = append(s.continuousAggregates, schemamodel.ContinuousAggregate{
 		StructName:       structName,
 		Name:             kv["name"],
 		Schema:           kv["schema"],
@@ -1552,7 +1566,7 @@ func (s *schemaParseState) parseSynonymComment(comment *ast.Comment, structName 
 	if err := requireAttributes(kv, ctx); err != nil {
 		return err
 	}
-	s.synonyms = append(s.synonyms, Synonym{
+	s.synonyms = append(s.synonyms, schemamodel.Synonym{
 		StructName: structName,
 		Name:       kv["name"],
 		Schema:     kv["schema"],
@@ -1609,7 +1623,7 @@ func (s *schemaParseState) parseExtendedPropertyComment(comment *ast.Comment, st
 				"declare it with the comment attribute of the object it belongs to",
 			ctx.location)
 	}
-	s.extendedProperties = append(s.extendedProperties, ExtendedProperty{
+	s.extendedProperties = append(s.extendedProperties, schemamodel.ExtendedProperty{
 		StructName: structName,
 		Name:       kv["name"],
 		Schema:     kv["schema"],
@@ -1643,7 +1657,7 @@ func (s *schemaParseState) parseMaterializedViewComment(comment *ast.Comment, st
 	if err != nil {
 		return err
 	}
-	s.materializedViews = append(s.materializedViews, MaterializedView{
+	s.materializedViews = append(s.materializedViews, schemamodel.MaterializedView{
 		StructName: structName,
 		Name:       kv["name"],
 		Body:       kv["body"],
@@ -1715,7 +1729,7 @@ func (s *schemaParseState) parseTriggerComment(comment *ast.Comment, structName 
 	if err != nil {
 		return err
 	}
-	trigger := Trigger{
+	trigger := schemamodel.Trigger{
 		StructName: structName,
 		Name:       kv["name"],
 		Table:      kv["table"],
@@ -1741,7 +1755,7 @@ func (s *schemaParseState) parseRLSPolicyComment(comment *ast.Comment, structNam
 	if err != nil {
 		return err
 	}
-	s.rlsPolicies = append(s.rlsPolicies, RLSPolicy{
+	s.rlsPolicies = append(s.rlsPolicies, schemamodel.RLSPolicy{
 		StructName:          structName,
 		Name:                kv["name"],
 		Table:               kv["table"],
@@ -1765,7 +1779,7 @@ func (s *schemaParseState) parseRLSEnableComment(comment *ast.Comment, structNam
 	if err != nil {
 		return err
 	}
-	s.rlsEnabledTables = append(s.rlsEnabledTables, RLSEnabledTable{
+	s.rlsEnabledTables = append(s.rlsEnabledTables, schemamodel.RLSEnabledTable{
 		StructName: structName,
 		Table:      kv["table"],
 		Comment:    kv["comment"],
@@ -1784,7 +1798,7 @@ func (s *schemaParseState) parseRoleComment(comment *ast.Comment, structName str
 	if err != nil {
 		return err
 	}
-	s.roles = append(s.roles, Role{
+	s.roles = append(s.roles, schemamodel.Role{
 		StructName:  structName,
 		Name:        kv["name"],
 		Login:       kv["login"] == "true",
@@ -1814,7 +1828,7 @@ func (s *schemaParseState) parseGrantComment(comment *ast.Comment, structName st
 	if len(privileges) == 0 {
 		privileges = splitCommaList(kv["privileges"])
 	}
-	grant := Grant{
+	grant := schemamodel.Grant{
 		StructName: structName,
 		Role:       kv["role"],
 		Privileges: privileges,
@@ -1852,7 +1866,7 @@ func (s *schemaParseState) parseManagedDataComment(comment *ast.Comment, structN
 		}
 	}
 
-	s.managedData = append(s.managedData, ManagedData{
+	s.managedData = append(s.managedData, schemamodel.ManagedData{
 		StructName: structName,
 		Table:      kv["table"],
 		Schema:     kv["schema"],
@@ -1881,8 +1895,8 @@ func splitCommaList(value string) []string {
 // targetNames reads the per-target name attributes. They share one shape on the
 // field and the table directives, so they are read in one place: a target that
 // gained an attribute on only one of the two would be a silent asymmetry.
-func targetNames(kv map[string]string) TargetNames {
-	return TargetNames{
+func targetNames(kv map[string]string) schemamodel.TargetNames {
+	return schemamodel.TargetNames{
 		OpenAPI:  kv["openapi_name"],
 		GraphQL:  kv["graphql_name"],
 		Protobuf: kv["proto_name"],

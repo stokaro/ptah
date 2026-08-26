@@ -5,11 +5,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 // TestConstraints_AModificationCarriesOneIdentityUnderTwoSpellings is what the
@@ -54,15 +54,15 @@ func TestConstraints_AModificationCarriesOneIdentityUnderTwoSpellings(t *testing
 
 // widgetDeclaringScopeOn is the description, which leaves the table unqualified
 // the way a description does.
-func widgetDeclaringScopeOn(columns ...string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Widget", Name: "widget"}},
-		Fields: []goschema.Field{
+func widgetDeclaringScopeOn(columns ...string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Widget", Name: "widget"}},
+		Fields: []schemamodel.Field{
 			{StructName: "Widget", Name: "id", Type: "int", Primary: true},
 			{StructName: "Widget", Name: "tenant", Type: "text"},
 			{StructName: "Widget", Name: "code", Type: "text"},
 		},
-		Constraints: []goschema.Constraint{{
+		Constraints: []schemamodel.Constraint{{
 			StructName: "Widget", Name: "uq_widget_scope", Table: "widget",
 			Type: "UNIQUE", Columns: columns,
 		}},
@@ -72,14 +72,14 @@ func widgetDeclaringScopeOn(columns ...string) *goschema.Database {
 // widgetCatalogHoldingScopeOn is the read, which reports the table with its
 // schema the way a catalog does, and the constraint over other columns so the
 // pair is a modification rather than nothing.
-func widgetCatalogHoldingScopeOn(columns ...string) *types.DBSchema {
-	return &types.DBSchema{
-		Tables: []types.DBTable{{Schema: "public", Name: "widget", Columns: []types.DBColumn{
+func widgetCatalogHoldingScopeOn(columns ...string) *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{{Schema: "public", Name: "widget", Columns: []catalog.Column{
 			{Name: "id", DataType: "integer", IsPrimaryKey: true, IsNullable: "NO"},
 			{Name: "tenant", DataType: "text", IsNullable: "NO"},
 			{Name: "code", DataType: "text", IsNullable: "NO"},
 		}}},
-		Constraints: []types.DBConstraint{{
+		Constraints: []catalog.Constraint{{
 			Schema: "public", TableName: "widget", Name: "uq_widget_scope",
 			Type: "UNIQUE", ColumnNames: columns,
 		}},

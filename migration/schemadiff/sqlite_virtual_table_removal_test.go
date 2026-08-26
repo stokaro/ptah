@@ -8,18 +8,18 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "modernc.org/sqlite"
 
-	"go.5x5.cz/ptah/core/goschema"
-	dbtypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/dbschema/sqlite"
 	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestCompareRefusesToPlanDroppingALiveVirtualTable is the seam test for the
 // data-loss path, run against a real SQLite database rather than a hand-built
-// DBSchema.
+// catalog.Database.
 //
 // The unit guard in internal/sqlitevirtual proves the rule; this proves the
 // rule is wired into the comparison every native verb goes through. The two
@@ -34,7 +34,7 @@ func TestCompareRefusesToPlanDroppingALiveVirtualTable(t *testing.T) {
 	tests := []struct {
 		name            string
 		env             func(testing.TB)
-		desired         []goschema.Table
+		desired         []schemamodel.Table
 		wantErr         bool
 		wantRemoved     []string
 		wantErrContains string
@@ -42,21 +42,21 @@ func TestCompareRefusesToPlanDroppingALiveVirtualTable(t *testing.T) {
 		{
 			name:            "the virtual table alone is refused, not planned",
 			env:             envbooltest.Unset(sqlitevirtual.AllowDropEnvVar),
-			desired:         []goschema.Table{{StructName: "User", Name: "users"}, {StructName: "Note", Name: "notes"}},
+			desired:         []schemamodel.Table{{StructName: "User", Name: "users"}, {StructName: "Note", Name: "notes"}},
 			wantErr:         true,
 			wantErrContains: `virtual table "docs" (module fts5)`,
 		},
 		{
 			name:            "an ordinary table declared with the virtual table's name is refused",
 			env:             envbooltest.Unset(sqlitevirtual.AllowDropEnvVar),
-			desired:         []goschema.Table{{StructName: "User", Name: "users"}, {StructName: "Doc", Name: "docs"}, {StructName: "Note", Name: "notes"}},
+			desired:         []schemamodel.Table{{StructName: "User", Name: "users"}, {StructName: "Doc", Name: "docs"}, {StructName: "Note", Name: "notes"}},
 			wantErr:         true,
 			wantErrContains: "cannot convert one kind into the other",
 		},
 		{
 			name:    "the opt-in plans the drop again",
 			env:     envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "1"),
-			desired: []goschema.Table{{StructName: "User", Name: "users"}, {StructName: "Note", Name: "notes"}},
+			desired: []schemamodel.Table{{StructName: "User", Name: "users"}, {StructName: "Note", Name: "notes"}},
 			wantErr: false,
 			// notes is the control: with the opt-in set the comparison is the
 			// one master made, and it still plans the ordinary removal beside
@@ -66,7 +66,7 @@ func TestCompareRefusesToPlanDroppingALiveVirtualTable(t *testing.T) {
 		{
 			name:        "an ordinary removal is planned while the virtual table is declared out of scope",
 			env:         envbooltest.Unset(sqlitevirtual.AllowDropEnvVar),
-			desired:     []goschema.Table{{StructName: "User", Name: "users"}, {StructName: "Doc", Name: "docs"}},
+			desired:     []schemamodel.Table{{StructName: "User", Name: "users"}, {StructName: "Doc", Name: "docs"}},
 			wantErr:     true,
 			wantRemoved: nil,
 			// Reaching the collision refusal, not the removal one, even though
@@ -80,13 +80,13 @@ func TestCompareRefusesToPlanDroppingALiveVirtualTable(t *testing.T) {
 			c := qt.New(t)
 			tt.env(t)
 
-			database := readLiveVirtualTableFixture(t)
-			generated := &goschema.Database{Tables: tt.desired}
+			current := readLiveVirtualTableFixture(t)
+			desired := &schemamodel.Database{Tables: tt.desired}
 
 			diff, err := schemadiff.CompareWithDatabaseInfo(
-				generated,
-				database,
-				dbtypes.DBInfo{Dialect: "sqlite"},
+				desired,
+				current,
+				catalog.ServerInfo{Dialect: "sqlite"},
 				nil,
 			)
 
@@ -99,9 +99,9 @@ func TestCompareRefusesToPlanDroppingALiveVirtualTable(t *testing.T) {
 
 // readLiveVirtualTableFixture builds a SQLite database holding a virtual table,
 // an ordinary table that stays, and an ordinary table that goes, and reads it
-// with the real reader. A hand-built DBSchema would prove the validator reads
+// with the real reader. A hand-built catalog.Database would prove the validator reads
 // a struct field; this proves it reads what the reader reports.
-func readLiveVirtualTableFixture(t *testing.T) *dbtypes.DBSchema {
+func readLiveVirtualTableFixture(t *testing.T) *catalog.Database {
 	t.Helper()
 
 	path := filepath.Join(t.TempDir(), "virtual.sqlite")

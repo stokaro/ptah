@@ -5,11 +5,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 // TestConstraints_NameCaseFollowsTheEngineThatResolvesIt pins which spellings of
@@ -74,14 +74,14 @@ func TestConstraints_NameCaseFollowsTheEngineThatResolvesIt(t *testing.T) {
 
 // widgetDeclaringLowerCaseConstraint names the constraint the way an annotation
 // does.
-func widgetDeclaringLowerCaseConstraint() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Widget", Name: "widget"}},
-		Fields: []goschema.Field{
+func widgetDeclaringLowerCaseConstraint() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Widget", Name: "widget"}},
+		Fields: []schemamodel.Field{
 			{StructName: "Widget", Name: "id", Type: "int", Primary: true},
 			{StructName: "Widget", Name: "tenant", Type: "text"},
 		},
-		Constraints: []goschema.Constraint{{
+		Constraints: []schemamodel.Constraint{{
 			StructName: "Widget", Name: "uq_widget_scope", Table: "widget",
 			Type: "UNIQUE", Columns: []string{"tenant"},
 		}},
@@ -90,13 +90,13 @@ func widgetDeclaringLowerCaseConstraint() *goschema.Database {
 
 // widgetReportingUpperCaseConstraint is the same table as a catalog holding the
 // constraint under the other spelling reports it.
-func widgetReportingUpperCaseConstraint() *types.DBSchema {
-	return &types.DBSchema{
-		Tables: []types.DBTable{{Name: "widget", Columns: []types.DBColumn{
+func widgetReportingUpperCaseConstraint() *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{{Name: "widget", Columns: []catalog.Column{
 			{Name: "id", DataType: "integer", IsPrimaryKey: true, IsNullable: "NO"},
 			{Name: "tenant", DataType: "text", IsNullable: "NO"},
 		}}},
-		Constraints: []types.DBConstraint{{
+		Constraints: []catalog.Constraint{{
 			TableName: "widget", Name: "UQ_WIDGET_SCOPE",
 			Type: "UNIQUE", ColumnNames: []string{"tenant"},
 		}},
@@ -151,13 +151,13 @@ func TestConstraints_ASynthesizedForeignKeyMatchesTheCatalogsSpelling(t *testing
 
 // widgetReferencingParent declares the foreign key on the field, which is what
 // the synthesizer turns into a named constraint.
-func widgetReferencingParent() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func widgetReferencingParent() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Parent", Name: "parent"},
 			{StructName: "Widget", Name: "widget"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Parent", Name: "id", Type: "int", Primary: true},
 			{StructName: "Widget", Name: "id", Type: "int", Primary: true},
 			{StructName: "Widget", Name: "parent", Type: "int", Foreign: "parent(id)"},
@@ -167,19 +167,19 @@ func widgetReferencingParent() *goschema.Database {
 
 // parentAndWidgetHoldingForeignKey is the pair as a catalog reports it, with the
 // foreign key under the given spelling and its body otherwise identical.
-func parentAndWidgetHoldingForeignKey(name string) *types.DBSchema {
+func parentAndWidgetHoldingForeignKey(name string) *catalog.Database {
 	parent, id := "parent", "id"
-	return &types.DBSchema{
-		Tables: []types.DBTable{
-			{Name: "parent", Columns: []types.DBColumn{
+	return &catalog.Database{
+		Tables: []catalog.Table{
+			{Name: "parent", Columns: []catalog.Column{
 				{Name: "id", DataType: "integer", IsPrimaryKey: true, IsNullable: "NO"},
 			}},
-			{Name: "widget", Columns: []types.DBColumn{
+			{Name: "widget", Columns: []catalog.Column{
 				{Name: "id", DataType: "integer", IsPrimaryKey: true, IsNullable: "NO"},
 				{Name: "parent", DataType: "integer", IsNullable: "NO"},
 			}},
 		},
-		Constraints: []types.DBConstraint{{
+		Constraints: []catalog.Constraint{{
 			TableName: "widget", Name: name, Type: "FOREIGN KEY",
 			ColumnName: "parent", ColumnNames: []string{"parent"},
 			ForeignTable: &parent, ForeignColumn: &id, ForeignColumns: []string{"id"},

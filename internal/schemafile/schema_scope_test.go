@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemafile"
 )
 
@@ -171,7 +171,7 @@ func TestLoadAcceptsADocumentTheRunCanReach(t *testing.T) {
 			opts:        schemafile.Options{Dialect: "sqlite", SchemaScope: "main", SchemaScopeFlag: "dev-url"},
 			wantSchemas: make([]string, 0),
 			// Sorted rather than in file order: the SQL path finishes through
-			// goschema.Finalize, which orders tables by their dependencies.
+			// schemamodel.Finalize, which orders tables by their dependencies.
 			wantTables: []string{"posts", "users"},
 		},
 	}
@@ -255,7 +255,7 @@ func TestScopeFromURLsPrefersTheDevURL(t *testing.T) {
 	}
 }
 
-func schemaNames(db *goschema.Database) []string {
+func schemaNames(db *schemamodel.Database) []string {
 	names := make([]string, 0, len(db.Schemas))
 	for _, schema := range db.Schemas {
 		names = append(names, schema.Name)

@@ -52,7 +52,7 @@ The three `model-imports-pipeline` edges:
 
 The four `pipeline-builds-source-description` sites are one per dialect planner:
 `internal/planner/dialects/{clickhouse,mysql,postgres,sqlite}` each build a
-`goschema.Database`.
+`schemamodel.Database`.
 
 Both are cleared by the staged plan in ADR 0001 section 8, not by this issue.
 The gate exists so that work is measurable while it happens.
@@ -64,8 +64,8 @@ issue that owns each.
 
 | Boundary | What is lost | Owner |
 | --- | --- | --- |
-| `goschema.Database` ↔ `types.DBSchema` | Two families are spelled differently and several exist on only one side; four packages under `internal/convert` move between them. | [#1662](https://github.com/stokaro/ptah/issues/1662) |
-| `types.SchemaDiff` per-family name lists | A change carries a name, so the planner takes the desired description as a second parameter to recover the rest. | [#1662](https://github.com/stokaro/ptah/issues/1662) |
+| `schemamodel.Database` ↔ `catalog.Database` | Two families are spelled differently and several exist on only one side; four packages under `internal/convert` move between them. | [#1662](https://github.com/stokaro/ptah/issues/1662) |
+| `difftypes.SchemaDiff` per-family name lists | A change carries a name, so the planner takes the desired description as a second parameter to recover the rest. | [#1662](https://github.com/stokaro/ptah/issues/1662) |
 | Converted foreign migration layouts | The rebuilt directory carries no integrity file, so source checksums are dropped. Carried out of band since [#1209](https://github.com/stokaro/ptah/issues/1209). | closed |
 | Routine overload identity | Closed: comparison pairs overloads on a signature normalized to agree with the catalog, consulted only where a name is overloaded. | closed |
 | Single-column uniqueness | Closed: a guarantee is a `schemastate.UniqueKey` object rather than a flag on a column, and `ReferencedColumnsAreUnique` asks about the column list, so a composite key is a key. | closed |

@@ -1,7 +1,7 @@
 # HCL Schema Input
 
 Ptah can generate SQL from an HCL schema file instead of scanning Go source
-annotations. The HCL schema frontend builds the same `goschema.Database`
+annotations. The HCL schema frontend builds the same `schemamodel.Database`
 intermediate representation as Go annotations and YAML schema input, then runs
 the normal finalization, dependency ordering, AST conversion, and dialect
 renderers.
@@ -518,7 +518,7 @@ attributes are rejected instead of being silently dropped.
 ## PostgreSQL Schema Objects
 
 Ptah accepts the Atlas-style HCL object blocks that map to its current
-`goschema.Database` IR. These blocks are primarily useful with PostgreSQL-family
+`schemamodel.Database` IR. These blocks are primarily useful with PostgreSQL-family
 rendering.
 
 ```hcl

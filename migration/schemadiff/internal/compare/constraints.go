@@ -5,15 +5,15 @@ import (
 	"sort"
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/tableref"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
-// Constraints compares constraint definitions between generated and database schemas.
+// Constraints compares constraint definitions between the desired and current schemas.
 //
 // This function identifies differences in table-level constraints such as EXCLUDE,
 // CHECK, UNIQUE, PRIMARY KEY, and FOREIGN KEY constraints. It compares constraints
@@ -43,7 +43,7 @@ import (
 // # Example Usage
 //
 //	// Compare constraints between schemas
-//	compare.Constraints(generated, database, diff)
+//	compare.Constraints(desired, current, diff)
 //
 //	// Check for constraint changes
 //	if len(diff.ConstraintsAdded) > 0 {
@@ -52,8 +52,8 @@ import (
 //
 // # Parameters
 //
-//   - generated: Target schema parsed from Go struct annotations
-//   - database: Current database schema from database introspection
+//   - desired: the schema an authoring source declared
+//   - current: the schema a live database reported
 //   - diff: Schema difference structure to populate with constraint changes
 //
 // # Limitations
@@ -61,12 +61,12 @@ import (
 //   - Database constraint introspection is not yet fully implemented
 //   - Currently focuses on constraint additions from generated schema
 //   - Constraint modifications are not yet detected
-func Constraints(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff, opts *config.CompareOptions) {
+func Constraints(desired *schemamodel.Database, current *catalog.Database, diff *difftypes.SchemaDiff, opts *config.CompareOptions) {
 	dialect := ""
 	if opts != nil {
 		dialect = opts.Dialect
 	}
-	ConstraintsWithSemantics(generated, database, diff, opts, identifier.ForDialect(dialect))
+	ConstraintsWithSemantics(desired, current, diff, opts, identifier.ForDialect(dialect))
 }
 
 // ConstraintsWithSemantics is [Constraints] told which identifier rules the
@@ -84,8 +84,8 @@ func Constraints(generated *goschema.Database, database *types.DBSchema, diff *d
 // PostgreSQL and SQLite, still live on MySQL because it could never see a
 // default schema (stokaro/ptah#1244).
 func ConstraintsWithSemantics(
-	generated *goschema.Database,
-	database *types.DBSchema,
+	desired *schemamodel.Database,
+	current *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	opts *config.CompareOptions,
 	semantics identifier.Semantics,
@@ -96,9 +96,9 @@ func ConstraintsWithSemantics(
 	}
 
 	// Create maps for detailed constraint comparison
-	genConstraints := make(map[tableMemberKey]goschema.Constraint)
-	for _, constraint := range generated.Constraints {
-		constraint.Table = generatedConstraintTableName(constraint, generated.Tables)
+	genConstraints := make(map[tableMemberKey]schemamodel.Constraint)
+	for _, constraint := range desired.Constraints {
+		constraint.Table = generatedConstraintTableName(constraint, desired.Tables)
 		key := newConstraintKey(constraint.Table, constraint.Name, semantics)
 		genConstraints[key] = constraint
 	}
@@ -110,7 +110,7 @@ func ConstraintsWithSemantics(
 	// their CHECK inline via CREATE TABLE / ALTER TABLE ADD COLUMN, and
 	// double-emitting an ALTER TABLE ADD CONSTRAINT would fail because the
 	// constraint is created in the same migration step.
-	for _, synthesized := range synthesizeFieldLevelCheckConstraints(generated, database, semantics) {
+	for _, synthesized := range synthesizeFieldLevelCheckConstraints(desired, current, semantics) {
 		key := newConstraintKey(synthesized.Table, synthesized.Name, semantics)
 		// Don't clobber an explicit table-level constraint that happens to
 		// share the same name.
@@ -119,7 +119,7 @@ func ConstraintsWithSemantics(
 		}
 	}
 
-	for _, synthesized := range synthesizeTablePrimaryKeyConstraints(generated, database, dialect, semantics) {
+	for _, synthesized := range synthesizeTablePrimaryKeyConstraints(desired, current, dialect, semantics) {
 		key := newConstraintKey(synthesized.Table, synthesized.Name, semantics)
 		// Don't clobber an explicit table-level constraint that happens to
 		// share the same name.
@@ -141,7 +141,7 @@ func ConstraintsWithSemantics(
 	// through to the comparison instead of filtering it out — otherwise
 	// foreignKeyConstraintChanged would never run for field-level FKs.
 	synthesizedFKKeys := make(map[tableMemberKey]struct{})
-	for _, synthesized := range synthesizeFieldLevelForeignKeyConstraints(generated, database, semantics) {
+	for _, synthesized := range synthesizeFieldLevelForeignKeyConstraints(desired, current, semantics) {
 		key := newConstraintKey(synthesized.Table, synthesized.Name, semantics)
 		synthesizedFKKeys[key] = struct{}{}
 		// Don't clobber an explicit table-level constraint that happens to
@@ -152,8 +152,8 @@ func ConstraintsWithSemantics(
 	}
 
 	dbConstraints := collectDatabaseConstraints(
-		generated,
-		database,
+		desired,
+		current,
 		genConstraints,
 		synthesizedFKKeys,
 		dialect,
@@ -233,17 +233,17 @@ func ConstraintsWithSemantics(
 // its constraint honored rather than being handed to a pool that would then
 // plan an ADD CONSTRAINT on top of the existing index.
 func collectDatabaseConstraints(
-	generated *goschema.Database,
-	database *types.DBSchema,
-	genConstraints map[tableMemberKey]goschema.Constraint,
+	desired *schemamodel.Database,
+	current *catalog.Database,
+	genConstraints map[tableMemberKey]schemamodel.Constraint,
 	synthesizedFKKeys map[tableMemberKey]struct{},
 	dialect string,
 	semantics identifier.Semantics,
-) map[tableMemberKey]types.DBConstraint {
-	declaredIndexes := generatedIndexIdentities(generated, semantics)
-	dbConstraints := make(map[tableMemberKey]types.DBConstraint, len(database.Constraints))
-	for _, constraint := range database.Constraints {
-		if isFieldLevelConstraint(constraint, generated, synthesizedFKKeys, semantics) {
+) map[tableMemberKey]catalog.Constraint {
+	declaredIndexes := generatedIndexIdentities(desired, semantics)
+	dbConstraints := make(map[tableMemberKey]catalog.Constraint, len(current.Constraints))
+	for _, constraint := range current.Constraints {
+		if isFieldLevelConstraint(constraint, desired, synthesizedFKKeys, semantics) {
 			continue
 		}
 		key := newConstraintKey(constraint.QualifiedTableName(), constraint.Name, semantics)
@@ -268,7 +268,7 @@ func collectDatabaseConstraints(
 // CONSTRAINT — read this parallel slice instead of the bare name list.
 func appendConstraintRemoval(
 	infos []difftypes.ConstraintRemovalInfo,
-	dbConstraint types.DBConstraint,
+	dbConstraint catalog.Constraint,
 	semantics identifier.Semantics,
 ) []difftypes.ConstraintRemovalInfo {
 	return append(infos, difftypes.ConstraintRemovalInfo{
@@ -281,7 +281,7 @@ func appendConstraintRemoval(
 
 func appendForeignKeyRemoval(
 	infos []difftypes.ForeignKeyRemovalInfo,
-	dbConstraint types.DBConstraint,
+	dbConstraint catalog.Constraint,
 	semantics identifier.Semantics,
 ) []difftypes.ForeignKeyRemovalInfo {
 	if !strings.EqualFold(dbConstraint.Type, "FOREIGN KEY") {
@@ -309,7 +309,7 @@ func appendForeignKeyRemoval(
 // one entry and matches the previous field-scan behavior.
 func appendConstraintAddition(
 	infos []difftypes.ConstraintAdditionInfo,
-	genConstraint goschema.Constraint,
+	genConstraint schemamodel.Constraint,
 	semantics identifier.Semantics,
 ) []difftypes.ConstraintAdditionInfo {
 	return append(infos, difftypes.ConstraintAdditionInfo{
@@ -331,11 +331,11 @@ func appendConstraintAddition(
 	})
 }
 
-// constraintDefinitionsChanged compares constraint definitions between generated and database schemas
+// constraintDefinitionsChanged compares constraint definitions between the desired and current schemas
 // to detect if a constraint needs to be recreated due to definition changes.
 func constraintDefinitionsChanged(
-	genConstraint goschema.Constraint,
-	dbConstraint types.DBConstraint,
+	genConstraint schemamodel.Constraint,
+	dbConstraint catalog.Constraint,
 	dialect string,
 	semantics identifier.Semantics,
 	checks map[string]config.CheckExpression,
@@ -363,13 +363,13 @@ func constraintDefinitionsChanged(
 	}
 }
 
-func primaryKeyConstraintChanged(genConstraint goschema.Constraint, dbConstraint types.DBConstraint) bool {
+func primaryKeyConstraintChanged(genConstraint schemamodel.Constraint, dbConstraint catalog.Constraint) bool {
 	return !slices.Equal(genConstraint.Columns, dbConstraint.ColumnNamesOrDefault()) ||
 		!stringSetsEqual(genConstraint.IncludeColumns, dbConstraint.IncludeColumns)
 }
 
 // excludeConstraintChanged compares EXCLUDE constraint definitions
-func excludeConstraintChanged(genConstraint goschema.Constraint, dbConstraint types.DBConstraint) bool {
+func excludeConstraintChanged(genConstraint schemamodel.Constraint, dbConstraint catalog.Constraint) bool {
 	// Compare using method
 	if genConstraint.UsingMethod != getStringValue(dbConstraint.UsingMethod) {
 		return true
@@ -401,8 +401,8 @@ func excludeConstraintChanged(genConstraint goschema.Constraint, dbConstraint ty
 // Without a resolver the old rule stands, which is right for the shapes it
 // folds and declines the one it cannot.
 func checkConstraintChanged(
-	genConstraint goschema.Constraint,
-	dbConstraint types.DBConstraint,
+	genConstraint schemamodel.Constraint,
+	dbConstraint catalog.Constraint,
 	checks map[string]config.CheckExpression,
 ) bool {
 	dbClause := getStringValue(dbConstraint.CheckClause)
@@ -426,7 +426,7 @@ func checkConstraintChanged(
 // nothing about whether the two expressions agree.
 func resolvedCheckExpression(
 	checks map[string]config.CheckExpression,
-	constraint goschema.Constraint,
+	constraint schemamodel.Constraint,
 ) (string, bool) {
 	resolved, ok := checks[checkExpressionLookupKey(constraint.Table, constraint.Name)]
 	if !ok || !resolved.Resolved {
@@ -456,7 +456,7 @@ func checkExpressionsOf(opts *config.CompareOptions) map[string]config.CheckExpr
 }
 
 // uniqueConstraintChanged compares UNIQUE constraint definitions
-func uniqueConstraintChanged(genConstraint goschema.Constraint, dbConstraint types.DBConstraint) bool {
+func uniqueConstraintChanged(genConstraint schemamodel.Constraint, dbConstraint catalog.Constraint) bool {
 	return !stringSetsEqual(genConstraint.Columns, dbConstraint.ColumnNamesOrDefault()) ||
 		!stringSetsEqual(genConstraint.IncludeColumns, dbConstraint.IncludeColumns) ||
 		!boolPtrEqual(genConstraint.NullsDistinct, dbConstraint.NullsDistinct)

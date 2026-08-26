@@ -11,25 +11,25 @@ import (
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/migration/risk"
 	"go.5x5.cz/ptah/migration/safety"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestClassifySchemaDiff_HighestSeverity(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		TablesAdded: []string{"users"},
-		TablesModified: []types.TableDiff{
+		TablesModified: []difftypes.TableDiff{
 			{
 				TableName:      "products",
 				ColumnsAdded:   []string{"sku"},
 				ColumnsRemoved: []string{"legacy_code"},
 			},
 		},
-		IndexesRemoved: []types.IndexRef{
+		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_products_old", TableName: "products"},
 		},
-		RLSPoliciesRemoved: []types.RLSPolicyRef{
+		RLSPoliciesRemoved: []difftypes.RLSPolicyRef{
 			{PolicyName: "tenant_isolation", TableName: "accounts"},
 		},
 	}
@@ -58,8 +58,8 @@ func TestClassifySchemaDiff_HighestSeverity(t *testing.T) {
 func TestClassifySchemaDiff_AggregatesRepeatedCategories(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
-		TablesModified: []types.TableDiff{
+	diff := &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{
 			{TableName: "users", ColumnsAdded: []string{"email"}},
 			{TableName: "posts", ColumnsAdded: []string{"slug", "status"}},
 		},
@@ -80,8 +80,8 @@ func TestClassifySchemaDiff_AggregatesRepeatedCategories(t *testing.T) {
 func TestClassifySchemaDiff_ExtensionPlacementIsAWarning(t *testing.T) {
 	c := qt.New(t)
 
-	findings := safety.ClassifySchemaDiff(&types.SchemaDiff{
-		ExtensionsModified: []types.ExtensionDiff{{
+	findings := safety.ClassifySchemaDiff(&difftypes.SchemaDiff{
+		ExtensionsModified: []difftypes.ExtensionDiff{{
 			Name: "pgcrypto", FromSchema: "public", ToSchema: "extensions",
 		}},
 	})

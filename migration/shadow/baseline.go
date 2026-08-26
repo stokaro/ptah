@@ -6,10 +6,10 @@ import (
 	"io/fs"
 	"time"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/internal/shadowdb"
@@ -123,7 +123,7 @@ func VerifyBaseline(ctx context.Context, opts BaselineVerifyOptions) error {
 	diff, err := schemadiff.CompareWithDatabase(
 		ctx,
 		opts.TargetConn,
-		dbschematogo.ConvertDBSchemaToGoSchema(shadowSchema),
+		dbschematogo.ConvertCatalogToSchema(shadowSchema),
 		targetSchema,
 		opts.CompareOptions,
 	)
@@ -179,12 +179,12 @@ func validateBaselineTargetIdentifierSemantics(
 	ctx context.Context,
 	shadowConn *dbschema.DatabaseConnection,
 	opts BaselineVerifyOptions,
-) (*dbschematypes.DBSchema, error) {
+) (*catalog.Database, error) {
 	targetSchema, err := dbschema.ReadSchemaWithSchemasContext(ctx, opts.TargetConn, opts.Schemas)
 	if err != nil {
 		return nil, baselineError("target-introspect", "target_introspection_error", "read target schema", err)
 	}
-	targetGenerated := dbschematogo.ConvertDBSchemaToGoSchema(targetSchema)
+	targetGenerated := dbschematogo.ConvertCatalogToSchema(targetSchema)
 	targetDiff, err := schemadiff.CompareWithDatabase(
 		ctx,
 		opts.TargetConn,

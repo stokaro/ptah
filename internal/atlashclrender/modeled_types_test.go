@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 )
 
@@ -253,9 +253,9 @@ func TestRenderIgnoresTheDialect(t *testing.T) {
 
 // inspectedColumn builds the IR a database read produces for a one-column
 // table: a type with no record of how it was written.
-func inspectedColumn(columnType string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Probe", Name: "probe"}},
-		Fields: []goschema.Field{{StructName: "Probe", Name: "c", Type: columnType}},
+func inspectedColumn(columnType string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Probe", Name: "probe"}},
+		Fields: []schemamodel.Field{{StructName: "Probe", Name: "c", Type: columnType}},
 	}
 }

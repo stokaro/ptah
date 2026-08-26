@@ -6,26 +6,26 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/schemamodel"
 	sqliteplanner "go.5x5.cz/ptah/internal/planner/dialects/sqlite"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // viewFixture916 and triggerFixture916 are the two diffs the table below plans.
 // Each names exactly one object kind so a refusal can only come from that
 // kind's own gate.
-func viewFixture916() (*types.SchemaDiff, *goschema.Database) {
-	return &types.SchemaDiff{ViewsAdded: []string{"active_notes"}},
-		&goschema.Database{Views: []goschema.View{{
+func viewFixture916() (*difftypes.SchemaDiff, *schemamodel.Database) {
+	return &difftypes.SchemaDiff{ViewsAdded: []string{"active_notes"}},
+		&schemamodel.Database{Views: []schemamodel.View{{
 			Name: "active_notes",
 			Body: "SELECT id FROM notes WHERE body IS NOT NULL",
 		}}}
 }
 
-func triggerFixture916() (*types.SchemaDiff, *goschema.Database) {
-	return &types.SchemaDiff{TriggersAdded: []types.TriggerRef{{TriggerName: "touch", TableName: "notes"}}},
-		&goschema.Database{Triggers: []goschema.Trigger{{
+func triggerFixture916() (*difftypes.SchemaDiff, *schemamodel.Database) {
+	return &difftypes.SchemaDiff{TriggersAdded: []difftypes.TriggerRef{{TriggerName: "touch", TableName: "notes"}}},
+		&schemamodel.Database{Triggers: []schemamodel.Trigger{{
 			StructName: "Note",
 			Name:       "touch",
 			Table:      "notes",
@@ -48,44 +48,44 @@ func TestSQLitePlanner_RefusesObjectKindsTheTargetDeclines(t *testing.T) {
 	tests := []struct {
 		name      string
 		caps      capability.Capabilities
-		diff      *types.SchemaDiff
-		generated *goschema.Database
+		diff      *difftypes.SchemaDiff
+		desired   *schemamodel.Database
 		wantError string
 	}{
 		{
-			name:      "the shipped preset plans a view",
-			caps:      capability.SQLite3(),
-			diff:      viewDiff,
-			generated: viewSchema,
+			name:    "the shipped preset plans a view",
+			caps:    capability.SQLite3(),
+			diff:    viewDiff,
+			desired: viewSchema,
 		},
 		{
-			name:      "the shipped preset plans a trigger",
-			caps:      capability.SQLite3(),
-			diff:      triggerDiff,
-			generated: triggerSchema,
+			name:    "the shipped preset plans a trigger",
+			caps:    capability.SQLite3(),
+			diff:    triggerDiff,
+			desired: triggerSchema,
 		},
 		{
 			name:      "a set declining views refuses one",
 			caps:      capability.SQLite3().With(capability.Views, false),
 			diff:      viewDiff,
-			generated: viewSchema,
+			desired:   viewSchema,
 			wantError: "views are not supported by the target capability set",
 		},
 		{
 			name:      "a set declining triggers refuses one",
 			caps:      capability.SQLite3().With(capability.Triggers, false),
 			diff:      triggerDiff,
-			generated: triggerSchema,
+			desired:   triggerSchema,
 			wantError: "triggers are not supported by the target capability set",
 		},
 		{
 			// The non-interference control: declining views must not reach the
 			// trigger gate, or one gate would answer for both and reverting
 			// either would still look measured.
-			name:      "a set declining views still plans a trigger",
-			caps:      capability.SQLite3().With(capability.Views, false),
-			diff:      triggerDiff,
-			generated: triggerSchema,
+			name:    "a set declining views still plans a trigger",
+			caps:    capability.SQLite3().With(capability.Views, false),
+			diff:    triggerDiff,
+			desired: triggerSchema,
 		},
 	}
 
@@ -95,7 +95,7 @@ func TestSQLitePlanner_RefusesObjectKindsTheTargetDeclines(t *testing.T) {
 
 			p := sqliteplanner.NewWithCapabilities(test.caps)
 
-			nodes, err := p.GenerateMigrationASTChecked(test.diff, test.generated)
+			nodes, err := p.GenerateMigrationASTChecked(test.diff, test.desired)
 
 			c.Assert(errorText916(err), qt.Contains, test.wantError)
 			// The arithmetic half of the assertion, which the empty wantError

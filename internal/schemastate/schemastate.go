@@ -3,8 +3,8 @@
 //
 // # Why it exists
 //
-// The tree describes a schema two ways. `core/goschema.Database` is what an
-// authoring source produces and `dbschema/types.DBSchema` is what a catalog
+// The tree describes a schema two ways. `core/schemamodel.Database` is what an
+// authoring source produces and `catalog.Database` is what a catalog
 // read produces; they carry different field sets, spell two families
 // differently, and four packages under internal/convert exist to move between
 // them. Every conversion is a place a fact can be lost with no gate that
@@ -245,7 +245,7 @@ type Table struct {
 	Columns []Column
 	// EstimatedRows and RowStatsUnknown are the best evidence a plan has about
 	// whether the table holds anything, and they are a PAIR for the reason
-	// dbschema/types.DBTable carries them as one: a zero estimate from a server
+	// catalog.Table carries them as one: a zero estimate from a server
 	// that keeps statistics means "empty at the last analyze", and a zero from
 	// a server that keeps none means nothing at all. Reading the number alone
 	// turns the second into the first.
@@ -282,7 +282,7 @@ type Table struct {
 	//
 	// It is `*ast.RowTTLSpec` rather than a type of this package, unlike
 	// [Partition]. Both sides already carry that exact type -- the authoring
-	// model and `dbschema/types.DBTable` both hold it -- so a mirror here would
+	// model and `catalog.Table` both hold it -- so a mirror here would
 	// be a third shape to keep in step for no gain, and the comparison rules
 	// its fields carry live with it.
 	RowTTL *ast.RowTTLSpec
@@ -301,7 +301,7 @@ type Table struct {
 	// none.
 	//
 	// It is carried for rendering and not compared. A catalog reports only
-	// THAT a table is partitioned -- `DBTable.Partitioned` is a boolean and no
+	// THAT a table is partitioned -- `catalog.Table.Partitioned` is a boolean and no
 	// read returns the key -- so a comparison would hold a declared key against
 	// nothing and report a change for every partitioned table. Dropping it from
 	// a CREATE builds an ordinary table instead, which accepts every row the
@@ -498,7 +498,7 @@ type Index struct {
 	//
 	// A comparison must not read Columns as the whole key when this is set: it
 	// would plan a rebuild on every run for a key that never changed
-	// (stokaro/ptah#1663, and the same fact dbschema/types.DBIndex records).
+	// (stokaro/ptah#1663, and the same fact catalog.Index records).
 	KeyPartsIncomplete bool
 	// RequiresExtensions names the extensions this index cannot be built
 	// without.

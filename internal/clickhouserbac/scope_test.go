@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/clickhouserbac"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 )
@@ -109,29 +109,29 @@ func TestScope_Contains_IsTheServerAbsorptionRule(t *testing.T) {
 func TestScopeOf_HappyPath(t *testing.T) {
 	tests := []struct {
 		name            string
-		grant           goschema.Grant
+		grant           schemamodel.Grant
 		defaultDatabase string
 		want            clickhouserbac.Scope
 	}{
 		{
 			name:  "on_schema is a database scope",
-			grant: goschema.Grant{Role: "reader", OnSchema: "shop"},
+			grant: schemamodel.Grant{Role: "reader", OnSchema: "shop"},
 			want:  clickhouserbac.Scope{Database: "shop"},
 		},
 		{
 			name:  "a qualified on_table names its own database",
-			grant: goschema.Grant{Role: "reader", OnTable: "shop.orders"},
+			grant: schemamodel.Grant{Role: "reader", OnTable: "shop.orders"},
 			want:  clickhouserbac.Scope{Database: "shop", Table: "orders"},
 		},
 		{
 			name:            "an unqualified on_table resolves against the default",
-			grant:           goschema.Grant{Role: "reader", OnTable: "orders"},
+			grant:           schemamodel.Grant{Role: "reader", OnTable: "orders"},
 			defaultDatabase: "shop",
 			want:            clickhouserbac.Scope{Database: "shop", Table: "orders"},
 		},
 		{
 			name:            "a qualified on_table outranks the default",
-			grant:           goschema.Grant{Role: "reader", OnTable: "warehouse.orders"},
+			grant:           schemamodel.Grant{Role: "reader", OnTable: "warehouse.orders"},
 			defaultDatabase: "shop",
 			want:            clickhouserbac.Scope{Database: "warehouse", Table: "orders"},
 		},
@@ -150,33 +150,33 @@ func TestScopeOf_HappyPath(t *testing.T) {
 func TestScopeOf_FailurePath(t *testing.T) {
 	tests := []struct {
 		name            string
-		grant           goschema.Grant
+		grant           schemamodel.Grant
 		defaultDatabase string
 		wantErr         string
 	}{
 		{
 			name:    "sequences do not exist",
-			grant:   goschema.Grant{Role: "reader", OnSequence: "order_id_seq"},
+			grant:   schemamodel.Grant{Role: "reader", OnSequence: "order_id_seq"},
 			wantErr: `grant to role "reader" names on_sequence "order_id_seq": ClickHouse has no sequences`,
 		},
 		{
 			name:    "two scopes at once",
-			grant:   goschema.Grant{Role: "reader", OnSchema: "shop", OnTable: "shop.orders"},
+			grant:   schemamodel.Grant{Role: "reader", OnSchema: "shop", OnTable: "shop.orders"},
 			wantErr: `.*names both on_schema "shop" and on_table "shop.orders".*`,
 		},
 		{
 			name:    "no object at all",
-			grant:   goschema.Grant{Role: "reader"},
+			grant:   schemamodel.Grant{Role: "reader"},
 			wantErr: `grant to role "reader" names no object.*`,
 		},
 		{
 			name:    "an unqualified table with no default to resolve against",
-			grant:   goschema.Grant{Role: "reader", OnTable: "orders"},
+			grant:   schemamodel.Grant{Role: "reader", OnTable: "orders"},
 			wantErr: `.*names table "orders" with no database.*`,
 		},
 		{
 			name:    "three parts",
-			grant:   goschema.Grant{Role: "reader", OnTable: "cluster.shop.orders"},
+			grant:   schemamodel.Grant{Role: "reader", OnTable: "cluster.shop.orders"},
 			wantErr: `.*a ClickHouse scope has at most two parts`,
 		},
 		{
@@ -185,23 +185,23 @@ func TestScopeOf_FailurePath(t *testing.T) {
 			// this would widen one table's privilege to every table in the
 			// database — silently, from a typo.
 			name:    "a trailing dot, which would widen the scope",
-			grant:   goschema.Grant{Role: "reader", OnTable: "shop."},
+			grant:   schemamodel.Grant{Role: "reader", OnTable: "shop."},
 			wantErr: `.*names table "shop\." with no table part.*`,
 		},
 		{
 			name:            "a trailing dot is refused even with a default database",
-			grant:           goschema.Grant{Role: "reader", OnTable: "shop."},
+			grant:           schemamodel.Grant{Role: "reader", OnTable: "shop."},
 			defaultDatabase: "warehouse",
 			wantErr:         `.*with no table part.*`,
 		},
 		{
 			name:    "a wildcard database",
-			grant:   goschema.Grant{Role: "reader", OnTable: "*.orders"},
+			grant:   schemamodel.Grant{Role: "reader", OnTable: "*.orders"},
 			wantErr: `.*not wildcard scopes`,
 		},
 		{
 			name:    "a wildcard schema",
-			grant:   goschema.Grant{Role: "reader", OnSchema: "*"},
+			grant:   schemamodel.Grant{Role: "reader", OnSchema: "*"},
 			wantErr: `.*not wildcard scopes`,
 		},
 	}
@@ -220,9 +220,9 @@ func TestScopeOf_FailurePath(t *testing.T) {
 // populated.
 //
 // The two object types put the database in DIFFERENT fields, and that is the
-// shared [types.DBGrant] contract rather than anything ClickHouse decided: a
+// shared [catalog.Grant] contract rather than anything ClickHouse decided: a
 // SCHEMA-typed row carries its target in ObjectName with Schema empty — which
-// is what [types.DBGrant.QualifiedTarget] returns, what the PostgreSQL reader
+// is what [catalog.Grant.QualifiedTarget] returns, what the PostgreSQL reader
 // writes, and what internal/convert/dbschematogo reads — while a TABLE-typed
 // row carries the schema in Schema and the table in ObjectName.
 //
@@ -233,29 +233,29 @@ func TestScopeOf_FailurePath(t *testing.T) {
 func TestScopeOfLive_ReadsTheCatalogShape(t *testing.T) {
 	tests := []struct {
 		name  string
-		grant types.DBGrant
+		grant catalog.Grant
 		want  clickhouserbac.Scope
 	}{
 		{
 			name:  "a table row",
-			grant: types.DBGrant{ObjectType: "TABLE", Schema: "shop", ObjectName: "orders"},
+			grant: catalog.Grant{ObjectType: "TABLE", Schema: "shop", ObjectName: "orders"},
 			want:  clickhouserbac.Scope{Database: "shop", Table: "orders"},
 		},
 		{
 			name:  "a database row, spelled the way the shared contract spells it",
-			grant: types.DBGrant{ObjectType: "SCHEMA", ObjectName: "shop"},
+			grant: catalog.Grant{ObjectType: "SCHEMA", ObjectName: "shop"},
 			want:  clickhouserbac.Scope{Database: "shop"},
 		},
 		{
 			name:  "the object type decides, whatever case it is written in",
-			grant: types.DBGrant{ObjectType: "schema", ObjectName: "shop"},
+			grant: catalog.Grant{ObjectType: "schema", ObjectName: "shop"},
 			want:  clickhouserbac.Scope{Database: "shop"},
 		},
 		{
 			// A row with no object type at all is a table row, because that is
 			// the only shape a reader that does not set the field can mean.
 			name:  "an untyped row falls back to the table spelling",
-			grant: types.DBGrant{Schema: "shop", ObjectName: "orders"},
+			grant: catalog.Grant{Schema: "shop", ObjectName: "orders"},
 			want:  clickhouserbac.Scope{Database: "shop", Table: "orders"},
 		},
 	}
@@ -279,20 +279,20 @@ func TestScopeOfLive_ReadsTheCatalogShape(t *testing.T) {
 func TestScopeOfLive_AgreesWithScopeOfAcrossTheBoundary(t *testing.T) {
 	tests := []struct {
 		name    string
-		grant   goschema.Grant
-		live    types.DBGrant
+		grant   schemamodel.Grant
+		live    catalog.Grant
 		wantSQL string
 	}{
 		{
 			name:    "a database scope",
-			grant:   goschema.Grant{Role: "reader", Privileges: []string{"SELECT"}, OnSchema: "shop"},
-			live:    types.DBGrant{Role: "reader", Privilege: "SELECT", ObjectType: "SCHEMA", ObjectName: "shop"},
+			grant:   schemamodel.Grant{Role: "reader", Privileges: []string{"SELECT"}, OnSchema: "shop"},
+			live:    catalog.Grant{Role: "reader", Privilege: "SELECT", ObjectType: "SCHEMA", ObjectName: "shop"},
 			wantSQL: "`shop`.*",
 		},
 		{
 			name:    "a table scope",
-			grant:   goschema.Grant{Role: "reader", Privileges: []string{"SELECT"}, OnTable: "shop.orders"},
-			live:    types.DBGrant{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", Schema: "shop", ObjectName: "orders"},
+			grant:   schemamodel.Grant{Role: "reader", Privileges: []string{"SELECT"}, OnTable: "shop.orders"},
+			live:    catalog.Grant{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", Schema: "shop", ObjectName: "orders"},
 			wantSQL: "`shop`.`orders`",
 		},
 	}
@@ -314,8 +314,8 @@ func TestScopeOfLive_AgreesWithScopeOfAcrossTheBoundary(t *testing.T) {
 			// This is the path `ptah db read` output takes back into a
 			// comparison, and a reader that filled the wrong field would break
 			// it while both assertions above still passed.
-			described := dbschematogo.ConvertDBSchemaToGoSchema(
-				&types.DBSchema{Grants: []types.DBGrant{test.live}},
+			described := dbschematogo.ConvertCatalogToSchema(
+				&catalog.Database{Grants: []catalog.Grant{test.live}},
 			)
 			c.Assert(described.Grants, qt.HasLen, 1)
 			redeclared, err := clickhouserbac.ScopeOf(described.Grants[0], "")

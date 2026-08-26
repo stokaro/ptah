@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
 
@@ -37,12 +37,12 @@ func TestRLSPolicyDefinitions_AnUnspecifiedForClauseEqualsALL(t *testing.T) {
 			c := qt.New(t)
 
 			diff := compare.RLSPolicyDefinitions(
-				goschema.RLSPolicy{
+				schemamodel.RLSPolicy{
 					Name: "p", Table: "t",
 					PolicyFor:       test.declared,
 					UsingExpression: "tenant = 1",
 				},
-				types.DBRLSPolicy{
+				catalog.RLSPolicy{
 					Name: "p", Table: "t",
 					PolicyFor:       test.observed,
 					UsingExpression: "tenant = 1",

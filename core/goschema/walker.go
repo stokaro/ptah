@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/goannotationsource"
 )
 
@@ -47,12 +48,12 @@ import (
 //	if err != nil {
 //		return fmt.Errorf("failed to render schema: %w", err)
 //	}
-func ParseDir(rootDir string) (*Database, error) {
+func ParseDir(rootDir string) (*schemamodel.Database, error) {
 	result, err := ParseDirRaw(rootDir)
 	if err != nil {
 		return nil, err
 	}
-	return mergeAccumulatedDatabase(result)
+	return schemamodel.MergeAccumulated(result)
 }
 
 // ParseFS parses all Go files in the given root directory and its subdirectories within the provided filesystem.
@@ -83,12 +84,12 @@ func ParseDir(rootDir string) (*Database, error) {
 //	if err != nil {
 //		return fmt.Errorf("failed to render schema: %w", err)
 //	}
-func ParseFS(fsys fs.FS, rootDir string) (*Database, error) {
-	result := newDatabase()
+func ParseFS(fsys fs.FS, rootDir string) (*schemamodel.Database, error) {
+	result := schemamodel.NewDatabase()
 	if err := accumulateGoFiles(result, fsys, rootDir); err != nil {
 		return nil, err
 	}
-	return mergeAccumulatedDatabase(result)
+	return schemamodel.MergeAccumulated(result)
 }
 
 // ParseDirs parses several Go entity roots into a single composite schema.
@@ -106,12 +107,12 @@ func ParseFS(fsys fs.FS, rootDir string) (*Database, error) {
 // object that differ return a descriptive conflict error. With a single root,
 // ParseDirs delegates to ParseDir and uses the same strict collision semantics
 // without allocating a second database accumulator.
-func ParseDirs(roots ...string) (*Database, error) {
+func ParseDirs(roots ...string) (*schemamodel.Database, error) {
 	if len(roots) == 1 {
 		return ParseDir(roots[0])
 	}
 
-	sources := make([]*Database, 0, len(roots))
+	sources := make([]*schemamodel.Database, 0, len(roots))
 	for _, root := range roots {
 		source, err := ParseDirRaw(root)
 		if err != nil {
@@ -119,7 +120,7 @@ func ParseDirs(roots ...string) (*Database, error) {
 		}
 		sources = append(sources, source)
 	}
-	return Merge(sources...)
+	return schemamodel.Merge(sources...)
 }
 
 // ParseDirRaw parses one Go entity root into an un-finalized schema: it
@@ -127,18 +128,18 @@ func ParseDirs(roots ...string) (*Database, error) {
 // finalize pipeline (deduplication, embedded-field expansion, dependency
 // ordering).
 //
-// It exists to feed goschema.Merge when composing a Go schema with schemas from
+// It exists to feed schemamodel.Merge when composing a Go schema with schemas from
 // other source kinds (YAML, HCL): parsing every Go root independently preserves
 // its local type namespace until Merge applies the cross-source collision
 // policy. Merge also accepts finalized schemas, but raw roots avoid unnecessary
 // expansion and deduplication work. For a directly usable, finalized schema use
 // ParseDir or ParseDirs instead.
-func ParseDirRaw(root string) (*Database, error) {
+func ParseDirRaw(root string) (*schemamodel.Database, error) {
 	absoluteRoot, err := filepath.Abs(root)
 	if err != nil {
 		return nil, err
 	}
-	result := newDatabase()
+	result := schemamodel.NewDatabase()
 	if err := accumulateGoFiles(result, os.DirFS(absoluteRoot), "."); err != nil {
 		return nil, err
 	}
@@ -146,7 +147,7 @@ func ParseDirRaw(root string) (*Database, error) {
 	return result, nil
 }
 
-func bindManagedDataSourceRoot(result *Database, root string) {
+func bindManagedDataSourceRoot(result *schemamodel.Database, root string) {
 	for index := range result.ManagedData {
 		result.ManagedData[index].SourceDir = filepath.Join(
 			root,
@@ -159,7 +160,7 @@ func bindManagedDataSourceRoot(result *Database, root string) {
 // fsys and appends each parsed file's schema objects onto result without
 // finalizing. It is the shared, pre-finalize body of ParseFS and ParseDirs, so
 // multiple roots can accumulate into one result before a single finalize pass.
-func accumulateGoFiles(result *Database, fsys fs.FS, rootDir string) error {
+func accumulateGoFiles(result *schemamodel.Database, fsys fs.FS, rootDir string) error {
 	var parseErrors []error
 
 	err := fs.WalkDir(fsys, rootDir, func(path string, d fs.DirEntry, err error) error {
@@ -192,7 +193,7 @@ func accumulateGoFiles(result *Database, fsys fs.FS, rootDir string) error {
 			return nil
 		}
 
-		appendDatabase(result, &database)
+		schemamodel.AppendDatabase(result, &database)
 
 		return nil
 	})
@@ -203,10 +204,10 @@ func accumulateGoFiles(result *Database, fsys fs.FS, rootDir string) error {
 	return errors.Join(parseErrors...)
 }
 
-func parseDatabaseFile(fsys fs.FS, path string) (Database, error) {
+func parseDatabaseFile(fsys fs.FS, path string) (schemamodel.Database, error) {
 	file, err := fsys.Open(path)
 	if err != nil {
-		return Database{}, err
+		return schemamodel.Database{}, err
 	}
 	defer file.Close()
 

@@ -6,11 +6,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestGenerateSchemaDiffSQLStatements_KeepsAnOracleRoutineInOneStatement is the
@@ -54,7 +54,7 @@ func TestGenerateSchemaDiffSQLStatements_KeepsAnOracleRoutineInOneStatement(t *t
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			generated := &goschema.Database{Functions: []goschema.Function{{
+			desired := &schemamodel.Database{Functions: []schemamodel.Function{{
 				StructName: "F",
 				Name:       "fn_double",
 				Parameters: "p IN NUMBER",
@@ -64,10 +64,10 @@ func TestGenerateSchemaDiffSQLStatements_KeepsAnOracleRoutineInOneStatement(t *t
 				Volatility: "VOLATILE",
 				Body:       test.body,
 			}}}
-			diff := &types.SchemaDiff{FunctionsAdded: []string{"fn_double"}}
+			diff := &difftypes.SchemaDiff{FunctionsAdded: []string{"fn_double"}}
 
 			statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
-				diff, generated, platform.Oracle,
+				diff, desired, platform.Oracle,
 				planner.Options{Capabilities: capability.Oracle23()})
 
 			c.Assert(err, qt.IsNil)
@@ -86,7 +86,7 @@ func TestGenerateSchemaDiffSQLStatements_KeepsAnOracleRoutineInOneStatement(t *t
 // guard is what keeps the drop harmless when there is nothing to drop.
 func TestGenerateSchemaDiffSQLStatements_OracleReplacesARoutineWithBothHalves(t *testing.T) {
 	c := qt.New(t)
-	generated := &goschema.Database{Functions: []goschema.Function{{
+	desired := &schemamodel.Database{Functions: []schemamodel.Function{{
 		StructName: "F",
 		Name:       "fn_double",
 		Parameters: "p IN NUMBER",
@@ -96,13 +96,13 @@ func TestGenerateSchemaDiffSQLStatements_OracleReplacesARoutineWithBothHalves(t 
 		Volatility: "VOLATILE",
 		Body:       "BEGIN\n  RETURN p * 3;\nEND;",
 	}}}
-	diff := &types.SchemaDiff{FunctionsModified: []types.FunctionDiff{{
+	diff := &difftypes.SchemaDiff{FunctionsModified: []difftypes.FunctionDiff{{
 		FunctionName: "fn_double",
 		Changes:      map[string]string{"body": "old -> new"},
 	}}}
 
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
-		diff, generated, platform.Oracle,
+		diff, desired, platform.Oracle,
 		planner.Options{Capabilities: capability.Oracle23()})
 
 	c.Assert(err, qt.IsNil)
@@ -121,7 +121,7 @@ func TestGenerateSchemaDiffSQLStatements_OracleReplacesARoutineWithBothHalves(t 
 // an annotation without `language=` is defaulted to it.
 func TestGenerateSchemaDiffSQLStatements_OracleDropsNothingItCannotRecreate(t *testing.T) {
 	c := qt.New(t)
-	generated := &goschema.Database{Functions: []goschema.Function{{
+	desired := &schemamodel.Database{Functions: []schemamodel.Function{{
 		StructName: "F",
 		Name:       "fn_double",
 		Parameters: "p integer",
@@ -131,13 +131,13 @@ func TestGenerateSchemaDiffSQLStatements_OracleDropsNothingItCannotRecreate(t *t
 		Volatility: "VOLATILE",
 		Body:       "BEGIN RETURN p * 3; END;",
 	}}}
-	diff := &types.SchemaDiff{FunctionsModified: []types.FunctionDiff{{
+	diff := &difftypes.SchemaDiff{FunctionsModified: []difftypes.FunctionDiff{{
 		FunctionName: "fn_double",
 		Changes:      map[string]string{"body": "old -> new"},
 	}}}
 
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
-		diff, generated, platform.Oracle,
+		diff, desired, platform.Oracle,
 		planner.Options{Capabilities: capability.Oracle23()})
 
 	c.Assert(err, qt.IsNil)

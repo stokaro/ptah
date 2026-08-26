@@ -5,10 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // A comment that differs between the declaration and the database is a change
@@ -101,23 +101,23 @@ func TestCompareWithDialect_AColumnCommentDifferenceIsAChange(t *testing.T) {
 		&difftypes.CommentChange{Current: "login address", Desired: "primary contact"})
 }
 
-func commentedDeclaration(table, column string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{Name: "users", StructName: "User", Comment: table}},
-		Fields: []goschema.Field{
+func commentedDeclaration(table, column string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "users", StructName: "User", Comment: table}},
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "integer", Primary: true},
 			{StructName: "User", Name: "email", Type: "varchar(255)", Comment: column},
 		},
 	}
 }
 
-func commentedDatabase(table, column string) *types.DBSchema {
-	return &types.DBSchema{
-		Tables: []types.DBTable{{
+func commentedDatabase(table, column string) *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{{
 			Name:    "users",
 			Type:    "TABLE",
 			Comment: table,
-			Columns: []types.DBColumn{
+			Columns: []catalog.Column{
 				{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
 				{Name: "email", DataType: "varchar(255)", IsNullable: "NO", Comment: column},
 			},

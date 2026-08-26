@@ -6,24 +6,24 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestPlanner_LiteralDotAndQualifiedTablesRemainDistinct(t *testing.T) {
 	c := qt.New(t)
-	generated := literalDotAndQualifiedSchema()
-	diff := &types.SchemaDiff{
+	desired := literalDotAndQualifiedSchema()
+	diff := &difftypes.SchemaDiff{
 		TablesAdded: []string{`"tenant.data"`, "tenant.data"},
-		IndexesAdded: []types.IndexRef{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "literal_lookup", TableName: `"tenant.data"`},
 			{Name: "qualified_lookup", TableName: "tenant.data"},
 		},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
+	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -37,7 +37,7 @@ func TestPlanner_LiteralDotAndQualifiedTablesRemainDistinct(t *testing.T) {
 
 func TestPlanner_LiteralDotAndQualifiedTableRemovalsRemainDistinct(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		TablesRemoved: []string{`"tenant.data"`, "tenant.data"},
 	}
 
@@ -51,17 +51,17 @@ func TestPlanner_LiteralDotAndQualifiedTableRemovalsRemainDistinct(t *testing.T)
 	c.Assert(sql, qt.Contains, `DROP TABLE IF EXISTS "tenant"."data"`)
 }
 
-func literalDotAndQualifiedSchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func literalDotAndQualifiedSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Literal", Name: "tenant.data"},
 			{StructName: "Qualified", Schema: "tenant", Name: "data"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Literal", Name: "id", Type: "INTEGER"},
 			{StructName: "Qualified", Name: "id", Type: "INTEGER"},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{
 				StructName: "Literal",
 				Name:       "literal_lookup",

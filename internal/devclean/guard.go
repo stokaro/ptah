@@ -4,19 +4,19 @@ import (
 	"fmt"
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/lexer"
 )
 
 // ReplayGuard rejects migration statements whose effects cannot be confined to
 // the disposable database realm cleaned after migration replay.
 type ReplayGuard struct {
-	info types.DBInfo
+	info catalog.ServerInfo
 }
 
 // NewReplayGuard creates a dialect-aware migration replay guard.
-func NewReplayGuard(info types.DBInfo) *ReplayGuard {
+func NewReplayGuard(info catalog.ServerInfo) *ReplayGuard {
 	return &ReplayGuard{info: info}
 }
 

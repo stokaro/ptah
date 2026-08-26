@@ -11,10 +11,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestReverseSchemaDiff_EveryConstraintRecordCarriesAnIdentity is the invariant
@@ -30,18 +30,18 @@ import (
 func TestReverseSchemaDiff_EveryConstraintRecordCarriesAnIdentity(t *testing.T) {
 	c := qt.New(t)
 	semantics := identifier.ForDialect("postgres")
-	forward := &types.SchemaDiff{
+	forward := &difftypes.SchemaDiff{
 		IdentifierSemantics: &semantics,
 		ConstraintsAdded:    []string{"uq_widget_scope"},
 		ConstraintsRemoved:  []string{"uq_widget_scope"},
-		ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
 			Name: "uq_widget_scope", TableName: "widget", Type: "UNIQUE",
 			Columns:  []string{"tenant"},
-			Identity: types.ConstraintIdentity{Schema: "public", Table: "widget", Name: "uq_widget_scope"},
+			Identity: difftypes.ConstraintIdentity{Schema: "public", Table: "widget", Name: "uq_widget_scope"},
 		}},
-		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{{
+		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{{
 			Name: "uq_widget_scope", TableName: "public.widget", Type: "UNIQUE",
-			Identity: types.ConstraintIdentity{Schema: "public", Table: "widget", Name: "uq_widget_scope"},
+			Identity: difftypes.ConstraintIdentity{Schema: "public", Table: "widget", Name: "uq_widget_scope"},
 		}},
 	}
 
@@ -51,36 +51,36 @@ func TestReverseSchemaDiff_EveryConstraintRecordCarriesAnIdentity(t *testing.T) 
 	c.Assert(reversed.ConstraintsAddedWithTables, qt.Not(qt.HasLen), 0)
 	c.Assert(reversed.ConstraintsRemovedWithTables, qt.Not(qt.HasLen), 0)
 	for _, info := range reversed.ConstraintsAddedWithTables {
-		c.Assert(info.Identity, qt.Not(qt.Equals), types.ConstraintIdentity{},
+		c.Assert(info.Identity, qt.Not(qt.Equals), difftypes.ConstraintIdentity{},
 			qt.Commentf("addition %q on %q carries no identity", info.Name, info.TableName))
 	}
 	for _, info := range reversed.ConstraintsRemovedWithTables {
-		c.Assert(info.Identity, qt.Not(qt.Equals), types.ConstraintIdentity{},
+		c.Assert(info.Identity, qt.Not(qt.Equals), difftypes.ConstraintIdentity{},
 			qt.Commentf("removal %q on %q carries no identity", info.Name, info.TableName))
 	}
 }
 
-func widgetSchemaForReversal() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Widget", Name: "widget"}},
-		Fields: []goschema.Field{
+func widgetSchemaForReversal() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Widget", Name: "widget"}},
+		Fields: []schemamodel.Field{
 			{StructName: "Widget", Name: "id", Type: "int", Primary: true},
 			{StructName: "Widget", Name: "tenant", Type: "text"},
 		},
-		Constraints: []goschema.Constraint{{
+		Constraints: []schemamodel.Constraint{{
 			StructName: "Widget", Name: "uq_widget_scope", Table: "widget",
 			Type: "UNIQUE", Columns: []string{"tenant"},
 		}},
 	}
 }
 
-func widgetCatalogForReversal() *dbschematypes.DBSchema {
-	return &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{{Schema: "public", Name: "widget", Columns: []dbschematypes.DBColumn{
+func widgetCatalogForReversal() *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{{Schema: "public", Name: "widget", Columns: []catalog.Column{
 			{Name: "id", DataType: "integer", IsPrimaryKey: true, IsNullable: "NO"},
 			{Name: "tenant", DataType: "text", IsNullable: "NO"},
 		}}},
-		Constraints: []dbschematypes.DBConstraint{{
+		Constraints: []catalog.Constraint{{
 			Schema: "public", TableName: "widget", Name: "uq_widget_scope",
 			Type: "UNIQUE", ColumnNames: []string{"tenant", "code"},
 		}},

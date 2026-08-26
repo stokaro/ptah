@@ -9,13 +9,13 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 const (
@@ -81,7 +81,7 @@ func cleanupPostgresIndexIdentity(t *testing.T, db *sql.DB) {
 	_, _ = db.Exec(`DROP SCHEMA IF EXISTS ` + postgresIndexIdentitySchemaB + ` CASCADE`)
 }
 
-func readPostgresIndexIdentitySchema(c *qt.C, t *testing.T, dsn string) *dbschematypes.DBSchema {
+func readPostgresIndexIdentitySchema(c *qt.C, t *testing.T, dsn string) *catalog.Database {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(t.Context(), dsn)
 	c.Assert(err, qt.IsNil)
@@ -91,35 +91,35 @@ func readPostgresIndexIdentitySchema(c *qt.C, t *testing.T, dsn string) *dbschem
 		postgresIndexIdentitySchemaB,
 	})
 	c.Assert(err, qt.IsNil)
-	tables := slices.DeleteFunc(live.Tables, func(table dbschematypes.DBTable) bool {
+	tables := slices.DeleteFunc(live.Tables, func(table catalog.Table) bool {
 		return table.Schema != postgresIndexIdentitySchemaA && table.Schema != postgresIndexIdentitySchemaB
 	})
-	indexes := slices.DeleteFunc(live.Indexes, func(index dbschematypes.DBIndex) bool {
+	indexes := slices.DeleteFunc(live.Indexes, func(index catalog.Index) bool {
 		return index.Schema != postgresIndexIdentitySchemaA && index.Schema != postgresIndexIdentitySchemaB
 	})
-	constraints := slices.DeleteFunc(live.Constraints, func(constraint dbschematypes.DBConstraint) bool {
+	constraints := slices.DeleteFunc(live.Constraints, func(constraint catalog.Constraint) bool {
 		return constraint.Schema != postgresIndexIdentitySchemaA && constraint.Schema != postgresIndexIdentitySchemaB
 	})
-	return &dbschematypes.DBSchema{
+	return &catalog.Database{
 		Tables:      tables,
 		Indexes:     indexes,
 		Constraints: constraints,
 	}
 }
 
-func postgresSchemaScopedIndexTarget() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func postgresSchemaScopedIndexTarget() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "SchemaAUser", Schema: postgresIndexIdentitySchemaA, Name: "users"},
 			{StructName: "SchemaAOrder", Schema: postgresIndexIdentitySchemaA, Name: "orders"},
 			{StructName: "SchemaBUser", Schema: postgresIndexIdentitySchemaB, Name: "users"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "SchemaAUser", Name: "email", Type: "TEXT"},
 			{StructName: "SchemaAOrder", Name: "reference", Type: "TEXT"},
 			{StructName: "SchemaBUser", Name: "email", Type: "TEXT"},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{
 				StructName: "SchemaAOrder",
 				Name:       postgresIndexIdentityName,

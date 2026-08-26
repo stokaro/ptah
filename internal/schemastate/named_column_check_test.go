@@ -5,17 +5,17 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemastate"
 )
 
 // checkedWidget is a table whose column carries a CHECK, named or not.
-func checkedWidget(checkName string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Widget", Name: "widget"}},
-		Fields: []goschema.Field{
+func checkedWidget(checkName string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Widget", Name: "widget"}},
+		Fields: []schemamodel.Field{
 			{StructName: "Widget", Name: "id", Type: "int", Primary: true},
 			{
 				StructName: "Widget", Name: "b", Type: "int",
@@ -26,7 +26,7 @@ func checkedWidget(checkName string) *goschema.Database {
 }
 
 // checkConstraintNames lists the CHECK constraints a state carries.
-func checkConstraintNames(c *qt.C, database *goschema.Database) []string {
+func checkConstraintNames(c *qt.C, database *schemamodel.Database) []string {
 	c.Helper()
 
 	state, err := schemastate.FromDescription(database, platform.Postgres, identifier.ForDialect(platform.Postgres))

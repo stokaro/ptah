@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestPlanner_RefusesWhatTimescaleDBCannotUndo pins the two divergences that
@@ -22,17 +22,17 @@ import (
 func TestPlanner_RefusesWhatTimescaleDBCannotUndo(t *testing.T) {
 	tests := []struct {
 		name string
-		diff *types.SchemaDiff
+		diff *difftypes.SchemaDiff
 		want string
 	}{
 		{
 			name: "the declaration stops naming it",
-			diff: &types.SchemaDiff{HypertablesRemoved: []string{"public.readings"}},
+			diff: &difftypes.SchemaDiff{HypertablesRemoved: []string{"public.readings"}},
 			want: "no statement that turns a hypertable back into an ordinary table",
 		},
 		{
 			name: "the declaration moves the dimension",
-			diff: &types.SchemaDiff{HypertablesModified: []types.HypertableDiff{{
+			diff: &difftypes.SchemaDiff{HypertablesModified: []difftypes.HypertableDiff{{
 				Table: "public.readings", OldColumn: "time", NewColumn: "recorded_at",
 			}}},
 			want: "no statement that repartitions an existing hypertable",
@@ -43,7 +43,7 @@ func TestPlanner_RefusesWhatTimescaleDBCannotUndo(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, err := postgres.New().GenerateMigrationASTChecked(test.diff, &goschema.Database{})
+			_, err := postgres.New().GenerateMigrationASTChecked(test.diff, &schemamodel.Database{})
 
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(err.Error(), qt.Contains, test.want)
@@ -58,12 +58,12 @@ func TestPlanner_RefusesWhatTimescaleDBCannotUndo(t *testing.T) {
 // direction that HAS a statement still produces one.
 func TestPlanner_PlansAnAddedHypertable(t *testing.T) {
 	c := qt.New(t)
-	declared := &goschema.Database{Hypertables: []goschema.Hypertable{
+	declared := &schemamodel.Database{Hypertables: []schemamodel.Hypertable{
 		{Table: "public.readings", Column: "time"},
 	}}
 
 	nodes, err := postgres.New().GenerateMigrationASTChecked(
-		&types.SchemaDiff{HypertablesAdded: []string{"public.readings"}}, declared)
+		&difftypes.SchemaDiff{HypertablesAdded: []string{"public.readings"}}, declared)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.Not(qt.HasLen), 0)

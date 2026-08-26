@@ -13,7 +13,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/dbtarget"
@@ -70,7 +70,7 @@ func TestPostgresDomainDefaultConvergesE2E(t *testing.T) {
 
 	// The description of the database compared against the database it
 	// describes. Nothing about it should differ.
-	described := dbschematogo.ConvertDBSchemaToGoSchema(read)
+	described := dbschematogo.ConvertCatalogToSchema(read)
 	diff, err := schemadiff.CompareWithDatabase(
 		ctx, conn, described, read, config.DefaultCompareOptions())
 
@@ -83,7 +83,7 @@ func TestPostgresDomainDefaultConvergesE2E(t *testing.T) {
 
 // describedDomainDefault returns whichever of the two default fields the
 // description filled, so a failure message names the value rather than a field.
-func describedDomainDefault(described *goschema.Database, name string) string {
+func describedDomainDefault(described *schemamodel.Database, name string) string {
 	for _, domain := range described.Domains {
 		if domain.Name != name {
 			continue

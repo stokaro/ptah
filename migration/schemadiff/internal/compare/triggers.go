@@ -5,15 +5,15 @@ import (
 	"sort"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
-// Triggers compares trigger definitions between generated and database schemas.
-func Triggers(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
-	TriggersWithDialect(generated, database, diff, "")
+// Triggers compares trigger definitions between the desired and current schemas.
+func Triggers(desired *schemamodel.Database, current *catalog.Database, diff *difftypes.SchemaDiff) {
+	TriggersWithDialect(desired, current, diff, "")
 }
 
 // TriggersWithDialect compares triggers with the dialect's own idea of which
@@ -25,31 +25,31 @@ func Triggers(generated *goschema.Database, database *types.DBSchema, diff *diff
 // Without the fill-in, every trigger on such a table read as removed and
 // re-added (stokaro/ptah#1232).
 func TriggersWithDialect(
-	generated *goschema.Database,
-	database *types.DBSchema,
+	desired *schemamodel.Database,
+	current *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	dialect string,
 ) {
-	TriggersWithSemantics(generated, database, diff, identifier.ForDialect(dialect))
+	TriggersWithSemantics(desired, current, diff, identifier.ForDialect(dialect))
 }
 
 // TriggersWithSemantics compares trigger identity using the live database's
 // resolved default schema and identifier rules.
 func TriggersWithSemantics(
-	generated *goschema.Database,
-	database *types.DBSchema,
+	desired *schemamodel.Database,
+	current *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	semantics identifier.Semantics,
 ) {
 	semantics = semantics.Normalize("")
-	generatedTriggers := make(map[tableMemberKey]goschema.Trigger)
-	for _, trigger := range generated.Triggers {
+	generatedTriggers := make(map[tableMemberKey]schemamodel.Trigger)
+	for _, trigger := range desired.Triggers {
 		trigger.Canonicalize()
 		generatedTriggers[triggerKey(trigger.Table, trigger.Name, semantics)] = trigger
 	}
 
-	databaseTriggers := make(map[tableMemberKey]types.DBTrigger)
-	for _, trigger := range database.Triggers {
+	databaseTriggers := make(map[tableMemberKey]catalog.Trigger)
+	for _, trigger := range current.Triggers {
 		databaseTriggers[triggerKey(trigger.QualifiedTable(), trigger.Name, semantics)] = trigger
 	}
 
@@ -101,8 +101,8 @@ func sortTriggerRefs(refs []difftypes.TriggerRef) {
 	})
 }
 
-// TriggerDefinitions performs detailed comparison between generated and database trigger definitions.
-func TriggerDefinitions(genTrigger goschema.Trigger, dbTrigger types.DBTrigger) difftypes.TriggerDiff {
+// TriggerDefinitions performs detailed comparison between the desired and current trigger definitions.
+func TriggerDefinitions(genTrigger schemamodel.Trigger, dbTrigger catalog.Trigger) difftypes.TriggerDiff {
 	genTrigger.Canonicalize()
 
 	triggerDiff := difftypes.TriggerDiff{

@@ -12,16 +12,16 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
 // declaredRoutine is one routine as a schema declares it.
-func declaredRoutine(name, parameters, returns, body string) goschema.Function {
-	return goschema.Function{
+func declaredRoutine(name, parameters, returns, body string) schemamodel.Function {
+	return schemamodel.Function{
 		Name: name, Parameters: parameters, Returns: returns,
 		Language: "sql", Security: "INVOKER", Volatility: "VOLATILE", Body: body,
 	}
@@ -46,7 +46,7 @@ func TestPostgresRoutineOverloadIdentityE2E(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		declared    []goschema.Function
+		declared    []schemamodel.Function
 		wantAdded   int
 		wantRemoved int
 	}{
@@ -54,7 +54,7 @@ func TestPostgresRoutineOverloadIdentityE2E(t *testing.T) {
 			// The dangerous direction: the schema stops declaring one overload
 			// and the plan has to drop exactly that one.
 			name: "a dropped overload is removed rather than folded into the survivor",
-			declared: []goschema.Function{
+			declared: []schemamodel.Function{
 				declaredRoutine("greet", "a integer", "text", "SELECT 'int'"),
 			},
 			wantRemoved: 1,
@@ -66,7 +66,7 @@ func TestPostgresRoutineOverloadIdentityE2E(t *testing.T) {
 			// greet(text)'s declaration to greet(integer)'s row and reports two
 			// modifications; pairing on the signature reports none.
 			name: "both overloads declared, in the opposite order, is no change at all",
-			declared: []goschema.Function{
+			declared: []schemamodel.Function{
 				declaredRoutine("greet", "a text", "text", "SELECT 'text'"),
 				declaredRoutine("greet", "a integer", "text", "SELECT 'int'"),
 			},
@@ -75,7 +75,7 @@ func TestPostgresRoutineOverloadIdentityE2E(t *testing.T) {
 			// A third overload the database does not have is an addition, and
 			// the two it does have stay paired.
 			name: "a new overload is added and the existing pair is untouched",
-			declared: []goschema.Function{
+			declared: []schemamodel.Function{
 				declaredRoutine("greet", "a boolean", "text", "SELECT 'bool'"),
 				declaredRoutine("greet", "a text", "text", "SELECT 'text'"),
 				declaredRoutine("greet", "a integer", "text", "SELECT 'int'"),
@@ -119,7 +119,7 @@ func TestPostgresRoutineOverloadIdentityE2E(t *testing.T) {
 			c.Assert(countRoutinesNamed(read.Functions, "greet"), qt.Equals, 2)
 
 			diff := schemadiff.CompareWithDialect(
-				&goschema.Database{Functions: test.declared}, read, "postgres")
+				&schemamodel.Database{Functions: test.declared}, read, "postgres")
 
 			c.Assert(diff.FunctionsAdded, qt.HasLen, test.wantAdded,
 				qt.Commentf("added=%v", diff.FunctionsAdded))
@@ -133,7 +133,7 @@ func TestPostgresRoutineOverloadIdentityE2E(t *testing.T) {
 	}
 }
 
-func countRoutinesNamed(functions []dbschematypes.DBFunction, name string) int {
+func countRoutinesNamed(functions []catalog.Function, name string) int {
 	count := 0
 	for _, function := range functions {
 		if function.Name == name {

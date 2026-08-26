@@ -5,19 +5,19 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 func TestGetOrderedCreateStatements_PostgresOrdersViewLikeDependencies(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{
-		Views: []goschema.View{{
+	database := &schemamodel.Database{
+		Views: []schemamodel.View{{
 			Name: "a_report",
 			Body: "SELECT id FROM z_base",
 		}},
-		MaterializedViews: []goschema.MaterializedView{{
+		MaterializedViews: []schemamodel.MaterializedView{{
 			Name: "z_base",
 			Body: "SELECT id FROM users",
 		}},

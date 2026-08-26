@@ -10,9 +10,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -48,10 +48,10 @@ func TestMySQLLiveRoleRoundTrip(t *testing.T) {
 	c.Assert(conn.Writer().ExecuteSQL(ctx,
 		"CREATE TABLE `"+table+"` (id INT PRIMARY KEY)"), qt.IsNil)
 
-	declared := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "T", Name: table}},
-		Fields: []goschema.Field{{StructName: "T", Name: "id", Type: "INT", Primary: true}},
-		Roles:  []goschema.Role{{StructName: "R", Name: role}},
+	declared := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "T", Name: table}},
+		Fields: []schemamodel.Field{{StructName: "T", Name: "id", Type: "INT", Primary: true}},
+		Roles:  []schemamodel.Role{{StructName: "R", Name: role}},
 	}
 
 	// 1. The role is seen as missing, planned, and the statement runs.
@@ -127,7 +127,7 @@ func TestMySQLLiveRoleAttributeIsRefusedByTheServerToo(t *testing.T) {
 }
 
 // roleNames lists the names a read reported.
-func roleNames(roles []dbschematypes.DBRole) []string {
+func roleNames(roles []catalog.Role) []string {
 	names := make([]string, 0, len(roles))
 	for _, role := range roles {
 		names = append(names, role.Name)

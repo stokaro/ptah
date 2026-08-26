@@ -10,15 +10,15 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // deferrableGenerated and deferrableDatabase are the two sides of one foreign
 // key, identical but for the deferral each row sets.
-func deferrableGenerated(deferrable bool, initially string) goschema.Constraint {
-	return goschema.Constraint{
+func deferrableGenerated(deferrable bool, initially string) schemamodel.Constraint {
+	return schemamodel.Constraint{
 		Name:           "fk_child_parent",
 		Type:           "FOREIGN KEY",
 		Table:          "child",
@@ -31,10 +31,10 @@ func deferrableGenerated(deferrable bool, initially string) goschema.Constraint 
 	}
 }
 
-func deferrableDatabase(deferrable bool, initially string) types.DBConstraint {
+func deferrableDatabase(deferrable bool, initially string) catalog.Constraint {
 	foreignTable := "parent"
 	foreignColumn := "id"
-	return types.DBConstraint{
+	return catalog.Constraint{
 		Name:           "fk_child_parent",
 		Type:           "FOREIGN KEY",
 		TableName:      "child",
@@ -66,8 +66,8 @@ func deferrableDatabase(deferrable bool, initially string) types.DBConstraint {
 func TestForeignKeyConstraintChanged_Deferral(t *testing.T) {
 	tests := []struct {
 		name        string
-		generated   goschema.Constraint
-		database    types.DBConstraint
+		generated   schemamodel.Constraint
+		database    catalog.Constraint
 		wantChanged bool
 	}{
 		{

@@ -5,11 +5,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 // multiColumnDeferrableDeclaration is a description whose child table declares a
@@ -19,19 +19,19 @@ import (
 // description rather than on a field, so it reaches the addition record without
 // passing through the field-level synthesis. Both arities have to arrive at the
 // planner carrying the deferral, and only one of them goes through synthesis.
-func multiColumnDeferrableDeclaration(deferrable bool, initially string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func multiColumnDeferrableDeclaration(deferrable bool, initially string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Parent", Name: "parent"},
 			{StructName: "Child", Name: "child"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Parent", Name: "a", Type: "INTEGER"},
 			{StructName: "Parent", Name: "b", Type: "INTEGER"},
 			{StructName: "Child", Name: "pa", Type: "INTEGER"},
 			{StructName: "Child", Name: "pb", Type: "INTEGER"},
 		},
-		Constraints: []goschema.Constraint{{
+		Constraints: []schemamodel.Constraint{{
 			StructName: "Child", Name: "fk_multi", Type: "FOREIGN KEY", Table: "child",
 			Columns: []string{"pa", "pb"}, ForeignTable: "parent",
 			ForeignColumn: "a", ForeignColumns: []string{"a", "b"},
@@ -42,14 +42,14 @@ func multiColumnDeferrableDeclaration(deferrable bool, initially string) *gosche
 
 // emptyChildCatalog is the same two tables with no foreign key at all, so the
 // declared one is recorded as an addition.
-func emptyChildCatalog() *types.DBSchema {
-	return &types.DBSchema{
-		Tables: []types.DBTable{
-			{Name: "parent", Type: "BASE TABLE", Columns: []types.DBColumn{
+func emptyChildCatalog() *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{
+			{Name: "parent", Type: "BASE TABLE", Columns: []catalog.Column{
 				{Name: "a", DataType: "integer", IsNullable: "NO"},
 				{Name: "b", DataType: "integer", IsNullable: "NO"},
 			}},
-			{Name: "child", Type: "BASE TABLE", Columns: []types.DBColumn{
+			{Name: "child", Type: "BASE TABLE", Columns: []catalog.Column{
 				{Name: "pa", DataType: "integer", IsNullable: "NO"},
 				{Name: "pb", DataType: "integer", IsNullable: "NO"},
 			}},

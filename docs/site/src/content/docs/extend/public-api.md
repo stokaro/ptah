@@ -15,23 +15,24 @@ equal to it.
 | Package | Purpose |
 | --- | --- |
 | `atlascompat` | Stable wrappers for Atlas-compatible schema, SQL, and migration-sum behavior. |
+| `catalog` | The live schema as an introspection read reports it. |
 | `config` | Project-level config loading helpers. |
 | `config/projectconfig` | Typed Ptah/Atlas project config IR, including validated online-DDL policy. |
 | `core/ast` | Typed schema DDL AST nodes. |
 | `core/astbuilder` | Fluent builders that construct `core/ast` DDL nodes without hand-written struct literals. |
 | `core/coverage` | Schema description scope facts, so an absent object is not read as a removed one. |
-| `core/goschema` | Go annotation parser and schema IR. |
+| `core/goschema` | Go annotation parser. |
 | `core/platform` | Dialect and platform constants. |
 | `core/platform/capability` | Capability flags for dialect/version behavior. |
 | `core/platform/identifier` | Catalog identifier comparison and namespace semantics. |
 | `core/ptaherr` | Typed public errors and sentinel errors. |
 | `core/query` | Fluent builder for parameterized, dialect-aware SELECT statements. |
 | `core/renderer` | Dialect-aware SQL rendering from AST/schema IR, including fail-closed two-phase foreign key ordering. |
+| `core/schemamodel` | The schema as a source declares it: the desired side of every comparison. |
 | `core/schemasource` | Runs an external desired-schema program and parses its output into schema IR. |
 | `core/sqlutil` | SQL utility helpers used by public paths. |
 | `core/yamlschema` | Reads Ptah's YAML authoring format into the schema IR, strictly. |
 | `dbschema` | Live database schema introspection connection layer. |
-| `dbschema/types` | Shared database schema types. |
 | `docs` | Ptah's own documentation embedded in the binary as an `embed.FS`. |
 | `migration/datadiff` | Row-level diffing between declared managed data and live table rows. |
 | `migration/dbtest` | Declarative migration/schema test cases, runners, and reports. |
@@ -45,7 +46,7 @@ equal to it.
 | `migration/risk` | Migration risk classification. |
 | `migration/safety` | Destructive-change assessment and safety reports. |
 | `migration/schemadiff` | Desired/live schema diffing. |
-| `migration/schemadiff/types` | Shared schema-diff types. |
+| `migration/schemadiff/difftypes` | Shared schema-diff types. |
 | `migration/seeder` | Seed discovery and execution. |
 | `migration/shadow` | Migration verification against a live disposable database. |
 
@@ -88,7 +89,7 @@ preserves the collection. Ptah's CLI reports each entry; embedders decide how
 to expose the same metadata.
 
 `renderer.ValidateSchema` and `renderer.ValidateSchemaWithCapabilities` check
-a complete `goschema.Database` without rendering SQL. They use the same
+a complete `schemamodel.Database` without rendering SQL. They use the same
 foreign-key and capability validation as ordered schema rendering and migration
 planning.
 
@@ -100,19 +101,19 @@ type or an unresolved foreign key reaches the AST and is reported by
 `core/renderer` or by the database.
 
 `core/yamlschema` reads Ptah's YAML authoring format: `Parse` from bytes,
-`ParseFile` from a path, both returning the `*goschema.Database` that Go
+`ParseFile` from a path, both returning the `*schemamodel.Database` that Go
 annotations, HCL, SQL, and DBML also produce. Parsing refuses an unknown key and
 refuses a second YAML document in the same stream, so a misspelled attribute
 cannot pass as an intentional setting. Use `core/schemasource` when the YAML is
 written by an external program rather than held in a file.
 
-`goschema.Extension.Schema` is the PostgreSQL installation namespace.
+`schemamodel.Extension.Schema` is the PostgreSQL installation namespace.
 `ast.ExtensionNode.Schema` and `SetSchema` preserve it through SQL rendering;
 the renderer emits `CREATE EXTENSION ... WITH SCHEMA ...` in PostgreSQL's
 required clause order. Empty means the target's default schema. Preserve the
 field in custom schema codecs so an extension is not relocated silently.
 
-`goschema.Finalize` can be called again after mutating schema input. It rebuilds
+`schemamodel.Finalize` can be called again after mutating schema input. It rebuilds
 materialized embedded fields and marks them with
 `Field.GeneratedFromEmbedded`; source declarations should leave that derived
 metadata false.
@@ -125,7 +126,7 @@ discarding it can also discard the source declarations behind materialized
 `GeneratedFromEmbedded` fields.
 
 MySQL-family readers populate the JSON-hidden
-`dbschema/types.DBFunction.Definer` and `CurrentAccount` execution facts.
+`catalog.Function.Definer` and `CurrentAccount` execution facts.
 Database-aware `schemadiff.CompareWithDatabase` entry points use them to refuse
 a modified `SQL SECURITY DEFINER` routine when recreating it would change the
 executing account. Custom readers that supply a modified definer routine must
@@ -285,7 +286,7 @@ statements.
 
 ## Schema diff and planning contracts
 
-`migration/schemadiff/types.SchemaDiff` stores index additions and removals as
+`migration/schemadiff/difftypes.SchemaDiff` stores index additions and removals as
 canonical `[]IndexRef` fields. Every index reference includes its owning
 table. Live comparisons snapshot catalog identifier semantics into the diff so
 comparison, policy, forward planning, and reverse planning share one source of

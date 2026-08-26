@@ -1420,7 +1420,7 @@ func ClickHouse24() Capabilities {
 		AlterGeneratedColumnExpression: true,
 		// RowLevelSecurity is on because all three halves the key requires now
 		// exist: the renderer emits CREATE/ALTER/DROP ROW POLICY, this reader
-		// takes system.row_policies back into DBSchema.RLSPolicies, and the
+		// takes system.row_policies back into catalog.Database.RLSPolicies, and the
 		// planner plans them. The key used to be false with no reason recorded
 		// at all -- unlike Functions above it, whose false is measured and
 		// explained -- for an engine that has had row policies for years
@@ -1653,7 +1653,7 @@ func SQLServer2022() Capabilities {
 		// RowLevelSecurity is on because all three halves the key requires now
 		// exist for this target: the renderer emits CREATE/DROP SECURITY
 		// POLICY, internal/dbschema/mssql reads sys.security_policies joined
-		// to sys.security_predicates back into DBSchema.RLSPolicies, and the
+		// to sys.security_predicates back into catalog.Database.RLSPolicies, and the
 		// shared planner plans them. The engine has had it since 2016
 		// (stokaro/ptah#1699).
 		//
@@ -1684,7 +1684,7 @@ func SQLServer2022() Capabilities {
 		// Sequences is on because all three halves the key requires now exist
 		// for this target: the renderer emits T-SQL CREATE/ALTER/DROP SEQUENCE,
 		// internal/dbschema/mssql reads sys.sequences back into
-		// DBSchema.Sequences, and the shared planner plans them. It was false
+		// catalog.Database.Sequences, and the shared planner plans them. It was false
 		// while any of those was missing, which is what the key means -- it
 		// describes Ptah's generator, not the engine's brochure -- and the
 		// engine itself has had CREATE SEQUENCE since 2012

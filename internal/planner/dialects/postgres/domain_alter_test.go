@@ -6,16 +6,16 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // alterDomainSchema declares one domain of each shape the in-place path emits a
 // statement for.
-func alterDomainSchema() *goschema.Database {
-	return &goschema.Database{Domains: []goschema.Domain{
+func alterDomainSchema() *schemamodel.Database {
+	return &schemamodel.Database{Domains: []schemamodel.Domain{
 		{Name: "positive", BaseType: "integer", Check: "VALUE > 0"},
 		{Name: "labelled", BaseType: "text", Default: "x"},
 		{Name: "expr_default", BaseType: "timestamptz", DefaultExpr: "now()"},

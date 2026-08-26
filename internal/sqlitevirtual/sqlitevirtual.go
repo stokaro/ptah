@@ -125,19 +125,19 @@ import (
 	"sort"
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/envbool"
 	"go.5x5.cz/ptah/internal/planner/objectlookup"
 	"go.5x5.cz/ptah/internal/planner/sqliterebuild"
 	"go.5x5.cz/ptah/internal/sqlitemodule"
 	"go.5x5.cz/ptah/migration/diffpolicy"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // AllowDropEnvVar plans the removal of a live virtual table the desired state
@@ -366,8 +366,8 @@ func (t Table) String() string {
 // has said it removes every one of them.
 func ValidateComparison(
 	dialect string,
-	desired *goschema.Database,
-	database *types.DBSchema,
+	desired *schemamodel.Database,
+	current *catalog.Database,
 	policy Policy,
 ) error {
 	if platform.NormalizeDialect(dialect) != platform.SQLite {
@@ -400,7 +400,7 @@ func ValidateComparison(
 	// ordinary` off the description; where a module is missing that answer was
 	// never SQLite's, and the tables it is wrong about are not the ones an
 	// operator can see or exclude.
-	if err := validateDatabaseIsClassifiable(desired, database, registered, semantics, policy); err != nil {
+	if err := validateDatabaseIsClassifiable(desired, current, registered, semantics, policy); err != nil {
 		return err
 	}
 
@@ -411,7 +411,7 @@ func ValidateComparison(
 	if desired != nil {
 		declaredLimits = desired.NotDescribed
 	}
-	sides := pairSides(desired, database, semantics)
+	sides := pairSides(desired, current, semantics)
 	var collisions, transitions, removals, uncreatable []Table
 	for _, side := range sides {
 		switch {
@@ -560,8 +560,8 @@ func ValidateComparison(
 // the rebuild half of the harm is exactly what the post-diff gate reads, and
 // `skip drop_table` does not filter a modification.
 func validateDatabaseIsClassifiable(
-	desired *goschema.Database,
-	database *types.DBSchema,
+	desired *schemamodel.Database,
+	current *catalog.Database,
 	registered sqlitemodule.Set,
 	semantics identifier.Semantics,
 	policy Policy,
@@ -584,11 +584,11 @@ func validateDatabaseIsClassifiable(
 	if policy.SkipDropTable {
 		return nil
 	}
-	unclassified := liveUnregistered(database, registered)
+	unclassified := liveUnregistered(current, registered)
 	if len(unclassified) == 0 {
 		return nil
 	}
-	if !someLiveTableIsUndeclared(desired, database, semantics) {
+	if !someLiveTableIsUndeclared(desired, current, semantics) {
 		return nil
 	}
 	return fmt.Errorf(
@@ -691,7 +691,7 @@ func refuseUncreatableAdditions(wanted []Table, registered sqlitemodule.Set) err
 // dialect.
 func ValidatePlannedChanges(
 	dialect string,
-	database *types.DBSchema,
+	current *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	policy Policy,
 ) error {
@@ -702,7 +702,7 @@ func ValidatePlannedChanges(
 	// set are the same diff. A rollback is the one case where they differ; see
 	// [ValidatePlannedRollback].
 	return refusePlanTouchingUnclassifiedStorage(
-		database,
+		current,
 		tablesTouchedBy(diff, createdBy(diff), policy),
 		forwardPlan,
 	)
@@ -758,7 +758,7 @@ func ValidatePlannedChanges(
 // already stands for.
 func ValidatePlannedRollback(
 	dialect string,
-	database *types.DBSchema,
+	current *catalog.Database,
 	forward,
 	reverse *difftypes.SchemaDiff,
 ) error {
@@ -766,7 +766,7 @@ func ValidatePlannedRollback(
 		return nil
 	}
 	return refusePlanTouchingUnclassifiedStorage(
-		database,
+		current,
 		tablesTouchedBy(reverse, createdBy(forward), Policy{}),
 		rollbackPlan,
 	)
@@ -869,7 +869,7 @@ var (
 // refusePlanTouchingUnclassifiedStorage is the one refusal both directions
 // raise, so the rule cannot be stated twice and drift.
 func refusePlanTouchingUnclassifiedStorage(
-	database *types.DBSchema,
+	current *catalog.Database,
 	touched []string,
 	subject planSubject,
 ) error {
@@ -887,7 +887,7 @@ func refusePlanTouchingUnclassifiedStorage(
 	if err != nil {
 		return err
 	}
-	unclassified := liveUnregistered(database, registered)
+	unclassified := liveUnregistered(current, registered)
 	if len(unclassified) == 0 {
 		return nil
 	}
@@ -1122,11 +1122,11 @@ func quotedStrings(values []string) string {
 // [pairSides] gives it, and it keeps a nil desired state from being mistaken
 // for one that declared everything.
 func someLiveTableIsUndeclared(
-	desired *goschema.Database,
-	database *types.DBSchema,
+	desired *schemamodel.Database,
+	current *catalog.Database,
 	semantics identifier.Semantics,
 ) bool {
-	if database == nil {
+	if current == nil {
 		return false
 	}
 	declared := make(map[string]struct{})
@@ -1135,7 +1135,7 @@ func someLiveTableIsUndeclared(
 			declared[identity(table.Schema, table.Name, semantics)] = struct{}{}
 		}
 	}
-	for _, table := range database.Tables {
+	for _, table := range current.Tables {
 		if _, ok := declared[identity(table.Schema, table.Name, semantics)]; !ok {
 			return true
 		}
@@ -1148,16 +1148,16 @@ func someLiveTableIsUndeclared(
 // It reads two sources and unions them, because they answer at different times
 // and only one of them survives narrowing:
 //
-//   - [types.DBSchema.UnregisteredVirtualTables] is the reader's own statement,
+//   - [catalog.Database.UnregisteredVirtualTables] is the reader's own statement,
 //     recorded before any selection ran. It is the source that still speaks
 //     after `--exclude docs` has removed the virtual table, which is exactly
 //     the run that plans the drops.
-//   - the tables still in the description are checked directly, so a DBSchema
+//   - the tables still in the description are checked directly, so a catalog.Database
 //     built by something other than the SQLite reader -- a test, a future
 //     producer -- cannot walk past this by leaving the field empty. A zero
 //     value must not read as "every module is present".
-func liveUnregistered(database *types.DBSchema, registered sqlitemodule.Set) []Table {
-	if database == nil {
+func liveUnregistered(current *catalog.Database, registered sqlitemodule.Set) []Table {
+	if current == nil {
 		return nil
 	}
 	seen := make(map[string]struct{})
@@ -1172,10 +1172,10 @@ func liveUnregistered(database *types.DBSchema, registered sqlitemodule.Set) []T
 		seen[schema+"\x00"+name] = struct{}{}
 		unclassified = append(unclassified, Table{Schema: schema, Name: name, Module: module})
 	}
-	for _, table := range database.UnregisteredVirtualTables {
+	for _, table := range current.UnregisteredVirtualTables {
 		add(table.Schema, table.Name, table.Module)
 	}
-	for _, table := range database.Tables {
+	for _, table := range current.Tables {
 		add(table.Schema, table.Name, table.VirtualModule)
 	}
 	sortTables(unclassified)
@@ -1306,8 +1306,8 @@ func (s pairedSide) declarationsMatch(semantics identifier.Semantics) bool {
 // pairSides joins the two sides of the comparison on table identity, keeping
 // only the names at least one side calls a virtual table.
 func pairSides(
-	desired *goschema.Database,
-	database *types.DBSchema,
+	desired *schemamodel.Database,
+	current *catalog.Database,
 	semantics identifier.Semantics,
 ) []pairedSide {
 	sides := make(map[string]*pairedSide)
@@ -1321,8 +1321,8 @@ func pairSides(
 		return side
 	}
 
-	if database != nil {
-		for _, table := range database.Tables {
+	if current != nil {
+		for _, table := range current.Tables {
 			side := at(table.Schema, table.Name)
 			side.present = true
 			side.live = declaration{
@@ -1405,7 +1405,7 @@ func Names(tables []Table) []string {
 // stream"; the note is then dropped rather than panicking. Write errors are
 // dropped too: a diagnostic that fails to print must not fail a read that
 // succeeded.
-func ReportUnclassified(w io.Writer, schema *types.DBSchema) {
+func ReportUnclassified(w io.Writer, schema *catalog.Database) {
 	if w == nil || schema == nil || len(schema.UnregisteredVirtualTables) == 0 {
 		return
 	}
@@ -1487,12 +1487,12 @@ func useVerb(count int) string {
 }
 
 // Tables lists the virtual tables a database schema holds, in a stable order.
-func Tables(database *types.DBSchema) []Table {
-	if database == nil {
+func Tables(current *catalog.Database) []Table {
+	if current == nil {
 		return nil
 	}
 	var virtual []Table
-	for _, table := range database.Tables {
+	for _, table := range current.Tables {
 		if table.VirtualModule == "" {
 			continue
 		}

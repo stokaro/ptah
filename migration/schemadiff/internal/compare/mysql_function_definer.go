@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/mysqlroutine"
 	"go.5x5.cz/ptah/internal/tableref"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // ValidateMySQLFunctionDefinerReplacements refuses a routine replacement that
@@ -27,13 +27,13 @@ import (
 // FunctionsWithSemantics or the planner. The latter would see the unsafe diff
 // only after comparison had already represented it as an executable change.
 func ValidateMySQLFunctionDefinerReplacements(
-	generated *goschema.Database,
-	database *types.DBSchema,
+	desired *schemamodel.Database,
+	current *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	dialect string,
 	semantics identifier.Semantics,
 ) error {
-	if !isMySQLFamily(dialect) || generated == nil || database == nil || diff == nil ||
+	if !isMySQLFamily(dialect) || desired == nil || current == nil || diff == nil ||
 		len(diff.FunctionsModified) == 0 {
 		return nil
 	}
@@ -44,11 +44,11 @@ func ValidateMySQLFunctionDefinerReplacements(
 	}
 
 	semantics = semantics.Normalize("")
-	for _, desired := range generated.Functions {
+	for _, desired := range desired.Functions {
 		if _, ok := modified[desired.Name]; !ok {
 			continue
 		}
-		current, ok := findCurrentFunctionForDesired(desired, database.Functions, dialect, semantics)
+		current, ok := findCurrentFunctionForDesired(desired, current.Functions, dialect, semantics)
 		if !ok {
 			continue
 		}
@@ -90,13 +90,13 @@ func ValidateMySQLFunctionDefinerReplacements(
 }
 
 func findCurrentFunctionForDesired(
-	desired goschema.Function,
-	current []types.DBFunction,
+	desired schemamodel.Function,
+	current []catalog.Function,
 	dialect string,
 	semantics identifier.Semantics,
-) (types.DBFunction, bool) {
+) (catalog.Function, bool) {
 	if semantics.DefaultSchema != "" {
-		byIdentity := make(map[objectIdentity]types.DBFunction, len(current))
+		byIdentity := make(map[objectIdentity]catalog.Function, len(current))
 		for _, function := range current {
 			identity := newObjectIdentity(
 				routineIdentityKind(function.Kind),
@@ -115,8 +115,8 @@ func findCurrentFunctionForDesired(
 		return function, ok
 	}
 
-	byName := make(map[string][]types.DBFunction, len(current))
-	byQualifiedName := make(map[string]types.DBFunction, len(current))
+	byName := make(map[string][]catalog.Function, len(current))
+	byQualifiedName := make(map[string]catalog.Function, len(current))
 	for _, function := range current {
 		key := routineIdentityKey(function.Name, dialect)
 		byName[routineKeyWithKind(function.Kind, key)] = append(byName[routineKeyWithKind(function.Kind, key)], function)

@@ -6,31 +6,31 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestPlanner_GenerateMigrationAST_TableQualifiedCheckAndUniqueAdditions(t *testing.T) {
 	tests := []struct {
 		name     string
-		diff     *types.SchemaDiff
+		diff     *difftypes.SchemaDiff
 		wantDrop string
 		wantAdd  string
 	}{
 		{
 			name: "unique to check",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				ConstraintsAdded: []string{"products_quantity_guard"},
-				ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
 					Name:            "products_quantity_guard",
 					TableName:       "products",
 					Type:            "CHECK",
 					CheckExpression: "quantity > 10",
 				}},
 				ConstraintsRemoved: []string{"products_quantity_guard"},
-				ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{{
+				ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{{
 					Name:      "products_quantity_guard",
 					TableName: "products",
 					Type:      "UNIQUE",
@@ -41,9 +41,9 @@ func TestPlanner_GenerateMigrationAST_TableQualifiedCheckAndUniqueAdditions(t *t
 		},
 		{
 			name: "check to unique",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				ConstraintsAdded: []string{"accounts_identity"},
-				ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
 					Name:           "accounts_identity",
 					TableName:      "accounts",
 					Type:           "UNIQUE",
@@ -51,7 +51,7 @@ func TestPlanner_GenerateMigrationAST_TableQualifiedCheckAndUniqueAdditions(t *t
 					IncludeColumns: []string{"updated_at"},
 				}},
 				ConstraintsRemoved: []string{"accounts_identity"},
-				ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{{
+				ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{{
 					Name:      "accounts_identity",
 					TableName: "accounts",
 					Type:      "CHECK",
@@ -66,7 +66,7 @@ func TestPlanner_GenerateMigrationAST_TableQualifiedCheckAndUniqueAdditions(t *t
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			nodes, err := postgres.New().GenerateMigrationASTChecked(tt.diff, &goschema.Database{})
+			nodes, err := postgres.New().GenerateMigrationASTChecked(tt.diff, &schemamodel.Database{})
 			c.Assert(err, qt.IsNil)
 			sql, err := renderer.RenderSQL("postgres", nodes...)
 			c.Assert(err, qt.IsNil)
@@ -98,20 +98,20 @@ func TestPlanner_GenerateMigrationAST_HostlessReAdd_DropsExactlyOnce(t *testing.
 	t.Run("single removal host", func(t *testing.T) {
 		c := qt.New(t)
 
-		diff := &types.SchemaDiff{
+		diff := &difftypes.SchemaDiff{
 			ConstraintsAdded:   []string{"chk_down"},
 			ConstraintsRemoved: []string{"chk_down"},
-			ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+			ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 				{Name: "chk_down", TableName: "things", Type: "CHECK"},
 			},
 		}
-		generated := &goschema.Database{
-			Constraints: []goschema.Constraint{
+		desired := &schemamodel.Database{
+			Constraints: []schemamodel.Constraint{
 				{StructName: "Thing", Name: "chk_down", Type: "CHECK", Table: "things", CheckExpression: "qty >= 0"},
 			},
 		}
 
-		nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
+		nodes, err := postgres.New().GenerateMigrationASTChecked(diff, desired)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -139,21 +139,21 @@ func TestPlanner_GenerateMigrationAST_HostlessReAdd_DropsExactlyOnce(t *testing.
 		// re-add, and removeConstraints must add nothing on top.
 		c := qt.New(t)
 
-		diff := &types.SchemaDiff{
+		diff := &difftypes.SchemaDiff{
 			ConstraintsAdded:   []string{"shared_check", "shared_check"},
 			ConstraintsRemoved: []string{"shared_check", "shared_check"},
-			ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+			ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 				{Name: "shared_check", TableName: "articles", Type: "CHECK"},
 				{Name: "shared_check", TableName: "pages", Type: "CHECK"},
 			},
 		}
-		generated := &goschema.Database{
-			Constraints: []goschema.Constraint{
+		desired := &schemamodel.Database{
+			Constraints: []schemamodel.Constraint{
 				{StructName: "Article", Name: "shared_check", Type: "CHECK", Table: "articles", CheckExpression: "qty >= 0"},
 			},
 		}
 
-		nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
+		nodes, err := postgres.New().GenerateMigrationASTChecked(diff, desired)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -185,23 +185,23 @@ func TestPlanner_GenerateMigrationAST_HostlessReAdd_DropsExactlyOnce(t *testing.
 func TestPlanner_GenerateMigrationAST_EmptyTableNameAdditionTreatedAsHostless(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		ConstraintsAdded:   []string{"chk_ghost"},
 		ConstraintsRemoved: []string{"chk_ghost"},
-		ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{
+		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
 			{Name: "chk_ghost", TableName: "", Type: "CHECK"},
 		},
-		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 			{Name: "chk_ghost", TableName: "things", Type: "CHECK"},
 		},
 	}
-	generated := &goschema.Database{
-		Constraints: []goschema.Constraint{
+	desired := &schemamodel.Database{
+		Constraints: []schemamodel.Constraint{
 			{StructName: "Thing", Name: "chk_ghost", Type: "CHECK", Table: "things", CheckExpression: "qty >= 0"},
 		},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
+	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -226,9 +226,9 @@ func TestPlanner_GenerateMigrationAST_EmptyTableNameAdditionTreatedAsHostless(t 
 func TestPlanner_GenerateMigrationAST_TableQualifiedPrimaryKeyAddition(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		ConstraintsAdded: []string{"memberships_pkey"},
-		ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
 			Name:      "memberships_pkey",
 			TableName: "memberships",
 			Type:      "PRIMARY KEY",
@@ -236,7 +236,7 @@ func TestPlanner_GenerateMigrationAST_TableQualifiedPrimaryKeyAddition(t *testin
 		}},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, &goschema.Database{})
+	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, &schemamodel.Database{})
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)

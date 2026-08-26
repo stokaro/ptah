@@ -6,10 +6,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlascompatpolicy"
 	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 )
@@ -188,26 +188,26 @@ func TestResolveStrictCERejectsMalformedRetainedEnvironment(t *testing.T) {
 func TestStrictCEValidatesDesiredSchemaExtensions(t *testing.T) {
 	tests := []struct {
 		name     string
-		database *goschema.Database
+		database *schemamodel.Database
 	}{
-		{name: "extensions", database: &goschema.Database{Extensions: []goschema.Extension{{
+		{name: "extensions", database: &schemamodel.Database{Extensions: []schemamodel.Extension{{
 			Name: "pgcrypto", Schema: "extensions",
 		}}}},
-		{name: "functions", database: &goschema.Database{Functions: []goschema.Function{{}}}},
-		{name: "standalone sequences", database: &goschema.Database{Sequences: []goschema.Sequence{{}}}},
-		{name: "domains", database: &goschema.Database{Domains: []goschema.Domain{{}}}},
-		{name: "composite types", database: &goschema.Database{CompositeTypes: []goschema.CompositeType{{}}}},
-		{name: "range types", database: &goschema.Database{Ranges: []goschema.Range{{}}}},
-		{name: "views", database: &goschema.Database{Views: []goschema.View{{}}}},
-		{name: "materialized views", database: &goschema.Database{MaterializedViews: []goschema.MaterializedView{{}}}},
-		{name: "triggers", database: &goschema.Database{Triggers: []goschema.Trigger{{}}}},
-		{name: "row-level security policies", database: &goschema.Database{RLSPolicies: []goschema.RLSPolicy{{}}}},
-		{name: "row-level security settings", database: &goschema.Database{RLSEnabledTables: []goschema.RLSEnabledTable{{}}}},
-		{name: "roles", database: &goschema.Database{Roles: []goschema.Role{{}}}},
-		{name: "grants", database: &goschema.Database{Grants: []goschema.Grant{{}}}},
-		{name: "managed data", database: &goschema.Database{ManagedData: []goschema.ManagedData{{}}}},
-		{name: "table partitioning", database: &goschema.Database{Tables: []goschema.Table{{Partition: &goschema.PartitionSpec{}}}}},
-		{name: "platform overrides", database: &goschema.Database{Fields: []goschema.Field{{Overrides: map[string]map[string]string{"mysql": {"type": "bigint"}}}}}},
+		{name: "functions", database: &schemamodel.Database{Functions: []schemamodel.Function{{}}}},
+		{name: "standalone sequences", database: &schemamodel.Database{Sequences: []schemamodel.Sequence{{}}}},
+		{name: "domains", database: &schemamodel.Database{Domains: []schemamodel.Domain{{}}}},
+		{name: "composite types", database: &schemamodel.Database{CompositeTypes: []schemamodel.CompositeType{{}}}},
+		{name: "range types", database: &schemamodel.Database{Ranges: []schemamodel.Range{{}}}},
+		{name: "views", database: &schemamodel.Database{Views: []schemamodel.View{{}}}},
+		{name: "materialized views", database: &schemamodel.Database{MaterializedViews: []schemamodel.MaterializedView{{}}}},
+		{name: "triggers", database: &schemamodel.Database{Triggers: []schemamodel.Trigger{{}}}},
+		{name: "row-level security policies", database: &schemamodel.Database{RLSPolicies: []schemamodel.RLSPolicy{{}}}},
+		{name: "row-level security settings", database: &schemamodel.Database{RLSEnabledTables: []schemamodel.RLSEnabledTable{{}}}},
+		{name: "roles", database: &schemamodel.Database{Roles: []schemamodel.Role{{}}}},
+		{name: "grants", database: &schemamodel.Database{Grants: []schemamodel.Grant{{}}}},
+		{name: "managed data", database: &schemamodel.Database{ManagedData: []schemamodel.ManagedData{{}}}},
+		{name: "table partitioning", database: &schemamodel.Database{Tables: []schemamodel.Table{{Partition: &schemamodel.PartitionSpec{}}}}},
+		{name: "platform overrides", database: &schemamodel.Database{Fields: []schemamodel.Field{{Overrides: map[string]map[string]string{"mysql": {"type": "bigint"}}}}}},
 	}
 
 	for _, test := range tests {
@@ -223,14 +223,14 @@ func TestStrictCEValidatesDesiredSchemaExtensions(t *testing.T) {
 
 func TestStrictCEValidatesInspectedSchemaExtensions(t *testing.T) {
 	c := qt.New(t)
-	err := atlascompatpolicy.StrictCE().ValidateInspectedSchema(&goschema.Database{
-		Views: []goschema.View{{Name: "active_users"}},
+	err := atlascompatpolicy.StrictCE().ValidateInspectedSchema(&schemamodel.Database{
+		Views: []schemamodel.View{{Name: "active_users"}},
 	})
 
 	c.Assert(err, qt.ErrorMatches,
 		`Atlas Community Edition strict compatibility does not support inspected schema views`)
-	c.Assert(atlascompatpolicy.Full().ValidateInspectedSchema(&goschema.Database{
-		Views: []goschema.View{{Name: "active_users"}},
+	c.Assert(atlascompatpolicy.Full().ValidateInspectedSchema(&schemamodel.Database{
+		Views: []schemamodel.View{{Name: "active_users"}},
 	}),
 		qt.IsNil,
 	)
@@ -239,21 +239,21 @@ func TestStrictCEValidatesInspectedSchemaExtensions(t *testing.T) {
 func TestStrictCEIgnoresOnlyInspectedSystemPlpgsqlExtension(t *testing.T) {
 	c := qt.New(t)
 	policy := atlascompatpolicy.StrictCE()
-	c.Assert(policy.ValidateInspectedSchema(&goschema.Database{
-		Extensions: []goschema.Extension{{Name: "plpgsql"}},
+	c.Assert(policy.ValidateInspectedSchema(&schemamodel.Database{
+		Extensions: []schemamodel.Extension{{Name: "plpgsql"}},
 	}), qt.IsNil)
-	c.Assert(policy.ValidateSchemaCleanSnapshot(&goschema.Database{
-		Extensions: []goschema.Extension{{Name: "plpgsql"}},
+	c.Assert(policy.ValidateSchemaCleanSnapshot(&schemamodel.Database{
+		Extensions: []schemamodel.Extension{{Name: "plpgsql"}},
 	}), qt.IsNil)
 
-	err := policy.ValidateInspectedSchema(&goschema.Database{
-		Extensions: []goschema.Extension{{Name: "plpgsql"}, {Name: "citext"}},
+	err := policy.ValidateInspectedSchema(&schemamodel.Database{
+		Extensions: []schemamodel.Extension{{Name: "plpgsql"}, {Name: "citext"}},
 	})
 	c.Assert(err, qt.ErrorMatches,
 		`Atlas Community Edition strict compatibility does not support inspected schema extensions`)
 
-	err = policy.ValidateDesiredSchema(&goschema.Database{
-		Extensions: []goschema.Extension{{Name: "plpgsql"}},
+	err = policy.ValidateDesiredSchema(&schemamodel.Database{
+		Extensions: []schemamodel.Extension{{Name: "plpgsql"}},
 	})
 	c.Assert(err, qt.ErrorMatches,
 		`Atlas Community Edition strict compatibility does not support desired schema extensions`)
@@ -262,39 +262,39 @@ func TestStrictCEIgnoresOnlyInspectedSystemPlpgsqlExtension(t *testing.T) {
 func TestStrictCEIgnoresOnlyInspectedPostgresPublicUsageBaseline(t *testing.T) {
 	c := qt.New(t)
 	policy := atlascompatpolicy.StrictCE()
-	baseline := goschema.Grant{
+	baseline := schemamodel.Grant{
 		Role:       "PUBLIC",
 		Privileges: []string{"USAGE"},
 		OnSchema:   "public",
 		GrantedBy:  "database_owner",
 	}
-	c.Assert(policy.ValidateInspectedSchema(&goschema.Database{
-		Grants: []goschema.Grant{baseline},
+	c.Assert(policy.ValidateInspectedSchema(&schemamodel.Database{
+		Grants: []schemamodel.Grant{baseline},
 	}), qt.IsNil)
-	c.Assert(policy.ValidateSchemaCleanSnapshot(&goschema.Database{
-		Grants: []goschema.Grant{baseline},
+	c.Assert(policy.ValidateSchemaCleanSnapshot(&schemamodel.Database{
+		Grants: []schemamodel.Grant{baseline},
 	}), qt.IsNil)
 
-	for _, grant := range []goschema.Grant{
+	for _, grant := range []schemamodel.Grant{
 		{Role: "app", Privileges: []string{"USAGE"}, OnSchema: "public"},
 		{Role: "PUBLIC", Privileges: []string{"CREATE"}, OnSchema: "public"},
 		{Role: "PUBLIC", Privileges: []string{"USAGE"}, OnSchema: "app"},
 		{Role: "PUBLIC", Privileges: []string{"USAGE"}, OnSchema: "public", WithOption: true},
 	} {
-		err := policy.ValidateInspectedSchema(&goschema.Database{
-			Grants: []goschema.Grant{grant},
+		err := policy.ValidateInspectedSchema(&schemamodel.Database{
+			Grants: []schemamodel.Grant{grant},
 		})
 		c.Assert(err, qt.ErrorMatches,
 			`Atlas Community Edition strict compatibility does not support inspected schema grants`)
-		err = policy.ValidateSchemaCleanSnapshot(&goschema.Database{
-			Grants: []goschema.Grant{grant},
+		err = policy.ValidateSchemaCleanSnapshot(&schemamodel.Database{
+			Grants: []schemamodel.Grant{grant},
 		})
 		c.Assert(err, qt.ErrorMatches,
 			`Atlas Community Edition strict compatibility does not support cleaning live schema grants`)
 	}
 
-	err := policy.ValidateDesiredSchema(&goschema.Database{
-		Grants: []goschema.Grant{baseline},
+	err := policy.ValidateDesiredSchema(&schemamodel.Database{
+		Grants: []schemamodel.Grant{baseline},
 	})
 	c.Assert(err, qt.ErrorMatches,
 		`Atlas Community Edition strict compatibility does not support desired schema grants`)
@@ -302,9 +302,9 @@ func TestStrictCEIgnoresOnlyInspectedPostgresPublicUsageBaseline(t *testing.T) {
 
 func TestPrepareInspectedSchemaRemovesOnlyStrictPostgresBaselines(t *testing.T) {
 	c := qt.New(t)
-	baseline := &dbschematypes.DBSchema{
-		Extensions: []dbschematypes.DBExtension{{Name: "plpgsql"}},
-		Grants: []dbschematypes.DBGrant{{
+	baseline := &catalog.Database{
+		Extensions: []catalog.Extension{{Name: "plpgsql"}},
+		Grants: []catalog.Grant{{
 			Role:       "PUBLIC",
 			Privilege:  "USAGE",
 			ObjectType: "SCHEMA",
@@ -330,12 +330,12 @@ func TestPrepareInspectedSchemaRemovesOnlyStrictPostgresBaselines(t *testing.T) 
 
 func TestFullCompatibilityRetainsDesiredSchemaExtensions(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{
-		Extensions: []goschema.Extension{{Name: "citext"}},
-		Tables: []goschema.Table{{
-			Partition: &goschema.PartitionSpec{Type: "RANGE"},
+	database := &schemamodel.Database{
+		Extensions: []schemamodel.Extension{{Name: "citext"}},
+		Tables: []schemamodel.Table{{
+			Partition: &schemamodel.PartitionSpec{Type: "RANGE"},
 		}},
-		Fields: []goschema.Field{{
+		Fields: []schemamodel.Field{{
 			Overrides: map[string]map[string]string{"mysql": {"type": "bigint"}},
 		}},
 	}
@@ -429,7 +429,7 @@ func TestStrictCEValidatesUnmodeledLiveSchemaInspectObjects(t *testing.T) {
 
 func TestStrictCEValidatesUnlistedLiveSchemaCleanObjects(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{Triggers: []goschema.Trigger{{Name: "users_audit"}}}
+	database := &schemamodel.Database{Triggers: []schemamodel.Trigger{{Name: "users_audit"}}}
 
 	err := atlascompatpolicy.StrictCE().ValidateSchemaCleanSnapshot(database)
 

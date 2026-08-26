@@ -5,18 +5,18 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 )
 
 // rangeSchema is one range type as the reader reports it.
-func rangeSchema(rangeType types.DBRange) *types.DBSchema {
-	return &types.DBSchema{Ranges: []types.DBRange{rangeType}}
+func rangeSchema(rangeType catalog.Range) *catalog.Database {
+	return &catalog.Database{Ranges: []catalog.Range{rangeType}}
 }
 
 // onlyRange returns the single converted range.
-func onlyRange(c *qt.C, database *goschema.Database) goschema.Range {
+func onlyRange(c *qt.C, database *schemamodel.Database) schemamodel.Range {
 	c.Helper()
 	c.Assert(database.Ranges, qt.HasLen, 1)
 	return database.Ranges[0]
@@ -36,7 +36,7 @@ func onlyRange(c *qt.C, database *goschema.Database) goschema.Range {
 func TestConvert_CarriesEveryRangeAttribute(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(rangeSchema(types.DBRange{
+	database := dbschematogo.ConvertCatalogToSchema(rangeSchema(catalog.Range{
 		Name:           "fancy",
 		Schema:         "public",
 		Subtype:        "double precision",
@@ -65,7 +65,7 @@ func TestConvert_CarriesEveryRangeAttribute(t *testing.T) {
 func TestConvert_LeavesARangeWithNoAttributesBare(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(rangeSchema(types.DBRange{
+	database := dbschematogo.ConvertCatalogToSchema(rangeSchema(catalog.Range{
 		Name:    "plainrange",
 		Schema:  "public",
 		Subtype: "double precision",

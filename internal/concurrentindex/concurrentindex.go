@@ -19,13 +19,13 @@ package concurrentindex
 import (
 	"slices"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/indexscope"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TableFacts is what the live catalog says about one table, reduced to the two
@@ -59,7 +59,7 @@ func (idx TableIndex) Lookup(tableName string) (TableFacts, bool) {
 }
 
 // IndexTableFacts indexes a read schema by both spellings an index ref can use.
-func IndexTableFacts(dbSchema *dbschematypes.DBSchema) TableIndex {
+func IndexTableFacts(dbSchema *catalog.Database) TableIndex {
 	index := TableIndex{
 		qualified: make(map[string]TableFacts),
 		bare:      make(map[string]TableFacts),
@@ -104,7 +104,7 @@ func mergeTableFacts(into map[string]TableFacts, key string, facts TableFacts) {
 // concurrently.
 //
 // `CREATE INDEX CONCURRENTLY` survives parsing into
-// [go.5x5.cz/ptah/core/goschema.Index.Concurrently], and until this existed
+// [go.5x5.cz/ptah/core/schemamodel.Index.Concurrently], and until this existed
 // nothing carried the answer to the planner: a `.sql` desired state asking for
 // the non-locking build was planned as a locking one, silently, which on a table
 // large enough for the request to be worth making is the difference between a
@@ -127,11 +127,11 @@ func mergeTableFacts(into map[string]TableFacts, key string, facts TableFacts) {
 // would have wanted; a declaration is not guessing, so an index declared
 // concurrent on an empty table is still built concurrently.
 func DeclaredRefs(
-	diff *types.SchemaDiff,
-	desired *goschema.Database,
-	dbSchema *dbschematypes.DBSchema,
-	info dbschematypes.DBInfo,
-) []types.IndexRef {
+	diff *difftypes.SchemaDiff,
+	desired *schemamodel.Database,
+	dbSchema *catalog.Database,
+	info catalog.ServerInfo,
+) []difftypes.IndexRef {
 	if !platform.IsPostgresFamily(info.Dialect) || !info.Capabilities.Has(capability.CreateIndexConcurrently) {
 		return nil
 	}
@@ -140,7 +140,7 @@ func DeclaredRefs(
 		return nil
 	}
 	tables := IndexTableFacts(dbSchema)
-	var refs []types.IndexRef
+	var refs []difftypes.IndexRef
 	for _, ref := range diff.IndexAdditions() {
 		identity := indexscope.IdentityKeyWithSemantics(identifier.ForDialect(info.Dialect), ref)
 		if _, asked := declared[identity]; !asked {
@@ -164,19 +164,19 @@ func DeclaredRefs(
 // planner's diagnostic with one about concurrency, for a diff that has nothing
 // to do with it.
 func declaredIdentities(
-	desired *goschema.Database,
+	desired *schemamodel.Database,
 	semantics identifier.Semantics,
-) map[types.IndexRef]struct{} {
+) map[difftypes.IndexRef]struct{} {
 	if desired == nil {
 		return nil
 	}
-	owners := goschema.ResolveIndexOwners(desired.Indexes, desired.Tables, desired.MaterializedViews)
-	identities := make(map[types.IndexRef]struct{})
+	owners := schemamodel.ResolveIndexOwners(desired.Indexes, desired.Tables, desired.MaterializedViews)
+	identities := make(map[difftypes.IndexRef]struct{})
 	for position, index := range desired.Indexes {
 		if !index.Concurrently {
 			continue
 		}
-		identities[indexscope.IdentityKeyWithSemantics(semantics, types.IndexRef{
+		identities[indexscope.IdentityKeyWithSemantics(semantics, difftypes.IndexRef{
 			Name:      index.Name,
 			TableName: owners[position],
 		})] = struct{}{}
@@ -186,12 +186,12 @@ func declaredIdentities(
 
 // MergeRefs is the union of two ref lists, in the order the first names them and
 // then the second, without repeating one both name.
-func MergeRefs(first, second []types.IndexRef) []types.IndexRef {
+func MergeRefs(first, second []difftypes.IndexRef) []difftypes.IndexRef {
 	if len(second) == 0 {
 		return first
 	}
-	seen := make(map[types.IndexRef]struct{}, len(first)+len(second))
-	merged := make([]types.IndexRef, 0, len(first)+len(second))
+	seen := make(map[difftypes.IndexRef]struct{}, len(first)+len(second))
+	merged := make([]difftypes.IndexRef, 0, len(first)+len(second))
 	for _, ref := range slices.Concat(first, second) {
 		if _, repeated := seen[ref]; repeated {
 			continue

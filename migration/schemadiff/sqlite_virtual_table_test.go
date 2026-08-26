@@ -6,10 +6,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestCompareDoesNotPlanColumnChangesForASQLiteVirtualTable guards the seam the
@@ -29,13 +29,13 @@ import (
 func TestCompareDoesNotPlanColumnChangesForASQLiteVirtualTable(t *testing.T) {
 	tests := []struct {
 		name            string
-		dbTable         types.DBTable
+		dbTable         catalog.Table
 		wantModified    bool
 		wantColumnAdded []string
 	}{
 		{
 			name: "a virtual table is not compared column by column",
-			dbTable: types.DBTable{
+			dbTable: catalog.Table{
 				Name:             "docs",
 				Type:             "TABLE",
 				VirtualModule:    "fts5",
@@ -45,7 +45,7 @@ func TestCompareDoesNotPlanColumnChangesForASQLiteVirtualTable(t *testing.T) {
 		},
 		{
 			name: "an ordinary table missing the same columns still is",
-			dbTable: types.DBTable{
+			dbTable: catalog.Table{
 				Name: "docs",
 				Type: "TABLE",
 			},
@@ -58,16 +58,16 @@ func TestCompareDoesNotPlanColumnChangesForASQLiteVirtualTable(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			generated := &goschema.Database{
-				Tables: []goschema.Table{{StructName: "Doc", Name: "docs"}},
-				Fields: []goschema.Field{
+			desired := &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "Doc", Name: "docs"}},
+				Fields: []schemamodel.Field{
 					{StructName: "Doc", Name: "title", Type: "TEXT"},
 					{StructName: "Doc", Name: "body", Type: "TEXT"},
 				},
 			}
-			database := &types.DBSchema{Tables: []types.DBTable{tt.dbTable}}
+			current := &catalog.Database{Tables: []catalog.Table{tt.dbTable}}
 
-			diff := schemadiff.CompareWithDialect(generated, database, "sqlite")
+			diff := schemadiff.CompareWithDialect(desired, current, "sqlite")
 
 			c.Assert(diff.TablesAdded, qt.HasLen, 0)
 			c.Assert(diff.TablesRemoved, qt.HasLen, 0)

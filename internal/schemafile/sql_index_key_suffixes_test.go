@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/convert/goschematodb"
 	"go.5x5.cz/ptah/internal/schemafile"
 )
@@ -50,35 +50,35 @@ func TestToDBSchema_SQLDocumentCarriesIndexKeySuffixes(t *testing.T) {
 	db, err := schemafile.LoadAll([]string{path}, schemafile.Options{Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 
-	parts := make(map[string][]dbschematypes.DBIndexPart)
-	for _, index := range goschematodb.ToDBSchema(db, platform.Postgres).Indexes {
+	parts := make(map[string][]catalog.IndexPart)
+	for _, index := range goschematodb.ToCatalog(db, platform.Postgres).Indexes {
 		parts[index.Name] = index.Parts
 	}
 
 	tests := []struct {
 		name  string
 		index string
-		want  []dbschematypes.DBIndexPart
+		want  []catalog.IndexPart
 	}{
 		{
 			name:  "a parameterised default operator class survives whole",
 			index: "i_siglen",
-			want:  []dbschematypes.DBIndexPart{{Name: "tsv", Operator: "tsvector_ops(siglen=64)"}},
+			want:  []catalog.IndexPart{{Name: "tsv", Operator: "tsvector_ops(siglen=64)"}},
 		},
 		{
 			name:  "a non-default operator class survives",
 			index: "i_opclass",
-			want:  []dbschematypes.DBIndexPart{{Name: "code", Operator: "text_pattern_ops"}},
+			want:  []catalog.IndexPart{{Name: "code", Operator: "text_pattern_ops"}},
 		},
 		{
 			name:  "a direction and its NULLS ordering survive together",
 			index: "i_desc",
-			want:  []dbschematypes.DBIndexPart{{Name: "created_at", Desc: true, NullsOrder: dbschematypes.NullsOrderLast}},
+			want:  []catalog.IndexPart{{Name: "created_at", Desc: true, NullsOrder: catalog.NullsOrderLast}},
 		},
 		{
 			name:  "an explicit NULLS ordering without a direction survives",
 			index: "i_nullsfst",
-			want:  []dbschematypes.DBIndexPart{{Name: "score", NullsOrder: dbschematypes.NullsOrderFirst}},
+			want:  []catalog.IndexPart{{Name: "score", NullsOrder: catalog.NullsOrderFirst}},
 		},
 		{
 			name:  "a key list with no suffix stays on the legacy column path",

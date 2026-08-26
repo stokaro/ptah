@@ -9,7 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/migration/generator"
 )
@@ -30,7 +30,7 @@ func TestGenerateMigration_CompareOptionsWithRealPostgres(t *testing.T) {
 	t.Run("default options ignore plpgsql", func(t *testing.T) {
 		c := qt.New(t)
 		files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
-			Generated:     &goschema.Database{},
+			Desired:       &schemamodel.Database{},
 			DBConn:        target,
 			MigrationName: "default_ignore",
 			OutputDir:     c.TempDir(),
@@ -42,7 +42,7 @@ func TestGenerateMigration_CompareOptionsWithRealPostgres(t *testing.T) {
 	t.Run("custom options ignore plpgsql", func(t *testing.T) {
 		c := qt.New(t)
 		files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
-			Generated:      &goschema.Database{},
+			Desired:        &schemamodel.Database{},
 			DBConn:         target,
 			MigrationName:  "custom_ignore",
 			OutputDir:      c.TempDir(),
@@ -55,7 +55,7 @@ func TestGenerateMigration_CompareOptionsWithRealPostgres(t *testing.T) {
 	t.Run("empty ignore list manages plpgsql", func(t *testing.T) {
 		c := qt.New(t)
 		files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
-			Generated:      &goschema.Database{},
+			Desired:        &schemamodel.Database{},
 			DBConn:         target,
 			MigrationName:  "manage_plpgsql",
 			OutputDir:      c.TempDir(),
@@ -73,8 +73,8 @@ func TestGenerateMigration_CompareOptionsWithRealPostgres(t *testing.T) {
 	t.Run("desired extension is added while plpgsql is ignored", func(t *testing.T) {
 		c := qt.New(t)
 		files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
-			Generated: &goschema.Database{
-				Extensions: []goschema.Extension{{Name: "pg_trgm", IfNotExists: true}},
+			Desired: &schemamodel.Database{
+				Extensions: []schemamodel.Extension{{Name: "pg_trgm", IfNotExists: true}},
 			},
 			DBConn:         target,
 			MigrationName:  "add_pg_trgm",

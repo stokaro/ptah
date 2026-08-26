@@ -7,8 +7,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemafile"
 )
 
@@ -108,7 +108,7 @@ func writeDocument(c *qt.C, name, document string) string {
 	return path
 }
 
-func synonymNames(database *goschema.Database) []string {
+func synonymNames(database *schemamodel.Database) []string {
 	names := make([]string, 0, len(database.Synonyms))
 	for _, synonym := range database.Synonyms {
 		names = append(names, synonym.Name)

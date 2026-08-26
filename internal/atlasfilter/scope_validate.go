@@ -6,8 +6,8 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/deporder"
 )
 
@@ -32,7 +32,7 @@ func (d scopeDiagnostics) err() error {
 // column types whose type object was dropped. Only dependencies the selection
 // dropped are diagnosed: a reference to an object that was never part of the
 // same state behaves exactly as it does without a selection.
-func validateGeneratedScope(original, final *goschema.Database, selection *scopeSelection) error {
+func validateGeneratedScope(original, final *schemamodel.Database, selection *scopeSelection) error {
 	diagnostics := make(scopeDiagnostics)
 	keptByStruct := generatedTableByStruct(final.Tables)
 
@@ -44,8 +44,8 @@ func validateGeneratedScope(original, final *goschema.Database, selection *scope
 }
 
 func validateGeneratedForeignKeys(
-	original, final *goschema.Database,
-	keptByStruct map[string]goschema.Table,
+	original, final *schemamodel.Database,
+	keptByStruct map[string]schemamodel.Table,
 	diagnostics scopeDiagnostics,
 ) {
 	for _, field := range original.Fields {
@@ -77,8 +77,8 @@ func validateGeneratedForeignKeys(
 // reportGeneratedTableDependency records a diagnostic when reference names a
 // table that exists in the original schema but was dropped by the selection.
 func reportGeneratedTableDependency(
-	original, final *goschema.Database,
-	owner goschema.Table,
+	original, final *schemamodel.Database,
+	owner schemamodel.Table,
 	reference string,
 	diagnostics scopeDiagnostics,
 ) {
@@ -95,7 +95,7 @@ func reportGeneratedTableDependency(
 	}
 }
 
-func validateGeneratedFunctions(original, final *goschema.Database, diagnostics scopeDiagnostics) {
+func validateGeneratedFunctions(original, final *schemamodel.Database, diagnostics scopeDiagnostics) {
 	keptFunctions := make(map[string]struct{}, len(final.Functions))
 	for _, function := range final.Functions {
 		keptFunctions[function.Name] = struct{}{}
@@ -119,7 +119,7 @@ func validateGeneratedFunctions(original, final *goschema.Database, diagnostics 
 // validateGeneratedBodies checks view, materialized view, and trigger bodies
 // of the selection for references to relations the selection dropped. Bodies
 // are free SQL, so the check is a conservative identifier scan.
-func validateGeneratedBodies(original, final *goschema.Database, diagnostics scopeDiagnostics) {
+func validateGeneratedBodies(original, final *schemamodel.Database, diagnostics scopeDiagnostics) {
 	dropped := droppedGeneratedRelations(original, final)
 	for _, view := range final.Views {
 		reportBodyReferences("view", view.Name, view.Body, dropped, diagnostics)
@@ -135,7 +135,7 @@ func validateGeneratedBodies(original, final *goschema.Database, diagnostics sco
 // droppedGeneratedRelations maps display names of tables, views, and
 // materialized views that the selection dropped, keyed by the bare name the
 // identifier scan looks for.
-func droppedGeneratedRelations(original, final *goschema.Database) map[string]string {
+func droppedGeneratedRelations(original, final *schemamodel.Database) map[string]string {
 	kept := make(map[string]struct{})
 	for _, table := range final.Tables {
 		kept[table.Name] = struct{}{}
@@ -184,14 +184,14 @@ func reportBodyReferences(
 // validateGeneratedTypes refuses projections whose kept columns use a type
 // object (enum, domain, composite type, range) that the selection dropped.
 func validateGeneratedTypes(
-	original, final *goschema.Database,
+	original, final *schemamodel.Database,
 	selection *scopeSelection,
 	diagnostics scopeDiagnostics,
 ) {
 	referenced := generatedFieldTypeSet(final.Fields)
 	report := func(kind, schema, name string) {
 		if typeNameReferenced(referenced, schema, name) {
-			display := dbschematypes.QualifyTableName(selection.effectiveSchema(schema), name)
+			display := catalog.QualifyTableName(selection.effectiveSchema(schema), name)
 			diagnostics.addf("selected tables use %s %q, but %q is not selected", kind, display, display)
 		}
 	}
@@ -202,21 +202,21 @@ func validateGeneratedTypes(
 		}
 	}
 	for _, domain := range original.Domains {
-		if !typeObjectKept(final.Domains, domain.Schema, domain.Name, func(d goschema.Domain) (string, string) {
+		if !typeObjectKept(final.Domains, domain.Schema, domain.Name, func(d schemamodel.Domain) (string, string) {
 			return d.Schema, d.Name
 		}) {
 			report("domain", domain.Schema, domain.Name)
 		}
 	}
 	for _, composite := range original.CompositeTypes {
-		if !typeObjectKept(final.CompositeTypes, composite.Schema, composite.Name, func(c goschema.CompositeType) (string, string) {
+		if !typeObjectKept(final.CompositeTypes, composite.Schema, composite.Name, func(c schemamodel.CompositeType) (string, string) {
 			return c.Schema, c.Name
 		}) {
 			report("composite type", composite.Schema, composite.Name)
 		}
 	}
 	for _, item := range original.Ranges {
-		if !typeObjectKept(final.Ranges, item.Schema, item.Name, func(r goschema.Range) (string, string) {
+		if !typeObjectKept(final.Ranges, item.Schema, item.Name, func(r schemamodel.Range) (string, string) {
 			return r.Schema, r.Name
 		}) {
 			report("range type", item.Schema, item.Name)
@@ -224,7 +224,7 @@ func validateGeneratedTypes(
 	}
 }
 
-func generatedEnumKept(enums []goschema.Enum, schema, name string) bool {
+func generatedEnumKept(enums []schemamodel.Enum, schema, name string) bool {
 	for _, enum := range enums {
 		keptSchema, keptName := enumIdentity(enum.Schema, enum.Name)
 		if keptSchema == schema && keptName == name {
@@ -249,7 +249,7 @@ func typeObjectKept[T any](kept []T, schema, name string, key func(T) (schema, n
 // validateDatabaseScope refuses projections where a selected introspected
 // table has a foreign key to a table the selection dropped, or where kept
 // columns use a type object the selection dropped.
-func validateDatabaseScope(original, final *dbschematypes.DBSchema, selection *scopeSelection) error {
+func validateDatabaseScope(original, final *catalog.Database, selection *scopeSelection) error {
 	diagnostics := make(scopeDiagnostics)
 	kept := make(map[tableIdentity]struct{}, len(final.Tables))
 	for _, table := range final.Tables {
@@ -273,8 +273,8 @@ func validateDatabaseScope(original, final *dbschematypes.DBSchema, selection *s
 		_, foreignKept := kept[foreign.Key()]
 		_, foreignExisted := existed[foreign.Key()]
 		if ownerKept && foreignExisted && !foreignKept {
-			ownerName := dbschematypes.QualifyTableName(owner.Schema.Source, owner.Name.Source)
-			foreignName := dbschematypes.QualifyTableName(foreign.Schema.Source, foreign.Name.Source)
+			ownerName := catalog.QualifyTableName(owner.Schema.Source, owner.Name.Source)
+			foreignName := catalog.QualifyTableName(foreign.Schema.Source, foreign.Name.Source)
 			diagnostics.addf("table %q depends on table %q via a foreign key, but %q is not selected",
 				ownerName, foreignName, foreignName)
 		}
@@ -286,14 +286,14 @@ func validateDatabaseScope(original, final *dbschematypes.DBSchema, selection *s
 // validateDatabaseTypes refuses projections whose kept columns reference an
 // introspected type object the selection dropped.
 func validateDatabaseTypes(
-	original, final *dbschematypes.DBSchema,
+	original, final *catalog.Database,
 	selection *scopeSelection,
 	diagnostics scopeDiagnostics,
 ) {
 	referenced := databaseColumnTypeSet(final.Tables)
 	report := func(kind, schema, name string) {
 		if typeNameReferenced(referenced, schema, name) {
-			display := dbschematypes.QualifyTableName(selection.effectiveSchema(schema), name)
+			display := catalog.QualifyTableName(selection.effectiveSchema(schema), name)
 			diagnostics.addf("selected tables use %s %q, but %q is not selected", kind, display, display)
 		}
 	}
@@ -303,7 +303,7 @@ func validateDatabaseTypes(
 		}
 	}
 	for _, domain := range original.Domains {
-		if !typeObjectKept(final.Domains, domain.Schema, domain.Name, func(d dbschematypes.DBDomain) (string, string) {
+		if !typeObjectKept(final.Domains, domain.Schema, domain.Name, func(d catalog.Domain) (string, string) {
 			return d.Schema, d.Name
 		}) {
 			report("domain", domain.Schema, domain.Name)
@@ -311,7 +311,7 @@ func validateDatabaseTypes(
 	}
 }
 
-func databaseEnumKept(enums []dbschematypes.DBEnum, schema, name string) bool {
+func databaseEnumKept(enums []catalog.Enum, schema, name string) bool {
 	for _, enum := range enums {
 		if enum.Schema == schema && enum.Name == name {
 			return true

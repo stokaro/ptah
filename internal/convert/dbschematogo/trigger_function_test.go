@@ -5,15 +5,15 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 )
 
 // triggerSchema is one trigger on table `a` running the named function.
-func triggerSchema(executeFunction string) *types.DBSchema {
-	return &types.DBSchema{
-		Triggers: []types.DBTrigger{{
+func triggerSchema(executeFunction string) *catalog.Database {
+	return &catalog.Database{
+		Triggers: []catalog.Trigger{{
 			Name:            "trg_a",
 			Table:           "a",
 			Timing:          "AFTER",
@@ -26,7 +26,7 @@ func triggerSchema(executeFunction string) *types.DBSchema {
 }
 
 // onlyTrigger returns the single converted trigger.
-func onlyTrigger(c *qt.C, database *goschema.Database) goschema.Trigger {
+func onlyTrigger(c *qt.C, database *schemamodel.Database) schemamodel.Trigger {
 	c.Helper()
 	c.Assert(database.Triggers, qt.HasLen, 1)
 	return database.Triggers[0]
@@ -44,7 +44,7 @@ func onlyTrigger(c *qt.C, database *goschema.Database) goschema.Trigger {
 func TestConvert_KeepsATriggerBoundToSomebodyElsesFunction(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(triggerSchema("audit_fn"))
+	database := dbschematogo.ConvertCatalogToSchema(triggerSchema("audit_fn"))
 
 	trigger := onlyTrigger(c, database)
 	c.Assert(trigger.ExecuteFunction, qt.Equals, "audit_fn")
@@ -66,7 +66,7 @@ func TestConvert_KeepsATriggerBoundToSomebodyElsesFunction(t *testing.T) {
 func TestConvert_LeavesATriggerPtahOwnsInline(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(triggerSchema("ptah_trigger_a_trg_a"))
+	database := dbschematogo.ConvertCatalogToSchema(triggerSchema("ptah_trigger_a_trg_a"))
 
 	trigger := onlyTrigger(c, database)
 	c.Assert(trigger.ExecuteFunction, qt.Equals, "")
@@ -78,7 +78,7 @@ func TestConvert_LeavesATriggerPtahOwnsInline(t *testing.T) {
 func TestConvert_LeavesATriggerWithNoReportedFunctionInline(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(triggerSchema(""))
+	database := dbschematogo.ConvertCatalogToSchema(triggerSchema(""))
 
 	trigger := onlyTrigger(c, database)
 	c.Assert(trigger.ExecuteFunction, qt.Equals, "")

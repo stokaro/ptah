@@ -6,32 +6,32 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestPlanner_GenerateMigrationAST_MultiSchemaTablesAndFKs(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "User", Name: "users", Schema: "auth"},
 			{StructName: "Invoice", Name: "invoices", Schema: "billing"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "Invoice", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "Invoice", Name: "user_id", Type: "INTEGER", Foreign: "auth.users(id)"},
 		},
-		SelfReferencingForeignKeys: make(map[string][]goschema.SelfReferencingFK),
+		SelfReferencingForeignKeys: make(map[string][]schemamodel.SelfReferencingFK),
 	}
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		TablesAdded: []string{"auth.users", "billing.invoices"},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
+	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -47,24 +47,24 @@ func TestPlanner_GenerateMigrationAST_MultiSchemaTablesAndFKs(t *testing.T) {
 func TestPlanner_GenerateMigrationAST_TrimsSchemaPreconditions(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "User", Name: "users", Schema: " auth "},
 			{StructName: "Account", Name: "accounts", Schema: "auth"},
 			{StructName: "Blank", Name: "blank", Schema: "   "},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "Account", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "Blank", Name: "id", Type: "SERIAL", Primary: true},
 		},
-		SelfReferencingForeignKeys: make(map[string][]goschema.SelfReferencingFK),
+		SelfReferencingForeignKeys: make(map[string][]schemamodel.SelfReferencingFK),
 	}
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		TablesAdded: []string{"auth.users", "auth.accounts", "blank"},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
+	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -79,25 +79,25 @@ func TestPlanner_GenerateMigrationAST_TrimsSchemaPreconditions(t *testing.T) {
 func TestPlanner_GenerateMigrationAST_DoesNotQualifyAmbiguousLeafFK(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "AuthUser", Name: "users", Schema: "auth"},
 			{StructName: "CrmUser", Name: "users", Schema: "crm"},
 			{StructName: "Invoice", Name: "invoices", Schema: "billing"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "AuthUser", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "CrmUser", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "Invoice", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "Invoice", Name: "user_id", Type: "INTEGER", Foreign: "users(id)"},
 		},
-		SelfReferencingForeignKeys: make(map[string][]goschema.SelfReferencingFK),
+		SelfReferencingForeignKeys: make(map[string][]schemamodel.SelfReferencingFK),
 	}
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		TablesAdded: []string{"auth.users", "crm.users", "billing.invoices"},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
+	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -144,17 +144,17 @@ func TestPlanner_SchemaPreconditionsSkipTheNamesATargetOwns(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			generated := &goschema.Database{
-				Tables: []goschema.Table{{StructName: "User", Name: "users", Schema: test.schema}},
-				Fields: []goschema.Field{
+			desired := &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "User", Name: "users", Schema: test.schema}},
+				Fields: []schemamodel.Field{
 					{StructName: "User", Name: "id", Type: "BIGINT", Primary: true},
 				},
-				SelfReferencingForeignKeys: make(map[string][]goschema.SelfReferencingFK),
+				SelfReferencingForeignKeys: make(map[string][]schemamodel.SelfReferencingFK),
 			}
-			diff := &types.SchemaDiff{TablesAdded: []string{test.schema + ".users"}}
+			diff := &difftypes.SchemaDiff{TablesAdded: []string{test.schema + ".users"}}
 
 			nodes, err := postgres.NewForDialect(test.dialect, nil).
-				GenerateMigrationASTChecked(diff, generated)
+				GenerateMigrationASTChecked(diff, desired)
 			c.Assert(err, qt.IsNil)
 			sql, err := renderer.RenderSQL(test.dialect, nodes...)
 			c.Assert(err, qt.IsNil)

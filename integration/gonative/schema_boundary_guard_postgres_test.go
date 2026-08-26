@@ -89,7 +89,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
@@ -383,7 +383,7 @@ func TestPostgreSQLSchemaBoundaryGuardIntegration(t *testing.T) {
 type boundaryObservation struct {
 	// live is the schema the reader reported, in the same IR the renderer is
 	// handed.
-	live *goschema.Database
+	live *schemamodel.Database
 	// document is the NATIVE surface's inspected output, parsed back.
 	//
 	// Property 1 is asked of the native surface alone, deliberately. The
@@ -391,7 +391,7 @@ type boundaryObservation struct {
 	// read, so a difference there is a presentation decision rather than a
 	// defect -- and property 2 below is where that decision turns into a plan
 	// that removes things, which is the part worth guarding.
-	document      *goschema.Database
+	document      *schemamodel.Database
 	defaultSchema string
 	// role owns the fixture tables: whatever role POSTGRES_TEST_DSN connects
 	// as, since that role created them.
@@ -424,7 +424,7 @@ func observeBoundaryCase(c *qt.C, dsn string, tc boundaryCase) boundaryObservati
 	compatDocument := boundaryInspect(c, dbURL, true)
 
 	return boundaryObservation{
-		live:          dbschematogo.ConvertDBSchemaToGoSchema(live),
+		live:          dbschematogo.ConvertCatalogToSchema(live),
 		document:      boundaryParseBack(c, nativeDocument, false),
 		defaultSchema: conn.Info().Schema,
 		role:          boundaryConnectedRole(c, dbURL),
@@ -538,7 +538,7 @@ func boundaryInspect(c *qt.C, dbURL string, compatibility bool) string {
 // boundaryParseBack reads an inspected document back into Ptah's IR. A parse
 // failure is property 1 failing in its loudest form -- Ptah unable to read its
 // own output, which is what #1266 was.
-func boundaryParseBack(c *qt.C, document string, compatibility bool) *goschema.Database {
+func boundaryParseBack(c *qt.C, document string, compatibility bool) *schemamodel.Database {
 	c.Helper()
 
 	parsed, err := schemafile.LoadAll([]string{"file://" + boundaryDocumentFile(c, document)}, schemafile.Options{
@@ -615,7 +615,7 @@ func boundaryDropExtension(name string) func(role string) []string {
 }
 
 // boundarySchemaNames is the set of schemas an IR says the database has.
-func boundarySchemaNames(db *goschema.Database) []string {
+func boundarySchemaNames(db *schemamodel.Database) []string {
 	var names []string
 	for _, schema := range db.Schemas {
 		names = append(names, schema.Name)
@@ -638,7 +638,7 @@ func boundarySchemaNames(db *goschema.Database) []string {
 // cluster-scoped, so a sibling suite's leftover role would appear in one of
 // these reads and turn this guard into a flake. Grants are covered by property
 // 2 instead, where they are the whole finding.
-func boundaryObjectDifference(document, live *goschema.Database, defaultSchema string) (documentOnly, databaseOnly []string) {
+func boundaryObjectDifference(document, live *schemamodel.Database, defaultSchema string) (documentOnly, databaseOnly []string) {
 	inDocument := boundaryObjectIDs(document, defaultSchema)
 	inDatabase := boundaryObjectIDs(live, defaultSchema)
 	return boundaryMissingFrom(inDocument, inDatabase), boundaryMissingFrom(inDatabase, inDocument)
@@ -661,7 +661,7 @@ func boundaryMissingFrom(have, other []string) []string {
 // an internal handle and the two sides spell it differently for the same table
 // (`PkT` from the catalog, `pk_t` from the document), which is a difference in
 // bookkeeping rather than in what exists.
-func boundaryObjectIDs(db *goschema.Database, defaultSchema string) []string {
+func boundaryObjectIDs(db *schemamodel.Database, defaultSchema string) []string {
 	var ids []string
 	for _, schema := range db.Schemas {
 		ids = append(ids, "schema:"+schema.Name)

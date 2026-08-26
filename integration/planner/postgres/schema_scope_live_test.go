@@ -8,9 +8,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestPlannerDoesNotWriteToARelationTheSchemaNeverDeclaredLive is blocker 1
@@ -66,18 +66,18 @@ func TestPlannerDoesNotWriteToARelationTheSchemaNeverDeclaredLive(t *testing.T) 
 			})
 			c.Assert(schemaTableColumns(c, dbURL, "app", "users"), qt.DeepEquals, []string{"id"})
 
-			generated := &goschema.Database{
-				Tables: []goschema.Table{{
+			generated := &schemamodel.Database{
+				Tables: []schemamodel.Table{{
 					StructName: "User",
 					Name:       "users",
 					Schema:     test.declaredSchema,
 				}},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{StructName: "User", Name: "id", Type: "INTEGER", Primary: true},
 					{StructName: "User", Name: "note", Type: "TEXT"},
 				},
 			}
-			diff := &types.SchemaDiff{TablesModified: []types.TableDiff{{
+			diff := &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:    "app.users",
 				ColumnsAdded: []string{"note"},
 			}}}

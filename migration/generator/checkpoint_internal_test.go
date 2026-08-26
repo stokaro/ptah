@@ -18,11 +18,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
@@ -136,13 +136,13 @@ func TestWriteAtlasCheckpointFile_RejectsNonPositiveVersion(t *testing.T) {
 	c.Assert(entries, qt.HasLen, 0)
 }
 
-func checkpointSampleSchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func checkpointSampleSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "User", Name: "users"},
 			{StructName: "Post", Name: "posts"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "Post", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "Post", Name: "user_id", Type: "INTEGER", Foreign: "users(id)"},
@@ -189,7 +189,7 @@ func TestGenerateCheckpoint_NilAndEmpty(t *testing.T) {
 	_, _, err := generateCheckpoint(nil, "postgres")
 	c.Assert(err, qt.ErrorMatches, `checkpoint schema is required`)
 
-	up, down, err := generateCheckpoint(&goschema.Database{}, "postgres")
+	up, down, err := generateCheckpoint(&schemamodel.Database{}, "postgres")
 	c.Assert(err, qt.IsNil)
 	c.Assert(up, qt.Equals, "")
 	c.Assert(down, qt.Equals, "")
@@ -208,7 +208,7 @@ func TestGenerateCheckpointWithDatabaseInfo_SQLServerCaseSensitiveVariants(t *te
 		})
 	schema := sqlServerCaseVariantIndexSchema()
 
-	up, down, err := generateCheckpointWithDatabaseInfo(schema, dbschematypes.DBInfo{
+	up, down, err := generateCheckpointWithDatabaseInfo(schema, catalog.ServerInfo{
 		Dialect:             "sqlserver",
 		Capabilities:        capability.SQLServer2022(),
 		IdentifierSemantics: semantics,
@@ -240,12 +240,12 @@ func TestGenerateCheckpointWithDatabaseInfo_SQLServerTableCollision_FailurePath(
 			{Name: "dbo", Key: "dbo"},
 			{Name: "users", Key: "Users"},
 		})
-	schema := &goschema.Database{Tables: []goschema.Table{
+	schema := &schemamodel.Database{Tables: []schemamodel.Table{
 		{StructName: "UpperUser", Schema: "dbo", Name: "Users"},
 		{StructName: "LowerUser", Schema: "dbo", Name: "users"},
 	}}
 
-	up, down, err := generateCheckpointWithDatabaseInfo(schema, dbschematypes.DBInfo{
+	up, down, err := generateCheckpointWithDatabaseInfo(schema, catalog.ServerInfo{
 		Dialect:             "sqlserver",
 		Capabilities:        capability.SQLServer2022(),
 		IdentifierSemantics: semantics,
@@ -263,11 +263,11 @@ func TestGenerateCheckpointWithDatabaseInfo_SQLServerIncompleteSnapshot_FailureP
 		WithResolvedNames([]identifier.ResolvedName{
 			{Name: "dbo", Key: "dbo"},
 		})
-	schema := &goschema.Database{Tables: []goschema.Table{
+	schema := &schemamodel.Database{Tables: []schemamodel.Table{
 		{StructName: "User", Schema: "dbo", Name: "users"},
 	}}
 
-	up, down, err := generateCheckpointWithDatabaseInfo(schema, dbschematypes.DBInfo{
+	up, down, err := generateCheckpointWithDatabaseInfo(schema, catalog.ServerInfo{
 		Dialect:             "sqlserver",
 		Capabilities:        capability.SQLServer2022(),
 		IdentifierSemantics: semantics,
@@ -279,16 +279,16 @@ func TestGenerateCheckpointWithDatabaseInfo_SQLServerIncompleteSnapshot_FailureP
 	c.Assert(down, qt.Equals, "")
 }
 
-func sqlServerCaseVariantIndexSchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func sqlServerCaseVariantIndexSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "User", Schema: "dbo", Name: "users"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "email", Type: "NVARCHAR(320)"},
 			{StructName: "User", Name: "status", Type: "INT"},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{StructName: "User", Name: "idx_email", Fields: []string{"email"}},
 			{StructName: "User", Name: "IDX_Email", Fields: []string{"status"}},
 		},

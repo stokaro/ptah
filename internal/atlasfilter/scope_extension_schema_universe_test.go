@@ -5,18 +5,18 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 )
 
 func TestScopeGenerated_SchemaUniverseRetainsDatabaseWideExtensions(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{
-		Schemas: []goschema.Schema{{Name: "app"}, {Name: "extensions"}, {Name: "other"}},
-		Tables:  []goschema.Table{{StructName: "User", Schema: "app", Name: "users"}},
-		Fields:  []goschema.Field{{StructName: "User", Name: "email", Type: "extensions.citext"}},
-		Extensions: []goschema.Extension{
+	database := &schemamodel.Database{
+		Schemas: []schemamodel.Schema{{Name: "app"}, {Name: "extensions"}, {Name: "other"}},
+		Tables:  []schemamodel.Table{{StructName: "User", Schema: "app", Name: "users"}},
+		Fields:  []schemamodel.Field{{StructName: "User", Name: "email", Type: "extensions.citext"}},
+		Extensions: []schemamodel.Extension{
 			{Name: "pgcrypto"},
 			{Schema: "extensions", Name: "citext"},
 			{Schema: "other", Name: "unrelated"},
@@ -40,16 +40,16 @@ func TestScopeGenerated_SchemaUniverseRetainsDatabaseWideExtensions(t *testing.T
 
 func TestScopeDatabase_SchemaUniverseRetainsDatabaseWideExtensions(t *testing.T) {
 	c := qt.New(t)
-	database := &dbschematypes.DBSchema{
-		Schemas: []dbschematypes.DBSchemaInfo{{Name: "app"}, {Name: "extensions"}, {Name: "other"}},
-		Tables: []dbschematypes.DBTable{{
+	database := &catalog.Database{
+		Schemas: []catalog.Schema{{Name: "app"}, {Name: "extensions"}, {Name: "other"}},
+		Tables: []catalog.Table{{
 			Schema: "app",
 			Name:   "users",
-			Columns: []dbschematypes.DBColumn{{
+			Columns: []catalog.Column{{
 				Name: "email", DataType: "USER-DEFINED", UDTName: "citext", FormattedType: "extensions.citext",
 			}},
 		}},
-		Extensions: []dbschematypes.DBExtension{
+		Extensions: []catalog.Extension{
 			{Name: "pgcrypto"},
 			{Schema: "extensions", Name: "citext"},
 			{Schema: "other", Name: "unrelated"},
@@ -68,11 +68,11 @@ func TestScopeDatabase_SchemaUniverseRetainsDatabaseWideExtensions(t *testing.T)
 
 func TestScopeGenerated_NonExtensionIncludeCarriesDatabaseWideExtensions(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{
-		Schemas: []goschema.Schema{{Name: "app"}, {Name: "extensions"}, {Name: "other"}},
-		Tables:  []goschema.Table{{StructName: "User", Schema: "app", Name: "users"}},
-		Fields:  []goschema.Field{{StructName: "User", Name: "email", Type: "extensions.citext"}},
-		Extensions: []goschema.Extension{
+	database := &schemamodel.Database{
+		Schemas: []schemamodel.Schema{{Name: "app"}, {Name: "extensions"}, {Name: "other"}},
+		Tables:  []schemamodel.Table{{StructName: "User", Schema: "app", Name: "users"}},
+		Fields:  []schemamodel.Field{{StructName: "User", Name: "email", Type: "extensions.citext"}},
+		Extensions: []schemamodel.Extension{
 			{Name: "pgcrypto"},
 			{Schema: "extensions", Name: "citext"},
 			{Schema: "other", Name: "unrelated"},
@@ -98,16 +98,16 @@ func TestScopeGenerated_NonExtensionIncludeCarriesDatabaseWideExtensions(t *test
 
 func TestScopeDatabase_NonExtensionIncludeCarriesDatabaseWideExtensions(t *testing.T) {
 	c := qt.New(t)
-	database := &dbschematypes.DBSchema{
-		Schemas: []dbschematypes.DBSchemaInfo{{Name: "app"}, {Name: "extensions"}, {Name: "other"}},
-		Tables: []dbschematypes.DBTable{{
+	database := &catalog.Database{
+		Schemas: []catalog.Schema{{Name: "app"}, {Name: "extensions"}, {Name: "other"}},
+		Tables: []catalog.Table{{
 			Schema: "app",
 			Name:   "users",
-			Columns: []dbschematypes.DBColumn{{
+			Columns: []catalog.Column{{
 				Name: "email", DataType: "USER-DEFINED", UDTName: "citext", FormattedType: "extensions.citext",
 			}},
 		}},
-		Extensions: []dbschematypes.DBExtension{
+		Extensions: []catalog.Extension{
 			{Name: "pgcrypto"},
 			{Schema: "extensions", Name: "citext"},
 			{Schema: "other", Name: "unrelated"},
@@ -127,7 +127,7 @@ func TestScopeDatabase_NonExtensionIncludeCarriesDatabaseWideExtensions(t *testi
 
 func TestScopeGenerated_ExtensionOnlyIncludeSelectsExtensions(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{Extensions: []goschema.Extension{
+	database := &schemamodel.Database{Extensions: []schemamodel.Extension{
 		{Name: "pgcrypto"},
 		{Schema: "extensions", Name: "citext"},
 		{Schema: "other", Name: "unrelated"},
@@ -161,7 +161,7 @@ func TestScopeGenerated_ExtensionOnlyIncludeSelectsExtensions(t *testing.T) {
 
 func TestScopeDatabase_ExtensionOnlyIncludeSelectsExtensions(t *testing.T) {
 	c := qt.New(t)
-	database := &dbschematypes.DBSchema{Extensions: []dbschematypes.DBExtension{
+	database := &catalog.Database{Extensions: []catalog.Extension{
 		{Name: "pgcrypto"},
 		{Schema: "extensions", Name: "citext"},
 		{Schema: "other", Name: "unrelated"},
@@ -173,7 +173,7 @@ func TestScopeDatabase_ExtensionOnlyIncludeSelectsExtensions(t *testing.T) {
 		DefaultSchema: "public",
 	})
 	c.Assert(err, qt.IsNil)
-	c.Assert(qualified.Extensions, qt.DeepEquals, []dbschematypes.DBExtension{{
+	c.Assert(qualified.Extensions, qt.DeepEquals, []catalog.Extension{{
 		Schema: "extensions", Name: "citext",
 	}})
 
@@ -183,7 +183,7 @@ func TestScopeDatabase_ExtensionOnlyIncludeSelectsExtensions(t *testing.T) {
 		DefaultSchema: "public",
 	})
 	c.Assert(err, qt.IsNil)
-	c.Assert(bare.Extensions, qt.DeepEquals, []dbschematypes.DBExtension{{
+	c.Assert(bare.Extensions, qt.DeepEquals, []catalog.Extension{{
 		Schema: "extensions", Name: "citext",
 	}})
 

@@ -12,6 +12,7 @@ guide.
 These packages are intended for application and tool embedders:
 
 - `go.5x5.cz/ptah/atlascompat`
+- `go.5x5.cz/ptah/catalog`
 - `go.5x5.cz/ptah/config`
 - `go.5x5.cz/ptah/config/projectconfig`
 - `go.5x5.cz/ptah/core/ast`
@@ -24,11 +25,11 @@ These packages are intended for application and tool embedders:
 - `go.5x5.cz/ptah/core/ptaherr`
 - `go.5x5.cz/ptah/core/query`
 - `go.5x5.cz/ptah/core/renderer`
+- `go.5x5.cz/ptah/core/schemamodel`
 - `go.5x5.cz/ptah/core/schemasource`
 - `go.5x5.cz/ptah/core/sqlutil`
 - `go.5x5.cz/ptah/core/yamlschema`
 - `go.5x5.cz/ptah/dbschema`
-- `go.5x5.cz/ptah/dbschema/types`
 - `go.5x5.cz/ptah/docs`
 - `go.5x5.cz/ptah/migration/datadiff`
 - `go.5x5.cz/ptah/migration/dbtest`
@@ -42,7 +43,7 @@ These packages are intended for application and tool embedders:
 - `go.5x5.cz/ptah/migration/risk`
 - `go.5x5.cz/ptah/migration/safety`
 - `go.5x5.cz/ptah/migration/schemadiff`
-- `go.5x5.cz/ptah/migration/schemadiff/types`
+- `go.5x5.cz/ptah/migration/schemadiff/difftypes`
 - `go.5x5.cz/ptah/migration/seeder`
 - `go.5x5.cz/ptah/migration/shadow`
 
@@ -111,7 +112,7 @@ database.
 
 `core/yamlschema` reads a desired schema written in Ptah's YAML format. `Parse`
 takes the document as bytes and `ParseFile` reads it from a path; both return
-the `*goschema.Database` that Go annotations, HCL, SQL, and DBML also produce,
+the `*schemamodel.Database` that Go annotations, HCL, SQL, and DBML also produce,
 and nothing downstream can tell which reader filled it. Parsing is strict in
 two ways: an unknown key is an error rather than a silent drop, and a second
 YAML document in the same stream is refused rather than ignored.
@@ -119,7 +120,7 @@ YAML document in the same stream is refused rather than ignored.
 writes YAML to its standard output — and parses that output through this
 package.
 
-`goschema.Extension.Schema` records a PostgreSQL extension's installation
+`schemamodel.Extension.Schema` records a PostgreSQL extension's installation
 schema. `ast.ExtensionNode.Schema` and `SetSchema` carry the same intent into
 SQL rendering, which emits `CREATE EXTENSION ... WITH SCHEMA ...` after any
 `IF NOT EXISTS` clause and before `VERSION`. An empty schema means the target's
@@ -127,7 +128,7 @@ default schema. Embedders should preserve the field when converting or copying
 schema IR; dropping it can move an extension into the wrong namespace.
 
 `core/coverage` carries what a schema description does **not** claim to
-describe. `goschema.Database.NotDescribed` and `dbschema/types.DBSchema.NotDescribed`
+describe. `schemamodel.Database.NotDescribed` and `catalog.Database.NotDescribed`
 hold one, and schema comparison consults both: the desired state's record gates
 removals and the introspected state's record gates additions. Its zero value
 claims everything, so an embedder that never sets one gets exactly the
@@ -143,7 +144,7 @@ default comparison options. Command adapters use that report for warnings;
 embedders can choose their own diagnostic policy.
 
 MySQL-family readers populate the JSON-hidden
-`dbschema/types.DBFunction.Definer` and `CurrentAccount` execution facts.
+`catalog.Function.Definer` and `CurrentAccount` execution facts.
 Database-aware `schemadiff.CompareWithDatabase` entry points use them to refuse
 a modified `SQL SECURITY DEFINER` routine when recreating it would change the
 executing account. Custom readers that supply a modified definer routine must
@@ -151,7 +152,7 @@ preserve both fields; missing facts fail closed with
 `ptaherr.ErrInvalidSchemaDiff`. Offline comparison has no live ownership facts
 and is not the safety boundary for applying such a replacement.
 
-`goschema.Finalize` rebuilds materialized inline, JSON, and relation fields on
+`schemamodel.Finalize` rebuilds materialized inline, JSON, and relation fields on
 every call. `Field.GeneratedFromEmbedded` identifies those derived fields so a
 caller can mutate the source fields or embedded declarations and finalize the
 database again without retaining stale or duplicate columns. Treat the flag as
@@ -570,7 +571,7 @@ schema, and displayed stderr/parser diagnostics are bounded, secret-redacted,
 and terminal-safe. Embedders can use the same external desired-schema contract
 as the CLI without depending on Cobra or any `cmd/internal` package.
 
-`migration/schemadiff/types.SchemaDiff` stores index additions and removals as
+`migration/schemadiff/difftypes.SchemaDiff` stores index additions and removals as
 canonical `[]IndexRef` fields. Every index reference includes its owning
 table. Live comparisons also snapshot catalog identifier semantics into the
 diff so comparison, destructive-change policy, forward planning, and reverse
@@ -597,7 +598,7 @@ hand must fill both fields; a reference the target schema cannot resolve is
 rejected with `ptaherr.ErrInvalidSchemaDiff` rather than silently omitted from
 the plan.
 
-`migration/schemadiff/types.ViewDiff` also records the view body that is in
+`migration/schemadiff/difftypes.ViewDiff` also records the view body that is in
 force before the diff is applied, and whether the entry is being planned as a
 rollback. Planners read the body to decide whether the target engine accepts an
 in-place view replacement; PostgreSQL accepts `CREATE OR REPLACE VIEW` only when

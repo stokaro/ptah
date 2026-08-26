@@ -1,6 +1,6 @@
 // Package dbmlparse reads DBML into Ptah's schema model.
 //
-// It is a format adapter: it produces [goschema.Database] and decides no schema
+// It is a format adapter: it produces [schemamodel.Database] and decides no schema
 // semantics of its own. There is no SQL conversion, no JavaScript runtime and no
 // subprocess -- the grammar is read here (stokaro/ptah#2065).
 //

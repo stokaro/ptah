@@ -5,55 +5,55 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/rlsscope"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestNewResolver_RefusesADiffItCannotPlan covers the refusals the PostgreSQL
 // planner delegates here, including the two a planner cannot reach on its own:
 // a nil diff, and a target schema whose declarations collapse onto one identity.
 func TestNewResolver_RefusesADiffItCannotPlan(t *testing.T) {
-	declared := func(policies ...goschema.RLSPolicy) *goschema.Database {
-		return &goschema.Database{RLSPolicies: policies}
+	declared := func(policies ...schemamodel.RLSPolicy) *schemamodel.Database {
+		return &schemamodel.Database{RLSPolicies: policies}
 	}
 
 	tests := []struct {
 		name      string
-		diff      *types.SchemaDiff
-		generated *goschema.Database
+		diff      *difftypes.SchemaDiff
+		desired   *schemamodel.Database
 		wantError string
 	}{
 		{
 			name:      "a nil diff",
 			diff:      nil,
-			generated: declared(),
+			desired:   declared(),
 			wantError: `invalid schema diff: schema diff is nil`,
 		},
 		{
 			name: "an addition with no owning table",
-			diff: &types.SchemaDiff{
-				RLSPoliciesAdded: []types.RLSPolicyRef{{PolicyName: "p"}},
+			diff: &difftypes.SchemaDiff{
+				RLSPoliciesAdded: []difftypes.RLSPolicyRef{{PolicyName: "p"}},
 			},
-			generated: declared(),
+			desired:   declared(),
 			wantError: `invalid schema diff: added RLS policy reference at position 0 requires a policy name and owning table`,
 		},
 		{
 			name: "an addition with no policy name",
-			diff: &types.SchemaDiff{
-				RLSPoliciesAdded: []types.RLSPolicyRef{{TableName: "orders"}},
+			diff: &difftypes.SchemaDiff{
+				RLSPoliciesAdded: []difftypes.RLSPolicyRef{{TableName: "orders"}},
 			},
-			generated: declared(),
+			desired:   declared(),
 			wantError: `invalid schema diff: added RLS policy reference at position 0 requires a policy name and owning table`,
 		},
 		{
 			name: "an addition the target schema does not hold",
-			diff: &types.SchemaDiff{
-				RLSPoliciesAdded: []types.RLSPolicyRef{{PolicyName: "p", TableName: "orders"}},
+			diff: &difftypes.SchemaDiff{
+				RLSPoliciesAdded: []difftypes.RLSPolicyRef{{PolicyName: "p", TableName: "orders"}},
 			},
-			generated: declared(),
+			desired:   declared(),
 			wantError: `invalid schema diff: added RLS policy p on table orders at position 0 is missing from the target schema`,
 		},
 		{
@@ -61,17 +61,17 @@ func TestNewResolver_RefusesADiffItCannotPlan(t *testing.T) {
 			// policy under PostgreSQL's rules, so the map would keep whichever
 			// came last and the plan would depend on declaration order.
 			name: "a target schema with two declarations of one policy",
-			diff: &types.SchemaDiff{},
-			generated: declared(
-				goschema.RLSPolicy{Name: "p", Table: "orders"},
-				goschema.RLSPolicy{Name: "p", Table: "public.orders"},
+			diff: &difftypes.SchemaDiff{},
+			desired: declared(
+				schemamodel.RLSPolicy{Name: "p", Table: "orders"},
+				schemamodel.RLSPolicy{Name: "p", Table: "public.orders"},
 			),
 			wantError: `invalid schema diff: target RLS policies p on orders and p on public.orders share one identity in postgres`,
 		},
 		{
 			name:      "a target declaration with no owning table",
-			diff:      &types.SchemaDiff{},
-			generated: declared(goschema.RLSPolicy{Name: "p"}),
+			diff:      &difftypes.SchemaDiff{},
+			desired:   declared(schemamodel.RLSPolicy{Name: "p"}),
 			wantError: `invalid schema diff: target RLS policy reference at position 0 requires a policy name and owning table`,
 		},
 	}
@@ -80,7 +80,7 @@ func TestNewResolver_RefusesADiffItCannotPlan(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			resolver, err := rlsscope.NewResolver("postgres", test.diff, test.generated)
+			resolver, err := rlsscope.NewResolver("postgres", test.diff, test.desired)
 
 			c.Assert(resolver, qt.IsNil)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
@@ -96,11 +96,11 @@ func TestResolver_ResolveOnANilResolver(t *testing.T) {
 	c := qt.New(t)
 	var resolver *rlsscope.Resolver
 
-	policy, err := resolver.Resolve(types.RLSPolicyRef{PolicyName: "p", TableName: "orders"})
+	policy, err := resolver.Resolve(difftypes.RLSPolicyRef{PolicyName: "p", TableName: "orders"})
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 	c.Assert(err, qt.ErrorMatches, `invalid schema diff: no validated target RLS policies are available`)
-	c.Assert(policy, qt.DeepEquals, goschema.RLSPolicy{})
+	c.Assert(policy, qt.DeepEquals, schemamodel.RLSPolicy{})
 }
 
 // TestResolver_ResolvesEitherDefaultSchemaSpelling pins the matching rule the
@@ -121,18 +121,18 @@ func TestResolver_ResolvesEitherDefaultSchemaSpelling(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			generated := &goschema.Database{
-				RLSPolicies: []goschema.RLSPolicy{
+			desired := &schemamodel.Database{
+				RLSPolicies: []schemamodel.RLSPolicy{
 					{Name: "p", Table: test.declared, UsingExpression: "tenant_id = 1"},
 				},
 			}
-			ref := types.RLSPolicyRef{PolicyName: "p", TableName: test.reference}
+			ref := difftypes.RLSPolicyRef{PolicyName: "p", TableName: test.reference}
 
 			resolver, err := rlsscope.NewResolverWithSemantics(
 				"postgres",
 				identifier.ForDialect("postgres"),
-				&types.SchemaDiff{RLSPoliciesAdded: []types.RLSPolicyRef{ref}},
-				generated,
+				&difftypes.SchemaDiff{RLSPoliciesAdded: []difftypes.RLSPolicyRef{ref}},
+				desired,
 			)
 			c.Assert(err, qt.IsNil)
 
@@ -160,8 +160,8 @@ func TestResolver_KeepsOnePolicyNamePerTable(t *testing.T) {
 		{name: "zeta", table: "zeta_orders", wantUsing: "tenant_id = 2"},
 	}
 
-	generated := &goschema.Database{
-		RLSPolicies: []goschema.RLSPolicy{
+	desired := &schemamodel.Database{
+		RLSPolicies: []schemamodel.RLSPolicy{
 			{Name: "tenant_isolation", Table: "alpha_orders", UsingExpression: "tenant_id = 1"},
 			{Name: "tenant_isolation", Table: "zeta_orders", UsingExpression: "tenant_id = 2"},
 		},
@@ -170,9 +170,9 @@ func TestResolver_KeepsOnePolicyNamePerTable(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			ref := types.RLSPolicyRef{PolicyName: "tenant_isolation", TableName: test.table}
+			ref := difftypes.RLSPolicyRef{PolicyName: "tenant_isolation", TableName: test.table}
 
-			resolver, err := rlsscope.NewResolver("postgres", &types.SchemaDiff{}, generated)
+			resolver, err := rlsscope.NewResolver("postgres", &difftypes.SchemaDiff{}, desired)
 			c.Assert(err, qt.IsNil)
 
 			policy, err := resolver.Resolve(ref)

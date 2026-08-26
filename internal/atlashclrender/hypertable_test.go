@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 )
 
@@ -22,13 +22,13 @@ import (
 func TestRenderWritesTheHypertableBlock(t *testing.T) {
 	c := qt.New(t)
 
-	db := &goschema.Database{
-		Schemas: []goschema.Schema{{Name: "public"}},
-		Tables:  []goschema.Table{{StructName: "T", Name: "readings", Schema: "public"}},
-		Fields: []goschema.Field{
+	db := &schemamodel.Database{
+		Schemas: []schemamodel.Schema{{Name: "public"}},
+		Tables:  []schemamodel.Table{{StructName: "T", Name: "readings", Schema: "public"}},
+		Fields: []schemamodel.Field{
 			{StructName: "T", Name: "time", Type: "TIMESTAMPTZ", Primary: true},
 		},
-		Hypertables: []goschema.Hypertable{{
+		Hypertables: []schemamodel.Hypertable{{
 			Table: "public.readings", Column: "time", ChunkInterval: "1 day",
 		}},
 	}
@@ -50,11 +50,11 @@ func TestRenderWritesTheHypertableBlock(t *testing.T) {
 func TestRenderOmitsAnIntervalTheDeclarationDidNot(t *testing.T) {
 	c := qt.New(t)
 
-	db := &goschema.Database{
-		Schemas:     []goschema.Schema{{Name: "public"}},
-		Tables:      []goschema.Table{{StructName: "T", Name: "readings", Schema: "public"}},
-		Fields:      []goschema.Field{{StructName: "T", Name: "time", Type: "TIMESTAMPTZ", Primary: true}},
-		Hypertables: []goschema.Hypertable{{Table: "public.readings", Column: "time"}},
+	db := &schemamodel.Database{
+		Schemas:     []schemamodel.Schema{{Name: "public"}},
+		Tables:      []schemamodel.Table{{StructName: "T", Name: "readings", Schema: "public"}},
+		Fields:      []schemamodel.Field{{StructName: "T", Name: "time", Type: "TIMESTAMPTZ", Primary: true}},
+		Hypertables: []schemamodel.Hypertable{{Table: "public.readings", Column: "time"}},
 	}
 
 	result, err := atlashclrender.RenderInspected(db, platform.Postgres, "public")

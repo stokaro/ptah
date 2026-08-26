@@ -10,11 +10,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -84,34 +84,34 @@ func nonCanonicalSpellings(c *qt.C) []string {
 // on it, while the planner emits one node per (grant, privilege) pair, so a
 // two-privilege grant would make the two paths differ in node COUNT for a
 // reason that has nothing to do with dialect gating.
-func objectKindFixture() goschema.Database {
-	return goschema.Database{
-		Tables: []goschema.Table{{StructName: "User", Name: "users"}},
-		Fields: []goschema.Field{
+func objectKindFixture() schemamodel.Database {
+	return schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "BIGINT", Primary: true},
 			{StructName: "User", Name: "updated_at", Type: "TIMESTAMP", Nullable: true},
 		},
-		Sequences: []goschema.Sequence{{
+		Sequences: []schemamodel.Sequence{{
 			StructName: "OrderSeqMarker",
 			Name:       "order_number_seq",
 		}},
-		Roles: []goschema.Role{{
+		Roles: []schemamodel.Role{{
 			StructName: "AppRoleMarker",
 			Name:       "app_user",
 			Login:      true,
 			Inherit:    true,
 		}},
-		Grants: []goschema.Grant{{
+		Grants: []schemamodel.Grant{{
 			StructName: "AccessControlMarker",
 			Role:       "app_user",
 			Privileges: []string{"SELECT"},
 			OnTable:    "users",
 		}},
-		RLSEnabledTables: []goschema.RLSEnabledTable{{
+		RLSEnabledTables: []schemamodel.RLSEnabledTable{{
 			StructName: "SecurityMarker",
 			Table:      "users",
 		}},
-		RLSPolicies: []goschema.RLSPolicy{{
+		RLSPolicies: []schemamodel.RLSPolicy{{
 			StructName:      "SecurityMarker",
 			Name:            "users_self",
 			Table:           "users",
@@ -119,24 +119,24 @@ func objectKindFixture() goschema.Database {
 			ToRoles:         "app_user",
 			UsingExpression: "true",
 		}},
-		Functions: []goschema.Function{{
+		Functions: []schemamodel.Function{{
 			StructName: "FunctionMarker",
 			Name:       "touch_updated",
 			Returns:    "trigger",
 			Language:   "plpgsql",
 			Body:       "BEGIN NEW.updated_at = NOW(); RETURN NEW; END;",
 		}},
-		Views: []goschema.View{{
+		Views: []schemamodel.View{{
 			StructName: "ActiveUsers",
 			Name:       "active_users",
 			Body:       "SELECT id FROM users",
 		}},
-		MaterializedViews: []goschema.MaterializedView{{
+		MaterializedViews: []schemamodel.MaterializedView{{
 			StructName: "UserCounts",
 			Name:       "user_counts",
 			Body:       "SELECT count(*) AS cnt FROM users",
 		}},
-		Triggers: []goschema.Trigger{{
+		Triggers: []schemamodel.Trigger{{
 			StructName: "UsersTouch",
 			Name:       "users_touch",
 			Table:      "users",
@@ -150,7 +150,7 @@ func objectKindFixture() goschema.Database {
 
 // renderedSchema is what `ptah schema render --dialect <d>` produces: the
 // offline converter's AST for the whole desired schema, rendered.
-func renderedSchema(c *qt.C, database goschema.Database, dialect string) string {
+func renderedSchema(c *qt.C, database schemamodel.Database, dialect string) string {
 	nodes := fromschema.FromDatabase(database, dialect)
 	sql, err := renderer.RenderSQL(dialect, nodes.Statements...)
 	c.Assert(err, qt.IsNil, qt.Commentf("render path failed for %s", dialect))
@@ -160,8 +160,8 @@ func renderedSchema(c *qt.C, database goschema.Database, dialect string) string 
 // plannedSchema is what `ptah schema apply` plans for the same desired schema
 // against an empty database: the comparator's diff, through the dialect planner
 // and the same renderer.
-func plannedSchema(c *qt.C, database goschema.Database, dialect string) string {
-	diff := schemadiff.CompareWithDialect(&database, &dbschematypes.DBSchema{}, dialect)
+func plannedSchema(c *qt.C, database schemamodel.Database, dialect string) string {
+	diff := schemadiff.CompareWithDialect(&database, &catalog.Database{}, dialect)
 	sql, err := planner.GenerateSchemaDiffSQL(diff, &database, dialect)
 	c.Assert(err, qt.IsNil, qt.Commentf("plan path failed for %s", dialect))
 	return sql
@@ -172,14 +172,14 @@ func plannedSchema(c *qt.C, database goschema.Database, dialect string) string {
 // still contributes a value both spellings of that engine must agree on. The
 // spelling-parity test below compares engines to themselves, never to each
 // other, so a refusal is a legitimate answer as long as it is the same answer.
-func renderedOrRefusal(database goschema.Database, dialect string) string {
+func renderedOrRefusal(database schemamodel.Database, dialect string) string {
 	nodes := fromschema.FromDatabase(database, dialect)
 	sql, err := renderer.RenderSQL(dialect, nodes.Statements...)
 	return fmt.Sprintf("%s | err=%v", sql, err)
 }
 
-func plannedOrRefusal(database goschema.Database, dialect string) string {
-	diff := schemadiff.CompareWithDialect(&database, &dbschematypes.DBSchema{}, dialect)
+func plannedOrRefusal(database schemamodel.Database, dialect string) string {
+	diff := schemadiff.CompareWithDialect(&database, &catalog.Database{}, dialect)
 	sql, err := planner.GenerateSchemaDiffSQL(diff, &database, dialect)
 	return fmt.Sprintf("%s | err=%v", sql, err)
 }

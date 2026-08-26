@@ -10,9 +10,9 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/envbool"
 )
 
@@ -68,8 +68,8 @@ const AllowEnvVar = "PTAH_ALLOW_RESERVED_ROLE_NAMES"
 // Is reports whether name is a PostgreSQL role name Ptah never manages.
 //
 // This is the Go spelling of the exclusion [ExcludeSQL] renders, over the same
-// two constants. A role Is reports true for is in neither DBSchema.Roles nor
-// DBSchema.RolesOutOfScope, which is why declaring one has to be refused rather
+// two constants. A role Is reports true for is in neither catalog.Database.Roles nor
+// catalog.Database.RolesOutOfScope, which is why declaring one has to be refused rather
 // than compared: the comparator would find it in neither list and read it as
 // absent.
 func Is(name string) bool {
@@ -145,7 +145,7 @@ func Allowed() (bool, error) {
 // excludes these names and whose planner emits CREATE ROLE. dialect is the
 // normalized or raw target dialect; an empty or non-PostgreSQL dialect declares
 // nothing about PostgreSQL role names and is left alone.
-func ValidateDeclared(dialect string, roles []goschema.Role) error {
+func ValidateDeclared(dialect string, roles []schemamodel.Role) error {
 	if !platform.IsPostgresFamily(dialect) {
 		// A non-PostgreSQL target declares nothing about PostgreSQL role names,
 		// so this subsystem does not recognize the variable on that run and must

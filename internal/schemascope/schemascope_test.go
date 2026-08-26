@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemascope"
 )
 
@@ -20,62 +20,62 @@ func TestSplitNames(t *testing.T) {
 
 func TestFilterGeneratedScopesTablesAndDependentObjects(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Schemas: []goschema.Schema{
+	db := &schemamodel.Database{
+		Schemas: []schemamodel.Schema{
 			{Name: "auth"},
 			{Name: "billing"},
 		},
-		Extensions: []goschema.Extension{
+		Extensions: []schemamodel.Extension{
 			{Schema: "auth", Name: "pgcrypto"},
 			{Schema: "billing", Name: "citext"},
 		},
-		Tables: []goschema.Table{
+		Tables: []schemamodel.Table{
 			{StructName: "AuthUser", Schema: "auth", Name: "users"},
 			{StructName: "BillingInvoice", Schema: "billing", Name: "invoices"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "AuthUser", Name: "id", Type: "BIGINT"},
 			{StructName: "AuthUser", Name: "status", Type: "enum_auth_user_status"},
 			{StructName: "AuthUser", Name: "invoice_id", Type: "BIGINT", Foreign: "billing.invoices(id)", ForeignKeyName: "fk_users_invoice"},
 			{StructName: "BillingInvoice", Name: "id", Type: "BIGINT"},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{StructName: "AuthUser", Name: "idx_users_status"},
 			{StructName: "BillingInvoice", Name: "idx_invoices_total"},
 		},
-		Constraints: []goschema.Constraint{
+		Constraints: []schemamodel.Constraint{
 			{StructName: "AuthUser", Name: "users_status_check", Type: "CHECK"},
 			{StructName: "AuthUser", Name: "users_invoice_fk", Type: "FOREIGN KEY", ForeignTable: "billing.invoices"},
 			{StructName: "BillingInvoice", Name: "invoices_total_check", Type: "CHECK"},
 		},
-		Enums: []goschema.Enum{
+		Enums: []schemamodel.Enum{
 			{Name: "enum_auth_user_status", Values: []string{"active"}},
 			{Name: "enum_billing_invoice_status", Values: []string{"paid"}},
 		},
-		Functions: []goschema.Function{
+		Functions: []schemamodel.Function{
 			{StructName: "AuthUser", Name: "auth.set_tenant"},
 			{Name: "billing.set_invoice"},
 		},
-		Views: []goschema.View{
+		Views: []schemamodel.View{
 			{Name: "auth.active_users"},
 			{Name: "billing.open_invoices"},
 		},
-		Triggers: []goschema.Trigger{
+		Triggers: []schemamodel.Trigger{
 			{Name: "users_updated_at", Table: "auth.users"},
 			{Name: "invoices_updated_at", Table: "billing.invoices"},
 		},
-		RLSPolicies: []goschema.RLSPolicy{
+		RLSPolicies: []schemamodel.RLSPolicy{
 			{Name: "users_tenant", Table: "auth.users"},
 			{Name: "invoices_tenant", Table: "billing.invoices"},
 		},
-		RLSEnabledTables: []goschema.RLSEnabledTable{
+		RLSEnabledTables: []schemamodel.RLSEnabledTable{
 			{Table: "auth.users"},
 			{Table: "billing.invoices"},
 		},
-		Roles: []goschema.Role{
+		Roles: []schemamodel.Role{
 			{Name: "app_role"},
 		},
-		Grants: []goschema.Grant{
+		Grants: []schemamodel.Grant{
 			{Role: "app_role", OnSchema: "auth"},
 			{Role: "app_role", OnSchema: "billing"},
 			{Role: "app_role", OnTable: "auth.users"},
@@ -109,20 +109,20 @@ func TestFilterGeneratedScopesTablesAndDependentObjects(t *testing.T) {
 
 func TestFilterGeneratedWithDefaultSchemaKeepsUnqualifiedPublicObjects(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Tables: []goschema.Table{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "User", Name: "users"},
 			{StructName: "AuditLog", Schema: "audit", Name: "logs"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "BIGINT"},
 			{StructName: "AuditLog", Name: "id", Type: "BIGINT"},
 		},
-		Views: []goschema.View{
+		Views: []schemamodel.View{
 			{Name: "active_users"},
 			{Name: "audit.recent_logs"},
 		},
-		Grants: []goschema.Grant{
+		Grants: []schemamodel.Grant{
 			{OnSchema: "public", Role: "app_role"},
 			{OnTable: "users", Role: "app_role"},
 			{OnSchema: "audit", Role: "app_role"},
@@ -139,15 +139,15 @@ func TestFilterGeneratedWithDefaultSchemaKeepsUnqualifiedPublicObjects(t *testin
 
 func TestFilterGeneratedKeepsDatabaseWideExtensionsAcrossSchemaSelection(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Schemas: []goschema.Schema{{Name: "app"}, {Name: "extensions"}, {Name: "other"}},
-		Extensions: []goschema.Extension{
+	db := &schemamodel.Database{
+		Schemas: []schemamodel.Schema{{Name: "app"}, {Name: "extensions"}, {Name: "other"}},
+		Extensions: []schemamodel.Extension{
 			{Name: "pgcrypto"},
 			{Name: "citext", Schema: "extensions", Provides: []string{"citext"}},
 			{Name: "unrelated", Schema: "other"},
 		},
-		Tables: []goschema.Table{{StructName: "User", Schema: "app", Name: "users"}},
-		Fields: []goschema.Field{
+		Tables: []schemamodel.Table{{StructName: "User", Schema: "app", Name: "users"}},
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "email", Type: "extensions.citext"},
 		},
 	}
@@ -162,12 +162,12 @@ func TestFilterGeneratedKeepsDatabaseWideExtensionsAcrossSchemaSelection(t *test
 
 func TestFilterGenerated_PreservesStructuralTableIdentity(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Tables: []goschema.Table{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Literal", Name: "tenant.data"},
 			{StructName: "Qualified", Schema: "tenant", Name: "data"},
 		},
-		Triggers: []goschema.Trigger{
+		Triggers: []schemamodel.Trigger{
 			{Name: "literal_trigger", Table: `"tenant.data"`},
 			{Name: "qualified_trigger", Table: "tenant.data"},
 		},
@@ -182,57 +182,57 @@ func TestFilterGenerated_PreservesStructuralTableIdentity(t *testing.T) {
 func TestFilterDatabaseScopesIntrospectedObjects(t *testing.T) {
 	c := qt.New(t)
 	foreignTable := "billing.invoices"
-	db := &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
+	db := &catalog.Database{
+		Tables: []catalog.Table{
 			{
 				Schema: "auth",
 				Name:   "users",
-				Columns: []dbschematypes.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "status", DataType: "USER-DEFINED", UDTName: "user_status"},
 				},
 			},
 			{
 				Schema: "billing",
 				Name:   "invoices",
-				Columns: []dbschematypes.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "status", DataType: "USER-DEFINED", UDTName: "invoice_status"},
 				},
 			},
 		},
-		Enums: []dbschematypes.DBEnum{
+		Enums: []catalog.Enum{
 			{Name: "user_status", Values: []string{"active"}},
 			{Name: "invoice_status", Values: []string{"paid"}},
 		},
-		Indexes: []dbschematypes.DBIndex{
+		Indexes: []catalog.Index{
 			{Schema: "auth", TableName: "users", Name: "idx_users_status"},
 			{Schema: "billing", TableName: "invoices", Name: "idx_invoices_status"},
 		},
-		Constraints: []dbschematypes.DBConstraint{
+		Constraints: []catalog.Constraint{
 			{Schema: "auth", TableName: "users", Name: "users_status_check", Type: "CHECK"},
 			{Schema: "auth", TableName: "users", Name: "users_invoice_fk", Type: "FOREIGN KEY", ForeignTable: &foreignTable, ForeignSchema: "billing"},
 			{Schema: "billing", TableName: "invoices", Name: "invoices_status_check", Type: "CHECK"},
 		},
-		Extensions: []dbschematypes.DBExtension{
+		Extensions: []catalog.Extension{
 			{Schema: "auth", Name: "pg_trgm"},
 			{Schema: "billing", Name: "btree_gin"},
 		},
-		Views: []dbschematypes.DBView{
+		Views: []catalog.View{
 			{Schema: "auth", Name: "active_users"},
 			{Schema: "billing", Name: "open_invoices"},
 		},
-		MatViews: []dbschematypes.DBMatView{
+		MatViews: []catalog.MaterializedView{
 			{Schema: "auth", Name: "user_stats"},
 			{Schema: "billing", Name: "invoice_stats"},
 		},
-		Triggers: []dbschematypes.DBTrigger{
+		Triggers: []catalog.Trigger{
 			{Schema: "auth", Table: "users", Name: "users_updated_at"},
 			{Schema: "billing", Table: "invoices", Name: "invoices_updated_at"},
 		},
-		RLSPolicies: []dbschematypes.DBRLSPolicy{
+		RLSPolicies: []catalog.RLSPolicy{
 			{Table: "users", Name: "users_tenant"},
 			{Table: "billing.invoices", Name: "invoices_tenant"},
 		},
-		Grants: []dbschematypes.DBGrant{
+		Grants: []catalog.Grant{
 			{ObjectType: "SCHEMA", ObjectName: "auth", Role: "app_role"},
 			{ObjectType: "SCHEMA", ObjectName: "billing", Role: "app_role"},
 			{ObjectType: "TABLE", Schema: "auth", ObjectName: "users", Role: "app_role"},
@@ -255,28 +255,28 @@ func TestFilterDatabaseScopesIntrospectedObjects(t *testing.T) {
 
 func TestFilterDatabaseWithDefaultSchemaKeepsUnqualifiedPublicObjects(t *testing.T) {
 	c := qt.New(t)
-	db := &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
+	db := &catalog.Database{
+		Tables: []catalog.Table{
 			{Schema: "", Name: "users"},
 			{Schema: "audit", Name: "logs"},
 		},
-		Indexes: []dbschematypes.DBIndex{
+		Indexes: []catalog.Index{
 			{Schema: "", TableName: "users", Name: "idx_users_id"},
 			{Schema: "audit", TableName: "logs", Name: "idx_logs_id"},
 		},
-		Constraints: []dbschematypes.DBConstraint{
+		Constraints: []catalog.Constraint{
 			{Schema: "", TableName: "users", Name: "users_pkey", Type: "PRIMARY KEY"},
 			{Schema: "audit", TableName: "logs", Name: "logs_pkey", Type: "PRIMARY KEY"},
 		},
-		Views: []dbschematypes.DBView{
+		Views: []catalog.View{
 			{Schema: "", Name: "active_users"},
 			{Schema: "audit", Name: "recent_logs"},
 		},
-		RLSPolicies: []dbschematypes.DBRLSPolicy{
+		RLSPolicies: []catalog.RLSPolicy{
 			{Table: "users", Name: "users_tenant"},
 			{Table: "audit.logs", Name: "logs_tenant"},
 		},
-		Grants: []dbschematypes.DBGrant{
+		Grants: []catalog.Grant{
 			{ObjectType: "SCHEMA", ObjectName: "public", Role: "app_role"},
 			{ObjectType: "TABLE", Schema: "", ObjectName: "users", Role: "app_role"},
 			{ObjectType: "SCHEMA", ObjectName: "audit", Role: "app_role"},
@@ -295,17 +295,17 @@ func TestFilterDatabaseWithDefaultSchemaKeepsUnqualifiedPublicObjects(t *testing
 
 func TestFilterDatabaseKeepsDatabaseWideExtensionsAcrossSchemaSelection(t *testing.T) {
 	c := qt.New(t)
-	db := &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
+	db := &catalog.Database{
+		Tables: []catalog.Table{
 			{
 				Schema: "app",
 				Name:   "users",
-				Columns: []dbschematypes.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "email", DataType: "USER-DEFINED", UDTName: "citext", FormattedType: "extensions.citext"},
 				},
 			},
 		},
-		Extensions: []dbschematypes.DBExtension{
+		Extensions: []catalog.Extension{
 			{Name: "pgcrypto", Schema: "public"},
 			{Name: "citext", Schema: "extensions", Provides: []string{"citext"}},
 			{Name: "unrelated", Schema: "other"},
@@ -321,12 +321,12 @@ func TestFilterDatabaseKeepsDatabaseWideExtensionsAcrossSchemaSelection(t *testi
 
 func TestFilterDatabase_PreservesStructuralTableIdentity(t *testing.T) {
 	c := qt.New(t)
-	db := &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
+	db := &catalog.Database{
+		Tables: []catalog.Table{
 			{Name: "tenant.data"},
 			{Schema: "tenant", Name: "data"},
 		},
-		RLSPolicies: []dbschematypes.DBRLSPolicy{
+		RLSPolicies: []catalog.RLSPolicy{
 			{Name: "literal_policy", Table: `"tenant.data"`},
 			{Name: "qualified_policy", Table: "tenant.data"},
 		},
@@ -338,7 +338,7 @@ func TestFilterDatabase_PreservesStructuralTableIdentity(t *testing.T) {
 	c.Assert(databaseRLSPolicyNames(got.RLSPolicies), qt.DeepEquals, []string{"literal_policy"})
 }
 
-func generatedTableNames(tables []goschema.Table) []string {
+func generatedTableNames(tables []schemamodel.Table) []string {
 	names := make([]string, 0, len(tables))
 	for _, table := range tables {
 		names = append(names, table.QualifiedName())
@@ -346,7 +346,7 @@ func generatedTableNames(tables []goschema.Table) []string {
 	return names
 }
 
-func generatedSchemaNames(schemas []goschema.Schema) []string {
+func generatedSchemaNames(schemas []schemamodel.Schema) []string {
 	names := make([]string, 0, len(schemas))
 	for _, schema := range schemas {
 		names = append(names, schema.Name)
@@ -354,15 +354,15 @@ func generatedSchemaNames(schemas []goschema.Schema) []string {
 	return names
 }
 
-func generatedExtensionNames(extensions []goschema.Extension) []string {
+func generatedExtensionNames(extensions []schemamodel.Extension) []string {
 	names := make([]string, 0, len(extensions))
 	for _, extension := range extensions {
-		names = append(names, dbschematypes.QualifyTableName(extension.Schema, extension.Name))
+		names = append(names, catalog.QualifyTableName(extension.Schema, extension.Name))
 	}
 	return names
 }
 
-func generatedFieldNames(fields []goschema.Field) []string {
+func generatedFieldNames(fields []schemamodel.Field) []string {
 	names := make([]string, 0, len(fields))
 	for _, field := range fields {
 		names = append(names, field.Name)
@@ -370,7 +370,7 @@ func generatedFieldNames(fields []goschema.Field) []string {
 	return names
 }
 
-func generatedIndexNames(indexes []goschema.Index) []string {
+func generatedIndexNames(indexes []schemamodel.Index) []string {
 	names := make([]string, 0, len(indexes))
 	for _, index := range indexes {
 		names = append(names, index.Name)
@@ -378,7 +378,7 @@ func generatedIndexNames(indexes []goschema.Index) []string {
 	return names
 }
 
-func generatedConstraintNames(constraints []goschema.Constraint) []string {
+func generatedConstraintNames(constraints []schemamodel.Constraint) []string {
 	names := make([]string, 0, len(constraints))
 	for _, constraint := range constraints {
 		names = append(names, constraint.Name)
@@ -386,7 +386,7 @@ func generatedConstraintNames(constraints []goschema.Constraint) []string {
 	return names
 }
 
-func generatedEnumNames(enums []goschema.Enum) []string {
+func generatedEnumNames(enums []schemamodel.Enum) []string {
 	names := make([]string, 0, len(enums))
 	for _, enum := range enums {
 		names = append(names, enum.Name)
@@ -394,7 +394,7 @@ func generatedEnumNames(enums []goschema.Enum) []string {
 	return names
 }
 
-func generatedFunctionNames(functions []goschema.Function) []string {
+func generatedFunctionNames(functions []schemamodel.Function) []string {
 	names := make([]string, 0, len(functions))
 	for _, function := range functions {
 		names = append(names, function.Name)
@@ -402,7 +402,7 @@ func generatedFunctionNames(functions []goschema.Function) []string {
 	return names
 }
 
-func generatedViewNames(views []goschema.View) []string {
+func generatedViewNames(views []schemamodel.View) []string {
 	names := make([]string, 0, len(views))
 	for _, view := range views {
 		names = append(names, view.Name)
@@ -410,7 +410,7 @@ func generatedViewNames(views []goschema.View) []string {
 	return names
 }
 
-func generatedTriggerNames(triggers []goschema.Trigger) []string {
+func generatedTriggerNames(triggers []schemamodel.Trigger) []string {
 	names := make([]string, 0, len(triggers))
 	for _, trigger := range triggers {
 		names = append(names, trigger.Name)
@@ -418,7 +418,7 @@ func generatedTriggerNames(triggers []goschema.Trigger) []string {
 	return names
 }
 
-func generatedRLSPolicyNames(policies []goschema.RLSPolicy) []string {
+func generatedRLSPolicyNames(policies []schemamodel.RLSPolicy) []string {
 	names := make([]string, 0, len(policies))
 	for _, policy := range policies {
 		names = append(names, policy.Name)
@@ -426,7 +426,7 @@ func generatedRLSPolicyNames(policies []goschema.RLSPolicy) []string {
 	return names
 }
 
-func generatedRLSTableNames(tables []goschema.RLSEnabledTable) []string {
+func generatedRLSTableNames(tables []schemamodel.RLSEnabledTable) []string {
 	names := make([]string, 0, len(tables))
 	for _, table := range tables {
 		names = append(names, table.Table)
@@ -434,7 +434,7 @@ func generatedRLSTableNames(tables []goschema.RLSEnabledTable) []string {
 	return names
 }
 
-func generatedGrantTargets(grants []goschema.Grant) []string {
+func generatedGrantTargets(grants []schemamodel.Grant) []string {
 	targets := make([]string, 0, len(grants))
 	for _, grant := range grants {
 		targets = append(targets, grantTarget(grant.OnSchema, grant.OnTable))
@@ -449,7 +449,7 @@ func grantTarget(schema, table string) string {
 	return "table:" + table
 }
 
-func databaseTableNames(tables []dbschematypes.DBTable) []string {
+func databaseTableNames(tables []catalog.Table) []string {
 	names := make([]string, 0, len(tables))
 	for _, table := range tables {
 		names = append(names, table.QualifiedName())
@@ -457,7 +457,7 @@ func databaseTableNames(tables []dbschematypes.DBTable) []string {
 	return names
 }
 
-func databaseEnumNames(enums []dbschematypes.DBEnum) []string {
+func databaseEnumNames(enums []catalog.Enum) []string {
 	names := make([]string, 0, len(enums))
 	for _, enum := range enums {
 		names = append(names, enum.Name)
@@ -465,7 +465,7 @@ func databaseEnumNames(enums []dbschematypes.DBEnum) []string {
 	return names
 }
 
-func databaseIndexNames(indexes []dbschematypes.DBIndex) []string {
+func databaseIndexNames(indexes []catalog.Index) []string {
 	names := make([]string, 0, len(indexes))
 	for _, index := range indexes {
 		names = append(names, index.Name)
@@ -473,7 +473,7 @@ func databaseIndexNames(indexes []dbschematypes.DBIndex) []string {
 	return names
 }
 
-func databaseConstraintNames(constraints []dbschematypes.DBConstraint) []string {
+func databaseConstraintNames(constraints []catalog.Constraint) []string {
 	names := make([]string, 0, len(constraints))
 	for _, constraint := range constraints {
 		names = append(names, constraint.Name)
@@ -481,15 +481,15 @@ func databaseConstraintNames(constraints []dbschematypes.DBConstraint) []string 
 	return names
 }
 
-func databaseExtensionNames(extensions []dbschematypes.DBExtension) []string {
+func databaseExtensionNames(extensions []catalog.Extension) []string {
 	names := make([]string, 0, len(extensions))
 	for _, extension := range extensions {
-		names = append(names, dbschematypes.QualifyTableName(extension.Schema, extension.Name))
+		names = append(names, catalog.QualifyTableName(extension.Schema, extension.Name))
 	}
 	return names
 }
 
-func databaseViewNames(views []dbschematypes.DBView) []string {
+func databaseViewNames(views []catalog.View) []string {
 	names := make([]string, 0, len(views))
 	for _, view := range views {
 		names = append(names, view.QualifiedName())
@@ -497,7 +497,7 @@ func databaseViewNames(views []dbschematypes.DBView) []string {
 	return names
 }
 
-func databaseMatViewNames(views []dbschematypes.DBMatView) []string {
+func databaseMatViewNames(views []catalog.MaterializedView) []string {
 	names := make([]string, 0, len(views))
 	for _, view := range views {
 		names = append(names, view.QualifiedName())
@@ -505,7 +505,7 @@ func databaseMatViewNames(views []dbschematypes.DBMatView) []string {
 	return names
 }
 
-func databaseTriggerNames(triggers []dbschematypes.DBTrigger) []string {
+func databaseTriggerNames(triggers []catalog.Trigger) []string {
 	names := make([]string, 0, len(triggers))
 	for _, trigger := range triggers {
 		names = append(names, trigger.Name)
@@ -513,7 +513,7 @@ func databaseTriggerNames(triggers []dbschematypes.DBTrigger) []string {
 	return names
 }
 
-func databaseRLSPolicyNames(policies []dbschematypes.DBRLSPolicy) []string {
+func databaseRLSPolicyNames(policies []catalog.RLSPolicy) []string {
 	names := make([]string, 0, len(policies))
 	for _, policy := range policies {
 		names = append(names, policy.Name)
@@ -521,7 +521,7 @@ func databaseRLSPolicyNames(policies []dbschematypes.DBRLSPolicy) []string {
 	return names
 }
 
-func databaseGrantTargets(grants []dbschematypes.DBGrant) []string {
+func databaseGrantTargets(grants []catalog.Grant) []string {
 	targets := make([]string, 0, len(grants))
 	for _, grant := range grants {
 		targets = append(targets, dbGrantTarget(grant))
@@ -529,7 +529,7 @@ func databaseGrantTargets(grants []dbschematypes.DBGrant) []string {
 	return targets
 }
 
-func dbGrantTarget(grant dbschematypes.DBGrant) string {
+func dbGrantTarget(grant catalog.Grant) string {
 	if grant.ObjectType == "SCHEMA" {
 		return "schema:" + grant.ObjectName
 	}

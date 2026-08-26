@@ -10,11 +10,11 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/dbschema/postgres"
 	"go.5x5.cz/ptah/migration/planner"
@@ -66,12 +66,12 @@ func TestGeneratedColumnAndPartialIndex_RoundTrip_Postgres(t *testing.T) {
 	c.Assert(plannedSQL, qt.Not(qt.Contains), `DROP COLUMN "email_lc"`)
 }
 
-func generatedPartialIndexSchema(schemaName, expression string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func generatedPartialIndexSchema(schemaName, expression string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "User", Schema: schemaName, Name: "ptah_generated_users"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "User", Name: "email", Type: "TEXT", Nullable: false},
 			{StructName: "User", Name: "deleted_at", Type: "TIMESTAMP", Nullable: true},
@@ -84,7 +84,7 @@ func generatedPartialIndexSchema(schemaName, expression string) *goschema.Databa
 				GeneratedKind:       "STORED",
 			},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{
 				StructName: "User",
 				Name:       "idx_ptah_generated_users_email_active",
@@ -95,7 +95,7 @@ func generatedPartialIndexSchema(schemaName, expression string) *goschema.Databa
 				StructName: "User",
 				Name:       "idx_ptah_generated_users_email_expr_active",
 				Fields:     []string{`"left"(email, 2)`, "deleted_at"},
-				Parts: []goschema.IndexPart{
+				Parts: []schemamodel.IndexPart{
 					{Expr: `"left"(email, 2)`},
 					{Name: "deleted_at"},
 				},
@@ -105,7 +105,7 @@ func generatedPartialIndexSchema(schemaName, expression string) *goschema.Databa
 	}
 }
 
-func findDBIndex(indexes []dbschematypes.DBIndex, name string) *dbschematypes.DBIndex {
+func findDBIndex(indexes []catalog.Index, name string) *catalog.Index {
 	for i := range indexes {
 		if indexes[i].Name == name {
 			return &indexes[i]

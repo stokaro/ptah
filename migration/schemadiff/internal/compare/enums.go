@@ -4,15 +4,15 @@ import (
 	"sort"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/tableref"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
-// Enums performs comprehensive enum type comparison between generated and database schemas.
+// Enums performs comprehensive enum type comparison between the desired and current schemas.
 //
 // This function handles the comparison of enum type definitions, which is particularly
 // complex due to database-specific enum implementations and the challenges of enum
@@ -62,8 +62,8 @@ import (
 //
 // # Parameters
 //
-//   - generated: Target schema parsed from Go struct annotations
-//   - database: Current database schema from executor introspection
+//   - desired: the schema an authoring source declared
+//   - current: the schema a live database reported
 //   - diff: SchemaDiff structure to populate with discovered differences
 //
 // # Side Effects
@@ -90,8 +90,8 @@ import (
 // no-default-schema rule: a blank schema stays blank and only matches a blank
 // one. Callers that have a live connection have a default schema and should
 // pass it.
-func Enums(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
-	EnumsWithSemantics(generated, database, diff, identifier.Semantics{})
+func Enums(desired *schemamodel.Database, current *catalog.Database, diff *difftypes.SchemaDiff) {
+	EnumsWithSemantics(desired, current, diff, identifier.Semantics{})
 }
 
 // EnumsWithSemantics compares enum types by (schema, name) identity.
@@ -135,21 +135,21 @@ func Enums(generated *goschema.Database, database *types.DBSchema, diff *difftyp
 //
 // for a schema nothing had changed. Both on PostgreSQL 17.10.
 func EnumsWithSemantics(
-	generated *goschema.Database,
-	database *types.DBSchema,
+	desired *schemamodel.Database,
+	current *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	semantics identifier.Semantics,
 ) {
-	dbByIdentity := make(map[objectIdentity]types.DBEnum, len(database.Enums))
-	dbByName := make(map[string][]types.DBEnum, len(database.Enums))
-	for _, enum := range database.Enums {
+	dbByIdentity := make(map[objectIdentity]catalog.Enum, len(current.Enums))
+	dbByName := make(map[string][]catalog.Enum, len(current.Enums))
+	for _, enum := range current.Enums {
 		schema, name := enumParts(enum.Schema, enum.Name)
 		dbByIdentity[newObjectIdentity(objectidentity.KindEnum, schema, name, semantics)] = enum
 		dbByName[semantics.TableIdentityKey(name)] = append(dbByName[semantics.TableIdentityKey(name)], enum)
 	}
 
-	matched := make(map[string]struct{}, len(database.Enums))
-	for _, genEnum := range generated.Enums {
+	matched := make(map[string]struct{}, len(current.Enums))
+	for _, genEnum := range desired.Enums {
 		dbEnum, exists := findDatabaseEnum(genEnum, dbByIdentity, dbByName, semantics)
 		if !exists {
 			diff.EnumsAdded = append(diff.EnumsAdded, genEnum.QualifiedName())
@@ -162,7 +162,7 @@ func EnumsWithSemantics(
 		}
 	}
 
-	for _, enum := range database.Enums {
+	for _, enum := range current.Enums {
 		if _, ok := matched[enum.QualifiedName()]; ok {
 			continue
 		}
@@ -179,11 +179,11 @@ func EnumsWithSemantics(
 
 // findDatabaseEnum resolves one generated enum against the read.
 func findDatabaseEnum(
-	genEnum goschema.Enum,
-	dbByIdentity map[objectIdentity]types.DBEnum,
-	dbByName map[string][]types.DBEnum,
+	genEnum schemamodel.Enum,
+	dbByIdentity map[objectIdentity]catalog.Enum,
+	dbByName map[string][]catalog.Enum,
 	semantics identifier.Semantics,
-) (types.DBEnum, bool) {
+) (catalog.Enum, bool) {
 	schema, name := enumParts(genEnum.Schema, genEnum.Name)
 	if strings.TrimSpace(schema) != "" {
 		enum, ok := dbByIdentity[newObjectIdentity(objectidentity.KindEnum, schema, name, semantics)]
@@ -191,7 +191,7 @@ func findDatabaseEnum(
 	}
 	candidates := dbByName[semantics.TableIdentityKey(name)]
 	if len(candidates) != 1 {
-		return types.DBEnum{}, false
+		return catalog.Enum{}, false
 	}
 	return candidates[0], true
 }
@@ -217,7 +217,7 @@ func enumParts(schema, name string) (enumSchema, enumName string) {
 	return "", name
 }
 
-// EnumValues performs detailed value-level comparison between generated and database enum types.
+// EnumValues performs detailed value-level comparison between the desired and current enum catalog.
 //
 // This function analyzes the specific values within an enum type to determine what
 // changes are needed to bring the database enum in line with the generated enum
@@ -287,7 +287,7 @@ func enumParts(schema, name string) (enumSchema, enumName string) {
 //
 // Value lists are sorted alphabetically to ensure deterministic migration
 // generation and reliable testing across multiple runs.
-func EnumValues(genEnum goschema.Enum, dbEnum types.DBEnum) difftypes.EnumDiff {
+func EnumValues(genEnum schemamodel.Enum, dbEnum catalog.Enum) difftypes.EnumDiff {
 	// The qualified name, so the planner can name the type it has to alter.
 	// It is the bare name for every enum that names no schema, which is every
 	// enum a Go annotation can declare (stokaro/ptah#1276).

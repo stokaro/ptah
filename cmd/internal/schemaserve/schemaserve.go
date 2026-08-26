@@ -139,7 +139,7 @@ func (s *server) observe(ctx context.Context) observation {
 	}
 	current.Findings = safety.ClassifySchemaDiff(result.Diff)
 	current.Highest = safety.Highest(current.Findings)
-	sidebar, content, renderErr := schemadoc.Page(result.Generated, schemadoc.Options{Title: s.opts.Title})
+	sidebar, content, renderErr := schemadoc.Page(result.Desired, schemadoc.Options{Title: s.opts.Title})
 	if renderErr == nil {
 		current.Schema = &schemaSnapshot{Sidebar: sidebar, Content: content}
 	}

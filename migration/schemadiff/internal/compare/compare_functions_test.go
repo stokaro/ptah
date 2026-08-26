@@ -5,16 +5,16 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	dbtypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 func TestFunctionDefinitions_DetectsBodyChange(t *testing.T) {
 	c := qt.New(t)
 
-	gen := goschema.Function{
+	gen := schemamodel.Function{
 		Name:       "set_tenant_context",
 		Parameters: "tenant_id_param text",
 		Returns:    "void",
@@ -23,7 +23,7 @@ func TestFunctionDefinitions_DetectsBodyChange(t *testing.T) {
 		Volatility: "VOLATILE",
 		Body:       "BEGIN PERFORM set_config('app.current_tenant_id', tenant_id_param, true); END;",
 	}
-	db := dbtypes.DBFunction{
+	db := catalog.Function{
 		Name:       "set_tenant_context",
 		Parameters: "tenant_id_param text",
 		Returns:    "void",
@@ -44,7 +44,7 @@ func TestFunctionDefinitions_DetectsBodyChange(t *testing.T) {
 func TestFunctionDefinitions_DetectsSecurityVolatilityLanguageChanges(t *testing.T) {
 	c := qt.New(t)
 
-	gen := goschema.Function{
+	gen := schemamodel.Function{
 		Name:       "f",
 		Returns:    "integer",
 		Language:   "sql",
@@ -52,7 +52,7 @@ func TestFunctionDefinitions_DetectsSecurityVolatilityLanguageChanges(t *testing
 		Volatility: "IMMUTABLE",
 		Body:       "SELECT 1;",
 	}
-	db := dbtypes.DBFunction{
+	db := catalog.Function{
 		Name:       "f",
 		Returns:    "integer",
 		Language:   "plpgsql",
@@ -74,14 +74,14 @@ func TestFunctionDefinitions_NoChangeWhenIdentical(t *testing.T) {
 	c := qt.New(t)
 
 	fn := struct {
-		gen goschema.Function
-		db  dbtypes.DBFunction
+		gen schemamodel.Function
+		db  catalog.Function
 	}{
-		gen: goschema.Function{
+		gen: schemamodel.Function{
 			Name: "f", Returns: "void", Language: "plpgsql",
 			Security: "INVOKER", Volatility: "VOLATILE", Body: "BEGIN END;",
 		},
-		db: dbtypes.DBFunction{
+		db: catalog.Function{
 			Name: "f", Returns: "void", Language: "plpgsql",
 			Security: "INVOKER", Volatility: "VOLATILE", Body: "BEGIN END;",
 		},
@@ -98,12 +98,12 @@ func TestFunctionDefinitions_EmptyAnnotationDefaultsMatchPostgresDefaults(t *tes
 	// reports the implicit defaults (INVOKER, VOLATILE, plpgsql for a typical
 	// trigger/RLS helper). The comparator must normalize the Go side so no
 	// spurious diff is reported.
-	gen := goschema.Function{
+	gen := schemamodel.Function{
 		Name:    "f",
 		Returns: "integer",
 		Body:    "BEGIN RETURN 1; END;",
 	}
-	db := dbtypes.DBFunction{
+	db := catalog.Function{
 		Name:       "f",
 		Returns:    "integer",
 		Language:   "plpgsql",
@@ -119,31 +119,31 @@ func TestFunctionDefinitions_EmptyAnnotationDefaultsMatchPostgresDefaults(t *tes
 func TestFunctionDefinitions_LowercaseAnnotationDoesNotDiff(t *testing.T) {
 	cases := []struct {
 		name string
-		gen  goschema.Function
+		gen  schemamodel.Function
 	}{
 		{
 			name: "lowercase security/volatility",
-			gen: goschema.Function{
+			gen: schemamodel.Function{
 				Name: "f", Returns: "void", Language: "plpgsql",
 				Security: "definer", Volatility: "stable", Body: "BEGIN END;",
 			},
 		},
 		{
 			name: "mixed-case security/volatility",
-			gen: goschema.Function{
+			gen: schemamodel.Function{
 				Name: "f", Returns: "void", Language: "plpgsql",
 				Security: "Definer", Volatility: "Stable", Body: "BEGIN END;",
 			},
 		},
 		{
 			name: "uppercase language",
-			gen: goschema.Function{
+			gen: schemamodel.Function{
 				Name: "f", Returns: "void", Language: "PLPGSQL",
 				Security: "DEFINER", Volatility: "STABLE", Body: "BEGIN END;",
 			},
 		},
 	}
-	db := dbtypes.DBFunction{
+	db := catalog.Function{
 		Name: "f", Returns: "void", Language: "plpgsql",
 		Security: "DEFINER", Volatility: "STABLE", Body: "BEGIN END;",
 	}
@@ -165,13 +165,13 @@ func TestFunctionDefinitions_LowercaseAnnotationDoesNotDiff(t *testing.T) {
 func TestFunctionDefinitions_ExplicitNonDefaultLanguage(t *testing.T) {
 	c := qt.New(t)
 
-	gen := goschema.Function{
+	gen := schemamodel.Function{
 		Name:     "f",
 		Returns:  "INTEGER",
 		Language: "sql",
 		Body:     "SELECT 1;",
 	}
-	db := dbtypes.DBFunction{
+	db := catalog.Function{
 		Name:       "f",
 		Returns:    "integer",
 		Language:   "sql",
@@ -187,8 +187,8 @@ func TestFunctionDefinitions_ExplicitNonDefaultLanguage(t *testing.T) {
 func TestFunctions_PopulatesModifiedList(t *testing.T) {
 	c := qt.New(t)
 
-	gen := &goschema.Database{
-		Functions: []goschema.Function{
+	gen := &schemamodel.Database{
+		Functions: []schemamodel.Function{
 			{
 				Name:       "f",
 				Returns:    "void",
@@ -199,8 +199,8 @@ func TestFunctions_PopulatesModifiedList(t *testing.T) {
 			},
 		},
 	}
-	db := &dbtypes.DBSchema{
-		Functions: []dbtypes.DBFunction{
+	db := &catalog.Database{
+		Functions: []catalog.Function{
 			{
 				Name:       "f",
 				Returns:    "void",
@@ -229,7 +229,7 @@ func TestFunctions_PopulatesModifiedList(t *testing.T) {
 // are not: they follow lower_case_table_names, which is 0 on both pinned
 // images, and the identifier semantics already describe them as exact. Folding
 // the whole `Sales.Foo` applied the routine rule to the database name too,
-// while the database side folded only DBFunction.Name and left Schema alone --
+// while the database side folded only catalog.Function.Name and left Schema alone --
 // so the two identities disagreed about the schema component, an unchanged
 // function was reported as BOTH added and removed, and applying the plan tried
 // to create a function that was already there.
@@ -238,14 +238,14 @@ func TestFunctions_PopulatesModifiedList(t *testing.T) {
 // different function, or the fix would have replaced one collision with
 // another.
 func TestFunctionsWithDialect_FoldsOnlyTheRoutineHalfOfAQualifiedName(t *testing.T) {
-	function := func(name string) goschema.Function {
-		return goschema.Function{
+	function := func(name string) schemamodel.Function {
+		return schemamodel.Function{
 			Name: name, Returns: "int", Language: "sql",
 			Security: "INVOKER", Volatility: "IMMUTABLE", Body: "RETURN 1",
 		}
 	}
-	dbFunction := func(schema, name string) dbtypes.DBFunction {
-		return dbtypes.DBFunction{
+	dbFunction := func(schema, name string) catalog.Function {
+		return catalog.Function{
 			Schema: schema, Name: name, Returns: "int", Language: "sql",
 			Security: "INVOKER", Volatility: "IMMUTABLE", Body: "RETURN 1",
 		}
@@ -282,9 +282,9 @@ func TestFunctionsWithDialect_FoldsOnlyTheRoutineHalfOfAQualifiedName(t *testing
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			gen := &goschema.Database{Functions: []goschema.Function{function(test.desired)}}
-			db := &dbtypes.DBSchema{
-				Functions: []dbtypes.DBFunction{dbFunction(test.dbSchema, test.dbName)},
+			gen := &schemamodel.Database{Functions: []schemamodel.Function{function(test.desired)}}
+			db := &catalog.Database{
+				Functions: []catalog.Function{dbFunction(test.dbSchema, test.dbName)},
 			}
 
 			diff := &difftypes.SchemaDiff{}

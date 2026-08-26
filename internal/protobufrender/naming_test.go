@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 func TestEnumSynthesizesTheZeroValue(t *testing.T) {
@@ -32,9 +32,9 @@ func TestEnumValuePrefixFollowsBufsDigitRule(t *testing.T) {
 	// own snake-casing over the *generated* type name, and snake -> PascalCase
 	// -> snake is not the identity across digits. The naive
 	// ENUM_USER_2FA_STATUS_ prefix is what buf rejects.
-	db := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Enum", Name: "enums"}},
-		Fields: columns("Enum", goschema.Field{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Enum", Name: "enums"}},
+		Fields: columns("Enum", schemamodel.Field{
 			Name: "user_2fa_status",
 			Type: enumCarrierType,
 			Enum: []string{"pending", "done"},
@@ -59,10 +59,10 @@ func TestEnumNamedTypeDropsThePtahPrefixAndKeepsTheDigitRule(t *testing.T) {
 	// "enum_user_2fa_status" loses its "enum_" prefix and becomes
 	// User2faStatus, whose buf prefix is USER2FA_STATUS_ rather than
 	// USER_2FA_STATUS_.
-	db := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Thing", Name: "things"}},
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Thing", Name: "things"}},
 		Fields: columns("Thing", column("status", "enum_user_2fa_status")),
-		Enums:  []goschema.Enum{{Name: "enum_user_2fa_status", Values: []string{"pending", "done"}}},
+		Enums:  []schemamodel.Enum{{Name: "enum_user_2fa_status", Values: []string{"pending", "done"}}},
 	}
 
 	text := mustRenderText(c, db, baseOptions())
@@ -79,16 +79,16 @@ func TestEnumNamedTypeDropsThePtahPrefixAndKeepsTheDigitRule(t *testing.T) {
 func TestEnumNamedTypeSharedByTwoColumnsProducesOneEnum(t *testing.T) {
 	c := qt.New(t)
 
-	db := &goschema.Database{
-		Tables: []goschema.Table{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "User", Name: "users"},
 			{StructName: "Admin", Name: "admins"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "status", Type: "enum_account_status"},
 			{StructName: "Admin", Name: "status", Type: "enum_account_status"},
 		},
-		Enums: []goschema.Enum{{Name: "enum_account_status", Values: []string{"active", "retired"}}},
+		Enums: []schemamodel.Enum{{Name: "enum_account_status", Values: []string{"active", "retired"}}},
 	}
 
 	text := mustRenderText(c, db, baseOptions())
@@ -156,8 +156,8 @@ func TestDigitLeadingColumnsSanitizeAndWarn(t *testing.T) {
 func TestSanitizedTableNameWarns(t *testing.T) {
 	c := qt.New(t)
 
-	res := mustRender(c, &goschema.Database{
-		Tables: []goschema.Table{{StructName: "S", Name: "2fa_tokens"}},
+	res := mustRender(c, &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "S", Name: "2fa_tokens"}},
 		Fields: columns("S", column("id", "BIGINT")),
 	}, baseOptions())
 
@@ -185,13 +185,13 @@ func TestEnumValuesCollideAcrossDifferentEnums(t *testing.T) {
 
 	// Alpha + label "x_y" and AlphaX + label "y" both spell ALPHA_X_Y, and
 	// C++ scoping makes that a package-level clash rather than a per-enum one.
-	db := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Thing", Name: "things"}},
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Thing", Name: "things"}},
 		Fields: columns("Thing",
 			column("a", "enum_alpha"),
 			column("b", "enum_alpha_x"),
 		),
-		Enums: []goschema.Enum{
+		Enums: []schemamodel.Enum{
 			{Name: "enum_alpha", Values: []string{"x_y"}},
 			{Name: "enum_alpha_x", Values: []string{"y"}},
 		},
@@ -206,13 +206,13 @@ func TestEnumValuesCollideAcrossDifferentEnums(t *testing.T) {
 func TestEnumTypeNamesCollide(t *testing.T) {
 	c := qt.New(t)
 
-	db := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Thing", Name: "things"}},
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Thing", Name: "things"}},
 		Fields: columns("Thing",
 			column("a", "enum_shared"),
 			column("b", "enum_shared_"),
 		),
-		Enums: []goschema.Enum{
+		Enums: []schemamodel.Enum{
 			{Name: "enum_shared", Values: []string{"one"}},
 			{Name: "enum_shared_", Values: []string{"two"}},
 		},
@@ -241,12 +241,12 @@ func TestTwoColumnsSanitizingToOneFieldNameAreRejected(t *testing.T) {
 func TestTablesCollapsingToOneMessageNameAreRejected(t *testing.T) {
 	c := qt.New(t)
 
-	db := &goschema.Database{
-		Tables: []goschema.Table{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Order", Name: "order"},
 			{StructName: "OrderRow", Name: "orders"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Order", Name: "id", Type: "BIGINT"},
 			{StructName: "OrderRow", Name: "id", Type: "BIGINT"},
 		},
@@ -265,19 +265,19 @@ func TestTablesCollapsingToOneMessageNameAreRejected(t *testing.T) {
 func TestSchemaQualifiedDisambiguationIsOrderIndependent(t *testing.T) {
 	c := qt.New(t)
 
-	sales := goschema.Table{StructName: "Order", Name: "order", Schema: "sales"}
-	rows := goschema.Table{StructName: "OrderRow", Name: "orders"}
-	fields := []goschema.Field{
+	sales := schemamodel.Table{StructName: "Order", Name: "order", Schema: "sales"}
+	rows := schemamodel.Table{StructName: "OrderRow", Name: "orders"}
+	fields := []schemamodel.Field{
 		{StructName: "Order", Name: "id", Type: "BIGINT"},
 		{StructName: "OrderRow", Name: "id", Type: "BIGINT"},
 	}
 
-	forward := mustRenderText(c, &goschema.Database{
-		Tables: []goschema.Table{sales, rows},
+	forward := mustRenderText(c, &schemamodel.Database{
+		Tables: []schemamodel.Table{sales, rows},
 		Fields: fields,
 	}, baseOptions())
-	reversed := mustRenderText(c, &goschema.Database{
-		Tables: []goschema.Table{rows, sales},
+	reversed := mustRenderText(c, &schemamodel.Database{
+		Tables: []schemamodel.Table{rows, sales},
 		Fields: fields,
 	}, baseOptions())
 
@@ -291,12 +291,12 @@ func TestSchemaQualifiedDisambiguationIsOrderIndependent(t *testing.T) {
 func TestSchemaQualificationThatStillCollidesIsRejected(t *testing.T) {
 	c := qt.New(t)
 
-	db := &goschema.Database{
-		Tables: []goschema.Table{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Order", Name: "order", Schema: "sales"},
 			{StructName: "OrderRow", Name: "orders", Schema: "sales"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Order", Name: "id", Type: "BIGINT"},
 			{StructName: "OrderRow", Name: "id", Type: "BIGINT"},
 		},
@@ -312,12 +312,12 @@ func TestSchemaQualificationThatStillCollidesIsRejected(t *testing.T) {
 func TestMessagesAndEnumsAreOrderedByName(t *testing.T) {
 	c := qt.New(t)
 
-	db := &goschema.Database{
-		Tables: []goschema.Table{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Zebra", Name: "zebras"},
 			{StructName: "Apple", Name: "apples"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Zebra", Name: "state", Type: enumCarrierType, Enum: []string{"a"}},
 			{StructName: "Apple", Name: "state", Type: enumCarrierType, Enum: []string{"b"}},
 		},

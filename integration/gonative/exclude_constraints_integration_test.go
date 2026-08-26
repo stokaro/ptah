@@ -8,9 +8,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -18,21 +18,21 @@ import (
 func TestExcludeConstraints_EndToEnd_PostgreSQL(t *testing.T) {
 	tests := []struct {
 		name        string
-		generated   *goschema.Database
-		database    *types.DBSchema
+		generated   *schemamodel.Database
+		database    *catalog.Database
 		expectedSQL []string
 	}{
 		{
 			name: "EXCLUDE constraint with WHERE clause",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{
+			generated: &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{Name: "user_sessions", StructName: "UserSession"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{Name: "user_id", Type: "BIGINT", StructName: "UserSession", Nullable: false},
 					{Name: "is_active", Type: "BOOLEAN", StructName: "UserSession", Nullable: false},
 				},
-				Constraints: []goschema.Constraint{
+				Constraints: []schemamodel.Constraint{
 					{
 						StructName:      "UserSession",
 						Name:            "one_active_session_per_user",
@@ -44,11 +44,11 @@ func TestExcludeConstraints_EndToEnd_PostgreSQL(t *testing.T) {
 					},
 				},
 			},
-			database: &types.DBSchema{
-				Tables: []types.DBTable{
+			database: &catalog.Database{
+				Tables: []catalog.Table{
 					{
 						Name: "user_sessions",
-						Columns: []types.DBColumn{
+						Columns: []catalog.Column{
 							{Name: "user_id", DataType: "BIGINT", IsNullable: "NO"},
 							{Name: "is_active", DataType: "BOOLEAN", IsNullable: "NO"},
 						},
@@ -61,15 +61,15 @@ func TestExcludeConstraints_EndToEnd_PostgreSQL(t *testing.T) {
 		},
 		{
 			name: "EXCLUDE constraint without WHERE clause",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{
+			generated: &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{Name: "bookings", StructName: "Booking"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{Name: "room_id", Type: "INTEGER", StructName: "Booking", Nullable: false},
 					{Name: "during", Type: "TSRANGE", StructName: "Booking", Nullable: false},
 				},
-				Constraints: []goschema.Constraint{
+				Constraints: []schemamodel.Constraint{
 					{
 						StructName:      "Booking",
 						Name:            "no_overlapping_bookings",
@@ -80,11 +80,11 @@ func TestExcludeConstraints_EndToEnd_PostgreSQL(t *testing.T) {
 					},
 				},
 			},
-			database: &types.DBSchema{
-				Tables: []types.DBTable{
+			database: &catalog.Database{
+				Tables: []catalog.Table{
 					{
 						Name: "bookings",
-						Columns: []types.DBColumn{
+						Columns: []catalog.Column{
 							{Name: "room_id", DataType: "INTEGER", IsNullable: "NO"},
 							{Name: "during", DataType: "TSRANGE", IsNullable: "NO"},
 						},
@@ -97,17 +97,17 @@ func TestExcludeConstraints_EndToEnd_PostgreSQL(t *testing.T) {
 		},
 		{
 			name: "Multiple constraint types",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{
+			generated: &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{Name: "products", StructName: "Product"},
 					{Name: "users", StructName: "User"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{Name: "price", Type: "DECIMAL", StructName: "Product", Nullable: false},
 					{Name: "user_id", Type: "BIGINT", StructName: "User", Nullable: false},
 					{Name: "email", Type: "VARCHAR(255)", StructName: "User", Nullable: false},
 				},
-				Constraints: []goschema.Constraint{
+				Constraints: []schemamodel.Constraint{
 					{
 						StructName:      "Product",
 						Name:            "positive_price",
@@ -124,17 +124,17 @@ func TestExcludeConstraints_EndToEnd_PostgreSQL(t *testing.T) {
 					},
 				},
 			},
-			database: &types.DBSchema{
-				Tables: []types.DBTable{
+			database: &catalog.Database{
+				Tables: []catalog.Table{
 					{
 						Name: "products",
-						Columns: []types.DBColumn{
+						Columns: []catalog.Column{
 							{Name: "price", DataType: "DECIMAL", IsNullable: "NO"},
 						},
 					},
 					{
 						Name: "users",
-						Columns: []types.DBColumn{
+						Columns: []catalog.Column{
 							{Name: "user_id", DataType: "BIGINT", IsNullable: "NO"},
 							{Name: "email", DataType: "VARCHAR(255)", IsNullable: "NO"},
 						},
@@ -196,14 +196,14 @@ func TestExcludeConstraints_EndToEnd_MySQL(t *testing.T) {
 	c := qt.New(t)
 
 	// Test that EXCLUDE constraints generate warnings for MySQL
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	generated := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: "user_sessions", StructName: "UserSession"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{Name: "user_id", Type: "BIGINT", StructName: "UserSession", Nullable: false},
 		},
-		Constraints: []goschema.Constraint{
+		Constraints: []schemamodel.Constraint{
 			{
 				StructName:      "UserSession",
 				Name:            "one_active_session_per_user",
@@ -215,11 +215,11 @@ func TestExcludeConstraints_EndToEnd_MySQL(t *testing.T) {
 		},
 	}
 
-	database := &types.DBSchema{
-		Tables: []types.DBTable{
+	database := &catalog.Database{
+		Tables: []catalog.Table{
 			{
 				Name: "user_sessions",
-				Columns: []types.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "user_id", DataType: "BIGINT", IsNullable: "NO"},
 				},
 			},
@@ -247,8 +247,8 @@ func TestExcludeConstraints_SchemaComparison(t *testing.T) {
 	c := qt.New(t)
 
 	// Test that schema comparison correctly identifies constraint changes
-	generated := &goschema.Database{
-		Constraints: []goschema.Constraint{
+	generated := &schemamodel.Database{
+		Constraints: []schemamodel.Constraint{
 			{
 				StructName:      "Booking",
 				Name:            "no_overlapping_bookings",
@@ -267,7 +267,7 @@ func TestExcludeConstraints_SchemaComparison(t *testing.T) {
 		},
 	}
 
-	database := &types.DBSchema{
+	database := &catalog.Database{
 		// Empty database - no existing constraints
 	}
 
@@ -286,11 +286,11 @@ func TestExcludeConstraints_EmptySchema(t *testing.T) {
 	c := qt.New(t)
 
 	// Test with empty schemas
-	generated := &goschema.Database{
-		Constraints: make([]goschema.Constraint, 0),
+	generated := &schemamodel.Database{
+		Constraints: make([]schemamodel.Constraint, 0),
 	}
 
-	database := &types.DBSchema{}
+	database := &catalog.Database{}
 
 	diff := schemadiff.Compare(generated, database)
 

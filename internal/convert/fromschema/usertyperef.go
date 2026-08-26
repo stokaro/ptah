@@ -4,7 +4,7 @@ import (
 	"maps"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // QualifyDeclaredUserTypes returns a clone of database whose column types name
@@ -53,7 +53,7 @@ import (
 //     [handleEnumTypes] makes
 //   - every enum on a dialect that models an enum on the column instead of as a
 //     standalone type, for the same reason
-func QualifyDeclaredUserTypes(database *goschema.Database, targetPlatform string) *goschema.Database {
+func QualifyDeclaredUserTypes(database *schemamodel.Database, targetPlatform string) *schemamodel.Database {
 	if database == nil {
 		return nil
 	}
@@ -62,7 +62,7 @@ func QualifyDeclaredUserTypes(database *goschema.Database, targetPlatform string
 	if len(scalars) == 0 && len(arrays) == 0 {
 		return &clone
 	}
-	clone.Fields = make([]goschema.Field, len(database.Fields))
+	clone.Fields = make([]schemamodel.Field, len(database.Fields))
 	copy(clone.Fields, database.Fields)
 	for i := range clone.Fields {
 		clone.Fields[i].Type = qualifyUserTypeReference(clone.Fields[i].Type, scalars, arrays)
@@ -79,7 +79,7 @@ func QualifyDeclaredUserTypes(database *goschema.Database, targetPlatform string
 // twice is mapped to the empty string rather than dropped, so that a later
 // declaration of the same name cannot re-add it.
 func declaredUserTypeQualifiers(
-	database *goschema.Database,
+	database *schemamodel.Database,
 	targetPlatform string,
 ) (scalars, arrays map[string]string) {
 	declare := func(into map[string]string, name, schema, qualified string) {

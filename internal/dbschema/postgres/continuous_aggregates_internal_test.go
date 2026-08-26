@@ -13,7 +13,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 )
 
@@ -39,22 +39,22 @@ func (e sqlStateError) SQLState() string { return e.state }
 func TestHasTimescaleExtension_DecidesWhetherTheCatalogIsAskedAtAll(t *testing.T) {
 	tests := []struct {
 		name       string
-		extensions []types.DBExtension
+		extensions []catalog.Extension
 		want       bool
 	}{
 		{
 			name:       "installed",
-			extensions: []types.DBExtension{{Name: "plpgsql"}, {Name: "timescaledb"}},
+			extensions: []catalog.Extension{{Name: "plpgsql"}, {Name: "timescaledb"}},
 			want:       true,
 		},
 		{
 			name:       "installed under another spelling",
-			extensions: []types.DBExtension{{Name: "TimescaleDB"}},
+			extensions: []catalog.Extension{{Name: "TimescaleDB"}},
 			want:       true,
 		},
 		{
 			name:       "an ordinary PostgreSQL server",
-			extensions: []types.DBExtension{{Name: "plpgsql"}, {Name: "pg_trgm"}},
+			extensions: []catalog.Extension{{Name: "plpgsql"}, {Name: "pg_trgm"}},
 			want:       false,
 		},
 		{
@@ -68,7 +68,7 @@ func TestHasTimescaleExtension_DecidesWhetherTheCatalogIsAskedAtAll(t *testing.T
 		},
 		{
 			name:       "a name that merely contains it",
-			extensions: []types.DBExtension{{Name: "timescaledb_toolkit"}},
+			extensions: []catalog.Extension{{Name: "timescaledb_toolkit"}},
 			want:       false,
 		},
 	}
@@ -91,7 +91,7 @@ func TestReadContinuousAggregates_CarriesTheWrittenDefinition(t *testing.T) {
 	aggregates, err := reader.readContinuousAggregates(t.Context(), timescaleInstalled())
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(aggregates, qt.DeepEquals, []types.DBContinuousAggregate{{
+	c.Assert(aggregates, qt.DeepEquals, []catalog.ContinuousAggregate{{
 		Name:             "conditions_hourly",
 		HypertableSchema: "public",
 		HypertableName:   "conditions",
@@ -112,7 +112,7 @@ func TestReadContinuousAggregates_AsksNothingWithoutTheExtension(t *testing.T) {
 	db := dbtest.Open(t, recordingQueries(&asked))
 	reader := NewPostgreSQLReader(db.SQL, "public")
 
-	aggregates, err := reader.readContinuousAggregates(t.Context(), []types.DBExtension{{Name: "plpgsql"}})
+	aggregates, err := reader.readContinuousAggregates(t.Context(), []catalog.Extension{{Name: "plpgsql"}})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(aggregates, qt.HasLen, 0)
@@ -141,21 +141,21 @@ func TestReadContinuousAggregates_AFailureWithTheExtensionIsSurfaced(t *testing.
 func TestWithoutContinuousAggregates_RemovesOnlyTheAggregates(t *testing.T) {
 	tests := []struct {
 		name       string
-		views      []types.DBView
-		aggregates []types.DBContinuousAggregate
+		views      []catalog.View
+		aggregates []catalog.ContinuousAggregate
 		want       []string
 	}{
 		{
 			name:  "the aggregate goes and the view stays",
-			views: []types.DBView{{Name: "conditions_hourly"}, {Name: "ordinary"}},
-			aggregates: []types.DBContinuousAggregate{
+			views: []catalog.View{{Name: "conditions_hourly"}, {Name: "ordinary"}},
+			aggregates: []catalog.ContinuousAggregate{
 				{Name: "conditions_hourly"},
 			},
 			want: []string{"ordinary"},
 		},
 		{
 			name:  "a server with no aggregates keeps every view",
-			views: []types.DBView{{Name: "conditions_hourly"}, {Name: "ordinary"}},
+			views: []catalog.View{{Name: "conditions_hourly"}, {Name: "ordinary"}},
 			want:  []string{"conditions_hourly", "ordinary"},
 		},
 		{
@@ -163,16 +163,16 @@ func TestWithoutContinuousAggregates_RemovesOnlyTheAggregates(t *testing.T) {
 			// qualify a name the other does not. Comparing raw strings would
 			// leave the aggregate in the view list on a schema-scoped read.
 			name:  "the schema is folded on both sides",
-			views: []types.DBView{{Schema: "APP", Name: "Conditions_Hourly"}},
-			aggregates: []types.DBContinuousAggregate{
+			views: []catalog.View{{Schema: "APP", Name: "Conditions_Hourly"}},
+			aggregates: []catalog.ContinuousAggregate{
 				{Schema: "app", Name: "conditions_hourly"},
 			},
 			want: nil,
 		},
 		{
 			name:  "an aggregate in another schema leaves this one's views alone",
-			views: []types.DBView{{Schema: "app", Name: "conditions_hourly"}},
-			aggregates: []types.DBContinuousAggregate{
+			views: []catalog.View{{Schema: "app", Name: "conditions_hourly"}},
+			aggregates: []catalog.ContinuousAggregate{
 				{Schema: "other", Name: "conditions_hourly"},
 			},
 			want: []string{"conditions_hourly"},
@@ -213,7 +213,7 @@ func TestContinuousAggregateQuery_AsksForTheWrittenDefinition(t *testing.T) {
 	}
 }
 
-func viewNames(views []types.DBView) []string {
+func viewNames(views []catalog.View) []string {
 	var names []string
 	for _, view := range views {
 		names = append(names, view.Name)
@@ -228,8 +228,8 @@ func answeringContinuousAggregates(
 }
 
 // timescaleInstalled is the extension list of a server that has it.
-func timescaleInstalled() []types.DBExtension {
-	return []types.DBExtension{{Name: "plpgsql"}, {Name: "timescaledb"}}
+func timescaleInstalled() []catalog.Extension {
+	return []catalog.Extension{{Name: "plpgsql"}, {Name: "timescaledb"}}
 }
 
 // recordingQueries answers nothing and remembers what it was asked.

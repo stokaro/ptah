@@ -5,10 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // mysqlUniqueKeyDatabaseSchema is what MySQL 9.7.1 and MariaDB 11.8.8 report for
@@ -23,12 +23,12 @@ import (
 // One object appears twice: information_schema.STATISTICS reports the unique
 // index and information_schema.TABLE_CONSTRAINTS reports a UNIQUE constraint,
 // both named uq_users_email on users.
-func mysqlUniqueKeyDatabaseSchema() *types.DBSchema {
-	return &types.DBSchema{
-		Tables: []types.DBTable{{
+func mysqlUniqueKeyDatabaseSchema() *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{{
 			Name: "users",
 			Type: "BASE TABLE",
-			Columns: []types.DBColumn{{
+			Columns: []catalog.Column{{
 				Name:       "email",
 				DataType:   "varchar(255)",
 				ColumnType: "varchar(255)",
@@ -36,13 +36,13 @@ func mysqlUniqueKeyDatabaseSchema() *types.DBSchema {
 				IsUnique:   true,
 			}},
 		}},
-		Indexes: []types.DBIndex{{
+		Indexes: []catalog.Index{{
 			Name:      "uq_users_email",
 			TableName: "users",
 			Columns:   []string{"email"},
 			IsUnique:  true,
 		}},
-		Constraints: []types.DBConstraint{{
+		Constraints: []catalog.Constraint{{
 			Name:        "uq_users_email",
 			TableName:   "users",
 			Type:        "UNIQUE",
@@ -55,17 +55,17 @@ func mysqlUniqueKeyDatabaseSchema() *types.DBSchema {
 // mysqlUniqueKeyGeneratedSchema is the same table as the desired state writes
 // it. `schema inspect` on `ptah-compat` and on the pinned community binary
 // v1.3.0, and Ptah's own annotations, all spell MySQL uniqueness as an index,
-// so there is no goschema.Constraint at all.
-func mysqlUniqueKeyGeneratedSchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{Name: "users", StructName: "User"}},
-		Fields: []goschema.Field{{
+// so there is no schemamodel.Constraint at all.
+func mysqlUniqueKeyGeneratedSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "users", StructName: "User"}},
+		Fields: []schemamodel.Field{{
 			StructName: "User",
 			Name:       "email",
 			Type:       "VARCHAR(255)",
 			Nullable:   false,
 		}},
-		Indexes: []goschema.Index{{
+		Indexes: []schemamodel.Index{{
 			StructName: "User",
 			Name:       "uq_users_email",
 			TableName:  "users",
@@ -159,13 +159,13 @@ func TestCompareWithDialect_NameHeuristicUniqueKeyIsSynced(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			generated := mysqlUniqueKeyGeneratedSchema()
-			generated.Indexes[0].Name = test.indexName
-			database := mysqlUniqueKeyDatabaseSchema()
-			database.Indexes[0].Name = test.indexName
-			database.Constraints[0].Name = test.indexName
+			desired := mysqlUniqueKeyGeneratedSchema()
+			desired.Indexes[0].Name = test.indexName
+			current := mysqlUniqueKeyDatabaseSchema()
+			current.Indexes[0].Name = test.indexName
+			current.Constraints[0].Name = test.indexName
 
-			diff := schemadiff.CompareWithDialect(generated, database, "mysql")
+			diff := schemadiff.CompareWithDialect(desired, current, "mysql")
 
 			c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 		})
@@ -194,11 +194,11 @@ func TestCompareWithDialect_UndeclaredUniqueKeyIsStillRemoved(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			generated := mysqlUniqueKeyGeneratedSchema()
-			generated.Indexes = nil
+			desired := mysqlUniqueKeyGeneratedSchema()
+			desired.Indexes = nil
 
 			diff := schemadiff.CompareWithDialect(
-				generated,
+				desired,
 				mysqlUniqueKeyDatabaseSchema(),
 				test.dialect,
 			)
@@ -237,24 +237,24 @@ func TestCompareWithDialect_UniqueKeyOnAnotherTableIsNotTheSameObject(t *testing
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			generated := mysqlUniqueKeyGeneratedSchema()
-			generated.Tables = append(generated.Tables, goschema.Table{
+			desired := mysqlUniqueKeyGeneratedSchema()
+			desired.Tables = append(desired.Tables, schemamodel.Table{
 				Name:       "orders",
 				StructName: "Order",
 			})
-			generated.Fields = append(generated.Fields, goschema.Field{
+			desired.Fields = append(desired.Fields, schemamodel.Field{
 				StructName: "Order",
 				Name:       "email",
 				Type:       "VARCHAR(255)",
 				Nullable:   false,
 			})
-			generated.Indexes[0].StructName = "Order"
-			generated.Indexes[0].TableName = "orders"
-			database := mysqlUniqueKeyDatabaseSchema()
-			database.Tables = append(database.Tables, types.DBTable{
+			desired.Indexes[0].StructName = "Order"
+			desired.Indexes[0].TableName = "orders"
+			current := mysqlUniqueKeyDatabaseSchema()
+			current.Tables = append(current.Tables, catalog.Table{
 				Name: "orders",
 				Type: "BASE TABLE",
-				Columns: []types.DBColumn{{
+				Columns: []catalog.Column{{
 					Name:       "email",
 					DataType:   "varchar(255)",
 					ColumnType: "varchar(255)",
@@ -263,7 +263,7 @@ func TestCompareWithDialect_UniqueKeyOnAnotherTableIsNotTheSameObject(t *testing
 				}},
 			})
 
-			diff := schemadiff.CompareWithDialect(generated, database, test.dialect)
+			diff := schemadiff.CompareWithDialect(desired, current, test.dialect)
 
 			c.Assert(diff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{{
 				Name:      "uq_users_email",
@@ -301,11 +301,11 @@ func TestCompareWithDialect_DeclaredIndexUniquenessStillCompared(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			generated := mysqlUniqueKeyGeneratedSchema()
-			generated.Indexes[0].Unique = false
+			desired := mysqlUniqueKeyGeneratedSchema()
+			desired.Indexes[0].Unique = false
 
 			diff := schemadiff.CompareWithDialect(
-				generated,
+				desired,
 				mysqlUniqueKeyDatabaseSchema(),
 				test.dialect,
 			)
@@ -340,23 +340,23 @@ func TestCompareWithDialect_DeclaredIndexColumnsStillCompared(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			generated := mysqlUniqueKeyGeneratedSchema()
-			generated.Fields = append(generated.Fields, goschema.Field{
+			desired := mysqlUniqueKeyGeneratedSchema()
+			desired.Fields = append(desired.Fields, schemamodel.Field{
 				StructName: "User",
 				Name:       "name",
 				Type:       "VARCHAR(255)",
 				Nullable:   false,
 			})
-			generated.Indexes[0].Fields = []string{"name"}
-			database := mysqlUniqueKeyDatabaseSchema()
-			database.Tables[0].Columns = append(database.Tables[0].Columns, types.DBColumn{
+			desired.Indexes[0].Fields = []string{"name"}
+			current := mysqlUniqueKeyDatabaseSchema()
+			current.Tables[0].Columns = append(current.Tables[0].Columns, catalog.Column{
 				Name:       "name",
 				DataType:   "varchar(255)",
 				ColumnType: "varchar(255)",
 				IsNullable: "NO",
 			})
 
-			diff := schemadiff.CompareWithDialect(generated, database, test.dialect)
+			diff := schemadiff.CompareWithDialect(desired, current, test.dialect)
 
 			c.Assert(diff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{{
 				Name:      "uq_users_email",
@@ -389,9 +389,9 @@ func TestCompareWithDialect_DeclaredUniqueConstraintKeepsConstraintOwnership(t *
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			generated := mysqlUniqueKeyGeneratedSchema()
-			generated.Indexes = nil
-			generated.Constraints = []goschema.Constraint{{
+			desired := mysqlUniqueKeyGeneratedSchema()
+			desired.Indexes = nil
+			desired.Constraints = []schemamodel.Constraint{{
 				StructName: "User",
 				Name:       "uq_users_email",
 				Type:       "UNIQUE",
@@ -400,7 +400,7 @@ func TestCompareWithDialect_DeclaredUniqueConstraintKeepsConstraintOwnership(t *
 			}}
 
 			diff := schemadiff.CompareWithDialect(
-				generated,
+				desired,
 				mysqlUniqueKeyDatabaseSchema(),
 				test.dialect,
 			)
@@ -440,11 +440,11 @@ func TestCompareWithDialect_ConstraintBackedIndexRemovalIsRecordedEverywhere(t *
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			generated := mysqlUniqueKeyGeneratedSchema()
-			generated.Indexes[0].Unique = false
+			desired := mysqlUniqueKeyGeneratedSchema()
+			desired.Indexes[0].Unique = false
 
 			diff := schemadiff.CompareWithDialect(
-				generated,
+				desired,
 				mysqlUniqueKeyDatabaseSchema(),
 				test.dialect,
 			)
@@ -468,14 +468,14 @@ func TestCompareWithDialect_ConstraintBackedIndexRemovalIsRecordedEverywhere(t *
 func TestCompareWithDialect_PlainIndexRemovalIsNotConstraintBacked(t *testing.T) {
 	t.Run("postgres", func(t *testing.T) {
 		c := qt.New(t)
-		generated := mysqlUniqueKeyGeneratedSchema()
-		generated.Indexes = nil
-		database := mysqlUniqueKeyDatabaseSchema()
-		database.Constraints = nil
-		database.Indexes[0].Name = "idx_users_email"
-		database.Indexes[0].IsUnique = false
+		desired := mysqlUniqueKeyGeneratedSchema()
+		desired.Indexes = nil
+		current := mysqlUniqueKeyDatabaseSchema()
+		current.Constraints = nil
+		current.Indexes[0].Name = "idx_users_email"
+		current.Indexes[0].IsUnique = false
 
-		diff := schemadiff.CompareWithDialect(generated, database, "postgres")
+		diff := schemadiff.CompareWithDialect(desired, current, "postgres")
 
 		c.Assert(diff.IndexRemovals(), qt.DeepEquals, []difftypes.IndexRef{{
 			Name:      "idx_users_email",
@@ -574,26 +574,26 @@ func TestCompareWithDialect_MySQLUnreadablePartDoesNotHideANamedDifference(t *te
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			generated := expressionKeyGeneratedSchema()
-			generated.Fields = append(generated.Fields, goschema.Field{
+			desired := expressionKeyGeneratedSchema()
+			desired.Fields = append(desired.Fields, schemamodel.Field{
 				StructName: "T4",
 				Name:       "c",
 				Type:       "INT",
 				Nullable:   false,
 			})
-			generated.Indexes[0].Parts = []goschema.IndexPart{
+			desired.Indexes[0].Parts = []schemamodel.IndexPart{
 				{Name: "c"},
 				{Expr: "(`c` + 1)"},
 			}
-			database := expressionKeyDatabaseSchema(true)
-			database.Tables[0].Columns = append(database.Tables[0].Columns, types.DBColumn{
+			current := expressionKeyDatabaseSchema(true)
+			current.Tables[0].Columns = append(current.Tables[0].Columns, catalog.Column{
 				Name:       "c",
 				DataType:   "int",
 				ColumnType: "int",
 				IsNullable: "NO",
 			})
 
-			diff := schemadiff.CompareWithDialect(generated, database, test.dialect)
+			diff := schemadiff.CompareWithDialect(desired, current, test.dialect)
 
 			c.Assert(diff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{{
 				Name:      "idx_mixed",
@@ -619,19 +619,19 @@ func TestCompareWithDialect_MySQLUnreadablePartDoesNotHideANamedDifference(t *te
 // once the reader has assembled the key: one named column, and -- when
 // incomplete is set -- the record that a second part exists which it could not
 // name.
-func expressionKeyDatabaseSchema(incomplete bool) *types.DBSchema {
-	return &types.DBSchema{
-		Tables: []types.DBTable{{
+func expressionKeyDatabaseSchema(incomplete bool) *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{{
 			Name: "t4",
 			Type: "BASE TABLE",
-			Columns: []types.DBColumn{{
+			Columns: []catalog.Column{{
 				Name:       "b",
 				DataType:   "int",
 				ColumnType: "int",
 				IsNullable: "NO",
 			}},
 		}},
-		Indexes: []types.DBIndex{{
+		Indexes: []catalog.Index{{
 			Name:               "idx_mixed",
 			TableName:          "t4",
 			Columns:            []string{"b"},
@@ -642,20 +642,20 @@ func expressionKeyDatabaseSchema(incomplete bool) *types.DBSchema {
 
 // expressionKeyGeneratedSchema is the same key as `schema inspect` writes it:
 // the named column and the expression, both spelled out.
-func expressionKeyGeneratedSchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{Name: "t4", StructName: "T4"}},
-		Fields: []goschema.Field{{
+func expressionKeyGeneratedSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "t4", StructName: "T4"}},
+		Fields: []schemamodel.Field{{
 			StructName: "T4",
 			Name:       "b",
 			Type:       "INT",
 			Nullable:   false,
 		}},
-		Indexes: []goschema.Index{{
+		Indexes: []schemamodel.Index{{
 			StructName: "T4",
 			Name:       "idx_mixed",
 			TableName:  "t4",
-			Parts: []goschema.IndexPart{
+			Parts: []schemamodel.IndexPart{
 				{Name: "b"},
 				{Expr: "(`b` + 1)"},
 			},

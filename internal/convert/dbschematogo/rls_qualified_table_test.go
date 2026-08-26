@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 )
 
@@ -15,23 +15,23 @@ import (
 // The policy is not decoration. It is the same object named twice in one
 // description, so the two spellings have to agree; a fixture with only the
 // enablement could not tell a qualified name from an unqualified one.
-func rlsSchema(schemaName string) *types.DBSchema {
+func rlsSchema(schemaName string) *catalog.Database {
 	qualified := "users"
 	if schemaName != "" {
 		qualified = schemaName + ".users"
 	}
-	return &types.DBSchema{
-		Tables: []types.DBTable{{
+	return &catalog.Database{
+		Tables: []catalog.Table{{
 			Name:       "users",
 			Schema:     schemaName,
 			Type:       "BASE TABLE",
 			RLSEnabled: true,
-			Columns: []types.DBColumn{
+			Columns: []catalog.Column{
 				{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
 				{Name: "tenant", DataType: "text", IsNullable: "NO"},
 			},
 		}},
-		RLSPolicies: []types.DBRLSPolicy{{
+		RLSPolicies: []catalog.RLSPolicy{{
 			Name:            "tenant_isolation",
 			Table:           qualified,
 			PolicyFor:       "ALL",
@@ -56,7 +56,7 @@ func rlsSchema(schemaName string) *types.DBSchema {
 func TestConvert_EnablesRLSOnTheSchemaQualifiedTable(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(rlsSchema("app"))
+	database := dbschematogo.ConvertCatalogToSchema(rlsSchema("app"))
 
 	c.Assert(database.RLSEnabledTables, qt.HasLen, 1)
 	c.Assert(database.RLSEnabledTables[0].Table, qt.Equals, "app.users")
@@ -75,7 +75,7 @@ func TestConvert_EnablesRLSOnTheSchemaQualifiedTable(t *testing.T) {
 func TestConvert_LeavesAnUnqualifiedRLSTableAlone(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(rlsSchema(""))
+	database := dbschematogo.ConvertCatalogToSchema(rlsSchema(""))
 
 	c.Assert(database.RLSEnabledTables, qt.HasLen, 1)
 	c.Assert(database.RLSEnabledTables[0].Table, qt.Equals, "users")

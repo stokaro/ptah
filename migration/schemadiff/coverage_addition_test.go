@@ -5,11 +5,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // A record on the CURRENT side says the read never looked. It does not say the
@@ -41,15 +41,15 @@ import (
 func TestAGuardedNonExtensionCreationSurvivesAReadThatDidNotLook(t *testing.T) {
 	tests := []struct {
 		name        string
-		desired     func() *goschema.Database
+		desired     func() *schemamodel.Database
 		read        func(*difftypes.SchemaDiff) []string
 		wantPlanned []string
 	}{
 		{
 			name: "a sequence the desired state declares with if_not_exists",
-			desired: func() *goschema.Database {
-				return &goschema.Database{
-					Sequences: []goschema.Sequence{{Name: "s1", Schema: "public", IfNotExists: true}},
+			desired: func() *schemamodel.Database {
+				return &schemamodel.Database{
+					Sequences: []schemamodel.Sequence{{Name: "s1", Schema: "public", IfNotExists: true}},
 				}
 			},
 			read:        func(diff *difftypes.SchemaDiff) []string { return diff.SequencesAdded },
@@ -60,12 +60,12 @@ func TestAGuardedNonExtensionCreationSurvivesAReadThatDidNotLook(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			database := &types.DBSchema{}
-			database.NotDescribed = coverage.Set{}.WithKind(
+			current := &catalog.Database{}
+			current.NotDescribed = coverage.Set{}.WithKind(
 				coverage.Extension, coverage.Policy, coverage.Sequence,
 			)
 
-			diff, undecided := schemadiff.CompareReportingUndecidedAdditions(test.desired(), database, nil)
+			diff, undecided := schemadiff.CompareReportingUndecidedAdditions(test.desired(), current, nil)
 
 			c.Assert(test.read(diff), qt.DeepEquals, test.wantPlanned)
 			c.Assert(undecided, qt.HasLen, 0)
@@ -77,12 +77,12 @@ func TestUnknownCurrentExtensionIsWithheldRegardlessOfCreationGuard(t *testing.T
 	for _, ifNotExists := range []bool{false, true} {
 		t.Run(map[bool]string{false: "unguarded", true: "guarded"}[ifNotExists], func(t *testing.T) {
 			c := qt.New(t)
-			desired := &goschema.Database{Extensions: []goschema.Extension{{
+			desired := &schemamodel.Database{Extensions: []schemamodel.Extension{{
 				Name:        "citext",
 				Schema:      "extensions",
 				IfNotExists: ifNotExists,
 			}}}
-			current := &types.DBSchema{}
+			current := &catalog.Database{}
 			current.NotDescribed = coverage.Set{}.WithKind(coverage.Extension)
 
 			diff, undecided := schemadiff.CompareReportingUndecidedAdditions(desired, current, nil)
@@ -104,16 +104,16 @@ func TestUnknownCurrentExtensionIsWithheldRegardlessOfCreationGuard(t *testing.T
 func TestAPolicyAdditionSurvivesAReadThatDidNotLook(t *testing.T) {
 	c := qt.New(t)
 
-	desired := &goschema.Database{
-		Tables: []goschema.Table{{Name: "guarded", StructName: "Guarded"}},
-		RLSPolicies: []goschema.RLSPolicy{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "guarded", StructName: "Guarded"}},
+		RLSPolicies: []schemamodel.RLSPolicy{
 			{Name: "p", Table: "guarded", PolicyFor: "SELECT", UsingExpression: "true"},
 		},
 	}
-	database := &types.DBSchema{Tables: []types.DBTable{{Name: "guarded"}}}
-	database.NotDescribed = coverage.Set{}.WithKind(coverage.Policy)
+	current := &catalog.Database{Tables: []catalog.Table{{Name: "guarded"}}}
+	current.NotDescribed = coverage.Set{}.WithKind(coverage.Policy)
 
-	diff, undecided := schemadiff.CompareReportingUndecidedAdditions(desired, database, nil)
+	diff, undecided := schemadiff.CompareReportingUndecidedAdditions(desired, current, nil)
 
 	c.Assert(diff.RLSPoliciesAdded, qt.DeepEquals, []difftypes.RLSPolicyRef{
 		{PolicyName: "p", TableName: "guarded"},
@@ -128,15 +128,15 @@ func TestAPolicyAdditionSurvivesAReadThatDidNotLook(t *testing.T) {
 func TestAnUnguardedCreationIsWithheldAndNamed(t *testing.T) {
 	tests := []struct {
 		name         string
-		desired      func() *goschema.Database
+		desired      func() *schemamodel.Database
 		notDescribed coverage.Set
 		read         func(*difftypes.SchemaDiff) []string
 		wantWithheld []coverage.Object
 	}{
 		{
 			name: "a sequence declared without if_not_exists",
-			desired: func() *goschema.Database {
-				return &goschema.Database{Sequences: []goschema.Sequence{{Name: "s1", Schema: "public"}}}
+			desired: func() *schemamodel.Database {
+				return &schemamodel.Database{Sequences: []schemamodel.Sequence{{Name: "s1", Schema: "public"}}}
 			},
 			notDescribed: coverage.Set{}.WithKind(coverage.Sequence),
 			read:         func(diff *difftypes.SchemaDiff) []string { return diff.SequencesAdded },
@@ -144,8 +144,8 @@ func TestAnUnguardedCreationIsWithheldAndNamed(t *testing.T) {
 		},
 		{
 			name: "an extension declared without if_not_exists",
-			desired: func() *goschema.Database {
-				return &goschema.Database{Extensions: []goschema.Extension{{Name: "citext"}}}
+			desired: func() *schemamodel.Database {
+				return &schemamodel.Database{Extensions: []schemamodel.Extension{{Name: "citext"}}}
 			},
 			notDescribed: coverage.Set{}.WithKind(coverage.Extension),
 			read:         func(diff *difftypes.SchemaDiff) []string { return diff.ExtensionsAdded },
@@ -153,8 +153,8 @@ func TestAnUnguardedCreationIsWithheldAndNamed(t *testing.T) {
 		},
 		{
 			name: "a role, which has no conditional creation at all",
-			desired: func() *goschema.Database {
-				return &goschema.Database{Roles: []goschema.Role{{Name: "admin_user", Login: true}}}
+			desired: func() *schemamodel.Database {
+				return &schemamodel.Database{Roles: []schemamodel.Role{{Name: "admin_user", Login: true}}}
 			},
 			notDescribed: coverage.Set{}.WithObject(coverage.Role, "admin_user"),
 			read:         func(diff *difftypes.SchemaDiff) []string { return diff.RolesAdded },
@@ -162,9 +162,9 @@ func TestAnUnguardedCreationIsWithheldAndNamed(t *testing.T) {
 		},
 		{
 			name: "a table in a schema the read never opened",
-			desired: func() *goschema.Database {
-				return &goschema.Database{
-					Tables: []goschema.Table{{Name: "b", Schema: "extra", StructName: "B"}},
+			desired: func() *schemamodel.Database {
+				return &schemamodel.Database{
+					Tables: []schemamodel.Table{{Name: "b", Schema: "extra", StructName: "B"}},
 				}
 			},
 			notDescribed: coverage.Set{}.WithObject(coverage.Schema, "extra"),
@@ -176,10 +176,10 @@ func TestAnUnguardedCreationIsWithheldAndNamed(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			database := &types.DBSchema{}
-			database.NotDescribed = test.notDescribed
+			current := &catalog.Database{}
+			current.NotDescribed = test.notDescribed
 
-			diff, undecided := schemadiff.CompareReportingUndecidedAdditions(test.desired(), database, nil)
+			diff, undecided := schemadiff.CompareReportingUndecidedAdditions(test.desired(), current, nil)
 
 			c.Assert(test.read(diff), qt.HasLen, 0)
 			c.Assert(undecided, qt.DeepEquals, test.wantWithheld)
@@ -194,39 +194,39 @@ func TestAnUnguardedCreationIsWithheldAndNamed(t *testing.T) {
 func TestAnUndeclaredReadPlansEveryAdditionAndWithholdsNothing(t *testing.T) {
 	tests := []struct {
 		name        string
-		desired     func() *goschema.Database
+		desired     func() *schemamodel.Database
 		read        func(*difftypes.SchemaDiff) []string
 		wantPlanned []string
 	}{
 		{
 			name: "a sequence declared without if_not_exists",
-			desired: func() *goschema.Database {
-				return &goschema.Database{Sequences: []goschema.Sequence{{Name: "s1", Schema: "public"}}}
+			desired: func() *schemamodel.Database {
+				return &schemamodel.Database{Sequences: []schemamodel.Sequence{{Name: "s1", Schema: "public"}}}
 			},
 			read:        func(diff *difftypes.SchemaDiff) []string { return diff.SequencesAdded },
 			wantPlanned: []string{"public.s1"},
 		},
 		{
 			name: "an extension declared without if_not_exists",
-			desired: func() *goschema.Database {
-				return &goschema.Database{Extensions: []goschema.Extension{{Name: "citext"}}}
+			desired: func() *schemamodel.Database {
+				return &schemamodel.Database{Extensions: []schemamodel.Extension{{Name: "citext"}}}
 			},
 			read:        func(diff *difftypes.SchemaDiff) []string { return diff.ExtensionsAdded },
 			wantPlanned: []string{"citext"},
 		},
 		{
 			name: "a role",
-			desired: func() *goschema.Database {
-				return &goschema.Database{Roles: []goschema.Role{{Name: "admin_user", Login: true}}}
+			desired: func() *schemamodel.Database {
+				return &schemamodel.Database{Roles: []schemamodel.Role{{Name: "admin_user", Login: true}}}
 			},
 			read:        func(diff *difftypes.SchemaDiff) []string { return diff.RolesAdded },
 			wantPlanned: []string{"admin_user"},
 		},
 		{
 			name: "a table in another schema",
-			desired: func() *goschema.Database {
-				return &goschema.Database{
-					Tables: []goschema.Table{{Name: "b", Schema: "extra", StructName: "B"}},
+			desired: func() *schemamodel.Database {
+				return &schemamodel.Database{
+					Tables: []schemamodel.Table{{Name: "b", Schema: "extra", StructName: "B"}},
 				}
 			},
 			read:        func(diff *difftypes.SchemaDiff) []string { return diff.TablesAdded },
@@ -237,7 +237,7 @@ func TestAnUndeclaredReadPlansEveryAdditionAndWithholdsNothing(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff, undecided := schemadiff.CompareReportingUndecidedAdditions(test.desired(), &types.DBSchema{}, nil)
+			diff, undecided := schemadiff.CompareReportingUndecidedAdditions(test.desired(), &catalog.Database{}, nil)
 
 			c.Assert(test.read(diff), qt.DeepEquals, test.wantPlanned)
 			c.Assert(undecided, qt.HasLen, 0)
@@ -255,11 +255,11 @@ func TestAnUndeclaredReadPlansEveryAdditionAndWithholdsNothing(t *testing.T) {
 func TestWithheldAdditionsAreNotChanges(t *testing.T) {
 	c := qt.New(t)
 
-	desired := &goschema.Database{Sequences: []goschema.Sequence{{Name: "s1", Schema: "public"}}}
-	database := &types.DBSchema{}
-	database.NotDescribed = coverage.Set{}.WithKind(coverage.Sequence)
+	desired := &schemamodel.Database{Sequences: []schemamodel.Sequence{{Name: "s1", Schema: "public"}}}
+	current := &catalog.Database{}
+	current.NotDescribed = coverage.Set{}.WithKind(coverage.Sequence)
 
-	diff, undecided := schemadiff.CompareReportingUndecidedAdditions(desired, database, nil)
+	diff, undecided := schemadiff.CompareReportingUndecidedAdditions(desired, current, nil)
 
 	c.Assert(undecided, qt.HasLen, 1)
 	c.Assert(diff.HasChanges(), qt.IsFalse)
@@ -272,17 +272,17 @@ func TestWithheldAdditionsAreNotChanges(t *testing.T) {
 func TestWithheldAdditionsAreOrdered(t *testing.T) {
 	c := qt.New(t)
 
-	desired := &goschema.Database{
-		Extensions: []goschema.Extension{{Name: "citext"}, {Name: "btree_gist"}},
-		Sequences: []goschema.Sequence{
+	desired := &schemamodel.Database{
+		Extensions: []schemamodel.Extension{{Name: "citext"}, {Name: "btree_gist"}},
+		Sequences: []schemamodel.Sequence{
 			{Name: "b_seq", Schema: "public"},
 			{Name: "a_seq", Schema: "public"},
 		},
 	}
-	database := &types.DBSchema{}
-	database.NotDescribed = coverage.Set{}.WithKind(coverage.Extension, coverage.Sequence)
+	current := &catalog.Database{}
+	current.NotDescribed = coverage.Set{}.WithKind(coverage.Extension, coverage.Sequence)
 
-	_, undecided := schemadiff.CompareReportingUndecidedAdditions(desired, database, nil)
+	_, undecided := schemadiff.CompareReportingUndecidedAdditions(desired, current, nil)
 
 	c.Assert(undecided, qt.DeepEquals, []coverage.Object{
 		{Kind: coverage.Extension, Name: "btree_gist"},
@@ -299,11 +299,11 @@ func TestWithheldAdditionsAreOrdered(t *testing.T) {
 func TestAGuardIsNotAnExcuseToIgnoreARemovalRecord(t *testing.T) {
 	c := qt.New(t)
 
-	desired := &goschema.Database{}
+	desired := &schemamodel.Database{}
 	desired.NotDescribed = coverage.Set{}.WithKind(coverage.Extension)
-	database := &types.DBSchema{Extensions: []types.DBExtension{{Name: "pgcrypto", Schema: "public"}}}
+	current := &catalog.Database{Extensions: []catalog.Extension{{Name: "pgcrypto", Schema: "public"}}}
 
-	diff, undecided := schemadiff.CompareReportingUndecidedAdditions(desired, database, nil)
+	diff, undecided := schemadiff.CompareReportingUndecidedAdditions(desired, current, nil)
 
 	c.Assert(diff.ExtensionsRemoved, qt.HasLen, 0)
 	c.Assert(undecided, qt.HasLen, 0)

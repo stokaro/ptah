@@ -5,18 +5,18 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/generator"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // A desired state may ask for PostgreSQL's non-locking index build in its own
 // words -- `CREATE INDEX CONCURRENTLY` survives parsing into
-// goschema.Index.Concurrently -- and nothing carried the answer to the planner,
+// schemamodel.Index.Concurrently -- and nothing carried the answer to the planner,
 // so the build was planned as a locking one, silently (stokaro/ptah#2019).
 //
 // Every row below declares the index on an EMPTY table, which is what separates
@@ -90,15 +90,15 @@ func TestPlanBidirectionalSchemaDiff_DeclaredConcurrentIndex(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := &types.SchemaDiff{}
-			diff.SetIndexAdditions([]types.IndexRef{{Name: "idx_users_reference", TableName: "users"}})
+			diff := &difftypes.SchemaDiff{}
+			diff.SetIndexAdditions([]difftypes.IndexRef{{Name: "idx_users_reference", TableName: "users"}})
 
 			plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
-				Diff:          diff,
-				DesiredSchema: usersSchemaDeclaring(test.declared),
-				CurrentSchema: emptyUsersTable(test.partitioned),
-				Dialect:       platform.Postgres,
-				Capabilities:  test.capabilities,
+				Diff:         diff,
+				Desired:      usersSchemaDeclaring(test.declared),
+				Current:      emptyUsersTable(test.partitioned),
+				Dialect:      platform.Postgres,
+				Capabilities: test.capabilities,
 				Policy: generator.BidirectionalPlanPolicy{
 					Create: test.mode,
 					Drop:   generator.ConcurrentIndexDisabled,
@@ -128,15 +128,15 @@ func TestPlanBidirectionalSchemaDiff_DeclaredConcurrentIndex(t *testing.T) {
 // set claims, so a statement carrying CONCURRENTLY is one MySQL rejects.
 func TestPlanBidirectionalSchemaDiff_DeclaredConcurrentIndexIsPostgresOnly(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{}
-	diff.SetIndexAdditions([]types.IndexRef{{Name: "idx_users_reference", TableName: "users"}})
+	diff := &difftypes.SchemaDiff{}
+	diff.SetIndexAdditions([]difftypes.IndexRef{{Name: "idx_users_reference", TableName: "users"}})
 
 	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
-		Diff:          diff,
-		DesiredSchema: usersSchemaDeclaring(true),
-		CurrentSchema: emptyUsersTable(false),
-		Dialect:       platform.MySQL,
-		Capabilities:  capability.MySQL84().With(capability.CreateIndexConcurrently, true),
+		Diff:         diff,
+		Desired:      usersSchemaDeclaring(true),
+		Current:      emptyUsersTable(false),
+		Dialect:      platform.MySQL,
+		Capabilities: capability.MySQL84().With(capability.CreateIndexConcurrently, true),
 		Policy: generator.BidirectionalPlanPolicy{
 			Create: generator.ConcurrentIndexAutomatic,
 			Drop:   generator.ConcurrentIndexDisabled,
@@ -149,7 +149,7 @@ func TestPlanBidirectionalSchemaDiff_DeclaredConcurrentIndexIsPostgresOnly(t *te
 }
 
 // usersSchemaDeclaring is the target schema, with or without the request.
-func usersSchemaDeclaring(concurrently bool) *goschema.Database {
+func usersSchemaDeclaring(concurrently bool) *schemamodel.Database {
 	description := singleConcurrentIndexSchema()
 	description.Indexes[0].Concurrently = concurrently
 	return description
@@ -157,8 +157,8 @@ func usersSchemaDeclaring(concurrently bool) *goschema.Database {
 
 // emptyUsersTable is the read: a table holding no rows, so the automatic
 // heuristic would choose the plain build for it on its own.
-func emptyUsersTable(partitioned bool) *dbschematypes.DBSchema {
-	return &dbschematypes.DBSchema{Tables: []dbschematypes.DBTable{{
+func emptyUsersTable(partitioned bool) *catalog.Database {
+	return &catalog.Database{Tables: []catalog.Table{{
 		Name: "users", Type: "BASE TABLE", EstimatedRows: 0, Partitioned: partitioned,
 	}}}
 }

@@ -4,18 +4,19 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/envbool"
 )
 
 // One HCL document is a set of declarations, and declaring one object twice in
 // it is a mistake rather than an instruction to merge.
 //
-// [goschema.Finalize] folds a repeated declaration into the first one it saw.
+// [schemamodel.Finalize] folds a repeated declaration into the first one it saw.
 // That fold is load-bearing for the NATIVE Go-annotation path and must stay:
 // a package whose files each carry `//ptah:schema:table name="users"` is one
 // table, and disabling the fold reddens `TestParseDir_Deduplication`,
-// `TestParseFS_Deduplication` and 15 further tests in core/goschema. So the
+// `TestParseFS_Deduplication` and 15 further tests across core/goschema and
+// core/schemamodel. So the
 // refusal belongs here, where a single DOCUMENT is parsed, and not in the
 // shared folding step.
 //
@@ -52,7 +53,7 @@ import (
 //	view/materialized/role twice   exit 0  block dropped unread              exit 0
 //
 // The `foreign_key` row is the one this ledger was extended for. A
-// SINGLE-column foreign key is not a [goschema.Constraint] at all -- see
+// SINGLE-column foreign key is not a [schemamodel.Constraint] at all -- see
 // [parser.applyForeignKey], which writes it onto the referencing FIELD -- so
 // walking `db.Constraints` could never see it, and the block declared twice was
 // applied twice to one field and rendered once. `documentDeclarations` reads the
@@ -233,7 +234,7 @@ type declaration struct {
 
 // rejectRedeclarations refuses a document that declares one object twice.
 //
-// It runs after the body walk and before [goschema.Finalize], because Finalize
+// It runs after the body walk and before [schemamodel.Finalize], because Finalize
 // is what makes the second declaration invisible.
 func (p *parser) rejectRedeclarations() error {
 	policy, err := resolveRedeclarationPolicy()
@@ -406,7 +407,7 @@ func (p *parser) documentDeclarations(policy redeclarationPolicy) []declaration 
 // difference between "the drop-in floor" and "above it" is a single call the
 // reader can see, and so the mutant that moves a kind across the line has one
 // place to move it.
-func declaredBeyondParity(db *goschema.Database, policy redeclarationPolicy) []declaration {
+func declaredBeyondParity(db *schemamodel.Database, policy redeclarationPolicy) []declaration {
 	if !policy.strict {
 		return nil
 	}
@@ -434,7 +435,7 @@ func declaredBeyondParity(db *goschema.Database, policy redeclarationPolicy) []d
 // A FOREIGN KEY constraint is skipped here and counted by
 // [parser.declaredForeignKeys] instead, because only ONE of the two shapes a
 // `foreign_key` block can take lands in this slice.
-func declaredConstraints(db *goschema.Database, policy redeclarationPolicy) []declaration {
+func declaredConstraints(db *schemamodel.Database, policy redeclarationPolicy) []declaration {
 	objects := make([]declaration, 0, len(db.Constraints))
 	for _, constraint := range db.Constraints {
 		// Every constraint this parser produces carries a name -- an unlabeled
@@ -465,7 +466,7 @@ func declaredConstraints(db *goschema.Database, policy redeclarationPolicy) []de
 //
 // It is recorded HERE, at the block, rather than read back out of the IR,
 // because a foreign key has two landing places and only one of them is a
-// [goschema.Constraint]: [parser.applyForeignKey] puts a SINGLE-column key on
+// [schemamodel.Constraint]: [parser.applyForeignKey] puts a SINGLE-column key on
 // the referencing field, where nothing distinguishes "declared once" from
 // "declared twice and applied twice". Measured on PostgreSQL 17.10, a document
 // declaring one single-column `foreign_key "posts_author_fk"` twice is
@@ -475,7 +476,7 @@ func declaredConstraints(db *goschema.Database, policy redeclarationPolicy) []de
 //
 // The identity is the table plus the constraint name, which is what PostgreSQL
 // collided on in that message and what a constraint name is scoped by.
-func (p *parser) recordForeignKey(table goschema.Table, name string) {
+func (p *parser) recordForeignKey(table schemamodel.Table, name string) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return
@@ -499,7 +500,7 @@ func (p *parser) recordForeignKey(table goschema.Table, name string) {
 // forbids, so the bare name is the default. [SchemaScopedEnumsEnvVar] selects
 // the qualified name, which is what the two objects actually are and what makes
 // Ptah's own two-schema inspect output readable again.
-func declaredTypes(db *goschema.Database, policy redeclarationPolicy) []declaration {
+func declaredTypes(db *schemamodel.Database, policy redeclarationPolicy) []declaration {
 	objects := make([]declaration, 0,
 		len(db.Enums)+len(db.Domains)+len(db.CompositeTypes)+len(db.Ranges))
 	for _, enum := range db.Enums {
@@ -526,7 +527,7 @@ func declaredTypes(db *goschema.Database, policy redeclarationPolicy) []declarat
 // advising a merge that would delete a type. Under the variable the two
 // identities are the same string, so the finer branch cannot fire and a real
 // repeat still reports a real repeat.
-func declaredEnum(enum goschema.Enum, policy redeclarationPolicy) declaration {
+func declaredEnum(enum schemamodel.Enum, policy redeclarationPolicy) declaration {
 	entry := declare(kindEnum, enum.Name)
 	if policy.schemaScopedEnums {
 		return declare(kindEnum, enum.QualifiedName())
@@ -537,9 +538,9 @@ func declaredEnum(enum goschema.Enum, policy redeclarationPolicy) declaration {
 }
 
 // indexOwner names the table an index belongs to. This runs before
-// [goschema.Finalize], so TableName is set only when the document said so and
+// [schemamodel.Finalize], so TableName is set only when the document said so and
 // StructName carries the table the index block sat in.
-func indexOwner(index goschema.Index) string {
+func indexOwner(index schemamodel.Index) string {
 	if strings.TrimSpace(index.TableName) != "" {
 		return index.TableName
 	}
@@ -549,7 +550,7 @@ func indexOwner(index goschema.Index) string {
 // constraintOwner names the table a constraint belongs to, preferring an
 // explicit table over the block it was written in -- the same preference
 // goschema's deduplication pass applies at constraintDedupKey.
-func constraintOwner(constraint goschema.Constraint) string {
+func constraintOwner(constraint schemamodel.Constraint) string {
 	if table := strings.TrimSpace(constraint.Table); table != "" {
 		return table
 	}
@@ -557,7 +558,7 @@ func constraintOwner(constraint goschema.Constraint) string {
 }
 
 // policyOwner names the table a row-level security policy belongs to.
-func policyOwner(policy goschema.RLSPolicy) string {
+func policyOwner(policy schemamodel.RLSPolicy) string {
 	if table := strings.TrimSpace(policy.Table); table != "" {
 		return table
 	}

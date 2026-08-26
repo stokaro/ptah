@@ -6,11 +6,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	mssqlplanner "go.5x5.cz/ptah/internal/planner/dialects/mssql"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // A modified procedure is planned as a drop and a create. The drop half was
@@ -22,8 +22,8 @@ import (
 // the statements, so the assertion is on what the server would be given.
 func planProcedureReplacement(c *qt.C, kind string) string {
 	c.Helper()
-	desired := &goschema.Database{
-		Functions: []goschema.Function{{
+	desired := &schemamodel.Database{
+		Functions: []schemamodel.Function{{
 			StructName: "Report", Name: "dbo.p_report", Kind: kind,
 			Parameters: "@id int", Language: "sql",
 			Body: "BEGIN SELECT @id; END",
@@ -52,7 +52,7 @@ func planProcedureReplacement(c *qt.C, kind string) string {
 func TestPlanner_ProcedureReplacementDropsWithTheProcedureVerb(t *testing.T) {
 	c := qt.New(t)
 
-	rendered := planProcedureReplacement(c, goschema.FunctionKindProcedure)
+	rendered := planProcedureReplacement(c, schemamodel.FunctionKindProcedure)
 
 	c.Assert(rendered, qt.Contains, "DROP PROCEDURE IF EXISTS")
 	c.Assert(rendered, qt.Not(qt.Contains), "DROP FUNCTION")
@@ -76,7 +76,7 @@ func TestPlanner_FunctionReplacementKeepsTheFunctionVerb(t *testing.T) {
 func TestPlanner_ReplacementCommentNamesTheObject(t *testing.T) {
 	c := qt.New(t)
 
-	procedure := planProcedureReplacement(c, goschema.FunctionKindProcedure)
+	procedure := planProcedureReplacement(c, schemamodel.FunctionKindProcedure)
 	function := planProcedureReplacement(c, "")
 
 	c.Assert(procedure, qt.Contains, "Replace procedure dbo.p_report")

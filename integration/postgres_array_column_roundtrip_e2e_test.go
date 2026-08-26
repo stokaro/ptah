@@ -12,8 +12,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/dbtarget"
 )
@@ -98,7 +98,7 @@ func TestPostgresArrayColumnSurvivesAReadE2E(t *testing.T) {
 			// The type as the converter hands it onward is the value every
 			// renderer downstream writes, so recreating the column from it is
 			// what proves the read is usable and not merely non-empty.
-			converted := dbschematogo.ConvertDBSchemaToGoSchema(read)
+			converted := dbschematogo.ConvertCatalogToSchema(read)
 			c.Assert(converted.Fields, qt.Not(qt.HasLen), 0)
 			_, err = setupDB.ExecContext(ctx,
 				"CREATE TABLE logs_again (records "+converted.Fields[0].Type+" NOT NULL)")
@@ -112,7 +112,7 @@ func TestPostgresArrayColumnSurvivesAReadE2E(t *testing.T) {
 
 // postgresColumnType returns the type an introspected schema carries for one
 // column, or "" when the column is not there.
-func postgresColumnType(schema *dbschematypes.DBSchema, table, column string) string {
+func postgresColumnType(schema *catalog.Database, table, column string) string {
 	for _, dbTable := range schema.Tables {
 		for _, dbColumn := range dbTable.Columns {
 			if dbTable.Name == table && dbColumn.Name == column {

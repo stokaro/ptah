@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
@@ -40,12 +40,12 @@ import (
 func TestCompareWithDialect_PostgresDomainNamedLikeATypeStillReportsARealChange(t *testing.T) {
 	c := qt.New(t)
 
-	database := &types.DBSchema{
-		Tables: []types.DBTable{
+	current := &catalog.Database{
+		Tables: []catalog.Table{
 			{
 				Name: "t",
 				Type: "TABLE",
-				Columns: []types.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "a", DataType: "integer", UDTName: "int4", FormattedType: "waypoint", IsNullable: "NO"},
 					{Name: "b", DataType: "integer", UDTName: "int4", FormattedType: "context", IsNullable: "NO"},
 				},
@@ -53,15 +53,15 @@ func TestCompareWithDialect_PostgresDomainNamedLikeATypeStillReportsARealChange(
 		},
 	}
 
-	desired := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "T", Name: "t"}},
-		Fields: []goschema.Field{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "T", Name: "t"}},
+		Fields: []schemamodel.Field{
 			{StructName: "T", Name: "a", Type: "BIGINT"},
 			{StructName: "T", Name: "b", Type: "TEXT"},
 		},
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, database, platform.Postgres)
+	diff := schemadiff.CompareWithDialect(desired, current, platform.Postgres)
 
 	c.Assert(diff.TablesModified, qt.HasLen, 1,
 		qt.Commentf("a column of domain waypoint (over integer) against a desired BIGINT, and one of domain context "+

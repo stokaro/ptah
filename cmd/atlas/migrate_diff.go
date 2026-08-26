@@ -462,11 +462,11 @@ func planCompatBidirectionalSchemaDiff(
 		dropMode = generator.ConcurrentIndexAll
 	}
 	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
-		Diff:          input.Diff,
-		DesiredSchema: input.DesiredSchema,
-		CurrentSchema: input.CurrentSchema,
-		Dialect:       input.Dialect,
-		Capabilities:  input.Capabilities,
+		Diff:         input.Diff,
+		Desired:      input.DesiredSchema,
+		Current:      input.CurrentSchema,
+		Dialect:      input.Dialect,
+		Capabilities: input.Capabilities,
 		Policy: generator.BidirectionalPlanPolicy{
 			Create: createMode,
 			Drop:   dropMode,

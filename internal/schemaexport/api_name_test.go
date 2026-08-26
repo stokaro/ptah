@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemaexport"
 )
 
@@ -16,17 +16,17 @@ import (
 func TestFieldAPIName(t *testing.T) {
 	tests := []struct {
 		name  string
-		field goschema.Field
+		field schemamodel.Field
 		want  string
 	}{
 		{
 			name:  "an undeclared API name is the column name",
-			field: goschema.Field{Name: "billing_amount_minor"},
+			field: schemamodel.Field{Name: "billing_amount_minor"},
 			want:  "billing_amount_minor",
 		},
 		{
 			name:  "a declared one replaces it",
-			field: goschema.Field{Name: "billing_amount_minor", APIName: "amount"},
+			field: schemamodel.Field{Name: "billing_amount_minor", APIName: "amount"},
 			want:  "amount",
 		},
 		{
@@ -34,12 +34,12 @@ func TestFieldAPIName(t *testing.T) {
 			// to publish a field under no name, and treating the empty string
 			// as a request to would produce a document with an unnamed member.
 			name:  "an empty declaration is not a declaration",
-			field: goschema.Field{Name: "id", APIName: ""},
+			field: schemamodel.Field{Name: "id", APIName: ""},
 			want:  "id",
 		},
 		{
 			name:  "a declaration that equals the column name is not special",
-			field: goschema.Field{Name: "id", APIName: "id"},
+			field: schemamodel.Field{Name: "id", APIName: "id"},
 			want:  "id",
 		},
 	}
@@ -55,15 +55,15 @@ func TestFieldAPIName(t *testing.T) {
 // Distinct API names are what the exporters are entitled to assume, so this is
 // the shape that must stay quiet.
 func TestValidateFieldAPINamesAcceptsDistinctNames(t *testing.T) {
-	table := goschema.Table{Name: "invoices"}
+	table := schemamodel.Table{Name: "invoices"}
 
 	tests := []struct {
 		name   string
-		fields []goschema.Field
+		fields []schemamodel.Field
 	}{
 		{
 			name: "columns and an alias that do not overlap",
-			fields: []goschema.Field{
+			fields: []schemamodel.Field{
 				{Name: "id"},
 				{Name: "billing_amount_minor", APIName: "amount"},
 			},
@@ -87,16 +87,16 @@ func TestValidateFieldAPINamesAcceptsDistinctNames(t *testing.T) {
 // that schema records that it was dropped -- so the error names both sources
 // rather than picking a winner.
 func TestValidateFieldAPINamesRefusesACollision(t *testing.T) {
-	table := goschema.Table{Name: "invoices"}
+	table := schemamodel.Table{Name: "invoices"}
 
 	tests := []struct {
 		name    string
-		fields  []goschema.Field
+		fields  []schemamodel.Field
 		wantErr string
 	}{
 		{
 			name: "an alias colliding with another column",
-			fields: []goschema.Field{
+			fields: []schemamodel.Field{
 				{Name: "amount"},
 				{Name: "billing_amount_minor", APIName: "amount"},
 			},
@@ -105,7 +105,7 @@ func TestValidateFieldAPINamesRefusesACollision(t *testing.T) {
 		},
 		{
 			name: "two aliases colliding with each other",
-			fields: []goschema.Field{
+			fields: []schemamodel.Field{
 				{Name: "net_minor", APIName: "amount"},
 				{Name: "gross_minor", APIName: "amount"},
 			},
@@ -117,7 +117,7 @@ func TestValidateFieldAPINamesRefusesACollision(t *testing.T) {
 			// the column that did have it comes later. Order must not decide
 			// whether this is caught.
 			name: "the alias declared before the column it collides with",
-			fields: []goschema.Field{
+			fields: []schemamodel.Field{
 				{Name: "billing_amount_minor", APIName: "amount"},
 				{Name: "amount"},
 			},
@@ -141,22 +141,22 @@ func TestValidateFieldAPINamesRefusesACollision(t *testing.T) {
 func TestTableAPIName(t *testing.T) {
 	tests := []struct {
 		name  string
-		table goschema.Table
+		table schemamodel.Table
 		want  string
 	}{
 		{
 			name:  "an undeclared API name is the table name",
-			table: goschema.Table{Name: "billing_invoices"},
+			table: schemamodel.Table{Name: "billing_invoices"},
 			want:  "billing_invoices",
 		},
 		{
 			name:  "a declared one replaces it",
-			table: goschema.Table{Name: "billing_invoices", APIName: "invoices"},
+			table: schemamodel.Table{Name: "billing_invoices", APIName: "invoices"},
 			want:  "invoices",
 		},
 		{
 			name:  "an empty declaration is not a declaration",
-			table: goschema.Table{Name: "invoices", APIName: ""},
+			table: schemamodel.Table{Name: "invoices", APIName: ""},
 			want:  "invoices",
 		},
 	}
@@ -172,11 +172,11 @@ func TestTableAPIName(t *testing.T) {
 func TestValidateTableAPINamesAcceptsDistinctNames(t *testing.T) {
 	tests := []struct {
 		name   string
-		tables []goschema.Table
+		tables []schemamodel.Table
 	}{
 		{
 			name: "tables and an alias that do not overlap",
-			tables: []goschema.Table{
+			tables: []schemamodel.Table{
 				{Name: "authors"},
 				{Name: "billing_invoices", APIName: "invoices"},
 			},
@@ -198,12 +198,12 @@ func TestValidateTableAPINamesAcceptsDistinctNames(t *testing.T) {
 func TestValidateTableAPINamesRefusesACollision(t *testing.T) {
 	tests := []struct {
 		name    string
-		tables  []goschema.Table
+		tables  []schemamodel.Table
 		wantErr string
 	}{
 		{
 			name: "an alias colliding with another table",
-			tables: []goschema.Table{
+			tables: []schemamodel.Table{
 				{Name: "invoices"},
 				{Name: "billing_invoices", APIName: "invoices"},
 			},
@@ -212,7 +212,7 @@ func TestValidateTableAPINamesRefusesACollision(t *testing.T) {
 		},
 		{
 			name: "two aliases colliding with each other",
-			tables: []goschema.Table{
+			tables: []schemamodel.Table{
 				{Name: "billing_invoices", APIName: "invoices"},
 				{Name: "legacy_invoices", APIName: "invoices"},
 			},
@@ -236,22 +236,22 @@ func TestValidateTableAPINamesRefusesACollision(t *testing.T) {
 func TestFieldAPIType(t *testing.T) {
 	tests := []struct {
 		name  string
-		field goschema.Field
+		field schemamodel.Field
 		want  string
 	}{
 		{
 			name:  "an undeclared override is the column type",
-			field: goschema.Field{Name: "amount", Type: "DECIMAL(12,2)"},
+			field: schemamodel.Field{Name: "amount", Type: "DECIMAL(12,2)"},
 			want:  "DECIMAL(12,2)",
 		},
 		{
 			name:  "a declared one replaces it",
-			field: goschema.Field{Name: "amount", Type: "DECIMAL(12,2)", APIType: "TEXT"},
+			field: schemamodel.Field{Name: "amount", Type: "DECIMAL(12,2)", APIType: "TEXT"},
 			want:  "TEXT",
 		},
 		{
 			name:  "an empty declaration is not a declaration",
-			field: goschema.Field{Name: "amount", Type: "DECIMAL(12,2)", APIType: ""},
+			field: schemamodel.Field{Name: "amount", Type: "DECIMAL(12,2)", APIType: ""},
 			want:  "DECIMAL(12,2)",
 		},
 	}
@@ -269,7 +269,7 @@ func TestFieldAPIType(t *testing.T) {
 func TestProjectedField(t *testing.T) {
 	c := qt.New(t)
 
-	original := goschema.Field{Name: "amount", Type: "DECIMAL(12,2)", APIType: "TEXT"}
+	original := schemamodel.Field{Name: "amount", Type: "DECIMAL(12,2)", APIType: "TEXT"}
 	projected := schemaexport.ProjectedField(original)
 
 	c.Assert(projected.Type, qt.Equals, "TEXT")
@@ -284,7 +284,7 @@ func TestProjectedField(t *testing.T) {
 func TestProjectedFieldDropsInlineEnumValues(t *testing.T) {
 	c := qt.New(t)
 
-	overridden := schemaexport.ProjectedField(goschema.Field{
+	overridden := schemaexport.ProjectedField(schemamodel.Field{
 		Name: "state", Type: "VARCHAR(16)",
 		Enum: []string{"draft", "sent"}, APIType: "TEXT",
 	})
@@ -292,7 +292,7 @@ func TestProjectedFieldDropsInlineEnumValues(t *testing.T) {
 
 	// The control: with no override there is nothing to replace, and an enum
 	// column must keep exporting as an enum.
-	untouched := schemaexport.ProjectedField(goschema.Field{
+	untouched := schemaexport.ProjectedField(schemamodel.Field{
 		Name: "state", Type: "VARCHAR(16)", Enum: []string{"draft", "sent"},
 	})
 	c.Assert(untouched.Enum, qt.DeepEquals, []string{"draft", "sent"})
@@ -301,7 +301,7 @@ func TestProjectedFieldDropsInlineEnumValues(t *testing.T) {
 // refusalTable and refusalEnums are the fixed surroundings of the refusal: the
 // answer depends on the field, not on where it lives.
 var (
-	refusalTable = goschema.Table{Name: "invoices"}
+	refusalTable = schemamodel.Table{Name: "invoices"}
 	refusalEnums = map[string][]string{"invoice_state": {"draft", "sent"}}
 )
 
@@ -310,23 +310,23 @@ var (
 func TestRefuseUnknownAPITypeAccepts(t *testing.T) {
 	tests := []struct {
 		name  string
-		field goschema.Field
+		field schemamodel.Field
 		maps  map[string]bool
 	}{
 		{
 			name:  "no override is nothing to refuse",
-			field: goschema.Field{Name: "amount", Type: "money_ish"},
+			field: schemamodel.Field{Name: "amount", Type: "money_ish"},
 		},
 		{
 			name:  "an override the mapping knows",
-			field: goschema.Field{Name: "amount", Type: "DECIMAL(12,2)", APIType: "TEXT"},
+			field: schemamodel.Field{Name: "amount", Type: "DECIMAL(12,2)", APIType: "TEXT"},
 			maps:  map[string]bool{"TEXT": true},
 		},
 		{
 			// The arm the mapping alone would have refused, and the reason
 			// this is one helper rather than a comparison per exporter.
 			name:  "an override naming a declared enum",
-			field: goschema.Field{Name: "state", Type: "VARCHAR(32)", APIType: "invoice_state"},
+			field: schemamodel.Field{Name: "state", Type: "VARCHAR(32)", APIType: "invoice_state"},
 		},
 	}
 
@@ -347,17 +347,17 @@ func TestRefuseUnknownAPITypeAccepts(t *testing.T) {
 func TestRefuseUnknownAPITypeRefuses(t *testing.T) {
 	tests := []struct {
 		name  string
-		field goschema.Field
+		field schemamodel.Field
 	}{
 		{
 			name:  "an override that is neither mapped nor an enum",
-			field: goschema.Field{Name: "amount", Type: "DECIMAL(12,2)", APIType: "money_ish"},
+			field: schemamodel.Field{Name: "amount", Type: "DECIMAL(12,2)", APIType: "money_ish"},
 		},
 		{
 			// The enum arm reads the OVERRIDE, not the column: a column that
 			// happens to be an enum does not license an unmappable override.
 			name:  "an enum column with an unmappable override",
-			field: goschema.Field{Name: "state", Type: "invoice_state", APIType: "money_ish"},
+			field: schemamodel.Field{Name: "state", Type: "invoice_state", APIType: "money_ish"},
 		},
 	}
 
@@ -382,10 +382,10 @@ func TestRefuseUnknownAPITypeRefuses(t *testing.T) {
 // every target, and a per-target name exists for the case the shared one cannot
 // cover.
 func TestFieldAPINamePrecedence(t *testing.T) {
-	declared := goschema.Field{
+	declared := schemamodel.Field{
 		Name:    "billing_amount_minor",
 		APIName: "amount",
-		APINames: goschema.TargetNames{
+		APINames: schemamodel.TargetNames{
 			GraphQL:  "amountMinor",
 			Protobuf: "amount_minor",
 		},
@@ -393,7 +393,7 @@ func TestFieldAPINamePrecedence(t *testing.T) {
 
 	tests := []struct {
 		name   string
-		field  goschema.Field
+		field  schemamodel.Field
 		target schemaexport.Target
 		want   string
 	}{
@@ -417,7 +417,7 @@ func TestFieldAPINamePrecedence(t *testing.T) {
 		},
 		{
 			name:   "no declaration at all is the column name",
-			field:  goschema.Field{Name: "billing_amount_minor"},
+			field:  schemamodel.Field{Name: "billing_amount_minor"},
 			target: schemaexport.TargetGraphQL,
 			want:   "billing_amount_minor",
 		},
@@ -441,15 +441,15 @@ func TestFieldAPINamePrecedence(t *testing.T) {
 
 // The table-level half resolves the same way, from the same declarations.
 func TestTableAPINamePrecedence(t *testing.T) {
-	declared := goschema.Table{
+	declared := schemamodel.Table{
 		Name:     "billing_invoices",
 		APIName:  "invoices",
-		APINames: goschema.TargetNames{Protobuf: "invoice_records"},
+		APINames: schemamodel.TargetNames{Protobuf: "invoice_records"},
 	}
 
 	tests := []struct {
 		name   string
-		table  goschema.Table
+		table  schemamodel.Table
 		target schemaexport.Target
 		want   string
 	}{
@@ -467,7 +467,7 @@ func TestTableAPINamePrecedence(t *testing.T) {
 		},
 		{
 			name:   "no declaration at all is the table name",
-			table:  goschema.Table{Name: "billing_invoices"},
+			table:  schemamodel.Table{Name: "billing_invoices"},
 			target: schemaexport.TargetOpenAPI,
 			want:   "billing_invoices",
 		},
@@ -486,13 +486,13 @@ func TestTableAPINamePrecedence(t *testing.T) {
 func TestValidateFieldAPINamesRefusesAPerTargetCollision(t *testing.T) {
 	c := qt.New(t)
 
-	table := goschema.Table{Name: "invoices"}
-	fields := []goschema.Field{
+	table := schemamodel.Table{Name: "invoices"}
+	fields := []schemamodel.Field{
 		{Name: "net_minor", APIName: "net"},
 		{
 			Name:     "gross_minor",
 			APIName:  "gross",
-			APINames: goschema.TargetNames{GraphQL: "net"},
+			APINames: schemamodel.TargetNames{GraphQL: "net"},
 		},
 	}
 

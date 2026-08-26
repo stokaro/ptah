@@ -11,14 +11,14 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
-func postgresIndexDBInfo() dbschematypes.DBInfo {
-	return dbschematypes.DBInfo{
+func postgresIndexDBInfo() catalog.ServerInfo {
+	return catalog.ServerInfo{
 		Dialect:      platform.Postgres,
 		Capabilities: capability.Postgres17(),
 	}
@@ -36,43 +36,43 @@ func postgresIndexDBInfo() dbschematypes.DBInfo {
 func TestConcurrentIndexRefsForPopulatedTables_PartitionedAndUnknownStats(t *testing.T) {
 	tests := []struct {
 		name   string
-		tables []dbschematypes.DBTable
-		want   []types.IndexRef
+		tables []catalog.Table
+		want   []difftypes.IndexRef
 	}{
 		{
 			name:   "populated ordinary table builds concurrently",
-			tables: []dbschematypes.DBTable{{Name: "events", EstimatedRows: 5000}},
-			want:   []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
+			tables: []catalog.Table{{Name: "events", EstimatedRows: 5000}},
+			want:   []difftypes.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
 		},
 		{
 			// The discriminating row: an exclusion keyed on "the schema contains
 			// a partitioned table" rather than on "this index names one" passes
 			// every other row and fails here.
 			name: "an unrelated partitioned table does not downgrade the build",
-			tables: []dbschematypes.DBTable{
+			tables: []catalog.Table{
 				{Name: "events", EstimatedRows: 5000},
 				{Name: "measurements", EstimatedRows: 5000, Partitioned: true},
 			},
-			want: []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
+			want: []difftypes.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
 		},
 		{
 			name:   "reported empty table stays transactional",
-			tables: []dbschematypes.DBTable{{Name: "events", EstimatedRows: 0}},
+			tables: []catalog.Table{{Name: "events", EstimatedRows: 0}},
 			want:   nil,
 		},
 		{
 			name:   "unreported row statistics build concurrently",
-			tables: []dbschematypes.DBTable{{Name: "events", EstimatedRows: 0, RowStatsUnknown: true}},
-			want:   []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
+			tables: []catalog.Table{{Name: "events", EstimatedRows: 0, RowStatsUnknown: true}},
+			want:   []difftypes.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
 		},
 		{
 			name:   "populated partitioned parent stays transactional",
-			tables: []dbschematypes.DBTable{{Name: "events", EstimatedRows: 5000, Partitioned: true}},
+			tables: []catalog.Table{{Name: "events", EstimatedRows: 5000, Partitioned: true}},
 			want:   nil,
 		},
 		{
 			name: "partitioned parent with unreported statistics stays transactional",
-			tables: []dbschematypes.DBTable{{
+			tables: []catalog.Table{{
 				Name:            "events",
 				EstimatedRows:   0,
 				RowStatsUnknown: true,
@@ -85,14 +85,14 @@ func TestConcurrentIndexRefsForPopulatedTables_PartitionedAndUnknownStats(t *tes
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := &types.SchemaDiff{}
-			diff.SetIndexAdditions([]types.IndexRef{
+			diff := &difftypes.SchemaDiff{}
+			diff.SetIndexAdditions([]difftypes.IndexRef{
 				{Name: "idx_events_tenant", TableName: "events"},
 			})
 
 			got := concurrentIndexRefsForPopulatedTables(
 				diff,
-				&dbschematypes.DBSchema{Tables: tt.tables},
+				&catalog.Database{Tables: tt.tables},
 				postgresIndexDBInfo(),
 			)
 
@@ -108,14 +108,14 @@ func TestConcurrentIndexRefsForPopulatedTables_PartitionedAndUnknownStats(t *tes
 // before a migration file, its checksum, and its commit exist.
 func TestConcurrentIndexPolicy_RefusesPartitionedParent(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{}
-	diff.SetIndexAdditions([]types.IndexRef{
+	diff := &difftypes.SchemaDiff{}
+	diff.SetIndexAdditions([]difftypes.IndexRef{
 		{Name: "idx_events_tenant", TableName: "events"},
 	})
 
 	refs, err := concurrentIndexRefsForPolicy(
 		diff,
-		&dbschematypes.DBSchema{Tables: []dbschematypes.DBTable{{Name: "events", Partitioned: true}}},
+		&catalog.Database{Tables: []catalog.Table{{Name: "events", Partitioned: true}}},
 		postgresIndexDBInfo(),
 		DiffPolicy{ConcurrentIndex: true},
 	)
@@ -133,38 +133,38 @@ func TestConcurrentIndexPolicy_RefusesPartitionedParent(t *testing.T) {
 func TestConcurrentIndexPolicy_HonorsATableTheBuildIsLegalOn(t *testing.T) {
 	tests := []struct {
 		name   string
-		tables []dbschematypes.DBTable
-		want   []types.IndexRef
+		tables []catalog.Table
+		want   []difftypes.IndexRef
 	}{
 		{
 			name:   "create over an ordinary table is honored",
-			tables: []dbschematypes.DBTable{{Name: "events"}},
-			want:   []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
+			tables: []catalog.Table{{Name: "events"}},
+			want:   []difftypes.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
 		},
 		{
 			// The discriminating row: a refusal keyed on "the schema contains a
 			// partitioned table" rather than on "this index names one" passes
 			// the refusal test and fails here.
 			name: "an unrelated partitioned table does not refuse the run",
-			tables: []dbschematypes.DBTable{
+			tables: []catalog.Table{
 				{Name: "events"},
 				{Name: "measurements", Partitioned: true},
 			},
-			want: []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
+			want: []difftypes.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := &types.SchemaDiff{}
-			diff.SetIndexAdditions([]types.IndexRef{
+			diff := &difftypes.SchemaDiff{}
+			diff.SetIndexAdditions([]difftypes.IndexRef{
 				{Name: "idx_events_tenant", TableName: "events"},
 			})
 
 			refs, err := concurrentIndexRefsForPolicy(
 				diff,
-				&dbschematypes.DBSchema{Tables: tt.tables},
+				&catalog.Database{Tables: tt.tables},
 				postgresIndexDBInfo(),
 				DiffPolicy{ConcurrentIndex: true},
 			)
@@ -182,14 +182,14 @@ func TestConcurrentIndexPolicy_HonorsATableTheBuildIsLegalOn(t *testing.T) {
 // build is -- and a rollback nobody ran is where that goes unnoticed.
 func TestConcurrentIndexDropPolicy_RefusesPartitionedParent(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{}
-	diff.SetIndexRemovals([]types.IndexRef{
+	diff := &difftypes.SchemaDiff{}
+	diff.SetIndexRemovals([]difftypes.IndexRef{
 		{Name: "idx_events_tenant", TableName: "events"},
 	})
 
 	refs, err := concurrentIndexDropRefsForPolicy(
 		diff,
-		&dbschematypes.DBSchema{Tables: []dbschematypes.DBTable{{Name: "events", Partitioned: true}}},
+		&catalog.Database{Tables: []catalog.Table{{Name: "events", Partitioned: true}}},
 		postgresIndexDBInfo(),
 		DiffPolicy{ConcurrentIndexDrop: true},
 	)
@@ -207,35 +207,35 @@ func TestConcurrentIndexDropPolicy_RefusesPartitionedParent(t *testing.T) {
 func TestConcurrentIndexDropPolicy_HonorsATableTheDropIsLegalOn(t *testing.T) {
 	tests := []struct {
 		name   string
-		tables []dbschematypes.DBTable
-		want   []types.IndexRef
+		tables []catalog.Table
+		want   []difftypes.IndexRef
 	}{
 		{
 			name:   "drop over an ordinary table is honored",
-			tables: []dbschematypes.DBTable{{Name: "events"}},
-			want:   []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
+			tables: []catalog.Table{{Name: "events"}},
+			want:   []difftypes.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
 		},
 		{
 			name: "an unrelated partitioned table does not refuse the run",
-			tables: []dbschematypes.DBTable{
+			tables: []catalog.Table{
 				{Name: "events"},
 				{Name: "measurements", Partitioned: true},
 			},
-			want: []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
+			want: []difftypes.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := &types.SchemaDiff{}
-			diff.SetIndexRemovals([]types.IndexRef{
+			diff := &difftypes.SchemaDiff{}
+			diff.SetIndexRemovals([]difftypes.IndexRef{
 				{Name: "idx_events_tenant", TableName: "events"},
 			})
 
 			refs, err := concurrentIndexDropRefsForPolicy(
 				diff,
-				&dbschematypes.DBSchema{Tables: tt.tables},
+				&catalog.Database{Tables: tt.tables},
 				postgresIndexDBInfo(),
 				DiffPolicy{ConcurrentIndexDrop: true},
 			)

@@ -47,18 +47,22 @@ additionally needs a reviewed entry in `docs/public_api_approvals.txt`.
 The list below is orientation, not the ledger: the core packages a reader
 meets first. `docs/public_api.md` is the authority on what is public.
 
+- `catalog` — the live schema as an introspection read reports it: the current
+  side of every comparison.
 - `core/ast` — dialect-agnostic AST for SQL DDL.
 - `core/astbuilder` — fluent builders that construct `core/ast` nodes without
   hand-written struct literals.
 - `core/goschema` — Go source parsing and entity extraction; the annotation
   parser is `core/goschema/parser.go`.
+- `core/schemamodel` — the schema as a source declares it: the desired side of
+  every comparison, and what every reader produces.
 - `core/renderer` — dialect-specific SQL generation from the AST. The entry
   point is `core/renderer/renderer.go`; per-dialect code sits under
   `core/renderer/internal/dialects/`.
 - `core/platform` — dialect names, normalization, and family predicates such as
   `IsPostgresFamily`.
 - `core/yamlschema` — the YAML authoring format's reader; one of the five
-  readers that produce `goschema.Database`.
+  readers that produce `schemamodel.Database`.
 - `dbschema` — connection management plus schema reading and writing against a
   live database.
 - `migration/generator` — migration file generation from schema diffs.
@@ -1334,8 +1338,8 @@ rules of [`docs/STYLE_GUIDE.md`](docs/STYLE_GUIDE.md) apply in spirit.
   cannot answer which boundary its tests cross, because the helper that opens
   the database usually lives in a sibling file of the same package.
   `integration/planner/postgres/schema_scope_live_test.go` imports nothing but
-  `goschema`, `planner` and `types`, and creates a real PostgreSQL database
-  through `createRLSEnableDatabase` two files over. An import scan calls it
+  `schemamodel`, `planner` and `difftypes`, and creates a real PostgreSQL
+  database through `createRLSEnableDatabase` two files over. An import scan calls it
   boundary-free and is wrong; the name is right. Every package in
   `integration/` crosses a boundary somewhere, so a file that appears not to is
   a question, never an answer.

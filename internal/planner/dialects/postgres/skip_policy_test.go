@@ -5,32 +5,32 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	"go.5x5.cz/ptah/migration/diffpolicy"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
-func skipPolicyFixture() (*types.SchemaDiff, *goschema.Database) {
-	diff := &types.SchemaDiff{
+func skipPolicyFixture() (*difftypes.SchemaDiff, *schemamodel.Database) {
+	diff := &difftypes.SchemaDiff{
 		TablesRemoved: []string{"legacy"},
 		EnumsRemoved:  []string{"legacy_status"},
-		IndexesRemoved: []types.IndexRef{
+		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_legacy", TableName: "users"},
 		},
-		TablesModified: []types.TableDiff{
+		TablesModified: []difftypes.TableDiff{
 			{TableName: "users", ColumnsRemoved: []string{"middle_name"}},
 		},
 	}
-	generated := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "User", Name: "users"}},
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
 	}
-	return diff, generated
+	return diff, desired
 }
 
-func renderPostgresSkip(c *qt.C, planner *postgres.Planner, diff *types.SchemaDiff, generated *goschema.Database) string {
-	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+func renderPostgresSkip(c *qt.C, planner *postgres.Planner, diff *difftypes.SchemaDiff, desired *schemamodel.Database) string {
+	nodes, err := planner.GenerateMigrationASTChecked(diff, desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -38,11 +38,11 @@ func renderPostgresSkip(c *qt.C, planner *postgres.Planner, diff *types.SchemaDi
 }
 
 func TestPlanner_SkipChangeKinds(t *testing.T) {
-	diff, generated := skipPolicyFixture()
+	diff, desired := skipPolicyFixture()
 
 	t.Run("no policy emits every destructive statement", func(t *testing.T) {
 		c := qt.New(t)
-		sql := renderPostgresSkip(c, postgres.New(), diff, generated)
+		sql := renderPostgresSkip(c, postgres.New(), diff, desired)
 		c.Assert(sql, qt.Contains, "DROP TABLE IF EXISTS \"legacy\"")
 		c.Assert(sql, qt.Contains, "DROP TYPE IF EXISTS \"legacy_status\"")
 		c.Assert(sql, qt.Contains, "DROP INDEX IF EXISTS \"idx_legacy\"")
@@ -52,7 +52,7 @@ func TestPlanner_SkipChangeKinds(t *testing.T) {
 	t.Run("skip drop_table omits the drop and comments it", func(t *testing.T) {
 		c := qt.New(t)
 		planner := postgres.New().WithSkipChangeKinds(diffpolicy.DropTable)
-		sql := renderPostgresSkip(c, planner, diff, generated)
+		sql := renderPostgresSkip(c, planner, diff, desired)
 		// The DDL statement is gone; only the SKIP comment mentions the table.
 		c.Assert(sql, qt.Not(qt.Contains), "DROP TABLE IF EXISTS")
 		c.Assert(sql, qt.Contains, "SKIP: DROP TABLE of legacy omitted by diff policy (skip: drop_table)")
@@ -67,7 +67,7 @@ func TestPlanner_SkipChangeKinds(t *testing.T) {
 		planner := postgres.New().WithSkipChangeKinds(
 			diffpolicy.DropTable, diffpolicy.DropColumn, diffpolicy.DropIndex, diffpolicy.DropEnum,
 		)
-		sql := renderPostgresSkip(c, planner, diff, generated)
+		sql := renderPostgresSkip(c, planner, diff, desired)
 		c.Assert(sql, qt.Not(qt.Contains), "DROP TABLE IF EXISTS")
 		c.Assert(sql, qt.Not(qt.Contains), "DROP TYPE IF EXISTS")
 		c.Assert(sql, qt.Not(qt.Contains), "DROP INDEX IF EXISTS")
@@ -83,8 +83,8 @@ func TestPlanner_SkipChangeKinds(t *testing.T) {
 		base := postgres.New()
 		derived := base.WithSkipChangeKinds(diffpolicy.DropTable)
 		// The base planner is unaffected by the derived policy.
-		c.Assert(renderPostgresSkip(c, base, diff, generated), qt.Contains, "DROP TABLE IF EXISTS")
-		c.Assert(renderPostgresSkip(c, derived, diff, generated), qt.Not(qt.Contains), "DROP TABLE IF EXISTS")
+		c.Assert(renderPostgresSkip(c, base, diff, desired), qt.Contains, "DROP TABLE IF EXISTS")
+		c.Assert(renderPostgresSkip(c, derived, diff, desired), qt.Not(qt.Contains), "DROP TABLE IF EXISTS")
 		// Passing no kinds returns the receiver unchanged.
 		c.Assert(base.WithSkipChangeKinds(), qt.Equals, base)
 	})

@@ -16,7 +16,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/cmd/schemapull"
 	"go.5x5.cz/ptah/cmd/schemapush"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/annotationschema"
 	"go.5x5.cz/ptah/internal/dbmlrender"
 	"go.5x5.cz/ptah/internal/docsrender"
@@ -543,7 +543,7 @@ func runHCLExport(cmd *cobra.Command, opts exportOptions, rootDir string) error 
 // written verbatim to stdout (for piping to a validator); with --out it is
 // written to the file and a human-readable summary is printed. Diagnostics always
 // go to stderr so they never corrupt a piped schema.
-func emitAPISchema(cmd *cobra.Command, opts exportOptions, db *goschema.Database, data []byte, diagnostics []schemaexport.Diagnostic, label string) error {
+func emitAPISchema(cmd *cobra.Command, opts exportOptions, db *schemamodel.Database, data []byte, diagnostics []schemaexport.Diagnostic, label string) error {
 	errOut := cmd.ErrOrStderr()
 	for _, diagnostic := range diagnostics {
 		fmt.Fprintf(errOut, "%s: %s: %s\n", diagnostic.Severity, diagnostic.Path, diagnostic.Message)

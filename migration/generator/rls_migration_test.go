@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -16,20 +16,20 @@ func TestRLSMigrationGeneration(t *testing.T) {
 	c := qt.New(t)
 
 	// Parse the test entities with RLS annotations
-	generated, err := goschema.ParseDir("../../integration/fixtures/entities/016-rls-multiple-files")
+	desired, err := goschema.ParseDir("../../integration/fixtures/entities/016-rls-multiple-files")
 	c.Assert(err, qt.IsNil)
 
 	// Create an empty database schema (simulating a fresh database)
-	dbSchema := &types.DBSchema{
-		Tables:      make([]types.DBTable, 0),
-		RLSPolicies: make([]types.DBRLSPolicy, 0),
+	dbSchema := &catalog.Database{
+		Tables:      make([]catalog.Table, 0),
+		RLSPolicies: make([]catalog.RLSPolicy, 0),
 	}
 
 	// Generate schema diff
-	diff := schemadiff.Compare(generated, dbSchema)
+	diff := schemadiff.Compare(desired, dbSchema)
 
 	// Generate migration SQL
-	sql, err := planner.GenerateSchemaDiffSQL(diff, generated, platform.Postgres)
+	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 

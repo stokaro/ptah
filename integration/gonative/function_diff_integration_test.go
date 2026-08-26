@@ -10,7 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/dbschema/postgres"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -63,8 +63,8 @@ func TestFunctionDiff_BodyAndSecurityChange_Integration(t *testing.T) {
 
 	// Define the "after" target: same name/signature, but the body switches to
 	// transaction-local set_config and SECURITY DEFINER is dropped.
-	target := &goschema.Database{
-		Functions: []goschema.Function{
+	target := &schemamodel.Database{
+		Functions: []schemamodel.Function{
 			{
 				Name:       "ptah_test_set_group_context",
 				Parameters: "group_id_param text",
@@ -151,8 +151,8 @@ func TestFunctionDiff_VolatilityChange_Integration(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	// Target schema marks the same function as STABLE.
-	target := &goschema.Database{
-		Functions: []goschema.Function{
+	target := &schemamodel.Database{
+		Functions: []schemamodel.Function{
 			{
 				Name:       "ptah_test_get_current_group_id",
 				Parameters: "",

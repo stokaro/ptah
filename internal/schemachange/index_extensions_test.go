@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // TestTheExtensionAnIndexNeedsIsNotCompared pins the half of the fact that is
@@ -42,22 +42,22 @@ func TestTheExtensionAnIndexNeedsIsNotCompared(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			description := describedTable(
-				goschema.Field{StructName: "Widget", Name: "n", Type: "int", Nullable: true},
-				goschema.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true},
+				schemamodel.Field{StructName: "Widget", Name: "n", Type: "int", Nullable: true},
+				schemamodel.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true},
 			)
-			description.Indexes = append(description.Indexes, goschema.Index{
+			description.Indexes = append(description.Indexes, schemamodel.Index{
 				StructName: "Widget", Name: "widget_gin", Fields: test.declaredFields,
 			})
-			catalog := catalogTable(
-				dbschematypes.DBColumn{Name: "n", DataType: "integer", IsNullable: "YES"},
-				dbschematypes.DBColumn{Name: "code", DataType: "text", IsNullable: "YES"},
+			current := catalogTable(
+				catalog.Column{Name: "n", DataType: "integer", IsNullable: "YES"},
+				catalog.Column{Name: "code", DataType: "text", IsNullable: "YES"},
 			)
-			catalog.Indexes = []dbschematypes.DBIndex{{
+			current.Indexes = []catalog.Index{{
 				Name: "widget_gin", TableName: "widget", Schema: "public",
 				Columns: []string{"n"}, RequiresExtensions: []string{"btree_gin"},
 			}}
 
-			changes := changesFor(c, description, catalog)
+			changes := changesFor(c, description, current)
 
 			c.Assert(changes, qt.HasLen, test.wantChanges)
 		})

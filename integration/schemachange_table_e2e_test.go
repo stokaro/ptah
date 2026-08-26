@@ -11,8 +11,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/schemachange"
 )
@@ -47,7 +47,7 @@ func TestSchemaChangeTablePipelinePostgresE2E(t *testing.T) {
 	profile := livePostgresProfile()
 
 	// The creation, columns and key included.
-	creation := planFor(c, liveWidget(nil), &dbschematypes.DBSchema{}, profile)
+	creation := planFor(c, liveWidget(nil), &catalog.Database{}, profile)
 	c.Assert(creation, qt.HasLen, 1)
 	execute(c, ctx, db, creation)
 	// The TYPES as well as the names: a CREATE TABLE that rendered every
@@ -59,7 +59,7 @@ func TestSchemaChangeTablePipelinePostgresE2E(t *testing.T) {
 
 	// A column the table does not have. It is nullable, so nothing about the
 	// rows it will not have can stop it.
-	addition := planFor(c, liveWidget([]goschema.Field{{
+	addition := planFor(c, liveWidget([]schemamodel.Field{{
 		StructName: "Widget", Name: "label", Type: "text", Nullable: true,
 	}}), liveWidgetCatalog(nil), profile)
 	c.Assert(addition, qt.HasLen, 1)
@@ -67,7 +67,7 @@ func TestSchemaChangeTablePipelinePostgresE2E(t *testing.T) {
 	c.Assert(liveColumns(c, ctx, db, "widget"), qt.DeepEquals, []string{"code text", "id integer", "label text"})
 
 	// A column the desired schema no longer declares.
-	removal := planFor(c, liveWidget(nil), liveWidgetCatalog([]dbschematypes.DBColumn{{
+	removal := planFor(c, liveWidget(nil), liveWidgetCatalog([]catalog.Column{{
 		Name: "label", DataType: "text", IsNullable: "YES",
 	}}), profile)
 	c.Assert(removal, qt.HasLen, 1)
@@ -75,7 +75,7 @@ func TestSchemaChangeTablePipelinePostgresE2E(t *testing.T) {
 	c.Assert(liveColumns(c, ctx, db, "widget"), qt.DeepEquals, []string{"code text", "id integer"})
 
 	// The whole table.
-	drop := planFor(c, &goschema.Database{}, liveWidgetCatalog(nil), profile)
+	drop := planFor(c, &schemamodel.Database{}, liveWidgetCatalog(nil), profile)
 	c.Assert(drop, qt.HasLen, 1)
 	execute(c, ctx, db, drop)
 	c.Assert(liveColumns(c, ctx, db, "widget"), qt.HasLen, 0)
@@ -112,12 +112,12 @@ func TestSchemaChangeNotNullColumnRefusalIsTheEnginesPostgresE2E(t *testing.T) {
 
 	// The catalog as a read of THIS database reports it: one row, statistics
 	// available.
-	catalog := liveWidgetCatalog(nil)
-	catalog.Tables[0].EstimatedRows = 1
+	current := liveWidgetCatalog(nil)
+	current.Tables[0].EstimatedRows = 1
 
-	changes := changesFor(c, liveWidget([]goschema.Field{{
+	changes := changesFor(c, liveWidget([]schemamodel.Field{{
 		StructName: "Widget", Name: "label", Type: "text",
-	}}), catalog, livePostgresProfile())
+	}}), current, livePostgresProfile())
 
 	c.Assert(changes, qt.HasLen, 1)
 	c.Assert(changes[0].Status, qt.Equals, schemachange.Blocked)
@@ -130,26 +130,26 @@ func TestSchemaChangeNotNullColumnRefusalIsTheEnginesPostgresE2E(t *testing.T) {
 }
 
 // liveWidget is a table with a key, a column, and whatever else a row adds.
-func liveWidget(extra []goschema.Field) *goschema.Database {
-	fields := []goschema.Field{
+func liveWidget(extra []schemamodel.Field) *schemamodel.Database {
+	fields := []schemamodel.Field{
 		{StructName: "Widget", Name: "id", Type: "integer", Primary: true},
 		{StructName: "Widget", Name: "code", Type: "text", Nullable: true},
 	}
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Widget", Name: "widget"}},
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Widget", Name: "widget"}},
 		Fields: append(fields, extra...),
 	}
 }
 
 // liveWidgetCatalog is that table as a catalog read reports it, plus whatever
 // else a step has added.
-func liveWidgetCatalog(extra []dbschematypes.DBColumn) *dbschematypes.DBSchema {
-	columns := []dbschematypes.DBColumn{
+func liveWidgetCatalog(extra []catalog.Column) *catalog.Database {
+	columns := []catalog.Column{
 		{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
 		{Name: "code", DataType: "text", IsNullable: "YES"},
 	}
-	return &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{{
+	return &catalog.Database{
+		Tables: []catalog.Table{{
 			Name: "widget", Schema: "public", Columns: append(columns, extra...),
 		}},
 	}

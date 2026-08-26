@@ -19,8 +19,8 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/cmd/internal/migrateflags"
 	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlascompatpolicy"
 	"go.5x5.cz/ptah/internal/atlasfilter"
@@ -823,7 +823,7 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	var desired *goschema.Database
+	var desired *schemamodel.Database
 	if len(opts.toURLs) > 0 {
 		schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(opts.devURL, opts.url, "url")
 		// The sources, so a desired state the env selected through
@@ -951,7 +951,7 @@ type rehearsePlanParams struct {
 	policy     planRehearsalPolicy
 	format     atlasschema.PlanFormat
 	statements []string
-	desired    *goschema.Database
+	desired    *schemamodel.Database
 	exclude    []string
 	txMode     migrator.MigrationTxMode
 	// devURL is the operator-supplied dev database, empty when none was given.
@@ -1016,7 +1016,7 @@ func resolveAtlasSchemaApplyPlanRehearsal(
 	format atlasschema.PlanFormat,
 	dialect,
 	devURL string,
-	desired *goschema.Database,
+	desired *schemamodel.Database,
 ) (planRehearsalDecision, error) {
 	if desired == nil {
 		// Without a desired state there is nothing to verify the replay

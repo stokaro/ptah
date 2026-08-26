@@ -7,29 +7,29 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestPlanner_GenerateMigrationSQL_EnumsAdded(t *testing.T) {
 	tests := []struct {
-		name      string
-		diff      *types.SchemaDiff
-		generated *goschema.Database
-		expected  func(nodes []ast.Node) bool
+		name     string
+		diff     *difftypes.SchemaDiff
+		desired  *schemamodel.Database
+		expected func(nodes []ast.Node) bool
 	}{
 		{
 			name: "single enum added",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				EnumsAdded: []string{"user_status"},
 			},
-			generated: &goschema.Database{
-				Enums: []goschema.Enum{
+			desired: &schemamodel.Database{
+				Enums: []schemamodel.Enum{
 					{Name: "user_status", Values: []string{"active", "inactive"}},
 				},
 			},
@@ -49,11 +49,11 @@ func TestPlanner_GenerateMigrationSQL_EnumsAdded(t *testing.T) {
 		},
 		{
 			name: "multiple enums added",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				EnumsAdded: []string{"user_status", "order_status"},
 			},
-			generated: &goschema.Database{
-				Enums: []goschema.Enum{
+			desired: &schemamodel.Database{
+				Enums: []schemamodel.Enum{
 					{Name: "user_status", Values: []string{"active", "inactive"}},
 					{Name: "order_status", Values: []string{"pending", "completed", "canceled"}},
 				},
@@ -87,7 +87,7 @@ func TestPlanner_GenerateMigrationSQL_EnumsAdded(t *testing.T) {
 			c := qt.New(t)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationASTChecked(tt.diff, tt.generated)
+			nodes, err := planner.GenerateMigrationASTChecked(tt.diff, tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -97,22 +97,22 @@ func TestPlanner_GenerateMigrationSQL_EnumsAdded(t *testing.T) {
 
 func TestPlanner_GenerateMigrationSQL_EnumsModified(t *testing.T) {
 	tests := []struct {
-		name      string
-		diff      *types.SchemaDiff
-		generated *goschema.Database
-		expected  func(nodes []ast.Node) bool
+		name     string
+		diff     *difftypes.SchemaDiff
+		desired  *schemamodel.Database
+		expected func(nodes []ast.Node) bool
 	}{
 		{
 			name: "enum with values added",
-			diff: &types.SchemaDiff{
-				EnumsModified: []types.EnumDiff{
+			diff: &difftypes.SchemaDiff{
+				EnumsModified: []difftypes.EnumDiff{
 					{
 						EnumName:    "user_status",
 						ValuesAdded: []string{"suspended"},
 					},
 				},
 			},
-			generated: &goschema.Database{},
+			desired: &schemamodel.Database{},
 			expected: func(nodes []ast.Node) bool {
 				if len(nodes) != 1 {
 					return false
@@ -126,22 +126,22 @@ func TestPlanner_GenerateMigrationSQL_EnumsModified(t *testing.T) {
 		},
 		{
 			name: "enum with values removed recreates type",
-			diff: &types.SchemaDiff{
-				EnumsModified: []types.EnumDiff{
+			diff: &difftypes.SchemaDiff{
+				EnumsModified: []difftypes.EnumDiff{
 					{
 						EnumName:      "user_status",
 						ValuesRemoved: []string{"deprecated"},
 					},
 				},
 			},
-			generated: &goschema.Database{
-				Enums: []goschema.Enum{
+			desired: &schemamodel.Database{
+				Enums: []schemamodel.Enum{
 					{Name: "user_status", Values: []string{"active", "suspended"}},
 				},
-				Tables: []goschema.Table{
+				Tables: []schemamodel.Table{
 					{Name: "users", StructName: "User"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{
 						Name:       "status",
 						Type:       "user_status",
@@ -175,7 +175,7 @@ func TestPlanner_GenerateMigrationSQL_EnumsModified(t *testing.T) {
 			c := qt.New(t)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationASTChecked(tt.diff, tt.generated)
+			nodes, err := planner.GenerateMigrationASTChecked(tt.diff, tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -185,21 +185,21 @@ func TestPlanner_GenerateMigrationSQL_EnumsModified(t *testing.T) {
 
 func TestPlanner_GenerateMigrationSQL_TablesAdded(t *testing.T) {
 	tests := []struct {
-		name      string
-		diff      *types.SchemaDiff
-		generated *goschema.Database
-		expected  func(nodes []ast.Node) bool
+		name     string
+		diff     *difftypes.SchemaDiff
+		desired  *schemamodel.Database
+		expected func(nodes []ast.Node) bool
 	}{
 		{
 			name: "single table added",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				TablesAdded: []string{"users"},
 			},
-			generated: &goschema.Database{
-				Tables: []goschema.Table{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{Name: "users", StructName: "User"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{Name: "id", Type: "SERIAL", StructName: "User", Primary: true},
 					{Name: "email", Type: "VARCHAR(255)", StructName: "User", Nullable: false},
 				},
@@ -217,16 +217,16 @@ func TestPlanner_GenerateMigrationSQL_TablesAdded(t *testing.T) {
 		},
 		{
 			name: "composite primary key is created with new table",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				TablesAdded: []string{"memberships"},
 			},
-			generated: &goschema.Database{
-				Tables: []goschema.Table{{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{{
 					Name:       "memberships",
 					StructName: "Membership",
 					PrimaryKey: []string{"org_id", "user_id"},
 				}},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{Name: "org_id", Type: "INTEGER", StructName: "Membership", Nullable: false},
 					{Name: "user_id", Type: "INTEGER", StructName: "Membership", Nullable: false},
 					{Name: "role", Type: "TEXT", StructName: "Membership", Nullable: false},
@@ -244,7 +244,7 @@ func TestPlanner_GenerateMigrationSQL_TablesAdded(t *testing.T) {
 			c := qt.New(t)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationASTChecked(tt.diff, tt.generated)
+			nodes, err := planner.GenerateMigrationASTChecked(tt.diff, tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -254,26 +254,26 @@ func TestPlanner_GenerateMigrationSQL_TablesAdded(t *testing.T) {
 
 func TestPlanner_GenerateMigrationSQL_TablesModified(t *testing.T) {
 	tests := []struct {
-		name      string
-		diff      *types.SchemaDiff
-		generated *goschema.Database
-		expected  func(nodes []ast.Node) bool
+		name     string
+		diff     *difftypes.SchemaDiff
+		desired  *schemamodel.Database
+		expected func(nodes []ast.Node) bool
 	}{
 		{
 			name: "table with columns added",
-			diff: &types.SchemaDiff{
-				TablesModified: []types.TableDiff{
+			diff: &difftypes.SchemaDiff{
+				TablesModified: []difftypes.TableDiff{
 					{
 						TableName:    "users",
 						ColumnsAdded: []string{"created_at"},
 					},
 				},
 			},
-			generated: &goschema.Database{
-				Tables: []goschema.Table{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{Name: "users", StructName: "User"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{Name: "created_at", Type: "TIMESTAMP", StructName: "User", Nullable: false},
 				},
 			},
@@ -299,19 +299,19 @@ func TestPlanner_GenerateMigrationSQL_TablesModified(t *testing.T) {
 		},
 		{
 			name: "column with foreign key added - separated operations",
-			diff: &types.SchemaDiff{
-				TablesModified: []types.TableDiff{
+			diff: &difftypes.SchemaDiff{
+				TablesModified: []difftypes.TableDiff{
 					{
 						TableName:    "posts",
 						ColumnsAdded: []string{"user_id"},
 					},
 				},
 			},
-			generated: &goschema.Database{
-				Tables: []goschema.Table{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{Name: "posts", StructName: "Post"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{
 						Name:           "user_id",
 						Type:           "INTEGER",
@@ -395,7 +395,7 @@ func TestPlanner_GenerateMigrationSQL_TablesModified(t *testing.T) {
 			c := qt.New(t)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationASTChecked(tt.diff, tt.generated)
+			nodes, err := planner.GenerateMigrationASTChecked(tt.diff, tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -407,15 +407,15 @@ func TestPlanner_GenerateMigrationSQL_TablesModified(t *testing.T) {
 // Foreign key constraint generation before referenced column creation causes migration failure
 func TestPlanner_ForeignKeyDependencyOrdering(t *testing.T) {
 	tests := []struct {
-		name      string
-		diff      *types.SchemaDiff
-		generated *goschema.Database
-		expected  func(nodes []ast.Node) bool
+		name     string
+		diff     *difftypes.SchemaDiff
+		desired  *schemamodel.Database
+		expected func(nodes []ast.Node) bool
 	}{
 		{
 			name: "foreign key references newly added column - proper ordering",
-			diff: &types.SchemaDiff{
-				TablesModified: []types.TableDiff{
+			diff: &difftypes.SchemaDiff{
+				TablesModified: []difftypes.TableDiff{
 					{
 						TableName:    "users",
 						ColumnsAdded: []string{"id"},
@@ -426,12 +426,12 @@ func TestPlanner_ForeignKeyDependencyOrdering(t *testing.T) {
 					},
 				},
 			},
-			generated: &goschema.Database{
-				Tables: []goschema.Table{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{Name: "users", StructName: "User"},
 					{Name: "restore_steps", StructName: "RestoreStep"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{
 						Name:       "id",
 						Type:       "TEXT",
@@ -531,7 +531,7 @@ func TestPlanner_ForeignKeyDependencyOrdering(t *testing.T) {
 			c := qt.New(t)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationASTChecked(tt.diff, tt.generated)
+			nodes, err := planner.GenerateMigrationASTChecked(tt.diff, tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -544,8 +544,8 @@ func TestPlanner_ForeignKeyDependencyOrdering(t *testing.T) {
 func TestPlanner_ForeignKeyDependencyOrdering_SQLOutput(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
-		TablesModified: []types.TableDiff{
+	diff := &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{
 			{
 				TableName:    "users",
 				ColumnsAdded: []string{"id"},
@@ -557,12 +557,12 @@ func TestPlanner_ForeignKeyDependencyOrdering_SQLOutput(t *testing.T) {
 		},
 	}
 
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: "users", StructName: "User"},
 			{Name: "restore_steps", StructName: "RestoreStep"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{
 				Name:       "id",
 				Type:       "TEXT",
@@ -582,7 +582,7 @@ func TestPlanner_ForeignKeyDependencyOrdering_SQLOutput(t *testing.T) {
 	}
 
 	planner := &postgres.Planner{}
-	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	nodes, err := planner.GenerateMigrationASTChecked(diff, desired)
 	c.Assert(err, qt.IsNil)
 
 	// Render to SQL to verify the actual output
@@ -621,20 +621,20 @@ func TestPlanner_ForeignKeyDependencyOrdering_SQLOutput(t *testing.T) {
 
 func TestPlanner_GenerateMigrationSQL_IndexesAdded(t *testing.T) {
 	tests := []struct {
-		name      string
-		diff      *types.SchemaDiff
-		generated *goschema.Database
-		expected  func(nodes []ast.Node) bool
+		name     string
+		diff     *difftypes.SchemaDiff
+		desired  *schemamodel.Database
+		expected func(nodes []ast.Node) bool
 	}{
 		{
 			name: "single index added",
-			diff: &types.SchemaDiff{
-				IndexesAdded: []types.IndexRef{
+			diff: &difftypes.SchemaDiff{
+				IndexesAdded: []difftypes.IndexRef{
 					{Name: "idx_users_email", TableName: "users"},
 				},
 			},
-			generated: &goschema.Database{
-				Indexes: []goschema.Index{
+			desired: &schemamodel.Database{
+				Indexes: []schemamodel.Index{
 					{Name: "idx_users_email", TableName: "users", Fields: []string{"email"}},
 				},
 			},
@@ -653,13 +653,13 @@ func TestPlanner_GenerateMigrationSQL_IndexesAdded(t *testing.T) {
 		},
 		{
 			name: "unique index added",
-			diff: &types.SchemaDiff{
-				IndexesAdded: []types.IndexRef{
+			diff: &difftypes.SchemaDiff{
+				IndexesAdded: []difftypes.IndexRef{
 					{Name: "uk_users_email", TableName: "users"},
 				},
 			},
-			generated: &goschema.Database{
-				Indexes: []goschema.Index{
+			desired: &schemamodel.Database{
+				Indexes: []schemamodel.Index{
 					{Name: "uk_users_email", TableName: "users", Fields: []string{"email"}, Unique: true},
 				},
 			},
@@ -676,18 +676,18 @@ func TestPlanner_GenerateMigrationSQL_IndexesAdded(t *testing.T) {
 		},
 		{
 			name: "same name index replacement drops before create",
-			diff: &types.SchemaDiff{
-				IndexesAdded: []types.IndexRef{
+			diff: &difftypes.SchemaDiff{
+				IndexesAdded: []difftypes.IndexRef{
 					{Name: "idx_users_c", TableName: "users"},
 				},
-				IndexesRemoved: []types.IndexRef{
+				IndexesRemoved: []difftypes.IndexRef{
 					{Name: "idx_users_c", TableName: "users"},
 				},
 			},
-			generated: func() *goschema.Database {
+			desired: func() *schemamodel.Database {
 				nullsDistinct := false
-				return &goschema.Database{
-					Indexes: []goschema.Index{
+				return &schemamodel.Database{
+					Indexes: []schemamodel.Index{
 						{Name: "idx_users_c", TableName: "users", Fields: []string{"c"}, Unique: true, NullsDistinct: &nullsDistinct},
 					},
 				}
@@ -712,7 +712,7 @@ func TestPlanner_GenerateMigrationSQL_IndexesAdded(t *testing.T) {
 			c := qt.New(t)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationASTChecked(tt.diff, tt.generated)
+			nodes, err := planner.GenerateMigrationASTChecked(tt.diff, tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -722,19 +722,19 @@ func TestPlanner_GenerateMigrationSQL_IndexesAdded(t *testing.T) {
 
 func TestPlanner_GenerateMigrationSQL_IndexesRemoved(t *testing.T) {
 	tests := []struct {
-		name      string
-		diff      *types.SchemaDiff
-		generated *goschema.Database
-		expected  func(nodes []ast.Node) bool
+		name     string
+		diff     *difftypes.SchemaDiff
+		desired  *schemamodel.Database
+		expected func(nodes []ast.Node) bool
 	}{
 		{
 			name: "single index removed",
-			diff: &types.SchemaDiff{
-				IndexesRemoved: []types.IndexRef{
+			diff: &difftypes.SchemaDiff{
+				IndexesRemoved: []difftypes.IndexRef{
 					{Name: "idx_old_index", TableName: "users"},
 				},
 			},
-			generated: &goschema.Database{},
+			desired: &schemamodel.Database{},
 			expected: func(nodes []ast.Node) bool {
 				if len(nodes) != 1 {
 					return false
@@ -748,13 +748,13 @@ func TestPlanner_GenerateMigrationSQL_IndexesRemoved(t *testing.T) {
 		},
 		{
 			name: "multiple indexes removed",
-			diff: &types.SchemaDiff{
-				IndexesRemoved: []types.IndexRef{
+			diff: &difftypes.SchemaDiff{
+				IndexesRemoved: []difftypes.IndexRef{
 					{Name: "idx_old1", TableName: "users"},
 					{Name: "idx_old2", TableName: "orders"},
 				},
 			},
-			generated: &goschema.Database{},
+			desired: &schemamodel.Database{},
 			expected: func(nodes []ast.Node) bool {
 				if len(nodes) != 2 {
 					return false
@@ -780,7 +780,7 @@ func TestPlanner_GenerateMigrationSQL_IndexesRemoved(t *testing.T) {
 			c := qt.New(t)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationASTChecked(tt.diff, tt.generated)
+			nodes, err := planner.GenerateMigrationASTChecked(tt.diff, tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -791,11 +791,11 @@ func TestPlanner_GenerateMigrationSQL_IndexesRemoved(t *testing.T) {
 func TestPlanner_RecreatesGeneratedColumnOnExpressionChange(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
-		TablesModified: []types.TableDiff{
+	diff := &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{
 			{
 				TableName: "users",
-				ColumnsModified: []types.ColumnDiff{
+				ColumnsModified: []difftypes.ColumnDiff{
 					{
 						ColumnName: "slug",
 						Changes: map[string]string{
@@ -806,11 +806,11 @@ func TestPlanner_RecreatesGeneratedColumnOnExpressionChange(t *testing.T) {
 			},
 		},
 	}
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "User", Name: "users"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{
 				StructName:          "User",
 				Name:                "slug",
@@ -822,7 +822,7 @@ func TestPlanner_RecreatesGeneratedColumnOnExpressionChange(t *testing.T) {
 		},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
+	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -834,11 +834,11 @@ func TestPlanner_RecreatesGeneratedColumnOnExpressionChange(t *testing.T) {
 func TestPlanner_GeneratedColumnExpressionChangeOnPostgres16RequiresManualMigration(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
-		TablesModified: []types.TableDiff{
+	diff := &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{
 			{
 				TableName: "users",
-				ColumnsModified: []types.ColumnDiff{
+				ColumnsModified: []difftypes.ColumnDiff{
 					{
 						ColumnName: "slug",
 						Changes: map[string]string{
@@ -849,11 +849,11 @@ func TestPlanner_GeneratedColumnExpressionChangeOnPostgres16RequiresManualMigrat
 			},
 		},
 	}
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "User", Name: "users"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{
 				StructName:          "User",
 				Name:                "slug",
@@ -865,7 +865,7 @@ func TestPlanner_GeneratedColumnExpressionChangeOnPostgres16RequiresManualMigrat
 		},
 	}
 
-	nodes, err := postgres.NewWithCapabilities(capability.Postgres16()).GenerateMigrationASTChecked(diff, generated)
+	nodes, err := postgres.NewWithCapabilities(capability.Postgres16()).GenerateMigrationASTChecked(diff, desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQLWithCapabilities("postgres", capability.Postgres16(), nodes...)
 	c.Assert(err, qt.IsNil)
@@ -880,11 +880,11 @@ func TestPlanner_GeneratedColumnExpressionChangeOnPostgres16RequiresManualMigrat
 func TestPlanner_RecreatesEmbeddedGeneratedColumnOnExpressionChange(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
-		TablesModified: []types.TableDiff{
+	diff := &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{
 			{
 				TableName: "users",
-				ColumnsModified: []types.ColumnDiff{
+				ColumnsModified: []difftypes.ColumnDiff{
 					{
 						ColumnName: "slug",
 						Changes: map[string]string{
@@ -895,11 +895,11 @@ func TestPlanner_RecreatesEmbeddedGeneratedColumnOnExpressionChange(t *testing.T
 			},
 		},
 	}
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "User", Name: "users"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{
 				StructName:          "ComputedFields",
 				Name:                "slug",
@@ -909,7 +909,7 @@ func TestPlanner_RecreatesEmbeddedGeneratedColumnOnExpressionChange(t *testing.T
 				GeneratedKind:       "STORED",
 			},
 		},
-		EmbeddedFields: []goschema.EmbeddedField{
+		EmbeddedFields: []schemamodel.EmbeddedField{
 			{
 				StructName:       "User",
 				Mode:             "inline",
@@ -918,7 +918,7 @@ func TestPlanner_RecreatesEmbeddedGeneratedColumnOnExpressionChange(t *testing.T
 		},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
+	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -928,17 +928,17 @@ func TestPlanner_RecreatesEmbeddedGeneratedColumnOnExpressionChange(t *testing.T
 
 func TestPlanner_GenerateMigrationSQL_TablesRemoved(t *testing.T) {
 	tests := []struct {
-		name      string
-		diff      *types.SchemaDiff
-		generated *goschema.Database
-		expected  func(nodes []ast.Node) bool
+		name     string
+		diff     *difftypes.SchemaDiff
+		desired  *schemamodel.Database
+		expected func(nodes []ast.Node) bool
 	}{
 		{
 			name: "single table removed",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				TablesRemoved: []string{"old_table"},
 			},
-			generated: &goschema.Database{},
+			desired: &schemamodel.Database{},
 			expected: func(nodes []ast.Node) bool {
 				if len(nodes) != 1 {
 					return false
@@ -959,7 +959,7 @@ func TestPlanner_GenerateMigrationSQL_TablesRemoved(t *testing.T) {
 			c := qt.New(t)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationASTChecked(tt.diff, tt.generated)
+			nodes, err := planner.GenerateMigrationASTChecked(tt.diff, tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -969,17 +969,17 @@ func TestPlanner_GenerateMigrationSQL_TablesRemoved(t *testing.T) {
 
 func TestPlanner_GenerateMigrationSQL_EnumsRemoved(t *testing.T) {
 	tests := []struct {
-		name      string
-		diff      *types.SchemaDiff
-		generated *goschema.Database
-		expected  func(nodes []ast.Node) bool
+		name     string
+		diff     *difftypes.SchemaDiff
+		desired  *schemamodel.Database
+		expected func(nodes []ast.Node) bool
 	}{
 		{
 			name: "single enum removed",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				EnumsRemoved: []string{"old_enum"},
 			},
-			generated: &goschema.Database{},
+			desired: &schemamodel.Database{},
 			expected: func(nodes []ast.Node) bool {
 				if len(nodes) != 1 {
 					return false
@@ -1000,7 +1000,7 @@ func TestPlanner_GenerateMigrationSQL_EnumsRemoved(t *testing.T) {
 			c := qt.New(t)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationASTChecked(tt.diff, tt.generated)
+			nodes, err := planner.GenerateMigrationASTChecked(tt.diff, tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -1010,35 +1010,35 @@ func TestPlanner_GenerateMigrationSQL_EnumsRemoved(t *testing.T) {
 
 func TestPlanner_GenerateMigrationSQL_ComplexScenario(t *testing.T) {
 	tests := []struct {
-		name      string
-		diff      *types.SchemaDiff
-		generated *goschema.Database
-		expected  func(nodes []ast.Node) bool
+		name     string
+		diff     *difftypes.SchemaDiff
+		desired  *schemamodel.Database
+		expected func(nodes []ast.Node) bool
 	}{
 		{
 			name: "complete migration with all operations",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				EnumsAdded:  []string{"user_status"},
 				TablesAdded: []string{"users"},
-				IndexesAdded: []types.IndexRef{
+				IndexesAdded: []difftypes.IndexRef{
 					{Name: "idx_users_email", TableName: "users"},
 				},
-				IndexesRemoved: []types.IndexRef{
+				IndexesRemoved: []difftypes.IndexRef{
 					{Name: "idx_old", TableName: "old_users"},
 				},
 			},
-			generated: &goschema.Database{
-				Enums: []goschema.Enum{
+			desired: &schemamodel.Database{
+				Enums: []schemamodel.Enum{
 					{Name: "user_status", Values: []string{"active", "inactive"}},
 				},
-				Tables: []goschema.Table{
+				Tables: []schemamodel.Table{
 					{Name: "users", StructName: "User"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{Name: "id", Type: "SERIAL", StructName: "User", Primary: true},
 					{Name: "email", Type: "VARCHAR(255)", StructName: "User", Nullable: false},
 				},
-				Indexes: []goschema.Index{
+				Indexes: []schemamodel.Index{
 					{Name: "idx_users_email", TableName: "users", Fields: []string{"email"}},
 				},
 			},
@@ -1063,7 +1063,7 @@ func TestPlanner_GenerateMigrationSQL_ComplexScenario(t *testing.T) {
 			c := qt.New(t)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationASTChecked(tt.diff, tt.generated)
+			nodes, err := planner.GenerateMigrationASTChecked(tt.diff, tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -1073,26 +1073,26 @@ func TestPlanner_GenerateMigrationSQL_ComplexScenario(t *testing.T) {
 
 func TestPlanner_GenerateMigrationSQL_EdgeCases(t *testing.T) {
 	tests := []struct {
-		name      string
-		diff      *types.SchemaDiff
-		generated *goschema.Database
-		expected  func(nodes []ast.Node) bool
+		name     string
+		diff     *difftypes.SchemaDiff
+		desired  *schemamodel.Database
+		expected func(nodes []ast.Node) bool
 	}{
 		{
-			name:      "empty diff should return empty result",
-			diff:      &types.SchemaDiff{},
-			generated: &goschema.Database{},
+			name:    "empty diff should return empty result",
+			diff:    &difftypes.SchemaDiff{},
+			desired: &schemamodel.Database{},
 			expected: func(nodes []ast.Node) bool {
 				return len(nodes) == 0
 			},
 		},
 		{
 			name: "enum added but not found in generated schema",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				EnumsAdded: []string{"missing_enum"},
 			},
-			generated: &goschema.Database{
-				Enums: []goschema.Enum{
+			desired: &schemamodel.Database{
+				Enums: []schemamodel.Enum{
 					{Name: "other_enum", Values: []string{"value1"}},
 				},
 			},
@@ -1102,11 +1102,11 @@ func TestPlanner_GenerateMigrationSQL_EdgeCases(t *testing.T) {
 		},
 		{
 			name: "table added but not found in generated schema",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				TablesAdded: []string{"missing_table"},
 			},
-			generated: &goschema.Database{
-				Tables: []goschema.Table{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{Name: "other_table", StructName: "Other"},
 				},
 			},
@@ -1121,7 +1121,7 @@ func TestPlanner_GenerateMigrationSQL_EdgeCases(t *testing.T) {
 			c := qt.New(t)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationASTChecked(tt.diff, tt.generated)
+			nodes, err := planner.GenerateMigrationASTChecked(tt.diff, tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -1131,18 +1131,18 @@ func TestPlanner_GenerateMigrationSQL_EdgeCases(t *testing.T) {
 
 func TestPlanner_GenerateMigrationASTChecked_MissingIndexRejected(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{
-		IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "missing_index", TableName: "users"},
 		},
 	}
-	generated := &goschema.Database{
-		Indexes: []goschema.Index{
+	desired := &schemamodel.Database{
+		Indexes: []schemamodel.Index{
 			{Name: "other_index", TableName: "other_table", Fields: []string{"field"}},
 		},
 	}
 
-	nodes, err := (&postgres.Planner{}).GenerateMigrationASTChecked(diff, generated)
+	nodes, err := (&postgres.Planner{}).GenerateMigrationASTChecked(diff, desired)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 	c.Assert(nodes, qt.IsNil)
@@ -1150,12 +1150,12 @@ func TestPlanner_GenerateMigrationASTChecked_MissingIndexRejected(t *testing.T) 
 
 func TestPlanner_GenerateMigrationAST_ExtensionInstallationSchema(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{ExtensionsAdded: []string{"pgcrypto"}}
-	generated := &goschema.Database{Extensions: []goschema.Extension{{
+	diff := &difftypes.SchemaDiff{ExtensionsAdded: []string{"pgcrypto"}}
+	desired := &schemamodel.Database{Extensions: []schemamodel.Extension{{
 		Name: "pgcrypto", Schema: " Extension Store ",
 	}}}
 
-	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
+	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, desired)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 2)
@@ -1171,12 +1171,12 @@ func TestPlanner_GenerateMigrationAST_ExtensionInstallationSchema(t *testing.T) 
 
 func TestPlanner_GenerateMigrationAST_WhitespaceOnlyExtensionInstallationSchema(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{ExtensionsAdded: []string{"pgcrypto"}}
-	generated := &goschema.Database{Extensions: []goschema.Extension{{
+	diff := &difftypes.SchemaDiff{ExtensionsAdded: []string{"pgcrypto"}}
+	desired := &schemamodel.Database{Extensions: []schemamodel.Extension{{
 		Name: "pgcrypto", Schema: " ",
 	}}}
 
-	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
+	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, desired)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 2)
@@ -1192,12 +1192,12 @@ func TestPlanner_GenerateMigrationAST_WhitespaceOnlyExtensionInstallationSchema(
 
 func TestPlanner_GenerateMigrationAST_SystemExtensionInstallationSchemaNeedsNoPrecondition(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{ExtensionsAdded: []string{"plpgsql"}}
-	generated := &goschema.Database{Extensions: []goschema.Extension{{
+	diff := &difftypes.SchemaDiff{ExtensionsAdded: []string{"plpgsql"}}
+	desired := &schemamodel.Database{Extensions: []schemamodel.Extension{{
 		Name: "plpgsql", Schema: "pg_catalog", Version: "1.0", IfNotExists: true,
 	}}}
 
-	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
+	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, desired)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 1)
@@ -1209,18 +1209,18 @@ func TestPlanner_GenerateMigrationAST_SystemExtensionInstallationSchemaNeedsNoPr
 
 func TestPlanner_GenerateMigrationAST_ExtensionsAdded(t *testing.T) {
 	tests := []struct {
-		name      string
-		diff      *types.SchemaDiff
-		generated *goschema.Database
-		expected  func(nodes []ast.Node) bool
+		name     string
+		diff     *difftypes.SchemaDiff
+		desired  *schemamodel.Database
+		expected func(nodes []ast.Node) bool
 	}{
 		{
 			name: "single extension added",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				ExtensionsAdded: []string{"pg_trgm"},
 			},
-			generated: &goschema.Database{
-				Extensions: []goschema.Extension{
+			desired: &schemamodel.Database{
+				Extensions: []schemamodel.Extension{
 					{Name: "pg_trgm", IfNotExists: true, Comment: "Enable trigram similarity search"},
 				},
 			},
@@ -1239,11 +1239,11 @@ func TestPlanner_GenerateMigrationAST_ExtensionsAdded(t *testing.T) {
 		},
 		{
 			name: "multiple extensions added",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				ExtensionsAdded: []string{"pg_trgm", "btree_gin"},
 			},
-			generated: &goschema.Database{
-				Extensions: []goschema.Extension{
+			desired: &schemamodel.Database{
+				Extensions: []schemamodel.Extension{
 					{Name: "pg_trgm", IfNotExists: true, Comment: "Enable trigram similarity search"},
 					{Name: "btree_gin", IfNotExists: true, Comment: "Enable GIN indexes on btree types"},
 				},
@@ -1270,11 +1270,11 @@ func TestPlanner_GenerateMigrationAST_ExtensionsAdded(t *testing.T) {
 		},
 		{
 			name: "extension with version",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				ExtensionsAdded: []string{"postgis"},
 			},
-			generated: &goschema.Database{
-				Extensions: []goschema.Extension{
+			desired: &schemamodel.Database{
+				Extensions: []schemamodel.Extension{
 					{Name: "postgis", Version: "3.0", IfNotExists: true, Comment: "Geographic data support"},
 				},
 			},
@@ -1299,7 +1299,7 @@ func TestPlanner_GenerateMigrationAST_ExtensionsAdded(t *testing.T) {
 			c := qt.New(t)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationASTChecked(tt.diff, tt.generated)
+			nodes, err := planner.GenerateMigrationASTChecked(tt.diff, tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -1317,17 +1317,17 @@ func TestPlanner_GenerateMigrationAST_ExtensionsAdded(t *testing.T) {
 func TestPlanner_GenerateMigrationAST_ExtensionChanges(t *testing.T) {
 	tests := []struct {
 		name   string
-		change types.ExtensionDiff
+		change difftypes.ExtensionDiff
 		want   string
 	}{{
 		name: "a relocatable move becomes SET SCHEMA",
-		change: types.ExtensionDiff{
+		change: difftypes.ExtensionDiff{
 			Name: "pgcrypto", FromSchema: "public", ToSchema: "extensions", Relocatable: true,
 		},
 		want: `ALTER EXTENSION "pgcrypto" SET SCHEMA "extensions";`,
 	}, {
 		name: "a raised version becomes UPDATE TO",
-		change: types.ExtensionDiff{
+		change: difftypes.ExtensionDiff{
 			Name: "pg_trgm", FromSchema: "public", ToSchema: "public",
 			FromVersion: "1.5", ToVersion: "1.6",
 		},
@@ -1339,8 +1339,8 @@ func TestPlanner_GenerateMigrationAST_ExtensionChanges(t *testing.T) {
 			c := qt.New(t)
 
 			nodes, err := postgres.New().GenerateMigrationASTChecked(
-				&types.SchemaDiff{ExtensionsModified: []types.ExtensionDiff{test.change}},
-				&goschema.Database{Extensions: []goschema.Extension{{
+				&difftypes.SchemaDiff{ExtensionsModified: []difftypes.ExtensionDiff{test.change}},
+				&schemamodel.Database{Extensions: []schemamodel.Extension{{
 					Name: test.change.Name, Schema: test.change.ToSchema,
 				}}},
 			)
@@ -1363,17 +1363,17 @@ func TestPlanner_GenerateMigrationAST_ExtensionChanges(t *testing.T) {
 func TestPlanner_GenerateMigrationAST_ExtensionChangeRefusals(t *testing.T) {
 	tests := []struct {
 		name   string
-		change types.ExtensionDiff
+		change difftypes.ExtensionDiff
 		want   string
 	}{{
 		name: "a fixed extension is refused, naming why the server would",
-		change: types.ExtensionDiff{
+		change: difftypes.ExtensionDiff{
 			Name: "pgcrypto", FromSchema: "public", ToSchema: "extensions",
 		},
 		want: `(?s).*not relocatable.*does not support SET SCHEMA.*`,
 	}, {
 		name: "a lowered version is refused rather than attempted",
-		change: types.ExtensionDiff{
+		change: difftypes.ExtensionDiff{
 			Name: "pg_trgm", FromSchema: "public", ToSchema: "public",
 			FromVersion: "1.6", ToVersion: "1.5",
 		},
@@ -1385,8 +1385,8 @@ func TestPlanner_GenerateMigrationAST_ExtensionChangeRefusals(t *testing.T) {
 			c := qt.New(t)
 
 			nodes, err := postgres.New().GenerateMigrationASTChecked(
-				&types.SchemaDiff{ExtensionsModified: []types.ExtensionDiff{test.change}},
-				&goschema.Database{Extensions: []goschema.Extension{{
+				&difftypes.SchemaDiff{ExtensionsModified: []difftypes.ExtensionDiff{test.change}},
+				&schemamodel.Database{Extensions: []schemamodel.Extension{{
 					Name: test.change.Name, Schema: test.change.ToSchema,
 				}}},
 			)
@@ -1400,17 +1400,17 @@ func TestPlanner_GenerateMigrationAST_ExtensionChangeRefusals(t *testing.T) {
 
 func TestPlanner_GenerateMigrationAST_ExtensionsRemoved(t *testing.T) {
 	tests := []struct {
-		name      string
-		diff      *types.SchemaDiff
-		generated *goschema.Database
-		expected  func(nodes []ast.Node) bool
+		name     string
+		diff     *difftypes.SchemaDiff
+		desired  *schemamodel.Database
+		expected func(nodes []ast.Node) bool
 	}{
 		{
 			name: "single extension removed",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				ExtensionsRemoved: []string{"pg_trgm"},
 			},
-			generated: &goschema.Database{},
+			desired: &schemamodel.Database{},
 			expected: func(nodes []ast.Node) bool {
 				// Should have 3 warning comments + 1 drop extension statement
 				if len(nodes) != 4 {
@@ -1435,10 +1435,10 @@ func TestPlanner_GenerateMigrationAST_ExtensionsRemoved(t *testing.T) {
 		},
 		{
 			name: "multiple extensions removed",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				ExtensionsRemoved: []string{"pg_trgm", "btree_gin"},
 			},
-			generated: &goschema.Database{},
+			desired: &schemamodel.Database{},
 			expected: func(nodes []ast.Node) bool {
 				// Should have 3 warnings + 1 drop + blank line + 3 warnings + 1 drop = 9 nodes
 				if len(nodes) != 9 {
@@ -1474,7 +1474,7 @@ func TestPlanner_GenerateMigrationAST_ExtensionsRemoved(t *testing.T) {
 			c := qt.New(t)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationASTChecked(tt.diff, tt.generated)
+			nodes, err := planner.GenerateMigrationASTChecked(tt.diff, tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -1485,18 +1485,18 @@ func TestPlanner_GenerateMigrationAST_ExtensionsRemoved(t *testing.T) {
 func TestPlanner_ExtensionSQL_Generation(t *testing.T) {
 	tests := []struct {
 		name          string
-		diff          *types.SchemaDiff
-		generated     *goschema.Database
+		diff          *difftypes.SchemaDiff
+		desired       *schemamodel.Database
 		expectedSQL   []string
 		unexpectedSQL []string
 	}{
 		{
 			name: "extension creation SQL",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				ExtensionsAdded: []string{"pg_trgm"},
 			},
-			generated: &goschema.Database{
-				Extensions: []goschema.Extension{
+			desired: &schemamodel.Database{
+				Extensions: []schemamodel.Extension{
 					{Name: "pg_trgm", IfNotExists: true, Comment: "Enable trigram similarity search"},
 				},
 			},
@@ -1510,10 +1510,10 @@ func TestPlanner_ExtensionSQL_Generation(t *testing.T) {
 		},
 		{
 			name: "extension removal SQL",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				ExtensionsRemoved: []string{"pg_trgm"},
 			},
-			generated: &goschema.Database{},
+			desired: &schemamodel.Database{},
 			expectedSQL: []string{
 				"WARNING: Removing extension 'pg_trgm' may break existing functionality",
 				"Consider reviewing all database objects that use this extension",
@@ -1526,11 +1526,11 @@ func TestPlanner_ExtensionSQL_Generation(t *testing.T) {
 		},
 		{
 			name: "extension with version SQL",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				ExtensionsAdded: []string{"postgis"},
 			},
-			generated: &goschema.Database{
-				Extensions: []goschema.Extension{
+			desired: &schemamodel.Database{
+				Extensions: []schemamodel.Extension{
 					{Name: "postgis", Version: "3.0", IfNotExists: true, Comment: "Geographic data support"},
 				},
 			},
@@ -1549,7 +1549,7 @@ func TestPlanner_ExtensionSQL_Generation(t *testing.T) {
 			c := qt.New(t)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationASTChecked(tt.diff, tt.generated)
+			nodes, err := planner.GenerateMigrationASTChecked(tt.diff, tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			// Render nodes to SQL
@@ -1576,11 +1576,11 @@ func TestPlanner_AddNewTables_WithEmbeddedFields(t *testing.T) {
 	c := qt.New(t)
 
 	// Test data: schema with embedded fields (simulating the walker.go processing)
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "TestTable", Name: "test_table"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			// Regular field
 			{StructName: "TestTable", Name: "name", Type: "TEXT", Nullable: false},
 			// Embedded struct fields (original)
@@ -1588,7 +1588,7 @@ func TestPlanner_AddNewTables_WithEmbeddedFields(t *testing.T) {
 			// Processed embedded field (what walker.go would generate)
 			{StructName: "TestTable", Name: "id", Type: "TEXT", Primary: true},
 		},
-		EmbeddedFields: []goschema.EmbeddedField{
+		EmbeddedFields: []schemamodel.EmbeddedField{
 			{
 				StructName:       "TestTable",
 				Mode:             "inline",
@@ -1597,12 +1597,12 @@ func TestPlanner_AddNewTables_WithEmbeddedFields(t *testing.T) {
 		},
 	}
 
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		TablesAdded: []string{"test_table"},
 	}
 
 	planner := &postgres.Planner{}
-	result, err := planner.GenerateMigrationASTChecked(diff, generated)
+	result, err := planner.GenerateMigrationASTChecked(diff, desired)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(result, qt.HasLen, 1)

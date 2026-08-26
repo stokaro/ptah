@@ -12,7 +12,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 )
 
@@ -42,7 +42,7 @@ func TestReadRoleMemberships_ExcludesTheRolesEveryDatabaseShips(t *testing.T) {
 	memberships, err := reader.readRoleMemberships(t.Context())
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(memberships, qt.DeepEquals, []types.DBRoleMembership{
+	c.Assert(memberships, qt.DeepEquals, []catalog.RoleMembership{
 		{Role: "analyst", Member: "alice"},
 		{Role: "reader", Member: "alice"},
 	})
@@ -82,7 +82,7 @@ func TestReadObjectOwners_ResolvesTheOwnerAndWhetherItAuthenticates(t *testing.T
 	c.Assert(err, qt.IsNil)
 	// The catalog's type codes are mapped into Ptah's vocabulary, so a consumer
 	// need not know what sys.objects.type 'SO' is.
-	c.Assert(owners, qt.DeepEquals, []types.DBObjectOwner{
+	c.Assert(owners, qt.DeepEquals, []catalog.ObjectOwner{
 		{Kind: "table", Schema: "dbo", Name: "users", Owner: "dbo", OwnerCanLogin: true},
 		{Kind: "sequence", Schema: "dbo", Name: "order_seq", Owner: "dbo", OwnerCanLogin: true},
 		{Kind: "schema", Name: "reporting", Owner: "alice", OwnerCanLogin: false},

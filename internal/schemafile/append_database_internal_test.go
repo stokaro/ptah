@@ -10,14 +10,14 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // TestAppendDatabase_MergesEveryObjectFamily is the guard the two families
 // stokaro/ptah#1999 lost would have needed.
 //
 // [appendDatabase] is a list of twenty-four assignments, and a family added to
-// [goschema.Database] joins it only if somebody remembers. Two did not, and the
+// [schemamodel.Database] joins it only if somebody remembers. Two did not, and the
 // failure was silent in the direction that matters: the objects were dropped
 // from the DESIRED side, so `schema apply` answered "no changes" for a
 // declaration it had thrown away.
@@ -28,10 +28,10 @@ func TestAppendDatabase_MergesEveryObjectFamily(t *testing.T) {
 	for _, field := range mergeableDatabaseFields() {
 		t.Run(field, func(t *testing.T) {
 			c := qt.New(t)
-			source := &goschema.Database{}
+			source := &schemamodel.Database{}
 			seedSliceField(c, source, field)
 
-			merged := &goschema.Database{}
+			merged := &schemamodel.Database{}
 			appendDatabase(merged, source)
 
 			c.Assert(sliceFieldLen(merged, field), qt.Equals, 1,
@@ -48,7 +48,7 @@ func TestAppendDatabase_MergesEveryObjectFamily(t *testing.T) {
 // declares is a limit of the whole (stokaro/ptah#1276).
 func TestAppendDatabase_UnionsTheCoverageRecord(t *testing.T) {
 	c := qt.New(t)
-	merged := &goschema.Database{}
+	merged := &schemamodel.Database{}
 
 	limited := coverage.Set{}.With(coverage.Object{
 		Kind:       coverage.VirtualTable,
@@ -56,8 +56,8 @@ func TestAppendDatabase_UnionsTheCoverageRecord(t *testing.T) {
 		Provenance: coverage.DerivedFromFact,
 	})
 
-	appendDatabase(merged, &goschema.Database{NotDescribed: limited})
-	appendDatabase(merged, &goschema.Database{})
+	appendDatabase(merged, &schemamodel.Database{NotDescribed: limited})
+	appendDatabase(merged, &schemamodel.Database{})
 
 	c.Assert(merged.NotDescribed.Describes(coverage.VirtualTable), qt.IsFalse)
 }
@@ -72,7 +72,7 @@ var nonMergeableDatabaseFields = make(map[string]string)
 
 // mergeableDatabaseFields is every slice field of the IR, minus the exemptions.
 func mergeableDatabaseFields() []string {
-	databaseType := reflect.TypeFor[goschema.Database]()
+	databaseType := reflect.TypeFor[schemamodel.Database]()
 	fields := make([]string, 0, databaseType.NumField())
 	for field := range databaseType.Fields() {
 		if field.Type.Kind() != reflect.Slice {
@@ -88,13 +88,13 @@ func mergeableDatabaseFields() []string {
 
 // seedSliceField puts exactly one zero element into the named slice field, so
 // the assertion is about the merge rather than about any family's contents.
-func seedSliceField(c *qt.C, database *goschema.Database, field string) {
+func seedSliceField(c *qt.C, database *schemamodel.Database, field string) {
 	c.Helper()
 	value := reflect.ValueOf(database).Elem().FieldByName(field)
 	c.Assert(value.IsValid(), qt.IsTrue)
 	value.Set(reflect.MakeSlice(value.Type(), 1, 1))
 }
 
-func sliceFieldLen(database *goschema.Database, field string) int {
+func sliceFieldLen(database *schemamodel.Database, field string) int {
 	return reflect.ValueOf(database).Elem().FieldByName(field).Len()
 }

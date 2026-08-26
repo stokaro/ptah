@@ -13,8 +13,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 )
 
@@ -95,7 +95,7 @@ func servePostgres12(query string, _ []driver.NamedValue) (dbtest.QueryResult, e
 // Nothing is lost by dropping the pointer: readColumnsForSchema takes the
 // address only when the value it read is non-empty, so a non-nil pointer to the
 // empty string is a state it cannot produce.
-func generatedExpressionOf(column types.DBColumn) string {
+func generatedExpressionOf(column catalog.Column) string {
 	if column.GeneratedExpression == nil {
 		return ""
 	}

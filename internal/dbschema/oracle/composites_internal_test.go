@@ -12,8 +12,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 )
 
@@ -32,9 +32,9 @@ func TestReadComposites_CarriesTheAttributesInDeclarationOrder(t *testing.T) {
 	composites, err := reader.readComposites(t.Context())
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(composites, qt.DeepEquals, []types.DBComposite{{
+	c.Assert(composites, qt.DeepEquals, []catalog.CompositeType{{
 		Name: "ORA_POINT",
-		Fields: []types.DBCompositeField{
+		Fields: []catalog.CompositeField{
 			{Name: "X", Type: "NUMBER(10,2)"},
 			{Name: "Y", Type: "NUMBER(10,2)"},
 		},

@@ -1,0 +1,361 @@
+package schemamodel_test
+
+import (
+	"testing"
+
+	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/core/schemamodel"
+)
+
+func TestDeduplicate_FieldOrderPreservation(t *testing.T) {
+	c := qt.New(t)
+
+	// Test multiple runs to ensure consistent ordering
+
+	for range 10 {
+		// Create a fresh copy for each test
+		testDB := &schemamodel.Database{
+			Tables: []schemamodel.Table{
+				{Name: "users", StructName: "User"},
+			},
+			Fields: []schemamodel.Field{
+				{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
+				{StructName: "User", Name: "email", Type: "VARCHAR(255)", Nullable: false},
+				{StructName: "User", Name: "name", Type: "VARCHAR(255)", Nullable: false},
+				{StructName: "User", Name: "created_at", Type: "TIMESTAMP", Nullable: false},
+				// Add duplicate fields
+				{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
+				{StructName: "User", Name: "email", Type: "VARCHAR(255)", Nullable: false},
+			},
+		}
+
+		// Apply deduplication
+		schemamodel.Deduplicate(testDB)
+
+		// Verify field order is preserved
+		userFields := make([]string, 0)
+		for _, field := range testDB.Fields {
+			if field.StructName == "User" {
+				userFields = append(userFields, field.Name)
+			}
+		}
+
+		// Should have exactly 4 unique fields
+		c.Assert(userFields, qt.HasLen, 4)
+
+		// Order should be preserved: id, email, name, created_at
+		expectedOrder := []string{"id", "email", "name", "created_at"}
+		c.Assert(userFields, qt.DeepEquals, expectedOrder)
+	}
+}
+
+func TestDeduplicate_MultipleStructsFieldOrder(t *testing.T) {
+	c := qt.New(t)
+
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{
+			{Name: "users", StructName: "User"},
+			{Name: "posts", StructName: "Post"},
+		},
+		Fields: []schemamodel.Field{
+			// User fields
+			{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
+			{StructName: "User", Name: "email", Type: "VARCHAR(255)"},
+			{StructName: "User", Name: "name", Type: "VARCHAR(255)"},
+			// Post fields
+			{StructName: "Post", Name: "id", Type: "SERIAL", Primary: true},
+			{StructName: "Post", Name: "title", Type: "VARCHAR(255)"},
+			{StructName: "Post", Name: "content", Type: "TEXT"},
+			{StructName: "Post", Name: "user_id", Type: "INTEGER"},
+			// More User fields (to test interleaving)
+			{StructName: "User", Name: "created_at", Type: "TIMESTAMP"},
+			// Duplicates
+			{StructName: "User", Name: "id", Type: "SERIAL", Primary: true}, // duplicate
+			{StructName: "Post", Name: "title", Type: "VARCHAR(255)"},       // duplicate
+		},
+	}
+
+	schemamodel.Deduplicate(db)
+
+	// Extract fields by struct
+	userFields := make([]string, 0)
+	postFields := make([]string, 0)
+
+	for _, field := range db.Fields {
+		switch field.StructName {
+		case "User":
+			userFields = append(userFields, field.Name)
+		case "Post":
+			postFields = append(postFields, field.Name)
+		}
+	}
+
+	// Verify User fields maintain order: id, email, name, created_at
+	expectedUserOrder := []string{"id", "email", "name", "created_at"}
+	c.Assert(userFields, qt.DeepEquals, expectedUserOrder)
+
+	// Verify Post fields maintain order: id, title, content, user_id
+	expectedPostOrder := []string{"id", "title", "content", "user_id"}
+	c.Assert(postFields, qt.DeepEquals, expectedPostOrder)
+}
+
+func TestDeduplicate_IndexOrderPreservation(t *testing.T) {
+	c := qt.New(t)
+
+	db := &schemamodel.Database{
+		Indexes: []schemamodel.Index{
+			{StructName: "User", Name: "idx_email", Fields: []string{"email"}},
+			{StructName: "User", Name: "idx_name", Fields: []string{"name"}},
+			{StructName: "Post", Name: "idx_title", Fields: []string{"title"}},
+			{StructName: "User", Name: "idx_created_at", Fields: []string{"created_at"}},
+			// Duplicates
+			{StructName: "User", Name: "idx_email", Fields: []string{"email"}},
+			{StructName: "Post", Name: "idx_title", Fields: []string{"title"}},
+		},
+	}
+
+	schemamodel.Deduplicate(db)
+
+	// Extract index names in order
+	indexNames := make([]string, 0)
+	for _, index := range db.Indexes {
+		indexNames = append(indexNames, index.Name)
+	}
+
+	// Should preserve original order and remove duplicates
+	expectedOrder := []string{"idx_email", "idx_name", "idx_title", "idx_created_at"}
+	c.Assert(indexNames, qt.DeepEquals, expectedOrder)
+	c.Assert(db.Indexes, qt.HasLen, 4) // Should have 4 unique indexes
+}
+
+func TestDeduplicate_EnumOrderPreservation(t *testing.T) {
+	c := qt.New(t)
+
+	db := &schemamodel.Database{
+		Enums: []schemamodel.Enum{
+			{Name: "user_status", Values: []string{"active", "inactive"}},
+			{Name: "post_status", Values: []string{"draft", "published"}},
+			{Name: "priority", Values: []string{"low", "medium", "high"}},
+			// Duplicates
+			{Name: "user_status", Values: []string{"active", "inactive"}},
+			{Name: "priority", Values: []string{"low", "medium", "high"}},
+		},
+	}
+
+	schemamodel.Deduplicate(db)
+
+	// Extract enum names in order
+	enumNames := make([]string, 0)
+	for _, enum := range db.Enums {
+		enumNames = append(enumNames, enum.Name)
+	}
+
+	// Should preserve original order and remove duplicates
+	expectedOrder := []string{"user_status", "post_status", "priority"}
+	c.Assert(enumNames, qt.DeepEquals, expectedOrder)
+	c.Assert(db.Enums, qt.HasLen, 3) // Should have 3 unique enums
+}
+
+func TestDeduplicate_TableOrderPreservation(t *testing.T) {
+	c := qt.New(t)
+
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{
+			{Name: "users", StructName: "User"},
+			{Name: "posts", StructName: "Post"},
+			{Name: "comments", StructName: "Comment"},
+			{Name: "categories", StructName: "Category"},
+			// Duplicates
+			{Name: "users", StructName: "User"},
+			{Name: "comments", StructName: "Comment"},
+		},
+	}
+
+	schemamodel.Deduplicate(db)
+
+	// Extract table names in order
+	tableNames := make([]string, 0)
+	for _, table := range db.Tables {
+		tableNames = append(tableNames, table.Name)
+	}
+
+	// Should preserve original order and remove duplicates
+	expectedOrder := []string{"users", "posts", "comments", "categories"}
+	c.Assert(tableNames, qt.DeepEquals, expectedOrder)
+	c.Assert(db.Tables, qt.HasLen, 4) // Should have 4 unique tables
+}
+
+func TestDeduplicate_EmbeddedFieldOrderPreservation(t *testing.T) {
+	c := qt.New(t)
+
+	db := &schemamodel.Database{
+		EmbeddedFields: []schemamodel.EmbeddedField{
+			{StructName: "User", EmbeddedTypeName: "BaseEntity", Mode: "inline"},
+			{StructName: "User", EmbeddedTypeName: "Timestamps", Mode: "inline"},
+			{StructName: "Post", EmbeddedTypeName: "BaseEntity", Mode: "inline"},
+			{StructName: "User", EmbeddedTypeName: "SoftDelete", Mode: "inline"},
+			// Duplicates
+			{StructName: "User", EmbeddedTypeName: "BaseEntity", Mode: "inline"},
+			{StructName: "Post", EmbeddedTypeName: "BaseEntity", Mode: "inline"},
+		},
+	}
+
+	schemamodel.Deduplicate(db)
+
+	// Extract embedded field names in order
+	embeddedKeys := make([]string, 0)
+	for _, embedded := range db.EmbeddedFields {
+		key := embedded.StructName + "." + embedded.EmbeddedTypeName
+		embeddedKeys = append(embeddedKeys, key)
+	}
+
+	// Should preserve original order and remove duplicates
+	expectedOrder := []string{"User.BaseEntity", "User.Timestamps", "Post.BaseEntity", "User.SoftDelete"}
+	c.Assert(embeddedKeys, qt.DeepEquals, expectedOrder)
+	c.Assert(db.EmbeddedFields, qt.HasLen, 4) // Should have 4 unique embedded fields
+}
+
+func TestDeduplicate_GrantsKeepGrantOptionAndIgnorePrivilegeOrder(t *testing.T) {
+	c := qt.New(t)
+
+	db := &schemamodel.Database{
+		Grants: []schemamodel.Grant{
+			{Role: "app", Privileges: []string{"SELECT", "INSERT"}, OnTable: "users"},
+			{Role: "app", Privileges: []string{"INSERT", "SELECT"}, OnTable: "users"},
+			{Role: "app", Privileges: []string{"SELECT", "INSERT"}, OnTable: "users", WithOption: true},
+		},
+	}
+
+	schemamodel.Deduplicate(db)
+
+	c.Assert(db.Grants, qt.HasLen, 2)
+	c.Assert(db.Grants[0].WithOption, qt.IsFalse)
+	c.Assert(db.Grants[0].Privileges, qt.DeepEquals, []string{"SELECT", "INSERT"})
+	c.Assert(db.Grants[1].WithOption, qt.IsTrue)
+	c.Assert(db.Grants[1].Privileges, qt.DeepEquals, []string{"SELECT", "INSERT"})
+}
+
+func TestDeduplicate_GrantsDistinguishSequenceTargets(t *testing.T) {
+	c := qt.New(t)
+
+	// Grants that differ only by their sequence target must both survive; the
+	// sequence name is part of the grant's identity. A duplicate sequence grant
+	// still deduplicates.
+	db := &schemamodel.Database{
+		Grants: []schemamodel.Grant{
+			{Role: "app", Privileges: []string{"USAGE"}, OnSequence: "seq_a"},
+			{Role: "app", Privileges: []string{"USAGE"}, OnSequence: "seq_b"},
+			{Role: "app", Privileges: []string{"USAGE"}, OnSequence: "seq_a"},
+		},
+	}
+
+	schemamodel.Deduplicate(db)
+
+	c.Assert(db.Grants, qt.HasLen, 2)
+	c.Assert(db.Grants[0].OnSequence, qt.Equals, "seq_a")
+	c.Assert(db.Grants[1].OnSequence, qt.Equals, "seq_b")
+}
+
+func TestDeduplicate_ConstraintsUseExplicitTableScope(t *testing.T) {
+	c := qt.New(t)
+
+	db := &schemamodel.Database{
+		Constraints: []schemamodel.Constraint{
+			{StructName: "User", Table: "users", Name: "users_email_check", Type: "CHECK", CheckExpression: "email <> ''"},
+			{StructName: "UserMixin", Table: "users", Name: "users_email_check", Type: "CHECK", CheckExpression: "email <> ''"},
+			{StructName: "Account", Table: "accounts", Name: "users_email_check", Type: "CHECK", CheckExpression: "email <> ''"},
+		},
+	}
+
+	schemamodel.Deduplicate(db)
+
+	c.Assert(db.Constraints, qt.HasLen, 2)
+	c.Assert(db.Constraints[0].StructName, qt.Equals, "User")
+	c.Assert(db.Constraints[1].StructName, qt.Equals, "Account")
+}
+
+func TestDeduplicate_ComplexScenarioWithAllTypes(t *testing.T) {
+	c := qt.New(t)
+
+	// Test a complex scenario with all types of entities and duplicates
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{
+			{Name: "users", StructName: "User"},
+			{Name: "posts", StructName: "Post"},
+			{Name: "users", StructName: "User"}, // duplicate
+		},
+		Fields: []schemamodel.Field{
+			{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
+			{StructName: "Post", Name: "id", Type: "SERIAL", Primary: true},
+			{StructName: "User", Name: "email", Type: "VARCHAR(255)"},
+			{StructName: "Post", Name: "title", Type: "VARCHAR(255)"},
+			{StructName: "User", Name: "name", Type: "VARCHAR(255)"},
+			{StructName: "Post", Name: "content", Type: "TEXT"},
+			{StructName: "User", Name: "id", Type: "SERIAL", Primary: true}, // duplicate
+		},
+		Indexes: []schemamodel.Index{
+			{StructName: "User", Name: "idx_email", Fields: []string{"email"}},
+			{StructName: "Post", Name: "idx_title", Fields: []string{"title"}},
+			{StructName: "User", Name: "idx_name", Fields: []string{"name"}},
+			{StructName: "User", Name: "idx_email", Fields: []string{"email"}}, // duplicate
+		},
+		Enums: []schemamodel.Enum{
+			{Name: "status", Values: []string{"active", "inactive"}},
+			{Name: "priority", Values: []string{"low", "high"}},
+			{Name: "status", Values: []string{"active", "inactive"}}, // duplicate
+		},
+		EmbeddedFields: []schemamodel.EmbeddedField{
+			{StructName: "User", EmbeddedTypeName: "BaseEntity", Mode: "inline"},
+			{StructName: "Post", EmbeddedTypeName: "BaseEntity", Mode: "inline"},
+			{StructName: "User", EmbeddedTypeName: "BaseEntity", Mode: "inline"}, // duplicate
+		},
+	}
+
+	schemamodel.Deduplicate(db)
+
+	// Verify all collections maintain order and remove duplicates
+
+	// Tables
+	tableNames := make([]string, 0)
+	for _, table := range db.Tables {
+		tableNames = append(tableNames, table.Name)
+	}
+	c.Assert(tableNames, qt.DeepEquals, []string{"users", "posts"})
+	c.Assert(db.Tables, qt.HasLen, 2)
+
+	// Fields - should maintain interleaved order
+	fieldKeys := make([]string, 0)
+	for _, field := range db.Fields {
+		key := field.StructName + "." + field.Name
+		fieldKeys = append(fieldKeys, key)
+	}
+	expectedFieldOrder := []string{"User.id", "Post.id", "User.email", "Post.title", "User.name", "Post.content"}
+	c.Assert(fieldKeys, qt.DeepEquals, expectedFieldOrder)
+	c.Assert(db.Fields, qt.HasLen, 6)
+
+	// Indexes
+	indexNames := make([]string, 0)
+	for _, index := range db.Indexes {
+		indexNames = append(indexNames, index.Name)
+	}
+	c.Assert(indexNames, qt.DeepEquals, []string{"idx_email", "idx_title", "idx_name"})
+	c.Assert(db.Indexes, qt.HasLen, 3)
+
+	// Enums
+	enumNames := make([]string, 0)
+	for _, enum := range db.Enums {
+		enumNames = append(enumNames, enum.Name)
+	}
+	c.Assert(enumNames, qt.DeepEquals, []string{"status", "priority"})
+	c.Assert(db.Enums, qt.HasLen, 2)
+
+	// Embedded Fields
+	embeddedKeys := make([]string, 0)
+	for _, embedded := range db.EmbeddedFields {
+		key := embedded.StructName + "." + embedded.EmbeddedTypeName
+		embeddedKeys = append(embeddedKeys, key)
+	}
+	c.Assert(embeddedKeys, qt.DeepEquals, []string{"User.BaseEntity", "Post.BaseEntity"})
+	c.Assert(db.EmbeddedFields, qt.HasLen, 2)
+}

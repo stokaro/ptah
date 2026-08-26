@@ -8,6 +8,7 @@ import (
 
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 const usersSource = `package entities
@@ -34,14 +35,14 @@ type Order struct {
 
 // parseRaw parses a single Go source into a raw (un-finalized) Database, the
 // form Merge expects — the same thing ParseFS accumulates per file.
-func parseRaw(c *qt.C, filename, source string) *goschema.Database {
+func parseRaw(c *qt.C, filename, source string) *schemamodel.Database {
 	db, err := goschema.ParseSource(filename, source)
 	c.Assert(err, qt.IsNil)
 	return &db
 }
 
 // tableIndex returns the position of the named table in db.Tables, or -1.
-func tableIndex(db *goschema.Database, name string) int {
+func tableIndex(db *schemamodel.Database, name string) int {
 	for i, table := range db.Tables {
 		if table.Name == name {
 			return i
@@ -56,7 +57,7 @@ func TestMergeCombinesDistinctSourcesAndOrdersForeignKeys(t *testing.T) {
 	users := parseRaw(c, "users.go", usersSource)
 	orders := parseRaw(c, "orders.go", ordersSource)
 
-	merged, err := goschema.Merge(users, orders)
+	merged, err := schemamodel.Merge(users, orders)
 	c.Assert(err, qt.IsNil)
 
 	// Both tables are present.
@@ -81,7 +82,7 @@ func TestMergeDeduplicatesIdenticalObjects(t *testing.T) {
 	first := parseRaw(c, "users_a.go", usersSource)
 	second := parseRaw(c, "users_b.go", usersSource)
 
-	merged, err := goschema.Merge(first, second)
+	merged, err := schemamodel.Merge(first, second)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(merged.Tables, qt.HasLen, 1)
@@ -94,14 +95,14 @@ func TestMergeErrorsOnConflictingDefinitions(t *testing.T) {
 
 	// Two sources declaring the same view differently must be rejected rather
 	// than silently picking one.
-	first := &goschema.Database{
-		Views: []goschema.View{{StructName: "ActiveUsers", Name: "active_users", Body: "SELECT id FROM users WHERE active"}},
+	first := &schemamodel.Database{
+		Views: []schemamodel.View{{StructName: "ActiveUsers", Name: "active_users", Body: "SELECT id FROM users WHERE active"}},
 	}
-	second := &goschema.Database{
-		Views: []goschema.View{{StructName: "ActiveUsers", Name: "active_users", Body: "SELECT id FROM users"}},
+	second := &schemamodel.Database{
+		Views: []schemamodel.View{{StructName: "ActiveUsers", Name: "active_users", Body: "SELECT id FROM users"}},
 	}
 
-	merged, err := goschema.Merge(first, second)
+	merged, err := schemamodel.Merge(first, second)
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(merged, qt.IsNil)
 	c.Assert(err.Error(), qt.Contains, "active_users")
@@ -110,11 +111,11 @@ func TestMergeErrorsOnConflictingDefinitions(t *testing.T) {
 func TestMergeIdenticalViewsAcrossSourcesDeduplicate(t *testing.T) {
 	c := qt.New(t)
 
-	view := goschema.View{StructName: "ActiveUsers", Name: "active_users", Body: "SELECT id FROM users"}
-	first := &goschema.Database{Views: []goschema.View{view}}
-	second := &goschema.Database{Views: []goschema.View{view}}
+	view := schemamodel.View{StructName: "ActiveUsers", Name: "active_users", Body: "SELECT id FROM users"}
+	first := &schemamodel.Database{Views: []schemamodel.View{view}}
+	second := &schemamodel.Database{Views: []schemamodel.View{view}}
 
-	merged, err := goschema.Merge(first, second)
+	merged, err := schemamodel.Merge(first, second)
 	c.Assert(err, qt.IsNil)
 	c.Assert(merged.Views, qt.HasLen, 1)
 }
@@ -124,7 +125,7 @@ func TestMergeSkipsNilSources(t *testing.T) {
 
 	users := parseRaw(c, "users.go", usersSource)
 
-	merged, err := goschema.Merge(nil, users, nil)
+	merged, err := schemamodel.Merge(nil, users, nil)
 	c.Assert(err, qt.IsNil)
 	c.Assert(merged.Tables, qt.HasLen, 1)
 	c.Assert(tableIndex(merged, "users") >= 0, qt.IsTrue)
@@ -133,7 +134,7 @@ func TestMergeSkipsNilSources(t *testing.T) {
 func TestMergeNoSourcesReturnsEmpty(t *testing.T) {
 	c := qt.New(t)
 
-	merged, err := goschema.Merge()
+	merged, err := schemamodel.Merge()
 	c.Assert(err, qt.IsNil)
 	c.Assert(merged, qt.IsNotNil)
 	c.Assert(merged.Tables, qt.HasLen, 0)
@@ -151,7 +152,7 @@ func TestParseFS_FinalizationMatchesMerge(t *testing.T) {
 
 	users := parseRaw(c, "users.go", usersSource)
 	orders := parseRaw(c, "orders.go", ordersSource)
-	merged, err := goschema.Merge(orders, users)
+	merged, err := schemamodel.Merge(orders, users)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(parsed, qt.DeepEquals, merged)
@@ -181,7 +182,7 @@ type User struct {
 	finalized, err := goschema.ParseFS(fsys, ".")
 	c.Assert(err, qt.IsNil)
 
-	merged, err := goschema.Merge(finalized)
+	merged, err := schemamodel.Merge(finalized)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(merged, qt.DeepEquals, finalized)
@@ -190,40 +191,40 @@ type User struct {
 func TestMerge_DoesNotMutateInputs(t *testing.T) {
 	c := qt.New(t)
 
-	source := &goschema.Database{
-		Tables: []goschema.Table{{
+	source := &schemamodel.Database{
+		Tables: []schemamodel.Table{{
 			StructName: "User",
 			Name:       "users",
 			PrimaryKey: []string{"id"},
 		}},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "User", FieldName: "ID", Name: "id", Type: "BIGINT"},
 			{StructName: "Metadata", FieldName: "Label", Name: "label", Type: "TEXT"},
 		},
-		EmbeddedFields: []goschema.EmbeddedField{{
+		EmbeddedFields: []schemamodel.EmbeddedField{{
 			StructName:       "User",
 			EmbeddedTypeName: "Metadata",
 			Mode:             "inline",
 		}},
 	}
-	want := &goschema.Database{
-		Tables: []goschema.Table{{
+	want := &schemamodel.Database{
+		Tables: []schemamodel.Table{{
 			StructName: "User",
 			Name:       "users",
 			PrimaryKey: []string{"id"},
 		}},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "User", FieldName: "ID", Name: "id", Type: "BIGINT"},
 			{StructName: "Metadata", FieldName: "Label", Name: "label", Type: "TEXT"},
 		},
-		EmbeddedFields: []goschema.EmbeddedField{{
+		EmbeddedFields: []schemamodel.EmbeddedField{{
 			StructName:       "User",
 			EmbeddedTypeName: "Metadata",
 			Mode:             "inline",
 		}},
 	}
 
-	_, err := goschema.Merge(source, &goschema.Database{})
+	_, err := schemamodel.Merge(source, &schemamodel.Database{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(source, qt.DeepEquals, want)
@@ -237,10 +238,10 @@ func TestMerge_DoesNotMutateInputs(t *testing.T) {
 // coverage exists to prevent (stokaro/ptah#1028).
 func TestMergePreservesWhatEachSourceDeclinedToDescribe(t *testing.T) {
 	c := qt.New(t)
-	first := &goschema.Database{
+	first := &schemamodel.Database{
 		NotDescribed: coverage.Set{}.With(coverage.Refused(coverage.Extension)),
 	}
-	second := &goschema.Database{
+	second := &schemamodel.Database{
 		NotDescribed: coverage.Set{}.With(coverage.Object{
 			Kind:       coverage.VirtualTable,
 			Reason:     coverage.Unsupported,
@@ -248,7 +249,7 @@ func TestMergePreservesWhatEachSourceDeclinedToDescribe(t *testing.T) {
 		}),
 	}
 
-	merged, err := goschema.Merge(first, second)
+	merged, err := schemamodel.Merge(first, second)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(merged.NotDescribed.Describes(coverage.Extension, "pgcrypto"), qt.IsFalse)

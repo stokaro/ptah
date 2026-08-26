@@ -11,8 +11,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 	"go.5x5.cz/ptah/internal/sqlrunner"
 	"go.5x5.cz/ptah/internal/testutils"
@@ -297,10 +297,10 @@ func TestPostgreSQLReader_enhanceTablesWithConstraints(t *testing.T) {
 	reader := NewPostgreSQLReader(nil, "public")
 
 	// Create test data
-	tables := []types.DBTable{
+	tables := []catalog.Table{
 		{
 			Name: "test_table",
-			Columns: []types.DBColumn{
+			Columns: []catalog.Column{
 				{Name: "id", IsPrimaryKey: false, IsUnique: false},
 				{Name: "email", IsPrimaryKey: false, IsUnique: false},
 				{Name: "name", IsPrimaryKey: false, IsUnique: false},
@@ -310,7 +310,7 @@ func TestPostgreSQLReader_enhanceTablesWithConstraints(t *testing.T) {
 		},
 	}
 
-	constraints := []types.DBConstraint{
+	constraints := []catalog.Constraint{
 		{TableName: "test_table", ColumnName: "id", Type: "PRIMARY KEY"},
 		{TableName: "test_table", ColumnName: "email", Type: "UNIQUE"},
 		{TableName: "test_table", ColumnNames: []string{"sku", "region"}, Type: "UNIQUE"},
@@ -423,7 +423,7 @@ func TestPostgresTransactionRunnerClosedTransactionReturnsError(t *testing.T) {
 func TestPostgreSQLWriter_SchemaWriterInterface(t *testing.T) {
 	c := qt.New(t)
 	writer := NewPostgreSQLWriter(nil, "public")
-	var _ types.SchemaWriter = writer
+	var _ catalog.SchemaWriter = writer
 	c.Assert(writer, qt.IsNotNil)
 }
 

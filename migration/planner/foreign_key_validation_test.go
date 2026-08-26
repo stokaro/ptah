@@ -5,27 +5,27 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestGenerateSchemaDiffAST_ValidatesTargetForeignKeys_FailurePath(t *testing.T) {
 	tests := []struct {
 		name    string
 		dialect string
-		diff    *types.SchemaDiff
-		schema  *goschema.Database
+		diff    *difftypes.SchemaDiff
+		schema  *schemamodel.Database
 		wantIs  error
 		wantErr string
 	}{
 		{
 			name:    "mysql nonunique referenced key",
 			dialect: platform.MySQL,
-			diff:    &types.SchemaDiff{},
+			diff:    &difftypes.SchemaDiff{},
 			schema:  plannerIndexedForeignKeyDatabase(),
 			wantIs:  ptaherr.ErrUnsupportedFeature,
 			wantErr: `mysql requires referenced columns tenant_id, code on table "parents" to be declared unique`,
@@ -41,7 +41,7 @@ func TestGenerateSchemaDiffAST_ValidatesTargetForeignKeys_FailurePath(t *testing
 		{
 			name:    "postgres incompatible types",
 			dialect: platform.Postgres,
-			diff:    &types.SchemaDiff{},
+			diff:    &difftypes.SchemaDiff{},
 			schema:  plannerTypeMismatchDatabase(),
 			wantIs:  ptaherr.ErrInvalidSchemaDiff,
 			wantErr: `foreign-key columns "children"\."parent_id" \(BIGINT\) and "parents"\."id" \(INTEGER\) have incompatible types`,
@@ -59,7 +59,7 @@ func TestGenerateSchemaDiffAST_ValidatesTargetForeignKeys_FailurePath(t *testing
 	}
 }
 
-func plannerSQLServerDiff() *types.SchemaDiff {
+func plannerSQLServerDiff() *difftypes.SchemaDiff {
 	semantics := identifier.ForSQLServerCatalog("SQL_Latin1_General_CP1_CI_AS").
 		WithResolvedNames([]identifier.ResolvedName{
 			{Name: "dbo", Key: "dbo"},
@@ -69,27 +69,27 @@ func plannerSQLServerDiff() *types.SchemaDiff {
 			{Name: "left_id", Key: "left_id"},
 			{Name: "right_id", Key: "right_id"},
 		})
-	return &types.SchemaDiff{IdentifierSemantics: &semantics}
+	return &difftypes.SchemaDiff{IdentifierSemantics: &semantics}
 }
 
-func plannerIndexedForeignKeyDatabase() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func plannerIndexedForeignKeyDatabase() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Parent", Name: "parents"},
 			{StructName: "Child", Name: "children"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Parent", Name: "tenant_id", Type: "INTEGER"},
 			{StructName: "Parent", Name: "code", Type: "INTEGER"},
 			{StructName: "Child", Name: "tenant_id", Type: "INTEGER"},
 			{StructName: "Child", Name: "parent_code", Type: "INTEGER"},
 		},
-		Indexes: []goschema.Index{{
+		Indexes: []schemamodel.Index{{
 			StructName: "Parent",
 			Name:       "idx_parents_tenant_code",
 			Fields:     []string{"tenant_id", "code"},
 		}},
-		Constraints: []goschema.Constraint{{
+		Constraints: []schemamodel.Constraint{{
 			StructName:     "Child",
 			Name:           "fk_children_parents",
 			Type:           "FOREIGN KEY",
@@ -100,13 +100,13 @@ func plannerIndexedForeignKeyDatabase() *goschema.Database {
 	}
 }
 
-func plannerCascadeCycleDatabase() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func plannerCascadeCycleDatabase() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Left", Name: "left_nodes"},
 			{StructName: "Right", Name: "right_nodes"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Left", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Left", Name: "right_id", Type: "INTEGER", Foreign: "right_nodes(id)", OnDelete: "CASCADE"},
 			{StructName: "Right", Name: "id", Type: "INTEGER", Primary: true},
@@ -115,13 +115,13 @@ func plannerCascadeCycleDatabase() *goschema.Database {
 	}
 }
 
-func plannerTypeMismatchDatabase() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func plannerTypeMismatchDatabase() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Parent", Name: "parents"},
 			{StructName: "Child", Name: "children"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Parent", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Child", Name: "parent_id", Type: "BIGINT", Foreign: "parents(id)"},
 		},

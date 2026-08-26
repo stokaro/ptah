@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 )
 
@@ -19,8 +19,8 @@ import (
 func TestConvertViews_CarriesTheAttributes(t *testing.T) {
 	c := qt.New(t)
 
-	converted := dbschematogo.ConvertDBSchemaToGoSchema(&types.DBSchema{
-		Views: []types.DBView{
+	converted := dbschematogo.ConvertCatalogToSchema(&catalog.Database{
+		Views: []catalog.View{
 			{
 				Schema:     "dbo",
 				Name:       "bound_orders",

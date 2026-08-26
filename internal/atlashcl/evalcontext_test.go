@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashcl"
 )
 
@@ -421,7 +421,7 @@ func TestParseKeepsReferenceFormsUnevaluated(t *testing.T) {
 		// makes the comparison below carry the COUNT as well as the value, so a
 		// row that stopped parsing its block fails on the length and a row that
 		// started evaluating its reference fails on the text.
-		read func(db *goschema.Database) []string
+		read func(db *schemamodel.Database) []string
 		want []string
 	}{
 		{
@@ -534,10 +534,10 @@ table "t" {
 // gives one entry per INDEX rather than one per column, so an index that lost a
 // column and an index that was never parsed stay different answers.
 
-func indexColumns(db *goschema.Database) []string {
-	return projectStrings(db.Indexes, func(item goschema.Index) string { return strings.Join(item.Fields, ",") })
+func indexColumns(db *schemamodel.Database) []string {
+	return projectStrings(db.Indexes, func(item schemamodel.Index) string { return strings.Join(item.Fields, ",") })
 }
 
-func rangeSubtypes(db *goschema.Database) []string {
-	return projectStrings(db.Ranges, func(item goschema.Range) string { return item.Subtype })
+func rangeSubtypes(db *schemamodel.Database) []string {
+	return projectStrings(db.Ranges, func(item schemamodel.Range) string { return item.Subtype })
 }

@@ -30,9 +30,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/migration/migrator"
@@ -98,12 +98,12 @@ func TestPostgreSQLDomainColumn_ReaderKeepsTheDomain(t *testing.T) {
 
 	live, err := dbschema.ReadSchemaWithSchemasContext(t.Context(), conn, nil)
 	c.Assert(err, qt.IsNil)
-	converted := dbschematogo.ConvertDBSchemaToGoSchema(live)
+	converted := dbschematogo.ConvertCatalogToSchema(live)
 
 	tests := []struct {
 		name   string
 		column string
-		// wantDomain is DBColumn.DomainName: the fact information_schema
+		// wantDomain is catalog.Column.DomainName: the fact information_schema
 		// records and data_type erases.
 		wantDomain string
 		// wantFieldType is what the desired-state model carries, which is what
@@ -218,12 +218,12 @@ func TestPostgreSQLDomainColumn_OverUserDefinedBaseTypeKeepsTheDomain(t *testing
 
 	live, err := dbschema.ReadSchemaWithSchemasContext(t.Context(), conn, nil)
 	c.Assert(err, qt.IsNil)
-	converted := dbschematogo.ConvertDBSchemaToGoSchema(live)
+	converted := dbschematogo.ConvertCatalogToSchema(live)
 
 	tests := []struct {
 		name   string
 		column string
-		// wantDomain is DBColumn.DomainName, empty for the control column.
+		// wantDomain is catalog.Column.DomainName, empty for the control column.
 		wantDomain string
 		// wantUDTName is the BASE type the catalog reports for a domain
 		// column, and the column's own type for the control. The two being
@@ -409,7 +409,7 @@ func columnStatements(statements []string, column string) []string {
 	return out
 }
 
-func findLiveColumn(c *qt.C, tables []dbschematypes.DBTable, table, column string) dbschematypes.DBColumn {
+func findLiveColumn(c *qt.C, tables []catalog.Table, table, column string) catalog.Column {
 	c.Helper()
 
 	for _, candidate := range tables {
@@ -420,10 +420,10 @@ func findLiveColumn(c *qt.C, tables []dbschematypes.DBTable, table, column strin
 		}
 	}
 	c.Fatalf("table %q has no column %q in the read schema", table, column)
-	return dbschematypes.DBColumn{}
+	return catalog.Column{}
 }
 
-func findConvertedField(c *qt.C, converted *goschema.Database, column string) goschema.Field {
+func findConvertedField(c *qt.C, converted *schemamodel.Database, column string) schemamodel.Field {
 	c.Helper()
 
 	for _, field := range converted.Fields {
@@ -432,5 +432,5 @@ func findConvertedField(c *qt.C, converted *goschema.Database, column string) go
 		}
 	}
 	c.Fatalf("converted schema has no field %q", column)
-	return goschema.Field{}
+	return schemamodel.Field{}
 }

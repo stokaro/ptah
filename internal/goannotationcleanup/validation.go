@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/annotationmeta"
 	"go.5x5.cz/ptah/internal/annotationparse"
 	"go.5x5.cz/ptah/internal/tableref"
@@ -16,7 +16,7 @@ import (
 // attachment and that directives the parser can collapse or skip produced the
 // corresponding schema object. Callers must run this against the same captured
 // source view before destructive cleanup.
-func (p *Plan) ValidateParsed(sourceDB, exportedDB *goschema.Database) error {
+func (p *Plan) ValidateParsed(sourceDB, exportedDB *schemamodel.Database) error {
 	var validationErrors []error
 	for _, removal := range p.removals() {
 		if err := annotationAttachmentError(removal); err != nil {
@@ -87,7 +87,7 @@ func annotationScopeError(removal removedLine, directive annotationmeta.Directiv
 	)
 }
 
-type representationMatcher func(removedLine, *goschema.Database, *goschema.Database) bool
+type representationMatcher func(removedLine, *schemamodel.Database, *schemamodel.Database) bool
 
 var representationMatchers = map[string]representationMatcher{
 	"ptah:schema:field":      fieldRepresented,
@@ -113,7 +113,7 @@ var representationMatchers = map[string]representationMatcher{
 	"ptah:schema:data":       dataRepresented,
 }
 
-func annotationRepresented(removal removedLine, sourceDB, exportedDB *goschema.Database) bool {
+func annotationRepresented(removal removedLine, sourceDB, exportedDB *schemamodel.Database) bool {
 	if sourceDB == nil || exportedDB == nil {
 		return false
 	}
@@ -124,60 +124,60 @@ func annotationRepresented(removal removedLine, sourceDB, exportedDB *goschema.D
 	return matcher(removal, sourceDB, exportedDB)
 }
 
-func schemaRepresented(removal removedLine, _, exportedDB *goschema.Database) bool {
-	return slices.ContainsFunc(exportedDB.Schemas, func(schema goschema.Schema) bool {
+func schemaRepresented(removal removedLine, _, exportedDB *schemamodel.Database) bool {
+	return slices.ContainsFunc(exportedDB.Schemas, func(schema schemamodel.Schema) bool {
 		return schema.Name == removal.values["name"]
 	})
 }
 
-func enumRepresented(removal removedLine, _, exportedDB *goschema.Database) bool {
-	return slices.ContainsFunc(exportedDB.Enums, func(enum goschema.Enum) bool {
+func enumRepresented(removal removedLine, _, exportedDB *schemamodel.Database) bool {
+	return slices.ContainsFunc(exportedDB.Enums, func(enum schemamodel.Enum) bool {
 		return enum.Name == removal.values["name"] &&
 			enum.Schema == removal.values["schema"] &&
 			slices.Equal(enum.Values, splitAnnotationList(removal.values["values"]))
 	})
 }
 
-func extensionRepresented(removal removedLine, _, exportedDB *goschema.Database) bool {
-	return slices.ContainsFunc(exportedDB.Extensions, func(extension goschema.Extension) bool {
+func extensionRepresented(removal removedLine, _, exportedDB *schemamodel.Database) bool {
+	return slices.ContainsFunc(exportedDB.Extensions, func(extension schemamodel.Extension) bool {
 		return extension.Name == removal.values["name"]
 	})
 }
 
-func functionRepresented(removal removedLine, _, exportedDB *goschema.Database) bool {
-	return slices.ContainsFunc(exportedDB.Functions, func(function goschema.Function) bool {
+func functionRepresented(removal removedLine, _, exportedDB *schemamodel.Database) bool {
+	return slices.ContainsFunc(exportedDB.Functions, func(function schemamodel.Function) bool {
 		return function.Name == removal.values["name"] && function.Body == removal.values["body"]
 	})
 }
 
-func sequenceRepresented(removal removedLine, _, exportedDB *goschema.Database) bool {
-	return slices.ContainsFunc(exportedDB.Sequences, func(sequence goschema.Sequence) bool {
+func sequenceRepresented(removal removedLine, _, exportedDB *schemamodel.Database) bool {
+	return slices.ContainsFunc(exportedDB.Sequences, func(sequence schemamodel.Sequence) bool {
 		return sameSchemaObject(sequence.Schema, sequence.Name, removal.values["schema"], removal.values["name"])
 	})
 }
 
-func domainRepresented(removal removedLine, _, exportedDB *goschema.Database) bool {
-	return slices.ContainsFunc(exportedDB.Domains, func(domain goschema.Domain) bool {
+func domainRepresented(removal removedLine, _, exportedDB *schemamodel.Database) bool {
+	return slices.ContainsFunc(exportedDB.Domains, func(domain schemamodel.Domain) bool {
 		return sameSchemaObject(domain.Schema, domain.Name, removal.values["schema"], removal.values["name"]) &&
 			domain.BaseType == removal.values["type"]
 	})
 }
 
-func compositeRepresented(removal removedLine, _, exportedDB *goschema.Database) bool {
-	return slices.ContainsFunc(exportedDB.CompositeTypes, func(composite goschema.CompositeType) bool {
+func compositeRepresented(removal removedLine, _, exportedDB *schemamodel.Database) bool {
+	return slices.ContainsFunc(exportedDB.CompositeTypes, func(composite schemamodel.CompositeType) bool {
 		return sameSchemaObject(composite.Schema, composite.Name, removal.values["schema"], removal.values["name"])
 	})
 }
 
-func rangeRepresented(removal removedLine, _, exportedDB *goschema.Database) bool {
-	return slices.ContainsFunc(exportedDB.Ranges, func(rangeType goschema.Range) bool {
+func rangeRepresented(removal removedLine, _, exportedDB *schemamodel.Database) bool {
+	return slices.ContainsFunc(exportedDB.Ranges, func(rangeType schemamodel.Range) bool {
 		return sameSchemaObject(rangeType.Schema, rangeType.Name, removal.values["schema"], removal.values["name"]) &&
 			rangeType.Subtype == removal.values["subtype"]
 	})
 }
 
-func viewRepresented(removal removedLine, _, exportedDB *goschema.Database) bool {
-	return slices.ContainsFunc(exportedDB.Views, func(view goschema.View) bool {
+func viewRepresented(removal removedLine, _, exportedDB *schemamodel.Database) bool {
+	return slices.ContainsFunc(exportedDB.Views, func(view schemamodel.View) bool {
 		return view.Name == removal.values["name"] && view.Body == removal.values["body"]
 	})
 }
@@ -185,32 +185,32 @@ func viewRepresented(removal removedLine, _, exportedDB *goschema.Database) bool
 func materializedViewRepresented(
 	removal removedLine,
 	_,
-	exportedDB *goschema.Database,
+	exportedDB *schemamodel.Database,
 ) bool {
-	return slices.ContainsFunc(exportedDB.MaterializedViews, func(view goschema.MaterializedView) bool {
+	return slices.ContainsFunc(exportedDB.MaterializedViews, func(view schemamodel.MaterializedView) bool {
 		return view.Name == removal.values["name"] && view.Body == removal.values["body"]
 	})
 }
 
-func triggerRepresented(removal removedLine, _, exportedDB *goschema.Database) bool {
-	return slices.ContainsFunc(exportedDB.Triggers, func(trigger goschema.Trigger) bool {
+func triggerRepresented(removal removedLine, _, exportedDB *schemamodel.Database) bool {
+	return slices.ContainsFunc(exportedDB.Triggers, func(trigger schemamodel.Trigger) bool {
 		return trigger.Name == removal.values["name"] &&
 			sameTableRef(trigger.Table, removal.values["table"])
 	})
 }
 
-func rlsPolicyDirectiveRepresented(removal removedLine, _, exportedDB *goschema.Database) bool {
+func rlsPolicyDirectiveRepresented(removal removedLine, _, exportedDB *schemamodel.Database) bool {
 	return rlsPolicyRepresented(removal, exportedDB)
 }
 
-func roleRepresented(removal removedLine, _, exportedDB *goschema.Database) bool {
-	return slices.ContainsFunc(exportedDB.Roles, func(role goschema.Role) bool {
+func roleRepresented(removal removedLine, _, exportedDB *schemamodel.Database) bool {
+	return slices.ContainsFunc(exportedDB.Roles, func(role schemamodel.Role) bool {
 		return role.Name == removal.values["name"]
 	})
 }
 
-func grantRepresented(removal removedLine, _, exportedDB *goschema.Database) bool {
-	return slices.ContainsFunc(exportedDB.Grants, func(grant goschema.Grant) bool {
+func grantRepresented(removal removedLine, _, exportedDB *schemamodel.Database) bool {
+	return slices.ContainsFunc(exportedDB.Grants, func(grant schemamodel.Grant) bool {
 		return grant.Role == removal.values["role"] &&
 			slices.Equal(grant.Privileges, splitGrantPrivileges(removal.values)) &&
 			grant.OnTable == removal.values["on_table"] &&
@@ -219,15 +219,15 @@ func grantRepresented(removal removedLine, _, exportedDB *goschema.Database) boo
 	})
 }
 
-func dataRepresented(removal removedLine, _, exportedDB *goschema.Database) bool {
-	return slices.ContainsFunc(exportedDB.ManagedData, func(data goschema.ManagedData) bool {
+func dataRepresented(removal removedLine, _, exportedDB *schemamodel.Database) bool {
+	return slices.ContainsFunc(exportedDB.ManagedData, func(data schemamodel.ManagedData) bool {
 		return sameSchemaObject(data.Schema, data.Table, removal.values["schema"], removal.values["table"]) &&
 			slices.Equal(data.Keys, splitAnnotationList(removal.values["key"])) &&
 			data.File == removal.values["file"]
 	})
 }
 
-func tableRepresented(removal removedLine, sourceDB, exportedDB *goschema.Database) bool {
+func tableRepresented(removal removedLine, sourceDB, exportedDB *schemamodel.Database) bool {
 	table, ok := sourceTableForStruct(sourceDB, removal.structName)
 	if !ok {
 		return false
@@ -236,7 +236,7 @@ func tableRepresented(removal removedLine, sourceDB, exportedDB *goschema.Databa
 	return ok
 }
 
-func fieldRepresented(removal removedLine, sourceDB, exportedDB *goschema.Database) bool {
+func fieldRepresented(removal removedLine, sourceDB, exportedDB *schemamodel.Database) bool {
 	fields := sourceFieldsForRemoval(sourceDB, removal)
 	if len(fields) == 0 {
 		return false
@@ -251,7 +251,7 @@ func fieldRepresented(removal removedLine, sourceDB, exportedDB *goschema.Databa
 	return fieldsRepresentedThroughEmbeddedUse(removal, sourceDB, exportedDB, fields)
 }
 
-func embeddedRepresented(removal removedLine, sourceDB, exportedDB *goschema.Database) bool {
+func embeddedRepresented(removal removedLine, sourceDB, exportedDB *schemamodel.Database) bool {
 	sourceTable, ok := sourceTableForStruct(sourceDB, removal.structName)
 	if !ok {
 		return false
@@ -275,7 +275,7 @@ func embeddedRepresented(removal removedLine, sourceDB, exportedDB *goschema.Dat
 	return true
 }
 
-func indexRepresented(removal removedLine, sourceDB, exportedDB *goschema.Database) bool {
+func indexRepresented(removal removedLine, sourceDB, exportedDB *schemamodel.Database) bool {
 	indexes := sourceIndexesForRemoval(sourceDB, removal)
 	if len(indexes) == 0 {
 		return false
@@ -289,7 +289,7 @@ func indexRepresented(removal removedLine, sourceDB, exportedDB *goschema.Databa
 	return true
 }
 
-func constraintRepresented(removal removedLine, sourceDB, exportedDB *goschema.Database) bool {
+func constraintRepresented(removal removedLine, sourceDB, exportedDB *schemamodel.Database) bool {
 	constraints := sourceConstraintsForRemoval(sourceDB, removal)
 	if len(constraints) == 0 {
 		return false
@@ -303,7 +303,7 @@ func constraintRepresented(removal removedLine, sourceDB, exportedDB *goschema.D
 	return true
 }
 
-func fieldsRepresentedInTable(database *goschema.Database, structName string, fields []goschema.Field) bool {
+func fieldsRepresentedInTable(database *schemamodel.Database, structName string, fields []schemamodel.Field) bool {
 	for _, field := range fields {
 		if !exportedFieldExists(database, structName, field.Name) {
 			return false
@@ -314,8 +314,8 @@ func fieldsRepresentedInTable(database *goschema.Database, structName string, fi
 
 func fieldsRepresentedThroughEmbeddedUse(
 	removal removedLine,
-	sourceDB, exportedDB *goschema.Database,
-	fields []goschema.Field,
+	sourceDB, exportedDB *schemamodel.Database,
+	fields []schemamodel.Field,
 ) bool {
 	for _, sourceField := range fields {
 		if !fieldRepresentedThroughEmbeddedUse(removal, sourceDB, exportedDB, sourceField) {
@@ -327,8 +327,8 @@ func fieldsRepresentedThroughEmbeddedUse(
 
 func fieldRepresentedThroughEmbeddedUse(
 	removal removedLine,
-	sourceDB, exportedDB *goschema.Database,
-	sourceField goschema.Field,
+	sourceDB, exportedDB *schemamodel.Database,
+	sourceField schemamodel.Field,
 ) bool {
 	for _, generated := range sourceDB.Fields {
 		if !generated.GeneratedFromEmbedded || generated.FieldName != sourceField.FieldName {
@@ -349,12 +349,12 @@ func fieldRepresentedThroughEmbeddedUse(
 	return false
 }
 
-func inlineEmbeddedPathContains(database *goschema.Database, ownerStruct, embeddedStruct string) bool {
+func inlineEmbeddedPathContains(database *schemamodel.Database, ownerStruct, embeddedStruct string) bool {
 	return inlineEmbeddedPathContainsSeen(database, ownerStruct, embeddedStruct, make(map[string]struct{}))
 }
 
 func inlineEmbeddedPathContainsSeen(
-	database *goschema.Database,
+	database *schemamodel.Database,
 	ownerStruct, embeddedStruct string,
 	seen map[string]struct{},
 ) bool {
@@ -383,8 +383,8 @@ func embeddedModeMaterializesFields(mode string) bool {
 	return mode == "" || strings.EqualFold(mode, "inline")
 }
 
-func rlsPolicyRepresented(removal removedLine, database *goschema.Database) bool {
-	return slices.ContainsFunc(database.RLSPolicies, func(policy goschema.RLSPolicy) bool {
+func rlsPolicyRepresented(removal removedLine, database *schemamodel.Database) bool {
+	return slices.ContainsFunc(database.RLSPolicies, func(policy schemamodel.RLSPolicy) bool {
 		return policy.Name == removal.values["name"] &&
 			sameTableRef(policy.Table, removal.values["table"]) &&
 			policy.PolicyFor == canonicalRLSPolicyFor(removal.values["for"]) &&
@@ -402,7 +402,7 @@ func canonicalRLSPolicyFor(value string) string {
 	return strings.ToUpper(value)
 }
 
-func rlsEnableRepresented(removal removedLine, sourceDB, exportedDB *goschema.Database) bool {
+func rlsEnableRepresented(removal removedLine, sourceDB, exportedDB *schemamodel.Database) bool {
 	tables := sourceRLSEnabledTablesForRemoval(sourceDB, removal)
 	if len(tables) == 0 {
 		return false
@@ -415,8 +415,8 @@ func rlsEnableRepresented(removal removedLine, sourceDB, exportedDB *goschema.Da
 	return true
 }
 
-func sourceRLSEnabledTablesForRemoval(database *goschema.Database, removal removedLine) []goschema.RLSEnabledTable {
-	var tables []goschema.RLSEnabledTable
+func sourceRLSEnabledTablesForRemoval(database *schemamodel.Database, removal removedLine) []schemamodel.RLSEnabledTable {
+	var tables []schemamodel.RLSEnabledTable
 	for _, table := range database.RLSEnabledTables {
 		if !sameTableRef(table.Table, removal.values["table"]) {
 			continue
@@ -426,26 +426,26 @@ func sourceRLSEnabledTablesForRemoval(database *goschema.Database, removal remov
 	return tables
 }
 
-func exportedRLSEnabledTableExists(database *goschema.Database, source goschema.RLSEnabledTable) bool {
-	return slices.ContainsFunc(database.RLSEnabledTables, func(table goschema.RLSEnabledTable) bool {
+func exportedRLSEnabledTableExists(database *schemamodel.Database, source schemamodel.RLSEnabledTable) bool {
+	return slices.ContainsFunc(database.RLSEnabledTables, func(table schemamodel.RLSEnabledTable) bool {
 		return sameTableRef(table.Table, source.Table) && table.Comment == source.Comment
 	})
 }
 
-func sourceTableForStruct(database *goschema.Database, structName string) (goschema.Table, bool) {
-	return findFunc(database.Tables, func(table goschema.Table) bool {
+func sourceTableForStruct(database *schemamodel.Database, structName string) (schemamodel.Table, bool) {
+	return findFunc(database.Tables, func(table schemamodel.Table) bool {
 		return table.StructName == structName
 	})
 }
 
-func exportedTableForSource(database *goschema.Database, source goschema.Table) (goschema.Table, bool) {
-	return findFunc(database.Tables, func(table goschema.Table) bool {
+func exportedTableForSource(database *schemamodel.Database, source schemamodel.Table) (schemamodel.Table, bool) {
+	return findFunc(database.Tables, func(table schemamodel.Table) bool {
 		return sameTableRef(table.QualifiedName(), source.QualifiedName())
 	})
 }
 
-func sourceFieldsForRemoval(database *goschema.Database, removal removedLine) []goschema.Field {
-	var fields []goschema.Field
+func sourceFieldsForRemoval(database *schemamodel.Database, removal removedLine) []schemamodel.Field {
+	var fields []schemamodel.Field
 	for _, fieldName := range removal.fieldNames {
 		for _, field := range database.Fields {
 			if field.StructName == removal.structName && field.FieldName == fieldName {
@@ -456,8 +456,8 @@ func sourceFieldsForRemoval(database *goschema.Database, removal removedLine) []
 	return fields
 }
 
-func sourceGeneratedEmbeddedFields(database *goschema.Database, structName string) []goschema.Field {
-	var fields []goschema.Field
+func sourceGeneratedEmbeddedFields(database *schemamodel.Database, structName string) []schemamodel.Field {
+	var fields []schemamodel.Field
 	for _, field := range database.Fields {
 		if field.StructName == structName && field.GeneratedFromEmbedded {
 			fields = append(fields, field)
@@ -466,22 +466,22 @@ func sourceGeneratedEmbeddedFields(database *goschema.Database, structName strin
 	return fields
 }
 
-func sourceEmbeddedRepresented(database *goschema.Database, removal removedLine) bool {
-	return slices.ContainsFunc(database.EmbeddedFields, func(embedded goschema.EmbeddedField) bool {
+func sourceEmbeddedRepresented(database *schemamodel.Database, removal removedLine) bool {
+	return slices.ContainsFunc(database.EmbeddedFields, func(embedded schemamodel.EmbeddedField) bool {
 		return embedded.StructName == removal.structName &&
 			embedded.EmbeddedTypeName == removal.embeddedTypeName &&
 			!strings.EqualFold(embedded.Mode, "skip")
 	})
 }
 
-func exportedFieldExists(database *goschema.Database, structName, name string) bool {
-	return slices.ContainsFunc(database.Fields, func(field goschema.Field) bool {
+func exportedFieldExists(database *schemamodel.Database, structName, name string) bool {
+	return slices.ContainsFunc(database.Fields, func(field schemamodel.Field) bool {
 		return field.StructName == structName && field.Name == name
 	})
 }
 
-func sourceIndexesForRemoval(database *goschema.Database, removal removedLine) []goschema.Index {
-	var indexes []goschema.Index
+func sourceIndexesForRemoval(database *schemamodel.Database, removal removedLine) []schemamodel.Index {
+	var indexes []schemamodel.Index
 	for _, index := range database.Indexes {
 		if index.StructName == removal.structName && index.Name == removal.values["name"] {
 			indexes = append(indexes, index)
@@ -490,7 +490,7 @@ func sourceIndexesForRemoval(database *goschema.Database, removal removedLine) [
 	return indexes
 }
 
-func sourceIndexTarget(database *goschema.Database, index goschema.Index) string {
+func sourceIndexTarget(database *schemamodel.Database, index schemamodel.Index) string {
 	if strings.TrimSpace(index.TableName) != "" {
 		return canonicalTableRef(index.TableName)
 	}
@@ -501,14 +501,14 @@ func sourceIndexTarget(database *goschema.Database, index goschema.Index) string
 	return table.QualifiedName()
 }
 
-func exportedIndexExists(database *goschema.Database, tableName, name string) bool {
-	return slices.ContainsFunc(database.Indexes, func(index goschema.Index) bool {
+func exportedIndexExists(database *schemamodel.Database, tableName, name string) bool {
+	return slices.ContainsFunc(database.Indexes, func(index schemamodel.Index) bool {
 		return index.Name == name && sameTableRef(index.TableName, tableName)
 	})
 }
 
-func sourceConstraintsForRemoval(database *goschema.Database, removal removedLine) []goschema.Constraint {
-	var constraints []goschema.Constraint
+func sourceConstraintsForRemoval(database *schemamodel.Database, removal removedLine) []schemamodel.Constraint {
+	var constraints []schemamodel.Constraint
 	for _, constraint := range database.Constraints {
 		if constraint.StructName == removal.structName &&
 			constraint.Name == removal.values["name"] &&
@@ -519,7 +519,7 @@ func sourceConstraintsForRemoval(database *goschema.Database, removal removedLin
 	return constraints
 }
 
-func sourceConstraintTarget(database *goschema.Database, constraint goschema.Constraint) string {
+func sourceConstraintTarget(database *schemamodel.Database, constraint schemamodel.Constraint) string {
 	if strings.TrimSpace(constraint.Table) != "" {
 		return canonicalTableRef(constraint.Table)
 	}
@@ -530,8 +530,8 @@ func sourceConstraintTarget(database *goschema.Database, constraint goschema.Con
 	return table.QualifiedName()
 }
 
-func exportedConstraintExists(database *goschema.Database, tableName, name, constraintType string) bool {
-	return slices.ContainsFunc(database.Constraints, func(constraint goschema.Constraint) bool {
+func exportedConstraintExists(database *schemamodel.Database, tableName, name, constraintType string) bool {
+	return slices.ContainsFunc(database.Constraints, func(constraint schemamodel.Constraint) bool {
 		return constraint.Name == name &&
 			constraint.Type == constraintType &&
 			sameTableRef(constraint.Table, tableName)
@@ -552,7 +552,7 @@ func canonicalTableRef(value string) string {
 	if !ok {
 		return value
 	}
-	return goschema.QualifyTableName(ref.Schema, ref.Name)
+	return schemamodel.QualifyTableName(ref.Schema, ref.Name)
 }
 
 func splitGrantPrivileges(values map[string]string) []string {

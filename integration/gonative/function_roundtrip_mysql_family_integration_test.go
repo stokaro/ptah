@@ -9,12 +9,12 @@ import (
 	qt "github.com/frankban/quicktest"
 	mysqldriver "github.com/go-sql-driver/mysql"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/dbschema/mysql"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // roundTripDatabase is the database this test owns outright. It must match the
@@ -106,9 +106,9 @@ func dropOwnedDatabase(c *qt.C, dsn string) {
 // The body is spelled the way the target engine spells it. That is the same
 // contract the view and trigger renderers already carry: Ptah supplies the
 // engine-correct envelope around a body the operator writes for the target.
-func functionRoundTripSchema(body string) *goschema.Database {
-	return &goschema.Database{
-		Functions: []goschema.Function{{
+func functionRoundTripSchema(body string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Functions: []schemamodel.Function{{
 			Name: "ptah_rt_fn", Parameters: "a INT", Returns: "int",
 			Language: "sql", Volatility: "IMMUTABLE", Security: "INVOKER", Body: body,
 		}},
@@ -117,7 +117,7 @@ func functionRoundTripSchema(body string) *goschema.Database {
 
 // applyPlannedSQL plans the diff between desired and the live database, executes
 // every statement, and returns the statements it ran.
-func applyPlannedSQL(c *qt.C, db *sql.DB, dialect string, desired *goschema.Database) []string {
+func applyPlannedSQL(c *qt.C, db *sql.DB, dialect string, desired *schemamodel.Database) []string {
 	c.Helper()
 
 	reader := mysql.NewMySQLReader(db, "")
@@ -136,7 +136,7 @@ func applyPlannedSQL(c *qt.C, db *sql.DB, dialect string, desired *goschema.Data
 }
 
 // readBackDiff reads the live catalog and diffs it against desired.
-func readBackDiff(c *qt.C, db *sql.DB, desired *goschema.Database) *difftypes.SchemaDiff {
+func readBackDiff(c *qt.C, db *sql.DB, desired *schemamodel.Database) *difftypes.SchemaDiff {
 	c.Helper()
 
 	reader := mysql.NewMySQLReader(db, "")

@@ -8,24 +8,24 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/mysql"
 	migrationplanner "go.5x5.cz/ptah/migration/planner"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestPlanner_GenerateMigrationAST_ViewsAndTriggersModified(t *testing.T) {
 	c := qt.New(t)
 	planner := mysql.New()
 
-	generated := &goschema.Database{
-		Views: []goschema.View{{
+	desired := &schemamodel.Database{
+		Views: []schemamodel.View{{
 			Name: "active_users",
 			Body: "SELECT id FROM users WHERE deleted_at IS NULL",
 		}},
-		Triggers: []goschema.Trigger{{
+		Triggers: []schemamodel.Trigger{{
 			Name:   "set_updated_at",
 			Table:  "users",
 			Timing: "BEFORE",
@@ -38,7 +38,7 @@ func TestPlanner_GenerateMigrationAST_ViewsAndTriggersModified(t *testing.T) {
 		TriggersModified: []difftypes.TriggerDiff{{TriggerName: "set_updated_at", TableName: "users", Changes: map[string]string{"body": "old -> new"}}},
 	}
 
-	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	nodes, err := planner.GenerateMigrationASTChecked(diff, desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("mysql", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -62,8 +62,8 @@ func TestPlanner_GenerateMigrationASTChecked_RejectsUniqueIncludeColumns(t *test
 			IncludeColumns: []string{"updated_at"},
 		}},
 	}
-	generated := &goschema.Database{
-		Constraints: []goschema.Constraint{{
+	desired := &schemamodel.Database{
+		Constraints: []schemamodel.Constraint{{
 			StructName:     "User",
 			Name:           "users_email_key",
 			Type:           "UNIQUE",
@@ -73,7 +73,7 @@ func TestPlanner_GenerateMigrationASTChecked_RejectsUniqueIncludeColumns(t *test
 		}},
 	}
 
-	_, err := planner.GenerateMigrationASTChecked(diff, generated)
+	_, err := planner.GenerateMigrationASTChecked(diff, desired)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(err, qt.ErrorMatches, "MySQL-family does not support PostgreSQL INCLUDE columns on UNIQUE constraints.*")
@@ -82,8 +82,8 @@ func TestPlanner_GenerateMigrationASTChecked_RejectsUniqueIncludeColumns(t *test
 func TestPlanner_GenerateSchemaDiffSQLStatements_CompoundTriggerBody(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Triggers: []goschema.Trigger{{
+	desired := &schemamodel.Database{
+		Triggers: []schemamodel.Trigger{{
 			Name:   "set_updated_at",
 			Table:  "users",
 			Timing: "BEFORE",
@@ -99,7 +99,7 @@ func TestPlanner_GenerateSchemaDiffSQLStatements_CompoundTriggerBody(t *testing.
 		}},
 	}
 
-	statements, err := migrationplanner.GenerateSchemaDiffSQLStatements(diff, generated, "mysql")
+	statements, err := migrationplanner.GenerateSchemaDiffSQLStatements(diff, desired, "mysql")
 	c.Assert(err, qt.IsNil)
 	for i, statement := range statements {
 		statements[i] = legacyRenderedSQL(statement)
@@ -120,14 +120,14 @@ func TestPlanner_GenerateMigrationAST_RejectsMaterializedViews(t *testing.T) {
 	diff := &difftypes.SchemaDiff{
 		MaterializedViewsAdded: []string{"user_stats"},
 	}
-	generated := &goschema.Database{
-		MaterializedViews: []goschema.MaterializedView{{
+	desired := &schemamodel.Database{
+		MaterializedViews: []schemamodel.MaterializedView{{
 			Name: "user_stats",
 			Body: "SELECT id, COUNT(*) FROM users GROUP BY id",
 		}},
 	}
 
-	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	nodes, err := planner.GenerateMigrationASTChecked(diff, desired)
 	c.Assert(nodes, qt.IsNil)
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(err, qt.ErrorMatches, "materialized views are not supported by MySQL or MariaDB.*")
@@ -181,7 +181,7 @@ func TestPlanner_GenerateMigrationAST_RoutesEveryRoleChangeToItsStatement(t *tes
 			// schema has to hold what the diff names or the phase contributes
 			// nothing (stokaro/ptah#1762).
 			nodes, err := planner.GenerateMigrationASTChecked(test.diff,
-				&goschema.Database{Roles: []goschema.Role{{Name: "app_role"}}})
+				&schemamodel.Database{Roles: []schemamodel.Role{{Name: "app_role"}}})
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.HasLen, 1)
 			c.Check(fmt.Sprintf("%T", nodes[0]), qt.Equals, test.wantNode)

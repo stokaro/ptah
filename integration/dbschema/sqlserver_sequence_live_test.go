@@ -10,12 +10,12 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -70,7 +70,7 @@ func TestSQLServerLiveSequenceRoundTrip(t *testing.T) {
 	// 2. The catalog is asked what it actually holds.
 	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
-	byName := make(map[string]dbschematypes.DBSequence)
+	byName := make(map[string]catalog.Sequence)
 	for _, sequence := range live.Sequences {
 		byName[sequence.Name] = sequence
 	}
@@ -133,13 +133,13 @@ func renderedStatementsNaming(c *qt.C, nodes []ast.Node, keyword string) []strin
 }
 
 // sequenceNamed returns the sequence a catalog read reports under a name.
-func sequenceNamed(sequences []dbschematypes.DBSequence, name string) dbschematypes.DBSequence {
+func sequenceNamed(sequences []catalog.Sequence, name string) catalog.Sequence {
 	for _, sequence := range sequences {
 		if sequence.Name == name {
 			return sequence
 		}
 	}
-	return dbschematypes.DBSequence{}
+	return catalog.Sequence{}
 }
 
 // TestSQLServerLiveSequenceRefusesWhatTheRendererDeclines pins that the two
@@ -203,11 +203,11 @@ func TestSQLServerLiveSequenceRefusesWhatTheRendererDeclines(t *testing.T) {
 
 // sqlServerSequenceSchema declares three sequences: one naming every option,
 // one naming none, and one bounded.
-func sqlServerSequenceSchema(schemaName string) *goschema.Database {
+func sqlServerSequenceSchema(schemaName string) *schemamodel.Database {
 	start, increment, cache := int64(1000), int64(5), int64(20)
 	minValue, maxValue := int64(1), int64(9999)
-	return &goschema.Database{
-		Sequences: []goschema.Sequence{
+	return &schemamodel.Database{
+		Sequences: []schemamodel.Sequence{
 			{
 				StructName: "Order", Name: "order_number_seq", Schema: schemaName,
 				AsType: "bigint", Start: &start, Increment: &increment, Cache: &cache, Cycle: true,

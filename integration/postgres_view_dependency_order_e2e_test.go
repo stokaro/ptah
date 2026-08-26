@@ -12,9 +12,9 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -85,9 +85,9 @@ func TestPostgresViewDependencyOrderE2E(t *testing.T) {
 			// edge can put the base view ahead of it, which is what makes this
 			// test able to fail. With names that sorted correctly it passed
 			// even when the ordering ignored the dialect entirely.
-			declared := &goschema.Database{
+			declared := &schemamodel.Database{
 				Tables: existingTablesOf(read),
-				Views: []goschema.View{
+				Views: []schemamodel.View{
 					{Name: "analytics.asummary", Body: "SELECT id FROM " + test.summaryRef},
 					{Name: "analytics.zbase", Body: "SELECT id FROM analytics.events"},
 				},
@@ -115,10 +115,10 @@ func TestPostgresViewDependencyOrderE2E(t *testing.T) {
 
 // existingTablesOf carries the tables already in the database into the desired
 // schema, so the comparison plans views and nothing else.
-func existingTablesOf(read *dbschematypes.DBSchema) []goschema.Table {
-	tables := make([]goschema.Table, 0, len(read.Tables))
+func existingTablesOf(read *catalog.Database) []schemamodel.Table {
+	tables := make([]schemamodel.Table, 0, len(read.Tables))
 	for _, table := range read.Tables {
-		tables = append(tables, goschema.Table{
+		tables = append(tables, schemamodel.Table{
 			StructName: table.Name, Name: table.Name, Schema: table.Schema,
 		})
 	}

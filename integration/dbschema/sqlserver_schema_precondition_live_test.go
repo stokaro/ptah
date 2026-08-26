@@ -9,9 +9,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -50,10 +50,10 @@ func TestSQLServerLiveSchemaPrecondition(t *testing.T) {
 		_, _ = conn.ExecContext(ctx, "DROP SCHEMA IF EXISTS "+quoted)
 	}()
 
-	declared := &goschema.Database{
-		Schemas: []goschema.Schema{{Name: "dbo"}, {Name: schemaName}},
-		Tables:  []goschema.Table{{StructName: "W", Name: "widget", Schema: schemaName}},
-		Fields: []goschema.Field{
+	declared := &schemamodel.Database{
+		Schemas: []schemamodel.Schema{{Name: "dbo"}, {Name: schemaName}},
+		Tables:  []schemamodel.Table{{StructName: "W", Name: "widget", Schema: schemaName}},
+		Fields: []schemamodel.Field{
 			{StructName: "W", Name: "id", Type: "INT", Primary: true},
 			{StructName: "W", Name: "title", Type: "NVARCHAR(50)"},
 		},
@@ -82,9 +82,9 @@ func TestSQLServerLiveSchemaPrecondition(t *testing.T) {
 	// in the database` -- so an unguarded precondition would fail every apply
 	// after the first one that touched a new schema.
 	declared.Tables = append(declared.Tables,
-		goschema.Table{StructName: "G", Name: "gadget", Schema: schemaName})
+		schemamodel.Table{StructName: "G", Name: "gadget", Schema: schemaName})
 	declared.Fields = append(declared.Fields,
-		goschema.Field{StructName: "G", Name: "id", Type: "INT", Primary: true})
+		schemamodel.Field{StructName: "G", Name: "id", Type: "INT", Primary: true})
 	defer func() {
 		_, _ = conn.ExecContext(ctx, "DROP TABLE IF EXISTS "+quoted+".[gadget]")
 	}()
@@ -106,7 +106,7 @@ func TestSQLServerLiveSchemaPrecondition(t *testing.T) {
 func planSQLServerAgainstLive(
 	c *qt.C,
 	conn *dbschema.DatabaseConnection,
-	declared *goschema.Database,
+	declared *schemamodel.Database,
 	schemaName string,
 ) []string {
 	c.Helper()
@@ -127,7 +127,7 @@ func planSQLServerAgainstLive(
 
 // sqlServerTableNames is the read's table list, for an assertion that says
 // which table rather than how many.
-func sqlServerTableNames(tables []dbschematypes.DBTable) []string {
+func sqlServerTableNames(tables []catalog.Table) []string {
 	names := make([]string, 0, len(tables))
 	for _, table := range tables {
 		names = append(names, table.Name)

@@ -5,11 +5,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // The four coverage tests below are all one shape, and the shape is the point.
@@ -23,8 +23,8 @@ import (
 type coverageCase struct {
 	name string
 	// desired and database are shared by both runs; only the coverage moves.
-	desired  func() *goschema.Database
-	database func() *types.DBSchema
+	desired  func() *schemamodel.Database
+	database func() *catalog.Database
 	// notDescribed is attached to whichever side the case is about.
 	notDescribed coverage.Set
 	// onDesired attaches the record to the desired state (gating removals)
@@ -45,9 +45,9 @@ func coverageCases() []coverageCase {
 			// its own output back to the database it came from planned
 			// DROP EXTENSION for an extension that database has.
 			name:    "an undescribed extension kind is not a dropped extension",
-			desired: func() *goschema.Database { return &goschema.Database{} },
-			database: func() *types.DBSchema {
-				return &types.DBSchema{Extensions: []types.DBExtension{{Name: "pgcrypto", Schema: "public"}}}
+			desired: func() *schemamodel.Database { return &schemamodel.Database{} },
+			database: func() *catalog.Database {
+				return &catalog.Database{Extensions: []catalog.Extension{{Name: "pgcrypto", Schema: "public"}}}
 			},
 			notDescribed: coverage.Set{}.WithKind(coverage.Extension),
 			onDesired:    true,
@@ -62,10 +62,10 @@ func coverageCases() []coverageCase {
 			// document records nothing here, so the control column is what its
 			// silence still plans.
 			name:    "an undescribed virtual table is not a dropped virtual table",
-			desired: func() *goschema.Database { return &goschema.Database{} },
-			database: func() *types.DBSchema {
-				return &types.DBSchema{
-					Tables: []types.DBTable{{Name: "docs", Type: "TABLE", VirtualModule: "fts5"}},
+			desired: func() *schemamodel.Database { return &schemamodel.Database{} },
+			database: func() *catalog.Database {
+				return &catalog.Database{
+					Tables: []catalog.Table{{Name: "docs", Type: "TABLE", VirtualModule: "fts5"}},
 				}
 			},
 			notDescribed: coverage.Set{}.WithKind(coverage.VirtualTable),
@@ -75,9 +75,9 @@ func coverageCases() []coverageCase {
 		},
 		{
 			name:    "an undescribed sequence kind is not a dropped sequence",
-			desired: func() *goschema.Database { return &goschema.Database{} },
-			database: func() *types.DBSchema {
-				return &types.DBSchema{Sequences: []types.DBSequence{{Name: "order_seq", Schema: "public"}}}
+			desired: func() *schemamodel.Database { return &schemamodel.Database{} },
+			database: func() *catalog.Database {
+				return &catalog.Database{Sequences: []catalog.Sequence{{Name: "order_seq", Schema: "public"}}}
 			},
 			notDescribed: coverage.Set{}.WithKind(coverage.Sequence),
 			onDesired:    true,
@@ -90,10 +90,10 @@ func coverageCases() []coverageCase {
 			// construction. CREATE ROLE for a role that exists fails the
 			// migration outright.
 			name: "an undescribed role is not a missing role",
-			desired: func() *goschema.Database {
-				return &goschema.Database{Roles: []goschema.Role{{Name: "admin_user", Login: true}}}
+			desired: func() *schemamodel.Database {
+				return &schemamodel.Database{Roles: []schemamodel.Role{{Name: "admin_user", Login: true}}}
 			},
-			database:     func() *types.DBSchema { return &types.DBSchema{} },
+			database:     func() *catalog.Database { return &catalog.Database{} },
 			notDescribed: coverage.Set{}.WithObject(coverage.Role, "admin_user"),
 			read:         func(diff *difftypes.SchemaDiff) []string { return diff.RolesAdded },
 			wantWithout:  []string{"admin_user"},
@@ -104,12 +104,12 @@ func coverageCases() []coverageCase {
 			// table that exists, because the read had never looked at the
 			// schema holding it.
 			name: "a table in an undescribed schema is not a missing table",
-			desired: func() *goschema.Database {
-				return &goschema.Database{
-					Tables: []goschema.Table{{Name: "b", Schema: "extra", StructName: "B"}},
+			desired: func() *schemamodel.Database {
+				return &schemamodel.Database{
+					Tables: []schemamodel.Table{{Name: "b", Schema: "extra", StructName: "B"}},
 				}
 			},
-			database:     func() *types.DBSchema { return &types.DBSchema{} },
+			database:     func() *catalog.Database { return &catalog.Database{} },
 			notDescribed: coverage.Set{}.WithObject(coverage.Schema, "extra"),
 			read:         func(diff *difftypes.SchemaDiff) []string { return diff.TablesAdded },
 			wantWithout:  []string{"extra.b"},
@@ -121,11 +121,11 @@ func TestCoverageSuppressesOnlyWhatWasNotDescribed(t *testing.T) {
 	for _, test := range coverageCases() {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			desired, database := test.desired(), test.database()
+			desired, current := test.desired(), test.database()
 			desired.NotDescribed = pickDesired(test.onDesired, test.notDescribed)
-			database.NotDescribed = pickCurrent(test.onDesired, test.notDescribed)
+			current.NotDescribed = pickCurrent(test.onDesired, test.notDescribed)
 
-			c.Assert(test.read(schemadiff.Compare(desired, database)), qt.HasLen, 0)
+			c.Assert(test.read(schemadiff.Compare(desired, current)), qt.HasLen, 0)
 		})
 	}
 }
@@ -137,9 +137,9 @@ func TestNoCoverageStillPlansTheChange(t *testing.T) {
 	for _, test := range coverageCases() {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			desired, database := test.desired(), test.database()
+			desired, current := test.desired(), test.database()
 
-			c.Assert(test.read(schemadiff.Compare(desired, database)), qt.DeepEquals, test.wantWithout)
+			c.Assert(test.read(schemadiff.Compare(desired, current)), qt.DeepEquals, test.wantWithout)
 		})
 	}
 }
@@ -152,20 +152,20 @@ func TestNoCoverageStillPlansTheChange(t *testing.T) {
 func TestCoverageOnTheWrongSideSuppressesNothing(t *testing.T) {
 	t.Run("a desired-state record does not suppress an addition", func(t *testing.T) {
 		c := qt.New(t)
-		desired := &goschema.Database{Extensions: []goschema.Extension{{Name: "pgcrypto"}}}
+		desired := &schemamodel.Database{Extensions: []schemamodel.Extension{{Name: "pgcrypto"}}}
 		desired.NotDescribed = coverage.Set{}.WithKind(coverage.Extension)
 
-		diff := schemadiff.Compare(desired, &types.DBSchema{})
+		diff := schemadiff.Compare(desired, &catalog.Database{})
 
 		c.Assert(diff.ExtensionsAdded, qt.DeepEquals, []string{"pgcrypto"})
 	})
 
 	t.Run("a read record does not suppress a removal", func(t *testing.T) {
 		c := qt.New(t)
-		database := &types.DBSchema{Extensions: []types.DBExtension{{Name: "pgcrypto", Schema: "public"}}}
-		database.NotDescribed = coverage.Set{}.WithKind(coverage.Extension)
+		current := &catalog.Database{Extensions: []catalog.Extension{{Name: "pgcrypto", Schema: "public"}}}
+		current.NotDescribed = coverage.Set{}.WithKind(coverage.Extension)
 
-		diff := schemadiff.Compare(&goschema.Database{}, database)
+		diff := schemadiff.Compare(&schemamodel.Database{}, current)
 
 		c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, []string{"pgcrypto"})
 	})
@@ -178,14 +178,14 @@ func TestCoverageOnTheWrongSideSuppressesNothing(t *testing.T) {
 func TestCoverageNamesOneObjectOnly(t *testing.T) {
 	c := qt.New(t)
 
-	desired := &goschema.Database{}
+	desired := &schemamodel.Database{}
 	desired.NotDescribed = coverage.Set{}.WithObject(coverage.Extension, "pgcrypto")
-	database := &types.DBSchema{Extensions: []types.DBExtension{
+	current := &catalog.Database{Extensions: []catalog.Extension{
 		{Name: "pgcrypto", Schema: "public"},
 		{Name: "postgis", Schema: "public"},
 	}}
 
-	diff := schemadiff.Compare(desired, database)
+	diff := schemadiff.Compare(desired, current)
 
 	c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, []string{"postgis"})
 }
@@ -196,13 +196,13 @@ func TestCoverageNamesOneObjectOnly(t *testing.T) {
 // surface omits `policy` blocks with the same rule it omits `extension` blocks,
 // and the measured plan dropped a policy the database had.
 func TestUndescribedPolicyIsNotADroppedPolicy(t *testing.T) {
-	database := func() *types.DBSchema {
-		return &types.DBSchema{RLSPolicies: []types.DBRLSPolicy{{Name: "p", Table: "public.guarded"}}}
+	database := func() *catalog.Database {
+		return &catalog.Database{RLSPolicies: []catalog.RLSPolicy{{Name: "p", Table: "public.guarded"}}}
 	}
 
 	t.Run("declared: nothing is planned", func(t *testing.T) {
 		c := qt.New(t)
-		desired := &goschema.Database{}
+		desired := &schemamodel.Database{}
 		desired.NotDescribed = coverage.Set{}.WithKind(coverage.Policy)
 
 		c.Assert(schemadiff.Compare(desired, database()).RLSPoliciesRemoved, qt.HasLen, 0)
@@ -210,7 +210,7 @@ func TestUndescribedPolicyIsNotADroppedPolicy(t *testing.T) {
 
 	t.Run("control: undeclared, the drop is still planned", func(t *testing.T) {
 		c := qt.New(t)
-		diff := schemadiff.Compare(&goschema.Database{}, database())
+		diff := schemadiff.Compare(&schemamodel.Database{}, database())
 
 		c.Assert(diff.RLSPoliciesRemoved, qt.DeepEquals, []difftypes.RLSPolicyRef{
 			{PolicyName: "p", TableName: "public.guarded"},

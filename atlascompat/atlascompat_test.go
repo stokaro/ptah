@@ -10,9 +10,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/atlascompat"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
@@ -78,9 +78,9 @@ func TestParseSQL(t *testing.T) {
 
 func TestSchemaToAST(t *testing.T) {
 	c := qt.New(t)
-	list := atlascompat.SchemaToAST(goschema.Database{
-		Tables: []goschema.Table{{StructName: "User", Name: "users"}},
-		Fields: []goschema.Field{{
+	list := atlascompat.SchemaToAST(schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
+		Fields: []schemamodel.Field{{
 			StructName: "User",
 			FieldName:  "ID",
 			Name:       "id",
@@ -94,12 +94,12 @@ func TestSchemaToAST(t *testing.T) {
 	c.Assert(ok, qt.IsTrue)
 }
 
-func TestDBSchemaToGoSchema(t *testing.T) {
+func TestCatalogToSchema(t *testing.T) {
 	c := qt.New(t)
-	db := atlascompat.DBSchemaToGoSchema(&dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{{
+	db := atlascompat.CatalogToSchema(&catalog.Database{
+		Tables: []catalog.Table{{
 			Name: "users",
-			Columns: []dbschematypes.DBColumn{{
+			Columns: []catalog.Column{{
 				Name:         "id",
 				DataType:     "integer",
 				IsNullable:   "NO",

@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 	"go.5x5.cz/ptah/internal/atlasreport"
 )
@@ -85,18 +85,18 @@ func TestRenderSchemaInspect_SQLKeepsRenderedTerminatorsAndIndentation(t *testin
 
 func sqlTerminatorInspectReport() *atlasreport.SchemaInspectReport {
 	return atlasreport.NewSchemaInspectReport(
-		&goschema.Database{
-			Tables: []goschema.Table{{StructName: "User", Name: "users"}},
-			Fields: []goschema.Field{
+		&schemamodel.Database{
+			Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
+			Fields: []schemamodel.Field{
 				{StructName: "User", Name: "id", Type: "INTEGER", Primary: true},
 				{StructName: "User", Name: "email", Type: "TEXT", Nullable: true},
 			},
-			Indexes: []goschema.Index{{
+			Indexes: []schemamodel.Index{{
 				Name: "idx_users_email", TableName: "users", Fields: []string{"email"},
 			}},
 		},
-		&types.DBSchema{},
-		types.DBInfo{Dialect: platform.SQLite, Schema: "main"},
+		&catalog.Database{},
+		catalog.ServerInfo{Dialect: platform.SQLite, Schema: "main"},
 		nil,
 		atlasreport.SchemaInspectReportOptions{DescribeSchemas: true},
 	)

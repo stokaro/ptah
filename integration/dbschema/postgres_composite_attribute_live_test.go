@@ -10,14 +10,14 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestPostgresLiveCompositeAttributeConverges is the composite half of
@@ -52,21 +52,21 @@ func TestPostgresLiveCompositeAttributeConverges(t *testing.T) {
 		_, _ = conn.ExecContext(context.Background(), `DROP SCHEMA IF EXISTS "`+schemaName+`" CASCADE`)
 	}()
 
-	declared := func(fields ...goschema.CompositeTypeField) *goschema.Database {
-		return &goschema.Database{
-			CompositeTypes: []goschema.CompositeType{
+	declared := func(fields ...schemamodel.CompositeField) *schemamodel.Database {
+		return &schemamodel.Database{
+			CompositeTypes: []schemamodel.CompositeType{
 				{Name: "addr", Schema: schemaName, Fields: fields},
 			},
-			Tables: []goschema.Table{{StructName: "S", Name: "s", Schema: schemaName}},
-			Fields: []goschema.Field{
+			Tables: []schemamodel.Table{{StructName: "S", Name: "s", Schema: schemaName}},
+			Fields: []schemamodel.Field{
 				{StructName: "S", Name: "id", Type: "INT", Primary: true},
 				{StructName: "S", Name: "home", Type: schemaName + ".addr"},
 			},
 		}
 	}
-	street := goschema.CompositeTypeField{Name: "street", Type: "text"}
-	city := goschema.CompositeTypeField{Name: "city", Type: "text"}
-	zip := goschema.CompositeTypeField{Name: "zip", Type: "text"}
+	street := schemamodel.CompositeField{Name: "street", Type: "text"}
+	city := schemamodel.CompositeField{Name: "city", Type: "text"}
+	zip := schemamodel.CompositeField{Name: "zip", Type: "text"}
 
 	statements, err := renderer.GetOrderedCreateStatements(declared(street, city), platform.Postgres)
 	c.Assert(err, qt.IsNil)
@@ -107,7 +107,7 @@ func compareLiveComposites(
 	c *qt.C,
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
-	declared *goschema.Database,
+	declared *schemamodel.Database,
 	schemaName string,
 ) *difftypes.SchemaDiff {
 	c.Helper()
@@ -124,7 +124,7 @@ func applyLiveComposite(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	diff *difftypes.SchemaDiff,
-	declared *goschema.Database,
+	declared *schemamodel.Database,
 ) {
 	c.Helper()
 	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, declared, platform.Postgres)

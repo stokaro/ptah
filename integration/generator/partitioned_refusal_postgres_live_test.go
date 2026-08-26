@@ -19,7 +19,7 @@ import (
 // that fires when a project explicitly asks for concurrent builds and the
 // index it asks for names a partitioned parent.
 //
-// The unit tests for this rule hand it a DBSchema with Partitioned set by the
+// The unit tests for this rule hand it a catalog.Database with Partitioned set by the
 // test, which proves the rule and nothing about the read that feeds it.
 // information_schema.tables reports a declaratively partitioned parent as an
 // ordinary BASE TABLE, so pg_class.relkind is the only place the distinction

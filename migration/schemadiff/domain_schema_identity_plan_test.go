@@ -6,9 +6,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -22,13 +22,13 @@ import (
 // column under its BASE type with domain_name/domain_schema naming the domain,
 // and the reader blanks a domain's own schema for the schema it is reading, so
 // the current side's domain carries no schema of its own.
-func crossSchemaDomainColumn() (*goschema.Database, *types.DBSchema) {
-	database := &types.DBSchema{
-		Domains: []types.DBDomain{{Name: "status", BaseType: "text", Check: "VALUE IN ('open','closed')"}},
-		Tables: []types.DBTable{{
+func crossSchemaDomainColumn() (*schemamodel.Database, *catalog.Database) {
+	current := &catalog.Database{
+		Domains: []catalog.Domain{{Name: "status", BaseType: "text", Check: "VALUE IN ('open','closed')"}},
+		Tables: []catalog.Table{{
 			Name: "t",
 			Type: "TABLE",
-			Columns: []types.DBColumn{
+			Columns: []catalog.Column{
 				{Name: "id", DataType: "integer", UDTName: "int4", IsNullable: "NO", IsPrimaryKey: true, IsAutoIncrement: true},
 				{
 					Name: "s", DataType: "text", UDTName: "text",
@@ -38,18 +38,18 @@ func crossSchemaDomainColumn() (*goschema.Database, *types.DBSchema) {
 			},
 		}},
 	}
-	desired := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "T", Name: "t"}},
-		Fields: []goschema.Field{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "T", Name: "t"}},
+		Fields: []schemamodel.Field{
 			{StructName: "T", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "T", Name: "s", Type: "other.status"},
 		},
-		Domains: []goschema.Domain{{
+		Domains: []schemamodel.Domain{{
 			StructName: "Status", Name: "status", Schema: "other",
 			BaseType: "TEXT", Check: "VALUE IN ('open','closed')",
 		}},
 	}
-	return desired, database
+	return desired, current
 }
 
 // TestGenerateSchemaDiffSQL_DomainColumnIsConvertedBeforeTheOldDomainIsDropped
@@ -76,9 +76,9 @@ func crossSchemaDomainColumn() (*goschema.Database, *types.DBSchema) {
 func TestGenerateSchemaDiffSQL_DomainColumnIsConvertedBeforeTheOldDomainIsDropped(t *testing.T) {
 	c := qt.New(t)
 
-	desired, database := crossSchemaDomainColumn()
+	desired, current := crossSchemaDomainColumn()
 
-	diff := schemadiff.CompareWithDialect(desired, database, platform.Postgres)
+	diff := schemadiff.CompareWithDialect(desired, current, platform.Postgres)
 
 	c.Assert(diff.DomainsRemoved, qt.DeepEquals, []string{"status"},
 		qt.Commentf("the desired schema no longer declares public.status, so the plan drops it"))

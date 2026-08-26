@@ -6,13 +6,13 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/constraintscope"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // These tests pin the DOWN (rollback) half of issue #197: a mixin-shared FK name
@@ -31,10 +31,10 @@ import (
 // multiHostMixinGenerated builds a generated schema with an "Ownable" inline
 // mixin carrying a shared tenant FK (fk_entity_tenant, ON DELETE = onDelete)
 // embedded into each host table.
-func multiHostMixinGenerated(onDelete string, hosts ...string) *goschema.Database {
-	db := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Tenant", Name: "tenants"}},
-		Fields: []goschema.Field{
+func multiHostMixinGenerated(onDelete string, hosts ...string) *schemamodel.Database {
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Tenant", Name: "tenants"}},
+		Fields: []schemamodel.Field{
 			{StructName: "Tenant", Name: "id", Type: "VARCHAR(255)", Primary: true},
 			{
 				StructName:     "Ownable",
@@ -48,11 +48,11 @@ func multiHostMixinGenerated(onDelete string, hosts ...string) *goschema.Databas
 	}
 	for _, h := range hosts {
 		structName := strings.ToUpper(h[:1]) + h[1:]
-		db.Tables = append(db.Tables, goschema.Table{StructName: structName, Name: h})
+		db.Tables = append(db.Tables, schemamodel.Table{StructName: structName, Name: h})
 		db.Fields = append(db.Fields,
-			goschema.Field{StructName: structName, Name: "id", Type: "TEXT", Primary: true},
+			schemamodel.Field{StructName: structName, Name: "id", Type: "TEXT", Primary: true},
 		)
-		db.EmbeddedFields = append(db.EmbeddedFields, goschema.EmbeddedField{
+		db.EmbeddedFields = append(db.EmbeddedFields, schemamodel.EmbeddedField{
 			StructName: structName, Mode: "inline", EmbeddedTypeName: "Ownable",
 		})
 	}
@@ -61,23 +61,23 @@ func multiHostMixinGenerated(onDelete string, hosts ...string) *goschema.Databas
 
 // multiHostMixinDB builds the introspected (pre-change) DB: each host has the
 // tenant FK with the given delete rule.
-func multiHostMixinDB(deleteRule string, hosts ...string) *dbschematypes.DBSchema {
+func multiHostMixinDB(deleteRule string, hosts ...string) *catalog.Database {
 	varcharLength := 255
-	db := &dbschematypes.DBSchema{Tables: []dbschematypes.DBTable{{
+	db := &catalog.Database{Tables: []catalog.Table{{
 		Name: "tenants",
-		Columns: []dbschematypes.DBColumn{
+		Columns: []catalog.Column{
 			{Name: "id", DataType: "varchar", CharacterMaxLength: &varcharLength, IsNullable: "NO", IsPrimaryKey: true},
 		},
 	}}}
 	for _, h := range hosts {
-		db.Tables = append(db.Tables, dbschematypes.DBTable{
+		db.Tables = append(db.Tables, catalog.Table{
 			Name: h,
-			Columns: []dbschematypes.DBColumn{
+			Columns: []catalog.Column{
 				{Name: "id", DataType: "varchar", CharacterMaxLength: &varcharLength, IsNullable: "NO", IsPrimaryKey: true},
 				{Name: "tenant_id", DataType: "varchar", CharacterMaxLength: &varcharLength, IsNullable: "NO"},
 			},
 		})
-		db.Constraints = append(db.Constraints, dbschematypes.DBConstraint{
+		db.Constraints = append(db.Constraints, catalog.Constraint{
 			Name: "fk_entity_tenant", TableName: h, Type: "FOREIGN KEY", ColumnName: "tenant_id",
 			ForeignTable: new("tenants"), ForeignColumn: new("id"),
 			DeleteRule: new(deleteRule), UpdateRule: new("NO ACTION"),
@@ -130,11 +130,11 @@ func TestGenerateDownMigration_MultiHostMixinFKModify_RestoresPriorActionPerHost
 func TestGenerateDownMigration_MultiHostMixinFKModify_MySQLRejectsDuplicateNames(t *testing.T) {
 	c := qt.New(t)
 	hosts := []string{"locations", "areas", "commodities"}
-	generated := multiHostMixinGenerated("CASCADE", hosts...)
+	desired := multiHostMixinGenerated("CASCADE", hosts...)
 	dbSchema := multiHostMixinDB("NO ACTION", hosts...)
-	diff := schemadiff.CompareWithDialect(generated, dbSchema, "mysql")
+	diff := schemadiff.CompareWithDialect(desired, dbSchema, "mysql")
 
-	downSQL, err := generateDownMigrationSQL(diff, generated, dbSchema, "mysql")
+	downSQL, err := generateDownMigrationSQL(diff, desired, dbSchema, "mysql")
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 	c.Assert(err, qt.ErrorMatches, `error generating down migration SQL: invalid foreign key: foreign-key name "fk_entity_tenant" is duplicated in database constraint namespace`)
@@ -173,16 +173,16 @@ func TestReverseConstraintAdditions_RestoresPerHostBody(t *testing.T) {
 
 	dbSchema := multiHostMixinDB("NO ACTION", hosts...)
 	// Up diff: the shared FK was removed (then re-added) on each host.
-	upDiff := &types.SchemaDiff{}
+	upDiff := &difftypes.SchemaDiff{}
 	for _, h := range hosts {
 		upDiff.ConstraintsRemovedWithTables = append(upDiff.ConstraintsRemovedWithTables,
-			types.ConstraintRemovalInfo{Name: "fk_entity_tenant", TableName: h, Type: "FOREIGN KEY"})
+			difftypes.ConstraintRemovalInfo{Name: "fk_entity_tenant", TableName: h, Type: "FOREIGN KEY"})
 	}
 
 	additions := reverseConstraintAdditions(upDiff, dbSchema, identifier.ForDialect("postgres"))
 	c.Assert(additions, qt.HasLen, len(hosts))
 
-	byTable := make(map[string]types.ConstraintAdditionInfo)
+	byTable := make(map[string]difftypes.ConstraintAdditionInfo)
 	for _, a := range additions {
 		byTable[a.TableName] = a
 	}
@@ -202,16 +202,16 @@ func TestReverseConstraintAdditions_RestoresPerHostBody(t *testing.T) {
 func TestReverseConstraintAdditions_RestoresPrimaryKeyColumns(t *testing.T) {
 	c := qt.New(t)
 
-	dbSchema := &dbschematypes.DBSchema{
-		Constraints: []dbschematypes.DBConstraint{{
+	dbSchema := &catalog.Database{
+		Constraints: []catalog.Constraint{{
 			Name:        "PRIMARY",
 			TableName:   "memberships",
 			Type:        "PRIMARY KEY",
 			ColumnNames: []string{"org_id", "user_id"},
 		}},
 	}
-	upDiff := &types.SchemaDiff{
-		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{{
+	upDiff := &difftypes.SchemaDiff{
+		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{{
 			Name:      "PRIMARY",
 			TableName: "memberships",
 			Type:      "PRIMARY KEY",
@@ -219,7 +219,7 @@ func TestReverseConstraintAdditions_RestoresPrimaryKeyColumns(t *testing.T) {
 	}
 
 	additions := reverseConstraintAdditions(upDiff, dbSchema, identifier.ForDialect("postgres"))
-	c.Assert(additions, qt.DeepEquals, []types.ConstraintAdditionInfo{{
+	c.Assert(additions, qt.DeepEquals, []difftypes.ConstraintAdditionInfo{{
 		Name:      "PRIMARY",
 		TableName: "memberships",
 		Identity:  constraintscope.Identity(identifier.ForDialect("postgres"), "memberships", "PRIMARY"),
@@ -230,8 +230,8 @@ func TestReverseConstraintAdditions_RestoresPrimaryKeyColumns(t *testing.T) {
 
 func TestReverseConstraintAdditions_RestoresCompositeForeignKeyBody(t *testing.T) {
 	c := qt.New(t)
-	dbSchema := &dbschematypes.DBSchema{
-		Constraints: []dbschematypes.DBConstraint{
+	dbSchema := &catalog.Database{
+		Constraints: []catalog.Constraint{
 			{
 				Name:           "fk_orders_accounts",
 				TableName:      "orders",
@@ -246,15 +246,15 @@ func TestReverseConstraintAdditions_RestoresCompositeForeignKeyBody(t *testing.T
 			},
 		},
 	}
-	upDiff := &types.SchemaDiff{
-		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+	upDiff := &difftypes.SchemaDiff{
+		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 			{Name: "fk_orders_accounts", TableName: "orders", Type: "FOREIGN KEY"},
 		},
 	}
 
 	additions := reverseConstraintAdditions(upDiff, dbSchema, identifier.ForDialect("postgres"))
 
-	c.Assert(additions, qt.DeepEquals, []types.ConstraintAdditionInfo{
+	c.Assert(additions, qt.DeepEquals, []difftypes.ConstraintAdditionInfo{
 		{
 			Name:           "fk_orders_accounts",
 			TableName:      "orders",
@@ -273,23 +273,23 @@ func TestReverseConstraintAdditions_RestoresCompositeForeignKeyBody(t *testing.T
 func TestReverseConstraintAdditions_RestoresCheckConstraintBody(t *testing.T) {
 	c := qt.New(t)
 	checkClause := "quantity > 0"
-	dbSchema := &dbschematypes.DBSchema{
-		Constraints: []dbschematypes.DBConstraint{{
+	dbSchema := &catalog.Database{
+		Constraints: []catalog.Constraint{{
 			Name:        "products_quantity_check",
 			TableName:   "products",
 			Type:        "CHECK",
 			CheckClause: &checkClause,
 		}},
 	}
-	upDiff := &types.SchemaDiff{
-		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+	upDiff := &difftypes.SchemaDiff{
+		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 			{Name: "products_quantity_check", TableName: "products", Type: "CHECK"},
 		},
 	}
 
 	additions := reverseConstraintAdditions(upDiff, dbSchema, identifier.ForDialect("postgres"))
 
-	c.Assert(additions, qt.DeepEquals, []types.ConstraintAdditionInfo{{
+	c.Assert(additions, qt.DeepEquals, []difftypes.ConstraintAdditionInfo{{
 		Name:            "products_quantity_check",
 		TableName:       "products",
 		Identity:        constraintscope.Identity(identifier.ForDialect("postgres"), "products", "products_quantity_check"),
@@ -301,8 +301,8 @@ func TestReverseConstraintAdditions_RestoresCheckConstraintBody(t *testing.T) {
 func TestReverseConstraintAdditions_RestoresUniqueConstraintBody(t *testing.T) {
 	c := qt.New(t)
 	nullsDistinct := false
-	dbSchema := &dbschematypes.DBSchema{
-		Constraints: []dbschematypes.DBConstraint{{
+	dbSchema := &catalog.Database{
+		Constraints: []catalog.Constraint{{
 			Name:           "accounts_identity_unique",
 			TableName:      "accounts",
 			Type:           "UNIQUE",
@@ -311,8 +311,8 @@ func TestReverseConstraintAdditions_RestoresUniqueConstraintBody(t *testing.T) {
 			NullsDistinct:  &nullsDistinct,
 		}},
 	}
-	upDiff := &types.SchemaDiff{
-		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+	upDiff := &difftypes.SchemaDiff{
+		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 			{Name: "accounts_identity_unique", TableName: "accounts", Type: "UNIQUE"},
 		},
 	}
@@ -334,8 +334,8 @@ func TestReverseConstraintAdditions_RestoresUniqueConstraintBody(t *testing.T) {
 // the names ride the name-only fallback via ConstraintsAdded.
 func TestReverseConstraintAdditions_NilDBSchema(t *testing.T) {
 	c := qt.New(t)
-	upDiff := &types.SchemaDiff{
-		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+	upDiff := &difftypes.SchemaDiff{
+		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 			{Name: "fk_x", TableName: "t", Type: "FOREIGN KEY"},
 		},
 	}

@@ -5,17 +5,17 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 func TestSequences_AddRemove(t *testing.T) {
 	tests := []struct {
 		name              string
-		generated         []goschema.Sequence
-		database          []types.DBSequence
+		generated         []schemamodel.Sequence
+		database          []catalog.Sequence
 		expectedAdded     []string
 		expectedRemoved   []string
 		expectedModifiedN int
@@ -29,7 +29,7 @@ func TestSequences_AddRemove(t *testing.T) {
 		},
 		{
 			name:            "sequence needs to be added",
-			generated:       []goschema.Sequence{{Name: "order_seq", AsType: "bigint"}},
+			generated:       []schemamodel.Sequence{{Name: "order_seq", AsType: "bigint"}},
 			database:        nil,
 			expectedAdded:   []string{"order_seq"},
 			expectedRemoved: nil,
@@ -37,14 +37,14 @@ func TestSequences_AddRemove(t *testing.T) {
 		{
 			name:            "sequence needs to be removed",
 			generated:       nil,
-			database:        []types.DBSequence{{Name: "legacy_seq"}},
+			database:        []catalog.Sequence{{Name: "legacy_seq"}},
 			expectedAdded:   nil,
 			expectedRemoved: []string{"legacy_seq"},
 		},
 		{
 			name:            "schema-qualified sequence matches by qualified name",
-			generated:       []goschema.Sequence{{Name: "s", Schema: "app"}},
-			database:        []types.DBSequence{{Name: "s", Schema: "app"}},
+			generated:       []schemamodel.Sequence{{Name: "s", Schema: "app"}},
+			database:        []catalog.Sequence{{Name: "s", Schema: "app"}},
 			expectedAdded:   nil,
 			expectedRemoved: nil,
 		},
@@ -53,11 +53,11 @@ func TestSequences_AddRemove(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			generated := &goschema.Database{Sequences: tt.generated}
-			database := &types.DBSchema{Sequences: tt.database}
+			desired := &schemamodel.Database{Sequences: tt.generated}
+			current := &catalog.Database{Sequences: tt.database}
 			diff := &difftypes.SchemaDiff{}
 
-			compare.Sequences(generated, database, diff, compare.CoverageOf(generated, database))
+			compare.Sequences(desired, current, diff, compare.CoverageOf(desired, current))
 
 			c.Assert(diff.SequencesAdded, qt.DeepEquals, tt.expectedAdded)
 			c.Assert(diff.SequencesRemoved, qt.DeepEquals, tt.expectedRemoved)
@@ -72,15 +72,15 @@ func TestSequences_ModifiedOnlyComparesDeclaredOptions(t *testing.T) {
 	// The database has increment=1, cache=30, cycle=false. Only the declared
 	// options that differ (increment, cycle) must show up as changes; the
 	// undeclared cache must not churn.
-	generated := &goschema.Database{Sequences: []goschema.Sequence{
+	desired := &schemamodel.Database{Sequences: []schemamodel.Sequence{
 		{Name: "s", Increment: new(int64(2)), Cycle: true},
 	}}
-	database := &types.DBSchema{Sequences: []types.DBSequence{
+	current := &catalog.Database{Sequences: []catalog.Sequence{
 		{Name: "s", Increment: new(int64(1)), Cache: new(int64(30)), Cycle: false},
 	}}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.Sequences(generated, database, diff, compare.CoverageOf(generated, database))
+	compare.Sequences(desired, current, diff, compare.CoverageOf(desired, current))
 
 	c.Assert(diff.SequencesAdded, qt.IsNil)
 	c.Assert(diff.SequencesRemoved, qt.IsNil)
@@ -97,20 +97,20 @@ func TestSequences_ModifiedOnlyComparesDeclaredOptions(t *testing.T) {
 func TestGrants_OnSequenceRoundTrip(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Grants: []goschema.Grant{
+	desired := &schemamodel.Database{
+		Grants: []schemamodel.Grant{
 			{Role: "app_user", Privileges: []string{"USAGE", "SELECT"}, OnSequence: "order_seq"},
 		},
 	}
-	database := &types.DBSchema{
-		Grants: []types.DBGrant{
+	current := &catalog.Database{
+		Grants: []catalog.Grant{
 			{Role: "app_user", Privilege: "USAGE", ObjectType: "SEQUENCE", ObjectName: "order_seq"},
 			{Role: "app_user", Privilege: "SELECT", ObjectType: "SEQUENCE", ObjectName: "order_seq"},
 		},
 	}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.Grants(generated, database, diff)
+	compare.Grants(desired, current, diff)
 
 	c.Assert(diff.GrantsAdded, qt.HasLen, 0, qt.Commentf("declared sequence grant must match DB, not re-add"))
 	c.Assert(diff.GrantsRemoved, qt.HasLen, 0, qt.Commentf("introspected sequence grant must not be revoked"))
@@ -122,15 +122,15 @@ func TestGrants_OnSequenceRoundTrip(t *testing.T) {
 func TestGrants_OnSequenceAddedWhenMissing(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Grants: []goschema.Grant{
+	desired := &schemamodel.Database{
+		Grants: []schemamodel.Grant{
 			{Role: "app_user", Privileges: []string{"USAGE"}, OnSequence: "order_seq"},
 		},
 	}
-	database := &types.DBSchema{}
+	current := &catalog.Database{}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.Grants(generated, database, diff)
+	compare.Grants(desired, current, diff)
 
 	c.Assert(diff.GrantsAdded, qt.HasLen, 1)
 	c.Assert(diff.GrantsAdded[0].ObjectType, qt.Equals, "SEQUENCE")
@@ -140,15 +140,15 @@ func TestGrants_OnSequenceAddedWhenMissing(t *testing.T) {
 func TestSequences_UnchangedProducesNoDiff(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{Sequences: []goschema.Sequence{
+	desired := &schemamodel.Database{Sequences: []schemamodel.Sequence{
 		{Name: "s", AsType: "bigint", Increment: new(int64(1)), Cache: new(int64(20)), Cycle: true},
 	}}
-	database := &types.DBSchema{Sequences: []types.DBSequence{
+	current := &catalog.Database{Sequences: []catalog.Sequence{
 		{Name: "s", DataType: "bigint", Increment: new(int64(1)), Cache: new(int64(20)), Cycle: true},
 	}}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.Sequences(generated, database, diff, compare.CoverageOf(generated, database))
+	compare.Sequences(desired, current, diff, compare.CoverageOf(desired, current))
 
 	c.Assert(diff.SequencesAdded, qt.IsNil)
 	c.Assert(diff.SequencesRemoved, qt.IsNil)

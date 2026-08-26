@@ -493,7 +493,7 @@ func TestLimitExplainsWhatDescribesRefuses(t *testing.T) {
 // builders produced is normalized, and normalization sorts the whole-kind
 // record first, so taking the first match would be right by accident and the
 // preference would be untested. A Set does not always arrive normalized: a
-// DBSchema decoded from JSON carries whatever order the document had, and that
+// catalog.Database decoded from JSON carries whatever order the document had, and that
 // is the case this asserts.
 func TestWholeKindLimitWinsOverANamedOne(t *testing.T) {
 	c := qt.New(t)

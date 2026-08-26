@@ -62,7 +62,7 @@ no vector code in the shipped packages: `vector(384)` survives because the
 PostgreSQL reader keys on `atttypmod` and keeps any extension type's modifier as
 an opaque string. Nothing parses a dimension and nothing knows 2000 is a ceiling.
 The access method is a free string, the distance metric is the per-key operator
-class, and `DBIndex.RequiresExtensions` already records that an HNSW index
+class, and `catalog.Index.RequiresExtensions` already records that an HNSW index
 depends on pgvector.
 
 Nothing exists for the inference half: no package for embeddings, generations,

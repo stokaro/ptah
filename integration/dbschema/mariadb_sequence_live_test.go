@@ -10,13 +10,13 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestMariaDBLiveSequenceConverges is the test the Sequences capability could
@@ -52,7 +52,7 @@ func TestMariaDBLiveSequenceConverges(t *testing.T) {
 		_, _ = conn.ExecContext(context.Background(), fmt.Sprintf("DROP SEQUENCE IF EXISTS `%s`", name))
 	}()
 
-	declared := func(cache int64) *goschema.Database {
+	declared := func(cache int64) *schemamodel.Database {
 		return declaredSequence(name, cache, false)
 	}
 
@@ -105,9 +105,9 @@ func TestMariaDBLiveSequenceConverges(t *testing.T) {
 
 // declaredSequence is the declaration under test, with the two options each
 // step varies.
-func declaredSequence(name string, cache int64, cycle bool) *goschema.Database {
+func declaredSequence(name string, cache int64, cycle bool) *schemamodel.Database {
 	start, increment, minValue, maxValue := int64(7), int64(3), int64(1), int64(900)
-	return &goschema.Database{Sequences: []goschema.Sequence{{
+	return &schemamodel.Database{Sequences: []schemamodel.Sequence{{
 		Name:      name,
 		AsType:    "bigint",
 		Start:     &start,
@@ -125,7 +125,7 @@ func compareLiveSequences(
 	c *qt.C,
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
-	declared *goschema.Database,
+	declared *schemamodel.Database,
 ) *difftypes.SchemaDiff {
 	c.Helper()
 	current, err := conn.Reader().ReadSchemaContext(ctx)
@@ -141,7 +141,7 @@ func applyLiveStatements(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	diff *difftypes.SchemaDiff,
-	declared *goschema.Database,
+	declared *schemamodel.Database,
 	dialect string,
 ) {
 	c.Helper()

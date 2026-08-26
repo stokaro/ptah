@@ -12,7 +12,7 @@ import (
 
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/core/yamlschema"
 	"go.5x5.cz/ptah/internal/atlashcl"
 	"go.5x5.cz/ptah/internal/convert/toschema"
@@ -175,7 +175,7 @@ func ScopeFromURLs(devURL, targetURL, targetFlag string) (scope, flag string) {
 // A nested load -- a directory entry, or one of several --to files -- finds the
 // collector already set and just contributes to it, so the count is the desired
 // state's and the refusal is reported once.
-func gateSchemaScope(opts Options, load func(Options) (*goschema.Database, error)) (*goschema.Database, error) {
+func gateSchemaScope(opts Options, load func(Options) (*schemamodel.Database, error)) (*schemamodel.Database, error) {
 	if opts.collect != nil {
 		return load(opts)
 	}
@@ -213,7 +213,7 @@ func (o Options) checkSchemaScope(blocks []atlashcl.SchemaBlock) error {
 }
 
 // Load reads one local schema file from either a plain path or file:// URL.
-func Load(rawURL string, opts Options) (*goschema.Database, error) {
+func Load(rawURL string, opts Options) (*schemamodel.Database, error) {
 	path, err := LocalFilePath(rawURL)
 	if err != nil {
 		return nil, err
@@ -223,8 +223,8 @@ func Load(rawURL string, opts Options) (*goschema.Database, error) {
 
 // LoadPath reads one local schema source from a resolved filesystem path: a
 // single schema file, or a directory of schema files (see [loadSchemaDir]).
-func LoadPath(path string, opts Options) (*goschema.Database, error) {
-	return gateSchemaScope(opts, func(opts Options) (*goschema.Database, error) {
+func LoadPath(path string, opts Options) (*schemamodel.Database, error) {
+	return gateSchemaScope(opts, func(opts Options) (*schemamodel.Database, error) {
 		resolved, isDir, err := statSchemaPath(path)
 		if err != nil {
 			return nil, err
@@ -243,7 +243,7 @@ func LoadPath(path string, opts Options) (*goschema.Database, error) {
 // a directory refuses here instead of being read as another schema directory.
 // That covers the case [os.ReadDir] cannot see, a symlink to a directory, which
 // it reports as a symlink rather than as a directory.
-func loadSchemaDirEntry(path string, opts Options) (*goschema.Database, map[guardKey]struct{}, error) {
+func loadSchemaDirEntry(path string, opts Options) (*schemamodel.Database, map[guardKey]struct{}, error) {
 	resolved, isDir, err := statSchemaPath(path)
 	if err != nil {
 		return nil, nil, err
@@ -288,7 +288,7 @@ func statSchemaPath(path string) (resolved string, isDir bool, err error) {
 
 // loadSchemaFile reads one schema file, chosen by extension, and records what
 // the chosen format cannot express.
-func loadSchemaFile(resolved string, opts Options) (*goschema.Database, error) {
+func loadSchemaFile(resolved string, opts Options) (*schemamodel.Database, error) {
 	database, err := parseSchemaFile(resolved, opts)
 	if err != nil {
 		return nil, err
@@ -326,7 +326,7 @@ var yamlOnlyExtensions = []string{".yaml", ".yml"}
 //     A YAML schema declaring one table was measured planning
 //     `DROP SEQUENCE`, `DROP DOMAIN` and both `DROP TYPE`s against a database
 //     holding one of each.
-func withFormatLimits(database *goschema.Database, resolved string) *goschema.Database {
+func withFormatLimits(database *schemamodel.Database, resolved string) *schemamodel.Database {
 	if database == nil {
 		return nil
 	}
@@ -390,7 +390,7 @@ func dbmlCannotExpress() []coverage.Kind {
 // and dropped. Deliberately not a second one: the same product should not
 // describe an ignored HCL block and an ignored DBML block in two different
 // sentences.
-func loadDBMLFile(resolved string, opts Options) (*goschema.Database, error) {
+func loadDBMLFile(resolved string, opts Options) (*schemamodel.Database, error) {
 	contents, err := os.ReadFile(resolved)
 	if err != nil {
 		return nil, fmt.Errorf("read schema file %s: %w", resolved, err)
@@ -432,7 +432,7 @@ func unsupportedByFormat(kinds ...coverage.Kind) []coverage.Object {
 	return records
 }
 
-func parseSchemaFile(resolved string, opts Options) (*goschema.Database, error) {
+func parseSchemaFile(resolved string, opts Options) (*schemamodel.Database, error) {
 	switch strings.ToLower(filepath.Ext(resolved)) {
 	case ".hcl":
 		return atlashcl.ParseFileWithOptions(resolved, atlashcl.Options{
@@ -490,7 +490,7 @@ const (
 // atlas.sum still wins: a directory carrying one is a migration directory on
 // both surfaces, replayed rather than read, and saying so here keeps the two
 // spellings from disagreeing when this loader is reached directly.
-func loadSchemaDir(dir string, opts Options) (*goschema.Database, error) {
+func loadSchemaDir(dir string, opts Options) (*schemamodel.Database, error) {
 	if _, err := os.Stat(filepath.Join(dir, atlasSumFileName)); err == nil {
 		return nil, fmt.Errorf(
 			"%q is a migration directory (it contains %s), not a schema directory",
@@ -531,7 +531,7 @@ func loadSchemaDir(dir string, opts Options) (*goschema.Database, error) {
 		return nil, isDirectoryError(filepath.Join(dir, subdirNames[0]))
 	}
 
-	merged := &goschema.Database{}
+	merged := &schemamodel.Database{}
 	ledger := newDirDeclarations()
 	for _, name := range names {
 		db, guarded, err := loadSchemaDirEntry(filepath.Join(dir, name), opts)
@@ -543,7 +543,7 @@ func loadSchemaDir(dir string, opts Options) (*goschema.Database, error) {
 		}
 		appendDatabase(merged, db)
 	}
-	goschema.Finalize(merged)
+	schemamodel.Finalize(merged)
 	return merged, nil
 }
 
@@ -560,7 +560,7 @@ func isDirectoryError(path string) error {
 }
 
 // LoadAll reads all schema files and merges them into one database IR.
-func LoadAll(rawURLs []string, opts Options) (*goschema.Database, error) {
+func LoadAll(rawURLs []string, opts Options) (*schemamodel.Database, error) {
 	if len(rawURLs) == 0 {
 		return nil, fmt.Errorf("at least one schema file URL is required")
 	}
@@ -594,13 +594,13 @@ type Source struct {
 
 // LoadSources loads every source into one merged schema, applying each source's
 // own variable scope.
-func LoadSources(sources []Source, opts Options) (*goschema.Database, error) {
+func LoadSources(sources []Source, opts Options) (*schemamodel.Database, error) {
 	if len(sources) == 0 {
 		return nil, fmt.Errorf("at least one schema file URL is required")
 	}
 
-	return gateSchemaScope(opts, func(opts Options) (*goschema.Database, error) {
-		merged := &goschema.Database{}
+	return gateSchemaScope(opts, func(opts Options) (*schemamodel.Database, error) {
+		merged := &schemamodel.Database{}
 		for _, source := range sources {
 			db, err := Load(source.URL, source.apply(opts))
 			if err != nil {
@@ -608,7 +608,7 @@ func LoadSources(sources []Source, opts Options) (*goschema.Database, error) {
 			}
 			appendDatabase(merged, db)
 		}
-		goschema.Finalize(merged)
+		schemamodel.Finalize(merged)
 		return merged, nil
 	})
 }
@@ -652,7 +652,7 @@ func LocalFilePath(rawURL string) (string, error) {
 	return filepath.Clean(path), nil
 }
 
-func loadSQLFile(path string, opts Options) (*goschema.Database, error) {
+func loadSQLFile(path string, opts Options) (*schemamodel.Database, error) {
 	db, _, err := loadSQLFileWithStatements(path, opts)
 	return db, err
 }
@@ -663,7 +663,7 @@ func loadSQLFile(path string, opts Options) (*goschema.Database, error) {
 // table, so only the statement can say whether a redeclaration is guarded, and
 // that is the difference between an exit 1 the pinned binary also gives and a
 // refusal it does not (see schemadir_order.go).
-func loadSQLFileWithStatements(path string, opts Options) (*goschema.Database, *ast.StatementList, error) {
+func loadSQLFileWithStatements(path string, opts Options) (*schemamodel.Database, *ast.StatementList, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, nil, fmt.Errorf("read SQL schema file: %w", err)
@@ -674,7 +674,7 @@ func loadSQLFileWithStatements(path string, opts Options) (*goschema.Database, *
 		return nil, nil, fmt.Errorf("parse SQL schema file: %w", err)
 	}
 	db := toschema.ToDatabase(statements, opts.Dialect)
-	goschema.Finalize(&db)
+	schemamodel.Finalize(&db)
 	// The same directive grammar the HCL loader reads, spelled with SQL's
 	// comment marker. No Ptah surface writes one into SQL today -- only the HCL
 	// rendering omits blocks -- but the contract is the document's, not one
@@ -691,7 +691,7 @@ func loadSQLFileWithStatements(path string, opts Options) (*goschema.Database, *
 // appendDatabase merges one parsed file into the description being built from
 // all of them.
 //
-// EVERY object family of [goschema.Database] belongs here. Two did not, and the
+// EVERY object family of [schemamodel.Database] belongs here. Two did not, and the
 // consequence was not a compile error: `ptah schema apply --to file://x.hcl`
 // silently ignored every declared SQL Server synonym and extended property and
 // reported `Schema is synced, no changes to be made`, while the same file
@@ -702,7 +702,7 @@ func loadSQLFileWithStatements(path string, opts Options) (*goschema.Database, *
 // [TestAppendDatabase_MergesEveryObjectFamily] is what keeps the next family
 // from being missed the same way: it reflects over the struct rather than
 // trusting this list.
-func appendDatabase(dst, src *goschema.Database) {
+func appendDatabase(dst, src *schemamodel.Database) {
 	dst.Schemas = append(dst.Schemas, src.Schemas...)
 	dst.Tables = append(dst.Tables, src.Tables...)
 	dst.Fields = append(dst.Fields, src.Fields...)

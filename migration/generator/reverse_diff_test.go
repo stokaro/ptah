@@ -6,76 +6,76 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/renderer"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/constraintscope"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestReverseSchemaDiff_Extensions(t *testing.T) {
 	tests := []struct {
 		name     string
-		input    *types.SchemaDiff
-		expected *types.SchemaDiff
+		input    *difftypes.SchemaDiff
+		expected *difftypes.SchemaDiff
 	}{
 		{
 			name: "reverse added, removed, and moved extensions",
-			input: &types.SchemaDiff{
+			input: &difftypes.SchemaDiff{
 				ExtensionsAdded:    []string{"pg_trgm", "btree_gin"},
 				ExtensionsRemoved:  []string{"postgis", "uuid-ossp"},
-				ExtensionsModified: []types.ExtensionDiff{{Name: "citext", FromSchema: "public", ToSchema: "extensions"}},
+				ExtensionsModified: []difftypes.ExtensionDiff{{Name: "citext", FromSchema: "public", ToSchema: "extensions"}},
 			},
-			expected: &types.SchemaDiff{
+			expected: &difftypes.SchemaDiff{
 				ExtensionsAdded:    []string{"postgis", "uuid-ossp"},
 				ExtensionsRemoved:  []string{"pg_trgm", "btree_gin"},
-				ExtensionsModified: []types.ExtensionDiff{{Name: "citext", FromSchema: "extensions", ToSchema: "public"}},
+				ExtensionsModified: []difftypes.ExtensionDiff{{Name: "citext", FromSchema: "extensions", ToSchema: "public"}},
 			},
 		},
 		{
 			name: "reverse only extensions added",
-			input: &types.SchemaDiff{
+			input: &difftypes.SchemaDiff{
 				ExtensionsAdded:   []string{"pg_trgm"},
 				ExtensionsRemoved: make([]string, 0),
 			},
-			expected: &types.SchemaDiff{
+			expected: &difftypes.SchemaDiff{
 				ExtensionsAdded:   make([]string, 0),
 				ExtensionsRemoved: []string{"pg_trgm"},
 			},
 		},
 		{
 			name: "reverse only extensions removed",
-			input: &types.SchemaDiff{
+			input: &difftypes.SchemaDiff{
 				ExtensionsAdded:   make([]string, 0),
 				ExtensionsRemoved: []string{"postgis"},
 			},
-			expected: &types.SchemaDiff{
+			expected: &difftypes.SchemaDiff{
 				ExtensionsAdded:   []string{"postgis"},
 				ExtensionsRemoved: make([]string, 0),
 			},
 		},
 		{
 			name: "no extensions to reverse",
-			input: &types.SchemaDiff{
+			input: &difftypes.SchemaDiff{
 				ExtensionsAdded:   make([]string, 0),
 				ExtensionsRemoved: make([]string, 0),
 			},
-			expected: &types.SchemaDiff{
+			expected: &difftypes.SchemaDiff{
 				ExtensionsAdded:   make([]string, 0),
 				ExtensionsRemoved: make([]string, 0),
 			},
 		},
 		{
 			name: "nil extension slices",
-			input: &types.SchemaDiff{
+			input: &difftypes.SchemaDiff{
 				ExtensionsAdded:   nil,
 				ExtensionsRemoved: nil,
 			},
-			expected: &types.SchemaDiff{
+			expected: &difftypes.SchemaDiff{
 				ExtensionsAdded:   nil,
 				ExtensionsRemoved: nil,
 			},
@@ -102,8 +102,8 @@ func TestGenerateDownMigrationSQL_Issue43_RLSPolicyTableNames(t *testing.T) {
 	// Missing table names in generated down migration DROP POLICY statements
 
 	// Create a schema diff that adds RLS policies (simulating an up migration)
-	upDiff := &types.SchemaDiff{
-		RLSPoliciesAdded: []types.RLSPolicyRef{
+	upDiff := &difftypes.SchemaDiff{
+		RLSPoliciesAdded: []difftypes.RLSPolicyRef{
 			{PolicyName: "area_user_isolation", TableName: "areas"},
 			{PolicyName: "commodity_user_isolation", TableName: "commodities"},
 		},
@@ -112,12 +112,12 @@ func TestGenerateDownMigrationSQL_Issue43_RLSPolicyTableNames(t *testing.T) {
 
 	// Create a database schema that includes the RLS policies with table names
 	// This simulates the database state after the up migration has been applied
-	dbSchema := &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
+	dbSchema := &catalog.Database{
+		Tables: []catalog.Table{
 			{Name: "areas", RLSEnabled: true},
 			{Name: "commodities", RLSEnabled: true},
 		},
-		RLSPolicies: []dbschematypes.DBRLSPolicy{
+		RLSPolicies: []catalog.RLSPolicy{
 			{
 				Name:            "area_user_isolation",
 				Table:           "areas",
@@ -137,16 +137,16 @@ func TestGenerateDownMigrationSQL_Issue43_RLSPolicyTableNames(t *testing.T) {
 
 	// Create a generated schema that includes the RLS policies with table names
 	// This simulates the original generated schema that was used to create the up migration
-	generatedSchema := &goschema.Database{
-		Tables: []goschema.Table{
+	generatedSchema := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: "areas"},
 			{Name: "commodities"},
 		},
-		RLSEnabledTables: []goschema.RLSEnabledTable{
+		RLSEnabledTables: []schemamodel.RLSEnabledTable{
 			{Table: "areas"},
 			{Table: "commodities"},
 		},
-		RLSPolicies: []goschema.RLSPolicy{
+		RLSPolicies: []schemamodel.RLSPolicy{
 			{
 				Name:            "area_user_isolation",
 				Table:           "areas",
@@ -190,8 +190,8 @@ func TestGenerateDownMigrationSQL_Issue57_MissingTableNames(t *testing.T) {
 	// when the schema context doesn't contain the policy information
 
 	// Create a schema diff that adds RLS policies (simulating an up migration)
-	upDiff := &types.SchemaDiff{
-		RLSPoliciesAdded: []types.RLSPolicyRef{
+	upDiff := &difftypes.SchemaDiff{
+		RLSPoliciesAdded: []difftypes.RLSPolicyRef{
 			{PolicyName: "area_tenant_isolation", TableName: "areas"},
 			{PolicyName: "area_user_isolation", TableName: "areas"},
 			{PolicyName: "commodity_tenant_isolation", TableName: "commodities"},
@@ -201,26 +201,26 @@ func TestGenerateDownMigrationSQL_Issue57_MissingTableNames(t *testing.T) {
 
 	// Create a database schema that includes the tables but NOT the RLS policies
 	// This simulates the scenario where the schema context is incomplete
-	dbSchema := &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
+	dbSchema := &catalog.Database{
+		Tables: []catalog.Table{
 			{Name: "areas", RLSEnabled: true},
 			{Name: "commodities", RLSEnabled: true},
 		},
-		RLSPolicies: make([]dbschematypes.DBRLSPolicy, 0), // Empty - this is the key to reproducing the bug
+		RLSPolicies: make([]catalog.RLSPolicy, 0), // Empty - this is the key to reproducing the bug
 	}
 
 	// Create a generated schema that includes the RLS policies with table names
 	// This simulates the original generated schema that was used to create the up migration
-	generatedSchema := &goschema.Database{
-		Tables: []goschema.Table{
+	generatedSchema := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: "areas"},
 			{Name: "commodities"},
 		},
-		RLSEnabledTables: []goschema.RLSEnabledTable{
+		RLSEnabledTables: []schemamodel.RLSEnabledTable{
 			{Table: "areas"},
 			{Table: "commodities"},
 		},
-		RLSPolicies: []goschema.RLSPolicy{
+		RLSPolicies: []schemamodel.RLSPolicy{
 			{
 				Name:            "area_tenant_isolation",
 				Table:           "areas",
@@ -268,42 +268,42 @@ func TestReverseSchemaDiff_CompleteReversal(t *testing.T) {
 	c := qt.New(t)
 
 	// Test that all fields are properly reversed
-	input := &types.SchemaDiff{
+	input := &difftypes.SchemaDiff{
 		TablesAdded:   []string{"users", "posts"},
 		TablesRemoved: []string{"old_table"},
 		EnumsAdded:    []string{"status_type"},
 		EnumsRemoved:  []string{"old_enum"},
-		IndexesAdded: []types.IndexRef{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "idx_users_email", TableName: "users"},
 		},
-		IndexesRemoved: []types.IndexRef{
+		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_old", TableName: "old_table"},
 		},
 		ExtensionsAdded:   []string{"pg_trgm", "btree_gin"},
 		ExtensionsRemoved: []string{"postgis"},
 		FunctionsAdded:    []string{"get_tenant_id", "set_tenant_context"},
 		FunctionsRemoved:  []string{"old_function"},
-		RLSPoliciesAdded: []types.RLSPolicyRef{
+		RLSPoliciesAdded: []difftypes.RLSPolicyRef{
 			{PolicyName: "user_policy", TableName: "users"},
 			{PolicyName: "tenant_policy", TableName: "posts"},
 		},
-		RLSPoliciesRemoved: []types.RLSPolicyRef{
+		RLSPoliciesRemoved: []difftypes.RLSPolicyRef{
 			{PolicyName: "old_policy", TableName: "old_table"},
 		},
 		RLSEnabledTablesAdded:   []string{"users", "posts"},
 		RLSEnabledTablesRemoved: []string{"old_table"},
 		RolesAdded:              []string{"app_user", "admin_user"},
 		RolesRemoved:            []string{"old_role"},
-		GrantsAdded: []types.GrantRef{
+		GrantsAdded: []difftypes.GrantRef{
 			{Role: "app_user", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "users"},
 		},
-		GrantsRemoved: []types.GrantRef{
+		GrantsRemoved: []difftypes.GrantRef{
 			{Role: "old_role", Privilege: "DELETE", ObjectType: "TABLE", ObjectName: "users"},
 		},
-		GrantOptionsAdded: []types.GrantRef{
+		GrantOptionsAdded: []difftypes.GrantRef{
 			{Role: "app_user", Privilege: "UPDATE", ObjectType: "TABLE", ObjectName: "users", WithOption: true},
 		},
-		GrantOptionsRevoked: []types.GrantRef{
+		GrantOptionsRevoked: []difftypes.GrantRef{
 			{Role: "old_role", Privilege: "INSERT", ObjectType: "TABLE", ObjectName: "users", WithOption: true},
 		},
 	}
@@ -325,7 +325,7 @@ func TestReverseSchemaDiff_CompleteReversal(t *testing.T) {
 	c.Assert(result.FunctionsRemoved, qt.DeepEquals, input.FunctionsAdded)
 
 	// Verify RLS policy reversals
-	expectedRLSPoliciesAdded := []types.RLSPolicyRef{
+	expectedRLSPoliciesAdded := []difftypes.RLSPolicyRef{
 		{PolicyName: "old_policy", TableName: "old_table"},
 	}
 	c.Assert(result.RLSPoliciesAdded, qt.DeepEquals, expectedRLSPoliciesAdded)
@@ -333,7 +333,7 @@ func TestReverseSchemaDiff_CompleteReversal(t *testing.T) {
 	// The reversal carries each policy's own table through instead of
 	// re-deriving it from the policy name, which is why these are no longer
 	// empty.
-	expectedRLSPoliciesRemoved := []types.RLSPolicyRef{
+	expectedRLSPoliciesRemoved := []difftypes.RLSPolicyRef{
 		{PolicyName: "user_policy", TableName: "users"},
 		{PolicyName: "tenant_policy", TableName: "posts"},
 	}
@@ -355,7 +355,7 @@ func TestReverseSchemaDiff_CompleteReversal(t *testing.T) {
 func TestGenerateDownMigrationSQL_DropsFKChainChildBeforeParent(t *testing.T) {
 	c := qt.New(t)
 	schema := fkOrderSchema()
-	upDiff := &types.SchemaDiff{
+	upDiff := &difftypes.SchemaDiff{
 		TablesAdded: []string{
 			"ptah_fk_order_accounts",
 			"ptah_fk_order_projects",
@@ -363,7 +363,7 @@ func TestGenerateDownMigrationSQL_DropsFKChainChildBeforeParent(t *testing.T) {
 		},
 	}
 
-	downSQL, err := generateDownMigrationSQL(upDiff, schema, &dbschematypes.DBSchema{}, "postgres")
+	downSQL, err := generateDownMigrationSQL(upDiff, schema, &catalog.Database{}, "postgres")
 	downSQL = legacyRenderedSQL(downSQL)
 
 	c.Assert(err, qt.IsNil)
@@ -374,7 +374,7 @@ func TestGenerateDownMigrationSQL_DropsFKChainChildBeforeParent(t *testing.T) {
 func TestGenerateDownMigrationSQL_DropsFKDiamondLeavesBeforeRoot(t *testing.T) {
 	c := qt.New(t)
 	schema := fkOrderSchema()
-	upDiff := &types.SchemaDiff{
+	upDiff := &difftypes.SchemaDiff{
 		TablesAdded: []string{
 			"ptah_fk_order_accounts",
 			"ptah_fk_order_memberships",
@@ -383,7 +383,7 @@ func TestGenerateDownMigrationSQL_DropsFKDiamondLeavesBeforeRoot(t *testing.T) {
 		},
 	}
 
-	downSQL, err := generateDownMigrationSQL(upDiff, schema, &dbschematypes.DBSchema{}, "postgres")
+	downSQL, err := generateDownMigrationSQL(upDiff, schema, &catalog.Database{}, "postgres")
 	downSQL = legacyRenderedSQL(downSQL)
 
 	c.Assert(err, qt.IsNil)
@@ -395,17 +395,17 @@ func TestGenerateDownMigrationSQL_DropsFKDiamondLeavesBeforeRoot(t *testing.T) {
 
 func TestGenerateDownMigrationSQL_DropsSchemaQualifiedTableLevelFKChildBeforeParent(t *testing.T) {
 	c := qt.New(t)
-	schema := &goschema.Database{
-		Tables: []goschema.Table{
+	schema := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Account", Schema: "app", Name: "accounts"},
 			{StructName: "Project", Schema: "app", Name: "projects"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Account", Name: "id", Type: "VARCHAR(36)", Primary: true},
 			{StructName: "Project", Name: "id", Type: "VARCHAR(36)", Primary: true},
 			{StructName: "Project", Name: "account_id", Type: "VARCHAR(36)"},
 		},
-		Constraints: []goschema.Constraint{
+		Constraints: []schemamodel.Constraint{
 			{
 				Name:           "fk_projects_account",
 				Type:           "FOREIGN KEY",
@@ -416,9 +416,9 @@ func TestGenerateDownMigrationSQL_DropsSchemaQualifiedTableLevelFKChildBeforePar
 			},
 		},
 	}
-	upDiff := &types.SchemaDiff{TablesAdded: []string{"app.accounts", "app.projects"}}
+	upDiff := &difftypes.SchemaDiff{TablesAdded: []string{"app.accounts", "app.projects"}}
 
-	downSQL, err := generateDownMigrationSQL(upDiff, schema, &dbschematypes.DBSchema{}, "postgres")
+	downSQL, err := generateDownMigrationSQL(upDiff, schema, &catalog.Database{}, "postgres")
 
 	c.Assert(err, qt.IsNil)
 	assertSQLBefore(t, downSQL, "DROP TABLE IF EXISTS app.projects", "DROP TABLE IF EXISTS app.accounts")
@@ -429,10 +429,10 @@ func TestGenerateDownMigrationSQL_DropsMySQLFamilyFKChainInDependencyOrder(t *te
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			schema := fkOrderSchema()
-			goschema.Finalize(schema)
-			upDiff := schemadiff.CompareWithDialect(schema, &dbschematypes.DBSchema{}, dialect)
+			schemamodel.Finalize(schema)
+			upDiff := schemadiff.CompareWithDialect(schema, &catalog.Database{}, dialect)
 
-			downSQL, err := generateDownMigrationSQL(upDiff, schema, &dbschematypes.DBSchema{}, dialect)
+			downSQL, err := generateDownMigrationSQL(upDiff, schema, &catalog.Database{}, dialect)
 			c.Assert(err, qt.IsNil)
 			downSQL = legacyRenderedSQL(downSQL)
 
@@ -449,10 +449,10 @@ func TestGenerateDownMigrationSQL_DropsMySQLFamilyFKDiamondInDependencyOrder(t *
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			schema := fkOrderSchema()
-			goschema.Finalize(schema)
-			upDiff := schemadiff.CompareWithDialect(schema, &dbschematypes.DBSchema{}, dialect)
+			schemamodel.Finalize(schema)
+			upDiff := schemadiff.CompareWithDialect(schema, &catalog.Database{}, dialect)
 
-			downSQL, err := generateDownMigrationSQL(upDiff, schema, &dbschematypes.DBSchema{}, dialect)
+			downSQL, err := generateDownMigrationSQL(upDiff, schema, &catalog.Database{}, dialect)
 			c.Assert(err, qt.IsNil)
 			downSQL = legacyRenderedSQL(downSQL)
 
@@ -472,10 +472,10 @@ func TestGenerateDownMigrationSQL_DropsMySQLFamilyMutualFKCycleTogether(t *testi
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			schema := mutualFKCycleSchema()
-			goschema.Finalize(schema)
-			upDiff := schemadiff.CompareWithDialect(schema, &dbschematypes.DBSchema{}, dialect)
+			schemamodel.Finalize(schema)
+			upDiff := schemadiff.CompareWithDialect(schema, &catalog.Database{}, dialect)
 
-			downSQL, err := generateDownMigrationSQL(upDiff, schema, &dbschematypes.DBSchema{}, dialect)
+			downSQL, err := generateDownMigrationSQL(upDiff, schema, &catalog.Database{}, dialect)
 			c.Assert(err, qt.IsNil)
 			downSQL = legacyRenderedSQL(downSQL)
 
@@ -489,14 +489,14 @@ func TestGenerateDownMigrationSQL_DropsMySQLFamilyMutualFKCycleTogether(t *testi
 
 func TestReverseSchemaDiff_GrantOptionUpgradeDownRevokesOnlyOption(t *testing.T) {
 	c := qt.New(t)
-	upDiff := &types.SchemaDiff{
-		GrantOptionsAdded: []types.GrantRef{
+	upDiff := &difftypes.SchemaDiff{
+		GrantOptionsAdded: []difftypes.GrantRef{
 			{Role: "app_role", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "users", WithOption: true},
 		},
 	}
 
 	downDiff := reverseSchemaDiff(upDiff)
-	nodes, err := postgres.New().GenerateMigrationASTChecked(downDiff, &goschema.Database{})
+	nodes, err := postgres.New().GenerateMigrationASTChecked(downDiff, &schemamodel.Database{})
 	c.Assert(err, qt.IsNil)
 	downSQL, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -509,13 +509,13 @@ func TestReverseSchemaDiff_TableModifications(t *testing.T) {
 	c := qt.New(t)
 
 	// Test table modifications reversal
-	input := &types.SchemaDiff{
-		TablesModified: []types.TableDiff{
+	input := &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{
 			{
 				TableName:      "users",
 				ColumnsAdded:   []string{"email", "created_at"},
 				ColumnsRemoved: []string{"legacy_field"},
-				ColumnsModified: []types.ColumnDiff{
+				ColumnsModified: []difftypes.ColumnDiff{
 					{
 						ColumnName: "name",
 						Changes:    map[string]string{"type": "VARCHAR(100) -> VARCHAR(255)"},
@@ -544,8 +544,8 @@ func TestReverseSchemaDiff_EnumModifications(t *testing.T) {
 	c := qt.New(t)
 
 	// Test enum modifications reversal
-	input := &types.SchemaDiff{
-		EnumsModified: []types.EnumDiff{
+	input := &difftypes.SchemaDiff{
+		EnumsModified: []difftypes.EnumDiff{
 			{
 				EnumName:      "status_type",
 				ValuesAdded:   []string{"pending", "archived"},
@@ -568,8 +568,8 @@ func TestReverseSchemaDiff_FunctionModifications(t *testing.T) {
 	c := qt.New(t)
 
 	// Test function modifications reversal
-	input := &types.SchemaDiff{
-		FunctionsModified: []types.FunctionDiff{
+	input := &difftypes.SchemaDiff{
+		FunctionsModified: []difftypes.FunctionDiff{
 			{
 				FunctionName: "get_tenant_id",
 				Changes: map[string]string{
@@ -596,8 +596,8 @@ func TestReverseSchemaDiff_RLSPolicyModifications(t *testing.T) {
 	c := qt.New(t)
 
 	// Test RLS policy modifications reversal
-	input := &types.SchemaDiff{
-		RLSPoliciesModified: []types.RLSPolicyDiff{
+	input := &difftypes.SchemaDiff{
+		RLSPoliciesModified: []difftypes.RLSPolicyDiff{
 			{
 				PolicyName: "user_tenant_isolation",
 				TableName:  "users",
@@ -628,8 +628,8 @@ func TestReverseSchemaDiff_RoleModifications(t *testing.T) {
 	c := qt.New(t)
 
 	// Test role modifications reversal
-	input := &types.SchemaDiff{
-		RolesModified: []types.RoleDiff{
+	input := &difftypes.SchemaDiff{
+		RolesModified: []difftypes.RoleDiff{
 			{
 				RoleName: "app_user",
 				Changes: map[string]string{ // #nosec G101 -- "password" is a map key naming a field, not a credential
@@ -662,12 +662,12 @@ func TestReverseSchemaDiff_Issue39_Integration(t *testing.T) {
 
 	// Create a schema diff that includes RLS policies, functions, and roles being added
 	// (simulating a migration that creates these objects)
-	upDiff := &types.SchemaDiff{
+	upDiff := &difftypes.SchemaDiff{
 		// Add some functions
 		FunctionsAdded: []string{"get_current_tenant_id", "set_tenant_context"},
 
 		// Add some RLS policies
-		RLSPoliciesAdded: []types.RLSPolicyRef{
+		RLSPoliciesAdded: []difftypes.RLSPolicyRef{
 			{PolicyName: "user_tenant_isolation", TableName: "users"},
 			{PolicyName: "area_tenant_isolation", TableName: "areas"},
 		},
@@ -692,7 +692,7 @@ func TestReverseSchemaDiff_Issue39_Integration(t *testing.T) {
 	c.Assert(downDiff.FunctionsAdded, qt.HasLen, 0)
 
 	// RLS policies should be removed in down migration
-	expectedPolicyRefs := []types.RLSPolicyRef{
+	expectedPolicyRefs := []difftypes.RLSPolicyRef{
 		{PolicyName: "user_tenant_isolation", TableName: "users"},
 		{PolicyName: "area_tenant_isolation", TableName: "areas"},
 	}
@@ -720,7 +720,7 @@ func TestReverseSchemaDiff_Issue39_Integration(t *testing.T) {
 func TestReverseSchemaDiff_ConstraintReversal(t *testing.T) {
 	c := qt.New(t)
 
-	input := &types.SchemaDiff{
+	input := &difftypes.SchemaDiff{
 		// Up: change fk_export_file's action -> remove(old) + add(new) of the
 		// same name.
 		ConstraintsRemoved: []string{"fk_export_file"},
@@ -741,9 +741,9 @@ func TestReverseSchemaDiff_ConstraintReversal(t *testing.T) {
 func TestReverseSchemaDiff_FieldLevelCheckRemovalsWithTables(t *testing.T) {
 	c := qt.New(t)
 
-	generatedSchema := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "File", Name: "files"}},
-		Fields: []goschema.Field{
+	generatedSchema := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "File", Name: "files"}},
+		Fields: []schemamodel.Field{
 			{
 				StructName: "File",
 				Name:       "category",
@@ -759,14 +759,14 @@ func TestReverseSchemaDiff_FieldLevelCheckRemovalsWithTables(t *testing.T) {
 			},
 		},
 	}
-	upDiff := &types.SchemaDiff{
+	upDiff := &difftypes.SchemaDiff{
 		ConstraintsAdded: []string{"files_category_check", "files_status_valid"},
 	}
 
 	result := reverseSchemaDiffWithSchema(upDiff, generatedSchema, nil)
 
 	c.Assert(result.ConstraintsRemoved, qt.DeepEquals, []string{"files_category_check", "files_status_valid"})
-	c.Assert(result.ConstraintsRemovedWithTables, qt.DeepEquals, []types.ConstraintRemovalInfo{
+	c.Assert(result.ConstraintsRemovedWithTables, qt.DeepEquals, []difftypes.ConstraintRemovalInfo{
 		{Name: "files_category_check", TableName: "files", Type: "CHECK", Identity: constraintscope.Identity(identifier.Semantics{}, "files", "files_category_check")},
 		{Name: "files_status_valid", TableName: "files", Type: "CHECK", Identity: constraintscope.Identity(identifier.Semantics{}, "files", "files_status_valid")},
 	})
@@ -780,13 +780,13 @@ func TestReverseSchemaDiff_FieldLevelCheckRemovalsWithTables(t *testing.T) {
 func TestReverseSchemaDiff_AddedTableForeignKeyRemovalsWithTables(t *testing.T) {
 	c := qt.New(t)
 
-	generatedSchema := &goschema.Database{
-		Tables: []goschema.Table{
+	generatedSchema := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Account", Schema: "app", Name: "accounts"},
 			{StructName: "Project", Schema: "app", Name: "projects"},
 			{StructName: "Audit", Schema: "app", Name: "audits"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Project", Name: "account_id", Type: "INTEGER", Foreign: "app.accounts(id)"},
 			{
 				StructName:     "Project",
@@ -797,10 +797,10 @@ func TestReverseSchemaDiff_AddedTableForeignKeyRemovalsWithTables(t *testing.T) 
 			},
 			{StructName: "Audit", Name: "project_id", Type: "INTEGER", Foreign: "app.projects(id)"},
 		},
-		EmbeddedFields: []goschema.EmbeddedField{
+		EmbeddedFields: []schemamodel.EmbeddedField{
 			{StructName: "Project", Mode: "relation", Field: "owner_id", Ref: "app.accounts(id)"},
 		},
-		Constraints: []goschema.Constraint{
+		Constraints: []schemamodel.Constraint{
 			{
 				StructName:     "Project",
 				Type:           "FOREIGN KEY",
@@ -811,18 +811,18 @@ func TestReverseSchemaDiff_AddedTableForeignKeyRemovalsWithTables(t *testing.T) 
 			},
 		},
 	}
-	upDiff := &types.SchemaDiff{
+	upDiff := &difftypes.SchemaDiff{
 		TablesAdded: []string{"app.projects"},
 	}
 
 	result := reverseSchemaDiffWithSchema(upDiff, generatedSchema, nil)
 
-	c.Assert(result.ConstraintsRemovedWithTables, qt.DeepEquals, []types.ConstraintRemovalInfo{
+	c.Assert(result.ConstraintsRemovedWithTables, qt.DeepEquals, []difftypes.ConstraintRemovalInfo{
 		{Name: "fk_projects_account_id", TableName: "app.projects", Type: "FOREIGN KEY"},
 		{Name: "fk_project_owner_id", TableName: "app.projects", Type: "FOREIGN KEY"},
 		{Name: "fk_projects_tenant_id_reviewer_id", TableName: "app.projects", Type: "FOREIGN KEY"},
 	})
-	c.Assert(result.ForeignKeysRemovedWithTables, qt.DeepEquals, []types.ForeignKeyRemovalInfo{
+	c.Assert(result.ForeignKeysRemovedWithTables, qt.DeepEquals, []difftypes.ForeignKeyRemovalInfo{
 		{
 			Name: "fk_project_owner_id", TableName: "app.projects",
 			Identity: constraintscope.Identity(identifier.ForDialect("postgres"), "app.projects", "fk_project_owner_id"),
@@ -845,7 +845,7 @@ func TestReverseSchemaDiff_AddedTableForeignKeyRemovalsWithTables(t *testing.T) 
 func TestForeignKeyAdditionFromDBConstraint_DeduplicatesRepeatedIntrospectionColumns(t *testing.T) {
 	c := qt.New(t)
 	foreignTable := "ptah_tenants"
-	dbConstraint := dbschematypes.DBConstraint{
+	dbConstraint := catalog.Constraint{
 		Name:           "fk_entity_tenant",
 		TableName:      "ptah_area",
 		Type:           "FOREIGN KEY",
@@ -863,17 +863,17 @@ func TestForeignKeyAdditionFromDBConstraint_DeduplicatesRepeatedIntrospectionCol
 
 func TestReverseSchemaDiff_MySQLSparseForeignKeyAdditionUsesCaseInsensitiveSchemaBody(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{
-		ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+	diff := &difftypes.SchemaDiff{
+		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
 			Name: "fk_parent_code", TableName: "children", Type: "FOREIGN KEY",
 		}},
 	}
-	desired := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Parent", Name: "parents"},
 			{StructName: "Child", Name: "children"},
 		},
-		Fields: []goschema.Field{{
+		Fields: []schemamodel.Field{{
 			StructName: "Child", Name: "parent_code", Type: "VARCHAR(36)",
 			Foreign: "parents(code)", ForeignKeyName: "FK_PARENT_CODE",
 		}},
@@ -881,25 +881,25 @@ func TestReverseSchemaDiff_MySQLSparseForeignKeyAdditionUsesCaseInsensitiveSchem
 
 	reversed := reverseSchemaDiffWithSchemaForDialect(diff, desired, nil, platform.MySQL)
 
-	c.Assert(reversed.ConstraintsRemovedWithTables, qt.DeepEquals, []types.ConstraintRemovalInfo{{
+	c.Assert(reversed.ConstraintsRemovedWithTables, qt.DeepEquals, []difftypes.ConstraintRemovalInfo{{
 		Name: "fk_parent_code", TableName: "children", Type: "FOREIGN KEY",
 	}})
-	c.Assert(reversed.ForeignKeysRemovedWithTables, qt.DeepEquals, []types.ForeignKeyRemovalInfo{{
+	c.Assert(reversed.ForeignKeysRemovedWithTables, qt.DeepEquals, []difftypes.ForeignKeyRemovalInfo{{
 		Name: "FK_PARENT_CODE", TableName: "children", Columns: []string{"parent_code"},
 		Identity:     constraintscope.Identity(identifier.ForDialect("mysql"), "children", "FK_PARENT_CODE"),
 		ForeignTable: "parents", ForeignColumns: []string{"code"},
 	}})
 }
 
-func fkOrderSchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func fkOrderSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "PtahFKOrderAccount", Name: "ptah_fk_order_accounts"},
 			{StructName: "PtahFKOrderProject", Name: "ptah_fk_order_projects"},
 			{StructName: "PtahFKOrderMembership", Name: "ptah_fk_order_memberships"},
 			{StructName: "PtahFKOrderTask", Name: "ptah_fk_order_tasks"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "PtahFKOrderAccount", Name: "id", Type: "VARCHAR(36)", Primary: true},
 			{StructName: "PtahFKOrderProject", Name: "id", Type: "VARCHAR(36)", Primary: true},
 			{
@@ -936,13 +936,13 @@ func fkOrderSchema() *goschema.Database {
 	}
 }
 
-func mutualFKCycleSchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func mutualFKCycleSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "LeftNode", Name: "left_nodes"},
 			{StructName: "RightNode", Name: "right_nodes"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "LeftNode", Name: "id", Type: "INTEGER", Primary: true},
 			{
 				StructName:     "LeftNode",
@@ -986,12 +986,12 @@ func TestGenerateDownMigrationSQL_Issue189_RestoresPriorForeignKeyAction(t *test
 	varcharLength := 255
 
 	// Generated (target) schema: file_id FK now uses ON DELETE SET NULL.
-	generatedSchema := &goschema.Database{
-		Tables: []goschema.Table{
+	generatedSchema := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Export", Name: "exports"},
 			{StructName: "File", Name: "files"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "File", Name: "id", Type: "VARCHAR(255)", Primary: true},
 			{StructName: "Export", Name: "id", Type: "VARCHAR(255)", Primary: true},
 			{
@@ -1008,23 +1008,23 @@ func TestGenerateDownMigrationSQL_Issue189_RestoresPriorForeignKeyAction(t *test
 
 	// Database (current, pre-change) schema: the FK still has the prior default
 	// NO ACTION. This is what the down migration must restore.
-	dbSchema := &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
+	dbSchema := &catalog.Database{
+		Tables: []catalog.Table{
 			{
 				Name: "files",
-				Columns: []dbschematypes.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "id", DataType: "varchar", CharacterMaxLength: &varcharLength, IsNullable: "NO", IsPrimaryKey: true},
 				},
 			},
 			{
 				Name: "exports",
-				Columns: []dbschematypes.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "id", DataType: "varchar", CharacterMaxLength: &varcharLength, IsNullable: "NO", IsPrimaryKey: true},
 					{Name: "file_id", DataType: "varchar", CharacterMaxLength: &varcharLength, IsNullable: "YES"},
 				},
 			},
 		},
-		Constraints: []dbschematypes.DBConstraint{
+		Constraints: []catalog.Constraint{
 			{
 				Name:          "fk_export_file",
 				TableName:     "exports",
@@ -1039,7 +1039,7 @@ func TestGenerateDownMigrationSQL_Issue189_RestoresPriorForeignKeyAction(t *test
 	}
 
 	// Up diff for the action change: remove(old) + add(new) of the same name.
-	upDiff := &types.SchemaDiff{
+	upDiff := &difftypes.SchemaDiff{
 		ConstraintsRemoved: []string{"fk_export_file"},
 		ConstraintsAdded:   []string{"fk_export_file"},
 	}
@@ -1079,9 +1079,9 @@ func TestGenerateDownMigrationSQL_Issue189_RestoresPriorForeignKeyAction(t *test
 // acceptance test for issue #194: adding a field-level CHECK on an existing
 // column must generate a non-empty MySQL/MariaDB DOWN that drops the CHECK.
 func TestGenerateDownMigrationSQL_Issue194_DropsFieldLevelCheckMySQLFamily(t *testing.T) {
-	generatedSchema := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "File", Name: "files"}},
-		Fields: []goschema.Field{
+	generatedSchema := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "File", Name: "files"}},
+		Fields: []schemamodel.Field{
 			{
 				StructName: "File",
 				Name:       "category",
@@ -1090,11 +1090,11 @@ func TestGenerateDownMigrationSQL_Issue194_DropsFieldLevelCheckMySQLFamily(t *te
 			},
 		},
 	}
-	dbSchema := &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
+	dbSchema := &catalog.Database{
+		Tables: []catalog.Table{
 			{
 				Name: "files",
-				Columns: []dbschematypes.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "category", DataType: "text", IsNullable: "YES"},
 				},
 			},
@@ -1126,10 +1126,10 @@ func TestGenerateDownMigrationSQL_Issue194_DropsFieldLevelCheckMySQLFamily(t *te
 }
 
 func TestGenerateDownMigrationSQL_MySQLFamilyDropsGeneratedForeignKeyBackingIndex(t *testing.T) {
-	generatedSchema := &goschema.Database{}
-	upDiff := &types.SchemaDiff{
+	generatedSchema := &schemamodel.Database{}
+	upDiff := &difftypes.SchemaDiff{
 		ConstraintsAdded: []string{"fk_users_account_id"},
-		ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{
+		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
 			{
 				Name:         "fk_users_account_id",
 				TableName:    "users",
@@ -1143,18 +1143,18 @@ func TestGenerateDownMigrationSQL_MySQLFamilyDropsGeneratedForeignKeyBackingInde
 
 	tests := []struct {
 		name      string
-		dbSchema  *dbschematypes.DBSchema
+		dbSchema  *catalog.Database
 		wantIndex bool
 	}{
 		{
 			name:      "no prior same-named index",
-			dbSchema:  &dbschematypes.DBSchema{},
+			dbSchema:  &catalog.Database{},
 			wantIndex: true,
 		},
 		{
 			name: "pre-change DB already had that index",
-			dbSchema: &dbschematypes.DBSchema{
-				Indexes: []dbschematypes.DBIndex{
+			dbSchema: &catalog.Database{
+				Indexes: []catalog.Index{
 					{
 						Name: "fk_users_account_id", TableName: "users",
 						Columns: []string{"account_id"},
@@ -1197,10 +1197,10 @@ func TestGenerateDownMigrationSQL_MySQLFamilyDropsGeneratedForeignKeyBackingInde
 func TestReverseSchemaDiff_Sequences(t *testing.T) {
 	c := qt.New(t)
 
-	input := &types.SchemaDiff{
+	input := &difftypes.SchemaDiff{
 		SequencesAdded:   []string{"added_seq"},
 		SequencesRemoved: []string{"removed_seq"},
-		SequencesModified: []types.SequenceDiff{
+		SequencesModified: []difftypes.SequenceDiff{
 			{SequenceName: "changed_seq", Changes: map[string]string{"increment": "1 -> 2"}},
 		},
 	}
@@ -1219,14 +1219,14 @@ func TestGenerateDownMigrationSQL_SequenceAdded(t *testing.T) {
 
 	// The up migration added a standalone sequence, so the down migration must
 	// drop it. The post-up database state carries the sequence.
-	upDiff := &types.SchemaDiff{
+	upDiff := &difftypes.SchemaDiff{
 		SequencesAdded: []string{"order_seq"},
 	}
-	dbSchema := &dbschematypes.DBSchema{
-		Sequences: []dbschematypes.DBSequence{{Name: "order_seq", DataType: "bigint"}},
+	dbSchema := &catalog.Database{
+		Sequences: []catalog.Sequence{{Name: "order_seq", DataType: "bigint"}},
 	}
-	generatedSchema := &goschema.Database{
-		Sequences: []goschema.Sequence{{Name: "order_seq", AsType: "bigint"}},
+	generatedSchema := &schemamodel.Database{
+		Sequences: []schemamodel.Sequence{{Name: "order_seq", AsType: "bigint"}},
 	}
 
 	downSQL, err := generateDownMigrationSQL(upDiff, generatedSchema, dbSchema, "postgres")

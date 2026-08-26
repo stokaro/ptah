@@ -10,10 +10,10 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/schemasecurity"
@@ -154,7 +154,7 @@ func runSchemaSecurity(cmd *cobra.Command, opts schemaSecurityOptions) error {
 	// session resolved, so a rule gated on a capability this server refines is
 	// gated on what this server answered (stokaro/ptah#1230).
 	report := schemasecurity.Analyze(
-		dbschematogo.ConvertDBSchemaToGoSchema(live),
+		dbschematogo.ConvertCatalogToSchema(live),
 		schemasecurity.Options{
 			Capabilities: conn.Info().Capabilities,
 			// Non-nil even when the server has no memberships: this caller DID
@@ -181,7 +181,7 @@ func runSchemaSecurity(cmd *cobra.Command, opts schemaSecurityOptions) error {
 // The conversion to a desired-state schema drops it, because Ptah does not
 // model membership as a desired state -- it is a property of the cluster's role
 // graph, and the analyzer takes it as its own input for exactly that reason.
-func roleMemberships(live *dbschematypes.DBSchema) []schemasecurity.RoleMembership {
+func roleMemberships(live *catalog.Database) []schemasecurity.RoleMembership {
 	memberships := make([]schemasecurity.RoleMembership, 0, len(live.RoleMemberships))
 	for _, membership := range live.RoleMemberships {
 		memberships = append(memberships, schemasecurity.RoleMembership{
@@ -195,7 +195,7 @@ func roleMemberships(live *dbschematypes.DBSchema) []schemasecurity.RoleMembersh
 
 // objectOwners carries who owns what into the analysis, with the owner's login
 // flag as the catalog reported it.
-func objectOwners(live *dbschematypes.DBSchema) []schemasecurity.ObjectOwner {
+func objectOwners(live *catalog.Database) []schemasecurity.ObjectOwner {
 	owners := make([]schemasecurity.ObjectOwner, 0, len(live.ObjectOwners))
 	for _, owner := range live.ObjectOwners {
 		owners = append(owners, schemasecurity.ObjectOwner{

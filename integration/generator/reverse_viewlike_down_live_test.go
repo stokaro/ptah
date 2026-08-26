@@ -13,9 +13,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -34,8 +34,8 @@ import (
 func TestReverseViewLikeObjects_DownRoundTrip_Integration(t *testing.T) {
 	cases := []struct {
 		name   string
-		prior  func() *goschema.Database
-		target func() *goschema.Database
+		prior  func() *schemamodel.Database
+		target func() *schemamodel.Database
 		// downHas and downLacks pin the shape of the rollback where the shape is
 		// the point. The legality test reads the body PostgreSQL hands back
 		// through pg_get_viewdef, which spells the same projection differently
@@ -51,22 +51,22 @@ func TestReverseViewLikeObjects_DownRoundTrip_Integration(t *testing.T) {
 	}{
 		{
 			name:      "up creates the view, materialized view and trigger",
-			prior:     func() *goschema.Database { return revIntSchema(revIntOptions{}) },
-			target:    func() *goschema.Database { return revIntSchema(revIntOptions{objects: true}) },
+			prior:     func() *schemamodel.Database { return revIntSchema(revIntOptions{}) },
+			target:    func() *schemamodel.Database { return revIntSchema(revIntOptions{objects: true}) },
 			downHas:   []string{"DROP VIEW IF EXISTS", "DROP MATERIALIZED VIEW IF EXISTS", "DROP TRIGGER IF EXISTS"},
 			downLacks: []string{"DROP TABLE"},
 		},
 		{
 			name:      "up drops the view, materialized view and trigger",
-			prior:     func() *goschema.Database { return revIntSchema(revIntOptions{objects: true}) },
-			target:    func() *goschema.Database { return revIntSchema(revIntOptions{}) },
+			prior:     func() *schemamodel.Database { return revIntSchema(revIntOptions{objects: true}) },
+			target:    func() *schemamodel.Database { return revIntSchema(revIntOptions{}) },
 			downHas:   []string{"CREATE VIEW", "CREATE MATERIALIZED VIEW", "CREATE TRIGGER"},
 			downLacks: []string{"DROP TABLE"},
 		},
 		{
 			name:  "up appends a column to the view",
-			prior: func() *goschema.Database { return revIntSchema(revIntOptions{objects: true}) },
-			target: func() *goschema.Database {
+			prior: func() *schemamodel.Database { return revIntSchema(revIntOptions{objects: true}) },
+			target: func() *schemamodel.Database {
 				return revIntSchema(revIntOptions{
 					objects:  true,
 					viewBody: "SELECT id, email FROM " + revIntTable,
@@ -79,8 +79,8 @@ func TestReverseViewLikeObjects_DownRoundTrip_Integration(t *testing.T) {
 		},
 		{
 			name:  "up changes only the view predicate",
-			prior: func() *goschema.Database { return revIntSchema(revIntOptions{objects: true}) },
-			target: func() *goschema.Database {
+			prior: func() *schemamodel.Database { return revIntSchema(revIntOptions{objects: true}) },
+			target: func() *schemamodel.Database {
 				return revIntSchema(revIntOptions{
 					objects:  true,
 					viewBody: "SELECT id FROM " + revIntTable + " WHERE id > 10",
@@ -93,8 +93,8 @@ func TestReverseViewLikeObjects_DownRoundTrip_Integration(t *testing.T) {
 		},
 		{
 			name:  "up rewrites the materialized view and the trigger",
-			prior: func() *goschema.Database { return revIntSchema(revIntOptions{objects: true}) },
-			target: func() *goschema.Database {
+			prior: func() *schemamodel.Database { return revIntSchema(revIntOptions{objects: true}) },
+			target: func() *schemamodel.Database {
 				return revIntSchema(revIntOptions{
 					objects:     true,
 					matViewBody: "SELECT count(id) AS total FROM " + revIntTable,
@@ -115,10 +115,10 @@ func TestReverseViewLikeObjects_DownRoundTrip_Integration(t *testing.T) {
 			// Dropping the view instead applies cleanly and leaves the database
 			// short of the schema it was generated from, which step 6 catches.
 			name: "up changes only the predicate inside a WITH view that has a dependent",
-			prior: func() *goschema.Database {
+			prior: func() *schemamodel.Database {
 				return revIntSchema(revIntOptions{objects: true, dependent: true, viewBody: revIntWithBody})
 			},
-			target: func() *goschema.Database {
+			target: func() *schemamodel.Database {
 				return revIntSchema(revIntOptions{
 					objects:   true,
 					dependent: true,
@@ -138,7 +138,7 @@ func TestReverseViewLikeObjects_DownRoundTrip_Integration(t *testing.T) {
 			// prior body back with CREATE OR REPLACE VIEW is refused with
 			// "cannot change data type of view column", which step 3 executes.
 			name: "up swaps the relation under a shared column",
-			prior: func() *goschema.Database {
+			prior: func() *schemamodel.Database {
 				return revIntSchema(revIntOptions{
 					objects:   true,
 					altTable:  true,
@@ -147,7 +147,7 @@ func TestReverseViewLikeObjects_DownRoundTrip_Integration(t *testing.T) {
 					noTrigger: true,
 				})
 			},
-			target: func() *goschema.Database {
+			target: func() *schemamodel.Database {
 				return revIntSchema(revIntOptions{
 					objects:   true,
 					altTable:  true,
@@ -168,10 +168,10 @@ func TestReverseViewLikeObjects_DownRoundTrip_Integration(t *testing.T) {
 			// never touched, which on PostgreSQL 17.10 took a hand-made dependent
 			// view, a unique index and a GRANT with it.
 			name: "up appends a column while a materialized view only names the view in a literal",
-			prior: func() *goschema.Database {
+			prior: func() *schemamodel.Database {
 				return revIntSchema(revIntOptions{objects: true, matViewBody: revIntLabelMatViewBody})
 			},
-			target: func() *goschema.Database {
+			target: func() *schemamodel.Database {
 				return revIntSchema(revIntOptions{
 					objects:     true,
 					viewBody:    "SELECT id, email FROM " + revIntTable,
@@ -315,36 +315,36 @@ type revIntOptions struct {
 	noTrigger bool
 }
 
-func revIntSchema(opts revIntOptions) *goschema.Database {
-	schema := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "RevIntUser", Name: revIntTable}},
-		Fields: []goschema.Field{
+func revIntSchema(opts revIntOptions) *schemamodel.Database {
+	schema := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "RevIntUser", Name: revIntTable}},
+		Fields: []schemamodel.Field{
 			{StructName: "RevIntUser", Name: "id", Type: "BIGINT", Primary: true},
 			{StructName: "RevIntUser", Name: "email", Type: "TEXT", Nullable: true},
 		},
 	}
 	if opts.altTable {
-		schema.Tables = append(schema.Tables, goschema.Table{StructName: "RevIntAltUser", Name: revIntAltTable})
+		schema.Tables = append(schema.Tables, schemamodel.Table{StructName: "RevIntAltUser", Name: revIntAltTable})
 		schema.Fields = append(schema.Fields,
-			goschema.Field{StructName: "RevIntAltUser", Name: "id", Type: "TEXT", Primary: true},
-			goschema.Field{StructName: "RevIntAltUser", Name: "email", Type: "TEXT", Nullable: true},
+			schemamodel.Field{StructName: "RevIntAltUser", Name: "id", Type: "TEXT", Primary: true},
+			schemamodel.Field{StructName: "RevIntAltUser", Name: "email", Type: "TEXT", Nullable: true},
 		)
 	}
 	if opts.objects {
-		schema.Views = []goschema.View{{
+		schema.Views = []schemamodel.View{{
 			StructName: "RevIntActiveUsers",
 			Name:       revIntView,
 			Body:       cmp.Or(opts.viewBody, revIntViewBody),
 		}}
 		if opts.dependent {
-			schema.Views = append(schema.Views, goschema.View{
+			schema.Views = append(schema.Views, schemamodel.View{
 				StructName: "RevIntActiveIDs",
 				Name:       revIntDepView,
 				Body:       revIntDepViewBody,
 			})
 		}
 		if !opts.noTrigger {
-			schema.Triggers = []goschema.Trigger{{
+			schema.Triggers = []schemamodel.Trigger{{
 				StructName: "RevIntUser",
 				Name:       revIntTrigger,
 				Table:      revIntTable,
@@ -355,38 +355,38 @@ func revIntSchema(opts revIntOptions) *goschema.Database {
 			}}
 		}
 		if !opts.noTrigger || opts.matView {
-			schema.MaterializedViews = []goschema.MaterializedView{{
+			schema.MaterializedViews = []schemamodel.MaterializedView{{
 				StructName: "RevIntUserStats",
 				Name:       revIntMatView,
 				Body:       cmp.Or(opts.matViewBody, revIntMatViewBody),
 			}}
 		}
 	}
-	goschema.Finalize(schema)
+	schemamodel.Finalize(schema)
 	return schema
 }
 
 // revIntMissingObjects names the view-like objects a schema declares that the
 // catalog does not hold. An empty result is what "the migration arrived" means;
 // a non-empty one is a plan that applied and still left work undone.
-func revIntMissingObjects(schema *goschema.Database, db *dbschematypes.DBSchema) []string {
+func revIntMissingObjects(schema *schemamodel.Database, db *catalog.Database) []string {
 	var missing []string
 	for _, view := range schema.Views {
-		if !slices.ContainsFunc(db.Views, func(candidate dbschematypes.DBView) bool {
+		if !slices.ContainsFunc(db.Views, func(candidate catalog.View) bool {
 			return candidate.Name == view.Name
 		}) {
 			missing = append(missing, "view "+view.Name)
 		}
 	}
 	for _, view := range schema.MaterializedViews {
-		if !slices.ContainsFunc(db.MatViews, func(candidate dbschematypes.DBMatView) bool {
+		if !slices.ContainsFunc(db.MatViews, func(candidate catalog.MaterializedView) bool {
 			return candidate.Name == view.Name
 		}) {
 			missing = append(missing, "matview "+view.Name)
 		}
 	}
 	for _, trigger := range schema.Triggers {
-		if !slices.ContainsFunc(db.Triggers, func(candidate dbschematypes.DBTrigger) bool {
+		if !slices.ContainsFunc(db.Triggers, func(candidate catalog.Trigger) bool {
 			return candidate.Name == trigger.Name
 		}) {
 			missing = append(missing, "trigger "+trigger.Name)
@@ -398,7 +398,7 @@ func revIntMissingObjects(schema *goschema.Database, db *dbschematypes.DBSchema)
 // revIntCatalog reduces the introspected schema to the view-like objects this
 // test governs, so a mismatch names the object rather than dumping a whole
 // schema.
-func revIntCatalog(db *dbschematypes.DBSchema) []string {
+func revIntCatalog(db *catalog.Database) []string {
 	var lines []string
 	for _, view := range db.Views {
 		lines = append(lines, fmt.Sprintf("view %s = %s", view.Name, revIntNormalize(view.Body)))
@@ -422,8 +422,8 @@ func revIntNormalize(body string) string {
 	return strings.Join(strings.Fields(body), " ")
 }
 
-func revIntHasTable(db *dbschematypes.DBSchema) bool {
-	return slices.ContainsFunc(db.Tables, func(table dbschematypes.DBTable) bool {
+func revIntHasTable(db *catalog.Database) bool {
+	return slices.ContainsFunc(db.Tables, func(table catalog.Table) bool {
 		return table.Name == revIntTable
 	})
 }

@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemachange"
 )
 
@@ -19,8 +19,8 @@ import (
 func TestAUniqueConstraintIsPlanned(t *testing.T) {
 	tests := []struct {
 		name          string
-		description   *goschema.Database
-		catalog       *dbschematypes.DBSchema
+		description   *schemamodel.Database
+		current       *catalog.Database
 		wantOperation schemachange.Operation
 		wantRisk      schemachange.Risk
 		wantChanged   []string
@@ -28,14 +28,14 @@ func TestAUniqueConstraintIsPlanned(t *testing.T) {
 		{
 			name:          "declared and absent from the database",
 			description:   scopedWidget([]string{"tenant", "code"}),
-			catalog:       scopedWidgetCatalog(nil),
+			current:       scopedWidgetCatalog(nil),
 			wantOperation: schemachange.Add,
 			wantRisk:      schemachange.RiskDataDependent,
 		},
 		{
 			name:          "present and no longer declared",
 			description:   scopedWidget(nil),
-			catalog:       scopedWidgetCatalog([]string{"tenant", "code"}),
+			current:       scopedWidgetCatalog([]string{"tenant", "code"}),
 			wantOperation: schemachange.Remove,
 			// Dropping one destroys a guarantee rather than data.
 			wantRisk: schemachange.RiskGuaranteeLoss,
@@ -43,7 +43,7 @@ func TestAUniqueConstraintIsPlanned(t *testing.T) {
 		{
 			name:          "declared over different columns",
 			description:   scopedWidget([]string{"tenant"}),
-			catalog:       scopedWidgetCatalog([]string{"tenant", "code"}),
+			current:       scopedWidgetCatalog([]string{"tenant", "code"}),
 			wantOperation: schemachange.Modify,
 			wantRisk:      schemachange.RiskDataDependent,
 			wantChanged:   []string{"columns"},
@@ -54,7 +54,7 @@ func TestAUniqueConstraintIsPlanned(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			changes := changesFor(c, test.description, test.catalog)
+			changes := changesFor(c, test.description, test.current)
 
 			c.Assert(changes, qt.HasLen, 1)
 			c.Assert(changes[0].Operation, qt.Equals, test.wantOperation)
@@ -77,7 +77,7 @@ func TestAUniqueConstraintIsPlanned(t *testing.T) {
 func TestAGuaranteeInTheColumnSyntaxIsNotAConstraintChange(t *testing.T) {
 	tests := []struct {
 		name        string
-		description *goschema.Database
+		description *schemamodel.Database
 		// wantKinds is every family the row plans, in order. A unique INDEX
 		// plans two changes -- the table and the index -- and the point of the
 		// row is that neither of them is a CONSTRAINT change.
@@ -86,8 +86,8 @@ func TestAGuaranteeInTheColumnSyntaxIsNotAConstraintChange(t *testing.T) {
 		{
 			name: "a column's own flag",
 			description: describedTable(
-				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
-				goschema.Field{
+				schemamodel.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				schemamodel.Field{
 					StructName: "Widget", Name: "code", Type: "text", Nullable: true, Unique: true,
 				}),
 			wantKinds: []string{"table"},
@@ -95,15 +95,15 @@ func TestAGuaranteeInTheColumnSyntaxIsNotAConstraintChange(t *testing.T) {
 		{
 			name: "a table-level primary key",
 			description: describedTableWithKey([]string{"id", "code"},
-				goschema.Field{StructName: "Widget", Name: "id", Type: "int"},
-				goschema.Field{StructName: "Widget", Name: "code", Type: "text"}),
+				schemamodel.Field{StructName: "Widget", Name: "id", Type: "int"},
+				schemamodel.Field{StructName: "Widget", Name: "code", Type: "text"}),
 			wantKinds: []string{"table"},
 		},
 		{
 			name: "a unique index",
 			description: withUniqueIndex(describedTable(
-				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
-				goschema.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true},
+				schemamodel.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				schemamodel.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true},
 			), "idx_widget_code", "code"),
 			// The index is its own object and its own change. What the row
 			// asserts is that it is not ALSO a constraint change: the
@@ -120,7 +120,7 @@ func TestAGuaranteeInTheColumnSyntaxIsNotAConstraintChange(t *testing.T) {
 			// beside it. What must NOT appear is a constraint change: this
 			// family planning a guarantee the CREATE already carries would
 			// declare it twice.
-			changes := changesFor(c, test.description, &dbschematypes.DBSchema{})
+			changes := changesFor(c, test.description, &catalog.Database{})
 
 			c.Assert(kindsOf(changes), qt.DeepEquals, test.wantKinds)
 		})
@@ -129,21 +129,21 @@ func TestAGuaranteeInTheColumnSyntaxIsNotAConstraintChange(t *testing.T) {
 
 // scopedWidget is a table whose named UNIQUE constraint covers the given
 // columns, or which declares none when they are absent.
-func scopedWidget(columns []string) *goschema.Database {
+func scopedWidget(columns []string) *schemamodel.Database {
 	description := describedTable(
-		goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
-		goschema.Field{StructName: "Widget", Name: "tenant", Type: "int", Nullable: true},
-		goschema.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true},
+		schemamodel.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+		schemamodel.Field{StructName: "Widget", Name: "tenant", Type: "int", Nullable: true},
+		schemamodel.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true},
 	)
 	return withUniqueConstraint(description, columns)
 }
 
 // withUniqueConstraint adds the named guarantee, or none for an empty list.
-func withUniqueConstraint(description *goschema.Database, columns []string) *goschema.Database {
-	return map[bool]func() *goschema.Database{
-		true: func() *goschema.Database { return description },
-		false: func() *goschema.Database {
-			description.Constraints = append(description.Constraints, goschema.Constraint{
+func withUniqueConstraint(description *schemamodel.Database, columns []string) *schemamodel.Database {
+	return map[bool]func() *schemamodel.Database{
+		true: func() *schemamodel.Database { return description },
+		false: func() *schemamodel.Database {
+			description.Constraints = append(description.Constraints, schemamodel.Constraint{
 				StructName: "Widget", Name: "uq_widget_scope", Type: "UNIQUE", Columns: columns,
 			})
 			return description
@@ -152,8 +152,8 @@ func withUniqueConstraint(description *goschema.Database, columns []string) *gos
 }
 
 // withUniqueIndex adds a unique index over one column.
-func withUniqueIndex(description *goschema.Database, name, column string) *goschema.Database {
-	description.Indexes = append(description.Indexes, goschema.Index{
+func withUniqueIndex(description *schemamodel.Database, name, column string) *schemamodel.Database {
+	description.Indexes = append(description.Indexes, schemamodel.Index{
 		StructName: "Widget", Name: name, Fields: []string{column}, Unique: true,
 	})
 	return description
@@ -161,27 +161,27 @@ func withUniqueIndex(description *goschema.Database, name, column string) *gosch
 
 // scopedWidgetCatalog is that table as a catalog read reports it, with the
 // guarantee as a constraint row when the database holds one.
-func scopedWidgetCatalog(columns []string) *dbschematypes.DBSchema {
-	catalog := catalogTable(
-		dbschematypes.DBColumn{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
-		dbschematypes.DBColumn{Name: "tenant", DataType: "integer", IsNullable: "YES"},
-		dbschematypes.DBColumn{Name: "code", DataType: "text", IsNullable: "YES"},
+func scopedWidgetCatalog(columns []string) *catalog.Database {
+	current := catalogTable(
+		catalog.Column{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
+		catalog.Column{Name: "tenant", DataType: "integer", IsNullable: "YES"},
+		catalog.Column{Name: "code", DataType: "text", IsNullable: "YES"},
 	)
-	return withCatalogUniqueConstraint(catalog, columns)
+	return withCatalogUniqueConstraint(current, columns)
 }
 
 func withCatalogUniqueConstraint(
-	catalog *dbschematypes.DBSchema,
+	current *catalog.Database,
 	columns []string,
-) *dbschematypes.DBSchema {
-	return map[bool]func() *dbschematypes.DBSchema{
-		true: func() *dbschematypes.DBSchema { return catalog },
-		false: func() *dbschematypes.DBSchema {
-			catalog.Constraints = append(catalog.Constraints, dbschematypes.DBConstraint{
+) *catalog.Database {
+	return map[bool]func() *catalog.Database{
+		true: func() *catalog.Database { return current },
+		false: func() *catalog.Database {
+			current.Constraints = append(current.Constraints, catalog.Constraint{
 				Name: "uq_widget_scope", TableName: "widget", Schema: "public",
 				Type: "UNIQUE", ColumnNames: columns,
 			})
-			return catalog
+			return current
 		},
 	}[len(columns) == 0]()
 }

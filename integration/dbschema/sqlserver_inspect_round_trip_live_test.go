@@ -68,7 +68,7 @@ func TestSQLServerLiveInspectDescribesSynonymsAndProperties(t *testing.T) {
 	c.Assert(live.ExtendedProperties, qt.HasLen, 2)
 
 	rendered, err := atlashclrender.RenderInspected(
-		dbschematogo.ConvertDBSchemaToGoSchema(live), platform.SQLServer, schemaName)
+		dbschematogo.ConvertCatalogToSchema(live), platform.SQLServer, schemaName)
 	c.Assert(err, qt.IsNil)
 	document := string(rendered.Data)
 

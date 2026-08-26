@@ -5,10 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemachange"
 	"go.5x5.cz/ptah/internal/schemastate"
 )
@@ -79,13 +79,13 @@ func cockroachProfile() schemastate.Profile {
 
 // parentChildDescription is the desired schema every row starts from: a parent
 // with a key, and a child whose column references it.
-func parentChildDescription(onDelete string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func parentChildDescription(onDelete string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Parent", Name: "parent"},
 			{StructName: "Child", Name: "child"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Parent", Name: "id", Type: "int", Primary: true},
 			{StructName: "Child", Name: "id", Type: "int", Primary: true},
 			{
@@ -110,20 +110,20 @@ func parentChildDescription(onDelete string) *goschema.Database {
 
 // parentChildCatalog is the same schema as a catalog reports it, with the
 // referential action spelled the way an engine spells it.
-func parentChildCatalog(onDelete string) *dbschematypes.DBSchema {
+func parentChildCatalog(onDelete string) *catalog.Database {
 	parent := "parent"
 	column := "id"
-	return &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
-			{Name: "parent", Schema: "public", Columns: []dbschematypes.DBColumn{
+	return &catalog.Database{
+		Tables: []catalog.Table{
+			{Name: "parent", Schema: "public", Columns: []catalog.Column{
 				{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
 			}},
-			{Name: "child", Schema: "public", Columns: []dbschematypes.DBColumn{
+			{Name: "child", Schema: "public", Columns: []catalog.Column{
 				{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
 				{Name: "parent_id", DataType: "integer", IsNullable: "YES"},
 			}},
 		},
-		Constraints: []dbschematypes.DBConstraint{
+		Constraints: []catalog.Constraint{
 			{
 				Name:          "fk_child_parent",
 				TableName:     "child",
@@ -142,7 +142,7 @@ func parentChildCatalog(onDelete string) *dbschematypes.DBSchema {
 
 // emptyCatalog is a database with the two tables and no foreign key, which is
 // the state an addition starts from.
-func emptyCatalog() *dbschematypes.DBSchema {
+func emptyCatalog() *catalog.Database {
 	return emptyCatalogInSchema("public")
 }
 
@@ -154,13 +154,13 @@ func emptyCatalog() *dbschematypes.DBSchema {
 // PostgreSQL and empty on ClickHouse. A row that ran a "public" catalog past a
 // ClickHouse profile therefore described two different tables, and nothing
 // noticed while the comparison read constraints only (stokaro/ptah#1662).
-func emptyCatalogInSchema(schema string) *dbschematypes.DBSchema {
-	return &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
-			{Name: "parent", Schema: schema, Columns: []dbschematypes.DBColumn{
+func emptyCatalogInSchema(schema string) *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{
+			{Name: "parent", Schema: schema, Columns: []catalog.Column{
 				{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
 			}},
-			{Name: "child", Schema: schema, Columns: []dbschematypes.DBColumn{
+			{Name: "child", Schema: schema, Columns: []catalog.Column{
 				{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
 				{Name: "parent_id", DataType: "integer", IsNullable: "YES"},
 			}},
@@ -172,12 +172,12 @@ func emptyCatalogInSchema(schema string) *dbschematypes.DBSchema {
 // under test in most rows: adapters, normalization, comparison, graph, plan.
 func pipeline(
 	c *qt.C,
-	description *goschema.Database,
-	catalog *dbschematypes.DBSchema,
+	description *schemamodel.Database,
+	current *catalog.Database,
 	profile schemastate.Profile,
 ) []schemachange.PlannedOperation {
 	c.Helper()
-	ordered, err := orderedChanges(c, description, catalog, profile)
+	ordered, err := orderedChanges(c, description, current, profile)
 	c.Assert(err, qt.IsNil)
 	operations, err := schemachange.Plan(ordered, profile)
 	c.Assert(err, qt.IsNil)
@@ -188,12 +188,12 @@ func pipeline(
 // assert on changes rather than on statements.
 func orderedChanges(
 	c *qt.C,
-	description *goschema.Database,
-	catalog *dbschematypes.DBSchema,
+	description *schemamodel.Database,
+	currentCatalog *catalog.Database,
 	profile schemastate.Profile,
 ) ([]schemachange.Change, error) {
 	c.Helper()
-	desired, current, err := states(description, catalog, profile)
+	desired, current, err := states(description, currentCatalog, profile)
 	if err != nil {
 		return nil, err
 	}
@@ -210,15 +210,15 @@ func orderedChanges(
 
 // states builds and normalizes both sides.
 func states(
-	description *goschema.Database,
-	catalog *dbschematypes.DBSchema,
+	description *schemamodel.Database,
+	currentCatalog *catalog.Database,
 	profile schemastate.Profile,
 ) (desired, current *schemastate.State, err error) {
 	rawDesired, err := schemastate.FromDescription(description, profile.Dialect, profile.Semantics)
 	if err != nil {
 		return nil, nil, err
 	}
-	rawCurrent, err := schemastate.FromCatalog(catalog, profile.Dialect, profile.Semantics)
+	rawCurrent, err := schemastate.FromCatalog(currentCatalog, profile.Dialect, profile.Semantics)
 	if err != nil {
 		return nil, nil, err
 	}

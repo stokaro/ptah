@@ -8,13 +8,13 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/diffpolicy"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestValidateComparisonRefusesAnUnregisteredModule is the guard on the second
@@ -47,14 +47,14 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 	// PRAGMA module_list reports as exactly: dbstat, fts5, fts5vocab, geopoly,
 	// rtree, rtree_i32, sqlite_dbpage. Nothing here hard-codes that name as
 	// special; it is unregistered the same way an invented module is.
-	unclassified := []types.DBVirtualTable{{Name: "docs", Module: "fts4"}}
+	unclassified := []catalog.VirtualTable{{Name: "docs", Module: "fts4"}}
 
 	tests := []struct {
 		name            string
 		dialect         string
 		env             func(testing.TB)
-		desired         *goschema.Database
-		database        *types.DBSchema
+		desired         *schemamodel.Database
+		current         *catalog.Database
 		policy          sqlitevirtual.Policy
 		wantErr         bool
 		wantUnsupported bool
@@ -66,8 +66,8 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect: "sqlite",
 			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			desired: declaring("users"),
-			database: &types.DBSchema{
-				Tables:                    []types.DBTable{{Name: "docs", VirtualModule: "fts4"}, {Name: "users"}},
+			current: &catalog.Database{
+				Tables:                    []catalog.Table{{Name: "docs", VirtualModule: "fts4"}, {Name: "users"}},
 				UnregisteredVirtualTables: unclassified,
 			},
 			wantErr:         true,
@@ -88,8 +88,8 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect: "sqlite",
 			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			desired: declaring("users"),
-			database: &types.DBSchema{
-				Tables: []types.DBTable{
+			current: &catalog.Database{
+				Tables: []catalog.Table{
 					{Name: "docs_content"},
 					{Name: "docs_docsize"},
 					{Name: "docs_segdir"},
@@ -110,8 +110,8 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect: "sqlite",
 			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			desired: declaring("users"),
-			database: &types.DBSchema{
-				Tables:                    []types.DBTable{{Name: "docs", VirtualModule: "fts4"}},
+			current: &catalog.Database{
+				Tables:                    []catalog.Table{{Name: "docs", VirtualModule: "fts4"}},
 				UnregisteredVirtualTables: unclassified,
 			},
 			wantErr:         true,
@@ -126,7 +126,7 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			},
 		},
 		{
-			// A DBSchema built by something other than the SQLite reader
+			// A catalog.Database built by something other than the SQLite reader
 			// carries no list. The virtual table in front of the validator is
 			// still checked directly, so a zero value cannot read as "every
 			// module is present".
@@ -144,8 +144,8 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect: "sqlite",
 			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			desired: declaringVirtual("docs", "fts4", "title, body"),
-			database: &types.DBSchema{
-				Tables: []types.DBTable{
+			current: &catalog.Database{
+				Tables: []catalog.Table{
 					{Name: "docs", VirtualModule: "fts4", VirtualArguments: "title, body"},
 					{Name: "docs_content"},
 				},
@@ -163,9 +163,9 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect: "sqlite",
 			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			desired: declaring("users"),
-			database: &types.DBSchema{
-				Tables: []types.DBTable{{Name: "users"}, {Name: "docs_content"}},
-				UnregisteredVirtualTables: []types.DBVirtualTable{
+			current: &catalog.Database{
+				Tables: []catalog.Table{{Name: "users"}, {Name: "docs_content"}},
+				UnregisteredVirtualTables: []catalog.VirtualTable{
 					{Name: "docs", Module: "fts4"},
 					{Name: "notes_ix", Module: "fts4"},
 				},
@@ -186,9 +186,9 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect: "sqlite",
 			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			desired: declaring("users"),
-			database: &types.DBSchema{
-				Tables: []types.DBTable{{Name: "users"}, {Name: "docs_content"}},
-				UnregisteredVirtualTables: []types.DBVirtualTable{
+			current: &catalog.Database{
+				Tables: []catalog.Table{{Name: "users"}, {Name: "docs_content"}},
+				UnregisteredVirtualTables: []catalog.VirtualTable{
 					{Name: "docs", Module: "fts4"},
 					{Name: "legacy", Module: "fts3"},
 				},
@@ -205,8 +205,8 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect: "sqlite",
 			env:     envbooltest.Set(sqlitevirtual.AllowUnregisteredModuleEnvVar, "1"),
 			desired: declaring("users"),
-			database: &types.DBSchema{
-				Tables:                    []types.DBTable{{Name: "docs_content"}, {Name: "users"}},
+			current: &catalog.Database{
+				Tables:                    []catalog.Table{{Name: "docs_content"}, {Name: "users"}},
 				UnregisteredVirtualTables: unclassified,
 			},
 			wantErr: false,
@@ -217,8 +217,8 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect: "sqlite",
 			env:     envbooltest.Set(sqlitevirtual.AllowUnregisteredModuleEnvVar, "false"),
 			desired: declaring("users"),
-			database: &types.DBSchema{
-				Tables:                    []types.DBTable{{Name: "users"}, {Name: "docs_content"}},
+			current: &catalog.Database{
+				Tables:                    []catalog.Table{{Name: "users"}, {Name: "docs_content"}},
 				UnregisteredVirtualTables: unclassified,
 			},
 			wantErr:         true,
@@ -234,8 +234,8 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect: "sqlite",
 			env:     envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "1"),
 			desired: declaring("users"),
-			database: &types.DBSchema{
-				Tables:                    []types.DBTable{{Name: "docs", VirtualModule: "fts4"}},
+			current: &catalog.Database{
+				Tables:                    []catalog.Table{{Name: "docs", VirtualModule: "fts4"}},
 				UnregisteredVirtualTables: unclassified,
 			},
 			wantErr:         true,
@@ -250,7 +250,7 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect:         "sqlite",
 			env:             envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			desired:         declaring("users"),
-			database:        &types.DBSchema{Tables: []types.DBTable{{Name: "docs", VirtualModule: "fts5"}}},
+			current:         &catalog.Database{Tables: []catalog.Table{{Name: "docs", VirtualModule: "fts5"}}},
 			wantErr:         true,
 			wantUnsupported: true,
 			wantContains: []string{
@@ -279,7 +279,7 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect:         "sqlite",
 			env:             envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			desired:         declaringVirtual("docs", "FTS5", "title, body"),
-			database:        &types.DBSchema{Tables: []types.DBTable{{Name: "docs", VirtualModule: "FTS5", VirtualArguments: "title, body"}}},
+			current:         &catalog.Database{Tables: []catalog.Table{{Name: "docs", VirtualModule: "FTS5", VirtualArguments: "title, body"}}},
 			wantErr:         false,
 			wantUnsupported: false,
 		},
@@ -293,7 +293,7 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect:         "sqlite",
 			env:             envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			desired:         declaringVirtual("docs", "fts4", "title, body"),
-			database:        &types.DBSchema{Tables: []types.DBTable{{Name: "users"}}},
+			current:         &catalog.Database{Tables: []catalog.Table{{Name: "users"}}},
 			wantErr:         true,
 			wantUnsupported: true,
 			wantContains: []string{
@@ -312,12 +312,12 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			// happen and left the opt-in unable to restore the comparison it
 			// promises. Measured on the command before the fix:
 			// `schema diff` between two identical fts4 databases exited 2.
-			name:     "an unregistered module present on both sides is comparable with the opt-in",
-			dialect:  "sqlite",
-			env:      envbooltest.Set(sqlitevirtual.AllowUnregisteredModuleEnvVar, "1"),
-			desired:  declaringVirtual("docs", "fts4", "title, body"),
-			database: &types.DBSchema{Tables: []types.DBTable{{Name: "docs", VirtualModule: "fts4", VirtualArguments: "title, body"}}},
-			wantErr:  false,
+			name:    "an unregistered module present on both sides is comparable with the opt-in",
+			dialect: "sqlite",
+			env:     envbooltest.Set(sqlitevirtual.AllowUnregisteredModuleEnvVar, "1"),
+			desired: declaringVirtual("docs", "fts4", "title, body"),
+			current: &catalog.Database{Tables: []catalog.Table{{Name: "docs", VirtualModule: "fts4", VirtualArguments: "title, body"}}},
+			wantErr: false,
 		},
 		{
 			// And the same pair needs no opt-in at all, because nothing in it
@@ -325,12 +325,12 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			// no DROP TABLE is planned however badly Ptah has misclassified the
 			// module's storage. Refusing this was the over-strict half of the
 			// same finding.
-			name:     "an unregistered module present on both sides needs no opt-in",
-			dialect:  "sqlite",
-			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			desired:  declaringVirtual("docs", "fts4", "title, body"),
-			database: &types.DBSchema{Tables: []types.DBTable{{Name: "docs", VirtualModule: "fts4", VirtualArguments: "title, body"}}},
-			wantErr:  false,
+			name:    "an unregistered module present on both sides needs no opt-in",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			desired: declaringVirtual("docs", "fts4", "title, body"),
+			current: &catalog.Database{Tables: []catalog.Table{{Name: "docs", VirtualModule: "fts4", VirtualArguments: "title, body"}}},
+			wantErr: false,
 		},
 		{
 			// THE SCOPING ROW. `--include users` narrows the comparison to a
@@ -347,8 +347,8 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect: "sqlite",
 			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			desired: declaring("users"),
-			database: &types.DBSchema{
-				Tables:                    []types.DBTable{{Name: "users"}},
+			current: &catalog.Database{
+				Tables:                    []catalog.Table{{Name: "users"}},
 				UnregisteredVirtualTables: unclassified,
 			},
 			wantErr: false,
@@ -366,10 +366,10 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 				"docs", "fts4", "title, body",
 				"docs_content", []string{"docid", "c0title"},
 			),
-			database: &types.DBSchema{
-				Tables: []types.DBTable{
+			current: &catalog.Database{
+				Tables: []catalog.Table{
 					{Name: "docs", VirtualModule: "fts4", VirtualArguments: "title, body"},
-					{Name: "docs_content", Columns: []types.DBColumn{
+					{Name: "docs_content", Columns: []catalog.Column{
 						{Name: "docid"}, {Name: "c0title"}, {Name: "c1body"},
 					}},
 				},
@@ -386,8 +386,8 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect: "sqlite",
 			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			desired: declaring("users"),
-			database: &types.DBSchema{
-				Tables:                    []types.DBTable{{Name: "users"}, {Name: "docs_content"}},
+			current: &catalog.Database{
+				Tables:                    []catalog.Table{{Name: "users"}, {Name: "docs_content"}},
 				UnregisteredVirtualTables: unclassified,
 			},
 			wantErr:         true,
@@ -402,7 +402,7 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect:         "sqlite",
 			env:             envbooltest.Set(sqlitevirtual.AllowUnregisteredModuleEnvVar, "1"),
 			desired:         declaringVirtual("docs", "fts4", "title, body"),
-			database:        &types.DBSchema{Tables: []types.DBTable{{Name: "users"}}},
+			current:         &catalog.Database{Tables: []catalog.Table{{Name: "users"}}},
 			wantErr:         true,
 			wantUnsupported: true,
 			wantContains:    []string{"the desired schema adds", "no such module: fts4"},
@@ -415,7 +415,7 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect:         "sqlite",
 			env:             envbooltest.Set(sqlitevirtual.AllowUnregisteredModuleEnvVar, "1"),
 			desired:         declaringVirtual("docs", "fts4", "title, body"),
-			database:        &types.DBSchema{Tables: []types.DBTable{{Name: "users"}}},
+			current:         &catalog.Database{Tables: []catalog.Table{{Name: "users"}}},
 			wantErr:         true,
 			wantUnsupported: true,
 			wantContains:    []string{"no such module: fts4"},
@@ -427,8 +427,8 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect: "mysql",
 			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			desired: declaring("users"),
-			database: &types.DBSchema{
-				Tables:                    []types.DBTable{{Name: "docs", VirtualModule: "fts4"}},
+			current: &catalog.Database{
+				Tables:                    []catalog.Table{{Name: "docs", VirtualModule: "fts4"}},
 				UnregisteredVirtualTables: unclassified,
 			},
 			wantErr: false,
@@ -452,8 +452,8 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect: "sqlite",
 			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			desired: declaring("users"),
-			database: &types.DBSchema{
-				Tables: []types.DBTable{
+			current: &catalog.Database{
+				Tables: []catalog.Table{
 					{Name: "docs_content"},
 					{Name: "docs_docsize"},
 					{Name: "docs_segdir"},
@@ -476,7 +476,7 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect:         "sqlite",
 			env:             envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			desired:         declaringVirtual("docs", "fts4", "title, body"),
-			database:        &types.DBSchema{Tables: []types.DBTable{{Name: "users"}}},
+			current:         &catalog.Database{Tables: []catalog.Table{{Name: "users"}}},
 			policy:          sqlitevirtual.Policy{SkipDropTable: true},
 			wantErr:         true,
 			wantUnsupported: true,
@@ -490,7 +490,7 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect:      "sqlite",
 			env:          envbooltest.Set(sqlitevirtual.AllowUnregisteredModuleEnvVar, "maybe"),
 			desired:      declaring("users"),
-			database:     &types.DBSchema{Tables: []types.DBTable{{Name: "docs_content"}, {Name: "users"}}, UnregisteredVirtualTables: unclassified},
+			current:      &catalog.Database{Tables: []catalog.Table{{Name: "docs_content"}, {Name: "users"}}, UnregisteredVirtualTables: unclassified},
 			policy:       sqlitevirtual.Policy{SkipDropTable: true},
 			wantErr:      true,
 			wantContains: []string{sqlitevirtual.AllowUnregisteredModuleEnvVar, "maybe"},
@@ -502,7 +502,7 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			c := qt.New(t)
 			tt.env(t)
 
-			err := sqlitevirtual.ValidateComparison(tt.dialect, tt.desired, tt.database, tt.policy)
+			err := sqlitevirtual.ValidateComparison(tt.dialect, tt.desired, tt.current, tt.policy)
 
 			c.Assert(err != nil, qt.Equals, tt.wantErr)
 			c.Assert(errors.Is(err, ptaherr.ErrUnsupportedFeature), qt.Equals, tt.wantUnsupported)
@@ -532,9 +532,9 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 // So the question is asked afterwards, of the diff itself, which cannot drift
 // from the rules that produced it.
 func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
-	unclassified := []types.DBVirtualTable{{Name: "docs", Module: "fts4"}}
-	holdingFTS4 := &types.DBSchema{
-		Tables: []types.DBTable{
+	unclassified := []catalog.VirtualTable{{Name: "docs", Module: "fts4"}}
+	holdingFTS4 := &catalog.Database{
+		Tables: []catalog.Table{
 			{Name: "docs", VirtualModule: "fts4"},
 			{Name: "docs_content"},
 		},
@@ -545,7 +545,7 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 		name            string
 		dialect         string
 		env             func(testing.TB)
-		database        *types.DBSchema
+		current         *catalog.Database
 		diff            *difftypes.SchemaDiff
 		policy          sqlitevirtual.Policy
 		wantErr         bool
@@ -558,7 +558,7 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			name:            "a modified table in an unclassifiable database is refused",
 			dialect:         "sqlite",
 			env:             envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database:        holdingFTS4,
+			current:         holdingFTS4,
 			diff:            modifying("docs_content"),
 			wantErr:         true,
 			wantUnsupported: true,
@@ -577,22 +577,22 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			// `schema diff --include users` against an fts4 database whose whole
 			// plan was `ALTER TABLE "users" ADD COLUMN "email" TEXT;`, and the
 			// only escape offered was the opt-in that also permits the drops.
-			name:     "a table that only gains a column is not counted",
-			dialect:  "sqlite",
-			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database: holdingFTS4,
-			diff:     addingColumn("users"),
-			wantErr:  false,
+			name:    "a table that only gains a column is not counted",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			current: holdingFTS4,
+			diff:    addingColumn("users"),
+			wantErr: false,
 		},
 		{
 			// The first control for the row above. The exclusion is about a
 			// table diff whose ONLY change is added columns; one rebuilding
 			// change beside them still rebuilds the table, added columns and
 			// all.
-			name:     "a table that gains a column and loses one is still counted",
-			dialect:  "sqlite",
-			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database: holdingFTS4,
+			name:    "a table that gains a column and loses one is still counted",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			current: holdingFTS4,
 			diff: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:      "docs_content",
 				ColumnsAdded:   []string{"spurious"},
@@ -606,10 +606,10 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			// The second control. A constraint recorded ON the table diff also
 			// rebuilds -- SQLite has no ALTER for a constraint -- so the
 			// exclusion must not read "TablesModified is never counted".
-			name:     "a table diff carrying a constraint change is still counted",
-			dialect:  "sqlite",
-			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database: holdingFTS4,
+			name:    "a table diff carrying a constraint change is still counted",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			current: holdingFTS4,
 			diff: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:        "docs_content",
 				ColumnsAdded:     []string{"spurious"},
@@ -625,10 +625,10 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			// same add-column-only table diff, beside a schema-level constraint
 			// change on that table. planTableRebuilds derives it from
 			// ConstraintsAddedWithTables and rebuilds it, so the gate must too.
-			name:     "an added column beside a schema level constraint change is still counted",
-			dialect:  "sqlite",
-			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database: holdingFTS4,
+			name:    "an added column beside a schema level constraint change is still counted",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			current: holdingFTS4,
 			diff: &difftypes.SchemaDiff{
 				TablesModified: []difftypes.TableDiff{{
 					TableName:    "docs_content",
@@ -649,10 +649,10 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			// derives this table from ConstraintsAddedWithTables and rebuilds
 			// it: drop, recreate, copy. Reading only the two table fields let
 			// it through, which review caught.
-			name:     "a constraint-only rebuild is refused",
-			dialect:  "sqlite",
-			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database: holdingFTS4,
+			name:    "a constraint-only rebuild is refused",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			current: holdingFTS4,
 			diff: &difftypes.SchemaDiff{
 				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
 					{Name: "docs_content_chk", TableName: "docs_content", Type: "CHECK"},
@@ -663,10 +663,10 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			wantContains:    []string{`the plan changes "docs_content"`},
 		},
 		{
-			name:     "a constraint removal is refused too",
-			dialect:  "sqlite",
-			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database: holdingFTS4,
+			name:    "a constraint removal is refused too",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			current: holdingFTS4,
 			diff: &difftypes.SchemaDiff{
 				ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 					{Name: "docs_content_chk", TableName: "docs_content", Type: "CHECK"},
@@ -681,10 +681,10 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			// constraint on a table the plan CREATES cannot be on storage the
 			// module already owns, so adding a table with a constraint beside an
 			// index Ptah cannot classify stays ordinary work.
-			name:     "a constraint on an added table is not counted",
-			dialect:  "sqlite",
-			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database: holdingFTS4,
+			name:    "a constraint on an added table is not counted",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			current: holdingFTS4,
 			diff: &difftypes.SchemaDiff{
 				TablesAdded: []string{"audit"},
 				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
@@ -701,10 +701,10 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			// lookup answers "different object" for one object -- the shape
 			// stokaro/ptah#1351 came from -- and the cost is refusing a safe
 			// addition.
-			name:     "an added table spelled with its schema is still not counted",
-			dialect:  "sqlite",
-			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database: holdingFTS4,
+			name:    "an added table spelled with its schema is still not counted",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			current: holdingFTS4,
 			diff: &difftypes.SchemaDiff{
 				TablesAdded: []string{"main.audit"},
 				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
@@ -715,10 +715,10 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 		},
 		{
 			// SQLite folds ASCII case, so these two name one table too.
-			name:     "an added table spelled in another case is still not counted",
-			dialect:  "sqlite",
-			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database: holdingFTS4,
+			name:    "an added table spelled in another case is still not counted",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			current: holdingFTS4,
 			diff: &difftypes.SchemaDiff{
 				TablesAdded: []string{"AUDIT"},
 				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
@@ -731,10 +731,10 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			// The control for both: a constraint on a table the plan does NOT
 			// add is still counted, so the identity-aware lookup has not turned
 			// the exclusion into "never refuse".
-			name:     "a constraint on a table the plan does not add is still counted",
-			dialect:  "sqlite",
-			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database: holdingFTS4,
+			name:    "a constraint on a table the plan does not add is still counted",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			current: holdingFTS4,
 			diff: &difftypes.SchemaDiff{
 				TablesAdded: []string{"main.audit"},
 				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
@@ -749,7 +749,7 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			name:            "a removed table in an unclassifiable database is refused",
 			dialect:         "sqlite",
 			env:             envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database:        holdingFTS4,
+			current:         holdingFTS4,
 			diff:            removing("docs_stat"),
 			wantErr:         true,
 			wantUnsupported: true,
@@ -760,62 +760,62 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			// database again". A diff that changes nothing cannot touch the
 			// module's storage, whatever Ptah believes that storage to be, so
 			// the comparison the earlier rounds unblocked stays unblocked.
-			name:     "a diff that changes nothing is not refused",
-			dialect:  "sqlite",
-			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database: holdingFTS4,
-			wantErr:  false,
+			name:    "a diff that changes nothing is not refused",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			current: holdingFTS4,
+			wantErr: false,
 		},
 		{
 			// The other control: the same change against a database whose
 			// modules are all present is ordinary work.
-			name:     "a modified table in a classifiable database is not refused",
-			dialect:  "sqlite",
-			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database: &types.DBSchema{Tables: []types.DBTable{{Name: "docs", VirtualModule: "fts5"}}},
-			diff:     modifying("docs"),
-			wantErr:  false,
+			name:    "a modified table in a classifiable database is not refused",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			current: &catalog.Database{Tables: []catalog.Table{{Name: "docs", VirtualModule: "fts5"}}},
+			diff:    modifying("docs"),
+			wantErr: false,
 		},
 		{
-			name:     "the opt-in lifts it",
-			dialect:  "sqlite",
-			env:      envbooltest.Set(sqlitevirtual.AllowUnregisteredModuleEnvVar, "1"),
-			database: holdingFTS4,
-			diff:     modifying("docs_content"),
-			wantErr:  false,
+			name:    "the opt-in lifts it",
+			dialect: "sqlite",
+			env:     envbooltest.Set(sqlitevirtual.AllowUnregisteredModuleEnvVar, "1"),
+			current: holdingFTS4,
+			diff:    modifying("docs_content"),
+			wantErr: false,
 		},
 		{
 			// The dialect gate. A MySQL plan must not be failed by a SQLite
 			// subsystem, however the list got onto the description.
-			name:     "a non SQLite dialect is not touched",
-			dialect:  "mysql",
-			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database: holdingFTS4,
-			diff:     modifying("docs_content"),
-			wantErr:  false,
+			name:    "a non SQLite dialect is not touched",
+			dialect: "mysql",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			current: holdingFTS4,
+			diff:    modifying("docs_content"),
+			wantErr: false,
 		},
 		{
 			// THE ROW THE DROP-POLICY FINDING ADDED, on the post-diff half. The
 			// caller filters TablesRemoved out of this diff after this gate
 			// returns, so counting a removal here refuses a plan that will not
 			// contain it.
-			name:     "a removal is not counted when the caller skips table drops",
-			dialect:  "sqlite",
-			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database: holdingFTS4,
-			diff:     removing("docs_stat"),
-			policy:   sqlitevirtual.Policy{SkipDropTable: true},
-			wantErr:  false,
+			name:    "a removal is not counted when the caller skips table drops",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			current: holdingFTS4,
+			diff:    removing("docs_stat"),
+			policy:  sqlitevirtual.Policy{SkipDropTable: true},
+			wantErr: false,
 		},
 		{
 			// A dropped table's dependent removals go with it, so a constraint
 			// whose host is being dropped is not an ALTER on a kept table --
 			// both implementations of the policy delete it. Counting the host
 			// would refuse the same emptied plan by another route.
-			name:     "a constraint on a table the policy keeps from dropping is not counted",
-			dialect:  "sqlite",
-			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database: holdingFTS4,
+			name:    "a constraint on a table the policy keeps from dropping is not counted",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			current: holdingFTS4,
 			diff: &difftypes.SchemaDiff{
 				TablesRemoved: []string{"main.docs_content"},
 				ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
@@ -835,7 +835,7 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			name:            "a rebuild is still refused when the caller skips table drops",
 			dialect:         "sqlite",
 			env:             envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database:        holdingFTS4,
+			current:         holdingFTS4,
 			diff:            modifying("docs_content"),
 			policy:          sqlitevirtual.Policy{SkipDropTable: true},
 			wantErr:         true,
@@ -846,10 +846,10 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			// The second control: a constraint-only rebuild reaches
 			// planTableRebuilds through a schema-level field the drop policy
 			// never touches, so it stays refused too.
-			name:     "a constraint-only rebuild is still refused when the caller skips table drops",
-			dialect:  "sqlite",
-			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database: holdingFTS4,
+			name:    "a constraint-only rebuild is still refused when the caller skips table drops",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			current: holdingFTS4,
 			diff: &difftypes.SchemaDiff{
 				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
 					{Name: "docs_content_chk", TableName: "docs_content", Type: "CHECK"},
@@ -871,10 +871,10 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			// `ptah schema diff --from sqlite://live.db --to sqlite://desired.db`
 			// planned `DROP INDEX IF EXISTS "docs_content_title_idx";` at
 			// exit 0.
-			name:     "an index removed from a table in an unclassifiable database is refused",
-			dialect:  "sqlite",
-			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database: holdingFTS4,
+			name:    "an index removed from a table in an unclassifiable database is refused",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			current: holdingFTS4,
 			diff: &difftypes.SchemaDiff{
 				IndexesRemoved: []difftypes.IndexRef{
 					{Name: "docs_content_title_idx", TableName: "docs_content"},
@@ -890,10 +890,10 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			// rebuild set -- so a trigger removal is a statement against a
 			// table nothing else in the diff mentions. Measured the same way:
 			// `DROP TRIGGER IF EXISTS "docs_content_guard";` at exit 0.
-			name:     "a trigger removed from a table in an unclassifiable database is refused",
-			dialect:  "sqlite",
-			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database: holdingFTS4,
+			name:    "a trigger removed from a table in an unclassifiable database is refused",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			current: holdingFTS4,
 			diff: &difftypes.SchemaDiff{
 				TriggersRemoved: []difftypes.TriggerRef{
 					{TriggerName: "docs_content_guard", TableName: "docs_content"},
@@ -908,10 +908,10 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			// trigger with SetReplace, which puts the existing one out of the
 			// way first; the object the module may be maintaining is gone
 			// either way.
-			name:     "a replaced trigger in an unclassifiable database is refused",
-			dialect:  "sqlite",
-			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database: holdingFTS4,
+			name:    "a replaced trigger in an unclassifiable database is refused",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			current: holdingFTS4,
 			diff: &difftypes.SchemaDiff{
 				TriggersModified: []difftypes.TriggerDiff{{
 					TriggerName: "docs_content_guard",
@@ -929,10 +929,10 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			// nothing, so the harm this gate names cannot come from one, and a
 			// database holding an unloadable module must still be able to gain
 			// an index.
-			name:     "an index or trigger the plan only ADDS is not counted",
-			dialect:  "sqlite",
-			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database: holdingFTS4,
+			name:    "an index or trigger the plan only ADDS is not counted",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			current: holdingFTS4,
 			diff: &difftypes.SchemaDiff{
 				IndexesAdded: []difftypes.IndexRef{
 					{Name: "docs_content_title_idx", TableName: "docs_content"},
@@ -948,10 +948,10 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			// exists at all: adding index removals to the counted set without
 			// it would have re-opened, on a new field, the over-refusal the
 			// drop_table round closed.
-			name:     "an index removal is not counted when the caller skips index drops",
-			dialect:  "sqlite",
-			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database: holdingFTS4,
+			name:    "an index removal is not counted when the caller skips index drops",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			current: holdingFTS4,
 			diff: &difftypes.SchemaDiff{
 				IndexesRemoved: []difftypes.IndexRef{
 					{Name: "docs_content_title_idx", TableName: "docs_content"},
@@ -964,10 +964,10 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			// Its control. `skip drop_index` keeps a REPLACEMENT -- an index
 			// dropped and recreated under the same name -- because the plan
 			// needs the pair, so the table it is aimed at stays counted.
-			name:     "an index replacement is still counted when the caller skips index drops",
-			dialect:  "sqlite",
-			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database: holdingFTS4,
+			name:    "an index replacement is still counted when the caller skips index drops",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			current: holdingFTS4,
 			diff: &difftypes.SchemaDiff{
 				IndexesRemoved: []difftypes.IndexRef{
 					{Name: "docs_content_title_idx", TableName: "docs_content"},
@@ -993,10 +993,10 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			// dropping one column from an ordinary `users` table, exited 2 --
 			// while the same run with the opt-in set exited 0 and wrote no
 			// migration file at all.
-			name:     "a column drop is not counted when the caller skips column drops",
-			dialect:  "sqlite",
-			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database: holdingFTS4,
+			name:    "a column drop is not counted when the caller skips column drops",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			current: holdingFTS4,
 			diff: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:      "users",
 				ColumnsRemoved: []string{"legacy"},
@@ -1011,10 +1011,10 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			// rebuilds the table -- drop, recreate, copy -- and is still
 			// refused. This is the row that fails if the policy is read as a
 			// short-circuit rather than as a filter over the diff.
-			name:     "a column drop beside a type change is still counted under the same policy",
-			dialect:  "sqlite",
-			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database: holdingFTS4,
+			name:    "a column drop beside a type change is still counted under the same policy",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			current: holdingFTS4,
 			diff: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:      "docs_content",
 				ColumnsRemoved: []string{"c1body"},
@@ -1033,10 +1033,10 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			// rebuild the planner really performs, so it stays refused.
 			// Measured with `diff.skip: [drop_table]` alone on the fixture
 			// above -- exit 2.
-			name:     "a column drop with no policy is still counted",
-			dialect:  "sqlite",
-			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database: holdingFTS4,
+			name:    "a column drop with no policy is still counted",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			current: holdingFTS4,
 			diff: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:      "docs_content",
 				ColumnsRemoved: []string{"c1body"},
@@ -1052,7 +1052,7 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			c := qt.New(t)
 			tt.env(t)
 
-			err := sqlitevirtual.ValidatePlannedChanges(tt.dialect, tt.database, tt.diff, tt.policy)
+			err := sqlitevirtual.ValidatePlannedChanges(tt.dialect, tt.current, tt.diff, tt.policy)
 
 			c.Assert(err != nil, qt.Equals, tt.wantErr)
 			c.Assert(errors.Is(err, ptaherr.ErrUnsupportedFeature), qt.Equals, tt.wantUnsupported)
@@ -1092,9 +1092,9 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 // unloadable module -- the over-refusal this package has fixed three times
 // already, arriving a fourth time by a new route.
 func TestValidatePlannedRollbackRefusesADestructiveRollback(t *testing.T) {
-	unclassified := []types.DBVirtualTable{{Name: "docs", Module: "fts4"}}
-	holdingFTS4 := &types.DBSchema{
-		Tables: []types.DBTable{
+	unclassified := []catalog.VirtualTable{{Name: "docs", Module: "fts4"}}
+	holdingFTS4 := &catalog.Database{
+		Tables: []catalog.Table{
 			{Name: "docs", VirtualModule: "fts4"},
 			{Name: "docs_content"},
 		},
@@ -1105,7 +1105,7 @@ func TestValidatePlannedRollbackRefusesADestructiveRollback(t *testing.T) {
 		name            string
 		dialect         string
 		env             func(testing.TB)
-		database        *types.DBSchema
+		current         *catalog.Database
 		forward         *difftypes.SchemaDiff
 		reverse         *difftypes.SchemaDiff
 		wantErr         bool
@@ -1117,11 +1117,11 @@ func TestValidatePlannedRollbackRefusesADestructiveRollback(t *testing.T) {
 			// `ALTER TABLE ... ADD COLUMN`, which the up-direction gate admits
 			// and should; the rollback that Ptah writes beside it rebuilds the
 			// module's storage.
-			name:     "an added column reversed into a removed one is refused",
-			dialect:  "sqlite",
-			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database: holdingFTS4,
-			forward:  addingColumn("docs_content"),
+			name:    "an added column reversed into a removed one is refused",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			current: holdingFTS4,
+			forward: addingColumn("docs_content"),
 			reverse: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:      "docs_content",
 				ColumnsRemoved: []string{"email"},
@@ -1141,13 +1141,13 @@ func TestValidatePlannedRollbackRefusesADestructiveRollback(t *testing.T) {
 			// one. Adding an ordinary table to a database that happens to hold
 			// an unloadable module is exactly the work the earlier rounds
 			// unblocked.
-			name:     "a table the migration creates is not counted when the rollback drops it again",
-			dialect:  "sqlite",
-			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database: holdingFTS4,
-			forward:  &difftypes.SchemaDiff{TablesAdded: []string{"audit"}},
-			reverse:  removing("audit"),
-			wantErr:  false,
+			name:    "a table the migration creates is not counted when the rollback drops it again",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			current: holdingFTS4,
+			forward: &difftypes.SchemaDiff{TablesAdded: []string{"audit"}},
+			reverse: removing("audit"),
+			wantErr: false,
 		},
 		{
 			// Its control: the exclusion is about the tables THIS migration
@@ -1156,7 +1156,7 @@ func TestValidatePlannedRollbackRefusesADestructiveRollback(t *testing.T) {
 			name:            "a rollback drop of a table the migration did not create is still counted",
 			dialect:         "sqlite",
 			env:             envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database:        holdingFTS4,
+			current:         holdingFTS4,
 			forward:         &difftypes.SchemaDiff{TablesAdded: []string{"audit"}},
 			reverse:         removing("docs_content"),
 			wantErr:         true,
@@ -1170,22 +1170,22 @@ func TestValidatePlannedRollbackRefusesADestructiveRollback(t *testing.T) {
 			// the comparator's spelling and the reverse removal carries the
 			// drop order's, so a raw string lookup answers "different object"
 			// for one object (stokaro/ptah#1351).
-			name:     "a created table spelled with its schema is still not counted",
-			dialect:  "sqlite",
-			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database: holdingFTS4,
-			forward:  &difftypes.SchemaDiff{TablesAdded: []string{"main.audit"}},
-			reverse:  removing("audit"),
-			wantErr:  false,
+			name:    "a created table spelled with its schema is still not counted",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			current: holdingFTS4,
+			forward: &difftypes.SchemaDiff{TablesAdded: []string{"main.audit"}},
+			reverse: removing("audit"),
+			wantErr: false,
 		},
 		{
 			// The index half of the creation set. `migrations generate` for a
 			// database holding an unloadable module must still be able to add
 			// an index, and the rollback of an addition is a drop.
-			name:     "an index the migration creates is not counted when the rollback drops it",
-			dialect:  "sqlite",
-			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database: holdingFTS4,
+			name:    "an index the migration creates is not counted when the rollback drops it",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			current: holdingFTS4,
 			forward: &difftypes.SchemaDiff{IndexesAdded: []difftypes.IndexRef{
 				{Name: "docs_content_docid_idx", TableName: "docs_content"},
 			}},
@@ -1199,10 +1199,10 @@ func TestValidatePlannedRollbackRefusesADestructiveRollback(t *testing.T) {
 			// An index dropped and recreated under one name REPLACES the object
 			// that was there, so its rollback puts the earlier definition back
 			// over whatever the module was maintaining.
-			name:     "an index the migration only replaces is still counted",
-			dialect:  "sqlite",
-			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database: holdingFTS4,
+			name:    "an index the migration only replaces is still counted",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			current: holdingFTS4,
 			forward: &difftypes.SchemaDiff{
 				IndexesAdded: []difftypes.IndexRef{
 					{Name: "docs_content_docid_idx", TableName: "docs_content"},
@@ -1224,10 +1224,10 @@ func TestValidatePlannedRollbackRefusesADestructiveRollback(t *testing.T) {
 			// The granularity control: the exclusion is asked of the index, not
 			// of the table it sits on, so one created index does not excuse
 			// every removal aimed at its table.
-			name:     "a created index does not excuse another removal on the same table",
-			dialect:  "sqlite",
-			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database: holdingFTS4,
+			name:    "a created index does not excuse another removal on the same table",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			current: holdingFTS4,
 			forward: &difftypes.SchemaDiff{IndexesAdded: []difftypes.IndexRef{
 				{Name: "docs_content_new_idx", TableName: "docs_content"},
 			}},
@@ -1243,10 +1243,10 @@ func TestValidatePlannedRollbackRefusesADestructiveRollback(t *testing.T) {
 		},
 		{
 			// The trigger half of the same pair.
-			name:     "a trigger the migration creates is not counted when the rollback drops it",
-			dialect:  "sqlite",
-			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database: holdingFTS4,
+			name:    "a trigger the migration creates is not counted when the rollback drops it",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			current: holdingFTS4,
 			forward: &difftypes.SchemaDiff{TriggersAdded: []difftypes.TriggerRef{
 				{TriggerName: "docs_content_guard", TableName: "docs_content"},
 			}},
@@ -1256,10 +1256,10 @@ func TestValidatePlannedRollbackRefusesADestructiveRollback(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:     "a trigger the migration only replaces is still counted",
-			dialect:  "sqlite",
-			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database: holdingFTS4,
+			name:    "a trigger the migration only replaces is still counted",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			current: holdingFTS4,
 			forward: &difftypes.SchemaDiff{
 				TriggersAdded: []difftypes.TriggerRef{
 					{TriggerName: "docs_content_guard", TableName: "docs_content"},
@@ -1281,10 +1281,10 @@ func TestValidatePlannedRollbackRefusesADestructiveRollback(t *testing.T) {
 			// A trigger the forward direction MODIFIES is put back by the
 			// rollback over the module's own, so a reversed modification is a
 			// replacement however the creation set reads.
-			name:     "a trigger the rollback replaces is still counted",
-			dialect:  "sqlite",
-			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database: holdingFTS4,
+			name:    "a trigger the rollback replaces is still counted",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			current: holdingFTS4,
 			forward: &difftypes.SchemaDiff{TriggersModified: []difftypes.TriggerDiff{{
 				TriggerName: "docs_content_guard",
 				TableName:   "docs_content",
@@ -1306,29 +1306,29 @@ func TestValidatePlannedRollbackRefusesADestructiveRollback(t *testing.T) {
 			// dropped removes nothing, so it is not this gate's harm. It is the
 			// pre-comparison half's, and that one already refused the forward
 			// drop.
-			name:     "a rollback that only restores a dropped table is not refused",
-			dialect:  "sqlite",
-			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database: holdingFTS4,
-			forward:  removing("docs_content"),
-			reverse:  &difftypes.SchemaDiff{TablesAdded: []string{"docs_content"}},
-			wantErr:  false,
+			name:    "a rollback that only restores a dropped table is not refused",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			current: holdingFTS4,
+			forward: removing("docs_content"),
+			reverse: &difftypes.SchemaDiff{TablesAdded: []string{"docs_content"}},
+			wantErr: false,
 		},
 		{
-			name:     "a rollback that changes nothing is not refused",
-			dialect:  "sqlite",
-			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database: holdingFTS4,
-			forward:  &difftypes.SchemaDiff{},
-			reverse:  &difftypes.SchemaDiff{},
-			wantErr:  false,
+			name:    "a rollback that changes nothing is not refused",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			current: holdingFTS4,
+			forward: &difftypes.SchemaDiff{},
+			reverse: &difftypes.SchemaDiff{},
+			wantErr: false,
 		},
 		{
-			name:     "a rollback against a classifiable database is not refused",
-			dialect:  "sqlite",
-			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database: &types.DBSchema{Tables: []types.DBTable{{Name: "docs", VirtualModule: "fts5"}}},
-			forward:  addingColumn("docs"),
+			name:    "a rollback against a classifiable database is not refused",
+			dialect: "sqlite",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			current: &catalog.Database{Tables: []catalog.Table{{Name: "docs", VirtualModule: "fts5"}}},
+			forward: addingColumn("docs"),
 			reverse: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:      "docs",
 				ColumnsRemoved: []string{"email"},
@@ -1336,11 +1336,11 @@ func TestValidatePlannedRollbackRefusesADestructiveRollback(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:     "the opt-in lifts it",
-			dialect:  "sqlite",
-			env:      envbooltest.Set(sqlitevirtual.AllowUnregisteredModuleEnvVar, "1"),
-			database: holdingFTS4,
-			forward:  addingColumn("docs_content"),
+			name:    "the opt-in lifts it",
+			dialect: "sqlite",
+			env:     envbooltest.Set(sqlitevirtual.AllowUnregisteredModuleEnvVar, "1"),
+			current: holdingFTS4,
+			forward: addingColumn("docs_content"),
 			reverse: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:      "docs_content",
 				ColumnsRemoved: []string{"email"},
@@ -1348,11 +1348,11 @@ func TestValidatePlannedRollbackRefusesADestructiveRollback(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:     "a non SQLite dialect is not touched",
-			dialect:  "mysql",
-			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database: holdingFTS4,
-			forward:  addingColumn("docs_content"),
+			name:    "a non SQLite dialect is not touched",
+			dialect: "mysql",
+			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			current: holdingFTS4,
+			forward: addingColumn("docs_content"),
 			reverse: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:      "docs_content",
 				ColumnsRemoved: []string{"email"},
@@ -1366,7 +1366,7 @@ func TestValidatePlannedRollbackRefusesADestructiveRollback(t *testing.T) {
 			c := qt.New(t)
 			tt.env(t)
 
-			err := sqlitevirtual.ValidatePlannedRollback(tt.dialect, tt.database, tt.forward, tt.reverse)
+			err := sqlitevirtual.ValidatePlannedRollback(tt.dialect, tt.current, tt.forward, tt.reverse)
 
 			c.Assert(err != nil, qt.Equals, tt.wantErr)
 			c.Assert(errors.Is(err, ptaherr.ErrUnsupportedFeature), qt.Equals, tt.wantUnsupported)
@@ -1444,9 +1444,9 @@ func TestDiffPolicySkipKindsAreClassified(t *testing.T) {
 		c.Assert(classified, qt.DeepEquals, all)
 	})
 
-	database := &types.DBSchema{
-		Tables:                    []types.DBTable{{Name: "docs", VirtualModule: "fts4"}},
-		UnregisteredVirtualTables: []types.DBVirtualTable{{Name: "docs", Module: "fts4"}},
+	current := &catalog.Database{
+		Tables:                    []catalog.Table{{Name: "docs", VirtualModule: "fts4"}},
+		UnregisteredVirtualTables: []catalog.VirtualTable{{Name: "docs", Module: "fts4"}},
 	}
 
 	for _, tt := range tests {
@@ -1454,7 +1454,7 @@ func TestDiffPolicySkipKindsAreClassified(t *testing.T) {
 			c := qt.New(t)
 			envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar)(t)
 
-			err := sqlitevirtual.ValidatePlannedChanges("sqlite", database, tt.diff, sqlitevirtual.Policy{})
+			err := sqlitevirtual.ValidatePlannedChanges("sqlite", current, tt.diff, sqlitevirtual.Policy{})
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 		})
@@ -1463,7 +1463,7 @@ func TestDiffPolicySkipKindsAreClassified(t *testing.T) {
 			c := qt.New(t)
 			envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar)(t)
 
-			err := sqlitevirtual.ValidatePlannedChanges("sqlite", database, tt.diff, tt.policy)
+			err := sqlitevirtual.ValidatePlannedChanges("sqlite", current, tt.diff, tt.policy)
 
 			c.Assert(err, qt.IsNil)
 		})
@@ -1511,13 +1511,13 @@ func declaringVirtualWithTable(
 	virtualName, module, arguments,
 	tableName string,
 	columns []string,
-) *goschema.Database {
-	fields := make([]goschema.Field, 0, len(columns))
+) *schemamodel.Database {
+	fields := make([]schemamodel.Field, 0, len(columns))
 	for _, column := range columns {
-		fields = append(fields, goschema.Field{StructName: tableName, Name: column})
+		fields = append(fields, schemamodel.Field{StructName: tableName, Name: column})
 	}
-	return &goschema.Database{
-		Tables: []goschema.Table{
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{
 				StructName:       virtualName,
 				Name:             virtualName,
@@ -1582,7 +1582,7 @@ func TestValidateToggleResolvesBothOwnedVariables(t *testing.T) {
 func TestReportUnclassifiedNamesWhatTheDescriptionCannotVouchFor(t *testing.T) {
 	tests := []struct {
 		name         string
-		schema       *types.DBSchema
+		schema       *catalog.Database
 		wantContains []string
 		wantAbsent   []string
 		wantSilent   bool
@@ -1594,14 +1594,14 @@ func TestReportUnclassifiedNamesWhatTheDescriptionCannotVouchFor(t *testing.T) {
 		},
 		{
 			name:       "a fully classified database says nothing",
-			schema:     &types.DBSchema{Tables: []types.DBTable{{Name: "docs", VirtualModule: "fts5"}}},
+			schema:     &catalog.Database{Tables: []catalog.Table{{Name: "docs", VirtualModule: "fts5"}}},
 			wantSilent: true,
 		},
 		{
 			name: "an unclassified table is named with its module",
-			schema: &types.DBSchema{
-				Tables:                    []types.DBTable{{Name: "docs", VirtualModule: "fts4"}},
-				UnregisteredVirtualTables: []types.DBVirtualTable{{Name: "docs", Module: "fts4"}},
+			schema: &catalog.Database{
+				Tables:                    []catalog.Table{{Name: "docs", VirtualModule: "fts4"}},
+				UnregisteredVirtualTables: []catalog.VirtualTable{{Name: "docs", Module: "fts4"}},
 			},
 			wantContains: []string{
 				`virtual table "docs" (module fts4)`,
@@ -1612,12 +1612,12 @@ func TestReportUnclassifiedNamesWhatTheDescriptionCannotVouchFor(t *testing.T) {
 		},
 		{
 			name: "every unclassified table is named, not just the first",
-			schema: &types.DBSchema{
-				Tables: []types.DBTable{
+			schema: &catalog.Database{
+				Tables: []catalog.Table{
 					{Name: "docs", VirtualModule: "fts4"},
 					{Name: "legacy", VirtualModule: "fts3"},
 				},
-				UnregisteredVirtualTables: []types.DBVirtualTable{
+				UnregisteredVirtualTables: []catalog.VirtualTable{
 					{Name: "docs", Module: "fts4"},
 					{Name: "legacy", Module: "fts3"},
 				},
@@ -1633,9 +1633,9 @@ func TestReportUnclassifiedNamesWhatTheDescriptionCannotVouchFor(t *testing.T) {
 			// ordinary CREATE TABLEs with nothing said. The note keeps the
 			// warning and drops the name.
 			name: "a projection that dropped the virtual table still warns, without naming it",
-			schema: &types.DBSchema{
-				Tables:                    []types.DBTable{{Name: "users"}},
-				UnregisteredVirtualTables: []types.DBVirtualTable{{Name: "docs", Module: "fts4"}},
+			schema: &catalog.Database{
+				Tables:                    []catalog.Table{{Name: "users"}},
+				UnregisteredVirtualTables: []catalog.VirtualTable{{Name: "docs", Module: "fts4"}},
 			},
 			wantContains: []string{
 				"this description was narrowed",
@@ -1650,8 +1650,8 @@ func TestReportUnclassifiedNamesWhatTheDescriptionCannotVouchFor(t *testing.T) {
 			// database does not have renders nothing, and a note beside an
 			// empty rendering describes a document that does not exist.
 			name: "an empty description says nothing",
-			schema: &types.DBSchema{
-				UnregisteredVirtualTables: []types.DBVirtualTable{{Name: "docs", Module: "fts4"}},
+			schema: &catalog.Database{
+				UnregisteredVirtualTables: []catalog.VirtualTable{{Name: "docs", Module: "fts4"}},
 			},
 			wantSilent: true,
 		},
@@ -1679,7 +1679,7 @@ func TestReportUnclassifiedNamesWhatTheDescriptionCannotVouchFor(t *testing.T) {
 // surfaces spell "no diagnostics stream". A note that panicked would fail a
 // read that succeeded.
 func TestReportUnclassifiedToleratesNoDiagnosticsStream(t *testing.T) {
-	sqlitevirtual.ReportUnclassified(nil, &types.DBSchema{
-		UnregisteredVirtualTables: []types.DBVirtualTable{{Name: "docs", Module: "fts4"}},
+	sqlitevirtual.ReportUnclassified(nil, &catalog.Database{
+		UnregisteredVirtualTables: []catalog.VirtualTable{{Name: "docs", Module: "fts4"}},
 	})
 }

@@ -5,18 +5,18 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestExtensionMigration_EndToEnd(t *testing.T) {
 	tests := []struct {
 		name              string
-		generatedSchema   *goschema.Database
-		databaseSchema    *types.DBSchema
+		generatedSchema   *schemamodel.Database
+		databaseSchema    *catalog.Database
 		expectedUpSQL     []string
 		expectedDownSQL   []string
 		unexpectedUpSQL   []string
@@ -24,13 +24,13 @@ func TestExtensionMigration_EndToEnd(t *testing.T) {
 	}{
 		{
 			name: "add single extension",
-			generatedSchema: &goschema.Database{
-				Extensions: []goschema.Extension{
+			generatedSchema: &schemamodel.Database{
+				Extensions: []schemamodel.Extension{
 					{Name: "pg_trgm", IfNotExists: true, Comment: "Enable trigram similarity search"},
 				},
 			},
-			databaseSchema: &types.DBSchema{
-				Extensions: make([]types.DBExtension, 0),
+			databaseSchema: &catalog.Database{
+				Extensions: make([]catalog.Extension, 0),
 			},
 			expectedUpSQL: []string{
 				"-- Enable trigram similarity search",
@@ -49,14 +49,14 @@ func TestExtensionMigration_EndToEnd(t *testing.T) {
 		},
 		{
 			name: "add multiple extensions",
-			generatedSchema: &goschema.Database{
-				Extensions: []goschema.Extension{
+			generatedSchema: &schemamodel.Database{
+				Extensions: []schemamodel.Extension{
 					{Name: "pg_trgm", IfNotExists: true, Comment: "Enable trigram similarity search"},
 					{Name: "btree_gin", IfNotExists: true, Comment: "Enable GIN indexes on btree types"},
 				},
 			},
-			databaseSchema: &types.DBSchema{
-				Extensions: make([]types.DBExtension, 0),
+			databaseSchema: &catalog.Database{
+				Extensions: make([]catalog.Extension, 0),
 			},
 			expectedUpSQL: []string{
 				"CREATE EXTENSION IF NOT EXISTS pg_trgm;",
@@ -75,11 +75,11 @@ func TestExtensionMigration_EndToEnd(t *testing.T) {
 		},
 		{
 			name: "remove extension",
-			generatedSchema: &goschema.Database{
-				Extensions: make([]goschema.Extension, 0),
+			generatedSchema: &schemamodel.Database{
+				Extensions: make([]schemamodel.Extension, 0),
 			},
-			databaseSchema: &types.DBSchema{
-				Extensions: []types.DBExtension{
+			databaseSchema: &catalog.Database{
+				Extensions: []catalog.Extension{
 					{Name: "pg_trgm", Version: "1.6", Schema: "public"},
 				},
 			},
@@ -98,13 +98,13 @@ func TestExtensionMigration_EndToEnd(t *testing.T) {
 		},
 		{
 			name: "extension with version",
-			generatedSchema: &goschema.Database{
-				Extensions: []goschema.Extension{
+			generatedSchema: &schemamodel.Database{
+				Extensions: []schemamodel.Extension{
 					{Name: "postgis", Version: "3.0", IfNotExists: true, Comment: "Geographic data support"},
 				},
 			},
-			databaseSchema: &types.DBSchema{
-				Extensions: make([]types.DBExtension, 0),
+			databaseSchema: &catalog.Database{
+				Extensions: make([]catalog.Extension, 0),
 			},
 			expectedUpSQL: []string{
 				"-- Geographic data support",
@@ -142,11 +142,11 @@ func TestExtensionMigration_EndToEnd(t *testing.T) {
 			}
 
 			// For down migrations, we need to convert database schema to go schema format
-			dbAsGoSchema := &goschema.Database{
-				Extensions: make([]goschema.Extension, len(tt.databaseSchema.Extensions)),
+			dbAsGoSchema := &schemamodel.Database{
+				Extensions: make([]schemamodel.Extension, len(tt.databaseSchema.Extensions)),
 			}
 			for i, ext := range tt.databaseSchema.Extensions {
-				dbAsGoSchema.Extensions[i] = goschema.Extension{
+				dbAsGoSchema.Extensions[i] = schemamodel.Extension{
 					Name:        ext.Name,
 					IfNotExists: true, // Default for down migrations
 				}
@@ -185,15 +185,15 @@ func TestExtensionMigration_UpDownCycle(t *testing.T) {
 	c := qt.New(t)
 
 	// Test a complete up/down migration cycle
-	generatedSchema := &goschema.Database{
-		Extensions: []goschema.Extension{
+	generatedSchema := &schemamodel.Database{
+		Extensions: []schemamodel.Extension{
 			{Name: "pg_trgm", IfNotExists: true, Comment: "Enable trigram similarity search"},
 			{Name: "btree_gin", IfNotExists: true, Comment: "Enable GIN indexes on btree types"},
 		},
 	}
 
-	databaseSchema := &types.DBSchema{
-		Extensions: make([]types.DBExtension, 0),
+	databaseSchema := &catalog.Database{
+		Extensions: make([]catalog.Extension, 0),
 	}
 
 	// 1. Calculate initial diff (should add extensions)
@@ -202,15 +202,15 @@ func TestExtensionMigration_UpDownCycle(t *testing.T) {
 	c.Assert(upDiff.ExtensionsRemoved, qt.HasLen, 0)
 
 	// 2. Simulate applying the up migration (database now has extensions)
-	simulatedDatabaseAfterUp := &types.DBSchema{
-		Extensions: []types.DBExtension{
+	simulatedDatabaseAfterUp := &catalog.Database{
+		Extensions: []catalog.Extension{
 			{Name: "pg_trgm", Version: "1.6", Schema: "public"},
 			{Name: "btree_gin", Version: "1.3", Schema: "public"},
 		},
 	}
 
 	// 3. Calculate down diff (should remove extensions)
-	downDiff := schemadiff.Compare(&goschema.Database{Extensions: make([]goschema.Extension, 0)}, simulatedDatabaseAfterUp)
+	downDiff := schemadiff.Compare(&schemamodel.Database{Extensions: make([]schemamodel.Extension, 0)}, simulatedDatabaseAfterUp)
 	c.Assert(downDiff.ExtensionsAdded, qt.HasLen, 0)
 	c.Assert(downDiff.ExtensionsRemoved, qt.HasLen, 2)
 

@@ -6,16 +6,16 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // ordersTable declares one `orders` table whose schema is spelled as given.
-func ordersTable(tableSchema string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Order", Name: "orders", Schema: tableSchema}},
-		Fields: []goschema.Field{
+func ordersTable(tableSchema string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Order", Name: "orders", Schema: tableSchema}},
+		Fields: []schemamodel.Field{
 			{StructName: "Order", Name: "id", Type: "INT", Primary: true},
 			{StructName: "Order", Name: "note", Type: "TEXT"},
 		},
@@ -29,10 +29,10 @@ func ordersTable(tableSchema string) *goschema.Database {
 // reported as a possible catalog collision and the diff is refused before any
 // planning happens. That guard belongs to stokaro/ptah#1290 and is not what
 // these rows measure, so the SQL Server row carries one column.
-func ordersTableOneColumn(tableSchema string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Order", Name: "orders", Schema: tableSchema}},
-		Fields: []goschema.Field{{StructName: "Order", Name: "note", Type: "TEXT"}},
+func ordersTableOneColumn(tableSchema string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Order", Name: "orders", Schema: tableSchema}},
+		Fields: []schemamodel.Field{{StructName: "Order", Name: "note", Type: "TEXT"}},
 	}
 }
 
@@ -48,10 +48,10 @@ func ordersTableOneColumn(tableSchema string) *goschema.Database {
 // definition` comment that applies cleanly and changes nothing.
 func TestColumnDDLResolvesTheTableAcrossSchemaSpellings(t *testing.T) {
 	tests := []struct {
-		name      string
-		dialect   string
-		generated *goschema.Database
-		diffName  string
+		name     string
+		dialect  string
+		desired  *schemamodel.Database
+		diffName string
 		// wantAdd is the column-addition fragment the target's renderer emits.
 		// T-SQL spells it `ADD [note]` where the MySQL family spells it
 		// `ADD COLUMN`, and that is the renderer's business, not the lookup's.
@@ -59,43 +59,43 @@ func TestColumnDDLResolvesTheTableAcrossSchemaSpellings(t *testing.T) {
 	}{
 		{
 			// Control: both sides already agree.
-			name:      "MySQL with both sides spelling the table the same way",
-			dialect:   "mysql",
-			generated: ordersTable("app"),
-			diffName:  "app.orders",
-			wantAdd:   "ADD COLUMN",
+			name:     "MySQL with both sides spelling the table the same way",
+			dialect:  "mysql",
+			desired:  ordersTable("app"),
+			diffName: "app.orders",
+			wantAdd:  "ADD COLUMN",
 		},
 		{
 			// MySQL's schema IS its database, so identifier.ForDialect leaves
 			// DefaultSchema empty and only the unqualified tier can join these.
-			name:      "the diff names the database and the declaration does not",
-			dialect:   "mysql",
-			generated: ordersTable(""),
-			diffName:  "app.orders",
-			wantAdd:   "ADD COLUMN",
+			name:     "the diff names the database and the declaration does not",
+			dialect:  "mysql",
+			desired:  ordersTable(""),
+			diffName: "app.orders",
+			wantAdd:  "ADD COLUMN",
 		},
 		{
-			name:      "the declaration names the database and the diff does not",
-			dialect:   "mysql",
-			generated: ordersTable("app"),
-			diffName:  "orders",
-			wantAdd:   "ADD COLUMN",
+			name:     "the declaration names the database and the diff does not",
+			dialect:  "mysql",
+			desired:  ordersTable("app"),
+			diffName: "orders",
+			wantAdd:  "ADD COLUMN",
 		},
 		{
-			name:      "MariaDB resolves it the same way",
-			dialect:   "mariadb",
-			generated: ordersTable(""),
-			diffName:  "app.orders",
-			wantAdd:   "ADD COLUMN",
+			name:     "MariaDB resolves it the same way",
+			dialect:  "mariadb",
+			desired:  ordersTable(""),
+			diffName: "app.orders",
+			wantAdd:  "ADD COLUMN",
 		},
 		{
 			// SQL Server carries DefaultSchema `dbo`, so this pair is one object
 			// at the identity tier rather than the unqualified one.
-			name:      "SQL Server resolves a bare declaration against dbo",
-			dialect:   "sqlserver",
-			generated: ordersTableOneColumn(""),
-			diffName:  "dbo.orders",
-			wantAdd:   "ADD [note]",
+			name:     "SQL Server resolves a bare declaration against dbo",
+			dialect:  "sqlserver",
+			desired:  ordersTableOneColumn(""),
+			diffName: "dbo.orders",
+			wantAdd:  "ADD [note]",
 		},
 	}
 
@@ -103,11 +103,11 @@ func TestColumnDDLResolvesTheTableAcrossSchemaSpellings(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			added, err := planner.GenerateSchemaDiffSQLStatements(
-				&types.SchemaDiff{TablesModified: []types.TableDiff{{
+				&difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 					TableName:    test.diffName,
 					ColumnsAdded: []string{"note"},
 				}}},
-				test.generated,
+				test.desired,
 				test.dialect,
 			)
 			c.Assert(err, qt.IsNil)
@@ -115,14 +115,14 @@ func TestColumnDDLResolvesTheTableAcrossSchemaSpellings(t *testing.T) {
 			c.Assert(addedPlan, qt.Contains, test.wantAdd, qt.Commentf("plan:\n%s", addedPlan))
 
 			modified, err := planner.GenerateSchemaDiffSQLStatements(
-				&types.SchemaDiff{TablesModified: []types.TableDiff{{
+				&difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 					TableName: test.diffName,
-					ColumnsModified: []types.ColumnDiff{{
+					ColumnsModified: []difftypes.ColumnDiff{{
 						ColumnName: "note",
 						Changes:    map[string]string{"type": "VARCHAR(10) -> TEXT"},
 					}},
 				}}},
-				test.generated,
+				test.desired,
 				test.dialect,
 			)
 			c.Assert(err, qt.IsNil)
@@ -142,7 +142,7 @@ func TestColumnDDLDoesNotGuessBetweenSchemas(t *testing.T) {
 	c := qt.New(t)
 
 	statements, err := planner.GenerateSchemaDiffSQLStatements(
-		&types.SchemaDiff{TablesModified: []types.TableDiff{{
+		&difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 			TableName:    "app.orders",
 			ColumnsAdded: []string{"note"},
 		}}},
@@ -198,16 +198,16 @@ func TestPrimaryKeyIsPlannedOnceAcrossSchemaSpellings(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := &types.SchemaDiff{
-				TablesModified: []types.TableDiff{{
+			diff := &difftypes.SchemaDiff{
+				TablesModified: []difftypes.TableDiff{{
 					TableName: test.diffTableName,
-					ColumnsModified: []types.ColumnDiff{{
+					ColumnsModified: []difftypes.ColumnDiff{{
 						ColumnName: "id",
 						Changes:    map[string]string{"primary_key": "false -> true"},
 					}},
 				}},
 				ConstraintsAdded: []string{"pk_orders"},
-				ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
 					Name:      "pk_orders",
 					TableName: test.constraintTable,
 					Type:      "PRIMARY KEY",
@@ -230,16 +230,16 @@ func TestPrimaryKeyIsPlannedOnceAcrossSchemaSpellings(t *testing.T) {
 func TestPrimaryKeyOwnershipDoesNotCrossSchemas(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
-		TablesModified: []types.TableDiff{{
+	diff := &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{{
 			TableName: "app.orders",
-			ColumnsModified: []types.ColumnDiff{{
+			ColumnsModified: []difftypes.ColumnDiff{{
 				ColumnName: "id",
 				Changes:    map[string]string{"primary_key": "false -> true"},
 			}},
 		}},
 		ConstraintsAdded: []string{"pk_orders"},
-		ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
 			Name:      "pk_orders",
 			TableName: "reporting.orders",
 			Type:      "PRIMARY KEY",

@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashcl"
 )
 
@@ -121,9 +121,9 @@ func TestParseKeepsColumnAttributesThatNameAColumn(t *testing.T) {
 		// All three positions are stated by every row, so a row that names a
 		// column in one of them also says the other two stayed empty: a
 		// refusal replaced by a silent relocation would otherwise pass.
-		wantIndexParts      [][]goschema.IndexPart
-		wantPrimaryKeyParts []goschema.PrimaryKeyPart
-		wantPartition       *goschema.PartitionSpec
+		wantIndexParts      [][]schemamodel.IndexPart
+		wantPrimaryKeyParts []schemamodel.PrimaryKeyPart
+		wantPartition       *schemamodel.PartitionSpec
 	}{
 		{
 			name: "index on column reference",
@@ -135,7 +135,7 @@ table "t" {
   }
 }
 `,
-			wantIndexParts: [][]goschema.IndexPart{{{Name: "n"}}},
+			wantIndexParts: [][]schemamodel.IndexPart{{{Name: "n"}}},
 		},
 		{
 			name: "index on qualified table reference",
@@ -147,7 +147,7 @@ table "t" {
   }
 }
 `,
-			wantIndexParts: [][]goschema.IndexPart{{{Name: "n"}}},
+			wantIndexParts: [][]schemamodel.IndexPart{{{Name: "n"}}},
 		},
 		{
 			name: "primary key on column reference",
@@ -159,7 +159,7 @@ table "t" {
   }
 }
 `,
-			wantPrimaryKeyParts: []goschema.PrimaryKeyPart{{Name: "n"}},
+			wantPrimaryKeyParts: []schemamodel.PrimaryKeyPart{{Name: "n"}},
 		},
 		{
 			name: "partition by column reference",
@@ -172,9 +172,9 @@ table "t" {
   }
 }
 `,
-			wantPartition: &goschema.PartitionSpec{
+			wantPartition: &schemamodel.PartitionSpec{
 				Type:  "RANGE",
-				Parts: []goschema.PartitionPart{{Name: "n"}},
+				Parts: []schemamodel.PartitionPart{{Name: "n"}},
 			},
 		},
 		{
@@ -187,7 +187,7 @@ table "t" {
   }
 }
 `,
-			wantIndexParts: [][]goschema.IndexPart{{{Name: "n"}}},
+			wantIndexParts: [][]schemamodel.IndexPart{{{Name: "n"}}},
 		},
 	}
 
@@ -209,8 +209,8 @@ table "t" {
 // indexPartsPerIndex returns the parts of every index in the document, one
 // slice per index. The nesting is what lets a row state the index COUNT as well
 // as what each index covers, which a flat list of parts would lose.
-func indexPartsPerIndex(db *goschema.Database) [][]goschema.IndexPart {
-	var parts [][]goschema.IndexPart
+func indexPartsPerIndex(db *schemamodel.Database) [][]schemamodel.IndexPart {
+	var parts [][]schemamodel.IndexPart
 	for _, index := range db.Indexes {
 		parts = append(parts, index.Parts)
 	}

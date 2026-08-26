@@ -5,17 +5,17 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestPlanner_GenerateMigrationAST_OrdersFKChainTables(t *testing.T) {
 	c := qt.New(t)
 	planner := postgres.New()
-	generated := dependencyOrderSchema()
-	diff := &types.SchemaDiff{
+	desired := dependencyOrderSchema()
+	diff := &difftypes.SchemaDiff{
 		TablesAdded: []string{
 			"ptah_fk_order_tasks",
 			"ptah_fk_order_projects",
@@ -23,7 +23,7 @@ func TestPlanner_GenerateMigrationAST_OrdersFKChainTables(t *testing.T) {
 		},
 	}
 
-	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	nodes, err := planner.GenerateMigrationASTChecked(diff, desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -37,8 +37,8 @@ func TestPlanner_GenerateMigrationAST_OrdersFKChainTables(t *testing.T) {
 func TestPlanner_GenerateMigrationAST_OrdersFKDiamondTables(t *testing.T) {
 	c := qt.New(t)
 	planner := postgres.New()
-	generated := dependencyOrderSchema()
-	diff := &types.SchemaDiff{
+	desired := dependencyOrderSchema()
+	diff := &difftypes.SchemaDiff{
 		TablesAdded: []string{
 			"ptah_fk_order_tasks",
 			"ptah_fk_order_projects",
@@ -47,7 +47,7 @@ func TestPlanner_GenerateMigrationAST_OrdersFKDiamondTables(t *testing.T) {
 		},
 	}
 
-	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	nodes, err := planner.GenerateMigrationASTChecked(diff, desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -62,8 +62,8 @@ func TestPlanner_GenerateMigrationAST_OrdersFKDiamondTables(t *testing.T) {
 func TestPlanner_GenerateMigrationAST_DropsFKDiamondTablesInDependencyOrder(t *testing.T) {
 	c := qt.New(t)
 	planner := postgres.New()
-	generated := dependencyOrderSchema()
-	diff := &types.SchemaDiff{
+	desired := dependencyOrderSchema()
+	diff := &difftypes.SchemaDiff{
 		TablesRemoved: []string{
 			"ptah_fk_order_accounts",
 			"ptah_fk_order_projects",
@@ -72,7 +72,7 @@ func TestPlanner_GenerateMigrationAST_DropsFKDiamondTablesInDependencyOrder(t *t
 		},
 	}
 
-	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	nodes, err := planner.GenerateMigrationASTChecked(diff, desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -87,15 +87,15 @@ func TestPlanner_GenerateMigrationAST_DropsFKDiamondTablesInDependencyOrder(t *t
 func TestPlanner_GenerateMigrationAST_AddsReferencedUniqueIndexBeforeNewTableFKs(t *testing.T) {
 	c := qt.New(t)
 	planner := postgres.New()
-	generated := referencedUniqueKeySchema()
-	diff := &types.SchemaDiff{
+	desired := referencedUniqueKeySchema()
+	diff := &difftypes.SchemaDiff{
 		TablesAdded: []string{"ptah_fk_order_children", "ptah_fk_order_parents"},
-		IndexesAdded: []types.IndexRef{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "uq_ptah_fk_order_parents_code_idx", TableName: "ptah_fk_order_parents"},
 		},
 	}
 
-	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	nodes, err := planner.GenerateMigrationASTChecked(diff, desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -108,11 +108,11 @@ func TestPlanner_GenerateMigrationAST_AddsReferencedUniqueIndexBeforeNewTableFKs
 func TestPlanner_GenerateMigrationAST_AddsReferencedUniqueConstraintBeforeNewTableFKs(t *testing.T) {
 	c := qt.New(t)
 	planner := postgres.New()
-	generated := referencedUniqueKeySchema()
-	diff := &types.SchemaDiff{
+	desired := referencedUniqueKeySchema()
+	diff := &difftypes.SchemaDiff{
 		TablesAdded:      []string{"ptah_fk_order_children", "ptah_fk_order_parents"},
 		ConstraintsAdded: []string{"uq_ptah_fk_order_parents_code"},
-		ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
 			Name:      "uq_ptah_fk_order_parents_code",
 			TableName: "ptah_fk_order_parents",
 			Type:      "UNIQUE",
@@ -120,7 +120,7 @@ func TestPlanner_GenerateMigrationAST_AddsReferencedUniqueConstraintBeforeNewTab
 		}},
 	}
 
-	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	nodes, err := planner.GenerateMigrationASTChecked(diff, desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -129,15 +129,15 @@ func TestPlanner_GenerateMigrationAST_AddsReferencedUniqueConstraintBeforeNewTab
 	assertBefore(t, sql, "ALTER TABLE ptah_fk_order_parents ADD CONSTRAINT uq_ptah_fk_order_parents_code", "ALTER TABLE ptah_fk_order_children ADD CONSTRAINT")
 }
 
-func dependencyOrderSchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func dependencyOrderSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "PtahFKOrderTask", Name: "ptah_fk_order_tasks"},
 			{StructName: "PtahFKOrderProject", Name: "ptah_fk_order_projects"},
 			{StructName: "PtahFKOrderMembership", Name: "ptah_fk_order_memberships"},
 			{StructName: "PtahFKOrderAccount", Name: "ptah_fk_order_accounts"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "PtahFKOrderAccount", Name: "id", Type: "VARCHAR(36)", Primary: true},
 			{StructName: "PtahFKOrderProject", Name: "id", Type: "VARCHAR(36)", Primary: true},
 			{
@@ -174,13 +174,13 @@ func dependencyOrderSchema() *goschema.Database {
 	}
 }
 
-func referencedUniqueKeySchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func referencedUniqueKeySchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "PtahFKOrderChild", Name: "ptah_fk_order_children"},
 			{StructName: "PtahFKOrderParent", Name: "ptah_fk_order_parents"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "PtahFKOrderParent", Name: "id", Type: "VARCHAR(36)", Primary: true},
 			{StructName: "PtahFKOrderParent", Name: "code", Type: "VARCHAR(36)"},
 			{StructName: "PtahFKOrderChild", Name: "id", Type: "VARCHAR(36)", Primary: true},
@@ -192,7 +192,7 @@ func referencedUniqueKeySchema() *goschema.Database {
 				ForeignKeyName: "fk_ptah_fk_order_children_parent_code",
 			},
 		},
-		Indexes: []goschema.Index{{
+		Indexes: []schemamodel.Index{{
 			StructName: "PtahFKOrderParent",
 			Name:       "uq_ptah_fk_order_parents_code_idx",
 			Fields:     []string{"code"},

@@ -9,10 +9,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/schemachange"
 	"go.5x5.cz/ptah/internal/schemastate"
@@ -29,8 +29,8 @@ import (
 func TestPipeline_ProducesTheChangeTheInputsDescribe(t *testing.T) {
 	tests := []struct {
 		name              string
-		description       *goschema.Database
-		catalog           *dbschematypes.DBSchema
+		description       *schemamodel.Database
+		current           *catalog.Database
 		wantOperation     schemachange.Operation
 		wantChanged       []string
 		wantRisk          schemachange.Risk
@@ -40,7 +40,7 @@ func TestPipeline_ProducesTheChangeTheInputsDescribe(t *testing.T) {
 		{
 			name:              "a foreign key the database does not have",
 			description:       parentChildDescription(""),
-			catalog:           emptyCatalog(),
+			current:           emptyCatalog(),
 			wantOperation:     schemachange.Add,
 			wantRisk:          schemachange.RiskDataDependent,
 			wantReversibility: schemachange.Reversible,
@@ -49,8 +49,8 @@ func TestPipeline_ProducesTheChangeTheInputsDescribe(t *testing.T) {
 		},
 		{
 			name:              "a foreign key the desired schema does not declare",
-			description:       &goschema.Database{Tables: parentChildDescription("").Tables, Fields: fieldsWithoutForeignKey()},
-			catalog:           parentChildCatalog("NO ACTION"),
+			description:       &schemamodel.Database{Tables: parentChildDescription("").Tables, Fields: fieldsWithoutForeignKey()},
+			current:           parentChildCatalog("NO ACTION"),
 			wantOperation:     schemachange.Remove,
 			wantRisk:          schemachange.RiskGuaranteeLoss,
 			wantReversibility: schemachange.ReversibleWithData,
@@ -64,7 +64,7 @@ func TestPipeline_ProducesTheChangeTheInputsDescribe(t *testing.T) {
 			// together; here it is one change that says what moved.
 			name:              "a foreign key whose referential action changed",
 			description:       parentChildDescription("CASCADE"),
-			catalog:           parentChildCatalog("NO ACTION"),
+			current:           parentChildCatalog("NO ACTION"),
 			wantOperation:     schemachange.Modify,
 			wantChanged:       []string{"on delete"},
 			wantRisk:          schemachange.RiskDataDependent,
@@ -78,7 +78,7 @@ func TestPipeline_ProducesTheChangeTheInputsDescribe(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			changes, err := orderedChanges(c, test.description, test.catalog, postgresProfile())
+			changes, err := orderedChanges(c, test.description, test.current, postgresProfile())
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(changes, qt.HasLen, 1)
@@ -209,12 +209,12 @@ func TestPipeline_ForwardAndRollbackShareTheSameEdges(t *testing.T) {
 func TestPipeline_DeterministicAcrossRuns(t *testing.T) {
 	c := qt.New(t)
 	description := manyForeignKeys(12)
-	catalog := manyForeignKeysCatalog(12)
+	current := manyForeignKeysCatalog(12)
 
-	first := strings.Join(statementsOf(c, pipeline(c, description, catalog, postgresProfile())), "\n")
+	first := strings.Join(statementsOf(c, pipeline(c, description, current, postgresProfile())), "\n")
 
 	for run := range 24 {
-		again := strings.Join(statementsOf(c, pipeline(c, description, catalog, postgresProfile())), "\n")
+		again := strings.Join(statementsOf(c, pipeline(c, description, current, postgresProfile())), "\n")
 		c.Assert(again, qt.Equals, first, qt.Commentf("run %d", run))
 	}
 }
@@ -258,8 +258,8 @@ func TestPipeline_RefusesToNormalizeTwice(t *testing.T) {
 func TestPipeline_UnknownStateNeverPlansDestruction(t *testing.T) {
 	tests := []struct {
 		name        string
-		description *goschema.Database
-		catalog     *dbschematypes.DBSchema
+		description *schemamodel.Database
+		current     *catalog.Database
 		wantErr     string
 	}{
 		{
@@ -268,7 +268,7 @@ func TestPipeline_UnknownStateNeverPlansDestruction(t *testing.T) {
 			// dropping the clause would emit one that guards nothing.
 			name:        "a reference to a table that does not exist",
 			description: referencingAMissingTable(),
-			catalog:     emptyCatalog(),
+			current:     emptyCatalog(),
 			wantErr:     "dangling reference",
 		},
 		{
@@ -276,7 +276,7 @@ func TestPipeline_UnknownStateNeverPlansDestruction(t *testing.T) {
 			// renders a clause whose behavior on delete nobody can state.
 			name:        "a referential action the model does not understand",
 			description: withOnDelete("SET EVERYTHING"),
-			catalog:     emptyCatalog(),
+			current:     emptyCatalog(),
 			wantErr:     "unknown referential action",
 		},
 		{
@@ -285,7 +285,7 @@ func TestPipeline_UnknownStateNeverPlansDestruction(t *testing.T) {
 			// the key.
 			name:        "a reference that names no column",
 			description: withForeignSpelling("parent"),
-			catalog:     emptyCatalog(),
+			current:     emptyCatalog(),
 			wantErr:     "names no column",
 		},
 	}
@@ -294,7 +294,7 @@ func TestPipeline_UnknownStateNeverPlansDestruction(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, err := orderedChanges(c, test.description, test.catalog, postgresProfile())
+			_, err := orderedChanges(c, test.description, test.current, postgresProfile())
 
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(err.Error(), qt.Contains, test.wantErr)
@@ -346,12 +346,12 @@ func TestPipeline_ExplainNamesTheChangeAndItsSource(t *testing.T) {
 func TestPipeline_MatchesTheExistingPath(t *testing.T) {
 	tests := []struct {
 		name        string
-		description *goschema.Database
-		catalog     *dbschematypes.DBSchema
+		description *schemamodel.Database
+		current     *catalog.Database
 	}{
-		{name: "adding a foreign key", description: parentChildDescription(""), catalog: emptyCatalog()},
-		{name: "adding one with a referential action", description: parentChildDescription("CASCADE"), catalog: emptyCatalog()},
-		{name: "an unchanged schema", description: parentChildDescription(""), catalog: parentChildCatalog("NO ACTION")},
+		{name: "adding a foreign key", description: parentChildDescription(""), current: emptyCatalog()},
+		{name: "adding one with a referential action", description: parentChildDescription("CASCADE"), current: emptyCatalog()},
+		{name: "an unchanged schema", description: parentChildDescription(""), current: parentChildCatalog("NO ACTION")},
 	}
 
 	for _, test := range tests {
@@ -359,8 +359,8 @@ func TestPipeline_MatchesTheExistingPath(t *testing.T) {
 			c := qt.New(t)
 			profile := postgresProfile()
 
-			existing := existingPathStatements(c, test.description, test.catalog, profile)
-			prototype := statementsOf(c, pipeline(c, test.description, test.catalog, profile))
+			existing := existingPathStatements(c, test.description, test.current, profile)
+			prototype := statementsOf(c, pipeline(c, test.description, test.current, profile))
 
 			c.Assert(foreignKeyStatements(c, prototype), qt.DeepEquals, foreignKeyStatements(c, existing),
 				qt.Commentf("existing=%v prototype=%v", existing, prototype))
@@ -372,12 +372,12 @@ func TestPipeline_MatchesTheExistingPath(t *testing.T) {
 // measured against.
 func existingPathStatements(
 	c *qt.C,
-	description *goschema.Database,
-	catalog *dbschematypes.DBSchema,
+	description *schemamodel.Database,
+	current *catalog.Database,
 	profile schemastate.Profile,
 ) []string {
 	c.Helper()
-	diff := schemadiff.CompareWithDialect(description, catalog, profile.Dialect)
+	diff := schemadiff.CompareWithDialect(description, current, profile.Dialect)
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, description, profile.Dialect, planner.Options{Capabilities: profile.Capabilities})
 	c.Assert(err, qt.IsNil)
 	return statements
@@ -445,49 +445,49 @@ func reversedLine(changes []schemachange.Change) string {
 
 // fieldsWithoutForeignKey is the child schema with the reference removed, which
 // is what a removal's desired side looks like.
-func fieldsWithoutForeignKey() []goschema.Field {
+func fieldsWithoutForeignKey() []schemamodel.Field {
 	fields := parentChildDescription("").Fields
-	kept := make([]goschema.Field, 0, len(fields))
+	kept := make([]schemamodel.Field, 0, len(fields))
 	for _, field := range fields {
 		kept = append(kept, clearedForeign(field))
 	}
 	return kept
 }
 
-func clearedForeign(field goschema.Field) goschema.Field {
+func clearedForeign(field schemamodel.Field) schemamodel.Field {
 	field.Foreign = ""
 	field.ForeignKeyName = ""
 	field.OnDelete = ""
 	return field
 }
 
-func referencingAMissingTable() *goschema.Database {
+func referencingAMissingTable() *schemamodel.Database {
 	return withForeignSpelling("nowhere(id)")
 }
 
-func withForeignSpelling(spelling string) *goschema.Database {
+func withForeignSpelling(spelling string) *schemamodel.Database {
 	description := parentChildDescription("")
 	description.Fields[2].Foreign = spelling
 	return description
 }
 
-func withOnDelete(action string) *goschema.Database {
+func withOnDelete(action string) *schemamodel.Database {
 	return parentChildDescription(action)
 }
 
 // manyForeignKeys builds a description with enough constraints that a
 // nondeterministic order would show up rather than happen to agree.
-func manyForeignKeys(count int) *goschema.Database {
-	description := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Parent", Name: "parent"}},
-		Fields: []goschema.Field{{StructName: "Parent", Name: "id", Type: "int", Primary: true}},
+func manyForeignKeys(count int) *schemamodel.Database {
+	description := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Parent", Name: "parent"}},
+		Fields: []schemamodel.Field{{StructName: "Parent", Name: "id", Type: "int", Primary: true}},
 	}
 	for index := range count {
 		child := fmt.Sprintf("child%02d", index)
-		description.Tables = append(description.Tables, goschema.Table{StructName: child, Name: child})
+		description.Tables = append(description.Tables, schemamodel.Table{StructName: child, Name: child})
 		description.Fields = append(description.Fields,
-			goschema.Field{StructName: child, Name: "id", Type: "int", Primary: true},
-			goschema.Field{
+			schemamodel.Field{StructName: child, Name: "id", Type: "int", Primary: true},
+			schemamodel.Field{
 				StructName: child,
 				Name:       "parent_id",
 				Type:       "int",
@@ -502,25 +502,25 @@ func manyForeignKeys(count int) *goschema.Database {
 
 // manyForeignKeysCatalog is the same shape with the tables present and no
 // constraints, so every one of them is an addition.
-func manyForeignKeysCatalog(count int) *dbschematypes.DBSchema {
-	catalog := &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
-			{Name: "parent", Schema: "public", Columns: []dbschematypes.DBColumn{
+func manyForeignKeysCatalog(count int) *catalog.Database {
+	current := &catalog.Database{
+		Tables: []catalog.Table{
+			{Name: "parent", Schema: "public", Columns: []catalog.Column{
 				{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
 			}},
 		},
 	}
 	for index := range count {
-		catalog.Tables = append(catalog.Tables, dbschematypes.DBTable{
+		current.Tables = append(current.Tables, catalog.Table{
 			Name:   fmt.Sprintf("child%02d", index),
 			Schema: "public",
-			Columns: []dbschematypes.DBColumn{
+			Columns: []catalog.Column{
 				{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
 				{Name: "parent_id", DataType: "integer", IsNullable: "YES"},
 			},
 		})
 	}
-	return catalog
+	return current
 }
 
 var _ = errors.Is
@@ -535,13 +535,13 @@ var _ = errors.Is
 // inputs that might differ.
 func BenchmarkPipeline_LargeSchema(b *testing.B) {
 	description := manyForeignKeys(500)
-	catalog := manyForeignKeysCatalog(500)
+	current := manyForeignKeysCatalog(500)
 	profile := postgresProfile()
 
 	b.Run("prototype", func(b *testing.B) {
 		for b.Loop() {
 			desired, _ := schemastate.FromDescription(description, profile.Dialect, profile.Semantics)
-			current, _ := schemastate.FromCatalog(catalog, profile.Dialect, profile.Semantics)
+			current, _ := schemastate.FromCatalog(current, profile.Dialect, profile.Semantics)
 			normalizedDesired, _ := schemastate.Normalize(desired, profile)
 			normalizedCurrent, _ := schemastate.Normalize(current, profile)
 			changes, _ := schemachange.Compare(normalizedCurrent, normalizedDesired, profile)
@@ -553,7 +553,7 @@ func BenchmarkPipeline_LargeSchema(b *testing.B) {
 
 	b.Run("existing path", func(b *testing.B) {
 		for b.Loop() {
-			diff := schemadiff.CompareWithDialect(description, catalog, profile.Dialect)
+			diff := schemadiff.CompareWithDialect(description, current, profile.Dialect)
 			_, _ = planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, description, profile.Dialect, planner.Options{Capabilities: profile.Capabilities})
 		}
 	})
@@ -600,9 +600,9 @@ func TestPipeline_BlockedWhenTheReferenceIsNotAKey(t *testing.T) {
 func TestPipeline_EdgeOrderIsStable(t *testing.T) {
 	c := qt.New(t)
 	description := manyForeignKeys(3)
-	catalog := manyForeignKeysCatalog(3)
+	current := manyForeignKeysCatalog(3)
 
-	first := edgeLine(c, description, catalog)
+	first := edgeLine(c, description, current)
 
 	c.Assert(first, qt.Equals, strings.Join([]string{
 		"referenced table: constraint public.child00.fk_child00_parent references table public.parent",
@@ -613,7 +613,7 @@ func TestPipeline_EdgeOrderIsStable(t *testing.T) {
 		"owning table: constraint public.child02.fk_child02_parent is carried by table public.child02",
 	}, "\n"))
 	for run := range 16 {
-		c.Assert(edgeLine(c, description, catalog), qt.Equals, first, qt.Commentf("run %d", run))
+		c.Assert(edgeLine(c, description, current), qt.Equals, first, qt.Commentf("run %d", run))
 	}
 }
 
@@ -666,9 +666,9 @@ func TestPipeline_RollbackReversesAMultiChangeOrder(t *testing.T) {
 }
 
 // edgeLine renders a graph's edges as one comparable string.
-func edgeLine(c *qt.C, description *goschema.Database, catalog *dbschematypes.DBSchema) string {
+func edgeLine(c *qt.C, description *schemamodel.Database, currentCatalog *catalog.Database) string {
 	c.Helper()
-	desired, current, err := states(description, catalog, postgresProfile())
+	desired, current, err := states(description, currentCatalog, postgresProfile())
 	c.Assert(err, qt.IsNil)
 	changes, err := schemachange.Compare(current, desired, postgresProfile())
 	c.Assert(err, qt.IsNil)
@@ -683,17 +683,17 @@ func edgeLine(c *qt.C, description *goschema.Database, catalog *dbschematypes.DB
 
 // sharedForeignKeyName declares one foreign-key NAME on two host tables, which
 // is what an embedded mixin produces.
-func sharedForeignKeyName() *goschema.Database {
-	description := &goschema.Database{
-		Tables: []goschema.Table{
+func sharedForeignKeyName() *schemamodel.Database {
+	description := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Parent", Name: "parent"},
 			{StructName: "One", Name: "one"},
 			{StructName: "Two", Name: "two"},
 		},
-		Fields: []goschema.Field{{StructName: "Parent", Name: "id", Type: "int", Primary: true}},
+		Fields: []schemamodel.Field{{StructName: "Parent", Name: "id", Type: "int", Primary: true}},
 	}
 	for _, host := range []string{"One", "Two"} {
-		description.Fields = append(description.Fields, goschema.Field{
+		description.Fields = append(description.Fields, schemamodel.Field{
 			StructName: host,
 			Name:       "parent_id",
 			Type:       "int",
@@ -707,16 +707,16 @@ func sharedForeignKeyName() *goschema.Database {
 	return description
 }
 
-func sharedForeignKeyCatalog() *dbschematypes.DBSchema {
-	return &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
-			{Name: "parent", Schema: "public", Columns: []dbschematypes.DBColumn{
+func sharedForeignKeyCatalog() *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{
+			{Name: "parent", Schema: "public", Columns: []catalog.Column{
 				{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
 			}},
-			{Name: "one", Schema: "public", Columns: []dbschematypes.DBColumn{
+			{Name: "one", Schema: "public", Columns: []catalog.Column{
 				{Name: "parent_id", DataType: "integer", IsNullable: "YES"},
 			}},
-			{Name: "two", Schema: "public", Columns: []dbschematypes.DBColumn{
+			{Name: "two", Schema: "public", Columns: []catalog.Column{
 				{Name: "parent_id", DataType: "integer", IsNullable: "YES"},
 			}},
 		},
@@ -725,8 +725,8 @@ func sharedForeignKeyCatalog() *dbschematypes.DBSchema {
 
 // emptyCatalogWithoutKeys is [emptyCatalog] with the parent's primary key
 // removed, so nothing on either side makes the reference a key.
-func emptyCatalogWithoutKeys() *dbschematypes.DBSchema {
-	catalog := emptyCatalog()
-	catalog.Tables[0].Columns[0].IsPrimaryKey = false
-	return catalog
+func emptyCatalogWithoutKeys() *catalog.Database {
+	current := emptyCatalog()
+	current.Tables[0].Columns[0].IsPrimaryKey = false
+	return current
 }

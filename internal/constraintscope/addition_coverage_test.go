@@ -7,7 +7,7 @@ import (
 
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/internal/constraintscope"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestNormalize_EveryBareAdditionGetsARecord pins the property that lets a

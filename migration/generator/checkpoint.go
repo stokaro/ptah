@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
@@ -19,7 +19,7 @@ import (
 	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	schemadifftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // generateCheckpoint renders a full cumulative schema as a checkpoint migration
@@ -29,10 +29,10 @@ import (
 // It diffs the schema against an empty database, so it is deterministic and
 // needs no live database connection. Callers obtain the schema either by
 // introspecting a database that has the whole migration directory applied (and
-// converting the result with atlascompat.DBSchemaToGoSchema) or from Go
+// converting the result with atlascompat.CatalogToSchema) or from Go
 // entities / schema files. An empty schema yields empty up and down bodies.
-func generateCheckpoint(schema *goschema.Database, dialect string) (upSQL, downSQL string, err error) {
-	return generateCheckpointWithDatabaseInfo(schema, dbschematypes.DBInfo{
+func generateCheckpoint(desired *schemamodel.Database, dialect string) (upSQL, downSQL string, err error) {
+	return generateCheckpointWithDatabaseInfo(desired, catalog.ServerInfo{
 		Dialect:      dialect,
 		Capabilities: capability.ForDialect(dialect),
 	})
@@ -45,19 +45,19 @@ func generateCheckpoint(schema *goschema.Database, dialect string) (upSQL, downS
 // resolves the complete candidate identifier set under the live catalog
 // collation — the distinction that matters on SQL Server.
 func generateCheckpointWithDatabaseInfo(
-	schema *goschema.Database,
-	info dbschematypes.DBInfo,
+	desired *schemamodel.Database,
+	info catalog.ServerInfo,
 ) (upSQL, downSQL string, err error) {
-	if schema == nil {
+	if desired == nil {
 		return "", "", fmt.Errorf("checkpoint schema is required")
 	}
 
-	empty := &dbschematypes.DBSchema{}
-	diff, err := schemadiff.CompareWithDatabaseInfo(schema, empty, info, nil)
+	empty := &catalog.Database{}
+	diff, err := schemadiff.CompareWithDatabaseInfo(desired, empty, info, nil)
 	if err != nil {
 		return "", "", fmt.Errorf("generate checkpoint: %w", err)
 	}
-	return generateCheckpointFromDiff(schema, empty, info, diff, "")
+	return generateCheckpointFromDiff(desired, empty, info, diff, "")
 }
 
 // generateCheckpointWithDatabaseQualified renders a checkpoint after resolving
@@ -66,25 +66,25 @@ func generateCheckpointWithDatabaseInfo(
 func generateCheckpointWithDatabaseQualified(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
-	schema *goschema.Database,
+	desired *schemamodel.Database,
 	qualifier string,
 ) (upSQL, downSQL string, err error) {
-	if schema == nil {
+	if desired == nil {
 		return "", "", fmt.Errorf("checkpoint schema is required")
 	}
-	empty := &dbschematypes.DBSchema{}
-	diff, err := schemadiff.CompareWithDatabase(ctx, conn, schema, empty, nil)
+	empty := &catalog.Database{}
+	diff, err := schemadiff.CompareWithDatabase(ctx, conn, desired, empty, nil)
 	if err != nil {
 		return "", "", fmt.Errorf("generate checkpoint: %w", err)
 	}
-	return generateCheckpointFromDiff(schema, empty, conn.Info(), diff, qualifier)
+	return generateCheckpointFromDiff(desired, empty, conn.Info(), diff, qualifier)
 }
 
 func generateCheckpointFromDiff(
-	schema *goschema.Database,
-	empty *dbschematypes.DBSchema,
-	info dbschematypes.DBInfo,
-	diff *schemadifftypes.SchemaDiff,
+	desired *schemamodel.Database,
+	empty *catalog.Database,
+	info catalog.ServerInfo,
+	diff *difftypes.SchemaDiff,
 	qualifierValue string,
 ) (upSQL, downSQL string, err error) {
 	capabilities := info.Capabilities
@@ -96,11 +96,11 @@ func generateCheckpointFromDiff(
 		return "", "", err
 	}
 	plan, err := PlanBidirectionalSchemaDiff(BidirectionalSchemaPlanOptions{
-		Diff:          diff,
-		DesiredSchema: schema,
-		CurrentSchema: empty,
-		Dialect:       info.Dialect,
-		Capabilities:  capabilities,
+		Diff:         diff,
+		Desired:      desired,
+		Current:      empty,
+		Dialect:      info.Dialect,
+		Capabilities: capabilities,
 		Policy: BidirectionalPlanPolicy{
 			Create: ConcurrentIndexAutomatic,
 			Drop:   ConcurrentIndexDisabled,
@@ -378,7 +378,7 @@ func generateCheckpointFromConn(ctx context.Context, shadowConn *dbschema.Databa
 	return generateCheckpointWithDatabaseQualified(
 		ctx,
 		shadowConn,
-		dbschematogo.ConvertDBSchemaToGoSchema(shadowSchema),
+		dbschematogo.ConvertCatalogToSchema(shadowSchema),
 		opts.SchemaQualifier,
 	)
 }

@@ -6,17 +6,17 @@ import (
 	qt "github.com/frankban/quicktest"
 	yaml "go.yaml.in/yaml/v3"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/openapirender"
 )
 
-func fixture() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func fixture() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Author", Name: "authors", Comment: "An author of books"},
 			{StructName: "Book", Name: "books"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Author", Name: "id", Type: "SERIAL", Primary: true, Nullable: true},
 			{StructName: "Author", Name: "name", Type: "VARCHAR(255)"},
 			{StructName: "Author", Name: "status", Type: "enum_author_status", Nullable: true, Enum: []string{"active", "retired"}},
@@ -28,7 +28,7 @@ func fixture() *goschema.Database {
 			{StructName: "Book", Name: "author_id", Type: "INTEGER", Foreign: "authors(id)"},
 			{StructName: "Book", Name: "quirk", Type: "some_unknown_type", Nullable: true},
 		},
-		Enums: []goschema.Enum{{Name: "enum_author_status", Values: []string{"active", "retired"}}},
+		Enums: []schemamodel.Enum{{Name: "enum_author_status", Values: []string{"active", "retired"}}},
 	}
 }
 
@@ -105,9 +105,9 @@ func TestRenderUnknownTypeDiagnostic(t *testing.T) {
 
 func TestRenderArrayAndUnsigned(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "T", Name: "t"}},
-		Fields: []goschema.Field{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "T", Name: "t"}},
+		Fields: []schemamodel.Field{
 			{StructName: "T", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "T", Name: "tags", Type: "TEXT[]", Nullable: true},
 			{StructName: "T", Name: "big", Type: "BIGINT UNSIGNED"},

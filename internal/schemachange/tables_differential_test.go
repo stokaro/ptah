@@ -8,13 +8,13 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemachange"
 	"go.5x5.cz/ptah/internal/schemastate"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestTableChangesMatchTheExistingComparator is the differential test for this
@@ -38,46 +38,46 @@ import (
 func TestTableChangesMatchTheExistingComparator(t *testing.T) {
 	tests := []struct {
 		name        string
-		description *goschema.Database
-		catalog     *dbschematypes.DBSchema
+		description *schemamodel.Database
+		current     *catalog.Database
 	}{
 		{
 			name: "a table the database does not have",
 			description: describedTable(
-				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true}),
-			catalog: &dbschematypes.DBSchema{},
+				schemamodel.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true}),
+			current: &catalog.Database{},
 		},
 		{
 			name:        "a table the desired schema does not declare",
-			description: &goschema.Database{},
-			catalog: catalogTable(dbschematypes.DBColumn{
+			description: &schemamodel.Database{},
+			current: catalogTable(catalog.Column{
 				Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true,
 			}),
 		},
 		{
 			name: "a column the table does not have",
 			description: describedTable(
-				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
-				goschema.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true}),
-			catalog: catalogTable(dbschematypes.DBColumn{
+				schemamodel.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				schemamodel.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true}),
+			current: catalogTable(catalog.Column{
 				Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true,
 			}),
 		},
 		{
 			name: "a column the desired schema does not declare",
 			description: describedTable(
-				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true}),
-			catalog: catalogTable(
-				dbschematypes.DBColumn{
+				schemamodel.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true}),
+			current: catalogTable(
+				catalog.Column{
 					Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true,
 				},
-				dbschematypes.DBColumn{Name: "code", DataType: "text", IsNullable: "YES"}),
+				catalog.Column{Name: "code", DataType: "text", IsNullable: "YES"}),
 		},
 		{
 			name: "a column whose type changed",
 			description: describedTable(
-				goschema.Field{StructName: "Widget", Name: "code", Type: "varchar(200)", Nullable: true}),
-			catalog: catalogTable(dbschematypes.DBColumn{
+				schemamodel.Field{StructName: "Widget", Name: "code", Type: "varchar(200)", Nullable: true}),
+			current: catalogTable(catalog.Column{
 				Name: "code", DataType: "varchar(50)", IsNullable: "YES",
 			}),
 		},
@@ -85,11 +85,11 @@ func TestTableChangesMatchTheExistingComparator(t *testing.T) {
 			// Both sources report a generated column's expression, so a change
 			// to it is a change both comparators have to see.
 			name: "a column whose generated expression changed",
-			description: describedTable(goschema.Field{
+			description: describedTable(schemamodel.Field{
 				StructName: "Widget", Name: "code", Type: "text", Nullable: true,
 				GeneratedExpression: "upper(name)", GeneratedKind: "STORED",
 			}),
-			catalog: catalogTable(dbschematypes.DBColumn{
+			current: catalogTable(catalog.Column{
 				Name: "code", DataType: "text", IsNullable: "YES",
 				GeneratedExpression: new("lower(name)"), GeneratedKind: "STORED",
 			}),
@@ -101,10 +101,10 @@ func TestTableChangesMatchTheExistingComparator(t *testing.T) {
 			// from every declaration that created such a column -- so this row
 			// asserts NO change, and it is the one that caught the defect.
 			name: "a varchar column the database already matches",
-			description: describedTable(goschema.Field{
+			description: describedTable(schemamodel.Field{
 				StructName: "Widget", Name: "code", Type: "varchar(50)", Nullable: true,
 			}),
-			catalog: catalogTable(dbschematypes.DBColumn{
+			current: catalogTable(catalog.Column{
 				Name: "code", DataType: "character varying", IsNullable: "YES",
 				CharacterMaxLength: new(50),
 			}),
@@ -112,10 +112,10 @@ func TestTableChangesMatchTheExistingComparator(t *testing.T) {
 		{
 			// The control on the row above: the same shape, a different width.
 			name: "a varchar column the database reports narrower",
-			description: describedTable(goschema.Field{
+			description: describedTable(schemamodel.Field{
 				StructName: "Widget", Name: "code", Type: "varchar(200)", Nullable: true,
 			}),
-			catalog: catalogTable(dbschematypes.DBColumn{
+			current: catalogTable(catalog.Column{
 				Name: "code", DataType: "character varying", IsNullable: "YES",
 				CharacterMaxLength: new(50),
 			}),
@@ -124,10 +124,10 @@ func TestTableChangesMatchTheExistingComparator(t *testing.T) {
 			// The same pair for a numeric, whose precision and scale live in
 			// two more fields of their own.
 			name: "a numeric column the database already matches",
-			description: describedTable(goschema.Field{
+			description: describedTable(schemamodel.Field{
 				StructName: "Widget", Name: "amount", Type: "numeric(10,2)", Nullable: true,
 			}),
-			catalog: catalogTable(dbschematypes.DBColumn{
+			current: catalogTable(catalog.Column{
 				Name: "amount", DataType: "numeric", IsNullable: "YES",
 				NumericPrecision: new(10), NumericScale: new(2),
 			}),
@@ -137,8 +137,8 @@ func TestTableChangesMatchTheExistingComparator(t *testing.T) {
 			// declaration that created it. Nothing changed.
 			name: "a domain column the database already matches",
 			description: describedTableWithDomain("email",
-				goschema.Field{StructName: "Widget", Name: "contact", Type: "email", Nullable: true}),
-			catalog: catalogTable(dbschematypes.DBColumn{
+				schemamodel.Field{StructName: "Widget", Name: "contact", Type: "email", Nullable: true}),
+			current: catalogTable(catalog.Column{
 				Name: "contact", DataType: "USER-DEFINED", IsNullable: "YES",
 				DomainName: "email", DomainSchema: "public", FormattedType: "email",
 			}),
@@ -149,10 +149,10 @@ func TestTableChangesMatchTheExistingComparator(t *testing.T) {
 			// that folded the domain's name as if it were a type said they
 			// were -- this is the row that caught it.
 			name: "a domain named after a base type is not that base type",
-			description: describedTable(goschema.Field{
+			description: describedTable(schemamodel.Field{
 				StructName: "Widget", Name: "amount", Type: "bigint", Nullable: true,
 			}),
-			catalog: catalogTable(dbschematypes.DBColumn{
+			current: catalogTable(catalog.Column{
 				Name: "amount", DataType: "USER-DEFINED", IsNullable: "YES",
 				DomainName: "int8", DomainSchema: "public", FormattedType: "int8",
 			}),
@@ -160,8 +160,8 @@ func TestTableChangesMatchTheExistingComparator(t *testing.T) {
 		{
 			name: "a column whose nullability changed",
 			description: describedTable(
-				goschema.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: false}),
-			catalog: catalogTable(dbschematypes.DBColumn{
+				schemamodel.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: false}),
+			current: catalogTable(catalog.Column{
 				Name: "code", DataType: "text", IsNullable: "YES",
 			}),
 		},
@@ -171,13 +171,13 @@ func TestTableChangesMatchTheExistingComparator(t *testing.T) {
 			// six and be useless.
 			name: "an unchanged schema",
 			description: describedTable(
-				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
-				goschema.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true}),
-			catalog: catalogTable(
-				dbschematypes.DBColumn{
+				schemamodel.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				schemamodel.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true}),
+			current: catalogTable(
+				catalog.Column{
 					Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true,
 				},
-				dbschematypes.DBColumn{Name: "code", DataType: "text", IsNullable: "YES"}),
+				catalog.Column{Name: "code", DataType: "text", IsNullable: "YES"}),
 		},
 	}
 
@@ -187,8 +187,8 @@ func TestTableChangesMatchTheExistingComparator(t *testing.T) {
 			profile := postgresProfile()
 
 			existing := existingTableDecisions(
-				schemadiff.CompareWithDialect(test.description, test.catalog, profile.Dialect))
-			prototype := canonicalTableDecisions(changesFor(c, test.description, test.catalog))
+				schemadiff.CompareWithDialect(test.description, test.current, profile.Dialect))
+			prototype := canonicalTableDecisions(changesFor(c, test.description, test.current))
 
 			c.Assert(prototype, qt.DeepEquals, existing)
 		})
@@ -290,8 +290,8 @@ func TestTableStatementsMatchTheExistingPlanner(t *testing.T) {
 			c := qt.New(t)
 			profile := profileOrPostgres(test.profile)
 
-			existing := executableLines(existingPathStatements(c, test.description, test.catalog, profile))
-			prototype := executableLines(plannedStatements(c, test.description, test.catalog, profile))
+			existing := executableLines(existingPathStatements(c, test.description, test.current, profile))
+			prototype := executableLines(plannedStatements(c, test.description, test.current, profile))
 
 			c.Assert(prototype, qt.DeepEquals, existing)
 		})
@@ -301,12 +301,12 @@ func TestTableStatementsMatchTheExistingPlanner(t *testing.T) {
 // plannedStatements renders the canonical path's plan for one input pair.
 func plannedStatements(
 	c *qt.C,
-	description *goschema.Database,
-	catalog *dbschematypes.DBSchema,
+	description *schemamodel.Database,
+	current *catalog.Database,
 	profile schemastate.Profile,
 ) []string {
 	c.Helper()
-	operations, err := schemachange.Plan(changesFor(c, description, catalog), profile)
+	operations, err := schemachange.Plan(changesFor(c, description, current), profile)
 	c.Assert(err, qt.IsNil)
 	return schemachange.Statements(operations)
 }
@@ -351,9 +351,9 @@ func appendExecutable(lines []string, trimmed string) []string {
 func TestAModificationCarriesWhatItReplaces(t *testing.T) {
 	c := qt.New(t)
 	profile := postgresProfile()
-	changes := changesFor(c, describedTable(goschema.Field{
+	changes := changesFor(c, describedTable(schemamodel.Field{
 		StructName: "Widget", Name: "code", Type: "varchar(200)", Nullable: true,
-	}), catalogTable(dbschematypes.DBColumn{
+	}), catalogTable(catalog.Column{
 		Name: "code", DataType: "varchar(50)", IsNullable: "NO",
 		ColumnDefault: new("'unset'"),
 	}))
@@ -411,8 +411,8 @@ func cockroachProfilePointer() *schemastate.Profile {
 // statement-level differential slice carries.
 type statementDifferentialFixture struct {
 	name        string
-	description *goschema.Database
-	catalog     *dbschematypes.DBSchema
+	description *schemamodel.Database
+	current     *catalog.Database
 	// profile defaults to PostgreSQL. A row names another target when the
 	// rule under test is one the targets disagree about: PostgreSQL's
 	// renderer suppresses UNIQUE on a primary key column and Oracle's does
@@ -426,61 +426,61 @@ func statementDifferentialFixtures() []statementDifferentialFixture {
 		{
 			name: "creating a table",
 			description: describedTable(
-				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
-				goschema.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true}),
-			catalog: &dbschematypes.DBSchema{},
+				schemamodel.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				schemamodel.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true}),
+			current: &catalog.Database{},
 		},
 		{
 			name: "creating a table with a default",
 			description: describedTable(
-				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
-				goschema.Field{
+				schemamodel.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				schemamodel.Field{
 					StructName: "Widget", Name: "code", Type: "text", Nullable: true,
 					Default: "unset", DefaultSet: true,
 				}),
-			catalog: &dbschematypes.DBSchema{},
+			current: &catalog.Database{},
 		},
 		{
 			name: "creating a table with a default expression",
 			description: describedTable(
-				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
-				goschema.Field{
+				schemamodel.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				schemamodel.Field{
 					StructName: "Widget", Name: "seen", Type: "timestamp", Nullable: true,
 					DefaultExpr: "now()",
 				}),
-			catalog: &dbschematypes.DBSchema{},
+			current: &catalog.Database{},
 		},
 		{
 			name:        "dropping a table",
-			description: &goschema.Database{},
-			catalog: catalogTable(dbschematypes.DBColumn{
+			description: &schemamodel.Database{},
+			current: catalogTable(catalog.Column{
 				Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true,
 			}),
 		},
 		{
 			name: "adding a column",
 			description: describedTable(
-				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
-				goschema.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true}),
-			catalog: catalogTable(dbschematypes.DBColumn{
+				schemamodel.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				schemamodel.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true}),
+			current: catalogTable(catalog.Column{
 				Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true,
 			}),
 		},
 		{
 			name: "dropping a column",
 			description: describedTable(
-				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true}),
-			catalog: catalogTable(
-				dbschematypes.DBColumn{
+				schemamodel.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true}),
+			current: catalogTable(
+				catalog.Column{
 					Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true,
 				},
-				dbschematypes.DBColumn{Name: "code", DataType: "text", IsNullable: "YES"}),
+				catalog.Column{Name: "code", DataType: "text", IsNullable: "YES"}),
 		},
 		{
 			name: "widening a column",
 			description: describedTable(
-				goschema.Field{StructName: "Widget", Name: "code", Type: "varchar(200)", Nullable: true}),
-			catalog: catalogTable(dbschematypes.DBColumn{
+				schemamodel.Field{StructName: "Widget", Name: "code", Type: "varchar(200)", Nullable: true}),
+			current: catalogTable(catalog.Column{
 				Name: "code", DataType: "varchar(50)", IsNullable: "YES",
 			}),
 		},
@@ -491,23 +491,23 @@ func statementDifferentialFixtures() []statementDifferentialFixture {
 			// running the two paths over a fixture that carries it.
 			name: "creating a table with a unique column",
 			description: describedTable(
-				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
-				goschema.Field{
+				schemamodel.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				schemamodel.Field{
 					StructName: "Widget", Name: "code", Type: "text", Nullable: true, Unique: true,
 				}),
-			catalog: &dbschematypes.DBSchema{},
+			current: &catalog.Database{},
 		},
 		{
 			// A column-level CHECK, which the canonical Column did not carry at
 			// all until the same measurement found it.
 			name: "creating a table with a column check",
 			description: describedTable(
-				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
-				goschema.Field{
+				schemamodel.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				schemamodel.Field{
 					StructName: "Widget", Name: "code", Type: "text", Nullable: true,
 					Check: "length(code) > 0",
 				}),
-			catalog: &dbschematypes.DBSchema{},
+			current: &catalog.Database{},
 		},
 		{
 			// The same table against a target whose renderer does NOT suppress
@@ -516,11 +516,11 @@ func statementDifferentialFixtures() []statementDifferentialFixture {
 			// declare a second constraint here that nobody asked for.
 			name: "creating a table with a unique column, on Oracle",
 			description: describedTable(
-				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
-				goschema.Field{
+				schemamodel.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				schemamodel.Field{
 					StructName: "Widget", Name: "code", Type: "text", Nullable: true, Unique: true,
 				}),
-			catalog: &dbschematypes.DBSchema{},
+			current: &catalog.Database{},
 			profile: oracleProfilePointer(),
 		},
 		{
@@ -528,12 +528,12 @@ func statementDifferentialFixtures() []statementDifferentialFixture {
 			// kind, so this one is compared as well as rendered.
 			name: "creating a table with a generated column",
 			description: describedTable(
-				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
-				goschema.Field{
+				schemamodel.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				schemamodel.Field{
 					StructName: "Widget", Name: "code", Type: "text", Nullable: true,
 					GeneratedExpression: "upper(name)", GeneratedKind: "STORED",
 				}),
-			catalog: &dbschematypes.DBSchema{},
+			current: &catalog.Database{},
 		},
 		{
 			// The same generated column against a target whose renderer writes
@@ -543,12 +543,12 @@ func statementDifferentialFixtures() []statementDifferentialFixture {
 			// there can see a planner that drops the field.
 			name: "creating a table with a stored generated column, on SQLite",
 			description: describedTable(
-				goschema.Field{StructName: "Widget", Name: "id", Type: "integer", Primary: true},
-				goschema.Field{
+				schemamodel.Field{StructName: "Widget", Name: "id", Type: "integer", Primary: true},
+				schemamodel.Field{
 					StructName: "Widget", Name: "code", Type: "text", Nullable: true,
 					GeneratedExpression: "upper(name)", GeneratedKind: "STORED",
 				}),
-			catalog: &dbschematypes.DBSchema{},
+			current: &catalog.Database{},
 			profile: sqliteProfilePointer(),
 		},
 		{
@@ -556,20 +556,20 @@ func statementDifferentialFixtures() []statementDifferentialFixture {
 			// dropped one builds a table nothing can fix afterwards without a
 			// rebuild -- and it builds without failing.
 			name: "creating a strict table without a rowid, on SQLite",
-			description: describedTableOptions(true, true, goschema.Field{
+			description: describedTableOptions(true, true, schemamodel.Field{
 				StructName: "Widget", Name: "id", Type: "integer", Primary: true,
 			}),
-			catalog: &dbschematypes.DBSchema{},
+			current: &catalog.Database{},
 			profile: sqliteProfilePointer(),
 		},
 		{
 			// The control on the row above: a table declaring neither must
 			// carry neither, or every SQLite table Ptah creates becomes strict.
 			name: "creating an ordinary table, on SQLite",
-			description: describedTableOptions(false, false, goschema.Field{
+			description: describedTableOptions(false, false, schemamodel.Field{
 				StructName: "Widget", Name: "id", Type: "integer", Primary: true,
 			}),
-			catalog: &dbschematypes.DBSchema{},
+			current: &catalog.Database{},
 			profile: sqliteProfilePointer(),
 		},
 		{
@@ -577,11 +577,11 @@ func statementDifferentialFixtures() []statementDifferentialFixture {
 			// may supply its own value, so a CREATE that dropped it would build
 			// a column with different write semantics.
 			name: "creating a table with an identity column",
-			description: describedTable(goschema.Field{
+			description: describedTable(schemamodel.Field{
 				StructName: "Widget", Name: "id", Type: "int", Primary: true,
 				IdentityGeneration: "ALWAYS",
 			}),
-			catalog: &dbschematypes.DBSchema{},
+			current: &catalog.Database{},
 		},
 		{
 			// A NAMED column check. The name is what every later diagnostic
@@ -589,12 +589,12 @@ func statementDifferentialFixtures() []statementDifferentialFixture {
 			// the server to invent one the author cannot predict.
 			name: "creating a table with a named column check",
 			description: describedTable(
-				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
-				goschema.Field{
+				schemamodel.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				schemamodel.Field{
 					StructName: "Widget", Name: "code", Type: "text", Nullable: true,
 					Check: "length(code) > 0", CheckName: "ck_widget_code",
 				}),
-			catalog: &dbschematypes.DBSchema{},
+			current: &catalog.Database{},
 		},
 		{
 			// The sequence behind an identity column. Dropping it builds a
@@ -602,11 +602,11 @@ func statementDifferentialFixtures() []statementDifferentialFixture {
 			// author asked for, and the table is otherwise identical -- so the
 			// loss is invisible until a row is inserted.
 			name: "creating a table with a started identity column",
-			description: describedTable(goschema.Field{
+			description: describedTable(schemamodel.Field{
 				StructName: "Widget", Name: "id", Type: "int", Primary: true,
 				IdentityGeneration: "ALWAYS", IdentityStart: "100", IdentityIncrement: "5",
 			}),
-			catalog: &dbschematypes.DBSchema{},
+			current: &catalog.Database{},
 		},
 		{
 			// A key with INCLUDE payload columns, which cannot be declared on a
@@ -614,17 +614,17 @@ func statementDifferentialFixtures() []statementDifferentialFixture {
 			// however few columns it covers.
 			name: "creating a table with a covering primary key",
 			description: describedTableCoveringKey(
-				goschema.Field{StructName: "Widget", Name: "id", Type: "int"},
-				goschema.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true},
+				schemamodel.Field{StructName: "Widget", Name: "id", Type: "int"},
+				schemamodel.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true},
 			),
-			catalog: &dbschematypes.DBSchema{},
+			current: &catalog.Database{},
 		},
 		{
 			name: "creating a table with a counter, on MySQL",
-			description: describedTableCounter(goschema.Field{
+			description: describedTableCounter(schemamodel.Field{
 				StructName: "Widget", Name: "id", Type: "int", Primary: true,
 			}),
-			catalog: &dbschematypes.DBSchema{},
+			current: &catalog.Database{},
 			profile: mysqlProfilePointer(),
 		},
 		{
@@ -634,10 +634,10 @@ func statementDifferentialFixtures() []statementDifferentialFixture {
 			// the table is large enough for it to matter.
 			name: "creating a partitioned table",
 			description: describedTablePartitioned(
-				goschema.Field{StructName: "Widget", Name: "id", Type: "int"},
-				goschema.Field{StructName: "Widget", Name: "created", Type: "date"},
+				schemamodel.Field{StructName: "Widget", Name: "id", Type: "int"},
+				schemamodel.Field{StructName: "Widget", Name: "created", Type: "date"},
 			),
-			catalog: &dbschematypes.DBSchema{},
+			current: &catalog.Database{},
 		},
 		{
 			// A SQLite virtual table, which is not a CREATE TABLE at all. A
@@ -645,20 +645,20 @@ func statementDifferentialFixtures() []statementDifferentialFixture {
 			// same name where an FTS5 index was declared -- a different object
 			// that accepts different SQL, created without failing.
 			name: "creating a virtual table, on SQLite",
-			description: describedVirtualTable(goschema.Field{
+			description: describedVirtualTable(schemamodel.Field{
 				StructName: "Widget", Name: "id", Type: "integer", Primary: true,
 			}),
-			catalog: &dbschematypes.DBSchema{},
+			current: &catalog.Database{},
 			profile: sqliteProfilePointer(),
 		},
 		{
 			// A row-level TTL, which is what makes rows disappear on schedule.
 			// A table created without it keeps them forever.
 			name: "creating a table with a row TTL, on CockroachDB",
-			description: describedTableRowTTL(goschema.Field{
+			description: describedTableRowTTL(schemamodel.Field{
 				StructName: "Widget", Name: "id", Type: "int", Primary: true,
 			}),
-			catalog: &dbschematypes.DBSchema{},
+			current: &catalog.Database{},
 			profile: cockroachProfilePointer(),
 		},
 		{
@@ -668,21 +668,21 @@ func statementDifferentialFixtures() []statementDifferentialFixture {
 			name: "creating a table with a composite key",
 			description: describedTableWithKey(
 				[]string{"tenant", "id"},
-				goschema.Field{StructName: "Widget", Name: "tenant", Type: "int"},
-				goschema.Field{StructName: "Widget", Name: "id", Type: "int"}),
-			catalog: &dbschematypes.DBSchema{},
+				schemamodel.Field{StructName: "Widget", Name: "tenant", Type: "int"},
+				schemamodel.Field{StructName: "Widget", Name: "id", Type: "int"}),
+			current: &catalog.Database{},
 		},
 		{
 			// A column's character set and collation, on the target family that
 			// puts them on a column.
 			name: "creating a table with a collated column, on MySQL",
 			description: describedTable(
-				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
-				goschema.Field{
+				schemamodel.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				schemamodel.Field{
 					StructName: "Widget", Name: "code", Type: "varchar(50)", Nullable: true,
 					Charset: "utf8mb4", Collate: "utf8mb4_0900_ai_ci",
 				}),
-			catalog: &dbschematypes.DBSchema{},
+			current: &catalog.Database{},
 			profile: mysqlProfilePointer(),
 		},
 		{
@@ -690,12 +690,12 @@ func statementDifferentialFixtures() []statementDifferentialFixture {
 			// maintaining itself, and the table is otherwise identical.
 			name: "creating a table with a self-updating column, on MySQL",
 			description: describedTable(
-				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
-				goschema.Field{
+				schemamodel.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				schemamodel.Field{
 					StructName: "Widget", Name: "seen", Type: "timestamp", Nullable: true,
 					UpdateExpression: "CURRENT_TIMESTAMP",
 				}),
-			catalog: &dbschematypes.DBSchema{},
+			current: &catalog.Database{},
 			profile: mysqlProfilePointer(),
 		},
 		{
@@ -703,46 +703,46 @@ func statementDifferentialFixtures() []statementDifferentialFixture {
 			// server's default, which on a server configured differently is a
 			// different storage engine with different transactional behavior.
 			name: "creating a table with an engine and a charset, on MySQL",
-			description: describedTableMySQLOptions(goschema.Field{
+			description: describedTableMySQLOptions(schemamodel.Field{
 				StructName: "Widget", Name: "id", Type: "int", Primary: true,
 			}),
-			catalog: &dbschematypes.DBSchema{},
+			current: &catalog.Database{},
 			profile: mysqlProfilePointer(),
 		},
 		{
 			name:        "adding an index",
 			description: indexedWidget(false, "a", "b"),
-			catalog:     indexedWidgetCatalog(false),
+			current:     indexedWidgetCatalog(false),
 		},
 		{
 			name:        "dropping an index",
 			description: indexedWidget(false),
-			catalog:     indexedWidgetCatalog(false, "a", "b"),
+			current:     indexedWidgetCatalog(false, "a", "b"),
 		},
 		{
 			// The key changes, which no engine alters in place: a drop and an
 			// add, in that order, as one change.
 			name:        "changing an index key",
 			description: indexedWidget(false, "a"),
-			catalog:     indexedWidgetCatalog(false, "a", "b"),
+			current:     indexedWidgetCatalog(false, "a", "b"),
 		},
 		{
 			name:        "adding a check constraint",
 			description: constrainedWidget(checkConstraint("price > 0")),
-			catalog:     constrainedCatalog(),
+			current:     constrainedCatalog(),
 		},
 		{
 			name:        "dropping a check constraint",
 			description: constrainedWidget(),
-			catalog:     constrainedCatalog(catalogCheck("price > 0")),
+			current:     constrainedCatalog(catalogCheck("price > 0")),
 		},
 		{
 			name: "adding a primary key",
-			description: constrainedWidget(goschema.Constraint{
+			description: constrainedWidget(schemamodel.Constraint{
 				StructName: "Widget", Name: "pk_widget", Type: "PRIMARY KEY",
 				Columns: []string{"id"},
 			}),
-			catalog: constrainedCatalog(),
+			current: constrainedCatalog(),
 		},
 		// A concurrent index has no STATEMENT row: the canonical path renders
 		// `CREATE INDEX CONCURRENTLY` for a declaration asking for it and the
@@ -767,32 +767,32 @@ func statementDifferentialFixtures() []statementDifferentialFixture {
 		{
 			name:        "adding a unique index",
 			description: indexedWidget(true, "a"),
-			catalog:     indexedWidgetCatalog(true),
+			current:     indexedWidgetCatalog(true),
 		},
 		{
 			name:        "dropping a unique index",
 			description: indexedWidget(true),
-			catalog:     indexedWidgetCatalog(true, "a"),
+			current:     indexedWidgetCatalog(true, "a"),
 		},
 		{
 			name:        "making an index unique",
 			description: indexedWidget(true, "a"),
-			catalog:     indexedWidgetCatalog(false, "a"),
+			current:     indexedWidgetCatalog(false, "a"),
 		},
 		{
 			name:        "adding an exclusion constraint",
 			description: constrainedWidget(exclusionConstraint("room WITH =")),
-			catalog:     constrainedCatalog(),
+			current:     constrainedCatalog(),
 		},
 		{
 			name:        "dropping an exclusion constraint",
 			description: constrainedWidget(),
-			catalog:     constrainedCatalog(catalogExclusion("room WITH =")),
+			current:     constrainedCatalog(catalogExclusion("room WITH =")),
 		},
 		{
 			name:        "dropping a primary key",
 			description: constrainedWidget(),
-			catalog: constrainedCatalog(dbschematypes.DBConstraint{
+			current: constrainedCatalog(catalog.Constraint{
 				Name: "pk_widget", TableName: "widget", Schema: "public",
 				Type: "PRIMARY KEY", ColumnNames: []string{"id"},
 			}),
@@ -803,17 +803,17 @@ func statementDifferentialFixtures() []statementDifferentialFixture {
 			// desired state declares the constraint; nothing changed.
 			name:        "a unique constraint the database already has",
 			description: widgetDeclaringUniqueConstraint(),
-			catalog:     widgetReportingBoth(),
+			current:     widgetReportingBoth(),
 		},
 		{
 			name:        "adding a unique constraint",
 			description: scopedWidget([]string{"tenant", "code"}),
-			catalog:     scopedWidgetCatalog(nil),
+			current:     scopedWidgetCatalog(nil),
 		},
 		{
 			name:        "dropping a unique constraint",
 			description: scopedWidget(nil),
-			catalog:     scopedWidgetCatalog([]string{"tenant", "code"}),
+			current:     scopedWidgetCatalog([]string{"tenant", "code"}),
 		},
 		{
 			// The control. A planner that emitted nothing would agree with the
@@ -821,13 +821,13 @@ func statementDifferentialFixtures() []statementDifferentialFixture {
 			// emitted something here would disagree with it on this row alone.
 			name: "an unchanged schema",
 			description: describedTable(
-				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
-				goschema.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true}),
-			catalog: catalogTable(
-				dbschematypes.DBColumn{
+				schemamodel.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				schemamodel.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true}),
+			current: catalogTable(
+				catalog.Column{
 					Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true,
 				},
-				dbschematypes.DBColumn{Name: "code", DataType: "text", IsNullable: "YES"}),
+				catalog.Column{Name: "code", DataType: "text", IsNullable: "YES"}),
 		},
 	}
 }

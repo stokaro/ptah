@@ -12,12 +12,12 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbexprprobe"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestTimescaleContinuousAggregateConvergesE2E is the live acceptance for
@@ -179,16 +179,16 @@ func TestTimescaleContinuousAggregateProbeLeavesNothingBehindE2E(t *testing.T) {
 // timescaleDeclaration is the desired schema both tests compare with: the table
 // as a Go-annotated schema would describe it, the hypertable declaration, and
 // the aggregate carrying the body it was written with.
-func timescaleDeclaration(table, aggregate, body string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "R", Name: table}},
-		Fields: []goschema.Field{
+func timescaleDeclaration(table, aggregate, body string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "R", Name: table}},
+		Fields: []schemamodel.Field{
 			{StructName: "R", Name: "time", Type: "TIMESTAMPTZ"},
 			{StructName: "R", Name: "device", Type: "TEXT"},
 			{StructName: "R", Name: "temperature", Type: "DOUBLE PRECISION", Nullable: true},
 		},
-		Hypertables: []goschema.Hypertable{{StructName: "R", Table: table, Column: "time"}},
-		ContinuousAggregates: []goschema.ContinuousAggregate{{
+		Hypertables: []schemamodel.Hypertable{{StructName: "R", Table: table, Column: "time"}},
+		ContinuousAggregates: []schemamodel.ContinuousAggregate{{
 			StructName: "A", Name: aggregate, Body: body,
 		}},
 	}

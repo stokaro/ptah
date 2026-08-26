@@ -8,11 +8,12 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/atlascompat"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/lint"
 	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/planner"
@@ -86,9 +87,9 @@ table "users" {
 
 func TestDiffAndPlan(t *testing.T) {
 	c := qt.New(t)
-	desired := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "User", Name: "users"}},
-		Fields: []goschema.Field{{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
+		Fields: []schemamodel.Field{{
 			StructName: "User",
 			FieldName:  "ID",
 			Name:       "id",
@@ -96,7 +97,7 @@ func TestDiffAndPlan(t *testing.T) {
 			Primary:    true,
 		}},
 	}
-	live := &dbschematypes.DBSchema{}
+	live := &catalog.Database{}
 
 	diff := schemadiff.CompareWithDialect(desired, live, "sqlite")
 	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, "sqlite")

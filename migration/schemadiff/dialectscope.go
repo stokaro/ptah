@@ -3,8 +3,8 @@ package schemadiff
 import (
 	"slices"
 
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // suppressScopedAway removes from the current schema every object a scope kept
@@ -26,7 +26,7 @@ import (
 // The current schema is cloned rather than filtered in place. Callers hand over
 // a snapshot they may still be holding, and a comparison is not entitled to
 // edit it.
-func suppressScopedAway(current *types.DBSchema, omitted []goschema.ScopedObject) *types.DBSchema {
+func suppressScopedAway(current *catalog.Database, omitted []schemamodel.ScopedObject) *catalog.Database {
 	if current == nil || len(omitted) == 0 {
 		return current
 	}
@@ -40,17 +40,17 @@ func suppressScopedAway(current *types.DBSchema, omitted []goschema.ScopedObject
 	}
 
 	filtered := *current
-	filtered.Extensions = keepUnscoped(current.Extensions, names["extension"], func(v types.DBExtension) (string, string) { return v.Schema, v.Name })
-	filtered.Functions = keepUnscoped(current.Functions, names["function"], func(v types.DBFunction) (string, string) { return v.Schema, v.Name })
-	filtered.Sequences = keepUnscoped(current.Sequences, names["sequence"], func(v types.DBSequence) (string, string) { return v.Schema, v.Name })
-	filtered.Domains = keepUnscoped(current.Domains, names["domain"], func(v types.DBDomain) (string, string) { return v.Schema, v.Name })
-	filtered.Composites = keepUnscoped(current.Composites, names["composite"], func(v types.DBComposite) (string, string) { return v.Schema, v.Name })
-	filtered.Ranges = keepUnscoped(current.Ranges, names["range"], func(v types.DBRange) (string, string) { return v.Schema, v.Name })
-	filtered.Views = keepUnscoped(current.Views, names["view"], func(v types.DBView) (string, string) { return v.Schema, v.Name })
-	filtered.MatViews = keepUnscoped(current.MatViews, names["matview"], func(v types.DBMatView) (string, string) { return v.Schema, v.Name })
-	filtered.Triggers = keepUnscoped(current.Triggers, names["trigger"], func(v types.DBTrigger) (string, string) { return v.Schema, v.Name })
-	filtered.Roles = keepUnscoped(current.Roles, names["role"], func(v types.DBRole) (string, string) { return "", v.Name })
-	filtered.Grants = keepUnscoped(current.Grants, names["grant"], func(v types.DBGrant) (string, string) { return "", v.Role })
+	filtered.Extensions = keepUnscoped(current.Extensions, names["extension"], func(v catalog.Extension) (string, string) { return v.Schema, v.Name })
+	filtered.Functions = keepUnscoped(current.Functions, names["function"], func(v catalog.Function) (string, string) { return v.Schema, v.Name })
+	filtered.Sequences = keepUnscoped(current.Sequences, names["sequence"], func(v catalog.Sequence) (string, string) { return v.Schema, v.Name })
+	filtered.Domains = keepUnscoped(current.Domains, names["domain"], func(v catalog.Domain) (string, string) { return v.Schema, v.Name })
+	filtered.Composites = keepUnscoped(current.Composites, names["composite"], func(v catalog.CompositeType) (string, string) { return v.Schema, v.Name })
+	filtered.Ranges = keepUnscoped(current.Ranges, names["range"], func(v catalog.Range) (string, string) { return v.Schema, v.Name })
+	filtered.Views = keepUnscoped(current.Views, names["view"], func(v catalog.View) (string, string) { return v.Schema, v.Name })
+	filtered.MatViews = keepUnscoped(current.MatViews, names["matview"], func(v catalog.MaterializedView) (string, string) { return v.Schema, v.Name })
+	filtered.Triggers = keepUnscoped(current.Triggers, names["trigger"], func(v catalog.Trigger) (string, string) { return v.Schema, v.Name })
+	filtered.Roles = keepUnscoped(current.Roles, names["role"], func(v catalog.Role) (string, string) { return "", v.Name })
+	filtered.Grants = keepUnscoped(current.Grants, names["grant"], func(v catalog.Grant) (string, string) { return "", v.Role })
 	return &filtered
 }
 

@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashcl"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
@@ -32,13 +32,13 @@ const AtlasSumFileName = "atlas.sum"
 // schema file, and is refused with an error naming the block and its position.
 // Parsing one as a schema would yield an empty IR, which a caller diffing
 // against a live database cannot tell apart from "drop everything".
-func ParseAtlasHCL(data []byte, filename string) (*goschema.Database, error) {
+func ParseAtlasHCL(data []byte, filename string) (*schemamodel.Database, error) {
 	return atlashcl.Parse(data, filename)
 }
 
 // ParseAtlasHCLFile parses an Atlas schema HCL file into Ptah's Go schema IR.
 // It refuses project files on the same terms as [ParseAtlasHCL].
-func ParseAtlasHCLFile(path string) (*goschema.Database, error) {
+func ParseAtlasHCLFile(path string) (*schemamodel.Database, error) {
 	return atlashcl.ParseFile(path)
 }
 
@@ -71,14 +71,14 @@ func ParseSQL(sql string, opts ParseSQLOptions) (*ast.StatementList, error) {
 
 // SchemaToAST converts Ptah's Go schema IR into SQL AST statements for the
 // selected target platform.
-func SchemaToAST(database goschema.Database, targetPlatform string) *ast.StatementList {
-	return fromschema.FromDatabase(database, targetPlatform)
+func SchemaToAST(desired schemamodel.Database, targetPlatform string) *ast.StatementList {
+	return fromschema.FromDatabase(desired, targetPlatform)
 }
 
-// DBSchemaToGoSchema converts an introspected database schema into Ptah's Go
-// schema IR.
-func DBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Database {
-	return dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+// CatalogToSchema converts an introspected live catalog into Ptah's Go schema
+// IR.
+func CatalogToSchema(dbSchema *catalog.Database) *schemamodel.Database {
+	return dbschematogo.ConvertCatalogToSchema(dbSchema)
 }
 
 // SumEntry is one migration file and its content hash.

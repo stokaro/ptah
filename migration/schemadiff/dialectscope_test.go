@@ -5,17 +5,17 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
 // scopedDesiredState declares one PostgreSQL-only function and one role, both
 // scoped to postgres, against an empty database.
-func scopedDesiredState() *goschema.Database {
-	return &goschema.Database{
-		Functions: []goschema.Function{{
+func scopedDesiredState() *schemamodel.Database {
+	return &schemamodel.Database{
+		Functions: []schemamodel.Function{{
 			StructName: "Fn",
 			Name:       "get_current_tenant_id",
 			Returns:    "TEXT",
@@ -23,7 +23,7 @@ func scopedDesiredState() *goschema.Database {
 			Body:       "BEGIN RETURN 'x'; END;",
 			Dialects:   []string{"postgres"},
 		}},
-		Roles: []goschema.Role{
+		Roles: []schemamodel.Role{
 			{StructName: "Rol", Name: "app_reader", Inherit: true, Dialects: []string{"postgres"}},
 		},
 	}
@@ -55,7 +55,7 @@ func TestCompare_AScopedObjectIsNotReportedAsAddedOnATargetItDoesNotName(t *test
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := schemadiff.CompareWithDialect(scopedDesiredState(), &types.DBSchema{}, test.dialect)
+			diff := schemadiff.CompareWithDialect(scopedDesiredState(), &catalog.Database{}, test.dialect)
 
 			c.Assert(diff.FunctionsAdded, qt.HasLen, test.added)
 			c.Assert(diff.RolesAdded, qt.HasLen, test.added)
@@ -73,7 +73,7 @@ func TestCompare_AnUnscopedObjectIsStillReportedAsAdded(t *testing.T) {
 	unscoped.Functions[0].Dialects = nil
 	unscoped.Roles[0].Dialects = nil
 
-	diff := schemadiff.CompareWithDialect(unscoped, &types.DBSchema{}, "mariadb")
+	diff := schemadiff.CompareWithDialect(unscoped, &catalog.Database{}, "mariadb")
 
 	c.Assert(diff.FunctionsAdded, qt.HasLen, 1)
 	c.Assert(diff.RolesAdded, qt.HasLen, 1)
@@ -89,7 +89,7 @@ func TestCompare_ADialectlessComparisonKeepsEveryScopedObject(t *testing.T) {
 	opts := config.DefaultCompareOptions()
 	opts.Dialect = ""
 
-	diff := schemadiff.CompareWithOptions(scopedDesiredState(), &types.DBSchema{}, opts)
+	diff := schemadiff.CompareWithOptions(scopedDesiredState(), &catalog.Database{}, opts)
 
 	c.Assert(diff.FunctionsAdded, qt.HasLen, 1)
 	c.Assert(diff.RolesAdded, qt.HasLen, 1)
@@ -153,9 +153,9 @@ func TestCompare_AnUndeclaredObjectIsStillRemovedOnAScopedTarget(t *testing.T) {
 }
 
 // scopedFunctionDeclaredFor declares one function scoped to dialect.
-func scopedFunctionDeclaredFor(dialect string) *goschema.Database {
-	return &goschema.Database{
-		Functions: []goschema.Function{{
+func scopedFunctionDeclaredFor(dialect string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Functions: []schemamodel.Function{{
 			StructName: "Fn",
 			Name:       "get_current_tenant_id",
 			Returns:    "TEXT",
@@ -167,9 +167,9 @@ func scopedFunctionDeclaredFor(dialect string) *goschema.Database {
 }
 
 // databaseHoldingTheScopedFunction is a target that already has it.
-func databaseHoldingTheScopedFunction() *types.DBSchema {
-	return &types.DBSchema{
-		Functions: []types.DBFunction{{Name: "get_current_tenant_id"}},
+func databaseHoldingTheScopedFunction() *catalog.Database {
+	return &catalog.Database{
+		Functions: []catalog.Function{{Name: "get_current_tenant_id"}},
 	}
 }
 
@@ -197,16 +197,16 @@ func TestCompare_AScopedAwayNameDoesNotSuppressAnotherSchemasObject(t *testing.T
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			desired := &goschema.Database{
-				Sequences: []goschema.Sequence{{
+			desired := &schemamodel.Database{
+				Sequences: []schemamodel.Sequence{{
 					StructName: "Seq",
 					Name:       "tenant_seq",
 					Schema:     "app",
 					Dialects:   []string{"mysql"},
 				}},
 			}
-			current := &types.DBSchema{
-				Sequences: []types.DBSequence{{Name: "tenant_seq", Schema: test.schema}},
+			current := &catalog.Database{
+				Sequences: []catalog.Sequence{{Name: "tenant_seq", Schema: test.schema}},
 			}
 
 			diff := schemadiff.CompareWithDialect(desired, current, "postgres")

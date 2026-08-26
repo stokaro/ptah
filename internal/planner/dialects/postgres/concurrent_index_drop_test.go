@@ -5,39 +5,39 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
-func indexRemovalFixture() (*types.SchemaDiff, *goschema.Database) {
-	diff := &types.SchemaDiff{IndexesRemoved: []types.IndexRef{
+func indexRemovalFixture() (*difftypes.SchemaDiff, *schemamodel.Database) {
+	diff := &difftypes.SchemaDiff{IndexesRemoved: []difftypes.IndexRef{
 		{Name: "idx_users_email", TableName: "users"},
 	}}
-	generated := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "User", Name: "users"}},
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
 	}
-	return diff, generated
+	return diff, desired
 }
 
 // indexRedefinitionFixture drops and rebuilds the same index identity. The
 // planner pairs that drop with the rebuild, so it is not a standalone removal
 // and must never become concurrent: PostgreSQL would then need the pair split
 // across a transactional and a non-transactional file.
-func indexRedefinitionFixture() (*types.SchemaDiff, *goschema.Database) {
-	diff := &types.SchemaDiff{
-		IndexesAdded:   []types.IndexRef{{Name: "idx_users_email", TableName: "users"}},
-		IndexesRemoved: []types.IndexRef{{Name: "idx_users_email", TableName: "users"}},
+func indexRedefinitionFixture() (*difftypes.SchemaDiff, *schemamodel.Database) {
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded:   []difftypes.IndexRef{{Name: "idx_users_email", TableName: "users"}},
+		IndexesRemoved: []difftypes.IndexRef{{Name: "idx_users_email", TableName: "users"}},
 	}
-	generated := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "User", Name: "users"}},
-		Indexes: []goschema.Index{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
+		Indexes: []schemamodel.Index{
 			{Name: "idx_users_email", StructName: "User", Fields: []string{"email", "tenant"}},
 		},
 	}
-	return diff, generated
+	return diff, desired
 }
 
 // TestPlanner_ConcurrentIndexDrops pins that DROP INDEX CONCURRENTLY needs BOTH
@@ -49,11 +49,11 @@ func indexRedefinitionFixture() (*types.SchemaDiff, *goschema.Database) {
 // CONCURRENTLY fail with `no substring match found`; the negative rows keep
 // passing, which is what makes the pair discriminating.
 func TestPlanner_ConcurrentIndexDrops(t *testing.T) {
-	removalRef := types.IndexRef{Name: "idx_users_email", TableName: "users"}
+	removalRef := difftypes.IndexRef{Name: "idx_users_email", TableName: "users"}
 
 	tests := []struct {
 		name    string
-		fixture func() (*types.SchemaDiff, *goschema.Database)
+		fixture func() (*difftypes.SchemaDiff, *schemamodel.Database)
 		planner func() *postgres.Planner
 		want    string
 	}{
@@ -79,7 +79,7 @@ func TestPlanner_ConcurrentIndexDrops(t *testing.T) {
 			name:    "unlisted ref stays blocking",
 			fixture: indexRemovalFixture,
 			planner: func() *postgres.Planner {
-				return postgres.New().WithConcurrentIndexDropRefs(types.IndexRef{Name: "idx_users_email", TableName: "orders"})
+				return postgres.New().WithConcurrentIndexDropRefs(difftypes.IndexRef{Name: "idx_users_email", TableName: "orders"})
 			},
 			want: "DROP INDEX IF EXISTS idx_users_email;",
 		},
@@ -109,9 +109,9 @@ func TestPlanner_ConcurrentIndexDrops(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff, generated := tt.fixture()
+			diff, desired := tt.fixture()
 
-			nodes, err := tt.planner().GenerateMigrationASTChecked(diff, generated)
+			nodes, err := tt.planner().GenerateMigrationASTChecked(diff, desired)
 			c.Assert(err, qt.IsNil)
 			sql, err := renderer.RenderSQL("postgres", nodes...)
 			c.Assert(err, qt.IsNil)

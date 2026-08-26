@@ -7,9 +7,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
-	dbtypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 	"go.5x5.cz/ptah/internal/schemafile"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -102,15 +102,15 @@ func TestCompare_AGoSchemaThatCouldNameThemStillDropsThem(t *testing.T) {
 
 // sqlServerDatabaseWithUnwritableObjects is a database holding one of each of
 // the two kinds only HCL and a Go schema can name.
-func sqlServerDatabaseWithUnwritableObjects() *dbtypes.DBSchema {
-	return &dbtypes.DBSchema{
-		Schemas: []dbtypes.DBSchemaInfo{{Name: "dbo"}},
-		Tables:  []dbtypes.DBTable{{Schema: "dbo", Name: "users"}},
-		ExtendedProperties: []dbtypes.DBExtendedProperty{{
+func sqlServerDatabaseWithUnwritableObjects() *catalog.Database {
+	return &catalog.Database{
+		Schemas: []catalog.Schema{{Name: "dbo"}},
+		Tables:  []catalog.Table{{Schema: "dbo", Name: "users"}},
+		ExtendedProperties: []catalog.ExtendedProperty{{
 			Name: "MS_Description", Value: "the users",
 			Schema: "dbo", Table: "users", ValueType: "nvarchar",
 		}},
-		Synonyms: []dbtypes.DBSynonym{{
+		Synonyms: []catalog.Synonym{{
 			Schema: "dbo", Name: "s_users", Target: "other.dbo.users",
 		}},
 	}
@@ -118,28 +118,28 @@ func sqlServerDatabaseWithUnwritableObjects() *dbtypes.DBSchema {
 
 // describedSQLServerSchema is what a read of that database produces: the table,
 // and both objects the HCL render has to carry.
-func describedSQLServerSchema() *goschema.Database {
-	return &goschema.Database{
-		Schemas: []goschema.Schema{{Name: "dbo"}},
-		Tables:  []goschema.Table{{StructName: "T", Name: "users", Schema: "dbo"}},
-		Fields:  []goschema.Field{{StructName: "T", Name: "id", Type: "INT", Primary: true}},
-		ExtendedProperties: []goschema.ExtendedProperty{{
+func describedSQLServerSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Schemas: []schemamodel.Schema{{Name: "dbo"}},
+		Tables:  []schemamodel.Table{{StructName: "T", Name: "users", Schema: "dbo"}},
+		Fields:  []schemamodel.Field{{StructName: "T", Name: "id", Type: "INT", Primary: true}},
+		ExtendedProperties: []schemamodel.ExtendedProperty{{
 			Name: "MS_Description", Value: "the users", Schema: "dbo", Table: "users",
 		}},
-		Synonyms: []goschema.Synonym{{
+		Synonyms: []schemamodel.Synonym{{
 			Name: "s_users", Schema: "dbo", Target: "other.dbo.users",
 		}},
 	}
 }
 
-func renderInspectedDocument(c *qt.C, db *goschema.Database) []byte {
+func renderInspectedDocument(c *qt.C, db *schemamodel.Database) []byte {
 	c.Helper()
 	result, err := atlashclrender.RenderInspected(db, platform.SQLServer, "dbo")
 	c.Assert(err, qt.IsNil)
 	return result.Data
 }
 
-func loadDocument(c *qt.C, document []byte) *goschema.Database {
+func loadDocument(c *qt.C, document []byte) *schemamodel.Database {
 	c.Helper()
 	path := filepath.Join(c.TB.(*testing.T).TempDir(), "out.hcl")
 	c.Assert(os.WriteFile(path, document, 0o600), qt.IsNil)

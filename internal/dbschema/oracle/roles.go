@@ -9,8 +9,8 @@ import (
 
 	"github.com/sijms/go-ora/v3/network"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/dbschema/types"
 )
 
 // Oracle error numbers for a catalog this account may not read.
@@ -86,16 +86,16 @@ ORDER BY r.role`
 //   - HasPassword, from AUTHENTICATION_TYPE. A role can be IDENTIFIED BY a
 //     password, and PASSWORD is the value that says so. NONE is the ordinary
 //     case and every role in the measurement above reported it.
-func (r *Reader) readRoles(ctx context.Context) ([]types.DBRole, error) {
+func (r *Reader) readRoles(ctx context.Context) ([]catalog.Role, error) {
 	rows, err := r.db.QueryContext(ctx, roleQuery)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var roles []types.DBRole
+	var roles []catalog.Role
 	for rows.Next() {
-		var role types.DBRole
+		var role catalog.Role
 		var authentication sql.NullString
 		if err := rows.Scan(&role.Name, &authentication); err != nil {
 			return nil, err
@@ -136,7 +136,7 @@ ORDER BY p.grantee, p.table_name, p.privilege`
 // something to take away.
 //
 //   - A SYSTEM privilege (DBA_SYS_PRIVS): `GRANT CREATE SESSION TO r` names no
-//     object, and goschema.Grant has no shape without one -- its target is a
+//     object, and schemamodel.Grant has no shape without one -- its target is a
 //     table, a schema or a sequence. Reported, it would match no declaration
 //     and be planned as a REVOKE of a privilege nobody could have declared.
 //   - A role granted to a role (DBA_ROLE_PRIVS), for the same reason: Ptah
@@ -156,16 +156,16 @@ ORDER BY p.grantee, p.table_name, p.privilege`
 // 23.26.2.0.0 -- so a declaration asking for one cannot be rendered; a row
 // already carrying GRANTABLE='YES' on some other grantee is a fact about the
 // server, and dropping it would describe the server as something it is not.
-func (r *Reader) readGrants(ctx context.Context) ([]types.DBGrant, error) {
+func (r *Reader) readGrants(ctx context.Context) ([]catalog.Grant, error) {
 	rows, err := r.db.QueryContext(ctx, grantQuery, r.schema)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var grants []types.DBGrant
+	var grants []catalog.Grant
 	for rows.Next() {
-		var grant types.DBGrant
+		var grant catalog.Grant
 		var grantable, objectType string
 		var grantor sql.NullString
 		if err := rows.Scan(&grant.Role, &grant.Privilege, &grant.ObjectName,
@@ -186,7 +186,7 @@ func (r *Reader) readGrants(ctx context.Context) ([]types.DBGrant, error) {
 // grant shape names.
 //
 // A VIEW becomes TABLE rather than staying VIEW, because that is the word the
-// declared side carries for one: goschema.Grant spells every relation target
+// declared side carries for one: schemamodel.Grant spells every relation target
 // OnTable, on every dialect, and PostgreSQL's information_schema reports a
 // view grant the same way. Keying the two sides differently would make one
 // grant into two -- a GRANT planned because the declaration matched nothing,
@@ -228,7 +228,7 @@ func grantObjectTypeFor(catalogType string) string {
 // "these privileges belong to roles that are not there", and the grant
 // comparator has no coverage to consult: it decides a REVOKE from live rows
 // alone, so those rows must not arrive without the roles they belong to.
-func (r *Reader) readRolesInto(ctx context.Context, schema *types.DBSchema) error {
+func (r *Reader) readRolesInto(ctx context.Context, schema *catalog.Database) error {
 	roles, err := r.readRoles(ctx)
 	if err != nil {
 		if !isRoleReadDenied(err) {

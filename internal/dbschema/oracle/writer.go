@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/internal/sqlrunner"
 )
@@ -58,7 +58,7 @@ func (w *Writer) ExecuteSQL(ctx context.Context, sqlExpr string, args ...any) er
 
 // BeginTransaction returns a transaction whose Commit and Rollback are no-ops.
 // See the Writer doc for the measurement behind that.
-func (w *Writer) BeginTransaction(_ context.Context) (types.SchemaTransaction, error) {
+func (w *Writer) BeginTransaction(_ context.Context) (catalog.SchemaTransaction, error) {
 	if w.dryRun {
 		slog.Info("[DRY RUN] Would begin transaction (a no-op for Oracle DDL)")
 	}

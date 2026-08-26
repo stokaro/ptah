@@ -8,9 +8,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -146,22 +146,22 @@ func tenantFKName(dialect, host string) string {
 // ptah_tenants table plus the given host tables, each carrying a tenant_id field
 // with the tenant FK (named per tenantFKName). onDelete sets the FK's ON DELETE
 // action ("" = leave default / NO ACTION).
-func roundTripSchema(dialect, onDelete string, hosts ...string) *goschema.Database {
+func roundTripSchema(dialect, onDelete string, hosts ...string) *schemamodel.Database {
 	// VARCHAR(36) (not TEXT) so MySQL/MariaDB can index the PK and back the FK —
 	// a TEXT column needs a key length there ("BLOB/TEXT used in key
 	// specification without a key length").
-	db := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "PtahTenants", Name: "ptah_tenants"}},
-		Fields: []goschema.Field{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "PtahTenants", Name: "ptah_tenants"}},
+		Fields: []schemamodel.Field{
 			{StructName: "PtahTenants", Name: "id", Type: "VARCHAR(36)", Primary: true},
 		},
 	}
 	for _, h := range hosts {
 		structName := structNameFor(h)
-		db.Tables = append(db.Tables, goschema.Table{StructName: structName, Name: h})
+		db.Tables = append(db.Tables, schemamodel.Table{StructName: structName, Name: h})
 		db.Fields = append(db.Fields,
-			goschema.Field{StructName: structName, Name: "id", Type: "VARCHAR(36)", Primary: true},
-			goschema.Field{
+			schemamodel.Field{StructName: structName, Name: "id", Type: "VARCHAR(36)", Primary: true},
+			schemamodel.Field{
 				StructName:     structName,
 				Name:           "tenant_id",
 				Type:           "VARCHAR(36)",
@@ -177,7 +177,7 @@ func roundTripSchema(dialect, onDelete string, hosts ...string) *goschema.Databa
 
 // tenantDeleteRules returns host -> ON DELETE rule for the host's tenant FK as
 // the database reports it.
-func tenantDeleteRules(dialect string, db *dbschematypes.DBSchema, hosts []string) map[string]string {
+func tenantDeleteRules(dialect string, db *catalog.Database, hosts []string) map[string]string {
 	wantName := make(map[string]string, len(hosts)) // host -> expected FK name
 	for _, h := range hosts {
 		wantName[h] = tenantFKName(dialect, h)
@@ -204,10 +204,10 @@ func tenantDeleteRules(dialect string, db *dbschematypes.DBSchema, hosts []strin
 // but no FK yet. The named prior FK is then added explicitly by the caller (the
 // renderer's inline FK emission is dialect-asymmetric — MySQL omits field-level
 // inline FKs — so we keep setup engine-agnostic).
-func applyTablesOnly(c *qt.C, conn *dbschema.DatabaseConnection, dialect string, gen *goschema.Database) {
+func applyTablesOnly(c *qt.C, conn *dbschema.DatabaseConnection, dialect string, gen *schemamodel.Database) {
 	c.Helper()
 	bare := *gen
-	bare.Fields = make([]goschema.Field, 0, len(gen.Fields))
+	bare.Fields = make([]schemamodel.Field, 0, len(gen.Fields))
 	for _, f := range gen.Fields {
 		f.Foreign = ""
 		f.ForeignKeyName = ""

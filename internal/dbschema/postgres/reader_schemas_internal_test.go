@@ -2,7 +2,7 @@ package postgres
 
 // White-box testing required: readSchemas is unexported, and what it reports is
 // not observable through ReadSchema without a live server -- the exported path
-// returns a whole DBSchema whose other members would have to be faked to reach
+// returns a whole catalog.Database whose other members would have to be faked to reach
 // this one field.
 //
 // The property under test is that the schema list and the objects underneath it
@@ -24,7 +24,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 )
 
@@ -42,12 +42,12 @@ func pgNamespaceFixture() map[string][][]driver.Value {
 // pgNamespaceServer answers readSchemaInfo's query for the schema it was asked
 // about. A name absent from the fixture yields no rows, which is what a real
 // server does for a schema that does not exist.
-func pgNamespaceServer(catalog map[string][][]driver.Value) dbtest.QueryHandler {
+func pgNamespaceServer(rowsBySchema map[string][][]driver.Value) dbtest.QueryHandler {
 	return func(_ string, args []driver.NamedValue) (dbtest.QueryResult, error) {
 		name, _ := args[0].Value.(string)
 		return dbtest.QueryResult{
 			Columns: []string{"nspname", "schema_comment"},
-			Rows:    catalog[name],
+			Rows:    rowsBySchema[name],
 		}, nil
 	}
 }
@@ -60,7 +60,7 @@ func TestPostgreSQLReaderReadSchemasReportsWhatItRead(t *testing.T) {
 		connected string
 		// scope is the allow-list, nil for an unscoped read.
 		scope []string
-		want  []types.DBSchemaInfo
+		want  []catalog.Schema
 		// wantQueries is how many schemas were asked about. It pins the list the
 		// reader worked from rather than the list it returned: the two were
 		// allowed to differ, and that is the defect.
@@ -72,7 +72,7 @@ func TestPostgreSQLReaderReadSchemasReportsWhatItRead(t *testing.T) {
 			name:        "unscoped reports the connected schema",
 			connected:   "public",
 			scope:       nil,
-			want:        []types.DBSchemaInfo{{Name: "public", Comment: "standard public schema"}},
+			want:        []catalog.Schema{{Name: "public", Comment: "standard public schema"}},
 			wantQueries: 1,
 		},
 		{
@@ -81,7 +81,7 @@ func TestPostgreSQLReaderReadSchemasReportsWhatItRead(t *testing.T) {
 			name:        "unscoped follows the connection",
 			connected:   "extra",
 			scope:       nil,
-			want:        []types.DBSchemaInfo{{Name: "extra"}},
+			want:        []catalog.Schema{{Name: "extra"}},
 			wantQueries: 1,
 		},
 		{
@@ -91,14 +91,14 @@ func TestPostgreSQLReaderReadSchemasReportsWhatItRead(t *testing.T) {
 			name:        "scoped reports only what was named",
 			connected:   "public",
 			scope:       []string{"extra"},
-			want:        []types.DBSchemaInfo{{Name: "extra"}},
+			want:        []catalog.Schema{{Name: "extra"}},
 			wantQueries: 1,
 		},
 		{
 			name:        "scoped reports every name it was given",
 			connected:   "public",
 			scope:       []string{"extra", "public"},
-			want:        []types.DBSchemaInfo{{Name: "extra"}, {Name: "public", Comment: "standard public schema"}},
+			want:        []catalog.Schema{{Name: "extra"}, {Name: "public", Comment: "standard public schema"}},
 			wantQueries: 2,
 		},
 		{
@@ -107,7 +107,7 @@ func TestPostgreSQLReaderReadSchemasReportsWhatItRead(t *testing.T) {
 			name:        "scoped drops a schema the server does not have",
 			connected:   "public",
 			scope:       []string{"missing"},
-			want:        make([]types.DBSchemaInfo, 0),
+			want:        make([]catalog.Schema, 0),
 			wantQueries: 1,
 		},
 	}

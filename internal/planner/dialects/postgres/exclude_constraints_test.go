@@ -6,19 +6,19 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestPlanner_GenerateMigrationAST_CompositeForeignKeyAddition(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		ConstraintsAdded: []string{"fk_orders_accounts"},
-		ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{
+		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
 			{
 				Name:           "fk_orders_accounts",
 				TableName:      "orders",
@@ -32,7 +32,7 @@ func TestPlanner_GenerateMigrationAST_CompositeForeignKeyAddition(t *testing.T) 
 		},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, &goschema.Database{})
+	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, &schemamodel.Database{})
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -45,17 +45,17 @@ func TestPlanner_GenerateMigrationAST_CompositeForeignKeyAddition(t *testing.T) 
 func TestPlanner_GenerateMigrationAST_ConstraintsAdded(t *testing.T) {
 	tests := []struct {
 		name        string
-		diff        *types.SchemaDiff
-		generated   *goschema.Database
+		diff        *difftypes.SchemaDiff
+		desired     *schemamodel.Database
 		expectedSQL []string
 	}{
 		{
 			name: "EXCLUDE constraint added",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				ConstraintsAdded: []string{"no_overlapping_bookings"},
 			},
-			generated: &goschema.Database{
-				Constraints: []goschema.Constraint{
+			desired: &schemamodel.Database{
+				Constraints: []schemamodel.Constraint{
 					{
 						StructName:      "Booking",
 						Name:            "no_overlapping_bookings",
@@ -73,11 +73,11 @@ func TestPlanner_GenerateMigrationAST_ConstraintsAdded(t *testing.T) {
 		},
 		{
 			name: "EXCLUDE constraint without WHERE clause",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				ConstraintsAdded: []string{"unique_locations"},
 			},
-			generated: &goschema.Database{
-				Constraints: []goschema.Constraint{
+			desired: &schemamodel.Database{
+				Constraints: []schemamodel.Constraint{
 					{
 						StructName:      "Location",
 						Name:            "unique_locations",
@@ -94,11 +94,11 @@ func TestPlanner_GenerateMigrationAST_ConstraintsAdded(t *testing.T) {
 		},
 		{
 			name: "CHECK constraint added",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				ConstraintsAdded: []string{"positive_price"},
 			},
-			generated: &goschema.Database{
-				Constraints: []goschema.Constraint{
+			desired: &schemamodel.Database{
+				Constraints: []schemamodel.Constraint{
 					{
 						StructName:      "Product",
 						Name:            "positive_price",
@@ -114,11 +114,11 @@ func TestPlanner_GenerateMigrationAST_ConstraintsAdded(t *testing.T) {
 		},
 		{
 			name: "UNIQUE constraint added",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				ConstraintsAdded: []string{"unique_user_email"},
 			},
-			generated: &goschema.Database{
-				Constraints: []goschema.Constraint{
+			desired: &schemamodel.Database{
+				Constraints: []schemamodel.Constraint{
 					{
 						StructName: "User",
 						Name:       "unique_user_email",
@@ -134,11 +134,11 @@ func TestPlanner_GenerateMigrationAST_ConstraintsAdded(t *testing.T) {
 		},
 		{
 			name: "FOREIGN KEY constraint added",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				ConstraintsAdded: []string{"fk_user"},
 			},
-			generated: &goschema.Database{
-				Constraints: []goschema.Constraint{
+			desired: &schemamodel.Database{
+				Constraints: []schemamodel.Constraint{
 					{
 						StructName:    "Order",
 						Name:          "fk_user",
@@ -157,11 +157,11 @@ func TestPlanner_GenerateMigrationAST_ConstraintsAdded(t *testing.T) {
 		},
 		{
 			name: "Multiple constraints added",
-			diff: &types.SchemaDiff{
+			diff: &difftypes.SchemaDiff{
 				ConstraintsAdded: []string{"no_overlapping_bookings", "positive_price"},
 			},
-			generated: &goschema.Database{
-				Constraints: []goschema.Constraint{
+			desired: &schemamodel.Database{
+				Constraints: []schemamodel.Constraint{
 					{
 						StructName:      "Booking",
 						Name:            "no_overlapping_bookings",
@@ -191,7 +191,7 @@ func TestPlanner_GenerateMigrationAST_ConstraintsAdded(t *testing.T) {
 			c := qt.New(t)
 
 			planner := postgres.New()
-			nodes, err := planner.GenerateMigrationASTChecked(tt.diff, tt.generated)
+			nodes, err := planner.GenerateMigrationASTChecked(tt.diff, tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			// Convert AST nodes to SQL for verification
@@ -234,10 +234,10 @@ func TestPlanner_GenerateMigrationAST_ModifiedFK_ScopesDropToHostTable(t *testin
 		// drifted (its on_delete changed), so the comparator reports a modify for
 		// orders alone: orders appears in BOTH the additions and removals, while
 		// invoices appears nowhere.
-		diff := &types.SchemaDiff{
+		diff := &difftypes.SchemaDiff{
 			ConstraintsAdded:   []string{"fk_customer"},
 			ConstraintsRemoved: []string{"fk_customer"},
-			ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{
+			ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
 				{
 					Name:          "fk_customer",
 					TableName:     "orders",
@@ -248,12 +248,12 @@ func TestPlanner_GenerateMigrationAST_ModifiedFK_ScopesDropToHostTable(t *testin
 					OnDelete:      "CASCADE",
 				},
 			},
-			ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+			ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 				{Name: "fk_customer", TableName: "orders", Type: "FOREIGN KEY"},
 			},
 		}
 
-		nodes, err := postgres.New().GenerateMigrationASTChecked(diff, &goschema.Database{})
+		nodes, err := postgres.New().GenerateMigrationASTChecked(diff, &schemamodel.Database{})
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -288,10 +288,10 @@ func TestPlanner_GenerateMigrationAST_ModifiedFK_ScopesDropToHostTable(t *testin
 		// Both hosts drifted: each must be dropped from its own table and
 		// re-added with its own (distinct) action. Neither may rely on a
 		// name-only resolution that can only reach one table.
-		diff := &types.SchemaDiff{
+		diff := &difftypes.SchemaDiff{
 			ConstraintsAdded:   []string{"fk_customer"},
 			ConstraintsRemoved: []string{"fk_customer"},
-			ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{
+			ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
 				{
 					Name: "fk_customer", TableName: "orders", Type: "FOREIGN KEY",
 					Columns: []string{"customer_id"}, ForeignTable: "customers", ForeignColumn: "id", OnDelete: "CASCADE",
@@ -301,13 +301,13 @@ func TestPlanner_GenerateMigrationAST_ModifiedFK_ScopesDropToHostTable(t *testin
 					Columns: []string{"customer_id"}, ForeignTable: "customers", ForeignColumn: "id", OnDelete: "SET NULL",
 				},
 			},
-			ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+			ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 				{Name: "fk_customer", TableName: "orders", Type: "FOREIGN KEY"},
 				{Name: "fk_customer", TableName: "invoices", Type: "FOREIGN KEY"},
 			},
 		}
 
-		nodes, err := postgres.New().GenerateMigrationASTChecked(diff, &goschema.Database{})
+		nodes, err := postgres.New().GenerateMigrationASTChecked(diff, &schemamodel.Database{})
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -339,23 +339,23 @@ func TestPlanner_GenerateMigrationAST_ModifiedNonFKConstraint_ScopesDropToHostTa
 		// Both `articles` and `pages` carry a UNIQUE constraint literally named
 		// `uq_slug`. Only the one on `articles` drifted (a column was added), so
 		// the comparator reports a modify for articles alone.
-		diff := &types.SchemaDiff{
+		diff := &difftypes.SchemaDiff{
 			ConstraintsAdded:   []string{"uq_slug"},
 			ConstraintsRemoved: []string{"uq_slug"},
-			ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{
+			ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
 				{Name: "uq_slug", TableName: "articles", Type: "UNIQUE", Columns: []string{"slug", "locale"}},
 			},
-			ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+			ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 				{Name: "uq_slug", TableName: "articles", Type: "UNIQUE"},
 			},
 		}
-		generated := &goschema.Database{
-			Constraints: []goschema.Constraint{
+		desired := &schemamodel.Database{
+			Constraints: []schemamodel.Constraint{
 				{StructName: "Article", Name: "uq_slug", Type: "UNIQUE", Table: "articles", Columns: []string{"slug", "locale"}},
 			},
 		}
 
-		nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
+		nodes, err := postgres.New().GenerateMigrationASTChecked(diff, desired)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -388,17 +388,17 @@ func TestPlanner_GenerateMigrationAST_ModifiedNonFKConstraint_ScopesDropToHostTa
 		// only option. The real comparator never produces this shape (it fills
 		// the WithTables lists in lockstep), but the planner must not panic or
 		// silently drop the work.
-		diff := &types.SchemaDiff{
+		diff := &difftypes.SchemaDiff{
 			ConstraintsAdded:   []string{"legacy_check"},
 			ConstraintsRemoved: []string{"legacy_check"},
 		}
-		generated := &goschema.Database{
-			Constraints: []goschema.Constraint{
+		desired := &schemamodel.Database{
+			Constraints: []schemamodel.Constraint{
 				{StructName: "Thing", Name: "legacy_check", Type: "CHECK", Table: "things", CheckExpression: "x > 0"},
 			},
 		}
 
-		nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
+		nodes, err := postgres.New().GenerateMigrationASTChecked(diff, desired)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -441,19 +441,19 @@ func TestPlanner_GenerateMigrationAST_SharedConstraintName_ModifiedOnOneTablePur
 		// removed outright on `pages` (removal only). The FK modify on articles is
 		// owned by the ConstraintsAddedWithTables loop, so removeConstraints alone
 		// is responsible for dropping pages — which the bare-name skip got wrong.
-		diff := &types.SchemaDiff{
+		diff := &difftypes.SchemaDiff{
 			ConstraintsAdded:   []string{"shared_fk"},
 			ConstraintsRemoved: []string{"shared_fk"},
-			ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{
+			ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
 				{Name: "shared_fk", TableName: "articles", Type: "FOREIGN KEY", Columns: []string{"author_id"}, ForeignTable: "users", ForeignColumn: "id", OnDelete: "CASCADE"},
 			},
-			ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+			ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 				{Name: "shared_fk", TableName: "articles", Type: "FOREIGN KEY"},
 				{Name: "shared_fk", TableName: "pages", Type: "FOREIGN KEY"},
 			},
 		}
 
-		nodes, err := postgres.New().GenerateMigrationASTChecked(diff, &goschema.Database{})
+		nodes, err := postgres.New().GenerateMigrationASTChecked(diff, &schemamodel.Database{})
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -490,24 +490,24 @@ func TestPlanner_GenerateMigrationAST_SharedConstraintName_ModifiedOnOneTablePur
 		// discriminating assertion is the ORDER: the fix emits the pages-drop AFTER
 		// the articles re-add (removeConstraints runs later), whereas the pre-fix
 		// add-side phantom pre-drop emitted pages BEFORE the re-add.
-		diff := &types.SchemaDiff{
+		diff := &difftypes.SchemaDiff{
 			ConstraintsAdded:   []string{"shared_check"},
 			ConstraintsRemoved: []string{"shared_check"},
-			ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{
+			ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
 				{Name: "shared_check", TableName: "articles", Type: "CHECK"},
 			},
-			ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+			ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 				{Name: "shared_check", TableName: "articles", Type: "CHECK"},
 				{Name: "shared_check", TableName: "pages", Type: "CHECK"},
 			},
 		}
-		generated := &goschema.Database{
-			Constraints: []goschema.Constraint{
+		desired := &schemamodel.Database{
+			Constraints: []schemamodel.Constraint{
 				{StructName: "Article", Name: "shared_check", Type: "CHECK", Table: "articles", CheckExpression: "status IN ('draft', 'published')"},
 			},
 		}
 
-		nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
+		nodes, err := postgres.New().GenerateMigrationASTChecked(diff, desired)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -551,21 +551,21 @@ func TestPlanner_GenerateMigrationAST_ModifyDrop_ScopesToHostWhenAddedHostsAbsen
 
 	// A non-FK modify shaped like a reverse/down diff: the removal host is known
 	// (ConstraintsRemovedWithTables) but ConstraintsAddedWithTables is empty.
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		ConstraintsAdded:           []string{"chk_down"},
 		ConstraintsRemoved:         []string{"chk_down"},
 		ConstraintsAddedWithTables: nil,
-		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 			{Name: "chk_down", TableName: "things", Type: "CHECK"},
 		},
 	}
-	generated := &goschema.Database{
-		Constraints: []goschema.Constraint{
+	desired := &schemamodel.Database{
+		Constraints: []schemamodel.Constraint{
 			{StructName: "Thing", Name: "chk_down", Type: "CHECK", Table: "things", CheckExpression: "qty >= 0"},
 		},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
+	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -587,13 +587,13 @@ func TestPlanner_GenerateMigrationAST_ModifyDrop_ScopesToHostWhenAddedHostsAbsen
 func TestPlanner_GenerateMigrationAST_ConstraintsRemoved(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		ConstraintsRemoved: []string{"old_constraint"},
 	}
-	generated := &goschema.Database{}
+	desired := &schemamodel.Database{}
 
 	pl := postgres.New()
-	nodes, err := pl.GenerateMigrationASTChecked(diff, generated)
+	nodes, err := pl.GenerateMigrationASTChecked(diff, desired)
 	c.Assert(err, qt.IsNil)
 
 	// One DO block per removed constraint. The previous implementation emitted
@@ -627,10 +627,10 @@ func TestPlanner_GenerateMigrationAST_ConstraintsRemoved_MultipleSplitCleanly(t 
 	// the SQL statement splitter. The regression this guards against is the
 	// missing `;` in VisitRawSQL: without it, two DO blocks merge into one
 	// chunk and Postgres rejects the second `DO`.
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		ConstraintsRemoved: []string{"first_constraint", "second_constraint"},
 	}
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, &goschema.Database{}, "postgres")
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, &schemamodel.Database{}, "postgres")
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 2,
 		qt.Commentf("each DO block must end up as its own statement after SQL splitting; got %d statements:\n%s",
@@ -646,11 +646,11 @@ func TestPlanner_GenerateMigrationAST_ConstraintsRemoved_EscapesSingleQuoteInNam
 	// DO block interpolates the constraint name into five distinct contexts
 	// (one SQL literal, one EXECUTE format() argument, two RAISE NOTICE
 	// strings, one SQL comment) and every literal substitution must escape.
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		ConstraintsRemoved: []string{"don't_drop"},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, &goschema.Database{})
+	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, &schemamodel.Database{})
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 1)
 
@@ -692,8 +692,8 @@ func TestPlanner_GenerateMigrationAST_ConstraintsRemoved_RejectsUnsafeName(t *te
 	for _, tc := range cases {
 		t.Run(tc.input, func(t *testing.T) {
 			c := qt.New(t)
-			diff := &types.SchemaDiff{ConstraintsRemoved: []string{tc.input}}
-			nodes, err := postgres.New().GenerateMigrationASTChecked(diff, &goschema.Database{})
+			diff := &difftypes.SchemaDiff{ConstraintsRemoved: []string{tc.input}}
+			nodes, err := postgres.New().GenerateMigrationASTChecked(diff, &schemamodel.Database{})
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.HasLen, 1)
 

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // enum reads `Enum name { value ... }`.
@@ -19,7 +19,7 @@ func (p *parser) enum() error {
 	if err := p.expectPunct("{"); err != nil {
 		return err
 	}
-	enum := goschema.Enum{Name: name, Schema: schema}
+	enum := schemamodel.Enum{Name: name, Schema: schema}
 	for !p.isPunct("}") {
 		if p.tok.kind == tokenEOF {
 			return p.errorf("unterminated enum %q", name)
@@ -69,7 +69,7 @@ func (p *parser) table() error {
 	}
 
 	structName := structNameFor(schema, name)
-	table := goschema.Table{StructName: structName, Name: name, Schema: schema}
+	table := schemamodel.Table{StructName: structName, Name: name, Schema: schema}
 	p.tableStruct[structName] = name
 
 	for !p.isPunct("}") {
@@ -141,7 +141,7 @@ func (p *parser) column(structName, schema string) error {
 	if err != nil {
 		return err
 	}
-	field := goschema.Field{
+	field := schemamodel.Field{
 		StructName: structName,
 		FieldName:  name,
 		Name:       name,

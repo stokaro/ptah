@@ -8,10 +8,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestRejectMaterializedViews_AsksTheCapabilityNotThePlanner holds the decision
@@ -42,7 +42,7 @@ func TestRejectMaterializedViews_AsksTheCapabilityNotThePlanner(t *testing.T) {
 			c := qt.New(t)
 
 			planner := NewForDialect(test.dialect, capability.ForDialect(test.dialect))
-			err := planner.rejectMaterializedViews(&types.SchemaDiff{
+			err := planner.rejectMaterializedViews(&difftypes.SchemaDiff{
 				MaterializedViewsAdded: []string{"mv_sales"},
 			})
 
@@ -59,7 +59,7 @@ func TestRejectMaterializedViews_SaysNothingWhenTheDiffCarriesNone(t *testing.T)
 
 	for _, dialect := range []string{platform.MySQL, platform.MariaDB, platform.SQLServer, platform.Oracle} {
 		planner := NewForDialect(dialect, capability.ForDialect(dialect))
-		c.Assert(planner.rejectMaterializedViews(&types.SchemaDiff{}), qt.IsNil,
+		c.Assert(planner.rejectMaterializedViews(&difftypes.SchemaDiff{}), qt.IsNil,
 			qt.Commentf("dialect %s", dialect))
 	}
 }
@@ -73,31 +73,31 @@ func TestRejectMaterializedViews_SaysNothingWhenTheDiffCarriesNone(t *testing.T)
 func TestMaterializedViewPlanning_EmitsTheThreeStatementsAChangeNeeds(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		MaterializedViews: []goschema.MaterializedView{
+	desired := &schemamodel.Database{
+		MaterializedViews: []schemamodel.MaterializedView{
 			{Name: "order_totals", Body: "SELECT id, amount FROM orders"},
 		},
 	}
 	planner := NewForDialect(platform.Oracle, capability.ForDialect(platform.Oracle))
 
-	added := planner.addNewMaterializedViews(nil, &types.SchemaDiff{
+	added := planner.addNewMaterializedViews(nil, &difftypes.SchemaDiff{
 		MaterializedViewsAdded: []string{"order_totals"},
-	}, generated)
+	}, desired)
 	c.Assert(added, qt.HasLen, 1)
 
-	modified := planner.modifyExistingMaterializedViews(nil, &types.SchemaDiff{
-		MaterializedViewsModified: []types.MaterializedViewDiff{{ViewName: "order_totals"}},
-	}, generated)
+	modified := planner.modifyExistingMaterializedViews(nil, &difftypes.SchemaDiff{
+		MaterializedViewsModified: []difftypes.MaterializedViewDiff{{ViewName: "order_totals"}},
+	}, desired)
 	c.Assert(modified, qt.HasLen, 2)
 
-	removed := planner.removeMaterializedViews(nil, &types.SchemaDiff{
+	removed := planner.removeMaterializedViews(nil, &difftypes.SchemaDiff{
 		MaterializedViewsRemoved: []string{"order_totals"},
 	})
 	c.Assert(removed, qt.HasLen, 1)
 
 	// A name the declaration does not carry produces nothing rather than a nil
 	// node the renderer would have to survive.
-	c.Assert(planner.addNewMaterializedViews(nil, &types.SchemaDiff{
+	c.Assert(planner.addNewMaterializedViews(nil, &difftypes.SchemaDiff{
 		MaterializedViewsAdded: []string{"absent"},
-	}, generated), qt.HasLen, 0)
+	}, desired), qt.HasLen, 0)
 }

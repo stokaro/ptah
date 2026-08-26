@@ -5,10 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemachange"
 	"go.5x5.cz/ptah/internal/schemastate"
 )
@@ -22,34 +22,34 @@ import (
 func TestAnIndexIsPlanned(t *testing.T) {
 	tests := []struct {
 		name          string
-		description   *goschema.Database
-		catalog       *dbschematypes.DBSchema
+		description   *schemamodel.Database
+		current       *catalog.Database
 		wantOperation schemachange.Operation
 		wantChanged   []string
 	}{
 		{
 			name:          "declared and absent from the database",
 			description:   indexedWidget(false, "a", "b"),
-			catalog:       indexedWidgetCatalog(false),
+			current:       indexedWidgetCatalog(false),
 			wantOperation: schemachange.Add,
 		},
 		{
 			name:          "present and no longer declared",
 			description:   indexedWidget(false),
-			catalog:       indexedWidgetCatalog(false, "a", "b"),
+			current:       indexedWidgetCatalog(false, "a", "b"),
 			wantOperation: schemachange.Remove,
 		},
 		{
 			name:          "declared over different columns",
 			description:   indexedWidget(false, "a"),
-			catalog:       indexedWidgetCatalog(false, "a", "b"),
+			current:       indexedWidgetCatalog(false, "a", "b"),
 			wantOperation: schemachange.Modify,
 			wantChanged:   []string{"columns"},
 		},
 		{
 			name:          "declared unique where the database has it plain",
 			description:   indexedWidget(true, "a", "b"),
-			catalog:       indexedWidgetCatalog(false, "a", "b"),
+			current:       indexedWidgetCatalog(false, "a", "b"),
 			wantOperation: schemachange.Modify,
 			wantChanged:   []string{"uniqueness"},
 		},
@@ -59,7 +59,7 @@ func TestAnIndexIsPlanned(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			changes := changesFor(c, test.description, test.catalog)
+			changes := changesFor(c, test.description, test.current)
 
 			c.Assert(changes, qt.HasLen, 1)
 			c.Assert(string(changes[0].ID.Kind), qt.Equals, "index")
@@ -91,10 +91,10 @@ func TestAnUnchangedIndexIsNotAChange(t *testing.T) {
 // the part the reader could not see.
 func TestAKeyTheReaderCouldNotNameIsNotRebuilt(t *testing.T) {
 	c := qt.New(t)
-	catalog := indexedWidgetCatalog(false, "a")
-	catalog.Indexes[0].KeyPartsIncomplete = true
+	current := indexedWidgetCatalog(false, "a")
+	current.Indexes[0].KeyPartsIncomplete = true
 
-	changes := changesFor(c, indexedWidget(false, "a", "b"), catalog)
+	changes := changesFor(c, indexedWidget(false, "a", "b"), current)
 
 	c.Assert(changes, qt.HasLen, 0)
 }
@@ -116,24 +116,24 @@ func TestAnIndexInAnUndescribedSchemaIsNotDropped(t *testing.T) {
 
 // indexedWidget is a table carrying an index over the given columns, or none
 // when they are absent.
-func indexedWidget(unique bool, columns ...string) *goschema.Database {
+func indexedWidget(unique bool, columns ...string) *schemamodel.Database {
 	description := describedTable(
-		goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
-		goschema.Field{StructName: "Widget", Name: "a", Type: "text", Nullable: true},
-		goschema.Field{StructName: "Widget", Name: "b", Type: "text", Nullable: true},
+		schemamodel.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+		schemamodel.Field{StructName: "Widget", Name: "a", Type: "text", Nullable: true},
+		schemamodel.Field{StructName: "Widget", Name: "b", Type: "text", Nullable: true},
 	)
 	return withDeclaredIndex(description, unique, columns)
 }
 
 func withDeclaredIndex(
-	description *goschema.Database,
+	description *schemamodel.Database,
 	unique bool,
 	columns []string,
-) *goschema.Database {
-	return map[bool]func() *goschema.Database{
-		true: func() *goschema.Database { return description },
-		false: func() *goschema.Database {
-			description.Indexes = append(description.Indexes, goschema.Index{
+) *schemamodel.Database {
+	return map[bool]func() *schemamodel.Database{
+		true: func() *schemamodel.Database { return description },
+		false: func() *schemamodel.Database {
+			description.Indexes = append(description.Indexes, schemamodel.Index{
 				StructName: "Widget", Name: "idx_widget_ab", Fields: columns, Unique: unique,
 			})
 			return description
@@ -142,28 +142,28 @@ func withDeclaredIndex(
 }
 
 // indexedWidgetCatalog is that table as a catalog read reports it.
-func indexedWidgetCatalog(unique bool, columns ...string) *dbschematypes.DBSchema {
-	catalog := catalogTable(
-		dbschematypes.DBColumn{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
-		dbschematypes.DBColumn{Name: "a", DataType: "text", IsNullable: "YES"},
-		dbschematypes.DBColumn{Name: "b", DataType: "text", IsNullable: "YES"},
+func indexedWidgetCatalog(unique bool, columns ...string) *catalog.Database {
+	current := catalogTable(
+		catalog.Column{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
+		catalog.Column{Name: "a", DataType: "text", IsNullable: "YES"},
+		catalog.Column{Name: "b", DataType: "text", IsNullable: "YES"},
 	)
-	return withCatalogIndex(catalog, unique, columns)
+	return withCatalogIndex(current, unique, columns)
 }
 
 func withCatalogIndex(
-	catalog *dbschematypes.DBSchema,
+	current *catalog.Database,
 	unique bool,
 	columns []string,
-) *dbschematypes.DBSchema {
-	return map[bool]func() *dbschematypes.DBSchema{
-		true: func() *dbschematypes.DBSchema { return catalog },
-		false: func() *dbschematypes.DBSchema {
-			catalog.Indexes = append(catalog.Indexes, dbschematypes.DBIndex{
+) *catalog.Database {
+	return map[bool]func() *catalog.Database{
+		true: func() *catalog.Database { return current },
+		false: func() *catalog.Database {
+			current.Indexes = append(current.Indexes, catalog.Index{
 				Name: "idx_widget_ab", TableName: "widget", Schema: "public",
 				Columns: columns, IsUnique: unique,
 			})
-			return catalog
+			return current
 		},
 	}[len(columns) == 0]()
 }

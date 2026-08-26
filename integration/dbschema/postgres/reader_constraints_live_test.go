@@ -14,8 +14,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/jackc/pgx/v5"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
@@ -127,7 +127,7 @@ func dropConstraintIdentityFixture(
 	c.Check(err, qt.IsNil)
 }
 
-func observeConstraints(constraints []dbschematypes.DBConstraint) []observedConstraint {
+func observeConstraints(constraints []catalog.Constraint) []observedConstraint {
 	observed := make([]observedConstraint, 0)
 	for _, constraint := range constraints {
 		if !slices.Contains([]string{"ck_entity_amount", "fk_entity_tenant"}, constraint.Name) &&

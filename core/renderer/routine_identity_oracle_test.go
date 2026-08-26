@@ -5,10 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // TestValidateSchema_OracleRefusesTwoRoutinesItCannotTellApart is the check
@@ -23,7 +23,7 @@ import (
 // them is gone, and nothing names it.
 func TestValidateSchema_OracleRefusesTwoRoutinesItCannotTellApart(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{Functions: []goschema.Function{
+	database := &schemamodel.Database{Functions: []schemamodel.Function{
 		oracleCaseFunction("zz_case", "BEGIN\n  RETURN 1;\nEND;"),
 		oracleCaseFunction("ZZ_CASE", "BEGIN\n  RETURN 2;\nEND;"),
 	}}
@@ -41,7 +41,7 @@ func TestValidateSchema_OracleRefusesTwoRoutinesItCannotTellApart(t *testing.T) 
 // making every ordinary schema unrenderable.
 func TestValidateSchema_OracleAcceptsTwoRoutinesItCanTellApart(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{Functions: []goschema.Function{
+	database := &schemamodel.Database{Functions: []schemamodel.Function{
 		oracleCaseFunction("zz_case", "BEGIN\n  RETURN 1;\nEND;"),
 		oracleCaseFunction("zz_other", "BEGIN\n  RETURN 2;\nEND;"),
 	}}
@@ -49,8 +49,8 @@ func TestValidateSchema_OracleAcceptsTwoRoutinesItCanTellApart(t *testing.T) {
 	c.Assert(renderer.ValidateSchemaWithCapabilities(database, platform.Oracle, capability.Oracle23()), qt.IsNil)
 }
 
-func oracleCaseFunction(name, body string) goschema.Function {
-	return goschema.Function{
+func oracleCaseFunction(name, body string) schemamodel.Function {
+	return schemamodel.Function{
 		Name:       name,
 		Returns:    "NUMBER",
 		Language:   "plsql",

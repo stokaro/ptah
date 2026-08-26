@@ -21,8 +21,8 @@ import (
 	"strconv"
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/sqlrunner"
 )
 
@@ -66,16 +66,16 @@ func NewOracleReaderWithCapabilities(
 }
 
 // ReadSchema is [Reader.ReadSchemaContext] under context.Background(), the
-// context-free half of the pair [types.SchemaReader] declares. Prefer the
+// context-free half of the pair [catalog.SchemaReader] declares. Prefer the
 // Context form: only it can be told to stop.
-func (r *Reader) ReadSchema() (*types.DBSchema, error) {
+func (r *Reader) ReadSchema() (*catalog.Database, error) {
 	return r.ReadSchemaContext(context.Background())
 }
 
 // ReadSchemaContext reads the objects Ptah renders for Oracle.
-func (r *Reader) ReadSchemaContext(ctx context.Context) (*types.DBSchema, error) {
-	schema := &types.DBSchema{
-		Schemas: []types.DBSchemaInfo{{Name: r.schema}},
+func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, error) {
+	schema := &catalog.Database{
+		Schemas: []catalog.Schema{{Name: r.schema}},
 	}
 
 	tables, err := r.readTables(ctx)
@@ -165,11 +165,11 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*types.DBSchema, error)
 // nothing is lost by removing the row afterwards. A constraint the user named
 // arrives with generated = 'USER NAME' and is kept, because that one does have a
 // counterpart (stokaro/ptah#1890).
-func withoutGeneratedKeys(constraints []types.DBConstraint, generated map[string]bool) []types.DBConstraint {
+func withoutGeneratedKeys(constraints []catalog.Constraint, generated map[string]bool) []catalog.Constraint {
 	if len(generated) == 0 {
 		return constraints
 	}
-	kept := make([]types.DBConstraint, 0, len(constraints))
+	kept := make([]catalog.Constraint, 0, len(constraints))
 	for _, constraint := range constraints {
 		if generated[constraint.Name] {
 			continue
@@ -191,16 +191,16 @@ WHERE t.owner = :1
   AND t.dropped = 'NO'
 ORDER BY t.table_name`
 
-func (r *Reader) readTables(ctx context.Context) ([]types.DBTable, error) {
+func (r *Reader) readTables(ctx context.Context) ([]catalog.Table, error) {
 	rows, err := r.db.QueryContext(ctx, tableQuery, r.schema)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var tables []types.DBTable
+	var tables []catalog.Table
 	for rows.Next() {
-		var table types.DBTable
+		var table catalog.Table
 		var comment string
 		if err := rows.Scan(&table.Name, &comment); err != nil {
 			return nil, err
@@ -260,18 +260,18 @@ WHERE c.owner = :1
   AND c.table_name NOT LIKE 'BIN$%'
 ORDER BY c.table_name, c.column_id`
 
-func (r *Reader) readColumns(ctx context.Context) (map[string][]types.DBColumn, error) {
+func (r *Reader) readColumns(ctx context.Context) (map[string][]catalog.Column, error) {
 	rows, err := r.db.QueryContext(ctx, columnQuery, r.schema)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	columns := make(map[string][]types.DBColumn)
+	columns := make(map[string][]catalog.Column)
 	for rows.Next() {
 		var (
 			table      string
-			column     types.DBColumn
+			column     catalog.Column
 			charLength sql.NullInt64
 			precision  sql.NullInt64
 			scale      sql.NullInt64
@@ -337,7 +337,7 @@ WHERE c.owner = :1
            AND REGEXP_LIKE(c.search_condition_vc, '^"[^"]+" IS NOT NULL$'))
 ORDER BY c.table_name, c.constraint_name, col.position`
 
-func (r *Reader) readConstraints(ctx context.Context) ([]types.DBConstraint, map[string]bool, error) {
+func (r *Reader) readConstraints(ctx context.Context) ([]catalog.Constraint, map[string]bool, error) {
 	// The referenced keys are read BEFORE the constraint rows are opened, and
 	// the order is load-bearing rather than tidy.
 	//
@@ -366,7 +366,7 @@ func (r *Reader) readConstraints(ctx context.Context) ([]types.DBConstraint, map
 	defer rows.Close()
 
 	var (
-		constraints []types.DBConstraint
+		constraints []catalog.Constraint
 		index       = make(map[string]int)
 	)
 	generatedKeys := make(map[string]bool)
@@ -435,8 +435,8 @@ type constraintRow struct {
 // foreign-key half needs the second catalog read: Oracle records the target as
 // the NAME of the unique or primary-key constraint it references rather than as
 // a table and a column list.
-func (r *Reader) newConstraint(row constraintRow, referenced map[string]referencedKey) types.DBConstraint {
-	constraint := types.DBConstraint{
+func (r *Reader) newConstraint(row constraintRow, referenced map[string]referencedKey) catalog.Constraint {
+	constraint := catalog.Constraint{
 		Name:       row.name,
 		TableName:  row.table,
 		Schema:     r.schema,
@@ -528,16 +528,16 @@ FROM all_ind_columns ic
 WHERE ic.index_owner = :1
 ORDER BY ic.index_name, ic.column_position`
 
-func (r *Reader) readIndexes(ctx context.Context) ([]types.DBIndex, error) {
+func (r *Reader) readIndexes(ctx context.Context) ([]catalog.Index, error) {
 	rows, err := r.db.QueryContext(ctx, indexQuery, r.schema)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var indexes []types.DBIndex
+	var indexes []catalog.Index
 	for rows.Next() {
-		var index types.DBIndex
+		var index catalog.Index
 		var uniqueness, indexType string
 		if err := rows.Scan(&index.Name, &index.TableName, &uniqueness, &indexType); err != nil {
 			return nil, err
@@ -566,21 +566,21 @@ func (r *Reader) readIndexes(ctx context.Context) ([]types.DBIndex, error) {
 	return indexes, nil
 }
 
-func (r *Reader) readIndexColumns(ctx context.Context) (map[string][]types.DBIndexPart, error) {
+func (r *Reader) readIndexColumns(ctx context.Context) (map[string][]catalog.IndexPart, error) {
 	rows, err := r.db.QueryContext(ctx, indexColumnQuery, r.schema)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	parts := make(map[string][]types.DBIndexPart)
+	parts := make(map[string][]catalog.IndexPart)
 	for rows.Next() {
 		var index, column, descend string
 		var position sql.NullInt64
 		if err := rows.Scan(&index, &column, &descend, &position); err != nil {
 			return nil, err
 		}
-		parts[index] = append(parts[index], types.DBIndexPart{
+		parts[index] = append(parts[index], catalog.IndexPart{
 			Name: column,
 			Desc: descend == "DESC",
 		})
@@ -615,17 +615,17 @@ WHERE s.sequence_owner = :1
         WHERE i.owner = s.sequence_owner AND i.sequence_name = s.sequence_name)
 ORDER BY s.sequence_name`
 
-func (r *Reader) readSequences(ctx context.Context) ([]types.DBSequence, error) {
+func (r *Reader) readSequences(ctx context.Context) ([]catalog.Sequence, error) {
 	rows, err := r.db.QueryContext(ctx, sequenceQuery, r.schema)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var sequences []types.DBSequence
+	var sequences []catalog.Sequence
 	for rows.Next() {
 		var (
-			sequence   types.DBSequence
+			sequence   catalog.Sequence
 			minValue   sql.NullString
 			maxValue   sql.NullString
 			increment  sql.NullString
@@ -654,16 +654,16 @@ FROM all_views v
 WHERE v.owner = :1
 ORDER BY v.view_name`
 
-func (r *Reader) readViews(ctx context.Context) ([]types.DBView, error) {
+func (r *Reader) readViews(ctx context.Context) ([]catalog.View, error) {
 	rows, err := r.db.QueryContext(ctx, viewQuery, r.schema)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var views []types.DBView
+	var views []catalog.View
 	for rows.Next() {
-		var view types.DBView
+		var view catalog.View
 		var body string
 		if err := rows.Scan(&view.Name, &body); err != nil {
 			return nil, err
@@ -686,16 +686,16 @@ FROM all_mviews m
 WHERE m.owner = :1
 ORDER BY m.mview_name`
 
-func (r *Reader) readMaterializedViews(ctx context.Context) ([]types.DBMatView, error) {
+func (r *Reader) readMaterializedViews(ctx context.Context) ([]catalog.MaterializedView, error) {
 	rows, err := r.db.QueryContext(ctx, matViewQuery, r.schema)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var views []types.DBMatView
+	var views []catalog.MaterializedView
 	for rows.Next() {
-		var view types.DBMatView
+		var view catalog.MaterializedView
 		var body sql.NullString
 		if err := rows.Scan(&view.Name, &body); err != nil {
 			return nil, err
@@ -709,7 +709,7 @@ func (r *Reader) readMaterializedViews(ctx context.Context) ([]types.DBMatView, 
 
 // markKeyColumns copies the constraint facts onto the columns they describe.
 //
-// IsPrimaryKey and IsUnique are derived fields on DBColumn, and every reader
+// IsPrimaryKey and IsUnique are derived fields on catalog.Column, and every reader
 // here fills them from its constraint read rather than from a column flag,
 // because no catalog carries them on the column.
 // formatColumnType composes the spelling a declaration would have written.
@@ -748,7 +748,7 @@ func formatColumnType(dataType string, charLength, precision, scale sql.NullInt6
 	}
 }
 
-func markKeyColumns(schema *types.DBSchema) {
+func markKeyColumns(schema *catalog.Database) {
 	primary := make(map[string]map[string]bool)
 	unique := make(map[string]map[string]bool)
 	for _, constraint := range schema.Constraints {
@@ -793,7 +793,7 @@ func markKeyColumns(schema *types.DBSchema) {
 //
 // VIRTUAL_COLUMN and IDENTITY_COLUMN separate the three cases, and in both of
 // those two the value is Oracle's own bookkeeping rather than a declaration.
-func assignDefault(column *types.DBColumn, identity, virtual bool, def sql.NullString) {
+func assignDefault(column *catalog.Column, identity, virtual bool, def sql.NullString) {
 	value := defaultPointer(def)
 	switch {
 	case virtual:

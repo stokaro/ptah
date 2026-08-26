@@ -16,7 +16,7 @@ import (
 	"github.com/zclconf/go-cty/cty/convert"
 
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/pgindexstorage"
 	"go.5x5.cz/ptah/internal/tableref"
 )
@@ -46,7 +46,7 @@ type Options struct {
 	// declares, in file order, one call per block. Optional; nil discards them.
 	//
 	// It reports blocks rather than schemas because those are two different
-	// numbers and the caller needs the first: `goschema.Finalize` folds two
+	// numbers and the caller needs the first: `schemamodel.Finalize` folds two
 	// `schema "main"` blocks into one schema, and the pinned Atlas community
 	// binary v1.3.0 counts that document as two. See [declaredSchemaBlocks].
 	//
@@ -85,18 +85,18 @@ type Options struct {
 
 // ParseFile parses an HCL schema file into the same Database IR used by
 // Go annotations and YAML schema files.
-func ParseFile(path string) (*goschema.Database, error) {
+func ParseFile(path string) (*schemamodel.Database, error) {
 	return ParseFileWithOptions(path, Options{})
 }
 
 // Parse parses HCL schema text into the same Database IR used by Go
 // annotations and YAML schema files.
-func Parse(data []byte, filename string) (*goschema.Database, error) {
+func Parse(data []byte, filename string) (*schemamodel.Database, error) {
 	return ParseWithOptions(data, filename, Options{})
 }
 
 // ParseFileWithOptions parses an HCL schema file under the given options.
-func ParseFileWithOptions(path string, opts Options) (*goschema.Database, error) {
+func ParseFileWithOptions(path string, opts Options) (*schemamodel.Database, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read HCL schema file: %w", err)
@@ -106,7 +106,7 @@ func ParseFileWithOptions(path string, opts Options) (*goschema.Database, error)
 }
 
 // ParseWithOptions parses HCL schema text under the given options.
-func ParseWithOptions(data []byte, filename string, opts Options) (*goschema.Database, error) {
+func ParseWithOptions(data []byte, filename string, opts Options) (*schemamodel.Database, error) {
 	if filename == "" {
 		filename = "schema.hcl"
 	}
@@ -124,7 +124,7 @@ func ParseWithOptions(data []byte, filename string, opts Options) (*goschema.Dat
 		src:             data,
 		filename:        filename,
 		sourceDir:       filepath.Dir(filename),
-		db:              &goschema.Database{},
+		db:              &schemamodel.Database{},
 		tolerant:        opts.IgnoreUnknownNames,
 		recordIgnored:   opts.RecordIgnored,
 		refContext:      columnRefContext(body),
@@ -186,7 +186,7 @@ func ParseWithOptions(data []byte, filename string, opts Options) (*goschema.Dat
 	if err := p.rejectRedeclarations(); err != nil {
 		return nil, err
 	}
-	goschema.Finalize(p.db)
+	schemamodel.Finalize(p.db)
 	// A document's own account of its limits is part of the document. It rides
 	// in the leading comment header rather than in a block, because it has to
 	// survive being read by tools that are not Ptah -- the pinned Atlas
@@ -255,7 +255,7 @@ type parser struct {
 	src       []byte
 	filename  string
 	sourceDir string
-	db        *goschema.Database
+	db        *schemamodel.Database
 
 	// ctx carries the var. and local. namespaces and the function set every
 	// attribute is evaluated against. It is never nil once Parse has built it.
@@ -383,7 +383,7 @@ func (p *parser) parseSchema(block *hclsyntax.Block) error {
 	if err := p.rejectUnsupportedSchemaBody(block); err != nil {
 		return err
 	}
-	p.db.Schemas = append(p.db.Schemas, goschema.Schema{
+	p.db.Schemas = append(p.db.Schemas, schemamodel.Schema{
 		Name:    block.Labels[0],
 		Comment: p.optionalString(block.Body.Attributes["comment"]),
 		Charset: p.optionalString(block.Body.Attributes["charset"]),
@@ -445,7 +445,7 @@ func (p *parser) parseEnum(block *hclsyntax.Block) error {
 	// enum belonging to nothing, and applying it created the type in whatever
 	// schema the connection defaulted to (stokaro/ptah#1276). A `function`
 	// block's schema has always been read here; an enum's is the same fact.
-	p.db.Enums = append(p.db.Enums, goschema.Enum{
+	p.db.Enums = append(p.db.Enums, schemamodel.Enum{
 		Name:   labels.name,
 		Schema: labels.schema,
 		Values: values,
@@ -480,7 +480,7 @@ func (p *parser) parseTable(block *hclsyntax.Block) error {
 		return err
 	}
 
-	table := goschema.Table{
+	table := schemamodel.Table{
 		StructName:    hclTableStructName(labels.schema, labels.name),
 		Name:          labels.name,
 		Schema:        labels.schema,
@@ -555,7 +555,7 @@ func (p *parser) tableLabels(block *hclsyntax.Block) (tableLabels, error) {
 	}
 }
 
-func (p *parser) parseTableBlock(table *goschema.Table, fieldsStart, unlabeledCheckOrdinal int, block *hclsyntax.Block) error {
+func (p *parser) parseTableBlock(table *schemamodel.Table, fieldsStart, unlabeledCheckOrdinal int, block *hclsyntax.Block) error {
 	switch block.Type {
 	case "column":
 		field, err := p.parseColumn(table.StructName, block)
@@ -624,7 +624,7 @@ func (p *parser) parseTableBlock(table *goschema.Table, fieldsStart, unlabeledCh
 	return nil
 }
 
-func (p *parser) parseAdditionalTableBlock(table *goschema.Table, block *hclsyntax.Block) error {
+func (p *parser) parseAdditionalTableBlock(table *schemamodel.Table, block *hclsyntax.Block) error {
 	switch block.Type {
 	case "constraint":
 		constraint, err := p.parseConstraint(table, block)
@@ -641,47 +641,47 @@ func (p *parser) parseAdditionalTableBlock(table *goschema.Table, block *hclsynt
 	return nil
 }
 
-func (p *parser) parseColumn(structName string, block *hclsyntax.Block) (goschema.Field, error) {
+func (p *parser) parseColumn(structName string, block *hclsyntax.Block) (schemamodel.Field, error) {
 	if len(block.Labels) != 1 {
-		return goschema.Field{}, p.blockError(block, "column block requires exactly one label")
+		return schemamodel.Field{}, p.blockError(block, "column block requires exactly one label")
 	}
 	name := block.Labels[0]
 	typeAttr, ok := block.Body.Attributes["type"]
 	if !ok {
-		return goschema.Field{}, p.blockError(block, "column %q requires type", name)
+		return schemamodel.Field{}, p.blockError(block, "column %q requires type", name)
 	}
 	if err := p.rejectUnsupportedColumnAttrs(block); err != nil {
-		return goschema.Field{}, err
+		return schemamodel.Field{}, err
 	}
 	// Once, here, rather than in each of the two body walks below: they both
 	// iterate the same blocks, so leaving the gate in their default arms would
 	// report a dropped name twice.
 	if err := p.rejectUnsupportedColumnBlocks(block); err != nil {
-		return goschema.Field{}, err
+		return schemamodel.Field{}, err
 	}
 	generated, err := p.parseGeneratedColumn(block)
 	if err != nil {
-		return goschema.Field{}, err
+		return schemamodel.Field{}, err
 	}
 	identity, err := p.parseIdentityColumn(block)
 	if err != nil {
-		return goschema.Field{}, err
+		return schemamodel.Field{}, err
 	}
 	if generated.expression != "" && identity.generation != "" {
-		return goschema.Field{}, p.blockError(block, "column cannot mix as and identity blocks")
+		return schemamodel.Field{}, p.blockError(block, "column cannot mix as and identity blocks")
 	}
 	overrides, err := p.parsePlatformOverrides(block, "column")
 	if err != nil {
-		return goschema.Field{}, err
+		return schemamodel.Field{}, err
 	}
 	enumValues, err := p.stringListAttr(block, "enum")
 	if err != nil {
-		return goschema.Field{}, err
+		return schemamodel.Field{}, err
 	}
 
 	columnType, typeRawSQL := p.columnTypeName(block, typeAttr)
 
-	field := goschema.Field{
+	field := schemamodel.Field{
 		StructName:          structName,
 		FieldName:           name,
 		Name:                name,
@@ -805,66 +805,66 @@ func (p *parser) parseIdentityColumn(block *hclsyntax.Block) (identityColumnSpec
 	}, nil
 }
 
-func (p *parser) parseIndex(structName, tableName string, block *hclsyntax.Block) (goschema.Index, error) {
+func (p *parser) parseIndex(structName, tableName string, block *hclsyntax.Block) (schemamodel.Index, error) {
 	if len(block.Labels) != 1 {
-		return goschema.Index{}, p.blockError(block, "index block requires exactly one label")
+		return schemamodel.Index{}, p.blockError(block, "index block requires exactly one label")
 	}
 	// Gated before the mix check so a dropped block name does not read as an
 	// `on` block and turn tolerance into "cannot mix columns with on blocks".
 	onBlocks, err := p.indexOnBlocks(block)
 	if err != nil {
-		return goschema.Index{}, err
+		return schemamodel.Index{}, err
 	}
 	if block.Body.Attributes["columns"] != nil && len(onBlocks) > 0 {
-		return goschema.Index{}, p.blockError(onBlocks[0], "index cannot mix columns attribute with on blocks")
+		return schemamodel.Index{}, p.blockError(onBlocks[0], "index cannot mix columns attribute with on blocks")
 	}
 	columns, err := p.parseColumnsAttr(block, "columns")
 	if err != nil {
-		return goschema.Index{}, err
+		return schemamodel.Index{}, err
 	}
 	include, err := p.parseColumnsAttr(block, "include")
 	if err != nil {
-		return goschema.Index{}, err
+		return schemamodel.Index{}, err
 	}
-	var parts []goschema.IndexPart
+	var parts []schemamodel.IndexPart
 	if len(columns) == 0 {
 		columns, parts, err = p.parseIndexParts(onBlocks)
 		if err != nil {
-			return goschema.Index{}, err
+			return schemamodel.Index{}, err
 		}
 	}
 	if len(columns) == 0 {
-		return goschema.Index{}, p.blockError(block, "index %q requires columns or parts", block.Labels[0])
+		return schemamodel.Index{}, p.blockError(block, "index %q requires columns or parts", block.Labels[0])
 	}
 	if err := p.rejectUnsupportedIndexAttrs(block); err != nil {
-		return goschema.Index{}, err
+		return schemamodel.Index{}, err
 	}
 	storageParams, err := p.parseIndexStorageParams(block)
 	if err != nil {
-		return goschema.Index{}, err
+		return schemamodel.Index{}, err
 	}
 	indexType := p.optionalString(block.Body.Attributes["type"])
 	operator, err := p.stringAttr(block, "ops", "index")
 	if err != nil {
-		return goschema.Index{}, err
+		return schemamodel.Index{}, err
 	}
 	nullsDistinct, err := p.optionalBlockBoolPtr(block, "nulls_distinct", "index")
 	if err != nil {
-		return goschema.Index{}, err
+		return schemamodel.Index{}, err
 	}
 	parserName := p.optionalString(block.Body.Attributes["parser"])
 	if parserName != "" && !strings.EqualFold(indexType, "FULLTEXT") {
-		return goschema.Index{}, p.blockError(block, "index parser requires FULLTEXT type")
+		return schemamodel.Index{}, p.blockError(block, "index parser requires FULLTEXT type")
 	}
 	unique := p.optionalBool(block.Body.Attributes["unique"], false)
 	if nullsDistinct != nil && !unique {
-		return goschema.Index{}, p.blockError(block, "index nulls_distinct requires unique = true")
+		return schemamodel.Index{}, p.blockError(block, "index nulls_distinct requires unique = true")
 	}
 	granularity, err := p.optionalGranularity(block)
 	if err != nil {
-		return goschema.Index{}, err
+		return schemamodel.Index{}, err
 	}
-	return goschema.Index{
+	return schemamodel.Index{
 		StructName:     structName,
 		Name:           block.Labels[0],
 		Fields:         columns,
@@ -883,72 +883,72 @@ func (p *parser) parseIndex(structName, tableName string, block *hclsyntax.Block
 	}, nil
 }
 
-func (p *parser) parseConstraint(table *goschema.Table, block *hclsyntax.Block) (goschema.Constraint, error) {
+func (p *parser) parseConstraint(table *schemamodel.Table, block *hclsyntax.Block) (schemamodel.Constraint, error) {
 	if len(block.Labels) != 1 {
-		return goschema.Constraint{}, p.blockError(block, "constraint block requires exactly one label")
+		return schemamodel.Constraint{}, p.blockError(block, "constraint block requires exactly one label")
 	}
 	if err := p.rejectNestedBlocks(block, "constraint"); err != nil {
-		return goschema.Constraint{}, err
+		return schemamodel.Constraint{}, err
 	}
 	if err := p.rejectUnsupportedConstraintAttrs(block); err != nil {
-		return goschema.Constraint{}, err
+		return schemamodel.Constraint{}, err
 	}
 	constraintType, err := p.stringAttr(block, "type", "constraint")
 	if err != nil {
-		return goschema.Constraint{}, err
+		return schemamodel.Constraint{}, err
 	}
 	if constraintType == "" {
-		return goschema.Constraint{}, p.blockError(block, "constraint %q requires type", block.Labels[0])
+		return schemamodel.Constraint{}, p.blockError(block, "constraint %q requires type", block.Labels[0])
 	}
 	columns, err := p.stringListAttr(block, "columns")
 	if err != nil {
-		return goschema.Constraint{}, err
+		return schemamodel.Constraint{}, err
 	}
 	include, err := p.stringListAttr(block, "include")
 	if err != nil {
-		return goschema.Constraint{}, err
+		return schemamodel.Constraint{}, err
 	}
 	foreignColumns, err := p.stringListAttr(block, "foreign_columns")
 	if err != nil {
-		return goschema.Constraint{}, err
+		return schemamodel.Constraint{}, err
 	}
 	nullsDistinct, err := p.optionalBlockBoolPtr(block, "nulls_distinct", "constraint")
 	if err != nil {
-		return goschema.Constraint{}, err
+		return schemamodel.Constraint{}, err
 	}
 	usingMethod, err := p.stringAttr(block, "using", "constraint")
 	if err != nil {
-		return goschema.Constraint{}, err
+		return schemamodel.Constraint{}, err
 	}
 	excludeElements, err := p.stringAttr(block, "elements", "constraint")
 	if err != nil {
-		return goschema.Constraint{}, err
+		return schemamodel.Constraint{}, err
 	}
 	whereCondition, err := p.stringAttr(block, "condition", "constraint")
 	if err != nil {
-		return goschema.Constraint{}, err
+		return schemamodel.Constraint{}, err
 	}
 	checkExpression, err := p.stringAttr(block, "check", "constraint")
 	if err != nil {
-		return goschema.Constraint{}, err
+		return schemamodel.Constraint{}, err
 	}
 	foreignTable, err := p.stringAttr(block, "foreign_table", "constraint")
 	if err != nil {
-		return goschema.Constraint{}, err
+		return schemamodel.Constraint{}, err
 	}
 	onDelete, err := p.stringAttr(block, "on_delete", "constraint")
 	if err != nil {
-		return goschema.Constraint{}, err
+		return schemamodel.Constraint{}, err
 	}
 	onUpdate, err := p.stringAttr(block, "on_update", "constraint")
 	if err != nil {
-		return goschema.Constraint{}, err
+		return schemamodel.Constraint{}, err
 	}
 	comment, err := p.stringAttr(block, "comment", "constraint")
 	if err != nil {
-		return goschema.Constraint{}, err
+		return schemamodel.Constraint{}, err
 	}
-	return goschema.Constraint{
+	return schemamodel.Constraint{
 		StructName:      table.StructName,
 		Name:            block.Labels[0],
 		Type:            constraintType,
@@ -1075,29 +1075,29 @@ func (p *parser) optionalGranularity(block *hclsyntax.Block) (int, error) {
 	return int(*value), nil
 }
 
-func (p *parser) parseUnique(structName, tableName string, block *hclsyntax.Block) (goschema.Constraint, error) {
+func (p *parser) parseUnique(structName, tableName string, block *hclsyntax.Block) (schemamodel.Constraint, error) {
 	if len(block.Labels) != 1 {
-		return goschema.Constraint{}, p.blockError(block, "unique block requires exactly one label")
+		return schemamodel.Constraint{}, p.blockError(block, "unique block requires exactly one label")
 	}
 	if err := p.rejectUnsupportedUniqueAttrs(block); err != nil {
-		return goschema.Constraint{}, err
+		return schemamodel.Constraint{}, err
 	}
 	columns, err := p.parseColumnsAttr(block, "columns")
 	if err != nil {
-		return goschema.Constraint{}, err
+		return schemamodel.Constraint{}, err
 	}
 	if len(columns) == 0 {
-		return goschema.Constraint{}, p.blockError(block, "unique %q requires columns", block.Labels[0])
+		return schemamodel.Constraint{}, p.blockError(block, "unique %q requires columns", block.Labels[0])
 	}
 	include, err := p.parseColumnsAttr(block, "include")
 	if err != nil {
-		return goschema.Constraint{}, err
+		return schemamodel.Constraint{}, err
 	}
 	nullsDistinct, err := p.optionalBlockBoolPtr(block, "nulls_distinct", "unique")
 	if err != nil {
-		return goschema.Constraint{}, err
+		return schemamodel.Constraint{}, err
 	}
-	return goschema.Constraint{
+	return schemamodel.Constraint{
 		StructName:     structName,
 		Name:           block.Labels[0],
 		Type:           "UNIQUE",
@@ -1212,9 +1212,9 @@ func (p *parser) indexOnBlocks(block *hclsyntax.Block) ([]*hclsyntax.Block, erro
 	return onBlocks, nil
 }
 
-func (p *parser) parseIndexParts(onBlocks []*hclsyntax.Block) ([]string, []goschema.IndexPart, error) {
+func (p *parser) parseIndexParts(onBlocks []*hclsyntax.Block) ([]string, []schemamodel.IndexPart, error) {
 	var columns []string
-	var parts []goschema.IndexPart
+	var parts []schemamodel.IndexPart
 	for _, nested := range onBlocks {
 		if err := p.rejectUnsupportedIndexOnAttrs(nested); err != nil {
 			return nil, nil, err
@@ -1243,7 +1243,7 @@ func (p *parser) parseIndexParts(onBlocks []*hclsyntax.Block) ([]string, []gosch
 				return nil, nil, err
 			}
 			columns = append(columns, column)
-			parts = append(parts, goschema.IndexPart{
+			parts = append(parts, schemamodel.IndexPart{
 				Name:       column,
 				Operator:   operator,
 				Prefix:     prefix,
@@ -1257,7 +1257,7 @@ func (p *parser) parseIndexParts(onBlocks []*hclsyntax.Block) ([]string, []gosch
 		}
 		expr := p.exprString(exprAttr)
 		columns = append(columns, expr)
-		parts = append(parts, goschema.IndexPart{
+		parts = append(parts, schemamodel.IndexPart{
 			Expr:       expr,
 			Operator:   operator,
 			Desc:       desc,
@@ -1293,17 +1293,17 @@ func (p *parser) indexPartNullsOrder(block *hclsyntax.Block) (string, error) {
 		return "", p.blockError(block, "index on cannot set both nulls_first and nulls_last")
 	}
 	if first {
-		return goschema.NullsOrderFirst, nil
+		return schemamodel.NullsOrderFirst, nil
 	}
 	if last {
-		return goschema.NullsOrderLast, nil
+		return schemamodel.NullsOrderLast, nil
 	}
 	return "", nil
 }
 
 type primaryKeySpec struct {
 	columns []string
-	parts   []goschema.PrimaryKeyPart
+	parts   []schemamodel.PrimaryKeyPart
 	include []string
 }
 
@@ -1340,7 +1340,7 @@ func (p *parser) parsePrimaryKey(block *hclsyntax.Block) (primaryKeySpec, error)
 	return primaryKeySpec{columns: columns, parts: parts, include: include}, nil
 }
 
-func (p *parser) parsePartition(block *hclsyntax.Block) (*goschema.PartitionSpec, error) {
+func (p *parser) parsePartition(block *hclsyntax.Block) (*schemamodel.PartitionSpec, error) {
 	if len(block.Labels) != 0 {
 		return nil, p.blockError(block, "partition block does not accept labels")
 	}
@@ -1368,14 +1368,14 @@ func (p *parser) parsePartition(block *hclsyntax.Block) (*goschema.PartitionSpec
 		if len(columns) == 0 {
 			return nil, p.blockError(block, "partition requires at least one column")
 		}
-		return &goschema.PartitionSpec{Type: partitionType, Parts: partitionColumnParts(columns)}, nil
+		return &schemamodel.PartitionSpec{Type: partitionType, Parts: partitionColumnParts(columns)}, nil
 	}
 
 	parts, err := p.parsePartitionParts(block, byBlocks)
 	if err != nil {
 		return nil, err
 	}
-	return &goschema.PartitionSpec{Type: partitionType, Parts: parts}, nil
+	return &schemamodel.PartitionSpec{Type: partitionType, Parts: parts}, nil
 }
 
 // partitionByBlocks returns the partition body's `by` blocks, sending every
@@ -1394,8 +1394,8 @@ func (p *parser) partitionByBlocks(block *hclsyntax.Block) ([]*hclsyntax.Block, 
 	return byBlocks, nil
 }
 
-func (p *parser) parsePartitionParts(block *hclsyntax.Block, byBlocks []*hclsyntax.Block) ([]goschema.PartitionPart, error) {
-	parts := make([]goschema.PartitionPart, 0, len(byBlocks))
+func (p *parser) parsePartitionParts(block *hclsyntax.Block, byBlocks []*hclsyntax.Block) ([]schemamodel.PartitionPart, error) {
+	parts := make([]schemamodel.PartitionPart, 0, len(byBlocks))
 	for _, nested := range byBlocks {
 		if err := p.rejectUnsupportedPartitionByAttrs(nested); err != nil {
 			return nil, err
@@ -1413,10 +1413,10 @@ func (p *parser) parsePartitionParts(block *hclsyntax.Block, byBlocks []*hclsynt
 			if err != nil {
 				return nil, err
 			}
-			parts = append(parts, goschema.PartitionPart{Name: name})
+			parts = append(parts, schemamodel.PartitionPart{Name: name})
 			continue
 		}
-		parts = append(parts, goschema.PartitionPart{Expr: p.exprString(exprAttr)})
+		parts = append(parts, schemamodel.PartitionPart{Expr: p.exprString(exprAttr)})
 	}
 	// Checked after the walk, not before it: under the unknown-name policy a
 	// body holding nothing but dropped block names leaves no parts behind, and
@@ -1427,10 +1427,10 @@ func (p *parser) parsePartitionParts(block *hclsyntax.Block, byBlocks []*hclsynt
 	return parts, nil
 }
 
-func partitionColumnParts(columns []string) []goschema.PartitionPart {
-	parts := make([]goschema.PartitionPart, 0, len(columns))
+func partitionColumnParts(columns []string) []schemamodel.PartitionPart {
+	parts := make([]schemamodel.PartitionPart, 0, len(columns))
 	for _, column := range columns {
-		parts = append(parts, goschema.PartitionPart{Name: column})
+		parts = append(parts, schemamodel.PartitionPart{Name: column})
 	}
 	return parts
 }
@@ -1445,8 +1445,8 @@ func (p *parser) validatePrimaryKeyType(block *hclsyntax.Block) error {
 	}
 }
 
-func (p *parser) parsePrimaryKeyParts(block *hclsyntax.Block) ([]goschema.PrimaryKeyPart, error) {
-	parts := make([]goschema.PrimaryKeyPart, 0, len(block.Body.Blocks))
+func (p *parser) parsePrimaryKeyParts(block *hclsyntax.Block) ([]schemamodel.PrimaryKeyPart, error) {
+	parts := make([]schemamodel.PrimaryKeyPart, 0, len(block.Body.Blocks))
 	for _, nested := range block.Body.Blocks {
 		if nested.Type != "on" {
 			if err := p.rejectUnsupportedBlock(nested, "primary_key"); err != nil {
@@ -1465,7 +1465,7 @@ func (p *parser) parsePrimaryKeyParts(block *hclsyntax.Block) ([]goschema.Primar
 		if err != nil {
 			return nil, err
 		}
-		parts = append(parts, goschema.PrimaryKeyPart{
+		parts = append(parts, schemamodel.PrimaryKeyPart{
 			Name:   name,
 			Prefix: p.optionalRawExpr(nested.Body.Attributes["prefix"]),
 			Desc:   p.optionalBool(nested.Body.Attributes["desc"], false),
@@ -1478,10 +1478,10 @@ func (p *parser) parsePrimaryKeyParts(block *hclsyntax.Block) ([]goschema.Primar
 	return parts, nil
 }
 
-func primaryKeyParts(columns []string) []goschema.PrimaryKeyPart {
-	parts := make([]goschema.PrimaryKeyPart, 0, len(columns))
+func primaryKeyParts(columns []string) []schemamodel.PrimaryKeyPart {
+	parts := make([]schemamodel.PrimaryKeyPart, 0, len(columns))
 	for _, column := range columns {
-		parts = append(parts, goschema.PrimaryKeyPart{Name: column})
+		parts = append(parts, schemamodel.PrimaryKeyPart{Name: column})
 	}
 	return parts
 }
@@ -1580,12 +1580,12 @@ func (p *parser) parseForeignKeyDeferral(block *hclsyntax.Block) (deferrable boo
 	return deferrable, initially, nil
 }
 
-func (p *parser) applyForeignKey(table goschema.Table, fieldsStart int, block *hclsyntax.Block, spec foreignKeySpec) error {
+func (p *parser) applyForeignKey(table schemamodel.Table, fieldsStart int, block *hclsyntax.Block, spec foreignKeySpec) error {
 	if err := p.requireForeignKeyLocalColumns(fieldsStart, block, spec); err != nil {
 		return err
 	}
 	if len(spec.columns) > 1 {
-		p.db.Constraints = append(p.db.Constraints, goschema.Constraint{
+		p.db.Constraints = append(p.db.Constraints, schemamodel.Constraint{
 			StructName:     table.StructName,
 			Name:           spec.name,
 			Type:           "FOREIGN KEY",
@@ -1641,16 +1641,16 @@ func (p *parser) parseCheck(
 	structName, tableName string,
 	unlabeledOrdinal int,
 	block *hclsyntax.Block,
-) (goschema.Constraint, error) {
+) (schemamodel.Constraint, error) {
 	if len(block.Labels) > 1 {
-		return goschema.Constraint{}, p.blockError(block, "check block accepts at most one label")
+		return schemamodel.Constraint{}, p.blockError(block, "check block accepts at most one label")
 	}
 	if err := p.rejectUnsupportedCheckAttrs(block); err != nil {
-		return goschema.Constraint{}, err
+		return schemamodel.Constraint{}, err
 	}
 	expr := p.optionalString(block.Body.Attributes["expr"])
 	if expr == "" {
-		return goschema.Constraint{}, p.blockError(block, "check requires expr")
+		return schemamodel.Constraint{}, p.blockError(block, "check requires expr")
 	}
 	name := tableName + "_check"
 	if len(block.Labels) == 1 {
@@ -1658,7 +1658,7 @@ func (p *parser) parseCheck(
 	} else if unlabeledOrdinal > 1 {
 		name = fmt.Sprintf("%s_check_%d", tableName, unlabeledOrdinal)
 	}
-	return goschema.Constraint{
+	return schemamodel.Constraint{
 		StructName:      structName,
 		Name:            name,
 		Type:            "CHECK",
@@ -1972,7 +1972,7 @@ func (p *parser) rejectNestedBlocks(block *hclsyntax.Block, label string) error 
 // clearing the flag here would apply a stricter table than the document asked
 // for. Where the flag is absent the HCL parser already defaults it to NOT NULL.
 // See stokaro/ptah#1235.
-func markPrimaryFields(fields []goschema.Field, columns []string) {
+func markPrimaryFields(fields []schemamodel.Field, columns []string) {
 	if len(columns) != 1 {
 		return
 	}
@@ -1984,7 +1984,7 @@ func markPrimaryFields(fields []goschema.Field, columns []string) {
 	}
 }
 
-func (p *parser) setDefault(field *goschema.Field, attr *hclsyntax.Attribute) {
+func (p *parser) setDefault(field *schemamodel.Field, attr *hclsyntax.Attribute) {
 	if value, ok := p.sqlExpression(attr); ok {
 		field.DefaultExpr = value
 		return

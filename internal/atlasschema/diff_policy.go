@@ -4,11 +4,11 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform/capability"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/concurrentindex"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // DiffPolicy holds Atlas-compatible schema diff policy that maps to Ptah's
@@ -47,8 +47,8 @@ type DiffPolicy struct {
 func declaredConcurrentIndexRefs(
 	policy DiffPolicy,
 	diff *difftypes.SchemaDiff,
-	desired *goschema.Database,
-	current *dbschematypes.DBSchema,
+	desired *schemamodel.Database,
+	current *catalog.Database,
 	dialect string,
 	capabilities capability.Capabilities,
 ) []difftypes.IndexRef {
@@ -58,7 +58,7 @@ func declaredConcurrentIndexRefs(
 	if capabilities == nil {
 		capabilities = capability.ForDialect(dialect)
 	}
-	return concurrentindex.DeclaredRefs(diff, desired, current, dbschematypes.DBInfo{
+	return concurrentindex.DeclaredRefs(diff, desired, current, catalog.ServerInfo{
 		Dialect:      dialect,
 		Capabilities: capabilities,
 	})

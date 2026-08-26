@@ -6,9 +6,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestModifiedUserTypeNeverDropsWhatItCannotRecreate pins the two halves of the
@@ -23,8 +23,8 @@ import (
 func TestModifiedUserTypeNeverDropsWhatItCannotRecreate(t *testing.T) {
 	tests := []struct {
 		name        string
-		generated   *goschema.Database
-		diff        *types.SchemaDiff
+		desired     *schemamodel.Database
+		diff        *difftypes.SchemaDiff
 		wantDrop    bool
 		wantCreate  bool
 		wantWarning string
@@ -33,10 +33,10 @@ func TestModifiedUserTypeNeverDropsWhatItCannotRecreate(t *testing.T) {
 			// Control. The definition resolves, so both halves are emitted and
 			// the pair is what it has always been.
 			name: "a modified domain the schema declares is dropped and recreated",
-			generated: &goschema.Database{
-				Domains: []goschema.Domain{{Name: "zip", Schema: "app", BaseType: "VARCHAR(10)"}},
+			desired: &schemamodel.Database{
+				Domains: []schemamodel.Domain{{Name: "zip", Schema: "app", BaseType: "VARCHAR(10)"}},
 			},
-			diff: &types.SchemaDiff{DomainsModified: []types.DomainDiff{{
+			diff: &difftypes.SchemaDiff{DomainsModified: []difftypes.DomainDiff{{
 				DomainName:      "app.zip",
 				Changes:         map[string]string{"type": "character varying(5) -> VARCHAR(10)"},
 				CurrentBaseType: "character varying(5)",
@@ -49,10 +49,10 @@ func TestModifiedUserTypeNeverDropsWhatItCannotRecreate(t *testing.T) {
 			// identifier semantics they are one domain, so both halves are
 			// emitted -- and they name the same object.
 			name: "a modified domain spelled bare in the schema still recreates",
-			generated: &goschema.Database{
-				Domains: []goschema.Domain{{Name: "zip", BaseType: "VARCHAR(10)"}},
+			desired: &schemamodel.Database{
+				Domains: []schemamodel.Domain{{Name: "zip", BaseType: "VARCHAR(10)"}},
 			},
-			diff: &types.SchemaDiff{DomainsModified: []types.DomainDiff{{
+			diff: &difftypes.SchemaDiff{DomainsModified: []difftypes.DomainDiff{{
 				DomainName:      "public.zip",
 				Changes:         map[string]string{"type": "character varying(5) -> VARCHAR(10)"},
 				CurrentBaseType: "character varying(5)",
@@ -64,10 +64,10 @@ func TestModifiedUserTypeNeverDropsWhatItCannotRecreate(t *testing.T) {
 			// The definition is genuinely absent. Neither half is emitted, and
 			// the omission is stated rather than silent.
 			name: "a modified domain the schema does not declare is left alone",
-			generated: &goschema.Database{
-				Domains: []goschema.Domain{{Name: "other", Schema: "app", BaseType: "TEXT"}},
+			desired: &schemamodel.Database{
+				Domains: []schemamodel.Domain{{Name: "other", Schema: "app", BaseType: "TEXT"}},
 			},
-			diff: &types.SchemaDiff{DomainsModified: []types.DomainDiff{{
+			diff: &difftypes.SchemaDiff{DomainsModified: []difftypes.DomainDiff{{
 				DomainName:      "app.zip",
 				Changes:         map[string]string{"type": "character varying(5) -> VARCHAR(10)"},
 				CurrentBaseType: "character varying(5)",
@@ -78,10 +78,10 @@ func TestModifiedUserTypeNeverDropsWhatItCannotRecreate(t *testing.T) {
 		},
 		{
 			name: "a modified composite type the schema does not declare is left alone",
-			generated: &goschema.Database{
-				CompositeTypes: []goschema.CompositeType{{Name: "other", Schema: "app"}},
+			desired: &schemamodel.Database{
+				CompositeTypes: []schemamodel.CompositeType{{Name: "other", Schema: "app"}},
 			},
-			diff: &types.SchemaDiff{CompositeTypesModified: []types.CompositeTypeDiff{{
+			diff: &difftypes.SchemaDiff{CompositeTypesModified: []difftypes.CompositeTypeDiff{{
 				TypeName: "app.addr",
 				Changes:  map[string]string{"fields": "a text -> a text, b text"},
 			}}},
@@ -91,10 +91,10 @@ func TestModifiedUserTypeNeverDropsWhatItCannotRecreate(t *testing.T) {
 		},
 		{
 			name: "a modified range type the schema does not declare is left alone",
-			generated: &goschema.Database{
-				Ranges: []goschema.Range{{Name: "other", Schema: "app", Subtype: "int8"}},
+			desired: &schemamodel.Database{
+				Ranges: []schemamodel.Range{{Name: "other", Schema: "app", Subtype: "int8"}},
 			},
-			diff: &types.SchemaDiff{RangesModified: []types.RangeDiff{{
+			diff: &difftypes.SchemaDiff{RangesModified: []difftypes.RangeDiff{{
 				RangeName:      "app.span",
 				Changes:        map[string]string{"subtype": "int4 -> int8"},
 				CurrentSubtype: "int4",
@@ -108,7 +108,7 @@ func TestModifiedUserTypeNeverDropsWhatItCannotRecreate(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			statements, err := planner.GenerateSchemaDiffSQLStatements(test.diff, test.generated, "postgres")
+			statements, err := planner.GenerateSchemaDiffSQLStatements(test.diff, test.desired, "postgres")
 			c.Assert(err, qt.IsNil)
 			plan := strings.Join(statements, "\n")
 			c.Assert(strings.Contains(plan, "DROP DOMAIN") || strings.Contains(plan, "DROP TYPE"),

@@ -12,10 +12,10 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/dbexprprobe"
 )
@@ -31,7 +31,7 @@ import (
 // database may legitimately already hold the schema being compared -- that is
 // what a dev database is for -- and creating a second table under the same name
 // would fail on the first schema that did.
-func For(dialect string, caps capability.Capabilities, declared *goschema.Database) ([]dbexprprobe.GeneratedExpressionProbe, error) {
+func For(dialect string, caps capability.Capabilities, declared *schemamodel.Database) ([]dbexprprobe.GeneratedExpressionProbe, error) {
 	if declared == nil || !rewritesStoredExpressions(dialect) {
 		return nil, nil
 	}
@@ -75,8 +75,8 @@ func rewritesStoredExpressions(dialect string) bool {
 	return platform.NormalizeDialect(dialect) == platform.Oracle
 }
 
-func fieldsForTable(declared *goschema.Database, table goschema.Table) []goschema.Field {
-	var fields []goschema.Field
+func fieldsForTable(declared *schemamodel.Database, table schemamodel.Table) []schemamodel.Field {
+	var fields []schemamodel.Field
 	for _, field := range declared.Fields {
 		if field.StructName == table.StructName {
 			fields = append(fields, field)
@@ -85,7 +85,7 @@ func fieldsForTable(declared *goschema.Database, table goschema.Table) []goschem
 	return fields
 }
 
-func generatedColumnNames(fields []goschema.Field) []string {
+func generatedColumnNames(fields []schemamodel.Field) []string {
 	var names []string
 	for _, field := range fields {
 		if strings.TrimSpace(field.GeneratedExpression) != "" {

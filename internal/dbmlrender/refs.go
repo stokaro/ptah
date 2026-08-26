@@ -5,14 +5,14 @@ import (
 	"sort"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // references renders one Ref per foreign key, sorted by the line itself so the
 // order is a property of the content rather than of the schema's field order.
 func (b *builder) references() []string {
 	tables := b.selected()
-	byStruct := make(map[string]goschema.Table, len(tables))
+	byStruct := make(map[string]schemamodel.Table, len(tables))
 	for _, table := range tables {
 		byStruct[table.StructName] = table
 	}
@@ -40,7 +40,7 @@ func (b *builder) references() []string {
 // declaration this cannot parse is skipped rather than guessed at: emitting a
 // Ref to a target nobody named would put a relationship in the diagram that the
 // database does not have.
-func reference(table goschema.Table, field goschema.Field) (string, bool) {
+func reference(table schemamodel.Table, field schemamodel.Field) (string, bool) {
 	targetTable, targetColumn, ok := parseForeign(field.Foreign)
 	if !ok {
 		return "", false

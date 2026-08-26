@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashcl"
 )
 
@@ -18,7 +18,7 @@ func TestParseContinuousAggregate(t *testing.T) {
 	tests := []struct {
 		name     string
 		document string
-		want     goschema.ContinuousAggregate
+		want     schemamodel.ContinuousAggregate
 	}{
 		{
 			name: "the whole block",
@@ -33,7 +33,7 @@ continuous_aggregate "hourly" {
   comment           = "one row per hour"
 }
 `,
-			want: goschema.ContinuousAggregate{
+			want: schemamodel.ContinuousAggregate{
 				Name: "hourly", Schema: "app",
 				Body:             "SELECT time_bucket('1 hour', time) AS bucket FROM readings GROUP BY bucket",
 				MaterializedOnly: new(true), Comment: "one row per hour",
@@ -46,7 +46,7 @@ continuous_aggregate "hourly" {
   as = "SELECT 1"
 }
 `,
-			want: goschema.ContinuousAggregate{Name: "hourly", Body: "SELECT 1"},
+			want: schemamodel.ContinuousAggregate{Name: "hourly", Body: "SELECT 1"},
 		},
 		{
 			name: "the two-label spelling",
@@ -55,7 +55,7 @@ continuous_aggregate "app" "hourly" {
   as = "SELECT 1"
 }
 `,
-			want: goschema.ContinuousAggregate{Name: "hourly", Schema: "app", Body: "SELECT 1"},
+			want: schemamodel.ContinuousAggregate{Name: "hourly", Schema: "app", Body: "SELECT 1"},
 		},
 	}
 
@@ -66,7 +66,7 @@ continuous_aggregate "app" "hourly" {
 			db, err := atlashcl.Parse([]byte(test.document), "schema.hcl")
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(db.ContinuousAggregates, qt.DeepEquals, []goschema.ContinuousAggregate{test.want})
+			c.Assert(db.ContinuousAggregates, qt.DeepEquals, []schemamodel.ContinuousAggregate{test.want})
 		})
 	}
 }

@@ -12,10 +12,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/schemafile"
 	"go.5x5.cz/ptah/migration/planner"
@@ -34,7 +34,7 @@ import (
 // changes to be made`.
 //
 // The library path planned all of it, which is why nothing in the suite could
-// see this: every other test builds a [goschema.Database] in Go, or loads one
+// see this: every other test builds a [schemamodel.Database] in Go, or loads one
 // file through [schemafile.Load], and both skip the merge.
 //
 // The second apply is half the test. A property added but not readable back --
@@ -96,7 +96,7 @@ func TestSQLServerLiveDocumentAppliesEveryPropertyScope(t *testing.T) {
 
 // extendedPropertyNames is the read's property names, sorted, so the assertion
 // says which properties rather than how many.
-func extendedPropertyNames(properties []dbschematypes.DBExtendedProperty) []string {
+func extendedPropertyNames(properties []catalog.ExtendedProperty) []string {
 	names := make([]string, 0, len(properties))
 	for _, property := range properties {
 		names = append(names, property.Name)
@@ -110,7 +110,7 @@ func extendedPropertyNames(properties []dbschematypes.DBExtendedProperty) []stri
 func planDocumentAgainstLive(
 	c *qt.C,
 	conn *dbschema.DatabaseConnection,
-	declared *goschema.Database,
+	declared *schemamodel.Database,
 	schemaName string,
 ) []string {
 	c.Helper()

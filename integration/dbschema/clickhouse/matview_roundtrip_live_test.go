@@ -8,9 +8,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	clickhousedb "go.5x5.cz/ptah/internal/dbschema/clickhouse"
 	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/migration/planner"
@@ -21,12 +21,12 @@ func readClickHouseMaterializedViews(
 	t *testing.T,
 	db *sql.DB,
 	database string,
-) *dbschematypes.DBSchema {
+) *catalog.Database {
 	c := qt.New(t)
 	t.Helper()
 	schema, err := clickhousedb.NewClickHouseReader(db, database).ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
-	return &dbschematypes.DBSchema{MatViews: schema.MatViews}
+	return &catalog.Database{MatViews: schema.MatViews}
 }
 
 // readClickHouseViewLikes reads both view kinds and nothing else, so a
@@ -36,12 +36,12 @@ func readClickHouseViewLikes(
 	t *testing.T,
 	db *sql.DB,
 	database string,
-) *dbschematypes.DBSchema {
+) *catalog.Database {
 	c := qt.New(t)
 	t.Helper()
 	schema, err := clickhousedb.NewClickHouseReader(db, database).ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
-	return &dbschematypes.DBSchema{Views: schema.Views, MatViews: schema.MatViews}
+	return &catalog.Database{Views: schema.Views, MatViews: schema.MatViews}
 }
 
 // TestMaterializedViewLifecycleRoundTripsLive is the acceptance for #1462.
@@ -68,7 +68,7 @@ func TestMaterializedViewLifecycleRoundTripsLive(t *testing.T) {
 		"CREATE VIEW " + plainView + " AS SELECT id FROM " + sourceTable,
 	})
 
-	created := &goschema.Database{MaterializedViews: []goschema.MaterializedView{{
+	created := &schemamodel.Database{MaterializedViews: []schemamodel.MaterializedView{{
 		StructName: "UserCounts",
 		Name:       viewName,
 		Body:       "SELECT count() AS c FROM " + sourceTable + " WHERE active = true",
@@ -108,7 +108,7 @@ func TestMaterializedViewLifecycleRoundTripsLive(t *testing.T) {
 	c.Assert(fullReadback.Tables, qt.HasLen, 1)
 	c.Assert(fullReadback.Tables[0].Name, qt.Equals, "users")
 
-	changed := &goschema.Database{MaterializedViews: []goschema.MaterializedView{{
+	changed := &schemamodel.Database{MaterializedViews: []schemamodel.MaterializedView{{
 		StructName: "UserCounts",
 		Name:       viewName,
 		Body:       "SELECT count() AS c FROM " + sourceTable + " WHERE active = false",
@@ -135,14 +135,14 @@ func TestMaterializedViewLifecycleRoundTripsLive(t *testing.T) {
 	)
 
 	removalDiff := schemadiff.CompareWithDialect(
-		&goschema.Database{},
+		&schemamodel.Database{},
 		changedReadback,
 		platform.ClickHouse,
 	)
 	c.Assert(removalDiff.MaterializedViewsRemoved, qt.DeepEquals, []string{viewName})
 	dropStatements, err := planner.GenerateSchemaDiffSQLStatements(
 		removalDiff,
-		&goschema.Database{},
+		&schemamodel.Database{},
 		platform.ClickHouse,
 	)
 	c.Assert(err, qt.IsNil)
@@ -154,7 +154,7 @@ func TestMaterializedViewLifecycleRoundTripsLive(t *testing.T) {
 	c.Assert(removedReadback.MatViews, qt.HasLen, 0)
 	c.Assert(
 		schemadiff.CompareWithDialect(
-			&goschema.Database{},
+			&schemamodel.Database{},
 			removedReadback,
 			platform.ClickHouse,
 		).HasChanges(),
@@ -196,13 +196,13 @@ func TestMaterializedViewUnqualifiedBodyRoundTripsLive(t *testing.T) {
 
 	// Unqualified on purpose: the connection's database is the realm database,
 	// so this is what an author writes and what the server has to resolve.
-	declared := &goschema.Database{
-		MaterializedViews: []goschema.MaterializedView{{
+	declared := &schemamodel.Database{
+		MaterializedViews: []schemamodel.MaterializedView{{
 			StructName: "UserCounts",
 			Name:       database + ".user_counts",
 			Body:       "SELECT count() AS c FROM users",
 		}},
-		Views: []goschema.View{{
+		Views: []schemamodel.View{{
 			StructName: "ActiveUsers",
 			Name:       database + ".active_users",
 			Body:       "SELECT id FROM users",
@@ -237,8 +237,8 @@ func TestMaterializedViewUnqualifiedBodyRoundTripsLive(t *testing.T) {
 
 	// A body that really did change is still a change: the normalization removes
 	// the qualifier the server added, not the difference the author made.
-	changed := &goschema.Database{
-		MaterializedViews: []goschema.MaterializedView{{
+	changed := &schemamodel.Database{
+		MaterializedViews: []schemamodel.MaterializedView{{
 			StructName: "UserCounts",
 			Name:       database + ".user_counts",
 			Body:       "SELECT count() AS c FROM users WHERE active = true",
@@ -276,13 +276,13 @@ func TestMaterializedViewAliasedBodyRoundTripsLive(t *testing.T) {
 		"CREATE TABLE " + sourceTable + " (id UInt64, active Bool) ENGINE = MergeTree ORDER BY id",
 	})
 
-	declared := &goschema.Database{
-		MaterializedViews: []goschema.MaterializedView{{
+	declared := &schemamodel.Database{
+		MaterializedViews: []schemamodel.MaterializedView{{
 			StructName: "UserIDs",
 			Name:       database + ".user_ids",
 			Body:       "SELECT u.id AS id FROM users AS u",
 		}},
-		Views: []goschema.View{{
+		Views: []schemamodel.View{{
 			StructName: "UserIDsPlain",
 			Name:       database + ".user_ids_plain",
 			Body:       "SELECT u.id AS id FROM users AS u",
@@ -319,8 +319,8 @@ func TestMaterializedViewAliasedBodyRoundTripsLive(t *testing.T) {
 	c.Assert(settledDiff.HasChanges(), qt.IsFalse, qt.Commentf("settled diff: %+v", settledDiff))
 
 	// A body that really did change is still a change.
-	changed := &goschema.Database{
-		MaterializedViews: []goschema.MaterializedView{{
+	changed := &schemamodel.Database{
+		MaterializedViews: []schemamodel.MaterializedView{{
 			StructName: "UserIDs",
 			Name:       database + ".user_ids",
 			Body:       "SELECT u.id AS id FROM users AS u WHERE u.active = true",
@@ -352,13 +352,13 @@ func TestMaterializedViewAliasNamedLikeTheDatabaseRoundTripsLive(t *testing.T) {
 	})
 
 	body := "SELECT " + database + ".id AS id FROM users AS " + database
-	declared := &goschema.Database{
-		MaterializedViews: []goschema.MaterializedView{{
+	declared := &schemamodel.Database{
+		MaterializedViews: []schemamodel.MaterializedView{{
 			StructName: "UserIDs",
 			Name:       database + ".user_ids",
 			Body:       body,
 		}},
-		Views: []goschema.View{{
+		Views: []schemamodel.View{{
 			StructName: "UserIDsPlain",
 			Name:       database + ".user_ids_plain",
 			Body:       body,
@@ -421,13 +421,13 @@ func TestMaterializedViewUnqualifiedNameRoundTripsLive(t *testing.T) {
 	})
 
 	// Unqualified on both halves: the object's own name as well as its source.
-	declared := &goschema.Database{
-		MaterializedViews: []goschema.MaterializedView{{
+	declared := &schemamodel.Database{
+		MaterializedViews: []schemamodel.MaterializedView{{
 			StructName: "UserStats",
 			Name:       "user_stats",
 			Body:       "SELECT count() AS c FROM users",
 		}},
-		Views: []goschema.View{{
+		Views: []schemamodel.View{{
 			StructName: "ActiveUsers",
 			Name:       "active_users",
 			Body:       "SELECT id FROM users",
@@ -594,7 +594,7 @@ func TestViewKindChangeAppliesLive(t *testing.T) {
 			" ENGINE = MergeTree ORDER BY tuple() AS " + body,
 	})
 
-	asPlainView := &goschema.Database{Views: []goschema.View{{
+	asPlainView := &schemamodel.Database{Views: []schemamodel.View{{
 		StructName: "UserCounts",
 		Name:       viewName,
 		Body:       body,
@@ -627,7 +627,7 @@ func TestViewKindChangeAppliesLive(t *testing.T) {
 		qt.IsFalse,
 	)
 
-	asMaterialized := &goschema.Database{MaterializedViews: []goschema.MaterializedView{{
+	asMaterialized := &schemamodel.Database{MaterializedViews: []schemamodel.MaterializedView{{
 		StructName: "UserCounts",
 		Name:       viewName,
 		Body:       body,

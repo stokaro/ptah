@@ -112,7 +112,7 @@ func readDBCommand(cmd *cobra.Command, opts *options) error {
 	timescale.ReportUndescribed(stderr, schema)
 
 	// Format and display the schema
-	dbsch := dbschematogo.ConvertDBSchemaToGoSchema(schema)
+	dbsch := dbschematogo.ConvertCatalogToSchema(schema)
 	info := conn.Info()
 	statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(dbsch, info.Dialect, info.Capabilities)
 	if err != nil {

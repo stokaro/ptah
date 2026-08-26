@@ -8,9 +8,9 @@ import (
 	"slices"
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/schemascope"
 )
 
@@ -34,7 +34,7 @@ func readInspectSchemaWithNames(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	requested []string,
-) (*dbschematypes.DBSchema, []string, error) {
+) (*catalog.Database, []string, error) {
 	names, err := inspectSchemaNames(ctx, conn, requested)
 	if err != nil {
 		return nil, nil, err
@@ -75,7 +75,7 @@ func inspectSchemaNames(
 // one it is connected to, even on a dialect whose reader reports no schema rows
 // of its own.
 //
-// Only the PostgreSQL-family reader answers DBSchema.Schemas today, so on
+// Only the PostgreSQL-family reader answers catalog.Database.Schemas today, so on
 // MySQL, MariaDB, SQLite and ClickHouse an empty database still arrived here
 // with nothing in it and rendered as an empty document. The connection is the
 // proof the schema exists — it was opened against it.
@@ -83,10 +83,10 @@ func inspectSchemaNames(
 // It does not fire when `--schema` named something, because there the empty
 // result is the answer: the named schema is not there.
 func withConnectedSchemaRow(
-	schema *dbschematypes.DBSchema,
-	info dbschematypes.DBInfo,
+	schema *catalog.Database,
+	info catalog.ServerInfo,
 	requested []string,
-) *dbschematypes.DBSchema {
+) *catalog.Database {
 	if schema == nil || len(SplitSchemaNames(requested)) > 0 {
 		return schema
 	}
@@ -94,12 +94,12 @@ func withConnectedSchemaRow(
 	if name == "" {
 		return schema
 	}
-	if slices.ContainsFunc(schema.Schemas, func(row dbschematypes.DBSchemaInfo) bool {
+	if slices.ContainsFunc(schema.Schemas, func(row catalog.Schema) bool {
 		return row.Name == name
 	}) {
 		return schema
 	}
-	schema.Schemas = append(schema.Schemas, dbschematypes.DBSchemaInfo{Name: name})
+	schema.Schemas = append(schema.Schemas, catalog.Schema{Name: name})
 	return schema
 }
 
@@ -107,9 +107,9 @@ func withConnectedSchemaRow(
 // belongs to: `current_schema()` on PostgreSQL, the database on MySQL-family
 // and ClickHouse connections, and `main` on SQLite.
 //
-// dbschema resolves all of those into DBInfo.Schema at connect time, so this
+// dbschema resolves all of those into catalog.ServerInfo.Schema at connect time, so this
 // only has to refuse an empty one rather than re-derive it.
-func connectedSchemaName(info dbschematypes.DBInfo) string {
+func connectedSchemaName(info catalog.ServerInfo) string {
 	return strings.TrimSpace(info.Schema)
 }
 
@@ -126,7 +126,7 @@ func connectedSchemaName(info dbschematypes.DBInfo) string {
 func inspectSchemaAttributes(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
-	schema *dbschematypes.DBSchema,
+	schema *catalog.Database,
 ) error {
 	if schema == nil {
 		return nil

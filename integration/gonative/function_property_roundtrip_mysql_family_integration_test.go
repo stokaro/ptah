@@ -13,15 +13,15 @@ import (
 	qt "github.com/frankban/quicktest"
 	mysqldriver "github.com/go-sql-driver/mysql"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbschema/mysql"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // propertyRoundTripDatabase is the database this file owns outright. Like
@@ -90,11 +90,11 @@ func dropPropertyDatabase(c *qt.C, dsn string) {
 		qt.Commentf("routines survived in %s", propertyRoundTripDatabase))
 }
 
-func propertyFunction(fn goschema.Function) *goschema.Database {
-	return &goschema.Database{Functions: []goschema.Function{fn}}
+func propertyFunction(fn schemamodel.Function) *schemamodel.Database {
+	return &schemamodel.Database{Functions: []schemamodel.Function{fn}}
 }
 
-func applyPropertySQL(c *qt.C, db *sql.DB, dialect string, desired *goschema.Database) []string {
+func applyPropertySQL(c *qt.C, db *sql.DB, dialect string, desired *schemamodel.Database) []string {
 	c.Helper()
 
 	reader := mysql.NewMySQLReader(db, "")
@@ -116,7 +116,7 @@ func applyPropertySQL(c *qt.C, db *sql.DB, dialect string, desired *goschema.Dat
 	return statements
 }
 
-func propertyDiff(c *qt.C, db *sql.DB, dialect string, desired *goschema.Database) *difftypes.SchemaDiff {
+func propertyDiff(c *qt.C, db *sql.DB, dialect string, desired *schemamodel.Database) *difftypes.SchemaDiff {
 	c.Helper()
 
 	reader := mysql.NewMySQLReader(db, "")
@@ -155,17 +155,17 @@ var mysqlFamilyTargets = []struct {
 // case then changes exactly that property and requires exactly one change,
 // named.
 func TestFunctionPropertyRoundTrip_MySQLFamily_Integration(t *testing.T) {
-	base := goschema.Function{
+	base := schemamodel.Function{
 		Name: "ptah_prop_fn", Parameters: "a INT", Returns: "int",
 		Language: "sql", Volatility: "IMMUTABLE", Security: "INVOKER", Body: "RETURN a + 1",
 	}
 
-	withVolatility := func(v string) goschema.Function {
+	withVolatility := func(v string) schemamodel.Function {
 		fn := base
 		fn.Volatility = v
 		return fn
 	}
-	withSecurity := func(s string) goschema.Function {
+	withSecurity := func(s string) schemamodel.Function {
 		fn := base
 		fn.Security = s
 		return fn
@@ -173,8 +173,8 @@ func TestFunctionPropertyRoundTrip_MySQLFamily_Integration(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		declared goschema.Function
-		changed  goschema.Function
+		declared schemamodel.Function
+		changed  schemamodel.Function
 		property string
 		// call probes the created routine. It is per-row because not every
 		// signature under test takes an integer; an empty value uses the
@@ -219,11 +219,11 @@ func TestFunctionPropertyRoundTrip_MySQLFamily_Integration(t *testing.T) {
 			// catalogs report distinctly -- so changing one to the other
 			// produced no modification at all.
 			name: "enum member containing a comma",
-			declared: goschema.Function{
+			declared: schemamodel.Function{
 				Name: "ptah_prop_fn", Parameters: "p ENUM('x,y')", Returns: "int",
 				Language: "sql", Volatility: "IMMUTABLE", Security: "INVOKER", Body: "RETURN 42",
 			},
-			changed: goschema.Function{
+			changed: schemamodel.Function{
 				Name: "ptah_prop_fn", Parameters: "p ENUM('x','y')", Returns: "int",
 				Language: "sql", Volatility: "IMMUTABLE", Security: "INVOKER", Body: "RETURN 42",
 			},
@@ -237,11 +237,11 @@ func TestFunctionPropertyRoundTrip_MySQLFamily_Integration(t *testing.T) {
 			// it collapsed INT(5) and INT(10) ZEROFILL onto one type, so the
 			// authored change was silently ignored.
 			name: "zerofill width is meaning",
-			declared: goschema.Function{
+			declared: schemamodel.Function{
 				Name: "ptah_prop_fn", Parameters: "a INT(5) ZEROFILL", Returns: "int",
 				Language: "sql", Volatility: "IMMUTABLE", Security: "INVOKER", Body: "RETURN 42",
 			},
-			changed: goschema.Function{
+			changed: schemamodel.Function{
 				Name: "ptah_prop_fn", Parameters: "a INT(10) ZEROFILL", Returns: "int",
 				Language: "sql", Volatility: "IMMUTABLE", Security: "INVOKER", Body: "RETURN 42",
 			},
@@ -254,11 +254,11 @@ func TestFunctionPropertyRoundTrip_MySQLFamily_Integration(t *testing.T) {
 			// reported `parameters, returns` drift on a function that already
 			// matched, on every inspection.
 			name: "type alias INTEGER against the catalog's int",
-			declared: goschema.Function{
+			declared: schemamodel.Function{
 				Name: "ptah_prop_fn", Parameters: "a INTEGER", Returns: "INTEGER",
 				Language: "sql", Volatility: "IMMUTABLE", Security: "INVOKER", Body: "RETURN a + 1",
 			},
-			changed: goschema.Function{
+			changed: schemamodel.Function{
 				Name: "ptah_prop_fn", Parameters: "a INTEGER", Returns: "INTEGER",
 				Language: "sql", Volatility: "IMMUTABLE", Security: "INVOKER", Body: "RETURN a + 2",
 			},
@@ -336,7 +336,7 @@ func TestFunctionOrderedCreateStatements_ExecuteOneByOne_Integration(t *testing.
 			c := qt.New(t)
 			newPropertyDatabase(c, dsn)
 
-			desired := propertyFunction(goschema.Function{
+			desired := propertyFunction(schemamodel.Function{
 				Name: "ptah_prop_fn", Parameters: "a INT", Returns: "int",
 				Language: "sql", Volatility: "IMMUTABLE", Security: "INVOKER", Body: "RETURN a + 1",
 			})
@@ -403,8 +403,8 @@ func queryRoutineCount(c *qt.C, dsn, name string) int {
 // key the catalog already had. The mixed-case LIVE row is what makes the
 // database-side fold load-bearing.
 func TestFunctionCaseOnlySpelling_MySQLFamily_Integration(t *testing.T) {
-	makeFunction := func(name string) *goschema.Database {
-		return propertyFunction(goschema.Function{
+	makeFunction := func(name string) *schemamodel.Database {
+		return propertyFunction(schemamodel.Function{
 			Name: name, Parameters: "a INT", Returns: "int",
 			Language: "sql", Volatility: "IMMUTABLE", Security: "INVOKER", Body: "RETURN a + 1",
 		})
@@ -482,7 +482,7 @@ func TestFunctionParametersIgnoreASameNamedProcedure_Integration(t *testing.T) {
 			c := qt.New(t)
 			db := newPropertyDatabase(c, dsn)
 
-			desired := propertyFunction(goschema.Function{
+			desired := propertyFunction(schemamodel.Function{
 				Name: "ptah_prop_fn", Parameters: "a INT", Returns: "int",
 				Language: "sql", Volatility: "IMMUTABLE", Security: "INVOKER", Body: "RETURN a + 1",
 			})
@@ -538,7 +538,7 @@ func TestFunctionParametersIgnoreASameNamedProcedure_Integration(t *testing.T) {
 //
 // The shape is reachable without an exotic schema. A function exists on the
 // server. The desired declaration omits `language=`, which
-// [goschema.Function.Canonicalize] defaults to `plpgsql`. The comparator sees
+// [schemamodel.Function.Canonicalize] defaults to `plpgsql`. The comparator sees
 // `language: sql -> plpgsql` and reports a MODIFICATION, the planner emits
 // DROP + CREATE for it, and the renderer answers the CREATE with a skip comment
 // because neither engine runs plpgsql. Applying that plan executes the drop and
@@ -554,9 +554,9 @@ func TestFunctionParametersIgnoreASameNamedProcedure_Integration(t *testing.T) {
 // the failure mode: the migration reports success.
 // liveRoutineOfKind picks the one routine of the asked-for kind, failing when
 // the read holds none or more than one.
-func liveRoutineOfKind(c *qt.C, routines []dbschematypes.DBFunction, procedures bool) dbschematypes.DBFunction {
+func liveRoutineOfKind(c *qt.C, routines []catalog.Function, procedures bool) catalog.Function {
 	c.Helper()
-	var found []dbschematypes.DBFunction
+	var found []catalog.Function
 	for _, routine := range routines {
 		if strings.EqualFold(strings.TrimSpace(routine.Kind), "procedure") == procedures {
 			found = append(found, routine)
@@ -589,7 +589,7 @@ func TestFunctionSkippedLanguageNeverDropsTheLiveRoutine_Integration(t *testing.
 				c := qt.New(t)
 				db := newPropertyDatabase(c, dsn)
 
-				live := propertyFunction(goschema.Function{
+				live := propertyFunction(schemamodel.Function{
 					Name: "ptah_prop_fn", Parameters: "a INT", Returns: "int",
 					Language: "sql", Volatility: "IMMUTABLE", Security: "INVOKER",
 					Body: "RETURN a + 1",
@@ -603,7 +603,7 @@ func TestFunctionSkippedLanguageNeverDropsTheLiveRoutine_Integration(t *testing.
 				// an omitted `language=` into plpgsql. Without it this test
 				// would carry an empty language the renderer treats as SQL, and
 				// the omitted-language row would not model production at all.
-				declared := goschema.Function{
+				declared := schemamodel.Function{
 					Name: "ptah_prop_fn", Parameters: "a INT", Returns: "int",
 					Language: test.language, Volatility: "IMMUTABLE", Security: "INVOKER",
 					Body: "RETURN a + 2",
@@ -652,7 +652,7 @@ func TestFunctionCaseCollidingDeclarationsAreRefused_Integration(t *testing.T) {
 			c := qt.New(t)
 			db := newPropertyDatabase(c, dsn)
 
-			colliding := &goschema.Database{Functions: []goschema.Function{
+			colliding := &schemamodel.Database{Functions: []schemamodel.Function{
 				{
 					Name: "Ptah_Dup_Fn", Parameters: "a INT", Returns: "int",
 					Language: "sql", Volatility: "IMMUTABLE", Security: "INVOKER",
@@ -683,7 +683,7 @@ func TestFunctionCaseCollidingDeclarationsAreRefused_Integration(t *testing.T) {
 			// The control: the SAME two bodies under names that do not collide
 			// still plan and apply as two separate functions, so the refusal is
 			// about the collision and not about declaring two functions.
-			distinct := &goschema.Database{Functions: []goschema.Function{
+			distinct := &schemamodel.Database{Functions: []schemamodel.Function{
 				{
 					Name: "ptah_dup_one", Parameters: "a INT", Returns: "int",
 					Language: "sql", Volatility: "IMMUTABLE", Security: "INVOKER",
@@ -716,7 +716,7 @@ func TestFunctionReplacementIsTwoStatements_Integration(t *testing.T) {
 			c := qt.New(t)
 			db := newPropertyDatabase(c, dsn)
 
-			first := propertyFunction(goschema.Function{
+			first := propertyFunction(schemamodel.Function{
 				Name: "ptah_prop_fn", Parameters: "a INT", Returns: "int",
 				Language: "sql", Volatility: "IMMUTABLE", Security: "INVOKER", Body: "RETURN a + 1",
 			})
@@ -726,7 +726,7 @@ func TestFunctionReplacementIsTwoStatements_Integration(t *testing.T) {
 			c.Check(created[0], qt.Contains, "CREATE FUNCTION")
 			c.Check(created[0], qt.Not(qt.Contains), "DROP FUNCTION")
 
-			second := propertyFunction(goschema.Function{
+			second := propertyFunction(schemamodel.Function{
 				Name: "ptah_prop_fn", Parameters: "a INT", Returns: "int",
 				Language: "sql", Volatility: "IMMUTABLE", Security: "INVOKER", Body: "RETURN a + 2",
 			})

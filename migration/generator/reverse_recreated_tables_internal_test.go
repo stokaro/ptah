@@ -13,8 +13,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
@@ -145,27 +145,27 @@ func TestGenerateDownMigration_DropTable_KeepsWhatTableCreationCannotRestore(t *
 // one constraint of every kind the reverse has to decide about: a primary key
 // and a single-column foreign key (both restored by the re-created table), and
 // a CHECK and a named UNIQUE (neither of which is).
-func droppedTableFixtures(dialect string) (*goschema.Database, *dbschematypes.DBSchema) {
-	target := &goschema.Database{
-		Tables: []goschema.Table{{Name: "widgets", StructName: "Widget"}},
-		Fields: []goschema.Field{
+func droppedTableFixtures(dialect string) (*schemamodel.Database, *catalog.Database) {
+	target := &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "widgets", StructName: "Widget"}},
+		Fields: []schemamodel.Field{
 			{Name: "id", Type: droppedTableIntType(dialect), StructName: "Widget", Primary: true},
 		},
 	}
 	check := "qty > 0"
-	prior := &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
-			{Name: "widgets", Columns: []dbschematypes.DBColumn{
+	prior := &catalog.Database{
+		Tables: []catalog.Table{
+			{Name: "widgets", Columns: []catalog.Column{
 				{Name: "id", DataType: droppedTableIntType(dialect), IsNullable: "NO", IsPrimaryKey: true},
 			}},
-			{Name: "gadgets", Columns: []dbschematypes.DBColumn{
+			{Name: "gadgets", Columns: []catalog.Column{
 				{Name: "id", DataType: droppedTableIntType(dialect), IsNullable: "NO", IsPrimaryKey: true},
 				{Name: "code", DataType: "text", IsNullable: "NO"},
 				{Name: "qty", DataType: droppedTableIntType(dialect), IsNullable: "NO"},
 				{Name: "widget_id", DataType: droppedTableIntType(dialect), IsNullable: "YES"},
 			}},
 		},
-		Constraints: []dbschematypes.DBConstraint{
+		Constraints: []catalog.Constraint{
 			{Name: "gadgets_pk", TableName: "gadgets", Type: "PRIMARY KEY", ColumnName: "id", ColumnNames: []string{"id"}},
 			{Name: "gadgets_code_uq", TableName: "gadgets", Type: "UNIQUE", ColumnName: "code", ColumnNames: []string{"code"}},
 			{Name: "gadgets_qty_ck", TableName: "gadgets", Type: "CHECK", ColumnName: "qty", CheckClause: &check},
@@ -191,30 +191,30 @@ func droppedTableIntType(dialect string) string {
 // table and a pre-change database holding two the re-created CREATE TABLE
 // cannot fully restore: `nodes` with a self-referencing foreign key, and
 // `pairs` with a composite primary key and a two-column foreign key.
-func selfAndCompositeForeignKeyFixtures() (*goschema.Database, *dbschematypes.DBSchema) {
-	target := &goschema.Database{
-		Tables: []goschema.Table{{Name: "widgets", StructName: "Widget"}},
-		Fields: []goschema.Field{
+func selfAndCompositeForeignKeyFixtures() (*schemamodel.Database, *catalog.Database) {
+	target := &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "widgets", StructName: "Widget"}},
+		Fields: []schemamodel.Field{
 			{Name: "id", Type: "integer", StructName: "Widget", Primary: true},
 		},
 	}
-	prior := &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
-			{Name: "widgets", Columns: []dbschematypes.DBColumn{
+	prior := &catalog.Database{
+		Tables: []catalog.Table{
+			{Name: "widgets", Columns: []catalog.Column{
 				{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
 			}},
-			{Name: "nodes", Columns: []dbschematypes.DBColumn{
+			{Name: "nodes", Columns: []catalog.Column{
 				{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
 				{Name: "parent_id", DataType: "integer", IsNullable: "YES"},
 			}},
-			{Name: "pairs", Columns: []dbschematypes.DBColumn{
+			{Name: "pairs", Columns: []catalog.Column{
 				{Name: "a", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
 				{Name: "b", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
 				{Name: "owner_a", DataType: "integer", IsNullable: "YES"},
 				{Name: "owner_b", DataType: "integer", IsNullable: "YES"},
 			}},
 		},
-		Constraints: []dbschematypes.DBConstraint{
+		Constraints: []catalog.Constraint{
 			{Name: "nodes_pk", TableName: "nodes", Type: "PRIMARY KEY", ColumnName: "id", ColumnNames: []string{"id"}},
 			{
 				Name: "nodes_parent_fk", TableName: "nodes", Type: "FOREIGN KEY",

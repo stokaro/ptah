@@ -22,7 +22,7 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2/errdef"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemaartifact"
 )
 
@@ -34,7 +34,7 @@ import (
 // the client, the media types and the artifact-type check on the way through.
 // A stub would agree with any pull the resolver made -- including one that
 // fetched a migration directory and called it a schema.
-func StartSchemaArtifactRegistry(c *qt.C, repository, tag string, db *goschema.Database) string {
+func StartSchemaArtifactRegistry(c *qt.C, repository, tag string, db *schemamodel.Database) string {
 	c.Helper()
 	store := newRecordingTarget()
 	_, err := schemaartifact.PushTo(c.TB.Context(), store, db, schemaartifact.PushOptions{Tags: []string{tag}})

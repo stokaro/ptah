@@ -4,16 +4,16 @@ import (
 	"fmt"
 	"maps"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/concurrentindex"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // ConcurrentIndexMode selects which index changes one direction plans with
@@ -45,38 +45,38 @@ type BidirectionalPlanPolicy struct {
 // SchemaDirectionPlan is one half of a bidirectional schema migration plan.
 // Its slices and diff are planning inputs and must be treated as read-only.
 type SchemaDirectionPlan struct {
-	Diff                    *types.SchemaDiff
+	Diff                    *difftypes.SchemaDiff
 	Nodes                   []ast.Node
-	ConcurrentIndexRefs     []types.IndexRef
-	ConcurrentIndexDropRefs []types.IndexRef
+	ConcurrentIndexRefs     []difftypes.IndexRef
+	ConcurrentIndexDropRefs []difftypes.IndexRef
 	RequiresNoTransaction   bool
 }
 
 // BidirectionalSchemaPlan is one validated forward and reverse schema plan.
 //
-// DesiredSchema and CurrentSchema are the exact inputs the two directions were
-// planned against. They are retained so adapters can apply the same qualifier
-// or rendering policy without reconstructing either side. Treat them and both
+// Desired and Current are the exact inputs the two directions were planned
+// against. They are retained so adapters can apply the same qualifier or
+// rendering policy without reconstructing either side. Treat them and both
 // direction plans as read-only.
 type BidirectionalSchemaPlan struct {
-	Dialect       string
-	Capabilities  capability.Capabilities
-	DesiredSchema *goschema.Database
-	CurrentSchema *dbschematypes.DBSchema
-	Policy        BidirectionalPlanPolicy
-	Forward       SchemaDirectionPlan
-	Reverse       SchemaDirectionPlan
+	Dialect      string
+	Capabilities capability.Capabilities
+	Desired      *schemamodel.Database
+	Current      *catalog.Database
+	Policy       BidirectionalPlanPolicy
+	Forward      SchemaDirectionPlan
+	Reverse      SchemaDirectionPlan
 }
 
 // BidirectionalSchemaPlanOptions contains the complete state needed to plan a
 // schema change and the rollback that restores its pre-change state.
 type BidirectionalSchemaPlanOptions struct {
-	Diff          *types.SchemaDiff
-	DesiredSchema *goschema.Database
-	CurrentSchema *dbschematypes.DBSchema
-	Dialect       string
-	Capabilities  capability.Capabilities
-	Policy        BidirectionalPlanPolicy
+	Diff         *difftypes.SchemaDiff
+	Desired      *schemamodel.Database
+	Current      *catalog.Database
+	Dialect      string
+	Capabilities capability.Capabilities
+	Policy       BidirectionalPlanPolicy
 }
 
 // PlanBidirectionalSchemaDiff plans a forward schema diff and its exact
@@ -104,10 +104,10 @@ func PlanBidirectionalSchemaDiff(
 	if opts.Diff == nil {
 		return nil, fmt.Errorf("schema diff is required")
 	}
-	if opts.DesiredSchema == nil {
+	if opts.Desired == nil {
 		return nil, fmt.Errorf("desired schema is required")
 	}
-	if opts.CurrentSchema == nil {
+	if opts.Current == nil {
 		return nil, fmt.Errorf("current schema is required")
 	}
 	dialect := platform.NormalizeDialect(opts.Dialect)
@@ -124,9 +124,9 @@ func PlanBidirectionalSchemaDiff(
 
 	createRefs, err := concurrentIndexCreateRefs(
 		opts.Diff,
-		opts.DesiredSchema,
-		opts.CurrentSchema,
-		dbschematypes.DBInfo{Dialect: dialect, Capabilities: caps},
+		opts.Desired,
+		opts.Current,
+		catalog.ServerInfo{Dialect: dialect, Capabilities: caps},
 		opts.Policy.Create,
 	)
 	if err != nil {
@@ -134,8 +134,8 @@ func PlanBidirectionalSchemaDiff(
 	}
 	dropRefs, err := concurrentIndexRemovalRefs(
 		opts.Diff,
-		opts.CurrentSchema,
-		dbschematypes.DBInfo{Dialect: dialect, Capabilities: caps},
+		opts.Current,
+		catalog.ServerInfo{Dialect: dialect, Capabilities: caps},
 		opts.Policy.Drop,
 	)
 	if err != nil {
@@ -150,15 +150,15 @@ func planBidirectionalSchemaDiffWithRefs(
 	dialect string,
 	caps capability.Capabilities,
 	forwardCreateRefs,
-	forwardDropRefs []types.IndexRef,
+	forwardDropRefs []difftypes.IndexRef,
 ) (*BidirectionalSchemaPlan, error) {
 	if err := validateSelectedForwardConcurrentCapabilities(dialect, caps, forwardCreateRefs, forwardDropRefs); err != nil {
 		return nil, err
 	}
 	reverseDiff := reverseSchemaDiffWithSchemaForDialect(
 		opts.Diff,
-		opts.DesiredSchema,
-		opts.CurrentSchema,
+		opts.Desired,
+		opts.Current,
 		dialect,
 	)
 
@@ -169,7 +169,7 @@ func planBidirectionalSchemaDiffWithRefs(
 	}
 	forwardNodes, err := planner.GenerateSchemaDiffASTWithOptions(
 		opts.Diff,
-		opts.DesiredSchema,
+		opts.Desired,
 		dialect,
 		forwardOpts,
 	)
@@ -179,7 +179,7 @@ func planBidirectionalSchemaDiffWithRefs(
 	if err := addMySQLFamilyForeignKeyBackingIndexRemovals(
 		reverseDiff,
 		opts.Diff,
-		opts.CurrentSchema,
+		opts.Current,
 		dialect,
 		forwardNodes,
 	); err != nil {
@@ -192,7 +192,7 @@ func planBidirectionalSchemaDiffWithRefs(
 	// different MySQL/MariaDB tables. The reverse modifier is capability-selected
 	// independently: lack of a counterpart concurrent operation does not make
 	// the ordinary reverse statement invalid.
-	var reverseCreate, reverseDrop []types.IndexRef
+	var reverseCreate, reverseDrop []difftypes.IndexRef
 	if caps.Has(capability.CreateIndexConcurrently) {
 		reverseCreate = selectIndexRefOccurrences(
 			reverseDiff.IndexAdditions(),
@@ -219,7 +219,7 @@ func planBidirectionalSchemaDiffWithRefs(
 	// and ptah-compat `migrate diff` both reach a reverse plan only through this
 	// function, and both hand it a diff their diff policy has already filtered.
 	if err := sqlitevirtual.ValidatePlannedRollback(
-		dialect, opts.CurrentSchema, opts.Diff, reverseDiff,
+		dialect, opts.Current, opts.Diff, reverseDiff,
 	); err != nil {
 		return nil, err
 	}
@@ -229,23 +229,23 @@ func planBidirectionalSchemaDiffWithRefs(
 		ConcurrentIndexRefs:     reverseCreate,
 		ConcurrentIndexDropRefs: reverseDrop,
 	}
-	priorSchema := dbschematogo.ConvertDBSchemaToGoSchema(opts.CurrentSchema)
+	priorSchema := dbschematogo.ConvertCatalogToSchema(opts.Current)
 	reverseNodes, err := planner.GenerateSchemaDiffASTWithOptions(reverseDiff, priorSchema, dialect, reverseOpts)
 	if err != nil {
 		return nil, fmt.Errorf("error planning reverse migration: %w", err)
 	}
 
 	return &BidirectionalSchemaPlan{
-		Dialect:       dialect,
-		Capabilities:  maps.Clone(caps),
-		DesiredSchema: opts.DesiredSchema,
-		CurrentSchema: opts.CurrentSchema,
-		Policy:        opts.Policy,
+		Dialect:      dialect,
+		Capabilities: maps.Clone(caps),
+		Desired:      opts.Desired,
+		Current:      opts.Current,
+		Policy:       opts.Policy,
 		Forward: SchemaDirectionPlan{
 			Diff:                    opts.Diff,
 			Nodes:                   forwardNodes,
-			ConcurrentIndexRefs:     append([]types.IndexRef(nil), forwardCreateRefs...),
-			ConcurrentIndexDropRefs: append([]types.IndexRef(nil), forwardDropRefs...),
+			ConcurrentIndexRefs:     append([]difftypes.IndexRef(nil), forwardCreateRefs...),
+			ConcurrentIndexDropRefs: append([]difftypes.IndexRef(nil), forwardDropRefs...),
 			RequiresNoTransaction:   planner.RequiresNoTransaction(dialect, forwardNodes),
 		},
 		Reverse: SchemaDirectionPlan{
@@ -259,12 +259,12 @@ func planBidirectionalSchemaDiffWithRefs(
 }
 
 func concurrentIndexCreateRefs(
-	diff *types.SchemaDiff,
-	desired *goschema.Database,
-	current *dbschematypes.DBSchema,
-	info dbschematypes.DBInfo,
+	diff *difftypes.SchemaDiff,
+	desired *schemamodel.Database,
+	current *catalog.Database,
+	info catalog.ServerInfo,
 	mode ConcurrentIndexMode,
-) ([]types.IndexRef, error) {
+) ([]difftypes.IndexRef, error) {
 	switch mode {
 	case ConcurrentIndexAutomatic:
 		return concurrentindex.MergeRefs(
@@ -293,11 +293,11 @@ func concurrentIndexCreateRefs(
 }
 
 func concurrentIndexRemovalRefs(
-	diff *types.SchemaDiff,
-	current *dbschematypes.DBSchema,
-	info dbschematypes.DBInfo,
+	diff *difftypes.SchemaDiff,
+	current *catalog.Database,
+	info catalog.ServerInfo,
 	mode ConcurrentIndexMode,
-) ([]types.IndexRef, error) {
+) ([]difftypes.IndexRef, error) {
 	switch mode {
 	case ConcurrentIndexAutomatic, ConcurrentIndexDisabled:
 		return nil, nil
@@ -343,7 +343,7 @@ func validateSelectedForwardConcurrentCapabilities(
 	dialect string,
 	caps capability.Capabilities,
 	forwardCreateRefs,
-	forwardDropRefs []types.IndexRef,
+	forwardDropRefs []difftypes.IndexRef,
 ) error {
 	if len(forwardCreateRefs) > 0 {
 		if err := requireConcurrentIndexCapability(
@@ -369,10 +369,10 @@ func validateSelectedForwardConcurrentCapabilities(
 }
 
 func selectIndexRefOccurrences(
-	refs []types.IndexRef,
-	selected map[types.IndexRef]struct{},
-) []types.IndexRef {
-	out := make([]types.IndexRef, 0, len(selected))
+	refs []difftypes.IndexRef,
+	selected map[difftypes.IndexRef]struct{},
+) []difftypes.IndexRef {
+	out := make([]difftypes.IndexRef, 0, len(selected))
 	for _, ref := range refs {
 		if _, ok := selected[ref]; ok {
 			out = append(out, ref)

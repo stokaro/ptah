@@ -7,21 +7,21 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // enumSchema builds one table whose single non-key column is typed with a
 // declared enum of the given name. The two spellings differ only in the name, so
 // a difference in the rendered DDL can come from nothing else.
-func enumSchema(enumName string) *goschema.Database {
-	return &goschema.Database{
-		Enums:  []goschema.Enum{{Name: enumName, Values: []string{"active", "archived"}}},
-		Tables: []goschema.Table{{StructName: "User", Name: "users"}},
-		Fields: []goschema.Field{
+func enumSchema(enumName string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Enums:  []schemamodel.Enum{{Name: enumName, Values: []string{"active", "archived"}}},
+		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "BIGINT", Primary: true},
 			{StructName: "User", Name: "s", Type: enumName, Nullable: true},
 		},
@@ -82,11 +82,11 @@ func TestRender_PostgreSQLEmitsTheEnumTypeUnderEitherName(t *testing.T) {
 }
 
 // matviewSchema declares one table and one materialized view over it.
-func matviewSchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "T1", Name: "t1"}},
-		Fields: []goschema.Field{{StructName: "T1", Name: "id", Type: "BIGINT", Primary: true}},
-		MaterializedViews: []goschema.MaterializedView{{
+func matviewSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "T1", Name: "t1"}},
+		Fields: []schemamodel.Field{{StructName: "T1", Name: "id", Type: "BIGINT", Primary: true}},
+		MaterializedViews: []schemamodel.MaterializedView{{
 			StructName: "MV1", Name: "mv1", Body: "SELECT id FROM t1",
 		}},
 	}
@@ -128,8 +128,8 @@ func TestRender_PostgreSQLStillEmitsMaterializedViews(t *testing.T) {
 
 func TestRender_PostgreSQLExtensionCreatesItsInstallationSchemaFirst(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{
-		Extensions: []goschema.Extension{{
+	database := &schemamodel.Database{
+		Extensions: []schemamodel.Extension{{
 			Name:        "pgcrypto",
 			Schema:      " Extension Store ",
 			IfNotExists: true,
@@ -147,8 +147,8 @@ func TestRender_PostgreSQLExtensionCreatesItsInstallationSchemaFirst(t *testing.
 
 func TestRender_PostgreSQLExtensionCreatesWhitespaceOnlyInstallationSchemaFirst(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{
-		Extensions: []goschema.Extension{{Name: "pgcrypto", Schema: " "}},
+	database := &schemamodel.Database{
+		Extensions: []schemamodel.Extension{{Name: "pgcrypto", Schema: " "}},
 	}
 
 	statements, err := renderer.GetOrderedCreateStatements(database, platform.Postgres)
@@ -162,9 +162,9 @@ func TestRender_PostgreSQLExtensionCreatesWhitespaceOnlyInstallationSchemaFirst(
 
 func TestRender_PostgreSQLExtensionKeepsDistinctWhitespaceInSchemaIdentity(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{
-		Schemas: []goschema.Schema{{Name: "Extension Store"}},
-		Extensions: []goschema.Extension{{
+	database := &schemamodel.Database{
+		Schemas: []schemamodel.Schema{{Name: "Extension Store"}},
+		Extensions: []schemamodel.Extension{{
 			Name: "pgcrypto", Schema: " Extension Store ",
 		}},
 	}
@@ -181,9 +181,9 @@ func TestRender_PostgreSQLExtensionKeepsDistinctWhitespaceInSchemaIdentity(t *te
 
 func TestRender_PostgreSQLExtensionDoesNotDuplicateDeclaredSchema(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{
-		Schemas:    []goschema.Schema{{Name: "extensions"}},
-		Extensions: []goschema.Extension{{Name: "pgcrypto", Schema: "extensions"}},
+	database := &schemamodel.Database{
+		Schemas:    []schemamodel.Schema{{Name: "extensions"}},
+		Extensions: []schemamodel.Extension{{Name: "pgcrypto", Schema: "extensions"}},
 	}
 
 	statements, err := renderer.GetOrderedCreateStatements(database, platform.Postgres)
@@ -197,8 +197,8 @@ func TestRender_PostgreSQLExtensionDoesNotDuplicateDeclaredSchema(t *testing.T) 
 
 func TestRender_PostgreSQLExtensionDoesNotCreateSystemInstallationSchema(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{
-		Extensions: []goschema.Extension{{
+	database := &schemamodel.Database{
+		Extensions: []schemamodel.Extension{{
 			Name: "plpgsql", Schema: "pg_catalog", Version: "1.0", IfNotExists: true,
 		}},
 	}
@@ -212,8 +212,8 @@ func TestRender_PostgreSQLExtensionDoesNotCreateSystemInstallationSchema(t *test
 }
 
 func TestRender_ExtensionInstallationSchemaSupportedTargets(t *testing.T) {
-	database := &goschema.Database{
-		Extensions: []goschema.Extension{{Name: "pgcrypto", Schema: "extensions"}},
+	database := &schemamodel.Database{
+		Extensions: []schemamodel.Extension{{Name: "pgcrypto", Schema: "extensions"}},
 	}
 
 	for _, dialect := range []string{platform.Postgres, platform.YugabyteDB} {
@@ -231,8 +231,8 @@ func TestRender_ExtensionInstallationSchemaSupportedTargets(t *testing.T) {
 }
 
 func TestRender_ExtensionInstallationSchemaUnsupportedTargetsFailBeforeSQL(t *testing.T) {
-	database := &goschema.Database{
-		Extensions: []goschema.Extension{{Name: "pgcrypto", Schema: "extensions"}},
+	database := &schemamodel.Database{
+		Extensions: []schemamodel.Extension{{Name: "pgcrypto", Schema: "extensions"}},
 	}
 	node := &ast.ExtensionNode{Name: "pgcrypto", Schema: "extensions"}
 
@@ -253,8 +253,8 @@ func TestRender_ExtensionInstallationSchemaUnsupportedTargetsFailBeforeSQL(t *te
 }
 
 func TestRender_WhitespaceOnlyExtensionInstallationSchemaUnsupportedTargetsFailBeforeSQL(t *testing.T) {
-	database := &goschema.Database{
-		Extensions: []goschema.Extension{{Name: "pgcrypto", Schema: " "}},
+	database := &schemamodel.Database{
+		Extensions: []schemamodel.Extension{{Name: "pgcrypto", Schema: " "}},
 	}
 	node := &ast.ExtensionNode{Name: "pgcrypto", Schema: " "}
 
@@ -276,8 +276,8 @@ func TestRender_WhitespaceOnlyExtensionInstallationSchemaUnsupportedTargetsFailB
 
 func TestRender_UnsupportedExtensionDoesNotCreateItsPostgreSQLSchema(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{
-		Extensions: []goschema.Extension{{Name: "pgcrypto", Schema: "extensions"}},
+	database := &schemamodel.Database{
+		Extensions: []schemamodel.Extension{{Name: "pgcrypto", Schema: "extensions"}},
 	}
 
 	statements, err := renderer.GetOrderedCreateStatements(database, platform.MySQL)
@@ -289,20 +289,20 @@ func TestRender_UnsupportedExtensionDoesNotCreateItsPostgreSQLSchema(t *testing.
 
 // clickHouseSchema declares a plain view alongside the object kinds Ptah's
 // ClickHouse model cannot express, plus a table carrying a column CHECK.
-func clickHouseSchema() *goschema.Database {
-	return &goschema.Database{
-		Extensions: []goschema.Extension{{Name: "pg_trgm"}},
-		Sequences:  []goschema.Sequence{{Name: "chk_seq"}},
-		Roles:      []goschema.Role{{Name: "chk_role"}},
-		Functions:  []goschema.Function{{Name: "chk_f", Returns: "integer", Language: "sql", Body: "SELECT 1;"}},
-		Tables:     []goschema.Table{{StructName: "T", Name: "t"}},
-		Fields: []goschema.Field{
+func clickHouseSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Extensions: []schemamodel.Extension{{Name: "pg_trgm"}},
+		Sequences:  []schemamodel.Sequence{{Name: "chk_seq"}},
+		Roles:      []schemamodel.Role{{Name: "chk_role"}},
+		Functions:  []schemamodel.Function{{Name: "chk_f", Returns: "integer", Language: "sql", Body: "SELECT 1;"}},
+		Tables:     []schemamodel.Table{{StructName: "T", Name: "t"}},
+		Fields: []schemamodel.Field{
 			{StructName: "T", Name: "id", Type: "BIGINT", Primary: true},
 			{StructName: "T", Name: "n", Type: "INTEGER", Nullable: true, Check: "n > 0"},
 		},
-		Views:             []goschema.View{{StructName: "V", Name: "chk_v", Body: "SELECT id FROM t"}},
-		MaterializedViews: []goschema.MaterializedView{{StructName: "MV", Name: "chk_mv", Body: "SELECT id FROM t"}},
-		Triggers: []goschema.Trigger{{
+		Views:             []schemamodel.View{{StructName: "V", Name: "chk_v", Body: "SELECT id FROM t"}},
+		MaterializedViews: []schemamodel.MaterializedView{{StructName: "MV", Name: "chk_mv", Body: "SELECT id FROM t"}},
+		Triggers: []schemamodel.Trigger{{
 			StructName: "TR", Name: "chk_trg", Table: "t",
 			Timing: "AFTER", Event: "INSERT", ForEach: "ROW", Body: "SELECT 1",
 		}},
@@ -372,11 +372,11 @@ func TestRender_ClickHouseKeepsAColumnCheckAsANamedConstraint(t *testing.T) {
 }
 
 // sequenceSchema declares one standalone sequence and one table.
-func sequenceSchema() *goschema.Database {
-	return &goschema.Database{
-		Sequences: []goschema.Sequence{{Name: "order_number_seq", AsType: "bigint", Start: &sequenceStart}},
-		Tables:    []goschema.Table{{StructName: "T1", Name: "t1"}},
-		Fields:    []goschema.Field{{StructName: "T1", Name: "id", Type: "BIGINT", Primary: true}},
+func sequenceSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Sequences: []schemamodel.Sequence{{Name: "order_number_seq", AsType: "bigint", Start: &sequenceStart}},
+		Tables:    []schemamodel.Table{{StructName: "T1", Name: "t1"}},
+		Fields:    []schemamodel.Field{{StructName: "T1", Name: "id", Type: "BIGINT", Primary: true}},
 	}
 }
 

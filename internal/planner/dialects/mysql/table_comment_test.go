@@ -6,8 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // A table whose only difference is its comment produces a statement --
@@ -62,7 +62,7 @@ func TestPlanner_MySQLFamilyPlansNoCommentWithoutAChange(t *testing.T) {
 			c := qt.New(t)
 
 			nodes, err := test.planner.GenerateMigrationASTChecked(
-				&types.SchemaDiff{TablesModified: []types.TableDiff{{TableName: "users"}}},
+				&difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{TableName: "users"}}},
 				commentedTableSchema(),
 			)
 
@@ -72,19 +72,19 @@ func TestPlanner_MySQLFamilyPlansNoCommentWithoutAChange(t *testing.T) {
 	}
 }
 
-func tableCommentDiff(desired string) *types.SchemaDiff {
-	return &types.SchemaDiff{
-		TablesModified: []types.TableDiff{{
+func tableCommentDiff(desired string) *difftypes.SchemaDiff {
+	return &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{{
 			TableName:     "users",
-			CommentChange: &types.CommentChange{Current: "people who buy", Desired: desired},
+			CommentChange: &difftypes.CommentChange{Current: "people who buy", Desired: desired},
 		}},
 	}
 }
 
-func commentedTableSchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{Name: "users", StructName: "User"}},
-		Fields: []goschema.Field{
+func commentedTableSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "users", StructName: "User"}},
+		Fields: []schemamodel.Field{
 			{Name: "id", StructName: "User", Type: "INT", Primary: true},
 			{Name: "email", StructName: "User", Type: "VARCHAR(255)", Comment: "primary contact"},
 		},
@@ -134,14 +134,14 @@ func TestPlanner_MySQLFamilyCarriesAColumnCommentInTheModify(t *testing.T) {
 	}
 }
 
-func columnCommentOnlyDiff() *types.SchemaDiff {
-	return &types.SchemaDiff{
-		TablesModified: []types.TableDiff{{
+func columnCommentOnlyDiff() *difftypes.SchemaDiff {
+	return &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{{
 			TableName: "users",
-			ColumnsModified: []types.ColumnDiff{{
+			ColumnsModified: []difftypes.ColumnDiff{{
 				ColumnName:    "email",
 				Changes:       make(map[string]string),
-				CommentChange: &types.CommentChange{Current: "login address", Desired: "primary contact"},
+				CommentChange: &difftypes.CommentChange{Current: "login address", Desired: "primary contact"},
 			}},
 		}},
 	}

@@ -7,10 +7,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -62,7 +62,7 @@ func TestClickHouseReadRendersItsOwnRead(t *testing.T) {
 	applyStatements(c, conn, planAgainstLive(c, conn, roundTripDeclaration()))
 
 	live := readLive(c, conn)
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(schemadiff.CompareWithDialect(&goschema.Database{}, live, platform.ClickHouse), &goschema.Database{}, platform.ClickHouse, planner.Options{Capabilities: conn.Info().Capabilities})
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(schemadiff.CompareWithDialect(&schemamodel.Database{}, live, platform.ClickHouse), &schemamodel.Database{}, platform.ClickHouse, planner.Options{Capabilities: conn.Info().Capabilities})
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.IsNotNil)
 }
@@ -90,16 +90,16 @@ func TestClickHouseReadCarriesASortingKeyWiderThanThePrimaryKey(t *testing.T) {
 
 // roundTripDeclaration is the reproducer from the issue: one MergeTree table
 // whose sorting key comes from a declared primary key.
-func roundTripDeclaration() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Orders", Name: roundTripTable}},
-		Fields: []goschema.Field{
+func roundTripDeclaration() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Orders", Name: roundTripTable}},
+		Fields: []schemamodel.Field{
 			{StructName: "Orders", Name: "id", Type: "UInt64", Primary: true},
 		},
 	}
 }
 
-func planAgainstLive(c *qt.C, conn *dbschema.DatabaseConnection, declared *goschema.Database) []string {
+func planAgainstLive(c *qt.C, conn *dbschema.DatabaseConnection, declared *schemamodel.Database) []string {
 	c.Helper()
 	live := readLive(c, conn)
 	info := conn.Info()
@@ -118,14 +118,14 @@ func applyStatements(c *qt.C, conn *dbschema.DatabaseConnection, statements []st
 	}
 }
 
-func readLive(c *qt.C, conn *dbschema.DatabaseConnection) *dbschematypes.DBSchema {
+func readLive(c *qt.C, conn *dbschema.DatabaseConnection) *catalog.Database {
 	c.Helper()
 	live, err := conn.Reader().ReadSchemaContext(c.Context())
 	c.Assert(err, qt.IsNil)
 	return live
 }
 
-func sortingKeyOf(live *dbschematypes.DBSchema, table string) string {
+func sortingKeyOf(live *catalog.Database, table string) string {
 	for _, candidate := range live.Tables {
 		if candidate.Name == table {
 			return candidate.ClickHouseSortingKey

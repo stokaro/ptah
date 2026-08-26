@@ -12,10 +12,10 @@ import (
 
 	digest "github.com/opencontainers/go-digest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/schemafile"
@@ -83,7 +83,7 @@ type PlanFileOptions struct {
 	Policy    DiffPolicy
 	// Desired supplies a pre-loaded desired schema model; see
 	// [ApplyOptions.Desired]. When set, ToURLs are ignored.
-	Desired *goschema.Database
+	Desired *schemamodel.Database
 	// Vars supplies values for HCL schema-file `variable` blocks, as `--var`
 	// spells them; see [go.5x5.cz/ptah/internal/schemafile.Options].
 	Vars []string
@@ -204,7 +204,7 @@ func planSourceSchema(ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	computation applyComputation,
 	exclude []string,
-) (*types.DBSchema, error) {
+) (*catalog.Database, error) {
 	if computation.readScope == nil {
 		return computation.current, nil
 	}
@@ -422,7 +422,7 @@ func VerifyPlanTarget(ctx context.Context, conn *dbschema.DatabaseConnection, pl
 // encoding/json emits struct fields in declaration order and map keys
 // sorted), in `sha256:<hex>` form. The same mechanism binds migration-plan
 // OCI attachments to live schema state (internal/planartifact).
-func SchemaFingerprint(schema *types.DBSchema) (string, error) {
+func SchemaFingerprint(schema *catalog.Database) (string, error) {
 	if schema == nil {
 		return "", errors.New("schema fingerprint requires schema")
 	}
@@ -437,7 +437,7 @@ func SchemaFingerprint(schema *types.DBSchema) (string, error) {
 // informational: apply --plan executes the recorded statements and only
 // verifies the source fingerprint, but the target fingerprint lets tooling
 // detect that a plan no longer corresponds to the desired sources.
-func desiredSchemaFingerprint(desired *goschema.Database) (string, error) {
+func desiredSchemaFingerprint(desired *schemamodel.Database) (string, error) {
 	if desired == nil {
 		return "", errors.New("desired schema fingerprint requires schema")
 	}

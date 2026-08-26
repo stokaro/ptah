@@ -11,12 +11,12 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestPlanGeneratedMigrationSpecs_ConcurrentIndexForPopulatedPostgresTable(t *testing.T) {
@@ -25,7 +25,7 @@ func TestPlanGeneratedMigrationSpecs_ConcurrentIndexForPopulatedPostgresTable(t 
 	specs, assessments, err := planGeneratedMigrationSpecs(
 		indexOnlyDiff(),
 		indexOnlyGeneratedSchema(),
-		&dbschematypes.DBSchema{Tables: []dbschematypes.DBTable{{Name: "users", Type: "BASE TABLE", EstimatedRows: 10}}},
+		&catalog.Database{Tables: []catalog.Table{{Name: "users", Type: "BASE TABLE", EstimatedRows: 10}}},
 		postgresInfo(capability.Postgres16()),
 		100,
 		"add_user_email_index",
@@ -49,13 +49,13 @@ func TestPlanGeneratedMigrationSpecs_ConcurrentIndexForPopulatedPostgresTable(t 
 
 func TestPlanGeneratedMigrationSpecs_ReverseOnlyNoTransactionMarksPair(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{EnumsModified: []types.EnumDiff{{
+	diff := &difftypes.SchemaDiff{EnumsModified: []difftypes.EnumDiff{{
 		EnumName: "status", ValuesRemoved: []string{"retired"},
 	}}}
-	desired := &goschema.Database{Enums: []goschema.Enum{{
+	desired := &schemamodel.Database{Enums: []schemamodel.Enum{{
 		Name: "status", Values: []string{"active"},
 	}}}
-	current := &dbschematypes.DBSchema{Enums: []dbschematypes.DBEnum{{
+	current := &catalog.Database{Enums: []catalog.Enum{{
 		Name: "status", Values: []string{"active", "retired"},
 	}}}
 
@@ -84,8 +84,8 @@ func TestPlanGeneratedMigrationSpecs_YugabyteConcurrentCreateUsesBlockingRollbac
 	specs, assessments, err := planGeneratedMigrationSpecs(
 		indexOnlyDiff(),
 		indexOnlyGeneratedSchema(),
-		&dbschematypes.DBSchema{Tables: []dbschematypes.DBTable{{Name: "users", Type: "BASE TABLE", EstimatedRows: 10}}},
-		dbschematypes.DBInfo{
+		&catalog.Database{Tables: []catalog.Table{{Name: "users", Type: "BASE TABLE", EstimatedRows: 10}}},
+		catalog.ServerInfo{
 			Dialect:      platform.YugabyteDB,
 			Capabilities: capability.YugabyteDB25(),
 		},
@@ -110,22 +110,22 @@ func TestPlanGeneratedMigrationSpecs_YugabyteConcurrentCreateUsesBlockingRollbac
 func TestPlanGeneratedMigrationSpecs_ConcurrentIndexRequiresPopulatedCapablePostgres(t *testing.T) {
 	tests := []struct {
 		name     string
-		dbSchema *dbschematypes.DBSchema
-		info     dbschematypes.DBInfo
+		dbSchema *catalog.Database
+		info     catalog.ServerInfo
 	}{
 		{
 			name:     "empty table stays transactional",
-			dbSchema: &dbschematypes.DBSchema{Tables: []dbschematypes.DBTable{{Name: "users", Type: "BASE TABLE"}}},
+			dbSchema: &catalog.Database{Tables: []catalog.Table{{Name: "users", Type: "BASE TABLE"}}},
 			info:     postgresInfo(capability.Postgres16()),
 		},
 		{
 			name:     "missing table stats stays transactional",
-			dbSchema: &dbschematypes.DBSchema{},
+			dbSchema: &catalog.Database{},
 			info:     postgresInfo(capability.Postgres16()),
 		},
 		{
 			name:     "capability-disabled postgres family stays transactional",
-			dbSchema: &dbschematypes.DBSchema{Tables: []dbschematypes.DBTable{{Name: "users", Type: "BASE TABLE", EstimatedRows: 10}}},
+			dbSchema: &catalog.Database{Tables: []catalog.Table{{Name: "users", Type: "BASE TABLE", EstimatedRows: 10}}},
 			info:     postgresInfo(capability.Postgres16().With(capability.CreateIndexConcurrently, false)),
 		},
 	}
@@ -151,9 +151,9 @@ func TestPlanGeneratedMigrationSpecs_SplitsTransactionalAndConcurrentIndex(t *te
 
 	diff := indexOnlyDiff()
 	diff.TablesAdded = []string{"posts"}
-	generated := indexOnlyGeneratedSchema()
-	generated.Tables = append(generated.Tables, goschema.Table{StructName: "Post", Name: "posts"})
-	generated.Fields = append(generated.Fields, goschema.Field{
+	desired := indexOnlyGeneratedSchema()
+	desired.Tables = append(desired.Tables, schemamodel.Table{StructName: "Post", Name: "posts"})
+	desired.Fields = append(desired.Fields, schemamodel.Field{
 		StructName: "Post",
 		Name:       "id",
 		Type:       "SERIAL",
@@ -163,8 +163,8 @@ func TestPlanGeneratedMigrationSpecs_SplitsTransactionalAndConcurrentIndex(t *te
 
 	specs, _, err := planGeneratedMigrationSpecs(
 		diff,
-		generated,
-		&dbschematypes.DBSchema{Tables: []dbschematypes.DBTable{{Name: "users", Type: "BASE TABLE", EstimatedRows: 10}}},
+		desired,
+		&catalog.Database{Tables: []catalog.Table{{Name: "users", Type: "BASE TABLE", EstimatedRows: 10}}},
 		postgresInfo(capability.Postgres16()),
 		100,
 		"add_posts_and_user_index",
@@ -193,26 +193,26 @@ func TestPlanGeneratedMigrationSpecs_SplitsTransactionalAndConcurrentIndex(t *te
 func TestPlanGeneratedMigrationSpecs_SplitsPopulatedAndEmptyTableIndexes(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{IndexesAdded: []difftypes.IndexRef{
 		{Name: "idx_users_email", TableName: "users"},
 		{Name: "idx_posts_title", TableName: "posts"},
 	}}
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "User", Name: "users"},
 			{StructName: "Post", Name: "posts"},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{Name: "idx_users_email", StructName: "User", Fields: []string{"email"}},
 			{Name: "idx_posts_title", StructName: "Post", Fields: []string{"title"}},
 		},
 	}
-	dbSchema := &dbschematypes.DBSchema{Tables: []dbschematypes.DBTable{
+	dbSchema := &catalog.Database{Tables: []catalog.Table{
 		{Name: "users", Type: "BASE TABLE", EstimatedRows: 10},
 		{Name: "posts", Type: "BASE TABLE", EstimatedRows: 0},
 	}}
 
-	specs, _, err := planGeneratedMigrationSpecs(diff, generated, dbSchema, postgresInfo(capability.Postgres16()), 100, "add_indexes", DiffPolicy{}, atlasmigrate.Qualifier{})
+	specs, _, err := planGeneratedMigrationSpecs(diff, desired, dbSchema, postgresInfo(capability.Postgres16()), 100, "add_indexes", DiffPolicy{}, atlasmigrate.Qualifier{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(specs, qt.HasLen, 2)
@@ -241,26 +241,26 @@ func TestPlanGeneratedMigrationSpecs_SplitsPopulatedAndEmptyTableIndexes(t *test
 func TestPlanGeneratedMigrationSpecs_LeadsWithTheEnumValueAddition(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		TablesAdded: []string{"users"},
-		EnumsModified: []types.EnumDiff{{
+		EnumsModified: []difftypes.EnumDiff{{
 			EnumName:    "status",
 			ValuesAdded: []string{"archived"},
 		}},
 	}
-	generated := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "User", Name: "users"}},
-		Fields: []goschema.Field{{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
+		Fields: []schemamodel.Field{{
 			StructName: "User",
 			Name:       "id",
 			Type:       "SERIAL",
 			Primary:    true,
 			AutoInc:    true,
 		}},
-		Enums: []goschema.Enum{{Name: "status", Values: []string{"active", "archived"}}},
+		Enums: []schemamodel.Enum{{Name: "status", Values: []string{"active", "archived"}}},
 	}
 
-	specs, _, err := planGeneratedMigrationSpecs(diff, generated, &dbschematypes.DBSchema{}, postgresInfo(capability.Postgres16()), 100, "mixed", DiffPolicy{}, atlasmigrate.Qualifier{})
+	specs, _, err := planGeneratedMigrationSpecs(diff, desired, &catalog.Database{}, postgresInfo(capability.Postgres16()), 100, "mixed", DiffPolicy{}, atlasmigrate.Qualifier{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(specs, qt.HasLen, 2)
@@ -315,7 +315,7 @@ func TestPlanGeneratedMigrationSpecs_ConcurrentIndexDropPolicy(t *testing.T) {
 	tests := []struct {
 		name              string
 		policy            DiffPolicy
-		info              dbschematypes.DBInfo
+		info              catalog.ServerInfo
 		wantNoTransaction bool
 		wantUpSQL         string
 		wantDownSQL       string
@@ -392,9 +392,9 @@ func TestPlanGeneratedMigrationSpecs_ConcurrentIndexDropSplitsFromTransactional(
 
 	diff := indexRemovalOnlyDiff()
 	diff.TablesAdded = []string{"posts"}
-	generated := indexOnlyGeneratedSchema()
-	generated.Tables = append(generated.Tables, goschema.Table{StructName: "Post", Name: "posts"})
-	generated.Fields = append(generated.Fields, goschema.Field{
+	desired := indexOnlyGeneratedSchema()
+	desired.Tables = append(desired.Tables, schemamodel.Table{StructName: "Post", Name: "posts"})
+	desired.Fields = append(desired.Fields, schemamodel.Field{
 		StructName: "Post",
 		Name:       "id",
 		Type:       "SERIAL",
@@ -404,7 +404,7 @@ func TestPlanGeneratedMigrationSpecs_ConcurrentIndexDropSplitsFromTransactional(
 
 	specs, _, err := planGeneratedMigrationSpecs(
 		diff,
-		generated,
+		desired,
 		indexRemovalDBSchema(),
 		postgresInfo(capability.Postgres16()),
 		100,
@@ -430,17 +430,17 @@ func TestPlanGeneratedMigrationSpecs_ConcurrentIndexDropSplitsFromTransactional(
 // indexRemovalDBSchema is the pre-change database state a removal is planned
 // against: the index the migration drops still exists, so the down direction
 // can rebuild it.
-func indexRemovalDBSchema() *dbschematypes.DBSchema {
-	return &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{{
+func indexRemovalDBSchema() *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{{
 			Name:          "users",
 			Type:          "BASE TABLE",
 			EstimatedRows: 10,
-			Columns: []dbschematypes.DBColumn{
+			Columns: []catalog.Column{
 				{Name: "email", DataType: "text", UDTName: "text", IsNullable: "YES", OrdinalPosition: 1},
 			},
 		}},
-		Indexes: []dbschematypes.DBIndex{{
+		Indexes: []catalog.Index{{
 			Name:      "idx_users_email",
 			TableName: "users",
 			Columns:   []string{"email"},
@@ -448,29 +448,29 @@ func indexRemovalDBSchema() *dbschematypes.DBSchema {
 	}
 }
 
-func indexRemovalOnlyDiff() *types.SchemaDiff {
-	return &types.SchemaDiff{IndexesRemoved: []types.IndexRef{
+func indexRemovalOnlyDiff() *difftypes.SchemaDiff {
+	return &difftypes.SchemaDiff{IndexesRemoved: []difftypes.IndexRef{
 		{Name: "idx_users_email", TableName: "users"},
 	}}
 }
 
-func indexOnlyDiff() *types.SchemaDiff {
-	return &types.SchemaDiff{IndexesAdded: []types.IndexRef{
+func indexOnlyDiff() *difftypes.SchemaDiff {
+	return &difftypes.SchemaDiff{IndexesAdded: []difftypes.IndexRef{
 		{Name: "idx_users_email", TableName: "users"},
 	}}
 }
 
-func indexOnlyGeneratedSchema() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "User", Name: "users"}},
-		Indexes: []goschema.Index{
+func indexOnlyGeneratedSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
+		Indexes: []schemamodel.Index{
 			{Name: "idx_users_email", StructName: "User", Fields: []string{"email"}},
 		},
 	}
 }
 
-func postgresInfo(caps capability.Capabilities) dbschematypes.DBInfo {
-	return dbschematypes.DBInfo{
+func postgresInfo(caps capability.Capabilities) catalog.ServerInfo {
+	return catalog.ServerInfo{
 		Dialect:      platform.Postgres,
 		Capabilities: caps,
 	}

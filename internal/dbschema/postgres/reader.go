@@ -11,9 +11,9 @@ import (
 	"strings"
 	"sync"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/pgindexstorage"
 	"go.5x5.cz/ptah/internal/reservedrole"
 	"go.5x5.cz/ptah/internal/rolescope"
@@ -106,15 +106,15 @@ func (r *Reader) outputSchema(schemaName string) string {
 }
 
 // ReadSchema is [Reader.ReadSchemaContext] under context.Background(), the
-// context-free half of the pair [types.SchemaReader] declares. Prefer the
+// context-free half of the pair [catalog.SchemaReader] declares. Prefer the
 // Context form: only it can be told to stop.
-func (r *Reader) ReadSchema() (*types.DBSchema, error) {
+func (r *Reader) ReadSchema() (*catalog.Database, error) {
 	return r.ReadSchemaContext(context.Background())
 }
 
 // ReadSchemaContext reads the complete database schema
-func (r *Reader) ReadSchemaContext(ctx context.Context) (*types.DBSchema, error) {
-	schema := &types.DBSchema{}
+func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, error) {
+	schema := &catalog.Database{}
 
 	schemas, err := r.readSchemas(ctx)
 	if err != nil {
@@ -224,9 +224,9 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*types.DBSchema, error)
 // change does not move it: it is still the connected schema. What moves is that
 // the read says so. `schema inspect` resolves its own wider scope from the URL
 // and hands the names in explicitly (stokaro/ptah#1264).
-func (r *Reader) readSchemas(ctx context.Context) ([]types.DBSchemaInfo, error) {
+func (r *Reader) readSchemas(ctx context.Context) ([]catalog.Schema, error) {
 	names := r.schemasToRead()
-	schemas := make([]types.DBSchemaInfo, 0, len(names))
+	schemas := make([]catalog.Schema, 0, len(names))
 	for _, schemaName := range names {
 		schema, err := r.readSchemaInfo(ctx, schemaName)
 		if err != nil {
@@ -240,7 +240,7 @@ func (r *Reader) readSchemas(ctx context.Context) ([]types.DBSchemaInfo, error) 
 	return schemas, nil
 }
 
-func (r *Reader) readSchemaInfo(ctx context.Context, schemaName string) (types.DBSchemaInfo, error) {
+func (r *Reader) readSchemaInfo(ctx context.Context, schemaName string) (catalog.Schema, error) {
 	schemasQuery := `
 		SELECT
 			n.nspname,
@@ -260,17 +260,17 @@ func (r *Reader) readSchemaInfo(ctx context.Context, schemaName string) (types.D
 		WHERE n.nspname = $1`
 	}
 
-	var schema types.DBSchemaInfo
+	var schema catalog.Schema
 	err := r.db.QueryRowContext(ctx, schemasQuery, schemaName).Scan(&schema.Name, &schema.Comment)
 	if err != nil {
-		return types.DBSchemaInfo{}, fmt.Errorf("failed to query schema %s: %w", schemaName, err)
+		return catalog.Schema{}, fmt.Errorf("failed to query schema %s: %w", schemaName, err)
 	}
 	return schema, nil
 }
 
 // readTables reads all tables and their columns
-func (r *Reader) readTables(ctx context.Context) ([]types.DBTable, error) {
-	var tables []types.DBTable
+func (r *Reader) readTables(ctx context.Context) ([]catalog.Table, error) {
+	var tables []catalog.Table
 	for _, schemaName := range r.schemasToRead() {
 		schemaTables, err := r.readTablesForSchema(ctx, schemaName)
 		if err != nil {
@@ -374,7 +374,7 @@ func (r *Reader) cacheRelationSize(supported bool) {
 	r.relationSizeProbed = true
 }
 
-func (r *Reader) readTablesForSchema(ctx context.Context, schemaName string) ([]types.DBTable, error) {
+func (r *Reader) readTablesForSchema(ctx context.Context, schemaName string) ([]catalog.Table, error) {
 	columnsByTable, err := r.readColumnsForSchema(ctx, schemaName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read columns for schema %s: %w", schemaName, err)
@@ -427,9 +427,9 @@ func (r *Reader) readTablesForSchema(ctx context.Context, schemaName string) ([]
 	}
 	defer rows.Close()
 
-	var tables []types.DBTable
+	var tables []catalog.Table
 	for rows.Next() {
-		var table types.DBTable
+		var table catalog.Table
 		var rowTTLOptions string
 		var rowDeletionPolicy string
 		err := rows.Scan(
@@ -699,7 +699,7 @@ func (r *Reader) formattedTypeExpr() string {
 
 // readColumnsForSchema reads all columns in a schema in one catalog query and
 // groups them by table name.
-func (r *Reader) readColumnsForSchema(ctx context.Context, schemaName string) (map[string][]types.DBColumn, error) {
+func (r *Reader) readColumnsForSchema(ctx context.Context, schemaName string) (map[string][]catalog.Column, error) {
 	columnsQuery := `
 		SELECT
 			col.table_name,
@@ -783,9 +783,9 @@ func (r *Reader) readColumnsForSchema(ctx context.Context, schemaName string) (m
 	}
 	defer rows.Close()
 
-	columnsByTable := make(map[string][]types.DBColumn)
+	columnsByTable := make(map[string][]catalog.Column)
 	for rows.Next() {
-		var col types.DBColumn
+		var col catalog.Column
 		var generatedKind string
 		var generatedExpression string
 		var identityKind string
@@ -860,8 +860,8 @@ func postgresIdentityGeneration(code string) string {
 }
 
 // readEnums reads all enum types
-func (r *Reader) readEnums(ctx context.Context) ([]types.DBEnum, error) {
-	var enums []types.DBEnum
+func (r *Reader) readEnums(ctx context.Context) ([]catalog.Enum, error) {
+	var enums []catalog.Enum
 	for _, schemaName := range r.schemasToRead() {
 		schemaEnums, err := r.readEnumsForSchema(ctx, schemaName)
 		if err != nil {
@@ -872,7 +872,7 @@ func (r *Reader) readEnums(ctx context.Context) ([]types.DBEnum, error) {
 	return enums, nil
 }
 
-func (r *Reader) readEnumsForSchema(ctx context.Context, schemaName string) ([]types.DBEnum, error) {
+func (r *Reader) readEnumsForSchema(ctx context.Context, schemaName string) ([]catalog.Enum, error) {
 	enumsQuery := `
 		SELECT
 			t.typname AS enum_name,
@@ -902,9 +902,9 @@ func (r *Reader) readEnumsForSchema(ctx context.Context, schemaName string) ([]t
 		enumMap[enumName] = append(enumMap[enumName], enumValue)
 	}
 
-	var enums []types.DBEnum
+	var enums []catalog.Enum
 	for name, values := range enumMap {
-		enums = append(enums, types.DBEnum{
+		enums = append(enums, catalog.Enum{
 			Name: name,
 			// Same convention as tables, views and domains: blank for the
 			// connection's own schema, named otherwise. Filters rebuild the
@@ -921,7 +921,7 @@ func (r *Reader) readEnumsForSchema(ctx context.Context, schemaName string) ([]t
 // readUserTypesInto reads PostgreSQL domains, composite types, and range types
 // and assigns them onto schema. Split out of ReadSchema to keep that method's
 // cyclomatic complexity manageable.
-func (r *Reader) readUserTypesInto(ctx context.Context, schema *types.DBSchema) error {
+func (r *Reader) readUserTypesInto(ctx context.Context, schema *catalog.Database) error {
 	// The whole read is skipped rather than gated projection by projection: it
 	// joins pg_depend, and a missing relation is not something a constant can
 	// stand in for the way a missing function is. A target without the type
@@ -959,7 +959,7 @@ func (r *Reader) readUserTypesInto(ctx context.Context, schema *types.DBSchema) 
 //
 // The reasoning is the one [Reader.readFunctionsForSchema] already carries for
 // functions -- an extension's members "cannot be dropped independently and
-// should be managed by the extension" -- and it was never applied to its types.
+// should be managed by the extension" -- and it was never applied to its catalog.
 // A description that declares both `extension "lo"` and `domain "lo"` cannot be
 // replayed, because CREATE EXTENSION makes the domain and the second
 // declaration collides with it. Measured on PostgreSQL 17.10 (stokaro/ptah#1294):
@@ -990,8 +990,8 @@ const extensionOwnedTypeExclusion = `
 		)`
 
 // readDomains reads PostgreSQL domain types (typtype='d').
-func (r *Reader) readDomains(ctx context.Context) ([]types.DBDomain, error) {
-	var domains []types.DBDomain
+func (r *Reader) readDomains(ctx context.Context) ([]catalog.Domain, error) {
+	var domains []catalog.Domain
 	for _, schemaName := range r.schemasToRead() {
 		schemaDomains, err := r.readDomainsForSchema(ctx, schemaName)
 		if err != nil {
@@ -1002,7 +1002,7 @@ func (r *Reader) readDomains(ctx context.Context) ([]types.DBDomain, error) {
 	return domains, nil
 }
 
-func (r *Reader) readDomainsForSchema(ctx context.Context, schemaName string) ([]types.DBDomain, error) {
+func (r *Reader) readDomainsForSchema(ctx context.Context, schemaName string) ([]catalog.Domain, error) {
 	query := `
 		SELECT
 			n.nspname AS schema_name,
@@ -1023,9 +1023,9 @@ func (r *Reader) readDomainsForSchema(ctx context.Context, schemaName string) ([
 	}
 	defer rows.Close()
 
-	var domains []types.DBDomain
+	var domains []catalog.Domain
 	for rows.Next() {
-		var domain types.DBDomain
+		var domain catalog.Domain
 		var rawSchema string
 		if err := rows.Scan(&rawSchema, &domain.Name, &domain.BaseType, &domain.NotNull, &domain.Default, &domain.Check); err != nil {
 			return nil, fmt.Errorf("failed to scan domain for schema %s: %w", schemaName, err)
@@ -1051,7 +1051,7 @@ func (r *Reader) readDomainsForSchema(ctx context.Context, schemaName string) ([
 // CHECK has only one route -- drop the domain and create it again -- and that
 // route fails on any domain a column actually uses, which is every domain worth
 // having (stokaro/ptah#1717).
-func (r *Reader) attachDomainCheckConstraints(ctx context.Context, schemaName string, domains []types.DBDomain) error {
+func (r *Reader) attachDomainCheckConstraints(ctx context.Context, schemaName string, domains []catalog.Domain) error {
 	if len(domains) == 0 || !r.caps.Has(capability.PostgresCatalogFunctions) {
 		return nil
 	}
@@ -1072,10 +1072,10 @@ func (r *Reader) attachDomainCheckConstraints(ctx context.Context, schemaName st
 	}
 	defer rows.Close()
 
-	byDomain := make(map[string][]types.DBDomainCheck, len(domains))
+	byDomain := make(map[string][]catalog.DomainCheck, len(domains))
 	for rows.Next() {
 		var domainName string
-		var check types.DBDomainCheck
+		var check catalog.DomainCheck
 		if err := rows.Scan(&domainName, &check.Name, &check.Expression); err != nil {
 			return fmt.Errorf("failed to scan domain check constraint for schema %s: %w", schemaName, err)
 		}
@@ -1092,8 +1092,8 @@ func (r *Reader) attachDomainCheckConstraints(ctx context.Context, schemaName st
 
 // readComposites reads PostgreSQL composite types (typtype='c'), excluding the
 // implicit row types of tables (relkind other than 'c').
-func (r *Reader) readComposites(ctx context.Context) ([]types.DBComposite, error) {
-	var composites []types.DBComposite
+func (r *Reader) readComposites(ctx context.Context) ([]catalog.CompositeType, error) {
+	var composites []catalog.CompositeType
 	for _, schemaName := range r.schemasToRead() {
 		schemaComposites, err := r.readCompositesForSchema(ctx, schemaName)
 		if err != nil {
@@ -1104,7 +1104,7 @@ func (r *Reader) readComposites(ctx context.Context) ([]types.DBComposite, error
 	return composites, nil
 }
 
-func (r *Reader) readCompositesForSchema(ctx context.Context, schemaName string) ([]types.DBComposite, error) {
+func (r *Reader) readCompositesForSchema(ctx context.Context, schemaName string) ([]catalog.CompositeType, error) {
 	const query = `
 		SELECT
 			n.nspname AS schema_name,
@@ -1128,7 +1128,7 @@ func (r *Reader) readCompositesForSchema(ctx context.Context, schemaName string)
 
 	type key struct{ schema, name string }
 	order := make([]key, 0)
-	byName := make(map[key]*types.DBComposite)
+	byName := make(map[key]*catalog.CompositeType)
 	for rows.Next() {
 		var rawSchema, typeName, fieldName, fieldType string
 		var attNum int
@@ -1138,17 +1138,17 @@ func (r *Reader) readCompositesForSchema(ctx context.Context, schemaName string)
 		k := key{r.outputSchema(rawSchema), typeName}
 		composite, ok := byName[k]
 		if !ok {
-			composite = &types.DBComposite{Name: typeName, Schema: k.schema}
+			composite = &catalog.CompositeType{Name: typeName, Schema: k.schema}
 			byName[k] = composite
 			order = append(order, k)
 		}
-		composite.Fields = append(composite.Fields, types.DBCompositeField{Name: fieldName, Type: fieldType})
+		composite.Fields = append(composite.Fields, catalog.CompositeField{Name: fieldName, Type: fieldType})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("failed to read composite types for schema %s: %w", schemaName, err)
 	}
 
-	composites := make([]types.DBComposite, 0, len(order))
+	composites := make([]catalog.CompositeType, 0, len(order))
 	for _, k := range order {
 		composites = append(composites, *byName[k])
 	}
@@ -1156,8 +1156,8 @@ func (r *Reader) readCompositesForSchema(ctx context.Context, schemaName string)
 }
 
 // readRanges reads PostgreSQL range types (typtype='r').
-func (r *Reader) readRanges(ctx context.Context) ([]types.DBRange, error) {
-	var ranges []types.DBRange
+func (r *Reader) readRanges(ctx context.Context) ([]catalog.Range, error) {
+	var ranges []catalog.Range
 	for _, schemaName := range r.schemasToRead() {
 		schemaRanges, err := r.readRangesForSchema(ctx, schemaName)
 		if err != nil {
@@ -1168,7 +1168,7 @@ func (r *Reader) readRanges(ctx context.Context) ([]types.DBRange, error) {
 	return ranges, nil
 }
 
-func (r *Reader) readRangesForSchema(ctx context.Context, schemaName string) ([]types.DBRange, error) {
+func (r *Reader) readRangesForSchema(ctx context.Context, schemaName string) ([]catalog.Range, error) {
 	// The four attributes after the subtype are what makes a change to an
 	// existing range type visible at all; without them the comparator had only
 	// names to compare and called a changed range converged (stokaro/ptah#931
@@ -1198,9 +1198,9 @@ func (r *Reader) readRangesForSchema(ctx context.Context, schemaName string) ([]
 	}
 	defer rows.Close()
 
-	var ranges []types.DBRange
+	var ranges []catalog.Range
 	for rows.Next() {
-		var rangeType types.DBRange
+		var rangeType catalog.Range
 		var rawSchema string
 		if err := rows.Scan(
 			&rawSchema,
@@ -1223,8 +1223,8 @@ func (r *Reader) readRangesForSchema(ctx context.Context, schemaName string) ([]
 }
 
 // readIndexes reads all indexes
-func (r *Reader) readIndexes(ctx context.Context) ([]types.DBIndex, error) {
-	var indexes []types.DBIndex
+func (r *Reader) readIndexes(ctx context.Context) ([]catalog.Index, error) {
+	var indexes []catalog.Index
 	for _, schemaName := range r.schemasToRead() {
 		schemaIndexes, err := r.readIndexesForSchema(ctx, schemaName)
 		if err != nil {
@@ -1263,7 +1263,7 @@ func (r *Reader) readIndexes(ctx context.Context) ([]types.DBIndex, error) {
 //
 // Both arms are unconditional on opcdefault, so a printed class is recorded
 // here as well as an unprinted one. A printed class is also matchable by name
-// through [goschema.Extension.Provides] wherever the renderer's reference scan
+// through [schemamodel.Extension.Provides] wherever the renderer's reference scan
 // reads the attribute it lands in, and that is the answer preferred when both
 // are available, because a name can be looked up in the document; see
 // [go.5x5.cz/ptah/internal/atlashclrender] omitRefusedExtension. This projection
@@ -1282,7 +1282,7 @@ func requiredExtensionsProjection(indclassExpr, accessMethodExpr string) string 
 			), '[]')`
 }
 
-func (r *Reader) readIndexesForSchema(ctx context.Context, schemaName string) ([]types.DBIndex, error) {
+func (r *Reader) readIndexesForSchema(ctx context.Context, schemaName string) ([]catalog.Index, error) {
 	// A server without pg_catalog's introspection helpers has no
 	// pg_get_indexdef either, and the query below is pg_index/pg_class/pg_am/
 	// pg_get_indexdef throughout, so there is nothing here to degrade: the read
@@ -1438,7 +1438,7 @@ func (r *Reader) readIndexesForSchema(ctx context.Context, schemaName string) ([
 	}
 	defer rows.Close()
 
-	var indexes []types.DBIndex
+	var indexes []catalog.Index
 	for rows.Next() {
 		var row postgresIndexRow
 		err := rows.Scan(
@@ -1503,8 +1503,8 @@ type postgresIndexRow struct {
 
 // buildPostgresIndex maps one introspection row onto the dialect-neutral index
 // model. It does not set Schema, which needs the reader's output-schema policy.
-func buildPostgresIndex(row postgresIndexRow) (types.DBIndex, error) {
-	index := types.DBIndex{
+func buildPostgresIndex(row postgresIndexRow) (catalog.Index, error) {
+	index := catalog.Index{
 		Name:              row.indexName,
 		TableName:         row.tableName,
 		Definition:        row.indexDef,
@@ -1519,39 +1519,39 @@ func buildPostgresIndex(row postgresIndexRow) (types.DBIndex, error) {
 
 	columns, err := parsePostgresIndexColumns(row.keyTexts, row.indexDef)
 	if err != nil {
-		return types.DBIndex{}, fmt.Errorf("failed to parse index columns for %s: %w", row.indexName, err)
+		return catalog.Index{}, fmt.Errorf("failed to parse index columns for %s: %w", row.indexName, err)
 	}
 	index.Columns = columns
 
 	index.IncludeColumns, err = decodePostgresNameList(row.includeColumns)
 	if err != nil {
-		return types.DBIndex{}, fmt.Errorf("failed to parse index include columns for %s: %w", row.indexName, err)
+		return catalog.Index{}, fmt.Errorf("failed to parse index include columns for %s: %w", row.indexName, err)
 	}
 
 	index.RequiresExtensions, err = decodePostgresNameList(row.requiredExtensions)
 	if err != nil {
-		return types.DBIndex{}, fmt.Errorf("failed to parse index required extensions for %s: %w", row.indexName, err)
+		return catalog.Index{}, fmt.Errorf("failed to parse index required extensions for %s: %w", row.indexName, err)
 	}
 	slices.Sort(index.RequiresExtensions)
 
 	index.Parts, err = parsePostgresIndexParts(index.Columns, row.keyAttnums)
 	if err != nil {
-		return types.DBIndex{}, fmt.Errorf("failed to parse index key parts for %s: %w", row.indexName, err)
+		return catalog.Index{}, fmt.Errorf("failed to parse index key parts for %s: %w", row.indexName, err)
 	}
 
 	index.Parts, err = applyPostgresIndexOpclasses(index.Parts, row.keyOpclasses)
 	if err != nil {
-		return types.DBIndex{}, fmt.Errorf("failed to parse index operator classes for %s: %w", row.indexName, err)
+		return catalog.Index{}, fmt.Errorf("failed to parse index operator classes for %s: %w", row.indexName, err)
 	}
 
 	index.Parts, err = applyPostgresIndexOptions(index.Parts, row.keyOptions)
 	if err != nil {
-		return types.DBIndex{}, fmt.Errorf("failed to parse index key options for %s: %w", row.indexName, err)
+		return catalog.Index{}, fmt.Errorf("failed to parse index key options for %s: %w", row.indexName, err)
 	}
 
 	index.StorageParams, err = postgresIndexStorageParams(row.storageParams)
 	if err != nil {
-		return types.DBIndex{}, fmt.Errorf("failed to parse index storage parameters for %s: %w", row.indexName, err)
+		return catalog.Index{}, fmt.Errorf("failed to parse index storage parameters for %s: %w", row.indexName, err)
 	}
 
 	return index, nil
@@ -1653,7 +1653,7 @@ func postgresOperatorClassSpelling(class postgresKeyOperatorClass) string {
 // A list that does not line up with the parts is dropped rather than applied
 // off by one: an operator class on the wrong key builds a different index than
 // the one being read, which is worse than not carrying it at all.
-func applyPostgresIndexOpclasses(parts []types.DBIndexPart, opclassesJSON string) ([]types.DBIndexPart, error) {
+func applyPostgresIndexOpclasses(parts []catalog.IndexPart, opclassesJSON string) ([]catalog.IndexPart, error) {
 	opclasses, err := decodePostgresKeyList[postgresKeyOperatorClass](opclassesJSON, len(parts))
 	if err != nil || opclasses == nil {
 		return parts, err
@@ -1676,7 +1676,7 @@ const (
 // Only an ordering that contradicts its direction's default is recorded:
 // PostgreSQL gives NULLS LAST to ASC and NULLS FIRST to DESC, so recording the
 // default would make the renderer emit a clause the pinned binary does not.
-func applyPostgresIndexOptions(parts []types.DBIndexPart, optionsJSON string) ([]types.DBIndexPart, error) {
+func applyPostgresIndexOptions(parts []catalog.IndexPart, optionsJSON string) ([]catalog.IndexPart, error) {
 	options, err := decodePostgresKeyList[int](optionsJSON, len(parts))
 	if err != nil || options == nil {
 		return parts, err
@@ -1702,9 +1702,9 @@ func postgresNullsOrder(optionBits int) string {
 	case descending == nullsFirst:
 		return ""
 	case nullsFirst:
-		return types.NullsOrderFirst
+		return catalog.NullsOrderFirst
 	default:
-		return types.NullsOrderLast
+		return catalog.NullsOrderLast
 	}
 }
 
@@ -1741,9 +1741,9 @@ func parsePostgresIndexColumns(value, indexDef string) ([]string, error) {
 // key texts. An attnum of 0 marks an expression key.
 //
 // It returns nil when the attnum list is missing or does not line up with the
-// key texts, which leaves DBIndex.Parts empty and keeps the legacy
+// key texts, which leaves catalog.Index.Parts empty and keeps the legacy
 // columns-only representation rather than guessing.
-func parsePostgresIndexParts(columns []string, attnumsJSON string) ([]types.DBIndexPart, error) {
+func parsePostgresIndexParts(columns []string, attnumsJSON string) ([]catalog.IndexPart, error) {
 	trimmed := strings.TrimSpace(attnumsJSON)
 	if trimmed == "" || trimmed == "[]" {
 		return nil, nil
@@ -1756,15 +1756,15 @@ func parsePostgresIndexParts(columns []string, attnumsJSON string) ([]types.DBIn
 		return nil, nil
 	}
 
-	parts := make([]types.DBIndexPart, len(columns))
+	parts := make([]catalog.IndexPart, len(columns))
 	for position, key := range columns {
 		// Attribute number 0 is PostgreSQL's marker for "this key is an
 		// expression"; every real column has a positive attnum.
 		if attnums[position] == 0 {
-			parts[position] = types.DBIndexPart{Expr: key}
+			parts[position] = catalog.IndexPart{Expr: key}
 			continue
 		}
-		parts[position] = types.DBIndexPart{Name: key}
+		parts[position] = catalog.IndexPart{Name: key}
 	}
 	return parts, nil
 }
@@ -1801,13 +1801,13 @@ func splitPostgresIndexColumns(value string) []string {
 }
 
 // readConstraints reads all constraints
-func (r *Reader) readConstraints(ctx context.Context) ([]types.DBConstraint, error) {
+func (r *Reader) readConstraints(ctx context.Context) ([]catalog.Constraint, error) {
 	// A server without pg_catalog cannot answer either half below: the basic
 	// read is anchored in pg_constraint and aggregates with FILTER, and the
 	// second reads pg_constraint directly. The SQL-standard catalog answers the
 	// same question with different joins (stokaro/ptah#942).
 	if !r.caps.Has(capability.PostgresCatalogFunctions) {
-		var constraints []types.DBConstraint
+		var constraints []catalog.Constraint
 		for _, schemaName := range r.schemasToRead() {
 			schemaConstraints, err := r.readInformationSchemaConstraints(ctx, schemaName)
 			if err != nil {
@@ -1837,8 +1837,8 @@ func (r *Reader) readConstraints(ctx context.Context) ([]types.DBConstraint, err
 }
 
 // readBasicConstraints reads basic constraint information from information_schema
-func (r *Reader) readBasicConstraints(ctx context.Context) ([]types.DBConstraint, error) {
-	var constraints []types.DBConstraint
+func (r *Reader) readBasicConstraints(ctx context.Context) ([]catalog.Constraint, error) {
+	var constraints []catalog.Constraint
 	for _, schemaName := range r.schemasToRead() {
 		schemaConstraints, err := r.readBasicConstraintsForSchema(ctx, schemaName)
 		if err != nil {
@@ -1849,7 +1849,7 @@ func (r *Reader) readBasicConstraints(ctx context.Context) ([]types.DBConstraint
 	return constraints, nil
 }
 
-func (r *Reader) readBasicConstraintsForSchema(ctx context.Context, schemaName string) ([]types.DBConstraint, error) {
+func (r *Reader) readBasicConstraintsForSchema(ctx context.Context, schemaName string) ([]catalog.Constraint, error) {
 	// PostgreSQL scopes constraint names to their owning tables. Joining the
 	// information_schema FK views by schema and name therefore cross-products
 	// same-named constraints on different tables. Anchor the row in
@@ -1929,9 +1929,9 @@ func (r *Reader) readBasicConstraintsForSchema(ctx context.Context, schemaName s
 	}
 	defer rows.Close()
 
-	var constraints []types.DBConstraint
+	var constraints []catalog.Constraint
 	for rows.Next() {
-		var constraint types.DBConstraint
+		var constraint catalog.Constraint
 		var columnNames, foreignSchema, foreignTable, foreignColumns, deleteRule, updateRule, checkClause, constraintDefinition string
 		var deferrable, deferred bool
 
@@ -2048,8 +2048,8 @@ func unquotePostgresIdentifier(identifier string) string {
 }
 
 // readPostgreSQLConstraints reads PostgreSQL-specific constraints from pg_constraint
-func (r *Reader) readPostgreSQLConstraints(ctx context.Context) ([]types.DBConstraint, error) {
-	var constraints []types.DBConstraint
+func (r *Reader) readPostgreSQLConstraints(ctx context.Context) ([]catalog.Constraint, error) {
+	var constraints []catalog.Constraint
 	for _, schemaName := range r.schemasToRead() {
 		schemaConstraints, err := r.readPostgreSQLConstraintsForSchema(ctx, schemaName)
 		if err != nil {
@@ -2060,7 +2060,7 @@ func (r *Reader) readPostgreSQLConstraints(ctx context.Context) ([]types.DBConst
 	return constraints, nil
 }
 
-func (r *Reader) readPostgreSQLConstraintsForSchema(ctx context.Context, schemaName string) ([]types.DBConstraint, error) {
+func (r *Reader) readPostgreSQLConstraintsForSchema(ctx context.Context, schemaName string) ([]catalog.Constraint, error) {
 	// Query PostgreSQL system catalogs for PostgreSQL-specific constraints
 	pgQuery := `
 			SELECT
@@ -2092,7 +2092,7 @@ func (r *Reader) readPostgreSQLConstraintsForSchema(ctx context.Context, schemaN
 	}
 	defer rows.Close()
 
-	var constraints []types.DBConstraint
+	var constraints []catalog.Constraint
 	for rows.Next() {
 		var schemaName, constraintName, tableName, constraintType, definition string
 		var requiredExtensions string
@@ -2116,7 +2116,7 @@ func (r *Reader) readPostgreSQLConstraintsForSchema(ctx context.Context, schemaN
 			continue // Skip unknown types
 		}
 
-		constraint := types.DBConstraint{
+		constraint := catalog.Constraint{
 			Name:               constraintName,
 			TableName:          tableName,
 			Schema:             r.outputSchema(schemaName),
@@ -2225,7 +2225,7 @@ func (r *Reader) ParseExcludeConstraintDefinition(definition string) (*ExcludeCo
 	}, nil
 }
 
-func (r *Reader) readExtensions(ctx context.Context) ([]types.DBExtension, error) {
+func (r *Reader) readExtensions(ctx context.Context) ([]catalog.Extension, error) {
 	// Use a simpler query that only relies on pg_extension and pg_namespace
 	// These are core system catalogs that are consistent across PostgreSQL versions
 	extensionsQuery := `
@@ -2245,9 +2245,9 @@ func (r *Reader) readExtensions(ctx context.Context) ([]types.DBExtension, error
 	}
 	defer rows.Close()
 
-	var extensions []types.DBExtension
+	var extensions []catalog.Extension
 	for rows.Next() {
-		var ext types.DBExtension
+		var ext catalog.Extension
 		var comment sql.NullString
 
 		err := rows.Scan(
@@ -2488,8 +2488,8 @@ func (r *Reader) readExtensionMembers(ctx context.Context) (map[string][]string,
 //   - a sequence with a lifecycle-only OWNED BY (owner column does not draw its
 //     default from it) is surfaced, with OwnedBy populated;
 //   - only genuine SERIAL/identity backing sequences are excluded.
-func (r *Reader) readSequences(ctx context.Context) ([]types.DBSequence, error) {
-	var sequences []types.DBSequence
+func (r *Reader) readSequences(ctx context.Context) ([]catalog.Sequence, error) {
+	var sequences []catalog.Sequence
 	for _, schemaName := range r.schemasToRead() {
 		schemaSequences, err := r.readSequencesForSchema(ctx, schemaName)
 		if err != nil {
@@ -2502,7 +2502,7 @@ func (r *Reader) readSequences(ctx context.Context) ([]types.DBSequence, error) 
 
 // readSequencesForSchema reads one schema's sequences through whichever catalog
 // the target carries.
-func (r *Reader) readSequencesForSchema(ctx context.Context, schemaName string) ([]types.DBSequence, error) {
+func (r *Reader) readSequencesForSchema(ctx context.Context, schemaName string) ([]catalog.Sequence, error) {
 	if !r.caps.Has(capability.PostgresCatalogFunctions) {
 		return r.readSequencesFromInformationSchema(ctx, schemaName)
 	}
@@ -2528,7 +2528,7 @@ func (r *Reader) readSequencesForSchema(ctx context.Context, schemaName string) 
 // target that carries no increment has not set it to 0, and the comparator
 // skips an option the declaration does not state -- writing 0 here would turn
 // every unstated option into a difference.
-func (r *Reader) readSequencesFromInformationSchema(ctx context.Context, schemaName string) ([]types.DBSequence, error) {
+func (r *Reader) readSequencesFromInformationSchema(ctx context.Context, schemaName string) ([]catalog.Sequence, error) {
 	const query = `
 		SELECT
 			"sequence_schema",
@@ -2550,10 +2550,10 @@ func (r *Reader) readSequencesFromInformationSchema(ctx context.Context, schemaN
 	}
 	defer rows.Close()
 
-	var sequences []types.DBSequence
+	var sequences []catalog.Sequence
 	for rows.Next() {
 		var (
-			seq         types.DBSequence
+			seq         catalog.Sequence
 			rawSchema   string
 			start       sql.NullString
 			increment   sql.NullString
@@ -2623,7 +2623,7 @@ func firstReportedInt64(values ...sql.NullString) *int64 {
 	return nil
 }
 
-func (r *Reader) readSequencesFromPgCatalog(ctx context.Context, schemaName string) ([]types.DBSequence, error) {
+func (r *Reader) readSequencesFromPgCatalog(ctx context.Context, schemaName string) ([]catalog.Sequence, error) {
 	const query = `
 		SELECT
 			n.nspname AS schema_name,
@@ -2686,10 +2686,10 @@ func (r *Reader) readSequencesFromPgCatalog(ctx context.Context, schemaName stri
 	}
 	defer rows.Close()
 
-	var sequences []types.DBSequence
+	var sequences []catalog.Sequence
 	for rows.Next() {
 		var (
-			seq         types.DBSequence
+			seq         catalog.Sequence
 			rawSchema   string
 			start       int64
 			increment   int64
@@ -2756,7 +2756,7 @@ func (r *Reader) readSequencesFromPgCatalog(ctx context.Context, schemaName stri
 // holds the qualified names (schema.name, as introspected) of sequences that
 // readSequences classified as standalone, so grants on implicit serial/identity
 // sequences are not surfaced as spurious diffs.
-func (r *Reader) readSequenceGrantsForSchema(ctx context.Context, schemaName string, standalone map[string]bool) ([]types.DBGrant, error) {
+func (r *Reader) readSequenceGrantsForSchema(ctx context.Context, schemaName string, standalone map[string]bool) ([]catalog.Grant, error) {
 	const query = `
 		SELECT
 			COALESCE(grantee.rolname, 'PUBLIC') AS grantee,
@@ -2782,14 +2782,14 @@ func (r *Reader) readSequenceGrantsForSchema(ctx context.Context, schemaName str
 	}
 	defer rows.Close()
 
-	var grants []types.DBGrant
+	var grants []catalog.Grant
 	for rows.Next() {
-		grant := types.DBGrant{ObjectType: "SEQUENCE"}
+		grant := catalog.Grant{ObjectType: "SEQUENCE"}
 		var rawSchema string
 		if err := rows.Scan(&grant.Role, &grant.Privilege, &rawSchema, &grant.ObjectName, &grant.WithOption, &grant.GrantedBy); err != nil {
 			return nil, fmt.Errorf("failed to scan sequence grant for schema %s: %w", schemaName, err)
 		}
-		if !standalone[types.QualifyTableName(r.outputSchema(rawSchema), grant.ObjectName)] {
+		if !standalone[catalog.QualifyTableName(r.outputSchema(rawSchema), grant.ObjectName)] {
 			continue
 		}
 		grant.Schema = r.outputSchema(rawSchema)
@@ -2802,7 +2802,7 @@ func (r *Reader) readSequenceGrantsForSchema(ctx context.Context, schemaName str
 }
 
 // enhanceTablesWithConstraints adds constraint information to table columns
-func (r *Reader) enhanceTablesWithConstraints(tables []types.DBTable, constraints []types.DBConstraint) {
+func (r *Reader) enhanceTablesWithConstraints(tables []catalog.Table, constraints []catalog.Constraint) {
 	// Create maps for quick lookup
 	primaryKeys := make(map[string]map[string]bool)
 	uniqueKeys := make(map[string]map[string]bool)
@@ -2852,7 +2852,7 @@ func (r *Reader) enhanceTablesWithConstraints(tables []types.DBTable, constraint
 // its default from a standalone sequence via nextval(...) is auto-increment but
 // is not a primary key, and inferring one produced a phantom primary-key diff
 // on an otherwise clean round-trip (issue #675).
-func (r *Reader) enhanceTablesWithIndexes(tables []types.DBTable, indexes []types.DBIndex) {
+func (r *Reader) enhanceTablesWithIndexes(tables []catalog.Table, indexes []catalog.Index) {
 	primaryKeyColumns := make(map[string]map[string]bool)
 	for _, index := range indexes {
 		if !index.IsPrimary {
@@ -2895,8 +2895,8 @@ func (r *Reader) enhanceTablesWithIndexes(tables []types.DBTable, indexes []type
 //
 // This approach is more robust than maintaining a manual list of problematic
 // extensions because it automatically handles any extension that creates functions.
-func (r *Reader) readFunctions(ctx context.Context) ([]types.DBFunction, error) {
-	var functions []types.DBFunction
+func (r *Reader) readFunctions(ctx context.Context) ([]catalog.Function, error) {
+	var functions []catalog.Function
 	for _, schemaName := range r.schemasToRead() {
 		schemaFunctions, err := r.readFunctionsForSchema(ctx, schemaName)
 		if err != nil {
@@ -2907,8 +2907,8 @@ func (r *Reader) readFunctions(ctx context.Context) ([]types.DBFunction, error) 
 	return functions, nil
 }
 
-func (r *Reader) readViews(ctx context.Context) ([]types.DBView, error) {
-	var views []types.DBView
+func (r *Reader) readViews(ctx context.Context) ([]catalog.View, error) {
+	var views []catalog.View
 	for _, schemaName := range r.schemasToRead() {
 		schemaViews, err := r.readViewsForSchema(ctx, schemaName)
 		if err != nil {
@@ -2919,7 +2919,7 @@ func (r *Reader) readViews(ctx context.Context) ([]types.DBView, error) {
 	return views, nil
 }
 
-func (r *Reader) readViewsForSchema(ctx context.Context, schemaName string) ([]types.DBView, error) {
+func (r *Reader) readViewsForSchema(ctx context.Context, schemaName string) ([]catalog.View, error) {
 	viewsQuery := `
 		SELECT
 			n.nspname AS schema_name,
@@ -2942,9 +2942,9 @@ func (r *Reader) readViewsForSchema(ctx context.Context, schemaName string) ([]t
 	}
 	defer rows.Close()
 
-	var views []types.DBView
+	var views []catalog.View
 	for rows.Next() {
-		var view types.DBView
+		var view catalog.View
 		err := rows.Scan(&view.Schema, &view.Name, &view.Body, &view.CheckOption, &view.Comment)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan view: %w", err)
@@ -2955,8 +2955,8 @@ func (r *Reader) readViewsForSchema(ctx context.Context, schemaName string) ([]t
 	return views, nil
 }
 
-func (r *Reader) readMaterializedViews(ctx context.Context) ([]types.DBMatView, error) {
-	var views []types.DBMatView
+func (r *Reader) readMaterializedViews(ctx context.Context) ([]catalog.MaterializedView, error) {
+	var views []catalog.MaterializedView
 	for _, schemaName := range r.schemasToRead() {
 		schemaViews, err := r.readMaterializedViewsForSchema(ctx, schemaName)
 		if err != nil {
@@ -2967,7 +2967,7 @@ func (r *Reader) readMaterializedViews(ctx context.Context) ([]types.DBMatView, 
 	return views, nil
 }
 
-func (r *Reader) readMaterializedViewsForSchema(ctx context.Context, schemaName string) ([]types.DBMatView, error) {
+func (r *Reader) readMaterializedViewsForSchema(ctx context.Context, schemaName string) ([]catalog.MaterializedView, error) {
 	viewsQuery := `
 		SELECT
 			n.nspname AS schema_name,
@@ -2986,9 +2986,9 @@ func (r *Reader) readMaterializedViewsForSchema(ctx context.Context, schemaName 
 	}
 	defer rows.Close()
 
-	var views []types.DBMatView
+	var views []catalog.MaterializedView
 	for rows.Next() {
-		var view types.DBMatView
+		var view catalog.MaterializedView
 		err := rows.Scan(&view.Schema, &view.Name, &view.Body, &view.Comment)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan materialized view: %w", err)
@@ -2999,8 +2999,8 @@ func (r *Reader) readMaterializedViewsForSchema(ctx context.Context, schemaName 
 	return views, nil
 }
 
-func (r *Reader) readTriggers(ctx context.Context) ([]types.DBTrigger, error) {
-	var triggers []types.DBTrigger
+func (r *Reader) readTriggers(ctx context.Context) ([]catalog.Trigger, error) {
+	var triggers []catalog.Trigger
 	for _, schemaName := range r.schemasToRead() {
 		schemaTriggers, err := r.readTriggersForSchema(ctx, schemaName)
 		if err != nil {
@@ -3011,7 +3011,7 @@ func (r *Reader) readTriggers(ctx context.Context) ([]types.DBTrigger, error) {
 	return triggers, nil
 }
 
-func (r *Reader) readTriggersForSchema(ctx context.Context, schemaName string) ([]types.DBTrigger, error) {
+func (r *Reader) readTriggersForSchema(ctx context.Context, schemaName string) ([]catalog.Trigger, error) {
 	triggersQuery := `
 		SELECT
 			n.nspname AS schema_name,
@@ -3046,9 +3046,9 @@ func (r *Reader) readTriggersForSchema(ctx context.Context, schemaName string) (
 	}
 	defer rows.Close()
 
-	var triggers []types.DBTrigger
+	var triggers []catalog.Trigger
 	for rows.Next() {
-		var trigger types.DBTrigger
+		var trigger catalog.Trigger
 		err := rows.Scan(
 			&trigger.Schema,
 			&trigger.Table,
@@ -3069,7 +3069,7 @@ func (r *Reader) readTriggersForSchema(ctx context.Context, schemaName string) (
 	return triggers, nil
 }
 
-func (r *Reader) readFunctionsForSchema(ctx context.Context, schemaName string) ([]types.DBFunction, error) {
+func (r *Reader) readFunctionsForSchema(ctx context.Context, schemaName string) ([]catalog.Function, error) {
 	functionsQuery := `
 		SELECT
 			p.proname AS function_name,
@@ -3121,9 +3121,9 @@ func (r *Reader) readFunctionsForSchema(ctx context.Context, schemaName string) 
 	}
 	defer rows.Close()
 
-	var functions []types.DBFunction
+	var functions []catalog.Function
 	for rows.Next() {
-		var fn types.DBFunction
+		var fn catalog.Function
 		var identityArguments string
 		err := rows.Scan(
 			&fn.Name,
@@ -3153,8 +3153,8 @@ func (r *Reader) readFunctionsForSchema(ctx context.Context, schemaName string) 
 }
 
 // readRLSPolicies reads all PostgreSQL RLS policies from the database
-func (r *Reader) readRLSPolicies(ctx context.Context) ([]types.DBRLSPolicy, error) {
-	var policies []types.DBRLSPolicy
+func (r *Reader) readRLSPolicies(ctx context.Context) ([]catalog.RLSPolicy, error) {
+	var policies []catalog.RLSPolicy
 	for _, schemaName := range r.schemasToRead() {
 		schemaPolicies, err := r.readRLSPoliciesForSchema(ctx, schemaName)
 		if err != nil {
@@ -3165,7 +3165,7 @@ func (r *Reader) readRLSPolicies(ctx context.Context) ([]types.DBRLSPolicy, erro
 	return policies, nil
 }
 
-func (r *Reader) readRLSPoliciesForSchema(ctx context.Context, schemaName string) ([]types.DBRLSPolicy, error) {
+func (r *Reader) readRLSPoliciesForSchema(ctx context.Context, schemaName string) ([]catalog.RLSPolicy, error) {
 	rlsPoliciesQuery := `
 		SELECT
 			n.nspname AS schema_name,
@@ -3199,9 +3199,9 @@ func (r *Reader) readRLSPoliciesForSchema(ctx context.Context, schemaName string
 	}
 	defer rows.Close()
 
-	var policies []types.DBRLSPolicy
+	var policies []catalog.RLSPolicy
 	for rows.Next() {
-		var policy types.DBRLSPolicy
+		var policy catalog.RLSPolicy
 		var schemaName string
 		err := rows.Scan(
 			&schemaName,
@@ -3216,7 +3216,7 @@ func (r *Reader) readRLSPoliciesForSchema(ctx context.Context, schemaName string
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan RLS policy: %w", err)
 		}
-		policy.Table = types.QualifyTableName(r.outputSchema(schemaName), policy.Table)
+		policy.Table = catalog.QualifyTableName(r.outputSchema(schemaName), policy.Table)
 
 		policies = append(policies, policy)
 	}
@@ -3305,7 +3305,7 @@ func (r *Reader) rolesInScopeClauses() []string {
 // readGrants reports both. That makes this set a superset of every role name
 // the rest of the description can mention, so the description never references
 // a role it does not also define.
-func (r *Reader) readRoles(ctx context.Context) ([]types.DBRole, error) {
+func (r *Reader) readRoles(ctx context.Context) ([]catalog.Role, error) {
 	return r.queryRoles(ctx, rolesUsedByScope)
 }
 
@@ -3326,7 +3326,7 @@ func (r *Reader) readRoles(ctx context.Context) ([]types.DBRole, error) {
 //
 // The union is re-sorted by name rather than concatenated, so the fuller
 // description is ordered exactly as the single unscoped query ordered it.
-func (r *Reader) readRolesInto(ctx context.Context, schema *types.DBSchema) error {
+func (r *Reader) readRolesInto(ctx context.Context, schema *catalog.Database) error {
 	// Resolved FIRST, before either query, so a malformed value is refused on
 	// every role read and not only on the runs that would have widened the
 	// description. A server whose scoped and unscoped reads happen to agree
@@ -3356,7 +3356,7 @@ func (r *Reader) readRolesInto(ctx context.Context, schema *types.DBSchema) erro
 
 	if describeAll {
 		everyManagedRole := slices.Concat(described, outOfScope)
-		slices.SortFunc(everyManagedRole, func(a, b types.DBRole) int {
+		slices.SortFunc(everyManagedRole, func(a, b catalog.Role) int {
 			return strings.Compare(a.Name, b.Name)
 		})
 		schema.Roles = everyManagedRole
@@ -3404,7 +3404,7 @@ func (r *Reader) readRolesInto(ctx context.Context, schema *types.DBSchema) erro
 // The complement is spelled NOT EXISTS rather than NOT IN because a NOT IN
 // over a subquery yielding a single NULL matches nothing at all, which would
 // silently empty this list and restore the very defect it exists to prevent.
-func (r *Reader) readRolesOutOfScope(ctx context.Context) ([]types.DBRole, error) {
+func (r *Reader) readRolesOutOfScope(ctx context.Context) ([]catalog.Role, error) {
 	return r.queryRoles(ctx, rolesNotUsedByScope)
 }
 
@@ -3418,7 +3418,7 @@ const (
 
 // queryRoles reads pg_roles restricted by one of the two membership
 // predicates above.
-func (r *Reader) queryRoles(ctx context.Context, membership string) ([]types.DBRole, error) {
+func (r *Reader) queryRoles(ctx context.Context, membership string) ([]catalog.Role, error) {
 	schemas := r.schemasToRead()
 	placeholders := make([]string, 0, len(schemas))
 	args := make([]any, 0, len(schemas))
@@ -3467,9 +3467,9 @@ func (r *Reader) queryRoles(ctx context.Context, membership string) ([]types.DBR
 	}
 	defer rows.Close()
 
-	var roles []types.DBRole
+	var roles []catalog.Role
 	for rows.Next() {
-		var role types.DBRole
+		var role catalog.Role
 		err := rows.Scan(
 			&role.Name,
 			&role.Login,
@@ -3514,7 +3514,7 @@ var ownerKinds = map[string]string{
 // and the note above readRoles records what happened the last time ownership
 // leaked into the description: every inspect described the connecting
 // superuser, and a diff then planned CREATE ROLE for it (stokaro/ptah#1950).
-func (r *Reader) readObjectOwners(ctx context.Context) ([]types.DBObjectOwner, error) {
+func (r *Reader) readObjectOwners(ctx context.Context) ([]catalog.ObjectOwner, error) {
 	schemas := r.schemasToRead()
 	placeholders := make([]string, 0, len(schemas))
 	args := make([]any, 0, len(schemas))
@@ -3550,7 +3550,7 @@ func (r *Reader) readObjectOwners(ctx context.Context) ([]types.DBObjectOwner, e
 	}
 	defer rows.Close()
 
-	owners := make([]types.DBObjectOwner, 0)
+	owners := make([]catalog.ObjectOwner, 0)
 	for rows.Next() {
 		var kind, schemaName, name, owner string
 		var canLogin bool
@@ -3561,7 +3561,7 @@ func (r *Reader) readObjectOwners(ctx context.Context) ([]types.DBObjectOwner, e
 		if mapped, ok := ownerKinds[kind]; ok {
 			resolved = mapped
 		}
-		owners = append(owners, types.DBObjectOwner{
+		owners = append(owners, catalog.ObjectOwner{
 			Kind: resolved, Schema: schemaName, Name: name, Owner: owner, OwnerCanLogin: canLogin,
 		})
 	}
@@ -3584,7 +3584,7 @@ func (r *Reader) readObjectOwners(ctx context.Context) ([]types.DBObjectOwner, e
 // Both ends exclude the reserved system roles, through the same
 // [reservedrole.ExcludeSQL] the role read uses, so the two lists cannot come to
 // disagree about what "reserved" means (stokaro/ptah#1950).
-func (r *Reader) readRoleMemberships(ctx context.Context) ([]types.DBRoleMembership, error) {
+func (r *Reader) readRoleMemberships(ctx context.Context) ([]catalog.RoleMembership, error) {
 	query := `
 		SELECT
 			role.rolname AS role_name,
@@ -3603,9 +3603,9 @@ func (r *Reader) readRoleMemberships(ctx context.Context) ([]types.DBRoleMembers
 	}
 	defer rows.Close()
 
-	memberships := make([]types.DBRoleMembership, 0)
+	memberships := make([]catalog.RoleMembership, 0)
 	for rows.Next() {
-		var membership types.DBRoleMembership
+		var membership catalog.RoleMembership
 		if err := rows.Scan(&membership.Role, &membership.Member, &membership.AdminOption); err != nil {
 			return nil, fmt.Errorf("failed to scan role membership: %w", err)
 		}
@@ -3617,8 +3617,8 @@ func (r *Reader) readRoleMemberships(ctx context.Context) ([]types.DBRoleMembers
 	return memberships, nil
 }
 
-func (r *Reader) readGrants(ctx context.Context, standaloneSequences map[string]bool) ([]types.DBGrant, error) {
-	var grants []types.DBGrant
+func (r *Reader) readGrants(ctx context.Context, standaloneSequences map[string]bool) ([]catalog.Grant, error) {
+	var grants []catalog.Grant
 	for _, schemaName := range r.schemasToRead() {
 		tableGrants, err := r.readTableGrantsForSchema(ctx, schemaName)
 		if err != nil {
@@ -3646,7 +3646,7 @@ func (r *Reader) readGrants(ctx context.Context, standaloneSequences map[string]
 // standaloneSequenceSet returns a lookup keyed by each sequence's qualified
 // name, used to keep sequence-grant introspection scoped to standalone
 // sequences (excluding implicit serial/identity sequences).
-func standaloneSequenceSet(sequences []types.DBSequence) map[string]bool {
+func standaloneSequenceSet(sequences []catalog.Sequence) map[string]bool {
 	set := make(map[string]bool, len(sequences))
 	for _, sequence := range sequences {
 		set[sequence.QualifiedName()] = true
@@ -3654,7 +3654,7 @@ func standaloneSequenceSet(sequences []types.DBSequence) map[string]bool {
 	return set
 }
 
-func (r *Reader) readTableGrantsForSchema(ctx context.Context, schemaName string) ([]types.DBGrant, error) {
+func (r *Reader) readTableGrantsForSchema(ctx context.Context, schemaName string) ([]catalog.Grant, error) {
 	const query = `
 		SELECT
 			grantee,
@@ -3690,9 +3690,9 @@ func (r *Reader) readTableGrantsForSchema(ctx context.Context, schemaName string
 	}
 	defer rows.Close()
 
-	var grants []types.DBGrant
+	var grants []catalog.Grant
 	for rows.Next() {
-		grant := types.DBGrant{ObjectType: "TABLE"}
+		grant := catalog.Grant{ObjectType: "TABLE"}
 		if err := rows.Scan(&grant.Role, &grant.Privilege, &grant.Schema, &grant.ObjectName, &grant.WithOption, &grant.GrantedBy); err != nil {
 			return nil, fmt.Errorf("failed to scan table grant for schema %s: %w", schemaName, err)
 		}
@@ -3705,7 +3705,7 @@ func (r *Reader) readTableGrantsForSchema(ctx context.Context, schemaName string
 	return grants, nil
 }
 
-func (r *Reader) readSchemaGrantsForSchema(ctx context.Context, schemaName string) ([]types.DBGrant, error) {
+func (r *Reader) readSchemaGrantsForSchema(ctx context.Context, schemaName string) ([]catalog.Grant, error) {
 	const query = `
 		SELECT
 			COALESCE(grantee.rolname, 'PUBLIC') AS grantee,
@@ -3728,9 +3728,9 @@ func (r *Reader) readSchemaGrantsForSchema(ctx context.Context, schemaName strin
 	}
 	defer rows.Close()
 
-	var grants []types.DBGrant
+	var grants []catalog.Grant
 	for rows.Next() {
-		grant := types.DBGrant{ObjectType: "SCHEMA"}
+		grant := catalog.Grant{ObjectType: "SCHEMA"}
 		if err := rows.Scan(&grant.Role, &grant.Privilege, &grant.ObjectName, &grant.WithOption, &grant.GrantedBy); err != nil {
 			return nil, fmt.Errorf("failed to scan schema grant for schema %s: %w", schemaName, err)
 		}
@@ -3745,11 +3745,11 @@ func (r *Reader) readSchemaGrantsForSchema(ctx context.Context, schemaName strin
 // readAllViews reads views from whichever catalog the server has. A view is not
 // an object kind a preset rules out -- every dialect this reader serves has
 // views -- so the choice is which catalog can answer, not whether to ask.
-func (r *Reader) readAllViews(ctx context.Context) ([]types.DBView, error) {
+func (r *Reader) readAllViews(ctx context.Context) ([]catalog.View, error) {
 	if r.caps.Has(capability.PostgresCatalogFunctions) {
 		return r.readViews(ctx)
 	}
-	var views []types.DBView
+	var views []catalog.View
 	for _, schemaName := range r.schemasToRead() {
 		schemaViews, err := r.readInformationSchemaViews(ctx, schemaName)
 		if err != nil {
@@ -3766,7 +3766,7 @@ func (r *Reader) readAllViews(ctx context.Context) ([]types.DBView, error) {
 // Splitting them apart is not only tidiness: four gates inline pushed
 // ReadSchema past the cognitive-complexity limit, and the reads they guard are
 // one idea -- ask only for what this server can have.
-func (r *Reader) readCapabilityGatedObjects(ctx context.Context, schema *types.DBSchema) error {
+func (r *Reader) readCapabilityGatedObjects(ctx context.Context, schema *catalog.Database) error {
 	// Extensions are pg_extension, and pg_catalog is where that lives. A server
 	// without it has no extension mechanism to describe -- but this read cannot
 	// prove that, only that it could not look, so the kind is recorded as not

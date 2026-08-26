@@ -10,12 +10,12 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer/internal/dialects/internal/bufwriter"
 	"go.5x5.cz/ptah/core/renderer/internal/dialects/internal/defaultlit"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 // Renderer provides PostgreSQL-specific SQL rendering
@@ -1939,7 +1939,7 @@ func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
 // sequenceIdentifier returns the escaped, optionally schema-qualified sequence
 // identifier for name and schema.
 func (r *Renderer) sequenceIdentifier(name, schema string) string {
-	return r.escapeQualifiedIdentifier(goschema.QualifyTableName(schema, name))
+	return r.escapeQualifiedIdentifier(schemamodel.QualifyTableName(schema, name))
 }
 
 // sequenceOwnedByClause renders the OWNED BY target: either NONE or a

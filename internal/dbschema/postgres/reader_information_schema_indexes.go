@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 )
 
 // informationSchemaIndexQuery reads indexes from the SQL-standard catalog
@@ -53,7 +53,7 @@ const spannerPrimaryKeyIndexType = "PRIMARY_KEY"
 
 // readInformationSchemaIndexes reads one schema's indexes from the SQL-standard
 // catalog. See [informationSchemaIndexQuery].
-func (r *Reader) readInformationSchemaIndexes(ctx context.Context, schemaName string) ([]types.DBIndex, error) {
+func (r *Reader) readInformationSchemaIndexes(ctx context.Context, schemaName string) ([]catalog.Index, error) {
 	rows, err := r.db.QueryContext(ctx, informationSchemaIndexQuery, schemaName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query indexes: %w", err)
@@ -61,7 +61,7 @@ func (r *Reader) readInformationSchemaIndexes(ctx context.Context, schemaName st
 	defer rows.Close()
 
 	var (
-		indexes []types.DBIndex
+		indexes []catalog.Index
 		byName  = make(map[string]int)
 	)
 	for rows.Next() {
@@ -85,7 +85,7 @@ func (r *Reader) readInformationSchemaIndexes(ctx context.Context, schemaName st
 		if !seen {
 			position = len(indexes)
 			byName[key] = position
-			indexes = append(indexes, types.DBIndex{
+			indexes = append(indexes, catalog.Index{
 				Name:      indexName,
 				TableName: tableName,
 				// See the same field on the constraint read: the default schema
@@ -110,7 +110,7 @@ func (r *Reader) readInformationSchemaIndexes(ctx context.Context, schemaName st
 // addInformationSchemaIndexColumn records one column of an index as a key part
 // or as a payload column, from whether the catalog gave it a position.
 func addInformationSchemaIndexColumn(
-	index *types.DBIndex,
+	index *catalog.Index,
 	columnName string,
 	ordinal sql.NullInt64,
 	ordering sql.NullString,
@@ -120,7 +120,7 @@ func addInformationSchemaIndexColumn(
 		return
 	}
 	index.Columns = append(index.Columns, columnName)
-	index.Parts = append(index.Parts, types.DBIndexPart{
+	index.Parts = append(index.Parts, catalog.IndexPart{
 		Name: columnName,
 		Desc: strings.EqualFold(strings.TrimSpace(ordering.String), "DESC"),
 	})
@@ -130,7 +130,7 @@ func addInformationSchemaIndexColumn(
 // way the MySQL reader does for the same reason: this catalog reports an
 // index's parts and never its text, and every surface below the model expects a
 // definition to read.
-func informationSchemaIndexDefinition(index types.DBIndex) string {
+func informationSchemaIndexDefinition(index catalog.Index) string {
 	parts := make([]string, 0, len(index.Parts))
 	for _, part := range index.Parts {
 		spelled := part.Name

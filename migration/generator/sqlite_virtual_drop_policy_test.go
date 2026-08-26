@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/migration/diffpolicy"
 	"go.5x5.cz/ptah/migration/generator"
@@ -76,9 +76,9 @@ func TestGenerateMigrationCarriesTheDropPolicyIntoTheVirtualTableGuard(t *testin
 			c.Assert(err, qt.IsNil)
 
 			_, err = generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
-				Generated: &goschema.Database{
-					Tables: []goschema.Table{{StructName: "users", Name: "users"}},
-					Fields: []goschema.Field{
+				Desired: &schemamodel.Database{
+					Tables: []schemamodel.Table{{StructName: "users", Name: "users"}},
+					Fields: []schemamodel.Field{
 						{StructName: "users", Name: "id", Type: "INTEGER", Primary: true},
 					},
 				},

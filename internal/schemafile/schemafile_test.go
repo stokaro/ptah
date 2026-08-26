@@ -9,8 +9,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 	"go.5x5.cz/ptah/internal/convert/goschematodb"
 	"go.5x5.cz/ptah/internal/schemafile"
@@ -41,34 +41,34 @@ func TestLoadAll_HCLPreservesExtendedSchemaObjects(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "schema.hcl")
-	db := &goschema.Database{
-		Schemas: []goschema.Schema{{Name: "app"}},
-		Tables:  []goschema.Table{{StructName: "User", Name: "users", Schema: "app"}},
-		Fields:  []goschema.Field{{StructName: "User", Name: "id", Type: "bigint"}},
-		Extensions: []goschema.Extension{{
+	db := &schemamodel.Database{
+		Schemas: []schemamodel.Schema{{Name: "app"}},
+		Tables:  []schemamodel.Table{{StructName: "User", Name: "users", Schema: "app"}},
+		Fields:  []schemamodel.Field{{StructName: "User", Name: "id", Type: "bigint"}},
+		Extensions: []schemamodel.Extension{{
 			Name:   "pgcrypto",
 			Schema: "app",
 		}},
-		Sequences: []goschema.Sequence{{
+		Sequences: []schemamodel.Sequence{{
 			Name:   "order_seq",
 			Schema: "app",
 		}},
-		Domains: []goschema.Domain{{
+		Domains: []schemamodel.Domain{{
 			Name:     "email",
 			Schema:   "app",
 			BaseType: "text",
 		}},
-		CompositeTypes: []goschema.CompositeType{{
+		CompositeTypes: []schemamodel.CompositeType{{
 			Name:   "address",
 			Schema: "app",
-			Fields: []goschema.CompositeTypeField{{Name: "city", Type: "text"}},
+			Fields: []schemamodel.CompositeField{{Name: "city", Type: "text"}},
 		}},
-		Ranges: []goschema.Range{{
+		Ranges: []schemamodel.Range{{
 			Name:    "price_range",
 			Schema:  "app",
 			Subtype: "numeric",
 		}},
-		ManagedData: []goschema.ManagedData{{
+		ManagedData: []schemamodel.ManagedData{{
 			Table:  "users",
 			Schema: "app",
 			Keys:   []string{"id"},
@@ -119,7 +119,7 @@ table "users" {
 	db, err := schemafile.Load(path, schemafile.Options{})
 	c.Assert(err, qt.IsNil)
 
-	got := goschematodb.ToDBSchema(db, platform.Postgres)
+	got := goschematodb.ToCatalog(db, platform.Postgres)
 
 	c.Assert(got.Tables, qt.HasLen, 1)
 	c.Assert(got.Tables[0].Name, qt.Equals, "users")

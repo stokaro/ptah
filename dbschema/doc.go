@@ -28,7 +28,7 @@
 //   - DatabaseConnection: Main connection wrapper with unified interface
 //   - SchemaReader: Interface for reading database schemas
 //   - SchemaWriter: Interface for writing schema changes
-//   - DBInfo: Database connection and metadata information
+//   - catalog.ServerInfo: Database connection and metadata information
 //
 // # Supported Databases
 //

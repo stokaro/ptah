@@ -9,14 +9,14 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestCompatBidirectionalPlannerForFormat_NativeAtlasStaysForwardOnly(t *testing.T) {
@@ -31,18 +31,18 @@ func TestCompatBidirectionalPlannerForFormat_ForeignLayoutKeepsYugabyteBlockingR
 	c := qt.New(t)
 	planFn := compatBidirectionalPlannerForFormat(atlasmigrateimport.FormatGolangMigrate)
 	c.Assert(planFn, qt.IsNotNil)
-	diff := &types.SchemaDiff{}
-	diff.SetIndexAdditions([]types.IndexRef{{Name: "idx_users_email", TableName: "users"}})
+	diff := &difftypes.SchemaDiff{}
+	diff.SetIndexAdditions([]difftypes.IndexRef{{Name: "idx_users_email", TableName: "users"}})
 
 	plan, err := planFn(atlasmigrate.BidirectionalPlanInput{
 		Diff: diff,
-		DesiredSchema: &goschema.Database{
-			Tables: []goschema.Table{{StructName: "User", Name: "users"}},
-			Indexes: []goschema.Index{{
+		DesiredSchema: &schemamodel.Database{
+			Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
+			Indexes: []schemamodel.Index{{
 				StructName: "User", Name: "idx_users_email", Fields: []string{"email"},
 			}},
 		},
-		CurrentSchema:         &dbschematypes.DBSchema{},
+		CurrentSchema:         &catalog.Database{},
 		Dialect:               platform.YugabyteDB,
 		Capabilities:          capability.YugabyteDB25(),
 		ConcurrentIndexCreate: true,
@@ -64,13 +64,13 @@ func TestCompatBidirectionalPlannerForFormat_ExplicitUnavailableForwardStillRefu
 	c := qt.New(t)
 	planFn := compatBidirectionalPlannerForFormat(atlasmigrateimport.FormatGolangMigrate)
 	c.Assert(planFn, qt.IsNotNil)
-	diff := &types.SchemaDiff{}
-	diff.SetIndexAdditions([]types.IndexRef{{Name: "idx_users_email", TableName: "users"}})
+	diff := &difftypes.SchemaDiff{}
+	diff.SetIndexAdditions([]difftypes.IndexRef{{Name: "idx_users_email", TableName: "users"}})
 
 	plan, err := planFn(atlasmigrate.BidirectionalPlanInput{
 		Diff:                  diff,
-		DesiredSchema:         &goschema.Database{},
-		CurrentSchema:         &dbschematypes.DBSchema{},
+		DesiredSchema:         &schemamodel.Database{},
+		CurrentSchema:         &catalog.Database{},
 		Dialect:               platform.CockroachDB,
 		Capabilities:          capability.CockroachDB23(),
 		ConcurrentIndexCreate: true,

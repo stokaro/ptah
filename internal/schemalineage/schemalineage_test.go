@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemalineage"
 )
 
@@ -14,10 +14,10 @@ import (
 // already holds (stokaro/ptah#1712).
 
 // schemaWith builds a database with one users table and the given views.
-func schemaWith(views ...goschema.View) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "User", Name: "users"}},
-		Fields: []goschema.Field{
+func schemaWith(views ...schemamodel.View) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id"},
 			{StructName: "User", Name: "email"},
 			{StructName: "User", Name: "created_at"},
@@ -28,7 +28,7 @@ func schemaWith(views ...goschema.View) *goschema.Database {
 
 func TestDeriveResolvesAPlainColumnList(t *testing.T) {
 	c := qt.New(t)
-	db := schemaWith(goschema.View{Name: "active_users", Body: "SELECT id, email FROM users"})
+	db := schemaWith(schemamodel.View{Name: "active_users", Body: "SELECT id, email FROM users"})
 
 	result := schemalineage.Derive(db)
 
@@ -44,7 +44,7 @@ func TestDeriveResolvesAPlainColumnList(t *testing.T) {
 // could not answer which base column feeds which output.
 func TestDeriveFollowsAnAliasToItsSource(t *testing.T) {
 	c := qt.New(t)
-	db := schemaWith(goschema.View{Name: "v", Body: "SELECT email AS contact FROM users"})
+	db := schemaWith(schemamodel.View{Name: "v", Body: "SELECT email AS contact FROM users"})
 
 	result := schemalineage.Derive(db)
 
@@ -60,7 +60,7 @@ func TestDeriveFollowsAnAliasToItsSource(t *testing.T) {
 // is the right place for this analysis rather than the SQL text alone.
 func TestDeriveExpandsAStarProjection(t *testing.T) {
 	c := qt.New(t)
-	db := schemaWith(goschema.View{Name: "v", Body: "SELECT * FROM users"})
+	db := schemaWith(schemamodel.View{Name: "v", Body: "SELECT * FROM users"})
 
 	result := schemalineage.Derive(db)
 
@@ -75,7 +75,7 @@ func TestDeriveExpandsAStarProjection(t *testing.T) {
 // dependencies. Dropping either input breaks the view, so both are edges.
 func TestDeriveAttributesEveryColumnAnExpressionNames(t *testing.T) {
 	c := qt.New(t)
-	db := schemaWith(goschema.View{
+	db := schemaWith(schemamodel.View{
 		Name: "v",
 		Body: "SELECT coalesce(email, id) AS who FROM users",
 	})
@@ -92,7 +92,7 @@ func TestDeriveAttributesEveryColumnAnExpressionNames(t *testing.T) {
 // TestDeriveResolvesAQualifiedColumnThroughAnAlias covers the table alias.
 func TestDeriveResolvesAQualifiedColumnThroughAnAlias(t *testing.T) {
 	c := qt.New(t)
-	db := schemaWith(goschema.View{Name: "v", Body: "SELECT u.email AS mail FROM users u"})
+	db := schemaWith(schemamodel.View{Name: "v", Body: "SELECT u.email AS mail FROM users u"})
 
 	result := schemalineage.Derive(db)
 
@@ -111,7 +111,7 @@ func TestDeriveResolvesAQualifiedColumnThroughAnAlias(t *testing.T) {
 // reads.
 func TestDeriveReportsAJoinAsUndecidedRatherThanGuessing(t *testing.T) {
 	c := qt.New(t)
-	db := schemaWith(goschema.View{
+	db := schemaWith(schemamodel.View{
 		Name: "v",
 		Body: "SELECT id FROM users JOIN orders ON orders.user_id = users.id",
 	})
@@ -128,7 +128,7 @@ func TestDeriveReportsAJoinAsUndecidedRatherThanGuessing(t *testing.T) {
 // source shape.
 func TestDeriveReportsASubquerySourceAsUndecided(t *testing.T) {
 	c := qt.New(t)
-	db := schemaWith(goschema.View{Name: "v", Body: "SELECT id FROM (SELECT id FROM users) s"})
+	db := schemaWith(schemamodel.View{Name: "v", Body: "SELECT id FROM (SELECT id FROM users) s"})
 
 	result := schemalineage.Derive(db)
 
@@ -142,7 +142,7 @@ func TestDeriveReportsASubquerySourceAsUndecided(t *testing.T) {
 // source and every edge would name the wrong table.
 func TestDeriveDoesNotMistakeASubqueryFromForTheSourcesOwn(t *testing.T) {
 	c := qt.New(t)
-	db := schemaWith(goschema.View{
+	db := schemaWith(schemamodel.View{
 		Name: "v",
 		Body: "SELECT (SELECT max(id) FROM audit) AS latest, email FROM users",
 	})
@@ -165,7 +165,7 @@ func TestDeriveDoesNotMistakeASubqueryFromForTheSourcesOwn(t *testing.T) {
 func TestDeriveMarksMaterializedViews(t *testing.T) {
 	c := qt.New(t)
 	db := schemaWith()
-	db.MaterializedViews = []goschema.MaterializedView{
+	db.MaterializedViews = []schemamodel.MaterializedView{
 		{Name: "mv", Body: "SELECT id FROM users"},
 	}
 
@@ -181,8 +181,8 @@ func TestDeriveMarksMaterializedViews(t *testing.T) {
 func TestDeriveIsOrderedSoTwoRunsAgree(t *testing.T) {
 	c := qt.New(t)
 	db := schemaWith(
-		goschema.View{Name: "zebra", Body: "SELECT id FROM users"},
-		goschema.View{Name: "alpha", Body: "SELECT email, id FROM users"},
+		schemamodel.View{Name: "zebra", Body: "SELECT id FROM users"},
+		schemamodel.View{Name: "alpha", Body: "SELECT email, id FROM users"},
 	)
 
 	first := schemalineage.Derive(db)
@@ -198,7 +198,7 @@ func TestDeriveIsOrderedSoTwoRunsAgree(t *testing.T) {
 func TestDeriveOnAnEmptySchemaIsEmptyNotUndecided(t *testing.T) {
 	c := qt.New(t)
 
-	result := schemalineage.Derive(&goschema.Database{})
+	result := schemalineage.Derive(&schemamodel.Database{})
 
 	c.Assert(result.Edges, qt.HasLen, 0)
 	c.Assert(result.Undecided, qt.HasLen, 0)
@@ -218,8 +218,8 @@ func TestDeriveOnAnEmptySchemaIsEmptyNotUndecided(t *testing.T) {
 func TestDeriveDoesNotReportANumericLiteralAsAColumn(t *testing.T) {
 	c := qt.New(t)
 	db := schemaWith(
-		goschema.View{Name: "bare", Body: "SELECT 1 AS one, email FROM users"},
-		goschema.View{Name: "inexpr", Body: "SELECT CASE WHEN id > 0 THEN email ELSE email END AS pick FROM users"},
+		schemamodel.View{Name: "bare", Body: "SELECT 1 AS one, email FROM users"},
+		schemamodel.View{Name: "inexpr", Body: "SELECT CASE WHEN id > 0 THEN email ELSE email END AS pick FROM users"},
 	)
 
 	result := schemalineage.Derive(db)
@@ -244,7 +244,7 @@ func TestDeriveDoesNotReportANumericLiteralAsAColumn(t *testing.T) {
 // has two.
 func TestDeriveResolvesAnAliasWrittenWithoutAS(t *testing.T) {
 	c := qt.New(t)
-	db := schemaWith(goschema.View{Name: "v", Body: "SELECT email contact FROM users"})
+	db := schemaWith(schemamodel.View{Name: "v", Body: "SELECT email contact FROM users"})
 
 	result := schemalineage.Derive(db)
 

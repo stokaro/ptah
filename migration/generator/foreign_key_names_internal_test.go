@@ -12,9 +12,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
@@ -25,8 +25,8 @@ func TestGenerateUpMigrationSQL_AssignsLengthLimitedForeignKeyNames(t *testing.T
 	tableName := strings.Repeat("children_", 6) + "records"
 	fieldName := strings.Repeat("parent_", 5) + "id"
 	schema := generatorForeignKeyNameSchema(tableName, fieldName)
-	goschema.Finalize(schema)
-	diff := schemadiff.CompareWithDialect(schema, &dbschematypes.DBSchema{}, platform.MySQL)
+	schemamodel.Finalize(schema)
+	diff := schemadiff.CompareWithDialect(schema, &catalog.Database{}, platform.MySQL)
 
 	sql, err := generateUpMigrationSQL(diff, schema, platform.MySQL)
 
@@ -40,15 +40,15 @@ func TestGenerateUpMigrationSQL_AssignsLengthLimitedForeignKeyNames(t *testing.T
 func TestGenerateUpMigrationSQL_AvoidsExplicitAndGeneratedForeignKeyNameCollision(t *testing.T) {
 	c := qt.New(t)
 	schema := generatorForeignKeyNameSchema("children", "parent_id")
-	schema.Fields = append(schema.Fields, goschema.Field{
+	schema.Fields = append(schema.Fields, schemamodel.Field{
 		StructName:     "Child",
 		Name:           "backup_parent_id",
 		Type:           "INTEGER",
 		Foreign:        "parents(id)",
 		ForeignKeyName: "FK_CHILDREN_PARENT_ID",
 	})
-	goschema.Finalize(schema)
-	diff := schemadiff.CompareWithDialect(schema, &dbschematypes.DBSchema{}, platform.MySQL)
+	schemamodel.Finalize(schema)
+	diff := schemadiff.CompareWithDialect(schema, &catalog.Database{}, platform.MySQL)
 
 	sql, err := generateUpMigrationSQL(diff, schema, platform.MySQL)
 
@@ -59,13 +59,13 @@ func TestGenerateUpMigrationSQL_AvoidsExplicitAndGeneratedForeignKeyNameCollisio
 	c.Assert(schema.Fields[2].ForeignKeyName, qt.Equals, "")
 }
 
-func generatorForeignKeyNameSchema(tableName, fieldName string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func generatorForeignKeyNameSchema(tableName, fieldName string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Parent", Name: "parents"},
 			{StructName: "Child", Name: tableName},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Parent", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Child", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "Child", Name: fieldName, Type: "INTEGER", Foreign: "parents(id)"},

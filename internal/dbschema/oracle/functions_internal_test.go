@@ -13,9 +13,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 )
 
@@ -35,7 +35,7 @@ func TestReadFunctions_JoinsTheThreeViewsIntoOneDescription(t *testing.T) {
 	functions, err := reader.readFunctions(t.Context())
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(functions, qt.DeepEquals, []types.DBFunction{
+	c.Assert(functions, qt.DeepEquals, []catalog.Function{
 		{
 			Name:       "FN_DET",
 			Parameters: "p in number",
@@ -56,7 +56,7 @@ func TestReadFunctions_JoinsTheThreeViewsIntoOneDescription(t *testing.T) {
 		},
 		{
 			Name:       "PR_OUT",
-			Kind:       goschema.FunctionKindProcedure,
+			Kind:       schemamodel.FunctionKindProcedure,
 			Parameters: "a in number, b out number, c in out varchar2",
 			Language:   "plsql",
 			Security:   "DEFINER",
@@ -127,8 +127,8 @@ func TestRoutineKind_SeparatesTheTwoObjectsOneViewReports(t *testing.T) {
 		want       string
 	}{
 		{name: "function", objectType: "FUNCTION", want: ""},
-		{name: "procedure", objectType: "PROCEDURE", want: goschema.FunctionKindProcedure},
-		{name: "padded", objectType: "  PROCEDURE  ", want: goschema.FunctionKindProcedure},
+		{name: "procedure", objectType: "PROCEDURE", want: schemamodel.FunctionKindProcedure},
+		{name: "padded", objectType: "  PROCEDURE  ", want: schemamodel.FunctionKindProcedure},
 	}
 
 	for _, test := range tests {

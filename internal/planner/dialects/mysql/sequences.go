@@ -7,12 +7,12 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/planner/objectlookup"
 	"go.5x5.cz/ptah/internal/tableref"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // planSequences emits real sequence DDL for a target in this family that hosts
@@ -29,20 +29,20 @@ import (
 // Creations run before tables because a column DEFAULT may draw from the
 // sequence, and on SQL Server that dependency is enforced: the engine refuses
 // `DROP SEQUENCE` while a default still references it.
-func (p *Planner) planSequences(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) planSequences(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
 	if !p.capabilities().Has(capability.Sequences) {
 		return result
 	}
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, name := range diff.SequencesAdded {
-		sequence := objectlookup.Qualified(generated.Sequences, name, semantics)
+		sequence := objectlookup.Qualified(desired.Sequences, name, semantics)
 		if sequence == nil {
 			continue
 		}
 		result = append(result, fromschema.FromSequence(*sequence))
 	}
 	for _, sequenceDiff := range diff.SequencesModified {
-		sequence := objectlookup.Qualified(generated.Sequences, sequenceDiff.SequenceName, semantics)
+		sequence := objectlookup.Qualified(desired.Sequences, sequenceDiff.SequenceName, semantics)
 		if sequence == nil {
 			continue
 		}
@@ -57,7 +57,7 @@ func (p *Planner) planSequences(result []ast.Node, diff *types.SchemaDiff, gener
 // removeSequences emits DROP SEQUENCE for sequences the desired schema no
 // longer carries. It runs after table removal so a table whose column default
 // draws from the sequence is gone first.
-func (p *Planner) removeSequences(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) removeSequences(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	if !p.capabilities().Has(capability.Sequences) {
 		return result
 	}
@@ -76,7 +76,7 @@ func (p *Planner) removeSequences(result []ast.Node, diff *types.SchemaDiff) []a
 
 // alterSequenceFromDiff builds an ALTER SEQUENCE node carrying only the options
 // the diff reports as changed, sourced from the declaration.
-func alterSequenceFromDiff(target goschema.Sequence, changes map[string]string) *ast.AlterSequenceNode {
+func alterSequenceFromDiff(target schemamodel.Sequence, changes map[string]string) *ast.AlterSequenceNode {
 	node := ast.NewAlterSequence(target.Name)
 	if target.Schema != "" {
 		node.SetSchema(target.Schema)
@@ -110,7 +110,7 @@ func alterSequenceFromDiff(target goschema.Sequence, changes map[string]string) 
 
 // summarizeSequenceChanges produces a deterministic one-line summary of the
 // changed options, for the comment above the statement.
-func summarizeSequenceChanges(sequenceDiff types.SequenceDiff) string {
+func summarizeSequenceChanges(sequenceDiff difftypes.SequenceDiff) string {
 	return strings.Join(slices.Sorted(maps.Keys(sequenceDiff.Changes)), ", ")
 }
 

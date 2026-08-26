@@ -6,13 +6,13 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/dbschema/sqlite"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestReaderAndSchemaDiff_PreserveAttachedSchemaIndexIdentity(t *testing.T) {
@@ -37,16 +37,16 @@ func TestReaderAndSchemaDiff_PreserveAttachedSchemaIndexIdentity(t *testing.T) {
 	c.Assert(mainSchema.Tables[0].Columns[1].Name, qt.Equals, "main_value")
 	c.Assert(mainSchema.Indexes, qt.HasLen, 1)
 	c.Assert(mainSchema.Indexes[0].Columns, qt.DeepEquals, []string{"main_value"})
-	c.Assert(slices.ContainsFunc(mainSchema.Constraints, func(constraint dbschematypes.DBConstraint) bool {
+	c.Assert(slices.ContainsFunc(mainSchema.Constraints, func(constraint catalog.Constraint) bool {
 		return constraint.Type == "FOREIGN KEY"
 	}), qt.IsFalse)
 	c.Assert(tenantSchema.Tables, qt.HasLen, 2)
 	c.Assert(tenantSchema.Indexes, qt.HasLen, 1)
 	c.Assert(tenantSchema.Indexes[0].Columns, qt.DeepEquals, []string{"email"})
-	c.Assert(slices.ContainsFunc(tenantSchema.Constraints, func(constraint dbschematypes.DBConstraint) bool {
+	c.Assert(slices.ContainsFunc(tenantSchema.Constraints, func(constraint catalog.Constraint) bool {
 		return constraint.Type == "FOREIGN KEY" && constraint.TableName == "users"
 	}), qt.IsTrue)
-	live := &dbschematypes.DBSchema{
+	live := &catalog.Database{
 		Indexes: append(mainSchema.Indexes, tenantSchema.Indexes...),
 	}
 	target := attachedSchemaIndexTarget()
@@ -121,16 +121,16 @@ func TestReaderAndSchemaDiff_MoveSameSchemaIndexWithoutNameCollision(t *testing.
 	execSQL(t, db, `CREATE TABLE users (email TEXT NOT NULL)`)
 	execSQL(t, db, `CREATE TABLE orders (reference TEXT NOT NULL)`)
 	execSQL(t, db, `CREATE INDEX idx_shared ON users(email)`)
-	target := &goschema.Database{
-		Tables: []goschema.Table{
+	target := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "User", Name: "users"},
 			{StructName: "Order", Name: "orders"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "email", Type: "TEXT"},
 			{StructName: "Order", Name: "reference", Type: "TEXT"},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{StructName: "Order", Name: "idx_shared", Fields: []string{"reference"}},
 		},
 	}
@@ -161,26 +161,26 @@ func TestReaderAndSchemaDiff_MoveSameSchemaIndexWithoutNameCollision(t *testing.
 	c.Assert(finalDiff.IndexRemovals(), qt.HasLen, 0)
 }
 
-func attachedSchemaIndexTarget() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func attachedSchemaIndexTarget() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "MainUser", Name: "users"},
 			{StructName: "TenantUser", Schema: "tenant", Name: "users"},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{StructName: "MainUser", Name: "idx_shared_email", Fields: []string{"main_value"}},
 			{StructName: "TenantUser", Name: "idx_shared_email", Fields: []string{"email"}},
 		},
 	}
 }
 
-func attachedSchemaIndexTargetWithoutTenantIndex() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func attachedSchemaIndexTargetWithoutTenantIndex() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "MainUser", Name: "users"},
 			{StructName: "TenantUser", Schema: "tenant", Name: "users"},
 		},
-		Indexes: []goschema.Index{
+		Indexes: []schemamodel.Index{
 			{StructName: "MainUser", Name: "idx_shared_email", Fields: []string{"main_value"}},
 		},
 	}

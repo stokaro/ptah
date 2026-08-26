@@ -5,10 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 // TestIssue34_ExplicitlyDefinedUniqueIndexes tests the specific scenario from GitHub issue #34.
@@ -21,20 +21,20 @@ func TestIssue34_ExplicitlyDefinedUniqueIndexes(t *testing.T) {
 		c := qt.New(t)
 
 		// Generated schema has the explicitly defined unique indexes
-		generated := &goschema.Database{
-			Indexes: []goschema.Index{
+		desired := &schemamodel.Database{
+			Indexes: []schemamodel.Index{
 				{Name: "tenants_slug_idx", TableName: "tenants"},
 				{Name: "users_tenant_email_idx", TableName: "users"},
 			},
 		}
 
 		// Database has no indexes yet (fresh database)
-		database := &types.DBSchema{
-			Indexes: make([]types.DBIndex, 0),
+		current := &catalog.Database{
+			Indexes: make([]catalog.Index, 0),
 		}
 
 		diff := &difftypes.SchemaDiff{}
-		compare.Indexes(generated, database, diff)
+		compare.Indexes(desired, current, diff)
 
 		// Both indexes should be added
 		c.Assert(diff.IndexesAdded, qt.DeepEquals, []difftypes.IndexRef{
@@ -49,23 +49,23 @@ func TestIssue34_ExplicitlyDefinedUniqueIndexes(t *testing.T) {
 		c := qt.New(t)
 
 		// Generated schema still has the same explicitly defined unique indexes
-		generated := &goschema.Database{
-			Indexes: []goschema.Index{
+		desired := &schemamodel.Database{
+			Indexes: []schemamodel.Index{
 				{Name: "tenants_slug_idx", TableName: "tenants"},
 				{Name: "users_tenant_email_idx", TableName: "users"},
 			},
 		}
 
 		// Database now has the indexes that were created (they are unique indexes)
-		database := &types.DBSchema{
-			Indexes: []types.DBIndex{
+		current := &catalog.Database{
+			Indexes: []catalog.Index{
 				{Name: "tenants_slug_idx", TableName: "tenants", Columns: []string{"slug"}, IsPrimary: false, IsUnique: true},
 				{Name: "users_tenant_email_idx", TableName: "users", Columns: []string{"tenant_id", "email"}, IsPrimary: false, IsUnique: true},
 			},
 		}
 
 		diff := &difftypes.SchemaDiff{}
-		compare.Indexes(generated, database, diff)
+		compare.Indexes(desired, current, diff)
 
 		// No indexes should be added or removed - they already exist and are detected
 		c.Assert(diff.IndexesAdded, qt.DeepEquals, []difftypes.IndexRef(nil))
@@ -77,16 +77,16 @@ func TestIssue34_ExplicitlyDefinedUniqueIndexes(t *testing.T) {
 		c := qt.New(t)
 
 		// Generated schema has explicitly defined unique indexes
-		generated := &goschema.Database{
-			Indexes: []goschema.Index{
+		desired := &schemamodel.Database{
+			Indexes: []schemamodel.Index{
 				{Name: "tenants_slug_idx", TableName: "tenants"},
 				{Name: "users_tenant_email_idx", TableName: "users"},
 			},
 		}
 
 		// Database has both constraint-based and explicitly defined indexes
-		database := &types.DBSchema{
-			Indexes: []types.DBIndex{
+		current := &catalog.Database{
+			Indexes: []catalog.Index{
 				// Constraint-based indexes (should be ignored)
 				{Name: "tenants_pkey", TableName: "tenants", Columns: []string{"id"}, IsPrimary: true, IsUnique: false},
 				{Name: "users_email_key", TableName: "users", Columns: []string{"email"}, IsPrimary: false, IsUnique: true},
@@ -98,7 +98,7 @@ func TestIssue34_ExplicitlyDefinedUniqueIndexes(t *testing.T) {
 		}
 
 		diff := &difftypes.SchemaDiff{}
-		compare.Indexes(generated, database, diff)
+		compare.Indexes(desired, current, diff)
 
 		// No indexes should be added or removed - explicitly defined ones exist, constraint-based ones are ignored
 		c.Assert(diff.IndexesAdded, qt.DeepEquals, []difftypes.IndexRef(nil))
@@ -110,16 +110,16 @@ func TestIssue34_ExplicitlyDefinedUniqueIndexes(t *testing.T) {
 		c := qt.New(t)
 
 		// Generated schema has both explicitly defined unique indexes
-		generated := &goschema.Database{
-			Indexes: []goschema.Index{
+		desired := &schemamodel.Database{
+			Indexes: []schemamodel.Index{
 				{Name: "tenants_slug_idx", TableName: "tenants"},
 				{Name: "users_tenant_email_idx", TableName: "users"},
 			},
 		}
 
 		// Database has only one of the explicitly defined indexes
-		database := &types.DBSchema{
-			Indexes: []types.DBIndex{
+		current := &catalog.Database{
+			Indexes: []catalog.Index{
 				// Constraint-based indexes (should be ignored)
 				{Name: "users_email_key", TableName: "users", Columns: []string{"email"}, IsPrimary: false, IsUnique: true},
 				// Only one explicitly defined index exists
@@ -129,7 +129,7 @@ func TestIssue34_ExplicitlyDefinedUniqueIndexes(t *testing.T) {
 		}
 
 		diff := &difftypes.SchemaDiff{}
-		compare.Indexes(generated, database, diff)
+		compare.Indexes(desired, current, diff)
 
 		// Only the missing explicitly defined index should be added
 		c.Assert(diff.IndexesAdded, qt.DeepEquals, []difftypes.IndexRef{

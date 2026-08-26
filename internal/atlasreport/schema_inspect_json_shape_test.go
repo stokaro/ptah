@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlasreport"
 )
 
@@ -38,44 +38,44 @@ import (
 func TestSchemaInspectJSONNeverInventsTheConnectedSchema(t *testing.T) {
 	tests := []struct {
 		name   string
-		schema *types.DBSchema
-		info   types.DBInfo
+		schema *catalog.Database
+		info   catalog.ServerInfo
 		want   string
 	}{
 		{
 			name: "an empty sqlite database reports the schema its reader described",
-			schema: &types.DBSchema{
-				Schemas: []types.DBSchemaInfo{{Name: "main"}},
+			schema: &catalog.Database{
+				Schemas: []catalog.Schema{{Name: "main"}},
 			},
-			info: types.DBInfo{Dialect: "sqlite", Schema: "main"},
+			info: catalog.ServerInfo{Dialect: "sqlite", Schema: "main"},
 			want: `{"schemas":[{"name":"main"}]}`,
 		},
 		{
 			name: "an empty postgres database reports the schema its reader described",
-			schema: &types.DBSchema{
-				Schemas: []types.DBSchemaInfo{{Name: "public", Comment: "standard public schema"}},
+			schema: &catalog.Database{
+				Schemas: []catalog.Schema{{Name: "public", Comment: "standard public schema"}},
 			},
-			info: types.DBInfo{Dialect: "postgres", Schema: "public"},
+			info: catalog.ServerInfo{Dialect: "postgres", Schema: "public"},
 			want: `{"schemas":[{"name":"public","comment":"standard public schema"}]}`,
 		},
 		{
 			name: "a schema selection on a realm URL does not gain the connected schema",
-			schema: &types.DBSchema{
-				Schemas: []types.DBSchemaInfo{{Name: "extra"}},
-				Tables: []types.DBTable{{
+			schema: &catalog.Database{
+				Schemas: []catalog.Schema{{Name: "extra"}},
+				Tables: []catalog.Table{{
 					Name:    "ext_t",
 					Schema:  "extra",
-					Columns: []types.DBColumn{{Name: "id", DataType: "integer"}},
+					Columns: []catalog.Column{{Name: "id", DataType: "integer"}},
 				}},
 			},
-			info: types.DBInfo{Dialect: "postgres", Schema: "public"},
+			info: catalog.ServerInfo{Dialect: "postgres", Schema: "public"},
 			want: `{"schemas":[{"name":"extra","tables":[{"name":"ext_t",` +
 				`"columns":[{"name":"id","type":"integer"}]}]}]}`,
 		},
 		{
 			name:   "a selection naming a schema that does not exist stays empty",
-			schema: &types.DBSchema{},
-			info:   types.DBInfo{Dialect: "postgres", Schema: "public"},
+			schema: &catalog.Database{},
+			info:   catalog.ServerInfo{Dialect: "postgres", Schema: "public"},
 			want:   `{}`,
 		},
 	}
@@ -85,7 +85,7 @@ func TestSchemaInspectJSONNeverInventsTheConnectedSchema(t *testing.T) {
 			c := qt.New(t)
 
 			report := atlasreport.NewSchemaInspectReport(
-				&goschema.Database{},
+				&schemamodel.Database{},
 				test.schema,
 				test.info,
 				nil,
@@ -120,12 +120,12 @@ func TestSchemaInspectJSONNeverInventsTheConnectedSchema(t *testing.T) {
 func TestSchemaInspectJSONReportsABackedUniqueConstraintOnce(t *testing.T) {
 	tests := []struct {
 		name    string
-		indexes []types.DBIndex
+		indexes []catalog.Index
 		want    string
 	}{
 		{
 			name: "the backing index is reported and the constraint is not repeated",
-			indexes: []types.DBIndex{{
+			indexes: []catalog.Index{{
 				Name:      "sqlite_autoindex_t_1",
 				TableName: "t",
 				Columns:   []string{"a"},
@@ -149,22 +149,22 @@ func TestSchemaInspectJSONReportsABackedUniqueConstraintOnce(t *testing.T) {
 			c := qt.New(t)
 
 			report := atlasreport.NewSchemaInspectReport(
-				&goschema.Database{},
-				&types.DBSchema{
-					Schemas: []types.DBSchemaInfo{{Name: "main"}},
-					Tables: []types.DBTable{{
+				&schemamodel.Database{},
+				&catalog.Database{
+					Schemas: []catalog.Schema{{Name: "main"}},
+					Tables: []catalog.Table{{
 						Name:    "t",
-						Columns: []types.DBColumn{{Name: "a", DataType: "TEXT", IsNullable: "YES"}},
+						Columns: []catalog.Column{{Name: "a", DataType: "TEXT", IsNullable: "YES"}},
 					}},
 					Indexes: test.indexes,
-					Constraints: []types.DBConstraint{{
+					Constraints: []catalog.Constraint{{
 						Name:        "sqlite_autoindex_t_1",
 						TableName:   "t",
 						Type:        "UNIQUE",
 						ColumnNames: []string{"a"},
 					}},
 				},
-				types.DBInfo{Dialect: "sqlite", Schema: "main"},
+				catalog.ServerInfo{Dialect: "sqlite", Schema: "main"},
 				nil,
 				atlasreport.SchemaInspectReportOptions{DescribeSchemas: true},
 			)

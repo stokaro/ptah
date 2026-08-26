@@ -5,12 +5,12 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 // TestDomains_ComparesCheckThroughTheServersOwnSpelling is the defect
@@ -86,24 +86,24 @@ func TestDomains_ComparesCheckThroughTheServersOwnSpelling(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			generated := &goschema.Database{Domains: []goschema.Domain{
+			desired := &schemamodel.Database{Domains: []schemamodel.Domain{
 				{Name: "positive", BaseType: "integer", Check: test.declared},
 			}}
-			database := &types.DBSchema{Domains: []types.DBDomain{{
+			current := &catalog.Database{Domains: []catalog.Domain{{
 				Name:     "positive",
 				BaseType: "integer",
 				Check:    test.stored,
-				CheckConstraints: []types.DBDomainCheck{
+				CheckConstraints: []catalog.DomainCheck{
 					{Name: test.storedName, Expression: test.stored},
 				},
 			}}}
 			diff := &difftypes.SchemaDiff{}
 
 			compare.DomainsWithSemantics(
-				generated,
-				database,
+				desired,
+				current,
 				diff,
-				compare.CoverageOf(generated, database),
+				compare.CoverageOf(desired, current),
 				identifier.ForDialect("postgres"),
 				map[string]config.DomainExpression{
 					"positive": {Check: test.normalized, Resolved: test.resolved},
@@ -127,13 +127,13 @@ func TestDomains_ComparesCheckThroughTheServersOwnSpelling(t *testing.T) {
 func TestDomains_ComparesEachStoredConstraintRatherThanTheJoinedForm(t *testing.T) {
 	tests := []struct {
 		name        string
-		constraints []types.DBDomainCheck
+		constraints []catalog.DomainCheck
 		wantChanged bool
 		wantDropped []string
 	}{
 		{
 			name: "one stored constraint matching the declaration",
-			constraints: []types.DBDomainCheck{
+			constraints: []catalog.DomainCheck{
 				{Name: "bounded_check", Expression: "((VALUE > 0) AND (VALUE < 100))"},
 			},
 			wantChanged: false,
@@ -143,7 +143,7 @@ func TestDomains_ComparesEachStoredConstraintRatherThanTheJoinedForm(t *testing.
 			// with one constraint too many, and both have to go for the
 			// replacement to converge.
 			name: "two stored constraints joining to the same rule",
-			constraints: []types.DBDomainCheck{
+			constraints: []catalog.DomainCheck{
 				{Name: "lower_check", Expression: "(VALUE > 0)"},
 				{Name: "upper_check", Expression: "(VALUE < 100)"},
 			},
@@ -156,10 +156,10 @@ func TestDomains_ComparesEachStoredConstraintRatherThanTheJoinedForm(t *testing.
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			generated := &goschema.Database{Domains: []goschema.Domain{
+			desired := &schemamodel.Database{Domains: []schemamodel.Domain{
 				{Name: "bounded", BaseType: "integer", Check: "VALUE > 0 AND VALUE < 100"},
 			}}
-			database := &types.DBSchema{Domains: []types.DBDomain{{
+			current := &catalog.Database{Domains: []catalog.Domain{{
 				Name:             "bounded",
 				BaseType:         "integer",
 				Check:            "(VALUE > 0) AND (VALUE < 100)",
@@ -168,10 +168,10 @@ func TestDomains_ComparesEachStoredConstraintRatherThanTheJoinedForm(t *testing.
 			diff := &difftypes.SchemaDiff{}
 
 			compare.DomainsWithSemantics(
-				generated,
-				database,
+				desired,
+				current,
 				diff,
-				compare.CoverageOf(generated, database),
+				compare.CoverageOf(desired, current),
 				identifier.ForDialect("postgres"),
 				map[string]config.DomainExpression{
 					"bounded": {Check: "((VALUE > 0) AND (VALUE < 100))", Resolved: true},
@@ -193,23 +193,23 @@ func TestDomains_ComparesEachStoredConstraintRatherThanTheJoinedForm(t *testing.
 func TestDomains_LeavesUndeclaredAttributesAlone(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{Domains: []goschema.Domain{
+	desired := &schemamodel.Database{Domains: []schemamodel.Domain{
 		{Name: "positive", BaseType: "integer"},
 	}}
-	database := &types.DBSchema{Domains: []types.DBDomain{{
+	current := &catalog.Database{Domains: []catalog.Domain{{
 		Name:             "positive",
 		BaseType:         "integer",
 		Check:            "(VALUE > 0)",
 		Default:          "7",
-		CheckConstraints: []types.DBDomainCheck{{Name: "positive_check", Expression: "(VALUE > 0)"}},
+		CheckConstraints: []catalog.DomainCheck{{Name: "positive_check", Expression: "(VALUE > 0)"}},
 	}}}
 	diff := &difftypes.SchemaDiff{}
 
 	compare.DomainsWithSemantics(
-		generated,
-		database,
+		desired,
+		current,
 		diff,
-		compare.CoverageOf(generated, database),
+		compare.CoverageOf(desired, current),
 		identifier.ForDialect("postgres"),
 		map[string]config.DomainExpression{"positive": {Resolved: true}},
 	)
@@ -235,19 +235,19 @@ func TestDomains_ComparesDefaultThroughTheServersOwnSpelling(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			generated := &goschema.Database{Domains: []goschema.Domain{
+			desired := &schemamodel.Database{Domains: []schemamodel.Domain{
 				{Name: "labelled", BaseType: "text", Default: "x"},
 			}}
-			database := &types.DBSchema{Domains: []types.DBDomain{
+			current := &catalog.Database{Domains: []catalog.Domain{
 				{Name: "labelled", BaseType: "text", Default: test.stored},
 			}}
 			diff := &difftypes.SchemaDiff{}
 
 			compare.DomainsWithSemantics(
-				generated,
-				database,
+				desired,
+				current,
 				diff,
-				compare.CoverageOf(generated, database),
+				compare.CoverageOf(desired, current),
 				identifier.ForDialect("postgres"),
 				map[string]config.DomainExpression{
 					"labelled": {Default: test.normalized, Resolved: true},

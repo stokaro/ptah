@@ -29,8 +29,8 @@ uses them internally.
 | Parse Atlas HCL schema files | `atlascompat` | Atlas-style HCL schema files to Ptah's schema IR through a stable compatibility wrapper. |
 | Parse YAML schema files | `core/yamlschema` | Ptah's YAML authoring format to the schema IR, from bytes or from a path. |
 | Render SQL from schema IR | `core/renderer`, `atlascompat` | Ordered DDL statements for supported dialects. |
-| Introspect live databases | `dbschema`, `dbschema/types` | Database schema snapshots from live connections. |
-| Compare desired vs. live schemas | `migration/schemadiff`, `migration/schemadiff/types` | Structured schema diffs for planning and reporting. |
+| Introspect live databases | `dbschema`, `catalog` | Database schema snapshots from live connections. |
+| Compare desired vs. live schemas | `migration/schemadiff`, `migration/schemadiff/difftypes` | Structured schema diffs for planning and reporting. |
 | Plan SQL migrations | `migration/planner` | Ordered AST or SQL statements for schema changes. |
 | Generate migration files | `migration/generator` | Versioned migration files from desired/live differences. |
 | Apply migrations | `migration/migrator` | Embedded migration runner with filesystem providers, revision metadata, dry-run planning, and transaction modes. |
@@ -225,7 +225,7 @@ fmt.Println(sql)
 YAML is one of the authoring formats that produce Ptah's schema IR, alongside Go
 annotations, HCL, SQL, and DBML. `core/yamlschema` is its reader: `Parse` takes
 the document as bytes, `ParseFile` reads it from a path, and both return the
-same `*goschema.Database` the other readers return. Nothing downstream knows
+same `*schemamodel.Database` the other readers return. Nothing downstream knows
 which one filled it.
 
 ```go
@@ -308,7 +308,7 @@ if err != nil {
 fmt.Println(sql)
 ```
 
-For unit tests or offline planning, you can build a `dbschema/types.DBSchema`
+For unit tests or offline planning, you can build a `catalog.Database`
 value directly and pass it to `schemadiff`.
 
 Index names are table-scoped in some dialects. Use `diff.IndexAdditions()` and
@@ -318,8 +318,8 @@ directly. Every reference includes its owning table.
 
 Planning rejects missing owners, unresolved additions, and same-name target
 indexes that conflict in the selected dialect's namespace. When a custom
-consumer starts from `goschema.Index` values, use
-`goschema.ResolveIndexTableNames` to resolve all owning tables in one indexed
+consumer starts from `schemamodel.Index` values, use
+`schemamodel.ResolveIndexTableNames` to resolve all owning tables in one indexed
 pass instead of scanning the table list for each index. MySQL and SQLite index
 matching applies ASCII case folding.
 
@@ -337,7 +337,7 @@ instead of approximating it in Go.
 
 `CompareWithDatabaseInfo` remains useful for deterministic offline comparison
 or for callers that already provide a complete resolved
-`DBInfo.IdentifierSemantics` snapshot. It returns an error when a non-zero
+`catalog.ServerInfo.IdentifierSemantics` snapshot. It returns an error when a non-zero
 snapshot is invalid, incomplete for the compared identifier set, or exposes a
 target table, column, or index collision. Omitting the snapshot selects
 conservative dialect rules. SQL Server embedders should normally use
@@ -581,7 +581,7 @@ compatibility matters.
 
 **Schema documentation generator** — start from
 [Render SQL from Go annotations](#render-sql-from-go-annotations).
-Stable packages: `core/goschema`, `atlascompat`, `dbschema/types`,
+Stable packages: `core/goschema`, `atlascompat`, `catalog`,
 `migration/schemadiff`, `core/platform/capability`.
 The host tool keeps output formatting; generate from the stable schema IR, not
 internal renderers.

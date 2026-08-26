@@ -5,28 +5,28 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/clickhouserbac"
 )
 
 // managedSchema is a declaration naming one role, which is what makes a live
 // row's role "managed" for [clickhouserbac.ValidateLive].
-func managedSchema(roles ...string) *goschema.Database {
-	declared := make([]goschema.Role, 0, len(roles))
+func managedSchema(roles ...string) *schemamodel.Database {
+	declared := make([]schemamodel.Role, 0, len(roles))
 	for _, name := range roles {
-		declared = append(declared, goschema.Role{Name: name, Inherit: true})
+		declared = append(declared, schemamodel.Role{Name: name, Inherit: true})
 	}
-	return &goschema.Database{Roles: declared}
+	return &schemamodel.Database{Roles: declared}
 }
 
 // partialRevoke is the second row ClickHouse leaves behind when a narrower
 // scope is revoked from a broader grant. Measured on 26.7.3.19:
 // `GRANT SELECT ON db.* TO r` followed by `REVOKE SELECT ON db.t FROM r`
 // leaves the grant row and this one.
-func partialRevoke(role, privilege, database, table string) types.DBGrant {
-	return types.DBGrant{
+func partialRevoke(role, privilege, database, table string) catalog.Grant {
+	return catalog.Grant{
 		Role:            role,
 		Privilege:       privilege,
 		ObjectType:      "TABLE",
@@ -38,19 +38,19 @@ func partialRevoke(role, privilege, database, table string) types.DBGrant {
 
 func TestValidateLive_HappyPath(t *testing.T) {
 	tests := []struct {
-		name      string
-		generated *goschema.Database
-		database  *types.DBSchema
+		name    string
+		desired *schemamodel.Database
+		current *catalog.Database
 	}{
 		{
-			name:      "no grants at all",
-			generated: managedSchema("reader"),
-			database:  &types.DBSchema{},
+			name:    "no grants at all",
+			desired: managedSchema("reader"),
+			current: &catalog.Database{},
 		},
 		{
-			name:      "ordinary grants on a managed role",
-			generated: managedSchema("reader"),
-			database: &types.DBSchema{Grants: []types.DBGrant{
+			name:    "ordinary grants on a managed role",
+			desired: managedSchema("reader"),
+			current: &catalog.Database{Grants: []catalog.Grant{
 				{Role: "reader", Privilege: "SELECT", ObjectType: "SCHEMA", ObjectName: "shop"},
 				{Role: "reader", Privilege: "INSERT", ObjectType: "TABLE", Schema: "shop", ObjectName: "orders"},
 			}},
@@ -61,28 +61,28 @@ func TestValidateLive_HappyPath(t *testing.T) {
 			// nor plans against it, so there is nothing for it to get wrong.
 			// Refusing here would make an unrelated role on a shared server
 			// fail every migration.
-			name:      "a partial revoke on a role nothing declares",
-			generated: managedSchema("reader"),
-			database: &types.DBSchema{Grants: []types.DBGrant{
+			name:    "a partial revoke on a role nothing declares",
+			desired: managedSchema("reader"),
+			current: &catalog.Database{Grants: []catalog.Grant{
 				partialRevoke("outsider", "SELECT", "shop", "orders"),
 			}},
 		},
 		{
-			name:      "a declaration with no roles leaves every live row alone",
-			generated: &goschema.Database{},
-			database: &types.DBSchema{Grants: []types.DBGrant{
+			name:    "a declaration with no roles leaves every live row alone",
+			desired: &schemamodel.Database{},
+			current: &catalog.Database{Grants: []catalog.Grant{
 				partialRevoke("outsider", "SELECT", "shop", "orders"),
 			}},
 		},
 		{
-			name:      "a nil live schema is a caller with nothing to check",
-			generated: managedSchema("reader"),
-			database:  nil,
+			name:    "a nil live schema is a caller with nothing to check",
+			desired: managedSchema("reader"),
+			current: nil,
 		},
 		{
-			name:      "a nil declaration is a caller with nothing to check",
-			generated: nil,
-			database: &types.DBSchema{Grants: []types.DBGrant{
+			name:    "a nil declaration is a caller with nothing to check",
+			desired: nil,
+			current: &catalog.Database{Grants: []catalog.Grant{
 				partialRevoke("reader", "SELECT", "shop", "orders"),
 			}},
 		},
@@ -91,7 +91,7 @@ func TestValidateLive_HappyPath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			err := clickhouserbac.ValidateLive(platform.ClickHouse, test.generated, test.database)
+			err := clickhouserbac.ValidateLive(platform.ClickHouse, test.desired, test.current)
 			c.Assert(err, qt.IsNil)
 		})
 	}
@@ -99,15 +99,15 @@ func TestValidateLive_HappyPath(t *testing.T) {
 
 func TestValidateLive_FailurePath(t *testing.T) {
 	tests := []struct {
-		name      string
-		generated *goschema.Database
-		database  *types.DBSchema
-		wantErr   string
+		name    string
+		desired *schemamodel.Database
+		current *catalog.Database
+		wantErr string
 	}{
 		{
-			name:      "a partial revoke on a managed role",
-			generated: managedSchema("reader"),
-			database: &types.DBSchema{Grants: []types.DBGrant{
+			name:    "a partial revoke on a managed role",
+			desired: managedSchema("reader"),
+			current: &catalog.Database{Grants: []catalog.Grant{
 				partialRevoke("reader", "SELECT", "shop", "orders"),
 			}},
 			wantErr: `(?s).*role "reader" carries a partial revoke of SELECT on shop\.orders.*not grants with exceptions.*`,
@@ -118,18 +118,18 @@ func TestValidateLive_FailurePath(t *testing.T) {
 			// the grant row and plans nothing, so without this refusal Ptah
 			// would report a synced schema for a role whose privileges are
 			// quietly narrower than the declaration says.
-			name:      "the grant and its exception together",
-			generated: managedSchema("reader"),
-			database: &types.DBSchema{Grants: []types.DBGrant{
+			name:    "the grant and its exception together",
+			desired: managedSchema("reader"),
+			current: &catalog.Database{Grants: []catalog.Grant{
 				{Role: "reader", Privilege: "SELECT", ObjectType: "SCHEMA", ObjectName: "shop"},
 				partialRevoke("reader", "SELECT", "shop", "orders"),
 			}},
 			wantErr: `(?s).*carries a partial revoke of SELECT on shop\.orders.*`,
 		},
 		{
-			name:      "a database-scoped exception names the database scope",
-			generated: managedSchema("reader"),
-			database: &types.DBSchema{Grants: []types.DBGrant{
+			name:    "a database-scoped exception names the database scope",
+			desired: managedSchema("reader"),
+			current: &catalog.Database{Grants: []catalog.Grant{
 				{
 					Role: "reader", Privilege: "INSERT", ObjectType: "SCHEMA",
 					ObjectName: "shop", IsPartialRevoke: true,
@@ -140,9 +140,9 @@ func TestValidateLive_FailurePath(t *testing.T) {
 		{
 			// Both halves are reported rather than the first one found, so an
 			// operator fixing this learns the whole of what is in the way.
-			name:      "every managed role with an exception is named",
-			generated: managedSchema("reader", "writer"),
-			database: &types.DBSchema{Grants: []types.DBGrant{
+			name:    "every managed role with an exception is named",
+			desired: managedSchema("reader", "writer"),
+			current: &catalog.Database{Grants: []catalog.Grant{
 				partialRevoke("writer", "INSERT", "shop", "orders"),
 				partialRevoke("reader", "SELECT", "shop", "orders"),
 			}},
@@ -153,7 +153,7 @@ func TestValidateLive_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			err := clickhouserbac.ValidateLive(platform.ClickHouse, test.generated, test.database)
+			err := clickhouserbac.ValidateLive(platform.ClickHouse, test.desired, test.current)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
 	}
@@ -166,8 +166,8 @@ func TestValidateLive_FailurePath(t *testing.T) {
 // field alone would refuse a comparison on any dialect whose reader later
 // learned to set it. The dialect decides, and this row is what says so.
 func TestValidateLive_LeavesOtherDialectsAlone(t *testing.T) {
-	generated := managedSchema("reader")
-	database := &types.DBSchema{Grants: []types.DBGrant{
+	desired := managedSchema("reader")
+	current := &catalog.Database{Grants: []catalog.Grant{
 		partialRevoke("reader", "SELECT", "shop", "orders"),
 	}}
 
@@ -185,7 +185,7 @@ func TestValidateLive_LeavesOtherDialectsAlone(t *testing.T) {
 	for _, dialect := range dialects {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(clickhouserbac.ValidateLive(dialect, generated, database), qt.IsNil)
+			c.Assert(clickhouserbac.ValidateLive(dialect, desired, current), qt.IsNil)
 		})
 	}
 }
@@ -199,7 +199,7 @@ func TestValidateLive_RefusesTheSameStateOnClickHouse(t *testing.T) {
 	err := clickhouserbac.ValidateLive(
 		platform.ClickHouse,
 		managedSchema("reader"),
-		&types.DBSchema{Grants: []types.DBGrant{
+		&catalog.Database{Grants: []catalog.Grant{
 			partialRevoke("reader", "SELECT", "shop", "orders"),
 		}},
 	)
@@ -214,20 +214,20 @@ func TestValidateLive_RefusesTheSameStateOnClickHouse(t *testing.T) {
 func TestValidateLive_IsDeterministic(t *testing.T) {
 	c := qt.New(t)
 
-	generated := managedSchema("a", "b", "c")
-	forward := &types.DBSchema{Grants: []types.DBGrant{
+	desired := managedSchema("a", "b", "c")
+	forward := &catalog.Database{Grants: []catalog.Grant{
 		partialRevoke("c", "SELECT", "shop", "orders"),
 		partialRevoke("a", "INSERT", "warehouse", "items"),
 		partialRevoke("b", "SELECT", "shop", "items"),
 	}}
-	reversed := &types.DBSchema{Grants: []types.DBGrant{
+	reversed := &catalog.Database{Grants: []catalog.Grant{
 		partialRevoke("b", "SELECT", "shop", "items"),
 		partialRevoke("a", "INSERT", "warehouse", "items"),
 		partialRevoke("c", "SELECT", "shop", "orders"),
 	}}
 
-	first := clickhouserbac.ValidateLive(platform.ClickHouse, generated, forward)
-	second := clickhouserbac.ValidateLive(platform.ClickHouse, generated, reversed)
+	first := clickhouserbac.ValidateLive(platform.ClickHouse, desired, forward)
+	second := clickhouserbac.ValidateLive(platform.ClickHouse, desired, reversed)
 
 	c.Assert(first, qt.IsNotNil)
 	c.Assert(second, qt.IsNotNil)
@@ -242,14 +242,14 @@ func TestValidateLive_IsDeterministic(t *testing.T) {
 func TestValidateLive_DoesNotMutateTheLiveSchema(t *testing.T) {
 	c := qt.New(t)
 
-	database := &types.DBSchema{Grants: []types.DBGrant{
+	current := &catalog.Database{Grants: []catalog.Grant{
 		partialRevoke("c", "SELECT", "shop", "orders"),
 		partialRevoke("a", "INSERT", "warehouse", "items"),
 	}}
-	before := append([]types.DBGrant(nil), database.Grants...)
+	before := append([]catalog.Grant(nil), current.Grants...)
 
-	err := clickhouserbac.ValidateLive(platform.ClickHouse, managedSchema("a", "c"), database)
+	err := clickhouserbac.ValidateLive(platform.ClickHouse, managedSchema("a", "c"), current)
 
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(database.Grants, qt.DeepEquals, before)
+	c.Assert(current.Grants, qt.DeepEquals, before)
 }

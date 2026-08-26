@@ -5,17 +5,17 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 )
 
 // identitySchema is one table whose id column carries the given identity range.
-func identitySchema(start, increment string) *types.DBSchema {
-	return &types.DBSchema{
-		Tables: []types.DBTable{{
+func identitySchema(start, increment string) *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{{
 			Name: "orders", Type: "BASE TABLE",
-			Columns: []types.DBColumn{
+			Columns: []catalog.Column{
 				{
 					Name: "id", DataType: "int", IsNullable: "NO",
 					IsPrimaryKey: true, IsAutoIncrement: true,
@@ -28,7 +28,7 @@ func identitySchema(start, increment string) *types.DBSchema {
 }
 
 // identityField returns the converted id column.
-func identityField(c *qt.C, database *goschema.Database) goschema.Field {
+func identityField(c *qt.C, database *schemamodel.Database) schemamodel.Field {
 	c.Helper()
 	for _, field := range database.Fields {
 		if field.Name == "id" {
@@ -36,7 +36,7 @@ func identityField(c *qt.C, database *goschema.Database) goschema.Field {
 		}
 	}
 	c.Fatalf("no id field in %+v", database.Fields)
-	return goschema.Field{}
+	return schemamodel.Field{}
 }
 
 // TestConvert_CarriesTheIdentityRange pins that the range crosses this
@@ -48,7 +48,7 @@ func identityField(c *qt.C, database *goschema.Database) goschema.Field {
 func TestConvert_CarriesTheIdentityRange(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(identitySchema("1000", "5"))
+	database := dbschematogo.ConvertCatalogToSchema(identitySchema("1000", "5"))
 
 	field := identityField(c, database)
 	c.Assert(field.AutoInc, qt.IsTrue)
@@ -61,7 +61,7 @@ func TestConvert_CarriesTheIdentityRange(t *testing.T) {
 func TestConvert_LeavesAnIdentityColumnWithoutARangeAlone(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(identitySchema("", ""))
+	database := dbschematogo.ConvertCatalogToSchema(identitySchema("", ""))
 
 	field := identityField(c, database)
 	c.Assert(field.AutoInc, qt.IsTrue)

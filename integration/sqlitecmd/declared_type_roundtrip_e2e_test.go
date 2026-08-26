@@ -12,9 +12,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
@@ -55,7 +55,7 @@ func TestSQLiteDeclaredTypesSurviveAReadE2E(t *testing.T) {
 	read, err := conn.Reader().ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 
-	described := dbschematogo.ConvertDBSchemaToGoSchema(read)
+	described := dbschematogo.ConvertCatalogToSchema(read)
 
 	c.Assert(describedColumnTypes(described), qt.DeepEquals, map[string]string{
 		"id":       "INTEGER",
@@ -158,7 +158,7 @@ func TestSQLiteDifferentAffinitiesStillRebuildE2E(t *testing.T) {
 
 // describedColumnTypes names the type each column of the described table
 // carries, so a failure shows the whole table rather than one assertion.
-func describedColumnTypes(described *goschema.Database) map[string]string {
+func describedColumnTypes(described *schemamodel.Database) map[string]string {
 	types := make(map[string]string, len(described.Fields))
 	for _, field := range described.Fields {
 		types[field.Name] = field.Type
@@ -168,10 +168,10 @@ func describedColumnTypes(described *goschema.Database) map[string]string {
 
 // sqliteColumnDeclaration is a description of the probe table with one column
 // declared as the caller spells it.
-func sqliteColumnDeclaration(declaredType string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "P", Name: "probe"}},
-		Fields: []goschema.Field{
+func sqliteColumnDeclaration(declaredType string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "P", Name: "probe"}},
+		Fields: []schemamodel.Field{
 			// Not a primary key: SQLite reports an INTEGER PRIMARY KEY column
 			// as nullable, and a declaration that made it a key would report a
 			// nullability change this test is not about.
@@ -245,6 +245,6 @@ func TestSQLiteDeclaredTypesSurviveTheDocumentE2E(t *testing.T) {
 
 	replayed, err := replayConn.Reader().ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
-	c.Assert(describedColumnTypes(dbschematogo.ConvertDBSchemaToGoSchema(replayed)),
-		qt.DeepEquals, describedColumnTypes(dbschematogo.ConvertDBSchemaToGoSchema(read)))
+	c.Assert(describedColumnTypes(dbschematogo.ConvertCatalogToSchema(replayed)),
+		qt.DeepEquals, describedColumnTypes(dbschematogo.ConvertCatalogToSchema(read)))
 }

@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 func TestRoleAnnotationParsing(t *testing.T) {
@@ -252,7 +252,7 @@ type User struct {
 }
 
 // Helper function to find a role by name in a slice of roles
-func findRoleByName(roles []goschema.Role, name string) *goschema.Role {
+func findRoleByName(roles []schemamodel.Role, name string) *schemamodel.Role {
 	for _, role := range roles {
 		if role.Name == name {
 			return &role

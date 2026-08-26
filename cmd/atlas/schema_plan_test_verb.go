@@ -10,7 +10,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/devdocker"
@@ -172,8 +172,8 @@ func runAtlasSchemaPlanTest(cmd *cobra.Command, opts atlasSchemaPlanTestOptions)
 //
 // Paths resolve against the directory holding the test files, which is what
 // makes a case portable: the snapshot it names travels with it.
-func atlasPlanTestSchemaResolver(dir string) func(string) (*goschema.Database, error) {
-	return func(url string) (*goschema.Database, error) {
+func atlasPlanTestSchemaResolver(dir string) func(string) (*schemamodel.Database, error) {
+	return func(url string) (*schemamodel.Database, error) {
 		path, err := atlasPlanTestLocalPath(dir, url, "schema")
 		if err != nil {
 			return nil, err

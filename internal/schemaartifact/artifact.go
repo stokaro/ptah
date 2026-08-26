@@ -15,7 +15,7 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashcl"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 	"go.5x5.cz/ptah/internal/fsnapshot"
@@ -56,7 +56,7 @@ type PushResult struct {
 
 // Artifact is a validated canonical schema retrieved from OCI storage.
 type Artifact struct {
-	Database   *goschema.Database
+	Database   *schemamodel.Database
 	FileSystem fs.FS
 	Descriptor ocispec.Descriptor
 	Reference  ociartifact.Reference
@@ -70,7 +70,7 @@ type preparedPush struct {
 }
 
 // Capture renders db into a lossless canonical HCL snapshot.
-func Capture(db *goschema.Database) (fs.FS, error) {
+func Capture(db *schemamodel.Database) (fs.FS, error) {
 	if db == nil {
 		return nil, fmt.Errorf("schema database is required")
 	}
@@ -114,7 +114,7 @@ func Capture(db *goschema.Database) (fs.FS, error) {
 func Push(
 	ctx context.Context,
 	reference string,
-	db *goschema.Database,
+	db *schemamodel.Database,
 	opts PushOptions,
 ) (PushResult, error) {
 	client, err := ociartifact.NewClient(ociartifact.ClientOptions{PlainHTTP: opts.PlainHTTP})
@@ -128,7 +128,7 @@ func Push(
 func PushTo(
 	ctx context.Context,
 	target oras.Target,
-	db *goschema.Database,
+	db *schemamodel.Database,
 	opts PushOptions,
 ) (PushResult, error) {
 	prepared, err := prepare(db, opts)
@@ -152,7 +152,7 @@ func push(
 	ctx context.Context,
 	client *ociartifact.Client,
 	reference string,
-	db *goschema.Database,
+	db *schemamodel.Database,
 	opts PushOptions,
 ) (PushResult, error) {
 	prepared, err := prepare(db, opts)
@@ -232,7 +232,7 @@ func PullToFile(ctx context.Context, reference, output string, plainHTTP bool) (
 }
 
 func prepare(
-	db *goschema.Database,
+	db *schemamodel.Database,
 	opts PushOptions,
 ) (preparedPush, error) {
 	snapshot, err := Capture(db)

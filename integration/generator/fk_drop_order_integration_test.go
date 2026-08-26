@@ -8,9 +8,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
@@ -34,7 +34,7 @@ func TestFKDropOrder_DownRoundTrip_Integration(t *testing.T) {
 			t.Cleanup(func() { dropFKOrderTables(conn, dialect) })
 
 			target := fkOrderSchema()
-			goschema.Finalize(target)
+			schemamodel.Finalize(target)
 			upSQL, downSQL := generateLiveMigrationSQL(c, conn, target)
 			execScript(c, conn, upSQL, "UP")
 
@@ -68,7 +68,7 @@ func TestFKDropOrder_MutualCycleDownRoundTrip_Integration(t *testing.T) {
 			t.Cleanup(func() { dropMutualFKCycleTables(conn, dialect) })
 
 			target := mutualFKCycleSchema()
-			goschema.Finalize(target)
+			schemamodel.Finalize(target)
 			upSQL, downSQL := generateLiveMigrationSQL(c, conn, target)
 			execScript(c, conn, upSQL, "UP")
 
@@ -103,7 +103,7 @@ func dropMutualFKCycleTables(conn *dbschema.DatabaseConnection, dialect string) 
 	}
 }
 
-func hasFKOrderTables(schema *dbschematypes.DBSchema) bool {
+func hasFKOrderTables(schema *catalog.Database) bool {
 	for _, table := range schema.Tables {
 		if strings.HasPrefix(table.Name, "ptah_fk_order_") {
 			return true
@@ -112,7 +112,7 @@ func hasFKOrderTables(schema *dbschematypes.DBSchema) bool {
 	return false
 }
 
-func hasMutualFKCycleTables(schema *dbschematypes.DBSchema) bool {
+func hasMutualFKCycleTables(schema *catalog.Database) bool {
 	for _, table := range schema.Tables {
 		if table.Name == "left_nodes" || table.Name == "right_nodes" {
 			return true

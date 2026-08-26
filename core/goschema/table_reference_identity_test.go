@@ -7,6 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 func TestParseSource_TableDirectivePreservesReferenceIdentity(t *testing.T) {
@@ -59,13 +60,13 @@ func TestParseSource_TableDirectivePreservesReferenceIdentity(t *testing.T) {
 
 func TestFinalize_ForeignKeysPreserveReferenceIdentity(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{
-		Tables: []goschema.Table{
+	database := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Literal", Name: "tenant.data"},
 			{StructName: "Qualified", Schema: "tenant", Name: "data"},
 			{StructName: "Child", Name: "children"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Literal", Name: "id", Type: "INTEGER"},
 			{StructName: "Qualified", Name: "id", Type: "INTEGER"},
 			{StructName: "Child", Name: "literal_id", Type: "INTEGER", Foreign: `"tenant.data"(id)`},
@@ -73,32 +74,32 @@ func TestFinalize_ForeignKeysPreserveReferenceIdentity(t *testing.T) {
 		},
 	}
 
-	goschema.Finalize(database)
+	schemamodel.Finalize(database)
 
 	c.Assert(database.Dependencies["children"], qt.DeepEquals, []string{`"tenant.data"`, "tenant.data"})
 }
 
 func TestFinalize_ExplicitTableReferencesOverrideStructAssociation(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{
-		Tables: []goschema.Table{
+	database := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Literal", Name: "tenant.data"},
 			{StructName: "Qualified", Schema: "tenant", Name: "data"},
 		},
-		Indexes: []goschema.Index{{
+		Indexes: []schemamodel.Index{{
 			StructName: "Literal",
 			Name:       "qualified_lookup",
 			TableName:  "tenant.data",
 			Fields:     []string{"id"},
 		}},
-		Constraints: []goschema.Constraint{{
+		Constraints: []schemamodel.Constraint{{
 			StructName:      "Literal",
 			Name:            "qualified_check",
 			Type:            "CHECK",
 			Table:           "tenant.data",
 			CheckExpression: "id > 0",
 		}},
-		Triggers: []goschema.Trigger{{
+		Triggers: []schemamodel.Trigger{{
 			StructName: "Literal",
 			Name:       "qualified_trigger",
 			Table:      "tenant.data",
@@ -106,7 +107,7 @@ func TestFinalize_ExplicitTableReferencesOverrideStructAssociation(t *testing.T)
 		}},
 	}
 
-	goschema.Finalize(database)
+	schemamodel.Finalize(database)
 
 	c.Assert(database.Indexes[0].TableName, qt.Equals, "tenant.data")
 	c.Assert(database.Constraints[0].Table, qt.Equals, "tenant.data")
@@ -116,12 +117,12 @@ func TestFinalize_ExplicitTableReferencesOverrideStructAssociation(t *testing.T)
 func TestQualifiedSchemaObjectNamesPreserveReferenceIdentity(t *testing.T) {
 	c := qt.New(t)
 
-	c.Assert(goschema.Domain{Name: "tenant.data"}.QualifiedName(), qt.Equals, `"tenant.data"`)
-	c.Assert(goschema.Domain{Schema: "tenant", Name: "data"}.QualifiedName(), qt.Equals, "tenant.data")
-	c.Assert(goschema.CompositeType{Name: "tenant.data"}.QualifiedName(), qt.Equals, `"tenant.data"`)
-	c.Assert(goschema.CompositeType{Schema: "tenant", Name: "data"}.QualifiedName(), qt.Equals, "tenant.data")
-	c.Assert(goschema.Range{Name: "tenant.data"}.QualifiedName(), qt.Equals, `"tenant.data"`)
-	c.Assert(goschema.Range{Schema: "tenant", Name: "data"}.QualifiedName(), qt.Equals, "tenant.data")
-	c.Assert(goschema.Sequence{Name: "tenant.data"}.QualifiedName(), qt.Equals, `"tenant.data"`)
-	c.Assert(goschema.Sequence{Schema: "tenant", Name: "data"}.QualifiedName(), qt.Equals, "tenant.data")
+	c.Assert(schemamodel.Domain{Name: "tenant.data"}.QualifiedName(), qt.Equals, `"tenant.data"`)
+	c.Assert(schemamodel.Domain{Schema: "tenant", Name: "data"}.QualifiedName(), qt.Equals, "tenant.data")
+	c.Assert(schemamodel.CompositeType{Name: "tenant.data"}.QualifiedName(), qt.Equals, `"tenant.data"`)
+	c.Assert(schemamodel.CompositeType{Schema: "tenant", Name: "data"}.QualifiedName(), qt.Equals, "tenant.data")
+	c.Assert(schemamodel.Range{Name: "tenant.data"}.QualifiedName(), qt.Equals, `"tenant.data"`)
+	c.Assert(schemamodel.Range{Schema: "tenant", Name: "data"}.QualifiedName(), qt.Equals, "tenant.data")
+	c.Assert(schemamodel.Sequence{Name: "tenant.data"}.QualifiedName(), qt.Equals, `"tenant.data"`)
+	c.Assert(schemamodel.Sequence{Schema: "tenant", Name: "data"}.QualifiedName(), qt.Equals, "tenant.data")
 }

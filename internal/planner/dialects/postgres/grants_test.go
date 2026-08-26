@@ -6,31 +6,31 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestPlanner_GenerateMigrationAST_Grants(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{
-		GrantsRemoved: []types.GrantRef{
+	diff := &difftypes.SchemaDiff{
+		GrantsRemoved: []difftypes.GrantRef{
 			{Role: "app_role", Privilege: "DELETE", ObjectType: "TABLE", ObjectName: "users", WithOption: true},
 		},
-		GrantOptionsRevoked: []types.GrantRef{
+		GrantOptionsRevoked: []difftypes.GrantRef{
 			{Role: "app_role", Privilege: "UPDATE", ObjectType: "TABLE", ObjectName: "users", WithOption: true},
 		},
-		GrantOptionsAdded: []types.GrantRef{
+		GrantOptionsAdded: []difftypes.GrantRef{
 			{Role: "app_role", Privilege: "REFERENCES", ObjectType: "TABLE", ObjectName: "users", WithOption: true},
 		},
-		GrantsAdded: []types.GrantRef{
+		GrantsAdded: []difftypes.GrantRef{
 			{Role: "app_role", Privilege: "USAGE", ObjectType: "SCHEMA", ObjectName: "public"},
 			{Role: "app_role", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "users", WithOption: true},
 		},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, &goschema.Database{})
+	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, &schemamodel.Database{})
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)

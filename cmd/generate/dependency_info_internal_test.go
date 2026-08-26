@@ -12,14 +12,15 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 func TestGetDependencyInfo_EmptyResult(t *testing.T) {
 	c := qt.New(t)
 
 	// Create an empty result to test edge case
-	result := &goschema.Database{
-		Tables:       make([]goschema.Table, 0),
+	result := &schemamodel.Database{
+		Tables:       make([]schemamodel.Table, 0),
 		Dependencies: make(map[string][]string),
 	}
 

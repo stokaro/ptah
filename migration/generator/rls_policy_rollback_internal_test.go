@@ -11,21 +11,21 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
 // desiredPolicyOnOrders is the desired state for the rollback tests: one policy
 // on one table, spelled however the caller writes it, with the USING expression
 // the migration is changing to.
-func desiredPolicyOnOrders(spelling string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{Name: "orders", StructName: "Order"}},
-		RLSEnabledTables: []goschema.RLSEnabledTable{
+func desiredPolicyOnOrders(spelling string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "orders", StructName: "Order"}},
+		RLSEnabledTables: []schemamodel.RLSEnabledTable{
 			{Table: spelling, StructName: "Order"},
 		},
-		RLSPolicies: []goschema.RLSPolicy{{
+		RLSPolicies: []schemamodel.RLSPolicy{{
 			Name:            "tenant_isolation",
 			Table:           spelling,
 			StructName:      "Order",
@@ -38,12 +38,12 @@ func desiredPolicyOnOrders(spelling string) *goschema.Database {
 
 // introspectedPolicyOnOrders is the database side, carrying the spelling the
 // PostgreSQL reader reports and the USING expression a rollback has to restore.
-func introspectedPolicyOnOrders(spelling string) *dbschematypes.DBSchema {
-	return &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
+func introspectedPolicyOnOrders(spelling string) *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{
 			{Name: "orders", Schema: "public", RLSEnabled: true},
 		},
-		RLSPolicies: []dbschematypes.DBRLSPolicy{{
+		RLSPolicies: []catalog.RLSPolicy{{
 			Name:            "tenant_isolation",
 			Table:           spelling,
 			PolicyFor:       "ALL",

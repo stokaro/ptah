@@ -5,29 +5,29 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // declaredTTL is a one-table declaration carrying the given policy.
-func declaredTTL(spec *ast.RowTTLSpec) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Sessions", Name: "sessions", RowTTL: spec}},
-		Fields: []goschema.Field{{StructName: "Sessions", Name: "id", Type: "BIGINT", Primary: true}},
+func declaredTTL(spec *ast.RowTTLSpec) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Sessions", Name: "sessions", RowTTL: spec}},
+		Fields: []schemamodel.Field{{StructName: "Sessions", Name: "id", Type: "BIGINT", Primary: true}},
 	}
 }
 
 // liveTTL is the live description of that table with the given policy.
-func liveTTL(spec *ast.RowTTLSpec) *types.DBSchema {
-	return &types.DBSchema{
-		Tables: []types.DBTable{{
+func liveTTL(spec *ast.RowTTLSpec) *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{{
 			Name:    "sessions",
 			Type:    "BASE TABLE",
-			Columns: []types.DBColumn{{Name: "id", DataType: "BIGINT", IsNullable: "NO"}},
+			Columns: []catalog.Column{{Name: "id", DataType: "BIGINT", IsNullable: "NO"}},
 			RowTTL:  spec,
 		}},
 	}
@@ -163,8 +163,8 @@ func TestCompare_ATTLOnlyDifferenceStillReachesTablesModified(t *testing.T) {
 // columnsMatching describes the declaration's columns exactly as a read of the
 // table it creates would, so a comparison over the two finds no column
 // difference at all.
-func columnsMatching(_ *goschema.Database) []types.DBColumn {
-	return []types.DBColumn{{
+func columnsMatching(_ *schemamodel.Database) []catalog.Column {
+	return []catalog.Column{{
 		Name: "id", DataType: "bigint", UDTName: "int8", IsNullable: "NO", IsPrimaryKey: true,
 	}}
 }

@@ -5,40 +5,40 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 )
 
 // defaultSchemaFixture mirrors the PostgreSQL fixture the issue reproduces
 // against: objects in the connection's own schema come back from every reader
 // with an empty Schema field, objects in a second schema carry theirs.
-func defaultSchemaFixture() *dbschematypes.DBSchema {
-	return &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
-			{Name: "users", Columns: []dbschematypes.DBColumn{{Name: "id"}, {Name: "name"}}},
-			{Schema: "app", Name: "orders", Columns: []dbschematypes.DBColumn{{Name: "id"}}},
+func defaultSchemaFixture() *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{
+			{Name: "users", Columns: []catalog.Column{{Name: "id"}, {Name: "name"}}},
+			{Schema: "app", Name: "orders", Columns: []catalog.Column{{Name: "id"}}},
 		},
-		Indexes: []dbschematypes.DBIndex{
+		Indexes: []catalog.Index{
 			{TableName: "users", Name: "users_name_idx", Columns: []string{"name"}},
 			{Schema: "app", TableName: "orders", Name: "orders_id_idx", Columns: []string{"id"}},
 		},
-		Views: []dbschematypes.DBView{
+		Views: []catalog.View{
 			{Name: "v_users"},
 			{Schema: "app", Name: "v_orders"},
 		},
-		MatViews: []dbschematypes.DBMatView{
+		MatViews: []catalog.MaterializedView{
 			{Name: "mv_users"},
 			{Schema: "app", Name: "mv_orders"},
 		},
-		Extensions: []dbschematypes.DBExtension{
+		Extensions: []catalog.Extension{
 			{Schema: "public", Name: "pgcrypto", Version: "1.3"},
 			{Schema: "public", Name: "plpgsql", Version: "1.0"},
 		},
 	}
 }
 
-func defaultSchemaMatViewNames(views []dbschematypes.DBMatView) []string {
+func defaultSchemaMatViewNames(views []catalog.MaterializedView) []string {
 	names := make([]string, 0, len(views))
 	for _, view := range views {
 		names = append(names, view.QualifiedName())
@@ -46,7 +46,7 @@ func defaultSchemaMatViewNames(views []dbschematypes.DBMatView) []string {
 	return names
 }
 
-func defaultSchemaExtensionNames(extensions []dbschematypes.DBExtension) []string {
+func defaultSchemaExtensionNames(extensions []catalog.Extension) []string {
 	names := make([]string, 0, len(extensions))
 	for _, extension := range extensions {
 		names = append(names, extension.Name)
@@ -68,7 +68,7 @@ type defaultSchemaObjects struct {
 	Extensions []string
 }
 
-func defaultSchemaObjectsOf(schema *dbschematypes.DBSchema) defaultSchemaObjects {
+func defaultSchemaObjectsOf(schema *catalog.Database) defaultSchemaObjects {
 	columns := make([]string, 0, len(schema.Tables))
 	for _, table := range schema.Tables {
 		for _, column := range table.Columns {
@@ -251,7 +251,7 @@ func TestExcludeDatabase_WithoutDefaultSchemaKeepsBareOnlyCandidates(t *testing.
 // Reverting the fix fails this with the table and the view still present in the
 // desired state, while the introspected side of the same pattern is empty.
 func TestExcludeGeneratedWithDefaultSchema_MatchesDatabaseSide(t *testing.T) {
-	// goschema.Finalize sorts tables by name; fields and views keep input order.
+	// schemamodel.Finalize sorts tables by name; fields and views keep input order.
 	tests := []struct {
 		name    string
 		pattern string
@@ -289,16 +289,16 @@ func TestExcludeGeneratedWithDefaultSchema_MatchesDatabaseSide(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			schema := &goschema.Database{
-				Tables: []goschema.Table{
+			schema := &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{StructName: "User", Name: "users"},
 					{StructName: "Order", Schema: "app", Name: "orders"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{StructName: "User", Name: "id", Type: "INTEGER", Primary: true},
 					{StructName: "Order", Name: "id", Type: "INTEGER", Primary: true},
 				},
-				Views: []goschema.View{
+				Views: []schemamodel.View{
 					{StructName: "VUsers", Name: "v_users", Body: "SELECT id FROM users"},
 					{StructName: "VOrders", Name: "app.v_orders", Body: "SELECT id FROM app.orders"},
 				},
@@ -320,7 +320,7 @@ type generatedDefaultSchemaObjects struct {
 	Views  []string
 }
 
-func generatedDefaultSchemaObjectsOf(schema *goschema.Database) generatedDefaultSchemaObjects {
+func generatedDefaultSchemaObjectsOf(schema *schemamodel.Database) generatedDefaultSchemaObjects {
 	return generatedDefaultSchemaObjects{
 		Tables: generatedTableNames(schema.Tables),
 		Fields: generatedFieldNames(schema.Fields),
@@ -328,7 +328,7 @@ func generatedDefaultSchemaObjectsOf(schema *goschema.Database) generatedDefault
 	}
 }
 
-func generatedViewNames(views []goschema.View) []string {
+func generatedViewNames(views []schemamodel.View) []string {
 	names := make([]string, 0, len(views))
 	for _, view := range views {
 		names = append(names, view.Name)

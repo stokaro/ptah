@@ -77,10 +77,10 @@ target="$tree/internal/planner/dialects/sqlite/boundaries_selftest_defect.go"
 cat >"$target" <<'GO'
 package sqlite
 
-import "go.5x5.cz/ptah/core/goschema"
+import "go.5x5.cz/ptah/core/schemamodel"
 
-func boundariesSelftestDefect() *goschema.Database {
-	return &goschema.Database{}
+func boundariesSelftestDefect() *schemamodel.Database {
+	return &schemamodel.Database{}
 }
 GO
 require_refusal "a planner constructing a source schema description"
@@ -106,7 +106,7 @@ package sqlite
 
 // boundariesSelftestComment shows a caller how to build a description:
 //
-//	generated := &goschema.Database{}
+//	desired := &schemamodel.Database{}
 //
 // which is prose, not a construction site.
 func boundariesSelftestComment() {}

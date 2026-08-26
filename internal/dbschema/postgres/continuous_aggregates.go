@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 )
 
 // timescaleExtension is the extension whose presence decides whether the
@@ -55,7 +55,7 @@ const continuousAggregateQuery = `
 // A server whose preset left the extension read out reports none, which is the
 // right answer for the two targets that happens to: neither Spanner nor a
 // catalog without pg_extension has TimescaleDB.
-func hasTimescaleExtension(extensions []types.DBExtension) bool {
+func hasTimescaleExtension(extensions []catalog.Extension) bool {
 	for _, extension := range extensions {
 		if strings.EqualFold(extension.Name, timescaleExtension) {
 			return true
@@ -72,12 +72,12 @@ func hasTimescaleExtension(extensions []types.DBExtension) bool {
 // which is a claim a failed read cannot make -- and the objects it would hide
 // are exactly the ones a plan must not treat as views.
 func (r *Reader) readContinuousAggregates(ctx context.Context,
-	extensions []types.DBExtension,
-) ([]types.DBContinuousAggregate, error) {
+	extensions []catalog.Extension,
+) ([]catalog.ContinuousAggregate, error) {
 	if !hasTimescaleExtension(extensions) {
 		return nil, nil
 	}
-	var aggregates []types.DBContinuousAggregate
+	var aggregates []catalog.ContinuousAggregate
 	for _, schemaName := range r.schemasToRead() {
 		schemaAggregates, err := r.readContinuousAggregatesForSchema(ctx, schemaName)
 		if err != nil {
@@ -90,16 +90,16 @@ func (r *Reader) readContinuousAggregates(ctx context.Context,
 
 func (r *Reader) readContinuousAggregatesForSchema(ctx context.Context,
 	schemaName string,
-) ([]types.DBContinuousAggregate, error) {
+) ([]catalog.ContinuousAggregate, error) {
 	rows, err := r.db.QueryContext(ctx, continuousAggregateQuery, schemaName)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var aggregates []types.DBContinuousAggregate
+	var aggregates []catalog.ContinuousAggregate
 	for rows.Next() {
-		var aggregate types.DBContinuousAggregate
+		var aggregate catalog.ContinuousAggregate
 		if err := rows.Scan(
 			&aggregate.Schema, &aggregate.Name,
 			&aggregate.HypertableSchema, &aggregate.HypertableName,
@@ -129,9 +129,9 @@ func (r *Reader) readContinuousAggregatesForSchema(ctx context.Context,
 // its schema on the same database, which is the same answer arrived at from
 // the other side.
 func withoutContinuousAggregates(
-	views []types.DBView,
-	aggregates []types.DBContinuousAggregate,
-) []types.DBView {
+	views []catalog.View,
+	aggregates []catalog.ContinuousAggregate,
+) []catalog.View {
 	if len(aggregates) == 0 {
 		return views
 	}
@@ -139,7 +139,7 @@ func withoutContinuousAggregates(
 	for _, aggregate := range aggregates {
 		excluded[continuousAggregateKey(aggregate.Schema, aggregate.Name)] = true
 	}
-	kept := make([]types.DBView, 0, len(views))
+	kept := make([]catalog.View, 0, len(views))
 	for _, view := range views {
 		if excluded[continuousAggregateKey(view.Schema, view.Name)] {
 			continue

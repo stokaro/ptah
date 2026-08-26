@@ -5,25 +5,25 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/constraintscope"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 func TestConstraints(t *testing.T) {
 	tests := []struct {
-		name      string
-		generated *goschema.Database
-		database  *types.DBSchema
-		expected  *difftypes.SchemaDiff
+		name     string
+		desired  *schemamodel.Database
+		current  *catalog.Database
+		expected *difftypes.SchemaDiff
 	}{
 		{
 			name: "new EXCLUDE constraint added",
-			generated: &goschema.Database{
-				Constraints: []goschema.Constraint{
+			desired: &schemamodel.Database{
+				Constraints: []schemamodel.Constraint{
 					{
 						StructName:      "Booking",
 						Name:            "no_overlapping_bookings",
@@ -35,7 +35,7 @@ func TestConstraints(t *testing.T) {
 					},
 				},
 			},
-			database: &types.DBSchema{
+			current: &catalog.Database{
 				// Empty database - no existing constraints
 			},
 			expected: &difftypes.SchemaDiff{
@@ -44,8 +44,8 @@ func TestConstraints(t *testing.T) {
 		},
 		{
 			name: "multiple constraints added",
-			generated: &goschema.Database{
-				Constraints: []goschema.Constraint{
+			desired: &schemamodel.Database{
+				Constraints: []schemamodel.Constraint{
 					{
 						StructName:      "Booking",
 						Name:            "no_overlapping_bookings",
@@ -70,7 +70,7 @@ func TestConstraints(t *testing.T) {
 					},
 				},
 			},
-			database: &types.DBSchema{
+			current: &catalog.Database{
 				// Empty database - no existing constraints
 			},
 			expected: &difftypes.SchemaDiff{
@@ -79,10 +79,10 @@ func TestConstraints(t *testing.T) {
 		},
 		{
 			name: "no constraints in either schema",
-			generated: &goschema.Database{
-				Constraints: make([]goschema.Constraint, 0),
+			desired: &schemamodel.Database{
+				Constraints: make([]schemamodel.Constraint, 0),
 			},
-			database: &types.DBSchema{
+			current: &catalog.Database{
 				// Empty database - no existing constraints
 			},
 			expected: &difftypes.SchemaDiff{
@@ -92,8 +92,8 @@ func TestConstraints(t *testing.T) {
 		},
 		{
 			name: "CHECK constraint added",
-			generated: &goschema.Database{
-				Constraints: []goschema.Constraint{
+			desired: &schemamodel.Database{
+				Constraints: []schemamodel.Constraint{
 					{
 						StructName:      "Product",
 						Name:            "positive_price",
@@ -103,7 +103,7 @@ func TestConstraints(t *testing.T) {
 					},
 				},
 			},
-			database: &types.DBSchema{
+			current: &catalog.Database{
 				// Empty database - no existing constraints
 			},
 			expected: &difftypes.SchemaDiff{
@@ -112,8 +112,8 @@ func TestConstraints(t *testing.T) {
 		},
 		{
 			name: "CHECK constraint modified",
-			generated: &goschema.Database{
-				Constraints: []goschema.Constraint{
+			desired: &schemamodel.Database{
+				Constraints: []schemamodel.Constraint{
 					{
 						StructName:      "Product",
 						Name:            "positive_price",
@@ -123,8 +123,8 @@ func TestConstraints(t *testing.T) {
 					},
 				},
 			},
-			database: &types.DBSchema{
-				Constraints: []types.DBConstraint{
+			current: &catalog.Database{
+				Constraints: []catalog.Constraint{
 					{
 						Name:        "positive_price",
 						TableName:   "products",
@@ -140,8 +140,8 @@ func TestConstraints(t *testing.T) {
 		},
 		{
 			name: "CHECK constraint semantic parentheses are preserved",
-			generated: &goschema.Database{
-				Constraints: []goschema.Constraint{
+			desired: &schemamodel.Database{
+				Constraints: []schemamodel.Constraint{
 					{
 						StructName:      "Invoice",
 						Name:            "positive_balance",
@@ -151,8 +151,8 @@ func TestConstraints(t *testing.T) {
 					},
 				},
 			},
-			database: &types.DBSchema{
-				Constraints: []types.DBConstraint{
+			current: &catalog.Database{
+				Constraints: []catalog.Constraint{
 					{
 						Name:        "positive_balance",
 						TableName:   "invoices",
@@ -168,8 +168,8 @@ func TestConstraints(t *testing.T) {
 		},
 		{
 			name: "CHECK constraint explicit column cast is preserved",
-			generated: &goschema.Database{
-				Constraints: []goschema.Constraint{
+			desired: &schemamodel.Database{
+				Constraints: []schemamodel.Constraint{
 					{
 						StructName:      "Invoice",
 						Name:            "positive_amount",
@@ -179,8 +179,8 @@ func TestConstraints(t *testing.T) {
 					},
 				},
 			},
-			database: &types.DBSchema{
-				Constraints: []types.DBConstraint{
+			current: &catalog.Database{
+				Constraints: []catalog.Constraint{
 					{
 						Name:        "positive_amount",
 						TableName:   "invoices",
@@ -196,8 +196,8 @@ func TestConstraints(t *testing.T) {
 		},
 		{
 			name: "CHECK constraint MySQL quoted identifier is equivalent",
-			generated: &goschema.Database{
-				Constraints: []goschema.Constraint{
+			desired: &schemamodel.Database{
+				Constraints: []schemamodel.Constraint{
 					{
 						StructName:      "Product",
 						Name:            "products_quantity_check",
@@ -207,8 +207,8 @@ func TestConstraints(t *testing.T) {
 					},
 				},
 			},
-			database: &types.DBSchema{
-				Constraints: []types.DBConstraint{
+			current: &catalog.Database{
+				Constraints: []catalog.Constraint{
 					{
 						Name:        "products_quantity_check",
 						TableName:   "products",
@@ -221,8 +221,8 @@ func TestConstraints(t *testing.T) {
 		},
 		{
 			name: "UNIQUE constraint added",
-			generated: &goschema.Database{
-				Constraints: []goschema.Constraint{
+			desired: &schemamodel.Database{
+				Constraints: []schemamodel.Constraint{
 					{
 						StructName: "User",
 						Name:       "unique_user_email",
@@ -232,7 +232,7 @@ func TestConstraints(t *testing.T) {
 					},
 				},
 			},
-			database: &types.DBSchema{
+			current: &catalog.Database{
 				// Empty database - no existing constraints
 			},
 			expected: &difftypes.SchemaDiff{
@@ -241,8 +241,8 @@ func TestConstraints(t *testing.T) {
 		},
 		{
 			name: "UNIQUE constraint column set changed",
-			generated: &goschema.Database{
-				Constraints: []goschema.Constraint{
+			desired: &schemamodel.Database{
+				Constraints: []schemamodel.Constraint{
 					{
 						StructName: "User",
 						Name:       "unique_user_email",
@@ -252,8 +252,8 @@ func TestConstraints(t *testing.T) {
 					},
 				},
 			},
-			database: &types.DBSchema{
-				Constraints: []types.DBConstraint{
+			current: &catalog.Database{
+				Constraints: []catalog.Constraint{
 					{
 						Name:        "unique_user_email",
 						TableName:   "users",
@@ -269,8 +269,8 @@ func TestConstraints(t *testing.T) {
 		},
 		{
 			name: "UNIQUE constraint column order changed",
-			generated: &goschema.Database{
-				Constraints: []goschema.Constraint{
+			desired: &schemamodel.Database{
+				Constraints: []schemamodel.Constraint{
 					{
 						StructName: "User",
 						Name:       "unique_user_email",
@@ -280,8 +280,8 @@ func TestConstraints(t *testing.T) {
 					},
 				},
 			},
-			database: &types.DBSchema{
-				Constraints: []types.DBConstraint{
+			current: &catalog.Database{
+				Constraints: []catalog.Constraint{
 					{
 						Name:        "unique_user_email",
 						TableName:   "users",
@@ -294,10 +294,10 @@ func TestConstraints(t *testing.T) {
 		},
 		{
 			name: "UNIQUE constraint nulls distinct changed",
-			generated: func() *goschema.Database {
+			desired: func() *schemamodel.Database {
 				nullsDistinct := false
-				return &goschema.Database{
-					Constraints: []goschema.Constraint{
+				return &schemamodel.Database{
+					Constraints: []schemamodel.Constraint{
 						{
 							StructName:    "User",
 							Name:          "users_c_key",
@@ -309,8 +309,8 @@ func TestConstraints(t *testing.T) {
 					},
 				}
 			}(),
-			database: &types.DBSchema{
-				Constraints: []types.DBConstraint{
+			current: &catalog.Database{
+				Constraints: []catalog.Constraint{
 					{
 						Name:        "users_c_key",
 						TableName:   "users",
@@ -326,8 +326,8 @@ func TestConstraints(t *testing.T) {
 		},
 		{
 			name: "FOREIGN KEY constraint added",
-			generated: &goschema.Database{
-				Constraints: []goschema.Constraint{
+			desired: &schemamodel.Database{
+				Constraints: []schemamodel.Constraint{
 					{
 						StructName:    "Order",
 						Name:          "fk_user",
@@ -340,7 +340,7 @@ func TestConstraints(t *testing.T) {
 					},
 				},
 			},
-			database: &types.DBSchema{
+			current: &catalog.Database{
 				// Empty database - no existing constraints
 			},
 			expected: &difftypes.SchemaDiff{
@@ -354,7 +354,7 @@ func TestConstraints(t *testing.T) {
 			c := qt.New(t)
 
 			diff := &difftypes.SchemaDiff{}
-			compare.Constraints(tt.generated, tt.database, diff, nil)
+			compare.Constraints(tt.desired, tt.current, diff, nil)
 
 			// Check constraints added
 			c.Assert(diff.ConstraintsAdded, qt.HasLen, len(tt.expected.ConstraintsAdded))
@@ -375,15 +375,15 @@ func TestConstraints(t *testing.T) {
 
 func TestConstraints_SameNameTypeDriftCarriesAdditionBody(t *testing.T) {
 	tests := []struct {
-		name      string
-		generated *goschema.Database
-		database  *types.DBSchema
-		expected  []difftypes.ConstraintAdditionInfo
+		name     string
+		desired  *schemamodel.Database
+		current  *catalog.Database
+		expected []difftypes.ConstraintAdditionInfo
 	}{
 		{
 			name: "CHECK to UNIQUE",
-			generated: &goschema.Database{
-				Constraints: []goschema.Constraint{{
+			desired: &schemamodel.Database{
+				Constraints: []schemamodel.Constraint{{
 					StructName: "Account",
 					Name:       "accounts_identity",
 					Type:       "UNIQUE",
@@ -391,8 +391,8 @@ func TestConstraints_SameNameTypeDriftCarriesAdditionBody(t *testing.T) {
 					Columns:    []string{"email", "region"},
 				}},
 			},
-			database: &types.DBSchema{
-				Constraints: []types.DBConstraint{{
+			current: &catalog.Database{
+				Constraints: []catalog.Constraint{{
 					Name:        "accounts_identity",
 					TableName:   "accounts",
 					Type:        "CHECK",
@@ -409,8 +409,8 @@ func TestConstraints_SameNameTypeDriftCarriesAdditionBody(t *testing.T) {
 		},
 		{
 			name: "UNIQUE to CHECK",
-			generated: &goschema.Database{
-				Constraints: []goschema.Constraint{{
+			desired: &schemamodel.Database{
+				Constraints: []schemamodel.Constraint{{
 					StructName:      "Product",
 					Name:            "products_quantity_guard",
 					Type:            "CHECK",
@@ -418,8 +418,8 @@ func TestConstraints_SameNameTypeDriftCarriesAdditionBody(t *testing.T) {
 					CheckExpression: "quantity > 10",
 				}},
 			},
-			database: &types.DBSchema{
-				Constraints: []types.DBConstraint{{
+			current: &catalog.Database{
+				Constraints: []catalog.Constraint{{
 					Name:        "products_quantity_guard",
 					TableName:   "products",
 					Type:        "UNIQUE",
@@ -441,7 +441,7 @@ func TestConstraints_SameNameTypeDriftCarriesAdditionBody(t *testing.T) {
 			c := qt.New(t)
 
 			diff := &difftypes.SchemaDiff{}
-			compare.Constraints(tt.generated, tt.database, diff, nil)
+			compare.Constraints(tt.desired, tt.current, diff, nil)
 
 			c.Assert(diff.ConstraintsAdded, qt.DeepEquals, []string{tt.expected[0].Name})
 			c.Assert(diff.ConstraintsRemoved, qt.DeepEquals, []string{tt.expected[0].Name})
@@ -456,12 +456,12 @@ func TestConstraints_SameNameTypeDriftCarriesAdditionBody(t *testing.T) {
 func TestConstraints_UniqueIncludeDrift(t *testing.T) {
 	tests := []struct {
 		name      string
-		generated goschema.Constraint
-		database  types.DBConstraint
+		generated schemamodel.Constraint
+		database  catalog.Constraint
 	}{
 		{
 			name: "missing include column",
-			generated: goschema.Constraint{
+			generated: schemamodel.Constraint{
 				StructName:     "Account",
 				Name:           "accounts_email_unique",
 				Type:           "UNIQUE",
@@ -469,7 +469,7 @@ func TestConstraints_UniqueIncludeDrift(t *testing.T) {
 				Columns:        []string{"email"},
 				IncludeColumns: []string{"updated_at"},
 			},
-			database: types.DBConstraint{
+			database: catalog.Constraint{
 				Name:        "accounts_email_unique",
 				TableName:   "accounts",
 				Type:        "UNIQUE",
@@ -478,7 +478,7 @@ func TestConstraints_UniqueIncludeDrift(t *testing.T) {
 		},
 		{
 			name: "changed include column",
-			generated: goschema.Constraint{
+			generated: schemamodel.Constraint{
 				StructName:     "Account",
 				Name:           "accounts_email_unique",
 				Type:           "UNIQUE",
@@ -486,7 +486,7 @@ func TestConstraints_UniqueIncludeDrift(t *testing.T) {
 				Columns:        []string{"email"},
 				IncludeColumns: []string{"updated_at"},
 			},
-			database: types.DBConstraint{
+			database: catalog.Constraint{
 				Name:           "accounts_email_unique",
 				TableName:      "accounts",
 				Type:           "UNIQUE",
@@ -496,14 +496,14 @@ func TestConstraints_UniqueIncludeDrift(t *testing.T) {
 		},
 		{
 			name: "extra include column",
-			generated: goschema.Constraint{
+			generated: schemamodel.Constraint{
 				StructName: "Account",
 				Name:       "accounts_email_unique",
 				Type:       "UNIQUE",
 				Table:      "accounts",
 				Columns:    []string{"email"},
 			},
-			database: types.DBConstraint{
+			database: catalog.Constraint{
 				Name:           "accounts_email_unique",
 				TableName:      "accounts",
 				Type:           "UNIQUE",
@@ -516,11 +516,11 @@ func TestConstraints_UniqueIncludeDrift(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			generated := &goschema.Database{Constraints: []goschema.Constraint{tt.generated}}
-			database := &types.DBSchema{Constraints: []types.DBConstraint{tt.database}}
+			desired := &schemamodel.Database{Constraints: []schemamodel.Constraint{tt.generated}}
+			current := &catalog.Database{Constraints: []catalog.Constraint{tt.database}}
 
 			diff := &difftypes.SchemaDiff{}
-			compare.Constraints(generated, database, diff, nil)
+			compare.Constraints(desired, current, diff, nil)
 
 			c.Assert(diff.ConstraintsRemovedWithTables, qt.DeepEquals, []difftypes.ConstraintRemovalInfo{{
 				Name:      tt.generated.Name,
@@ -596,8 +596,8 @@ func TestConstraints_HasChanges(t *testing.T) {
 func TestConstraints_CompositeForeignKeyAdditionCarriesReferencedColumns(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Constraints: []goschema.Constraint{
+	desired := &schemamodel.Database{
+		Constraints: []schemamodel.Constraint{
 			{
 				StructName:     "Order",
 				Name:           "fk_orders_accounts",
@@ -613,7 +613,7 @@ func TestConstraints_CompositeForeignKeyAdditionCarriesReferencedColumns(t *test
 	}
 
 	diff := &difftypes.SchemaDiff{}
-	compare.Constraints(generated, &types.DBSchema{}, diff, nil)
+	compare.Constraints(desired, &catalog.Database{}, diff, nil)
 
 	c.Assert(diff.ConstraintsAdded, qt.DeepEquals, []string{"fk_orders_accounts"})
 	c.Assert(diff.ConstraintsAddedWithTables, qt.DeepEquals, []difftypes.ConstraintAdditionInfo{
@@ -634,8 +634,8 @@ func TestConstraints_CompositeForeignKeyAdditionCarriesReferencedColumns(t *test
 func TestConstraints_CompositeForeignKeyReferencedColumnDrift(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Constraints: []goschema.Constraint{
+	desired := &schemamodel.Database{
+		Constraints: []schemamodel.Constraint{
 			{
 				StructName:     "Order",
 				Name:           "fk_orders_accounts",
@@ -648,8 +648,8 @@ func TestConstraints_CompositeForeignKeyReferencedColumnDrift(t *testing.T) {
 			},
 		},
 	}
-	database := &types.DBSchema{
-		Constraints: []types.DBConstraint{
+	current := &catalog.Database{
+		Constraints: []catalog.Constraint{
 			{
 				Name:           "fk_orders_accounts",
 				TableName:      "orders",
@@ -666,7 +666,7 @@ func TestConstraints_CompositeForeignKeyReferencedColumnDrift(t *testing.T) {
 	}
 
 	diff := &difftypes.SchemaDiff{}
-	compare.Constraints(generated, database, diff, nil)
+	compare.Constraints(desired, current, diff, nil)
 
 	c.Assert(diff.ConstraintsRemovedWithTables, qt.DeepEquals, []difftypes.ConstraintRemovalInfo{
 		{Name: "fk_orders_accounts", TableName: "orders", Type: "FOREIGN KEY", Identity: difftypes.ConstraintIdentity{Table: "orders", Name: "fk_orders_accounts"}},
@@ -696,8 +696,8 @@ func TestConstraints_CompositeForeignKeyReferencedColumnDrift(t *testing.T) {
 func TestConstraints_CompositeForeignKeyLocalColumnDrift(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Constraints: []goschema.Constraint{
+	desired := &schemamodel.Database{
+		Constraints: []schemamodel.Constraint{
 			{
 				StructName:     "Order",
 				Name:           "fk_orders_accounts",
@@ -710,8 +710,8 @@ func TestConstraints_CompositeForeignKeyLocalColumnDrift(t *testing.T) {
 			},
 		},
 	}
-	database := &types.DBSchema{
-		Constraints: []types.DBConstraint{
+	current := &catalog.Database{
+		Constraints: []catalog.Constraint{
 			{
 				Name:           "fk_orders_accounts",
 				TableName:      "orders",
@@ -728,7 +728,7 @@ func TestConstraints_CompositeForeignKeyLocalColumnDrift(t *testing.T) {
 	}
 
 	diff := &difftypes.SchemaDiff{}
-	compare.Constraints(generated, database, diff, nil)
+	compare.Constraints(desired, current, diff, nil)
 
 	c.Assert(diff.ConstraintsRemovedWithTables, qt.DeepEquals, []difftypes.ConstraintRemovalInfo{
 		{Name: "fk_orders_accounts", TableName: "orders", Type: "FOREIGN KEY", Identity: difftypes.ConstraintIdentity{Table: "orders", Name: "fk_orders_accounts"}},
@@ -759,13 +759,13 @@ func TestConstraints_EdgeCases(t *testing.T) {
 	c := qt.New(t)
 
 	// Test with nil slices
-	generated := &goschema.Database{
+	desired := &schemamodel.Database{
 		Constraints: nil,
 	}
-	database := &types.DBSchema{}
+	current := &catalog.Database{}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.Constraints(generated, database, diff, nil)
+	compare.Constraints(desired, current, diff, nil)
 
 	c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
 	c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0)
@@ -773,15 +773,15 @@ func TestConstraints_EdgeCases(t *testing.T) {
 
 func TestConstraints_ExcludeConstraintComparison(t *testing.T) {
 	tests := []struct {
-		name      string
-		generated *goschema.Database
-		database  *types.DBSchema
-		expected  *difftypes.SchemaDiff
+		name     string
+		desired  *schemamodel.Database
+		current  *catalog.Database
+		expected *difftypes.SchemaDiff
 	}{
 		{
 			name: "EXCLUDE constraint added",
-			generated: &goschema.Database{
-				Constraints: []goschema.Constraint{
+			desired: &schemamodel.Database{
+				Constraints: []schemamodel.Constraint{
 					{
 						Name:            "no_overlapping_bookings",
 						Type:            "EXCLUDE",
@@ -792,8 +792,8 @@ func TestConstraints_ExcludeConstraintComparison(t *testing.T) {
 					},
 				},
 			},
-			database: &types.DBSchema{
-				Constraints: make([]types.DBConstraint, 0),
+			current: &catalog.Database{
+				Constraints: make([]catalog.Constraint, 0),
 			},
 			expected: &difftypes.SchemaDiff{
 				ConstraintsAdded: []string{"no_overlapping_bookings"},
@@ -801,11 +801,11 @@ func TestConstraints_ExcludeConstraintComparison(t *testing.T) {
 		},
 		{
 			name: "EXCLUDE constraint removed",
-			generated: &goschema.Database{
-				Constraints: make([]goschema.Constraint, 0),
+			desired: &schemamodel.Database{
+				Constraints: make([]schemamodel.Constraint, 0),
 			},
-			database: &types.DBSchema{
-				Constraints: []types.DBConstraint{
+			current: &catalog.Database{
+				Constraints: []catalog.Constraint{
 					{
 						Name:            "no_overlapping_bookings",
 						TableName:       "bookings",
@@ -822,8 +822,8 @@ func TestConstraints_ExcludeConstraintComparison(t *testing.T) {
 		},
 		{
 			name: "EXCLUDE constraint modified - using method changed",
-			generated: &goschema.Database{
-				Constraints: []goschema.Constraint{
+			desired: &schemamodel.Database{
+				Constraints: []schemamodel.Constraint{
 					{
 						Name:            "no_overlapping_bookings",
 						Type:            "EXCLUDE",
@@ -834,8 +834,8 @@ func TestConstraints_ExcludeConstraintComparison(t *testing.T) {
 					},
 				},
 			},
-			database: &types.DBSchema{
-				Constraints: []types.DBConstraint{
+			current: &catalog.Database{
+				Constraints: []catalog.Constraint{
 					{
 						Name:            "no_overlapping_bookings",
 						TableName:       "bookings",
@@ -853,8 +853,8 @@ func TestConstraints_ExcludeConstraintComparison(t *testing.T) {
 		},
 		{
 			name: "EXCLUDE constraint modified - elements changed",
-			generated: &goschema.Database{
-				Constraints: []goschema.Constraint{
+			desired: &schemamodel.Database{
+				Constraints: []schemamodel.Constraint{
 					{
 						Name:            "no_overlapping_bookings",
 						Type:            "EXCLUDE",
@@ -865,8 +865,8 @@ func TestConstraints_ExcludeConstraintComparison(t *testing.T) {
 					},
 				},
 			},
-			database: &types.DBSchema{
-				Constraints: []types.DBConstraint{
+			current: &catalog.Database{
+				Constraints: []catalog.Constraint{
 					{
 						Name:            "no_overlapping_bookings",
 						TableName:       "bookings",
@@ -884,8 +884,8 @@ func TestConstraints_ExcludeConstraintComparison(t *testing.T) {
 		},
 		{
 			name: "EXCLUDE constraint modified - WHERE condition changed",
-			generated: &goschema.Database{
-				Constraints: []goschema.Constraint{
+			desired: &schemamodel.Database{
+				Constraints: []schemamodel.Constraint{
 					{
 						Name:            "no_overlapping_bookings",
 						Type:            "EXCLUDE",
@@ -896,8 +896,8 @@ func TestConstraints_ExcludeConstraintComparison(t *testing.T) {
 					},
 				},
 			},
-			database: &types.DBSchema{
-				Constraints: []types.DBConstraint{
+			current: &catalog.Database{
+				Constraints: []catalog.Constraint{
 					{
 						Name:            "no_overlapping_bookings",
 						TableName:       "bookings",
@@ -915,8 +915,8 @@ func TestConstraints_ExcludeConstraintComparison(t *testing.T) {
 		},
 		{
 			name: "EXCLUDE constraint unchanged",
-			generated: &goschema.Database{
-				Constraints: []goschema.Constraint{
+			desired: &schemamodel.Database{
+				Constraints: []schemamodel.Constraint{
 					{
 						Name:            "no_overlapping_bookings",
 						Type:            "EXCLUDE",
@@ -927,8 +927,8 @@ func TestConstraints_ExcludeConstraintComparison(t *testing.T) {
 					},
 				},
 			},
-			database: &types.DBSchema{
-				Constraints: []types.DBConstraint{
+			current: &catalog.Database{
+				Constraints: []catalog.Constraint{
 					{
 						Name:            "no_overlapping_bookings",
 						TableName:       "bookings",
@@ -951,7 +951,7 @@ func TestConstraints_ExcludeConstraintComparison(t *testing.T) {
 			c := qt.New(t)
 
 			diff := &difftypes.SchemaDiff{}
-			compare.Constraints(tt.generated, tt.database, diff, nil)
+			compare.Constraints(tt.desired, tt.current, diff, nil)
 
 			// Check constraints added
 			c.Assert(diff.ConstraintsAdded, qt.HasLen, len(tt.expected.ConstraintsAdded))
@@ -970,27 +970,27 @@ func TestConstraints_ExcludeConstraintComparison(t *testing.T) {
 
 // TestConstraints_FieldLevelCheck covers issue #112 — column-level `check=`
 // annotations need to participate in drift detection. The compare layer
-// synthesizes goschema.Constraint entries from field.Check for columns that
+// synthesizes schemamodel.Constraint entries from field.Check for columns that
 // already exist in the introspected database, so add/remove/modify all run
 // through the standard Constraints() diff path.
 func TestConstraints_FieldLevelCheck(t *testing.T) {
 	// Shared setup: a "files" table with one existing column "category".
-	filesTable := types.DBTable{
+	filesTable := catalog.Table{
 		Name:    "files",
-		Columns: []types.DBColumn{{Name: "category"}},
+		Columns: []catalog.Column{{Name: "category"}},
 	}
 
 	tests := []struct {
-		name      string
-		generated *goschema.Database
-		database  *types.DBSchema
-		expected  *difftypes.SchemaDiff
+		name     string
+		desired  *schemamodel.Database
+		current  *catalog.Database
+		expected *difftypes.SchemaDiff
 	}{
 		{
 			name: "field-level CHECK added on existing column",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{{StructName: "File", Name: "files"}},
-				Fields: []goschema.Field{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "File", Name: "files"}},
+				Fields: []schemamodel.Field{
 					{
 						StructName: "File",
 						Name:       "category",
@@ -999,8 +999,8 @@ func TestConstraints_FieldLevelCheck(t *testing.T) {
 					},
 				},
 			},
-			database: &types.DBSchema{
-				Tables: []types.DBTable{filesTable},
+			current: &catalog.Database{
+				Tables: []catalog.Table{filesTable},
 			},
 			expected: &difftypes.SchemaDiff{
 				ConstraintsAdded: []string{"files_category_check"},
@@ -1015,9 +1015,9 @@ func TestConstraints_FieldLevelCheck(t *testing.T) {
 			// that `IN (...)` to `ANY (ARRAY[...])` form as an unsupported
 			// rewrite rather than emitting a perpetual drop+add loop.
 			name: "field-level CHECK matches existing — no diff (idempotency, Postgres-normalized clause)",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{{StructName: "File", Name: "files"}},
-				Fields: []goschema.Field{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "File", Name: "files"}},
+				Fields: []schemamodel.Field{
 					{
 						StructName: "File",
 						Name:       "category",
@@ -1026,9 +1026,9 @@ func TestConstraints_FieldLevelCheck(t *testing.T) {
 					},
 				},
 			},
-			database: &types.DBSchema{
-				Tables: []types.DBTable{filesTable},
-				Constraints: []types.DBConstraint{
+			current: &catalog.Database{
+				Tables: []catalog.Table{filesTable},
+				Constraints: []catalog.Constraint{
 					{
 						Name:        "files_category_check",
 						TableName:   "files",
@@ -1041,9 +1041,9 @@ func TestConstraints_FieldLevelCheck(t *testing.T) {
 		},
 		{
 			name: "field-level CHECK expression-only change surfaces as drop + add",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{{StructName: "File", Name: "files"}},
-				Fields: []goschema.Field{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "File", Name: "files"}},
+				Fields: []schemamodel.Field{
 					{
 						StructName: "File",
 						Name:       "category",
@@ -1052,9 +1052,9 @@ func TestConstraints_FieldLevelCheck(t *testing.T) {
 					},
 				},
 			},
-			database: &types.DBSchema{
-				Tables: []types.DBTable{filesTable},
-				Constraints: []types.DBConstraint{
+			current: &catalog.Database{
+				Tables: []catalog.Table{filesTable},
+				Constraints: []catalog.Constraint{
 					{
 						Name:        "files_category_check",
 						TableName:   "files",
@@ -1074,9 +1074,9 @@ func TestConstraints_FieldLevelCheck(t *testing.T) {
 			// constraint and adds the renamed synthesized one. This is
 			// the documented escape hatch for forcing an expression change.
 			name: "field-level CHECK rename via check_name → drop + add",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{{StructName: "File", Name: "files"}},
-				Fields: []goschema.Field{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "File", Name: "files"}},
+				Fields: []schemamodel.Field{
 					{
 						StructName: "File",
 						Name:       "category",
@@ -1086,9 +1086,9 @@ func TestConstraints_FieldLevelCheck(t *testing.T) {
 					},
 				},
 			},
-			database: &types.DBSchema{
-				Tables: []types.DBTable{filesTable},
-				Constraints: []types.DBConstraint{
+			current: &catalog.Database{
+				Tables: []catalog.Table{filesTable},
+				Constraints: []catalog.Constraint{
 					{
 						Name:        "files_category_check",
 						TableName:   "files",
@@ -1104,15 +1104,15 @@ func TestConstraints_FieldLevelCheck(t *testing.T) {
 		},
 		{
 			name: "field-level CHECK removed from annotation → drop existing",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{{StructName: "File", Name: "files"}},
-				Fields: []goschema.Field{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "File", Name: "files"}},
+				Fields: []schemamodel.Field{
 					{StructName: "File", Name: "category", Type: "TEXT"},
 				},
 			},
-			database: &types.DBSchema{
-				Tables: []types.DBTable{filesTable},
-				Constraints: []types.DBConstraint{
+			current: &catalog.Database{
+				Tables: []catalog.Table{filesTable},
+				Constraints: []catalog.Constraint{
 					{
 						Name:        "files_category_check",
 						TableName:   "files",
@@ -1127,9 +1127,9 @@ func TestConstraints_FieldLevelCheck(t *testing.T) {
 		},
 		{
 			name: "explicit check_name overrides deterministic name",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{{StructName: "File", Name: "files"}},
-				Fields: []goschema.Field{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "File", Name: "files"}},
+				Fields: []schemamodel.Field{
 					{
 						StructName: "File",
 						Name:       "category",
@@ -1139,8 +1139,8 @@ func TestConstraints_FieldLevelCheck(t *testing.T) {
 					},
 				},
 			},
-			database: &types.DBSchema{
-				Tables: []types.DBTable{filesTable},
+			current: &catalog.Database{
+				Tables: []catalog.Table{filesTable},
 			},
 			expected: &difftypes.SchemaDiff{
 				ConstraintsAdded: []string{"files_category_valid"},
@@ -1148,9 +1148,9 @@ func TestConstraints_FieldLevelCheck(t *testing.T) {
 		},
 		{
 			name: "field-level CHECK on column not yet in DB → no synthesized constraint (handled inline by CREATE/ADD COLUMN)",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{{StructName: "File", Name: "files"}},
-				Fields: []goschema.Field{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "File", Name: "files"}},
+				Fields: []schemamodel.Field{
 					{
 						StructName: "File",
 						Name:       "new_column",
@@ -1159,22 +1159,22 @@ func TestConstraints_FieldLevelCheck(t *testing.T) {
 					},
 				},
 			},
-			database: &types.DBSchema{
-				Tables: []types.DBTable{filesTable},
+			current: &catalog.Database{
+				Tables: []catalog.Table{filesTable},
 			},
 			expected: &difftypes.SchemaDiff{},
 		},
 		{
 			name: "NOT NULL CHECK (internal Postgres representation) is not touched by field-level CHECK synthesis",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{{StructName: "File", Name: "files"}},
-				Fields: []goschema.Field{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "File", Name: "files"}},
+				Fields: []schemamodel.Field{
 					{StructName: "File", Name: "category", Type: "TEXT", Nullable: false},
 				},
 			},
-			database: &types.DBSchema{
-				Tables: []types.DBTable{filesTable},
-				Constraints: []types.DBConstraint{
+			current: &catalog.Database{
+				Tables: []catalog.Table{filesTable},
+				Constraints: []catalog.Constraint{
 					{
 						Name:      "2200_files_category_not_null",
 						TableName: "files",
@@ -1191,7 +1191,7 @@ func TestConstraints_FieldLevelCheck(t *testing.T) {
 			c := qt.New(t)
 
 			diff := &difftypes.SchemaDiff{}
-			compare.Constraints(tt.generated, tt.database, diff, nil)
+			compare.Constraints(tt.desired, tt.current, diff, nil)
 
 			c.Assert(diff.ConstraintsAdded, qt.HasLen, len(tt.expected.ConstraintsAdded),
 				qt.Commentf("ConstraintsAdded=%v", diff.ConstraintsAdded))

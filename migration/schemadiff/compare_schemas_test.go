@@ -5,39 +5,39 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/goschematodb"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // usersV1 is the current side of the CompareSchemas fixtures: one table with a
 // serial primary key and an email column.
-func usersV1() *goschema.Database {
-	db := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "User", Name: "users"}},
-		Fields: []goschema.Field{
+func usersV1() *schemamodel.Database {
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "User", Name: "email", Type: "VARCHAR(255)"},
 		},
 	}
-	goschema.Finalize(db)
+	schemamodel.Finalize(db)
 	return db
 }
 
 // usersV2 is usersV1 plus a created_at column and an index over it.
-func usersV2() *goschema.Database {
+func usersV2() *schemamodel.Database {
 	db := usersV1()
-	db.Fields = append(db.Fields, goschema.Field{
+	db.Fields = append(db.Fields, schemamodel.Field{
 		StructName: "User", Name: "created_at", Type: "TIMESTAMP", Nullable: true,
 	})
-	db.Indexes = append(db.Indexes, goschema.Index{
+	db.Indexes = append(db.Indexes, schemamodel.Index{
 		StructName: "User",
 		Name:       "idx_users_created_at",
 		Fields:     []string{"created_at"},
 	})
-	goschema.Finalize(db)
+	schemamodel.Finalize(db)
 	return db
 }
 
@@ -72,37 +72,37 @@ func TestCompareSchemas_IdenticalInputsReportNothing(t *testing.T) {
 
 // TestCompareSchemas_MatchesExplicitConversionThenCompare pins CompareSchemas
 // to the path it documents: converting the current side with
-// goschematodb.ToDBSchema and comparing with CompareWithDialect must produce
+// goschematodb.ToCatalog and comparing with CompareWithDialect must produce
 // the same diff, on a fixture whose diff is not empty.
 func TestCompareSchemas_MatchesExplicitConversionThenCompare(t *testing.T) {
 	c := qt.New(t)
-	current := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Order", Name: "orders"}},
-		Fields: []goschema.Field{
+	current := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Order", Name: "orders"}},
+		Fields: []schemamodel.Field{
 			{StructName: "Order", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "Order", Name: "status", Type: "order_status"},
 		},
-		Enums: []goschema.Enum{{Name: "order_status", Values: []string{"new", "paid"}}},
+		Enums: []schemamodel.Enum{{Name: "order_status", Values: []string{"new", "paid"}}},
 	}
-	goschema.Finalize(current)
-	desired := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Order", Name: "orders"}},
-		Fields: []goschema.Field{
+	schemamodel.Finalize(current)
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Order", Name: "orders"}},
+		Fields: []schemamodel.Field{
 			{StructName: "Order", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "Order", Name: "status", Type: "order_status"},
 		},
-		Enums: []goschema.Enum{{Name: "order_status", Values: []string{"new", "paid", "shipped"}}},
-		Indexes: []goschema.Index{{
+		Enums: []schemamodel.Enum{{Name: "order_status", Values: []string{"new", "paid", "shipped"}}},
+		Indexes: []schemamodel.Index{{
 			StructName: "Order",
 			Name:       "idx_orders_status",
 			Fields:     []string{"status"},
 		}},
 	}
-	goschema.Finalize(desired)
+	schemamodel.Finalize(desired)
 
 	got := schemadiff.CompareSchemas(desired, current, platform.Postgres)
 	want := schemadiff.CompareWithDialect(
-		desired, goschematodb.ToDBSchema(current, platform.Postgres), platform.Postgres,
+		desired, goschematodb.ToCatalog(current, platform.Postgres), platform.Postgres,
 	)
 
 	c.Assert(got.HasChanges(), qt.IsTrue, qt.Commentf("fixture must produce a non-empty diff"))
@@ -111,32 +111,32 @@ func TestCompareSchemas_MatchesExplicitConversionThenCompare(t *testing.T) {
 
 // TestCompareSchemas_DialectReachesTheConversion pins that the dialect argument
 // drives the conversion of the current side, not only the comparison. The
-// conversion reports goschema.Index.Type as a PostgreSQL access method only on
+// conversion reports schemamodel.Index.Type as a PostgreSQL access method only on
 // a PostgreSQL-family target, so a self-compare of a hash index is clean under
 // the postgres dialect, while the same current side converted with no dialect
 // loses the method and the same postgres comparison plans a rebuild.
 func TestCompareSchemas_DialectReachesTheConversion(t *testing.T) {
 	c := qt.New(t)
-	db := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "User", Name: "users"}},
-		Fields: []goschema.Field{
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "User", Name: "email", Type: "VARCHAR(255)"},
 		},
-		Indexes: []goschema.Index{{
+		Indexes: []schemamodel.Index{{
 			StructName: "User",
 			Name:       "idx_users_email_hash",
 			Fields:     []string{"email"},
 			Type:       "hash",
 		}},
 	}
-	goschema.Finalize(db)
+	schemamodel.Finalize(db)
 
 	diff := schemadiff.CompareSchemas(db, db, platform.Postgres)
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %+v", diff))
 
 	dialectless := schemadiff.CompareWithDialect(
-		db, goschematodb.ToDBSchema(db, ""), platform.Postgres,
+		db, goschematodb.ToCatalog(db, ""), platform.Postgres,
 	)
 	c.Assert(dialectless.IndexesAdded, qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "idx_users_email_hash", TableName: "users"},

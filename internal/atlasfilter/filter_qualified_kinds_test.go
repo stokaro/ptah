@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 )
 
@@ -18,25 +18,25 @@ import (
 // Tables, views and extensions ride along as controls. They already honored the
 // qualified spelling before this change, so a regression that reached them
 // would show up here rather than being attributed to enums and functions.
-func qualifiedKindsFixture() *dbschematypes.DBSchema {
-	return &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
-			{Name: "users", Columns: []dbschematypes.DBColumn{{Name: "id"}}},
-			{Schema: "app", Name: "orders", Columns: []dbschematypes.DBColumn{{Name: "id"}}},
+func qualifiedKindsFixture() *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{
+			{Name: "users", Columns: []catalog.Column{{Name: "id"}}},
+			{Schema: "app", Name: "orders", Columns: []catalog.Column{{Name: "id"}}},
 		},
-		Enums: []dbschematypes.DBEnum{
+		Enums: []catalog.Enum{
 			{Name: "mood", Values: []string{"a", "b"}},
 			{Schema: "app", Name: "color", Values: []string{"r"}},
 		},
-		Functions: []dbschematypes.DBFunction{
+		Functions: []catalog.Function{
 			{Name: "fn_audit", Returns: "integer"},
 			{Schema: "app", Name: "fn_app", Returns: "integer"},
 		},
-		Views: []dbschematypes.DBView{
+		Views: []catalog.View{
 			{Name: "v_users"},
 			{Schema: "app", Name: "v_orders"},
 		},
-		Extensions: []dbschematypes.DBExtension{
+		Extensions: []catalog.Extension{
 			{Schema: "public", Name: "pgcrypto", Version: "1.3"},
 		},
 	}
@@ -53,18 +53,18 @@ var (
 	allFixtureViews     = []string{"v_users", "app.v_orders"}
 )
 
-func qualifiedEnumNames(enums []dbschematypes.DBEnum) []string {
+func qualifiedEnumNames(enums []catalog.Enum) []string {
 	names := make([]string, 0, len(enums))
 	for _, enum := range enums {
-		names = append(names, dbschematypes.QualifyTableName(enum.Schema, enum.Name))
+		names = append(names, catalog.QualifyTableName(enum.Schema, enum.Name))
 	}
 	return names
 }
 
-func qualifiedFunctionNames(functions []dbschematypes.DBFunction) []string {
+func qualifiedFunctionNames(functions []catalog.Function) []string {
 	names := make([]string, 0, len(functions))
 	for _, function := range functions {
-		names = append(names, dbschematypes.QualifyTableName(function.Schema, function.Name))
+		names = append(names, catalog.QualifyTableName(function.Schema, function.Name))
 	}
 	return names
 }
@@ -245,17 +245,17 @@ func TestExcludeDatabase_EnumsAndFunctionsKeepBareOnlyCandidatesWithoutDefault(t
 // generatedQualifiedKindsFixture is the desired-side mirror. Extensions carry
 // installation schema separately; enums and functions retain their established
 // identity representations.
-func generatedQualifiedKindsFixture() *goschema.Database {
-	return &goschema.Database{
-		Enums: []goschema.Enum{
+func generatedQualifiedKindsFixture() *schemamodel.Database {
+	return &schemamodel.Database{
+		Enums: []schemamodel.Enum{
 			{Name: "mood", Values: []string{"a", "b"}},
 			{Name: "app.color", Values: []string{"r"}},
 		},
-		Functions: []goschema.Function{
+		Functions: []schemamodel.Function{
 			{Name: "fn_audit", Returns: "integer"},
 			{Name: "app.fn_app", Returns: "integer"},
 		},
-		Extensions: []goschema.Extension{
+		Extensions: []schemamodel.Extension{
 			{Name: "pgcrypto", Version: "1.3"},
 			{Name: "postgis", Schema: "app", Version: "3.4"},
 		},
@@ -263,7 +263,7 @@ func generatedQualifiedKindsFixture() *goschema.Database {
 }
 
 // The desired-side lists before any selector runs, in the order
-// [goschema.Finalize] leaves them: it sorts functions and extensions and leaves
+// [schemamodel.Finalize] leaves them: it sorts functions and extensions and leaves
 // enums in declaration order.
 var (
 	allGeneratedFixtureEnums      = []string{"mood", "app.color"}
@@ -271,7 +271,7 @@ var (
 	allGeneratedFixtureExtensions = []string{"pgcrypto", "app.postgis"}
 )
 
-func generatedFunctionNames(functions []goschema.Function) []string {
+func generatedFunctionNames(functions []schemamodel.Function) []string {
 	names := make([]string, 0, len(functions))
 	for _, function := range functions {
 		names = append(names, function.Name)
@@ -279,7 +279,7 @@ func generatedFunctionNames(functions []goschema.Function) []string {
 	return names
 }
 
-func generatedExtensionNames(extensions []goschema.Extension) []string {
+func generatedExtensionNames(extensions []schemamodel.Extension) []string {
 	names := make([]string, 0, len(extensions))
 	for _, extension := range extensions {
 		if extension.Schema == "" {
@@ -396,12 +396,12 @@ func TestExcludeGeneratedWithDefaultSchema_QualifiedSelectorsMatchDatabaseSide(t
 
 func TestScopeDatabase_ExtensionSchemaIdentityPreservesQuotedWhitespace(t *testing.T) {
 	c := qt.New(t)
-	database := &dbschematypes.DBSchema{
-		Schemas: []dbschematypes.DBSchemaInfo{
+	database := &catalog.Database{
+		Schemas: []catalog.Schema{
 			{Name: "Extension Store"},
 			{Name: " Extension Store "},
 		},
-		Extensions: []dbschematypes.DBExtension{
+		Extensions: []catalog.Extension{
 			{Schema: "Extension Store", Name: "citext"},
 			{Schema: " Extension Store ", Name: "pgcrypto"},
 		},
@@ -412,20 +412,20 @@ func TestScopeDatabase_ExtensionSchemaIdentityPreservesQuotedWhitespace(t *testi
 	})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(got.Extensions, qt.DeepEquals, []dbschematypes.DBExtension{{
+	c.Assert(got.Extensions, qt.DeepEquals, []catalog.Extension{{
 		Schema: " Extension Store ", Name: "pgcrypto",
 	}})
-	c.Assert(got.Schemas, qt.DeepEquals, []dbschematypes.DBSchemaInfo{{Name: " Extension Store "}})
+	c.Assert(got.Schemas, qt.DeepEquals, []catalog.Schema{{Name: " Extension Store "}})
 }
 
 func TestScopeGenerated_ExtensionSchemaIdentityPreservesQuotedWhitespace(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{
-		Schemas: []goschema.Schema{
+	database := &schemamodel.Database{
+		Schemas: []schemamodel.Schema{
 			{Name: "Extension Store"},
 			{Name: " Extension Store "},
 		},
-		Extensions: []goschema.Extension{
+		Extensions: []schemamodel.Extension{
 			{Schema: "Extension Store", Name: "citext"},
 			{Schema: " Extension Store ", Name: "pgcrypto"},
 		},
@@ -436,17 +436,17 @@ func TestScopeGenerated_ExtensionSchemaIdentityPreservesQuotedWhitespace(t *test
 	})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(got.Extensions, qt.DeepEquals, []goschema.Extension{{
+	c.Assert(got.Extensions, qt.DeepEquals, []schemamodel.Extension{{
 		Schema: " Extension Store ", Name: "pgcrypto",
 	}})
-	c.Assert(got.Schemas, qt.DeepEquals, []goschema.Schema{{Name: " Extension Store "}})
+	c.Assert(got.Schemas, qt.DeepEquals, []schemamodel.Schema{{Name: " Extension Store "}})
 }
 
 func TestScopeDatabase_ExtensionWhitespaceOnlySchemaIsNotTheDefault(t *testing.T) {
 	c := qt.New(t)
-	database := &dbschematypes.DBSchema{
-		Schemas: []dbschematypes.DBSchemaInfo{{Name: " "}, {Name: "public"}},
-		Extensions: []dbschematypes.DBExtension{
+	database := &catalog.Database{
+		Schemas: []catalog.Schema{{Name: " "}, {Name: "public"}},
+		Extensions: []catalog.Extension{
 			{Schema: " ", Name: "pgcrypto"},
 			{Schema: "public", Name: "citext"},
 		},
@@ -457,17 +457,17 @@ func TestScopeDatabase_ExtensionWhitespaceOnlySchemaIsNotTheDefault(t *testing.T
 	})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(got.Extensions, qt.DeepEquals, []dbschematypes.DBExtension{{
+	c.Assert(got.Extensions, qt.DeepEquals, []catalog.Extension{{
 		Schema: " ", Name: "pgcrypto",
 	}})
-	c.Assert(got.Schemas, qt.DeepEquals, []dbschematypes.DBSchemaInfo{{Name: " "}})
+	c.Assert(got.Schemas, qt.DeepEquals, []catalog.Schema{{Name: " "}})
 }
 
 func TestScopeGenerated_ExtensionWhitespaceOnlySchemaIsNotTheDefault(t *testing.T) {
 	c := qt.New(t)
-	database := &goschema.Database{
-		Schemas: []goschema.Schema{{Name: " "}, {Name: "public"}},
-		Extensions: []goschema.Extension{
+	database := &schemamodel.Database{
+		Schemas: []schemamodel.Schema{{Name: " "}, {Name: "public"}},
+		Extensions: []schemamodel.Extension{
 			{Schema: " ", Name: "pgcrypto"},
 			{Schema: "public", Name: "citext"},
 		},
@@ -478,30 +478,30 @@ func TestScopeGenerated_ExtensionWhitespaceOnlySchemaIsNotTheDefault(t *testing.
 	})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(got.Extensions, qt.DeepEquals, []goschema.Extension{{
+	c.Assert(got.Extensions, qt.DeepEquals, []schemamodel.Extension{{
 		Schema: " ", Name: "pgcrypto",
 	}})
-	c.Assert(got.Schemas, qt.DeepEquals, []goschema.Schema{{Name: " "}})
+	c.Assert(got.Schemas, qt.DeepEquals, []schemamodel.Schema{{Name: " "}})
 }
 
 func TestScopeExtensionSchemasWithInternalWhitespaceUseQuotedCandidates(t *testing.T) {
 	c := qt.New(t)
 	scope := atlasfilter.Scope{Include: []string{`"Extension Store".pgcrypto`}}
-	database, err := atlasfilter.ScopeDatabase(&dbschematypes.DBSchema{
-		Schemas:    []dbschematypes.DBSchemaInfo{{Name: "Extension Store"}},
-		Extensions: []dbschematypes.DBExtension{{Schema: "Extension Store", Name: "pgcrypto"}},
+	database, err := atlasfilter.ScopeDatabase(&catalog.Database{
+		Schemas:    []catalog.Schema{{Name: "Extension Store"}},
+		Extensions: []catalog.Extension{{Schema: "Extension Store", Name: "pgcrypto"}},
 	}, scope)
 	c.Assert(err, qt.IsNil)
-	c.Assert(database.Extensions, qt.DeepEquals, []dbschematypes.DBExtension{{
+	c.Assert(database.Extensions, qt.DeepEquals, []catalog.Extension{{
 		Schema: "Extension Store", Name: "pgcrypto",
 	}})
 
-	generated, err := atlasfilter.ScopeGenerated(&goschema.Database{
-		Schemas:    []goschema.Schema{{Name: "Extension Store"}},
-		Extensions: []goschema.Extension{{Schema: "Extension Store", Name: "pgcrypto"}},
+	desired, err := atlasfilter.ScopeGenerated(&schemamodel.Database{
+		Schemas:    []schemamodel.Schema{{Name: "Extension Store"}},
+		Extensions: []schemamodel.Extension{{Schema: "Extension Store", Name: "pgcrypto"}},
 	}, scope)
 	c.Assert(err, qt.IsNil)
-	c.Assert(generated.Extensions, qt.DeepEquals, []goschema.Extension{{
+	c.Assert(desired.Extensions, qt.DeepEquals, []schemamodel.Extension{{
 		Schema: "Extension Store", Name: "pgcrypto",
 	}})
 }

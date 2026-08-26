@@ -9,6 +9,7 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
 
 func TestParseManagedDataAnnotation(t *testing.T) {
@@ -184,7 +185,7 @@ type Country struct {
 	c.Assert(db.ManagedData, qt.HasLen, 1)
 	c.Assert(db.ManagedData[0].SourceDir, qt.Equals, sub)
 
-	rows, err := goschema.LoadManagedRows("", db.ManagedData[0])
+	rows, err := schemamodel.LoadManagedRows("", db.ManagedData[0])
 	c.Assert(err, qt.IsNil)
 	c.Assert(rows, qt.DeepEquals, []map[string]any{{"code": "US", "name": "United States"}})
 }
@@ -218,15 +219,15 @@ type Country struct {
 	c.Assert(err, qt.IsNil)
 	second, err := goschema.ParseDirRaw(rootB)
 	c.Assert(err, qt.IsNil)
-	merged, err := goschema.Merge(first, second)
+	merged, err := schemamodel.Merge(first, second)
 	c.Assert(err, qt.IsNil)
 	c.Assert(merged.ManagedData, qt.HasLen, 2)
 	c.Assert(merged.ManagedData[0].SourceDir, qt.Equals, referenceA)
 	c.Assert(merged.ManagedData[1].SourceDir, qt.Equals, referenceB)
 
-	firstRows, err := goschema.LoadManagedRows("", merged.ManagedData[0])
+	firstRows, err := schemamodel.LoadManagedRows("", merged.ManagedData[0])
 	c.Assert(err, qt.IsNil)
-	secondRows, err := goschema.LoadManagedRows("", merged.ManagedData[1])
+	secondRows, err := schemamodel.LoadManagedRows("", merged.ManagedData[1])
 	c.Assert(err, qt.IsNil)
 	c.Assert(firstRows, qt.DeepEquals, []map[string]any{{"code": "US"}})
 	c.Assert(secondRows, qt.DeepEquals, []map[string]any{{"code": "CZ"}})
@@ -259,7 +260,7 @@ type Currency struct {
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.ManagedData, qt.HasLen, 2)
 
-	byTable := make(map[string]goschema.ManagedData)
+	byTable := make(map[string]schemamodel.ManagedData)
 	for _, md := range db.ManagedData {
 		byTable[md.Table] = md
 	}
@@ -282,7 +283,7 @@ func TestLoadManagedRows(t *testing.T) {
   rank: 2
 `), 0o600), qt.IsNil)
 
-	rows, err := goschema.LoadManagedRows(dir, goschema.ManagedData{
+	rows, err := schemamodel.LoadManagedRows(dir, schemamodel.ManagedData{
 		Table: "countries",
 		Keys:  []string{"code"},
 		File:  "countries.yaml",
@@ -297,7 +298,7 @@ func TestLoadManagedRows(t *testing.T) {
 func TestLoadManagedRows_MissingFileReturnsError(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := goschema.LoadManagedRows(t.TempDir(), goschema.ManagedData{
+	_, err := schemamodel.LoadManagedRows(t.TempDir(), schemamodel.ManagedData{
 		Table: "countries",
 		Keys:  []string{"code"},
 		File:  "does-not-exist.yaml",
@@ -311,7 +312,7 @@ func TestLoadManagedRows_MalformedYAMLReturnsError(t *testing.T) {
 	dir := t.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(dir, "bad.yaml"), []byte("this: is: not a list of rows"), 0o600), qt.IsNil)
 
-	_, err := goschema.LoadManagedRows(dir, goschema.ManagedData{
+	_, err := schemamodel.LoadManagedRows(dir, schemamodel.ManagedData{
 		Table: "countries",
 		Keys:  []string{"code"},
 		File:  "bad.yaml",

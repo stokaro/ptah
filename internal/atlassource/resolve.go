@@ -10,11 +10,11 @@ import (
 	"strings"
 	"time"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/core/schemasource"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasregistry"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
@@ -90,11 +90,11 @@ type ResolveOptions struct {
 	// fully materialized and before the resolved state is returned. Nil accepts
 	// every schema. The callback is interface-neutral: compatibility adapters
 	// select policy without making this shared resolver depend on a CLI layer.
-	ValidateSchema func(*goschema.Database) error
+	ValidateSchema func(*schemamodel.Database) error
 	// ValidateInspectedSchema replaces ValidateSchema for database-backed and
 	// replayed migration-directory states. It lets an adapter distinguish
 	// authored desired content from objects supplied by the target server.
-	ValidateInspectedSchema func(*goschema.Database) error
+	ValidateInspectedSchema func(*schemamodel.Database) error
 	// ValidateInspectedDatabase applies a caller-selected policy while a live
 	// database source or replayed migration-directory dev database is still
 	// open. The schema list is the exact scope introspected into the returned
@@ -116,10 +116,10 @@ type State struct {
 	// Kind is the concrete source kind the state was resolved from.
 	Kind Kind
 	// Schema is the desired-state schema IR.
-	Schema *goschema.Database
+	Schema *schemamodel.Database
 	// DB is the introspected database state backing Schema for database and
 	// migration-directory sources; nil for local schema files.
-	DB *dbschematypes.DBSchema
+	DB *catalog.Database
 	// DefaultSchema is the schema that owns unqualified objects for database
 	// and migration-directory sources ("public" for PostgreSQL, the database
 	// name for MySQL-family targets, "main" for SQLite); empty for local
@@ -283,7 +283,7 @@ func (s Set) resolveDatabase(ctx context.Context, opts ResolveOptions) (State, e
 	}
 	return State{
 		Kind:          s.Kind,
-		Schema:        dbschematogo.ConvertDBSchemaToGoSchema(schema),
+		Schema:        dbschematogo.ConvertCatalogToSchema(schema),
 		DB:            schema,
 		DefaultSchema: conn.Info().Schema,
 		RealmScoped:   schemaselection.Realm(conn.Info().Dialect, conn.Info().URL, conn.Info().Schema),
@@ -378,7 +378,7 @@ func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions) (Stat
 			}
 			state = State{
 				Kind:          s.Kind,
-				Schema:        dbschematogo.ConvertDBSchemaToGoSchema(schema),
+				Schema:        dbschematogo.ConvertCatalogToSchema(schema),
 				DB:            schema,
 				DefaultSchema: replayConn.Info().Schema,
 				RealmScoped: schemaselection.Realm(
@@ -459,18 +459,18 @@ func verifyMigrationFS(fsys fs.FS) error {
 // WithoutRevisionTable returns a copy of schema with the Atlas revision table
 // (and its indexes and constraints) removed, so replayed dev-database state
 // only exposes the migrations' own objects.
-func WithoutRevisionTable(schema *dbschematypes.DBSchema) *dbschematypes.DBSchema {
+func WithoutRevisionTable(schema *catalog.Database) *catalog.Database {
 	if schema == nil {
-		return &dbschematypes.DBSchema{}
+		return &catalog.Database{}
 	}
 	out := *schema
-	out.Tables = filterByTable(out.Tables, func(table dbschematypes.DBTable) bool {
+	out.Tables = filterByTable(out.Tables, func(table catalog.Table) bool {
 		return !strings.EqualFold(table.Name, revisionTableName)
 	})
-	out.Indexes = filterByTable(out.Indexes, func(index dbschematypes.DBIndex) bool {
+	out.Indexes = filterByTable(out.Indexes, func(index catalog.Index) bool {
 		return !strings.EqualFold(index.TableName, revisionTableName)
 	})
-	out.Constraints = filterByTable(out.Constraints, func(constraint dbschematypes.DBConstraint) bool {
+	out.Constraints = filterByTable(out.Constraints, func(constraint catalog.Constraint) bool {
 		return !strings.EqualFold(constraint.TableName, revisionTableName)
 	})
 	return &out

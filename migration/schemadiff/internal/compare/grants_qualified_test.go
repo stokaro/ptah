@@ -5,12 +5,12 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 // grantTarget is the part of a planned grant these rows tell apart: what the
@@ -38,9 +38,9 @@ type grantTarget struct {
 // planned one.
 type grantIdentityCase struct {
 	name             string
-	generated        []goschema.Grant
-	roles            []goschema.Role
-	database         []types.DBGrant
+	generated        []schemamodel.Grant
+	roles            []schemamodel.Role
+	database         []catalog.Grant
 	wantAdded        []grantTarget
 	wantRemoved      []grantTarget
 	wantOptionsAdded int
@@ -64,7 +64,7 @@ func grantTargets(grants []difftypes.GrantRef) []grantTarget {
 // as.
 //
 // The two sides never spelled it the same. A grant read from the catalog goes
-// through [types.DBGrant.QualifiedTarget], which qualifies the target with the
+// through [catalog.Grant.QualifiedTarget], which qualifies the target with the
 // schema the reader found -- `"public"."granted"`. A grant declared in Go
 // annotations or HCL carries whatever the author wrote, normally the bare
 // `granted`. Keyed raw, one grant became two, so an unchanged schema planned a
@@ -77,10 +77,10 @@ func TestGrantsWithSemantics_QualifiedTargetIdentity(t *testing.T) {
 		{
 			// The headline row: identical grant, two spellings.
 			name: "a declared bare table matches the qualified row the reader reports",
-			generated: []goschema.Grant{
+			generated: []schemamodel.Grant{
 				{Role: "app_user", Privileges: []string{"SELECT"}, OnTable: "granted"},
 			},
-			database: []types.DBGrant{
+			database: []catalog.Grant{
 				{Role: "app_user", Privilege: "SELECT", ObjectType: "TABLE", Schema: "public", ObjectName: "granted"},
 			},
 		},
@@ -88,10 +88,10 @@ func TestGrantsWithSemantics_QualifiedTargetIdentity(t *testing.T) {
 			// The same in the other direction: the author qualified it and the
 			// reader reported the same schema.
 			name: "a declared qualified table matches the same qualified row",
-			generated: []goschema.Grant{
+			generated: []schemamodel.Grant{
 				{Role: "app_user", Privileges: []string{"SELECT"}, OnTable: "public.granted"},
 			},
-			database: []types.DBGrant{
+			database: []catalog.Grant{
 				{Role: "app_user", Privilege: "SELECT", ObjectType: "TABLE", Schema: "public", ObjectName: "granted"},
 			},
 		},
@@ -99,11 +99,11 @@ func TestGrantsWithSemantics_QualifiedTargetIdentity(t *testing.T) {
 			// The control that stops the fix from becoming "everything
 			// matches". A different schema is a different table.
 			name: "the same table name in another schema is another grant",
-			generated: []goschema.Grant{
+			generated: []schemamodel.Grant{
 				{Role: "app_user", Privileges: []string{"SELECT"}, OnTable: "other.granted"},
 			},
-			roles: []goschema.Role{{Name: "app_user"}},
-			database: []types.DBGrant{
+			roles: []schemamodel.Role{{Name: "app_user"}},
+			database: []catalog.Grant{
 				{Role: "app_user", Privilege: "SELECT", ObjectType: "TABLE", Schema: "public", ObjectName: "granted"},
 			},
 			wantAdded:   []grantTarget{{ObjectType: "TABLE", ObjectName: "other.granted"}},
@@ -114,11 +114,11 @@ func TestGrantsWithSemantics_QualifiedTargetIdentity(t *testing.T) {
 			// to resolve. It must not pick up the default one and start
 			// matching a table of the same name.
 			name: "a schema grant does not collide with a table of that name",
-			generated: []goschema.Grant{
+			generated: []schemamodel.Grant{
 				{Role: "app_user", Privileges: []string{"USAGE"}, OnSchema: "app"},
 			},
-			roles: []goschema.Role{{Name: "app_user"}},
-			database: []types.DBGrant{
+			roles: []schemamodel.Role{{Name: "app_user"}},
+			database: []catalog.Grant{
 				{Role: "app_user", Privilege: "USAGE", ObjectType: "TABLE", Schema: "public", ObjectName: "app"},
 			},
 			wantAdded:   []grantTarget{{ObjectType: "SCHEMA", ObjectName: "app"}},
@@ -129,10 +129,10 @@ func TestGrantsWithSemantics_QualifiedTargetIdentity(t *testing.T) {
 			// the control for the row above: that assertion must not pass
 			// merely because schema grants stopped matching anything.
 			name: "a schema grant matches its own row",
-			generated: []goschema.Grant{
+			generated: []schemamodel.Grant{
 				{Role: "app_user", Privileges: []string{"USAGE"}, OnSchema: "app"},
 			},
-			database: []types.DBGrant{
+			database: []catalog.Grant{
 				{Role: "app_user", Privilege: "USAGE", ObjectType: "SCHEMA", ObjectName: "app"},
 			},
 		},
@@ -140,10 +140,10 @@ func TestGrantsWithSemantics_QualifiedTargetIdentity(t *testing.T) {
 			// A sequence grant travels the same qualification path as a table
 			// grant, so it gets the same normalization and the same control.
 			name: "a declared bare sequence matches the qualified row",
-			generated: []goschema.Grant{
+			generated: []schemamodel.Grant{
 				{Role: "app_user", Privileges: []string{"USAGE"}, OnSequence: "order_seq"},
 			},
-			database: []types.DBGrant{
+			database: []catalog.Grant{
 				{Role: "app_user", Privilege: "USAGE", ObjectType: "SEQUENCE", Schema: "public", ObjectName: "order_seq"},
 			},
 		},
@@ -152,11 +152,11 @@ func TestGrantsWithSemantics_QualifiedTargetIdentity(t *testing.T) {
 			// were unreachable for a qualified target too: this row reached
 			// neither GrantOptionsAdded nor a plain re-GRANT.
 			name: "a grant option is detected across the two spellings",
-			generated: []goschema.Grant{
+			generated: []schemamodel.Grant{
 				{Role: "app_user", Privileges: []string{"SELECT"}, OnTable: "granted", WithOption: true},
 			},
-			roles: []goschema.Role{{Name: "app_user"}},
-			database: []types.DBGrant{
+			roles: []schemamodel.Role{{Name: "app_user"}},
+			database: []catalog.Grant{
 				{Role: "app_user", Privilege: "SELECT", ObjectType: "TABLE", Schema: "public", ObjectName: "granted"},
 			},
 			wantOptionsAdded: 1,
@@ -166,11 +166,11 @@ func TestGrantsWithSemantics_QualifiedTargetIdentity(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			generated := &goschema.Database{Grants: test.generated, Roles: test.roles}
-			database := &types.DBSchema{Grants: test.database}
+			desired := &schemamodel.Database{Grants: test.generated, Roles: test.roles}
+			current := &catalog.Database{Grants: test.database}
 			diff := &difftypes.SchemaDiff{}
 
-			compare.GrantsWithSemantics(generated, database, diff, identifier.ForDialect(platform.Postgres))
+			compare.GrantsWithSemantics(desired, current, diff, identifier.ForDialect(platform.Postgres))
 
 			c.Assert(grantTargets(diff.GrantsAdded), qt.DeepEquals, test.wantAdded)
 			c.Assert(grantTargets(diff.GrantsRemoved), qt.DeepEquals, test.wantRemoved)

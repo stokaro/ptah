@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
@@ -31,7 +31,7 @@ func TestCompareWithDatabaseInfoNeverDiffsARefreshStrategy(t *testing.T) {
 			diff, err := schemadiff.CompareWithDatabaseInfo(
 				materializedViewDesired(),
 				materializedViewCurrent(),
-				types.DBInfo{Dialect: dialect},
+				catalog.ServerInfo{Dialect: dialect},
 				nil,
 			)
 
@@ -58,7 +58,7 @@ func TestCompareWithDatabaseInfoReportsABodyChangeWithoutARefreshKey(t *testing.
 	diff, err := schemadiff.CompareWithDatabaseInfo(
 		desired,
 		materializedViewCurrent(),
-		types.DBInfo{Dialect: platform.Postgres},
+		catalog.ServerInfo{Dialect: platform.Postgres},
 		nil,
 	)
 
@@ -70,14 +70,14 @@ func TestCompareWithDatabaseInfoReportsABodyChangeWithoutARefreshKey(t *testing.
 	c.Assert(hasRefreshKey, qt.IsFalse)
 }
 
-func materializedViewDesired() *goschema.Database {
-	return &goschema.Database{MaterializedViews: []goschema.MaterializedView{{
+func materializedViewDesired() *schemamodel.Database {
+	return &schemamodel.Database{MaterializedViews: []schemamodel.MaterializedView{{
 		Name: "analytics.user_counts",
 		Body: "SELECT count(*) AS total FROM analytics.users"}}}
 }
 
-func materializedViewCurrent() *types.DBSchema {
-	return &types.DBSchema{MatViews: []types.DBMatView{{
+func materializedViewCurrent() *catalog.Database {
+	return &catalog.Database{MatViews: []catalog.MaterializedView{{
 		Name:   "user_counts",
 		Schema: "analytics",
 		Body:   "SELECT count(*) AS total FROM analytics.users"}}}

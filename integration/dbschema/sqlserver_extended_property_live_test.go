@@ -10,14 +10,14 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestSQLServerLiveExtendedPropertyRoundTrip is the assertion the object could
@@ -151,21 +151,21 @@ func TestSQLServerLiveExtendedPropertyLeavesAnUnwritableValueAlone(t *testing.T)
 
 	// A declaration that does not name it plans no removal, which is the half
 	// that would otherwise destroy the value.
-	empty := &goschema.Database{}
+	empty := &schemamodel.Database{}
 	settled := schemadiff.CompareWithDialect(empty, live, platform.SQLServer)
 	c.Assert(extendedPropertiesOn(settled.ExtendedPropertiesRemoved, table), qt.HasLen, 0)
 }
 
 // sqlServerExtendedPropertySchema declares one table carrying a table-scoped
 // property and a column-scoped one.
-func sqlServerExtendedPropertySchema(table, property, columnProperty, value string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "XP", Name: table}},
-		Fields: []goschema.Field{
+func sqlServerExtendedPropertySchema(table, property, columnProperty, value string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "XP", Name: table}},
+		Fields: []schemamodel.Field{
 			{StructName: "XP", Name: "id", Type: "INT", Primary: true},
 			{StructName: "XP", Name: "title", Type: "NVARCHAR(200)", Nullable: true},
 		},
-		ExtendedProperties: []goschema.ExtendedProperty{
+		ExtendedProperties: []schemamodel.ExtendedProperty{
 			{StructName: "XP", Name: property, Schema: "dbo", Table: table, Value: value},
 			{
 				StructName: "XP", Name: columnProperty, Schema: "dbo",
@@ -177,7 +177,7 @@ func sqlServerExtendedPropertySchema(table, property, columnProperty, value stri
 
 // extendedPropertySummary renders one table's properties in a stable order.
 func extendedPropertySummary(
-	properties []dbschematypes.DBExtendedProperty,
+	properties []catalog.ExtendedProperty,
 	table string,
 ) []string {
 	var summary []string
@@ -219,9 +219,9 @@ func modifiedExtendedPropertiesOn(
 
 func findExtendedProperty(
 	c *qt.C,
-	properties []dbschematypes.DBExtendedProperty,
+	properties []catalog.ExtendedProperty,
 	table, name string,
-) dbschematypes.DBExtendedProperty {
+) catalog.ExtendedProperty {
 	c.Helper()
 	for _, property := range properties {
 		if property.Table == table && property.Name == name {
@@ -229,7 +229,7 @@ func findExtendedProperty(
 		}
 	}
 	c.Fatalf("extended property %q on %q is absent from the read schema", name, table)
-	return dbschematypes.DBExtendedProperty{}
+	return catalog.ExtendedProperty{}
 }
 
 // TestSQLServerLiveDatabaseScopedExtendedPropertyRoundTrip is the scope with
@@ -265,8 +265,8 @@ func TestSQLServerLiveDatabaseScopedExtendedPropertyRoundTrip(t *testing.T) {
 			schemaProperty))
 	}()
 
-	description := &goschema.Database{
-		ExtendedProperties: []goschema.ExtendedProperty{
+	description := &schemamodel.Database{
+		ExtendedProperties: []schemamodel.ExtendedProperty{
 			{StructName: "DB", Name: databaseProperty, Value: "database scope"},
 			{StructName: "DB", Name: schemaProperty, Schema: "dbo", Value: "schema scope"},
 		},
@@ -302,9 +302,9 @@ func TestSQLServerLiveDatabaseScopedExtendedPropertyRoundTrip(t *testing.T) {
 
 func findExtendedPropertyByName(
 	c *qt.C,
-	properties []dbschematypes.DBExtendedProperty,
+	properties []catalog.ExtendedProperty,
 	name string,
-) dbschematypes.DBExtendedProperty {
+) catalog.ExtendedProperty {
 	c.Helper()
 	for _, property := range properties {
 		if property.Name == name {
@@ -312,7 +312,7 @@ func findExtendedPropertyByName(
 		}
 	}
 	c.Fatalf("extended property %q is absent from the read schema", name)
-	return dbschematypes.DBExtendedProperty{}
+	return catalog.ExtendedProperty{}
 }
 
 func extendedPropertiesNamed(

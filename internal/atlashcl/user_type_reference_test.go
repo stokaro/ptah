@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashcl"
 )
 
@@ -52,7 +52,7 @@ func TestUserTypeReferenceResolvesInEveryPosition(t *testing.T) {
 	tests := []struct {
 		name string
 		hcl  string
-		read func(*goschema.Database) string
+		read func(*schemamodel.Database) string
 		want string
 	}{
 		{
@@ -214,26 +214,26 @@ function "f" {
 	}
 }
 
-func firstFieldType(db *goschema.Database) string {
+func firstFieldType(db *schemamodel.Database) string {
 	return db.Fields[0].Type
 }
 
-func lastDomainBaseType(db *goschema.Database) string {
+func lastDomainBaseType(db *schemamodel.Database) string {
 	return db.Domains[len(db.Domains)-1].BaseType
 }
 
-func lastCompositeFieldType(db *goschema.Database) string {
+func lastCompositeFieldType(db *schemamodel.Database) string {
 	return db.CompositeTypes[len(db.CompositeTypes)-1].Fields[0].Type
 }
 
-func lastRangeSubtype(db *goschema.Database) string {
+func lastRangeSubtype(db *schemamodel.Database) string {
 	return db.Ranges[len(db.Ranges)-1].Subtype
 }
 
-func firstFunctionParameters(db *goschema.Database) string {
+func firstFunctionParameters(db *schemamodel.Database) string {
 	return db.Functions[0].Parameters
 }
 
-func firstFunctionReturns(db *goschema.Database) string {
+func firstFunctionReturns(db *schemamodel.Database) string {
 	return db.Functions[0].Returns
 }

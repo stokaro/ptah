@@ -15,7 +15,7 @@ import (
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/internal/typechange"
 	"go.5x5.cz/ptah/migration/risk"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // Severity is the operational risk level for a schema change.
@@ -56,7 +56,7 @@ type Report struct {
 
 // ClassifySchemaDiff returns severity findings for every non-empty diff
 // category.
-func ClassifySchemaDiff(diff *types.SchemaDiff) []Finding {
+func ClassifySchemaDiff(diff *difftypes.SchemaDiff) []Finding {
 	if diff == nil {
 		return nil
 	}

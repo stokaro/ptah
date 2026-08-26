@@ -5,10 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 // TestConstraints_EmbeddedInlineMixinForeignKey covers issue #197 — a
@@ -32,8 +32,8 @@ import (
 func TestConstraints_EmbeddedInlineMixinForeignKey(t *testing.T) {
 	// ownerCol returns the standard introspected FK row for <table>.<col> ->
 	// <refTable>.id with the given delete rule (nil == rule absent).
-	dbFK := func(name, table, col, refTable string, deleteRule *string) types.DBConstraint {
-		return types.DBConstraint{
+	dbFK := func(name, table, col, refTable string, deleteRule *string) catalog.Constraint {
+		return catalog.Constraint{
 			Name:          name,
 			TableName:     table,
 			Type:          "FOREIGN KEY",
@@ -47,7 +47,7 @@ func TestConstraints_EmbeddedInlineMixinForeignKey(t *testing.T) {
 
 	// mixinFields are the FK fields owned by the "Ownable" mixin struct. They
 	// are declared on the mixin, not on any table.
-	mixinFields := []goschema.Field{
+	mixinFields := []schemamodel.Field{
 		{
 			StructName:     "Ownable",
 			Name:           "tenant_id",
@@ -67,17 +67,17 @@ func TestConstraints_EmbeddedInlineMixinForeignKey(t *testing.T) {
 	}
 
 	// Two concrete tables embed the mixin inline.
-	embedded := []goschema.EmbeddedField{
+	embedded := []schemamodel.EmbeddedField{
 		{StructName: "Location", Mode: "inline", EmbeddedTypeName: "Ownable"},
 		{StructName: "Area", Mode: "inline", EmbeddedTypeName: "Ownable"},
 	}
 
 	// dbColumns: both host tables already exist in the database with the mixin
 	// columns materialized, so the field-level FKs get synthesized.
-	dbTable := func(name string) types.DBTable {
-		return types.DBTable{
+	dbTable := func(name string) catalog.Table {
+		return catalog.Table{
 			Name: name,
-			Columns: []types.DBColumn{
+			Columns: []catalog.Column{
 				{Name: "id"},
 				{Name: "tenant_id"},
 				{Name: "created_by_user_id"},
@@ -85,12 +85,12 @@ func TestConstraints_EmbeddedInlineMixinForeignKey(t *testing.T) {
 		}
 	}
 
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Location", Name: "locations"},
 			{StructName: "Area", Name: "areas"},
 		},
-		Fields: append([]goschema.Field{
+		Fields: append([]schemamodel.Field{
 			{StructName: "Location", Name: "id", Type: "TEXT", Primary: true},
 			{StructName: "Area", Name: "id", Type: "TEXT", Primary: true},
 		}, mixinFields...),
@@ -100,9 +100,9 @@ func TestConstraints_EmbeddedInlineMixinForeignKey(t *testing.T) {
 	t.Run("unchanged actions round-trip to a no-op across all embedding hosts", func(t *testing.T) {
 		c := qt.New(t)
 
-		database := &types.DBSchema{
-			Tables: []types.DBTable{dbTable("locations"), dbTable("areas")},
-			Constraints: []types.DBConstraint{
+		current := &catalog.Database{
+			Tables: []catalog.Table{dbTable("locations"), dbTable("areas")},
+			Constraints: []catalog.Constraint{
 				// CASCADE matches the mixin annotation on both hosts.
 				dbFK("fk_entity_tenant", "locations", "tenant_id", "tenants", new("CASCADE")),
 				dbFK("fk_entity_tenant", "areas", "tenant_id", "tenants", new("CASCADE")),
@@ -113,7 +113,7 @@ func TestConstraints_EmbeddedInlineMixinForeignKey(t *testing.T) {
 		}
 
 		diff := &difftypes.SchemaDiff{}
-		compare.Constraints(generated, database, diff, nil)
+		compare.Constraints(desired, current, diff, nil)
 
 		c.Assert(diff.ConstraintsAdded, qt.HasLen, 0, qt.Commentf("added=%v", diff.ConstraintsAdded))
 		c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0, qt.Commentf("removed=%v", diff.ConstraintsRemoved))
@@ -126,11 +126,11 @@ func TestConstraints_EmbeddedInlineMixinForeignKey(t *testing.T) {
 		// that previously emitted ALTER TABLE Ownable ADD CONSTRAINT ...; with
 		// the fix the synthesis is keyed on real host tables, so the removal
 		// info (and therefore the eventual ALTER) never references the struct.
-		database := &types.DBSchema{
-			Tables: []types.DBTable{dbTable("locations"), dbTable("areas")},
+		current := &catalog.Database{
+			Tables: []catalog.Table{dbTable("locations"), dbTable("areas")},
 			// No matching DB constraints -> all synthesized FKs are additions,
 			// but crucially against real tables.
-			Constraints: []types.DBConstraint{
+			Constraints: []catalog.Constraint{
 				dbFK("fk_entity_tenant", "locations", "tenant_id", "tenants", new("CASCADE")),
 				dbFK("fk_entity_tenant", "areas", "tenant_id", "tenants", new("CASCADE")),
 				dbFK("fk_entity_created_by", "locations", "created_by_user_id", "users", new("NO ACTION")),
@@ -142,7 +142,7 @@ func TestConstraints_EmbeddedInlineMixinForeignKey(t *testing.T) {
 		// removal-info table names never contain the mixin struct. The removal
 		// slice is the structure the planner reads to build ALTER statements.
 		diff := &difftypes.SchemaDiff{}
-		compare.Constraints(generated, database, diff, nil)
+		compare.Constraints(desired, current, diff, nil)
 		for _, info := range diff.ConstraintsRemovedWithTables {
 			c.Assert(info.TableName, qt.Not(qt.Equals), "Ownable",
 				qt.Commentf("removal must target a real table, got %q", info.TableName))
@@ -156,9 +156,9 @@ func TestConstraints_EmbeddedInlineMixinForeignKey(t *testing.T) {
 		// (mixin) wants CASCADE. areas still matches CASCADE. Expect exactly one
 		// drop + one add of fk_entity_tenant, and the removal must be scoped to
 		// the locations table.
-		database := &types.DBSchema{
-			Tables: []types.DBTable{dbTable("locations"), dbTable("areas")},
-			Constraints: []types.DBConstraint{
+		current := &catalog.Database{
+			Tables: []catalog.Table{dbTable("locations"), dbTable("areas")},
+			Constraints: []catalog.Constraint{
 				dbFK("fk_entity_tenant", "locations", "tenant_id", "tenants", new("NO ACTION")), // drifted
 				dbFK("fk_entity_tenant", "areas", "tenant_id", "tenants", new("CASCADE")),       // unchanged
 				dbFK("fk_entity_created_by", "locations", "created_by_user_id", "users", new("NO ACTION")),
@@ -167,7 +167,7 @@ func TestConstraints_EmbeddedInlineMixinForeignKey(t *testing.T) {
 		}
 
 		diff := &difftypes.SchemaDiff{}
-		compare.Constraints(generated, database, diff, nil)
+		compare.Constraints(desired, current, diff, nil)
 
 		c.Assert(diff.ConstraintsAdded, qt.DeepEquals, []string{"fk_entity_tenant"},
 			qt.Commentf("added=%v", diff.ConstraintsAdded))
@@ -186,18 +186,18 @@ func TestConstraints_EmbeddedInlineMixinForeignKey(t *testing.T) {
 
 		// Add a third embedding host to prove the per-host de-duplication does
 		// not accidentally drop legitimate distinct (table,name) pairs.
-		gen3 := &goschema.Database{
-			Tables: []goschema.Table{
+		gen3 := &schemamodel.Database{
+			Tables: []schemamodel.Table{
 				{StructName: "Location", Name: "locations"},
 				{StructName: "Area", Name: "areas"},
 				{StructName: "Commodity", Name: "commodities"},
 			},
-			Fields: append([]goschema.Field{
+			Fields: append([]schemamodel.Field{
 				{StructName: "Location", Name: "id", Type: "TEXT", Primary: true},
 				{StructName: "Area", Name: "id", Type: "TEXT", Primary: true},
 				{StructName: "Commodity", Name: "id", Type: "TEXT", Primary: true},
 			}, mixinFields...),
-			EmbeddedFields: []goschema.EmbeddedField{
+			EmbeddedFields: []schemamodel.EmbeddedField{
 				{StructName: "Location", Mode: "inline", EmbeddedTypeName: "Ownable"},
 				{StructName: "Area", Mode: "inline", EmbeddedTypeName: "Ownable"},
 				{StructName: "Commodity", Mode: "inline", EmbeddedTypeName: "Ownable"},
@@ -205,8 +205,8 @@ func TestConstraints_EmbeddedInlineMixinForeignKey(t *testing.T) {
 		}
 
 		hosts := []string{"locations", "areas", "commodities"}
-		var dbTables []types.DBTable
-		var dbConstraints []types.DBConstraint
+		var dbTables []catalog.Table
+		var dbConstraints []catalog.Constraint
 		for _, h := range hosts {
 			dbTables = append(dbTables, dbTable(h))
 			dbConstraints = append(dbConstraints,
@@ -216,7 +216,7 @@ func TestConstraints_EmbeddedInlineMixinForeignKey(t *testing.T) {
 		}
 
 		diff := &difftypes.SchemaDiff{}
-		compare.Constraints(gen3, &types.DBSchema{Tables: dbTables, Constraints: dbConstraints}, diff, nil)
+		compare.Constraints(gen3, &catalog.Database{Tables: dbTables, Constraints: dbConstraints}, diff, nil)
 
 		c.Assert(diff.ConstraintsAdded, qt.HasLen, 0, qt.Commentf("added=%v", diff.ConstraintsAdded))
 		c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0, qt.Commentf("removed=%v", diff.ConstraintsRemoved))
@@ -228,19 +228,19 @@ func TestConstraints_EmbeddedInlineMixinForeignKey(t *testing.T) {
 		// areas has not yet materialized the mixin columns (fresh table mid-add):
 		// its FKs ship inline with the column add, so they must NOT be
 		// synthesized here. locations is fully migrated and matches -> no-op.
-		database := &types.DBSchema{
-			Tables: []types.DBTable{
+		current := &catalog.Database{
+			Tables: []catalog.Table{
 				dbTable("locations"),
-				{Name: "areas", Columns: []types.DBColumn{{Name: "id"}}}, // mixin cols absent
+				{Name: "areas", Columns: []catalog.Column{{Name: "id"}}}, // mixin cols absent
 			},
-			Constraints: []types.DBConstraint{
+			Constraints: []catalog.Constraint{
 				dbFK("fk_entity_tenant", "locations", "tenant_id", "tenants", new("CASCADE")),
 				dbFK("fk_entity_created_by", "locations", "created_by_user_id", "users", new("NO ACTION")),
 			},
 		}
 
 		diff := &difftypes.SchemaDiff{}
-		compare.Constraints(generated, database, diff, nil)
+		compare.Constraints(desired, current, diff, nil)
 
 		c.Assert(diff.ConstraintsAdded, qt.HasLen, 0, qt.Commentf("added=%v", diff.ConstraintsAdded))
 		c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0, qt.Commentf("removed=%v", diff.ConstraintsRemoved))
@@ -257,9 +257,9 @@ func TestConstraints_EmbeddedInlineMixinForeignKey(t *testing.T) {
 func TestConstraints_FieldLevelForeignKeyOnDeleteNotStripped(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "AuditRow", Name: "audit_rows"}},
-		Fields: []goschema.Field{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "AuditRow", Name: "audit_rows"}},
+		Fields: []schemamodel.Field{
 			{StructName: "AuditRow", Name: "id", Type: "TEXT", Primary: true},
 			{
 				StructName:     "AuditRow",
@@ -271,11 +271,11 @@ func TestConstraints_FieldLevelForeignKeyOnDeleteNotStripped(t *testing.T) {
 			},
 		},
 	}
-	database := &types.DBSchema{
-		Tables: []types.DBTable{
-			{Name: "audit_rows", Columns: []types.DBColumn{{Name: "id"}, {Name: "migration_id"}}},
+	current := &catalog.Database{
+		Tables: []catalog.Table{
+			{Name: "audit_rows", Columns: []catalog.Column{{Name: "id"}, {Name: "migration_id"}}},
 		},
-		Constraints: []types.DBConstraint{
+		Constraints: []catalog.Constraint{
 			{
 				Name:          "fk_audit_migration",
 				TableName:     "audit_rows",
@@ -290,7 +290,7 @@ func TestConstraints_FieldLevelForeignKeyOnDeleteNotStripped(t *testing.T) {
 	}
 
 	diff := &difftypes.SchemaDiff{}
-	compare.Constraints(generated, database, diff, nil)
+	compare.Constraints(desired, current, diff, nil)
 
 	c.Assert(diff.ConstraintsAdded, qt.HasLen, 0, qt.Commentf("CASCADE must not be stripped, added=%v", diff.ConstraintsAdded))
 	c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0, qt.Commentf("CASCADE must not be stripped, removed=%v", diff.ConstraintsRemoved))

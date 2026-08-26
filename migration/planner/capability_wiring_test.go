@@ -6,12 +6,12 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestGetPlanner_CapabilityWiring proves the factory wires the right
@@ -19,18 +19,18 @@ import (
 // guarded constraint drops for mariadb and unguarded ones for mysql, end to
 // end through GenerateSchemaDiffAST + the dialect renderer.
 func TestGetPlanner_CapabilityWiring(t *testing.T) {
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		ConstraintsRemoved: []string{"fk_posts_user"},
-		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 			{Name: "fk_posts_user", TableName: "posts", Type: "FOREIGN KEY"},
 		},
 	}
-	generated := &goschema.Database{}
+	desired := &schemamodel.Database{}
 
 	t.Run("mariadb gets guarded drops", func(t *testing.T) {
 		c := qt.New(t)
 
-		nodes, err := planner.GenerateSchemaDiffAST(diff, generated, "mariadb")
+		nodes, err := planner.GenerateSchemaDiffAST(diff, desired, "mariadb")
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("mariadb", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -42,7 +42,7 @@ func TestGetPlanner_CapabilityWiring(t *testing.T) {
 	t.Run("mysql stays unguarded", func(t *testing.T) {
 		c := qt.New(t)
 
-		nodes, err := planner.GenerateSchemaDiffAST(diff, generated, "mysql")
+		nodes, err := planner.GenerateSchemaDiffAST(diff, desired, "mysql")
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("mysql", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -55,19 +55,19 @@ func TestGetPlanner_CapabilityWiring(t *testing.T) {
 }
 
 func TestGenerateSchemaDiffSQLStatementsWithOptions_UsesServerVersionPreset(t *testing.T) {
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		ConstraintsRemoved: []string{"chk_qty"},
-		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 			{Name: "chk_qty", TableName: "things", Type: "CHECK"},
 		},
 	}
-	generated := &goschema.Database{}
+	desired := &schemamodel.Database{}
 
 	t.Run("mysql 5.7 emits warning instead of invalid drop", func(t *testing.T) {
 		c := qt.New(t)
 		caps := capability.ForServerVersion("mysql", "5.7.44")
 
-		statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, generated, "mysql", planner.Options{Capabilities: caps})
+		statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, desired, "mysql", planner.Options{Capabilities: caps})
 		c.Assert(err, qt.IsNil)
 		sql := legacyRenderedSQL(strings.Join(statements, "\n"))
 
@@ -79,7 +79,7 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_UsesServerVersionPreset(t *t
 		c := qt.New(t)
 		caps := capability.ForServerVersion("mysql", "8.0.17")
 
-		statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, generated, "mysql", planner.Options{Capabilities: caps})
+		statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, desired, "mysql", planner.Options{Capabilities: caps})
 		c.Assert(err, qt.IsNil)
 		sql := legacyRenderedSQL(strings.Join(statements, "\n"))
 
@@ -90,7 +90,7 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_UsesServerVersionPreset(t *t
 		c := qt.New(t)
 		caps := capability.ForServerVersion("mysql", "8.0.19")
 
-		statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, generated, "mysql", planner.Options{Capabilities: caps})
+		statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, desired, "mysql", planner.Options{Capabilities: caps})
 		c.Assert(err, qt.IsNil)
 		sql := legacyRenderedSQL(strings.Join(statements, "\n"))
 
@@ -101,17 +101,17 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_UsesServerVersionPreset(t *t
 func TestGetPlanner_DistributedSQLCapabilityWiring(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{IndexesAdded: []difftypes.IndexRef{
 		{Name: "idx_users_email", TableName: "users"},
 	}}
-	generated := &goschema.Database{
-		Tables: []goschema.Table{{StructName: "User", Name: "users"}},
-		Indexes: []goschema.Index{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
+		Indexes: []schemamodel.Index{
 			{Name: "idx_users_email", StructName: "User", Fields: []string{"email"}},
 		},
 	}
 
-	nodes, err := planner.GenerateSchemaDiffAST(diff, generated, platform.CockroachDB)
+	nodes, err := planner.GenerateSchemaDiffAST(diff, desired, platform.CockroachDB)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL(platform.CockroachDB, nodes...)
 	c.Assert(err, qt.IsNil)
@@ -124,20 +124,20 @@ func TestGetPlanner_DistributedSQLCapabilityWiring(t *testing.T) {
 
 func TestGetPlanner_CockroachDBTableQualifiedIndexReplacement(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{}
-	diff.SetIndexAdditions([]types.IndexRef{
+	diff := &difftypes.SchemaDiff{}
+	diff.SetIndexAdditions([]difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "public.users"},
 	})
-	diff.SetIndexRemovals([]types.IndexRef{
+	diff.SetIndexRemovals([]difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "public.users"},
 	})
-	generated := &goschema.Database{
-		Indexes: []goschema.Index{
+	desired := &schemamodel.Database{
+		Indexes: []schemamodel.Index{
 			{Name: "idx_shared", TableName: "public.users", Fields: []string{"handle"}},
 		},
 	}
 
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, generated, platform.CockroachDB)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, platform.CockroachDB)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 2)

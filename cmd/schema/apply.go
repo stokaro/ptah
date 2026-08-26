@@ -16,7 +16,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/editor"
 	"go.5x5.cz/ptah/cmd/internal/migrateflags"
 	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 	"go.5x5.cz/ptah/internal/atlasschema"
@@ -239,7 +239,7 @@ func runSchemaApply(cmd *cobra.Command, opts schemaApplyOptions) error {
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	var desired *goschema.Database
+	var desired *schemamodel.Database
 	if len(opts.rootDirs) > 0 || len(opts.schemaFiles) > 0 {
 		desired, err = schemaload.LoadContext(cmd.Context(), schemaload.Options{
 			RootDirs:        opts.rootDirs,

@@ -8,9 +8,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemafile"
 )
 
@@ -134,7 +134,7 @@ func writeSchemaFile(c *qt.C, dir, name, body string) string {
 	return path
 }
 
-func renderPostgres(c *qt.C, db *goschema.Database) []string {
+func renderPostgres(c *qt.C, db *schemamodel.Database) []string {
 	statements, err := renderer.GetOrderedCreateStatements(db, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	return statements

@@ -6,12 +6,12 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/mysql"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // These tests pin issue #694: a column-type change on a column that participates
@@ -22,12 +22,12 @@ import (
 // schema, so exercising both input shapes here proves up and down are inverses.
 
 // typeChangeDiff builds a single-column type-change diff for one table.
-func typeChangeDiff(table, column, change string) *types.SchemaDiff {
-	return &types.SchemaDiff{
-		TablesModified: []types.TableDiff{
+func typeChangeDiff(table, column, change string) *difftypes.SchemaDiff {
+	return &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{
 			{
 				TableName: table,
-				ColumnsModified: []types.ColumnDiff{
+				ColumnsModified: []difftypes.ColumnDiff{
 					{ColumnName: column, Changes: map[string]string{"type": change}},
 				},
 			},
@@ -41,18 +41,18 @@ func TestPlanner_ColumnTypeChange_ReferencingFKColumn_DropModifyReadd(t *testing
 			c := qt.New(t)
 
 			diff := typeChangeDiff("posts", "user_id", "INTEGER -> BIGINT")
-			generated := &goschema.Database{
-				Tables: []goschema.Table{
+			desired := &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{Name: "users", StructName: "User"},
 					{Name: "posts", StructName: "Post"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{Name: "id", Type: "BIGINT", StructName: "User", Primary: true},
 					{Name: "user_id", Type: "BIGINT", StructName: "Post", Nullable: false, Foreign: "users(id)", OnDelete: "CASCADE"},
 				},
 			}
 
-			sql := renderMySQLFamily(c, dialect, diff, generated)
+			sql := renderMySQLFamily(c, dialect, diff, desired)
 
 			assertContainsBefore(c, sql,
 				"ALTER TABLE posts DROP FOREIGN KEY fk_posts_user_id",
@@ -77,18 +77,18 @@ func TestPlanner_ColumnTypeChange_ReferencedColumn_DropsReferencingFK(t *testing
 			// lives on posts, so the DROP/ADD must target posts even though posts
 			// is not the modified table.
 			diff := typeChangeDiff("users", "id", "INTEGER -> BIGINT")
-			generated := &goschema.Database{
-				Tables: []goschema.Table{
+			desired := &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{Name: "users", StructName: "User"},
 					{Name: "posts", StructName: "Post"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{Name: "id", Type: "BIGINT", StructName: "User", Primary: true},
 					{Name: "user_id", Type: "BIGINT", StructName: "Post", Nullable: false, Foreign: "users(id)"},
 				},
 			}
 
-			sql := renderMySQLFamily(c, dialect, diff, generated)
+			sql := renderMySQLFamily(c, dialect, diff, desired)
 
 			assertContainsBefore(c, sql,
 				"ALTER TABLE posts DROP FOREIGN KEY fk_posts_user_id",
@@ -107,24 +107,24 @@ func TestPlanner_ColumnTypeChange_DefaultSchemaQualifiedRemovalMatchesBareAdditi
 	diff := typeChangeDiff("posts", "user_id", "INTEGER -> BIGINT")
 	diff.IdentifierSemantics = &semantics
 	diff.ConstraintsAdded = []string{"fk_posts_user_id"}
-	diff.ConstraintsAddedWithTables = []types.ConstraintAdditionInfo{{
+	diff.ConstraintsAddedWithTables = []difftypes.ConstraintAdditionInfo{{
 		Name: "fk_posts_user_id", TableName: "posts", Type: "FOREIGN KEY",
 		Columns: []string{"user_id"}, ForeignTable: "users", ForeignColumns: []string{"id"},
 	}}
 	diff.ConstraintsRemoved = []string{"fk_posts_user_id"}
-	diff.ConstraintsRemovedWithTables = []types.ConstraintRemovalInfo{{
+	diff.ConstraintsRemovedWithTables = []difftypes.ConstraintRemovalInfo{{
 		Name: "fk_posts_user_id", TableName: "app.posts", Type: "FOREIGN KEY",
 	}}
-	diff.ForeignKeysRemovedWithTables = []types.ForeignKeyRemovalInfo{{
+	diff.ForeignKeysRemovedWithTables = []difftypes.ForeignKeyRemovalInfo{{
 		Name: "fk_posts_user_id", TableName: "app.posts", Columns: []string{"user_id"},
 		ForeignTable: "users", ForeignColumns: []string{"id"},
 	}}
-	desired := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: "users", StructName: "User"},
 			{Name: "posts", StructName: "Post"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{Name: "id", Type: "BIGINT", StructName: "User", Primary: true},
 			{
 				Name: "user_id", Type: "BIGINT", StructName: "Post", Nullable: false,
@@ -148,13 +148,13 @@ func TestPlanner_ColumnTypeChange_DefaultSchemaQualifiedRemovalMatchesBareAdditi
 func TestPlanner_ColumnTypeChange_IgnoresUnmatchedSupplementalForeignKeyRemoval(t *testing.T) {
 	c := qt.New(t)
 	diff := typeChangeDiff("posts", "user_id", "INTEGER -> BIGINT")
-	diff.ForeignKeysRemovedWithTables = []types.ForeignKeyRemovalInfo{{
+	diff.ForeignKeysRemovedWithTables = []difftypes.ForeignKeyRemovalInfo{{
 		Name: "fk_posts_user_id", TableName: "posts", Columns: []string{"user_id"},
 		ForeignTable: "users", ForeignColumns: []string{"id"},
 	}}
-	desired := &goschema.Database{
-		Tables: []goschema.Table{{Name: "posts", StructName: "Post"}},
-		Fields: []goschema.Field{{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "posts", StructName: "Post"}},
+		Fields: []schemamodel.Field{{
 			Name: "user_id", Type: "BIGINT", StructName: "Post", Nullable: false,
 		}},
 	}
@@ -173,29 +173,29 @@ func TestPlanner_ColumnTypeChange_BothEnds_SingleDropAndReadd(t *testing.T) {
 			// A valid widening changes both ends of the key so the recreated
 			// constraint stays type-compatible. The key must be dropped once,
 			// both columns modified, then the key recreated once.
-			diff := &types.SchemaDiff{
-				TablesModified: []types.TableDiff{
-					{TableName: "posts", ColumnsModified: []types.ColumnDiff{
+			diff := &difftypes.SchemaDiff{
+				TablesModified: []difftypes.TableDiff{
+					{TableName: "posts", ColumnsModified: []difftypes.ColumnDiff{
 						{ColumnName: "user_id", Changes: map[string]string{"type": "INTEGER -> BIGINT"}},
 					}},
-					{TableName: "users", ColumnsModified: []types.ColumnDiff{
+					{TableName: "users", ColumnsModified: []difftypes.ColumnDiff{
 						{ColumnName: "code", Changes: map[string]string{"type": "INTEGER -> BIGINT"}},
 					}},
 				},
 			}
-			generated := &goschema.Database{
-				Tables: []goschema.Table{
+			desired := &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{Name: "users", StructName: "User"},
 					{Name: "posts", StructName: "Post"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{Name: "id", Type: "BIGINT", StructName: "User", Primary: true},
 					{Name: "code", Type: "BIGINT", StructName: "User", Unique: true},
 					{Name: "user_id", Type: "BIGINT", StructName: "Post", Nullable: false, Foreign: "users(code)"},
 				},
 			}
 
-			sql := renderMySQLFamily(c, dialect, diff, generated)
+			sql := renderMySQLFamily(c, dialect, diff, desired)
 
 			c.Assert(strings.Count(sql, "DROP FOREIGN KEY fk_posts_user_id"), qt.Equals, 1,
 				qt.Commentf("expected exactly one drop, got:\n%s", sql))
@@ -216,23 +216,23 @@ func TestPlanner_ColumnTypeChange_TableLevelForeignKey(t *testing.T) {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := &types.SchemaDiff{
-				TablesModified: []types.TableDiff{
-					{TableName: "orders", ColumnsModified: []types.ColumnDiff{
+			diff := &difftypes.SchemaDiff{
+				TablesModified: []difftypes.TableDiff{
+					{TableName: "orders", ColumnsModified: []difftypes.ColumnDiff{
 						{ColumnName: "tenant_id", Changes: map[string]string{"type": "INTEGER -> BIGINT"}},
 					}},
 				},
 			}
-			generated := &goschema.Database{
-				Tables: []goschema.Table{
+			desired := &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{Name: "orders", StructName: "Order"},
 					{Name: "accounts", StructName: "Account"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{Name: "tenant_id", Type: "BIGINT", StructName: "Order", Nullable: false},
 					{Name: "owner_id", Type: "BIGINT", StructName: "Order", Nullable: false},
 				},
-				Constraints: []goschema.Constraint{
+				Constraints: []schemamodel.Constraint{
 					{
 						Name: "fk_orders_accounts", Type: "FOREIGN KEY", Table: "orders",
 						Columns: []string{"tenant_id", "owner_id"}, ForeignTable: "accounts",
@@ -241,7 +241,7 @@ func TestPlanner_ColumnTypeChange_TableLevelForeignKey(t *testing.T) {
 				},
 			}
 
-			sql := renderMySQLFamily(c, dialect, diff, generated)
+			sql := renderMySQLFamily(c, dialect, diff, desired)
 
 			assertContainsBefore(c, sql,
 				"ALTER TABLE orders DROP FOREIGN KEY fk_orders_accounts",
@@ -259,13 +259,13 @@ func TestPlanner_ColumnTypeChange_SelfReferencingForeignKey(t *testing.T) {
 			c := qt.New(t)
 
 			diff := typeChangeDiff("categories", "parent_id", "INTEGER -> BIGINT")
-			generated := &goschema.Database{
-				Tables: []goschema.Table{{Name: "categories", StructName: "Category"}},
-				Fields: []goschema.Field{
+			desired := &schemamodel.Database{
+				Tables: []schemamodel.Table{{Name: "categories", StructName: "Category"}},
+				Fields: []schemamodel.Field{
 					{Name: "id", Type: "BIGINT", StructName: "Category", Primary: true},
 					{Name: "parent_id", Type: "BIGINT", StructName: "Category", Nullable: true},
 				},
-				SelfReferencingForeignKeys: map[string][]goschema.SelfReferencingFK{
+				SelfReferencingForeignKeys: map[string][]schemamodel.SelfReferencingFK{
 					"categories": {{
 						FieldName: "parent_id", Foreign: "categories(id)",
 						ForeignKeyName: "fk_categories_parent", OnDelete: "SET NULL",
@@ -273,7 +273,7 @@ func TestPlanner_ColumnTypeChange_SelfReferencingForeignKey(t *testing.T) {
 				},
 			}
 
-			sql := renderMySQLFamily(c, dialect, diff, generated)
+			sql := renderMySQLFamily(c, dialect, diff, desired)
 
 			assertContainsBefore(c, sql,
 				"ALTER TABLE categories DROP FOREIGN KEY fk_categories_parent",
@@ -296,14 +296,14 @@ func TestPlanner_ColumnTypeChange_DownInverse(t *testing.T) {
 			c := qt.New(t)
 
 			reverseDiff := typeChangeDiff("posts", "user_id", "BIGINT -> INTEGER")
-			// Shaped like dbschematogo.ConvertDBSchemaToGoSchema output: the FK is
+			// Shaped like dbschematogo.ConvertCatalogToSchema output: the FK is
 			// a field-level reference whose ForeignKeyName is the real DB name.
-			dbAsGoSchema := &goschema.Database{
-				Tables: []goschema.Table{
+			dbAsGoSchema := &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{Name: "users", StructName: "Users"},
 					{Name: "posts", StructName: "Posts"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{Name: "id", Type: "INTEGER", StructName: "Users", Primary: true},
 					{
 						Name: "user_id", Type: "INTEGER", StructName: "Posts", Nullable: false,
@@ -337,34 +337,34 @@ func TestPlanner_ColumnTypeChange_CoincidentFKDefinitionChange(t *testing.T) {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := &types.SchemaDiff{
-				TablesModified: []types.TableDiff{
-					{TableName: "posts", ColumnsModified: []types.ColumnDiff{
+			diff := &difftypes.SchemaDiff{
+				TablesModified: []difftypes.TableDiff{
+					{TableName: "posts", ColumnsModified: []difftypes.ColumnDiff{
 						{ColumnName: "user_id", Changes: map[string]string{"type": "INTEGER -> BIGINT"}},
 					}},
 				},
 				ConstraintsAdded:   []string{"fk_posts_user_id"},
 				ConstraintsRemoved: []string{"fk_posts_user_id"},
-				ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
 					Name: "fk_posts_user_id", TableName: "posts", Type: "FOREIGN KEY",
 					Columns: []string{"user_id"}, ForeignTable: "users", ForeignColumn: "id", OnDelete: "SET NULL",
 				}},
-				ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{{
+				ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{{
 					Name: "fk_posts_user_id", TableName: "posts", Type: "FOREIGN KEY",
 				}},
 			}
-			generated := &goschema.Database{
-				Tables: []goschema.Table{
+			desired := &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{Name: "users", StructName: "User"},
 					{Name: "posts", StructName: "Post"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{Name: "id", Type: "BIGINT", StructName: "User", Primary: true},
 					{Name: "user_id", Type: "BIGINT", StructName: "Post", Nullable: true, Foreign: "users(id)", ForeignKeyName: "fk_posts_user_id", OnDelete: "SET NULL"},
 				},
 			}
 
-			sql := renderMySQLFamily(c, dialect, diff, generated)
+			sql := renderMySQLFamily(c, dialect, diff, desired)
 
 			// Exactly one drop and one re-add.
 			c.Assert(strings.Count(sql, "DROP FOREIGN KEY fk_posts_user_id"), qt.Equals, 1,
@@ -397,39 +397,39 @@ func TestPlanner_ColumnTypeChange_CoHostedSharedFKName(t *testing.T) {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := &types.SchemaDiff{
-				TablesModified: []types.TableDiff{
-					{TableName: "posts", ColumnsModified: []types.ColumnDiff{
+			diff := &difftypes.SchemaDiff{
+				TablesModified: []difftypes.TableDiff{
+					{TableName: "posts", ColumnsModified: []difftypes.ColumnDiff{
 						{ColumnName: "user_id", Changes: map[string]string{"type": "INTEGER -> BIGINT"}},
 					}},
-					{TableName: "comments", ColumnsModified: []types.ColumnDiff{
+					{TableName: "comments", ColumnsModified: []difftypes.ColumnDiff{
 						{ColumnName: "user_id", Changes: map[string]string{"type": "INTEGER -> BIGINT"}},
 					}},
 				},
 				ConstraintsAdded:   []string{"fk_shared"},
 				ConstraintsRemoved: []string{"fk_shared"},
-				ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
 					Name: "fk_shared", TableName: "posts", Type: "FOREIGN KEY",
 					Columns: []string{"user_id"}, ForeignTable: "users", ForeignColumn: "id", OnDelete: "SET NULL",
 				}},
-				ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{{
+				ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{{
 					Name: "fk_shared", TableName: "posts", Type: "FOREIGN KEY",
 				}},
 			}
-			generated := &goschema.Database{
-				Tables: []goschema.Table{
+			desired := &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{Name: "users", StructName: "User"},
 					{Name: "posts", StructName: "Post"},
 					{Name: "comments", StructName: "Comment"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{Name: "id", Type: "BIGINT", StructName: "User", Primary: true},
 					{Name: "user_id", Type: "BIGINT", StructName: "Post", Nullable: true, Foreign: "users(id)", ForeignKeyName: "fk_shared", OnDelete: "SET NULL"},
 					{Name: "user_id", Type: "BIGINT", StructName: "Comment", Nullable: false, Foreign: "users(id)", ForeignKeyName: "fk_shared"},
 				},
 			}
 
-			sql := renderMySQLFamily(c, dialect, diff, generated)
+			sql := renderMySQLFamily(c, dialect, diff, desired)
 
 			// Both hosts dropped and recreated exactly once each.
 			c.Assert(strings.Count(sql, "ALTER TABLE posts DROP FOREIGN KEY fk_shared"), qt.Equals, 1,
@@ -460,29 +460,29 @@ func TestPlanner_ColumnTypeChange_RemovedOnlyForeignKey(t *testing.T) {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := &types.SchemaDiff{
-				TablesModified: []types.TableDiff{
-					{TableName: "posts", ColumnsModified: []types.ColumnDiff{
+			diff := &difftypes.SchemaDiff{
+				TablesModified: []difftypes.TableDiff{
+					{TableName: "posts", ColumnsModified: []difftypes.ColumnDiff{
 						{ColumnName: "author_id", Changes: map[string]string{"type": "INTEGER -> BIGINT"}},
 					}},
 				},
 				ConstraintsRemoved: []string{"fk_posts_author"},
-				ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+				ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 					{Name: "fk_posts_author", TableName: "posts", Type: "FOREIGN KEY"},
 				},
 			}
-			generated := &goschema.Database{
-				Tables: []goschema.Table{
+			desired := &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{Name: "users", StructName: "User"},
 					{Name: "posts", StructName: "Post"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{Name: "id", Type: "BIGINT", StructName: "User", Primary: true},
 					{Name: "author_id", Type: "BIGINT", StructName: "Post", Nullable: true},
 				},
 			}
 
-			sql := renderMySQLFamily(c, dialect, diff, generated)
+			sql := renderMySQLFamily(c, dialect, diff, desired)
 
 			// Dropped exactly once, before the MODIFY; never re-added.
 			c.Assert(strings.Count(sql, "DROP FOREIGN KEY fk_posts_author"), qt.Equals, 1,
@@ -502,25 +502,25 @@ func TestPlanner_ColumnTypeChange_NonTypeChangeKeepsForeignKey(t *testing.T) {
 
 			// A nullability-only change does not disturb the referential type
 			// match, so no foreign key is dropped.
-			diff := &types.SchemaDiff{
-				TablesModified: []types.TableDiff{
-					{TableName: "posts", ColumnsModified: []types.ColumnDiff{
+			diff := &difftypes.SchemaDiff{
+				TablesModified: []difftypes.TableDiff{
+					{TableName: "posts", ColumnsModified: []difftypes.ColumnDiff{
 						{ColumnName: "user_id", Changes: map[string]string{"nullable": "false -> true"}},
 					}},
 				},
 			}
-			generated := &goschema.Database{
-				Tables: []goschema.Table{
+			desired := &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{Name: "users", StructName: "User"},
 					{Name: "posts", StructName: "Post"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{Name: "id", Type: "BIGINT", StructName: "User", Primary: true},
 					{Name: "user_id", Type: "BIGINT", StructName: "Post", Nullable: true, Foreign: "users(id)"},
 				},
 			}
 
-			sql := renderMySQLFamily(c, dialect, diff, generated)
+			sql := renderMySQLFamily(c, dialect, diff, desired)
 
 			c.Assert(sql, qt.Not(qt.Contains), "DROP FOREIGN KEY")
 			c.Assert(sql, qt.Not(qt.Contains), "ADD CONSTRAINT fk_posts_user_id")
@@ -535,14 +535,14 @@ func TestPlanner_ColumnTypeChange_NoForeignKeyLeavesBareModify(t *testing.T) {
 			c := qt.New(t)
 
 			diff := typeChangeDiff("users", "age", "INTEGER -> SMALLINT")
-			generated := &goschema.Database{
-				Tables: []goschema.Table{{Name: "users", StructName: "User"}},
-				Fields: []goschema.Field{
+			desired := &schemamodel.Database{
+				Tables: []schemamodel.Table{{Name: "users", StructName: "User"}},
+				Fields: []schemamodel.Field{
 					{Name: "age", Type: "SMALLINT", StructName: "User", Nullable: true},
 				},
 			}
 
-			sql := renderMySQLFamily(c, dialect, diff, generated)
+			sql := renderMySQLFamily(c, dialect, diff, desired)
 
 			c.Assert(sql, qt.Not(qt.Contains), "DROP FOREIGN KEY")
 			c.Assert(sql, qt.Not(qt.Contains), "ADD CONSTRAINT")
@@ -558,18 +558,18 @@ func TestPlanner_ColumnTypeChange_MariaDBGuardsDrop(t *testing.T) {
 	c := qt.New(t)
 
 	diff := typeChangeDiff("posts", "user_id", "INTEGER -> BIGINT")
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{Name: "users", StructName: "User"},
 			{Name: "posts", StructName: "Post"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{Name: "id", Type: "BIGINT", StructName: "User", Primary: true},
 			{Name: "user_id", Type: "BIGINT", StructName: "Post", Nullable: false, Foreign: "users(id)"},
 		},
 	}
 
-	nodes, err := mysql.NewWithCapabilities(capability.MariaDB1011()).GenerateMigrationASTChecked(diff, generated)
+	nodes, err := mysql.NewWithCapabilities(capability.MariaDB1011()).GenerateMigrationASTChecked(diff, desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQLWithCapabilities("mariadb", capability.MariaDB1011(), nodes...)
 	c.Assert(err, qt.IsNil)

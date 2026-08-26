@@ -55,14 +55,14 @@
 //	}
 //
 //	// Target schema from Go struct parsing
-//	generated := &goschema.Database{
-//		Tables: []goschema.Table{
+//	generated := &schemamodel.Database{
+//		Tables: []schemamodel.Table{
 //			{Name: "users", StructName: "User"},
 //		},
-//		Enums: []goschema.Enum{
+//		Enums: []schemamodel.Enum{
 //			{Name: "user_status", Values: []string{"active", "inactive"}},
 //		},
-//		Fields: []goschema.Field{
+//		Fields: []schemamodel.Field{
 //			{Name: "id", Type: "SERIAL", StructName: "User", Primary: true},
 //			{Name: "status", Type: "user_status", StructName: "User"},
 //		},

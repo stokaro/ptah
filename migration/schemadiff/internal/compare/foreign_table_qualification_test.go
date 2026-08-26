@@ -5,11 +5,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 // compositeDeclaringForeignTable is a description whose child table declares a
@@ -18,19 +18,19 @@ import (
 // Composite is what makes the spelling reachable: a single-column key is carried
 // on the field, as `parent(a)`, which is always unqualified. Only a multi-column
 // key becomes a constraint whose ForeignTable the HCL parser writes qualified.
-func compositeDeclaringForeignTable(foreignTable string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{
+func compositeDeclaringForeignTable(foreignTable string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "Parent", Name: "parent"},
 			{StructName: "Child", Name: "child_multi"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "Parent", Name: "a", Type: "INTEGER"},
 			{StructName: "Parent", Name: "b", Type: "INTEGER"},
 			{StructName: "Child", Name: "pa", Type: "INTEGER"},
 			{StructName: "Child", Name: "pb", Type: "INTEGER"},
 		},
-		Constraints: []goschema.Constraint{{
+		Constraints: []schemamodel.Constraint{{
 			StructName: "child_multi", Name: "fk_multi", Type: "FOREIGN KEY",
 			Table:   "public.child_multi",
 			Columns: []string{"pa", "pb"}, ForeignTable: foreignTable,
@@ -46,20 +46,20 @@ func compositeDeclaringForeignTable(foreignTable string) *goschema.Database {
 // The empty spelling is not hypothetical: a reader blanks the schema for the one
 // it was scoped to, so this is what a PostgreSQL read of the default schema
 // actually produces.
-func catalogReportingForeignTable(foreignSchema string) *types.DBSchema {
+func catalogReportingForeignTable(foreignSchema string) *catalog.Database {
 	parent := "parent"
-	return &types.DBSchema{
-		Tables: []types.DBTable{
-			{Name: "parent", Schema: "public", Type: "BASE TABLE", Columns: []types.DBColumn{
+	return &catalog.Database{
+		Tables: []catalog.Table{
+			{Name: "parent", Schema: "public", Type: "BASE TABLE", Columns: []catalog.Column{
 				{Name: "a", DataType: "integer", IsNullable: "NO"},
 				{Name: "b", DataType: "integer", IsNullable: "NO"},
 			}},
-			{Name: "child_multi", Schema: "public", Type: "BASE TABLE", Columns: []types.DBColumn{
+			{Name: "child_multi", Schema: "public", Type: "BASE TABLE", Columns: []catalog.Column{
 				{Name: "pa", DataType: "integer", IsNullable: "NO"},
 				{Name: "pb", DataType: "integer", IsNullable: "NO"},
 			}},
 		},
-		Constraints: []types.DBConstraint{{
+		Constraints: []catalog.Constraint{{
 			Schema: "public", TableName: "child_multi", Name: "fk_multi", Type: "FOREIGN KEY",
 			ColumnName:  "pa",
 			ColumnNames: []string{"pa", "pb"}, ForeignTable: &parent,
@@ -76,10 +76,10 @@ func noAction() *string {
 }
 
 // qualificationDiff compares one description against one catalog.
-func qualificationDiff(c *qt.C, generated *goschema.Database, database *types.DBSchema) *difftypes.SchemaDiff {
+func qualificationDiff(c *qt.C, desired *schemamodel.Database, current *catalog.Database) *difftypes.SchemaDiff {
 	c.Helper()
 	diff := &difftypes.SchemaDiff{}
-	compare.ConstraintsWithSemantics(generated, database, diff, nil, identifier.ForDialect("postgres"))
+	compare.ConstraintsWithSemantics(desired, current, diff, nil, identifier.ForDialect("postgres"))
 	return diff
 }
 

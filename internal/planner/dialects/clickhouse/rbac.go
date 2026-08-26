@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // planRoles emits the role half of ClickHouse access control.
@@ -17,7 +17,7 @@ import (
 // which is also why this phase keeps the slot the old role diagnostics had --
 // after the tables and before everything that reads a role, the same place the
 // offline render path emits roles from.
-func planRoles(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func planRoles(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	result = createRoles(result, diff)
 	result = reportRoleModifications(result, diff)
 	return reportRoleRemovals(result, diff)
@@ -43,7 +43,7 @@ func planRoles(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
 // [ast.NewCreateRole] defaults Inherit to true, and that default is ClickHouse's
 // only behavior: role membership always inherits, which is why clickhouserbac
 // refuses a declared inherit="false" instead of emitting one.
-func createRoles(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func createRoles(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, name := range diff.RolesAdded {
 		result = append(result, ast.NewCreateRole(name))
 	}
@@ -54,16 +54,16 @@ func createRoles(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
 // plans no statement for it.
 //
 // There is no attribute to change, so any difference the comparison found is
-// between the PostgreSQL-shaped attributes [goschema.Role] carries and whatever
+// between the PostgreSQL-shaped attributes [schemamodel.Role] carries and whatever
 // the ClickHouse reader answered for them. ClickHouse's own ALTER ROLE renames a
 // role or attaches settings profiles, neither of which is what
-// [types.RoleDiff] describes.
+// [difftypes.RoleDiff] describes.
 //
 // It is named rather than ignored for the reason the rest of this planner names
 // what it cannot host (stokaro/ptah#931 item 7): a diff category the planner
 // passes over outright produces a plan that exits 0 having said nothing about a
 // difference the comparison did find.
-func reportRoleModifications(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func reportRoleModifications(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, role := range diff.RolesModified {
 		result = append(result, ast.NewComment(fmt.Sprintf(
 			"CLICKHOUSE: role %q differs only in attributes a ClickHouse role does not carry; nothing is altered",
@@ -85,7 +85,7 @@ func reportRoleModifications(result []ast.Node, diff *types.SchemaDiff) []ast.No
 //
 // The category is still named, so a diff that somehow carries one is not
 // planned silently past.
-func reportRoleRemovals(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func reportRoleRemovals(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, name := range diff.RolesRemoved {
 		result = append(result, ast.NewComment(fmt.Sprintf(
 			"CLICKHOUSE: role %q exists on the server and not in the schema; Ptah does not drop ClickHouse roles",
@@ -108,7 +108,7 @@ func reportRoleRemovals(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
 //
 // The order costs nothing when the two sets do not overlap: revoking a grant a
 // role does not hold is a silent no-op on both measured servers.
-func planGrants(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func planGrants(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	result = revokeGrants(result, diff)
 	result = revokeGrantOptions(result, diff)
 	return addGrants(result, diff)
@@ -125,7 +125,7 @@ func planGrants(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
 // next comparison asks for the same change again. This planner used to emit
 // exactly that, invisibly, because the ClickHouse renderer reduced every grant
 // node to a comment.
-func addGrants(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func addGrants(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, grant := range diff.GrantsAdded {
 		result = append(result, grantNode(grant).SetWithOption(grant.WithOption))
 	}
@@ -136,7 +136,7 @@ func addGrants(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
 }
 
 // revokeGrants plans REVOKE for a grant the schema no longer declares.
-func revokeGrants(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func revokeGrants(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, grant := range diff.GrantsRemoved {
 		result = append(result, revokeNode(grant))
 	}
@@ -153,7 +153,7 @@ func revokeGrants(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
 // 24.10.4.191, that downgrade is one statement, so nothing has to be re-granted
 // after it -- which is why this phase emits one node and not a revoke/grant
 // pair. Omitting the clause was this planner's other invisible defect.
-func revokeGrantOptions(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func revokeGrantOptions(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, grant := range diff.GrantOptionsRevoked {
 		result = append(result, revokeNode(grant).SetGrantOptionFor(true))
 	}
@@ -168,7 +168,7 @@ func revokeGrantOptions(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
 // precisely what ObjectType records, so dropping it here would leave the
 // renderer guessing. [go.5x5.cz/ptah/internal/clickhouserbac.Scope] reads it back
 // rather than emitting it.
-func grantNode(grant types.GrantRef) *ast.GrantPrivilegeNode {
+func grantNode(grant difftypes.GrantRef) *ast.GrantPrivilegeNode {
 	return ast.NewGrantPrivilege(
 		grant.Role,
 		grant.ObjectType,
@@ -178,7 +178,7 @@ func grantNode(grant types.GrantRef) *ast.GrantPrivilegeNode {
 }
 
 // revokeNode is [grantNode] for the statement that takes a privilege back.
-func revokeNode(grant types.GrantRef) *ast.RevokePrivilegeNode {
+func revokeNode(grant difftypes.GrantRef) *ast.RevokePrivilegeNode {
 	return ast.NewRevokePrivilege(
 		grant.Role,
 		grant.ObjectType,

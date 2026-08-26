@@ -10,12 +10,12 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
-	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/dbschema/postgres"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestSchemaObjects_RoundTripAndBodyChange_PostgreSQL_Integration(t *testing.T) {
@@ -30,7 +30,7 @@ func TestSchemaObjects_RoundTripAndBodyChange_PostgreSQL_Integration(t *testing.
 	defer cleanupSchemaObjects(t, db)
 
 	target := schemaObjectsTarget()
-	diff := schemadiff.Compare(target, &dbschematypes.DBSchema{})
+	diff := schemadiff.Compare(target, &catalog.Database{})
 	c.Assert(diff.HasChanges(), qt.IsTrue)
 
 	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, target, "postgres")
@@ -91,26 +91,26 @@ func TestSchemaObjects_RoundTripAndBodyChange_PostgreSQL_Integration(t *testing.
 	c.Assert(removedRoundTrip.HasChanges(), qt.IsFalse, qt.Commentf("diff: %#v", removedRoundTrip))
 }
 
-func schemaObjectsTarget() *goschema.Database {
-	db := &goschema.Database{
-		Tables: []goschema.Table{{
+func schemaObjectsTarget() *schemamodel.Database {
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{
 			StructName: "SchemaObjectUser",
 			Name:       "ptah_schema_objects_users",
 		}},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "SchemaObjectUser", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "SchemaObjectUser", Name: "deleted_at", Type: "TIMESTAMP"},
 			{StructName: "SchemaObjectUser", Name: "updated_at", Type: "TIMESTAMP"},
 		},
-		Views: []goschema.View{{
+		Views: []schemamodel.View{{
 			Name: "ptah_schema_objects_active_users",
 			Body: "SELECT id, updated_at FROM ptah_schema_objects_users WHERE deleted_at IS NULL",
 		}},
-		MaterializedViews: []goschema.MaterializedView{{
+		MaterializedViews: []schemamodel.MaterializedView{{
 			Name: "ptah_schema_objects_user_stats",
 			Body: "SELECT id, COUNT(*) FROM ptah_schema_objects_users GROUP BY id",
 		}},
-		Triggers: []goschema.Trigger{{
+		Triggers: []schemamodel.Trigger{{
 			Name:   "ptah_schema_objects_set_updated_at",
 			Table:  "ptah_schema_objects_users",
 			Timing: "BEFORE",
@@ -118,11 +118,11 @@ func schemaObjectsTarget() *goschema.Database {
 			Body:   "NEW.updated_at = NOW(); RETURN NEW;",
 		}},
 	}
-	goschema.Finalize(db)
+	schemamodel.Finalize(db)
 	return db
 }
 
-func schemaObjectsTableOnly() *goschema.Database {
+func schemaObjectsTableOnly() *schemamodel.Database {
 	db := schemaObjectsTarget()
 	db.Views = nil
 	db.MaterializedViews = nil
@@ -138,8 +138,8 @@ func cleanupSchemaObjects(t *testing.T, db *sql.DB) {
 	_, _ = db.Exec("DROP FUNCTION IF EXISTS ptah_trigger_ptah_schema_objects_users_ptah_schema_objects_set_updated_at()")
 }
 
-func filterSchemaObjects(in *dbschematypes.DBSchema) *dbschematypes.DBSchema {
-	out := &dbschematypes.DBSchema{}
+func filterSchemaObjects(in *catalog.Database) *catalog.Database {
+	out := &catalog.Database{}
 	for _, table := range in.Tables {
 		if table.Name == "ptah_schema_objects_users" {
 			out.Tables = append(out.Tables, table)

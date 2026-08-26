@@ -90,7 +90,7 @@ func runSchemaStats(cmd *cobra.Command, opts schemaStatsOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("read schema: %w", err))
 	}
-	stats := schemastats.Collect(dbschematogo.ConvertDBSchemaToGoSchema(live))
+	stats := schemastats.Collect(dbschematogo.ConvertCatalogToSchema(live))
 	labels := map[string]string{"dialect": conn.Info().Dialect}
 	if opts.schemas != "" {
 		labels["schemas"] = opts.schemas

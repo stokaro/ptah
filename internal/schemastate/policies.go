@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/rlspolicy"
 )
@@ -54,8 +54,8 @@ const grantObjectTypeSchema = "SCHEMA"
 // The owning table is resolved through the identity model rather than kept as
 // the string the source wrote, so a policy on `"tenant.data"` belongs to that
 // table and not to a table `data` in a schema `tenant`.
-func PoliciesFromDescription(state *State, description *goschema.Database, builder objectidentity.Builder) error {
-	tablesByStruct := make(map[string]goschema.Table)
+func PoliciesFromDescription(state *State, description *schemamodel.Database, builder objectidentity.Builder) error {
+	tablesByStruct := make(map[string]schemamodel.Table)
 	for _, table := range description.Tables {
 		tablesByStruct[table.StructName] = table
 	}
@@ -84,8 +84,8 @@ func PoliciesFromDescription(state *State, description *goschema.Database, build
 // resolvePolicyTable resolves the table a declared policy names, preferring the
 // struct it was parsed from and falling back to the written table name.
 func resolvePolicyTable(
-	policy goschema.RLSPolicy,
-	tablesByStruct map[string]goschema.Table,
+	policy schemamodel.RLSPolicy,
+	tablesByStruct map[string]schemamodel.Table,
 	builder objectidentity.Builder,
 ) (objectidentity.ID, bool) {
 	if table, ok := tablesByStruct[policy.StructName]; ok {
@@ -98,7 +98,7 @@ func resolvePolicyTable(
 }
 
 // PoliciesFromCatalog adds the policies a catalog reports.
-func PoliciesFromCatalog(state *State, schema *dbschematypes.DBSchema, builder objectidentity.Builder) error {
+func PoliciesFromCatalog(state *State, schema *catalog.Database, builder objectidentity.Builder) error {
 	for _, policy := range schema.RLSPolicies {
 		owner := builder.Table(policy.Table)
 		id := builder.PolicyParts(owner.Schema.Source, owner.Name.Source, policy.Name)
@@ -158,7 +158,7 @@ func DescribesObject(state *State, id objectidentity.ID) bool {
 // the target holds: `GRANT SELECT, INSERT ON t TO r` is two rows in the
 // catalog, and revoking one of them leaves the other. A model carrying the
 // three as one object cannot express the state that follows.
-func GrantsFromDescription(state *State, description *goschema.Database, builder objectidentity.Builder) error {
+func GrantsFromDescription(state *State, description *schemamodel.Database, builder objectidentity.Builder) error {
 	for _, declared := range description.Grants {
 		declared.Canonicalize()
 		schema, object := grantTarget(declared)
@@ -186,7 +186,7 @@ func GrantsFromDescription(state *State, description *goschema.Database, builder
 // object types name something inside a schema the declaration does not
 // qualify, so the schema slot stays empty and the identity builder applies the
 // target's own default.
-func grantTarget(declared goschema.Grant) (schema, object string) {
+func grantTarget(declared schemamodel.Grant) (schema, object string) {
 	if declared.OnSchema != "" {
 		return declared.OnSchema, ""
 	}
@@ -197,7 +197,7 @@ func grantTarget(declared goschema.Grant) (schema, object string) {
 }
 
 // GrantsFromCatalog adds the privilege grants a catalog reports.
-func GrantsFromCatalog(state *State, schema *dbschematypes.DBSchema, builder objectidentity.Builder) error {
+func GrantsFromCatalog(state *State, schema *catalog.Database, builder objectidentity.Builder) error {
 	for _, reported := range schema.Grants {
 		if reported.IsPartialRevoke {
 			// A row that subtracts from a broader grant is not a grant, and
@@ -222,7 +222,7 @@ func GrantsFromCatalog(state *State, schema *dbschematypes.DBSchema, builder obj
 	return nil
 }
 
-func catalogGrantTarget(reported dbschematypes.DBGrant) (schema, object string) {
+func catalogGrantTarget(reported catalog.Grant) (schema, object string) {
 	if strings.EqualFold(reported.ObjectType, grantObjectTypeSchema) {
 		return reported.ObjectName, ""
 	}
@@ -235,7 +235,7 @@ func catalogGrantTarget(reported dbschematypes.DBGrant) (schema, object string) 
 // removal has to ask whether Ptah manages the role that holds it, and asking a
 // canonical object is what keeps that question from being answered by a side
 // map the comparison has to be handed separately.
-func RolesFromDescription(state *State, description *goschema.Database, builder objectidentity.Builder) error {
+func RolesFromDescription(state *State, description *schemamodel.Database, builder objectidentity.Builder) error {
 	for _, role := range description.Roles {
 		id := builder.Role(role.Name)
 		if existing, collided := state.Add(Object{
@@ -249,7 +249,7 @@ func RolesFromDescription(state *State, description *goschema.Database, builder 
 }
 
 // RolesFromCatalog adds the roles a catalog reports.
-func RolesFromCatalog(state *State, schema *dbschematypes.DBSchema, builder objectidentity.Builder) error {
+func RolesFromCatalog(state *State, schema *catalog.Database, builder objectidentity.Builder) error {
 	for _, role := range schema.Roles {
 		id := builder.Role(role.Name)
 		if existing, collided := state.Add(Object{
@@ -274,7 +274,7 @@ func (s *State) Manages(role string, builder objectidentity.Builder) bool {
 // not manage is not Ptah's to revoke, and its absence from a description is not
 // a request to take it away -- the description was never describing that role's
 // privileges in the first place.
-func ManagedRoles(description *goschema.Database) map[string]bool {
+func ManagedRoles(description *schemamodel.Database) map[string]bool {
 	managed := make(map[string]bool)
 	for _, role := range description.Roles {
 		managed[strings.TrimSpace(role.Name)] = true

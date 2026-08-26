@@ -5,17 +5,17 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestMigrationFileGeneration_ExtensionSQL(t *testing.T) {
 	tests := []struct {
 		name              string
-		generatedSchema   *goschema.Database
-		databaseSchema    *types.DBSchema
+		generatedSchema   *schemamodel.Database
+		databaseSchema    *catalog.Database
 		expectedUpSQL     []string
 		expectedDownSQL   []string
 		unexpectedUpSQL   []string
@@ -23,14 +23,14 @@ func TestMigrationFileGeneration_ExtensionSQL(t *testing.T) {
 	}{
 		{
 			name: "extension addition generates correct up and down SQL",
-			generatedSchema: &goschema.Database{
-				Extensions: []goschema.Extension{
+			generatedSchema: &schemamodel.Database{
+				Extensions: []schemamodel.Extension{
 					{Name: "pg_trgm", IfNotExists: true, Comment: "Enable trigram similarity search"},
 					{Name: "btree_gin", IfNotExists: true, Comment: "Enable GIN indexes on btree types"},
 				},
 			},
-			databaseSchema: &types.DBSchema{
-				Extensions: make([]types.DBExtension, 0),
+			databaseSchema: &catalog.Database{
+				Extensions: make([]catalog.Extension, 0),
 			},
 			expectedUpSQL: []string{
 				"-- Direction: UP",
@@ -55,11 +55,11 @@ func TestMigrationFileGeneration_ExtensionSQL(t *testing.T) {
 		},
 		{
 			name: "extension removal generates correct up and down SQL",
-			generatedSchema: &goschema.Database{
-				Extensions: make([]goschema.Extension, 0),
+			generatedSchema: &schemamodel.Database{
+				Extensions: make([]schemamodel.Extension, 0),
 			},
-			databaseSchema: &types.DBSchema{
-				Extensions: []types.DBExtension{
+			databaseSchema: &catalog.Database{
+				Extensions: []catalog.Extension{
 					{Name: "pg_trgm", Version: "1.6", Schema: "public"},
 				},
 			},
@@ -81,8 +81,8 @@ func TestMigrationFileGeneration_ExtensionSQL(t *testing.T) {
 		},
 		{
 			name:            "nondefault extension removal restores its schema on rollback",
-			generatedSchema: &goschema.Database{},
-			databaseSchema: &types.DBSchema{Extensions: []types.DBExtension{{
+			generatedSchema: &schemamodel.Database{},
+			databaseSchema: &catalog.Database{Extensions: []catalog.Extension{{
 				Name: "pgcrypto", Version: "1.3", Schema: "Extension Store",
 			}}},
 			expectedUpSQL: []string{
@@ -165,14 +165,14 @@ func TestExtensionMigrationSQL_CompleteFlow(t *testing.T) {
 	c := qt.New(t)
 
 	// Test the complete flow: schema with extensions -> empty database -> up migration -> down migration
-	generatedSchema := &goschema.Database{
-		Extensions: []goschema.Extension{
+	generatedSchema := &schemamodel.Database{
+		Extensions: []schemamodel.Extension{
 			{Name: "pg_trgm", IfNotExists: true, Comment: "Enable trigram similarity search"},
 		},
 	}
 
-	emptyDatabase := &types.DBSchema{
-		Extensions: make([]types.DBExtension, 0),
+	emptyDatabase := &catalog.Database{
+		Extensions: make([]catalog.Extension, 0),
 	}
 
 	// 1. Generate up migration (should create extension)
@@ -183,8 +183,8 @@ func TestExtensionMigrationSQL_CompleteFlow(t *testing.T) {
 	c.Assert(upSQL, qt.Contains, "CREATE EXTENSION IF NOT EXISTS pg_trgm;")
 
 	// 2. Simulate database state after up migration
-	databaseAfterUp := &types.DBSchema{
-		Extensions: []types.DBExtension{
+	databaseAfterUp := &catalog.Database{
+		Extensions: []catalog.Extension{
 			{Name: "pg_trgm", Version: "1.6", Schema: "public"},
 		},
 	}
@@ -207,24 +207,24 @@ func TestExtensionMigrationSQL_CompleteFlow(t *testing.T) {
 func TestMigrationFileGeneration_EmptyDiffPrevention(t *testing.T) {
 	tests := []struct {
 		name            string
-		generatedSchema *goschema.Database
-		databaseSchema  *types.DBSchema
+		generatedSchema *schemamodel.Database
+		databaseSchema  *catalog.Database
 		diff            *difftypes.SchemaDiff
 		description     string
 	}{
 		{
 			name: "table modification with missing field definitions should not generate migration",
-			generatedSchema: &goschema.Database{
-				Tables: []goschema.Table{
+			generatedSchema: &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{Name: "users", StructName: "User"},
 				},
-				Fields: make([]goschema.Field, 0),
+				Fields: make([]schemamodel.Field, 0),
 			},
-			databaseSchema: &types.DBSchema{
-				Tables: []types.DBTable{
+			databaseSchema: &catalog.Database{
+				Tables: []catalog.Table{
 					{
 						Name: "users",
-						Columns: []types.DBColumn{
+						Columns: []catalog.Column{
 							{Name: "id", DataType: "integer", IsPrimaryKey: true},
 						},
 					},
@@ -242,12 +242,12 @@ func TestMigrationFileGeneration_EmptyDiffPrevention(t *testing.T) {
 		},
 		{
 			name: "completely empty diff should not generate migration",
-			generatedSchema: &goschema.Database{
-				Tables: make([]goschema.Table, 0),
-				Fields: make([]goschema.Field, 0),
+			generatedSchema: &schemamodel.Database{
+				Tables: make([]schemamodel.Table, 0),
+				Fields: make([]schemamodel.Field, 0),
 			},
-			databaseSchema: &types.DBSchema{
-				Tables: make([]types.DBTable, 0),
+			databaseSchema: &catalog.Database{
+				Tables: make([]catalog.Table, 0),
 			},
 			diff: &difftypes.SchemaDiff{
 				// Completely empty diff
@@ -278,9 +278,9 @@ func TestGenerateUpMigrationSQL_NoChangesSuccess(t *testing.T) {
 		// Completely empty diff
 	}
 
-	emptySchema := &goschema.Database{
-		Tables: make([]goschema.Table, 0),
-		Fields: make([]goschema.Field, 0),
+	emptySchema := &schemamodel.Database{
+		Tables: make([]schemamodel.Table, 0),
+		Fields: make([]schemamodel.Field, 0),
 	}
 
 	// Generate up migration SQL - should return success with empty SQL

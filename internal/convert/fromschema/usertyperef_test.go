@@ -5,31 +5,31 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 )
 
 // userTypeDocument is the IR a PostgreSQL read of one schema produces: one
 // declaration of each user-type kind, each carrying the schema it lives in, and
 // one table whose column type is whatever the row is about.
-func userTypeDocument(columnType string) *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "T", Name: "t", Schema: "app"}},
-		Fields: []goschema.Field{{StructName: "T", Name: "c", Type: columnType}},
-		Enums: []goschema.Enum{{
+func userTypeDocument(columnType string) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "T", Name: "t", Schema: "app"}},
+		Fields: []schemamodel.Field{{StructName: "T", Name: "c", Type: columnType}},
+		Enums: []schemamodel.Enum{{
 			Name: "mood", Schema: "app", Values: []string{"sad", "ok"},
 		}},
-		Domains: []goschema.Domain{{
+		Domains: []schemamodel.Domain{{
 			Name: "positive_int", Schema: "app", BaseType: "integer",
 		}},
-		CompositeTypes: []goschema.CompositeType{{
+		CompositeTypes: []schemamodel.CompositeType{{
 			Name:   "addr",
 			Schema: "app",
-			Fields: []goschema.CompositeTypeField{{Name: "street", Type: "text"}},
+			Fields: []schemamodel.CompositeField{{Name: "street", Type: "text"}},
 		}},
-		Ranges: []goschema.Range{{Name: "numrng", Schema: "app", Subtype: "numeric"}},
+		Ranges: []schemamodel.Range{{Name: "numrng", Schema: "app", Subtype: "numeric"}},
 	}
 }
 
@@ -135,32 +135,32 @@ func TestQualifyDeclaredUserTypesLeavesEverythingElseAlone(t *testing.T) {
 	tests := []struct {
 		name       string
 		columnType string
-		amend      func(*goschema.Database)
+		amend      func(*schemamodel.Database)
 		want       string
 	}{
 		{
 			name:       "a built-in scalar type",
 			columnType: "varchar(100)",
-			amend:      func(_ *goschema.Database) {},
+			amend:      func(_ *schemamodel.Database) {},
 			want:       "varchar(100)",
 		},
 		{
 			name:       "a built-in array type",
 			columnType: "character varying(100)[]",
-			amend:      func(_ *goschema.Database) {},
+			amend:      func(_ *schemamodel.Database) {},
 			want:       "character varying(100)[]",
 		},
 		{
 			name:       "a type the author already qualified",
 			columnType: "other.positive_int",
-			amend:      func(_ *goschema.Database) {},
+			amend:      func(_ *schemamodel.Database) {},
 			want:       "other.positive_int",
 		},
 		{
 			name:       "a name two schemas both declare",
 			columnType: "positive_int",
-			amend: func(db *goschema.Database) {
-				db.Domains = append(db.Domains, goschema.Domain{
+			amend: func(db *schemamodel.Database) {
+				db.Domains = append(db.Domains, schemamodel.Domain{
 					Name: "positive_int", Schema: "other", BaseType: "integer",
 				})
 			},
@@ -169,8 +169,8 @@ func TestQualifyDeclaredUserTypesLeavesEverythingElseAlone(t *testing.T) {
 		{
 			name:       "an array of a name two schemas both declare",
 			columnType: "positive_int[]",
-			amend: func(db *goschema.Database) {
-				db.Domains = append(db.Domains, goschema.Domain{
+			amend: func(db *schemamodel.Database) {
+				db.Domains = append(db.Domains, schemamodel.Domain{
 					Name: "positive_int", Schema: "other", BaseType: "integer",
 				})
 			},
@@ -179,8 +179,8 @@ func TestQualifyDeclaredUserTypesLeavesEverythingElseAlone(t *testing.T) {
 		{
 			name:       "an array whose element name an enum also answers to",
 			columnType: "addr[]",
-			amend: func(db *goschema.Database) {
-				db.Enums = append(db.Enums, goschema.Enum{
+			amend: func(db *schemamodel.Database) {
+				db.Enums = append(db.Enums, schemamodel.Enum{
 					Name: "addr", Schema: "app", Values: []string{"home"},
 				})
 			},
@@ -189,23 +189,23 @@ func TestQualifyDeclaredUserTypesLeavesEverythingElseAlone(t *testing.T) {
 		{
 			name:       "a declaration that carries no schema, as an author writes it",
 			columnType: "positive_int",
-			amend: func(db *goschema.Database) {
-				db.Domains = []goschema.Domain{{Name: "positive_int", BaseType: "integer"}}
+			amend: func(db *schemamodel.Database) {
+				db.Domains = []schemamodel.Domain{{Name: "positive_int", BaseType: "integer"}}
 			},
 			want: "positive_int",
 		},
 		{
 			name:       "an array of a declaration that carries no schema",
 			columnType: "mood[]",
-			amend: func(db *goschema.Database) {
-				db.Enums = []goschema.Enum{{Name: "mood", Values: []string{"sad", "ok"}}}
+			amend: func(db *schemamodel.Database) {
+				db.Enums = []schemamodel.Enum{{Name: "mood", Values: []string{"sad", "ok"}}}
 			},
 			want: "mood[]",
 		},
 		{
 			name:       "a bracket run that is part of the type, not a dimension",
 			columnType: "positive_int[a]",
-			amend:      func(_ *goschema.Database) {},
+			amend:      func(_ *schemamodel.Database) {},
 			want:       "positive_int[a]",
 		},
 	}

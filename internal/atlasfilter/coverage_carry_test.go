@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 )
 
@@ -37,8 +37,8 @@ func TestScopeDatabaseKeepsCoverage(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			schema := &dbschematypes.DBSchema{
-				Tables: []dbschematypes.DBTable{
+			schema := &catalog.Database{
+				Tables: []catalog.Table{
 					{Name: "kept", Schema: "public"},
 					{Name: "dropped", Schema: "public"},
 				},
@@ -66,8 +66,8 @@ func TestScopeGeneratedKeepsCoverage(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			schema := &goschema.Database{
-				Tables: []goschema.Table{
+			schema := &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{Name: "kept", StructName: "Kept", Schema: "public"},
 					{Name: "dropped", StructName: "Dropped", Schema: "public"},
 				},

@@ -12,18 +12,18 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlasschema"
 )
 
 // desiredFixture is a non-nil desired schema; the decision only cares whether
 // one is present.
-func desiredFixture() *goschema.Database { return &goschema.Database{} }
+func desiredFixture() *schemamodel.Database { return &schemamodel.Database{} }
 
 // desiredFor maps a table-driven presence flag onto the desired-schema
 // argument.
-func desiredFor(present bool) *goschema.Database {
-	m := map[bool]*goschema.Database{true: desiredFixture()}
+func desiredFor(present bool) *schemamodel.Database {
+	m := map[bool]*schemamodel.Database{true: desiredFixture()}
 	return m[present]
 }
 

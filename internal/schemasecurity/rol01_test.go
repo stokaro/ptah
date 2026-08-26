@@ -5,14 +5,14 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/schemasecurity"
 )
 
 // grantedSchema is one role granted SELECT on two tables.
-func grantedSchema() *goschema.Database {
-	return &goschema.Database{
-		Grants: []goschema.Grant{
+func grantedSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Grants: []schemamodel.Grant{
 			{Role: "reporting", Privileges: []string{"SELECT"}, OnTable: "orders"},
 			{Role: "reporting", Privileges: []string{"SELECT"}, OnTable: "customers"},
 		},
@@ -154,8 +154,8 @@ func TestROL01_NamesOnlyTheGrantsNothingWasObservedUsing(t *testing.T) {
 func TestROL01_LeavesPublicGrantsToPRV03(t *testing.T) {
 	c := qt.New(t)
 
-	report := schemasecurity.Analyze(&goschema.Database{
-		Grants: []goschema.Grant{
+	report := schemasecurity.Analyze(&schemamodel.Database{
+		Grants: []schemamodel.Grant{
 			{Role: "PUBLIC", Privileges: []string{"SELECT"}, OnTable: "orders"},
 		},
 	}, schemasecurity.Options{RoleObjectUsage: make([]schemasecurity.RoleObjectUsage, 0)})
@@ -169,8 +169,8 @@ func TestROL01_LeavesPublicGrantsToPRV03(t *testing.T) {
 func TestROL01_CarriesThePrivilegesAndTheRole(t *testing.T) {
 	c := qt.New(t)
 
-	report := schemasecurity.Analyze(&goschema.Database{
-		Grants: []goschema.Grant{
+	report := schemasecurity.Analyze(&schemamodel.Database{
+		Grants: []schemamodel.Grant{
 			{Role: "reporting", Privileges: []string{"select", "UPDATE"}, OnTable: "orders"},
 		},
 	}, schemasecurity.Options{RoleObjectUsage: make([]schemasecurity.RoleObjectUsage, 0)})

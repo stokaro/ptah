@@ -237,8 +237,8 @@ func constructsSourceDescription(pkg *packages.Package) []finding {
 // sourceDescriptionTypes are the types that describe a schema as a SOURCE
 // wrote it, which a pipeline stage should receive rather than build.
 var sourceDescriptionTypes = []string{
-	modulePath + "/core/goschema.Database",
-	modulePath + "/dbschema/types.DBSchema",
+	modulePath + "/core/schemamodel.Database",
+	modulePath + "/catalog.Database",
 }
 
 func isSourceDescription(typ types.Type) bool {

@@ -11,10 +11,10 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/jackc/pgx/v5"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -52,13 +52,13 @@ func TestMaterializedViewReadback_LiveUnqualifiedBodyRoundTrips(t *testing.T) {
 	c.Assert(live.Views[0].Schema, qt.Equals, schemaName)
 	c.Assert(live.Views[0].Body, qt.Contains, schemaName+".users")
 
-	declared := &goschema.Database{
-		MaterializedViews: []goschema.MaterializedView{{
+	declared := &schemamodel.Database{
+		MaterializedViews: []schemamodel.MaterializedView{{
 			StructName: "UserCounts",
 			Name:       schemaName + ".user_counts",
 			Body:       "SELECT count(*) AS c FROM users",
 		}},
-		Views: []goschema.View{{
+		Views: []schemamodel.View{{
 			StructName: "UserCountsPlain",
 			Name:       schemaName + ".user_counts_plain",
 			Body:       "SELECT count(*) AS c FROM users",
@@ -66,7 +66,7 @@ func TestMaterializedViewReadback_LiveUnqualifiedBodyRoundTrips(t *testing.T) {
 	}
 	// Only the two view kinds, so this is a comparison about their bodies rather
 	// than about the source table the desired state does not declare.
-	viewLikes := &dbschematypes.DBSchema{Views: live.Views, MatViews: live.MatViews}
+	viewLikes := &catalog.Database{Views: live.Views, MatViews: live.MatViews}
 
 	settled := schemadiff.CompareWithDialect(declared, viewLikes, platform.Postgres)
 	c.Assert(settled.MaterializedViewsModified, qt.HasLen, 0)
@@ -75,8 +75,8 @@ func TestMaterializedViewReadback_LiveUnqualifiedBodyRoundTrips(t *testing.T) {
 
 	// A body that really did change is still a change: what the normalization
 	// removes is the qualifier the catalog added, not the author's edit.
-	changed := &goschema.Database{
-		MaterializedViews: []goschema.MaterializedView{{
+	changed := &schemamodel.Database{
+		MaterializedViews: []schemamodel.MaterializedView{{
 			StructName: "UserCounts",
 			Name:       schemaName + ".user_counts",
 			Body:       "SELECT count(*) AS c FROM users WHERE enabled",

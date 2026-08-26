@@ -7,12 +7,12 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashcl"
 )
 
-func renderStatements(c *qt.C, db *goschema.Database, dialect string) []string {
+func renderStatements(c *qt.C, db *schemamodel.Database, dialect string) []string {
 	c.Helper()
 	statements, err := renderer.GetOrderedCreateStatements(db, dialect)
 	c.Assert(err, qt.IsNil)
@@ -44,7 +44,7 @@ table "users" {
 }
 `), "schema.hcl")
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.Schemas, qt.DeepEquals, []goschema.Schema{{Name: "main"}})
+	c.Assert(db.Schemas, qt.DeepEquals, []schemamodel.Schema{{Name: "main"}})
 	c.Assert(db.Tables, qt.HasLen, 1)
 	c.Assert(db.Tables[0].Name, qt.Equals, "users")
 	c.Assert(db.Tables[0].Schema, qt.Equals, "main")
@@ -193,9 +193,9 @@ table "metrics" {
 `), "schema.hcl")
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
-	c.Assert(db.Tables[0].Partition, qt.DeepEquals, &goschema.PartitionSpec{
+	c.Assert(db.Tables[0].Partition, qt.DeepEquals, &schemamodel.PartitionSpec{
 		Type: "RANGE",
-		Parts: []goschema.PartitionPart{
+		Parts: []schemamodel.PartitionPart{
 			{Name: "x"},
 			{Expr: "floor(y)"},
 		},
@@ -247,7 +247,7 @@ table "users" {
 	// declared anywhere else, so the DDL below names the schema on both the
 	// CREATE TYPE and the column that is declared against it
 	// (stokaro/ptah#1276).
-	c.Assert(db.Enums, qt.DeepEquals, []goschema.Enum{
+	c.Assert(db.Enums, qt.DeepEquals, []schemamodel.Enum{
 		{Name: "status", Schema: "main", Values: []string{"active", "inactive"}},
 	})
 	c.Assert(db.Fields, qt.HasLen, 1)
@@ -301,7 +301,7 @@ table "tokens" {
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
 	c.Assert(db.Tables[0].PrimaryKey, qt.DeepEquals, []string{"id", "tenant_id"})
-	c.Assert(db.Tables[0].PrimaryKeyParts, qt.DeepEquals, []goschema.PrimaryKeyPart{
+	c.Assert(db.Tables[0].PrimaryKeyParts, qt.DeepEquals, []schemamodel.PrimaryKeyPart{
 		{Name: "id", Prefix: "7"},
 		{Name: "tenant_id", Prefix: "1", Desc: true},
 	})
@@ -334,7 +334,7 @@ table "users" {
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
 	c.Assert(db.Tables[0].PrimaryKey, qt.DeepEquals, []string{"id"})
-	c.Assert(db.Tables[0].PrimaryKeyParts, qt.DeepEquals, []goschema.PrimaryKeyPart{{Name: "id"}})
+	c.Assert(db.Tables[0].PrimaryKeyParts, qt.DeepEquals, []schemamodel.PrimaryKeyPart{{Name: "id"}})
 	c.Assert(db.Tables[0].PrimaryKeyInclude, qt.DeepEquals, []string{"covering"})
 
 	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "postgres"), "\n"))
@@ -534,12 +534,12 @@ table "users" {
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Indexes, qt.HasLen, 2)
 	c.Assert(db.Indexes[0].Fields, qt.DeepEquals, []string{"rank", "score"})
-	c.Assert(db.Indexes[0].Parts, qt.DeepEquals, []goschema.IndexPart{
+	c.Assert(db.Indexes[0].Parts, qt.DeepEquals, []schemamodel.IndexPart{
 		{Name: "rank", Operator: "bpchar_ops", Prefix: "7"},
 		{Name: "score", Operator: "tsvector_ops(siglen=8)", Desc: true},
 	})
 	c.Assert(db.Indexes[1].Fields, qt.DeepEquals, []string{"first_name || ' ' || last_name"})
-	c.Assert(db.Indexes[1].Parts, qt.DeepEquals, []goschema.IndexPart{
+	c.Assert(db.Indexes[1].Parts, qt.DeepEquals, []schemamodel.IndexPart{
 		{Expr: "first_name || ' ' || last_name"},
 	})
 }
@@ -731,7 +731,7 @@ schema "public" {
 }
 `), "schema.hcl")
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.Schemas, qt.DeepEquals, []goschema.Schema{{
+	c.Assert(db.Schemas, qt.DeepEquals, []schemamodel.Schema{{
 		Name:    "public",
 		Comment: "This is a test schema",
 	}})
@@ -751,7 +751,7 @@ schema "app" {
 }
 `), "schema.hcl")
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.Schemas, qt.DeepEquals, []goschema.Schema{{
+	c.Assert(db.Schemas, qt.DeepEquals, []schemamodel.Schema{{
 		Name:    "app",
 		Charset: "utf8mb4",
 		Collate: "utf8mb4_0900_ai_ci",
@@ -1421,7 +1421,7 @@ extension "pg_trgm" {
 `), "schema.hcl")
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.Extensions, qt.DeepEquals, []goschema.Extension{{Name: "pg_trgm", Schema: "extensions"}})
+	c.Assert(db.Extensions, qt.DeepEquals, []schemamodel.Extension{{Name: "pg_trgm", Schema: "extensions"}})
 }
 
 func TestParseExtensionSchemaPlacementForms(t *testing.T) {
@@ -1458,7 +1458,7 @@ extension "pg_trgm" {
 `, test.prefix, test.expression), "schema.hcl")
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(db.Extensions, qt.DeepEquals, []goschema.Extension{{Name: "pg_trgm", Schema: test.want}})
+			c.Assert(db.Extensions, qt.DeepEquals, []schemamodel.Extension{{Name: "pg_trgm", Schema: test.want}})
 		})
 	}
 }
@@ -1573,47 +1573,47 @@ table "users" {
 	}
 }
 
-func tableByName(tables []goschema.Table, name string) goschema.Table {
+func tableByName(tables []schemamodel.Table, name string) schemamodel.Table {
 	for _, table := range tables {
 		if table.Name == name {
 			return table
 		}
 	}
-	return goschema.Table{}
+	return schemamodel.Table{}
 }
 
-func fieldByName(fields []goschema.Field, structName, name string) goschema.Field {
+func fieldByName(fields []schemamodel.Field, structName, name string) schemamodel.Field {
 	for _, field := range fields {
 		if field.StructName == structName && field.Name == name {
 			return field
 		}
 	}
-	return goschema.Field{}
+	return schemamodel.Field{}
 }
 
-func constraintByName(constraints []goschema.Constraint, name string) goschema.Constraint {
+func constraintByName(constraints []schemamodel.Constraint, name string) schemamodel.Constraint {
 	for _, constraint := range constraints {
 		if constraint.Name == name {
 			return constraint
 		}
 	}
-	return goschema.Constraint{}
+	return schemamodel.Constraint{}
 }
 
-func grantByTable(grants []goschema.Grant, table string) goschema.Grant {
+func grantByTable(grants []schemamodel.Grant, table string) schemamodel.Grant {
 	for _, grant := range grants {
 		if grant.OnTable == table || strings.HasSuffix(grant.OnTable, "."+table) {
 			return grant
 		}
 	}
-	return goschema.Grant{}
+	return schemamodel.Grant{}
 }
 
-func grantBySchema(grants []goschema.Grant, schema string) goschema.Grant {
+func grantBySchema(grants []schemamodel.Grant, schema string) schemamodel.Grant {
 	for _, grant := range grants {
 		if grant.OnSchema == schema {
 			return grant
 		}
 	}
-	return goschema.Grant{}
+	return schemamodel.Grant{}
 }

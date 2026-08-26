@@ -28,7 +28,7 @@ model as decided and builds on it rather than reopening it.
 
 ### 1.1 There are two schema states, not one
 
-| | `core/goschema.Database` | `dbschema/types.DBSchema` |
+| | `core/schemamodel.Database` | `catalog.Database` |
 | --- | --- | --- |
 | Role | Desired schema, from every authoring source | Current schema, from a live catalog |
 | Object slices | 21, plus three `map[string][]string` relations | 19, two of which are not object families |
@@ -47,7 +47,7 @@ a corner of the codebase; it is a layer.
 
 ### 1.2 The diff is a name list, and the planner compensates
 
-`migration/schemadiff/types.SchemaDiff` is a flat struct of per-family slices:
+`migration/schemadiff/difftypes.SchemaDiff` is a flat struct of per-family slices:
 `TablesAdded []string`, `TablesRemoved []string`, `ConstraintsRemovedWithTables
 []ConstraintRemovalInfo`, and so on for every family. A change carries no
 identity value, no before/after state, no evidence, no risk, no reversibility,
@@ -56,7 +56,7 @@ and no provenance.
 The consequence is visible in the planner's own signature:
 
 ```go
-func GenerateSchemaDiffAST(diff *types.SchemaDiff, generated *goschema.Database, dialect string) ([]ast.Node, error)
+func GenerateSchemaDiffAST(diff *difftypes.SchemaDiff, desired *schemamodel.Database, dialect string) ([]ast.Node, error)
 ```
 
 The planner takes the diff **and** the desired schema, because the diff does not
@@ -93,7 +93,7 @@ edges are worth naming individually:
 - `core/schemasource` → `internal/convert/toschema`: a second package under
   `core/` reaching into conversion.
 - `internal/planner/dialects/{postgres,mysql,sqlite,clickhouse}` construct
-  `goschema.Database` values, once each: the planner synthesizes desired-schema
+  `schemamodel.Database` values, once each: the planner synthesizes desired-schema
   descriptions rather than consuming them.
 
 Decision 11 asks for forbidden dependency directions. Today there is nothing for
@@ -131,18 +131,18 @@ flowchart LR
   end
   DB[("Live catalog<br/>internal/dbschema/*")]
 
-  GO --> DESIRED["goschema.Database<br/><i>desired</i>"]
+  GO --> DESIRED["schemamodel.Database<br/><i>desired</i>"]
   YAML --> DESIRED
   HCL --> DESIRED
   SQLF --> DESIRED
-  DB --> CURRENT["types.DBSchema<br/><i>current</i>"]
+  DB --> CURRENT["catalog.Database<br/><i>current</i>"]
 
   CURRENT -. "internal/convert/toschema" .-> DESIRED
   DESIRED -. "internal/convert/fromschema" .-> CURRENT
 
   DESIRED --> CMP["migration/schemadiff<br/>compare + normalize"]
   CURRENT --> CMP
-  CMP --> DIFF["types.SchemaDiff<br/><i>name lists</i>"]
+  CMP --> DIFF["difftypes.SchemaDiff<br/><i>name lists</i>"]
   DIFF --> PLAN["migration/planner<br/>internal/planner/dialects/*"]
   DESIRED -- "second parameter" --> PLAN
   PLAN --> AST["core/ast"]
@@ -229,7 +229,7 @@ Forbidden directions, in the order they matter:
    planning or rendering. This is the rule `core/renderer` →
    `internal/planner/tablelookup` breaks today.
 2. **L2 must not construct source descriptions.** A planner that builds a
-   `goschema.Database` is reading a source it was not handed.
+   `schemamodel.Database` is reading a source it was not handed.
 3. **L2 must not import L3.** Planning must not know about migration files,
    hashes, revision tables or locks.
 4. **A renderer must not import a comparator.** If rendering needs a fact, the
@@ -333,7 +333,7 @@ that do not understand it.
 **Decision: (c), typed extensions.**
 
 (a) is the failure #1343 exists to end. (b) makes the common object the union of
-every dialect, which is where `goschema.Database` is heading and why it carries
+every dialect, which is where `schemamodel.Database` is heading and why it carries
 twenty-one object slices and three relation maps.
 
 (c) requires each stage to declare whether it understands an extension. A stage
@@ -343,7 +343,7 @@ what turns "Ptah does not support this" into "Ptah removed this".
 ### D4. Schema state versus managed and reference data
 
 **Alternatives.** (a) Managed data inside the canonical state, as
-`goschema.Database.ManagedData` is today. (b) A separate model that references
+`schemamodel.Database.ManagedData` is today. (b) A separate model that references
 schema objects by identity. (c) Out of scope for the canonical pipeline.
 
 **Decision: (b).**
@@ -505,7 +505,7 @@ delete.
 **Decision: the canonical model is internal until the prototype in #1350 is
 accepted.**
 
-`goschema.Database` and `dbschema/types.DBSchema` are both in
+`schemamodel.Database` and `catalog.Database` are both in
 `docs/public_api.snapshot`, so neither can be changed in place before GA. That
 is a constraint on the migration, not on the model: the canonical state lives
 under `internal/`, the two public types become projections of it, and their

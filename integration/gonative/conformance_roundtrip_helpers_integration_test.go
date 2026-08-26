@@ -8,14 +8,14 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/core/sqlutil"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 )
 
-func renderConformanceSQL(c *qt.C, target *goschema.Database, dialect string) string {
+func renderConformanceSQL(c *qt.C, target *schemamodel.Database, dialect string) string {
 	createAST := fromschema.FromDatabase(*target, dialect)
 	createSQL, err := renderer.RenderSQL(dialect, createAST.Statements...)
 	c.Assert(err, qt.IsNil)
@@ -29,7 +29,7 @@ func execConformanceSQL(c *qt.C, db *sql.DB, sqlText, fixture string) {
 	}
 }
 
-func filterConformanceSchema(in *dbschematypes.DBSchema, keepTables map[string]struct{}) *dbschematypes.DBSchema {
+func filterConformanceSchema(in *catalog.Database, keepTables map[string]struct{}) *catalog.Database {
 	out := *in
 	out.Tables = filterTables(in.Tables, keepTables)
 	out.Indexes = filterIndexes(in.Indexes, keepTables)

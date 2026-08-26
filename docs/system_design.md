@@ -53,7 +53,7 @@ The system operates through four main layers:
   - Handles embedded structs and topological sorting
 
 #### Internal YAML Schema Frontend
-- **Purpose**: Parses language-agnostic YAML schema files into the same `goschema.Database` IR used by Go annotations
+- **Purpose**: Parses language-agnostic YAML schema files into the same `schemamodel.Database` IR used by Go annotations
 - **Input**: `.yaml` and `.yml` files passed to `ptah schema render --schema-file`
 - **Functionality**:
   - Supports tables, columns, indexes, constraints, enums, extensions, functions, views, materialized views, triggers, row-level security, roles, and dialect overrides
@@ -61,7 +61,7 @@ The system operates through four main layers:
   - Applies strict validation for unknown fields, duplicate ordered keys, invalid indexes and constraints, and multiple YAML documents
 
 #### Internal HCL Schema Frontend
-- **Purpose**: Parses HCL schema files into the same `goschema.Database` IR used by Go annotations
+- **Purpose**: Parses HCL schema files into the same `schemamodel.Database` IR used by Go annotations
 - **Input**: `.hcl` files passed to `ptah schema render --schema-file`
 - **Functionality**:
   - Uses HashiCorp HCL syntax parsing instead of ad hoc string parsing
@@ -108,8 +108,8 @@ The system operates through four main layers:
 #### dbschema Package
 - **Purpose**: Reads existing database schemas and manages connections
 - **Key Types**:
-  - `DBSchema`: Complete database schema representation
-  - `DBTable`, `DBColumn`, `DBIndex`: Database object representations
+  - `catalog.Database`: Complete database schema representation
+  - `catalog.Table`, `catalog.Column`, `catalog.Index`: Database object representations
   - `SchemaReader`: Interface for reading database schemas
   - `SchemaWriter`: Interface for writing to databases
 - **Functionality**: Database introspection and connection management
@@ -194,7 +194,7 @@ DROP TABLE statements.
 ### Database Schema Representation
 
 ```go
-// Core schema representation from Go annotations
+// package schemamodel: the schema a source declared
 type Database struct {
     Schemas       []Schema
     Tables         []Table
@@ -205,12 +205,12 @@ type Database struct {
     Dependencies   map[string][]string
 }
 
-// Database schema read from live database
-type DBSchema struct {
-    Tables      []DBTable
-    Enums       []DBEnum
-    Indexes     []DBIndex
-    Constraints []DBConstraint
+// package catalog: the schema a live database reported
+type Database struct {
+    Tables      []Table
+    Enums       []Enum
+    Indexes     []Index
+    Constraints []Constraint
 }
 ```
 

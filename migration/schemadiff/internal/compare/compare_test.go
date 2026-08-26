@@ -5,32 +5,32 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 func TestTableColumns_UnhappyPath(t *testing.T) {
 	tests := []struct {
-		name      string
-		genTable  goschema.Table
-		dbTable   types.DBTable
-		generated *goschema.Database
-		expected  difftypes.TableDiff
+		name     string
+		genTable schemamodel.Table
+		dbTable  catalog.Table
+		desired  *schemamodel.Database
+		expected difftypes.TableDiff
 	}{
 		{
 			name:     "no fields for struct",
-			genTable: goschema.Table{StructName: "User", Name: "users"},
-			dbTable: types.DBTable{
+			genTable: schemamodel.Table{StructName: "User", Name: "users"},
+			dbTable: catalog.Table{
 				Name:    "users",
-				Columns: make([]types.DBColumn, 0),
+				Columns: make([]catalog.Column, 0),
 			},
-			generated: &goschema.Database{
-				Fields: []goschema.Field{
+			desired: &schemamodel.Database{
+				Fields: []schemamodel.Field{
 					{StructName: "Post", Name: "id", Type: "SERIAL", Primary: true}, // Different struct
 				},
-				EmbeddedFields: make([]goschema.EmbeddedField, 0),
+				EmbeddedFields: make([]schemamodel.EmbeddedField, 0),
 			},
 			expected: difftypes.TableDiff{
 				TableName: "users",
@@ -38,16 +38,16 @@ func TestTableColumns_UnhappyPath(t *testing.T) {
 		},
 		{
 			name:     "empty database table",
-			genTable: goschema.Table{StructName: "User", Name: "users"},
-			dbTable: types.DBTable{
+			genTable: schemamodel.Table{StructName: "User", Name: "users"},
+			dbTable: catalog.Table{
 				Name:    "users",
-				Columns: make([]types.DBColumn, 0),
+				Columns: make([]catalog.Column, 0),
 			},
-			generated: &goschema.Database{
-				Fields: []goschema.Field{
+			desired: &schemamodel.Database{
+				Fields: []schemamodel.Field{
 					{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 				},
-				EmbeddedFields: make([]goschema.EmbeddedField, 0),
+				EmbeddedFields: make([]schemamodel.EmbeddedField, 0),
 			},
 			expected: difftypes.TableDiff{
 				TableName:    "users",
@@ -60,7 +60,7 @@ func TestTableColumns_UnhappyPath(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			result := compare.TableColumns(tt.genTable, tt.dbTable, tt.generated)
+			result := compare.TableColumns(tt.genTable, tt.dbTable, tt.desired)
 
 			c.Assert(result.TableName, qt.Equals, tt.expected.TableName)
 			c.Assert(result.ColumnsAdded, qt.DeepEquals, tt.expected.ColumnsAdded)
@@ -72,17 +72,17 @@ func TestTableColumns_UnhappyPath(t *testing.T) {
 func TestColumns_HappyPath(t *testing.T) {
 	tests := []struct {
 		name     string
-		genCol   goschema.Field
-		dbCol    types.DBColumn
+		genCol   schemamodel.Field
+		dbCol    catalog.Column
 		expected difftypes.ColumnDiff
 	}{
 		{
 			name: "type change",
-			genCol: goschema.Field{
+			genCol: schemamodel.Field{
 				Name: "name",
 				Type: "VARCHAR(255)",
 			},
-			dbCol: types.DBColumn{
+			dbCol: catalog.Column{
 				Name:     "name",
 				DataType: "TEXT",
 			},
@@ -95,12 +95,12 @@ func TestColumns_HappyPath(t *testing.T) {
 		},
 		{
 			name: "nullable change",
-			genCol: goschema.Field{
+			genCol: schemamodel.Field{
 				Name:     "email",
 				Type:     "VARCHAR(255)",
 				Nullable: false,
 			},
-			dbCol: types.DBColumn{
+			dbCol: catalog.Column{
 				Name:       "email",
 				DataType:   "VARCHAR(255)",
 				IsNullable: "YES",
@@ -114,11 +114,11 @@ func TestColumns_HappyPath(t *testing.T) {
 		},
 		{
 			name: "varchar narrowing preserves raw type",
-			genCol: goschema.Field{
+			genCol: schemamodel.Field{
 				Name: "name",
 				Type: "VARCHAR(100)",
 			},
-			dbCol: types.DBColumn{
+			dbCol: catalog.Column{
 				Name:     "name",
 				DataType: "VARCHAR(255)",
 			},
@@ -131,11 +131,11 @@ func TestColumns_HappyPath(t *testing.T) {
 		},
 		{
 			name: "postgres varchar narrowing uses length metadata",
-			genCol: goschema.Field{
+			genCol: schemamodel.Field{
 				Name: "name",
 				Type: "VARCHAR(100)",
 			},
-			dbCol: types.DBColumn{
+			dbCol: catalog.Column{
 				Name:               "name",
 				DataType:           "character varying",
 				UDTName:            "varchar",
@@ -150,11 +150,11 @@ func TestColumns_HappyPath(t *testing.T) {
 		},
 		{
 			name: "integer narrowing preserves raw type",
-			genCol: goschema.Field{
+			genCol: schemamodel.Field{
 				Name: "count",
 				Type: "integer",
 			},
-			dbCol: types.DBColumn{
+			dbCol: catalog.Column{
 				Name:     "count",
 				DataType: "bigint",
 			},
@@ -167,11 +167,11 @@ func TestColumns_HappyPath(t *testing.T) {
 		},
 		{
 			name: "decimal narrowing preserves raw type",
-			genCol: goschema.Field{
+			genCol: schemamodel.Field{
 				Name: "price",
 				Type: "NUMERIC(10,2)",
 			},
-			dbCol: types.DBColumn{
+			dbCol: catalog.Column{
 				Name:     "price",
 				DataType: "NUMERIC(12,2)",
 			},
@@ -184,11 +184,11 @@ func TestColumns_HappyPath(t *testing.T) {
 		},
 		{
 			name: "varchar widening preserves raw type",
-			genCol: goschema.Field{
+			genCol: schemamodel.Field{
 				Name: "name",
 				Type: "VARCHAR(255)",
 			},
-			dbCol: types.DBColumn{
+			dbCol: catalog.Column{
 				Name:     "name",
 				DataType: "VARCHAR(100)",
 			},
@@ -201,11 +201,11 @@ func TestColumns_HappyPath(t *testing.T) {
 		},
 		{
 			name: "postgres varchar widening uses length metadata",
-			genCol: goschema.Field{
+			genCol: schemamodel.Field{
 				Name: "name",
 				Type: "VARCHAR(255)",
 			},
-			dbCol: types.DBColumn{
+			dbCol: catalog.Column{
 				Name:               "name",
 				DataType:           "character varying",
 				UDTName:            "varchar",
@@ -220,11 +220,11 @@ func TestColumns_HappyPath(t *testing.T) {
 		},
 		{
 			name: "integer widening preserves raw type",
-			genCol: goschema.Field{
+			genCol: schemamodel.Field{
 				Name: "count",
 				Type: "bigint",
 			},
-			dbCol: types.DBColumn{
+			dbCol: catalog.Column{
 				Name:     "count",
 				DataType: "integer",
 			},
@@ -237,11 +237,11 @@ func TestColumns_HappyPath(t *testing.T) {
 		},
 		{
 			name: "decimal widening preserves raw type",
-			genCol: goschema.Field{
+			genCol: schemamodel.Field{
 				Name: "price",
 				Type: "NUMERIC(12,2)",
 			},
-			dbCol: types.DBColumn{
+			dbCol: catalog.Column{
 				Name:     "price",
 				DataType: "NUMERIC(10,2)",
 			},
@@ -254,12 +254,12 @@ func TestColumns_HappyPath(t *testing.T) {
 		},
 		{
 			name: "primary key change",
-			genCol: goschema.Field{
+			genCol: schemamodel.Field{
 				Name:    "id",
 				Type:    "SERIAL",
 				Primary: true,
 			},
-			dbCol: types.DBColumn{
+			dbCol: catalog.Column{
 				Name:         "id",
 				DataType:     "integer",
 				IsPrimaryKey: false,
@@ -273,12 +273,12 @@ func TestColumns_HappyPath(t *testing.T) {
 		},
 		{
 			name: "unique constraint change",
-			genCol: goschema.Field{
+			genCol: schemamodel.Field{
 				Name:   "email",
 				Type:   "VARCHAR(255)",
 				Unique: true,
 			},
-			dbCol: types.DBColumn{
+			dbCol: catalog.Column{
 				Name:     "email",
 				DataType: "VARCHAR(255)",
 				IsUnique: false,
@@ -292,12 +292,12 @@ func TestColumns_HappyPath(t *testing.T) {
 		},
 		{
 			name: "default value change",
-			genCol: goschema.Field{
+			genCol: schemamodel.Field{
 				Name:    "status",
 				Type:    "VARCHAR(50)",
 				Default: "'active'",
 			},
-			dbCol: types.DBColumn{
+			dbCol: catalog.Column{
 				Name:          "status",
 				DataType:      "VARCHAR(50)",
 				ColumnDefault: new("'inactive'"),
@@ -311,13 +311,13 @@ func TestColumns_HappyPath(t *testing.T) {
 		},
 		{
 			name: "multiple changes",
-			genCol: goschema.Field{
+			genCol: schemamodel.Field{
 				Name:     "name",
 				Type:     "TEXT",
 				Nullable: false,
 				Unique:   true,
 			},
-			dbCol: types.DBColumn{
+			dbCol: catalog.Column{
 				Name:       "name",
 				DataType:   "VARCHAR(100)",
 				IsNullable: "YES",
@@ -334,13 +334,13 @@ func TestColumns_HappyPath(t *testing.T) {
 		},
 		{
 			name: "generated expression change",
-			genCol: goschema.Field{
+			genCol: schemamodel.Field{
 				Name:                "slug",
 				Type:                "TEXT",
 				GeneratedExpression: "lower(name)",
 				GeneratedKind:       "STORED",
 			},
-			dbCol: types.DBColumn{
+			dbCol: catalog.Column{
 				Name:          "slug",
 				DataType:      "TEXT",
 				IsNullable:    "NO",
@@ -377,19 +377,19 @@ func TestColumns_HappyPath(t *testing.T) {
 func TestColumns_UnhappyPath(t *testing.T) {
 	tests := []struct {
 		name     string
-		genCol   goschema.Field
-		dbCol    types.DBColumn
+		genCol   schemamodel.Field
+		dbCol    catalog.Column
 		expected difftypes.ColumnDiff
 	}{
 		{
 			name: "no changes",
-			genCol: goschema.Field{
+			genCol: schemamodel.Field{
 				Name:     "id",
 				Type:     "SERIAL",
 				Primary:  true,
 				Nullable: false,
 			},
-			dbCol: types.DBColumn{
+			dbCol: catalog.Column{
 				Name:         "id",
 				DataType:     "integer",
 				IsPrimaryKey: true,
@@ -402,13 +402,13 @@ func TestColumns_UnhappyPath(t *testing.T) {
 		},
 		{
 			name: "auto increment column ignores default",
-			genCol: goschema.Field{
+			genCol: schemamodel.Field{
 				Name:    "id",
 				Type:    "SERIAL",
 				Primary: true,
 				Default: "",
 			},
-			dbCol: types.DBColumn{
+			dbCol: catalog.Column{
 				Name:            "id",
 				DataType:        "integer",
 				IsPrimaryKey:    true,
@@ -422,13 +422,13 @@ func TestColumns_UnhappyPath(t *testing.T) {
 		},
 		{
 			name: "primary key forces not null",
-			genCol: goschema.Field{
+			genCol: schemamodel.Field{
 				Name:     "id",
 				Type:     "SERIAL",
 				Primary:  true,
 				Nullable: true, // This should be ignored for primary keys
 			},
-			dbCol: types.DBColumn{
+			dbCol: catalog.Column{
 				Name:         "id",
 				DataType:     "integer",
 				IsPrimaryKey: true,
@@ -458,20 +458,20 @@ func TestColumns_UnhappyPath(t *testing.T) {
 
 func TestEnums_HappyPath(t *testing.T) {
 	tests := []struct {
-		name      string
-		generated *goschema.Database
-		database  *types.DBSchema
-		expected  *difftypes.SchemaDiff
+		name     string
+		desired  *schemamodel.Database
+		current  *catalog.Database
+		expected *difftypes.SchemaDiff
 	}{
 		{
 			name: "enum added",
-			generated: &goschema.Database{
-				Enums: []goschema.Enum{
+			desired: &schemamodel.Database{
+				Enums: []schemamodel.Enum{
 					{Name: "status_enum", Values: []string{"active", "inactive"}},
 				},
 			},
-			database: &types.DBSchema{
-				Enums: make([]types.DBEnum, 0),
+			current: &catalog.Database{
+				Enums: make([]catalog.Enum, 0),
 			},
 			expected: &difftypes.SchemaDiff{
 				EnumsAdded: []string{"status_enum"},
@@ -479,11 +479,11 @@ func TestEnums_HappyPath(t *testing.T) {
 		},
 		{
 			name: "enum removed",
-			generated: &goschema.Database{
-				Enums: make([]goschema.Enum, 0),
+			desired: &schemamodel.Database{
+				Enums: make([]schemamodel.Enum, 0),
 			},
-			database: &types.DBSchema{
-				Enums: []types.DBEnum{
+			current: &catalog.Database{
+				Enums: []catalog.Enum{
 					{Name: "old_enum", Values: []string{"value1", "value2"}},
 				},
 			},
@@ -493,13 +493,13 @@ func TestEnums_HappyPath(t *testing.T) {
 		},
 		{
 			name: "enum modified",
-			generated: &goschema.Database{
-				Enums: []goschema.Enum{
+			desired: &schemamodel.Database{
+				Enums: []schemamodel.Enum{
 					{Name: "status_enum", Values: []string{"active", "inactive", "pending"}},
 				},
 			},
-			database: &types.DBSchema{
-				Enums: []types.DBEnum{
+			current: &catalog.Database{
+				Enums: []catalog.Enum{
 					{Name: "status_enum", Values: []string{"active", "inactive"}},
 				},
 			},
@@ -515,14 +515,14 @@ func TestEnums_HappyPath(t *testing.T) {
 		},
 		{
 			name: "multiple enum changes",
-			generated: &goschema.Database{
-				Enums: []goschema.Enum{
+			desired: &schemamodel.Database{
+				Enums: []schemamodel.Enum{
 					{Name: "status_enum", Values: []string{"active", "inactive"}},
 					{Name: "priority_enum", Values: []string{"low", "medium", "high"}},
 				},
 			},
-			database: &types.DBSchema{
-				Enums: []types.DBEnum{
+			current: &catalog.Database{
+				Enums: []catalog.Enum{
 					{Name: "status_enum", Values: []string{"active", "inactive", "deprecated"}},
 					{Name: "old_enum", Values: []string{"value1"}},
 				},
@@ -546,7 +546,7 @@ func TestEnums_HappyPath(t *testing.T) {
 			c := qt.New(t)
 
 			diff := &difftypes.SchemaDiff{}
-			compare.Enums(tt.generated, tt.database, diff)
+			compare.Enums(tt.desired, tt.current, diff)
 
 			c.Assert(diff.EnumsAdded, qt.DeepEquals, tt.expected.EnumsAdded)
 			c.Assert(diff.EnumsRemoved, qt.DeepEquals, tt.expected.EnumsRemoved)
@@ -563,27 +563,27 @@ func TestEnums_HappyPath(t *testing.T) {
 
 func TestEnums_UnhappyPath(t *testing.T) {
 	tests := []struct {
-		name      string
-		generated *goschema.Database
-		database  *types.DBSchema
-		expected  *difftypes.SchemaDiff
+		name     string
+		desired  *schemamodel.Database
+		current  *catalog.Database
+		expected *difftypes.SchemaDiff
 	}{
 		{
 			name: "empty schemas",
-			generated: &goschema.Database{
-				Enums: make([]goschema.Enum, 0),
+			desired: &schemamodel.Database{
+				Enums: make([]schemamodel.Enum, 0),
 			},
-			database: &types.DBSchema{
-				Enums: make([]types.DBEnum, 0),
+			current: &catalog.Database{
+				Enums: make([]catalog.Enum, 0),
 			},
 			expected: &difftypes.SchemaDiff{},
 		},
 		{
 			name: "nil enums",
-			generated: &goschema.Database{
+			desired: &schemamodel.Database{
 				Enums: nil,
 			},
-			database: &types.DBSchema{
+			current: &catalog.Database{
 				Enums: nil,
 			},
 			expected: &difftypes.SchemaDiff{},
@@ -595,7 +595,7 @@ func TestEnums_UnhappyPath(t *testing.T) {
 			c := qt.New(t)
 
 			diff := &difftypes.SchemaDiff{}
-			compare.Enums(tt.generated, tt.database, diff)
+			compare.Enums(tt.desired, tt.current, diff)
 
 			c.Assert(diff.EnumsAdded, qt.DeepEquals, tt.expected.EnumsAdded)
 			c.Assert(diff.EnumsRemoved, qt.DeepEquals, tt.expected.EnumsRemoved)
@@ -607,17 +607,17 @@ func TestEnums_UnhappyPath(t *testing.T) {
 func TestEnumValues_HappyPath(t *testing.T) {
 	tests := []struct {
 		name     string
-		genEnum  goschema.Enum
-		dbEnum   types.DBEnum
+		genEnum  schemamodel.Enum
+		dbEnum   catalog.Enum
 		expected difftypes.EnumDiff
 	}{
 		{
 			name: "values added",
-			genEnum: goschema.Enum{
+			genEnum: schemamodel.Enum{
 				Name:   "status_enum",
 				Values: []string{"active", "inactive", "pending", "archived"},
 			},
-			dbEnum: types.DBEnum{
+			dbEnum: catalog.Enum{
 				Name:   "status_enum",
 				Values: []string{"active", "inactive"},
 			},
@@ -629,11 +629,11 @@ func TestEnumValues_HappyPath(t *testing.T) {
 		},
 		{
 			name: "values removed",
-			genEnum: goschema.Enum{
+			genEnum: schemamodel.Enum{
 				Name:   "status_enum",
 				Values: []string{"active", "inactive"},
 			},
-			dbEnum: types.DBEnum{
+			dbEnum: catalog.Enum{
 				Name:   "status_enum",
 				Values: []string{"active", "inactive", "deprecated", "legacy"},
 			},
@@ -645,11 +645,11 @@ func TestEnumValues_HappyPath(t *testing.T) {
 		},
 		{
 			name: "mixed changes",
-			genEnum: goschema.Enum{
+			genEnum: schemamodel.Enum{
 				Name:   "priority_enum",
 				Values: []string{"low", "medium", "high", "critical"},
 			},
-			dbEnum: types.DBEnum{
+			dbEnum: catalog.Enum{
 				Name:   "priority_enum",
 				Values: []string{"low", "medium", "urgent"},
 			},
@@ -677,17 +677,17 @@ func TestEnumValues_HappyPath(t *testing.T) {
 func TestEnumValues_UnhappyPath(t *testing.T) {
 	tests := []struct {
 		name     string
-		genEnum  goschema.Enum
-		dbEnum   types.DBEnum
+		genEnum  schemamodel.Enum
+		dbEnum   catalog.Enum
 		expected difftypes.EnumDiff
 	}{
 		{
 			name: "no changes",
-			genEnum: goschema.Enum{
+			genEnum: schemamodel.Enum{
 				Name:   "status_enum",
 				Values: []string{"active", "inactive"},
 			},
-			dbEnum: types.DBEnum{
+			dbEnum: catalog.Enum{
 				Name:   "status_enum",
 				Values: []string{"active", "inactive"},
 			},
@@ -699,11 +699,11 @@ func TestEnumValues_UnhappyPath(t *testing.T) {
 		},
 		{
 			name: "empty enum values",
-			genEnum: goschema.Enum{
+			genEnum: schemamodel.Enum{
 				Name:   "empty_enum",
 				Values: make([]string, 0),
 			},
-			dbEnum: types.DBEnum{
+			dbEnum: catalog.Enum{
 				Name:   "empty_enum",
 				Values: make([]string, 0),
 			},
@@ -730,20 +730,20 @@ func TestEnumValues_UnhappyPath(t *testing.T) {
 
 func TestIndexes_HappyPath(t *testing.T) {
 	tests := []struct {
-		name      string
-		generated *goschema.Database
-		database  *types.DBSchema
-		expected  *difftypes.SchemaDiff
+		name     string
+		desired  *schemamodel.Database
+		current  *catalog.Database
+		expected *difftypes.SchemaDiff
 	}{
 		{
 			name: "index added",
-			generated: &goschema.Database{
-				Indexes: []goschema.Index{
+			desired: &schemamodel.Database{
+				Indexes: []schemamodel.Index{
 					{Name: "idx_user_email", TableName: "users"},
 				},
 			},
-			database: &types.DBSchema{
-				Indexes: make([]types.DBIndex, 0),
+			current: &catalog.Database{
+				Indexes: make([]catalog.Index, 0),
 			},
 			expected: &difftypes.SchemaDiff{
 				IndexesAdded: []difftypes.IndexRef{
@@ -753,11 +753,11 @@ func TestIndexes_HappyPath(t *testing.T) {
 		},
 		{
 			name: "index removed",
-			generated: &goschema.Database{
-				Indexes: make([]goschema.Index, 0),
+			desired: &schemamodel.Database{
+				Indexes: make([]schemamodel.Index, 0),
 			},
-			database: &types.DBSchema{
-				Indexes: []types.DBIndex{
+			current: &catalog.Database{
+				Indexes: []catalog.Index{
 					{Name: "old_index", TableName: "users", IsPrimary: false, IsUnique: false},
 				},
 			},
@@ -769,11 +769,11 @@ func TestIndexes_HappyPath(t *testing.T) {
 		},
 		{
 			name: "primary key index ignored",
-			generated: &goschema.Database{
-				Indexes: make([]goschema.Index, 0),
+			desired: &schemamodel.Database{
+				Indexes: make([]schemamodel.Index, 0),
 			},
-			database: &types.DBSchema{
-				Indexes: []types.DBIndex{
+			current: &catalog.Database{
+				Indexes: []catalog.Index{
 					{Name: "users_pkey", IsPrimary: true, IsUnique: false},
 				},
 			},
@@ -781,11 +781,11 @@ func TestIndexes_HappyPath(t *testing.T) {
 		},
 		{
 			name: "unique constraint index ignored",
-			generated: &goschema.Database{
-				Indexes: make([]goschema.Index, 0),
+			desired: &schemamodel.Database{
+				Indexes: make([]schemamodel.Index, 0),
 			},
-			database: &types.DBSchema{
-				Indexes: []types.DBIndex{
+			current: &catalog.Database{
+				Indexes: []catalog.Index{
 					{Name: "users_email_key", TableName: "users", Columns: []string{"email"}, IsPrimary: false, IsUnique: true},
 				},
 			},
@@ -793,14 +793,14 @@ func TestIndexes_HappyPath(t *testing.T) {
 		},
 		{
 			name: "multiple index changes",
-			generated: &goschema.Database{
-				Indexes: []goschema.Index{
+			desired: &schemamodel.Database{
+				Indexes: []schemamodel.Index{
 					{Name: "idx_user_email", TableName: "users"},
 					{Name: "idx_user_name", TableName: "users"},
 				},
 			},
-			database: &types.DBSchema{
-				Indexes: []types.DBIndex{
+			current: &catalog.Database{
+				Indexes: []catalog.Index{
 					{Name: "idx_user_email", TableName: "users", IsPrimary: false, IsUnique: false},
 					{Name: "old_index", TableName: "users", IsPrimary: false, IsUnique: false},
 					{Name: "users_pkey", TableName: "users", IsPrimary: true, IsUnique: false}, // Should be ignored
@@ -817,16 +817,16 @@ func TestIndexes_HappyPath(t *testing.T) {
 		},
 		{
 			name: "index nulls distinct changed",
-			generated: func() *goschema.Database {
+			desired: func() *schemamodel.Database {
 				nullsDistinct := false
-				return &goschema.Database{
-					Indexes: []goschema.Index{
+				return &schemamodel.Database{
+					Indexes: []schemamodel.Index{
 						{Name: "idx_users_c", StructName: "users", TableName: "users", Fields: []string{"c"}, Unique: true, NullsDistinct: &nullsDistinct},
 					},
 				}
 			}(),
-			database: &types.DBSchema{
-				Indexes: []types.DBIndex{
+			current: &catalog.Database{
+				Indexes: []catalog.Index{
 					{Name: "idx_users_c", TableName: "users", Columns: []string{"c"}, IsUnique: true},
 				},
 			},
@@ -841,13 +841,13 @@ func TestIndexes_HappyPath(t *testing.T) {
 		},
 		{
 			name: "partial index condition changed",
-			generated: &goschema.Database{
-				Indexes: []goschema.Index{
+			desired: &schemamodel.Database{
+				Indexes: []schemamodel.Index{
 					{Name: "idx_users_email_active", StructName: "users", TableName: "users", Fields: []string{"email"}, Condition: "deleted_at IS NULL"},
 				},
 			},
-			database: &types.DBSchema{
-				Indexes: []types.DBIndex{
+			current: &catalog.Database{
+				Indexes: []catalog.Index{
 					{
 						Name:      "idx_users_email_active",
 						TableName: "users",
@@ -867,13 +867,13 @@ func TestIndexes_HappyPath(t *testing.T) {
 		},
 		{
 			name: "partial index condition outer parentheses match",
-			generated: &goschema.Database{
-				Indexes: []goschema.Index{
+			desired: &schemamodel.Database{
+				Indexes: []schemamodel.Index{
 					{Name: "idx_users_email_active", StructName: "users", TableName: "users", Fields: []string{"email"}, Condition: "deleted_at IS NULL"},
 				},
 			},
-			database: &types.DBSchema{
-				Indexes: []types.DBIndex{
+			current: &catalog.Database{
+				Indexes: []catalog.Index{
 					{
 						Name:      "idx_users_email_active",
 						TableName: "users",
@@ -886,13 +886,13 @@ func TestIndexes_HappyPath(t *testing.T) {
 		},
 		{
 			name: "partial index condition whitespace outside literals matches",
-			generated: &goschema.Database{
-				Indexes: []goschema.Index{
+			desired: &schemamodel.Database{
+				Indexes: []schemamodel.Index{
 					{Name: "idx_users_email_active", StructName: "users", TableName: "users", Fields: []string{"email"}, Condition: "deleted_at   IS\nNULL"},
 				},
 			},
-			database: &types.DBSchema{
-				Indexes: []types.DBIndex{
+			current: &catalog.Database{
+				Indexes: []catalog.Index{
 					{
 						Name:      "idx_users_email_active",
 						TableName: "users",
@@ -905,13 +905,13 @@ func TestIndexes_HappyPath(t *testing.T) {
 		},
 		{
 			name: "partial index condition whitespace inside string literal differs",
-			generated: &goschema.Database{
-				Indexes: []goschema.Index{
+			desired: &schemamodel.Database{
+				Indexes: []schemamodel.Index{
 					{Name: "idx_users_email_active", StructName: "users", TableName: "users", Fields: []string{"email"}, Condition: "status = 'a  b'"},
 				},
 			},
-			database: &types.DBSchema{
-				Indexes: []types.DBIndex{
+			current: &catalog.Database{
+				Indexes: []catalog.Index{
 					{
 						Name:      "idx_users_email_active",
 						TableName: "users",
@@ -931,13 +931,13 @@ func TestIndexes_HappyPath(t *testing.T) {
 		},
 		{
 			name: "partial index condition postgres IN rewrite does not drift",
-			generated: &goschema.Database{
-				Indexes: []goschema.Index{
+			desired: &schemamodel.Database{
+				Indexes: []schemamodel.Index{
 					{Name: "idx_users_status", StructName: "users", TableName: "users", Fields: []string{"status"}, Condition: "status IN ('active','pending')"},
 				},
 			},
-			database: &types.DBSchema{
-				Indexes: []types.DBIndex{
+			current: &catalog.Database{
+				Indexes: []catalog.Index{
 					{
 						Name:      "idx_users_status",
 						TableName: "users",
@@ -955,7 +955,7 @@ func TestIndexes_HappyPath(t *testing.T) {
 			c := qt.New(t)
 
 			diff := &difftypes.SchemaDiff{}
-			compare.Indexes(tt.generated, tt.database, diff)
+			compare.Indexes(tt.desired, tt.current, diff)
 
 			c.Assert(diff.IndexesAdded, qt.DeepEquals, tt.expected.IndexesAdded)
 			c.Assert(diff.IndexesRemoved, qt.DeepEquals, tt.expected.IndexesRemoved)
@@ -965,38 +965,38 @@ func TestIndexes_HappyPath(t *testing.T) {
 
 func TestIndexes_UnhappyPath(t *testing.T) {
 	tests := []struct {
-		name      string
-		generated *goschema.Database
-		database  *types.DBSchema
-		expected  *difftypes.SchemaDiff
+		name     string
+		desired  *schemamodel.Database
+		current  *catalog.Database
+		expected *difftypes.SchemaDiff
 	}{
 		{
 			name: "empty schemas",
-			generated: &goschema.Database{
-				Indexes: make([]goschema.Index, 0),
+			desired: &schemamodel.Database{
+				Indexes: make([]schemamodel.Index, 0),
 			},
-			database: &types.DBSchema{
-				Indexes: make([]types.DBIndex, 0),
+			current: &catalog.Database{
+				Indexes: make([]catalog.Index, 0),
 			},
 			expected: &difftypes.SchemaDiff{},
 		},
 		{
 			name: "nil indexes",
-			generated: &goschema.Database{
+			desired: &schemamodel.Database{
 				Indexes: nil,
 			},
-			database: &types.DBSchema{
+			current: &catalog.Database{
 				Indexes: nil,
 			},
 			expected: &difftypes.SchemaDiff{},
 		},
 		{
 			name: "only system indexes in database",
-			generated: &goschema.Database{
-				Indexes: make([]goschema.Index, 0),
+			desired: &schemamodel.Database{
+				Indexes: make([]schemamodel.Index, 0),
 			},
-			database: &types.DBSchema{
-				Indexes: []types.DBIndex{
+			current: &catalog.Database{
+				Indexes: []catalog.Index{
 					{Name: "users_pkey", TableName: "users", Columns: []string{"id"}, IsPrimary: true, IsUnique: false},
 					{Name: "users_email_key", TableName: "users", Columns: []string{"email"}, IsPrimary: false, IsUnique: true},
 				},
@@ -1005,14 +1005,14 @@ func TestIndexes_UnhappyPath(t *testing.T) {
 		},
 		{
 			name: "explicitly defined unique indexes should be compared",
-			generated: &goschema.Database{
-				Indexes: []goschema.Index{
+			desired: &schemamodel.Database{
+				Indexes: []schemamodel.Index{
 					{Name: "tenants_slug_idx", TableName: "tenants"},
 					{Name: "users_tenant_email_idx", TableName: "users"},
 				},
 			},
-			database: &types.DBSchema{
-				Indexes: []types.DBIndex{
+			current: &catalog.Database{
+				Indexes: []catalog.Index{
 					{Name: "tenants_slug_idx", TableName: "tenants", Columns: []string{"slug"}, IsPrimary: false, IsUnique: true},
 					{Name: "users_tenant_email_idx", TableName: "users", Columns: []string{"tenant_id", "email"}, IsPrimary: false, IsUnique: true},
 				},
@@ -1021,14 +1021,14 @@ func TestIndexes_UnhappyPath(t *testing.T) {
 		},
 		{
 			name: "missing explicitly defined unique indexes should be added",
-			generated: &goschema.Database{
-				Indexes: []goschema.Index{
+			desired: &schemamodel.Database{
+				Indexes: []schemamodel.Index{
 					{Name: "tenants_slug_idx", TableName: "tenants"},
 					{Name: "users_tenant_email_idx", TableName: "users"},
 				},
 			},
-			database: &types.DBSchema{
-				Indexes: []types.DBIndex{
+			current: &catalog.Database{
+				Indexes: []catalog.Index{
 					// Only constraint-based indexes exist, explicitly defined ones are missing
 					{Name: "tenants_pkey", TableName: "tenants", Columns: []string{"id"}, IsPrimary: true, IsUnique: false},
 					{Name: "users_email_key", TableName: "users", Columns: []string{"email"}, IsPrimary: false, IsUnique: true},
@@ -1043,11 +1043,11 @@ func TestIndexes_UnhappyPath(t *testing.T) {
 		},
 		{
 			name: "constraint-based unique indexes should be ignored",
-			generated: &goschema.Database{
-				Indexes: make([]goschema.Index, 0),
+			desired: &schemamodel.Database{
+				Indexes: make([]schemamodel.Index, 0),
 			},
-			database: &types.DBSchema{
-				Indexes: []types.DBIndex{
+			current: &catalog.Database{
+				Indexes: []catalog.Index{
 					{Name: "users_email_key", TableName: "users", Columns: []string{"email"}, IsPrimary: false, IsUnique: true},
 					{Name: "tenants_name_key", TableName: "tenants", Columns: []string{"name"}, IsPrimary: false, IsUnique: true},
 					{Name: "products_sku_code_key", TableName: "products", Columns: []string{"sku", "code"}, IsPrimary: false, IsUnique: true},
@@ -1057,14 +1057,14 @@ func TestIndexes_UnhappyPath(t *testing.T) {
 		},
 		{
 			name: "custom-named unique constraint backing indexes should be ignored",
-			generated: &goschema.Database{
-				Indexes: make([]goschema.Index, 0),
+			desired: &schemamodel.Database{
+				Indexes: make([]schemamodel.Index, 0),
 			},
-			database: &types.DBSchema{
-				Constraints: []types.DBConstraint{
+			current: &catalog.Database{
+				Constraints: []catalog.Constraint{
 					{Name: "ptah_constraint_unique", TableName: "ptah_constraint_drift", Type: "UNIQUE", ColumnNames: []string{"sku", "region"}},
 				},
-				Indexes: []types.DBIndex{
+				Indexes: []catalog.Index{
 					{
 						Name:      "ptah_constraint_unique",
 						TableName: "ptah_constraint_drift",
@@ -1077,14 +1077,14 @@ func TestIndexes_UnhappyPath(t *testing.T) {
 		},
 		{
 			name: "mixed constraint-based and explicitly defined unique indexes",
-			generated: &goschema.Database{
-				Indexes: []goschema.Index{
+			desired: &schemamodel.Database{
+				Indexes: []schemamodel.Index{
 					{Name: "idx_users_custom_unique", TableName: "users"},
 					{Name: "tenants_slug_idx", TableName: "tenants"},
 				},
 			},
-			database: &types.DBSchema{
-				Indexes: []types.DBIndex{
+			current: &catalog.Database{
+				Indexes: []catalog.Index{
 					// Constraint-based (should be ignored)
 					{Name: "users_email_key", TableName: "users", Columns: []string{"email"}, IsPrimary: false, IsUnique: true},
 					{Name: "tenants_name_key", TableName: "tenants", Columns: []string{"name"}, IsPrimary: false, IsUnique: true},
@@ -1106,7 +1106,7 @@ func TestIndexes_UnhappyPath(t *testing.T) {
 			c := qt.New(t)
 
 			diff := &difftypes.SchemaDiff{}
-			compare.Indexes(tt.generated, tt.database, diff)
+			compare.Indexes(tt.desired, tt.current, diff)
 
 			c.Assert(diff.IndexesAdded, qt.DeepEquals, tt.expected.IndexesAdded)
 			c.Assert(diff.IndexesRemoved, qt.DeepEquals, tt.expected.IndexesRemoved)
@@ -1121,17 +1121,17 @@ func TestIndexes_UnhappyPath(t *testing.T) {
 func TestColumns_EdgeCases(t *testing.T) {
 	tests := []struct {
 		name     string
-		genCol   goschema.Field
-		dbCol    types.DBColumn
+		genCol   schemamodel.Field
+		dbCol    catalog.Column
 		expected difftypes.ColumnDiff
 	}{
 		{
 			name: "UDT name takes precedence over data type",
-			genCol: goschema.Field{
+			genCol: schemamodel.Field{
 				Name: "status",
 				Type: "status_enum",
 			},
-			dbCol: types.DBColumn{
+			dbCol: catalog.Column{
 				Name:     "status",
 				DataType: "USER-DEFINED",
 				UDTName:  "status_enum",
@@ -1143,13 +1143,13 @@ func TestColumns_EdgeCases(t *testing.T) {
 		},
 		{
 			name: "SERIAL type detection for auto increment",
-			genCol: goschema.Field{
+			genCol: schemamodel.Field{
 				Name:    "id",
 				Type:    "SERIAL",
 				Primary: true,
 				Default: "",
 			},
-			dbCol: types.DBColumn{
+			dbCol: catalog.Column{
 				Name:            "id",
 				DataType:        "integer",
 				IsPrimaryKey:    true,
@@ -1163,12 +1163,12 @@ func TestColumns_EdgeCases(t *testing.T) {
 		},
 		{
 			name: "null column default vs empty string",
-			genCol: goschema.Field{
+			genCol: schemamodel.Field{
 				Name:    "description",
 				Type:    "TEXT",
 				Default: "",
 			},
-			dbCol: types.DBColumn{
+			dbCol: catalog.Column{
 				Name:          "description",
 				DataType:      "TEXT",
 				ColumnDefault: nil, // NULL default
@@ -1199,24 +1199,24 @@ func TestTableColumns_EdgeCases(t *testing.T) {
 	c := qt.New(t)
 
 	// Test with column modifications
-	genTable := goschema.Table{StructName: "User", Name: "users"}
-	dbTable := types.DBTable{
+	genTable := schemamodel.Table{StructName: "User", Name: "users"}
+	dbTable := catalog.Table{
 		Name: "users",
-		Columns: []types.DBColumn{
+		Columns: []catalog.Column{
 			{Name: "id", DataType: "integer", IsPrimaryKey: true},
 			{Name: "name", DataType: "VARCHAR(100)", IsNullable: "YES"},
 		},
 	}
 
-	generated := &goschema.Database{
-		Fields: []goschema.Field{
+	desired := &schemamodel.Database{
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "User", Name: "name", Type: "VARCHAR(255)", Nullable: false}, // Type and nullable change
 		},
-		EmbeddedFields: make([]goschema.EmbeddedField, 0),
+		EmbeddedFields: make([]schemamodel.EmbeddedField, 0),
 	}
 
-	result := compare.TableColumns(genTable, dbTable, generated)
+	result := compare.TableColumns(genTable, dbTable, desired)
 
 	c.Assert(result.TableName, qt.Equals, "users")
 	c.Assert(result.ColumnsModified, qt.HasLen, 1)
@@ -1229,24 +1229,24 @@ func TestTableColumns_EdgeCases(t *testing.T) {
 func TestTablesAndColumns_SortingConsistency(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "User", Name: "zebra_table"},
 			{StructName: "Post", Name: "alpha_table"},
 		},
-		Fields:         make([]goschema.Field, 0),
-		EmbeddedFields: make([]goschema.EmbeddedField, 0),
+		Fields:         make([]schemamodel.Field, 0),
+		EmbeddedFields: make([]schemamodel.EmbeddedField, 0),
 	}
 
-	database := &types.DBSchema{
-		Tables: []types.DBTable{
+	current := &catalog.Database{
+		Tables: []catalog.Table{
 			{Name: "zebra_old_table"},
 			{Name: "alpha_old_table"},
 		},
 	}
 
 	diff := &difftypes.SchemaDiff{}
-	compare.TablesAndColumns(generated, database, diff)
+	compare.TablesAndColumns(desired, current, diff)
 
 	// Check that results are sorted alphabetically
 	c.Assert(diff.TablesAdded, qt.DeepEquals, []string{"alpha_table", "zebra_table"})
@@ -1256,23 +1256,23 @@ func TestTablesAndColumns_SortingConsistency(t *testing.T) {
 func TestTablesAndColumns_UsesSchemaQualifiedTableIdentity(t *testing.T) {
 	c := qt.New(t)
 
-	generated := &goschema.Database{
-		Tables: []goschema.Table{
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
 			{StructName: "AuthUser", Name: "users", Schema: "auth"},
 			{StructName: "BillingUser", Name: "users", Schema: "billing"},
 		},
-		Fields: []goschema.Field{
+		Fields: []schemamodel.Field{
 			{StructName: "AuthUser", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "BillingUser", Name: "id", Type: "INTEGER", Primary: true},
 		},
-		EmbeddedFields: make([]goschema.EmbeddedField, 0),
+		EmbeddedFields: make([]schemamodel.EmbeddedField, 0),
 	}
-	database := &types.DBSchema{
-		Tables: []types.DBTable{
+	current := &catalog.Database{
+		Tables: []catalog.Table{
 			{
 				Name:   "users",
 				Schema: "auth",
-				Columns: []types.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "id", DataType: "integer", UDTName: "int4", IsNullable: "NO", IsPrimaryKey: true},
 				},
 			},
@@ -1280,7 +1280,7 @@ func TestTablesAndColumns_UsesSchemaQualifiedTableIdentity(t *testing.T) {
 	}
 
 	diff := &difftypes.SchemaDiff{}
-	compare.TablesAndColumns(generated, database, diff)
+	compare.TablesAndColumns(desired, current, diff)
 
 	c.Assert(diff.TablesAdded, qt.DeepEquals, []string{"billing.users"})
 	c.Assert(diff.TablesRemoved, qt.HasLen, 0)
@@ -1665,24 +1665,24 @@ func TestColumnByName_PointerBehavior(t *testing.T) {
 
 func TestTablesAndColumns_HappyPath(t *testing.T) {
 	tests := []struct {
-		name      string
-		generated *goschema.Database
-		database  *types.DBSchema
-		expected  *difftypes.SchemaDiff
+		name     string
+		desired  *schemamodel.Database
+		current  *catalog.Database
+		expected *difftypes.SchemaDiff
 	}{
 		{
 			name: "new table added",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{StructName: "User", Name: "users"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 				},
-				EmbeddedFields: make([]goschema.EmbeddedField, 0),
+				EmbeddedFields: make([]schemamodel.EmbeddedField, 0),
 			},
-			database: &types.DBSchema{
-				Tables: make([]types.DBTable, 0),
+			current: &catalog.Database{
+				Tables: make([]catalog.Table, 0),
 			},
 			expected: &difftypes.SchemaDiff{
 				TablesAdded: []string{"users"},
@@ -1690,13 +1690,13 @@ func TestTablesAndColumns_HappyPath(t *testing.T) {
 		},
 		{
 			name: "table removed",
-			generated: &goschema.Database{
-				Tables:         make([]goschema.Table, 0),
-				Fields:         make([]goschema.Field, 0),
-				EmbeddedFields: make([]goschema.EmbeddedField, 0),
+			desired: &schemamodel.Database{
+				Tables:         make([]schemamodel.Table, 0),
+				Fields:         make([]schemamodel.Field, 0),
+				EmbeddedFields: make([]schemamodel.EmbeddedField, 0),
 			},
-			database: &types.DBSchema{
-				Tables: []types.DBTable{
+			current: &catalog.Database{
+				Tables: []catalog.Table{
 					{Name: "old_table"},
 				},
 			},
@@ -1706,21 +1706,21 @@ func TestTablesAndColumns_HappyPath(t *testing.T) {
 		},
 		{
 			name: "table modified - column added",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{StructName: "User", Name: "users"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 					{StructName: "User", Name: "email", Type: "VARCHAR(255)", Nullable: false},
 				},
-				EmbeddedFields: make([]goschema.EmbeddedField, 0),
+				EmbeddedFields: make([]schemamodel.EmbeddedField, 0),
 			},
-			database: &types.DBSchema{
-				Tables: []types.DBTable{
+			current: &catalog.Database{
+				Tables: []catalog.Table{
 					{
 						Name: "users",
-						Columns: []types.DBColumn{
+						Columns: []catalog.Column{
 							{Name: "id", DataType: "integer", IsPrimaryKey: true},
 						},
 					},
@@ -1737,22 +1737,22 @@ func TestTablesAndColumns_HappyPath(t *testing.T) {
 		},
 		{
 			name: "multiple changes",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{StructName: "User", Name: "users"},
 					{StructName: "Post", Name: "posts"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 					{StructName: "Post", Name: "id", Type: "SERIAL", Primary: true},
 				},
-				EmbeddedFields: make([]goschema.EmbeddedField, 0),
+				EmbeddedFields: make([]schemamodel.EmbeddedField, 0),
 			},
-			database: &types.DBSchema{
-				Tables: []types.DBTable{
+			current: &catalog.Database{
+				Tables: []catalog.Table{
 					{
 						Name: "users",
-						Columns: []types.DBColumn{
+						Columns: []catalog.Column{
 							{Name: "id", DataType: "integer", IsPrimaryKey: true},
 							{Name: "legacy_field", DataType: "varchar"},
 						},
@@ -1778,7 +1778,7 @@ func TestTablesAndColumns_HappyPath(t *testing.T) {
 			c := qt.New(t)
 
 			diff := &difftypes.SchemaDiff{}
-			compare.TablesAndColumns(tt.generated, tt.database, diff)
+			compare.TablesAndColumns(tt.desired, tt.current, diff)
 
 			c.Assert(diff.TablesAdded, qt.DeepEquals, tt.expected.TablesAdded)
 			c.Assert(diff.TablesRemoved, qt.DeepEquals, tt.expected.TablesRemoved)
@@ -1795,36 +1795,36 @@ func TestTablesAndColumns_HappyPath(t *testing.T) {
 
 func TestTablesAndColumns_UnhappyPath(t *testing.T) {
 	tests := []struct {
-		name      string
-		generated *goschema.Database
-		database  *types.DBSchema
-		expected  *difftypes.SchemaDiff
+		name     string
+		desired  *schemamodel.Database
+		current  *catalog.Database
+		expected *difftypes.SchemaDiff
 	}{
 		{
 			name: "empty schemas",
-			generated: &goschema.Database{
-				Tables:         make([]goschema.Table, 0),
-				Fields:         make([]goschema.Field, 0),
-				EmbeddedFields: make([]goschema.EmbeddedField, 0),
+			desired: &schemamodel.Database{
+				Tables:         make([]schemamodel.Table, 0),
+				Fields:         make([]schemamodel.Field, 0),
+				EmbeddedFields: make([]schemamodel.EmbeddedField, 0),
 			},
-			database: &types.DBSchema{
-				Tables: make([]types.DBTable, 0),
+			current: &catalog.Database{
+				Tables: make([]catalog.Table, 0),
 			},
 			expected: &difftypes.SchemaDiff{},
 		},
 		{
 			name: "nil embedded fields",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{
 					{StructName: "User", Name: "users"},
 				},
-				Fields: []goschema.Field{
+				Fields: []schemamodel.Field{
 					{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 				},
 				EmbeddedFields: nil,
 			},
-			database: &types.DBSchema{
-				Tables: make([]types.DBTable, 0),
+			current: &catalog.Database{
+				Tables: make([]catalog.Table, 0),
 			},
 			expected: &difftypes.SchemaDiff{
 				TablesAdded: []string{"users"},
@@ -1837,7 +1837,7 @@ func TestTablesAndColumns_UnhappyPath(t *testing.T) {
 			c := qt.New(t)
 
 			diff := &difftypes.SchemaDiff{}
-			compare.TablesAndColumns(tt.generated, tt.database, diff)
+			compare.TablesAndColumns(tt.desired, tt.current, diff)
 
 			c.Assert(diff.TablesAdded, qt.DeepEquals, tt.expected.TablesAdded)
 			c.Assert(diff.TablesRemoved, qt.DeepEquals, tt.expected.TablesRemoved)
@@ -1848,27 +1848,27 @@ func TestTablesAndColumns_UnhappyPath(t *testing.T) {
 
 func TestTableColumns_HappyPath(t *testing.T) {
 	tests := []struct {
-		name      string
-		genTable  goschema.Table
-		dbTable   types.DBTable
-		generated *goschema.Database
-		expected  difftypes.TableDiff
+		name     string
+		genTable schemamodel.Table
+		dbTable  catalog.Table
+		desired  *schemamodel.Database
+		expected difftypes.TableDiff
 	}{
 		{
 			name:     "column added",
-			genTable: goschema.Table{StructName: "User", Name: "users"},
-			dbTable: types.DBTable{
+			genTable: schemamodel.Table{StructName: "User", Name: "users"},
+			dbTable: catalog.Table{
 				Name: "users",
-				Columns: []types.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "id", DataType: "integer", IsPrimaryKey: true},
 				},
 			},
-			generated: &goschema.Database{
-				Fields: []goschema.Field{
+			desired: &schemamodel.Database{
+				Fields: []schemamodel.Field{
 					{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 					{StructName: "User", Name: "email", Type: "VARCHAR(255)", Nullable: false},
 				},
-				EmbeddedFields: make([]goschema.EmbeddedField, 0),
+				EmbeddedFields: make([]schemamodel.EmbeddedField, 0),
 			},
 			expected: difftypes.TableDiff{
 				TableName:    "users",
@@ -1877,19 +1877,19 @@ func TestTableColumns_HappyPath(t *testing.T) {
 		},
 		{
 			name:     "column removed",
-			genTable: goschema.Table{StructName: "User", Name: "users"},
-			dbTable: types.DBTable{
+			genTable: schemamodel.Table{StructName: "User", Name: "users"},
+			dbTable: catalog.Table{
 				Name: "users",
-				Columns: []types.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "id", DataType: "integer", IsPrimaryKey: true},
 					{Name: "legacy_field", DataType: "varchar"},
 				},
 			},
-			generated: &goschema.Database{
-				Fields: []goschema.Field{
+			desired: &schemamodel.Database{
+				Fields: []schemamodel.Field{
 					{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 				},
-				EmbeddedFields: make([]goschema.EmbeddedField, 0),
+				EmbeddedFields: make([]schemamodel.EmbeddedField, 0),
 			},
 			expected: difftypes.TableDiff{
 				TableName:      "users",
@@ -1902,7 +1902,7 @@ func TestTableColumns_HappyPath(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			result := compare.TableColumns(tt.genTable, tt.dbTable, tt.generated)
+			result := compare.TableColumns(tt.genTable, tt.dbTable, tt.desired)
 
 			c.Assert(result.TableName, qt.Equals, tt.expected.TableName)
 			c.Assert(result.ColumnsAdded, qt.DeepEquals, tt.expected.ColumnsAdded)
@@ -1914,21 +1914,21 @@ func TestTableColumns_HappyPath(t *testing.T) {
 func TestTableColumns_WithEmbeddedFields(t *testing.T) {
 	c := qt.New(t)
 
-	genTable := goschema.Table{StructName: "User", Name: "users"}
-	dbTable := types.DBTable{
+	genTable := schemamodel.Table{StructName: "User", Name: "users"}
+	dbTable := catalog.Table{
 		Name: "users",
-		Columns: []types.DBColumn{
+		Columns: []catalog.Column{
 			{Name: "id", DataType: "integer", IsPrimaryKey: true},
 		},
 	}
 
-	generated := &goschema.Database{
-		Fields: []goschema.Field{
+	desired := &schemamodel.Database{
+		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "Timestamps", Name: "created_at", Type: "TIMESTAMP", Nullable: false},
 			{StructName: "Timestamps", Name: "updated_at", Type: "TIMESTAMP", Nullable: false},
 		},
-		EmbeddedFields: []goschema.EmbeddedField{
+		EmbeddedFields: []schemamodel.EmbeddedField{
 			{
 				StructName:       "User",
 				Mode:             "inline",
@@ -1937,7 +1937,7 @@ func TestTableColumns_WithEmbeddedFields(t *testing.T) {
 		},
 	}
 
-	result := compare.TableColumns(genTable, dbTable, generated)
+	result := compare.TableColumns(genTable, dbTable, desired)
 
 	c.Assert(result.TableName, qt.Equals, "users")
 	c.Assert(result.ColumnsAdded, qt.DeepEquals, []string{"created_at", "updated_at"})

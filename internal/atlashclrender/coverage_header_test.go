@@ -7,8 +7,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashcl"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 )
@@ -36,7 +36,7 @@ import (
 func TestCompatibilityRenderDeclaresWhatItDoesNotDescribe(t *testing.T) {
 	tests := []struct {
 		name string
-		db   func() *goschema.Database
+		db   func() *schemamodel.Database
 	}{
 		{name: "a database holding all three block types", db: inspectedRichDatabase},
 		{name: "a database holding none of them", db: coverageBareDatabase},
@@ -152,10 +152,10 @@ func TestNativeDocumentCarriesNoLimitsBackThroughTheParser(t *testing.T) {
 // coverageBareDatabase is a database holding none of the block types the
 // compatibility surface omits, so the header it produces cannot have come from
 // counting what was left out.
-func coverageBareDatabase() *goschema.Database {
-	return &goschema.Database{
-		Tables: []goschema.Table{{Name: "accounts", StructName: "Accounts", Schema: "public"}},
-		Fields: []goschema.Field{{Name: "id", StructName: "Accounts", Type: "integer"}},
+func coverageBareDatabase() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "accounts", StructName: "Accounts", Schema: "public"}},
+		Fields: []schemamodel.Field{{Name: "id", StructName: "Accounts", Type: "integer"}},
 	}
 }
 
