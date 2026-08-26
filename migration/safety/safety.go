@@ -1,4 +1,10 @@
-// Package safety classifies schema changes by operational risk.
+// Package safety classifies a schema diff into findings, each carrying a
+// [go.5x5.cz/ptah/migration/risk.Severity].
+//
+// It is an analysis rather than a vocabulary: it reads a comparison and decides
+// which changes remove data, drop objects or tighten constraints. The scale
+// those decisions are reported on belongs to migration/risk, which several
+// other producers share (stokaro/ptah#2246 section 2.2).
 package safety
 
 import (

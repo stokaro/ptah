@@ -1,7 +1,15 @@
-// Package risk defines shared severity vocabulary for migration safety checks.
+// Package risk is the severity scale a Ptah finding is expressed on, together
+// with the ordering a gate reads it by.
+//
+// It is a vocabulary rather than an analysis: nothing here inspects a schema.
+// Severity, Rank, IsBlocking and SARIFLevel answer "how bad is this, and does
+// it block", and the packages that decide WHAT is bad -- migration/safety,
+// migration/lint, internal/schemasecurity, the lint gate and cmd/viz -- all
+// express their answers on this scale. migration/safety is one consumer among
+// several rather than this package's subject (stokaro/ptah#2246 section 2.2).
 package risk
 
-// Severity is the shared risk level type used by lint and safety reports.
+// Severity is the level a finding carries, shared by every producer of them.
 type Severity string
 
 const (
