@@ -341,6 +341,9 @@ func computeApplyPlan(
 		Capabilities:         info.Capabilities,
 		ConcurrentIndexes:    opts.Policy.ConcurrentIndexCreate,
 		ConcurrentIndexDrops: opts.Policy.ConcurrentIndexDrop,
+		ConcurrentIndexRefs: declaredConcurrentIndexRefs(
+			opts.Policy, diff, desired, current, info.Dialect, info.Capabilities,
+		),
 	})
 	if err != nil {
 		return applyComputation{}, fmt.Errorf("generate schema apply SQL: %w", err)
