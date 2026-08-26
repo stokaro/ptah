@@ -15,6 +15,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
+	"go.5x5.cz/ptah/migration/internal/shadowdb"
 	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -320,7 +321,7 @@ func GenerateCheckpointFromShadow(ctx context.Context, opts CheckpointFromShadow
 			err,
 		)
 	}
-	connectCtx, cancelConnect := baselineShadowConnectContext(ctx, opts.ConnectTimeout)
+	connectCtx, cancelConnect := connectContext(ctx, opts.ConnectTimeout)
 	shadowConn, err := dbschema.ConnectToDatabase(connectCtx, opts.ShadowDatabaseURL)
 	cancelConnect()
 	if err != nil {
@@ -335,7 +336,7 @@ func GenerateCheckpointFromShadow(ctx context.Context, opts CheckpointFromShadow
 // generation so it can be exercised against any connection, including an
 // in-memory one, without a live server.
 func generateCheckpointFromConn(ctx context.Context, shadowConn *dbschema.DatabaseConnection, opts CheckpointFromShadowOptions) (upSQL, downSQL string, err error) {
-	if opts.Dialect != "" && !sameDialect(opts.Dialect, shadowConn.Info().Dialect) {
+	if opts.Dialect != "" && !shadowdb.SameDialect(opts.Dialect, shadowConn.Info().Dialect) {
 		return "", "", fmt.Errorf(
 			"checkpoint generation failed: shadow database dialect %q does not match target dialect %q",
 			shadowConn.Info().Dialect,
@@ -346,11 +347,11 @@ func generateCheckpointFromConn(ctx context.Context, shadowConn *dbschema.Databa
 	if err := shadowConn.SchemaWriter().DropAllTables(ctx); err != nil {
 		return "", "", fmt.Errorf("checkpoint generation failed: drop all objects: %w", err)
 	}
-	if err := resetBaselineShadowSchemas(ctx, shadowConn, opts.Schemas); err != nil {
-		return "", "", err
+	if err := shadowdb.ResetSchemas(ctx, shadowConn, opts.Schemas); err != nil {
+		return "", "", fmt.Errorf("checkpoint generation failed: %w", err)
 	}
 
-	migrations, err := loadPriorMigrationsFS(opts.MigrationsFS, opts.MigrationsDir, opts.ProviderOptions...)
+	migrations, err := shadowdb.LoadMigrations(opts.MigrationsFS, opts.MigrationsDir, opts.ProviderOptions...)
 	if err != nil {
 		return "", "", fmt.Errorf("checkpoint generation failed: load migrations: %w", err)
 	}
@@ -361,13 +362,13 @@ func generateCheckpointFromConn(ctx context.Context, shadowConn *dbschema.Databa
 	mig := migrator.NewMigrator(shadowConn, migrator.NewRegisteredMigrationProvider(migrations...)).
 		WithMigrationLockTimeout(opts.MigrationLockTimeout)
 	if err := mig.MigrateUp(ctx); err != nil {
-		if description := describeReplayError(err); description != "" {
+		if description := shadowdb.DescribeReplayError(err); description != "" {
 			return "", "", fmt.Errorf("checkpoint generation failed: %s", description)
 		}
 		return "", "", fmt.Errorf("checkpoint generation failed: replay migrations: %w", err)
 	}
-	if err := dropBaselineShadowMetadata(ctx, shadowConn, mig.MigrationsTableIdentifier()); err != nil {
-		return "", "", err
+	if err := shadowdb.DropMigrationMetadata(ctx, shadowConn, mig.MigrationsTableIdentifier()); err != nil {
+		return "", "", fmt.Errorf("checkpoint generation failed: %w", err)
 	}
 
 	shadowSchema, err := dbschema.ReadSchemaWithSchemas(shadowConn, opts.Schemas)

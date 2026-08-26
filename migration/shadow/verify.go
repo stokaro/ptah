@@ -1,18 +1,13 @@
-package generator
+package shadow
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io/fs"
 	"maps"
-	"os"
-	"regexp"
-	"strings"
 
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/dbschema"
@@ -22,21 +17,17 @@ import (
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
-var missingColumnErrorRe = regexp.MustCompile(`column "([^"]+)" of relation "([^"]+)" does not exist`)
-
-// ShadowVerificationResult describes one failed shadow-database verification.
-// Errors preserve the text form through
-// ShadowVerificationError.Error while exposing mismatches to callers that need
-// machine-readable diagnostics.
-type ShadowVerificationResult struct {
+// VerificationResult describes one failed shadow-database verification.
+// Errors preserve the text form through [VerificationError.Error] while
+// exposing mismatches to callers that need machine-readable diagnostics.
+type VerificationResult struct {
 	Stage string `json:"stage"`
 	// Mismatches contains every structural mismatch in deterministic category and object order.
-	Mismatches []ShadowMismatch `json:"mismatches,omitempty"`
+	Mismatches []Mismatch `json:"mismatches,omitempty"`
 }
 
-// ShadowMismatch describes one schema mismatch found during shadow
-// verification.
-type ShadowMismatch struct {
+// Mismatch describes one schema mismatch found during shadow verification.
+type Mismatch struct {
 	Kind       string            `json:"kind"`
 	Object     string            `json:"object,omitempty"`
 	Table      string            `json:"table,omitempty"`
@@ -46,40 +37,40 @@ type ShadowMismatch struct {
 	Message    string            `json:"message"`
 }
 
-// ShadowVerificationError wraps a structured shadow verification result.
-type ShadowVerificationError struct {
-	Result ShadowVerificationResult `json:"result"`
-	Err    error                    `json:"-"`
+// VerificationError wraps a structured shadow verification result.
+type VerificationError struct {
+	Result VerificationResult `json:"result"`
+	Err    error              `json:"-"`
 }
 
-func (e *ShadowVerificationError) Error() string {
+func (e *VerificationError) Error() string {
 	if len(e.Result.Mismatches) > 0 {
 		return "shadow check failed: " + e.Result.Mismatches[0].Message
 	}
 	return "shadow check failed: schema differs"
 }
 
-func (e *ShadowVerificationError) Unwrap() error {
+func (e *VerificationError) Unwrap() error {
 	return e.Err
 }
 
-func newShadowVerificationError(stage, kind, message string, err error) *ShadowVerificationError {
+func newVerificationError(stage, kind, message string, err error) *VerificationError {
 	if err != nil {
 		message = fmt.Sprintf("%s: %v", message, err)
 	}
-	return newShadowVerificationErrorWithDisplayMessage(stage, kind, message, err)
+	return newVerificationErrorWithDisplayMessage(stage, kind, message, err)
 }
 
-func newShadowVerificationErrorWithDisplayMessage(
+func newVerificationErrorWithDisplayMessage(
 	stage,
 	kind,
 	message string,
 	err error,
-) *ShadowVerificationError {
-	return &ShadowVerificationError{
-		Result: ShadowVerificationResult{
+) *VerificationError {
+	return &VerificationError{
+		Result: VerificationResult{
 			Stage: stage,
-			Mismatches: []ShadowMismatch{{
+			Mismatches: []Mismatch{{
 				Kind:    kind,
 				Message: message,
 			}},
@@ -91,11 +82,11 @@ func newShadowVerificationErrorWithDisplayMessage(
 func targetConnectionRequiredError(
 	target *dbschema.DatabaseConnection,
 	message string,
-) *ShadowVerificationError {
+) *VerificationError {
 	if target != nil {
 		return nil
 	}
-	return newShadowVerificationError(
+	return newVerificationError(
 		"realm-check",
 		"target_connection_required",
 		message,
@@ -103,28 +94,28 @@ func targetConnectionRequiredError(
 	)
 }
 
-func validateShadowConnection(
+func validateConnection(
 	ctx context.Context,
 	target,
-	shadow *dbschema.DatabaseConnection,
+	shadowConn *dbschema.DatabaseConnection,
 	dialect string,
 	capabilities capability.Capabilities,
 	targetRequiredMessage string,
-) *ShadowVerificationError {
-	if !sameDialect(dialect, shadow.Info().Dialect) {
-		return newShadowVerificationError(
+) *VerificationError {
+	if !shadowdb.SameDialect(dialect, shadowConn.Info().Dialect) {
+		return newVerificationError(
 			"dialect-check",
 			"dialect_mismatch",
-			fmt.Sprintf("shadow database dialect %q does not match target dialect %q", shadow.Info().Dialect, dialect),
+			fmt.Sprintf("shadow database dialect %q does not match target dialect %q", shadowConn.Info().Dialect, dialect),
 			nil,
 		)
 	}
 	if err := targetConnectionRequiredError(target, targetRequiredMessage); err != nil {
 		return err
 	}
-	sameRealm, err := devlock.SameRealm(ctx, target, shadow)
+	sameRealm, err := devlock.SameRealm(ctx, target, shadowConn)
 	if err != nil {
-		return newShadowVerificationError(
+		return newVerificationError(
 			"realm-check",
 			"realm_comparison_error",
 			"compare target and shadow database realms",
@@ -132,15 +123,15 @@ func validateShadowConnection(
 		)
 	}
 	if sameRealm {
-		return newShadowVerificationError(
+		return newVerificationError(
 			"realm-check",
 			"target_shadow_same_realm",
 			"shadow database must be distinct from target database",
 			nil,
 		)
 	}
-	if capabilities != nil && !maps.Equal(capabilities, shadow.Info().Capabilities) {
-		return newShadowVerificationError(
+	if capabilities != nil && !maps.Equal(capabilities, shadowConn.Info().Capabilities) {
+		return newVerificationError(
 			"capability-check",
 			"capability_mismatch",
 			fmt.Sprintf("shadow database capabilities do not match target %s capabilities", dialect),
@@ -150,36 +141,52 @@ func validateShadowConnection(
 	return nil
 }
 
-type shadowMigrationOptions struct {
-	DatabaseURL         string
+// MigrationVerifyOptions configures [VerifyMigration].
+type MigrationVerifyOptions struct {
+	ShadowDatabaseURL   string
 	TargetConnection    *dbschema.DatabaseConnection
 	MigrationsDir       string
 	MigrationsFS        fs.FS
 	Dialect             string
 	Capabilities        capability.Capabilities
 	IdentifierSemantics identifier.Semantics
-	Candidates          []shadowCandidate
+	Candidates          []Candidate
 	Generated           *goschema.Database
 	CompareOpts         *config.CompareOptions
 	Schemas             []string
 }
 
-type shadowCandidate struct {
+// Candidate is one migration under verification: a version, a name, and the
+// two bodies the replay applies and reverses. The caller has planned it but not
+// written it, which is the whole point of measuring it here.
+type Candidate struct {
 	Version int64
 	Name    string
 	UpSQL   string
 	DownSQL string
 }
 
-func verifyShadowMigration(ctx context.Context, opts shadowMigrationOptions) error {
-	database, err := shadowdb.Open(ctx, opts.DatabaseURL, "")
+// VerifyMigration measures a planned migration against a live disposable
+// database before its files are written.
+//
+// The shadow database is dropped clean, the prior history is replayed into it,
+// and the candidates are applied on top. The result is re-introspected and
+// compared with the desired schema, so what is checked is what a server did
+// rather than what the SQL was expected to mean. The candidates are then rolled
+// back to the prior version and reapplied, because a down body that does not
+// run is only discovered by running it.
+//
+// Failures are [VerificationError] values naming the stage that stopped and
+// every mismatch found.
+func VerifyMigration(ctx context.Context, opts MigrationVerifyOptions) error {
+	database, err := shadowdb.Open(ctx, opts.ShadowDatabaseURL, "")
 	if err != nil {
-		return newShadowVerificationError("connect", "connect_error", "connect to shadow database", err)
+		return newVerificationError("connect", "connect_error", "connect to shadow database", err)
 	}
 	defer database.CloseAndWarn()
 	conn := database.Connection()
 
-	if err := validateShadowConnection(
+	if err := validateConnection(
 		ctx,
 		opts.TargetConnection,
 		conn,
@@ -189,14 +196,14 @@ func verifyShadowMigration(ctx context.Context, opts shadowMigrationOptions) err
 	); err != nil {
 		return err
 	}
-	identifierSemanticsMatch, err := shadowIdentifierSemanticsMatch(
+	identifierSemanticsMatch, err := identifierSemanticsAgree(
 		ctx,
 		conn,
 		opts.Dialect,
 		opts.IdentifierSemantics,
 	)
 	if err != nil {
-		return newShadowVerificationError(
+		return newVerificationError(
 			"identifier-semantics-check",
 			"identifier_semantics_resolution_error",
 			"resolve shadow database identifier semantics",
@@ -204,7 +211,7 @@ func verifyShadowMigration(ctx context.Context, opts shadowMigrationOptions) err
 		)
 	}
 	if !opts.IdentifierSemantics.IsZero() && !identifierSemanticsMatch {
-		return newShadowVerificationError(
+		return newVerificationError(
 			"identifier-semantics-check",
 			"identifier_semantics_mismatch",
 			fmt.Sprintf("shadow database identifier semantics do not match target %s catalog semantics", opts.Dialect),
@@ -213,11 +220,11 @@ func verifyShadowMigration(ctx context.Context, opts shadowMigrationOptions) err
 	}
 
 	if err := conn.SchemaWriter().DropAllTables(ctx); err != nil {
-		return newShadowVerificationError("drop-all", "drop_all_error", "drop all objects", err)
+		return newVerificationError("drop-all", "drop_all_error", "drop all objects", err)
 	}
-	prior, err := loadPriorMigrationsFS(opts.MigrationsFS, opts.MigrationsDir)
+	prior, err := shadowdb.LoadMigrations(opts.MigrationsFS, opts.MigrationsDir)
 	if err != nil {
-		return newShadowVerificationError("load-prior", "load_prior_error", "load prior migrations", err)
+		return newVerificationError("load-prior", "load_prior_error", "load prior migrations", err)
 	}
 
 	migrations := make([]*migrator.Migration, 0, len(prior)+len(opts.Candidates))
@@ -230,26 +237,26 @@ func verifyShadowMigration(ctx context.Context, opts shadowMigrationOptions) err
 
 	mig := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migrations...))
 	if err := mig.MigrateUp(ctx); err != nil {
-		if description := describeReplayError(err); description != "" {
-			return newShadowVerificationError("replay", "replay_error", description, err)
+		if description := shadowdb.DescribeReplayError(err); description != "" {
+			return newVerificationError("replay", "replay_error", description, err)
 		}
-		return newShadowVerificationError("replay", "replay_error", "replay migrations", err)
+		return newVerificationError("replay", "replay_error", "replay migrations", err)
 	}
-	if err := assertShadowSchemaMatches(ctx, conn, opts); err != nil {
+	if err := assertSchemaMatches(ctx, conn, opts); err != nil {
 		return err
 	}
 
 	previousVersion := latestMigrationVersion(prior)
 	if err := mig.MigrateDownTo(ctx, previousVersion); err != nil {
-		return newShadowVerificationError("round-trip-down", "round_trip_down_error", "round-trip down", err)
+		return newVerificationError("round-trip-down", "round_trip_down_error", "round-trip down", err)
 	}
 	if err := mig.MigrateTo(ctx, latestMigrationVersion(migrations)); err != nil {
-		return newShadowVerificationError("round-trip-up", "round_trip_up_error", "round-trip up", err)
+		return newVerificationError("round-trip-up", "round_trip_up_error", "round-trip up", err)
 	}
-	return assertShadowSchemaMatches(ctx, conn, opts)
+	return assertSchemaMatches(ctx, conn, opts)
 }
 
-func shadowIdentifierSemanticsMatch(
+func identifierSemanticsAgree(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	dialect string,
@@ -263,55 +270,11 @@ func shadowIdentifierSemanticsMatch(
 	for position, resolved := range target.ResolvedNames {
 		names[position] = resolved.Name
 	}
-	shadow, err := conn.ResolveIdentifierSemantics(ctx, names)
+	resolved, err := conn.ResolveIdentifierSemantics(ctx, names)
 	if err != nil {
 		return false, err
 	}
-	return target.Equal(shadow.Normalize(dialect)), nil
-}
-
-func describeReplayError(err error) string {
-	match := missingColumnErrorRe.FindStringSubmatch(err.Error())
-	if match == nil {
-		return ""
-	}
-	return fmt.Sprintf("missing column %s.%s", match[2], match[1])
-}
-
-func sameDialect(left, right string) bool {
-	return platform.NormalizeDialect(left) == platform.NormalizeDialect(right)
-}
-
-func loadPriorMigrations(dir string, opts ...migrator.FSProviderOption) ([]*migrator.Migration, error) {
-	if strings.TrimSpace(dir) == "" {
-		return nil, nil
-	}
-	if _, err := os.Stat(dir); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
-		}
-		return nil, err
-	}
-
-	return loadPriorMigrationsFS(os.DirFS(dir), dir, opts...)
-}
-
-func loadPriorMigrationsFS(
-	fsys fs.FS,
-	displayDir string,
-	opts ...migrator.FSProviderOption,
-) ([]*migrator.Migration, error) {
-	if fsys == nil {
-		return loadPriorMigrations(displayDir, opts...)
-	}
-	provider, err := migrator.NewFSMigrationProvider(fsys, opts...)
-	if err != nil {
-		return nil, err
-	}
-	migrations := provider.Migrations()
-	out := make([]*migrator.Migration, len(migrations))
-	copy(out, migrations)
-	return out, nil
+	return target.Equal(resolved.Normalize(dialect)), nil
 }
 
 func latestMigrationVersion(migrations []*migrator.Migration) int64 {
@@ -324,14 +287,14 @@ func latestMigrationVersion(migrations []*migrator.Migration) int64 {
 	return latest
 }
 
-func assertShadowSchemaMatches(
+func assertSchemaMatches(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
-	opts shadowMigrationOptions,
+	opts MigrationVerifyOptions,
 ) error {
 	dbSchema, err := dbschema.ReadSchemaWithSchemas(conn, opts.Schemas)
 	if err != nil {
-		return newShadowVerificationError("re-introspect", "re_introspect_error", "re-introspect shadow database", err)
+		return newVerificationError("re-introspect", "re_introspect_error", "re-introspect shadow database", err)
 	}
 
 	diff, err := schemadiff.CompareWithDatabase(
@@ -342,7 +305,7 @@ func assertShadowSchemaMatches(
 		opts.CompareOpts,
 	)
 	if err != nil {
-		return newShadowVerificationError(
+		return newVerificationError(
 			"schema-match",
 			"identifier_resolution_error",
 			"resolve shadow database identifier semantics",
@@ -352,5 +315,5 @@ func assertShadowSchemaMatches(
 	if !diff.HasChanges() {
 		return nil
 	}
-	return newShadowSchemaMismatchError(diff)
+	return newSchemaMismatchError(diff)
 }

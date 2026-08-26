@@ -11,6 +11,7 @@ import (
 
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/migration/generator"
+	"go.5x5.cz/ptah/migration/shadow"
 )
 
 func TestGenerateMigrationShadowVerificationWithRealDB(t *testing.T) {
@@ -46,7 +47,7 @@ func TestGenerateMigrationShadowVerificationWithRealDB(t *testing.T) {
 
 		c.Assert(files, qt.IsNil)
 		c.Assert(err.Error(), qt.Contains, "shadow check failed: missing column users.name: ")
-		var shadowErr *generator.ShadowVerificationError
+		var shadowErr *shadow.VerificationError
 		c.Assert(err, qt.ErrorAs, &shadowErr)
 		c.Assert(shadowErr.Result.Stage, qt.Equals, "replay")
 		c.Assert(shadowErr.Result.Mismatches, qt.HasLen, 1)

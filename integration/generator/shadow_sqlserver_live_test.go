@@ -16,7 +16,7 @@ import (
 
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
-	"go.5x5.cz/ptah/migration/generator"
+	"go.5x5.cz/ptah/migration/shadow"
 )
 
 func TestShadowIdentifierSemanticsMatch_SQLServerLive(t *testing.T) {
@@ -50,7 +50,7 @@ CREATE TABLE [ptah_shadow_i] (id INT NOT NULL);
 	), qt.IsNil)
 	info := target.Info()
 
-	err = generator.VerifyBaselineShadow(t.Context(), generator.BaselineShadowVerifyOptions{
+	err = shadow.VerifyBaseline(t.Context(), shadow.BaselineVerifyOptions{
 		ShadowDatabaseURL: matchingShadowURL,
 		TargetConn:        target,
 		MigrationsDir:     migrationsDir,
@@ -60,7 +60,7 @@ CREATE TABLE [ptah_shadow_i] (id INT NOT NULL);
 	})
 	c.Assert(err, qt.IsNil)
 
-	err = generator.VerifyBaselineShadow(t.Context(), generator.BaselineShadowVerifyOptions{
+	err = shadow.VerifyBaseline(t.Context(), shadow.BaselineVerifyOptions{
 		ShadowDatabaseURL: mismatchedShadowURL,
 		TargetConn:        target,
 		MigrationsDir:     migrationsDir,
@@ -69,10 +69,10 @@ CREATE TABLE [ptah_shadow_i] (id INT NOT NULL);
 		Capabilities:      info.Capabilities,
 	})
 	c.Assert(err, qt.ErrorMatches, `baseline shadow check failed: shadow database identifier semantics do not match target sqlserver catalog semantics`)
-	var shadowErr *generator.ShadowVerificationError
+	var shadowErr *shadow.VerificationError
 	c.Assert(err, qt.ErrorAs, &shadowErr)
 	c.Assert(shadowErr.Result.Stage, qt.Equals, "identifier-semantics-check")
-	c.Assert(shadowErr.Result.Mismatches, qt.DeepEquals, []generator.ShadowMismatch{{
+	c.Assert(shadowErr.Result.Mismatches, qt.DeepEquals, []shadow.Mismatch{{
 		Kind:    "identifier_semantics_mismatch",
 		Message: "shadow database identifier semantics do not match target sqlserver catalog semantics",
 	}})

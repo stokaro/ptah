@@ -26,9 +26,9 @@ import (
 	"go.5x5.cz/ptah/internal/devdocker"
 	"go.5x5.cz/ptah/internal/envbool"
 	"go.5x5.cz/ptah/internal/migrationintegrity"
-	"go.5x5.cz/ptah/migration/generator"
 	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/shadow"
 )
 
 // newAtlasMigrateDownCommand wraps the table-driven `atlas migrate down`
@@ -262,7 +262,7 @@ func runAtlasMigrateDownFormat(
 		}
 		defer releaseDev()
 
-		err := generator.VerifyRollbackFromShadow(cmd.Context(), generator.RollbackFromShadowOptions{
+		err := shadow.VerifyRollback(cmd.Context(), shadow.RollbackVerifyOptions{
 			TargetConnection:  conn,
 			ShadowDatabaseURL: devURL,
 			FS:                source.FileSystem,

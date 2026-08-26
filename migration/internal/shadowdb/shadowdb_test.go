@@ -43,3 +43,12 @@ func TestOpen_ExplicitDatabaseIsPreserved(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(rows.Close(), qt.IsNil)
 }
+
+func TestLoadMigrationsMissingDir(t *testing.T) {
+	c := qt.New(t)
+
+	migrations, err := shadowdb.LoadMigrations(nil, filepath.Join(t.TempDir(), "missing"))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(migrations, qt.HasLen, 0)
+}

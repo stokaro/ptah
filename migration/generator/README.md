@@ -155,7 +155,7 @@ The generator follows this process:
 3. **Calculate Differences**: Compares the desired schema with the current database state
 4. **Generate UP Migration**: Creates SQL statements to transform current schema to desired schema
 5. **Generate DOWN Migration**: Creates SQL statements to reverse the changes (rollback)
-6. **Shadow Verification (Optional)**: Replays prior migrations plus the candidate on a disposable database before files are written
+6. **Shadow Verification (Optional)**: Hands the candidate to `migration/shadow`, which replays prior migrations plus the candidate on a disposable database before files are written
 7. **Save Files**: Writes both migration files with proper naming convention
 
 ### Shadow database verification
@@ -172,12 +172,15 @@ opts := generator.GenerateMigrationOptions{
 }
 ```
 
-The shadow database is treated as disposable and must identify a different
-live database realm from the target. Ptah verifies that separation before any
-destructive work. The generator drops all objects in the shadow database,
-applies every existing migration from `OutputDir`, applies the candidate
-migration, re-introspects the database, and compares the result against the Go
-schema. If the replayed schema differs, generation aborts before writing files:
+Verification itself lives in
+[`migration/shadow`](../shadow); the generator calls `shadow.VerifyMigration`
+with the candidate it planned. The shadow database is treated as disposable and
+must identify a different live database realm from the target. Ptah verifies
+that separation before any destructive work. It drops all objects in the shadow
+database, applies every existing migration from `OutputDir`, applies the
+candidate migration, re-introspects the database, and compares the result
+against the Go schema. If the replayed schema differs, generation aborts before
+writing files:
 
 ```text
 shadow check failed: missing column users.email
@@ -186,11 +189,11 @@ shadow check failed: missing column users.email
 Ptah also runs an `up -> down -> up` round-trip on the candidate migration and
 aborts if either direction fails.
 
-Candidate generation and `VerifyBaselineShadow` preserve structured shadow
+Candidate generation and `shadow.VerifyBaseline` preserve structured shadow
 diagnostics. Use `errors.As` rather than parsing the display message:
 
 ```go
-var shadowErr *generator.ShadowVerificationError
+var shadowErr *shadow.VerificationError
 if errors.As(err, &shadowErr) {
     fmt.Printf("shadow stage: %s\n", shadowErr.Result.Stage)
     for _, mismatch := range shadowErr.Result.Mismatches {
@@ -199,7 +202,7 @@ if errors.As(err, &shadowErr) {
 }
 ```
 
-For SQLite, `VerifyBaselineShadow` and `GenerateCheckpointFromShadow` validate
+For SQLite, `shadow.VerifyBaseline` and `GenerateCheckpointFromShadow` validate
 `PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP` before connecting to or mutating a
 shadow database. Non-SQLite shadow operations do not consult the variable.
 

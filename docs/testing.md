@@ -172,8 +172,7 @@ environment value exactly as it refuses a flag.
 
 When `--db-url` is omitted, each case receives its own ephemeral SQLite
 database. Ptah provisions and cleans it through the same disposable-database
-lifecycle used by migration generator shadow verification. State cannot leak
-between cases.
+lifecycle used by shadow verification. State cannot leak between cases.
 
 When `--db-url` is set, all cases share that explicit database. Ptah does not
 delete the caller-owned database after the run, so the caller must create,
