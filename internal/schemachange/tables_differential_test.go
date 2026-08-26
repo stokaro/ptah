@@ -283,17 +283,146 @@ func appendTableDecision(decisions []string, change schemachange.Change) []strin
 //
 // The existing planner was right about all four.
 func TestTableStatementsMatchTheExistingPlanner(t *testing.T) {
-	tests := []struct {
-		name        string
-		description *goschema.Database
-		catalog     *dbschematypes.DBSchema
-		// profile defaults to PostgreSQL. A row names another target when the
-		// rule under test is one the targets disagree about: PostgreSQL's
-		// renderer suppresses UNIQUE on a primary key column and Oracle's does
-		// not, so a PostgreSQL-only fixture cannot see a planner that asks for
-		// both.
-		profile *schemastate.Profile
-	}{
+	tests := statementDifferentialFixtures()
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			profile := profileOrPostgres(test.profile)
+
+			existing := executableLines(existingPathStatements(c, test.description, test.catalog, profile))
+			prototype := executableLines(plannedStatements(c, test.description, test.catalog, profile))
+
+			c.Assert(prototype, qt.DeepEquals, existing)
+		})
+	}
+}
+
+// plannedStatements renders the canonical path's plan for one input pair.
+func plannedStatements(
+	c *qt.C,
+	description *goschema.Database,
+	catalog *dbschematypes.DBSchema,
+	profile schemastate.Profile,
+) []string {
+	c.Helper()
+	operations, err := schemachange.Plan(changesFor(c, description, catalog), profile)
+	c.Assert(err, qt.IsNil)
+	return schemachange.Statements(operations)
+}
+
+// executableLines keeps the lines a database would run.
+//
+// Both paths wrap their statements in comments -- the existing planner writes a
+// header per table and a warning per destructive change, the renderer writes a
+// banner -- and comparing those would be comparing two narrators rather than
+// two plans. Everything that is not a comment survives, so a statement one path
+// emits and the other does not is still a difference.
+func executableLines(statements []string) []string {
+	lines := make([]string, 0)
+	for _, statement := range statements {
+		for line := range strings.SplitSeq(statement, "\n") {
+			lines = appendExecutable(lines, strings.TrimSpace(line))
+		}
+	}
+	return lines
+}
+
+// appendExecutable keeps [executableLines] free of the conditionals the
+// repository's test style refuses inside a test.
+func appendExecutable(lines []string, trimmed string) []string {
+	executable := trimmed != "" && !strings.HasPrefix(trimmed, "--")
+	return map[bool][]string{
+		true:  append(lines, normalizeStatement(trimmed)),
+		false: lines,
+	}[executable]
+}
+
+// TestAModificationCarriesWhatItReplaces pins the metadata a rendered
+// modification carries beside the new definition.
+//
+// Most renderers ignore it, which is exactly why a statement comparison against
+// PostgreSQL cannot see it: the two paths agree on every byte with the previous
+// values present or absent. Two consumers cannot ignore it. Safety analysis
+// tells a narrowing change from a widening one by the previous type, and
+// Oracle's MODIFY states the WHOLE new column definition, so a cleared default
+// has to be spelled DEFAULT NULL or the old one stays and the migration reports
+// success (stokaro/ptah#1885).
+func TestAModificationCarriesWhatItReplaces(t *testing.T) {
+	c := qt.New(t)
+	profile := postgresProfile()
+	changes := changesFor(c, describedTable(goschema.Field{
+		StructName: "Widget", Name: "code", Type: "varchar(200)", Nullable: true,
+	}), catalogTable(dbschematypes.DBColumn{
+		Name: "code", DataType: "varchar(50)", IsNullable: "NO",
+		ColumnDefault: new("'unset'"),
+	}))
+
+	operations, err := schemachange.Plan(changes, profile)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(operations, qt.HasLen, 1)
+	alter, ok := operations[0].Node.(*ast.AlterTableNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(alter.Operations, qt.HasLen, 1)
+	modify, ok := alter.Operations[0].(*ast.ModifyColumnOperation)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(modify.PreviousType, qt.Equals, "varchar(50)")
+	c.Assert(modify.HasPreviousNullable, qt.IsTrue)
+	c.Assert(modify.PreviousNullable, qt.IsFalse)
+	c.Assert(modify.HasPreviousDefault, qt.IsTrue)
+	c.Assert(modify.PreviousDefault, qt.Equals, "'unset'")
+	c.Assert(modify.Column.Type, qt.Equals, "varchar(200)")
+}
+
+// profileOrPostgres resolves a row's target, defaulting to PostgreSQL.
+func profileOrPostgres(profile *schemastate.Profile) schemastate.Profile {
+	return map[bool]func() schemastate.Profile{
+		true:  postgresProfile,
+		false: func() schemastate.Profile { return *profile },
+	}[profile == nil]()
+}
+
+// oracleProfilePointer is [oracleProfile] as a row can carry it.
+func oracleProfilePointer() *schemastate.Profile {
+	profile := oracleProfile()
+	return &profile
+}
+
+// sqliteProfilePointer is [sqliteProfile] as a row can carry it.
+func sqliteProfilePointer() *schemastate.Profile {
+	profile := sqliteProfile()
+	return &profile
+}
+
+// mysqlProfilePointer is [mysqlProfile] as a row can carry it.
+func mysqlProfilePointer() *schemastate.Profile {
+	profile := mysqlProfile()
+	return &profile
+}
+
+// cockroachProfilePointer is [cockroachProfile] as a row can carry it.
+func cockroachProfilePointer() *schemastate.Profile {
+	profile := cockroachProfile()
+	return &profile
+}
+
+// statementDifferentialFixture is one description-and-catalog pair the
+// statement-level differential slice carries.
+type statementDifferentialFixture struct {
+	name        string
+	description *goschema.Database
+	catalog     *dbschematypes.DBSchema
+	// profile defaults to PostgreSQL. A row names another target when the
+	// rule under test is one the targets disagree about: PostgreSQL's
+	// renderer suppresses UNIQUE on a primary key column and Oracle's does
+	// not, so a PostgreSQL-only fixture cannot see a planner that asks for
+	// both.
+	profile *schemastate.Profile
+}
+
+func statementDifferentialFixtures() []statementDifferentialFixture {
+	return []statementDifferentialFixture{
 		{
 			name: "creating a table",
 			description: describedTable(
@@ -701,125 +830,4 @@ func TestTableStatementsMatchTheExistingPlanner(t *testing.T) {
 				dbschematypes.DBColumn{Name: "code", DataType: "text", IsNullable: "YES"}),
 		},
 	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			profile := profileOrPostgres(test.profile)
-
-			existing := executableLines(existingPathStatements(c, test.description, test.catalog, profile))
-			prototype := executableLines(plannedStatements(c, test.description, test.catalog, profile))
-
-			c.Assert(prototype, qt.DeepEquals, existing)
-		})
-	}
-}
-
-// plannedStatements renders the canonical path's plan for one input pair.
-func plannedStatements(
-	c *qt.C,
-	description *goschema.Database,
-	catalog *dbschematypes.DBSchema,
-	profile schemastate.Profile,
-) []string {
-	c.Helper()
-	operations, err := schemachange.Plan(changesFor(c, description, catalog), profile)
-	c.Assert(err, qt.IsNil)
-	return schemachange.Statements(operations)
-}
-
-// executableLines keeps the lines a database would run.
-//
-// Both paths wrap their statements in comments -- the existing planner writes a
-// header per table and a warning per destructive change, the renderer writes a
-// banner -- and comparing those would be comparing two narrators rather than
-// two plans. Everything that is not a comment survives, so a statement one path
-// emits and the other does not is still a difference.
-func executableLines(statements []string) []string {
-	lines := make([]string, 0)
-	for _, statement := range statements {
-		for line := range strings.SplitSeq(statement, "\n") {
-			lines = appendExecutable(lines, strings.TrimSpace(line))
-		}
-	}
-	return lines
-}
-
-// appendExecutable keeps [executableLines] free of the conditionals the
-// repository's test style refuses inside a test.
-func appendExecutable(lines []string, trimmed string) []string {
-	executable := trimmed != "" && !strings.HasPrefix(trimmed, "--")
-	return map[bool][]string{
-		true:  append(lines, normalizeStatement(trimmed)),
-		false: lines,
-	}[executable]
-}
-
-// TestAModificationCarriesWhatItReplaces pins the metadata a rendered
-// modification carries beside the new definition.
-//
-// Most renderers ignore it, which is exactly why a statement comparison against
-// PostgreSQL cannot see it: the two paths agree on every byte with the previous
-// values present or absent. Two consumers cannot ignore it. Safety analysis
-// tells a narrowing change from a widening one by the previous type, and
-// Oracle's MODIFY states the WHOLE new column definition, so a cleared default
-// has to be spelled DEFAULT NULL or the old one stays and the migration reports
-// success (stokaro/ptah#1885).
-func TestAModificationCarriesWhatItReplaces(t *testing.T) {
-	c := qt.New(t)
-	profile := postgresProfile()
-	changes := changesFor(c, describedTable(goschema.Field{
-		StructName: "Widget", Name: "code", Type: "varchar(200)", Nullable: true,
-	}), catalogTable(dbschematypes.DBColumn{
-		Name: "code", DataType: "varchar(50)", IsNullable: "NO",
-		ColumnDefault: new("'unset'"),
-	}))
-
-	operations, err := schemachange.Plan(changes, profile)
-
-	c.Assert(err, qt.IsNil)
-	c.Assert(operations, qt.HasLen, 1)
-	alter, ok := operations[0].Node.(*ast.AlterTableNode)
-	c.Assert(ok, qt.IsTrue)
-	c.Assert(alter.Operations, qt.HasLen, 1)
-	modify, ok := alter.Operations[0].(*ast.ModifyColumnOperation)
-	c.Assert(ok, qt.IsTrue)
-	c.Assert(modify.PreviousType, qt.Equals, "varchar(50)")
-	c.Assert(modify.HasPreviousNullable, qt.IsTrue)
-	c.Assert(modify.PreviousNullable, qt.IsFalse)
-	c.Assert(modify.HasPreviousDefault, qt.IsTrue)
-	c.Assert(modify.PreviousDefault, qt.Equals, "'unset'")
-	c.Assert(modify.Column.Type, qt.Equals, "varchar(200)")
-}
-
-// profileOrPostgres resolves a row's target, defaulting to PostgreSQL.
-func profileOrPostgres(profile *schemastate.Profile) schemastate.Profile {
-	return map[bool]func() schemastate.Profile{
-		true:  postgresProfile,
-		false: func() schemastate.Profile { return *profile },
-	}[profile == nil]()
-}
-
-// oracleProfilePointer is [oracleProfile] as a row can carry it.
-func oracleProfilePointer() *schemastate.Profile {
-	profile := oracleProfile()
-	return &profile
-}
-
-// sqliteProfilePointer is [sqliteProfile] as a row can carry it.
-func sqliteProfilePointer() *schemastate.Profile {
-	profile := sqliteProfile()
-	return &profile
-}
-
-// mysqlProfilePointer is [mysqlProfile] as a row can carry it.
-func mysqlProfilePointer() *schemastate.Profile {
-	profile := mysqlProfile()
-	return &profile
-}
-
-// cockroachProfilePointer is [cockroachProfile] as a row can carry it.
-func cockroachProfilePointer() *schemastate.Profile {
-	profile := cockroachProfile()
-	return &profile
 }
