@@ -1,6 +1,7 @@
 package mssql
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"strings"
@@ -75,94 +76,101 @@ func (r *Reader) outputSchema(schemaName string) string {
 	return ""
 }
 
+// ReadSchema is [Reader.ReadSchemaContext] under context.Background(), the
+// context-free half of the pair [types.SchemaReader] declares. Prefer the
+// Context form: only it can be told to stop.
 func (r *Reader) ReadSchema() (*types.DBSchema, error) {
+	return r.ReadSchemaContext(context.Background())
+}
+
+func (r *Reader) ReadSchemaContext(ctx context.Context) (*types.DBSchema, error) {
 	schema := &types.DBSchema{}
 
-	tables, err := r.readTables()
+	tables, err := r.readTables(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("sqlserver: read tables: %w", err)
 	}
 	schema.Tables = tables
 
-	indexes, err := r.readIndexes()
+	indexes, err := r.readIndexes(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("sqlserver: read indexes: %w", err)
 	}
 	schema.Indexes = indexes
 
-	constraints, err := r.readConstraints()
+	constraints, err := r.readConstraints(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("sqlserver: read constraints: %w", err)
 	}
 	schema.Constraints = constraints
 
-	views, err := r.readViews()
+	views, err := r.readViews(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("sqlserver: read views: %w", err)
 	}
 	schema.Views = views
 
-	sequences, err := r.readSequences()
+	sequences, err := r.readSequences(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("sqlserver: read sequences: %w", err)
 	}
 	schema.Sequences = sequences
 
-	roles, err := r.readRoles()
+	roles, err := r.readRoles(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("sqlserver: read roles: %w", err)
 	}
 	schema.Roles = roles
 
-	grants, err := r.readGrants()
+	grants, err := r.readGrants(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("sqlserver: read grants: %w", err)
 	}
 	schema.Grants = grants
 
-	memberships, err := r.readRoleMemberships()
+	memberships, err := r.readRoleMemberships(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("sqlserver: read role memberships: %w", err)
 	}
 	schema.RoleMemberships = memberships
 
-	owners, err := r.readObjectOwners()
+	owners, err := r.readObjectOwners(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("sqlserver: read object owners: %w", err)
 	}
 	schema.ObjectOwners = owners
 
-	synonyms, err := r.readSynonyms()
+	synonyms, err := r.readSynonyms(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("sqlserver: read synonyms: %w", err)
 	}
 	schema.Synonyms = synonyms
 
-	extendedProperties, err := r.readExtendedProperties()
+	extendedProperties, err := r.readExtendedProperties(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("sqlserver: read extended properties: %w", err)
 	}
 	schema.ExtendedProperties = extendedProperties
 
-	triggers, err := r.readTriggers()
+	triggers, err := r.readTriggers(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("sqlserver: read triggers: %w", err)
 	}
 	schema.Triggers = triggers
 
-	functions, err := r.readFunctions()
+	functions, err := r.readFunctions(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("sqlserver: read functions: %w", err)
 	}
 	schema.Functions = functions
 
-	policies, err := r.readRLSPolicies()
+	policies, err := r.readRLSPolicies(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("sqlserver: read rls policies: %w", err)
 	}
 	schema.RLSPolicies = policies
 
-	rlsEnabled, err := r.readRLSEnabledTables()
+	rlsEnabled, err := r.readRLSEnabledTables(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("sqlserver: read rls enabled tables: %w", err)
 	}
@@ -172,8 +180,8 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	return schema, nil
 }
 
-func (r *Reader) readTables() ([]types.DBTable, error) {
-	columns, err := r.readColumnsByTable()
+func (r *Reader) readTables(ctx context.Context) ([]types.DBTable, error) {
+	columns, err := r.readColumnsByTable(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -190,7 +198,7 @@ func (r *Reader) readTables() ([]types.DBTable, error) {
 		  AND t.name NOT IN ('schema_migrations', 'atlas_schema_revisions')
 			  AND (` + schemaPredicatePlaceholder + `)
 		ORDER BY s.name, t.name`
-	rows, err := r.db.Query(r.queryWithSchemaPredicate(query), r.schemaArgs()...)
+	rows, err := r.db.QueryContext(ctx, r.queryWithSchemaPredicate(query), r.schemaArgs()...)
 	if err != nil {
 		return nil, err
 	}
@@ -214,7 +222,7 @@ func (r *Reader) readTables() ([]types.DBTable, error) {
 	return tables, nil
 }
 
-func (r *Reader) readColumnsByTable() (map[catalogTableKey][]types.DBColumn, error) {
+func (r *Reader) readColumnsByTable(ctx context.Context) (map[catalogTableKey][]types.DBColumn, error) {
 	query := `
 		SELECT
 			s.name,
@@ -250,7 +258,7 @@ func (r *Reader) readColumnsByTable() (map[catalogTableKey][]types.DBColumn, err
 		  AND t.name NOT IN ('schema_migrations', 'atlas_schema_revisions')
 			  AND (` + schemaPredicatePlaceholder + `)
 		ORDER BY s.name, t.name, c.column_id`
-	rows, err := r.db.Query(r.queryWithSchemaPredicate(query), r.schemaArgs()...)
+	rows, err := r.db.QueryContext(ctx, r.queryWithSchemaPredicate(query), r.schemaArgs()...)
 	if err != nil {
 		return nil, err
 	}
@@ -355,7 +363,7 @@ func (r *Reader) readColumnsByTable() (map[catalogTableKey][]types.DBColumn, err
 	return columns, nil
 }
 
-func (r *Reader) readIndexes() ([]types.DBIndex, error) {
+func (r *Reader) readIndexes(ctx context.Context) ([]types.DBIndex, error) {
 	query := `
 		SELECT s.name, t.name, i.name, i.is_unique, i.is_primary_key, c.name, ic.key_ordinal, ic.is_descending_key, COALESCE(i.filter_definition, '')
 		FROM sys.indexes AS i
@@ -373,7 +381,7 @@ func (r *Reader) readIndexes() ([]types.DBIndex, error) {
 		  AND t.name NOT IN ('schema_migrations', 'atlas_schema_revisions')
 		  AND (` + schemaPredicatePlaceholder + `)
 		ORDER BY s.name, t.name, i.name, ic.key_ordinal`
-	rows, err := r.db.Query(r.queryWithSchemaPredicate(query), r.schemaArgs()...)
+	rows, err := r.db.QueryContext(ctx, r.queryWithSchemaPredicate(query), r.schemaArgs()...)
 	if err != nil {
 		return nil, err
 	}
@@ -424,16 +432,16 @@ func (r *Reader) readIndexes() ([]types.DBIndex, error) {
 	return indexes, nil
 }
 
-func (r *Reader) readConstraints() ([]types.DBConstraint, error) {
-	constraints, err := r.readKeyConstraints()
+func (r *Reader) readConstraints(ctx context.Context) ([]types.DBConstraint, error) {
+	constraints, err := r.readKeyConstraints(ctx)
 	if err != nil {
 		return nil, err
 	}
-	fks, err := r.readForeignKeys()
+	fks, err := r.readForeignKeys(ctx)
 	if err != nil {
 		return nil, err
 	}
-	checks, err := r.readChecks()
+	checks, err := r.readChecks(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -442,7 +450,7 @@ func (r *Reader) readConstraints() ([]types.DBConstraint, error) {
 	return constraints, nil
 }
 
-func (r *Reader) readKeyConstraints() ([]types.DBConstraint, error) {
+func (r *Reader) readKeyConstraints(ctx context.Context) ([]types.DBConstraint, error) {
 	query := `
 		SELECT s.name, t.name, kc.name, kc.type_desc, c.name, ic.key_ordinal
 		FROM sys.key_constraints AS kc
@@ -454,7 +462,7 @@ func (r *Reader) readKeyConstraints() ([]types.DBConstraint, error) {
 		  AND t.name NOT IN ('schema_migrations', 'atlas_schema_revisions')
 			  AND (` + schemaPredicatePlaceholder + `)
 		ORDER BY s.name, t.name, kc.name, ic.key_ordinal`
-	rows, err := r.db.Query(r.queryWithSchemaPredicate(query), r.schemaArgs()...)
+	rows, err := r.db.QueryContext(ctx, r.queryWithSchemaPredicate(query), r.schemaArgs()...)
 	if err != nil {
 		return nil, err
 	}
@@ -498,7 +506,7 @@ func (r *Reader) readKeyConstraints() ([]types.DBConstraint, error) {
 	return constraints, nil
 }
 
-func (r *Reader) readForeignKeys() ([]types.DBConstraint, error) {
+func (r *Reader) readForeignKeys(ctx context.Context) ([]types.DBConstraint, error) {
 	query := `
 		SELECT
 			s.name, t.name, fk.name, c.name,
@@ -518,7 +526,7 @@ func (r *Reader) readForeignKeys() ([]types.DBConstraint, error) {
 		  AND t.name NOT IN ('schema_migrations', 'atlas_schema_revisions')
 			  AND (` + schemaPredicatePlaceholder + `)
 		ORDER BY s.name, t.name, fk.name, fkc.constraint_column_id`
-	rows, err := r.db.Query(r.queryWithSchemaPredicate(query), r.schemaArgs()...)
+	rows, err := r.db.QueryContext(ctx, r.queryWithSchemaPredicate(query), r.schemaArgs()...)
 	if err != nil {
 		return nil, err
 	}
@@ -575,7 +583,7 @@ func (r *Reader) readForeignKeys() ([]types.DBConstraint, error) {
 	return constraints, nil
 }
 
-func (r *Reader) readChecks() ([]types.DBConstraint, error) {
+func (r *Reader) readChecks(ctx context.Context) ([]types.DBConstraint, error) {
 	query := `
 		SELECT s.name, t.name, cc.name, cc.definition
 		FROM sys.check_constraints AS cc
@@ -585,7 +593,7 @@ func (r *Reader) readChecks() ([]types.DBConstraint, error) {
 		  AND t.name NOT IN ('schema_migrations', 'atlas_schema_revisions')
 			  AND (` + schemaPredicatePlaceholder + `)
 		ORDER BY s.name, t.name, cc.name`
-	rows, err := r.db.Query(r.queryWithSchemaPredicate(query), r.schemaArgs()...)
+	rows, err := r.db.QueryContext(ctx, r.queryWithSchemaPredicate(query), r.schemaArgs()...)
 	if err != nil {
 		return nil, err
 	}
@@ -607,7 +615,7 @@ func (r *Reader) readChecks() ([]types.DBConstraint, error) {
 	return constraints, nil
 }
 
-func (r *Reader) readViews() ([]types.DBView, error) {
+func (r *Reader) readViews(ctx context.Context) ([]types.DBView, error) {
 	query := `
 		SELECT s.name, v.name, OBJECT_DEFINITION(v.object_id)
 		FROM sys.views AS v
@@ -615,7 +623,7 @@ func (r *Reader) readViews() ([]types.DBView, error) {
 		WHERE v.is_ms_shipped = 0
 			  AND (` + schemaPredicatePlaceholder + `)
 		ORDER BY s.name, v.name`
-	rows, err := r.db.Query(r.queryWithSchemaPredicate(query), r.schemaArgs()...)
+	rows, err := r.db.QueryContext(ctx, r.queryWithSchemaPredicate(query), r.schemaArgs()...)
 	if err != nil {
 		return nil, err
 	}
@@ -666,7 +674,7 @@ func (r *Reader) readViews() ([]types.DBView, error) {
 // by number, so it reads as unset. is_cached = 0 is NO CACHE, which
 // goschema.Sequence has no way to spell either; it also reads as unset, and the
 // renderer's own NO CACHE stays reachable through a declared cache of zero.
-func (r *Reader) readSequences() ([]types.DBSequence, error) {
+func (r *Reader) readSequences(ctx context.Context) ([]types.DBSequence, error) {
 	query := `
 		SELECT s.name, sq.name, t.name,
 			   CAST(sq.start_value AS bigint), CAST(sq.increment AS bigint),
@@ -678,7 +686,7 @@ func (r *Reader) readSequences() ([]types.DBSequence, error) {
 		WHERE sq.is_ms_shipped = 0
 			  AND (` + schemaPredicatePlaceholder + `)
 		ORDER BY s.name, sq.name`
-	rows, err := r.db.Query(r.queryWithSchemaPredicate(query), r.schemaArgs()...)
+	rows, err := r.db.QueryContext(ctx, r.queryWithSchemaPredicate(query), r.schemaArgs()...)
 	if err != nil {
 		return nil, err
 	}
@@ -759,13 +767,13 @@ func (f sequenceCacheFacts) managedOption() *int64 {
 // -- no login, no password, no superuser -- so reporting false for each is not
 // a loss of information; it is the only truth available, and the renderer says
 // so when a declaration asks for one.
-func (r *Reader) readRoles() ([]types.DBRole, error) {
+func (r *Reader) readRoles(ctx context.Context) ([]types.DBRole, error) {
 	query := `
 		SELECT p.name
 		FROM sys.database_principals AS p
 		WHERE p.type = 'R' AND p.is_fixed_role = 0 AND p.name <> 'public'
 		ORDER BY p.name`
-	rows, err := r.db.Query(query)
+	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -799,7 +807,7 @@ func (r *Reader) readRoles() ([]types.DBRole, error) {
 // SQL Server records no admin option: `ALTER ROLE ... ADD MEMBER` grants
 // membership and nothing else, so AdminOption is false here rather than
 // unknown (stokaro/ptah#1950).
-func (r *Reader) readRoleMemberships() ([]types.DBRoleMembership, error) {
+func (r *Reader) readRoleMemberships(ctx context.Context) ([]types.DBRoleMembership, error) {
 	query := `
 		SELECT role_principal.name AS role_name, member_principal.name AS member_name
 		FROM sys.database_role_members AS rm
@@ -809,7 +817,7 @@ func (r *Reader) readRoleMemberships() ([]types.DBRoleMembership, error) {
 			ON member_principal.principal_id = rm.member_principal_id
 		WHERE role_principal.is_fixed_role = 0 AND role_principal.name <> 'public'
 		ORDER BY role_principal.name, member_principal.name`
-	rows, err := r.db.Query(query)
+	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -850,7 +858,7 @@ var mssqlOwnerKinds = map[string]string{
 // NONE and cannot be authenticated as either, so neither is somebody whose
 // password could be held. Measured on SQL Server 2025: dbo reports INSTANCE,
 // `guest` and a `CREATE USER ... WITHOUT LOGIN` user both report NONE.
-func (r *Reader) readObjectOwners() ([]types.DBObjectOwner, error) {
+func (r *Reader) readObjectOwners(ctx context.Context) ([]types.DBObjectOwner, error) {
 	query := `
 		SELECT o.type AS kind, s.name AS schema_name, o.name AS object_name,
 		       owner.name AS owner_name,
@@ -868,7 +876,7 @@ func (r *Reader) readObjectOwners() ([]types.DBObjectOwner, error) {
 		JOIN sys.database_principals AS owner ON owner.principal_id = s.principal_id
 		WHERE s.name NOT IN ('sys', 'INFORMATION_SCHEMA')
 		ORDER BY kind, schema_name, object_name`
-	rows, err := r.db.Query(query)
+	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -904,7 +912,7 @@ func (r *Reader) readObjectOwners() ([]types.DBObjectOwner, error) {
 // row is reported with IsPartialRevoke set rather than dropped -- exactly what
 // that field exists for, and what lets a live validation refuse a managed role
 // whose effective privileges are quietly narrower than its grant rows say.
-func (r *Reader) readGrants() ([]types.DBGrant, error) {
+func (r *Reader) readGrants(ctx context.Context) ([]types.DBGrant, error) {
 	query := `
 		SELECT grantee.name, pe.permission_name, pe.state_desc, pe.class_desc,
 			   COALESCE(s.name, ''), COALESCE(OBJECT_NAME(pe.major_id), SCHEMA_NAME(pe.major_id), '')
@@ -914,7 +922,7 @@ func (r *Reader) readGrants() ([]types.DBGrant, error) {
 		LEFT JOIN sys.schemas AS s ON s.schema_id = o.schema_id
 		WHERE grantee.type = 'R' AND grantee.is_fixed_role = 0 AND grantee.name <> 'public'
 		ORDER BY grantee.name, pe.permission_name`
-	rows, err := r.db.Query(query)
+	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -965,7 +973,7 @@ func grantObjectTypeFor(class string) string {
 // rewriting it would change which object the alias names. The parsed parts are
 // derived from it so that ordering can tell a local target from one in another
 // database without parsing the string again at every call site.
-func (r *Reader) readSynonyms() ([]types.DBSynonym, error) {
+func (r *Reader) readSynonyms(ctx context.Context) ([]types.DBSynonym, error) {
 	query := `
 		SELECT s.name, sy.name, sy.base_object_name
 		FROM sys.synonyms AS sy
@@ -973,7 +981,7 @@ func (r *Reader) readSynonyms() ([]types.DBSynonym, error) {
 		WHERE sy.is_ms_shipped = 0
 			  AND (` + schemaPredicatePlaceholder + `)
 		ORDER BY s.name, sy.name`
-	rows, err := r.db.Query(r.queryWithSchemaPredicate(query), r.schemaArgs()...)
+	rows, err := r.db.QueryContext(ctx, r.queryWithSchemaPredicate(query), r.schemaArgs()...)
 	if err != nil {
 		return nil, err
 	}
@@ -1027,7 +1035,7 @@ func partFromRight(parts []string, n int) string {
 	return parts[index]
 }
 
-func (r *Reader) readTriggers() ([]types.DBTrigger, error) {
+func (r *Reader) readTriggers(ctx context.Context) ([]types.DBTrigger, error) {
 	query := `
 		SELECT s.name, tr.name, t.name, OBJECT_DEFINITION(tr.object_id)
 		FROM sys.triggers AS tr
@@ -1036,7 +1044,7 @@ func (r *Reader) readTriggers() ([]types.DBTrigger, error) {
 		WHERE tr.is_ms_shipped = 0
 			  AND (` + schemaPredicatePlaceholder + `)
 		ORDER BY s.name, t.name, tr.name`
-	rows, err := r.db.Query(r.queryWithSchemaPredicate(query), r.schemaArgs()...)
+	rows, err := r.db.QueryContext(ctx, r.queryWithSchemaPredicate(query), r.schemaArgs()...)
 	if err != nil {
 		return nil, err
 	}

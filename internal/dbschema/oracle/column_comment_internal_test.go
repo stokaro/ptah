@@ -27,7 +27,7 @@ func TestReadColumns_CarriesAColumnComment(t *testing.T) {
 	db := dbtest.Open(t, answeringColumnCatalog)
 	reader := &Reader{db: db.SQL, schema: "APP"}
 
-	columns, err := reader.readColumns()
+	columns, err := reader.readColumns(t.Context())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(columns["CUSTOMERS"], qt.HasLen, 2)

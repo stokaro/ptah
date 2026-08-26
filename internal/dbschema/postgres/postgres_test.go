@@ -262,7 +262,7 @@ func TestPostgreSQLReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 	})
 	reader := NewPostgreSQLReader(db.SQL, "public")
 
-	tables, err := reader.readTablesForSchema("public")
+	tables, err := reader.readTablesForSchema(t.Context(), "public")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.QueryCount(), qt.Equals, 3)

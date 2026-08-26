@@ -487,7 +487,6 @@ func findDatabaseFunction(
 	return candidates[0], true
 }
 
-// Views compares view definitions between generated and database schemas.
 // Synonyms compares declared synonyms against the ones the database reports.
 //
 // The comparison is on the qualified name, and a changed target is reported as
@@ -576,6 +575,7 @@ func synonymTargetParts(name string) string {
 	return strings.Join(parts, ".")
 }
 
+// Views compares view definitions between generated and database schemas.
 func Views(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
 	ViewsWithDialect(generated, database, diff, "")
 }

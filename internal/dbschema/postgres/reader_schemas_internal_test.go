@@ -119,7 +119,7 @@ func TestPostgreSQLReaderReadSchemasReportsWhatItRead(t *testing.T) {
 			reader := NewPostgreSQLReader(db.SQL, test.connected)
 			reader.SetSchemas(test.scope)
 
-			schemas, err := reader.readSchemas()
+			schemas, err := reader.readSchemas(t.Context())
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(schemas, qt.DeepEquals, test.want)

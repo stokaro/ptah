@@ -15,6 +15,7 @@
 package oracle
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"strconv"
@@ -64,54 +65,61 @@ func NewOracleReaderWithCapabilities(
 	}
 }
 
-// ReadSchema reads the objects Ptah renders for Oracle.
+// ReadSchema is [Reader.ReadSchemaContext] under context.Background(), the
+// context-free half of the pair [types.SchemaReader] declares. Prefer the
+// Context form: only it can be told to stop.
 func (r *Reader) ReadSchema() (*types.DBSchema, error) {
+	return r.ReadSchemaContext(context.Background())
+}
+
+// ReadSchemaContext reads the objects Ptah renders for Oracle.
+func (r *Reader) ReadSchemaContext(ctx context.Context) (*types.DBSchema, error) {
 	schema := &types.DBSchema{
 		Schemas: []types.DBSchemaInfo{{Name: r.schema}},
 	}
 
-	tables, err := r.readTables()
+	tables, err := r.readTables(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("oracle: read tables: %w", err)
 	}
 	schema.Tables = tables
 
-	constraints, generatedKeys, err := r.readConstraints()
+	constraints, generatedKeys, err := r.readConstraints(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("oracle: read constraints: %w", err)
 	}
 	schema.Constraints = constraints
 
-	indexes, err := r.readIndexes()
+	indexes, err := r.readIndexes(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("oracle: read indexes: %w", err)
 	}
 	schema.Indexes = indexes
 
-	sequences, err := r.readSequences()
+	sequences, err := r.readSequences(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("oracle: read sequences: %w", err)
 	}
 	schema.Sequences = sequences
 
-	views, err := r.readViews()
+	views, err := r.readViews(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("oracle: read views: %w", err)
 	}
 	schema.Views = views
 
-	matViews, err := r.readMaterializedViews()
+	matViews, err := r.readMaterializedViews(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("oracle: read materialized views: %w", err)
 	}
 	schema.MatViews = matViews
 
-	if err := r.readRolesInto(schema); err != nil {
+	if err := r.readRolesInto(ctx, schema); err != nil {
 		return nil, fmt.Errorf("oracle: %w", err)
 	}
 
 	if r.caps.Has(capability.DomainTypes) {
-		domains, err := r.readDomains()
+		domains, err := r.readDomains(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("oracle: read domains: %w", err)
 		}
@@ -119,7 +127,7 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	}
 
 	if r.caps.Has(capability.CompositeTypes) {
-		composites, err := r.readComposites()
+		composites, err := r.readComposites(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("oracle: read composite types: %w", err)
 		}
@@ -131,7 +139,7 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	// asking for one kind and not the other would mean a second query for the
 	// same view. A target declaring neither key is not asked at all.
 	if r.caps.Has(capability.Functions) || r.caps.Has(capability.Procedures) {
-		functions, err := r.readFunctions()
+		functions, err := r.readFunctions(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("oracle: read functions: %w", err)
 		}
@@ -183,8 +191,8 @@ WHERE t.owner = :1
   AND t.dropped = 'NO'
 ORDER BY t.table_name`
 
-func (r *Reader) readTables() ([]types.DBTable, error) {
-	rows, err := r.db.Query(tableQuery, r.schema)
+func (r *Reader) readTables(ctx context.Context) ([]types.DBTable, error) {
+	rows, err := r.db.QueryContext(ctx, tableQuery, r.schema)
 	if err != nil {
 		return nil, err
 	}
@@ -206,7 +214,7 @@ func (r *Reader) readTables() ([]types.DBTable, error) {
 		return nil, err
 	}
 
-	columns, err := r.readColumns()
+	columns, err := r.readColumns(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -252,8 +260,8 @@ WHERE c.owner = :1
   AND c.table_name NOT LIKE 'BIN$%'
 ORDER BY c.table_name, c.column_id`
 
-func (r *Reader) readColumns() (map[string][]types.DBColumn, error) {
-	rows, err := r.db.Query(columnQuery, r.schema)
+func (r *Reader) readColumns(ctx context.Context) (map[string][]types.DBColumn, error) {
+	rows, err := r.db.QueryContext(ctx, columnQuery, r.schema)
 	if err != nil {
 		return nil, err
 	}
@@ -329,7 +337,7 @@ WHERE c.owner = :1
            AND REGEXP_LIKE(c.search_condition_vc, '^"[^"]+" IS NOT NULL$'))
 ORDER BY c.table_name, c.constraint_name, col.position`
 
-func (r *Reader) readConstraints() ([]types.DBConstraint, map[string]bool, error) {
+func (r *Reader) readConstraints(ctx context.Context) ([]types.DBConstraint, map[string]bool, error) {
 	// The referenced keys are read BEFORE the constraint rows are opened, and
 	// the order is load-bearing rather than tidy.
 	//
@@ -346,12 +354,12 @@ func (r *Reader) readConstraints() ([]types.DBConstraint, map[string]bool, error
 	//
 	// v2 served the pair from a second pooled connection, so the old order
 	// worked by accident of the driver rather than by design.
-	referenced, err := r.readReferencedKeys()
+	referenced, err := r.readReferencedKeys(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	rows, err := r.db.Query(constraintQuery, r.schema)
+	rows, err := r.db.QueryContext(ctx, constraintQuery, r.schema)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -477,8 +485,8 @@ WHERE c.owner = :1
   AND c.constraint_type IN ('P', 'U')
 ORDER BY c.constraint_name, col.position`
 
-func (r *Reader) readReferencedKeys() (map[string]referencedKey, error) {
-	rows, err := r.db.Query(referencedKeyQuery, r.schema)
+func (r *Reader) readReferencedKeys(ctx context.Context) (map[string]referencedKey, error) {
+	rows, err := r.db.QueryContext(ctx, referencedKeyQuery, r.schema)
 	if err != nil {
 		return nil, err
 	}
@@ -520,8 +528,8 @@ FROM all_ind_columns ic
 WHERE ic.index_owner = :1
 ORDER BY ic.index_name, ic.column_position`
 
-func (r *Reader) readIndexes() ([]types.DBIndex, error) {
-	rows, err := r.db.Query(indexQuery, r.schema)
+func (r *Reader) readIndexes(ctx context.Context) ([]types.DBIndex, error) {
+	rows, err := r.db.QueryContext(ctx, indexQuery, r.schema)
 	if err != nil {
 		return nil, err
 	}
@@ -542,7 +550,7 @@ func (r *Reader) readIndexes() ([]types.DBIndex, error) {
 		return nil, err
 	}
 
-	columns, err := r.readIndexColumns()
+	columns, err := r.readIndexColumns(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -558,8 +566,8 @@ func (r *Reader) readIndexes() ([]types.DBIndex, error) {
 	return indexes, nil
 }
 
-func (r *Reader) readIndexColumns() (map[string][]types.DBIndexPart, error) {
-	rows, err := r.db.Query(indexColumnQuery, r.schema)
+func (r *Reader) readIndexColumns(ctx context.Context) (map[string][]types.DBIndexPart, error) {
+	rows, err := r.db.QueryContext(ctx, indexColumnQuery, r.schema)
 	if err != nil {
 		return nil, err
 	}
@@ -607,8 +615,8 @@ WHERE s.sequence_owner = :1
         WHERE i.owner = s.sequence_owner AND i.sequence_name = s.sequence_name)
 ORDER BY s.sequence_name`
 
-func (r *Reader) readSequences() ([]types.DBSequence, error) {
-	rows, err := r.db.Query(sequenceQuery, r.schema)
+func (r *Reader) readSequences(ctx context.Context) ([]types.DBSequence, error) {
+	rows, err := r.db.QueryContext(ctx, sequenceQuery, r.schema)
 	if err != nil {
 		return nil, err
 	}
@@ -646,8 +654,8 @@ FROM all_views v
 WHERE v.owner = :1
 ORDER BY v.view_name`
 
-func (r *Reader) readViews() ([]types.DBView, error) {
-	rows, err := r.db.Query(viewQuery, r.schema)
+func (r *Reader) readViews(ctx context.Context) ([]types.DBView, error) {
+	rows, err := r.db.QueryContext(ctx, viewQuery, r.schema)
 	if err != nil {
 		return nil, err
 	}
@@ -678,8 +686,8 @@ FROM all_mviews m
 WHERE m.owner = :1
 ORDER BY m.mview_name`
 
-func (r *Reader) readMaterializedViews() ([]types.DBMatView, error) {
-	rows, err := r.db.Query(matViewQuery, r.schema)
+func (r *Reader) readMaterializedViews(ctx context.Context) ([]types.DBMatView, error) {
+	rows, err := r.db.QueryContext(ctx, matViewQuery, r.schema)
 	if err != nil {
 		return nil, err
 	}

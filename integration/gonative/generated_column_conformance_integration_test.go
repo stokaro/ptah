@@ -33,7 +33,7 @@ func TestGeneratedColumnConformanceFixture_RoundTrip_Postgres(t *testing.T) {
 	execConformanceSQL(c, db, createSQL, "generated-column")
 
 	reader := postgresreader.NewPostgreSQLReader(db, "public")
-	liveSchema, err := reader.ReadSchema()
+	liveSchema, err := reader.ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	liveSchema = filterConformanceSchema(liveSchema, generatedColumnConformanceTables())
 
@@ -57,7 +57,7 @@ func TestGeneratedColumnConformanceFixture_RoundTrip_MySQL(t *testing.T) {
 	execConformanceSQL(c, db, createSQL, "generated-column")
 
 	reader := mysqlreader.NewMySQLReader(db, "")
-	liveSchema, err := reader.ReadSchema()
+	liveSchema, err := reader.ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	liveSchema = filterConformanceSchema(liveSchema, generatedColumnConformanceTables())
 

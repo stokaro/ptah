@@ -150,7 +150,7 @@ func PreparePlanFile(
 		return PlanFile{}, err
 	}
 
-	from, err := planSourceSchema(conn, computation, opts.Exclude)
+	from, err := planSourceSchema(ctx, conn, computation, opts.Exclude)
 	if err != nil {
 		return PlanFile{}, err
 	}
@@ -200,7 +200,7 @@ func PreparePlanFile(
 // desired state naming another schema creates and no other. The exclusion is
 // applied here the way computeApplyPlan applied it to its own read, so the two
 // fingerprints describe the same subtraction.
-func planSourceSchema(
+func planSourceSchema(ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	computation applyComputation,
 	exclude []string,
@@ -208,7 +208,7 @@ func planSourceSchema(
 	if computation.readScope == nil {
 		return computation.current, nil
 	}
-	current, err := dbschema.ReadSchemaWithSchemas(conn, nil)
+	current, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, nil)
 	if err != nil {
 		return nil, fmt.Errorf("read database schema: %w", err)
 	}
@@ -382,7 +382,7 @@ func decodePlanJSON(contents []byte, path string) (PlanFile, error) {
 // was computed against: the dialects must be compatible and the current
 // schema, filtered with the plan's recorded exclude patterns, must match the
 // plan's source fingerprint. A fingerprint mismatch returns *StalePlanError.
-func VerifyPlanTarget(conn *dbschema.DatabaseConnection, plan PlanFile) error {
+func VerifyPlanTarget(ctx context.Context, conn *dbschema.DatabaseConnection, plan PlanFile) error {
 	if conn == nil {
 		return errors.New("plan verification requires database connection")
 	}
@@ -393,7 +393,7 @@ func VerifyPlanTarget(conn *dbschema.DatabaseConnection, plan PlanFile) error {
 			plan.Dialect, conn.Info().Dialect)
 	}
 
-	current, err := dbschema.ReadSchemaWithSchemas(conn, nil)
+	current, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, nil)
 	if err != nil {
 		return fmt.Errorf("read database schema: %w", err)
 	}

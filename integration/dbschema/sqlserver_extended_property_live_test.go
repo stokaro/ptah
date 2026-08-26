@@ -70,7 +70,7 @@ func TestSQLServerLiveExtendedPropertyRoundTrip(t *testing.T) {
 
 	// 2. The catalog is asked what it holds, through the reader rather than
 	// through a query written here.
-	live, err := dbschema.ReadSchemaWithSchemas(conn, []string{"dbo"})
+	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{"dbo"})
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(extendedPropertySummary(live.ExtendedProperties, table), qt.DeepEquals, []string{
@@ -99,7 +99,7 @@ func TestSQLServerLiveExtendedPropertyRoundTrip(t *testing.T) {
 		property, table))
 	c.Assert(err, qt.IsNil)
 
-	after, err := dbschema.ReadSchemaWithSchemas(conn, []string{"dbo"})
+	after, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{"dbo"})
 	c.Assert(err, qt.IsNil)
 	settledAgain := schemadiff.CompareWithDialect(changed, after, platform.SQLServer)
 	c.Assert(modifiedExtendedPropertiesOn(settledAgain.ExtendedPropertiesModified, table), qt.HasLen, 0)
@@ -138,7 +138,7 @@ func TestSQLServerLiveExtendedPropertyLeavesAnUnwritableValueAlone(t *testing.T)
 		property, table))
 	c.Assert(err, qt.IsNil)
 
-	live, err := dbschema.ReadSchemaWithSchemas(conn, []string{"dbo"})
+	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{"dbo"})
 	c.Assert(err, qt.IsNil)
 
 	found := findExtendedProperty(c, live.ExtendedProperties, table, property)
@@ -285,7 +285,7 @@ func TestSQLServerLiveDatabaseScopedExtendedPropertyRoundTrip(t *testing.T) {
 		c.Assert(execErr, qt.IsNil, qt.Commentf("statement:\n%s", statement))
 	}
 
-	live, err := dbschema.ReadSchemaWithSchemas(conn, []string{"dbo"})
+	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{"dbo"})
 	c.Assert(err, qt.IsNil)
 
 	found := findExtendedPropertyByName(c, live.ExtendedProperties, databaseProperty)

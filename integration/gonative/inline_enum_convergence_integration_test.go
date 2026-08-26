@@ -109,7 +109,7 @@ func inlineEnumPending(c *qt.C, db *sql.DB, dialect string, desired *goschema.Da
 	c.Helper()
 
 	reader := mysql.NewMySQLReader(db, "")
-	live, err := reader.ReadSchema()
+	live, err := reader.ReadSchemaContext(c.Context())
 	c.Assert(err, qt.IsNil)
 
 	// CompareWithDialect rather than Compare: the inline-enum fold is what turns

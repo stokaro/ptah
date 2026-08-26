@@ -53,9 +53,9 @@ func TestPostgresPooledProxyDescribesTheSameSchemaE2E(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(pooled)
 
-	directSchema, err := dbschema.ReadSchemaWithSchemas(direct, []string{"public"})
+	directSchema, err := dbschema.ReadSchemaWithSchemasContext(ctx, direct, []string{"public"})
 	c.Assert(err, qt.IsNil)
-	pooledSchema, err := dbschema.ReadSchemaWithSchemas(pooled, []string{"public"})
+	pooledSchema, err := dbschema.ReadSchemaWithSchemasContext(ctx, pooled, []string{"public"})
 	c.Assert(err, qt.IsNil)
 
 	// Non-vacuity first: the table this test created is in both reads, so two

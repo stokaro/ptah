@@ -908,17 +908,62 @@ func (s DBSequence) QualifiedName() string {
 
 // DBInfo contains connection and metadata information
 type DBInfo struct {
-	Dialect             string                  `json:"dialect"` // postgres, mysql, mariadb
-	Version             string                  `json:"version"`
-	Schema              string                  `json:"schema"`               // public, database name, etc.
-	URL                 string                  `json:"url"`                  // database connection URL (for reference)
+	Dialect string `json:"dialect"` // postgres, mysql, mariadb
+	Version string `json:"version"`
+	Schema  string `json:"schema"` // public, database name, etc.
+
+	// URL is the database connection URL the connection was opened from, with
+	// whatever credentials it carried. Callers that reconnect to the same
+	// target read it -- a dev-database URL, a second session for an online DDL
+	// tool, a realm-scope decision that depends on the URL's path.
+	//
+	// It is excluded from JSON because every other field here is tagged, and a
+	// struct whose tags invite marshalling must not carry one field that turns
+	// a marshal into a credential disclosure: `json.Marshal(conn.Info())` is
+	// the obvious thing to do with a DBInfo, and it must not write the
+	// database password into whatever the caller does with the bytes. Marshal
+	// [DBInfo.RedactedURL] instead -- it names the same target with the
+	// secrets removed (stokaro/ptah#2246).
+	URL string `json:"-"`
+
+	// RedactedURL is URL with every secret it carries replaced, suitable for a
+	// log line, an error message or a serialized report. It occupies the `url`
+	// JSON name so a consumer that marshals DBInfo still learns which target
+	// the description came from.
+	RedactedURL string `json:"url"`
+
 	Capabilities        capability.Capabilities `json:"capabilities"`         // resolved from Dialect + Version for live connections
 	IdentifierSemantics identifier.Semantics    `json:"identifier_semantics"` // catalog identifier metadata and static rules
 }
 
-// SchemaReader interface for reading database schemas
+// SchemaReader reads a live database schema, in the two forms this package
+// offers every other database call in: a context-free one and a Context one.
+//
+// ReadSchemaContext governs every catalog query the read issues with the
+// provided context: canceling it, or letting its deadline pass, makes the read
+// return promptly with an error rather than running the remaining queries.
+//
+// The context is part of the contract rather than a convenience. A schema read
+// is dozens of round trips against a server that may be slow or unreachable,
+// and it is what the migration generator's own documented context contract
+// bottoms out in, so a caller with no way to say "stop" has no way to bound
+// either one (stokaro/ptah#2246).
+//
+// ReadSchema is that same read under context.Background(), and is what a caller
+// with no context to hand writes. It is the pairing database/sql itself uses
+// and that dbschema.DatabaseConnection already follows -- Exec beside
+// ExecContext, Query beside QueryContext, QueryRow beside QueryRowContext -- so
+// a reader implements both and the choice is the caller's. Prefer
+// ReadSchemaContext: only it can be stopped.
+//
+// Both are part of the interface rather than one being a helper beside it,
+// because an implementation of SchemaReader can live outside this module.
+// Ptah's own testkit module is one such consumer: it builds against the working
+// tree AND against the last published release, so the read it issues has to be
+// spelled a way that both of them carry.
 type SchemaReader interface {
 	ReadSchema() (*DBSchema, error)
+	ReadSchemaContext(ctx context.Context) (*DBSchema, error)
 }
 
 // SchemaExecutor executes SQL statements produced by schema operations.

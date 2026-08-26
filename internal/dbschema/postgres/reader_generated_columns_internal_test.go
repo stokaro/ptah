@@ -154,7 +154,7 @@ func TestReadColumnsForSchema_AsksForAttgeneratedOnlyWhereItExists(t *testing.T)
 			db := dbtest.Open(t, test.serve)
 
 			columnsByTable, err := NewPostgreSQLReaderWithCapabilities(db.SQL, "public", test.caps).
-				readColumnsForSchema("public")
+				readColumnsForSchema(t.Context(), "public")
 			c.Assert(err, qt.IsNil)
 			c.Assert(columnsByTable["t"], qt.HasLen, 1)
 
@@ -178,7 +178,7 @@ func TestReadColumnsForSchema_APostgres11EngineRefusesTheUngatedQuery(t *testing
 	db := dbtest.Open(t, servePostgres11)
 
 	_, err := NewPostgreSQLReaderWithCapabilities(db.SQL, "public", capability.Postgres16()).
-		readColumnsForSchema("public")
+		readColumnsForSchema(t.Context(), "public")
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "column a.attgenerated does not exist")
 }

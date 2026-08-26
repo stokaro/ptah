@@ -292,7 +292,7 @@ func assertSchemaMatches(
 	conn *dbschema.DatabaseConnection,
 	opts MigrationVerifyOptions,
 ) error {
-	dbSchema, err := dbschema.ReadSchemaWithSchemas(conn, opts.Schemas)
+	dbSchema, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, opts.Schemas)
 	if err != nil {
 		return newVerificationError("re-introspect", "re_introspect_error", "re-introspect shadow database", err)
 	}

@@ -358,7 +358,7 @@ func recreateCurrentSchema(
 	}
 	baseline := dbschematogo.ConvertDBSchemaToGoSchema(current)
 	normalizeBaselineSerialColumns(baseline, devConn.Info().Dialect)
-	devCurrent, err := dbschema.ReadSchemaWithSchemas(devConn, nil)
+	devCurrent, err := dbschema.ReadSchemaWithSchemasContext(ctx, devConn, nil)
 	if err != nil {
 		return fmt.Errorf("read dev database schema: %w", err)
 	}

@@ -1,6 +1,7 @@
 package mssql
 
 import (
+	"context"
 	"strings"
 
 	"go.5x5.cz/ptah/dbschema/types"
@@ -27,7 +28,7 @@ import (
 // each pair becomes one [types.DBRLSPolicy], which is the shape the comparator
 // reads; a policy naming three tables therefore reads back as three entries
 // carrying the same name.
-func (r *Reader) readRLSPolicies() ([]types.DBRLSPolicy, error) {
+func (r *Reader) readRLSPolicies(ctx context.Context) ([]types.DBRLSPolicy, error) {
 	query := `
 		SELECT s.name, p.name, t.name, sp.predicate_definition,
 			   sp.predicate_type_desc, ISNULL(sp.operation_desc, '')
@@ -39,7 +40,7 @@ func (r *Reader) readRLSPolicies() ([]types.DBRLSPolicy, error) {
 		WHERE p.is_ms_shipped = 0
 			  AND (` + schemaPredicatePlaceholder + `)
 		ORDER BY s.name, p.name, t.name, sp.security_predicate_id`
-	rows, err := r.db.Query(r.queryWithSchemaPredicate(query), r.schemaArgs()...)
+	rows, err := r.db.QueryContext(ctx, r.queryWithSchemaPredicate(query), r.schemaArgs()...)
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +137,7 @@ func applyRLSEnabled(schema *types.DBSchema, enabled map[string]bool) {
 // accepted at creation, and a disabled policy filters nothing. Reporting a
 // table as protected because a dormant policy names it would be the kind of
 // false all-clear this reader exists to avoid.
-func (r *Reader) readRLSEnabledTables() (map[string]bool, error) {
+func (r *Reader) readRLSEnabledTables(ctx context.Context) (map[string]bool, error) {
 	query := `
 		SELECT DISTINCT t.name
 		FROM sys.security_policies AS p
@@ -145,7 +146,7 @@ func (r *Reader) readRLSEnabledTables() (map[string]bool, error) {
 		JOIN sys.objects AS t ON t.object_id = sp.target_object_id
 		WHERE p.is_ms_shipped = 0 AND p.is_enabled = 1
 			  AND (` + schemaPredicatePlaceholder + `)`
-	rows, err := r.db.Query(r.queryWithSchemaPredicate(query), r.schemaArgs()...)
+	rows, err := r.db.QueryContext(ctx, r.queryWithSchemaPredicate(query), r.schemaArgs()...)
 	if err != nil {
 		return nil, err
 	}

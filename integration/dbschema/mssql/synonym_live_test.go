@@ -40,7 +40,7 @@ func TestReadSynonyms_Live(t *testing.T) {
 
 	reader := mssql.NewSQLServerReader(db, "dbo")
 	reader.SetSchemas([]string{"dbo", "app", "sales"})
-	schema, err := reader.ReadSchema()
+	schema, err := reader.ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 
 	byName := make(map[string]int)
@@ -91,7 +91,7 @@ func TestSynonymsDiffToZero_Live(t *testing.T) {
 
 	reader := mssql.NewSQLServerReader(db, "dbo")
 	reader.SetSchemas([]string{"dbo", "app"})
-	schema, err := reader.ReadSchema()
+	schema, err := reader.ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 
 	declared := &goschema.Database{Synonyms: []goschema.Synonym{
@@ -136,7 +136,7 @@ func TestSynonymRetarget_Live(t *testing.T) {
 	}
 
 	reader := mssql.NewSQLServerReader(db, "dbo")
-	schema, err := reader.ReadSchema()
+	schema, err := reader.ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	c.Assert(schema.Synonyms, qt.HasLen, 1)
 	c.Assert(schema.Synonyms[0].TargetObject, qt.Equals, "archived_orders")

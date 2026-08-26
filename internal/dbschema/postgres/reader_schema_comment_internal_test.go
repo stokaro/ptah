@@ -83,7 +83,7 @@ func TestReadSchemaInfoAsksForACommentOnlyWhenTheCatalogAnswers(t *testing.T) {
 			db := dbtest.Open(t, recorder.handle)
 
 			reader := NewPostgreSQLReaderWithCapabilities(db.SQL, "public", tt.caps)
-			schema, err := reader.readSchemaInfo("public")
+			schema, err := reader.readSchemaInfo(t.Context(), "public")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(schema.Name, qt.Equals, "public")
@@ -125,7 +125,7 @@ func TestTablesQueryDropsWhatTheCatalogCannotAnswer(t *testing.T) {
 			db := dbtest.Open(t, recorder.handle)
 
 			reader := NewPostgreSQLReaderWithCapabilities(db.SQL, "public", tt.caps)
-			_, err := reader.readTables()
+			_, err := reader.readTables(t.Context())
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(len(recorder.statements) > 0, qt.IsTrue)
@@ -157,7 +157,7 @@ func TestCatalogDependenciesAreNotReadWhereThereAreNone(t *testing.T) {
 			// in for by a constant the way a missing function can, so the whole
 			// read is skipped rather than reduced.
 			reader := NewPostgreSQLReaderWithCapabilities(db.SQL, "public", tt.caps)
-			err := reader.readUserTypesInto(&types.DBSchema{})
+			err := reader.readUserTypesInto(t.Context(), &types.DBSchema{})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(len(recorder.statements) > 0, qt.Equals, tt.wantQuery)

@@ -67,7 +67,7 @@
 //
 // The package provides comprehensive schema introspection:
 //
-//	schema, err := conn.Reader().ReadSchema()
+//	schema, err := conn.Reader().ReadSchemaContext(ctx)
 //	if err != nil {
 //		log.Fatal(err)
 //	}
@@ -79,6 +79,19 @@
 //			fmt.Printf("  Column: %s (%s)\n", column.Name, column.Type)
 //		}
 //	}
+//
+// Every schema read comes in two forms, the pairing this package offers for
+// every other database call and the one database/sql itself uses: a reader's
+// ReadSchemaContext beside its ReadSchema, and [ReadSchemaWithSchemasContext]
+// beside [ReadSchemaWithSchemas], just as [DatabaseConnection.ExecContext] sits
+// beside [DatabaseConnection.Exec]. The context-free form is the same read
+// under context.Background(), for a caller with none to hand.
+//
+// Prefer the Context form wherever a context exists. A schema read is dozens of
+// round trips against a server that may be slow or unreachable, and only the
+// Context form can be told to stop: canceling the context, or letting its
+// deadline pass, makes the read return promptly with an error rather than
+// running the remaining queries.
 //
 // # Schema Writing
 //
@@ -184,7 +197,17 @@
 //
 // # Thread Safety
 //
-// DatabaseConnection instances are thread-safe for read operations but should
-// not be used concurrently for write operations that involve transactions.
-// Multiple connections can be created for concurrent access patterns.
+// A DatabaseConnection may be used from several goroutines for reads:
+// [ReadSchemaWithSchemasContext] and its context-free form give each call a
+// reader of its own, the query methods go straight to database/sql's pool, and
+// [DatabaseConnection.Info] returns a copy. Two concurrent schema reads at different schema scopes are
+// two independent reads. That is a property of where the schema allow-list is
+// held rather than a free one: the allow-list is reader state, so a read that
+// scoped a reader shared with another read would let each see the other's
+// scope (stokaro/ptah#2246).
+//
+// Writes are not covered by that. A schema writer, and the transaction a writer
+// opens, belong to one goroutine at a time: [DatabaseConnection.WithSession]
+// and [DatabaseConnection.WithExecutor] hand out connection copies for exactly
+// that reason. Open a second connection instead of sharing a writer.
 package dbschema

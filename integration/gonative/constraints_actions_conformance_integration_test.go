@@ -35,7 +35,7 @@ func TestConstraintsActionsConformanceFixture_RoundTrip_MySQL(t *testing.T) {
 	execConformanceSQL(c, db, createSQL, "constraints/actions")
 
 	reader := mysqlreader.NewMySQLReader(db, "")
-	liveSchema, err := reader.ReadSchema()
+	liveSchema, err := reader.ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	liveSchema = filterConformanceSchema(liveSchema, constraintsActionsConformanceTables())
 

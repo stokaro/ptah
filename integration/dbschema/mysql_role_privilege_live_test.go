@@ -69,7 +69,7 @@ func TestMySQLLiveRoleReadDegradesWithoutPrivilege(t *testing.T) {
 	// The read succeeds, which is the whole point: before the degradation it
 	// returned `failed to read roles: Error 1142 (42000): SELECT command denied`
 	// and the account had no description of its own schema at all.
-	described, err := restricted.Reader().ReadSchema()
+	described, err := restricted.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 
 	// What it could not look at is recorded rather than reported as empty, so a

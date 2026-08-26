@@ -69,7 +69,7 @@ func TestExtensionVersionAndSchemaConvergeLive(t *testing.T) {
 	declared := &goschema.Database{Extensions: []goschema.Extension{{
 		Name: "pg_trgm", Schema: home, Version: "1.6",
 	}}}
-	live, err := conn.Reader().ReadSchema()
+	live, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 	raised := schemadiff.CompareWithDialect(declared, live, platform.Postgres)
 	c.Assert(raised.ExtensionsModified, qt.HasLen, 1)
@@ -86,7 +86,7 @@ func TestExtensionVersionAndSchemaConvergeLive(t *testing.T) {
 
 	// 3. Convergence. The same declaration against a freshly read database has
 	// nothing left to do.
-	settled, err := conn.Reader().ReadSchema()
+	settled, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 	after := schemadiff.CompareWithDialect(declared, settled, platform.Postgres)
 	c.Assert(after.ExtensionsModified, qt.HasLen, 0)
@@ -107,7 +107,7 @@ func TestExtensionVersionAndSchemaConvergeLive(t *testing.T) {
 		c.Assert(conn.Writer().ExecuteSQL(ctx, statement), qt.IsNil, qt.Commentf("statement:\n%s", statement))
 	}
 
-	relocated, err := conn.Reader().ReadSchema()
+	relocated, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 	c.Assert(schemadiff.CompareWithDialect(moved, relocated, platform.Postgres).ExtensionsModified, qt.HasLen, 0)
 }
@@ -156,7 +156,7 @@ func TestExtensionAlterationRefusalsMatchTheServerLive(t *testing.T) {
 	t.Run("the read reports which extension may move", func(t *testing.T) {
 		c := qt.New(t)
 
-		live, readErr := conn.Reader().ReadSchema()
+		live, readErr := conn.Reader().ReadSchemaContext(ctx)
 		c.Assert(readErr, qt.IsNil)
 		byName := map[string]bool{}
 		for _, extension := range live.Extensions {

@@ -66,7 +66,7 @@ func TestForeignDefinerReplacementRefusal_Live(t *testing.T) {
 			adminConn, err := dbschema.ConnectToDatabase(c.Context(), adminURL)
 			c.Assert(err, qt.IsNil)
 			c.Cleanup(func() { c.Check(adminConn.Close(), qt.IsNil) })
-			live, err := adminConn.Reader().ReadSchema()
+			live, err := adminConn.Reader().ReadSchemaContext(t.Context())
 			c.Assert(err, qt.IsNil)
 			c.Assert(live.Functions, qt.HasLen, 1)
 			c.Assert(live.Functions[0].Definer, qt.Contains, owner+"@")
@@ -89,7 +89,7 @@ func TestForeignDefinerReplacementRefusal_Live(t *testing.T) {
 			ownerConn, err := dbschema.ConnectToDatabase(c.Context(), ownerURL)
 			c.Assert(err, qt.IsNil)
 			c.Cleanup(func() { c.Check(ownerConn.Close(), qt.IsNil) })
-			ownerLive, err := ownerConn.Reader().ReadSchema()
+			ownerLive, err := ownerConn.Reader().ReadSchemaContext(t.Context())
 			c.Assert(err, qt.IsNil)
 			ownerDiff, err := schemadiff.CompareWithDatabase(
 				c.Context(), ownerConn, desired, ownerLive, nil,

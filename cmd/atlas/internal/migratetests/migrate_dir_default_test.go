@@ -321,7 +321,7 @@ func sqliteTableNames(c *qt.C, dbPath string) []string {
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
-	schema, err := dbschema.ReadSchemaWithSchemas(conn, nil)
+	schema, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, nil)
 	c.Assert(err, qt.IsNil)
 	names := make([]string, 0, len(schema.Tables))
 	for _, table := range schema.Tables {

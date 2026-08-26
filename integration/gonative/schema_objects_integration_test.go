@@ -40,7 +40,7 @@ func TestSchemaObjects_RoundTripAndBodyChange_PostgreSQL_Integration(t *testing.
 	c.Assert(err, qt.IsNil, qt.Commentf("generated migration SQL must execute: %s", sqlText))
 
 	reader := postgres.NewPostgreSQLReader(db, "public")
-	read, err := reader.ReadSchema()
+	read, err := reader.ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	filtered := filterSchemaObjects(read)
 
@@ -63,7 +63,7 @@ func TestSchemaObjects_RoundTripAndBodyChange_PostgreSQL_Integration(t *testing.
 	_, err = db.Exec(modifiedSQL)
 	c.Assert(err, qt.IsNil, qt.Commentf("modified migration SQL must execute: %s", modifiedSQL))
 
-	read, err = reader.ReadSchema()
+	read, err = reader.ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	modifiedFiltered := filterSchemaObjects(read)
 	modifiedRoundTrip := schemadiff.Compare(modified, modifiedFiltered)
@@ -84,7 +84,7 @@ func TestSchemaObjects_RoundTripAndBodyChange_PostgreSQL_Integration(t *testing.
 	_, err = db.Exec(removalSQL)
 	c.Assert(err, qt.IsNil, qt.Commentf("removal migration SQL must execute: %s", removalSQL))
 
-	read, err = reader.ReadSchema()
+	read, err = reader.ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	removedFiltered := filterSchemaObjects(read)
 	removedRoundTrip := schemadiff.Compare(tableOnly, removedFiltered)

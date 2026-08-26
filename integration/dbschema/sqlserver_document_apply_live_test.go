@@ -85,7 +85,7 @@ func TestSQLServerLiveDocumentAppliesEveryPropertyScope(t *testing.T) {
 	// database-scoped one is in a read narrowed to a schema on purpose: it
 	// belongs to no schema, so dropping it from a narrowed description would
 	// plan sp_dropextendedproperty for a property the declaration still names.
-	live, err := dbschema.ReadSchemaWithSchemas(conn, []string{schemaName})
+	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
 	c.Assert(extendedPropertyNames(live.ExtendedProperties), qt.DeepEquals,
 		[]string{"ptah_column", databaseProperty, "ptah_schema", "ptah_table"})
@@ -114,7 +114,7 @@ func planDocumentAgainstLive(
 	schemaName string,
 ) []string {
 	c.Helper()
-	live, err := dbschema.ReadSchemaWithSchemas(conn, []string{schemaName})
+	live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
 
 	diff, err := schemadiff.CompareWithDatabase(c.Context(), conn, declared, live, nil)

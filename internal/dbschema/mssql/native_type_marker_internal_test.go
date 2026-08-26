@@ -27,7 +27,7 @@ func TestReadColumnsByTable_MarksTheTypeAsTheTargetsOwn(t *testing.T) {
 	db := dbtest.Open(t, answeringNativeTypes)
 	reader := NewSQLServerReader(db.SQL, "dbo")
 
-	columns, err := reader.readColumnsByTable()
+	columns, err := reader.readColumnsByTable(t.Context())
 
 	c.Assert(err, qt.IsNil)
 	byTable := columns[catalogTableKey{schema: "dbo", table: "t"}]

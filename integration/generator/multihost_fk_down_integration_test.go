@@ -82,7 +82,7 @@ func TestMultiHostMixinFKModify_DownRoundTrip_Integration(t *testing.T) {
 				c.Assert(err, qt.IsNil, qt.Commentf("setup: add prior FK on %s", h))
 			}
 
-			dbPrior, err := conn.Reader().ReadSchema()
+			dbPrior, err := conn.Reader().ReadSchemaContext(t.Context())
 			c.Assert(err, qt.IsNil)
 			priorRules := tenantDeleteRules(dialect, dbPrior, hosts)
 			c.Assert(priorRules, qt.HasLen, len(hosts),
@@ -96,7 +96,7 @@ func TestMultiHostMixinFKModify_DownRoundTrip_Integration(t *testing.T) {
 			c.Assert(upSQL, qt.Not(qt.Equals), "")
 			execScript(c, conn, upSQL, "UP")
 
-			dbAfterUp, err := conn.Reader().ReadSchema()
+			dbAfterUp, err := conn.Reader().ReadSchemaContext(t.Context())
 			c.Assert(err, qt.IsNil)
 			afterUp := tenantDeleteRules(dialect, dbAfterUp, hosts)
 			for _, h := range hosts {
@@ -111,7 +111,7 @@ func TestMultiHostMixinFKModify_DownRoundTrip_Integration(t *testing.T) {
 			execScript(c, conn, downSQL, "DOWN")
 
 			// 5. Per-host action restored to the prior value, on every host.
-			dbAfterDown, err := conn.Reader().ReadSchema()
+			dbAfterDown, err := conn.Reader().ReadSchemaContext(t.Context())
 			c.Assert(err, qt.IsNil)
 			restored := tenantDeleteRules(dialect, dbAfterDown, hosts)
 			for _, h := range hosts {

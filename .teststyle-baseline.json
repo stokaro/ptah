@@ -709,12 +709,6 @@
       "count": 4
     },
     {
-      "path": "migration/migrator/example_test.go",
-      "function": "Example_registerMigrationsCustomFilesystem",
-      "kind": "if",
-      "count": 2
-    },
-    {
       "path": "migration/migrator/migration_provider_test.go",
       "function": "TestRegisteredMigrationProvider_ConcurrentRegisterAndMigrations",
       "kind": "if",

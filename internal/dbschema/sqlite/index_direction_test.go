@@ -75,7 +75,7 @@ func TestReader_RecordsAnIndexKeysDirection(t *testing.T) {
 			)`)
 			execSQL(t, db, tt.ddl)
 
-			schema, err := sqlite.NewSQLiteReader(db, "main").ReadSchema()
+			schema, err := sqlite.NewSQLiteReader(db, "main").ReadSchemaContext(t.Context())
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(schema.Indexes, qt.HasLen, 1)

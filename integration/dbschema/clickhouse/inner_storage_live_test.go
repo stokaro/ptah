@@ -50,7 +50,7 @@ func TestInnerTableSubtractionKeepsADeclaredDotNameLive(t *testing.T) {
 			" (x UInt64, INDEX x_minmax x TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY x",
 	})
 
-	readback, err := clickhousedb.NewClickHouseReader(db, database).ReadSchema()
+	readback, err := clickhousedb.NewClickHouseReader(db, database).ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	c.Assert(clickHouseTableNames(readback), qt.DeepEquals, []string{".inner.user_counts", "users"})
 	c.Assert(readback.MatViews, qt.HasLen, 1)

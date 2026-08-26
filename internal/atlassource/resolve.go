@@ -272,7 +272,7 @@ func (s Set) resolveDatabase(ctx context.Context, opts ResolveOptions) (State, e
 	if err != nil {
 		return State{}, fmt.Errorf("read %s database schema: %w", s.Flag, err)
 	}
-	schema, err := dbschema.ReadSchemaWithSchemas(conn, names)
+	schema, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, names)
 	if err != nil {
 		return State{}, fmt.Errorf("read %s database schema: %w", s.Flag, err)
 	}
@@ -366,7 +366,7 @@ func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions) (Stat
 			if err != nil {
 				return fmt.Errorf("read dev database schema: %w", err)
 			}
-			schema, err := dbschema.ReadSchemaWithSchemas(replayConn, names)
+			schema, err := dbschema.ReadSchemaWithSchemasContext(ctx, replayConn, names)
 			if err != nil {
 				return fmt.Errorf("read dev database schema: %w", err)
 			}

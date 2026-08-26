@@ -93,7 +93,7 @@ func assertOracleDomainBehavior(ctx context.Context, c *qt.C, conn *dbschema.Dat
 // statement and abort the transaction around it.
 func assertOracleDomainsAreRefused(ctx context.Context, c *qt.C, conn *dbschema.DatabaseConnection) {
 	c.Helper()
-	live, err := conn.Reader().ReadSchema()
+	live, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 	c.Assert(live.Domains, qt.HasLen, 0)
 
@@ -111,7 +111,7 @@ func assertOracleDomainsConverge(ctx context.Context, c *qt.C, conn *dbschema.Da
 	c.Helper()
 	declared := oracleDomainDeclaration()
 
-	before, err := conn.Reader().ReadSchema()
+	before, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, before, nil)
 	c.Assert(err, qt.IsNil)
@@ -129,7 +129,7 @@ func assertOracleDomainsConverge(ctx context.Context, c *qt.C, conn *dbschema.Da
 		execOracle(ctx, c, conn, strings.TrimSuffix(strings.TrimSpace(statement), ";"))
 	}
 
-	after, err := conn.Reader().ReadSchema()
+	after, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 
 	// What the catalog gives back, spelled out: the NOT NULL is a column fact
@@ -157,7 +157,7 @@ func assertOracleDomainsConverge(ctx context.Context, c *qt.C, conn *dbschema.Da
 		execOracle(ctx, c, conn, strings.TrimSuffix(strings.TrimSpace(statement), ";"))
 	}
 
-	empty, err := conn.Reader().ReadSchema()
+	empty, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 	c.Assert(empty.Domains, qt.HasLen, 0)
 }

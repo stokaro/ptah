@@ -73,7 +73,7 @@ func TestPostgresCheckExpressionsConvergeE2E(t *testing.T) {
 	conn, err := dbschema.ConnectToDatabase(ctx, scopedURL)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
-	read, err := conn.Reader().ReadSchema()
+	read, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 
 	// Non-vacuity, and the evidence the rewrite happened at all: the server's

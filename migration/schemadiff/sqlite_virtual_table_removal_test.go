@@ -123,7 +123,7 @@ func readLiveVirtualTableFixture(t *testing.T) *dbtypes.DBSchema {
 		}
 	}
 
-	schema, err := sqlite.NewSQLiteReader(db, "main").ReadSchema()
+	schema, err := sqlite.NewSQLiteReader(db, "main").ReadSchemaContext(t.Context())
 	if err != nil {
 		t.Fatalf("read schema: %v", err)
 	}

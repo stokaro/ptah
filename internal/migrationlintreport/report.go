@@ -559,14 +559,14 @@ func (c *baselineCollector) observer() func(context.Context, int64, *dbschema.Da
 }
 
 func (c *baselineCollector) observe(
-	_ context.Context,
+	ctx context.Context,
 	version int64,
 	conn *dbschema.DatabaseConnection,
 ) error {
 	if c == nil || !c.wanted[version] {
 		return nil
 	}
-	columns, err := readBaselineColumns(conn, version, c.schemas)
+	columns, err := readBaselineColumns(ctx, conn, version, c.schemas)
 	if err != nil {
 		return err
 	}

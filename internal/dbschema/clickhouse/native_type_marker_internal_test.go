@@ -27,7 +27,7 @@ func TestReadColumnsByTable_MarksTheTypeAsTheTargetsOwn(t *testing.T) {
 	db := dbtest.Open(t, answeringClickHouseTypes)
 	reader := NewClickHouseReader(db.SQL, "app")
 
-	columns, err := reader.readColumnsByTable("app")
+	columns, err := reader.readColumnsByTable(t.Context(), "app")
 
 	c.Assert(err, qt.IsNil)
 	events := columns["events"]

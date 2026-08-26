@@ -1,6 +1,7 @@
 package oracle
 
 import (
+	"context"
 	"database/sql"
 	"strings"
 
@@ -64,13 +65,13 @@ ORDER BY a.type_name, a.attr_no`
 // so an object type with no attribute row is one the attribute read could not
 // see, and describing it as a composite with no fields would plan a
 // CREATE OR REPLACE that empties it.
-func (r *Reader) readComposites() ([]types.DBComposite, error) {
-	attributes, err := r.readCompositeAttributes()
+func (r *Reader) readComposites(ctx context.Context) ([]types.DBComposite, error) {
+	attributes, err := r.readCompositeAttributes(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	rows, err := r.db.Query(compositeQuery, r.schema)
+	rows, err := r.db.QueryContext(ctx, compositeQuery, r.schema)
 	if err != nil {
 		return nil, err
 	}
@@ -93,8 +94,8 @@ func (r *Reader) readComposites() ([]types.DBComposite, error) {
 
 // readCompositeAttributes groups the attributes by type name, in declaration
 // order.
-func (r *Reader) readCompositeAttributes() (map[string][]types.DBCompositeField, error) {
-	rows, err := r.db.Query(compositeAttributeQuery, r.schema)
+func (r *Reader) readCompositeAttributes(ctx context.Context) (map[string][]types.DBCompositeField, error) {
+	rows, err := r.db.QueryContext(ctx, compositeAttributeQuery, r.schema)
 	if err != nil {
 		return nil, err
 	}

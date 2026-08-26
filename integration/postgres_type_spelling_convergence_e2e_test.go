@@ -92,7 +92,7 @@ func TestPostgresTypeSpellingsConvergeE2E(t *testing.T) {
 	conn, err := dbschema.ConnectToDatabase(ctx, scopedURL)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
-	read, err := conn.Reader().ReadSchema()
+	read, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 
 	// Non-vacuity: the table has to be in the read, or a comparison of nothing

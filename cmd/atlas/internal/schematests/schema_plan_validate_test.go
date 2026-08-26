@@ -74,7 +74,7 @@ func readTargetSchema(c *qt.C, dbURL string) *dbschematypes.DBSchema {
 	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
-	schema, err := dbschema.ReadSchemaWithSchemas(conn, nil)
+	schema, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, nil)
 	c.Assert(err, qt.IsNil)
 	return schema
 }

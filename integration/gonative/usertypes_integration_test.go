@@ -61,7 +61,7 @@ type FloatRange struct{}
 		c.Assert(err, qt.IsNil, qt.Commentf("statement failed: %s", stmt))
 	}
 
-	live, err := postgres.NewPostgreSQLReader(db, "public").ReadSchema()
+	live, err := postgres.NewPostgreSQLReader(db, "public").ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	c.Assert(live.Domains, qt.HasLen, 2)
 	c.Assert(live.Composites, qt.HasLen, 1)

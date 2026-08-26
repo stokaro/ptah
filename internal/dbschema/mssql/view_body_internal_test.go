@@ -139,7 +139,7 @@ func TestReadViews_CarriesTheBodyRatherThanTheStatement(t *testing.T) {
 	db := dbtest.Open(t, answeringOneView)
 	reader := NewSQLServerReader(db.SQL, "shop")
 
-	views, err := reader.readViews()
+	views, err := reader.readViews(t.Context())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(views, qt.HasLen, 1)

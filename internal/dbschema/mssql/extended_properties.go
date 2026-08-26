@@ -1,6 +1,7 @@
 package mssql
 
 import (
+	"context"
 	"database/sql"
 	"strings"
 
@@ -99,8 +100,8 @@ const extendedPropertyQuery = `
 
 // readExtendedProperties reads the schema-, table- and column-scoped extended
 // properties of the schemas this read covers.
-func (r *Reader) readExtendedProperties() ([]types.DBExtendedProperty, error) {
-	rows, err := r.db.Query(r.queryWithSchemaPredicate(extendedPropertyQuery), r.schemaArgs()...)
+func (r *Reader) readExtendedProperties(ctx context.Context) ([]types.DBExtendedProperty, error) {
+	rows, err := r.db.QueryContext(ctx, r.queryWithSchemaPredicate(extendedPropertyQuery), r.schemaArgs()...)
 	if err != nil {
 		return nil, err
 	}

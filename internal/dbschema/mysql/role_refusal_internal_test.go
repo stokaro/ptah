@@ -61,7 +61,7 @@ func TestReadRolesInto_RecordsWhyTheRoleCatalogWasNotRead(t *testing.T) {
 			reader := NewMySQLReader(db.SQL, "app")
 
 			schema := &types.DBSchema{}
-			c.Assert(reader.readRolesInto(schema, "app"), qt.IsNil)
+			c.Assert(reader.readRolesInto(t.Context(), schema, "app"), qt.IsNil)
 
 			c.Assert(schema.NotDescribed.Objects, qt.DeepEquals, test.want)
 		})

@@ -133,7 +133,7 @@ func inlineEnumDiff(
 	description *goschema.Database,
 ) *difftypes.SchemaDiff {
 	c.Helper()
-	live, err := conn.Reader().ReadSchema()
+	live, err := conn.Reader().ReadSchemaContext(c.Context())
 	c.Assert(err, qt.IsNil)
 	diff, err := schemadiff.CompareWithDatabase(
 		context.Background(), conn, description, live, config.DefaultCompareOptions())

@@ -91,7 +91,7 @@ func assertSameNamedNonCoveringIndexRefusesForeignKey(
 		" FOREIGN KEY (parent_id) REFERENCES " + parentTable + " (id)")
 	c.Assert(err, qt.IsNotNil)
 
-	after, readErr := conn.Reader().ReadSchema()
+	after, readErr := conn.Reader().ReadSchemaContext(c.Context())
 	c.Assert(readErr, qt.IsNil)
 	c.Assert(hasNamedForeignKey(after, childTable, foreignKey), qt.IsFalse)
 	c.Assert(hasNamedIndex(after, childTable, foreignKey), qt.IsTrue)
@@ -156,7 +156,7 @@ func runAddedReferencedColumnRoundTrip(c *qt.C, conn *dbschema.DatabaseConnectio
 	upSQL, downSQL := generateLiveMigrationSQL(c, conn, target)
 	execScript(c, conn, upSQL, "UP")
 
-	afterUp, err := conn.Reader().ReadSchema()
+	afterUp, err := conn.Reader().ReadSchemaContext(c.Context())
 	c.Assert(err, qt.IsNil)
 	c.Assert(hasNamedForeignKey(afterUp, childTable, foreignKey), qt.IsTrue)
 	c.Assert(hasNamedColumn(afterUp, parentTable, "code"), qt.IsTrue)
@@ -169,7 +169,7 @@ func runAddedReferencedColumnRoundTrip(c *qt.C, conn *dbschema.DatabaseConnectio
 	c.Assert(dropForeignKey < dropColumn, qt.IsTrue)
 	execScript(c, conn, downSQL, "DOWN")
 
-	afterDown, err := conn.Reader().ReadSchema()
+	afterDown, err := conn.Reader().ReadSchemaContext(c.Context())
 	c.Assert(err, qt.IsNil)
 	c.Assert(hasNamedForeignKey(afterDown, childTable, foreignKey), qt.IsFalse)
 	c.Assert(hasNamedColumn(afterDown, parentTable, "code"), qt.IsFalse)
@@ -226,7 +226,7 @@ func runAddedForeignKeyColumnRoundTrip(c *qt.C, conn *dbschema.DatabaseConnectio
 	upSQL, downSQL := generateLiveMigrationSQL(c, conn, target)
 	execScript(c, conn, upSQL, "UP")
 
-	afterUp, err := conn.Reader().ReadSchema()
+	afterUp, err := conn.Reader().ReadSchemaContext(c.Context())
 	c.Assert(err, qt.IsNil)
 	c.Assert(hasNamedForeignKey(afterUp, childTable, foreignKey), qt.IsTrue)
 	c.Assert(hasNamedIndex(afterUp, childTable, foreignKey), qt.IsTrue)
@@ -241,7 +241,7 @@ func runAddedForeignKeyColumnRoundTrip(c *qt.C, conn *dbschema.DatabaseConnectio
 	c.Assert(upperDown, qt.Not(qt.Contains), "DROP INDEX")
 	execScript(c, conn, downSQL, "DOWN")
 
-	afterDown, err := conn.Reader().ReadSchema()
+	afterDown, err := conn.Reader().ReadSchemaContext(c.Context())
 	c.Assert(err, qt.IsNil)
 	c.Assert(hasNamedForeignKey(afterDown, childTable, foreignKey), qt.IsFalse)
 	c.Assert(hasNamedIndex(afterDown, childTable, foreignKey), qt.IsFalse)
@@ -302,7 +302,7 @@ func runForeignKeyBackingIndexRoundTrip(
 	c.Assert(upSQL, qt.Contains, foreignKey)
 	execScript(c, conn, upSQL, "UP")
 
-	afterUp, err := conn.Reader().ReadSchema()
+	afterUp, err := conn.Reader().ReadSchemaContext(c.Context())
 	c.Assert(err, qt.IsNil)
 	c.Assert(hasNamedForeignKey(afterUp, childTable, foreignKey), qt.IsTrue)
 	wantBackingIndexName := foreignKey
@@ -319,7 +319,7 @@ func runForeignKeyBackingIndexRoundTrip(
 	}
 	execScript(c, conn, downSQL, "DOWN")
 
-	afterDown, err := conn.Reader().ReadSchema()
+	afterDown, err := conn.Reader().ReadSchemaContext(c.Context())
 	c.Assert(err, qt.IsNil)
 	c.Assert(hasNamedForeignKey(afterDown, childTable, foreignKey), qt.IsFalse)
 	c.Assert(

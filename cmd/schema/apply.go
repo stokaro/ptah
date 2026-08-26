@@ -389,7 +389,7 @@ func runSchemaApplyPlanFile(cmd *cobra.Command, opts schemaApplyOptions) error {
 	defer releaseSchemaApplyLock(cmd, applyLock)
 	noteSchemaApplyLockUnsupported(cmd, opts.lockTimeout, applyLock, conn.Info().Dialect)
 
-	if err := atlasschema.VerifyPlanTarget(conn, plan); err != nil {
+	if err := atlasschema.VerifyPlanTarget(cmd.Context(), conn, plan); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 

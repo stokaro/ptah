@@ -32,7 +32,7 @@ func TestReadFunctions_JoinsTheThreeViewsIntoOneDescription(t *testing.T) {
 	db := dbtest.Open(t, answeringRoutineCatalog)
 	reader := NewOracleReader(db.SQL, "APP")
 
-	functions, err := reader.readFunctions()
+	functions, err := reader.readFunctions(t.Context())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(functions, qt.DeepEquals, []types.DBFunction{
@@ -110,7 +110,7 @@ func TestReadSchema_AsksForRoutinesOnlyWhereAPresetClaimsThem(t *testing.T) {
 			})
 			reader := NewOracleReaderWithCapabilities(db.SQL, "APP", test.caps)
 
-			_, err := reader.ReadSchema()
+			_, err := reader.ReadSchemaContext(t.Context())
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(asked, qt.Equals, test.wantAsked)

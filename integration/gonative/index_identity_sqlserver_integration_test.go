@@ -132,7 +132,7 @@ func compareSQLServerIndexIdentitySchema(
 	conn, err := dbschema.ConnectToDatabase(t.Context(), dsn)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
-	live, err := dbschema.ReadSchemaWithSchemas(conn, []string{sqlServerIndexIdentitySchema})
+	live, err := dbschema.ReadSchemaWithSchemasContext(t.Context(), conn, []string{sqlServerIndexIdentitySchema})
 	c.Assert(err, qt.IsNil)
 	diff, err := schemadiff.CompareWithDatabase(t.Context(), conn, target, live, nil)
 	c.Assert(err, qt.IsNil)

@@ -108,7 +108,7 @@ func testMySQLFamilyTableQualifiedIndexIdentityRoundTrip(t *testing.T, dsn, dial
 
 func readMySQLFamilyIndexIdentitySchema(c *qt.C, db *sql.DB) *dbschematypes.DBSchema {
 	c.Helper()
-	live, err := mysql.NewMySQLReader(db, "").ReadSchema()
+	live, err := mysql.NewMySQLReader(db, "").ReadSchemaContext(c.Context())
 	c.Assert(err, qt.IsNil)
 	live.Indexes = slices.DeleteFunc(live.Indexes, func(index dbschematypes.DBIndex) bool {
 		return index.TableName != indexIdentityUsersTable && index.TableName != indexIdentityOrdersTable

@@ -51,7 +51,7 @@ func TestPostgreSQLRolesGrantsRoundTripAndBehaviorIntegration(t *testing.T) {
 		c.Assert(err, qt.IsNil, qt.Commentf("statement failed: %s", stmt))
 	}
 	reader := postgres.NewPostgreSQLReader(db, "public")
-	live, err := reader.ReadSchema()
+	live, err := reader.ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	filtered := filterRolesGrantsIntegrationSchema(live)
 
@@ -408,7 +408,7 @@ ALTER TABLE ptah_ref_untouched_137 OWNER TO ptah_ref_owner_137;`)
 	c.Assert(err, qt.IsNil)
 
 	reader := postgres.NewPostgreSQLReader(db, "public")
-	live, err := reader.ReadSchema()
+	live, err := reader.ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 
 	described := make([]string, 0, len(live.Roles))
@@ -509,7 +509,7 @@ func TestPostgreSQLRoleOutOfScopeIsPresentNotAbsentIntegration(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	reader := postgres.NewPostgreSQLReader(db, "public")
-	live, err := reader.ReadSchema()
+	live, err := reader.ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 
 	// The description leaves it out, which is what stokaro/ptah#1267 asked
@@ -702,7 +702,7 @@ CREATE ROLE pgbouncer_undescribed_137 LOGIN;`)
 	// change one planned statement. The role exists either way, so it is never
 	// added; a role that exists nowhere still is.
 	reader := postgres.NewPostgreSQLReader(db, "ptah_undescribed_schema_137")
-	full, err := reader.ReadSchema()
+	full, err := reader.ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	c.Assert(integrationRoleNames(full.Roles), qt.Contains, "ptah_undescribed_outside_137")
 	c.Assert(full.RolesOutOfScope, qt.HasLen, 0)

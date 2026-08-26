@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 
@@ -27,8 +28,8 @@ const informationSchemaViewQuery = `
 
 // readInformationSchemaViews reads one schema's views from the SQL-standard
 // catalog. See [informationSchemaViewQuery].
-func (r *Reader) readInformationSchemaViews(schemaName string) ([]types.DBView, error) {
-	rows, err := r.db.Query(informationSchemaViewQuery, schemaName)
+func (r *Reader) readInformationSchemaViews(ctx context.Context, schemaName string) ([]types.DBView, error) {
+	rows, err := r.db.QueryContext(ctx, informationSchemaViewQuery, schemaName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query views: %w", err)
 	}

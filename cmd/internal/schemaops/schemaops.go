@@ -87,7 +87,7 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	dbSchema, err := dbschema.ReadSchemaWithSchemas(conn, opts.Schemas)
+	dbSchema, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, opts.Schemas)
 	if err != nil {
 		return nil, fmt.Errorf("error reading database schema: %w", err)
 	}

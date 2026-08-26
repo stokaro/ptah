@@ -170,12 +170,12 @@ func TestVerifyPlanTargetDetectsDriftAndDialectMismatch(t *testing.T) {
 	})
 	c.Assert(err, qt.IsNil)
 
-	c.Assert(atlasschema.VerifyPlanTarget(conn, plan), qt.IsNil)
+	c.Assert(atlasschema.VerifyPlanTarget(t.Context(), conn, plan), qt.IsNil)
 
 	// A schema change after planning must be detected as a stale plan.
 	c.Assert(atlasschema.ApplySQL(context.Background(), conn, migrator.MigrationTxModeAll,
 		`CREATE TABLE drifted (id INTEGER PRIMARY KEY);`), qt.IsNil)
-	err = atlasschema.VerifyPlanTarget(conn, plan)
+	err = atlasschema.VerifyPlanTarget(t.Context(), conn, plan)
 	var stale *atlasschema.StalePlanError
 	c.Assert(err, qt.ErrorAs, &stale)
 	c.Assert(stale.PlanFingerprint, qt.Equals, plan.FromFingerprint)
@@ -183,7 +183,7 @@ func TestVerifyPlanTargetDetectsDriftAndDialectMismatch(t *testing.T) {
 
 	mismatched := plan
 	mismatched.Dialect = "mysql"
-	c.Assert(atlasschema.VerifyPlanTarget(conn, mismatched), qt.ErrorMatches,
+	c.Assert(atlasschema.VerifyPlanTarget(t.Context(), conn, mismatched), qt.ErrorMatches,
 		`plan file targets dialect "mysql", but the --url database dialect is "sqlite"`)
 }
 

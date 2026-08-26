@@ -106,11 +106,31 @@ Adjust the protected set with repeatable `--protected-env` flags, and add
 repeatable `--protected-table` flags to require `--allow-prod` whenever a seed
 file targets a named existing table.
 
+## Edit an applied seed
+
+`schema_seeds` records a SHA-256 checksum of each file's bytes alongside its
+path, and the next run reads it. A seed file that changed after it was applied
+is refused rather than reported as skipped:
+
+```text
+error: error applying seeds: seed 001_countries.all.sql changed after it was
+applied: recorded checksum 85d0..., current 5bbc...; add a new seed file with
+the change, or pass --force to re-apply this one
+```
+
+The command prints that on one line, and the two checksums are full SHA-256 hex
+digests; both are wrapped and elided here.
+
+Adding a new seed file is the normal answer, for the same reason it is with
+migrations: the rows the old file wrote are already in the database, and the new
+file says what changes about them. `--force` re-applies the edited file and
+records its new checksum.
+
 ## Re-run seeds
 
-- `--force` re-runs seeds that are already recorded in `schema_seeds`. Plain
-  `INSERT` statements then hit duplicate-key errors on tables with primary or
-  unique keys.
+- `--force` re-runs seeds that are already recorded in `schema_seeds`, and is
+  what gets past the checksum refusal above. Plain `INSERT` statements then hit
+  duplicate-key errors on tables with primary or unique keys.
 - `--idempotent` treats a duplicate-key conflict as already-applied data,
   using a per-file savepoint, so `--force --idempotent` re-runs cleanly over
   existing rows.

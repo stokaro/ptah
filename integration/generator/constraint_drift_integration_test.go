@@ -88,7 +88,7 @@ type Product struct {
 
 	desired, err := goschema.ParseFS(os.DirFS(root), "entities")
 	c.Assert(err, qt.IsNil)
-	dbAfter, err := conn.Reader().ReadSchema()
+	dbAfter, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 	diff := schemadiff.CompareWithDialect(desired, dbAfter, "postgres")
 	c.Assert(diff.HasChanges(), qt.IsFalse,
@@ -170,7 +170,7 @@ type Product struct {
 
 			desired, err := goschema.ParseFS(os.DirFS(root), "entities")
 			c.Assert(err, qt.IsNil)
-			dbAfter, err := conn.Reader().ReadSchema()
+			dbAfter, err := conn.Reader().ReadSchemaContext(ctx)
 			c.Assert(err, qt.IsNil)
 			diff := schemadiff.CompareWithDialect(desired, dbAfter, dialect)
 			c.Assert(diff.HasChanges(), qt.IsFalse,

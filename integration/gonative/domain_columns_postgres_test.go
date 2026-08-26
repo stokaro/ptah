@@ -96,7 +96,7 @@ func TestPostgreSQLDomainColumn_ReaderKeepsTheDomain(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
 
-	live, err := dbschema.ReadSchemaWithSchemas(conn, nil)
+	live, err := dbschema.ReadSchemaWithSchemasContext(t.Context(), conn, nil)
 	c.Assert(err, qt.IsNil)
 	converted := dbschematogo.ConvertDBSchemaToGoSchema(live)
 
@@ -216,7 +216,7 @@ func TestPostgreSQLDomainColumn_OverUserDefinedBaseTypeKeepsTheDomain(t *testing
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
 
-	live, err := dbschema.ReadSchemaWithSchemas(conn, nil)
+	live, err := dbschema.ReadSchemaWithSchemasContext(t.Context(), conn, nil)
 	c.Assert(err, qt.IsNil)
 	converted := dbschematogo.ConvertDBSchemaToGoSchema(live)
 
@@ -374,7 +374,7 @@ func TestPostgreSQLDomainColumn_OverUserDefinedBaseTypeDescriptionReplaysOnAnEmp
 	c.Assert(plan.HasChanges(), qt.IsTrue)
 	c.Assert(plan.Execute(c.Context()), qt.IsNil, qt.Commentf("emitted script:\n%s", plan.SQL()))
 
-	replayed, err := dbschema.ReadSchemaWithSchemas(target, nil)
+	replayed, err := dbschema.ReadSchemaWithSchemasContext(t.Context(), target, nil)
 	c.Assert(err, qt.IsNil)
 
 	tests := []struct {

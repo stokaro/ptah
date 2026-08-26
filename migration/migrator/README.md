@@ -9,7 +9,7 @@ The Ptah Migrator provides versioned database migration capabilities with up/dow
 - **Transaction Safety**: Global and per-file modes resolve before a migration changes schema or revision state
 - **SQL File Support**: Migrations can be defined as SQL files
 - **Go Function Support**: Migrations can also be defined as Go functions for complex logic
-- **Multiple Database Support**: Works with PostgreSQL and MySQL through Ptah's executor package
+- **Multiple Database Support**: Runs through Ptah's `dbschema` connections, with migrator-specific handling for PostgreSQL, CockroachDB, YugabyteDB, Spanner, MySQL, MariaDB, SQL Server, SQLite, and ClickHouse
 - **Dry Run Mode**: Preview what migrations would do without actually applying them
 - **Migration Status**: Check current migration state and pending migrations
 - **Configurable Migration State**: Store migration history in a custom schema/table
@@ -30,20 +30,50 @@ Where:
 
 ### Filesystem Requirements
 
-The `RegisterMigrations` function accepts an `fs.FS` parameter where migrations should be located in the root directory. It's the caller's responsibility to prepare the filesystem correctly:
+`NewFSMigrator` and `NewFSMigrationProvider` take an `fs.FS` whose root holds the migration files. Preparing that filesystem is the caller's job:
+
+For embedded migrations, peel off the subdirectory they live in so the files sit at the root of the filesystem the migrator reads:
 
 ```go
-// For embedded migrations, use a subdirectory
-migrationsFS := must.Must(fs.Sub(GetMigrations(), "source"))
-err := RegisterMigrations(migrator, migrationsFS)
+//go:embed migrations/*.sql
+var embedded embed.FS
 
-// For directory on disk
-migrationsFS := os.DirFS("/path/to/migrations")
-err := RegisterMigrations(migrator, migrationsFS)
+func newMigrator(conn *dbschema.DatabaseConnection) (*migrator.Migrator, error) {
+    migrationsFS, err := fs.Sub(embedded, "migrations")
+    if err != nil {
+        return nil, err
+    }
+    return migrator.NewFSMigrator(conn, migrationsFS)
+}
+```
 
-// For convenience, use helper functions
-err := RegisterMigrationsFromEmbedded(migrator)  // Uses embedded source/ directory
-err := RegisterMigrationsFromDirectory(migrator, "/path/to/migrations")
+A directory on disk needs no `fs.Sub`, because `os.DirFS` is already rooted at it:
+
+```go
+m, err := migrator.NewFSMigrator(conn, os.DirFS("/path/to/migrations"))
+```
+
+`NewFSMigrator` builds the provider and the migrator in one call. To load the migrations without building a migrator, or to configure the migrator separately, use the provider directly:
+
+```go
+provider, err := migrator.NewFSMigrationProvider(os.DirFS("/path/to/migrations"))
+if err != nil {
+    return err
+}
+m := migrator.NewMigrator(conn, provider)
+```
+
+Migrations that are not files at all are registered in memory:
+
+```go
+provider := migrator.NewRegisteredMigrationProvider()
+provider.Register(migrator.CreateMigrationFromSQL(
+    1,
+    "Create users table",
+    "CREATE TABLE users (id SERIAL PRIMARY KEY);",
+    "DROP TABLE users;",
+))
+m := migrator.NewMigrator(conn, provider)
 ```
 
 ### Example Migration Files
@@ -676,8 +706,8 @@ keeping a failed or not-yet-deleted rollback dirty and recoverable.
 
 ### Migration Advisory Locks
 
-PostgreSQL, MySQL, MariaDB, and SQL Server migrators acquire a session-level
-advisory lock around the planning and apply window for `MigrateUp`,
+PostgreSQL, YugabyteDB, MySQL, MariaDB, and SQL Server migrators acquire a
+session-level advisory lock around the planning and apply window for `MigrateUp`,
 `MigrateDown`, `MigrateDownTo`, `MigrateTo`, and `RepairMigration`. Repair holds
 the lock across revision inspection, resumed SQL, safety checks, and its final
 metadata write. This prevents concurrent runners from acting on the same
@@ -1065,15 +1095,12 @@ hide a partial rollback behind a clean applied row.
 The migrator integrates seamlessly with Ptah's existing infrastructure:
 
 - Uses Ptah's dbschema package for database connections
-- Supports the same databases as Ptah (PostgreSQL, MySQL, MariaDB)
+- Supports the databases listed under Multiple Database Support above
 - Follows Ptah's transaction and error handling patterns
 - Uses Ptah's SQL parsing utilities for statement splitting
 
 ## Future Enhancements
 
-- Enhanced query support in executor interfaces
-- Migration locking to prevent concurrent execution
 - Migration dependency resolution
 - Schema validation after migrations
-- Migration performance metrics
 - Web UI for migration management

@@ -369,7 +369,7 @@ func sqliteTableExists(c *qt.C, dbPath, table string) bool {
 	conn := connectSQLite(c, dbPath)
 	defer dbschema.CloseAndWarn(conn)
 
-	schema, err := dbschema.ReadSchemaWithSchemas(conn, nil)
+	schema, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, nil)
 	c.Assert(err, qt.IsNil)
 	return slices.ContainsFunc(schema.Tables, func(dbTable types.DBTable) bool {
 		return dbTable.Name == table

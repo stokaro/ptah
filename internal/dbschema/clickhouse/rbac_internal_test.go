@@ -448,7 +448,7 @@ func TestReadGrantsDescribesTheConnectedDatabase(t *testing.T) {
 			c := qt.New(t)
 			reader, _ := newRBACServer(c, rbacServer{grants: test.grants}, withRoleManagement())
 
-			grants, err := reader.readGrants(rbacDatabase)
+			grants, err := reader.readGrants(t.Context(), rbacDatabase)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(grants, qt.DeepEquals, test.want)
@@ -499,7 +499,7 @@ func TestReadGrantsLeavesOutEveryRowAPlanMustNeverRevoke(t *testing.T) {
 			c := qt.New(t)
 			reader, _ := newRBACServer(c, rbacServer{grants: []grantRow{test.row}}, withRoleManagement())
 
-			grants, err := reader.readGrants(rbacDatabase)
+			grants, err := reader.readGrants(t.Context(), rbacDatabase)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(grants, qt.HasLen, 0)
@@ -556,9 +556,9 @@ func TestReadRolesPartitionsTheCatalog(t *testing.T) {
 			c := qt.New(t)
 			reader, _ := newRBACServer(c, test.server, withRoleManagement())
 
-			grants, err := reader.readGrants(rbacDatabase)
+			grants, err := reader.readGrants(t.Context(), rbacDatabase)
 			c.Assert(err, qt.IsNil)
-			described, outOfScope, err := reader.readRoles(grants)
+			described, outOfScope, err := reader.readRoles(t.Context(), grants)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(roleNames(described), qt.DeepEquals, test.wantDescribed)
@@ -584,9 +584,9 @@ func TestReadRolesReportsTheOnlyAttributeClickHouseHas(t *testing.T) {
 	}
 	reader, _ := newRBACServer(c, server, withRoleManagement())
 
-	grants, err := reader.readGrants(rbacDatabase)
+	grants, err := reader.readGrants(t.Context(), rbacDatabase)
 	c.Assert(err, qt.IsNil)
-	described, _, err := reader.readRoles(grants)
+	described, _, err := reader.readRoles(t.Context(), grants)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(described, qt.DeepEquals, []types.DBRole{{Name: "reader", Inherit: true}})
@@ -597,7 +597,7 @@ func TestReadSchemaFillsTheDescriptionUnderTheCapability(t *testing.T) {
 
 	reader, _ := newRBACServer(c, mixedServer(), withRoleManagement())
 
-	schema, err := reader.ReadSchema()
+	schema, err := reader.ReadSchemaContext(t.Context())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(roleNames(schema.Roles), qt.DeepEquals, []string{"analyst", "reader"})
@@ -681,7 +681,7 @@ func TestReadSchemaDegradesWhenTheAccountMayNotReadTheAccessCatalog(t *testing.T
 				c, mixedServer(), withRoleManagement(), test.catalog, accessDenied(test.catalog),
 			)
 
-			schema, err := reader.ReadSchema()
+			schema, err := reader.ReadSchemaContext(t.Context())
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(schema.Roles, qt.HasLen, 0)
@@ -709,7 +709,7 @@ func TestReadSchemaFailsOnEveryOtherRBACError(t *testing.T) {
 		c, mixedServer(), withRoleManagement(), "system.grants", unknownIdentifier(),
 	)
 
-	_, err := reader.ReadSchema()
+	_, err := reader.ReadSchemaContext(t.Context())
 
 	c.Assert(err, qt.ErrorMatches, `(?s).*Missing columns.*`)
 }
@@ -724,7 +724,7 @@ func TestReadSchemaDescribesRolesWhenTheAccountMayReadThem(t *testing.T) {
 
 	reader, _ := newRBACServer(c, mixedServer(), withRoleManagement())
 
-	schema, err := reader.ReadSchema()
+	schema, err := reader.ReadSchemaContext(t.Context())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(schema.NotDescribed.IsZero(), qt.IsTrue)
@@ -741,7 +741,7 @@ func TestReadSchemaAsksNothingAboutRBACWithoutTheCapability(t *testing.T) {
 	// asserted too.
 	reader, sent := newRBACServer(c, mixedServer(), withoutRoleManagement())
 
-	schema, err := reader.ReadSchema()
+	schema, err := reader.ReadSchemaContext(t.Context())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(schema.Roles, qt.HasLen, 0)
@@ -775,7 +775,7 @@ func TestGrantsStatementCarriesEveryRestrictionTheDescriptionDependsOn(t *testin
 			c := qt.New(t)
 			reader, sent := newRBACServer(c, mixedServer(), withRoleManagement())
 
-			_, err := reader.readGrants(rbacDatabase)
+			_, err := reader.readGrants(t.Context(), rbacDatabase)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(*sent, qt.HasLen, 1)
@@ -803,7 +803,7 @@ func TestGrantsProjectionNamesOnlyColumnsTheOldestDeclaredLineHas(t *testing.T) 
 			c := qt.New(t)
 			reader, sent := newRBACServer(c, mixedServer(), withRoleManagement())
 
-			_, err := reader.readGrants(rbacDatabase)
+			_, err := reader.readGrants(t.Context(), rbacDatabase)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(*sent, qt.HasLen, 1)
@@ -833,7 +833,7 @@ func TestRBACReadsTouchNoCredentialBearingSurface(t *testing.T) {
 			c := qt.New(t)
 			reader, sent := newRBACServer(c, mixedServer(), withRoleManagement())
 
-			_, err := reader.ReadSchema()
+			_, err := reader.ReadSchemaContext(t.Context())
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(*sent, qt.Not(qt.HasLen), 0)

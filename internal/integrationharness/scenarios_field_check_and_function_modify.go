@@ -119,7 +119,7 @@ func testDynamicFunctionAttributeModification(ctx context.Context, conn *dbschem
 		if err != nil {
 			return fmt.Errorf("failed to parse entities: %w", err)
 		}
-		dbSchema, err := conn.Reader().ReadSchema()
+		dbSchema, err := conn.Reader().ReadSchemaContext(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to read database schema: %w", err)
 		}

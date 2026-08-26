@@ -147,7 +147,7 @@ func TestReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 	})
 	reader := NewClickHouseReader(db.SQL, "default")
 
-	tables, err := reader.readTables("default")
+	tables, err := reader.readTables(t.Context(), "default")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.QueryCount(), qt.Equals, 2)
@@ -227,7 +227,7 @@ func TestReaderReadTablesCarriesTheSortingKey(t *testing.T) {
 			db := dbtest.Open(t, keyedTableServer(test.sortingKey, test.primaryKey, test.keyColumns))
 			reader := NewClickHouseReader(db.SQL, "default")
 
-			tables, err := reader.readTables("default")
+			tables, err := reader.readTables(t.Context(), "default")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(tables, qt.HasLen, 1)

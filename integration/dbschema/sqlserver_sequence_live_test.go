@@ -68,7 +68,7 @@ func TestSQLServerLiveSequenceRoundTrip(t *testing.T) {
 	}
 
 	// 2. The catalog is asked what it actually holds.
-	live, err := dbschema.ReadSchemaWithSchemas(conn, []string{schemaName})
+	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
 	byName := make(map[string]dbschematypes.DBSequence)
 	for _, sequence := range live.Sequences {
@@ -112,7 +112,7 @@ func TestSQLServerLiveSequenceRoundTrip(t *testing.T) {
 	_, err = conn.ExecContext(ctx, alters[0])
 	c.Assert(err, qt.IsNil, qt.Commentf("statement:\n%s", alters[0]))
 
-	after, err := dbschema.ReadSchemaWithSchemas(conn, []string{schemaName})
+	after, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
 	c.Assert(*sequenceNamed(after.Sequences, "order_number_seq").Increment, qt.Equals, int64(7))
 }

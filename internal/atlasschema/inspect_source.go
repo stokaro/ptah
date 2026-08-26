@@ -512,7 +512,7 @@ func materializeOnDev(
 	diag io.Writer,
 ) error {
 	info := devConn.Info()
-	desired, err := devMaterializableSchema(devConn, desired, diag)
+	desired, err := devMaterializableSchema(ctx, devConn, desired, diag)
 	if err != nil {
 		return err
 	}
@@ -550,7 +550,7 @@ func materializeOnDev(
 // happened to have is a fact about that database, not about the document, and
 // the value belongs to a caller that may still use it -- retry against another
 // dev database, or report what the source declared.
-func devMaterializableSchema(
+func devMaterializableSchema(ctx context.Context,
 	devConn *dbschema.DatabaseConnection,
 	desired *goschema.Database,
 	diag io.Writer,
@@ -558,7 +558,7 @@ func devMaterializableSchema(
 	if desired == nil || len(desired.Roles) == 0 {
 		return desired, nil
 	}
-	devSchema, err := dbschema.ReadSchemaWithSchemas(devConn, nil)
+	devSchema, err := dbschema.ReadSchemaWithSchemasContext(ctx, devConn, nil)
 	if err != nil {
 		return nil, fmt.Errorf("read dev database roles: %w", err)
 	}

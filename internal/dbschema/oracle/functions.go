@@ -1,6 +1,7 @@
 package oracle
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -86,17 +87,17 @@ ORDER BY s.name, s.type, s.line`
 // reports DEFAULTED = 'Y' and never the value. A routine created with one
 // therefore reads back without it and would be replanned on every run, which is
 // why the renderer refuses that shape up front instead.
-func (r *Reader) readFunctions() ([]types.DBFunction, error) {
-	parameters, returns, err := r.readRoutineArguments()
+func (r *Reader) readFunctions(ctx context.Context) ([]types.DBFunction, error) {
+	parameters, returns, err := r.readRoutineArguments(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("read routine arguments: %w", err)
 	}
-	sources, err := r.readRoutineSources()
+	sources, err := r.readRoutineSources(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("read routine sources: %w", err)
 	}
 
-	rows, err := r.db.Query(routineQuery, r.schema)
+	rows, err := r.db.QueryContext(ctx, routineQuery, r.schema)
 	if err != nil {
 		return nil, err
 	}
@@ -142,8 +143,8 @@ type routineKey struct{ name, objectType string }
 
 // readRoutineArguments builds the parameter list and the return type of every
 // standalone routine, from the catalog rather than from the statement text.
-func (r *Reader) readRoutineArguments() (parameters, returns map[string]string, err error) {
-	rows, err := r.db.Query(routineArgumentQuery, r.schema)
+func (r *Reader) readRoutineArguments(ctx context.Context) (parameters, returns map[string]string, err error) {
+	rows, err := r.db.QueryContext(ctx, routineArgumentQuery, r.schema)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -175,8 +176,8 @@ func (r *Reader) readRoutineArguments() (parameters, returns map[string]string, 
 }
 
 // readRoutineSources reassembles each routine's stored text from its lines.
-func (r *Reader) readRoutineSources() (map[routineKey]string, error) {
-	rows, err := r.db.Query(routineSourceQuery, r.schema)
+func (r *Reader) readRoutineSources(ctx context.Context) (map[routineKey]string, error) {
+	rows, err := r.db.QueryContext(ctx, routineSourceQuery, r.schema)
 	if err != nil {
 		return nil, err
 	}

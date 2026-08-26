@@ -1,6 +1,7 @@
 package clickhouse
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -131,12 +132,12 @@ const configuredRoleStorage = "users_xml"
 // the set from the described grants themselves rather than re-deriving it in SQL
 // is what keeps the two from disagreeing about scope -- there is one definition
 // of "described", and it is the grant list.
-func (r *Reader) readRBACInto(dbName string, schema *types.DBSchema) error {
-	grants, err := r.readGrants(dbName)
+func (r *Reader) readRBACInto(ctx context.Context, dbName string, schema *types.DBSchema) error {
+	grants, err := r.readGrants(ctx, dbName)
 	if err != nil {
 		return err
 	}
-	described, outOfScope, err := r.readRoles(grants)
+	described, outOfScope, err := r.readRoles(ctx, grants)
 	if err != nil {
 		return err
 	}
@@ -154,8 +155,8 @@ func (r *Reader) readRBACInto(dbName string, schema *types.DBSchema) error {
 // describe a role whose effective privileges are quietly narrower than the
 // description says. Ptah plans no such shape; see types.DBGrant.IsPartialRevoke
 // for why reporting it is still the reader's job.
-func (r *Reader) readGrants(dbName string) ([]types.DBGrant, error) {
-	rows, err := r.db.Query(grantsQuery, dbName)
+func (r *Reader) readGrants(ctx context.Context, dbName string) ([]types.DBGrant, error) {
+	rows, err := r.db.QueryContext(ctx, grantsQuery, dbName)
 	if err != nil {
 		return nil, fmt.Errorf("clickhouse: read grants%s: %w", r.onServer(), err)
 	}
@@ -234,8 +235,8 @@ func liveGrant(role, privilege, database, table string, grantOption, partialRevo
 // a CREATE ROLE for a role the server already has. Granting to a role that does
 // not exist fails at Code 511 (UNKNOWN_ROLE), so that distinction is what stands
 // between a plan and a refused statement.
-func (r *Reader) readRoles(grants []types.DBGrant) (described, outOfScope []types.DBRole, err error) {
-	rows, err := r.db.Query(rolesQuery)
+func (r *Reader) readRoles(ctx context.Context, grants []types.DBGrant) (described, outOfScope []types.DBRole, err error) {
+	rows, err := r.db.QueryContext(ctx, rolesQuery)
 	if err != nil {
 		return nil, nil, fmt.Errorf("clickhouse: read roles%s: %w", r.onServer(), err)
 	}

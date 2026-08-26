@@ -121,7 +121,7 @@ func applyPlannedSQL(c *qt.C, db *sql.DB, dialect string, desired *goschema.Data
 	c.Helper()
 
 	reader := mysql.NewMySQLReader(db, "")
-	live, err := reader.ReadSchema()
+	live, err := reader.ReadSchemaContext(c.Context())
 	c.Assert(err, qt.IsNil)
 
 	diff := schemadiff.Compare(desired, live)
@@ -140,7 +140,7 @@ func readBackDiff(c *qt.C, db *sql.DB, desired *goschema.Database) *difftypes.Sc
 	c.Helper()
 
 	reader := mysql.NewMySQLReader(db, "")
-	live, err := reader.ReadSchema()
+	live, err := reader.ReadSchemaContext(c.Context())
 	c.Assert(err, qt.IsNil)
 	return schemadiff.Compare(desired, live)
 }

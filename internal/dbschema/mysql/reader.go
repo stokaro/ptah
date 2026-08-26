@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -69,58 +70,65 @@ func NewMySQLReaderWithCapabilities(db sqlrunner.Runner, schema string, caps cap
 	}
 }
 
-// ReadSchema reads the complete schema from MySQL/MariaDB
+// ReadSchema is [Reader.ReadSchemaContext] under context.Background(), the
+// context-free half of the pair [types.SchemaReader] declares. Prefer the
+// Context form: only it can be told to stop.
 func (r *Reader) ReadSchema() (*types.DBSchema, error) {
+	return r.ReadSchemaContext(context.Background())
+}
+
+// ReadSchemaContext reads the complete schema from MySQL/MariaDB
+func (r *Reader) ReadSchemaContext(ctx context.Context) (*types.DBSchema, error) {
 	schema := &types.DBSchema{}
 
 	// Get current database name
 	var dbName string
-	err := r.db.QueryRow("SELECT DATABASE()").Scan(&dbName)
+	err := r.db.QueryRowContext(ctx, "SELECT DATABASE()").Scan(&dbName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get database name: %w", err)
 	}
 
 	// Read tables
-	tables, err := r.readTables(dbName)
+	tables, err := r.readTables(ctx, dbName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read tables: %w", err)
 	}
 	schema.Tables = tables
 
 	// Read enums (MySQL stores them as column types)
-	enums, err := r.readEnums(dbName)
+	enums, err := r.readEnums(ctx, dbName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read enums: %w", err)
 	}
 	schema.Enums = enums
 
 	// Read indexes
-	indexes, err := r.readIndexes(dbName)
+	indexes, err := r.readIndexes(ctx, dbName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read indexes: %w", err)
 	}
 	schema.Indexes = indexes
 
 	// Read constraints
-	constraints, err := r.readConstraints(dbName)
+	constraints, err := r.readConstraints(ctx, dbName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read constraints: %w", err)
 	}
 	schema.Constraints = constraints
 
-	views, err := r.readViews(dbName)
+	views, err := r.readViews(ctx, dbName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read views: %w", err)
 	}
 	schema.Views = views
 
-	triggers, err := r.readTriggers(dbName)
+	triggers, err := r.readTriggers(ctx, dbName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read triggers: %w", err)
 	}
 	schema.Triggers = triggers
 
-	functions, err := r.readFunctions(dbName)
+	functions, err := r.readFunctions(ctx, dbName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read functions: %w", err)
 	}
@@ -136,7 +144,7 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	// question with a syntax error rather than an empty result, so asking
 	// unconditionally would fail the whole description on the engine that has
 	// none (stokaro/ptah#1759).
-	sequences, err := r.readSequences(dbName)
+	sequences, err := r.readSequences(ctx, dbName)
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +155,7 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	// not lose the whole description over an object kind the schema may not
 	// even declare.
 	if r.caps.Has(capability.RoleManagement) {
-		if err := r.readRolesInto(schema, dbName); err != nil {
+		if err := r.readRolesInto(ctx, schema, dbName); err != nil {
 			return nil, err
 		}
 	}
@@ -160,8 +168,8 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 
 // readTables reads all tables and their columns using bulk information_schema
 // queries.
-func (r *Reader) readTables(dbName string) ([]types.DBTable, error) {
-	columnsByTable, err := r.readColumnsByTable(dbName)
+func (r *Reader) readTables(ctx context.Context, dbName string) ([]types.DBTable, error) {
+	columnsByTable, err := r.readColumnsByTable(ctx, dbName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read columns: %w", err)
 	}
@@ -174,7 +182,7 @@ func (r *Reader) readTables(dbName string) ([]types.DBTable, error) {
 		AND TABLE_NAME NOT IN ('schema_migrations')
 		ORDER BY TABLE_NAME`
 
-	rows, err := r.db.Query(query, dbName)
+	rows, err := r.db.QueryContext(ctx, query, dbName)
 	if err != nil {
 		return nil, err
 	}
@@ -196,7 +204,7 @@ func (r *Reader) readTables(dbName string) ([]types.DBTable, error) {
 	return tables, nil
 }
 
-func (r *Reader) readColumnsByTable(dbName string) (map[string][]types.DBColumn, error) {
+func (r *Reader) readColumnsByTable(ctx context.Context, dbName string) (map[string][]types.DBColumn, error) {
 	query := `
 		SELECT
 			TABLE_NAME,
@@ -219,7 +227,7 @@ func (r *Reader) readColumnsByTable(dbName string) (map[string][]types.DBColumn,
 		AND TABLE_NAME NOT IN ('schema_migrations')
 		ORDER BY TABLE_NAME, ORDINAL_POSITION`
 
-	rows, err := r.db.Query(query, dbName)
+	rows, err := r.db.QueryContext(ctx, query, dbName)
 	if err != nil {
 		return nil, err
 	}
@@ -471,7 +479,7 @@ func enhanceTablesWithPrimaryKeys(tables []types.DBTable, constraints []types.DB
 	}
 }
 
-func (r *Reader) readViews(dbName string) ([]types.DBView, error) {
+func (r *Reader) readViews(ctx context.Context, dbName string) ([]types.DBView, error) {
 	query := `
 		SELECT TABLE_NAME, VIEW_DEFINITION, CHECK_OPTION
 		FROM information_schema.VIEWS
@@ -479,7 +487,7 @@ func (r *Reader) readViews(dbName string) ([]types.DBView, error) {
 		AND TABLE_NAME NOT IN ('schema_migrations')
 		ORDER BY TABLE_NAME`
 
-	rows, err := r.db.Query(query, dbName)
+	rows, err := r.db.QueryContext(ctx, query, dbName)
 	if err != nil {
 		return nil, err
 	}
@@ -519,8 +527,8 @@ func (r *Reader) readViews(dbName string) ([]types.DBView, error) {
 //
 // A body the connected account may not see is refused rather than reported as
 // empty; see [errFunctionBodyHidden].
-func (r *Reader) readFunctions(dbName string) ([]types.DBFunction, error) {
-	parameters, err := r.readRoutineParameters(dbName)
+func (r *Reader) readFunctions(ctx context.Context, dbName string) ([]types.DBFunction, error) {
+	parameters, err := r.readRoutineParameters(ctx, dbName)
 	if err != nil {
 		return nil, err
 	}
@@ -545,7 +553,7 @@ func (r *Reader) readFunctions(dbName string) ([]types.DBFunction, error) {
 		AND ROUTINE_TYPE IN ('FUNCTION', 'PROCEDURE')
 		ORDER BY ROUTINE_TYPE, ROUTINE_NAME`
 
-	rows, err := r.db.Query(query, dbName)
+	rows, err := r.db.QueryContext(ctx, query, dbName)
 	if err != nil {
 		return nil, err
 	}
@@ -639,7 +647,7 @@ func hiddenRoutineBodyError(dbName, routine string) error {
 // SPECIFIC_NAME) matches the procedure's parameter rows against the function's
 // ROUTINES row and lets every one of them through. Measured: the joined form
 // still produced `a int, p_x varchar(50), p_y decimal(10,2)` on both engines.
-func (r *Reader) readRoutineParameters(dbName string) (map[string]string, error) {
+func (r *Reader) readRoutineParameters(ctx context.Context, dbName string) (map[string]string, error) {
 	query := `
 		SELECT ROUTINE_TYPE, SPECIFIC_NAME, PARAMETER_MODE, PARAMETER_NAME, DTD_IDENTIFIER
 		FROM information_schema.PARAMETERS
@@ -648,7 +656,7 @@ func (r *Reader) readRoutineParameters(dbName string) (map[string]string, error)
 		AND ORDINAL_POSITION > 0
 		ORDER BY ROUTINE_TYPE, SPECIFIC_NAME, ORDINAL_POSITION`
 
-	rows, err := r.db.Query(query, dbName)
+	rows, err := r.db.QueryContext(ctx, query, dbName)
 	if err != nil {
 		return nil, err
 	}
@@ -696,7 +704,7 @@ func routineKind(routineType string) string {
 	return "function"
 }
 
-func (r *Reader) readTriggers(dbName string) ([]types.DBTrigger, error) {
+func (r *Reader) readTriggers(ctx context.Context, dbName string) ([]types.DBTrigger, error) {
 	query := `
 		SELECT
 			TRIGGER_NAME,
@@ -709,7 +717,7 @@ func (r *Reader) readTriggers(dbName string) ([]types.DBTrigger, error) {
 		WHERE TRIGGER_SCHEMA = ?
 		ORDER BY EVENT_OBJECT_TABLE, TRIGGER_NAME`
 
-	rows, err := r.db.Query(query, dbName)
+	rows, err := r.db.QueryContext(ctx, query, dbName)
 	if err != nil {
 		return nil, err
 	}
@@ -753,7 +761,7 @@ func (r *Reader) readTriggers(dbName string) ([]types.DBTrigger, error) {
 // database does not record. The comparison is unaffected either way -- the
 // MySQL family folds a declared enum into its column's type before comparing,
 // so this list is what INSPECTION reports, not what convergence rests on.
-func (r *Reader) readEnums(dbName string) ([]types.DBEnum, error) {
+func (r *Reader) readEnums(ctx context.Context, dbName string) ([]types.DBEnum, error) {
 	query := `
 		SELECT
 			TABLE_NAME,
@@ -764,7 +772,7 @@ func (r *Reader) readEnums(dbName string) ([]types.DBEnum, error) {
 		AND DATA_TYPE = 'enum'
 		ORDER BY TABLE_NAME, COLUMN_NAME`
 
-	rows, err := r.db.Query(query, dbName)
+	rows, err := r.db.QueryContext(ctx, query, dbName)
 	if err != nil {
 		return nil, err
 	}
@@ -833,8 +841,8 @@ const indexKeyPartsQuery = `
 		ORDER BY s.TABLE_NAME, s.INDEX_NAME, s.SEQ_IN_INDEX`
 
 // readIndexes reads all indexes, assembling each key from its parts.
-func (r *Reader) readIndexes(dbName string) ([]types.DBIndex, error) {
-	rows, err := r.db.Query(indexKeyPartsQuery, dbName)
+func (r *Reader) readIndexes(ctx context.Context, dbName string) ([]types.DBIndex, error) {
+	rows, err := r.db.QueryContext(ctx, indexKeyPartsQuery, dbName)
 	if err != nil {
 		return nil, err
 	}
@@ -946,8 +954,8 @@ func indexKeyPrefix(subPart sql.NullInt64) string {
 }
 
 // readConstraints reads all constraints
-func (r *Reader) readConstraints(dbName string) ([]types.DBConstraint, error) {
-	checkClauses, err := r.readCheckConstraintClauses(dbName)
+func (r *Reader) readConstraints(ctx context.Context, dbName string) ([]types.DBConstraint, error) {
+	checkClauses, err := r.readCheckConstraintClauses(ctx, dbName)
 	if err != nil {
 		return nil, fmt.Errorf("read check constraint clauses: %w", err)
 	}
@@ -973,7 +981,7 @@ func (r *Reader) readConstraints(dbName string) ([]types.DBConstraint, error) {
 		AND tc.TABLE_NAME NOT IN ('schema_migrations')
 		ORDER BY tc.TABLE_NAME, tc.CONSTRAINT_NAME, kcu.ORDINAL_POSITION`
 
-	rows, err := r.db.Query(query, dbName)
+	rows, err := r.db.QueryContext(ctx, query, dbName)
 	if err != nil {
 		return nil, err
 	}
@@ -1083,7 +1091,7 @@ func (c checkConstraintClauses) forConstraint(tableName, constraintName string) 
 	return c.byName[constraintName]
 }
 
-func (r *Reader) readCheckConstraintClauses(dbName string) (checkConstraintClauses, error) {
+func (r *Reader) readCheckConstraintClauses(ctx context.Context, dbName string) (checkConstraintClauses, error) {
 	clauses := checkConstraintClauses{
 		byTableName: make(map[constraintKey]string),
 		byName:      make(map[string]string),
@@ -1093,14 +1101,14 @@ func (r *Reader) readCheckConstraintClauses(dbName string) (checkConstraintClaus
 		// spend a round trip to be told error 1054. The error handling below is
 		// still the authority -- a set that is wrong about a live server must
 		// not cost the read -- so a missing view is absorbed here too.
-		err := r.readNameOnlyCheckConstraintClauses(dbName, clauses.byName)
+		err := r.readNameOnlyCheckConstraintClauses(ctx, dbName, clauses.byName)
 		if err == nil || isMissingCheckConstraintsTable(err) {
 			return clauses, nil
 		}
 		return clauses, err
 	}
 
-	err := r.readTableAwareCheckConstraintClauses(dbName, clauses.byTableName)
+	err := r.readTableAwareCheckConstraintClauses(ctx, dbName, clauses.byTableName)
 	if err == nil {
 		return clauses, nil
 	}
@@ -1111,7 +1119,7 @@ func (r *Reader) readCheckConstraintClauses(dbName string) (checkConstraintClaus
 		return clauses, err
 	}
 
-	err = r.readNameOnlyCheckConstraintClauses(dbName, clauses.byName)
+	err = r.readNameOnlyCheckConstraintClauses(ctx, dbName, clauses.byName)
 	if err == nil {
 		return clauses, nil
 	}
@@ -1154,8 +1162,8 @@ func isMissingCheckConstraintsTable(err error) bool {
 	return strings.Contains(strings.ToUpper(mysqlErr.Message), "CHECK_CONSTRAINTS")
 }
 
-func (r *Reader) readTableAwareCheckConstraintClauses(dbName string, clauses map[constraintKey]string) error {
-	rows, err := r.db.Query(`
+func (r *Reader) readTableAwareCheckConstraintClauses(ctx context.Context, dbName string, clauses map[constraintKey]string) error {
+	rows, err := r.db.QueryContext(ctx, `
 		SELECT CONSTRAINT_NAME, TABLE_NAME, CHECK_CLAUSE
 		FROM information_schema.CHECK_CONSTRAINTS
 		WHERE CONSTRAINT_SCHEMA = ?`, dbName)
@@ -1174,8 +1182,8 @@ func (r *Reader) readTableAwareCheckConstraintClauses(dbName string, clauses map
 	return rows.Err()
 }
 
-func (r *Reader) readNameOnlyCheckConstraintClauses(dbName string, clauses map[string]string) error {
-	rows, err := r.db.Query(`
+func (r *Reader) readNameOnlyCheckConstraintClauses(ctx context.Context, dbName string, clauses map[string]string) error {
+	rows, err := r.db.QueryContext(ctx, `
 		SELECT CONSTRAINT_NAME, CHECK_CLAUSE
 		FROM information_schema.CHECK_CONSTRAINTS
 		WHERE CONSTRAINT_SCHEMA = ?`, dbName)

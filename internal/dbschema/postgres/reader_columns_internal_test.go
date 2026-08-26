@@ -242,7 +242,7 @@ func TestReadColumnsForSchema_KeepsTheDeclaredDomainType(t *testing.T) {
 				return serveColumnQuery(catalog, query)
 			})
 
-			columnsByTable, err := NewPostgreSQLReader(db.SQL, "public").readColumnsForSchema("public")
+			columnsByTable, err := NewPostgreSQLReader(db.SQL, "public").readColumnsForSchema(t.Context(), "public")
 			c.Assert(err, qt.IsNil)
 			c.Assert(columnsByTable["t"], qt.HasLen, 1)
 			c.Assert(columnsByTable["t"][0].FormattedType, qt.Equals, test.expectedFormattedType)

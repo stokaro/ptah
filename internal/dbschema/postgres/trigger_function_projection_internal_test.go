@@ -29,7 +29,7 @@ func TestReadTriggersForSchema_ReportsTheFunctionItRuns(t *testing.T) {
 	db := dbtest.Open(t, answeringTriggerFunctions)
 	reader := NewPostgreSQLReader(db.SQL, "public")
 
-	triggers, err := reader.readTriggersForSchema("public")
+	triggers, err := reader.readTriggersForSchema(t.Context(), "public")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(triggers, qt.HasLen, 2)

@@ -57,7 +57,7 @@ func TestReadExtendedProperties_CarriesTheAddressAndDeclinesTheValueItCannotWrit
 	db := dbtest.Open(t, answeringExtendedProperties)
 	reader := NewSQLServerReader(db.SQL, "app")
 
-	properties, err := reader.readExtendedProperties()
+	properties, err := reader.readExtendedProperties(t.Context())
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(properties, qt.DeepEquals, []types.DBExtendedProperty{

@@ -31,7 +31,7 @@ func TestDefaultsTypesConformanceFixture_RoundTrip_MySQL(t *testing.T) {
 	execConformanceSQL(c, db, createSQL, "defaults/types")
 
 	reader := mysqlreader.NewMySQLReader(db, "")
-	liveSchema, err := reader.ReadSchema()
+	liveSchema, err := reader.ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	liveSchema = filterConformanceSchema(liveSchema, defaultsTypesConformanceTables())
 

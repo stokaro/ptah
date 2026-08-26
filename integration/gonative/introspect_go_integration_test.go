@@ -88,7 +88,7 @@ func TestIntrospectCommand_PostgresBrownfieldGoRoundTrip(t *testing.T) {
 	conn, err := dbschema.ConnectToDatabase(t.Context(), dsn)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
-	live, err := dbschema.ReadSchemaWithSchemas(conn, []string{schemaName})
+	live, err := dbschema.ReadSchemaWithSchemasContext(t.Context(), conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
 	compareOpts := config.DefaultCompareOptions()
 	compareOpts.Dialect = conn.Info().Dialect

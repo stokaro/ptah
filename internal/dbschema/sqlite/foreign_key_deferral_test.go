@@ -94,7 +94,7 @@ func TestReader_RecordsAForeignKeysDeferral(t *testing.T) {
 			execSQL(t, db, `CREATE TABLE parent (id INTEGER PRIMARY KEY)`)
 			execSQL(t, db, `CREATE TABLE child (id INTEGER PRIMARY KEY, `+tt.ddl+`)`)
 
-			schema, err := sqlite.NewSQLiteReader(db, "main").ReadSchema()
+			schema, err := sqlite.NewSQLiteReader(db, "main").ReadSchemaContext(t.Context())
 
 			c.Assert(err, qt.IsNil)
 			foreignKey := onlyForeignKey(c, schema.Constraints)

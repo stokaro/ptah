@@ -111,7 +111,7 @@ func TestReaderReadSchema_LoadsPlainViews(t *testing.T) {
 	db := dbtest.Open(t, clickHouseViewReaderQuery)
 	reader := clickhouse.NewClickHouseReader(db.SQL, "analytics")
 
-	schema, err := reader.ReadSchema()
+	schema, err := reader.ReadSchemaContext(t.Context())
 
 	c.Assert(err, qt.IsNil)
 	// Nine: the five catalog reads this test has always made, the two RBAC
@@ -142,7 +142,7 @@ func TestReaderReadSchema_LoadsMaterializedViews(t *testing.T) {
 	db := dbtest.Open(t, clickHouseViewReaderQuery)
 	reader := clickhouse.NewClickHouseReader(db.SQL, "analytics")
 
-	schema, err := reader.ReadSchema()
+	schema, err := reader.ReadSchemaContext(t.Context())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(schema.MatViews, qt.DeepEquals, []types.DBMatView{{
@@ -160,7 +160,7 @@ func TestReaderReadSchema_MaterializedViewCatalogFailurePath(t *testing.T) {
 	db := dbtest.Open(t, clickHouseMaterializedViewReaderFailureQuery)
 	reader := clickhouse.NewClickHouseReader(db.SQL, "analytics")
 
-	schema, err := reader.ReadSchema()
+	schema, err := reader.ReadSchemaContext(t.Context())
 
 	c.Assert(err, qt.ErrorMatches, `clickhouse: read materialized views: catalog unavailable`)
 	c.Assert(schema, qt.IsNil)
@@ -171,7 +171,7 @@ func TestReaderReadSchema_ViewCatalogFailurePath(t *testing.T) {
 	db := dbtest.Open(t, clickHouseViewReaderFailureQuery)
 	reader := clickhouse.NewClickHouseReader(db.SQL, "analytics")
 
-	schema, err := reader.ReadSchema()
+	schema, err := reader.ReadSchemaContext(t.Context())
 
 	c.Assert(err, qt.ErrorMatches, `clickhouse: read views: catalog unavailable`)
 	c.Assert(schema, qt.IsNil)
@@ -236,7 +236,7 @@ func TestReaderReadSchema_ReadsAScheduleOnlyForAViewTheServerSchedules(t *testin
 	db := dbtest.Open(t, clickHouseRefreshableViewReaderQuery)
 	reader := clickhouse.NewClickHouseReader(db.SQL, "analytics")
 
-	schema, err := reader.ReadSchema()
+	schema, err := reader.ReadSchemaContext(t.Context())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(schema.MatViews, qt.HasLen, 2)

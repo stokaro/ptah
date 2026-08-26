@@ -39,7 +39,7 @@ func readInspectSchemaWithNames(
 	if err != nil {
 		return nil, nil, err
 	}
-	schema, err := dbschema.ReadSchemaWithSchemas(conn, names)
+	schema, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, names)
 	if err != nil {
 		return nil, nil, err
 	}

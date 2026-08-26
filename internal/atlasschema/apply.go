@@ -226,7 +226,7 @@ func PreflightApplyTarget(
 	if err != nil {
 		return fmt.Errorf("read database schema: %w", err)
 	}
-	current, err := dbschema.ReadSchemaWithSchemas(conn, readScope)
+	current, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, readScope)
 	if err != nil {
 		return fmt.Errorf("read database schema: %w", err)
 	}
@@ -446,7 +446,7 @@ func applyCurrentState(
 		return nil, nil, fmt.Errorf("read database schema: %w", err)
 	}
 	readScope = applyReadScope(requested, urlScope, desired)
-	current, err = dbschema.ReadSchemaWithSchemas(conn, readScope)
+	current, err = dbschema.ReadSchemaWithSchemasContext(ctx, conn, readScope)
 	if err != nil {
 		return nil, nil, fmt.Errorf("read database schema: %w", err)
 	}

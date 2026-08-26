@@ -32,7 +32,7 @@ func TestReadColumnsByTable_CarriesTheColumnComment(t *testing.T) {
 	db := dbtest.Open(t, answeringColumnComments)
 	reader := NewSQLServerReader(db.SQL, "dbo")
 
-	columns, err := reader.readColumnsByTable()
+	columns, err := reader.readColumnsByTable(t.Context())
 
 	c.Assert(err, qt.IsNil)
 	byTable := columns[catalogTableKey{schema: "dbo", table: "users"}]

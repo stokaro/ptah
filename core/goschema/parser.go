@@ -23,10 +23,8 @@ import (
 	"go.5x5.cz/ptah/internal/tableref"
 )
 
-// validateAttributes rejects any key the directive does not recognize.
-// Platform-specific overrides are accepted only for directives whose schema IR
-// retains them. This catches typos and unsupported overrides at parse time
-// instead of silently dropping them and producing wrong SQL.
+// annotationErrorContext locates one annotation in the source being parsed, so
+// a diagnostic can name the file, line, and directive it came from.
 type annotationErrorContext struct {
 	file      string
 	line      int
@@ -34,6 +32,10 @@ type annotationErrorContext struct {
 	location  string
 }
 
+// validateAttributes rejects any key the directive does not recognize.
+// Platform-specific overrides are accepted only for directives whose schema IR
+// retains them. This catches typos and unsupported overrides at parse time
+// instead of silently dropping them and producing wrong SQL.
 func validateAttributes(kv map[string]string, ctx annotationErrorContext) error {
 	directive := strings.TrimPrefix(ctx.directive, "//")
 	for _, k := range slices.Sorted(maps.Keys(kv)) {

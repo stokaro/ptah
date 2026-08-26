@@ -58,7 +58,7 @@ func TestPostgreSQLReader_ReadSchema_Integration(t *testing.T) {
 	}()
 
 	reader := postgres.NewPostgreSQLReader(db, "public")
-	schema, err := reader.ReadSchema()
+	schema, err := reader.ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	c.Assert(schema, qt.IsNotNil)
 	c.Assert(schema.Tables, qt.Not(qt.HasLen), 0)

@@ -104,7 +104,7 @@ func testDynamicSQLServerIdentitySchemaBracketReservedWords(
 			return fmt.Errorf("expected first SQL Server IDENTITY value 1, got %d", id)
 		}
 
-		schema, err := dbschema.ReadSchemaWithSchemas(conn, []string{sqlServerAcceptanceSchema})
+		schema, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{sqlServerAcceptanceSchema})
 		if err != nil {
 			return fmt.Errorf("read SQL Server schema: %w", err)
 		}

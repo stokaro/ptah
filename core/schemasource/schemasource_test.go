@@ -225,7 +225,7 @@ func TestRun_SQLiteRoundTripConverges(t *testing.T) {
 		c.Assert(err, qt.IsNil, qt.Commentf("statement: %s", statement))
 	}
 
-	live, err := conn.Reader().ReadSchema()
+	live, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 	diff := schemadiff.CompareWithDialect(desired, live, "sqlite")
 

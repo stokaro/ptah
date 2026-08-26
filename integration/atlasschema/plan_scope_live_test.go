@@ -116,7 +116,7 @@ table "c" {
 			c.Assert(plan.Statements, qt.Not(qt.HasLen), 0,
 				qt.Commentf("an empty plan cannot show the fingerprints disagreeing"))
 
-			c.Assert(atlasschema.VerifyPlanTarget(conn, plan), qt.IsNil)
+			c.Assert(atlasschema.VerifyPlanTarget(ctx, conn, plan), qt.IsNil)
 		})
 	}
 }

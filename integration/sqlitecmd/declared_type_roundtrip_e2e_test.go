@@ -52,7 +52,7 @@ func TestSQLiteDeclaredTypesSurviveAReadE2E(t *testing.T) {
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
-	read, err := conn.Reader().ReadSchema()
+	read, err := conn.Reader().ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 
 	described := dbschematogo.ConvertDBSchemaToGoSchema(read)
@@ -110,7 +110,7 @@ func TestSQLiteEquivalentSpellingsDoNotRebuildE2E(t *testing.T) {
 			conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 			c.Assert(err, qt.IsNil)
 			defer dbschema.CloseAndWarn(conn)
-			read, err := conn.Reader().ReadSchema()
+			read, err := conn.Reader().ReadSchemaContext(t.Context())
 			c.Assert(err, qt.IsNil)
 
 			diff, err := schemadiff.CompareWithDatabase(context.Background(), conn,
@@ -144,7 +144,7 @@ func TestSQLiteDifferentAffinitiesStillRebuildE2E(t *testing.T) {
 			conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 			c.Assert(err, qt.IsNil)
 			defer dbschema.CloseAndWarn(conn)
-			read, err := conn.Reader().ReadSchema()
+			read, err := conn.Reader().ReadSchemaContext(t.Context())
 			c.Assert(err, qt.IsNil)
 
 			diff, err := schemadiff.CompareWithDatabase(context.Background(), conn,
@@ -221,7 +221,7 @@ func TestSQLiteDeclaredTypesSurviveTheDocumentE2E(t *testing.T) {
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
-	read, err := conn.Reader().ReadSchema()
+	read, err := conn.Reader().ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 
 	diff, err := schemadiff.CompareWithDatabase(
@@ -243,7 +243,7 @@ func TestSQLiteDeclaredTypesSurviveTheDocumentE2E(t *testing.T) {
 	c.Assert(atlasschema.ApplySQL(context.Background(), replayConn,
 		migrator.MigrationTxModeAll, strings.Join(statements, "\n")), qt.IsNil)
 
-	replayed, err := replayConn.Reader().ReadSchema()
+	replayed, err := replayConn.Reader().ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	c.Assert(describedColumnTypes(dbschematogo.ConvertDBSchemaToGoSchema(replayed)),
 		qt.DeepEquals, describedColumnTypes(dbschematogo.ConvertDBSchemaToGoSchema(read)))
