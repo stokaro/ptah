@@ -19,6 +19,7 @@ import (
 	mcpcmd "go.5x5.cz/ptah/cmd/mcp"
 	"go.5x5.cz/ptah/cmd/migrations"
 	"go.5x5.cz/ptah/cmd/oci"
+	"go.5x5.cz/ptah/cmd/project"
 	"go.5x5.cz/ptah/cmd/schema"
 	"go.5x5.cz/ptah/cmd/seed"
 	sqlcmd "go.5x5.cz/ptah/cmd/sql"
@@ -52,6 +53,7 @@ func NewRootCommand() *cobra.Command {
 	cmd.AddCommand(db.NewDBCommand())
 	cmd.AddCommand(migrations.NewMigrationsCommand())
 	cmd.AddCommand(oci.NewCommand())
+	cmd.AddCommand(project.NewProjectCommand())
 	cmd.AddCommand(seed.NewSeedCommand())
 	cmd.AddCommand(sqlcmd.NewSQLCommand())
 	cmd.AddCommand(viz.NewCommand())
