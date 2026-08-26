@@ -942,6 +942,56 @@ func declaredTables(
 		if err := addDeclaredPrimaryKey(state, builder, table); err != nil {
 			return err
 		}
+		if err := addNamedColumnChecks(state, builder, table, columns); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// addNamedColumnChecks records a NAMED column-level CHECK as the table
+// constraint the catalog reports it as.
+//
+// A catalog does not record where a check was written. Measured on PostgreSQL
+// 18.6, these three are one shape:
+//
+//	a int CHECK (a > 0)                        -> widget_a_check  | c
+//	b int CONSTRAINT b_positive CHECK (b > 0)  -> b_positive      | c
+//	ALTER TABLE ... ADD CONSTRAINT c_positive  -> c_positive      | c
+//
+// So the two adapters can only agree in one direction: a declared column-level
+// check becomes the table constraint it already is on the other side. Teaching
+// the catalog side to guess which constraint belongs to a column would invent a
+// fact the server does not keep.
+//
+// Only a NAMED one is read, which is the same rule stokaro/ptah#2182 and #2189
+// applied to a column-level UNIQUE and PRIMARY KEY: the name is what both sides
+// have, so identity is the name. An UNNAMED one is left on the column and out
+// of the comparison, because the server invents its name -- `widget_a_check` on
+// PostgreSQL, `widget_chk_1` on MySQL -- and a synthesized constraint carrying
+// no name, or a name derived from one server's convention, would differ from
+// the catalog on every run. Deciding what identity an unnamed check has is the
+// part of stokaro/ptah#1663 still open.
+func addNamedColumnChecks(
+	state *State,
+	builder objectidentity.Builder,
+	table goschema.Table,
+	columns []Column,
+) error {
+	for _, column := range columns {
+		if strings.TrimSpace(column.Check) == "" || strings.TrimSpace(column.CheckName) == "" {
+			continue
+		}
+		if err := addTableConstraint(state, builder, table.Schema, table.Name, column.CheckName,
+			&TableConstraint{
+				Kind:           "CHECK",
+				ConstraintName: column.CheckName,
+				Table:          builder.TableParts(table.Schema, table.Name),
+				Expression:     column.Check,
+				Columns:        []string{column.ID.Name.Source},
+			}, coverage.Declared, table.StructName); err != nil {
+			return err
+		}
 	}
 	return nil
 }
