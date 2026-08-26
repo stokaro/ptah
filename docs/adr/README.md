@@ -18,6 +18,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0006](0006-one-authorized-agent-runtime.md) | One policy-bearing agent runtime, and an operator-bound database target | Proposed |
 | [0007](0007-agent-error-taxonomy.md) | A closed agent error taxonomy, assigned at the sentinel and carried in `_meta` | Proposed |
 | [0008](0008-agent-surface-promotion.md) | The agent surfaces are experimental, and these are the criteria that end that | Proposed |
+| [0010](0010-retrieval-quality-is-not-a-schema-property.md) | Retrieval quality is not a property of the schema, and what follows for verification | Proposed |
 
 ## Writing one
 
