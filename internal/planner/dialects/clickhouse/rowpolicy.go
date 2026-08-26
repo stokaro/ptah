@@ -5,7 +5,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // planRowPolicies emits real row-policy DDL once the target hosts it.
@@ -21,7 +21,7 @@ import (
 // (stokaro/ptah#1736).
 func planRowPolicies(
 	result []ast.Node,
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	generated *goschema.Database,
 	caps capability.Capabilities,
 ) []ast.Node {
@@ -50,7 +50,7 @@ func planRowPolicies(
 //
 // It runs before table removal. A policy names its table, and dropping the
 // table first would leave the drop naming an object that is already gone.
-func removeRowPolicies(result []ast.Node, diff *types.SchemaDiff, caps capability.Capabilities) []ast.Node {
+func removeRowPolicies(result []ast.Node, diff *difftypes.SchemaDiff, caps capability.Capabilities) []ast.Node {
 	if !caps.Has(capability.RowLevelSecurity) {
 		return result
 	}

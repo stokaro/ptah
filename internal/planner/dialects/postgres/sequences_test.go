@@ -9,13 +9,13 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestPlanner_SequencesAdded_OrderedBeforeTablesWithOwnershipAfter(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		SequencesAdded: []string{"order_seq"},
 		TablesAdded:    []string{"orders"},
 	}
@@ -48,8 +48,8 @@ func TestPlanner_SequencesAdded_OrderedBeforeTablesWithOwnershipAfter(t *testing
 func TestPlanner_SequencesModified_EmitsAlterForChangedOptionsOnly(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
-		SequencesModified: []types.SequenceDiff{
+	diff := &difftypes.SchemaDiff{
+		SequencesModified: []difftypes.SequenceDiff{
 			{SequenceName: "order_seq", Changes: map[string]string{"increment": "1 -> 5", "cache": "20 -> 50"}},
 		},
 	}

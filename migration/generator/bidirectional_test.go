@@ -13,18 +13,18 @@ import (
 	"go.5x5.cz/ptah/core/renderer"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/generator"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestPlanBidirectionalSchemaDiff_MySQLForeignKeyBackingIndexes(t *testing.T) {
 	tests := []struct {
 		name       string
 		prior      []dbschematypes.DBIndex
-		wantRemove []types.IndexRef
+		wantRemove []difftypes.IndexRef
 	}{
 		{
 			name: "new backing indexes are removed with table-qualified identity",
-			wantRemove: []types.IndexRef{
+			wantRemove: []difftypes.IndexRef{
 				{Name: "fk_tenant", TableName: "a.b"},
 				{Name: "fk_tenant", TableName: "orders"},
 			},
@@ -36,7 +36,7 @@ func TestPlanBidirectionalSchemaDiff_MySQLForeignKeyBackingIndexes(t *testing.T)
 				// This dotted identity must not collide with (table=a.b, name=fk_tenant).
 				{Name: "b.fk_tenant", TableName: "a", Columns: []string{"tenant_id"}},
 			},
-			wantRemove: []types.IndexRef{{Name: "fk_tenant", TableName: "a.b"}},
+			wantRemove: []difftypes.IndexRef{{Name: "fk_tenant", TableName: "a.b"}},
 		},
 		{
 			name: "pre-existing differently named covering prefix is preserved",
@@ -46,16 +46,16 @@ func TestPlanBidirectionalSchemaDiff_MySQLForeignKeyBackingIndexes(t *testing.T)
 					Columns: []string{"tenant_id", "created_at"},
 				},
 			},
-			wantRemove: []types.IndexRef{{Name: "fk_tenant", TableName: "a.b"}},
+			wantRemove: []difftypes.IndexRef{{Name: "fk_tenant", TableName: "a.b"}},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := &types.SchemaDiff{
+			diff := &difftypes.SchemaDiff{
 				ConstraintsAdded: []string{"fk_tenant", "fk_tenant"},
-				ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{
+				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
 					{
 						Name: "fk_tenant", TableName: "orders", Type: "FOREIGN KEY",
 						Columns: []string{"tenant_id"}, ForeignTable: "tenants", ForeignColumns: []string{"id"},
@@ -89,14 +89,14 @@ func TestPlanBidirectionalSchemaDiff_MySQLForeignKeyBackingIndexes(t *testing.T)
 
 func TestPlanBidirectionalSchemaDiff_MySQLSameRunCoveringIndexPreventsBackingIndex(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		ConstraintsAdded: []string{"fk_parent"},
-		ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
 			Name: "fk_parent", TableName: "children", Type: "FOREIGN KEY",
 			Columns: []string{"parent_id"}, ForeignTable: "parents", ForeignColumns: []string{"id"},
 		}},
 	}
-	diff.SetIndexAdditions([]types.IndexRef{{Name: "idx_parent", TableName: "children"}})
+	diff.SetIndexAdditions([]difftypes.IndexRef{{Name: "idx_parent", TableName: "children"}})
 	desired := &goschema.Database{
 		Tables: []goschema.Table{{StructName: "Child", Name: "children"}},
 		Indexes: []goschema.Index{{
@@ -117,7 +117,7 @@ func TestPlanBidirectionalSchemaDiff_MySQLSameRunCoveringIndexPreventsBackingInd
 	})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(plan.Reverse.Diff.IndexRemovals(), qt.DeepEquals, []types.IndexRef{{
+	c.Assert(plan.Reverse.Diff.IndexRemovals(), qt.DeepEquals, []difftypes.IndexRef{{
 		Name: "idx_parent", TableName: "children",
 	}})
 }
@@ -149,14 +149,14 @@ func TestPlanBidirectionalSchemaDiff_MySQLRefusesSameNamedNonCoveringIndex(t *te
 
 func TestPlanBidirectionalSchemaDiff_MySQLRefusesRemovalOfOnlyCoveringIndex(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		ConstraintsAdded: []string{"fk_parent"},
-		ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
 			Name: "fk_parent", TableName: "children", Type: "FOREIGN KEY",
 			Columns: []string{"parent_id"}, ForeignTable: "parents", ForeignColumns: []string{"id"},
 		}},
 	}
-	diff.SetIndexRemovals([]types.IndexRef{{Name: "idx_parent", TableName: "children"}})
+	diff.SetIndexRemovals([]difftypes.IndexRef{{Name: "idx_parent", TableName: "children"}})
 
 	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
 		Diff:          diff,
@@ -192,7 +192,7 @@ func TestPlanBidirectionalSchemaDiff_MySQLConstraintAdditionCoversForeignKey(t *
 			c := qt.New(t)
 			diff := singleMySQLForeignKeyDiff("children")
 			diff.ConstraintsAdded = append([]string{test.constraintName}, diff.ConstraintsAdded...)
-			diff.ConstraintsAddedWithTables = append([]types.ConstraintAdditionInfo{{
+			diff.ConstraintsAddedWithTables = append([]difftypes.ConstraintAdditionInfo{{
 				Name: test.constraintName, TableName: "children", Type: test.constraintType,
 				Columns: []string{"parent_id"},
 			}}, diff.ConstraintsAddedWithTables...)
@@ -200,7 +200,7 @@ func TestPlanBidirectionalSchemaDiff_MySQLConstraintAdditionCoversForeignKey(t *
 			plan, err := planMySQLBidirectional(diff, &goschema.Database{}, &dbschematypes.DBSchema{})
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(plan.Reverse.Diff.IndexRemovals(), qt.Not(qt.Contains), types.IndexRef{
+			c.Assert(plan.Reverse.Diff.IndexRemovals(), qt.Not(qt.Contains), difftypes.IndexRef{
 				Name: "fk_parent", TableName: "children",
 			})
 		})
@@ -209,12 +209,12 @@ func TestPlanBidirectionalSchemaDiff_MySQLConstraintAdditionCoversForeignKey(t *
 
 func TestPlanBidirectionalSchemaDiff_MySQLCompositeAddedColumnBackingCleanupOrder(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{
-		TablesModified: []types.TableDiff{{
+	diff := &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{{
 			TableName: "children", ColumnsAdded: []string{"tenant_id"},
 		}},
 		ConstraintsAdded: []string{"fk_parent"},
-		ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
 			Name: "fk_parent", TableName: "children", Type: "FOREIGN KEY",
 			Columns:        []string{"parent_id", "tenant_id"},
 			ForeignTable:   "parents",
@@ -232,7 +232,7 @@ func TestPlanBidirectionalSchemaDiff_MySQLCompositeAddedColumnBackingCleanupOrde
 	plan, err := planMySQLBidirectional(diff, desired, &dbschematypes.DBSchema{})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(plan.Reverse.Diff.IndexRemovals(), qt.Contains, types.IndexRef{
+	c.Assert(plan.Reverse.Diff.IndexRemovals(), qt.Contains, difftypes.IndexRef{
 		Name: "fk_parent", TableName: "children",
 	})
 	dropForeignKey, dropColumn, dropIndex := mysqlReverseMutationPositions(
@@ -250,12 +250,12 @@ func TestPlanBidirectionalSchemaDiff_MySQLCompositeAddedColumnBackingCleanupOrde
 
 func TestPlanBidirectionalSchemaDiff_MySQLReferencedAddedColumnDropsForeignKeyFirst(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{
-		TablesModified: []types.TableDiff{{
+	diff := &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{{
 			TableName: "parents", ColumnsAdded: []string{"code"},
 		}},
 		ConstraintsAdded: []string{"fk_parent_code"},
-		ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
 			Name: "fk_parent_code", TableName: "children", Type: "FOREIGN KEY",
 			Columns:        []string{"parent_code"},
 			ForeignTable:   "parents",
@@ -306,7 +306,7 @@ func TestPlanBidirectionalSchemaDiff_MySQLConstraintRemovalCannotStrandForeignKe
 			c := qt.New(t)
 			diff := singleMySQLForeignKeyDiff("children")
 			diff.ConstraintsRemoved = []string{test.constraintName}
-			diff.ConstraintsRemovedWithTables = []types.ConstraintRemovalInfo{{
+			diff.ConstraintsRemovedWithTables = []difftypes.ConstraintRemovalInfo{{
 				Name: test.constraintName, TableName: "children", Type: test.constraintType,
 			}}
 			current := &dbschematypes.DBSchema{Constraints: []dbschematypes.DBConstraint{{
@@ -328,10 +328,10 @@ func TestPlanBidirectionalSchemaDiff_MySQLUniqueReplacementStopsCoveringForeignK
 	diff := singleMySQLForeignKeyDiff("children")
 	diff.ConstraintsAdded = append([]string{"uq_parent"}, diff.ConstraintsAdded...)
 	diff.ConstraintsRemoved = []string{"uq_parent"}
-	diff.ConstraintsAddedWithTables = append([]types.ConstraintAdditionInfo{{
+	diff.ConstraintsAddedWithTables = append([]difftypes.ConstraintAdditionInfo{{
 		Name: "uq_parent", TableName: "children", Type: "UNIQUE", Columns: []string{"other_id"},
 	}}, diff.ConstraintsAddedWithTables...)
-	diff.ConstraintsRemovedWithTables = []types.ConstraintRemovalInfo{{
+	diff.ConstraintsRemovedWithTables = []difftypes.ConstraintRemovalInfo{{
 		Name: "uq_parent", TableName: "children", Type: "UNIQUE",
 	}}
 	current := &dbschematypes.DBSchema{Constraints: []dbschematypes.DBConstraint{{
@@ -341,7 +341,7 @@ func TestPlanBidirectionalSchemaDiff_MySQLUniqueReplacementStopsCoveringForeignK
 	plan, err := planMySQLBidirectional(diff, &goschema.Database{}, current)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(plan.Reverse.Diff.IndexRemovals(), qt.Contains, types.IndexRef{
+	c.Assert(plan.Reverse.Diff.IndexRemovals(), qt.Contains, difftypes.IndexRef{
 		Name: "fk_parent", TableName: "children",
 	})
 }
@@ -359,7 +359,7 @@ func TestPlanBidirectionalSchemaDiff_MySQLNewTableInlineKeyAvoidsPhantomCleanup(
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := &types.SchemaDiff{TablesAdded: []string{"children"}}
+			diff := &difftypes.SchemaDiff{TablesAdded: []string{"children"}}
 			desired := &goschema.Database{
 				Tables: []goschema.Table{
 					{StructName: "Parent", Name: "parents"},
@@ -378,7 +378,7 @@ func TestPlanBidirectionalSchemaDiff_MySQLNewTableInlineKeyAvoidsPhantomCleanup(
 			plan, err := planMySQLBidirectional(diff, desired, &dbschematypes.DBSchema{})
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(plan.Reverse.Diff.IndexRemovals(), qt.Not(qt.Contains), types.IndexRef{
+			c.Assert(plan.Reverse.Diff.IndexRemovals(), qt.Not(qt.Contains), difftypes.IndexRef{
 				Name: "fk_parent", TableName: "children",
 			})
 		})
@@ -398,7 +398,7 @@ func TestPlanBidirectionalSchemaDiff_MySQLAddedColumnInlineKeyAvoidsPhantomClean
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := &types.SchemaDiff{TablesModified: []types.TableDiff{{
+			diff := &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName: "children", ColumnsAdded: []string{"parent_id"},
 			}}}
 			desired := &goschema.Database{
@@ -419,7 +419,7 @@ func TestPlanBidirectionalSchemaDiff_MySQLAddedColumnInlineKeyAvoidsPhantomClean
 			plan, err := planMySQLBidirectional(diff, desired, &dbschematypes.DBSchema{})
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(plan.Reverse.Diff.IndexRemovals(), qt.Not(qt.Contains), types.IndexRef{
+			c.Assert(plan.Reverse.Diff.IndexRemovals(), qt.Not(qt.Contains), difftypes.IndexRef{
 				Name: "fk_parent", TableName: "children",
 			})
 			dropForeignKey, dropColumn, _ := mysqlReverseMutationPositions(
@@ -438,9 +438,9 @@ func TestPlanBidirectionalSchemaDiff_MySQLAddedColumnInlineKeyAvoidsPhantomClean
 func TestPlanBidirectionalSchemaDiff_MySQLModifyColumnUniqueCoversForeignKey(t *testing.T) {
 	c := qt.New(t)
 	diff := singleMySQLForeignKeyDiff("children")
-	diff.TablesModified = []types.TableDiff{{
+	diff.TablesModified = []difftypes.TableDiff{{
 		TableName: "children",
-		ColumnsModified: []types.ColumnDiff{{
+		ColumnsModified: []difftypes.ColumnDiff{{
 			ColumnName: "parent_id", Changes: map[string]string{"unique": "false -> true"},
 		}},
 	}}
@@ -454,7 +454,7 @@ func TestPlanBidirectionalSchemaDiff_MySQLModifyColumnUniqueCoversForeignKey(t *
 	plan, err := planMySQLBidirectional(diff, desired, &dbschematypes.DBSchema{})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(plan.Reverse.Diff.IndexRemovals(), qt.Not(qt.Contains), types.IndexRef{
+	c.Assert(plan.Reverse.Diff.IndexRemovals(), qt.Not(qt.Contains), difftypes.IndexRef{
 		Name: "fk_parent", TableName: "children",
 	})
 }
@@ -462,8 +462,8 @@ func TestPlanBidirectionalSchemaDiff_MySQLModifyColumnUniqueCoversForeignKey(t *
 func TestPlanBidirectionalSchemaDiff_MySQLReplacementCoverSurvivesCaseEquivalentRemoval(t *testing.T) {
 	c := qt.New(t)
 	diff := singleMySQLForeignKeyDiff("children")
-	diff.SetIndexAdditions([]types.IndexRef{{Name: "IDX_PARENT", TableName: "children"}})
-	diff.SetIndexRemovals([]types.IndexRef{{Name: "idx_parent", TableName: "children"}})
+	diff.SetIndexAdditions([]difftypes.IndexRef{{Name: "IDX_PARENT", TableName: "children"}})
+	diff.SetIndexRemovals([]difftypes.IndexRef{{Name: "idx_parent", TableName: "children"}})
 	desired := &goschema.Database{
 		Tables: []goschema.Table{{StructName: "Child", Name: "children"}},
 		Indexes: []goschema.Index{{
@@ -486,7 +486,7 @@ func TestPlanBidirectionalSchemaDiff_MySQLReplacementCoverSurvivesCaseEquivalent
 	})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(plan.Reverse.Diff.IndexRemovals(), qt.Not(qt.Contains), types.IndexRef{
+	c.Assert(plan.Reverse.Diff.IndexRemovals(), qt.Not(qt.Contains), difftypes.IndexRef{
 		Name: "fk_parent", TableName: "children",
 	})
 }
@@ -494,8 +494,8 @@ func TestPlanBidirectionalSchemaDiff_MySQLReplacementCoverSurvivesCaseEquivalent
 func TestPlanBidirectionalSchemaDiff_MySQLReplacementDropsOldCoverBeforeForeignKey(t *testing.T) {
 	c := qt.New(t)
 	diff := singleMySQLForeignKeyDiff("children")
-	diff.SetIndexAdditions([]types.IndexRef{{Name: "idx_parent", TableName: "children"}})
-	diff.SetIndexRemovals([]types.IndexRef{{Name: "idx_parent", TableName: "children"}})
+	diff.SetIndexAdditions([]difftypes.IndexRef{{Name: "idx_parent", TableName: "children"}})
+	diff.SetIndexRemovals([]difftypes.IndexRef{{Name: "idx_parent", TableName: "children"}})
 	desired := &goschema.Database{
 		Tables: []goschema.Table{{StructName: "Child", Name: "children"}},
 		Indexes: []goschema.Index{{
@@ -518,7 +518,7 @@ func TestPlanBidirectionalSchemaDiff_MySQLReplacementDropsOldCoverBeforeForeignK
 	})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(plan.Reverse.Diff.IndexRemovals(), qt.Contains, types.IndexRef{
+	c.Assert(plan.Reverse.Diff.IndexRemovals(), qt.Contains, difftypes.IndexRef{
 		Name: "fk_parent", TableName: "children",
 	})
 }
@@ -576,7 +576,7 @@ func TestPlanBidirectionalSchemaDiff_MySQLStructuredFunctionalKeyPositions(t *te
 	tests := []struct {
 		name         string
 		parts        []dbschematypes.DBIndexPart
-		wantRemovals []types.IndexRef
+		wantRemovals []difftypes.IndexRef
 	}{
 		{
 			name: "foreign key column before expression covers",
@@ -591,7 +591,7 @@ func TestPlanBidirectionalSchemaDiff_MySQLStructuredFunctionalKeyPositions(t *te
 				{Expr: "(other_id + 1)"},
 				{Name: "parent_id"},
 			},
-			wantRemovals: []types.IndexRef{{Name: "fk_parent", TableName: "children"}},
+			wantRemovals: []difftypes.IndexRef{{Name: "fk_parent", TableName: "children"}},
 		},
 	}
 
@@ -621,11 +621,11 @@ func TestPlanBidirectionalSchemaDiff_MySQLStructuredFunctionalKeyPositions(t *te
 
 func TestPlanBidirectionalSchemaDiff_SwapsExactConcurrentIndexRefs(t *testing.T) {
 	c := qt.New(t)
-	refs := []types.IndexRef{
+	refs := []difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "app.orders"},
 		{Name: "idx_shared", TableName: "audit.users"},
 	}
-	diff := &types.SchemaDiff{}
+	diff := &difftypes.SchemaDiff{}
 	diff.SetIndexAdditions(refs)
 	desired := concurrentIndexSchema()
 	current := &dbschematypes.DBSchema{Tables: []dbschematypes.DBTable{
@@ -656,11 +656,11 @@ func TestPlanBidirectionalSchemaDiff_SwapsExactConcurrentIndexRefs(t *testing.T)
 
 func TestPlanBidirectionalSchemaDiff_SwapsExactConcurrentIndexDropRefs(t *testing.T) {
 	c := qt.New(t)
-	refs := []types.IndexRef{
+	refs := []difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "app.orders"},
 		{Name: "idx_shared", TableName: "audit.users"},
 	}
-	diff := &types.SchemaDiff{}
+	diff := &difftypes.SchemaDiff{}
 	diff.SetIndexRemovals(refs)
 	current := &dbschematypes.DBSchema{
 		Tables: []dbschematypes.DBTable{
@@ -696,8 +696,8 @@ func TestPlanBidirectionalSchemaDiff_SwapsExactConcurrentIndexDropRefs(t *testin
 
 func TestPlanBidirectionalSchemaDiff_ConcurrentCreateUsesBlockingRollbackWithoutDropCapability(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{}
-	diff.SetIndexAdditions([]types.IndexRef{{Name: "idx_users_reference", TableName: "users"}})
+	diff := &difftypes.SchemaDiff{}
+	diff.SetIndexAdditions([]difftypes.IndexRef{{Name: "idx_users_reference", TableName: "users"}})
 	caps := capability.Postgres17().With(capability.DropIndexConcurrently, false)
 
 	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
@@ -721,7 +721,7 @@ func TestPlanBidirectionalSchemaDiff_ConcurrentCreateUsesBlockingRollbackWithout
 	c.Assert(renderErr, qt.IsNil)
 	c.Assert(up, qt.Equals, "CREATE INDEX CONCURRENTLY IF NOT EXISTS \"idx_users_reference\" ON \"users\" (\"reference\");\n")
 	c.Assert(down, qt.Equals, "DROP INDEX IF EXISTS \"idx_users_reference\";\n")
-	c.Assert(plan.Forward.ConcurrentIndexRefs, qt.DeepEquals, []types.IndexRef{{
+	c.Assert(plan.Forward.ConcurrentIndexRefs, qt.DeepEquals, []difftypes.IndexRef{{
 		Name: "idx_users_reference", TableName: "users",
 	}})
 	c.Assert(plan.Reverse.ConcurrentIndexDropRefs, qt.HasLen, 0)
@@ -763,9 +763,9 @@ func TestPlanBidirectionalSchemaDiff_ExplicitConcurrentModeRequiresCapability(t 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := &types.SchemaDiff{}
-			diff.SetIndexAdditions([]types.IndexRef{{Name: "idx_shared", TableName: "users"}})
-			diff.SetIndexRemovals([]types.IndexRef{{Name: "idx_old", TableName: "users"}})
+			diff := &difftypes.SchemaDiff{}
+			diff.SetIndexAdditions([]difftypes.IndexRef{{Name: "idx_shared", TableName: "users"}})
+			diff.SetIndexRemovals([]difftypes.IndexRef{{Name: "idx_old", TableName: "users"}})
 			plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
 				Diff:          diff,
 				DesiredSchema: &goschema.Database{},
@@ -786,8 +786,8 @@ func TestPlanBidirectionalSchemaDiff_ExplicitConcurrentModeRequiresCapability(t 
 
 func TestPlanBidirectionalSchemaDiff_YugabyteExplicitConcurrentCreateKeepsBlockingRollback(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{}
-	diff.SetIndexAdditions([]types.IndexRef{{Name: "idx_users_reference", TableName: "users"}})
+	diff := &difftypes.SchemaDiff{}
+	diff.SetIndexAdditions([]difftypes.IndexRef{{Name: "idx_users_reference", TableName: "users"}})
 
 	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
 		Diff:          diff,
@@ -838,8 +838,8 @@ func TestPlanBidirectionalSchemaDiff_AutomaticModeIsBidirectionallyCapabilitySaf
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := &types.SchemaDiff{}
-			diff.SetIndexAdditions([]types.IndexRef{{Name: "idx_users_reference", TableName: "users"}})
+			diff := &difftypes.SchemaDiff{}
+			diff.SetIndexAdditions([]difftypes.IndexRef{{Name: "idx_users_reference", TableName: "users"}})
 			plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
 				Diff:          diff,
 				DesiredSchema: singleConcurrentIndexSchema(),
@@ -865,8 +865,8 @@ func TestPlanBidirectionalSchemaDiff_AutomaticModeIsBidirectionallyCapabilitySaf
 
 func TestPlanBidirectionalSchemaDiff_AutomaticYugabyteCreateKeepsBlockingRollback(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{}
-	diff.SetIndexAdditions([]types.IndexRef{{Name: "idx_users_reference", TableName: "users"}})
+	diff := &difftypes.SchemaDiff{}
+	diff.SetIndexAdditions([]difftypes.IndexRef{{Name: "idx_users_reference", TableName: "users"}})
 
 	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
 		Diff:          diff,
@@ -883,7 +883,7 @@ func TestPlanBidirectionalSchemaDiff_AutomaticYugabyteCreateKeepsBlockingRollbac
 	})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(plan.Forward.ConcurrentIndexRefs, qt.DeepEquals, []types.IndexRef{{
+	c.Assert(plan.Forward.ConcurrentIndexRefs, qt.DeepEquals, []difftypes.IndexRef{{
 		Name: "idx_users_reference", TableName: "users",
 	}})
 	c.Assert(plan.Reverse.ConcurrentIndexDropRefs, qt.HasLen, 0)
@@ -893,9 +893,9 @@ func TestPlanBidirectionalSchemaDiff_AutomaticYugabyteCreateKeepsBlockingRollbac
 
 func TestPlanBidirectionalSchemaDiff_ConcurrentDropUsesBlockingReverseCreateWithoutCreateCapability(t *testing.T) {
 	c := qt.New(t)
-	ref := types.IndexRef{Name: "idx_users_reference", TableName: "users"}
-	diff := &types.SchemaDiff{}
-	diff.SetIndexRemovals([]types.IndexRef{ref})
+	ref := difftypes.IndexRef{Name: "idx_users_reference", TableName: "users"}
+	diff := &difftypes.SchemaDiff{}
+	diff.SetIndexRemovals([]difftypes.IndexRef{ref})
 	caps := capability.Postgres17().
 		With(capability.CreateIndexConcurrently, false).
 		With(capability.DropIndexConcurrently, true)
@@ -925,7 +925,7 @@ func TestPlanBidirectionalSchemaDiff_ConcurrentDropUsesBlockingReverseCreateWith
 	c.Assert(renderErr, qt.IsNil)
 	c.Assert(up, qt.Equals, "DROP INDEX CONCURRENTLY IF EXISTS \"idx_users_reference\";\n")
 	c.Assert(down, qt.Equals, "CREATE INDEX IF NOT EXISTS \"idx_users_reference\" ON \"users\" (\"reference\");\n")
-	c.Assert(plan.Forward.ConcurrentIndexDropRefs, qt.DeepEquals, []types.IndexRef{ref})
+	c.Assert(plan.Forward.ConcurrentIndexDropRefs, qt.DeepEquals, []difftypes.IndexRef{ref})
 	c.Assert(plan.Reverse.ConcurrentIndexRefs, qt.HasLen, 0)
 	c.Assert(plan.Forward.RequiresNoTransaction, qt.IsTrue)
 	c.Assert(plan.Reverse.RequiresNoTransaction, qt.IsFalse)
@@ -933,8 +933,8 @@ func TestPlanBidirectionalSchemaDiff_ConcurrentDropUsesBlockingReverseCreateWith
 
 func TestPlanBidirectionalSchemaDiff_PartitionedParentRefusesExplicitPolicy(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{}
-	diff.SetIndexAdditions([]types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}})
+	diff := &difftypes.SchemaDiff{}
+	diff.SetIndexAdditions([]difftypes.IndexRef{{Name: "idx_events_tenant", TableName: "events"}})
 	desired := &goschema.Database{
 		Tables: []goschema.Table{{StructName: "Event", Name: "events"}},
 		Indexes: []goschema.Index{{
@@ -983,7 +983,7 @@ func singleConcurrentIndexSchema() *goschema.Database {
 }
 
 func planMySQLBidirectional(
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	desired *goschema.Database,
 	current *dbschematypes.DBSchema,
 ) (*generator.BidirectionalSchemaPlan, error) {
@@ -1051,10 +1051,10 @@ func mysqlReverseForeignKeyAndColumnPositions(
 	return dropForeignKey, dropColumn
 }
 
-func singleMySQLForeignKeyDiff(table string) *types.SchemaDiff {
-	return &types.SchemaDiff{
+func singleMySQLForeignKeyDiff(table string) *difftypes.SchemaDiff {
+	return &difftypes.SchemaDiff{
 		ConstraintsAdded: []string{"fk_parent"},
-		ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
 			Name: "fk_parent", TableName: table, Type: "FOREIGN KEY",
 			Columns: []string{"parent_id"}, ForeignTable: "parents", ForeignColumns: []string{"id"},
 		}},

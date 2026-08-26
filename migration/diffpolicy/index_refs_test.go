@@ -7,29 +7,29 @@ import (
 
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/migration/diffpolicy"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestApplyDropIndex_PreservesOnlyExactReplacement(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{}
-	diff.SetIndexAdditions([]types.IndexRef{
+	diff := &difftypes.SchemaDiff{}
+	diff.SetIndexAdditions([]difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "users"},
 	})
-	diff.SetIndexRemovals([]types.IndexRef{
+	diff.SetIndexRemovals([]difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "users"},
 		{Name: "idx_shared", TableName: "orders"},
 	})
 
 	got, skipped := diffpolicy.Apply(diff, diffpolicy.NewSkipSet(diffpolicy.DropIndex))
 
-	c.Assert(got.IndexRemovals(), qt.DeepEquals, []types.IndexRef{
+	c.Assert(got.IndexRemovals(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "users"},
 	})
 	c.Assert(skipped, qt.DeepEquals, []diffpolicy.SkippedChange{
 		{Kind: diffpolicy.DropIndex, Object: "orders.idx_shared"},
 	})
-	c.Assert(diff.IndexRemovals(), qt.DeepEquals, []types.IndexRef{
+	c.Assert(diff.IndexRemovals(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "orders"},
 		{Name: "idx_shared", TableName: "users"},
 	})
@@ -37,11 +37,11 @@ func TestApplyDropIndex_PreservesOnlyExactReplacement(t *testing.T) {
 
 func TestApplyForDialectDropIndex_PreservesPostgresSchemaReplacement(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{}
-	diff.SetIndexAdditions([]types.IndexRef{
+	diff := &difftypes.SchemaDiff{}
+	diff.SetIndexAdditions([]difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "app.orders"},
 	})
-	diff.SetIndexRemovals([]types.IndexRef{
+	diff.SetIndexRemovals([]difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "app.users"},
 	})
 
@@ -51,7 +51,7 @@ func TestApplyForDialectDropIndex_PreservesPostgresSchemaReplacement(t *testing.
 		"postgres",
 	)
 
-	c.Assert(got.IndexRemovals(), qt.DeepEquals, []types.IndexRef{
+	c.Assert(got.IndexRemovals(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "app.users"},
 	})
 	c.Assert(skipped, qt.HasLen, 0)
@@ -59,11 +59,11 @@ func TestApplyForDialectDropIndex_PreservesPostgresSchemaReplacement(t *testing.
 
 func TestApplyForDialectDropIndex_SkipsMySQLDifferentTableRemoval(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{}
-	diff.SetIndexAdditions([]types.IndexRef{
+	diff := &difftypes.SchemaDiff{}
+	diff.SetIndexAdditions([]difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "orders"},
 	})
-	diff.SetIndexRemovals([]types.IndexRef{
+	diff.SetIndexRemovals([]difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "users"},
 	})
 
@@ -83,35 +83,35 @@ func TestApplyForDialectDropIndex_PreservesCaseInsensitiveReplacement(t *testing
 	tests := []struct {
 		name     string
 		dialect  string
-		addition types.IndexRef
-		removal  types.IndexRef
+		addition difftypes.IndexRef
+		removal  difftypes.IndexRef
 	}{
 		{
 			name:     "mysql",
 			dialect:  "mysql",
-			addition: types.IndexRef{Name: "IDX_Shared", TableName: "users"},
-			removal:  types.IndexRef{Name: "idx_shared", TableName: "users"},
+			addition: difftypes.IndexRef{Name: "IDX_Shared", TableName: "users"},
+			removal:  difftypes.IndexRef{Name: "idx_shared", TableName: "users"},
 		},
 		{
 			name:     "mariadb",
 			dialect:  "mariadb",
-			addition: types.IndexRef{Name: "IDX_Shared", TableName: "users"},
-			removal:  types.IndexRef{Name: "idx_shared", TableName: "users"},
+			addition: difftypes.IndexRef{Name: "IDX_Shared", TableName: "users"},
+			removal:  difftypes.IndexRef{Name: "idx_shared", TableName: "users"},
 		},
 		{
 			name:     "sqlite",
 			dialect:  "sqlite",
-			addition: types.IndexRef{Name: "IDX_Shared", TableName: "Tenant.Orders"},
-			removal:  types.IndexRef{Name: "idx_shared", TableName: "tenant.users"},
+			addition: difftypes.IndexRef{Name: "IDX_Shared", TableName: "Tenant.Orders"},
+			removal:  difftypes.IndexRef{Name: "idx_shared", TableName: "tenant.users"},
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := &types.SchemaDiff{
-				IndexesAdded:   []types.IndexRef{test.addition},
-				IndexesRemoved: []types.IndexRef{test.removal},
+			diff := &difftypes.SchemaDiff{
+				IndexesAdded:   []difftypes.IndexRef{test.addition},
+				IndexesRemoved: []difftypes.IndexRef{test.removal},
 			}
 
 			got, skipped := diffpolicy.ApplyForDialect(
@@ -120,7 +120,7 @@ func TestApplyForDialectDropIndex_PreservesCaseInsensitiveReplacement(t *testing
 				test.dialect,
 			)
 
-			c.Assert(got.IndexRemovals(), qt.DeepEquals, []types.IndexRef{test.removal})
+			c.Assert(got.IndexRemovals(), qt.DeepEquals, []difftypes.IndexRef{test.removal})
 			c.Assert(skipped, qt.HasLen, 0)
 		})
 	}
@@ -128,11 +128,11 @@ func TestApplyForDialectDropIndex_PreservesCaseInsensitiveReplacement(t *testing
 
 func TestApplyForDialectDropIndex_PreservesPotentialSQLServerReplacement(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{
-		IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "IDX_Shared", TableName: "users"},
 		},
-		IndexesRemoved: []types.IndexRef{
+		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_shared", TableName: "users"},
 		},
 	}
@@ -143,7 +143,7 @@ func TestApplyForDialectDropIndex_PreservesPotentialSQLServerReplacement(t *test
 		"sqlserver",
 	)
 
-	c.Assert(got.IndexRemovals(), qt.DeepEquals, []types.IndexRef{
+	c.Assert(got.IndexRemovals(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "users"},
 	})
 	c.Assert(skipped, qt.HasLen, 0)
@@ -158,12 +158,12 @@ func TestApplyForDialectDropIndex_SQLServerCaseSensitiveSkipsIndependentRemoval(
 			{Name: "IDX_Shared", Key: "IDX_Shared"},
 			{Name: "idx_shared", Key: "idx_shared"},
 		})
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		IdentifierSemantics: &semantics,
-		IndexesAdded: []types.IndexRef{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "IDX_Shared", TableName: "dbo.users"},
 		},
-		IndexesRemoved: []types.IndexRef{
+		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_shared", TableName: "dbo.users"},
 		},
 	}
@@ -182,21 +182,21 @@ func TestApplyForDialectDropIndex_SQLServerCaseSensitiveSkipsIndependentRemoval(
 
 func TestApplyDropTable_PreservesSameNamedIndexOnKeptTable(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{TablesRemoved: []string{"users"}}
-	diff.SetIndexRemovals([]types.IndexRef{
+	diff := &difftypes.SchemaDiff{TablesRemoved: []string{"users"}}
+	diff.SetIndexRemovals([]difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "users"},
 		{Name: "idx_shared", TableName: "orders"},
 	})
 
 	got, skipped := diffpolicy.Apply(diff, diffpolicy.NewSkipSet(diffpolicy.DropTable))
 
-	c.Assert(got.IndexRemovals(), qt.DeepEquals, []types.IndexRef{
+	c.Assert(got.IndexRemovals(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "orders"},
 	})
 	c.Assert(skipped, qt.DeepEquals, []diffpolicy.SkippedChange{
 		{Kind: diffpolicy.DropTable, Object: "users"},
 	})
-	c.Assert(diff.IndexRemovals(), qt.DeepEquals, []types.IndexRef{
+	c.Assert(diff.IndexRemovals(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "orders"},
 		{Name: "idx_shared", TableName: "users"},
 	})

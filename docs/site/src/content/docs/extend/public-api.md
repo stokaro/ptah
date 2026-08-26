@@ -45,7 +45,7 @@ equal to it.
 | `migration/risk` | Migration risk classification. |
 | `migration/safety` | Destructive-change assessment and safety reports. |
 | `migration/schemadiff` | Desired/live schema diffing. |
-| `migration/schemadiff/types` | Shared schema-diff types. |
+| `migration/schemadiff/difftypes` | Shared schema-diff types. |
 | `migration/seeder` | Seed discovery and execution. |
 | `migration/shadow` | Migration verification against a live disposable database. |
 
@@ -285,7 +285,7 @@ statements.
 
 ## Schema diff and planning contracts
 
-`migration/schemadiff/types.SchemaDiff` stores index additions and removals as
+`migration/schemadiff/difftypes.SchemaDiff` stores index additions and removals as
 canonical `[]IndexRef` fields. Every index reference includes its owning
 table. Live comparisons snapshot catalog identifier semantics into the diff so
 comparison, policy, forward planning, and reverse planning share one source of

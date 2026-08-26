@@ -11,7 +11,7 @@ import (
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/normalize"
 	"go.5x5.cz/ptah/internal/rlspolicy"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // RLSPolicies performs PostgreSQL RLS policy comparison between generated and database schemas.

@@ -8,7 +8,7 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // eventsTable declares one `events` table whose schema is spelled as given.
@@ -60,7 +60,7 @@ func TestColumnDDLResolvesTheTableAcrossSchemaSpellings(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			statements, err := planner.GenerateSchemaDiffSQLStatements(
-				&types.SchemaDiff{TablesModified: []types.TableDiff{{
+				&difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 					TableName:    test.diffName,
 					ColumnsAdded: []string{"note"},
 				}}},
@@ -83,7 +83,7 @@ func TestColumnDDLDoesNotGuessBetweenSchemas(t *testing.T) {
 	c := qt.New(t)
 
 	statements, err := planner.GenerateSchemaDiffSQLStatements(
-		&types.SchemaDiff{TablesModified: []types.TableDiff{{
+		&difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 			TableName:    "app.events",
 			ColumnsAdded: []string{"note"},
 		}}},
@@ -129,7 +129,7 @@ func TestCreateTableResolvesTheTableAcrossSchemaSpellings(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			statements, err := planner.GenerateSchemaDiffSQLStatements(
-				&types.SchemaDiff{TablesAdded: []string{test.diffName}},
+				&difftypes.SchemaDiff{TablesAdded: []string{test.diffName}},
 				eventsTable(test.tableSchema),
 				"clickhouse",
 			)
@@ -147,7 +147,7 @@ func TestCreateTableDoesNotGuessBetweenSchemas(t *testing.T) {
 	c := qt.New(t)
 
 	statements, err := planner.GenerateSchemaDiffSQLStatements(
-		&types.SchemaDiff{TablesAdded: []string{"app.events"}},
+		&difftypes.SchemaDiff{TablesAdded: []string{"app.events"}},
 		eventsTable("reporting"),
 		"clickhouse",
 	)

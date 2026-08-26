@@ -10,7 +10,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestIssue51ExactReproduction reproduces the exact scenario described in GitHub issue #51
@@ -85,7 +85,7 @@ func TestIssue51ExactReproduction(t *testing.T) {
 	c.Assert(actualOrder, qt.DeepEquals, expectedOrder)
 
 	// Now test the migration generation
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		TablesAdded: []string{"tenants", "users", "locations", "areas"},
 	}
 

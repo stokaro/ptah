@@ -6,10 +6,10 @@ import (
 	"sort"
 	"strings"
 
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
-func describeDiff(diff *types.SchemaDiff) string {
+func describeDiff(diff *difftypes.SchemaDiff) string {
 	mismatches := collectMismatches(diff)
 	if len(mismatches) > 0 {
 		return mismatches[0].Message
@@ -17,14 +17,14 @@ func describeDiff(diff *types.SchemaDiff) string {
 	return "schema differs"
 }
 
-func newSchemaMismatchError(diff *types.SchemaDiff) *VerificationError {
+func newSchemaMismatchError(diff *difftypes.SchemaDiff) *VerificationError {
 	return &VerificationError{Result: VerificationResult{
 		Stage:      "schema-match",
 		Mismatches: collectMismatches(diff),
 	}}
 }
 
-func collectModifiedTableMismatches(table types.TableDiff) []Mismatch {
+func collectModifiedTableMismatches(table difftypes.TableDiff) []Mismatch {
 	var mismatches []Mismatch
 	for _, columnName := range sortedStrings(table.ColumnsAdded) {
 		message := fmt.Sprintf("missing column %s.%s", table.TableName, columnName)
@@ -49,7 +49,7 @@ func collectModifiedTableMismatches(table types.TableDiff) []Mismatch {
 	return mismatches
 }
 
-func collectMismatches(diff *types.SchemaDiff) []Mismatch {
+func collectMismatches(diff *difftypes.SchemaDiff) []Mismatch {
 	if diff == nil {
 		return []Mismatch{{Kind: "schema", Message: "schema differs"}}
 	}
@@ -66,7 +66,7 @@ func collectMismatches(diff *types.SchemaDiff) []Mismatch {
 	return mismatches
 }
 
-func collectTableMismatches(diff *types.SchemaDiff) []Mismatch {
+func collectTableMismatches(diff *difftypes.SchemaDiff) []Mismatch {
 	var mismatches []Mismatch
 	mismatches = append(mismatches, tableMismatches(diff.TablesAdded, "missing_table", "missing table")...)
 	mismatches = append(mismatches, tableMismatches(diff.TablesRemoved, "extra_table", "extra table")...)
@@ -76,7 +76,7 @@ func collectTableMismatches(diff *types.SchemaDiff) []Mismatch {
 	return mismatches
 }
 
-func collectSchemaObjectMismatches(diff *types.SchemaDiff) []Mismatch {
+func collectSchemaObjectMismatches(diff *difftypes.SchemaDiff) []Mismatch {
 	var mismatches []Mismatch
 	mismatches = append(mismatches, namedMismatches(diff.ExtensionsAdded, "missing_extension", "missing extension")...)
 	mismatches = append(mismatches, namedMismatches(diff.ExtensionsRemoved, "extra_extension", "extra extension")...)
@@ -84,8 +84,8 @@ func collectSchemaObjectMismatches(diff *types.SchemaDiff) []Mismatch {
 		diff.ExtensionsModified,
 		"extension_mismatch",
 		"extension",
-		func(value types.ExtensionDiff) string { return value.Name },
-		func(value types.ExtensionDiff) map[string]string {
+		func(value difftypes.ExtensionDiff) string { return value.Name },
+		func(value difftypes.ExtensionDiff) map[string]string {
 			return map[string]string{"schema": value.FromSchema + " -> " + value.ToSchema}
 		},
 	)...)
@@ -95,8 +95,8 @@ func collectSchemaObjectMismatches(diff *types.SchemaDiff) []Mismatch {
 		diff.FunctionsModified,
 		"function_mismatch",
 		"function",
-		func(value types.FunctionDiff) string { return value.FunctionName },
-		func(value types.FunctionDiff) map[string]string { return value.Changes },
+		func(value difftypes.FunctionDiff) string { return value.FunctionName },
+		func(value difftypes.FunctionDiff) map[string]string { return value.Changes },
 	)...)
 	mismatches = append(mismatches, namedMismatches(diff.SequencesAdded, "missing_sequence", "missing sequence")...)
 	mismatches = append(mismatches, namedMismatches(diff.SequencesRemoved, "extra_sequence", "extra sequence")...)
@@ -104,8 +104,8 @@ func collectSchemaObjectMismatches(diff *types.SchemaDiff) []Mismatch {
 		diff.SequencesModified,
 		"sequence_mismatch",
 		"sequence",
-		func(value types.SequenceDiff) string { return value.SequenceName },
-		func(value types.SequenceDiff) map[string]string { return value.Changes },
+		func(value difftypes.SequenceDiff) string { return value.SequenceName },
+		func(value difftypes.SequenceDiff) map[string]string { return value.Changes },
 	)...)
 	mismatches = append(mismatches, collectUserTypeMismatches(diff)...)
 	mismatches = append(mismatches, collectViewMismatches(diff)...)
@@ -113,7 +113,7 @@ func collectSchemaObjectMismatches(diff *types.SchemaDiff) []Mismatch {
 	return mismatches
 }
 
-func collectUserTypeMismatches(diff *types.SchemaDiff) []Mismatch {
+func collectUserTypeMismatches(diff *difftypes.SchemaDiff) []Mismatch {
 	var mismatches []Mismatch
 	mismatches = append(mismatches, namedMismatches(diff.DomainsAdded, "missing_domain", "missing domain")...)
 	mismatches = append(mismatches, namedMismatches(diff.DomainsRemoved, "extra_domain", "extra domain")...)
@@ -121,8 +121,8 @@ func collectUserTypeMismatches(diff *types.SchemaDiff) []Mismatch {
 		diff.DomainsModified,
 		"domain_mismatch",
 		"domain",
-		func(value types.DomainDiff) string { return value.DomainName },
-		func(value types.DomainDiff) map[string]string { return value.Changes },
+		func(value difftypes.DomainDiff) string { return value.DomainName },
+		func(value difftypes.DomainDiff) map[string]string { return value.Changes },
 	)...)
 	mismatches = append(mismatches, namedMismatches(diff.CompositeTypesAdded, "missing_composite_type", "missing composite type")...)
 	mismatches = append(mismatches, namedMismatches(diff.CompositeTypesRemoved, "extra_composite_type", "extra composite type")...)
@@ -130,8 +130,8 @@ func collectUserTypeMismatches(diff *types.SchemaDiff) []Mismatch {
 		diff.CompositeTypesModified,
 		"composite_type_mismatch",
 		"composite type",
-		func(value types.CompositeTypeDiff) string { return value.TypeName },
-		func(value types.CompositeTypeDiff) map[string]string { return value.Changes },
+		func(value difftypes.CompositeTypeDiff) string { return value.TypeName },
+		func(value difftypes.CompositeTypeDiff) map[string]string { return value.Changes },
 	)...)
 	mismatches = append(mismatches, namedMismatches(diff.RangesAdded, "missing_range", "missing range")...)
 	mismatches = append(mismatches, namedMismatches(diff.RangesRemoved, "extra_range", "extra range")...)
@@ -139,13 +139,13 @@ func collectUserTypeMismatches(diff *types.SchemaDiff) []Mismatch {
 		diff.RangesModified,
 		"range_mismatch",
 		"range type",
-		func(value types.RangeDiff) string { return value.RangeName },
-		func(value types.RangeDiff) map[string]string { return value.Changes },
+		func(value difftypes.RangeDiff) string { return value.RangeName },
+		func(value difftypes.RangeDiff) map[string]string { return value.Changes },
 	)...)
 	return mismatches
 }
 
-func collectViewMismatches(diff *types.SchemaDiff) []Mismatch {
+func collectViewMismatches(diff *difftypes.SchemaDiff) []Mismatch {
 	var mismatches []Mismatch
 	mismatches = append(mismatches, namedMismatches(diff.ViewsAdded, "missing_view", "missing view")...)
 	mismatches = append(mismatches, namedMismatches(diff.ViewsRemoved, "extra_view", "extra view")...)
@@ -153,8 +153,8 @@ func collectViewMismatches(diff *types.SchemaDiff) []Mismatch {
 		diff.ViewsModified,
 		"view_mismatch",
 		"view",
-		func(value types.ViewDiff) string { return value.ViewName },
-		func(value types.ViewDiff) map[string]string { return value.Changes },
+		func(value difftypes.ViewDiff) string { return value.ViewName },
+		func(value difftypes.ViewDiff) map[string]string { return value.Changes },
 	)...)
 	mismatches = append(mismatches, namedMismatches(diff.MaterializedViewsAdded, "missing_materialized_view", "missing materialized view")...)
 	mismatches = append(mismatches, namedMismatches(diff.MaterializedViewsRemoved, "extra_materialized_view", "extra materialized view")...)
@@ -162,13 +162,13 @@ func collectViewMismatches(diff *types.SchemaDiff) []Mismatch {
 		diff.MaterializedViewsModified,
 		"materialized_view_mismatch",
 		"materialized view",
-		func(value types.MaterializedViewDiff) string { return value.ViewName },
-		func(value types.MaterializedViewDiff) map[string]string { return value.Changes },
+		func(value difftypes.MaterializedViewDiff) string { return value.ViewName },
+		func(value difftypes.MaterializedViewDiff) map[string]string { return value.Changes },
 	)...)
 	return mismatches
 }
 
-func collectTriggerMismatches(diff *types.SchemaDiff) []Mismatch {
+func collectTriggerMismatches(diff *difftypes.SchemaDiff) []Mismatch {
 	var mismatches []Mismatch
 	for _, ref := range sortedTriggerRefs(diff.TriggersAdded) {
 		object := qualifiedObject(ref.TableName, ref.TriggerName)
@@ -186,7 +186,7 @@ func collectTriggerMismatches(diff *types.SchemaDiff) []Mismatch {
 	return mismatches
 }
 
-func collectAccessControlMismatches(diff *types.SchemaDiff) []Mismatch {
+func collectAccessControlMismatches(diff *difftypes.SchemaDiff) []Mismatch {
 	var mismatches []Mismatch
 	for _, ref := range sortedRLSPolicyRefs(diff.RLSPoliciesAdded) {
 		object := qualifiedObject(ref.TableName, ref.PolicyName)
@@ -209,8 +209,8 @@ func collectAccessControlMismatches(diff *types.SchemaDiff) []Mismatch {
 		diff.RolesModified,
 		"role_mismatch",
 		"role",
-		func(value types.RoleDiff) string { return value.RoleName },
-		func(value types.RoleDiff) map[string]string { return value.Changes },
+		func(value difftypes.RoleDiff) string { return value.RoleName },
+		func(value difftypes.RoleDiff) map[string]string { return value.Changes },
 	)...)
 	mismatches = append(mismatches, grantMismatches(diff.GrantsAdded, "missing_grant", "missing grant")...)
 	mismatches = append(mismatches, grantMismatches(diff.GrantsRemoved, "extra_grant", "extra grant")...)
@@ -219,14 +219,14 @@ func collectAccessControlMismatches(diff *types.SchemaDiff) []Mismatch {
 	return mismatches
 }
 
-func collectTopLevelConstraintMismatches(diff *types.SchemaDiff) []Mismatch {
+func collectTopLevelConstraintMismatches(diff *difftypes.SchemaDiff) []Mismatch {
 	var mismatches []Mismatch
 	mismatches = append(mismatches, constraintAdditionMismatches(diff)...)
 	mismatches = append(mismatches, constraintRemovalMismatches(diff)...)
 	return mismatches
 }
 
-func constraintAdditionMismatches(diff *types.SchemaDiff) []Mismatch {
+func constraintAdditionMismatches(diff *difftypes.SchemaDiff) []Mismatch {
 	represented := make(map[string]struct{}, len(diff.ConstraintsAddedWithTables))
 	var mismatches []Mismatch
 	for _, info := range sortedConstraintAdditions(diff.ConstraintsAddedWithTables) {
@@ -242,7 +242,7 @@ func constraintAdditionMismatches(diff *types.SchemaDiff) []Mismatch {
 	return mismatches
 }
 
-func constraintRemovalMismatches(diff *types.SchemaDiff) []Mismatch {
+func constraintRemovalMismatches(diff *difftypes.SchemaDiff) []Mismatch {
 	represented := make(map[string]struct{}, len(diff.ConstraintsRemovedWithTables))
 	var mismatches []Mismatch
 	for _, info := range sortedConstraintRemovals(diff.ConstraintsRemovedWithTables) {
@@ -274,7 +274,7 @@ func namedMismatches(names []string, kind, label string) []Mismatch {
 	return mismatches
 }
 
-func indexMismatches(refs []types.IndexRef, kind, label string) []Mismatch {
+func indexMismatches(refs []difftypes.IndexRef, kind, label string) []Mismatch {
 	var mismatches []Mismatch
 	for _, ref := range sortedIndexRefs(refs) {
 		object := qualifiedObject(ref.TableName, ref.Name)
@@ -302,7 +302,7 @@ func changedObjectMismatches[T any](
 	return mismatches
 }
 
-func grantMismatches(refs []types.GrantRef, kind, label string) []Mismatch {
+func grantMismatches(refs []difftypes.GrantRef, kind, label string) []Mismatch {
 	var mismatches []Mismatch
 	for _, ref := range sortedGrantRefs(refs) {
 		object := fmt.Sprintf("%s %s ON %s %s", ref.Role, ref.Privilege, ref.ObjectType, ref.ObjectName)
@@ -318,7 +318,7 @@ func qualifiedObject(namespace, name string) string {
 	return namespace + "." + name
 }
 
-func collectEnumAndIndexMismatches(diff *types.SchemaDiff) []Mismatch {
+func collectEnumAndIndexMismatches(diff *difftypes.SchemaDiff) []Mismatch {
 	var mismatches []Mismatch
 	mismatches = append(mismatches, namedMismatches(diff.EnumsAdded, "missing_enum", "missing enum")...)
 	mismatches = append(mismatches, namedMismatches(diff.EnumsRemoved, "extra_enum", "extra enum")...)
@@ -337,8 +337,8 @@ func collectEnumAndIndexMismatches(diff *types.SchemaDiff) []Mismatch {
 	return mismatches
 }
 
-func sortedIndexRefs(refs []types.IndexRef) []types.IndexRef {
-	sorted := append([]types.IndexRef(nil), refs...)
+func sortedIndexRefs(refs []difftypes.IndexRef) []difftypes.IndexRef {
+	sorted := append([]difftypes.IndexRef(nil), refs...)
 	sort.Slice(sorted, func(i, j int) bool {
 		if sorted[i].TableName != sorted[j].TableName {
 			return sorted[i].TableName < sorted[j].TableName
@@ -348,8 +348,8 @@ func sortedIndexRefs(refs []types.IndexRef) []types.IndexRef {
 	return sorted
 }
 
-func sortedTriggerRefs(refs []types.TriggerRef) []types.TriggerRef {
-	sorted := append([]types.TriggerRef(nil), refs...)
+func sortedTriggerRefs(refs []difftypes.TriggerRef) []difftypes.TriggerRef {
+	sorted := append([]difftypes.TriggerRef(nil), refs...)
 	sort.Slice(sorted, func(i, j int) bool {
 		return compareQualified(
 			sorted[i].TableName, sorted[i].TriggerName,
@@ -359,8 +359,8 @@ func sortedTriggerRefs(refs []types.TriggerRef) []types.TriggerRef {
 	return sorted
 }
 
-func sortedTriggerDiffs(values []types.TriggerDiff) []types.TriggerDiff {
-	sorted := append([]types.TriggerDiff(nil), values...)
+func sortedTriggerDiffs(values []difftypes.TriggerDiff) []difftypes.TriggerDiff {
+	sorted := append([]difftypes.TriggerDiff(nil), values...)
 	sort.Slice(sorted, func(i, j int) bool {
 		return compareQualified(
 			sorted[i].TableName, sorted[i].TriggerName,
@@ -370,8 +370,8 @@ func sortedTriggerDiffs(values []types.TriggerDiff) []types.TriggerDiff {
 	return sorted
 }
 
-func sortedRLSPolicyRefs(refs []types.RLSPolicyRef) []types.RLSPolicyRef {
-	sorted := append([]types.RLSPolicyRef(nil), refs...)
+func sortedRLSPolicyRefs(refs []difftypes.RLSPolicyRef) []difftypes.RLSPolicyRef {
+	sorted := append([]difftypes.RLSPolicyRef(nil), refs...)
 	sort.Slice(sorted, func(i, j int) bool {
 		return compareQualified(
 			sorted[i].TableName, sorted[i].PolicyName,
@@ -381,8 +381,8 @@ func sortedRLSPolicyRefs(refs []types.RLSPolicyRef) []types.RLSPolicyRef {
 	return sorted
 }
 
-func sortedRLSPolicyDiffs(values []types.RLSPolicyDiff) []types.RLSPolicyDiff {
-	sorted := append([]types.RLSPolicyDiff(nil), values...)
+func sortedRLSPolicyDiffs(values []difftypes.RLSPolicyDiff) []difftypes.RLSPolicyDiff {
+	sorted := append([]difftypes.RLSPolicyDiff(nil), values...)
 	sort.Slice(sorted, func(i, j int) bool {
 		return compareQualified(
 			sorted[i].TableName, sorted[i].PolicyName,
@@ -392,15 +392,15 @@ func sortedRLSPolicyDiffs(values []types.RLSPolicyDiff) []types.RLSPolicyDiff {
 	return sorted
 }
 
-func sortedGrantRefs(refs []types.GrantRef) []types.GrantRef {
-	sorted := append([]types.GrantRef(nil), refs...)
+func sortedGrantRefs(refs []difftypes.GrantRef) []difftypes.GrantRef {
+	sorted := append([]difftypes.GrantRef(nil), refs...)
 	sort.Slice(sorted, func(i, j int) bool {
 		return compareGrantRefs(sorted[i], sorted[j]) < 0
 	})
 	return sorted
 }
 
-func compareGrantRefs(left, right types.GrantRef) int {
+func compareGrantRefs(left, right difftypes.GrantRef) int {
 	for _, values := range [][2]string{
 		{left.Role, right.Role},
 		{left.Privilege, right.Privilege},
@@ -414,16 +414,16 @@ func compareGrantRefs(left, right types.GrantRef) int {
 	return 0
 }
 
-func sortedConstraintAdditions(values []types.ConstraintAdditionInfo) []types.ConstraintAdditionInfo {
-	sorted := append([]types.ConstraintAdditionInfo(nil), values...)
+func sortedConstraintAdditions(values []difftypes.ConstraintAdditionInfo) []difftypes.ConstraintAdditionInfo {
+	sorted := append([]difftypes.ConstraintAdditionInfo(nil), values...)
 	sort.Slice(sorted, func(i, j int) bool {
 		return compareQualified(sorted[i].TableName, sorted[i].Name, sorted[j].TableName, sorted[j].Name) < 0
 	})
 	return sorted
 }
 
-func sortedConstraintRemovals(values []types.ConstraintRemovalInfo) []types.ConstraintRemovalInfo {
-	sorted := append([]types.ConstraintRemovalInfo(nil), values...)
+func sortedConstraintRemovals(values []difftypes.ConstraintRemovalInfo) []difftypes.ConstraintRemovalInfo {
+	sorted := append([]difftypes.ConstraintRemovalInfo(nil), values...)
 	sort.Slice(sorted, func(i, j int) bool {
 		return compareQualified(sorted[i].TableName, sorted[i].Name, sorted[j].TableName, sorted[j].Name) < 0
 	})
@@ -443,24 +443,24 @@ func sortedStrings(values []string) []string {
 	return out
 }
 
-func sortedTableDiffs(values []types.TableDiff) []types.TableDiff {
-	out := append([]types.TableDiff(nil), values...)
+func sortedTableDiffs(values []difftypes.TableDiff) []difftypes.TableDiff {
+	out := append([]difftypes.TableDiff(nil), values...)
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].TableName < out[j].TableName
 	})
 	return out
 }
 
-func sortedColumnDiffs(values []types.ColumnDiff) []types.ColumnDiff {
-	out := append([]types.ColumnDiff(nil), values...)
+func sortedColumnDiffs(values []difftypes.ColumnDiff) []difftypes.ColumnDiff {
+	out := append([]difftypes.ColumnDiff(nil), values...)
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].ColumnName < out[j].ColumnName
 	})
 	return out
 }
 
-func sortedEnumDiffs(values []types.EnumDiff) []types.EnumDiff {
-	out := append([]types.EnumDiff(nil), values...)
+func sortedEnumDiffs(values []difftypes.EnumDiff) []difftypes.EnumDiff {
+	out := append([]difftypes.EnumDiff(nil), values...)
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].EnumName < out[j].EnumName
 	})

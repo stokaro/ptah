@@ -3,7 +3,7 @@
 //
 // # Why it exists
 //
-// `migration/schemadiff/types.SchemaDiff` describes a change as a name in a
+// `migration/schemadiff/difftypes.SchemaDiff` describes a change as a name in a
 // per-family slice. `TablesAdded []string` says a table appeared and nothing
 // about what is in it, which is why the planner's signature is
 //

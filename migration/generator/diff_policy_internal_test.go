@@ -15,7 +15,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/migration/diffpolicy"
 	"go.5x5.cz/ptah/migration/safety"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestPlanGeneratedMigrationSpecs_SkipDropTable(t *testing.T) {
@@ -23,9 +23,9 @@ func TestPlanGeneratedMigrationSpecs_SkipDropTable(t *testing.T) {
 
 	// A dropped table (to be skipped) alongside a kept index add, so the
 	// migration is non-empty and we can assert the drop was omitted in place.
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		TablesRemoved: []string{"legacy"},
-		IndexesAdded: []types.IndexRef{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "idx_users_email", TableName: "users"},
 		},
 	}
@@ -69,9 +69,9 @@ func TestPlanGeneratedMigrationSpecs_SkipDropTableAlsoFiltersDown(t *testing.T) 
 			{Name: "users", Type: "BASE TABLE"},
 		},
 	}
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		TablesRemoved: []string{"legacy"},
-		IndexesAdded: []types.IndexRef{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "idx_users_email", TableName: "users"},
 		},
 	}
@@ -105,11 +105,11 @@ func TestPlanGeneratedMigrationSpecs_SkipDropTableAlsoFiltersDown(t *testing.T) 
 func TestPlanGeneratedMigrationSpecs_SkipDropIndexKeepsRedefinition(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
-		IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "idx_users_email", TableName: "users"},
 		},
-		IndexesRemoved: []types.IndexRef{
+		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_users_email", TableName: "users"},
 		},
 	}

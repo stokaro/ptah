@@ -8,7 +8,7 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestViewAndTriggerLookupsDoNotCrossDatabases pins mysql's findView and
@@ -23,7 +23,7 @@ func TestViewAndTriggerLookupsDoNotCrossDatabases(t *testing.T) {
 	tests := []struct {
 		name        string
 		generated   *goschema.Database
-		diff        *types.SchemaDiff
+		diff        *difftypes.SchemaDiff
 		unwantedSQL string
 	}{
 		{
@@ -34,7 +34,7 @@ func TestViewAndTriggerLookupsDoNotCrossDatabases(t *testing.T) {
 					Body: "SELECT id FROM orders WHERE open",
 				}},
 			},
-			diff: &types.SchemaDiff{ViewsModified: []types.ViewDiff{{
+			diff: &difftypes.SchemaDiff{ViewsModified: []difftypes.ViewDiff{{
 				ViewName:     "app.active_orders",
 				PreviousBody: "SELECT id FROM orders",
 				Changes:      map[string]string{"body": "changed"},
@@ -54,7 +54,7 @@ func TestViewAndTriggerLookupsDoNotCrossDatabases(t *testing.T) {
 					Body:       "SET @x = 1;",
 				}},
 			},
-			diff: &types.SchemaDiff{TriggersAdded: []types.TriggerRef{{
+			diff: &difftypes.SchemaDiff{TriggersAdded: []difftypes.TriggerRef{{
 				TriggerName: "touch",
 				TableName:   "app.orders",
 			}}},
@@ -81,7 +81,7 @@ func TestViewAndTriggerLookupsResolveAcrossDatabaseSpellings(t *testing.T) {
 	tests := []struct {
 		name      string
 		generated *goschema.Database
-		diff      *types.SchemaDiff
+		diff      *difftypes.SchemaDiff
 		wantSQL   string
 	}{
 		{
@@ -92,7 +92,7 @@ func TestViewAndTriggerLookupsResolveAcrossDatabaseSpellings(t *testing.T) {
 					Body: "SELECT id FROM orders WHERE open",
 				}},
 			},
-			diff: &types.SchemaDiff{ViewsModified: []types.ViewDiff{{
+			diff: &difftypes.SchemaDiff{ViewsModified: []difftypes.ViewDiff{{
 				ViewName:     "app.active_orders",
 				PreviousBody: "SELECT id FROM orders",
 				Changes:      map[string]string{"body": "changed"},
@@ -112,7 +112,7 @@ func TestViewAndTriggerLookupsResolveAcrossDatabaseSpellings(t *testing.T) {
 					Body:       "SET @x = 1;",
 				}},
 			},
-			diff: &types.SchemaDiff{TriggersAdded: []types.TriggerRef{{
+			diff: &difftypes.SchemaDiff{TriggersAdded: []difftypes.TriggerRef{{
 				TriggerName: "touch",
 				TableName:   "app.orders",
 			}}},

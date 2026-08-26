@@ -8,7 +8,7 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestSequenceLookupResolvesAcrossSchemaSpellings pins findSequence at each of
@@ -60,7 +60,7 @@ func TestSequenceLookupResolvesAcrossSchemaSpellings(t *testing.T) {
 			}
 
 			added, err := planner.GenerateSchemaDiffSQLStatements(
-				&types.SchemaDiff{SequencesAdded: []string{test.diffName}},
+				&difftypes.SchemaDiff{SequencesAdded: []string{test.diffName}},
 				generated,
 				"postgres",
 			)
@@ -73,7 +73,7 @@ func TestSequenceLookupResolvesAcrossSchemaSpellings(t *testing.T) {
 			c.Assert(addedPlan, qt.Contains, "OWNED BY", qt.Commentf("plan:\n%s", addedPlan))
 
 			modified, err := planner.GenerateSchemaDiffSQLStatements(
-				&types.SchemaDiff{SequencesModified: []types.SequenceDiff{{
+				&difftypes.SchemaDiff{SequencesModified: []difftypes.SequenceDiff{{
 					SequenceName: test.diffName,
 					Changes:      map[string]string{"increment": "1 -> 5"},
 				}}},
@@ -97,7 +97,7 @@ func TestSequenceLookupDoesNotGuessBetweenSchemas(t *testing.T) {
 		Sequences: []goschema.Sequence{{Name: "order_id_seq", Schema: "reporting", AsType: "bigint"}},
 	}
 	statements, err := planner.GenerateSchemaDiffSQLStatements(
-		&types.SchemaDiff{SequencesAdded: []string{"app.order_id_seq"}},
+		&difftypes.SchemaDiff{SequencesAdded: []string{"app.order_id_seq"}},
 		generated,
 		"postgres",
 	)
@@ -147,7 +147,7 @@ func TestEnumLookupResolvesAcrossSchemaSpellings(t *testing.T) {
 			}
 
 			added, err := planner.GenerateSchemaDiffSQLStatements(
-				&types.SchemaDiff{EnumsAdded: []string{test.diffName}},
+				&difftypes.SchemaDiff{EnumsAdded: []string{test.diffName}},
 				generated,
 				"postgres",
 			)
@@ -156,7 +156,7 @@ func TestEnumLookupResolvesAcrossSchemaSpellings(t *testing.T) {
 			c.Assert(addedPlan, qt.Contains, "CREATE TYPE", qt.Commentf("plan:\n%s", addedPlan))
 
 			removed, err := planner.GenerateSchemaDiffSQLStatements(
-				&types.SchemaDiff{EnumsModified: []types.EnumDiff{{
+				&difftypes.SchemaDiff{EnumsModified: []difftypes.EnumDiff{{
 					EnumName:      test.diffName,
 					ValuesRemoved: []string{"draft"},
 				}}},
@@ -181,7 +181,7 @@ func TestEnumLookupDoesNotGuessBetweenSchemas(t *testing.T) {
 		Enums: []goschema.Enum{{Name: "status", Schema: "reporting", Values: []string{"draft", "live"}}},
 	}
 	statements, err := planner.GenerateSchemaDiffSQLStatements(
-		&types.SchemaDiff{EnumsAdded: []string{"app.status"}},
+		&difftypes.SchemaDiff{EnumsAdded: []string{"app.status"}},
 		generated,
 		"postgres",
 	)
@@ -199,7 +199,7 @@ func TestUserTypeLookupResolvesAcrossSchemaSpellings(t *testing.T) {
 	tests := []struct {
 		name      string
 		generated *goschema.Database
-		diff      *types.SchemaDiff
+		diff      *difftypes.SchemaDiff
 	}{
 		{
 			name: "a composite type qualified in the diff and bare in the schema",
@@ -212,7 +212,7 @@ func TestUserTypeLookupResolvesAcrossSchemaSpellings(t *testing.T) {
 					},
 				}},
 			},
-			diff: &types.SchemaDiff{CompositeTypesModified: []types.CompositeTypeDiff{{
+			diff: &difftypes.SchemaDiff{CompositeTypesModified: []difftypes.CompositeTypeDiff{{
 				TypeName: "public.addr",
 				Changes:  map[string]string{"fields": "line1 text -> line1 text, line2 text"},
 			}}},
@@ -229,7 +229,7 @@ func TestUserTypeLookupResolvesAcrossSchemaSpellings(t *testing.T) {
 					},
 				}},
 			},
-			diff: &types.SchemaDiff{CompositeTypesModified: []types.CompositeTypeDiff{{
+			diff: &difftypes.SchemaDiff{CompositeTypesModified: []difftypes.CompositeTypeDiff{{
 				TypeName: "addr",
 				Changes:  map[string]string{"fields": "line1 text -> line1 text, line2 text"},
 			}}},
@@ -239,7 +239,7 @@ func TestUserTypeLookupResolvesAcrossSchemaSpellings(t *testing.T) {
 			generated: &goschema.Database{
 				Ranges: []goschema.Range{{Name: "span", Subtype: "int8"}},
 			},
-			diff: &types.SchemaDiff{RangesModified: []types.RangeDiff{{
+			diff: &difftypes.SchemaDiff{RangesModified: []difftypes.RangeDiff{{
 				RangeName:      "public.span",
 				Changes:        map[string]string{"subtype": "int4 -> int8"},
 				CurrentSubtype: "int4",
@@ -250,7 +250,7 @@ func TestUserTypeLookupResolvesAcrossSchemaSpellings(t *testing.T) {
 			generated: &goschema.Database{
 				Ranges: []goschema.Range{{Name: "span", Schema: "public", Subtype: "int8"}},
 			},
-			diff: &types.SchemaDiff{RangesModified: []types.RangeDiff{{
+			diff: &difftypes.SchemaDiff{RangesModified: []difftypes.RangeDiff{{
 				RangeName:      "span",
 				Changes:        map[string]string{"subtype": "int4 -> int8"},
 				CurrentSubtype: "int4",
@@ -294,13 +294,13 @@ func TestPlannerWritesNoDDLForARelationTheSchemaDoesNotDeclare(t *testing.T) {
 	tests := []struct {
 		name        string
 		generated   *goschema.Database
-		diff        *types.SchemaDiff
+		diff        *difftypes.SchemaDiff
 		unwantedSQL string
 	}{
 		{
 			name:      "a column addition on a table declared in another schema",
 			generated: reportingUsers,
-			diff: &types.SchemaDiff{TablesModified: []types.TableDiff{{
+			diff: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:    "app.users",
 				ColumnsAdded: []string{"note"},
 			}}},
@@ -309,9 +309,9 @@ func TestPlannerWritesNoDDLForARelationTheSchemaDoesNotDeclare(t *testing.T) {
 		{
 			name:      "a column modification on a table declared in another schema",
 			generated: reportingUsers,
-			diff: &types.SchemaDiff{TablesModified: []types.TableDiff{{
+			diff: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName: "app.users",
-				ColumnsModified: []types.ColumnDiff{{
+				ColumnsModified: []difftypes.ColumnDiff{{
 					ColumnName: "note",
 					Changes:    map[string]string{"type": "varchar(10) -> TEXT"},
 				}},
@@ -323,7 +323,7 @@ func TestPlannerWritesNoDDLForARelationTheSchemaDoesNotDeclare(t *testing.T) {
 			generated: &goschema.Database{
 				Domains: []goschema.Domain{{Name: "zip", Schema: "reporting", BaseType: "VARCHAR(10)"}},
 			},
-			diff: &types.SchemaDiff{DomainsModified: []types.DomainDiff{{
+			diff: &difftypes.SchemaDiff{DomainsModified: []difftypes.DomainDiff{{
 				DomainName:      "app.zip",
 				Changes:         map[string]string{"type": "character varying(5) -> VARCHAR(10)"},
 				CurrentBaseType: "character varying(5)",

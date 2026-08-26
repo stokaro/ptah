@@ -8,7 +8,7 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // ordersTable declares one `orders` table whose schema is spelled as given.
@@ -103,7 +103,7 @@ func TestColumnDDLResolvesTheTableAcrossSchemaSpellings(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			added, err := planner.GenerateSchemaDiffSQLStatements(
-				&types.SchemaDiff{TablesModified: []types.TableDiff{{
+				&difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 					TableName:    test.diffName,
 					ColumnsAdded: []string{"note"},
 				}}},
@@ -115,9 +115,9 @@ func TestColumnDDLResolvesTheTableAcrossSchemaSpellings(t *testing.T) {
 			c.Assert(addedPlan, qt.Contains, test.wantAdd, qt.Commentf("plan:\n%s", addedPlan))
 
 			modified, err := planner.GenerateSchemaDiffSQLStatements(
-				&types.SchemaDiff{TablesModified: []types.TableDiff{{
+				&difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 					TableName: test.diffName,
-					ColumnsModified: []types.ColumnDiff{{
+					ColumnsModified: []difftypes.ColumnDiff{{
 						ColumnName: "note",
 						Changes:    map[string]string{"type": "VARCHAR(10) -> TEXT"},
 					}},
@@ -142,7 +142,7 @@ func TestColumnDDLDoesNotGuessBetweenSchemas(t *testing.T) {
 	c := qt.New(t)
 
 	statements, err := planner.GenerateSchemaDiffSQLStatements(
-		&types.SchemaDiff{TablesModified: []types.TableDiff{{
+		&difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 			TableName:    "app.orders",
 			ColumnsAdded: []string{"note"},
 		}}},
@@ -198,16 +198,16 @@ func TestPrimaryKeyIsPlannedOnceAcrossSchemaSpellings(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := &types.SchemaDiff{
-				TablesModified: []types.TableDiff{{
+			diff := &difftypes.SchemaDiff{
+				TablesModified: []difftypes.TableDiff{{
 					TableName: test.diffTableName,
-					ColumnsModified: []types.ColumnDiff{{
+					ColumnsModified: []difftypes.ColumnDiff{{
 						ColumnName: "id",
 						Changes:    map[string]string{"primary_key": "false -> true"},
 					}},
 				}},
 				ConstraintsAdded: []string{"pk_orders"},
-				ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
 					Name:      "pk_orders",
 					TableName: test.constraintTable,
 					Type:      "PRIMARY KEY",
@@ -230,16 +230,16 @@ func TestPrimaryKeyIsPlannedOnceAcrossSchemaSpellings(t *testing.T) {
 func TestPrimaryKeyOwnershipDoesNotCrossSchemas(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
-		TablesModified: []types.TableDiff{{
+	diff := &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{{
 			TableName: "app.orders",
-			ColumnsModified: []types.ColumnDiff{{
+			ColumnsModified: []difftypes.ColumnDiff{{
 				ColumnName: "id",
 				Changes:    map[string]string{"primary_key": "false -> true"},
 			}},
 		}},
 		ConstraintsAdded: []string{"pk_orders"},
-		ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
 			Name:      "pk_orders",
 			TableName: "reporting.orders",
 			Type:      "PRIMARY KEY",

@@ -9,17 +9,17 @@ import (
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	"go.5x5.cz/ptah/migration/diffpolicy"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
-func skipPolicyFixture() (*types.SchemaDiff, *goschema.Database) {
-	diff := &types.SchemaDiff{
+func skipPolicyFixture() (*difftypes.SchemaDiff, *goschema.Database) {
+	diff := &difftypes.SchemaDiff{
 		TablesRemoved: []string{"legacy"},
 		EnumsRemoved:  []string{"legacy_status"},
-		IndexesRemoved: []types.IndexRef{
+		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_legacy", TableName: "users"},
 		},
-		TablesModified: []types.TableDiff{
+		TablesModified: []difftypes.TableDiff{
 			{TableName: "users", ColumnsRemoved: []string{"middle_name"}},
 		},
 	}
@@ -29,7 +29,7 @@ func skipPolicyFixture() (*types.SchemaDiff, *goschema.Database) {
 	return diff, generated
 }
 
-func renderPostgresSkip(c *qt.C, planner *postgres.Planner, diff *types.SchemaDiff, generated *goschema.Database) string {
+func renderPostgresSkip(c *qt.C, planner *postgres.Planner, diff *difftypes.SchemaDiff, generated *goschema.Database) string {
 	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)

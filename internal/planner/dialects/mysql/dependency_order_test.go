@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestPlanner_GenerateMigrationAST_MySQLFamilyOrdersFKChainTables(t *testing.T) {
@@ -14,7 +14,7 @@ func TestPlanner_GenerateMigrationAST_MySQLFamilyOrdersFKChainTables(t *testing.
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			generated := dependencyOrderSchema()
-			diff := &types.SchemaDiff{
+			diff := &difftypes.SchemaDiff{
 				TablesAdded: []string{
 					"ptah_fk_order_tasks",
 					"ptah_fk_order_projects",
@@ -36,7 +36,7 @@ func TestPlanner_GenerateMigrationAST_MySQLFamilyOrdersFKDiamondTables(t *testin
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			generated := dependencyOrderSchema()
-			diff := &types.SchemaDiff{
+			diff := &difftypes.SchemaDiff{
 				TablesAdded: []string{
 					"ptah_fk_order_tasks",
 					"ptah_fk_order_projects",
@@ -60,7 +60,7 @@ func TestPlanner_GenerateMigrationAST_MySQLFamilyDropsFKDiamondTablesInDependenc
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			generated := dependencyOrderSchema()
-			diff := &types.SchemaDiff{
+			diff := &difftypes.SchemaDiff{
 				TablesRemoved: []string{
 					"ptah_fk_order_accounts",
 					"ptah_fk_order_projects",
@@ -84,9 +84,9 @@ func TestPlanner_GenerateMigrationAST_MySQLFamilyAddsReferencedUniqueIndexBefore
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			generated := referencedUniqueKeySchema()
-			diff := &types.SchemaDiff{
+			diff := &difftypes.SchemaDiff{
 				TablesAdded: []string{"ptah_fk_order_children", "ptah_fk_order_parents"},
-				IndexesAdded: []types.IndexRef{
+				IndexesAdded: []difftypes.IndexRef{
 					{Name: "uq_ptah_fk_order_parents_code_idx", TableName: "ptah_fk_order_parents"},
 				},
 			}
@@ -104,10 +104,10 @@ func TestPlanner_GenerateMigrationAST_MySQLFamilyAddsReferencedUniqueConstraintB
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			generated := referencedUniqueKeySchema()
-			diff := &types.SchemaDiff{
+			diff := &difftypes.SchemaDiff{
 				TablesAdded:      []string{"ptah_fk_order_children", "ptah_fk_order_parents"},
 				ConstraintsAdded: []string{"uq_ptah_fk_order_parents_code"},
-				ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
 					Name:      "uq_ptah_fk_order_parents_code",
 					TableName: "ptah_fk_order_parents",
 					Type:      "UNIQUE",

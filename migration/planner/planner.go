@@ -24,7 +24,7 @@ import (
 	"go.5x5.cz/ptah/internal/txrequire"
 	"go.5x5.cz/ptah/migration/diffpolicy"
 	"go.5x5.cz/ptah/migration/internal/identifiervalidation"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 var builtInPlannerRegistration struct {
@@ -68,7 +68,7 @@ var plannerRegistry struct {
 // # Example Implementation Pattern
 //
 //	func (p *PostgresPlanner) GenerateMigrationASTChecked(
-//		diff *types.SchemaDiff,
+//		diff *difftypes.SchemaDiff,
 //		generated *goschema.Database,
 //	) ([]ast.Node, error) {
 //		var nodes []ast.Node
@@ -85,7 +85,7 @@ var plannerRegistry struct {
 //		return nodes, nil
 //	}
 type Planner interface {
-	GenerateMigrationASTChecked(diff *types.SchemaDiff, generated *goschema.Database) ([]ast.Node, error)
+	GenerateMigrationASTChecked(diff *difftypes.SchemaDiff, generated *goschema.Database) ([]ast.Node, error)
 }
 
 // Options configures high-level planner helpers.
@@ -99,7 +99,7 @@ type Options struct {
 	// ConcurrentIndexRefs requests PostgreSQL CREATE INDEX CONCURRENTLY for
 	// exactly these table-qualified newly added indexes when the target
 	// supports it.
-	ConcurrentIndexRefs []types.IndexRef
+	ConcurrentIndexRefs []difftypes.IndexRef
 	// ConcurrentIndexDrops requests PostgreSQL DROP INDEX CONCURRENTLY for all
 	// standalone index removals when the target supports it. It is separate
 	// from ConcurrentIndexes so enabling concurrent index builds never silently
@@ -107,7 +107,7 @@ type Options struct {
 	ConcurrentIndexDrops bool
 	// ConcurrentIndexDropRefs requests PostgreSQL DROP INDEX CONCURRENTLY for
 	// exactly these table-qualified removed indexes when the target supports it.
-	ConcurrentIndexDropRefs []types.IndexRef
+	ConcurrentIndexDropRefs []difftypes.IndexRef
 	// SkipChangeKinds lists destructive change kinds the planner must omit from
 	// the plan (emitting a clearly-marked comment in their place) instead of
 	// deferring to the coarse destructive gate. Currently honored by the
@@ -385,7 +385,7 @@ func normalizeRegistryDialect(dialect string) string {
 //   - GenerateSchemaDiffSQL: For complete SQL string generation
 //   - GenerateSchemaDiffSQLStatements: For individual SQL statements
 //   - GetPlanner: For direct planner access
-func GenerateSchemaDiffAST(diff *types.SchemaDiff, generated *goschema.Database, dialect string) ([]ast.Node, error) {
+func GenerateSchemaDiffAST(diff *difftypes.SchemaDiff, generated *goschema.Database, dialect string) ([]ast.Node, error) {
 	return GenerateSchemaDiffASTWithOptions(diff, generated, dialect, Options{
 		Capabilities: capability.ForDialect(dialect),
 	})
@@ -394,7 +394,7 @@ func GenerateSchemaDiffAST(diff *types.SchemaDiff, generated *goschema.Database,
 // GenerateSchemaDiffASTWithOptions generates AST nodes with explicit planning
 // options.
 func GenerateSchemaDiffASTWithOptions(
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	generated *goschema.Database,
 	dialect string,
 	opts Options,
@@ -517,7 +517,7 @@ func RequiresNoTransaction(dialect string, nodes []ast.Node) bool {
 //
 //   - GenerateSchemaDiffSQL: For complete SQL string without splitting
 //   - GenerateSchemaDiffAST: For AST nodes without rendering
-func GenerateSchemaDiffSQLStatements(diff *types.SchemaDiff, generated *goschema.Database, dialect string) ([]string, error) {
+func GenerateSchemaDiffSQLStatements(diff *difftypes.SchemaDiff, generated *goschema.Database, dialect string) ([]string, error) {
 	output, err := GenerateSchemaDiffSQLWithOptions(diff, generated, dialect, Options{
 		Capabilities: capability.ForDialect(dialect),
 	})
@@ -531,7 +531,7 @@ func GenerateSchemaDiffSQLStatements(diff *types.SchemaDiff, generated *goschema
 // GenerateSchemaDiffSQLStatementsWithOptions generates individual SQL
 // statements using explicit planning options.
 func GenerateSchemaDiffSQLStatementsWithOptions(
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	generated *goschema.Database,
 	dialect string,
 	opts Options,
@@ -605,7 +605,7 @@ func GenerateSchemaDiffSQLStatementsWithOptions(
 //
 //   - GenerateSchemaDiffSQLStatements: For individual SQL statements
 //   - GenerateSchemaDiffAST: For AST nodes without rendering
-func GenerateSchemaDiffSQL(diff *types.SchemaDiff, generated *goschema.Database, dialect string) (string, error) {
+func GenerateSchemaDiffSQL(diff *difftypes.SchemaDiff, generated *goschema.Database, dialect string) (string, error) {
 	return GenerateSchemaDiffSQLWithOptions(diff, generated, dialect, Options{
 		Capabilities: capability.ForDialect(dialect),
 	})
@@ -614,7 +614,7 @@ func GenerateSchemaDiffSQL(diff *types.SchemaDiff, generated *goschema.Database,
 // GenerateSchemaDiffSQLWithOptions generates complete SQL using explicit
 // planning options.
 func GenerateSchemaDiffSQLWithOptions(
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	generated *goschema.Database,
 	dialect string,
 	opts Options,

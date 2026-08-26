@@ -12,7 +12,7 @@ import (
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/constraintscope"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // These tests pin the DOWN (rollback) half of issue #197: a mixin-shared FK name
@@ -173,16 +173,16 @@ func TestReverseConstraintAdditions_RestoresPerHostBody(t *testing.T) {
 
 	dbSchema := multiHostMixinDB("NO ACTION", hosts...)
 	// Up diff: the shared FK was removed (then re-added) on each host.
-	upDiff := &types.SchemaDiff{}
+	upDiff := &difftypes.SchemaDiff{}
 	for _, h := range hosts {
 		upDiff.ConstraintsRemovedWithTables = append(upDiff.ConstraintsRemovedWithTables,
-			types.ConstraintRemovalInfo{Name: "fk_entity_tenant", TableName: h, Type: "FOREIGN KEY"})
+			difftypes.ConstraintRemovalInfo{Name: "fk_entity_tenant", TableName: h, Type: "FOREIGN KEY"})
 	}
 
 	additions := reverseConstraintAdditions(upDiff, dbSchema, identifier.ForDialect("postgres"))
 	c.Assert(additions, qt.HasLen, len(hosts))
 
-	byTable := make(map[string]types.ConstraintAdditionInfo)
+	byTable := make(map[string]difftypes.ConstraintAdditionInfo)
 	for _, a := range additions {
 		byTable[a.TableName] = a
 	}
@@ -210,8 +210,8 @@ func TestReverseConstraintAdditions_RestoresPrimaryKeyColumns(t *testing.T) {
 			ColumnNames: []string{"org_id", "user_id"},
 		}},
 	}
-	upDiff := &types.SchemaDiff{
-		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{{
+	upDiff := &difftypes.SchemaDiff{
+		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{{
 			Name:      "PRIMARY",
 			TableName: "memberships",
 			Type:      "PRIMARY KEY",
@@ -219,7 +219,7 @@ func TestReverseConstraintAdditions_RestoresPrimaryKeyColumns(t *testing.T) {
 	}
 
 	additions := reverseConstraintAdditions(upDiff, dbSchema, identifier.ForDialect("postgres"))
-	c.Assert(additions, qt.DeepEquals, []types.ConstraintAdditionInfo{{
+	c.Assert(additions, qt.DeepEquals, []difftypes.ConstraintAdditionInfo{{
 		Name:      "PRIMARY",
 		TableName: "memberships",
 		Identity:  constraintscope.Identity(identifier.ForDialect("postgres"), "memberships", "PRIMARY"),
@@ -246,15 +246,15 @@ func TestReverseConstraintAdditions_RestoresCompositeForeignKeyBody(t *testing.T
 			},
 		},
 	}
-	upDiff := &types.SchemaDiff{
-		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+	upDiff := &difftypes.SchemaDiff{
+		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 			{Name: "fk_orders_accounts", TableName: "orders", Type: "FOREIGN KEY"},
 		},
 	}
 
 	additions := reverseConstraintAdditions(upDiff, dbSchema, identifier.ForDialect("postgres"))
 
-	c.Assert(additions, qt.DeepEquals, []types.ConstraintAdditionInfo{
+	c.Assert(additions, qt.DeepEquals, []difftypes.ConstraintAdditionInfo{
 		{
 			Name:           "fk_orders_accounts",
 			TableName:      "orders",
@@ -281,15 +281,15 @@ func TestReverseConstraintAdditions_RestoresCheckConstraintBody(t *testing.T) {
 			CheckClause: &checkClause,
 		}},
 	}
-	upDiff := &types.SchemaDiff{
-		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+	upDiff := &difftypes.SchemaDiff{
+		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 			{Name: "products_quantity_check", TableName: "products", Type: "CHECK"},
 		},
 	}
 
 	additions := reverseConstraintAdditions(upDiff, dbSchema, identifier.ForDialect("postgres"))
 
-	c.Assert(additions, qt.DeepEquals, []types.ConstraintAdditionInfo{{
+	c.Assert(additions, qt.DeepEquals, []difftypes.ConstraintAdditionInfo{{
 		Name:            "products_quantity_check",
 		TableName:       "products",
 		Identity:        constraintscope.Identity(identifier.ForDialect("postgres"), "products", "products_quantity_check"),
@@ -311,8 +311,8 @@ func TestReverseConstraintAdditions_RestoresUniqueConstraintBody(t *testing.T) {
 			NullsDistinct:  &nullsDistinct,
 		}},
 	}
-	upDiff := &types.SchemaDiff{
-		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+	upDiff := &difftypes.SchemaDiff{
+		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 			{Name: "accounts_identity_unique", TableName: "accounts", Type: "UNIQUE"},
 		},
 	}
@@ -334,8 +334,8 @@ func TestReverseConstraintAdditions_RestoresUniqueConstraintBody(t *testing.T) {
 // the names ride the name-only fallback via ConstraintsAdded.
 func TestReverseConstraintAdditions_NilDBSchema(t *testing.T) {
 	c := qt.New(t)
-	upDiff := &types.SchemaDiff{
-		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+	upDiff := &difftypes.SchemaDiff{
+		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 			{Name: "fk_x", TableName: "t", Type: "FOREIGN KEY"},
 		},
 	}

@@ -47,7 +47,7 @@ a corner of the codebase; it is a layer.
 
 ### 1.2 The diff is a name list, and the planner compensates
 
-`migration/schemadiff/types.SchemaDiff` is a flat struct of per-family slices:
+`migration/schemadiff/difftypes.SchemaDiff` is a flat struct of per-family slices:
 `TablesAdded []string`, `TablesRemoved []string`, `ConstraintsRemovedWithTables
 []ConstraintRemovalInfo`, and so on for every family. A change carries no
 identity value, no before/after state, no evidence, no risk, no reversibility,

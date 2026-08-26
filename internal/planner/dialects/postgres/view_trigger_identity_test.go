@@ -8,7 +8,7 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestViewAndTriggerLookupsDoNotCrossSchemas pins the view, materialized-view
@@ -27,7 +27,7 @@ func TestViewAndTriggerLookupsDoNotCrossSchemas(t *testing.T) {
 	tests := []struct {
 		name        string
 		generated   *goschema.Database
-		diff        *types.SchemaDiff
+		diff        *difftypes.SchemaDiff
 		unwantedSQL string
 	}{
 		{
@@ -38,7 +38,7 @@ func TestViewAndTriggerLookupsDoNotCrossSchemas(t *testing.T) {
 					Body: "SELECT id FROM users WHERE active",
 				}},
 			},
-			diff: &types.SchemaDiff{ViewsModified: []types.ViewDiff{{
+			diff: &difftypes.SchemaDiff{ViewsModified: []difftypes.ViewDiff{{
 				ViewName:     "app.active_users",
 				PreviousBody: "SELECT id FROM users",
 				Changes:      map[string]string{"body": "changed"},
@@ -53,7 +53,7 @@ func TestViewAndTriggerLookupsDoNotCrossSchemas(t *testing.T) {
 					Body: "SELECT count(*) FROM users",
 				}},
 			},
-			diff: &types.SchemaDiff{MaterializedViewsModified: []types.MaterializedViewDiff{{
+			diff: &difftypes.SchemaDiff{MaterializedViewsModified: []difftypes.MaterializedViewDiff{{
 				ViewName: "app.user_stats",
 				Changes:  map[string]string{"body": "changed"},
 			}}},
@@ -72,7 +72,7 @@ func TestViewAndTriggerLookupsDoNotCrossSchemas(t *testing.T) {
 					Body:       "BEGIN RETURN NEW; END;",
 				}},
 			},
-			diff: &types.SchemaDiff{TriggersAdded: []types.TriggerRef{{
+			diff: &difftypes.SchemaDiff{TriggersAdded: []difftypes.TriggerRef{{
 				TriggerName: "touch",
 				TableName:   "app.users",
 			}}},
@@ -98,7 +98,7 @@ func TestViewAndTriggerLookupsResolveAcrossSpellings(t *testing.T) {
 	tests := []struct {
 		name      string
 		generated *goschema.Database
-		diff      *types.SchemaDiff
+		diff      *difftypes.SchemaDiff
 		wantSQL   string
 	}{
 		{
@@ -109,7 +109,7 @@ func TestViewAndTriggerLookupsResolveAcrossSpellings(t *testing.T) {
 					Body: "SELECT id FROM users WHERE active",
 				}},
 			},
-			diff: &types.SchemaDiff{ViewsModified: []types.ViewDiff{{
+			diff: &difftypes.SchemaDiff{ViewsModified: []difftypes.ViewDiff{{
 				ViewName:     "public.active_users",
 				PreviousBody: "SELECT id FROM users",
 				Changes:      map[string]string{"body": "changed"},
@@ -129,7 +129,7 @@ func TestViewAndTriggerLookupsResolveAcrossSpellings(t *testing.T) {
 					Body:       "BEGIN RETURN NEW; END;",
 				}},
 			},
-			diff: &types.SchemaDiff{TriggersAdded: []types.TriggerRef{{
+			diff: &difftypes.SchemaDiff{TriggersAdded: []difftypes.TriggerRef{{
 				TriggerName: "touch",
 				TableName:   "public.users",
 			}}},

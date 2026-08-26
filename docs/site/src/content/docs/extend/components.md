@@ -30,7 +30,7 @@ uses them internally.
 | Parse YAML schema files | `core/yamlschema` | Ptah's YAML authoring format to the schema IR, from bytes or from a path. |
 | Render SQL from schema IR | `core/renderer`, `atlascompat` | Ordered DDL statements for supported dialects. |
 | Introspect live databases | `dbschema`, `dbschema/types` | Database schema snapshots from live connections. |
-| Compare desired vs. live schemas | `migration/schemadiff`, `migration/schemadiff/types` | Structured schema diffs for planning and reporting. |
+| Compare desired vs. live schemas | `migration/schemadiff`, `migration/schemadiff/difftypes` | Structured schema diffs for planning and reporting. |
 | Plan SQL migrations | `migration/planner` | Ordered AST or SQL statements for schema changes. |
 | Generate migration files | `migration/generator` | Versioned migration files from desired/live differences. |
 | Apply migrations | `migration/migrator` | Embedded migration runner with filesystem providers, revision metadata, dry-run planning, and transaction modes. |

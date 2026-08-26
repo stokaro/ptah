@@ -10,12 +10,12 @@ import (
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestGenerateSchemaDiffAST_SQLServerUnknownTableSemantics_FailurePath(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		TablesAdded: []string{"dbo.orders", "dbo.users"},
 	}
 	generated := &goschema.Database{Tables: []goschema.Table{
@@ -36,7 +36,7 @@ func TestGenerateSchemaDiffAST_SQLServerUnknownTableSemantics_FailurePath(t *tes
 
 func TestGenerateSchemaDiffAST_SQLServerUnknownColumnSemantics_FailurePath(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		TablesAdded: []string{"dbo.users"},
 	}
 	generated := &goschema.Database{
@@ -70,7 +70,7 @@ func TestGenerateSchemaDiffAST_SQLServerIncompleteSnapshot_FailurePath(t *testin
 		WithResolvedNames([]identifier.ResolvedName{
 			{Name: "dbo", Key: "dbo"},
 		})
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		IdentifierSemantics: &semantics,
 		TablesAdded:         []string{"dbo.users"},
 	}
@@ -94,7 +94,7 @@ func TestGenerateSchemaDiffAST_SQLServerInvalidSnapshot_FailurePath(t *testing.T
 	semantics := identifier.ForSQLServerCatalog(
 		"SQL_Latin1_General_CP1_CI_AS",
 	)
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		IdentifierSemantics: &semantics,
 	}
 

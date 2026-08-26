@@ -10,7 +10,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
 	mssqlplanner "go.5x5.cz/ptah/internal/planner/dialects/mssql"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // A modified procedure is planned as a drop and a create. The drop half was

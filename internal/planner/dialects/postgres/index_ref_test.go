@@ -11,17 +11,17 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestPlanner_IndexRefs_QualifiesDropsAndReplacesOnlyExactRef(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{
-		IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "idx_shared", TableName: "app.records"},
 			{Name: "idx_shared", TableName: "logs.records"},
 		},
-		IndexesRemoved: []types.IndexRef{
+		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_shared", TableName: "app.records"},
 			{Name: "idx_shared", TableName: "archive.records"},
 		},
@@ -63,11 +63,11 @@ func TestPlanner_IndexRefs_QualifiesDropsAndReplacesOnlyExactRef(t *testing.T) {
 
 func TestPlanner_IndexRefs_DropsSameSchemaNameBeforeMovingIndex(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{
-		IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "idx_shared", TableName: "app.orders"},
 		},
-		IndexesRemoved: []types.IndexRef{
+		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_shared", TableName: "app.users"},
 		},
 	}
@@ -94,11 +94,11 @@ func TestPlanner_IndexRefs_DropsSameSchemaNameBeforeMovingIndex(t *testing.T) {
 
 func TestPlanner_IndexRefs_CockroachDBPreservesReplacementTable(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{}
-	diff.SetIndexAdditions([]types.IndexRef{
+	diff := &difftypes.SchemaDiff{}
+	diff.SetIndexAdditions([]difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "public.users"},
 	})
-	diff.SetIndexRemovals([]types.IndexRef{
+	diff.SetIndexRemovals([]difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "public.users"},
 	})
 	generated := &goschema.Database{
@@ -123,11 +123,11 @@ func TestPlanner_IndexRefs_CockroachDBPreservesReplacementTable(t *testing.T) {
 
 func TestPlanner_IndexRefs_SpannerDropsSameSchemaNameBeforeMovingIndex(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{}
-	diff.SetIndexAdditions([]types.IndexRef{
+	diff := &difftypes.SchemaDiff{}
+	diff.SetIndexAdditions([]difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "app.orders"},
 	})
-	diff.SetIndexRemovals([]types.IndexRef{
+	diff.SetIndexRemovals([]difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "app.users"},
 	})
 	generated := &goschema.Database{
@@ -151,11 +151,11 @@ func TestPlanner_IndexRefs_SpannerDropsSameSchemaNameBeforeMovingIndex(t *testin
 
 func TestPlanner_IndexRefs_SpannerKeepsDifferentSchemaIndexesIndependent(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{}
-	diff.SetIndexAdditions([]types.IndexRef{
+	diff := &difftypes.SchemaDiff{}
+	diff.SetIndexAdditions([]difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "app.orders"},
 	})
-	diff.SetIndexRemovals([]types.IndexRef{
+	diff.SetIndexRemovals([]difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "logs.users"},
 	})
 	generated := &goschema.Database{
@@ -189,8 +189,8 @@ func TestPlanner_IndexRefs_UsesCanonicalOwnerAcrossPostgresFamily(t *testing.T) 
 		{name: "yugabytedb", dialect: platform.YugabyteDB, caps: capability.YugabyteDB25()},
 		{name: "spanner", dialect: platform.Spanner, caps: capability.SpannerPostgres()},
 	}
-	diff := &types.SchemaDiff{
-		IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: []difftypes.IndexRef{
 			{Name: "idx_users_email", TableName: "app.users"},
 		},
 	}
@@ -233,8 +233,8 @@ func BenchmarkPlanner_LargeIndexReplacementPlan(b *testing.B) {
 
 	tables := make([]goschema.Table, 0, indexCount)
 	indexes := make([]goschema.Index, 0, indexCount)
-	additions := make([]types.IndexRef, 0, indexCount)
-	removals := make([]types.IndexRef, 0, indexCount)
+	additions := make([]difftypes.IndexRef, 0, indexCount)
+	removals := make([]difftypes.IndexRef, 0, indexCount)
 	for index := range indexCount {
 		suffix := strconv.Itoa(index)
 		structName := "Record" + suffix
@@ -250,17 +250,17 @@ func BenchmarkPlanner_LargeIndexReplacementPlan(b *testing.B) {
 			Name:       indexName,
 			Fields:     []string{"value"},
 		})
-		additions = append(additions, types.IndexRef{
+		additions = append(additions, difftypes.IndexRef{
 			Name:      indexName,
 			TableName: "app." + tableName,
 		})
-		removals = append(removals, types.IndexRef{
+		removals = append(removals, difftypes.IndexRef{
 			Name:      indexName,
 			TableName: "app.legacy_" + suffix,
 		})
 	}
 	generated := &goschema.Database{Tables: tables, Indexes: indexes}
-	diff := &types.SchemaDiff{IndexesAdded: additions, IndexesRemoved: removals}
+	diff := &difftypes.SchemaDiff{IndexesAdded: additions, IndexesRemoved: removals}
 	planner := postgres.New()
 
 	b.ReportAllocs()

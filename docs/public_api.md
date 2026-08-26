@@ -42,7 +42,7 @@ These packages are intended for application and tool embedders:
 - `go.5x5.cz/ptah/migration/risk`
 - `go.5x5.cz/ptah/migration/safety`
 - `go.5x5.cz/ptah/migration/schemadiff`
-- `go.5x5.cz/ptah/migration/schemadiff/types`
+- `go.5x5.cz/ptah/migration/schemadiff/difftypes`
 - `go.5x5.cz/ptah/migration/seeder`
 - `go.5x5.cz/ptah/migration/shadow`
 
@@ -570,7 +570,7 @@ schema, and displayed stderr/parser diagnostics are bounded, secret-redacted,
 and terminal-safe. Embedders can use the same external desired-schema contract
 as the CLI without depending on Cobra or any `cmd/internal` package.
 
-`migration/schemadiff/types.SchemaDiff` stores index additions and removals as
+`migration/schemadiff/difftypes.SchemaDiff` stores index additions and removals as
 canonical `[]IndexRef` fields. Every index reference includes its owning
 table. Live comparisons also snapshot catalog identifier semantics into the
 diff so comparison, destructive-change policy, forward planning, and reverse
@@ -597,7 +597,7 @@ hand must fill both fields; a reference the target schema cannot resolve is
 rejected with `ptaherr.ErrInvalidSchemaDiff` rather than silently omitted from
 the plan.
 
-`migration/schemadiff/types.ViewDiff` also records the view body that is in
+`migration/schemadiff/difftypes.ViewDiff` also records the view body that is in
 force before the diff is applied, and whether the entry is being planned as a
 rollback. Planners read the body to decide whether the target engine accepts an
 in-place view replacement; PostgreSQL accepts `CREATE OR REPLACE VIEW` only when

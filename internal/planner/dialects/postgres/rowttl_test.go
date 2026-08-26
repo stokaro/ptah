@@ -11,16 +11,16 @@ import (
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // ttlDiff is a diff whose only content is one table's TTL transition, which is
 // what the comparator produces for a table that differs in nothing else.
-func ttlDiff(desired, current *ast.RowTTLSpec) *types.SchemaDiff {
-	return &types.SchemaDiff{
-		TablesModified: []types.TableDiff{{
+func ttlDiff(desired, current *ast.RowTTLSpec) *difftypes.SchemaDiff {
+	return &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{{
 			TableName:    "sessions",
-			RowTTLChange: &types.RowTTLChange{Desired: desired, Current: current},
+			RowTTLChange: &difftypes.RowTTLChange{Desired: desired, Current: current},
 		}},
 	}
 }
@@ -133,8 +133,8 @@ func TestPlanner_RowTTLIsNotPlannedWithoutTheCapability(t *testing.T) {
 func TestPlanner_UnchangedTTLPlansNothing(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
-		TablesModified: []types.TableDiff{{TableName: "sessions", ColumnsAdded: []string{"note"}}},
+	diff := &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{{TableName: "sessions", ColumnsAdded: []string{"note"}}},
 	}
 
 	planner := postgres.NewForDialect(platform.CockroachDB, capability.CockroachDB26())
@@ -148,7 +148,7 @@ func TestPlanner_UnchangedTTLPlansNothing(t *testing.T) {
 
 // planRowTTL plans a TTL diff on CockroachDB and returns the TTL statements it
 // produced, dropping the comment nodes the planner writes around them.
-func planRowTTL(c *qt.C, diff *types.SchemaDiff) []string {
+func planRowTTL(c *qt.C, diff *difftypes.SchemaDiff) []string {
 	c.Helper()
 
 	planner := postgres.NewForDialect(platform.CockroachDB, capability.CockroachDB26())
@@ -193,11 +193,11 @@ func renderedStatements(
 func TestPlanner_TheTTLIsSetBeforeItsColumnIsDropped(t *testing.T) {
 	c := qt.New(t)
 
-	statements := planRowTTL(c, &types.SchemaDiff{
-		TablesModified: []types.TableDiff{{
+	statements := planRowTTL(c, &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{{
 			TableName:      "sessions",
 			ColumnsRemoved: []string{"expires_at"},
-			RowTTLChange: &types.RowTTLChange{
+			RowTTLChange: &difftypes.RowTTLChange{
 				Desired: &ast.RowTTLSpec{ExpirationExpression: "deleted_at"},
 				Current: &ast.RowTTLSpec{ExpirationExpression: "expires_at"},
 			},
@@ -214,11 +214,11 @@ func TestPlanner_TheTTLIsSetBeforeItsColumnIsDropped(t *testing.T) {
 func TestPlanner_TheTTLIsResetBeforeItsColumnIsDropped(t *testing.T) {
 	c := qt.New(t)
 
-	statements := planRowTTL(c, &types.SchemaDiff{
-		TablesModified: []types.TableDiff{{
+	statements := planRowTTL(c, &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{{
 			TableName:      "sessions",
 			ColumnsRemoved: []string{"expires_at"},
-			RowTTLChange: &types.RowTTLChange{
+			RowTTLChange: &difftypes.RowTTLChange{
 				Current: &ast.RowTTLSpec{ExpirationExpression: "expires_at"},
 			},
 		}},

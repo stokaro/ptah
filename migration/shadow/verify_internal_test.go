@@ -15,14 +15,14 @@ import (
 
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestDescribeDiffMissingColumn(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
-		TablesModified: []types.TableDiff{
+	diff := &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{
 			{
 				TableName:    "users",
 				ColumnsAdded: []string{"email", "name"},
@@ -68,73 +68,73 @@ func TestDescribeChangesIsDeterministic(t *testing.T) {
 func TestCollectMismatchesCoversEverySchemaDiffCategory(t *testing.T) {
 	c := qt.New(t)
 	changes := map[string]string{"definition": "old -> new"}
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		TablesAdded:   []string{"missing_table"},
 		TablesRemoved: []string{"extra_table"},
-		TablesModified: []types.TableDiff{{
+		TablesModified: []difftypes.TableDiff{{
 			TableName:          "changed_table",
 			ColumnsAdded:       []string{"missing_column"},
 			ColumnsRemoved:     []string{"extra_column"},
-			ColumnsModified:    []types.ColumnDiff{{ColumnName: "changed_column", Changes: changes}},
+			ColumnsModified:    []difftypes.ColumnDiff{{ColumnName: "changed_column", Changes: changes}},
 			ConstraintsAdded:   []string{"missing_table_constraint"},
 			ConstraintsRemoved: []string{"extra_table_constraint"},
 		}},
 		EnumsAdded:   []string{"missing_enum"},
 		EnumsRemoved: []string{"extra_enum"},
-		EnumsModified: []types.EnumDiff{{
+		EnumsModified: []difftypes.EnumDiff{{
 			EnumName:      "changed_enum",
 			ValuesAdded:   []string{"missing_value"},
 			ValuesRemoved: []string{"extra_value"},
 		}},
-		IndexesAdded:      []types.IndexRef{{TableName: "users", Name: "missing_index"}},
-		IndexesRemoved:    []types.IndexRef{{TableName: "users", Name: "extra_index"}},
+		IndexesAdded:      []difftypes.IndexRef{{TableName: "users", Name: "missing_index"}},
+		IndexesRemoved:    []difftypes.IndexRef{{TableName: "users", Name: "extra_index"}},
 		ExtensionsAdded:   []string{"missing_extension"},
 		ExtensionsRemoved: []string{"extra_extension"},
-		ExtensionsModified: []types.ExtensionDiff{{
+		ExtensionsModified: []difftypes.ExtensionDiff{{
 			Name: "changed_extension", FromSchema: "public", ToSchema: "extensions",
 		}},
 		FunctionsAdded:            []string{"missing_function"},
 		FunctionsRemoved:          []string{"extra_function"},
-		FunctionsModified:         []types.FunctionDiff{{FunctionName: "changed_function", Changes: changes}},
+		FunctionsModified:         []difftypes.FunctionDiff{{FunctionName: "changed_function", Changes: changes}},
 		SequencesAdded:            []string{"missing_sequence"},
 		SequencesRemoved:          []string{"extra_sequence"},
-		SequencesModified:         []types.SequenceDiff{{SequenceName: "changed_sequence", Changes: changes}},
+		SequencesModified:         []difftypes.SequenceDiff{{SequenceName: "changed_sequence", Changes: changes}},
 		DomainsAdded:              []string{"missing_domain"},
 		DomainsRemoved:            []string{"extra_domain"},
-		DomainsModified:           []types.DomainDiff{{DomainName: "changed_domain", Changes: changes}},
+		DomainsModified:           []difftypes.DomainDiff{{DomainName: "changed_domain", Changes: changes}},
 		CompositeTypesAdded:       []string{"missing_composite"},
 		CompositeTypesRemoved:     []string{"extra_composite"},
-		CompositeTypesModified:    []types.CompositeTypeDiff{{TypeName: "changed_composite", Changes: changes}},
+		CompositeTypesModified:    []difftypes.CompositeTypeDiff{{TypeName: "changed_composite", Changes: changes}},
 		RangesAdded:               []string{"missing_range"},
 		RangesRemoved:             []string{"extra_range"},
 		ViewsAdded:                []string{"missing_view"},
 		ViewsRemoved:              []string{"extra_view"},
-		ViewsModified:             []types.ViewDiff{{ViewName: "changed_view", Changes: changes}},
+		ViewsModified:             []difftypes.ViewDiff{{ViewName: "changed_view", Changes: changes}},
 		MaterializedViewsAdded:    []string{"missing_materialized_view"},
 		MaterializedViewsRemoved:  []string{"extra_materialized_view"},
-		MaterializedViewsModified: []types.MaterializedViewDiff{{ViewName: "changed_materialized_view", Changes: changes}},
-		TriggersAdded:             []types.TriggerRef{{TableName: "users", TriggerName: "missing_trigger"}},
-		TriggersRemoved:           []types.TriggerRef{{TableName: "users", TriggerName: "extra_trigger"}},
-		TriggersModified:          []types.TriggerDiff{{TableName: "users", TriggerName: "changed_trigger", Changes: changes}},
-		RLSPoliciesAdded:          []types.RLSPolicyRef{{TableName: "users", PolicyName: "missing_policy"}},
-		RLSPoliciesRemoved:        []types.RLSPolicyRef{{TableName: "users", PolicyName: "extra_policy"}},
-		RLSPoliciesModified:       []types.RLSPolicyDiff{{TableName: "users", PolicyName: "changed_policy", Changes: changes}},
+		MaterializedViewsModified: []difftypes.MaterializedViewDiff{{ViewName: "changed_materialized_view", Changes: changes}},
+		TriggersAdded:             []difftypes.TriggerRef{{TableName: "users", TriggerName: "missing_trigger"}},
+		TriggersRemoved:           []difftypes.TriggerRef{{TableName: "users", TriggerName: "extra_trigger"}},
+		TriggersModified:          []difftypes.TriggerDiff{{TableName: "users", TriggerName: "changed_trigger", Changes: changes}},
+		RLSPoliciesAdded:          []difftypes.RLSPolicyRef{{TableName: "users", PolicyName: "missing_policy"}},
+		RLSPoliciesRemoved:        []difftypes.RLSPolicyRef{{TableName: "users", PolicyName: "extra_policy"}},
+		RLSPoliciesModified:       []difftypes.RLSPolicyDiff{{TableName: "users", PolicyName: "changed_policy", Changes: changes}},
 		RLSEnabledTablesAdded:     []string{"missing_rls_table"},
 		RLSEnabledTablesRemoved:   []string{"extra_rls_table"},
 		RolesAdded:                []string{"missing_role"},
 		RolesRemoved:              []string{"extra_role"},
-		RolesModified:             []types.RoleDiff{{RoleName: "changed_role", Changes: changes}},
-		GrantsAdded:               []types.GrantRef{{Role: "app", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "users"}},
-		GrantsRemoved:             []types.GrantRef{{Role: "app", Privilege: "INSERT", ObjectType: "TABLE", ObjectName: "users"}},
-		GrantOptionsAdded:         []types.GrantRef{{Role: "app", Privilege: "UPDATE", ObjectType: "TABLE", ObjectName: "users"}},
-		GrantOptionsRevoked:       []types.GrantRef{{Role: "app", Privilege: "DELETE", ObjectType: "TABLE", ObjectName: "users"}},
+		RolesModified:             []difftypes.RoleDiff{{RoleName: "changed_role", Changes: changes}},
+		GrantsAdded:               []difftypes.GrantRef{{Role: "app", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "users"}},
+		GrantsRemoved:             []difftypes.GrantRef{{Role: "app", Privilege: "INSERT", ObjectType: "TABLE", ObjectName: "users"}},
+		GrantOptionsAdded:         []difftypes.GrantRef{{Role: "app", Privilege: "UPDATE", ObjectType: "TABLE", ObjectName: "users"}},
+		GrantOptionsRevoked:       []difftypes.GrantRef{{Role: "app", Privilege: "DELETE", ObjectType: "TABLE", ObjectName: "users"}},
 		ConstraintsAdded:          []string{"missing_global_constraint"},
-		ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
 			Name:      "missing_global_constraint",
 			TableName: "accounts",
 		}},
 		ConstraintsRemoved: []string{"extra_global_constraint"},
-		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{{
+		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{{
 			Name:      "extra_global_constraint",
 			TableName: "accounts",
 		}},
@@ -229,12 +229,12 @@ func mismatchKinds(mismatches []Mismatch) []string {
 func TestCollectMismatchesNamesTheTableOwningAnRLSPolicy(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{
-		RLSPoliciesAdded: []types.RLSPolicyRef{
+	diff := &difftypes.SchemaDiff{
+		RLSPoliciesAdded: []difftypes.RLSPolicyRef{
 			{TableName: "zeta_orders", PolicyName: "tenant_isolation"},
 			{TableName: "alpha_orders", PolicyName: "tenant_isolation"},
 		},
-		RLSPoliciesRemoved: []types.RLSPolicyRef{
+		RLSPoliciesRemoved: []difftypes.RLSPolicyRef{
 			{TableName: "zeta_orders", PolicyName: "legacy_isolation"},
 		},
 	}

@@ -2,7 +2,7 @@
 // carries, for the CLI commands that report a comparison to an operator.
 //
 // The categories are discovered by reflecting over the fields of
-// [types.SchemaDiff] rather than read from a list maintained by hand. A hand-written
+// [difftypes.SchemaDiff] rather than read from a list maintained by hand. A hand-written
 // list is what let "ptah schema compare" report nothing for row-level security
 // changes the comparator had recorded (stokaro/ptah#1284): the field existed,
 // the comparator filled it, and no reporting path ever read it. Reflection
@@ -15,7 +15,7 @@ import (
 	"reflect"
 	"strings"
 
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // maxObjectNameParts bounds how many string fields of one changed object are
@@ -50,7 +50,7 @@ func (c Category) Count() int {
 // The result is empty exactly when the diff carries no changes, so a caller
 // can report "no differences" from len(Categories(diff)) == 0 without a second
 // opinion about what counts as a change.
-func Categories(diff *types.SchemaDiff) []Category {
+func Categories(diff *difftypes.SchemaDiff) []Category {
 	if diff == nil {
 		return nil
 	}

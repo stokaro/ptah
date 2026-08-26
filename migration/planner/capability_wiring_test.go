@@ -11,7 +11,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestGetPlanner_CapabilityWiring proves the factory wires the right
@@ -19,9 +19,9 @@ import (
 // guarded constraint drops for mariadb and unguarded ones for mysql, end to
 // end through GenerateSchemaDiffAST + the dialect renderer.
 func TestGetPlanner_CapabilityWiring(t *testing.T) {
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		ConstraintsRemoved: []string{"fk_posts_user"},
-		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 			{Name: "fk_posts_user", TableName: "posts", Type: "FOREIGN KEY"},
 		},
 	}
@@ -55,9 +55,9 @@ func TestGetPlanner_CapabilityWiring(t *testing.T) {
 }
 
 func TestGenerateSchemaDiffSQLStatementsWithOptions_UsesServerVersionPreset(t *testing.T) {
-	diff := &types.SchemaDiff{
+	diff := &difftypes.SchemaDiff{
 		ConstraintsRemoved: []string{"chk_qty"},
-		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 			{Name: "chk_qty", TableName: "things", Type: "CHECK"},
 		},
 	}
@@ -101,7 +101,7 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_UsesServerVersionPreset(t *t
 func TestGetPlanner_DistributedSQLCapabilityWiring(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{IndexesAdded: []types.IndexRef{
+	diff := &difftypes.SchemaDiff{IndexesAdded: []difftypes.IndexRef{
 		{Name: "idx_users_email", TableName: "users"},
 	}}
 	generated := &goschema.Database{
@@ -124,11 +124,11 @@ func TestGetPlanner_DistributedSQLCapabilityWiring(t *testing.T) {
 
 func TestGetPlanner_CockroachDBTableQualifiedIndexReplacement(t *testing.T) {
 	c := qt.New(t)
-	diff := &types.SchemaDiff{}
-	diff.SetIndexAdditions([]types.IndexRef{
+	diff := &difftypes.SchemaDiff{}
+	diff.SetIndexAdditions([]difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "public.users"},
 	})
-	diff.SetIndexRemovals([]types.IndexRef{
+	diff.SetIndexRemovals([]difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "public.users"},
 	})
 	generated := &goschema.Database{

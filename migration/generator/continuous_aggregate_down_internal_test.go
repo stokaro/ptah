@@ -14,7 +14,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestGenerateDownMigration_ContinuousAggregate pins both directions of the
@@ -29,13 +29,13 @@ import (
 func TestGenerateDownMigration_ContinuousAggregate(t *testing.T) {
 	tests := []struct {
 		name    string
-		diff    *types.SchemaDiff
+		diff    *difftypes.SchemaDiff
 		want    []string
 		notWant []string
 	}{
 		{
 			name: "rolling back a create drops it",
-			diff: &types.SchemaDiff{ContinuousAggregatesAdded: []string{"public.hourly"}},
+			diff: &difftypes.SchemaDiff{ContinuousAggregatesAdded: []string{"public.hourly"}},
 			want: []string{`DROP MATERIALIZED VIEW IF EXISTS "public"."hourly"`},
 			// DROP VIEW would be refused by the server, so a rollback carrying
 			// it could not run at all.
@@ -43,7 +43,7 @@ func TestGenerateDownMigration_ContinuousAggregate(t *testing.T) {
 		},
 		{
 			name: "rolling back a drop restores the body the database had",
-			diff: &types.SchemaDiff{ContinuousAggregatesRemoved: []string{"public.hourly"}},
+			diff: &difftypes.SchemaDiff{ContinuousAggregatesRemoved: []string{"public.hourly"}},
 			want: []string{
 				`CREATE MATERIALIZED VIEW "public"."hourly" WITH (timescaledb.continuous`,
 				"SELECT time_bucket('01:00:00'::interval, \"time\") FROM readings",

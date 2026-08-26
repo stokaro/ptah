@@ -13,7 +13,7 @@ import (
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/internal/planner/dialects/mysql"
 	migrationplanner "go.5x5.cz/ptah/migration/planner"
-	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestPlanner_GenerateMigrationAST_ViewsAndTriggersModified(t *testing.T) {

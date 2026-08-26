@@ -11,18 +11,18 @@ import (
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/internal/tableref"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // Resolver contains the validated target indexes needed by one migration plan.
 // Index lookup is constant time and uses the canonical table-qualified identity.
 type Resolver struct {
 	semantics identifier.Semantics
-	indexes   map[types.IndexRef]goschema.Index
+	indexes   map[difftypes.IndexRef]goschema.Index
 }
 
 // Resolve returns the target index identified by ref.
-func (r *Resolver) Resolve(ref types.IndexRef) (goschema.Index, error) {
+func (r *Resolver) Resolve(ref difftypes.IndexRef) (goschema.Index, error) {
 	if r == nil {
 		return goschema.Index{}, fmt.Errorf(
 			"%w: no validated target indexes are available",
@@ -41,7 +41,7 @@ func (r *Resolver) Resolve(ref types.IndexRef) (goschema.Index, error) {
 	return index, nil
 }
 
-func validateDiff(dialect string, semantics identifier.Semantics, diff *types.SchemaDiff) error {
+func validateDiff(dialect string, semantics identifier.Semantics, diff *difftypes.SchemaDiff) error {
 	if diff == nil {
 		return nil
 	}
@@ -56,7 +56,7 @@ func validateDiff(dialect string, semantics identifier.Semantics, diff *types.Sc
 // self-contained because their owning table is part of IndexRef.
 func NewResolver(
 	dialect string,
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	generated *goschema.Database,
 ) (*Resolver, error) {
 	return NewResolverWithSemantics(dialect, identifier.ForDialect(dialect), diff, generated)
@@ -67,7 +67,7 @@ func NewResolver(
 func NewResolverWithSemantics(
 	dialect string,
 	semantics identifier.Semantics,
-	diff *types.SchemaDiff,
+	diff *difftypes.SchemaDiff,
 	generated *goschema.Database,
 ) (*Resolver, error) {
 	if diff == nil {
@@ -104,7 +104,7 @@ func newTargetResolver(
 ) (*Resolver, error) {
 	resolver := &Resolver{
 		semantics: semantics,
-		indexes:   make(map[types.IndexRef]goschema.Index),
+		indexes:   make(map[difftypes.IndexRef]goschema.Index),
 	}
 	if generated == nil {
 		return resolver, nil
@@ -118,7 +118,7 @@ func newTargetResolver(
 	// (stokaro/ptah#1725).
 	tableNames := goschema.ResolveIndexOwners(generated.Indexes, generated.Tables, generated.MaterializedViews)
 	for position, index := range generated.Indexes {
-		ref := types.IndexRef{
+		ref := difftypes.IndexRef{
 			Name:      index.Name,
 			TableName: tableNames[position],
 		}
@@ -140,7 +140,7 @@ func newTargetResolver(
 // IdentityKey returns the dialect-aware comparison identity for ref. It is
 // intended only for map and set keys; callers must keep the original ref when
 // rendering SQL so the declared identifier spelling is preserved.
-func IdentityKey(dialect string, ref types.IndexRef) types.IndexRef {
+func IdentityKey(dialect string, ref difftypes.IndexRef) difftypes.IndexRef {
 	return IdentityKeyWithSemantics(identifier.ForDialect(dialect), ref)
 }
 
@@ -148,8 +148,8 @@ func IdentityKey(dialect string, ref types.IndexRef) types.IndexRef {
 // Original references must still be retained for SQL rendering.
 func IdentityKeyWithSemantics(
 	semantics identifier.Semantics,
-	ref types.IndexRef,
-) types.IndexRef {
+	ref difftypes.IndexRef,
+) difftypes.IndexRef {
 	ref.Name = semantics.IndexIdentityKey(ref.Name)
 	ref.TableName = semantics.QualifiedTableIdentityKey(ref.TableName)
 	return ref
@@ -159,11 +159,11 @@ func IdentityKeyWithSemantics(
 // index namespace. It supports constant-time exact conflict checks.
 type ConflictSet struct {
 	semantics identifier.Semantics
-	matches   map[namespaceKey][]types.IndexRef
+	matches   map[namespaceKey][]difftypes.IndexRef
 }
 
 // NewConflictSet builds a dialect-aware conflict index for refs.
-func NewConflictSet(dialect string, refs []types.IndexRef) *ConflictSet {
+func NewConflictSet(dialect string, refs []difftypes.IndexRef) *ConflictSet {
 	return NewConflictSetWithSemantics(identifier.ForDialect(dialect), refs)
 }
 
@@ -171,11 +171,11 @@ func NewConflictSet(dialect string, refs []types.IndexRef) *ConflictSet {
 // identifier collisions under semantics.
 func NewConflictSetWithSemantics(
 	semantics identifier.Semantics,
-	refs []types.IndexRef,
+	refs []difftypes.IndexRef,
 ) *ConflictSet {
 	set := &ConflictSet{
 		semantics: semantics,
-		matches:   make(map[namespaceKey][]types.IndexRef, len(refs)),
+		matches:   make(map[namespaceKey][]difftypes.IndexRef, len(refs)),
 	}
 	for _, ref := range refs {
 		set.add(ref)
@@ -184,7 +184,7 @@ func NewConflictSetWithSemantics(
 }
 
 // Contains reports whether ref conflicts with an indexed reference.
-func (s *ConflictSet) Contains(ref types.IndexRef) bool {
+func (s *ConflictSet) Contains(ref difftypes.IndexRef) bool {
 	if s == nil {
 		return false
 	}
@@ -194,8 +194,8 @@ func (s *ConflictSet) Contains(ref types.IndexRef) bool {
 
 // Matches returns conflicting references. Validated diff references retain
 // their original input order. The sequence is allocation-free.
-func (s *ConflictSet) Matches(ref types.IndexRef) iter.Seq[types.IndexRef] {
-	return func(yield func(types.IndexRef) bool) {
+func (s *ConflictSet) Matches(ref difftypes.IndexRef) iter.Seq[difftypes.IndexRef] {
+	return func(yield func(difftypes.IndexRef) bool) {
 		if s == nil {
 			return
 		}
@@ -204,19 +204,19 @@ func (s *ConflictSet) Matches(ref types.IndexRef) iter.Seq[types.IndexRef] {
 	}
 }
 
-func (s *ConflictSet) add(ref types.IndexRef) {
+func (s *ConflictSet) add(ref difftypes.IndexRef) {
 	key := conflictKey(s.semantics, ref)
 	s.matches[key] = append(s.matches[key], ref)
 }
 
-func (s *ConflictSet) firstMatch(ref types.IndexRef) (types.IndexRef, bool) {
+func (s *ConflictSet) firstMatch(ref difftypes.IndexRef) (difftypes.IndexRef, bool) {
 	for match := range s.Matches(ref) {
 		return match, true
 	}
-	return types.IndexRef{}, false
+	return difftypes.IndexRef{}, false
 }
 
-func yieldRefs(refs []types.IndexRef, yield func(types.IndexRef) bool) bool {
+func yieldRefs(refs []difftypes.IndexRef, yield func(difftypes.IndexRef) bool) bool {
 	for _, ref := range refs {
 		if !yield(ref) {
 			return false
@@ -225,7 +225,7 @@ func yieldRefs(refs []types.IndexRef, yield func(types.IndexRef) bool) bool {
 	return true
 }
 
-func conflictKey(semantics identifier.Semantics, ref types.IndexRef) namespaceKey {
+func conflictKey(semantics identifier.Semantics, ref difftypes.IndexRef) namespaceKey {
 	namespace := semantics.QualifiedTableConflictKey(ref.TableName)
 	if semantics.IndexNamespace == identifier.IndexNamespaceSchema {
 		table, ok := tableref.Parse(namespace)
@@ -243,7 +243,7 @@ func validateRefs(
 	dialect string,
 	semantics identifier.Semantics,
 	operation string,
-	refs []types.IndexRef,
+	refs []difftypes.IndexRef,
 ) error {
 	tracker := NewConflictSetWithSemantics(semantics, nil)
 	for index, ref := range refs {
@@ -261,7 +261,7 @@ func validateRefs(
 	return nil
 }
 
-func validateRef(operation string, position int, ref types.IndexRef) error {
+func validateRef(operation string, position int, ref difftypes.IndexRef) error {
 	if strings.TrimSpace(ref.Name) == "" || strings.TrimSpace(ref.TableName) == "" {
 		return fmt.Errorf(
 			"%w: %s index reference at position %d requires a name and owning table",
@@ -277,7 +277,7 @@ func validateResolvedRef(
 	semantics identifier.Semantics,
 	operation string,
 	position int,
-	ref types.IndexRef,
+	ref difftypes.IndexRef,
 ) error {
 	if semantics.IndexNames != identifier.ComparisonCatalogResolved {
 		return nil
@@ -296,7 +296,7 @@ func validateResolvedRef(
 	)
 }
 
-func conflictError(dialect, operation string, previous, ref types.IndexRef) error {
+func conflictError(dialect, operation string, previous, ref difftypes.IndexRef) error {
 	return fmt.Errorf(
 		"%w: %s indexes %s.%s and %s.%s conflict in the %s namespace",
 		ptaherr.ErrInvalidSchemaDiff,

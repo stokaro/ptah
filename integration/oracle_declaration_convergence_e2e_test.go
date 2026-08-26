@@ -25,7 +25,7 @@ import (
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/genexprprobe"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // TestOracleDeclarationConvergesE2E is the assertion every other engine here
@@ -261,7 +261,7 @@ func oracleGeneratedExpressionOptions(
 
 // oracleDiffSummary names every change a comparison reported, so a failure says
 // which one rather than that a count was not zero.
-func oracleDiffSummary(diff *types.SchemaDiff) []string {
+func oracleDiffSummary(diff *difftypes.SchemaDiff) []string {
 	var changes []string
 	for _, name := range diff.TablesAdded {
 		changes = append(changes, "table added: "+name)

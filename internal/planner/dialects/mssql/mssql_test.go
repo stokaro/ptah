@@ -6,17 +6,17 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestNewWithCapabilitiesUsesSQLServerDialect(t *testing.T) {
 	c := qt.New(t)
 
 	plan := New()
-	diff := &types.SchemaDiff{
-		TablesModified: []types.TableDiff{{
+	diff := &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{{
 			TableName: "users",
-			ColumnsModified: []types.ColumnDiff{{
+			ColumnsModified: []difftypes.ColumnDiff{{
 				ColumnName: "status",
 				Changes: map[string]string{
 					"default": "'inactive' -> 'active'",
@@ -40,8 +40,8 @@ func TestNewWithCapabilitiesRejectsSQLServerColumnRemoval(t *testing.T) {
 	c := qt.New(t)
 
 	plan := New()
-	diff := &types.SchemaDiff{
-		TablesModified: []types.TableDiff{{
+	diff := &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{{
 			TableName:      "users",
 			ColumnsRemoved: []string{"legacy_id"},
 		}},

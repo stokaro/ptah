@@ -16,7 +16,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	"go.5x5.cz/ptah/migration/schemadiff/types"
+	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // indexOfFragment reports where a fragment starts, so an ordering assertion can
@@ -126,7 +126,7 @@ func TestGenerateDownMigrationSQL_DropsViewLikeObjectsCreatedByUp(t *testing.T) 
 
 	c.Assert(upDiff.ViewsAdded, qt.DeepEquals, []string{"rev_active_users"})
 	c.Assert(upDiff.MaterializedViewsAdded, qt.DeepEquals, []string{"rev_user_stats"})
-	c.Assert(upDiff.TriggersAdded, qt.DeepEquals, []types.TriggerRef{
+	c.Assert(upDiff.TriggersAdded, qt.DeepEquals, []difftypes.TriggerRef{
 		{TriggerName: "rev_touch", TableName: "rev_view_users"},
 	})
 
@@ -173,7 +173,7 @@ func TestGenerateDownMigrationSQL_RestoresViewLikeObjectsDroppedByUp(t *testing.
 
 	c.Assert(upDiff.ViewsRemoved, qt.DeepEquals, []string{"rev_active_users"})
 	c.Assert(upDiff.MaterializedViewsRemoved, qt.DeepEquals, []string{"rev_user_stats"})
-	c.Assert(upDiff.TriggersRemoved, qt.DeepEquals, []types.TriggerRef{
+	c.Assert(upDiff.TriggersRemoved, qt.DeepEquals, []difftypes.TriggerRef{
 		{TriggerName: "rev_touch", TableName: "rev_view_users"},
 	})
 
@@ -342,14 +342,14 @@ func TestGenerateDownMigrationSQL_ModifiedMatViewAndTriggerRollback(t *testing.T
 // not consume this map, but the diff is serialized into reports, so an
 // unreversed "old -> new" would describe the up migration on a down plan.
 func TestReverseSchemaDiff_ReversesViewLikeChangeDescriptions(t *testing.T) {
-	input := &types.SchemaDiff{
-		ViewsModified: []types.ViewDiff{
+	input := &difftypes.SchemaDiff{
+		ViewsModified: []difftypes.ViewDiff{
 			{ViewName: "v", Changes: map[string]string{"body": "OLD -> NEW"}},
 		},
-		MaterializedViewsModified: []types.MaterializedViewDiff{
+		MaterializedViewsModified: []difftypes.MaterializedViewDiff{
 			{ViewName: "mv", Changes: map[string]string{"body": "OLD -> NEW"}},
 		},
-		TriggersModified: []types.TriggerDiff{
+		TriggersModified: []difftypes.TriggerDiff{
 			{TriggerName: "trg", TableName: "t", Changes: map[string]string{"timing": "BEFORE -> AFTER"}},
 		},
 	}
