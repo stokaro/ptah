@@ -13,7 +13,7 @@ import (
 	"go.5x5.cz/ptah/cmd/atlas"
 	"go.5x5.cz/ptah/cmd/migrateset"
 	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // writePtahMigrations writes a two-migration ptah-format directory.
@@ -50,7 +50,7 @@ func writeAtlasMigrations(t *testing.T) string {
 	for name, content := range files {
 		c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
 	}
-	sum, err := atlascompat.ComputeSum(os.DirFS(dir), migrator.MigrationDirFormatAtlas)
+	sum, err := atlascompat.ComputeSum(os.DirFS(dir), migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(dir, atlascompat.AtlasSumFileName), sum.Bytes(), 0o600), qt.IsNil)
 	return dir

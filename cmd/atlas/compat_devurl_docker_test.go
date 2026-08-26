@@ -11,7 +11,7 @@ import (
 	"go.5x5.cz/ptah/cmd/atlas"
 	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // This file pins WHERE a `docker://` dev database URL is answered on the
@@ -149,7 +149,7 @@ func newCompatDockerFixture(c *qt.C) compatDockerFixture {
 		[]byte("CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n"),
 		0o600,
 	), qt.IsNil)
-	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(dir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 
 	schema := filepath.Join(root, "schema.sql")

@@ -27,7 +27,7 @@ import (
 	"go.5x5.cz/ptah/internal/schemafile"
 	"go.5x5.cz/ptah/internal/schemascope"
 	"go.5x5.cz/ptah/internal/schemaselection"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 const (
@@ -356,7 +356,7 @@ func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions) (Stat
 		ctx,
 		conn,
 		snapshot,
-		migrator.MigrationDirFormatAtlas,
+		migrationfile.DirFormatAtlas,
 		func(replayConn *dbschema.DatabaseConnection) error {
 			// Same decision, same owner: a migration directory that creates a
 			// second schema describes it, and a read scoped to the dev
@@ -443,7 +443,7 @@ func CaptureVerifiedMigrationDir(dir string) (fs.FS, error) {
 }
 
 func verifyMigrationFS(fsys fs.FS) error {
-	result, err := migratesum.VerifyWithFormat(fsys, migrator.MigrationDirFormatAtlas)
+	result, err := migratesum.VerifyWithFormat(fsys, migrationfile.DirFormatAtlas)
 	if errors.Is(err, migratesum.ErrSumFileMissing) {
 		return nil
 	}

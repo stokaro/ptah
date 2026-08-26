@@ -10,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -84,7 +85,7 @@ func TestNoTransactionTimeoutValidation_DefaultTimeoutCanBeFixedAndRetried(t *te
 		},
 	})
 	c.Assert(err, qt.IsNil)
-	mig = mig.WithDefaultTimeouts(migrator.MigrationTimeouts{
+	mig = mig.WithDefaultTimeouts(migrationfile.Timeouts{
 		LockTimeout:    time.Second,
 		HasLockTimeout: true,
 	})
@@ -94,7 +95,7 @@ func TestNoTransactionTimeoutValidation_DefaultTimeoutCanBeFixedAndRetried(t *te
 	c.Assert(noTransactionRevisionCount(c, conn), qt.Equals, int64(0))
 	c.Assert(noTransactionTableExists(c, conn, "users"), qt.IsFalse)
 
-	mig = mig.WithDefaultTimeouts(migrator.MigrationTimeouts{})
+	mig = mig.WithDefaultTimeouts(migrationfile.Timeouts{})
 	c.Assert(mig.MigrateUp(ctx), qt.IsNil)
 	c.Assert(noTransactionRevisionCount(c, conn), qt.Equals, int64(1))
 	c.Assert(noTransactionRevisionState(c, conn), qt.Equals, "applied")
@@ -204,7 +205,7 @@ func TestProgrammaticMigration_UpNoTransactionUsesAutocommit(t *testing.T) {
 		"CREATE TABLE users (id INTEGER PRIMARY KEY); INSERT INTO missing_table (id) VALUES (1);",
 		"DROP TABLE users;",
 	)
-	migration.UpTxMode = migrator.MigrationFileTxModeNone
+	migration.UpTxMode = migrationfile.FileTxModeNone
 	mig := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migration))
 
 	err := mig.MigrateUp(ctx)

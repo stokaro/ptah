@@ -7,7 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/migration/lint"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // An empty migration directory is nothing to analyze on the Atlas-compatible
@@ -29,7 +29,7 @@ func TestAnalyzeFS_EmptyDirectoryHappyPathOnAtlasProfile(t *testing.T) {
 
 	analysis, err := lint.AnalyzeFS(fstest.MapFS{}, lint.Options{
 		Compatibility: lint.CompatibilityProfileAtlas,
-		DirFormat:     migrator.MigrationDirFormatAtlas,
+		DirFormat:     migrationfile.DirFormatAtlas,
 	})
 
 	c.Assert(err, qt.IsNil)
@@ -41,7 +41,7 @@ func TestAnalyzeFS_EmptyDirectoryFailurePathOnNativeProfile(t *testing.T) {
 	c := qt.New(t)
 
 	analysis, err := lint.AnalyzeFS(fstest.MapFS{}, lint.Options{
-		DirFormat: migrator.MigrationDirFormatAtlas,
+		DirFormat: migrationfile.DirFormatAtlas,
 	})
 
 	c.Assert(err, qt.ErrorMatches, `no \*\.sql migration files found`)
@@ -59,7 +59,7 @@ func TestAnalyzeFS_NonEmptyDirectoryHappyPathOnAtlasProfile(t *testing.T) {
 
 	analysis, err := lint.AnalyzeFS(fsys, lint.Options{
 		Compatibility: lint.CompatibilityProfileAtlas,
-		DirFormat:     migrator.MigrationDirFormatAtlas,
+		DirFormat:     migrationfile.DirFormatAtlas,
 	})
 
 	c.Assert(err, qt.IsNil)

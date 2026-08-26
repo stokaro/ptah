@@ -10,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -27,7 +28,7 @@ func TestMigrationStatusDistinguishesExactEmptyIdentityFromNoHistory(t *testing.
 		fstest.MapFS{
 			"10_repeat.sql": {Data: []byte("CREATE TABLE empty_identity (id INTEGER PRIMARY KEY);\n")},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 		migrator.WithAtlasRevisionVersions(map[int64]string{10: ""}),
 	)
 	c.Assert(err, qt.IsNil)
@@ -117,7 +118,7 @@ func TestAtlasRevisionIdentityCollationScalesPastSQLiteCompoundLimit(t *testing.
 	mig, err := migrator.NewFSMigrator(
 		conn,
 		fsys,
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 		migrator.WithAtlasRevisionVersions(versions),
 	)
 	c.Assert(err, qt.IsNil)
@@ -196,7 +197,7 @@ func newAtlasAliasCollationMigrator(
 	mig, err := migrator.NewFSMigrator(
 		conn,
 		fsys,
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 		migrator.WithAtlasRevisionVersions(versions),
 	)
 	c.Assert(err, qt.IsNil)
@@ -225,7 +226,7 @@ func TestRepairMigrationFindsMappedExactRevisionIdentity(t *testing.T) {
 		fstest.MapFS{
 			"10_mapped.sql": {Data: []byte("CREATE TABLE mapped_repair (id INTEGER PRIMARY KEY);\n")},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 		migrator.WithAtlasRevisionVersions(map[int64]string{10: "1.5"}),
 	)
 	c.Assert(err, qt.IsNil)
@@ -265,7 +266,7 @@ func TestMigrationStatusKeepsSquashedDotIdentityAsHistoryOnly(t *testing.T) {
 		fstest.MapFS{
 			"20_baseline.sql": {Data: []byte("CREATE TABLE current_baseline (id INTEGER PRIMARY KEY);\n")},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 		migrator.WithAtlasRevisionVersions(map[int64]string{
 			10: ".foo",
 			20: "2",
@@ -307,7 +308,7 @@ func TestMigrationStatusReportsCurrentFromRetiredExactIdentityOrder(t *testing.T
 		fstest.MapFS{
 			"10_remaining.sql": {Data: []byte("CREATE TABLE remaining (id INTEGER PRIMARY KEY);\n")},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 		migrator.WithAtlasRevisionVersions(map[int64]string{10: "1"}),
 	)
 	c.Assert(err, qt.IsNil)
@@ -340,7 +341,7 @@ func TestRetiredExactIdentityNamesCorruptRevisionMetadata(t *testing.T) {
 		fstest.MapFS{
 			"10_remaining.sql": {Data: []byte("CREATE TABLE remaining (id INTEGER PRIMARY KEY);\n")},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 		migrator.WithAtlasRevisionVersions(map[int64]string{10: "1"}),
 	)
 	c.Assert(err, qt.IsNil)
@@ -370,7 +371,7 @@ func TestNativeRevisionStatusKeepsNumericOrderWithAtlasSourceMapping(t *testing.
 			"2_two.sql":  {Data: []byte("CREATE TABLE version_two (id INTEGER PRIMARY KEY);\n")},
 			"10_ten.sql": {Data: []byte("CREATE TABLE version_ten (id INTEGER PRIMARY KEY);\n")},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 		migrator.WithAtlasRevisionVersions(map[int64]string{2: "2", 10: "10"}),
 	)
 	c.Assert(err, qt.IsNil)

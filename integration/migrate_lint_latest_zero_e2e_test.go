@@ -18,7 +18,7 @@ import (
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/migrationlintreport"
 	migrationlint "go.5x5.cz/ptah/migration/lint"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 func TestCompatMigrateLintLatestZeroE2E(t *testing.T) {
@@ -163,7 +163,7 @@ func TestMigrationLintReportAtlasExplicitZeroAllowsExplicitGitSelectorE2E(t *tes
 	_, err := migrationlintreport.Build(t.Context(), migrationlintreport.Options{
 		Dir:           t.TempDir(),
 		FS:            fstest.MapFS{"1_init.sql": {Data: []byte("CREATE TABLE users (id int);\n")}},
-		DirFormat:     string(migrator.MigrationDirFormatAtlas),
+		DirFormat:     string(migrationfile.DirFormatAtlas),
 		Dialect:       "sqlite",
 		GitBase:       "HEAD",
 		GitDir:        t.TempDir(),
@@ -187,7 +187,7 @@ func writeLatestZeroAtlasDir(c *qt.C) string {
 		[]byte("CREATE TABLE t (id INT);\n"),
 		0o600,
 	), qt.IsNil)
-	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(dir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	return dir
 }

@@ -15,7 +15,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // Recovery is the half of stokaro/ptah#895 that no callback can reach: it runs
@@ -63,7 +63,7 @@ func TestRecoverPendingPublication_RollsBackInTheRetainedDirectory(t *testing.T)
 	decoy := filepath.Join(root, "decoy")
 	c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(dir, "1_initial.sql"), []byte("SELECT 1;"), 0o600), qt.IsNil)
-	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(dir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	writer := openTestWriter(c, dir)
 	batch, err := stageMigrationBatchAt(

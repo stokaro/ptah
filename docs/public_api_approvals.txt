@@ -144,3 +144,17 @@ v0.2.0 go.5x5.cz/ptah/dbschema
 v0.2.0 go.5x5.cz/ptah/core/ast
 v0.2.0 go.5x5.cz/ptah/core/renderer
 v0.2.0 go.5x5.cz/ptah/core/query
+
+# The migration file layout leaves the engine for migration/migrationfile
+# (#2246 §4.2). migration/lint held 66 references into migration/migrator and
+# every one was file-layout; lint, importer and atlascompat imported the whole
+# database engine to name and parse files, and now do not depend on it at all.
+# Symbols drop the word the package name carries (MigrationFile is File,
+# DiscoverMigrationFiles is Discover), and the engine keeps no aliases: its
+# exported signatures name migrationfile types directly.
+v0.2.0 go.5x5.cz/ptah/migration/migrator
+v0.2.0 go.5x5.cz/ptah/migration/generator
+v0.2.0 go.5x5.cz/ptah/atlascompat
+v0.2.0 go.5x5.cz/ptah/migration/lint
+v0.2.0 go.5x5.cz/ptah/migration/importer
+v0.2.0 go.5x5.cz/ptah/migration/dbtest

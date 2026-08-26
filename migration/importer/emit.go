@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // maxPtahVersion is the largest version Ptah's exactly-10-digit file-name format
@@ -98,12 +98,12 @@ func Emit(outDir string, migrations []SourceMigration, declined []DeclinedFile, 
 		if sanitizedDescriptionIsEmpty(description) {
 			description = fallbackMigrationName
 		}
-		upName := migrator.GenerateMigrationFileName(version, description, "up")
-		downName := migrator.GenerateMigrationFileName(version, description, "down")
+		upName := migrationfile.FileName(version, description, "up")
+		downName := migrationfile.FileName(version, description, "down")
 		// Ptah's reader is strict (exactly 10 digits, non-empty name); confirm the
 		// generated names round-trip before committing to writing anything.
 		for _, name := range []string{upName, downName} {
-			if _, err := migrator.ParseMigrationFileName(name); err != nil {
+			if _, err := migrationfile.ParseFileName(name); err != nil {
 				return nil, fmt.Errorf("cannot import migration %q as Ptah file %q: %w", migration.Name, name, err)
 			}
 		}
@@ -154,11 +154,11 @@ func Emit(outDir string, migrations []SourceMigration, declined []DeclinedFile, 
 		written = append(written, file.name)
 	}
 
-	if _, err := migratesum.WriteWithFormat(outDir, migrator.MigrationDirFormatPtah); err != nil {
+	if _, err := migratesum.WriteWithFormat(outDir, migrationfile.DirFormatPtah); err != nil {
 		cleanupFiles(outDir, written)
 		return nil, fmt.Errorf("write integrity file: %w", err)
 	}
-	sumName, err := migratesum.FileNameForFormat(migrator.MigrationDirFormatPtah)
+	sumName, err := migratesum.FileNameForFormat(migrationfile.DirFormatPtah)
 	if err != nil {
 		return nil, err
 	}
@@ -167,7 +167,7 @@ func Emit(outDir string, migrations []SourceMigration, declined []DeclinedFile, 
 }
 
 func addImportedNoTransactionDirective(sql string) string {
-	return "-- +ptah " + migrator.DirectiveNoTransaction + "\n" + sql
+	return "-- +ptah " + migrationfile.DirectiveNoTransaction + "\n" + sql
 }
 
 // needsVersionRemap reports whether any non-repeatable version falls outside

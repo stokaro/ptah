@@ -1914,7 +1914,7 @@ Two rules survive, and both are deliberate:
   and no finding in the register asks for one.
 - A name whose composed file name Ptah's own reader would classify as something
   other than a new up migration is refused before anything is written. Exactly
-  one suffix does that today: `migrator.ParseAtlasMigrationFileName` reads
+  one suffix does that today: `migrationfile.ParseAtlasFileName` reads
   `<version>_x.down.sql` as the down half of a pair, because Atlas importers emit
   that spelling for golang-migrate directories.
 

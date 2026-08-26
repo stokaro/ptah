@@ -14,7 +14,7 @@ import (
 	"go.5x5.cz/ptah/internal/agentpolicy"
 	"go.5x5.cz/ptah/internal/agentworkspace"
 	"go.5x5.cz/ptah/internal/migrateops"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // migrationScope builds a workspace whose migrations class holds one hashed
@@ -28,7 +28,7 @@ func migrationScope(c *qt.C) *agentworkspace.Scope {
 		[]byte("CREATE TABLE users (id BIGINT PRIMARY KEY);\n"), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(dir, "1700000000_init.down.sql"),
 		[]byte("DROP TABLE users;\n"), 0o600), qt.IsNil)
-	_, err := migrateops.Rehash(dir, migrator.MigrationDirFormatAuto)
+	_, err := migrateops.Rehash(dir, migrationfile.DirFormatAuto)
 	c.Assert(err, qt.IsNil)
 
 	workspace, err := agentworkspace.Open(agentworkspace.Config{

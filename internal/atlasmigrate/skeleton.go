@@ -11,7 +11,7 @@ import (
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/migrationversion"
 	"go.5x5.cz/ptah/internal/pathguard"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // WriteSkeletonMigration writes one foreign layout's empty migration into dir
@@ -54,7 +54,7 @@ func WriteSkeletonMigration(
 
 	version := MigrationVersion()
 	for {
-		writable, err := migrationversion.Writable(version, migrator.MigrationDirFormatAtlas)
+		writable, err := migrationversion.Writable(version, migrationfile.DirFormatAtlas)
 		if err != nil {
 			return nil, err
 		}

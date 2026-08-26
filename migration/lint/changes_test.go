@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/migration/lint"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 type changeProjection struct {
@@ -36,7 +36,7 @@ func fileByName(c *qt.C, analysis lint.Analysis, name string) lint.File {
 func analyzeSQLite(c *qt.C, files map[string]string) lint.Analysis {
 	c.Helper()
 	analysis, err := lint.AnalyzeFS(fixture(files), lint.Options{
-		DirFormat: migrator.MigrationDirFormatAtlas,
+		DirFormat: migrationfile.DirFormatAtlas,
 		Dialect:   "sqlite",
 	})
 	c.Assert(err, qt.IsNil)
@@ -165,7 +165,7 @@ func TestAnalyzeFS_DownMigrationHasNoChanges(t *testing.T) {
 	analysis, err := lint.AnalyzeFS(fixture(map[string]string{
 		"0000000001_init.up.sql":   "CREATE TABLE users (id INTEGER);",
 		"0000000001_init.down.sql": "DROP TABLE users;",
-	}), lint.Options{DirFormat: migrator.MigrationDirFormatPtah})
+	}), lint.Options{DirFormat: migrationfile.DirFormatPtah})
 	c.Assert(err, qt.IsNil)
 
 	up := fileByName(c, analysis, "0000000001_init.up.sql")
@@ -197,7 +197,7 @@ func TestAnalyzeFS_SchemaChangesRespectDialect(t *testing.T) {
 	sql := "CREATE TABLE t (id INTEGER);\nALTER TABLE t ADD COLUMN a INTEGER, ADD COLUMN b INTEGER;\n"
 
 	postgres, err := lint.AnalyzeFS(fixture(map[string]string{"1_change.sql": sql}), lint.Options{
-		DirFormat: migrator.MigrationDirFormatAtlas,
+		DirFormat: migrationfile.DirFormatAtlas,
 		Dialect:   "postgres",
 	})
 	c.Assert(err, qt.IsNil)

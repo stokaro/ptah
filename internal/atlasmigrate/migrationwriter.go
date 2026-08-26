@@ -7,7 +7,7 @@ import (
 
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/pathguard"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // MigrationWriter is the rooted migration-directory capability a writer
@@ -152,7 +152,7 @@ func (w *MigrationWriter) Remove(name string) error {
 // handle the migration files were created through, or the checksum describes a
 // directory this transaction did not write into (stokaro/ptah#1118).
 func (w *MigrationWriter) PublishSum(
-	format migrator.MigrationDirFormat,
+	format migrationfile.DirFormat,
 	sum *migratesum.SumFile,
 ) (string, error) {
 	if !w.dir.Exists() {

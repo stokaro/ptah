@@ -14,6 +14,7 @@ import (
 
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -49,7 +50,7 @@ CREATE TABLE atlas_sum_widgets (id INTEGER PRIMARY KEY);
 DROP TABLE atlas_sum_widgets;
 `)},
 	}
-	m, err := migrator.NewFSMigrator(conn, fsys, migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas))
+	m, err := migrator.NewFSMigrator(conn, fsys, migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas))
 	c.Assert(err, qt.IsNil)
 	return conn, m
 }
@@ -87,7 +88,7 @@ func atlasChainFS(t *testing.T, files map[string]string) fstest.MapFS {
 	for name, body := range files {
 		fsys[name] = &fstest.MapFile{Data: []byte(body)}
 	}
-	sum, err := migratesum.ComputeWithFormat(fsys, migrator.MigrationDirFormatAtlas)
+	sum, err := migratesum.ComputeWithFormat(fsys, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	fsys[migratesum.AtlasFileName] = &fstest.MapFile{Data: sum.Bytes()}
 	return fsys
@@ -103,7 +104,7 @@ func newSQLiteAtlasChainMigrator(
 	conn, err := dbschema.ConnectToDatabase(t.Context(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)
 	t.Cleanup(func() { _ = conn.Close() })
-	m, err := migrator.NewFSMigrator(conn, fsys, migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas))
+	m, err := migrator.NewFSMigrator(conn, fsys, migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas))
 	c.Assert(err, qt.IsNil)
 	return conn, m
 }

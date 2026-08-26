@@ -643,6 +643,24 @@
       "count": 1
     },
     {
+      "path": "migration/migrationfile/example_test.go",
+      "function": "ExampleParseFileName",
+      "kind": "if",
+      "count": 1
+    },
+    {
+      "path": "migration/migrationfile/name_test.go",
+      "function": "TestParseFileName",
+      "kind": "if",
+      "count": 1
+    },
+    {
+      "path": "migration/migrationfile/timeouts_test.go",
+      "function": "TestParseTimeouts",
+      "kind": "if",
+      "count": 1
+    },
+    {
       "path": "migration/migrator/example_test.go",
       "function": "ExampleMigrator",
       "kind": "if",
@@ -686,12 +704,6 @@
     },
     {
       "path": "migration/migrator/example_test.go",
-      "function": "ExampleParseMigrationFileName",
-      "kind": "if",
-      "count": 1
-    },
-    {
-      "path": "migration/migrator/example_test.go",
       "function": "Example_completeWorkflow",
       "kind": "if",
       "count": 4
@@ -705,12 +717,6 @@
     {
       "path": "migration/migrator/migration_provider_test.go",
       "function": "TestRegisteredMigrationProvider_ConcurrentRegisterAndMigrations",
-      "kind": "if",
-      "count": 1
-    },
-    {
-      "path": "migration/migrator/migrations_test.go",
-      "function": "TestParseMigrationTimeoutDirectives",
       "kind": "if",
       "count": 1
     },
@@ -783,12 +789,6 @@
     {
       "path": "migration/migrator/timeouts_test.go",
       "function": "TestTimeoutStatements",
-      "kind": "if",
-      "count": 1
-    },
-    {
-      "path": "migration/migrator/util_test.go",
-      "function": "TestParseMigrationFileName",
       "kind": "if",
       "count": 1
     },
@@ -983,11 +983,6 @@
       "reason": "same-package test file is not named *_internal_test.go"
     },
     {
-      "path": "migration/migrator/directives_test.go",
-      "package": "migrator",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
       "path": "migration/migrator/exec_order_test.go",
       "package": "migrator",
       "reason": "same-package test file is not named *_internal_test.go"
@@ -1014,11 +1009,6 @@
     },
     {
       "path": "migration/migrator/timeouts_test.go",
-      "package": "migrator",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
-      "path": "migration/migrator/util_test.go",
       "package": "migrator",
       "reason": "same-package test file is not named *_internal_test.go"
     },

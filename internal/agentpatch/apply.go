@@ -17,7 +17,7 @@ import (
 	"go.5x5.cz/ptah/internal/fsdurable"
 	"go.5x5.cz/ptah/internal/migrateops"
 	"go.5x5.cz/ptah/internal/pathguard"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // createdFileMode is the mode a newly created artifact gets.
@@ -323,7 +323,7 @@ func refreshIntegrity(plan *Plan) (bool, error) {
 	if plan.patch.Class != agentpolicy.ClassMigrations {
 		return false, nil
 	}
-	if _, err := migrateops.Rehash(plan.scope.Path(), migrator.MigrationDirFormatAuto); err != nil {
+	if _, err := migrateops.Rehash(plan.scope.Path(), migrationfile.DirFormatAuto); err != nil {
 		return false, agentdiag.Errorf(agentdiag.CodeWriteFailed,
 			"refresh migration integrity: %w", err)
 	}

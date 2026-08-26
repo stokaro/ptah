@@ -9,7 +9,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // The compat surface half of stokaro/ptah#966: `migrate apply` registers
@@ -36,7 +36,7 @@ func writeDirtyRetryFixture(c *qt.C, secondBody string) (migrationsDir, dbPath s
 		[]byte("CREATE TABLE dr_one (id INTEGER PRIMARY KEY);\n"),
 		0o600,
 	), qt.IsNil)
-	_, err := migratesum.WriteWithFormat(migrationsDir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(migrationsDir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	return migrationsDir, filepath.Join(root, "dirty.db")
 }
@@ -50,7 +50,7 @@ func writeDirtyRetrySecond(c *qt.C, migrationsDir, body string) {
 		[]byte(body),
 		0o600,
 	), qt.IsNil)
-	_, err := migratesum.WriteWithFormat(migrationsDir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(migrationsDir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 }
 

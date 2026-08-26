@@ -20,7 +20,7 @@ import (
 	"go.5x5.cz/ptah/cmd/atlas"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // stokaro/ptah#1257: the adoption gate stokaro/ptah#1252 shipped resolved its
@@ -83,7 +83,7 @@ func writeCleanGatePostgresFixture(c *qt.C) string {
 	c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
 	body := "CREATE TABLE cg_users (id integer NOT NULL, PRIMARY KEY (id));\n"
 	c.Assert(os.WriteFile(filepath.Join(dir, "20240101000000_first.sql"), []byte(body), 0o600), qt.IsNil)
-	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(dir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	return dir
 }

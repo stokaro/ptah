@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -43,7 +44,7 @@ func TestAtlasTxModeValidation_FirstFileErrorSkipsPreflight(t *testing.T) {
 				Data: []byte("-- atlas:txmode bogus\n\nCREATE TABLE invalid (id INTEGER PRIMARY KEY);\n"),
 			},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
@@ -113,13 +114,13 @@ func TestAtlasTxModeProvider_PlainDirections(t *testing.T) {
 				Data: []byte("-- atlas:txmode none\n\nDROP TABLE directional;\n"),
 			},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	migrations := provider.Migrations()
 	c.Assert(migrations, qt.HasLen, 1)
-	c.Assert(migrations[0].UpTxMode, qt.Equals, migrator.MigrationFileTxModeFile)
-	c.Assert(migrations[0].DownTxMode, qt.Equals, migrator.MigrationFileTxModeNone)
+	c.Assert(migrations[0].UpTxMode, qt.Equals, migrationfile.FileTxModeFile)
+	c.Assert(migrations[0].DownTxMode, qt.Equals, migrationfile.FileTxModeNone)
 }
 
 func TestAtlasTxModeProvider_TxtarDirections(t *testing.T) {
@@ -141,13 +142,13 @@ DROP TABLE directional;
 `),
 			},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	migrations := provider.Migrations()
 	c.Assert(migrations, qt.HasLen, 1)
-	c.Assert(migrations[0].UpTxMode, qt.Equals, migrator.MigrationFileTxModeFile)
-	c.Assert(migrations[0].DownTxMode, qt.Equals, migrator.MigrationFileTxModeNone)
+	c.Assert(migrations[0].UpTxMode, qt.Equals, migrationfile.FileTxModeFile)
+	c.Assert(migrations[0].DownTxMode, qt.Equals, migrationfile.FileTxModeNone)
 }
 
 func TestAtlasTxModeProvider_InvalidTxtarDownPreservesAppliedRevision(t *testing.T) {
@@ -175,7 +176,7 @@ DROP TABLE directional;
 `),
 			},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
@@ -235,7 +236,7 @@ CREATE TABLE down_body (id INTEGER PRIMARY KEY);
 			_, err = migrator.NewFSMigrator(
 				conn,
 				fstest.MapFS{"1_misplaced.sql": {Data: []byte(test.sql)}},
-				migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+				migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 			)
 			c.Assert(
 				err,
@@ -302,7 +303,7 @@ DROP TABLE second_table;
 			mig, err := migrator.NewFSMigrator(
 				conn,
 				test.fsys,
-				migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+				migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 			)
 			c.Assert(err, qt.IsNil)
 			mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
@@ -422,7 +423,7 @@ func TestAtlasTxModeProgrammatic_InvalidEnumLeavesNoRevision(t *testing.T) {
 		"CREATE TABLE invalid_enum (id INTEGER PRIMARY KEY);\n",
 		"",
 	)
-	migration.UpTxMode = migrator.MigrationFileTxMode("bogus")
+	migration.UpTxMode = migrationfile.FileTxMode("bogus")
 	mig := migrator.NewMigrator(
 		conn,
 		migrator.NewRegisteredMigrationProvider(migration),
@@ -455,7 +456,7 @@ func newAtlasTxModeSelectionMigrator(
 				Data: []byte("-- atlas:txmode bogus\n\nCREATE TABLE second_invalid (id INTEGER PRIMARY KEY);\n"),
 			},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	return conn, mig.

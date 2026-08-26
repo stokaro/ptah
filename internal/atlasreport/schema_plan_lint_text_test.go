@@ -10,7 +10,7 @@ import (
 
 	"go.5x5.cz/ptah/internal/atlasreport"
 	migrationlint "go.5x5.cz/ptah/migration/lint"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // planLintAnalysis analyzes one block of SQL the way a plan file's SQL is
@@ -23,7 +23,7 @@ func planLintAnalysis(c *qt.C, sql string) migrationlint.Analysis {
 	}, migrationlint.Options{
 		Compatibility: migrationlint.CompatibilityProfileAtlas,
 		Dialect:       "postgres",
-		DirFormat:     migrator.MigrationDirFormatAtlas,
+		DirFormat:     migrationfile.DirFormatAtlas,
 	})
 	c.Assert(err, qt.IsNil)
 	return analysis

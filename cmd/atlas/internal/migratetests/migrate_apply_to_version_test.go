@@ -9,7 +9,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // The three versions the fixture below carries. They are named so a test can
@@ -37,7 +37,7 @@ func writeToVersionFixture(c *qt.C) (migrationsDir, dbPath string) {
 	for name, body := range files {
 		c.Assert(os.WriteFile(filepath.Join(migrationsDir, name), []byte(body), 0o600), qt.IsNil)
 	}
-	_, err := migratesum.WriteWithFormat(migrationsDir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(migrationsDir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	return migrationsDir, filepath.Join(root, "live.db")
 }

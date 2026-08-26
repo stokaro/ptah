@@ -16,7 +16,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/migrationreplay"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // newAtlasMigrateValidateCommand returns `atlas migrate validate`. A native
@@ -136,7 +136,7 @@ func replayAtlasMigrateSource(cmd *cobra.Command, source atlasMigrateSource, fsy
 	}
 	err = migrationreplay.Replay(cmd.Context(), migrationreplay.Options{
 		Dir:       source.dir,
-		DirFormat: migrator.MigrationDirFormatAtlas,
+		DirFormat: migrationfile.DirFormatAtlas,
 		DevURL:    source.devURL,
 		FS:        converted,
 	})

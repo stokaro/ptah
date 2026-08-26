@@ -380,56 +380,6 @@ func ExampleMigrator_GetPendingMigrations() {
 	}
 }
 
-// Example demonstrates working with migration file utilities
-func ExampleParseMigrationFileName() {
-	filenames := []string{
-		"0000000001_create_users_table.up.sql",
-		"0000000002_add_email_index.down.sql",
-		"invalid_filename.sql",
-	}
-
-	for _, filename := range filenames {
-		migrationFile, err := migrator.ParseMigrationFileName(filename)
-		if err != nil {
-			fmt.Printf("Invalid filename: %s\n", filename)
-			continue
-		}
-
-		fmt.Printf("File: %s\n", filename)
-		fmt.Printf("  Version: %d\n", migrationFile.Version)
-		fmt.Printf("  Name: %s\n", migrationFile.Name)
-		fmt.Printf("  Direction: %s\n", migrationFile.Direction)
-	}
-
-	// Output:
-	// File: 0000000001_create_users_table.up.sql
-	//   Version: 1
-	//   Name: Create Users Table
-	//   Direction: up
-	// File: 0000000002_add_email_index.down.sql
-	//   Version: 2
-	//   Name: Add Email Index
-	//   Direction: down
-	// Invalid filename: invalid_filename.sql
-}
-
-// Example demonstrates generating migration filenames
-func ExampleGenerateMigrationFileName() {
-	// Generate filenames for a new migration
-	var version int64 = 20240101120000
-	description := "Add User Preferences Table"
-
-	upFilename := migrator.GenerateMigrationFileName(version, description, "up")
-	downFilename := migrator.GenerateMigrationFileName(version, description, "down")
-
-	fmt.Printf("Up migration file: %s\n", upFilename)
-	fmt.Printf("Down migration file: %s\n", downFilename)
-
-	// Output:
-	// Up migration file: 20240101120000_add_user_preferences_table.up.sql
-	// Down migration file: 20240101120000_add_user_preferences_table.down.sql
-}
-
 // Example demonstrates creating migrations from filesystem with error handling
 func ExampleNewFSMigrator_errorHandling() {
 	// Create a filesystem with incomplete migrations (missing down file)

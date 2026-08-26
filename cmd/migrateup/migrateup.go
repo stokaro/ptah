@@ -31,6 +31,7 @@ import (
 	"go.5x5.cz/ptah/internal/onlineddl"
 	"go.5x5.cz/ptah/internal/preflight"
 	"go.5x5.cz/ptah/migration/lint"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -95,7 +96,7 @@ type options struct {
 }
 
 type parsedMigrationSettings struct {
-	dirFormat            migrator.MigrationDirFormat
+	dirFormat            migrationfile.DirFormat
 	revisionFormat       migrator.RevisionTableFormat
 	execOrder            migrator.ExecOrder
 	txMode               migrator.MigrationTxMode
@@ -182,7 +183,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 				"(hashed directories always verify before applying)",
 		),
 	)
-	flags.StringVar(&opts.dirFormat, dirFormatFlag, string(migrator.MigrationDirFormatAuto), "Migration directory format: auto, ptah, or atlas")
+	flags.StringVar(&opts.dirFormat, dirFormatFlag, string(migrationfile.DirFormatAuto), "Migration directory format: auto, ptah, or atlas")
 	flags.StringVar(&opts.atlasEnv, atlasEnvFlag, "", "Value exposed as .Env when rendering Atlas SQL template migrations")
 	flags.StringVar(&opts.execOrder, execOrderFlag, string(migrator.ExecOrderLinear), "Execution order policy for pending migrations below the current version: linear, linear-skip, or non-linear")
 	flags.StringVar(&opts.txMode, txModeFlag, string(migrator.MigrationTxModeFile), "Transaction mode for pending migrations: file, all, or none")
@@ -243,7 +244,7 @@ func parseMigrationSettings(
 	migrationLockTimeoutValue,
 	connectTimeoutValue string,
 ) (parsedMigrationSettings, error) {
-	dirFormat, err := migrator.ParseMigrationDirFormat(dirFormatValue)
+	dirFormat, err := migrationfile.ParseDirFormat(dirFormatValue)
 	if err != nil {
 		return parsedMigrationSettings{}, err
 	}
@@ -448,7 +449,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 		migrationsFS,
 		migrator.WithStatementInterceptor(interceptor),
 		migrator.WithMigrationDirFormat(settings.dirFormat),
-		migrator.WithAtlasTemplateData(migrator.AtlasTemplateData{Env: atlasEnv}),
+		migrator.WithAtlasTemplateData(migrationfile.AtlasTemplateData{Env: atlasEnv}),
 	)
 	if err != nil {
 		return fmt.Errorf("error registering migrations: %w", err)
@@ -652,7 +653,7 @@ func runIntegrityGate(
 	emit cliobs.Emitter,
 	runtime *cliobs.Runtime,
 	source migrationsource.Source,
-	format migrator.MigrationDirFormat,
+	format migrationfile.DirFormat,
 	integrityPolicy migrationintegrity.Policy,
 	opts *options,
 ) error {

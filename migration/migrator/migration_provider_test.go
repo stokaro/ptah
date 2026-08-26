@@ -10,6 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -320,7 +321,7 @@ func TestNewFSMigrationProvider_AtlasFormat(t *testing.T) {
 		"20220318104614_team_A.sql":    &fstest.MapFile{Data: []byte("CREATE TABLE teams (id INT);\n")},
 	}
 
-	provider, err := migrator.NewFSMigrationProvider(fsys, migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas))
+	provider, err := migrator.NewFSMigrationProvider(fsys, migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas))
 	c.Assert(err, qt.IsNil)
 
 	migrations := provider.Migrations()
@@ -357,7 +358,7 @@ func TestNewFSMigrationProvider_AtlasImportedDirectionalFiles(t *testing.T) {
 	interceptor := &recordingInterceptor{}
 	provider, err := migrator.NewFSMigrationProvider(
 		fsys,
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 		migrator.WithStatementInterceptor(interceptor),
 	)
 	c.Assert(err, qt.IsNil)
@@ -392,13 +393,13 @@ func TestNewFSMigrationProvider_AtlasRepeatableFiles(t *testing.T) {
 		"3R_views.sql":   &fstest.MapFile{Data: []byte("CREATE VIEW active_users AS SELECT * FROM users;\n")},
 	}
 
-	files, err := migrator.DiscoverMigrationFiles(fsys, migrator.MigrationDirFormatAtlas)
+	files, err := migrationfile.Discover(fsys, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.HasLen, 2)
 
 	provider, err := migrator.NewFSMigrationProvider(
 		fsys,
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 
@@ -427,7 +428,7 @@ func TestNewFSMigrationProvider_AtlasRepeatableFilesUseFilenameOrder(t *testing.
 
 	provider, err := migrator.NewFSMigrationProvider(
 		fsys,
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 
@@ -449,7 +450,7 @@ func TestDiscoverMigrationFiles_AtlasRepeatableStaysVisible(t *testing.T) {
 		"3R_views.sql":   &fstest.MapFile{Data: []byte("CREATE VIEW active_users AS SELECT * FROM users;\n")},
 	}
 
-	files, err := migrator.DiscoverMigrationFiles(fsys, migrator.MigrationDirFormatAtlas)
+	files, err := migrationfile.Discover(fsys, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.HasLen, 2)
 	c.Assert(files[0].Path, qt.Equals, "2_baseline.sql")
@@ -483,9 +484,9 @@ CREATE TABLE users_{{ $ }} (id INT);
 	interceptor := &recordingInterceptor{}
 	provider, err := migrator.NewFSMigrationProvider(
 		fsys,
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 		migrator.WithStatementInterceptor(interceptor),
-		migrator.WithAtlasTemplateData(migrator.AtlasTemplateData{Env: "dev"}),
+		migrator.WithAtlasTemplateData(migrationfile.AtlasTemplateData{Env: "dev"}),
 	)
 	c.Assert(err, qt.IsNil)
 
@@ -527,7 +528,7 @@ DROP TABLE users;
 	interceptor := &recordingInterceptor{}
 	provider, err := migrator.NewFSMigrationProvider(
 		fsys,
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 		migrator.WithStatementInterceptor(interceptor),
 	)
 	c.Assert(err, qt.IsNil)
@@ -577,7 +578,7 @@ CREATE TABLE users (id INT PRIMARY KEY);
 DROP TABLE users;
 `)},
 	}
-	provider, err := migrator.NewFSMigrationProvider(fsys, migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas))
+	provider, err := migrator.NewFSMigrationProvider(fsys, migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas))
 	c.Assert(provider, qt.IsNil)
 	c.Assert(err, qt.ErrorMatches, `failed to load Atlas migration 20240305171147_invalid_down_directive.sql: invalid migration directives in 20240305171147_invalid_down_directive.sql#down.sql: invalid \+ptah no_transaction value "maybe": expected true or false`)
 }
@@ -596,13 +597,13 @@ CREATE TABLE users (id INT PRIMARY KEY);
 DROP TABLE users;
 `)},
 	}
-	provider, err := migrator.NewFSMigrationProvider(fsys, migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas))
+	provider, err := migrator.NewFSMigrationProvider(fsys, migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas))
 	c.Assert(err, qt.IsNil)
 
 	migrations := provider.Migrations()
 	c.Assert(migrations, qt.HasLen, 1)
-	c.Assert(migrations[0].UpTxMode, qt.Equals, migrator.MigrationFileTxModeUnspecified)
-	c.Assert(migrations[0].DownTxMode, qt.Equals, migrator.MigrationFileTxModeNone)
+	c.Assert(migrations[0].UpTxMode, qt.Equals, migrationfile.FileTxModeUnspecified)
+	c.Assert(migrations[0].DownTxMode, qt.Equals, migrationfile.FileTxModeNone)
 }
 
 func TestNewFSMigrationProvider_AtlasTxModeNoneIsNoTransaction(t *testing.T) {
@@ -620,13 +621,13 @@ CREATE INDEX CONCURRENTLY users_email_idx ON users (email);
 DROP INDEX users_email_idx;
 `)},
 	}
-	provider, err := migrator.NewFSMigrationProvider(fsys, migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas))
+	provider, err := migrator.NewFSMigrationProvider(fsys, migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas))
 	c.Assert(err, qt.IsNil)
 
 	migrations := provider.Migrations()
 	c.Assert(migrations, qt.HasLen, 1)
-	c.Assert(migrations[0].UpTxMode, qt.Equals, migrator.MigrationFileTxModeNone)
-	c.Assert(migrations[0].DownTxMode, qt.Equals, migrator.MigrationFileTxModeUnspecified)
+	c.Assert(migrations[0].UpTxMode, qt.Equals, migrationfile.FileTxModeNone)
+	c.Assert(migrations[0].DownTxMode, qt.Equals, migrationfile.FileTxModeUnspecified)
 }
 
 func TestNewFSMigrationProvider_UnknownOnlySQLFilesError(t *testing.T) {
@@ -825,7 +826,7 @@ func TestNewFSMigrationProvider_AtlasRevisionVersionsSeparateIdentityFromOrder(t
 			"40_repeatable.sql": &fstest.MapFile{Data: []byte("SELECT 40;\n")},
 			"50_plain.sql":      &fstest.MapFile{Data: []byte("SELECT 50;\n")},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 		migrator.WithAtlasRevisionVersions(map[int64]string{
 			firstOrderKey:      "01",
 			dottedOrderKey:     "1.5",
@@ -867,7 +868,7 @@ func TestNewFSMigrationProvider_AtlasRevisionVersionsRejectDuplicateOwnedIdentit
 			"1_first.sql":  &fstest.MapFile{Data: []byte("SELECT 1;\n")},
 			"2_second.sql": &fstest.MapFile{Data: []byte("SELECT 2;\n")},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 		migrator.WithAtlasRevisionVersions(map[int64]string{
 			1: "same",
 			2: "same",
@@ -885,7 +886,7 @@ func TestNewFSMigrationProvider_AtlasRevisionVersionsOwnDotPrefixedIdentity(t *t
 		fstest.MapFS{
 			"1_reserved.sql": &fstest.MapFile{Data: []byte("SELECT 1;\n")},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 		migrator.WithAtlasRevisionVersions(map[int64]string{1: ".foo"}),
 	)
 

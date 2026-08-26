@@ -21,6 +21,7 @@ import (
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -96,7 +97,7 @@ func runAtlasRevisionTableTimestampTypeIntegration(t *testing.T, dbURL string) {
 		fstest.MapFS{
 			"1_create_users.sql": &fstest.MapFile{Data: []byte("SELECT 1;\n")},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
@@ -270,7 +271,7 @@ func TestDryRunRevisionState_PostgresIntegration_SearchPath(t *testing.T) {
 	writer, err := migrator.NewFSMigrator(
 		conn,
 		fsys,
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	writer = writer.WithRevisionTableFormat(migrator.RevisionTableFormatPtah)
@@ -279,7 +280,7 @@ func TestDryRunRevisionState_PostgresIntegration_SearchPath(t *testing.T) {
 	reader, err := migrator.NewFSMigrator(
 		conn,
 		fsys,
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	reader = reader.WithRevisionTableFormat(migrator.RevisionTableFormatPtah)
@@ -323,7 +324,7 @@ func TestDryRunRevisionState_PostgresIntegration_SearchPathIgnoresFallbackMetada
 	fallbackWriter, err := migrator.NewFSMigrator(
 		fallbackConn,
 		fSys,
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	fallbackWriter = fallbackWriter.WithRevisionTableFormat(migrator.RevisionTableFormatPtah)
@@ -341,7 +342,7 @@ func TestDryRunRevisionState_PostgresIntegration_SearchPathIgnoresFallbackMetada
 	reader, err := migrator.NewFSMigrator(
 		currentConn,
 		fSys,
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	reader = reader.WithRevisionTableFormat(migrator.RevisionTableFormatPtah)
@@ -372,7 +373,7 @@ func TestDryRunRevisionState_PostgresIntegration_ExplicitSchema(t *testing.T) {
 	writer, err := migrator.NewFSMigrator(
 		conn,
 		fsys,
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	writer = writer.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas).
@@ -382,7 +383,7 @@ func TestDryRunRevisionState_PostgresIntegration_ExplicitSchema(t *testing.T) {
 	reader, err := migrator.NewFSMigrator(
 		conn,
 		fsys,
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	reader = reader.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas).
@@ -443,7 +444,7 @@ func runDryRunRevisionStateIntegration(
 	mig, err := migrator.NewFSMigrator(
 		conn,
 		fsys,
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	mig = mig.WithRevisionTableFormat(revisionFormat).
@@ -454,7 +455,7 @@ func runDryRunRevisionStateIntegration(
 	dryRunMigrator, err := migrator.NewFSMigrator(
 		conn,
 		fsys,
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	dryRunMigrator = dryRunMigrator.WithRevisionTableFormat(revisionFormat).
@@ -486,7 +487,7 @@ func TestAtlasSetSerializable_PostgresConcurrentInsertIntegration(t *testing.T) 
 	mig, err := migrator.NewFSMigrator(
 		conn,
 		fsys,
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
@@ -599,7 +600,7 @@ func TestAtlasRevisionMetadata_ClickHouseIntegration(t *testing.T) {
 			"1_create_accounts.sql": &fstest.MapFile{Data: []byte(firstSQL)},
 			"2_create_users.sql":    &fstest.MapFile{Data: []byte("SELECT 2;\n")},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
@@ -640,7 +641,7 @@ func TestAtlasRevisionMetadata_ClickHouseRejectsSetIntegration(t *testing.T) {
 		fstest.MapFS{
 			"1_create_accounts.sql": &fstest.MapFile{Data: []byte("SELECT 1;\n")},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
@@ -698,7 +699,7 @@ func runAtlasFormatIntegration(t *testing.T, dbURL string) {
 			"CREATE TABLE ptah_issue_273_audit (id INT PRIMARY KEY);\n",
 		)},
 	}
-	mig, err := migrator.NewFSMigrator(conn, fsys, migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas))
+	mig, err := migrator.NewFSMigrator(conn, fsys, migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas))
 	c.Assert(err, qt.IsNil)
 	mig = mig.WithMigrationsTable("", "schema_migrations_issue_273")
 
@@ -750,7 +751,7 @@ func runAtlasExactRevisionIdentityCollationIntegration(t *testing.T, dbURL strin
 			"10_upper.sql": &fstest.MapFile{Data: []byte("CREATE TABLE ptah_issue_1206_upper (id BIGINT PRIMARY KEY);\n")},
 			"20_lower.sql": &fstest.MapFile{Data: []byte("CREATE TABLE ptah_issue_1206_lower (id BIGINT PRIMARY KEY);\n")},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 		migrator.WithAtlasRevisionVersions(map[int64]string{10: "A", 20: "a"}),
 	)
 	c.Assert(err, qt.IsNil)
@@ -813,7 +814,7 @@ func runAtlasRevisionIdentityCollationRefusalIntegration(t *testing.T, dbURL, co
 			"10_upper.sql": &fstest.MapFile{Data: []byte("CREATE TABLE ptah_issue_1206_upper (id BIGINT PRIMARY KEY);\n")},
 			"20_lower.sql": &fstest.MapFile{Data: []byte("CREATE TABLE ptah_issue_1206_lower (id BIGINT PRIMARY KEY);\n")},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 		migrator.WithAtlasRevisionVersions(map[int64]string{10: "A", 20: "a"}),
 	)
 	c.Assert(err, qt.IsNil)
@@ -869,7 +870,7 @@ func runAtlasRevisionIdentityCollationSQLServerRefusalIntegration(t *testing.T, 
 			"10_upper.sql": &fstest.MapFile{Data: []byte("CREATE TABLE ptah_issue_1206_upper (id BIGINT PRIMARY KEY);\n")},
 			"20_lower.sql": &fstest.MapFile{Data: []byte("CREATE TABLE ptah_issue_1206_lower (id BIGINT PRIMARY KEY);\n")},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 		migrator.WithAtlasRevisionVersions(map[int64]string{10: "A", 20: "a"}),
 	)
 	c.Assert(err, qt.IsNil)
@@ -906,7 +907,7 @@ INSERT INTO ptah_issue_290_widgets (id, name) VALUES (1, 'Alice');
 DROP TABLE ptah_issue_290_widgets;
 `)},
 	}
-	mig, err := migrator.NewFSMigrator(conn, fsys, migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas))
+	mig, err := migrator.NewFSMigrator(conn, fsys, migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas))
 	c.Assert(err, qt.IsNil)
 	mig = mig.WithMigrationsTable("", "schema_migrations_issue_290")
 
@@ -949,8 +950,8 @@ CREATE TABLE ptah_issue_299_users_{{ $ }} (id INT PRIMARY KEY);
 	mig, err := migrator.NewFSMigrator(
 		conn,
 		fsys,
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
-		migrator.WithAtlasTemplateData(migrator.AtlasTemplateData{Env: "dev"}),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
+		migrator.WithAtlasTemplateData(migrationfile.AtlasTemplateData{Env: "dev"}),
 	)
 	c.Assert(err, qt.IsNil)
 	mig = mig.WithMigrationsTable("", "schema_migrations_issue_299")
@@ -987,7 +988,7 @@ func runAtlasRevisionTableIntegration(t *testing.T, dbURL string) {
 	seedMigrator, err := migrator.NewFSMigrator(
 		conn,
 		seedFS,
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	seedMigrator = seedMigrator.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
@@ -1036,7 +1037,7 @@ DROP TABLE ptah_issue_275_next;
 	nextMigrator, err := migrator.NewFSMigrator(
 		conn,
 		nextFS,
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	nextMigrator = nextMigrator.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
@@ -1082,7 +1083,7 @@ func runAtlasRevisionMetadataIntegration(t *testing.T, dbURL string) {
 	mig, err := migrator.NewFSMigrator(
 		conn,
 		fsys,
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
@@ -1185,7 +1186,7 @@ func runAtlasRevisionMetadataIntegration(t *testing.T, dbURL string) {
 	baselineMigrator, err := migrator.NewFSMigrator(
 		conn,
 		fsys,
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	baselineMigrator = baselineMigrator.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
@@ -1224,7 +1225,7 @@ func runAtlasDotMetadataIntegration(t *testing.T, dbURL string) {
 	mig, err := migrator.NewFSMigrator(
 		conn,
 		fsys,
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
@@ -1343,7 +1344,7 @@ SELECT 1 UNION ALL SELECT 1;
 SELECT * FROM ptah_check_body_must_not_run;
 `)},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	mig = mig.WithRevisionTableFormat(revisionFormat)
@@ -1383,7 +1384,7 @@ SELECT pg_try_advisory_lock(964227);
 SELECT 1;
 `)},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
@@ -1422,7 +1423,7 @@ SELECT E'it\'s; one literal' = E'it\'s; one literal';
 SELECT 1;
 `)},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
@@ -1506,7 +1507,7 @@ SELECT -1--1;
 SELECT 1;
 `)},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
@@ -1651,7 +1652,7 @@ SELECT 1;
 SELECT 1;
 `)},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
@@ -1698,7 +1699,7 @@ func runAtlasTxtarChecksMySQLExecutableCommentEscapeIntegration(t *testing.T, db
 SELECT 1;
 `)},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
@@ -1747,7 +1748,7 @@ func runAtlasTxtarChecksShortNumericPrefixRejectsNonSelectIntegration(t *testing
 CREATE TABLE ptah_check_numeric_body (id INT);
 `)},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
@@ -1790,7 +1791,7 @@ SELECT GET_LOCK('ptah_check_lock_964227', 0);
 SELECT 1;
 `)},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
@@ -1841,7 +1842,7 @@ SELECT NEXT VALUE FOR dbo.ptah_check_sequence;
 SELECT 1;
 `)},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)

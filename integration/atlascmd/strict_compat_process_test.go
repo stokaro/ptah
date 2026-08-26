@@ -23,7 +23,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 const strictCompatGateSuffix = ` is unavailable while PTAH_ATLAS_STRICT_COMPAT is enabled.
@@ -82,7 +82,7 @@ func TestStrictCompatProcessUsesPtahGateDiagnostics(t *testing.T) {
 		c.Assert(os.WriteFile(filepath.Join(fixture.desired, "1_init.sql"), []byte(
 			"SELECT 'prefix \\'\n-- +ptah no_transaction=maybe\n;\n",
 		), 0o600), qt.IsNil)
-		_, err := migratesum.WriteWithFormat(fixture.desired, migrator.MigrationDirFormatAtlas)
+		_, err := migratesum.WriteWithFormat(fixture.desired, migrationfile.DirFormatAtlas)
 		c.Assert(err, qt.IsNil)
 
 		stdout, stderr, code := runAtlasBinary(
@@ -480,7 +480,7 @@ func TestStrictCompatValidatesEveryDynamicEnvironmentBeforeApply(t *testing.T) {
 	c.Assert(os.WriteFile(filepath.Join(migrationsDir, "20240101000000_init.sql"), []byte(
 		"CREATE TABLE users (id integer PRIMARY KEY);\n",
 	), 0o600), qt.IsNil)
-	_, err := migratesum.WriteWithFormat(migrationsDir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(migrationsDir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.WriteFile(configPath, []byte(`env {
   for_each = ["first", "second"]
@@ -692,7 +692,7 @@ func TestStrictCompatPreflightsSourcesBeforeDatabaseAndLockArtifacts(t *testing.
 		c.Assert(os.WriteFile(filepath.Join(migrationsDir, "1_init.sql"), []byte(
 			"CREATE TABLE users (id integer PRIMARY KEY);\n",
 		), 0o600), qt.IsNil)
-		_, err := migratesum.WriteWithFormat(migrationsDir, migrator.MigrationDirFormatAtlas)
+		_, err := migratesum.WriteWithFormat(migrationsDir, migrationfile.DirFormatAtlas)
 		c.Assert(err, qt.IsNil)
 		devPath := filepath.Join(dir, "dev.db")
 		stdout, stderr, code := runAtlasBinary(
@@ -722,7 +722,7 @@ func TestStrictCompatPreflightsSourcesBeforeDatabaseAndLockArtifacts(t *testing.
 		c.Assert(os.WriteFile(filepath.Join(migrationsDir, "1_init.sql"), []byte(
 			"-- +ptah no_transaction\nCREATE TABLE users (id integer PRIMARY KEY);\n",
 		), 0o600), qt.IsNil)
-		_, err := migratesum.WriteWithFormat(migrationsDir, migrator.MigrationDirFormatAtlas)
+		_, err := migratesum.WriteWithFormat(migrationsDir, migrationfile.DirFormatAtlas)
 		c.Assert(err, qt.IsNil)
 		desiredPath := filepath.Join(dir, "desired.sql")
 		c.Assert(os.WriteFile(desiredPath, []byte(
@@ -863,9 +863,9 @@ func newStrictMigrationPreflightFixture(t *testing.T) strictMigrationPreflightFi
 	c.Assert(os.WriteFile(filepath.Join(current, "1_init.sql"), []byte(
 		"CREATE TABLE users (id integer PRIMARY KEY);\n",
 	), 0o600), qt.IsNil)
-	_, err := migratesum.WriteWithFormat(desired, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(desired, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
-	_, err = migratesum.WriteWithFormat(current, migrator.MigrationDirFormatAtlas)
+	_, err = migratesum.WriteWithFormat(current, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	return strictMigrationPreflightFixture{
 		root: root, current: current, desired: desired,
@@ -1380,7 +1380,7 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 		c.Assert(os.WriteFile(filepath.Join(migrationDir, "1_replayed.sql"), []byte(
 			"CREATE TABLE replayed_before_target_validation (id integer PRIMARY KEY);\n",
 		), 0o600), qt.IsNil)
-		_, err := migratesum.WriteWithFormat(migrationDir, migrator.MigrationDirFormatAtlas)
+		_, err := migratesum.WriteWithFormat(migrationDir, migrationfile.DirFormatAtlas)
 		c.Assert(err, qt.IsNil)
 
 		stdout, stderr, code := runAtlasBinary(
@@ -1407,7 +1407,7 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 			"CREATE SCHEMA IF NOT EXISTS "+procedureSchema+";\n"+
 				"CREATE TABLE "+procedureSchema+"."+tableName+" (id integer PRIMARY KEY);\n",
 		), 0o600), qt.IsNil)
-		_, err := migratesum.WriteWithFormat(migrationDir, migrator.MigrationDirFormatAtlas)
+		_, err := migratesum.WriteWithFormat(migrationDir, migrationfile.DirFormatAtlas)
 		c.Assert(err, qt.IsNil)
 
 		stdout, stderr, code := runAtlasBinary(
@@ -1489,7 +1489,7 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 		c.Assert(command.Start(), qt.IsNil)
 
 		waitForPostgresAdvisoryLockPoller(t, lockConn)
-		_, err = migratesum.WriteWithFormat(migrationDir, migrator.MigrationDirFormatAtlas)
+		_, err = migratesum.WriteWithFormat(migrationDir, migrationfile.DirFormatAtlas)
 		c.Assert(err, qt.IsNil)
 		c.Assert(lock.Release(), qt.IsNil)
 		c.Assert(command.Wait(), qt.IsNil,
@@ -1561,7 +1561,7 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 		c.Assert(os.WriteFile(filepath.Join(migrationDir, "1_replayed.sql"), []byte(
 			"CREATE TABLE "+tableName+" (id integer PRIMARY KEY);\n",
 		), 0o600), qt.IsNil)
-		_, err := migratesum.WriteWithFormat(migrationDir, migrator.MigrationDirFormatAtlas)
+		_, err := migratesum.WriteWithFormat(migrationDir, migrationfile.DirFormatAtlas)
 		c.Assert(err, qt.IsNil)
 
 		stdout, stderr, code := runAtlasBinary(
@@ -1586,7 +1586,7 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 		c.Assert(os.WriteFile(filepath.Join(migrationDir, "1_collation.sql"), []byte(
 			"CREATE COLLATION "+collationName+" FROM \"C\";\n",
 		), 0o600), qt.IsNil)
-		_, err := migratesum.WriteWithFormat(migrationDir, migrator.MigrationDirFormatAtlas)
+		_, err := migratesum.WriteWithFormat(migrationDir, migrationfile.DirFormatAtlas)
 		c.Assert(err, qt.IsNil)
 
 		stdout, stderr, code := runAtlasBinary(
@@ -1645,7 +1645,7 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 		c.Assert(os.WriteFile(filepath.Join(currentDir, "1_collation.sql"), []byte(
 			"CREATE COLLATION "+collationName+" FROM \"C\";\n",
 		), 0o600), qt.IsNil)
-		_, err := migratesum.WriteWithFormat(currentDir, migrator.MigrationDirFormatAtlas)
+		_, err := migratesum.WriteWithFormat(currentDir, migrationfile.DirFormatAtlas)
 		c.Assert(err, qt.IsNil)
 
 		stdout, stderr, code := runAtlasBinary(
@@ -1800,7 +1800,7 @@ func TestStrictCompatSchemaInspectValidatesMigrationBeforeDevReset(t *testing.T)
 		`-- +ptah check name="ready" assert="SELECT 1"`+"\n"+
 			"CREATE TABLE replayed_users (id integer PRIMARY KEY);\n",
 	), 0o600), qt.IsNil)
-	_, err := migratesum.WriteWithFormat(migrationsDir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(migrationsDir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	devPath := filepath.Join(dir, "dev.db")
 	conn, err := dbschema.ConnectToDatabase(t.Context(), "sqlite://"+devPath)

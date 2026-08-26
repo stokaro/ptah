@@ -11,7 +11,7 @@ import (
 	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/internal/atlascompatpolicy"
 	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // These two verbs read a migration directory and print what they found. They
@@ -28,7 +28,7 @@ func compatReadDir(c *qt.C) string {
 	c.Helper()
 	dir := c.TempDir()
 	compatReadFiles(c, dir)
-	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(dir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	return dir
 }
@@ -330,7 +330,7 @@ func TestCompatMigrateRead_AcceptsADirectoryNamedByAtlasHCL(t *testing.T) {
 			migrations := filepath.Join(root, "migrations")
 			c.Assert(os.MkdirAll(migrations, 0o750), qt.IsNil)
 			compatReadFiles(c, migrations)
-			_, err := migratesum.WriteWithFormat(migrations, migrator.MigrationDirFormatAtlas)
+			_, err := migratesum.WriteWithFormat(migrations, migrationfile.DirFormatAtlas)
 			c.Assert(err, qt.IsNil)
 			c.Assert(os.WriteFile(filepath.Join(root, "atlas.hcl"),
 				[]byte("env \"local\" {\n  migration {\n    dir = \""+test.dir+"\"\n  }\n}\n"),

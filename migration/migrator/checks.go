@@ -13,13 +13,8 @@ import (
 	"go.5x5.cz/ptah/internal/dialectlexer"
 	"go.5x5.cz/ptah/internal/lexer"
 	"go.5x5.cz/ptah/internal/ptahdirective"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
-
-// checkDirective is the +ptah directive keyword that introduces a pre-migration
-// assertion check:
-//
-//	-- +ptah check name="users_empty" assert="SELECT count(*) = 0 FROM users" on_fail=abort
-const checkDirective = "check"
 
 // OnFail selects what a failing check does. Only abort is supported today: the
 // migration is aborted before any body statement runs, leaving nothing applied
@@ -54,12 +49,12 @@ type checkGroup struct {
 }
 
 // ParseChecks extracts ordered `-- +ptah check` assertion directives from
-// migration SQL, in file order. Unlike ParseFileDirectives — which merges every
+// migration SQL, in file order. Unlike [migrationfile.ParseDirectives] — which merges every
 // directive into one file-scoped map (later keys win) — checks are an ordered
 // list: multiple checks per migration run in the order written.
 //
 // The scan reuses the lexer-driven, line-anchored approach of
-// ParseFileDirectives (through [ptahdirective.Bodies]), so a
+// [migrationfile.ParseDirectives] (through [ptahdirective.Bodies]), so a
 // `-- +ptah check` sequence inside a string literal, a block comment, or a
 // trailing comment is never mistaken for a check. Each check's arguments are
 // parsed with a quote-aware tokenizer so an assert predicate can contain spaces
@@ -71,11 +66,11 @@ type checkGroup struct {
 func ParseChecks(source, dialect string) ([]Check, error) {
 	var checks []Check
 	for body := range ptahdirective.Bodies(source, checkLexerOptions(dialect)) {
-		args, ok := strings.CutPrefix(strings.TrimSpace(body), checkDirective)
-		if !ok || (args != "" && args[0] != ' ' && args[0] != '\t') {
+		args, ok := migrationfile.CheckDirectiveArgs(body)
+		if !ok {
 			continue // a +ptah directive, but not a check
 		}
-		check, err := parseCheckArgs(strings.TrimSpace(args), dialect)
+		check, err := parseCheckArgs(args, dialect)
 		if err != nil {
 			return nil, err
 		}
@@ -86,14 +81,6 @@ func ParseChecks(source, dialect string) ([]Check, error) {
 
 func checkLexerOptions(dialect string) lexer.Options {
 	return dialectlexer.Options(dialect)
-}
-
-// isCheckDirectiveBody reports whether a +ptah directive body (the text after
-// "+ptah ") is a check directive. ParseFileDirectives uses this to leave check
-// lines out of its merged directive map.
-func isCheckDirectiveBody(body string) bool {
-	after, ok := strings.CutPrefix(strings.TrimSpace(body), checkDirective)
-	return ok && (after == "" || after[0] == ' ' || after[0] == '\t')
 }
 
 func parseCheckArgs(args, dialect string) (Check, error) {

@@ -13,7 +13,7 @@ import (
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/ociartifact"
 	"go.5x5.cz/ptah/internal/pathguard"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // DirectoryPushOptions configures a migration-directory registry push.
@@ -22,7 +22,7 @@ type DirectoryPushOptions struct {
 	Directory string
 	Tags      []string
 	Version   string
-	DirFormat migrator.MigrationDirFormat
+	DirFormat migrationfile.DirFormat
 	PlainHTTP bool
 	VerifySum bool
 	Now       func() time.Time

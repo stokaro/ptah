@@ -29,7 +29,7 @@ import (
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/testutils"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 func SqliteTableCount(c *qt.C, dbPath, table string) int {
@@ -312,14 +312,14 @@ func WriteHashedAtlasDir(c *qt.C, dir, name, body string) {
 	c.Helper()
 	c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600), qt.IsNil)
-	sum, err := atlascompat.ComputeSum(os.DirFS(dir), migrator.MigrationDirFormatAtlas)
+	sum, err := atlascompat.ComputeSum(os.DirFS(dir), migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(dir, atlascompat.AtlasSumFileName), sum.Bytes(), 0o600), qt.IsNil)
 }
 
 func WriteAtlasApplyProjectSum(c *qt.C, dir string) {
 	c.Helper()
-	sum, err := atlascompat.ComputeSum(os.DirFS(dir), migrator.MigrationDirFormatAtlas)
+	sum, err := atlascompat.ComputeSum(os.DirFS(dir), migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(dir, atlascompat.AtlasSumFileName), sum.Bytes(), 0o600), qt.IsNil)
 }

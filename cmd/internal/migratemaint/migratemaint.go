@@ -18,6 +18,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/migrateflags"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/migrateops"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -41,7 +42,7 @@ type Options struct {
 func RegisterFlags(flags *pflag.FlagSet, opts *Options) {
 	flags.StringVar(&opts.MigrationsDir, "migrations-dir", "./migrations", "Directory containing migration files")
 	flags.StringVar(&opts.Version, "version", "", "Migration version to operate on (required)")
-	flags.StringVar(&opts.DirFormat, "dir-format", string(migrator.MigrationDirFormatAuto), "Migration directory format: auto, ptah, or atlas")
+	flags.StringVar(&opts.DirFormat, "dir-format", string(migrationfile.DirFormatAuto), "Migration directory format: auto, ptah, or atlas")
 	flags.StringVar(&opts.DBURL, "db-url", "", "Database URL used to verify applied state; when omitted, applied state is not checked")
 	flags.BoolVar(&opts.Force, "force", false, "Proceed even when the migration is already applied")
 	flags.StringVar(&opts.AtlasEnv, "atlas-env", "", "Value exposed as .Env when rendering Atlas SQL template migrations")
@@ -56,7 +57,7 @@ func RegisterFlags(flags *pflag.FlagSet, opts *Options) {
 type Resolved struct {
 	Dir     string
 	Version int64
-	Format  migrator.MigrationDirFormat
+	Format  migrationfile.DirFormat
 }
 
 // Resolve validates the directory, parses the version, and parses the directory
@@ -75,7 +76,7 @@ func (o *Options) Resolve() (Resolved, error) {
 	if err != nil || version <= 0 {
 		return Resolved{}, fmt.Errorf("invalid --version %q: must be a positive integer", o.Version)
 	}
-	format, err := migrator.ParseMigrationDirFormat(o.DirFormat)
+	format, err := migrationfile.ParseDirFormat(o.DirFormat)
 	if err != nil {
 		return Resolved{}, err
 	}
@@ -86,7 +87,7 @@ func (o *Options) Resolve() (Resolved, error) {
 // the applied set and enforces migrateops.EnsureNotApplied; without --db-url it
 // warns to w that applied state could not be verified and proceeds (mirroring how
 // hash treats the database as optional).
-func (o *Options) Guard(ctx context.Context, w io.Writer, version int64, format migrator.MigrationDirFormat) error {
+func (o *Options) Guard(ctx context.Context, w io.Writer, version int64, format migrationfile.DirFormat) error {
 	if o.DBURL == "" {
 		fmt.Fprintln(w, "warning: --db-url not provided; applied migration state was not verified")
 		return nil
@@ -116,7 +117,7 @@ func (o *Options) Guard(ctx context.Context, w io.Writer, version int64, format 
 		conn,
 		os.DirFS(o.MigrationsDir),
 		migrator.WithMigrationDirFormat(format),
-		migrator.WithAtlasTemplateData(migrator.AtlasTemplateData{Env: o.AtlasEnv}),
+		migrator.WithAtlasTemplateData(migrationfile.AtlasTemplateData{Env: o.AtlasEnv}),
 	)
 	if err != nil {
 		return fmt.Errorf("error preparing migrator: %w", err)

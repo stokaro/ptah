@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 func TestWithNoTransactionDirective(t *testing.T) {
@@ -15,8 +15,8 @@ func TestWithNoTransactionDirective(t *testing.T) {
 	got := withNoTransactionDirective(sql)
 
 	c.Assert(got, qt.Equals, "-- +ptah no_transaction\n"+sql)
-	c.Assert(migrator.ParseFileDirectives(got), qt.DeepEquals, map[string]string{
-		migrator.DirectiveNoTransaction: "true",
+	c.Assert(migrationfile.ParseDirectives(got), qt.DeepEquals, map[string]string{
+		migrationfile.DirectiveNoTransaction: "true",
 	})
 	c.Assert(withNoTransactionDirective(got), qt.Equals, got)
 	c.Assert(withNoTransactionDirective(""), qt.Equals, "")

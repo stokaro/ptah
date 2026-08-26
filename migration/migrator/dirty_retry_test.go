@@ -12,6 +12,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -101,7 +102,7 @@ func newAtlasMappedPtahDirtyMigrator(
 		fstest.MapFS{
 			migrationFile: {Data: []byte(body)},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 		migrator.WithAtlasRevisionVersions(map[int64]string{version: identity}),
 	)
 	c.Assert(err, qt.IsNil)

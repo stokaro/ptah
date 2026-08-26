@@ -17,7 +17,7 @@ import (
 
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/migrationversion"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // Result reports the outcome of a maintenance operation for CLI display.
@@ -31,7 +31,7 @@ type Result struct {
 
 // Remove deletes every file belonging to version (its up and down pair) from dir
 // and rewrites the integrity file. It errors if the version is not present.
-func Remove(dir string, version int64, format migrator.MigrationDirFormat) (*Result, error) {
+func Remove(dir string, version int64, format migrationfile.DirFormat) (*Result, error) {
 	format, err := resolveFormat(dir, format)
 	if err != nil {
 		return nil, err
@@ -61,7 +61,7 @@ func Remove(dir string, version int64, format migrator.MigrationDirFormat) (*Res
 // rewrites the integrity file. It returns the new version. Because it changes the
 // version, it is only valid for an unapplied migration (the caller enforces that
 // with EnsureNotApplied).
-func Rebase(dir string, version int64, format migrator.MigrationDirFormat) (newVersion int64, _ *Result, err error) {
+func Rebase(dir string, version int64, format migrationfile.DirFormat) (newVersion int64, _ *Result, err error) {
 	format, err = resolveFormat(dir, format)
 	if err != nil {
 		return 0, nil, err
@@ -139,9 +139,9 @@ var rebaseNow = func() time.Time { return time.Now().UTC() }
 // The paired ptah layout keeps the epoch. Its names render the version with
 // %010d, so a fourteen-digit stamp is above [migrationversion.PtahMax] and is
 // not a name that layout can carry at all.
-func rebaseClock(format migrator.MigrationDirFormat) int64 {
+func rebaseClock(format migrationfile.DirFormat) int64 {
 	now := rebaseNow().UTC()
-	if format != migrator.MigrationDirFormatAtlas {
+	if format != migrationfile.DirFormatAtlas {
 		return now.Unix()
 	}
 	stamp, err := strconv.ParseInt(now.Format(migrationversion.StampLayout), 10, 64)
@@ -165,7 +165,7 @@ func rebaseClock(format migrator.MigrationDirFormat) int64 {
 // seconds past the minute, an instant time.Parse refuses under the layout the
 // rest of the name uses -- and a second rebase then wrote 29991231235961 on top
 // of it (stokaro/ptah#938).
-func rebaseVersion(maxVersion int64, format migrator.MigrationDirFormat) (int64, error) {
+func rebaseVersion(maxVersion int64, format migrationfile.DirFormat) (int64, error) {
 	clock, err := migrationversion.Writable(rebaseClock(format), format)
 	if err != nil {
 		return 0, err
@@ -178,7 +178,7 @@ func rebaseVersion(maxVersion int64, format migrator.MigrationDirFormat) (int64,
 
 // Rehash rewrites the integrity file for dir without otherwise changing it. It is
 // the step an interactive edit runs after the migration files are saved in place.
-func Rehash(dir string, format migrator.MigrationDirFormat) (*Result, error) {
+func Rehash(dir string, format migrationfile.DirFormat) (*Result, error) {
 	format, err := resolveFormat(dir, format)
 	if err != nil {
 		return nil, err
@@ -192,12 +192,12 @@ func Rehash(dir string, format migrator.MigrationDirFormat) (*Result, error) {
 // sum file wins (and both present is an ambiguity the operator must resolve, as
 // verification requires), otherwise the format is detected from the migration
 // files' content — keeping rm/edit/rebase consistent with hash and validate.
-func resolveFormat(dir string, format migrator.MigrationDirFormat) (migrator.MigrationDirFormat, error) {
-	normalized, err := migrator.ParseMigrationDirFormat(string(format))
+func resolveFormat(dir string, format migrationfile.DirFormat) (migrationfile.DirFormat, error) {
+	normalized, err := migrationfile.ParseDirFormat(string(format))
 	if err != nil {
 		return "", err
 	}
-	if normalized != migrator.MigrationDirFormatAuto {
+	if normalized != migrationfile.DirFormatAuto {
 		return normalized, nil
 	}
 	hasPtah := fileExists(filepath.Join(dir, migratesum.FileName))
@@ -206,21 +206,21 @@ func resolveFormat(dir string, format migrator.MigrationDirFormat) (migrator.Mig
 	case hasPtah && hasAtlas:
 		return "", fmt.Errorf("both %s and %s exist in %s; choose --dir-format ptah or --dir-format atlas", migratesum.FileName, migratesum.AtlasFileName, dir)
 	case hasAtlas:
-		return migrator.MigrationDirFormatAtlas, nil
+		return migrationfile.DirFormatAtlas, nil
 	case hasPtah:
-		return migrator.MigrationDirFormatPtah, nil
+		return migrationfile.DirFormatPtah, nil
 	}
 	// No sum file yet: detect from the files themselves, as discovery does.
-	files, err := migrator.DiscoverMigrationFiles(os.DirFS(dir), migrator.MigrationDirFormatAuto)
+	files, err := migrationfile.Discover(os.DirFS(dir), migrationfile.DirFormatAuto)
 	if err != nil {
 		return "", err
 	}
 	for _, f := range files {
-		if f.Format == migrator.MigrationDirFormatAtlas {
-			return migrator.MigrationDirFormatAtlas, nil
+		if f.Format == migrationfile.DirFormatAtlas {
+			return migrationfile.DirFormatAtlas, nil
 		}
 	}
-	return migrator.MigrationDirFormatPtah, nil
+	return migrationfile.DirFormatPtah, nil
 }
 
 func fileExists(path string) bool {
@@ -231,7 +231,7 @@ func fileExists(path string) bool {
 // LocatePair returns the up and down file paths (under dir) for version. Either
 // path is empty when that direction is absent. It errors if the version has no
 // files. It is used by the edit command to find the pair to open or overwrite.
-func LocatePair(dir string, version int64, format migrator.MigrationDirFormat) (upPath, downPath string, err error) {
+func LocatePair(dir string, version int64, format migrationfile.DirFormat) (upPath, downPath string, err error) {
 	format, err = resolveFormat(dir, format)
 	if err != nil {
 		return "", "", err
@@ -266,11 +266,11 @@ func EnsureNotApplied(applied []int64, version int64) error {
 
 // versionedFiles returns the versioned files matching version and all versioned
 // files in dir. Repeatable (non-versioned) migrations are ignored.
-func versionedFiles(dir string, version int64, format migrator.MigrationDirFormat) (matched, all []migrator.MigrationFile, err error) {
+func versionedFiles(dir string, version int64, format migrationfile.DirFormat) (matched, all []migrationfile.File, err error) {
 	if info, statErr := os.Stat(dir); statErr != nil || !info.IsDir() {
 		return nil, nil, fmt.Errorf("migrations directory %s is not accessible", dir)
 	}
-	files, err := migrator.DiscoverMigrationFiles(os.DirFS(dir), format)
+	files, err := migrationfile.Discover(os.DirFS(dir), format)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -286,7 +286,7 @@ func versionedFiles(dir string, version int64, format migrator.MigrationDirForma
 	return matched, all, nil
 }
 
-func rehash(dir string, format migrator.MigrationDirFormat, touched []string) (*Result, error) {
+func rehash(dir string, format migrationfile.DirFormat, touched []string) (*Result, error) {
 	if _, err := migratesum.WriteWithFormat(dir, format); err != nil {
 		return nil, fmt.Errorf("write integrity file: %w", err)
 	}
@@ -314,11 +314,11 @@ func swapVersion(base string, newVersion int64) (string, error) {
 // validateName confirms a generated file name round-trips through the reader for
 // the file's own format, so an out-of-range version (for example one too wide for
 // Ptah's exactly-10-digit format) is rejected before any file is renamed.
-func validateName(name string, format migrator.MigrationDirFormat) error {
-	if format == migrator.MigrationDirFormatAtlas {
-		_, err := migrator.ParseAtlasMigrationFileName(name)
+func validateName(name string, format migrationfile.DirFormat) error {
+	if format == migrationfile.DirFormatAtlas {
+		_, err := migrationfile.ParseAtlasFileName(name)
 		return err
 	}
-	_, err := migrator.ParseMigrationFileName(name)
+	_, err := migrationfile.ParseFileName(name)
 	return err
 }

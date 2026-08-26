@@ -13,7 +13,7 @@ import (
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 func TestParseAtlasHCL(t *testing.T) {
@@ -120,7 +120,7 @@ func TestSumHelpers(t *testing.T) {
 			Data: []byte("CREATE TABLE users (id int);\n"),
 		},
 	}
-	sum, err := atlascompat.ComputeSum(fsys, migrator.MigrationDirFormatAtlas)
+	sum, err := atlascompat.ComputeSum(fsys, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sum.DirHash, qt.Not(qt.Equals), "")
 	c.Assert(sum.Entries, qt.HasLen, 1)
@@ -137,18 +137,18 @@ func TestSumHelpers(t *testing.T) {
 			Data: sum.Bytes(),
 		},
 	}
-	result, err := atlascompat.VerifySum(withSum, migrator.MigrationDirFormatAtlas)
+	result, err := atlascompat.VerifySum(withSum, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.OK(), qt.IsTrue, qt.Commentf("verify result = %s", result.Describe()))
 }
 
 func TestSumFileNameConstantsMatchFormats(t *testing.T) {
 	c := qt.New(t)
-	ptahName, err := atlascompat.SumFileNameForFormat(migrator.MigrationDirFormatPtah)
+	ptahName, err := atlascompat.SumFileNameForFormat(migrationfile.DirFormatPtah)
 	c.Assert(err, qt.IsNil)
 	c.Assert(ptahName, qt.Equals, atlascompat.PtahSumFileName)
 
-	atlasName, err := atlascompat.SumFileNameForFormat(migrator.MigrationDirFormatAtlas)
+	atlasName, err := atlascompat.SumFileNameForFormat(migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	c.Assert(atlasName, qt.Equals, atlascompat.AtlasSumFileName)
 }

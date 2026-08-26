@@ -20,7 +20,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/cmdadapter"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/cmd/internal/migrationsource"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 func TestAtlasArgMapperPreservesProjectFilesSnapshot(t *testing.T) {
@@ -93,7 +93,7 @@ func TestAtlasArgMapperPreservesProjectFilesSnapshot(t *testing.T) {
 	c.Assert(loaded.Migration.PreDownHook, qt.Equals, "generation-one-hook")
 
 	source, err := migrationsource.Resolve(snapshotContext, migrationPath, migrationsource.Options{
-		DirFormat: migrator.MigrationDirFormatAtlas,
+		DirFormat: migrationfile.DirFormatAtlas,
 	})
 	c.Assert(err, qt.IsNil)
 	original, err := fs.ReadFile(source.FileSystem, "20240101000000_original.sql")

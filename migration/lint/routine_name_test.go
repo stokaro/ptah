@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/migration/lint"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // TestAnalyzeFS_ARoutineCreationCarriesItsName pins the name a routine reaches
@@ -52,7 +52,7 @@ func TestAnalyzeFS_ARoutineCreationCarriesItsName(t *testing.T) {
 
 			analysis, err := lint.AnalyzeFS(
 				fixture(map[string]string{"1_routine.sql": test.sql}),
-				lint.Options{DirFormat: migrator.MigrationDirFormatAtlas, Dialect: test.dialect},
+				lint.Options{DirFormat: migrationfile.DirFormatAtlas, Dialect: test.dialect},
 			)
 
 			c.Assert(err, qt.IsNil)

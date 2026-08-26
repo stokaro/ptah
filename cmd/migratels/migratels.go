@@ -12,7 +12,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/migrateread"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // options are the flags this command owns on top of the shared read surface.
@@ -66,7 +66,7 @@ func runLs(cmd *cobra.Command, opts *options) error {
 }
 
 // listing renders the lines this invocation prints.
-func listing(files []migrator.MigrationFile, opts *options) []string {
+func listing(files []migrationfile.File, opts *options) []string {
 	if opts.latest {
 		files = newest(files)
 	}
@@ -79,12 +79,12 @@ func listing(files []migrator.MigrationFile, opts *options) []string {
 // newest returns the files belonging to the highest version present, or nothing
 // when the directory holds no migrations. Files arrive ordered by version, so
 // the last one names the version to keep.
-func newest(files []migrator.MigrationFile) []migrator.MigrationFile {
+func newest(files []migrationfile.File) []migrationfile.File {
 	if len(files) == 0 {
 		return nil
 	}
 	latest := files[len(files)-1].Version
-	kept := make([]migrator.MigrationFile, 0, len(files))
+	kept := make([]migrationfile.File, 0, len(files))
 	for _, file := range files {
 		if file.Version == latest {
 			kept = append(kept, file)
@@ -94,7 +94,7 @@ func newest(files []migrator.MigrationFile) []migrator.MigrationFile {
 }
 
 // names returns one line per migration file, named as it sits in the directory.
-func names(files []migrator.MigrationFile) []string {
+func names(files []migrationfile.File) []string {
 	lines := make([]string, 0, len(files))
 	for _, file := range files {
 		lines = append(lines, path.Base(file.Path))
@@ -108,7 +108,7 @@ func names(files []migrator.MigrationFile) []string {
 // The revision token is used rather than the numeric version because an Atlas
 // repeatable migration records itself under an opaque token such as "R", and
 // printing 0 for it would name a version that does not exist.
-func versions(files []migrator.MigrationFile) []string {
+func versions(files []migrationfile.File) []string {
 	lines := make([]string, 0, len(files))
 	seen := make(map[string]struct{}, len(files))
 	for _, file := range files {

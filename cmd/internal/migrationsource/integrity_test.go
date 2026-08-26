@@ -8,7 +8,7 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"go.5x5.cz/ptah/cmd/internal/migrationsource"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // These rows moved here from cmd/migrateup, where they were a white-box test of
@@ -27,7 +27,7 @@ const (
 func ociTagSource(reference, tag, resolved string) migrationsource.Source {
 	return migrationsource.Source{
 		Display:   reference,
-		DirFormat: migrator.MigrationDirFormatPtah,
+		DirFormat: migrationfile.DirFormatPtah,
 		OCI: &migrationsource.OCI{
 			Reference:       reference,
 			Descriptor:      ocispec.Descriptor{Digest: digest.Digest(resolved)},
@@ -41,7 +41,7 @@ func ociDigestSource(resolved string) migrationsource.Source {
 	reference := "oci://reg.test/ptah/app@" + resolved
 	return migrationsource.Source{
 		Display:   reference,
-		DirFormat: migrator.MigrationDirFormatPtah,
+		DirFormat: migrationfile.DirFormatPtah,
 		OCI: &migrationsource.OCI{
 			Reference:       reference,
 			Descriptor:      ocispec.Descriptor{Digest: digest.Digest(resolved)},
@@ -54,7 +54,7 @@ func ociDigestSource(resolved string) migrationsource.Source {
 func localSource() migrationsource.Source {
 	return migrationsource.Source{
 		Display:   "/srv/app/migrations",
-		DirFormat: migrator.MigrationDirFormatPtah,
+		DirFormat: migrationfile.DirFormatPtah,
 	}
 }
 

@@ -6,7 +6,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/internal/cliobs"
 	"go.5x5.cz/ptah/internal/migrationintegrity"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // VerifyOptions selects how strict one [Verify] call is and where it reports.
@@ -55,7 +55,7 @@ func Verify(
 	emit cliobs.Emitter,
 	runtime *cliobs.Runtime,
 	source Source,
-	format migrator.MigrationDirFormat,
+	format migrationfile.DirFormat,
 	policy migrationintegrity.Policy,
 	opts VerifyOptions,
 ) error {

@@ -11,7 +11,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/cmd/internal/migrationsource"
 	"go.5x5.cz/ptah/internal/migrationartifact"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 type options struct {
@@ -55,7 +55,7 @@ explicitly trusted local registries.`,
 	flags.StringVar(&opts.migrationsDir, "migrations-dir", "./migrations", "Migration directory to publish")
 	flags.StringArrayVar(&opts.tags, "tag", nil, "Additional movable tag to apply (repeatable)")
 	flags.StringVar(&opts.version, "version", "", "Write-once version tag (defaults to v<UTC timestamp>)")
-	flags.StringVar(&opts.dirFormat, "dir-format", string(migrator.MigrationDirFormatAuto), "Migration directory format: auto, ptah, or atlas")
+	flags.StringVar(&opts.dirFormat, "dir-format", string(migrationfile.DirFormatAuto), "Migration directory format: auto, ptah, or atlas")
 	flags.BoolVar(&opts.latest, "latest", false,
 		"Also move the latest alias onto this push")
 	flags.BoolVar(&opts.generatedVersion, "generated-version", false,
@@ -69,7 +69,7 @@ explicitly trusted local registries.`,
 }
 
 func run(cmd *cobra.Command, reference string, opts *options) error {
-	dirFormat, err := migrator.ParseMigrationDirFormat(opts.dirFormat)
+	dirFormat, err := migrationfile.ParseDirFormat(opts.dirFormat)
 	if err != nil {
 		return err
 	}

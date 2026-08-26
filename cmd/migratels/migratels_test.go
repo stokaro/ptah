@@ -11,7 +11,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
 	"go.5x5.cz/ptah/cmd/migratels"
 	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // ptahDir writes a hashed two-migration directory in Ptah's reversible layout,
@@ -28,7 +28,7 @@ func ptahDir(c *qt.C) string {
 	for name, body := range files {
 		c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600), qt.IsNil)
 	}
-	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatPtah)
+	_, err := migratesum.WriteWithFormat(dir, migrationfile.DirFormatPtah)
 	c.Assert(err, qt.IsNil)
 	return dir
 }
@@ -45,7 +45,7 @@ func atlasDir(c *qt.C) string {
 	for name, body := range files {
 		c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600), qt.IsNil)
 	}
-	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(dir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	return dir
 }

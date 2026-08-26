@@ -22,7 +22,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/cmd/internal/migrationsource"
 	"go.5x5.cz/ptah/internal/migrationintegrity"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // Options are the flags common to every read-only migration-directory command.
@@ -49,7 +49,7 @@ func RegisterFlags(flags *pflag.FlagSet, opts *Options, verifySumLead string) {
 	flags.StringVar(
 		&opts.DirFormat,
 		"dir-format",
-		string(migrator.MigrationDirFormatAuto),
+		string(migrationfile.DirFormatAuto),
 		"Migration directory format: auto, ptah, or atlas",
 	)
 	flags.BoolVar(&opts.VerifySum, "verify-sum", false, migrationsource.VerifySumUsage(verifySumLead))
@@ -69,11 +69,11 @@ type Directory struct {
 	// Format is the layout the files were parsed under, resolved from the
 	// requested format and — for a registry artifact — from the format the
 	// artifact records.
-	Format migrator.MigrationDirFormat
+	Format migrationfile.DirFormat
 	// Files are every migration file the directory holds, ordered by version
-	// and then by path, which is the order [migrator.DiscoverMigrationFiles]
+	// and then by path, which is the order [migrationfile.Discover]
 	// establishes.
-	Files []migrator.MigrationFile
+	Files []migrationfile.File
 }
 
 // Resolve resolves the named directory, discovers the migration files it holds
@@ -84,7 +84,7 @@ type Directory struct {
 // registry tag cannot carry on its own; pass the command's standard error so a
 // caller parsing standard output is unaffected.
 func (o *Options) Resolve(ctx context.Context, notice io.Writer) (Directory, error) {
-	requested, err := migrator.ParseMigrationDirFormat(o.DirFormat)
+	requested, err := migrationfile.ParseDirFormat(o.DirFormat)
 	if err != nil {
 		return Directory{}, err
 	}
@@ -95,7 +95,7 @@ func (o *Options) Resolve(ctx context.Context, notice io.Writer) (Directory, err
 	if err != nil {
 		return Directory{}, err
 	}
-	files, err := migrator.DiscoverMigrationFiles(source.FileSystem, source.DirFormat)
+	files, err := migrationfile.Discover(source.FileSystem, source.DirFormat)
 	if err != nil {
 		return Directory{}, err
 	}
@@ -131,7 +131,7 @@ func (o *Options) Resolve(ctx context.Context, notice io.Writer) (Directory, err
 func verify(
 	notice io.Writer,
 	source migrationsource.Source,
-	format migrator.MigrationDirFormat,
+	format migrationfile.DirFormat,
 ) error {
 	policy, err := migrationintegrity.Resolve()
 	if err != nil {

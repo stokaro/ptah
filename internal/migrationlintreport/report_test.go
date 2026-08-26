@@ -17,7 +17,7 @@ import (
 	"go.5x5.cz/ptah/internal/migrationlintreport"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	migrationlint "go.5x5.cz/ptah/migration/lint"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 type gitExitStatus128 struct{}
@@ -84,7 +84,7 @@ func TestBuild_UsesProjectConfigWithoutCobra(t *testing.T) {
 
 	report, err := migrationlintreport.Build(context.Background(), migrationlintreport.Options{
 		Dir:       dir,
-		DirFormat: string(migrator.MigrationDirFormatPtah),
+		DirFormat: string(migrationfile.DirFormatPtah),
 		FailOn:    migrationlintreport.FailOnNone,
 	}, projectconfig.Config{
 		Lint: projectconfig.LintConfig{
@@ -114,7 +114,7 @@ migration:
 
 	_, err = migrationlintreport.Build(context.Background(), migrationlintreport.Options{
 		Dir:       t.TempDir(),
-		DirFormat: string(migrator.MigrationDirFormatAtlas),
+		DirFormat: string(migrationfile.DirFormatAtlas),
 		Dialect:   "sqlite",
 		FailOn:    migrationlintreport.FailOnNone,
 		Changed:   migrationlintreport.ChangedOptions{Dialect: true},
@@ -134,7 +134,7 @@ lint:
 	_, err = migrationlintreport.Build(context.Background(), migrationlintreport.Options{
 		Dir:       t.TempDir(),
 		FS:        fstest.MapFS{"1_init.sql": {Data: []byte("CREATE TABLE users (id int);")}},
-		DirFormat: string(migrator.MigrationDirFormatAtlas),
+		DirFormat: string(migrationfile.DirFormatAtlas),
 		Dialect:   "sqlite",
 		FailOn:    migrationlintreport.FailOnNone,
 		Changed:   migrationlintreport.ChangedOptions{Dialect: true},
@@ -153,7 +153,7 @@ func TestBuild_ExplicitGitBaseSuppressesProjectLatest(t *testing.T) {
 	_, err := migrationlintreport.Build(context.Background(), migrationlintreport.Options{
 		Dir:       t.TempDir(),
 		FS:        fstest.MapFS{"1_init.sql": {Data: []byte("CREATE TABLE users (id int);")}},
-		DirFormat: string(migrator.MigrationDirFormatAtlas),
+		DirFormat: string(migrationfile.DirFormatAtlas),
 		Dialect:   "sqlite",
 		GitBase:   "-unsafe",
 		FailOn:    migrationlintreport.FailOnNone,
@@ -178,7 +178,7 @@ func TestBuild_ExplicitLatestSuppressesProjectGitSelector(t *testing.T) {
 	report, err := migrationlintreport.Build(context.Background(), migrationlintreport.Options{
 		Dir:       t.TempDir(),
 		FS:        fstest.MapFS{"1_init.sql": {Data: []byte("CREATE TABLE users (id int);")}},
-		DirFormat: string(migrator.MigrationDirFormatAtlas),
+		DirFormat: string(migrationfile.DirFormatAtlas),
 		Dialect:   "sqlite",
 		Latest:    1,
 		FailOn:    migrationlintreport.FailOnNone,
@@ -205,7 +205,7 @@ func TestBuild_LatestAndAnalysisShareOneSourceSnapshot(t *testing.T) {
 	report, err := migrationlintreport.Build(context.Background(), migrationlintreport.Options{
 		Dir:       t.TempDir(),
 		FS:        source,
-		DirFormat: string(migrator.MigrationDirFormatAtlas),
+		DirFormat: string(migrationfile.DirFormatAtlas),
 		FailOn:    migrationlintreport.FailOnNone,
 		Latest:    1,
 		Changed:   migrationlintreport.ChangedOptions{Latest: true},
@@ -230,7 +230,7 @@ func TestBuild_LatestSelectsAtlasBareRepeatableAfterNumericMigrations(t *testing
 			"1_create_users.sql": {Data: []byte("CREATE TABLE users (id int);\n")},
 			"R__drop_users.sql":  {Data: []byte("DROP TABLE users;\n")},
 		},
-		DirFormat: string(migrator.MigrationDirFormatAtlas),
+		DirFormat: string(migrationfile.DirFormatAtlas),
 		Dialect:   "sqlite",
 		FailOn:    migrationlintreport.FailOnNone,
 		Latest:    1,
@@ -264,7 +264,7 @@ func TestBuild_GitBaseSelectsAtlasRepeatableByRevisionKey(t *testing.T) {
 
 	report, err := migrationlintreport.Build(context.Background(), migrationlintreport.Options{
 		Dir:       migrationsDir,
-		DirFormat: string(migrator.MigrationDirFormatAtlas),
+		DirFormat: string(migrationfile.DirFormatAtlas),
 		Dialect:   "sqlite",
 		GitBase:   "HEAD~1",
 		GitDir:    repo,
@@ -293,7 +293,7 @@ func TestBuild_ProvidedSnapshotDoesNotRequireSourceDirectory(t *testing.T) {
 	report, err := migrationlintreport.Build(context.Background(), migrationlintreport.Options{
 		Dir:       dir,
 		FS:        snapshot,
-		DirFormat: string(migrator.MigrationDirFormatAtlas),
+		DirFormat: string(migrationfile.DirFormatAtlas),
 		FailOn:    migrationlintreport.FailOnNone,
 	}, projectconfig.Config{})
 
@@ -315,7 +315,7 @@ func TestBuild_LoadsConventionalLintConfigFromSnapshot(t *testing.T) {
 	report, err := migrationlintreport.Build(context.Background(), migrationlintreport.Options{
 		Dir:       t.TempDir(),
 		FS:        source,
-		DirFormat: string(migrator.MigrationDirFormatAtlas),
+		DirFormat: string(migrationfile.DirFormatAtlas),
 		FailOn:    migrationlintreport.FailOnNone,
 	}, projectconfig.Config{})
 
@@ -335,7 +335,7 @@ func TestBuild_FailOnErrorDoesNotFailWarnings(t *testing.T) {
 
 	report, err := migrationlintreport.Build(context.Background(), migrationlintreport.Options{
 		Dir:       dir,
-		DirFormat: string(migrator.MigrationDirFormatPtah),
+		DirFormat: string(migrationfile.DirFormatPtah),
 		Dialect:   "postgres",
 		FailOn:    migrationlintreport.FailOnError,
 		Changed:   migrationlintreport.ChangedOptions{Dialect: true},
@@ -353,7 +353,7 @@ func TestBuild_FailOnAnyFailsWarnings(t *testing.T) {
 
 	report, err := migrationlintreport.Build(context.Background(), migrationlintreport.Options{
 		Dir:       dir,
-		DirFormat: string(migrator.MigrationDirFormatPtah),
+		DirFormat: string(migrationfile.DirFormatPtah),
 		Dialect:   "postgres",
 		FailOn:    migrationlintreport.FailOnAny,
 		Changed:   migrationlintreport.ChangedOptions{Dialect: true},

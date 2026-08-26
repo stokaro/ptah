@@ -11,7 +11,7 @@ import (
 
 	"go.5x5.cz/ptah/internal/migrateops"
 	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // stampLayout is the layout every Atlas-format version this binary stamps is
@@ -30,7 +30,7 @@ func atlasDir(t *testing.T, files map[string]string) string {
 			t.Fatal(err)
 		}
 	}
-	if _, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas); err != nil {
+	if _, err := migratesum.WriteWithFormat(dir, migrationfile.DirFormatAtlas); err != nil {
 		t.Fatal(err)
 	}
 	return dir
@@ -50,7 +50,7 @@ func assertNamedInstant(c *qt.C, dir, description string, version int64) {
 	_, statErr := os.Stat(filepath.Join(dir, name))
 	c.Assert(statErr, qt.IsNil, qt.Commentf("rebase reported version %d but no %s is on disk", version, name))
 
-	parsed, parseErr := migrator.ParseAtlasMigrationFileName(name)
+	parsed, parseErr := migrationfile.ParseAtlasFileName(name)
 	c.Assert(parseErr, qt.IsNil)
 
 	digits := strconv.FormatInt(parsed.Version, 10)
@@ -77,23 +77,23 @@ func TestAtlasRebaseBumpsOntoASecondThatExists(t *testing.T) {
 		"29991231235959_future.sql": "CREATE TABLE future (id int);\n",
 	})
 
-	first, _, err := migrateops.Rebase(dir, 20200101000000, migrator.MigrationDirFormatAtlas)
+	first, _, err := migrateops.Rebase(dir, 20200101000000, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	c.Assert(first, qt.Equals, int64(30000101000000))
 	assertNamedInstant(c, dir, "users", first)
-	validates(c, dir, migrator.MigrationDirFormatAtlas)
+	validates(c, dir, migrationfile.DirFormatAtlas)
 
-	second, _, err := migrateops.Rebase(dir, 29991231235959, migrator.MigrationDirFormatAtlas)
+	second, _, err := migrateops.Rebase(dir, 29991231235959, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	c.Assert(second, qt.Equals, int64(30000101000001))
 	assertNamedInstant(c, dir, "future", second)
-	validates(c, dir, migrator.MigrationDirFormatAtlas)
+	validates(c, dir, migrationfile.DirFormatAtlas)
 }
 
 // TestAtlasRebaseStampsTheCalendarSecond covers the clock rebase reaches for
 // when the newest version is below it.
 //
-// Rebase took migrator.GetNextMigrationVersion() -- a Unix epoch -- for every
+// Rebase took migrationfile.NextVersion() -- a Unix epoch -- for every
 // layout, so moving a migration to the end of an Atlas directory whose versions
 // were all small wrote a ten-digit 1786268355_init.sql beside fourteen-digit
 // neighbors. `migrate new`, `migrate diff` and `migrate checkpoint` all stamp
@@ -109,11 +109,11 @@ func TestAtlasRebaseStampsTheCalendarSecond(t *testing.T) {
 		"2_second.sql": "CREATE TABLE two (id int);\n",
 	})
 
-	version, _, err := migrateops.Rebase(dir, 1, migrator.MigrationDirFormatAtlas)
+	version, _, err := migrateops.Rebase(dir, 1, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	c.Assert(strconv.FormatInt(version, 10), qt.HasLen, 14, qt.Commentf("version %d is not a fourteen-digit stamp", version))
 	assertNamedInstant(c, dir, "init", version)
-	validates(c, dir, migrator.MigrationDirFormatAtlas)
+	validates(c, dir, migrationfile.DirFormatAtlas)
 }
 
 // TestPtahRebaseKeepsTheTenDigitVersion is the non-interference control for the
@@ -127,13 +127,13 @@ func TestPtahRebaseKeepsTheTenDigitVersion(t *testing.T) {
 	c := qt.New(t)
 	dir := ptahFixture(t)
 
-	version, _, err := migrateops.Rebase(dir, 1, migrator.MigrationDirFormatPtah)
+	version, _, err := migrateops.Rebase(dir, 1, migrationfile.DirFormatPtah)
 	c.Assert(err, qt.IsNil)
 	c.Assert(version > 3, qt.IsTrue, qt.Commentf("version %d must outrank the previous max 3", version))
 	c.Assert(version <= int64(9999999999), qt.IsTrue, qt.Commentf("version %d does not fit the ten-digit paired name", version))
 
-	moved := migrator.GenerateMigrationFileName(version, "first", "up")
+	moved := migrationfile.FileName(version, "first", "up")
 	_, statErr := os.Stat(filepath.Join(dir, moved))
 	c.Assert(statErr, qt.IsNil)
-	validates(c, dir, migrator.MigrationDirFormatPtah)
+	validates(c, dir, migrationfile.DirFormatPtah)
 }

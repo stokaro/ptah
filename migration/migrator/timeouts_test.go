@@ -8,18 +8,19 @@ import (
 
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 func TestMergeMigrationTimeouts(t *testing.T) {
 	c := qt.New(t)
 
-	defaults := MigrationTimeouts{
+	defaults := migrationfile.Timeouts{
 		LockTimeout:         3 * time.Second,
 		StatementTimeout:    30 * time.Second,
 		HasLockTimeout:      true,
 		HasStatementTimeout: true,
 	}
-	overrides := MigrationTimeouts{
+	overrides := migrationfile.Timeouts{
 		LockTimeout:    500 * time.Millisecond,
 		HasLockTimeout: true,
 	}
@@ -35,7 +36,7 @@ func TestTimeoutStatements(t *testing.T) {
 	tests := []struct {
 		name        string
 		dialect     string
-		timeouts    MigrationTimeouts
+		timeouts    migrationfile.Timeouts
 		wantSetup   []string
 		wantRestore []string
 		wantErr     string
@@ -43,7 +44,7 @@ func TestTimeoutStatements(t *testing.T) {
 		{
 			name:    "postgres",
 			dialect: "postgres",
-			timeouts: MigrationTimeouts{
+			timeouts: migrationfile.Timeouts{
 				LockTimeout:         3 * time.Second,
 				StatementTimeout:    30 * time.Second,
 				HasLockTimeout:      true,
@@ -57,7 +58,7 @@ func TestTimeoutStatements(t *testing.T) {
 		{
 			name:    "mysql",
 			dialect: "mysql",
-			timeouts: MigrationTimeouts{
+			timeouts: migrationfile.Timeouts{
 				LockTimeout:         1500 * time.Millisecond,
 				StatementTimeout:    2500 * time.Millisecond,
 				HasLockTimeout:      true,
@@ -77,7 +78,7 @@ func TestTimeoutStatements(t *testing.T) {
 		{
 			name:    "mariadb",
 			dialect: "mariadb",
-			timeouts: MigrationTimeouts{
+			timeouts: migrationfile.Timeouts{
 				LockTimeout:         time.Second,
 				StatementTimeout:    1500 * time.Millisecond,
 				HasLockTimeout:      true,
@@ -97,7 +98,7 @@ func TestTimeoutStatements(t *testing.T) {
 		{
 			name:    "clickhouse lock timeout",
 			dialect: "clickhouse",
-			timeouts: MigrationTimeouts{
+			timeouts: migrationfile.Timeouts{
 				LockTimeout:    time.Second,
 				HasLockTimeout: true,
 			},
@@ -106,7 +107,7 @@ func TestTimeoutStatements(t *testing.T) {
 		{
 			name:    "spanner unsupported",
 			dialect: "spanner",
-			timeouts: MigrationTimeouts{
+			timeouts: migrationfile.Timeouts{
 				LockTimeout:    time.Second,
 				HasLockTimeout: true,
 			},
@@ -132,70 +133,10 @@ func TestTimeoutStatements(t *testing.T) {
 	}
 }
 
-// TestParseMigrationTimeoutDirectives_ToleratesTheFileDirectiveFamilies pins
-// the timeout scanner against the `-- +ptah` directive vocabulary that
-// ParseFileDirectives owns. The scanner runs on every migration file load, so
-// any directive family owned by another parser must pass through it without
-// error — otherwise files carrying that directive fail to load entirely (this
-// regressed once for `check`). When adding a new directive family, add a row
-// here, or a test beside
-// TestParseMigrationTimeoutDirectives_ToleratesThePreMigrationCheckDirective if
-// another parser owns it.
-//
-// Each row asserts the whole directive map its line produces, so the family is
-// proven real by its own parser rather than assumed: a line the owning parser
-// silently ignores would leave the tolerance assertion below measuring nothing.
-//
-// This is a white-box test because parseMigrationTimeoutDirectives is the
-// unexported scanner on the file-load path; the cross-check must target it
-// directly to guard the two parsers against drifting.
-func TestParseMigrationTimeoutDirectives_ToleratesTheFileDirectiveFamilies(t *testing.T) {
-	tests := []struct {
-		name           string
-		line           string
-		wantDirectives map[string]string
-	}{
-		{
-			name:           "no_transaction",
-			line:           "-- +ptah " + DirectiveNoTransaction,
-			wantDirectives: map[string]string{DirectiveNoTransaction: "true"},
-		},
-		{
-			name: "timeouts",
-			line: "-- +ptah lock_timeout=3s statement_timeout=30s",
-			wantDirectives: map[string]string{
-				"lock_timeout":      "3s",
-				"statement_timeout": "30s",
-			},
-		},
-		{
-			name: "online DDL routing",
-			line: "-- +ptah online_ddl_tool=ghost online_ddl_fallback=error",
-			wantDirectives: map[string]string{
-				"online_ddl_tool":     "ghost",
-				"online_ddl_fallback": "error",
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := qt.New(t)
-
-			sql := tt.line + "\nALTER TABLE users ADD COLUMN email TEXT;"
-			c.Assert(ParseFileDirectives(sql), qt.DeepEquals, tt.wantDirectives)
-
-			_, err := parseMigrationTimeoutDirectives(sql)
-			c.Assert(err, qt.IsNil,
-				qt.Commentf("timeout scanner must tolerate the %s directive family or files carrying it cannot load", tt.name))
-		})
-	}
-}
-
-// TestParseMigrationTimeoutDirectives_ToleratesThePreMigrationCheckDirective is
+// TestParseTimeouts_ToleratesThePreMigrationCheckDirective is
 // the same cross-check for the one family ParseChecks owns rather than
 // ParseFileDirectives — and the family the scanner actually regressed on.
-func TestParseMigrationTimeoutDirectives_ToleratesThePreMigrationCheckDirective(t *testing.T) {
+func TestParseTimeouts_ToleratesThePreMigrationCheckDirective(t *testing.T) {
 	c := qt.New(t)
 
 	sql := `-- +ptah check name="users_empty" assert="SELECT count(*) = 0 FROM users" on_fail=abort` +
@@ -206,7 +147,7 @@ func TestParseMigrationTimeoutDirectives_ToleratesThePreMigrationCheckDirective(
 	c.Assert(checks, qt.HasLen, 1)
 	c.Assert(checks[0].Name, qt.Equals, "users_empty")
 
-	_, err = parseMigrationTimeoutDirectives(sql)
+	_, err = migrationfile.ParseTimeouts(sql)
 	c.Assert(err, qt.IsNil,
 		qt.Commentf("timeout scanner must tolerate the check directive family or files carrying it cannot load"))
 }
@@ -224,12 +165,14 @@ func TestParseMigrationTimeoutDirectives_ToleratesThePreMigrationCheckDirective(
 func TestMigrationTimeoutsUseTheExecutionDialect(t *testing.T) {
 	c := qt.New(t)
 	sql := "# generated by deploy tooling\n-- +ptah lock_timeout=3s statement_timeout=30s\nALTER TABLE users ADD COLUMN email TEXT;"
-	header := "# generated by deploy tooling\n-- +ptah lock_timeout=3s statement_timeout=30s\n"
-	c.Assert(directiveRegion(sql, platform.MySQL), qt.Equals, header)
-	c.Assert(directiveRegion(sql, ""), qt.Equals, header)
-	c.Assert(directiveRegion(sql, platform.SQLServer), qt.Equals, "")
+	fromMySQL, err := migrationfile.ParseTimeoutsForDialect(sql, platform.MySQL)
+	c.Assert(err, qt.IsNil)
+	c.Assert(fromMySQL.HasLockTimeout, qt.IsTrue)
+	fromSQLServer, err := migrationfile.ParseTimeoutsForDialect(sql, platform.SQLServer)
+	c.Assert(err, qt.IsNil)
+	c.Assert(fromSQLServer.IsZero(), qt.IsTrue)
 
-	loaded, err := parseMigrationTimeoutDirectives(sql)
+	loaded, err := migrationfile.ParseTimeouts(sql)
 	c.Assert(err, qt.IsNil)
 	c.Assert(loaded.HasLockTimeout, qt.IsTrue)
 
@@ -267,9 +210,9 @@ func TestMigrationTimeoutsUseTheExecutionDialect(t *testing.T) {
 func TestMigrationTimeoutsKeepAnExplicitPublicOverride(t *testing.T) {
 	c := qt.New(t)
 	sql := "# generated by deploy tooling\n-- +ptah lock_timeout=3s\nSELECT 1;"
-	loaded, err := parseMigrationTimeoutDirectives(sql)
+	loaded, err := migrationfile.ParseTimeouts(sql)
 	c.Assert(err, qt.IsNil)
-	override := MigrationTimeouts{
+	override := migrationfile.Timeouts{
 		LockTimeout:    9 * time.Second,
 		HasLockTimeout: true,
 	}

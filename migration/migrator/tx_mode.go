@@ -3,6 +3,8 @@ package migrator
 import (
 	"fmt"
 	"path"
+
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // MigrationTxMode controls how pending up migrations are wrapped in
@@ -27,7 +29,7 @@ func normalizeMigrationTxMode(mode MigrationTxMode) MigrationTxMode {
 	return mode
 }
 
-func resolveMigrationFileTxMode(global MigrationTxMode, file MigrationFileTxMode) (MigrationTxMode, error) {
+func resolveMigrationFileTxMode(global MigrationTxMode, file migrationfile.FileTxMode) (MigrationTxMode, error) {
 	switch global {
 	case MigrationTxModeFile, MigrationTxModeAll, MigrationTxModeNone:
 	default:
@@ -35,9 +37,9 @@ func resolveMigrationFileTxMode(global MigrationTxMode, file MigrationFileTxMode
 	}
 
 	switch file {
-	case MigrationFileTxModeUnspecified:
+	case migrationfile.FileTxModeUnspecified:
 		return global, nil
-	case MigrationFileTxModeFile, MigrationFileTxModeNone:
+	case migrationfile.FileTxModeFile, migrationfile.FileTxModeNone:
 		return MigrationTxMode(file), nil
 	default:
 		return "", fmt.Errorf("invalid migration file txmode %q: expected file, none, or empty", file)
@@ -60,49 +62,49 @@ func resolveMigrationFileTxMode(global MigrationTxMode, file MigrationFileTxMode
 // description, or a plan file's path.
 func ResolveAtlasDirectiveTxMode(
 	global MigrationTxMode,
-	file MigrationFileTxMode,
+	file migrationfile.FileTxMode,
 	source string,
 ) (MigrationTxMode, error) {
-	if global == MigrationTxModeAll && file != MigrationFileTxModeUnspecified {
-		return "", newAtlasTxModeDirectiveError(
+	if global == MigrationTxModeAll && file != migrationfile.FileTxModeUnspecified {
+		return "", migrationfile.NewAtlasTxModeDirectiveError(fmt.Sprintf(
 			"cannot set txmode directive to %q in %q when txmode %q is set globally",
 			file,
 			source,
 			MigrationTxModeAll,
-		)
+		))
 	}
 	return resolveMigrationFileTxMode(global, file)
 }
 
 func (m *Migrator) resolveUpMigrationTxMode(migration *Migration) (MigrationTxMode, error) {
 	fileMode := migration.parsedUpTxModeForDialect(m.connectionDialect())
-	if fileMode.err != nil {
-		return "", fileMode.err
+	if fileMode.Err != nil {
+		return "", fileMode.Err
 	}
-	if m.txMode == MigrationTxModeAll && fileMode.mode != MigrationFileTxModeUnspecified &&
-		fileMode.source != migrationFileTxModeSourceAtlas {
-		if fileMode.source == migrationFileTxModeSourcePtah && fileMode.mode == MigrationFileTxModeNone {
+	if m.txMode == MigrationTxModeAll && fileMode.Mode != migrationfile.FileTxModeUnspecified &&
+		fileMode.Source != migrationfile.FileTxModeSourceAtlas {
+		if fileMode.Source == migrationfile.FileTxModeSourcePtah && fileMode.Mode == migrationfile.FileTxModeNone {
 			return "", fmt.Errorf("migration %d is marked no_transaction and cannot run with tx-mode all", migration.Version)
 		}
 		return "", fmt.Errorf(
 			"migration %d selects txmode %q and cannot run with tx-mode all",
 			migration.Version,
-			fileMode.mode,
+			fileMode.Mode,
 		)
 	}
 	return ResolveAtlasDirectiveTxMode(
 		m.txMode,
-		fileMode.mode,
+		fileMode.Mode,
 		migrationTxModeSourceName(migration.upSourcePath, migration.Description),
 	)
 }
 
 func (m *Migrator) resolveDownMigrationTxMode(migration *Migration) (MigrationTxMode, error) {
 	fileMode := migration.parsedDownTxModeForDialect(m.connectionDialect())
-	if fileMode.err != nil {
-		return "", fileMode.err
+	if fileMode.Err != nil {
+		return "", fileMode.Err
 	}
-	return resolveMigrationFileTxMode(MigrationTxModeFile, fileMode.mode)
+	return resolveMigrationFileTxMode(MigrationTxModeFile, fileMode.Mode)
 }
 
 func migrationTxModeSourceName(sourcePath, description string) string {

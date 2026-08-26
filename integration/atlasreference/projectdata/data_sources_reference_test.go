@@ -23,7 +23,7 @@ import (
 
 	"go.5x5.cz/ptah/integration/atlasreference"
 	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 const (
@@ -382,7 +382,7 @@ func readTemplateDirectoryState(c *qt.C, directory string) templateDirectoryStat
 	for _, entry := range sum.Entries {
 		state.sumEntries = append(state.sumEntries, normalizeTemplateMigrationName(entry.Name))
 	}
-	verification, err := migratesum.VerifyWithFormat(os.DirFS(directory), migrator.MigrationDirFormatAtlas)
+	verification, err := migratesum.VerifyWithFormat(os.DirFS(directory), migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	c.Assert(verification.OK(), qt.IsTrue)
 	return state

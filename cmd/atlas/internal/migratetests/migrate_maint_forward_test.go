@@ -12,7 +12,7 @@ import (
 	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/cmd/migratevalidate"
 	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // writeMigrateMaintFixture fills dir with a two-migration Atlas-format
@@ -29,7 +29,7 @@ func writeMigrateMaintFixture(c *qt.C, dir string) {
 		[]byte("ALTER TABLE users ADD COLUMN email TEXT;\n"),
 		0o600,
 	), qt.IsNil)
-	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(dir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 }
 

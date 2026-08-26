@@ -200,6 +200,8 @@
 // This package integrates with other Ptah components:
 //
 //   - ptah/dbschema: Uses database connections and schema operations
+//   - ptah/migration/migrationfile: Reads the file layout — names, formats,
+//     directives, txtar archives, and templates
 //   - ptah/migration/generator: Applies generated migration files
 //   - ptah/core/sqlutil: Uses SQL parsing utilities for statement splitting
 //   - ptah/cmd/migrate*: Provides CLI interfaces for migration operations

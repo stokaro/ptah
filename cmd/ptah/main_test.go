@@ -11,7 +11,7 @@ import (
 
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/testutils"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // TestPtahAtlasNamespaceRemoved pins the removal of the ptah atlas command
@@ -197,7 +197,7 @@ func malformedAtlasTxModeDir(c *qt.C) string {
 	c.Assert(os.WriteFile(filepath.Join(dir, "1_invalid.sql"), []byte(
 		"-- atlas:txmode bogus\n\nCREATE TABLE invalid_txmode (id INTEGER PRIMARY KEY);\n",
 	), 0o600), qt.IsNil)
-	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(dir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	return dir
 }

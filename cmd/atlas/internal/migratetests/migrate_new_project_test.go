@@ -10,7 +10,7 @@ import (
 
 	"go.5x5.cz/ptah/atlascompat"
 	"go.5x5.cz/ptah/cmd/atlas"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 func TestMigrateNewWithAtlasProjectEnumIdentifiers(t *testing.T) {
@@ -23,7 +23,7 @@ func TestMigrateNewWithAtlasProjectEnumIdentifiers(t *testing.T) {
 		[]byte("CREATE TABLE existing (id INTEGER PRIMARY KEY);\n"),
 		0o600,
 	), qt.IsNil)
-	initialSum, sumErr := atlascompat.ComputeSum(os.DirFS("migrations"), migrator.MigrationDirFormatAtlas)
+	initialSum, sumErr := atlascompat.ComputeSum(os.DirFS("migrations"), migrationfile.DirFormatAtlas)
 	c.Assert(sumErr, qt.IsNil)
 	c.Assert(
 		os.WriteFile(
@@ -62,7 +62,7 @@ func TestMigrateNewWithAtlasProjectEnumIdentifiers(t *testing.T) {
 	migrationDir := filepath.Join(root, "migrations")
 	gotSum, readErr := os.ReadFile(filepath.Join(migrationDir, atlascompat.AtlasSumFileName))
 	c.Assert(readErr, qt.IsNil)
-	wantSum, sumErr := atlascompat.ComputeSum(os.DirFS(migrationDir), migrator.MigrationDirFormatAtlas)
+	wantSum, sumErr := atlascompat.ComputeSum(os.DirFS(migrationDir), migrationfile.DirFormatAtlas)
 	c.Assert(sumErr, qt.IsNil)
 	c.Assert(string(gotSum), qt.Equals, string(wantSum.Bytes()))
 }

@@ -18,6 +18,7 @@ import (
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/testutils"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -77,7 +78,7 @@ func TestWriteMigrateApplyFormat_ConvertedFilesUseExactSelectedIdentities(t *tes
 	}
 	provider, err := migrator.NewFSMigrationProvider(
 		fsys,
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 		migrator.WithAtlasRevisionVersions(map[int64]string{10: "1.5", 20: ""}),
 	)
 	c.Assert(err, qt.IsNil)
@@ -113,7 +114,7 @@ func TestWriteMigrateApplyFormat_ConvertedFailureAttachesToExactIdentity(t *test
 	}
 	provider, err := migrator.NewFSMigrationProvider(
 		fsys,
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 		migrator.WithAtlasRevisionVersions(map[int64]string{10: "1.5"}),
 	)
 	c.Assert(err, qt.IsNil)

@@ -27,7 +27,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/internal/atlashash"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // FileName is the conventional integrity file inside a migrations directory.
@@ -62,13 +62,13 @@ type SumFile struct {
 // up` and `ptah migrations down` execute. The ptah.sum file itself
 // and any non-migration file are excluded.
 func Compute(fsys fs.FS) (*SumFile, error) {
-	return ComputeWithFormat(fsys, migrator.MigrationDirFormatAuto)
+	return ComputeWithFormat(fsys, migrationfile.DirFormatAuto)
 }
 
 // ComputeWithFormat walks fsys and builds the sum over every migration file
 // recognized by the selected directory format.
-func ComputeWithFormat(fsys fs.FS, format migrator.MigrationDirFormat) (*SumFile, error) {
-	normalized, err := migrator.ParseMigrationDirFormat(string(format))
+func ComputeWithFormat(fsys fs.FS, format migrationfile.DirFormat) (*SumFile, error) {
+	normalized, err := migrationfile.ParseDirFormat(string(format))
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +81,7 @@ func ComputeWithFormat(fsys fs.FS, format migrator.MigrationDirFormat) (*SumFile
 		return computeAtlas(fsys)
 	}
 
-	files, err := migrator.DiscoverMigrationFiles(fsys, normalized)
+	files, err := migrationfile.Discover(fsys, normalized)
 	if err != nil {
 		return nil, err
 	}
@@ -101,12 +101,12 @@ func ComputeWithFormat(fsys fs.FS, format migrator.MigrationDirFormat) (*SumFile
 
 // FileNameForFormat returns the integrity file written by the selected
 // explicit format. Auto mode preserves Ptah's default ptah.sum output.
-func FileNameForFormat(format migrator.MigrationDirFormat) (string, error) {
-	normalized, err := migrator.ParseMigrationDirFormat(string(format))
+func FileNameForFormat(format migrationfile.DirFormat) (string, error) {
+	normalized, err := migrationfile.ParseDirFormat(string(format))
 	if err != nil {
 		return "", err
 	}
-	if normalized == migrator.MigrationDirFormatAtlas {
+	if normalized == migrationfile.DirFormatAtlas {
 		return AtlasFileName, nil
 	}
 	return FileName, nil
@@ -196,11 +196,11 @@ func dirHash(entries []Entry) string {
 	return hashPrefix + base64.StdEncoding.EncodeToString(h.Sum(nil))
 }
 
-func shouldUseAtlasHash(fsys fs.FS, format migrator.MigrationDirFormat) (bool, error) {
+func shouldUseAtlasHash(fsys fs.FS, format migrationfile.DirFormat) (bool, error) {
 	switch format {
-	case migrator.MigrationDirFormatAtlas:
+	case migrationfile.DirFormatAtlas:
 		return true, nil
-	case migrator.MigrationDirFormatPtah:
+	case migrationfile.DirFormatPtah:
 		return false, nil
 	}
 	return hasFile(fsys, AtlasFileName)

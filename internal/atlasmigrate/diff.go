@@ -29,7 +29,7 @@ import (
 	"go.5x5.cz/ptah/internal/schemafile"
 	"go.5x5.cz/ptah/internal/schemascope"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
@@ -193,7 +193,7 @@ type replaySnapshotConsumer func(
 	context.Context,
 	*dbschema.DatabaseConnection,
 	fs.FS,
-	migrator.MigrationDirFormat,
+	migrationfile.DirFormat,
 	func(*dbschema.DatabaseConnection) error,
 ) error
 
@@ -291,7 +291,7 @@ func generateDiff(
 		ctx,
 		conn,
 		replaySource,
-		migrator.MigrationDirFormatAtlas,
+		migrationfile.DirFormatAtlas,
 		func(replayConn *dbschema.DatabaseConnection) error {
 			replayed, compared, err := compareReplayedState(
 				ctx, replayConn, runtime, schemas, devDefaultSchema, desired,
@@ -718,7 +718,7 @@ func (o DiffOptions) verifyDir(fsys fs.FS) error {
 // stricter rule -- an unhashed directory that already holds migrations is a
 // checksum error -- supplies it through [DiffOptions.VerifyDir].
 func verifyDirSum(fsys fs.FS) error {
-	result, err := migratesum.VerifyWithFormat(fsys, migrator.MigrationDirFormatAtlas)
+	result, err := migratesum.VerifyWithFormat(fsys, migrationfile.DirFormatAtlas)
 	if errors.Is(err, migratesum.ErrSumFileMissing) {
 		return nil
 	}

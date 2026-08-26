@@ -16,7 +16,7 @@ import (
 
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
@@ -267,9 +267,9 @@ func TestNextAvailableMigrationVersionChecksUpAndDownFiles(t *testing.T) {
 	c := qt.New(t)
 
 	dir := t.TempDir()
-	err := os.WriteFile(filepath.Join(dir, migrator.GenerateMigrationFileName(100, "add_email", "down")), []byte("SELECT 1;"), 0600)
+	err := os.WriteFile(filepath.Join(dir, migrationfile.FileName(100, "add_email", "down")), []byte("SELECT 1;"), 0600)
 	c.Assert(err, qt.IsNil)
-	err = os.WriteFile(filepath.Join(dir, migrator.GenerateMigrationFileName(105, "future", "up")), []byte("SELECT 1;"), 0600)
+	err = os.WriteFile(filepath.Join(dir, migrationfile.FileName(105, "future", "up")), []byte("SELECT 1;"), 0600)
 	c.Assert(err, qt.IsNil)
 
 	writer, err := bindPlannedMigrationDir("", dir)

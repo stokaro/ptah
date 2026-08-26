@@ -13,7 +13,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/migrateread"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // directionUp and directionDown are the two halves of a reversible migration,
@@ -163,8 +163,8 @@ func selectFile(
 	dir migrateread.Directory,
 	version int64,
 	direction string,
-) (migrator.MigrationFile, error) {
-	var matched, selected migrator.MigrationFile
+) (migrationfile.File, error) {
+	var matched, selected migrationfile.File
 	found, chosen := false, false
 	for _, file := range dir.Files {
 		if file.Repeatable || file.Version != version {
@@ -176,11 +176,11 @@ func selectFile(
 		}
 	}
 	if !found {
-		return migrator.MigrationFile{}, fmt.Errorf(
+		return migrationfile.File{}, fmt.Errorf(
 			"migration version %d not found in %s", version, dir.Display)
 	}
 	if !chosen {
-		return migrator.MigrationFile{}, fmt.Errorf(
+		return migrationfile.File{}, fmt.Errorf(
 			"migration version %d in %s has no %s migration (found %s)",
 			version, dir.Display, direction, matched.Path)
 	}
@@ -190,7 +190,7 @@ func selectFile(
 // directionOf reports which half of a reversible migration a file holds. Only
 // the down half is spelled out in a file name; everything else is the forward
 // migration, including an Atlas-format file that names no direction at all.
-func directionOf(file migrator.MigrationFile) string {
+func directionOf(file migrationfile.File) string {
 	if file.Direction == directionDown {
 		return directionDown
 	}

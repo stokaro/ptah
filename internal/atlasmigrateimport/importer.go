@@ -33,6 +33,7 @@ import (
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/internal/revisiontable"
 	"go.5x5.cz/ptah/migration/importer"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -88,7 +89,7 @@ type Loaded struct {
 
 // FS returns an in-memory fs.FS containing the converted Atlas single-file
 // migrations. The result is suitable for migrator.NewFSMigrator with
-// migrator.MigrationDirFormatAtlas. It contains no atlas.sum, which is correct:
+// migrationfile.DirFormatAtlas. It contains no atlas.sum, which is correct:
 // external source formats carry no Atlas integrity file, so the Atlas migrator
 // derives each revision checksum from the converted up SQL instead.
 func (l *Loaded) FS() fs.FS {
@@ -284,7 +285,7 @@ func (c *CapturedImport) Write() (*Result, error) {
 		}
 		files = append(files, target)
 	}
-	sum, err := atlascompat.WriteSum(c.ToDir, migrator.MigrationDirFormatAtlas)
+	sum, err := atlascompat.WriteSum(c.ToDir, migrationfile.DirFormatAtlas)
 	if err != nil {
 		return nil, err
 	}
@@ -593,7 +594,7 @@ func LoadFS(fsys fs.FS, display string, format Format) (*Loaded, error) {
 func checkDuplicateConvertedVersions(entries []Entry) error {
 	seen := make(map[int64]string, len(entries))
 	for _, entry := range entries {
-		file, err := migrator.ParseAtlasMigrationFileName(entry.Name)
+		file, err := migrationfile.ParseAtlasFileName(entry.Name)
 		if err != nil {
 			return fmt.Errorf("converted migration %s is not a valid Atlas migration file name: %w", entry.Name, err)
 		}

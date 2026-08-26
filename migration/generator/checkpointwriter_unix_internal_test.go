@@ -22,7 +22,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // These are the checkpoint and data-migration writers' half of the rooted-writer
@@ -397,7 +397,7 @@ func TestGenerateEmptyMigrationStepsPastADestinationTakenAfterTheNameWasChosen(t
 	files, err := GenerateEmptyMigration(EmptyMigrationOptions{
 		MigrationName: "added",
 		OutputDir:     selected,
-		DirFormat:     migrator.MigrationDirFormatAtlas,
+		DirFormat:     migrationfile.DirFormatAtlas,
 	})
 
 	c.Assert(err, qt.IsNil)

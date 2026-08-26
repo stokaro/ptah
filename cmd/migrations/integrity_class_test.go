@@ -17,7 +17,7 @@ import (
 	"go.5x5.cz/ptah/cmd/migrateup"
 	"go.5x5.cz/ptah/cmd/migrationstest"
 	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // This file is the CLASS test for the integrity gate.
@@ -56,7 +56,7 @@ func newClassFixture(c *qt.C) classFixture {
 	for name, content := range files {
 		c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
 	}
-	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatPtah)
+	_, err := migratesum.WriteWithFormat(dir, migrationfile.DirFormatPtah)
 	c.Assert(err, qt.IsNil)
 
 	testsDir := c.TempDir()

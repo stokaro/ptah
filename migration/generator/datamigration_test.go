@@ -8,7 +8,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/migration/generator"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 func TestWriteDataMigrationFiles(t *testing.T) {
@@ -28,7 +28,7 @@ func TestWriteDataMigrationFiles(t *testing.T) {
 	c.Assert(filepath.Base(upPath), qt.Equals, "0000000002_seed_data.up.sql")
 	c.Assert(filepath.Base(downPath), qt.Equals, "0000000002_seed_data.down.sql")
 
-	parsed, err := migrator.ParseMigrationFileName(filepath.Base(upPath))
+	parsed, err := migrationfile.ParseFileName(filepath.Base(upPath))
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.IsCheckpoint, qt.IsFalse)
 

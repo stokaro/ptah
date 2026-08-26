@@ -23,7 +23,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 func TestWriteCheckpointFiles(t *testing.T) {
@@ -44,7 +44,7 @@ func TestWriteCheckpointFiles(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(upContent), qt.Contains, "name TEXT")
 
-	parsed, err := migrator.ParseMigrationFileName(filepath.Base(upPath))
+	parsed, err := migrationfile.ParseFileName(filepath.Base(upPath))
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.IsCheckpoint, qt.IsTrue)
 

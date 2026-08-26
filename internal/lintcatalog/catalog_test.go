@@ -15,7 +15,7 @@ import (
 	"go.5x5.cz/ptah/internal/migrationlintgate"
 	"go.5x5.cz/ptah/internal/sqllint"
 	"go.5x5.cz/ptah/migration/lint"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 const (
@@ -74,7 +74,7 @@ func findingCodes(c *qt.C, files map[string]string, profile lint.CompatibilityPr
 		fsys[name] = &fstest.MapFile{Data: []byte(content)}
 	}
 	analysis, err := lint.AnalyzeFS(fsys, lint.Options{
-		DirFormat:     migrator.MigrationDirFormatPtah,
+		DirFormat:     migrationfile.DirFormatPtah,
 		Compatibility: profile,
 	})
 	c.Assert(err, qt.IsNil)
@@ -132,7 +132,7 @@ func messagesFor(tb testing.TB, files map[string]string, profile lint.Compatibil
 		fsys[name] = &fstest.MapFile{Data: []byte(content)}
 	}
 	analysis, err := lint.AnalyzeFS(fsys, lint.Options{
-		DirFormat:     migrator.MigrationDirFormatPtah,
+		DirFormat:     migrationfile.DirFormatPtah,
 		Compatibility: profile,
 	})
 	c.Assert(err, qt.IsNil)

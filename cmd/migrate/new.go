@@ -13,7 +13,7 @@ import (
 	"go.5x5.cz/ptah/internal/migrateops"
 	"go.5x5.cz/ptah/internal/pathguard"
 	"go.5x5.cz/ptah/migration/generator"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 const (
@@ -44,7 +44,7 @@ refreshes atlas.sum afterwards for Atlas-format directories.`,
 
 	flags := cmd.Flags()
 	flags.String(newMigrationsDirFlag, "", "Directory receiving generated migration files (required)")
-	flags.StringVar(&dirFormat, newDirFormatFlag, string(migrator.MigrationDirFormatAuto), "Migration directory format: auto, ptah, or atlas")
+	flags.StringVar(&dirFormat, newDirFormatFlag, string(migrationfile.DirFormatAuto), "Migration directory format: auto, ptah, or atlas")
 	flags.String(newNameFlag, "", "Migration name; optional when [name] is provided")
 	flags.Bool(newEditFlag, false, "Open the created migration files in an editor (atlas.sum is refreshed for Atlas-format directories)")
 	flags.String(newEditorFlag, "", "Editor command used with --edit (defaults to $VISUAL, then $EDITOR)")
@@ -83,11 +83,11 @@ func migrateNewCommand(cmd *cobra.Command, args []string, dirFormatValue string)
 	if strings.TrimSpace(migrationsDir) == "" {
 		return fmt.Errorf("migrations directory is required")
 	}
-	dirFormat, err := migrator.ParseMigrationDirFormat(dirFormatValue)
+	dirFormat, err := migrationfile.ParseDirFormat(dirFormatValue)
 	if err != nil {
 		return err
 	}
-	if strings.TrimSpace(name) == "" && dirFormat != migrator.MigrationDirFormatAtlas {
+	if strings.TrimSpace(name) == "" && dirFormat != migrationfile.DirFormatAtlas {
 		return fmt.Errorf("migration name is required")
 	}
 	migrationsDir, err = pathguard.ResolveCLIPath(migrationsDir)
@@ -132,7 +132,7 @@ func editCreatedMigration(
 	pair generator.MigrationFilePair,
 	editorCmd,
 	migrationsDir string,
-	dirFormat migrator.MigrationDirFormat,
+	dirFormat migrationfile.DirFormat,
 ) error {
 	err := editor.Open(ctx, editorCmd, pair.UpFile, pair.DownFile)
 	if errors.Is(err, editor.ErrNoEditor) {
@@ -141,7 +141,7 @@ func editCreatedMigration(
 	if err != nil {
 		return err
 	}
-	if dirFormat != migrator.MigrationDirFormatAtlas {
+	if dirFormat != migrationfile.DirFormatAtlas {
 		return nil
 	}
 	if _, err := migrateops.Rehash(migrationsDir, dirFormat); err != nil {

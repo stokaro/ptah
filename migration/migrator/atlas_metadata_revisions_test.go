@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -74,7 +75,7 @@ CREATE TABLE posts (id INTEGER PRIMARY KEY);
 DROP TABLE posts;
 `)},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	m = m.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)

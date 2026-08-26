@@ -11,7 +11,7 @@ import (
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/migrationvalidate"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 func TestValidate_WithDevURLReplaysAtlasMigration(t *testing.T) {
@@ -24,7 +24,7 @@ func TestValidate_WithDevURLReplaysAtlasMigration(t *testing.T) {
 
 	result, err := migrationvalidate.Validate(ctx, migrationvalidate.Options{
 		Dir:       migrationsDir,
-		DirFormat: migrator.MigrationDirFormatAtlas,
+		DirFormat: migrationfile.DirFormatAtlas,
 		DevURL:    "sqlite://" + devDBPath,
 	})
 
@@ -44,7 +44,7 @@ func TestValidate_WithDevURLReportsSQLExecutionFailure(t *testing.T) {
 
 	result, err := migrationvalidate.Validate(context.Background(), migrationvalidate.Options{
 		Dir:       migrationsDir,
-		DirFormat: migrator.MigrationDirFormatAtlas,
+		DirFormat: migrationfile.DirFormatAtlas,
 		DevURL:    "sqlite://" + devDBPath,
 	})
 
@@ -64,7 +64,7 @@ func TestValidate_ChecksumDriftSkipsDevDatabaseConnection(t *testing.T) {
 
 	result, err := migrationvalidate.Validate(context.Background(), migrationvalidate.Options{
 		Dir:       migrationsDir,
-		DirFormat: migrator.MigrationDirFormatAtlas,
+		DirFormat: migrationfile.DirFormatAtlas,
 		DevURL:    "unsupported://must-not-connect",
 	})
 
@@ -77,7 +77,7 @@ func TestValidate_ChecksumDriftSkipsDevDatabaseConnection(t *testing.T) {
 func writeAtlasMigration(c *qt.C, dir, name, sql string) {
 	c.Helper()
 	c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(sql), 0o600), qt.IsNil)
-	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
+	_, err := migratesum.WriteWithFormat(dir, migrationfile.DirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 }
 

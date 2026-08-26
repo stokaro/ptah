@@ -13,7 +13,7 @@ import (
 
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/migrationreplay"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // TestReplayRoutesADockerDevURLToTheProvisioner replaced a test that asserted
@@ -59,7 +59,7 @@ func TestReplayCleansDevDatabaseAndIgnoresExistingRevisionRows(t *testing.T) {
 
 	err = migrationreplay.Replay(t.Context(), migrationreplay.Options{
 		Dir:       migrationsDir,
-		DirFormat: migrator.MigrationDirFormatAtlas,
+		DirFormat: migrationfile.DirFormatAtlas,
 		DevURL:    "sqlite://" + devDBPath,
 	})
 	c.Assert(err, qt.IsNil)
@@ -91,10 +91,10 @@ CREATE TABLE wrong_template_branch (id INTEGER PRIMARY KEY);
 
 	err := migrationreplay.Replay(context.Background(), migrationreplay.Options{
 		Dir:               migrationsDir,
-		DirFormat:         migrator.MigrationDirFormatAtlas,
+		DirFormat:         migrationfile.DirFormatAtlas,
 		DevURL:            "sqlite://" + devDBPath,
 		FS:                snapshot,
-		AtlasTemplateData: migrator.AtlasTemplateData{Env: "dev"},
+		AtlasTemplateData: migrationfile.AtlasTemplateData{Env: "dev"},
 	})
 
 	c.Assert(err, qt.IsNil)
@@ -109,7 +109,7 @@ func TestReplayFailureNamesExactEmptyRevision(t *testing.T) {
 	devDBPath := filepath.Join(t.TempDir(), "empty-revision.db")
 
 	err := migrationreplay.Replay(t.Context(), migrationreplay.Options{
-		DirFormat: migrator.MigrationDirFormatAtlas,
+		DirFormat: migrationfile.DirFormatAtlas,
 		DevURL:    "sqlite://" + devDBPath,
 		FS: fstest.MapFS{
 			"10_broken.sql": {Data: []byte("INSERT INTO missing_replay_table VALUES (1);\n")},
@@ -132,7 +132,7 @@ func TestReplayProviderFailurePreservesDevDatabase(t *testing.T) {
 	dbschema.CloseAndWarn(conn)
 
 	err = migrationreplay.Replay(ctx, migrationreplay.Options{
-		DirFormat: migrator.MigrationDirFormatPtah,
+		DirFormat: migrationfile.DirFormatPtah,
 		DevURL:    devURL,
 		FS: fstest.MapFS{
 			"0000000001_incomplete.up.sql": {
@@ -175,7 +175,7 @@ func TestReplayPreCanceledContextPreservesDevDatabase(t *testing.T) {
 				Data: []byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"),
 			},
 		},
-		migrator.MigrationDirFormatAtlas,
+		migrationfile.DirFormatAtlas,
 	)
 
 	c.Assert(err, qt.ErrorIs, context.Canceled)
@@ -197,7 +197,7 @@ func TestReplayExecutionFailureCleansPartialDevDatabase(t *testing.T) {
 	devURL := "sqlite://" + devDBPath
 
 	err := migrationreplay.Replay(ctx, migrationreplay.Options{
-		DirFormat: migrator.MigrationDirFormatAtlas,
+		DirFormat: migrationfile.DirFormatAtlas,
 		DevURL:    devURL,
 		FS: fstest.MapFS{
 			"1_create_users.sql": {
@@ -235,7 +235,7 @@ func TestReplaySQLiteRejectsAttachedDatabaseEscape(t *testing.T) {
 	devURL := "sqlite://" + filepath.Join(t.TempDir(), "dev.db")
 
 	err := migrationreplay.Replay(ctx, migrationreplay.Options{
-		DirFormat: migrator.MigrationDirFormatAtlas,
+		DirFormat: migrationfile.DirFormatAtlas,
 		DevURL:    devURL,
 		FS: fstest.MapFS{
 			"1_attach.sql": {
@@ -287,7 +287,7 @@ CREATE TABLE users (id INTEGER PRIMARY KEY);
 `),
 			},
 		},
-		migrator.MigrationDirFormatAtlas,
+		migrationfile.DirFormatAtlas,
 		func(replayConn *dbschema.DatabaseConnection) error {
 			err := replayConn.QueryRowContext(ctx, "PRAGMA foreign_keys").Scan(&callbackForeignKeys)
 			c.Assert(err, qt.IsNil)
@@ -329,7 +329,7 @@ func TestWithReplayedSnapshot_CallbackFailureCleansDatabaseRealm(t *testing.T) {
 				Data: []byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"),
 			},
 		},
-		migrator.MigrationDirFormatAtlas,
+		migrationfile.DirFormatAtlas,
 		func(*dbschema.DatabaseConnection) error {
 			return consumeErr
 		},
@@ -357,7 +357,7 @@ func TestWithReplayedSnapshot_NilCallbackPreservesDatabaseRealm(t *testing.T) {
 				Data: []byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"),
 			},
 		},
-		migrator.MigrationDirFormatAtlas,
+		migrationfile.DirFormatAtlas,
 		nil,
 	)
 
@@ -388,7 +388,7 @@ func TestWithReplayedSnapshot_SerializesConcurrentRealmReplay(t *testing.T) {
 			t.Context(),
 			firstConn,
 			snapshot,
-			migrator.MigrationDirFormatAtlas,
+			migrationfile.DirFormatAtlas,
 			func(*dbschema.DatabaseConnection) error {
 				close(firstEntered)
 				<-releaseFirst
@@ -404,7 +404,7 @@ func TestWithReplayedSnapshot_SerializesConcurrentRealmReplay(t *testing.T) {
 		waitCtx,
 		secondConn,
 		snapshot,
-		migrator.MigrationDirFormatAtlas,
+		migrationfile.DirFormatAtlas,
 		func(*dbschema.DatabaseConnection) error {
 			return nil
 		},

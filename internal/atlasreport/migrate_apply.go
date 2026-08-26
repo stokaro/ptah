@@ -16,6 +16,7 @@ import (
 
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -159,7 +160,7 @@ func buildAtlasMigrateApplyResult(opts MigrateApplyResultOptions) (atlasMigrateA
 }
 
 func atlasMigrateApplyFilesByVersion(fsys fs.FS) (map[string]atlasMigrateApplyFile, error) {
-	discovered, err := migrator.DiscoverMigrationFiles(fsys, migrator.MigrationDirFormatAtlas)
+	discovered, err := migrationfile.Discover(fsys, migrationfile.DirFormatAtlas)
 	if err != nil {
 		return nil, fmt.Errorf("discover Atlas migration files: %w", err)
 	}

@@ -17,7 +17,7 @@ import (
 	"go.5x5.cz/ptah/internal/assistloop"
 	"go.5x5.cz/ptah/internal/mcpserver"
 	"go.5x5.cz/ptah/internal/migrateops"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // injectedMigration is repository content that addresses the model.
@@ -131,7 +131,7 @@ func injectedSession(c *qt.C) (session *mcp.ClientSession, dir, digest string) {
 		[]byte(injectedMigration), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(dir, "1700000000_init.down.sql"),
 		[]byte("DROP TABLE audit_notes;\n"), 0o600), qt.IsNil)
-	_, err := migrateops.Rehash(dir, migrator.MigrationDirFormatAuto)
+	_, err := migrateops.Rehash(dir, migrationfile.DirFormatAuto)
 	c.Assert(err, qt.IsNil)
 
 	workspace, err := agentworkspace.Open(agentworkspace.Config{

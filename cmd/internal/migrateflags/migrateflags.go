@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -40,13 +41,13 @@ func ParseMigrationLockTimeout(value string) (time.Duration, error) {
 }
 
 // ParseMigrationTimeouts parses CLI timeout values. Empty values are ignored.
-func ParseMigrationTimeouts(lockTimeout, statementTimeout string) (migrator.MigrationTimeouts, error) {
-	var timeouts migrator.MigrationTimeouts
+func ParseMigrationTimeouts(lockTimeout, statementTimeout string) (migrationfile.Timeouts, error) {
+	var timeouts migrationfile.Timeouts
 
 	if strings.TrimSpace(lockTimeout) != "" {
 		duration, err := parsePositiveDuration(lockTimeout)
 		if err != nil {
-			return migrator.MigrationTimeouts{}, fmt.Errorf("invalid lock timeout: %w", err)
+			return migrationfile.Timeouts{}, fmt.Errorf("invalid lock timeout: %w", err)
 		}
 		timeouts.LockTimeout = duration
 		timeouts.HasLockTimeout = true
@@ -55,7 +56,7 @@ func ParseMigrationTimeouts(lockTimeout, statementTimeout string) (migrator.Migr
 	if strings.TrimSpace(statementTimeout) != "" {
 		duration, err := parsePositiveDuration(statementTimeout)
 		if err != nil {
-			return migrator.MigrationTimeouts{}, fmt.Errorf("invalid statement timeout: %w", err)
+			return migrationfile.Timeouts{}, fmt.Errorf("invalid statement timeout: %w", err)
 		}
 		timeouts.StatementTimeout = duration
 		timeouts.HasStatementTimeout = true

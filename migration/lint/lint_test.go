@@ -10,7 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/migration/lint"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // fixture builds an in-memory migrations directory.
@@ -500,7 +500,7 @@ DROP INDEX idx;
 				fixture(map[string]string{"1_txmode.sql": test.sql}),
 				lint.Options{
 					Dialect:   "postgres",
-					DirFormat: migrator.MigrationDirFormatAtlas,
+					DirFormat: migrationfile.DirFormatAtlas,
 				},
 			)
 			c.Assert(err, qt.IsNil)
@@ -522,7 +522,7 @@ DROP TABLE users;
 CREATE TABLE users (id INTEGER PRIMARY KEY);
 `,
 		}),
-		lint.Options{DirFormat: migrator.MigrationDirFormatAtlas},
+		lint.Options{DirFormat: migrationfile.DirFormatAtlas},
 	)
 
 	c.Assert(err, qt.IsNil)

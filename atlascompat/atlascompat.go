@@ -17,7 +17,7 @@ import (
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/parser"
-	"go.5x5.cz/ptah/migration/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
 // PtahSumFileName is the conventional Ptah migration-directory integrity file.
@@ -117,7 +117,7 @@ func ParseSum(data []byte) (*SumFile, error) {
 }
 
 // ComputeSum computes a migration-directory sum over fsys.
-func ComputeSum(fsys fs.FS, format migrator.MigrationDirFormat) (*SumFile, error) {
+func ComputeSum(fsys fs.FS, format migrationfile.DirFormat) (*SumFile, error) {
 	sum, err := migratesum.ComputeWithFormat(fsys, format)
 	if err != nil {
 		return nil, err
@@ -127,12 +127,12 @@ func ComputeSum(fsys fs.FS, format migrator.MigrationDirFormat) (*SumFile, error
 
 // SumFileNameForFormat returns the integrity file name for a migration
 // directory format.
-func SumFileNameForFormat(format migrator.MigrationDirFormat) (string, error) {
+func SumFileNameForFormat(format migrationfile.DirFormat) (string, error) {
 	return migratesum.FileNameForFormat(format)
 }
 
 // WriteSum computes and writes a migration-directory sum file.
-func WriteSum(dir string, format migrator.MigrationDirFormat) (*SumFile, error) {
+func WriteSum(dir string, format migrationfile.DirFormat) (*SumFile, error) {
 	sum, err := migratesum.WriteWithFormat(dir, format)
 	if err != nil {
 		return nil, err
@@ -141,7 +141,7 @@ func WriteSum(dir string, format migrator.MigrationDirFormat) (*SumFile, error) 
 }
 
 // VerifySum verifies a migration-directory sum over fsys.
-func VerifySum(fsys fs.FS, format migrator.MigrationDirFormat) (*SumResult, error) {
+func VerifySum(fsys fs.FS, format migrationfile.DirFormat) (*SumResult, error) {
 	result, err := migratesum.VerifyWithFormat(fsys, format)
 	if err != nil {
 		return nil, err
@@ -150,7 +150,7 @@ func VerifySum(fsys fs.FS, format migrator.MigrationDirFormat) (*SumResult, erro
 }
 
 // VerifySumDir verifies a migration-directory sum on disk.
-func VerifySumDir(dir string, format migrator.MigrationDirFormat) (*SumResult, error) {
+func VerifySumDir(dir string, format migrationfile.DirFormat) (*SumResult, error) {
 	result, err := migratesum.VerifyDirWithFormat(dir, format)
 	if err != nil {
 		return nil, err

@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -38,7 +39,7 @@ func newConvertedRepeatableMigrator(
 			"0000000001_init.sql": {Data: []byte(convertedRepeatableVersionedBody)},
 			repeatable:            {Data: []byte(repeatableBody)},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 	return conn, mig.WithRevisionTableFormat(migrator.RevisionTableFormatPtah)
@@ -113,7 +114,7 @@ func TestMigrateUp_EditedVersionedMigrationIsStillRefusedPlainly(t *testing.T) {
 			"0000000001_init.sql": {Data: []byte("CREATE TABLE t (id INTEGER PRIMARY KEY, extra INTEGER);\n")},
 			fmt.Sprintf("%d_view.sql", migrator.ConvertedFlywayRepeatableVersion): {Data: []byte(repeatable)},
 		},
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 	)
 	c.Assert(err, qt.IsNil)
 
