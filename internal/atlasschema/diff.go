@@ -25,6 +25,7 @@ import (
 	"go.5x5.cz/ptah/internal/systemschema"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
+	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 type DiffOptions struct {
@@ -81,15 +82,22 @@ type DiffOptions struct {
 	ValidateLocalSchemaSource func(string) error
 }
 
-// Diff computes the Atlas schema diff between two desired-state sources.
+// DiffReportingChanges computes the Atlas schema diff between two
+// desired-state sources, returning both the rendered statements and the
+// structural comparison they were planned from.
+//
 // Either side accepts local schema files, one database URL, one migration
 // directory (replayed on --dev-url), or one env:// reference. The SQL dialect
 // is pinned by --dev-url first, then by --from and --to database sources;
 // local files alone still require --dev-url.
-func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error) {
+//
+// The structural value is the comparison AFTER the caller's DiffPolicy has been
+// applied, which is the one the statements were generated from. Returning the
+// comparison from before it would describe a change the statements do not make.
+func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, *difftypes.SchemaDiff, error) {
 	prepared, err := prepareDiffSources(opts)
 	if err != nil {
-		return atlasreport.SchemaDiff{}, err
+		return atlasreport.SchemaDiff{}, nil, err
 	}
 	fromSet := prepared.from
 	toSet := prepared.to
@@ -102,7 +110,7 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 	// into the dev database. A malformed drop toggle must not survive any of
 	// that unreported, nor let that work start. See stokaro/ptah#1028.
 	if err := sqlitevirtual.ValidateToggle(dialect); err != nil {
-		return atlasreport.SchemaDiff{}, err
+		return atlasreport.SchemaDiff{}, nil, err
 	}
 
 	// Resolved here for the same reason, and equally early: a version naming
@@ -114,7 +122,7 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 	if err != nil {
 		// The flag name is the caller's to add: this package is reached from a
 		// native verb and an Atlas-shaped one, which spell it differently.
-		return atlasreport.SchemaDiff{}, fmt.Errorf("invalid server version: %w", err)
+		return atlasreport.SchemaDiff{}, nil, fmt.Errorf("invalid server version: %w", err)
 	}
 	if target.Note != "" && opts.Diagnostics != nil {
 		fmt.Fprintf(opts.Diagnostics, "Warning: %s.\n", target.Note)
@@ -147,10 +155,10 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 	}
 	fromState, toState, err := resolveDiffSources(ctx, fromSet, toSet, resolveOpts)
 	if err != nil {
-		return atlasreport.SchemaDiff{}, err
+		return atlasreport.SchemaDiff{}, nil, err
 	}
 	if err := validateDiffSystemSchemaStates(fromState, toState, dialect); err != nil {
-		return atlasreport.SchemaDiff{}, err
+		return atlasreport.SchemaDiff{}, nil, err
 	}
 
 	defaultSchema, realmRelative := diffPatternScope(dialect, fromState, toState)
@@ -163,11 +171,11 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 	scope.RealmRelativePatterns = realmRelative
 	fromSide, toSide := scopeDiffStates(fromState, toState, scope, dialect)
 	if fromSide.err != nil {
-		return atlasreport.SchemaDiff{}, fromSide.err
+		return atlasreport.SchemaDiff{}, nil, fromSide.err
 	}
 	from, fromReport, fromErr := fromSide.schema, fromSide.report, fromSide.selectionErr
 	if toSide.err != nil {
-		return atlasreport.SchemaDiff{}, toSide.err
+		return atlasreport.SchemaDiff{}, nil, toSide.err
 	}
 	to, toReport, toErr := toSide.schema, toSide.report, toSide.selectionErr
 	applyExtensionSupportCoverage(to, fromSide.selection, toSide.selection)
@@ -175,7 +183,7 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 	// neither side cannot answer the requested comparison, so fail instead of
 	// reporting a false synced result to CI.
 	if emptySelection(fromErr) && emptySelection(toErr) {
-		return atlasreport.SchemaDiff{}, fromErr
+		return atlasreport.SchemaDiff{}, nil, fromErr
 	}
 	compareOpts := config.DefaultCompareOptions()
 	compareOpts.Dialect = dialect
@@ -195,14 +203,14 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 	// statement before it is rendered.
 	virtualPolicy := sqlitevirtual.Policy{SkipDropTable: opts.Policy.SkipDropTable}
 	if err := sqlitevirtual.ValidateComparison(dialect, to, fromSide.database, virtualPolicy); err != nil {
-		return atlasreport.SchemaDiff{}, err
+		return atlasreport.SchemaDiff{}, nil, err
 	}
 
 	if err := validateClickHouseRBAC(dialect, to, fromSide.database); err != nil {
-		return atlasreport.SchemaDiff{}, err
+		return atlasreport.SchemaDiff{}, nil, err
 	}
 	if err := validateRowTTL(dialect, to); err != nil {
-		return atlasreport.SchemaDiff{}, err
+		return atlasreport.SchemaDiff{}, nil, err
 	}
 
 	// The comparison reports what the --from document's coverage record made
@@ -218,7 +226,7 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 	if err := sqlitevirtual.ValidatePlannedChanges(
 		dialect, fromSide.database, compared, virtualPolicy,
 	); err != nil {
-		return atlasreport.SchemaDiff{}, err
+		return atlasreport.SchemaDiff{}, nil, err
 	}
 
 	diff := applyDiffPolicy(compared, opts.Policy)
@@ -232,10 +240,22 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 			ConcurrentIndexDrops: opts.Policy.ConcurrentIndexDrop,
 		})
 		if err != nil {
-			return atlasreport.SchemaDiff{}, fmt.Errorf("generate schema diff SQL: %w", err)
+			return atlasreport.SchemaDiff{}, nil, fmt.Errorf("generate schema diff SQL: %w", err)
 		}
 	}
-	return atlasreport.NewSchemaDiff(from, to, statements), nil
+	return atlasreport.NewSchemaDiff(from, to, statements), diff, nil
+}
+
+// Diff is DiffReportingChanges for the callers that render statements and
+// nothing else.
+//
+// The two are one implementation on purpose. The rendered statements and the
+// structural comparison are two readings of a single run, and a second
+// comparison to produce the second reading is a second answer that can disagree
+// with the first (stokaro/ptah#1229).
+func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error) {
+	report, _, err := DiffReportingChanges(ctx, opts)
+	return report, err
 }
 
 func validateDiffSystemSchemaStates(
