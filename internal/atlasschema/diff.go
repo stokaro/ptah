@@ -20,9 +20,9 @@ import (
 	"go.5x5.cz/ptah/internal/convert/goschematodb"
 	"go.5x5.cz/ptah/internal/crdbttl"
 	"go.5x5.cz/ptah/internal/schemafile"
-	"go.5x5.cz/ptah/internal/schemaselection"
 	"go.5x5.cz/ptah/internal/servertarget"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
+	"go.5x5.cz/ptah/internal/systemschema"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -257,7 +257,7 @@ func validateDiffSystemSchemaState(state atlassource.State, dialect, flag string
 	// SQL has already been executed and validated by replay before this point.
 	if state.DB != nil {
 		for _, schema := range state.DB.Schemas {
-			if !schemaselection.IsPostgresFamilySystemSchema(dialect, schema.Name) {
+			if !systemschema.IsPostgresFamilySystemSchema(dialect, schema.Name) {
 				continue
 			}
 			return fmt.Errorf("validate %s database schema: %w", flag, &ptaherr.PlanError{
@@ -270,7 +270,7 @@ func validateDiffSystemSchemaState(state atlassource.State, dialect, flag string
 		}
 		return nil
 	}
-	if err := schemaselection.ValidateDeclaredPostgresSystemSchemas(
+	if err := systemschema.ValidateDeclaredPostgresSystemSchemas(
 		dialect,
 		state.Schema.Schemas,
 	); err != nil {

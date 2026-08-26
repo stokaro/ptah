@@ -61,7 +61,7 @@ import (
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/planner/tablelookup"
 	"go.5x5.cz/ptah/internal/reservedrole"
-	"go.5x5.cz/ptah/internal/schemaselection"
+	"go.5x5.cz/ptah/internal/systemschema"
 	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/internal/usertypescope"
 )
@@ -1002,7 +1002,7 @@ func validateDatabaseDeclarations(
 	caps capability.Capabilities,
 	database *goschema.Database,
 ) error {
-	if err := schemaselection.ValidateDeclaredPostgresSystemSchemas(dialect, database.Schemas); err != nil {
+	if err := systemschema.ValidateDeclaredPostgresSystemSchemas(dialect, database.Schemas); err != nil {
 		return err
 	}
 	if err := validateExtensionInstallationSchemas(dialect, database.Extensions); err != nil {

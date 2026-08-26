@@ -17,9 +17,9 @@ import (
 	"go.5x5.cz/ptah/internal/convert/goschematodb"
 	"go.5x5.cz/ptah/internal/crdbttl"
 	"go.5x5.cz/ptah/internal/reservedrole"
-	"go.5x5.cz/ptah/internal/schemaselection"
 	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
+	"go.5x5.cz/ptah/internal/systemschema"
 	"go.5x5.cz/ptah/internal/timescale"
 	"go.5x5.cz/ptah/migration/internal/identifiervalidation"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
@@ -576,7 +576,7 @@ func validateDeclaredBeforeComparison(
 	); err != nil {
 		return err
 	}
-	if err := schemaselection.ValidateDeclaredPostgresSystemSchemas(
+	if err := systemschema.ValidateDeclaredPostgresSystemSchemas(
 		info.Dialect,
 		generated.Schemas,
 	); err != nil {
