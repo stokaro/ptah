@@ -19,12 +19,12 @@ import (
 	"time"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/yamlschema"
 	"go.5x5.cz/ptah/internal/atlashcl"
 	"go.5x5.cz/ptah/internal/convert/toschema"
 	"go.5x5.cz/ptah/internal/parser"
 	"go.5x5.cz/ptah/internal/processcapture"
 	"go.5x5.cz/ptah/internal/secretdisplay"
-	"go.5x5.cz/ptah/internal/yamlschema"
 )
 
 // DefaultTimeout bounds how long an external schema command may run when the

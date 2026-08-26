@@ -6,8 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/yamlschema"
 	"go.5x5.cz/ptah/internal/matviewrefresh"
-	"go.5x5.cz/ptah/internal/yamlschema"
 )
 
 // TestParse_RefusesTheRetiredRefreshStrategy pins the YAML half of the refusal,

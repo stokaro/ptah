@@ -8,7 +8,7 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/internal/yamlschema"
+	"go.5x5.cz/ptah/core/yamlschema"
 )
 
 func renderStatements(c *qt.C, db *goschema.Database, dialect string) []string {

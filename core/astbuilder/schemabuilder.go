@@ -158,7 +158,7 @@ func (sb *SchemaBuilder) Table(name string) *SchemaTableBuilder {
 	tb := NewTable(name)
 	// We'll add the table to statements when End() is called
 	return &SchemaTableBuilder{
-		TableBuilder: tb,
+		tableBuilder: tb,
 		schema:       sb,
 	}
 }
@@ -203,7 +203,7 @@ func (sb *SchemaBuilder) Index(name, table string, columns ...string) *SchemaInd
 	ib := NewIndex(name, table, columns...)
 	// We'll add the index to statements when End() is called
 	return &SchemaIndexBuilder{
-		IndexBuilder: ib,
+		indexBuilder: ib,
 		schema:       sb,
 	}
 }

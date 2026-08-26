@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	"go.5x5.cz/ptah/core/ast"
+	"go.5x5.cz/ptah/core/astbuilder"
 	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/internal/astbuilder"
 )
 
 // DemonstrateASTApproach shows how to use the new AST-based SQL generation

@@ -48,6 +48,8 @@ The list below is orientation, not the ledger: the core packages a reader
 meets first. `docs/public_api.md` is the authority on what is public.
 
 - `core/ast` — dialect-agnostic AST for SQL DDL.
+- `core/astbuilder` — fluent builders that construct `core/ast` nodes without
+  hand-written struct literals.
 - `core/goschema` — Go source parsing and entity extraction; the annotation
   parser is `core/goschema/parser.go`.
 - `core/renderer` — dialect-specific SQL generation from the AST. The entry
@@ -55,6 +57,8 @@ meets first. `docs/public_api.md` is the authority on what is public.
   `core/renderer/internal/dialects/`.
 - `core/platform` — dialect names, normalization, and family predicates such as
   `IsPostgresFamily`.
+- `core/yamlschema` — the YAML authoring format's reader; one of the five
+  readers that produce `goschema.Database`.
 - `dbschema` — connection management plus schema reading and writing against a
   live database.
 - `migration/generator` — migration file generation from schema diffs.
@@ -70,7 +74,6 @@ Internal packages worth knowing, none of them importable from another module:
 
 - `internal/lexer`, `internal/parser` and `internal/dialectlexer` — SQL
   tokenizer and DDL parser.
-- `internal/astbuilder` — fluent builders for AST nodes.
 - `internal/convert/...` — conversions between schema representations.
 - `internal/dbschema/...` — the per-dialect readers and writers `dbschema`
   selects between.
