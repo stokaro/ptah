@@ -13,13 +13,17 @@ set -euo pipefail
 # descends into every checkout parked under this one and reports modules that
 # belong to a different tree. `git ls-files` cannot leave the working tree.
 #
-# This exists because the three repository-wide tools disagreed. qtlint took
-# -multi-module and discovered every module; nolintguard named all three by
-# hand in six places; golangci-lint ran from the repository root and therefore
-# linted the root module only. Measured: a file planted in testkit/ with two
-# `unused` findings was reported by `golangci-lint run ./...` inside testkit and
-# not reported at all from the root, so testkit -- a published module -- was
+# This exists because the repository-wide tools disagreed. qtlint took
+# -multi-module and discovered every module; nolintguard named each by hand in
+# six places; golangci-lint ran from the repository root and therefore linted
+# the root module only. Measured at the time: a file planted in a nested module
+# with two `unused` findings was reported by `golangci-lint run ./...` inside
+# that module and not reported at all from the root, so a published module was
 # unlinted, and so was examples/orm-loaders/gorm.
+#
+# The list is read from git rather than written down for exactly the reason the
+# testkit module's departure to stokaro/ptah-testkit demonstrates: a module can
+# arrive or leave, and nothing here has to be edited when it does.
 
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"

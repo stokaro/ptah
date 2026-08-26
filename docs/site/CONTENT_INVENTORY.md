@@ -238,7 +238,7 @@ list in the same PR.
 | --- | --- | --- | --- | --- |
 | `README.md` (643) | everyone landing on GitHub | Project pitch, start-here table, install, surfaces, compatibility status | `index.mdx`, `install.md`, `getting-started.md`, `operate/license-boundary` | keep + rewrite links when site URLs move; must never diverge from the site on parity claims |
 | `docs/site/README.md` (107) | contributor | How to build the site | none | keep |
-| `testkit/README.md` (178) | Go embedder | Test-harness package (separate Go module) | `extend/public-api` | keep; linked from `extend/public-api` |
+| `testkit` README (178) | Go embedder | Test-harness package (separate repository and module) | `extend/public-api` | moved to stokaro/ptah-testkit; linked from `extend/public-api` |
 | `internal/parser/README.md` (1,331) | contributor | SQL parser internals | none | keep (contributor surface) |
 | `migration/generator/README.md` (1,222) | contributor/embedder | Generator package detail | `extend/components` | keep; canonical for package-level API detail |
 | `migration/migrator/README.md` (2,887) | contributor/embedder | Migrator package detail | `workflows/migrations`, `extend/components` | keep; canonical for package-level API detail |

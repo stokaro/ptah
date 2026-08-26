@@ -94,8 +94,8 @@ run_case check-go-toolchain-single-source.sh \
 	"perl -0pi -e 's/go-version-file: go.mod/go-version: \"1.26.0\"/' .github/workflows/go-unit-tests.yml"
 
 run_case check-go-module-lint-coverage.sh \
-	"working-directory: testkit removed from one job" \
-	"perl -0pi -e 's/working-directory: testkit//' .github/workflows/go-lint.yml"
+	"working-directory for the nested module removed from one job" \
+	"perl -0pi -e 's|working-directory: examples/orm-loaders/gorm||' .github/workflows/go-lint.yml"
 
 run_case check-version-matrix.sh \
 	"a declared release line deleted from the documented block" \

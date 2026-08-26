@@ -972,9 +972,9 @@ type DBInfo struct {
 //
 // Both are part of the interface rather than one being a helper beside it,
 // because an implementation of SchemaReader can live outside this module.
-// Ptah's own testkit module is one such consumer: it builds against the working
-// tree AND against the last published release, so the read it issues has to be
-// spelled a way that both of them carry.
+// stokaro/ptah-testkit is one such consumer: a separate module that builds
+// against the last published release, so the read it issues has to be spelled
+// a way that release carries.
 type SchemaReader interface {
 	ReadSchema() (*DBSchema, error)
 	ReadSchemaContext(ctx context.Context) (*DBSchema, error)

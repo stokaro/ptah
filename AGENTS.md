@@ -333,10 +333,9 @@ databases listening on those exact ports.
 `go.mod` carries two Go versions and they are different facts with different
 lifecycles. Do not collapse them.
 
-- `go 1.26.5` is the published compatibility floor. `go.5x5.cz/ptah` and
-  `go.5x5.cz/ptah/testkit` are separately released import paths, so raising this
-  forces every consumer of both onto the newer language version. It moves on a
-  human decision.
+- `go 1.26.5` is the published compatibility floor. `go.5x5.cz/ptah` is a
+  released import path, so raising this forces every consumer onto the newer
+  language version. It moves on a human decision.
 - `toolchain go1.26.6` is what CI builds and scans with. It moves on every patch
   release and Renovate's built-in gomod manager proposes those bumps without
   configuration. A dependency's `toolchain` line does not propagate to its
@@ -360,13 +359,10 @@ forwarding resolves to is pinned by the `go-version-file` input's default, which
 has to exist and to name `go.mod`: the forwarded value is opaque, so that
 default is the only place left where the module is named.
 
-If you raise the `go` directive, raise `testkit/go.mod`'s in the same change.
-`testkit` both requires and replaces the root module, so under `testkit/` it is
-the **main** module and the root module is its dependency; Go requires a main
-module's `go` directive to be at least every dependency's, and a root floor
-above testkit's fails the testkit build outright with `go: module .. requires go
->= <root floor>`. The reverse — testkit deliberately ahead — is legal and is
-testkit's own decision.
+Raising it is the root module's decision alone. `go.5x5.cz/ptah/testkit` lives
+in [stokaro/ptah-testkit](https://github.com/stokaro/ptah-testkit) and consumes
+a published release rather than this working tree, so a floor raised here
+reaches it when it bumps its `require` line.
 
 ```bash
 # Fail when the toolchain grows a second declaration
@@ -1179,29 +1175,30 @@ The fix pass can leave second-pass fallout such as unused imports, removed helpe
 
 ### A module is covered because it exists, not because someone listed it
 
-This repository holds three Go modules — the root, `testkit/`, and
-`examples/orm-loaders/gorm/` — and its three repository-wide tools each
-answered "which modules do I visit" differently:
+This repository holds two Go modules — the root and
+`examples/orm-loaders/gorm/` — and its repository-wide tools each answered
+"which modules do I visit" differently:
 
-- **qtlint** took `-multi-module` and discovered all three.
-- **nolintguard** named all three by hand, in six `cd` lines across the
+- **qtlint** took `-multi-module` and discovered every one.
+- **nolintguard** named each by hand, in six `cd` lines across the
   Makefile and the workflow.
 - **golangci-lint** ran from the repository root, so it linted the root module
   and nothing else.
 
 The third is not a style difference, it is missing coverage, and it was
 invisible because a linter that visits nothing reports nothing. Measured: a
-file planted in `testkit/` with two `unused` findings was reported by
-`golangci-lint run ./...` inside `testkit` and reported **not at all** from the
-root. `testkit` is a published module — downstream code imports it — and it was
-unlinted, as was the gorm example.
+file planted in a nested published module with two `unused` findings was
+reported by `golangci-lint run ./...` inside it and reported **not at all**
+from the root. Downstream code imports that module, and it was unlinted, as was
+the gorm example.
 
 **Discover the module list, never write it out.**
 [`scripts/list-go-modules.sh`](scripts/list-go-modules.sh) is the single answer,
 sourced from `git ls-files` rather than from a filesystem walk for the reason
 `scripts/check-test-style.sh` already documents: a walk descends into linked
 worktrees parked under this one and reports modules belonging to a different
-checkout. `make lint` consumes it, so a fourth module is covered by existing.
+checkout. `make lint` consumes it, so a module is covered by existing, and a module
+that leaves the repository takes no edit here either.
 
 Where discovery is impossible the list has to be policed. The
 `golangci-lint-action` lints one directory per invocation, so the workflow
@@ -1222,7 +1219,7 @@ Every Go package must carry a package-level doc comment (`// Package <name>
 ...`), either atop a central file of the package or in a dedicated `doc.go`.
 This is CI-enforced through staticcheck's `ST1000` in `.golangci.yml`; a PR
 that introduces a new package must ship the comment in the same PR. The rule
-applies to every module in the repository, including `testkit/`. `main`
+applies to every module in the repository. `main`
 packages describe their binary; test-only packages (`package foo_test`) are
 exempt.
 
@@ -1238,8 +1235,7 @@ rules of [`docs/STYLE_GUIDE.md`](docs/STYLE_GUIDE.md) apply in spirit.
 - Unit tests are ordinary `*_test.go` files that need no server.
   `go test ./... -count=1` runs the whole set.
 - Every integration test lives in its module's dedicated `integration/`
-  package or one of its subpackages. The root module uses `integration/`; the
-  separate testkit module uses `testkit/integration/`. Do not place a
+  package or one of its subpackages. Do not place a
   live-database or external-process test beside production code. A test that
   does not cross a process, filesystem, network, or database boundary is a unit
   or pipeline test and belongs beside the production package instead.
@@ -1253,7 +1249,7 @@ rules of [`docs/STYLE_GUIDE.md`](docs/STYLE_GUIDE.md) apply in spirit.
   tests. `internal/integrationharness` and `internal/integrationfixture` are the
   worked examples.
 - An integration test is never white-box. Every test file under
-  `integration/**` and `testkit/integration/**` uses `package <name>_test` and
+  `integration/**` uses `package <name>_test` and
   exercises only exported APIs. `*_internal_test.go` and same-package tests are
   forbidden anywhere in those trees. If a behavior can only be reached through an
   unexported symbol, move the deterministic logic behind a package boundary and
@@ -1303,8 +1299,7 @@ rules of [`docs/STYLE_GUIDE.md`](docs/STYLE_GUIDE.md) apply in spirit.
   integration-tagged test outside a dedicated integration tree. Do not add
   domain-specific build tags, package loops, package selectors, test names, or
   regular expressions to select integration tests. The CLI intentionally has
-  no package-selection flag. The separate testkit module uses the same runner
-  with `--dir ./testkit`.
+  no package-selection flag.
 - **Name the file for what the test needs, not for the category it is in.**
   Every file under an integration tree is an integration test, so spelling that
   in the filename says nothing. Two suffixes carry a fact worth reading off the
@@ -1525,9 +1520,9 @@ go tool qtlint -multi-module $(QTLINT_RULES) -tags integration ./...
 ```
 
 `-multi-module` is required because `go list` resolves patterns against the
-module holding the working directory, so `./testkit/...` from the root answers
-`directory prefix testkit does not contain main module or its selected
-dependencies`. Both contours are required because a build tag selects a
+module holding the working directory, so a nested module's `./<dir>/...` from
+the root answers `directory prefix <dir> does not contain main module or its
+selected dependencies`. Both contours are required because a build tag selects a
 different build rather than a superset: satisfying `integration` also drops
 every file a constraint excludes from that contour.
 

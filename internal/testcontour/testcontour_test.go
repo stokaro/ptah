@@ -160,7 +160,7 @@ func TestLive(_ *testing.T) {}
 		Timeout: time.Minute,
 		Dir:     dir,
 	})
-	c.Assert(err, qt.ErrorMatches, `integration test file product/live_test\.go must live under integration/ or testkit/integration/`)
+	c.Assert(err, qt.ErrorMatches, `integration test file product/live_test\.go must live under integration/`)
 }
 
 // The fixture is named for plan9, not for windows.

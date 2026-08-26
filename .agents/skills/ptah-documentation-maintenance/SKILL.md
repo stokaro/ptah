@@ -43,8 +43,8 @@ Classify the change before editing docs:
 - **SQL/parser/migration behavior**: generated SQL, parsed SQL, migration file
   layout, directives, revision tables, hash files, validation, repair, rollback,
   dialect support, or destructive-safety behavior.
-- **Public API behavior**: exported Go packages, extension points, testkit
-  behavior, capability APIs, or documented embedding surfaces.
+- **Public API behavior**: exported Go packages, extension points, capability
+  APIs, or documented embedding surfaces.
 - **Conformance and Atlas parity**: the `ptah-compat` drop-in binary,
   conformance results, known gaps, clean-room/license boundary, or drop-in
   replacement claims.
@@ -66,8 +66,8 @@ Inspect every surface that can be stale for the change class:
   `examples/**`.
 - Integration docs: `integration/*.md`.
 - Package documentation: `internal/parser/README.md`,
-  `migration/generator/README.md`, `migration/migrator/README.md`,
-  `testkit/README.md`, and package comments when exported APIs change.
+  `migration/generator/README.md`, `migration/migrator/README.md`, and package
+  comments when exported APIs change.
 - Agent workflow: `AGENTS.md` and `.agents/skills/**/SKILL.md` when agent
   behavior changes.
 - Release, CI, and operational docs when workflows, checks, or deployment
@@ -127,9 +127,11 @@ Use these routes to avoid missing a class of docs:
   `docs/site/src/content/docs/concepts/dialects-and-capabilities.md`,
   `docs/site/src/content/docs/databases/support-matrix.md`, and any dialect or
   conformance pages that mention the changed capability.
-- **Public Go API or testkit**: `docs/public_api.md`,
-  `docs/site/src/content/docs/extend/*.md`, `testkit/README.md`, and package
-  comments for exported identifiers.
+- **Public Go API**: `docs/public_api.md`,
+  `docs/site/src/content/docs/extend/*.md`, and package comments for exported
+  identifiers. A change an embedder sees may also need one in
+  [stokaro/ptah-testkit](https://github.com/stokaro/ptah-testkit), which is a
+  separate repository and is not edited from here.
 - **GitHub Action, CI, or generated reports**: `docs/github_action.md`,
   `docs/site/src/content/docs/testing/ci.md`, `docs/release_process.md`, and
   integration docs.

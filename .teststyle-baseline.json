@@ -833,36 +833,6 @@
       "function": "TestConstraints_FieldLevelForeignKey",
       "kind": "if",
       "count": 1
-    },
-    {
-      "path": "testkit/testkit_test.go",
-      "function": "TestApplyMigrationsFromSubFS",
-      "kind": "if",
-      "count": 3
-    },
-    {
-      "path": "testkit/testkit_test.go",
-      "function": "TestMySQLDSNDatabasePreservesCredentialsEndpointAndQuery",
-      "kind": "if",
-      "count": 1
-    },
-    {
-      "path": "testkit/testkit_test.go",
-      "function": "TestPostgresDatabaseURLPreservesCredentialsAndQuery",
-      "kind": "if",
-      "count": 1
-    },
-    {
-      "path": "testkit/testkit_test.go",
-      "function": "TestSQLiteApplyMigrationsSeedAndSnapshot",
-      "kind": "if",
-      "count": 4
-    },
-    {
-      "path": "testkit/testkit_test.go",
-      "function": "TestSeedSkipsCommentsAndEmptyStatements",
-      "kind": "if",
-      "count": 2
     }
   ],
   "white_box_files": [
@@ -1004,11 +974,6 @@
     {
       "path": "migration/seeder/seeder_test.go",
       "package": "seeder",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
-      "path": "testkit/testkit_test.go",
-      "package": "testkit",
       "reason": "same-package test file is not named *_internal_test.go"
     }
   ]
