@@ -1772,6 +1772,18 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	// 11. Disable RLS on tables (must be done after removing policies)
 	result = p.disableRLSOnTables(result, diff)
 
+	// 11.8. Row-level TTL, after the columns a TTL expression may refer to
+	// exist and before anything is dropped -- INCLUDING a column. The comment
+	// here has always said "before anything is dropped"; the step sat below
+	// removeTableColumns, so that was true of tables and not of columns, and a
+	// plan that moved an expression off a column and dropped it emitted
+	// `DROP COLUMN … CASCADE` first (stokaro/ptah#1027, position corrected
+	// while placing the row deletion policy, which carries the same
+	// constraint).
+	if p.planningRowTTL() {
+		result = p.applyRowTTLChanges(result, diff)
+	}
+
 	// 11.9. The row deletion policy, after the columns exist and BEFORE any
 	// column is removed. Both halves are load-bearing: the clause names a
 	// column, so retargeting it to one added in the same plan cannot run
@@ -1785,14 +1797,6 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 
 	// 12. Remove table columns (must be done after removing RLS policies that depend on columns)
 	result = p.removeTableColumns(result, diff)
-
-	// 12.4. Row-level TTL, after the columns a TTL expression may refer to
-	// exist and before anything is dropped. A policy whose expression names a
-	// column added in the same plan cannot be set before that column is there
-	// (stokaro/ptah#1027).
-	if p.planningRowTTL() {
-		result = p.applyRowTTLChanges(result, diff)
-	}
 
 	// 12.5. Remove constraints (must be done before removing tables)
 	result = p.removeConstraints(result, diff)
