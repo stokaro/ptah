@@ -47,6 +47,18 @@ on:
     branches:
       - master
   pull_request:
+    # `labeled` is what makes a requested fan-out a check OF THE PULL REQUEST.
+    #
+    # The request used to arrive as a workflow_dispatch against the head branch.
+    # Its checks did attach to the head commit -- measured on stokaro/ptah#2297,
+    # 38 check-run names on the commit -- but a pull request's status rollup
+    # ignores a dispatch suite entirely: `gh pr checks` listed 32 of them and
+    # none of the six `probe postgres-*`. Worse, where a name existed on both
+    # sides the pull request's own SKIPPED `tier 2 report` was what the rollup
+    # reported while two FAILURES from the dispatch, both newer, sat on the same
+    # commit unseen. A red matrix could not block a merge and did not: #2297 was
+    # merged with `probe postgres-18` failing.
+    types: [opened, synchronize, reopened, labeled]
   # 03:20 UTC, clear of the tier 3 nightly at 02:40 and the fuzz job at 02:17.
   # Tier 3 probes each cell before running its suite, so this is not the only
   # nightly coverage -- it is the one that reports the probe verdicts on their
@@ -62,6 +74,9 @@ on:
 
 permissions:
   contents: read
+  # Reading the pull request's comments is how a requested fan-out learns which
+  # cells to probe; nothing here writes.
+  pull-requests: read
 
 concurrency:
   group: capability-matrix-${{ github.ref }}
@@ -124,6 +139,54 @@ jobs:
             jq -r '.skipped[] | "- `\(.id)` is declared and not run: \(.skip)"' "${RUNNER_TEMP}/matrix.json"
           } >>"${GITHUB_STEP_SUMMARY}"
 
+      # What this pull request asked for, read from its own comments.
+      #
+      # The request arrives as a comment and a comment starts no
+      # `pull_request` event, so capability-matrix-request.yml labels the pull
+      # request and the label is what starts this run. The cells come from the
+      # comment, because a label cannot carry an argument list and
+      # `/capability-matrix postgres` has to keep meaning what it says.
+      #
+      # The author check is the same one the request workflow applies, and it
+      # is applied AGAIN here rather than trusted: a label can be added by
+      # anyone who can label, and this job runs the repository's own probe
+      # containers. Only a comment by someone with write access selects cells;
+      # a label with no such comment behind it probes nothing and says so.
+      - name: Read the request from the pull request's comments
+        id: request
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # Newest first, so the last request wins. jq picks the newest comment
+          # that both starts with the command and comes from an author the
+          # repository trusts to run its code.
+          gh api "repos/${REPO}/issues/${PR}/comments" --paginate \
+            --jq '[.[] | select(.body | startswith("/capability-matrix"))
+                       | select(.author_association == "OWNER"
+                             or .author_association == "MEMBER"
+                             or .author_association == "COLLABORATOR")]
+                  | last | .body // ""' >"${RUNNER_TEMP}/request.txt"
+          body="$(cat "${RUNNER_TEMP}/request.txt")"
+          if [ -z "${body}" ] || [ "${body}" = "null" ]; then
+            {
+              echo "cells=none"
+              echo "reason=no \`/capability-matrix\` comment from a user with write access on this pull request"
+            } >>"${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          first="$(printf '%s' "${body}" | head -n 1)"
+          cells="${first#/capability-matrix}"
+          cells="$(printf '%s' "${cells}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+          cells="${cells:-all}"
+          {
+            echo "cells=${cells}"
+            echo "reason=requested on this pull request: ${cells}"
+          } >>"${GITHUB_OUTPUT}"
+
       # Which of those cells this RUN probes, and why.
       #
       # Separate from the emit step above on purpose. That step's "zero runnable
@@ -146,6 +209,8 @@ jobs:
           # either way -- and asking twice is how they would stop doing so
           # without anything going red.
           ALL: ${{ steps.emit.outputs.cells }}
+          PR_REQUEST: ${{ steps.request.outputs.cells }}
+          PR_REASON: ${{ steps.request.outputs.reason }}
         run: |
           set -euo pipefail
           all="${ALL}"
@@ -162,6 +227,10 @@ jobs:
             push)
               request="none"
               reason="the probe fan-out does not run on a push; it runs nightly, and on request from the workflow's Run button"
+              ;;
+            pull_request|pull_request_target)
+              request="${PR_REQUEST:-none}"
+              reason="${PR_REASON}"
               ;;
             *)
               request="none"
