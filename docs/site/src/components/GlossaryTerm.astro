@@ -41,6 +41,28 @@
  * Anchor positioning places it beside the term where the browser has it, and is
  * not required: without it the panel falls back to fixed placement, which is
  * off by the scroll offset and readable everywhere.
+ *
+ * # What the hand measurement above could not see
+ *
+ * Those numbers were taken with ONE panel open on a page. Two defects only
+ * appear with several, and both reached a reader (stokaro/ptah#1454):
+ *
+ *   - Every use site declared the same `anchor-name`. A dashed-ident is a
+ *     global name, so `position-anchor` resolved to the last element in tree
+ *     order carrying it and every panel anchored to the last term on the page.
+ *   - `position-area: block-end` spans the whole inline axis, which put the
+ *     panel at the container's inline start rather than under its term.
+ *
+ * Measured on the built site, worst case over every panel at both widths:
+ *
+ *   before   desktop  gap to its own term 204px   clipped content 117px
+ *            mobile   gap to its own term 483px   clipped content 117px
+ *   after    both     gap 0px                     clipped 0px
+ *
+ * scripts/check-glossary.mjs is what keeps it: it opens every panel on every
+ * built page at both widths and fails on either reading. check:responsive
+ * cannot -- it measures the CLOSED state, where a one-character button
+ * overflows nothing and both defects are invisible.
  */
 import { glossary } from '../glossary';
 
@@ -61,9 +83,18 @@ if (!entry) {
 // Stable per use site, because two uses of the same term on one page would
 // otherwise share an id and the association would name the wrong element.
 const id = `glossary-${term.replace(/[^a-z0-9]+/gi, '-')}-${Math.random().toString(36).slice(2, 8)}`;
+
+// The anchor name has to be unique per use site for the same reason the id
+// does, and it cannot live in the stylesheet: a dashed-ident is a GLOBAL name,
+// and Astro's scoping rewrites selectors rather than values. Every use site
+// declaring one constant name made `position-anchor` resolve to the last
+// element in tree order carrying it, so every panel on the page anchored to the
+// last term rather than to its own trigger -- clicking a term in the first row
+// of a table opened its panel beside the last row (stokaro/ptah#1454).
+const anchorName = `--${id}`;
 ---
 
-<span class="ptah-glossary">
+<span class="ptah-glossary" style={`anchor-name: ${anchorName}`}>
   <slot>{term}</slot><button
     type="button"
     class="ptah-glossary-trigger"
@@ -71,7 +102,13 @@ const id = `glossary-${term.replace(/[^a-z0-9]+/gi, '-')}-${Math.random().toStri
     aria-describedby={id}
     aria-label={`What ${term} means`}>ⓘ</button
   >
-  <span popover="auto" id={id} role="tooltip" class="ptah-glossary-panel">
+  <span
+    popover="auto"
+    id={id}
+    role="tooltip"
+    class="ptah-glossary-panel"
+    style={`position-anchor: ${anchorName}`}
+  >
     <span class="ptah-glossary-term">{term}</span>
     {entry.definition}
     {entry.source && <span class="ptah-glossary-source">{entry.source}</span>}
@@ -80,9 +117,9 @@ const id = `glossary-${term.replace(/[^a-z0-9]+/gi, '-')}-${Math.random().toStri
 
 <style>
   .ptah-glossary {
-    /* anchor-name is ignored where anchor positioning is absent, and the panel
-     * then falls back to the fixed placement below. */
-    anchor-name: --ptah-glossary;
+    /* anchor-name is set inline, per use site: see the comment beside
+     * anchorName above. It is ignored where anchor positioning is absent, and
+     * the panel then falls back to the fixed placement below. */
     white-space: nowrap;
   }
 
@@ -114,8 +151,9 @@ const id = `glossary-${term.replace(/[^a-z0-9]+/gi, '-')}-${Math.random().toStri
     max-width: min(32ch, calc(100vw - 2rem));
     padding: 0.6rem 0.75rem;
     position: fixed;
-    position-anchor: --ptah-glossary;
-    position-area: block-end;
+    /* position-anchor is set inline, per use site, beside the anchor-name it
+     * refers to. */
+    position-area: block-end span-inline-end;
     position-try-fallbacks: flip-block, flip-inline;
     white-space: normal;
   }
@@ -131,5 +169,13 @@ const id = `glossary-${term.replace(/[^a-z0-9]+/gi, '-')}-${Math.random().toStri
     font-size: 0.85em;
     margin-top: 0.35rem;
     opacity: 0.8;
+    /* A source is a file path: one token, no spaces, and longer than the
+     * panel's 32ch cap -- `core/platform/capability/capability_measured_lines_test.go`
+     * is 52 characters. `white-space: normal` gives it nowhere to break, so it
+     * ran past the panel's border and was clipped by it. `anywhere` breaks only
+     * where it must, and unlike `break-word` it also shrinks min-content, so
+     * the panel's max-width is what actually bounds the line
+     * (stokaro/ptah#1454). */
+    overflow-wrap: anywhere;
   }
 </style>
