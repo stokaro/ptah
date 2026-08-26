@@ -132,14 +132,8 @@ jobs:
       # its own step. scripts/check-go-module-lint-coverage.sh fails when a
       # tracked module has none, which is what keeps this list from going stale
       # the way it already had: golangci-lint ran only from the repository root,
-      # so testkit -- a published module -- and the gorm example were unlinted.
-      - name: Golint (testkit)
-        uses: golangci/golangci-lint-action@v9
-        with:
-          args: --timeout=30m
-          version: v2.13.1
-          working-directory: testkit
-
+      # so the gorm example was unlinted, as was the testkit module before it
+      # moved to stokaro/ptah-testkit.
       - name: Golint (gorm example)
         uses: golangci/golangci-lint-action@v9
         with:
@@ -203,14 +197,8 @@ jobs:
       # its own step. scripts/check-go-module-lint-coverage.sh fails when a
       # tracked module has none, which is what keeps this list from going stale
       # the way it already had: golangci-lint ran only from the repository root,
-      # so testkit -- a published module -- and the gorm example were unlinted.
-      - name: Golint (testkit)
-        uses: golangci/golangci-lint-action@v9
-        with:
-          args: --timeout=30m
-          version: v2.13.1
-          working-directory: testkit
-
+      # so the gorm example was unlinted, as was the testkit module before it
+      # moved to stokaro/ptah-testkit.
       - name: Golint (gorm example)
         uses: golangci/golangci-lint-action@v9
         with:

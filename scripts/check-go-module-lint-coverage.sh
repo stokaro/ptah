@@ -10,9 +10,9 @@ set -euo pipefail
 # action lints one directory per invocation, so the workflow names the modules
 # it visits. A hand-written list is exactly what went stale before -- until this
 # check landed, golangci-lint ran from the repository root and therefore linted
-# only the root module, leaving testkit (a published module) and
-# examples/orm-loaders/gorm unlinted, while nolintguard named all three by hand
-# in six places and qtlint discovered all three by itself. Three tools, three
+# only the root module, leaving a nested published module and
+# examples/orm-loaders/gorm unlinted, while nolintguard named each by hand
+# in six places and qtlint discovered each by itself. Three tools, three
 # different answers to the same question.
 #
 # A new module therefore fails here until the workflow visits it, which is the
@@ -41,7 +41,7 @@ fi
 # Counting rather than merely finding matters: with `grep -q` a module dropped
 # from one job stays green on the strength of the other, which is the same
 # "somewhere in the file" reasoning that let the modules go uncovered in the
-# first place. Removing `working-directory: testkit` from one job was measured
+# first place. Removing a `working-directory:` line from one job was measured
 # against both spellings; only the count reports it.
 invocations="$(grep -c 'uses: golangci/golangci-lint-action' "$workflow" || true)"
 scoped="$(grep -c 'working-directory:' "$workflow" || true)"

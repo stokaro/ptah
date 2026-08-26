@@ -18,8 +18,9 @@ func TestDBSchema_RolesOutOfScopeIsNeverSerialized(t *testing.T) {
 	// they exist for the comparator and for nothing else.
 	//
 	// What this protects, measured rather than assumed: the schema
-	// fingerprint that binds a migration plan to live state, and testkit's
-	// golden snapshots. Both serialize a DBSchema through encoding/json, so a
+	// fingerprint that binds a migration plan to live state, and the golden
+	// snapshots an out-of-module test helper keeps. Both serialize a DBSchema
+	// through encoding/json, so a
 	// serialized field would move a fingerprint whenever an unrelated database
 	// on the same server gained a role. It is NOT what keeps the field out of
 	// `ptah-compat schema inspect --format '{{ json . }}'`: that surface emits
