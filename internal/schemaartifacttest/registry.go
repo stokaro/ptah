@@ -3,7 +3,7 @@
 //
 // It is its own package rather than part of internal/testutils because it pulls
 // the artifact and HCL dependency graphs in, and testutils sits in the
-// dependency graph of the published testkit module -- a test helper should not
+// dependency graph of a published test-helper module -- a test helper should not
 // widen what consumers of that module resolve.
 package schemaartifacttest
 
