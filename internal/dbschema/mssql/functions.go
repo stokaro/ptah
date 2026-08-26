@@ -1,6 +1,7 @@
 package mssql
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -33,8 +34,8 @@ import (
 // because SQL Server records defaults for CLR parameters only. A declaration
 // carrying one therefore reads back without it and would be replanned forever,
 // which is why the renderer refuses that shape up front instead.
-func (r *Reader) readFunctions() ([]types.DBFunction, error) {
-	parameters, returns, err := r.readRoutineSignatures()
+func (r *Reader) readFunctions(ctx context.Context) ([]types.DBFunction, error) {
+	parameters, returns, err := r.readRoutineSignatures(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +50,7 @@ func (r *Reader) readFunctions() ([]types.DBFunction, error) {
 		WHERE o.type IN ('FN', 'IF', 'TF', 'P') AND o.is_ms_shipped = 0
 			  AND (` + schemaPredicatePlaceholder + `)
 		ORDER BY s.name, o.name`
-	rows, err := r.db.Query(r.queryWithSchemaPredicate(query), r.schemaArgs()...)
+	rows, err := r.db.QueryContext(ctx, r.queryWithSchemaPredicate(query), r.schemaArgs()...)
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +102,7 @@ type routineKey struct{ schema, name string }
 
 // readRoutineSignatures builds the parameter list and the return type of every
 // function, from the catalog rather than from the statement text.
-func (r *Reader) readRoutineSignatures() (parameters, returns map[routineKey]string, err error) {
+func (r *Reader) readRoutineSignatures(ctx context.Context) (parameters, returns map[routineKey]string, err error) {
 	query := `
 		SELECT s.name, o.name, p.parameter_id, ISNULL(p.name, ''), t.name,
 			   p.max_length, p.precision, p.scale
@@ -112,7 +113,7 @@ func (r *Reader) readRoutineSignatures() (parameters, returns map[routineKey]str
 		WHERE o.type IN ('FN', 'IF', 'TF', 'P') AND o.is_ms_shipped = 0
 			  AND (` + schemaPredicatePlaceholder + `)
 		ORDER BY s.name, o.name, p.parameter_id`
-	rows, err := r.db.Query(r.queryWithSchemaPredicate(query), r.schemaArgs()...)
+	rows, err := r.db.QueryContext(ctx, r.queryWithSchemaPredicate(query), r.schemaArgs()...)
 	if err != nil {
 		return nil, nil, err
 	}

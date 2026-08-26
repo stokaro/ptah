@@ -112,7 +112,7 @@ func TestReadSchemaRecordsVirtualTablesItCouldNotClassify(t *testing.T) {
 			execSQL(t, db, `CREATE TABLE users (id INTEGER PRIMARY KEY)`)
 			tt.setup(t, db)
 
-			schema, err := sqlite.NewSQLiteReader(db, "main").ReadSchema()
+			schema, err := sqlite.NewSQLiteReader(db, "main").ReadSchemaContext(t.Context())
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(schema.UnregisteredVirtualTables, qt.DeepEquals, tt.want)
@@ -140,7 +140,7 @@ func TestReadSchemaKeepsShadowTablesOutOfTheUnclassifiedList(t *testing.T) {
 	c.Assert(catalogNamesOfKind(t, db, "shadow"), qt.DeepEquals,
 		[]string{"docs_config", "docs_content", "docs_data", "docs_docsize", "docs_idx"})
 
-	schema, err := sqlite.NewSQLiteReader(db, "main").ReadSchema()
+	schema, err := sqlite.NewSQLiteReader(db, "main").ReadSchemaContext(t.Context())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(schema.UnregisteredVirtualTables, qt.HasLen, 0)

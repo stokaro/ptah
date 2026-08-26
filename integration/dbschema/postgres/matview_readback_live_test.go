@@ -43,7 +43,7 @@ func TestMaterializedViewReadback_LiveUnqualifiedBodyRoundTrips(t *testing.T) {
 	defer cancel()
 	conn, schemaName := prepareMaterializedViewReadbackFixture(c, ctx, dbtarget.PostgreSQL)
 
-	live, err := dbschema.ReadSchemaWithSchemas(conn, []string{schemaName})
+	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
 	c.Assert(live.MatViews, qt.HasLen, 1)
 	c.Assert(live.MatViews[0].Schema, qt.Equals, schemaName)

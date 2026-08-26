@@ -255,7 +255,7 @@ func TestClickHouseDescriptionCarriesNoCredentialLive(t *testing.T) {
 			" TO "+sqlident.Quote(platform.ClickHouse, user),
 	)
 
-	described, err := conn.Reader().ReadSchema()
+	described, err := conn.Reader().ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 
 	// Non-vacuous: the read did describe this database's RBAC, and then did not
@@ -447,7 +447,7 @@ func clickHouseSelectGrant(role, database, table string, withOption bool) dbsche
 // CREATE ROLE.
 func readClickHouseRBAC(c *qt.C, conn *dbschema.DatabaseConnection) *dbschematypes.DBSchema {
 	c.Helper()
-	schema, err := conn.Reader().ReadSchema()
+	schema, err := conn.Reader().ReadSchemaContext(c.Context())
 	c.Assert(err, qt.IsNil)
 	return &dbschematypes.DBSchema{
 		Roles:           schema.Roles,

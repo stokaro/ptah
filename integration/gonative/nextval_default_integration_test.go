@@ -61,7 +61,7 @@ type Order struct {
 		c.Assert(err, qt.IsNil, qt.Commentf("statement failed: %s", stmt))
 	}
 
-	live, err := postgres.NewPostgreSQLReader(db, "public").ReadSchema()
+	live, err := postgres.NewPostgreSQLReader(db, "public").ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 
 	roundTrip := schemadiff.CompareWithDialect(desired, live, "postgres")

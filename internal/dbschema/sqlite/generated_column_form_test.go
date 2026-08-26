@@ -58,7 +58,7 @@ func TestReader_ReadsBothSpellingsOfAGeneratedColumn(t *testing.T) {
 			db := openMemoryDB(t)
 			execSQL(t, db, tt.ddl)
 
-			schema, err := sqlite.NewSQLiteReader(db, "main").ReadSchema()
+			schema, err := sqlite.NewSQLiteReader(db, "main").ReadSchemaContext(t.Context())
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(schema.Tables, qt.HasLen, 1)
@@ -98,7 +98,7 @@ func TestReader_LeavesAPlainColumnUngenerated(t *testing.T) {
 			db := openMemoryDB(t)
 			execSQL(t, db, tt.ddl)
 
-			schema, err := sqlite.NewSQLiteReader(db, "main").ReadSchema()
+			schema, err := sqlite.NewSQLiteReader(db, "main").ReadSchemaContext(t.Context())
 
 			c.Assert(err, qt.IsNil)
 			plain := schema.Tables[0].Columns[2]

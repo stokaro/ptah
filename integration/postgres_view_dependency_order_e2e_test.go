@@ -76,7 +76,7 @@ func TestPostgresViewDependencyOrderE2E(t *testing.T) {
 			conn, err := dbschema.ConnectToDatabase(ctx, scopedURL)
 			c.Assert(err, qt.IsNil)
 			defer dbschema.CloseAndWarn(conn)
-			read, err := conn.Reader().ReadSchema()
+			read, err := conn.Reader().ReadSchemaContext(ctx)
 			c.Assert(err, qt.IsNil)
 
 			// The names are chosen so ALPHABETICAL order is the WRONG order:

@@ -55,7 +55,7 @@ func TestMySQLLiveRoleRoundTrip(t *testing.T) {
 	}
 
 	// 1. The role is seen as missing, planned, and the statement runs.
-	live, err := conn.Reader().ReadSchema()
+	live, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 	creation := schemadiff.CompareWithDialect(declared, live, conn.Info().Dialect)
 	c.Assert(creation.RolesAdded, qt.Contains, role)
@@ -69,7 +69,7 @@ func TestMySQLLiveRoleRoundTrip(t *testing.T) {
 
 	// 2. The read reports the role, and reports it as a ROLE rather than as one
 	// of the accounts sitting in the same table.
-	created, err := conn.Reader().ReadSchema()
+	created, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 	c.Assert(roleNames(created.Roles), qt.Contains, role)
 	// root is an account that can log in. A read that could not tell the two

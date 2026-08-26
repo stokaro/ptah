@@ -87,7 +87,7 @@ func readIndexAttributeIndexes(c *qt.C, dsn string) []dbschematypes.DBIndex {
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
 
-	live, err := dbschema.ReadSchemaWithSchemas(conn, nil)
+	live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, nil)
 	c.Assert(err, qt.IsNil)
 
 	return live.Indexes

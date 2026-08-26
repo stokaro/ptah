@@ -165,7 +165,7 @@ func TestReadSequencesForSchema_DomainBackedSequenceIsStandalone(t *testing.T) {
 				return serveSequenceQuery(catalog, query)
 			})
 
-			sequences, err := NewPostgreSQLReader(db.SQL, "public").readSequencesForSchema("public")
+			sequences, err := NewPostgreSQLReader(db.SQL, "public").readSequencesForSchema(t.Context(), "public")
 			c.Assert(err, qt.IsNil)
 
 			var names []string

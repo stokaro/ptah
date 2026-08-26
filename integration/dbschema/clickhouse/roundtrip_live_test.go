@@ -120,7 +120,7 @@ func applyStatements(c *qt.C, conn *dbschema.DatabaseConnection, statements []st
 
 func readLive(c *qt.C, conn *dbschema.DatabaseConnection) *dbschematypes.DBSchema {
 	c.Helper()
-	live, err := conn.Reader().ReadSchema()
+	live, err := conn.Reader().ReadSchemaContext(c.Context())
 	c.Assert(err, qt.IsNil)
 	return live
 }

@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -29,18 +30,18 @@ import (
 // not a NEXTVAL, and next_not_cached_value is unchanged afterwards. A read that
 // advanced the sequence would be a description with a side effect, which is the
 // one thing a reader must never be.
-func (r *Reader) readSequences(dbName string) ([]types.DBSequence, error) {
+func (r *Reader) readSequences(ctx context.Context, dbName string) ([]types.DBSequence, error) {
 	if !r.caps.Has(capability.Sequences) {
 		return nil, nil
 	}
-	names, err := r.sequenceNames(dbName)
+	names, err := r.sequenceNames(ctx, dbName)
 	if err != nil {
 		return nil, err
 	}
 
 	sequences := make([]types.DBSequence, 0, len(names))
 	for _, name := range names {
-		sequence, err := r.readSequenceOptions(dbName, name)
+		sequence, err := r.readSequenceOptions(ctx, dbName, name)
 		if err != nil {
 			return nil, err
 		}
@@ -54,8 +55,8 @@ func (r *Reader) readSequences(dbName string) ([]types.DBSequence, error) {
 // TABLE_TYPE = 'SEQUENCE' rather than information_schema.SEQUENCES because the
 // two agree on membership and only this one is also the table a name can be
 // quoted from with the same rules every other object here uses.
-func (r *Reader) sequenceNames(dbName string) ([]string, error) {
-	rows, err := r.db.Query(`
+func (r *Reader) sequenceNames(ctx context.Context, dbName string) ([]string, error) {
+	rows, err := r.db.QueryContext(ctx, `
 		SELECT TABLE_NAME
 		FROM information_schema.TABLES
 		WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'SEQUENCE'
@@ -87,7 +88,7 @@ func (r *Reader) sequenceNames(dbName string) ([]string, error) {
 // safe on SQL Server -- the comparator compares only the options a DECLARATION
 // sets and treats an unset one as unmanaged, so a fully populated read against a
 // declaration that named nothing produces no change.
-func (r *Reader) readSequenceOptions(dbName, name string) (types.DBSequence, error) {
+func (r *Reader) readSequenceOptions(ctx context.Context, dbName, name string) (types.DBSequence, error) {
 	sequence := types.DBSequence{Name: name, Schema: dbName, DataType: "bigint"}
 	var start, increment, minValue, maxValue, cache int64
 	var cycle bool
@@ -96,7 +97,7 @@ func (r *Reader) readSequenceOptions(dbName, name string) (types.DBSequence, err
 		"SELECT start_value, increment, minimum_value, maximum_value, cache_size, cycle_option FROM %s.%s",
 		quoteMySQLIdentifier(dbName), quoteMySQLIdentifier(name),
 	)
-	err := r.db.QueryRow(query).Scan(&start, &increment, &minValue, &maxValue, &cache, &cycle)
+	err := r.db.QueryRowContext(ctx, query).Scan(&start, &increment, &minValue, &maxValue, &cache, &cycle)
 	if err != nil {
 		return types.DBSequence{}, fmt.Errorf("failed to read sequence %s: %w", name, err)
 	}

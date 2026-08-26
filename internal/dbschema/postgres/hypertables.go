@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"context"
 	"database/sql"
 
 	"go.5x5.cz/ptah/dbschema/types"
@@ -76,13 +77,13 @@ const hypertableQuery = `
 // here is partitioned", and that is a claim a failed read cannot make. The
 // consequence of getting it wrong is not a wrong statement but a MISSING note,
 // which is the failure this whole read exists to prevent.
-func (r *Reader) readHypertables(extensions []types.DBExtension) ([]types.DBHypertable, error) {
+func (r *Reader) readHypertables(ctx context.Context, extensions []types.DBExtension) ([]types.DBHypertable, error) {
 	if !hasTimescaleExtension(extensions) {
 		return nil, nil
 	}
 	var hypertables []types.DBHypertable
 	for _, schemaName := range r.schemasToRead() {
-		schemaHypertables, err := r.readHypertablesForSchema(schemaName)
+		schemaHypertables, err := r.readHypertablesForSchema(ctx, schemaName)
 		if err != nil {
 			return nil, err
 		}
@@ -91,8 +92,8 @@ func (r *Reader) readHypertables(extensions []types.DBExtension) ([]types.DBHype
 	return hypertables, nil
 }
 
-func (r *Reader) readHypertablesForSchema(schemaName string) ([]types.DBHypertable, error) {
-	rows, err := r.db.Query(hypertableQuery, schemaName)
+func (r *Reader) readHypertablesForSchema(ctx context.Context, schemaName string) ([]types.DBHypertable, error) {
+	rows, err := r.db.QueryContext(ctx, hypertableQuery, schemaName)
 	if err != nil {
 		return nil, err
 	}

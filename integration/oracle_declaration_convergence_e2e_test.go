@@ -87,7 +87,7 @@ func TestOracleDeclarationConvergesE2E(t *testing.T) {
 	}
 
 	// The read side. Every field the comparison reads has to survive this.
-	read, err := conn.Reader().ReadSchema()
+	read, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 
 	tables := make(map[string]int, len(read.Tables))
@@ -192,7 +192,7 @@ func TestOracleGeneratedExpressionChangeIsStillReportedE2E(t *testing.T) {
 			qt.Commentf("statement: %s", statement))
 	}
 
-	read, err := conn.Reader().ReadSchema()
+	read, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 
 	// The one edit, on the declaration only.

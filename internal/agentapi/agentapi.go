@@ -460,7 +460,7 @@ func readDatabase(
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	live, err := dbschema.ReadSchemaWithSchemas(conn, req.Schemas)
+	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, req.Schemas)
 	if err != nil {
 		return nil, agentdiag.Errorf(agentdiag.CodeDatabaseReadFailed, "read schema: %w", err)
 	}

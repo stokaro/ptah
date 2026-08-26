@@ -76,7 +76,7 @@ func readTablesThroughRowStatsFakeServer(t *testing.T, hasRelationSize bool) row
 	var out rowStatsReadResult
 	db := dbtest.Open(t, rowStatsFakeServer(hasRelationSize, &out.tablesQuery))
 	reader := NewPostgreSQLReader(db.SQL, "public")
-	out.tables, out.err = reader.readTablesForSchema("public")
+	out.tables, out.err = reader.readTablesForSchema(t.Context(), "public")
 	out.queries = db.QueryCount()
 	return out
 }
@@ -167,8 +167,8 @@ func TestSupportsRelationSize_AsksOncePerReader(t *testing.T) {
 	db := dbtest.Open(t, probeCountingServer(&probes))
 	reader := NewPostgreSQLReader(db.SQL, "public")
 
-	first, firstErr := reader.supportsRelationSize()
-	second, secondErr := reader.supportsRelationSize()
+	first, firstErr := reader.supportsRelationSize(t.Context())
+	second, secondErr := reader.supportsRelationSize(t.Context())
 
 	c.Assert(firstErr, qt.IsNil)
 	c.Assert(secondErr, qt.IsNil)

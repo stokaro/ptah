@@ -60,7 +60,7 @@ func TestSQLServerLiveInspectDescribesSynonymsAndProperties(t *testing.T) {
 		c.Assert(execErr, qt.IsNil, qt.Commentf("statement:\n%s", statement))
 	}
 
-	live, err := dbschema.ReadSchemaWithSchemas(conn, []string{schemaName})
+	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
 	// Non-vacuity: the read really found all three, so an empty document below
 	// cannot pass as agreement about what is describable.

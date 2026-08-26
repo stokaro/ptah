@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"testing/fstest"
 
 	"github.com/go-extras/go-kit/must"
@@ -159,37 +160,64 @@ func ExampleCreateMigrationFromSQL() {
 	// Has down function: true
 }
 
-// Example demonstrates how to register migrations from different filesystems
-func Example_registerMigrationsCustomFilesystem() {
-	// This is a demonstration - in real usage you would have a valid database URL
-	dbURL := "postgres://user:pass@localhost/db"
+// Example demonstrates the three sources a migrator takes its migrations from:
+// an embedded filesystem, a directory on disk, and migrations built in memory.
+// Every one of them produces a MigrationProvider, and NewMigrator turns any
+// provider into a migrator. A real caller passes a connection from
+// dbschema.ConnectToDatabase where this example passes nil.
+func Example_migrationSources() {
+	// Source 1: an embedded filesystem. The migration files must sit at the root
+	// of the fs.FS the provider is handed, so a subdirectory is peeled off first.
+	embeddedFS := must.Must(fs.Sub(examples.GetExampleMigrations(), "migrations"))
+	embedded := must.Must(migrator.NewFSMigrationProvider(embeddedFS))
 
-	// Connect to database
-	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
-	if err != nil {
-		fmt.Printf("Failed to connect: %v\n", err)
-		return
+	// Source 2: a directory on disk, read through os.DirFS.
+	dir, removeDir := exampleMigrationDir()
+	defer removeDir()
+	onDisk := must.Must(migrator.NewFSMigrationProvider(os.DirFS(dir)))
+
+	// Source 3: migrations built in memory, with no files at all.
+	inMemory := migrator.NewRegisteredMigrationProvider()
+	inMemory.Register(migrator.CreateMigrationFromSQL(
+		1,
+		"Create users table",
+		"CREATE TABLE users (id SERIAL PRIMARY KEY);",
+		"DROP TABLE users;",
+	))
+
+	// NewFSMigrator is the shorthand for the two filesystem cases: it builds the
+	// provider and the migrator in one call.
+	shorthand := must.Must(migrator.NewFSMigrator(nil, embeddedFS))
+
+	fmt.Printf("Embedded migrations: %d\n", len(embedded.Migrations()))
+	fmt.Printf("On-disk migrations: %d\n", len(onDisk.Migrations()))
+	fmt.Printf("In-memory migrations: %d\n", len(inMemory.Migrations()))
+	fmt.Printf("Migrator built from a provider: %t\n", migrator.NewMigrator(nil, embedded) != nil)
+	fmt.Printf("Migrator built by NewFSMigrator: %t\n", shorthand != nil)
+
+	// Output:
+	// Embedded migrations: 3
+	// On-disk migrations: 1
+	// In-memory migrations: 1
+	// Migrator built from a provider: true
+	// Migrator built by NewFSMigrator: true
+}
+
+// exampleMigrationDir writes one up/down migration pair into a fresh temporary
+// directory and returns the directory together with its cleanup. It exists so
+// the example above can show os.DirFS against a real directory instead of
+// describing one in a comment.
+func exampleMigrationDir() (dir string, cleanup func()) {
+	dir = must.Must(os.MkdirTemp("", "ptah-migrator-example"))
+	writeExampleMigration(dir, "0000000001_create_orders.up.sql", "CREATE TABLE orders (id SERIAL PRIMARY KEY);")
+	writeExampleMigration(dir, "0000000001_create_orders.down.sql", "DROP TABLE orders;")
+	return dir, func() { _ = os.RemoveAll(dir) }
+}
+
+func writeExampleMigration(dir, name, sql string) {
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(sql), 0o600); err != nil {
+		panic(err)
 	}
-	defer conn.Close()
-
-	// Option 1: Register from example migrations
-	exampleFS := examples.GetExampleMigrations()
-	migrationsFS := must.Must(fs.Sub(exampleFS, "migrations"))
-	// Create a migrator and register all migrations with both up and down
-	_, err = migrator.NewFSMigrator(conn, migrationsFS)
-	if err != nil {
-		fmt.Printf("Failed to register example migrations: %v\n", err)
-		return
-	}
-
-	// Option 2: Register from a directory on disk
-	// err = migrator.RegisterMigrationsFromDirectory(m, "/path/to/migrations")
-
-	// Option 3: Register from a custom filesystem
-	// customFS := os.DirFS("/custom/path")
-	// err = migrator.RegisterMigrations(m, customFS)
-
-	fmt.Println("Migrations registered successfully")
 }
 
 // Example demonstrates how to use RegisteredMigrationProvider for programmatic migrations

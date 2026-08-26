@@ -279,13 +279,16 @@ func joinStatements(stmts []string) string {
 //
 // # String escaping (per dialect)
 //
-// The single quote is always doubled (” ) per the SQL standard. For MySQL,
-// MariaDB, and ClickHouse the backslash is ALSO escaped (\ -> \\) because those
-// dialects process C-style backslash escapes inside string literals by default;
-// for the PostgreSQL family, SQLite, SQL Server, and any unrecognized dialect
-// the backslash is left untouched, as standard SQL treats it literally. A string
-// containing a NUL byte is rejected because it is not portably representable as a
-// SQL literal.
+// The single quote is always doubled per the SQL standard:
+//
+//	'  ->  ''
+//
+// For MySQL, MariaDB, and ClickHouse the backslash is ALSO escaped (\ -> \\)
+// because those dialects process C-style backslash escapes inside string
+// literals by default; for the PostgreSQL family, SQLite, SQL Server, and any
+// unrecognized dialect the backslash is left untouched, as standard SQL treats
+// it literally. A string containing a NUL byte is rejected because it is not
+// portably representable as a SQL literal.
 func renderLiteral(dialect string, v any) (string, error) {
 	switch val := v.(type) {
 	case nil:

@@ -22,7 +22,7 @@ func TestReaderTriggerBodyExcludesCreateTriggerHeader(t *testing.T) {
 	_, err = db.ExecContext(ctx, `CREATE TRIGGER trg_users_email AFTER UPDATE ON users FOR EACH ROW BEGIN SELECT NEW.email; END`)
 	c.Assert(err, qt.IsNil)
 
-	schema, err := sqlite.NewSQLiteReader(db, "main").ReadSchema()
+	schema, err := sqlite.NewSQLiteReader(db, "main").ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(schema.Triggers, qt.HasLen, 1)

@@ -18,7 +18,7 @@
 //   - Migration to specific versions (forward or backward)
 //   - Comprehensive migration status reporting
 //   - SQL file-based and programmatic migration support
-//   - Cross-database compatibility (PostgreSQL, MySQL, MariaDB)
+//   - Cross-database compatibility (see Cross-Database Support below)
 //
 // # Core Components
 //
@@ -100,15 +100,17 @@
 // WithMigrationsTable(schema, table) to store migration history in a custom
 // schema or table, for example an `infra.ptah_migrations` table in PostgreSQL.
 //
-// PostgreSQL, MySQL, MariaDB, and SQL Server migrations acquire a session-level
-// advisory lock around the planning and apply window. Use
-// WithMigrationLockName to coordinate on a custom lock name, and use
-// WithMigrationLockTimeout to bound the wait for that lock. Callers can detect
-// acquisition timeouts with IsMigrationLockTimeout. WithoutMigrationLock turns
-// the lock off entirely for callers that serialize migration runs by some
-// other means; MigrationLockName and MigrationLockSkipped report the resulting
-// decision so a command can name what it acquires, or announce what it does
-// not.
+// PostgreSQL, YugabyteDB, MySQL, MariaDB, and SQL Server migrations acquire a
+// session-level advisory lock around the planning and apply window; the
+// remaining dialects get a no-op lock because their servers have no
+// session-scoped advisory-lock semantics to take (see internal/dblock.Supported
+// for the list this follows). Use WithMigrationLockName to coordinate on a
+// custom lock name, and use WithMigrationLockTimeout to bound the wait for that
+// lock. Callers can detect acquisition timeouts with IsMigrationLockTimeout.
+// WithoutMigrationLock turns the lock off entirely for callers that serialize
+// migration runs by some other means; MigrationLockName and
+// MigrationLockSkipped report the resulting decision so a command can name what
+// it acquires, or announce what it does not.
 //
 // # Migration Operations
 //
@@ -189,11 +191,29 @@
 //
 // # Cross-Database Support
 //
-// The migrator works with all supported database platforms:
+// The migrator carries dialect-specific handling for nine dialects. Every
+// branch is reachable from a zero-value Migrator, which is how the guard tests
+// assert the statement each target is sent without a live server of that
+// engine:
 //
-//   - PostgreSQL: Full support with proper timestamp handling
-//   - MySQL: Compatible with MySQL-specific SQL syntax
-//   - MariaDB: Full compatibility with MariaDB features
+//   - PostgreSQL, CockroachDB, YugabyteDB: the default revision table DDL with
+//     a TIMESTAMP column, and read-only pre-migration check transactions
+//   - Spanner: the same PostgreSQL-family paths, except that the revision
+//     table's timestamp column is TIMESTAMPTZ, which is the type Spanner's
+//     PostgreSQL interface has (see revisionTimestampType), and that it asks
+//     for a schema by name rather than through current_schema()
+//   - MySQL, MariaDB: backtick identifier quoting, the InnoDB revision-row
+//     witness on file transactions, and the version-column type migration
+//     described above
+//   - SQL Server: its own IF OBJECT_ID revision table DDL with NVARCHAR columns
+//     and TOP (1) selection (see ptahRevisionsTableDDL)
+//   - SQLite: sqlite_schema for metadata presence, one physical connection for
+//     nontransactional sessions, and table rebuilds through
+//     internal/sqliterebuild
+//   - ClickHouse: a named table engine on the revision table, system.tables for
+//     metadata presence, and no multi-row transaction -- which is why an Atlas
+//     checksum reconciliation that cannot be done atomically is refused there
+//     rather than done in pieces
 //
 // # Integration with Ptah
 //

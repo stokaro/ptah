@@ -1,6 +1,7 @@
 package migrationlintreport
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -18,12 +19,12 @@ import (
 // of a rename still exists: `ALTER TABLE users RENAME COLUMN id TO oid` says
 // nothing about what `id` was, and after the statement runs there is no `id`
 // left to ask about.
-func readBaselineColumns(
+func readBaselineColumns(ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	version int64,
 	schemas []string,
 ) ([]lint.BaselineColumn, error) {
-	schema, err := dbschema.ReadSchemaWithSchemas(conn, schemas)
+	schema, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, schemas)
 	if err != nil {
 		return nil, fmt.Errorf("read dev database schema: %w", err)
 	}

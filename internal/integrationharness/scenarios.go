@@ -180,7 +180,7 @@ func testApplyIncrementalMigrations(ctx context.Context, conn *dbschema.Database
 	// Verify tables exist
 	tables := []string{"users", "posts", "comments"}
 	for _, table := range tables {
-		exists, err := helper.TableExists(table)
+		exists, err := helper.TableExists(ctx, table)
 		if err != nil {
 			return fmt.Errorf("failed to check if table %s exists: %w", table, err)
 		}
@@ -222,7 +222,7 @@ func testRollbackMigrations(ctx context.Context, conn *dbschema.DatabaseConnecti
 	}
 
 	// Verify only users table exists
-	exists, err := helper.TableExists("users")
+	exists, err := helper.TableExists(ctx, "users")
 	if err != nil {
 		return fmt.Errorf("failed to check if users table exists: %w", err)
 	}
@@ -231,7 +231,7 @@ func testRollbackMigrations(ctx context.Context, conn *dbschema.DatabaseConnecti
 	}
 
 	// Verify posts table doesn't exist
-	exists, err = helper.TableExists("posts")
+	exists, err = helper.TableExists(ctx, "posts")
 	if err != nil {
 		return fmt.Errorf("failed to check if posts table exists: %w", err)
 	}
@@ -280,7 +280,7 @@ func testUpgradeToSpecificVersion(ctx context.Context, conn *dbschema.DatabaseCo
 	}
 
 	for table, shouldExist := range tables {
-		exists, err := helper.TableExists(table)
+		exists, err := helper.TableExists(ctx, table)
 		if err != nil {
 			return fmt.Errorf("failed to check if table %s exists: %w", table, err)
 		}
@@ -395,7 +395,7 @@ func testReadActualDBSchema(ctx context.Context, conn *dbschema.DatabaseConnecti
 	}
 
 	// Read the actual schema
-	schema, err := conn.Reader().ReadSchema()
+	schema, err := conn.Reader().ReadSchemaContext(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to read database schema: %w", err)
 	}
@@ -445,7 +445,7 @@ func testDryRunSupport(ctx context.Context, conn *dbschema.DatabaseConnection, f
 	}
 
 	// Verify no tables were actually created
-	exists, err := helper.TableExists("users")
+	exists, err := helper.TableExists(ctx, "users")
 	if err != nil {
 		return fmt.Errorf("failed to check if users table exists: %w", err)
 	}
@@ -460,7 +460,7 @@ func testDryRunSupport(ctx context.Context, conn *dbschema.DatabaseConnection, f
 	}
 
 	// Now table should exist
-	exists, err = helper.TableExists("users")
+	exists, err = helper.TableExists(ctx, "users")
 	if err != nil {
 		return fmt.Errorf("failed to check if users table exists after real migration: %w", err)
 	}

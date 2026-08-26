@@ -51,7 +51,7 @@ func TestReverseRecreatedTable_DropTableRollbackApplies_Integration(t *testing.T
 	seedSQL, _ := generateLiveMigrationSQL(c, conn, prior)
 	execScript(c, conn, seedSQL, "SEED")
 
-	dbPrior, err := conn.Reader().ReadSchema()
+	dbPrior, err := conn.Reader().ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	priorCatalog := rrtCatalog(dbPrior)
 	c.Assert(priorCatalog, qt.Not(qt.HasLen), 0,
@@ -65,7 +65,7 @@ func TestReverseRecreatedTable_DropTableRollbackApplies_Integration(t *testing.T
 	upSQL, downSQL := generateLiveMigrationSQL(c, conn, target)
 	execScript(c, conn, upSQL, "UP")
 
-	dbAfterUp, err := conn.Reader().ReadSchema()
+	dbAfterUp, err := conn.Reader().ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	c.Assert(rrtHasTable(dbAfterUp), qt.IsFalse,
 		qt.Commentf("the up migration must really drop the table, or the down proves nothing"))
@@ -78,7 +78,7 @@ func TestReverseRecreatedTable_DropTableRollbackApplies_Integration(t *testing.T
 
 	// 4. Applying is not arriving: the table has to be back, with its
 	//    constraints, and not with more of them than it started with.
-	dbAfterDown, err := conn.Reader().ReadSchema()
+	dbAfterDown, err := conn.Reader().ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	c.Assert(rrtHasTable(dbAfterDown), qt.IsTrue, qt.Commentf("down SQL:\n%s", downSQL))
 	c.Assert(rrtCatalog(dbAfterDown), qt.DeepEquals, priorCatalog,

@@ -1,6 +1,7 @@
 package clickhouse
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -70,30 +71,37 @@ func NewClickHouseReaderWithCapabilities(
 	return &Reader{db: db, schema: schema, caps: caps, version: version}
 }
 
-// ReadSchema returns tables, columns, data-skipping indexes, plain views and
-// materialized views for the configured database, plus roles and grants when
-// the target carries [capability.RoleManagement]. Constraints, RLS, functions,
-// and other shapes with no direct equivalent in Ptah's ClickHouse model remain
-// empty.
+// ReadSchema is [Reader.ReadSchemaContext] under context.Background(), the
+// context-free half of the pair [types.SchemaReader] declares. Prefer the
+// Context form: only it can be told to stop.
 func (r *Reader) ReadSchema() (*types.DBSchema, error) {
-	dbName, err := r.resolveDatabaseName()
+	return r.ReadSchemaContext(context.Background())
+}
+
+// ReadSchemaContext returns tables, columns, data-skipping indexes, plain
+// views and materialized views for the configured database, plus roles and
+// grants when the target carries [capability.RoleManagement]. Constraints, RLS,
+// functions, and other shapes with no direct equivalent in Ptah's ClickHouse
+// model remain empty.
+func (r *Reader) ReadSchemaContext(ctx context.Context) (*types.DBSchema, error) {
+	dbName, err := r.resolveDatabaseName(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	tables, err := r.readTables(dbName)
+	tables, err := r.readTables(ctx, dbName)
 	if err != nil {
 		return nil, fmt.Errorf("clickhouse: read tables: %w", err)
 	}
-	indexes, err := r.readSkippingIndexes(dbName)
+	indexes, err := r.readSkippingIndexes(ctx, dbName)
 	if err != nil {
 		return nil, fmt.Errorf("clickhouse: read indexes: %w", err)
 	}
-	views, err := r.readViews(dbName)
+	views, err := r.readViews(ctx, dbName)
 	if err != nil {
 		return nil, fmt.Errorf("clickhouse: read views: %w", err)
 	}
-	matViews, err := r.readMaterializedViews(dbName)
+	matViews, err := r.readMaterializedViews(ctx, dbName)
 	if err != nil {
 		return nil, fmt.Errorf("clickhouse: read materialized views: %w", err)
 	}
@@ -104,7 +112,7 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 		MatViews: matViews,
 	}
 	if r.caps.Has(capability.RoleManagement) {
-		if err := r.readRBACInto(dbName, schema); err != nil {
+		if err := r.readRBACInto(ctx, dbName, schema); err != nil {
 			// An account that may not read the access catalog must not lose the
 			// whole description over it. Reading system.roles and system.grants
 			// needs a privilege reading a table does not, and the capability
@@ -138,7 +146,7 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 		// "this policy is missing" from a read that admits it did not look, so
 		// a declared policy becomes an undecided addition instead of a CREATE
 		// nothing verified.
-		policies, err := r.readRowPolicies(dbName)
+		policies, err := r.readRowPolicies(ctx, dbName)
 		switch {
 		case err == nil:
 			schema.RLSPolicies = policies
@@ -220,24 +228,24 @@ const innerTableNameExpression = `if(
 		         concat('.inner_id.', toString(uuid))
 		       )`
 
-func (r *Reader) resolveDatabaseName() (string, error) {
+func (r *Reader) resolveDatabaseName(ctx context.Context) (string, error) {
 	if r.schema != "" {
 		return r.schema, nil
 	}
 	var name string
-	if err := r.db.QueryRow("SELECT currentDatabase()").Scan(&name); err != nil {
+	if err := r.db.QueryRowContext(ctx, "SELECT currentDatabase()").Scan(&name); err != nil {
 		return "", fmt.Errorf("clickhouse: resolve current database: %w", err)
 	}
 	return name, nil
 }
 
-func (r *Reader) readTables(dbName string) ([]types.DBTable, error) {
-	columnsByTable, err := r.readColumnsByTable(dbName)
+func (r *Reader) readTables(ctx context.Context, dbName string) ([]types.DBTable, error) {
+	columnsByTable, err := r.readColumnsByTable(ctx, dbName)
 	if err != nil {
 		return nil, fmt.Errorf("clickhouse: read columns: %w", err)
 	}
 
-	rows, err := r.db.Query(`
+	rows, err := r.db.QueryContext(ctx, `
 		SELECT name, comment, sorting_key, primary_key,
 		       engine_full, partition_key, sampling_key
 		FROM system.tables
@@ -288,8 +296,8 @@ func (r *Reader) readTables(dbName string) ([]types.DBTable, error) {
 	return tables, nil
 }
 
-func (r *Reader) readViews(dbName string) ([]types.DBView, error) {
-	rows, err := r.db.Query(`
+func (r *Reader) readViews(ctx context.Context, dbName string) ([]types.DBView, error) {
+	rows, err := r.db.QueryContext(ctx, `
 		SELECT name, as_select, comment
 		FROM system.tables
 		WHERE database = ?
@@ -353,12 +361,12 @@ func (r *Reader) readViews(dbName string) ([]types.DBView, error) {
 // the renderer emitting `TO`, the comparator diffing it); refusing the read
 // outright would take away a read that works today. Neither is decided here --
 // the support matrix says plainly not to manage a `TO` view with Ptah.
-func (r *Reader) readMaterializedViews(dbName string) ([]types.DBMatView, error) {
-	refreshable, err := r.readRefreshableViews(dbName)
+func (r *Reader) readMaterializedViews(ctx context.Context, dbName string) ([]types.DBMatView, error) {
+	refreshable, err := r.readRefreshableViews(ctx, dbName)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := r.db.Query(`
+	rows, err := r.db.QueryContext(ctx, `
 		SELECT name, as_select, comment, create_table_query
 		FROM system.tables
 		WHERE database = ?
@@ -395,7 +403,7 @@ func (r *Reader) readMaterializedViews(dbName string) ([]types.DBMatView, error)
 	return views, nil
 }
 
-func (r *Reader) readColumnsByTable(dbName string) (map[string][]types.DBColumn, error) {
+func (r *Reader) readColumnsByTable(ctx context.Context, dbName string) (map[string][]types.DBColumn, error) {
 	// is_in_primary_key is what makes a read of a MergeTree table describable
 	// again. Without it every column reads as non-key, which has two visible
 	// consequences and one root cause (stokaro/ptah#1603): a declaration
@@ -404,7 +412,7 @@ func (r *Reader) readColumnsByTable(dbName string) (map[string][]types.DBColumn,
 	// renderer, which falls back to the primary-key columns for the ORDER BY a
 	// MergeTree engine requires, has nothing to fall back to, so `ptah db read`
 	// cannot render the schema it just read.
-	rows, err := r.db.Query(`
+	rows, err := r.db.QueryContext(ctx, `
 		SELECT table, name, type, default_kind, default_expression, position, comment,
 		       is_in_primary_key
 		FROM system.columns
@@ -478,9 +486,9 @@ func (r *Reader) readColumnsByTable(dbName string) (map[string][]types.DBColumn,
 
 // skippingIndexTablePresent reports whether system.data_skipping_indices is
 // available on the connected server.
-func (r *Reader) skippingIndexTablePresent() (bool, error) {
+func (r *Reader) skippingIndexTablePresent(ctx context.Context) (bool, error) {
 	var n uint64
-	err := r.db.QueryRow(`
+	err := r.db.QueryRowContext(ctx, `
 		SELECT count()
 		FROM system.tables
 		WHERE database = 'system' AND name = 'data_skipping_indices'
@@ -491,11 +499,11 @@ func (r *Reader) skippingIndexTablePresent() (bool, error) {
 	return n > 0, nil
 }
 
-func (r *Reader) readSkippingIndexes(dbName string) ([]types.DBIndex, error) {
+func (r *Reader) readSkippingIndexes(ctx context.Context, dbName string) ([]types.DBIndex, error) {
 	// system.data_skipping_indices was added in 21.x; on very old servers it
 	// is absent. Feature-detect by probing system.tables before querying so
 	// real failures aren't swallowed by an error-substring sniff.
-	present, err := r.skippingIndexTablePresent()
+	present, err := r.skippingIndexTablePresent(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("clickhouse: detect system.data_skipping_indices: %w", err)
 	}
@@ -510,7 +518,7 @@ func (r *Reader) readSkippingIndexes(dbName string) ([]types.DBIndex, error) {
 	// materialized view's storage belongs to a table this reader does not
 	// report, and an index whose TableName names nothing in the schema is a
 	// change the comparator cannot resolve.
-	rows, err := r.db.Query(`
+	rows, err := r.db.QueryContext(ctx, `
 		SELECT table, name, expr, type, granularity
 		FROM system.data_skipping_indices
 		WHERE database = ?
@@ -616,8 +624,8 @@ func normalizeKeyExpression(expression string) string {
 // A server that does not have the table at all is answered with an empty set
 // rather than an error: the read then reports every view as plain, which is
 // what this reader did before refreshable views were modeled.
-func (r *Reader) readRefreshableViews(dbName string) (map[string]bool, error) {
-	rows, err := r.db.Query(`
+func (r *Reader) readRefreshableViews(ctx context.Context, dbName string) (map[string]bool, error) {
+	rows, err := r.db.QueryContext(ctx, `
 		SELECT view
 		FROM system.view_refreshes
 		WHERE database = ?

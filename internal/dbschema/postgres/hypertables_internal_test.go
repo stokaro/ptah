@@ -30,7 +30,7 @@ func TestReadHypertables_CarriesThePrimaryDimension(t *testing.T) {
 	db := dbtest.Open(t, answeringHypertables)
 	reader := NewPostgreSQLReader(db.SQL, "public")
 
-	hypertables, err := reader.readHypertables(timescaleInstalled())
+	hypertables, err := reader.readHypertables(t.Context(), timescaleInstalled())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(hypertables, qt.DeepEquals, []types.DBHypertable{{
@@ -56,7 +56,7 @@ func TestReadHypertables_AsksNothingWithoutTheExtension(t *testing.T) {
 	db := dbtest.Open(t, recordingQueries(&asked))
 	reader := NewPostgreSQLReader(db.SQL, "public")
 
-	hypertables, err := reader.readHypertables([]types.DBExtension{{Name: "plpgsql"}})
+	hypertables, err := reader.readHypertables(t.Context(), []types.DBExtension{{Name: "plpgsql"}})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(hypertables, qt.HasLen, 0)
@@ -75,7 +75,7 @@ func TestReadHypertables_AFailureWithTheExtensionIsSurfaced(t *testing.T) {
 	db := dbtest.Open(t, faultingHypertables)
 	reader := NewPostgreSQLReader(db.SQL, "public")
 
-	_, err := reader.readHypertables(timescaleInstalled())
+	_, err := reader.readHypertables(t.Context(), timescaleInstalled())
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "permission denied")
@@ -93,7 +93,7 @@ func TestReadHypertables_TakesAHypertableWithNoDimensionReported(t *testing.T) {
 	db := dbtest.Open(t, dimensionlessHypertable)
 	reader := NewPostgreSQLReader(db.SQL, "public")
 
-	hypertables, err := reader.readHypertables(timescaleInstalled())
+	hypertables, err := reader.readHypertables(t.Context(), timescaleInstalled())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(hypertables, qt.DeepEquals, []types.DBHypertable{{

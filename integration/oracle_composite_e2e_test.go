@@ -48,7 +48,7 @@ func TestOracleCompositeTypesPlanAndConvergeE2E(t *testing.T) {
 
 	declared := oracleCompositeDeclaration()
 
-	before, err := conn.Reader().ReadSchema()
+	before, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, before, nil)
 	c.Assert(err, qt.IsNil)
@@ -66,7 +66,7 @@ func TestOracleCompositeTypesPlanAndConvergeE2E(t *testing.T) {
 		execOracle(ctx, c, conn, strings.TrimSuffix(strings.TrimSpace(statement), ";"))
 	}
 
-	after, err := conn.Reader().ReadSchema()
+	after, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 	c.Assert(oracleCompositeSummary(after), qt.DeepEquals, []string{
 		"ORA_ADDR(STREET VARCHAR2(100), ZIP VARCHAR2(10))",
@@ -91,7 +91,7 @@ func TestOracleCompositeTypesPlanAndConvergeE2E(t *testing.T) {
 		execOracle(ctx, c, conn, strings.TrimSuffix(strings.TrimSpace(statement), ";"))
 	}
 
-	empty, err := conn.Reader().ReadSchema()
+	empty, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 	c.Assert(oracleCompositeSummary(empty), qt.HasLen, 0)
 }
@@ -129,7 +129,7 @@ func TestOracleCompositeReaderDeclinesWhatTheModelCannotCarryE2E(t *testing.T) {
 		execOracle(ctx, c, conn, statement)
 	}
 
-	schema, err := conn.Reader().ReadSchema()
+	schema, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 
 	// ORA_PARENT survives on its own merits -- it has no methods and no

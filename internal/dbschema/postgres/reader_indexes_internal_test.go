@@ -790,7 +790,7 @@ func readIndexThroughFakeServer(t *testing.T, catalog pgIndexCatalog) (types.DBI
 	db := dbtest.Open(t, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
 		return serveIndexQuery(catalog, query)
 	})
-	indexes, err := NewPostgreSQLReader(db.SQL, "public").readIndexesForSchema("public")
+	indexes, err := NewPostgreSQLReader(db.SQL, "public").readIndexesForSchema(t.Context(), "public")
 	if err != nil {
 		return types.DBIndex{}, err
 	}
@@ -1271,7 +1271,7 @@ func indexQueryForFake(t *testing.T) string {
 		captured = query
 		return serveIndexQuery(plainCatalog(), query)
 	})
-	_, err := NewPostgreSQLReader(db.SQL, "public").readIndexesForSchema("public")
+	_, err := NewPostgreSQLReader(db.SQL, "public").readIndexesForSchema(t.Context(), "public")
 	c.Assert(err, qt.IsNil)
 	return captured
 }

@@ -1,6 +1,7 @@
 package oracle
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"strings"
@@ -57,13 +58,13 @@ ORDER BY c.domain_name, c.name`
 // DOMAIN answers ORA-00901, and asking anyway would fail the statement -- and
 // a failed statement aborts the enclosing transaction, so every later read
 // would answer ORA-25P02's Oracle equivalent rather than the read that broke.
-func (r *Reader) readDomains() ([]types.DBDomain, error) {
-	checks, err := r.readDomainChecks()
+func (r *Reader) readDomains(ctx context.Context) ([]types.DBDomain, error) {
+	checks, err := r.readDomainChecks(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	rows, err := r.db.Query(domainQuery, r.schema)
+	rows, err := r.db.QueryContext(ctx, domainQuery, r.schema)
 	if err != nil {
 		return nil, err
 	}
@@ -103,8 +104,8 @@ func (r *Reader) readDomains() ([]types.DBDomain, error) {
 }
 
 // readDomainChecks groups the CHECK constraints by domain name.
-func (r *Reader) readDomainChecks() (map[string][]types.DBDomainCheck, error) {
-	rows, err := r.db.Query(domainConstraintQuery, r.schema)
+func (r *Reader) readDomainChecks(ctx context.Context) (map[string][]types.DBDomainCheck, error) {
+	rows, err := r.db.QueryContext(ctx, domainConstraintQuery, r.schema)
 	if err != nil {
 		return nil, err
 	}

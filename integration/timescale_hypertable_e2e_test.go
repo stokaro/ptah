@@ -70,7 +70,7 @@ func TestTimescaleHypertableRoundTripE2E(t *testing.T) {
 
 	// 2. The extension's own catalog is asked what it holds. Nothing else can
 	//    answer: pg_class reports relkind 'r' for a hypertable.
-	live, err := dbschema.ReadSchemaWithSchemas(conn, []string{schemaName})
+	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
 	c.Assert(describedHypertableNames(live), qt.Contains, table)
 	c.Assert(readHypertable(c, live, table), qt.DeepEquals, dbschematypes.DBHypertable{
@@ -211,7 +211,7 @@ func planTimescaleReportingError(
 	schemaName string,
 ) ([]string, error) {
 	c.Helper()
-	live, err := dbschema.ReadSchemaWithSchemas(conn, []string{schemaName})
+	live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
 
 	diff, err := schemadiff.CompareWithDatabase(c.Context(), conn, declared, live, nil)

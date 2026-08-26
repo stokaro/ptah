@@ -128,7 +128,7 @@ func compareLiveSequences(
 	declared *goschema.Database,
 ) *difftypes.SchemaDiff {
 	c.Helper()
-	current, err := conn.Reader().ReadSchema()
+	current, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, current, nil)
 	c.Assert(err, qt.IsNil)

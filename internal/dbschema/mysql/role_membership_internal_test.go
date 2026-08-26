@@ -74,7 +74,7 @@ func TestReadRoleMemberships_ReadsTheTableThisEngineHas(t *testing.T) {
 			db := membershipDB(c, test.hasRoleEdges, test.hasRolesMap, test.rows)
 			reader := NewMySQLReader(db.SQL, "app")
 
-			memberships, err := reader.readRoleMemberships()
+			memberships, err := reader.readRoleMemberships(t.Context())
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(memberships, qt.DeepEquals, test.want)

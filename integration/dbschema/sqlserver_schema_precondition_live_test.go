@@ -69,7 +69,7 @@ func TestSQLServerLiveSchemaPrecondition(t *testing.T) {
 
 	// The table is where the declaration put it, which a plan that created the
 	// schema somewhere else would not achieve.
-	live, err := dbschema.ReadSchemaWithSchemas(conn, []string{schemaName})
+	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
 	c.Assert(sqlServerTableNames(live.Tables), qt.DeepEquals, []string{"widget"})
 
@@ -96,7 +96,7 @@ func TestSQLServerLiveSchemaPrecondition(t *testing.T) {
 		c.Assert(execErr, qt.IsNil, qt.Commentf("statement:\n%s", statement))
 	}
 
-	final, err := dbschema.ReadSchemaWithSchemas(conn, []string{schemaName})
+	final, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
 	c.Assert(sqlServerTableNames(final.Tables), qt.DeepEquals, []string{"gadget", "widget"})
 }
@@ -110,7 +110,7 @@ func planSQLServerAgainstLive(
 	schemaName string,
 ) []string {
 	c.Helper()
-	live, err := dbschema.ReadSchemaWithSchemas(conn, []string{schemaName})
+	live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
 
 	// CompareWithDatabase, not CompareWithDatabaseInfo: SQL Server compares

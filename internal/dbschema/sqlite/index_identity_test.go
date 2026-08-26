@@ -29,9 +29,9 @@ func TestReaderAndSchemaDiff_PreserveAttachedSchemaIndexIdentity(t *testing.T) {
 	)`)
 	execSQL(t, db, `CREATE INDEX tenant.idx_shared_email ON users(email)`)
 
-	mainSchema, err := sqlite.NewSQLiteReader(db, "main").ReadSchema()
+	mainSchema, err := sqlite.NewSQLiteReader(db, "main").ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
-	tenantSchema, err := sqlite.NewSQLiteReader(db, "tenant").ReadSchema()
+	tenantSchema, err := sqlite.NewSQLiteReader(db, "tenant").ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	c.Assert(mainSchema.Tables, qt.HasLen, 1)
 	c.Assert(mainSchema.Tables[0].Columns[1].Name, qt.Equals, "main_value")
@@ -64,7 +64,7 @@ func TestReaderAndSchemaDiff_PreserveAttachedSchemaIndexIdentity(t *testing.T) {
 	err = db.QueryRow(`SELECT count(*) FROM tenant.sqlite_schema WHERE type = 'index' AND name = 'idx_shared_email'`).Scan(&tenantIndexCount)
 	c.Assert(err, qt.IsNil)
 	c.Assert(tenantIndexCount, qt.Equals, 0)
-	tenantSchema, err = sqlite.NewSQLiteReader(db, "tenant").ReadSchema()
+	tenantSchema, err = sqlite.NewSQLiteReader(db, "tenant").ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	c.Assert(tenantSchema.Indexes, qt.HasLen, 0)
 	live.Indexes = append(mainSchema.Indexes, tenantSchema.Indexes...)
@@ -85,7 +85,7 @@ func TestReaderAndSchemaDiff_PreserveAttachedSchemaIndexIdentity(t *testing.T) {
 	})
 	execSQL(t, db, addStatements[0])
 
-	tenantSchema, err = sqlite.NewSQLiteReader(db, "tenant").ReadSchema()
+	tenantSchema, err = sqlite.NewSQLiteReader(db, "tenant").ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	live.Indexes = append(mainSchema.Indexes, tenantSchema.Indexes...)
 	restoredDiff := schemadiff.CompareWithDialect(target, live, platform.SQLite)
@@ -107,7 +107,7 @@ func TestReaderAndSchemaDiff_PreserveAttachedSchemaIndexIdentity(t *testing.T) {
 	})
 	execSQL(t, db, removeStatements[0])
 
-	tenantSchema, err = sqlite.NewSQLiteReader(db, "tenant").ReadSchema()
+	tenantSchema, err = sqlite.NewSQLiteReader(db, "tenant").ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	live.Indexes = append(mainSchema.Indexes, tenantSchema.Indexes...)
 	finalDiff := schemadiff.CompareWithDialect(target, live, platform.SQLite)
@@ -135,7 +135,7 @@ func TestReaderAndSchemaDiff_MoveSameSchemaIndexWithoutNameCollision(t *testing.
 		},
 	}
 
-	live, err := sqlite.NewSQLiteReader(db, "main").ReadSchema()
+	live, err := sqlite.NewSQLiteReader(db, "main").ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	diff := schemadiff.CompareWithDialect(target, live, platform.SQLite)
 	c.Assert(diff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{
@@ -154,7 +154,7 @@ func TestReaderAndSchemaDiff_MoveSameSchemaIndexWithoutNameCollision(t *testing.
 	execSQL(t, db, statements[0])
 	execSQL(t, db, statements[1])
 
-	live, err = sqlite.NewSQLiteReader(db, "main").ReadSchema()
+	live, err = sqlite.NewSQLiteReader(db, "main").ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	finalDiff := schemadiff.CompareWithDialect(target, live, platform.SQLite)
 	c.Assert(finalDiff.IndexAdditions(), qt.HasLen, 0)

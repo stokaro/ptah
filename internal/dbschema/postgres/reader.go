@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/platform/capability"
@@ -29,6 +31,13 @@ type Reader struct {
 	// relationSize records whether pg_catalog.pg_relation_size exists on the
 	// connected server, and relationSizeProbed whether that has been asked yet.
 	// The pair is a cache, not configuration: see supportsRelationSize.
+	//
+	// relationSizeMu guards them, because this is the reader's only field pair
+	// written DURING a read rather than before one. Two goroutines reading
+	// through the same reader -- what conn.Reader() hands out -- write it
+	// concurrently, and go test -race calls that a race whether or not the two
+	// answers agree.
+	relationSizeMu     sync.Mutex
 	relationSize       bool
 	relationSizeProbed bool
 }
@@ -96,56 +105,63 @@ func (r *Reader) outputSchema(schemaName string) string {
 	return ""
 }
 
-// ReadSchema reads the complete database schema
+// ReadSchema is [Reader.ReadSchemaContext] under context.Background(), the
+// context-free half of the pair [types.SchemaReader] declares. Prefer the
+// Context form: only it can be told to stop.
 func (r *Reader) ReadSchema() (*types.DBSchema, error) {
+	return r.ReadSchemaContext(context.Background())
+}
+
+// ReadSchemaContext reads the complete database schema
+func (r *Reader) ReadSchemaContext(ctx context.Context) (*types.DBSchema, error) {
 	schema := &types.DBSchema{}
 
-	schemas, err := r.readSchemas()
+	schemas, err := r.readSchemas(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read schemas: %w", err)
 	}
 	schema.Schemas = schemas
 
 	// Read tables
-	tables, err := r.readTables()
+	tables, err := r.readTables(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read tables: %w", err)
 	}
 	schema.Tables = tables
 
 	// Read enums
-	enums, err := r.readEnums()
+	enums, err := r.readEnums(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read enums: %w", err)
 	}
 	schema.Enums = enums
 
 	// Read PostgreSQL user-defined types (domains, composites, ranges)
-	if err := r.readUserTypesInto(schema); err != nil {
+	if err := r.readUserTypesInto(ctx, schema); err != nil {
 		return nil, err
 	}
 
 	// Read indexes
-	indexes, err := r.readIndexes()
+	indexes, err := r.readIndexes(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read indexes: %w", err)
 	}
 	schema.Indexes = indexes
 
 	// Read constraints
-	constraints, err := r.readConstraints()
+	constraints, err := r.readConstraints(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read constraints: %w", err)
 	}
 	schema.Constraints = constraints
 
-	if err := r.readCapabilityGatedObjects(schema); err != nil {
+	if err := r.readCapabilityGatedObjects(ctx, schema); err != nil {
 		return nil, err
 	}
 
 	if r.caps.Has(capability.Sequences) {
 		// Read standalone sequences (PostgreSQL-specific)
-		sequences, err := r.readSequences()
+		sequences, err := r.readSequences(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read sequences: %w", err)
 		}
@@ -154,7 +170,7 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 
 	if r.caps.Has(capability.RowLevelSecurity) {
 		// Read RLS policies (PostgreSQL-specific)
-		rlsPolicies, err := r.readRLSPolicies()
+		rlsPolicies, err := r.readRLSPolicies(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read RLS policies: %w", err)
 		}
@@ -163,23 +179,23 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 
 	if r.caps.Has(capability.RoleManagement) {
 		// Read roles and grants (PostgreSQL-specific)
-		if err := r.readRolesInto(schema); err != nil {
+		if err := r.readRolesInto(ctx, schema); err != nil {
 			return nil, err
 		}
 
-		grants, err := r.readGrants(standaloneSequenceSet(schema.Sequences))
+		grants, err := r.readGrants(ctx, standaloneSequenceSet(schema.Sequences))
 		if err != nil {
 			return nil, fmt.Errorf("failed to read grants: %w", err)
 		}
 		schema.Grants = grants
 
-		memberships, err := r.readRoleMemberships()
+		memberships, err := r.readRoleMemberships(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read role memberships: %w", err)
 		}
 		schema.RoleMemberships = memberships
 
-		owners, err := r.readObjectOwners()
+		owners, err := r.readObjectOwners(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read object owners: %w", err)
 		}
@@ -208,11 +224,11 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 // change does not move it: it is still the connected schema. What moves is that
 // the read says so. `schema inspect` resolves its own wider scope from the URL
 // and hands the names in explicitly (stokaro/ptah#1264).
-func (r *Reader) readSchemas() ([]types.DBSchemaInfo, error) {
+func (r *Reader) readSchemas(ctx context.Context) ([]types.DBSchemaInfo, error) {
 	names := r.schemasToRead()
 	schemas := make([]types.DBSchemaInfo, 0, len(names))
 	for _, schemaName := range names {
-		schema, err := r.readSchemaInfo(schemaName)
+		schema, err := r.readSchemaInfo(ctx, schemaName)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				continue
@@ -224,7 +240,7 @@ func (r *Reader) readSchemas() ([]types.DBSchemaInfo, error) {
 	return schemas, nil
 }
 
-func (r *Reader) readSchemaInfo(schemaName string) (types.DBSchemaInfo, error) {
+func (r *Reader) readSchemaInfo(ctx context.Context, schemaName string) (types.DBSchemaInfo, error) {
 	schemasQuery := `
 		SELECT
 			n.nspname,
@@ -245,7 +261,7 @@ func (r *Reader) readSchemaInfo(schemaName string) (types.DBSchemaInfo, error) {
 	}
 
 	var schema types.DBSchemaInfo
-	err := r.db.QueryRow(schemasQuery, schemaName).Scan(&schema.Name, &schema.Comment)
+	err := r.db.QueryRowContext(ctx, schemasQuery, schemaName).Scan(&schema.Name, &schema.Comment)
 	if err != nil {
 		return types.DBSchemaInfo{}, fmt.Errorf("failed to query schema %s: %w", schemaName, err)
 	}
@@ -253,10 +269,10 @@ func (r *Reader) readSchemaInfo(schemaName string) (types.DBSchemaInfo, error) {
 }
 
 // readTables reads all tables and their columns
-func (r *Reader) readTables() ([]types.DBTable, error) {
+func (r *Reader) readTables(ctx context.Context) ([]types.DBTable, error) {
 	var tables []types.DBTable
 	for _, schemaName := range r.schemasToRead() {
-		schemaTables, err := r.readTablesForSchema(schemaName)
+		schemaTables, err := r.readTablesForSchema(ctx, schemaName)
 		if err != nil {
 			return nil, err
 		}
@@ -301,14 +317,14 @@ const rowStatsUnknownReltuplesOnly = `NOT COALESCE(c.reltuples >= 0, false)`
 // answers the question there (`f`) and on PostgreSQL 17.10 (`t`), so the
 // projection degrades to the statistics-only test on a server without the
 // function instead of failing the read.
-func (r *Reader) rowStatsUnknownProjection() (string, error) {
+func (r *Reader) rowStatsUnknownProjection(ctx context.Context) (string, error) {
 	// A catalog with no statistics views has no st to read, and asking for one
 	// is a missing-FROM-clause error rather than a null (stokaro/ptah#942).
 	statistics := rowStatsUnknownStatisticsOnly
 	if !r.caps.Has(capability.CatalogRowStatistics) {
 		statistics = rowStatsUnknownReltuplesOnly
 	}
-	hasRelationSize, err := r.supportsRelationSize()
+	hasRelationSize, err := r.supportsRelationSize(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -321,9 +337,14 @@ func (r *Reader) rowStatsUnknownProjection() (string, error) {
 
 // supportsRelationSize reports whether pg_catalog.pg_relation_size exists on
 // the connected server, asking once per reader.
-func (r *Reader) supportsRelationSize() (bool, error) {
-	if r.relationSizeProbed {
-		return r.relationSize, nil
+//
+// The probe runs outside the lock, so a first read never blocks another read
+// behind a round trip. Two concurrent first reads may both ask; they ask the
+// same server the same question, so the second answer overwrites the first
+// with its own value.
+func (r *Reader) supportsRelationSize(ctx context.Context) (bool, error) {
+	if supported, probed := r.cachedRelationSize(); probed {
+		return supported, nil
 	}
 	const probe = `
 		SELECT EXISTS (
@@ -333,16 +354,28 @@ func (r *Reader) supportsRelationSize() (bool, error) {
 			WHERE n.nspname = 'pg_catalog' AND p.proname = 'pg_relation_size'
 		)`
 	var supported bool
-	if err := r.db.QueryRow(probe).Scan(&supported); err != nil {
+	if err := r.db.QueryRowContext(ctx, probe).Scan(&supported); err != nil {
 		return false, fmt.Errorf("failed to probe pg_relation_size availability: %w", err)
 	}
-	r.relationSize = supported
-	r.relationSizeProbed = true
+	r.cacheRelationSize(supported)
 	return supported, nil
 }
 
-func (r *Reader) readTablesForSchema(schemaName string) ([]types.DBTable, error) {
-	columnsByTable, err := r.readColumnsForSchema(schemaName)
+func (r *Reader) cachedRelationSize() (supported, probed bool) {
+	r.relationSizeMu.Lock()
+	defer r.relationSizeMu.Unlock()
+	return r.relationSize, r.relationSizeProbed
+}
+
+func (r *Reader) cacheRelationSize(supported bool) {
+	r.relationSizeMu.Lock()
+	defer r.relationSizeMu.Unlock()
+	r.relationSize = supported
+	r.relationSizeProbed = true
+}
+
+func (r *Reader) readTablesForSchema(ctx context.Context, schemaName string) ([]types.DBTable, error) {
+	columnsByTable, err := r.readColumnsForSchema(ctx, schemaName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read columns for schema %s: %w", schemaName, err)
 	}
@@ -366,7 +399,7 @@ func (r *Reader) readTablesForSchema(schemaName string) ([]types.DBTable, error)
 	// catalog is the only place the distinction survives, and PostgreSQL
 	// rejects both CREATE INDEX CONCURRENTLY and DROP INDEX CONCURRENTLY on
 	// such a relation.
-	rowStatsUnknown, err := r.rowStatsUnknownProjection()
+	rowStatsUnknown, err := r.rowStatsUnknownProjection(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -388,7 +421,7 @@ func (r *Reader) readTablesForSchema(schemaName string) ([]types.DBTable, error)
 			AND t.table_name NOT IN ('schema_migrations')
 			ORDER BY table_schema, table_name`
 
-	rows, err := r.db.Query(tablesQuery, schemaName)
+	rows, err := r.db.QueryContext(ctx, tablesQuery, schemaName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query tables: %w", err)
 	}
@@ -666,7 +699,7 @@ func (r *Reader) formattedTypeExpr() string {
 
 // readColumnsForSchema reads all columns in a schema in one catalog query and
 // groups them by table name.
-func (r *Reader) readColumnsForSchema(schemaName string) (map[string][]types.DBColumn, error) {
+func (r *Reader) readColumnsForSchema(ctx context.Context, schemaName string) (map[string][]types.DBColumn, error) {
 	columnsQuery := `
 		SELECT
 			col.table_name,
@@ -744,7 +777,7 @@ func (r *Reader) readColumnsForSchema(schemaName string) (map[string][]types.DBC
 		` + r.hiddenColumnFilter() + `
 		ORDER BY col.table_name, col.ordinal_position`
 
-	rows, err := r.db.Query(columnsQuery, schemaName)
+	rows, err := r.db.QueryContext(ctx, columnsQuery, schemaName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query columns: %w", err)
 	}
@@ -827,10 +860,10 @@ func postgresIdentityGeneration(code string) string {
 }
 
 // readEnums reads all enum types
-func (r *Reader) readEnums() ([]types.DBEnum, error) {
+func (r *Reader) readEnums(ctx context.Context) ([]types.DBEnum, error) {
 	var enums []types.DBEnum
 	for _, schemaName := range r.schemasToRead() {
-		schemaEnums, err := r.readEnumsForSchema(schemaName)
+		schemaEnums, err := r.readEnumsForSchema(ctx, schemaName)
 		if err != nil {
 			return nil, err
 		}
@@ -839,7 +872,7 @@ func (r *Reader) readEnums() ([]types.DBEnum, error) {
 	return enums, nil
 }
 
-func (r *Reader) readEnumsForSchema(schemaName string) ([]types.DBEnum, error) {
+func (r *Reader) readEnumsForSchema(ctx context.Context, schemaName string) ([]types.DBEnum, error) {
 	enumsQuery := `
 		SELECT
 			t.typname AS enum_name,
@@ -851,7 +884,7 @@ func (r *Reader) readEnumsForSchema(schemaName string) ([]types.DBEnum, error) {
 		WHERE n.nspname = $1
 		ORDER BY t.typname, e.enumsortorder`
 
-	rows, err := r.db.Query(enumsQuery, schemaName)
+	rows, err := r.db.QueryContext(ctx, enumsQuery, schemaName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query enums: %w", err)
 	}
@@ -888,7 +921,7 @@ func (r *Reader) readEnumsForSchema(schemaName string) ([]types.DBEnum, error) {
 // readUserTypesInto reads PostgreSQL domains, composite types, and range types
 // and assigns them onto schema. Split out of ReadSchema to keep that method's
 // cyclomatic complexity manageable.
-func (r *Reader) readUserTypesInto(schema *types.DBSchema) error {
+func (r *Reader) readUserTypesInto(ctx context.Context, schema *types.DBSchema) error {
 	// The whole read is skipped rather than gated projection by projection: it
 	// joins pg_depend, and a missing relation is not something a constant can
 	// stand in for the way a missing function is. A target without the type
@@ -896,19 +929,19 @@ func (r *Reader) readUserTypesInto(schema *types.DBSchema) error {
 	if !r.caps.Has(capability.CatalogDependencies) {
 		return nil
 	}
-	domains, err := r.readDomains()
+	domains, err := r.readDomains(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to read domains: %w", err)
 	}
 	schema.Domains = domains
 
-	composites, err := r.readComposites()
+	composites, err := r.readComposites(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to read composite types: %w", err)
 	}
 	schema.Composites = composites
 
-	ranges, err := r.readRanges()
+	ranges, err := r.readRanges(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to read range types: %w", err)
 	}
@@ -957,10 +990,10 @@ const extensionOwnedTypeExclusion = `
 		)`
 
 // readDomains reads PostgreSQL domain types (typtype='d').
-func (r *Reader) readDomains() ([]types.DBDomain, error) {
+func (r *Reader) readDomains(ctx context.Context) ([]types.DBDomain, error) {
 	var domains []types.DBDomain
 	for _, schemaName := range r.schemasToRead() {
-		schemaDomains, err := r.readDomainsForSchema(schemaName)
+		schemaDomains, err := r.readDomainsForSchema(ctx, schemaName)
 		if err != nil {
 			return nil, err
 		}
@@ -969,7 +1002,7 @@ func (r *Reader) readDomains() ([]types.DBDomain, error) {
 	return domains, nil
 }
 
-func (r *Reader) readDomainsForSchema(schemaName string) ([]types.DBDomain, error) {
+func (r *Reader) readDomainsForSchema(ctx context.Context, schemaName string) ([]types.DBDomain, error) {
 	query := `
 		SELECT
 			n.nspname AS schema_name,
@@ -984,7 +1017,7 @@ func (r *Reader) readDomainsForSchema(schemaName string) ([]types.DBDomain, erro
 		extensionOwnedTypeExclusion + `
 		ORDER BY t.typname`
 
-	rows, err := r.db.Query(query, schemaName)
+	rows, err := r.db.QueryContext(ctx, query, schemaName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query domains for schema %s: %w", schemaName, err)
 	}
@@ -1003,7 +1036,7 @@ func (r *Reader) readDomainsForSchema(schemaName string) ([]types.DBDomain, erro
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("failed to read domains for schema %s: %w", schemaName, err)
 	}
-	if err := r.attachDomainCheckConstraints(schemaName, domains); err != nil {
+	if err := r.attachDomainCheckConstraints(ctx, schemaName, domains); err != nil {
 		return nil, err
 	}
 	return domains, nil
@@ -1018,7 +1051,7 @@ func (r *Reader) readDomainsForSchema(schemaName string) ([]types.DBDomain, erro
 // CHECK has only one route -- drop the domain and create it again -- and that
 // route fails on any domain a column actually uses, which is every domain worth
 // having (stokaro/ptah#1717).
-func (r *Reader) attachDomainCheckConstraints(schemaName string, domains []types.DBDomain) error {
+func (r *Reader) attachDomainCheckConstraints(ctx context.Context, schemaName string, domains []types.DBDomain) error {
 	if len(domains) == 0 || !r.caps.Has(capability.PostgresCatalogFunctions) {
 		return nil
 	}
@@ -1033,7 +1066,7 @@ func (r *Reader) attachDomainCheckConstraints(schemaName string, domains []types
 		WHERE n.nspname = $1 AND c.contype = 'c' AND t.typtype = 'd'
 		ORDER BY t.typname, c.conname`
 
-	rows, err := r.db.Query(query, schemaName)
+	rows, err := r.db.QueryContext(ctx, query, schemaName)
 	if err != nil {
 		return fmt.Errorf("failed to query domain check constraints for schema %s: %w", schemaName, err)
 	}
@@ -1059,10 +1092,10 @@ func (r *Reader) attachDomainCheckConstraints(schemaName string, domains []types
 
 // readComposites reads PostgreSQL composite types (typtype='c'), excluding the
 // implicit row types of tables (relkind other than 'c').
-func (r *Reader) readComposites() ([]types.DBComposite, error) {
+func (r *Reader) readComposites(ctx context.Context) ([]types.DBComposite, error) {
 	var composites []types.DBComposite
 	for _, schemaName := range r.schemasToRead() {
-		schemaComposites, err := r.readCompositesForSchema(schemaName)
+		schemaComposites, err := r.readCompositesForSchema(ctx, schemaName)
 		if err != nil {
 			return nil, err
 		}
@@ -1071,7 +1104,7 @@ func (r *Reader) readComposites() ([]types.DBComposite, error) {
 	return composites, nil
 }
 
-func (r *Reader) readCompositesForSchema(schemaName string) ([]types.DBComposite, error) {
+func (r *Reader) readCompositesForSchema(ctx context.Context, schemaName string) ([]types.DBComposite, error) {
 	const query = `
 		SELECT
 			n.nspname AS schema_name,
@@ -1087,7 +1120,7 @@ func (r *Reader) readCompositesForSchema(schemaName string) ([]types.DBComposite
 		extensionOwnedTypeExclusion + `
 		ORDER BY t.typname, a.attnum`
 
-	rows, err := r.db.Query(query, schemaName)
+	rows, err := r.db.QueryContext(ctx, query, schemaName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query composite types for schema %s: %w", schemaName, err)
 	}
@@ -1123,10 +1156,10 @@ func (r *Reader) readCompositesForSchema(schemaName string) ([]types.DBComposite
 }
 
 // readRanges reads PostgreSQL range types (typtype='r').
-func (r *Reader) readRanges() ([]types.DBRange, error) {
+func (r *Reader) readRanges(ctx context.Context) ([]types.DBRange, error) {
 	var ranges []types.DBRange
 	for _, schemaName := range r.schemasToRead() {
-		schemaRanges, err := r.readRangesForSchema(schemaName)
+		schemaRanges, err := r.readRangesForSchema(ctx, schemaName)
 		if err != nil {
 			return nil, err
 		}
@@ -1135,7 +1168,7 @@ func (r *Reader) readRanges() ([]types.DBRange, error) {
 	return ranges, nil
 }
 
-func (r *Reader) readRangesForSchema(schemaName string) ([]types.DBRange, error) {
+func (r *Reader) readRangesForSchema(ctx context.Context, schemaName string) ([]types.DBRange, error) {
 	// The four attributes after the subtype are what makes a change to an
 	// existing range type visible at all; without them the comparator had only
 	// names to compare and called a changed range converged (stokaro/ptah#931
@@ -1159,7 +1192,7 @@ func (r *Reader) readRangesForSchema(schemaName string) ([]types.DBRange, error)
 		extensionOwnedTypeExclusion + `
 		ORDER BY t.typname`
 
-	rows, err := r.db.Query(query, schemaName)
+	rows, err := r.db.QueryContext(ctx, query, schemaName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query range types for schema %s: %w", schemaName, err)
 	}
@@ -1190,10 +1223,10 @@ func (r *Reader) readRangesForSchema(schemaName string) ([]types.DBRange, error)
 }
 
 // readIndexes reads all indexes
-func (r *Reader) readIndexes() ([]types.DBIndex, error) {
+func (r *Reader) readIndexes(ctx context.Context) ([]types.DBIndex, error) {
 	var indexes []types.DBIndex
 	for _, schemaName := range r.schemasToRead() {
-		schemaIndexes, err := r.readIndexesForSchema(schemaName)
+		schemaIndexes, err := r.readIndexesForSchema(ctx, schemaName)
 		if err != nil {
 			return nil, err
 		}
@@ -1249,7 +1282,7 @@ func requiredExtensionsProjection(indclassExpr, accessMethodExpr string) string 
 			), '[]')`
 }
 
-func (r *Reader) readIndexesForSchema(schemaName string) ([]types.DBIndex, error) {
+func (r *Reader) readIndexesForSchema(ctx context.Context, schemaName string) ([]types.DBIndex, error) {
 	// A server without pg_catalog's introspection helpers has no
 	// pg_get_indexdef either, and the query below is pg_index/pg_class/pg_am/
 	// pg_get_indexdef throughout, so there is nothing here to degrade: the read
@@ -1257,7 +1290,7 @@ func (r *Reader) readIndexesForSchema(schemaName string) ([]types.DBIndex, error
 	// probe already measures on every run, so the branch cannot drift from what
 	// the server actually answers (stokaro/ptah#942).
 	if !r.caps.Has(capability.PostgresCatalogFunctions) {
-		return r.readInformationSchemaIndexes(schemaName)
+		return r.readInformationSchemaIndexes(ctx, schemaName)
 	}
 	indexesQuery := `
 		SELECT
@@ -1399,7 +1432,7 @@ func (r *Reader) readIndexesForSchema(schemaName string) ([]types.DBIndex, error
 		AND t.relname NOT IN ('schema_migrations')
 		ORDER BY t.relname, i.relname`
 
-	rows, err := r.db.Query(indexesQuery, schemaName)
+	rows, err := r.db.QueryContext(ctx, indexesQuery, schemaName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query indexes: %w", err)
 	}
@@ -1768,7 +1801,7 @@ func splitPostgresIndexColumns(value string) []string {
 }
 
 // readConstraints reads all constraints
-func (r *Reader) readConstraints() ([]types.DBConstraint, error) {
+func (r *Reader) readConstraints(ctx context.Context) ([]types.DBConstraint, error) {
 	// A server without pg_catalog cannot answer either half below: the basic
 	// read is anchored in pg_constraint and aggregates with FILTER, and the
 	// second reads pg_constraint directly. The SQL-standard catalog answers the
@@ -1776,7 +1809,7 @@ func (r *Reader) readConstraints() ([]types.DBConstraint, error) {
 	if !r.caps.Has(capability.PostgresCatalogFunctions) {
 		var constraints []types.DBConstraint
 		for _, schemaName := range r.schemasToRead() {
-			schemaConstraints, err := r.readInformationSchemaConstraints(schemaName)
+			schemaConstraints, err := r.readInformationSchemaConstraints(ctx, schemaName)
 			if err != nil {
 				return nil, err
 			}
@@ -1786,13 +1819,13 @@ func (r *Reader) readConstraints() ([]types.DBConstraint, error) {
 	}
 
 	// First, read basic constraint information from information_schema
-	basicConstraints, err := r.readBasicConstraints()
+	basicConstraints, err := r.readBasicConstraints(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	// Then, read PostgreSQL-specific constraints (like EXCLUDE) from pg_constraint
-	pgConstraints, err := r.readPostgreSQLConstraints()
+	pgConstraints, err := r.readPostgreSQLConstraints(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1804,10 +1837,10 @@ func (r *Reader) readConstraints() ([]types.DBConstraint, error) {
 }
 
 // readBasicConstraints reads basic constraint information from information_schema
-func (r *Reader) readBasicConstraints() ([]types.DBConstraint, error) {
+func (r *Reader) readBasicConstraints(ctx context.Context) ([]types.DBConstraint, error) {
 	var constraints []types.DBConstraint
 	for _, schemaName := range r.schemasToRead() {
-		schemaConstraints, err := r.readBasicConstraintsForSchema(schemaName)
+		schemaConstraints, err := r.readBasicConstraintsForSchema(ctx, schemaName)
 		if err != nil {
 			return nil, err
 		}
@@ -1816,7 +1849,7 @@ func (r *Reader) readBasicConstraints() ([]types.DBConstraint, error) {
 	return constraints, nil
 }
 
-func (r *Reader) readBasicConstraintsForSchema(schemaName string) ([]types.DBConstraint, error) {
+func (r *Reader) readBasicConstraintsForSchema(ctx context.Context, schemaName string) ([]types.DBConstraint, error) {
 	// PostgreSQL scopes constraint names to their owning tables. Joining the
 	// information_schema FK views by schema and name therefore cross-products
 	// same-named constraints on different tables. Anchor the row in
@@ -1890,7 +1923,7 @@ func (r *Reader) readBasicConstraintsForSchema(schemaName string) ([]types.DBCon
 			tc.constraint_type
 		ORDER BY tc.table_name, tc.constraint_type, tc.constraint_name`
 
-	rows, err := r.db.Query(constraintsQuery, schemaName)
+	rows, err := r.db.QueryContext(ctx, constraintsQuery, schemaName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query constraints: %w", err)
 	}
@@ -2015,10 +2048,10 @@ func unquotePostgresIdentifier(identifier string) string {
 }
 
 // readPostgreSQLConstraints reads PostgreSQL-specific constraints from pg_constraint
-func (r *Reader) readPostgreSQLConstraints() ([]types.DBConstraint, error) {
+func (r *Reader) readPostgreSQLConstraints(ctx context.Context) ([]types.DBConstraint, error) {
 	var constraints []types.DBConstraint
 	for _, schemaName := range r.schemasToRead() {
-		schemaConstraints, err := r.readPostgreSQLConstraintsForSchema(schemaName)
+		schemaConstraints, err := r.readPostgreSQLConstraintsForSchema(ctx, schemaName)
 		if err != nil {
 			return nil, err
 		}
@@ -2027,7 +2060,7 @@ func (r *Reader) readPostgreSQLConstraints() ([]types.DBConstraint, error) {
 	return constraints, nil
 }
 
-func (r *Reader) readPostgreSQLConstraintsForSchema(schemaName string) ([]types.DBConstraint, error) {
+func (r *Reader) readPostgreSQLConstraintsForSchema(ctx context.Context, schemaName string) ([]types.DBConstraint, error) {
 	// Query PostgreSQL system catalogs for PostgreSQL-specific constraints
 	pgQuery := `
 			SELECT
@@ -2053,7 +2086,7 @@ func (r *Reader) readPostgreSQLConstraintsForSchema(schemaName string) ([]types.
 		AND cl.relname NOT IN ('schema_migrations')
 		ORDER BY cl.relname, c.conname`
 
-	rows, err := r.db.Query(pgQuery, schemaName)
+	rows, err := r.db.QueryContext(ctx, pgQuery, schemaName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query PostgreSQL constraints: %w", err)
 	}
@@ -2192,7 +2225,7 @@ func (r *Reader) ParseExcludeConstraintDefinition(definition string) (*ExcludeCo
 	}, nil
 }
 
-func (r *Reader) readExtensions() ([]types.DBExtension, error) {
+func (r *Reader) readExtensions(ctx context.Context) ([]types.DBExtension, error) {
 	// Use a simpler query that only relies on pg_extension and pg_namespace
 	// These are core system catalogs that are consistent across PostgreSQL versions
 	extensionsQuery := `
@@ -2206,7 +2239,7 @@ func (r *Reader) readExtensions() ([]types.DBExtension, error) {
 		JOIN pg_namespace n ON n.oid = e.extnamespace
 		ORDER BY e.extname`
 
-	rows, err := r.db.Query(extensionsQuery)
+	rows, err := r.db.QueryContext(ctx, extensionsQuery)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query extensions: %w", err)
 	}
@@ -2242,7 +2275,7 @@ func (r *Reader) readExtensions() ([]types.DBExtension, error) {
 		return nil, fmt.Errorf("failed to iterate extensions: %w", err)
 	}
 
-	provides, err := r.readExtensionMembers()
+	provides, err := r.readExtensionMembers(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2341,7 +2374,7 @@ func (r *Reader) readExtensions() ([]types.DBExtension, error) {
 // extension. That is the cheaper of the two errors -- a block kept where it
 // could have been dropped costs this document its compatibility, a block
 // dropped where a column needs it costs a document nobody can read.
-func (r *Reader) readExtensionMembers() (map[string][]string, error) {
+func (r *Reader) readExtensionMembers(ctx context.Context) (map[string][]string, error) {
 	const membersQuery = `
 		SELECT e.extname AS extension_name, t.typname AS member_name
 		  FROM pg_depend d
@@ -2418,7 +2451,7 @@ func (r *Reader) readExtensionMembers() (map[string][]string, error) {
 		        WHERE corens.nspname = 'pg_catalog' AND core.opfname = opf.opfname)
 		 ORDER BY 1, 2`
 
-	rows, err := r.db.Query(membersQuery)
+	rows, err := r.db.QueryContext(ctx, membersQuery)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query extension members: %w", err)
 	}
@@ -2455,10 +2488,10 @@ func (r *Reader) readExtensionMembers() (map[string][]string, error) {
 //   - a sequence with a lifecycle-only OWNED BY (owner column does not draw its
 //     default from it) is surfaced, with OwnedBy populated;
 //   - only genuine SERIAL/identity backing sequences are excluded.
-func (r *Reader) readSequences() ([]types.DBSequence, error) {
+func (r *Reader) readSequences(ctx context.Context) ([]types.DBSequence, error) {
 	var sequences []types.DBSequence
 	for _, schemaName := range r.schemasToRead() {
-		schemaSequences, err := r.readSequencesForSchema(schemaName)
+		schemaSequences, err := r.readSequencesForSchema(ctx, schemaName)
 		if err != nil {
 			return nil, err
 		}
@@ -2469,11 +2502,11 @@ func (r *Reader) readSequences() ([]types.DBSequence, error) {
 
 // readSequencesForSchema reads one schema's sequences through whichever catalog
 // the target carries.
-func (r *Reader) readSequencesForSchema(schemaName string) ([]types.DBSequence, error) {
+func (r *Reader) readSequencesForSchema(ctx context.Context, schemaName string) ([]types.DBSequence, error) {
 	if !r.caps.Has(capability.PostgresCatalogFunctions) {
-		return r.readSequencesFromInformationSchema(schemaName)
+		return r.readSequencesFromInformationSchema(ctx, schemaName)
 	}
-	return r.readSequencesFromPgCatalog(schemaName)
+	return r.readSequencesFromPgCatalog(ctx, schemaName)
 }
 
 // readSequencesFromInformationSchema reads sequences from the SQL-standard view
@@ -2495,7 +2528,7 @@ func (r *Reader) readSequencesForSchema(schemaName string) ([]types.DBSequence, 
 // target that carries no increment has not set it to 0, and the comparator
 // skips an option the declaration does not state -- writing 0 here would turn
 // every unstated option into a difference.
-func (r *Reader) readSequencesFromInformationSchema(schemaName string) ([]types.DBSequence, error) {
+func (r *Reader) readSequencesFromInformationSchema(ctx context.Context, schemaName string) ([]types.DBSequence, error) {
 	const query = `
 		SELECT
 			"sequence_schema",
@@ -2511,7 +2544,7 @@ func (r *Reader) readSequencesFromInformationSchema(schemaName string) ([]types.
 		WHERE "sequence_schema" = $1
 		ORDER BY "sequence_name"`
 
-	rows, err := r.db.Query(query, schemaName)
+	rows, err := r.db.QueryContext(ctx, query, schemaName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query sequences for schema %s: %w", schemaName, err)
 	}
@@ -2590,7 +2623,7 @@ func firstReportedInt64(values ...sql.NullString) *int64 {
 	return nil
 }
 
-func (r *Reader) readSequencesFromPgCatalog(schemaName string) ([]types.DBSequence, error) {
+func (r *Reader) readSequencesFromPgCatalog(ctx context.Context, schemaName string) ([]types.DBSequence, error) {
 	const query = `
 		SELECT
 			n.nspname AS schema_name,
@@ -2647,7 +2680,7 @@ func (r *Reader) readSequencesFromPgCatalog(schemaName string) ([]types.DBSequen
 		WHERE n.nspname = $1
 		ORDER BY n.nspname, c.relname`
 
-	rows, err := r.db.Query(query, schemaName)
+	rows, err := r.db.QueryContext(ctx, query, schemaName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query sequences for schema %s: %w", schemaName, err)
 	}
@@ -2723,7 +2756,7 @@ func (r *Reader) readSequencesFromPgCatalog(schemaName string) ([]types.DBSequen
 // holds the qualified names (schema.name, as introspected) of sequences that
 // readSequences classified as standalone, so grants on implicit serial/identity
 // sequences are not surfaced as spurious diffs.
-func (r *Reader) readSequenceGrantsForSchema(schemaName string, standalone map[string]bool) ([]types.DBGrant, error) {
+func (r *Reader) readSequenceGrantsForSchema(ctx context.Context, schemaName string, standalone map[string]bool) ([]types.DBGrant, error) {
 	const query = `
 		SELECT
 			COALESCE(grantee.rolname, 'PUBLIC') AS grantee,
@@ -2743,7 +2776,7 @@ func (r *Reader) readSequenceGrantsForSchema(schemaName string, standalone map[s
 		AND COALESCE(grantee.rolname, 'PUBLIC') != 'postgres'
 		ORDER BY n.nspname, c.relname, COALESCE(grantee.rolname, 'PUBLIC'), acl.privilege_type`
 
-	rows, err := r.db.Query(query, schemaName)
+	rows, err := r.db.QueryContext(ctx, query, schemaName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query sequence grants for schema %s: %w", schemaName, err)
 	}
@@ -2862,10 +2895,10 @@ func (r *Reader) enhanceTablesWithIndexes(tables []types.DBTable, indexes []type
 //
 // This approach is more robust than maintaining a manual list of problematic
 // extensions because it automatically handles any extension that creates functions.
-func (r *Reader) readFunctions() ([]types.DBFunction, error) {
+func (r *Reader) readFunctions(ctx context.Context) ([]types.DBFunction, error) {
 	var functions []types.DBFunction
 	for _, schemaName := range r.schemasToRead() {
-		schemaFunctions, err := r.readFunctionsForSchema(schemaName)
+		schemaFunctions, err := r.readFunctionsForSchema(ctx, schemaName)
 		if err != nil {
 			return nil, err
 		}
@@ -2874,10 +2907,10 @@ func (r *Reader) readFunctions() ([]types.DBFunction, error) {
 	return functions, nil
 }
 
-func (r *Reader) readViews() ([]types.DBView, error) {
+func (r *Reader) readViews(ctx context.Context) ([]types.DBView, error) {
 	var views []types.DBView
 	for _, schemaName := range r.schemasToRead() {
-		schemaViews, err := r.readViewsForSchema(schemaName)
+		schemaViews, err := r.readViewsForSchema(ctx, schemaName)
 		if err != nil {
 			return nil, err
 		}
@@ -2886,7 +2919,7 @@ func (r *Reader) readViews() ([]types.DBView, error) {
 	return views, nil
 }
 
-func (r *Reader) readViewsForSchema(schemaName string) ([]types.DBView, error) {
+func (r *Reader) readViewsForSchema(ctx context.Context, schemaName string) ([]types.DBView, error) {
 	viewsQuery := `
 		SELECT
 			n.nspname AS schema_name,
@@ -2903,7 +2936,7 @@ func (r *Reader) readViewsForSchema(schemaName string) ([]types.DBView, error) {
 		AND c.relname NOT IN ('schema_migrations')
 		ORDER BY c.relname`
 
-	rows, err := r.db.Query(viewsQuery, schemaName)
+	rows, err := r.db.QueryContext(ctx, viewsQuery, schemaName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query views: %w", err)
 	}
@@ -2922,10 +2955,10 @@ func (r *Reader) readViewsForSchema(schemaName string) ([]types.DBView, error) {
 	return views, nil
 }
 
-func (r *Reader) readMaterializedViews() ([]types.DBMatView, error) {
+func (r *Reader) readMaterializedViews(ctx context.Context) ([]types.DBMatView, error) {
 	var views []types.DBMatView
 	for _, schemaName := range r.schemasToRead() {
-		schemaViews, err := r.readMaterializedViewsForSchema(schemaName)
+		schemaViews, err := r.readMaterializedViewsForSchema(ctx, schemaName)
 		if err != nil {
 			return nil, err
 		}
@@ -2934,7 +2967,7 @@ func (r *Reader) readMaterializedViews() ([]types.DBMatView, error) {
 	return views, nil
 }
 
-func (r *Reader) readMaterializedViewsForSchema(schemaName string) ([]types.DBMatView, error) {
+func (r *Reader) readMaterializedViewsForSchema(ctx context.Context, schemaName string) ([]types.DBMatView, error) {
 	viewsQuery := `
 		SELECT
 			n.nspname AS schema_name,
@@ -2947,7 +2980,7 @@ func (r *Reader) readMaterializedViewsForSchema(schemaName string) ([]types.DBMa
 		AND c.relkind = 'm'
 		ORDER BY c.relname`
 
-	rows, err := r.db.Query(viewsQuery, schemaName)
+	rows, err := r.db.QueryContext(ctx, viewsQuery, schemaName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query materialized views: %w", err)
 	}
@@ -2966,10 +2999,10 @@ func (r *Reader) readMaterializedViewsForSchema(schemaName string) ([]types.DBMa
 	return views, nil
 }
 
-func (r *Reader) readTriggers() ([]types.DBTrigger, error) {
+func (r *Reader) readTriggers(ctx context.Context) ([]types.DBTrigger, error) {
 	var triggers []types.DBTrigger
 	for _, schemaName := range r.schemasToRead() {
-		schemaTriggers, err := r.readTriggersForSchema(schemaName)
+		schemaTriggers, err := r.readTriggersForSchema(ctx, schemaName)
 		if err != nil {
 			return nil, err
 		}
@@ -2978,7 +3011,7 @@ func (r *Reader) readTriggers() ([]types.DBTrigger, error) {
 	return triggers, nil
 }
 
-func (r *Reader) readTriggersForSchema(schemaName string) ([]types.DBTrigger, error) {
+func (r *Reader) readTriggersForSchema(ctx context.Context, schemaName string) ([]types.DBTrigger, error) {
 	triggersQuery := `
 		SELECT
 			n.nspname AS schema_name,
@@ -3007,7 +3040,7 @@ func (r *Reader) readTriggersForSchema(schemaName string) ([]types.DBTrigger, er
 		AND NOT trg.tgisinternal
 		ORDER BY tbl.relname, trg.tgname`
 
-	rows, err := r.db.Query(triggersQuery, schemaName)
+	rows, err := r.db.QueryContext(ctx, triggersQuery, schemaName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query triggers: %w", err)
 	}
@@ -3036,7 +3069,7 @@ func (r *Reader) readTriggersForSchema(schemaName string) ([]types.DBTrigger, er
 	return triggers, nil
 }
 
-func (r *Reader) readFunctionsForSchema(schemaName string) ([]types.DBFunction, error) {
+func (r *Reader) readFunctionsForSchema(ctx context.Context, schemaName string) ([]types.DBFunction, error) {
 	functionsQuery := `
 		SELECT
 			p.proname AS function_name,
@@ -3082,7 +3115,7 @@ func (r *Reader) readFunctionsForSchema(schemaName string) ([]types.DBFunction, 
 		)
 		ORDER BY p.proname, pg_get_function_identity_arguments(p.oid)`
 
-	rows, err := r.db.Query(functionsQuery, schemaName)
+	rows, err := r.db.QueryContext(ctx, functionsQuery, schemaName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query functions: %w", err)
 	}
@@ -3120,10 +3153,10 @@ func (r *Reader) readFunctionsForSchema(schemaName string) ([]types.DBFunction, 
 }
 
 // readRLSPolicies reads all PostgreSQL RLS policies from the database
-func (r *Reader) readRLSPolicies() ([]types.DBRLSPolicy, error) {
+func (r *Reader) readRLSPolicies(ctx context.Context) ([]types.DBRLSPolicy, error) {
 	var policies []types.DBRLSPolicy
 	for _, schemaName := range r.schemasToRead() {
-		schemaPolicies, err := r.readRLSPoliciesForSchema(schemaName)
+		schemaPolicies, err := r.readRLSPoliciesForSchema(ctx, schemaName)
 		if err != nil {
 			return nil, err
 		}
@@ -3132,7 +3165,7 @@ func (r *Reader) readRLSPolicies() ([]types.DBRLSPolicy, error) {
 	return policies, nil
 }
 
-func (r *Reader) readRLSPoliciesForSchema(schemaName string) ([]types.DBRLSPolicy, error) {
+func (r *Reader) readRLSPoliciesForSchema(ctx context.Context, schemaName string) ([]types.DBRLSPolicy, error) {
 	rlsPoliciesQuery := `
 		SELECT
 			n.nspname AS schema_name,
@@ -3160,7 +3193,7 @@ func (r *Reader) readRLSPoliciesForSchema(schemaName string) ([]types.DBRLSPolic
 		WHERE n.nspname = $1
 		ORDER BY c.relname, pol.polname`
 
-	rows, err := r.db.Query(rlsPoliciesQuery, schemaName)
+	rows, err := r.db.QueryContext(ctx, rlsPoliciesQuery, schemaName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query RLS policies: %w", err)
 	}
@@ -3272,8 +3305,8 @@ func (r *Reader) rolesInScopeClauses() []string {
 // readGrants reports both. That makes this set a superset of every role name
 // the rest of the description can mention, so the description never references
 // a role it does not also define.
-func (r *Reader) readRoles() ([]types.DBRole, error) {
-	return r.queryRoles(rolesUsedByScope)
+func (r *Reader) readRoles(ctx context.Context) ([]types.DBRole, error) {
+	return r.queryRoles(ctx, rolesUsedByScope)
 }
 
 // readRolesInto performs both role reads and decides which of them the
@@ -3293,7 +3326,7 @@ func (r *Reader) readRoles() ([]types.DBRole, error) {
 //
 // The union is re-sorted by name rather than concatenated, so the fuller
 // description is ordered exactly as the single unscoped query ordered it.
-func (r *Reader) readRolesInto(schema *types.DBSchema) error {
+func (r *Reader) readRolesInto(ctx context.Context, schema *types.DBSchema) error {
 	// Resolved FIRST, before either query, so a malformed value is refused on
 	// every role read and not only on the runs that would have widened the
 	// description. A server whose scoped and unscoped reads happen to agree
@@ -3307,7 +3340,7 @@ func (r *Reader) readRolesInto(schema *types.DBSchema) error {
 		return err
 	}
 
-	described, err := r.readRoles()
+	described, err := r.readRoles(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to read roles: %w", err)
 	}
@@ -3316,7 +3349,7 @@ func (r *Reader) readRolesInto(schema *types.DBSchema) error {
 	// comparator that is not told so plans CREATE ROLE for them. Read the
 	// complement so "not described" and "not present" stay different answers.
 	// See stokaro/ptah#1267 and stokaro/ptah#1276.
-	outOfScope, err := r.readRolesOutOfScope()
+	outOfScope, err := r.readRolesOutOfScope(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to read roles outside the inspected scope: %w", err)
 	}
@@ -3371,8 +3404,8 @@ func (r *Reader) readRolesInto(schema *types.DBSchema) error {
 // The complement is spelled NOT EXISTS rather than NOT IN because a NOT IN
 // over a subquery yielding a single NULL matches nothing at all, which would
 // silently empty this list and restore the very defect it exists to prevent.
-func (r *Reader) readRolesOutOfScope() ([]types.DBRole, error) {
-	return r.queryRoles(rolesNotUsedByScope)
+func (r *Reader) readRolesOutOfScope(ctx context.Context) ([]types.DBRole, error) {
+	return r.queryRoles(ctx, rolesNotUsedByScope)
 }
 
 // Membership predicates for the role query, applied against the `used` set the
@@ -3385,7 +3418,7 @@ const (
 
 // queryRoles reads pg_roles restricted by one of the two membership
 // predicates above.
-func (r *Reader) queryRoles(membership string) ([]types.DBRole, error) {
+func (r *Reader) queryRoles(ctx context.Context, membership string) ([]types.DBRole, error) {
 	schemas := r.schemasToRead()
 	placeholders := make([]string, 0, len(schemas))
 	args := make([]any, 0, len(schemas))
@@ -3428,7 +3461,7 @@ func (r *Reader) queryRoles(membership string) ([]types.DBRole, error) {
 		AND ` + reservedrole.ExcludeSQL("r.rolname") + `
 		ORDER BY r.rolname`
 
-	rows, err := r.db.Query(rolesQuery, args...)
+	rows, err := r.db.QueryContext(ctx, rolesQuery, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query roles: %w", err)
 	}
@@ -3481,7 +3514,7 @@ var ownerKinds = map[string]string{
 // and the note above readRoles records what happened the last time ownership
 // leaked into the description: every inspect described the connecting
 // superuser, and a diff then planned CREATE ROLE for it (stokaro/ptah#1950).
-func (r *Reader) readObjectOwners() ([]types.DBObjectOwner, error) {
+func (r *Reader) readObjectOwners(ctx context.Context) ([]types.DBObjectOwner, error) {
 	schemas := r.schemasToRead()
 	placeholders := make([]string, 0, len(schemas))
 	args := make([]any, 0, len(schemas))
@@ -3511,7 +3544,7 @@ func (r *Reader) readObjectOwners() ([]types.DBObjectOwner, error) {
 	// numbering, so the arguments are passed once: a placeholder that appears
 	// twice is still one parameter, and passing them twice answers
 	// `expected 1 arguments, got 2`.
-	rows, err := r.db.Query(query, args...)
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query object owners: %w", err)
 	}
@@ -3551,7 +3584,7 @@ func (r *Reader) readObjectOwners() ([]types.DBObjectOwner, error) {
 // Both ends exclude the reserved system roles, through the same
 // [reservedrole.ExcludeSQL] the role read uses, so the two lists cannot come to
 // disagree about what "reserved" means (stokaro/ptah#1950).
-func (r *Reader) readRoleMemberships() ([]types.DBRoleMembership, error) {
+func (r *Reader) readRoleMemberships(ctx context.Context) ([]types.DBRoleMembership, error) {
 	query := `
 		SELECT
 			role.rolname AS role_name,
@@ -3564,7 +3597,7 @@ func (r *Reader) readRoleMemberships() ([]types.DBRoleMembership, error) {
 		AND ` + reservedrole.ExcludeSQL("member.rolname") + `
 		ORDER BY role.rolname, member.rolname`
 
-	rows, err := r.db.Query(query)
+	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query role memberships: %w", err)
 	}
@@ -3584,23 +3617,23 @@ func (r *Reader) readRoleMemberships() ([]types.DBRoleMembership, error) {
 	return memberships, nil
 }
 
-func (r *Reader) readGrants(standaloneSequences map[string]bool) ([]types.DBGrant, error) {
+func (r *Reader) readGrants(ctx context.Context, standaloneSequences map[string]bool) ([]types.DBGrant, error) {
 	var grants []types.DBGrant
 	for _, schemaName := range r.schemasToRead() {
-		tableGrants, err := r.readTableGrantsForSchema(schemaName)
+		tableGrants, err := r.readTableGrantsForSchema(ctx, schemaName)
 		if err != nil {
 			return nil, err
 		}
 		grants = append(grants, tableGrants...)
 
-		schemaGrants, err := r.readSchemaGrantsForSchema(schemaName)
+		schemaGrants, err := r.readSchemaGrantsForSchema(ctx, schemaName)
 		if err != nil {
 			return nil, err
 		}
 		grants = append(grants, schemaGrants...)
 
 		if r.caps.Has(capability.Sequences) {
-			sequenceGrants, err := r.readSequenceGrantsForSchema(schemaName, standaloneSequences)
+			sequenceGrants, err := r.readSequenceGrantsForSchema(ctx, schemaName, standaloneSequences)
 			if err != nil {
 				return nil, err
 			}
@@ -3621,7 +3654,7 @@ func standaloneSequenceSet(sequences []types.DBSequence) map[string]bool {
 	return set
 }
 
-func (r *Reader) readTableGrantsForSchema(schemaName string) ([]types.DBGrant, error) {
+func (r *Reader) readTableGrantsForSchema(ctx context.Context, schemaName string) ([]types.DBGrant, error) {
 	const query = `
 		SELECT
 			grantee,
@@ -3651,7 +3684,7 @@ func (r *Reader) readTableGrantsForSchema(schemaName string) ([]types.DBGrant, e
 		)
 		ORDER BY table_schema, table_name, grantee, privilege_type`
 
-	rows, err := r.db.Query(query, schemaName)
+	rows, err := r.db.QueryContext(ctx, query, schemaName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query table grants for schema %s: %w", schemaName, err)
 	}
@@ -3672,7 +3705,7 @@ func (r *Reader) readTableGrantsForSchema(schemaName string) ([]types.DBGrant, e
 	return grants, nil
 }
 
-func (r *Reader) readSchemaGrantsForSchema(schemaName string) ([]types.DBGrant, error) {
+func (r *Reader) readSchemaGrantsForSchema(ctx context.Context, schemaName string) ([]types.DBGrant, error) {
 	const query = `
 		SELECT
 			COALESCE(grantee.rolname, 'PUBLIC') AS grantee,
@@ -3689,7 +3722,7 @@ func (r *Reader) readSchemaGrantsForSchema(schemaName string) ([]types.DBGrant, 
 		AND COALESCE(grantee.rolname, 'PUBLIC') != 'postgres'
 		ORDER BY n.nspname, COALESCE(grantee.rolname, 'PUBLIC'), acl.privilege_type`
 
-	rows, err := r.db.Query(query, schemaName)
+	rows, err := r.db.QueryContext(ctx, query, schemaName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query schema grants for schema %s: %w", schemaName, err)
 	}
@@ -3712,13 +3745,13 @@ func (r *Reader) readSchemaGrantsForSchema(schemaName string) ([]types.DBGrant, 
 // readAllViews reads views from whichever catalog the server has. A view is not
 // an object kind a preset rules out -- every dialect this reader serves has
 // views -- so the choice is which catalog can answer, not whether to ask.
-func (r *Reader) readAllViews() ([]types.DBView, error) {
+func (r *Reader) readAllViews(ctx context.Context) ([]types.DBView, error) {
 	if r.caps.Has(capability.PostgresCatalogFunctions) {
-		return r.readViews()
+		return r.readViews(ctx)
 	}
 	var views []types.DBView
 	for _, schemaName := range r.schemasToRead() {
-		schemaViews, err := r.readInformationSchemaViews(schemaName)
+		schemaViews, err := r.readInformationSchemaViews(ctx, schemaName)
 		if err != nil {
 			return nil, err
 		}
@@ -3733,14 +3766,14 @@ func (r *Reader) readAllViews() ([]types.DBView, error) {
 // Splitting them apart is not only tidiness: four gates inline pushed
 // ReadSchema past the cognitive-complexity limit, and the reads they guard are
 // one idea -- ask only for what this server can have.
-func (r *Reader) readCapabilityGatedObjects(schema *types.DBSchema) error {
+func (r *Reader) readCapabilityGatedObjects(ctx context.Context, schema *types.DBSchema) error {
 	// Extensions are pg_extension, and pg_catalog is where that lives. A server
 	// without it has no extension mechanism to describe -- but this read cannot
 	// prove that, only that it could not look, so the kind is recorded as not
 	// described. The comparator then withholds rather than concluding an
 	// extension is missing from a read that never asked (stokaro/ptah#942).
 	if r.caps.Has(capability.PostgresCatalogFunctions) {
-		extensions, err := r.readExtensions()
+		extensions, err := r.readExtensions(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to read extensions: %w", err)
 		}
@@ -3763,14 +3796,14 @@ func (r *Reader) readCapabilityGatedObjects(schema *types.DBSchema) error {
 	// failed the whole read asking whether objects exist that its own preset
 	// already says cannot.
 	if r.caps.Has(capability.Functions) {
-		functions, err := r.readFunctions()
+		functions, err := r.readFunctions(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to read functions: %w", err)
 		}
 		schema.Functions = functions
 	}
 
-	views, err := r.readAllViews()
+	views, err := r.readAllViews(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to read views: %w", err)
 	}
@@ -3780,7 +3813,7 @@ func (r *Reader) readCapabilityGatedObjects(schema *types.DBSchema) error {
 	// catalog exists: asking a server that has no TimescaleDB would fail the
 	// statement, and a failed statement aborts the enclosing transaction --
 	// every later read then answers SQLSTATE 25P02 (stokaro/ptah#1026).
-	aggregates, err := r.readContinuousAggregates(schema.Extensions)
+	aggregates, err := r.readContinuousAggregates(ctx, schema.Extensions)
 	if err != nil {
 		return fmt.Errorf("failed to read continuous aggregates: %w", err)
 	}
@@ -3790,14 +3823,14 @@ func (r *Reader) readCapabilityGatedObjects(schema *types.DBSchema) error {
 	// Read from the same extension list and for the same reason: a hypertable
 	// is an ordinary table everywhere but here, so nothing else in this
 	// description can say that one is partitioned (stokaro/ptah#1026).
-	hypertables, err := r.readHypertables(schema.Extensions)
+	hypertables, err := r.readHypertables(ctx, schema.Extensions)
 	if err != nil {
 		return fmt.Errorf("failed to read hypertables: %w", err)
 	}
 	schema.Hypertables = hypertables
 
 	if r.caps.Has(capability.MaterializedViews) {
-		matViews, err := r.readMaterializedViews()
+		matViews, err := r.readMaterializedViews(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to read materialized views: %w", err)
 		}
@@ -3805,7 +3838,7 @@ func (r *Reader) readCapabilityGatedObjects(schema *types.DBSchema) error {
 	}
 
 	if r.caps.Has(capability.Triggers) {
-		triggers, err := r.readTriggers()
+		triggers, err := r.readTriggers(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to read triggers: %w", err)
 		}

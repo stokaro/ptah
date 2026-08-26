@@ -88,7 +88,7 @@ func TestReadRolesInto_DescribesWhatAPrivilegedAccountSees(t *testing.T) {
 	reader := NewOracleReader(db.SQL, "APP")
 
 	schema := &types.DBSchema{}
-	c.Assert(reader.readRolesInto(schema), qt.IsNil)
+	c.Assert(reader.readRolesInto(t.Context(), schema), qt.IsNil)
 
 	c.Assert(schema.Roles, qt.DeepEquals, []types.DBRole{
 		{Name: "APP_READER", Inherit: true},
@@ -120,7 +120,7 @@ func TestReadRolesInto_RecordsWhatARefusedAccountDidNotLookAt(t *testing.T) {
 	reader := NewOracleReader(db.SQL, "APP")
 
 	schema := &types.DBSchema{}
-	c.Assert(reader.readRolesInto(schema), qt.IsNil)
+	c.Assert(reader.readRolesInto(t.Context(), schema), qt.IsNil)
 
 	c.Assert(schema.Roles, qt.HasLen, 0)
 	c.Assert(schema.Grants, qt.HasLen, 0)
@@ -143,7 +143,7 @@ func TestReadRolesInto_SurfacesAFaultRatherThanDescribingAroundIt(t *testing.T) 
 	reader := NewOracleReader(db.SQL, "APP")
 
 	schema := &types.DBSchema{}
-	err := reader.readRolesInto(schema)
+	err := reader.readRolesInto(t.Context(), schema)
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "failed to read roles")
 	c.Assert(schema.NotDescribed.IsZero(), qt.IsTrue)

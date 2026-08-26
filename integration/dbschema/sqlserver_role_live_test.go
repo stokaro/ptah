@@ -61,7 +61,7 @@ func TestSQLServerLiveRoleAndGrantRoundTrip(t *testing.T) {
 	}
 
 	// 2. The catalog is asked what it holds.
-	live, err := dbschema.ReadSchemaWithSchemas(conn, []string{"dbo"})
+	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{"dbo"})
 	c.Assert(err, qt.IsNil)
 
 	held, withOption := grantsHeldBy(live.Grants, role)
@@ -242,7 +242,7 @@ func TestSQLServerLiveReaderClassifiesDenyAndSchemaGrants(t *testing.T) {
 		c.Assert(execErr, qt.IsNil, qt.Commentf("statement:\n%s", statement))
 	}
 
-	live, err := dbschema.ReadSchemaWithSchemas(conn, []string{"dbo"})
+	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{"dbo"})
 	c.Assert(err, qt.IsNil)
 
 	// The DENY is reported rather than dropped, and marked as the subtraction

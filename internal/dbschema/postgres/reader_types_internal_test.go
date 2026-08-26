@@ -24,6 +24,7 @@ package postgres
 // with every type the server has, which is exactly what master did.
 
 import (
+	"context"
 	"database/sql/driver"
 	"fmt"
 	"strings"
@@ -272,24 +273,24 @@ func mixedCatalog() []catalogType {
 // readTypeNames is the three reads behind one signature, so a table row can name
 // the read it exercises instead of the test body choosing between them.
 var (
-	readDomainNames = func(r *Reader) ([]string, error) {
-		domains, err := r.readDomains()
+	readDomainNames = func(ctx context.Context, r *Reader) ([]string, error) {
+		domains, err := r.readDomains(ctx)
 		names := make([]string, 0, len(domains))
 		for _, domain := range domains {
 			names = append(names, domain.Name)
 		}
 		return names, err
 	}
-	readCompositeNames = func(r *Reader) ([]string, error) {
-		composites, err := r.readComposites()
+	readCompositeNames = func(ctx context.Context, r *Reader) ([]string, error) {
+		composites, err := r.readComposites(ctx)
 		names := make([]string, 0, len(composites))
 		for _, composite := range composites {
 			names = append(names, composite.Name)
 		}
 		return names, err
 	}
-	readRangeNames = func(r *Reader) ([]string, error) {
-		ranges, err := r.readRanges()
+	readRangeNames = func(ctx context.Context, r *Reader) ([]string, error) {
+		ranges, err := r.readRanges(ctx)
 		names := make([]string, 0, len(ranges))
 		for _, rangeType := range ranges {
 			names = append(names, rangeType.Name)
@@ -312,7 +313,7 @@ func TestReadTypesLeavesExtensionOwnedTypesToTheExtension(t *testing.T) {
 	// reason and the three type reads were never given that filter.
 	tests := []struct {
 		name string
-		read func(*Reader) ([]string, error)
+		read func(context.Context, *Reader) ([]string, error)
 		want []string
 	}{
 		{name: "domains", read: readDomainNames, want: []string{"lo_own"}},
@@ -325,7 +326,7 @@ func TestReadTypesLeavesExtensionOwnedTypesToTheExtension(t *testing.T) {
 			c := qt.New(t)
 			reader := newTypesServer(c, mixedCatalog())
 
-			names, err := test.read(reader)
+			names, err := test.read(t.Context(), reader)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(names, qt.DeepEquals, test.want)
@@ -346,7 +347,7 @@ func TestReadTypesStillDescribesWhatTheUserDeclared(t *testing.T) {
 	// predicate by name, so this test reddens for it.
 	tests := []struct {
 		name string
-		read func(*Reader) ([]string, error)
+		read func(context.Context, *Reader) ([]string, error)
 		want []string
 	}{
 		{name: "domains", read: readDomainNames, want: []string{"lo", "lo_own"}},
@@ -369,7 +370,7 @@ func TestReadTypesStillDescribesWhatTheUserDeclared(t *testing.T) {
 			c := qt.New(t)
 			reader := newTypesServer(c, userDeclared)
 
-			names, err := test.read(reader)
+			names, err := test.read(t.Context(), reader)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(names, qt.DeepEquals, test.want)
@@ -400,7 +401,7 @@ func TestReadTypesAsksPgDependRatherThanTheName(t *testing.T) {
 	// database with nothing installed would still pass the tests above.
 	tests := []struct {
 		name string
-		read func(*Reader) ([]string, error)
+		read func(context.Context, *Reader) ([]string, error)
 	}{
 		{name: "domains", read: readDomainNames},
 		{name: "composites", read: readCompositeNames},
@@ -418,7 +419,7 @@ func TestReadTypesAsksPgDependRatherThanTheName(t *testing.T) {
 			reader := NewPostgreSQLReaderWithCapabilities(db.SQL, "public", capability.Postgres16())
 			reader.SetSchemas([]string{"public"})
 
-			_, err := test.read(reader)
+			_, err := test.read(t.Context(), reader)
 			c.Assert(err, qt.IsNil)
 
 			// The domain read sends a second statement for its constraint

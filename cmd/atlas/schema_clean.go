@@ -3,6 +3,7 @@ package atlas
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -159,7 +160,7 @@ func runAtlasSchemaClean(
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	plan, err := inspectAtlasSchemaCleanPlan(policy, conn)
+	plan, err := inspectAtlasSchemaCleanPlan(cmd.Context(), policy, conn)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -271,7 +272,7 @@ func applyAtlasSchemaClean(
 				if executor != nil {
 					validationConn = conn.WithExecutor(executor)
 				}
-				fresh, err := inspectAtlasSchemaCleanPlan(policy, validationConn)
+				fresh, err := inspectAtlasSchemaCleanPlan(cmd.Context(), policy, validationConn)
 				if err != nil {
 					return err
 				}
@@ -289,6 +290,7 @@ func applyAtlasSchemaClean(
 }
 
 func inspectAtlasSchemaCleanPlan(
+	ctx context.Context,
 	policy atlascompatpolicy.Policy,
 	conn *dbschema.DatabaseConnection,
 ) (schemaclean.Plan, error) {
@@ -303,7 +305,7 @@ func inspectAtlasSchemaCleanPlan(
 			return policy.ValidateSchemaCleanSnapshot(dbschematogo.ConvertDBSchemaToGoSchema(owned))
 		}
 	}
-	plan, err := schemaclean.InspectWithOptions(conn, inspectOpts)
+	plan, err := schemaclean.InspectWithOptions(ctx, conn, inspectOpts)
 	if err != nil {
 		return schemaclean.Plan{}, err
 	}

@@ -164,15 +164,15 @@ type dialectCoverage struct {
 	revisionTables bool
 }
 
-func Inspect(conn *dbschema.DatabaseConnection) (Plan, error) {
-	return InspectWithOptions(conn, InspectOptions{})
+func Inspect(ctx context.Context, conn *dbschema.DatabaseConnection) (Plan, error) {
+	return InspectWithOptions(ctx, conn, InspectOptions{})
 }
 
 // InspectWithOptions returns a cleanup plan after applying caller-selected
 // validation to the reader snapshot. The returned plan also includes the
 // writer-only live-catalog objects that the reader cannot represent.
-func InspectWithOptions(conn *dbschema.DatabaseConnection, opts InspectOptions) (Plan, error) {
-	schema, err := conn.Reader().ReadSchema()
+func InspectWithOptions(ctx context.Context, conn *dbschema.DatabaseConnection, opts InspectOptions) (Plan, error) {
+	schema, err := conn.Reader().ReadSchemaContext(ctx)
 	if err != nil {
 		return Plan{}, fmt.Errorf("inspect schema before cleanup: %w", err)
 	}
@@ -201,7 +201,7 @@ func InspectWithOptions(conn *dbschema.DatabaseConnection, opts InspectOptions) 
 }
 
 func Execute(ctx context.Context, conn *dbschema.DatabaseConnection, opts Options) (Plan, error) {
-	plan, err := Inspect(conn)
+	plan, err := Inspect(ctx, conn)
 	if err != nil {
 		return Plan{}, err
 	}

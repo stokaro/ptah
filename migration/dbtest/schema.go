@@ -167,7 +167,7 @@ func applyDesiredSchema(
 	conn *dbschema.DatabaseConnection,
 	schema *goschema.Database,
 ) (bool, error) {
-	current, err := dbschema.ReadSchemaWithSchemas(conn, nil)
+	current, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, nil)
 	if err != nil {
 		return false, fmt.Errorf("inspect test database before applying desired schema: %w", err)
 	}

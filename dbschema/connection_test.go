@@ -233,7 +233,7 @@ func TestConnectToDatabase_SQLiteFile(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(reopened)
 
-	schema, err := reopened.Reader().ReadSchema()
+	schema, err := reopened.Reader().ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	c.Assert(schema.Tables, qt.HasLen, 1)
 	c.Assert(schema.Tables[0].Name, qt.Equals, "users")

@@ -87,7 +87,7 @@ func TestReaderReadSchema_SubtractsInnerStorageByOneSpellingPerView(t *testing.T
 	db := dbtest.Open(t, recordingClickHouseReaderQuery(&recorded))
 	reader := clickhouse.NewClickHouseReader(db.SQL, "analytics")
 
-	_, err := reader.ReadSchema()
+	_, err := reader.ReadSchemaContext(t.Context())
 
 	c.Assert(err, qt.IsNil)
 	tableQueries := clickHouseQueriesContaining(recorded, "engine LIKE '%MergeTree'")

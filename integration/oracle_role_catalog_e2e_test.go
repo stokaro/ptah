@@ -72,7 +72,7 @@ func TestOracleRoleCatalogIsNotDescribedWithoutPrivilegeE2E(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
 
-	read, err := conn.Reader().ReadSchema()
+	read, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 
 	// Three assertions, and the third is the one a wrong reader passes the
@@ -131,7 +131,7 @@ func TestOracleRolesAndGrantsAreReadWithPrivilegeE2E(t *testing.T) {
 	execOracle(ctx, c, conn, "GRANT SELECT, INSERT ON rc_docs TO "+role)
 	execOracle(ctx, c, conn, "GRANT SELECT ON rc_titles TO "+role)
 
-	read, err := conn.Reader().ReadSchema()
+	read, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(read.NotDescribed.Describes(coverage.Role, role), qt.IsTrue)
@@ -343,7 +343,7 @@ func TestOracleRoleManagementPlansAndConvergesE2E(t *testing.T) {
 
 	declared := oracleRoleManagementDeclaration(account, role)
 
-	before, err := conn.Reader().ReadSchema()
+	before, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 	diff := schemadiff.CompareWithDialect(declared, before, platform.Oracle)
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, declared, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities})
@@ -365,7 +365,7 @@ func TestOracleRoleManagementPlansAndConvergesE2E(t *testing.T) {
 		execOracle(ctx, c, conn, strings.TrimSuffix(strings.TrimSpace(statement), ";"))
 	}
 
-	after, err := conn.Reader().ReadSchema()
+	after, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 	c.Assert(oracleRoleNames(after.Roles), qt.Contains, role)
 

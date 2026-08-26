@@ -50,7 +50,7 @@ func TestPostgreSQLSequenceIntrospectionClassificationIntegration(t *testing.T) 
 	}
 
 	reader := postgres.NewPostgreSQLReader(db, "public")
-	live, err := reader.ReadSchema()
+	live, err := reader.ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 
 	found := make(map[string]string, len(live.Sequences))

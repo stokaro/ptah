@@ -81,7 +81,7 @@ func TestSQLServerLiveRLSRoundTrip(t *testing.T) {
 
 	// 2. The catalog is asked what it holds. The predicate has to come back in
 	// the declaration's spelling, not the catalog's.
-	live, err := dbschema.ReadSchemaWithSchemas(conn, []string{schemaName})
+	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
 	c.Assert(live.RLSPolicies, qt.HasLen, 1)
 	c.Assert(live.RLSPolicies[0].Table, qt.Equals, "documents")

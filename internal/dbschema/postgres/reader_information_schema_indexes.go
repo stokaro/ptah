@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"strings"
@@ -52,8 +53,8 @@ const spannerPrimaryKeyIndexType = "PRIMARY_KEY"
 
 // readInformationSchemaIndexes reads one schema's indexes from the SQL-standard
 // catalog. See [informationSchemaIndexQuery].
-func (r *Reader) readInformationSchemaIndexes(schemaName string) ([]types.DBIndex, error) {
-	rows, err := r.db.Query(informationSchemaIndexQuery, schemaName)
+func (r *Reader) readInformationSchemaIndexes(ctx context.Context, schemaName string) ([]types.DBIndex, error) {
+	rows, err := r.db.QueryContext(ctx, informationSchemaIndexQuery, schemaName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query indexes: %w", err)
 	}

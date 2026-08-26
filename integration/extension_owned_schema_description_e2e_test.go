@@ -78,7 +78,7 @@ func TestExtensionOwnedSchemaStaysOutOfTheRealmDescriptionE2E(t *testing.T) {
 	c.Assert(names, qt.Not(qt.Contains), "ext_owned_probe")
 	c.Assert(names, qt.Contains, "public")
 
-	read, err := dbschema.ReadSchemaWithSchemas(conn, names)
+	read, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, names)
 	c.Assert(err, qt.IsNil)
 
 	// Both halves. The schema is not described, and neither is what it holds:

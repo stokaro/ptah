@@ -8,17 +8,6 @@ import (
 	"go.5x5.cz/ptah/dbschema/types"
 )
 
-// isFieldLevelConstraint determines if a database constraint represents a field-level constraint
-// that is already represented in the field definitions (NOT NULL, PRIMARY KEY, UNIQUE, FOREIGN KEY).
-//
-// synthesizedFKKeys holds the table.constraint_name of every field-level FK that
-// Constraints() synthesized into the generated set (see
-// synthesizeFieldLevelForeignKeyConstraints). When a DB-side FK has a synthesized
-// counterpart it is NOT treated as field-level here, so it stays in the
-// comparison and on_delete / on_update drift flows through
-// foreignKeyConstraintChanged (issue #189). FKs without a synthesized
-// counterpart (e.g. a column that is not yet in the database, which never gets
-// synthesized) keep the previous filter-out behavior.
 // buildTablePrimaryKeyColumnSets maps each generated table to the set of
 // columns in its table-level primary key.
 //
@@ -40,6 +29,17 @@ func buildTablePrimaryKeyColumnSets(
 	return result
 }
 
+// isFieldLevelConstraint determines if a database constraint represents a field-level constraint
+// that is already represented in the field definitions (NOT NULL, PRIMARY KEY, UNIQUE, FOREIGN KEY).
+//
+// synthesizedFKKeys holds the table.constraint_name of every field-level FK that
+// Constraints() synthesized into the generated set (see
+// synthesizeFieldLevelForeignKeyConstraints). When a DB-side FK has a synthesized
+// counterpart it is NOT treated as field-level here, so it stays in the
+// comparison and on_delete / on_update drift flows through
+// foreignKeyConstraintChanged (issue #189). FKs without a synthesized
+// counterpart (e.g. a column that is not yet in the database, which never gets
+// synthesized) keep the previous filter-out behavior.
 func isFieldLevelConstraint(
 	dbConstraint types.DBConstraint,
 	generated *goschema.Database,

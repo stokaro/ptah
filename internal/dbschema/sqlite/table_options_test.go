@@ -20,7 +20,7 @@ func TestReaderTableOptions(t *testing.T) {
 	_, err = db.ExecContext(ctx, `CREATE TABLE users (id TEXT PRIMARY KEY, email TEXT NOT NULL) WITHOUT ROWID, STRICT`)
 	c.Assert(err, qt.IsNil)
 
-	schema, err := sqlite.NewSQLiteReader(db, "main").ReadSchema()
+	schema, err := sqlite.NewSQLiteReader(db, "main").ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(schema.Tables, qt.HasLen, 1)

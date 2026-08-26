@@ -97,7 +97,7 @@ func dropAllCommand(cmd *cobra.Command, opts *options) error {
 	fmt.Fprintf(out, "Connected to %s database successfully!\n", conn.Info().Dialect)
 	fmt.Fprintln(out)
 
-	plan, err := schemaclean.Inspect(conn)
+	plan, err := schemaclean.Inspect(cmd.Context(), conn)
 	if err != nil {
 		return err
 	}

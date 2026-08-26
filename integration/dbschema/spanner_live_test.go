@@ -77,7 +77,7 @@ func TestSpannerLiveSchemaRoundTrip(t *testing.T) {
 
 	// 2. The read returns the table, its primary key and the secondary index,
 	// through the SQL-standard catalog rather than pg_index.
-	live, err := dbschema.ReadSchemaWithSchemas(conn, []string{"public"})
+	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{"public"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(spannerLiveTableNames(live.Tables), qt.Contains, table)
 
@@ -157,7 +157,7 @@ func TestSpannerLiveApplyPathRunsOutsideATransaction(t *testing.T) {
 	})
 
 	c.Assert(err, qt.IsNil, qt.Commentf("the default transaction mode must not reach this target"))
-	live, readErr := dbschema.ReadSchemaWithSchemas(conn, []string{"public"})
+	live, readErr := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{"public"})
 	c.Assert(readErr, qt.IsNil)
 	c.Assert(spannerLiveTableNames(live.Tables), qt.Contains, table)
 }
@@ -204,7 +204,7 @@ func TestSpannerLiveSequenceRoundTrip(t *testing.T) {
 		c.Assert(execErr, qt.IsNil, qt.Commentf("statement:\n%s", statement))
 	}
 
-	live, err := dbschema.ReadSchemaWithSchemas(conn, []string{"public"})
+	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{"public"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(spannerLiveSequenceNames(live.Sequences), qt.Contains, name,
 		qt.Commentf("the reader must find the sequence it just applied"))

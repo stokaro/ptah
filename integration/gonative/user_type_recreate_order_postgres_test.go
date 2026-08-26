@@ -122,7 +122,7 @@ func TestPostgreSQLUserTypeRecreate_DropsAgainstTheCurrentShape(t *testing.T) {
 
 			// Exit status alone is not convergence: a plan could run and leave
 			// the types on their old shape.
-			applied, err := dbschema.ReadSchemaWithSchemas(target, nil)
+			applied, err := dbschema.ReadSchemaWithSchemasContext(t.Context(), target, nil)
 			c.Assert(err, qt.IsNil)
 			c.Assert(findLiveDomain(c, applied.Domains, test.wantDomain).BaseType, qt.Equals, test.wantBaseType)
 			c.Assert(liveCompositeFieldTypes(c, applied.Composites, test.wantComposite), qt.DeepEquals, test.wantCompositeSQL)
@@ -188,7 +188,7 @@ func TestPostgreSQLUserTypeRecreate_DropsADomainBeforeTheDomainItNames(t *testin
 			c.Assert(plan.HasChanges(), qt.IsTrue)
 			c.Assert(plan.Execute(c.Context()), qt.IsNil, qt.Commentf("emitted script:\n%s", plan.SQL()))
 
-			applied, err := dbschema.ReadSchemaWithSchemas(target, nil)
+			applied, err := dbschema.ReadSchemaWithSchemasContext(t.Context(), target, nil)
 			c.Assert(err, qt.IsNil)
 			c.Assert(findLiveDomain(c, applied.Domains, test.wantBase).BaseType, qt.Equals, test.wantBaseType)
 			c.Assert(findLiveDomain(c, applied.Domains, test.wantDependent).BaseType, qt.Equals, test.wantDependentType)
@@ -246,7 +246,7 @@ func TestPostgreSQLUserTypeRecreate_DropsACompositeBeforeTheCompositeItNames(t *
 			c.Assert(plan.HasChanges(), qt.IsTrue)
 			c.Assert(plan.Execute(c.Context()), qt.IsNil, qt.Commentf("emitted script:\n%s", plan.SQL()))
 
-			applied, err := dbschema.ReadSchemaWithSchemas(target, nil)
+			applied, err := dbschema.ReadSchemaWithSchemasContext(t.Context(), target, nil)
 			c.Assert(err, qt.IsNil)
 			c.Assert(liveCompositeFieldTypes(c, applied.Composites, test.wantBase), qt.DeepEquals, test.wantBaseFieldSQL)
 			c.Assert(liveCompositeFieldTypes(c, applied.Composites, test.wantDependent), qt.DeepEquals, test.wantDependentFieldSQL)

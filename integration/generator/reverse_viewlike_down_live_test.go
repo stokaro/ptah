@@ -200,7 +200,7 @@ func TestReverseViewLikeObjects_DownRoundTrip_Integration(t *testing.T) {
 			seedSQL, _ := generateLiveMigrationSQL(c, conn, prior)
 			execScript(c, conn, seedSQL, "SEED")
 
-			dbPrior, err := conn.Reader().ReadSchema()
+			dbPrior, err := conn.Reader().ReadSchemaContext(t.Context())
 			c.Assert(err, qt.IsNil)
 			priorCatalog := revIntCatalog(dbPrior)
 
@@ -216,7 +216,7 @@ func TestReverseViewLikeObjects_DownRoundTrip_Integration(t *testing.T) {
 			}
 			execScript(c, conn, upSQL, "UP")
 
-			dbAfterUp, err := conn.Reader().ReadSchema()
+			dbAfterUp, err := conn.Reader().ReadSchemaContext(t.Context())
 			c.Assert(err, qt.IsNil)
 			c.Assert(revIntCatalog(dbAfterUp), qt.Not(qt.DeepEquals), priorCatalog,
 				qt.Commentf("the up migration must actually change the catalog, or the down proves nothing"))
@@ -241,7 +241,7 @@ func TestReverseViewLikeObjects_DownRoundTrip_Integration(t *testing.T) {
 			execScript(c, conn, downSQL, "DOWN")
 
 			// 4. The rollback has to land on the pre-up catalog, not merely apply.
-			dbAfterDown, err := conn.Reader().ReadSchema()
+			dbAfterDown, err := conn.Reader().ReadSchemaContext(t.Context())
 			c.Assert(err, qt.IsNil)
 			c.Assert(revIntCatalog(dbAfterDown), qt.DeepEquals, priorCatalog,
 				qt.Commentf("down SQL:\n%s", downSQL))

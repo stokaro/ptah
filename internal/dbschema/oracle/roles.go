@@ -1,6 +1,7 @@
 package oracle
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -85,8 +86,8 @@ ORDER BY r.role`
 //   - HasPassword, from AUTHENTICATION_TYPE. A role can be IDENTIFIED BY a
 //     password, and PASSWORD is the value that says so. NONE is the ordinary
 //     case and every role in the measurement above reported it.
-func (r *Reader) readRoles() ([]types.DBRole, error) {
-	rows, err := r.db.Query(roleQuery)
+func (r *Reader) readRoles(ctx context.Context) ([]types.DBRole, error) {
+	rows, err := r.db.QueryContext(ctx, roleQuery)
 	if err != nil {
 		return nil, err
 	}
@@ -155,8 +156,8 @@ ORDER BY p.grantee, p.table_name, p.privilege`
 // 23.26.2.0.0 -- so a declaration asking for one cannot be rendered; a row
 // already carrying GRANTABLE='YES' on some other grantee is a fact about the
 // server, and dropping it would describe the server as something it is not.
-func (r *Reader) readGrants() ([]types.DBGrant, error) {
-	rows, err := r.db.Query(grantQuery, r.schema)
+func (r *Reader) readGrants(ctx context.Context) ([]types.DBGrant, error) {
+	rows, err := r.db.QueryContext(ctx, grantQuery, r.schema)
 	if err != nil {
 		return nil, err
 	}
@@ -227,8 +228,8 @@ func grantObjectTypeFor(catalogType string) string {
 // "these privileges belong to roles that are not there", and the grant
 // comparator has no coverage to consult: it decides a REVOKE from live rows
 // alone, so those rows must not arrive without the roles they belong to.
-func (r *Reader) readRolesInto(schema *types.DBSchema) error {
-	roles, err := r.readRoles()
+func (r *Reader) readRolesInto(ctx context.Context, schema *types.DBSchema) error {
+	roles, err := r.readRoles(ctx)
 	if err != nil {
 		if !isRoleReadDenied(err) {
 			return fmt.Errorf("failed to read roles: %w", err)
@@ -237,7 +238,7 @@ func (r *Reader) readRolesInto(schema *types.DBSchema) error {
 		return nil
 	}
 
-	grants, err := r.readGrants()
+	grants, err := r.readGrants(ctx)
 	if err != nil {
 		if !isRoleReadDenied(err) {
 			return fmt.Errorf("failed to read grants: %w", err)

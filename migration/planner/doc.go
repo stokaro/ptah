@@ -12,9 +12,24 @@
 // provides both AST-based and string-based SQL generation with support for multiple database
 // dialects.
 //
+// # Architecture
+//
+// The package follows a registry pattern with dialect-specific implementations:
+//
+//	┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+//	│   SchemaDiff    │───▶│     Planner      │───▶│   AST Nodes     │
+//	│   (Changes)     │    │   (Registry)     │    │  (SQL Logic)    │
+//	└─────────────────┘    └──────────────────┘    └─────────────────┘
+//	                                │
+//	                                ▼
+//	                       ┌──────────────────┐
+//	                       │ Dialect-Specific │
+//	                       │   Generators     │
+//	                       └──────────────────┘
+//
 // # Key Features
 //
-//   - Dialect-specific migration planning for PostgreSQL, MySQL, and MariaDB
+//   - A planner for every registered dialect (see Supported Dialects below)
 //   - AST-based SQL generation for type safety and consistency
 //   - Proper dependency ordering to avoid constraint violations
 //   - Safety checks and warnings for destructive operations
@@ -28,6 +43,35 @@
 //		GenerateMigrationASTChecked(diff *types.SchemaDiff, generated *goschema.Database) ([]ast.Node, error)
 //	}
 //
+// Each implementation handles dialect-specific features, constraints, and SQL generation patterns.
+//
+// # Supported Dialects
+//
+// The package registers a built-in planner for each of these dialects. Use the
+// platform package's constants rather than spelling the names out. Several
+// dialects share one implementation configured with their own capability
+// preset, which is why the count of dialects exceeds the count of planners:
+//
+//   - postgres: ENUM types, SERIAL columns, and PostgreSQL-specific constraints
+//   - cockroachdb, yugabytedb, spanner: the PostgreSQL planner built for that
+//     dialect, so each one's capability preset decides what it emits
+//   - mysql: AUTO_INCREMENT, ENGINE specifications, and charset handling, under
+//     the capability.MySQL84 preset (no IF EXISTS guards -- exactly-once drops)
+//   - mariadb: the same MySQL planner under capability.MariaDB1011, which
+//     additionally requests IF EXISTS guards on constraint drops (issue #226)
+//   - sqlserver: a portable T-SQL subset with schemas, IDENTITY columns, and
+//     explicit errors for ALTER shapes that cannot be represented safely yet
+//   - oracle: Oracle's own ALTER TABLE clause vocabulary and identity rules
+//   - clickhouse: MergeTree-oriented table and index planning
+//   - sqlite: conservative planning for native CREATE TABLE, ADD COLUMN,
+//     indexes, views, triggers, and drops; table rebuilds are reported for
+//     structural ALTER operations SQLite cannot perform directly
+//
+// Built-in dialect planners are implementation details behind internal package
+// boundaries. Use the public registry functions in this package instead of
+// importing dialect implementations directly, and call RegisteredDialects for the
+// registered set at runtime rather than reading it off this list.
+//
 // # Main Functions
 //
 // The package provides several convenience functions for SQL generation:
@@ -39,6 +83,17 @@
 //   - Register(): Extension point for third-party planner dialects
 //
 // # Usage Example
+//
+// The three generation helpers sit at different levels of abstraction:
+//
+//	// High-level: individual SQL statements
+//	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, generated, "postgres")
+//
+//	// Mid-level: one complete SQL string
+//	sql, err := planner.GenerateSchemaDiffSQL(diff, generated, "postgres")
+//
+//	// Low-level: AST nodes for custom processing
+//	nodes, err := planner.GenerateSchemaDiffAST(diff, generated, "postgres")
 //
 // Basic migration planning:
 //
@@ -65,18 +120,6 @@
 //	if err := tx.Commit(); err != nil {
 //		log.Fatal(err)
 //	}
-//
-// # Dialect-Specific Planning
-//
-// Built-in dialect planners are implementation details behind internal package
-// boundaries. Use the public registry functions in this package instead of
-// importing dialect implementations directly. Each dialect planner handles
-// platform-specific features and limitations:
-//
-//   - PostgreSQL: ENUM types, SERIAL columns, advanced constraints
-//   - MySQL: AUTO_INCREMENT, ENGINE specifications, charset handling
-//   - MariaDB: MySQL-family planning with the MariaDB capability preset
-//   - ClickHouse: MergeTree-oriented table and index planning
 //
 // # Migration Order
 //
@@ -131,11 +174,14 @@
 //
 // # Error Handling
 //
-// The planner provides comprehensive error handling:
+// Public helpers return errors for user-controlled and configuration-dependent
+// failures, including unsupported dialects, renderer failures, and unsupported
+// dialect features. CLI callers should surface these errors directly instead of
+// relying on panic recovery. The errors carry context:
 //
 //   - Validation of schema differences before SQL generation
 //   - Detailed error messages with context information
-//   - Graceful handling of unsupported operations
+//   - Explicit refusal of unsupported operations
 //   - Proper error propagation for debugging
 //
 // # Performance Considerations

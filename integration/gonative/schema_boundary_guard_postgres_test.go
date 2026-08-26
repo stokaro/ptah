@@ -412,7 +412,7 @@ func observeBoundaryCase(c *qt.C, dsn string, tc boundaryCase) boundaryObservati
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
 
-	live, err := dbschema.ReadSchemaWithSchemas(conn, nil)
+	live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, nil)
 	c.Assert(err, qt.IsNil)
 
 	// The two surfaces differ in exactly the two options cmd/atlas sets and

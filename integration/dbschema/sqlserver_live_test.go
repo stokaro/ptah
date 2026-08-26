@@ -60,7 +60,7 @@ func TestSQLServerLiveReadSchema(t *testing.T) {
 		c.Assert(err, qt.IsNil, qt.Commentf("statement failed:\n%s", stmt))
 	}
 
-	schema, err := dbschema.ReadSchemaWithSchemas(conn, []string{schemaName})
+	schema, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
 	c.Assert(schema.Tables, qt.HasLen, 2)
 	c.Assert(schema.Indexes, qt.HasLen, 2)
@@ -162,7 +162,7 @@ func TestSQLServerLiveDropAllTablesDropsForeignKeys(t *testing.T) {
 
 	c.Assert(scopedConn.SchemaWriter().DropAllTables(ctx), qt.IsNil)
 
-	schema, err := dbschema.ReadSchemaWithSchemas(scopedConn, []string{schemaName})
+	schema, err := dbschema.ReadSchemaWithSchemasContext(ctx, scopedConn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
 	c.Assert(schema.Tables, qt.HasLen, 0)
 	c.Assert(sqlServerLiveTableExists(t, scopedConn, schemaName, "schema_migrations"), qt.IsFalse)
@@ -242,7 +242,7 @@ func TestSQLServerLiveComputedColumnZeroDiff(t *testing.T) {
 	);`)
 	c.Assert(err, qt.IsNil)
 
-	liveSchema, err := dbschema.ReadSchemaWithSchemas(conn, []string{schemaName})
+	liveSchema, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
 	generated := &goschema.Database{
 		Tables: []goschema.Table{{
@@ -308,11 +308,11 @@ func TestSQLServerLiveDropAllTablesRejectsExternalForeignKeys(t *testing.T) {
 	err = scopedConn.SchemaWriter().DropAllTables(ctx)
 	c.Assert(err, qt.ErrorMatches, `sqlserver: cannot drop schema .* tables because external foreign keys reference them: .*fk_external_child_parent.*`)
 
-	schema, err := dbschema.ReadSchemaWithSchemas(scopedConn, []string{schemaName})
+	schema, err := dbschema.ReadSchemaWithSchemasContext(ctx, scopedConn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
 	c.Assert(schema.Tables, qt.HasLen, 1)
 
-	externalSchema, err := dbschema.ReadSchemaWithSchemas(scopedConn, []string{externalSchemaName})
+	externalSchema, err := dbschema.ReadSchemaWithSchemasContext(ctx, scopedConn, []string{externalSchemaName})
 	c.Assert(err, qt.IsNil)
 	c.Assert(externalSchema.Tables, qt.HasLen, 1)
 	externalFK := findSQLServerConstraint(externalSchema.Constraints, externalSchemaName, "external_child", "fk_external_child_parent")

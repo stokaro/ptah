@@ -57,7 +57,7 @@ func TestOracleTablePrimaryKeyConvergesE2E(t *testing.T) {
 			`qty NUMBER(8) NOT NULL, PRIMARY KEY (id))`,
 		table)), qt.IsNil)
 
-	read, err := conn.Reader().ReadSchema()
+	read, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 
 	// The premise, and the reason a unit test could not hold this: the read

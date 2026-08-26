@@ -64,7 +64,7 @@ func TestSQLServerLiveProcedureRoundTrip(t *testing.T) {
 	// does, which is the finding that settled whether a T-SQL header parser was
 	// needed: it is not. The body is the half that comes out of the statement
 	// text, and p_owner is the one that pins where it starts.
-	live, err := dbschema.ReadSchemaWithSchemas(conn, []string{schemaName})
+	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
 	c.Assert(live.Functions, qt.HasLen, 2)
 	report := sqlServerFunctionNamed(live.Functions, "p_report")
@@ -126,7 +126,7 @@ func TestSQLServerLiveProcedureReplacementUsesTheMatchingVerb(t *testing.T) {
 		c.Assert(execErr, qt.IsNil, qt.Commentf("statement:\n%s", statement))
 	}
 
-	live, err := dbschema.ReadSchemaWithSchemas(conn, []string{schemaName})
+	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
 	report := sqlServerFunctionNamed(live.Functions, "p_report")
 	c.Assert(report.Body, qt.Contains, "1 AS extra")

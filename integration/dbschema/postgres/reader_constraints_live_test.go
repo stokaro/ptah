@@ -60,7 +60,7 @@ func TestReaderConstraints_LiveKeepsSameNamedConstraintsTableQualified(t *testin
 			ctx, cancel := context.WithTimeout(c.Context(), time.Minute)
 			defer cancel()
 			conn, schemaName := prepareConstraintIdentityFixture(c, ctx, test.engine)
-			gotSchema, err := dbschema.ReadSchemaWithSchemas(conn, []string{schemaName})
+			gotSchema, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schemaName})
 			c.Assert(err, qt.IsNil)
 			c.Assert(observeConstraints(gotSchema.Constraints), qt.DeepEquals, test.want)
 		})

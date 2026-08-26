@@ -61,7 +61,7 @@ func TestOracleRoutinesPlanAndConvergeE2E(t *testing.T) {
 
 	declared := oracleRoutineDeclaration()
 
-	before, err := conn.Reader().ReadSchema()
+	before, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, before, nil)
 	c.Assert(err, qt.IsNil)
@@ -89,7 +89,7 @@ func TestOracleRoutinesPlanAndConvergeE2E(t *testing.T) {
 		execOracle(ctx, c, conn, statement)
 	}
 
-	after, err := conn.Reader().ReadSchema()
+	after, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 
 	// What the catalog gives back, spelled out. The names are upper case
@@ -134,7 +134,7 @@ func TestOracleRoutinesPlanAndConvergeE2E(t *testing.T) {
 		execOracle(ctx, c, conn, statement)
 	}
 
-	empty, err := conn.Reader().ReadSchema()
+	empty, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 	c.Assert(oracleRoutineSummary(empty), qt.HasLen, 0)
 }
@@ -260,7 +260,7 @@ func TestOracleTriggerCompilesE2E(t *testing.T) {
 		}},
 	}
 
-	live, err := conn.Reader().ReadSchema()
+	live, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, live, nil)
 	c.Assert(err, qt.IsNil)

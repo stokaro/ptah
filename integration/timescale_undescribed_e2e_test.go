@@ -69,7 +69,7 @@ func TestTimescaleUndescribedObjectsE2E(t *testing.T) {
 			`FROM %s GROUP BY bucket, device WITH NO DATA`,
 		aggregate, table))
 
-	schema, err := conn.Reader().ReadSchema()
+	schema, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 
 	// The hypertable is in the description, and so is its primary dimension.
@@ -162,7 +162,7 @@ func TestTimescaleReportIsSilentOnOrdinaryPostgresE2E(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
 
-	schema, err := conn.Reader().ReadSchema()
+	schema, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 
 	var out bytes.Buffer
