@@ -12,7 +12,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"go.5x5.cz/ptah/dbschema"
-	examples "go.5x5.cz/ptah/examples/migrator"
+	"go.5x5.cz/ptah/examples/migrator"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -74,7 +74,7 @@ func ExampleNewFSMigrator() {
 	defer conn.Close()
 
 	// Get example migrations filesystem
-	exampleFS := examples.GetExampleMigrations()
+	exampleFS := examplemigrations.GetExampleMigrations()
 	migrationsFS := must.Must(fs.Sub(exampleFS, "migrations"))
 
 	mig, err := migrator.NewFSMigrator(conn, migrationsFS)
@@ -107,7 +107,7 @@ func ExampleMigrator_GetMigrationStatus() {
 	defer conn.Close()
 
 	// Get example migrations filesystem
-	exampleFS := examples.GetExampleMigrations()
+	exampleFS := examplemigrations.GetExampleMigrations()
 	migrationsFS := must.Must(fs.Sub(exampleFS, "migrations"))
 
 	mig, err := migrator.NewFSMigrator(conn, migrationsFS)
@@ -168,7 +168,7 @@ func ExampleCreateMigrationFromSQL() {
 func Example_migrationSources() {
 	// Source 1: an embedded filesystem. The migration files must sit at the root
 	// of the fs.FS the provider is handed, so a subdirectory is peeled off first.
-	embeddedFS := must.Must(fs.Sub(examples.GetExampleMigrations(), "migrations"))
+	embeddedFS := must.Must(fs.Sub(examplemigrations.GetExampleMigrations(), "migrations"))
 	embedded := must.Must(migrator.NewFSMigrationProvider(embeddedFS))
 
 	// Source 2: a directory on disk, read through os.DirFS.

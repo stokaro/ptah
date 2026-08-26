@@ -25,7 +25,7 @@ import (
     
     "go.5x5.cz/ptah/executor"
     "go.5x5.cz/ptah/migrator"
-    migrator_examples "go.5x5.cz/ptah/examples/migrator"
+    "go.5x5.cz/ptah/examples/migrator"
 )
 
 func main() {
@@ -40,7 +40,7 @@ func main() {
     m := migrator.NewMigrator(conn)
 
     // Register example migrations
-    exampleFS := migrator_examples.GetExampleMigrations()
+    exampleFS := examplemigrations.GetExampleMigrations()
     migrationsFS := must.Must(fs.Sub(exampleFS, "migrations"))
     
     err = migrator.RegisterMigrations(m, migrationsFS)
