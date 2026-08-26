@@ -299,16 +299,28 @@ func FunctionsWithSemantics(
 		}
 	}
 	for identity, recorded := range databaseFunctions {
-		_, _, removedCount := pairRoutineOverloads(generatedFunctions[identity], recorded)
-		for range removedCount {
+		_, _, removed := pairRoutineOverloads(generatedFunctions[identity], recorded)
+		for _, routine := range removed {
 			// The kind travels with the removal because it cannot be recovered
 			// later: there is no declaration left to read it off, and the DROP
 			// verb has to match the object (stokaro/ptah#1722).
+			//
+			// So does the signature. A name alone does not select an overload:
+			// `DROP FUNCTION IF EXISTS f` is refused with
+			// `function name "f" is not unique` whenever the schema holds more
+			// than one, and IF EXISTS does not help because the refusal is
+			// about ambiguity rather than existence (stokaro/ptah#2296).
+			removal := difftypes.RoutineRemoval{
+				Name:      databaseNames[identity],
+				Signature: recordedRoutineSignature(routine),
+			}
 			if identity.Kind() == objectidentity.KindProcedure {
-				diff.ProceduresRemoved = append(diff.ProceduresRemoved, databaseNames[identity])
+				diff.ProceduresRemoved = append(diff.ProceduresRemoved, removal.Name)
+				diff.ProceduresRemovedWithSignatures = append(diff.ProceduresRemovedWithSignatures, removal)
 				continue
 			}
-			diff.FunctionsRemoved = append(diff.FunctionsRemoved, databaseNames[identity])
+			diff.FunctionsRemoved = append(diff.FunctionsRemoved, removal.Name)
+			diff.FunctionsRemovedWithSignatures = append(diff.FunctionsRemovedWithSignatures, removal)
 		}
 	}
 

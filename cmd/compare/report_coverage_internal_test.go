@@ -28,9 +28,11 @@ import (
 // and a list listed here is a claim that reporting it would say nothing the
 // list it qualifies does not already say.
 var nonCategoryFields = map[string]string{
-	"IdentifierSemantics":           "records the live catalog identifier rules the diff was produced under, not a difference between the two schemas",
-	"ConstraintBackedIndexRemovals": "a subset of IndexesRemoved, naming the removals whose object a UNIQUE constraint enforces so the planner spells the drop as a constraint drop; reporting it would print the same removed index a second time, and on its own it removes nothing",
-	"ForeignKeysRemovedWithTables":  "supplements matching ConstraintsRemovedWithTables entries with local and referenced columns for drop ordering; it is ignored without a base removal and reporting it would print the same foreign-key removal twice",
+	"IdentifierSemantics":             "records the live catalog identifier rules the diff was produced under, not a difference between the two schemas",
+	"ConstraintBackedIndexRemovals":   "a subset of IndexesRemoved, naming the removals whose object a UNIQUE constraint enforces so the planner spells the drop as a constraint drop; reporting it would print the same removed index a second time, and on its own it removes nothing",
+	"ForeignKeysRemovedWithTables":    "supplements matching ConstraintsRemovedWithTables entries with local and referenced columns for drop ordering; it is ignored without a base removal and reporting it would print the same foreign-key removal twice",
+	"FunctionsRemovedWithSignatures":  "the removals FunctionsRemoved already names, carrying the argument list that makes each one addressable; reporting it would print the same removed function twice, and on its own it removes nothing (stokaro/ptah#2296)",
+	"ProceduresRemovedWithSignatures": "ProceduresRemoved with signatures, for the same reason",
 }
 
 // TestWriteComparisonReportsEveryDiffCategory is the guard for
