@@ -31,8 +31,29 @@ type Script struct {
 	Steps []Step
 	// Masks are the reusable `mask "<name>"` blocks declared beside it.
 	Masks map[string]Mask
+	// Iterator is the keyset walk a loop script runs its body over, and nil for
+	// the other kinds.
+	Iterator *Iterator
 	// Range is where the block was written, for the report's `<file>:<line>`.
 	Range hcl.Range
+}
+
+// Iterator is a `iterator "keyset" { … }` block: the walk a loop runs its body
+// over, one batch at a time.
+//
+// Keyset rather than offset, and that is the documented shape rather than a
+// choice made here -- an OFFSET walk over rows the body is deleting skips
+// rows, because every delete shifts the offsets under the next page.
+type Iterator struct {
+	// Cursor names the columns carried between batches, in declaration order.
+	Cursor []string
+	// InitSQL selects the first batch.
+	InitSQL string
+	// NextSQL selects each batch after it, and NextArgs are the cursor
+	// references it takes.
+	NextSQL  string
+	NextArgs []string
+	Range    hcl.Range
 }
 
 // StepKind names what a step does.
@@ -164,6 +185,32 @@ func parseScriptBlock(block *hclsyntax.Block, masks map[string]Mask) (Script, er
 	}
 	script.Steps = steps
 
+	iterator, err := parseIterator(block)
+	if err != nil {
+		return Script{}, err
+	}
+	script.Iterator = iterator
+
+	// The pairing is checked here rather than at run time, because a script
+	// with the wrong shape is wrong before it reaches a database. A loop with
+	// no iterator would run its body once over everything -- which for a body
+	// holding a DELETE is the batching silently not happening.
+	if kind == KindLoop && script.Iterator == nil {
+		return Script{}, &ParseError{
+			Range: block.DefRange(),
+			Message: fmt.Sprintf(
+				"loop %q has no iterator; without one its body would run once over everything rather than in batches",
+				script.Name),
+		}
+	}
+	if kind != KindLoop && script.Iterator != nil {
+		return Script{}, &ParseError{
+			Range: block.DefRange(),
+			Message: fmt.Sprintf(
+				"%s %q declares an iterator, which only a loop runs", kind, script.Name),
+		}
+	}
+
 	if len(script.Steps) == 0 {
 		return Script{}, &ParseError{
 			Range:   block.DefRange(),
@@ -192,14 +239,10 @@ func parseSteps(body *hclsyntax.Body, masks map[string]Mask) ([]Step, error) {
 			}
 			steps = append(steps, step)
 		case "iterator":
-			// Recognized and refused by name. A keyset iterator decides which
-			// rows a loop's body runs against, so reading it approximately
-			// would run the body over the wrong set -- and a loop's body is
-			// where the deletes are.
-			return nil, &ParseError{
-				Range:   block.DefRange(),
-				Message: "iterator blocks are not read yet, and a loop that ignored one would run its body over the wrong rows",
-			}
+			// Read by parseScriptBlock, which owns it: an iterator is the
+			// script's, not a step, and a body that returned it as one would
+			// let a loop carry two.
+			continue
 		case "http":
 			return nil, &ParseError{
 				Range:   block.DefRange(),

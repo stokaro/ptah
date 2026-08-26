@@ -41,6 +41,12 @@ type RunOptions struct {
 	// Now supplies the clock, so a test can assert on a report without its
 	// timings changing between runs.
 	Now func() time.Time
+	// MaxBatches bounds a loop's walk. Zero means [DefaultMaxBatches].
+	//
+	// Configurable because the bound is a safety net whose only observable
+	// behavior is being hit, and a test that has to run ten thousand batches
+	// to see it would be too slow to keep.
+	MaxBatches int
 }
 
 // RunQuery runs a query script and writes its rows.
