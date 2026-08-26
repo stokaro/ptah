@@ -5,10 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
@@ -48,7 +48,7 @@ func TestCompareWithDatabaseInfoRefusesAForeignDefinerReplacement(t *testing.T) 
 
 // TestCompareWithDatabaseInfoRefusesAReplacementWithoutOwnershipFacts keeps
 // the safety rule fail closed for programmatic callers that build a live-like
-// DBFunction without the reader-only ownership fields. Treating missing facts
+// Function without the reader-only ownership fields. Treating missing facts
 // as same-owner would recreate the exact silent principal change this guard
 // exists to prevent.
 func TestCompareWithDatabaseInfoRefusesAReplacementWithoutOwnershipFacts(t *testing.T) {
@@ -162,18 +162,18 @@ func mysqlDefinerDesired(body, security string) *goschema.Database {
 	}}}
 }
 
-func mysqlDefinerCurrent(body, security, definer, currentAccount string) *types.DBSchema {
-	return &types.DBSchema{Functions: []types.DBFunction{{
+func mysqlDefinerCurrent(body, security, definer, currentAccount string) *catalog.Database {
+	return &catalog.Database{Functions: []catalog.Function{{
 		Name: "f", Schema: "app", Returns: "int", Language: "sql",
 		Security: security, Volatility: "IMMUTABLE", Body: body,
 		Definer: definer, CurrentAccount: currentAccount,
 	}}}
 }
 
-func mysqlDefinerInfo(dialect string) types.DBInfo {
+func mysqlDefinerInfo(dialect string) catalog.ServerInfo {
 	semantics := identifier.ForDialect(dialect)
 	semantics.DefaultSchema = "app"
-	return types.DBInfo{
+	return catalog.ServerInfo{
 		Dialect:             dialect,
 		Schema:              "app",
 		IdentifierSemantics: semantics,

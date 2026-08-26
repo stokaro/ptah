@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -14,7 +14,7 @@ import (
 // TestCompareWithDialect_PostgresArrayAndDomainColumnsCompareEqualToThemselves
 // compares a PostgreSQL schema against ITSELF (stokaro/ptah#1138).
 //
-// The desired side is not written out by hand -- it is the same *types.DBSchema
+// The desired side is not written out by hand -- it is the same *catalog.Database
 // put through the database-to-schema converter, which is the path
 // `ptah-compat schema diff --from <db> --to <db>` takes. That is what makes the
 // assertion meaningful: any column the two sides read out of different fields
@@ -34,12 +34,12 @@ import (
 func TestCompareWithDialect_PostgresArrayAndDomainColumnsCompareEqualToThemselves(t *testing.T) {
 	c := qt.New(t)
 
-	database := &types.DBSchema{
-		Tables: []types.DBTable{
+	database := &catalog.Database{
+		Tables: []catalog.Table{
 			{
 				Name: "arrays",
 				Type: "TABLE",
-				Columns: []types.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "a_bit", DataType: "ARRAY", UDTName: "_bit", FormattedType: "bit(8)[]", IsNullable: "NO"},
 					{Name: "a_char", DataType: "ARRAY", UDTName: "_bpchar", FormattedType: "character(5)[]", IsNullable: "NO"},
 					{Name: "a_cube", DataType: "ARRAY", UDTName: "_cube", FormattedType: "cube[]", IsNullable: "NO"},
@@ -64,7 +64,7 @@ func TestCompareWithDialect_PostgresArrayAndDomainColumnsCompareEqualToThemselve
 			{
 				Name: "scalars",
 				Type: "TABLE",
-				Columns: []types.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "c_domain", DataType: "integer", UDTName: "int4", FormattedType: "positive_int", IsNullable: "NO"},
 					{Name: "c_point3d", DataType: "USER-DEFINED", UDTName: "cube", FormattedType: "point3d", IsNullable: "NO"},
 					{Name: "c_tags", DataType: "ARRAY", UDTName: "_text", FormattedType: "tags", IsNullable: "NO"},

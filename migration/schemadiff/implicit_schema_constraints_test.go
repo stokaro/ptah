@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
@@ -194,7 +194,7 @@ func TestCompareWithDialect_ImplicitDatabaseSchemaMatchesTriggers(t *testing.T) 
 				Body:       "SELECT 1",
 			}}
 			database := implicitSchemaDatabase(test.dbSchema, "users")
-			database.Triggers = []types.DBTrigger{{
+			database.Triggers = []catalog.Trigger{{
 				Name:   "users_audit",
 				Table:  "users",
 				Schema: test.dbSchema,
@@ -232,18 +232,18 @@ func implicitSchemaDesired(schema string) *goschema.Database {
 
 // implicitSchemaDatabase builds the database side: the same table, as a reader
 // reports it.
-func implicitSchemaDatabase(schema, table string) *types.DBSchema {
-	return &types.DBSchema{
-		Tables: []types.DBTable{{
+func implicitSchemaDatabase(schema, table string) *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{{
 			Name:   table,
 			Schema: schema,
 			Type:   "TABLE",
-			Columns: []types.DBColumn{
+			Columns: []catalog.Column{
 				{Name: "id", DataType: "INTEGER", IsNullable: "NO", IsPrimaryKey: true},
 				{Name: "email", DataType: "TEXT", IsNullable: "YES"},
 			},
 		}},
-		Constraints: []types.DBConstraint{{
+		Constraints: []catalog.Constraint{{
 			Name:        table + "_pkey",
 			TableName:   table,
 			Schema:      schema,

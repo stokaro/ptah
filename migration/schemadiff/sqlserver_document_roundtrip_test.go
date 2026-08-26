@@ -7,9 +7,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
-	dbtypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 	"go.5x5.cz/ptah/internal/schemafile"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -102,15 +102,15 @@ func TestCompare_AGoSchemaThatCouldNameThemStillDropsThem(t *testing.T) {
 
 // sqlServerDatabaseWithUnwritableObjects is a database holding one of each of
 // the two kinds only HCL and a Go schema can name.
-func sqlServerDatabaseWithUnwritableObjects() *dbtypes.DBSchema {
-	return &dbtypes.DBSchema{
-		Schemas: []dbtypes.DBSchemaInfo{{Name: "dbo"}},
-		Tables:  []dbtypes.DBTable{{Schema: "dbo", Name: "users"}},
-		ExtendedProperties: []dbtypes.DBExtendedProperty{{
+func sqlServerDatabaseWithUnwritableObjects() *catalog.Database {
+	return &catalog.Database{
+		Schemas: []catalog.Schema{{Name: "dbo"}},
+		Tables:  []catalog.Table{{Schema: "dbo", Name: "users"}},
+		ExtendedProperties: []catalog.ExtendedProperty{{
 			Name: "MS_Description", Value: "the users",
 			Schema: "dbo", Table: "users", ValueType: "nvarchar",
 		}},
-		Synonyms: []dbtypes.DBSynonym{{
+		Synonyms: []catalog.Synonym{{
 			Schema: "dbo", Name: "s_users", Target: "other.dbo.users",
 		}},
 	}

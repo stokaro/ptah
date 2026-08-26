@@ -9,10 +9,10 @@ import (
 	"text/template"
 	"text/template/parse"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 	"go.5x5.cz/ptah/internal/dbmlrender"
 	"go.5x5.cz/ptah/internal/schemaviz"
@@ -20,7 +20,7 @@ import (
 
 type SchemaInspectReport struct {
 	db          *goschema.Database
-	info        dbschematypes.DBInfo
+	info        catalog.ServerInfo
 	diagnostics io.Writer
 	// omitAtlasRefusedBlocks renders HCL for the Atlas-compatible surface,
 	// which leaves out the block types the pinned Atlas community binary
@@ -176,8 +176,8 @@ func RenderSchemaInspect(format string, report *SchemaInspectReport) (SchemaInsp
 // came from the connection URL; see the field's own documentation.
 func NewSchemaInspectReport(
 	db *goschema.Database,
-	schema *dbschematypes.DBSchema,
-	info dbschematypes.DBInfo,
+	schema *catalog.Database,
+	info catalog.ServerInfo,
 	diagnostics io.Writer,
 	opts SchemaInspectReportOptions,
 ) *SchemaInspectReport {
@@ -486,7 +486,7 @@ func atlasSchemaInspectBase64URL(value any) string {
 // `--schema nosuch` answered `{"schemas":[{"name":"public"}]}` where that
 // binary answers `{}`. Which schemas exist is the reader's answer, not the
 // connection's; see [go.5x5.cz/ptah/internal/schemaselection].
-func atlasSchemaInspectJSON(schema *dbschematypes.DBSchema, info dbschematypes.DBInfo) atlasSchemaInspectJSONRealm {
+func atlasSchemaInspectJSON(schema *catalog.Database, info catalog.ServerInfo) atlasSchemaInspectJSONRealm {
 	schemasByName := make(map[string]*atlasSchemaInspectJSONSchema)
 	indexesByTable := atlasSchemaInspectIndexesByTable(schema.Indexes)
 	constraintsByTable := atlasSchemaInspectConstraintsByTable(schema.Constraints)
@@ -533,9 +533,9 @@ func atlasSchemaInspectSchemaForName(
 }
 
 func atlasSchemaInspectTable(
-	table dbschematypes.DBTable,
-	indexesByTable map[string][]dbschematypes.DBIndex,
-	constraintsByTable map[string][]dbschematypes.DBConstraint,
+	table catalog.Table,
+	indexesByTable map[string][]catalog.Index,
+	constraintsByTable map[string][]catalog.Constraint,
 ) atlasSchemaInspectJSONTable {
 	jsonTable := atlasSchemaInspectJSONTable{
 		Name: table.Name,
@@ -585,7 +585,7 @@ func atlasSchemaInspectTable(
 	return jsonTable
 }
 
-func atlasSchemaInspectColumn(column dbschematypes.DBColumn) atlasSchemaInspectJSONColumn {
+func atlasSchemaInspectColumn(column catalog.Column) atlasSchemaInspectJSONColumn {
 	columnType := atlasSchemaInspectColumnType(column)
 	return atlasSchemaInspectJSONColumn{
 		Name: column.Name,
@@ -615,7 +615,7 @@ func atlasSchemaInspectColumn(column dbschematypes.DBColumn) atlasSchemaInspectJ
 // both kinds of column fill: preferring FormattedType outright would print
 // "character varying(100)[]" where the binary prints "ARRAY" and trade one
 // disagreement for another. See stokaro/ptah#1242.
-func atlasSchemaInspectColumnType(column dbschematypes.DBColumn) string {
+func atlasSchemaInspectColumnType(column catalog.Column) string {
 	if column.DomainName != "" && column.FormattedType != "" {
 		return column.FormattedType
 	}
@@ -625,7 +625,7 @@ func atlasSchemaInspectColumnType(column dbschematypes.DBColumn) string {
 	return column.DataType
 }
 
-func atlasSchemaInspectIndex(index dbschematypes.DBIndex) atlasSchemaInspectJSONIndex {
+func atlasSchemaInspectIndex(index catalog.Index) atlasSchemaInspectJSONIndex {
 	parts := atlasSchemaInspectIndexParts(index)
 	if index.Expression != "" && len(parts) == 0 {
 		parts = append(parts, atlasSchemaInspectJSONIndexPart{Expr: index.Expression})
@@ -648,7 +648,7 @@ func atlasSchemaInspectIndex(index dbschematypes.DBIndex) atlasSchemaInspectJSON
 //
 // Falling back to Columns keeps every reader that supplies only the flat form
 // -- MySQL, MariaDB -- printing exactly what it printed before.
-func atlasSchemaInspectIndexParts(index dbschematypes.DBIndex) []atlasSchemaInspectJSONIndexPart {
+func atlasSchemaInspectIndexParts(index catalog.Index) []atlasSchemaInspectJSONIndexPart {
 	if len(index.Parts) == 0 {
 		parts := make([]atlasSchemaInspectJSONIndexPart, 0, len(index.Columns))
 		for _, column := range index.Columns {
@@ -668,7 +668,7 @@ func atlasSchemaInspectIndexParts(index dbschematypes.DBIndex) []atlasSchemaInsp
 // the reader already established that from pg_index.indkey, so a column
 // literally named "lower(name)" stays a column here.
 func atlasSchemaInspectStructuredIndexPart(
-	part dbschematypes.DBIndexPart,
+	part catalog.IndexPart,
 ) atlasSchemaInspectJSONIndexPart {
 	if part.Expr != "" {
 		return atlasSchemaInspectJSONIndexPart{Desc: part.Desc, Expr: part.Expr}
@@ -676,7 +676,7 @@ func atlasSchemaInspectStructuredIndexPart(
 	return atlasSchemaInspectJSONIndexPart{Desc: part.Desc, Column: part.Name}
 }
 
-func atlasSchemaInspectUniqueConstraintIndex(constraint dbschematypes.DBConstraint) atlasSchemaInspectJSONIndex {
+func atlasSchemaInspectUniqueConstraintIndex(constraint catalog.Constraint) atlasSchemaInspectJSONIndex {
 	return atlasSchemaInspectJSONIndex{
 		Name:   constraint.Name,
 		Unique: true,
@@ -689,7 +689,7 @@ func atlasSchemaInspectPrimaryKey(parts []atlasSchemaInspectJSONIndexPart) *atla
 }
 
 func atlasSchemaInspectConstraintIndexParts(
-	constraint dbschematypes.DBConstraint,
+	constraint catalog.Constraint,
 ) []atlasSchemaInspectJSONIndexPart {
 	columns := constraint.ColumnNamesOrDefault()
 	parts := make([]atlasSchemaInspectJSONIndexPart, 0, len(columns))
@@ -706,7 +706,7 @@ func atlasSchemaInspectIndexPart(value string) atlasSchemaInspectJSONIndexPart {
 	return atlasSchemaInspectJSONIndexPart{Column: value}
 }
 
-func atlasSchemaInspectForeignKey(constraint dbschematypes.DBConstraint) atlasSchemaInspectJSONForeignKey {
+func atlasSchemaInspectForeignKey(constraint catalog.Constraint) atlasSchemaInspectJSONForeignKey {
 	foreignKey := atlasSchemaInspectJSONForeignKey{
 		Name:    constraint.Name,
 		Columns: constraint.ColumnNamesOrDefault(),
@@ -716,8 +716,8 @@ func atlasSchemaInspectForeignKey(constraint dbschematypes.DBConstraint) atlasSc
 	return foreignKey
 }
 
-func atlasSchemaInspectIndexesByTable(indexes []dbschematypes.DBIndex) map[string][]dbschematypes.DBIndex {
-	byTable := make(map[string][]dbschematypes.DBIndex)
+func atlasSchemaInspectIndexesByTable(indexes []catalog.Index) map[string][]catalog.Index {
+	byTable := make(map[string][]catalog.Index)
 	for _, index := range indexes {
 		byTable[index.QualifiedTableName()] = append(byTable[index.QualifiedTableName()], index)
 	}
@@ -725,16 +725,16 @@ func atlasSchemaInspectIndexesByTable(indexes []dbschematypes.DBIndex) map[strin
 }
 
 func atlasSchemaInspectConstraintsByTable(
-	constraints []dbschematypes.DBConstraint,
-) map[string][]dbschematypes.DBConstraint {
-	byTable := make(map[string][]dbschematypes.DBConstraint)
+	constraints []catalog.Constraint,
+) map[string][]catalog.Constraint {
+	byTable := make(map[string][]catalog.Constraint)
 	for _, constraint := range constraints {
 		byTable[constraint.QualifiedTableName()] = append(byTable[constraint.QualifiedTableName()], constraint)
 	}
 	return byTable
 }
 
-func atlasSchemaInspectSchemaName(schema string, info dbschematypes.DBInfo) string {
+func atlasSchemaInspectSchemaName(schema string, info catalog.ServerInfo) string {
 	if schema != "" {
 		return schema
 	}

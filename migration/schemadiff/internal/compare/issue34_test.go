@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -29,8 +29,8 @@ func TestIssue34_ExplicitlyDefinedUniqueIndexes(t *testing.T) {
 		}
 
 		// Database has no indexes yet (fresh database)
-		database := &types.DBSchema{
-			Indexes: make([]types.DBIndex, 0),
+		database := &catalog.Database{
+			Indexes: make([]catalog.Index, 0),
 		}
 
 		diff := &difftypes.SchemaDiff{}
@@ -57,8 +57,8 @@ func TestIssue34_ExplicitlyDefinedUniqueIndexes(t *testing.T) {
 		}
 
 		// Database now has the indexes that were created (they are unique indexes)
-		database := &types.DBSchema{
-			Indexes: []types.DBIndex{
+		database := &catalog.Database{
+			Indexes: []catalog.Index{
 				{Name: "tenants_slug_idx", TableName: "tenants", Columns: []string{"slug"}, IsPrimary: false, IsUnique: true},
 				{Name: "users_tenant_email_idx", TableName: "users", Columns: []string{"tenant_id", "email"}, IsPrimary: false, IsUnique: true},
 			},
@@ -85,8 +85,8 @@ func TestIssue34_ExplicitlyDefinedUniqueIndexes(t *testing.T) {
 		}
 
 		// Database has both constraint-based and explicitly defined indexes
-		database := &types.DBSchema{
-			Indexes: []types.DBIndex{
+		database := &catalog.Database{
+			Indexes: []catalog.Index{
 				// Constraint-based indexes (should be ignored)
 				{Name: "tenants_pkey", TableName: "tenants", Columns: []string{"id"}, IsPrimary: true, IsUnique: false},
 				{Name: "users_email_key", TableName: "users", Columns: []string{"email"}, IsPrimary: false, IsUnique: true},
@@ -118,8 +118,8 @@ func TestIssue34_ExplicitlyDefinedUniqueIndexes(t *testing.T) {
 		}
 
 		// Database has only one of the explicitly defined indexes
-		database := &types.DBSchema{
-			Indexes: []types.DBIndex{
+		database := &catalog.Database{
+			Indexes: []catalog.Index{
 				// Constraint-based indexes (should be ignored)
 				{Name: "users_email_key", TableName: "users", Columns: []string{"email"}, IsPrimary: false, IsUnique: true},
 				// Only one explicitly defined index exists

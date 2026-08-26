@@ -18,11 +18,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
@@ -208,7 +208,7 @@ func TestGenerateCheckpointWithDatabaseInfo_SQLServerCaseSensitiveVariants(t *te
 		})
 	schema := sqlServerCaseVariantIndexSchema()
 
-	up, down, err := generateCheckpointWithDatabaseInfo(schema, dbschematypes.DBInfo{
+	up, down, err := generateCheckpointWithDatabaseInfo(schema, catalog.ServerInfo{
 		Dialect:             "sqlserver",
 		Capabilities:        capability.SQLServer2022(),
 		IdentifierSemantics: semantics,
@@ -245,7 +245,7 @@ func TestGenerateCheckpointWithDatabaseInfo_SQLServerTableCollision_FailurePath(
 		{StructName: "LowerUser", Schema: "dbo", Name: "users"},
 	}}
 
-	up, down, err := generateCheckpointWithDatabaseInfo(schema, dbschematypes.DBInfo{
+	up, down, err := generateCheckpointWithDatabaseInfo(schema, catalog.ServerInfo{
 		Dialect:             "sqlserver",
 		Capabilities:        capability.SQLServer2022(),
 		IdentifierSemantics: semantics,
@@ -267,7 +267,7 @@ func TestGenerateCheckpointWithDatabaseInfo_SQLServerIncompleteSnapshot_FailureP
 		{StructName: "User", Schema: "dbo", Name: "users"},
 	}}
 
-	up, down, err := generateCheckpointWithDatabaseInfo(schema, dbschematypes.DBInfo{
+	up, down, err := generateCheckpointWithDatabaseInfo(schema, catalog.ServerInfo{
 		Dialect:             "sqlserver",
 		Capabilities:        capability.SQLServer2022(),
 		IdentifierSemantics: semantics,

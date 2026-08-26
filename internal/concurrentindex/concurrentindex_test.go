@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/concurrentindex"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -28,8 +28,8 @@ func diffAddingIndex() *difftypes.SchemaDiff {
 	}
 }
 
-func postgresInfo() dbschematypes.DBInfo {
-	return dbschematypes.DBInfo{Dialect: "postgres", Capabilities: capability.ForDialect("postgres")}
+func postgresInfo() catalog.ServerInfo {
+	return catalog.ServerInfo{Dialect: "postgres", Capabilities: capability.ForDialect("postgres")}
 }
 
 // TestDeclaredRefs_HonorsTheDeclaration is the reproduction from
@@ -58,7 +58,7 @@ func TestDeclaredRefs_LeavesAnUndeclaredIndexAlone(t *testing.T) {
 func TestDeclaredRefs_GatesOnTargetAndCapability(t *testing.T) {
 	tests := []struct {
 		name string
-		info dbschematypes.DBInfo
+		info catalog.ServerInfo
 		want int
 	}{
 		{
@@ -68,14 +68,14 @@ func TestDeclaredRefs_GatesOnTargetAndCapability(t *testing.T) {
 		},
 		{
 			name: "outside the PostgreSQL family",
-			info: dbschematypes.DBInfo{Dialect: "mysql", Capabilities: capability.ForDialect("mysql")},
+			info: catalog.ServerInfo{Dialect: "mysql", Capabilities: capability.ForDialect("mysql")},
 			want: 0,
 		},
 		{
 			// The nil set answers false for every key. A caller that resolves
 			// no capabilities must not be handed a statement on that silence.
 			name: "no capabilities established",
-			info: dbschematypes.DBInfo{Dialect: "postgres"},
+			info: catalog.ServerInfo{Dialect: "postgres"},
 			want: 0,
 		},
 	}
@@ -110,11 +110,11 @@ func TestDeclaredRefs_ExcludesAPartitionedParent(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			catalog := &dbschematypes.DBSchema{
-				Tables: []dbschematypes.DBTable{{Name: "widget", Partitioned: test.partitioned}},
+			currentCatalog := &catalog.Database{
+				Tables: []catalog.Table{{Name: "widget", Partitioned: test.partitioned}},
 			}
 
-			refs := concurrentindex.DeclaredRefs(diffAddingIndex(), desiredWithConcurrentIndex(true), catalog, postgresInfo())
+			refs := concurrentindex.DeclaredRefs(diffAddingIndex(), desiredWithConcurrentIndex(true), currentCatalog, postgresInfo())
 
 			c.Assert(refs, qt.HasLen, test.want)
 		})
@@ -130,8 +130,8 @@ func TestDeclaredRefs_ExcludesAPartitionedParent(t *testing.T) {
 // built concurrently.
 func TestDeclaredRefs_DoesNotApplyThePopulatedTableFilter(t *testing.T) {
 	c := qt.New(t)
-	empty := &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{{Name: "widget", EstimatedRows: 0}},
+	empty := &catalog.Database{
+		Tables: []catalog.Table{{Name: "widget", EstimatedRows: 0}},
 	}
 
 	refs := concurrentindex.DeclaredRefs(diffAddingIndex(), desiredWithConcurrentIndex(true), empty, postgresInfo())

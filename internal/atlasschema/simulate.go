@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/devdocker"
@@ -268,7 +268,7 @@ func rehearseStatementsOnDev(
 	ctx context.Context,
 	targetConn,
 	devConn *dbschema.DatabaseConnection,
-	current *dbschematypes.DBSchema,
+	current *catalog.Database,
 	txMode migrator.MigrationTxMode,
 	statements []string,
 ) error {
@@ -310,7 +310,7 @@ var checkPlanStatements = CheckPlanStatementsSandboxable
 func rehearseOnPreparedDev(
 	ctx context.Context,
 	devConn *dbschema.DatabaseConnection,
-	current *dbschematypes.DBSchema,
+	current *catalog.Database,
 	txMode migrator.MigrationTxMode,
 	statements []string,
 ) error {
@@ -332,7 +332,7 @@ func rehearseOnPreparedDev(
 // a namespace inside the database participate: where it names the database
 // itself the two legitimately differ, which is exactly why the plan has to be
 // re-scoped before it is rehearsed.
-func checkSimulationSchemaScope(devInfo, targetInfo dbschematypes.DBInfo) error {
+func checkSimulationSchemaScope(devInfo, targetInfo catalog.ServerInfo) error {
 	if schemaScopeNamesDatabase(targetInfo.Dialect) {
 		return nil
 	}
@@ -351,7 +351,7 @@ func checkSimulationSchemaScope(devInfo, targetInfo dbschematypes.DBInfo) error 
 func recreateCurrentSchema(
 	ctx context.Context,
 	devConn *dbschema.DatabaseConnection,
-	current *dbschematypes.DBSchema,
+	current *catalog.Database,
 ) error {
 	if current == nil {
 		return nil

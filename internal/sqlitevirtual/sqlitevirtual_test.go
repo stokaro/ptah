@@ -6,10 +6,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
 )
@@ -49,16 +49,16 @@ func TestValidateExplicitURLToggleIgnoresOtherAndInvalidURLs(t *testing.T) {
 // (measured on the command, not here -- the exclusion happens before this
 // validator is reached).
 func TestValidateComparison(t *testing.T) {
-	fts5 := types.DBTable{Name: "docs", Type: "TABLE", VirtualModule: "fts5", VirtualArguments: "title, body"}
-	rtree := types.DBTable{Name: "geo", Type: "TABLE", VirtualModule: "rtree", VirtualArguments: "id, x0, x1"}
-	users := types.DBTable{Name: "users", Type: "TABLE"}
+	fts5 := catalog.Table{Name: "docs", Type: "TABLE", VirtualModule: "fts5", VirtualArguments: "title, body"}
+	rtree := catalog.Table{Name: "geo", Type: "TABLE", VirtualModule: "rtree", VirtualArguments: "id, x0, x1"}
+	users := catalog.Table{Name: "users", Type: "TABLE"}
 
 	tests := []struct {
 		name            string
 		dialect         string
 		env             func(testing.TB)
 		desired         *goschema.Database
-		database        []types.DBTable
+		database        []catalog.Table
 		policy          sqlitevirtual.Policy
 		wantErr         bool
 		wantUnsupported bool
@@ -69,7 +69,7 @@ func TestValidateComparison(t *testing.T) {
 			dialect:         "sqlite",
 			env:             envbooltest.Unset(sqlitevirtual.AllowDropEnvVar),
 			desired:         declaring("users"),
-			database:        []types.DBTable{fts5, users},
+			database:        []catalog.Table{fts5, users},
 			wantErr:         true,
 			wantUnsupported: true,
 			wantContains: []string{
@@ -90,7 +90,7 @@ func TestValidateComparison(t *testing.T) {
 			dialect:  "sqlite",
 			env:      envbooltest.Unset(sqlitevirtual.AllowDropEnvVar),
 			desired:  cannotDescribeVirtualTables(declaring("users")),
-			database: []types.DBTable{fts5, users},
+			database: []catalog.Table{fts5, users},
 			wantErr:  false,
 		},
 		{
@@ -102,7 +102,7 @@ func TestValidateComparison(t *testing.T) {
 			dialect:         "sqlite",
 			env:             envbooltest.Unset(sqlitevirtual.AllowDropEnvVar),
 			desired:         cannotDescribeVirtualTables(declaring("users", "docs")),
-			database:        []types.DBTable{fts5, users},
+			database:        []catalog.Table{fts5, users},
 			wantErr:         true,
 			wantUnsupported: true,
 			wantContains:    []string{`"docs"`},
@@ -114,7 +114,7 @@ func TestValidateComparison(t *testing.T) {
 			dialect:         "sqlite",
 			env:             envbooltest.Unset(sqlitevirtual.AllowDropEnvVar),
 			desired:         declaring("users"),
-			database:        []types.DBTable{rtree, users},
+			database:        []catalog.Table{rtree, users},
 			wantErr:         true,
 			wantUnsupported: true,
 			wantContains:    []string{`virtual table "geo" (module rtree)`},
@@ -124,7 +124,7 @@ func TestValidateComparison(t *testing.T) {
 			dialect:         "sqlite",
 			env:             envbooltest.Unset(sqlitevirtual.AllowDropEnvVar),
 			desired:         declaring("users"),
-			database:        []types.DBTable{fts5, rtree, users},
+			database:        []catalog.Table{fts5, rtree, users},
 			wantErr:         true,
 			wantUnsupported: true,
 			wantContains:    []string{`"docs" (module fts5)`, `"geo" (module rtree)`, "virtual tables"},
@@ -134,7 +134,7 @@ func TestValidateComparison(t *testing.T) {
 			dialect:  "sqlite",
 			env:      envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "1"),
 			desired:  declaring("users"),
-			database: []types.DBTable{fts5, users},
+			database: []catalog.Table{fts5, users},
 			wantErr:  false,
 		},
 		{
@@ -144,7 +144,7 @@ func TestValidateComparison(t *testing.T) {
 			dialect:         "sqlite",
 			env:             envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "false"),
 			desired:         declaring("users"),
-			database:        []types.DBTable{fts5, users},
+			database:        []catalog.Table{fts5, users},
 			wantErr:         true,
 			wantUnsupported: true,
 			wantContains:    []string{`virtual table "docs" (module fts5)`},
@@ -154,7 +154,7 @@ func TestValidateComparison(t *testing.T) {
 			dialect:      "sqlite",
 			env:          envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "maybe"),
 			desired:      declaring("users"),
-			database:     []types.DBTable{fts5, users},
+			database:     []catalog.Table{fts5, users},
 			wantErr:      true,
 			wantContains: []string{sqlitevirtual.AllowDropEnvVar, "maybe"},
 		},
@@ -163,7 +163,7 @@ func TestValidateComparison(t *testing.T) {
 			dialect:         "sqlite",
 			env:             envbooltest.Unset(sqlitevirtual.AllowDropEnvVar),
 			desired:         declaring("users", "docs"),
-			database:        []types.DBTable{fts5, users},
+			database:        []catalog.Table{fts5, users},
 			wantErr:         true,
 			wantUnsupported: true,
 			wantContains: []string{
@@ -179,7 +179,7 @@ func TestValidateComparison(t *testing.T) {
 			dialect:         "sqlite",
 			env:             envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "1"),
 			desired:         declaring("users", "docs"),
-			database:        []types.DBTable{fts5, users},
+			database:        []catalog.Table{fts5, users},
 			wantErr:         true,
 			wantUnsupported: true,
 			wantContains:    []string{"cannot convert one kind into the other"},
@@ -192,7 +192,7 @@ func TestValidateComparison(t *testing.T) {
 			dialect:         "sqlite",
 			env:             envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "1"),
 			desired:         declaring("DOCS"),
-			database:        []types.DBTable{fts5},
+			database:        []catalog.Table{fts5},
 			wantErr:         true,
 			wantUnsupported: true,
 			wantContains:    []string{"cannot convert one kind into the other"},
@@ -206,7 +206,7 @@ func TestValidateComparison(t *testing.T) {
 			dialect:      "sqlite",
 			env:          envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "maybe"),
 			desired:      declaring("users"),
-			database:     []types.DBTable{users},
+			database:     []catalog.Table{users},
 			wantErr:      true,
 			wantContains: []string{sqlitevirtual.AllowDropEnvVar, "maybe"},
 		},
@@ -221,7 +221,7 @@ func TestValidateComparison(t *testing.T) {
 			dialect:         "sqlite",
 			env:             envbooltest.Unset(sqlitevirtual.AllowDropEnvVar),
 			desired:         declaring("\u00e4"),
-			database:        []types.DBTable{{Name: "\u00c4", Type: "TABLE", VirtualModule: "fts5", VirtualArguments: "body"}},
+			database:        []catalog.Table{{Name: "\u00c4", Type: "TABLE", VirtualModule: "fts5", VirtualArguments: "body"}},
 			wantErr:         true,
 			wantUnsupported: true,
 			// The removal refusal, not the collision one: the two names are two
@@ -234,7 +234,7 @@ func TestValidateComparison(t *testing.T) {
 			dialect:         "sqlite",
 			env:             envbooltest.Unset(sqlitevirtual.AllowDropEnvVar),
 			desired:         declaring("DOCS"),
-			database:        []types.DBTable{fts5},
+			database:        []catalog.Table{fts5},
 			wantErr:         true,
 			wantUnsupported: true,
 			wantContains:    []string{"cannot convert one kind into the other"},
@@ -247,7 +247,7 @@ func TestValidateComparison(t *testing.T) {
 			dialect:  "sqlite",
 			env:      envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "1"),
 			desired:  declaring("docs"),
-			database: []types.DBTable{{Name: " docs ", Type: "TABLE", VirtualModule: "fts5", VirtualArguments: "body"}},
+			database: []catalog.Table{{Name: " docs ", Type: "TABLE", VirtualModule: "fts5", VirtualArguments: "body"}},
 			wantErr:  false,
 		},
 		{
@@ -257,7 +257,7 @@ func TestValidateComparison(t *testing.T) {
 			dialect: "sqlite",
 			env:     envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "1"),
 			desired: &goschema.Database{Tables: []goschema.Table{{Schema: "aux", Name: "docs"}}},
-			database: []types.DBTable{{
+			database: []catalog.Table{{
 				Schema: " aux ", Name: "docs", Type: "TABLE", VirtualModule: "fts5", VirtualArguments: "body",
 			}},
 			wantErr: false,
@@ -267,7 +267,7 @@ func TestValidateComparison(t *testing.T) {
 			dialect:  "sqlite",
 			env:      envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "false"),
 			desired:  declaring("users"),
-			database: []types.DBTable{users},
+			database: []catalog.Table{users},
 			wantErr:  false,
 		},
 		{
@@ -279,7 +279,7 @@ func TestValidateComparison(t *testing.T) {
 			dialect:  "sqlite",
 			env:      envbooltest.Unset(sqlitevirtual.AllowDropEnvVar),
 			desired:  declaringVirtual("docs", "fts5", "title, body"),
-			database: []types.DBTable{fts5},
+			database: []catalog.Table{fts5},
 			wantErr:  false,
 		},
 		{
@@ -289,7 +289,7 @@ func TestValidateComparison(t *testing.T) {
 			dialect:  "sqlite",
 			env:      envbooltest.Unset(sqlitevirtual.AllowDropEnvVar),
 			desired:  declaringVirtual("docs", "FTS5", "title, body"),
-			database: []types.DBTable{fts5},
+			database: []catalog.Table{fts5},
 			wantErr:  false,
 		},
 		{
@@ -297,7 +297,7 @@ func TestValidateComparison(t *testing.T) {
 			dialect:         "sqlite",
 			env:             envbooltest.Unset(sqlitevirtual.AllowDropEnvVar),
 			desired:         declaringVirtual("docs", "rtree", "title, body"),
-			database:        []types.DBTable{fts5},
+			database:        []catalog.Table{fts5},
 			wantErr:         true,
 			wantUnsupported: true,
 			wantContains:    []string{"declared differently on the two sides", "no ALTER VIRTUAL TABLE"},
@@ -307,7 +307,7 @@ func TestValidateComparison(t *testing.T) {
 			dialect:         "sqlite",
 			env:             envbooltest.Unset(sqlitevirtual.AllowDropEnvVar),
 			desired:         declaringVirtual("docs", "fts5", "title, body, extra"),
-			database:        []types.DBTable{fts5},
+			database:        []catalog.Table{fts5},
 			wantErr:         true,
 			wantUnsupported: true,
 			wantContains:    []string{"declared differently on the two sides"},
@@ -319,7 +319,7 @@ func TestValidateComparison(t *testing.T) {
 			dialect:         "sqlite",
 			env:             envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "1"),
 			desired:         declaringVirtual("docs", "fts5", "title, body, extra"),
-			database:        []types.DBTable{fts5},
+			database:        []catalog.Table{fts5},
 			wantErr:         true,
 			wantUnsupported: true,
 			wantContains:    []string{"declared differently on the two sides"},
@@ -331,7 +331,7 @@ func TestValidateComparison(t *testing.T) {
 			dialect:         "sqlite",
 			env:             envbooltest.Unset(sqlitevirtual.AllowDropEnvVar),
 			desired:         declaringVirtual("docs", "fts5", "title, body"),
-			database:        []types.DBTable{{Name: "docs", Type: "TABLE"}},
+			database:        []catalog.Table{{Name: "docs", Type: "TABLE"}},
 			wantErr:         true,
 			wantUnsupported: true,
 			wantContains:    []string{"is a virtual table on one side of the comparison and an ordinary table on the other"},
@@ -343,7 +343,7 @@ func TestValidateComparison(t *testing.T) {
 			dialect:  "sqlite",
 			env:      envbooltest.Unset(sqlitevirtual.AllowDropEnvVar),
 			desired:  declaringVirtual("docs", "fts5", "title, body"),
-			database: []types.DBTable{users},
+			database: []catalog.Table{users},
 			wantErr:  false,
 		},
 		{
@@ -351,7 +351,7 @@ func TestValidateComparison(t *testing.T) {
 			dialect:  "postgres",
 			env:      envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "maybe"),
 			desired:  declaring("users"),
-			database: []types.DBTable{fts5, users},
+			database: []catalog.Table{fts5, users},
 			wantErr:  false,
 		},
 		{
@@ -359,7 +359,7 @@ func TestValidateComparison(t *testing.T) {
 			dialect:         "sqlite3",
 			env:             envbooltest.Unset(sqlitevirtual.AllowDropEnvVar),
 			desired:         declaring("users"),
-			database:        []types.DBTable{fts5},
+			database:        []catalog.Table{fts5},
 			wantErr:         true,
 			wantUnsupported: true,
 			wantContains: []string{
@@ -371,7 +371,7 @@ func TestValidateComparison(t *testing.T) {
 			dialect:         "sqlite",
 			env:             envbooltest.Unset(sqlitevirtual.AllowDropEnvVar),
 			desired:         nil,
-			database:        []types.DBTable{fts5},
+			database:        []catalog.Table{fts5},
 			wantErr:         true,
 			wantUnsupported: true,
 			wantContains: []string{
@@ -392,7 +392,7 @@ func TestValidateComparison(t *testing.T) {
 			dialect:  "sqlite",
 			env:      envbooltest.Unset(sqlitevirtual.AllowDropEnvVar),
 			desired:  declaring("users"),
-			database: []types.DBTable{fts5, users},
+			database: []catalog.Table{fts5, users},
 			policy:   sqlitevirtual.Policy{SkipDropTable: true},
 			wantErr:  false,
 		},
@@ -405,7 +405,7 @@ func TestValidateComparison(t *testing.T) {
 			dialect:         "sqlite",
 			env:             envbooltest.Unset(sqlitevirtual.AllowDropEnvVar),
 			desired:         declaring("docs"),
-			database:        []types.DBTable{fts5, users},
+			database:        []catalog.Table{fts5, users},
 			policy:          sqlitevirtual.Policy{SkipDropTable: true},
 			wantErr:         true,
 			wantUnsupported: true,
@@ -419,7 +419,7 @@ func TestValidateComparison(t *testing.T) {
 			dialect:      "sqlite",
 			env:          envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "maybe"),
 			desired:      declaring("users"),
-			database:     []types.DBTable{fts5, users},
+			database:     []catalog.Table{fts5, users},
 			policy:       sqlitevirtual.Policy{SkipDropTable: true},
 			wantErr:      true,
 			wantContains: []string{sqlitevirtual.AllowDropEnvVar, "maybe"},
@@ -431,7 +431,7 @@ func TestValidateComparison(t *testing.T) {
 			c := qt.New(t)
 			tt.env(t)
 
-			database := &types.DBSchema{Tables: tt.database}
+			database := &catalog.Database{Tables: tt.database}
 
 			err := sqlitevirtual.ValidateComparison(tt.dialect, tt.desired, database, tt.policy)
 
@@ -449,7 +449,7 @@ func TestValidateComparison(t *testing.T) {
 func TestTables(t *testing.T) {
 	tests := []struct {
 		name     string
-		database *types.DBSchema
+		database *catalog.Database
 		want     []sqlitevirtual.Table
 	}{
 		{
@@ -459,7 +459,7 @@ func TestTables(t *testing.T) {
 		},
 		{
 			name: "ordinary tables are not virtual tables",
-			database: &types.DBSchema{Tables: []types.DBTable{
+			database: &catalog.Database{Tables: []catalog.Table{
 				{Name: "users"},
 				{Name: "docs_backup"},
 			}},
@@ -467,7 +467,7 @@ func TestTables(t *testing.T) {
 		},
 		{
 			name: "the order is by schema then name, not catalog order",
-			database: &types.DBSchema{Tables: []types.DBTable{
+			database: &catalog.Database{Tables: []catalog.Table{
 				{Name: "zeta", VirtualModule: "rtree"},
 				{Name: "alpha", VirtualModule: "fts5", VirtualArguments: "title, body"},
 				{Name: "beta", Schema: "aux", VirtualModule: "geopoly"},

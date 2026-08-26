@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 )
 
 // informationSchemaViewQuery reads views from the SQL-standard catalog.
@@ -28,14 +28,14 @@ const informationSchemaViewQuery = `
 
 // readInformationSchemaViews reads one schema's views from the SQL-standard
 // catalog. See [informationSchemaViewQuery].
-func (r *Reader) readInformationSchemaViews(ctx context.Context, schemaName string) ([]types.DBView, error) {
+func (r *Reader) readInformationSchemaViews(ctx context.Context, schemaName string) ([]catalog.View, error) {
 	rows, err := r.db.QueryContext(ctx, informationSchemaViewQuery, schemaName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query views: %w", err)
 	}
 	defer rows.Close()
 
-	var views []types.DBView
+	var views []catalog.View
 	for rows.Next() {
 		var (
 			name        string
@@ -45,7 +45,7 @@ func (r *Reader) readInformationSchemaViews(ctx context.Context, schemaName stri
 		if err := rows.Scan(&name, &body, &checkOption); err != nil {
 			return nil, fmt.Errorf("failed to scan view row: %w", err)
 		}
-		views = append(views, types.DBView{
+		views = append(views, catalog.View{
 			Name:        name,
 			Schema:      r.outputSchema(schemaName),
 			Body:        body.String,

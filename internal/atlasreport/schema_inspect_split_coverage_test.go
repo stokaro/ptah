@@ -8,10 +8,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasreport"
 )
 
@@ -209,8 +209,8 @@ func coverageSplitReport() *atlasreport.SchemaInspectReport {
 				{Name: "ticket_read", Table: "ticket", PolicyFor: "SELECT", UsingExpression: "true"},
 			},
 		},
-		&types.DBSchema{},
-		types.DBInfo{Dialect: platform.Postgres, Schema: "public"},
+		&catalog.Database{},
+		catalog.ServerInfo{Dialect: platform.Postgres, Schema: "public"},
 		nil,
 		// The run did not choose its own scope, so the SQL format would leave the
 		// schema row out. These cases render HCL and split it, which carries the

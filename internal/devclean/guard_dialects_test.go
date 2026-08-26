@@ -5,13 +5,13 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/devclean"
 )
 
 func TestReplayGuardPostgresFamily_HappyPath(t *testing.T) {
-	guard := devclean.NewReplayGuard(types.DBInfo{
+	guard := devclean.NewReplayGuard(catalog.ServerInfo{
 		Dialect: platform.Postgres,
 		Schema:  "public",
 	})
@@ -47,7 +47,7 @@ func TestReplayGuardPostgresFamily_HappyPath(t *testing.T) {
 }
 
 func TestReplayGuardPostgresFamily_FailurePath(t *testing.T) {
-	guard := devclean.NewReplayGuard(types.DBInfo{
+	guard := devclean.NewReplayGuard(catalog.ServerInfo{
 		Dialect: platform.Postgres,
 		Schema:  "public",
 	})
@@ -228,7 +228,7 @@ func TestReplayGuardPostgresFamily_FailurePath(t *testing.T) {
 }
 
 func TestReplayGuardMySQLFamily_HappyPath(t *testing.T) {
-	guard := devclean.NewReplayGuard(types.DBInfo{
+	guard := devclean.NewReplayGuard(catalog.ServerInfo{
 		Dialect: platform.MySQL,
 		Schema:  "ptah_dev",
 	})
@@ -301,7 +301,7 @@ func TestReplayGuardMySQLFamily_HappyPath(t *testing.T) {
 }
 
 func TestReplayGuardMySQLFamily_FailurePath(t *testing.T) {
-	guard := devclean.NewReplayGuard(types.DBInfo{
+	guard := devclean.NewReplayGuard(catalog.ServerInfo{
 		Dialect: platform.MySQL,
 		Schema:  "ptah_dev",
 	})
@@ -501,7 +501,7 @@ func TestReplayGuardMySQLFamily_FailurePath(t *testing.T) {
 }
 
 func TestReplayGuardMariaDB_FailurePath(t *testing.T) {
-	guard := devclean.NewReplayGuard(types.DBInfo{
+	guard := devclean.NewReplayGuard(catalog.ServerInfo{
 		Dialect: platform.MariaDB,
 		Schema:  "ptah_dev",
 	})
@@ -542,7 +542,7 @@ func TestReplayGuardMariaDB_FailurePath(t *testing.T) {
 }
 
 func TestReplayGuardSQLServer_HappyPath(t *testing.T) {
-	guard := devclean.NewReplayGuard(types.DBInfo{
+	guard := devclean.NewReplayGuard(catalog.ServerInfo{
 		Dialect: platform.SQLServer,
 		Schema:  "dbo",
 	})
@@ -594,7 +594,7 @@ func TestReplayGuardSQLServer_HappyPath(t *testing.T) {
 }
 
 func TestReplayGuardSQLServer_FailurePath(t *testing.T) {
-	guard := devclean.NewReplayGuard(types.DBInfo{
+	guard := devclean.NewReplayGuard(catalog.ServerInfo{
 		Dialect: platform.SQLServer,
 		Schema:  "dbo",
 	})
@@ -686,7 +686,7 @@ func TestReplayGuardSQLServer_FailurePath(t *testing.T) {
 }
 
 func TestReplayGuardClickHouse_HappyPath(t *testing.T) {
-	guard := devclean.NewReplayGuard(types.DBInfo{
+	guard := devclean.NewReplayGuard(catalog.ServerInfo{
 		Dialect: platform.ClickHouse,
 		Schema:  "ptah_dev",
 	})
@@ -726,7 +726,7 @@ func TestReplayGuardClickHouse_HappyPath(t *testing.T) {
 }
 
 func TestReplayGuardClickHouse_FailurePath(t *testing.T) {
-	guard := devclean.NewReplayGuard(types.DBInfo{
+	guard := devclean.NewReplayGuard(catalog.ServerInfo{
 		Dialect: platform.ClickHouse,
 		Schema:  "ptah_dev",
 	})
@@ -838,7 +838,7 @@ func TestReplayGuardClickHouse_FailurePath(t *testing.T) {
 
 func TestReplayGuardUnknownDialect_FailurePath(t *testing.T) {
 	c := qt.New(t)
-	guard := devclean.NewReplayGuard(types.DBInfo{Dialect: "oracle"})
+	guard := devclean.NewReplayGuard(catalog.ServerInfo{Dialect: "oracle"})
 
 	err := guard.ValidateStatement("CREATE TABLE users (id integer)")
 

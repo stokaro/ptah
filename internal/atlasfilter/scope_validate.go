@@ -6,8 +6,8 @@ import (
 	"slices"
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/deporder"
 )
 
@@ -191,7 +191,7 @@ func validateGeneratedTypes(
 	referenced := generatedFieldTypeSet(final.Fields)
 	report := func(kind, schema, name string) {
 		if typeNameReferenced(referenced, schema, name) {
-			display := dbschematypes.QualifyTableName(selection.effectiveSchema(schema), name)
+			display := catalog.QualifyTableName(selection.effectiveSchema(schema), name)
 			diagnostics.addf("selected tables use %s %q, but %q is not selected", kind, display, display)
 		}
 	}
@@ -249,7 +249,7 @@ func typeObjectKept[T any](kept []T, schema, name string, key func(T) (schema, n
 // validateDatabaseScope refuses projections where a selected introspected
 // table has a foreign key to a table the selection dropped, or where kept
 // columns use a type object the selection dropped.
-func validateDatabaseScope(original, final *dbschematypes.DBSchema, selection *scopeSelection) error {
+func validateDatabaseScope(original, final *catalog.Database, selection *scopeSelection) error {
 	diagnostics := make(scopeDiagnostics)
 	kept := make(map[tableIdentity]struct{}, len(final.Tables))
 	for _, table := range final.Tables {
@@ -273,8 +273,8 @@ func validateDatabaseScope(original, final *dbschematypes.DBSchema, selection *s
 		_, foreignKept := kept[foreign.Key()]
 		_, foreignExisted := existed[foreign.Key()]
 		if ownerKept && foreignExisted && !foreignKept {
-			ownerName := dbschematypes.QualifyTableName(owner.Schema.Source, owner.Name.Source)
-			foreignName := dbschematypes.QualifyTableName(foreign.Schema.Source, foreign.Name.Source)
+			ownerName := catalog.QualifyTableName(owner.Schema.Source, owner.Name.Source)
+			foreignName := catalog.QualifyTableName(foreign.Schema.Source, foreign.Name.Source)
 			diagnostics.addf("table %q depends on table %q via a foreign key, but %q is not selected",
 				ownerName, foreignName, foreignName)
 		}
@@ -286,14 +286,14 @@ func validateDatabaseScope(original, final *dbschematypes.DBSchema, selection *s
 // validateDatabaseTypes refuses projections whose kept columns reference an
 // introspected type object the selection dropped.
 func validateDatabaseTypes(
-	original, final *dbschematypes.DBSchema,
+	original, final *catalog.Database,
 	selection *scopeSelection,
 	diagnostics scopeDiagnostics,
 ) {
 	referenced := databaseColumnTypeSet(final.Tables)
 	report := func(kind, schema, name string) {
 		if typeNameReferenced(referenced, schema, name) {
-			display := dbschematypes.QualifyTableName(selection.effectiveSchema(schema), name)
+			display := catalog.QualifyTableName(selection.effectiveSchema(schema), name)
 			diagnostics.addf("selected tables use %s %q, but %q is not selected", kind, display, display)
 		}
 	}
@@ -303,7 +303,7 @@ func validateDatabaseTypes(
 		}
 	}
 	for _, domain := range original.Domains {
-		if !typeObjectKept(final.Domains, domain.Schema, domain.Name, func(d dbschematypes.DBDomain) (string, string) {
+		if !typeObjectKept(final.Domains, domain.Schema, domain.Name, func(d catalog.Domain) (string, string) {
 			return d.Schema, d.Name
 		}) {
 			report("domain", domain.Schema, domain.Name)
@@ -311,7 +311,7 @@ func validateDatabaseTypes(
 	}
 }
 
-func databaseEnumKept(enums []dbschematypes.DBEnum, schema, name string) bool {
+func databaseEnumKept(enums []catalog.Enum, schema, name string) bool {
 	for _, enum := range enums {
 		if enum.Schema == schema && enum.Name == name {
 			return true

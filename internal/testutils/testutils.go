@@ -3,8 +3,8 @@
 package testutils
 
 import (
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 )
 
 // CreateTestParseResult creates a minimal PackageParseResult for testing
@@ -25,7 +25,7 @@ func CreateTestParseResult() *goschema.Database {
 	}
 }
 
-func FindColumn(columns []types.DBColumn, name string) *types.DBColumn {
+func FindColumn(columns []catalog.Column, name string) *catalog.Column {
 	for i := range columns {
 		if columns[i].Name == name {
 			return &columns[i]

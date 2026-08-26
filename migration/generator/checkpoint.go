@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
@@ -32,7 +32,7 @@ import (
 // converting the result with atlascompat.DBSchemaToGoSchema) or from Go
 // entities / schema files. An empty schema yields empty up and down bodies.
 func generateCheckpoint(schema *goschema.Database, dialect string) (upSQL, downSQL string, err error) {
-	return generateCheckpointWithDatabaseInfo(schema, dbschematypes.DBInfo{
+	return generateCheckpointWithDatabaseInfo(schema, catalog.ServerInfo{
 		Dialect:      dialect,
 		Capabilities: capability.ForDialect(dialect),
 	})
@@ -46,13 +46,13 @@ func generateCheckpoint(schema *goschema.Database, dialect string) (upSQL, downS
 // collation — the distinction that matters on SQL Server.
 func generateCheckpointWithDatabaseInfo(
 	schema *goschema.Database,
-	info dbschematypes.DBInfo,
+	info catalog.ServerInfo,
 ) (upSQL, downSQL string, err error) {
 	if schema == nil {
 		return "", "", fmt.Errorf("checkpoint schema is required")
 	}
 
-	empty := &dbschematypes.DBSchema{}
+	empty := &catalog.Database{}
 	diff, err := schemadiff.CompareWithDatabaseInfo(schema, empty, info, nil)
 	if err != nil {
 		return "", "", fmt.Errorf("generate checkpoint: %w", err)
@@ -72,7 +72,7 @@ func generateCheckpointWithDatabaseQualified(
 	if schema == nil {
 		return "", "", fmt.Errorf("checkpoint schema is required")
 	}
-	empty := &dbschematypes.DBSchema{}
+	empty := &catalog.Database{}
 	diff, err := schemadiff.CompareWithDatabase(ctx, conn, schema, empty, nil)
 	if err != nil {
 		return "", "", fmt.Errorf("generate checkpoint: %w", err)
@@ -82,8 +82,8 @@ func generateCheckpointWithDatabaseQualified(
 
 func generateCheckpointFromDiff(
 	schema *goschema.Database,
-	empty *dbschematypes.DBSchema,
-	info dbschematypes.DBInfo,
+	empty *catalog.Database,
+	info catalog.ServerInfo,
 	diff *difftypes.SchemaDiff,
 	qualifierValue string,
 ) (upSQL, downSQL string, err error) {

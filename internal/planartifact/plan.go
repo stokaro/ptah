@@ -12,8 +12,8 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform/capability"
-	dbtypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/fsnapshot"
 	"go.5x5.cz/ptah/internal/ociartifact"
 	"go.5x5.cz/ptah/migration/safety"
@@ -46,7 +46,7 @@ type Report struct {
 // state. The current-state digest hashes the complete schema IR.
 func NewReport(
 	subject ocispec.Descriptor,
-	current *dbtypes.DBSchema,
+	current *catalog.Database,
 	dialect string,
 	capabilities capability.Capabilities,
 	schemas []string,

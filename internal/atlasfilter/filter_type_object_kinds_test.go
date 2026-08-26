@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 )
 
@@ -16,31 +16,31 @@ import (
 // A table rides along as the control: it was always filtered, so a regression
 // that reached it would show up here rather than being read as a fault in the
 // four kinds this fixture exists for.
-func typeObjectKindsFixture() *dbschematypes.DBSchema {
-	return &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
-			{Name: "users", Columns: []dbschematypes.DBColumn{{Name: "id"}}},
+func typeObjectKindsFixture() *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{
+			{Name: "users", Columns: []catalog.Column{{Name: "id"}}},
 		},
-		Sequences: []dbschematypes.DBSequence{
+		Sequences: []catalog.Sequence{
 			{Name: "order_seq"},
 			{Schema: "app", Name: "app_seq"},
 		},
-		Domains: []dbschematypes.DBDomain{
+		Domains: []catalog.Domain{
 			{Name: "positive_int", BaseType: "integer"},
 			{Schema: "app", Name: "app_int", BaseType: "integer"},
 		},
-		Composites: []dbschematypes.DBComposite{
+		Composites: []catalog.CompositeType{
 			{Name: "addr"},
 			{Schema: "app", Name: "app_addr"},
 		},
-		Ranges: []dbschematypes.DBRange{
+		Ranges: []catalog.Range{
 			{Name: "intrange", Subtype: "integer"},
 			{Schema: "app", Name: "app_range", Subtype: "integer"},
 		},
 	}
 }
 
-func databaseDomainNames(domains []dbschematypes.DBDomain) []string {
+func databaseDomainNames(domains []catalog.Domain) []string {
 	names := make([]string, 0, len(domains))
 	for _, domain := range domains {
 		names = append(names, domain.QualifiedName())
@@ -48,7 +48,7 @@ func databaseDomainNames(domains []dbschematypes.DBDomain) []string {
 	return names
 }
 
-func databaseCompositeNames(composites []dbschematypes.DBComposite) []string {
+func databaseCompositeNames(composites []catalog.CompositeType) []string {
 	names := make([]string, 0, len(composites))
 	for _, composite := range composites {
 		names = append(names, composite.QualifiedName())
@@ -56,7 +56,7 @@ func databaseCompositeNames(composites []dbschematypes.DBComposite) []string {
 	return names
 }
 
-func databaseRangeNames(ranges []dbschematypes.DBRange) []string {
+func databaseRangeNames(ranges []catalog.Range) []string {
 	names := make([]string, 0, len(ranges))
 	for _, value := range ranges {
 		names = append(names, value.QualifiedName())
@@ -77,7 +77,7 @@ type typeObjectSurvivors struct {
 	Ranges     []string
 }
 
-func typeObjectSurvivorsOf(schema *dbschematypes.DBSchema) typeObjectSurvivors {
+func typeObjectSurvivorsOf(schema *catalog.Database) typeObjectSurvivors {
 	return typeObjectSurvivors{
 		Tables:     tableNames(schema.Tables),
 		Sequences:  databaseSequenceNames(schema.Sequences),
@@ -333,7 +333,7 @@ func TestExcludeGenerated_SubtractsTheSameTypeObjectKinds(t *testing.T) {
 func generatedDomainNames(domains []goschema.Domain) []string {
 	names := make([]string, 0, len(domains))
 	for _, domain := range domains {
-		names = append(names, dbschematypes.QualifyTableName(domain.Schema, domain.Name))
+		names = append(names, catalog.QualifyTableName(domain.Schema, domain.Name))
 	}
 	return names
 }
@@ -341,7 +341,7 @@ func generatedDomainNames(domains []goschema.Domain) []string {
 func generatedCompositeNames(types []goschema.CompositeType) []string {
 	names := make([]string, 0, len(types))
 	for _, composite := range types {
-		names = append(names, dbschematypes.QualifyTableName(composite.Schema, composite.Name))
+		names = append(names, catalog.QualifyTableName(composite.Schema, composite.Name))
 	}
 	return names
 }
@@ -349,7 +349,7 @@ func generatedCompositeNames(types []goschema.CompositeType) []string {
 func generatedRangeNames(ranges []goschema.Range) []string {
 	names := make([]string, 0, len(ranges))
 	for _, value := range ranges {
-		names = append(names, dbschematypes.QualifyTableName(value.Schema, value.Name))
+		names = append(names, catalog.QualifyTableName(value.Schema, value.Name))
 	}
 	return names
 }
@@ -404,9 +404,9 @@ func TestExcludeDatabaseReport_ColumnSelectorUnderAnExcludedTableIsNotEmpty(t *t
 			c := qt.New(t)
 
 			_, report, err := atlasfilter.ExcludeDatabaseReport(
-				&dbschematypes.DBSchema{
-					Tables: []dbschematypes.DBTable{
-						{Name: "users", Columns: []dbschematypes.DBColumn{{Name: "id"}, {Name: "name"}}},
+				&catalog.Database{
+					Tables: []catalog.Table{
+						{Name: "users", Columns: []catalog.Column{{Name: "id"}, {Name: "name"}}},
 					},
 				},
 				test.patterns, "public")
@@ -422,11 +422,11 @@ func TestExcludeDatabaseReport_ColumnSelectorUnderAnExcludedTableIsNotEmpty(t *t
 // alter what survives: the table and its columns leave together either way.
 func TestExcludeDatabase_ColumnSelectorUnderAnExcludedTableChangesNothing(t *testing.T) {
 	c := qt.New(t)
-	fixture := func() *dbschematypes.DBSchema {
-		return &dbschematypes.DBSchema{
-			Tables: []dbschematypes.DBTable{
-				{Name: "users", Columns: []dbschematypes.DBColumn{{Name: "id"}, {Name: "name"}}},
-				{Name: "posts", Columns: []dbschematypes.DBColumn{{Name: "id"}, {Name: "body"}}},
+	fixture := func() *catalog.Database {
+		return &catalog.Database{
+			Tables: []catalog.Table{
+				{Name: "users", Columns: []catalog.Column{{Name: "id"}, {Name: "name"}}},
+				{Name: "posts", Columns: []catalog.Column{{Name: "id"}, {Name: "body"}}},
 			},
 		}
 	}

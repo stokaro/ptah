@@ -31,7 +31,7 @@ equal to it.
 | `core/sqlutil` | SQL utility helpers used by public paths. |
 | `core/yamlschema` | Reads Ptah's YAML authoring format into the schema IR, strictly. |
 | `dbschema` | Live database schema introspection connection layer. |
-| `dbschema/types` | Shared database schema types. |
+| `catalog` | Shared database schema types. |
 | `docs` | Ptah's own documentation embedded in the binary as an `embed.FS`. |
 | `migration/datadiff` | Row-level diffing between declared managed data and live table rows. |
 | `migration/dbtest` | Declarative migration/schema test cases, runners, and reports. |
@@ -125,7 +125,7 @@ discarding it can also discard the source declarations behind materialized
 `GeneratedFromEmbedded` fields.
 
 MySQL-family readers populate the JSON-hidden
-`dbschema/types.DBFunction.Definer` and `CurrentAccount` execution facts.
+`catalog.Function.Definer` and `CurrentAccount` execution facts.
 Database-aware `schemadiff.CompareWithDatabase` entry points use them to refuse
 a modified `SQL SECURITY DEFINER` routine when recreating it would change the
 executing account. Custom readers that supply a modified definer routine must

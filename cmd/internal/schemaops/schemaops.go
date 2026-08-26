@@ -7,12 +7,12 @@ import (
 	"strings"
 	"time"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/schemasource"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlassource"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/dburldisplay"
@@ -46,7 +46,7 @@ type CompareResult struct {
 	DatabaseURL string
 	Dialect     string
 	Generated   *goschema.Database
-	Database    *dbschematypes.DBSchema
+	Database    *catalog.Database
 	Diff        *difftypes.SchemaDiff
 }
 
@@ -189,7 +189,7 @@ func FilterGeneratedTables(db *goschema.Database, ignoredTables []string) *gosch
 
 // FilterDatabaseTables returns a shallow copy of db without ignored tables and
 // their table-scoped schema objects.
-func FilterDatabaseTables(db *dbschematypes.DBSchema, ignoredTables []string) *dbschematypes.DBSchema {
+func FilterDatabaseTables(db *catalog.Database, ignoredTables []string) *catalog.Database {
 	if db == nil {
 		return nil
 	}
@@ -200,20 +200,20 @@ func FilterDatabaseTables(db *dbschematypes.DBSchema, ignoredTables []string) *d
 
 	filtered := *db
 	ignoredEnumRefs := make(map[string]struct{})
-	filtered.Tables = keep(db.Tables, func(table dbschematypes.DBTable) bool {
+	filtered.Tables = keep(db.Tables, func(table catalog.Table) bool {
 		ignore := isIgnoredTable(ignored, table.QualifiedName(), table.Name)
 		if ignore {
 			addDatabaseEnumRefs(ignoredEnumRefs, table.Columns)
 		}
 		return !ignore
 	})
-	filtered.Indexes = keep(db.Indexes, func(index dbschematypes.DBIndex) bool {
+	filtered.Indexes = keep(db.Indexes, func(index catalog.Index) bool {
 		return !isIgnoredTable(ignored, index.QualifiedTableName(), index.TableName)
 	})
-	filtered.Constraints = keep(db.Constraints, func(constraint dbschematypes.DBConstraint) bool {
+	filtered.Constraints = keep(db.Constraints, func(constraint catalog.Constraint) bool {
 		return !isIgnoredTable(ignored, constraint.QualifiedTableName(), constraint.TableName)
 	})
-	filtered.RLSPolicies = keep(db.RLSPolicies, func(policy dbschematypes.DBRLSPolicy) bool {
+	filtered.RLSPolicies = keep(db.RLSPolicies, func(policy catalog.RLSPolicy) bool {
 		return !isIgnoredTable(ignored, policy.Table)
 	})
 	filtered.Enums = keepDatabaseEnums(db.Enums, filtered.Tables, ignoredEnumRefs)
@@ -312,15 +312,15 @@ func keepGeneratedEnums(enums []goschema.Enum, fields []goschema.Field, ignoredE
 }
 
 func keepDatabaseEnums(
-	enums []dbschematypes.DBEnum,
-	tables []dbschematypes.DBTable,
+	enums []catalog.Enum,
+	tables []catalog.Table,
 	ignoredEnumRefs map[string]struct{},
-) []dbschematypes.DBEnum {
+) []catalog.Enum {
 	referenced := make(map[string]struct{})
 	for _, table := range tables {
 		addDatabaseEnumRefs(referenced, table.Columns)
 	}
-	return keep(enums, func(enum dbschematypes.DBEnum) bool {
+	return keep(enums, func(enum catalog.Enum) bool {
 		if _, stillReferenced := referenced[enum.Name]; stillReferenced {
 			return true
 		}
@@ -329,7 +329,7 @@ func keepDatabaseEnums(
 	})
 }
 
-func addDatabaseEnumRefs(out map[string]struct{}, columns []dbschematypes.DBColumn) {
+func addDatabaseEnumRefs(out map[string]struct{}, columns []catalog.Column) {
 	for _, column := range columns {
 		ref, ok := databaseEnumRef(column)
 		if ok {
@@ -338,7 +338,7 @@ func addDatabaseEnumRefs(out map[string]struct{}, columns []dbschematypes.DBColu
 	}
 }
 
-func databaseEnumRef(column dbschematypes.DBColumn) (string, bool) {
+func databaseEnumRef(column catalog.Column) (string, bool) {
 	if column.UDTName == "" {
 		return "", false
 	}

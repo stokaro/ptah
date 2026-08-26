@@ -8,10 +8,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -156,13 +156,13 @@ func clickHouseRowPolicyDeclaration(role, database, table, policy string) *gosch
 }
 
 // clickHouseRowPolicyNamed returns the policy a read reports under a name.
-func clickHouseRowPolicyNamed(schema *dbschematypes.DBSchema, name string) dbschematypes.DBRLSPolicy {
+func clickHouseRowPolicyNamed(schema *catalog.Database, name string) catalog.RLSPolicy {
 	for _, policy := range schema.RLSPolicies {
 		if policy.Name == name {
 			return policy
 		}
 	}
-	return dbschematypes.DBRLSPolicy{}
+	return catalog.RLSPolicy{}
 }
 
 // clickHouseRowPolicyStatements keeps the planned statements that name a row
@@ -197,7 +197,7 @@ func dropClickHouseRowPolicyAfterTest(c *qt.C, conn *dbschema.DatabaseConnection
 // reading as an RBAC failure. It is the wrong instrument here for the same
 // reason: it drops RLSPolicies, so a comparison built on it would report every
 // policy as an addition forever and step 3 would pass while proving nothing.
-func readClickHouseRowPolicies(c *qt.C, conn *dbschema.DatabaseConnection) *dbschematypes.DBSchema {
+func readClickHouseRowPolicies(c *qt.C, conn *dbschema.DatabaseConnection) *catalog.Database {
 	c.Helper()
 	schema, err := conn.Reader().ReadSchemaContext(c.Context())
 	c.Assert(err, qt.IsNil)

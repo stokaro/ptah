@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/schemascope"
 )
 
@@ -182,57 +182,57 @@ func TestFilterGenerated_PreservesStructuralTableIdentity(t *testing.T) {
 func TestFilterDatabaseScopesIntrospectedObjects(t *testing.T) {
 	c := qt.New(t)
 	foreignTable := "billing.invoices"
-	db := &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
+	db := &catalog.Database{
+		Tables: []catalog.Table{
 			{
 				Schema: "auth",
 				Name:   "users",
-				Columns: []dbschematypes.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "status", DataType: "USER-DEFINED", UDTName: "user_status"},
 				},
 			},
 			{
 				Schema: "billing",
 				Name:   "invoices",
-				Columns: []dbschematypes.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "status", DataType: "USER-DEFINED", UDTName: "invoice_status"},
 				},
 			},
 		},
-		Enums: []dbschematypes.DBEnum{
+		Enums: []catalog.Enum{
 			{Name: "user_status", Values: []string{"active"}},
 			{Name: "invoice_status", Values: []string{"paid"}},
 		},
-		Indexes: []dbschematypes.DBIndex{
+		Indexes: []catalog.Index{
 			{Schema: "auth", TableName: "users", Name: "idx_users_status"},
 			{Schema: "billing", TableName: "invoices", Name: "idx_invoices_status"},
 		},
-		Constraints: []dbschematypes.DBConstraint{
+		Constraints: []catalog.Constraint{
 			{Schema: "auth", TableName: "users", Name: "users_status_check", Type: "CHECK"},
 			{Schema: "auth", TableName: "users", Name: "users_invoice_fk", Type: "FOREIGN KEY", ForeignTable: &foreignTable, ForeignSchema: "billing"},
 			{Schema: "billing", TableName: "invoices", Name: "invoices_status_check", Type: "CHECK"},
 		},
-		Extensions: []dbschematypes.DBExtension{
+		Extensions: []catalog.Extension{
 			{Schema: "auth", Name: "pg_trgm"},
 			{Schema: "billing", Name: "btree_gin"},
 		},
-		Views: []dbschematypes.DBView{
+		Views: []catalog.View{
 			{Schema: "auth", Name: "active_users"},
 			{Schema: "billing", Name: "open_invoices"},
 		},
-		MatViews: []dbschematypes.DBMatView{
+		MatViews: []catalog.MaterializedView{
 			{Schema: "auth", Name: "user_stats"},
 			{Schema: "billing", Name: "invoice_stats"},
 		},
-		Triggers: []dbschematypes.DBTrigger{
+		Triggers: []catalog.Trigger{
 			{Schema: "auth", Table: "users", Name: "users_updated_at"},
 			{Schema: "billing", Table: "invoices", Name: "invoices_updated_at"},
 		},
-		RLSPolicies: []dbschematypes.DBRLSPolicy{
+		RLSPolicies: []catalog.RLSPolicy{
 			{Table: "users", Name: "users_tenant"},
 			{Table: "billing.invoices", Name: "invoices_tenant"},
 		},
-		Grants: []dbschematypes.DBGrant{
+		Grants: []catalog.Grant{
 			{ObjectType: "SCHEMA", ObjectName: "auth", Role: "app_role"},
 			{ObjectType: "SCHEMA", ObjectName: "billing", Role: "app_role"},
 			{ObjectType: "TABLE", Schema: "auth", ObjectName: "users", Role: "app_role"},
@@ -255,28 +255,28 @@ func TestFilterDatabaseScopesIntrospectedObjects(t *testing.T) {
 
 func TestFilterDatabaseWithDefaultSchemaKeepsUnqualifiedPublicObjects(t *testing.T) {
 	c := qt.New(t)
-	db := &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
+	db := &catalog.Database{
+		Tables: []catalog.Table{
 			{Schema: "", Name: "users"},
 			{Schema: "audit", Name: "logs"},
 		},
-		Indexes: []dbschematypes.DBIndex{
+		Indexes: []catalog.Index{
 			{Schema: "", TableName: "users", Name: "idx_users_id"},
 			{Schema: "audit", TableName: "logs", Name: "idx_logs_id"},
 		},
-		Constraints: []dbschematypes.DBConstraint{
+		Constraints: []catalog.Constraint{
 			{Schema: "", TableName: "users", Name: "users_pkey", Type: "PRIMARY KEY"},
 			{Schema: "audit", TableName: "logs", Name: "logs_pkey", Type: "PRIMARY KEY"},
 		},
-		Views: []dbschematypes.DBView{
+		Views: []catalog.View{
 			{Schema: "", Name: "active_users"},
 			{Schema: "audit", Name: "recent_logs"},
 		},
-		RLSPolicies: []dbschematypes.DBRLSPolicy{
+		RLSPolicies: []catalog.RLSPolicy{
 			{Table: "users", Name: "users_tenant"},
 			{Table: "audit.logs", Name: "logs_tenant"},
 		},
-		Grants: []dbschematypes.DBGrant{
+		Grants: []catalog.Grant{
 			{ObjectType: "SCHEMA", ObjectName: "public", Role: "app_role"},
 			{ObjectType: "TABLE", Schema: "", ObjectName: "users", Role: "app_role"},
 			{ObjectType: "SCHEMA", ObjectName: "audit", Role: "app_role"},
@@ -295,17 +295,17 @@ func TestFilterDatabaseWithDefaultSchemaKeepsUnqualifiedPublicObjects(t *testing
 
 func TestFilterDatabaseKeepsDatabaseWideExtensionsAcrossSchemaSelection(t *testing.T) {
 	c := qt.New(t)
-	db := &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
+	db := &catalog.Database{
+		Tables: []catalog.Table{
 			{
 				Schema: "app",
 				Name:   "users",
-				Columns: []dbschematypes.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "email", DataType: "USER-DEFINED", UDTName: "citext", FormattedType: "extensions.citext"},
 				},
 			},
 		},
-		Extensions: []dbschematypes.DBExtension{
+		Extensions: []catalog.Extension{
 			{Name: "pgcrypto", Schema: "public"},
 			{Name: "citext", Schema: "extensions", Provides: []string{"citext"}},
 			{Name: "unrelated", Schema: "other"},
@@ -321,12 +321,12 @@ func TestFilterDatabaseKeepsDatabaseWideExtensionsAcrossSchemaSelection(t *testi
 
 func TestFilterDatabase_PreservesStructuralTableIdentity(t *testing.T) {
 	c := qt.New(t)
-	db := &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
+	db := &catalog.Database{
+		Tables: []catalog.Table{
 			{Name: "tenant.data"},
 			{Schema: "tenant", Name: "data"},
 		},
-		RLSPolicies: []dbschematypes.DBRLSPolicy{
+		RLSPolicies: []catalog.RLSPolicy{
 			{Name: "literal_policy", Table: `"tenant.data"`},
 			{Name: "qualified_policy", Table: "tenant.data"},
 		},
@@ -357,7 +357,7 @@ func generatedSchemaNames(schemas []goschema.Schema) []string {
 func generatedExtensionNames(extensions []goschema.Extension) []string {
 	names := make([]string, 0, len(extensions))
 	for _, extension := range extensions {
-		names = append(names, dbschematypes.QualifyTableName(extension.Schema, extension.Name))
+		names = append(names, catalog.QualifyTableName(extension.Schema, extension.Name))
 	}
 	return names
 }
@@ -449,7 +449,7 @@ func grantTarget(schema, table string) string {
 	return "table:" + table
 }
 
-func databaseTableNames(tables []dbschematypes.DBTable) []string {
+func databaseTableNames(tables []catalog.Table) []string {
 	names := make([]string, 0, len(tables))
 	for _, table := range tables {
 		names = append(names, table.QualifiedName())
@@ -457,7 +457,7 @@ func databaseTableNames(tables []dbschematypes.DBTable) []string {
 	return names
 }
 
-func databaseEnumNames(enums []dbschematypes.DBEnum) []string {
+func databaseEnumNames(enums []catalog.Enum) []string {
 	names := make([]string, 0, len(enums))
 	for _, enum := range enums {
 		names = append(names, enum.Name)
@@ -465,7 +465,7 @@ func databaseEnumNames(enums []dbschematypes.DBEnum) []string {
 	return names
 }
 
-func databaseIndexNames(indexes []dbschematypes.DBIndex) []string {
+func databaseIndexNames(indexes []catalog.Index) []string {
 	names := make([]string, 0, len(indexes))
 	for _, index := range indexes {
 		names = append(names, index.Name)
@@ -473,7 +473,7 @@ func databaseIndexNames(indexes []dbschematypes.DBIndex) []string {
 	return names
 }
 
-func databaseConstraintNames(constraints []dbschematypes.DBConstraint) []string {
+func databaseConstraintNames(constraints []catalog.Constraint) []string {
 	names := make([]string, 0, len(constraints))
 	for _, constraint := range constraints {
 		names = append(names, constraint.Name)
@@ -481,15 +481,15 @@ func databaseConstraintNames(constraints []dbschematypes.DBConstraint) []string 
 	return names
 }
 
-func databaseExtensionNames(extensions []dbschematypes.DBExtension) []string {
+func databaseExtensionNames(extensions []catalog.Extension) []string {
 	names := make([]string, 0, len(extensions))
 	for _, extension := range extensions {
-		names = append(names, dbschematypes.QualifyTableName(extension.Schema, extension.Name))
+		names = append(names, catalog.QualifyTableName(extension.Schema, extension.Name))
 	}
 	return names
 }
 
-func databaseViewNames(views []dbschematypes.DBView) []string {
+func databaseViewNames(views []catalog.View) []string {
 	names := make([]string, 0, len(views))
 	for _, view := range views {
 		names = append(names, view.QualifiedName())
@@ -497,7 +497,7 @@ func databaseViewNames(views []dbschematypes.DBView) []string {
 	return names
 }
 
-func databaseMatViewNames(views []dbschematypes.DBMatView) []string {
+func databaseMatViewNames(views []catalog.MaterializedView) []string {
 	names := make([]string, 0, len(views))
 	for _, view := range views {
 		names = append(names, view.QualifiedName())
@@ -505,7 +505,7 @@ func databaseMatViewNames(views []dbschematypes.DBMatView) []string {
 	return names
 }
 
-func databaseTriggerNames(triggers []dbschematypes.DBTrigger) []string {
+func databaseTriggerNames(triggers []catalog.Trigger) []string {
 	names := make([]string, 0, len(triggers))
 	for _, trigger := range triggers {
 		names = append(names, trigger.Name)
@@ -513,7 +513,7 @@ func databaseTriggerNames(triggers []dbschematypes.DBTrigger) []string {
 	return names
 }
 
-func databaseRLSPolicyNames(policies []dbschematypes.DBRLSPolicy) []string {
+func databaseRLSPolicyNames(policies []catalog.RLSPolicy) []string {
 	names := make([]string, 0, len(policies))
 	for _, policy := range policies {
 		names = append(names, policy.Name)
@@ -521,7 +521,7 @@ func databaseRLSPolicyNames(policies []dbschematypes.DBRLSPolicy) []string {
 	return names
 }
 
-func databaseGrantTargets(grants []dbschematypes.DBGrant) []string {
+func databaseGrantTargets(grants []catalog.Grant) []string {
 	targets := make([]string, 0, len(grants))
 	for _, grant := range grants {
 		targets = append(targets, dbGrantTarget(grant))
@@ -529,7 +529,7 @@ func databaseGrantTargets(grants []dbschematypes.DBGrant) []string {
 	return targets
 }
 
-func dbGrantTarget(grant dbschematypes.DBGrant) string {
+func dbGrantTarget(grant catalog.Grant) string {
 	if grant.ObjectType == "SCHEMA" {
 		return "schema:" + grant.ObjectName
 	}

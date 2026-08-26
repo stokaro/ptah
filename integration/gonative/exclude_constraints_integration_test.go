@@ -8,9 +8,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -19,7 +19,7 @@ func TestExcludeConstraints_EndToEnd_PostgreSQL(t *testing.T) {
 	tests := []struct {
 		name        string
 		generated   *goschema.Database
-		database    *types.DBSchema
+		database    *catalog.Database
 		expectedSQL []string
 	}{
 		{
@@ -44,11 +44,11 @@ func TestExcludeConstraints_EndToEnd_PostgreSQL(t *testing.T) {
 					},
 				},
 			},
-			database: &types.DBSchema{
-				Tables: []types.DBTable{
+			database: &catalog.Database{
+				Tables: []catalog.Table{
 					{
 						Name: "user_sessions",
-						Columns: []types.DBColumn{
+						Columns: []catalog.Column{
 							{Name: "user_id", DataType: "BIGINT", IsNullable: "NO"},
 							{Name: "is_active", DataType: "BOOLEAN", IsNullable: "NO"},
 						},
@@ -80,11 +80,11 @@ func TestExcludeConstraints_EndToEnd_PostgreSQL(t *testing.T) {
 					},
 				},
 			},
-			database: &types.DBSchema{
-				Tables: []types.DBTable{
+			database: &catalog.Database{
+				Tables: []catalog.Table{
 					{
 						Name: "bookings",
-						Columns: []types.DBColumn{
+						Columns: []catalog.Column{
 							{Name: "room_id", DataType: "INTEGER", IsNullable: "NO"},
 							{Name: "during", DataType: "TSRANGE", IsNullable: "NO"},
 						},
@@ -124,17 +124,17 @@ func TestExcludeConstraints_EndToEnd_PostgreSQL(t *testing.T) {
 					},
 				},
 			},
-			database: &types.DBSchema{
-				Tables: []types.DBTable{
+			database: &catalog.Database{
+				Tables: []catalog.Table{
 					{
 						Name: "products",
-						Columns: []types.DBColumn{
+						Columns: []catalog.Column{
 							{Name: "price", DataType: "DECIMAL", IsNullable: "NO"},
 						},
 					},
 					{
 						Name: "users",
-						Columns: []types.DBColumn{
+						Columns: []catalog.Column{
 							{Name: "user_id", DataType: "BIGINT", IsNullable: "NO"},
 							{Name: "email", DataType: "VARCHAR(255)", IsNullable: "NO"},
 						},
@@ -215,11 +215,11 @@ func TestExcludeConstraints_EndToEnd_MySQL(t *testing.T) {
 		},
 	}
 
-	database := &types.DBSchema{
-		Tables: []types.DBTable{
+	database := &catalog.Database{
+		Tables: []catalog.Table{
 			{
 				Name: "user_sessions",
-				Columns: []types.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "user_id", DataType: "BIGINT", IsNullable: "NO"},
 				},
 			},
@@ -267,7 +267,7 @@ func TestExcludeConstraints_SchemaComparison(t *testing.T) {
 		},
 	}
 
-	database := &types.DBSchema{
+	database := &catalog.Database{
 		// Empty database - no existing constraints
 	}
 
@@ -290,7 +290,7 @@ func TestExcludeConstraints_EmptySchema(t *testing.T) {
 		Constraints: make([]goschema.Constraint, 0),
 	}
 
-	database := &types.DBSchema{}
+	database := &catalog.Database{}
 
 	diff := schemadiff.Compare(generated, database)
 

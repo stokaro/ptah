@@ -9,7 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/internal/dbschema/postgres"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/testutils"
@@ -64,7 +64,7 @@ func TestPostgreSQLReader_ReadSchema_Integration(t *testing.T) {
 	c.Assert(schema.Tables, qt.Not(qt.HasLen), 0)
 
 	// Find our test table
-	var testTable *types.DBTable
+	var testTable *catalog.Table
 	for i := range schema.Tables {
 		if schema.Tables[i].Name == "test_table" {
 			testTable = &schema.Tables[i]
@@ -91,7 +91,7 @@ func TestPostgreSQLReader_ReadSchema_Integration(t *testing.T) {
 
 	// Verify enums were read
 	c.Assert(schema.Enums, qt.Not(qt.HasLen), 0)
-	var testEnum *types.DBEnum
+	var testEnum *catalog.Enum
 	for i := range schema.Enums {
 		if schema.Enums[i].Name == "test_status" {
 			testEnum = &schema.Enums[i]

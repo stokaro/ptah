@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/chrefresh"
 	"go.5x5.cz/ptah/internal/sqlrunner"
 )
@@ -72,9 +72,9 @@ func NewClickHouseReaderWithCapabilities(
 }
 
 // ReadSchema is [Reader.ReadSchemaContext] under context.Background(), the
-// context-free half of the pair [types.SchemaReader] declares. Prefer the
+// context-free half of the pair [catalog.SchemaReader] declares. Prefer the
 // Context form: only it can be told to stop.
-func (r *Reader) ReadSchema() (*types.DBSchema, error) {
+func (r *Reader) ReadSchema() (*catalog.Database, error) {
 	return r.ReadSchemaContext(context.Background())
 }
 
@@ -83,7 +83,7 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 // grants when the target carries [capability.RoleManagement]. Constraints, RLS,
 // functions, and other shapes with no direct equivalent in Ptah's ClickHouse
 // model remain empty.
-func (r *Reader) ReadSchemaContext(ctx context.Context) (*types.DBSchema, error) {
+func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, error) {
 	dbName, err := r.resolveDatabaseName(ctx)
 	if err != nil {
 		return nil, err
@@ -105,7 +105,7 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*types.DBSchema, error)
 	if err != nil {
 		return nil, fmt.Errorf("clickhouse: read materialized views: %w", err)
 	}
-	schema := &types.DBSchema{
+	schema := &catalog.Database{
 		Tables:   tables,
 		Indexes:  indexes,
 		Views:    views,
@@ -239,7 +239,7 @@ func (r *Reader) resolveDatabaseName(ctx context.Context) (string, error) {
 	return name, nil
 }
 
-func (r *Reader) readTables(ctx context.Context, dbName string) ([]types.DBTable, error) {
+func (r *Reader) readTables(ctx context.Context, dbName string) ([]catalog.Table, error) {
 	columnsByTable, err := r.readColumnsByTable(ctx, dbName)
 	if err != nil {
 		return nil, fmt.Errorf("clickhouse: read columns: %w", err)
@@ -267,7 +267,7 @@ func (r *Reader) readTables(ctx context.Context, dbName string) ([]types.DBTable
 	}
 	defer rows.Close()
 
-	var tables []types.DBTable
+	var tables []catalog.Table
 	for rows.Next() {
 		var name, comment, sortingKey, primaryKey string
 		var engineFull, partitionKey, samplingKey string
@@ -277,7 +277,7 @@ func (r *Reader) readTables(ctx context.Context, dbName string) ([]types.DBTable
 		); err != nil {
 			return nil, err
 		}
-		t := types.DBTable{Name: name, Type: "TABLE", Comment: comment}
+		t := catalog.Table{Name: name, Type: "TABLE", Comment: comment}
 		t.Columns = columnsByTable[name]
 		t.ClickHouseSortingKey = sortingKeyBeyondPrimaryKey(sortingKey, primaryKey)
 		t.ClickHouseOrderBy = sortingKey
@@ -296,7 +296,7 @@ func (r *Reader) readTables(ctx context.Context, dbName string) ([]types.DBTable
 	return tables, nil
 }
 
-func (r *Reader) readViews(ctx context.Context, dbName string) ([]types.DBView, error) {
+func (r *Reader) readViews(ctx context.Context, dbName string) ([]catalog.View, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT name, as_select, comment
 		FROM system.tables
@@ -310,9 +310,9 @@ func (r *Reader) readViews(ctx context.Context, dbName string) ([]types.DBView, 
 	}
 	defer rows.Close()
 
-	var views []types.DBView
+	var views []catalog.View
 	for rows.Next() {
-		view := types.DBView{Schema: dbName, CheckOption: "NONE"}
+		view := catalog.View{Schema: dbName, CheckOption: "NONE"}
 		if err := rows.Scan(&view.Name, &view.Body, &view.Comment); err != nil {
 			return nil, err
 		}
@@ -353,7 +353,7 @@ func (r *Reader) readViews(ctx context.Context, dbName string) ([]types.DBView, 
 //	create_table_query: CREATE MATERIALIZED VIEW wf9d_alias.mv_to
 //	                    TO wf9d_alias.mv_target (`c` UInt64) AS SELECT ...
 //
-// The target survives only in create_table_query, and types.DBMatView has
+// The target survives only in create_table_query, and catalog.MaterializedView has
 // nowhere to put it, so such a view is reported as an ordinary one: it compares
 // as synchronized against a declaration of the same query, and a body change
 // would be planned as a drop and a create that recreates it without the target.
@@ -361,7 +361,7 @@ func (r *Reader) readViews(ctx context.Context, dbName string) ([]types.DBView, 
 // the renderer emitting `TO`, the comparator diffing it); refusing the read
 // outright would take away a read that works today. Neither is decided here --
 // the support matrix says plainly not to manage a `TO` view with Ptah.
-func (r *Reader) readMaterializedViews(ctx context.Context, dbName string) ([]types.DBMatView, error) {
+func (r *Reader) readMaterializedViews(ctx context.Context, dbName string) ([]catalog.MaterializedView, error) {
 	refreshable, err := r.readRefreshableViews(ctx, dbName)
 	if err != nil {
 		return nil, err
@@ -379,9 +379,9 @@ func (r *Reader) readMaterializedViews(ctx context.Context, dbName string) ([]ty
 	}
 	defer rows.Close()
 
-	var views []types.DBMatView
+	var views []catalog.MaterializedView
 	for rows.Next() {
-		view := types.DBMatView{Schema: dbName}
+		view := catalog.MaterializedView{Schema: dbName}
 		var createQuery string
 		if err := rows.Scan(&view.Name, &view.Body, &view.Comment, &createQuery); err != nil {
 			return nil, err
@@ -403,7 +403,7 @@ func (r *Reader) readMaterializedViews(ctx context.Context, dbName string) ([]ty
 	return views, nil
 }
 
-func (r *Reader) readColumnsByTable(ctx context.Context, dbName string) (map[string][]types.DBColumn, error) {
+func (r *Reader) readColumnsByTable(ctx context.Context, dbName string) (map[string][]catalog.Column, error) {
 	// is_in_primary_key is what makes a read of a MergeTree table describable
 	// again. Without it every column reads as non-key, which has two visible
 	// consequences and one root cause (stokaro/ptah#1603): a declaration
@@ -424,7 +424,7 @@ func (r *Reader) readColumnsByTable(ctx context.Context, dbName string) (map[str
 	}
 	defer rows.Close()
 
-	columnsByTable := make(map[string][]types.DBColumn)
+	columnsByTable := make(map[string][]catalog.Column)
 	for rows.Next() {
 		var (
 			tableName                                         string
@@ -441,7 +441,7 @@ func (r *Reader) readColumnsByTable(ctx context.Context, dbName string) (map[str
 		if strings.HasPrefix(dataType, "Nullable(") {
 			nullable = "YES"
 		}
-		col := types.DBColumn{
+		col := catalog.Column{
 			Name:     name,
 			DataType: dataType,
 			// The catalog answers with ClickHouse's own type name, and the
@@ -499,7 +499,7 @@ func (r *Reader) skippingIndexTablePresent(ctx context.Context) (bool, error) {
 	return n > 0, nil
 }
 
-func (r *Reader) readSkippingIndexes(ctx context.Context, dbName string) ([]types.DBIndex, error) {
+func (r *Reader) readSkippingIndexes(ctx context.Context, dbName string) ([]catalog.Index, error) {
 	// system.data_skipping_indices was added in 21.x; on very old servers it
 	// is absent. Feature-detect by probing system.tables before querying so
 	// real failures aren't swallowed by an error-substring sniff.
@@ -530,7 +530,7 @@ func (r *Reader) readSkippingIndexes(ctx context.Context, dbName string) ([]type
 	}
 	defer rows.Close()
 
-	var indexes []types.DBIndex
+	var indexes []catalog.Index
 	for rows.Next() {
 		var (
 			table, name, expr, idxType string
@@ -542,8 +542,8 @@ func (r *Reader) readSkippingIndexes(ctx context.Context, dbName string) ([]type
 		// Populate Columns[0] = expression for back-compat with the
 		// existing diff layer (which compares Columns), AND set Expression
 		// for richer downstream diffing once that's wired up. The duality
-		// is intentional and documented on types.DBIndex.
-		indexes = append(indexes, types.DBIndex{
+		// is intentional and documented on catalog.Index.
+		indexes = append(indexes, catalog.Index{
 			Name:        name,
 			TableName:   table,
 			Columns:     []string{expr},

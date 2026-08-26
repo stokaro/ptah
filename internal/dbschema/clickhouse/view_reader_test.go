@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/internal/chrefresh"
 	"go.5x5.cz/ptah/internal/dbschema/clickhouse"
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
@@ -124,7 +124,7 @@ func TestReaderReadSchema_LoadsPlainViews(t *testing.T) {
 	// issuing one statement per role, per policy — or per view
 	// (stokaro/ptah#1025).
 	c.Assert(db.QueryCount(), qt.Equals, 9)
-	c.Assert(schema.Views, qt.DeepEquals, []types.DBView{{
+	c.Assert(schema.Views, qt.DeepEquals, []catalog.View{{
 		Name:        "active_users",
 		Schema:      "analytics",
 		Body:        "SELECT id, name FROM analytics.users WHERE active = true",
@@ -145,7 +145,7 @@ func TestReaderReadSchema_LoadsMaterializedViews(t *testing.T) {
 	schema, err := reader.ReadSchemaContext(t.Context())
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(schema.MatViews, qt.DeepEquals, []types.DBMatView{{
+	c.Assert(schema.MatViews, qt.DeepEquals, []catalog.MaterializedView{{
 		Name:    "user_counts",
 		Schema:  "analytics",
 		Body:    "SELECT count() AS c FROM analytics.users",
@@ -240,7 +240,7 @@ func TestReaderReadSchema_ReadsAScheduleOnlyForAViewTheServerSchedules(t *testin
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(schema.MatViews, qt.HasLen, 2)
-	byName := make(map[string]types.DBMatView, len(schema.MatViews))
+	byName := make(map[string]catalog.MaterializedView, len(schema.MatViews))
 	for _, view := range schema.MatViews {
 		byName[view.Name] = view
 	}

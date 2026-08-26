@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/dbschema/types"
 )
 
 // DirectiveTool is the per-migration directive key selecting the online-DDL
@@ -35,7 +35,7 @@ const (
 // Conn is the slice of dbschema.DatabaseConnection the executor consumes,
 // narrow so tests can fake it.
 type Conn interface {
-	Info() types.DBInfo
+	Info() catalog.ServerInfo
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 

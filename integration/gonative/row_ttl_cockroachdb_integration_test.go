@@ -8,10 +8,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -219,7 +219,7 @@ func readRowTTL(c *qt.C, t *testing.T, dsn string) *ast.RowTTLSpec {
 // description that does not carry it, which a caller asserting on the policy
 // would then read as "no policy" -- so the table's presence is asserted
 // separately by rowTTLTableExists.
-func rowTTLOf(live *dbschematypes.DBSchema) *ast.RowTTLSpec {
+func rowTTLOf(live *catalog.Database) *ast.RowTTLSpec {
 	for _, table := range live.Tables {
 		if table.Name == rowTTLTable {
 			return table.RowTTL

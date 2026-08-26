@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -18,8 +18,8 @@ func TestRLSEnabledTables_MatchesSchemaQualifiedTables(t *testing.T) {
 			{Table: "auth.users"},
 		},
 	}
-	database := &types.DBSchema{
-		Tables: []types.DBTable{
+	database := &catalog.Database{
+		Tables: []catalog.Table{
 			{Schema: "auth", Name: "users", RLSEnabled: true},
 		},
 	}

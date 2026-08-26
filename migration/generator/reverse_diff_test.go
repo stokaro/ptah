@@ -6,11 +6,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/renderer"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/constraintscope"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -112,12 +112,12 @@ func TestGenerateDownMigrationSQL_Issue43_RLSPolicyTableNames(t *testing.T) {
 
 	// Create a database schema that includes the RLS policies with table names
 	// This simulates the database state after the up migration has been applied
-	dbSchema := &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
+	dbSchema := &catalog.Database{
+		Tables: []catalog.Table{
 			{Name: "areas", RLSEnabled: true},
 			{Name: "commodities", RLSEnabled: true},
 		},
-		RLSPolicies: []dbschematypes.DBRLSPolicy{
+		RLSPolicies: []catalog.RLSPolicy{
 			{
 				Name:            "area_user_isolation",
 				Table:           "areas",
@@ -201,12 +201,12 @@ func TestGenerateDownMigrationSQL_Issue57_MissingTableNames(t *testing.T) {
 
 	// Create a database schema that includes the tables but NOT the RLS policies
 	// This simulates the scenario where the schema context is incomplete
-	dbSchema := &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
+	dbSchema := &catalog.Database{
+		Tables: []catalog.Table{
 			{Name: "areas", RLSEnabled: true},
 			{Name: "commodities", RLSEnabled: true},
 		},
-		RLSPolicies: make([]dbschematypes.DBRLSPolicy, 0), // Empty - this is the key to reproducing the bug
+		RLSPolicies: make([]catalog.RLSPolicy, 0), // Empty - this is the key to reproducing the bug
 	}
 
 	// Create a generated schema that includes the RLS policies with table names
@@ -363,7 +363,7 @@ func TestGenerateDownMigrationSQL_DropsFKChainChildBeforeParent(t *testing.T) {
 		},
 	}
 
-	downSQL, err := generateDownMigrationSQL(upDiff, schema, &dbschematypes.DBSchema{}, "postgres")
+	downSQL, err := generateDownMigrationSQL(upDiff, schema, &catalog.Database{}, "postgres")
 	downSQL = legacyRenderedSQL(downSQL)
 
 	c.Assert(err, qt.IsNil)
@@ -383,7 +383,7 @@ func TestGenerateDownMigrationSQL_DropsFKDiamondLeavesBeforeRoot(t *testing.T) {
 		},
 	}
 
-	downSQL, err := generateDownMigrationSQL(upDiff, schema, &dbschematypes.DBSchema{}, "postgres")
+	downSQL, err := generateDownMigrationSQL(upDiff, schema, &catalog.Database{}, "postgres")
 	downSQL = legacyRenderedSQL(downSQL)
 
 	c.Assert(err, qt.IsNil)
@@ -418,7 +418,7 @@ func TestGenerateDownMigrationSQL_DropsSchemaQualifiedTableLevelFKChildBeforePar
 	}
 	upDiff := &difftypes.SchemaDiff{TablesAdded: []string{"app.accounts", "app.projects"}}
 
-	downSQL, err := generateDownMigrationSQL(upDiff, schema, &dbschematypes.DBSchema{}, "postgres")
+	downSQL, err := generateDownMigrationSQL(upDiff, schema, &catalog.Database{}, "postgres")
 
 	c.Assert(err, qt.IsNil)
 	assertSQLBefore(t, downSQL, "DROP TABLE IF EXISTS app.projects", "DROP TABLE IF EXISTS app.accounts")
@@ -430,9 +430,9 @@ func TestGenerateDownMigrationSQL_DropsMySQLFamilyFKChainInDependencyOrder(t *te
 			c := qt.New(t)
 			schema := fkOrderSchema()
 			goschema.Finalize(schema)
-			upDiff := schemadiff.CompareWithDialect(schema, &dbschematypes.DBSchema{}, dialect)
+			upDiff := schemadiff.CompareWithDialect(schema, &catalog.Database{}, dialect)
 
-			downSQL, err := generateDownMigrationSQL(upDiff, schema, &dbschematypes.DBSchema{}, dialect)
+			downSQL, err := generateDownMigrationSQL(upDiff, schema, &catalog.Database{}, dialect)
 			c.Assert(err, qt.IsNil)
 			downSQL = legacyRenderedSQL(downSQL)
 
@@ -450,9 +450,9 @@ func TestGenerateDownMigrationSQL_DropsMySQLFamilyFKDiamondInDependencyOrder(t *
 			c := qt.New(t)
 			schema := fkOrderSchema()
 			goschema.Finalize(schema)
-			upDiff := schemadiff.CompareWithDialect(schema, &dbschematypes.DBSchema{}, dialect)
+			upDiff := schemadiff.CompareWithDialect(schema, &catalog.Database{}, dialect)
 
-			downSQL, err := generateDownMigrationSQL(upDiff, schema, &dbschematypes.DBSchema{}, dialect)
+			downSQL, err := generateDownMigrationSQL(upDiff, schema, &catalog.Database{}, dialect)
 			c.Assert(err, qt.IsNil)
 			downSQL = legacyRenderedSQL(downSQL)
 
@@ -473,9 +473,9 @@ func TestGenerateDownMigrationSQL_DropsMySQLFamilyMutualFKCycleTogether(t *testi
 			c := qt.New(t)
 			schema := mutualFKCycleSchema()
 			goschema.Finalize(schema)
-			upDiff := schemadiff.CompareWithDialect(schema, &dbschematypes.DBSchema{}, dialect)
+			upDiff := schemadiff.CompareWithDialect(schema, &catalog.Database{}, dialect)
 
-			downSQL, err := generateDownMigrationSQL(upDiff, schema, &dbschematypes.DBSchema{}, dialect)
+			downSQL, err := generateDownMigrationSQL(upDiff, schema, &catalog.Database{}, dialect)
 			c.Assert(err, qt.IsNil)
 			downSQL = legacyRenderedSQL(downSQL)
 
@@ -845,7 +845,7 @@ func TestReverseSchemaDiff_AddedTableForeignKeyRemovalsWithTables(t *testing.T) 
 func TestForeignKeyAdditionFromDBConstraint_DeduplicatesRepeatedIntrospectionColumns(t *testing.T) {
 	c := qt.New(t)
 	foreignTable := "ptah_tenants"
-	dbConstraint := dbschematypes.DBConstraint{
+	dbConstraint := catalog.Constraint{
 		Name:           "fk_entity_tenant",
 		TableName:      "ptah_area",
 		Type:           "FOREIGN KEY",
@@ -1008,23 +1008,23 @@ func TestGenerateDownMigrationSQL_Issue189_RestoresPriorForeignKeyAction(t *test
 
 	// Database (current, pre-change) schema: the FK still has the prior default
 	// NO ACTION. This is what the down migration must restore.
-	dbSchema := &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
+	dbSchema := &catalog.Database{
+		Tables: []catalog.Table{
 			{
 				Name: "files",
-				Columns: []dbschematypes.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "id", DataType: "varchar", CharacterMaxLength: &varcharLength, IsNullable: "NO", IsPrimaryKey: true},
 				},
 			},
 			{
 				Name: "exports",
-				Columns: []dbschematypes.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "id", DataType: "varchar", CharacterMaxLength: &varcharLength, IsNullable: "NO", IsPrimaryKey: true},
 					{Name: "file_id", DataType: "varchar", CharacterMaxLength: &varcharLength, IsNullable: "YES"},
 				},
 			},
 		},
-		Constraints: []dbschematypes.DBConstraint{
+		Constraints: []catalog.Constraint{
 			{
 				Name:          "fk_export_file",
 				TableName:     "exports",
@@ -1090,11 +1090,11 @@ func TestGenerateDownMigrationSQL_Issue194_DropsFieldLevelCheckMySQLFamily(t *te
 			},
 		},
 	}
-	dbSchema := &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
+	dbSchema := &catalog.Database{
+		Tables: []catalog.Table{
 			{
 				Name: "files",
-				Columns: []dbschematypes.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "category", DataType: "text", IsNullable: "YES"},
 				},
 			},
@@ -1143,18 +1143,18 @@ func TestGenerateDownMigrationSQL_MySQLFamilyDropsGeneratedForeignKeyBackingInde
 
 	tests := []struct {
 		name      string
-		dbSchema  *dbschematypes.DBSchema
+		dbSchema  *catalog.Database
 		wantIndex bool
 	}{
 		{
 			name:      "no prior same-named index",
-			dbSchema:  &dbschematypes.DBSchema{},
+			dbSchema:  &catalog.Database{},
 			wantIndex: true,
 		},
 		{
 			name: "pre-change DB already had that index",
-			dbSchema: &dbschematypes.DBSchema{
-				Indexes: []dbschematypes.DBIndex{
+			dbSchema: &catalog.Database{
+				Indexes: []catalog.Index{
 					{
 						Name: "fk_users_account_id", TableName: "users",
 						Columns: []string{"account_id"},
@@ -1222,8 +1222,8 @@ func TestGenerateDownMigrationSQL_SequenceAdded(t *testing.T) {
 	upDiff := &difftypes.SchemaDiff{
 		SequencesAdded: []string{"order_seq"},
 	}
-	dbSchema := &dbschematypes.DBSchema{
-		Sequences: []dbschematypes.DBSequence{{Name: "order_seq", DataType: "bigint"}},
+	dbSchema := &catalog.Database{
+		Sequences: []catalog.Sequence{{Name: "order_seq", DataType: "bigint"}},
 	}
 	generatedSchema := &goschema.Database{
 		Sequences: []goschema.Sequence{{Name: "order_seq", AsType: "bigint"}},

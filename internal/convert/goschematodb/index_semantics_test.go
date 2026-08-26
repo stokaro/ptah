@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/convert/goschematodb"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -57,9 +57,9 @@ func TestToDBSchema_CarriesPostgresIndexSemantics(t *testing.T) {
 	index := got.Indexes[0]
 	c.Assert(index.Method, qt.Equals, "btree")
 	c.Assert(index.IncludeColumns, qt.DeepEquals, []string{"c"})
-	c.Assert(index.Parts, qt.DeepEquals, []dbschematypes.DBIndexPart{
-		{Name: "a", Operator: "text_pattern_ops", Desc: true, NullsOrder: dbschematypes.NullsOrderLast},
-		{Name: "b", NullsOrder: dbschematypes.NullsOrderFirst},
+	c.Assert(index.Parts, qt.DeepEquals, []catalog.IndexPart{
+		{Name: "a", Operator: "text_pattern_ops", Desc: true, NullsOrder: catalog.NullsOrderLast},
+		{Name: "b", NullsOrder: catalog.NullsOrderFirst},
 	})
 }
 
@@ -81,7 +81,7 @@ func TestToDBSchema_PostgresIndexSemanticsAreIdempotent(t *testing.T) {
 
 // TestToDBSchema_ClickHouseSkippingIndexTypeIsNotAnAccessMethod keeps the two
 // concepts goschema.Index.Type carries apart. On ClickHouse the field is the
-// data-skipping-index type, which the DB shape keeps in DBIndex.Type; reporting
+// data-skipping-index type, which the DB shape keeps in Index.Type; reporting
 // it as a PostgreSQL access method would make a ClickHouse "bloom_filter" and a
 // PostgreSQL "gin" indistinguishable at the comparison layer.
 func TestToDBSchema_ClickHouseSkippingIndexTypeIsNotAnAccessMethod(t *testing.T) {

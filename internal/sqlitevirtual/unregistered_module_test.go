@@ -8,9 +8,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/diffpolicy"
@@ -47,14 +47,14 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 	// PRAGMA module_list reports as exactly: dbstat, fts5, fts5vocab, geopoly,
 	// rtree, rtree_i32, sqlite_dbpage. Nothing here hard-codes that name as
 	// special; it is unregistered the same way an invented module is.
-	unclassified := []types.DBVirtualTable{{Name: "docs", Module: "fts4"}}
+	unclassified := []catalog.VirtualTable{{Name: "docs", Module: "fts4"}}
 
 	tests := []struct {
 		name            string
 		dialect         string
 		env             func(testing.TB)
 		desired         *goschema.Database
-		database        *types.DBSchema
+		database        *catalog.Database
 		policy          sqlitevirtual.Policy
 		wantErr         bool
 		wantUnsupported bool
@@ -66,8 +66,8 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect: "sqlite",
 			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			desired: declaring("users"),
-			database: &types.DBSchema{
-				Tables:                    []types.DBTable{{Name: "docs", VirtualModule: "fts4"}, {Name: "users"}},
+			database: &catalog.Database{
+				Tables:                    []catalog.Table{{Name: "docs", VirtualModule: "fts4"}, {Name: "users"}},
 				UnregisteredVirtualTables: unclassified,
 			},
 			wantErr:         true,
@@ -88,8 +88,8 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect: "sqlite",
 			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			desired: declaring("users"),
-			database: &types.DBSchema{
-				Tables: []types.DBTable{
+			database: &catalog.Database{
+				Tables: []catalog.Table{
 					{Name: "docs_content"},
 					{Name: "docs_docsize"},
 					{Name: "docs_segdir"},
@@ -110,8 +110,8 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect: "sqlite",
 			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			desired: declaring("users"),
-			database: &types.DBSchema{
-				Tables:                    []types.DBTable{{Name: "docs", VirtualModule: "fts4"}},
+			database: &catalog.Database{
+				Tables:                    []catalog.Table{{Name: "docs", VirtualModule: "fts4"}},
 				UnregisteredVirtualTables: unclassified,
 			},
 			wantErr:         true,
@@ -126,7 +126,7 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			},
 		},
 		{
-			// A DBSchema built by something other than the SQLite reader
+			// A Database built by something other than the SQLite reader
 			// carries no list. The virtual table in front of the validator is
 			// still checked directly, so a zero value cannot read as "every
 			// module is present".
@@ -144,8 +144,8 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect: "sqlite",
 			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			desired: declaringVirtual("docs", "fts4", "title, body"),
-			database: &types.DBSchema{
-				Tables: []types.DBTable{
+			database: &catalog.Database{
+				Tables: []catalog.Table{
 					{Name: "docs", VirtualModule: "fts4", VirtualArguments: "title, body"},
 					{Name: "docs_content"},
 				},
@@ -163,9 +163,9 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect: "sqlite",
 			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			desired: declaring("users"),
-			database: &types.DBSchema{
-				Tables: []types.DBTable{{Name: "users"}, {Name: "docs_content"}},
-				UnregisteredVirtualTables: []types.DBVirtualTable{
+			database: &catalog.Database{
+				Tables: []catalog.Table{{Name: "users"}, {Name: "docs_content"}},
+				UnregisteredVirtualTables: []catalog.VirtualTable{
 					{Name: "docs", Module: "fts4"},
 					{Name: "notes_ix", Module: "fts4"},
 				},
@@ -186,9 +186,9 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect: "sqlite",
 			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			desired: declaring("users"),
-			database: &types.DBSchema{
-				Tables: []types.DBTable{{Name: "users"}, {Name: "docs_content"}},
-				UnregisteredVirtualTables: []types.DBVirtualTable{
+			database: &catalog.Database{
+				Tables: []catalog.Table{{Name: "users"}, {Name: "docs_content"}},
+				UnregisteredVirtualTables: []catalog.VirtualTable{
 					{Name: "docs", Module: "fts4"},
 					{Name: "legacy", Module: "fts3"},
 				},
@@ -205,8 +205,8 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect: "sqlite",
 			env:     envbooltest.Set(sqlitevirtual.AllowUnregisteredModuleEnvVar, "1"),
 			desired: declaring("users"),
-			database: &types.DBSchema{
-				Tables:                    []types.DBTable{{Name: "docs_content"}, {Name: "users"}},
+			database: &catalog.Database{
+				Tables:                    []catalog.Table{{Name: "docs_content"}, {Name: "users"}},
 				UnregisteredVirtualTables: unclassified,
 			},
 			wantErr: false,
@@ -217,8 +217,8 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect: "sqlite",
 			env:     envbooltest.Set(sqlitevirtual.AllowUnregisteredModuleEnvVar, "false"),
 			desired: declaring("users"),
-			database: &types.DBSchema{
-				Tables:                    []types.DBTable{{Name: "users"}, {Name: "docs_content"}},
+			database: &catalog.Database{
+				Tables:                    []catalog.Table{{Name: "users"}, {Name: "docs_content"}},
 				UnregisteredVirtualTables: unclassified,
 			},
 			wantErr:         true,
@@ -234,8 +234,8 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect: "sqlite",
 			env:     envbooltest.Set(sqlitevirtual.AllowDropEnvVar, "1"),
 			desired: declaring("users"),
-			database: &types.DBSchema{
-				Tables:                    []types.DBTable{{Name: "docs", VirtualModule: "fts4"}},
+			database: &catalog.Database{
+				Tables:                    []catalog.Table{{Name: "docs", VirtualModule: "fts4"}},
 				UnregisteredVirtualTables: unclassified,
 			},
 			wantErr:         true,
@@ -250,7 +250,7 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect:         "sqlite",
 			env:             envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			desired:         declaring("users"),
-			database:        &types.DBSchema{Tables: []types.DBTable{{Name: "docs", VirtualModule: "fts5"}}},
+			database:        &catalog.Database{Tables: []catalog.Table{{Name: "docs", VirtualModule: "fts5"}}},
 			wantErr:         true,
 			wantUnsupported: true,
 			wantContains: []string{
@@ -279,7 +279,7 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect:         "sqlite",
 			env:             envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			desired:         declaringVirtual("docs", "FTS5", "title, body"),
-			database:        &types.DBSchema{Tables: []types.DBTable{{Name: "docs", VirtualModule: "FTS5", VirtualArguments: "title, body"}}},
+			database:        &catalog.Database{Tables: []catalog.Table{{Name: "docs", VirtualModule: "FTS5", VirtualArguments: "title, body"}}},
 			wantErr:         false,
 			wantUnsupported: false,
 		},
@@ -293,7 +293,7 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect:         "sqlite",
 			env:             envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			desired:         declaringVirtual("docs", "fts4", "title, body"),
-			database:        &types.DBSchema{Tables: []types.DBTable{{Name: "users"}}},
+			database:        &catalog.Database{Tables: []catalog.Table{{Name: "users"}}},
 			wantErr:         true,
 			wantUnsupported: true,
 			wantContains: []string{
@@ -316,7 +316,7 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect:  "sqlite",
 			env:      envbooltest.Set(sqlitevirtual.AllowUnregisteredModuleEnvVar, "1"),
 			desired:  declaringVirtual("docs", "fts4", "title, body"),
-			database: &types.DBSchema{Tables: []types.DBTable{{Name: "docs", VirtualModule: "fts4", VirtualArguments: "title, body"}}},
+			database: &catalog.Database{Tables: []catalog.Table{{Name: "docs", VirtualModule: "fts4", VirtualArguments: "title, body"}}},
 			wantErr:  false,
 		},
 		{
@@ -329,7 +329,7 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect:  "sqlite",
 			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			desired:  declaringVirtual("docs", "fts4", "title, body"),
-			database: &types.DBSchema{Tables: []types.DBTable{{Name: "docs", VirtualModule: "fts4", VirtualArguments: "title, body"}}},
+			database: &catalog.Database{Tables: []catalog.Table{{Name: "docs", VirtualModule: "fts4", VirtualArguments: "title, body"}}},
 			wantErr:  false,
 		},
 		{
@@ -347,8 +347,8 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect: "sqlite",
 			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			desired: declaring("users"),
-			database: &types.DBSchema{
-				Tables:                    []types.DBTable{{Name: "users"}},
+			database: &catalog.Database{
+				Tables:                    []catalog.Table{{Name: "users"}},
 				UnregisteredVirtualTables: unclassified,
 			},
 			wantErr: false,
@@ -366,10 +366,10 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 				"docs", "fts4", "title, body",
 				"docs_content", []string{"docid", "c0title"},
 			),
-			database: &types.DBSchema{
-				Tables: []types.DBTable{
+			database: &catalog.Database{
+				Tables: []catalog.Table{
 					{Name: "docs", VirtualModule: "fts4", VirtualArguments: "title, body"},
-					{Name: "docs_content", Columns: []types.DBColumn{
+					{Name: "docs_content", Columns: []catalog.Column{
 						{Name: "docid"}, {Name: "c0title"}, {Name: "c1body"},
 					}},
 				},
@@ -386,8 +386,8 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect: "sqlite",
 			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			desired: declaring("users"),
-			database: &types.DBSchema{
-				Tables:                    []types.DBTable{{Name: "users"}, {Name: "docs_content"}},
+			database: &catalog.Database{
+				Tables:                    []catalog.Table{{Name: "users"}, {Name: "docs_content"}},
 				UnregisteredVirtualTables: unclassified,
 			},
 			wantErr:         true,
@@ -402,7 +402,7 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect:         "sqlite",
 			env:             envbooltest.Set(sqlitevirtual.AllowUnregisteredModuleEnvVar, "1"),
 			desired:         declaringVirtual("docs", "fts4", "title, body"),
-			database:        &types.DBSchema{Tables: []types.DBTable{{Name: "users"}}},
+			database:        &catalog.Database{Tables: []catalog.Table{{Name: "users"}}},
 			wantErr:         true,
 			wantUnsupported: true,
 			wantContains:    []string{"the desired schema adds", "no such module: fts4"},
@@ -415,7 +415,7 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect:         "sqlite",
 			env:             envbooltest.Set(sqlitevirtual.AllowUnregisteredModuleEnvVar, "1"),
 			desired:         declaringVirtual("docs", "fts4", "title, body"),
-			database:        &types.DBSchema{Tables: []types.DBTable{{Name: "users"}}},
+			database:        &catalog.Database{Tables: []catalog.Table{{Name: "users"}}},
 			wantErr:         true,
 			wantUnsupported: true,
 			wantContains:    []string{"no such module: fts4"},
@@ -427,8 +427,8 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect: "mysql",
 			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			desired: declaring("users"),
-			database: &types.DBSchema{
-				Tables:                    []types.DBTable{{Name: "docs", VirtualModule: "fts4"}},
+			database: &catalog.Database{
+				Tables:                    []catalog.Table{{Name: "docs", VirtualModule: "fts4"}},
 				UnregisteredVirtualTables: unclassified,
 			},
 			wantErr: false,
@@ -452,8 +452,8 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect: "sqlite",
 			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			desired: declaring("users"),
-			database: &types.DBSchema{
-				Tables: []types.DBTable{
+			database: &catalog.Database{
+				Tables: []catalog.Table{
 					{Name: "docs_content"},
 					{Name: "docs_docsize"},
 					{Name: "docs_segdir"},
@@ -476,7 +476,7 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect:         "sqlite",
 			env:             envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			desired:         declaringVirtual("docs", "fts4", "title, body"),
-			database:        &types.DBSchema{Tables: []types.DBTable{{Name: "users"}}},
+			database:        &catalog.Database{Tables: []catalog.Table{{Name: "users"}}},
 			policy:          sqlitevirtual.Policy{SkipDropTable: true},
 			wantErr:         true,
 			wantUnsupported: true,
@@ -490,7 +490,7 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			dialect:      "sqlite",
 			env:          envbooltest.Set(sqlitevirtual.AllowUnregisteredModuleEnvVar, "maybe"),
 			desired:      declaring("users"),
-			database:     &types.DBSchema{Tables: []types.DBTable{{Name: "docs_content"}, {Name: "users"}}, UnregisteredVirtualTables: unclassified},
+			database:     &catalog.Database{Tables: []catalog.Table{{Name: "docs_content"}, {Name: "users"}}, UnregisteredVirtualTables: unclassified},
 			policy:       sqlitevirtual.Policy{SkipDropTable: true},
 			wantErr:      true,
 			wantContains: []string{sqlitevirtual.AllowUnregisteredModuleEnvVar, "maybe"},
@@ -532,9 +532,9 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 // So the question is asked afterwards, of the diff itself, which cannot drift
 // from the rules that produced it.
 func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
-	unclassified := []types.DBVirtualTable{{Name: "docs", Module: "fts4"}}
-	holdingFTS4 := &types.DBSchema{
-		Tables: []types.DBTable{
+	unclassified := []catalog.VirtualTable{{Name: "docs", Module: "fts4"}}
+	holdingFTS4 := &catalog.Database{
+		Tables: []catalog.Table{
 			{Name: "docs", VirtualModule: "fts4"},
 			{Name: "docs_content"},
 		},
@@ -545,7 +545,7 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 		name            string
 		dialect         string
 		env             func(testing.TB)
-		database        *types.DBSchema
+		database        *catalog.Database
 		diff            *difftypes.SchemaDiff
 		policy          sqlitevirtual.Policy
 		wantErr         bool
@@ -772,7 +772,7 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			name:     "a modified table in a classifiable database is not refused",
 			dialect:  "sqlite",
 			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database: &types.DBSchema{Tables: []types.DBTable{{Name: "docs", VirtualModule: "fts5"}}},
+			database: &catalog.Database{Tables: []catalog.Table{{Name: "docs", VirtualModule: "fts5"}}},
 			diff:     modifying("docs"),
 			wantErr:  false,
 		},
@@ -1092,9 +1092,9 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 // unloadable module -- the over-refusal this package has fixed three times
 // already, arriving a fourth time by a new route.
 func TestValidatePlannedRollbackRefusesADestructiveRollback(t *testing.T) {
-	unclassified := []types.DBVirtualTable{{Name: "docs", Module: "fts4"}}
-	holdingFTS4 := &types.DBSchema{
-		Tables: []types.DBTable{
+	unclassified := []catalog.VirtualTable{{Name: "docs", Module: "fts4"}}
+	holdingFTS4 := &catalog.Database{
+		Tables: []catalog.Table{
 			{Name: "docs", VirtualModule: "fts4"},
 			{Name: "docs_content"},
 		},
@@ -1105,7 +1105,7 @@ func TestValidatePlannedRollbackRefusesADestructiveRollback(t *testing.T) {
 		name            string
 		dialect         string
 		env             func(testing.TB)
-		database        *types.DBSchema
+		database        *catalog.Database
 		forward         *difftypes.SchemaDiff
 		reverse         *difftypes.SchemaDiff
 		wantErr         bool
@@ -1327,7 +1327,7 @@ func TestValidatePlannedRollbackRefusesADestructiveRollback(t *testing.T) {
 			name:     "a rollback against a classifiable database is not refused",
 			dialect:  "sqlite",
 			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			database: &types.DBSchema{Tables: []types.DBTable{{Name: "docs", VirtualModule: "fts5"}}},
+			database: &catalog.Database{Tables: []catalog.Table{{Name: "docs", VirtualModule: "fts5"}}},
 			forward:  addingColumn("docs"),
 			reverse: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:      "docs",
@@ -1444,9 +1444,9 @@ func TestDiffPolicySkipKindsAreClassified(t *testing.T) {
 		c.Assert(classified, qt.DeepEquals, all)
 	})
 
-	database := &types.DBSchema{
-		Tables:                    []types.DBTable{{Name: "docs", VirtualModule: "fts4"}},
-		UnregisteredVirtualTables: []types.DBVirtualTable{{Name: "docs", Module: "fts4"}},
+	database := &catalog.Database{
+		Tables:                    []catalog.Table{{Name: "docs", VirtualModule: "fts4"}},
+		UnregisteredVirtualTables: []catalog.VirtualTable{{Name: "docs", Module: "fts4"}},
 	}
 
 	for _, tt := range tests {
@@ -1582,7 +1582,7 @@ func TestValidateToggleResolvesBothOwnedVariables(t *testing.T) {
 func TestReportUnclassifiedNamesWhatTheDescriptionCannotVouchFor(t *testing.T) {
 	tests := []struct {
 		name         string
-		schema       *types.DBSchema
+		schema       *catalog.Database
 		wantContains []string
 		wantAbsent   []string
 		wantSilent   bool
@@ -1594,14 +1594,14 @@ func TestReportUnclassifiedNamesWhatTheDescriptionCannotVouchFor(t *testing.T) {
 		},
 		{
 			name:       "a fully classified database says nothing",
-			schema:     &types.DBSchema{Tables: []types.DBTable{{Name: "docs", VirtualModule: "fts5"}}},
+			schema:     &catalog.Database{Tables: []catalog.Table{{Name: "docs", VirtualModule: "fts5"}}},
 			wantSilent: true,
 		},
 		{
 			name: "an unclassified table is named with its module",
-			schema: &types.DBSchema{
-				Tables:                    []types.DBTable{{Name: "docs", VirtualModule: "fts4"}},
-				UnregisteredVirtualTables: []types.DBVirtualTable{{Name: "docs", Module: "fts4"}},
+			schema: &catalog.Database{
+				Tables:                    []catalog.Table{{Name: "docs", VirtualModule: "fts4"}},
+				UnregisteredVirtualTables: []catalog.VirtualTable{{Name: "docs", Module: "fts4"}},
 			},
 			wantContains: []string{
 				`virtual table "docs" (module fts4)`,
@@ -1612,12 +1612,12 @@ func TestReportUnclassifiedNamesWhatTheDescriptionCannotVouchFor(t *testing.T) {
 		},
 		{
 			name: "every unclassified table is named, not just the first",
-			schema: &types.DBSchema{
-				Tables: []types.DBTable{
+			schema: &catalog.Database{
+				Tables: []catalog.Table{
 					{Name: "docs", VirtualModule: "fts4"},
 					{Name: "legacy", VirtualModule: "fts3"},
 				},
-				UnregisteredVirtualTables: []types.DBVirtualTable{
+				UnregisteredVirtualTables: []catalog.VirtualTable{
 					{Name: "docs", Module: "fts4"},
 					{Name: "legacy", Module: "fts3"},
 				},
@@ -1633,9 +1633,9 @@ func TestReportUnclassifiedNamesWhatTheDescriptionCannotVouchFor(t *testing.T) {
 			// ordinary CREATE TABLEs with nothing said. The note keeps the
 			// warning and drops the name.
 			name: "a projection that dropped the virtual table still warns, without naming it",
-			schema: &types.DBSchema{
-				Tables:                    []types.DBTable{{Name: "users"}},
-				UnregisteredVirtualTables: []types.DBVirtualTable{{Name: "docs", Module: "fts4"}},
+			schema: &catalog.Database{
+				Tables:                    []catalog.Table{{Name: "users"}},
+				UnregisteredVirtualTables: []catalog.VirtualTable{{Name: "docs", Module: "fts4"}},
 			},
 			wantContains: []string{
 				"this description was narrowed",
@@ -1650,8 +1650,8 @@ func TestReportUnclassifiedNamesWhatTheDescriptionCannotVouchFor(t *testing.T) {
 			// database does not have renders nothing, and a note beside an
 			// empty rendering describes a document that does not exist.
 			name: "an empty description says nothing",
-			schema: &types.DBSchema{
-				UnregisteredVirtualTables: []types.DBVirtualTable{{Name: "docs", Module: "fts4"}},
+			schema: &catalog.Database{
+				UnregisteredVirtualTables: []catalog.VirtualTable{{Name: "docs", Module: "fts4"}},
 			},
 			wantSilent: true,
 		},
@@ -1679,7 +1679,7 @@ func TestReportUnclassifiedNamesWhatTheDescriptionCannotVouchFor(t *testing.T) {
 // surfaces spell "no diagnostics stream". A note that panicked would fail a
 // read that succeeded.
 func TestReportUnclassifiedToleratesNoDiagnosticsStream(t *testing.T) {
-	sqlitevirtual.ReportUnclassified(nil, &types.DBSchema{
-		UnregisteredVirtualTables: []types.DBVirtualTable{{Name: "docs", Module: "fts4"}},
+	sqlitevirtual.ReportUnclassified(nil, &catalog.Database{
+		UnregisteredVirtualTables: []catalog.VirtualTable{{Name: "docs", Module: "fts4"}},
 	})
 }

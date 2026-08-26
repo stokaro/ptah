@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 )
 
@@ -471,15 +471,15 @@ func TestScopeGenerated_FailurePath(t *testing.T) {
 
 // scopeDatabaseFixture mirrors scopeGeneratedFixture for the introspected
 // side.
-func scopeDatabaseFixture() *dbschematypes.DBSchema {
+func scopeDatabaseFixture() *catalog.Database {
 	usersTable := "users"
-	return &dbschematypes.DBSchema{
-		Schemas: []dbschematypes.DBSchemaInfo{{Name: "app"}, {Name: "billing"}},
-		Tables: []dbschematypes.DBTable{
+	return &catalog.Database{
+		Schemas: []catalog.Schema{{Name: "app"}, {Name: "billing"}},
+		Tables: []catalog.Table{
 			{
 				Schema: "app",
 				Name:   "users",
-				Columns: []dbschematypes.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "id", DataType: "integer"},
 					{Name: "status", DataType: "USER-DEFINED", UDTName: "user_status"},
 				},
@@ -487,7 +487,7 @@ func scopeDatabaseFixture() *dbschematypes.DBSchema {
 			{
 				Schema: "app",
 				Name:   "audit_log",
-				Columns: []dbschematypes.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "id", DataType: "integer"},
 					{Name: "user_id", DataType: "integer"},
 				},
@@ -495,37 +495,37 @@ func scopeDatabaseFixture() *dbschematypes.DBSchema {
 			{
 				Schema: "billing",
 				Name:   "invoices",
-				Columns: []dbschematypes.DBColumn{
+				Columns: []catalog.Column{
 					{Name: "id", DataType: "integer"},
 				},
 			},
 		},
-		Enums: []dbschematypes.DBEnum{
+		Enums: []catalog.Enum{
 			{Name: "user_status", Values: []string{"active", "inactive"}},
 			{Name: "invoice_status", Values: []string{"open", "paid"}},
 		},
-		Indexes: []dbschematypes.DBIndex{
+		Indexes: []catalog.Index{
 			{Schema: "app", TableName: "users", Name: "users_status_idx", Columns: []string{"status"}},
 			{Schema: "app", TableName: "audit_log", Name: "audit_log_user_idx", Columns: []string{"user_id"}},
 		},
-		Constraints: []dbschematypes.DBConstraint{
+		Constraints: []catalog.Constraint{
 			{Schema: "app", TableName: "audit_log", Name: "audit_log_user_fk", Type: "FOREIGN KEY", ColumnNames: []string{"user_id"}, ForeignSchema: "app", ForeignTable: &usersTable},
 		},
-		Sequences: []dbschematypes.DBSequence{
+		Sequences: []catalog.Sequence{
 			{Schema: "app", Name: "user_number_seq", OwnedBy: "users.id"},
 			{Schema: "billing", Name: "invoice_number_seq"},
 		},
-		Triggers: []dbschematypes.DBTrigger{
+		Triggers: []catalog.Trigger{
 			{Schema: "app", Table: "users", Name: "users_updated_at"},
 		},
-		RLSPolicies: []dbschematypes.DBRLSPolicy{
+		RLSPolicies: []catalog.RLSPolicy{
 			{Table: "app.users", Name: "users_policy"},
 		},
-		Roles: []dbschematypes.DBRole{
+		Roles: []catalog.Role{
 			{Name: "app_user"},
 			{Name: "billing_user"},
 		},
-		Grants: []dbschematypes.DBGrant{
+		Grants: []catalog.Grant{
 			{Role: "app_user", ObjectType: "TABLE", Schema: "app", ObjectName: "users"},
 			{Role: "billing_user", ObjectType: "TABLE", Schema: "billing", ObjectName: "invoices"},
 		},
@@ -605,10 +605,10 @@ func TestScopeDatabase_QualifiedFunctionAndEnumRetainOwningSchema(t *testing.T) 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			got, err := atlasfilter.ScopeDatabase(&dbschematypes.DBSchema{
-				Schemas:   []dbschematypes.DBSchemaInfo{{Name: "app"}},
-				Functions: []dbschematypes.DBFunction{{Schema: "app", Name: "fn_app"}},
-				Enums:     []dbschematypes.DBEnum{{Schema: "app", Name: "color"}},
+			got, err := atlasfilter.ScopeDatabase(&catalog.Database{
+				Schemas:   []catalog.Schema{{Name: "app"}},
+				Functions: []catalog.Function{{Schema: "app", Name: "fn_app"}},
+				Enums:     []catalog.Enum{{Schema: "app", Name: "color"}},
 			}, atlasfilter.Scope{Include: []string{test.include}, DefaultSchema: "public"})
 
 			c.Assert(err, qt.IsNil)
@@ -624,10 +624,10 @@ func TestScopeDatabase_WrongQualifiedFunctionAndEnumMatchNothing(t *testing.T) {
 	for _, include := range tests {
 		t.Run(include, func(t *testing.T) {
 			c := qt.New(t)
-			got, err := atlasfilter.ScopeDatabase(&dbschematypes.DBSchema{
-				Schemas:   []dbschematypes.DBSchemaInfo{{Name: "app"}},
-				Functions: []dbschematypes.DBFunction{{Schema: "app", Name: "fn_app"}},
-				Enums:     []dbschematypes.DBEnum{{Schema: "app", Name: "color"}},
+			got, err := atlasfilter.ScopeDatabase(&catalog.Database{
+				Schemas:   []catalog.Schema{{Name: "app"}},
+				Functions: []catalog.Function{{Schema: "app", Name: "fn_app"}},
+				Enums:     []catalog.Enum{{Schema: "app", Name: "color"}},
 			}, atlasfilter.Scope{Include: []string{include}, DefaultSchema: "public"})
 
 			c.Assert(err, qt.ErrorMatches, `the --include selection matched no objects: ".*"`)
@@ -783,16 +783,16 @@ func TestScopeDatabase_FailurePath(t *testing.T) {
 
 	t.Run("database enum validation does not collide across schemas", func(t *testing.T) {
 		c := qt.New(t)
-		schema := &dbschematypes.DBSchema{
-			Schemas: []dbschematypes.DBSchemaInfo{{Name: "app"}, {Name: "public"}},
-			Tables: []dbschematypes.DBTable{{
+		schema := &catalog.Database{
+			Schemas: []catalog.Schema{{Name: "app"}, {Name: "public"}},
+			Tables: []catalog.Table{{
 				Schema: "app",
 				Name:   "users",
-				Columns: []dbschematypes.DBColumn{{
+				Columns: []catalog.Column{{
 					Name: "color", DataType: "USER-DEFINED", UDTName: "color",
 				}},
 			}},
-			Enums: []dbschematypes.DBEnum{
+			Enums: []catalog.Enum{
 				{Schema: "app", Name: "color"},
 				{Schema: "public", Name: "color"},
 			},
@@ -842,7 +842,7 @@ func generatedRoleNames(roles []goschema.Role) []string {
 	return names
 }
 
-func databaseSchemaNames(schemas []dbschematypes.DBSchemaInfo) []string {
+func databaseSchemaNames(schemas []catalog.Schema) []string {
 	names := make([]string, 0, len(schemas))
 	for _, schema := range schemas {
 		names = append(names, schema.Name)
@@ -850,7 +850,7 @@ func databaseSchemaNames(schemas []dbschematypes.DBSchemaInfo) []string {
 	return names
 }
 
-func databaseEnumNames(enums []dbschematypes.DBEnum) []string {
+func databaseEnumNames(enums []catalog.Enum) []string {
 	names := make([]string, 0, len(enums))
 	for _, enum := range enums {
 		names = append(names, enum.Name)
@@ -858,7 +858,7 @@ func databaseEnumNames(enums []dbschematypes.DBEnum) []string {
 	return names
 }
 
-func databaseSequenceNames(sequences []dbschematypes.DBSequence) []string {
+func databaseSequenceNames(sequences []catalog.Sequence) []string {
 	names := make([]string, 0, len(sequences))
 	for _, sequence := range sequences {
 		names = append(names, sequence.QualifiedName())
@@ -866,7 +866,7 @@ func databaseSequenceNames(sequences []dbschematypes.DBSequence) []string {
 	return names
 }
 
-func databaseRoleNames(roles []dbschematypes.DBRole) []string {
+func databaseRoleNames(roles []catalog.Role) []string {
 	names := make([]string, 0, len(roles))
 	for _, role := range roles {
 		names = append(names, role.Name)

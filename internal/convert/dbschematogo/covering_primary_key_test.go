@@ -5,26 +5,26 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 )
 
 // coveringSchema is one table whose primary key covers the given columns and
 // carries the given INCLUDE payload.
-func coveringSchema(keyColumns, include []string) *types.DBSchema {
-	columns := make([]types.DBColumn, 0, len(keyColumns)+1)
+func coveringSchema(keyColumns, include []string) *catalog.Database {
+	columns := make([]catalog.Column, 0, len(keyColumns)+1)
 	for _, name := range keyColumns {
-		columns = append(columns, types.DBColumn{
+		columns = append(columns, catalog.Column{
 			Name: name, DataType: "integer", IsNullable: "NO", IsPrimaryKey: true,
 		})
 	}
-	columns = append(columns, types.DBColumn{Name: "payload", DataType: "text", IsNullable: "YES"})
-	return &types.DBSchema{
-		Tables: []types.DBTable{{
+	columns = append(columns, catalog.Column{Name: "payload", DataType: "text", IsNullable: "YES"})
+	return &catalog.Database{
+		Tables: []catalog.Table{{
 			Name: "covering", Type: "BASE TABLE", Columns: columns,
 		}},
-		Constraints: []types.DBConstraint{{
+		Constraints: []catalog.Constraint{{
 			TableName:      "covering",
 			Name:           "covering_pkey",
 			Type:           "PRIMARY KEY",
@@ -61,7 +61,7 @@ func primaryField(c *qt.C, database *goschema.Database, name string) goschema.Fi
 // TestConvert_KeepsTheIncludePayloadOfACoveringPrimaryKey pins that the payload
 // survives the description.
 //
-// It did not. The reader fills DBConstraint.IncludeColumns for every constraint
+// It did not. The reader fills Constraint.IncludeColumns for every constraint
 // kind, and the conversion then refuses to carry a primary key as a constraint
 // at all -- deliberately, because a primary key is carried as Table.PrimaryKey
 // so it renders once -- while the path that does carry primary keys read only

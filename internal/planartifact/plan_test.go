@@ -12,8 +12,8 @@ import (
 	"oras.land/oras-go/v2/content"
 	"oras.land/oras-go/v2/content/memory"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform/capability"
-	dbtypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/ociartifact"
 	"go.5x5.cz/ptah/internal/planartifact"
 	"go.5x5.cz/ptah/migration/safety"
@@ -28,7 +28,7 @@ func TestNewFS_UsesStateBoundCanonicalJSON(t *testing.T) {
 	}
 	report, err := planartifact.NewReport(
 		subject,
-		&dbtypes.DBSchema{},
+		&catalog.Database{},
 		"postgres",
 		capability.Capabilities{capability.CreateIndexConcurrently: true},
 		[]string{"tenant", "public", "tenant"},
@@ -66,7 +66,7 @@ func TestPublishTo_AttachesPlanToExactSubject(t *testing.T) {
 
 	report, err := planartifact.NewReport(
 		subject.Descriptor,
-		&dbtypes.DBSchema{},
+		&catalog.Database{},
 		"postgres",
 		capability.Capabilities{},
 		nil,
@@ -118,7 +118,7 @@ func TestPublishTo_RejectsDesiredDigestMismatch(t *testing.T) {
 			MediaType: ocispec.MediaTypeImageManifest,
 			Size:      123,
 		},
-		&dbtypes.DBSchema{},
+		&catalog.Database{},
 		"postgres",
 		capability.Capabilities{},
 		nil,

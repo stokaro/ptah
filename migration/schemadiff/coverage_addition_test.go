@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -60,7 +60,7 @@ func TestAGuardedNonExtensionCreationSurvivesAReadThatDidNotLook(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			database := &types.DBSchema{}
+			database := &catalog.Database{}
 			database.NotDescribed = coverage.Set{}.WithKind(
 				coverage.Extension, coverage.Policy, coverage.Sequence,
 			)
@@ -82,7 +82,7 @@ func TestUnknownCurrentExtensionIsWithheldRegardlessOfCreationGuard(t *testing.T
 				Schema:      "extensions",
 				IfNotExists: ifNotExists,
 			}}}
-			current := &types.DBSchema{}
+			current := &catalog.Database{}
 			current.NotDescribed = coverage.Set{}.WithKind(coverage.Extension)
 
 			diff, undecided := schemadiff.CompareReportingUndecidedAdditions(desired, current, nil)
@@ -110,7 +110,7 @@ func TestAPolicyAdditionSurvivesAReadThatDidNotLook(t *testing.T) {
 			{Name: "p", Table: "guarded", PolicyFor: "SELECT", UsingExpression: "true"},
 		},
 	}
-	database := &types.DBSchema{Tables: []types.DBTable{{Name: "guarded"}}}
+	database := &catalog.Database{Tables: []catalog.Table{{Name: "guarded"}}}
 	database.NotDescribed = coverage.Set{}.WithKind(coverage.Policy)
 
 	diff, undecided := schemadiff.CompareReportingUndecidedAdditions(desired, database, nil)
@@ -176,7 +176,7 @@ func TestAnUnguardedCreationIsWithheldAndNamed(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			database := &types.DBSchema{}
+			database := &catalog.Database{}
 			database.NotDescribed = test.notDescribed
 
 			diff, undecided := schemadiff.CompareReportingUndecidedAdditions(test.desired(), database, nil)
@@ -237,7 +237,7 @@ func TestAnUndeclaredReadPlansEveryAdditionAndWithholdsNothing(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff, undecided := schemadiff.CompareReportingUndecidedAdditions(test.desired(), &types.DBSchema{}, nil)
+			diff, undecided := schemadiff.CompareReportingUndecidedAdditions(test.desired(), &catalog.Database{}, nil)
 
 			c.Assert(test.read(diff), qt.DeepEquals, test.wantPlanned)
 			c.Assert(undecided, qt.HasLen, 0)
@@ -256,7 +256,7 @@ func TestWithheldAdditionsAreNotChanges(t *testing.T) {
 	c := qt.New(t)
 
 	desired := &goschema.Database{Sequences: []goschema.Sequence{{Name: "s1", Schema: "public"}}}
-	database := &types.DBSchema{}
+	database := &catalog.Database{}
 	database.NotDescribed = coverage.Set{}.WithKind(coverage.Sequence)
 
 	diff, undecided := schemadiff.CompareReportingUndecidedAdditions(desired, database, nil)
@@ -279,7 +279,7 @@ func TestWithheldAdditionsAreOrdered(t *testing.T) {
 			{Name: "a_seq", Schema: "public"},
 		},
 	}
-	database := &types.DBSchema{}
+	database := &catalog.Database{}
 	database.NotDescribed = coverage.Set{}.WithKind(coverage.Extension, coverage.Sequence)
 
 	_, undecided := schemadiff.CompareReportingUndecidedAdditions(desired, database, nil)
@@ -301,7 +301,7 @@ func TestAGuardIsNotAnExcuseToIgnoreARemovalRecord(t *testing.T) {
 
 	desired := &goschema.Database{}
 	desired.NotDescribed = coverage.Set{}.WithKind(coverage.Extension)
-	database := &types.DBSchema{Extensions: []types.DBExtension{{Name: "pgcrypto", Schema: "public"}}}
+	database := &catalog.Database{Extensions: []catalog.Extension{{Name: "pgcrypto", Schema: "public"}}}
 
 	diff, undecided := schemadiff.CompareReportingUndecidedAdditions(desired, database, nil)
 

@@ -7,12 +7,12 @@ import (
 	"sort"
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/chrefresh"
 	"go.5x5.cz/ptah/internal/mysqlroutine"
 	"go.5x5.cz/ptah/internal/objectidentity"
@@ -89,7 +89,7 @@ import (
 // # Output Consistency
 //
 // Results are sorted alphabetically for consistent output across multiple runs.
-func Functions(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
+func Functions(generated *goschema.Database, database *catalog.Database, diff *difftypes.SchemaDiff) {
 	FunctionsWithDialect(generated, database, diff, "")
 }
 
@@ -147,7 +147,7 @@ func isOracle(dialect string) bool {
 //
 // That was not symmetrical, which is what made it a defect rather than merely
 // a wide rule: the desired side folded `Sales.Foo` whole, while the database
-// side folded only [types.DBFunction.Name] and left `Schema` exact. The two
+// side folded only [catalog.Function.Name] and left `Schema` exact. The two
 // identities then disagreed on the schema component, so an unchanged function
 // was reported as BOTH added and removed and the plan tried to create a
 // function that was already there.
@@ -170,7 +170,7 @@ func qualifiedRoutineIdentityKey(name, dialect string) string {
 // [FunctionDefinitionsWithDialect] for what the dialect decides.
 func FunctionsWithDialect(
 	generated *goschema.Database,
-	database *types.DBSchema,
+	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	dialect string,
 ) {
@@ -187,8 +187,8 @@ func FunctionsWithDialect(
 	// generated side carries one and by bare name where it does not, so that a
 	// document describing `extra.f` is not compared against `public.f` and a
 	// round trip does not plan a redundant CREATE OR REPLACE (stokaro/ptah#1276).
-	databaseFunctionsByName := make(map[string][]types.DBFunction, len(database.Functions))
-	databaseFunctionsByQualifiedName := make(map[string]types.DBFunction, len(database.Functions))
+	databaseFunctionsByName := make(map[string][]catalog.Function, len(database.Functions))
+	databaseFunctionsByQualifiedName := make(map[string]catalog.Function, len(database.Functions))
 	for _, fn := range database.Functions {
 		// The kind is part of the key. One schema can hold a procedure and a
 		// function of the same name, and folding them together would compare a
@@ -251,7 +251,7 @@ func FunctionsWithDialect(
 // can resolve the exact source objects they received.
 func FunctionsWithSemantics(
 	generated *goschema.Database,
-	database *types.DBSchema,
+	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	dialect string,
 	semantics identifier.Semantics,
@@ -276,7 +276,7 @@ func FunctionsWithSemantics(
 		generatedFunctions[identity] = append(generatedFunctions[identity], function)
 		generatedNames[identity] = function.Name
 	}
-	databaseFunctions := make(map[objectIdentity][]types.DBFunction, len(database.Functions))
+	databaseFunctions := make(map[objectIdentity][]catalog.Function, len(database.Functions))
 	databaseNames := make(map[objectIdentity]string, len(database.Functions))
 	for _, function := range database.Functions {
 		identity := newObjectIdentity(routineIdentityKind(function.Kind),
@@ -479,12 +479,12 @@ func routineIdentityKind(kind string) objectidentity.Kind {
 // schema.
 func findDatabaseFunction(
 	kind, name string,
-	byName map[string][]types.DBFunction,
-	byQualifiedName map[string]types.DBFunction,
-) (types.DBFunction, bool) {
+	byName map[string][]catalog.Function,
+	byQualifiedName map[string]catalog.Function,
+) (catalog.Function, bool) {
 	ref, ok := tableref.Parse(name)
 	if !ok {
-		return types.DBFunction{}, false
+		return catalog.Function{}, false
 	}
 	// The kind joins the key after parsing, never before: a kind-prefixed name
 	// is not a name tableref can read (stokaro/ptah#1722).
@@ -494,7 +494,7 @@ func findDatabaseFunction(
 	}
 	candidates := byName[routineKeyWithKind(kind, ref.Name)]
 	if len(candidates) != 1 {
-		return types.DBFunction{}, false
+		return catalog.Function{}, false
 	}
 	return candidates[0], true
 }
@@ -508,7 +508,7 @@ func findDatabaseFunction(
 // them as one operation and a reader tell a retarget from a coincidence.
 func Synonyms(
 	generated *goschema.Database,
-	database *types.DBSchema,
+	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
 ) {
@@ -516,7 +516,7 @@ func Synonyms(
 	for _, synonym := range generated.Synonyms {
 		generatedSynonyms[synonym.QualifiedName()] = synonym
 	}
-	databaseSynonyms := make(map[string]types.DBSynonym, len(database.Synonyms))
+	databaseSynonyms := make(map[string]catalog.Synonym, len(database.Synonyms))
 	for _, synonym := range database.Synonyms {
 		databaseSynonyms[synonym.QualifiedName()] = synonym
 	}
@@ -569,7 +569,7 @@ func Synonyms(
 // written two ways. Comparing the raw strings would report a modification on
 // every run and make the plan churn forever, which is the false-convergence
 // failure this object was added to remove rather than to introduce.
-func sameSynonymTarget(declared string, stored types.DBSynonym) bool {
+func sameSynonymTarget(declared string, stored catalog.Synonym) bool {
 	return synonymTargetParts(declared) == synonymTargetParts(stored.Target)
 }
 
@@ -588,21 +588,21 @@ func synonymTargetParts(name string) string {
 }
 
 // Views compares view definitions between generated and database schemas.
-func Views(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
+func Views(generated *goschema.Database, database *catalog.Database, diff *difftypes.SchemaDiff) {
 	ViewsWithDialect(generated, database, diff, "")
 }
 
 // ViewsWithDialect compares view definitions with dialect-aware normalization
 // for catalog readback forms that are semantically equivalent to Ptah-rendered
 // view SQL.
-func ViewsWithDialect(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff, dialect string) {
+func ViewsWithDialect(generated *goschema.Database, database *catalog.Database, diff *difftypes.SchemaDiff, dialect string) {
 	generatedViews := make(map[string]goschema.View, len(generated.Views))
 	for _, view := range generated.Views {
 		generatedViews[view.Name] = view
 	}
 
-	databaseViewsByName := make(map[string][]types.DBView, len(database.Views))
-	databaseViewsByQualifiedName := make(map[string]types.DBView, len(database.Views))
+	databaseViewsByName := make(map[string][]catalog.View, len(database.Views))
+	databaseViewsByQualifiedName := make(map[string]catalog.View, len(database.Views))
 	for _, view := range database.Views {
 		databaseViewsByName[view.Name] = append(databaseViewsByName[view.Name], view)
 		databaseViewsByQualifiedName[view.QualifiedName()] = view
@@ -645,7 +645,7 @@ func ViewsWithDialect(generated *goschema.Database, database *types.DBSchema, di
 // default schema while retaining dialect-aware SQL-body normalization.
 func ViewsWithSemantics(
 	generated *goschema.Database,
-	database *types.DBSchema,
+	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	dialect string,
 	semantics identifier.Semantics,
@@ -663,7 +663,7 @@ func ViewsWithSemantics(
 		generatedViews[identity] = view
 		generatedNames[identity] = view.Name
 	}
-	databaseViews := make(map[objectIdentity]types.DBView, len(database.Views))
+	databaseViews := make(map[objectIdentity]catalog.View, len(database.Views))
 	databaseNames := make(map[objectIdentity]string, len(database.Views))
 	for _, view := range database.Views {
 		identity := newObjectIdentity(objectidentity.KindView, view.Schema, view.Name, semantics)
@@ -697,12 +697,12 @@ func ViewsWithSemantics(
 
 func findDatabaseViewForGeneratedView(
 	generatedView goschema.View,
-	databaseViewsByName map[string][]types.DBView,
-	databaseViewsByQualifiedName map[string]types.DBView,
-) (types.DBView, bool) {
+	databaseViewsByName map[string][]catalog.View,
+	databaseViewsByQualifiedName map[string]catalog.View,
+) (catalog.View, bool) {
 	ref, ok := tableref.Parse(generatedView.Name)
 	if !ok {
-		return types.DBView{}, false
+		return catalog.View{}, false
 	}
 	if ref.Qualified {
 		view, ok := databaseViewsByQualifiedName[tableref.Canonical(ref.Schema, ref.Name)]
@@ -710,12 +710,12 @@ func findDatabaseViewForGeneratedView(
 	}
 	candidates := databaseViewsByName[ref.Name]
 	if len(candidates) != 1 {
-		return types.DBView{}, false
+		return catalog.View{}, false
 	}
 	return candidates[0], true
 }
 
-func viewNameForDiff(view types.DBView) string {
+func viewNameForDiff(view catalog.View) string {
 	if view.Schema == "" {
 		return view.Name
 	}
@@ -724,7 +724,7 @@ func viewNameForDiff(view types.DBView) string {
 
 // MaterializedViews compares materialized view definitions between generated
 // and database schemas.
-func MaterializedViews(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
+func MaterializedViews(generated *goschema.Database, database *catalog.Database, diff *difftypes.SchemaDiff) {
 	MaterializedViewsWithDialect(generated, database, diff, "")
 }
 
@@ -749,7 +749,7 @@ func MaterializedViews(generated *goschema.Database, database *types.DBSchema, d
 // database view since #1276, reported nothing at all.
 func MaterializedViewsWithDialect(
 	generated *goschema.Database,
-	database *types.DBSchema,
+	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	dialect string,
 ) {
@@ -758,8 +758,8 @@ func MaterializedViewsWithDialect(
 		generatedViews[view.Name] = view
 	}
 
-	databaseViewsByName := make(map[string][]types.DBMatView, len(database.MatViews))
-	databaseViewsByQualifiedName := make(map[string]types.DBMatView, len(database.MatViews))
+	databaseViewsByName := make(map[string][]catalog.MaterializedView, len(database.MatViews))
+	databaseViewsByQualifiedName := make(map[string]catalog.MaterializedView, len(database.MatViews))
 	for _, view := range database.MatViews {
 		databaseViewsByName[view.Name] = append(databaseViewsByName[view.Name], view)
 		databaseViewsByQualifiedName[view.QualifiedName()] = view
@@ -805,12 +805,12 @@ func MaterializedViewsWithDialect(
 // name leave the declaration unmatched rather than guessing between them.
 func findDatabaseMatViewForGeneratedView(
 	generatedView goschema.MaterializedView,
-	databaseViewsByName map[string][]types.DBMatView,
-	databaseViewsByQualifiedName map[string]types.DBMatView,
-) (types.DBMatView, bool) {
+	databaseViewsByName map[string][]catalog.MaterializedView,
+	databaseViewsByQualifiedName map[string]catalog.MaterializedView,
+) (catalog.MaterializedView, bool) {
 	ref, ok := tableref.Parse(generatedView.Name)
 	if !ok {
-		return types.DBMatView{}, false
+		return catalog.MaterializedView{}, false
 	}
 	if ref.Qualified {
 		view, ok := databaseViewsByQualifiedName[tableref.Canonical(ref.Schema, ref.Name)]
@@ -818,7 +818,7 @@ func findDatabaseMatViewForGeneratedView(
 	}
 	candidates := databaseViewsByName[ref.Name]
 	if len(candidates) != 1 {
-		return types.DBMatView{}, false
+		return catalog.MaterializedView{}, false
 	}
 	return candidates[0], true
 }
@@ -827,7 +827,7 @@ func findDatabaseMatViewForGeneratedView(
 // the same default-schema semantics as tables and ordinary views.
 func MaterializedViewsWithSemantics(
 	generated *goschema.Database,
-	database *types.DBSchema,
+	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	dialect string,
 	semantics identifier.Semantics,
@@ -851,7 +851,7 @@ func MaterializedViewsWithSemantics(
 		generatedViews[identity] = view
 		generatedNames[identity] = view.Name
 	}
-	databaseViews := make(map[objectIdentity]types.DBMatView, len(database.MatViews))
+	databaseViews := make(map[objectIdentity]catalog.MaterializedView, len(database.MatViews))
 	databaseNames := make(map[objectIdentity]string, len(database.MatViews))
 	for _, view := range database.MatViews {
 		identity := newObjectIdentity(objectidentity.KindMatView, view.Schema, view.Name, semantics)
@@ -932,7 +932,7 @@ func MaterializedViewsWithSemantics(
 // Function changes typically require:
 //  1. DROP FUNCTION (with CASCADE if dependencies exist)
 //  2. CREATE OR REPLACE FUNCTION with new definition
-func FunctionDefinitions(genFunction goschema.Function, dbFunction types.DBFunction) difftypes.FunctionDiff {
+func FunctionDefinitions(genFunction goschema.Function, dbFunction catalog.Function) difftypes.FunctionDiff {
 	return FunctionDefinitionsWithDialect(genFunction, dbFunction, "")
 }
 
@@ -955,7 +955,7 @@ func FunctionDefinitions(genFunction goschema.Function, dbFunction types.DBFunct
 // the desired side speaking a third spelling.
 func FunctionDefinitionsWithDialect(
 	genFunction goschema.Function,
-	dbFunction types.DBFunction,
+	dbFunction catalog.Function,
 	dialect string,
 ) difftypes.FunctionDiff {
 	functionDiff := difftypes.FunctionDiff{
@@ -1052,13 +1052,13 @@ func FunctionDefinitionsWithDialect(
 }
 
 // ViewDefinitions performs detailed comparison between generated and database view definitions.
-func ViewDefinitions(genView goschema.View, dbView types.DBView) difftypes.ViewDiff {
+func ViewDefinitions(genView goschema.View, dbView catalog.View) difftypes.ViewDiff {
 	return ViewDefinitionsWithDialect(genView, dbView, "")
 }
 
 // ViewDefinitionsWithDialect performs detailed comparison between generated and
 // database view definitions with dialect-aware catalog readback normalization.
-func ViewDefinitionsWithDialect(genView goschema.View, dbView types.DBView, dialect string) difftypes.ViewDiff {
+func ViewDefinitionsWithDialect(genView goschema.View, dbView catalog.View, dialect string) difftypes.ViewDiff {
 	viewDiff := difftypes.ViewDiff{
 		ViewName: genView.Name,
 		Changes:  make(map[string]string),
@@ -1128,7 +1128,7 @@ func renderViewAttributes(attributes []string) string {
 
 // MaterializedViewDefinitions performs detailed comparison between generated
 // and database materialized view definitions.
-func MaterializedViewDefinitions(genView goschema.MaterializedView, dbView types.DBMatView) difftypes.MaterializedViewDiff {
+func MaterializedViewDefinitions(genView goschema.MaterializedView, dbView catalog.MaterializedView) difftypes.MaterializedViewDiff {
 	return MaterializedViewDefinitionsWithDialect(genView, dbView, "")
 }
 
@@ -1154,7 +1154,7 @@ func MaterializedViewDefinitions(genView goschema.MaterializedView, dbView types
 // reader defaults the field to manual.
 func MaterializedViewDefinitionsWithDialect(
 	genView goschema.MaterializedView,
-	dbView types.DBMatView,
+	dbView catalog.MaterializedView,
 	dialect string,
 ) difftypes.MaterializedViewDiff {
 	viewDiff := difftypes.MaterializedViewDiff{
@@ -1192,7 +1192,7 @@ func MaterializedViewDefinitionsWithDialect(
 // a schedule that is never going to be sent.
 func refreshChange(
 	genView goschema.MaterializedView,
-	dbView types.DBMatView,
+	dbView catalog.MaterializedView,
 ) (desired, current *ast.MatViewRefreshSpec, changed bool) {
 	desired, err := chrefresh.Canonical(genView.Refresh, dbView.Schema)
 	if err != nil {

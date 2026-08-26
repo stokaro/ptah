@@ -7,9 +7,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/platform"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 	"go.5x5.cz/ptah/internal/rolescope"
 )
@@ -110,12 +110,12 @@ func TestDescribeAllEnvVarIsSpelledLikeTheDocumentationQuotesIt(t *testing.T) {
 func TestReportUndescribedNamesTheCountAndTheWayBack(t *testing.T) {
 	tests := []struct {
 		name    string
-		omitted []dbschematypes.DBRole
+		omitted []catalog.Role
 		want    string
 	}{
 		{
 			name:    "one role is singular",
-			omitted: []dbschematypes.DBRole{{Name: "other_tenant"}},
+			omitted: []catalog.Role{{Name: "other_tenant"}},
 			want: "note: 1 role Ptah manages on this server is not described, because nothing in the" +
 				" inspected schemas refers to them; comparison still treats them as present, so none of" +
 				" them is planned as a CREATE ROLE. Set PTAH_POSTGRES_INSPECT_ALL_ROLES=1 to describe" +
@@ -123,7 +123,7 @@ func TestReportUndescribedNamesTheCountAndTheWayBack(t *testing.T) {
 		},
 		{
 			name: "three roles are plural",
-			omitted: []dbschematypes.DBRole{
+			omitted: []catalog.Role{
 				{Name: "other_tenant"}, {Name: "pgbouncer"}, {Name: "reporting"},
 			},
 			want: "note: 3 roles Ptah manages on this server are not described, because nothing in the" +
@@ -138,7 +138,7 @@ func TestReportUndescribedNamesTheCountAndTheWayBack(t *testing.T) {
 			c := qt.New(t)
 			var out bytes.Buffer
 
-			rolescope.ReportUndescribed(&out, platform.Postgres, &dbschematypes.DBSchema{RolesOutOfScope: test.omitted})
+			rolescope.ReportUndescribed(&out, platform.Postgres, &catalog.Database{RolesOutOfScope: test.omitted})
 
 			c.Assert(out.String(), qt.Equals, test.want)
 		})
@@ -148,7 +148,7 @@ func TestReportUndescribedNamesTheCountAndTheWayBack(t *testing.T) {
 // TestReportUndescribedNeverPrintsARoleName is the other half of the note's
 // contract, and it is a security property rather than a style one.
 //
-// [dbschematypes.DBSchema.RolesOutOfScope] is `json:"-"` precisely so that role
+// [catalog.Database.RolesOutOfScope] is `json:"-"` precisely so that role
 // names from outside the inspected scope never reach output; on a shared
 // instance they are other tenants' names. A note that printed them would leak
 // through the diagnostics stream exactly what scoping the description exists
@@ -157,8 +157,8 @@ func TestReportUndescribedNeverPrintsARoleName(t *testing.T) {
 	c := qt.New(t)
 	var out bytes.Buffer
 
-	rolescope.ReportUndescribed(&out, platform.Postgres, &dbschematypes.DBSchema{
-		RolesOutOfScope: []dbschematypes.DBRole{
+	rolescope.ReportUndescribed(&out, platform.Postgres, &catalog.Database{
+		RolesOutOfScope: []catalog.Role{
 			{Name: "acme_tenant_billing"},
 			{Name: "zeta_tenant_reporting"},
 		},
@@ -184,15 +184,15 @@ func TestReportUndescribedStaysSilentWhenNothingWasLeftOut(t *testing.T) {
 		{
 			name: "no roles were left out",
 			report: func(out *bytes.Buffer) {
-				rolescope.ReportUndescribed(out, platform.Postgres, &dbschematypes.DBSchema{
-					Roles: []dbschematypes.DBRole{{Name: "app_user"}},
+				rolescope.ReportUndescribed(out, platform.Postgres, &catalog.Database{
+					Roles: []catalog.Role{{Name: "app_user"}},
 				})
 			},
 		},
 		{
 			name: "a dialect that reports no roles at all",
 			report: func(out *bytes.Buffer) {
-				rolescope.ReportUndescribed(out, platform.Postgres, &dbschematypes.DBSchema{})
+				rolescope.ReportUndescribed(out, platform.Postgres, &catalog.Database{})
 			},
 		},
 		{
@@ -204,8 +204,8 @@ func TestReportUndescribedStaysSilentWhenNothingWasLeftOut(t *testing.T) {
 		{
 			name: "a nil writer takes the roles with it",
 			report: func(_ *bytes.Buffer) {
-				rolescope.ReportUndescribed(nil, platform.Postgres, &dbschematypes.DBSchema{
-					RolesOutOfScope: []dbschematypes.DBRole{{Name: "other_tenant"}},
+				rolescope.ReportUndescribed(nil, platform.Postgres, &catalog.Database{
+					RolesOutOfScope: []catalog.Role{{Name: "other_tenant"}},
 				})
 			},
 		},
@@ -250,8 +250,8 @@ func TestReportUndescribedOffersTheOptOutOnlyWhereItWorks(t *testing.T) {
 			c := qt.New(t)
 
 			var out bytes.Buffer
-			rolescope.ReportUndescribed(&out, test.dialect, &dbschematypes.DBSchema{
-				RolesOutOfScope: []dbschematypes.DBRole{{Name: "elsewhere"}},
+			rolescope.ReportUndescribed(&out, test.dialect, &catalog.Database{
+				RolesOutOfScope: []catalog.Role{{Name: "elsewhere"}},
 			})
 
 			// The count is reported on every dialect: it is the disclosure the
@@ -272,12 +272,12 @@ func TestReportUndescribedOffersTheOptOutOnlyWhereItWorks(t *testing.T) {
 func TestReportUndescribedSeparatesAReadThatCouldNotLook(t *testing.T) {
 	tests := []struct {
 		name        string
-		schema      *dbschematypes.DBSchema
+		schema      *catalog.Database
 		wantMatches string
 	}{
 		{
 			name: "a read the account was not allowed to perform",
-			schema: &dbschematypes.DBSchema{
+			schema: &catalog.Database{
 				NotDescribed: coverage.Set{}.WithKind(coverage.Role),
 			},
 			wantMatches: `note: roles were not described, because this connection may not read.*` +
@@ -288,9 +288,9 @@ func TestReportUndescribedSeparatesAReadThatCouldNotLook(t *testing.T) {
 			// look has nothing to have scoped, and reporting a count for it
 			// would describe a decision nobody made.
 			name: "a read that could not look, with roles somehow also out of scope",
-			schema: &dbschematypes.DBSchema{
+			schema: &catalog.Database{
 				NotDescribed:    coverage.Set{}.WithKind(coverage.Role),
-				RolesOutOfScope: []dbschematypes.DBRole{{Name: "other_tenant"}},
+				RolesOutOfScope: []catalog.Role{{Name: "other_tenant"}},
 			},
 			wantMatches: `note: roles were not described, because this connection may not read.*\n`,
 		},
@@ -298,9 +298,9 @@ func TestReportUndescribedSeparatesAReadThatCouldNotLook(t *testing.T) {
 			// The control: a coverage record about some OTHER kind says
 			// nothing about roles, and must not trigger the note.
 			name: "a description that declined a different kind entirely",
-			schema: &dbschematypes.DBSchema{
+			schema: &catalog.Database{
 				NotDescribed:    coverage.Set{}.WithKind(coverage.Extension),
-				RolesOutOfScope: []dbschematypes.DBRole{{Name: "other_tenant"}},
+				RolesOutOfScope: []catalog.Role{{Name: "other_tenant"}},
 			},
 			wantMatches: `note: 1 role Ptah manages on this server is not described.*\n`,
 		},
@@ -324,8 +324,8 @@ func TestReportUndescribedNamesNoCatalogItCouldNotRead(t *testing.T) {
 	c := qt.New(t)
 	var out bytes.Buffer
 
-	rolescope.ReportUndescribed(&out, platform.ClickHouse, &dbschematypes.DBSchema{
-		Roles: []dbschematypes.DBRole{{Name: "reader"}},
+	rolescope.ReportUndescribed(&out, platform.ClickHouse, &catalog.Database{
+		Roles: []catalog.Role{{Name: "reader"}},
 	})
 
 	c.Assert(out.String(), qt.Equals, "")

@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/internal/dbschema/sqlite"
 )
 
@@ -40,7 +40,7 @@ func TestReadSchemaRecordsVirtualTablesItCouldNotClassify(t *testing.T) {
 	tests := []struct {
 		name  string
 		setup func(*testing.T, *sql.DB)
-		want  []types.DBVirtualTable
+		want  []catalog.VirtualTable
 	}{
 		{
 			// The control, and the reason this is not a rule about fts4: fts5
@@ -57,7 +57,7 @@ func TestReadSchemaRecordsVirtualTablesItCouldNotClassify(t *testing.T) {
 			setup: func(t *testing.T, db *sql.DB) {
 				forgeCatalogRow(t, db, "docs", `CREATE VIRTUAL TABLE docs USING fts4(title, body)`)
 			},
-			want: []types.DBVirtualTable{{Name: "docs", Module: "fts4"}},
+			want: []catalog.VirtualTable{{Name: "docs", Module: "fts4"}},
 		},
 		{
 			// The class, stated as a test. Nothing here knows what fts3 or fts4
@@ -68,7 +68,7 @@ func TestReadSchemaRecordsVirtualTablesItCouldNotClassify(t *testing.T) {
 			setup: func(t *testing.T, db *sql.DB) {
 				forgeCatalogRow(t, db, "spatial", `CREATE VIRTUAL TABLE spatial USING acme_index(a, b)`)
 			},
-			want: []types.DBVirtualTable{{Name: "spatial", Module: "acme_index"}},
+			want: []catalog.VirtualTable{{Name: "spatial", Module: "acme_index"}},
 		},
 		{
 			// SQLite resolves a module name case-insensitively over ASCII:
@@ -90,7 +90,7 @@ func TestReadSchemaRecordsVirtualTablesItCouldNotClassify(t *testing.T) {
 				forgeCatalogRow(t, db, "zeta", `CREATE VIRTUAL TABLE zeta USING fts3(a)`)
 				forgeCatalogRow(t, db, "alpha", `CREATE VIRTUAL TABLE alpha USING fts4(b)`)
 			},
-			want: []types.DBVirtualTable{
+			want: []catalog.VirtualTable{
 				{Name: "alpha", Module: "fts4"},
 				{Name: "zeta", Module: "fts3"},
 			},

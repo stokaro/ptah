@@ -10,18 +10,18 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/internal/atlassource"
 )
 
 // patternScopeFixture is two tables in two schemas, the second one named so a
 // realm-relative pattern has somewhere to reach that the connection's schema
 // does not cover.
-func patternScopeFixture() *dbschematypes.DBSchema {
-	return &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
-			{Name: "users", Columns: []dbschematypes.DBColumn{{Name: "id"}, {Name: "name"}}},
-			{Schema: "app", Name: "orders", Columns: []dbschematypes.DBColumn{{Name: "id"}}},
+func patternScopeFixture() *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{
+			{Name: "users", Columns: []catalog.Column{{Name: "id"}, {Name: "name"}}},
+			{Schema: "app", Name: "orders", Columns: []catalog.Column{{Name: "id"}}},
 		},
 	}
 }
@@ -62,7 +62,7 @@ func TestScopeInspectSchema_TakesThePatternScopeFromTheURL(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			info := dbschematypes.DBInfo{Dialect: "postgres", Schema: "public", URL: test.url}
+			info := catalog.ServerInfo{Dialect: "postgres", Schema: "public", URL: test.url}
 
 			got, _, err := scopeInspectSchema(
 				patternScopeFixture(), info, InspectOptions{Exclude: []string{"public.users.name"}})
@@ -141,7 +141,7 @@ func patternScopeError(err error) string {
 
 // patternScopeColumns names what the users table kept, or nil when the run was
 // refused and produced no schema.
-func patternScopeColumns(schema *dbschematypes.DBSchema) []string {
+func patternScopeColumns(schema *catalog.Database) []string {
 	if schema == nil {
 		return nil
 	}

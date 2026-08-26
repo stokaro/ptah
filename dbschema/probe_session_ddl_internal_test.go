@@ -15,7 +15,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 )
 
@@ -75,7 +75,7 @@ func TestWithRolledBackTransaction_AsksOnlyTheServerThatWouldCommitTheDDL(t *tes
 					return driver.RowsAffected(0), nil
 				},
 			)
-			conn := &DatabaseConnection{db: db.SQL, info: types.DBInfo{Version: test.version}}
+			conn := &DatabaseConnection{db: db.SQL, info: catalog.ServerInfo{Version: test.version}}
 
 			ran, err := conn.WithRolledBackTransaction(context.Background(), "probe", func(ctx context.Context, tx *sql.Tx) error {
 				_, execErr := tx.ExecContext(ctx, "CREATE TEMPORARY TABLE probe (id int)")
@@ -110,7 +110,7 @@ func TestWithRolledBackTransaction_AsksBeforeTheBodyRuns(t *testing.T) {
 	)
 	conn := &DatabaseConnection{
 		db:   db.SQL,
-		info: types.DBInfo{Version: "CockroachDB CCL v25.4.0"},
+		info: catalog.ServerInfo{Version: "CockroachDB CCL v25.4.0"},
 	}
 
 	_, err := conn.WithRolledBackTransaction(context.Background(), "probe", func(ctx context.Context, tx *sql.Tx) error {

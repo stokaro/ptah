@@ -1,11 +1,11 @@
-package types_test
+package catalog_test
 
 import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 )
 
 // TestRawType_CarriesEveryWidthTheCatalogKeepsApart names the families whose
@@ -25,40 +25,40 @@ func TestRawType_CarriesEveryWidthTheCatalogKeepsApart(t *testing.T) {
 	width := 8
 	tests := []struct {
 		name     string
-		column   types.DBColumn
+		column   catalog.Column
 		wantType string
 	}{
 		{
 			name:     "varchar, as information_schema spells it",
-			column:   types.DBColumn{DataType: "character varying", CharacterMaxLength: &width},
+			column:   catalog.Column{DataType: "character varying", CharacterMaxLength: &width},
 			wantType: "character varying(8)",
 		},
 		{
 			name:     "char, as information_schema spells it",
-			column:   types.DBColumn{DataType: "character", CharacterMaxLength: &width},
+			column:   catalog.Column{DataType: "character", CharacterMaxLength: &width},
 			wantType: "character(8)",
 		},
 		{
 			name:     "bit",
-			column:   types.DBColumn{DataType: "bit", CharacterMaxLength: &width},
+			column:   catalog.Column{DataType: "bit", CharacterMaxLength: &width},
 			wantType: "bit(8)",
 		},
 		{
 			name:     "bit varying",
-			column:   types.DBColumn{DataType: "bit varying", CharacterMaxLength: &width},
+			column:   catalog.Column{DataType: "bit varying", CharacterMaxLength: &width},
 			wantType: "bit varying(8)",
 		},
 		{
 			// The control on the whole rule: a type with no width in that
 			// column must not grow one.
 			name:     "a type that keeps no width there",
-			column:   types.DBColumn{DataType: "integer"},
+			column:   catalog.Column{DataType: "integer"},
 			wantType: "integer",
 		},
 		{
 			// The other control: a width already in the name is not doubled.
 			name:     "a name that already carries its width",
-			column:   types.DBColumn{DataType: "bit", FormattedType: "bit(4)", CharacterMaxLength: &width},
+			column:   catalog.Column{DataType: "bit", FormattedType: "bit(4)", CharacterMaxLength: &width},
 			wantType: "bit(4)",
 		},
 	}

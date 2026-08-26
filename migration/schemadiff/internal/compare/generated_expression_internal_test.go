@@ -10,10 +10,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema/types"
 )
 
 // oracleStoredExpression is what a live 23.26.2.0.0 stores for
@@ -31,8 +31,8 @@ func generatedColumn(expression string) goschema.Field {
 	}
 }
 
-func storedGeneratedColumn(expression, kind string) types.DBColumn {
-	return types.DBColumn{
+func storedGeneratedColumn(expression, kind string) catalog.Column {
+	return catalog.Column{
 		Name:                "doubled",
 		GeneratedExpression: &expression,
 		GeneratedKind:       kind,

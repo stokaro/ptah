@@ -5,24 +5,24 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
 // clearedRangeSchemas builds one declared range and one catalog range for a
 // comparison.
-func clearedRangeSchemas(declared goschema.Range, current types.DBRange) (*goschema.Database, *types.DBSchema) {
+func clearedRangeSchemas(declared goschema.Range, current catalog.Range) (*goschema.Database, *catalog.Database) {
 	declared.Name = "measurement"
 	current.Name = "measurement"
 	current.Subtype = "int8"
 	declared.Subtype = "int8"
 	return &goschema.Database{Ranges: []goschema.Range{declared}},
-		&types.DBSchema{Ranges: []types.DBRange{current}}
+		&catalog.Database{Ranges: []catalog.Range{current}}
 }
 
 // rangeIsModified reports whether the comparison plans to change the range.
-func rangeIsModified(c *qt.C, declared goschema.Range, current types.DBRange) bool {
+func rangeIsModified(c *qt.C, declared goschema.Range, current catalog.Range) bool {
 	c.Helper()
 
 	target, currentSchema := clearedRangeSchemas(declared, current)
@@ -42,7 +42,7 @@ func TestCompare_AnOmittedRangeAttributeIsNotARemoval(t *testing.T) {
 
 	modified := rangeIsModified(c,
 		goschema.Range{},
-		types.DBRange{SubtypeDiff: "int8_subdiff", Canonical: "int8_canonical"})
+		catalog.Range{SubtypeDiff: "int8_subdiff", Canonical: "int8_canonical"})
 
 	c.Assert(modified, qt.IsFalse)
 }
@@ -55,21 +55,21 @@ func TestCompare_AClearedRangeAttributeIsARemoval(t *testing.T) {
 	tests := []struct {
 		name      string
 		cleared   []string
-		current   types.DBRange
+		current   catalog.Range
 		wantPlan  bool
 		wantEntry string
 	}{
 		{
 			name:      "a cleared subtype_diff removes the one the catalog holds",
 			cleared:   []string{"subtype_diff"},
-			current:   types.DBRange{SubtypeDiff: "int8_subdiff"},
+			current:   catalog.Range{SubtypeDiff: "int8_subdiff"},
 			wantPlan:  true,
 			wantEntry: "subtype_diff",
 		},
 		{
 			name:     "a cleared canonical removes the one the catalog holds",
 			cleared:  []string{"canonical"},
-			current:  types.DBRange{Canonical: "int8_canonical"},
+			current:  catalog.Range{Canonical: "int8_canonical"},
 			wantPlan: true,
 		},
 		{
@@ -77,7 +77,7 @@ func TestCompare_AClearedRangeAttributeIsARemoval(t *testing.T) {
 			// attribute the catalog also has none of is agreement, not a change.
 			name:     "a cleared attribute the catalog does not hold is no change",
 			cleared:  []string{"subtype_diff"},
-			current:  types.DBRange{},
+			current:  catalog.Range{},
 			wantPlan: false,
 		},
 		{
@@ -85,7 +85,7 @@ func TestCompare_AClearedRangeAttributeIsARemoval(t *testing.T) {
 			// others, so a catalog value beside it is still not planned away.
 			name:     "clearing one attribute leaves its neighbor alone",
 			cleared:  []string{"canonical"},
-			current:  types.DBRange{SubtypeDiff: "int8_subdiff"},
+			current:  catalog.Range{SubtypeDiff: "int8_subdiff"},
 			wantPlan: false,
 		},
 	}

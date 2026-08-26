@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -29,13 +29,13 @@ import (
 func TestCompareDoesNotPlanColumnChangesForASQLiteVirtualTable(t *testing.T) {
 	tests := []struct {
 		name            string
-		dbTable         types.DBTable
+		dbTable         catalog.Table
 		wantModified    bool
 		wantColumnAdded []string
 	}{
 		{
 			name: "a virtual table is not compared column by column",
-			dbTable: types.DBTable{
+			dbTable: catalog.Table{
 				Name:             "docs",
 				Type:             "TABLE",
 				VirtualModule:    "fts5",
@@ -45,7 +45,7 @@ func TestCompareDoesNotPlanColumnChangesForASQLiteVirtualTable(t *testing.T) {
 		},
 		{
 			name: "an ordinary table missing the same columns still is",
-			dbTable: types.DBTable{
+			dbTable: catalog.Table{
 				Name: "docs",
 				Type: "TABLE",
 			},
@@ -65,7 +65,7 @@ func TestCompareDoesNotPlanColumnChangesForASQLiteVirtualTable(t *testing.T) {
 					{StructName: "Doc", Name: "body", Type: "TEXT"},
 				},
 			}
-			database := &types.DBSchema{Tables: []types.DBTable{tt.dbTable}}
+			database := &catalog.Database{Tables: []catalog.Table{tt.dbTable}}
 
 			diff := schemadiff.CompareWithDialect(generated, database, "sqlite")
 

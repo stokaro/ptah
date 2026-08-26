@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
-	dbtypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -29,8 +29,8 @@ func oracleDeclaredFunction(parameters string) goschema.Function {
 // oracleLiveFunction is what the reader builds from ALL_PROCEDURES,
 // ALL_ARGUMENTS and ALL_SOURCE for that routine: names and types folded to
 // lower case, and the mode spelled as the catalog reports it.
-func oracleLiveFunction() dbtypes.DBFunction {
-	return dbtypes.DBFunction{
+func oracleLiveFunction() catalog.Function {
+	return catalog.Function{
 		Name:       "FN_DOUBLE",
 		Parameters: "p in number",
 		Returns:    "number",
@@ -122,7 +122,7 @@ func TestFunctionDefinitions_OracleKeepsOUTAndINOUT(t *testing.T) {
 func TestFunctions_OracleMatchesADeclarationToTheUpperCaseNameItCreated(t *testing.T) {
 	c := qt.New(t)
 	generated := &goschema.Database{Functions: []goschema.Function{oracleDeclaredFunction("p IN NUMBER")}}
-	database := &dbtypes.DBSchema{Functions: []dbtypes.DBFunction{oracleLiveFunction()}}
+	database := &catalog.Database{Functions: []catalog.Function{oracleLiveFunction()}}
 
 	diff := &difftypes.SchemaDiff{}
 	compare.FunctionsWithDialect(generated, database, diff, platform.Oracle)
@@ -139,7 +139,7 @@ func TestFunctions_OracleStillReportsAFunctionThatIsNotThere(t *testing.T) {
 	declared := oracleDeclaredFunction("p IN NUMBER")
 	declared.Name = "fn_triple"
 	generated := &goschema.Database{Functions: []goschema.Function{declared}}
-	database := &dbtypes.DBSchema{Functions: []dbtypes.DBFunction{oracleLiveFunction()}}
+	database := &catalog.Database{Functions: []catalog.Function{oracleLiveFunction()}}
 
 	diff := &difftypes.SchemaDiff{}
 	compare.FunctionsWithDialect(generated, database, diff, platform.Oracle)

@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"sort"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/normalize"
 	"go.5x5.cz/ptah/internal/rlspolicy"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
@@ -75,7 +75,7 @@ import (
 // across multiple runs.
 func RLSPolicies(
 	generated *goschema.Database,
-	database *types.DBSchema,
+	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
 ) {
@@ -104,7 +104,7 @@ func RLSPolicies(
 // those names.
 func RLSPoliciesWithSemantics(
 	generated *goschema.Database,
-	database *types.DBSchema,
+	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	semantics identifier.Semantics,
 	cov Coverage,
@@ -117,7 +117,7 @@ func RLSPoliciesWithSemantics(
 		generatedPolicyMap[newTableMemberKey(rlsPolicy.Table, rlsPolicy.Name, semantics)] = rlsPolicy
 	}
 
-	databasePolicyMap := make(map[tableMemberKey]types.DBRLSPolicy, len(database.RLSPolicies))
+	databasePolicyMap := make(map[tableMemberKey]catalog.RLSPolicy, len(database.RLSPolicies))
 	for _, rlsPolicy := range database.RLSPolicies {
 		databasePolicyMap[newTableMemberKey(rlsPolicy.Table, rlsPolicy.Name, semantics)] = rlsPolicy
 	}
@@ -297,7 +297,7 @@ func declaredPolicyClauses(
 // # Output Consistency
 //
 // Results are sorted alphabetically for consistent output across multiple runs.
-func RLSEnabledTables(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
+func RLSEnabledTables(generated *goschema.Database, database *catalog.Database, diff *difftypes.SchemaDiff) {
 	RLSEnabledTablesWithSemantics(generated, database, diff, identifier.ForDialect(""))
 }
 
@@ -305,7 +305,7 @@ func RLSEnabledTables(generated *goschema.Database, database *types.DBSchema, di
 // rules the target has.
 //
 // The two sides spell the table differently and could not match until they were
-// normalized: the database side comes from [types.DBTable.QualifiedName], which
+// normalized: the database side comes from [catalog.Table.QualifiedName], which
 // carries the schema the reader found, while a declaration carries whatever the
 // author wrote. `secured` and `public.secured` were two tables, so an unchanged
 // schema planned `ENABLE ROW LEVEL SECURITY` on a table that already had it and
@@ -318,7 +318,7 @@ func RLSEnabledTables(generated *goschema.Database, database *types.DBSchema, di
 // the planner renders. Only the matching is normalized.
 func RLSEnabledTablesWithSemantics(
 	generated *goschema.Database,
-	database *types.DBSchema,
+	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	semantics identifier.Semantics,
 ) {
@@ -427,7 +427,7 @@ func RLSEnabledTablesWithSemantics(
 // Policy changes typically require:
 //  1. DROP POLICY policy_name ON table_name
 //  2. CREATE POLICY policy_name ON table_name with new definition
-func RLSPolicyDefinitions(genPolicy goschema.RLSPolicy, dbPolicy types.DBRLSPolicy) difftypes.RLSPolicyDiff {
+func RLSPolicyDefinitions(genPolicy goschema.RLSPolicy, dbPolicy catalog.RLSPolicy) difftypes.RLSPolicyDiff {
 	return RLSPolicyDefinitionsWithExpressions(genPolicy, dbPolicy, config.PolicyExpression{})
 }
 
@@ -436,7 +436,7 @@ func RLSPolicyDefinitions(genPolicy goschema.RLSPolicy, dbPolicy types.DBRLSPoli
 // comparison in charge, which is every offline path.
 func RLSPolicyDefinitionsWithExpressions(
 	genPolicy goschema.RLSPolicy,
-	dbPolicy types.DBRLSPolicy,
+	dbPolicy catalog.RLSPolicy,
 	resolved config.PolicyExpression,
 ) difftypes.RLSPolicyDiff {
 	policyDiff := difftypes.RLSPolicyDiff{

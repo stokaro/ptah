@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/internal/sqlrunner"
 )
@@ -104,7 +104,7 @@ func (w *Writer) ExecContext(ctx context.Context, sqlExpr string, args ...any) (
 }
 
 // BeginTransaction starts a transaction and returns a transaction-scoped writer.
-func (w *Writer) BeginTransaction(ctx context.Context) (types.SchemaTransaction, error) {
+func (w *Writer) BeginTransaction(ctx context.Context) (catalog.SchemaTransaction, error) {
 	if w.dryRun {
 		slog.Info("[DRY RUN] Would begin transaction")
 		return &transactionWriter{schema: w.schema, dryRun: true}, nil

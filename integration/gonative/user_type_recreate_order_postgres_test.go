@@ -23,8 +23,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -310,7 +310,7 @@ func prepareUserTypeRecreatePlan(
 	return plan
 }
 
-func findLiveDomain(c *qt.C, domains []dbschematypes.DBDomain, name string) dbschematypes.DBDomain {
+func findLiveDomain(c *qt.C, domains []catalog.Domain, name string) catalog.Domain {
 	c.Helper()
 
 	for _, candidate := range domains {
@@ -319,10 +319,10 @@ func findLiveDomain(c *qt.C, domains []dbschematypes.DBDomain, name string) dbsc
 		}
 	}
 	c.Fatalf("the read schema has no domain %q", name)
-	return dbschematypes.DBDomain{}
+	return catalog.Domain{}
 }
 
-func liveCompositeFieldTypes(c *qt.C, composites []dbschematypes.DBComposite, name string) []string {
+func liveCompositeFieldTypes(c *qt.C, composites []catalog.CompositeType, name string) []string {
 	c.Helper()
 
 	for _, candidate := range composites {

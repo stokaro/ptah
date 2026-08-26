@@ -11,7 +11,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 )
 
 func TestApplySynonymTargetParts(t *testing.T) {
@@ -48,7 +48,7 @@ func TestApplySynonymTargetParts(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
-			synonym := types.DBSynonym{Target: tc.target}
+			synonym := catalog.Synonym{Target: tc.target}
 
 			applySynonymTargetParts(&synonym)
 
@@ -71,7 +71,7 @@ func TestApplySynonymTargetParts(t *testing.T) {
 // then treat a linked-server alias as a same-instance one.
 func TestApplySynonymTargetParts_ReadsFromTheRight(t *testing.T) {
 	c := qt.New(t)
-	synonym := types.DBSynonym{Target: "[remote]..[dbo].[orders]"}
+	synonym := catalog.Synonym{Target: "[remote]..[dbo].[orders]"}
 
 	applySynonymTargetParts(&synonym)
 

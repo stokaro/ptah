@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/lint"
 )
 
@@ -59,7 +59,7 @@ func readBaselineColumns(ctx context.Context,
 // back as the bare category `ARRAY`. An empty spelling still reports the
 // diagnostic, under Ptah's own labeled wording, which is the renderer's existing
 // answer to a type it cannot spell the other tool's way.
-func compatColumnDataType(column dbschematypes.DBColumn) string {
+func compatColumnDataType(column catalog.Column) string {
 	dataType := strings.ToLower(strings.Join(strings.Fields(column.DataType), " "))
 	switch dataType {
 	case "character", "character varying":
@@ -80,7 +80,7 @@ func compatColumnDataType(column dbschematypes.DBColumn) string {
 // the type constrains nothing, `numeric(p)` when it constrains precision alone,
 // and `numeric(p,s)` when it constrains both. Measured: `numeric(10)` and
 // `numeric(10,0)` both print `numeric(10)`, so a zero scale is not printed.
-func numericDataType(column dbschematypes.DBColumn) string {
+func numericDataType(column catalog.Column) string {
 	if column.NumericPrecision == nil {
 		return "numeric"
 	}

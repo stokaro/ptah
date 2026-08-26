@@ -1,9 +1,9 @@
 package postgres
 
-// White-box testing required: whether the hypertable catalog is asked at all is
+// White-box testing required: whether the hypertable currentCatalog is asked at all is
 // decided inside the reader from the extension list, and the exported read
 // returns the same empty list either way -- for a PostgreSQL server that has no
-// TimescaleDB, and for one whose catalog answered nothing.
+// TimescaleDB, and for one whose currentCatalog answered nothing.
 
 import (
 	"database/sql/driver"
@@ -13,7 +13,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 )
 
@@ -33,7 +33,7 @@ func TestReadHypertables_CarriesThePrimaryDimension(t *testing.T) {
 	hypertables, err := reader.readHypertables(t.Context(), timescaleInstalled())
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(hypertables, qt.DeepEquals, []types.DBHypertable{{
+	c.Assert(hypertables, qt.DeepEquals, []catalog.Hypertable{{
 		Name:                 "conditions",
 		PrimaryDimension:     "time",
 		PrimaryDimensionType: "timestamp with time zone",
@@ -56,7 +56,7 @@ func TestReadHypertables_AsksNothingWithoutTheExtension(t *testing.T) {
 	db := dbtest.Open(t, recordingQueries(&asked))
 	reader := NewPostgreSQLReader(db.SQL, "public")
 
-	hypertables, err := reader.readHypertables(t.Context(), []types.DBExtension{{Name: "plpgsql"}})
+	hypertables, err := reader.readHypertables(t.Context(), []catalog.Extension{{Name: "plpgsql"}})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(hypertables, qt.HasLen, 0)
@@ -66,7 +66,7 @@ func TestReadHypertables_AsksNothingWithoutTheExtension(t *testing.T) {
 // TestReadHypertables_AFailureWithTheExtensionIsSurfaced is the control the
 // gate needs.
 //
-// Once the extension IS installed the catalog is there, so a failure means
+// Once the extension IS installed the currentCatalog is there, so a failure means
 // something else, and an empty answer would claim that no table on this server
 // is partitioned. The consequence of that claim is not a wrong statement but a
 // MISSING note, which is the whole thing this read exists to produce.
@@ -96,7 +96,7 @@ func TestReadHypertables_TakesAHypertableWithNoDimensionReported(t *testing.T) {
 	hypertables, err := reader.readHypertables(t.Context(), timescaleInstalled())
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(hypertables, qt.DeepEquals, []types.DBHypertable{{
+	c.Assert(hypertables, qt.DeepEquals, []catalog.Hypertable{{
 		Name: "conditions", Dimensions: 1,
 	}})
 }
@@ -114,8 +114,8 @@ func TestHypertableQuery_ReadsTheExtensionsOwnCatalog(t *testing.T) {
 		name     string
 		fragment string
 	}{
-		{name: "the catalog", fragment: "timescaledb_information.hypertables"},
-		{name: "the dimension catalog", fragment: "timescaledb_information.dimensions"},
+		{name: "the currentCatalog", fragment: "timescaledb_information.hypertables"},
+		{name: "the dimension currentCatalog", fragment: "timescaledb_information.dimensions"},
 		{name: "the primary dimension", fragment: "d.column_name"},
 		{name: "the chunk interval", fragment: "d.time_interval::text"},
 		{name: "its type", fragment: "d.column_type::text"},
@@ -183,7 +183,7 @@ func hypertableRows() [][]driver.Value {
 	return [][]driver.Value{{"public", "conditions", "time", "timestamp with time zone", "7 days", int64(1)}}
 }
 
-// hypertableAnswer answers the catalog with the five columns the read scans, so
+// hypertableAnswer answers the currentCatalog with the five columns the read scans, so
 // a query that stopped selecting one fails here rather than being handed the
 // same rows.
 //
@@ -192,11 +192,11 @@ func hypertableRows() [][]driver.Value {
 // carry it on every supported release, and a query that went back to the newer
 // projection would otherwise be answered these rows anyway.
 func hypertableAnswer(query string, refusal error, rows [][]driver.Value) (dbtest.QueryResult, error) {
-	for _, catalog := range []string{
+	for _, currentCatalog := range []string{
 		"timescaledb_information.hypertables",
 		"timescaledb_information.dimensions",
 	} {
-		if !strings.Contains(query, catalog) {
+		if !strings.Contains(query, currentCatalog) {
 			return dbtest.QueryResult{}, fmt.Errorf("unexpected query: %s", query)
 		}
 	}

@@ -8,9 +8,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -177,7 +177,7 @@ func roundTripSchema(dialect, onDelete string, hosts ...string) *goschema.Databa
 
 // tenantDeleteRules returns host -> ON DELETE rule for the host's tenant FK as
 // the database reports it.
-func tenantDeleteRules(dialect string, db *dbschematypes.DBSchema, hosts []string) map[string]string {
+func tenantDeleteRules(dialect string, db *catalog.Database, hosts []string) map[string]string {
 	wantName := make(map[string]string, len(hosts)) // host -> expected FK name
 	for _, h := range hosts {
 		wantName[h] = tenantFKName(dialect, h)

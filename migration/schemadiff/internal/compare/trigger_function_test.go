@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -23,8 +23,8 @@ func declaredTrigger(executeFunction, body string) goschema.Trigger {
 // catalogTrigger is the same trigger as the reader reports it. The body is
 // always the source of whatever function the trigger runs, because PostgreSQL
 // has no inline body to report.
-func catalogTrigger(executeFunction, body string) types.DBTrigger {
-	return types.DBTrigger{
+func catalogTrigger(executeFunction, body string) catalog.Trigger {
+	return catalog.Trigger{
 		Name: "trg_a", Table: "a", Timing: "AFTER", Event: "INSERT", ForEach: "ROW",
 		ExecuteFunction: executeFunction, Body: body,
 	}

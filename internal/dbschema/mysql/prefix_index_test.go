@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 )
@@ -23,20 +23,20 @@ import (
 // database (stokaro/ptah#2112).
 func TestPrefixIndexReachesTheDocument(t *testing.T) {
 	c := qt.New(t)
-	database := dbschematogo.ConvertDBSchemaToGoSchema(&types.DBSchema{
-		Tables: []types.DBTable{{
+	database := dbschematogo.ConvertDBSchemaToGoSchema(&catalog.Database{
+		Tables: []catalog.Table{{
 			Name: "orders",
 			Type: "BASE TABLE",
-			Columns: []types.DBColumn{
+			Columns: []catalog.Column{
 				{Name: "id", DataType: "bigint", IsNullable: "NO", IsPrimaryKey: true},
 				{Name: "notes", DataType: "text", IsNullable: "YES"},
 			},
 		}},
-		Indexes: []types.DBIndex{{
+		Indexes: []catalog.Index{{
 			Name:      "orders_notes_prefix_idx",
 			TableName: "orders",
 			Columns:   []string{"notes"},
-			Parts:     []types.DBIndexPart{{Name: "notes", Prefix: "20"}},
+			Parts:     []catalog.IndexPart{{Name: "notes", Prefix: "20"}},
 		}},
 	})
 
@@ -54,16 +54,16 @@ func TestPrefixIndexReachesTheDocument(t *testing.T) {
 // an author writes.
 func TestWholeColumnIndexKeepsTheCompactSpelling(t *testing.T) {
 	c := qt.New(t)
-	database := dbschematogo.ConvertDBSchemaToGoSchema(&types.DBSchema{
-		Tables: []types.DBTable{{
+	database := dbschematogo.ConvertDBSchemaToGoSchema(&catalog.Database{
+		Tables: []catalog.Table{{
 			Name: "orders",
 			Type: "BASE TABLE",
-			Columns: []types.DBColumn{
+			Columns: []catalog.Column{
 				{Name: "id", DataType: "bigint", IsNullable: "NO", IsPrimaryKey: true},
 				{Name: "customer_id", DataType: "bigint", IsNullable: "NO"},
 			},
 		}},
-		Indexes: []types.DBIndex{{
+		Indexes: []catalog.Index{{
 			Name:      "orders_customer_idx",
 			TableName: "orders",
 			Columns:   []string{"customer_id"},

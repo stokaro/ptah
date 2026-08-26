@@ -12,12 +12,12 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/cmd/internal/cmdflags"
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlascompatpolicy"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 	"go.5x5.cz/ptah/internal/atlasreport"
@@ -267,7 +267,7 @@ func applyAtlasSchemaClean(
 			cmd.Context(),
 			conn,
 			plan,
-			schemaclean.ApplyPlanOptions{ValidateBeforeExecute: func(executor dbschematypes.SchemaExecutor) error {
+			schemaclean.ApplyPlanOptions{ValidateBeforeExecute: func(executor catalog.SchemaExecutor) error {
 				validationConn := conn
 				if executor != nil {
 					validationConn = conn.WithExecutor(executor)
@@ -296,7 +296,7 @@ func inspectAtlasSchemaCleanPlan(
 ) (schemaclean.Plan, error) {
 	inspectOpts := schemaclean.InspectOptions{}
 	if policy.IsStrictCE() {
-		inspectOpts.ValidateSchema = func(schema *dbschematypes.DBSchema) error {
+		inspectOpts.ValidateSchema = func(schema *catalog.Database) error {
 			owned := schemaclean.SnapshotWithinWriterScope(
 				schema,
 				conn.Info().Dialect,

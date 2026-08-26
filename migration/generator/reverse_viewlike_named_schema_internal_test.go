@@ -10,9 +10,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
@@ -22,7 +22,7 @@ import (
 // Reaching the reverse diff is not the same as reaching the plan. The diff
 // records a view by the name the Go schema spells, while the pre-change database
 // schema the down direction plans against names it "<schema>.<view>"
-// (dbschematypes.DBView.QualifiedName, applied by internal/convert/dbschematogo).
+// (catalog.View.QualifiedName, applied by internal/convert/dbschematogo).
 // A planner that compared those two strings found nothing for a view read from
 // any named schema, and the modified entry rendered nothing at all -- the whole
 // category rolled back to "No rollback operations needed" while the reflection
@@ -56,23 +56,23 @@ func TestGenerateDownMigrationSQL_RestoresModifiedViewInANamedSchema(t *testing.
 	}
 	goschema.Finalize(schema)
 
-	db := &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{{
+	db := &catalog.Database{
+		Tables: []catalog.Table{{
 			Name: "rev_view_users",
 			Type: "TABLE",
-			Columns: []dbschematypes.DBColumn{
+			Columns: []catalog.Column{
 				{Name: "id", DataType: "bigint", IsNullable: "NO", IsPrimaryKey: true, OrdinalPosition: 1},
 				{Name: "email", DataType: "text", IsNullable: "NO", OrdinalPosition: 2},
 			},
 		}},
-		Views: []dbschematypes.DBView{
+		Views: []catalog.View{
 			{Name: "rev_active_users", Schema: "reporting", Body: priorBody},
 		},
 	}
 
 	semantics := identifier.ForDialect("postgres")
 	semantics.DefaultSchema = "reporting"
-	upDiff, err := schemadiff.CompareWithDatabaseInfo(schema, db, dbschematypes.DBInfo{
+	upDiff, err := schemadiff.CompareWithDatabaseInfo(schema, db, catalog.ServerInfo{
 		Dialect:             "postgres",
 		IdentifierSemantics: semantics,
 	}, nil)

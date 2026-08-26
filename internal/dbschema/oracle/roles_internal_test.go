@@ -14,8 +14,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/sijms/go-ora/v3/network"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 )
 
@@ -87,14 +87,14 @@ func TestReadRolesInto_DescribesWhatAPrivilegedAccountSees(t *testing.T) {
 	db := dbtest.Open(t, answeringRoleCatalog)
 	reader := NewOracleReader(db.SQL, "APP")
 
-	schema := &types.DBSchema{}
+	schema := &catalog.Database{}
 	c.Assert(reader.readRolesInto(t.Context(), schema), qt.IsNil)
 
-	c.Assert(schema.Roles, qt.DeepEquals, []types.DBRole{
+	c.Assert(schema.Roles, qt.DeepEquals, []catalog.Role{
 		{Name: "APP_READER", Inherit: true},
 		{Name: "APP_SECRET", Inherit: true, HasPassword: true},
 	})
-	c.Assert(schema.Grants, qt.DeepEquals, []types.DBGrant{
+	c.Assert(schema.Grants, qt.DeepEquals, []catalog.Grant{
 		{
 			Role: "APP_READER", Privilege: "SELECT", ObjectType: "TABLE",
 			Schema: "APP", ObjectName: "DOCS", GrantedBy: "APP",
@@ -119,7 +119,7 @@ func TestReadRolesInto_RecordsWhatARefusedAccountDidNotLookAt(t *testing.T) {
 	db := dbtest.Open(t, refusingRoleCatalog)
 	reader := NewOracleReader(db.SQL, "APP")
 
-	schema := &types.DBSchema{}
+	schema := &catalog.Database{}
 	c.Assert(reader.readRolesInto(t.Context(), schema), qt.IsNil)
 
 	c.Assert(schema.Roles, qt.HasLen, 0)
@@ -142,7 +142,7 @@ func TestReadRolesInto_SurfacesAFaultRatherThanDescribingAroundIt(t *testing.T) 
 	db := dbtest.Open(t, faultingRoleCatalog)
 	reader := NewOracleReader(db.SQL, "APP")
 
-	schema := &types.DBSchema{}
+	schema := &catalog.Database{}
 	err := reader.readRolesInto(t.Context(), schema)
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "failed to read roles")

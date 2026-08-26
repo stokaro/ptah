@@ -1,9 +1,9 @@
 package compare
 
 import (
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/migration/internal/generatedschema"
 )
@@ -30,7 +30,7 @@ import (
 // Constraints() where genConstraints is populated.
 func synthesizeFieldLevelCheckConstraints(
 	generated *goschema.Database,
-	database *types.DBSchema,
+	database *catalog.Database,
 	semantics identifier.Semantics,
 ) []goschema.Constraint {
 	if generated == nil || database == nil {
@@ -81,7 +81,7 @@ func synthesizeFieldLevelCheckConstraints(
 
 func synthesizeTablePrimaryKeyConstraints(
 	generated *goschema.Database,
-	database *types.DBSchema,
+	database *catalog.Database,
 	dialect string,
 	semantics identifier.Semantics,
 ) []goschema.Constraint {
@@ -146,7 +146,7 @@ func synthesizeTablePrimaryKeyConstraints(
 // columns that does not MATCH the declared one is a real change and has to be
 // planned, so the column set is compared and not merely counted.
 func livePrimaryKeyIsOnTheColumns(
-	database *types.DBSchema,
+	database *catalog.Database,
 	identity tableIdentity,
 	declared []string,
 	semantics identifier.Semantics,
@@ -169,7 +169,7 @@ func livePrimaryKeyIsOnTheColumns(
 // livePrimaryKeyColumns names the columns the read marked as this table's
 // primary key.
 func livePrimaryKeyColumns(
-	database *types.DBSchema,
+	database *catalog.Database,
 	identity tableIdentity,
 	semantics identifier.Semantics,
 ) []string {
@@ -224,7 +224,7 @@ func columnSetsMatch(declared, live []string, semantics identifier.Semantics) bo
 // (stokaro/ptah#1244).
 func tablePrimaryKeyConstraintName(
 	table goschema.Table,
-	dbConstraints []types.DBConstraint,
+	dbConstraints []catalog.Constraint,
 	dialect string,
 	semantics identifier.Semantics,
 ) string {
@@ -268,7 +268,7 @@ func tablePrimaryKeyConstraintName(
 // wins — synthesis never clobbers it (see the guard in Constraints()).
 func synthesizeFieldLevelForeignKeyConstraints(
 	generated *goschema.Database,
-	database *types.DBSchema,
+	database *catalog.Database,
 	semantics identifier.Semantics,
 ) []goschema.Constraint {
 	if generated == nil || database == nil {

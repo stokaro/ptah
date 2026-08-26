@@ -9,8 +9,8 @@ import (
 	"slices"
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/revisiontable"
 	"go.5x5.cz/ptah/internal/sqlident"
 )
@@ -48,7 +48,7 @@ type InspectOptions struct {
 	// ValidateSchema runs after catalog inspection and before the plan is built.
 	// Nil accepts every schema. A validator can refuse dependent objects that
 	// disappear with a listed parent but are intentionally absent from Plan.
-	ValidateSchema func(*dbschematypes.DBSchema) error
+	ValidateSchema func(*catalog.Database) error
 }
 
 // Plan is the report an operator reviews before approving a destructive
@@ -90,10 +90,10 @@ type Object struct {
 // owned by its configured schema; global extensions must not veto an otherwise
 // schema-local clean.
 func SnapshotWithinWriterScope(
-	schema *dbschematypes.DBSchema,
+	schema *catalog.Database,
 	dialect,
 	writerSchema string,
-) *dbschematypes.DBSchema {
+) *catalog.Database {
 	if schema == nil || !isPostgresFamily(dialect) {
 		return schema
 	}
@@ -104,7 +104,7 @@ func SnapshotWithinWriterScope(
 	owned := *schema
 	owned.Extensions = slices.DeleteFunc(
 		slices.Clone(schema.Extensions),
-		func(extension dbschematypes.DBExtension) bool {
+		func(extension catalog.Extension) bool {
 			return strings.TrimSpace(extension.Schema) != writerSchema
 		},
 	)
@@ -130,7 +130,7 @@ type Change struct {
 }
 
 // dialectCoverage records which object kinds a dialect's
-// dbschema/types.SchemaWriter.DropAllTables implementation actually destroys.
+// catalog.SchemaWriter.DropAllTables implementation actually destroys.
 // It is the one place this package decides what a cleanup plan is allowed to
 // claim, so plan coverage and execution coverage cannot drift kind by kind.
 //
@@ -239,7 +239,7 @@ func ApplyPlan(ctx context.Context, conn *dbschema.DatabaseConnection, plan Plan
 // every planned relation that can own dependent objects and before executing
 // any drop.
 type ApplyPlanOptions struct {
-	ValidateBeforeExecute func(dbschematypes.SchemaExecutor) error
+	ValidateBeforeExecute func(catalog.SchemaExecutor) error
 }
 
 // ApplyPlanWithOptions executes exactly the changes plan carries and applies
@@ -322,7 +322,7 @@ func applyPostgresFamilyPlan(
 
 func lockPostgresPlanRelations(
 	ctx context.Context,
-	tx dbschematypes.SchemaTransaction,
+	tx catalog.SchemaTransaction,
 	changes []Change,
 ) error {
 	relations := make([]string, 0, len(changes))
@@ -351,7 +351,7 @@ func lockPostgresPlanRelations(
 
 func applyPostgresFamilyPlanChanges(
 	ctx context.Context,
-	tx dbschematypes.SchemaTransaction,
+	tx catalog.SchemaTransaction,
 	changes []Change,
 ) error {
 	// RESTRICT is the safety boundary. Savepoints let a selected dependent
@@ -393,7 +393,7 @@ func applyPostgresFamilyPlanChanges(
 
 func tryApplyPostgresFamilyPlanChange(
 	ctx context.Context,
-	tx dbschematypes.SchemaTransaction,
+	tx catalog.SchemaTransaction,
 	change Change,
 ) (dropErr, controlErr error) {
 	const savepoint = "ptah_scoped_cleanup_object"
@@ -422,7 +422,7 @@ func tryApplyPostgresFamilyPlanChange(
 
 func applyPlanChanges(
 	ctx context.Context,
-	executor dbschematypes.SchemaExecutor,
+	executor catalog.SchemaExecutor,
 	changes []Change,
 ) error {
 	for _, change := range changes {
@@ -443,7 +443,7 @@ func cleanupRollbackError(err error) error {
 	return fmt.Errorf("roll back scoped schema cleanup: %w", err)
 }
 
-func PlanFromSchema(schema *dbschematypes.DBSchema, dialect string) Plan {
+func PlanFromSchema(schema *catalog.Database, dialect string) Plan {
 	if schema == nil {
 		return Plan{}
 	}
@@ -597,7 +597,7 @@ func normalizeDialect(dialect string) string {
 // unconditional; every other kind is gated on this dialect's writer coverage,
 // paired with its collector below so a coverage field can never be added
 // without a collector or the other way round.
-func cleanupObjects(schema *dbschematypes.DBSchema, dialect string) []Object {
+func cleanupObjects(schema *catalog.Database, dialect string) []Object {
 	if schema == nil {
 		return nil
 	}
@@ -605,7 +605,7 @@ func cleanupObjects(schema *dbschematypes.DBSchema, dialect string) []Object {
 	objects := tableObjects(schema)
 	for _, kind := range []struct {
 		covered bool
-		collect func(*dbschematypes.DBSchema) []Object
+		collect func(*catalog.Database) []Object
 	}{
 		{coverage.foreignKeys, foreignKeyObjects},
 		{coverage.views, viewObjects},
@@ -626,11 +626,11 @@ func cleanupObjects(schema *dbschematypes.DBSchema, dialect string) []Object {
 	return objects
 }
 
-func tableObjects(schema *dbschematypes.DBSchema) []Object {
+func tableObjects(schema *catalog.Database) []Object {
 	objects := make([]Object, 0, len(schema.Tables))
 	for _, table := range schema.Tables {
-		// Readers that surface views through DBSchema.Tables as well as
-		// DBSchema.Views tag them here, and viewObjects reports them once.
+		// Readers that surface views through Database.Tables as well as
+		// Database.Views tag them here, and viewObjects reports them once.
 		if !isCleanupTableType(table.Type) {
 			continue
 		}
@@ -643,7 +643,7 @@ func tableObjects(schema *dbschematypes.DBSchema) []Object {
 	return objects
 }
 
-func foreignKeyObjects(schema *dbschematypes.DBSchema) []Object {
+func foreignKeyObjects(schema *catalog.Database) []Object {
 	objects := make([]Object, 0, len(schema.Constraints))
 	for _, constraint := range schema.Constraints {
 		if !isForeignKeyConstraint(constraint) {
@@ -659,7 +659,7 @@ func foreignKeyObjects(schema *dbschematypes.DBSchema) []Object {
 	return objects
 }
 
-func viewObjects(schema *dbschematypes.DBSchema) []Object {
+func viewObjects(schema *catalog.Database) []Object {
 	objects := make([]Object, 0, len(schema.Views))
 	for _, view := range schema.Views {
 		objects = append(objects, Object{
@@ -671,7 +671,7 @@ func viewObjects(schema *dbschematypes.DBSchema) []Object {
 	return objects
 }
 
-func materializedViewObjects(schema *dbschematypes.DBSchema) []Object {
+func materializedViewObjects(schema *catalog.Database) []Object {
 	objects := make([]Object, 0, len(schema.MatViews))
 	for _, matView := range schema.MatViews {
 		objects = append(objects, Object{
@@ -683,10 +683,10 @@ func materializedViewObjects(schema *dbschematypes.DBSchema) []Object {
 	return objects
 }
 
-// enumObjects reports PostgreSQL enum types. DBEnum carries no schema: the
+// enumObjects reports PostgreSQL enum types. Enum carries no schema: the
 // reader reads enums per schema but does not record which one, so enum rows
 // stay unqualified.
-func enumObjects(schema *dbschematypes.DBSchema) []Object {
+func enumObjects(schema *catalog.Database) []Object {
 	objects := make([]Object, 0, len(schema.Enums))
 	for _, enum := range schema.Enums {
 		objects = append(objects, Object{
@@ -697,7 +697,7 @@ func enumObjects(schema *dbschematypes.DBSchema) []Object {
 	return objects
 }
 
-func domainObjects(schema *dbschematypes.DBSchema) []Object {
+func domainObjects(schema *catalog.Database) []Object {
 	objects := make([]Object, 0, len(schema.Domains))
 	for _, domain := range schema.Domains {
 		objects = append(objects, Object{
@@ -709,7 +709,7 @@ func domainObjects(schema *dbschematypes.DBSchema) []Object {
 	return objects
 }
 
-func compositeObjects(schema *dbschematypes.DBSchema) []Object {
+func compositeObjects(schema *catalog.Database) []Object {
 	objects := make([]Object, 0, len(schema.Composites))
 	for _, composite := range schema.Composites {
 		objects = append(objects, Object{
@@ -721,7 +721,7 @@ func compositeObjects(schema *dbschematypes.DBSchema) []Object {
 	return objects
 }
 
-func rangeObjects(schema *dbschematypes.DBSchema) []Object {
+func rangeObjects(schema *catalog.Database) []Object {
 	objects := make([]Object, 0, len(schema.Ranges))
 	for _, rangeType := range schema.Ranges {
 		objects = append(objects, Object{
@@ -738,7 +738,7 @@ func rangeObjects(schema *dbschematypes.DBSchema) []Object {
 // pre-rendered command uses PostgreSQL's distinct overload identity. Older or
 // synthetic snapshots without identity metadata retain the former Parameters
 // fallback instead of losing their executable cleanup capability.
-func functionObjects(schema *dbschematypes.DBSchema, dialect string) []Object {
+func functionObjects(schema *catalog.Database, dialect string) []Object {
 	objects := make([]Object, 0, len(schema.Functions))
 	for _, function := range schema.Functions {
 		// Procedures are enumerated by inspectRuntimeObjects, which already
@@ -1609,7 +1609,7 @@ func isCleanupTableType(tableType string) bool {
 	}
 }
 
-func isForeignKeyConstraint(constraint dbschematypes.DBConstraint) bool {
+func isForeignKeyConstraint(constraint catalog.Constraint) bool {
 	return strings.EqualFold(strings.TrimSpace(constraint.Type), "FOREIGN KEY")
 }
 

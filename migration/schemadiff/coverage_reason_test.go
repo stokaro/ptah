@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
@@ -72,7 +72,7 @@ func TestWithheldAdditionCarriesTheReasonTheReadRecorded(t *testing.T) {
 				Name:   "citext",
 				Schema: "extensions",
 			}}}
-			current := &types.DBSchema{NotDescribed: test.notDescribed}
+			current := &catalog.Database{NotDescribed: test.notDescribed}
 
 			diff, undecided := schemadiff.CompareReportingUndecidedAdditions(desired, current, nil)
 
@@ -96,7 +96,7 @@ func TestWithheldTableCarriesTheSchemaRecordsReason(t *testing.T) {
 	desired := &goschema.Database{Tables: []goschema.Table{
 		{Name: "reports", StructName: "Reports", Schema: "extra"},
 	}}
-	current := &types.DBSchema{NotDescribed: coverage.Set{}.With(coverage.Object{
+	current := &catalog.Database{NotDescribed: coverage.Set{}.With(coverage.Object{
 		Kind:       coverage.Schema,
 		Name:       "extra",
 		Reason:     coverage.OutsideScope,
@@ -124,7 +124,7 @@ func TestWithheldAdditionCarriesTheReasonOfTheRecordThatCoveredIt(t *testing.T) 
 		Name:   "citext",
 		Schema: "extensions",
 	}}}
-	current := &types.DBSchema{NotDescribed: coverage.Set{}.
+	current := &catalog.Database{NotDescribed: coverage.Set{}.
 		With(coverage.Object{
 			Kind:       coverage.Extension,
 			Name:       "citext",

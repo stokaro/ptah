@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 )
 
@@ -15,9 +15,9 @@ func TestExcludeDatabaseWithDefaultSchema_BareSchemaPreservesCatalogCase(t *test
 	for _, pattern := range tests {
 		t.Run(pattern, func(t *testing.T) {
 			c := qt.New(t)
-			database := &dbschematypes.DBSchema{
-				Schemas: []dbschematypes.DBSchemaInfo{{Name: "Sales"}, {Name: "sales"}},
-				Tables: []dbschematypes.DBTable{
+			database := &catalog.Database{
+				Schemas: []catalog.Schema{{Name: "Sales"}, {Name: "sales"}},
+				Tables: []catalog.Table{
 					{Schema: "Sales", Name: "orders"},
 					{Schema: "sales", Name: "orders"},
 				},
@@ -27,7 +27,7 @@ func TestExcludeDatabaseWithDefaultSchema_BareSchemaPreservesCatalogCase(t *test
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(report.Unmatched, qt.IsNil)
-			c.Assert(got.Schemas, qt.DeepEquals, []dbschematypes.DBSchemaInfo{{Name: "sales"}})
+			c.Assert(got.Schemas, qt.DeepEquals, []catalog.Schema{{Name: "sales"}})
 			c.Assert(got.Tables, qt.HasLen, 1)
 			c.Assert(got.Tables[0].Schema, qt.Equals, "sales")
 			c.Assert(got.Tables[0].Name, qt.Equals, "orders")
@@ -63,13 +63,13 @@ func TestExcludeGeneratedWithDefaultSchema_BareSchemaPreservesCatalogCase(t *tes
 
 func TestExcludeDatabaseWithDefaultSchema_QuotedSchemaTakesItsExactObjects(t *testing.T) {
 	c := qt.New(t)
-	database := &dbschematypes.DBSchema{
-		Schemas: []dbschematypes.DBSchemaInfo{{Name: " app "}, {Name: "app"}},
-		Tables: []dbschematypes.DBTable{
+	database := &catalog.Database{
+		Schemas: []catalog.Schema{{Name: " app "}, {Name: "app"}},
+		Tables: []catalog.Table{
 			{Schema: " app ", Name: "users"},
 			{Schema: "app", Name: "users"},
 		},
-		Extensions: []dbschematypes.DBExtension{
+		Extensions: []catalog.Extension{
 			{Schema: " app ", Name: "pgcrypto"},
 			{Schema: "app", Name: "citext"},
 		},
@@ -78,22 +78,22 @@ func TestExcludeDatabaseWithDefaultSchema_QuotedSchemaTakesItsExactObjects(t *te
 	got, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(database, []string{`" app "`}, "public")
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(got.Schemas, qt.DeepEquals, []dbschematypes.DBSchemaInfo{{Name: "app"}})
+	c.Assert(got.Schemas, qt.DeepEquals, []catalog.Schema{{Name: "app"}})
 	c.Assert(got.Tables, qt.HasLen, 1)
 	c.Assert(got.Tables[0].Schema, qt.Equals, "app")
 	c.Assert(got.Tables[0].Name, qt.Equals, "users")
-	c.Assert(got.Extensions, qt.DeepEquals, []dbschematypes.DBExtension{{Schema: "app", Name: "citext"}})
+	c.Assert(got.Extensions, qt.DeepEquals, []catalog.Extension{{Schema: "app", Name: "citext"}})
 }
 
 func TestExcludeDatabaseWithDefaultSchema_UnquotedSchemaKeepsWhitespaceIdentity(t *testing.T) {
 	c := qt.New(t)
-	database := &dbschematypes.DBSchema{
-		Schemas: []dbschematypes.DBSchemaInfo{{Name: " app "}, {Name: "app"}},
-		Tables: []dbschematypes.DBTable{
+	database := &catalog.Database{
+		Schemas: []catalog.Schema{{Name: " app "}, {Name: "app"}},
+		Tables: []catalog.Table{
 			{Schema: " app ", Name: "users"},
 			{Schema: "app", Name: "users"},
 		},
-		Extensions: []dbschematypes.DBExtension{
+		Extensions: []catalog.Extension{
 			{Schema: " app ", Name: "pgcrypto"},
 			{Schema: "app", Name: "citext"},
 		},
@@ -102,11 +102,11 @@ func TestExcludeDatabaseWithDefaultSchema_UnquotedSchemaKeepsWhitespaceIdentity(
 	got, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(database, []string{"app"}, "public")
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(got.Schemas, qt.DeepEquals, []dbschematypes.DBSchemaInfo{{Name: " app "}})
+	c.Assert(got.Schemas, qt.DeepEquals, []catalog.Schema{{Name: " app "}})
 	c.Assert(got.Tables, qt.HasLen, 1)
 	c.Assert(got.Tables[0].Schema, qt.Equals, " app ")
 	c.Assert(got.Tables[0].Name, qt.Equals, "users")
-	c.Assert(got.Extensions, qt.DeepEquals, []dbschematypes.DBExtension{{Schema: " app ", Name: "pgcrypto"}})
+	c.Assert(got.Extensions, qt.DeepEquals, []catalog.Extension{{Schema: " app ", Name: "pgcrypto"}})
 }
 
 func TestExcludeGeneratedWithDefaultSchema_QuotedSchemaTakesItsExactObjects(t *testing.T) {
@@ -161,9 +161,9 @@ func TestExcludeGeneratedWithDefaultSchema_UnquotedSchemaKeepsWhitespaceIdentity
 
 func TestExcludeDatabaseWithDefaultSchema_WhitespaceOnlySchemaIsNotTheDefault(t *testing.T) {
 	c := qt.New(t)
-	database := &dbschematypes.DBSchema{
-		Schemas: []dbschematypes.DBSchemaInfo{{Name: " "}, {Name: "public"}},
-		Extensions: []dbschematypes.DBExtension{
+	database := &catalog.Database{
+		Schemas: []catalog.Schema{{Name: " "}, {Name: "public"}},
+		Extensions: []catalog.Extension{
 			{Schema: " ", Name: "pgcrypto"},
 			{Schema: "public", Name: "citext"},
 		},
@@ -172,8 +172,8 @@ func TestExcludeDatabaseWithDefaultSchema_WhitespaceOnlySchemaIsNotTheDefault(t 
 	got, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(database, []string{`" "`}, "public")
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(got.Schemas, qt.DeepEquals, []dbschematypes.DBSchemaInfo{{Name: "public"}})
-	c.Assert(got.Extensions, qt.DeepEquals, []dbschematypes.DBExtension{{Schema: "public", Name: "citext"}})
+	c.Assert(got.Schemas, qt.DeepEquals, []catalog.Schema{{Name: "public"}})
+	c.Assert(got.Extensions, qt.DeepEquals, []catalog.Extension{{Schema: "public", Name: "citext"}})
 }
 
 func TestExcludeGeneratedWithDefaultSchema_WhitespaceOnlySchemaIsNotTheDefault(t *testing.T) {

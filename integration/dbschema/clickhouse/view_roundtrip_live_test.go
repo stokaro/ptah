@@ -8,21 +8,21 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	clickhousedb "go.5x5.cz/ptah/internal/dbschema/clickhouse"
 	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
-func readClickHouseViews(t *testing.T, db *sql.DB, database string) *dbschematypes.DBSchema {
+func readClickHouseViews(t *testing.T, db *sql.DB, database string) *catalog.Database {
 	c := qt.New(t)
 	t.Helper()
 	schema, err := clickhousedb.NewClickHouseReader(db, database).ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
-	return &dbschematypes.DBSchema{Views: schema.Views}
+	return &catalog.Database{Views: schema.Views}
 }
 
 func executeClickHouseViewPlan(t *testing.T, db *sql.DB, statements []string) {

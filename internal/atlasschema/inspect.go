@@ -7,10 +7,10 @@ import (
 	"io"
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/atlasurl"
@@ -61,7 +61,7 @@ type InspectOptions struct {
 	// policy to the fully introspected schema before any template renders or
 	// file export is published. A returned replacement becomes the exact state
 	// every downstream inspection surface sees.
-	PrepareSchema func(*dbschematypes.DBSchema) (*dbschematypes.DBSchema, error)
+	PrepareSchema func(*catalog.Database) (*catalog.Database, error)
 	// ValidateSchema applies a caller-selected policy to the fully introspected
 	// schema before any template renders or file export is published.
 	ValidateSchema func(*goschema.Database) error
@@ -135,16 +135,16 @@ func Inspect(ctx context.Context, conn *dbschema.DatabaseConnection, opts Inspec
 }
 
 func prepareInspectSchema(
-	schema *dbschematypes.DBSchema,
-	prepare func(*dbschematypes.DBSchema) (*dbschematypes.DBSchema, error),
-) (*dbschematypes.DBSchema, error) {
+	schema *catalog.Database,
+	prepare func(*catalog.Database) (*catalog.Database, error),
+) (*catalog.Database, error) {
 	if prepare == nil {
 		return schema, nil
 	}
 	return prepare(schema)
 }
 
-func validateInspectSchema(schema *dbschematypes.DBSchema, validate func(*goschema.Database) error) error {
+func validateInspectSchema(schema *catalog.Database, validate func(*goschema.Database) error) error {
 	if validate == nil {
 		return nil
 	}
@@ -155,8 +155,8 @@ func validateInspectSchema(schema *dbschematypes.DBSchema, validate func(*gosche
 // exclude filtering, report construction, format rendering, and application
 // of the planned split/write file exports.
 func renderInspectSchema(
-	schema *dbschematypes.DBSchema,
-	info dbschematypes.DBInfo,
+	schema *catalog.Database,
+	info catalog.ServerInfo,
 	opts InspectOptions,
 ) (string, error) {
 	format, err := NormalizeInspectFormat(opts.Format)
@@ -244,7 +244,7 @@ func renderInspectSchema(
 // file holds the correct CREATE VIRTUAL TABLE -- measured as a note beside an
 // `out/main.sql` that contained the statement.
 func reportOmittedVirtualTables(
-	schema *dbschematypes.DBSchema,
+	schema *catalog.Database,
 	output atlasreport.SchemaInspectOutput,
 	opts InspectOptions,
 ) error {
@@ -288,7 +288,7 @@ func reportOmittedVirtualTables(
 // leaves the printed text empty and puts the whole document in the planned
 // files.
 func virtualTablesTheRenderingDropped(
-	schema *dbschematypes.DBSchema,
+	schema *catalog.Database,
 	output atlasreport.SchemaInspectOutput,
 ) []sqlitevirtual.Table {
 	virtual := sqlitevirtual.Tables(schema)
@@ -449,10 +449,10 @@ func omittedVerb(count int) string {
 // to an object it dropped), and without it the established exclusion-only path
 // is kept unchanged.
 func scopeInspectSchema(
-	schema *dbschematypes.DBSchema,
-	info dbschematypes.DBInfo,
+	schema *catalog.Database,
+	info catalog.ServerInfo,
 	opts InspectOptions,
-) (*dbschematypes.DBSchema, atlasfilter.ExcludeReport, error) {
+) (*catalog.Database, atlasfilter.ExcludeReport, error) {
 	return atlasfilter.ScopeDatabaseReport(schema, atlasfilter.Scope{
 		Include:               opts.Include,
 		Exclude:               opts.Exclude,
@@ -488,7 +488,7 @@ func SplitSchemaNames(values []string) []string {
 // schema it was told about and stays quiet about the one it merely connected
 // to. The measurements are on
 // [go.5x5.cz/ptah/internal/atlasreport.SchemaInspectReport].
-func describesSchemas(info dbschematypes.DBInfo, opts InspectOptions) bool {
+func describesSchemas(info catalog.ServerInfo, opts InspectOptions) bool {
 	if len(SplitSchemaNames(opts.Schemas)) > 0 {
 		return true
 	}
@@ -503,6 +503,6 @@ func describesSchemas(info dbschematypes.DBInfo, opts InspectOptions) bool {
 // already holds. Spelled once so that `schema inspect`, `schema apply` and
 // `schema clean` cannot end up counting the same exclude pattern three
 // different ways.
-func ConnectionIsRealmScoped(info dbschematypes.DBInfo) bool {
+func ConnectionIsRealmScoped(info catalog.ServerInfo) bool {
 	return schemaselection.Realm(info.Dialect, info.URL, info.Schema)
 }

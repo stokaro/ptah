@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/internal/timescale"
 )
 
@@ -22,7 +22,7 @@ import (
 func TestReportUndescribed_NamesWhatTheDescriptionLeavesOut(t *testing.T) {
 	tests := []struct {
 		name   string
-		schema *types.DBSchema
+		schema *catalog.Database
 		// wantLines is how many notes the row expects, asserted before the
 		// substrings: qt.Contains with an empty string matches anything, so a
 		// row expecting silence needs a count rather than an absent substring.
@@ -32,24 +32,24 @@ func TestReportUndescribed_NamesWhatTheDescriptionLeavesOut(t *testing.T) {
 	}{
 		{
 			name:      "an ordinary PostgreSQL description",
-			schema:    &types.DBSchema{Tables: []types.DBTable{{Name: "users"}}},
+			schema:    &catalog.Database{Tables: []catalog.Table{{Name: "users"}}},
 			wantLines: 0,
 		},
 		{
 			// A declaration carries this one, so the description is complete
 			// and there is nothing to report.
 			name: "one hypertable on one dimension",
-			schema: &types.DBSchema{
-				Tables:      []types.DBTable{{Name: "conditions"}},
-				Hypertables: []types.DBHypertable{{Name: "conditions", PrimaryDimension: "time", Dimensions: 1}},
+			schema: &catalog.Database{
+				Tables:      []catalog.Table{{Name: "conditions"}},
+				Hypertables: []catalog.Hypertable{{Name: "conditions", PrimaryDimension: "time", Dimensions: 1}},
 			},
 			wantLines: 0,
 		},
 		{
 			name: "one hypertable on two dimensions",
-			schema: &types.DBSchema{
-				Tables:      []types.DBTable{{Name: "conditions"}},
-				Hypertables: []types.DBHypertable{{Name: "conditions", PrimaryDimension: "time", Dimensions: 2}},
+			schema: &catalog.Database{
+				Tables:      []catalog.Table{{Name: "conditions"}},
+				Hypertables: []catalog.Hypertable{{Name: "conditions", PrimaryDimension: "time", Dimensions: 2}},
 			},
 			wantLines: 1,
 			want: []string{
@@ -59,9 +59,9 @@ func TestReportUndescribed_NamesWhatTheDescriptionLeavesOut(t *testing.T) {
 		},
 		{
 			name: "two hypertables are named in order",
-			schema: &types.DBSchema{
-				Tables: []types.DBTable{{Name: "metrics"}, {Name: "conditions"}},
-				Hypertables: []types.DBHypertable{
+			schema: &catalog.Database{
+				Tables: []catalog.Table{{Name: "metrics"}, {Name: "conditions"}},
+				Hypertables: []catalog.Hypertable{
 					{Name: "metrics", PrimaryDimension: "ts", Dimensions: 2},
 					{Name: "conditions", PrimaryDimension: "time", Dimensions: 2},
 				},
@@ -74,9 +74,9 @@ func TestReportUndescribed_NamesWhatTheDescriptionLeavesOut(t *testing.T) {
 		},
 		{
 			name: "a hypertable the selection removed is not named",
-			schema: &types.DBSchema{
-				Tables: []types.DBTable{{Name: "users"}},
-				Hypertables: []types.DBHypertable{
+			schema: &catalog.Database{
+				Tables: []catalog.Table{{Name: "users"}},
+				Hypertables: []catalog.Hypertable{
 					{Name: "conditions", PrimaryDimension: "time", Dimensions: 2},
 				},
 			},
@@ -84,9 +84,9 @@ func TestReportUndescribed_NamesWhatTheDescriptionLeavesOut(t *testing.T) {
 		},
 		{
 			name: "a hypertable in a named schema",
-			schema: &types.DBSchema{
-				Tables: []types.DBTable{{Schema: "app", Name: "conditions"}},
-				Hypertables: []types.DBHypertable{
+			schema: &catalog.Database{
+				Tables: []catalog.Table{{Schema: "app", Name: "conditions"}},
+				Hypertables: []catalog.Hypertable{
 					{Schema: "app", Name: "conditions", PrimaryDimension: "time", Dimensions: 2},
 				},
 			},
@@ -98,19 +98,19 @@ func TestReportUndescribed_NamesWhatTheDescriptionLeavesOut(t *testing.T) {
 			// is nothing to warn about. A note here would send an operator
 			// looking for what is missing from a document that has it.
 			name: "one continuous aggregate",
-			schema: &types.DBSchema{
-				ContinuousAggregates: []types.DBContinuousAggregate{{Name: "conditions_hourly"}},
+			schema: &catalog.Database{
+				ContinuousAggregates: []catalog.ContinuousAggregate{{Name: "conditions_hourly"}},
 			},
 			wantLines: 0,
 		},
 		{
 			name: "an aggregate over an incompletely described hypertable",
-			schema: &types.DBSchema{
-				Tables: []types.DBTable{{Name: "conditions"}},
-				Hypertables: []types.DBHypertable{
+			schema: &catalog.Database{
+				Tables: []catalog.Table{{Name: "conditions"}},
+				Hypertables: []catalog.Hypertable{
 					{Name: "conditions", PrimaryDimension: "time", Dimensions: 2},
 				},
-				ContinuousAggregates: []types.DBContinuousAggregate{{Name: "conditions_hourly"}},
+				ContinuousAggregates: []catalog.ContinuousAggregate{{Name: "conditions_hourly"}},
 			},
 			wantLines: 1,
 			want:      []string{"1 hypertable is"},
@@ -122,9 +122,9 @@ func TestReportUndescribed_NamesWhatTheDescriptionLeavesOut(t *testing.T) {
 			// description drops -- the same failure this note exists to
 			// prevent, one level down.
 			name: "a hypertable with a second dimension",
-			schema: &types.DBSchema{
-				Tables: []types.DBTable{{Name: "conditions"}},
-				Hypertables: []types.DBHypertable{
+			schema: &catalog.Database{
+				Tables: []catalog.Table{{Name: "conditions"}},
+				Hypertables: []catalog.Hypertable{
 					{Name: "conditions", PrimaryDimension: "time", Dimensions: 2},
 				},
 			},
@@ -133,9 +133,9 @@ func TestReportUndescribed_NamesWhatTheDescriptionLeavesOut(t *testing.T) {
 		},
 		{
 			name: "a hypertable with three dimensions",
-			schema: &types.DBSchema{
-				Tables: []types.DBTable{{Name: "conditions"}},
-				Hypertables: []types.DBHypertable{
+			schema: &catalog.Database{
+				Tables: []catalog.Table{{Name: "conditions"}},
+				Hypertables: []catalog.Hypertable{
 					{Name: "conditions", PrimaryDimension: "time", Dimensions: 3},
 				},
 			},
@@ -147,9 +147,9 @@ func TestReportUndescribed_NamesWhatTheDescriptionLeavesOut(t *testing.T) {
 			// description, so the note that names an incomplete one must not
 			// fire for it.
 			name: "the ordinary single dimension is not named",
-			schema: &types.DBSchema{
-				Tables: []types.DBTable{{Name: "conditions"}},
-				Hypertables: []types.DBHypertable{
+			schema: &catalog.Database{
+				Tables: []catalog.Table{{Name: "conditions"}},
+				Hypertables: []catalog.Hypertable{
 					{Name: "conditions", PrimaryDimension: "time", Dimensions: 1},
 				},
 			},
@@ -158,9 +158,9 @@ func TestReportUndescribed_NamesWhatTheDescriptionLeavesOut(t *testing.T) {
 		},
 		{
 			name: "a hypertable whose dimension the catalog did not report",
-			schema: &types.DBSchema{
-				Tables:      []types.DBTable{{Name: "conditions"}},
-				Hypertables: []types.DBHypertable{{Name: "conditions"}},
+			schema: &catalog.Database{
+				Tables:      []catalog.Table{{Name: "conditions"}},
+				Hypertables: []catalog.Hypertable{{Name: "conditions"}},
 			},
 			wantLines: 1,
 			want:      []string{"conditions."},
@@ -191,9 +191,9 @@ func TestReportUndescribed_NamesWhatTheDescriptionLeavesOut(t *testing.T) {
 // panics fails a read that succeeded.
 func TestReportUndescribed_DropsTheNoteWithNowhereToWriteIt(t *testing.T) {
 	c := qt.New(t)
-	schema := &types.DBSchema{
-		Tables:      []types.DBTable{{Name: "conditions"}},
-		Hypertables: []types.DBHypertable{{Name: "conditions", PrimaryDimension: "time"}},
+	schema := &catalog.Database{
+		Tables:      []catalog.Table{{Name: "conditions"}},
+		Hypertables: []catalog.Hypertable{{Name: "conditions", PrimaryDimension: "time"}},
 	}
 
 	timescale.ReportUndescribed(nil, schema)

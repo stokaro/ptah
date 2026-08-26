@@ -8,7 +8,7 @@ import (
 	"log/slog"
 	"strings"
 
-	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 )
 
 // foreignKeySession is foreign-key enforcement turned off on one connection for
@@ -139,7 +139,7 @@ func collectForeignKeyViolations(rows *sql.Rows) ([]string, error) {
 //
 // Before the commit, PRAGMA foreign_key_check has to pass. Enforcement is put
 // back the way it was found whether the transaction commits or rolls back.
-func (w *Writer) BeginTransactionWithoutForeignKeys(ctx context.Context) (types.SchemaTransaction, error) {
+func (w *Writer) BeginTransactionWithoutForeignKeys(ctx context.Context) (catalog.SchemaTransaction, error) {
 	if w.dryRun {
 		slog.Info("[DRY RUN] Would begin transaction with foreign keys disabled")
 		return &transactionWriter{schema: w.schema, dryRun: true}, nil

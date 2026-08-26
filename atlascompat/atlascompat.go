@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlashcl"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
@@ -77,7 +77,7 @@ func SchemaToAST(database goschema.Database, targetPlatform string) *ast.Stateme
 
 // DBSchemaToGoSchema converts an introspected database schema into Ptah's Go
 // schema IR.
-func DBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Database {
+func DBSchemaToGoSchema(dbSchema *catalog.Database) *goschema.Database {
 	return dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
 }
 

@@ -5,13 +5,13 @@ import (
 	"slices"
 	"strings"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/clickhouserbac"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/convert/goschematodb"
@@ -29,7 +29,7 @@ import (
 // Compare performs schema comparison between generated and database schemas using default options.
 // This is a convenience function that uses default comparison options (ignores "plpgsql" extension).
 // For custom configuration, use CompareWithOptions.
-func Compare(generated *goschema.Database, database *types.DBSchema) *difftypes.SchemaDiff {
+func Compare(generated *goschema.Database, database *catalog.Database) *difftypes.SchemaDiff {
 	return CompareWithOptions(generated, database, nil)
 }
 
@@ -38,7 +38,7 @@ func Compare(generated *goschema.Database, database *types.DBSchema) *difftypes.
 // such as MySQL-family catalog spellings and referential-action folds (see
 // config.CompareOptions.Dialect). Pass an empty dialect for dialect-neutral
 // comparison (equivalent to Compare).
-func CompareWithDialect(generated *goschema.Database, database *types.DBSchema, dialect string) *difftypes.SchemaDiff {
+func CompareWithDialect(generated *goschema.Database, database *catalog.Database, dialect string) *difftypes.SchemaDiff {
 	opts := config.DefaultCompareOptions()
 	opts.Dialect = dialect
 	return CompareWithOptions(generated, database, opts)
@@ -61,8 +61,8 @@ func CompareSchemas(desired, current *goschema.Database, dialect string) *diffty
 // and admit no target identifier collisions.
 func CompareWithDatabaseInfo(
 	generated *goschema.Database,
-	database *types.DBSchema,
-	info types.DBInfo,
+	database *catalog.Database,
+	info catalog.ServerInfo,
 	opts *config.CompareOptions,
 ) (*difftypes.SchemaDiff, error) {
 	diff, _, err := compareWithDatabaseInfoReportingUndecidedAdditions(
@@ -73,8 +73,8 @@ func CompareWithDatabaseInfo(
 
 func compareWithDatabaseInfoReportingUndecidedAdditions(
 	generated *goschema.Database,
-	database *types.DBSchema,
-	info types.DBInfo,
+	database *catalog.Database,
+	info catalog.ServerInfo,
 	opts *config.CompareOptions,
 ) (*difftypes.SchemaDiff, []coverage.Object, error) {
 	merged := config.DefaultCompareOptions()
@@ -95,8 +95,8 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 	if err := sqlitevirtual.ValidateToggle(info.Dialect); err != nil {
 		return nil, nil, err
 	}
-	// A reserved PostgreSQL role is in neither DBSchema.Roles nor
-	// DBSchema.RolesOutOfScope, so comparing it would read it as absent and
+	// A reserved PostgreSQL role is in neither Database.Roles nor
+	// Database.RolesOutOfScope, so comparing it would read it as absent and
 	// plan a CREATE ROLE the server always refuses. Refuse the declaration
 	// here instead, before anything is compared (stokaro/ptah#1312).
 	if err := validateDeclaredBeforeComparison(generated, database, info); err != nil {
@@ -190,7 +190,7 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 //	// Don't ignore any extensions
 //	opts := config.WithIgnoredExtensions()
 //	diff := schemadiff.CompareWithOptions(generated, database, opts)
-func CompareWithOptions(generated *goschema.Database, database *types.DBSchema, opts *config.CompareOptions) *difftypes.SchemaDiff {
+func CompareWithOptions(generated *goschema.Database, database *catalog.Database, opts *config.CompareOptions) *difftypes.SchemaDiff {
 	diff, _ := CompareReportingUndecidedAdditions(generated, database, opts)
 	return diff
 }
@@ -217,7 +217,7 @@ func CompareWithOptions(generated *goschema.Database, database *types.DBSchema, 
 // is stable across runs over the same two states.
 func CompareReportingUndecidedAdditions(
 	generated *goschema.Database,
-	database *types.DBSchema,
+	database *catalog.Database,
 	opts *config.CompareOptions,
 ) (*difftypes.SchemaDiff, []coverage.Object) {
 	if opts == nil {
@@ -353,9 +353,9 @@ func CompareReportingUndecidedAdditions(
 
 func normalizeInlineEnumsForCompare(
 	generated *goschema.Database,
-	database *types.DBSchema,
+	database *catalog.Database,
 	opts *config.CompareOptions,
-) (*goschema.Database, *types.DBSchema) {
+) (*goschema.Database, *catalog.Database) {
 	if generated == nil || database == nil || opts == nil || !isInlineEnumDialect(opts.Dialect) {
 		return generated, database
 	}
@@ -535,8 +535,8 @@ func rowTTLTables(generated *goschema.Database) []crdbttl.TableTTL {
 // rather than as one long guarded block.
 func validateDeclaredBeforeComparison(
 	generated *goschema.Database,
-	database *types.DBSchema,
-	info types.DBInfo,
+	database *catalog.Database,
+	info catalog.ServerInfo,
 ) error {
 	if generated == nil {
 		return nil

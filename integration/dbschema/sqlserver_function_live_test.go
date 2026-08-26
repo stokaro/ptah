@@ -10,11 +10,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/dbschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -198,11 +198,11 @@ func sqlServerFunctionSchema(schemaName string) *goschema.Database {
 
 // sqlServerFunctionNamed returns the function a catalog read reports under a
 // name.
-func sqlServerFunctionNamed(functions []dbschematypes.DBFunction, name string) dbschematypes.DBFunction {
+func sqlServerFunctionNamed(functions []catalog.Function, name string) catalog.Function {
 	for _, function := range functions {
 		if function.Name == name {
 			return function
 		}
 	}
-	return dbschematypes.DBFunction{}
+	return catalog.Function{}
 }

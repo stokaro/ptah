@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
-	dbtypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
 
@@ -79,7 +79,7 @@ func TestFunctionDefinitions_AnArgumentModeIsOneArgumentWhateverItsCase(t *testi
 
 			diff := compare.FunctionDefinitions(
 				goschema.Function{Name: "r", Parameters: test.generated, Body: "BEGIN END;"},
-				dbtypes.DBFunction{Name: "r", Parameters: test.database, Body: "BEGIN END;"},
+				catalog.Function{Name: "r", Parameters: test.database, Body: "BEGIN END;"},
 			)
 
 			c.Assert(diff.Changes["parameters"], qt.Equals, "")
@@ -127,7 +127,7 @@ func TestFunctionDefinitions_ChangingAnArgumentModeIsStillAChange(t *testing.T) 
 
 			diff := compare.FunctionDefinitions(
 				goschema.Function{Name: "r", Parameters: test.generated, Body: "BEGIN END;"},
-				dbtypes.DBFunction{Name: "r", Parameters: test.database, Body: "BEGIN END;"},
+				catalog.Function{Name: "r", Parameters: test.database, Body: "BEGIN END;"},
 			)
 
 			c.Assert(diff.Changes["parameters"], qt.Not(qt.Equals), "")
@@ -144,7 +144,7 @@ func TestFunctionDefinitions_TheMySQLFamilyFoldsTheSameModes(t *testing.T) {
 
 	diff := compare.FunctionDefinitionsWithDialect(
 		goschema.Function{Name: "p_out", Parameters: "a int, out b int, inout c int", Body: "SET b = a"},
-		dbtypes.DBFunction{Name: "p_out", Parameters: "a int, OUT b int, INOUT c int", Body: "SET b = a"},
+		catalog.Function{Name: "p_out", Parameters: "a int, OUT b int, INOUT c int", Body: "SET b = a"},
 		platform.MySQL,
 	)
 

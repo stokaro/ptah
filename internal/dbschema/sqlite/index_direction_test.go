@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/internal/dbschema/sqlite"
 )
 
@@ -21,12 +21,12 @@ func TestReader_RecordsAnIndexKeysDirection(t *testing.T) {
 	tests := []struct {
 		name  string
 		ddl   string
-		parts []dbschematypes.DBIndexPart
+		parts []catalog.IndexPart
 	}{
 		{
 			name:  "a descending key",
 			ddl:   `CREATE INDEX accounts_desc_idx ON accounts (status DESC)`,
-			parts: []dbschematypes.DBIndexPart{{Name: "status", Desc: true}},
+			parts: []catalog.IndexPart{{Name: "status", Desc: true}},
 		},
 		{
 			// The control. An ascending key is the default spelling, and a read
@@ -34,12 +34,12 @@ func TestReader_RecordsAnIndexKeysDirection(t *testing.T) {
 			// while describing every index in the database wrongly.
 			name:  "an explicitly ascending key",
 			ddl:   `CREATE INDEX accounts_asc_idx ON accounts (status ASC)`,
-			parts: []dbschematypes.DBIndexPart{{Name: "status"}},
+			parts: []catalog.IndexPart{{Name: "status"}},
 		},
 		{
 			name:  "a key with no direction at all",
 			ddl:   `CREATE INDEX accounts_plain_idx ON accounts (status)`,
-			parts: []dbschematypes.DBIndexPart{{Name: "status"}},
+			parts: []catalog.IndexPart{{Name: "status"}},
 		},
 		{
 			// Two keys pointing opposite ways. A one-key index cannot tell a
@@ -47,7 +47,7 @@ func TestReader_RecordsAnIndexKeysDirection(t *testing.T) {
 			// answer SQLite gives.
 			name: "one key each way",
 			ddl:  `CREATE INDEX accounts_mixed_idx ON accounts (status DESC, email ASC)`,
-			parts: []dbschematypes.DBIndexPart{
+			parts: []catalog.IndexPart{
 				{Name: "status", Desc: true},
 				{Name: "email"},
 			},
@@ -60,7 +60,7 @@ func TestReader_RecordsAnIndexKeysDirection(t *testing.T) {
 			// branches differ.
 			name:  "a descending expression key",
 			ddl:   `CREATE INDEX accounts_expr_idx ON accounts (lower(email) DESC)`,
-			parts: []dbschematypes.DBIndexPart{{Expr: "lower(email) DESC"}},
+			parts: []catalog.IndexPart{{Expr: "lower(email) DESC"}},
 		},
 	}
 

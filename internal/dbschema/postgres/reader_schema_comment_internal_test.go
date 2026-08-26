@@ -12,8 +12,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 )
 
@@ -157,7 +157,7 @@ func TestCatalogDependenciesAreNotReadWhereThereAreNone(t *testing.T) {
 			// in for by a constant the way a missing function can, so the whole
 			// read is skipped rather than reduced.
 			reader := NewPostgreSQLReaderWithCapabilities(db.SQL, "public", tt.caps)
-			err := reader.readUserTypesInto(t.Context(), &types.DBSchema{})
+			err := reader.readUserTypesInto(t.Context(), &catalog.Database{})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(len(recorder.statements) > 0, qt.Equals, tt.wantQuery)

@@ -6,10 +6,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/schemachange"
 	"go.5x5.cz/ptah/internal/schemastate"
 )
@@ -28,7 +28,7 @@ func TestColumnModificationCarriesBothSides(t *testing.T) {
 
 	changes := changesFor(c, describedTable(goschema.Field{
 		StructName: "Widget", Name: "code", Type: "varchar(200)", Nullable: true,
-	}), catalogTable(dbschematypes.DBColumn{
+	}), catalogTable(catalog.Column{
 		Name: "code", DataType: "varchar(50)", IsNullable: "YES",
 	}))
 
@@ -55,7 +55,7 @@ func TestAGeneratedColumnChangeCarriesBothExpressions(t *testing.T) {
 	changes := changesFor(c, describedTable(goschema.Field{
 		StructName: "Widget", Name: "code", Type: "text", Nullable: true,
 		GeneratedExpression: "upper(name)", GeneratedKind: "STORED",
-	}), catalogTable(dbschematypes.DBColumn{
+	}), catalogTable(catalog.Column{
 		Name: "code", DataType: "text", IsNullable: "YES",
 		GeneratedExpression: new("lower(name)"), GeneratedKind: "STORED",
 	}))
@@ -70,7 +70,7 @@ func TestAGeneratedColumnChangeCarriesBothExpressions(t *testing.T) {
 // TestTypeSpellingsThatMeanOneTypeAreNotAChange is the control on the row above.
 // A comparison that reported every spelling difference would satisfy it
 // completely, and would report an ALTER for every column of a database Ptah
-// itself created: the declaration says `int` and the catalog says `integer`.
+// itself created: the declaration says `int` and the currentCatalog says `integer`.
 func TestTypeSpellingsThatMeanOneTypeAreNotAChange(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -79,7 +79,7 @@ func TestTypeSpellingsThatMeanOneTypeAreNotAChange(t *testing.T) {
 	}{
 		{name: "int against integer", declared: "int", reported: "integer"},
 		{name: "case", declared: "INTEGER", reported: "integer"},
-		{name: "a postgres typecast the catalog spells out", declared: "text", reported: "text"},
+		{name: "a postgres typecast the currentCatalog spells out", declared: "text", reported: "text"},
 	}
 
 	for _, test := range tests {
@@ -88,7 +88,7 @@ func TestTypeSpellingsThatMeanOneTypeAreNotAChange(t *testing.T) {
 
 			changes := changesFor(c, describedTable(goschema.Field{
 				StructName: "Widget", Name: "code", Type: test.declared, Nullable: true,
-			}), catalogTable(dbschematypes.DBColumn{
+			}), catalogTable(catalog.Column{
 				Name: "code", DataType: test.reported, IsNullable: "YES",
 			}))
 
@@ -132,16 +132,16 @@ func TestNotNullColumnAdditionAnswersFromTheRowStatistics(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			catalog := catalogTable(dbschematypes.DBColumn{
+			currentCatalog := catalogTable(catalog.Column{
 				Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true,
 			})
-			catalog.Tables[0].EstimatedRows = test.rows
-			catalog.Tables[0].RowStatsUnknown = test.statsUnknown
+			currentCatalog.Tables[0].EstimatedRows = test.rows
+			currentCatalog.Tables[0].RowStatsUnknown = test.statsUnknown
 
 			changes := changesFor(c, describedTable(
 				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
 				goschema.Field{StructName: "Widget", Name: "code", Type: "text"},
-			), catalog)
+			), currentCatalog)
 
 			c.Assert(changes, qt.HasLen, 1)
 			c.Assert(changes[0].Operation, qt.Equals, schemachange.Add)
@@ -187,15 +187,15 @@ func TestAColumnThatFillsItselfIsPlannedOnAPopulatedTable(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			catalog := catalogTable(dbschematypes.DBColumn{
+			currentCatalog := catalogTable(catalog.Column{
 				Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true,
 			})
-			catalog.Tables[0].EstimatedRows = 42
+			currentCatalog.Tables[0].EstimatedRows = 42
 
 			changes := changesFor(c, describedTable(
 				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
 				test.field,
-			), catalog)
+			), currentCatalog)
 
 			c.Assert(changes, qt.HasLen, 1)
 			c.Assert(changes[0].Status, qt.Equals, schemachange.Planned)
@@ -232,10 +232,10 @@ func TestDroppingSaysWhatItCosts(t *testing.T) {
 			c := qt.New(t)
 
 			changes := changesFor(c, test.description, catalogTable(
-				dbschematypes.DBColumn{
+				catalog.Column{
 					Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true,
 				},
-				dbschematypes.DBColumn{Name: "code", DataType: "text", IsNullable: "YES"},
+				catalog.Column{Name: "code", DataType: "text", IsNullable: "YES"},
 			))
 
 			c.Assert(changes, qt.HasLen, 1)
@@ -256,7 +256,7 @@ func TestCreatingATableSaysItCostsNothing(t *testing.T) {
 
 	changes := changesFor(c, describedTable(
 		goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
-	), &dbschematypes.DBSchema{})
+	), &catalog.Database{})
 
 	c.Assert(changes, qt.HasLen, 1)
 	c.Assert(changes[0].Operation, qt.Equals, schemachange.Add)
@@ -271,10 +271,10 @@ func TestCreatingATableSaysItCostsNothing(t *testing.T) {
 func changesFor(
 	c *qt.C,
 	description *goschema.Database,
-	catalog *dbschematypes.DBSchema,
+	currentCatalog *catalog.Database,
 ) []schemachange.Change {
 	c.Helper()
-	return changesForProfile(c, description, catalog, postgresProfile())
+	return changesForProfile(c, description, currentCatalog, postgresProfile())
 }
 
 // changesForProfile is [changesFor] against a named target, which the type fold
@@ -282,13 +282,13 @@ func changesFor(
 func changesForProfile(
 	c *qt.C,
 	description *goschema.Database,
-	catalog *dbschematypes.DBSchema,
+	currentCatalog *catalog.Database,
 	profile schemastate.Profile,
 ) []schemachange.Change {
 	c.Helper()
 	desired, err := schemastate.FromDescription(description, profile.Dialect, profile.Semantics)
 	c.Assert(err, qt.IsNil)
-	current, err := schemastate.FromCatalog(catalog, profile.Dialect, profile.Semantics)
+	current, err := schemastate.FromCatalog(currentCatalog, profile.Dialect, profile.Semantics)
 	c.Assert(err, qt.IsNil)
 	normalizedDesired, err := schemastate.Normalize(desired, profile)
 	c.Assert(err, qt.IsNil)
@@ -390,8 +390,8 @@ func describedTableWithKey(key []string, fields ...goschema.Field) *goschema.Dat
 	}
 }
 
-// catalogTable is the same table as a catalog read reports it.
-func catalogTable(columns ...dbschematypes.DBColumn) *dbschematypes.DBSchema {
+// catalogTable is the same table as a currentCatalog read reports it.
+func catalogTable(columns ...catalog.Column) *catalog.Database {
 	return catalogTableInSchema("public", columns...)
 }
 
@@ -399,11 +399,11 @@ func catalogTable(columns ...dbschematypes.DBColumn) *dbschematypes.DBSchema {
 //
 // The schema has to agree with the PROFILE the row runs against: an unqualified
 // declaration resolves to the profile dialect's default schema, which is
-// "public" on PostgreSQL and empty on Oracle, so a "public" catalog read past
+// "public" on PostgreSQL and empty on Oracle, so a "public" currentCatalog read past
 // an Oracle profile describes a different table (stokaro/ptah#1662).
-func catalogTableInSchema(schema string, columns ...dbschematypes.DBColumn) *dbschematypes.DBSchema {
-	return &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{{Name: "widget", Schema: schema, Columns: columns}},
+func catalogTableInSchema(schema string, columns ...catalog.Column) *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{{Name: "widget", Schema: schema, Columns: columns}},
 	}
 }
 
@@ -418,7 +418,7 @@ func TestCoverageGatesTablesInBothDirections(t *testing.T) {
 		desiredLimits  coverage.Set
 		currentLimits  coverage.Set
 		description    *goschema.Database
-		catalog        *dbschematypes.DBSchema
+		currentCatalog *catalog.Database
 		wantOperation  schemachange.Operation
 		wantStatus     schemachange.Status
 		wantDiagnostic string
@@ -427,7 +427,7 @@ func TestCoverageGatesTablesInBothDirections(t *testing.T) {
 			name:          "a table the desired schema never claimed to describe",
 			desiredLimits: coverage.Set{}.WithObject(coverage.Schema, "public"),
 			description:   &goschema.Database{},
-			catalog: catalogTable(dbschematypes.DBColumn{
+			currentCatalog: catalogTable(catalog.Column{
 				Name: "id", DataType: "integer", IsNullable: "NO",
 			}),
 			wantOperation:  schemachange.Remove,
@@ -439,7 +439,7 @@ func TestCoverageGatesTablesInBothDirections(t *testing.T) {
 			currentLimits: coverage.Set{}.WithObject(coverage.Schema, "public"),
 			description: describedTable(
 				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true}),
-			catalog:        &dbschematypes.DBSchema{},
+			currentCatalog: &catalog.Database{},
 			wantOperation:  schemachange.Add,
 			wantStatus:     schemachange.Undecidable,
 			wantDiagnostic: "CREATE TABLE has no conditional form",
@@ -450,9 +450,9 @@ func TestCoverageGatesTablesInBothDirections(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			test.description.NotDescribed = test.desiredLimits
-			test.catalog.NotDescribed = test.currentLimits
+			test.currentCatalog.NotDescribed = test.currentLimits
 
-			changes := changesFor(c, test.description, test.catalog)
+			changes := changesFor(c, test.description, test.currentCatalog)
 
 			c.Assert(changes, qt.HasLen, 1)
 			c.Assert(changes[0].Operation, qt.Equals, test.wantOperation)
@@ -470,7 +470,7 @@ func TestCoverageDoesNotWithholdWhatBothSidesDescribe(t *testing.T) {
 
 	changes := changesFor(c, describedTable(
 		goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
-	), &dbschematypes.DBSchema{})
+	), &catalog.Database{})
 
 	c.Assert(changes, qt.HasLen, 1)
 	c.Assert(changes[0].Status, qt.Equals, schemachange.Planned)
@@ -490,22 +490,22 @@ func TestCoverageDoesNotWithholdWhatBothSidesDescribe(t *testing.T) {
 // visible -- which is what a first version of this test measured.
 func TestATableCreationOrdersBeforeTheConstraintThatNeedsIt(t *testing.T) {
 	tests := []struct {
-		name    string
-		catalog *dbschematypes.DBSchema
-		wantNew string
+		name           string
+		currentCatalog *catalog.Database
+		wantNew        string
 	}{
 		{
 			// Only the OWNING edge: the referenced table is already there.
-			name:    "the table that carries it",
-			catalog: parentOnlyCatalog(),
-			wantNew: "child",
+			name:           "the table that carries it",
+			currentCatalog: parentOnlyCatalog(),
+			wantNew:        "child",
 		},
 		{
 			// Only the REFERENCED edge: the table carrying the key is already
 			// there, and the table it points at is not.
-			name:    "the table it references",
-			catalog: childOnlyCatalog(),
-			wantNew: "parent",
+			name:           "the table it references",
+			currentCatalog: childOnlyCatalog(),
+			wantNew:        "parent",
 		},
 	}
 
@@ -513,7 +513,7 @@ func TestATableCreationOrdersBeforeTheConstraintThatNeedsIt(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			forward := forwardOrderFor(c, parentChildSchema(), test.catalog, "constraint", "table")
+			forward := forwardOrderFor(c, parentChildSchema(), test.currentCatalog, "constraint", "table")
 
 			c.Assert(kindsOf(forward), qt.DeepEquals, []string{"table", "constraint"})
 			c.Assert(forward[0].ID.Name.Source, qt.Equals, test.wantNew)
@@ -543,10 +543,10 @@ func parentChildSchema() *goschema.Database {
 
 // parentOnlyCatalog holds the referenced table and not the one that carries the
 // key.
-func parentOnlyCatalog() *dbschematypes.DBSchema {
-	return &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
-			{Name: "parent", Schema: "public", Columns: []dbschematypes.DBColumn{
+func parentOnlyCatalog() *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{
+			{Name: "parent", Schema: "public", Columns: []catalog.Column{
 				{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
 			}},
 		},
@@ -555,10 +555,10 @@ func parentOnlyCatalog() *dbschematypes.DBSchema {
 
 // childOnlyCatalog holds the table that carries the key and not the one it
 // references.
-func childOnlyCatalog() *dbschematypes.DBSchema {
-	return &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
-			{Name: "child", Schema: "public", Columns: []dbschematypes.DBColumn{
+func childOnlyCatalog() *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{
+			{Name: "child", Schema: "public", Columns: []catalog.Column{
 				{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
 				{Name: "parent_id", DataType: "integer", IsNullable: "YES"},
 			}},
@@ -574,23 +574,23 @@ func TestATableDropOrdersAfterTheConstraintOnIt(t *testing.T) {
 	c := qt.New(t)
 	parent := "parent"
 	column := "id"
-	catalog := &dbschematypes.DBSchema{
-		Tables: []dbschematypes.DBTable{
-			{Name: "parent", Schema: "public", Columns: []dbschematypes.DBColumn{
+	currentCatalog := &catalog.Database{
+		Tables: []catalog.Table{
+			{Name: "parent", Schema: "public", Columns: []catalog.Column{
 				{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
 			}},
-			{Name: "child", Schema: "public", Columns: []dbschematypes.DBColumn{
+			{Name: "child", Schema: "public", Columns: []catalog.Column{
 				{Name: "parent_id", DataType: "integer", IsNullable: "YES"},
 			}},
 		},
-		Constraints: []dbschematypes.DBConstraint{{
+		Constraints: []catalog.Constraint{{
 			Name: "fk_child_parent", TableName: "child", Schema: "public", Type: "FOREIGN KEY",
 			ColumnName: "parent_id", ColumnNames: []string{"parent_id"},
 			ForeignTable: &parent, ForeignSchema: "public", ForeignColumn: &column,
 		}},
 	}
 
-	forward := forwardOrderFor(c, &goschema.Database{}, catalog, "table", "constraint")
+	forward := forwardOrderFor(c, &goschema.Database{}, currentCatalog, "table", "constraint")
 
 	c.Assert(kindsOf(forward), qt.DeepEquals, []string{"constraint", "table", "table"})
 	c.Assert(forward[0].ID.Name.Source, qt.Equals, "fk_child_parent")
@@ -608,14 +608,14 @@ func TestATableDropOrdersAfterTheConstraintOnIt(t *testing.T) {
 func forwardOrderFor(
 	c *qt.C,
 	description *goschema.Database,
-	catalog *dbschematypes.DBSchema,
+	currentCatalog *catalog.Database,
 	inputKinds ...string,
 ) []schemachange.Change {
 	c.Helper()
 	profile := postgresProfile()
 	desired, err := schemastate.FromDescription(description, profile.Dialect, profile.Semantics)
 	c.Assert(err, qt.IsNil)
-	current, err := schemastate.FromCatalog(catalog, profile.Dialect, profile.Semantics)
+	current, err := schemastate.FromCatalog(currentCatalog, profile.Dialect, profile.Semantics)
 	c.Assert(err, qt.IsNil)
 	normalizedDesired, err := schemastate.Normalize(desired, profile)
 	c.Assert(err, qt.IsNil)
@@ -644,12 +644,12 @@ func kindsOf(changes []schemachange.Change) []string {
 }
 
 // TestADeclaredTypeIsAskedInTheTargetsSpelling pins the asymmetric half of the
-// fold, which a PostgreSQL row cannot reach: there the declared and catalog
+// fold, which a PostgreSQL row cannot reach: there the declared and currentCatalog
 // spellings mostly agree already.
 //
 // Oracle has no counterpart for most declared type names -- a declared TEXT is
 // a CLOB, an INT is a NUMBER(10) -- so the question is not "are these the same
-// word" but "would rendering this declaration produce the type the catalog
+// word" but "would rendering this declaration produce the type the currentCatalog
 // holds". Comparing them as words reported an ALTER for every column of a
 // database Ptah had just built from that declaration.
 func TestADeclaredTypeIsAskedInTheTargetsSpelling(t *testing.T) {
@@ -669,7 +669,7 @@ func TestADeclaredTypeIsAskedInTheTargetsSpelling(t *testing.T) {
 
 			changes := changesForProfile(c, describedTable(goschema.Field{
 				StructName: "Widget", Name: "code", Type: test.declared, Nullable: true,
-			}), catalogTableInSchema("", dbschematypes.DBColumn{
+			}), catalogTableInSchema("", catalog.Column{
 				Name: "code", DataType: test.reported, IsNullable: "YES",
 			}), oracleProfile())
 
@@ -686,7 +686,7 @@ func TestADefaultChangeIsAChange(t *testing.T) {
 	tests := []struct {
 		name     string
 		declared goschema.Field
-		reported dbschematypes.DBColumn
+		reported catalog.Column
 	}{
 		{
 			name: "a default the database does not have",
@@ -694,7 +694,7 @@ func TestADefaultChangeIsAChange(t *testing.T) {
 				StructName: "Widget", Name: "code", Type: "text", Nullable: true,
 				Default: "unset", DefaultSet: true,
 			},
-			reported: dbschematypes.DBColumn{Name: "code", DataType: "text", IsNullable: "YES"},
+			reported: catalog.Column{Name: "code", DataType: "text", IsNullable: "YES"},
 		},
 		{
 			name: "a different default",
@@ -702,7 +702,7 @@ func TestADefaultChangeIsAChange(t *testing.T) {
 				StructName: "Widget", Name: "code", Type: "text", Nullable: true,
 				Default: "unset", DefaultSet: true,
 			},
-			reported: dbschematypes.DBColumn{
+			reported: catalog.Column{
 				Name: "code", DataType: "text", IsNullable: "YES", ColumnDefault: new("other"),
 			},
 		},
@@ -714,7 +714,7 @@ func TestADefaultChangeIsAChange(t *testing.T) {
 				StructName: "Widget", Name: "code", Type: "text", Nullable: true,
 				Default: "", DefaultSet: true,
 			},
-			reported: dbschematypes.DBColumn{Name: "code", DataType: "text", IsNullable: "YES"},
+			reported: catalog.Column{Name: "code", DataType: "text", IsNullable: "YES"},
 		},
 	}
 
@@ -739,18 +739,18 @@ func TestADomainColumnIsComparedByIdentity(t *testing.T) {
 	tests := []struct {
 		name        string
 		description *goschema.Database
-		column      dbschematypes.DBColumn
+		column      catalog.Column
 		wantChanged []string
 	}{
 		{
-			// The declaration names the BASE type and the catalog reports a
+			// The declaration names the BASE type and the currentCatalog reports a
 			// DOMAIN named after it. Folding the domain's name as if it were a
 			// type made these one column.
 			name: "a domain named after a base type",
 			description: describedTable(goschema.Field{
 				StructName: "Widget", Name: "amount", Type: "bigint", Nullable: true,
 			}),
-			column: dbschematypes.DBColumn{
+			column: catalog.Column{
 				Name: "amount", DataType: "USER-DEFINED", IsNullable: "YES",
 				DomainName: "int8", DomainSchema: "public", FormattedType: "int8",
 			},
@@ -761,7 +761,7 @@ func TestADomainColumnIsComparedByIdentity(t *testing.T) {
 			name: "one domain name in two schemas",
 			description: describedTableWithDomainIn("app", "email",
 				goschema.Field{StructName: "Widget", Name: "contact", Type: "email", Nullable: true}),
-			column: dbschematypes.DBColumn{
+			column: catalog.Column{
 				Name: "contact", DataType: "USER-DEFINED", IsNullable: "YES",
 				DomainName: "email", DomainSchema: "public", FormattedType: "email",
 			},
@@ -774,7 +774,7 @@ func TestADomainColumnIsComparedByIdentity(t *testing.T) {
 			name: "the same domain on both sides",
 			description: describedTableWithDomain("email",
 				goschema.Field{StructName: "Widget", Name: "contact", Type: "email", Nullable: true}),
-			column: dbschematypes.DBColumn{
+			column: catalog.Column{
 				Name: "contact", DataType: "USER-DEFINED", IsNullable: "YES",
 				DomainName: "email", DomainSchema: "public", FormattedType: "email",
 			},
