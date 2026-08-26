@@ -43,7 +43,7 @@ func TestReadObjectOwners_PassesOneArgumentPerSchema(t *testing.T) {
 	})
 	reader := NewPostgreSQLReaderWithCapabilities(db.SQL, "public", capability.Postgres16())
 
-	owners, err := reader.readObjectOwners()
+	owners, err := reader.readObjectOwners(t.Context())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(seen, qt.HasLen, 1)
@@ -73,7 +73,7 @@ func TestReadObjectOwners_ReadsEveryInspectedSchema(t *testing.T) {
 	reader := NewPostgreSQLReaderWithCapabilities(db.SQL, "public", capability.Postgres16())
 	reader.schemas = []string{"public", "app"}
 
-	owners, err := reader.readObjectOwners()
+	owners, err := reader.readObjectOwners(t.Context())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(seen, qt.HasLen, 2)

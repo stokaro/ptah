@@ -94,7 +94,7 @@ func TestReadCheckConstraintClauses_CapabilityChoosesTheFirstSpelling(t *testing
 			db := dbtest.Open(c, catalog.answer)
 			reader := NewMySQLReaderWithCapabilities(db.SQL, "app", test.caps)
 
-			clauses, err := reader.readCheckConstraintClauses("app")
+			clauses, err := reader.readCheckConstraintClauses(t.Context(), "app")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(catalog.asked, qt.DeepEquals, test.wantAsked)

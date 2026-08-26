@@ -94,7 +94,7 @@ func TestPostgresLiveConnection_ASelectedSchemaComparesEqualToItself(t *testing.
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
 
-	live, err := dbschema.ReadSchemaWithSchemas(conn, []string{selected})
+	live, err := dbschema.ReadSchemaWithSchemasContext(t.Context(), conn, []string{selected})
 	c.Assert(err, qt.IsNil)
 
 	declared := &goschema.Database{

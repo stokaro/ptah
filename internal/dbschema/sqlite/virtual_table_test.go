@@ -186,7 +186,7 @@ func TestReadSchemaSeparatesShadowTablesFromUserTablesOfTheSameShape(t *testing.
 	execSQL(t, db, `CREATE TABLE docs_backup (id INTEGER PRIMARY KEY, payload TEXT)`)
 	execSQL(t, db, `CREATE TABLE notes_data (id INTEGER PRIMARY KEY, block TEXT)`)
 
-	schema, err := sqlite.NewSQLiteReader(db, "main").ReadSchema()
+	schema, err := sqlite.NewSQLiteReader(db, "main").ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(tableNames(schema.Tables), qt.DeepEquals, []string{"docs", "docs_backup", "notes_data"})
@@ -238,7 +238,7 @@ func TestReadSchemaDescribesAVirtualTableOfAnUnavailableModule(t *testing.T) {
 
 	c.Assert(catalogNamesOfKind(t, db, "virtual"), qt.DeepEquals, []string{"legacy"})
 
-	schema, err := sqlite.NewSQLiteReader(db, "main").ReadSchema()
+	schema, err := sqlite.NewSQLiteReader(db, "main").ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 
 	legacy := findTable(schema.Tables, "legacy")
@@ -281,7 +281,7 @@ func TestReadSchemaRefusesAVirtualTableItCannotRead(t *testing.T) {
 	execSQL(t, db, `PRAGMA writable_schema = OFF`)
 	c.Assert(catalogNamesOfKind(t, db, "virtual"), qt.DeepEquals, []string{"docs"})
 
-	_, err := sqlite.NewSQLiteReader(db, "main").ReadSchema()
+	_, err := sqlite.NewSQLiteReader(db, "main").ReadSchemaContext(t.Context())
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, `"docs" is a virtual table`)
@@ -296,7 +296,7 @@ func TestReadSchemaRefusesAVirtualTableItCannotRead(t *testing.T) {
 func readAndRenderSQLite(t *testing.T, db *sql.DB) []string {
 	t.Helper()
 
-	schema, err := sqlite.NewSQLiteReader(db, "main").ReadSchema()
+	schema, err := sqlite.NewSQLiteReader(db, "main").ReadSchemaContext(t.Context())
 	if err != nil {
 		t.Fatalf("read schema: %v", err)
 	}

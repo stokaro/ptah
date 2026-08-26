@@ -38,8 +38,12 @@ func NewSeedCommand() *cobra.Command {
 
 Seed files use the NNN_description.env.sql naming convention. Files matching
 the requested --env and files ending in .all.sql are applied in version order.
-Successful seeds are recorded in schema_seeds, so re-running the command is a
-no-op unless --force is set.`,
+Successful seeds are recorded in schema_seeds together with a checksum of the
+file, so re-running the command is a no-op unless --force is set.
+
+Editing an applied seed file is refused: the recorded checksum no longer matches
+the file. Add a new seed file with the change, or pass --force to re-apply the
+edited one.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runSeed(cmd.Context(), runOptions{
 				dbURL:             dbURL,
@@ -61,7 +65,7 @@ no-op unless --force is set.`,
 	cmd.Flags().StringVar(&env, "env", "", "Seed environment to apply (required), for example dev, test, or prod")
 	cmd.Flags().StringArrayVar(&protectedEnvs, "protected-env", seeder.DefaultProtectedEnvs(), "Environment name that requires --allow-prod; repeat to add more")
 	cmd.Flags().StringArrayVar(&protectedTables, "protected-table", nil, "Existing target table name that requires --allow-prod; repeat to add more")
-	cmd.Flags().BoolVar(&force, "force", false, "Re-run seeds even when they are already recorded in schema_seeds")
+	cmd.Flags().BoolVar(&force, "force", false, "Re-run seeds even when they are already recorded in schema_seeds, including a seed file edited since it was applied")
 	cmd.Flags().BoolVar(&idempotent, "idempotent", false, "Treat duplicate-key conflicts as already-applied seed data using a per-file savepoint")
 	cmd.Flags().BoolVar(&allowProd, "allow-prod", false, "Allow seeding a protected production-like environment")
 	cmd.Flags().BoolVar(&verbose, "verbose", false, "Enable verbose output")

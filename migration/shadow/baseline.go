@@ -116,7 +116,7 @@ func VerifyBaseline(ctx context.Context, opts BaselineVerifyOptions) error {
 		return baselineErrorWithDisplayMessage("drop-metadata", "drop_metadata_error", err.Error(), err)
 	}
 
-	shadowSchema, err := dbschema.ReadSchemaWithSchemas(shadowConn, opts.Schemas)
+	shadowSchema, err := dbschema.ReadSchemaWithSchemasContext(ctx, shadowConn, opts.Schemas)
 	if err != nil {
 		return baselineError("re-introspect", "re_introspect_error", "read shadow schema", err)
 	}
@@ -180,7 +180,7 @@ func validateBaselineTargetIdentifierSemantics(
 	shadowConn *dbschema.DatabaseConnection,
 	opts BaselineVerifyOptions,
 ) (*dbschematypes.DBSchema, error) {
-	targetSchema, err := dbschema.ReadSchemaWithSchemas(opts.TargetConn, opts.Schemas)
+	targetSchema, err := dbschema.ReadSchemaWithSchemasContext(ctx, opts.TargetConn, opts.Schemas)
 	if err != nil {
 		return nil, baselineError("target-introspect", "target_introspection_error", "read target schema", err)
 	}

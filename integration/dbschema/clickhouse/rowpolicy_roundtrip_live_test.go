@@ -199,7 +199,7 @@ func dropClickHouseRowPolicyAfterTest(c *qt.C, conn *dbschema.DatabaseConnection
 // policy as an addition forever and step 3 would pass while proving nothing.
 func readClickHouseRowPolicies(c *qt.C, conn *dbschema.DatabaseConnection) *dbschematypes.DBSchema {
 	c.Helper()
-	schema, err := conn.Reader().ReadSchema()
+	schema, err := conn.Reader().ReadSchemaContext(c.Context())
 	c.Assert(err, qt.IsNil)
 	return schema
 }

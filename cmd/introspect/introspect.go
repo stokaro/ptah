@@ -98,7 +98,7 @@ func run(cmd *cobra.Command, opts options) error {
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	dbSchema, err := dbschema.ReadSchemaWithSchemas(conn, dbcli.ParseSchemas(opts.schemasRaw))
+	dbSchema, err := dbschema.ReadSchemaWithSchemasContext(cmd.Context(), conn, dbcli.ParseSchemas(opts.schemasRaw))
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("read database schema: %w", err))
 	}

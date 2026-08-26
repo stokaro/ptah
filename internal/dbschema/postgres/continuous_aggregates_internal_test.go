@@ -88,7 +88,7 @@ func TestReadContinuousAggregates_CarriesTheWrittenDefinition(t *testing.T) {
 	db := dbtest.Open(t, answeringContinuousAggregates)
 	reader := NewPostgreSQLReader(db.SQL, "public")
 
-	aggregates, err := reader.readContinuousAggregates(timescaleInstalled())
+	aggregates, err := reader.readContinuousAggregates(t.Context(), timescaleInstalled())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(aggregates, qt.DeepEquals, []types.DBContinuousAggregate{{
@@ -112,7 +112,7 @@ func TestReadContinuousAggregates_AsksNothingWithoutTheExtension(t *testing.T) {
 	db := dbtest.Open(t, recordingQueries(&asked))
 	reader := NewPostgreSQLReader(db.SQL, "public")
 
-	aggregates, err := reader.readContinuousAggregates([]types.DBExtension{{Name: "plpgsql"}})
+	aggregates, err := reader.readContinuousAggregates(t.Context(), []types.DBExtension{{Name: "plpgsql"}})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(aggregates, qt.HasLen, 0)
@@ -130,7 +130,7 @@ func TestReadContinuousAggregates_AFailureWithTheExtensionIsSurfaced(t *testing.
 	db := dbtest.Open(t, faultingContinuousAggregates)
 	reader := NewPostgreSQLReader(db.SQL, "public")
 
-	_, err := reader.readContinuousAggregates(timescaleInstalled())
+	_, err := reader.readContinuousAggregates(t.Context(), timescaleInstalled())
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "permission denied")

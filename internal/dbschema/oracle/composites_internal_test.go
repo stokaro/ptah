@@ -29,7 +29,7 @@ func TestReadComposites_CarriesTheAttributesInDeclarationOrder(t *testing.T) {
 	db := dbtest.Open(t, answeringCompositeCatalog)
 	reader := NewOracleReader(db.SQL, "APP")
 
-	composites, err := reader.readComposites()
+	composites, err := reader.readComposites(t.Context())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(composites, qt.DeepEquals, []types.DBComposite{{
@@ -53,7 +53,7 @@ func TestReadComposites_LeavesOutATypeWithNoAttributesRead(t *testing.T) {
 	db := dbtest.Open(t, attributelessCompositeCatalog)
 	reader := NewOracleReader(db.SQL, "APP")
 
-	composites, err := reader.readComposites()
+	composites, err := reader.readComposites(t.Context())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(composites, qt.HasLen, 0)
@@ -122,7 +122,7 @@ func TestReadSchema_AsksForCompositesOnlyWhereThePresetClaimsThem(t *testing.T) 
 			})
 			reader := NewOracleReaderWithCapabilities(db.SQL, "APP", test.caps)
 
-			_, err := reader.ReadSchema()
+			_, err := reader.ReadSchemaContext(t.Context())
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(asked, qt.Equals, test.wantAsked)

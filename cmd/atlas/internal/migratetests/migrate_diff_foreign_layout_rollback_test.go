@@ -177,7 +177,7 @@ func compatReadSchema(c *qt.C, dbPath string) *dbschematypes.DBSchema {
 	c.Helper()
 	conn := compatConnect(c, dbPath)
 	defer dbschema.CloseAndWarn(conn)
-	schema, err := conn.Reader().ReadSchema()
+	schema, err := conn.Reader().ReadSchemaContext(c.Context())
 	c.Assert(err, qt.IsNil)
 	return schema
 }

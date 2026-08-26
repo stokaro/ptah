@@ -2379,17 +2379,6 @@ const (
 	FunctionBodyAtomic FunctionBodyKind = "atomic"
 )
 
-// NewCreateFunction creates a new CREATE FUNCTION node with the specified name.
-//
-// Example:
-//
-//	createFunc := NewCreateFunction("set_tenant_context").
-//		SetParameters("tenant_id_param TEXT").
-//		SetReturns("VOID").
-//		SetLanguage("plpgsql").
-//		SetSecurity("DEFINER").
-//		SetBody("BEGIN PERFORM set_config('app.current_tenant_id', tenant_id_param, false); END;")
-//
 // SetKind marks this routine as a function or a procedure and returns the node
 // for chaining.
 func (n *CreateFunctionNode) SetKind(kind string) *CreateFunctionNode {
@@ -2414,6 +2403,16 @@ func (n *DropFunctionNode) IsProcedure() bool {
 	return strings.EqualFold(strings.TrimSpace(n.Kind), "procedure")
 }
 
+// NewCreateFunction creates a new CREATE FUNCTION node with the specified name.
+//
+// Example:
+//
+//	createFunc := NewCreateFunction("set_tenant_context").
+//		SetParameters("tenant_id_param TEXT").
+//		SetReturns("VOID").
+//		SetLanguage("plpgsql").
+//		SetSecurity("DEFINER").
+//		SetBody("BEGIN PERFORM set_config('app.current_tenant_id', tenant_id_param, false); END;")
 func NewCreateFunction(name string) *CreateFunctionNode {
 	return &CreateFunctionNode{
 		Name:     name,

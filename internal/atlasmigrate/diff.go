@@ -184,6 +184,7 @@ type DiffResult struct {
 // here, so this verb reads the same schemas `schema diff`, `schema inspect` and
 // `schema apply` read (stokaro/ptah#1276).
 type devSchemaReader func(
+	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	readNames []string,
 	defaultSchema string,
@@ -645,7 +646,7 @@ func compareReplayedState(
 	if err != nil {
 		return nil, nil, fmt.Errorf("read dev database schema: %w", err)
 	}
-	replayed, err := runtime.readDevSchema(replayConn, readNames, defaultSchema)
+	replayed, err := runtime.readDevSchema(ctx, replayConn, readNames, defaultSchema)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -678,12 +679,12 @@ func compareReplayedState(
 // defect: filtering by the names actually read is a no-op for every object the
 // read could have returned, and it is exactly the selection when one was made
 // (stokaro/ptah#1276).
-func readScopedDevSchema(
+func readScopedDevSchema(ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	readNames []string,
 	defaultSchema string,
 ) (*dbschematypes.DBSchema, error) {
-	current, err := dbschema.ReadSchemaWithSchemas(conn, readNames)
+	current, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, readNames)
 	if err != nil {
 		return nil, fmt.Errorf("read dev database schema: %w", err)
 	}

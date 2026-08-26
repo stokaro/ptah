@@ -136,7 +136,7 @@ func compareLiveRoutines(
 	if schemaName == "" {
 		schemas = nil
 	}
-	current, err := dbschema.ReadSchemaWithSchemas(conn, schemas)
+	current, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, schemas)
 	c.Assert(err, qt.IsNil)
 	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, current, nil)
 	c.Assert(err, qt.IsNil)

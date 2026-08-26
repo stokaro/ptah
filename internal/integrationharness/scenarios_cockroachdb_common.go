@@ -137,7 +137,7 @@ func testPostgresDistributedCommonSubset(
 	}
 
 	return recorder.RecordStep("Read "+label+" Schema", "Verify the created table is visible through the PostgreSQL-family reader", func() error {
-		schema, err := conn.Reader().ReadSchema()
+		schema, err := conn.Reader().ReadSchemaContext(ctx)
 		if err != nil {
 			return fmt.Errorf("read %s schema: %w", label, err)
 		}

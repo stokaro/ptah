@@ -91,7 +91,7 @@ func readDBCommand(cmd *cobra.Command, opts *options) error {
 
 	// Read the schema
 	schemas := dbcli.ParseSchemas(opts.schemas)
-	schema, err := dbschema.ReadSchemaWithSchemas(conn, schemas)
+	schema, err := dbschema.ReadSchemaWithSchemasContext(cmd.Context(), conn, schemas)
 	if err != nil {
 		return fmt.Errorf("error reading schema: %w", err)
 	}

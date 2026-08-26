@@ -201,7 +201,7 @@ func computeTable(ctx context.Context, conn *dbschema.DatabaseConnection, rootDi
 		return nil, err
 	}
 
-	columns, err := readColumns(conn, md, desired)
+	columns, err := readColumns(ctx, conn, md, desired)
 	if err != nil {
 		return nil, err
 	}
@@ -225,9 +225,9 @@ func computeTable(ctx context.Context, conn *dbschema.DatabaseConnection, rootDi
 // restore — every other column. So the projection widens to the table's full
 // non-generated column set (see [fullNonGeneratedColumns]); an empty desired set
 // against an empty table stays a clean no-op because the read returns no rows.
-func readColumns(conn *dbschema.DatabaseConnection, md goschema.ManagedData, desired []map[string]any) ([]string, error) {
+func readColumns(ctx context.Context, conn *dbschema.DatabaseConnection, md goschema.ManagedData, desired []map[string]any) ([]string, error) {
 	if len(desired) == 0 {
-		return fullNonGeneratedColumns(conn, md.Schema, md.Table, md.Keys)
+		return fullNonGeneratedColumns(ctx, conn, md.Schema, md.Table, md.Keys)
 	}
 	return managedColumns(desired, md.Keys), nil
 }
@@ -241,8 +241,8 @@ func readColumns(conn *dbschema.DatabaseConnection, md goschema.ManagedData, des
 // column selection and its safety refusals live in the pure [insertableColumns];
 // this function only performs the introspection and locates the table. A table
 // that cannot be found in the introspected schema is surfaced as an error.
-func fullNonGeneratedColumns(conn *dbschema.DatabaseConnection, schema, table string, keys []string) ([]string, error) {
-	dbSchema, err := dbschema.ReadSchemaWithSchemas(conn, schemaScope(schema, conn.Info().Schema))
+func fullNonGeneratedColumns(ctx context.Context, conn *dbschema.DatabaseConnection, schema, table string, keys []string) ([]string, error) {
+	dbSchema, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, schemaScope(schema, conn.Info().Schema))
 	if err != nil {
 		return nil, fmt.Errorf("datamigrate: introspect columns of table %q: %w", qualifiedName(schema, table), err)
 	}

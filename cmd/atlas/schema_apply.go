@@ -860,7 +860,7 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 	// fingerprint shape is not a security boundary — the derivation is public
 	// — so it only ever adds a check, never removes one.
 	if planFormat == atlasschema.PlanFormatJSON || atlasschema.IsNativeFingerprint(plan.FromFingerprint) {
-		if err := atlasschema.VerifyPlanTarget(conn, plan); err != nil {
+		if err := atlasschema.VerifyPlanTarget(cmd.Context(), conn, plan); err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
 	}

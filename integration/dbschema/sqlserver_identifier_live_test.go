@@ -67,7 +67,7 @@ CREATE TABLE [dbo].[users] (
 			Fields:    []string{"email"},
 		},
 	}}
-	current, err := dbschema.ReadSchemaWithSchemas(conn, []string{"dbo"})
+	current, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{"dbo"})
 	c.Assert(err, qt.IsNil)
 	replacementDiff, err := schemadiff.CompareWithDatabase(
 		ctx,
@@ -94,7 +94,7 @@ CREATE TABLE [dbo].[users] (
 	_, err = conn.ExecContext(ctx, statements[1])
 	c.Assert(err, qt.IsNil, qt.Commentf("statement failed:\n%s", statements[1]))
 
-	actual, err := dbschema.ReadSchemaWithSchemas(conn, []string{"dbo"})
+	actual, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{"dbo"})
 	c.Assert(err, qt.IsNil)
 	finalDiff, err := schemadiff.CompareWithDatabase(
 		ctx,
@@ -134,7 +134,7 @@ CREATE TABLE [dbo].[users] (
 			Fields:    []string{"status"},
 		},
 	}}
-	current, err := dbschema.ReadSchemaWithSchemas(conn, []string{"dbo"})
+	current, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{"dbo"})
 	c.Assert(err, qt.IsNil)
 	replacementDiff, err := schemadiff.CompareWithDatabase(
 		ctx,
@@ -161,7 +161,7 @@ CREATE TABLE [dbo].[users] (
 	_, err = conn.ExecContext(ctx, statements[1])
 	c.Assert(err, qt.IsNil, qt.Commentf("statement failed:\n%s", statements[1]))
 
-	actual, err := dbschema.ReadSchemaWithSchemas(conn, []string{"dbo"})
+	actual, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{"dbo"})
 	c.Assert(err, qt.IsNil)
 	finalDiff, err := schemadiff.CompareWithDatabase(
 		ctx,
@@ -205,7 +205,7 @@ CREATE TABLE [dbo].[users] (
 			},
 		},
 	}}
-	current, err := dbschema.ReadSchemaWithSchemas(conn, []string{"dbo"})
+	current, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{"dbo"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(current.Indexes, qt.HasLen, 1)
 	c.Assert(current.Indexes[0].Parts, qt.DeepEquals, []dbschematypes.DBIndexPart{
@@ -240,7 +240,7 @@ CREATE TABLE [dbo].[users] (
 	_, err = conn.ExecContext(ctx, statements[1])
 	c.Assert(err, qt.IsNil, qt.Commentf("statement failed:\n%s", statements[1]))
 
-	actual, err := dbschema.ReadSchemaWithSchemas(conn, []string{"dbo"})
+	actual, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{"dbo"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(actual.Indexes, qt.HasLen, 1)
 	c.Assert(actual.Indexes[0].Parts, qt.DeepEquals, []dbschematypes.DBIndexPart{
@@ -285,7 +285,7 @@ CREATE TABLE [dbo].[users] (
 			Condition: "([status]=(2))",
 		},
 	}}
-	current, err := dbschema.ReadSchemaWithSchemas(conn, []string{"dbo"})
+	current, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{"dbo"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(current.Indexes, qt.HasLen, 1)
 	c.Assert(current.Indexes[0].Condition, qt.Equals, "([status]=(1))")
@@ -313,7 +313,7 @@ CREATE TABLE [dbo].[users] (
 	_, err = conn.ExecContext(ctx, statements[1])
 	c.Assert(err, qt.IsNil, qt.Commentf("statement failed:\n%s", statements[1]))
 
-	actual, err := dbschema.ReadSchemaWithSchemas(conn, []string{"dbo"})
+	actual, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{"dbo"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(actual.Indexes, qt.HasLen, 1)
 	c.Assert(actual.Indexes[0].Condition, qt.Equals, "([status]=(2))")
@@ -355,7 +355,7 @@ CREATE TABLE [dbo].[users] (
 			Condition: "status = 1",
 		},
 	}}
-	current, err := dbschema.ReadSchemaWithSchemas(conn, []string{"dbo"})
+	current, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{"dbo"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(current.Indexes, qt.HasLen, 0)
 	createDiff, err := schemadiff.CompareWithDatabase(
@@ -378,7 +378,7 @@ CREATE TABLE [dbo].[users] (
 	_, err = conn.ExecContext(ctx, statements[0])
 	c.Assert(err, qt.IsNil, qt.Commentf("statement failed:\n%s", statements[0]))
 
-	actual, err := dbschema.ReadSchemaWithSchemas(conn, []string{"dbo"})
+	actual, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{"dbo"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(actual.Indexes, qt.HasLen, 1)
 	c.Assert(actual.Indexes[0].Condition, qt.Equals, "([status]=(1))")
@@ -417,7 +417,7 @@ CREATE TABLE [dbo].[users] (
 		{Name: "idx_email", TableName: "dbo.users", Fields: []string{"email"}},
 		{Name: "IDX_Email", TableName: "dbo.users", Fields: []string{"status"}},
 	}}
-	current, err := dbschema.ReadSchemaWithSchemas(conn, []string{"dbo"})
+	current, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{"dbo"})
 	c.Assert(err, qt.IsNil)
 	diff, err := schemadiff.CompareWithDatabase(
 		ctx,
@@ -438,7 +438,7 @@ CREATE TABLE [dbo].[users] (
 	_, err = conn.ExecContext(ctx, statements[0])
 	c.Assert(err, qt.IsNil)
 
-	actual, err := dbschema.ReadSchemaWithSchemas(conn, []string{"dbo"})
+	actual, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{"dbo"})
 	c.Assert(err, qt.IsNil)
 	finalDiff, err := schemadiff.CompareWithDatabase(
 		ctx,

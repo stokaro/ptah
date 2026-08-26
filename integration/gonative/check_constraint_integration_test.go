@@ -77,7 +77,7 @@ func TestFieldLevelCheckConstraint_RoundTrip_Integration(t *testing.T) {
 
 	// Read the live schema and confirm both CHECK constraints landed.
 	reader := postgres.NewPostgreSQLReader(db, "public")
-	dbSchema, err := reader.ReadSchema()
+	dbSchema, err := reader.ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	filteredSchema := filterCheckConstraintSchema(dbSchema, "ptah_test_files")
 
@@ -147,7 +147,7 @@ func TestFieldLevelCheckConstraint_Removal_Integration(t *testing.T) {
 	}
 
 	reader := postgres.NewPostgreSQLReader(db, "public")
-	dbSchema, err := reader.ReadSchema()
+	dbSchema, err := reader.ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	filteredSchema := filterCheckConstraintSchema(dbSchema, "ptah_test_check_drop")
 
@@ -168,7 +168,7 @@ func TestFieldLevelCheckConstraint_Removal_Integration(t *testing.T) {
 	// PostgreSQL surfaces synthesized NOT NULL checks under the same
 	// information_schema CHECK type with `_not_null` suffix; those are not
 	// part of this assertion.
-	afterSchema, err := reader.ReadSchema()
+	afterSchema, err := reader.ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	filteredAfterSchema := filterCheckConstraintSchema(afterSchema, "ptah_test_check_drop")
 	for _, cs := range filteredAfterSchema.Constraints {

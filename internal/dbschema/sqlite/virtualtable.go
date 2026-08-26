@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -60,9 +61,9 @@ const (
 // table whose module is missing, so the description says out loud that it could
 // not classify part of this database instead of presenting the module's storage
 // as user tables. See [readUnregisteredVirtualTables] and docs/sqlite.md.
-func (r *Reader) readTableKinds() (map[string]tableKind, error) {
+func (r *Reader) readTableKinds(ctx context.Context) (map[string]tableKind, error) {
 	const query = `SELECT name, type FROM pragma_table_list WHERE schema = ?`
-	rows, err := r.db.Query(query, r.schema)
+	rows, err := r.db.QueryContext(ctx, query, r.schema)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: read table kinds: %w", err)
 	}

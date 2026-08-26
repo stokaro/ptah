@@ -24,7 +24,7 @@ func readClickHouseMaterializedViews(
 ) *dbschematypes.DBSchema {
 	c := qt.New(t)
 	t.Helper()
-	schema, err := clickhousedb.NewClickHouseReader(db, database).ReadSchema()
+	schema, err := clickhousedb.NewClickHouseReader(db, database).ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	return &dbschematypes.DBSchema{MatViews: schema.MatViews}
 }
@@ -39,7 +39,7 @@ func readClickHouseViewLikes(
 ) *dbschematypes.DBSchema {
 	c := qt.New(t)
 	t.Helper()
-	schema, err := clickhousedb.NewClickHouseReader(db, database).ReadSchema()
+	schema, err := clickhousedb.NewClickHouseReader(db, database).ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	return &dbschematypes.DBSchema{Views: schema.Views, MatViews: schema.MatViews}
 }
@@ -103,7 +103,7 @@ func TestMaterializedViewLifecycleRoundTripsLive(t *testing.T) {
 	// table in the same database. It must not arrive as a table the desired
 	// schema never declared, or the very next plan would drop the view's own
 	// storage.
-	fullReadback, err := clickhousedb.NewClickHouseReader(db, database).ReadSchema()
+	fullReadback, err := clickhousedb.NewClickHouseReader(db, database).ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	c.Assert(fullReadback.Tables, qt.HasLen, 1)
 	c.Assert(fullReadback.Tables[0].Name, qt.Equals, "users")
@@ -163,7 +163,7 @@ func TestMaterializedViewLifecycleRoundTripsLive(t *testing.T) {
 
 	// The drop takes the storage with it: nothing is left behind for the table
 	// read to report either.
-	emptyReadback, err := clickhousedb.NewClickHouseReader(db, database).ReadSchema()
+	emptyReadback, err := clickhousedb.NewClickHouseReader(db, database).ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	c.Assert(emptyReadback.Tables, qt.HasLen, 1)
 	c.Assert(emptyReadback.Tables[0].Name, qt.Equals, "users")
@@ -519,7 +519,7 @@ func TestDropAllTablesResetIsReplayableLive(t *testing.T) {
 	// The reset is only a reset if the same migration runs again on top of it.
 	executeClickHouseViewPlan(t, db, migration)
 
-	readback, err := clickhousedb.NewClickHouseReader(db, database).ReadSchema()
+	readback, err := clickhousedb.NewClickHouseReader(db, database).ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	c.Assert(readback.Tables, qt.HasLen, 1)
 	c.Assert(readback.Tables[0].Name, qt.Equals, "users")

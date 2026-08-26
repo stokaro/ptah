@@ -29,19 +29,20 @@
 //
 // # Visitor Pattern
 //
-// The visitor pattern enables dialect-specific rendering without modifying the AST nodes.
-// Each node implements the Accept method that calls the appropriate visitor method:
+// The visitor pattern enables dialect-specific rendering without modifying the
+// AST nodes. Each node implements an Accept method that calls the visitor method
+// for that node's own kind, so the interface carries one method per kind:
+// [Visitor] declares 46 of them, from VisitCreateTable through VisitUpsert. Read
+// the interface for the current set rather than a list repeated in prose.
 //
-//	type Visitor interface {
-//		VisitCreateTable(*CreateTableNode) error
-//		VisitAlterTable(*AlterTableNode) error
-//		VisitColumn(*ColumnNode) error
-//		VisitConstraint(*ConstraintNode) error
-//		VisitIndex(*IndexNode) error
-//		VisitEnum(*EnumNode) error
-//		VisitComment(*CommentNode) error
-//		VisitUpsert(*UpsertNode) error
-//	}
+// A consumer that handles only part of the AST can embed [NoopVisitor], whose
+// methods all ignore their node and return nil, and override the kinds it cares
+// about. That keeps it compiling as node kinds are added, at the cost of
+// answering an unrecognized kind with silence.
+//
+// Ptah's own dialect renderers deliberately do not embed it: every dialect must
+// answer for every node kind, and a build that breaks when [Visitor] grows is
+// what makes that happen. See [NoopVisitor].
 //
 // # Usage Example
 //

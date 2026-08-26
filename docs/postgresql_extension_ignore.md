@@ -53,7 +53,7 @@ func main() {
     }
     defer dbschema.CloseAndWarn(conn)
 
-    database, err := conn.ReadSchema()
+    database, err := conn.Reader().ReadSchemaContext(ctx)
     if err != nil {
         panic(err)
     }

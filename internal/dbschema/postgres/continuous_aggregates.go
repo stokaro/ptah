@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"context"
 	"strings"
 
 	"go.5x5.cz/ptah/dbschema/types"
@@ -70,7 +71,7 @@ func hasTimescaleExtension(extensions []types.DBExtension) bool {
 // An empty answer there would say "this server has no continuous aggregates",
 // which is a claim a failed read cannot make -- and the objects it would hide
 // are exactly the ones a plan must not treat as views.
-func (r *Reader) readContinuousAggregates(
+func (r *Reader) readContinuousAggregates(ctx context.Context,
 	extensions []types.DBExtension,
 ) ([]types.DBContinuousAggregate, error) {
 	if !hasTimescaleExtension(extensions) {
@@ -78,7 +79,7 @@ func (r *Reader) readContinuousAggregates(
 	}
 	var aggregates []types.DBContinuousAggregate
 	for _, schemaName := range r.schemasToRead() {
-		schemaAggregates, err := r.readContinuousAggregatesForSchema(schemaName)
+		schemaAggregates, err := r.readContinuousAggregatesForSchema(ctx, schemaName)
 		if err != nil {
 			return nil, err
 		}
@@ -87,10 +88,10 @@ func (r *Reader) readContinuousAggregates(
 	return aggregates, nil
 }
 
-func (r *Reader) readContinuousAggregatesForSchema(
+func (r *Reader) readContinuousAggregatesForSchema(ctx context.Context,
 	schemaName string,
 ) ([]types.DBContinuousAggregate, error) {
-	rows, err := r.db.Query(continuousAggregateQuery, schemaName)
+	rows, err := r.db.QueryContext(ctx, continuousAggregateQuery, schemaName)
 	if err != nil {
 		return nil, err
 	}

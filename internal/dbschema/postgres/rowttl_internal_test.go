@@ -156,7 +156,7 @@ func TestReadTablesForSchema_CarriesRowTTLThroughTheRead(t *testing.T) {
 			db := dbtest.Open(c, ttlTableServer(test.reloptions))
 			reader := NewPostgreSQLReaderWithCapabilities(db.SQL, "public", test.caps)
 
-			tables, err := reader.readTablesForSchema("public")
+			tables, err := reader.readTablesForSchema(t.Context(), "public")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(tables, qt.HasLen, 1)
@@ -253,7 +253,7 @@ func TestReadColumnsForSchema_LeavesOutTheColumnsTheEngineOwns(t *testing.T) {
 			})
 			reader := NewPostgreSQLReaderWithCapabilities(db.SQL, "public", test.caps)
 
-			_, err := reader.readColumnsForSchema("public")
+			_, err := reader.readColumnsForSchema(t.Context(), "public")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(sent, qt.HasLen, 1)

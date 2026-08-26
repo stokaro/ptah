@@ -59,7 +59,7 @@ func TestExtensionsAreRecordedAsUnsupportedWhereTheCatalogCannotBeAsked(t *testi
 			reader := NewPostgreSQLReaderWithCapabilities(db.SQL, "public", test.caps)
 
 			schema := &types.DBSchema{}
-			c.Assert(reader.readCapabilityGatedObjects(schema), qt.IsNil)
+			c.Assert(reader.readCapabilityGatedObjects(t.Context(), schema), qt.IsNil)
 
 			c.Assert(schema.NotDescribed.Objects, qt.DeepEquals, test.want)
 		})

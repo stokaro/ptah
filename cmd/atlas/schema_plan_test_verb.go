@@ -212,7 +212,7 @@ func atlasPlanTestPlanApplier(
 			return err
 		}
 		if atlasschema.IsNativeFingerprint(plan.FromFingerprint) {
-			if err := atlasschema.VerifyPlanTarget(conn, plan); err != nil {
+			if err := atlasschema.VerifyPlanTarget(ctx, conn, plan); err != nil {
 				return err
 			}
 		}

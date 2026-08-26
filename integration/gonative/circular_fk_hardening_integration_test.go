@@ -135,7 +135,7 @@ ALTER TABLE ptah_cycle_read_137.right_nodes
 	conn, err := dbschema.ConnectToDatabase(t.Context(), dsn)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { c.Check(conn.Close(), qt.IsNil) })
-	liveSchema, err := dbschema.ReadSchemaWithSchemas(conn, []string{"ptah_cycle_read_137"})
+	liveSchema, err := dbschema.ReadSchemaWithSchemasContext(t.Context(), conn, []string{"ptah_cycle_read_137"})
 	c.Assert(err, qt.IsNil)
 	// Roles and grants are cluster-global. Replaying them inside the source
 	// cluster must fail closed, so this same-cluster assertion renders only the

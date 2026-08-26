@@ -23,21 +23,46 @@
 //
 // # Core Functionality
 //
-// The package provides a single main function for schema comparison:
+// Every comparison has the same shape -- a desired schema and a current schema
+// in, a *types.SchemaDiff out. The entry points differ in what the caller can
+// supply and in what they report back:
 //
-//	func Compare(generated *goschema.Database, database *types.DBSchema) *types.SchemaDiff
-//
-// This function performs comprehensive comparison and returns a detailed difference report.
+//   - Compare: the desired schema against a database schema, under
+//     config.DefaultCompareOptions
+//   - CompareWithDialect: the same plus a target dialect, which selects the
+//     dialect-specific normalization rules
+//   - CompareWithOptions: full config.CompareOptions control, including ignored
+//     extensions and an identifier-semantics override
+//   - CompareSchemas: two in-memory desired-schema documents, where one is
+//     treated as the current state
+//   - CompareWithDatabaseInfo: caller-supplied database metadata
+//   - CompareWithDatabase: resolves live catalog identifier equivalence from an
+//     open connection before comparing
+//   - CompareReportingUndecidedAdditions and
+//     CompareWithDatabaseReportingUndecidedAdditions: the same comparisons,
+//     also naming the desired objects the current state's coverage record left
+//     undecidable
 //
 // # Comparison Categories
 //
-// The schema comparison covers these main areas:
+// The comparison covers every object kind types.SchemaDiff carries, which is
+// what types.SchemaDiff.HasChanges reads:
 //
-//   - Tables: New, removed, and modified table structures
-//   - Columns: Added, removed, and modified column definitions
-//   - Indexes: New and removed database indexes
-//   - Enums: New, removed, and modified enum type definitions
-//   - Constraints: Primary keys, foreign keys, unique constraints, and check constraints
+//   - Tables: new, removed, and modified table structures
+//   - Columns: added, removed, and modified column definitions
+//   - Indexes: new and removed database indexes
+//   - Enums: new, removed, and modified enum type definitions
+//   - Constraints: primary keys, foreign keys, unique constraints, and check
+//     constraints
+//   - Views and materialized views, including refresh strategy
+//   - Functions, procedures, and sequences
+//   - Triggers
+//   - Domains, composite types, and range types
+//   - Synonyms
+//   - Extensions and their installation schema
+//   - Roles, granted privileges, and row-level security policies
+//   - TimescaleDB hypertables and continuous aggregates
+//   - SQL Server extended properties
 //
 // # Usage Example
 //
@@ -56,7 +81,7 @@
 //	}
 //	defer dbschema.CloseAndWarn(conn)
 //
-//	database, err := conn.Reader().ReadSchema()
+//	database, err := conn.Reader().ReadSchemaContext(ctx)
 //	if err != nil {
 //		log.Fatal(err)
 //	}
@@ -155,13 +180,9 @@
 // from multiple goroutines. The returned difference structures are immutable
 // and safe for concurrent access.
 //
-// # Future Enhancements
+// # Scope
 //
-// Potential areas for future development:
-//
-//   - Support for view and function comparisons
-//   - Advanced constraint comparison (check constraints, triggers)
-//   - Schema dependency analysis for complex changes
-//   - Performance optimizations for very large schemas
-//   - Configurable comparison sensitivity levels
+// The comparison reports what differs. It does not order the result: statement
+// ordering, dependency handling, and destructive-operation policy belong to
+// ptah/migration/planner, which consumes the report.
 package schemadiff

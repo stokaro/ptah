@@ -104,7 +104,7 @@ func TestReadInformationSchemaIndexes(t *testing.T) {
 			c := qt.New(t)
 
 			reader, _ := informationSchemaIndexReader(c, capability.SpannerPostgres())
-			indexes, err := reader.readIndexesForSchema("public")
+			indexes, err := reader.readIndexesForSchema(t.Context(), "public")
 			c.Assert(err, qt.IsNil)
 
 			found := indexNamed(indexes, tt.index)
@@ -148,7 +148,7 @@ func TestReadIndexesForSchemaPicksTheCatalogTheServerHas(t *testing.T) {
 			})
 			reader := NewPostgreSQLReaderWithCapabilities(db.SQL, "public", tt.caps)
 
-			_, _ = reader.readIndexesForSchema("public")
+			_, _ = reader.readIndexesForSchema(t.Context(), "public")
 
 			c.Assert(strings.Contains(asked, "information_schema.indexes"), qt.Equals, tt.standard,
 				qt.Commentf("query was:\n%s", asked))

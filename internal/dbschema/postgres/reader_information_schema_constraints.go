@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"strings"
@@ -60,8 +61,8 @@ const notNullCheckPrefix = "CK_IS_NOT_NULL_"
 
 // readInformationSchemaConstraints reads one schema's constraints from the
 // SQL-standard catalog. See [informationSchemaConstraintQuery].
-func (r *Reader) readInformationSchemaConstraints(schemaName string) ([]types.DBConstraint, error) {
-	rows, err := r.db.Query(informationSchemaConstraintQuery, schemaName)
+func (r *Reader) readInformationSchemaConstraints(ctx context.Context, schemaName string) ([]types.DBConstraint, error) {
+	rows, err := r.db.QueryContext(ctx, informationSchemaConstraintQuery, schemaName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query constraints: %w", err)
 	}

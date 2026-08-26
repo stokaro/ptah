@@ -1,6 +1,7 @@
 package clickhouse
 
 import (
+	"context"
 	"database/sql"
 	"strings"
 
@@ -26,13 +27,13 @@ import (
 // them the same. This renderer writes AS PERMISSIVE explicitly so its own
 // policies are never that ambiguous, and managing a restrictive one is left
 // undone rather than half-done (stokaro/ptah#1736).
-func (r *Reader) readRowPolicies(dbName string) ([]types.DBRLSPolicy, error) {
+func (r *Reader) readRowPolicies(ctx context.Context, dbName string) ([]types.DBRLSPolicy, error) {
 	query := `
 		SELECT short_name, table, select_filter, apply_to_all, apply_to_list, apply_to_except
 		FROM system.row_policies
 		WHERE database = ?
 		ORDER BY table, short_name`
-	rows, err := r.db.Query(query, dbName)
+	rows, err := r.db.QueryContext(ctx, query, dbName)
 	if err != nil {
 		return nil, err
 	}

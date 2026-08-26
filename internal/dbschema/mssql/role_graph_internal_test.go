@@ -39,7 +39,7 @@ func TestReadRoleMemberships_ExcludesTheRolesEveryDatabaseShips(t *testing.T) {
 	})
 	reader := NewSQLServerReader(db.SQL, "dbo")
 
-	memberships, err := reader.readRoleMemberships()
+	memberships, err := reader.readRoleMemberships(t.Context())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(memberships, qt.DeepEquals, []types.DBRoleMembership{
@@ -77,7 +77,7 @@ func TestReadObjectOwners_ResolvesTheOwnerAndWhetherItAuthenticates(t *testing.T
 	})
 	reader := NewSQLServerReader(db.SQL, "dbo")
 
-	owners, err := reader.readObjectOwners()
+	owners, err := reader.readObjectOwners(t.Context())
 
 	c.Assert(err, qt.IsNil)
 	// The catalog's type codes are mapped into Ptah's vocabulary, so a consumer

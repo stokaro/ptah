@@ -47,7 +47,7 @@ func TestFunctionDiff_BodyAndSecurityChange_Integration(t *testing.T) {
 
 	// Read the live DB schema and confirm the function landed as expected.
 	reader := postgres.NewPostgreSQLReader(db, "public")
-	before, err := reader.ReadSchema()
+	before, err := reader.ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 
 	var beforeFn *struct{ Body, Security string }
@@ -102,7 +102,7 @@ func TestFunctionDiff_BodyAndSecurityChange_Integration(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("generated migration SQL must execute: %s", sqlText))
 
 	// Verify the live function actually flipped both attributes.
-	after, err := reader.ReadSchema()
+	after, err := reader.ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	var afterFn *struct{ Body, Security string }
 	for _, fn := range after.Functions {
@@ -147,7 +147,7 @@ func TestFunctionDiff_VolatilityChange_Integration(t *testing.T) {
 	defer func() { _, _ = db.Exec("DROP FUNCTION IF EXISTS ptah_test_get_current_group_id()") }()
 
 	reader := postgres.NewPostgreSQLReader(db, "public")
-	before, err := reader.ReadSchema()
+	before, err := reader.ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 
 	// Target schema marks the same function as STABLE.
@@ -178,7 +178,7 @@ func TestFunctionDiff_VolatilityChange_Integration(t *testing.T) {
 	_, err = db.Exec(sqlText)
 	c.Assert(err, qt.IsNil, qt.Commentf("generated migration SQL must execute: %s", sqlText))
 
-	after, err := reader.ReadSchema()
+	after, err := reader.ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	var afterFn *struct{ Volatility string }
 	for _, fn := range after.Functions {

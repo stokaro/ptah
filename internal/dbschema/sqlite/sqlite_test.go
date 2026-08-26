@@ -68,7 +68,7 @@ func TestReaderReadSchema(t *testing.T) {
 			UPDATE users SET email = NEW.email WHERE id = NEW.id;
 		END`)
 
-	schema, err := sqlite.NewSQLiteReader(db, "main").ReadSchema()
+	schema, err := sqlite.NewSQLiteReader(db, "main").ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	c.Assert(schema.Tables, qt.HasLen, 3)
 	c.Assert(schema.Views, qt.HasLen, 1)
@@ -148,7 +148,7 @@ func TestWriterDropAllTables(t *testing.T) {
 	err := writer.DropAllTables(t.Context())
 	c.Assert(err, qt.IsNil)
 
-	schema, err := sqlite.NewSQLiteReader(db, "main").ReadSchema()
+	schema, err := sqlite.NewSQLiteReader(db, "main").ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	c.Assert(schema.Tables, qt.HasLen, 0)
 	c.Assert(schema.Views, qt.HasLen, 0)
@@ -175,7 +175,7 @@ func TestReaderCompositeKeys(t *testing.T) {
 		CONSTRAINT fk_children_parent FOREIGN KEY (tenant_id, parent_code) REFERENCES parents(tenant_id, code)
 	)`)
 
-	schema, err := sqlite.NewSQLiteReader(db, "main").ReadSchema()
+	schema, err := sqlite.NewSQLiteReader(db, "main").ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 
 	pk := findConstraint(schema.Constraints, "parents_pkey")
@@ -200,7 +200,7 @@ func TestReaderInlineNamedForeignKey(t *testing.T) {
 		account_id INTEGER CONSTRAINT fk_users_account REFERENCES accounts(id)
 	)`)
 
-	schema, err := sqlite.NewSQLiteReader(db, "main").ReadSchema()
+	schema, err := sqlite.NewSQLiteReader(db, "main").ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 
 	fk := findConstraint(schema.Constraints, "fk_users_account")
@@ -221,7 +221,7 @@ func TestReaderExpressionAndPartialIndexes(t *testing.T) {
 	)`)
 	execSQL(t, db, `CREATE INDEX idx_users_email_expr_active ON users(lower(email), account_id) WHERE account_id > 0`)
 
-	schema, err := sqlite.NewSQLiteReader(db, "main").ReadSchema()
+	schema, err := sqlite.NewSQLiteReader(db, "main").ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 
 	index := findIndex(schema.Indexes, "idx_users_email_expr_active")
@@ -243,7 +243,7 @@ func TestReaderNamedUniqueConstraintsFollowColumns(t *testing.T) {
 		CONSTRAINT users_username_uq UNIQUE(username)
 	)`)
 
-	schema, err := sqlite.NewSQLiteReader(db, "main").ReadSchema()
+	schema, err := sqlite.NewSQLiteReader(db, "main").ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 
 	email := findConstraint(schema.Constraints, "users_email_uq")
@@ -285,7 +285,7 @@ func TestReaderUsesBatchedCatalogQueries(t *testing.T) {
 	}
 
 	before := db.QueryCount()
-	schema, err := sqlite.NewSQLiteReader(db.SQL, "main").ReadSchema()
+	schema, err := sqlite.NewSQLiteReader(db.SQL, "main").ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	c.Assert(schema.Tables, qt.HasLen, 51)
 	c.Assert(schema.Indexes, qt.HasLen, 51)
@@ -312,7 +312,7 @@ func TestReaderReadsAttachedSchema(t *testing.T) {
 	)`)
 	execSQL(t, db, `CREATE INDEX tenant.users_email_idx ON users(email)`)
 
-	schema, err := sqlite.NewSQLiteReader(db, "tenant").ReadSchema()
+	schema, err := sqlite.NewSQLiteReader(db, "tenant").ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	c.Assert(schema.Tables, qt.HasLen, 1)
 	c.Assert(schema.Tables[0].Name, qt.Equals, "users")
@@ -327,7 +327,7 @@ func TestRoundTripGeneratedSchemaThroughSQLite(t *testing.T) {
 	db := openMemoryDB(t)
 
 	generated := sqliteRoundTripSchema()
-	initial, err := sqlite.NewSQLiteReader(db, "main").ReadSchema()
+	initial, err := sqlite.NewSQLiteReader(db, "main").ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 
 	diff := schemadiff.CompareWithDialect(generated, initial, platform.SQLite)
@@ -343,7 +343,7 @@ func TestRoundTripGeneratedSchemaThroughSQLite(t *testing.T) {
 	}
 	c.Assert(tx.Commit(), qt.IsNil)
 
-	actual, err := sqlite.NewSQLiteReader(db, "main").ReadSchema()
+	actual, err := sqlite.NewSQLiteReader(db, "main").ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	secondDiff := schemadiff.CompareWithDialect(generated, actual, platform.SQLite)
 	c.Assert(secondDiff.HasChanges(), qt.IsFalse, qt.Commentf("unexpected SQLite drift: %+v", secondDiff))

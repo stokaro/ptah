@@ -101,7 +101,7 @@ func readSQLServerGeneratorIndexDirection(
 	conn *dbschema.DatabaseConnection,
 ) bool {
 	c.Helper()
-	schema, err := dbschema.ReadSchemaWithSchemas(conn, []string{"dbo"})
+	schema, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, []string{"dbo"})
 	c.Assert(err, qt.IsNil)
 	indexes := make([]dbschematypes.DBIndex, 0, len(schema.Indexes))
 	for _, index := range schema.Indexes {

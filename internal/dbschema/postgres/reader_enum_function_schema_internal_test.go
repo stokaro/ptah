@@ -92,13 +92,13 @@ func TestReadEnumsAndFunctionsForSchema_StampTheSchemaTheyWereAskedFor(t *testin
 			reader := NewPostgreSQLReaderWithCapabilities(db.SQL, "public", capability.Postgres16())
 			reader.SetSchemas(test.schemas)
 
-			enums, err := reader.readEnumsForSchema(test.readSchema)
+			enums, err := reader.readEnumsForSchema(t.Context(), test.readSchema)
 			c.Assert(err, qt.IsNil)
 			c.Assert(enums, qt.HasLen, 1)
 			c.Assert(enums[0].Name, qt.Equals, "color")
 			c.Assert(enums[0].Schema, qt.Equals, test.want)
 
-			functions, err := reader.readFunctionsForSchema(test.readSchema)
+			functions, err := reader.readFunctionsForSchema(t.Context(), test.readSchema)
 			c.Assert(err, qt.IsNil)
 			c.Assert(functions, qt.HasLen, 1)
 			c.Assert(functions[0].Name, qt.Equals, "fn_app")

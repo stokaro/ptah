@@ -179,7 +179,7 @@ func planRowTTLAgainstLive(
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
 
-	live, err := dbschema.ReadSchemaWithSchemas(conn, []string{"public"})
+	live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, []string{"public"})
 	c.Assert(err, qt.IsNil)
 
 	info := conn.Info()
@@ -209,7 +209,7 @@ func readRowTTL(c *qt.C, t *testing.T, dsn string) *ast.RowTTLSpec {
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
 
-	live, err := dbschema.ReadSchemaWithSchemas(conn, []string{"public"})
+	live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, []string{"public"})
 	c.Assert(err, qt.IsNil)
 
 	return rowTTLOf(live)
@@ -357,7 +357,7 @@ func rowTTLColumnNames(c *qt.C, t *testing.T, dsn string) []string {
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
 
-	live, err := dbschema.ReadSchemaWithSchemas(conn, []string{"public"})
+	live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, []string{"public"})
 	c.Assert(err, qt.IsNil)
 
 	for _, table := range live.Tables {

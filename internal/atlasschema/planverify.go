@@ -104,7 +104,7 @@ func RehearsePlanStatements(
 		return err
 	}
 
-	current, err := dbschema.ReadSchemaWithSchemas(conn, nil)
+	current, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, nil)
 	if err != nil {
 		return fmt.Errorf("read database schema: %w", err)
 	}

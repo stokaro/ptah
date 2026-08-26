@@ -190,7 +190,7 @@ func readPostgresFamilyReaderSchema(
 	conn, err := dbschema.ConnectToDatabase(t.Context(), sourceURL)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
-	live, err := dbschema.ReadSchemaWithSchemas(conn, []string{schema})
+	live, err := dbschema.ReadSchemaWithSchemasContext(t.Context(), conn, []string{schema})
 	c.Assert(err, qt.IsNil)
 	return live
 }

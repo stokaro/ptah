@@ -193,7 +193,7 @@ func TestMySQLReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 	})
 	reader := NewMySQLReader(db.SQL, "app")
 
-	tables, err := reader.readTables("app")
+	tables, err := reader.readTables(t.Context(), "app")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.QueryCount(), qt.Equals, 2)

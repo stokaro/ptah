@@ -111,7 +111,7 @@ func compareLiveComposites(
 	schemaName string,
 ) *difftypes.SchemaDiff {
 	c.Helper()
-	current, err := dbschema.ReadSchemaWithSchemas(conn, []string{schemaName})
+	current, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
 	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, current, nil)
 	c.Assert(err, qt.IsNil)

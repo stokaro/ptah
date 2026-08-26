@@ -85,7 +85,7 @@ func testManualPatchDetection(ctx context.Context, conn *dbschema.DatabaseConnec
 	}
 
 	// Read the schema to verify the manual change
-	schema, err := conn.Reader().ReadSchema()
+	schema, err := conn.Reader().ReadSchemaContext(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to read schema after manual change: %w", err)
 	}
@@ -327,7 +327,7 @@ func testCleanupSupport(
 	}
 
 	// Verify tables exist
-	exists, err := helper.TableExists("users")
+	exists, err := helper.TableExists(ctx, "users")
 	if err != nil {
 		return fmt.Errorf("failed to check if users table exists: %w", err)
 	}
@@ -341,7 +341,7 @@ func testCleanupSupport(
 	}
 
 	// Verify tables no longer exist
-	exists, err = helper.TableExists("users")
+	exists, err = helper.TableExists(ctx, "users")
 	if err != nil {
 		return fmt.Errorf("failed to check if users table exists after cleanup: %w", err)
 	}
@@ -355,7 +355,7 @@ func testCleanupSupport(
 	}
 
 	// Verify tables exist again
-	exists, err = helper.TableExists("users")
+	exists, err = helper.TableExists(ctx, "users")
 	if err != nil {
 		return fmt.Errorf("failed to check if users table exists after re-migration: %w", err)
 	}

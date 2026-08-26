@@ -212,7 +212,7 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 			c := qt.New(t)
 			reader := NewMySQLReader(statisticsDB(c, test.rows).SQL, "app")
 
-			indexes, err := reader.readIndexes("app")
+			indexes, err := reader.readIndexes(t.Context(), "app")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(indexes, qt.DeepEquals, test.want)
@@ -266,7 +266,7 @@ func TestReadIndexes_ReportsAKeyPartItCannotName(t *testing.T) {
 			c := qt.New(t)
 			reader := NewMySQLReader(statisticsDB(c, test.rows).SQL, "app")
 
-			indexes, err := reader.readIndexes("app")
+			indexes, err := reader.readIndexes(t.Context(), "app")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(indexes, qt.DeepEquals, test.want)
@@ -295,7 +295,7 @@ func TestReadFunctionsCarriesReplacementOwnershipFacts(t *testing.T) {
 	db := functionOwnershipDB(c)
 	reader := NewMySQLReader(db.SQL, "app")
 
-	functions, err := reader.readFunctions("app")
+	functions, err := reader.readFunctions(t.Context(), "app")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(functions, qt.HasLen, 1)
@@ -412,7 +412,7 @@ func TestReadEnums_NamesEachOneAfterItsColumn(t *testing.T) {
 			c := qt.New(t)
 			reader := NewMySQLReader(enumColumnsDB(c, test.rows).SQL, "app")
 
-			enums, err := reader.readEnums("app")
+			enums, err := reader.readEnums(t.Context(), "app")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(enums, qt.DeepEquals, test.want)

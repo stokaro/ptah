@@ -371,7 +371,7 @@ func generateCheckpointFromConn(ctx context.Context, shadowConn *dbschema.Databa
 		return "", "", fmt.Errorf("checkpoint generation failed: %w", err)
 	}
 
-	shadowSchema, err := dbschema.ReadSchemaWithSchemas(shadowConn, opts.Schemas)
+	shadowSchema, err := dbschema.ReadSchemaWithSchemasContext(ctx, shadowConn, opts.Schemas)
 	if err != nil {
 		return "", "", fmt.Errorf("checkpoint generation failed: read shadow schema: %w", err)
 	}

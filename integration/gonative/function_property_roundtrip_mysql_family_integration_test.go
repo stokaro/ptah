@@ -98,7 +98,7 @@ func applyPropertySQL(c *qt.C, db *sql.DB, dialect string, desired *goschema.Dat
 	c.Helper()
 
 	reader := mysql.NewMySQLReader(db, "")
-	live, err := reader.ReadSchema()
+	live, err := reader.ReadSchemaContext(c.Context())
 	c.Assert(err, qt.IsNil)
 
 	// CompareWithDialect, not Compare: the dialect is what tells the comparator
@@ -120,7 +120,7 @@ func propertyDiff(c *qt.C, db *sql.DB, dialect string, desired *goschema.Databas
 	c.Helper()
 
 	reader := mysql.NewMySQLReader(db, "")
-	live, err := reader.ReadSchema()
+	live, err := reader.ReadSchemaContext(c.Context())
 	c.Assert(err, qt.IsNil)
 	return schemadiff.CompareWithDialect(desired, live, dialect)
 }
@@ -498,7 +498,7 @@ func TestFunctionParametersIgnoreASameNamedProcedure_Integration(t *testing.T) {
 			// .PARAMETERS keys both by SPECIFIC_NAME, so a map keyed by name alone
 			// would hand one routine the other's arguments.
 			reader := mysql.NewMySQLReader(db, "")
-			live, err := reader.ReadSchema()
+			live, err := reader.ReadSchemaContext(t.Context())
 			c.Assert(err, qt.IsNil)
 			c.Assert(live.Functions, qt.HasLen, 2)
 
@@ -666,7 +666,7 @@ func TestFunctionCaseCollidingDeclarationsAreRefused_Integration(t *testing.T) {
 			}}
 
 			reader := mysql.NewMySQLReader(db, "")
-			live, err := reader.ReadSchema()
+			live, err := reader.ReadSchemaContext(t.Context())
 			c.Assert(err, qt.IsNil)
 			diff := schemadiff.CompareWithDialect(colliding, live, target.dialect)
 

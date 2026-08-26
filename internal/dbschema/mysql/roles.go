@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -31,15 +32,15 @@ import (
 // scoped by the connected schema the way a table read is. That is a property of
 // the object: a role is a server principal, and there is no per-database one to
 // read instead.
-func (r *Reader) readRoles() ([]types.DBRole, error) {
-	predicate, err := r.rolePredicate()
+func (r *Reader) readRoles(ctx context.Context) ([]types.DBRole, error) {
+	predicate, err := r.rolePredicate(ctx)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := r.db.Query(`
+	rows, err := r.db.QueryContext(ctx, `
 		SELECT user
 		FROM mysql.user
-		WHERE ` + predicate + `
+		WHERE `+predicate+`
 		  AND user NOT LIKE 'mysql.%'
 		ORDER BY user`)
 	if err != nil {
@@ -76,9 +77,9 @@ func (r *Reader) readRoles() ([]types.DBRole, error) {
 // `ERROR 1054: Unknown column 'account_locked'`, so a query written for MySQL
 // does not degrade there, it fails. MySQL 8.4 has no is_role and marks a role
 // locked with its password expired and an empty authentication string.
-func (r *Reader) rolePredicate() (string, error) {
+func (r *Reader) rolePredicate(ctx context.Context) (string, error) {
 	var hasIsRole int
-	err := r.db.QueryRow(`
+	err := r.db.QueryRowContext(ctx, `
 		SELECT COUNT(*)
 		FROM information_schema.columns
 		WHERE table_schema = 'mysql' AND table_name = 'user' AND column_name = 'is_role'`).Scan(&hasIsRole)
@@ -97,13 +98,13 @@ func (r *Reader) rolePredicate() (string, error) {
 // [grantQuery] says why those rather than the grant tables. A grant on another
 // database is not reported, because the description this reader produces is of
 // one database and a grant elsewhere is not part of it.
-func (r *Reader) readGrants(dbName string) ([]types.DBGrant, error) {
-	predicate, err := r.rolePredicate()
+func (r *Reader) readGrants(ctx context.Context, dbName string) ([]types.DBGrant, error) {
+	predicate, err := r.rolePredicate(ctx)
 	if err != nil {
 		return nil, err
 	}
 	rolePredicateOn := func(prefix string) string { return qualifyPredicate(predicate, prefix) }
-	rows, err := r.db.Query(grantQuery(rolePredicateOn("u.")), dbName, dbName)
+	rows, err := r.db.QueryContext(ctx, grantQuery(rolePredicateOn("u.")), dbName, dbName)
 	if err != nil {
 		return nil, err
 	}
@@ -198,8 +199,8 @@ func isRoleReadDenied(err error) bool {
 // it did not look, so a declared role is reported as an undecided addition
 // instead of planned from nothing. Nothing destructive follows either: role and
 // grant removals are decided from live rows, and there are none.
-func (r *Reader) readRolesInto(schema *types.DBSchema, dbName string) error {
-	roles, err := r.readRoles()
+func (r *Reader) readRolesInto(ctx context.Context, schema *types.DBSchema, dbName string) error {
+	roles, err := r.readRoles(ctx)
 	if err != nil {
 		if !isRoleReadDenied(err) {
 			return fmt.Errorf("failed to read roles: %w", err)
@@ -209,7 +210,7 @@ func (r *Reader) readRolesInto(schema *types.DBSchema, dbName string) error {
 	}
 	schema.Roles = roles
 
-	grants, err := r.readGrants(dbName)
+	grants, err := r.readGrants(ctx, dbName)
 	if err != nil {
 		if !isRoleReadDenied(err) {
 			return fmt.Errorf("failed to read grants: %w", err)
@@ -223,7 +224,7 @@ func (r *Reader) readRolesInto(schema *types.DBSchema, dbName string) error {
 	}
 	schema.Grants = grants
 
-	memberships, err := r.readRoleMemberships()
+	memberships, err := r.readRoleMemberships(ctx)
 	if err != nil {
 		if !isRoleReadDenied(err) {
 			return fmt.Errorf("failed to read role memberships: %w", err)
@@ -248,9 +249,9 @@ func (r *Reader) readRolesInto(schema *types.DBSchema, dbName string) error {
 // TO_USER; MariaDB 11.8 has mysql.roles_mapping with Role and User, and no
 // role_edges at all, so a query written for one does not degrade on the other,
 // it fails (stokaro/ptah#1950).
-func (r *Reader) membershipTable() (query string, found bool, err error) {
+func (r *Reader) membershipTable(ctx context.Context) (query string, found bool, err error) {
 	var hasRoleEdges int
-	if err := r.db.QueryRow(`
+	if err := r.db.QueryRowContext(ctx, `
 		SELECT COUNT(*)
 		FROM information_schema.tables
 		WHERE table_schema = 'mysql' AND table_name = 'role_edges'`).Scan(&hasRoleEdges); err != nil {
@@ -265,7 +266,7 @@ func (r *Reader) membershipTable() (query string, found bool, err error) {
 	}
 
 	var hasRolesMapping int
-	if err := r.db.QueryRow(`
+	if err := r.db.QueryRowContext(ctx, `
 		SELECT COUNT(*)
 		FROM information_schema.tables
 		WHERE table_schema = 'mysql' AND table_name = 'roles_mapping'`).Scan(&hasRolesMapping); err != nil {
@@ -288,8 +289,8 @@ func (r *Reader) membershipTable() (query string, found bool, err error) {
 // answers an empty list rather than an error: roles arrived in MySQL 8.0 and
 // MariaDB 10.0.5, and a 5.7 server is describing a world where the question
 // does not exist.
-func (r *Reader) readRoleMemberships() ([]types.DBRoleMembership, error) {
-	query, found, err := r.membershipTable()
+func (r *Reader) readRoleMemberships(ctx context.Context) ([]types.DBRoleMembership, error) {
+	query, found, err := r.membershipTable(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -298,7 +299,7 @@ func (r *Reader) readRoleMemberships() ([]types.DBRoleMembership, error) {
 		return memberships, nil
 	}
 
-	rows, err := r.db.Query(query)
+	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}

@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"regexp"
@@ -39,9 +40,17 @@ func NewSQLiteReader(db sqlrunner.Runner, schema string) *Reader {
 	return &Reader{db: db, schema: schema}
 }
 
-// ReadSchema reads user tables, indexes, constraints, views, and triggers.
+// ReadSchema is [Reader.ReadSchemaContext] under context.Background(), the
+// context-free half of the pair [types.SchemaReader] declares. Prefer the
+// Context form: only it can be told to stop.
 func (r *Reader) ReadSchema() (*types.DBSchema, error) {
-	catalog, err := r.readSchemaCatalog()
+	return r.ReadSchemaContext(context.Background())
+}
+
+// ReadSchemaContext reads user tables, indexes, constraints, views, and
+// triggers.
+func (r *Reader) ReadSchemaContext(ctx context.Context) (*types.DBSchema, error) {
+	catalog, err := r.readSchemaCatalog(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -54,19 +63,19 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	// takes the rest of the schema down with it.
 	skipped := catalog.nonOrdinaryTableNames()
 
-	columnsByTable, err := r.readColumnsByTable(skipped)
+	columnsByTable, err := r.readColumnsByTable(ctx, skipped)
 	if err != nil {
 		return nil, err
 	}
 
-	indexesByTable, uniqueConstraintsByTable, err := r.readIndexesByTable(
+	indexesByTable, uniqueConstraintsByTable, err := r.readIndexesByTable(ctx,
 		catalog.indexDDLByName, catalog.tableDDLByName, skipped,
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	foreignKeysByTable, err := r.readForeignKeysByTable(catalog.tableDDLByName, skipped)
+	foreignKeysByTable, err := r.readForeignKeysByTable(ctx, catalog.tableDDLByName, skipped)
 	if err != nil {
 		return nil, err
 	}
@@ -181,8 +190,8 @@ func (c sqliteSchemaCatalog) triggers(schema string) []types.DBTrigger {
 	return triggers
 }
 
-func (r *Reader) readSchemaCatalog() (sqliteSchemaCatalog, error) {
-	kinds, err := r.readTableKinds()
+func (r *Reader) readSchemaCatalog(ctx context.Context) (sqliteSchemaCatalog, error) {
+	kinds, err := r.readTableKinds(ctx)
 	if err != nil {
 		return sqliteSchemaCatalog{}, err
 	}
@@ -195,7 +204,7 @@ func (r *Reader) readSchemaCatalog() (sqliteSchemaCatalog, error) {
 		  AND NOT (type IN ('table', 'view') AND name = 'schema_migrations')
 		ORDER BY type, tbl_name, name
 	`, r.schemaObject("sqlite_schema"))
-	rows, err := r.db.Query(query)
+	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
 		return sqliteSchemaCatalog{}, fmt.Errorf("sqlite: read schema catalog: %w", err)
 	}
@@ -332,7 +341,7 @@ func (r *Reader) schemaObject(name string) string {
 	return sqlident.Qualified("sqlite", schema, name)
 }
 
-func (r *Reader) readColumnsByTable(skipped []string) (map[string][]types.DBColumn, error) {
+func (r *Reader) readColumnsByTable(ctx context.Context, skipped []string) (map[string][]types.DBColumn, error) {
 	exclusion, exclusionArguments := excludeTablesFilter(skipped)
 	query := fmt.Sprintf(`
 		SELECT m.name, x.cid, x.name, x.type, x."notnull", x.dflt_value, x.pk, x.hidden, m.sql
@@ -343,7 +352,7 @@ func (r *Reader) readColumnsByTable(skipped []string) (map[string][]types.DBColu
 		  AND m.name <> 'schema_migrations'%s
 		ORDER BY m.name, x.cid
 	`, r.schemaObject("sqlite_schema"), exclusion)
-	rows, err := r.db.Query(query, append([]any{r.schema}, exclusionArguments...)...)
+	rows, err := r.db.QueryContext(ctx, query, append([]any{r.schema}, exclusionArguments...)...)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: read columns: %w", err)
 	}
@@ -465,7 +474,7 @@ func autoincrementColumn(ddl string) string {
 	return ""
 }
 
-func (r *Reader) readIndexesByTable(
+func (r *Reader) readIndexesByTable(ctx context.Context,
 	indexDDLByName,
 	tableDDLByName map[string]string,
 	skipped []string,
@@ -474,12 +483,12 @@ func (r *Reader) readIndexesByTable(
 	map[string][]types.DBConstraint,
 	error,
 ) {
-	entriesByTable, err := r.readIndexEntriesByTable(skipped)
+	entriesByTable, err := r.readIndexEntriesByTable(ctx, skipped)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	columnsByIndex, err := r.readIndexColumnsByIndex(skipped)
+	columnsByIndex, err := r.readIndexColumnsByIndex(ctx, skipped)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -494,7 +503,7 @@ func (r *Reader) readIndexesByTable(
 	return indexesByTable, constraintsByTable, nil
 }
 
-func (r *Reader) readIndexEntriesByTable(skipped []string) (map[string][]sqliteIndexEntry, error) {
+func (r *Reader) readIndexEntriesByTable(ctx context.Context, skipped []string) (map[string][]sqliteIndexEntry, error) {
 	exclusion, exclusionArguments := excludeTablesFilter(skipped)
 	query := fmt.Sprintf(`
 		SELECT m.name, il.seq, il.name, il."unique", il.origin, il.partial
@@ -505,7 +514,7 @@ func (r *Reader) readIndexEntriesByTable(skipped []string) (map[string][]sqliteI
 		  AND m.name <> 'schema_migrations'%s
 		ORDER BY m.name, il.seq
 	`, r.schemaObject("sqlite_schema"), exclusion)
-	rows, err := r.db.Query(query, append([]any{r.schema}, exclusionArguments...)...)
+	rows, err := r.db.QueryContext(ctx, query, append([]any{r.schema}, exclusionArguments...)...)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: read indexes: %w", err)
 	}
@@ -623,7 +632,7 @@ type sqliteIndexKey struct {
 	desc bool
 }
 
-func (r *Reader) readIndexColumnsByIndex(skipped []string) (map[string]sqliteIndexColumns, error) {
+func (r *Reader) readIndexColumnsByIndex(ctx context.Context, skipped []string) (map[string]sqliteIndexColumns, error) {
 	exclusion, exclusionArguments := excludeTablesFilter(skipped)
 	query := fmt.Sprintf(`
 		SELECT il.name, ix.seqno, ix.cid, ix.name, ix.desc, ix.key
@@ -635,7 +644,7 @@ func (r *Reader) readIndexColumnsByIndex(skipped []string) (map[string]sqliteInd
 		  AND m.name <> 'schema_migrations'%s
 		ORDER BY il.name, ix.seqno
 	`, r.schemaObject("sqlite_schema"), exclusion)
-	rows, err := r.db.Query(query, append([]any{r.schema, r.schema}, exclusionArguments...)...)
+	rows, err := r.db.QueryContext(ctx, query, append([]any{r.schema, r.schema}, exclusionArguments...)...)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: read index columns: %w", err)
 	}
@@ -860,7 +869,7 @@ func primaryKeyConstraint(tableName, schema string, columns []types.DBColumn, dd
 	}
 }
 
-func (r *Reader) readForeignKeysByTable(
+func (r *Reader) readForeignKeysByTable(ctx context.Context,
 	tableDDLByName map[string]string,
 	skipped []string,
 ) (map[string][]types.DBConstraint, error) {
@@ -874,7 +883,7 @@ func (r *Reader) readForeignKeysByTable(
 		  AND m.name <> 'schema_migrations'%s
 		ORDER BY m.name, fk.id, fk.seq
 	`, r.schemaObject("sqlite_schema"), exclusion)
-	rows, err := r.db.Query(query, append([]any{r.schema}, exclusionArguments...)...)
+	rows, err := r.db.QueryContext(ctx, query, append([]any{r.schema}, exclusionArguments...)...)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: read foreign keys: %w", err)
 	}

@@ -28,6 +28,7 @@ import (
 	"go.5x5.cz/ptah/internal/dbschema/oracle"
 	"go.5x5.cz/ptah/internal/dbschema/postgres"
 	"go.5x5.cz/ptah/internal/dbschema/sqlite"
+	"go.5x5.cz/ptah/internal/dburldisplay"
 	"go.5x5.cz/ptah/internal/schemaselection"
 	"go.5x5.cz/ptah/internal/sqlrunner"
 )
@@ -544,20 +545,79 @@ type contextExecutor interface {
 	ExecContext(context.Context, string, ...any) (sql.Result, error)
 }
 
-// ReadSchemaWithSchemas reads a database schema, applying a schema allow-list
-// when the underlying dialect reader supports schema scoping.
-func ReadSchemaWithSchemas(conn *DatabaseConnection, schemas []string) (*types.DBSchema, error) {
-	reader := conn.Reader()
-	scoped, ok := reader.(schemaScopedReader)
-	if ok {
-		scoped.SetSchemas(schemas)
-		defer scoped.SetSchemas(nil)
-	}
-	schema, err := reader.ReadSchema()
+// ReadSchemaWithSchemasContext reads a database schema, applying a schema
+// allow-list when the underlying dialect reader supports schema scoping.
+//
+// The context governs every catalog query the read issues: canceling it, or
+// letting its deadline pass, makes the read return promptly with an error
+// rather than running the remaining queries.
+//
+// The read runs on a reader of its own rather than on the connection's shared
+// one, so two concurrent calls carrying different allow-lists cannot see each
+// other's scope. The scope is reader state -- the PostgreSQL-family and SQL
+// Server readers each write two unsynchronized fields in SetSchemas -- so
+// scoping a shared reader makes every concurrent pair a data race whose
+// visible effect is one read answering for the other's schemas. Measured with
+// `go test -race` against two goroutines calling this function with different
+// allow-lists, the detector reports the write in SetSchemas from both
+// goroutines; see
+// TestReadSchemaWithSchemas_ConcurrentScopesDoNotShareAReader.
+//
+// A reader per call costs whatever the reader caches across reads, which today
+// is the PostgreSQL pg_relation_size probe: one extra round trip per scoped
+// read, against a correctness defect that has no bound.
+func ReadSchemaWithSchemasContext(
+	ctx context.Context,
+	conn *DatabaseConnection,
+	schemas []string,
+) (*types.DBSchema, error) {
+	reader, restore := conn.readerScopedTo(schemas)
+	defer restore()
+	schema, err := reader.ReadSchemaContext(ctx)
 	if err != nil {
 		return nil, err
 	}
 	return recordUnmodeledObjectKinds(schema, conn.Info().Dialect), nil
+}
+
+// ReadSchemaWithSchemas is [ReadSchemaWithSchemasContext] under
+// context.Background(), for a caller with no context to hand.
+//
+// The pair is the one this package offers for every other database call --
+// [DatabaseConnection.Exec] beside [DatabaseConnection.ExecContext],
+// [DatabaseConnection.Query] beside [DatabaseConnection.QueryContext] -- and it
+// is database/sql's own. Prefer ReadSchemaWithSchemasContext: a schema read is
+// dozens of round trips against a server that may be slow or unreachable, and
+// only the Context form can be told to stop.
+func ReadSchemaWithSchemas(conn *DatabaseConnection, schemas []string) (*types.DBSchema, error) {
+	return ReadSchemaWithSchemasContext(context.Background(), conn, schemas)
+}
+
+// readerScopedTo returns a reader restricted to schemas, plus the cleanup the
+// caller must run when the read is done.
+//
+// A connection that knows how to build readers builds one, and the returned
+// cleanup does nothing: nothing else can observe a private reader, so nothing
+// has to be put back. A connection without a factory -- only a hand-assembled
+// one inside this package, since the struct's fields are unexported -- falls
+// back to scoping the shared reader and restoring it afterwards, which is the
+// behavior that cannot be made concurrency-safe.
+func (dc *DatabaseConnection) readerScopedTo(schemas []string) (types.SchemaReader, func()) {
+	if dc.newReader != nil {
+		reader := dc.newReader(dc.sqlRunner())
+		if scoped, ok := reader.(schemaScopedReader); ok {
+			scoped.SetSchemas(schemas)
+		}
+		return reader, func() {}
+	}
+
+	reader := dc.Reader()
+	scoped, ok := reader.(schemaScopedReader)
+	if !ok {
+		return reader, func() {}
+	}
+	scoped.SetSchemas(schemas)
+	return reader, func() { scoped.SetSchemas(nil) }
 }
 
 // recordUnmodeledObjectKinds marks the object kinds this target has and Ptah
@@ -1015,6 +1075,7 @@ func getDatabaseInfo(
 	info := types.DBInfo{
 		Dialect:             dialect,
 		URL:                 originalURL,
+		RedactedURL:         dburldisplay.Format(originalURL),
 		IdentifierSemantics: identifier.ForDialect(dialect),
 	}
 
@@ -1102,7 +1163,7 @@ func getDatabaseInfo(
 		info.IdentifierSemantics.DefaultSchema = info.Schema
 	case platform.ClickHouse:
 		var version string
-		if err := db.QueryRow("SELECT version()").Scan(&version); err != nil {
+		if err := db.QueryRowContext(ctx, "SELECT version()").Scan(&version); err != nil {
 			return info, fmt.Errorf("failed to get ClickHouse version: %w", err)
 		}
 		info.Version = version
@@ -1111,7 +1172,7 @@ func getDatabaseInfo(
 			info.Schema = parsedURL.Path[1:]
 		} else {
 			var dbName string
-			if err := db.QueryRow("SELECT currentDatabase()").Scan(&dbName); err != nil {
+			if err := db.QueryRowContext(ctx, "SELECT currentDatabase()").Scan(&dbName); err != nil {
 				return info, fmt.Errorf("failed to get current ClickHouse database name: %w", err)
 			}
 			info.Schema = dbName

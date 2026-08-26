@@ -20,7 +20,7 @@ func sequenceNamed(c *qt.C, answer dbtest.QueryHandler, name string) (start, cac
 	db := dbtest.Open(c.TB, answer)
 	reader := NewOracleReader(db.SQL, "PTAHSQ")
 
-	sequences, err := reader.readSequences()
+	sequences, err := reader.readSequences(c.Context())
 	c.Assert(err, qt.IsNil)
 
 	for _, sequence := range sequences {

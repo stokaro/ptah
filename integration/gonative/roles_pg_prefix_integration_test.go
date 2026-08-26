@@ -68,7 +68,7 @@ func TestPostgreSQLReaderDescribesRolesNamedPgSomething(t *testing.T) {
 	).Scan(&seeded), qt.IsNil)
 	c.Assert(seeded, qt.Equals, 1)
 
-	schema, err := postgres.NewPostgreSQLReader(db, "public").ReadSchema()
+	schema, err := postgres.NewPostgreSQLReader(db, "public").ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 
 	roleNames := make([]string, 0, len(schema.Roles))

@@ -539,7 +539,7 @@ func TestGenerateDiff_InvalidMigrationSnapshotDoesNotResetDevDatabase(t *testing
 		Name:        "must_not_reset",
 		LockTimeout: time.Second,
 	})
-	devSchema, readErr := dbschema.ReadSchemaWithSchemas(conn, nil)
+	devSchema, readErr := dbschema.ReadSchemaWithSchemasContext(t.Context(), conn, nil)
 
 	c.Assert(err, qt.ErrorMatches, `capture migration directory: capture filesystem snapshot: .*`)
 	c.Assert(result.MigrationPaths, qt.HasLen, 0)

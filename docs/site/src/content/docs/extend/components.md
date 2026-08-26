@@ -281,7 +281,7 @@ if err != nil {
 }
 defer dbschema.CloseAndWarn(conn)
 
-live, err := conn.Reader().ReadSchema()
+live, err := conn.Reader().ReadSchemaContext(ctx)
 if err != nil {
 	return err
 }

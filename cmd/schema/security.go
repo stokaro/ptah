@@ -146,7 +146,7 @@ func runSchemaSecurity(cmd *cobra.Command, opts schemaSecurityOptions) error {
 	}
 	defer func() { _ = conn.Close() }()
 
-	live, err := dbschema.ReadSchemaWithSchemas(conn, atlasschema.SplitSchemaNames([]string{opts.schemas}))
+	live, err := dbschema.ReadSchemaWithSchemasContext(cmd.Context(), conn, atlasschema.SplitSchemaNames([]string{opts.schemas}))
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("read schema: %w", err))
 	}

@@ -112,7 +112,7 @@ func TestPostgresRoutineOverloadIdentityE2E(t *testing.T) {
 			conn, err := dbschema.ConnectToDatabase(ctx, scopedURL)
 			c.Assert(err, qt.IsNil)
 			defer dbschema.CloseAndWarn(conn)
-			read, err := conn.Reader().ReadSchema()
+			read, err := conn.Reader().ReadSchemaContext(ctx)
 			c.Assert(err, qt.IsNil)
 			// The server really does hold two routines under one name, which is
 			// the premise every row below rests on.

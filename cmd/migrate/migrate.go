@@ -189,7 +189,7 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	defer dbschema.CloseAndWarn(conn)
 
 	schemas := dbcli.ParseSchemas(schemasValue)
-	dbSchema, err := dbschema.ReadSchemaWithSchemas(conn, schemas)
+	dbSchema, err := dbschema.ReadSchemaWithSchemasContext(cmd.Context(), conn, schemas)
 	if err != nil {
 		return fmt.Errorf("error reading database schema: %w", err)
 	}

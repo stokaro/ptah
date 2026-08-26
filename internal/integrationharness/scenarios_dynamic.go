@@ -824,7 +824,7 @@ func testDynamicRollbackSingle(ctx context.Context, conn *dbschema.DatabaseConne
 		}
 
 		// Verify schema state - should have posts table but no enums
-		schema, err := conn.Reader().ReadSchema()
+		schema, err := conn.Reader().ReadSchemaContext(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to read schema after rollback: %w", err)
 		}
@@ -943,7 +943,7 @@ func testDynamicRollbackMultiple(ctx context.Context, conn *dbschema.DatabaseCon
 		}
 
 		// Verify schema state - should only have users and products tables
-		schema, err := conn.Reader().ReadSchema()
+		schema, err := conn.Reader().ReadSchemaContext(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to read schema after rollback: %w", err)
 		}
@@ -1020,7 +1020,7 @@ func testDynamicRollbackToZero(ctx context.Context, conn *dbschema.DatabaseConne
 	}
 
 	// Verify we have tables
-	schema, err := conn.Reader().ReadSchema()
+	schema, err := conn.Reader().ReadSchemaContext(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to read schema before rollback: %w", err)
 	}
@@ -1044,7 +1044,7 @@ func testDynamicRollbackToZero(ctx context.Context, conn *dbschema.DatabaseConne
 		}
 
 		// Verify schema is empty (except for schema_migrations table)
-		schema, err := conn.Reader().ReadSchema()
+		schema, err := conn.Reader().ReadSchemaContext(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to read schema after rollback: %w", err)
 		}
@@ -1326,7 +1326,7 @@ func testDynamicCircularDependencies(
 			}
 		}
 
-		schema, err := conn.Reader().ReadSchema()
+		schema, err := conn.Reader().ReadSchemaContext(ctx)
 		if err != nil {
 			return fmt.Errorf("read circular foreign-key schema: %w", err)
 		}
@@ -1745,7 +1745,7 @@ func testDynamicReservedKeywords(ctx context.Context, conn *dbschema.DatabaseCon
 		}
 
 		// Verify the table was created
-		schema, err := conn.Reader().ReadSchema()
+		schema, err := conn.Reader().ReadSchemaContext(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to read schema: %w", err)
 		}
@@ -1842,7 +1842,7 @@ func testDynamicDialectDifferences(ctx context.Context, conn *dbschema.DatabaseC
 		}
 
 		// Verify the table was created
-		schema, err := conn.Reader().ReadSchema()
+		schema, err := conn.Reader().ReadSchemaContext(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to read schema: %w", err)
 		}
@@ -2234,7 +2234,7 @@ func testDynamicEmbeddedFields(ctx context.Context, conn *dbschema.DatabaseConne
 		}
 
 		// Verify that tables were created with embedded fields
-		schema, err := conn.Reader().ReadSchema()
+		schema, err := conn.Reader().ReadSchemaContext(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to read schema: %w", err)
 		}
@@ -3594,7 +3594,7 @@ func testDynamicRolesCrossDatabase(ctx context.Context, conn *dbschema.DatabaseC
 	return recorder.RecordStep("Test Cross-Database Compatibility", "Apply role fixtures on different database dialects", func() error {
 		err := vem.MigrateToVersion(ctx, conn, "016-roles", "Roles cross-database test")
 		if dialect == platform.MySQL || dialect == platform.MariaDB {
-			return verifyMySQLFamilyRoleRefusal(conn, err)
+			return verifyMySQLFamilyRoleRefusal(ctx, conn, err)
 		}
 		if err != nil {
 			return fmt.Errorf("failed to migrate to 016-roles: %w", err)
@@ -3636,7 +3636,7 @@ func testDynamicRolesCrossDatabase(ctx context.Context, conn *dbschema.DatabaseC
 // The refusal is what this scenario is for, so the assertion moved to the new
 // reason rather than being deleted -- a fixture that started succeeding would
 // have stopped testing anything.
-func verifyMySQLFamilyRoleRefusal(conn *dbschema.DatabaseConnection, err error) error {
+func verifyMySQLFamilyRoleRefusal(ctx context.Context, conn *dbschema.DatabaseConnection, err error) error {
 	if err == nil {
 		return fmt.Errorf("expected MySQL-family role declaration to fail closed")
 	}
@@ -3650,7 +3650,7 @@ func verifyMySQLFamilyRoleRefusal(conn *dbschema.DatabaseConnection, err error) 
 	if !strings.Contains(err.Error(), want) {
 		return fmt.Errorf("expected named MySQL-family role refusal %q, got: %w", want, err)
 	}
-	schema, readErr := conn.Reader().ReadSchema()
+	schema, readErr := conn.Reader().ReadSchemaContext(ctx)
 	if readErr != nil {
 		return fmt.Errorf("read schema after MySQL-family role refusal: %w", readErr)
 	}

@@ -550,7 +550,7 @@ func (vem *VersionedEntityManager) GenerateMigrationSQL(ctx context.Context, con
 	}
 
 	// Read current database schema
-	dbSchema, err := conn.Reader().ReadSchema()
+	dbSchema, err := conn.Reader().ReadSchemaContext(ctx)
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to read database schema: %w", err)
 	}
@@ -689,8 +689,8 @@ func (dh *DatabaseHelper) MigrateDown(ctx context.Context, migrationsFS fs.FS) e
 }
 
 // TableExists checks if a table exists in the database
-func (dh *DatabaseHelper) TableExists(tableName string) (bool, error) {
-	schema, err := dh.conn.Reader().ReadSchema()
+func (dh *DatabaseHelper) TableExists(ctx context.Context, tableName string) (bool, error) {
+	schema, err := dh.conn.Reader().ReadSchemaContext(ctx)
 	if err != nil {
 		return false, err
 	}

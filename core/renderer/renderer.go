@@ -4,11 +4,15 @@
 // across different database dialects. It implements a factory pattern to create appropriate
 // dialect renderers and provides a unified interface for SQL generation.
 //
-// The package supports multiple database platforms including PostgreSQL, MySQL,
-// MariaDB, and ClickHouse. Unsupported dialects are reported as errors instead
-// of falling back to a generic renderer. Each dialect renderer implements the
-// ast.Visitor interface to ensure consistent behavior across different database
-// systems.
+// The package renders for every dialect SupportedDialects names: PostgreSQL,
+// MySQL, MariaDB, ClickHouse, SQLite, SQL Server, CockroachDB, YugabyteDB,
+// Spanner, and Oracle, plus the alias spellings each of those accepts.
+// CockroachDB, YugabyteDB, and Spanner are rendered by the PostgreSQL renderer
+// constructed for that dialect, so their capability presets decide what each
+// one emits. Unsupported dialects are reported as errors instead of falling
+// back to a generic renderer. Each dialect renderer implements the ast.Visitor
+// interface outright rather than embedding ast.NoopVisitor, so a new node kind
+// breaks the build until every dialect has answered for it.
 //
 // Example usage:
 //

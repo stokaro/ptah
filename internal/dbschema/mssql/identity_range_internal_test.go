@@ -18,7 +18,7 @@ func columnsOf(c *qt.C, answer dbtest.QueryHandler) map[string]struct{ start, in
 	db := dbtest.Open(c.TB, answer)
 	reader := NewSQLServerReader(db.SQL, "dbo")
 
-	columns, err := reader.readColumnsByTable()
+	columns, err := reader.readColumnsByTable(c.Context())
 	c.Assert(err, qt.IsNil)
 
 	byName := make(map[string]struct{ start, increment string })

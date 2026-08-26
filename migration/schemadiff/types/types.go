@@ -529,28 +529,38 @@ func (d *SchemaDiff) EffectiveIdentifierSemantics(dialect string) identifier.Sem
 	return identifier.ForDialect(dialect)
 }
 
-// HasChanges returns true if the diff contains any schema changes requiring migration.
+// HasChanges reports whether the diff holds any change a migration would have
+// to carry out.
 //
-// This method provides a quick way to determine if any migration actions are needed
-// without having to check each individual diff category. It's commonly used in
-// CI/CD pipelines and automated deployment systems to decide whether to generate
-// and apply migrations.
+// It answers for every object kind the diff carries, so a caller does not have
+// to read the fields itself. It is the check a CI pipeline or an automated
+// deployment makes before deciding to generate and apply a migration.
 //
 // # Return Value
 //
-// Returns true if any of the following conditions are met:
-//   - New tables need to be created
-//   - Existing tables need to be removed
-//   - Existing tables have structural modifications
-//   - New enum types need to be created
-//   - Existing enum types need to be removed
-//   - Existing enum types have value modifications
-//   - New indexes need to be created
-//   - Existing indexes need to be removed
+// Returns true when any of these carries an entry:
+//
+//   - tables, and the columns and per-table structure inside them
+//   - enum types
+//   - indexes
+//   - constraints, whether named alone or with their owning table
+//   - views and materialized views
+//   - functions, procedures, and sequences
+//   - triggers
+//   - domains, composite types, and range types
+//   - synonyms
+//   - extensions
+//   - roles, grants, and grant options
+//   - row-level security policies, and the tables RLS is enabled or disabled on
+//   - TimescaleDB hypertables and continuous aggregates
+//   - SQL Server extended properties
+//
+// The method itself is the full set; the list above names the groups rather
+// than each individual field.
 //
 // # Example Usage
 //
-//	diff := CompareSchemas(generated, database)
+//	diff := schemadiff.Compare(generated, database)
 //	if diff.HasChanges() {
 //		log.Println("Schema changes detected, generating migration...")
 //		statements, err := planner.GenerateSchemaDiffAST(diff, generated, "postgres")

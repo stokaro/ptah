@@ -76,7 +76,7 @@ func TestPostgreSQLMultiSchemaGenerateApplyReadDiffIntegration(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
 
-	live, err := dbschema.ReadSchemaWithSchemas(conn, []string{"ptah_ms_auth", "ptah_ms_billing", "public"})
+	live, err := dbschema.ReadSchemaWithSchemasContext(t.Context(), conn, []string{"ptah_ms_auth", "ptah_ms_billing", "public"})
 	c.Assert(err, qt.IsNil)
 	live = filterMultiSchemaIntegrationTables(live)
 

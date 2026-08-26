@@ -20,7 +20,7 @@ import (
 func readClickHouseViews(t *testing.T, db *sql.DB, database string) *dbschematypes.DBSchema {
 	c := qt.New(t)
 	t.Helper()
-	schema, err := clickhousedb.NewClickHouseReader(db, database).ReadSchema()
+	schema, err := clickhousedb.NewClickHouseReader(db, database).ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	return &dbschematypes.DBSchema{Views: schema.Views}
 }

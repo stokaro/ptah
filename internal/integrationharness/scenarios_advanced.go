@@ -68,7 +68,7 @@ func testSchemaDiff(ctx context.Context, conn *dbschema.DatabaseConnection, fixt
 	}
 
 	// Read current schema
-	currentSchema, err := conn.Reader().ReadSchema()
+	currentSchema, err := conn.Reader().ReadSchemaContext(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to read current schema: %w", err)
 	}
@@ -345,7 +345,7 @@ func testPartialFailureRecovery(ctx context.Context, conn *dbschema.DatabaseConn
 	}
 
 	// Verify we can still interact with the database
-	exists, err := helper.TableExists("users")
+	exists, err := helper.TableExists(ctx, "users")
 	if err != nil {
 		return fmt.Errorf("should be able to check table existence after partial failure: %w", err)
 	}
@@ -627,7 +627,7 @@ func validateSchemaConsistency(ctx context.Context, conn *dbschema.DatabaseConne
 	}
 
 	// Read actual database schema
-	actualSchema, err := conn.Reader().ReadSchema()
+	actualSchema, err := conn.Reader().ReadSchemaContext(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to read database schema: %w", err)
 	}
@@ -680,7 +680,7 @@ func rollbackToVersion(ctx context.Context, conn *dbschema.DatabaseConnection, v
 // validateEmptySchema validates that the database schema is empty (no tables)
 func validateEmptySchema(ctx context.Context, conn *dbschema.DatabaseConnection) error {
 	// Read current schema
-	schema, err := conn.Reader().ReadSchema()
+	schema, err := conn.Reader().ReadSchemaContext(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to read database schema: %w", err)
 	}

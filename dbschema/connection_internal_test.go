@@ -125,7 +125,7 @@ func TestDatabaseConnectionWithExecutor_RebindsReaderToQueryableExecutor(t *test
 	executor := &connectionQueryExecutor{runner: runner}
 
 	scoped := conn.WithExecutor(executor)
-	_, err := scoped.Reader().ReadSchema()
+	_, err := scoped.Reader().ReadSchemaContext(t.Context())
 	_, execErr := scoped.ExecContext(t.Context(), "SET search_path = app")
 
 	c.Assert(err, qt.IsNil)
@@ -157,8 +157,12 @@ type connectionSessionReader struct {
 }
 
 func (r *connectionSessionReader) ReadSchema() (*types.DBSchema, error) {
+	return r.ReadSchemaContext(context.Background())
+}
+
+func (r *connectionSessionReader) ReadSchemaContext(ctx context.Context) (*types.DBSchema, error) {
 	var value int
-	err := r.runner.QueryRow("SELECT 1").Scan(&value)
+	err := r.runner.QueryRowContext(ctx, "SELECT 1").Scan(&value)
 	return &types.DBSchema{}, err
 }
 
@@ -225,7 +229,7 @@ func TestDatabaseConnectionWithSession_RebindsAllDatabaseOperations(t *testing.T
 	err := conn.WithSession(ctx, func(scoped *DatabaseConnection) error {
 		_, execErr := scoped.ExecContext(ctx, "DIRECT")
 		c.Assert(execErr, qt.IsNil)
-		_, readErr := scoped.Reader().ReadSchema()
+		_, readErr := scoped.Reader().ReadSchemaContext(ctx)
 		c.Assert(readErr, qt.IsNil)
 		writerErr := scoped.Writer().ExecuteSQL(ctx, "WRITER")
 		c.Assert(writerErr, qt.IsNil)

@@ -47,7 +47,7 @@ func TestGeneratedColumnAndPartialIndex_RoundTrip_Postgres(t *testing.T) {
 
 	reader := postgres.NewPostgreSQLReader(db, "public")
 	reader.SetSchemas([]string{schemaName})
-	liveSchema, err := reader.ReadSchema()
+	liveSchema, err := reader.ReadSchemaContext(t.Context())
 	c.Assert(err, qt.IsNil)
 	expressionIndex := findDBIndex(liveSchema.Indexes, "idx_ptah_generated_users_email_expr_active")
 	c.Assert(expressionIndex, qt.IsNotNil)

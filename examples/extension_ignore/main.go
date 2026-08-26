@@ -20,7 +20,7 @@
 //	}
 //	defer dbschema.CloseAndWarn(conn)
 //
-//	database, err := conn.ReadSchema()
+//	database, err := conn.ReadSchemaContext(ctx)
 //	if err != nil {
 //		log.Fatalf("Failed to read database schema: %v", err)
 //	}

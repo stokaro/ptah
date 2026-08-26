@@ -134,6 +134,23 @@ type EmbeddedSources struct {
 	Definitions []EmbeddedField
 }
 
+// TargetNames carries the API names that apply to one export target only.
+//
+// A shared APIName answers all three targets and is what a schema normally
+// declares. These exist for the case that shared name cannot cover: a format's
+// own naming rules. A name that is legal in OpenAPI can be illegal in GraphQL,
+// where the exporter has to sanitize it and say so, and the author who wants a
+// deliberate name there should not have to change what the other two publish
+// (stokaro/ptah#905).
+//
+// An empty target name falls back to APIName, and an empty APIName to the
+// database name, so an unannotated schema exports exactly as it always did.
+type TargetNames struct {
+	OpenAPI  string
+	GraphQL  string
+	Protobuf string
+}
+
 // Field represents a database column/field definition parsed from Go struct field annotations.
 // This is the core building block for table schema generation, containing all the metadata
 // needed to generate appropriate CREATE TABLE column definitions for different database platforms.
@@ -161,24 +178,6 @@ type EmbeddedSources struct {
 //
 //	//ptah:schema:field name="id" type="SERIAL" platform.mysql.type="INT AUTO_INCREMENT"
 //	ID int64
-//
-// TargetNames carries the API names that apply to one export target only.
-//
-// A shared APIName answers all three targets and is what a schema normally
-// declares. These exist for the case that shared name cannot cover: a format's
-// own naming rules. A name that is legal in OpenAPI can be illegal in GraphQL,
-// where the exporter has to sanitize it and say so, and the author who wants a
-// deliberate name there should not have to change what the other two publish
-// (stokaro/ptah#905).
-//
-// An empty target name falls back to APIName, and an empty APIName to the
-// database name, so an unannotated schema exports exactly as it always did.
-type TargetNames struct {
-	OpenAPI  string
-	GraphQL  string
-	Protobuf string
-}
-
 type Field struct {
 	StructName string // Name of the Go struct this field belongs to
 	FieldName  string // Name of the Go struct field

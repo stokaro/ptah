@@ -275,7 +275,7 @@ func TestReadSchema_PartitionAttachedIndexIsMarkedWithRealPostgres(t *testing.T)
 // reader under test describes the live database.
 func readPartitionAttachedMarks(c *qt.C, conn *dbschema.DatabaseConnection) map[string]bool {
 	c.Helper()
-	schema, err := conn.Reader().ReadSchema()
+	schema, err := conn.Reader().ReadSchemaContext(c.Context())
 	c.Assert(err, qt.IsNil)
 	marks := make(map[string]bool, len(schema.Indexes))
 	for _, index := range schema.Indexes {

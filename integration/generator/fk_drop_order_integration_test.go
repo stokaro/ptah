@@ -41,7 +41,7 @@ func TestFKDropOrder_DownRoundTrip_Integration(t *testing.T) {
 			t.Logf("[%s] generated DOWN:\n%s", dialect, downSQL)
 			execScript(c, conn, downSQL, "DOWN")
 
-			dbAfterDown, err := conn.Reader().ReadSchema()
+			dbAfterDown, err := conn.Reader().ReadSchemaContext(t.Context())
 			c.Assert(err, qt.IsNil)
 			c.Assert(hasFKOrderTables(dbAfterDown), qt.IsFalse)
 		})
@@ -75,7 +75,7 @@ func TestFKDropOrder_MutualCycleDownRoundTrip_Integration(t *testing.T) {
 			t.Logf("[%s] generated mutual-cycle DOWN:\n%s", dialect, downSQL)
 			execScript(c, conn, downSQL, "DOWN")
 
-			dbAfterDown, err := conn.Reader().ReadSchema()
+			dbAfterDown, err := conn.Reader().ReadSchemaContext(t.Context())
 			c.Assert(err, qt.IsNil)
 			c.Assert(hasMutualFKCycleTables(dbAfterDown), qt.IsFalse)
 		})

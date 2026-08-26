@@ -97,7 +97,7 @@ func verifyAtlasSchemaPlanFile(
 	// checked; an HCL plan only when its recorded fingerprint is one Ptah can
 	// recompute, and the replay below covers the rest either way.
 	if planFormat == atlasschema.PlanFormatJSON || atlasschema.IsNativeFingerprint(plan.FromFingerprint) {
-		if err := atlasschema.VerifyPlanTarget(conn, plan); err != nil {
+		if err := atlasschema.VerifyPlanTarget(cmd.Context(), conn, plan); err != nil {
 			return verifiedAtlasSchemaPlan{}, err
 		}
 	}

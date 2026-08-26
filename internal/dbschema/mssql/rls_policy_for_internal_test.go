@@ -35,7 +35,7 @@ func TestReadRLSPolicies_FilterOnlyPolicyCoversEveryOperation(t *testing.T) {
 	}))
 	reader := NewSQLServerReader(db.SQL, "dbo")
 
-	policies, err := reader.readRLSPolicies()
+	policies, err := reader.readRLSPolicies(t.Context())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(policies, qt.HasLen, 1)
@@ -70,7 +70,7 @@ func TestReadRLSPolicies_TheFilterHalfDoesNotOverwriteTheBlockOperation(t *testi
 			db := dbtest.Open(t, answeringRLSPredicates(test.rows))
 			reader := NewSQLServerReader(db.SQL, "dbo")
 
-			policies, err := reader.readRLSPolicies()
+			policies, err := reader.readRLSPolicies(t.Context())
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(policies, qt.HasLen, 1)

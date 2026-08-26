@@ -67,7 +67,7 @@ func TestTimescaleContinuousAggregateConvergesE2E(t *testing.T) {
 	execTimescale(ctx, c, conn, fmt.Sprintf(
 		`CREATE MATERIALIZED VIEW %s WITH (timescaledb.continuous) AS %s WITH NO DATA`, aggregate, body))
 
-	live, err := conn.Reader().ReadSchema()
+	live, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 
 	// The catalog and the declaration disagree textually. Asserting that first
@@ -160,7 +160,7 @@ func TestTimescaleContinuousAggregateProbeLeavesNothingBehindE2E(t *testing.T) {
 	execTimescale(ctx, c, conn, fmt.Sprintf(
 		`CREATE MATERIALIZED VIEW %s WITH (timescaledb.continuous) AS %s WITH NO DATA`, aggregate, body))
 
-	before, err := conn.Reader().ReadSchema()
+	before, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 
 	resolved, err := dbexprprobe.ResolveContinuousAggregateBodies(ctx, conn, []dbexprprobe.ContinuousAggregateProbe{{
@@ -171,7 +171,7 @@ func TestTimescaleContinuousAggregateProbeLeavesNothingBehindE2E(t *testing.T) {
 	c.Assert(resolved[aggregate].Resolved, qt.IsTrue)
 	c.Assert(resolved[aggregate].Body, qt.Equals, describedAggregateDefinition(before, aggregate))
 
-	after, err := conn.Reader().ReadSchema()
+	after, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 	c.Assert(describedAggregateNames(after), qt.DeepEquals, describedAggregateNames(before))
 }

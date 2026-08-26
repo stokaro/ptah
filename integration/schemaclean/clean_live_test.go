@@ -139,7 +139,7 @@ func TestInspectNamesEveryObjectApplyDestroys_PostgresLive(t *testing.T) {
 	applyPostgresCleanupFixture(c, ctx, conn)
 
 	before := postgresCleanupCensus(c, ctx, conn)
-	plan, err := schemaclean.Inspect(conn)
+	plan, err := schemaclean.Inspect(ctx, conn)
 	c.Assert(err, qt.IsNil)
 	planned := plannedObjectKeys(plan)
 

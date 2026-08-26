@@ -126,7 +126,7 @@ func TestReadInformationSchemaConstraints(t *testing.T) {
 			})
 			reader := NewPostgreSQLReaderWithCapabilities(db.SQL, "public", capability.SpannerPostgres())
 
-			constraints, err := reader.readInformationSchemaConstraints("public")
+			constraints, err := reader.readInformationSchemaConstraints(t.Context(), "public")
 			c.Assert(err, qt.IsNil)
 
 			found := constraintNamed(constraints, tt.constraint)
@@ -152,7 +152,7 @@ func TestReadInformationSchemaConstraintsSpellTheDefaultSchemaAsTheTablesDo(t *t
 	})
 	reader := NewPostgreSQLReaderWithCapabilities(db.SQL, "public", capability.SpannerPostgres())
 
-	constraints, err := reader.readInformationSchemaConstraints("public")
+	constraints, err := reader.readInformationSchemaConstraints(t.Context(), "public")
 	c.Assert(err, qt.IsNil)
 	c.Assert(len(constraints) > 0, qt.IsTrue)
 
@@ -188,7 +188,7 @@ func TestReadInformationSchemaViews(t *testing.T) {
 			})
 			reader := NewPostgreSQLReaderWithCapabilities(db.SQL, "public", capability.SpannerPostgres())
 
-			views, err := reader.readInformationSchemaViews("public")
+			views, err := reader.readInformationSchemaViews(t.Context(), "public")
 			c.Assert(err, qt.IsNil)
 			c.Assert(views, qt.HasLen, 1)
 			c.Assert(views[0].Name, qt.Equals, "v_p")
@@ -222,8 +222,8 @@ func TestConstraintAndViewReadsPickTheCatalogTheServerHas(t *testing.T) {
 			})
 			reader := NewPostgreSQLReaderWithCapabilities(db.SQL, "public", tt.caps)
 
-			_, _ = reader.readConstraints()
-			_, _ = reader.readAllViews()
+			_, _ = reader.readConstraints(t.Context())
+			_, _ = reader.readAllViews(t.Context())
 
 			asked := strings.Join(queries, "\n")
 			// The PostgreSQL path reads information_schema.table_constraints

@@ -31,7 +31,7 @@ func TestReadTables_CarriesEveryEngineClause(t *testing.T) {
 	db := dbtest.Open(t, engineTableServer)
 	reader := NewClickHouseReader(db.SQL, "default")
 
-	tables, err := reader.readTables("default")
+	tables, err := reader.readTables(t.Context(), "default")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(tables, qt.HasLen, 1)

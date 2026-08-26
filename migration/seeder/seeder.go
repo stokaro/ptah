@@ -47,9 +47,41 @@ type Options struct {
 	Env             string
 	ProtectedEnvs   []string
 	ProtectedTables []string
-	Force           bool
-	Idempotent      bool
-	AllowProd       bool
+	// Force re-applies a seed the tracker already records, and is also the
+	// answer to a [ChecksumMismatchError]: it re-runs the edited file and
+	// records the new checksum.
+	Force      bool
+	Idempotent bool
+	AllowProd  bool
+}
+
+// ChecksumMismatchError reports that a seed file changed after it was applied.
+//
+// A seed is recorded by path, and re-running the command skips every path the
+// tracker already holds. Without the checksum being read back, an edited seed
+// file is indistinguishable from an unedited one: the run reports it skipped,
+// leaves the database holding whatever the old file wrote, and says nothing --
+// output identical to the run that genuinely had nothing to do.
+//
+// It mirrors what the migrator does with an edited migration: the drift is
+// refused rather than applied, and re-applying is a decision the caller makes
+// explicitly with [Options.Force].
+type ChecksumMismatchError struct {
+	// Path is the seed's path relative to the seeds directory, which is the
+	// identity the tracker stores.
+	Path string
+	// Stored is the checksum recorded when the seed was applied.
+	Stored string
+	// Computed is the checksum of the file on disk now.
+	Computed string
+}
+
+func (e *ChecksumMismatchError) Error() string {
+	return fmt.Sprintf(
+		"seed %s changed after it was applied: recorded checksum %s, current %s; "+
+			"add a new seed file with the change, or pass --force to re-apply this one",
+		e.Path, e.Stored, e.Computed,
+	)
 }
 
 // Result summarizes one seed command run.
@@ -185,9 +217,19 @@ func Apply(ctx context.Context, conn *dbschema.DatabaseConnection, fsys fs.FS, o
 	}
 
 	for _, seed := range selected {
-		if !opts.Force && applied[seed.Path] {
-			result.Skipped = append(result.Skipped, seed)
-			continue
+		if !opts.Force {
+			stored, recorded := applied[seed.Path]
+			if recorded && stored != seed.Checksum {
+				return result, &ChecksumMismatchError{
+					Path:     seed.Path,
+					Stored:   stored,
+					Computed: seed.Checksum,
+				}
+			}
+			if recorded {
+				result.Skipped = append(result.Skipped, seed)
+				continue
+			}
 		}
 		if err := applySeed(ctx, conn, fsys, seed, opts); err != nil {
 			return result, err
@@ -288,6 +330,12 @@ func ensureTracker(ctx context.Context, conn *dbschema.DatabaseConnection) error
 	return nil
 }
 
+// trackerDDL is the tracker table every dialect gets.
+//
+// The checksum column holds the hex SHA-256 of the seed file's bytes as they
+// were when the seed ran, and it is read on the next run: a file whose bytes no
+// longer hash to the recorded value is refused with a [ChecksumMismatchError]
+// rather than reported as already applied.
 func trackerDDL(dialect string) string {
 	switch platform.NormalizeDialect(dialect) {
 	case platform.ClickHouse:
@@ -307,20 +355,28 @@ func trackerDDL(dialect string) string {
 	}
 }
 
-func appliedSeeds(ctx context.Context, conn *dbschema.DatabaseConnection) (map[string]bool, error) {
-	rows, err := conn.Query("SELECT seed_path FROM schema_seeds")
+// appliedSeeds returns the checksum recorded for each applied seed path.
+//
+// The rows are read oldest first so the newest row for a path wins. On every
+// dialect but one that ordering is redundant -- seed_path is the tracker's
+// primary key, so a path has one row. The ClickHouse tracker is a MergeTree
+// whose ORDER BY key constrains nothing, so a second row for a path is a shape
+// the table permits, and reading in applied_at order is what decides which of
+// them the checksum comparison uses. See [trackerDDL] for both tables.
+func appliedSeeds(ctx context.Context, conn *dbschema.DatabaseConnection) (map[string]string, error) {
+	rows, err := conn.QueryContext(ctx, "SELECT seed_path, checksum FROM schema_seeds ORDER BY applied_at")
 	if err != nil {
 		return nil, fmt.Errorf("query applied seeds: %w", err)
 	}
 	defer rows.Close()
 
-	applied := make(map[string]bool)
+	applied := make(map[string]string)
 	for rows.Next() {
-		var filename string
-		if err := rows.Scan(&filename); err != nil {
+		var filename, checksum string
+		if err := rows.Scan(&filename, &checksum); err != nil {
 			return nil, fmt.Errorf("scan applied seed: %w", err)
 		}
-		applied[filename] = true
+		applied[filename] = checksum
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate applied seeds: %w", err)
@@ -381,7 +437,7 @@ func existingTables(ctx context.Context, conn *dbschema.DatabaseConnection) ([]s
 		args = append(args, conn.Info().Schema)
 	}
 
-	rows, err := conn.Query(query, args...)
+	rows, err := conn.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query target tables: %w", err)
 	}

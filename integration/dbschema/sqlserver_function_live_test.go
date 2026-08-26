@@ -63,7 +63,7 @@ func TestSQLServerLiveFunctionRoundTrip(t *testing.T) {
 	}
 
 	// 2. The signature comes back from the catalog, not from the statement text.
-	live, err := dbschema.ReadSchemaWithSchemas(conn, []string{schemaName})
+	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
 	c.Assert(live.Functions, qt.HasLen, 3)
 	label := sqlServerFunctionNamed(live.Functions, "fn_label")
@@ -160,7 +160,7 @@ func TestSQLServerLiveFunctionRefusesWhatTheRendererDeclines(t *testing.T) {
 		// This is why the renderer refuses the shape rather than emitting it:
 		// the engine takes the default and the catalog does not report it, so a
 		// function created with one differs from its own declaration forever.
-		live, readErr := dbschema.ReadSchemaWithSchemas(conn, []string{schemaName})
+		live, readErr := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schemaName})
 		c.Assert(readErr, qt.IsNil)
 		defaulted := sqlServerFunctionNamed(live.Functions, "fn_default")
 		c.Assert(defaulted.Parameters, qt.Equals, "@a int, @b varchar(50)")

@@ -4715,7 +4715,7 @@ func sqliteTableExists(c *qt.C, dbPath, table string) bool {
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
-	schema, err := dbschema.ReadSchemaWithSchemas(conn, nil)
+	schema, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, nil)
 	c.Assert(err, qt.IsNil)
 	for _, dbTable := range schema.Tables {
 		if dbTable.Name == table {

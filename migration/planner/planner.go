@@ -1,70 +1,3 @@
-// Package planner provides the core migration planning functionality for the Ptah schema management system.
-//
-// This package serves as the central orchestrator for converting schema differences into executable
-// SQL migration statements. It acts as a bridge between schema comparison results and database-specific
-// SQL generation, providing a unified interface for migration planning across multiple database dialects.
-//
-// # Architecture Overview
-//
-// The planner package follows a registry pattern with dialect-specific implementations:
-//
-//	┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-//	│   SchemaDiff    │───▶│     Planner      │───▶│   AST Nodes     │
-//	│   (Changes)     │    │   (Registry)     │    │  (SQL Logic)    │
-//	└─────────────────┘    └──────────────────┘    └─────────────────┘
-//	                                │
-//	                                ▼
-//	                       ┌──────────────────┐
-//	                       │ Dialect-Specific │
-//	                       │   Generators     │
-//	                       │ (postgres/mysql/│
-//	                       │  sqlite)         │
-//	                       └──────────────────┘
-//
-// # Core Interface
-//
-// The Planner interface defines the contract for all dialect-specific migration generators:
-//
-//	type Planner interface {
-//		GenerateMigrationASTChecked(diff *types.SchemaDiff, generated *goschema.Database) ([]ast.Node, error)
-//	}
-//
-// Each implementation handles dialect-specific features, constraints, and SQL generation patterns.
-//
-// # Supported Database Dialects
-//
-// Currently supported database platforms:
-//   - PostgreSQL: Full support with ENUM types, SERIAL columns, and advanced constraints
-//   - MySQL: Complete support with AUTO_INCREMENT, ENGINE specifications, and charset handling
-//   - MariaDB: Served by the MySQL planner configured with the MariaDB
-//     capability preset (capability.MariaDB1011), which unlocks
-//     MariaDB-only SQL such as IF EXISTS guards on constraint drops
-//   - SQL Server: Portable T-SQL subset with schemas, IDENTITY columns,
-//     SQL Server introspection, and explicit errors for unsupported ALTER
-//     shapes that cannot be represented safely yet
-//   - SQLite: Conservative support for native CREATE TABLE, ADD COLUMN,
-//     indexes, views, triggers, and drops; table rebuilds are reported for
-//     structural ALTER operations SQLite cannot perform directly
-//
-// # Usage Patterns
-//
-// The package provides multiple levels of abstraction for different use cases:
-//
-//	// High-level: Get SQL statements directly
-//	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, generated, "postgres")
-//
-//	// Mid-level: Get complete SQL string
-//	sql, err := planner.GenerateSchemaDiffSQL(diff, generated, "postgres")
-//
-//	// Low-level: Get AST nodes for custom processing
-//	nodes, err := planner.GenerateSchemaDiffAST(diff, generated, "postgres")
-//
-// # Error Handling
-//
-// Public helpers return errors for user-controlled and configuration-dependent
-// failures, including unsupported dialects, renderer failures, and unsupported
-// dialect features. CLI callers should surface these errors directly instead of
-// relying on panic recovery.
 package planner
 
 import (
@@ -229,17 +162,11 @@ func RegisteredDialects() ([]string, error) {
 //
 // # Supported Dialects
 //
-// The function supports the following database dialects:
-//   - "postgres": Returns a PostgreSQL-specific planner with support for ENUM types,
-//     SERIAL columns, and PostgreSQL-specific constraints
-//   - "mysql": Returns a MySQL-specific planner with support for AUTO_INCREMENT,
-//     ENGINE specifications, and MySQL-specific features, configured with the
-//     capability.MySQL84 preset (no IF EXISTS guards — exactly-once drops)
-//   - "mariadb": Returns the same MySQL planner configured with the
-//     capability.MariaDB1011 preset, which additionally requests IF EXISTS
-//     guards on constraint drops (issue #226)
-//   - "sqlite": Returns a conservative SQLite planner for native DDL and
-//     explicit errors for table rebuild operations
+// Every dialect this package registers a built-in planner for is accepted:
+// postgres, cockroachdb, yugabytedb, spanner, mysql, mariadb, sqlserver,
+// oracle, clickhouse, and sqlite. See the package documentation for what each
+// planner does, and RegisteredDialects for the set at runtime, which a
+// third-party Register call can extend.
 //
 // # Parameters
 //

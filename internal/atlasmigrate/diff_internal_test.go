@@ -86,6 +86,7 @@ func TestCompareReplayedState_CarriesTheDropPolicyIntoTheVirtualTableGuard(t *te
 			}
 			runtime := diffRuntime{
 				readDevSchema: func(
+					context.Context,
 					*dbschema.DatabaseConnection,
 					[]string,
 					string,
@@ -125,6 +126,7 @@ func TestCompareReplayedState_PreservesDesiredCoverage(t *testing.T) {
 	}
 	runtime := diffRuntime{
 		readDevSchema: func(
+			context.Context,
 			*dbschema.DatabaseConnection,
 			[]string,
 			string,
@@ -151,6 +153,7 @@ func TestCompareReplayedState_PreservesExplicitRemoval(t *testing.T) {
 	}
 	runtime := diffRuntime{
 		readDevSchema: func(
+			context.Context,
 			*dbschema.DatabaseConnection,
 			[]string,
 			string,
@@ -188,6 +191,7 @@ func TestCompareReplayedState_SchemaScopeKeepsDatabaseWideExtensionSynced(t *tes
 	}, schemas, "public")
 	runtime := diffRuntime{
 		readDevSchema: func(
+			context.Context,
 			*dbschema.DatabaseConnection,
 			[]string,
 			string,
@@ -215,6 +219,7 @@ func TestCompareReplayedState_SchemaScopePreservesExplicitExtensionRemoval(t *te
 	}
 	runtime := diffRuntime{
 		readDevSchema: func(
+			context.Context,
 			*dbschema.DatabaseConnection,
 			[]string,
 			string,
@@ -242,6 +247,7 @@ func TestCompareReplayedState_ReportsUndecidedAddition(t *testing.T) {
 	}
 	runtime := diffRuntime{
 		readDevSchema: func(
+			context.Context,
 			*dbschema.DatabaseConnection,
 			[]string,
 			string,
@@ -300,6 +306,7 @@ func TestGenerateDiff_RoutesUndecidedAdditionDiagnostics(t *testing.T) {
 		Diagnostics: diagnostics,
 	}, diffRuntime{
 		readDevSchema: func(
+			context.Context,
 			*dbschema.DatabaseConnection,
 			[]string,
 			string,
@@ -1224,6 +1231,7 @@ func TestGenerateDiff_PostReplayReadFailureCleansAndReleasesLock(t *testing.T) {
 
 	result, err := generateDiff(t.Context(), conn, opts, diffRuntime{
 		readDevSchema: func(
+			context.Context,
 			*dbschema.DatabaseConnection,
 			[]string,
 			string,
@@ -1278,6 +1286,7 @@ func TestGenerateDiff_JoinsPostReplayFailureAndCleanupFailure(t *testing.T) {
 
 	result, err := generateDiff(t.Context(), conn, opts, diffRuntime{
 		readDevSchema: func(
+			context.Context,
 			*dbschema.DatabaseConnection,
 			[]string,
 			string,
