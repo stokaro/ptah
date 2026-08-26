@@ -161,9 +161,66 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          # Newest first, so the last request wins. jq picks the newest comment
-          # that both starts with the command and comes from an author the
-          # repository trusts to run its code.
+          # WHY THIS DOES NOT READ author_association FIRST.
+          #
+          # It used to, and the value it reads here is not the value GitHub put
+          # in the webhook payload. `author_association` over the REST API is
+          # answered relative to what the READING token can see, and this token
+          # is the workflow's own GITHUB_TOKEN: it cannot see a private
+          # organization membership, so an owner who is a private member of the
+          # organization reads back as an outsider and their request is
+          # discarded. Measured on stokaro/ptah#2316: the request comment came
+          # from a MEMBER -- `orgs/stokaro/public_members` is empty, so the
+          # membership is private -- the same jq filter run with a personal
+          # token returned the comment, and the run selected zero cells and went
+          # green having probed nothing.
+          #
+          # So trust comes from the BOT rather than from the commenter. The
+          # request workflow checks the requester against the webhook payload's
+          # association, which is authoritative, and then writes the cells it
+          # verified into its acknowledgement as the marker below. A bot's own
+          # identity is something this token can always see.
+          #
+          # The associations are still read, and printed, so the next person
+          # reading a run that probed nothing sees what this token was told
+          # rather than having to infer it.
+          gh api "repos/${REPO}/issues/${PR}/comments" --paginate \
+            --jq '[.[] | select(.user.type == "Bot")
+                       | select(.user.login == "github-actions[bot]")
+                       | select(.body | contains("<!-- capability-matrix-cells:"))]
+                  | last | .body // ""' >"${RUNNER_TEMP}/verified.txt"
+          # Greedy up to the closing marker, then trimmed: a request naming several
+          # cells is written `postgres, mysql`, and a pattern that stopped at the
+          # first space would carry `postgres,` and silently probe half of it.
+          verified="$(sed -n 's/.*<!-- capability-matrix-cells:\(.*\)-->.*/\1/p' "${RUNNER_TEMP}/verified.txt" | tail -n 1)"
+          verified="$(printf '%s' "${verified}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+
+          # What the token sees for the human requests, recorded either way.
+          gh api "repos/${REPO}/issues/${PR}/comments" --paginate \
+            --jq '[.[] | select(.body | startswith("/capability-matrix"))
+                       | "\(.user.login): \(.author_association)"]
+                  | join(", ")' >"${RUNNER_TEMP}/seen.txt"
+          seen="$(tr '\n' ' ' <"${RUNNER_TEMP}/seen.txt")"
+          {
+            echo
+            echo "### The request on this pull request"
+            echo
+            echo "Verified by the request workflow: \`${verified:-none}\`."
+            echo "Requests this token can see, and the association it is told:" \
+              "${seen:-none}."
+          } >>"${GITHUB_STEP_SUMMARY}"
+
+          if [ -n "${verified}" ]; then
+            {
+              echo "cells=${verified}"
+              echo "reason=requested on this pull request and verified by the request workflow: ${verified}"
+            } >>"${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          # The fallback still works wherever the association IS visible: a
+          # public member, an outside collaborator, or a request made by
+          # labelling the pull request by hand without commenting.
           gh api "repos/${REPO}/issues/${PR}/comments" --paginate \
             --jq '[.[] | select(.body | startswith("/capability-matrix"))
                        | select(.author_association == "OWNER"
@@ -174,7 +231,7 @@ jobs:
           if [ -z "${body}" ] || [ "${body}" = "null" ]; then
             {
               echo "cells=none"
-              echo "reason=no \`/capability-matrix\` comment from a user with write access on this pull request"
+              echo "reason=no \`/capability-matrix\` comment this token can attribute to a user with write access (associations seen: ${seen:-none})"
             } >>"${GITHUB_OUTPUT}"
             exit 0
           fi
@@ -211,6 +268,8 @@ jobs:
           ALL: ${{ steps.emit.outputs.cells }}
           PR_REQUEST: ${{ steps.request.outputs.cells }}
           PR_REASON: ${{ steps.request.outputs.reason }}
+          ACTION: ${{ github.event.action }}
+          LABEL_NAME: ${{ github.event.label.name }}
         run: |
           set -euo pipefail
           all="${ALL}"
@@ -291,6 +350,22 @@ jobs:
               echo "the matrix declares: ${all}" >&2
               exit 1
             fi
+          fi
+
+          # A run the LABEL started that then probes nothing is the defect this
+          # whole file exists to remove, wearing the one disguise it has left: a
+          # green check. Somebody asked for the fan-out, the label went on, the
+          # run appeared beside the pull request, and it reported success having
+          # measured no database at all.
+          #
+          # Selecting nothing stays a policy everywhere else -- an ordinary pull
+          # request probes nothing and says so -- but not here, because here
+          # something asked.
+          if [ "${ACTION}" = "labeled" ] && [ "${LABEL_NAME}" = "capability-matrix" ] && [ "${count}" -eq 0 ]; then
+            echo "the ${LABEL_NAME} label started this run and no request could be read from the pull request" >&2
+            echo "reason: ${reason}" >&2
+            echo "a requested fan-out that probes nothing must not report success" >&2
+            exit 1
           fi
 
   presets:

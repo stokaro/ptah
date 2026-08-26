@@ -150,6 +150,41 @@ jobs:
             echo "value=" >>"${GITHUB_OUTPUT}"
           fi
 
+      # The acknowledgement says which of the two things happened, because they
+      # look identical on the pull request: the label appears either way.
+      #
+      # It runs BEFORE the label, and that ordering is load-bearing. The label
+      # starts the run, the run reads the cells out of the marker below, and a
+      # marker written afterwards is a race against a runner starting up.
+      #
+      # The marker is also the only trusted carrier of the request. The check
+      # above reads the WEBHOOK payload's association, which is authoritative;
+      # the matrix workflow reads the REST API with its own GITHUB_TOKEN, which
+      # answers relative to what that token can see and reports a private
+      # organization member as an outsider (stokaro/ptah#2316). A comment from
+      # this bot is something that token can always identify.
+      - name: Acknowledge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+          CELLS: ${{ steps.request.outputs.cells }}
+          STARTS: ${{ steps.token.outputs.starts-a-run }}
+          LABEL: capability-matrix
+        run: |
+          set -euo pipefail
+          # Built from parts rather than as one multi-line string: a shell string
+          # spanning lines has to be indented to stay inside this block scalar, and
+          # four leading spaces turn the acknowledgement into a Markdown code block.
+          marker="<!-- capability-matrix-cells: ${CELLS} -->"
+          if [ "${STARTS}" = "true" ]; then
+            text="Capability matrix requested for cells: \`${CELLS}\`. The \`probe *\` checks run as checks OF THIS PULL REQUEST, so a red cell is visible here and blocks the merge; a request that names nothing the matrix has fails the \`cells\` job rather than probing silently."
+          else
+            text="Capability matrix requested for cells: \`${CELLS}\`, and the \`${LABEL}\` label is on. **It will not start on its own.** GitHub creates no workflow run for an event its own \`GITHUB_TOKEN\` triggered, and no app token or PAT is configured here, so the label this bot just applied starts nothing. Remove and re-add the label yourself and the run begins. To make the request self-starting, set the \`CAPABILITY_MATRIX_APP_ID\` variable with a \`CAPABILITY_MATRIX_APP_KEY\` secret, or a \`CAPABILITY_MATRIX_TOKEN\` PAT — the ladder \`testkit-sync.yml\` documents for its pushes."
+          fi
+          body="$(printf '%s\n%s' "${marker}" "${text}")"
+          gh pr comment "${PR}" --repo "${REPO}" --body "${body}"
+
       - name: Request the fan-out on the pull request
         env:
           GH_TOKEN: ${{ steps.token.outputs.value || github.token }}
@@ -168,22 +203,3 @@ jobs:
           # is allowed to fail, because the first request has nothing to remove.
           gh pr edit "${PR}" --repo "${REPO}" --remove-label "${LABEL}" >/dev/null 2>&1 || true
           gh pr edit "${PR}" --repo "${REPO}" --add-label "${LABEL}"
-
-      # The acknowledgement says which of the two things happened, because they
-      # look identical on the pull request: the label appears either way.
-      - name: Acknowledge
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR: ${{ github.event.issue.number }}
-          REPO: ${{ github.repository }}
-          CELLS: ${{ steps.request.outputs.cells }}
-          STARTS: ${{ steps.token.outputs.starts-a-run }}
-          LABEL: capability-matrix
-        run: |
-          set -euo pipefail
-          if [ "${STARTS}" = "true" ]; then
-            body="Capability matrix requested for cells: \`${CELLS}\`. The \`probe *\` checks run as checks OF THIS PULL REQUEST, so a red cell is visible here and blocks the merge; a request that names nothing the matrix has fails the \`cells\` job rather than probing silently."
-          else
-            body="Capability matrix requested for cells: \`${CELLS}\`, and the \`${LABEL}\` label is on. **It will not start on its own.** GitHub creates no workflow run for an event its own \`GITHUB_TOKEN\` triggered, and no app token or PAT is configured here, so the label this bot just applied starts nothing. Remove and re-add the label yourself and the run begins. To make the request self-starting, set the \`CAPABILITY_MATRIX_APP_ID\` variable with a \`CAPABILITY_MATRIX_APP_KEY\` secret, or a \`CAPABILITY_MATRIX_TOKEN\` PAT — the ladder \`testkit-sync.yml\` documents for its pushes."
-          fi
-          gh pr comment "${PR}" --repo "${REPO}" --body "${body}"
