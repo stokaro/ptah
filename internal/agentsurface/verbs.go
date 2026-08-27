@@ -115,11 +115,10 @@ var verbs = map[string]Verb{
 	// project.
 	"project adopt": {TargetReads, ScratchNone,
 		"classifies every construct a project file declares as exact, compat-only or " +
-			"unsupported; --check reports that and writes nothing, while the bare verb " +
-			"rewrites the compat-only spellings in the file and refuses a project " +
-			"declaring anything unsupported; --preflight additionally reads the revision " +
-			"history in the database the project points at, and writes nothing there -- " +
-			"not the revision table it looks for, and not the layout of one it finds"},
+			"unsupported; --check reports that and writes nothing, the bare verb rewrites " +
+			"the compat-only spellings and refuses a project declaring anything " +
+			"unsupported, and --preflight also reads the revision history in the " +
+			"project's database, writing nothing there"},
 	"project inspect": {TargetNone, ScratchNone,
 		"reads a project file and reports which of its settings Ptah acts on and which it " +
 			"read and ignored; it opens no database"},
