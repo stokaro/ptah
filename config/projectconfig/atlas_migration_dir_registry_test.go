@@ -149,3 +149,70 @@ func orResolved(want, got string) string {
 	}
 	return want
 }
+
+// TestAtlasMigrationDir_OCIReference is the spelling the adoption analysis
+// tells a project its `atlas://` reference becomes.
+//
+// `--migrations-dir` accepted `oci://` while `migration.dir` did not, so
+// normalizing a project file would have written a reference nothing resolves:
+// migrationDirValue passed it through as a literal path and
+// atlasprojectpath.localPath then refused it with `only local file://
+// migration directories are supported`. That is a hole in this issue's own
+// core principle -- every construct Ptah supports semantically is valid in
+// native Ptah HCL -- and an `atlas://` migration directory is supported
+// (stokaro/ptah#1215).
+func TestAtlasMigrationDir_OCIReference(t *testing.T) {
+	tests := []struct {
+		name string
+		dir  string
+	}{
+		{name: "a tag", dir: "oci://ghcr.io/acme/migrations:prod"},
+		{name: "no tag", dir: "oci://ghcr.io/acme/migrations"},
+		{name: "a digest", dir: "oci://ghcr.io/acme/migrations:prod@sha256:" +
+			"0000000000000000000000000000000000000000000000000000000000000000"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			// Deliberately set, and deliberately not part of the answer: an
+			// oci:// reference names its own registry, so a namespace must not
+			// reach it.
+			c.Setenv(atlasregistry.NamespaceEnvVar, "registry.example/team")
+			path := writeAtlasMigrationDirProject(c, test.dir)
+
+			cfg, err := projectconfig.LoadAtlasFile(path, "local")
+
+			c.Assert(err, qt.IsNil)
+			dir := cfg.StringValue(projectconfig.StringMigrationDir)
+			c.Assert(dir.Present, qt.IsTrue)
+			source, registered := cfg.MigrationDirectorySource(dir.Value)
+			c.Assert(registered, qt.IsTrue,
+				qt.Commentf("an oci:// reference must register as a remote directory, not pass through as a path"))
+			c.Assert(source.ReadOnly, qt.IsTrue)
+			// The reference the PROJECT wrote, verbatim.
+			c.Assert(source.Path, qt.Equals, test.dir)
+		})
+	}
+}
+
+// TestAtlasMigrationDir_OCIReferenceKeepsItsOwnRegistry is the property the
+// scheme split exists for.
+//
+// An `atlas://` reference names a repository and nothing else, so the location
+// is composed from the namespace. An `oci://` one carries registry, repository
+// and tag already; composing a namespace onto it would pull from a repository
+// the author never wrote.
+func TestAtlasMigrationDir_OCIReferenceKeepsItsOwnRegistry(t *testing.T) {
+	c := qt.New(t)
+	c.Setenv(atlasregistry.NamespaceEnvVar, "registry.example/team")
+	path := writeAtlasMigrationDirProject(c, "oci://ghcr.io/acme/migrations:prod")
+
+	cfg, err := projectconfig.LoadAtlasFile(path, "local")
+
+	c.Assert(err, qt.IsNil)
+	dir := cfg.StringValue(projectconfig.StringMigrationDir)
+	source, _ := cfg.MigrationDirectorySource(dir.Value)
+	c.Assert(source.Path, qt.Not(qt.Contains), "registry.example")
+	c.Assert(source.Path, qt.Contains, "ghcr.io/acme")
+}

@@ -129,3 +129,51 @@ func TestIsReference_KeysOnTheScheme(t *testing.T) {
 	c.Assert(atlasregistry.IsReference("oci://ghcr.io/acme/app"), qt.IsFalse)
 	c.Assert(atlasregistry.IsReference("atlas.hcl"), qt.IsFalse)
 }
+
+// TestIsOCIReference tells the two schemes apart, which is what decides
+// whether a reference still needs a namespace composed onto it.
+func TestIsOCIReference(t *testing.T) {
+	tests := []struct {
+		name  string
+		raw   string
+		wantO bool
+		wantA bool
+	}{
+		{name: "an oci reference", raw: "oci://ghcr.io/acme/migrations:prod", wantO: true},
+		{name: "uppercase scheme", raw: "OCI://ghcr.io/acme/migrations", wantO: true},
+		{name: "surrounding space", raw: "  oci://ghcr.io/acme/migrations  ", wantO: true},
+		{name: "a vendor reference", raw: "atlas://migrations", wantA: true},
+		{name: "a local path", raw: "./migrations"},
+		{name: "a path that merely contains the word", raw: "./oci/migrations"},
+		{name: "empty", raw: ""},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(atlasregistry.IsOCIReference(test.raw), qt.Equals, test.wantO)
+			// The two are exclusive: a reference cannot need composing and be
+			// composed already.
+			c.Assert(atlasregistry.IsReference(test.raw), qt.Equals, test.wantA)
+		})
+	}
+}
+
+// TestResolve_RefusesAnOCIReference is why the pull path branches rather than
+// resolving everything.
+//
+// Resolve exists to compose a location from the configured namespace for a
+// bare `atlas://` repository. An `oci://` reference already carries registry,
+// repository and tag, and Resolve does not accept it at all -- so a caller
+// that sent one through would get this refusal rather than a pull
+// (stokaro/ptah#1215).
+func TestResolve_RefusesAnOCIReference(t *testing.T) {
+	c := qt.New(t)
+	c.Setenv(atlasregistry.NamespaceEnvVar, "registry.example/team")
+
+	_, err := atlasregistry.Resolve("oci://ghcr.io/acme/migrations:prod")
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "is not an atlas:// reference")
+}
