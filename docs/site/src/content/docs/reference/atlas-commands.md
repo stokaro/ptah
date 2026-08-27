@@ -468,7 +468,7 @@ reading either sees exactly what Atlas produces. The note exists because
 dropping the key is what Atlas does and saying nothing about it is not: a
 misspelled `?fromat=goose` selects no layout on either tool, so the directory is
 read as the atlas layout while you believe it is being read as Goose. Set
-[`PTAH_STRICT_DIR_QUERY=1`](../../atlas/overview/#the-variables) to make that a
+[`PTAH_STRICT_DIR_QUERY=1`](../extension-variables/#ptah_strict_dir_query) to make that a
 refusal instead.
 
 `checkpoint`, `down`, `edit`, `rebase`, `rm` and `test` register `--dir` too and

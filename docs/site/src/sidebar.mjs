@@ -274,6 +274,7 @@ export const sidebar = [
           { slug: 'reference/native-commands' },
           { slug: 'reference/atlas-commands' },
           { slug: 'reference/command-flags' },
+      { slug: 'reference/extension-variables' },
           { slug: 'reference/test-cases' },
         ],
       },

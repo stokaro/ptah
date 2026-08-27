@@ -81,6 +81,7 @@
   "/reference/configuration/",
   "/reference/dialect-notes/",
   "/reference/exit-codes/",
+  "/reference/extension-variables/",
   "/reference/glossary/",
   "/reference/go-annotations/",
   "/reference/hcl-schema/",
