@@ -1061,8 +1061,8 @@ non-community template functions, so these exports are an open Ptah extension.
 - Other field-level exclude selectors fail explicitly, and the refusal names
   the fields the selected resource types do support. Type selectors on
   non-final pattern segments fail too, except for the leading `[type=schema]`
-  segment documented in the
-  [Atlas comparison](../../atlas/comparison/#leading-schema-type-selector);
+  segment documented under
+  [Leading schema type selector](../../atlas/retained-divergences/#leading-schema-type-selector);
   exporter blocks remain an explicit gap.
 
 <!-- BEGIN GENERATED EXCLUDE FIELD SELECTORS -->
@@ -1096,8 +1096,8 @@ Adding a field is a change to `excludeFieldSelectors` in
 
 The pinned Atlas CE binary rejects `schema inspect --include` with
 `unknown flag: --include`; Atlas registers it. The measured
-behavioral differences are tabulated in
-[the Atlas comparison](../../atlas/comparison/#schema-inspect---include).
+behavioral differences are tabulated under
+[`schema inspect --include`](../../atlas/retained-divergences/#schema-inspect---include).
 
 Native twin: [`ptah schema inspect`](../native-commands/).
 

@@ -28,12 +28,85 @@ What the two binaries share is capabilities, not command lines. A generally
 useful capability you reach through `ptah-compat` is reachable through native
 `ptah` as well, under native names and flags: `ptah-compat migrate apply` and
 `ptah migrations up`, or `ptah-compat schema inspect` and `ptah schema inspect`.
-Atlas-specific machinery has no native twin at all. See
-[Capability parity, not interface parity](../comparison/#capability-parity-not-interface-parity).
+Atlas-specific machinery has no native twin at all.
 
 Use the native tree for new Ptah-authored work and the compat binary for
 existing Atlas scripts; the per-verb mapping is listed in the
 [Atlas-compatible commands reference](../../reference/atlas-commands/).
+
+### Capability parity, not interface parity
+
+Ptah's Atlas compatibility layer does not define a separate feature set.
+
+Capabilities implemented for Atlas compatibility are also available through
+Ptah's native workflows when they are generally useful database-schema or
+migration capabilities.
+
+The interfaces may differ: `ptah-compat` preserves Atlas-shaped commands and
+compatibility contracts, while `ptah` uses Ptah-native commands and
+configuration.
+
+Atlas-specific adapters and compatibility representations — for example
+`atlas://` resolution, Atlas file and config codecs, revision-history
+compatibility, or Atlas-specific CLI and output behavior — are not duplicated
+in the native interface unless they have independent Ptah value.
+
+So the promise is about capabilities, not about command lines. The native
+binary accepts no Atlas CLI aliases, and the two binaries are not
+command-for-command equivalent: Atlas command spellings live only in
+`ptah-compat`. The [command parity table](#command-parity) below shows which
+native verb answers each Atlas one.
+
+## Command parity
+
+| Task | Native Ptah | `ptah-compat` | Atlas OSS |
+| --- | --- | --- | --- |
+| Apply migrations | `ptah migrations up` | `ptah-compat migrate apply` | `atlas migrate apply` |
+| Roll back migrations | `ptah migrations down` | `ptah-compat migrate down` | `atlas migrate down` |
+| Migration status | `ptah migrations status` | `ptah-compat migrate status` | `atlas migrate status` |
+| Hash migrations | `ptah migrations hash` | `ptah-compat migrate hash` | `atlas migrate hash` |
+| Validate migrations | `ptah migrations validate` | `ptah-compat migrate validate` | `atlas migrate validate` |
+| Lint migrations | `ptah migrations lint` | `ptah-compat migrate lint` | Pro CLI feature, basic Open rule set [^lint] |
+| Create an empty migration | `ptah migrations create` | `ptah-compat migrate new` | `atlas migrate new` |
+| Set revision state | `ptah migrations set` | `ptah-compat migrate set` | `atlas migrate set` |
+| Checkpoint / squash migrations | `ptah migrations checkpoint` | `ptah-compat migrate checkpoint` | Pro only |
+| Inspect schema | `ptah db read` | `ptah-compat schema inspect` | `atlas schema inspect` |
+| Diff schema | `ptah schema compare` | `ptah-compat schema diff` | `atlas schema diff` |
+| Format schema files | `ptah schema fmt` | `ptah-compat schema fmt` | `atlas schema fmt` |
+| Clean schema objects | `ptah db drop-all` | `ptah-compat schema clean` | `atlas schema clean` |
+| Atlas CE community-version unsupported commands | Not native Ptah features | `ptah-compat migrate push`, `ptah-compat schema push`, `schema plan` registry sub-verbs | Registered, unsupported [^ce] |
+
+[^lint]: Current Atlas docs list the migration linting CLI feature as Pro while
+    the same feature availability page also lists a basic Open lint-rule set.
+
+[^ce]: Atlas CE registers these command paths and reports the community-version
+    unsupported boundary. `migrate test`, `schema test`, `migrate edit`,
+    `migrate rebase`, `migrate rm`, and `schema plan` forward to or implement
+    native Ptah behavior instead of aborting.
+
+Some Atlas command paths are registered before complete runtime behavior
+exists, and some accepted Atlas flags fail explicitly rather than being silently
+ignored. The [Feature matrix](../feature-matrix/) carries the status of each,
+with the tracking issue where one is open.
+
+For a page-by-page crosswalk against the official Atlas documentation, see
+[Atlas docs coverage](../docs-coverage/).
+
+## What Atlas keeps outside its community build
+
+Atlas has both open and commercial feature sets, and which side a capability
+falls on decides whether `ptah-compat` is replacing something the community
+binary does or something it refuses. The Atlas
+[feature availability](https://atlasgo.io/features) page lists database
+inspection, schema diffing, versioned migrations, and declarative migrations as
+open CLI features. The same page lists the migration linting CLI feature as Pro
+while also listing a basic Open lint-rule set.
+
+Checkpoints, visualization, interactive migrations, testing, deployment
+rollout, database security as code, and declarative data management are listed
+as Pro features. The [Feature matrix](../feature-matrix/) states, per
+capability, what Ptah does, what the pinned community binary does, and what
+Atlas keeps outside that build.
 
 ## Strict Community Edition mode
 
@@ -441,9 +514,9 @@ full description is one environment variable away.
 ## Parity expectations
 
 Ptah is not documented as a full Atlas OSS replacement until the external
-conformance reports and the comparison gap register support that claim. Use
-[Conformance](../conformance/) for current evidence and
-[Comparison](../comparison/) for tracked product, coverage, and
+conformance reports and the per-capability status support that claim. Use
+[Conformance](../conformance/) for current evidence and the
+[Feature matrix](../feature-matrix/) for tracked product, coverage, and
 documentation gaps.
 
 ## Next steps

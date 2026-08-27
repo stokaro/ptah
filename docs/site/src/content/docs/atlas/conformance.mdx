@@ -25,10 +25,20 @@ The authoritative current numbers live in the conformance repository reports:
 - [`cli-surface.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/cli-surface.md)
 - [`PARITY.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/PARITY.md)
 
+Those reports are the live source for the observation counts, so this page
+names them rather than restating a number that changes without it.
+`gaps-live.md` carries the live database round-trip corpus and `gaps-diff.md`
+the Atlas CE differential corpus.
+
 Green conformance reports mean that the current measured corpus has no red
 results. They do not, by themselves, prove every Atlas OSS command, flag,
-dialect feature, and output mode. Use the comparison gap register for product
-and coverage gaps that are outside the current measured corpus.
+dialect feature, and output mode. Use the
+[Feature matrix](../feature-matrix/) for product and coverage gaps that are
+outside the current measured corpus; each row that is partial names the issue
+that owns it.
+
+A green documentation build proves that the documentation site builds and that
+its internal links resolve. It is not parity evidence.
 
 ## CE oracle policy
 
@@ -158,13 +168,9 @@ sections carry the detail.
 
 This is a workflow-parity record, not a claim of full Atlas Pro compatibility.
 For the code-by-code status of the analyzer checks Atlas marks as Pro, see
-[Lint rules](../../reference/lint-rules/).
-The `atlas migrate ls`, `migrate show`, `schema stats`, and
-`schema validate` verbs are absent from the pinned Atlas CE v1.3.0 binary and
-are triaged in the comparison gap register rather than measured here. Two of
-them, `migrate ls` and `migrate show`, are implemented anyway and reachable as
-`ptah-compat migrate ls` and `ptah-compat migrate show`; the strict profile that
-mirrors the pin registers neither.
+[Lint rules](../../reference/lint-rules/). Four verbs sit outside the pin
+entirely and are triaged rather than measured here; see
+[Verbs beyond the CE pin](#verbs-beyond-the-ce-pin).
 
 ### Declarative migration and schema tests
 
@@ -197,7 +203,7 @@ the live runners. This workflow is not counted as a schema-object fixture.
 
 **Native Ptah.** `ptah migrations down --shadow-db` replays the rollback plan on a disposable shadow database before the target is touched
 
-**Atlas-compatible Ptah surface.** `ptah-compat migrate down --dev-url` maps to the shadow verification, and `--format` renders an Atlas Go-template down report (`.Env`, `.Planned`, `.Reverted`, `.Current`, `.Target`, `.Total`, `.Error`); real rollbacks never read stdin, matching Atlas, while native `ptah migrations down` keeps its prompt; the forward defaults to the Atlas revision-table layout (`--revision-format atlas`) but retains Ptah's recoverable failed-down bookkeeping, with the native `--revision-format ptah` pass-through as the layout escape hatch; `--to-tag`, `--skip-checks`, and `--plan` are recorded registry-bound waivers that fail loudly.
+**Atlas-compatible Ptah surface.** `ptah-compat migrate down --dev-url` maps to the shadow verification, and `--format` renders an Atlas Go-template down report (`.Env`, `.Planned`, `.Reverted`, `.Current`, `.Target`, `.Total`, `.Error`); real rollbacks never read stdin, matching Atlas, while native `ptah migrations down` keeps its prompt; the forward defaults to the Atlas revision-table layout (`--revision-format atlas`) but retains Ptah's recoverable failed-down bookkeeping, with the native `--revision-format ptah` pass-through as the layout escape hatch; `--to-tag` resolves against the tags `ptah migrations tag` records in the database, `--skip-checks` bypasses the pre-migration checks the down bodies carry, and `--plan` derives the rollback from the schema difference instead of running those bodies.
 
 **Atlas CE.** `migrate down` does not exist in the community binary; the CE notice lists down migrations among excluded features
 
@@ -213,6 +219,27 @@ the live runners. This workflow is not counted as a schema-object fixture.
 **Atlas CE.** `schema plan` aborts with the community-version boundary; the plan/approval flow is bound to the Atlas Pro registry
 
 **Evidence.** Unit coverage over live SQLite: plan computation and save, plan execution with schema assertions, stale-plan refusal after target drift, dry-run, dialect mismatch, malformed documents, and waiver rejections. Validation consumes a versioned Atlas-authored plan bundle independently of Ptah's writer and rejects source, desired-schema, SQL, statement-set, HCL, and malformed-hash mutations without changing target schema or rows. The bundle records known capture provenance and artifact hashes; destructive dev-database guards cover percent-encoded/path/query-option/symlink/hard-link aliases, driver endpoint/database overrides, and fail-closed comparison errors. This workflow is not counted as a schema-object fixture
+
+## Verbs beyond the CE pin
+
+`atlas migrate ls`, `atlas migrate show`, `atlas schema stats`, and
+`atlas schema validate` appear in current Atlas documentation but are entirely
+absent from the pinned conformance Atlas CE binary — each resolves to
+`unknown command` rather than to a community-version abort stub — so they are
+outside the CLI-surface parity target. Being outside that target is not a
+reason to leave a capability unbuilt: all four are Ptah verbs, reachable
+through the compatibility spelling and omitted only under
+`PTAH_ATLAS_STRICT_COMPAT=1`, which is the profile that mirrors the pin.
+
+| Verb | Where it is answered |
+| --- | --- |
+| `migrate ls` | `ptah-compat migrate ls`, forwarding to native `ptah migrations ls`. Not `ptah migrations status`: status needs `--db-url` and reports applied and pending state, while listing a directory is a local question with no database in it. |
+| `migrate show` | `ptah-compat migrate show`, forwarding to native `ptah migrations show`, which prints a stored migration's SQL. |
+| `schema validate` | `ptah-compat schema validate` and native `ptah schema validate` report every structural problem in a desired state without a database. |
+| `schema stats` | `ptah-compat schema stats inspect` and native `ptah schema stats`, which count the objects in a live schema and emit them as OpenMetrics. |
+
+Revisit the classification when the conformance Atlas pin advances.
+[`stokaro/ptah#1618`](https://github.com/stokaro/ptah/issues/1618) tracks it.
 
 ## Local commands
 

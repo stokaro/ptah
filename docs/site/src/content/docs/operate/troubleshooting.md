@@ -135,5 +135,5 @@ The conformance repo has two kinds of gates:
 
 This is intentional. A green regression gate does not mean Ptah has complete
 Atlas OSS parity. Even green full-conformance reports only prove the current
-measured corpus; use [Comparison](../../atlas/comparison/) for tracked
+measured corpus; use the [Feature matrix](../../atlas/feature-matrix/) for tracked
 product, coverage, and documentation gaps.

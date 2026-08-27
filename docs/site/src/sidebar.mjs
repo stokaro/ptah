@@ -248,7 +248,6 @@ export const sidebar = [
         collapsed: true,
         items: [
           { slug: 'atlas/feature-matrix' },
-          { slug: 'atlas/comparison' },
           { slug: 'atlas/retained-divergences' },
           { slug: 'atlas/conformance' },
           { slug: 'atlas/docs-coverage' },
