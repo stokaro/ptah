@@ -316,3 +316,33 @@ func copyVerification(base embedrelease.Verification) embedrelease.Verification 
 	copied.Unmeasured = append([]string(nil), base.Unmeasured...)
 	return copied
 }
+
+// TestVerification_TheBoundaryBetweenTheTwoListsCannotMove is the fixture the
+// findings count exists for.
+//
+// A verification carries two adjacent lists of unbounded length: what was found
+// and what was not asked. Without a count on the first, a reader of the digest
+// components cannot tell where one ends -- and these two records, which say
+// opposite things, would be the same record.
+//
+// The values are digits because the second list is sorted: a finding's four
+// fields have to arrive already in the order sorting would put them in, or the
+// collision this pins could not be constructed and the count would look
+// load-bearing when it was the sort doing the work.
+func TestVerification_TheBoundaryBetweenTheTwoListsCannotMove(t *testing.T) {
+	c := qt.New(t)
+	at := time.Date(2026, 8, 27, 10, 0, 0, 0, time.UTC)
+
+	found := embedrelease.Verification{
+		Generation: "gen-1", MeasuredAt: at,
+		Findings: []embedrelease.Finding{
+			{Layer: "1", Severity: "2", Summary: "3", Count: 4},
+		},
+	}
+	notAsked := embedrelease.Verification{
+		Generation: "gen-1", MeasuredAt: at,
+		Unmeasured: []string{"1", "2", "3", "4"},
+	}
+
+	c.Assert(found.Digest(), qt.Not(qt.Equals), notAsked.Digest())
+}

@@ -93,6 +93,7 @@ export const sidebar = [
     items: [
       { slug: 'operate/ai-agents' },
       { slug: 'operate/ai-assist' },
+      { slug: 'operate/inference-migrations' },
       { slug: 'operate/oci-registry' },
       { slug: 'operate/seed-data' },
       { slug: 'operate/troubleshooting' },

@@ -164,14 +164,26 @@ func (v Verification) Digest() string {
 		"source_rows", strconv.Itoa(v.SourceRows), "target_rows", strconv.Itoa(v.TargetRows),
 		"measured_at", v.MeasuredAt.UTC().Format(time.RFC3339Nano),
 	}
+	// The retrieval block comes before the two lists because it is the last
+	// fixed-length part: an absent one renders two components and a present one
+	// eleven, and both begin with a literal that says which, so nothing after
+	// the header can be mistaken for it.
+	components = append(components, v.Retrieval.components()...)
+
+	// One count, on the first of the two adjacent variable-length lists. The
+	// second needs none because nothing follows it, and a second count would
+	// answer the same question -- which is how both come to be unmeasurable:
+	// remove either and the other still separates the lists, so no fixture can
+	// tell the encoding lost a guarantee. Measured, on this shape: with the
+	// count removed, one finding of {"1", "2", "3", 4} and no unmeasured notes
+	// digest identically to no findings and four notes reading "1", "2", "3",
+	// "4".
 	components = append(components, "findings", strconv.Itoa(len(v.Findings)))
 	for _, finding := range v.Findings {
 		components = append(components,
 			finding.Layer, finding.Severity, finding.Summary, strconv.Itoa(finding.Count))
 	}
-	components = append(components, "unmeasured", strconv.Itoa(len(v.Unmeasured)))
-	components = append(components, sortedCopy(v.Unmeasured)...)
-	return embeddigest.Of(append(components, v.Retrieval.components()...)...)
+	return embeddigest.Of(append(components, sortedCopy(v.Unmeasured)...)...)
 }
 
 // components renders the retrieval half of a verification digest.
