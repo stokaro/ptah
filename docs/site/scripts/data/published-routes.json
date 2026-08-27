@@ -37,6 +37,7 @@
   "/operate/ai-agents/",
   "/operate/ai-assist/",
   "/operate/conformance/",
+  "/operate/inference-migrations/",
   "/operate/license-boundary/",
   "/operate/oci-registry/",
   "/operate/seed-data/",
