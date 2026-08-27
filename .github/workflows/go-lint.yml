@@ -59,6 +59,16 @@ jobs:
       - name: Check the brand assets
         run: scripts/check-brand-assets.sh
 
+      # The README's worked example, run for real. It lives in this workflow
+      # rather than in docs.yml because both directions have to reach it: a
+      # README edit, which docs.yml's `paths:` filter also sees, and a change to
+      # what a command prints, which it does not. This workflow carries no
+      # filter at all.
+      - name: Check the README's worked example
+        run: |
+          scripts/check-readme-example.sh
+          scripts/check-readme-example-selftest.sh
+
       - name: Check the ADR index
         run: scripts/check-adr-index.sh
 
