@@ -25,7 +25,7 @@ func TestRenderScript_HappyPath(t *testing.T) {
 			shell: quickstart.Bash,
 			wantContains: []string{
 				"set -euo pipefail\n",
-				"cat >'schema.sql' <<'PTAH_QUICKSTART_FILE'\nCREATE TABLE users (id INTEGER PRIMARY KEY);\nPTAH_QUICKSTART_FILE\n",
+				"cat >'schema.sql' <<'__ptah_quickstart_file__'\nCREATE TABLE users (id INTEGER PRIMARY KEY);\n__ptah_quickstart_file__\n",
 				"mkdir work && cd work\n",
 				"printf '%s\\n' '__ptah_quickstart_step_1__'\n",
 				"printf '%s\\n' '__ptah_quickstart_step_1__' >&2\n",
@@ -76,8 +76,8 @@ func TestRenderScript_FailurePath(t *testing.T) {
 		{
 			name:    "bash here-document terminator",
 			shell:   quickstart.Bash,
-			body:    "SELECT 1;\nPTAH_QUICKSTART_FILE\nSELECT 2;",
-			wantErr: `file schema.sql contains the here-document terminator PTAH_QUICKSTART_FILE on a line of its own`,
+			body:    "SELECT 1;\n__ptah_quickstart_file__\nSELECT 2;",
+			wantErr: `file schema.sql contains the here-document terminator __ptah_quickstart_file__ on a line of its own`,
 		},
 		{
 			name:    "powershell here-string terminator",

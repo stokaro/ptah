@@ -7,8 +7,11 @@ import (
 
 const (
 	// heredocTerminator ends a Bash here-document holding a file the page tells
-	// the reader to write.
-	heredocTerminator = "PTAH_QUICKSTART_FILE"
+	// the reader to write. It is lowercase on purpose: an uppercase `PTAH_`
+	// token in Go source names an environment variable by this repository's
+	// convention, and cmd/internal/envboolguard enforces that convention by
+	// reporting every one it cannot find a classification for.
+	heredocTerminator = "__ptah_quickstart_file__"
 	// hereStringTerminator ends the PowerShell equivalent. It must start at
 	// column one, which is why the generated script never indents.
 	hereStringTerminator = "'@"
