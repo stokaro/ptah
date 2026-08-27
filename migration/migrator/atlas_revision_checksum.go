@@ -17,6 +17,35 @@ type ownedAtlasSumContribution struct {
 	contribution atlasSumContribution
 }
 
+// VerifyAppliedChecksums reports whether the checksums recorded for the applied
+// revisions are ones the current migration directory accounts for.
+//
+// It is the read-only half of what MigrateUp does before it applies anything,
+// exported so a caller deciding whether native Ptah may take over an existing
+// history asks the question through the rule that history was written under
+// (stokaro/ptah#1215). An adoption check that re-derived "does this hash match"
+// would be a second interpreter of Atlas revision checksums, and the two would
+// disagree the first time either learned something -- the atlas.sum running
+// hash accepted for a history the Atlas community binary wrote, say, which a
+// per-file content hash never reproduces.
+//
+// A non-nil error whose type is *ChecksumMismatchError names the first applied
+// revision no file accounts for. The bool reports that at least one row matched
+// a provable applied-history projection rather than the current full-directory
+// entry: those rows verify, and a writer that proceeds reconciles them. Nothing
+// here writes, so a caller in a preflight sees the fact without acting on it.
+//
+// Callers wanting the guarantee that a preflight cannot alter what it inspects
+// should put the connection in dry-run mode first: this calls Initialize, which
+// creates an absent revision table and alters an existing one into the current
+// layout.
+func (m *Migrator) VerifyAppliedChecksums(ctx context.Context) (bool, error) {
+	if err := m.Initialize(ctx); err != nil {
+		return false, fmt.Errorf("failed to initialize migrations table: %w", err)
+	}
+	return m.verifyAppliedMigrationChecksums(ctx, m.MigrationProvider().Migrations())
+}
+
 // verifyAppliedMigrationChecksums verifies clean applied revisions without
 // confusing an atlas.sum running hash with a per-file content hash. The bool
 // reports that at least one row matched a provable applied-history projection
