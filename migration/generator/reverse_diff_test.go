@@ -271,8 +271,8 @@ func TestReverseSchemaDiff_CompleteReversal(t *testing.T) {
 	input := &difftypes.SchemaDiff{
 		TablesAdded:   []string{"users", "posts"},
 		TablesRemoved: []string{"old_table"},
-		EnumsAdded:    []string{"status_type"},
-		EnumsRemoved:  []string{"old_enum"},
+		EnumsAdded:    difftypes.EnumChanges{{Name: "status_type"}},
+		EnumsRemoved:  difftypes.EnumChanges{{Name: "old_enum"}},
 		IndexesAdded: []difftypes.IndexRef{
 			{Name: "idx_users_email", TableName: "users"},
 		},
@@ -313,8 +313,8 @@ func TestReverseSchemaDiff_CompleteReversal(t *testing.T) {
 	// Verify all reversals
 	c.Assert(result.TablesAdded, qt.DeepEquals, input.TablesRemoved)
 	c.Assert(result.TablesRemoved, qt.DeepEquals, input.TablesAdded)
-	c.Assert(result.EnumsAdded, qt.DeepEquals, input.EnumsRemoved)
-	c.Assert(result.EnumsRemoved, qt.DeepEquals, input.EnumsAdded)
+	c.Assert(result.EnumsAdded.Names(), qt.DeepEquals, input.EnumsRemoved.Names())
+	c.Assert(result.EnumsRemoved.Names(), qt.DeepEquals, input.EnumsAdded.Names())
 	c.Assert(result.IndexesAdded, qt.DeepEquals, input.IndexesRemoved)
 	c.Assert(result.IndexesRemoved, qt.DeepEquals, input.IndexesAdded)
 	c.Assert(result.ExtensionsAdded.Names(), qt.DeepEquals, input.ExtensionsRemoved.Names())

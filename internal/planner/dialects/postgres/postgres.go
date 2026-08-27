@@ -250,16 +250,12 @@ func (p *Planner) usesConcurrentIndexDrop(ref difftypes.IndexRef) bool {
 }
 
 func (p *Planner) addNewEnums(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
-	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
-	for _, enumName := range diff.EnumsAdded {
-		// The diff names enums by qualified name, so the lookup does too --
-		// under the target's identifier rules rather than as raw text. Building
-		// the node through fromschema.FromEnum keeps the CREATE TYPE identifier
-		// and the column type that references it derived from one place
-		// (stokaro/ptah#1276).
-		if enum := objectlookup.Qualified(desired.Enums, enumName, semantics); enum != nil {
-			result = append(result, fromschema.FromEnum(*enum))
-		}
+	// No lookup: the change carries the enum (stokaro/ptah#2315). Building the
+	// node through fromschema.FromEnum still keeps the CREATE TYPE identifier
+	// and the column type that references it derived from one place
+	// (stokaro/ptah#1276).
+	for _, enum := range diff.EnumsAdded {
+		result = append(result, fromschema.FromEnum(enum))
 	}
 	return result
 }
@@ -495,7 +491,7 @@ func (p *Planner) addSchemaPreconditions(
 ) []ast.Node {
 	names := make([]string, 0, len(diff.TablesAdded))
 	names = append(names, diff.TablesAdded...)
-	names = append(names, diff.EnumsAdded...)
+	names = append(names, diff.EnumsAdded.Names()...)
 	names = append(names, diff.DomainsAdded...)
 	names = append(names, diff.CompositeTypesAdded.Names()...)
 	names = append(names, diff.RangesAdded.Names()...)
@@ -1273,8 +1269,8 @@ func (p *Planner) removeTables(result []ast.Node, diff *difftypes.SchemaDiff, de
 }
 
 func (p *Planner) removeEnums(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	for _, enumName := range diff.EnumsRemoved {
-		dropTypeNode := ast.NewDropType(enumName).
+	for _, enum := range diff.EnumsRemoved {
+		dropTypeNode := ast.NewDropType(enum.QualifiedName()).
 			SetIfExists().
 			SetCascade().
 			SetComment("WARNING: Make sure no tables use this enum!")

@@ -60,8 +60,8 @@ func TestEnumsWithSemantics_SchemaIdentity(t *testing.T) {
 			},
 			semantics: identifier.Semantics{DefaultSchema: "public"},
 			want: difftypes.SchemaDiff{
-				EnumsAdded:   []string{"mood"},
-				EnumsRemoved: []string{"one.mood", "two.mood"},
+				EnumsAdded:   difftypes.EnumChanges{{Name: "mood", Values: []string{"a"}}},
+				EnumsRemoved: difftypes.EnumChanges{{Name: "one.mood"}, {Name: "two.mood"}},
 			},
 		},
 		{
@@ -94,8 +94,8 @@ func TestEnumsWithSemantics_SchemaIdentity(t *testing.T) {
 			database:  []catalog.Enum{{Name: "mood", Schema: "other", Values: []string{"a"}}},
 			semantics: identifier.Semantics{DefaultSchema: "public"},
 			want: difftypes.SchemaDiff{
-				EnumsAdded:   []string{"wanted.mood"},
-				EnumsRemoved: []string{"other.mood"},
+				EnumsAdded:   difftypes.EnumChanges{{Name: "wanted.mood"}},
+				EnumsRemoved: difftypes.EnumChanges{{Name: "other.mood"}},
 			},
 		},
 	}
@@ -112,8 +112,8 @@ func TestEnumsWithSemantics_SchemaIdentity(t *testing.T) {
 				test.semantics,
 			)
 
-			c.Assert(diff.EnumsAdded, qt.DeepEquals, test.want.EnumsAdded)
-			c.Assert(diff.EnumsRemoved, qt.DeepEquals, test.want.EnumsRemoved)
+			c.Assert(diff.EnumsAdded.Names(), qt.DeepEquals, test.want.EnumsAdded.Names())
+			c.Assert(diff.EnumsRemoved.Names(), qt.DeepEquals, test.want.EnumsRemoved.Names())
 			c.Assert(diff.EnumsModified, qt.HasLen, len(test.want.EnumsModified))
 			for i, wantDiff := range test.want.EnumsModified {
 				c.Assert(diff.EnumsModified[i].EnumName, qt.Equals, wantDiff.EnumName)

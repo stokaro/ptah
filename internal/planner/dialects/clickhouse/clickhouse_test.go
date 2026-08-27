@@ -126,7 +126,7 @@ func TestGenerateMigrationAST_IndexAddRemove(t *testing.T) {
 func TestGenerateMigrationAST_EnumChangesAreSurfacedAsComment(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{
-		EnumsAdded: []string{"status"},
+		EnumsAdded: difftypes.EnumChanges{{Name: "status"}},
 	}
 	p := clickhouse.New()
 	nodes, err := p.GenerateMigrationAST(diff, mkDB())

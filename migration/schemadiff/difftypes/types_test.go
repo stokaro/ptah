@@ -53,14 +53,14 @@ func TestSchemaDiff_HasChanges(t *testing.T) {
 		{
 			name: "enums added",
 			diff: &difftypes.SchemaDiff{
-				EnumsAdded: []string{"status_enum"},
+				EnumsAdded: difftypes.EnumChanges{{Name: "status_enum"}},
 			},
 			expected: true,
 		},
 		{
 			name: "enums removed",
 			diff: &difftypes.SchemaDiff{
-				EnumsRemoved: []string{"old_enum"},
+				EnumsRemoved: difftypes.EnumChanges{{Name: "old_enum"}},
 			},
 			expected: true,
 		},

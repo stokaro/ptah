@@ -22,6 +22,37 @@ import (
 	"go.5x5.cz/ptah/core/schemamodel"
 )
 
+// EnumChanges is a set of enum types one change applies to, carrying each one's
+// values and not only its name.
+//
+// The fifth family off `[]string` under stokaro/ptah#2315, and the cleanest
+// carry of them: catalog.Enum and schemamodel.Enum declare the same three
+// properties -- name, schema and ordered values -- with nothing on either side
+// the other cannot hold. See [RangeChanges] for why both sides carry the
+// operand and why the wire shape does not change.
+type EnumChanges []schemamodel.Enum
+
+// MarshalJSON writes the names alone, the shape `enums_added` and
+// `enums_removed` have always had.
+func (e EnumChanges) MarshalJSON() ([]byte, error) {
+	if e == nil {
+		return []byte("null"), nil
+	}
+	return json.Marshal(e.Names())
+}
+
+// Names is the enum names this change applies to.
+func (e EnumChanges) Names() []string {
+	if e == nil {
+		return nil
+	}
+	names := make([]string, 0, len(e))
+	for _, enum := range e {
+		names = append(names, enum.QualifiedName())
+	}
+	return names
+}
+
 // ExtensionChanges is a set of extensions one change applies to, carrying each
 // one's declaration and not only its name.
 //
@@ -378,11 +409,11 @@ type SchemaDiff struct {
 
 	// EnumsAdded contains names of enum types that exist in the target schema
 	// but not in the current database schema
-	EnumsAdded []string `json:"enums_added"`
+	EnumsAdded EnumChanges `json:"enums_added"`
 
 	// EnumsRemoved contains names of enum types that exist in the current database
 	// but not in the target schema (potentially dangerous - may break existing data)
-	EnumsRemoved []string `json:"enums_removed"`
+	EnumsRemoved EnumChanges `json:"enums_removed"`
 
 	// EnumsModified contains detailed information about enum types that exist in both
 	// schemas but have different values (additions/removals)

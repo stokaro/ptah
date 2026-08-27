@@ -12474,6 +12474,7 @@ type ConstraintIdentity struct{ ... }
 type ConstraintRemovalInfo struct{ ... }
 type ContinuousAggregateDiff struct{ ... }
 type DomainDiff struct{ ... }
+type EnumChanges []schemamodel.Enum
 type EnumDiff struct{ ... }
 type ExtendedPropertyDiff struct{ ... }
 type ExtendedPropertyRef struct{ ... }
@@ -12849,6 +12850,23 @@ type DomainDiff struct {
     because a plan that drops this domain has to be ordered by the shape the
     database holds now. See the comment on CurrentBaseType.
 
+
+### go.5x5.cz/ptah/migration/schemadiff/difftypes.EnumChanges
+
+package difftypes // import "go.5x5.cz/ptah/migration/schemadiff/difftypes"
+
+type EnumChanges []schemamodel.Enum
+    EnumChanges is a set of enum types one change applies to, carrying each
+    one's values and not only its name.
+
+    The fifth family off `[]string` under stokaro/ptah#2315, and the cleanest
+    carry of them: catalog.Enum and schemamodel.Enum declare the same three
+    properties -- name, schema and ordered values -- with nothing on either side
+    the other cannot hold. See RangeChanges for why both sides carry the operand
+    and why the wire shape does not change.
+
+func (e EnumChanges) MarshalJSON() ([]byte, error)
+func (e EnumChanges) Names() []string
 
 ### go.5x5.cz/ptah/migration/schemadiff/difftypes.EnumDiff
 
@@ -13398,11 +13416,11 @@ type SchemaDiff struct {
 
     // EnumsAdded contains names of enum types that exist in the target schema
     // but not in the current database schema
-    EnumsAdded []string `json:"enums_added"`
+    EnumsAdded EnumChanges `json:"enums_added"`
 
     // EnumsRemoved contains names of enum types that exist in the current database
     // but not in the target schema (potentially dangerous - may break existing data)
-    EnumsRemoved []string `json:"enums_removed"`
+    EnumsRemoved EnumChanges `json:"enums_removed"`
 
     // EnumsModified contains detailed information about enum types that exist in both
     // schemas but have different values (additions/removals)

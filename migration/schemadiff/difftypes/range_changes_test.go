@@ -288,3 +288,63 @@ func TestExtensionChanges_TheInstallationSchemaSurvivesInMemory(t *testing.T) {
 	c.Assert(changes[0].Version, qt.Equals, "1.3")
 	c.Assert(changes.Names(), qt.DeepEquals, []string{"pgcrypto"})
 }
+
+// TestEnumChanges_TheWireShapeIsUnchanged is the same promise for the fifth
+// family off `[]string`.
+func TestEnumChanges_TheWireShapeIsUnchanged(t *testing.T) {
+	tests := []struct {
+		name    string
+		changes difftypes.EnumChanges
+		want    string
+		why     string
+	}{
+		{
+			name:    "nil is null",
+			changes: nil,
+			want:    "null",
+			why:     "null is a comparison that did not run",
+		},
+		{
+			name:    "empty is an empty array",
+			changes: difftypes.EnumChanges{},
+			want:    "[]",
+			why:     "[] is a comparison that ran and found nothing",
+		},
+		{
+			name:    "the values do not reach the wire",
+			changes: difftypes.EnumChanges{{Name: "status", Values: []string{"draft", "live"}}},
+			want:    `["status"]`,
+			why:     "a name list is what format_version 1 has always carried here",
+		},
+		{
+			name:    "a schema-qualified enum keeps its qualified spelling",
+			changes: difftypes.EnumChanges{{Name: "status", Schema: "app"}},
+			want:    `["app.status"]`,
+			why:     "the identity a consumer keys on is unchanged",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			encoded, err := json.Marshal(test.changes)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(string(encoded), qt.Equals, test.want, qt.Commentf("%s", test.why))
+		})
+	}
+}
+
+// TestEnumChanges_TheValuesSurviveInMemory is the other half.
+//
+// The values are the whole point for an enum: CREATE TYPE ... AS ENUM is
+// planned from them, so a carry that dropped them would plan an empty type.
+func TestEnumChanges_TheValuesSurviveInMemory(t *testing.T) {
+	c := qt.New(t)
+
+	changes := difftypes.EnumChanges{{Name: "status", Schema: "app", Values: []string{"draft", "live"}}}
+
+	c.Assert(changes[0].Values, qt.DeepEquals, []string{"draft", "live"})
+	c.Assert(changes.Names(), qt.DeepEquals, []string{"app.status"})
+}

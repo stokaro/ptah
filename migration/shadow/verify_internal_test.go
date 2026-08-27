@@ -79,8 +79,8 @@ func TestCollectMismatchesCoversEverySchemaDiffCategory(t *testing.T) {
 			ConstraintsAdded:   []string{"missing_table_constraint"},
 			ConstraintsRemoved: []string{"extra_table_constraint"},
 		}},
-		EnumsAdded:   []string{"missing_enum"},
-		EnumsRemoved: []string{"extra_enum"},
+		EnumsAdded:   difftypes.EnumChanges{{Name: "missing_enum"}},
+		EnumsRemoved: difftypes.EnumChanges{{Name: "extra_enum"}},
 		EnumsModified: []difftypes.EnumDiff{{
 			EnumName:      "changed_enum",
 			ValuesAdded:   []string{"missing_value"},

@@ -26,7 +26,7 @@ func TestPlanner_GenerateMigrationSQL_EnumsAdded(t *testing.T) {
 		{
 			name: "single enum added",
 			diff: &difftypes.SchemaDiff{
-				EnumsAdded: []string{"user_status"},
+				EnumsAdded: difftypes.EnumChanges{{Name: "user_status", Values: []string{"active", "inactive"}}},
 			},
 			desired: &schemamodel.Database{
 				Enums: []schemamodel.Enum{
@@ -50,7 +50,7 @@ func TestPlanner_GenerateMigrationSQL_EnumsAdded(t *testing.T) {
 		{
 			name: "multiple enums added",
 			diff: &difftypes.SchemaDiff{
-				EnumsAdded: []string{"user_status", "order_status"},
+				EnumsAdded: difftypes.EnumChanges{{Name: "user_status", Values: []string{"active", "inactive"}}, {Name: "order_status", Values: []string{"pending", "completed", "canceled"}}},
 			},
 			desired: &schemamodel.Database{
 				Enums: []schemamodel.Enum{
@@ -977,7 +977,7 @@ func TestPlanner_GenerateMigrationSQL_EnumsRemoved(t *testing.T) {
 		{
 			name: "single enum removed",
 			diff: &difftypes.SchemaDiff{
-				EnumsRemoved: []string{"old_enum"},
+				EnumsRemoved: difftypes.EnumChanges{{Name: "old_enum"}},
 			},
 			desired: &schemamodel.Database{},
 			expected: func(nodes []ast.Node) bool {
@@ -1018,7 +1018,7 @@ func TestPlanner_GenerateMigrationSQL_ComplexScenario(t *testing.T) {
 		{
 			name: "complete migration with all operations",
 			diff: &difftypes.SchemaDiff{
-				EnumsAdded:  []string{"user_status"},
+				EnumsAdded:  difftypes.EnumChanges{{Name: "user_status", Values: []string{"active", "inactive"}}},
 				TablesAdded: []string{"users"},
 				IndexesAdded: []difftypes.IndexRef{
 					{Name: "idx_users_email", TableName: "users"},
@@ -1087,9 +1087,15 @@ func TestPlanner_GenerateMigrationSQL_EdgeCases(t *testing.T) {
 			},
 		},
 		{
-			name: "enum added but not found in generated schema",
+			// This row used to assert that an enum the desired schema does
+			// not declare plans NOTHING -- the planner looked it up by name
+			// and silently skipped what it could not find. The change carries
+			// the enum now (stokaro/ptah#2315), so it is planned from the
+			// operand and the desired schema has no say. The silent skip was
+			// the defect, not the behaviour to keep.
+			name: "an enum the desired schema does not declare is still planned",
 			diff: &difftypes.SchemaDiff{
-				EnumsAdded: []string{"missing_enum"},
+				EnumsAdded: difftypes.EnumChanges{{Name: "missing_enum", Values: []string{"a", "b"}}},
 			},
 			desired: &schemamodel.Database{
 				Enums: []schemamodel.Enum{
@@ -1097,7 +1103,7 @@ func TestPlanner_GenerateMigrationSQL_EdgeCases(t *testing.T) {
 				},
 			},
 			expected: func(nodes []ast.Node) bool {
-				return len(nodes) == 0 // Should not generate anything for missing enum
+				return len(nodes) == 1
 			},
 		},
 		{
