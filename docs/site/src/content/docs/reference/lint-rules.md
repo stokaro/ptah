@@ -143,7 +143,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | `DS104` | DROP NOT NULL removes a column-level data protection | both | Ptah |
 | `DS105` | an untyped DROP CONSTRAINT removes a data protection the SQL does not name | both | Ptah |
 | `DS106` | removing an enum value can invalidate rows that still hold it | both | Ptah |
-| `DS107` | dropping a schema, type, extension, function, role, or policy removes behavior | both | Ptah |
+| `DS107` | dropping a schema, type, extension, function, procedure, trigger, role, or policy removes behavior | both | Ptah |
 | `DS108` | TRUNCATE deletes every row in the table | both | Ptah |
 | `DS109` | DISABLE ROW LEVEL SECURITY removes an access-control protection | both | Ptah |
 | `MF101` | no matching .down.sql exists, so a failed deploy cannot be rolled back mechanically | both | Ptah |

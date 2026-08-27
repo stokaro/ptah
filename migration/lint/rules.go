@@ -1422,9 +1422,27 @@ func scanDropPrimaryKey(w []string) bool { return scanDropClause(w, "DROP", "PRI
 // the typed forms above are reported by the CD family.
 func scanDropNamedConstraint(w []string) bool { return scanDropClause(w, "DROP", "CONSTRAINT") }
 
+// scanEnumValueRemoval reports whether a statement removes an enum value.
+//
+// Both forms are anchored on the statement they belong to, which is the whole
+// point. Unanchored, the scan walked every word a statement carried -- and a
+// routine body is words. `CREATE FUNCTION f() ... BEGIN ATOMIC DELETE FROM
+// pg_enum; END` reported DS106 at error severity, against the one family the
+// apply gate refuses on, for a migration that creates a function and removes no
+// enum value. The `$$`-quoted spelling of the same body did not, because a
+// dollar-quoted body is one token: the rule's answer depended on how the author
+// quoted a body it had no business reading (stokaro/ptah#2358).
+//
+// The tree already pins the principle this restores: a DROP TABLE inside a
+// procedure body runs when somebody calls the procedure and never at migration
+// time (migration/lint/compound_routine_body_test.go). DS101 and DS103 were
+// anchored and held it; this scan was the one that was not.
 func scanEnumValueRemoval(w []string) bool {
-	return hasWordSeq(w, "DELETE", "FROM", "PG_ENUM") ||
-		hasWordSeq(w, "DROP", "VALUE")
+	if hasWordPrefix(w, "DELETE", "FROM", "PG_ENUM") {
+		return true
+	}
+	// DROP VALUE is a clause of ALTER TYPE, so it is read only there.
+	return hasWordPrefix(w, "ALTER", "TYPE") && hasWordSeq(w, "DROP", "VALUE")
 }
 
 func scanDestructiveObjectDrop(w []string) bool {
@@ -1432,7 +1450,10 @@ func scanDestructiveObjectDrop(w []string) bool {
 		return false
 	}
 	switch w[1] {
-	case "TYPE", "EXTENSION", "FUNCTION", "ROLE", "POLICY", "SCHEMA":
+	// PROCEDURE and TRIGGER are here for the reason FUNCTION is: dropping one
+	// removes behavior a caller depends on, and this is the family that decides
+	// whether an apply proceeds (stokaro/ptah#2358).
+	case "TYPE", "EXTENSION", "FUNCTION", "PROCEDURE", "TRIGGER", "ROLE", "POLICY", "SCHEMA":
 		return true
 	default:
 		return false
