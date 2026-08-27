@@ -12,6 +12,7 @@ import (
 
 	"go.5x5.cz/ptah/internal/embedcatchup"
 	"go.5x5.cz/ptah/internal/embedcutover"
+	"go.5x5.cz/ptah/internal/embedgen"
 	"go.5x5.cz/ptah/internal/embedpg"
 	"go.5x5.cz/ptah/internal/embedrun"
 	"go.5x5.cz/ptah/internal/embedstore"
@@ -283,6 +284,11 @@ func buildCutoverPlan(
 		return embedcutover.Plan{}, embedcutover.Observed{}, err
 	}
 
+	objects, err := spec.TargetObjects()
+	if err != nil {
+		return embedcutover.Plan{}, embedcutover.Observed{}, err
+	}
+	ready := indexReady(objects, structure)
 	plan := embedcutover.Plan{
 		Generation: spec.Identity().Digest, Previous: active,
 		Schema: spec.Target.Schema, Table: spec.Target.Table, Column: spec.Target.Column,
@@ -291,23 +297,60 @@ func buildCutoverPlan(
 			VerificationPassed:   report.Passed(),
 			ConsistencyMode:      string(opened.loaded.Mode),
 			ConsistencyWatermark: run.CatchUpWatermark,
-			IndexReady:           structure.IndexExists && structure.IndexValid,
+			IndexReady:           ready,
 			SourceMutable:        opened.loaded.Source.Mutable,
 		},
-		// The plan is built now and executed now, so its age is nothing. A
-		// prepared plan an operator approves later is a separate verb, and
-		// giving this one a stale timestamp would be inventing that verb badly.
-		PreparedAt: time.Now().UTC(),
+		// When the EVIDENCE was last established, not when this process
+		// started. Two things follow, and both are the point.
+		//
+		// The digest is stable across invocations, so the operator who runs
+		// this to see the plan and runs it again with an approval is approving
+		// the plan they read. A wall-clock timestamp made every run a
+		// different plan and the approval impossible to give -- which the
+		// end-to-end test found the moment it tried.
+		//
+		// And the age a policy bounds becomes the age of the evidence rather
+		// than of the printout. A plan built on a run that last moved two days
+		// ago is stale however recently it was rendered.
+		PreparedAt: run.UpdatedAt.UTC(),
 	}
 	if !guarantee.Complete {
 		plan.Evidence.ConsistencyMode = ""
 	}
+	// The plan's expected previous generation and the observed pointer come
+	// from ONE read, because this caller builds and executes in the same
+	// process: there is no interval between them for the pointer to move in.
+	// What protects a cutover from somebody else's here is the approval, which
+	// is bound to a plan built from the pointer as it was.
+	//
+	// The domain's drift check is for a caller that persists a plan and
+	// executes it later. Supplying two separate reads here would be a second
+	// answer to a question with one.
 	return plan, embedcutover.Observed{
 		ActivePointer: active, ConsistencyWatermark: run.CatchUpWatermark,
-		IndexReady:  structure.IndexExists && structure.IndexValid,
+		IndexReady:  ready,
 		Permissions: []embedcutover.Permission{embedcutover.PermissionCutover},
 		Now:         time.Now().UTC(),
 	}, nil
+}
+
+// indexReady reports whether the index this generation needs is there.
+//
+// It takes the objects the specification derives rather than a flag, because
+// "does this generation want an index" and "is that index there" are one
+// question about one generation and splitting them into a boolean and a struct
+// invites a caller to answer half of it.
+//
+// A generation that declares no index method needs none, and is ready by
+// definition. Reporting the absent index as "not ready" made every such
+// generation permanently uncutoverable -- and the refusal named an index the
+// specification never asked for, which is the worst kind of diagnostic: it
+// sends the operator to configure something they deliberately left out.
+func indexReady(objects embedgen.TargetObjects, structure embedverify.Structure) bool {
+	if !objects.HasIndex {
+		return true
+	}
+	return structure.IndexExists && structure.IndexValid
 }
 
 // approvalFrom builds the approval a caller supplied, or none.
