@@ -484,3 +484,48 @@ func TestBackfill_AnEmptyPageStillMakesItsPositionDurable(t *testing.T) {
 	c.Assert(h.target.commits[0].writes, qt.HasLen, 0)
 	c.Assert(h.target.commits[0].cursor, qt.DeepEquals, []string{"0"})
 }
+
+// TestBackfill_AnEmptyPageThatSaysNothingIsRefused covers the two ways a page
+// with no rows fails to be progress.
+//
+// It is the same defect as a repeated row, one level quieter: nothing comes
+// back, so nothing looks wrong, and the next scan asks the question the last
+// one did not answer. A page reporting no position at all is the worse of the
+// two -- committing its cursor would erase the one the run already had.
+func TestBackfill_AnEmptyPageThatSaysNothingIsRefused(t *testing.T) {
+	tests := []struct {
+		name string
+		mode string
+	}{
+		{name: "it hands back the cursor it was given", mode: "same"},
+		{name: "it reports no position at all", mode: "none"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			h := newHarness(c, defaultBounds())
+			h.source.emptyPagesBefore = 1
+			h.source.emptyPageMode = test.mode
+
+			run, err := h.engine.Backfill(context.Background(), "run-1")
+
+			c.Assert(err, qt.ErrorIs, embedengine.ErrStalled)
+			c.Assert(run.FailureClass, qt.Equals, "source")
+			c.Assert(h.target.commits, qt.HasLen, 0)
+			c.Assert(run.Cursor, qt.HasLen, 0)
+		})
+	}
+}
+
+// TestBackfill_AnEmptyFinalPageIsTheEndAndNotAStall keeps the guard from firing
+// on the ordinary way a scan finishes.
+func TestBackfill_AnEmptyFinalPageIsTheEndAndNotAStall(t *testing.T) {
+	c := qt.New(t)
+	h := newHarness(c, embedrun.BatchBounds{MaxRows: 4, MaxInputs: 4})
+	h.source.rows = sourceRows()[:4]
+
+	run, err := h.engine.Backfill(context.Background(), "run-1")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(run.Progress.RowsScanned, qt.Equals, int64(4))
+}

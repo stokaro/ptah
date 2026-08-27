@@ -155,15 +155,18 @@ func (e *Engine) Backfill(ctx context.Context, runID string) (embedrun.Run, erro
 // and the loop cannot tell that from progress: the rows are real, the batch
 // embeds, the counts rise. Only the cursor it was handed says otherwise.
 func stalled(after []string, page Page) bool {
-	if len(after) == 0 {
+	if page.Done {
 		return false
 	}
-	for _, row := range page.Rows {
-		if slices.Equal(row.Key, after) {
-			return true
-		}
+	if len(page.Rows) == 0 {
+		// A page with no rows has to say where it got to, and it has to be
+		// somewhere new. One that says nothing, or says the position it was
+		// handed, leaves the next scan asking the same question.
+		return len(page.Cursor) == 0 || slices.Equal(page.Cursor, after)
 	}
-	return len(page.Rows) == 0 && !page.Done && slices.Equal(page.Cursor, after)
+	return slices.ContainsFunc(page.Rows, func(row embedgen.Row) bool {
+		return slices.Equal(row.Key, after)
+	})
 }
 
 // advancePast handles one page, whether or not it has rows in it.
@@ -177,9 +180,11 @@ func (e *Engine) advancePast(
 	if len(page.Rows) > 0 {
 		return e.processPage(ctx, run, token, page)
 	}
-	if page.Done || len(page.Cursor) == 0 {
+	if page.Done {
 		return run, nil
 	}
+	// A page that is not done and has no cursor was refused above, so what
+	// reaches here always has somewhere to record.
 	return e.commitProgress(ctx, run, token, nil, embedrun.BatchOutcome{
 		Cursor: page.Cursor, TargetCommitted: true, DeletesCommitted: true,
 	})

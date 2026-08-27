@@ -32,6 +32,22 @@ type fakeSource struct {
 	// emptyPagesBefore answers that many pages with no rows before the real
 	// ones, which is what a filter matching nothing for a stretch looks like.
 	emptyPagesBefore int
+	// emptyPageMode decides what position those pages report: "advanced" is a
+	// well-behaved source, "same" hands back the cursor it was given, and
+	// "none" reports no position at all.
+	emptyPageMode string
+}
+
+// emptyPageCursor is the position an empty page reports.
+func (f *fakeSource) emptyPageCursor(after []string) []string {
+	switch f.emptyPageMode {
+	case "same":
+		return after
+	case "none":
+		return nil
+	default:
+		return []string{"0"}
+	}
 }
 
 // Scan returns the rows after a cursor.
@@ -44,7 +60,7 @@ func (f *fakeSource) Scan(_ context.Context, after []string, limit int) (embeden
 		f.emptyPagesBefore--
 		// A cursor of its own, because a page reporting no rows AND no position
 		// has told the caller nothing it can resume from.
-		return embedengine.Page{Cursor: []string{"0"}}, nil
+		return embedengine.Page{Cursor: f.emptyPageCursor(after)}, nil
 	}
 	start := 0
 	if len(after) > 0 && !f.stalled {
