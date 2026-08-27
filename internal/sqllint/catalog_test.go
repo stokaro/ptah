@@ -225,6 +225,22 @@ func TestCatalogRowsMatchTheEmittedFindings(t *testing.T) {
 			},
 			code: "CAP001",
 		},
+		{
+			// A routine also draws SQL002, because the linter models no
+			// CREATE PROCEDURE statement. Disabling it is what leaves one
+			// finding for the assertion below, and it is a PROCEDURE rather
+			// than a FUNCTION because only the procedure path parses a body:
+			// on PostgreSQL, CREATE FUNCTION falls through to
+			// parseCreateFunction and arrives with no statements at all.
+			name: "dynamic SQL inside a routine body",
+			source: sqllint.Source{Name: "routine.sql", SQL: "CREATE PROCEDURE p() AS $$\nBEGIN\n" +
+				"EXECUTE 'TRUNCATE t';\nEND;\n$$ LANGUAGE plpgsql;"},
+			options: sqllint.Options{
+				Dialect:       platform.Postgres,
+				DisabledRules: []string{"SQL002"},
+			},
+			code: "SQL003",
+		},
 	}
 
 	driven := make([]string, 0, len(rows))

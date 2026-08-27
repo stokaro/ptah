@@ -19,6 +19,9 @@ const (
 	RuleUnsupportedStatement   = "SQL002"
 	RuleTableWithoutPrimaryKey = "DDL001"
 	RuleUnsupportedCapability  = "CAP001"
+	// RuleDynamicSQL marks a routine body that builds SQL at run time, which is
+	// where static analysis of that routine stops.
+	RuleDynamicSQL = "SQL003"
 )
 
 type Severity string
@@ -73,6 +76,7 @@ func DefaultRules() []Rule {
 		unsupportedRoutineRule{},
 		tablePrimaryKeyRule{},
 		createIndexCapabilityRule{},
+		dynamicSQLRule{},
 	}
 }
 
@@ -388,6 +392,64 @@ func (unsupportedRoutineRule) CheckStatement(ctx Context, stmt ast.Node) []Findi
 	default:
 		return nil
 	}
+}
+
+// dynamicSQLRule reports where a routine builds SQL at run time.
+//
+// This is the first thing in Ptah that READS a parsed routine body. The parser
+// has been producing `ast.PostgresRoutineBody.Statements` -- a statement list
+// with a typed Kind -- and nothing consumed it, which is what made every
+// schema-aware rule in stokaro/ptah#1270 look unreachable. It is not: PL/pgSQL's
+// EXECUTE is already its own Kind, so "analysis stops here" is decidable from
+// what the parser hands over, with no new parsing at all.
+//
+// It is the boundary #1270 asks to surface in its own words -- "does dynamic
+// SQL introduce an analysis boundary that should be surfaced?" -- and it is
+// INFO rather than a warning because a routine that composes SQL is doing
+// something legitimate. What the finding reports is the limit of what any later
+// rule can claim about that routine, not a defect in it.
+//
+// One finding per EXECUTE rather than one per routine: each is a separate place
+// the analysis stops, and each gets its own position.
+//
+// PostgreSQL only, because it is the only frontend with an execute Kind --
+// MySQL and SQL Server routine statements have no such classification, so their
+// dynamic SQL is indistinguishable from any other raw statement here.
+type dynamicSQLRule struct{}
+
+func (dynamicSQLRule) ID() string {
+	return RuleDynamicSQL
+}
+
+func (dynamicSQLRule) CheckStatement(ctx Context, stmt ast.Node) []Finding {
+	routine, ok := stmt.(*ast.PostgresRoutineNode)
+	if !ok {
+		return nil
+	}
+
+	var findings []Finding
+	for _, statement := range routine.Body.Statements {
+		if statement.Kind != ast.PostgresRoutineStatementExecute {
+			continue
+		}
+		// The statement carries no offset of its own -- it is a Kind and its
+		// raw text -- so the text is what locates it. A body running the same
+		// EXECUTE twice reports the first position twice, which is a worse
+		// position rather than a wrong claim.
+		line, column := ctx.LineColumn(statement.SQL)
+		findings = append(findings, Finding{
+			Rule:      RuleDynamicSQL,
+			Title:     "Dynamic SQL limits static analysis",
+			Severity:  SeverityInfo,
+			File:      ctx.Source.Name,
+			Line:      line,
+			Column:    column,
+			Dialect:   ctx.Dialect,
+			Message:   fmt.Sprintf("%s %s builds SQL at run time with EXECUTE", routine.Kind, routine.Name),
+			Rationale: "The statement text is not known until the routine runs, so nothing here can resolve what it reads or writes.",
+		})
+	}
+	return findings
 }
 
 func (c Context) unsupportedModeledSQLFinding(label string, offset int) Finding {

@@ -309,6 +309,9 @@ var sqlRuleMeta = map[string]ruleMeta{
 	"CAP001": {
 		Summary: "the statement needs a capability the target server version does not have",
 	},
+	"SQL003": {
+		Summary: "a routine body builds SQL at run time, so static analysis of that routine stops there",
+	},
 }
 
 // preConventionCodes pins the identifiers that predate the suffix convention.
