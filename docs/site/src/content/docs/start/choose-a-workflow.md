@@ -93,5 +93,5 @@ A common hybrid uses both: iterate with `ptah schema apply` against a disposable
 ## Where each workflow appears
 
 - The versioned lifecycle — plan, generate, apply, roll back, verify — lives in [Versioned migrations](../../versioned/overview/).
-- The direct workflow — inspect, compare and drift, apply — lives in [Direct schema changes](../../direct/inspect/), with direct application on [Apply directly](../../direct/apply/).
+- The direct workflow — inspect, compare and drift, apply — lives in [Direct schema changes](../../direct/overview/), with direct application on [Apply directly](../../direct/apply/).
 - Bringing a database that already exists into either workflow is covered in [Adopt an existing database](../adopt-an-existing-database/).

@@ -61,3 +61,32 @@
 	min-width: 632px;
 	overflow-x: visible;
 }
+
+/*
+ * A subgroup heading is a second level and has to look like one. Starlight
+ * gives every group label at every depth the same `.large` type
+ * (@astrojs/starlight/components/SidebarSublist.astro), so depth 1 and depth 2
+ * would be separated only by the 0.5rem `ul ul li` indent and its hairline.
+ * `.top-level` is on the outermost list alone, so `ul.top-level ul` is exactly
+ * the nested lists.
+ *
+ * The size steps down once per level, at both breakpoints, because Starlight
+ * itself steps down at 50rem: a group label is `--sl-text-lg` below it and
+ * `--sl-text-base` above, and a page link is unset below it and
+ * `--sl-text-sm` above. A single unconditional size would put the subgroup
+ * heading below its own links on a phone, where the sidebar is the menu.
+ *
+ * Unlayered on purpose: Starlight's own rule lives in `@layer starlight.core`,
+ * and an unlayered declaration wins over a layered one whatever its
+ * specificity.
+ */
+ul.top-level ul .group-label > .large {
+	font-size: var(--sl-text-base);
+	color: var(--sl-color-gray-2);
+}
+
+@media (min-width: 50rem) {
+	ul.top-level ul .group-label > .large {
+		font-size: var(--sl-text-sm);
+	}
+}

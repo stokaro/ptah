@@ -1,10 +1,10 @@
 ---
 title: Ptah
-description: Ptah helps you inspect, define, compare, visualize, test, and change database schemas, using versioned migrations, declarative schema changes, or both.
+description: Ptah helps you inspect, define, compare, visualize, test, and change database schemas, using versioned migrations, direct schema changes, or both.
 template: splash
 hero:
   title: Ptah
-  tagline: Ptah helps you inspect, define, compare, visualize, test, and change database schemas. Use versioned migrations, declarative schema changes, or both, across supported databases.
+  tagline: Ptah helps you inspect, define, compare, visualize, test, and change database schemas. Use versioned migrations, direct schema changes, or both, across supported databases.
   image:
     alt: Ptah logo
     file: ../../assets/logo.svg
@@ -168,10 +168,11 @@ ptah migrations up --db-url "$DATABASE_URL" --migrations-dir ./migrations
 ptah migrations status --db-url "$DATABASE_URL" --migrations-dir ./migrations
 ```
 
-### Declarative schema changes
+### Direct schema changes
 
-You own a description of the schema you want. Ptah works out the SQL that gets
-the database there, and tells you when the database has moved away from it.
+The change reaches the database now, with no migration file in between. Ptah
+works out the SQL that closes the difference, applies it once you approve the
+plan, and tells you when the database has moved away from the schema you want.
 
 ```bash
 ptah schema compare --db-url "$DATABASE_URL" --schema-file schema.sql
@@ -212,17 +213,14 @@ run the `ptah-ls` language server for annotation support in an editor.
 ## Start here
 
 <CardGrid>
-  <LinkCard title="Start" href="./start/quick-start/" description="Install Ptah, then run one of the two quick starts: versioned migration files you write and roll back, or a declarative change Ptah derives from the schema you want." />
-  <LinkCard title="Model your schema" href="./schema/work-with-a-source/" description="Describe the schema you want in SQL, YAML, HCL, DBML, an ORM loader, or Go annotations, and merge several sources into one desired schema." />
-  <LinkCard title="Direct schema changes" href="./direct/inspect/" description="Inspect a live database, compare it with the desired schema, gate on drift, and apply changes directly." />
-  <LinkCard title="Versioned migrations" href="./versioned/overview/" description="Generate, apply, roll back, verify, import, and maintain a migration directory, with checkpoints and reference data." />
-  <LinkCard title="Test and CI" href="./testing/migrations-and-schema/" description="Run declarative migration and schema tests locally, and gate pull requests in CI." />
-  <LinkCard title="Distribute and operate" href="./operate/oci-registry/" description="Publish and consume migrations and schemas through your OCI registry, apply seed data, and diagnose failures." />
-  <LinkCard title="Databases" href="./databases/support-matrix/" description="Check engine support and the PostgreSQL, MySQL/MariaDB, SQLite, and SQL Server differences that matter." />
+  <LinkCard title="Start" href="./start/quick-start/" description="Install Ptah, then run one of the two quick starts: versioned migration files you write and roll back, or a change Ptah derives from the schema you want." />
+  <LinkCard title="Versioned migrations" href="./versioned/overview/" description="Generate, apply, roll back, verify, import, and maintain a directory of timestamped SQL files that you review and commit." />
+  <LinkCard title="Direct schema changes" href="./direct/overview/" description="Inspect a live database, compare it with the desired schema, gate on drift, and apply the change without writing migration files." />
+  <LinkCard title="Schema" href="./schema/work-with-a-source/" description="Describe the schema you want in SQL, YAML, HCL, DBML, an ORM loader, or Go annotations, then validate, visualize, document, and export it." />
+  <LinkCard title="Databases" href="./databases/support-matrix/" description="Check which engines Ptah supports and how deep the support goes, and read the PostgreSQL, SQLite, and SQL Server guides." />
+  <LinkCard title="Integrations" href="./extend/public-api/" description="Embed the documented Go API, reuse parser and migrator components, and give an AI agent a schema surface to work against." />
   <LinkCard title="Atlas compatibility" href="./atlas/overview/" description="Run Atlas-style commands through the separate ptah-compat binary, and read the compatibility, conformance, and license-boundary evidence." />
-  <LinkCard title="Extend Ptah" href="./extend/public-api/" description="Embed the stable Go API, reuse parser and migrator components, and build dialect-aware queries." />
-  <LinkCard title="Concepts" href="./concepts/desired-schema-and-sources/" description="Understand desired schemas, migration directories, database URLs, dialects, and capabilities." />
-  <LinkCard title="Reference" href="./reference/native-commands/" description="Look up commands, annotation directives, configuration, schema formats, test cases, and exit codes." />
+  <LinkCard title="Concepts and reference" href="./reference/native-commands/" description="Look up a command, an annotation directive, a configuration key, a capability, a lint rule, or an exit code, and check what a term means." />
 </CardGrid>
 
 ## Choose your path

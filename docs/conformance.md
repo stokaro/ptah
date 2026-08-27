@@ -155,7 +155,7 @@ The Atlas-compatible test verbs run Ptah-native YAML/Go test cases; Atlas
 
 ### Pre-approved declarative plans
 
-**Native Ptah.** Ptah plans and applies declarative schema changes through the same `internal/atlasschema` engine that powers `schema apply`.
+**Native Ptah.** Ptah plans and applies direct schema changes through the same `internal/atlasschema` engine that powers `schema apply`.
 
 **Atlas-compatible Ptah surface.** `ptah-compat schema plan` atomically saves the computed plan in the Atlas `.plan.hcl` shape by default; an `--output` path ending in `.json` writes the native JSON plan instead, with ordered statements, per-statement safety severity, and SHA-256 source/desired schema fingerprints. `ptah-compat schema apply --plan file://<path>` reads both shapes: native JSON plans require a matching source fingerprint, while Atlas-format plans require dev-database replay against `--to` and an end-state check.
 

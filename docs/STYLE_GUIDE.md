@@ -297,6 +297,8 @@ Canonical names. Do not introduce synonyms.
 | desired schema | What the schema sources declare. Do not write "desired state" except inside the established compound for composite sources. |
 | schema source | A Go-annotation tree, YAML file, HCL file, SQL file, external loader, or live database used as input. |
 | composite desired schema | The merged result of multiple schema sources. |
+| direct schema changes | The workflow that runs a computed difference against the database with no migration file in between: `ptah schema plan`, `ptah schema apply`, `ptah schema drift`. Never "declarative schema changes". `ptah migrations generate` reads the same desired schema, so "declarative" names where a change came from, not how it lands; what separates the two workflows is whether the difference runs now or is committed as a file first. |
+| versioned migrations | The workflow that records a change as ordered `*.up.sql`/`*.down.sql` files and replays them: the `ptah migrations` tree. The peer of direct schema changes, and the other half of every "which workflow" sentence. |
 | migration directory | The versioned directory of `*.up.sql`/`*.down.sql` (or Atlas-format) files. |
 | integrity file | `ptah.sum` (native) or `atlas.sum` (Atlas-format). |
 | revision table | The database table recording applied migrations. |

@@ -104,6 +104,17 @@ needs something at the other end: a `slug:` names a page, an internal `link:`
 names a route the site publishes or a redirect `astro.config.mjs` declares.
 Either kind counts as coverage. External `link:` values are left alone.
 
+The tree is two levels: a top-level group holds subgroups, a subgroup holds
+pages. Starlight nests groups to any depth and the gate flattens whatever it
+finds, so the cap is a reading rule that review holds, as is the rule that no
+list of siblings runs much past eight. A group carries a `label` and `items`
+and nothing that navigates -- the schema has no `link` and no `slug`, and the
+heading renders as a `<summary>` rather than an `<a>` -- so a section index is
+an ordinary first item inside its own group, labeled `Overview` where the page
+title would otherwise repeat the group label. `collapsed: true` hides a
+subgroup's items until the reader opens it, and opens the group anyway
+whenever the current page is inside it.
+
 ## Brand assets
 
 Two files carry the Ptah mark, and they hold the same artwork:
