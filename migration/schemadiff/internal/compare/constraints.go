@@ -9,7 +9,7 @@ import (
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/tableref"
+	"go.5x5.cz/ptah/internal/exprkey"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
@@ -350,7 +350,7 @@ func constraintDefinitionsChanged(
 	case "EXCLUDE":
 		return excludeConstraintChanged(genConstraint, dbConstraint)
 	case "CHECK":
-		return checkConstraintChanged(genConstraint, dbConstraint, checks)
+		return checkConstraintChanged(genConstraint, dbConstraint, checks, semantics)
 	case "UNIQUE":
 		return uniqueConstraintChanged(genConstraint, dbConstraint)
 	case "PRIMARY KEY":
@@ -404,12 +404,13 @@ func checkConstraintChanged(
 	genConstraint schemamodel.Constraint,
 	dbConstraint catalog.Constraint,
 	checks map[string]config.CheckExpression,
+	semantics identifier.Semantics,
 ) bool {
 	dbClause := getStringValue(dbConstraint.CheckClause)
 	if strings.TrimSpace(genConstraint.CheckExpression) == "" || strings.TrimSpace(dbClause) == "" {
 		return false
 	}
-	if resolved, ok := resolvedCheckExpression(checks, genConstraint); ok {
+	if resolved, ok := resolvedCheckExpression(checks, genConstraint, semantics); ok {
 		return normalizeCheckExpression(resolved) != normalizeCheckExpression(dbClause)
 	}
 	if checkExpressionHasUnsupportedRewrite(genConstraint.CheckExpression, dbClause) {
@@ -427,23 +428,13 @@ func checkConstraintChanged(
 func resolvedCheckExpression(
 	checks map[string]config.CheckExpression,
 	constraint schemamodel.Constraint,
+	semantics identifier.Semantics,
 ) (string, bool) {
-	resolved, ok := checks[checkExpressionLookupKey(constraint.Table, constraint.Name)]
+	resolved, ok := checks[exprkey.Check(semantics, constraint.Table, constraint.Name)]
 	if !ok || !resolved.Resolved {
 		return "", false
 	}
 	return resolved.Expression, true
-}
-
-// checkExpressionLookupKey mirrors the key the resolver builds. The two are
-// separate functions in separate packages, which is why each one says what the
-// key is: the table's bare name, folded, and the constraint's name, folded.
-func checkExpressionLookupKey(table, name string) string {
-	bare := strings.TrimSpace(table)
-	if ref, ok := tableref.Parse(bare); ok {
-		bare = ref.Name
-	}
-	return strings.ToLower(bare) + "." + strings.ToLower(strings.TrimSpace(name))
 }
 
 // checkExpressionsOf reads the resolved map out of the options, which may be

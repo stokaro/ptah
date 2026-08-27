@@ -9,6 +9,7 @@ import (
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/internal/exprkey"
 	"go.5x5.cz/ptah/internal/normalize"
 	"go.5x5.cz/ptah/internal/rlspolicy"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
@@ -148,7 +149,7 @@ func RLSPoliciesWithSemantics(
 		if databasePolicy, policyExists := databasePolicyMap[key]; policyExists {
 			policyComparison := RLSPolicyDefinitionsWithExpressions(
 				generatedPolicy, databasePolicy,
-				policies[checkExpressionLookupKey(generatedPolicy.Table, generatedPolicy.Name)])
+				policies[exprkey.Policy(semantics, generatedPolicy.Table, generatedPolicy.Name)])
 			if len(policyComparison.Changes) > 0 {
 				diff.RLSPoliciesModified = append(diff.RLSPoliciesModified, policyComparison)
 			}

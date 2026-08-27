@@ -10,6 +10,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/internal/exprkey"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
@@ -39,7 +40,7 @@ func TestConstraints_ACheckIsComparedThroughTheServerWhenOneAnswered(t *testing.
 			name:     "the server says the declaration is what the catalog holds",
 			declared: "score BETWEEN 1 AND 10",
 			checks: map[string]config.CheckExpression{
-				"t.ck_score": {Expression: stored, Resolved: true},
+				checkKey("t", "ck_score"): {Expression: stored, Resolved: true},
 			},
 		},
 		{
@@ -47,7 +48,7 @@ func TestConstraints_ACheckIsComparedThroughTheServerWhenOneAnswered(t *testing.
 			name:     "the server says it is something else",
 			declared: "score BETWEEN 1 AND 20",
 			checks: map[string]config.CheckExpression{
-				"t.ck_score": {Expression: "((score >= 1) AND (score <= 20))", Resolved: true},
+				checkKey("t", "ck_score"): {Expression: "((score >= 1) AND (score <= 20))", Resolved: true},
 			},
 			wantAdded:  []string{"ck_score"},
 			wantRemove: []string{"ck_score"},
@@ -59,7 +60,7 @@ func TestConstraints_ACheckIsComparedThroughTheServerWhenOneAnswered(t *testing.
 			name:     "the server refused the declaration",
 			declared: "score BETWEEN 1 AND 10",
 			checks: map[string]config.CheckExpression{
-				"t.ck_score": {},
+				checkKey("t", "ck_score"): {},
 			},
 			wantAdded:  []string{"ck_score"},
 			wantRemove: []string{"ck_score"},
@@ -108,4 +109,12 @@ func checkSemantics() identifier.Semantics {
 	semantics := identifier.ForDialect(platform.Postgres)
 	semantics.DefaultSchema = "public"
 	return semantics
+}
+
+// checkKey builds a [config.CompareOptions.CheckExpressions] key the way the
+// resolver that fills that map does. The literal spelling is not part of the
+// contract -- it is an opaque identity -- so a test that wrote one by hand
+// would pin the encoding rather than the behavior.
+func checkKey(table, constraint string) string {
+	return exprkey.Check(checkSemantics(), table, constraint)
 }
