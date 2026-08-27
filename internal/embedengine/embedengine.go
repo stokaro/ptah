@@ -1,0 +1,322 @@
+// Package embedengine runs a backfill: it reads the source, canonicalizes what
+// it read, asks the provider, and commits the vectors with the checkpoint that
+// records them.
+//
+// Every part it composes already exists and is tested on its own. What this
+// package adds is the ORDER, and the order is where a resumable migration is
+// won or lost -- a checkpoint written before the vectors it claims produces a
+// resumed run that skips them, and nothing about the resumed run looks wrong
+// (stokaro/ptah#2068).
+package embedengine
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"time"
+
+	"go.5x5.cz/ptah/internal/embedgen"
+	"go.5x5.cz/ptah/internal/embedprovider"
+	"go.5x5.cz/ptah/internal/embedrun"
+	"go.5x5.cz/ptah/internal/embedstore"
+)
+
+// Source is where the rows come from.
+type Source interface {
+	// Scan returns the rows after a cursor, in key order, and the cursor to
+	// resume from.
+	//
+	// Keyset rather than offset: an offset over a table that changes during a
+	// scan taking hours silently skips and repeats rows, and neither shows up
+	// in a count.
+	Scan(ctx context.Context, after []string, limit int) (Page, error)
+}
+
+// Page is one keyset page.
+type Page struct {
+	// Rows are the source rows, in key order.
+	Rows []embedgen.Row
+	// Versions are the rows' source versions, positionally, and may be empty
+	// under a strategy that establishes none.
+	Versions []string
+	// Cursor is the key to resume after, and is what the next Scan is given.
+	Cursor []string
+	// Done reports that the scan reached the end of the snapshot. It is
+	// separate from an empty page because a filtered scan can answer with no
+	// rows and still have more to read.
+	Done bool
+}
+
+// Target is where the vectors go.
+type Target interface {
+	// Commit writes a batch's target writes AND the run that checkpoints them,
+	// in one transaction, refusing a stale fencing token.
+	//
+	// One method rather than two, because two is the bug: a caller given
+	// separate Write and Checkpoint calls will eventually make them separate
+	// transactions, and the resumed run then skips whichever half did not land.
+	// The signature is the guarantee, and it is why the engine never saves a
+	// checkpoint through the store -- a second write would be a second
+	// transaction, which is the thing this interface exists to prevent.
+	//
+	// It returns an error satisfying errors.Is(err, embedstore.ErrConflict)
+	// when another worker has taken the run over. That check belongs here
+	// rather than in the engine because it has to happen inside the same
+	// transaction: a token read before the write is a token that can go stale
+	// before the write lands.
+	Commit(ctx context.Context, writes []embedrun.TargetWrite, run embedrun.Run) error
+}
+
+// Errors a caller distinguishes.
+var (
+	// ErrAborted is a run that stopped because its context was cancelled.
+	ErrAborted = errors.New("the run was cancelled")
+	// ErrFenced is a run another worker took over.
+	ErrFenced = errors.New("the run was taken over by another worker")
+)
+
+// Engine drives one run.
+type Engine struct {
+	// Spec is what is being built.
+	Spec embedgen.Spec
+	// Source, Provider, Target and Store are what it works through.
+	Source   Source
+	Provider embedprovider.Provider
+	Target   Target
+	Store    embedstore.Store
+	// Bounds limit what one batch may hold.
+	Bounds embedrun.BatchBounds
+	// Worker names this process in the lease and in the audit trail.
+	Worker string
+	// Now supplies the clock, so a test does not have to wait and a run does
+	// not have to guess. Nil uses time.Now.
+	Now func() time.Time
+}
+
+// now answers the current time.
+func (e *Engine) now() time.Time {
+	if e.Now == nil {
+		return time.Now()
+	}
+	return e.Now()
+}
+
+// Backfill runs the scan-embed-commit loop until the source is exhausted.
+//
+// It returns the run as the store last accepted it, so a caller that stopped
+// early can see exactly how far the work got rather than how far this process
+// believed it got.
+func (e *Engine) Backfill(ctx context.Context, runID string) (embedrun.Run, error) {
+	run, err := e.Store.Run(ctx, runID)
+	if err != nil {
+		return embedrun.Run{}, fmt.Errorf("load run %s: %w", runID, err)
+	}
+	token := run.FencingToken
+
+	for {
+		if err := ctx.Err(); err != nil {
+			// Stopping is not failing. The run is durable at its last
+			// checkpoint and another process can pick it up, so this returns
+			// what is on disk rather than marking the run failed.
+			return e.reload(context.WithoutCancel(ctx), runID, errors.Join(ErrAborted, err))
+		}
+		page, err := e.Source.Scan(ctx, run.Cursor, e.Bounds.MaxRows)
+		if err != nil {
+			return e.fail(ctx, run, token, "source", err)
+		}
+		if len(page.Rows) == 0 && page.Done {
+			return run, nil
+		}
+		run, err = e.processPage(ctx, run, token, page)
+		if err != nil {
+			return run, err
+		}
+		if page.Done {
+			return run, nil
+		}
+	}
+}
+
+// processPage embeds and commits one page, batch by batch.
+func (e *Engine) processPage(
+	ctx context.Context, run embedrun.Run, token int64, page Page,
+) (embedrun.Run, error) {
+	rows, err := e.prepare(page)
+	if err != nil {
+		return e.fail(ctx, run, token, "canonicalization", err)
+	}
+	batches, err := embedrun.Assemble(rows, e.Bounds)
+	if err != nil {
+		return e.fail(ctx, run, token, "batching", err)
+	}
+	for _, batch := range batches {
+		run, err = e.commitBatch(ctx, run, token, batch)
+		if err != nil {
+			return run, err
+		}
+	}
+	return run, nil
+}
+
+// prepare canonicalizes a page's rows and hashes their inputs.
+func (e *Engine) prepare(page Page) ([]embedrun.BatchRow, error) {
+	rows := make([]embedrun.BatchRow, 0, len(page.Rows))
+	for index, row := range page.Rows {
+		input, err := e.Spec.Canonicalize(row)
+		if err != nil {
+			return nil, fmt.Errorf("canonicalize row %v: %w", row.Key, err)
+		}
+		rows = append(rows, embedrun.BatchRow{
+			Key:        row.Key,
+			Input:      input.Text,
+			Version:    versionAt(page.Versions, index),
+			InputHash:  e.Spec.SourceInputHash(input),
+			Skipped:    input.Skipped,
+			SkipReason: input.SkipReason,
+		})
+	}
+	return rows, nil
+}
+
+// versionAt reads a row's version, tolerating a strategy that establishes none.
+func versionAt(versions []string, index int) string {
+	if index >= len(versions) {
+		return ""
+	}
+	return versions[index]
+}
+
+// commitBatch embeds one batch and commits it with its checkpoint.
+//
+// The order is the whole point of the package: embed, then write the vectors
+// and the checkpoint together, then record the event. A checkpoint that moved
+// first would leave a resumed run past rows nothing embedded.
+func (e *Engine) commitBatch(
+	ctx context.Context, run embedrun.Run, token int64, batch embedrun.Batch,
+) (embedrun.Run, error) {
+	writes, outcome, err := e.embed(ctx, batch)
+	if err != nil {
+		return e.fail(ctx, run, token, "provider", err)
+	}
+	if err := run.Checkpoint(token, outcome); err != nil {
+		return run, fmt.Errorf("checkpoint: %w", err)
+	}
+	run.UpdatedAt = e.now()
+
+	if err := e.Target.Commit(ctx, writes, run); err != nil {
+		if errors.Is(err, embedstore.ErrConflict) {
+			// Another worker holds the run. This one's transaction did not
+			// land, and what it must not do is keep going.
+			return e.reload(ctx, run.ID, ErrFenced)
+		}
+		// The vectors and the checkpoint were one transaction, so neither
+		// landed. The in-memory run has already advanced past them, which is
+		// why the store's copy is what gets reloaded rather than trusted here.
+		return e.fail(ctx, run, token, "target", err)
+	}
+	if err := e.Store.AppendEvent(ctx,
+		embedrun.NewEvent(&run, embedrun.EventCheckpoint, e.Worker, "")); err != nil {
+		return run, fmt.Errorf("append event: %w", err)
+	}
+	return run, nil
+}
+
+// embed asks the provider for one batch and turns the answer into writes.
+func (e *Engine) embed(
+	ctx context.Context, batch embedrun.Batch,
+) ([]embedrun.TargetWrite, embedrun.BatchOutcome, error) {
+	inputs, embedded := embeddableInputs(batch)
+	var result embedprovider.Result
+	if len(inputs) > 0 {
+		answered, err := e.Provider.Embed(ctx, inputs)
+		if err != nil {
+			return nil, embedrun.BatchOutcome{}, err
+		}
+		if err := embedprovider.ValidateResult(answered, len(inputs), e.Spec.Model.ReportedDimension); err != nil {
+			return nil, embedrun.BatchOutcome{}, err
+		}
+		result = answered
+	}
+
+	writes := make([]embedrun.TargetWrite, 0, len(batch.Rows))
+	generation := e.Spec.Identity().Digest
+	position := 0
+	for _, row := range batch.Rows {
+		write := embedrun.TargetWrite{
+			Key: row.Key, Generation: generation, InputHash: row.InputHash, Version: row.Version,
+		}
+		if row.Skipped {
+			write.Kind = embedrun.WriteSkip
+			write.SkipReason = row.SkipReason
+			writes = append(writes, write)
+			continue
+		}
+		write.Kind = embedrun.WriteUpsert
+		write.Vector = result.Vectors[position]
+		position++
+		writes = append(writes, write)
+	}
+
+	outcome := embedrun.BatchOutcome{
+		Cursor:           batch.Rows[len(batch.Rows)-1].Key,
+		RowsScanned:      int64(len(batch.Rows)),
+		RowsEmbedded:     int64(embedded),
+		RowsSkipped:      int64(len(batch.Rows) - embedded),
+		PromptTokens:     int64(result.Usage.PromptTokens),
+		TotalTokens:      int64(result.Usage.TotalTokens),
+		TargetCommitted:  true,
+		DeletesCommitted: true,
+	}
+	return writes, outcome, nil
+}
+
+// embeddableInputs collects the texts a provider is actually asked about.
+//
+// A skipped row is not sent. It still travels in the batch and still produces a
+// write, because verification reads a skip as a deliberate gap rather than as
+// missing coverage -- dropping it here would make it indistinguishable from a
+// row nobody got to.
+func embeddableInputs(batch embedrun.Batch) ([]string, int) {
+	inputs := make([]string, 0, len(batch.Rows))
+	for _, row := range batch.Rows {
+		if row.Skipped {
+			continue
+		}
+		inputs = append(inputs, row.Input)
+	}
+	return inputs, len(inputs)
+}
+
+// fail records why a run stopped and returns what the store holds.
+func (e *Engine) fail(
+	ctx context.Context, run embedrun.Run, token int64, class string, cause error,
+) (embedrun.Run, error) {
+	// The run in hand may have advanced past what was committed, so the failure
+	// is recorded against a fresh copy: marking the in-memory one failed and
+	// saving it would persist a cursor whose work never landed.
+	stored, err := e.Store.Run(ctx, run.ID)
+	if err != nil {
+		return run, errors.Join(cause, fmt.Errorf("reload run %s: %w", run.ID, err))
+	}
+	if err := stored.Fail(token, class, cause.Error()); err != nil {
+		return stored, errors.Join(cause, err)
+	}
+	stored.UpdatedAt = e.now()
+	if err := e.Store.SaveRun(ctx, stored); err != nil {
+		return stored, errors.Join(cause, err)
+	}
+	if err := e.Store.AppendEvent(ctx,
+		embedrun.NewEvent(&stored, embedrun.EventFailed, e.Worker, cause.Error())); err != nil {
+		return stored, errors.Join(cause, err)
+	}
+	return stored, fmt.Errorf("%s: %w", class, cause)
+}
+
+// reload returns what the store holds, with the reason the loop stopped.
+func (e *Engine) reload(ctx context.Context, runID string, cause error) (embedrun.Run, error) {
+	stored, err := e.Store.Run(ctx, runID)
+	if err != nil {
+		return embedrun.Run{}, errors.Join(cause, err)
+	}
+	return stored, cause
+}
