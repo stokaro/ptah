@@ -75,7 +75,13 @@ func documentationFiles(root string) ([]string, error) {
 		if extension != ".md" && extension != ".mdx" {
 			return nil
 		}
-		paths = append(paths, path)
+		// ToSlash, because this string is the page's IDENTITY, not a handle:
+		// pages are ordered by it and every diagnostic prints it. Left native,
+		// `\` sorts before `/` and the discovery order, the floors' messages
+		// and the runner's output all differ between Windows and everywhere
+		// else. Windows accepts a forward slash in a file path, so opening it
+		// afterwards is unaffected.
+		paths = append(paths, filepath.ToSlash(path))
 		return nil
 	})
 	return paths, err
