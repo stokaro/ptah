@@ -455,7 +455,7 @@ func runRetire(ctx context.Context, out io.Writer, options retireOptions) error 
 	decision := embedcutover.DecideRetirement(plan, state, observed,
 		retirementApproval(plan, options), opened.loaded.Policy)
 	if !decision.Allowed {
-		_ = writeLines(out, fmt.Sprintf("plan %s (%d rows)", plan.Short(), rows))
+		_ = writeLines(out, retirementContext(plan, state, rows)...)
 		return refusal(out, "retirement refused", decision.Blockers)
 	}
 
@@ -472,6 +472,30 @@ func runRetire(ctx context.Context, out io.Writer, options retireOptions) error 
 	}
 	return writeLines(out, fmt.Sprintf("generation %s is gone, with %d vectors",
 		options.generation, rows))
+}
+
+// retirementContext says what was measured, beside what was decided.
+//
+// The rollback dependency is the line worth printing even when it does not
+// block. A generation the pointer records as somebody's way back, whose way
+// back is not currently eligible, is a fact an operator is about to act on:
+// destroying it is fine today and would not have been last week, and the
+// difference is not in the refusal.
+func retirementContext(
+	plan embedcutover.RetirementPlan, state embedcutover.RetirementState, rows int,
+) []string {
+	lines := []string{fmt.Sprintf("plan %s (%d rows)", plan.Short(), rows)}
+	if state.IsRollbackTargetFor == "" {
+		return lines
+	}
+	if state.RollbackEligible {
+		return append(lines, bullet(fmt.Sprintf(
+			"generation %q records this as its way back, and that way back is still eligible",
+			state.IsRollbackTargetFor)))
+	}
+	return append(lines, bullet(fmt.Sprintf(
+		"generation %q records this as its way back, and that way back is no longer eligible, "+
+			"so nothing here preserves it", state.IsRollbackTargetFor)))
 }
 
 // retirementFacts reads what is true about a generation somebody wants gone.

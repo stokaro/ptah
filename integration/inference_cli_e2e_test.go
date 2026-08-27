@@ -72,6 +72,27 @@ func TestInferenceCLIE2E(t *testing.T) {
 	assertACutoverIsRefusedWhenTheSourceHasMovedOn(c, ctx, db, specPath, dbName)
 	assertACutoverIsRefusedWhenSomebodyElseMovedThePointer(c, ctx, db, specPath, dbName)
 	assertAnUnmaintainedPreviousGenerationBlocksNothing(c, ctx, db, specPath, dbName)
+	assertCatchUpRefusesAModeThatRecordsNothing(c, ctx, endpoint.URL, dbName)
+}
+
+// assertCatchUpRefusesAModeThatRecordsNothing is structural absence rather than
+// a silent no-op.
+//
+// A catch-up that "succeeded" over a mode recording no changes is a run
+// reporting itself caught up on a source it never watched -- and the cutover
+// that follows would rest on it.
+func assertCatchUpRefusesAModeThatRecordsNothing(
+	c *qt.C, ctx context.Context, endpointURL, dbURL string,
+) {
+	c.Helper()
+	specPath := writeCLISpecWithMode(c, endpointURL, "immutable")
+
+	output, err := runInferenceExpectingFailure(c, ctx, "catchup",
+		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID)
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(output+err.Error(), qt.Contains,
+		`catch-up needs a consistency mode that records changes, and this specification selects "immutable"`)
 }
 
 // assertAnUnmaintainedPreviousGenerationBlocksNothing records where this build
@@ -121,6 +142,14 @@ func assertAnUnmaintainedPreviousGenerationBlocksNothing(
 	// dependency that would not survive being relied on.
 	c.Assert(output, qt.Contains, "this policy requires an approval and none was given")
 	c.Assert(output, qt.Not(qt.Contains), "can still be rolled back to this one")
+	// The dependency is measured and reported even though it blocks nothing.
+	// An operator about to destroy this needs to know it was somebody's way
+	// back and that the way back had already stopped working -- destroying it
+	// is fine today and would not have been last week, and the difference is
+	// not in the refusal.
+	c.Assert(output, qt.Contains,
+		`generation "the-newer-one" records this as its way back, and that way back is `+
+			`no longer eligible, so nothing here preserves it`)
 }
 
 // assertACutoverIsRefusedWhenTheSourceHasMovedOn is the verification result
@@ -224,6 +253,12 @@ func seedCLIArticles(c *qt.C, ctx context.Context, db *sql.DB) {
 // writeCLISpec writes the specification file the verbs are given.
 func writeCLISpec(c *qt.C, endpoint string) string {
 	c.Helper()
+	return writeCLISpecWithMode(c, endpoint, "outbox")
+}
+
+// writeCLISpecWithMode writes one with a chosen consistency mode.
+func writeCLISpecWithMode(c *qt.C, endpoint, mode string) string {
+	c.Helper()
 	document := fmt.Sprintf(`
 version: 1
 name: cli articles
@@ -256,11 +291,11 @@ target:
   representation: vector
   metric: cosine
 consistency:
-  mode: outbox
+  mode: %s
 policy:
   require_exact_approval: true
   require_consistency_mode: true
-`, endpoint)
+`, endpoint, mode)
 	path := filepath.Join(c.TempDir(), "spec.yaml")
 	c.Assert(os.WriteFile(path, []byte(document), 0o600), qt.IsNil)
 	return path
