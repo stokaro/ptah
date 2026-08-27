@@ -1092,7 +1092,7 @@ hide a partial rollback behind a clean applied row.
 
 ## Integration with Ptah
 
-The migrator integrates seamlessly with Ptah's existing infrastructure:
+The migrator builds on the rest of Ptah:
 
 - Uses Ptah's dbschema package for database connections
 - Supports the databases listed under Multiple Database Support above

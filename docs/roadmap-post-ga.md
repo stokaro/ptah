@@ -32,10 +32,9 @@ live projection of the issue tracker.
 
 The README states what Ptah claims to be:
 
-> Ptah is a schema and migration toolkit for Go projects. It can read annotated
-> Go models, YAML schema files, supported HCL schema files, and live databases;
-> render SQL; plan and run migrations; and validate migration hashes. A separate
-> `ptah-compat` binary is a drop-in replacement for the Atlas CLI.
+> Ptah helps you inspect, define, compare, visualize, test, and change database
+> schemas. Use versioned migrations, declarative schema changes, or both, across
+> supported databases.
 
 Every open issue was measured against one question: **does Ptah, as it
 advertises itself today, do something wrong or misleading without this?**

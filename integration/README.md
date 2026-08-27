@@ -1,6 +1,6 @@
 # Ptah Migration Library Integration Tests
 
-This directory contains comprehensive integration tests for the Ptah migration library. The tests validate migration functionality across PostgreSQL-family targets, MySQL, MariaDB, ClickHouse, and SQL Server.
+This directory contains the integration tests for the Ptah migration library. The tests validate migration functionality across PostgreSQL-family targets, MySQL, MariaDB, ClickHouse, and SQL Server.
 
 ## Overview
 

@@ -21,13 +21,14 @@ stdin and stdout.
 This is not a command to run by hand: an MCP client starts it and speaks the
 protocol to it. Point one at the Ptah binary with "mcp" as the argument.
 
-Without --workspace it serves five reading tools and nothing else. None of them
+Without --workspace it serves six reading tools and nothing else. None of them
 applies a migration, writes a file, or changes a database:
 
   describe_session  what this session may do and what it can reach
   validate_schema   structural problems in a declared schema, no database
   render_schema     the DDL a declared schema becomes, in dependency order
   schema_lineage    which base columns feed each view column
+  search_docs       what Ptah's own documentation says, with its source
   read_database     the schema a configured database currently holds
 
 Every one of them asks the capability policy first. A session always has a

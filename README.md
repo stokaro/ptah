@@ -1,207 +1,238 @@
 # Ptah
 
-Some systems are built to carry the weight of the world as it already exists.
+Ptah helps you inspect, define, compare, visualize, test, and change database
+schemas. Use versioned migrations, declarative schema changes, or both, across
+supported databases.
 
-Ptah begins from a different premise: infrastructure should not merely bear
-complexity, but shape it. Named after the ancient Egyptian god of architects and
-craftsmen, Ptah turns intent into structure through four deliberate stages:
-**Parse, Transform, Apply, Harmonize**.
+The CLI runs on its own and needs no Go toolchain. The
+[database support matrix](docs/site/src/content/docs/databases/support-matrix.md)
+lists every engine Ptah supports, the dialect name and URL scheme each one uses,
+and how deep the support goes.
 
-It is built to understand the current state, reshape it with precision, apply
-change safely, and bring systems into alignment — without inheriting more weight
-than necessary.
+## Two ways to change a schema
+
+| Workflow | You write | Entry commands |
+| --- | --- | --- |
+| Versioned migrations | Numbered SQL files kept in version control | `ptah migrations generate`, `ptah migrations up` |
+| Declarative schema changes | The schema you want, as SQL, YAML, HCL, or DBML | `ptah schema plan`, `ptah schema apply` |
+
+The two combine. One command reads a declarative schema source, compares it with
+a live database, and writes the difference as a reversible migration pair:
+
+```bash
+ptah migrations generate --db-url "sqlite://app.db" --schema-file schema.sql \
+  --migrations-dir ./migrations --name create_users
+```
+
+[Choose a workflow](docs/site/src/content/docs/start/choose-a-workflow.md)
+compares them in detail.
 
 ## What Ptah does
 
-Ptah is a schema and migration toolkit for Go projects. It can read annotated Go
-models, YAML schema files, supported HCL schema files, and live databases;
-render SQL; plan and run migrations; and validate migration hashes. A separate
-`ptah-compat` binary is a drop-in replacement for the Atlas CLI.
+Ptah is published under the MIT license. Migration integrity, deterministic
+planning, drift detection, approvals, advisory locking on the engines that
+provide it, recovery, testing, and artifact distribution are all part of the same
+open-source project. Deterministic means that the same inputs produce the same
+SQL on every run.
 
-## Independent implementation under European law
+| Capability | Native commands |
+| --- | --- |
+| Migration integrity | `ptah migrations hash`, `ptah migrations validate`, and `--verify-sum` on the verbs that execute |
+| Deterministic planning | `ptah schema render`, `ptah schema plan`, `ptah migrations plan` |
+| Drift detection | `ptah schema drift`, `ptah schema compare` |
+| Approvals | `ptah schema approve`, `ptah schema verify-approval` |
+| Advisory locking | `--lock-timeout` on `ptah schema apply`, `--migration-lock-timeout` on the migration verbs |
+| Recovery | `ptah migrations down`, `ptah migrations repair`, `ptah migrations rebase`, `ptah migrations baseline` |
+| Testing | `ptah schema test`, `ptah migrations test` |
+| Artifact distribution | `ptah oci`, `ptah schema push`, `ptah schema pull`, `ptah migrations push`, `ptah migrations pull` |
+| Documentation and diagrams | `ptah schema export --to markdown`, `ptah schema export --to html` |
 
-Ptah is developed in the Czech Republic under Czech and European Union law,
-including [Directive 2009/24/EC](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32009L0024)
-on the legal protection of computer programs.
+Not every engine provides every capability. Advisory locking is the clearest
+example: on an engine without it, Ptah reports that the lock flag is ignored
+rather than pretending the lock was taken. Run
+`ptah db capabilities --db-url <url>` to see what Ptah resolves for one server.
 
-Ptah is an independent project, not affiliated with or endorsed by Ariga.
+## Install
 
-Ptah is an original, independent implementation. It does not reverse engineer
-proprietary implementations: it does not decompile or disassemble proprietary
-binaries, access proprietary source code, or copy protected implementation
-expression from Atlas or any other product. The Ptah implementation includes
-no third-party product code, including Atlas code. External implementation code
-enters the project only through dependencies explicitly declared in repository
-manifests.
+The released archives carry `ptah`, `ptah-compat`, and `ptah-ls` for Linux,
+macOS, and Windows on both `amd64` and `arm64`. On Linux and macOS:
 
-Compatibility work is limited to public interfaces, documentation, properly
-licensed assets, and external behavior lawfully observed while using software
-under a valid right to use it. Subject to applicable law and without copying
-protected expression, Ptah reserves the right to independently reimplement the
-interface of any application to provide a free and open-source alternative.
+```bash
+VERSION="$(curl -sSL https://api.github.com/repos/stokaro/ptah/releases/latest \
+  | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')"
+OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
+ARCH="$(uname -m)"
+[ "$ARCH" = "x86_64" ] && ARCH=amd64
+[ "$ARCH" = "aarch64" ] && ARCH=arm64
+ARCHIVE="ptah_${VERSION#v}_${OS}_${ARCH}.tar.gz"
 
-This position rests in particular on:
+cd "$(mktemp -d)"
+curl -sSLO "https://github.com/stokaro/ptah/releases/download/${VERSION}/${ARCHIVE}"
+curl -sSLO "https://github.com/stokaro/ptah/releases/download/${VERSION}/checksums.txt"
+sha256sum --ignore-missing -c checksums.txt
 
-- Articles 1(2), 5(3), and 8 of Directive 2009/24/EC. They distinguish protected
-  expression from the ideas and principles underlying a program and its
-  interfaces, permit an authorized user to observe, study, and test program
-  behavior, and make contrary contractual terms null and void.
-- [Sections 65 and 66 of Czech Act No. 121/2000 Coll.](https://e-sbirka.gov.cz/sb/2000/121),
-  including Section 66(1)(d), which implements the right to study and test a
-  computer program's functionality.
-- [*SAS Institute Inc. v World Programming Ltd.*, C-406/10](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:62010CJ0406),
-  where the Court of Justice of the European Union held that program
-  functionality, programming languages, and data file formats are not protected
-  forms of program expression, and confirmed the licensed user's right to
-  observe, study, and test program behavior.
-
-Atlas-derived Apache-2.0 fixture material remains in the separate
-[`stokaro/ptah-atlas-conformance`](https://github.com/stokaro/ptah-atlas-conformance)
-repository so this MIT-licensed source tree stays implementation-clean:
-
-```text
-ptah-atlas-conformance -> ptah
-ptah                  !-> ptah-atlas-conformance
+tar -xzf "$ARCHIVE"
+sudo install -m 0755 ptah ptah-compat ptah-ls /usr/local/bin/
+ptah version
 ```
 
-Legal questions concerning Ptah's development and compatibility work should be
-addressed under Czech and European Union law. This section records the project's
-development and provenance policy; it is not legal advice. See the detailed
-[license boundary](docs/site/src/content/docs/atlas/license-boundary.md).
+The archive has no top-level directory, which is why the binaries are installed
+one by one instead of unpacked straight into `/usr/local/bin`. On a macOS
+without GNU coreutils, the checksum spelling is
+`shasum -a 256 --ignore-missing -c checksums.txt`.
 
-Ptah is pre-GA. The native command tree is still allowed to change when a cleaner
-architecture is better.
+The [install guide](docs/site/src/content/docs/start/install.md) covers Windows,
+signature verification, and the extra step a browser download needs on macOS.
 
-## Start Here
+To install through the Go toolchain instead:
 
-| Need | Read |
-| --- | --- |
-| First successful local run | [Quick start](docs/site/src/content/docs/start/quick-start.md) |
-| Application-owned Go schema | [Go annotations](docs/site/src/content/docs/schema/go-annotations.md) |
-| SQL, YAML, HCL, or external desired schema | [YAML](docs/site/src/content/docs/schema/yaml.md), [HCL](docs/site/src/content/docs/schema/hcl.md), and [SQL](docs/site/src/content/docs/schema/sql.md) schema pages |
-| ORM-owned desired schema | [ORM and external loaders](docs/site/src/content/docs/schema/orm-and-external.md) |
-| Compose one schema from several packages or files | [Composite desired schema](docs/site/src/content/docs/schema/composite.md) |
-| Migration operations | [Versioned migrations](docs/site/src/content/docs/versioned/overview.md) |
-| Publish or consume migrations and schemas through OCI | [OCI registry artifacts](docs/site/src/content/docs/operate/oci-registry.md) |
-| Test migrations or a desired schema | [Test migrations and schemas](docs/site/src/content/docs/testing/migrations-and-schema.md) |
-| Atlas-compatible CLI paths | [Atlas compatibility overview](docs/site/src/content/docs/atlas/overview.md) |
-| Reusable Go packages | [Reusable components](docs/site/src/content/docs/extend/components.md) |
-| CI setup | [CI](docs/site/src/content/docs/testing/ci.md) |
-| Command and feature comparison | [Comparison](docs/site/src/content/docs/atlas/comparison.md) |
-| Dialect behavior | [Capabilities](docs/site/src/content/docs/reference/capabilities.md) |
-| Problems during use | [Troubleshooting](docs/site/src/content/docs/operate/troubleshooting.md) |
+```bash
+go install go.5x5.cz/ptah/cmd/ptah@latest
+go install go.5x5.cz/ptah/cmd/ptah-compat@latest
+go install go.5x5.cz/ptah/cmd/ptah-ls@latest
+```
 
-The documentation site source lives in [`docs/site`](docs/site). It is built
-with Astro + Starlight, following the same versioned-site structure used by the
-Inventario documentation.
-
-## Install Or Build
-
-From a checkout:
+To build from a checkout:
 
 ```bash
 GOWORK=off go build -o ./bin/ptah ./cmd/ptah
 ./bin/ptah version
-
-GOWORK=off go build -o ./bin/ptah-compat ./cmd/ptah-compat
-./bin/ptah-compat migrate --help
 ```
 
-From Go modules:
+Ptah is pre-GA. The native command tree can still change.
+
+## A minimal example
+
+Save the schema you want as `schema.sql`. Any of the supported source formats
+works here; this one is plain SQL:
+
+```sql
+CREATE TABLE users (
+    id INTEGER PRIMARY KEY,
+    email TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL
+);
+```
+
+See the SQL Ptah would run against SQLite:
 
 ```bash
-go install go.5x5.cz/ptah/cmd/ptah@latest
-ptah version
-
-go install go.5x5.cz/ptah/cmd/ptah-compat@latest
-ptah-compat migrate --help
+ptah schema render --schema-file schema.sql --dialect sqlite
 ```
 
-## Minimal Example
-
-```go
-package models
-
-//ptah:schema:table name="users"
-type User struct {
-	//ptah:schema:field name="id" type="SERIAL" primary="true"
-	ID int
-
-	//ptah:schema:field name="email" type="TEXT" unique="true" not_null="true"
-	Email string
-}
+```sql
+-- Statement 1/1
+CREATE TABLE "users" (
+  "id" INTEGER PRIMARY KEY,
+  "email" TEXT NOT NULL UNIQUE,
+  "created_at" TEXT NOT NULL
+);
 ```
+
+Ptah writes the payload to standard output and progress messages to standard
+error, so the block above is what a pipe receives.
+
+Apply it to a database:
 
 ```bash
-ptah schema render --root-dir ./models --dialect postgres
-ptah migrations plan --root-dir ./models --db-url "$DATABASE_URL"
-ptah migrations hash --dir ./migrations
-ptah migrations validate --dir ./migrations
-ptah migrations up --db-url "$DATABASE_URL" --migrations-dir ./migrations --verify-sum
+ptah schema apply --db-url "sqlite://app.db" --schema-file schema.sql --auto-approve
 ```
 
-For a complete copy-pasteable SQLite run, use the
-[quick start](docs/site/src/content/docs/start/quick-start.md).
+```text
+Planned schema changes:
+CREATE TABLE "users" (
+  "id" INTEGER PRIMARY KEY,
+  "email" TEXT NOT NULL UNIQUE,
+  "created_at" TEXT NOT NULL
+);
+Auto-approval enabled; applying schema changes.
+Schema apply completed successfully.
+```
 
-## Command Surfaces
+Confirm that the database matches the file. This command exits 0 when they agree
+and 1 when they do not, so it also works as a CI gate:
 
-Ptah has two CLI surfaces:
+```bash
+ptah schema drift --db-url "sqlite://app.db" --schema-file schema.sql
+```
 
-- Native Ptah commands in the `ptah` binary, such as `ptah schema render`,
-  `ptah db read`, `ptah migrations up`, and `ptah viz`.
-- Atlas-compatible commands in the separate `ptah-compat` binary, such as
-  `migrate apply` and `schema inspect`.
+```text
+No schema drift detected.
+```
 
-The `ptah-compat` binary is the binary-level drop-in replacement for scripts
-that need Atlas-style root commands, invoked as `ptah-compat <command> ...`.
-The main `ptah` binary has no Atlas command paths.
+Remove the database when you are done:
 
-By default, `ptah-compat` retains the Atlas Pro-like and best-effort
-capabilities Ptah implements. Set `PTAH_ATLAS_STRICT_COMPAT=1` only for Atlas
-Community Edition reference or conformance runs. Strict mode presents the pinned
-CE command and flag surface and refuses richer authored content rather than
-discarding it. It also refuses a live Pro-only object before an inspect,
-apply, diff, or clean run could omit, miscompare, or destroy it.
+```bash
+rm app.db
+```
 
-Strict schema workflows refuse YAML sources and an apply lint policy that the CE path cannot enforce. Commands
-that execute, convert, or replay migration bodies refuse Atlas txtar, Ptah
-directives, and SQL templates. Checksum-only migration reads preserve the
-bytes. Strict-only command gates use a Ptah diagnostic that tells the operator
-to unset the selector; they never direct the operator to install Atlas. Default
-mode keeps all of those Ptah extensions. See
-[Atlas compatibility overview](docs/site/src/content/docs/atlas/overview.md#strict-community-edition-mode).
+## Documentation
 
-Do not use root-level Atlas spellings such as `ptah migrate apply`; those
-paths are intentionally absent from the native `ptah` binary, whose migration
-verbs live under `ptah migrations ...`.
+| I want to | Read |
+| --- | --- |
+| Install the CLI | [Install](docs/site/src/content/docs/start/install.md) |
+| Run my first migration | [Quick start](docs/site/src/content/docs/start/quick-start.mdx) |
+| Decide between the two workflows | [Choose a workflow](docs/site/src/content/docs/start/choose-a-workflow.md) |
+| Bring a database Ptah did not create under management | [Adopt an existing database](docs/site/src/content/docs/start/adopt-an-existing-database.mdx) |
+| Generate, apply, verify, and roll back migrations | [Versioned migrations](docs/site/src/content/docs/versioned/overview.md) |
+| Inspect a live database and apply a desired schema to it | [Inspect](docs/site/src/content/docs/direct/inspect.md), [Compare and drift](docs/site/src/content/docs/direct/compare-and-drift.md), [Apply](docs/site/src/content/docs/direct/apply.md) |
+| Write the schema in SQL, YAML, HCL, DBML, or an external loader | [Work with a schema source](docs/site/src/content/docs/schema/work-with-a-source.mdx) |
+| Document or visualize a schema | [Export a schema](docs/site/src/content/docs/schema/export.md), [Visualize a schema](docs/site/src/content/docs/schema/visualize.md) |
+| Test schemas and migrations, and gate a pull request | [Test migrations and schemas](docs/site/src/content/docs/testing/migrations-and-schema.md), [CI](docs/site/src/content/docs/testing/ci.md) |
+| Publish or consume artifacts through an OCI registry | [OCI registry artifacts](docs/site/src/content/docs/operate/oci-registry.md) |
+| Check engine support and dialect differences | [Database support matrix](docs/site/src/content/docs/databases/support-matrix.md), [Capabilities](docs/site/src/content/docs/reference/capabilities.mdx) |
+| Look up a command, a format, or an exit code | [Native commands](docs/site/src/content/docs/reference/native-commands.md), [Exit codes](docs/site/src/content/docs/reference/exit-codes.md) |
+| Diagnose a failure | [Troubleshooting](docs/site/src/content/docs/operate/troubleshooting.md) |
 
-See the [native CLI command reference](docs/site/src/content/docs/reference/native-commands.md) and
-[Atlas compatibility overview](docs/site/src/content/docs/atlas/overview.md).
+The site source lives in [`docs/site`](docs/site) and is built with Astro and
+Starlight.
 
-## Atlas Compatibility Status
+## Go integration
 
-Ptah is working toward Atlas OSS compatibility, but this repository does not
-claim full Atlas parity until the conformance gates prove it.
+The CLI needs no Go toolchain. Go projects can also embed Ptah through its
+documented Go packages, use Go annotations as one of the schema sources, and run
+the `ptah-ls` language server for annotation support in an editor.
 
-The current Atlas compatibility evidence lives in the separate
+- [Public Go API](docs/site/src/content/docs/extend/public-api.md)
+- [Reusable components](docs/site/src/content/docs/extend/components.md)
+- [Go annotations](docs/site/src/content/docs/schema/go-annotations.md)
+
+## Atlas compatibility
+
+A separate `ptah-compat` binary presents an Atlas-compatible command surface for
+scripts written against the Atlas CLI, invoked as `ptah-compat <command> ...`.
+The native `ptah` binary has no Atlas command paths; its migration verbs live
+under `ptah migrations`. The two binaries share capabilities, not command lines.
+
+Ptah does not claim full Atlas parity. The evidence lives in the separate
 [`stokaro/ptah-atlas-conformance`](https://github.com/stokaro/ptah-atlas-conformance)
-repository. That repo owns the regenerated reports:
+repository. The
+[Atlas compatibility overview](docs/site/src/content/docs/atlas/overview.md)
+explains what the surface covers and where it differs, and
+[Conformance](docs/site/src/content/docs/atlas/conformance.mdx) summarizes the
+current measurements.
 
-- [`gaps.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/gaps.md)
-- [`gaps-live.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/gaps-live.md)
-- [`gaps-diff.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/gaps-diff.md)
-- [`gaps-orm-providers.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/gaps-orm-providers.md)
-- [`PARITY.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/PARITY.md)
+## License and provenance
 
-See [Conformance](docs/site/src/content/docs/atlas/conformance.md).
+Ptah is published under the [MIT license](LICENSE). It is an independent
+implementation that does not use Atlas source code and is not affiliated with or
+endorsed by Ariga. The
+[license boundary](docs/site/src/content/docs/atlas/license-boundary.md) page
+records the provenance policy and its legal basis. `ptah license` prints the
+license and attribution from the binary itself.
 
-## Existing References
+## The name
 
-The docs site is the human-facing entrypoint. Repository-level Markdown files
-remain only where they provide contributor or implementation detail beyond the
-site:
+Ptah is the Egyptian god of architects and craftsmen. The name also spells the
+four stages a schema change moves through: **Parse** a schema source,
+**Transform** it into statements for one dialect, **Apply** the change, and
+**Harmonize** the database with the schema you declared.
 
-- [Native CLI command reference](docs/site/src/content/docs/reference/native-commands.md)
+## Repository references
+
+The site is the reader-facing entry point. These files carry contributor or
+implementation detail beyond it:
+
 - [OCI registry artifacts](docs/oci_registry.md)
 - [Project configuration](docs/project_config.md)
 - [Atlas project config subset](docs/atlas_project_config.md)
@@ -213,17 +244,15 @@ site:
 - [GitHub Action](docs/github_action.md)
 - [System design](docs/system_design.md)
 
-## Examples
+Runnable examples: [schema visualization](examples/viz),
+[embedded migrator](examples/migrator), and
+[annotation parser](examples/annotation_parser).
 
-- [Schema visualization example](examples/viz)
-- [Embedded migrator example](examples/migrator)
-- [Parser example](examples/annotation_parser)
-
-## Build The Documentation Site
+## Build the documentation site
 
 ```bash
 cd docs/site
-npm install
+npm ci
 npm run build
 ```
 

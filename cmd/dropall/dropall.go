@@ -34,12 +34,24 @@ func NewDropAllCommand() *cobra.Command {
 	opts := options{}
 	cmd := &cobra.Command{
 		Use:   "drop-all",
-		Short: "Drop ALL tables and enums in database (VERY DANGEROUS!)",
-		Long: `Drop ALL tables and enums from the database, not just those defined in Go entities.
+		Short: "Drop every schema object in a live database (VERY DANGEROUS!)",
+		Long: `Drop every schema object the target database holds.
 
-🚨 EXTREME WARNING: This operation will permanently delete EVERYTHING in the database!
-This will delete ALL tables and enums, including those not defined in your Go entities.
-ALL DATA WILL BE LOST!`,
+🚨 EXTREME WARNING: this cannot be undone, and ALL DATA WILL BE LOST.
+
+The scope is the database, not a schema Ptah declares. Objects Ptah never
+created are dropped along with the ones it did. Which kinds go depends on the
+dialect: tables everywhere, and views, materialized views, enums, types,
+functions, sequences and foreign keys where that dialect's writer removes them.
+Where Ptah's own revision table is an ordinary table it goes too, so a later
+"ptah migrations up" replays the whole migration history.
+
+Run --dry-run first. It connects, reports how many objects would be dropped,
+and changes nothing.
+
+Without --dry-run the command asks for two confirmations before it proceeds.
+--auto-approve skips both, and it is the one flag here with no PTAH_* variable,
+so no environment can turn the prompts off by accident.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return dropAllCommand(cmd, &opts)
 		},
@@ -105,8 +117,8 @@ func dropAllCommand(cmd *cobra.Command, opts *options) error {
 	// 2. Show extreme warning and ask for confirmation (skip confirmation in dry run or auto-approve mode)
 	switch {
 	case opts.dryRun:
-		fmt.Fprintln(out, "[DRY RUN] This would permanently delete ALL tables and enums!")
-		fmt.Fprintln(out, "[DRY RUN] This would delete EVERYTHING in the database, not just your Go entities!")
+		fmt.Fprintln(out, "[DRY RUN] This would permanently delete every schema object in the database!")
+		fmt.Fprintln(out, "[DRY RUN] This would delete EVERYTHING in the database, including objects Ptah did not create!")
 		fmt.Fprintln(out, "[DRY RUN] This would result in ALL DATA BEING LOST!")
 		fmt.Fprintln(out)
 	case opts.autoApprove:
@@ -114,8 +126,8 @@ func dropAllCommand(cmd *cobra.Command, opts *options) error {
 		fmt.Fprintln(out)
 	default:
 		reader := bufio.NewReader(cmd.InOrStdin())
-		fmt.Fprintln(out, "EXTREME WARNING: This operation will permanently delete ALL tables and enums!")
-		fmt.Fprintln(out, "This will delete EVERYTHING in the database, not just your Go entities!")
+		fmt.Fprintln(out, "EXTREME WARNING: This operation will permanently delete every schema object in the database!")
+		fmt.Fprintln(out, "This will delete EVERYTHING in the database, including objects Ptah did not create!")
 		fmt.Fprintln(out, "This action cannot be undone!")
 		fmt.Fprintln(out, "ALL DATA WILL BE LOST!")
 		fmt.Fprintln(out)

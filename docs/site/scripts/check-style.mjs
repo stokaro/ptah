@@ -107,10 +107,53 @@ const britishSpellings = [
 // docs/STYLE_GUIDE.md section 4: no marketing adjectives.
 const bannedFiller = ['simply', 'easily', 'just'];
 
-// docs/STYLE_GUIDE.md section 7 fixes the admonition set.
+// docs/STYLE_GUIDE.md section 5: no filler adjectives. Each of these praises a
+// capability without naming one, so the sentence carrying it tells the reader
+// nothing they can check and nothing they can act on. The remedy is always the
+// same shape: replace the adjective with the behavior it was standing in for.
+// "Discovery is robust whatever the registry does" became "discovery works
+// whether or not the registry answers the referrers API", which is shorter and
+// says what happens.
+//
+// Adverb forms are listed one by one rather than reached with an open-ended
+// suffix. The suffix belongs to britishSpellings, where every stem is one no
+// American word begins with; here it would take "flexib" and reach "flexibly"
+// at the cost of any future word that starts the same way, for no gain over
+// naming the two forms.
+//
+// A code span is the escape hatch, as it is for every prose rule: an external
+// identifier that happens to be one of these words is code, and prose rules
+// never read code.
+const fillerAdjectives = [
+  'powerful',
+  'seamless',
+  'seamlessly',
+  'robust',
+  'robustly',
+  'flexible',
+  'flexibly',
+  'comprehensive',
+  'comprehensively',
+  'enterprise-grade',
+  'production-ready',
+];
+
+// docs/STYLE_GUIDE.md section 9 fixes the admonition set.
 const allowedAdmonitions = new Set(['note', 'tip', 'caution', 'danger']);
 
-// docs/STYLE_GUIDE.md section 8: "a cell longer than about two rendered lines
+// An image whose alt text is empty, in both Markdown spellings: inline
+// `![](path)` and reference-style `![][label]`.
+const emptyMarkdownAlt = /!\[\s*\]\s*[([]/g;
+
+// A single-line <img> tag, which an .mdx page may carry. A tag spread over
+// several lines is deliberately not read: `alt` would sit on a line of its own
+// and a per-line rule would report a tag that has alt text. That gap is stated
+// in docs/STYLE_GUIDE.md section 16 rather than left for a reader to discover.
+const htmlImageTag = /<img\b[^>]*>/gi;
+const htmlAltAttribute = /\balt\s*=/i;
+const htmlEmptyAlt = /\balt\s*=\s*(?:""|''|\{\s*(?:""|'')\s*\})/i;
+
+// docs/STYLE_GUIDE.md section 10: "a cell longer than about two rendered lines
 // means the row needs a section with a heading instead."
 //
 // This ceiling is deliberately well above two lines. It is not the style rule;
@@ -310,7 +353,7 @@ function tableViolations(lines) {
           line: index + 1,
           message:
             `table cell is ${text.length} characters, over the ${maxTableCellChars} limit; ` +
-            'give the row its own section with a heading (docs/STYLE_GUIDE.md section 8)',
+            'give the row its own section with a heading (docs/STYLE_GUIDE.md section 10)',
         });
       }
     }
@@ -488,6 +531,66 @@ function trackingClaimViolations(lines) {
   return findings;
 }
 
+// isAttributeName answers whether a matched word is the name half of an HTML,
+// SVG, or JSX attribute rather than a word in a sentence.
+//
+// The one case that matters is real: an inline SVG diagram whose accessible
+// name comes from its own <title> element has to write `aria-labelledby`, which
+// is the ARIA spelling and has no American variant. Measured before this
+// exclusion existed, a page carrying that attribute failed with
+// `British spelling "labelledby"`, so the check rejected the shape
+// docs/STYLE_GUIDE.md section 11 asks a diagram to have.
+//
+// The test is the `=` that follows the word. No English sentence puts one
+// there, so the exclusion cannot reach prose. It is deliberately narrower than
+// "ignore markup": a British spelling inside an attribute *value*, such as an
+// alt text reading "the colour of the box", is prose a reader sees and stays
+// reported.
+function isAttributeName(line, match) {
+  return /^\s*=/.test(line.slice(match.index + match[0].length));
+}
+
+// imageAltViolations reports an image that carries no description.
+//
+// Alt text is the entire content of a diagram for a reader using a screen
+// reader, a reader on a link too slow to load it, and a reader looking at the
+// Markdown on GitHub. An image without it is a hole in the page for all three.
+//
+// The rule reads the prose side, so a page may show `![](path)` inside a code
+// sample to teach the syntax without failing its own example.
+//
+// It lands on a tree that embeds one image in 127 governed files, which is the
+// reason to add it now: a rule that arrives before the assets is green on
+// arrival, and one that arrives after them is a backlog nobody schedules.
+function imageAltViolations(lines) {
+  const findings = [];
+  for (const [index, line] of lines.entries()) {
+    const emptyAlts = (line.match(emptyMarkdownAlt) ?? []).length;
+    for (let seen = 0; seen < emptyAlts; seen += 1) {
+      findings.push({
+        line: index + 1,
+        message: 'image has empty alt text; say what the image shows',
+      });
+    }
+    for (const match of line.matchAll(htmlImageTag)) {
+      if (htmlEmptyAlt.test(match[0])) {
+        findings.push({
+          line: index + 1,
+          message: '<img> has empty alt text; say what the image shows',
+        });
+        continue;
+      }
+      if (!htmlAltAttribute.test(match[0])) {
+        findings.push({
+          line: index + 1,
+          message: '<img> has no alt attribute; say what the image shows',
+        });
+      }
+    }
+  }
+  return findings;
+}
+
 // bareFlagViolations reports a --flag written outside a code span. Astro's
 // smartypants pass renders a bare double hyphen as an en dash, so the reader
 // sees a typographic dash where a flag was meant and copies a broken token.
@@ -538,6 +641,7 @@ export function analyze(source, options = {}) {
     for (const [british, american] of britishSpellings) {
       const pattern = new RegExp(`\\b${british.replace(/ /g, '\\s')}[a-z]*`, 'gi');
       for (const match of line.matchAll(pattern)) {
+        if (isAttributeName(line, match)) continue;
         findings.push({
           line: lineNumber,
           message: `British spelling "${match[0]}"; use American English ("${american.trim()}")`,
@@ -550,6 +654,15 @@ export function analyze(source, options = {}) {
         findings.push({
           line: lineNumber,
           message: `banned filler "${match[0]}"; state the action instead`,
+        });
+      }
+    }
+
+    for (const word of fillerAdjectives) {
+      for (const match of line.matchAll(new RegExp(`\\b${word}\\b`, 'gi'))) {
+        findings.push({
+          line: lineNumber,
+          message: `filler adjective "${match[0]}"; name the behavior instead`,
         });
       }
     }
@@ -577,6 +690,7 @@ export function analyze(source, options = {}) {
   findings.push(...paragraphViolations(text));
   findings.push(...contradictionViolations(text));
   findings.push(...trackingClaimViolations(text));
+  findings.push(...imageAltViolations(prose));
   if (siteContent) findings.push(...bareFlagViolations(text));
   findings.push(...fenceErrors);
   return findings.sort((a, b) => a.line - b.line);
@@ -672,6 +786,24 @@ function selftest() {
     '| --- | --- | --- |',
     '| Registry artifact promotion path | 🔷 | ❌ |',
     '| Artifact promotion path for a registry | ❌ | ❌ |',
+    '',
+    // New cases go at the END of this fixture. Inserting one anywhere else
+    // renumbers every assertion below it, and a renumbered assertion that
+    // still finds *a* finding on its new line reads as passing.
+    //
+    // Filler adjectives. Two on one line, because the rule reports each match
+    // rather than the first one on the line.
+    'The seamless and powerful toolchain handles it.',
+    '',
+    // An image with no alt text, and an <img> tag with no alt attribute.
+    '![](../../assets/product-flow.svg)',
+    '',
+    '<img src="../../assets/product-flow.svg" width="600">',
+    '',
+    // A British spelling inside an attribute VALUE is prose a reader meets, so
+    // the attribute-name exclusion must not reach it. Without this the
+    // exclusion could be widened to "skip markup" and nothing would notice.
+    '<svg role="img" aria-label="The colour of each stage box">',
   ].join('\n');
 
   const expected = [
@@ -692,6 +824,11 @@ function selftest() {
     { line: 66, needle: 'bare flag "--dry-run"' },
     { line: 68, needle: 'without naming an issue' },
     { line: 74, needle: 'name the same capability and disagree' },
+    { line: 76, needle: 'filler adjective "seamless"' },
+    { line: 76, needle: 'filler adjective "powerful"' },
+    { line: 78, needle: 'image has empty alt text' },
+    { line: 80, needle: '<img> has no alt attribute' },
+    { line: 82, needle: 'British spelling "colour"' },
   ];
 
   const findings = analyze(violating);
@@ -805,6 +942,40 @@ function selftest() {
     '[#1234](https://github.com/stokaro/ptah/issues/1234).',
     '',
     'The two verbs stay divergent. No issue tracks closing that gap yet.',
+    '',
+    // "first-class" describes a modeling decision and is checkable, so it is
+    // deliberately not on the adjective list. Without this line the list could
+    // grow an entry that reads like the others and reports six real pages.
+    'A sequence is a first-class schema object here, not a rendering detail.',
+    '',
+    // A filler adjective inside a code span, and another inside a fenced block.
+    // Both are identifiers rather than prose, and prose rules never read code.
+    'The `Robust` field selects the retry policy; see the sample below.',
+    '',
+    '```go',
+    'type Options struct { Robust bool; Comprehensive bool } // powerful',
+    '```',
+    '',
+    // An image WITH alt text must stay silent, in Markdown and in an HTML tag.
+    // The Markdown shape also pins that the rule reads the alt slot rather
+    // than the presence of an image.
+    '![Entity diagram: users has many orders, joined on orders.user_id](flow.svg)',
+    '',
+    '<img src="flow.svg" alt="Entity diagram: users has many orders" width="600">',
+    '',
+    // Markdown image syntax shown as a sample. A rule that read the raw line
+    // instead of the prose line would fail the page teaching the syntax.
+    'Write `![](path)` and the check reports it; give the image a description.',
+    '',
+    '```markdown',
+    '![](../../assets/flow.svg)',
+    '```',
+    '',
+    // The ARIA attribute an inline SVG needs when its accessible name comes
+    // from a <title> element. There is no American spelling of it.
+    '<svg role="img" aria-labelledby="ptah-flow-title">',
+    '  <title id="ptah-flow-title">Sources reach the database.</title>',
+    '</svg>',
   ].join('\n');
 
   for (const finding of analyze(clean)) {
