@@ -526,3 +526,21 @@ func TestVerify_AGenerationWithoutADimensionSaysSo(t *testing.T) {
 	c.Assert(summaries(report), qt.Not(qt.Contains),
 		"2 stored vectors do not have the generation's dimension")
 }
+
+// TestVerify_AMissingColumnReportsOnceRatherThanCascading keeps the report
+// honest about what is actually wrong.
+//
+// A catalog that has no column reports nothing about its type, its dimension or
+// its index either. Carrying on down the layer turns one fact into four
+// findings, three of which are restatements of the first, and an operator
+// reading the report has to work out that they are the same problem.
+func TestVerify_AMissingColumnReportsOnceRatherThanCascading(t *testing.T) {
+	c := qt.New(t)
+	expectation, structure, source, target, state := healthy()
+	structure = embedverify.Structure{ExtensionPresent: true}
+
+	report := embedverify.Verify(expectation, structure, source, target, state)
+
+	c.Assert(summaries(report), qt.DeepEquals,
+		[]string{"the generation's vector column does not exist"})
+}
