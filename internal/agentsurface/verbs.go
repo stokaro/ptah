@@ -65,6 +65,9 @@ var verbs = map[string]Verb{
 	"inference cutover": {TargetWrites, ScratchNone,
 		"moves the pointer queries read to a different generation, and refuses when the pointer " +
 			"is not where the plan it was built from expects"},
+	"inference evaluate": {TargetReads, ScratchNone,
+		"searches the generation with queries from a corpus, which sends those queries to the " +
+			"embedding endpoint; the database is only read"},
 	"inference plan": {TargetReads, ScratchNone,
 		"resolves a specification against the database and prints what would happen; nothing is " +
 			"created and nothing is written"},
