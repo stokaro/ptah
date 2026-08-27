@@ -209,11 +209,11 @@ func reportViewLikes(
 
 	replacedMaterializedViews := crossKindReplacements(
 		diff.MaterializedViewsRemoved,
-		diff.ViewsAdded,
+		diff.ViewsAdded.Names(),
 		semantics,
 	)
 	replacedViews := crossKindReplacements(
-		diff.ViewsRemoved,
+		diff.ViewsRemoved.Names(),
 		diff.MaterializedViewsAdded,
 		semantics,
 	)
@@ -224,11 +224,8 @@ func reportViewLikes(
 		result = append(result, ast.NewDropView(name).SetIfExists())
 	}
 
-	for _, name := range diff.ViewsAdded {
-		object, node, err := clickHouseViewChange(desired, name, semantics, caps)
-		if err != nil {
-			return nil, err
-		}
+	for _, view := range diff.ViewsAdded {
+		object, node := clickHouseViewChangeFor(view, caps)
 		objects = append(objects, object)
 		nodes[identityOf(object)] = node
 	}
@@ -273,11 +270,11 @@ func reportViewLikes(
 	for _, object := range deporder.ViewLikesForCreateForDialect(objects, platform.ClickHouse) {
 		result = append(result, nodes[identityOf(object)])
 	}
-	for _, name := range diff.ViewsRemoved {
-		if slices.Contains(replacedViews, name) {
+	for _, view := range diff.ViewsRemoved {
+		if slices.Contains(replacedViews, view.Name) {
 			continue
 		}
-		result = append(result, ast.NewDropView(name).SetIfExists())
+		result = append(result, ast.NewDropView(view.Name).SetIfExists())
 	}
 	for _, name := range diff.MaterializedViewsRemoved {
 		if slices.Contains(replacedMaterializedViews, name) {
@@ -349,8 +346,24 @@ func clickHouseViewChange(
 			name,
 		)
 	}
-	node := fromschema.FromView(*view)
-	return deporder.ViewLike{Name: node.Name, Body: node.Body}, node, nil
+	object, node := clickHouseViewChangeFor(*view, caps)
+	return object, node, nil
+}
+
+// clickHouseViewChangeFor is clickHouseViewChange for a change that carries the
+// view, which is every addition (stokaro/ptah#2315).
+//
+// It returns no error because there is nothing left to fail on: the missing
+// declaration the name-taking form reports is a lookup that no longer happens.
+func clickHouseViewChangeFor(
+	view schemamodel.View,
+	caps capability.Capabilities,
+) (deporder.ViewLike, *ast.CreateViewNode) {
+	if !caps.Has(capability.Views) {
+		return deporder.ViewLike{Name: view.Name}, ast.NewCreateView(view.Name)
+	}
+	node := fromschema.FromView(view)
+	return deporder.ViewLike{Name: node.Name, Body: node.Body}, node
 }
 
 // clickHouseMaterializedViewChange is clickHouseViewChange for the materialized

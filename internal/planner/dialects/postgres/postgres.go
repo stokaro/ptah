@@ -497,7 +497,7 @@ func (p *Planner) addSchemaPreconditions(
 	names = append(names, diff.RangesAdded.Names()...)
 	names = append(names, diff.SequencesAdded.Names()...)
 	names = append(names, diff.FunctionsAdded...)
-	names = append(names, diff.ViewsAdded...)
+	names = append(names, diff.ViewsAdded.Names()...)
 	names = append(names, diff.MaterializedViewsAdded...)
 	for _, trigger := range diff.TriggersAdded {
 		names = append(names, trigger.TableName)
@@ -2339,10 +2339,10 @@ func splitQualifiedSequenceName(name string) (schema, sequence string) {
 func (p *Planner) addNewViewLikeObjects(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	objects := make([]deporder.ViewLike, 0, len(diff.ViewsAdded)+len(diff.MaterializedViewsAdded))
-	for _, viewName := range diff.ViewsAdded {
-		if view := findView(desired.Views, viewName, semantics); view != nil {
-			objects = append(objects, deporder.ViewLike{Name: view.Name, Body: view.Body})
-		}
+	for _, view := range diff.ViewsAdded {
+		// The body travels WITH the change, so the dependency order this
+		// computes no longer depends on finding the view again.
+		objects = append(objects, deporder.ViewLike{Name: view.Name, Body: view.Body})
 	}
 	for _, viewName := range diff.MaterializedViewsAdded {
 		if view := findMaterializedView(desired.MaterializedViews, viewName, semantics); view != nil {
@@ -2559,8 +2559,8 @@ func viewLikesLostToCascade(
 }
 
 func (p *Planner) removeViews(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	for _, viewName := range diff.ViewsRemoved {
-		result = append(result, ast.NewDropView(viewName).SetIfExists().SetCascade())
+	for _, view := range diff.ViewsRemoved {
+		result = append(result, ast.NewDropView(view.Name).SetIfExists().SetCascade())
 	}
 	return result
 }

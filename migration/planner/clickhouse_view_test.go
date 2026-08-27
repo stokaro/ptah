@@ -27,7 +27,7 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseViewLifecycle(t *testing.T) {
 	}{
 		{
 			name:    "create",
-			diff:    &difftypes.SchemaDiff{ViewsAdded: []string{"analytics.active_users"}},
+			diff:    &difftypes.SchemaDiff{ViewsAdded: difftypes.ViewChanges{{Name: "analytics.active_users", Body: viewBody}}},
 			desired: desired,
 			want:    "CREATE VIEW `analytics`.`active_users` AS\n" + viewBody,
 		},
@@ -42,7 +42,7 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseViewLifecycle(t *testing.T) {
 		},
 		{
 			name:    "drop",
-			diff:    &difftypes.SchemaDiff{ViewsRemoved: []string{"analytics.active_users"}},
+			diff:    &difftypes.SchemaDiff{ViewsRemoved: difftypes.ViewChanges{{Name: "analytics.active_users"}}},
 			desired: &schemamodel.Database{},
 			want:    "DROP VIEW IF EXISTS `analytics`.`active_users`",
 		},
@@ -80,7 +80,9 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseViewCapabilityDisabled(t *tes
 	}{
 		{
 			name: "create",
-			diff: &difftypes.SchemaDiff{ViewsAdded: []string{"analytics.active_users"}},
+			diff: &difftypes.SchemaDiff{ViewsAdded: difftypes.ViewChanges{
+				{Name: "analytics.active_users", Body: "SELECT 1"},
+			}},
 			want: `-- CLICKHOUSE: CREATE VIEW "analytics.active_users" is not supported`,
 		},
 		{
@@ -93,7 +95,7 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseViewCapabilityDisabled(t *tes
 		},
 		{
 			name: "drop",
-			diff: &difftypes.SchemaDiff{ViewsRemoved: []string{"analytics.active_users"}},
+			diff: &difftypes.SchemaDiff{ViewsRemoved: difftypes.ViewChanges{{Name: "analytics.active_users"}}},
 			want: `-- CLICKHOUSE: DROP VIEW "analytics.active_users" is not supported`,
 		},
 	}
@@ -120,7 +122,7 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseDropsViewBeforeSourceTable(t 
 
 	statements, err := planner.GenerateSchemaDiffSQLStatements(
 		&difftypes.SchemaDiff{
-			ViewsRemoved:  []string{"analytics.active_users"},
+			ViewsRemoved:  difftypes.ViewChanges{{Name: "analytics.active_users"}},
 			TablesRemoved: []string{"analytics.users"},
 		},
 		&schemamodel.Database{},
@@ -152,7 +154,12 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseOrdersAddedViewDependencies(t
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			statements, err := planner.GenerateSchemaDiffSQLStatements(
-				&difftypes.SchemaDiff{ViewsAdded: []string{"analytics.a_dep", "analytics.z_base"}},
+				&difftypes.SchemaDiff{ViewsAdded: difftypes.ViewChanges{
+					// The bodies travel WITH the change, and the order this
+					// test is about is computed from them.
+					{Name: "analytics.a_dep", Body: test.dependentBody},
+					{Name: "analytics.z_base", Body: "SELECT 1 AS n"},
+				}},
 				clickHouseDependentViews(test.dependentBody),
 				platform.ClickHouse,
 			)
@@ -185,7 +192,9 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseOrdersReplacementDependencies
 		{
 			name: "added dependent waits for replaced base",
 			diff: &difftypes.SchemaDiff{
-				ViewsAdded: []string{"analytics.a_dep"},
+				ViewsAdded: difftypes.ViewChanges{
+					{Name: "analytics.a_dep", Body: "SELECT n FROM `analytics`.`z_base`"},
+				},
 				ViewsModified: []difftypes.ViewDiff{{
 					ViewName: "analytics.z_base",
 					Changes:  map[string]string{"body": "changed"},

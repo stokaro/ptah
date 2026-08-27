@@ -549,7 +549,7 @@ func convertViews(database *schemamodel.Database, dbViews []catalog.View) {
 		database.Views = append(database.Views, schemamodel.View{
 			Name:       dbView.QualifiedName(),
 			Body:       dbView.Body,
-			WithCheck:  strings.EqualFold(dbView.CheckOption, "LOCAL") || strings.EqualFold(dbView.CheckOption, "CASCADED"),
+			WithCheck:  sqlutil.CheckOptionRequestsCheck(dbView.CheckOption),
 			Comment:    dbView.Comment,
 			Attributes: dbView.Attributes,
 		})

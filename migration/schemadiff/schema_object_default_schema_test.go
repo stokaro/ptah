@@ -36,8 +36,8 @@ func TestCompareWithDialect_DifferentSchemaDoesNotMatchSchemaObjects(t *testing.
 	c.Assert(diff.CompositeTypesRemoved.Names(), qt.DeepEquals, []string{"reporting.c_ctl"})
 	c.Assert(diff.RangesAdded.Names(), qt.DeepEquals, []string{"public.r_ctl"})
 	c.Assert(diff.RangesRemoved.Names(), qt.DeepEquals, []string{"reporting.r_ctl"})
-	c.Assert(diff.ViewsAdded, qt.DeepEquals, []string{"public.v_ctl"})
-	c.Assert(diff.ViewsRemoved, qt.DeepEquals, []string{"reporting.v_ctl"})
+	c.Assert(diff.ViewsAdded.Names(), qt.DeepEquals, []string{"public.v_ctl"})
+	c.Assert(diff.ViewsRemoved.Names(), qt.DeepEquals, []string{"reporting.v_ctl"})
 	c.Assert(diff.MaterializedViewsAdded, qt.DeepEquals, []string{"public.mv_ctl"})
 	c.Assert(diff.MaterializedViewsRemoved, qt.DeepEquals, []string{"reporting.mv_ctl"})
 	c.Assert(diff.TriggersAdded, qt.DeepEquals, []difftypes.TriggerRef{{

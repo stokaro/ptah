@@ -765,7 +765,9 @@ func TestPlanner_GenerateMigrationAST_OrdersViewLikeObjectsByDependencies(t *tes
 		}},
 	}
 	diff := &difftypes.SchemaDiff{
-		ViewsAdded:             []string{"a_report"},
+		// The body travels WITH the change, and the order this test is about
+		// is computed from it.
+		ViewsAdded:             difftypes.ViewChanges{{Name: "a_report", Body: "SELECT id FROM z_base"}},
 		MaterializedViewsAdded: []string{"z_base"},
 	}
 

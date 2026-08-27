@@ -147,8 +147,8 @@ func collectUserTypeMismatches(diff *difftypes.SchemaDiff) []Mismatch {
 
 func collectViewMismatches(diff *difftypes.SchemaDiff) []Mismatch {
 	var mismatches []Mismatch
-	mismatches = append(mismatches, namedMismatches(diff.ViewsAdded, "missing_view", "missing view")...)
-	mismatches = append(mismatches, namedMismatches(diff.ViewsRemoved, "extra_view", "extra view")...)
+	mismatches = append(mismatches, namedMismatches(diff.ViewsAdded.Names(), "missing_view", "missing view")...)
+	mismatches = append(mismatches, namedMismatches(diff.ViewsRemoved.Names(), "extra_view", "extra view")...)
 	mismatches = append(mismatches, changedObjectMismatches(
 		diff.ViewsModified,
 		"view_mismatch",

@@ -604,7 +604,7 @@ func TestViewKindChangeAppliesLive(t *testing.T) {
 		readClickHouseViewLikes(t, db, database),
 		platform.ClickHouse,
 	)
-	c.Assert(toPlainDiff.ViewsAdded, qt.DeepEquals, []string{viewName})
+	c.Assert(toPlainDiff.ViewsAdded.Names(), qt.DeepEquals, []string{viewName})
 	c.Assert(toPlainDiff.MaterializedViewsRemoved, qt.DeepEquals, []string{viewName})
 	toPlainStatements, err := planner.GenerateSchemaDiffSQLStatements(
 		toPlainDiff,
@@ -638,7 +638,7 @@ func TestViewKindChangeAppliesLive(t *testing.T) {
 		platform.ClickHouse,
 	)
 	c.Assert(toMaterializedDiff.MaterializedViewsAdded, qt.DeepEquals, []string{viewName})
-	c.Assert(toMaterializedDiff.ViewsRemoved, qt.DeepEquals, []string{viewName})
+	c.Assert(toMaterializedDiff.ViewsRemoved.Names(), qt.DeepEquals, []string{viewName})
 	toMaterializedStatements, err := planner.GenerateSchemaDiffSQLStatements(
 		toMaterializedDiff,
 		asMaterialized,

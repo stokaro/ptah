@@ -1326,7 +1326,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 	result = append(result, fkPlan.readds...)
 
 	// 4.5. Add and modify views/triggers after tables exist.
-	result = p.addNewViews(result, diff, desired)
+	result = p.addNewViews(result, diff)
 	result = p.modifyExistingViews(result, diff, desired)
 	result = p.retargetSynonyms(result, diff, desired)
 	result = p.addNewSynonyms(result, diff, desired)
@@ -1476,12 +1476,11 @@ func (p *Planner) rejectMaterializedViews(diff *difftypes.SchemaDiff) error {
 	}
 }
 
-func (p *Planner) addNewViews(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
-	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
-	for _, viewName := range diff.ViewsAdded {
-		if view := findView(desired.Views, viewName, semantics); view != nil {
-			result = append(result, fromschema.FromView(*view))
-		}
+func (p *Planner) addNewViews(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	// The view travels WITH the change, so this renders what it was handed
+	// rather than looking the name back up in the desired schema.
+	for _, view := range diff.ViewsAdded {
+		result = append(result, fromschema.FromView(view))
 	}
 	return result
 }
@@ -1497,8 +1496,8 @@ func (p *Planner) modifyExistingViews(result []ast.Node, diff *difftypes.SchemaD
 }
 
 func (p *Planner) removeViews(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	for _, viewName := range diff.ViewsRemoved {
-		result = append(result, ast.NewDropView(viewName).SetIfExists())
+	for _, view := range diff.ViewsRemoved {
+		result = append(result, ast.NewDropView(view.Name).SetIfExists())
 	}
 	return result
 }

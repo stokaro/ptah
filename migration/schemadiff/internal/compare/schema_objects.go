@@ -13,6 +13,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/internal/chrefresh"
 	"go.5x5.cz/ptah/internal/mysqlroutine"
 	"go.5x5.cz/ptah/internal/objectidentity"
@@ -609,14 +610,14 @@ func ViewsWithDialect(desired *schemamodel.Database, current *catalog.Database, 
 	}
 
 	matchedDatabaseViews := make(map[string]struct{}, len(current.Views))
-	for viewName, generatedView := range generatedViews {
+	for _, generatedView := range generatedViews {
 		databaseView, exists := findDatabaseViewForGeneratedView(
 			generatedView,
 			databaseViewsByName,
 			databaseViewsByQualifiedName,
 		)
 		if !exists {
-			diff.ViewsAdded = append(diff.ViewsAdded, viewName)
+			diff.ViewsAdded = append(diff.ViewsAdded, generatedView)
 			continue
 		}
 
@@ -631,11 +632,11 @@ func ViewsWithDialect(desired *schemamodel.Database, current *catalog.Database, 
 		if _, ok := matchedDatabaseViews[view.QualifiedName()]; ok {
 			continue
 		}
-		diff.ViewsRemoved = append(diff.ViewsRemoved, viewNameForDiff(view))
+		diff.ViewsRemoved = append(diff.ViewsRemoved, viewFromCatalog(view))
 	}
 
-	sort.Strings(diff.ViewsAdded)
-	sort.Strings(diff.ViewsRemoved)
+	sortViews(diff.ViewsAdded)
+	sortViews(diff.ViewsRemoved)
 	sort.Slice(diff.ViewsModified, func(i, j int) bool {
 		return diff.ViewsModified[i].ViewName < diff.ViewsModified[j].ViewName
 	})
@@ -674,7 +675,7 @@ func ViewsWithSemantics(
 	for identity, generatedView := range generatedViews {
 		databaseView, exists := databaseViews[identity]
 		if !exists {
-			diff.ViewsAdded = append(diff.ViewsAdded, generatedNames[identity])
+			diff.ViewsAdded = append(diff.ViewsAdded, generatedView)
 			continue
 		}
 		viewDiff := ViewDefinitionsWithDialect(generatedView, databaseView, dialect)
@@ -682,14 +683,14 @@ func ViewsWithSemantics(
 			diff.ViewsModified = append(diff.ViewsModified, viewDiff)
 		}
 	}
-	for identity := range databaseViews {
+	for identity, databaseView := range databaseViews {
 		if _, exists := generatedViews[identity]; !exists {
-			diff.ViewsRemoved = append(diff.ViewsRemoved, databaseNames[identity])
+			diff.ViewsRemoved = append(diff.ViewsRemoved, viewFromCatalog(databaseView))
 		}
 	}
 
-	sort.Strings(diff.ViewsAdded)
-	sort.Strings(diff.ViewsRemoved)
+	sortViews(diff.ViewsAdded)
+	sortViews(diff.ViewsRemoved)
 	sort.Slice(diff.ViewsModified, func(i, j int) bool {
 		return diff.ViewsModified[i].ViewName < diff.ViewsModified[j].ViewName
 	})
@@ -1310,4 +1311,29 @@ func stripDefaultColumnAliases(body string) string {
 
 func stripSimpleComparisonParentheses(body string) string {
 	return simpleComparisonParenthesesPattern.ReplaceAllString(body, "$1")
+}
+
+// viewFromCatalog carries a view the database reported into the shape the diff
+// holds.
+//
+// Two fields need a rule rather than a copy. The name is one: schemamodel.View
+// has no Schema, because a declared schema is folded into the name, so the
+// qualified spelling goes in Name -- which is what the name list held.
+//
+// The check option is the other. The catalog reports a word and the model has a
+// bool, and the rule is sqlutil.CheckOptionRequestsCheck, shared with the
+// conversion path rather than spelled a second time here.
+func viewFromCatalog(reported catalog.View) schemamodel.View {
+	return schemamodel.View{
+		Name:       viewNameForDiff(reported),
+		Body:       reported.Body,
+		WithCheck:  sqlutil.CheckOptionRequestsCheck(reported.CheckOption),
+		Comment:    reported.Comment,
+		Attributes: reported.Attributes,
+	}
+}
+
+// sortViews orders by the key the name list was sorted on.
+func sortViews(views difftypes.ViewChanges) {
+	sort.Slice(views, func(i, j int) bool { return views[i].Name < views[j].Name })
 }

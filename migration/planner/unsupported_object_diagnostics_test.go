@@ -64,7 +64,7 @@ func unhostableCreationDiff() *difftypes.SchemaDiff {
 		RolesAdded:             []string{"app_role"},
 		FunctionsAdded:         []string{"bump"},
 		TablesAdded:            []string{"t"},
-		ViewsAdded:             []string{"v1"},
+		ViewsAdded:             difftypes.ViewChanges{{Name: "v1", Body: "SELECT id FROM t"}},
 		MaterializedViewsAdded: []string{"mv1"},
 		RLSEnabledTablesAdded:  []string{"t"},
 		RLSPoliciesAdded:       []difftypes.RLSPolicyRef{{PolicyName: "p1", TableName: "t"}},
@@ -196,7 +196,7 @@ func TestPlan_ClickHouseViewAloneIsNotReportedAsSynced(t *testing.T) {
 	desired := &schemamodel.Database{
 		Views: []schemamodel.View{{StructName: "V", Name: "v_only", Body: "SELECT 1"}},
 	}
-	diff := &difftypes.SchemaDiff{ViewsAdded: []string{"v_only"}}
+	diff := &difftypes.SchemaDiff{ViewsAdded: difftypes.ViewChanges{{Name: "v_only", Body: "SELECT 1"}}}
 
 	statements := planStatements(c, diff, desired, platform.ClickHouse)
 
@@ -218,7 +218,7 @@ func TestPlan_ClickHouseNamesRemovedObjectsToo(t *testing.T) {
 		RangesRemoved:            difftypes.RangeChanges{{Name: "tsr"}},
 		RolesRemoved:             []string{"app_role"},
 		FunctionsRemoved:         []string{"bump"},
-		ViewsRemoved:             []string{"v1"},
+		ViewsRemoved:             difftypes.ViewChanges{{Name: "v1"}},
 		MaterializedViewsRemoved: []string{"mv1"},
 		RLSEnabledTablesRemoved:  []string{"t"},
 		RLSPoliciesRemoved:       []difftypes.RLSPolicyRef{{PolicyName: "p1", TableName: "t"}},

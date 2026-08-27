@@ -55,7 +55,7 @@ func TestViewLifecycleRoundTripsLive(t *testing.T) {
 		readClickHouseViews(t, db, database),
 		platform.ClickHouse,
 	)
-	c.Assert(creationDiff.ViewsAdded, qt.DeepEquals, []string{viewName})
+	c.Assert(creationDiff.ViewsAdded.Names(), qt.DeepEquals, []string{viewName})
 	createStatements, err := planner.GenerateSchemaDiffSQLStatements(
 		creationDiff,
 		created,
@@ -106,7 +106,7 @@ func TestViewLifecycleRoundTripsLive(t *testing.T) {
 		replacedReadback,
 		platform.ClickHouse,
 	)
-	c.Assert(removalDiff.ViewsRemoved, qt.DeepEquals, []string{viewName})
+	c.Assert(removalDiff.ViewsRemoved.Names(), qt.DeepEquals, []string{viewName})
 	dropStatements, err := planner.GenerateSchemaDiffSQLStatements(
 		removalDiff,
 		&schemamodel.Database{},

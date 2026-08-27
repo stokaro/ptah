@@ -438,3 +438,74 @@ func TestDomainChanges_TheDefaultKeepsItsKind(t *testing.T) {
 		})
 	}
 }
+
+// TestViewChanges_TheWireShapeIsUnchanged is the same promise for the seventh
+// family off `[]string`.
+func TestViewChanges_TheWireShapeIsUnchanged(t *testing.T) {
+	tests := []struct {
+		name    string
+		changes difftypes.ViewChanges
+		want    string
+		why     string
+	}{
+		{
+			name:    "nil is null",
+			changes: nil,
+			want:    "null",
+			why:     "null is a comparison that did not run",
+		},
+		{
+			name:    "empty is an empty array",
+			changes: difftypes.ViewChanges{},
+			want:    "[]",
+			why:     "[] is a comparison that ran and found nothing",
+		},
+		{
+			name: "the body, the check option and the attributes do not reach the wire",
+			changes: difftypes.ViewChanges{{
+				Name:       "active_users",
+				Body:       "SELECT id FROM users",
+				WithCheck:  true,
+				Attributes: []string{"SCHEMABINDING"},
+			}},
+			want: `["active_users"]`,
+			why:  "a name list is what format_version 1 has always carried here",
+		},
+		{
+			name:    "a schema-qualified view keeps its qualified spelling",
+			changes: difftypes.ViewChanges{{Name: "reporting.active_users"}},
+			want:    `["reporting.active_users"]`,
+			why:     "the schema is folded into the name, so the name IS the identity a consumer keys on",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			encoded, err := json.Marshal(test.changes)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(string(encoded), qt.Equals, test.want, qt.Commentf("%s", test.why))
+		})
+	}
+}
+
+// TestViewChanges_TheBodySurvivesInMemory is the other half: the field the wire
+// drops is the field the planner reads.
+//
+// A view planned from its name alone renders as an empty SELECT, which is the
+// failure this family exists to remove, so the carry is asserted where it is
+// used rather than only where it is written.
+func TestViewChanges_TheBodySurvivesInMemory(t *testing.T) {
+	c := qt.New(t)
+
+	changes := difftypes.ViewChanges{{Name: "active_users", Body: "SELECT id FROM users", WithCheck: true}}
+
+	c.Assert(changes[0].Body, qt.Equals, "SELECT id FROM users",
+		qt.Commentf("the planner renders this rather than looking the name back up"))
+	c.Assert(changes[0].WithCheck, qt.IsTrue,
+		qt.Commentf("WITH CHECK OPTION is the view's, and a name cannot carry it"))
+	c.Assert(changes.Names(), qt.DeepEquals, []string{"active_users"},
+		qt.Commentf("and the name list a consumer reads is unchanged"))
+}

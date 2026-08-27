@@ -972,10 +972,10 @@ func (p *Planner) addViews(
 	semantics identifier.Semantics,
 ) []ast.Node {
 	var result []ast.Node
-	for _, name := range diff.ViewsAdded {
-		if view := findView(desired.Views, name, semantics); view != nil {
-			result = append(result, fromschema.FromView(*view))
-		}
+	// The view travels WITH the change, so this renders what it was handed
+	// rather than looking the name back up in the desired schema.
+	for _, view := range diff.ViewsAdded {
+		result = append(result, fromschema.FromView(view))
 	}
 	return result
 }
@@ -996,8 +996,8 @@ func (p *Planner) modifyViews(
 
 func (p *Planner) removeViews(diff *difftypes.SchemaDiff) []ast.Node {
 	result := make([]ast.Node, 0, len(diff.ViewsRemoved))
-	for _, name := range diff.ViewsRemoved {
-		result = append(result, ast.NewDropView(name).SetIfExists())
+	for _, view := range diff.ViewsRemoved {
+		result = append(result, ast.NewDropView(view.Name).SetIfExists())
 	}
 	return result
 }
