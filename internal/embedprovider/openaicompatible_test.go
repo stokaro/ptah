@@ -1,0 +1,286 @@
+package embedprovider_test
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/internal/embedprovider"
+)
+
+// endpoint stands an embedding server up and returns a provider pointed at it.
+//
+// The handler is the test's whole fixture: what a provider ANSWERS is the thing
+// under test, and a fake that only ever answered correctly could not measure
+// any of the refusals.
+func endpoint(c *qt.C, dimension int, handler http.HandlerFunc) embedprovider.Provider {
+	c.Helper()
+
+	server := httptest.NewServer(handler)
+	c.Cleanup(server.Close)
+
+	provider, err := embedprovider.NewOpenAICompatible(embedprovider.OpenAICompatibleOptions{
+		Name:          "test",
+		BaseURL:       server.URL + "/v1",
+		Model:         "test-model",
+		EndpointClass: "local",
+		Dimension:     dimension,
+	})
+	c.Assert(err, qt.IsNil)
+	return provider
+}
+
+// answer writes a well-formed response carrying the given vectors, in the given
+// index order.
+func answer(w http.ResponseWriter, indices []int, vectors [][]float32) {
+	type entry struct {
+		Index     int       `json:"index"`
+		Embedding []float32 `json:"embedding"`
+	}
+	payload := map[string]any{"model": "test-model"}
+	data := make([]entry, 0, len(vectors))
+	for position, vector := range vectors {
+		data = append(data, entry{Index: indices[position], Embedding: vector})
+	}
+	payload["data"] = data
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(payload)
+}
+
+// TestOpenAICompatible_ReturnsVectorsInTheInputOrder is the defect a trusting
+// decoder ships.
+//
+// A provider may answer out of order. A caller that took the array's order
+// would attribute vectors to the wrong rows, which produces a corpus that
+// retrieves the wrong documents and looks entirely healthy from the outside
+// (stokaro/ptah#2068).
+func TestOpenAICompatible_ReturnsVectorsInTheInputOrder(t *testing.T) {
+	c := qt.New(t)
+	provider := endpoint(c, 2, func(w http.ResponseWriter, _ *http.Request) {
+		// The second input's answer arrives first.
+		answer(w, []int{1, 0}, [][]float32{{3, 4}, {1, 2}})
+	})
+
+	result, err := provider.Embed(context.Background(), []string{"first", "second"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Vectors, qt.HasLen, 2)
+	c.Assert([]float32(result.Vectors[0]), qt.DeepEquals, []float32{1, 2})
+	c.Assert([]float32(result.Vectors[1]), qt.DeepEquals, []float32{3, 4})
+}
+
+// TestOpenAICompatible_RefusesAnAnswerThatDoesNotSurviveValidation walks the
+// answers a provider can give that would otherwise become rows.
+func TestOpenAICompatible_RefusesAnAnswerThatDoesNotSurviveValidation(t *testing.T) {
+	tests := []struct {
+		name     string
+		handler  http.HandlerFunc
+		wantErr  error
+		wantText string
+	}{
+		{
+			name: "a short batch",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				answer(w, []int{0}, [][]float32{{1, 2}})
+			},
+			wantErr: embedprovider.ErrInvalidResponse, wantText: `.*partial batch.*`,
+		},
+		{
+			name: "an index that names no input position",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				answer(w, []int{0, 7}, [][]float32{{1, 2}, {3, 4}})
+			},
+			wantErr: embedprovider.ErrInvalidResponse, wantText: `.*association is not stable.*`,
+		},
+		{
+			name: "an error inside a nominal success",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"error":{"message":"model is loading","type":"server_error"}}`))
+			},
+			wantErr: embedprovider.ErrProvider, wantText: `.*model is loading.*`,
+		},
+		{
+			name: "a body that is not the shape",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(`not json at all`))
+			},
+			wantErr: embedprovider.ErrInvalidResponse, wantText: `.*decode response.*`,
+		},
+		{
+			name: "the wrong dimension",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				answer(w, []int{0, 1}, [][]float32{{1, 2}, {3, 4, 5}})
+			},
+			wantErr: embedprovider.ErrInvalidResponse, wantText: `.*vector 1 has 3 dimensions.*`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			provider := endpoint(c, 2, test.handler)
+
+			_, err := provider.Embed(context.Background(), []string{"first", "second"})
+
+			c.Assert(err, qt.ErrorIs, test.wantErr)
+			c.Assert(err, qt.ErrorMatches, test.wantText)
+		})
+	}
+}
+
+// TestOpenAICompatible_SeparatesTheFailuresAnOperatorActsOn pins the error
+// classes.
+//
+// "It did not work" is not an answer an operator can act on: an unreachable
+// endpoint, a refused credential and a provider that answered with an error are
+// three different next steps.
+func TestOpenAICompatible_SeparatesTheFailuresAnOperatorActsOn(t *testing.T) {
+	tests := []struct {
+		name    string
+		status  int
+		wantErr error
+	}{
+		{name: "unauthorized", status: http.StatusUnauthorized, wantErr: embedprovider.ErrUnauthorized},
+		{name: "forbidden", status: http.StatusForbidden, wantErr: embedprovider.ErrUnauthorized},
+		{name: "a provider error", status: http.StatusInternalServerError, wantErr: embedprovider.ErrProvider},
+		{name: "a bad request", status: http.StatusBadRequest, wantErr: embedprovider.ErrProvider},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			provider := endpoint(c, 2, func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(test.status)
+				_, _ = w.Write([]byte(`{"message":"refused"}`))
+			})
+
+			_, err := provider.Embed(context.Background(), []string{"first"})
+
+			c.Assert(err, qt.ErrorIs, test.wantErr)
+		})
+	}
+}
+
+// TestOpenAICompatible_AnUnreachableEndpointSaysSo is the class a caller reads
+// as "nothing was sent".
+func TestOpenAICompatible_AnUnreachableEndpointSaysSo(t *testing.T) {
+	c := qt.New(t)
+	provider, err := embedprovider.NewOpenAICompatible(embedprovider.OpenAICompatibleOptions{
+		Name: "test", BaseURL: "http://127.0.0.1:1/v1", Model: "test-model",
+	})
+	c.Assert(err, qt.IsNil)
+
+	_, err = provider.Embed(context.Background(), []string{"first"})
+
+	c.Assert(err, qt.ErrorIs, embedprovider.ErrUnreachable)
+}
+
+// TestOpenAICompatible_CancellationIsHonoured is the epic's explicit provider
+// requirement, and it is what stops a stuck endpoint holding a migration open.
+func TestOpenAICompatible_CancellationIsHonoured(t *testing.T) {
+	c := qt.New(t)
+	release := make(chan struct{})
+	provider := endpoint(c, 2, func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+		close(release)
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := provider.Embed(ctx, []string{"first"})
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err, qt.ErrorIs, context.Canceled)
+}
+
+// TestOpenAICompatible_ProfileCarriesNoCredential is the privacy rule in the
+// one place a report reads from.
+//
+// The profile is what an operator is shown and what a run records. It names
+// WHERE the credential lives so somebody can find it, and never what it is.
+func TestOpenAICompatible_ProfileCarriesNoCredential(t *testing.T) {
+	c := qt.New(t)
+	c.Setenv("PTAH_TEST_EMBED_TOKEN", "super-secret-value")
+	reference, err := embedprovider.ParseCredentialRef("env:PTAH_TEST_EMBED_TOKEN")
+	c.Assert(err, qt.IsNil)
+	provider, err := embedprovider.NewOpenAICompatible(embedprovider.OpenAICompatibleOptions{
+		Name: "test", BaseURL: "https://api.example.test/v1", Model: "test-model",
+		Credential: reference, EndpointClass: "hosted",
+	})
+	c.Assert(err, qt.IsNil)
+
+	profile := provider.Profile()
+
+	c.Assert(profile.CredentialSource, qt.Equals, "env:PTAH_TEST_EMBED_TOKEN")
+	c.Assert(profile.EndpointHost, qt.Equals, "api.example.test")
+	rendered, err := json.Marshal(profile)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(rendered), qt.Not(qt.Contains), "super-secret-value")
+	// Ptah speaks only for Ptah: whether the PROVIDER retains anything is
+	// outside its knowledge and the profile must not claim otherwise.
+	c.Assert(profile.Retains, qt.IsFalse)
+}
+
+// TestOpenAICompatible_SendsTheCredentialItWasReferred is the other half: a
+// reference nobody resolves is a provider that never authenticates.
+func TestOpenAICompatible_SendsTheCredentialItWasReferred(t *testing.T) {
+	c := qt.New(t)
+	c.Setenv("PTAH_TEST_EMBED_TOKEN", "super-secret-value")
+	reference, err := embedprovider.ParseCredentialRef("env:PTAH_TEST_EMBED_TOKEN")
+	c.Assert(err, qt.IsNil)
+
+	var seen string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = r.Header.Get("Authorization")
+		answer(w, []int{0}, [][]float32{{1, 2}})
+	}))
+	c.Cleanup(server.Close)
+	provider, err := embedprovider.NewOpenAICompatible(embedprovider.OpenAICompatibleOptions{
+		Name: "test", BaseURL: server.URL + "/v1", Model: "test-model",
+		Credential: reference, Dimension: 2,
+	})
+	c.Assert(err, qt.IsNil)
+
+	_, err = provider.Embed(context.Background(), []string{"first"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(seen, qt.Equals, "Bearer super-secret-value")
+}
+
+// TestOpenAICompatible_RefusesAConfigurationItCannotHonour is the failure that
+// belongs at construction rather than mid-run.
+func TestOpenAICompatible_RefusesAConfigurationItCannotHonour(t *testing.T) {
+	tests := []struct {
+		name    string
+		options embedprovider.OpenAICompatibleOptions
+		want    string
+	}{
+		{
+			name:    "no base URL",
+			options: embedprovider.OpenAICompatibleOptions{Name: "x", Model: "m"},
+			want:    `.*a base URL is required.*`,
+		},
+		{
+			name:    "no model",
+			options: embedprovider.OpenAICompatibleOptions{Name: "x", BaseURL: "http://h/v1"},
+			want:    `.*a model identifier is required.*`,
+		},
+		{
+			name:    "a base URL naming no host",
+			options: embedprovider.OpenAICompatibleOptions{Name: "x", BaseURL: "/v1", Model: "m"},
+			want:    `.*names no host.*`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			_, err := embedprovider.NewOpenAICompatible(test.options)
+
+			c.Assert(err, qt.ErrorMatches, test.want)
+		})
+	}
+}
