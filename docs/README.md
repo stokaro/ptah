@@ -4,8 +4,9 @@ The human-facing documentation site source lives in [`site`](site).
 
 Start with:
 
-- [Install](site/src/content/docs/start/install.md)
-- [Quick start](site/src/content/docs/start/quick-start.mdx)
+- [Install](site/src/content/docs/start/install.mdx)
+- [Quick start: versioned migrations](site/src/content/docs/start/quick-start-migrations.mdx)
+- [Quick start: declarative changes](site/src/content/docs/start/quick-start-declarative.mdx)
 - [Choose a workflow](site/src/content/docs/start/choose-a-workflow.md)
 - [Troubleshooting](site/src/content/docs/operate/troubleshooting.md)
 

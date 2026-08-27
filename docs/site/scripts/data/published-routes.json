@@ -82,6 +82,8 @@
   "/start/adopt-an-existing-database/",
   "/start/choose-a-workflow/",
   "/start/install/",
+  "/start/quick-start-declarative/",
+  "/start/quick-start-migrations/",
   "/start/quick-start/",
   "/testing/ci/",
   "/testing/migrations-and-schema/",

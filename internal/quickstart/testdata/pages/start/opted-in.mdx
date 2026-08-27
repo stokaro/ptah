@@ -1,0 +1,85 @@
+---
+title: A fixture quick start
+description: Two shells, one file, and two output blocks, for the extractor and the runner to work on.
+quickstart: true
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+## Make a working directory
+
+<Tabs syncKey="os">
+<TabItem label="Linux and macOS">
+
+```bash
+mkdir work && cd work
+```
+
+</TabItem>
+<TabItem label="Windows PowerShell">
+
+```powershell
+New-Item -ItemType Directory work | Out-Null
+Set-Location work
+```
+
+</TabItem>
+</Tabs>
+
+## Write the schema
+
+Put the shape you want in `schema.sql`:
+
+```sql
+CREATE TABLE users (id INTEGER PRIMARY KEY);
+```
+
+## Read it back
+
+<Tabs syncKey="os">
+<TabItem label="Linux and macOS">
+
+```bash
+cat schema.sql
+```
+
+</TabItem>
+<TabItem label="Windows PowerShell">
+
+```powershell
+Get-Content schema.sql
+```
+
+</TabItem>
+</Tabs>
+
+Expected output includes, on standard output:
+
+```text
+CREATE TABLE users (id INTEGER PRIMARY KEY);
+```
+
+## Say where it went
+
+<Tabs syncKey="os">
+<TabItem label="Linux and macOS">
+
+```bash
+ls schema.sql >&2
+```
+
+</TabItem>
+<TabItem label="Windows PowerShell">
+
+```powershell
+[Console]::Error.WriteLine('schema.sql')
+```
+
+</TabItem>
+</Tabs>
+
+Expected output includes, on standard error:
+
+```text
+schema.sql
+```

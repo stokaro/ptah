@@ -1,0 +1,455 @@
+---
+title: "Quick start: declarative changes"
+description: Describe a schema in one SQL file, let Ptah change a SQLite database to match, add a column, and check that the database still matches the file.
+quickstart: true
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+This tutorial runs the declarative workflow end to end. You keep one file that
+describes the schema you want; Ptah reads the live database, works out the
+difference, and applies it.
+
+You will produce a `ptah-declarative` directory holding `schema.sql` and a
+SQLite database that matches it, after one change that Ptah turns into an
+`ALTER TABLE` rather than a rebuild.
+
+Everything runs against a local SQLite file, so no database server is involved.
+To write the migration files yourself and keep a record of every change, run
+[Quick start: versioned migrations](../quick-start-migrations/) instead.
+
+## What you need
+
+- A `ptah` binary on your `PATH`. [Install Ptah](../install/) covers the routes.
+- A terminal. Pick Bash or PowerShell in the first tab set; the rest follow it.
+- About five minutes.
+
+No Go toolchain, no database server, and no Docker.
+
+Confirm that the binary is reachable:
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+ptah version
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+ptah version
+```
+
+</TabItem>
+</Tabs>
+
+It prints five lines naming the version, commit, build date, Go toolchain, and
+platform. Those values depend on how you installed Ptah, so they are not
+reproduced here.
+
+## Step 1. Make the working directory
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+mkdir ptah-declarative
+cd ptah-declarative
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+New-Item -ItemType Directory ptah-declarative | Out-Null
+Set-Location ptah-declarative
+```
+
+</TabItem>
+</Tabs>
+
+## Step 2. Describe the schema you want
+
+Write `schema.sql` with the command below rather than with an editor. An editor
+that appends its own extension produces `schema.sql.txt`, and the next command
+then fails with `schema file does not exist`.
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+cat > schema.sql <<'SQL'
+CREATE TABLE users (
+    id    INTEGER PRIMARY KEY,
+    email TEXT NOT NULL
+);
+SQL
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+@'
+CREATE TABLE users (
+    id    INTEGER PRIMARY KEY,
+    email TEXT NOT NULL
+);
+'@ | Set-Content schema.sql
+```
+
+</TabItem>
+</Tabs>
+
+This file is the desired schema. Plain SQL is one of the sources Ptah reads;
+YAML, HCL, DBML, an external loader, and annotated Go structs are the others,
+and every one of them parses into the same internal representation. See
+[Work with a desired schema](../../schema/work-with-a-source/) for the flag that
+names each source.
+
+## Step 3. Render the SQL without a database
+
+`ptah schema render` shows what the source becomes for one dialect. It opens no
+database and writes no file.
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+ptah schema render --schema-file schema.sql --dialect sqlite
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+ptah schema render --schema-file schema.sql --dialect sqlite
+```
+
+</TabItem>
+</Tabs>
+
+Expected output includes, on standard output:
+
+```text
+-- Statement 1/1
+CREATE TABLE "users" (
+  "id" INTEGER PRIMARY KEY,
+  "email" TEXT NOT NULL
+);
+```
+
+The report about the file goes to standard error instead, which is why
+redirecting standard output to a file writes SQL and nothing else.
+
+Expected output includes, on standard error:
+
+```text
+Found 1 tables, 2 fields, 0 indexes, 0 enums, 0 embedded fields
+
+Table Dependencies:
+==================
+users: (no dependencies)
+
+Table Creation Order:
+====================
+1. users
+```
+
+The line above that block names the absolute path of the file Ptah read, so it
+is left out here.
+
+## Step 4. Plan the change
+
+`--dry-run` prints the SQL Ptah would run and stops. `sqlite://app.db` creates
+`app.db` in the current directory.
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+ptah schema apply --schema-file schema.sql --db-url sqlite://app.db --dry-run
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+ptah schema apply --schema-file schema.sql --db-url sqlite://app.db --dry-run
+```
+
+</TabItem>
+</Tabs>
+
+Expected output includes, on standard output:
+
+```text
+Planned schema changes:
+CREATE TABLE "users" (
+  "id" INTEGER PRIMARY KEY,
+  "email" TEXT NOT NULL
+);
+```
+
+## Step 5. Apply the change
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+ptah schema apply --schema-file schema.sql --db-url sqlite://app.db --auto-approve
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+ptah schema apply --schema-file schema.sql --db-url sqlite://app.db --auto-approve
+```
+
+</TabItem>
+</Tabs>
+
+Expected output includes, on standard output:
+
+```text
+Planned schema changes:
+CREATE TABLE "users" (
+  "id" INTEGER PRIMARY KEY,
+  "email" TEXT NOT NULL
+);
+Auto-approval enabled; applying schema changes.
+Schema apply completed successfully.
+```
+
+:::caution
+`--auto-approve` executes the plan without asking. Without it, `ptah schema
+apply` prints the same plan and waits for approval. Run the command with
+`--dry-run` first against a database you care about.
+:::
+
+## Step 6. Verify the database
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+ptah db read --db-url sqlite://app.db
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+ptah db read --db-url sqlite://app.db
+```
+
+</TabItem>
+</Tabs>
+
+Expected output includes, on standard output:
+
+```text
+CREATE TABLE "users" (
+  "id" INTEGER PRIMARY KEY,
+  "email" TEXT NOT NULL
+);
+```
+
+`ptah db read` answers from the live database rather than from `schema.sql`. It
+writes two progress lines to standard error, so redirecting standard output
+captures the SQL alone.
+
+## Step 7. Change the schema
+
+Replace the contents of `schema.sql` with a version that adds one column:
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+cat > schema.sql <<'SQL'
+CREATE TABLE users (
+    id         INTEGER PRIMARY KEY,
+    email      TEXT NOT NULL,
+    created_at TEXT
+);
+SQL
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+@'
+CREATE TABLE users (
+    id         INTEGER PRIMARY KEY,
+    email      TEXT NOT NULL,
+    created_at TEXT
+);
+'@ | Set-Content schema.sql
+```
+
+</TabItem>
+</Tabs>
+
+You edit the shape you want. You do not write the statement that gets there.
+
+## Step 8. Plan the change again
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+ptah schema apply --schema-file schema.sql --db-url sqlite://app.db --dry-run
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+ptah schema apply --schema-file schema.sql --db-url sqlite://app.db --dry-run
+```
+
+</TabItem>
+</Tabs>
+
+Expected output includes, on standard output:
+
+```text
+Planned schema changes:
+ALTER TABLE "users" ADD COLUMN "created_at" TEXT;
+```
+
+Ptah planned an `ALTER TABLE`, not a second `CREATE TABLE`. This is the step
+that shows what declarative means: the file describes the destination, and Ptah
+derives the route from the database's current shape.
+
+## Step 9. Apply the change
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+ptah schema apply --schema-file schema.sql --db-url sqlite://app.db --auto-approve
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+ptah schema apply --schema-file schema.sql --db-url sqlite://app.db --auto-approve
+```
+
+</TabItem>
+</Tabs>
+
+Expected output includes, on standard output:
+
+```text
+Planned schema changes:
+ALTER TABLE "users" ADD COLUMN "created_at" TEXT;
+Auto-approval enabled; applying schema changes.
+Schema apply completed successfully.
+```
+
+## Step 10. Verify the result
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+ptah db read --db-url sqlite://app.db
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+ptah db read --db-url sqlite://app.db
+```
+
+</TabItem>
+</Tabs>
+
+Expected output includes, on standard output:
+
+```text
+CREATE TABLE "users" (
+  "id" INTEGER PRIMARY KEY,
+  "email" TEXT NOT NULL,
+  "created_at" TEXT
+);
+```
+
+## Step 11. Check that nothing has drifted
+
+`ptah schema drift` asks the same question as a check rather than as a report.
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+ptah schema drift --schema-file schema.sql --db-url sqlite://app.db
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+ptah schema drift --schema-file schema.sql --db-url sqlite://app.db
+```
+
+</TabItem>
+</Tabs>
+
+Expected output includes, on standard output:
+
+```text
+No schema drift detected.
+```
+
+The command exits `0` here. Add a column to `schema.sql` without applying it and
+the same command exits `1`, reports `Schema drift detected (highest severity:
+warning).` and lists `columns_added: 1 (warning)` under `Findings:`. That
+non-zero exit is the default, so the command works as a pipeline step with no
+extra flag.
+
+Branch that pipeline step on the exit status, not on the text it captured.
+`schema drift` is a check and the exit status is its answer: `0` for no drift,
+`1` for drift, `2` for a run that could not decide. A step that instead tests
+whether the output it captured is empty is asking a weaker question than the one
+already answered. [CI](../../testing/ci/) covers wiring it into a pull-request
+check.
+
+## Clean up
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+cd ..
+rm -rf ptah-declarative
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+Set-Location ..
+Remove-Item -Recurse -Force ptah-declarative
+```
+
+</TabItem>
+</Tabs>
+
+## Next steps
+
+- Keep a reviewable record of every change instead of applying it directly:
+  [Quick start: versioned migrations](../quick-start-migrations/).
+- Separate review from execution with a saved plan file:
+  [Apply directly](../../direct/apply/).
+- Describe the schema in YAML, HCL, DBML, an ORM loader, or Go annotations:
+  [Work with a desired schema](../../schema/work-with-a-source/).

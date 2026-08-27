@@ -1,0 +1,63 @@
+name: Quick Start Acceptance
+
+# Runs the commands the quick-start pages publish and checks them against the
+# output those pages show.
+#
+# The commands are read out of the pages by internal/quickstart. Nothing in this
+# repository holds a second copy of them, so a page edited without running its
+# own commands turns this job red, and a step deleted from a page stops being
+# covered by the same commit that deleted it.
+#
+# There is deliberately no `paths:` filter. A filtered workflow makes the check
+# ABSENT on the pull requests it does not match, and an absent check reads
+# exactly like a passing one -- the reasoning capability-matrix.yml writes down.
+# A change under cmd/ that alters what `ptah db read` prints has to redden this
+# job, and it cannot do that if the job only runs on documentation changes.
+#
+# The three legs are not redundant. The published pages carry a Bash tab and a
+# PowerShell tab, and the PowerShell one has no other coverage anywhere in this
+# repository: go-integration-tests.yml is ubuntu-only and is skipped for a
+# documentation-only change, and go-unit-tests.yml's Windows job runs a
+# hand-written package list.
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quickstart-acceptance:
+    name: quickstart-acceptance (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      # One entry point, the same one a contributor runs locally. The runner
+      # builds ./cmd/ptah itself and puts it in front of PATH, so the `ptah` the
+      # pages spell is this tree's binary; building it in this file instead would
+      # need the .exe suffix in a shell conditional per job, and internal/exeext
+      # already carries that fact once.
+      #
+      # `shell: bash` on the Windows leg is Git Bash driving the runner. The
+      # steps it runs there are the page's PowerShell tab: the shell that
+      # launches the tool and the shell the page is written for are different
+      # questions.
+      - name: Run every published quick start
+        shell: bash
+        run: bash scripts/check-quickstart.sh

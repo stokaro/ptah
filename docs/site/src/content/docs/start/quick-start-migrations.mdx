@@ -1,0 +1,425 @@
+---
+title: "Quick start: versioned migrations"
+description: Write a migration by hand, seal it with a checksum, apply it to a SQLite database, read the result back, and roll it back again.
+quickstart: true
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+This tutorial runs the versioned migration workflow end to end. You write the
+SQL; Ptah seals the directory, applies what is pending, records what it applied,
+and rolls it back on request.
+
+You will produce a `ptah-versioned` directory holding a migration directory, a
+`ptah.sum` integrity file, and a SQLite database file. The database ends the
+tutorial back at version 0, with the migration still on disk.
+
+Everything runs against a local SQLite file, so no database server is involved.
+To describe the schema you want and let Ptah change the database to match, run
+[Quick start: declarative changes](../quick-start-declarative/) instead.
+
+## What you need
+
+- A `ptah` binary on your `PATH`. [Install Ptah](../install/) covers the routes.
+- A terminal. Pick Bash or PowerShell in the first tab set; the rest follow it.
+- About five minutes.
+
+No Go toolchain, no database server, and no Docker.
+
+Confirm that the binary is reachable:
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+ptah version
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+ptah version
+```
+
+</TabItem>
+</Tabs>
+
+It prints five lines naming the version, commit, build date, Go toolchain, and
+platform. Those values depend on how you installed Ptah, so they are not
+reproduced here.
+
+## Step 1. Make the working directory
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+mkdir ptah-versioned
+cd ptah-versioned
+mkdir migrations
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+New-Item -ItemType Directory ptah-versioned | Out-Null
+Set-Location ptah-versioned
+New-Item -ItemType Directory migrations | Out-Null
+```
+
+</TabItem>
+</Tabs>
+
+Everything this tutorial writes stays inside `ptah-versioned`, so cleanup is one
+directory.
+
+## Step 2. Write the migration
+
+A migration is a pair of files: one that makes the change, one that undoes it.
+A migration file name is exactly ten digits, an underscore, a name, and then
+either `.up.sql` or `.down.sql`. `ptah migrations validate` refuses a name that
+does not match. The ten digits are a Unix timestamp, and Ptah applies migrations
+in ascending order of that number.
+
+Write both files with the commands below rather than with an editor. An editor
+that appends its own extension produces `1700000000_create_users.up.sql.txt`,
+and Ptah reads that directory as one holding no migrations at all.
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+cat > migrations/1700000000_create_users.up.sql <<'SQL'
+CREATE TABLE users (
+    id    INTEGER PRIMARY KEY,
+    email TEXT NOT NULL
+);
+SQL
+
+cat > migrations/1700000000_create_users.down.sql <<'SQL'
+DROP TABLE users;
+SQL
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+@'
+CREATE TABLE users (
+    id    INTEGER PRIMARY KEY,
+    email TEXT NOT NULL
+);
+'@ | Set-Content migrations/1700000000_create_users.up.sql
+
+@'
+DROP TABLE users;
+'@ | Set-Content migrations/1700000000_create_users.down.sql
+```
+
+</TabItem>
+</Tabs>
+
+Check that both files carry the names Ptah expects:
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+ls -1 migrations
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+Get-ChildItem migrations -Name
+```
+
+</TabItem>
+</Tabs>
+
+Expected output includes, on standard output:
+
+```text
+1700000000_create_users.down.sql
+1700000000_create_users.up.sql
+```
+
+A wrong extension produces no error further down. `migrations hash` reports
+`0 migration file(s) hashed`, `migrations validate` prints exactly the line this
+page shows, and `migrations up` reports the database as already up to date, all
+three exiting `0`.
+
+The fixed timestamp keeps this page reproducible. For your own work,
+`ptah migrations create <name> --migrations-dir ./migrations` writes an empty
+pair with the current time in the file name, and you fill in the SQL.
+
+## Step 3. Seal the directory
+
+`ptah migrations hash` writes `ptah.sum`, an integrity file covering every
+migration in the directory. Editing a migration that has already been applied is
+then a detectable event rather than a silent one.
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+ptah migrations hash --dir ./migrations
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+ptah migrations hash --dir ./migrations
+```
+
+</TabItem>
+</Tabs>
+
+Expected output includes, on standard output:
+
+```text
+Wrote ./migrations/ptah.sum
+2 migration file(s) hashed
+```
+
+## Step 4. Check the seal
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+ptah migrations validate --dir ./migrations
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+ptah migrations validate --dir ./migrations
+```
+
+</TabItem>
+</Tabs>
+
+Expected output includes, on standard output:
+
+```text
+OK: migrations directory matches ptah.sum
+```
+
+`migrations hash` and `migrations validate` read the directory through `--dir`.
+The commands that also open a database take `--migrations-dir`, which is
+required and has no default.
+
+## Step 5. Apply the migration
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+ptah migrations up --db-url sqlite://app.db --migrations-dir ./migrations --verify-sum
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+ptah migrations up --db-url sqlite://app.db --migrations-dir ./migrations --verify-sum
+```
+
+</TabItem>
+</Tabs>
+
+`sqlite://app.db` creates `app.db` in the current directory. A directory that
+carries a `ptah.sum` is checked before every apply, so a file that no longer
+matches it is refused whether or not you pass `--verify-sum`. The flag adds one
+thing: it makes a missing `ptah.sum` an error rather than an unsealed directory
+that applies anyway.
+
+Expected output includes, on standard output:
+
+```text
+Current version: 0
+Total migrations: 1
+Pending migrations: 1
+
+
+✅ Migrations completed successfully!
+Database is now at version: 1700000000
+```
+
+Above those lines the report names the database, the dialect, and the absolute
+path of the migration directory. Ptah also writes progress lines to standard
+error. They carry a timestamp and a correlation identifier, so they differ on
+every run and are not reproduced here.
+
+## Step 6. Read the history back
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+ptah migrations status --db-url sqlite://app.db --migrations-dir ./migrations
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+ptah migrations status --db-url sqlite://app.db --migrations-dir ./migrations
+```
+
+</TabItem>
+</Tabs>
+
+Expected output includes, on standard output:
+
+```text
+=== MIGRATION STATUS ===
+Database: ***
+Dialect: sqlite
+Schema: main
+
+Current Version: 1700000000
+Total Migrations: 1
+Applied Migrations: 1
+Pending Migrations: 0
+Out-of-order Migrations: 0
+Status: ✅ Database is up to date
+```
+
+This report comes from the revision table Ptah keeps inside the database, not
+from the files on disk. `migrations status` masks the database URL as `***`.
+
+## Step 7. Verify the database
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+ptah db read --db-url sqlite://app.db
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+ptah db read --db-url sqlite://app.db
+```
+
+</TabItem>
+</Tabs>
+
+Expected output includes, on standard output:
+
+```text
+CREATE TABLE "users" (
+  "id" INTEGER PRIMARY KEY,
+  "email" TEXT NOT NULL
+);
+```
+
+`ptah db read` answers from the live database rather than from the migration
+files. It writes two progress lines to standard error, so redirecting standard
+output captures the SQL alone.
+
+## Step 8. Roll back
+
+Rolling back names the version to return **to**, not the migration to undo.
+`--target 0` returns to an empty database, and `--confirm` answers the
+confirmation prompt that would otherwise stop the command.
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+ptah migrations down --db-url sqlite://app.db --migrations-dir ./migrations --target 0 --confirm
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+ptah migrations down --db-url sqlite://app.db --migrations-dir ./migrations --target 0 --confirm
+```
+
+</TabItem>
+</Tabs>
+
+Expected output includes, on standard output:
+
+```text
+✅ Migration rollback completed successfully!
+Database is now at version: 0
+```
+
+## Step 9. Verify the rollback
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+ptah migrations status --db-url sqlite://app.db --migrations-dir ./migrations
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+ptah migrations status --db-url sqlite://app.db --migrations-dir ./migrations
+```
+
+</TabItem>
+</Tabs>
+
+Expected output includes, on standard output:
+
+```text
+Current Version: 0
+Total Migrations: 1
+Applied Migrations: 0
+Pending Migrations: 1
+Out-of-order Migrations: 0
+Status: ⚠️  Pending migrations available
+
+Run 'ptah migrations up' to apply pending migrations.
+```
+
+The migration is on disk and unapplied, which is where it started. Running
+`ptah db read` now prints an empty schema, because `users` is gone. Ptah's own
+revision table stays in the database file, and `ptah db read` leaves it out.
+
+## Clean up
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+cd ..
+rm -rf ptah-versioned
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+Set-Location ..
+Remove-Item -Recurse -Force ptah-versioned
+```
+
+</TabItem>
+</Tabs>
+
+## Next steps
+
+- Change a database from a file that describes the schema you want:
+  [Quick start: declarative changes](../quick-start-declarative/).
+- Let Ptah write the migration pair from a desired schema:
+  [Generate migrations](../../versioned/generate/).
+- Keep a migration directory trustworthy in a shared repository:
+  [Integrity and safety](../../versioned/integrity-and-safety/).

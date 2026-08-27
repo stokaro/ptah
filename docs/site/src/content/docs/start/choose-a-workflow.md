@@ -17,7 +17,7 @@ direct apply that computes the difference and executes it after approval.
 
 |  | Versioned files | Direct apply |
 | --- | --- | --- |
-| **You write the migration** | `migrations create`, write the SQL, `hash`, `up` — the [Quick start](../quick-start/) | — |
+| **You write the migration** | `migrations create`, write the SQL, `hash`, `up` — [Quick start: versioned migrations](../quick-start-migrations/) | — |
 | **Ptah derives it from a desired schema** | `migrations generate`, then the same `hash` and `up` | `schema apply` |
 
 The empty cell is not an omission: a direct apply computes a difference, and
@@ -57,8 +57,8 @@ ptah migrations up \
 
 The migration directory lives in your repository, so every change is
 code-reviewed as SQL, and every environment replays the same files in the same
-order. The [Quick start](../quick-start/) runs the hand-written half of this
-loop end to end and then adds the generated half.
+order. [Quick start: versioned migrations](../quick-start-migrations/) runs the
+hand-written half of this loop end to end.
 
 ### Direct schema changes
 

@@ -319,6 +319,6 @@ rather than silently skipped.
 
 ## Next steps
 
-- Running the whole loop on SQLite first: [Quick start](../../start/quick-start/).
+- Running the whole loop on SQLite first: [Quick start: versioned migrations](../../start/quick-start-migrations/).
 - Testing against fresh ephemeral SQLite databases: [Test migrations and schemas](../../testing/migrations-and-schema/).
 - Checking another engine's depth: [Database support matrix](../support-matrix/).

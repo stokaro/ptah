@@ -45,7 +45,7 @@ Every page has exactly one primary type. Choose it before writing a word.
 
 | Type | Purpose | Canonical example |
 | --- | --- | --- |
-| Tutorial | Learning by doing: one happy path, guaranteed end state, cleanup | `start/quick-start` |
+| Tutorial | Learning by doing: one happy path, guaranteed end state, cleanup | `start/quick-start-migrations` |
 | Concept | Why and when: mental model, minimal commands | license boundary page |
 | How-to | Goal-directed steps for a competent reader; variants and failure modes allowed | `versioned/checkpoints` |
 | Reference | Exhaustive and scannable; no narrative | `reference/exit-codes` |

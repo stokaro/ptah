@@ -285,10 +285,11 @@ run_node_selftest_case lib/docroutes.mjs \
 uncovered=(
 	"check-coverage.sh	runs the whole test suite; minutes per fixture"
 	"check-public-api-released.sh	resolves the published module over the network"
-	"check-documented-install.sh	downloads the published binaries"
+	"check-documented-install.sh	installs the published module with go install, over the network"
 	"check-api-export-acceptance.sh	needs a built binary the throwaway worktree has none of"
 	"check-hcl-export-acceptance.sh	the same"
 	"check-protobuf-export-acceptance.sh	the same"
+	"check-quickstart.sh	the same; internal/quickstart is where it is proven able to fail"
 )
 
 # companion_gates lists the gates that prove themselves, derived from the files

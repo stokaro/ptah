@@ -117,13 +117,17 @@ else
 fi
 
 tar -xzf "$ARCHIVE"
+sudo install -d /usr/local/bin
 sudo install -m 0755 ptah ptah-compat ptah-ls /usr/local/bin/
 ptah version
 ```
 
 `set -euo pipefail` is what makes the checksum a gate: without it a failed
 comparison is followed by the install anyway. The archive has no top-level
-directory, which is why the binaries are installed one by one. The
+directory, which is why the binaries are installed one by one. `install -d`
+creates `/usr/local/bin`, which macOS does not ship, and does nothing when it is
+already there. Stock macOS ships `shasum` rather than `sha256sum`, which is what
+the branch above selects between. The
 [install guide](https://stokaro.github.io/ptah/edge/start/install/) covers the
 Go toolchain path and building from a checkout.
 
@@ -211,7 +215,8 @@ When you are done, remove the database with `rm app.db`.
 
 | I want to | Read |
 | --- | --- |
-| Run my first migration | [Quick start](https://stokaro.github.io/ptah/edge/start/quick-start/) |
+| Run my first migration | [Quick start: versioned migrations](https://stokaro.github.io/ptah/edge/start/quick-start-migrations/) |
+| Apply a schema without writing migration files | [Quick start: declarative changes](https://stokaro.github.io/ptah/edge/start/quick-start-declarative/) |
 | Decide between the two workflows | [Choose a workflow](https://stokaro.github.io/ptah/edge/start/choose-a-workflow/) |
 | Bring a database Ptah did not create under management | [Adopt an existing database](https://stokaro.github.io/ptah/edge/start/adopt-an-existing-database/) |
 | Write the schema in SQL, YAML, HCL, DBML, or an external loader | [Work with a desired schema](https://stokaro.github.io/ptah/edge/schema/work-with-a-source/) |

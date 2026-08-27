@@ -1,0 +1,17 @@
+---
+title: A Bash block in the Windows tab
+description: The tab and the fence language disagree about which shell runs it.
+quickstart: true
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+<Tabs syncKey="os">
+<TabItem label="Windows PowerShell">
+
+```bash
+echo hello
+```
+
+</TabItem>
+</Tabs>
