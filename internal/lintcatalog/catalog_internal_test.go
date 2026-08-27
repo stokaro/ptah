@@ -58,8 +58,13 @@ func TestSQLJoinRefusesBothDirections(t *testing.T) {
 		message string
 	}{
 		{
+			// The stand-in has to be an identifier no rule emits. It was
+			// SQL003 until SQL003 became a real rule (stokaro/ptah#1270), at
+			// which point this row stopped testing anything and started
+			// failing -- which is the right way round: a fixture that names
+			// the next free code goes stale the moment that code is taken.
 			name:    "identifier the catalog does not describe",
-			ids:     []string{"SQL001", "SQL002", "DDL001", "CAP001", "SQL003"},
+			ids:     []string{"SQL001", "SQL002", "DDL001", "CAP001", "SQL003", "SQL999"},
 			message: "no catalog entry",
 		},
 		{

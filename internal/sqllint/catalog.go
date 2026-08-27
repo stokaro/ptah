@@ -24,6 +24,7 @@ var catalogRules = []CatalogRule{
 	{ID: RuleUnsupportedStatement, Title: "Unsupported SQL statement", Severity: SeverityError},
 	{ID: RuleTableWithoutPrimaryKey, Title: "Table has no primary key", Severity: SeverityWarning},
 	{ID: RuleUnsupportedCapability, Title: "Statement requires unsupported capability", Severity: SeverityError},
+	{ID: RuleDynamicSQL, Title: "Dynamic SQL limits static analysis", Severity: SeverityInfo},
 }
 
 // Catalog returns every identifier `ptah sql lint` can report.
