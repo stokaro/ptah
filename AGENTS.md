@@ -1066,6 +1066,51 @@ counts as coverage while the page vanishes from every reader's navigation. Add a
 page and its entry in the same change; the gate reports an entry naming no page
 and a page named by no entry alike.
 
+### The quick starts run in CI
+
+The commands a quick-start page publishes are executed on every pull request by
+`.github/workflows/quickstart-acceptance.yml`, on Linux, macOS and Windows.
+`internal/quickstart` reads them out of the page, and nothing in this repository
+holds a second copy: a runner carrying its own transcript stays green while the
+page it claims to cover rots, which is the failure the check exists to prevent.
+Reword a step and that reworded step runs; delete one and it stops being covered
+by the same commit that deleted it.
+
+```bash
+# What a run would cover, without running any of it
+go run ./internal/cmd/quickstart list
+
+# Run every published quick start against a binary built from this tree
+scripts/check-quickstart.sh
+
+# Read one tree, or read the PowerShell tab from a machine that has pwsh
+go run ./internal/cmd/quickstart run --docs-dir docs/site/src/content/docs --shell powershell
+```
+
+A page opts in with `quickstart: true` in its frontmatter. Everything else the
+runner needs it reads from the shape section 8 of
+[`docs/STYLE_GUIDE.md`](docs/STYLE_GUIDE.md) already asks for, so the style rule
+and the machine check are one mechanism rather than two that can drift:
+
+| On the page | What the runner does with it |
+| --- | --- |
+| a `bash` or `powershell` block | a step, run in that shell, in page order |
+| an `sql` block whose introducing sentence names a path in a code span | a file written at that path before the next step |
+| a `text` block introduced by a sentence ending `on standard output:` or `on standard error:` | an expectation for the step above it, asserted by containment against that stream |
+| a `<TabItem>` whose label names Windows or PowerShell | its blocks belong to that shell alone; blocks outside any tab belong to both |
+
+Four page shapes are refused rather than skipped, because a skipped assertion
+reads exactly like a passing one: an output block whose introduction names no
+stream, an output block with no command block above it, an `sql` block that
+names no file, and a Bash block inside a Windows tab. Discovery also fails
+closed, in the shape `check-documented-install.sh` uses — fewer than two
+opted-in pages, six steps or four assertions per page per shell, and the run
+refuses to report success, naming the count it found.
+
+The workflow carries no `paths:` filter on purpose. A change under `cmd/` that
+alters what `ptah db read` prints has to redden this job, and a filtered
+workflow would make the check absent on exactly the pull requests that break it.
+
 **`docs/site/src/content/docs/atlas/feature-matrix.md` is generated.** Its
 source is `docs/site/scripts/data/feature-matrix-rows.json`; edit that and run
 `node docs/site/scripts/build-feature-matrix.mjs`. Editing the page by hand

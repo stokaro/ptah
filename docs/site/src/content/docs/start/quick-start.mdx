@@ -1,317 +1,67 @@
 ---
 title: Quick start
-description: Run a complete migration workflow with Ptah — create, validate, apply, inspect, roll back — then add declarative schema management on top.
+description: Two quick starts, one decision — write the migration files yourself, or describe the schema you want and let Ptah change the database to match.
 ---
 
-import { Tabs, TabItem } from '@astrojs/starlight/components';
-
-Ptah is a schema management and database migration tool. This page walks the
-migration workflow end to end — you own the SQL, Ptah owns the history — and
-then adds declarative schema management to the same project.
-
-Nothing here needs an application language. The last section shows the same
-schema expressed four ways, and Go is one of them rather than the entry point.
-
-## Build the CLI
-
-```bash
-GOWORK=off go build -o ./bin/ptah ./cmd/ptah
-./bin/ptah version
-```
-
-Expected shape:
-
-```text
-Version: ...
-Commit: ...
-Date: ...
-Go: ...
-Platform: ...
-```
-
-## Create a migration
-
-`migrations create` scaffolds the pair of files a migration is made of, and
-leaves their contents to you:
-
-```bash
-rm -rf /tmp/ptah-quickstart
-mkdir -p /tmp/ptah-quickstart/migrations
-
-./bin/ptah migrations create init \
-  --migrations-dir /tmp/ptah-quickstart/migrations
-```
-
-```text
-Generated empty migration files:
-UP:   .../<timestamp>_init.up.sql
-DOWN: .../<timestamp>_init.down.sql
-```
-
-Write what the migration does, and what undoes it:
-
-```bash
-VERSION=$(ls /tmp/ptah-quickstart/migrations | head -1 | cut -d_ -f1)
-
-cat > /tmp/ptah-quickstart/migrations/${VERSION}_init.up.sql <<'EOF'
-CREATE TABLE users (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  email TEXT NOT NULL UNIQUE
-);
-EOF
-
-cat > /tmp/ptah-quickstart/migrations/${VERSION}_init.down.sql <<'EOF'
-DROP TABLE users;
-EOF
-```
-
-## Hash and validate
-
-The directory carries a checksum file, so a migration edited after it was
-applied is a detectable event rather than a silent one:
-
-```bash
-./bin/ptah migrations hash --dir /tmp/ptah-quickstart/migrations
-./bin/ptah migrations validate --dir /tmp/ptah-quickstart/migrations
-```
-
-```text
-Wrote /tmp/ptah-quickstart/migrations/ptah.sum
-2 migration file(s) hashed
-OK: migrations directory matches ptah.sum
-```
-
-## Apply and inspect
-
-```bash
-DB_URL=sqlite:////tmp/ptah-quickstart/app.db
-
-./bin/ptah migrations up \
-  --db-url "$DB_URL" \
-  --migrations-dir /tmp/ptah-quickstart/migrations \
-  --verify-sum
-
-./bin/ptah migrations status \
-  --db-url "$DB_URL" \
-  --migrations-dir /tmp/ptah-quickstart/migrations
-
-./bin/ptah db read --db-url "$DB_URL"
-```
-
-`--verify-sum` refuses to apply a directory whose files no longer match the
-checksum. The status report is the migration history as the database records
-it:
-
-```text
-Current Version: <timestamp>
-Total Migrations: 1
-Applied Migrations: 1
-Pending Migrations: 0
-Status: ✅ Database is up to date
-```
-
-And `db read` answers from the database rather than from the files:
-
-```sql
-CREATE TABLE "users" (
-  "id" INTEGER PRIMARY KEY AUTOINCREMENT,
-  "email" TEXT NOT NULL UNIQUE
-);
-```
-
-## Change the schema
-
-A second migration is the same three steps — create, write, hash:
-
-```bash
-./bin/ptah migrations create add_posts \
-  --migrations-dir /tmp/ptah-quickstart/migrations
-
-POSTS=$(ls /tmp/ptah-quickstart/migrations | grep add_posts | head -1 | cut -d_ -f1)
-
-cat > /tmp/ptah-quickstart/migrations/${POSTS}_add_posts.up.sql <<'EOF'
-CREATE TABLE posts (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  title TEXT NOT NULL
-);
-EOF
-
-cat > /tmp/ptah-quickstart/migrations/${POSTS}_add_posts.down.sql <<'EOF'
-DROP TABLE posts;
-EOF
-
-./bin/ptah migrations hash --dir /tmp/ptah-quickstart/migrations
-```
-
-Before applying it, ask what is outstanding:
-
-```bash
-./bin/ptah migrations status \
-  --db-url "$DB_URL" \
-  --migrations-dir /tmp/ptah-quickstart/migrations
-```
-
-```text
-Pending Migrations: 1
-Status: ⚠️  Pending migrations available
-```
-
-Then apply the delta:
-
-```bash
-./bin/ptah migrations up \
-  --db-url "$DB_URL" \
-  --migrations-dir /tmp/ptah-quickstart/migrations \
-  --verify-sum
-```
-
-## Roll back
-
-Rolling back names the version to return **to**, not the one to undo:
-
-```bash
-./bin/ptah migrations down \
-  --db-url "$DB_URL" \
-  --migrations-dir /tmp/ptah-quickstart/migrations \
-  --target "$VERSION" \
-  --confirm
-```
-
-```text
-✅ Migration rollback completed successfully!
-Database is now at version: <timestamp>
-```
-
-`posts` is gone, `users` remains, and `migrations status` reports the second
-migration as pending again. `--target 0` would roll back everything.
-
-That is the whole migration workflow. Everything below is optional.
-
-## Add a desired schema
-
-Ptah can also derive migrations from a description of the schema you want. The
-description is an input, and Ptah reads several — here is the same table in
-four of them:
-
-<Tabs syncKey="schema-source">
-<TabItem label="SQL">
-
-```sql
-CREATE TABLE users (
-  id INTEGER PRIMARY KEY,
-  email TEXT NOT NULL
-);
-```
-
-</TabItem>
-<TabItem label="YAML">
-
-```yaml
-tables:
-  users:
-    columns:
-      id:
-        type: INTEGER
-        primary: true
-      email:
-        type: TEXT
-        not_null: true
-```
-
-</TabItem>
-<TabItem label="HCL">
-
-```hcl
-schema "main" {}
-
-table "users" {
-  schema = schema.main
-
-  column "id" {
-    type = integer
-  }
-
-  column "email" {
-    type = text
-    null = false
-  }
-
-  primary_key {
-    columns = [column.id]
-  }
-}
-```
-
-</TabItem>
-<TabItem label="Go">
-
-```go
-package models
-
-//ptah:schema:table name="users"
-type User struct {
-	//ptah:schema:field name="id" type="INTEGER" primary="true"
-	ID int
-
-	//ptah:schema:field name="email" type="TEXT" not_null="true"
-	Email string
-}
-```
-
-</TabItem>
-</Tabs>
-
-`ptah schema render` shows the SQL each one produces before a database is
-involved. The SQL, YAML and Go forms above render byte-identical output; the
-HCL one renders `"id" integer NOT NULL PRIMARY KEY`, because an HCL column is
-`NOT NULL` unless it says `null = true` and its type is written as declared.
-The schema is the same; the spelling belongs to the source.
-
-```bash
-mkdir -p /tmp/ptah-desired
-cat > /tmp/ptah-desired/schema.sql <<'EOF'
-CREATE TABLE users (
-  id INTEGER PRIMARY KEY,
-  email TEXT NOT NULL
-);
-EOF
-
-./bin/ptah schema render --schema-file /tmp/ptah-desired/schema.sql --dialect sqlite
-```
-
-Point a migration generation at it, and Ptah writes the migration for the
-difference between that description and the live database:
-
-```bash
-mkdir -p /tmp/ptah-desired/migrations
-
-./bin/ptah migrations generate \
-  --schema-file /tmp/ptah-desired/schema.sql \
-  --db-url "sqlite:////tmp/ptah-desired/app.db" \
-  --migrations-dir /tmp/ptah-desired/migrations \
-  --name init
-```
-
-```text
-Generated migration files for sqlite:////tmp/ptah-desired/app.db:
-UP:   .../<timestamp>_init.up.sql
-DOWN: .../<timestamp>_init.down.sql
-```
-
-The generated files are ordinary migrations: hash them, apply them, roll them
-back with the same commands as above. A `--root-dir` of annotated Go structs
-takes the place of `--schema-file` where that is the source you keep.
-
-## Clean up
-
-```bash
-rm -rf /tmp/ptah-quickstart /tmp/ptah-desired
-rm -f ./bin/ptah
-```
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+Ptah is a schema management and database migration tool. It reads a live
+database, works out how that database differs from the schema you want, and
+changes it — either through migration files you keep in your repository, or
+directly.
+
+Which of those two you try first is the only decision on this page.
+
+## Pick one
+
+<CardGrid>
+  <LinkCard
+    title="Versioned migrations"
+    href="../quick-start-migrations/"
+    description="You write the .up.sql and .down.sql files. Ptah seals the directory with a checksum, applies what is pending, records every applied migration in the database, and rolls them back on request. Choose this for shared and production databases, and wherever a change has to be reviewed as SQL before it runs."
+  />
+  <LinkCard
+    title="Declarative changes"
+    href="../quick-start-declarative/"
+    description="You keep one file that describes the schema you want. Ptah reads the live database, works out the difference, and applies it. Choose this for prototypes, local development, and databases with a single owner."
+  />
+</CardGrid>
+
+Neither is a reduced form of the other, and a project can use both. If the
+choice matters more than five minutes of reading, [Choose a
+workflow](../choose-a-workflow/) sets out what each one costs and what it buys.
+
+## What both quick starts need
+
+- A `ptah` binary on your `PATH`. [Install Ptah](../install/) covers the routes.
+- A terminal. Both Bash and PowerShell are shown on each page.
+- About five minutes.
+
+Both run against a local SQLite file, so neither needs a database server, a Go
+toolchain, or Docker. Both end by deleting the one directory they created.
+
+## What the quick starts leave out
+
+Each page runs one path so that it stays short. Three things they do not cover
+are worth knowing exist:
+
+- **The other schema sources.** The declarative quick start uses plain SQL. Ptah
+  reads the desired schema from YAML, HCL, and DBML files, from an external
+  loader, and from annotated Go structs, and every source parses into the same
+  internal representation. Go is one source among several, not the entry point.
+  See [Work with a desired schema](../../schema/work-with-a-source/).
+- **Migrations Ptah writes for you.** The two workflows meet at
+  `ptah migrations generate`, which turns the difference between a desired
+  schema and a live database into an ordinary migration pair. See
+  [Generate migrations](../../versioned/generate/).
+- **Engines other than SQLite.** The same commands take a PostgreSQL, MySQL, or
+  other supported database URL in place of the SQLite one. What each engine
+  accepts differs. See the
+  [database support matrix](../../databases/support-matrix/).
 
 ## Next steps
 
-- Decide how changes should reach your databases: [Choose a workflow](../choose-a-workflow/).
-- Start from a database that already exists: [Adopt an existing database](../adopt-an-existing-database/).
-- Keep the desired schema in a file: [HCL](../../schema/hcl/), [YAML](../../schema/yaml/), [SQL](../../schema/sql/), or [Go annotations](../../schema/go-annotations/).
-- Apply a desired schema without writing migrations at all: [Direct schema changes](../../direct/apply/).
+- Run [Quick start: versioned migrations](../quick-start-migrations/).
+- Run [Quick start: declarative changes](../quick-start-declarative/).
+- Bring a database that already exists under Ptah:
+  [Adopt an existing database](../adopt-an-existing-database/).

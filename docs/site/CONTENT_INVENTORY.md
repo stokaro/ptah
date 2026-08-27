@@ -53,6 +53,9 @@ Word counts were measured with `wc -w` at the audited commit.
 
 | Page (words) | Audience | Reader question | Type | Source of truth | Overlaps | Disposition |
 | --- | --- | --- | --- | --- | --- | --- |
+| `start/quick-start.mdx` (routing) | new user | Which quick start should I run? | navigation | this page (the one decision, plus what both quick starts need) | `start/choose-a-workflow` carries the longer version of the same decision | split → `start/quick-start-migrations` and `start/quick-start-declarative`; URL kept, so the `/getting-started/` redirect still resolves |
+| `start/quick-start-migrations.mdx` | new user, any language | How do I write a migration, apply it, and roll it back? | tutorial | this page; every command and output block run against a built binary | `versioned/generate` (the hand-written half), `versioned/rollback` | created (stokaro/ptah#1228 onboarding split); keep |
+| `start/quick-start-declarative.mdx` | new user, any language | How do I make a database match a file that describes the schema I want? | tutorial | this page; every command and output block run against a built binary | `direct/apply`, `direct/compare-and-drift` | created (stokaro/ptah#1228 onboarding split); keep |
 | `start/choose-a-workflow.md` (742) | new user deciding integration shape | Should changes reach my databases as versioned migration files or as direct applies? | concept | this page; command shapes verified against the built binary | `workflows/migrations`, `workflows/atlas-cli`, `reference/comparison` | created (section 9, item 4); keep |
 | `start/adopt-an-existing-database.md` (1,000) | brownfield database adopter | How do I put an existing database under Ptah management without recreating it? | howto | this page; `ptah introspect`, `ptah migrations baseline`, `ptah migrations import` runs against the built binary | `workflows/checkpoints` (baseline contrast), `workflows/migrations` import section | created (section 9, item 3); keep |
 
@@ -278,8 +281,8 @@ because each journey below resolves without consulting a meta-map.
 
 | Journey | Today | Target |
 | --- | --- | --- |
-| Migration-first user, any language | `start/quick-start` runs the whole migration workflow — create, write, hash, validate, apply, status, change, roll back — before any schema source appears | Home → `start/quick-start` → `versioned/overview` |
-| New Go user | reaches the quick start like everybody else and finds Go as one of four schema sources rather than as the entry point | Home → `start/quick-start` → `schema/go-annotations` → `versioned/overview` |
+| Migration-first user, any language | `start/quick-start-migrations` runs the whole hand-written migration workflow — write, hash, validate, apply, status, read back, roll back — before any schema source appears | Home → `start/quick-start` → `start/quick-start-migrations` → `versioned/overview` |
+| New Go user | reaches the quick start like everybody else and finds Go named as one schema source among several rather than as the entry point | Home → `start/quick-start` → `schema/work-with-a-source` → `schema/go-annotations` |
 | Schema-file user | `workflows/schema-files` covers four formats on one page; reference pages are two clicks away | Home → `start/choose-a-workflow` → `schema/yaml` / `schema/hcl` / `schema/sql` |
 | ORM/external-provider user | `workflows/orm-loaders`, duplicated by a section of `schema-files` | `schema/orm-and-external` |
 | Brownfield database adopter | no path: `ptah introspect` appears only in reference tables, `migrations baseline` has no how-to (only a contrast note in `checkpoints` and an exit-code row) | `start/adopt-an-existing-database` → `direct/inspect` → `versioned/import` or baseline |
@@ -297,16 +300,20 @@ reader wrote was Go, and every later step was driven from it. That made a schema
 source look like the product's identity, and it made the page unusable as an
 introduction for a reader who does not write Go.
 
-It now teaches the migration workflow first, in this order: build, create a
-migration, write its SQL, hash, validate, apply, inspect status, read the
-database back, add a second migration, apply the delta, roll back. Nothing in
-that sequence needs an application language, and it ends with a working
-migration history.
+`start/quick-start` is now a routing page carrying one decision, and the work
+sits in two tutorials below it. `start/quick-start-migrations` writes a
+migration by hand and takes it through hash, validate, apply, status, read back
+and roll back. `start/quick-start-declarative` keeps one `schema.sql`, applies
+it, adds a column, and checks for drift. Neither needs an application language,
+a database server, or a source checkout: both start from an installed binary
+and a local SQLite file.
 
-Declarative schema management arrives after it, as an addition rather than as
-the premise, and the schema itself is shown in four synchronized tabs — SQL,
-YAML, HCL, Go — with the one place they render differently named rather than
-smoothed over: an HCL column is `NOT NULL` unless it says `null = true`.
+The four ways to declare a schema — SQL, YAML, HCL, Go — live on
+`schema/work-with-a-source`, which owns the question and states the one place
+they render differently rather than smoothing it over: an HCL column is
+`NOT NULL` unless it says `null = true`. Deriving a migration from a desired
+schema lives on `versioned/generate`. The quick starts link to both instead of
+re-hosting them.
 
 The landing page follows the same rule. Its "Choose your path" table leads with
 migrations you write yourself, an existing migration directory, and a live
@@ -358,7 +365,7 @@ nowhere else:
 
 | Page | Tabs | Why they are equivalent |
 | --- | --- | --- |
-| `start/quick-start` | SQL, YAML, HCL, Go | the same table declared four ways; the one rendering difference is stated |
+| `start/quick-start-migrations`, `start/quick-start-declarative` | Bash, PowerShell | one tutorial step in two shells; every `ptah` invocation is identical in both panels, and only the shell's own commands differ. `internal/quickstart` reads each panel as the program for its shell, so a Windows reader is shown PowerShell throughout and CI runs what the panel says |
 | `schema/work-with-a-source` | the source flag | `--schema-file`, `--root-dir`, `--schema-cmd` name the same input |
 | `start/adopt-an-existing-database` | Go, HCL | one adoption path, two things to keep afterwards |
 | `reference/configuration` | `ptah.yaml`, `atlas.hcl` | a native command reads either through `--env`; measured with `migrations status --env dev` beside both |
@@ -516,7 +523,9 @@ disposition columns of sections 1–2.
 Home (index.mdx, splash)
 Start
   start/install                       howto
-  start/quick-start                   tutorial (current getting-started)
+  start/quick-start                   navigation (one decision, two children)
+  start/quick-start-migrations        tutorial (hand-written migration, applied and rolled back)
+  start/quick-start-declarative       tutorial (one schema file, applied and checked for drift)
   start/choose-a-workflow             concept (new)
   start/adopt-an-existing-database    howto (new: introspect, baseline, import, drift)
 Model your schema
