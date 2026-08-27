@@ -499,7 +499,7 @@ func (p *Planner) addSchemaPreconditions(
 	names = append(names, diff.DomainsAdded...)
 	names = append(names, diff.CompositeTypesAdded.Names()...)
 	names = append(names, diff.RangesAdded.Names()...)
-	names = append(names, diff.SequencesAdded...)
+	names = append(names, diff.SequencesAdded.Names()...)
 	names = append(names, diff.FunctionsAdded...)
 	names = append(names, diff.ViewsAdded...)
 	names = append(names, diff.MaterializedViewsAdded...)
@@ -2241,13 +2241,9 @@ func findSequence(
 // be created before its table while OWNED BY requires the table to already
 // exist.
 func (p *Planner) addNewSequences(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
-	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
-	for _, name := range diff.SequencesAdded {
-		sequence := findSequence(desired.Sequences, name, semantics)
-		if sequence == nil {
-			continue
-		}
-		sequenceNode := fromschema.FromSequence(*sequence)
+	// No lookup: the change carries the sequence (stokaro/ptah#2315).
+	for _, sequence := range diff.SequencesAdded {
+		sequenceNode := fromschema.FromSequence(sequence)
 		sequenceNode.OwnedBy = ""
 		result = append(result, sequenceNode)
 	}
@@ -2257,10 +2253,8 @@ func (p *Planner) addNewSequences(result []ast.Node, diff *difftypes.SchemaDiff,
 // addSequenceOwnership emits ALTER SEQUENCE ... OWNED BY for newly added
 // sequences that declare an owner, after their owning tables exist.
 func (p *Planner) addSequenceOwnership(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
-	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
-	for _, name := range diff.SequencesAdded {
-		sequence := findSequence(desired.Sequences, name, semantics)
-		if sequence == nil || sequence.OwnedBy == "" {
+	for _, sequence := range diff.SequencesAdded {
+		if sequence.OwnedBy == "" {
 			continue
 		}
 		node := ast.NewAlterSequence(sequence.Name).SetOwnedBy(sequence.OwnedBy)
@@ -2332,8 +2326,8 @@ func summarizeSequenceChanges(sequenceDiff difftypes.SequenceDiff) string {
 // target schema. It runs after table removal so a table that draws a column
 // default from the sequence is gone first.
 func (p *Planner) removeSequences(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	for _, name := range diff.SequencesRemoved {
-		schemaName, sequenceName := splitQualifiedSequenceName(name)
+	for _, sequence := range diff.SequencesRemoved {
+		schemaName, sequenceName := splitQualifiedSequenceName(sequence.QualifiedName())
 		dropSequence := ast.NewDropSequence(sequenceName).
 			SetIfExists().
 			SetComment("WARNING: Ensure no column default still draws from this sequence")

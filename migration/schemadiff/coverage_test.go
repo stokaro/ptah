@@ -81,7 +81,7 @@ func coverageCases() []coverageCase {
 			},
 			notDescribed: coverage.Set{}.WithKind(coverage.Sequence),
 			onDesired:    true,
-			read:         func(diff *difftypes.SchemaDiff) []string { return diff.SequencesRemoved },
+			read:         func(diff *difftypes.SchemaDiff) []string { return diff.SequencesRemoved.Names() },
 			wantWithout:  []string{"public.order_seq"},
 		},
 		{

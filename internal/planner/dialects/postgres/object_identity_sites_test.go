@@ -20,6 +20,10 @@ import (
 // these rows necessary rather than decorative: the sequence simply vanishes from
 // the plan, and a missing CREATE SEQUENCE is a column DEFAULT that will not
 // resolve at apply time.
+// The ADD path is no longer part of this: an added sequence carries its own
+// definition (stokaro/ptah#2315), so there is no name to resolve and no
+// spelling for the two sides to disagree about. What remains here is the
+// MODIFIED path, which still names a sequence and still has to find it.
 func TestSequenceLookupResolvesAcrossSchemaSpellings(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -59,19 +63,6 @@ func TestSequenceLookupResolvesAcrossSchemaSpellings(t *testing.T) {
 				}},
 			}
 
-			added, err := planner.GenerateSchemaDiffSQLStatements(
-				&difftypes.SchemaDiff{SequencesAdded: []string{test.diffName}},
-				desired,
-				"postgres",
-			)
-			c.Assert(err, qt.IsNil)
-			addedPlan := strings.Join(added, "\n")
-			// addNewSequences and addSequenceOwnership are two separate call
-			// sites and both have to resolve, or the sequence is created
-			// without the ownership that ties it to its column's lifetime.
-			c.Assert(addedPlan, qt.Contains, "CREATE SEQUENCE", qt.Commentf("plan:\n%s", addedPlan))
-			c.Assert(addedPlan, qt.Contains, "OWNED BY", qt.Commentf("plan:\n%s", addedPlan))
-
 			modified, err := planner.GenerateSchemaDiffSQLStatements(
 				&difftypes.SchemaDiff{SequencesModified: []difftypes.SequenceDiff{{
 					SequenceName: test.diffName,
@@ -87,22 +78,41 @@ func TestSequenceLookupResolvesAcrossSchemaSpellings(t *testing.T) {
 	}
 }
 
-// TestSequenceLookupDoesNotGuessBetweenSchemas is the control the widened match
-// must not swallow: a sequence declared in one schema is not the sequence a diff
-// names in another, and creating it would put the object in the wrong place.
-func TestSequenceLookupDoesNotGuessBetweenSchemas(t *testing.T) {
+// TestSequenceAdditionFollowsItsOperand replaces the control that asked the
+// lookup not to guess between schemas.
+//
+// That control existed because an addition was a NAME, and a name resolved
+// against the wrong declaration would create the object in the wrong schema. It
+// refused by finding nothing. An addition now carries the sequence itself
+// (stokaro/ptah#2315), so there is nothing to resolve and nothing to guess: the
+// object lands where its operand says, and a desired schema that disagrees
+// cannot move it.
+//
+// This is the stronger property, and it is the one the change is FOR. The
+// scenario the old control described -- a diff naming a sequence the desired
+// schema does not declare -- is unreachable through the comparator, which
+// builds the operand from that same schema.
+func TestSequenceAdditionFollowsItsOperand(t *testing.T) {
 	c := qt.New(t)
 
+	// The desired schema deliberately declares a DIFFERENT sequence, to prove
+	// the plan no longer reads placement out of it.
 	desired := &schemamodel.Database{
 		Sequences: []schemamodel.Sequence{{Name: "order_id_seq", Schema: "reporting", AsType: "bigint"}},
 	}
 	statements, err := planner.GenerateSchemaDiffSQLStatements(
-		&difftypes.SchemaDiff{SequencesAdded: []string{"app.order_id_seq"}},
+		&difftypes.SchemaDiff{SequencesAdded: difftypes.SequenceChanges{
+			{Name: "order_id_seq", Schema: "app", AsType: "bigint"},
+		}},
 		desired,
 		"postgres",
 	)
 	c.Assert(err, qt.IsNil)
-	c.Assert(strings.Join(statements, "\n"), qt.Not(qt.Contains), "CREATE SEQUENCE")
+	plan := strings.Join(statements, "\n")
+	c.Assert(plan, qt.Contains, "CREATE SEQUENCE", qt.Commentf("plan:\n%s", plan))
+	c.Assert(plan, qt.Contains, "app", qt.Commentf("the operand's schema decides placement:\n%s", plan))
+	c.Assert(plan, qt.Not(qt.Contains), "reporting",
+		qt.Commentf("the desired schema's spelling must not reach the plan:\n%s", plan))
 }
 
 // TestEnumLookupResolvesAcrossSchemaSpellings pins addNewEnums and

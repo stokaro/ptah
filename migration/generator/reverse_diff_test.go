@@ -1198,8 +1198,8 @@ func TestReverseSchemaDiff_Sequences(t *testing.T) {
 	c := qt.New(t)
 
 	input := &difftypes.SchemaDiff{
-		SequencesAdded:   []string{"added_seq"},
-		SequencesRemoved: []string{"removed_seq"},
+		SequencesAdded:   difftypes.SequenceChanges{{Name: "added_seq"}},
+		SequencesRemoved: difftypes.SequenceChanges{{Name: "removed_seq"}},
 		SequencesModified: []difftypes.SequenceDiff{
 			{SequenceName: "changed_seq", Changes: map[string]string{"increment": "1 -> 2"}},
 		},
@@ -1207,8 +1207,8 @@ func TestReverseSchemaDiff_Sequences(t *testing.T) {
 
 	result := reverseSchemaDiff(input)
 
-	c.Assert(result.SequencesAdded, qt.DeepEquals, []string{"removed_seq"})
-	c.Assert(result.SequencesRemoved, qt.DeepEquals, []string{"added_seq"})
+	c.Assert(result.SequencesAdded.Names(), qt.DeepEquals, []string{"removed_seq"})
+	c.Assert(result.SequencesRemoved.Names(), qt.DeepEquals, []string{"added_seq"})
 	c.Assert(result.SequencesModified, qt.HasLen, 1)
 	c.Assert(result.SequencesModified[0].SequenceName, qt.Equals, "changed_seq")
 	c.Assert(result.SequencesModified[0].Changes["increment"], qt.Equals, "2 -> 1")
@@ -1220,7 +1220,7 @@ func TestGenerateDownMigrationSQL_SequenceAdded(t *testing.T) {
 	// The up migration added a standalone sequence, so the down migration must
 	// drop it. The post-up database state carries the sequence.
 	upDiff := &difftypes.SchemaDiff{
-		SequencesAdded: []string{"order_seq"},
+		SequencesAdded: difftypes.SequenceChanges{{Name: "order_seq"}},
 	}
 	dbSchema := &catalog.Database{
 		Sequences: []catalog.Sequence{{Name: "order_seq", DataType: "bigint"}},

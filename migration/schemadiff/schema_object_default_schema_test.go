@@ -28,8 +28,8 @@ func TestCompareWithDialect_DifferentSchemaDoesNotMatchSchemaObjects(t *testing.
 
 	c.Assert(diff.FunctionsAdded, qt.DeepEquals, []string{"public.f_ctl"})
 	c.Assert(diff.FunctionsRemoved, qt.DeepEquals, []string{"reporting.f_ctl"})
-	c.Assert(diff.SequencesAdded, qt.DeepEquals, []string{"public.s_ctl"})
-	c.Assert(diff.SequencesRemoved, qt.DeepEquals, []string{"reporting.s_ctl"})
+	c.Assert(diff.SequencesAdded.Names(), qt.DeepEquals, []string{"public.s_ctl"})
+	c.Assert(diff.SequencesRemoved.Names(), qt.DeepEquals, []string{"reporting.s_ctl"})
 	c.Assert(diff.DomainsAdded, qt.DeepEquals, []string{"public.d_ctl"})
 	c.Assert(diff.DomainsRemoved, qt.DeepEquals, []string{"reporting.d_ctl"})
 	c.Assert(diff.CompositeTypesAdded.Names(), qt.DeepEquals, []string{"public.c_ctl"})

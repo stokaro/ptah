@@ -60,7 +60,7 @@ func unhostableSchema() *schemamodel.Database {
 func unhostableCreationDiff() *difftypes.SchemaDiff {
 	return &difftypes.SchemaDiff{
 		ExtensionsAdded:        []string{"pg_trgm"},
-		SequencesAdded:         []string{"order_number_seq"},
+		SequencesAdded:         difftypes.SequenceChanges{{Name: "order_number_seq"}},
 		RolesAdded:             []string{"app_role"},
 		FunctionsAdded:         []string{"bump"},
 		TablesAdded:            []string{"t"},
@@ -212,7 +212,7 @@ func TestPlan_ClickHouseNamesRemovedObjectsToo(t *testing.T) {
 
 	diff := &difftypes.SchemaDiff{
 		ExtensionsRemoved:        []string{"pg_trgm"},
-		SequencesRemoved:         []string{"order_number_seq"},
+		SequencesRemoved:         difftypes.SequenceChanges{{Name: "order_number_seq"}},
 		DomainsRemoved:           []string{"email"},
 		CompositeTypesRemoved:    difftypes.CompositeTypeChanges{{Name: "addr"}},
 		RangesRemoved:            difftypes.RangeChanges{{Name: "tsr"}},
@@ -319,7 +319,7 @@ func mysqlFamilySchema() *schemamodel.Database {
 func mysqlFamilyCreationDiff() *difftypes.SchemaDiff {
 	return &difftypes.SchemaDiff{
 		ExtensionsAdded: []string{"pg_trgm"},
-		SequencesAdded:  []string{"order_number_seq"},
+		SequencesAdded:  difftypes.SequenceChanges{{Name: "order_number_seq"}},
 		TablesAdded:     []string{"t"},
 	}
 }

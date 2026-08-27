@@ -185,7 +185,7 @@ func TestGenerateSchemaDiffSQL_PostgresEnumRemovalPreservesLiteralDotIdentity(t 
 func TestGenerateSchemaDiffSQL_PostgresSequenceRemovalPreservesLiteralDotIdentity(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{
-		SequencesRemoved: []string{`"tenant.data"`},
+		SequencesRemoved: difftypes.SequenceChanges{{Name: "tenant.data"}},
 	}
 
 	sql, err := planner.GenerateSchemaDiffSQL(diff, &schemamodel.Database{}, platform.Postgres)

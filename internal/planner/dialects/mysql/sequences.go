@@ -34,12 +34,10 @@ func (p *Planner) planSequences(result []ast.Node, diff *difftypes.SchemaDiff, d
 		return result
 	}
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
-	for _, name := range diff.SequencesAdded {
-		sequence := objectlookup.Qualified(desired.Sequences, name, semantics)
-		if sequence == nil {
-			continue
-		}
-		result = append(result, fromschema.FromSequence(*sequence))
+	// No lookup: the change carries the sequence (stokaro/ptah#2315), so a
+	// name the desired schema could not resolve no longer plans nothing.
+	for _, sequence := range diff.SequencesAdded {
+		result = append(result, fromschema.FromSequence(sequence))
 	}
 	for _, sequenceDiff := range diff.SequencesModified {
 		sequence := objectlookup.Qualified(desired.Sequences, sequenceDiff.SequenceName, semantics)
@@ -61,8 +59,8 @@ func (p *Planner) removeSequences(result []ast.Node, diff *difftypes.SchemaDiff)
 	if !p.capabilities().Has(capability.Sequences) {
 		return result
 	}
-	for _, name := range diff.SequencesRemoved {
-		schemaName, sequenceName := splitQualifiedSequenceName(name)
+	for _, sequence := range diff.SequencesRemoved {
+		schemaName, sequenceName := splitQualifiedSequenceName(sequence.QualifiedName())
 		node := ast.NewDropSequence(sequenceName).
 			SetIfExists().
 			SetComment("WARNING: Ensure no column default still draws from this sequence")

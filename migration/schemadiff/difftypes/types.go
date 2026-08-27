@@ -22,6 +22,34 @@ import (
 	"go.5x5.cz/ptah/core/schemamodel"
 )
 
+// SequenceChanges is a set of sequences one change applies to, carrying each
+// one's definition and not only its name.
+//
+// The third family off `[]string` under stokaro/ptah#2315. See [RangeChanges]
+// for why both sides carry the operand and why the wire shape does not change.
+type SequenceChanges []schemamodel.Sequence
+
+// MarshalJSON writes the names alone, the shape `sequences_added` and
+// `sequences_removed` have always had.
+func (s SequenceChanges) MarshalJSON() ([]byte, error) {
+	if s == nil {
+		return []byte("null"), nil
+	}
+	return json.Marshal(s.Names())
+}
+
+// Names is the sequence names this change applies to.
+func (s SequenceChanges) Names() []string {
+	if s == nil {
+		return nil
+	}
+	names := make([]string, 0, len(s))
+	for _, sequence := range s {
+		names = append(names, sequence.QualifiedName())
+	}
+	return names
+}
+
 // CompositeTypeChanges is a set of composite types one change applies to,
 // carrying each one's fields and not only its name.
 //
@@ -406,11 +434,11 @@ type SchemaDiff struct {
 
 	// SequencesAdded contains names of standalone sequences that exist in the target
 	// schema but not in the current database schema.
-	SequencesAdded []string `json:"sequences_added"`
+	SequencesAdded SequenceChanges `json:"sequences_added"`
 
 	// SequencesRemoved contains names of standalone sequences that exist in the current
 	// database but not in the target schema (potentially dangerous - may break defaults).
-	SequencesRemoved []string `json:"sequences_removed"`
+	SequencesRemoved SequenceChanges `json:"sequences_removed"`
 
 	// SequencesModified contains detailed information about sequences that exist in both
 	// schemas but have different options (increment, cache, cycle, ownership, etc.).
