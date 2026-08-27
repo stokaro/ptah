@@ -59,7 +59,7 @@ func TestMariaDBLiveSequenceConverges(t *testing.T) {
 	// 1. The creation is planned and the server takes it. Every option is
 	//    named, so every option is one the comparison will hold Ptah to.
 	created := compareLiveSequences(c, ctx, conn, declared(42))
-	c.Assert(created.SequencesAdded, qt.DeepEquals, []string{name})
+	c.Assert(created.SequencesAdded.Names(), qt.DeepEquals, []string{name})
 	applyLiveStatements(c, ctx, conn, created, declared(42), platform.MariaDB)
 
 	// 2. The read describes what was created, cache included -- the option

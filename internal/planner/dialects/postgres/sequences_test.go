@@ -15,9 +15,14 @@ import (
 func TestPlanner_SequencesAdded_OrderedBeforeTablesWithOwnershipAfter(t *testing.T) {
 	c := qt.New(t)
 
+	// The addition carries the sequence, ownership included: that is what the
+	// comparator now builds, and it is what `OWNED BY` is planned from
+	// (stokaro/ptah#2315).
 	diff := &difftypes.SchemaDiff{
-		SequencesAdded: []string{"order_seq"},
-		TablesAdded:    []string{"orders"},
+		SequencesAdded: difftypes.SequenceChanges{
+			{Name: "order_seq", AsType: "bigint", Cache: new(int64(20)), OwnedBy: "orders.id"},
+		},
+		TablesAdded: []string{"orders"},
 	}
 	desired := &schemamodel.Database{
 		Sequences: []schemamodel.Sequence{

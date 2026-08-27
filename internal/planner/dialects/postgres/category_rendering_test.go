@@ -165,10 +165,10 @@ func diffCategoryFixtures() []categoryFixture {
 		},
 		{
 			"SequencesAdded",
-			&difftypes.SchemaDiff{SequencesAdded: []string{"s"}},
+			&difftypes.SchemaDiff{SequencesAdded: difftypes.SequenceChanges{{Name: "s"}}},
 			&schemamodel.Database{Sequences: []schemamodel.Sequence{{Name: "s"}}},
 		},
-		{"SequencesRemoved", &difftypes.SchemaDiff{SequencesRemoved: []string{"s"}}, &schemamodel.Database{}},
+		{"SequencesRemoved", &difftypes.SchemaDiff{SequencesRemoved: difftypes.SequenceChanges{{Name: "s"}}}, &schemamodel.Database{}},
 		{
 			"SequencesModified",
 			&difftypes.SchemaDiff{SequencesModified: []difftypes.SequenceDiff{{SequenceName: "s", Changes: map[string]string{"increment": "1 -> 2"}}}},

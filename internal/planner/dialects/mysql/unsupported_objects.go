@@ -71,14 +71,14 @@ func (p *Planner) reportUnsupportedSequences(result []ast.Node, diff *difftypes.
 	if p.capabilities().Has(capability.Sequences) {
 		return result
 	}
-	for _, name := range diff.SequencesAdded {
-		result = append(result, ast.NewCreateSequence(name))
+	for _, sequence := range diff.SequencesAdded {
+		result = append(result, ast.NewCreateSequence(sequence.QualifiedName()))
 	}
 	for _, sequence := range diff.SequencesModified {
 		result = append(result, ast.NewAlterSequence(sequence.SequenceName))
 	}
-	for _, name := range diff.SequencesRemoved {
-		result = append(result, ast.NewDropSequence(name))
+	for _, sequence := range diff.SequencesRemoved {
+		result = append(result, ast.NewDropSequence(sequence.QualifiedName()))
 	}
 	return result
 }

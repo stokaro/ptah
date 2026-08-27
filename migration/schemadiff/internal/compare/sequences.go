@@ -73,7 +73,7 @@ func sequencesWithSemantics(
 	for identity, generatedSequence := range generatedSequences {
 		databaseSequence, exists := databaseSequences[identity]
 		if !exists {
-			diff.SequencesAdded = append(diff.SequencesAdded, generatedNames[identity])
+			diff.SequencesAdded = append(diff.SequencesAdded, generatedSequence)
 			continue
 		}
 		if changes := sequenceChanges(generatedSequence, databaseSequence); len(changes) > 0 {
@@ -84,9 +84,9 @@ func sequencesWithSemantics(
 		}
 	}
 
-	for identity := range databaseSequences {
+	for identity, databaseSequence := range databaseSequences {
 		if _, exists := generatedSequences[identity]; !exists {
-			diff.SequencesRemoved = append(diff.SequencesRemoved, databaseNames[identity])
+			diff.SequencesRemoved = append(diff.SequencesRemoved, sequenceFromCatalog(databaseSequence))
 		}
 	}
 
@@ -103,14 +103,14 @@ func sequencesWithSemantics(
 		sequenceGuards[generatedNames[identity]] = sequence.IfNotExists
 	}
 	kept, withheld := keepPlannedAdditions(cov,
-		coverage.Sequence, diff.SequencesAdded, qualifiedName, itself, guardedCreations(sequenceGuards),
+		coverage.Sequence, diff.SequencesAdded, sequenceSpelling, sequenceDisplay, guardedCreations(sequenceGuards),
 	)
 	diff.SequencesAdded = kept
 	cov.recordUndecidedAdditions(withheld)
-	diff.SequencesRemoved = keepPlannedRemovals(cov, coverage.Sequence, diff.SequencesRemoved, qualifiedName)
+	diff.SequencesRemoved = keepPlannedRemovals(cov, coverage.Sequence, diff.SequencesRemoved, sequenceSpelling)
 
-	sort.Strings(diff.SequencesAdded)
-	sort.Strings(diff.SequencesRemoved)
+	sortSequences(diff.SequencesAdded)
+	sortSequences(diff.SequencesRemoved)
 	sort.Slice(diff.SequencesModified, func(i, j int) bool {
 		return diff.SequencesModified[i].SequenceName < diff.SequencesModified[j].SequenceName
 	})
@@ -154,4 +154,39 @@ func compareInt64Option(changes map[string]string, key string, target, current *
 	if *target != *current {
 		changes[key] = fmt.Sprintf("%d -> %d", *current, *target)
 	}
+}
+
+// sequenceFromCatalog carries a sequence the database reported into the shape
+// the diff holds. Every property a read establishes has a home in the model;
+// the one rename is DataType, which the model spells AsType because that is the
+// word a declaration uses.
+func sequenceFromCatalog(reported catalog.Sequence) schemamodel.Sequence {
+	return schemamodel.Sequence{
+		Name:      reported.Name,
+		Schema:    reported.Schema,
+		AsType:    reported.DataType,
+		Start:     reported.Start,
+		Increment: reported.Increment,
+		MinValue:  reported.MinValue,
+		MaxValue:  reported.MaxValue,
+		Cache:     reported.Cache,
+		Cycle:     reported.Cycle,
+		OwnedBy:   reported.OwnedBy,
+		Comment:   reported.Comment,
+	}
+}
+
+// sequenceSpelling is qualifiedName for a change that carries its operand.
+func sequenceSpelling(sequence schemamodel.Sequence) (schema string, spellings []string) {
+	return qualifiedName(sequence.QualifiedName())
+}
+
+// sequenceDisplay names one for a record a person reads.
+func sequenceDisplay(sequence schemamodel.Sequence) string { return sequence.QualifiedName() }
+
+// sortSequences orders by the key the name lists were sorted on.
+func sortSequences(sequences difftypes.SequenceChanges) {
+	sort.Slice(sequences, func(i, j int) bool {
+		return sequences[i].QualifiedName() < sequences[j].QualifiedName()
+	})
 }

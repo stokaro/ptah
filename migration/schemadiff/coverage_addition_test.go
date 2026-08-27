@@ -52,7 +52,7 @@ func TestAGuardedNonExtensionCreationSurvivesAReadThatDidNotLook(t *testing.T) {
 					Sequences: []schemamodel.Sequence{{Name: "s1", Schema: "public", IfNotExists: true}},
 				}
 			},
-			read:        func(diff *difftypes.SchemaDiff) []string { return diff.SequencesAdded },
+			read:        func(diff *difftypes.SchemaDiff) []string { return diff.SequencesAdded.Names() },
 			wantPlanned: []string{"public.s1"},
 		},
 	}
@@ -139,7 +139,7 @@ func TestAnUnguardedCreationIsWithheldAndNamed(t *testing.T) {
 				return &schemamodel.Database{Sequences: []schemamodel.Sequence{{Name: "s1", Schema: "public"}}}
 			},
 			notDescribed: coverage.Set{}.WithKind(coverage.Sequence),
-			read:         func(diff *difftypes.SchemaDiff) []string { return diff.SequencesAdded },
+			read:         func(diff *difftypes.SchemaDiff) []string { return diff.SequencesAdded.Names() },
 			wantWithheld: []coverage.Object{{Kind: coverage.Sequence, Name: "public.s1"}},
 		},
 		{
@@ -203,7 +203,7 @@ func TestAnUndeclaredReadPlansEveryAdditionAndWithholdsNothing(t *testing.T) {
 			desired: func() *schemamodel.Database {
 				return &schemamodel.Database{Sequences: []schemamodel.Sequence{{Name: "s1", Schema: "public"}}}
 			},
-			read:        func(diff *difftypes.SchemaDiff) []string { return diff.SequencesAdded },
+			read:        func(diff *difftypes.SchemaDiff) []string { return diff.SequencesAdded.Names() },
 			wantPlanned: []string{"public.s1"},
 		},
 		{

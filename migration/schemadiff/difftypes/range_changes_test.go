@@ -159,3 +159,68 @@ func TestCompositeTypeChanges_TheFieldsSurviveInMemory(t *testing.T) {
 	c.Assert(changes[0].Fields[1].Type, qt.Equals, "text")
 	c.Assert(changes.Names(), qt.DeepEquals, []string{"app.addr"})
 }
+
+// TestSequenceChanges_TheWireShapeIsUnchanged is the same promise for the third
+// family off `[]string`.
+func TestSequenceChanges_TheWireShapeIsUnchanged(t *testing.T) {
+	increment := int64(5)
+	tests := []struct {
+		name    string
+		changes difftypes.SequenceChanges
+		want    string
+		why     string
+	}{
+		{
+			name:    "nil is null",
+			changes: nil,
+			want:    "null",
+			why:     "null is a comparison that did not run",
+		},
+		{
+			name:    "empty is an empty array",
+			changes: difftypes.SequenceChanges{},
+			want:    "[]",
+			why:     "[] is a comparison that ran and found nothing",
+		},
+		{
+			name: "the definition does not reach the wire",
+			changes: difftypes.SequenceChanges{
+				{Name: "s", AsType: "bigint", Increment: &increment, OwnedBy: "orders.id"},
+			},
+			want: `["s"]`,
+			why:  "a name list is what format_version 1 has always carried here",
+		},
+		{
+			name:    "a schema-qualified sequence keeps its qualified spelling",
+			changes: difftypes.SequenceChanges{{Name: "s", Schema: "app"}},
+			want:    `["app.s"]`,
+			why:     "the identity a consumer keys on is unchanged",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			encoded, err := json.Marshal(test.changes)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(string(encoded), qt.Equals, test.want, qt.Commentf("%s", test.why))
+		})
+	}
+}
+
+// TestSequenceChanges_TheDefinitionSurvivesInMemory is the other half.
+//
+// Ownership is the field that makes it matter: `OWNED BY` is planned from the
+// operand now, and a carry that dropped it would plan a sequence whose lifetime
+// is no longer tied to its column.
+func TestSequenceChanges_TheDefinitionSurvivesInMemory(t *testing.T) {
+	c := qt.New(t)
+
+	changes := difftypes.SequenceChanges{{Name: "s", Schema: "app", AsType: "bigint", OwnedBy: "orders.id"}}
+
+	c.Assert(changes[0].OwnedBy, qt.Equals, "orders.id")
+	c.Assert(changes[0].AsType, qt.Equals, "bigint")
+	c.Assert(changes.Names(), qt.DeepEquals, []string{"app.s"})
+}

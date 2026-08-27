@@ -59,8 +59,8 @@ func TestSequences_AddRemove(t *testing.T) {
 
 			compare.Sequences(desired, database, diff, compare.CoverageOf(desired, database))
 
-			c.Assert(diff.SequencesAdded, qt.DeepEquals, tt.expectedAdded)
-			c.Assert(diff.SequencesRemoved, qt.DeepEquals, tt.expectedRemoved)
+			c.Assert(diff.SequencesAdded.Names(), qt.DeepEquals, tt.expectedAdded)
+			c.Assert(diff.SequencesRemoved.Names(), qt.DeepEquals, tt.expectedRemoved)
 		})
 	}
 }
@@ -82,8 +82,8 @@ func TestSequences_ModifiedOnlyComparesDeclaredOptions(t *testing.T) {
 
 	compare.Sequences(desired, database, diff, compare.CoverageOf(desired, database))
 
-	c.Assert(diff.SequencesAdded, qt.IsNil)
-	c.Assert(diff.SequencesRemoved, qt.IsNil)
+	c.Assert(diff.SequencesAdded.Names(), qt.IsNil)
+	c.Assert(diff.SequencesRemoved.Names(), qt.IsNil)
 	c.Assert(diff.SequencesModified, qt.HasLen, 1)
 	changes := diff.SequencesModified[0].Changes
 	c.Assert(changes["increment"], qt.Equals, "1 -> 2")
@@ -150,7 +150,7 @@ func TestSequences_UnchangedProducesNoDiff(t *testing.T) {
 
 	compare.Sequences(desired, database, diff, compare.CoverageOf(desired, database))
 
-	c.Assert(diff.SequencesAdded, qt.IsNil)
-	c.Assert(diff.SequencesRemoved, qt.IsNil)
+	c.Assert(diff.SequencesAdded.Names(), qt.IsNil)
+	c.Assert(diff.SequencesRemoved.Names(), qt.IsNil)
 	c.Assert(diff.SequencesModified, qt.IsNil)
 }

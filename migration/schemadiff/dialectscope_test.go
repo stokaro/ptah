@@ -211,7 +211,7 @@ func TestCompare_AScopedAwayNameDoesNotSuppressAnotherSchemasObject(t *testing.T
 
 			diff := schemadiff.CompareWithDialect(desired, current, "postgres")
 
-			c.Assert(diff.SequencesRemoved, qt.HasLen, test.removed)
+			c.Assert(diff.SequencesRemoved.Names(), qt.HasLen, test.removed)
 		})
 	}
 }
