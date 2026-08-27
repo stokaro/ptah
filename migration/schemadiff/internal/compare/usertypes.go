@@ -94,12 +94,12 @@ func domainsWithSemantics(
 	//
 	// `CREATE DOMAIN` and `CREATE TYPE` have no conditional form, so an
 	// undecidable addition is recorded on the coverage rather than dropped.
-	keptDomains, withheldDomains := cov.keepPlannedAdditions(
-		coverage.Domain, diff.DomainsAdded, qualifiedName, unguardedCreations(),
+	keptDomains, withheldDomains := keepPlannedAdditions(cov,
+		coverage.Domain, diff.DomainsAdded, qualifiedName, itself, unguardedCreations(),
 	)
 	diff.DomainsAdded = keptDomains
 	cov.recordUndecidedAdditions(withheldDomains)
-	diff.DomainsRemoved = cov.keepPlannedRemovals(coverage.Domain, diff.DomainsRemoved, qualifiedName)
+	diff.DomainsRemoved = keepPlannedRemovals(cov, coverage.Domain, diff.DomainsRemoved, qualifiedName)
 
 	sort.Strings(diff.DomainsAdded)
 	sort.Strings(diff.DomainsRemoved)
@@ -298,12 +298,12 @@ func compositeTypesWithSemantics(
 		}
 	}
 
-	keptComposites, withheldComposites := cov.keepPlannedAdditions(
-		coverage.Composite, diff.CompositeTypesAdded, qualifiedName, unguardedCreations(),
+	keptComposites, withheldComposites := keepPlannedAdditions(cov,
+		coverage.Composite, diff.CompositeTypesAdded, qualifiedName, itself, unguardedCreations(),
 	)
 	diff.CompositeTypesAdded = keptComposites
 	cov.recordUndecidedAdditions(withheldComposites)
-	diff.CompositeTypesRemoved = cov.keepPlannedRemovals(coverage.Composite, diff.CompositeTypesRemoved, qualifiedName)
+	diff.CompositeTypesRemoved = keepPlannedRemovals(cov, coverage.Composite, diff.CompositeTypesRemoved, qualifiedName)
 
 	sort.Strings(diff.CompositeTypesAdded)
 	sort.Strings(diff.CompositeTypesRemoved)
@@ -469,7 +469,7 @@ func rangesWithSemantics(
 	for identity, target := range generatedRanges {
 		current, exists := databaseRanges[identity]
 		if !exists {
-			diff.RangesAdded = append(diff.RangesAdded, generatedNames[identity])
+			diff.RangesAdded = append(diff.RangesAdded, target)
 			continue
 		}
 		if changes := rangeChanges(target, current); len(changes) > 0 {
@@ -483,21 +483,24 @@ func rangesWithSemantics(
 			})
 		}
 	}
-	for identity := range databaseRanges {
+	for identity, current := range databaseRanges {
 		if _, exists := generatedRanges[identity]; !exists {
-			diff.RangesRemoved = append(diff.RangesRemoved, databaseNames[identity])
+			// The removed side carries its definition too, read off the
+			// database. A reverse migration turns this into an addition, and
+			// the planner it reaches must not have to look the type up.
+			diff.RangesRemoved = append(diff.RangesRemoved, rangeFromCatalog(current))
 		}
 	}
 
-	keptRanges, withheldRanges := cov.keepPlannedAdditions(
-		coverage.Range, diff.RangesAdded, qualifiedName, unguardedCreations(),
+	keptRanges, withheldRanges := keepPlannedAdditions(cov,
+		coverage.Range, diff.RangesAdded, rangeSpelling, rangeDisplay, unguardedCreations(),
 	)
 	diff.RangesAdded = keptRanges
 	cov.recordUndecidedAdditions(withheldRanges)
-	diff.RangesRemoved = cov.keepPlannedRemovals(coverage.Range, diff.RangesRemoved, qualifiedName)
+	diff.RangesRemoved = keepPlannedRemovals(cov, coverage.Range, diff.RangesRemoved, rangeSpelling)
 
-	sort.Strings(diff.RangesAdded)
-	sort.Strings(diff.RangesRemoved)
+	sortRanges(diff.RangesAdded)
+	sortRanges(diff.RangesRemoved)
 	sort.Slice(diff.RangesModified, func(i, j int) bool {
 		return diff.RangesModified[i].RangeName < diff.RangesModified[j].RangeName
 	})
@@ -554,4 +557,35 @@ func addDeclaredRangeChange(changes map[string]string, target schemamodel.Range,
 		return
 	}
 	changes[key] = fmt.Sprintf("%s -> %s", current, declared)
+}
+
+// rangeFromCatalog carries a range the database reported into the shape the
+// diff holds. The two declare the same seven properties; the model's remaining
+// fields describe how a declaration was WRITTEN, which a read has no source for.
+func rangeFromCatalog(reported catalog.Range) schemamodel.Range {
+	return schemamodel.Range{
+		Name:           reported.Name,
+		Schema:         reported.Schema,
+		Subtype:        reported.Subtype,
+		SubtypeOpClass: reported.SubtypeOpClass,
+		Collation:      reported.Collation,
+		Canonical:      reported.Canonical,
+		SubtypeDiff:    reported.SubtypeDiff,
+	}
+}
+
+// rangeSpelling is qualifiedName for a change that carries its operand.
+func rangeSpelling(rangeType schemamodel.Range) (schema string, spellings []string) {
+	return qualifiedName(rangeType.QualifiedName())
+}
+
+// rangeDisplay names one for a record a person reads.
+func rangeDisplay(rangeType schemamodel.Range) string { return rangeType.QualifiedName() }
+
+// sortRanges orders by the same key the name lists were sorted on, so a change
+// that only carries more does not reorder a plan.
+func sortRanges(ranges difftypes.RangeChanges) {
+	sort.Slice(ranges, func(i, j int) bool {
+		return ranges[i].QualifiedName() < ranges[j].QualifiedName()
+	})
 }

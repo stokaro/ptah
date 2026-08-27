@@ -200,5 +200,5 @@ func TestRanges_AddRemoveByNameOnly(t *testing.T) {
 	compare.Ranges(desired, database, diff, compare.CoverageOf(desired, database))
 
 	c.Assert(diff.RangesAdded, qt.IsNil)
-	c.Assert(diff.RangesRemoved, qt.DeepEquals, []string{"legacy"})
+	c.Assert(diff.RangesRemoved.Names(), qt.DeepEquals, []string{"legacy"})
 }

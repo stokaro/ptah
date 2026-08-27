@@ -167,8 +167,8 @@ func Roles(
 	//
 	// `CREATE ROLE` has no conditional form on any dialect Ptah renders, so a
 	// withheld role is recorded as undecided instead of vanishing.
-	kept, withheld := cov.keepPlannedAdditions(
-		coverage.Role, diff.RolesAdded, globalName, unguardedCreations(),
+	kept, withheld := keepPlannedAdditions(cov,
+		coverage.Role, diff.RolesAdded, globalName, itself, unguardedCreations(),
 	)
 	diff.RolesAdded = kept
 	cov.recordUndecidedAdditions(withheld)

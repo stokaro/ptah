@@ -49,7 +49,13 @@ func TestPlanner_GenerateMigrationAST_CreatesUserTypesBeforeTheTypesThatNameThem
 	diff := &difftypes.SchemaDiff{
 		DomainsAdded:        []string{"d_comp", "d_range", "d_int"},
 		CompositeTypesAdded: []string{"addr", "measure"},
-		RangesAdded:         []string{"myrange", "posrange"},
+		// The subtypes travel WITH the change now; the ordering this test is
+		// about is computed from them, and the planner no longer reads them
+		// back out of the schema by name.
+		RangesAdded: difftypes.RangeChanges{
+			{Name: "myrange", Subtype: "integer"},
+			{Name: "posrange", Subtype: "d_int"},
+		},
 	}
 
 	nodes, err := planner.GenerateMigrationAST(diff, userTypeOrderSchema())

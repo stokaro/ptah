@@ -154,8 +154,8 @@ func (p *Planner) reportRemovedUserTypes(result []ast.Node, diff *difftypes.Sche
 			result = append(result, ast.NewDropType(name))
 		}
 	}
-	for _, name := range diff.RangesRemoved {
-		result = append(result, ast.NewDropType(name))
+	for _, rangeType := range diff.RangesRemoved {
+		result = append(result, ast.NewDropType(rangeType.QualifiedName()))
 	}
 	return result
 }

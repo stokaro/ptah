@@ -187,12 +187,12 @@ func ExtensionsWithSemantics(
 	// PostgreSQL accepts CREATE EXTENSION IF NOT EXISTS as a no-op and leaves the
 	// requested placement unapplied. Withhold every unknown-current addition and
 	// report it instead of silently accepting the wrong schema.
-	kept, withheld := cov.keepPlannedAdditions(
-		coverage.Extension, diff.ExtensionsAdded, globalName, unguardedCreations(),
+	kept, withheld := keepPlannedAdditions(cov,
+		coverage.Extension, diff.ExtensionsAdded, globalName, itself, unguardedCreations(),
 	)
 	diff.ExtensionsAdded = kept
 	cov.recordUndecidedAdditions(withheld)
-	diff.ExtensionsRemoved = cov.keepPlannedRemovals(coverage.Extension, diff.ExtensionsRemoved, globalName)
+	diff.ExtensionsRemoved = keepPlannedRemovals(cov, coverage.Extension, diff.ExtensionsRemoved, globalName)
 
 	// Sort for consistent output
 	sort.Strings(diff.ExtensionsAdded)

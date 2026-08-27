@@ -13,12 +13,63 @@
 package difftypes
 
 import (
+	"encoding/json"
 	"slices"
 	"strings"
 
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 )
+
+// RangeChanges is a set of range types one change applies to, carrying each
+// one's definition and not only its name.
+//
+// It is the first family to move off `[]string` under stokaro/ptah#2315, whose
+// measure of done is `GenerateSchemaDiffAST` no longer taking the desired
+// schema: the planner took it to recover, by name, what the diff had thrown
+// away. A change that carries its operands needs no such lookup -- and the
+// lookup it replaces had an `if found != nil` around it, so a name the planner
+// could not resolve silently planned nothing.
+//
+// ON THE WIRE IT IS STILL A LIST OF NAMES. `ptah schema diff --format json`
+// serializes this type as `format_version: 1` has always spelled it, because
+// 33 of these families remain and a format that changed shape once per family
+// would churn 33 times for one architectural move. The document is written and
+// never read back -- nothing in the tree unmarshals a SchemaDiff -- so the
+// encoding is a presentation choice, and the version bump belongs to the end of
+// the migration rather than to each step of it.
+type RangeChanges []schemamodel.Range
+
+// MarshalJSON writes the names alone, preserving the shape `ranges_added` and
+// `ranges_removed` have carried since they existed.
+//
+// A nil list stays null and an empty one stays an empty array, which is the
+// distinction every other field of this type keeps: null is a comparison that
+// did not run, and [] is one that found nothing.
+func (r RangeChanges) MarshalJSON() ([]byte, error) {
+	if r == nil {
+		return []byte("null"), nil
+	}
+	names := make([]string, 0, len(r))
+	for _, rangeType := range r {
+		names = append(names, rangeType.QualifiedName())
+	}
+	return json.Marshal(names)
+}
+
+// Names is the range names this change applies to, for the callers that key on
+// a name rather than plan from a definition.
+func (r RangeChanges) Names() []string {
+	if r == nil {
+		return nil
+	}
+	names := make([]string, 0, len(r))
+	for _, rangeType := range r {
+		names = append(names, rangeType.QualifiedName())
+	}
+	return names
+}
 
 // IndexRef identifies an index together with its owning table.
 // Table-qualified identity is required for dialects such as MySQL and MariaDB,
@@ -356,9 +407,15 @@ type SchemaDiff struct {
 	// changing the subtype of an existing range type produced an empty plan and
 	// `schema apply` reported "Schema is synced" while the database still held
 	// the old definition (stokaro/ptah#931 item 2).
-	RangesAdded    []string    `json:"ranges_added"`
-	RangesRemoved  []string    `json:"ranges_removed"`
-	RangesModified []RangeDiff `json:"ranges_modified"`
+	//
+	// The two name lists carry the range type itself rather than its name, the
+	// first family to do so under stokaro/ptah#2315. Both sides carry it: the
+	// reverse of an addition is a removal and the reverse of a removal is an
+	// addition, and a planner that had to look one of them up would need a
+	// schema again for exactly the direction that swap produces.
+	RangesAdded    RangeChanges `json:"ranges_added"`
+	RangesRemoved  RangeChanges `json:"ranges_removed"`
+	RangesModified []RangeDiff  `json:"ranges_modified"`
 
 	// ViewsAdded contains names of views that exist in the target schema
 	// but not in the current database schema.

@@ -163,25 +163,35 @@ func alwaysGuardedCreations() creationGuard {
 //
 // names maps a planned entry to every spelling of it the coverage record might
 // use.
-func (c Coverage) keepPlannedAdditions(
+// display is taken rather than derived from the spellings, because a spelling
+// list may be empty on purpose: tableSchemaOnly reports the schema and NO
+// names, since the names inside a namespace a reader skipped are exactly what
+// it does not know. Reading a name out of that list would panic on the one
+// caller whose gate is the most conservative.
+func keepPlannedAdditions[T any](
+	c Coverage,
 	kind coverage.Kind,
-	planned []string,
-	names func(string) (schema string, spellings []string),
+	planned []T,
+	names func(T) (schema string, spellings []string),
+	display func(T) string,
 	guarded creationGuard,
-) (kept []string, withheld []coverage.Object) {
-	kept = c.keep(planned, func(entry string) bool {
+) (kept []T, withheld []coverage.Object) {
+	kept = keep(planned, func(entry T) bool {
 		schema, spellings := names(entry)
 		if c.PlansAddition(kind, schema, spellings...) {
 			return true
 		}
-		if guarded(entry) {
+		if guarded(display(entry)) {
 			return true
 		}
-		withheld = append(withheld, c.withheldAddition(kind, entry, schema, spellings))
+		withheld = append(withheld, c.withheldAddition(kind, display(entry), schema, spellings))
 		return false
 	})
 	return kept, withheld
 }
+
+// itself is the display function for a change still spelled as its name.
+func itself(name string) string { return name }
 
 // withheldAddition builds the record for one addition this comparison could not
 // decide, carrying the reason and the provenance the CURRENT side gave for its
@@ -221,12 +231,13 @@ func (c Coverage) recordUndecidedAdditions(withheld []coverage.Object) {
 
 // keepPlannedRemovals drops from a list of planned removals every object the
 // desired state never claimed to describe.
-func (c Coverage) keepPlannedRemovals(
+func keepPlannedRemovals[T any](
+	c Coverage,
 	kind coverage.Kind,
-	planned []string,
-	names func(string) (schema string, spellings []string),
-) []string {
-	return c.keep(planned, func(entry string) bool {
+	planned []T,
+	names func(T) (schema string, spellings []string),
+) []T {
+	return keep(planned, func(entry T) bool {
 		schema, spellings := names(entry)
 		return c.PlansRemoval(kind, schema, spellings...)
 	})
@@ -235,11 +246,16 @@ func (c Coverage) keepPlannedRemovals(
 // keep preserves the input's nil-versus-empty shape, because several
 // comparators publish an empty non-nil slice as part of their contract and a
 // filter that quietly nils it changes an answer it was not asked about.
-func (c Coverage) keep(planned []string, keepEntry func(string) bool) []string {
+// keep is generic over the planned element because a change is moving from
+// being a NAME to carrying its own operands (stokaro/ptah#2315). The gate asks
+// the same question of both spellings -- the caller's `names` function is what
+// turns an element into something coverage can be asked about -- so nothing
+// here needs to know which one it has.
+func keep[T any](planned []T, keepEntry func(T) bool) []T {
 	if planned == nil {
 		return nil
 	}
-	out := make([]string, 0, len(planned))
+	out := make([]T, 0, len(planned))
 	for _, entry := range planned {
 		if keepEntry(entry) {
 			out = append(out, entry)

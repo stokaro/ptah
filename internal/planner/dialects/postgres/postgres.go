@@ -498,7 +498,7 @@ func (p *Planner) addSchemaPreconditions(
 	names = append(names, diff.EnumsAdded...)
 	names = append(names, diff.DomainsAdded...)
 	names = append(names, diff.CompositeTypesAdded...)
-	names = append(names, diff.RangesAdded...)
+	names = append(names, diff.RangesAdded.Names()...)
 	names = append(names, diff.SequencesAdded...)
 	names = append(names, diff.FunctionsAdded...)
 	names = append(names, diff.ViewsAdded...)
@@ -1344,13 +1344,14 @@ func (p *Planner) plannedUserTypes(
 			})
 		}
 	}
-	for _, name := range diff.RangesAdded {
-		if rangeType := findRange(desired.Ranges, name, semantics); rangeType != nil {
-			planned = append(planned, plannedUserType{
-				dep:  deporder.UserType{Name: name, References: []string{rangeType.Subtype}},
-				node: fromschema.FromRange(*rangeType),
-			})
-		}
+	// No lookup, and no `if found` around it. The change carries the range
+	// type, so a name the desired schema could not resolve no longer plans
+	// nothing at all (stokaro/ptah#2315).
+	for _, rangeType := range diff.RangesAdded {
+		planned = append(planned, plannedUserType{
+			dep:  deporder.UserType{Name: rangeType.QualifiedName(), References: []string{rangeType.Subtype}},
+			node: fromschema.FromRange(rangeType),
+		})
 	}
 	for _, name := range diff.CompositeTypesAdded {
 		if composite := findCompositeType(desired.CompositeTypes, name, semantics); composite != nil {
@@ -1424,8 +1425,8 @@ func (p *Planner) removeUserTypes(result []ast.Node, diff *difftypes.SchemaDiff)
 		result = append(result, ast.NewDropType(name).SetIfExists().SetCascade().
 			SetComment("WARNING: Make sure no columns use this composite type!"))
 	}
-	for _, name := range diff.RangesRemoved {
-		result = append(result, ast.NewDropType(name).SetIfExists().SetCascade().
+	for _, rangeType := range diff.RangesRemoved {
+		result = append(result, ast.NewDropType(rangeType.QualifiedName()).SetIfExists().SetCascade().
 			SetComment("WARNING: Make sure no columns use this range type!"))
 	}
 	return result

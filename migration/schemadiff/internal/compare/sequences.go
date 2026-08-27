@@ -102,12 +102,12 @@ func sequencesWithSemantics(
 	for identity, sequence := range generatedSequences {
 		sequenceGuards[generatedNames[identity]] = sequence.IfNotExists
 	}
-	kept, withheld := cov.keepPlannedAdditions(
-		coverage.Sequence, diff.SequencesAdded, qualifiedName, guardedCreations(sequenceGuards),
+	kept, withheld := keepPlannedAdditions(cov,
+		coverage.Sequence, diff.SequencesAdded, qualifiedName, itself, guardedCreations(sequenceGuards),
 	)
 	diff.SequencesAdded = kept
 	cov.recordUndecidedAdditions(withheld)
-	diff.SequencesRemoved = cov.keepPlannedRemovals(coverage.Sequence, diff.SequencesRemoved, qualifiedName)
+	diff.SequencesRemoved = keepPlannedRemovals(cov, coverage.Sequence, diff.SequencesRemoved, qualifiedName)
 
 	sort.Strings(diff.SequencesAdded)
 	sort.Strings(diff.SequencesRemoved)

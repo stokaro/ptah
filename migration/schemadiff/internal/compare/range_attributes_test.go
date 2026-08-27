@@ -131,7 +131,7 @@ func TestRanges_AddAndRemoveStillReported(t *testing.T) {
 
 	compare.Ranges(desired, database, diff, compare.CoverageOf(desired, database))
 
-	c.Assert(diff.RangesAdded, qt.DeepEquals, []string{"fresh"})
-	c.Assert(diff.RangesRemoved, qt.DeepEquals, []string{"legacy"})
+	c.Assert(diff.RangesAdded.Names(), qt.DeepEquals, []string{"fresh"})
+	c.Assert(diff.RangesRemoved.Names(), qt.DeepEquals, []string{"legacy"})
 	c.Assert(diff.RangesModified, qt.IsNil)
 }

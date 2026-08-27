@@ -215,7 +215,7 @@ func TestPlan_ClickHouseNamesRemovedObjectsToo(t *testing.T) {
 		SequencesRemoved:         []string{"order_number_seq"},
 		DomainsRemoved:           []string{"email"},
 		CompositeTypesRemoved:    []string{"addr"},
-		RangesRemoved:            []string{"tsr"},
+		RangesRemoved:            difftypes.RangeChanges{{Name: "tsr"}},
 		RolesRemoved:             []string{"app_role"},
 		FunctionsRemoved:         []string{"bump"},
 		ViewsRemoved:             []string{"v1"},
@@ -413,7 +413,7 @@ func TestPlan_MySQLFamilyNamesTheUserTypesItNoLongerDeclares(t *testing.T) {
 	diff := &difftypes.SchemaDiff{
 		DomainsRemoved:        []string{"email"},
 		CompositeTypesRemoved: []string{"addr"},
-		RangesRemoved:         []string{"tsr"},
+		RangesRemoved:         difftypes.RangeChanges{{Name: "tsr"}},
 	}
 
 	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
