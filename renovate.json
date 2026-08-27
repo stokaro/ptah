@@ -18,12 +18,12 @@
   "customManagers": [
     {
       "customType": "regex",
-      "description": "A database image pinned in a workflow's `docker run` is invisible to every built-in manager: the github-actions manager reads `uses:`, `container:` and `services:`, and the image here is an operand inside a `run:` shell block. Without this the docker-compose manager moved docker-compose.yaml alone and check-compose-image-pins.sh failed on the bot's own pull request, because that gate requires every Compose pin to be pinned by a workflow too -- a tag no workflow pins is a tag nothing tests. The marker comment names the image explicitly and the backreference ties the captured tag to it, so the pattern cannot pick up an unrelated colon or the wrong image from a neighbouring block. Grouped with the compose bump by the database-server-images rule below, which matches on the same depName, so both pins move in one pull request and the gate is green on arrival.",
+      "description": "A database image pinned in a workflow's `docker run` is invisible to every built-in manager: the github-actions manager reads `uses:`, `container:` and `services:`, and the image here is an operand inside a `run:` shell block. Without this the docker-compose manager moved docker-compose.yaml alone and check-compose-image-pins.sh failed on the bot's own pull request, because that gate requires every Compose pin to be pinned by a workflow too -- a tag no workflow pins is a tag nothing tests. The marker comment names the image explicitly and sits directly above its own `docker run`, which is what ties the captured tag to it: Renovate evaluates these with RE2, which has no backreferences, so `\\k<depName>` fails to compile and stops the bot outright (stokaro/ptah#2339). Proximity plus a lazy gap reaches the first image-shaped token after the marker, and requiring that token to START WITH A LETTER is what keeps it off the `--publish 26257:26257` line one row above -- a published port is digits, and it was the reason the tie had to be exact in the first place. Grouped with the compose bump by the database-server-images rule below, which matches on the same depName, so both pins move in one pull request and the gate is green on arrival.",
       "managerFilePatterns": [
         "/^\\.github/workflows/.*\\.ya?ml$/"
       ],
       "matchStrings": [
-        "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>\\S+)[\\s\\S]*?\\n\\s*\\k<depName>:(?<currentValue>[^\\s\\\\]+)"
+        "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>\\S+)[\\s\\S]*?\\n\\s*[a-z][\\w./-]*:(?<currentValue>[^\\s\\\\]+)"
       ]
     }
   ],

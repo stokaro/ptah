@@ -155,6 +155,10 @@ run_case check-public-api-docs-sync.sh \
 	"a package the site table lists deleted from the ledger" \
 	"perl -0pi -e 's/^- \`go\.5x5\.cz\/ptah\/migration\/seeder\`\n//m' docs/public_api.md"
 
+run_case check-renovate-regex.sh \
+	"a backreference put back into a custom-manager pattern" \
+	"perl -0pi -e 's/\\[a-z\\]\\[\\\\\\\\w\\.\\/-\\]\\*:/\\\\\\\\k<depName>:/' renovate.json"
+
 # What this harness does NOT cover, and why. A data table rather than a
 # paragraph, because the guard at the end of this file reads it: a coverage list
 # nobody checks is the same failure mode the harness exists to prevent --

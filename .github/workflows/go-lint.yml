@@ -62,6 +62,9 @@ jobs:
       - name: Check the ADR index
         run: scripts/check-adr-index.sh
 
+      - name: Check the Renovate custom-manager patterns
+        run: scripts/check-renovate-regex.sh
+
       - name: Check documented lint rules
         run: scripts/check-lint-rules.sh
 
