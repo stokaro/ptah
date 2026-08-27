@@ -1336,6 +1336,7 @@ type Synonym struct {
     and External is derived from them rather than stored, so the two cannot
     disagree.
 
+func (s Synonym) DeclaredTarget() string
 func (s Synonym) IsExternal() bool
 func (s Synonym) QualifiedName() string
 func (s Synonym) TargetQualifiedName() string
@@ -12503,6 +12504,7 @@ type RowTTLChange struct{ ... }
 type SchemaDiff struct{ ... }
 type SequenceChanges []schemamodel.Sequence
 type SequenceDiff struct{ ... }
+type SynonymChanges []schemamodel.Synonym
 type SynonymDiff struct{ ... }
 type TableDiff struct{ ... }
 type TriggerDiff struct{ ... }
@@ -13644,11 +13646,11 @@ type SchemaDiff struct {
 
     // SynonymsAdded contains names of synonyms that exist in the target schema
     // and not in the database.
-    SynonymsAdded []string `json:"synonyms_added"`
+    SynonymsAdded SynonymChanges `json:"synonyms_added"`
 
     // SynonymsRemoved contains names of synonyms that exist in the database and
     // not in the target schema.
-    SynonymsRemoved []string `json:"synonyms_removed"`
+    SynonymsRemoved SynonymChanges `json:"synonyms_removed"`
 
     // SynonymsModified contains synonyms whose target changed.
     //
@@ -13859,6 +13861,30 @@ type SequenceDiff struct {
 }
     SequenceDiff represents changes to a standalone sequence definition.
 
+
+### go.5x5.cz/ptah/migration/schemadiff/difftypes.SynonymChanges
+
+package difftypes // import "go.5x5.cz/ptah/migration/schemadiff/difftypes"
+
+type SynonymChanges []schemamodel.Synonym
+    SynonymChanges is a set of synonyms one change applies to, carrying each
+    one's target and not only its name.
+
+    The ninth family off `[]string` under stokaro/ptah#2315. A synonym IS its
+    target -- there is nothing else to it -- so a change that carried only the
+    name carried the half that does not say what the statement should do.
+
+    Its rule is that target's spelling. A catalog records base_object_name
+    with the server's own bracket quoting and the parsed parts beside it,
+    and a declaration writes one to four unquoted dot-separated parts;
+    [catalog.Synonym.DeclaredTarget] is the one answer both the conversion and
+    this comparison take.
+
+    See RangeChanges for why both sides carry the operand and why the wire shape
+    does not change.
+
+func (s SynonymChanges) MarshalJSON() ([]byte, error)
+func (s SynonymChanges) Names() []string
 
 ### go.5x5.cz/ptah/migration/schemadiff/difftypes.SynonymDiff
 

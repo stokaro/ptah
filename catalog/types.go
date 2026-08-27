@@ -1295,6 +1295,37 @@ func (s Synonym) QualifiedName() string {
 	return QualifyTableName(s.Schema, s.Name)
 }
 
+// DeclaredTarget is the synonym's target in the spelling a declaration uses:
+// one to four dot-separated parts, unquoted.
+//
+// It is rebuilt from the parsed parts rather than read off Target, which is
+// base_object_name exactly as the catalog records it, brackets included.
+// Copying that form into a document writes `[other].[dbo].[gauge]`, which
+// renders again as a name with brackets inside it (stokaro/ptah#2001).
+//
+// Absent leading parts are empty, so joining what is present gives the
+// one-to-four part name without inventing a level. A row Ptah could not parse
+// still names something, and the raw form is better than nothing: it is what
+// the server holds.
+//
+// The rule lives here because both the conversion that writes a document and
+// the comparison that carries a removal need the same answer, and a second
+// copy of it answers differently the first time either one learns something
+// (stokaro/ptah#2315).
+func (s Synonym) DeclaredTarget() string {
+	parts := make([]string, 0, 4)
+	for _, part := range []string{s.TargetServer, s.TargetDatabase, s.TargetSchema, s.TargetObject} {
+		if strings.TrimSpace(part) == "" {
+			continue
+		}
+		parts = append(parts, part)
+	}
+	if len(parts) == 0 {
+		return s.Target
+	}
+	return strings.Join(parts, ".")
+}
+
 // IsExternal reports whether the target lives outside this database.
 //
 // Ptah manages the alias in both cases and never the target: a synonym is a

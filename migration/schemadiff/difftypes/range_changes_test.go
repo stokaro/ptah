@@ -577,3 +577,67 @@ func TestMaterializedViewChanges_TheRefreshScheduleSurvivesInMemory(t *testing.T
 	c.Assert(changes.Names(), qt.DeepEquals, []string{"reporting.user_counts"},
 		qt.Commentf("and the name list a consumer reads is unchanged"))
 }
+
+// TestSynonymChanges_TheWireShapeIsUnchanged is the same promise for the ninth
+// family off `[]string`.
+func TestSynonymChanges_TheWireShapeIsUnchanged(t *testing.T) {
+	tests := []struct {
+		name    string
+		changes difftypes.SynonymChanges
+		want    string
+		why     string
+	}{
+		{
+			name:    "nil is null",
+			changes: nil,
+			want:    "null",
+			why:     "null is a comparison that did not run",
+		},
+		{
+			name:    "empty is an empty array",
+			changes: difftypes.SynonymChanges{},
+			want:    "[]",
+			why:     "[] is a comparison that ran and found nothing",
+		},
+		{
+			name:    "the target does not reach the wire",
+			changes: difftypes.SynonymChanges{{Name: "s_users", Schema: "dbo", Target: "other.dbo.users"}},
+			want:    `["dbo.s_users"]`,
+			why:     "a name list is what format_version 1 has always carried here",
+		},
+		{
+			name:    "an unqualified synonym keeps its bare spelling",
+			changes: difftypes.SynonymChanges{{Name: "s_users"}},
+			want:    `["s_users"]`,
+			why:     "QualifiedName adds no schema where the declaration named none",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			encoded, err := json.Marshal(test.changes)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(string(encoded), qt.Equals, test.want, qt.Commentf("%s", test.why))
+		})
+	}
+}
+
+// TestSynonymChanges_TheTargetSurvivesInMemory is the other half, on the field
+// that is the whole of what a synonym is.
+//
+// A CREATE SYNONYM planned from a name alone has no object to point at, so the
+// carry is asserted where the planner reads it rather than only where it is
+// written.
+func TestSynonymChanges_TheTargetSurvivesInMemory(t *testing.T) {
+	c := qt.New(t)
+
+	changes := difftypes.SynonymChanges{{Name: "s_users", Schema: "dbo", Target: "other.dbo.users"}}
+
+	c.Assert(changes[0].Target, qt.Equals, "other.dbo.users",
+		qt.Commentf("the statement points here, and a name cannot carry it"))
+	c.Assert(changes.Names(), qt.DeepEquals, []string{"dbo.s_users"},
+		qt.Commentf("and the name list a consumer reads is unchanged"))
+}

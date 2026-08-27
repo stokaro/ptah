@@ -228,10 +228,10 @@ func diffCategoryFixtures() []categoryFixture {
 		},
 		{
 			"SynonymsAdded",
-			&difftypes.SchemaDiff{SynonymsAdded: []string{"s"}},
+			&difftypes.SchemaDiff{SynonymsAdded: difftypes.SynonymChanges{{Name: "s"}}},
 			&schemamodel.Database{Synonyms: []schemamodel.Synonym{{Name: "s", Target: "dbo.t"}}},
 		},
-		{"SynonymsRemoved", &difftypes.SchemaDiff{SynonymsRemoved: []string{"s"}}, &schemamodel.Database{}},
+		{"SynonymsRemoved", &difftypes.SchemaDiff{SynonymsRemoved: difftypes.SynonymChanges{{Name: "s"}}}, &schemamodel.Database{}},
 		{
 			"HypertablesAdded",
 			&difftypes.SchemaDiff{HypertablesAdded: []string{"conditions"}},

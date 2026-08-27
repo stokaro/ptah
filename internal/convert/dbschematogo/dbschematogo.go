@@ -483,34 +483,10 @@ func convertSynonyms(database *schemamodel.Database, synonyms []catalog.Synonym)
 		database.Synonyms = append(database.Synonyms, schemamodel.Synonym{
 			Name:    synonym.Name,
 			Schema:  synonym.Schema,
-			Target:  synonymTarget(synonym),
+			Target:  synonym.DeclaredTarget(),
 			Comment: synonym.Comment,
 		})
 	}
-}
-
-// synonymTarget joins the parsed target parts back into the spelling a
-// declaration uses. Absent leading parts are empty, so joining what is present
-// gives the one-to-four part name without inventing a level.
-func synonymTarget(synonym catalog.Synonym) string {
-	parts := make([]string, 0, 4)
-	for _, part := range []string{
-		synonym.TargetServer,
-		synonym.TargetDatabase,
-		synonym.TargetSchema,
-		synonym.TargetObject,
-	} {
-		if strings.TrimSpace(part) == "" {
-			continue
-		}
-		parts = append(parts, part)
-	}
-	if len(parts) == 0 {
-		// A catalog row Ptah could not parse still names something, and the
-		// raw form is better than nothing: it is what the server holds.
-		return synonym.Target
-	}
-	return strings.Join(parts, ".")
 }
 
 // convertExtendedProperties carries the SQL Server extended properties a read
