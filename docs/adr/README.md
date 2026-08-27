@@ -23,6 +23,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0011](0011-database-code-analysis-starts-from-what-the-tree-already-derives.md) | Database-code analysis starts from what the tree already derives | Proposed |
 | [0012](0012-the-canonical-core-is-removed-and-the-shipping-pipeline-migrates-in-place.md) | The canonical core is removed, and the shipping pipeline migrates in place | Proposed |
 | [0013](0013-inference-state-transitions-answer-with-their-provenance.md) | An inference-state transition answers with its provenance, and its approval binds to exact content | Proposed |
+| [0014](0014-the-outbox-boundary-is-a-transaction-and-the-order-is-a-sequence.md) | The outbox boundary is a transaction, the order is a sequence, and the trigger does not watch itself | Proposed |
 
 ## Writing one
 

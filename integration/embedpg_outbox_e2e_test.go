@@ -80,6 +80,38 @@ func TestEmbedPGOutboxE2E(t *testing.T) {
 	assertAWriteToTheGenerationsOwnColumnsIsNotAChange(c, ctx, db, outbox)
 	assertTheSequenceOrdersAndTheTransactionOnlyBounds(c, ctx, db, url, outbox)
 	assertPruningRemovesOnlyWhatIsBehindTheCursor(c, ctx, outbox)
+	assertHalfAnInstallationIsNotInstalled(c, ctx, db, outbox)
+}
+
+// assertHalfAnInstallationIsNotInstalled is what makes the completion condition
+// mean anything.
+//
+// The capture is two triggers, and one of them can be dropped -- by a migration
+// that rebuilt the table, by somebody tidying up, by a restore from a dump
+// taken before the outbox existed. An installation check that answered yes to
+// half of it reports a run as capturing changes while every insert, or every
+// update, goes unrecorded.
+func assertHalfAnInstallationIsNotInstalled(
+	c *qt.C, ctx context.Context, db *sql.DB, outbox *embedpg.Outbox,
+) {
+	c.Helper()
+	names := outbox.TriggerNames()
+	c.Assert(names, qt.HasLen, 2)
+
+	for _, name := range names {
+		_, err := db.ExecContext(ctx,
+			fmt.Sprintf(`DROP TRIGGER %q ON articles`, name))
+		c.Assert(err, qt.IsNil)
+
+		installed, err := outbox.Installed(ctx)
+		c.Assert(err, qt.IsNil)
+		c.Assert(installed, qt.IsFalse, qt.Commentf("with %s dropped", name))
+
+		c.Assert(outbox.Install(ctx), qt.IsNil)
+		installed, err = outbox.Installed(ctx)
+		c.Assert(err, qt.IsNil)
+		c.Assert(installed, qt.IsTrue)
+	}
 }
 
 // assertTheSequenceOrdersAndTheTransactionOnlyBounds separates when a row was
