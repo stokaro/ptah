@@ -105,6 +105,10 @@ run_case check-lint-rules.sh \
 	"a heading removed from the generated block" \
 	"perl -0pi -e 's/^## Identifier families\n//m' docs/site/src/content/docs/reference/lint-rules.md"
 
+run_case check-goreleaser-artifact-names.sh \
+	"the snapshot version taken from whatever tag git describe reaches" \
+	"perl -0pi -e 's|version_template: \"0\\.0\\.0-SNAPSHOT-\\{\\{ \\.ShortCommit \\}\\}\"|version_template: \"{{ .Version }}-SNAPSHOT-{{ .ShortCommit }}\"|' .goreleaser.yaml"
+
 run_case check-brand-assets.sh \
 	"the favicon drifting away from the header logo" \
 	"perl -0pi -e 's/fill=\"#f59e0b\"/fill=\"#38bdf8\"/' docs/site/public/favicon.svg"
