@@ -517,6 +517,348 @@
     }
   },
   {
+    "name": "inference_plan",
+    "description": "Explain what changing an embedding model would do to one of the operator's configured databases: the steps, what blocks them, what each answer rests on and where it came from, and what text would leave the database for the embedding endpoint. Reads catalogs and run state; creates nothing and writes nothing. Returns no source rows and no vectors.",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "current": {
+          "description": "identity of the generation queries read now, when there is one",
+          "type": "string"
+        },
+        "spec": {
+          "description": "path to the embedding-migration specification, inside a configured source root",
+          "type": "string"
+        },
+        "target": {
+          "description": "name of a configured database target; omit when the process has exactly one",
+          "type": "string"
+        }
+      },
+      "required": [
+        "spec"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "notice": {
+          "type": "string"
+        },
+        "plan": {
+          "additionalProperties": false,
+          "properties": {
+            "blockers": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "null",
+                "array"
+              ]
+            },
+            "consistency": {
+              "type": "string"
+            },
+            "consistency_mode": {
+              "type": "string"
+            },
+            "current": {
+              "type": "string"
+            },
+            "desired": {
+              "type": "string"
+            },
+            "disclosure": {
+              "additionalProperties": false,
+              "properties": {
+                "credential": {
+                  "type": "string"
+                },
+                "endpoint": {
+                  "type": "string"
+                },
+                "endpoint_class": {
+                  "type": "string"
+                },
+                "fields": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": [
+                    "null",
+                    "array"
+                  ]
+                },
+                "key_fields": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": [
+                    "null",
+                    "array"
+                  ]
+                },
+                "model": {
+                  "type": "string"
+                },
+                "provider": {
+                  "type": "string"
+                },
+                "revision": {
+                  "type": "string"
+                },
+                "rows_in_scope": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "provider",
+                "endpoint",
+                "endpoint_class",
+                "model",
+                "fields",
+                "key_fields",
+                "rows_in_scope"
+              ],
+              "type": "object"
+            },
+            "facts": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "detail": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "provenance": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "value",
+                  "provenance"
+                ],
+                "type": "object"
+              },
+              "type": [
+                "null",
+                "array"
+              ]
+            },
+            "steps": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "detail": {
+                    "type": "string"
+                  },
+                  "irreversible": {
+                    "type": "boolean"
+                  },
+                  "mutating": {
+                    "type": "boolean"
+                  },
+                  "phase": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "phase",
+                  "detail",
+                  "mutating",
+                  "irreversible"
+                ],
+                "type": "object"
+              },
+              "type": [
+                "null",
+                "array"
+              ]
+            },
+            "uncertain": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "null",
+                "array"
+              ]
+            }
+          },
+          "required": [
+            "desired",
+            "facts",
+            "steps",
+            "disclosure",
+            "consistency_mode",
+            "consistency"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "plan",
+        "notice"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "inference_status",
+    "description": "Report what a generation run has done and what it is waiting for: its phase, progress counts, watermarks, which holder may still commit, why it failed if it did, and whether a rollback is still possible. Answers why a cutover is blocked. Returns no source rows and no vectors, and moves nothing: this surface explains the lifecycle and does not drive it.",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "run_id": {
+          "description": "identifier of the run",
+          "type": "string"
+        },
+        "target": {
+          "description": "name of a configured database target; omit when the process has exactly one",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id"
+      ],
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "notice": {
+          "type": "string"
+        },
+        "status": {
+          "additionalProperties": false,
+          "properties": {
+            "Progress": {
+              "additionalProperties": false,
+              "properties": {
+                "batches_committed": {
+                  "type": "integer"
+                },
+                "provider_prompt_tokens": {
+                  "type": "integer"
+                },
+                "provider_total_tokens": {
+                  "type": "integer"
+                },
+                "retry_count": {
+                  "type": "integer"
+                },
+                "rows_deleted": {
+                  "type": "integer"
+                },
+                "rows_embedded": {
+                  "type": "integer"
+                },
+                "rows_scanned": {
+                  "type": "integer"
+                },
+                "rows_skipped": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "rows_scanned",
+                "rows_embedded",
+                "rows_skipped",
+                "rows_deleted",
+                "batches_committed",
+                "retry_count",
+                "provider_prompt_tokens",
+                "provider_total_tokens"
+              ],
+              "type": "object"
+            },
+            "active_pointer": {
+              "type": "string"
+            },
+            "approval_ref": {
+              "type": "string"
+            },
+            "catch_up_watermark": {
+              "type": "string"
+            },
+            "cutover_plan_ref": {
+              "type": "string"
+            },
+            "environment": {
+              "type": "string"
+            },
+            "failure_class": {
+              "type": "string"
+            },
+            "failure_detail": {
+              "type": "string"
+            },
+            "fencing_token": {
+              "type": "integer"
+            },
+            "generation": {
+              "type": "string"
+            },
+            "lease_holder": {
+              "type": "string"
+            },
+            "lease_until": {
+              "type": "string"
+            },
+            "phase": {
+              "type": "string"
+            },
+            "rollback_eligible": {
+              "type": "boolean"
+            },
+            "run_id": {
+              "type": "string"
+            },
+            "snapshot_watermark": {
+              "type": "string"
+            },
+            "spec_digest": {
+              "type": "string"
+            },
+            "state": {
+              "type": "string"
+            },
+            "updated_at": {
+              "type": "string"
+            },
+            "verification_ref": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "run_id",
+            "generation",
+            "phase",
+            "state",
+            "Progress",
+            "fencing_token",
+            "rollback_eligible",
+            "spec_digest"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "status",
+        "notice"
+      ],
+      "type": "object"
+    }
+  },
+  {
     "name": "preview_patch",
     "description": "Validate a proposed change to migration, schema or test files and return what applying it would do: a unified diff per file, the resulting digest, the capabilities it needs, and a preview token. Writes nothing. Apply the patch with apply_patch and the token this returns.",
     "input_schema": {

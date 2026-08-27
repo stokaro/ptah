@@ -126,7 +126,13 @@ func TestRun_OffersTheModelTheSameToolsAnExternalClientGets(t *testing.T) {
 	c.Assert(offered["describe_session"], qt.IsTrue)
 	c.Assert(offered["apply_patch"], qt.IsTrue)
 	c.Assert(offered["search_docs"], qt.IsTrue)
-	c.Assert(offered, qt.HasLen, 9)
+	// The inference reading tools reach Assist because both surfaces consume
+	// one contract rather than each choosing what to offer. That is the point
+	// of the count: a tool added for the protocol client and not for the
+	// conversational one would be two surfaces again.
+	c.Assert(offered["inference_plan"], qt.IsTrue)
+	c.Assert(offered["inference_status"], qt.IsTrue)
+	c.Assert(offered, qt.HasLen, 11)
 }
 
 func TestRun_SendsPtahsOwnInstructionBlock(t *testing.T) {
