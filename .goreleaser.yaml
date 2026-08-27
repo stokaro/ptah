@@ -71,6 +71,18 @@ builds:
         -X go.5x5.cz/ptah/internal/buildinfo.Commit={{ .Commit }}
         -X go.5x5.cz/ptah/internal/buildinfo.Date={{ .CommitDate }}
 
+# A snapshot is not a release, and naming one after whatever tag happens to be
+# reachable ties every branch's build to a marker somebody pushed for reasons of
+# their own. goreleaser's default derives the snapshot version from `git
+# describe`, so a repository tag containing a slash -- `prototype/canonical-core`
+# is the one that did it -- puts a path separator in every artifact name, and
+# the source archive then fails to open a directory nothing created.
+#
+# A short commit is what a snapshot actually identifies.
+# scripts/check-goreleaser-artifact-names.sh keeps this from drifting back.
+snapshot:
+  version_template: "0.0.0-SNAPSHOT-{{ .ShortCommit }}"
+
 archives:
   - id: ptah
     ids:
