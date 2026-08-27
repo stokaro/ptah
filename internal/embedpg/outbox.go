@@ -46,9 +46,15 @@ func (o *Outbox) FunctionName() string {
 	return o.TableName() + "_capture"
 }
 
-// TriggerName is what the trigger on the source table is called.
-func (o *Outbox) TriggerName() string {
-	return o.TableName() + "_trigger"
+// TriggerNames are what the triggers on the source table are called.
+//
+// Two of them, not one. An insert or a delete is always a change worth
+// recording; an update is only worth recording when it touched a column the
+// generation actually reads, and PostgreSQL's WHEN clause is what expresses
+// that -- but a WHEN clause referring to OLD cannot sit on a trigger that also
+// fires for INSERT.
+func (o *Outbox) TriggerNames() []string {
+	return []string{o.TableName() + "_write", o.TableName() + "_update"}
 }
 
 // Install creates the outbox table, its capture function and its trigger.
@@ -68,12 +74,9 @@ func (o *Outbox) Install(ctx context.Context) error {
 
 // installStatements renders what Install runs.
 func (o *Outbox) installStatements() []string {
-	return []string{
-		o.createTable(),
-		o.createFunction(),
-		o.dropTrigger(),
-		o.createTrigger(),
-	}
+	statements := []string{o.createTable(), o.createFunction()}
+	statements = append(statements, o.dropTriggers()...)
+	return append(statements, o.createWriteTrigger(), o.createUpdateTrigger())
 }
 
 // createTable renders the outbox table.
@@ -148,25 +151,71 @@ func (o *Outbox) versionExpression(record string) string {
 	return fmt.Sprintf("%s.%s::text", record, quoteIdentifier(field))
 }
 
-// dropTrigger removes a previous installation.
+// dropTriggers removes a previous installation.
 //
-// CREATE TRIGGER has no OR REPLACE before PostgreSQL 14 and no IF NOT EXISTS at
-// all, so reinstalling means dropping first. The drop is IF EXISTS because the
-// first install has nothing to drop.
-func (o *Outbox) dropTrigger() string {
-	return fmt.Sprintf("DROP TRIGGER IF EXISTS %s ON %s",
-		quoteIdentifier(o.TriggerName()), o.qualifiedSourceTable())
+// CREATE TRIGGER has no IF NOT EXISTS, so reinstalling means dropping first.
+// The drop is IF EXISTS because the first install has nothing to drop.
+func (o *Outbox) dropTriggers() []string {
+	statements := make([]string, 0, len(o.TriggerNames()))
+	for _, name := range o.TriggerNames() {
+		statements = append(statements, fmt.Sprintf("DROP TRIGGER IF EXISTS %s ON %s",
+			quoteIdentifier(name), o.qualifiedSourceTable()))
+	}
+	return statements
 }
 
-// createTrigger renders the trigger.
+// createWriteTrigger records every insert and every delete.
 //
-// AFTER, so a change that the statement itself rolls back leaves no event, and
-// FOR EACH ROW, because the events are about rows.
-func (o *Outbox) createTrigger() string {
+// AFTER, so a change the statement itself rolls back leaves no event, and FOR
+// EACH ROW, because the events are about rows.
+func (o *Outbox) createWriteTrigger() string {
 	return fmt.Sprintf(
-		"CREATE TRIGGER %s AFTER INSERT OR UPDATE OR DELETE ON %s FOR EACH ROW EXECUTE FUNCTION %s()",
-		quoteIdentifier(o.TriggerName()), o.qualifiedSourceTable(),
+		"CREATE TRIGGER %s AFTER INSERT OR DELETE ON %s FOR EACH ROW EXECUTE FUNCTION %s()",
+		quoteIdentifier(o.TriggerNames()[0]), o.qualifiedSourceTable(),
 		quoteIdentifier(o.FunctionName()))
+}
+
+// createUpdateTrigger records an update only when it touched something the
+// generation reads.
+//
+// This is not an optimization. A generation's vector column lives ON the source
+// table, so Ptah's own writes are updates to it -- and an outbox that recorded
+// them would hand catch-up an event for every vector it just wrote, which it
+// would then reread, re-embed, and write again. Measured against a live server
+// before this clause existed: the catch-up loop did not terminate.
+//
+// The columns compared are the ones that decide a vector: the key, the input
+// fields, and the version. An application update to an unrelated column
+// produces no event for the same reason -- the vector it would recompute is the
+// vector already there.
+func (o *Outbox) createUpdateTrigger() string {
+	return fmt.Sprintf(
+		"CREATE TRIGGER %s AFTER UPDATE ON %s FOR EACH ROW WHEN ((%s) IS DISTINCT FROM (%s)) "+
+			"EXECUTE FUNCTION %s()",
+		quoteIdentifier(o.TriggerNames()[1]), o.qualifiedSourceTable(),
+		o.watchedColumns("OLD"), o.watchedColumns("NEW"),
+		quoteIdentifier(o.FunctionName()))
+}
+
+// watchedColumns renders the columns whose change decides a vector.
+func (o *Outbox) watchedColumns(record string) string {
+	fields := append([]string(nil), o.spec.Source.KeyFields...)
+	fields = append(fields, o.spec.Source.InputFields...)
+	fields = append(fields, o.versionColumns()...)
+	rendered := make([]string, 0, len(fields))
+	for _, field := range fields {
+		rendered = append(rendered, fmt.Sprintf("%s.%s", record, quoteIdentifier(field)))
+	}
+	return strings.Join(rendered, ", ")
+}
+
+// versionColumns names the source version column, and is empty under a strategy
+// that establishes none.
+func (o *Outbox) versionColumns() []string {
+	if field := strings.TrimSpace(o.spec.Source.VersionField); field != "" {
+		return []string{field}
+	}
+	return nil
 }
 
 // Installed reports whether the trigger is actually on the source table.
@@ -176,16 +225,29 @@ func (o *Outbox) createTrigger() string {
 // from a dump, or recreated by a migration, has no trigger and no memory of
 // having had one.
 func (o *Outbox) Installed(ctx context.Context) (bool, error) {
-	const query = `SELECT EXISTS (
-		SELECT 1 FROM pg_trigger
+	// Both triggers, and counted rather than existence-checked: half an
+	// installation captures half the changes, and the half it misses is
+	// whichever one somebody dropped.
+	const query = `SELECT COUNT(*) FROM pg_trigger
 		JOIN pg_class ON pg_class.oid = pg_trigger.tgrelid
-		WHERE pg_trigger.tgname = $1 AND pg_class.relname = $2 AND NOT pg_trigger.tgisinternal)`
-	var installed bool
+		WHERE pg_trigger.tgname = ANY($1) AND pg_class.relname = $2 AND NOT pg_trigger.tgisinternal`
+	names := o.TriggerNames()
+	var found int
 	if err := o.db.QueryRowContext(ctx, query,
-		o.TriggerName(), o.spec.Source.Table).Scan(&installed); err != nil {
+		triggerNameArray(names), o.spec.Source.Table).Scan(&found); err != nil {
 		return false, fmt.Errorf("read trigger state for %s: %w", o.spec.Source.Table, err)
 	}
-	return installed, nil
+	return found == len(names), nil
+}
+
+// triggerNameArray renders the trigger names as a PostgreSQL text array
+// literal, so one query can ask about both.
+func triggerNameArray(names []string) string {
+	quoted := make([]string, 0, len(names))
+	for _, name := range names {
+		quoted = append(quoted, `"`+strings.ReplaceAll(name, `"`, `\"`)+`"`)
+	}
+	return "{" + strings.Join(quoted, ",") + "}"
 }
 
 // Horizon is the boundary below which every transaction has concluded.

@@ -131,12 +131,6 @@ func TestBarrier_RefusesEveryWayCatchUpIsNotDone(t *testing.T) {
 			change: func(b *embedcatchup.Barrier) { b.Unprocessed = 3 },
 			want:   "3 source changes are unprocessed",
 		},
-		{
-			name:   "nothing to process and the boundary did not move",
-			change: func(b *embedcatchup.Barrier) { b.Horizon = 400 },
-			want: "catch-up found nothing between transaction 220 and 400 and did not advance " +
-				"past it",
-		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -150,6 +144,24 @@ func TestBarrier_RefusesEveryWayCatchUpIsNotDone(t *testing.T) {
 			c.Assert(blockers, qt.Contains, test.want)
 		})
 	}
+}
+
+// TestBarrier_AHorizonThatHasMovedOnIsNotABlocker is what a live server taught
+// this rule.
+//
+// The horizon advances with every transaction anywhere in the database, so a
+// caught-up run is always behind it -- including behind transactions started by
+// the check that is asking. Requiring the two to meet refused a run that had
+// processed everything, over two transactions the reads in the check itself had
+// started.
+func TestBarrier_AHorizonThatHasMovedOnIsNotABlocker(t *testing.T) {
+	c := qt.New(t)
+	barrier := reachedBarrier()
+	barrier.Horizon = barrier.Processed + 5000
+
+	reached, blockers := barrier.Reached()
+
+	c.Assert(reached, qt.IsTrue, qt.Commentf("%v", blockers))
 }
 
 // TestBarrier_AnUninstalledOutboxSaysOnlyThat keeps a report about an absent

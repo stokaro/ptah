@@ -23,7 +23,8 @@ type Barrier struct {
 	// Processed is how far catch-up has got.
 	Processed uint64
 	// Horizon is the current boundary below which every transaction has
-	// concluded.
+	// concluded. It is context for a reader rather than a target to reach: see
+	// Reached.
 	Horizon uint64
 	// Unprocessed counts the events between Processed and Horizon that catch-up
 	// has not handled.
@@ -54,15 +55,18 @@ func (b Barrier) Reached() (bool, []string) {
 	if b.Unprocessed > 0 {
 		blockers = append(blockers, fmt.Sprintf("%d source changes are unprocessed", b.Unprocessed))
 	}
-	if b.Processed < b.Horizon && b.Unprocessed == 0 {
-		// No events between them, but the boundary has not been moved. The
-		// distinction matters: a catch-up that processed everything and did not
-		// record how far it got will read the same range again, and on a busy
-		// source that range only grows.
-		blockers = append(blockers, fmt.Sprintf(
-			"catch-up found nothing between transaction %d and %d and did not advance past it",
-			b.Processed, b.Horizon))
-	}
+	// There is deliberately no rule that the processed watermark has to equal
+	// the horizon. It never does on a live server: the horizon moves with every
+	// transaction anywhere in the database, and asking a catch-up to catch up
+	// to transactions that wrote nothing to the source is asking it to chase
+	// something that recedes. This was such a rule until it met one -- it
+	// refused a caught-up run over two transactions the reads in the check
+	// itself had started.
+	//
+	// What being caught up means is that nothing between the watermark and the
+	// horizon is unprocessed, which is the count above. Recording how far
+	// catch-up got is a separate concern and belongs to the loop, which moves
+	// its watermark on an empty page for exactly that reason.
 	return len(blockers) == 0, blockers
 }
 

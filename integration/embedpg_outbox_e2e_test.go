@@ -77,6 +77,7 @@ func TestEmbedPGOutboxE2E(t *testing.T) {
 	assertEveryOperationIsCaptured(c, ctx, db, outbox)
 	assertARolledBackChangeLeavesNoEvent(c, ctx, db, outbox)
 	assertTheHorizonExcludesAnInFlightTransaction(c, ctx, db, url, outbox)
+	assertAWriteToTheGenerationsOwnColumnsIsNotAChange(c, ctx, db, outbox)
 	assertTheSequenceOrdersAndTheTransactionOnlyBounds(c, ctx, db, url, outbox)
 	assertPruningRemovesOnlyWhatIsBehindTheCursor(c, ctx, outbox)
 }
@@ -223,6 +224,61 @@ func assertEveryOperationIsCaptured(
 	collapsed := embedcatchup.Collapse(events)
 	c.Assert(collapsed, qt.HasLen, 1)
 	c.Assert(collapsed[0].Operation, qt.Equals, embedcatchup.OperationDelete)
+}
+
+// assertAWriteToTheGenerationsOwnColumnsIsNotAChange is why the update trigger
+// carries a WHEN clause.
+//
+// A generation's vector column lives ON the source table, so every vector Ptah
+// writes is an update to it. An outbox that recorded those would hand catch-up
+// an event for each vector it had just written, which it would reread,
+// re-embed, and write again. Measured before the clause existed: the catch-up
+// loop did not terminate.
+//
+// The control is the same statement touching a column the generation reads,
+// which does produce an event -- otherwise a trigger that recorded nothing at
+// all would satisfy this.
+func assertAWriteToTheGenerationsOwnColumnsIsNotAChange(
+	c *qt.C, ctx context.Context, db *sql.DB, outbox *embedpg.Outbox,
+) {
+	c.Helper()
+	for _, statement := range []string{
+		`ALTER TABLE articles ADD COLUMN embedding_state TEXT`,
+		`ALTER TABLE articles ADD COLUMN unrelated_note TEXT`,
+		`INSERT INTO articles (id, title, body, updated_at) VALUES (4, 'Fourth', 'text', '1')`,
+	} {
+		_, err := db.ExecContext(ctx, statement)
+		c.Assert(err, qt.IsNil, qt.Commentf("%s", statement))
+	}
+	before, _, err := outbox.Since(ctx, 0, 200)
+	c.Assert(err, qt.IsNil)
+
+	_, err = db.ExecContext(ctx, `UPDATE articles SET embedding_state = 'upsert' WHERE id = 4`)
+	c.Assert(err, qt.IsNil)
+	_, err = db.ExecContext(ctx, `UPDATE articles SET unrelated_note = 'a note' WHERE id = 4`)
+	c.Assert(err, qt.IsNil)
+
+	quiet, _, err := outbox.Since(ctx, 0, 200)
+	c.Assert(err, qt.IsNil)
+	c.Assert(quiet, qt.HasLen, len(before))
+
+	// The control: a column the generation reads.
+	_, err = db.ExecContext(ctx, `UPDATE articles SET body = 'text again' WHERE id = 4`)
+	c.Assert(err, qt.IsNil)
+	loud, _, err := outbox.Since(ctx, 0, 200)
+	c.Assert(err, qt.IsNil)
+	c.Assert(loud, qt.HasLen, len(before)+1)
+	// And so is the version, even when the input is untouched: freshness
+	// compares versions, so a row whose version moved is a row whose target
+	// record is out of date.
+	_, err = db.ExecContext(ctx, `UPDATE articles SET updated_at = '99' WHERE id = 4`)
+	c.Assert(err, qt.IsNil)
+	versioned, _, err := outbox.Since(ctx, 0, 200)
+	c.Assert(err, qt.IsNil)
+	c.Assert(versioned, qt.HasLen, len(before)+2)
+
+	_, err = db.ExecContext(ctx, `DELETE FROM articles WHERE id = 4`)
+	c.Assert(err, qt.IsNil)
 }
 
 // assertARolledBackChangeLeavesNoEvent is the property a trigger has and an
