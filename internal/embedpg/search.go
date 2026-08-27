@@ -142,17 +142,35 @@ func (s *Searcher) nearest(
 // applyScanMode switches the index off where the caller asked for an exhaustive
 // scan.
 //
-// `enable_indexscan` alone is not enough: the planner will reach for a bitmap
-// scan instead and the answer comes back through the index anyway, which is the
-// comparison silently measuring itself.
+// Three settings and not one. `enable_indexscan` alone leaves the planner a
+// bitmap scan, and the answer comes back through the index anyway.
+//
+// The fourth is the one that made this measurable at all: these settings
+// DISCOURAGE a plan rather than forbid it, so with `enable_seqscan` off there
+// is nothing left to prefer and the planner takes the index it was told not to.
+// Measured on pgvector with an over-partitioned ivfflat index -- the two
+// searches returned identical rows, and the comparison had been measuring
+// itself against itself. `enable_seqscan` is a setting an operator tuning a
+// vector workload plausibly sets, and a database-level one at that, so the
+// exhaustive path turns it back on rather than hoping.
 func applyScanMode(ctx context.Context, conn *sql.Conn, mode scanMode) error {
 	if mode == useIndex {
 		return nil
 	}
+	// SET rather than SET LOCAL. SET LOCAL applies to the enclosing
+	// transaction, and outside one it does nothing at all -- silently, with a
+	// warning nobody sees through a driver. Every setting here was a no-op
+	// until this was measured: both searches ran with the database's own
+	// defaults, both used the index, and the comparison agreed with itself
+	// perfectly every time.
+	//
+	// Session scope is safe because the connection is pinned and closed at the
+	// end of this search; that is what pinning it is for.
 	for _, statement := range []string{
-		"SET LOCAL enable_indexscan = off",
-		"SET LOCAL enable_bitmapscan = off",
-		"SET LOCAL enable_indexonlyscan = off",
+		"SET enable_indexscan = off",
+		"SET enable_bitmapscan = off",
+		"SET enable_indexonlyscan = off",
+		"SET enable_seqscan = on",
 	} {
 		if _, err := conn.ExecContext(ctx, statement); err != nil {
 			return fmt.Errorf("force an exhaustive scan: %w", err)
