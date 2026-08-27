@@ -1,10 +1,11 @@
 // Package rlspolicy holds the single description of how a row-level-security
 // policy's FOR clause is folded before two sides of a comparison are matched.
 //
-// It is its own package because both sides need the same answer and they live
-// apart: the canonical state model in internal/schemastate and the field-level
-// comparison in migration/schemadiff. When they disagreed, an apply planned a
-// change it had just made (stokaro/ptah#2211).
+// It is its own package because everything that folds a FOR clause has to reach
+// one answer rather than each carrying its own. When two of them disagreed, an
+// apply planned a change it had just made (stokaro/ptah#2211). One of the two
+// was the canonical state model removed by ADR 0012; the rule outlived it,
+// which is the argument for it living here rather than beside a caller.
 package rlspolicy
 
 import "strings"
