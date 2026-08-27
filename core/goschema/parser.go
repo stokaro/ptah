@@ -1140,6 +1140,29 @@ func (s *schemaParseState) parseFileScopedRLSEnableComment(comment *ast.Comment,
 // procedure that named one would be a declaration the server cannot take, and
 // dropping the attribute silently is the failure this issue is about
 // (stokaro/ptah#1722).
+// qualifiedObjectName folds a declared schema into an object's name.
+//
+// Function, view and materialized-view declarations have nowhere else to put
+// it: unlike a sequence, domain, composite or range, their IR carries no
+// Schema field, so the schema travels inside Name as a qualified identifier.
+// That is not a workaround invented here -- it is what the atlas.hcl frontend
+// already produces for these same three kinds (internal/atlashcl/objects.go
+// builds them with tableref.Canonical), what the renderers split back apart
+// quote-aware, and what the comparator keys on. Writing anything else would
+// give the two frontends two spellings of one declaration.
+//
+// A declaration naming no schema keeps its name byte for byte. Canonical would
+// otherwise quote a name containing a dot or a quote character, and re-spelling
+// names that already work is not what adding an optional attribute may do
+// (stokaro/ptah#1270).
+func qualifiedObjectName(kv map[string]string) string {
+	schema := strings.TrimSpace(kv["schema"])
+	if schema == "" {
+		return kv["name"]
+	}
+	return tableref.Canonical(schema, kv["name"])
+}
+
 func (s *schemaParseState) parseProcedureComment(comment *ast.Comment, structName string) error {
 	// The attributes are validated against the procedure's own directive, so
 	// `returns=` is refused by name rather than accepted and then rejected
@@ -1187,7 +1210,7 @@ func (s *schemaParseState) parseFunctionComment(comment *ast.Comment, structName
 
 	fn := schemamodel.Function{
 		StructName: structName,
-		Name:       kv["name"],
+		Name:       qualifiedObjectName(kv),
 		Parameters: kv["params"],
 		Returns:    kv["returns"],
 		Language:   kv["language"],
@@ -1480,7 +1503,7 @@ func (s *schemaParseState) parseViewComment(comment *ast.Comment, structName str
 	}
 	s.views = append(s.views, schemamodel.View{
 		StructName: structName,
-		Name:       kv["name"],
+		Name:       qualifiedObjectName(kv),
 		Body:       kv["body"],
 		WithCheck:  kv["with_check"] == "true",
 		Comment:    kv["comment"],
@@ -1668,7 +1691,7 @@ func (s *schemaParseState) parseMaterializedViewComment(comment *ast.Comment, st
 	}
 	s.materializedViews = append(s.materializedViews, schemamodel.MaterializedView{
 		StructName: structName,
-		Name:       kv["name"],
+		Name:       qualifiedObjectName(kv),
 		Body:       kv["body"],
 		Comment:    kv["comment"],
 		Dialects:   scope,

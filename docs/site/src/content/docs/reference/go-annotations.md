@@ -420,8 +420,16 @@ Declares a database function.
 | `name` | No | Function name. |
 | `params` | No | Function parameter list. |
 | `returns` | No | Return type. |
+| `schema` | No | Target schema/namespace. |
 | `security` | No | Security mode, such as DEFINER. |
 | `volatility` | No | Volatility class. |
+
+`schema` places the routine in a named schema, and is also accepted on
+`view` and `matview`. A function, view or materialized view carries its schema
+inside its NAME rather than in a field of its own — `schema="app" name="fn"`
+becomes `app.fn` — which is the same spelling the `atlas.hcl` frontend produces
+for these three kinds, and what the renderers split back apart when they emit
+DDL. A declaration naming no schema keeps its name exactly as written.
 
 ### `//ptah:schema:procedure`
 
@@ -446,6 +454,7 @@ type ArchiveTenant struct{}
 | `language` | No | Procedure language. |
 | `name` | No | Procedure name. |
 | `params` | No | Procedure parameter list. |
+| `schema` | No | Target schema/namespace. |
 | `security` | No | Security mode, such as DEFINER. |
 | `volatility` | No | Volatility class. |
 
@@ -474,6 +483,7 @@ Declares a database view.
 | `comment` | No | View comment. |
 | `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
 | `name` | Yes | View name. |
+| `schema` | No | Target schema/namespace. |
 | `with_check` | No | Controls WITH CHECK OPTION where supported. `true`/`false`. |
 
 ### `//ptah:schema:matview`
@@ -486,6 +496,7 @@ Declares a materialized view.
 | `comment` | No | Materialized view comment. |
 | `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
 | `name` | Yes | Materialized view name. |
+| `schema` | No | Target schema/namespace. |
 | `refresh` | No | ClickHouse refresh schedule, as ClickHouse spells it. See below. |
 
 `refresh` carries a ClickHouse **scheduled** materialized view's schedule, in
