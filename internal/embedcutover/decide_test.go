@@ -9,6 +9,10 @@ import (
 	"go.5x5.cz/ptah/internal/embedcutover"
 )
 
+// goldenPlanDigest is what the plan in TestPlanDigest_IsTheEncodingPlanVersionNames
+// encodes to under PlanVersion 1.
+const goldenPlanDigest = "fd6f122114bbf5bc1f89d4611527da527a646744bb4dc64e34d7549b4e81f6ad"
+
 // preparedAt is when every plan below was built.
 var preparedAt = time.Date(2026, 8, 27, 10, 0, 0, 0, time.UTC)
 
@@ -349,4 +353,74 @@ func blockersJoined(decision embedcutover.Decision) string {
 		joined += blocker + "\n"
 	}
 	return joined
+}
+
+// TestDecide_AnImmutableSourceHasNoWatermarkToDriftFrom keeps the drift check
+// tied to evidence that exists.
+//
+// A run over a source that cannot change proves its completion condition
+// without a watermark, and comparing the one it does not have against whatever
+// the target reports would refuse every such cutover.
+func TestDecide_AnImmutableSourceHasNoWatermarkToDriftFrom(t *testing.T) {
+	c := qt.New(t)
+	plan, policy, observed, _ := ready()
+	plan.Evidence.SourceMutable = false
+	plan.Evidence.ConsistencyMode = ""
+	plan.Evidence.ConsistencyWatermark = ""
+	observed.ConsistencyWatermark = "lsn-99"
+
+	decision := embedcutover.Decide(plan, policy, observed, approvalFor(plan))
+
+	c.Assert(decision.Allowed, qt.IsTrue, qt.Commentf("%v", decision.Blockers))
+}
+
+// TestPlanDigest_IsTheEncodingPlanVersionNames pins the bytes.
+//
+// An approval is a stored digest. Change what the encoding produces and every
+// approval already given stops matching the plan it was given for -- which
+// fails closed, and is still a change nobody made on purpose.
+//
+// So the value is written down. If this digest moves, PlanVersion moves with
+// it, deliberately, and the constant in the digest keeps a new plan from
+// colliding with an approval given under the old encoding.
+func TestPlanDigest_IsTheEncodingPlanVersionNames(t *testing.T) {
+	c := qt.New(t)
+	plan := embedcutover.Plan{
+		Generation: "gen-new",
+		Previous:   "gen-old",
+		Schema:     "public",
+		Table:      "articles",
+		Column:     "embedding_new",
+		Evidence: embedcutover.Evidence{
+			VerificationDigest:   "report-1",
+			VerificationPassed:   true,
+			AcceptedFindings:     []string{"3 rows are stale"},
+			ConsistencyMode:      "outbox",
+			ConsistencyWatermark: "lsn-42",
+			IndexReady:           true,
+			SourceMutable:        true,
+		},
+		PreparedAt: time.Date(2026, 8, 27, 10, 0, 0, 0, time.UTC),
+	}
+
+	c.Assert(embedcutover.PlanVersion, qt.Equals, 1)
+	c.Assert(plan.Digest(), qt.Equals, goldenPlanDigest)
+	c.Assert(plan.Short(), qt.Equals, goldenPlanDigest[:12])
+}
+
+// TestPlanDigest_IsIndependentOfTheZoneItWasPreparedIn keeps one instant from
+// having two digests.
+//
+// The same moment recorded in two zones is the same moment, and an approval
+// given in one office must bind in the other.
+func TestPlanDigest_IsIndependentOfTheZoneItWasPreparedIn(t *testing.T) {
+	c := qt.New(t)
+	utc := time.Date(2026, 8, 27, 10, 0, 0, 0, time.UTC)
+	elsewhere := utc.In(time.FixedZone("elsewhere", 5*60*60))
+
+	first := embedcutover.Plan{PreparedAt: utc}
+	second := embedcutover.Plan{PreparedAt: elsewhere}
+
+	c.Assert(second.PreparedAt.Format(time.RFC3339), qt.Not(qt.Equals), first.PreparedAt.Format(time.RFC3339))
+	c.Assert(second.Digest(), qt.Equals, first.Digest())
 }

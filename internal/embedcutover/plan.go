@@ -94,7 +94,13 @@ func (p Plan) digestComponents() []string {
 		"evidence.source_mutable", strconv.FormatBool(p.Evidence.SourceMutable),
 		"prepared_at", p.PreparedAt.UTC().Format(time.RFC3339Nano),
 	}
-	components = append(components, "evidence.accepted_findings", strconv.Itoa(len(accepted)))
+	// No count precedes the list, because it is the last group: with
+	// length-prefixed components and nothing following it, the sequence is
+	// already unambiguous and a count would be a second rule saying what the
+	// first one says. Where two variable-length lists sit next to each other
+	// -- as they do in a generation identity -- the count is load-bearing and
+	// is written.
+	components = append(components, "evidence.accepted_findings")
 	components = append(components, accepted...)
 	return components
 }

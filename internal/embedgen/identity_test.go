@@ -199,6 +199,31 @@ func TestIdentity_TwoFieldsCannotBorrowEachOthersBoundary(t *testing.T) {
 	c.Assert(left.Identity().Digest, qt.Not(qt.Equals), right.Identity().Digest)
 }
 
+// TestIdentity_OneListCannotSwallowTheNextOnesLabel is what the COUNT holds,
+// as opposed to the length prefix.
+//
+// The two ordered field lists sit next to each other, and the second one's
+// label is a string a field could be named. Without the counts, a key field
+// spelled `source.input_fields` produces the same component sequence as an
+// input field spelled the same way with no key fields at all -- the value in
+// one list is indistinguishable from the label that starts the next.
+//
+// Length prefixes do not help here: both encodings are the same components in
+// the same order. Only the count separates them, and the two specifications it
+// separates address their target rows by different columns.
+func TestIdentity_OneListCannotSwallowTheNextOnesLabel(t *testing.T) {
+	c := qt.New(t)
+
+	asKey := baseSpec()
+	asKey.Source.KeyFields = []string{"source.input_fields"}
+	asKey.Source.InputFields = nil
+	asInput := baseSpec()
+	asInput.Source.KeyFields = nil
+	asInput.Source.InputFields = []string{"source.input_fields"}
+
+	c.Assert(asKey.Identity().Digest, qt.Not(qt.Equals), asInput.Identity().Digest)
+}
+
 // TestIdentity_ReproducibilityIsReportedRatherThanFabricated is the epic's
 // explicit rule: a provider with no immutable revision gets `partial` and a
 // reason, and Ptah must not invent an identity for it.
