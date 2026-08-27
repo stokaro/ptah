@@ -72,6 +72,15 @@ verdict on any of it.
 | `db capabilities` | reads | none | `--db-url` | reads the server's version and catalogs to report the capability profile Ptah resolves |
 | `db drop-all` | **writes** | none | `--db-url` | drops every schema object in the database it is given |
 | `db read` | reads | none | `--db-url` | introspects the database and prints what it found |
+| `inference backfill` | **writes** | none | `--db-url` | reads the source, sends it to the embedding endpoint the specification names, and writes vectors and checkpoints into the target database |
+| `inference catchup` | **writes** | none | `--db-url` | rereads the source rows recorded as changed and writes their vectors, which sends that text to the embedding endpoint |
+| `inference cutover` | **writes** | none | `--db-url` | moves the pointer queries read to a different generation, and refuses when the pointer is not where the plan it was built from expects |
+| `inference plan` | reads | none | `--db-url` | resolves a specification against the database and prints what would happen; nothing is created and nothing is written |
+| `inference prepare` | **writes** | none | `--db-url` | creates the run's own tables and, under the outbox mode, a companion table and two triggers on the source |
+| `inference retire` | **writes** | none | `--db-url` | drops a generation's index and column; it is the one verb here that cannot be undone |
+| `inference rollback` | **writes** | none | `--db-url` | moves the pointer queries read back to a previous generation, when that generation is still measurably one you can go back to |
+| `inference status` | reads | none | `--db-url` | prints a run's phase, progress and watermarks from the run-state tables |
+| `inference verify` | reads | none | `--db-url` | reads the source and the generation and reports what a cutover would rest on; it writes nothing |
 | `introspect` | reads | none | `--db-url` | reads a live database and writes annotated Go models to disk; the database is only read |
 | `license` | none | none | — | prints license and attribution text compiled into the binary |
 | `mcp` | none | none | — | opens no connection of its own; it serves other operations to an MCP client, and each of those carries its own classification |
@@ -158,6 +167,9 @@ permission.
 | `assist sessions show` | prints one saved conversation from disk, including what Ptah's tools answered during it; nothing is opened to do so |
 | `db capabilities` | reads the server's version and catalogs to report the capability profile Ptah resolves |
 | `db read` | introspects the database and prints what it found |
+| `inference plan` | resolves a specification against the database and prints what would happen; nothing is created and nothing is written |
+| `inference status` | prints a run's phase, progress and watermarks from the run-state tables |
+| `inference verify` | reads the source and the generation and reports what a cutover would rest on; it writes nothing |
 | `introspect` | reads a live database and writes annotated Go models to disk; the database is only read |
 | `license` | prints license and attribution text compiled into the binary |
 | `mcp` | opens no connection of its own; it serves other operations to an MCP client, and each of those carries its own classification |
