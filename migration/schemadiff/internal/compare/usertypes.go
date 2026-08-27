@@ -11,6 +11,7 @@ import (
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -79,11 +80,11 @@ func domainsWithSemantics(
 			}
 			continue
 		}
-		diff.DomainsAdded = append(diff.DomainsAdded, generatedNames[identity])
+		diff.DomainsAdded = append(diff.DomainsAdded, target)
 	}
-	for identity := range databaseDomains {
+	for identity, current := range databaseDomains {
 		if _, exists := generatedDomains[identity]; !exists {
-			diff.DomainsRemoved = append(diff.DomainsRemoved, databaseNames[identity])
+			diff.DomainsRemoved = append(diff.DomainsRemoved, domainFromCatalog(current))
 		}
 	}
 
@@ -95,14 +96,14 @@ func domainsWithSemantics(
 	// `CREATE DOMAIN` and `CREATE TYPE` have no conditional form, so an
 	// undecidable addition is recorded on the coverage rather than dropped.
 	keptDomains, withheldDomains := keepPlannedAdditions(cov,
-		coverage.Domain, diff.DomainsAdded, qualifiedName, itself, unguardedCreations(),
+		coverage.Domain, diff.DomainsAdded, domainSpelling, domainDisplay, unguardedCreations(),
 	)
 	diff.DomainsAdded = keptDomains
 	cov.recordUndecidedAdditions(withheldDomains)
-	diff.DomainsRemoved = keepPlannedRemovals(cov, coverage.Domain, diff.DomainsRemoved, qualifiedName)
+	diff.DomainsRemoved = keepPlannedRemovals(cov, coverage.Domain, diff.DomainsRemoved, domainSpelling)
 
-	sort.Strings(diff.DomainsAdded)
-	sort.Strings(diff.DomainsRemoved)
+	sortDomains(diff.DomainsAdded)
+	sortDomains(diff.DomainsRemoved)
 	sort.Slice(diff.DomainsModified, func(i, j int) bool {
 		return diff.DomainsModified[i].DomainName < diff.DomainsModified[j].DomainName
 	})
@@ -619,4 +620,44 @@ func sortComposites(composites difftypes.CompositeTypeChanges) {
 	sort.Slice(composites, func(i, j int) bool {
 		return composites[i].QualifiedName() < composites[j].QualifiedName()
 	})
+}
+
+// domainFromCatalog carries a domain the database reported into the shape the
+// diff holds.
+//
+// The default is the one field a read cannot transcribe: the catalog has one
+// string where the model has a literal value and an expression, and which one
+// it is decides whether the renderer quotes it. The rule is
+// sqlutil.DefaultLooksLikeExpression, shared with the column path rather than
+// copied from it -- a second copy would answer differently the first time
+// either learned something.
+func domainFromCatalog(reported catalog.Domain) schemamodel.Domain {
+	domain := schemamodel.Domain{
+		Name:     reported.Name,
+		Schema:   reported.Schema,
+		BaseType: reported.BaseType,
+		NotNull:  reported.NotNull,
+		Check:    reported.Check,
+	}
+	if strings.TrimSpace(reported.Default) != "" {
+		if sqlutil.DefaultLooksLikeExpression(reported.Default) {
+			domain.DefaultExpr = reported.Default
+		} else {
+			domain.Default = reported.Default
+		}
+	}
+	return domain
+}
+
+// domainSpelling is qualifiedName for a change that carries its operand.
+func domainSpelling(domain schemamodel.Domain) (schema string, spellings []string) {
+	return qualifiedName(domain.QualifiedName())
+}
+
+// domainDisplay names one for a record a person reads.
+func domainDisplay(domain schemamodel.Domain) string { return domain.QualifiedName() }
+
+// sortDomains orders by the key the name lists were sorted on.
+func sortDomains(domains difftypes.DomainChanges) {
+	sort.Slice(domains, func(i, j int) bool { return domains[i].QualifiedName() < domains[j].QualifiedName() })
 }

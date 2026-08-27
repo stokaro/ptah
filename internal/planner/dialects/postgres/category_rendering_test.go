@@ -176,10 +176,10 @@ func diffCategoryFixtures() []categoryFixture {
 		},
 		{
 			"DomainsAdded",
-			&difftypes.SchemaDiff{DomainsAdded: []string{"d"}},
+			&difftypes.SchemaDiff{DomainsAdded: difftypes.DomainChanges{{Name: "d"}}},
 			&schemamodel.Database{Domains: []schemamodel.Domain{{Name: "d", BaseType: "TEXT"}}},
 		},
-		{"DomainsRemoved", &difftypes.SchemaDiff{DomainsRemoved: []string{"d"}}, &schemamodel.Database{}},
+		{"DomainsRemoved", &difftypes.SchemaDiff{DomainsRemoved: difftypes.DomainChanges{{Name: "d"}}}, &schemamodel.Database{}},
 		{
 			"DomainsModified",
 			&difftypes.SchemaDiff{DomainsModified: []difftypes.DomainDiff{{DomainName: "d", Changes: map[string]string{"base_type": "TEXT -> VARCHAR"}}}},

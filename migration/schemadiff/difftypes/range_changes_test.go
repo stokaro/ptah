@@ -348,3 +348,93 @@ func TestEnumChanges_TheValuesSurviveInMemory(t *testing.T) {
 	c.Assert(changes[0].Values, qt.DeepEquals, []string{"draft", "live"})
 	c.Assert(changes.Names(), qt.DeepEquals, []string{"app.status"})
 }
+
+// TestDomainChanges_TheWireShapeIsUnchanged is the same promise for the sixth
+// family off `[]string`, and the first whose carry needed a rule.
+func TestDomainChanges_TheWireShapeIsUnchanged(t *testing.T) {
+	tests := []struct {
+		name    string
+		changes difftypes.DomainChanges
+		want    string
+		why     string
+	}{
+		{
+			name:    "nil is null",
+			changes: nil,
+			want:    "null",
+			why:     "null is a comparison that did not run",
+		},
+		{
+			name:    "empty is an empty array",
+			changes: difftypes.DomainChanges{},
+			want:    "[]",
+			why:     "[] is a comparison that ran and found nothing",
+		},
+		{
+			name: "the base type, check and default do not reach the wire",
+			changes: difftypes.DomainChanges{
+				{Name: "positive", BaseType: "integer", Check: "VALUE > 0", DefaultExpr: "now()"},
+			},
+			want: `["positive"]`,
+			why:  "a name list is what format_version 1 has always carried here",
+		},
+		{
+			name:    "a schema-qualified domain keeps its qualified spelling",
+			changes: difftypes.DomainChanges{{Name: "positive", Schema: "app"}},
+			want:    `["app.positive"]`,
+			why:     "the identity a consumer keys on is unchanged",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			encoded, err := json.Marshal(test.changes)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(string(encoded), qt.Equals, test.want, qt.Commentf("%s", test.why))
+		})
+	}
+}
+
+// TestDomainChanges_TheDefaultKeepsItsKind is the other half, and it is about
+// the one field a read cannot transcribe.
+//
+// A catalog reports one string for a default; the model splits it into a
+// literal VALUE and an EXPRESSION, and which slot it lands in decides whether
+// the renderer quotes it. A carry that put `now()` in the value slot would
+// render the literal text "now()" and the domain would default to a string.
+func TestDomainChanges_TheDefaultKeepsItsKind(t *testing.T) {
+	tests := []struct {
+		name      string
+		domain    schemamodel.Domain
+		wantValue string
+		wantExpr  string
+		why       string
+	}{
+		{
+			name:     "an expression stays an expression",
+			domain:   schemamodel.Domain{Name: "d", DefaultExpr: "now()"},
+			wantExpr: "now()",
+			why:      "unquoted SQL is evaluated, and quoting it would default the domain to a string",
+		},
+		{
+			name:      "a quoted literal stays a value",
+			domain:    schemamodel.Domain{Name: "d", Default: "'draft'"},
+			wantValue: "'draft'",
+			why:       "the server's quoting is what marks it a literal",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			changes := difftypes.DomainChanges{test.domain}
+
+			c.Assert(changes[0].Default, qt.Equals, test.wantValue, qt.Commentf("%s", test.why))
+			c.Assert(changes[0].DefaultExpr, qt.Equals, test.wantExpr, qt.Commentf("%s", test.why))
+		})
+	}
+}

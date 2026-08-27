@@ -32,8 +32,8 @@ func (p *Planner) planDomains(result []ast.Node, diff *difftypes.SchemaDiff, des
 	for _, domain := range desired.Domains {
 		declared[domain.Name] = domain
 	}
-	for _, name := range diff.DomainsAdded {
-		domain, found := declared[name]
+	for _, domain := range diff.DomainsAdded {
+		domain, found := declared[domain.QualifiedName()]
 		if !found {
 			continue
 		}
@@ -115,8 +115,8 @@ func (p *Planner) removeDomains(result []ast.Node, diff *difftypes.SchemaDiff) [
 	if !p.capabilities().Has(capability.DomainTypes) {
 		return result
 	}
-	for _, name := range diff.DomainsRemoved {
-		result = append(result, ast.NewDropType(name).SetDomain())
+	for _, domain := range diff.DomainsRemoved {
+		result = append(result, ast.NewDropType(domain.QualifiedName()).SetDomain())
 	}
 	return result
 }
@@ -143,8 +143,8 @@ func (p *Planner) reportRemovedUserTypes(result []ast.Node, diff *difftypes.Sche
 	// whose columns are typed by them -- see removeDomains. Naming them here
 	// as well would emit the statement twice.
 	if !p.capabilities().Has(capability.DomainTypes) {
-		for _, name := range diff.DomainsRemoved {
-			result = append(result, ast.NewDropType(name).SetDomain())
+		for _, domain := range diff.DomainsRemoved {
+			result = append(result, ast.NewDropType(domain.QualifiedName()).SetDomain())
 		}
 	}
 	// A target that HOSTS composite types drops them late instead, after the

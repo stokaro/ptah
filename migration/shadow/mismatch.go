@@ -115,8 +115,8 @@ func collectSchemaObjectMismatches(diff *difftypes.SchemaDiff) []Mismatch {
 
 func collectUserTypeMismatches(diff *difftypes.SchemaDiff) []Mismatch {
 	var mismatches []Mismatch
-	mismatches = append(mismatches, namedMismatches(diff.DomainsAdded, "missing_domain", "missing domain")...)
-	mismatches = append(mismatches, namedMismatches(diff.DomainsRemoved, "extra_domain", "extra domain")...)
+	mismatches = append(mismatches, namedMismatches(diff.DomainsAdded.Names(), "missing_domain", "missing domain")...)
+	mismatches = append(mismatches, namedMismatches(diff.DomainsRemoved.Names(), "extra_domain", "extra domain")...)
 	mismatches = append(mismatches, changedObjectMismatches(
 		diff.DomainsModified,
 		"domain_mismatch",
