@@ -31,9 +31,12 @@ type Event struct {
 	Sequence int64
 	// Transaction is the identity of the transaction that wrote the row.
 	//
-	// It is here rather than derived from Sequence because a sequence is
-	// allocated before a transaction commits, so two events can commit out of
-	// sequence order. See Barrier.
+	// It answers whether an event is SETTLED, and only that. It does not order
+	// events: a transaction can take its identity from an earlier write to some
+	// other table and reach this source afterwards, by which time a transaction
+	// with a later identity has already written and committed here. Ordering by
+	// it would put those two the wrong way round. See Barrier for what it is
+	// for, and Collapse for what orders.
 	Transaction uint64
 	// Key is the source key, in the specification's key order.
 	Key []string
@@ -58,12 +61,15 @@ type Event struct {
 // regardless of what came before it, and an update that arrived earlier
 // describes a row that no longer exists. A later insert reopens it, which is
 // why the LAST event wins rather than the delete specifically.
+//
+// Last is by SEQUENCE, which is when the row was written, and not by
+// transaction identity, which is only when a transaction first needed one.
+// Writes to a single row are serialized by that row's lock, so for the events
+// that can contradict each other -- the events about one key -- the sequence is
+// the order they happened in.
 func Collapse(events []Event) []Event {
 	ordered := slices.Clone(events)
 	slices.SortStableFunc(ordered, func(left, right Event) int {
-		if left.Transaction != right.Transaction {
-			return compareUint64(left.Transaction, right.Transaction)
-		}
 		return compareInt64(left.Sequence, right.Sequence)
 	})
 
@@ -92,18 +98,6 @@ func Collapse(events []Event) []Event {
 // row's change silently deciding another row's vector.
 func keyOf(key []string) string {
 	return embeddigest.Of(key...)
-}
-
-// compareUint64 orders two transaction identities.
-func compareUint64(left, right uint64) int {
-	switch {
-	case left < right:
-		return -1
-	case left > right:
-		return 1
-	default:
-		return 0
-	}
 }
 
 // compareInt64 orders two sequences.

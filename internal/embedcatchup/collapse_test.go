@@ -94,14 +94,11 @@ func TestCollapse_TheLastWordAboutAKeyWins(t *testing.T) {
 	}
 }
 
-// TestCollapse_OrdersByTransactionAndNotByArrival is what makes the rule above
+// TestCollapse_OrdersBySequenceAndNotByArrival is what makes the rule above
 // mean anything.
 //
-// Events come back in whatever order a query returned them. A collapse that
-// took the last one it happened to see would resolve a delete-then-insert to a
-// delete about half the time, and the half it got wrong leaves a tombstone over
-// a live row.
-func TestCollapse_OrdersByTransactionAndNotByArrival(t *testing.T) {
+// Events come back in whatever order a query returned them.
+func TestCollapse_OrdersBySequenceAndNotByArrival(t *testing.T) {
 	c := qt.New(t)
 	events := []embedcatchup.Event{
 		change(12, 3, "a", embedcatchup.OperationInsert),
@@ -114,7 +111,27 @@ func TestCollapse_OrdersByTransactionAndNotByArrival(t *testing.T) {
 	c.Assert(summarize(collapsed), qt.DeepEquals, []string{"a:insert"})
 }
 
-// TestCollapse_TwoEventsInOneTransactionAreOrderedBySequence is the tiebreak.
+// TestCollapse_DoesNotOrderByArrival is the same point without the transaction
+// identities agreeing with it.
+//
+// A collapse that took the last event it happened to see would resolve a
+// delete-then-insert to a delete about half the time, and the half it got wrong
+// leaves a tombstone over a live row.
+func TestCollapse_DoesNotOrderByArrival(t *testing.T) {
+	c := qt.New(t)
+	events := []embedcatchup.Event{
+		change(10, 3, "a", embedcatchup.OperationInsert),
+		change(10, 1, "a", embedcatchup.OperationDelete),
+		change(10, 2, "a", embedcatchup.OperationUpdate),
+	}
+
+	collapsed := embedcatchup.Collapse(events)
+
+	c.Assert(summarize(collapsed), qt.DeepEquals, []string{"a:insert"})
+}
+
+// TestCollapse_TwoEventsInOneTransactionAreOrderedBySequence is the simplest
+// case the sequence decides.
 //
 // A transaction that touches one row twice writes two events with one
 // transaction identity, and only the sequence separates them.
@@ -128,6 +145,33 @@ func TestCollapse_TwoEventsInOneTransactionAreOrderedBySequence(t *testing.T) {
 	collapsed := embedcatchup.Collapse(events)
 
 	c.Assert(summarize(collapsed), qt.DeepEquals, []string{"a:delete"})
+}
+
+// TestCollapse_TheSequenceWinsWhenTheTransactionIdentityDisagrees is the case
+// that separates when a row was WRITTEN from when its transaction first needed
+// an identity.
+//
+// A transaction takes its identity from its first write anywhere. One that
+// touched another table, then waited, then updated this row, holds an identity
+// EARLIER than a transaction that reached this row and committed in the
+// meantime -- and the update happened after the insert regardless. Ordering by
+// identity resolves this pair backwards and keeps the insert as the last word,
+// which leaves the target holding a vector for text the row no longer has.
+//
+// The two orders agree in every ordinary case, which is exactly why this needs
+// a fixture: nothing else in the suite can tell them apart.
+func TestCollapse_TheSequenceWinsWhenTheTransactionIdentityDisagrees(t *testing.T) {
+	c := qt.New(t)
+	events := []embedcatchup.Event{
+		// Written first, by the transaction with the LATER identity.
+		change(101, 1, "a", embedcatchup.OperationInsert),
+		// Written second, by the transaction that had already been given 100.
+		change(100, 2, "a", embedcatchup.OperationUpdate),
+	}
+
+	collapsed := embedcatchup.Collapse(events)
+
+	c.Assert(summarize(collapsed), qt.DeepEquals, []string{"a:update"})
 }
 
 // TestCollapse_DifferentKeysAreNotCollapsedIntoEachOther is the control.
