@@ -1,3 +1,5 @@
+@AGENTS.md
+
 # CLAUDE.md
 
 Repository guidance for coding agents lives in [AGENTS.md](AGENTS.md). Read
