@@ -81,7 +81,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends busybox
+          sudo apt-get install -y -qq --no-install-recommends busybox-static
           scripts/check-install-script.sh
           scripts/check-install-script-selftest.sh
 

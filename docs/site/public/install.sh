@@ -500,12 +500,21 @@ verify_checksum() {
 	fi
 }
 
+# detect_signature_tool runs with the other prerequisite checks, before the
+# transfer. Reaching for cosign at verification time would refuse the run after
+# thirty megabytes had already been downloaded for it.
+detect_signature_tool() {
+	if [ "$opt_verify_signature" = false ]; then
+		return 0
+	fi
+	have cosign || fail 4 "--verify-signature needs cosign on PATH; see https://github.com/sigstore/cosign"
+}
+
 # verify_signature is opt-in and requires cosign. It is never attempted
 # opportunistically: a signature check that quietly does not run when its tool
 # is absent is indistinguishable from one that passed.
 verify_signature() {
 	local bundle="$tmpdir/checksums.txt.sigstore.json"
-	have cosign || fail 4 "--verify-signature needs cosign on PATH; see https://github.com/sigstore/cosign"
 	download_or_fail "$base_url/download/$version_tag/checksums.txt.sigstore.json" "$bundle" \
 		"$version_tag publishes no checksums.txt.sigstore.json"
 	cosign verify-blob --bundle "$bundle" \
@@ -694,6 +703,7 @@ main() {
 	detect_platform
 	detect_tar
 	detect_hasher
+	detect_signature_tool
 
 	resolve_version
 	if [ "$resolved_latest" = true ]; then

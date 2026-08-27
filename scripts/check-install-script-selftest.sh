@@ -192,6 +192,19 @@ assert old in s, "anchor moved: the writability probe"
 p.write_text(s.replace(old, "\tif false; then"))
 '
 
+# The shape --verify-signature had for one revision: the cosign check sat inside
+# verify_signature, so a machine without cosign was told so only after the
+# archive had been downloaded for it. The exit code is the tell -- 6 for a
+# verification that could not run, where a missing prerequisite is 4.
+run_mutation "the cosign check moved back to verification time" '
+import os, pathlib
+p = pathlib.Path(os.environ["MUTANT"])
+s = p.read_text()
+old = "\tdetect_hasher\n\tdetect_signature_tool\n"
+assert old in s, "anchor moved: the prerequisite block"
+p.write_text(s.replace(old, "\tdetect_hasher\n"))
+'
+
 echo
 if [ "$failures" -ne 0 ]; then
 	echo "check-install-script-selftest: $failures of $checked mutations went unnoticed" >&2

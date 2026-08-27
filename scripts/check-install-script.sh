@@ -49,12 +49,25 @@ if [ ! -f "$script" ]; then
 	exit 1
 fi
 
-for tool in python3 tar curl shasum; do
+for tool in python3 tar curl; do
 	if ! command -v "$tool" >/dev/null 2>&1; then
 		echo "check-install-script: need $tool to run this suite" >&2
 		exit 1
 	fi
 done
+# The suite needs a sha256 tool of its own, to build the fixture checksums and
+# to stock the restricted PATHs below. Which one is not fixed: sha256sum is
+# absent from macOS before 26 and shasum is a perl package a slim Linux image
+# may not carry, so the suite asks for either rather than naming one and
+# failing on the machine that has the other.
+if command -v sha256sum >/dev/null 2>&1; then
+	host_hasher=sha256sum
+elif command -v shasum >/dev/null 2>&1; then
+	host_hasher=shasum
+else
+	echo "check-install-script: need sha256sum or shasum to build the fixture checksums" >&2
+	exit 1
+fi
 if ! command -v shellcheck >/dev/null 2>&1; then
 	echo "check-install-script: need shellcheck; it is the only mechanical guard against a" >&2
 	echo "  bashism, because /bin/sh on a maintainer's macOS is bash and accepts nearly anything" >&2
@@ -131,7 +144,13 @@ build_release() {
 	printf '%s\n' "$asset"
 }
 
-sha256_hex() { shasum -a 256 "$1" | awk '{print $1}'; }
+sha256_hex() {
+	if [ "$host_hasher" = sha256sum ]; then
+		sha256sum "$1" | awk '{print $1}'
+	else
+		shasum -a 256 "$1" | awk '{print $1}'
+	fi
+}
 
 # The .sbom.json line is written FIRST and deliberately. The published
 # checksums.txt carries one beside every archive, and a grep for the archive's
@@ -511,7 +530,7 @@ case_missing_hasher() {
 case_missing_tar() {
 	local bindir path
 	bindir="$(fresh_bindir)"
-	path="$(restricted_path notar curl uname shasum)"
+	path="$(restricted_path notar curl uname "$host_hasher")"
 	invoke PATH="$path" PTAH_INSTALL_BASE_URL="$base_url" PTAH_INSTALL_DIR="$bindir" \
 		"${shell_argv[@]}" "$script"
 	expect_status 4 "no tar exits 4" || return 0
@@ -522,12 +541,30 @@ case_missing_tar() {
 case_missing_downloader() {
 	local bindir path
 	bindir="$(fresh_bindir)"
-	path="$(restricted_path nodl tar uname shasum)"
+	path="$(restricted_path nodl tar uname "$host_hasher")"
 	invoke PATH="$path" PTAH_INSTALL_BASE_URL="$base_url" PTAH_INSTALL_DIR="$bindir" \
 		"${shell_argv[@]}" "$script"
 	expect_status 4 "no curl and no wget exits 4" || return 0
 	expect_contains "$err" "need curl or wget" "the refusal names both" || return 0
 	pass "a machine with neither curl nor wget is refused"
+}
+
+case_signature_without_cosign() {
+	local bindir path
+	bindir="$(fresh_bindir)"
+	# A restricted PATH rather than this machine's, so the case says the same
+	# thing whether or not cosign happens to be installed on the runner.
+	path="$(restricted_path nocosign curl tar uname "$host_hasher")"
+	invoke PATH="$path" PTAH_INSTALL_BASE_URL="$base_url" PTAH_INSTALL_DIR="$bindir" \
+		"${shell_argv[@]}" "$script" --verify-signature
+	expect_status 4 "--verify-signature without cosign exits 4" || return 0
+	expect_contains "$err" "needs cosign on PATH" "the refusal names cosign" || return 0
+	expect_empty_dir "$bindir" "nothing is installed" || return 0
+	# The refusal belongs with the other prerequisite checks. Reaching for cosign
+	# at verification time would refuse the run after the archive was downloaded
+	# for it.
+	expect_empty_dir "$work/tmp" "the refusal happens before the download" || return 0
+	pass "--verify-signature without cosign is refused before the download"
 }
 
 case_release_not_found() {
@@ -702,6 +739,7 @@ run_suite() {
 	case_missing_tar
 	case_missing_downloader
 	case_release_not_found
+	case_signature_without_cosign
 	case_unwritable_bindir
 	case_default_location
 	case_only_subset
