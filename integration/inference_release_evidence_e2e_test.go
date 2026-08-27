@@ -287,7 +287,7 @@ func assertCutoverPublishesWhatAuthorizedIt(
 	// reads six months later without the plan in front of them.
 	c.Assert(strings.HasPrefix(record.PlanDigest, digest), qt.IsTrue,
 		qt.Commentf("plan %s does not start with the approved %s", record.PlanDigest, digest))
-	c.Assert(len(record.PlanDigest), qt.Equals, 64)
+	c.Assert(record.PlanDigest, qt.HasLen, 64)
 	c.Assert(record.Approver, qt.Equals, "an operator")
 	c.Assert(record.Generation, qt.Equals, generation)
 	c.Assert(record.CutOverAt.IsZero(), qt.IsFalse)
