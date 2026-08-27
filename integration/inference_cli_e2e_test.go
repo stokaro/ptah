@@ -142,21 +142,32 @@ func assertMaintainingAGenerationKeepsItAWayBack(
 	c *qt.C, ctx context.Context, db *sql.DB, specPath, dbURL, generation string,
 ) {
 	c.Helper()
-	makeTheGenerationAWayBack(c, ctx, db, generation)
+	makeThePointerRecordItAsPrevious(c, ctx, db, generation)
+	// Both halves broken at once, which is the state a stabilization window
+	// decays into on its own: the source moved, and the promise to keep the
+	// generation current has run out.
 	_, err := db.ExecContext(ctx,
 		`UPDATE articles SET body = 'moved again', updated_at = '40' WHERE id = 2`)
+	c.Assert(err, qt.IsNil)
+	_, err = db.ExecContext(ctx,
+		`UPDATE ptah_embedding_generation SET maintained_until = NULL WHERE identity = $1`,
+		generation)
 	c.Assert(err, qt.IsNil)
 
 	drifted, err := runInferenceExpectingFailure(c, ctx, "rollback",
 		"--spec", specPath, "--db-url", dbURL, "--to", generation, "--window", "24h")
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(drifted, qt.Contains, "rows are stale and this policy allows 0")
+	c.Assert(drifted, qt.Contains, "no longer maintained")
 
 	// One catch-up, with the window moving alongside it.
 	output := runInference(c, ctx, "catchup",
 		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID,
 		"--batch-rows", "10", "--maintain-for", "1h")
 	c.Assert(output, qt.Contains, "stays a way back until ")
+	// The window is what this catch-up wrote, not what an earlier step left:
+	// it was cleared above, and nothing else has touched it.
+	c.Assert(maintainedUntil(c, ctx, db, generation).Valid, qt.IsTrue)
 
 	makeThePointerRecordItAsPrevious(c, ctx, db, generation)
 	c.Assert(runInference(c, ctx, "rollback",
