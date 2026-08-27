@@ -123,6 +123,71 @@ func TestInferenceCLIRollbackE2E(t *testing.T) {
 	assertRollbackMovesThePointerBack(c, ctx, specPath, dbName, generation)
 	assertNoWindowIsAskedForMeansNoWindow(c, ctx, db, specPath, dbName)
 	assertADriftedGenerationIsNotAWayBack(c, ctx, db, specPath, dbName, generation)
+	assertASkipIsNotAGapAndAGapIsNotASkip(c, ctx, db, specPath, dbName, generation)
+}
+
+// assertASkipIsNotAGapAndAGapIsNotASkip separates the two things a coverage
+// layer reports about a rollback target.
+//
+// A row the specification declined to embed is a deliberate gap and does not
+// make a generation unusable -- counting it would refuse a rollback to a corpus
+// that is exactly what was asked for. A row nothing ever embedded is a real
+// gap, and going back to a generation that has none of it answers those queries
+// with nothing.
+//
+// The two are one finding apart in the same layer, which is why they need one
+// fixture each.
+func assertASkipIsNotAGapAndAGapIsNotASkip(
+	c *qt.C, ctx context.Context, db *sql.DB, specPath, dbURL, generation string,
+) {
+	c.Helper()
+	// Bring the generation back up to date after the drift above, so the only
+	// thing either step below changes is coverage.
+	runInference(c, ctx, "catchup",
+		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID, "--batch-rows", "10")
+	makeTheGenerationAWayBack(c, ctx, db, generation)
+	c.Assert(runInference(c, ctx, "rollback",
+		"--spec", specPath, "--db-url", dbURL, "--to", generation, "--window", "24h"),
+		qt.Contains, "queries now read "+generation)
+
+	// A row the empty policy declines, caught up so the generation records the
+	// skip. It is still a way back.
+	_, err := db.ExecContext(ctx,
+		`INSERT INTO articles (id, title, body, updated_at) VALUES (77, '', '', '30')`)
+	c.Assert(err, qt.IsNil)
+	runInference(c, ctx, "catchup",
+		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID, "--batch-rows", "10")
+	makeTheGenerationAWayBack(c, ctx, db, generation)
+
+	c.Assert(runInference(c, ctx, "rollback",
+		"--spec", specPath, "--db-url", dbURL, "--to", generation, "--window", "24h"),
+		qt.Contains, "queries now read "+generation)
+
+	// A row nothing embedded, with no catch-up behind it. Now it is not.
+	_, err = db.ExecContext(ctx,
+		`INSERT INTO articles (id, title, body, updated_at) VALUES (78, 'Never', 'embedded', '31')`)
+	c.Assert(err, qt.IsNil)
+	makeTheGenerationAWayBack(c, ctx, db, generation)
+
+	output, err := runInferenceExpectingFailure(c, ctx, "rollback",
+		"--spec", specPath, "--db-url", dbURL, "--to", generation, "--window", "24h")
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(output, qt.Contains, "1 rows are missing and this policy allows 0")
+}
+
+// makeTheGenerationAWayBack puts the generation where a rollback would return
+// to it, with a live window, so nothing but the corpus can be the reason.
+func makeTheGenerationAWayBack(c *qt.C, ctx context.Context, db *sql.DB, generation string) {
+	c.Helper()
+	_, err := db.ExecContext(ctx,
+		`UPDATE ptah_embedding_pointer SET active_generation = 'the-newest-one',
+			previous_generation = $1 WHERE target_table = 'articles'`, generation)
+	c.Assert(err, qt.IsNil)
+	_, err = db.ExecContext(ctx,
+		`UPDATE ptah_embedding_generation SET maintained_until = now() + interval '1 hour'
+		 WHERE identity = $1`, generation)
+	c.Assert(err, qt.IsNil)
 }
 
 // assertADriftedGenerationIsNotAWayBack is the epic's rule that rollback is
