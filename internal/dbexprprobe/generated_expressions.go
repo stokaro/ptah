@@ -85,6 +85,18 @@ func ResolveGeneratedExpressions(
 	return resolved, nil
 }
 
+// KeyFor is the map key one of this probe's columns is written under.
+//
+// It exists so the key this package WRITES can be measured without a server.
+// Everything around it needs an Oracle connection, so a key built inline would
+// be exercised only by a live run -- and the failure it would cause is silent:
+// the comparison reads the map with the same key builder, finds nothing, and
+// leaves the expression uncompared, which is indistinguishable from nobody
+// having asked a server at all (stokaro/ptah#2315).
+func (p GeneratedExpressionProbe) KeyFor(semantics identifier.Semantics, column string) string {
+	return exprkey.Generated(semantics, p.Schema, p.Table, column)
+}
+
 // GeneratedExpressionProbeTable names the throwaway table for the nth probe.
 //
 // It is here rather than in the caller so that the name the caller renders and
@@ -121,7 +133,7 @@ func resolveOneGeneratedProbe(
 		// rather than reported, which is what a comparison that cannot judge
 		// must do.
 		for _, column := range probe.Generated {
-			into[exprkey.Generated(semantics, probe.Schema, probe.Table, column)] = config.GeneratedExpression{}
+			into[probe.KeyFor(semantics, column)] = config.GeneratedExpression{}
 		}
 		return nil
 	}
@@ -143,7 +155,7 @@ func resolveOneGeneratedProbe(
 	}
 	for _, column := range probe.Generated {
 		expression, found := stored[strings.ToUpper(strings.TrimSpace(column))]
-		into[exprkey.Generated(semantics, probe.Schema, probe.Table, column)] = config.GeneratedExpression{
+		into[probe.KeyFor(semantics, column)] = config.GeneratedExpression{
 			Expression: expression,
 			Resolved:   found,
 		}
