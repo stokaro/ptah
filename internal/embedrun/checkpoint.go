@@ -59,7 +59,13 @@ func (r *Run) Checkpoint(token int64, outcome BatchOutcome) error {
 		return err
 	}
 
-	r.Cursor = append([]string(nil), outcome.Cursor...)
+	// Each resume point is overwritten only by a batch that names one. The two
+	// halves of a run resume from different things -- the backfill from a key,
+	// catch-up from a transaction -- and a catch-up batch that cleared the
+	// keyset cursor would send a resumed backfill to the start of the table.
+	if len(outcome.Cursor) > 0 {
+		r.Cursor = append([]string(nil), outcome.Cursor...)
+	}
 	if outcome.CatchUpWatermark != "" {
 		r.CatchUpWatermark = outcome.CatchUpWatermark
 	}
@@ -87,8 +93,13 @@ func checkpointReady(outcome BatchOutcome) error {
 		return fmt.Errorf("%w: the batch's tombstones are not committed", ErrCheckpoint)
 	case outcome.Unreconciled:
 		return fmt.Errorf("%w: the batch carries a result that was never reconciled", ErrCheckpoint)
-	case len(outcome.Cursor) == 0:
-		return fmt.Errorf("%w: the batch names no cursor, so there is nothing to resume after", ErrCheckpoint)
+	case len(outcome.Cursor) == 0 && outcome.CatchUpWatermark == "":
+		// One or the other, not both: a backfill batch names a key and a
+		// catch-up batch names a transaction, and a batch that names neither
+		// has nothing to resume after.
+		return fmt.Errorf(
+			"%w: the batch names neither a cursor nor a catch-up watermark, so there is nothing "+
+				"to resume after", ErrCheckpoint)
 	default:
 		return nil
 	}

@@ -41,7 +41,7 @@ func TestCheckpoint_RefusesABatchWhoseWorkIsNotDurable(t *testing.T) {
 		{
 			name:    "no cursor, so nothing to resume after",
 			outcome: embedrun.BatchOutcome{TargetCommitted: true, DeletesCommitted: true},
-			want:    `.*names no cursor.*`,
+			want:    `.*names neither a cursor nor a catch-up watermark.*`,
 		},
 	}
 	for _, test := range tests {
@@ -184,4 +184,44 @@ func TestResume_OnlyAPausedRunResumes(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, embedrun.ErrCheckpoint)
 	c.Assert(run.Status, qt.Equals, embedrun.StatusFailed)
 	c.Assert(run.FailureClass, qt.Equals, "provider")
+}
+
+// TestCheckpoint_ACatchUpBatchResumesFromAWatermarkRatherThanAKey is the other
+// half of a run.
+//
+// The backfill resumes from a key and catch-up resumes from a transaction. A
+// catch-up batch names no keyset cursor because there is no key it got to, and
+// requiring one would make catch-up unable to checkpoint at all.
+func TestCheckpoint_ACatchUpBatchResumesFromAWatermarkRatherThanAKey(t *testing.T) {
+	c := qt.New(t)
+	run := embedrun.Run{Phase: embedrun.PhaseCaughtUp, Status: embedrun.StatusRunning, FencingToken: 1}
+
+	err := run.Checkpoint(1, embedrun.BatchOutcome{
+		CatchUpWatermark: "500", TargetCommitted: true, DeletesCommitted: true,
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(run.CatchUpWatermark, qt.Equals, "500")
+	c.Assert(run.Cursor, qt.HasLen, 0)
+}
+
+// TestCheckpoint_ACatchUpBatchDoesNotEraseTheBackfillsCursor is what makes the
+// two resume points independent.
+//
+// A catch-up batch carries no key, and a checkpoint that copied its empty
+// cursor over the backfill's would send a resumed backfill to the start of the
+// table -- over a target that already holds most of a corpus.
+func TestCheckpoint_ACatchUpBatchDoesNotEraseTheBackfillsCursor(t *testing.T) {
+	c := qt.New(t)
+	run := embedrun.Run{
+		Phase: embedrun.PhaseCaughtUp, Status: embedrun.StatusRunning, FencingToken: 1,
+		Cursor: []string{"tenant-b", "4000"},
+	}
+
+	err := run.Checkpoint(1, embedrun.BatchOutcome{
+		CatchUpWatermark: "500", TargetCommitted: true, DeletesCommitted: true,
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(run.Cursor, qt.DeepEquals, []string{"tenant-b", "4000"})
 }

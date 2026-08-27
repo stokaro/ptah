@@ -90,6 +90,15 @@ func Collapse(events []Event) []Event {
 	return collapsed
 }
 
+// KeyIdentity renders a key so two of them can be compared as map keys.
+//
+// Exported because catch-up outside this package has to agree with the collapse
+// inside it about which events are about one row. Two answers to that would let
+// a row be tombstoned by a change to its neighbour.
+func KeyIdentity(key []string) string {
+	return keyOf(key)
+}
+
 // keyOf renders a key so two of them can be compared as map keys.
 //
 // Through the same length-prefixed encoder every other content address in the
