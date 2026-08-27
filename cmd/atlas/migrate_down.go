@@ -26,6 +26,7 @@ import (
 	"go.5x5.cz/ptah/internal/devdocker"
 	"go.5x5.cz/ptah/internal/envbool"
 	"go.5x5.cz/ptah/internal/migrationintegrity"
+	"go.5x5.cz/ptah/internal/revisiontable"
 	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 	"go.5x5.cz/ptah/migration/shadow"
@@ -243,7 +244,7 @@ func runAtlasMigrateDownFormat(
 		FS:                   source.FileSystem,
 		TargetVersion:        targetVersion,
 		DryRun:               opts.dryRun,
-		RevisionsSchema:      applyAtlasRevisionsSchemaDefault(opts.revisionsSchema, opts.url),
+		RevisionsSchema:      revisiontable.Schema(opts.revisionsSchema, opts.url),
 		MigrationLockTimeout: migrationLockTimeout,
 		SkipChecks:           opts.skipChecks,
 	})
@@ -581,7 +582,7 @@ func resolveAtlasDownFormatTag(
 		return 0, fmt.Errorf("error registering migrations: %w", err)
 	}
 	resolver = resolver.
-		WithMigrationsTable(applyAtlasRevisionsSchemaDefault(opts.revisionsSchema, opts.url), "").
+		WithMigrationsTable(revisiontable.Schema(opts.revisionsSchema, opts.url), "").
 		WithMigrationsEngine(migrationsEngineFromEnv()).
 		WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
 	return resolver.ResolveMigrationTag(ctx, opts.toTag)

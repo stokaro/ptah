@@ -14,6 +14,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasargs"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
+	"go.5x5.cz/ptah/internal/revisiontable"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -144,7 +145,7 @@ func runAtlasMigrateSet(
 		Dir:                       source.Display,
 		FS:                        migrationFS,
 		AtlasEnv:                  opts.atlasEnv,
-		RevisionsSchema:           applyAtlasRevisionsSchemaDefault(opts.revisionsSchema, opts.url),
+		RevisionsSchema:           revisiontable.Schema(opts.revisionsSchema, opts.url),
 		RevisionVersions:          sourceVersions,
 		RevisionTypes:             linearity.revisionTypes,
 		RepeatableVersions:        linearity.repeatableVersions,

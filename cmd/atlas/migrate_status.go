@@ -13,6 +13,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasargs"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlasreport"
+	"go.5x5.cz/ptah/internal/revisiontable"
 )
 
 type atlasMigrateStatusOptions struct {
@@ -211,7 +212,7 @@ func runAtlasMigrateStatus(
 		Dir:              dir,
 		FS:               migrationFS,
 		AtlasEnv:         opts.atlasEnv,
-		RevisionsSchema:  applyAtlasRevisionsSchemaDefault(opts.revisionsSchema, opts.url),
+		RevisionsSchema:  revisiontable.Schema(opts.revisionsSchema, opts.url),
 		RevisionVersions: sourceVersions,
 	})
 	if err != nil {
