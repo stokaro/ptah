@@ -453,3 +453,76 @@ func TestVerify_TheListedKeysAreTheSortedPrefix(t *testing.T) {
 		"cc", "cd", "da", "db", "dc", "dd", "ea", "eb", "ec", "ed",
 	})
 }
+
+// TestVerify_ASkippedRowWrittenAsSkippedPasses is the state a skip policy
+// leaves behind once the run has been over the row.
+//
+// Both sides say the same thing -- the specification declined to embed it -- so
+// the absent vector is the correct answer rather than a missing one.
+func TestVerify_ASkippedRowWrittenAsSkippedPasses(t *testing.T) {
+	c := qt.New(t)
+	expectation, structure, source, target, state := healthy()
+	source[1].Skipped = true
+	target[1] = embedverify.TargetRow{Key: "2", Generation: generation, Skipped: true}
+
+	report := embedverify.Verify(expectation, structure, source, target, state)
+
+	c.Assert(report.Passed(), qt.IsTrue, qt.Commentf("%v", summaries(report)))
+}
+
+// TestVerify_AGenerationNotYetIndexedIsNotJudgedOnItsIndex separates the phases.
+//
+// Backfill runs before the index is built, and verification during backfill has
+// to be able to say something useful about coverage without failing on an index
+// nobody has asked for yet.
+func TestVerify_AGenerationNotYetIndexedIsNotJudgedOnItsIndex(t *testing.T) {
+	c := qt.New(t)
+	expectation, structure, source, target, state := healthy()
+	expectation.RequireIndex = false
+	structure.IndexExists = false
+	structure.IndexMethod = ""
+	structure.OperatorClass = ""
+	structure.IndexValid = false
+
+	report := embedverify.Verify(expectation, structure, source, target, state)
+
+	c.Assert(report.Passed(), qt.IsTrue, qt.Commentf("%v", summaries(report)))
+}
+
+// TestVerify_VerificationOutsideACutoverIgnoresThePointer keeps the drift check
+// tied to the plan that gives it meaning.
+//
+// Asking whether a generation is sound is not asking to cut over to it. Without
+// a plan there is no pointer the answer was built against, and whatever queries
+// currently read is somebody else's business.
+func TestVerify_VerificationOutsideACutoverIgnoresThePointer(t *testing.T) {
+	c := qt.New(t)
+	expectation, structure, source, target, state := healthy()
+	expectation.PreviousPointer = ""
+	structure.ActivePointer = "gen-other"
+
+	report := embedverify.Verify(expectation, structure, source, target, state)
+
+	c.Assert(report.Passed(), qt.IsTrue, qt.Commentf("%v", summaries(report)))
+}
+
+// TestVerify_AGenerationWithoutADimensionSaysSo is what replaced two silent
+// skips.
+//
+// A dimension is what both the column check and every stored vector are
+// measured against. Guarding each of them on having one meant an expectation
+// that arrived without a dimension passed two layers by asking them nothing,
+// and the report said the generation was sound.
+func TestVerify_AGenerationWithoutADimensionSaysSo(t *testing.T) {
+	c := qt.New(t)
+	expectation, structure, source, target, state := healthy()
+	expectation.Dimension = 0
+
+	report := embedverify.Verify(expectation, structure, source, target, state)
+
+	c.Assert(report.Passed(), qt.IsFalse)
+	c.Assert(summaries(report), qt.Contains,
+		"the generation declares no dimension, so nothing can be checked against one")
+	c.Assert(summaries(report), qt.Not(qt.Contains),
+		"2 stored vectors do not have the generation's dimension")
+}

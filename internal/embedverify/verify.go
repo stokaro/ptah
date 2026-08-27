@@ -135,7 +135,14 @@ func verifyStructure(report *Report, expectation Expectation, structure Structur
 		report.addf(LayerStructural, Blocking, 0, nil,
 			"the column is %s and the generation expects %s", structure.ColumnType, expectation.ColumnType)
 	}
-	if expectation.Dimension > 0 && structure.Dimension != expectation.Dimension {
+	switch {
+	case expectation.Dimension <= 0:
+		// Without a declared dimension neither the column nor a single stored
+		// vector can be checked against anything, so two layers go quiet at
+		// once. That is worth saying out loud rather than passing.
+		report.addf(LayerStructural, Blocking, 0, nil,
+			"the generation declares no dimension, so nothing can be checked against one")
+	case structure.Dimension != expectation.Dimension:
 		report.addf(LayerStructural, Blocking, 0, nil,
 			"the column holds %d dimensions and the generation expects %d",
 			structure.Dimension, expectation.Dimension)
