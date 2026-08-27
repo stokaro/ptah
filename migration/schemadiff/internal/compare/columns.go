@@ -11,6 +11,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/internal/exprkey"
 	"go.5x5.cz/ptah/internal/normalize"
 	"go.5x5.cz/ptah/internal/oracletype"
 	"go.5x5.cz/ptah/internal/sqlitekey"
@@ -435,7 +436,7 @@ func columnsWithDesiredDomains(
 		colDiff.Changes["unique"] = fmt.Sprintf("%t -> %t", dbUnique, genUnique)
 	}
 	var resolution *config.GeneratedExpression
-	if entry, ok := ctx.generatedExpressions[generatedColumnKey(ctx.schema, ctx.table, genCol.Name)]; ok {
+	if entry, ok := ctx.generatedExpressions[exprkey.Generated(dialect, ctx.schema, ctx.table, genCol.Name)]; ok {
 		resolution = &entry
 	}
 	if diff := generatedColumnDiff(genCol, dbCol, dialect, resolution); diff != "" {
@@ -998,20 +999,6 @@ func tablePrimaryKeyColumns(table schemamodel.Table) []string {
 // that a MODIFY would not make (stokaro/ptah#1915).
 func generatedExpressionIsRewritten(dialect string) bool {
 	return platform.NormalizeDialect(dialect) == platform.Oracle
-}
-
-// generatedColumnKey names one column for [config.CompareOptions.GeneratedExpressions].
-//
-// The declared spelling is the key on both sides, because the resolver builds
-// the map from the same declaration this comparison reads. Folded to lower case
-// so a target that reports its catalog in upper case does not need a second
-// spelling.
-func generatedColumnKey(schema, table, column string) string {
-	name := table + "." + column
-	if schema != "" {
-		name = schema + "." + name
-	}
-	return strings.ToLower(name)
 }
 
 // generatedColumnDiff compares a generated column, using the server's own
