@@ -268,9 +268,13 @@ Reader documentation does not celebrate internal refactoring.
 ### 6.5 Labels
 
 A reader-facing label names the current state, not the decision that produced
-it: "compatibility differences", not "retained divergences". A literal
-compatibility identifier a user has to type — a flag, an environment variable, a
-file name — keeps the spelling the tree uses, appears in reference
+it: "compatibility differences", not "retained divergences". The Atlas
+compatibility page still carries the older label; moving it is part of the same
+documentation rewrite as this rule, and the rule is what the new label answers
+to.
+
+A literal compatibility identifier a user has to type — a flag, an environment
+variable, a file name — keeps the spelling the tree uses, appears in reference
 documentation, and does not become part of Ptah's product model.
 
 ### 6.6 Accuracy outranks the greenfield reading
@@ -595,10 +599,27 @@ The alt-text rule reads Markdown images in both spellings and a single-line
 sit on a line of its own and a per-line rule would report a tag that has alt
 text. Keep an `<img>` on one line, or check its alt text by reading.
 
+Three rules guard density. Two cover tables, because one measurement cannot see
+both failures; the third covers the prose between them, since an enumeration
+does not stop being unreadable by leaving the grid. `check:style` counts characters, which is fast and needs no browser.
+`check:responsive` measures rendered height, which is the only way to catch a
+short cell squeezed into a column that an unbreakable code token has made
+narrow. A page whose dense cells are the reference content can be named in the
+allowlist in `check-responsive.mjs`, with the reason; the check then fails if
+that page stops having dense cells, so an exemption cannot outlive its reason.
+
+Anchor links are checked against the ids Starlight generates, so renaming a
+heading fails the build instead of silently dropping every reader who follows
+a link into it at the top of the page.
+
+`check:responsive` needs a browser. Without one it skips locally with an install
+hint, and fails in CI — a green check that rendered nothing is worse than a red
+one.
+
 ### 16.1 What sections 5, 6, and 11 leave to review
 
-Two of the three new sections are mostly a reading responsibility, and the
-reason is measured rather than assumed.
+Sections 5, 6, and 11 are mostly a reading responsibility. Which parts are not
+is measured rather than assumed.
 
 **Section 5 (plain English).** One rule is enforced: the filler-adjective list.
 Before it was added, `check:style` reported 15 findings across 9 governed files,
@@ -646,20 +667,3 @@ from a committed fixture, whether a screenshot leaked a local path, and whether
 a page that should carry a diagram has one are all read, not measured.
 `check:responsive` measures layout at 390px and 1280px; it performs no
 accessibility check.
-
-Three rules guard density. Two cover tables, because one measurement cannot see
-both failures; the third covers the prose between them, since an enumeration
-does not stop being unreadable by leaving the grid. `check:style` counts characters, which is fast and needs no browser.
-`check:responsive` measures rendered height, which is the only way to catch a
-short cell squeezed into a column that an unbreakable code token has made
-narrow. A page whose dense cells are the reference content can be named in the
-allowlist in `check-responsive.mjs`, with the reason; the check then fails if
-that page stops having dense cells, so an exemption cannot outlive its reason.
-
-Anchor links are checked against the ids Starlight generates, so renaming a
-heading fails the build instead of silently dropping every reader who follows
-a link into it at the top of the page.
-
-`check:responsive` needs a browser. Without one it skips locally with an install
-hint, and fails in CI — a green check that rendered nothing is worse than a red
-one.

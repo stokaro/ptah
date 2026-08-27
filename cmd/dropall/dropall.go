@@ -43,8 +43,10 @@ The scope is the database, not a schema Ptah declares. Objects Ptah never
 created are dropped along with the ones it did. Which kinds go depends on the
 dialect: tables everywhere, and views, materialized views, enums, types,
 functions, sequences and foreign keys where that dialect's writer removes them.
-Where Ptah's own revision table is an ordinary table it goes too, so a later
-"ptah migrations up" replays the whole migration history.
+SQLite keeps Ptah's revision table. Everything else in the database goes, so
+"ptah migrations status" afterwards still reports the old version and
+"ptah migrations up" finds nothing pending against an emptied database. Use
+"ptah migrations baseline" to put the recorded history back in step.
 
 Run --dry-run first. It connects, reports how many objects would be dropped,
 and changes nothing.

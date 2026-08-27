@@ -559,9 +559,10 @@ function isAttributeName(line, match) {
 // The rule reads the prose side, so a page may show `![](path)` inside a code
 // sample to teach the syntax without failing its own example.
 //
-// It lands on a tree that embeds one image in 127 governed files, which is the
-// reason to add it now: a rule that arrives before the assets is green on
-// arrival, and one that arrives after them is a backlog nobody schedules.
+// It lands on a tree carrying one Markdown image across the whole governed
+// corpus, which is the reason to add it now: a rule that arrives before the
+// assets is green on arrival, and one that arrives after them is a backlog
+// nobody schedules.
 function imageAltViolations(lines) {
   const findings = [];
   for (const [index, line] of lines.entries()) {

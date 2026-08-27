@@ -37,20 +37,21 @@ SQL on every run.
 
 | Capability | Native commands |
 | --- | --- |
-| Migration integrity | `ptah migrations hash`, `ptah migrations validate`, and `--verify-sum` on the verbs that execute |
+| Migration integrity | `ptah migrations hash`, `ptah migrations validate`, and `--verify-sum` on `up`, `down`, `ls`, `show`, `status` and `push` |
 | Deterministic planning | `ptah schema render`, `ptah schema plan`, `ptah migrations plan` |
 | Drift detection | `ptah schema drift`, `ptah schema compare` |
 | Approvals | `ptah schema approve`, `ptah schema verify-approval` |
-| Advisory locking | `--lock-timeout` on `ptah schema apply`, `--migration-lock-timeout` on the migration verbs |
+| Advisory locking | `--lock-timeout` on `ptah schema apply`, `--migration-lock-timeout` on `migrations up`, `down`, `baseline` and `checkpoint` |
 | Recovery | `ptah migrations down`, `ptah migrations repair`, `ptah migrations rebase`, `ptah migrations baseline` |
 | Testing | `ptah schema test`, `ptah migrations test` |
 | Artifact distribution | `ptah oci`, `ptah schema push`, `ptah schema pull`, `ptah migrations push`, `ptah migrations pull` |
 | Documentation and diagrams | `ptah schema export --to markdown`, `ptah schema export --to html` |
 
 Not every engine provides every capability. Advisory locking is the clearest
-example: on an engine without it, Ptah reports that the lock flag is ignored
-rather than pretending the lock was taken. Run
-`ptah db capabilities --db-url <url>` to see what Ptah resolves for one server.
+example: PostgreSQL, YugabyteDB, MySQL, MariaDB and SQL Server take a lock, and
+on SQLite, ClickHouse, CockroachDB and Spanner the migration runs without one.
+Run `ptah db capabilities --db-url <url>` to see what Ptah resolves for one
+server.
 
 ## Install
 
@@ -58,6 +59,8 @@ The released archives carry `ptah`, `ptah-compat`, and `ptah-ls` for Linux,
 macOS, and Windows on both `amd64` and `arm64`. On Linux and macOS:
 
 ```bash
+set -euo pipefail
+
 VERSION="$(curl -sSL https://api.github.com/repos/stokaro/ptah/releases/latest \
   | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')"
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
@@ -69,20 +72,25 @@ ARCHIVE="ptah_${VERSION#v}_${OS}_${ARCH}.tar.gz"
 cd "$(mktemp -d)"
 curl -sSLO "https://github.com/stokaro/ptah/releases/download/${VERSION}/${ARCHIVE}"
 curl -sSLO "https://github.com/stokaro/ptah/releases/download/${VERSION}/checksums.txt"
-sha256sum --ignore-missing -c checksums.txt
+if command -v sha256sum >/dev/null; then
+  sha256sum --ignore-missing -c checksums.txt
+else
+  shasum -a 256 --ignore-missing -c checksums.txt
+fi
 
 tar -xzf "$ARCHIVE"
 sudo install -m 0755 ptah ptah-compat ptah-ls /usr/local/bin/
 ptah version
 ```
 
-The archive has no top-level directory, which is why the binaries are installed
-one by one instead of unpacked straight into `/usr/local/bin`. On a macOS
-without GNU coreutils, the checksum spelling is
-`shasum -a 256 --ignore-missing -c checksums.txt`.
+`set -euo pipefail` is what makes the checksum a gate: without it a failed
+comparison is followed by the install anyway. The archive has no top-level
+directory, which is why the binaries are installed one by one instead of
+unpacked straight into `/usr/local/bin`. Stock macOS ships `shasum` rather than
+`sha256sum`, which is what the branch above selects between.
 
-The [install guide](docs/site/src/content/docs/start/install.md) covers Windows,
-signature verification, and the extra step a browser download needs on macOS.
+The [install guide](docs/site/src/content/docs/start/install.md) covers
+installing through the Go toolchain and building from a checkout.
 
 To install through the Go toolchain instead:
 
@@ -120,6 +128,8 @@ See the SQL Ptah would run against SQLite:
 ptah schema render --schema-file schema.sql --dialect sqlite
 ```
 
+Expected output includes:
+
 ```sql
 -- Statement 1/1
 CREATE TABLE "users" (
@@ -138,6 +148,8 @@ Apply it to a database:
 ptah schema apply --db-url "sqlite://app.db" --schema-file schema.sql --auto-approve
 ```
 
+Expected output includes:
+
 ```text
 Planned schema changes:
 CREATE TABLE "users" (
@@ -155,6 +167,8 @@ and 1 when they do not, so it also works as a CI gate:
 ```bash
 ptah schema drift --db-url "sqlite://app.db" --schema-file schema.sql
 ```
+
+Expected output includes:
 
 ```text
 No schema drift detected.

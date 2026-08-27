@@ -35,7 +35,7 @@ func NewRootCommand() *cobra.Command {
 	info := buildinfo.Resolve()
 	cmd := &cobra.Command{
 		Use:   "ptah",
-		Short: "Inspect, define, compare, visualize, test, and change database schemas",
+		Short: "Ptah inspects, defines, compares, visualizes, tests, and changes database schemas",
 		Long:  rootLongDescription,
 		// Version is what makes cobra register --version/-v at all; the
 		// template below is what makes those spellings answer with the same

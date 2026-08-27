@@ -5,8 +5,8 @@ description: The operations every schema source shares — render, compare, gate
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-Ptah reads the desired schema from SQL, YAML or HCL files, from annotated Go
-structs, and from an external loader. Every one of them parses into the same
+Ptah reads the desired schema from SQL, YAML, HCL or DBML files, from annotated
+Go structs, and from an external loader. Every one of them parses into the same
 internal representation before anything is planned or rendered, so the
 operations on this page work the same way whichever you keep.
 
@@ -32,6 +32,15 @@ ptah schema render --schema-file schema.yaml --dialect sqlite
 ```bash
 ptah schema render --schema-file schema.hcl --dialect sqlite
 ```
+
+</TabItem>
+<TabItem label="DBML">
+
+```bash
+ptah schema render --schema-file schema.dbml --dialect sqlite
+```
+
+[DBML](../dbml/) has its own page for the subset Ptah reads.
 
 </TabItem>
 <TabItem label="Go">
@@ -149,7 +158,7 @@ migration directory.
 ## Next steps
 
 - The syntax and limits of each source: [SQL](../sql/), [YAML](../yaml/),
-  [HCL](../hcl/), [Go annotations](../go-annotations/), and
+  [HCL](../hcl/), [DBML](../dbml/), [Go annotations](../go-annotations/), and
   [ORM and external loaders](../orm-and-external/).
 - What a desired schema is, and why the format is an input concern:
   [Desired schema and schema sources](../../concepts/desired-schema-and-sources/).
