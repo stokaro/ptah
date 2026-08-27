@@ -14,6 +14,7 @@ import (
 	"go.5x5.cz/ptah/internal/embedpg"
 	"go.5x5.cz/ptah/internal/embedprovider"
 	"go.5x5.cz/ptah/internal/embedrun"
+	"go.5x5.cz/ptah/internal/embedstore"
 )
 
 // errorsIs is errors.Is, named so the file that uses it does not have to import
@@ -27,6 +28,9 @@ type executeOptions struct {
 	batchRows int
 	batchSize int
 	timeout   time.Duration
+	// maintainFor extends the generation's stabilization window after a
+	// successful catch-up.
+	maintainFor time.Duration
 }
 
 // newBackfillCommand returns "ptah inference backfill".
@@ -69,7 +73,12 @@ request, and what stops a stale delete tombstoning a row that has since been
 re-inserted.
 
 It requires a consistency mode that records changes. Over a source with none,
-there is nothing to read and the cutover will refuse for the same reason.`,
+there is nothing to read and the cutover will refuse for the same reason.
+
+Run it against a PREVIOUS generation's specification with --maintain-for to keep
+that generation a way back: a rollback target only stays one while something is
+feeding it, and the window moves with the catch-up rather than being promised
+once.`,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runCatchUp(cmd.Context(), cmd.OutOrStdout(), options)
@@ -89,6 +98,8 @@ func addExecuteFlags(cmd *cobra.Command, options *executeOptions) {
 		"Inputs sent to the provider in one request")
 	cmd.Flags().DurationVar(&options.timeout, "provider-timeout", 60*time.Second,
 		"How long one provider request may take")
+	cmd.Flags().DurationVar(&options.maintainFor, "maintain-for", 0,
+		"After catching up, extend this generation's stabilization window by this much")
 }
 
 // runBackfill runs the scan-embed-commit loop.
@@ -137,9 +148,9 @@ func runCatchUp(ctx context.Context, out io.Writer, options executeOptions) erro
 	if err != nil {
 		return reportRun(out, run, err)
 	}
-	return writeLines(out,
-		fmt.Sprintf("caught up to transaction %s: %d changed rows, %d tombstoned",
-			boundaryText(run.CatchUpWatermark), run.Progress.RowsScanned, run.Progress.RowsDeleted))
+	lines := []string{fmt.Sprintf("caught up to transaction %s: %d changed rows, %d tombstoned",
+		boundaryText(run.CatchUpWatermark), run.Progress.RowsScanned, run.Progress.RowsDeleted)}
+	return extendMaintenance(ctx, out, opened, run.GenerationIdentity, options.maintainFor, lines)
 }
 
 // recordsChanges reports whether a mode leaves something for catch-up to read.
@@ -149,6 +160,40 @@ func runCatchUp(ctx context.Context, out io.Writer, options executeOptions) erro
 // writer's reports rather than a change log.
 func recordsChanges(mode embedcatchup.Mode) bool {
 	return mode == embedcatchup.ModeOutbox
+}
+
+// extendMaintenance renews the promise that this generation is current.
+//
+// Phase K's window says a generation stays a way back for a period. Nothing
+// makes that true on its own: an old generation stops receiving changes the
+// moment queries stop reading it, so keeping it current means catching it up,
+// and the window has to move with the catch-up rather than being set once and
+// hoped over.
+//
+// So the two happen together. A window extended without a catch-up behind it is
+// a promise nobody kept, and a catch-up whose window has expired left a
+// generation current and unusable -- which are the two halves of the same
+// mistake, made in opposite directions.
+func extendMaintenance(
+	ctx context.Context, out io.Writer, opened *session,
+	generation string, window time.Duration, lines []string,
+) error {
+	if window <= 0 {
+		return writeLines(out, lines...)
+	}
+	until := time.Now().UTC().Add(window)
+	err := opened.store.Maintain(ctx, generation, until)
+	if errorsIs(err, embedstore.ErrNotFound) || errorsIs(err, embedstore.ErrRetired) {
+		// The catch-up already happened and its work is committed. Failing here
+		// would report a run that did not do what it did.
+		return writeLines(out, append(lines, bullet(fmt.Sprintf(
+			"the window was not extended: %v", err)))...)
+	}
+	if err != nil {
+		return err
+	}
+	return writeLines(out, append(lines, bullet(fmt.Sprintf(
+		"generation %s stays a way back until %s", generation, until.Format(time.RFC3339))))...)
 }
 
 // buildEngine assembles the engine from the specification.
