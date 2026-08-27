@@ -971,6 +971,17 @@ type ServerInfo struct {
 
 	Capabilities        capability.Capabilities `json:"capabilities"`         // resolved from Dialect + Version for live connections
 	IdentifierSemantics identifier.Semantics    `json:"identifier_semantics"` // catalog identifier metadata and static rules
+
+	// CapabilityNote says what a non-version-specific resolution actually
+	// planned, and is empty when the version selected a measured release line.
+	//
+	// It carries the same sentence the typed --server-version path already
+	// prints, from the same producer, because a live connection asks the same
+	// question: this server is newer than anything measured, or it fell in a
+	// gap, or its dialect has no ladder to spend a version on. Reporting it
+	// only for the typed path is how planning against an unmodeled server reads
+	// as planning against a modeled one (stokaro/ptah#916).
+	CapabilityNote string `json:"capability_note,omitempty"`
 }
 
 // SchemaReader reads a live database schema, in the two forms this package
