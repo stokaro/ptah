@@ -27,6 +27,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/dblock"
 	"go.5x5.cz/ptah/internal/envbool"
+	"go.5x5.cz/ptah/internal/revisiontable"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -380,7 +381,7 @@ func runAtlasMigrateApplyTarget(
 		RevisionTypes:            linearity.revisionTypes,
 		RepeatableVersions:       linearity.repeatableVersions,
 		TxMode:                   txMode,
-		RevisionsSchema:          applyAtlasRevisionsSchemaDefault(opts.revisionsSchema, opts.url),
+		RevisionsSchema:          revisiontable.Schema(opts.revisionsSchema, opts.url),
 		MigrationLockTimeout:     migrationLockTimeout,
 		MigrationLockName:        runOpts.lockRequest.Name,
 		SkipMigrationLock:        runOpts.lockRequest.Skip,

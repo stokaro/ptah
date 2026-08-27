@@ -10,6 +10,12 @@
 //
 // migration/migrator derives its own unexported defaults from these constants,
 // so this package is the single source rather than a parallel one.
+//
+// It also answers WHERE the Atlas-compatible table lives, in [Schema]. That is
+// a per-dialect fact rather than a constant, and it belongs beside the names
+// for the same reason: the Atlas command surface and an adoption preflight both
+// have to look in the one place a history was actually written, and two copies
+// of the rule would send them to different schemas on the PostgreSQL family.
 package revisiontable
 
 const (

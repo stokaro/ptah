@@ -34,6 +34,42 @@ func (m *Migrator) migrationsTableExists(ctx context.Context) (bool, error) {
 	return count > 0, nil
 }
 
+// MetadataPresent reports whether the revision table this migrator is
+// configured for already exists.
+//
+// It is the one revision-state question that can be asked without Initialize,
+// and asking it that way is the point. Initialize creates the table when it is
+// absent AND alters an existing one into the current layout, so a caller that
+// only wants to know what is there -- an adoption preflight deciding whether
+// native Ptah may take over a history ptah-compat wrote -- would rewrite the
+// state it came to inspect (stokaro/ptah#1215).
+//
+// The answer is scoped by WithMigrationsTable and WithRevisionTableFormat, so
+// two migrators differing only in format answer for their own two tables.
+func (m *Migrator) MetadataPresent(ctx context.Context) (bool, error) {
+	return m.migrationsTableExists(ctx)
+}
+
+// RevisionLayoutBase reports whether an existing native revision table carries
+// only the base columns -- version, description and applied_at -- rather than
+// the full set the current layout writes.
+//
+// It matters to a caller deciding whether native Ptah may take over a history,
+// because the first native write UPGRADES such a table with ALTER TABLE, and
+// several reads decline to run against it: the applied-checksum rule returns
+// without verifying anything, so a preflight that did not ask this question
+// would print a clean checksum result for a table whose checksums it never
+// looked at (stokaro/ptah#1215).
+//
+// The answer is meaningful only for the native layout. The Atlas-compatible
+// layout has one shape, and this reports false for it.
+func (m *Migrator) RevisionLayoutBase(ctx context.Context) (bool, error) {
+	if m.revisionTableFormat.isAtlas() {
+		return false, nil
+	}
+	return m.migrationsTableUsesLegacyRevisionLayout(ctx)
+}
+
 func (m *Migrator) migrationsTableUsesLegacyRevisionLayout(ctx context.Context) (bool, error) {
 	rows, err := m.conn.QueryContext(
 		ctx,

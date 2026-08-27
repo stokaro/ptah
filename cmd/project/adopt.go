@@ -11,6 +11,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/config/projectconfig"
+	"go.5x5.cz/ptah/internal/adoptpreflight"
 	"go.5x5.cz/ptah/internal/atlasregistry"
 )
 
@@ -44,6 +45,7 @@ type adoptOptions struct {
 	envName   string
 	format    string
 	check     bool
+	preflight bool
 }
 
 // Construct is one thing the project file declares and where adoption stands
@@ -80,6 +82,14 @@ type AdoptionReport struct {
 	NativeReady bool `json:"native_ready"`
 	// Constructs are everything the analysis classified, in a stable order.
 	Constructs []Construct `json:"constructs"`
+	// Database is the persisted revision state, present only when --preflight
+	// asked for it.
+	//
+	// Absent means NOT ASKED, and never "nothing wrong": the text report says
+	// so in words for the same reason, because a clean project-file verdict
+	// with no database section reads as a finished adoption, and the database
+	// is where re-running applied SQL actually happens (stokaro/ptah#1215).
+	Database *adoptpreflight.Report `json:"database,omitempty"`
 }
 
 func newProjectAdoptCommand() *cobra.Command {
@@ -102,7 +112,13 @@ operated by native Ptah as it stands, without its file being rewritten.
 
 --check reports the analysis and writes nothing. Without it, the compat-only
 spellings are rewritten in place; a project declaring anything unsupported is
-refused rather than half-converted. Neither form contacts a database.`,
+refused rather than half-converted. Neither form contacts a database.
+
+--preflight adds the database half: it reads the revision history the project's
+own database holds and reports whether native Ptah may take it over. It writes
+nothing there either -- not the revision table it looks for, and not the layout
+of one it finds. A history it cannot adopt from is named and explained rather
+than converted.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAdopt(cmd, opts)
 		},
@@ -114,6 +130,8 @@ refused rather than half-converted. Neither form contacts a database.`,
 	flags.StringVar(&opts.format, "format", inspectFormatText, "Output format: text or json")
 	flags.BoolVar(&opts.check, "check", false,
 		"Report the analysis without changing anything")
+	flags.BoolVar(&opts.preflight, "preflight", false,
+		"Also inspect the revision history in the project's database, without writing to it")
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd
 }
@@ -135,6 +153,13 @@ func runAdopt(cmd *cobra.Command, opts adoptOptions) error {
 	}
 
 	report := adoptionReportFor(config)
+	if opts.preflight {
+		database, err := runDatabasePreflight(cmd.Context(), config)
+		if err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+		report.Database = database
+	}
 	if !opts.check {
 		return runAdoptWrite(cmd, opts, report)
 	}
@@ -152,6 +177,23 @@ func runAdopt(cmd *cobra.Command, opts adoptOptions) error {
 		return cmdutil.Fail(cmd, fmt.Errorf(
 			"this project is not native-ready: %d of %d constructs need adoption",
 			needingAdoption(report), len(report.Constructs)))
+	}
+	if report.Database != nil && report.Database.Refused {
+		// A refusal is not a step the operator can take on the way to
+		// adoption; it is a state adoption cannot start from, and calling it
+		// an action would tell them to do something the report never named.
+		return cmdutil.Fail(cmd, fmt.Errorf(
+			"this project's database cannot be adopted in the state it is in: "+
+				"the refusal above says what has to be true first"))
+	}
+	if report.Database != nil && !report.Database.Ready {
+		// The file is adoptable and the database is not, which is the case
+		// #1215 exists for: exiting 0 here would report a finished adoption
+		// over a history native Ptah would re-run or misread.
+		return cmdutil.Fail(cmd, fmt.Errorf(
+			"this project's file is native-ready and its database is not: "+
+				"%d revision-state action(s) remain before the writer can be switched",
+			report.Database.Actions()))
 	}
 	return nil
 }
@@ -174,6 +216,7 @@ func runAdoptWrite(cmd *cobra.Command, opts adoptOptions, report AdoptionReport)
 	if report.NativeReady {
 		fmt.Fprintln(cmd.OutOrStdout(),
 			"Nothing to rewrite: every construct already means the same thing in a native Ptah project.")
+		writeDatabaseAdoption(cmd.OutOrStdout(), report.Database)
 		return nil
 	}
 
@@ -194,6 +237,10 @@ func runAdoptWrite(cmd *cobra.Command, opts adoptOptions, report AdoptionReport)
 			"no compat-only construct has an unambiguous native spelling, so nothing was rewritten"))
 	}
 	writeNormalizationText(cmd.OutOrStdout(), path, changed)
+	// The rewrite changed the file. Whether native Ptah may take over the
+	// database is a separate answer, and printing it here is what keeps a
+	// successful rewrite from reading as the whole adoption.
+	writeDatabaseAdoption(cmd.OutOrStdout(), report.Database)
 	return nil
 }
 
@@ -331,13 +378,23 @@ func writeAdoptionText(out io.Writer, report AdoptionReport) {
 	for _, class := range []string{classUnsupported, classCompatOnly, classExact} {
 		writeAdoptionClass(out, report, class)
 	}
+	writeDatabaseAdoption(out, report.Database)
 	if report.NativeReady {
 		fmt.Fprintln(out, "\nNative-ready: every construct means the same in a native Ptah project,")
 		fmt.Fprintln(out, "so this file can be operated by ptah as it stands.")
-		return
+	} else {
+		fmt.Fprintf(out, "\nNot native-ready: %d of %d constructs need adoption.\n",
+			needingAdoption(report), len(report.Constructs))
 	}
-	fmt.Fprintf(out, "\nNot native-ready: %d of %d constructs need adoption.\n",
-		needingAdoption(report), len(report.Constructs))
+	// A separate line rather than a term in the sentence above, because the two
+	// verdicts are about different things: that one is about the file, and a
+	// file can be adoptable while the database in front of it is not.
+	if report.Database != nil && report.Database.Refused {
+		fmt.Fprintln(out, "This database cannot be adopted in the state it is in.")
+	} else if report.Database != nil && !report.Database.Ready {
+		fmt.Fprintf(out, "%d database-state action(s) remain before the writer can be switched.\n",
+			report.Database.Actions())
+	}
 }
 
 // writeAdoptionClass prints one class, and prints nothing for an empty one.
