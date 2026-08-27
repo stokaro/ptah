@@ -261,3 +261,48 @@ func TestEvaluateRollback_TheToleranceIsInclusive(t *testing.T) {
 		})
 	}
 }
+
+// TestEvaluateRollback_TheWindowIsOpenAtItsLastInstant pins the boundary the
+// same way the row tolerances are pinned.
+//
+// A twenty-four-hour window is twenty-four hours. Refusing at exactly the
+// expiry is a rollback denied to somebody who read the deadline and made it.
+func TestEvaluateRollback_TheWindowIsOpenAtItsLastInstant(t *testing.T) {
+	tests := []struct {
+		name     string
+		now      time.Time
+		eligible bool
+	}{
+		{name: "the instant it expires", now: cutOverAt.Add(24 * time.Hour), eligible: true},
+		{name: "a nanosecond later", now: cutOverAt.Add(24*time.Hour + time.Nanosecond), eligible: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			policy, state, observed := rollbackReady()
+			observed.Now = test.now
+
+			eligibility := embedcutover.EvaluateRollback(policy, state, observed)
+
+			c.Assert(eligibility.Eligible, qt.Equals, test.eligible, qt.Commentf("%v", eligibility.Blockers))
+		})
+	}
+}
+
+// TestEvaluateRollback_AWindowThatHasNotStartedHasNotClosed answers the
+// question Phase I asks.
+//
+// Before the cutover, an operator wants to know what rollback they would get.
+// There is no cutover time yet, and a window measured from one -- year one plus
+// a day, comfortably in the past -- would report the rollback as already
+// expired before the migration it protects has even happened.
+func TestEvaluateRollback_AWindowThatHasNotStartedHasNotClosed(t *testing.T) {
+	c := qt.New(t)
+	policy, state, observed := rollbackReady()
+	state.CutOverAt = time.Time{}
+
+	eligibility := embedcutover.EvaluateRollback(policy, state, observed)
+
+	c.Assert(eligibility.Eligible, qt.IsTrue, qt.Commentf("%v", eligibility.Blockers))
+	c.Assert(eligibility.Expires.IsZero(), qt.IsTrue)
+}
