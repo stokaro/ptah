@@ -226,6 +226,24 @@ Parent traversal that resolves outside, an absolute outside path, and a
 symbolic-link escape fail as `outside allowed root`. An explicit CLI `--dir` is
 operator-owned and retains the CLI path behavior above.
 
+## Two files, one project model
+
+`ptah.yaml` and the supported `atlas.hcl` subset are both native Ptah project
+languages. Neither is an import format for the other: each is parsed into the
+same project-config model, and every native `ptah` verb that reads project
+configuration reads either file. A project written in HCL needs no conversion
+to YAML to be operated by native Ptah, and one written in YAML needs no HCL.
+
+What differs is reach, not standing. The Atlas subset is bounded by what the
+compatibility profile covers, so a setting only Ptah has is expressed in
+`ptah.yaml`; Ptah's own HCL extensions live in the schema language rather than
+the project file, and are listed in [HCL schema](../hcl-schema/). A project
+using one of those is no longer a project Atlas reads.
+
+Both files can be present at once, and are merged by the precedence above.
+[Adopting an Atlas project](../../atlas/adoption/) walks the path that uses
+this.
+
 ## A minimal project config
 
 A native command selects an environment with `--env`, and reads it from either
