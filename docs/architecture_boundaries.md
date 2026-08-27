@@ -68,22 +68,29 @@ issue that owns each.
 | `difftypes.SchemaDiff` per-family name lists | A change carries a name, so the planner takes the desired description as a second parameter to recover the rest — `GenerateSchemaDiffAST(diff, desired, dialect)`. The name lists are still `[]string`. | [#2315](https://github.com/stokaro/ptah/issues/2315) |
 | Converted foreign migration layouts | The rebuilt directory carries no integrity file, so source checksums are dropped. Carried out of band since [#1209](https://github.com/stokaro/ptah/issues/1209). | closed |
 | Routine overload identity | Closed: comparison pairs overloads on a signature normalized to agree with the catalog, consulted only where a name is overloaded. | closed |
-| Single-column uniqueness | Closed: a guarantee is a `schemastate.UniqueKey` object rather than a flag on a column, and `ReferencedColumnsAreUnique` asks about the column list, so a composite key is a key. | closed |
+| Single-column uniqueness | Closed: `renderer.tableHasUniqueKey` accepts a primary key, a unique field, a unique constraint or a unique index, each compared as a whole column list, so a composite key is a key. The credit previously went to `schemastate.UniqueKey`, which never shipped. | closed |
 
 ## The invariant set
 
-#1344 names seven properties. Each is held by a named test, and each of those
-has an inverse control or a recorded mutation run — an invariant nobody has seen
-fail is not evidence.
+#1344 names seven properties. Each was held by a named test with an inverse
+control or a recorded mutation run — an invariant nobody has seen fail is not
+evidence.
+
+**Three of the seven lost their holder** when [ADR 0012](adr/0012-the-canonical-core-is-removed-and-the-shipping-pipeline-migrates-in-place.md)
+removed the core that held them. They are recorded here as unheld rather than
+quietly dropped: the mutation sweeps that killed 27 mutants between them
+measured a prototype, and a property measured only where the product does not
+run was never a property of the product. Establishing them on the shipping path
+is work #2315 carries.
 
 | Property | Held by | Evidence |
 | --- | --- | --- |
 | Identity: distinct objects never collapse under adversarial names | `internal/objectidentity` defect fixtures | 12 mutants killed, 0 survived ([#1345](https://github.com/stokaro/ptah/issues/1345)) |
 | Identifier provenance: quoted and unquoted components round-trip; insufficient provenance fails closed | `objectidentity.Part`, `Builder` equivalence tests | same sweep; folding is asserted equal to `identifier.Semantics` |
 | References: dangling, ambiguous and normalized-collision references are rejected | `objectidentity.Resolve` refusal classes | same sweep |
-| Coverage: not-inspected never becomes absent | `schemastate.RequireScope` | 15 mutants killed, 0 survived ([#1350](https://github.com/stokaro/ptah/issues/1350)) |
-| Target facts: uncertainty reaches every target-dependent consumer | `schemachange` required facts and blocked changes | same sweep |
-| Determinism: equivalent inputs produce identical output across runs and map orders | `schemachange` determinism tests | same sweep |
+| Coverage: not-inspected never becomes absent | **nothing on the shipping path** — `core/coverage` carries the record and the comparison threads it, but no test holds the property end to end | was `schemastate.RequireScope`, removed by [ADR 0012](adr/0012-the-canonical-core-is-removed-and-the-shipping-pipeline-migrates-in-place.md) |
+| Target facts: uncertainty reaches every target-dependent consumer | **nothing** — capability gating refuses what a target cannot do, which is the *missing* fact and not the *unestablished* one | was `schemachange` required facts, removed by ADR 0012 |
+| Determinism: equivalent inputs produce identical output across runs and map orders | **nothing on the shipping path** | was `schemachange` determinism tests, removed by ADR 0012 |
 | Package boundaries: compatibility-only packages are not dependencies of the semantic core | `scripts/check-architecture-boundaries.sh` | `…-selftest.sh`: 4 refusals and 1 false-positive control |
 
 ## Extending the set

@@ -4,6 +4,11 @@
 - Deciders: Ptah maintainers
 - Issue: [#1270](https://github.com/stokaro/ptah/issues/1270)
 - Records Stage 0 of that issue: the inventory, the first dialect, and the questions Stage 1 cannot start without
+- Superseded in part: the Stage 1 context inputs by
+  [ADR 0012](0012-the-canonical-core-is-removed-and-the-shipping-pipeline-migrates-in-place.md),
+  which removes `schemastate.Profile`. What the analysis needs — the declared
+  and observed schemas as a pair, plus the target's capabilities — is unchanged;
+  only the type that was to carry the target facts is gone.
 
 ## 1. Context
 
