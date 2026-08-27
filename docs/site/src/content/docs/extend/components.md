@@ -536,7 +536,7 @@ Rule codes use uppercase ASCII letters and digits and start with a letter.
 Custom codes flow through reporting, `--disable`, inline `-- ptah:nolint`
 directives, and `.ptah-lint.yaml` per-rule severity and path excludes
 exactly like built-in codes; the configuration surface is documented in
-[Integrity and safety](../../versioned/integrity-and-safety/).
+[Lint and gate unsafe SQL](../../versioned/lint/).
 
 ### Use capabilities
 

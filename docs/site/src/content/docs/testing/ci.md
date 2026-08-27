@@ -181,6 +181,7 @@ should interpret the code according to the selected CLI surface.
 - Assert behavior rather than safety:
   [Test migrations and schemas](../migrations-and-schema/).
 - Understand the gates the contour relies on:
-  [Integrity and safety](../../versioned/integrity-and-safety/).
+  [Integrity and safety](../../versioned/integrity-and-safety/) and
+  [Lint and gate unsafe SQL](../../versioned/lint/).
 - Add a drift gate for long-lived environments:
   [Compare and drift](../../direct/compare-and-drift/).

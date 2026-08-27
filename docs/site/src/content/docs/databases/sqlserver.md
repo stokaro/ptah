@@ -305,4 +305,4 @@ rendered SQL always preserves your annotation text verbatim.
 
 - Comparing engine depth before committing: [Database support matrix](../support-matrix/).
 - Declaring indexes and constraints: [Go annotation reference](../../reference/go-annotations/).
-- Gating destructive changes on any engine: [Integrity and safety](../../versioned/integrity-and-safety/).
+- Gating destructive changes on any engine: [Lint and gate unsafe SQL](../../versioned/lint/).

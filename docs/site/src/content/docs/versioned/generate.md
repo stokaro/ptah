@@ -290,7 +290,7 @@ Review the plan, then rerun with `--allow-destructive` to accept it. Use the
 [structured plan report](#send-the-plan-verdict-to-ci) for CI decisions, or
 the generated sibling report when an audit artifact must stay with the
 migration pair. The apply-time gate on `ptah migrations up` is separate — see
-[Integrity and safety](../integrity-and-safety/).
+[Lint and gate unsafe SQL](../lint/).
 
 **Conflicting sources stop generation.** When two schema sources disagree
 about the same database object, Ptah fails with a
@@ -300,7 +300,9 @@ see [Composite desired schema](../../schema/composite/).
 ## Next steps
 
 - Ready to run the files against a database? [Apply migrations](../apply/).
-- Sealing and linting before they reach a shared environment?
+- Sealing them before they reach a shared environment?
   [Integrity and safety](../integrity-and-safety/).
+- Linting the SQL and gating destructive statements?
+  [Lint and gate unsafe SQL](../lint/).
 - Need to reorder or rewrite a migration before it ships?
   [Maintain migration history](../maintain-history/).

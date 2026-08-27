@@ -542,8 +542,10 @@ Actions](https://docs.github.com/en/packages/managing-github-packages-using-gith
 
 ## Next steps
 
-- Verifying and gating what you publish and apply:
+- Verifying what you publish and apply:
   [Integrity and safety](../../versioned/integrity-and-safety/).
+- Linting a published directory and gating destructive statements:
+  [Lint and gate unsafe SQL](../../versioned/lint/).
 - The complete verb and flag inventory for the OCI commands:
   [Native commands](../../reference/native-commands/).
 - Which registry-backed features are supported where:

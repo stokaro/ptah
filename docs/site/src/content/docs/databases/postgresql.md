@@ -49,6 +49,38 @@ Several of these are features Atlas keeps out of its open-source core; Ptah
 provides them as open, local, no-account capabilities. The sections below
 summarize behavior that affects how you plan changes.
 
+## Materialized view refresh
+
+Ptah does not refresh materialized views, and a declaration cannot ask it to.
+A `refresh_strategy` attribute is refused when the schema is parsed, on every
+dialect and in every frontend.
+
+That is a boundary rather than a missing feature. `REFRESH MATERIALIZED VIEW`
+is a statement someone runs, and `CONCURRENTLY` is an option of that statement;
+neither is state the database holds, so nothing Ptah reads back could report a
+refresh policy or diff one. What Ptah does manage keeps the view current on its
+own terms: `CREATE MATERIALIZED VIEW` populates the view, and a changed body is
+reconciled as a `DROP` and a `CREATE` that populates it again. Measured on
+PostgreSQL 18.
+
+The case that is left over is a view no schema change touched, going stale
+because its **source data** moved. Schema reconciliation cannot observe that,
+so a refresh emitted there would be an unbounded data operation attached to a
+migration on a relationship Ptah inferred. Issue it yourself, from whatever
+already knows when the data changed:
+
+```sql
+REFRESH MATERIALIZED VIEW CONCURRENTLY analytics.user_counts;
+```
+
+`CONCURRENTLY` needs a unique index on the view, or the server answers
+`cannot refresh materialized view "public.mv" concurrently`.
+
+ClickHouse is a different matter: an ordinary materialized view there is
+maintained by inserts into its source, and the scheduled form the server does
+own, `REFRESH EVERY|AFTER`, is engine-native DDL and is managed — see
+[ClickHouse](../clickhouse/).
+
 ## Roles and grants
 
 `//ptah:schema:role` and `//ptah:schema:grant` declare roles and their
@@ -777,5 +809,5 @@ then withholds the removal its silence would otherwise mean.
 ## Next steps
 
 - Declaring these objects in Go sources: [Go annotation reference](../../reference/go-annotations/).
-- Targeting CockroachDB, YugabyteDB, or Spanner instead: [Database support matrix](../support-matrix/).
-- Gating destructive changes before they run: [Integrity and safety](../../versioned/integrity-and-safety/).
+- Targeting CockroachDB, YugabyteDB, or Spanner instead: [CockroachDB, YugabyteDB, and Spanner](../distributed/).
+- Gating destructive changes before they run: [Lint and gate unsafe SQL](../../versioned/lint/).
