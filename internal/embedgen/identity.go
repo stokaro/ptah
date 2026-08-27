@@ -120,13 +120,21 @@ func (s Spec) identityComponents() []string {
 
 		"target.index_method", s.Target.IndexMethod,
 	}
-	// The two ordered field lists are encoded with their length and their
-	// order, because both decide the input text: title-then-body is not
-	// body-then-title, and a key's component order decides how a target row is
-	// addressed.
+	// The two ordered field lists are encoded in order, because order decides
+	// the input text: title-then-body is not body-then-title, and a key's
+	// component order decides how a target row is addressed.
+	//
+	// The first list carries its length and the second does not, and that is
+	// not an oversight either way. Without the first count, a key field spelled
+	// `source.input_fields` is indistinguishable from the label that starts the
+	// next list, and two specifications addressing their rows by different
+	// columns collide -- TestIdentity_OneListCannotSwallowTheNextOnesLabel is
+	// that pair. With it, everything after the second label is the second list
+	// and a count there would be a rule no fixture could ever separate from
+	// the one above it.
 	components = append(components, "source.key_fields", strconv.Itoa(len(s.Source.KeyFields)))
 	components = append(components, s.Source.KeyFields...)
-	components = append(components, "source.input_fields", strconv.Itoa(len(s.Source.InputFields)))
+	components = append(components, "source.input_fields")
 	components = append(components, s.Source.InputFields...)
 	return components
 }

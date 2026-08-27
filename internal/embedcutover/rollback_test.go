@@ -179,3 +179,85 @@ func TestEvaluateRollback_TheZeroPolicyToleratesNothing(t *testing.T) {
 	c.Assert(eligibility.Eligible, qt.IsFalse)
 	c.Assert(eligibility.Blockers, qt.Contains, "3 rows are stale and this policy allows 0")
 }
+
+// TestEvaluateRollback_AnUnmeasuredGenerationDoesNotReportMeasurements keeps
+// the report from quoting numbers nobody took.
+//
+// The stale and missing counts come from a verification that never ran. Saying
+// "99 rows are stale" reads as a measurement, and the only true thing here is
+// that nobody looked.
+func TestEvaluateRollback_AnUnmeasuredGenerationDoesNotReportMeasurements(t *testing.T) {
+	c := qt.New(t)
+	policy, state, observed := rollbackReady()
+	state.VerifiedAt = time.Time{}
+	state.StaleRows = 99
+	state.MissingRows = 99
+
+	eligibility := embedcutover.EvaluateRollback(policy, state, observed)
+
+	c.Assert(eligibility.Eligible, qt.IsFalse)
+	c.Assert(eligibility.Blockers, qt.DeepEquals, []string{
+		"the generation has never been verified, so its freshness is unknown",
+	})
+}
+
+// TestEvaluateRollback_ThePolicyDecidesWhetherTheIndexMatters is the control
+// for the dropped-index refusal.
+//
+// A corpus small enough to scan does not need its index to be a place you can
+// go back to, and the policy is where that is said.
+func TestEvaluateRollback_ThePolicyDecidesWhetherTheIndexMatters(t *testing.T) {
+	c := qt.New(t)
+	policy, state, observed := rollbackReady()
+	policy.RequireIndex = false
+	state.IndexReady = false
+
+	eligibility := embedcutover.EvaluateRollback(policy, state, observed)
+
+	c.Assert(eligibility.Eligible, qt.IsTrue, qt.Commentf("%v", eligibility.Blockers))
+}
+
+// TestEvaluateRollback_TheToleranceIsInclusive pins the boundary rather than
+// leaving it to whichever comparison somebody typed.
+//
+// A policy allowing ten stale rows allows ten of them. Off by one here is a
+// generation refused for being exactly as fresh as it was required to be.
+func TestEvaluateRollback_TheToleranceIsInclusive(t *testing.T) {
+	tests := []struct {
+		name     string
+		change   func(*embedcutover.RollbackState)
+		eligible bool
+	}{
+		{
+			name:     "exactly the stale limit",
+			change:   func(s *embedcutover.RollbackState) { s.StaleRows = 10 },
+			eligible: true,
+		},
+		{
+			name:     "one past it",
+			change:   func(s *embedcutover.RollbackState) { s.StaleRows = 11 },
+			eligible: false,
+		},
+		{
+			name:     "exactly the missing limit",
+			change:   func(s *embedcutover.RollbackState) { s.MissingRows = 0 },
+			eligible: true,
+		},
+		{
+			name:     "one past it",
+			change:   func(s *embedcutover.RollbackState) { s.MissingRows = 1 },
+			eligible: false,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			policy, state, observed := rollbackReady()
+			test.change(&state)
+
+			eligibility := embedcutover.EvaluateRollback(policy, state, observed)
+
+			c.Assert(eligibility.Eligible, qt.Equals, test.eligible, qt.Commentf("%v", eligibility.Blockers))
+		})
+	}
+}
