@@ -26,6 +26,12 @@ type fakeSource struct {
 	// failAfter makes the source fail once that many scans have succeeded,
 	// negative for never.
 	failAfter int
+	// stalled makes every scan answer from the beginning, which is the shape
+	// of a source whose cursor does not work.
+	stalled bool
+	// emptyPagesBefore answers that many pages with no rows before the real
+	// ones, which is what a filter matching nothing for a stretch looks like.
+	emptyPagesBefore int
 }
 
 // Scan returns the rows after a cursor.
@@ -34,8 +40,14 @@ func (f *fakeSource) Scan(_ context.Context, after []string, limit int) (embeden
 	if f.failAfter >= 0 && f.scans > f.failAfter {
 		return embedengine.Page{}, errors.New("the source connection dropped")
 	}
+	if f.emptyPagesBefore > 0 {
+		f.emptyPagesBefore--
+		// A cursor of its own, because a page reporting no rows AND no position
+		// has told the caller nothing it can resume from.
+		return embedengine.Page{Cursor: []string{"0"}}, nil
+	}
 	start := 0
-	if len(after) > 0 {
+	if len(after) > 0 && !f.stalled {
 		start = indexAfter(f.rows, after[0])
 	}
 	end := min(start+limit, len(f.rows))

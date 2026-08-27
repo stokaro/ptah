@@ -97,6 +97,10 @@ func TestBackfill_EmbedsEveryRowAndCheckpointsWhatItWrote(t *testing.T) {
 	c.Assert(run.Progress.RowsEmbedded, qt.Equals, int64(3))
 	c.Assert(run.Progress.RowsSkipped, qt.Equals, int64(1))
 	c.Assert(run.Cursor, qt.DeepEquals, []string{"4"})
+	// Two rows per scan across four rows: two pages that had rows and one that
+	// reported the end. A scan limit that was ignored would read them all at
+	// once and this count would say so.
+	c.Assert(h.source.scans, qt.Equals, 2)
 	stored, err := h.store.Run(context.Background(), "run-1")
 	c.Assert(err, qt.IsNil)
 	c.Assert(stored.Cursor, qt.DeepEquals, []string{"4"})
@@ -409,4 +413,74 @@ func stealAfter(c *qt.C, h *harness, commits int) func() {
 		stolen.LeaseOwner = "worker-b"
 		c.Assert(h.store.SaveRun(context.Background(), stolen), qt.IsNil)
 	}
+}
+
+// TestBackfill_ABatchOfOnlySkippedRowsAsksTheProviderNothing keeps an empty
+// request from going out.
+//
+// Every row in the page is skipped, so there is no text to embed. A request
+// with no inputs is a round trip, a rate-limit slot and a line in somebody's
+// audit log, for an answer that is known to be empty.
+func TestBackfill_ABatchOfOnlySkippedRowsAsksTheProviderNothing(t *testing.T) {
+	c := qt.New(t)
+	h := newHarness(c, defaultBounds())
+	h.source.rows = []embedgen.Row{
+		{Key: []string{"1"}, Fields: []*string{new(""), new("")}},
+		{Key: []string{"2"}, Fields: []*string{new(""), new("")}},
+	}
+	h.source.versions = []string{"7", "7"}
+
+	run, err := h.engine.Backfill(context.Background(), "run-1")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(h.provider.calls, qt.HasLen, 0)
+	c.Assert(run.Progress.RowsSkipped, qt.Equals, int64(2))
+	c.Assert(h.target.commits, qt.HasLen, 1)
+	c.Assert(h.target.commits[0].writes, qt.HasLen, 2)
+}
+
+// TestBackfill_ASourceThatDoesNotAdvanceIsRefused is the failure a loop cannot
+// notice from the inside.
+//
+// A scan answering from the same position forever embeds one page of rows until
+// somebody reads the provider bill. Every count in the run keeps rising, the
+// phase stays right, and the corpus does not grow.
+func TestBackfill_ASourceThatDoesNotAdvanceIsRefused(t *testing.T) {
+	c := qt.New(t)
+	h := newHarness(c, defaultBounds())
+	h.source.stalled = true
+
+	run, err := h.engine.Backfill(context.Background(), "run-1")
+
+	c.Assert(err, qt.ErrorIs, embedengine.ErrStalled)
+	c.Assert(run.Status, qt.Equals, embedrun.StatusFailed)
+	c.Assert(run.FailureClass, qt.Equals, "source")
+	// One page went through, and the second was refused before it reached the
+	// provider: a first page that advances and a first page that does not look
+	// identical until the second scan comes back from the same place, and from
+	// there the answer costs nothing to give.
+	c.Assert(h.target.commits, qt.HasLen, 1)
+	c.Assert(h.provider.calls, qt.HasLen, 1)
+}
+
+// TestBackfill_AnEmptyPageStillMakesItsPositionDurable is what a filtered scan
+// needs.
+//
+// A filter matching nothing for a stretch answers with no rows and is not done.
+// The position it reached has to become durable, or the next run reads the same
+// empty stretch again -- for a corpus where the gap is large, forever.
+func TestBackfill_AnEmptyPageStillMakesItsPositionDurable(t *testing.T) {
+	c := qt.New(t)
+	h := newHarness(c, defaultBounds())
+	h.source.emptyPagesBefore = 1
+
+	run, err := h.engine.Backfill(context.Background(), "run-1")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(run.Cursor, qt.DeepEquals, []string{"4"})
+	c.Assert(run.Progress.RowsEmbedded, qt.Equals, int64(3))
+	// The empty page committed a checkpoint of its own, with nothing in it.
+	c.Assert(h.target.commits, qt.HasLen, 3)
+	c.Assert(h.target.commits[0].writes, qt.HasLen, 0)
+	c.Assert(h.target.commits[0].cursor, qt.DeepEquals, []string{"0"})
 }

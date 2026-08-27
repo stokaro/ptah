@@ -13,6 +13,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"go.5x5.cz/ptah/internal/embedgen"
@@ -73,6 +74,13 @@ var (
 	ErrAborted = errors.New("the run was cancelled")
 	// ErrFenced is a run another worker took over.
 	ErrFenced = errors.New("the run was taken over by another worker")
+	// ErrStalled is a source whose cursor does not move.
+	//
+	// It is a contract violation rather than an unlucky page: a scan that
+	// answers from the same position forever makes the engine embed one page
+	// of rows until somebody notices the provider bill, and every count in the
+	// run keeps rising while the corpus does not grow.
+	ErrStalled = errors.New("the source did not advance past the cursor it was given")
 )
 
 // Engine drives one run.
@@ -124,10 +132,14 @@ func (e *Engine) Backfill(ctx context.Context, runID string) (embedrun.Run, erro
 		if err != nil {
 			return e.fail(ctx, run, token, "source", err)
 		}
-		if len(page.Rows) == 0 && page.Done {
-			return run, nil
+		if stalled(run.Cursor, page) {
+			// Checked before the page is embedded rather than after, because
+			// after is a page of provider spend later and the answer is
+			// already knowable: a scan told to start past a key must not hand
+			// that key back.
+			return e.fail(ctx, run, token, "source", fmt.Errorf("%w: %v", ErrStalled, run.Cursor))
 		}
-		run, err = e.processPage(ctx, run, token, page)
+		run, err = e.advancePast(ctx, run, token, page)
 		if err != nil {
 			return run, err
 		}
@@ -135,6 +147,42 @@ func (e *Engine) Backfill(ctx context.Context, runID string) (embedrun.Run, erro
 			return run, nil
 		}
 	}
+}
+
+// stalled reports whether a page failed to move past the cursor it was given.
+//
+// A scan asked to start after a key that answers with that key has not moved,
+// and the loop cannot tell that from progress: the rows are real, the batch
+// embeds, the counts rise. Only the cursor it was handed says otherwise.
+func stalled(after []string, page Page) bool {
+	if len(after) == 0 {
+		return false
+	}
+	for _, row := range page.Rows {
+		if slices.Equal(row.Key, after) {
+			return true
+		}
+	}
+	return len(page.Rows) == 0 && !page.Done && slices.Equal(page.Cursor, after)
+}
+
+// advancePast handles one page, whether or not it has rows in it.
+//
+// A page with no rows is not the end of the scan: a filter that matches nothing
+// for a stretch answers exactly that, and the position it reached still has to
+// become durable or the next scan reads the same stretch again.
+func (e *Engine) advancePast(
+	ctx context.Context, run embedrun.Run, token int64, page Page,
+) (embedrun.Run, error) {
+	if len(page.Rows) > 0 {
+		return e.processPage(ctx, run, token, page)
+	}
+	if page.Done || len(page.Cursor) == 0 {
+		return run, nil
+	}
+	return e.commitProgress(ctx, run, token, nil, embedrun.BatchOutcome{
+		Cursor: page.Cursor, TargetCommitted: true, DeletesCommitted: true,
+	})
 }
 
 // processPage embeds and commits one page, batch by batch.
@@ -198,6 +246,18 @@ func (e *Engine) commitBatch(
 	if err != nil {
 		return e.fail(ctx, run, token, "provider", err)
 	}
+	return e.commitProgress(ctx, run, token, writes, outcome)
+}
+
+// commitProgress writes what a batch produced and the checkpoint that records
+// it, in that one transaction, and then says so in the trail.
+func (e *Engine) commitProgress(
+	ctx context.Context,
+	run embedrun.Run,
+	token int64,
+	writes []embedrun.TargetWrite,
+	outcome embedrun.BatchOutcome,
+) (embedrun.Run, error) {
 	if err := run.Checkpoint(token, outcome); err != nil {
 		return run, fmt.Errorf("checkpoint: %w", err)
 	}
