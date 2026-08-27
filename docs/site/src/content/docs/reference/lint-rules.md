@@ -101,6 +101,29 @@ The suffix marks an extension of someone else's family, not authorship. The
 identifiers chosen before the convention existed are counted and listed at the
 bottom of this page rather than left for a reader to notice.
 
+## How the analysis is performed
+
+Three kinds of analyzer are worth telling apart, because they fail differently
+and because two of the three are not built. Nothing below is a plan; it is what
+the tree does today.
+
+| Kind | In Ptah today |
+| --- | --- |
+| **Builtin** | Every rule on this page. It decides from what it is handed — the migration SQL, or the SQL file — and reaches no server and no other process. |
+| **Server-assisted** | One: the `baseline schema` input above, replayed onto the dev database `--dev-url` names. It is optional, and its absence is announced rather than absorbed. |
+| **Optional provider** | None. No external analyzer is integrated, and no analysis path starts another process. The only process any lint path runs is `git`, to resolve `--git-base`. |
+
+The server-assisted one is optional in the strict sense: without a dev database
+the rules that wanted it resolve nothing and report less, the command still
+exits 0, and **the run says so on stderr, naming each rule that asked** — the
+report on stdout is left byte-identical so a `--format json` consumer and a
+compatibility consumer both keep parsing it. A gap that only shows as a smaller
+report is the hardest kind to notice from CI.
+
+That leaves one thing to know about a clean lint result: it means every builtin
+rule looked and found nothing. It does not mean a routine body was read — see
+`AC101` and `SQL004`, which exist to keep those two apart.
+
 <!-- BEGIN GENERATED LINT RULES -->
 ## Identifier families
 
