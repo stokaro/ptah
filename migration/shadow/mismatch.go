@@ -133,8 +133,8 @@ func collectUserTypeMismatches(diff *difftypes.SchemaDiff) []Mismatch {
 		func(value difftypes.CompositeTypeDiff) string { return value.TypeName },
 		func(value difftypes.CompositeTypeDiff) map[string]string { return value.Changes },
 	)...)
-	mismatches = append(mismatches, namedMismatches(diff.RangesAdded, "missing_range", "missing range")...)
-	mismatches = append(mismatches, namedMismatches(diff.RangesRemoved, "extra_range", "extra range")...)
+	mismatches = append(mismatches, namedMismatches(diff.RangesAdded.Names(), "missing_range", "missing range")...)
+	mismatches = append(mismatches, namedMismatches(diff.RangesRemoved.Names(), "extra_range", "extra range")...)
 	mismatches = append(mismatches, changedObjectMismatches(
 		diff.RangesModified,
 		"range_mismatch",

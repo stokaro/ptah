@@ -1141,7 +1141,7 @@ func userDefinedTypeNames(diff *difftypes.SchemaDiff) []string {
 	names := slices.Concat(
 		diff.DomainsAdded, diff.DomainsRemoved,
 		diff.CompositeTypesAdded, diff.CompositeTypesRemoved,
-		diff.RangesAdded, diff.RangesRemoved,
+		diff.RangesAdded.Names(), diff.RangesRemoved.Names(),
 	)
 	for _, domain := range diff.DomainsModified {
 		names = append(names, domain.DomainName)
