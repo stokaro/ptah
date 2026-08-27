@@ -122,6 +122,50 @@ func TestInferenceCLIRollbackE2E(t *testing.T) {
 	assertAWindowMakesTheGenerationAWayBack(c, ctx, db, specPath, dbName, generation)
 	assertRollbackMovesThePointerBack(c, ctx, specPath, dbName, generation)
 	assertNoWindowIsAskedForMeansNoWindow(c, ctx, db, specPath, dbName)
+	assertADriftedGenerationIsNotAWayBack(c, ctx, db, specPath, dbName, generation)
+}
+
+// assertADriftedGenerationIsNotAWayBack is the epic's rule that rollback is
+// measured against the source rather than read off a status column.
+//
+// The generation is verified, maintained and present -- everything a status
+// field would record. The source has moved since, so going back to it would
+// answer queries with text that is no longer there, and the only thing that can
+// say so is a comparison against the source right now.
+func assertADriftedGenerationIsNotAWayBack(
+	c *qt.C, ctx context.Context, db *sql.DB, specPath, dbURL, generation string,
+) {
+	c.Helper()
+	// Put the generation back where a rollback would return to it, with a live
+	// window, so nothing else can be the reason.
+	_, err := db.ExecContext(ctx,
+		`UPDATE ptah_embedding_pointer SET active_generation = 'the-newest-one',
+			previous_generation = $1 WHERE target_table = 'articles'`, generation)
+	c.Assert(err, qt.IsNil)
+	_, err = db.ExecContext(ctx,
+		`UPDATE ptah_embedding_generation SET maintained_until = now() + interval '1 hour'
+		 WHERE identity = $1`, generation)
+	c.Assert(err, qt.IsNil)
+
+	// It is a way back, right up until the source moves.
+	c.Assert(runInference(c, ctx, "rollback",
+		"--spec", specPath, "--db-url", dbURL, "--to", generation, "--window", "24h"),
+		qt.Contains, "queries now read "+generation)
+
+	_, err = db.ExecContext(ctx,
+		`UPDATE articles SET body = 'about pricing, revised again', updated_at = '20' WHERE id = 1`)
+	c.Assert(err, qt.IsNil)
+	_, err = db.ExecContext(ctx,
+		`UPDATE ptah_embedding_pointer SET active_generation = 'the-newest-one',
+			previous_generation = $1 WHERE target_table = 'articles'`, generation)
+	c.Assert(err, qt.IsNil)
+
+	output, err := runInferenceExpectingFailure(c, ctx, "rollback",
+		"--spec", specPath, "--db-url", dbURL, "--to", generation, "--window", "24h")
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(output, qt.Contains, "rollback refused")
+	c.Assert(output, qt.Contains, "1 rows are stale and this policy allows 0")
 }
 
 // assertNoWindowIsAskedForMeansNoWindow is the flag's other answer, over a
