@@ -55,6 +55,33 @@ var verbs = map[string]Verb{
 	"db read": {TargetReads, ScratchNone,
 		"introspects the database and prints what it found"},
 
+	// inference.
+	"inference backfill": {TargetWrites, ScratchNone,
+		"reads the source, sends it to the embedding endpoint the specification names, and " +
+			"writes vectors and checkpoints into the target database"},
+	"inference catchup": {TargetWrites, ScratchNone,
+		"rereads the source rows recorded as changed and writes their vectors, which sends that " +
+			"text to the embedding endpoint"},
+	"inference cutover": {TargetWrites, ScratchNone,
+		"moves the pointer queries read to a different generation, and refuses when the pointer " +
+			"is not where the plan it was built from expects"},
+	"inference plan": {TargetReads, ScratchNone,
+		"resolves a specification against the database and prints what would happen; nothing is " +
+			"created and nothing is written"},
+	"inference prepare": {TargetWrites, ScratchNone,
+		"creates the run's own tables and, under the outbox mode, a companion table and two " +
+			"triggers on the source"},
+	"inference retire": {TargetWrites, ScratchNone,
+		"drops a generation's index and column; it is the one verb here that cannot be undone"},
+	"inference rollback": {TargetWrites, ScratchNone,
+		"moves the pointer queries read back to a previous generation, when that generation is " +
+			"still measurably one you can go back to"},
+	"inference status": {TargetReads, ScratchNone,
+		"prints a run's phase, progress and watermarks from the run-state tables"},
+	"inference verify": {TargetReads, ScratchNone,
+		"reads the source and the generation and reports what a cutover would rest on; it writes " +
+			"nothing"},
+
 	// migrations.
 	"migrations baseline": {TargetWrites, ScratchRewrites,
 		"records existing migrations as applied in the target's tracking table, and replays the " +
