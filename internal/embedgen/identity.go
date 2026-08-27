@@ -155,7 +155,8 @@ var excludedFromIdentity = map[string]string{
 
 // writeComponent appends one length-prefixed component.
 func writeComponent(b *strings.Builder, value string) {
-	b.WriteByte('.')
+	b.WriteString(strconv.Itoa(len(value)))
+	b.WriteByte(':')
 	b.WriteString(value)
 }
 

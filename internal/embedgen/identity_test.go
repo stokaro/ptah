@@ -181,6 +181,24 @@ func TestIdentity_ComponentsCannotForgeABoundary(t *testing.T) {
 	c.Assert(joined.Identity().Digest, qt.Not(qt.Equals), split.Identity().Digest)
 }
 
+// TestIdentity_TwoFieldsCannotBorrowEachOthersBoundary is what the LENGTH
+// prefix holds, as opposed to the count.
+//
+// The row above is separated by the field count alone -- one field against two
+// -- so a joined encoding would still tell those apart. These two have the SAME
+// count and a different boundary: `a` + `b.c` against `a.b` + `c`. Joined with
+// any separator they are one string; length-prefixed they are not.
+func TestIdentity_TwoFieldsCannotBorrowEachOthersBoundary(t *testing.T) {
+	c := qt.New(t)
+
+	left := baseSpec()
+	left.Source.InputFields = []string{"a", "b.c"}
+	right := baseSpec()
+	right.Source.InputFields = []string{"a.b", "c"}
+
+	c.Assert(left.Identity().Digest, qt.Not(qt.Equals), right.Identity().Digest)
+}
+
 // TestIdentity_ReproducibilityIsReportedRatherThanFabricated is the epic's
 // explicit rule: a provider with no immutable revision gets `partial` and a
 // reason, and Ptah must not invent an identity for it.
