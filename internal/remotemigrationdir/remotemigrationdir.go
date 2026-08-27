@@ -45,10 +45,21 @@ func Open(ctx context.Context, reference string) fs.FS {
 }
 
 // pull resolves the reference and fetches the artifact it names.
+//
+// An `oci://` reference is already a location: it carries registry, repository
+// and tag, so it skips [atlasregistry.Resolve], which exists to compose those
+// from the configured namespace for a bare `atlas://` repository. Sending one
+// through anyway would either refuse it -- Resolve accepts only the vendor
+// scheme -- or, if it did not, prefix a namespace onto a registry the author
+// already named (stokaro/ptah#1215).
 func pull(ctx context.Context, reference string) (fs.FS, error) {
-	resolved, err := atlasregistry.Resolve(reference)
-	if err != nil {
-		return nil, err
+	location := strings.TrimSpace(reference)
+	if !atlasregistry.IsOCIReference(location) {
+		resolved, err := atlasregistry.Resolve(reference)
+		if err != nil {
+			return nil, err
+		}
+		location = resolved.OCI
 	}
 	plainHTTP, err := atlasregistry.PlainHTTP.Resolve()
 	if err != nil {
@@ -58,7 +69,7 @@ func pull(ctx context.Context, reference string) (fs.FS, error) {
 	if err != nil {
 		return nil, fmt.Errorf("opening the registry client: %w", err)
 	}
-	artifact, err := migrationartifact.Pull(ctx, client, resolved.OCI)
+	artifact, err := migrationartifact.Pull(ctx, client, location)
 	if err != nil {
 		return nil, err
 	}

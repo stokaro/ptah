@@ -65,6 +65,17 @@ func IsReference(raw string) bool {
 	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(raw)), Scheme)
 }
 
+// IsOCIReference reports whether raw already names an OCI location.
+//
+// The two schemes differ in what they still need. An `atlas://` reference names
+// a repository and nothing else, so [Resolve] composes the location from the
+// configured namespace; an `oci://` one carries registry, repository and tag
+// already, and composing anything onto it would name a repository the author
+// did not write (stokaro/ptah#1215).
+func IsOCIReference(raw string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(raw)), OCIScheme)
+}
+
 // Resolve maps one `atlas://` reference onto an OCI reference.
 //
 // The three documented forms are supported and no others: a bare repository,

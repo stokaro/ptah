@@ -2997,12 +2997,19 @@ func stringListValue(name string, attr *hclsyntax.Attribute, value cty.Value) ([
 // migrationDirValue resolves what `migration.dir` names into what the rest of
 // the tree can open.
 //
-// A local path stays a local path. An `atlas://` reference names a directory
-// held in a registry, and is registered as an in-memory read-only directory --
-// the same shape `data "remote_dir"` produces, so every consumer that already
-// accepts one accepts this. Resolving it here rather than at the consumer is
-// what makes the capability reach every verb without a second pull path
-// (stokaro/ptah#1210).
+// A local path stays a local path. An `atlas://` or `oci://` reference names a
+// directory held in a registry, and is registered as an in-memory read-only
+// directory -- the same shape `data "remote_dir"` produces, so every consumer
+// that already accepts one accepts this. Resolving it here rather than at the
+// consumer is what makes the capability reach every verb without a second pull
+// path (stokaro/ptah#1210).
+//
+// `oci://` is here because the project file could not spell what the analysis
+// tells an adopter their `atlas://` reference becomes. `--migrations-dir`
+// accepted `oci://` while `migration.dir` did not, so normalizing the project
+// file would have produced a reference nothing resolves -- a hole in the
+// principle that every construct Ptah supports semantically is valid in native
+// Ptah HCL (stokaro/ptah#1215).
 //
 // Resolution and fetch are BOTH deferred: see [lazyMigrationDirFS]. A project
 // file is read by every verb, so a command that never opens the directory must
@@ -3011,7 +3018,7 @@ func stringListValue(name string, attr *hclsyntax.Attribute, value cty.Value) ([
 // than one nothing resolved.
 func (p atlasParser) migrationDirValue(value string) (string, error) {
 	trimmed := strings.TrimSpace(value)
-	if !strings.HasPrefix(trimmed, atlasregistry.Scheme) {
+	if !atlasregistry.IsReference(trimmed) && !atlasregistry.IsOCIReference(trimmed) {
 		return normalizeAtlasMigrationDir(value), nil
 	}
 	return p.registerRemoteMigrationDir(trimmed), nil
