@@ -44,7 +44,12 @@ func TestClassification_AgreesWithTheFlagsEachVerbRegisters(t *testing.T) {
 			verb, known := agentsurface.Lookup(leaf.Name)
 			c.Assert(known, qt.IsTrue)
 
-			c.Check(verb.Target != agentsurface.TargetNone, qt.Equals, len(leaf.TargetFlags) > 0,
+			// A verb can be pointed at a database two ways: by a flag, which
+			// Walk can see, or by the project file it was given, which it
+			// cannot. The second is enumerated rather than inferred, so the
+			// check stays bidirectional for everything else.
+			pointable := len(leaf.TargetFlags) > 0 || agentsurface.TargetFromProject(leaf.Name)
+			c.Check(verb.Target != agentsurface.TargetNone, qt.Equals, pointable,
 				qt.Commentf("target flags %v against target class %q", leaf.TargetFlags, verb.Target))
 			c.Check(verb.Scratch != agentsurface.ScratchNone, qt.Equals, len(leaf.ScratchFlags) > 0,
 				qt.Commentf("scratch flags %v against scratch class %q", leaf.ScratchFlags, verb.Scratch))

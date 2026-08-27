@@ -1,4 +1,4 @@
-package atlas
+package revisiontable
 
 import (
 	"net/url"
@@ -8,7 +8,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasurl"
 )
 
-// atlasRevisionsSchema is the schema the Atlas surface keeps its revision table
+// AtlasSchema is the schema the Atlas surface keeps its revision table
 // in on the PostgreSQL family.
 //
 // Atlas puts the table in a schema of its own there rather than in the
@@ -24,9 +24,9 @@ import (
 // the other `public.atlas_schema_revisions` (stokaro/ptah#1563). The table name
 // already matched; only the schema did not, which is why nothing but a live
 // PostgreSQL could show it.
-const atlasRevisionsSchema = "atlas_schema_revisions"
+const AtlasSchema = "atlas_schema_revisions"
 
-// applyAtlasRevisionsSchemaDefault answers where the revision table lives when
+// Schema answers where the revision table lives when
 // neither the flag nor the project file says.
 //
 // Two conditions, both measured against the pinned community binary rather than
@@ -55,7 +55,7 @@ const atlasRevisionsSchema = "atlas_schema_revisions"
 // --revisions-schema and the conformance cli-surface tier compares help text
 // against it. A flag default would render as `(default "…")` and diverge on a
 // surface that is checked byte for byte.
-func applyAtlasRevisionsSchemaDefault(resolved, databaseURL string) string {
+func Schema(resolved, databaseURL string) string {
 	if strings.TrimSpace(resolved) != "" {
 		return resolved
 	}
@@ -73,7 +73,7 @@ func applyAtlasRevisionsSchemaDefault(resolved, databaseURL string) string {
 	if urlPinsSchema(databaseURL) {
 		return resolved
 	}
-	return atlasRevisionsSchema
+	return AtlasSchema
 }
 
 // urlPinsSchema reports whether the URL selects one schema for the session.

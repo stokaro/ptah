@@ -1,15 +1,11 @@
-package atlas
-
-// White-box testing required: the default is deliberately NOT the flag's
-// declared default -- the community binary prints none for --revisions-schema
-// and the cli-surface tier compares help text -- so there is nothing on the
-// exported command surface that reveals it. The resolver is the only place the
-// decision exists.
+package revisiontable_test
 
 import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/internal/revisiontable"
 )
 
 // Where the revision table belongs is a per-dialect fact, measured against the
@@ -83,7 +79,7 @@ func TestApplyAtlasRevisionsSchemaDefault(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got := applyAtlasRevisionsSchemaDefault(test.resolved, test.url)
+			got := revisiontable.Schema(test.resolved, test.url)
 
 			c.Assert(got, qt.Equals, test.want)
 		})
@@ -105,7 +101,7 @@ func TestApplyAtlasRevisionsSchemaDefaultCoversThePostgresFamily(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got := applyAtlasRevisionsSchemaDefault("", test.url)
+			got := revisiontable.Schema("", test.url)
 
 			c.Assert(got, qt.Equals, "atlas_schema_revisions")
 		})
