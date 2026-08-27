@@ -446,6 +446,24 @@ func (b Builder) Index(qualifiedTable, index string) ID {
 	return id
 }
 
+// Constraint builds a constraint identity from a qualified table and the
+// constraint's own name.
+//
+// A constraint name is unique within its table and not across the schema, so
+// the table is the parent rather than a prefix on the name. That is the whole
+// reason this is not one string: `orders.2024` with constraint `c` and `orders`
+// with constraint `2024.c` render identically under any separator, and one of
+// two distinct constraints is then dropped.
+func (b Builder) Constraint(qualifiedTable, constraint string) ID {
+	table := b.Table(qualifiedTable)
+	return ID{
+		Kind:   KindConstraint,
+		Schema: table.Schema,
+		Parent: table.Name,
+		Name:   b.namePart(strings.TrimSpace(constraint), b.semantics.IndexIdentityKey),
+	}
+}
+
 // ConstraintParts builds a constraint identity from components the caller
 // already has, folding each under the target's rule.
 //
