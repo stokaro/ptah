@@ -168,8 +168,14 @@ func TestBuild_AnImmutableSourceNeedsNoModeAndSaysWhy(t *testing.T) {
 	c.Assert(fact.Detail, qt.Equals,
 		"the source is declared immutable, so there is nothing for a consistency mode to catch")
 	c.Assert(fact.Established(), qt.IsFalse)
-	c.Assert(stepSummaries(plan), qt.Not(qt.Contains),
-		"process every source change recorded after the snapshot began")
+	// Neither half of the consistency machinery is planned: there is nothing to
+	// capture a boundary against and nothing to catch up to.
+	phases := make([]string, 0, len(plan.Steps))
+	for _, step := range plan.Steps {
+		phases = append(phases, step.Phase)
+	}
+	c.Assert(phases, qt.Not(qt.Contains), "capture")
+	c.Assert(phases, qt.Not(qt.Contains), "catch-up")
 }
 
 // TestBuild_ThePlannerDoesNotOverwriteWhatWasResolved keeps Phase A's answers.
@@ -232,10 +238,18 @@ func TestBuild_IrreversibleStepsAreSeparated(t *testing.T) {
 
 	plan := embedplan.Build(resolved())
 
-	c.Assert(plan.Mutations(), qt.Not(qt.HasLen), 0)
 	c.Assert(plan.Irreversible(), qt.HasLen, 1)
 	c.Assert(plan.Irreversible()[0].Phase, qt.Equals, "retire")
-	c.Assert(len(plan.Mutations()) > len(plan.Irreversible()), qt.IsTrue)
+	// Verification is the step that reads and changes nothing, and it is what
+	// separates "every step" from "the mutating ones".
+	mutating := make([]string, 0, len(plan.Steps))
+	for _, step := range plan.Mutations() {
+		mutating = append(mutating, step.Phase)
+	}
+	c.Assert(mutating, qt.DeepEquals, []string{
+		"prepare", "capture", "backfill", "catch-up", "index", "cutover", "retire",
+	})
+	c.Assert(mutating, qt.Not(qt.Contains), "verify")
 }
 
 // TestBuild_AFirstGenerationRetiresNothing is the control for the row above.
@@ -301,4 +315,26 @@ func TestPlan_StringNamesEveryFactAndStep(t *testing.T) {
 		"model.identifier = text-embedding-3-large (configured: the migration specification)")
 	c.Assert(rendered, qt.Contains, "[backfill] embed 120000 in-scope source rows")
 	c.Assert(rendered, qt.Contains, "blocked: vector_index is required and was never established")
+}
+
+// TestBuild_AnEmptySourceIsAMeasurementAndNotAGap is the boundary between a
+// count of nothing and no count.
+//
+// A filter matching no rows is a real answer, and a plan calling it unknown
+// sends the operator looking for a measurement that was already taken. The two
+// are one comparison apart and read identically in a report.
+func TestBuild_AnEmptySourceIsAMeasurementAndNotAGap(t *testing.T) {
+	c := qt.New(t)
+	inputs := resolved()
+	inputs.EstimatedRows = 0
+
+	plan := embedplan.Build(inputs)
+
+	fact, found := plan.Facts.Lookup("source.estimated_rows")
+	c.Assert(found, qt.IsTrue)
+	c.Assert(fact.Value, qt.Equals, "0")
+	c.Assert(fact.Provenance, qt.Equals, embedplan.Measured)
+	c.Assert(fact.Established(), qt.IsTrue)
+	c.Assert(stepSummaries(plan), qt.Contains, "embed 0 in-scope source rows")
+	c.Assert(plan.Uncertain, qt.HasLen, 0, qt.Commentf("%v", plan.Uncertain))
 }
