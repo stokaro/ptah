@@ -91,6 +91,30 @@ archives:
 checksum:
   name_template: checksums.txt
 
+# A snapshot version is built from the commit, never from the newest tag.
+#
+# GoReleaser's default is `{{ .Version }}-SNAPSHOT-{{.ShortCommit}}`, and
+# `.Version` comes from `git describe`, which answers with whatever tag is
+# newest -- including one that is not a version at all. `prototype/canonical-core`
+# was pushed on 2026-08-27 to archive a prototype before removing it
+# (stokaro/ptah#2315), and from that moment every pull request's snapshot build
+# failed: the SLASH in the tag became a path separator, archives landed in
+# `dist/ptah_prototype/` while the source archive was written to
+# `dist/ptah-prototype/`, and the second directory does not exist.
+#
+#	⨯ release failed: fatal: could not open
+#	  'dist/ptah-prototype/canonical-core-SNAPSHOT-738e7d11.tar.gz'
+#	  for writing: No such file or directory
+#
+# Stripping the slash would fix that one tag. Not reading the tag at all fixes
+# the class: a snapshot is a pull request's throwaway artifact, the commit is
+# what identifies it, and no tag anybody pushes for any reason can make this
+# path unwritable again. It stays semver-compliant, which nfpm requires.
+#
+# Real releases are unaffected -- they run from a tag, not from --snapshot.
+snapshot:
+  version_template: "0.0.0-SNAPSHOT-{{ .ShortCommit }}"
+
 source:
   enabled: true
 
