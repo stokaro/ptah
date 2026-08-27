@@ -154,9 +154,10 @@ var migrationRuleMeta = map[string]ruleMeta{
 	},
 	"DS107": {
 		// Broader than Atlas DS101, which is the schema drop alone: this rule
-		// also fires on DROP TYPE, EXTENSION, FUNCTION, ROLE, and POLICY, so
-		// the rule is ours even though it covers the Atlas one.
-		Summary: "dropping a schema, type, extension, function, role, or policy removes behavior",
+		// also fires on DROP TYPE, EXTENSION, FUNCTION, PROCEDURE, TRIGGER,
+		// ROLE, and POLICY, so the rule is ours even though it covers the Atlas
+		// one.
+		Summary: "dropping a schema, type, extension, function, procedure, trigger, role, or policy removes behavior",
 	},
 	"DS108": {
 		Summary: "TRUNCATE deletes every row in the table",
