@@ -99,6 +99,14 @@ func TestLintSource_UnsupportedParserErrorIsExplicit(t *testing.T) {
 	c.Assert(findings[0].Title, qt.Equals, "Unsupported SQL statement")
 }
 
+// TestLintSource_CreatePolicyIsSupported holds what "supported" means here: the
+// parser models the statement and the run succeeds.
+//
+// It asserted zero findings, and now asserts nothing above info. The difference
+// is SQL004, which says no rule examined the statement -- true of CREATE POLICY,
+// and the point of reporting it. Only SeverityError decides the exit code
+// (cmd/sql/sql.go), so the run still succeeds and the claim this test was
+// written to make is unchanged (stokaro/ptah#1270).
 func TestLintSource_CreatePolicyIsSupported(t *testing.T) {
 	c := qt.New(t)
 
@@ -108,7 +116,10 @@ func TestLintSource_CreatePolicyIsSupported(t *testing.T) {
 	}, Options{Dialect: platform.Postgres})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(findings, qt.HasLen, 0)
+	for _, finding := range findings {
+		c.Assert(finding.Severity, qt.Equals, SeverityInfo,
+			qt.Commentf("a supported statement must not report above info: %#v", finding))
+	}
 }
 
 func TestLintSource_RawSQLNodesAreExplicitUnsupportedFindings(t *testing.T) {

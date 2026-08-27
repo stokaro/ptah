@@ -141,8 +141,24 @@ func TestRun_MigrationsReportUnparsableSQL(t *testing.T) {
 	c.Assert(report.OK, qt.IsFalse)
 	sql := resultFor(c, report, agentgate.GateMigrationSQL)
 	c.Assert(sql.OK, qt.IsFalse)
-	c.Assert(sql.Diagnostics[0].Path, qt.Equals, "1700000000_init.up.sql")
-	c.Assert(sql.Diagnostics[0].Severity, qt.Equals, agentgate.SeverityError)
+	// By severity rather than by position. The claim is that an unparsable up
+	// file is reported as an error; which index it lands at is incidental, and
+	// became wrong once the linter also reported the statement kinds no rule
+	// examined (stokaro/ptah#1270).
+	failing := errorDiagnostics(sql.Diagnostics)
+	c.Assert(failing, qt.HasLen, 1)
+	c.Assert(failing[0].Path, qt.Equals, "1700000000_init.up.sql")
+}
+
+// errorDiagnostics keeps the diagnostics that fail a gate.
+func errorDiagnostics(diagnostics []agentgate.Diagnostic) []agentgate.Diagnostic {
+	failing := make([]agentgate.Diagnostic, 0, len(diagnostics))
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Severity == agentgate.SeverityError {
+			failing = append(failing, diagnostic)
+		}
+	}
+	return failing
 }
 
 const goodSchema = `package models

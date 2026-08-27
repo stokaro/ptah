@@ -3,6 +3,8 @@ package sqllint
 
 import (
 	"fmt"
+	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -22,6 +24,16 @@ const (
 	// RuleDynamicSQL marks a routine body that builds SQL at run time, which is
 	// where static analysis of that routine stops.
 	RuleDynamicSQL = "SQL003"
+	// RuleStatementsNotAnalyzed names the statement kinds a file carried that
+	// no rule examined.
+	//
+	// It is not [RuleUnsupportedStatement], and the difference is the whole
+	// reason it exists. SQL002 says the PARSER does not model a statement, at
+	// error severity; the kinds this reports are modeled exactly as intended --
+	// `CREATE POLICY` has a test asserting it lints clean -- and simply have no
+	// rule looking at them. Reporting them as unsupported would make SQL002's
+	// own message untrue.
+	RuleStatementsNotAnalyzed = "SQL004"
 )
 
 type Severity string
@@ -87,6 +99,7 @@ func LintSource(source Source, opts Options) ([]Finding, error) {
 	}
 
 	var findings []Finding
+	var unanalyzedKinds []string
 	for _, statement := range splitSourceStatements(source, opts.Dialect) {
 		keyword, keywordOffset := firstKeyword(statement.sql)
 		if keyword == "" {
@@ -96,13 +109,57 @@ func LintSource(source Source, opts Options) ([]Finding, error) {
 			findings = append(findings, unsupportedStatementFinding(source, statement, opts, keyword, keywordOffset))
 			continue
 		}
-		statementFindings, err := lintParsedStatement(source, statement, opts, caps)
+		statementFindings, unanalyzed, err := lintParsedStatement(source, statement, opts, caps)
 		if err != nil {
 			return nil, err
 		}
 		findings = append(findings, statementFindings...)
+		unanalyzedKinds = appendUnanalyzed(unanalyzedKinds, unanalyzed)
+	}
+	if len(unanalyzedKinds) > 0 {
+		findings = append(findings, statementsNotAnalyzedFinding(source, opts, unanalyzedKinds))
 	}
 	return keepEnabled(findings, opts.DisabledRules), nil
+}
+
+// appendUnanalyzed adds kinds not already recorded, keeping first-seen order so
+// the finding reads in the order the file does.
+func appendUnanalyzed(seen, kinds []string) []string {
+	for _, kind := range kinds {
+		if !slices.Contains(seen, kind) {
+			seen = append(seen, kind)
+		}
+	}
+	return seen
+}
+
+// statementsNotAnalyzedFinding is the one line a file gets when it carried
+// statements no rule examined.
+//
+// It is ONE finding rather than one per statement, and that is a decision. A
+// migration is mostly statements this linter has no rule for, so per-statement
+// findings would outnumber the real ones several times over and bury them --
+// the failure mode of a rule meant to make incompleteness visible is being
+// ignored.
+//
+// Info severity, for the same reason [RuleDynamicSQL] is: nothing is wrong with
+// the file. What is incomplete is the analysis, and saying so is the point --
+// before this, a file of views, policies and ALTER TABLEs linted clean and
+// exited 0, which reads as "checked and fine" rather than "not checked"
+// (stokaro/ptah#1270).
+func statementsNotAnalyzedFinding(source Source, opts Options, kinds []string) Finding {
+	return Finding{
+		Rule:     RuleStatementsNotAnalyzed,
+		Title:    "Statements no rule analyzed",
+		Severity: SeverityInfo,
+		File:     source.Name,
+		Line:     1,
+		Column:   1,
+		Dialect:  opts.Dialect,
+		Message:  fmt.Sprintf("no rule examined %s in this file", strings.Join(kinds, ", ")),
+		Rationale: "A statement kind no rule looks at is reported so a clean result " +
+			"means the file was analyzed rather than skipped.",
+	}
 }
 
 // keepEnabled drops the findings a --disable selector covers.
@@ -182,10 +239,10 @@ func lintParsedStatement(
 	statement sourceStatement,
 	opts Options,
 	caps capability.Capabilities,
-) ([]Finding, error) {
+) ([]Finding, []string, error) {
 	stmtList, err := parser.NewParser(statementParserSQL(statement.sql), parserOptions(opts, caps)...).Parse()
 	if err != nil {
-		return []Finding{parseErrorFinding(source, statement, opts, err)}, nil
+		return []Finding{parseErrorFinding(source, statement, opts, err)}, nil, nil
 	}
 
 	ctx := Context{
@@ -196,6 +253,7 @@ func lintParsedStatement(
 		Capabilities: caps,
 	}
 	findings := make([]Finding, 0)
+	var unanalyzed []string
 	for _, stmt := range stmtList.Statements {
 		for _, rule := range effectiveRules(opts) {
 			if ruleDisabled(rule.ID(), opts.DisabledRules) {
@@ -203,8 +261,30 @@ func lintParsedStatement(
 			}
 			findings = append(findings, rule.CheckStatement(ctx, stmt)...)
 		}
+		if label, ok := unanalyzedStatementLabel(ctx, stmt); ok {
+			unanalyzed = append(unanalyzed, label)
+		}
 	}
-	return findings, nil
+	return findings, unanalyzed, nil
+}
+
+// unanalyzedStatementLabel names a statement no rule looks at, and reports
+// whether there is one.
+//
+// It asks the classification questions rather than watching for findings, and
+// deliberately ignores --disable. A statement's kind is what decides whether
+// this linter has anything to say about it; silencing the rule that says so
+// must not manufacture a different complaint about the same statement.
+func unanalyzedStatementLabel(ctx Context, stmt ast.Node) (string, bool) {
+	if _, analyzed := analyzedStatementKinds[reflect.TypeOf(stmt)]; analyzed {
+		return "", false
+	}
+	// A kind the unsupported rule already names is reported by SQL002, whose
+	// message is about the parser rather than about analysis.
+	if len((unsupportedRoutineRule{}).CheckStatement(ctx, stmt)) > 0 {
+		return "", false
+	}
+	return statementLabel(stmt), true
 }
 
 func parserOptions(opts Options, caps capability.Capabilities) []parser.Option {
@@ -392,6 +472,82 @@ func (unsupportedRoutineRule) CheckStatement(ctx Context, stmt ast.Node) []Findi
 	default:
 		return nil
 	}
+}
+
+// analyzedStatementKinds are the statement kinds a rule in this package
+// actually examines. It is the ONLY way a statement reaches the end of a lint
+// run without being reported, and the direction is the whole point: a node kind
+// added to core/ast joins the reported set by default rather than the silent
+// one.
+//
+// It was the other way around, behind a `default: return nil`, and the cost was
+// measured rather than argued. On postgres, `ptah sql lint` answered
+// CREATE VIEW, CREATE MATERIALIZED VIEW, CREATE POLICY, CREATE SEQUENCE,
+// CREATE TYPE, ALTER TABLE and DROP TABLE with no findings and exit 0 -- seven
+// statement kinds reported as a clean file when no rule had looked at them.
+// #1270 asks for the opposite in those words: "No supported code object is
+// silently skipped and reported as clean when analysis was incomplete."
+var analyzedStatementKinds = map[reflect.Type]struct{}{
+	// tablePrimaryKeyRule.
+	reflect.TypeFor[*ast.CreateTableNode](): {},
+	// createIndexCapabilityRule.
+	reflect.TypeFor[*ast.IndexNode](): {},
+}
+
+// statementLabel names a statement kind the way SQL spells it, from the node
+// type core/ast gives it.
+//
+// It is derived rather than mapped because a hand-written map is the thing it
+// would exist to guard: a node kind added without a map entry would report an
+// empty label, which reads as a finding about nothing. Consecutive capitals
+// stay together, so AlterTableEnableRLSNode is ALTER TABLE ENABLE RLS and not
+// ALTER TABLE ENABLE R L S.
+// statementLabelOverrides name the statement kinds whose node type is not what
+// SQL calls them. They are the exceptions the derivation cannot see: a
+// `CREATE TYPE ... AS ENUM` parses to an EnumNode, and reporting that Ptah
+// "does not model ENUM statements" names a keyword no author wrote.
+var statementLabelOverrides = map[string]string{
+	"EnumNode":      "CREATE TYPE",
+	"ExtensionNode": "CREATE EXTENSION",
+}
+
+func statementLabel(stmt ast.Node) string {
+	name := reflect.TypeOf(stmt).String()
+	if index := strings.LastIndex(name, "."); index >= 0 {
+		name = name[index+1:]
+	}
+	return statementLabelForName(name)
+}
+
+// statementLabelForName is [statementLabel] over the type's bare name, so the
+// guard that reads core/ast from disk can ask about a node type without
+// constructing one.
+func statementLabelForName(name string) string {
+	if override, ok := statementLabelOverrides[name]; ok {
+		return override
+	}
+	name = strings.TrimSuffix(name, "Node")
+	if name == "" {
+		return "this statement"
+	}
+
+	var words []string
+	var current []rune
+	runes := []rune(name)
+	for i, r := range runes {
+		startsWord := i > 0 && r >= 'A' && r <= 'Z' &&
+			(runes[i-1] < 'A' || runes[i-1] > 'Z' ||
+				(i+1 < len(runes) && runes[i+1] >= 'a' && runes[i+1] <= 'z'))
+		if startsWord && len(current) > 0 {
+			words = append(words, string(current))
+			current = current[:0]
+		}
+		current = append(current, r)
+	}
+	if len(current) > 0 {
+		words = append(words, string(current))
+	}
+	return strings.ToUpper(strings.Join(words, " "))
 }
 
 // postgresRoutineStatements is the parsed body of whichever node a PostgreSQL

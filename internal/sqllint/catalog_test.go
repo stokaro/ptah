@@ -211,6 +211,12 @@ func TestCatalogRowsMatchTheEmittedFindings(t *testing.T) {
 			code:    "SQL002",
 		},
 		{
+			name:    "a statement kind no rule analyzes",
+			source:  sqllint.Source{Name: "policy.sql", SQL: "CREATE POLICY p ON users USING (true);"},
+			options: sqllint.Options{Dialect: platform.Postgres},
+			code:    "SQL004",
+		},
+		{
 			name:    "table without a primary key",
 			source:  sqllint.Source{Name: "schema.sql", SQL: "CREATE TABLE users (email TEXT NOT NULL);"},
 			options: sqllint.Options{Dialect: platform.Postgres},
