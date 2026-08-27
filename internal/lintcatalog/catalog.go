@@ -310,6 +310,9 @@ var sqlRuleMeta = map[string]ruleMeta{
 	"CAP001": {
 		Summary: "the statement needs a capability the target server version does not have",
 	},
+	"SQL004": {
+		Summary: "the file carried statement kinds no rule examined, so a clean result would not mean it was checked",
+	},
 	"SQL003": {
 		Summary: "a routine body builds SQL at run time, so static analysis of that routine stops there",
 	},

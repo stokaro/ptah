@@ -192,7 +192,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 
 ## SQL lint rules
 
-5 rules, reported by `ptah sql lint` over standalone SQL files, on every dialect. The compatibility surface has no verb that reaches them.
+6 rules, reported by `ptah sql lint` over standalone SQL files, on every dialect. The compatibility surface has no verb that reaches them.
 
 | Rule | Meaning | Surface | Origin |
 | --- | --- | --- | --- |
@@ -201,10 +201,11 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | `SQL001` | the SQL parser could not build an AST, so no rule could inspect the statement | native only | Ptah |
 | `SQL002` | the statement uses a sub-language `ptah sql lint` does not model yet | native only | Ptah |
 | `SQL003` | a routine body builds SQL at run time, so static analysis of that routine stops there | native only | Ptah |
+| `SQL004` | the file carried statement kinds no rule examined, so a clean result would not mean it was checked | native only | Ptah |
 
 ## Default severities
 
-14 rules report at error severity by default: `CAP001`, `CD101`, `CD102`, `CD103`, `DS101`, `DS102`, `DS104`, `DS105`, `DS106`, `DS107`, `DS108`, `DS109`, `SQL001`, `SQL002`. The other 33 default to warning. A committed `.ptah-lint.yaml` replaces either for the migration lint rules, per rule or per family. It does not reach the SQL linter: `ptah sql lint` reads no policy file and takes only `--disable`, so the severities above are the ones `CAP001`, `DDL001`, `SQL001`, `SQL002` and `SQL003` report.
+14 rules report at error severity by default: `CAP001`, `CD101`, `CD102`, `CD103`, `DS101`, `DS102`, `DS104`, `DS105`, `DS106`, `DS107`, `DS108`, `DS109`, `SQL001`, `SQL002`. The other 34 default to warning. A committed `.ptah-lint.yaml` replaces either for the migration lint rules, per rule or per family. It does not reach the SQL linter: `ptah sql lint` reads no policy file and takes only `--disable`, so the severities above are the ones `CAP001`, `DDL001`, `SQL001`, `SQL002`, `SQL003` and `SQL004` report.
 
 ## What ptah-compat prints
 
