@@ -11974,6 +11974,7 @@ func (m *Migrator) GetMigrationStatusSnapshot(ctx context.Context) (snapshot Mig
 func (m *Migrator) GetPendingMigrations(ctx context.Context) ([]int64, error)
 func (m *Migrator) GetRevisions(ctx context.Context) ([]MigrationRevision, error)
 func (m *Migrator) Initialize(ctx context.Context) error
+func (m *Migrator) MetadataPresent(ctx context.Context) (bool, error)
 func (m *Migrator) MigrateDown(ctx context.Context) (err error)
 func (m *Migrator) MigrateDownTo(ctx context.Context, targetVersion int64) error
 func (m *Migrator) MigrateDownToWithPreflight(ctx context.Context, targetVersion int64, hook PreMigrationHook) (err error)
@@ -11988,8 +11989,10 @@ func (m *Migrator) MigrationsTableIdentifier() string
 func (m *Migrator) RecordMigrationTag(ctx context.Context, tag string, version int64) error
 func (m *Migrator) RepairMigration(ctx context.Context, opts RepairMigrationOptions) error
 func (m *Migrator) ResolveMigrationTag(ctx context.Context, tag string) (int64, error)
+func (m *Migrator) RevisionLayoutBase(ctx context.Context) (bool, error)
 func (m *Migrator) SetAtlasRevision(ctx context.Context, version int64) (AtlasRevisionSetResult, error)
 func (m *Migrator) SetRevision(ctx context.Context, version int64) (AtlasRevisionSetResult, error)
+func (m *Migrator) VerifyAppliedChecksums(ctx context.Context) (bool, error)
 func (m *Migrator) WithAtlasRevisionVersionComparator(compare AtlasRevisionVersionComparator) *Migrator
 func (m *Migrator) WithDefaultTimeouts(timeouts migrationfile.Timeouts) *Migrator
 func (m *Migrator) WithExecOrder(execOrder ExecOrder) *Migrator

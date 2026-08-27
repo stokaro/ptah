@@ -389,14 +389,39 @@ func inspect(ctx context.Context, opts Options, found location, report *Report) 
 		})
 	}
 
+	// The checksum answer is chosen HERE rather than inside the finding,
+	// because the two come from different places: one is read from the
+	// database, the other is what there is to say when the table has no
+	// checksum column to read.
+	checksum := baseLayoutChecksumFinding()
+	if !baseLayout {
+		checksum = checksumFinding(ctx, opts, mig)
+	}
+
 	report.Findings = append(report.Findings,
 		stateFinding(snapshot),
 		identityFinding(opts, mig, snapshot),
-		checksumFinding(ctx, opts, mig, baseLayout),
+		checksum,
 		semanticsFinding(snapshot),
 		metadataFinding(snapshot),
 	)
 	return nil
+}
+
+// baseLayoutChecksumFinding is the checksum answer for a table that has no
+// checksum column.
+//
+// The applied-checksum rule returns clean without looking at anything there,
+// and reporting that clean return as a clean result would be a check that
+// passes by not running.
+func baseLayoutChecksumFinding() Finding {
+	return Finding{
+		Dimension: DimensionChecksum,
+		Severity:  SeverityAction,
+		Summary:   "the recorded revisions carry no checksums to verify",
+		Detail: "this table has no checksum column, so nothing here proves the migrations that ran " +
+			"are the ones in this directory",
+	}
 }
 
 // stateFinding decides the dirty/partial dimension.
@@ -524,12 +549,7 @@ func identityFinding(
 // every preceding file and which no per-file content hash reproduces; the rule
 // that accepts it lives with the writer, and a second copy here would disagree
 // with it the first time either learned something.
-func checksumFinding(
-	ctx context.Context,
-	opts Options,
-	mig *migrator.Migrator,
-	baseLayout bool,
-) Finding {
+func checksumFinding(ctx context.Context, opts Options, mig *migrator.Migrator) Finding {
 	if opts.MigrationsFS == nil {
 		return Finding{
 			Dimension: DimensionChecksum,
@@ -538,21 +558,8 @@ func checksumFinding(
 			Detail:    "there is no migration directory to compute them from",
 		}
 	}
-	// The rule returns without verifying anything on a base-column table --
-	// there is no checksum column to verify against -- and reporting its clean
-	// return as a clean result would be a check that passes by not running.
-	if baseLayout {
-		return Finding{
-			Dimension: DimensionChecksum,
-			Severity:  SeverityAction,
-			Summary:   "the recorded revisions carry no checksums to verify",
-			Detail: "this table has no checksum column, so nothing here proves the migrations that ran " +
-				"are the ones in this directory",
-		}
-	}
 	reconcile, err := mig.VerifyAppliedChecksums(ctx)
-	var mismatch *migrator.ChecksumMismatchError
-	if errors.As(err, &mismatch) {
+	if mismatch, ok := errors.AsType[*migrator.ChecksumMismatchError](err); ok {
 		return Finding{
 			Dimension: DimensionChecksum,
 			Severity:  SeverityRefuse,
@@ -686,8 +693,6 @@ func revisionName(revision migrator.MigrationRevision) string {
 
 // firstLine keeps a driver's multi-line error from taking over a report line.
 func firstLine(text string) string {
-	if index := strings.IndexByte(text, '\n'); index >= 0 {
-		return strings.TrimSpace(text[:index])
-	}
-	return strings.TrimSpace(text)
+	line, _, _ := strings.Cut(text, "\n")
+	return strings.TrimSpace(line)
 }

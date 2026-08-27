@@ -1,7 +1,6 @@
 package project_test
 
 import (
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -59,7 +58,7 @@ env "local" {
 		"adopt", "--check", "--format", "json", "--atlas-config", path, "--env", "local")
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(strings.Contains(stdout, `"database"`), qt.IsFalse,
+	c.Assert(stdout, qt.Not(qt.Contains), `"database"`,
 		qt.Commentf("an omitted member is what makes 'not asked' unmistakable"))
 }
 
