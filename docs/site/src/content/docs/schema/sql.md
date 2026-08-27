@@ -61,7 +61,9 @@ understood every statement, and it can retarget the schema at another dialect.
 `--schema-file` is accepted wherever Ptah needs a desired schema:
 `ptah schema render`, `ptah schema compare`, `ptah schema drift`, the
 migration commands (`ptah migrations plan` / `ptah migrations generate`), and
-the API targets of [`ptah schema export`](../export/#sources).
+every target of [`ptah schema export`](../export/#sources) except `hcl`. That
+includes the two documentation targets, so
+[a Markdown or HTML reference](../document/) can be generated from this file.
 
 Relative `--schema-file` inputs are confined to the process working directory
 after symbolic-link resolution; use an absolute pathname for an intentional

@@ -8,8 +8,8 @@ schemas, GraphQL SDL, and Protobuf definitions. Use these artifacts when the
 selected database entities intentionally match your transport model, or as input
 to a separately designed contract.
 
-The source can be Go annotations under `--root-dir` or a YAML, HCL, or SQL
-schema file named by `--schema-file` — the same desired-schema sources
+The source can be Go annotations under `--root-dir` or a YAML, HCL, SQL, or
+DBML schema file named by `--schema-file` — the same desired-schema sources
 `ptah schema render` reads.
 
 The export does not expose database rows or create a working API. It does not
@@ -25,6 +25,13 @@ This page covers the OpenAPI and GraphQL targets, which are stateless. The
 Protobuf target is stateful — field numbers are persistent wire identifiers, so
 its generated file is committed compatibility state — and has its own page:
 [Protobuf schema export](../protobuf/).
+
+`--to` accepts seven targets in total, and the four this page does not cover
+answer different questions. `markdown` and `html` write
+[reference documentation for people](../document/) rather than a contract for
+machines, and `dbml` writes a [DBML document](../dbml/). `hcl` converts a Go
+annotation tree into an HCL schema, and with `--cleanup-go-annotations` it also
+removes the annotations from the Go files it reads.
 
 ## Commands
 
@@ -42,20 +49,20 @@ ptah schema export --to graphql --root-dir ./models \
 # Omit --out to write the schema to stdout (for piping into a validator)
 ptah schema export --to graphql --root-dir ./models > schema.graphql
 
-# Export a YAML, HCL, or SQL schema file instead of Go annotations
+# Export a YAML, HCL, SQL, or DBML schema file instead of Go annotations
 ptah schema export --to openapi-v3 --schema-file schema.yaml --out openapi.yaml
 ```
 
 | Flag | Applies to | Meaning |
 | --- | --- | --- |
-| `--to` | all | `hcl`, `openapi-v3`, `graphql`, or [`protobuf`](../protobuf/). The old `atlas-hcl` value is accepted as an alias. |
-| `--from` | all | Format of the `--schema-file` value: `go` (default), `yaml`, `hcl`, or `sql`. |
+| `--to` | all | `hcl`, `openapi-v3`, `graphql`, [`protobuf`](../protobuf/), [`markdown`](../document/), [`html`](../document/), or [`dbml`](../dbml/). `atlas-hcl` is accepted as an alias for `hcl`. |
+| `--from` | all | Format of the `--schema-file` value: `go` (default), `yaml`, `hcl`, `sql`, or `dbml`. |
 | `--root-dir` | all | Directory scanned for Go annotations. |
-| `--schema-file` | `openapi-v3`, `graphql`, `protobuf` | YAML, HCL, or SQL schema file to export instead of Go annotations. Repeatable. |
-| `--out` | all | Output file. Optional for `openapi-v3`/`graphql` (stdout when omitted); required for `hcl` and for [`protobuf`](../protobuf/), where it is also the compatibility state read back on the next run. |
-| `--include-tables` | `openapi-v3`, `graphql`, `protobuf` | Comma-separated allowlist of tables. |
-| `--exclude-tables` | `openapi-v3`, `graphql`, `protobuf` | Comma-separated denylist, applied after the allowlist. |
-| `--title` | `openapi-v3` | Value for `info.title` (default `Ptah Exported Schema`). |
+| `--schema-file` | every target except `hcl` | YAML, HCL, SQL, or DBML schema file to export instead of Go annotations. Repeatable. |
+| `--out` | all | Output file. Optional for `openapi-v3`, `graphql`, `markdown`, `html`, and `dbml` (stdout when omitted); required for `hcl` and for [`protobuf`](../protobuf/), where it is also the compatibility state read back on the next run. |
+| `--include-tables` | every target except `hcl` | Comma-separated allowlist of tables. |
+| `--exclude-tables` | every target except `hcl` | Comma-separated denylist, applied after the allowlist. |
+| `--title` | `openapi-v3`, `markdown`, `html` | Value for `info.title` (default `Ptah Exported Schema`), or the heading of a [Markdown or HTML document](../document/) (default `Schema reference`). |
 | `--graphql-operations` | `graphql` | Comma-separated operation shapes: `none` (default), `list`, `by-id`, `create-input`, `update-input`. |
 
 Export warnings (for example an enum whose values cannot be resolved) are written
@@ -64,8 +71,8 @@ to stderr, so a schema piped from stdout is never corrupted.
 ## Sources
 
 `--schema-file` is read by the same resolver as `ptah schema render`, so a
-desired schema is spelled the same way on both commands. The `openapi-v3`,
-`graphql`, and `protobuf` targets read all four sources below:
+desired schema is spelled the same way on both commands. Every target except
+`hcl` reads all five sources below:
 
 - **Go annotations** — the directory named by `--root-dir`, which defaults to
   `.`. This is `--from go`.
@@ -75,6 +82,8 @@ desired schema is spelled the same way on both commands. The `openapi-v3`,
   is `--from hcl`.
 - **[SQL schema](../sql/)** — a `--schema-file` whose extension is `.sql`. This
   is `--from sql`.
+- **[DBML document](../dbml/)** — a `--schema-file` whose extension is `.dbml`.
+  This is `--from dbml`.
 
 An export taken from a schema file is byte-identical to the export taken from
 annotated Go models describing the same tables, so a project can change how it

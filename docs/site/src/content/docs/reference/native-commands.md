@@ -20,6 +20,8 @@ Use `ptah <command> --help` for the exact flag set in an installed binary.
 | `ptah schema drift` | Check live database drift against desired schema. |
 | `ptah schema apply` | Apply a desired schema directly to a database, with an advisory lock, optional dev-database rehearsal, and interactive approval (`--auto-approve` for scripts). |
 | `ptah schema plan` | Save the declarative apply plan as a fingerprinted local plan file; `ptah schema apply --plan` executes it only while the target still matches the recorded fingerprint. |
+| `ptah schema approve` | Sign a saved plan file with an SSH key through `ssh-keygen`, writing `<plan>.sig` beside it. |
+| `ptah schema verify-approval` | Check a plan file's signature against an OpenSSH `allowed_signers` list and name the principal it belongs to. |
 | `ptah schema inspect` | Inspect a live database, a local schema file, an `oci://` schema artifact, or an Atlas-format migration directory as machine-clean HCL, SQL, or JSON; `--out-dir`/`--split` export files. |
 | `ptah schema diff` | Diff two arbitrary schema states (files, database URLs, or migration directories) into migration SQL or JSON. |
 | `ptah schema fmt` | Format HCL schema files canonically; `--check` is a no-write CI gate. |
@@ -28,6 +30,9 @@ Use `ptah <command> --help` for the exact flag set in an installed binary.
 | `ptah schema pull` | Pull a canonical desired schema from an OCI registry. |
 | `ptah schema test` | Apply a desired schema from Go annotations, a SQL or HCL file, or a live database to a throwaway database and run declarative seed/SQL/assert cases against it. |
 | `ptah schema security` | Report security findings over a live schema: privileges granted to `PUBLIC`, tables reachable with no row-level security, and routines that run with their owner's privileges. Reads the database and nothing else. |
+| `ptah schema lineage` | Trace which base columns feed each view and materialized-view column, from a schema source, with no database. |
+| `ptah schema stats` | Count the objects in a live schema and write one OpenMetrics gauge per object kind. |
+| `ptah schema serve` | Serve a read-only web page holding the desired schema and how a live database differs from it, re-read on every request. |
 
 Pass an explicit `--dialect` when the output must be executable by one target.
 Without it, `schema render` attempts the built-in review targets and emits
@@ -258,7 +263,6 @@ stdout therefore gets a document in every case except `2`.
 | `ptah viz` | Render desired schema diagrams as Mermaid, DOT, or SVG; `--security` marks the tables the schema security rules find. |
 | `ptah version` | Print Ptah build information. |
 | `ptah license` | Print license, copyright, and Atlas-compatibility attribution. |
-| `ptah schema serve` | Serve a read-only local view of the declared schema and how the live database differs from it. |
 | `ptah mcp` | Serve Ptah's operations to an AI client over the Model Context Protocol, on stdin and stdout. |
 | `ptah assist` | Hold a conversation with a model you supply, with Ptah's own tools answering. |
 | `ptah assist explain <question>` | Ask one question, with Ptah's own tools answering. |
@@ -344,169 +348,110 @@ written into configuration is refused, and Ptah stores none.
 
 ## A live view
 
-`ptah schema serve` serves the same schema page against a live database, adding
-what only means something over time:
+`ptah schema serve` runs an HTTP server that renders the declared schema and how
+a live database differs from it, re-reading both on every request. Every route
+answers `GET` and `HEAD` and nothing else, and no code path writes to the
+database. Nothing about it becomes a dependency of a migration.
 
-```bash
-ptah schema serve --db-url "$DATABASE_URL" --root-dir ./models
-```
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--addr` | `127.0.0.1:7070` | Listen address. The address is read back from the listener, so `127.0.0.1:0` prints the port that was chosen. |
+| `--refresh` | `30s` | Self-reload interval as a Go duration. `0` serves a page that does not reload. |
+| `--title` | `Schema dashboard` | Heading, browser title and sidebar name. |
+| `--root-dir` | working directory | Go annotation tree to read the declared schema from. Repeatable. |
+| `--schemas` | connection default | Comma-separated schemas the database read is limited to. |
+| `--db-url` | none | Database to compare against. Required. |
 
-It shows drift — how the database differs from the declared schema, by category
-and severity — and when that was last measured. A page whose age is unknown is
-not a live view; one that stopped refreshing looks identical to one that
-refreshed a second ago.
-
-The schema below the status panel is rendered by the same code as
-`schema export --to html`, so the served view and the exported document cannot
-disagree about what a schema looks like.
-
-**It is read-only.** Every route answers `GET` and `HEAD` and nothing else, and
-no code path writes to the database. Nothing about it becomes a dependency of a
-migration: `ptah migrate` works identically with this never started. There is no
-account, no login and no upload — it binds to a local address and reads a
-database you already have credentials for.
-
-If the database cannot be reached the page says so. It does not render zero
-drift, which would show a reader a green page and let them conclude their schema
-is in sync.
-
-The page reloads itself with a `meta refresh` and carries no JavaScript;
-`--refresh 0` serves a page that does not reload. The declared schema comes from
-`--root-dir`.
+[Serve a live schema view](../../schema/serve/) is the guide.
 
 ## Schema documentation
 
-`ptah schema export --to html` writes the schema as **one self-contained page**:
+`ptah schema export` carries two targets that write a schema as a document for a
+person: `--to markdown` and `--to html`. Both read the desired schema from any
+source and connect to no database.
 
-```bash
-ptah schema export --to html --root-dir ./models --out schema.html
-```
+| Target | Output | Diagram |
+| --- | --- | --- |
+| `markdown` | One Markdown document written to stdout, or to `--out`. | none |
+| `html` | One self-contained HTML file: the styling and the diagram sit inside it, and it names no resource outside itself. | inline SVG, laid out by Ptah |
 
-Opening it fetches nothing. No stylesheet, no font, no script, no image — the
-styling and the diagram are inside the file. So it works on a machine with no
-network, it can be attached to a review or copied to somebody, and looking at a
-schema never sends the schema anywhere.
-
-The entity diagram is inline SVG that Ptah lays out itself, left to right by
-dependency: reading it that way reads the order the tables can be created in.
-Nothing renders it at view time, which is why it needs neither a JavaScript
-library nor Graphviz installed.
-
-The page follows the reader's light or dark preference rather than picking one,
-and every column of every selected table appears — documentation that hid one
-would describe a schema the reader does not have. `--include-tables` and
-`--exclude-tables` select what it covers.
-
-`--to markdown` writes the same reference as a Markdown document, for a
-repository that would rather commit text.
+`--title`, `--include-tables` and `--exclude-tables` apply to both.
+[Generate schema documentation](../../schema/document/) is the guide.
 
 ## Plan approval
 
-`ptah schema approve` records that a human reviewed a saved plan, by signing it
-with an SSH key:
-
-```bash
-ptah schema plan --db-url "$DATABASE_URL" --schema-file schema.sql --name release
-ptah schema approve --plan release.plan.json --key ~/.ssh/id_ed25519
-ptah schema verify-approval --plan release.plan.json
-```
-
-```text
-Approved by alice@example.com
-Plan digest: b1a46d7d7fc05bd7705c7deb1e27016e3a99ed583a2df97d0c3b1e834efa27fd
-```
-
-`ptah schema apply --plan <path> --require-approval` refuses to execute a plan
-that does not verify, before the plan is parsed and before the database is
-contacted.
-
-Approvers live in an OpenSSH `allowed_signers` file, `./.ptah/allowed_signers`
-by default. Committing it is what makes the set of approvers reviewable in the
-same place as the code, and changing it a reviewable change:
-
-```text
-alice@example.com ssh-ed25519 AAAAC3Nza...
-bob@example.com   ssh-ed25519 AAAAC3Nza...
-```
-
-This is the mechanism git uses for signed commits, and it answers the same
-question: which known key vouched for this exact content. Ptah implements no
-cryptography and never reads a private key — `ssh-keygen` does both halves, so
-principal matching, key revocation and validity windows behave exactly as
-OpenSSH defines them.
-
-The signature covers the plan document byte for byte, not selected fields. A
-rule for which fields matter would let a plan that later gained a destructive
-flag nobody signed keep verifying.
+`ptah schema approve` signs a saved plan file with an SSH key,
+`ptah schema verify-approval` checks that signature against an OpenSSH
+`allowed_signers` file, and `ptah schema apply --plan <path> --require-approval`
+refuses a plan that does not verify. `ssh-keygen` performs both halves, in the
+`ptah-plan` namespace, over the plan document byte for byte; Ptah implements no
+cryptography of its own.
 
 Three outcomes stay distinct, because they call for different actions:
 
-| Outcome | Meaning |
-| --- | --- |
-| unapproved | no signature beside the plan — nobody reviewed it |
-| unverifiable | the plan changed after approval, or an unlisted key signed it |
-| approved | verified, and the signer is named |
+| Outcome | Meaning | Exit |
+| --- | --- | --- |
+| unapproved | no signature beside the plan — nobody reviewed it | `2` |
+| unverifiable | the plan changed after approval, an unlisted key signed it, or `ssh-keygen` could not run | `2` |
+| approved | verified, and the signer is named on stdout | `0` |
 
-A signature made for another purpose does not count: the approval is scoped to
-the `ptah-plan` namespace, so a commit signature over the same bytes cannot be
-replayed as a plan approval.
+| Flag | Verb | Meaning |
+| --- | --- | --- |
+| `--plan` | `approve`, `verify-approval` | Path to the plan file. |
+| `--key` | `approve` | Private key `ssh-keygen` signs with. |
+| `--allowed-signers` | `verify-approval`, `apply` | Approver list. Default `./.ptah/allowed_signers`, resolved against the working directory. |
+| `--signer` | `verify-approval` | Require the approval to belong to one named principal. |
+| `--require-approval` | `apply` | Refuse a `--plan` that carries no verifying approval. |
+
+[Plan and approve changes](../../direct/plan-and-approve/) is the guide.
 
 ## Column lineage
 
 `ptah schema lineage` derives column-to-column dependencies from the view and
-materialized-view bodies a schema declares:
+materialized-view bodies a schema declares. The analysis is static and local: it
+reads the schema Ptah already models and contacts nothing.
 
-```bash
-ptah schema lineage --schema-file schema.sql
-```
+A body it cannot fully resolve is reported under `undecided` with a reason
+rather than omitted, because "nothing reads this column" and "I could not tell"
+call for different decisions.
 
-```text
-SOURCE        FEEDS                 KIND
-users.email   active_users.contact  view
-users.id      active_users.id       view
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--schema-file` | none | Schema file to read. Repeatable. |
+| `--root-dir` | working directory | Go annotation tree to read instead. Repeatable. |
+| `--dialect` | `postgres` | How the source is parsed. Not a render target. |
+| `--format` | `table` | `table` or `json`. |
 
-1 view(s) not fully resolved:
-  joined: the FROM clause names more than one source, so an unqualified column cannot be attributed
-```
+The run exits `0` whether or not any view landed in `undecided`, so a gate reads
+the `undecided` key of the JSON output.
+[Trace view column lineage](../../schema/lineage/) is the guide.
 
-This answers "what breaks if I drop this column" before the drop rather than
-after. A view column resolves to the base columns it reads, so a column nothing
-reads is visibly different from one three views depend on. `--format json` emits
-the same answer as a document.
+## Schema object counts
 
-The analysis is static and local: it reads the schema Ptah already models and
-contacts nothing.
+`ptah schema stats` reads a live database and writes one OpenMetrics gauge per
+object kind, ending with a literal `# EOF` line. The family list is fixed rather
+than derived from the target, so every run emits the same names in the same
+order and a family the reader found none of is reported at `0`.
 
-A body it cannot fully resolve is **reported, not omitted**. A join, a subquery
-source, a set operation, or a computed column with no alias each appear under
-`undecided` with the reason. That distinction is the difference between "nothing
-reads this column" and "I could not tell", and only the first makes a drop safe.
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--db-url` | none | Database to read. Required; a `ptah.yaml` `url:` does not satisfy it. |
+| `--schemas` | connection default | Comma-separated schemas. Selects what is counted on the PostgreSQL family, and adds a `schemas` label carrying the flag's value as one string on every engine. |
+
+Every gauge is named `ptah_schema_<kind>` and carries a `dialect` label. The
+`HELP` line of each family names what it counts;
+[Count schema objects](../../schema/stats/) is the guide and shows the complete
+set.
 
 ## Schema security findings
 
 `ptah schema security` reads a live database and reports findings over what it
 declares — who holds which privilege, which tables are reachable with no
-row-level policy, which routines run as their owner:
+row-level policy, which routines run as their owner.
+[Report schema security findings](../../schema/security/) is the guide; this
+section is the per-code and per-engine detail behind a report.
 
-```bash
-ptah schema security --db-url "$DATABASE_URL"
-```
-
-```text
-CODE   SEVERITY  OBJECT            FINDING
-PRV01  info      table users       table users is granted to a role and has no row-level security enabled, so a granted role reads every row
-PRV02  info      routine escalate  routine escalate runs as its owner, so every caller that may execute it acts with the owner's privileges
-PRV03  warning   table audit_log   privileges on table audit_log are granted to PUBLIC, which every role holds
-
-Suggested:
-  PRV01 users: enable row-level security and declare a policy, or record that the whole table is meant to be readable by these roles
-  PRV02 escalate: qualify the object names in its body or pin search_path, and grant EXECUTE only to roles that should act as the owner
-  PRV03 audit_log: grant to a named role and let members inherit it, so the grant names who holds it
-
-0 error, 2 warning, 2 info
-```
-
-The rules today:
+The rules:
 
 | Code | Finding | Severity |
 | --- | --- | --- |
@@ -528,16 +473,8 @@ object graph, MySQL and MariaDB keep no equivalent, and SQL Server's
 
 So the observation is supplied rather than read. `--role-usage <file>` takes a
 JSON list of what something else saw — an audit stream, `pg_stat_statements`, a
-proxy log:
-
-```json
-[{"role": "reporting", "kind": "table", "name": "orders"}]
-```
-
-Without the flag `ROL01` reports itself skipped. With it, every grant to a named
-role on an object absent from the list is reported. An empty list is a different
-answer from no file at all: it says the window was observed and nothing used
-anything, so every grant in it is unused.
+proxy log. Without the flag `ROL01` reports itself skipped; with it, every grant
+to a named role on an object absent from the list is reported.
 
 The severity is `warning` rather than `error` because the signal is a window,
 and a window is evidence of absence only for as long as it covers — a quarterly
@@ -597,21 +534,10 @@ failing; `--fail-on any` gates on every finding.
 detail — the privileges, the roles, the routine's language — so a pipeline can
 group or diff them without parsing prose.
 
-**A rule that cannot run says so.** Row-level security has no meaning on a
-target that does not model it, so on MySQL the run reports:
-
-```text
-Not checked here:
-  PRV01: the target does not model row-level security
-```
-
-A rule that quietly did not run is indistinguishable from one that found
-nothing, and the difference is what makes a clean report worth having.
-
-**What a clean report is not.** The analysis reads what Ptah models: it does not
-attempt an access, and it cannot see a privilege granted on an object outside
-the schema. "Nothing here matched a rule" is the claim; "this database is
-secure" is not.
+A rule that cannot run is listed under `Not checked here:` with its reason,
+because a rule that quietly did not run is indistinguishable from one that found
+nothing. Row-level security has no meaning on a target that does not model it,
+so `PRV01` reports itself skipped on MySQL and SQLite.
 
 PostgreSQL's own `USAGE` on schema `public` to `PUBLIC` is excluded by name,
 because a finding present in every database is one a reader learns to skip.
