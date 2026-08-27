@@ -143,10 +143,6 @@ func TestVerify_StructuralFailuresBlock(t *testing.T) {
 			want: "the column holds 1024 dimensions and the generation expects 3",
 		},
 		{
-			name: "no index", change: func(s *embedverify.Structure) { s.IndexExists = false },
-			want: "the generation's index does not exist",
-		},
-		{
 			name: "an invalid index", change: func(s *embedverify.Structure) { s.IndexValid = false },
 			want: "the index exists and is not valid, so queries fall back to a sequential scan",
 		},
@@ -300,10 +296,13 @@ func TestVerify_AMutableSourceWithAConsistencyModeIsAllowed(t *testing.T) {
 }
 
 // TestVerify_ASkippedRowIsNotACoverageGap keeps a deliberate gap from reading
-// as a failure.
+// as a failure, and from going unsaid.
 //
 // The specification declined to embed the row -- an empty input under a skip
-// policy -- and verification has to tell that from a row nobody got to.
+// policy -- and verification has to tell that from a row nobody got to. It is
+// still reported: a policy that skips nine rows in ten passes every layer here
+// and answers a tenth of the queries the generation was built for, and the
+// operator is the one who can tell which of those two happened.
 func TestVerify_ASkippedRowIsNotACoverageGap(t *testing.T) {
 	c := qt.New(t)
 	expectation, structure, source, target, state := healthy()
@@ -313,6 +312,11 @@ func TestVerify_ASkippedRowIsNotACoverageGap(t *testing.T) {
 	report := embedverify.Verify(expectation, structure, source, target, state)
 
 	c.Assert(report.Passed(), qt.IsTrue, qt.Commentf("%v", summaries(report)))
+	c.Assert(report.Blocking(), qt.HasLen, 0)
+	c.Assert(summaries(report), qt.DeepEquals, []string{
+		"1 in-scope source rows were skipped by the specification and carry no vector",
+	})
+	c.Assert(report.Findings[0].Severity, qt.Equals, embedverify.Advisory)
 }
 
 // TestVerify_ADuplicateTargetKeyBlocks is the case a per-key walk finds and a
@@ -536,11 +540,31 @@ func TestVerify_AGenerationWithoutADimensionSaysSo(t *testing.T) {
 // reading the report has to work out that they are the same problem.
 func TestVerify_AMissingColumnReportsOnceRatherThanCascading(t *testing.T) {
 	c := qt.New(t)
-	expectation, structure, source, target, state := healthy()
-	structure = embedverify.Structure{ExtensionPresent: true}
+	expectation, _, source, target, state := healthy()
 
-	report := embedverify.Verify(expectation, structure, source, target, state)
+	report := embedverify.Verify(
+		expectation, embedverify.Structure{ExtensionPresent: true}, source, target, state)
 
 	c.Assert(summaries(report), qt.DeepEquals,
 		[]string{"the generation's vector column does not exist"})
+}
+
+// TestVerify_AMissingIndexReportsOnceRatherThanCascading is the column case one
+// level down.
+//
+// An index that does not exist has no method and no operator class either, so
+// continuing past it produces three findings for one fact -- and two of them
+// name a mismatch against an empty string, which reads like a different problem
+// than the one there is.
+func TestVerify_AMissingIndexReportsOnceRatherThanCascading(t *testing.T) {
+	c := qt.New(t)
+	expectation, structure, source, target, state := healthy()
+	structure.IndexExists = false
+	structure.IndexValid = false
+	structure.IndexMethod = ""
+	structure.OperatorClass = ""
+
+	report := embedverify.Verify(expectation, structure, source, target, state)
+
+	c.Assert(summaries(report), qt.DeepEquals, []string{"the generation's index does not exist"})
 }

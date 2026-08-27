@@ -204,9 +204,13 @@ func verifyCoverageAndFreshness(report *Report, expectation Expectation, source 
 	}
 
 	var missing, stale, wrongGeneration []string
+	skipped := 0
 	inScope := make(map[string]bool, len(source))
 	for _, row := range source {
 		inScope[row.Key] = true
+		if row.Skipped {
+			skipped++
+		}
 		found, ok := byKey[row.Key]
 		if !ok {
 			if !row.Skipped {
@@ -228,6 +232,14 @@ func verifyCoverageAndFreshness(report *Report, expectation Expectation, source 
 		}
 	}
 	reportCoverage(report, missing, stale, wrongGeneration)
+	if skipped > 0 {
+		// Not a failure -- the specification asked for this. It is still worth
+		// saying, because a policy that skips nine rows in ten produces a
+		// generation that passes every layer here and answers a tenth of the
+		// queries it was built for.
+		report.addf(LayerCoverage, Advisory, skipped, nil,
+			"%d in-scope source rows were skipped by the specification and carry no vector", skipped)
+	}
 
 	var unexpected []string
 	for _, row := range target {
