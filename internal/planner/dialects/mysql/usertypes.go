@@ -69,7 +69,7 @@ func (p *Planner) planCompositeTypes(
 		declared[composite.Name] = composite
 	}
 	names := make([]string, 0, len(diff.CompositeTypesAdded)+len(diff.CompositeTypesModified))
-	names = append(names, diff.CompositeTypesAdded...)
+	names = append(names, diff.CompositeTypesAdded.Names()...)
 	for _, changed := range diff.CompositeTypesModified {
 		names = append(names, changed.TypeName)
 	}
@@ -94,8 +94,8 @@ func (p *Planner) removeCompositeTypes(result []ast.Node, diff *difftypes.Schema
 	if !p.capabilities().Has(capability.CompositeTypes) {
 		return result
 	}
-	for _, name := range diff.CompositeTypesRemoved {
-		result = append(result, ast.NewDropType(name))
+	for _, composite := range diff.CompositeTypesRemoved {
+		result = append(result, ast.NewDropType(composite.QualifiedName()))
 	}
 	return result
 }
@@ -150,8 +150,8 @@ func (p *Planner) reportRemovedUserTypes(result []ast.Node, diff *difftypes.Sche
 	// A target that HOSTS composite types drops them late instead, after the
 	// tables whose columns are typed by them -- see removeCompositeTypes.
 	if !p.capabilities().Has(capability.CompositeTypes) {
-		for _, name := range diff.CompositeTypesRemoved {
-			result = append(result, ast.NewDropType(name))
+		for _, composite := range diff.CompositeTypesRemoved {
+			result = append(result, ast.NewDropType(composite.QualifiedName()))
 		}
 	}
 	for _, rangeType := range diff.RangesRemoved {

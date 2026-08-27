@@ -124,8 +124,8 @@ func collectUserTypeMismatches(diff *difftypes.SchemaDiff) []Mismatch {
 		func(value difftypes.DomainDiff) string { return value.DomainName },
 		func(value difftypes.DomainDiff) map[string]string { return value.Changes },
 	)...)
-	mismatches = append(mismatches, namedMismatches(diff.CompositeTypesAdded, "missing_composite_type", "missing composite type")...)
-	mismatches = append(mismatches, namedMismatches(diff.CompositeTypesRemoved, "extra_composite_type", "extra composite type")...)
+	mismatches = append(mismatches, namedMismatches(diff.CompositeTypesAdded.Names(), "missing_composite_type", "missing composite type")...)
+	mismatches = append(mismatches, namedMismatches(diff.CompositeTypesRemoved.Names(), "extra_composite_type", "extra composite type")...)
 	mismatches = append(mismatches, changedObjectMismatches(
 		diff.CompositeTypesModified,
 		"composite_type_mismatch",

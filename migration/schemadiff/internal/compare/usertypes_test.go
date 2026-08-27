@@ -111,7 +111,7 @@ func TestCompositeTypes_UnchangedNoChurn(t *testing.T) {
 
 	compare.CompositeTypes(desired, database, diff, compare.CoverageOf(desired, database))
 
-	c.Assert(diff.CompositeTypesAdded, qt.IsNil)
+	c.Assert(diff.CompositeTypesAdded.Names(), qt.IsNil)
 	c.Assert(diff.CompositeTypesModified, qt.IsNil)
 }
 

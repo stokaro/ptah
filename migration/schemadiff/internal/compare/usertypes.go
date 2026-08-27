@@ -276,7 +276,7 @@ func compositeTypesWithSemantics(
 	for identity, target := range generatedTypes {
 		current, exists := databaseTypes[identity]
 		if !exists {
-			diff.CompositeTypesAdded = append(diff.CompositeTypesAdded, generatedNames[identity])
+			diff.CompositeTypesAdded = append(diff.CompositeTypesAdded, target)
 			continue
 		}
 		if targetFields, currentFields := compositeFieldList(target), dbCompositeFieldList(current); targetFields != currentFields {
@@ -292,21 +292,21 @@ func compositeTypesWithSemantics(
 			})
 		}
 	}
-	for identity := range databaseTypes {
+	for identity, current := range databaseTypes {
 		if _, exists := generatedTypes[identity]; !exists {
-			diff.CompositeTypesRemoved = append(diff.CompositeTypesRemoved, databaseNames[identity])
+			diff.CompositeTypesRemoved = append(diff.CompositeTypesRemoved, compositeFromCatalog(current))
 		}
 	}
 
 	keptComposites, withheldComposites := keepPlannedAdditions(cov,
-		coverage.Composite, diff.CompositeTypesAdded, qualifiedName, itself, unguardedCreations(),
+		coverage.Composite, diff.CompositeTypesAdded, compositeSpelling, compositeDisplay, unguardedCreations(),
 	)
 	diff.CompositeTypesAdded = keptComposites
 	cov.recordUndecidedAdditions(withheldComposites)
-	diff.CompositeTypesRemoved = keepPlannedRemovals(cov, coverage.Composite, diff.CompositeTypesRemoved, qualifiedName)
+	diff.CompositeTypesRemoved = keepPlannedRemovals(cov, coverage.Composite, diff.CompositeTypesRemoved, compositeSpelling)
 
-	sort.Strings(diff.CompositeTypesAdded)
-	sort.Strings(diff.CompositeTypesRemoved)
+	sortComposites(diff.CompositeTypesAdded)
+	sortComposites(diff.CompositeTypesRemoved)
 	sort.Slice(diff.CompositeTypesModified, func(i, j int) bool {
 		return diff.CompositeTypesModified[i].TypeName < diff.CompositeTypesModified[j].TypeName
 	})
@@ -587,5 +587,36 @@ func rangeDisplay(rangeType schemamodel.Range) string { return rangeType.Qualifi
 func sortRanges(ranges difftypes.RangeChanges) {
 	sort.Slice(ranges, func(i, j int) bool {
 		return ranges[i].QualifiedName() < ranges[j].QualifiedName()
+	})
+}
+
+// compositeFromCatalog carries a composite type the database reported into the
+// shape the diff holds. The three properties a read can establish -- name,
+// schema and ordered fields -- are exactly the three the catalog has, and
+// CompositeField is the same {Name, Type} pair on both sides.
+func compositeFromCatalog(reported catalog.CompositeType) schemamodel.CompositeType {
+	fields := make([]schemamodel.CompositeField, 0, len(reported.Fields))
+	for _, field := range reported.Fields {
+		fields = append(fields, schemamodel.CompositeField{Name: field.Name, Type: field.Type})
+	}
+	return schemamodel.CompositeType{
+		Name:   reported.Name,
+		Schema: reported.Schema,
+		Fields: fields,
+	}
+}
+
+// compositeSpelling is qualifiedName for a change that carries its operand.
+func compositeSpelling(composite schemamodel.CompositeType) (schema string, spellings []string) {
+	return qualifiedName(composite.QualifiedName())
+}
+
+// compositeDisplay names one for a record a person reads.
+func compositeDisplay(composite schemamodel.CompositeType) string { return composite.QualifiedName() }
+
+// sortComposites orders by the key the name lists were sorted on.
+func sortComposites(composites difftypes.CompositeTypeChanges) {
+	sort.Slice(composites, func(i, j int) bool {
+		return composites[i].QualifiedName() < composites[j].QualifiedName()
 	})
 }

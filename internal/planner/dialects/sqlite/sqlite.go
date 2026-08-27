@@ -1140,7 +1140,7 @@ func sequenceNames(diff *difftypes.SchemaDiff) []string {
 func userDefinedTypeNames(diff *difftypes.SchemaDiff) []string {
 	names := slices.Concat(
 		diff.DomainsAdded, diff.DomainsRemoved,
-		diff.CompositeTypesAdded, diff.CompositeTypesRemoved,
+		diff.CompositeTypesAdded.Names(), diff.CompositeTypesRemoved.Names(),
 		diff.RangesAdded.Names(), diff.RangesRemoved.Names(),
 	)
 	for _, domain := range diff.DomainsModified {

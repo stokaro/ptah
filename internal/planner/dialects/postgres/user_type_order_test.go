@@ -47,8 +47,13 @@ func TestPlanner_GenerateMigrationAST_CreatesUserTypesBeforeTheTypesThatNameThem
 	planner := postgres.New()
 
 	diff := &difftypes.SchemaDiff{
-		DomainsAdded:        []string{"d_comp", "d_range", "d_int"},
-		CompositeTypesAdded: []string{"addr", "measure"},
+		DomainsAdded: []string{"d_comp", "d_range", "d_int"},
+		// The fields travel WITH the change now, and the ordering this test is
+		// about is computed from their types.
+		CompositeTypesAdded: difftypes.CompositeTypeChanges{
+			{Name: "addr", Fields: []schemamodel.CompositeField{{Name: "street", Type: "text"}, {Name: "city", Type: "text"}}},
+			{Name: "measure", Fields: []schemamodel.CompositeField{{Name: "qty", Type: "d_int"}}},
+		},
 		// The subtypes travel WITH the change now; the ordering this test is
 		// about is computed from them, and the planner no longer reads them
 		// back out of the schema by name.
