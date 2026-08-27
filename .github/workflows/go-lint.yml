@@ -87,6 +87,35 @@ jobs:
       - name: Check public Go API ledger
         run: scripts/check-public-api.sh
 
+      # The five feature-coverage gates (stokaro/ptah#804). Each holds
+      # docs/feature-inventory.md, or the tracked documentation, to a surface
+      # discovered from the binaries, the code, or `git ls-files`. Each runs its
+      # own fixtures too: a gate nobody has watched fail is not a gate.
+      - name: Check the feature inventory against the command trees
+        run: |
+          scripts/check-inventory-commands.sh
+          scripts/check-inventory-commands.sh --selftest
+
+      - name: Check documentation for commands that no longer exist
+        run: |
+          scripts/check-doc-command-references.sh
+          scripts/check-doc-command-references.sh --selftest
+
+      - name: Check documented flags against the commands that register them
+        run: |
+          scripts/check-doc-flag-references.sh
+          scripts/check-doc-flag-references.sh --selftest
+
+      - name: Check the feature inventory against packages, programs and formats
+        run: |
+          scripts/check-inventory-surfaces.sh
+          scripts/check-inventory-surfaces.sh --selftest
+
+      - name: Check the generated command reference
+        run: |
+          scripts/check-command-reference.sh
+          scripts/check-command-reference.sh --selftest
+
       - name: Check public Go API snapshot
         run: scripts/check-public-api-snapshot.sh
 

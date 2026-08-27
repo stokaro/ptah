@@ -214,6 +214,8 @@ list in the same PR.
 
 | File (words) | Audience | Purpose | Site counterpart | Disposition |
 | --- | --- | --- | --- | --- |
+| `feature-inventory.md` (new) | contributor | The register of every public surface, the page that owns it, and the evidence behind each claim; read by the feature-coverage CI checks | none (this is the map, not a page) | keep (script-coupled; update in the same PR as any public-surface change) |
+| `command-reference.md` (new, generated) | contributor | Every command path of both shipped trees, rendered from the trees themselves, with a strict-mode column | `docs/agent-surface.md` (the same verbs classified by database effect, a different axis) | created; keep (contributor surface, out of reader navigation) |
 | `README.md` (45) | contributor | Docs directory entry point | `index.mdx` | keep + rewrite: update links; hosts the documentation-layers and maintenance-rule text retired from `documentation-map` |
 | `exit_codes.md` (1,557) | contributor/CI | Source of truth for `check-exit-codes.mjs` | `reference/exit-codes` | keep (script-coupled) |
 | `yaml_schema.md` (1,348) | contributor | YAML format engineering depth | `reference/yaml-schema` | keep (protected) |
@@ -255,6 +257,7 @@ list in the same PR.
 | `migration/generator/README.md` (1,222) | contributor/embedder | Generator package detail | `extend/components` | keep; canonical for package-level API detail |
 | `migration/migrator/README.md` (2,887) | contributor/embedder | Migrator package detail | `workflows/migrations`, `extend/components` | keep; canonical for package-level API detail |
 | `cmd/lint/testdata/sarif/README.md` (46) | contributor | Test-fixture note | none | keep (not reader-facing documentation) |
+| `DRY_RUN.md` (1,097) | nobody reachable | Dry-run behavior of `write-db`, `drop-schema` and `drop-all`, plus an "Inventario Application Commands" section | the 19 site pages that document `--dry-run`, above all `direct/apply` and `versioned/apply` | done: retired — present since the initial commit, linked from nothing, and describing three commands `ptah` has never had (each answers `error: unknown command` at exit 2) alongside a second product's verbs. `scripts/check-doc-command-references.sh` is what found it |
 
 ## 4. Examples (`examples/**`)
 

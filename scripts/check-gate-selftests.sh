@@ -236,6 +236,37 @@ run_case check-public-api-docs-sync.sh \
 	"a package the site table lists deleted from the ledger" \
 	"perl -0pi -e 's/^- \`go\.5x5\.cz\/ptah\/migration\/seeder\`\n//m' docs/public_api.md"
 
+# The five feature-coverage gates (stokaro/ptah#804). Each mutation breaks the
+# rule its own gate states, in the tree rather than in a fixture the gate ships
+# with, so what is measured here is the gate reading the repository.
+run_case check-inventory-commands.sh \
+	"an inventory row deleted for a command the tree still registers" \
+	"perl -0pi -e 's/^\\| cli-db-read \\|[^\\n]*\\n//m' docs/feature-inventory.md"
+
+run_case check-inventory-commands.sh \
+	"an inventory row naming a command no tree has" \
+	'perl -0pi -e "s/(cli-db-read [|] .)ptah db read/\\${1}ptah db reed/" docs/feature-inventory.md'
+
+run_case check-doc-command-references.sh \
+	"a fenced block invoking a command the tree answers with unknown command" \
+	"printf '\\n\\x60\\x60\\x60bash\\nptah compare --db-url postgres://localhost/db\\n\\x60\\x60\\x60\\n' >>README.md"
+
+run_case check-doc-flag-references.sh \
+	"a documented invocation carrying a flag its command does not register" \
+	"perl -0pi -e 's/ptah schema render --root-dir /ptah schema render --root-dirs /' docs/site/src/content/docs/schema/go-annotations.md"
+
+run_case check-inventory-surfaces.sh \
+	"a package the public-API ledger lists with no inventory row" \
+	"perl -0pi -e 's/^\\| gopkg-dbschema \\|[^\\n]*\\n//m' docs/feature-inventory.md"
+
+run_case check-inventory-surfaces.sh \
+	"an export format the code accepts with no inventory row" \
+	'perl -0pi -e "s|.format:export-to/protobuf., ||" docs/feature-inventory.md'
+
+run_case check-command-reference.sh \
+	"a row deleted from the generated command reference" \
+	'perl -0pi -e "s/^[|] .ptah inference plan. [|][^\\n]*\\n//m" docs/command-reference.md'
+
 run_case check-renovate-regex.sh \
 	"a backreference put back into a custom-manager pattern" \
 	"perl -0pi -e 's/\\[a-z\\]\\[\\\\\\\\w\\.\\/-\\]\\*:/\\\\\\\\k<depName>:/' renovate.json"

@@ -48,3 +48,11 @@ generated SQL shape, public API, or Atlas parity claim changes.
   journeys, target navigation, and the inventory maintenance rule. Update it
   in the same PR whenever a reader-facing page is added, moved, merged, split,
   or retired.
+- [Feature inventory](feature-inventory.md) — every public surface, the page
+  that owns its explanation, and the evidence each claim rests on. Update it in
+  the same PR whenever a command, flag value set, `PTAH_*` variable, format,
+  dialect, public package, artifact type, or released channel changes.
+- [Command reference](command-reference.md) — every command path of both
+  shipped command trees, and what `PTAH_ATLAS_STRICT_COMPAT=1` does to each.
+  Generated: run `scripts/check-command-reference.sh --write` rather than
+  editing it by hand.
