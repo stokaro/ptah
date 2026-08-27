@@ -2,6 +2,7 @@ package project_test
 
 import (
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 
@@ -152,25 +153,30 @@ env "local" {
 	}
 }
 
-// TestProjectAdopt_RefusesWithoutCheck keeps a conversion nobody wrote from
-// looking like one that ran.
+// TestProjectAdopt_WithoutCheckOnANativeProjectWritesNothing pins the bare
+// verb's answer for a project that needs no conversion.
 //
-// `adopt` will one day rewrite the project file. Defaulting the bare verb to
-// the read-only analysis would teach a reader that it is safe, and that reader
-// would be wrong the day it is not.
-func TestProjectAdopt_RefusesWithoutCheck(t *testing.T) {
+// The two forms differ in what they DO, not in what they report: --check is the
+// analysis, and the bare verb rewrites. A project with nothing compat-only has
+// nothing to rewrite, so the bare verb succeeds and leaves the file alone --
+// which is what makes it safe to run in a pipeline that does not know whether
+// the project was adopted already.
+func TestProjectAdopt_WithoutCheckOnANativeProjectWritesNothing(t *testing.T) {
 	c := qt.New(t)
-	path := projectFile(c, `
+	document := `
 env "local" {
   url = "postgres://localhost:5432/app?sslmode=disable"
 }
-`)
+`
+	path := projectFile(c, document)
 
-	_, _, err := runInspect(c, "adopt", "--atlas-config", path, "--env", "local")
+	stdout, _, err := runInspect(c, "adopt", "--atlas-config", path, "--env", "local")
 
-	c.Assert(err, qt.IsNotNil)
-	c.Assert(err.Error(), qt.Contains, "not implemented")
-	c.Assert(err.Error(), qt.Contains, "--check")
+	c.Assert(err, qt.IsNil)
+	c.Assert(stdout, qt.Contains, "Nothing to rewrite")
+	untouched, readErr := os.ReadFile(path)
+	c.Assert(readErr, qt.IsNil)
+	c.Assert(string(untouched), qt.Equals, document)
 }
 
 // TestProjectAdopt_NotNativeReadyIsAFailingExit is what makes --check usable in
