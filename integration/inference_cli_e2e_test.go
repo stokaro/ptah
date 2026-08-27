@@ -124,6 +124,56 @@ func TestInferenceCLIRollbackE2E(t *testing.T) {
 	assertNoWindowIsAskedForMeansNoWindow(c, ctx, db, specPath, dbName)
 	assertADriftedGenerationIsNotAWayBack(c, ctx, db, specPath, dbName, generation)
 	assertASkipIsNotAGapAndAGapIsNotASkip(c, ctx, db, specPath, dbName, generation)
+	assertMaintainingAGenerationKeepsItAWayBack(c, ctx, db, specPath, dbName, generation)
+}
+
+// assertMaintainingAGenerationKeepsItAWayBack is what makes a stabilization
+// window true rather than promised.
+//
+// The window says a generation stays a way back for a period. Nothing makes
+// that so on its own: an old generation stops receiving changes the moment
+// queries stop reading it. Keeping it current means catching it up, and the
+// window has to move with the catch-up.
+//
+// The fixture is the failure and the repair in one run: the source moves, the
+// generation stops being a way back, and one catch-up with a window makes it one
+// again.
+func assertMaintainingAGenerationKeepsItAWayBack(
+	c *qt.C, ctx context.Context, db *sql.DB, specPath, dbURL, generation string,
+) {
+	c.Helper()
+	makeTheGenerationAWayBack(c, ctx, db, generation)
+	_, err := db.ExecContext(ctx,
+		`UPDATE articles SET body = 'moved again', updated_at = '40' WHERE id = 2`)
+	c.Assert(err, qt.IsNil)
+
+	drifted, err := runInferenceExpectingFailure(c, ctx, "rollback",
+		"--spec", specPath, "--db-url", dbURL, "--to", generation, "--window", "24h")
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(drifted, qt.Contains, "rows are stale and this policy allows 0")
+
+	// One catch-up, with the window moving alongside it.
+	output := runInference(c, ctx, "catchup",
+		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID,
+		"--batch-rows", "10", "--maintain-for", "1h")
+	c.Assert(output, qt.Contains, "stays a way back until ")
+
+	makeThePointerRecordItAsPrevious(c, ctx, db, generation)
+	c.Assert(runInference(c, ctx, "rollback",
+		"--spec", specPath, "--db-url", dbURL, "--to", generation, "--window", "24h"),
+		qt.Contains, "queries now read "+generation)
+}
+
+// makeThePointerRecordItAsPrevious puts the generation where a rollback would
+// return to it, leaving its maintenance window alone.
+func makeThePointerRecordItAsPrevious(
+	c *qt.C, ctx context.Context, db *sql.DB, generation string,
+) {
+	c.Helper()
+	_, err := db.ExecContext(ctx,
+		`UPDATE ptah_embedding_pointer SET active_generation = 'the-newest-one',
+			previous_generation = $1 WHERE target_table = 'articles'`, generation)
+	c.Assert(err, qt.IsNil)
 }
 
 // assertASkipIsNotAGapAndAGapIsNotASkip separates the two things a coverage
