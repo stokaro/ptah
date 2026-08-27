@@ -1,12 +1,12 @@
 package embedgen
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"sort"
 	"strconv"
 	"strings"
+
+	"go.5x5.cz/ptah/internal/embeddigest"
 )
 
 // Identity is the content address of a generation: the digest of every part of
@@ -43,10 +43,7 @@ const (
 // Short is the identity's leading twelve hex characters, for a name a person
 // reads and a column suffix a database accepts.
 func (i Identity) Short() string {
-	if len(i.Digest) < 12 {
-		return i.Digest
-	}
-	return i.Digest[:12]
+	return embeddigest.Short(i.Digest)
 }
 
 // Identity computes the generation identity for this specification.
@@ -62,14 +59,8 @@ func (i Identity) Short() string {
 // claimed `full` over a mutable alias would promise a rebuild it cannot deliver
 // (stokaro/ptah#2068).
 func (s Spec) Identity() Identity {
-	var b strings.Builder
-	for _, component := range s.identityComponents() {
-		writeComponent(&b, component)
-	}
-	sum := sha256.Sum256([]byte(b.String()))
-
 	identity := Identity{
-		Digest:          hex.EncodeToString(sum[:]),
+		Digest:          embeddigest.Of(s.identityComponents()...),
 		Reproducibility: ReproducibilityFull,
 	}
 	if strings.TrimSpace(s.Model.Revision) == "" {
@@ -151,13 +142,6 @@ var excludedFromIdentity = map[string]string{
 	"Target.IndexOptions": "recall tuning trades build cost against recall over the SAME vectors, and ADR 0010 " +
 		"measured a 26.5%-100% recall span on one unchanged index from a session setting alone, which makes it a " +
 		"property of the query rather than of the generation",
-}
-
-// writeComponent appends one length-prefixed component.
-func writeComponent(b *strings.Builder, value string) {
-	b.WriteString(strconv.Itoa(len(value)))
-	b.WriteByte(':')
-	b.WriteString(value)
 }
 
 // SameGeneration reports whether two specifications describe one generation.

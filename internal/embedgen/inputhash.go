@@ -1,9 +1,7 @@
 package embedgen
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"strings"
+	"go.5x5.cz/ptah/internal/embeddigest"
 )
 
 // SourceInputHash is the digest of the exact canonical text a provider was
@@ -22,10 +20,6 @@ import (
 // It is not a secrecy mechanism and must not be presented as one: it digests
 // text an attacker with the source can reproduce.
 func (s Spec) SourceInputHash(input CanonicalInput) string {
-	var b strings.Builder
-	writeComponent(&b, "source-input-hash")
-	writeComponent(&b, s.Identity().Digest)
-	writeComponent(&b, input.Text)
 	// Truncation is part of the hash because a truncated input and the whole
 	// one are different text with the same prefix, and a target row carrying
 	// one must not read as fresh against the other.
@@ -33,9 +27,7 @@ func (s Spec) SourceInputHash(input CanonicalInput) string {
 	if input.Truncated {
 		mark = "truncated"
 	}
-	writeComponent(&b, mark)
-	sum := sha256.Sum256([]byte(b.String()))
-	return hex.EncodeToString(sum[:])
+	return embeddigest.Of("source-input-hash", s.Identity().Digest, input.Text, mark)
 }
 
 // TargetRow is what a generation records beside each vector.
