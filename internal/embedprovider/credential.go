@@ -97,21 +97,19 @@ func (r CredentialRef) Resolve() (string, error) {
 }
 
 // resolveFile reads a credential file, refusing one the filesystem lets others
-// read.
+// read where the filesystem can be asked.
 //
 // A token in a world-readable file is a token every process on the host has,
-// and reading it anyway would make Ptah the reason it leaked. The check is on
-// the permission bits rather than on ownership because those are what a reader
-// can act on: `chmod 600` is the fix the error names.
+// and reading it anyway would make Ptah the reason it leaked. Whether that can
+// be established at all is a property of the platform, which is why the refusal
+// lives behind FilePermissionsEnforced rather than in this function.
 func (r CredentialRef) resolveFile() (string, error) {
 	info, err := os.Stat(r.Locator)
 	if err != nil {
 		return "", fmt.Errorf("read credential file %s: %w", r.Locator, err)
 	}
-	if mode := info.Mode().Perm(); mode&0o077 != 0 {
-		return "", fmt.Errorf(
-			"credential file %s is mode %04o and readable beyond its owner; chmod 600 it",
-			r.Locator, mode)
+	if err := refuseReadableBeyondOwner(r.Locator, info); err != nil {
+		return "", err
 	}
 	body, err := os.ReadFile(r.Locator) //gosec:disable G304 -- the operator named this file as the credential source
 	if err != nil {
