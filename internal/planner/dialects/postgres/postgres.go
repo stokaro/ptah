@@ -497,7 +497,7 @@ func (p *Planner) addSchemaPreconditions(
 	names = append(names, diff.TablesAdded...)
 	names = append(names, diff.EnumsAdded...)
 	names = append(names, diff.DomainsAdded...)
-	names = append(names, diff.CompositeTypesAdded...)
+	names = append(names, diff.CompositeTypesAdded.Names()...)
 	names = append(names, diff.RangesAdded.Names()...)
 	names = append(names, diff.SequencesAdded...)
 	names = append(names, diff.FunctionsAdded...)
@@ -1353,13 +1353,13 @@ func (p *Planner) plannedUserTypes(
 			node: fromschema.FromRange(rangeType),
 		})
 	}
-	for _, name := range diff.CompositeTypesAdded {
-		if composite := findCompositeType(desired.CompositeTypes, name, semantics); composite != nil {
-			planned = append(planned, plannedUserType{
-				dep:  deporder.UserType{Name: name, References: compositeFieldTypes(*composite)},
-				node: fromschema.FromCompositeType(*composite),
-			})
-		}
+	// No lookup: the change carries the composite type, so a name the desired
+	// schema could not resolve no longer plans nothing (stokaro/ptah#2315).
+	for _, composite := range diff.CompositeTypesAdded {
+		planned = append(planned, plannedUserType{
+			dep:  deporder.UserType{Name: composite.QualifiedName(), References: compositeFieldTypes(composite)},
+			node: fromschema.FromCompositeType(composite),
+		})
 	}
 	// A modification with no in-place ALTER is handled as drop + recreate. The
 	// recreations join the same ordering: a new domain over a recreated
@@ -1421,8 +1421,8 @@ func (p *Planner) removeUserTypes(result []ast.Node, diff *difftypes.SchemaDiff)
 		result = append(result, ast.NewDropType(name).SetDomain().SetIfExists().SetCascade().
 			SetComment("WARNING: Make sure no columns use this domain!"))
 	}
-	for _, name := range diff.CompositeTypesRemoved {
-		result = append(result, ast.NewDropType(name).SetIfExists().SetCascade().
+	for _, composite := range diff.CompositeTypesRemoved {
+		result = append(result, ast.NewDropType(composite.QualifiedName()).SetIfExists().SetCascade().
 			SetComment("WARNING: Make sure no columns use this composite type!"))
 	}
 	for _, rangeType := range diff.RangesRemoved {

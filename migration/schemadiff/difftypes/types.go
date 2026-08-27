@@ -22,6 +22,34 @@ import (
 	"go.5x5.cz/ptah/core/schemamodel"
 )
 
+// CompositeTypeChanges is a set of composite types one change applies to,
+// carrying each one's fields and not only its name.
+//
+// The second family off `[]string` under stokaro/ptah#2315. See [RangeChanges]
+// for why both sides carry the operand and why the wire shape does not change.
+type CompositeTypeChanges []schemamodel.CompositeType
+
+// MarshalJSON writes the names alone, the shape `composite_types_added` and
+// `composite_types_removed` have always had.
+func (c CompositeTypeChanges) MarshalJSON() ([]byte, error) {
+	if c == nil {
+		return []byte("null"), nil
+	}
+	return json.Marshal(c.Names())
+}
+
+// Names is the composite-type names this change applies to.
+func (c CompositeTypeChanges) Names() []string {
+	if c == nil {
+		return nil
+	}
+	names := make([]string, 0, len(c))
+	for _, composite := range c {
+		names = append(names, composite.QualifiedName())
+	}
+	return names
+}
+
 // RangeChanges is a set of range types one change applies to, carrying each
 // one's definition and not only its name.
 //
@@ -394,9 +422,12 @@ type SchemaDiff struct {
 	DomainsModified []DomainDiff `json:"domains_modified"`
 
 	// CompositeTypesAdded/Removed/Modified track PostgreSQL composite types.
-	CompositeTypesAdded    []string            `json:"composite_types_added"`
-	CompositeTypesRemoved  []string            `json:"composite_types_removed"`
-	CompositeTypesModified []CompositeTypeDiff `json:"composite_types_modified"`
+	//
+	// Both lists carry the composite type itself, the second family to do so
+	// under stokaro/ptah#2315, for the reason [RangeChanges] gives.
+	CompositeTypesAdded    CompositeTypeChanges `json:"composite_types_added"`
+	CompositeTypesRemoved  CompositeTypeChanges `json:"composite_types_removed"`
+	CompositeTypesModified []CompositeTypeDiff  `json:"composite_types_modified"`
 
 	// RangesAdded/Removed/Modified track PostgreSQL range types. PostgreSQL has
 	// no ALTER TYPE ... AS RANGE, so a modification is planned as a non-CASCADE

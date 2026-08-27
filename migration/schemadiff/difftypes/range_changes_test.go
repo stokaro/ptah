@@ -87,3 +87,75 @@ func TestRangeChanges_TheDefinitionSurvivesInMemory(t *testing.T) {
 	c.Assert(changes.Names(), qt.DeepEquals, []string{"app.r"})
 	c.Assert(schemamodel.Range(changes[0]).QualifiedName(), qt.Equals, "app.r")
 }
+
+// TestCompositeTypeChanges_TheWireShapeIsUnchanged is the same promise for the
+// second family off `[]string`.
+//
+// One test per family rather than one shared table: the promise is per FIELD,
+// and a table that iterated over an interface would pass for a family whose
+// marshaller had never been written.
+func TestCompositeTypeChanges_TheWireShapeIsUnchanged(t *testing.T) {
+	tests := []struct {
+		name    string
+		changes difftypes.CompositeTypeChanges
+		want    string
+		why     string
+	}{
+		{
+			name:    "nil is null",
+			changes: nil,
+			want:    "null",
+			why:     "null is a comparison that did not run",
+		},
+		{
+			name:    "empty is an empty array",
+			changes: difftypes.CompositeTypeChanges{},
+			want:    "[]",
+			why:     "[] is a comparison that ran and found nothing",
+		},
+		{
+			name: "the fields do not reach the wire",
+			changes: difftypes.CompositeTypeChanges{
+				{Name: "addr", Fields: []schemamodel.CompositeField{{Name: "street", Type: "text"}}},
+			},
+			want: `["addr"]`,
+			why:  "a name list is what format_version 1 has always carried here",
+		},
+		{
+			name: "a schema-qualified composite keeps its qualified spelling",
+			changes: difftypes.CompositeTypeChanges{
+				{Name: "addr", Schema: "app"},
+			},
+			want: `["app.addr"]`,
+			why:  "the identity a consumer keys on is unchanged",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			encoded, err := json.Marshal(test.changes)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(string(encoded), qt.Equals, test.want, qt.Commentf("%s", test.why))
+		})
+	}
+}
+
+// TestCompositeTypeChanges_TheFieldsSurviveInMemory is the other half: a flat
+// wire must not mean the operands were dropped on the way in.
+func TestCompositeTypeChanges_TheFieldsSurviveInMemory(t *testing.T) {
+	c := qt.New(t)
+
+	changes := difftypes.CompositeTypeChanges{
+		{Name: "addr", Schema: "app", Fields: []schemamodel.CompositeField{
+			{Name: "street", Type: "text"},
+			{Name: "city", Type: "text"},
+		}},
+	}
+
+	c.Assert(changes[0].Fields, qt.HasLen, 2)
+	c.Assert(changes[0].Fields[1].Type, qt.Equals, "text")
+	c.Assert(changes.Names(), qt.DeepEquals, []string{"app.addr"})
+}

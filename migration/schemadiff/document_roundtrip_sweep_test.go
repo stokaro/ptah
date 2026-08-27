@@ -217,7 +217,7 @@ func TestHCLDocument_StillRemovesWhatItCouldHaveNamed(t *testing.T) {
 
 	c.Assert(diff.SequencesRemoved, qt.HasLen, 1)
 	c.Assert(diff.DomainsRemoved, qt.HasLen, 1)
-	c.Assert(diff.CompositeTypesRemoved, qt.HasLen, 1)
+	c.Assert(diff.CompositeTypesRemoved.Names(), qt.HasLen, 1)
 	c.Assert(diff.RangesRemoved, qt.HasLen, 1)
 }
 

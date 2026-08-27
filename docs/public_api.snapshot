@@ -12467,6 +12467,7 @@ func CompareWithOptions(desired *schemamodel.Database, current *catalog.Database
 type ColumnDiff struct{ ... }
 type CommentChange struct{ ... }
 type CompositeAttribute struct{ ... }
+type CompositeTypeChanges []schemamodel.CompositeType
 type CompositeTypeDiff struct{ ... }
 type ConstraintAdditionInfo struct{ ... }
 type ConstraintIdentity struct{ ... }
@@ -12590,6 +12591,20 @@ type CompositeAttribute struct {
     CompositeAttribute is one field of a composite type, as a declaration spells
     it.
 
+
+### go.5x5.cz/ptah/migration/schemadiff/difftypes.CompositeTypeChanges
+
+package difftypes // import "go.5x5.cz/ptah/migration/schemadiff/difftypes"
+
+type CompositeTypeChanges []schemamodel.CompositeType
+    CompositeTypeChanges is a set of composite types one change applies to,
+    carrying each one's fields and not only its name.
+
+    The second family off `[]string` under stokaro/ptah#2315. See RangeChanges
+    for why both sides carry the operand and why the wire shape does not change.
+
+func (c CompositeTypeChanges) MarshalJSON() ([]byte, error)
+func (c CompositeTypeChanges) Names() []string
 
 ### go.5x5.cz/ptah/migration/schemadiff/difftypes.CompositeTypeDiff
 
@@ -13467,9 +13482,12 @@ type SchemaDiff struct {
     DomainsModified []DomainDiff `json:"domains_modified"`
 
     // CompositeTypesAdded/Removed/Modified track PostgreSQL composite types.
-    CompositeTypesAdded    []string            `json:"composite_types_added"`
-    CompositeTypesRemoved  []string            `json:"composite_types_removed"`
-    CompositeTypesModified []CompositeTypeDiff `json:"composite_types_modified"`
+    //
+    // Both lists carry the composite type itself, the second family to do so
+    // under stokaro/ptah#2315, for the reason [RangeChanges] gives.
+    CompositeTypesAdded    CompositeTypeChanges `json:"composite_types_added"`
+    CompositeTypesRemoved  CompositeTypeChanges `json:"composite_types_removed"`
+    CompositeTypesModified []CompositeTypeDiff  `json:"composite_types_modified"`
 
     // RangesAdded/Removed/Modified track PostgreSQL range types. PostgreSQL has
     // no ALTER TYPE ... AS RANGE, so a modification is planned as a non-CASCADE

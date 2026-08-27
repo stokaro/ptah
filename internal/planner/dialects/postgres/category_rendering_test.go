@@ -187,12 +187,12 @@ func diffCategoryFixtures() []categoryFixture {
 		},
 		{
 			"CompositeTypesAdded",
-			&difftypes.SchemaDiff{CompositeTypesAdded: []string{"ct"}},
+			&difftypes.SchemaDiff{CompositeTypesAdded: difftypes.CompositeTypeChanges{{Name: "ct"}}},
 			&schemamodel.Database{CompositeTypes: []schemamodel.CompositeType{
 				{Name: "ct", Fields: []schemamodel.CompositeField{{Name: "a", Type: "TEXT"}}},
 			}},
 		},
-		{"CompositeTypesRemoved", &difftypes.SchemaDiff{CompositeTypesRemoved: []string{"ct"}}, &schemamodel.Database{}},
+		{"CompositeTypesRemoved", &difftypes.SchemaDiff{CompositeTypesRemoved: difftypes.CompositeTypeChanges{{Name: "ct"}}}, &schemamodel.Database{}},
 		{
 			"CompositeTypesModified",
 			&difftypes.SchemaDiff{CompositeTypesModified: []difftypes.CompositeTypeDiff{{TypeName: "ct", Changes: map[string]string{"fields": "a -> b"}}}},
