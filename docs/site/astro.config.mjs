@@ -149,6 +149,7 @@ export default defineConfig({
           label: 'Atlas compatibility',
           items: [
             { slug: 'atlas/overview' },
+            { slug: 'atlas/adoption' },
             { slug: 'atlas/feature-matrix' },
             { slug: 'atlas/migrate-commands' },
             { slug: 'atlas/schema-commands' },
