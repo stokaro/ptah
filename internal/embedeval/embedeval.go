@@ -53,8 +53,31 @@ type Result struct {
 	Err string
 }
 
+// Subject is what is being evaluated, and under what.
+//
+// The query parameters are here rather than in the policy because they are a
+// condition of the measurement, not a rule about it. ADR 0010 measured a
+// 26.5%-100% recall span on one unchanged index from `ivfflat.probes` alone, so
+// two numbers taken under different settings are not two numbers about the same
+// thing -- and a regression tolerance applied across them compares a session
+// setting to a model.
+type Subject struct {
+	// Generation is what was measured.
+	Generation string
+	// QueryParameters are the query-time settings the results were produced
+	// under, rendered so that two equal strings mean two equal settings.
+	//
+	// Empty means nobody recorded them, which is reported rather than treated
+	// as "the defaults".
+	QueryParameters string
+}
+
 // Scores are one generation's measured retrieval quality.
 type Scores struct {
+	// QueryParameters are the settings these numbers were taken under. They
+	// travel with the numbers because a number without them cannot be compared
+	// to another one.
+	QueryParameters string
 	// RecallAtK is the share of relevant keys the search found, averaged over
 	// the cases that had any.
 	RecallAtK float64
@@ -123,8 +146,8 @@ func (r Report) Passed() bool {
 // It never invents a number it could not measure. A case that errored is not
 // scored as zero -- a zero is a measurement saying the generation found
 // nothing, and "we could not ask" is a different fact with a different fix.
-func Evaluate(generation string, policy Policy, cases []Case, results []Result, baseline Scores) Report {
-	report := Report{Generation: generation, Baseline: baseline}
+func Evaluate(subject Subject, policy Policy, cases []Case, results []Result, baseline Scores) Report {
+	report := Report{Generation: subject.Generation, Baseline: baseline}
 	byCase := make(map[string]Result, len(results))
 	for _, result := range results {
 		byCase[result.CaseID] = result
@@ -156,12 +179,13 @@ func Evaluate(generation string, policy Policy, cases []Case, results []Result, 
 	}
 
 	report.Scores = Scores{
-		RecallAtK:      mean(recalls),
-		MRR:            mean(reciprocals),
-		NDCG:           mean(gains),
-		ExactAgreement: mean(agreements),
-		Cases:          len(cases) - len(report.Incomplete),
-		ExactCases:     len(agreements),
+		QueryParameters: subject.QueryParameters,
+		RecallAtK:       mean(recalls),
+		MRR:             mean(reciprocals),
+		NDCG:            mean(gains),
+		ExactAgreement:  mean(agreements),
+		Cases:           len(cases) - len(report.Incomplete),
+		ExactCases:      len(agreements),
 	}
 	judge(&report, policy, missingRequired)
 	sort.Strings(report.Blockers)
@@ -296,6 +320,23 @@ func judgeRegression(report *Report, policy Policy) {
 		report.Unmeasured = append(report.Unmeasured,
 			"retrieval quality was not compared against the generation being replaced, because no "+
 				"baseline was measured for it")
+		return
+	}
+	if report.Scores.QueryParameters == "" || report.Baseline.QueryParameters == "" {
+		report.Unmeasured = append(report.Unmeasured,
+			"retrieval quality was not compared against the generation being replaced, because the "+
+				"query parameters behind one of the two measurements were not recorded")
+		return
+	}
+	if report.Scores.QueryParameters != report.Baseline.QueryParameters {
+		// ADR 0010's measurement: one unchanged index spans 26.5% to 100%
+		// recall as `ivfflat.probes` alone moves. A tolerance applied across
+		// that difference reports the session setting as a regression in the
+		// model.
+		report.Unmeasured = append(report.Unmeasured, fmt.Sprintf(
+			"retrieval quality was not compared against the generation being replaced, because it "+
+				"was measured under %s and this one under %s",
+			report.Baseline.QueryParameters, report.Scores.QueryParameters))
 		return
 	}
 	if drop := report.Baseline.MRR - report.Scores.MRR; drop > policy.MaxMRRRegression {

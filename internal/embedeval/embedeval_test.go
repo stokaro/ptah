@@ -44,6 +44,12 @@ func perfect() []embedeval.Result {
 	}
 }
 
+// subject is the generation under evaluation and the settings its results were
+// produced under.
+func subject() embedeval.Subject {
+	return embedeval.Subject{Generation: "gen-new", QueryParameters: "hnsw.ef_search=40"}
+}
+
 // strict is a policy that asks for everything.
 func strict() embedeval.Policy {
 	return embedeval.Policy{
@@ -61,7 +67,7 @@ func strict() embedeval.Policy {
 func TestEvaluate_APerfectGenerationPasses(t *testing.T) {
 	c := qt.New(t)
 
-	report := embedeval.Evaluate("gen-new", strict(), corpus(), perfect(), embedeval.Scores{})
+	report := embedeval.Evaluate(subject(), strict(), corpus(), perfect(), embedeval.Scores{})
 
 	c.Assert(report.Blockers, qt.HasLen, 0, qt.Commentf("%v", report.Blockers))
 	c.Assert(report.Passed(), qt.IsTrue)
@@ -83,7 +89,7 @@ func TestEvaluate_ARequiredDocumentMissingFromTopKBlocks(t *testing.T) {
 	results := perfect()
 	results[0].Keys = []string{"doc-plans", "doc-other", "doc-more"}
 
-	report := embedeval.Evaluate("gen-new", strict(), corpus(), results, embedeval.Scores{})
+	report := embedeval.Evaluate(subject(), strict(), corpus(), results, embedeval.Scores{})
 
 	c.Assert(report.Passed(), qt.IsFalse)
 	c.Assert(report.Blockers, qt.Contains, "pricing did not return doc-price")
@@ -98,7 +104,7 @@ func TestEvaluate_KBoundsWhatCounts(t *testing.T) {
 	results := perfect()
 	results[0].Keys = []string{"a", "b", "c", "doc-price"}
 
-	report := embedeval.Evaluate("gen-new", strict(), corpus(), results, embedeval.Scores{})
+	report := embedeval.Evaluate(subject(), strict(), corpus(), results, embedeval.Scores{})
 
 	c.Assert(report.Passed(), qt.IsFalse)
 	c.Assert(report.Blockers, qt.Contains, "pricing did not return doc-price")
@@ -114,7 +120,7 @@ func TestEvaluate_ACasesOwnKBeatsTheDefault(t *testing.T) {
 	results := perfect()
 	results[0].Keys = []string{"a", "b", "c", "doc-price"}
 
-	report := embedeval.Evaluate("gen-new", strict(), cases, results, embedeval.Scores{})
+	report := embedeval.Evaluate(subject(), strict(), cases, results, embedeval.Scores{})
 
 	c.Assert(report.Blockers, qt.Not(qt.Contains), "pricing did not return doc-price")
 }
@@ -127,7 +133,7 @@ func TestEvaluate_RecallBelowPolicyBlocks(t *testing.T) {
 	results := perfect()
 	results[0].Keys = []string{"doc-price", "a", "b"}
 
-	report := embedeval.Evaluate("gen-new", strict(), cases, results, embedeval.Scores{})
+	report := embedeval.Evaluate(subject(), strict(), cases, results, embedeval.Scores{})
 
 	c.Assert(report.Passed(), qt.IsFalse)
 	c.Assert(report.Blockers, qt.Contains, "recall is 0.750 and this policy requires 0.900")
@@ -148,13 +154,13 @@ func TestEvaluate_RegressionAgainstTheGenerationBeingReplacedBlocks(t *testing.T
 		{
 			name:     "MRR",
 			policy:   func(p *embedeval.Policy) { p.MaxMRRRegression = 0.05 },
-			baseline: embedeval.Scores{Cases: 2, MRR: 1.0, NDCG: 0.5},
+			baseline: embedeval.Scores{Cases: 2, MRR: 1.0, NDCG: 0.5, QueryParameters: "hnsw.ef_search=40"},
 			want:     "MRR fell by 0.250 (1.000 to 0.750) and this policy allows 0.050",
 		},
 		{
 			name:     "NDCG",
 			policy:   func(p *embedeval.Policy) { p.MaxNDCGRegression = 0.05 },
-			baseline: embedeval.Scores{Cases: 2, MRR: 0.5, NDCG: 1.0},
+			baseline: embedeval.Scores{Cases: 2, MRR: 0.5, NDCG: 1.0, QueryParameters: "hnsw.ef_search=40"},
 			want:     "NDCG fell by 0.170 (1.000 to 0.830) and this policy allows 0.050",
 		},
 	}
@@ -169,7 +175,7 @@ func TestEvaluate_RegressionAgainstTheGenerationBeingReplacedBlocks(t *testing.T
 			cases := corpus()
 			cases[0].Required = nil
 
-			report := embedeval.Evaluate("gen-new", policy, cases, results, test.baseline)
+			report := embedeval.Evaluate(subject(), policy, cases, results, test.baseline)
 
 			c.Assert(report.Passed(), qt.IsFalse)
 			c.Assert(report.Blockers, qt.Contains, test.want)
@@ -188,7 +194,7 @@ func TestEvaluate_AFirstEvaluationHasNothingToRegressFrom(t *testing.T) {
 	policy.MaxMRRRegression = 0
 	policy.MaxNDCGRegression = 0
 
-	report := embedeval.Evaluate("gen-new", policy, corpus(), perfect(), embedeval.Scores{})
+	report := embedeval.Evaluate(subject(), policy, corpus(), perfect(), embedeval.Scores{})
 
 	c.Assert(report.Passed(), qt.IsTrue, qt.Commentf("%v", report.Blockers))
 }
@@ -208,7 +214,7 @@ func TestEvaluate_AnApproximateIndexDivergingFromExactSearchBlocks(t *testing.T)
 	results := perfect()
 	results[0].Keys = []string{"x", "y", "z"}
 
-	report := embedeval.Evaluate("gen-new", policy, cases, results, embedeval.Scores{})
+	report := embedeval.Evaluate(subject(), policy, cases, results, embedeval.Scores{})
 
 	c.Assert(report.Passed(), qt.IsFalse)
 	c.Assert(report.Blockers, qt.Contains,
@@ -229,7 +235,7 @@ func TestEvaluate_NoExactSearchIsNotPerfectAgreement(t *testing.T) {
 	results[1].ExactRun = false
 	results[1].ExactKeys = nil
 
-	report := embedeval.Evaluate("gen-new", strict(), corpus(), results, embedeval.Scores{})
+	report := embedeval.Evaluate(subject(), strict(), corpus(), results, embedeval.Scores{})
 
 	c.Assert(report.Scores.ExactCases, qt.Equals, 0)
 	c.Assert(report.Scores.ExactAgreement, qt.Equals, 0.0)
@@ -265,7 +271,7 @@ func TestEvaluate_AnIncompleteEvaluationBlocks(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			report := embedeval.Evaluate("gen-new", strict(), corpus(), test.results, embedeval.Scores{})
+			report := embedeval.Evaluate(subject(), strict(), corpus(), test.results, embedeval.Scores{})
 
 			c.Assert(report.Passed(), qt.IsFalse)
 			c.Assert(report.Blockers, qt.Contains, test.want)
@@ -286,7 +292,7 @@ func TestEvaluate_AFailedCaseIsNotScoredAsZero(t *testing.T) {
 	policy.RequireEveryCase = false
 	results := append(perfect()[:1], embedeval.Result{CaseID: "support", Err: "timed out"})
 
-	report := embedeval.Evaluate("gen-new", policy, corpus(), results, embedeval.Scores{})
+	report := embedeval.Evaluate(subject(), policy, corpus(), results, embedeval.Scores{})
 
 	c.Assert(report.Scores.MRR, qt.Equals, 1.0)
 	c.Assert(report.Scores.Cases, qt.Equals, 1)
@@ -308,7 +314,7 @@ func TestEvaluate_ACaseWithNoRelevanceExpectationsScoresNothing(t *testing.T) {
 	results[0].Keys = []string{"doc-plans", "doc-other", "doc-more"}
 	results[0].ExactKeys = results[0].Keys
 
-	report := embedeval.Evaluate("gen-new", strict(), cases, results, embedeval.Scores{})
+	report := embedeval.Evaluate(subject(), strict(), cases, results, embedeval.Scores{})
 
 	c.Assert(report.Scores.RecallAtK, qt.Equals, 0.75)
 	c.Assert(report.Scores.Cases, qt.Equals, 3)
@@ -330,8 +336,8 @@ func TestEvaluate_RankingIsMeasuredAndNotJustMembership(t *testing.T) {
 	worse := perfect()
 	worse[0].Keys = []string{"doc-other", "doc-price", "doc-plans"}
 
-	first := embedeval.Evaluate("gen-new", policy, cases, best, embedeval.Scores{})
-	second := embedeval.Evaluate("gen-new", policy, cases, worse, embedeval.Scores{})
+	first := embedeval.Evaluate(subject(), policy, cases, best, embedeval.Scores{})
+	second := embedeval.Evaluate(subject(), policy, cases, worse, embedeval.Scores{})
 
 	c.Assert(first.Scores.RecallAtK, qt.Equals, second.Scores.RecallAtK)
 	c.Assert(second.Scores.NDCG < first.Scores.NDCG, qt.IsTrue)
@@ -356,7 +362,7 @@ func TestEvaluate_AnExactSearchThatFoundNothingStillRan(t *testing.T) {
 	results[0].ExactRun = true
 	results[0].ExactKeys = nil
 
-	report := embedeval.Evaluate("gen-new", policy, cases, results, embedeval.Scores{})
+	report := embedeval.Evaluate(subject(), policy, cases, results, embedeval.Scores{})
 
 	c.Assert(report.Scores.ExactCases, qt.Equals, 2)
 	c.Assert(report.Scores.ExactAgreement, qt.Equals, 0.5)
@@ -380,7 +386,7 @@ func TestEvaluate_AgreementIsMeasuredAgainstWhatExactSearchFound(t *testing.T) {
 	results[0].ExactKeys = []string{"doc-price"}
 	results[1].ExactKeys = []string{"doc-support"}
 
-	report := embedeval.Evaluate("gen-new", policy, cases, results, embedeval.Scores{})
+	report := embedeval.Evaluate(subject(), policy, cases, results, embedeval.Scores{})
 
 	c.Assert(report.Scores.ExactAgreement, qt.Equals, 1.0)
 	c.Assert(report.Passed(), qt.IsTrue, qt.Commentf("%v", report.Blockers))
@@ -405,7 +411,7 @@ func TestEvaluate_TheIdealRankingIsBoundedByK(t *testing.T) {
 		ExactKeys: []string{"a", "b", "c"}, ExactRun: true,
 	}}
 
-	report := embedeval.Evaluate("gen-new", policy, cases, results, embedeval.Scores{})
+	report := embedeval.Evaluate(subject(), policy, cases, results, embedeval.Scores{})
 
 	c.Assert(report.Scores.NDCG, qt.Equals, 1.0)
 	c.Assert(report.Scores.RecallAtK, qt.Equals, 0.6)
@@ -423,7 +429,7 @@ func TestEvaluate_WhatWasNotMeasuredIsSaid(t *testing.T) {
 	results[0].ExactRun = false
 	results[1].ExactRun = false
 
-	report := embedeval.Evaluate("gen-new", strict(), corpus(), results, embedeval.Scores{})
+	report := embedeval.Evaluate(subject(), strict(), corpus(), results, embedeval.Scores{})
 
 	c.Assert(report.Passed(), qt.IsTrue, qt.Commentf("%v", report.Blockers))
 	c.Assert(report.Unmeasured, qt.DeepEquals, []string{
@@ -439,8 +445,95 @@ func TestEvaluate_WhatWasNotMeasuredIsSaid(t *testing.T) {
 func TestEvaluate_AMeasuredComparisonIsNotReportedAsUnmeasured(t *testing.T) {
 	c := qt.New(t)
 
-	report := embedeval.Evaluate("gen-new", strict(), corpus(), perfect(),
-		embedeval.Scores{Cases: 2, MRR: 1, NDCG: 1})
+	report := embedeval.Evaluate(subject(), strict(), corpus(), perfect(),
+		embedeval.Scores{Cases: 2, MRR: 1, NDCG: 1, QueryParameters: "hnsw.ef_search=40"})
 
 	c.Assert(report.Unmeasured, qt.HasLen, 0)
+}
+
+// TestEvaluate_ScoresTakenUnderDifferentQueryParametersAreNotCompared is
+// ADR 0010's measurement turned into a refusal.
+//
+// One unchanged index spans 26.5% to 100% recall as `ivfflat.probes` alone
+// moves. A regression tolerance applied across that difference reports a
+// session setting as a regression in the model, and the operator's fix for it
+// is a rollback of the wrong thing.
+func TestEvaluate_ScoresTakenUnderDifferentQueryParametersAreNotCompared(t *testing.T) {
+	tests := []struct {
+		name     string
+		baseline string
+		current  string
+		want     string
+	}{
+		{
+			name: "different settings", baseline: "ivfflat.probes=1", current: "ivfflat.probes=100",
+			want: "retrieval quality was not compared against the generation being replaced, " +
+				"because it was measured under ivfflat.probes=1 and this one under ivfflat.probes=100",
+		},
+		{
+			name: "the baseline's were not recorded", baseline: "", current: "ivfflat.probes=100",
+			want: "retrieval quality was not compared against the generation being replaced, " +
+				"because the query parameters behind one of the two measurements were not recorded",
+		},
+		{
+			name: "this one's were not recorded", baseline: "ivfflat.probes=1", current: "",
+			want: "retrieval quality was not compared against the generation being replaced, " +
+				"because the query parameters behind one of the two measurements were not recorded",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			policy := strict()
+			policy.MinRecallAtK = 0
+			policy.MaxMRRRegression = 0
+			cases := corpus()
+			cases[0].Required = nil
+			results := perfect()
+			results[0].Keys = []string{"doc-other", "doc-price", "doc-plans"}
+
+			report := embedeval.Evaluate(
+				embedeval.Subject{Generation: "gen-new", QueryParameters: test.current},
+				policy, cases, results,
+				embedeval.Scores{Cases: 2, MRR: 1.0, NDCG: 1.0, QueryParameters: test.baseline})
+
+			c.Assert(report.Passed(), qt.IsTrue, qt.Commentf("%v", report.Blockers))
+			c.Assert(report.Unmeasured, qt.Contains, test.want)
+		})
+	}
+}
+
+// TestEvaluate_MatchingQueryParametersAreCompared is the control for the rows
+// above: the refusal is about the settings differing, not about them existing.
+func TestEvaluate_MatchingQueryParametersAreCompared(t *testing.T) {
+	c := qt.New(t)
+	policy := strict()
+	policy.MinRecallAtK = 0
+	policy.MaxMRRRegression = 0
+	cases := corpus()
+	cases[0].Required = nil
+	results := perfect()
+	results[0].Keys = []string{"doc-other", "doc-price", "doc-plans"}
+
+	report := embedeval.Evaluate(
+		embedeval.Subject{Generation: "gen-new", QueryParameters: "ivfflat.probes=10"},
+		policy, cases, results,
+		embedeval.Scores{Cases: 2, MRR: 1.0, NDCG: 1.0, QueryParameters: "ivfflat.probes=10"})
+
+	c.Assert(report.Passed(), qt.IsFalse)
+	c.Assert(report.Blockers, qt.Contains,
+		"MRR fell by 0.250 (1.000 to 0.750) and this policy allows 0.000")
+}
+
+// TestEvaluate_TheScoresCarryTheirOwnConditions keeps the numbers and the
+// settings from being separable later.
+//
+// A report handed on without them is a report whose numbers cannot be compared
+// to anything, and nothing about it says so.
+func TestEvaluate_TheScoresCarryTheirOwnConditions(t *testing.T) {
+	c := qt.New(t)
+
+	report := embedeval.Evaluate(subject(), strict(), corpus(), perfect(), embedeval.Scores{})
+
+	c.Assert(report.Scores.QueryParameters, qt.Equals, "hnsw.ef_search=40")
 }
