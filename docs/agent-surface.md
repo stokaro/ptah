@@ -75,6 +75,7 @@ verdict on any of it.
 | `inference backfill` | **writes** | none | `--db-url` | reads the source, sends it to the embedding endpoint the specification names, and writes vectors and checkpoints into the target database |
 | `inference catchup` | **writes** | none | `--db-url` | rereads the source rows recorded as changed and writes their vectors, which sends that text to the embedding endpoint |
 | `inference cutover` | **writes** | none | `--db-url` | moves the pointer queries read to a different generation, and refuses when the pointer is not where the plan it was built from expects |
+| `inference evaluate` | reads | none | `--db-url` | searches the generation with queries from a corpus, which sends those queries to the embedding endpoint; the database is only read |
 | `inference plan` | reads | none | `--db-url` | resolves a specification against the database and prints what would happen; nothing is created and nothing is written |
 | `inference prepare` | **writes** | none | `--db-url` | creates the run's own tables and, under the outbox mode, a companion table and two triggers on the source |
 | `inference retire` | **writes** | none | `--db-url` | drops a generation's index and column; it is the one verb here that cannot be undone |
@@ -167,6 +168,7 @@ permission.
 | `assist sessions show` | prints one saved conversation from disk, including what Ptah's tools answered during it; nothing is opened to do so |
 | `db capabilities` | reads the server's version and catalogs to report the capability profile Ptah resolves |
 | `db read` | introspects the database and prints what it found |
+| `inference evaluate` | searches the generation with queries from a corpus, which sends those queries to the embedding endpoint; the database is only read |
 | `inference plan` | resolves a specification against the database and prints what would happen; nothing is created and nothing is written |
 | `inference status` | prints a run's phase, progress and watermarks from the run-state tables |
 | `inference verify` | reads the source and the generation and reports what a cutover would rest on; it writes nothing |

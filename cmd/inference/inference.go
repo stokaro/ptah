@@ -31,6 +31,7 @@ separately:
   backfill   embed the source into the new generation, resumably
   catchup    process the source changes made while the backfill ran
   verify     the deterministic checks a cutover rests on
+  evaluate   what the generation actually retrieves, against a corpus you wrote
   status     what a run has done and what it is waiting for
   cutover    make the new generation the one queries read
   rollback   put the previous generation back
@@ -47,6 +48,7 @@ cutting over does not make the old generation disposable.`,
 	cmd.AddCommand(newBackfillCommand())
 	cmd.AddCommand(newCatchUpCommand())
 	cmd.AddCommand(newVerifyCommand())
+	cmd.AddCommand(newEvaluateCommand())
 	cmd.AddCommand(newStatusCommand())
 	cmd.AddCommand(newCutoverCommand())
 	cmd.AddCommand(newRollbackCommand())
