@@ -394,6 +394,31 @@ func (unsupportedRoutineRule) CheckStatement(ctx Context, stmt ast.Node) []Findi
 	}
 }
 
+// postgresRoutineStatements is the parsed body of whichever node a PostgreSQL
+// routine arrived as, with a label naming it for the finding.
+//
+// There are two, and the difference is not about what was parsed. A PROCEDURE
+// becomes a PostgresRoutineNode carrying its body; a FUNCTION becomes a
+// CreateFunctionNode, and `Parser.attachPostgresFunctionBody` fills its
+// RoutineBody with the same parsed statements. Reading only the first node type
+// left every function unexamined while looking like a parser limitation.
+func postgresRoutineStatements(stmt ast.Node) (label string, statements []ast.PostgresRoutineStatement) {
+	switch node := stmt.(type) {
+	case *ast.PostgresRoutineNode:
+		return fmt.Sprintf("%s %s", node.Kind, node.Name), node.Body.Statements
+	case *ast.CreateFunctionNode:
+		if node.RoutineBody == nil {
+			return "", nil
+		}
+		kind := node.Kind
+		if kind == "" {
+			kind = "function"
+		}
+		return fmt.Sprintf("%s %s", kind, node.Name), node.RoutineBody.Statements
+	}
+	return "", nil
+}
+
 // dynamicSQLRule reports where a routine builds SQL at run time.
 //
 // This is the first thing in Ptah that READS a parsed routine body. The parser
@@ -422,13 +447,13 @@ func (dynamicSQLRule) ID() string {
 }
 
 func (dynamicSQLRule) CheckStatement(ctx Context, stmt ast.Node) []Finding {
-	routine, ok := stmt.(*ast.PostgresRoutineNode)
-	if !ok {
+	label, statements := postgresRoutineStatements(stmt)
+	if len(statements) == 0 {
 		return nil
 	}
 
 	var findings []Finding
-	for _, statement := range routine.Body.Statements {
+	for _, statement := range statements {
 		if statement.Kind != ast.PostgresRoutineStatementExecute {
 			continue
 		}
@@ -445,7 +470,7 @@ func (dynamicSQLRule) CheckStatement(ctx Context, stmt ast.Node) []Finding {
 			Line:      line,
 			Column:    column,
 			Dialect:   ctx.Dialect,
-			Message:   fmt.Sprintf("%s %s builds SQL at run time with EXECUTE", routine.Kind, routine.Name),
+			Message:   fmt.Sprintf("%s builds SQL at run time with EXECUTE", label),
 			Rationale: "The statement text is not known until the routine runs, so nothing here can resolve what it reads or writes.",
 		})
 	}
