@@ -530,17 +530,15 @@ func (p *Planner) addSchemaPreconditions(
 		seen[schema] = struct{}{}
 		schemas = append(schemas, schema)
 	}
-	for _, name := range diff.ExtensionsAdded {
-		for _, extension := range desired.Extensions {
-			if extension.Name != name || extension.Schema == "" ||
-				systemschema.IsUncreatableSchema(p.dialect, extension.Schema) {
-				continue
-			}
-			if _, ok := seen[extension.Schema]; !ok {
-				seen[extension.Schema] = struct{}{}
-				schemas = append(schemas, extension.Schema)
-			}
-			break
+	// The addition carries the extension, so the inner search over the desired
+	// schema is gone (stokaro/ptah#2315).
+	for _, extension := range diff.ExtensionsAdded {
+		if extension.Schema == "" || systemschema.IsUncreatableSchema(p.dialect, extension.Schema) {
+			continue
+		}
+		if _, ok := seen[extension.Schema]; !ok {
+			seen[extension.Schema] = struct{}{}
+			schemas = append(schemas, extension.Schema)
 		}
 	}
 	slices.Sort(schemas)
@@ -1894,17 +1892,15 @@ func (p *Planner) validateExtensionInstallationSchemas(diff *difftypes.SchemaDif
 	if p.targetDialect() == platform.Postgres || p.targetDialect() == platform.YugabyteDB || diff == nil {
 		return nil
 	}
-	for _, name := range diff.ExtensionsAdded {
-		for _, extension := range desired.Extensions {
-			if extension.Name == name && extension.Schema != "" {
-				return fmt.Errorf(
-					"%w: %s does not support PostgreSQL extension installation schema %q for extension %q",
-					ptaherr.ErrUnsupportedFeature,
-					p.targetDialect(),
-					extension.Schema,
-					extension.Name,
-				)
-			}
+	for _, extension := range diff.ExtensionsAdded {
+		if extension.Schema != "" {
+			return fmt.Errorf(
+				"%w: %s does not support PostgreSQL extension installation schema %q for extension %q",
+				ptaherr.ErrUnsupportedFeature,
+				p.targetDialect(),
+				extension.Schema,
+				extension.Name,
+			)
 		}
 	}
 	if len(diff.ExtensionsModified) > 0 {
@@ -2098,15 +2094,10 @@ func (p *Planner) revokeGrantOptions(result []ast.Node, diff *difftypes.SchemaDi
 }
 
 func (p *Planner) addNewExtensions(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
-	for _, extensionName := range diff.ExtensionsAdded {
-		// Find the extension definition
-		for _, ext := range desired.Extensions {
-			if ext.Name == extensionName {
-				extensionNode := fromschema.FromExtension(ext)
-				result = append(result, extensionNode)
-				break
-			}
-		}
+	// No search: the change carries the extension (stokaro/ptah#2315), so one
+	// the desired schema does not declare no longer plans nothing.
+	for _, extension := range diff.ExtensionsAdded {
+		result = append(result, fromschema.FromExtension(extension))
 	}
 	return result
 }
@@ -2114,7 +2105,8 @@ func (p *Planner) addNewExtensions(result []ast.Node, diff *difftypes.SchemaDiff
 func (p *Planner) removeExtensions(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	// Generate DROP EXTENSION statements with comprehensive safety warnings
 	// Extension removal is potentially dangerous and requires careful consideration
-	for i, extensionName := range diff.ExtensionsRemoved {
+	for i, extension := range diff.ExtensionsRemoved {
+		extensionName := extension.Name
 		// Add comprehensive warning comments before each DROP EXTENSION statement
 		warningComment1 := ast.NewComment(fmt.Sprintf("WARNING: Removing extension '%s' may break existing functionality that depends on it", extensionName))
 		warningComment2 := ast.NewComment("Consider reviewing all database objects that use this extension before proceeding")

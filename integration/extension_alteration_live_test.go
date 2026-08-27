@@ -90,8 +90,8 @@ func TestExtensionVersionAndSchemaConvergeLive(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	after := schemadiff.CompareWithDialect(declared, settled, platform.Postgres)
 	c.Assert(after.ExtensionsModified, qt.HasLen, 0)
-	c.Assert(after.ExtensionsAdded, qt.HasLen, 0)
-	c.Assert(after.ExtensionsRemoved, qt.HasLen, 0)
+	c.Assert(after.ExtensionsAdded.Names(), qt.HasLen, 0)
+	c.Assert(after.ExtensionsRemoved.Names(), qt.HasLen, 0)
 
 	// 4. The schema move, which used to be refused for every target.
 	moved := &schemamodel.Database{Extensions: []schemamodel.Extension{{

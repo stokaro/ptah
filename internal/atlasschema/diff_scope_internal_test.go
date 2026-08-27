@@ -304,8 +304,8 @@ func TestNonExtensionScopeDoesNotRemoveUnmentionedCurrentExtension(t *testing.T)
 		Provenance: coverage.Configured,
 	}))
 	diff := schemadiff.CompareWithDialect(to.schema, from.database, platform.Postgres)
-	c.Assert(diff.ExtensionsAdded, qt.HasLen, 0)
-	c.Assert(diff.ExtensionsRemoved, qt.HasLen, 0)
+	c.Assert(diff.ExtensionsAdded.Names(), qt.HasLen, 0)
+	c.Assert(diff.ExtensionsRemoved.Names(), qt.HasLen, 0)
 }
 
 func TestCurrentOnlyNonExtensionMatchDoesNotRemoveUnrelatedExtension(t *testing.T) {
@@ -330,7 +330,7 @@ func TestCurrentOnlyNonExtensionMatchDoesNotRemoveUnrelatedExtension(t *testing.
 	applyExtensionSupportCoverage(to.schema, from.selection, to.selection)
 	diff := schemadiff.CompareWithDialect(to.schema, from.database, platform.Postgres)
 	c.Assert(diff.TablesRemoved, qt.HasLen, 1)
-	c.Assert(diff.ExtensionsRemoved, qt.HasLen, 0)
+	c.Assert(diff.ExtensionsRemoved.Names(), qt.HasLen, 0)
 }
 
 func TestDesiredOnlyNonExtensionMatchStillAddsDeclaredExtension(t *testing.T) {
@@ -355,8 +355,8 @@ func TestDesiredOnlyNonExtensionMatchStillAddsDeclaredExtension(t *testing.T) {
 	c.Assert(to.schema.Extensions, qt.DeepEquals, desired.Extensions)
 	applyExtensionSupportCoverage(to.schema, from.selection, to.selection)
 	diff := schemadiff.CompareWithDialect(to.schema, from.database, platform.Postgres)
-	c.Assert(diff.ExtensionsAdded, qt.DeepEquals, []string{"citext"})
-	c.Assert(diff.ExtensionsRemoved, qt.HasLen, 0)
+	c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"citext"})
+	c.Assert(diff.ExtensionsRemoved.Names(), qt.HasLen, 0)
 	c.Assert(diff.TablesAdded, qt.HasLen, 1)
 }
 
@@ -391,8 +391,8 @@ func TestDesiredOnlyNonExtensionMatchDoesNotReAddCurrentSupportExtension(t *test
 	c.Assert(to.schema.Extensions, qt.DeepEquals, desired.Extensions)
 	applyExtensionSupportCoverage(to.schema, from.selection, to.selection)
 	diff := schemadiff.CompareWithDialect(to.schema, from.database, platform.Postgres)
-	c.Assert(diff.ExtensionsAdded, qt.HasLen, 0)
-	c.Assert(diff.ExtensionsRemoved, qt.HasLen, 0)
+	c.Assert(diff.ExtensionsAdded.Names(), qt.HasLen, 0)
+	c.Assert(diff.ExtensionsRemoved.Names(), qt.HasLen, 0)
 	c.Assert(diff.TablesAdded, qt.HasLen, 1)
 }
 
@@ -416,8 +416,8 @@ func TestExtensionOnlyScopeStillRemovesSelectedExtension(t *testing.T) {
 	applyExtensionSupportCoverage(to.schema, from.selection, to.selection)
 	c.Assert(to.schema.NotDescribed.IsZero(), qt.IsTrue)
 	diff := schemadiff.CompareWithDialect(to.schema, from.database, platform.Postgres)
-	c.Assert(diff.ExtensionsAdded, qt.HasLen, 0)
-	c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, []string{"pgcrypto"})
+	c.Assert(diff.ExtensionsAdded.Names(), qt.HasLen, 0)
+	c.Assert(diff.ExtensionsRemoved.Names(), qt.DeepEquals, []string{"pgcrypto"})
 }
 
 func TestValidateDiffSystemSchemaStatesRefusesAuthoredStates(t *testing.T) {

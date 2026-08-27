@@ -78,8 +78,8 @@ func collectTableMismatches(diff *difftypes.SchemaDiff) []Mismatch {
 
 func collectSchemaObjectMismatches(diff *difftypes.SchemaDiff) []Mismatch {
 	var mismatches []Mismatch
-	mismatches = append(mismatches, namedMismatches(diff.ExtensionsAdded, "missing_extension", "missing extension")...)
-	mismatches = append(mismatches, namedMismatches(diff.ExtensionsRemoved, "extra_extension", "extra extension")...)
+	mismatches = append(mismatches, namedMismatches(diff.ExtensionsAdded.Names(), "missing_extension", "missing extension")...)
+	mismatches = append(mismatches, namedMismatches(diff.ExtensionsRemoved.Names(), "extra_extension", "extra extension")...)
 	mismatches = append(mismatches, changedObjectMismatches(
 		diff.ExtensionsModified,
 		"extension_mismatch",

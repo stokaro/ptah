@@ -51,7 +51,7 @@ func coverageCases() []coverageCase {
 			},
 			notDescribed: coverage.Set{}.WithKind(coverage.Extension),
 			onDesired:    true,
-			read:         func(diff *difftypes.SchemaDiff) []string { return diff.ExtensionsRemoved },
+			read:         func(diff *difftypes.SchemaDiff) []string { return diff.ExtensionsRemoved.Names() },
 			wantWithout:  []string{"pgcrypto"},
 		},
 		{
@@ -157,7 +157,7 @@ func TestCoverageOnTheWrongSideSuppressesNothing(t *testing.T) {
 
 		diff := schemadiff.Compare(desired, &catalog.Database{})
 
-		c.Assert(diff.ExtensionsAdded, qt.DeepEquals, []string{"pgcrypto"})
+		c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"pgcrypto"})
 	})
 
 	t.Run("a read record does not suppress a removal", func(t *testing.T) {
@@ -167,7 +167,7 @@ func TestCoverageOnTheWrongSideSuppressesNothing(t *testing.T) {
 
 		diff := schemadiff.Compare(&schemamodel.Database{}, database)
 
-		c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, []string{"pgcrypto"})
+		c.Assert(diff.ExtensionsRemoved.Names(), qt.DeepEquals, []string{"pgcrypto"})
 	})
 }
 
@@ -187,7 +187,7 @@ func TestCoverageNamesOneObjectOnly(t *testing.T) {
 
 	diff := schemadiff.Compare(desired, database)
 
-	c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, []string{"postgis"})
+	c.Assert(diff.ExtensionsRemoved.Names(), qt.DeepEquals, []string{"postgis"})
 }
 
 // TestUndescribedPolicyIsNotADroppedPolicy is the same pair as the table rows

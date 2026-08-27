@@ -88,8 +88,8 @@ func TestCollectMismatchesCoversEverySchemaDiffCategory(t *testing.T) {
 		}},
 		IndexesAdded:      []difftypes.IndexRef{{TableName: "users", Name: "missing_index"}},
 		IndexesRemoved:    []difftypes.IndexRef{{TableName: "users", Name: "extra_index"}},
-		ExtensionsAdded:   []string{"missing_extension"},
-		ExtensionsRemoved: []string{"extra_extension"},
+		ExtensionsAdded:   difftypes.ExtensionChanges{{Name: "missing_extension"}},
+		ExtensionsRemoved: difftypes.ExtensionChanges{{Name: "extra_extension"}},
 		ExtensionsModified: []difftypes.ExtensionDiff{{
 			Name: "changed_extension", FromSchema: "public", ToSchema: "extensions",
 		}},

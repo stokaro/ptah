@@ -87,7 +87,7 @@ func TestUnknownCurrentExtensionIsWithheldRegardlessOfCreationGuard(t *testing.T
 
 			diff, undecided := schemadiff.CompareReportingUndecidedAdditions(desired, current, nil)
 
-			c.Assert(diff.ExtensionsAdded, qt.HasLen, 0)
+			c.Assert(diff.ExtensionsAdded.Names(), qt.HasLen, 0)
 			c.Assert(undecided, qt.DeepEquals, []coverage.Object{{
 				Kind: coverage.Extension,
 				Name: "citext",
@@ -148,7 +148,7 @@ func TestAnUnguardedCreationIsWithheldAndNamed(t *testing.T) {
 				return &schemamodel.Database{Extensions: []schemamodel.Extension{{Name: "citext"}}}
 			},
 			notDescribed: coverage.Set{}.WithKind(coverage.Extension),
-			read:         func(diff *difftypes.SchemaDiff) []string { return diff.ExtensionsAdded },
+			read:         func(diff *difftypes.SchemaDiff) []string { return diff.ExtensionsAdded.Names() },
 			wantWithheld: []coverage.Object{{Kind: coverage.Extension, Name: "citext"}},
 		},
 		{
@@ -211,7 +211,7 @@ func TestAnUndeclaredReadPlansEveryAdditionAndWithholdsNothing(t *testing.T) {
 			desired: func() *schemamodel.Database {
 				return &schemamodel.Database{Extensions: []schemamodel.Extension{{Name: "citext"}}}
 			},
-			read:        func(diff *difftypes.SchemaDiff) []string { return diff.ExtensionsAdded },
+			read:        func(diff *difftypes.SchemaDiff) []string { return diff.ExtensionsAdded.Names() },
 			wantPlanned: []string{"citext"},
 		},
 		{
@@ -305,6 +305,6 @@ func TestAGuardIsNotAnExcuseToIgnoreARemovalRecord(t *testing.T) {
 
 	diff, undecided := schemadiff.CompareReportingUndecidedAdditions(desired, database, nil)
 
-	c.Assert(diff.ExtensionsRemoved, qt.HasLen, 0)
+	c.Assert(diff.ExtensionsRemoved.Names(), qt.HasLen, 0)
 	c.Assert(undecided, qt.HasLen, 0)
 }

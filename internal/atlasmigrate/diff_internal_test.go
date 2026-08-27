@@ -142,7 +142,7 @@ func TestCompareReplayedState_PreservesDesiredCoverage(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(replayed, qt.Equals, current)
-	c.Assert(diff.ExtensionsRemoved, qt.HasLen, 0)
+	c.Assert(diff.ExtensionsRemoved.Names(), qt.HasLen, 0)
 }
 
 func TestCompareReplayedState_PreservesExplicitRemoval(t *testing.T) {
@@ -168,7 +168,7 @@ func TestCompareReplayedState_PreservesExplicitRemoval(t *testing.T) {
 	)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, []string{"pgcrypto"})
+	c.Assert(diff.ExtensionsRemoved.Names(), qt.DeepEquals, []string{"pgcrypto"})
 }
 
 func TestCompareReplayedState_SchemaScopeKeepsDatabaseWideExtensionSynced(t *testing.T) {
@@ -236,7 +236,7 @@ func TestCompareReplayedState_SchemaScopePreservesExplicitExtensionRemoval(t *te
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(replayed.Extensions, qt.DeepEquals, current.Extensions)
-	c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, []string{"citext"})
+	c.Assert(diff.ExtensionsRemoved.Names(), qt.DeepEquals, []string{"citext"})
 }
 
 func TestCompareReplayedState_ReportsUndecidedAddition(t *testing.T) {

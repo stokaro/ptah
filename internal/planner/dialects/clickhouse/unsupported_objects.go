@@ -99,11 +99,11 @@ func reportRemovedUserTypes(result []ast.Node, diff *difftypes.SchemaDiff) []ast
 }
 
 func reportExtensions(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	for _, name := range diff.ExtensionsAdded {
-		result = append(result, ast.NewExtension(name))
+	for _, extension := range diff.ExtensionsAdded {
+		result = append(result, ast.NewExtension(extension.Name))
 	}
-	for _, name := range diff.ExtensionsRemoved {
-		result = append(result, ast.NewDropExtension(name))
+	for _, extension := range diff.ExtensionsRemoved {
+		result = append(result, ast.NewDropExtension(extension.Name))
 	}
 	for _, extension := range diff.ExtensionsModified {
 		result = append(result, ast.NewExtension(extension.Name).SetSchema(extension.ToSchema))

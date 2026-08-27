@@ -59,7 +59,7 @@ func unhostableSchema() *schemamodel.Database {
 // addition.
 func unhostableCreationDiff() *difftypes.SchemaDiff {
 	return &difftypes.SchemaDiff{
-		ExtensionsAdded:        []string{"pg_trgm"},
+		ExtensionsAdded:        difftypes.ExtensionChanges{{Name: "pg_trgm"}},
 		SequencesAdded:         difftypes.SequenceChanges{{Name: "order_number_seq"}},
 		RolesAdded:             []string{"app_role"},
 		FunctionsAdded:         []string{"bump"},
@@ -211,7 +211,7 @@ func TestPlan_ClickHouseNamesRemovedObjectsToo(t *testing.T) {
 	c := qt.New(t)
 
 	diff := &difftypes.SchemaDiff{
-		ExtensionsRemoved:        []string{"pg_trgm"},
+		ExtensionsRemoved:        difftypes.ExtensionChanges{{Name: "pg_trgm"}},
 		SequencesRemoved:         difftypes.SequenceChanges{{Name: "order_number_seq"}},
 		DomainsRemoved:           []string{"email"},
 		CompositeTypesRemoved:    difftypes.CompositeTypeChanges{{Name: "addr"}},
@@ -318,7 +318,7 @@ func mysqlFamilySchema() *schemamodel.Database {
 
 func mysqlFamilyCreationDiff() *difftypes.SchemaDiff {
 	return &difftypes.SchemaDiff{
-		ExtensionsAdded: []string{"pg_trgm"},
+		ExtensionsAdded: difftypes.ExtensionChanges{{Name: "pg_trgm"}},
 		SequencesAdded:  difftypes.SequenceChanges{{Name: "order_number_seq"}},
 		TablesAdded:     []string{"t"},
 	}
@@ -454,7 +454,12 @@ func TestPlan_NonPostgreSQLTargetsDoNotLoseExtensionPlacementDrift(t *testing.T)
 }
 
 func TestPlan_ExtensionInstallationSchemaSupportedTargets(t *testing.T) {
-	diff := &difftypes.SchemaDiff{ExtensionsAdded: []string{"pgcrypto"}}
+	// The installation schema travels WITH the change now, which is what
+	// the precondition and the WITH SCHEMA clause are both planned from
+	// (stokaro/ptah#2315).
+	diff := &difftypes.SchemaDiff{ExtensionsAdded: difftypes.ExtensionChanges{
+		{Name: "pgcrypto", Schema: "extensions"},
+	}}
 	desired := &schemamodel.Database{
 		Extensions: []schemamodel.Extension{{Name: "pgcrypto", Schema: "extensions"}},
 	}
@@ -474,7 +479,7 @@ func TestPlan_ExtensionInstallationSchemaSupportedTargets(t *testing.T) {
 }
 
 func TestPlan_ExtensionInstallationSchemaUnsupportedTargetsFailBeforeAST(t *testing.T) {
-	diff := &difftypes.SchemaDiff{ExtensionsAdded: []string{"pgcrypto"}}
+	diff := &difftypes.SchemaDiff{ExtensionsAdded: difftypes.ExtensionChanges{{Name: "pgcrypto"}}}
 	desired := &schemamodel.Database{
 		Extensions: []schemamodel.Extension{{Name: "pgcrypto", Schema: "extensions"}},
 	}
@@ -492,7 +497,7 @@ func TestPlan_ExtensionInstallationSchemaUnsupportedTargetsFailBeforeAST(t *test
 }
 
 func TestPlan_WhitespaceOnlyExtensionInstallationSchemaUnsupportedTargetsFailBeforeAST(t *testing.T) {
-	diff := &difftypes.SchemaDiff{ExtensionsAdded: []string{"pgcrypto"}}
+	diff := &difftypes.SchemaDiff{ExtensionsAdded: difftypes.ExtensionChanges{{Name: "pgcrypto"}}}
 	desired := &schemamodel.Database{
 		Extensions: []schemamodel.Extension{{Name: "pgcrypto", Schema: " "}},
 	}

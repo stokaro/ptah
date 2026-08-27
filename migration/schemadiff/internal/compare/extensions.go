@@ -115,8 +115,8 @@ func ExtensionsWithSemantics(
 	}
 
 	// Initialize slices to ensure they're never nil
-	diff.ExtensionsAdded = make([]string, 0)
-	diff.ExtensionsRemoved = make([]string, 0)
+	diff.ExtensionsAdded = make(difftypes.ExtensionChanges, 0)
+	diff.ExtensionsRemoved = make(difftypes.ExtensionChanges, 0)
 	diff.ExtensionsModified = make([]difftypes.ExtensionDiff, 0)
 
 	// Create maps for quick lookup, filtering out ignored extensions
@@ -140,7 +140,7 @@ func ExtensionsWithSemantics(
 	for extensionName := range genExtensions {
 		databaseExtension, exists := dbExtensions[extensionName]
 		if !exists {
-			diff.ExtensionsAdded = append(diff.ExtensionsAdded, extensionName)
+			diff.ExtensionsAdded = append(diff.ExtensionsAdded, genExtensions[extensionName])
 			continue
 		}
 		generatedSchema := effectiveExtensionSchema(genExtensions[extensionName].Schema, semantics)
@@ -170,9 +170,9 @@ func ExtensionsWithSemantics(
 
 	// Find removed extensions (exist in database but not in generated schema)
 	// Note: Ignored extensions are already filtered out, so they will never be marked for removal
-	for extensionName := range dbExtensions {
+	for extensionName, databaseExtension := range dbExtensions {
 		if _, exists := genExtensions[extensionName]; !exists {
-			diff.ExtensionsRemoved = append(diff.ExtensionsRemoved, extensionName)
+			diff.ExtensionsRemoved = append(diff.ExtensionsRemoved, extensionFromCatalog(databaseExtension))
 		}
 	}
 
@@ -188,15 +188,15 @@ func ExtensionsWithSemantics(
 	// requested placement unapplied. Withhold every unknown-current addition and
 	// report it instead of silently accepting the wrong schema.
 	kept, withheld := keepPlannedAdditions(cov,
-		coverage.Extension, diff.ExtensionsAdded, globalName, itself, unguardedCreations(),
+		coverage.Extension, diff.ExtensionsAdded, extensionSpelling, extensionDisplay, unguardedCreations(),
 	)
 	diff.ExtensionsAdded = kept
 	cov.recordUndecidedAdditions(withheld)
-	diff.ExtensionsRemoved = keepPlannedRemovals(cov, coverage.Extension, diff.ExtensionsRemoved, globalName)
+	diff.ExtensionsRemoved = keepPlannedRemovals(cov, coverage.Extension, diff.ExtensionsRemoved, extensionSpelling)
 
 	// Sort for consistent output
-	sort.Strings(diff.ExtensionsAdded)
-	sort.Strings(diff.ExtensionsRemoved)
+	sortExtensions(diff.ExtensionsAdded)
+	sortExtensions(diff.ExtensionsRemoved)
 	sort.Slice(diff.ExtensionsModified, func(i, j int) bool {
 		return diff.ExtensionsModified[i].Name < diff.ExtensionsModified[j].Name
 	})
@@ -207,4 +207,39 @@ func effectiveExtensionSchema(schema string, semantics identifier.Semantics) str
 		schema = semantics.DefaultSchema
 	}
 	return semantics.TableIdentityKey(schema)
+}
+
+// extensionFromCatalog carries an extension the database reported into the
+// shape the diff holds, matching what internal/convert/dbschematogo builds for
+// the same read -- including IfNotExists, which is true so a down migration can
+// re-create the extension without failing on one that survived.
+func extensionFromCatalog(reported catalog.Extension) schemamodel.Extension {
+	extension := schemamodel.Extension{
+		Name:        reported.Name,
+		Schema:      reported.Schema,
+		IfNotExists: true,
+		Version:     reported.Version,
+		// Carried rather than recomputed: only the reader has the catalog, and
+		// the renderer needs it to tell an extension nothing depends on from
+		// one a column type still needs.
+		Provides: reported.Provides,
+	}
+	if reported.Comment != nil {
+		extension.Comment = *reported.Comment
+	}
+	return extension
+}
+
+// extensionSpelling is globalName for a change that carries its operand: an
+// extension is named globally rather than inside a schema.
+func extensionSpelling(extension schemamodel.Extension) (schema string, spellings []string) {
+	return globalName(extension.Name)
+}
+
+// extensionDisplay names one for a record a person reads.
+func extensionDisplay(extension schemamodel.Extension) string { return extension.Name }
+
+// sortExtensions orders by the key the name lists were sorted on.
+func sortExtensions(extensions difftypes.ExtensionChanges) {
+	sort.Slice(extensions, func(i, j int) bool { return extensions[i].Name < extensions[j].Name })
 }

@@ -224,3 +224,67 @@ func TestSequenceChanges_TheDefinitionSurvivesInMemory(t *testing.T) {
 	c.Assert(changes[0].AsType, qt.Equals, "bigint")
 	c.Assert(changes.Names(), qt.DeepEquals, []string{"app.s"})
 }
+
+// TestExtensionChanges_TheWireShapeIsUnchanged is the same promise for the
+// fourth family off `[]string`.
+func TestExtensionChanges_TheWireShapeIsUnchanged(t *testing.T) {
+	tests := []struct {
+		name    string
+		changes difftypes.ExtensionChanges
+		want    string
+		why     string
+	}{
+		{
+			name:    "nil is null",
+			changes: nil,
+			want:    "null",
+			why:     "null is a comparison that did not run",
+		},
+		{
+			name:    "empty is an empty array",
+			changes: difftypes.ExtensionChanges{},
+			want:    "[]",
+			why:     "[] is a comparison that ran and found nothing; the comparator initialises these two eagerly",
+		},
+		{
+			name: "the installation schema and version do not reach the wire",
+			changes: difftypes.ExtensionChanges{
+				{Name: "pgcrypto", Schema: "extensions", Version: "1.3", IfNotExists: true},
+			},
+			want: `["pgcrypto"]`,
+			why:  "a name list is what format_version 1 has always carried here",
+		},
+		{
+			name:    "the name is bare, not schema-qualified",
+			changes: difftypes.ExtensionChanges{{Name: "pgcrypto", Schema: "extensions"}},
+			want:    `["pgcrypto"]`,
+			why:     "an extension is named globally; the schema is where it is INSTALLED, not part of its identity",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			encoded, err := json.Marshal(test.changes)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(string(encoded), qt.Equals, test.want, qt.Commentf("%s", test.why))
+		})
+	}
+}
+
+// TestExtensionChanges_TheInstallationSchemaSurvivesInMemory is the other half.
+//
+// The schema is the field that makes it matter: both the CREATE SCHEMA
+// precondition and the WITH SCHEMA clause are planned from the operand, so a
+// carry that dropped it would install the extension in the wrong place.
+func TestExtensionChanges_TheInstallationSchemaSurvivesInMemory(t *testing.T) {
+	c := qt.New(t)
+
+	changes := difftypes.ExtensionChanges{{Name: "pgcrypto", Schema: "extensions", Version: "1.3"}}
+
+	c.Assert(changes[0].Schema, qt.Equals, "extensions")
+	c.Assert(changes[0].Version, qt.Equals, "1.3")
+	c.Assert(changes.Names(), qt.DeepEquals, []string{"pgcrypto"})
+}

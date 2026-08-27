@@ -118,8 +118,8 @@ func TestExtensions(t *testing.T) {
 			compare.Extensions(desired, database, diff, nil, compare.CoverageOf(desired, database))
 
 			// Verify results
-			c.Assert(diff.ExtensionsAdded, qt.DeepEquals, tt.expectedAdded)
-			c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, tt.expectedRemoved)
+			c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, tt.expectedAdded)
+			c.Assert(diff.ExtensionsRemoved.Names(), qt.DeepEquals, tt.expectedRemoved)
 		})
 	}
 }
@@ -277,8 +277,8 @@ func TestExtensions_RealWorldScenarios(t *testing.T) {
 
 			compare.Extensions(desired, database, diff, nil, compare.CoverageOf(desired, database))
 
-			c.Assert(diff.ExtensionsAdded, qt.DeepEquals, tt.wantAdded)
-			c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, tt.wantRemoved)
+			c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, tt.wantAdded)
+			c.Assert(diff.ExtensionsRemoved.Names(), qt.DeepEquals, tt.wantRemoved)
 		})
 	}
 }
@@ -466,8 +466,8 @@ func TestExtensions_WithIgnoreConfiguration(t *testing.T) {
 			compare.Extensions(desired, database, diff, tt.options, compare.CoverageOf(desired, database))
 
 			// Verify results
-			c.Assert(diff.ExtensionsAdded, qt.DeepEquals, tt.expectedAdded)
-			c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, tt.expectedRemoved)
+			c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, tt.expectedAdded)
+			c.Assert(diff.ExtensionsRemoved.Names(), qt.DeepEquals, tt.expectedRemoved)
 		})
 	}
 }
