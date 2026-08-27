@@ -112,10 +112,10 @@ func diffCategoryFixtures() []categoryFixture {
 		},
 		{
 			"EnumsAdded",
-			&difftypes.SchemaDiff{EnumsAdded: []string{"e"}},
+			&difftypes.SchemaDiff{EnumsAdded: difftypes.EnumChanges{{Name: "e", Values: []string{"a", "b"}}}},
 			&schemamodel.Database{Enums: []schemamodel.Enum{{Name: "e", Values: []string{"a"}}}},
 		},
-		{"EnumsRemoved", &difftypes.SchemaDiff{EnumsRemoved: []string{"e"}}, &schemamodel.Database{}},
+		{"EnumsRemoved", &difftypes.SchemaDiff{EnumsRemoved: difftypes.EnumChanges{{Name: "e"}}}, &schemamodel.Database{}},
 		{
 			"EnumsModified",
 			&difftypes.SchemaDiff{EnumsModified: []difftypes.EnumDiff{{EnumName: "e", ValuesAdded: []string{"b"}}}},

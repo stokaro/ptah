@@ -168,11 +168,11 @@ func TestApplyDropIndexPreservesReplacements(t *testing.T) {
 func TestApplyDropEnum(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &difftypes.SchemaDiff{EnumsRemoved: []string{"status", "kind"}}
+	diff := &difftypes.SchemaDiff{EnumsRemoved: difftypes.EnumChanges{{Name: "status"}, {Name: "kind"}}}
 
 	got, skipped := diffpolicy.Apply(diff, diffpolicy.NewSkipSet(diffpolicy.DropEnum))
 
-	c.Assert(got.EnumsRemoved, qt.HasLen, 0)
+	c.Assert(got.EnumsRemoved.Names(), qt.HasLen, 0)
 	c.Assert(skipped, qt.HasLen, 2)
-	c.Assert(diff.EnumsRemoved, qt.DeepEquals, []string{"status", "kind"})
+	c.Assert(diff.EnumsRemoved.Names(), qt.DeepEquals, []string{"status", "kind"})
 }

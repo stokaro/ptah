@@ -23,7 +23,7 @@ func TestPlanner_GenerateMigrationAST_EnumsAdded(t *testing.T) {
 		{
 			name: "enum added generates warning comment",
 			diff: &difftypes.SchemaDiff{
-				EnumsAdded: []string{"user_status"},
+				EnumsAdded: difftypes.EnumChanges{{Name: "user_status", Values: []string{"active", "inactive"}}},
 			},
 			desired: &schemamodel.Database{
 				Enums: []schemamodel.Enum{
@@ -370,7 +370,7 @@ func TestPlanner_GenerateMigrationAST_EnumsRemoved(t *testing.T) {
 		{
 			name: "enum removed generates warning comment",
 			diff: &difftypes.SchemaDiff{
-				EnumsRemoved: []string{"old_enum"},
+				EnumsRemoved: difftypes.EnumChanges{{Name: "old_enum"}},
 			},
 			desired: &schemamodel.Database{},
 			expected: func(nodes []ast.Node) bool {

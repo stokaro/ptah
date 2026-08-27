@@ -122,6 +122,9 @@ func TestSequenceAdditionFollowsItsOperand(t *testing.T) {
 // place. The first drops the CREATE TYPE for a new enum, so the columns typed
 // against it fail to apply. The second is worse in kind: it does not fail, it
 // emits a WARNING comment and plans no value removal at all.
+// The ADD path is no longer part of this: an added enum carries its own values
+// (stokaro/ptah#2315), so there is no name to resolve. What remains is the
+// MODIFIED path, which still names an enum and still has to find it.
 func TestEnumLookupResolvesAcrossSchemaSpellings(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -156,15 +159,6 @@ func TestEnumLookupResolvesAcrossSchemaSpellings(t *testing.T) {
 				}},
 			}
 
-			added, err := planner.GenerateSchemaDiffSQLStatements(
-				&difftypes.SchemaDiff{EnumsAdded: []string{test.diffName}},
-				desired,
-				"postgres",
-			)
-			c.Assert(err, qt.IsNil)
-			addedPlan := strings.Join(added, "\n")
-			c.Assert(addedPlan, qt.Contains, "CREATE TYPE", qt.Commentf("plan:\n%s", addedPlan))
-
 			removed, err := planner.GenerateSchemaDiffSQLStatements(
 				&difftypes.SchemaDiff{EnumsModified: []difftypes.EnumDiff{{
 					EnumName:      test.diffName,
@@ -184,19 +178,31 @@ func TestEnumLookupResolvesAcrossSchemaSpellings(t *testing.T) {
 // TestEnumLookupDoesNotGuessBetweenSchemas is the enum control. public.mood and
 // extra.mood are two types with different value sets (stokaro/ptah#1276), so a
 // lookup that crossed schemas would rebuild one enum from the other's values.
-func TestEnumLookupDoesNotGuessBetweenSchemas(t *testing.T) {
+// TestEnumAdditionFollowsItsOperand replaces the control that asked the lookup
+// not to guess between schemas, for the reason
+// TestSequenceAdditionFollowsItsOperand gives: an addition carries the enum, so
+// there is nothing to resolve and nothing to guess.
+func TestEnumAdditionFollowsItsOperand(t *testing.T) {
 	c := qt.New(t)
 
+	// The desired schema deliberately declares the enum in a DIFFERENT schema,
+	// to prove the plan no longer reads placement out of it.
 	desired := &schemamodel.Database{
 		Enums: []schemamodel.Enum{{Name: "status", Schema: "reporting", Values: []string{"draft", "live"}}},
 	}
 	statements, err := planner.GenerateSchemaDiffSQLStatements(
-		&difftypes.SchemaDiff{EnumsAdded: []string{"app.status"}},
+		&difftypes.SchemaDiff{EnumsAdded: difftypes.EnumChanges{
+			{Name: "status", Schema: "app", Values: []string{"draft", "live"}},
+		}},
 		desired,
 		"postgres",
 	)
 	c.Assert(err, qt.IsNil)
-	c.Assert(strings.Join(statements, "\n"), qt.Not(qt.Contains), "CREATE TYPE")
+	plan := strings.Join(statements, "\n")
+	c.Assert(plan, qt.Contains, "CREATE TYPE", qt.Commentf("plan:\n%s", plan))
+	c.Assert(plan, qt.Contains, "app", qt.Commentf("the operand's schema decides placement:\n%s", plan))
+	c.Assert(plan, qt.Not(qt.Contains), "reporting",
+		qt.Commentf("the desired schema's spelling must not reach the plan:\n%s", plan))
 }
 
 // TestUserTypeLookupResolvesAcrossSchemaSpellings pins findCompositeType and

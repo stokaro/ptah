@@ -474,7 +474,7 @@ func TestEnums_HappyPath(t *testing.T) {
 				Enums: make([]catalog.Enum, 0),
 			},
 			expected: &difftypes.SchemaDiff{
-				EnumsAdded: []string{"status_enum"},
+				EnumsAdded: difftypes.EnumChanges{{Name: "status_enum", Values: []string{"active", "inactive", "deprecated"}}},
 			},
 		},
 		{
@@ -488,7 +488,7 @@ func TestEnums_HappyPath(t *testing.T) {
 				},
 			},
 			expected: &difftypes.SchemaDiff{
-				EnumsRemoved: []string{"old_enum"},
+				EnumsRemoved: difftypes.EnumChanges{{Name: "old_enum"}},
 			},
 		},
 		{
@@ -528,8 +528,8 @@ func TestEnums_HappyPath(t *testing.T) {
 				},
 			},
 			expected: &difftypes.SchemaDiff{
-				EnumsAdded:   []string{"priority_enum"},
-				EnumsRemoved: []string{"old_enum"},
+				EnumsAdded:   difftypes.EnumChanges{{Name: "priority_enum", Values: []string{"low", "medium", "high"}}},
+				EnumsRemoved: difftypes.EnumChanges{{Name: "old_enum"}},
 				EnumsModified: []difftypes.EnumDiff{
 					{
 						EnumName:      "status_enum",
@@ -548,8 +548,8 @@ func TestEnums_HappyPath(t *testing.T) {
 			diff := &difftypes.SchemaDiff{}
 			compare.Enums(tt.desired, tt.database, diff)
 
-			c.Assert(diff.EnumsAdded, qt.DeepEquals, tt.expected.EnumsAdded)
-			c.Assert(diff.EnumsRemoved, qt.DeepEquals, tt.expected.EnumsRemoved)
+			c.Assert(diff.EnumsAdded.Names(), qt.DeepEquals, tt.expected.EnumsAdded.Names())
+			c.Assert(diff.EnumsRemoved.Names(), qt.DeepEquals, tt.expected.EnumsRemoved.Names())
 			c.Assert(diff.EnumsModified, qt.HasLen, len(tt.expected.EnumsModified))
 
 			for i, expectedEnumDiff := range tt.expected.EnumsModified {
@@ -597,8 +597,8 @@ func TestEnums_UnhappyPath(t *testing.T) {
 			diff := &difftypes.SchemaDiff{}
 			compare.Enums(tt.desired, tt.database, diff)
 
-			c.Assert(diff.EnumsAdded, qt.DeepEquals, tt.expected.EnumsAdded)
-			c.Assert(diff.EnumsRemoved, qt.DeepEquals, tt.expected.EnumsRemoved)
+			c.Assert(diff.EnumsAdded.Names(), qt.DeepEquals, tt.expected.EnumsAdded.Names())
+			c.Assert(diff.EnumsRemoved.Names(), qt.DeepEquals, tt.expected.EnumsRemoved.Names())
 			c.Assert(diff.EnumsModified, qt.HasLen, len(tt.expected.EnumsModified))
 		})
 	}

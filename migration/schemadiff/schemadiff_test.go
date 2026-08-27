@@ -76,8 +76,8 @@ func TestCompareWithDialect_MySQLFamilyInlineEnumsMatchGeneratedEnumFields(t *te
 			}
 
 			diff := schemadiff.CompareWithDialect(desired, database, dialect)
-			c.Assert(diff.EnumsAdded, qt.HasLen, 0)
-			c.Assert(diff.EnumsRemoved, qt.HasLen, 0)
+			c.Assert(diff.EnumsAdded.Names(), qt.HasLen, 0)
+			c.Assert(diff.EnumsRemoved.Names(), qt.HasLen, 0)
 			c.Assert(diff.TablesModified, qt.HasLen, 0)
 		})
 	}
@@ -844,8 +844,8 @@ func TestCompareWithDialect_SQLiteInlineEnumsMatchGeneratedEnumFields(t *testing
 	}
 
 	diff := schemadiff.CompareWithDialect(desired, database, "sqlite")
-	c.Assert(diff.EnumsAdded, qt.HasLen, 0)
-	c.Assert(diff.EnumsRemoved, qt.HasLen, 0)
+	c.Assert(diff.EnumsAdded.Names(), qt.HasLen, 0)
+	c.Assert(diff.EnumsRemoved.Names(), qt.HasLen, 0)
 	c.Assert(diff.TablesModified, qt.HasLen, 0)
 	c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
 	c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0)
@@ -1098,8 +1098,8 @@ func TestCompareWithDialect_SQLServerInlineEnumsMatchGeneratedEnumFields(t *test
 	}
 
 	diff := schemadiff.CompareWithDialect(desired, database, "sqlserver")
-	c.Assert(diff.EnumsAdded, qt.HasLen, 0)
-	c.Assert(diff.EnumsRemoved, qt.HasLen, 0)
+	c.Assert(diff.EnumsAdded.Names(), qt.HasLen, 0)
+	c.Assert(diff.EnumsRemoved.Names(), qt.HasLen, 0)
 	c.Assert(diff.TablesModified, qt.HasLen, 0)
 	c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
 	c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0)

@@ -320,8 +320,8 @@ func qualifiedObject(namespace, name string) string {
 
 func collectEnumAndIndexMismatches(diff *difftypes.SchemaDiff) []Mismatch {
 	var mismatches []Mismatch
-	mismatches = append(mismatches, namedMismatches(diff.EnumsAdded, "missing_enum", "missing enum")...)
-	mismatches = append(mismatches, namedMismatches(diff.EnumsRemoved, "extra_enum", "extra enum")...)
+	mismatches = append(mismatches, namedMismatches(diff.EnumsAdded.Names(), "missing_enum", "missing enum")...)
+	mismatches = append(mismatches, namedMismatches(diff.EnumsRemoved.Names(), "extra_enum", "extra enum")...)
 	for _, enum := range sortedEnumDiffs(diff.EnumsModified) {
 		for _, value := range sortedStrings(enum.ValuesAdded) {
 			message := fmt.Sprintf("missing enum value %s.%s", enum.EnumName, value)

@@ -1,6 +1,7 @@
 package compare
 
 import (
+	"slices"
 	"sort"
 	"strings"
 
@@ -152,7 +153,7 @@ func EnumsWithSemantics(
 	for _, genEnum := range desired.Enums {
 		dbEnum, exists := findDatabaseEnum(genEnum, dbByIdentity, dbByName, semantics)
 		if !exists {
-			diff.EnumsAdded = append(diff.EnumsAdded, genEnum.QualifiedName())
+			diff.EnumsAdded = append(diff.EnumsAdded, genEnum)
 			continue
 		}
 		matched[dbEnum.QualifiedName()] = struct{}{}
@@ -166,12 +167,12 @@ func EnumsWithSemantics(
 		if _, ok := matched[enum.QualifiedName()]; ok {
 			continue
 		}
-		diff.EnumsRemoved = append(diff.EnumsRemoved, enum.QualifiedName())
+		diff.EnumsRemoved = append(diff.EnumsRemoved, enumFromCatalog(enum))
 	}
 
 	// Sort for consistent output
-	sort.Strings(diff.EnumsAdded)
-	sort.Strings(diff.EnumsRemoved)
+	sortEnums(diff.EnumsAdded)
+	sortEnums(diff.EnumsRemoved)
 	sort.Slice(diff.EnumsModified, func(i, j int) bool {
 		return diff.EnumsModified[i].EnumName < diff.EnumsModified[j].EnumName
 	})
@@ -322,4 +323,20 @@ func EnumValues(genEnum schemamodel.Enum, dbEnum catalog.Enum) difftypes.EnumDif
 	sort.Strings(enumDiff.ValuesRemoved)
 
 	return enumDiff
+}
+
+// enumFromCatalog carries an enum the database reported into the shape the diff
+// holds. The two declare the same three properties, so nothing is inferred and
+// nothing is lost.
+func enumFromCatalog(reported catalog.Enum) schemamodel.Enum {
+	return schemamodel.Enum{
+		Name:   reported.Name,
+		Schema: reported.Schema,
+		Values: slices.Clone(reported.Values),
+	}
+}
+
+// sortEnums orders by the key the name lists were sorted on.
+func sortEnums(enums difftypes.EnumChanges) {
+	sort.Slice(enums, func(i, j int) bool { return enums[i].QualifiedName() < enums[j].QualifiedName() })
 }

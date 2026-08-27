@@ -185,7 +185,7 @@ func apply(
 		filtered.SetIndexRemovals(kept)
 	}
 	if skip.Has(DropEnum) {
-		skipped = append(skipped, changesForNames(DropEnum, filtered.EnumsRemoved)...)
+		skipped = append(skipped, changesForNames(DropEnum, filtered.EnumsRemoved.Names())...)
 		filtered.EnumsRemoved = nil
 	}
 
