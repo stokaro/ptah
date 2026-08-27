@@ -104,6 +104,13 @@ type Report struct {
 	// Incomplete names the cases that produced nothing, which is a blocker in
 	// its own right and is reported separately from a low score.
 	Incomplete []string
+	// Unmeasured names the checks that did not run at all.
+	//
+	// A check that could not be made is not a check that passed, and the
+	// difference is invisible in a report of numbers: a regression tolerance
+	// with no baseline behind it and one the generation cleared read exactly
+	// the same.
+	Unmeasured []string
 }
 
 // Passed reports whether retrieval quality permits a cutover.
@@ -260,15 +267,21 @@ func judge(report *Report, policy Policy, missingRequired []string) {
 			fmt.Sprintf("%d evaluation cases produced no result: %s",
 				len(report.Incomplete), strings.Join(report.Incomplete, "; ")))
 	}
-	if policy.MinRecallAtK > 0 && report.Scores.RecallAtK < policy.MinRecallAtK {
+	// No guard on the floor being set: a recall is never below zero, so a
+	// policy asking for nothing is satisfied by anything.
+	if report.Scores.RecallAtK < policy.MinRecallAtK {
 		report.Blockers = append(report.Blockers, fmt.Sprintf(
 			"recall is %.3f and this policy requires %.3f", report.Scores.RecallAtK, policy.MinRecallAtK))
 	}
-	if policy.MinExactAgreement > 0 && report.Scores.ExactCases > 0 &&
-		report.Scores.ExactAgreement < policy.MinExactAgreement {
+	if report.Scores.ExactCases > 0 && report.Scores.ExactAgreement < policy.MinExactAgreement {
 		report.Blockers = append(report.Blockers, fmt.Sprintf(
 			"the index agrees with an exhaustive search on %.3f of results and this policy requires %.3f",
 			report.Scores.ExactAgreement, policy.MinExactAgreement))
+	}
+	if report.Scores.ExactCases == 0 {
+		report.Unmeasured = append(report.Unmeasured,
+			"the index was not compared against an exhaustive search, so a divergence between them "+
+				"would not have been seen")
 	}
 	judgeRegression(report, policy)
 }
@@ -280,6 +293,9 @@ func judge(report *Report, policy Policy, missingRequired []string) {
 // improvement, which is the most flattering way to say nothing.
 func judgeRegression(report *Report, policy Policy) {
 	if report.Baseline.Cases == 0 {
+		report.Unmeasured = append(report.Unmeasured,
+			"retrieval quality was not compared against the generation being replaced, because no "+
+				"baseline was measured for it")
 		return
 	}
 	if drop := report.Baseline.MRR - report.Scores.MRR; drop > policy.MaxMRRRegression {

@@ -337,3 +337,110 @@ func TestEvaluate_RankingIsMeasuredAndNotJustMembership(t *testing.T) {
 	c.Assert(second.Scores.NDCG < first.Scores.NDCG, qt.IsTrue)
 	c.Assert(second.Scores.MRR < first.Scores.MRR, qt.IsTrue)
 }
+
+// TestEvaluate_AnExactSearchThatFoundNothingStillRan is why the flag exists
+// beside the keys.
+//
+// An exhaustive search returning nothing is a measurement -- the query matches
+// no document at all -- and a search that was never run is not. Reading the
+// keys instead of the flag folds them together, and the reading loses the case
+// where the index confidently returns three documents an exact scan says are
+// not there.
+func TestEvaluate_AnExactSearchThatFoundNothingStillRan(t *testing.T) {
+	c := qt.New(t)
+	policy := strict()
+	policy.MinRecallAtK = 0
+	cases := corpus()
+	cases[0].Required = nil
+	results := perfect()
+	results[0].ExactRun = true
+	results[0].ExactKeys = nil
+
+	report := embedeval.Evaluate("gen-new", policy, cases, results, embedeval.Scores{})
+
+	c.Assert(report.Scores.ExactCases, qt.Equals, 2)
+	c.Assert(report.Scores.ExactAgreement, qt.Equals, 0.5)
+	c.Assert(report.Passed(), qt.IsFalse)
+}
+
+// TestEvaluate_AgreementIsMeasuredAgainstWhatExactSearchFound pins the
+// denominator.
+//
+// The exhaustive search found one document and the index returned it, along
+// with two others. It found everything there was to find. Dividing by what the
+// index returned instead punishes it for the depth it was asked for.
+func TestEvaluate_AgreementIsMeasuredAgainstWhatExactSearchFound(t *testing.T) {
+	c := qt.New(t)
+	policy := strict()
+	policy.MinRecallAtK = 0
+	cases := corpus()
+	cases[0].Required = nil
+	cases[1].Required = nil
+	results := perfect()
+	results[0].ExactKeys = []string{"doc-price"}
+	results[1].ExactKeys = []string{"doc-support"}
+
+	report := embedeval.Evaluate("gen-new", policy, cases, results, embedeval.Scores{})
+
+	c.Assert(report.Scores.ExactAgreement, qt.Equals, 1.0)
+	c.Assert(report.Passed(), qt.IsTrue, qt.Commentf("%v", report.Blockers))
+}
+
+// TestEvaluate_TheIdealRankingIsBoundedByK keeps a case from being scored
+// against a ranking it was never allowed to return.
+//
+// Five relevant documents and a top-3: the best possible answer holds three of
+// them. Measuring against all five reports a perfect search as a failing one,
+// and the fix somebody reaches for is a worse model.
+func TestEvaluate_TheIdealRankingIsBoundedByK(t *testing.T) {
+	c := qt.New(t)
+	policy := strict()
+	policy.MinRecallAtK = 0
+	cases := []embedeval.Case{{
+		ID: "broad", Query: "everything", K: 3,
+		Relevant: map[string]float64{"a": 3, "b": 3, "c": 3, "d": 3, "e": 3},
+	}}
+	results := []embedeval.Result{{
+		CaseID: "broad", Keys: []string{"a", "b", "c"},
+		ExactKeys: []string{"a", "b", "c"}, ExactRun: true,
+	}}
+
+	report := embedeval.Evaluate("gen-new", policy, cases, results, embedeval.Scores{})
+
+	c.Assert(report.Scores.NDCG, qt.Equals, 1.0)
+	c.Assert(report.Scores.RecallAtK, qt.Equals, 0.6)
+}
+
+// TestEvaluate_WhatWasNotMeasuredIsSaid is Decision 13 in this layer.
+//
+// A regression tolerance with no baseline behind it and one the generation
+// cleared read exactly the same in a report of numbers. So does an index
+// nobody compared against an exhaustive search. Neither is a check that
+// passed.
+func TestEvaluate_WhatWasNotMeasuredIsSaid(t *testing.T) {
+	c := qt.New(t)
+	results := perfect()
+	results[0].ExactRun = false
+	results[1].ExactRun = false
+
+	report := embedeval.Evaluate("gen-new", strict(), corpus(), results, embedeval.Scores{})
+
+	c.Assert(report.Passed(), qt.IsTrue, qt.Commentf("%v", report.Blockers))
+	c.Assert(report.Unmeasured, qt.DeepEquals, []string{
+		"the index was not compared against an exhaustive search, so a divergence between them " +
+			"would not have been seen",
+		"retrieval quality was not compared against the generation being replaced, because no " +
+			"baseline was measured for it",
+	})
+}
+
+// TestEvaluate_AMeasuredComparisonIsNotReportedAsUnmeasured is the control for
+// the row above.
+func TestEvaluate_AMeasuredComparisonIsNotReportedAsUnmeasured(t *testing.T) {
+	c := qt.New(t)
+
+	report := embedeval.Evaluate("gen-new", strict(), corpus(), perfect(),
+		embedeval.Scores{Cases: 2, MRR: 1, NDCG: 1})
+
+	c.Assert(report.Unmeasured, qt.HasLen, 0)
+}
