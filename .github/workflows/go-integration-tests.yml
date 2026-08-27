@@ -267,11 +267,13 @@ jobs:
 
       - name: Start distributed SQL databases
         run: |
+          # renovate: datasource=docker depName=cockroachdb/cockroach
           docker run --detach --name ptah-cockroachdb \
             --publish 26257:26257 \
             cockroachdb/cockroach:v26.3.0 \
             start-single-node --insecure --advertise-addr=localhost:26257
 
+          # renovate: datasource=docker depName=yugabytedb/yugabyte
           docker run --detach --name ptah-yugabytedb \
             --publish 5433:5433 \
             yugabytedb/yugabyte:2026.1.0.0-b118 \
