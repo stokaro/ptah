@@ -12,9 +12,13 @@
 //
 // # Two tool groups, and what decides which you get
 //
-// The four reading tools are always present. The four artifact tools --
-// describe, read, preview, apply -- are present when the operator started the
-// server with a workspace, and absent when they did not.
+// The six reading tools are always present: describe_session, validate_schema,
+// render_schema, schema_lineage, search_docs and read_database. The three
+// artifact tools -- read, preview, apply -- are present when the operator
+// started the server with a workspace, and absent when they did not.
+//
+// describe_session belongs to the first group and reports on the second, which
+// is why it used to be counted in the second by mistake.
 //
 // That split is process-level on purpose. The protocol requires a server's tool
 // list to be stable within a connection: a set that grew after a capability was
@@ -166,8 +170,9 @@ func writes(destructive, idempotent bool) *mcp.ToolAnnotations {
 	}
 }
 
-// registerReadTools adds the reading half: the four operations ADR 0002 froze
-// and describe_session, which reports what the other four may do.
+// registerReadTools adds the reading half: the four operations ADR 0002 froze,
+// describe_session, which reports what the other four may do, and search_docs,
+// which answers from the documentation carried in this binary. Six in all.
 //
 // They are bound to the session rather than called directly, so that each one
 // asks the capability broker first. Registering them beside the session left

@@ -24,6 +24,18 @@ const (
 	formatJSON = "json"
 )
 
+// sqlLintDialects is the one spelling of the list --dialect advertises. The
+// flag's help and its refusal both read it, so the two cannot come to disagree
+// about what this command takes.
+//
+// It is deliberately NOT capability.DefaultDialects, which "ptah schema render"
+// uses and which names ten. validateSQLLintOptions accepts whatever
+// platform.NormalizeDialect resolves, so `--dialect oracle` is accepted here
+// and exits 0, while nothing in internal/sqllint has been measured to analyze
+// Oracle. Naming a tenth dialect would claim coverage nobody established, and
+// refusing it is a behavior change this help-text change does not get to make.
+const sqlLintDialects = "postgres, mysql, mariadb, sqlite, sqlserver, clickhouse, cockroachdb, yugabytedb, or spanner"
+
 var errSQLLintFindings = errors.New("sql lint findings found")
 
 // NewSQLCommand returns the standalone SQL command namespace.
@@ -70,7 +82,7 @@ migration directory specific.`,
 	}
 
 	flags := cmd.Flags()
-	flags.StringVar(&dialect, "dialect", "", "Target dialect: postgres, mysql, mariadb, sqlite, sqlserver, clickhouse, cockroachdb, yugabytedb, or spanner")
+	flags.StringVar(&dialect, "dialect", "", "Target dialect: "+sqlLintDialects)
 	serverversion.Register(flags, &version)
 	flags.StringVar(&format, "format", formatText, "Output format: text or json")
 	flags.BoolVar(&stdin, "stdin", false, "Read SQL from stdin")
@@ -186,7 +198,7 @@ func validateSQLLintOptions(opts sqlLintOptions) error {
 		return fmt.Errorf("invalid --format value %q: expected text or json", opts.format)
 	}
 	if opts.dialect != "" && platform.NormalizeDialect(opts.dialect) == "" {
-		return fmt.Errorf("invalid --dialect value %q: expected postgres, mysql, mariadb, sqlite, sqlserver, clickhouse, cockroachdb, yugabytedb, or spanner", opts.dialect)
+		return fmt.Errorf("invalid --dialect value %q: expected %s", opts.dialect, sqlLintDialects)
 	}
 	if opts.version != "" && opts.dialect == "" {
 		return fmt.Errorf("--%s requires --dialect", serverversion.FlagName)

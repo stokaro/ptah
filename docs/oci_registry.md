@@ -115,7 +115,7 @@ ptah oci verify "oci://ghcr.io/acme/app-migrations@sha256:..." --policy policy.y
 version: 1
 require_digest_pin: true
 artifact_types:
-  - application/vnd.stokaro.ptah.migration.v1
+  - application/vnd.stokaro.ptah.migrations.v1
 require_annotations:
   - org.opencontainers.image.source
   - org.opencontainers.image.revision
@@ -275,13 +275,13 @@ exists to prevent.
 ptah oci capabilities "oci://ghcr.io/acme/app-migrations:latest"
 ```
 
-Ptah's own discovery is robust whatever the registry does, because it publishes
-referrers two ways and merges them on read. Cross-client discovery is the part
-that depends on the registry, and this is how to find out rather than assume:
-the question is put with the client pinned to the referrers API, so a success
-cannot have come from the tag-schema fallback. A refusal naming the API as
-unsupported is the registry saying no; a failure to ask is reported as an error
-rather than folded into a no.
+Ptah's own discovery works whether or not the registry answers that API,
+because it publishes referrers two ways and merges them on read. Cross-client
+discovery is the part that depends on the registry, and this is how to find out
+rather than assume: the question is put with the client pinned to the referrers
+API, so a success cannot have come from the tag-schema fallback. A refusal
+naming the API as unsupported is the registry saying no; a failure to ask is
+reported as an error rather than folded into a no.
 
 ## OCI Reference Syntax
 

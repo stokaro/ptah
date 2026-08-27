@@ -1,6 +1,6 @@
 # Ptah System Design
 
-**Ptah** is a comprehensive database schema management tool that bridges the gap between Go application code and database schemas. Named after the ancient Egyptian god of creation, Ptah transforms structured Go code into coherent, executable database schemas while maintaining consistency between code and data.
+**Ptah** is a database schema management tool that bridges the gap between Go application code and database schemas. Named after the ancient Egyptian god of creation, Ptah transforms structured Go code into coherent, executable database schemas while maintaining consistency between code and data.
 
 ## Overview
 
@@ -121,7 +121,7 @@ For a detailed view of the migration workflow, see the [Migration Architecture D
 #### schemadiff Package
 - **Purpose**: Compares Go-defined schemas with database schemas
 - **Key Types**:
-  - `SchemaDiff`: Comprehensive difference representation
+  - `SchemaDiff`: The whole difference between two schemas
   - `TableDiff`: Table-level changes
   - `ColumnDiff`: Column-level modifications
   - `IndexRef`: Table-qualified index identity
@@ -355,4 +355,4 @@ type Product struct {
 - Migration status tracking for recovery
 - Partial failure handling with rollback
 
-This architecture provides a robust, extensible foundation for database schema management that bridges the gap between application code and database structure while maintaining safety and consistency across multiple database platforms.
+This architecture keeps application code and database structure consistent across multiple database platforms, and each layer can be extended without touching the ones around it.

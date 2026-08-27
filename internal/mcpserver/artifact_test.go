@@ -173,9 +173,12 @@ func TestServer_WithAWorkspaceOffersTheArtifactTools(t *testing.T) {
 }
 
 func TestServer_AnnotatesTheApplyToolAsTheOnlyWriter(t *testing.T) {
-	// Three of the four artifact tools read. Annotating them all as writers
-	// would tell a client to confirm a listing, and annotating the fourth as a
-	// reader would tell it not to confirm the write.
+	// apply_patch is the only tool a workspace adds that writes. Annotating
+	// read_artifact and preview_patch as writers would tell a client to confirm
+	// a listing, and annotating apply_patch as a reader would tell it not to
+	// confirm the write. describe_session is asserted here too because it is
+	// the reading tool most often filed among the artifact ones: it reports on
+	// a workspace without touching it.
 	c := qt.New(t)
 	fixture := newWorkspace(c, agentpolicy.VerdictAllow, nil)
 

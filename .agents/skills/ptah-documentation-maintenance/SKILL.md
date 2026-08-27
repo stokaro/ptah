@@ -251,7 +251,7 @@ practical, live commands:
   `docs/*.md`, `examples/**`, `integration/*.md`, every package `README.md`,
   and `AGENTS.md` — so run it even when the change touches no site page. It has
   no npm dependencies, so `node docs/site/scripts/check-style.mjs` works from a
-  bare checkout; CI runs it that way in its own job. Section 13 of
+  bare checkout; CI runs it that way in its own job. Section 16 of
   `docs/STYLE_GUIDE.md` lists which rules these checks enforce; anything not in
   that table is your responsibility to review by reading.
 

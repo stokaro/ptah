@@ -35,7 +35,7 @@ func NewRootCommand() *cobra.Command {
 	info := buildinfo.Resolve()
 	cmd := &cobra.Command{
 		Use:   "ptah",
-		Short: "Ptah schema management and migration tooling",
+		Short: "Ptah inspects, defines, compares, visualizes, tests, and changes database schemas",
 		Long:  rootLongDescription,
 		// Version is what makes cobra register --version/-v at all; the
 		// template below is what makes those spellings answer with the same
@@ -137,9 +137,24 @@ func executeWithRecovery(cmd *cobra.Command) (err error) {
 	return cmdutil.NormalizeCommandError(executed, err, 2)
 }
 
-const rootLongDescription = `Ptah generates database schemas from Go entities,
-compares desired schemas with live databases, and manages database migrations.
+// rootLongDescription is the first sentence most users read about Ptah, so it
+// describes the product rather than one of the six sources a schema can be
+// written in.
+//
+// It names no engine and no engine count on purpose. Ptah renders for ten
+// dialects, the number moves, and a list here is one more place for it to go
+// stale -- the previous text named five families and left out Oracle, SQL
+// Server, CockroachDB and YugabyteDB, all of which render. "ptah db
+// capabilities" answers for the server the reader actually has.
+//
+// It also stops short of calling ptah-compat a drop-in replacement.
+// docs/STYLE_GUIDE.md and atlas/license-boundary.md both reserve that claim for
+// what the conformance evidence proves, and the conformance page says in as
+// many words that green reports do not prove it.
+const rootLongDescription = `Ptah helps you inspect, define, compare, visualize,
+test, and change database schemas. Use versioned migrations, declarative schema
+changes, or both, across supported databases.
 
-It supports PostgreSQL-family targets, MySQL, MariaDB, SQLite, ClickHouse, and
-Spanner-oriented schema workflows. Scripts that expect the Atlas CLI can use
-the separate ptah-compat binary, a drop-in Atlas replacement.`
+Run "ptah db capabilities --db-url <url>" to see what Ptah resolves for a
+specific server. Scripts written for the Atlas CLI can use the separate
+ptah-compat binary, which presents an Atlas-compatible command surface.`

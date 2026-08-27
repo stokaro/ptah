@@ -4,7 +4,7 @@ This document describes the new dynamic integration testing approach for the Pta
 
 ## Overview
 
-The dynamic testing approach provides more realistic and comprehensive testing by:
+The dynamic testing approach exercises the whole migration pipeline by:
 
 1. **Testing the Full Workflow**: Entity parsing → Schema generation → Migration generation → Application
 2. **Using Realistic Evolution**: Versioned entities represent real-world schema evolution patterns
@@ -136,8 +136,8 @@ docker compose --profile test run --rm ptah-tester --scenarios=dynamic_basic_evo
 
 1. **Realistic Testing**: Tests actual ptah functionality instead of applying pre-made SQL
 2. **Maintainable**: Entity files are easier to understand and modify than SQL
-3. **Comprehensive**: Tests the full pipeline from entities to applied migrations
-4. **Flexible**: Easy to add new evolution scenarios by creating new version directories
+3. **Full pipeline**: Tests entity parsing through to applied migrations
+4. **Cheap to extend**: A new evolution scenario is a new version directory
 5. **Self-Documenting**: Entity evolution tells a clear story of schema changes
 
 ## Adding New Test Scenarios
@@ -156,4 +156,4 @@ Example:
 }
 ```
 
-This approach provides much more realistic and comprehensive testing of the Ptah migration library's core functionality.
+This approach tests the migration library through the path a user takes, from entity files to a migrated database.

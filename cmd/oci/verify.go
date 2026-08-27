@@ -42,7 +42,7 @@ passing a policy and passing an empty one are different mistakes:
     version: 1
     require_digest_pin: true
     artifact_types:
-      - application/vnd.stokaro.ptah.migration.v1
+      - application/vnd.stokaro.ptah.migrations.v1
     require_annotations:
       - org.opencontainers.image.source
       - org.opencontainers.image.revision
