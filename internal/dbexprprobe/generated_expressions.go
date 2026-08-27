@@ -9,7 +9,9 @@ import (
 
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/exprkey"
 )
 
 // GeneratedExpressionProbe is one declared table whose generated columns need
@@ -73,9 +75,10 @@ func ResolveGeneratedExpressions(
 		return nil, nil
 	}
 
+	semantics := dev.Info().IdentifierSemantics
 	resolved := make(map[string]config.GeneratedExpression)
 	for _, probe := range probes {
-		if err := resolveOneGeneratedProbe(ctx, dev, probe, resolved); err != nil {
+		if err := resolveOneGeneratedProbe(ctx, dev, semantics, probe, resolved); err != nil {
 			return nil, err
 		}
 	}
@@ -103,6 +106,7 @@ func GeneratedExpressionProbeTable(index int) string {
 func resolveOneGeneratedProbe(
 	ctx context.Context,
 	dev *dbschema.DatabaseConnection,
+	semantics identifier.Semantics,
 	probe GeneratedExpressionProbe,
 	into map[string]config.GeneratedExpression,
 ) (resultErr error) {
@@ -117,7 +121,7 @@ func resolveOneGeneratedProbe(
 		// rather than reported, which is what a comparison that cannot judge
 		// must do.
 		for _, column := range probe.Generated {
-			into[generatedExpressionKey(probe.Schema, probe.Table, column)] = config.GeneratedExpression{}
+			into[exprkey.Generated(semantics, probe.Schema, probe.Table, column)] = config.GeneratedExpression{}
 		}
 		return nil
 	}
@@ -139,7 +143,7 @@ func resolveOneGeneratedProbe(
 	}
 	for _, column := range probe.Generated {
 		expression, found := stored[strings.ToUpper(strings.TrimSpace(column))]
-		into[generatedExpressionKey(probe.Schema, probe.Table, column)] = config.GeneratedExpression{
+		into[exprkey.Generated(semantics, probe.Schema, probe.Table, column)] = config.GeneratedExpression{
 			Expression: expression,
 			Resolved:   found,
 		}
@@ -197,10 +201,3 @@ func readOracleVirtualColumnExpressions(
 // generatedExpressionKey is the key
 // [config.CompareOptions.GeneratedExpressions] is read by, and has to agree
 // with the comparison's own spelling of it.
-func generatedExpressionKey(schema, table, column string) string {
-	name := table + "." + column
-	if schema != "" {
-		name = schema + "." + name
-	}
-	return strings.ToLower(name)
-}

@@ -11,6 +11,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/internal/exprkey"
 	"go.5x5.cz/ptah/internal/normalize"
 	"go.5x5.cz/ptah/internal/oracletype"
 	"go.5x5.cz/ptah/internal/sqlitekey"
@@ -184,6 +185,7 @@ func tableColumnsWithSemantics(
 			colDiff := columnsWithDesiredDomains(genCol, dbCol, dialect, desiredDomains, columnContext{
 				schema:               genTable.Schema,
 				table:                genTable.Name,
+				semantics:            semantics,
 				generatedExpressions: generatedExpressions,
 			})
 			// A comment-only difference has no entry in Changes, and it is
@@ -353,6 +355,11 @@ type columnContext struct {
 	// [config.CompareOptions.GeneratedExpressions].
 	schema string
 	table  string
+	// semantics is the target's identifier rule, and it is what the key into
+	// that map is built through. A hand-folded key here and another one in the
+	// package that FILLS the map is two answers to which column an entry is
+	// about (stokaro/ptah#2315).
+	semantics identifier.Semantics
 	// generatedExpressions is that map, nil when nobody asked a server.
 	generatedExpressions map[string]config.GeneratedExpression
 }
@@ -435,7 +442,7 @@ func columnsWithDesiredDomains(
 		colDiff.Changes["unique"] = fmt.Sprintf("%t -> %t", dbUnique, genUnique)
 	}
 	var resolution *config.GeneratedExpression
-	if entry, ok := ctx.generatedExpressions[generatedColumnKey(ctx.schema, ctx.table, genCol.Name)]; ok {
+	if entry, ok := ctx.generatedExpressions[exprkey.Generated(ctx.semantics, ctx.schema, ctx.table, genCol.Name)]; ok {
 		resolution = &entry
 	}
 	if diff := generatedColumnDiff(genCol, dbCol, dialect, resolution); diff != "" {
@@ -998,20 +1005,6 @@ func tablePrimaryKeyColumns(table schemamodel.Table) []string {
 // that a MODIFY would not make (stokaro/ptah#1915).
 func generatedExpressionIsRewritten(dialect string) bool {
 	return platform.NormalizeDialect(dialect) == platform.Oracle
-}
-
-// generatedColumnKey names one column for [config.CompareOptions.GeneratedExpressions].
-//
-// The declared spelling is the key on both sides, because the resolver builds
-// the map from the same declaration this comparison reads. Folded to lower case
-// so a target that reports its catalog in upper case does not need a second
-// spelling.
-func generatedColumnKey(schema, table, column string) string {
-	name := table + "." + column
-	if schema != "" {
-		name = schema + "." + name
-	}
-	return strings.ToLower(name)
 }
 
 // generatedColumnDiff compares a generated column, using the server's own

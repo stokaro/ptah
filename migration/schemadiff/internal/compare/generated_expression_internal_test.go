@@ -13,7 +13,9 @@ import (
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/internal/exprkey"
 )
 
 // oracleStoredExpression is what a live 23.26.2.0.0 stores for
@@ -153,31 +155,70 @@ func TestGeneratedColumnDiff_UsesTheServerSpellingWhereItHasOne(t *testing.T) {
 	}
 }
 
-// TestGeneratedColumnKey_MatchesTheResolverSpelling holds the two halves of one
-// key to each other.
+// TestGeneratedColumnKey_SeparatesComponentsADotWouldMerge is invariant 5 of
+// docs/object_identity.md: "Components held separately are never rejoined".
 //
-// The map is written by dbschema and read here, and neither package can see the
-// other's spelling. A key that folded differently on the two sides would leave
-// every entry unfound, which is indistinguishable from nobody having asked a
-// server -- the expression would go uncompared and the fix would look like it
-// worked.
-func TestGeneratedColumnKey_MatchesTheResolverSpelling(t *testing.T) {
+// The key is built by [exprkey.Generated] on both sides -- the package that
+// FILLS the map and this one, which reads it. A key that joined the three
+// components with dots made `table "a.b", column "c"` and `schema "a", table
+// "b", column "c"` one entry, so one column's resolved expression would be
+// compared against the other's declaration. A quoted Oracle table name may
+// contain a dot, which is what makes the collision reachable rather than
+// theoretical (stokaro/ptah#2315).
+func TestGeneratedColumnKey_SeparatesComponentsADotWouldMerge(t *testing.T) {
+	c := qt.New(t)
+	semantics := identifier.ForDialect(platform.Oracle)
+
+	dotInTable := exprkey.Generated(semantics, "", `"a.b"`, "c")
+	schemaAndTable := exprkey.Generated(semantics, "a", "b", "c")
+
+	c.Assert(dotInTable, qt.Not(qt.Equals), schemaAndTable)
+}
+
+// TestGeneratedColumnKey_FoldsThroughTheTargetsRule is invariant 4: folding is
+// the target's rule, not a hard-coded one.
+//
+// Oracle folds a bare identifier to upper case, so the declared and catalog
+// spellings of one column have to reach the same entry. PostgreSQL does not
+// fold a quoted one, so `"Users"` and `Users` are two columns there -- and a
+// key that lower-cased everything by hand answered the first correctly and the
+// second wrongly.
+func TestGeneratedColumnKey_FoldsThroughTheTargetsRule(t *testing.T) {
 	tests := []struct {
-		name   string
-		schema string
-		table  string
-		column string
-		want   string
+		name    string
+		dialect string
+		left    [3]string
+		right   [3]string
+		same    bool
 	}{
-		{name: "unqualified", table: "ora_posts", column: "doubled", want: "ora_posts.doubled"},
-		{name: "qualified", schema: "app", table: "ora_posts", column: "doubled", want: "app.ora_posts.doubled"},
-		{name: "folded", schema: "APP", table: "ORA_POSTS", column: "DOUBLED", want: "app.ora_posts.doubled"},
+		{
+			name: "Oracle folds a bare name", dialect: platform.Oracle,
+			left:  [3]string{"APP", "ORA_POSTS", "DOUBLED"},
+			right: [3]string{"app", "ora_posts", "doubled"},
+			same:  true,
+		},
+		{
+			name: "PostgreSQL keeps a quoted name apart", dialect: platform.Postgres,
+			left:  [3]string{"", "posts", `"Doubled"`},
+			right: [3]string{"", "posts", "Doubled"},
+			same:  false,
+		},
+		{
+			name: "a different column is a different key", dialect: platform.Oracle,
+			left:  [3]string{"app", "ora_posts", "doubled"},
+			right: [3]string{"app", "ora_posts", "tripled"},
+			same:  false,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
+			semantics := identifier.ForDialect(test.dialect)
 
-			c.Assert(generatedColumnKey(test.schema, test.table, test.column), qt.Equals, test.want)
+			left := exprkey.Generated(semantics, test.left[0], test.left[1], test.left[2])
+			right := exprkey.Generated(semantics, test.right[0], test.right[1], test.right[2])
+
+			c.Assert(left == right, qt.Equals, test.same)
 		})
 	}
 }
