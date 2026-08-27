@@ -56,6 +56,8 @@ using one is no longer a project Atlas reads.
 Where the two name the same setting, **`atlas.hcl` wins**. That makes an
 incremental move possible in either direction: settings Ptah alone needs can go
 in `ptah.yaml` while `atlas.hcl` stays authoritative for everything it declares.
+[Configuration](../../reference/configuration/) has the full precedence table,
+flags and environment variables included.
 
 ## Step 3 — ask what adoption would take
 
