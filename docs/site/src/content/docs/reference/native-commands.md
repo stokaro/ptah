@@ -246,7 +246,7 @@ stdout therefore gets a document in every case except `2`.
 | `ptah oci login` | Store a credential for a registry, after checking it works. |
 | `ptah oci logout` | Remove the credential Ptah stored for a registry. |
 | `ptah project inspect` | Report which project-file settings Ptah acts on, and which it read and ignored. |
-| `ptah project adopt` | Rewrite a project file's compat-only spellings into their native equivalents; `--check` reports the classification without writing. |
+| `ptah project adopt` | Rewrite a project file's compat-only spellings into their native equivalents; `--check` reports the classification without writing; `--preflight` also reads the revision history in the project's database and reports whether native Ptah may take it over, writing nothing there. |
 | `ptah sql lint` | Lint standalone SQL files. |
 
 ## Top-level verbs

@@ -52,6 +52,36 @@ const (
 	ScratchRewrites Scratch = "rewrites"
 )
 
+// targetFromProject names the verbs that reach their target through the
+// PROJECT FILE rather than through a flag.
+//
+// [Walk] checks the hand-written classification against each command's flags,
+// on the premise that a verb registering no `--db-url` cannot touch a target.
+// That premise holds for every verb which is given a database; it runs out for
+// a verb which is given a PROJECT and finds the database inside it.
+//
+// `project adopt --preflight` is that verb. It reads the revision history the
+// project's own configuration points at, and it takes no URL flag on purpose:
+// the project file is where the answer to "which database" already lives, and a
+// flag that disagreed with it would report confidently about a history the
+// project does not target.
+//
+// This is a list rather than a field on [Verb] so that the classifications stay
+// positional literals, and a list rather than a relaxed guard so that every
+// other verb keeps the bidirectional check.
+var targetFromProject = map[string]struct{}{
+	"project adopt": {},
+}
+
+// TargetFromProject reports whether a verb reaches its target through the
+// project file instead of a flag. A caller checking a classification against a
+// command's flags has to allow for these; nothing else may reach a database
+// without saying so in a flag.
+func TargetFromProject(name string) bool {
+	_, ok := targetFromProject[name]
+	return ok
+}
+
 // Verb is one command's classification, with the reason it carries that one.
 type Verb struct {
 	Target  Target
