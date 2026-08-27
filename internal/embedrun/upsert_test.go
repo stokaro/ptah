@@ -99,6 +99,44 @@ func TestResolveWrite_ANewerSourceVersionRevivesATombstonedRow(t *testing.T) {
 	c.Assert(resolved.Version, qt.Equals, "10")
 }
 
+// TestResolveWrite_ATombstoneSurvivesAnUnorderedUpdate is what the tombstone
+// rule holds that the version rule cannot.
+//
+// A late update whose version is merely OLDER is already refused by the
+// ordering. This one carries the SAME version as the tombstone and different
+// text, so nothing about the order refuses it -- only the tombstone being
+// terminal does. Without that, a redelivered update from the moment of the
+// delete brings the row back.
+func TestResolveWrite_ATombstoneSurvivesAnUnorderedUpdate(t *testing.T) {
+	c := qt.New(t)
+	existing := write(embedrun.WriteTombstone, "9", "")
+
+	resolved, changed, err := embedrun.ResolveWrite(&existing, write(embedrun.WriteUpsert, "9", "hash-9"))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(changed, qt.IsFalse)
+	c.Assert(resolved.Kind, qt.Equals, embedrun.WriteTombstone)
+}
+
+// TestResolveWrite_AnUnversionedWriteDoesNotLoseToAVersionedRow pins the choice
+// where no order exists.
+//
+// A row written under a version strategy and an answer computed without one
+// cannot be ordered against each other. Treating the absent version as "older"
+// would silently discard every write after a strategy change; treating it as
+// incomparable and letting the newer input hash decide is the freshness answer
+// the input-hash strategy is built on.
+func TestResolveWrite_AnUnversionedWriteDoesNotLoseToAVersionedRow(t *testing.T) {
+	c := qt.New(t)
+	existing := write(embedrun.WriteUpsert, "5", "hash-old")
+
+	resolved, changed, err := embedrun.ResolveWrite(&existing, write(embedrun.WriteUpsert, "", "hash-new"))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(changed, qt.IsTrue)
+	c.Assert(resolved.InputHash, qt.Equals, "hash-new")
+}
+
 // TestResolveWrite_AWriteNeverCrossesGenerations is Decision 6 at the row
 // level.
 //

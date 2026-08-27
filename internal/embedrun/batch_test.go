@@ -64,6 +64,14 @@ func TestAssemble_RespectsEveryBoundAtOnce(t *testing.T) {
 			bounds: embedrun.BatchBounds{MaxInputs: 3, MaxRows: 2, MaxBytes: 100}, want: []int{2, 2},
 		},
 		{
+			// The input bound binding ALONE, with every other bound slack.
+			// Without this row the row bound covers it -- it defaults to the
+			// input bound -- and dropping the input check changes nothing.
+			name: "the input bound binds on its own", rows: inputs(1, 1, 1, 1, 1),
+			bounds: embedrun.BatchBounds{MaxInputs: 2, MaxRows: 50, MaxBytes: 10_000},
+			want:   []int{2, 2, 1},
+		},
+		{
 			name: "no batching means one input a request", rows: inputs(1, 1, 1),
 			bounds: embedrun.BatchBounds{}, want: []int{1, 1, 1},
 		},
