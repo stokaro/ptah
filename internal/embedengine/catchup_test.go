@@ -356,3 +356,29 @@ func TestCatchUp_TheRereadIsAskedAboutEveryCollapsedKeyOnce(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(source.asked, qt.DeepEquals, [][]string{{"1"}, {"2"}})
 }
+
+// TestCatchUp_AResumedRunStartsFromItsOwnWatermark is the difference between
+// the two boundaries a run carries.
+//
+// The snapshot boundary is where catch-up BEGAN. A run that has been catching
+// up for an hour and restarts must not go back to it: on a busy source that is
+// an hour of changes re-read and re-embedded, every time the process bounces.
+func TestCatchUp_AResumedRunStartsFromItsOwnWatermark(t *testing.T) {
+	c := qt.New(t)
+	h := newHarness(c, defaultBounds())
+	stored, err := h.store.Run(context.Background(), "run-1")
+	c.Assert(err, qt.IsNil)
+	stored.SnapshotWatermark = "100"
+	stored.CatchUpWatermark = "300"
+	c.Assert(h.store.SaveRun(context.Background(), stored), qt.IsNil)
+	changes := &fakeChanges{
+		pages:    [][]embedcatchup.Event{{changed(301, 1, "1", embedcatchup.OperationUpdate)}},
+		horizons: []uint64{400},
+	}
+
+	run, err := h.engine.CatchUp(context.Background(), "run-1", changes, livingRows("1"))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(changes.asked[0], qt.Equals, uint64(300))
+	c.Assert(run.CatchUpWatermark, qt.Equals, "400")
+}
