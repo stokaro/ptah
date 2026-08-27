@@ -116,7 +116,7 @@ func runCatchUp(ctx context.Context, out io.Writer, options executeOptions) erro
 	}
 	defer opened.close()
 
-	if opened.loaded.Mode != embedcatchup.ModeOutbox {
+	if !recordsChanges(opened.loaded.Mode) {
 		// Structural absence rather than a silent no-op: a catch-up that
 		// "succeeded" over a mode that records nothing is a run reporting
 		// itself caught up on a source it never watched.
@@ -140,6 +140,15 @@ func runCatchUp(ctx context.Context, out io.Writer, options executeOptions) erro
 	return writeLines(out,
 		fmt.Sprintf("caught up to transaction %s: %d changed rows, %d tombstoned",
 			boundaryText(run.CatchUpWatermark), run.Progress.RowsScanned, run.Progress.RowsDeleted))
+}
+
+// recordsChanges reports whether a mode leaves something for catch-up to read.
+//
+// Only the outbox does, today. The immutable mode has nothing to catch up on by
+// definition, and dual write is the application's own business -- Ptah reads the
+// writer's reports rather than a change log.
+func recordsChanges(mode embedcatchup.Mode) bool {
+	return mode == embedcatchup.ModeOutbox
 }
 
 // buildEngine assembles the engine from the specification.
