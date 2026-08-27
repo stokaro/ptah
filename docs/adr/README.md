@@ -20,6 +20,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0008](0008-agent-surface-promotion.md) | The agent surfaces are experimental, and these are the criteria that end that | Proposed |
 | [0009](0009-remote-transport-authentication.md) | What a remote MCP transport would have to decide before it could exist | Proposed |
 | [0010](0010-retrieval-quality-is-not-a-schema-property.md) | Retrieval quality is not a property of the schema, and what follows for verification | Proposed |
+| [0011](0011-database-code-analysis-starts-from-what-the-tree-already-derives.md) | Database-code analysis starts from what the tree already derives | Proposed |
 
 ## Writing one
 
