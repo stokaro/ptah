@@ -6,6 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -507,5 +508,72 @@ func TestViewChanges_TheBodySurvivesInMemory(t *testing.T) {
 	c.Assert(changes[0].WithCheck, qt.IsTrue,
 		qt.Commentf("WITH CHECK OPTION is the view's, and a name cannot carry it"))
 	c.Assert(changes.Names(), qt.DeepEquals, []string{"active_users"},
+		qt.Commentf("and the name list a consumer reads is unchanged"))
+}
+
+// TestMaterializedViewChanges_TheWireShapeIsUnchanged is the same promise for
+// the eighth family off `[]string`.
+func TestMaterializedViewChanges_TheWireShapeIsUnchanged(t *testing.T) {
+	tests := []struct {
+		name    string
+		changes difftypes.MaterializedViewChanges
+		want    string
+		why     string
+	}{
+		{
+			name:    "nil is null",
+			changes: nil,
+			want:    "null",
+			why:     "null is a comparison that did not run",
+		},
+		{
+			name:    "empty is an empty array",
+			changes: difftypes.MaterializedViewChanges{},
+			want:    "[]",
+			why:     "[] is a comparison that ran and found nothing",
+		},
+		{
+			name: "the body and the refresh schedule do not reach the wire",
+			changes: difftypes.MaterializedViewChanges{{
+				Name:    "reporting.user_counts",
+				Body:    "SELECT count() FROM users",
+				Refresh: &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "1 HOUR"},
+			}},
+			want: `["reporting.user_counts"]`,
+			why:  "a name list is what format_version 1 has always carried here",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			encoded, err := json.Marshal(test.changes)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(string(encoded), qt.Equals, test.want, qt.Commentf("%s", test.why))
+		})
+	}
+}
+
+// TestMaterializedViewChanges_TheRefreshScheduleSurvivesInMemory is the other
+// half, on the field this family carries that its plain twin does not.
+//
+// A ClickHouse refreshable view whose schedule did not reach the planner would
+// be created as an ordinary one: the rows would be right once and never again.
+func TestMaterializedViewChanges_TheRefreshScheduleSurvivesInMemory(t *testing.T) {
+	c := qt.New(t)
+
+	changes := difftypes.MaterializedViewChanges{{
+		Name:    "reporting.user_counts",
+		Body:    "SELECT count() FROM users",
+		Refresh: &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "1 HOUR"},
+	}}
+
+	c.Assert(changes[0].Refresh, qt.IsNotNil,
+		qt.Commentf("a view created without its schedule refreshes once and never again"))
+	c.Assert(changes[0].Refresh.Mode, qt.Equals, "EVERY")
+	c.Assert(changes[0].Refresh.Interval, qt.Equals, "1 HOUR")
+	c.Assert(changes.Names(), qt.DeepEquals, []string{"reporting.user_counts"},
 		qt.Commentf("and the name list a consumer reads is unchanged"))
 }

@@ -60,6 +60,39 @@ func (v ViewChanges) Names() []string {
 	return names
 }
 
+// MaterializedViewChanges is a set of materialized views one change applies to,
+// carrying each one's body and not only its name.
+//
+// The eighth family off `[]string` under stokaro/ptah#2315, and the plainest
+// carry of the eight: catalog.MaterializedView and schemamodel.MaterializedView
+// hold the same fields, including the refresh schedule, which is the ast type
+// on both sides rather than a copy of it.
+//
+// See [ViewChanges] for why the name is the identity here, and [RangeChanges]
+// for why the wire shape does not change.
+type MaterializedViewChanges []schemamodel.MaterializedView
+
+// MarshalJSON writes the names alone, the shape `materialized_views_added` and
+// `materialized_views_removed` have always had.
+func (m MaterializedViewChanges) MarshalJSON() ([]byte, error) {
+	if m == nil {
+		return []byte("null"), nil
+	}
+	return json.Marshal(m.Names())
+}
+
+// Names is the materialized view names this change applies to.
+func (m MaterializedViewChanges) Names() []string {
+	if m == nil {
+		return nil
+	}
+	names := make([]string, 0, len(m))
+	for _, view := range m {
+		names = append(names, view.Name)
+	}
+	return names
+}
+
 // DomainChanges is a set of domain types one change applies to, carrying each
 // one's definition and not only its name.
 //
@@ -701,11 +734,11 @@ type SchemaDiff struct {
 
 	// MaterializedViewsAdded contains names of materialized views that exist in the target schema
 	// but not in the current database schema.
-	MaterializedViewsAdded []string `json:"materialized_views_added"`
+	MaterializedViewsAdded MaterializedViewChanges `json:"materialized_views_added"`
 
 	// MaterializedViewsRemoved contains names of materialized views that exist in the current database
 	// but not in the target schema.
-	MaterializedViewsRemoved []string `json:"materialized_views_removed"`
+	MaterializedViewsRemoved MaterializedViewChanges `json:"materialized_views_removed"`
 
 	// MaterializedViewsModified contains detailed information about changed materialized views.
 	MaterializedViewsModified []MaterializedViewDiff `json:"materialized_views_modified"`

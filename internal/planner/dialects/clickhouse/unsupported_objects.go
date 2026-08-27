@@ -208,13 +208,13 @@ func reportViewLikes(
 	nodes := make(map[viewLikeIdentity]ast.Node, capacity)
 
 	replacedMaterializedViews := crossKindReplacements(
-		diff.MaterializedViewsRemoved,
+		diff.MaterializedViewsRemoved.Names(),
 		diff.ViewsAdded.Names(),
 		semantics,
 	)
 	replacedViews := crossKindReplacements(
 		diff.ViewsRemoved.Names(),
-		diff.MaterializedViewsAdded,
+		diff.MaterializedViewsAdded.Names(),
 		semantics,
 	)
 	for _, name := range replacedMaterializedViews {
@@ -238,11 +238,8 @@ func reportViewLikes(
 		objects = append(objects, object)
 		nodes[identityOf(object)] = node
 	}
-	for _, name := range diff.MaterializedViewsAdded {
-		object, node, err := clickHouseMaterializedViewChange(desired, name, semantics, caps)
-		if err != nil {
-			return nil, err
-		}
+	for _, view := range diff.MaterializedViewsAdded {
+		object, node := clickHouseMaterializedViewChangeFor(view, caps)
 		objects = append(objects, object)
 		nodes[identityOf(object)] = node
 	}
@@ -276,11 +273,11 @@ func reportViewLikes(
 		}
 		result = append(result, ast.NewDropView(view.Name).SetIfExists())
 	}
-	for _, name := range diff.MaterializedViewsRemoved {
-		if slices.Contains(replacedMaterializedViews, name) {
+	for _, view := range diff.MaterializedViewsRemoved {
+		if slices.Contains(replacedMaterializedViews, view.Name) {
 			continue
 		}
-		result = append(result, ast.NewDropMaterializedView(name).SetIfExists())
+		result = append(result, ast.NewDropMaterializedView(view.Name).SetIfExists())
 	}
 	return result, nil
 }
@@ -388,8 +385,26 @@ func clickHouseMaterializedViewChange(
 			name,
 		)
 	}
-	node := fromschema.FromMaterializedView(*view)
-	return deporder.ViewLike{Name: node.Name, Body: node.Body, Materialized: true}, node, nil
+	object, node := clickHouseMaterializedViewChangeFor(*view, caps)
+	return object, node, nil
+}
+
+// clickHouseMaterializedViewChangeFor is clickHouseMaterializedViewChange for a
+// change that carries the view, which is every addition (stokaro/ptah#2315).
+//
+// It returns no error for the reason [clickHouseViewChangeFor] returns none:
+// the missing declaration the name-taking form reports is a lookup that no
+// longer happens.
+func clickHouseMaterializedViewChangeFor(
+	view schemamodel.MaterializedView,
+	caps capability.Capabilities,
+) (deporder.ViewLike, *ast.CreateMaterializedViewNode) {
+	if !caps.Has(capability.MaterializedViews) {
+		return deporder.ViewLike{Name: view.Name, Materialized: true},
+			ast.NewCreateMaterializedView(view.Name)
+	}
+	node := fromschema.FromMaterializedView(view)
+	return deporder.ViewLike{Name: node.Name, Body: node.Body, Materialized: true}, node
 }
 
 func reportRowLevelSecurity(

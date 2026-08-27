@@ -12489,6 +12489,7 @@ type GrantRef struct{ ... }
 type HypertableDiff struct{ ... }
 type IndexRef struct{ ... }
 type MatViewRefreshChange struct{ ... }
+type MaterializedViewChanges []schemamodel.MaterializedView
 type MaterializedViewDiff struct{ ... }
 type NotNullConstraintNameChange struct{ ... }
 type RLSPolicyDiff struct{ ... }
@@ -13162,6 +13163,25 @@ type MatViewRefreshChange struct {
     Both nil never reaches here, because that is not a change.
 
 
+### go.5x5.cz/ptah/migration/schemadiff/difftypes.MaterializedViewChanges
+
+package difftypes // import "go.5x5.cz/ptah/migration/schemadiff/difftypes"
+
+type MaterializedViewChanges []schemamodel.MaterializedView
+    MaterializedViewChanges is a set of materialized views one change applies
+    to, carrying each one's body and not only its name.
+
+    The eighth family off `[]string` under stokaro/ptah#2315,
+    and the plainest carry of the eight: catalog.MaterializedView and
+    schemamodel.MaterializedView hold the same fields, including the refresh
+    schedule, which is the ast type on both sides rather than a copy of it.
+
+    See ViewChanges for why the name is the identity here, and RangeChanges for
+    why the wire shape does not change.
+
+func (m MaterializedViewChanges) MarshalJSON() ([]byte, error)
+func (m MaterializedViewChanges) Names() []string
+
 ### go.5x5.cz/ptah/migration/schemadiff/difftypes.MaterializedViewDiff
 
 package difftypes // import "go.5x5.cz/ptah/migration/schemadiff/difftypes"
@@ -13660,11 +13680,11 @@ type SchemaDiff struct {
 
     // MaterializedViewsAdded contains names of materialized views that exist in the target schema
     // but not in the current database schema.
-    MaterializedViewsAdded []string `json:"materialized_views_added"`
+    MaterializedViewsAdded MaterializedViewChanges `json:"materialized_views_added"`
 
     // MaterializedViewsRemoved contains names of materialized views that exist in the current database
     // but not in the target schema.
-    MaterializedViewsRemoved []string `json:"materialized_views_removed"`
+    MaterializedViewsRemoved MaterializedViewChanges `json:"materialized_views_removed"`
 
     // MaterializedViewsModified contains detailed information about changed materialized views.
     MaterializedViewsModified []MaterializedViewDiff `json:"materialized_views_modified"`

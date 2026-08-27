@@ -292,6 +292,20 @@ linters:
       - linters:
           - dupl
         path: 'core/platform/capability/capability\.go$'
+      # The two view-like family descriptors are the same kind of table. A
+      # view and a materialized view are compared by one pair of walks now, and
+      # what is left in this file is the list of what genuinely differs between
+      # them: the models, the accessors, and where the answers go. The two
+      # literals resemble each other because they answer the same questions
+      # about different types, which is the abstraction working; collapsing
+      # them further would mean erasing the type distinction that makes them
+      # two families. The exclusion covers the file, so it also covers the two
+      # walks in it -- which each exist once, so there is nothing there for
+      # dupl to find. A second copy of a walk would have to be added here
+      # deliberately for this rule to hide one.
+      - linters:
+          - dupl
+        path: 'migration/schemadiff/internal/compare/viewlike\.go$'
       # Allow migration filenames to have numbers at the beginning
       - path: 'registry/postgres/migrations/.*\.go$'
         text: 'filename-format:'

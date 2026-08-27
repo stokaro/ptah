@@ -358,7 +358,7 @@ func touchesTriggers(diff *difftypes.SchemaDiff) bool {
 // does not tell them WHICH function to remove or move, and a schema with forty
 // objects is then a search (stokaro/ptah#1628).
 func rejectUnsupportedSchemaObjects(diff *difftypes.SchemaDiff) error {
-	if names := changedNames(diff.MaterializedViewsAdded, diff.MaterializedViewsRemoved, materializedViewNames(diff)); len(names) > 0 {
+	if names := changedNames(diff.MaterializedViewsAdded.Names(), diff.MaterializedViewsRemoved.Names(), materializedViewNames(diff)); len(names) > 0 {
 		return unsupportedFeaturef("materialized views are not supported: %s", strings.Join(names, ", "))
 	}
 	if names := changedNames(diff.ExtensionsAdded.Names(), diff.ExtensionsRemoved.Names(), extensionNames(diff)); len(names) > 0 {

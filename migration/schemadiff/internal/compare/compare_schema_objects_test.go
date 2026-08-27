@@ -483,8 +483,8 @@ func TestMaterializedViews_DetectsAmbiguousDatabaseSchemasForUnqualifiedName(t *
 		},
 	}, diff)
 
-	c.Assert(diff.MaterializedViewsAdded, qt.DeepEquals, []string{"user_stats"})
-	c.Assert(diff.MaterializedViewsRemoved, qt.DeepEquals, []string{"other.user_stats", "tenant.user_stats"})
+	c.Assert(diff.MaterializedViewsAdded.Names(), qt.DeepEquals, []string{"user_stats"})
+	c.Assert(diff.MaterializedViewsRemoved.Names(), qt.DeepEquals, []string{"other.user_stats", "tenant.user_stats"})
 	c.Assert(diff.MaterializedViewsModified, qt.HasLen, 0)
 }
 
@@ -648,4 +648,81 @@ func TestMaterializedViews_ReportsARealScheduleChange(t *testing.T) {
 			c.Assert(change.Current != nil, qt.Equals, test.stored != nil)
 		})
 	}
+}
+
+// TestViewLikes_TwoDeclarationsOfOneNameAreOneObject pins which of them stands.
+//
+// The two view-like families are compared by one shared walk now, and that walk
+// keeps the LAST declaration of a name -- which is what a map keyed by name did
+// before it was shared (stokaro/ptah#2315). Nothing measured it, so a rewrite
+// could have quietly made the first one win instead, and the body that reached
+// the planner would have been the one the document overrode.
+//
+// It is asserted through the body rather than the count, because both rules
+// produce exactly one addition.
+func TestViewLikes_TwoDeclarationsOfOneNameAreOneObject(t *testing.T) {
+	tests := []struct {
+		name     string
+		compare  func(*schemamodel.Database, *difftypes.SchemaDiff)
+		bodies   func(*difftypes.SchemaDiff) []string
+		desired  *schemamodel.Database
+		wantBody string
+	}{
+		{
+			name: "view",
+			desired: &schemamodel.Database{Views: []schemamodel.View{
+				{Name: "active_users", Body: "SELECT 1"},
+				{Name: "active_users", Body: "SELECT 2"},
+			}},
+			compare: func(desired *schemamodel.Database, diff *difftypes.SchemaDiff) {
+				compare.Views(desired, &catalog.Database{}, diff)
+			},
+			bodies: func(diff *difftypes.SchemaDiff) []string {
+				return viewBodies(diff.ViewsAdded)
+			},
+			wantBody: "SELECT 2",
+		},
+		{
+			name: "materialized view",
+			desired: &schemamodel.Database{MaterializedViews: []schemamodel.MaterializedView{
+				{Name: "user_counts", Body: "SELECT 1"},
+				{Name: "user_counts", Body: "SELECT 2"},
+			}},
+			compare: func(desired *schemamodel.Database, diff *difftypes.SchemaDiff) {
+				compare.MaterializedViews(desired, &catalog.Database{}, diff)
+			},
+			bodies: func(diff *difftypes.SchemaDiff) []string {
+				return matViewBodies(diff.MaterializedViewsAdded)
+			},
+			wantBody: "SELECT 2",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			diff := &difftypes.SchemaDiff{}
+
+			test.compare(test.desired, diff)
+
+			c.Assert(test.bodies(diff), qt.DeepEquals, []string{test.wantBody},
+				qt.Commentf("the last declaration of a name is the one that stands"))
+		})
+	}
+}
+
+func viewBodies(changes difftypes.ViewChanges) []string {
+	bodies := make([]string, 0, len(changes))
+	for _, view := range changes {
+		bodies = append(bodies, view.Body)
+	}
+	return bodies
+}
+
+func matViewBodies(changes difftypes.MaterializedViewChanges) []string {
+	bodies := make([]string, 0, len(changes))
+	for _, view := range changes {
+		bodies = append(bodies, view.Body)
+	}
+	return bodies
 }

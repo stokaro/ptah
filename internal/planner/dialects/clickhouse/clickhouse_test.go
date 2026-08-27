@@ -334,7 +334,9 @@ func TestGenerateMigrationAST_MaterializedViewCreateCarriesItsBody(t *testing.T)
 	}}}
 
 	nodes, err := clickhouse.New().GenerateMigrationAST(
-		&difftypes.SchemaDiff{MaterializedViewsAdded: []string{"analytics.user_counts"}},
+		&difftypes.SchemaDiff{MaterializedViewsAdded: difftypes.MaterializedViewChanges{
+			{Name: "analytics.user_counts", Body: "SELECT count() AS c FROM analytics.users"},
+		}},
 		desired,
 	)
 
@@ -413,7 +415,11 @@ func TestGenerateMigrationAST_ViewReadingAMaterializedViewIsOrderedAfterIt(t *te
 			ViewsAdded: difftypes.ViewChanges{
 				{Name: "analytics.reader", Body: "SELECT c FROM analytics.user_counts"},
 			},
-			MaterializedViewsAdded: []string{"analytics.user_counts"},
+			// The body travels WITH the change, and the order this test is
+			// about is computed from it.
+			MaterializedViewsAdded: difftypes.MaterializedViewChanges{
+				{Name: "analytics.user_counts", Body: "SELECT count() AS c FROM analytics.users"},
+			},
 		},
 		desired,
 	)
@@ -432,7 +438,7 @@ func TestGenerateMigrationAST_MaterializedViewRemovalIsGuarded(t *testing.T) {
 	c := qt.New(t)
 
 	nodes, err := clickhouse.New().GenerateMigrationAST(
-		&difftypes.SchemaDiff{MaterializedViewsRemoved: []string{"analytics.user_counts"}},
+		&difftypes.SchemaDiff{MaterializedViewsRemoved: difftypes.MaterializedViewChanges{{Name: "analytics.user_counts"}}},
 		&schemamodel.Database{},
 	)
 
@@ -445,14 +451,15 @@ func TestGenerateMigrationAST_MaterializedViewRemovalIsGuarded(t *testing.T) {
 }
 
 func TestGenerateMigrationAST_MissingDesiredMaterializedViewRejected(t *testing.T) {
+	// The addition row that used to sit beside this one is gone for the reason
+	// its plain-view twin's is: an added materialized view travels with the
+	// change, so there is no lookup left to miss (stokaro/ptah#2315). See
+	// TestGenerateMigrationAST_AnAddedViewNeedsNoDesiredDeclaration, which
+	// covers both kinds.
 	tests := []struct {
 		name string
 		diff *difftypes.SchemaDiff
 	}{
-		{
-			name: "addition",
-			diff: &difftypes.SchemaDiff{MaterializedViewsAdded: []string{"analytics.missing"}},
-		},
 		{
 			name: "modification",
 			diff: &difftypes.SchemaDiff{MaterializedViewsModified: []difftypes.MaterializedViewDiff{{
@@ -486,7 +493,7 @@ func TestGenerateMigrationAST_DisabledMaterializedViewsNeedNoDeclaration(t *test
 	}{
 		{
 			name: "addition",
-			diff: &difftypes.SchemaDiff{MaterializedViewsAdded: []string{"analytics.missing"}},
+			diff: &difftypes.SchemaDiff{MaterializedViewsAdded: difftypes.MaterializedViewChanges{{Name: "analytics.missing"}}},
 		},
 		{
 			name: "modification",
@@ -550,7 +557,7 @@ func TestGenerateMigrationAST_KindChangeDropsTheLiveObjectFirst(t *testing.T) {
 				ViewsAdded: difftypes.ViewChanges{
 					{Name: "user_counts", Body: "SELECT count() AS c FROM analytics.users"},
 				},
-				MaterializedViewsRemoved: []string{"analytics.user_counts"},
+				MaterializedViewsRemoved: difftypes.MaterializedViewChanges{{Name: "analytics.user_counts"}},
 			},
 			desired: viewDesired,
 			wantNodes: []ast.Node{
@@ -564,7 +571,7 @@ func TestGenerateMigrationAST_KindChangeDropsTheLiveObjectFirst(t *testing.T) {
 		{
 			name: "plain view becomes a materialized view",
 			diff: &difftypes.SchemaDiff{
-				MaterializedViewsAdded: []string{"user_counts"},
+				MaterializedViewsAdded: difftypes.MaterializedViewChanges{{Name: "user_counts", Body: "SELECT count() AS c FROM analytics.users"}},
 				ViewsRemoved:           difftypes.ViewChanges{{Name: "analytics.user_counts"}},
 			},
 			desired: materializedDesired,
@@ -608,7 +615,7 @@ func TestGenerateMigrationAST_UnrelatedRemovalStaysAfterTheCreates(t *testing.T)
 	nodes, err := clickhouse.New().GenerateMigrationAST(
 		&difftypes.SchemaDiff{
 			ViewsAdded:               difftypes.ViewChanges{{Name: "analytics.reader"}},
-			MaterializedViewsRemoved: []string{"analytics.user_counts"},
+			MaterializedViewsRemoved: difftypes.MaterializedViewChanges{{Name: "analytics.user_counts"}},
 		},
 		desired,
 	)
@@ -776,5 +783,20 @@ func TestGenerateMigrationAST_AnAddedViewNeedsNoDesiredDeclaration(t *testing.T)
 	c.Assert(ok, qt.IsTrue, qt.Commentf("node is %T", nodes[0]))
 	c.Assert(created.Name, qt.Equals, "analytics.daily")
 	c.Assert(created.Body, qt.Equals, "SELECT 1",
+		qt.Commentf("the body came from the change, not from a lookup"))
+
+	// The materialized kind, whose rejection row went the same way.
+	materialized := &difftypes.SchemaDiff{MaterializedViewsAdded: difftypes.MaterializedViewChanges{
+		{Name: "analytics.hourly", Body: "SELECT 2"},
+	}}
+
+	nodes, err = clickhouse.New().GenerateMigrationAST(materialized, &schemamodel.Database{})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(nodes, qt.HasLen, 1)
+	createdMatView, ok := nodes[0].(*ast.CreateMaterializedViewNode)
+	c.Assert(ok, qt.IsTrue, qt.Commentf("node is %T", nodes[0]))
+	c.Assert(createdMatView.Name, qt.Equals, "analytics.hourly")
+	c.Assert(createdMatView.Body, qt.Equals, "SELECT 2",
 		qt.Commentf("the body came from the change, not from a lookup"))
 }

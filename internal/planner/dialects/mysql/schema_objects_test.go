@@ -118,7 +118,7 @@ func TestPlanner_GenerateMigrationAST_RejectsMaterializedViews(t *testing.T) {
 	planner := mysql.New()
 
 	diff := &difftypes.SchemaDiff{
-		MaterializedViewsAdded: []string{"user_stats"},
+		MaterializedViewsAdded: difftypes.MaterializedViewChanges{{Name: "user_stats", Body: "SELECT id, COUNT(*) FROM users GROUP BY id"}},
 	}
 	desired := &schemamodel.Database{
 		MaterializedViews: []schemamodel.MaterializedView{{

@@ -701,7 +701,7 @@ func TestPlanner_GenerateMigrationAST_MaterializedViewPlansNoRefresh(t *testing.
 		}},
 	}
 	diff := &difftypes.SchemaDiff{
-		MaterializedViewsAdded: []string{"user_stats"},
+		MaterializedViewsAdded: difftypes.MaterializedViewChanges{{Name: "user_stats", Body: "SELECT id, COUNT(*) FROM users GROUP BY id"}},
 	}
 
 	nodes, err := planner.GenerateMigrationAST(diff, desired)
@@ -768,7 +768,7 @@ func TestPlanner_GenerateMigrationAST_OrdersViewLikeObjectsByDependencies(t *tes
 		// The body travels WITH the change, and the order this test is about
 		// is computed from it.
 		ViewsAdded:             difftypes.ViewChanges{{Name: "a_report", Body: "SELECT id FROM z_base"}},
-		MaterializedViewsAdded: []string{"z_base"},
+		MaterializedViewsAdded: difftypes.MaterializedViewChanges{{Name: "z_base", Body: "SELECT id FROM users"}},
 	}
 
 	nodes, err := planner.GenerateMigrationAST(diff, desired)
