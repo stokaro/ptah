@@ -107,6 +107,7 @@ justifies it.
 
 | Page (words) | Audience | Reader question | Type | Source of truth | Overlaps | Disposition |
 | --- | --- | --- | --- | --- | --- | --- |
+| `direct/overview.md` (522) | reader choosing how a change reaches the database | What is the direct workflow, and which verb do I run first? | concept | this page; the `db read` → `schema drift` → `schema plan` → `schema apply --plan` loop and the `migrations status` reading run against the built binary over a SQLite fixture | `start/choose-a-workflow` (the two axes, canonical there), `versioned/overview` (the sibling workflow's index) | created (nested navigation); keep — the group's other four pages are how-tos, and none of them answers what the workflow is or which verb comes first |
 | `direct/inspect.md` (631) | any user with a live database | How do I see the schema a live database actually has? | howto | this page; `ptah db read`, `ptah introspect`, and `ptah schema inspect` runs against the built binary | `start/adopt-an-existing-database` (introspect flow, canonical there), `workflows/atlas-cli` (inspect template surface, canonical there) | created (section 10 target, per D5); keep; #850 pass: leads with the native `ptah schema inspect`, compat spelling mentioned secondarily |
 | `direct/compare-and-drift.md` (739) | direct-workflow user, CI operator | How does a live database differ from the desired schema, and how do I gate on that? | howto | this page; `ptah schema compare`, `ptah schema drift` (severity, formats, exit codes), and `ptah migrations plan` runs against the built binary | `start/choose-a-workflow` (workflow decision), `versioned/generate` (plan-to-files path), `reference/commands` rows | created (section 10 target, per D5); keep |
 | `direct/apply.md` (865) | direct-workflow user | How do I apply desired-schema changes straight to a database? | howto | this page; `ptah schema apply` (dry-run, prompt, auto-approve), `ptah schema plan` plan files, and the stale-plan refusal run against the built binary | `workflows/atlas-cli` (full `schema apply`/`schema plan` flag surface, canonical there), `start/choose-a-workflow` (hybrid pattern) | created (section 10 target, per D5); keep; #850 pass: rewritten to lead with the native `ptah schema apply`/`ptah schema plan` verbs, compat spellings mentioned secondarily |
@@ -275,23 +276,47 @@ list in the same PR.
 
 ## 6. Reader journeys
 
-The ten journeys required by #804, with today's path (and its friction) and the
-target path. The target navigation in section 10 is considered valid only
-because each journey below resolves without consulting a meta-map.
+The ten journeys required by #804, plus the contributor journey, with the path
+each one took before the restructuring (and its friction) and the path it takes
+through the navigation the sidebar declares today. Section 10's tree is
+considered valid only because each journey below resolves by reading the
+sidebar, without consulting a meta-map.
 
-| Journey | Today | Target |
+Paths are written the way the sidebar reads: `Group > Subgroup > Page`, using
+the labels a reader sees. A step with no subgroup is a leaf directly inside its
+top-level group.
+
+| Journey | Before the restructuring | Path through the navigation |
 | --- | --- | --- |
-| Migration-first user, any language | `start/quick-start-migrations` runs the whole hand-written migration workflow — write, hash, validate, apply, status, read back, roll back — before any schema source appears | Home → `start/quick-start` → `start/quick-start-migrations` → `versioned/overview` |
-| New Go user | reaches the quick start like everybody else and finds Go named as one schema source among several rather than as the entry point | Home → `start/quick-start` → `schema/work-with-a-source` → `schema/go-annotations` |
-| Schema-file user | `workflows/schema-files` covers four formats on one page; reference pages are two clicks away | Home → `start/choose-a-workflow` → `schema/yaml` / `schema/hcl` / `schema/sql` |
-| ORM/external-provider user | `workflows/orm-loaders`, duplicated by a section of `schema-files` | `schema/orm-and-external` |
-| Brownfield database adopter | no path: `ptah introspect` appears only in reference tables, `migrations baseline` has no how-to (only a contrast note in `checkpoints` and an exit-code row) | `start/adopt-an-existing-database` → `direct/inspect` → `versioned/import` or baseline |
-| Versioned-migration user | `workflows/migrations` hub; per-step depth requires jumping to four other pages | `versioned/overview` → lifecycle pages |
-| Declarative/direct-workflow user | no home: `schema compare`/`drift` live in command tables; direct apply is only inside `workflows/atlas-cli` | `start/choose-a-workflow` → `direct/*` |
-| CI/operator | `workflows/ci` (371 words) → `reference/exit-codes`; safety gates buried in `workflows/migrations` | `testing/ci` → `versioned/integrity-and-safety` → `reference/exit-codes` → `operate/troubleshooting` |
-| Atlas migration user | `workflows/atlas-cli` (4,137 words, four page types mixed) → `reference/comparison` (4,795 words, four questions mixed) | `atlas/overview` → `atlas/migrate-commands` / `atlas/schema-commands` → `atlas/comparison` / `atlas/conformance` |
-| Go API embedder | `reference/reusable-components` + `reference/public-api` + `reference/query-builder`, all filed under generic `Reference` | `extend/public-api` → `extend/components` → `extend/query-builder` |
+| Migration-first user, any language | `start/quick-start-migrations` runs the whole hand-written migration workflow — write, hash, validate, apply, status, read back, roll back — before any schema source appears | Home → `Start > Quick start` → `Start > Quick start: versioned migrations` → `Workflows > Versioned migrations > Overview` |
+| New Go user | reaches the quick start like everybody else and finds Go as one of four schema sources rather than as the entry point | Home → `Start > Quick start` → either tutorial → `Schema > Sources > Go annotations` → `Workflows > Versioned migrations > Overview` |
+| Schema-file user | `workflows/schema-files` covers four formats on one page; reference pages are two clicks away | Home → `Start > Choose a workflow` → `Schema > Sources > Work with a desired schema` → the format page beside it (`SQL schema`, `YAML schema`, `HCL schema`, `DBML`) |
+| ORM/external-provider user | `workflows/orm-loaders`, duplicated by a section of `schema-files` | `Schema > Sources > ORM and external loaders`, a sibling of the hand-written formats rather than a separate group |
+| Brownfield database adopter | no path: `ptah introspect` appears only in reference tables, `migrations baseline` has no how-to (only a contrast note in `checkpoints` and an exit-code row) | `Start > Adopt an existing database` → `Workflows > Direct schema changes > Inspect a database` → `Workflows > Versioned migrations > Import from another tool` or `Checkpoints` |
+| Versioned-migration user | `workflows/migrations` hub; per-step depth requires jumping to four other pages | `Workflows > Versioned migrations > Overview` → the seven lifecycle pages under the same subgroup, all visible at once |
+| Direct-workflow user | no home: `schema compare`/`drift` live in command tables; direct apply is only inside `workflows/atlas-cli` | `Start > Choose a workflow` → `Workflows > Direct schema changes > Overview` → the four verbs under it, in the order a change passes through them |
+| CI/operator | `workflows/ci` (371 words) → `reference/exit-codes`; safety gates buried in `workflows/migrations` | `Workflows > Test and CI > CI` → `Workflows > Versioned migrations > Integrity and safety` → `Concepts and reference > Rules and diagnostics > Exit codes` → `Workflows > Distribute and operate > Troubleshooting` |
+| Atlas migration user | `workflows/atlas-cli` (4,137 words, four page types mixed) → `reference/comparison` (4,795 words, four questions mixed) | `Atlas compatibility > Overview` → `Adopting an Atlas project` → `Commands and configuration > Atlas migrate commands` / `Atlas schema commands` → `Differences and evidence > Feature matrix` / `Conformance`, the one collapsed subgroup, because evidence sits outside the learning path |
+| Go API embedder | `reference/reusable-components` + `reference/public-api` + `reference/query-builder`, all filed under generic `Reference` | `Integrations > Go integration > Public Go API` → `Reusable components` → `Query builder` |
 | Contributor | `AGENTS.md` → skill; no style guide exists yet | `AGENTS.md` → `docs/STYLE_GUIDE.md` → skill → this inventory |
+
+Two properties of the tree are what make these paths short, and both are stated
+here because section 10 records the tree and this section records the walking
+of it:
+
+- **A journey crosses a top-level group boundary at most twice**, counting
+  from the first group it lands in — Home is the splash page and belongs to no
+  group. Two rows reach two crossings: the new Go user (`Start` → `Schema` →
+  `Workflows`) and the CI/operator (`Workflows` → `Concepts and reference` →
+  `Workflows`). The CI/operator row is the longest at four stops, and it is
+  long inside its groups rather than across them, because the questions are
+  genuinely four: how you test, what protects a directory, what an exit code
+  means, and what to do when it fails.
+- **Every sibling list a journey lands in is readable without scrolling past
+  it.** Measured from `src/sidebar.mjs`: no list of siblings anywhere in the
+  tree runs past eight, and the two that reach eight — `Versioned migrations`
+  and `Sources` — are the two a reader arrives at deliberately rather than
+  scans.
 
 ## 6a. The onboarding narrative (stokaro/ptah#1228)
 
@@ -408,6 +433,7 @@ Verified with repository-wide searches at the audited commit.
 | `ptah-compat` | the only Atlas-compatible command surface | #850 pass: promoted from prose-only mention to the documented host of the Atlas-compatible tree (including the `atlas/comparison` command-parity column) |
 | desired schema vs desired state | "desired schema" appears 60 times across 18 pages; "desired state" 3 times (`workflows/migrations.md` twice, `workflows/schema-files.md` once) | standardize on **desired schema**; retire "desired state" outside the composite-source discussion (done: the final pass also replaced the hyphenated "desired-state" uses in Atlas status prose) |
 | schema source | used informally | canonicalize: Go annotations, YAML, HCL, SQL file, external loader, or live database used as input |
+| direct schema changes vs declarative schema changes | the nested-navigation pass measured the exact phrase "declarative schema changes" 4 times across 2 pages (`index.mdx` frontmatter description, hero tagline, and the H3 at line 171; `atlas/conformance` under a **Native Ptah.** label) and "declarative schema management" 3 times across 2 pages, against "Direct schema changes" as the sidebar group, the home page card, and the `start/choose-a-workflow` heading | standardize on **direct schema changes** for the workflow that runs a difference against the database with no migration file in between; retire "declarative schema changes" and "declarative schema management" as names for it, because `ptah migrations generate` reads the same desired schema and "declarative" therefore names where a change came from rather than how it lands. "Declarative" stays correct for the authoring model (`concepts/desired-schema-and-sources`) and inside capability names that carry it, such as declarative reference data and declarative test cases (done under `docs/site/src/content/docs/` and `docs/conformance.md`: 0 occurrences of either retired phrase remain; `direct/overview` states the reasoning in a heading, and `docs/STYLE_GUIDE.md` section 7 carries the rule. Outstanding: the root `README.md` opening sentence and its "Two ways to change a schema" table row, plus the verbatim quote of that sentence in `docs/roadmap-post-ga.md`, are left for the README rewrite that owns the file) |
 | dev database / shadow database / throwaway database | all three exist and are real, distinct flags: `--dev-url` (replay validation on `migrations validate`, `migrations lint`, Atlas-compatible verbs), `--shadow-db` (`migrations generate`, `checkpoint`, `baseline` verification replay), throwaway databases in `migrations test` / `schema test` | keep all three as distinct terms; define each once in `concepts/database-urls-and-dev-databases` and link instead of re-defining (done: page exists and first uses link to it) |
 | migration directory / integrity file / revision table | consistent; integrity files are `ptah.sum` (native) and `atlas.sum` (Atlas-format) | keep |
 | dialect vs database/engine | mostly consistent; `reference/dialect-notes` blurs the two | dialect = SQL rendering flavor; database/engine = the product you connect to (done: `concepts/dialects-and-capabilities` defines both and the `Databases` group replaced `dialect-notes`) |
@@ -471,8 +497,8 @@ these are merely misplaced content.
    `start/adopt-an-existing-database`. Done: page created with introspect,
    drift-check, baseline (dry-run and `--shadow-db`), and import flows run
    against the built binary.
-4. **Workflow choice.** No page presents the versioned versus direct/declarative
-   versus hybrid decision; it is implied by `reference/comparison` tables only.
+4. **Workflow choice.** No page presents the versioned versus direct versus
+   hybrid decision; it is implied by `reference/comparison` tables only.
    New page: `start/choose-a-workflow`. Done: page created.
 5. **`ptah viz` workflow page.** Only an example page exists; the workflow
    (formats, Graphviz prerequisite, committed artifacts) is scattered across
@@ -516,128 +542,194 @@ these are merely misplaced content.
 ## 10. Target navigation and page map
 
 Ordering principle: reading order for a new user first, lookup surfaces last.
-Group rationale follows the table. Current → new mappings are in the
-disposition columns of sections 1–2.
+The hierarchy is two levels — a top-level group holds subgroups, a subgroup
+holds pages — so that no list of siblings runs much past eight. The second
+level exists because four flat groups ran past that: `Model your schema` at 17
+entries, `Atlas compatibility` and `Reference` at 11 each, and `Versioned
+migrations` at 9. Group rationale follows the tree. Current → new mappings are
+in the disposition columns of sections 1–2.
+
+The tree below is the sidebar `docs/site/src/sidebar.mjs` declares. Each line
+carries the label the reader sees and the slug behind it; a label of `Overview`
+marks a section index whose page title would otherwise repeat the group above
+it.
 
 ```text
-Home (index.mdx, splash)
+Home (index.mdx, splash; renders no sidebar)
 Start
-  start/install                       howto
-  start/quick-start                   navigation (one decision, two children)
-  start/quick-start-migrations        tutorial (hand-written migration, applied and rolled back)
-  start/quick-start-declarative       tutorial (one schema file, applied and checked for drift)
-  start/choose-a-workflow             concept (new)
-  start/adopt-an-existing-database    howto (new: introspect, baseline, import, drift)
-Model your schema
-  schema/go-annotations               howto (+ example from examples/go-model)
-  schema/yaml                         howto (+ example from examples/yaml-schema)
-  schema/hcl                          howto (+ example from examples/atlas-hcl)
-  schema/sql                          howto
-  schema/orm-and-external             howto
-  schema/composite                    howto (canonical multi-source page)
-  schema/visualize                    howto (new, from examples/schema-viz)
-  schema/export                       howto (current workflows/api-schema-export)
-Direct schema changes
-  direct/inspect                      howto (new: db read, introspect, ptah-compat schema inspect)
-  direct/compare-and-drift            howto (new: schema compare, schema drift, plan-only runs)
-  direct/apply                        howto (new: Atlas-compatible schema apply; hybrid patterns)
-Versioned migrations
-  versioned/overview                  concept + core loop (split from workflows/migrations)
-  versioned/generate                  howto
-  versioned/apply                     howto
-  versioned/rollback                  howto
-  versioned/integrity-and-safety      howto (hash/validate/verify-sum, lint, destructive gate,
-                                      pre-migration checks)
-  versioned/maintain-history          howto (edit, rebase, rm, repair)
-  versioned/import                    howto (golang-migrate/Goose/Flyway/Liquibase)
-  versioned/checkpoints               howto (current workflows/checkpoints)
-  versioned/reference-data            howto (current workflows/reference-data)
-Test and CI
-  testing/migrations-and-schema       howto (current workflows/testing)
-  testing/ci                          howto (current workflows/ci + GitHub Action)
-Distribute and operate
-  operate/oci-registry                howto (current workflows/oci-registry)
-  operate/seed-data                   howto (new, small: ptah seed vs reference data)
-  operate/troubleshooting             troubleshooting (kept; grows symptom-first)
+  Install Ptah                        start/install
+  Quick start                         start/quick-start (navigation: one decision, two children)
+  Quick start: versioned migrations   start/quick-start-migrations
+  Quick start: declarative changes    start/quick-start-declarative
+  Choose a workflow                   start/choose-a-workflow
+  Adopt an existing database          start/adopt-an-existing-database
+Workflows
+  Versioned migrations
+    Overview                          versioned/overview
+    Generate migrations               versioned/generate
+    Apply migrations                  versioned/apply
+    Roll back migrations              versioned/rollback
+    Integrity and safety              versioned/integrity-and-safety
+    Maintain migration history        versioned/maintain-history
+    Import from another tool          versioned/import
+    Checkpoints                       versioned/checkpoints
+  Direct schema changes
+    Overview                          direct/overview
+    Inspect a database                direct/inspect
+    Compare and drift                 direct/compare-and-drift
+    Plan and approve changes          direct/plan-and-approve
+    Apply directly                    direct/apply
+  Test and CI
+    Test migrations and schemas       testing/migrations-and-schema
+    CI                                testing/ci
+  Load data
+    Reference data                    versioned/reference-data
+    Seed data                         operate/seed-data
+  Distribute and operate
+    OCI registry artifacts            operate/oci-registry
+    Troubleshooting                   operate/troubleshooting
+Schema
+  Sources
+    Work with a desired schema        schema/work-with-a-source
+    SQL schema                        schema/sql
+    YAML schema                       schema/yaml
+    HCL schema                        schema/hcl
+    DBML                              schema/dbml
+    Go annotations                    schema/go-annotations
+    ORM and external loaders          schema/orm-and-external
+    Composite desired schema          schema/composite
+  Analysis and documentation
+    Validate and format schema files  schema/validate-and-format
+    Visualize the schema              schema/visualize
+    Generate schema documentation     schema/document
+    Serve a live schema view          schema/serve
+    Count schema objects              schema/stats
+    Trace view column lineage         schema/lineage
+    Report schema security findings   schema/security
+  Contract exports
+    API schema export                 schema/export
+    Protobuf schema export            schema/protobuf
 Databases
-  databases/support-matrix            reference-flavored landing (from dialect-notes;
-                                      carries the MySQL/MariaDB section)
-  databases/postgresql                guide (P1)
-  databases/sqlite                    guide (compact)
-  databases/sqlserver                 guide (compact)
+  Database support matrix             databases/support-matrix
+  PostgreSQL                          databases/postgresql
+  SQLite                              databases/sqlite
+  SQL Server                          databases/sqlserver
+Integrations
+  Go integration
+    Public Go API                     extend/public-api
+    Reusable components               extend/components
+    Query builder                     extend/query-builder
+  AI and agents
+    AI agents over MCP                operate/ai-agents
+    Ptah Assist and your own model    operate/ai-assist
 Atlas compatibility
-  atlas/overview                      concept (surfaces, translation model, ptah-compat)
-  atlas/migrate-commands              howto (+ example from examples/atlas-migrations)
-  atlas/schema-commands               howto
-  atlas/project-config                reference (current reference/atlas-project-config)
-  atlas/comparison                    status (slimmed reference/comparison)
-  atlas/retained-divergences          status (#1241 retained refusal register)
-  atlas/conformance                   status (current operate/conformance)
-  atlas/docs-coverage                 status (current reference/atlas-docs-coverage)
-  atlas/license-boundary              concept (current operate/license-boundary)
-Extend Ptah
-  extend/public-api                   reference (current reference/public-api)
-  extend/components                   howto/reference (current reference/reusable-components)
-  extend/query-builder                reference (current reference/query-builder)
-Concepts
-  concepts/desired-schema-and-sources concept
-  concepts/migration-directory        concept
-  concepts/database-urls-and-dev-databases  concept
-  concepts/dialects-and-capabilities  concept
-Reference
-  reference/native-commands           reference (split from reference/commands)
-  reference/atlas-commands            reference (split from reference/commands)
-  reference/go-annotations            reference (new: //ptah:schema:* directives)
-  reference/configuration             reference (kept; + precedence)
-  reference/yaml-schema               reference (kept)
-  reference/hcl-schema                reference (kept)
-  reference/test-cases                reference (current reference/testing)
-  reference/capabilities              reference (kept; capability tables only)
-  reference/exit-codes                reference (kept at same path; script-coupled)
+  Overview                            atlas/overview
+  Adopting an Atlas project           atlas/adoption
+  Commands and configuration
+    Atlas migrate commands            atlas/migrate-commands
+    Atlas schema commands             atlas/schema-commands
+    Atlas project config              atlas/project-config
+  Differences and evidence            (collapsed)
+    Feature matrix                    atlas/feature-matrix
+    Comparison                        atlas/comparison
+    Retained divergences              atlas/retained-divergences
+    Conformance                       atlas/conformance
+    Atlas docs coverage               atlas/docs-coverage
+    License boundary                  atlas/license-boundary
+Concepts and reference
+  Concepts
+    Desired schema and schema sources  concepts/desired-schema-and-sources
+    The migration directory           concepts/migration-directory
+    Database URLs and dev databases   concepts/database-urls-and-dev-databases
+    Dialects and capabilities         concepts/dialects-and-capabilities
+  Command reference
+    Native commands                   reference/native-commands
+    Atlas-compatible commands         reference/atlas-commands
+    Database test commands            reference/test-cases
+  Format reference
+    Configuration                     reference/configuration
+    Go annotation reference           reference/go-annotations
+    HCL schema reference              reference/hcl-schema
+    YAML Schema Reference             reference/yaml-schema
+  Rules and diagnostics
+    Capabilities                      reference/capabilities
+    Lint rules                        reference/lint-rules
+    Exit codes                        reference/exit-codes
+    Glossary                          reference/glossary
 ```
 
 Retired from the sidebar: `documentation-map` (redirect to home), the
 `Examples` group (content merged where the decision is made), and the
-`Use Ptah` and `Operate` labels.
+`Use Ptah` and `Operate` labels. The second level retires no page and no
+route: every entry the flat sidebar carried has a place in the nested one.
+
+A group heading is a `<summary>` and can never be a link, so a section index is
+an ordinary leaf inside its group. A subgroup earns one only when that page has
+something to say beyond listing its children: `Versioned migrations`,
+`Direct schema changes` and `Sources` open with one, and the other thirteen
+subgroups do not. `Atlas compatibility` and `Databases` carry theirs as a
+top-level leaf for the same reason.
+
+The shape, measured by importing `src/sidebar.mjs` rather than by counting the
+block above: 7 top-level groups, 16 subgroups, 75 leaf entries, maximum depth 2,
+and one collapsed subgroup (`Atlas compatibility > Differences and evidence`).
+The largest sibling list anywhere is 8, reached twice — `Workflows > Versioned
+migrations` and `Schema > Sources` — so the rule that sent the sidebar to two
+levels holds everywhere in the result, not only in the four groups that broke it.
+
+Three of those properties are reading rules that no checker holds, and they are
+written here so a later change is judged against them rather than against
+whichever gate happens to stay green:
+
+- **The two-level cap.** Starlight's `items` schema is a lazy union that
+  includes itself, so a third level renders and passes every check in
+  `docs/site/scripts/`.
+- **The seven-or-eight sibling rule.** Nothing counts siblings.
+- **A duplicated entry.** `check-page-health.mjs` reads the sidebar in both
+  directions, so it catches a page named by no entry and an entry naming no
+  page, but a page named twice satisfies both directions. The tell is in the
+  numbers it prints: entries should run exactly one below pages, the one being
+  `index.mdx`, which renders no sidebar. `76 pages, 75 sidebar entries` is
+  correct; `76 pages, 76 sidebar entries` is a duplicate.
 
 Rationale by group (each maps to the top-level question a reader faces, in
 order):
 
 1. **Start** — "What is this and how do I try it?" Install, a runnable quick
    start, the one decision that shapes everything else (versioned vs direct vs
-   hybrid), and the brownfield entry, which today has shipped commands but no
-   documented path.
-2. **Model your schema** — "How do I tell Ptah what the schema should be?"
-   Ptah's defining dimension: Go annotations, YAML, HCL, SQL, external
-   loaders, and composite merging are peer sources feeding one pipeline.
-   Visualization and export live here because they are outputs of the modeled
-   schema, not of the migration lifecycle.
-3. **Direct schema changes** and **Versioned migrations** — "How do I change
-   the database?" Two peer groups mirroring the choose-a-workflow decision.
-   Inspection becomes first-class; the versioned group decomposes along the
-   lifecycle (generate → apply → rollback → integrity → maintain → import),
-   with checkpoints and reference data as named capabilities inside the
-   lifecycle they serve. Native Ptah has no direct `schema apply` verb; the
-   `direct/apply` page says exactly that and shows the Atlas-compatible
-   command plus hybrid patterns.
-4. **Test and CI** — "How do I know it's safe?"
-5. **Distribute and operate** — "How do I ship and run it?" OCI artifacts,
-   seeds, troubleshooting.
-6. **Databases** — "What about my engine?" Support matrix plus per-engine
-   guides where behavior materially differs (tiered: PostgreSQL first).
-7. **Atlas compatibility** — "I'm coming from Atlas / need parity evidence."
-   One front door for the compat surface, usage, config, comparison,
-   conformance, docs coverage, and the license boundary, instead of today's
-   spread across three groups.
-8. **Extend Ptah** — "I want to build on Ptah."
-9. **Concepts** and **Reference** — "What exactly does X mean / accept?"
-   Last, because they serve returning readers.
+   hybrid), and the brownfield entry.
+2. **Workflows** — "How do I change the database?" The two peer subgroups
+   `Versioned migrations` and `Direct schema changes` mirror the
+   choose-a-workflow decision, each opening with its own overview. The
+   versioned subgroup decomposes along the lifecycle (generate → apply →
+   rollback → integrity → maintain → import). `Test and CI`, `Load data` and
+   `Distribute and operate` follow, because they are what a reader does once
+   either route reaches the server; reference data and seed data sit together
+   because they are the declarative and imperative halves of one question.
+3. **Schema** — "How do I tell Ptah what the schema should be, and what can I
+   get back out of it?" `Sources` holds the peer formats feeding one pipeline,
+   `Analysis and documentation` holds what Ptah reports about a schema, and
+   `Contract exports` holds the two exports another system consumes.
+4. **Databases** — "What about my engine?" Support matrix plus per-engine
+   guides where behavior materially differs. It stays flat until a fourth
+   guide takes it past the sibling rule.
+5. **Integrations** — "How do I drive Ptah from something that is not the
+   CLI?" The Go API and the agent surfaces, discoverable without sitting on
+   the path a new reader walks.
+6. **Atlas compatibility** — "I'm coming from Atlas / need parity evidence."
+   The overview and the adoption path are leaves; the command spellings and
+   the project config are one subgroup; the evidence is a second, collapsed,
+   because it belongs outside the learning path.
+7. **Concepts and reference** — "What exactly does X mean / accept?" Last,
+   because they serve returning readers, and split by what is being looked up:
+   a concept, a command, a file format, or a rule.
 
-Page count grows from 37 to roughly 59; the growth is splits plus the verified
-missing content in section 9. Tiering keeps scope honest: SQLite and SQL
-Server launched as compact engine pages because their backing material
-justified it, while MySQL/MariaDB launched as a `databases/support-matrix`
-section and splits out when content justifies it.
+Page count grew from 37 at the audited commit to 76 routes the site publishes
+today, 75 of them named by a sidebar entry and one of them the splash page. The
+growth is splits plus the verified missing content in section 9. Tiering keeps
+scope honest: SQLite and SQL Server launched as compact engine pages because
+their backing material justified it, while MySQL/MariaDB launched as a
+`databases/support-matrix` section and splits out when content justifies it.
 
 ## 11. Atlas patterns adopted and rejected
 
@@ -659,10 +751,16 @@ Rejected or adapted:
 - No separate "Guides" tree: at Ptah's size, scenario content lives inside the
   workflow groups; a separate guides hub would recreate the Examples silo.
 - Atlas's "Declarative workflow" as a peer of "Versioned workflow" is adapted,
-  not copied: native Ptah has no direct `schema apply`; direct application
-  ships on the Atlas-compatible surface, while native direct work is
-  inspect/compare/drift/plan. The group is therefore "Direct schema changes"
-  and is honest about which surface does what.
+  not copied. The peer group is native work, not a compatibility surface:
+  measured on the binary built from this tree, `ptah schema apply` is a
+  registered native subcommand and its help reads "Apply a desired schema
+  directly to a database", alongside native `compare`, `drift`, `plan`,
+  `approve` and `inspect`. It is named "Direct schema changes" rather than
+  "Declarative schema changes" because that is what separates it from the
+  versioned group: `ptah migrations generate` reads the same desired schema and
+  records the difference as files instead of running it, so "declarative" names
+  where a change came from rather than how it lands. Section 7 carries the rule
+  and `direct/overview` states it for the reader.
 - Atlas's page-per-command reference is rejected; Ptah keeps two consolidated
   command reference pages (native, Atlas-compatible) with per-command anchors.
 - No Atlas prose, examples, diagrams, assets, taxonomy, or page sequence is
@@ -719,6 +817,23 @@ All enforced by scripts in `docs/site/scripts/` (verified by reading them):
   `reference/exit-codes` keeps its URL.
 - These scripts scan only `src/content/docs/`, which is why this inventory
   lives at `docs/site/CONTENT_INVENTORY.md` without tripping them.
+- `check-style.mjs` reaches further than the rest: site pages, `docs/*.md`
+  outside `docs/site/`, `examples/**`, `integration/*.md` and the repository
+  READMEs, 138 files in all. Measured by planting a British spelling in each
+  and reading the exit code: the root `README.md`, `docs/roadmap-post-ga.md`
+  and `docs/conformance.md` are governed; `docs/STYLE_GUIDE.md` is exempt by
+  name because it is the rule source, and this inventory is outside the walk
+  because the walk skips `docs/site/`.
+- Section 7's canonical names are a reading rule, not a gate. `check-style.mjs`
+  matches words, not phrases, so nothing catches a retired synonym: measured by
+  restoring `### Declarative schema changes` to `index.mdx` and running
+  `check:style`, `check:links`, `check:page-health`, `check:route-retirement`,
+  `check:redirects` and `check:core-doc-links` — all six exit 0. A phrase rule
+  is addable, and is deferred rather than rejected: added today it would fail
+  on the root `README.md` opening sentence, its workflow table row, and the
+  verbatim quote of that sentence in `docs/roadmap-post-ga.md`, all of which
+  belong to the README rewrite that owns the file. It becomes a zero-finding
+  addition once that rewrite carries the rename.
 - The site builds under a `/ptah/<version>/` base (`DOCS_VERSION`, default
   `edge`); redirects for moved URLs must be verified under that base.
   Historical tag builds rebuild their own snapshots, so renames never break
