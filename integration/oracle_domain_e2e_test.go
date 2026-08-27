@@ -141,8 +141,8 @@ func assertOracleDomainsConverge(ctx context.Context, c *qt.C, conn *dbschema.Da
 
 	settled, err := schemadiff.CompareWithDatabase(ctx, conn, declared, after, nil)
 	c.Assert(err, qt.IsNil)
-	c.Assert(settled.DomainsAdded, qt.HasLen, 0)
-	c.Assert(settled.DomainsRemoved, qt.HasLen, 0)
+	c.Assert(settled.DomainsAdded.Names(), qt.HasLen, 0)
+	c.Assert(settled.DomainsRemoved.Names(), qt.HasLen, 0)
 	c.Assert(settled.DomainsModified, qt.HasLen, 0)
 
 	// And the removal direction, which has an ordering constraint of its own:

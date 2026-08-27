@@ -492,7 +492,7 @@ func (p *Planner) addSchemaPreconditions(
 	names := make([]string, 0, len(diff.TablesAdded))
 	names = append(names, diff.TablesAdded...)
 	names = append(names, diff.EnumsAdded.Names()...)
-	names = append(names, diff.DomainsAdded...)
+	names = append(names, diff.DomainsAdded.Names()...)
 	names = append(names, diff.CompositeTypesAdded.Names()...)
 	names = append(names, diff.RangesAdded.Names()...)
 	names = append(names, diff.SequencesAdded.Names()...)
@@ -1330,13 +1330,12 @@ func (p *Planner) plannedUserTypes(
 ) []plannedUserType {
 	rebuiltForAdd := rebuiltUserTypes(diff)
 	var planned []plannedUserType
-	for _, name := range diff.DomainsAdded {
-		if domain := findDomain(desired.Domains, name, semantics); domain != nil {
-			planned = append(planned, plannedUserType{
-				dep:  deporder.UserType{Name: name, References: []string{domain.BaseType}},
-				node: fromschema.FromDomain(*domain),
-			})
-		}
+	// No lookup: the change carries the domain (stokaro/ptah#2315).
+	for _, domain := range diff.DomainsAdded {
+		planned = append(planned, plannedUserType{
+			dep:  deporder.UserType{Name: domain.QualifiedName(), References: []string{domain.BaseType}},
+			node: fromschema.FromDomain(domain),
+		})
 	}
 	// No lookup, and no `if found` around it. The change carries the range
 	// type, so a name the desired schema could not resolve no longer plans
@@ -1411,8 +1410,8 @@ func compositeFieldTypes(composite schemamodel.CompositeType) []string {
 // domains, ranges, and composite types. Modified objects are dropped here and
 // recreated by addNewUserTypes (there is no in-place ALTER for these forms).
 func (p *Planner) removeUserTypes(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	for _, name := range diff.DomainsRemoved {
-		result = append(result, ast.NewDropType(name).SetDomain().SetIfExists().SetCascade().
+	for _, domain := range diff.DomainsRemoved {
+		result = append(result, ast.NewDropType(domain.QualifiedName()).SetDomain().SetIfExists().SetCascade().
 			SetComment("WARNING: Make sure no columns use this domain!"))
 	}
 	for _, composite := range diff.CompositeTypesRemoved {

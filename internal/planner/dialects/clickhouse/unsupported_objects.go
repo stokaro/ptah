@@ -86,8 +86,8 @@ func planObjectsAfterTables(
 // and these three still silent (stokaro/ptah#1708). Writing it now means a
 // reader that learns them later produces a sentence rather than nothing.
 func reportRemovedUserTypes(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	for _, name := range diff.DomainsRemoved {
-		result = append(result, ast.NewDropType(name).SetDomain())
+	for _, domain := range diff.DomainsRemoved {
+		result = append(result, ast.NewDropType(domain.QualifiedName()).SetDomain())
 	}
 	for _, composite := range diff.CompositeTypesRemoved {
 		result = append(result, ast.NewDropType(composite.QualifiedName()))

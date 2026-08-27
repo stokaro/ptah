@@ -47,7 +47,13 @@ func TestPlanner_GenerateMigrationAST_CreatesUserTypesBeforeTheTypesThatNameThem
 	planner := postgres.New()
 
 	diff := &difftypes.SchemaDiff{
-		DomainsAdded: []string{"d_comp", "d_range", "d_int"},
+		DomainsAdded: difftypes.DomainChanges{
+			// The base types travel WITH the change; the ordering this test is
+			// about is computed from them.
+			{Name: "d_comp", BaseType: "addr"},
+			{Name: "d_range", BaseType: "myrange"},
+			{Name: "d_int", BaseType: "integer", Check: "VALUE > 0"},
+		},
 		// The fields travel WITH the change now, and the ordering this test is
 		// about is computed from their types.
 		CompositeTypesAdded: difftypes.CompositeTypeChanges{
@@ -137,7 +143,7 @@ func TestPlanner_GenerateMigrationAST_CreatesRecreatedUserTypesBeforeNewDependen
 	planner := postgres.New()
 
 	diff := &difftypes.SchemaDiff{
-		DomainsAdded: []string{"d_comp"},
+		DomainsAdded: difftypes.DomainChanges{{Name: "d_comp", BaseType: "addr"}},
 		CompositeTypesModified: []difftypes.CompositeTypeDiff{
 			{TypeName: "addr", Changes: map[string]string{"fields": "old -> new"}},
 		},

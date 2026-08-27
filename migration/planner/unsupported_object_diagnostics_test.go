@@ -213,7 +213,7 @@ func TestPlan_ClickHouseNamesRemovedObjectsToo(t *testing.T) {
 	diff := &difftypes.SchemaDiff{
 		ExtensionsRemoved:        difftypes.ExtensionChanges{{Name: "pg_trgm"}},
 		SequencesRemoved:         difftypes.SequenceChanges{{Name: "order_number_seq"}},
-		DomainsRemoved:           []string{"email"},
+		DomainsRemoved:           difftypes.DomainChanges{{Name: "email"}},
 		CompositeTypesRemoved:    difftypes.CompositeTypeChanges{{Name: "addr"}},
 		RangesRemoved:            difftypes.RangeChanges{{Name: "tsr"}},
 		RolesRemoved:             []string{"app_role"},
@@ -411,7 +411,7 @@ func sequenceDiagnosticIn(statements, want string) bool {
 // something never declared under that word.
 func TestPlan_MySQLFamilyNamesTheUserTypesItNoLongerDeclares(t *testing.T) {
 	diff := &difftypes.SchemaDiff{
-		DomainsRemoved:        []string{"email"},
+		DomainsRemoved:        difftypes.DomainChanges{{Name: "email"}},
 		CompositeTypesRemoved: difftypes.CompositeTypeChanges{{Name: "addr"}},
 		RangesRemoved:         difftypes.RangeChanges{{Name: "tsr"}},
 	}

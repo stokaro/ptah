@@ -1139,7 +1139,7 @@ func sequenceNames(diff *difftypes.SchemaDiff) []string {
 // answers it with the names the refusal prints.
 func userDefinedTypeNames(diff *difftypes.SchemaDiff) []string {
 	names := slices.Concat(
-		diff.DomainsAdded, diff.DomainsRemoved,
+		diff.DomainsAdded.Names(), diff.DomainsRemoved.Names(),
 		diff.CompositeTypesAdded.Names(), diff.CompositeTypesRemoved.Names(),
 		diff.RangesAdded.Names(), diff.RangesRemoved.Names(),
 	)

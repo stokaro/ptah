@@ -22,6 +22,41 @@ import (
 	"go.5x5.cz/ptah/core/schemamodel"
 )
 
+// DomainChanges is a set of domain types one change applies to, carrying each
+// one's definition and not only its name.
+//
+// The sixth family off `[]string` under stokaro/ptah#2315, and the first whose
+// carry needed a RULE rather than a transcription: a catalog reports one
+// `Default` string for what the model splits into a literal value and an
+// expression. That rule now lives in [sqlutil.DefaultLooksLikeExpression],
+// where the column path and this one both reach it, rather than inside
+// internal/convert -- the package item 3 retires.
+//
+// See [RangeChanges] for why both sides carry the operand and why the wire
+// shape does not change.
+type DomainChanges []schemamodel.Domain
+
+// MarshalJSON writes the names alone, the shape `domains_added` and
+// `domains_removed` have always had.
+func (d DomainChanges) MarshalJSON() ([]byte, error) {
+	if d == nil {
+		return []byte("null"), nil
+	}
+	return json.Marshal(d.Names())
+}
+
+// Names is the domain names this change applies to.
+func (d DomainChanges) Names() []string {
+	if d == nil {
+		return nil
+	}
+	names := make([]string, 0, len(d))
+	for _, domain := range d {
+		names = append(names, domain.QualifiedName())
+	}
+	return names
+}
+
 // EnumChanges is a set of enum types one change applies to, carrying each one's
 // values and not only its name.
 //
@@ -507,9 +542,12 @@ type SchemaDiff struct {
 	SequencesModified []SequenceDiff `json:"sequences_modified"`
 
 	// DomainsAdded/Removed/Modified track PostgreSQL domain types.
-	DomainsAdded    []string     `json:"domains_added"`
-	DomainsRemoved  []string     `json:"domains_removed"`
-	DomainsModified []DomainDiff `json:"domains_modified"`
+	//
+	// Both lists carry the domain itself, the sixth family to do so under
+	// stokaro/ptah#2315.
+	DomainsAdded    DomainChanges `json:"domains_added"`
+	DomainsRemoved  DomainChanges `json:"domains_removed"`
+	DomainsModified []DomainDiff  `json:"domains_modified"`
 
 	// CompositeTypesAdded/Removed/Modified track PostgreSQL composite types.
 	//

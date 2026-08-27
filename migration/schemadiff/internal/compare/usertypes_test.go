@@ -26,8 +26,8 @@ func TestDomains_AddRemoveModify(t *testing.T) {
 
 	compare.Domains(desired, database, diff, compare.CoverageOf(desired, database))
 
-	c.Assert(diff.DomainsAdded, qt.DeepEquals, []string{"email"})
-	c.Assert(diff.DomainsRemoved, qt.DeepEquals, []string{"legacy"})
+	c.Assert(diff.DomainsAdded.Names(), qt.DeepEquals, []string{"email"})
+	c.Assert(diff.DomainsRemoved.Names(), qt.DeepEquals, []string{"legacy"})
 	c.Assert(diff.DomainsModified, qt.HasLen, 1)
 	c.Assert(diff.DomainsModified[0].DomainName, qt.Equals, "changed")
 	c.Assert(diff.DomainsModified[0].Changes["not_null"], qt.Equals, "false -> true")
@@ -42,7 +42,7 @@ func TestDomains_TypeCaseInsensitiveNoChurn(t *testing.T) {
 
 	compare.Domains(desired, database, diff, compare.CoverageOf(desired, database))
 
-	c.Assert(diff.DomainsAdded, qt.IsNil)
+	c.Assert(diff.DomainsAdded.Names(), qt.IsNil)
 	c.Assert(diff.DomainsModified, qt.IsNil)
 }
 
@@ -63,8 +63,8 @@ func TestDomains_CanonicalTypeSpellingNoChurn(t *testing.T) {
 
 	compare.Domains(desired, database, diff, compare.CoverageOf(desired, database))
 
-	c.Assert(diff.DomainsAdded, qt.IsNil)
-	c.Assert(diff.DomainsRemoved, qt.IsNil)
+	c.Assert(diff.DomainsAdded.Names(), qt.IsNil)
+	c.Assert(diff.DomainsRemoved.Names(), qt.IsNil)
 	c.Assert(diff.DomainsModified, qt.IsNil)
 }
 

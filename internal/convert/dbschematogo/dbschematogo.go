@@ -12,6 +12,7 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/core/sqlutil"
 )
 
 // ConvertDBSchemaToGoSchema converts a database schema to goschema format
@@ -994,7 +995,7 @@ func sizedColumnType(dbColumn catalog.Column) string {
 }
 
 func setFieldDefaultFromDB(field *schemamodel.Field, defaultSQL string) {
-	if dbDefaultLooksLikeExpression(defaultSQL) {
+	if sqlutil.DefaultLooksLikeExpression(defaultSQL) {
 		field.DefaultExpr = defaultSQL
 		return
 	}
@@ -1021,24 +1022,11 @@ func setDomainDefaultFromDB(domain *schemamodel.Domain, defaultSQL string) {
 	if strings.TrimSpace(defaultSQL) == "" {
 		return
 	}
-	if dbDefaultLooksLikeExpression(defaultSQL) {
+	if sqlutil.DefaultLooksLikeExpression(defaultSQL) {
 		domain.DefaultExpr = defaultSQL
 		return
 	}
 	domain.Default = defaultSQL
-}
-func dbDefaultLooksLikeExpression(defaultSQL string) bool {
-	value := strings.TrimSpace(defaultSQL)
-	if value == "" {
-		return false
-	}
-	if strings.HasPrefix(value, `"`) && strings.HasSuffix(value, `"`) {
-		return false
-	}
-	if strings.HasPrefix(value, "'") && strings.HasSuffix(value, "'") {
-		return false
-	}
-	return true
 }
 
 // convertGrants describes live grant rows as declarations.

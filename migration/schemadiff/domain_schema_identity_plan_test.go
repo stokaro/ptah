@@ -80,7 +80,7 @@ func TestGenerateSchemaDiffSQL_DomainColumnIsConvertedBeforeTheOldDomainIsDroppe
 
 	diff := schemadiff.CompareWithDialect(desired, database, platform.Postgres)
 
-	c.Assert(diff.DomainsRemoved, qt.DeepEquals, []string{"status"},
+	c.Assert(diff.DomainsRemoved.Names(), qt.DeepEquals, []string{"status"},
 		qt.Commentf("the desired schema no longer declares public.status, so the plan drops it"))
 
 	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, platform.Postgres)

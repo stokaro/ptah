@@ -122,8 +122,8 @@ func TestPostgresLiveDomainCheckConverges(t *testing.T) {
 	// 5. And the comparison is empty again.
 	converged := compareLiveDomains(c, ctx, conn, declared(replacedCheck), schemaName)
 	c.Assert(converged.DomainsModified, qt.HasLen, 0)
-	c.Assert(converged.DomainsAdded, qt.HasLen, 0)
-	c.Assert(converged.DomainsRemoved, qt.HasLen, 0)
+	c.Assert(converged.DomainsAdded.Names(), qt.HasLen, 0)
+	c.Assert(converged.DomainsRemoved.Names(), qt.HasLen, 0)
 }
 
 // compareLiveDomains reads the schema and compares it through the connection,
