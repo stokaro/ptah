@@ -271,6 +271,31 @@ run_node_selftest_case check-page-health.mjs \
 	"the sidebar-to-page rule short-circuited inside analyze()" \
 	"perl -0pi -e 's/if \\(!liveRoutes\\.has\\(entry\\.route\\)\\) \\{/if (false) {/' docs/site/scripts/check-page-health.mjs"
 
+# The Pages root. Two fixtures, because the gate's two directions fail
+# differently and only one of them leaves a trace anybody would notice.
+#
+# The first is the whole reason the gate exists: the tree still carries
+# docs/site/public/install.sh, the assembly this gate runs for itself still
+# writes it, and the deploy stops doing so. `_site` is built from scratch and
+# uploaded whole on every deploying run, so the file survives until the next
+# deploy and then is gone, while the documentation goes on publishing
+# `curl ... | sh`.
+run_node_gate_case check-pages-root.mjs \
+	"the step that writes the install scripts into the Pages root removed" \
+	'perl -0pi -e "s{run: node docs/site/scripts/publish-root-assets.mjs [^\n]*}{run: echo nothing}" .github/workflows/docs.yml'
+
+# The other direction. Retiring an asset from the declaration is the same 404
+# reached from the other end, and nothing else in the tree objects: the file is
+# still in docs/site/public, the workflow still runs the publisher, and the
+# documentation still tells a reader to pipe an address into a shell.
+run_node_gate_case check-pages-root.mjs \
+	"a documented root URL dropped from the declaration the assembly reads" \
+	"perl -0pi -e 's/  \\{\\n    name: .install\\.ps1.,\\n.*?\\n  \\},\\n//s' docs/site/scripts/publish-root-assets.mjs"
+
+run_node_selftest_case check-pages-root.mjs \
+	"the produced-file rule short-circuited inside analyze()" \
+	"perl -0pi -e 's/if \\(!assembled\\.has\\(name\\)\\) \\{/if (false) {/' docs/site/scripts/check-pages-root.mjs"
+
 # The library both route gates read the tree through. Its self-test is the only
 # thing asserting that pages come from git rather than from a walk, and that a
 # route Astro would spell differently is refused rather than guessed at.

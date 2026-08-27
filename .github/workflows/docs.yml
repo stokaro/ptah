@@ -107,6 +107,15 @@ jobs:
           node docs/site/scripts/check-matrix-flag-names.mjs --selftest
           node docs/site/scripts/check-matrix-flag-names.mjs
           node docs/site/scripts/build-feature-matrix.mjs --check
+          # The Pages root is assembled by the build job below, which only runs
+          # for docs/site changes. This gate reads the workflow and the
+          # documentation as well as the scripts, so it belongs in the job that
+          # sees every documentation change: retiring the publish step is an
+          # edit to this file, and dropping the documented command is an edit to
+          # a page.
+          node docs/site/scripts/publish-root-assets.mjs --selftest
+          node docs/site/scripts/check-pages-root.mjs --selftest
+          node docs/site/scripts/check-pages-root.mjs
 
   build:
     name: Build versioned site
@@ -273,6 +282,25 @@ jobs:
       - name: Generate root version index and redirect
         if: github.event_name == 'push'
         run: node docs/site/scripts/gen-versions.mjs "$GITHUB_WORKSPACE/_site"
+
+      # The install scripts answer at the Pages root rather than inside a
+      # version directory, because the documented command carries no version.
+      # `_site` is assembled from scratch on every deploying run and uploaded
+      # whole, so a root file exists after a deploy only because that deploy
+      # wrote it. This step is what writes them, and it carries the same `push`
+      # condition as the version index beside it so a tag deploy publishes them
+      # too.
+      - name: Publish the install scripts at the site root
+        if: github.event_name == 'push'
+        run: node docs/site/scripts/publish-root-assets.mjs "$GITHUB_WORKSPACE/_site"
+
+      # Read back what was assembled rather than what the tree holds. Every
+      # step above can be right while the directory about to be uploaded is
+      # missing a file the documentation publishes, and that 404 is silent: the
+      # command keeps being printed and stops working.
+      - name: The assembled Pages root carries every published file
+        if: github.event_name == 'push'
+        run: node docs/site/scripts/check-pages-root.mjs --site "$GITHUB_WORKSPACE/_site"
 
       - name: Upload Pages artifact
         if: github.event_name == 'push'

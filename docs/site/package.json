@@ -29,8 +29,11 @@
     "check:responsive": "node scripts/check-responsive.mjs",
     "check:responsive:selftest": "node scripts/check-responsive.mjs --selftest",
     "check:glossary": "node scripts/check-glossary.mjs",
+    "check:pages-root": "node scripts/check-pages-root.mjs",
+    "check:pages-root:selftest": "node scripts/check-pages-root.mjs --selftest",
     "check:glossary:selftest": "node scripts/check-glossary.mjs --selftest",
-    "versions:selftest": "node scripts/gen-versions.mjs --selftest"
+    "versions:selftest": "node scripts/gen-versions.mjs --selftest",
+    "root-assets:selftest": "node scripts/publish-root-assets.mjs --selftest"
   },
   "dependencies": {
     "@astrojs/starlight": "0.41.9",
