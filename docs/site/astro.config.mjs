@@ -3,6 +3,13 @@ import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 import tailwindcss from '@tailwindcss/vite';
 
+// The navigation is a value in its own module because a plain Node script
+// cannot import this file: Starlight's entry point is TypeScript inside
+// node_modules and Node refuses to strip types there. scripts/check-page-health.mjs
+// reads that module, so the sidebar the gate checks is the sidebar the site
+// renders. See the header of src/sidebar.mjs.
+import { sidebar } from './src/sidebar.mjs';
+
 const site = 'https://stokaro.github.io';
 const DOCS_VERSION = process.env.DOCS_VERSION || 'edge';
 const base = `/ptah/${DOCS_VERSION}/`;
@@ -71,130 +78,7 @@ export default defineConfig({
           href: 'https://github.com/stokaro/ptah',
         },
       ],
-      sidebar: [
-        {
-          label: 'Start',
-          items: [
-            { slug: 'start/install' },
-            { slug: 'start/quick-start' },
-            { slug: 'start/choose-a-workflow' },
-            { slug: 'start/adopt-an-existing-database' },
-          ],
-        },
-        {
-          label: 'Model your schema',
-          items: [
-            { slug: 'schema/work-with-a-source' },
-            { slug: 'schema/go-annotations' },
-            { slug: 'schema/yaml' },
-            { slug: 'schema/hcl' },
-            { slug: 'schema/sql' },
-            { slug: 'schema/dbml' },
-            { slug: 'schema/orm-and-external' },
-            { slug: 'schema/composite' },
-            { slug: 'schema/visualize' },
-            { slug: 'schema/export' },
-            { slug: 'schema/protobuf' },
-          ],
-        },
-        {
-          label: 'Direct schema changes',
-          items: [
-            { slug: 'direct/inspect' },
-            { slug: 'direct/compare-and-drift' },
-            { slug: 'direct/apply' },
-          ],
-        },
-        {
-          label: 'Versioned migrations',
-          items: [
-            { slug: 'versioned/overview' },
-            { slug: 'versioned/generate' },
-            { slug: 'versioned/apply' },
-            { slug: 'versioned/rollback' },
-            { slug: 'versioned/integrity-and-safety' },
-            { slug: 'versioned/maintain-history' },
-            { slug: 'versioned/import' },
-            { slug: 'versioned/checkpoints' },
-            { slug: 'versioned/reference-data' },
-          ],
-        },
-        {
-          label: 'Test and CI',
-          items: [
-            { slug: 'testing/migrations-and-schema' },
-            { slug: 'testing/ci' },
-          ],
-        },
-        {
-          label: 'Distribute and operate',
-          items: [
-            { slug: 'operate/ai-agents' },
-            { slug: 'operate/ai-assist' },
-            { slug: 'operate/oci-registry' },
-            { slug: 'operate/seed-data' },
-            { slug: 'operate/troubleshooting' },
-          ],
-        },
-        {
-          label: 'Databases',
-          items: [
-            { slug: 'databases/support-matrix' },
-            { slug: 'databases/postgresql' },
-            { slug: 'databases/sqlite' },
-            { slug: 'databases/sqlserver' },
-          ],
-        },
-        {
-          label: 'Atlas compatibility',
-          items: [
-            { slug: 'atlas/overview' },
-            { slug: 'atlas/adoption' },
-            { slug: 'atlas/feature-matrix' },
-            { slug: 'atlas/migrate-commands' },
-            { slug: 'atlas/schema-commands' },
-            { slug: 'atlas/project-config' },
-            { slug: 'atlas/comparison' },
-            { slug: 'atlas/retained-divergences' },
-            { slug: 'atlas/conformance' },
-            { slug: 'atlas/docs-coverage' },
-            { slug: 'atlas/license-boundary' },
-          ],
-        },
-        {
-          label: 'Extend Ptah',
-          items: [
-            { slug: 'extend/public-api' },
-            { slug: 'extend/components' },
-            { slug: 'extend/query-builder' },
-          ],
-        },
-        {
-          label: 'Concepts',
-          items: [
-            { slug: 'concepts/desired-schema-and-sources' },
-            { slug: 'concepts/migration-directory' },
-            { slug: 'concepts/database-urls-and-dev-databases' },
-            { slug: 'concepts/dialects-and-capabilities' },
-          ],
-        },
-        {
-          label: 'Reference',
-          items: [
-            { slug: 'reference/native-commands' },
-            { slug: 'reference/atlas-commands' },
-            { slug: 'reference/go-annotations' },
-            { slug: 'reference/configuration' },
-            { slug: 'reference/yaml-schema' },
-            { slug: 'reference/hcl-schema' },
-            { slug: 'reference/test-cases' },
-            { slug: 'reference/capabilities' },
-            { slug: 'reference/lint-rules' },
-            { slug: 'reference/exit-codes' },
-            { slug: 'reference/glossary' },
-          ],
-        },
-      ],
+      sidebar,
     }),
   ],
   vite: {

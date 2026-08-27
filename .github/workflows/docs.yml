@@ -132,6 +132,30 @@ jobs:
       - name: Self-test the version generator
         run: node docs/site/scripts/gen-versions.mjs --selftest
 
+      # The route ledger's primary invariant runs with the other site checks
+      # below and needs no history. This is the secondary one, and it is here
+      # because this job is the only one checked out with fetch-depth: 0.
+      #
+      # check-route-retirement.mjs iterates the ledger, so a route DELETED from
+      # the ledger is a route it never visits: a retirement plus a hand-edited
+      # ledger leaves every documentation gate green. Comparing with the merge
+      # base is what sees that, and it is deliberately not allowed to skip --
+      # a base that will not resolve exits 2 rather than reporting a pass.
+      - name: The route ledger must not lose an entry
+        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/master'
+        env:
+          PULL_REQUEST_BASE: ${{ github.event_name == 'pull_request' && github.base_ref || '' }}
+        run: |
+          set -euo pipefail
+          # A pull request compares against the branch it targets; a push to
+          # master against the commit before it.
+          if [ -n "$PULL_REQUEST_BASE" ]; then
+            base="origin/${PULL_REQUEST_BASE}"
+          else
+            base='HEAD^'
+          fi
+          node docs/site/scripts/check-route-retirement.mjs --against "$base"
+
       - name: Build edge from the current tree
         if: github.event_name == 'pull_request' || github.ref == 'refs/heads/master'
         env:
@@ -143,9 +167,13 @@ jobs:
           npm ci
           npm run check:links:selftest
           npm run check:links
+          npm run check:docroutes:selftest
           npm run check:redirects:selftest
           npm run check:redirects
+          npm run check:route-retirement:selftest
+          npm run check:route-retirement
           npm run check:core-doc-links
+          npm run check:page-health:selftest
           npm run check:page-health
           npm run check:exit-codes:selftest
           npm run check:exit-codes
@@ -180,7 +208,13 @@ jobs:
               DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:redirects:selftest
               DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:redirects
             fi
+            if [ -f scripts/check-route-retirement.mjs ]; then
+              DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:docroutes:selftest
+              DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:route-retirement:selftest
+              DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:route-retirement
+            fi
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:core-doc-links
+            DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:page-health:selftest
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:page-health
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:exit-codes:selftest
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:exit-codes

@@ -681,9 +681,16 @@ The design proposal attached to #804 was drafted against `master` at
 All enforced by scripts in `docs/site/scripts/` (verified by reading them):
 
 - `check-page-health.mjs`: every content page needs `title` and `description`
-  frontmatter, no TODO-style markers, and a `slug:` entry in
-  `astro.config.mjs`. Every added or moved page must enter the sidebar in the
-  same PR; orphan pages are impossible.
+  frontmatter, no TODO-style markers, and a sidebar entry in
+  `src/sidebar.mjs` — a `slug:` or an internal `link:`, either one counting as
+  coverage. The same gate reads the other direction, so an entry naming no page
+  and a link naming no route are findings too. Every added or moved page must
+  enter the sidebar in the same PR; orphan pages are impossible.
+- `check-route-retirement.mjs`: every route in
+  `scripts/data/published-routes.json` is either a live page or the source of a
+  redirect. Retiring a URL without a redirect is a finding, and so is deleting
+  the redirect later; a new page joins the ledger through `--write` in the same
+  PR.
 - `check-links.mjs`: internal links must be docs-relative and resolve to an
   existing route. Every move must update all inbound links in the same PR;
   content must always link a new home directly, never a redirect URL.
