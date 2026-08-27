@@ -14,6 +14,7 @@ import (
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/internal/exprkey"
 )
 
 // oracleStoredExpression is what a live 23.26.2.0.0 stores for
@@ -156,28 +157,43 @@ func TestGeneratedColumnDiff_UsesTheServerSpellingWhereItHasOne(t *testing.T) {
 // TestGeneratedColumnKey_MatchesTheResolverSpelling holds the two halves of one
 // key to each other.
 //
-// The map is written by dbschema and read here, and neither package can see the
-// other's spelling. A key that folded differently on the two sides would leave
-// every entry unfound, which is indistinguishable from nobody having asked a
-// server -- the expression would go uncompared and the fix would look like it
-// worked.
+// The map is written by dbexprprobe and read here, and neither package can see
+// the other's spelling. A key that folded differently on the two sides would
+// leave every entry unfound, which is indistinguishable from nobody having
+// asked a server -- the expression would go uncompared and the fix would look
+// like it worked.
+//
+// The assertions are properties rather than a literal. The key is an opaque
+// identity, and a test that wrote one out would pin the encoding instead: it
+// would have to be rewritten by whoever changed the encoding, which is the one
+// person a guard must not depend on.
 func TestGeneratedColumnKey_MatchesTheResolverSpelling(t *testing.T) {
 	tests := []struct {
 		name   string
 		schema string
 		table  string
 		column string
-		want   string
+		same   bool
 	}{
-		{name: "unqualified", table: "ora_posts", column: "doubled", want: "ora_posts.doubled"},
-		{name: "qualified", schema: "app", table: "ora_posts", column: "doubled", want: "app.ora_posts.doubled"},
-		{name: "folded", schema: "APP", table: "ORA_POSTS", column: "DOUBLED", want: "app.ora_posts.doubled"},
+		{name: "the same spelling", schema: "app", table: "ora_posts", column: "doubled", same: true},
+		{
+			// Oracle folds an unquoted name, so the declaration may shout and
+			// the catalog may whisper and they are one column.
+			name: "a folded spelling", schema: "APP", table: "ORA_POSTS", column: "DOUBLED", same: true,
+		},
+		{
+			// A different column is a different key, which is what stops the
+			// fold above from being a blanket merge.
+			name: "a different column", schema: "app", table: "ora_posts", column: "tripled", same: false,
+		},
 	}
+	reference := exprkey.Generated(platform.Oracle, "app", "ora_posts", "doubled")
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(generatedColumnKey(test.schema, test.table, test.column), qt.Equals, test.want)
+			key := exprkey.Generated(platform.Oracle, test.schema, test.table, test.column)
+			c.Assert(key == reference, qt.Equals, test.same)
 		})
 	}
 }

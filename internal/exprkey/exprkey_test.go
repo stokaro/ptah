@@ -73,3 +73,32 @@ func TestCheck_TheFoldIsTheTargets(t *testing.T) {
 		exprkey.Check(oracle, "T", "ck"),
 		qt.Commentf("Oracle folds an unquoted name, so these are one table"))
 }
+
+// TestGenerated_TheTwoSidesAgreeWithoutSharingAConnection pins the property the
+// dialect parameter exists for.
+//
+// The map is filled by asking a dev database to spell each declaration and read
+// while comparing against the target. Nothing guarantees the two connections
+// resolved the same semantics, so the key is derived from the dialect both
+// sides do share.
+func TestGenerated_TheTwoSidesAgreeWithoutSharingAConnection(t *testing.T) {
+	c := qt.New(t)
+
+	producer := exprkey.Generated(platform.Oracle, "app", "orders", "total")
+	consumer := exprkey.Generated(platform.Oracle, "app", "orders", "total")
+	c.Assert(producer, qt.Equals, consumer)
+
+	c.Assert(exprkey.Generated(platform.Oracle, "app", "orders", "total"), qt.Not(qt.Equals),
+		exprkey.Generated(platform.Oracle, "app", "orders", "TOTAL_2"),
+		qt.Commentf("two columns are two keys"))
+}
+
+// TestGenerated_ComponentsCannotForgeABoundary is
+// [TestCheck_ComponentsCannotForgeABoundary] for the column family: a catalog
+// reports a table name bare, dots included.
+func TestGenerated_ComponentsCannotForgeABoundary(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(exprkey.Generated(platform.Postgres, "", "orders.2024", "total"), qt.Not(qt.Equals),
+		exprkey.Generated(platform.Postgres, "", "orders", "2024.total"))
+}

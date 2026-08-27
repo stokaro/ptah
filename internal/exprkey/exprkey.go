@@ -65,7 +65,17 @@ func PolicyParts(semantics identifier.Semantics, schema, table, policy string) s
 
 // Generated is the key for one generated column, whose schema may be empty
 // because the declaration did not qualify the table.
-func Generated(semantics identifier.Semantics, schema, table, column string) string {
+//
+// It takes the DIALECT rather than resolved semantics, which the other families
+// take, and the difference is not an oversight. The two sides of this key are
+// built from two different connections: the map is filled by asking a DEV
+// database to spell each declaration, and it is read while comparing against
+// the TARGET. Semantics resolved from either connection can carry that
+// server's catalog collation and its resolved names, so a key built from one
+// would not be found by the other. The dialect is the part both sides agree on
+// by construction.
+func Generated(dialect, schema, table, column string) string {
+	semantics := identifier.ForDialect(dialect)
 	return encode(objectidentity.NewBuilder(semantics).ColumnParts(schema, table, column))
 }
 
