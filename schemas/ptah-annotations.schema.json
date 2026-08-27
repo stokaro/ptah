@@ -689,6 +689,10 @@
               "description": "Return type.",
               "type": "string"
             },
+            "schema": {
+              "description": "Target schema/namespace.",
+              "type": "string"
+            },
             "security": {
               "description": "Security mode, such as DEFINER.",
               "type": "string"
@@ -942,6 +946,10 @@
               "description": "Retired: refused when the annotation is parsed, on every dialect. Ptah does not refresh materialized views: one is populated when it is created, a changed definition is reconciled as DROP and CREATE, and it goes stale only when its source data changes, which schema reconciliation cannot observe. Remove the attribute and refresh from your own scheduler.",
               "not": {},
               "x-ptah-retired": "Ptah does not refresh materialized views: one is populated when it is created, a changed definition is reconciled as DROP and CREATE, and it goes stale only when its source data changes, which schema reconciliation cannot observe. Remove the attribute and refresh from your own scheduler"
+            },
+            "schema": {
+              "description": "Target schema/namespace.",
+              "type": "string"
             }
           },
           "required": [
@@ -989,6 +997,10 @@
             },
             "params": {
               "description": "Procedure parameter list.",
+              "type": "string"
+            },
+            "schema": {
+              "description": "Target schema/namespace.",
               "type": "string"
             },
             "security": {
@@ -1618,6 +1630,10 @@
             },
             "name": {
               "description": "View name.",
+              "type": "string"
+            },
+            "schema": {
+              "description": "Target schema/namespace.",
               "type": "string"
             },
             "with_check": {

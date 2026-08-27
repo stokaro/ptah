@@ -489,6 +489,7 @@ var directives = []Directive{
 		Scopes:      []Scope{ScopeStruct},
 		Attributes: []Attribute{
 			attr("name", "Function name.", valueString, false, false),
+			attr("schema", "Target schema/namespace.", valueString, false, false),
 			attr("params", "Function parameter list.", valueString, false, false),
 			attr("returns", "Return type.", valueString, false, false),
 			attr("language", "Function language.", valueString, false, false),
@@ -505,6 +506,7 @@ var directives = []Directive{
 		Scopes:      []Scope{ScopeStruct},
 		Attributes: []Attribute{
 			attr("name", "Procedure name.", valueString, false, false),
+			attr("schema", "Target schema/namespace.", valueString, false, false),
 			attr("params", "Procedure parameter list.", valueString, false, false),
 			attr("language", "Procedure language.", valueString, false, false),
 			attr("security", "Security mode, such as DEFINER.", valueString, false, false),
@@ -584,6 +586,7 @@ var directives = []Directive{
 		Scopes:      []Scope{ScopeStruct},
 		Attributes: []Attribute{
 			attr("name", "View name.", valueString, true, false),
+			attr("schema", "Target schema/namespace.", valueString, false, false),
 			attr("body", "View SELECT body.", valueSQL, true, false),
 			attr("with_check", "Controls WITH CHECK OPTION where supported.", valueBoolean, false, false),
 			attr("comment", "View comment.", valueString, false, false),
@@ -596,6 +599,7 @@ var directives = []Directive{
 		Scopes:      []Scope{ScopeStruct},
 		Attributes: []Attribute{
 			attr("name", "Materialized view name.", valueString, true, false),
+			attr("schema", "Target schema/namespace.", valueString, false, false),
 			attr("body", "Materialized view SELECT body.", valueSQL, true, false),
 			attr("refresh", "ClickHouse refresh schedule, as ClickHouse spells it: "+
 				"`every 1 hour`, `after 30 minute`, `every 1 day offset 2 hour`. "+
