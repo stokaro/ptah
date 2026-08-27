@@ -147,6 +147,7 @@ func dataSafetyRules() []Rule {
 		constraintDroppedRule(),
 		enumValueRemovedRule(),
 		databaseObjectDroppedRule(),
+		routineBodyNotAnalyzedRule(),
 		tableTruncatedRule(),
 		rlsDisabledRule(),
 	}
@@ -509,6 +510,68 @@ func enumValueRemovedRule() Rule {
 			}
 			return true, "removing an enum value can invalidate existing rows; backfill rows away from the value before changing the enum"
 		},
+	}
+}
+
+// routineBodyNotAnalyzedRule says that a migration carried a routine whose body
+// this linter did not read.
+//
+// It reports nothing about the body, deliberately, and that is the point. A
+// DROP TABLE inside a procedure body runs when somebody calls the procedure and
+// never at migration time, so the rules correctly stay silent about it
+// (migration/lint/compound_routine_body_test.go). Silence about the body and
+// silence about the whole file are different facts, and until this rule the
+// operator could not tell them apart: a migration whose only statement was a
+// function dropping a table inside its body reported no findings and exit 0,
+// which reads as "checked and safe" rather than "not checked".
+//
+// #1270 asks for exactly this distinction: "No supported code object is
+// silently skipped and reported as clean when analysis was incomplete."
+//
+// Info severity, so nothing about the migration changes. It ends when routine
+// analysis exists (stokaro/ptah#2356, stokaro/ptah#2357).
+func routineBodyNotAnalyzedRule() Rule {
+	return Rule{
+		Code:     "AC101",
+		Title:    "routine body not analyzed",
+		Severity: SeverityInfo,
+		CheckStatement: func(stmt *Statement) (bool, string) {
+			kind, ok := routineDefinitionKind(stmt.Words)
+			if !ok {
+				return false, ""
+			}
+			return true, "this migration defines a " + kind +
+				"; its body is not analyzed, so a clean result here says nothing about what the body does"
+		},
+		AppliesToDown: true,
+	}
+}
+
+// routineDefinitionKind names the routine a statement defines, and reports
+// whether it defines one.
+//
+// Anchored on the statement, for the reason DS106 is: a routine body is words,
+// and a scan that walked them would answer for the body rather than about it.
+func routineDefinitionKind(w []string) (string, bool) {
+	var rest []string
+	switch {
+	case hasWordPrefix(w, "CREATE", "OR", "REPLACE"):
+		rest = w[3:]
+	case hasWordPrefix(w, "CREATE"):
+		rest = w[1:]
+	default:
+		return "", false
+	}
+	if len(rest) == 0 {
+		return "", false
+	}
+	switch rest[0] {
+	case "FUNCTION":
+		return "function", true
+	case "PROCEDURE":
+		return "procedure", true
+	default:
+		return "", false
 	}
 }
 

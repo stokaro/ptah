@@ -84,6 +84,7 @@ var families = []Family{
 	{Prefix: "SQL", Origin: OriginPtah, Summary: "the SQL linter could not read or model the statement"},
 	{Prefix: "DDL", Origin: OriginPtah, Summary: "the shape of a DDL statement the SQL linter modeled"},
 	{Prefix: "CAP", Origin: OriginPtah, Summary: "the target server version lacks a capability the statement needs"},
+	{Prefix: "AC", Origin: OriginPtah, Summary: "analysis coverage: what the linter did not read, so a clean result is not mistaken for a checked one"},
 }
 
 // Entry is one rule, joined from a registry and this package's declaration.
@@ -158,6 +159,9 @@ var migrationRuleMeta = map[string]ruleMeta{
 		// ROLE, and POLICY, so the rule is ours even though it covers the Atlas
 		// one.
 		Summary: "dropping a schema, type, extension, function, procedure, trigger, role, or policy removes behavior",
+	},
+	"AC101": {
+		Summary: "the migration defines a routine whose body is not analyzed, so a clean result says nothing about what the body does",
 	},
 	"DS108": {
 		Summary: "TRUNCATE deletes every row in the table",

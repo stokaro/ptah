@@ -1103,8 +1103,13 @@ $ptah$ LANGUAGE plpgsql;
 
 	findings, err := lint.LintFS(fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
-	c.Assert(findings, qt.HasLen, 0,
-		qt.Commentf("statements inside dollar-quoted bodies must not trigger rules; got: %v", findings))
+	// The claim is that a statement INSIDE the body triggers no rule. AC101 is
+	// about the body not being read at all, which is the opposite of reading it
+	// and is what stops the run from looking clean (stokaro/ptah#1270).
+	for _, finding := range findings {
+		c.Assert(finding.Rule, qt.Equals, "AC101",
+			qt.Commentf("statements inside dollar-quoted bodies must not trigger rules; got: %v", findings))
+	}
 }
 
 func TestLintFS_PathPrefixAppearsInFindings(t *testing.T) {
@@ -1345,7 +1350,14 @@ func TestRules_EveryRuleHasCodeTitleAndOneChecker(t *testing.T) {
 		seen[rule.Code] = true
 		oneChecker := (rule.CheckStatement != nil) != (rule.CheckFile != nil)
 		c.Assert(oneChecker, qt.IsTrue, qt.Commentf("rule %s must set exactly one checker", rule.Code))
-		c.Assert(rule.Severity == lint.SeverityWarning || rule.Severity == lint.SeverityError, qt.IsTrue)
+		// All three, not two. SeverityInfo is a designed severity -- reported
+		// and never gated on, so a rule can be introduced to a repository that
+		// still violates it (stokaro/ptah#1633) -- and the two-way assertion
+		// was a snapshot of a registry that happened to have none.
+		c.Assert(rule.Severity == lint.SeverityWarning ||
+			rule.Severity == lint.SeverityError ||
+			rule.Severity == lint.SeverityInfo, qt.IsTrue,
+			qt.Commentf("rule %s has severity %q", rule.Code, rule.Severity))
 	}
 }
 
