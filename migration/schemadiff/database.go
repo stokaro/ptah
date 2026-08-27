@@ -8,9 +8,11 @@ import (
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/coverage"
+	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbexprprobe"
+	"go.5x5.cz/ptah/internal/exprkey"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/migration/internal/generatedschema"
@@ -77,15 +79,15 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 	if err != nil {
 		return nil, nil, err
 	}
-	checks, err := resolveCheckExpressions(ctx, conn, desired, database)
+	checks, err := resolveCheckExpressions(ctx, conn, desired, database, semantics)
 	if err != nil {
 		return nil, nil, err
 	}
-	policies, err := resolvePolicyExpressions(ctx, conn, desired, database)
+	policies, err := resolvePolicyExpressions(ctx, conn, desired, database, semantics)
 	if err != nil {
 		return nil, nil, err
 	}
-	indexes, err := resolveIndexExpressions(ctx, conn, desired, database)
+	indexes, err := resolveIndexExpressions(ctx, conn, desired, database, semantics)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -223,6 +225,7 @@ func resolveCheckExpressions(
 	conn *dbschema.DatabaseConnection,
 	desired *schemamodel.Database,
 	database *catalog.Database,
+	semantics identifier.Semantics,
 ) (map[string]config.CheckExpression, error) {
 	if desired == nil || database == nil {
 		return nil, nil
@@ -230,21 +233,21 @@ func resolveCheckExpressions(
 	held := make(map[string]struct{}, len(database.Constraints))
 	for _, constraint := range database.Constraints {
 		if strings.EqualFold(constraint.Type, "CHECK") {
-			held[checkExpressionKey(constraint.TableName, constraint.Name)] = struct{}{}
+			held[exprkey.CheckParts(semantics, constraint.Schema, constraint.TableName, constraint.Name)] = struct{}{}
 		}
 	}
-	columns := liveTableColumns(database)
+	columns := liveTableColumns(database, semantics)
 
 	probes := make([]dbexprprobe.CheckExpressionProbe, 0, len(desired.Constraints))
 	for _, constraint := range desired.Constraints {
 		if !strings.EqualFold(constraint.Type, "CHECK") {
 			continue
 		}
-		key := checkExpressionKey(constraint.Table, constraint.Name)
+		key := exprkey.Check(semantics, constraint.Table, constraint.Name)
 		if _, exists := held[key]; !exists {
 			continue
 		}
-		probeColumns, known := columns[foldCheckTableName(constraint.Table)]
+		probeColumns, known := columns[exprkey.Table(semantics, constraint.Table)]
 		if !known {
 			continue
 		}
@@ -276,23 +279,24 @@ func resolvePolicyExpressions(
 	conn *dbschema.DatabaseConnection,
 	desired *schemamodel.Database,
 	database *catalog.Database,
+	semantics identifier.Semantics,
 ) (map[string]config.PolicyExpression, error) {
 	if desired == nil || database == nil {
 		return nil, nil
 	}
 	held := make(map[string]struct{}, len(database.RLSPolicies))
 	for _, policy := range database.RLSPolicies {
-		held[checkExpressionKey(policy.Table, policy.Name)] = struct{}{}
+		held[exprkey.Policy(semantics, policy.Table, policy.Name)] = struct{}{}
 	}
-	columns := liveTableColumns(database)
+	columns := liveTableColumns(database, semantics)
 
 	probes := make([]dbexprprobe.PolicyExpressionProbe, 0, len(desired.RLSPolicies))
 	for _, policy := range desired.RLSPolicies {
-		key := checkExpressionKey(policy.Table, policy.Name)
+		key := exprkey.Policy(semantics, policy.Table, policy.Name)
 		if _, exists := held[key]; !exists {
 			continue
 		}
-		probeColumns, known := columns[foldCheckTableName(policy.Table)]
+		probeColumns, known := columns[exprkey.Table(semantics, policy.Table)]
 		if !known {
 			continue
 		}
@@ -325,6 +329,7 @@ func resolveIndexExpressions(
 	conn *dbschema.DatabaseConnection,
 	desired *schemamodel.Database,
 	database *catalog.Database,
+	semantics identifier.Semantics,
 ) (map[string]config.IndexExpression, error) {
 	if desired == nil || database == nil {
 		return nil, nil
@@ -333,7 +338,7 @@ func resolveIndexExpressions(
 	for _, index := range database.Indexes {
 		held[strings.ToLower(strings.TrimSpace(index.Name))] = struct{}{}
 	}
-	columns := liveTableColumns(database)
+	columns := liveTableColumns(database, semantics)
 
 	// The owner is resolved the way the comparator resolves it, because an
 	// index declaration does not always carry its table: `TableName` is the
@@ -351,7 +356,7 @@ func resolveIndexExpressions(
 		if _, exists := held[key]; !exists {
 			continue
 		}
-		probeColumns, known := columns[foldCheckTableName(owners[position])]
+		probeColumns, known := columns[exprkey.Table(semantics, owners[position])]
 		if !known {
 			continue
 		}
@@ -397,7 +402,10 @@ func declaredIndexExpression(index schemamodel.Index) (expression string, parts 
 
 // liveTableColumns projects every live table's columns into the shape a probe
 // needs, keyed by the table's bare name.
-func liveTableColumns(current *catalog.Database) map[string][]dbexprprobe.CheckProbeColumn {
+func liveTableColumns(
+	current *catalog.Database,
+	semantics identifier.Semantics,
+) map[string][]dbexprprobe.CheckProbeColumn {
 	columns := make(map[string][]dbexprprobe.CheckProbeColumn, len(current.Tables))
 	for _, table := range current.Tables {
 		probeColumns := make([]dbexprprobe.CheckProbeColumn, 0, len(table.Columns))
@@ -407,27 +415,9 @@ func liveTableColumns(current *catalog.Database) map[string][]dbexprprobe.CheckP
 				Type: column.RawType(),
 			})
 		}
-		columns[foldCheckTableName(table.Name)] = probeColumns
+		columns[exprkey.TableParts(semantics, table.Schema, table.Name)] = probeColumns
 	}
 	return columns
-}
-
-// checkExpressionKey is the map key both halves use: the table and the
-// constraint, folded, because a constraint name is unique within its table and
-// not across the schema.
-func checkExpressionKey(table, name string) string {
-	return foldCheckTableName(table) + "." + strings.ToLower(strings.TrimSpace(name))
-}
-
-// foldCheckTableName reduces a table reference to its bare name, folded. The
-// declaration may qualify it and the read may not, and the probe only needs to
-// find the columns.
-func foldCheckTableName(table string) string {
-	name := strings.TrimSpace(table)
-	if ref, ok := tableref.Parse(name); ok {
-		name = ref.Name
-	}
-	return strings.ToLower(name)
 }
 
 // resolveContinuousAggregateBodies normalizes the declared SELECT of every
