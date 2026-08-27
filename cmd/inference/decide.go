@@ -14,6 +14,7 @@ import (
 	"go.5x5.cz/ptah/internal/embedcutover"
 	"go.5x5.cz/ptah/internal/embedgen"
 	"go.5x5.cz/ptah/internal/embedpg"
+	"go.5x5.cz/ptah/internal/embedrelease"
 	"go.5x5.cz/ptah/internal/embedrun"
 	"go.5x5.cz/ptah/internal/embedstore"
 	"go.5x5.cz/ptah/internal/embedverify"
@@ -23,6 +24,7 @@ import (
 func newVerifyCommand() *cobra.Command {
 	var options commonOptions
 	var runID string
+	var evidence evidenceOptions
 
 	cmd := &cobra.Command{
 		Use:   "verify",
@@ -39,11 +41,12 @@ satisfied by a corpus that missed a thousand rows and invented a thousand
 others.`,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runVerify(cmd.Context(), cmd.OutOrStdout(), options, runID)
+			return runVerify(cmd.Context(), cmd.OutOrStdout(), options, runID, evidence)
 		},
 	}
 	addCommonFlags(cmd, &options)
 	cmd.Flags().StringVar(&runID, "run-id", "", "Identifier of the run (required)")
+	addEvidenceFlags(cmd.Flags(), &evidence)
 	return cmd
 }
 
@@ -54,7 +57,9 @@ others.`,
 // somebody asserts is fine is not a generation anybody measured. The record is
 // written only on a pass, so a failing verification leaves the last passing one
 // standing rather than replacing it with a newer lie.
-func runVerify(ctx context.Context, out io.Writer, options commonOptions, runID string) error {
+func runVerify(
+	ctx context.Context, out io.Writer, options commonOptions, runID string, evidence evidenceOptions,
+) error {
 	report, _, err := verify(ctx, options, runID)
 	if err != nil {
 		return err
@@ -62,10 +67,34 @@ func runVerify(ctx context.Context, out io.Writer, options commonOptions, runID 
 	if err := printReport(out, report); err != nil {
 		return err
 	}
+	if err := publishVerification(ctx, out, options, report, evidence); err != nil {
+		return err
+	}
 	if !report.Passed() {
+		// Published either way, and that is the point: a verification that
+		// found something is the evidence somebody will want, and a registry
+		// holding only the passes is a record of nothing.
 		return fmt.Errorf("verification found %d blocking findings", len(report.Blocking()))
 	}
 	return recordVerification(ctx, options, report.Generation)
+}
+
+// publishVerification writes the report to a registry where one was named.
+func publishVerification(
+	ctx context.Context, out io.Writer, options commonOptions,
+	report embedverify.Report, evidence evidenceOptions,
+) error {
+	if evidence.publishTo == "" {
+		return nil
+	}
+	opened, err := open(ctx, options)
+	if err != nil {
+		return err
+	}
+	defer opened.close()
+	record, buildErr := embedrelease.NewVerificationRecord(
+		verificationRecord(opened.loaded.Spec, report, nil, time.Now().UTC()))
+	return publishRecord(ctx, out, evidence, record, buildErr)
 }
 
 // recordVerification writes the pass onto the generation.
@@ -223,6 +252,7 @@ func newCutoverCommand() *cobra.Command {
 	var approvalDigest string
 	var approver string
 	var stabilizeFor time.Duration
+	var evidence evidenceOptions
 
 	cmd := &cobra.Command{
 		Use:   "cutover",
@@ -240,7 +270,7 @@ stops applying -- which is the point of it.`,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runCutover(cmd.Context(), cmd.OutOrStdout(), options,
-				runID, approvalDigest, approver, stabilizeFor)
+				runID, approvalDigest, approver, stabilizeFor, evidence)
 		},
 	}
 	addCommonFlags(cmd, &options)
@@ -250,13 +280,14 @@ stops applying -- which is the point of it.`,
 	cmd.Flags().StringVar(&approver, "approver", "", "Who approved it")
 	cmd.Flags().DurationVar(&stabilizeFor, "stabilize-for", 0,
 		"How long the previous generation stays a way back; zero leaves no rollback")
+	addEvidenceFlags(cmd.Flags(), &evidence)
 	return cmd
 }
 
 // runCutover builds a plan, decides, and moves the pointer.
 func runCutover(
 	ctx context.Context, out io.Writer, options commonOptions,
-	runID, approvalDigest, approver string, stabilizeFor time.Duration,
+	runID, approvalDigest, approver string, stabilizeFor time.Duration, evidence evidenceOptions,
 ) error {
 	report, run, err := verify(ctx, options, runID)
 	if err != nil {
@@ -287,7 +318,38 @@ func runCutover(
 	}, plan.Previous); err != nil {
 		return err
 	}
-	return openStabilization(ctx, out, opened, plan, now, stabilizeFor)
+	if err := openStabilization(ctx, out, opened, plan, now, stabilizeFor); err != nil {
+		return err
+	}
+	return publishCutover(ctx, out, opened, plan, report, approver, now, stabilizeFor, evidence)
+}
+
+// publishCutover records what was done, where a registry was named.
+//
+// After the pointer has moved, and reported rather than fatal for the same
+// reason the window is: the cutover happened, and a registry being unreachable
+// is not a fact about it.
+func publishCutover(
+	ctx context.Context, out io.Writer, opened *session, plan embedcutover.Plan,
+	report embedverify.Report, approver string, at time.Time,
+	stabilizeFor time.Duration, evidence evidenceOptions,
+) error {
+	if evidence.publishTo == "" {
+		return nil
+	}
+	cutover := embedrelease.Cutover{
+		Generation: plan.Generation, Replaced: plan.Previous,
+		Target:     opened.loaded.Spec.Target.Table,
+		PlanDigest: plan.Digest(), Approver: approver,
+		VerificationDigest: verificationRecord(
+			opened.loaded.Spec, report, nil, at).Digest(),
+		CutOverAt: at,
+	}
+	if plan.Previous != "" && stabilizeFor > 0 {
+		cutover.StabilizeUntil = at.Add(stabilizeFor)
+	}
+	record, buildErr := embedrelease.NewCutoverRecord(cutover)
+	return publishRecord(ctx, out, evidence, record, buildErr)
 }
 
 // openStabilization starts the window in which the previous generation is still
