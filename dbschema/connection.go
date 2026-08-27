@@ -30,6 +30,7 @@ import (
 	"go.5x5.cz/ptah/internal/dbschema/sqlite"
 	"go.5x5.cz/ptah/internal/dburldisplay"
 	"go.5x5.cz/ptah/internal/schemaselection"
+	"go.5x5.cz/ptah/internal/servertarget"
 	"go.5x5.cz/ptah/internal/sqlrunner"
 )
 
@@ -304,6 +305,11 @@ func getDatabaseInfoWithCapabilities(
 	}
 	resolution := resolveDatabaseCapabilities(info)
 	info.Capabilities = refineExtensionCapabilities(ctx, db, info.Dialect, resolution.Capabilities)
+	// The same sentence the typed --server-version path renders, from the same
+	// function. A second wording here would be a second answer to "what was
+	// actually planned", and the two would drift on the first edit --
+	// servertarget.VersionNote is exported saying exactly that.
+	info.CapabilityNote = servertarget.VersionNote(info.Dialect, info.Version, resolution)
 	return info, resolution, nil
 }
 
@@ -348,41 +354,51 @@ func refineExtensionCapabilities(
 	return caps.With(capability.Hypertables, true).With(capability.ContinuousAggregates, true)
 }
 
-// reportCapabilityResolution records how the live server version was mapped
-// onto a capability preset, in the two cases where the mapping is not a plain
-// match: the version could not be parsed at all, or it parsed and ran off the
-// top of its dialect's ladder.
+// reportCapabilityResolution says what a non-version-specific resolution
+// actually planned. One of its three cases reaches a person; the rest stay a
+// debug record.
 //
-// All stay at DEBUG, and that level is the point. The default logger
-// cmd/internal/cliobs installs keeps WARN and above precisely because a clean
-// run against a supported server emits nothing there; anything it does emit is
-// a diagnostic that exists nowhere else. Connecting to a server Ptah supports
-// and runs in CI is not such an event. A saturated resolution fires on every
-// connection to an unmeasured newer major, so reporting it at WARN writes a
-// line to stderr on every command and breaks the clean error-stream contract.
+// All three said it at DEBUG, and the reasoning was recorded here: the default
+// logger keeps WARN and above precisely so a clean run against a supported
+// server emits nothing.
 //
-// The fact itself is not lost. capability.ResolveServerVersion returns
-// Saturated and NewestMeasured to any caller that wants to act on them, and
-// `--log-level debug` prints these lines. Surfacing an unrefined version to
-// the user on a channel of its own is criterion 6 of issue #916 and belongs
-// with the CLI work that owns that channel.
+// That reasoning holds for two of the cases and not for the third. A dialect
+// with no version ladder resolves the same way on every connection forever --
+// every SQL Server command would carry a line saying its version refined
+// nothing, which is true, permanent and not actionable. A version that fell in
+// a gap between measured lines is the same kind of fact.
+//
+// A server NEWER than the newest line this repository has measured is not that.
+// Its capabilities are unmodeled: anything the new release gained or lost is
+// planned as the old line, and the operator is the only one who can decide
+// whether that matters. It is also rare and it ends -- it fires until the line
+// is measured, not forever. That is the case the level is reserved for rather
+// than an exception to it, and the same fact already reaches the same stream on
+// the typed path, where a --server-version selecting no measured line prints
+// `ptah: <note>` on every command. Reporting it only when the operator typed
+// the version is how planning against an unmodeled server reads as planning
+// against a modeled one (stokaro/ptah#916, criterion 6).
+//
+// The sentence is [catalog.ServerInfo.CapabilityNote] in every case, rendered
+// by servertarget.VersionNote, so the live path and the typed one cannot
+// describe one outcome two ways. Empty means a measured release line was
+// selected and nothing is written at any level.
 func reportCapabilityResolution(info catalog.ServerInfo, resolution capability.VersionResolution) {
+	if info.CapabilityNote == "" {
+		return
+	}
 	if resolution.Saturated {
-		slog.Debug(
-			"server is newer than the newest measured capability line; planning with that line's preset",
+		slog.Warn(info.CapabilityNote,
 			"dialect", info.Dialect,
 			"version", info.Version,
 			"newest_measured", resolution.NewestMeasured,
 		)
 		return
 	}
-	if !resolution.VersionSpecific {
-		slog.Debug(
-			"falling back from an unmeasured server version",
-			"dialect", info.Dialect,
-			"version", info.Version,
-		)
-	}
+	slog.Debug(info.CapabilityNote,
+		"dialect", info.Dialect,
+		"version", info.Version,
+	)
 }
 
 func resolveDatabaseCapabilities(info catalog.ServerInfo) capability.VersionResolution {
