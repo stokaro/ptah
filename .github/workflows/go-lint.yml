@@ -72,6 +72,19 @@ jobs:
       - name: Check the ADR index
         run: scripts/check-adr-index.sh
 
+      # The script published at https://stokaro.github.io/ptah/install.sh, run
+      # against a fixture release under every POSIX shell on the runner. busybox
+      # is installed because `| sh` is busybox ash on Alpine and nothing else
+      # here compiles that path; without it the gate's shell floor is not met
+      # and the step fails rather than quietly testing one shell.
+      - name: Check the hosted install script
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends busybox
+          scripts/check-install-script.sh
+          scripts/check-install-script-selftest.sh
+
       - name: Check the Renovate custom-manager patterns
         run: scripts/check-renovate-regex.sh
 

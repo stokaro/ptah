@@ -20,6 +20,8 @@ on:
       - master
     paths:
       - "scripts/check-documented-install.sh"
+      - "scripts/check-install-script.sh"
+      - "docs/site/public/install.sh"
       - ".github/workflows/install-smoke.yml"
 
 permissions:
@@ -42,3 +44,36 @@ jobs:
       # discover which commands the documentation currently publishes.
       - name: Run every documented install command
         run: scripts/check-documented-install.sh
+
+  hosted-install-script:
+    name: The hosted install script against the published release
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      # Linux runners have neither busybox nor a second POSIX shell by default,
+      # and macOS runners have neither busybox nor dash. The gate refuses to
+      # pass under one shell, so this is what makes its matrix real rather than
+      # a floor nobody meets.
+      - name: Install the other POSIX shells
+        run: |
+          set -eu
+          if [ "$RUNNER_OS" = Linux ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq --no-install-recommends busybox
+          else
+            brew install dash
+          fi
+
+      # --live adds two runs against github.com on top of the fixture suite: a
+      # pinned end-to-end install of v0.2.0, and a dry run that resolves
+      # `latest`. Like the documented-install job above, this is scheduled
+      # rather than a pull-request gate, because a GitHub outage would otherwise
+      # redden unrelated pull requests.
+      - name: Install v0.2.0 from the published release
+        run: scripts/check-install-script.sh --live
