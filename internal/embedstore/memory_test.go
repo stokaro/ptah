@@ -357,3 +357,29 @@ func TestMemory_SatisfiesTheStoreContract(t *testing.T) {
 	c.Assert(pointer.Active, qt.Equals, "gen-1")
 	c.Assert(store.RetireGeneration(ctx, "gen-1", at), qt.IsNil)
 }
+
+// TestMemory_AReadEventTrailDoesNotShareTheStoresSlice is the third aliasing
+// case, and the one a run's history is worst placed to survive.
+//
+// A reader rendering the trail -- redacting a detail, folding a phase name --
+// would be editing the audit log it was asked to display, and the record that
+// changed is the record of what happened.
+func TestMemory_AReadEventTrailDoesNotShareTheStoresSlice(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	store := embedstore.NewMemory()
+	c.Assert(store.CreateRun(ctx, aRun()), qt.IsNil)
+	c.Assert(store.AppendEvent(ctx, embedrun.Event{
+		RunID: "run-1", Kind: "paused", At: at, Detail: "the provider was unreachable",
+	}), qt.IsNil)
+	events, err := store.Events(ctx, "run-1")
+	c.Assert(err, qt.IsNil)
+
+	events[0].Detail = "redacted"
+	events[0].Kind = "started"
+
+	again, err := store.Events(ctx, "run-1")
+	c.Assert(err, qt.IsNil)
+	c.Assert(again[0].Detail, qt.Equals, "the provider was unreachable")
+	c.Assert(string(again[0].Kind), qt.Equals, "paused")
+}
