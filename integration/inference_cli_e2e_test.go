@@ -75,6 +75,137 @@ func TestInferenceCLIE2E(t *testing.T) {
 	assertCatchUpRefusesAModeThatRecordsNothing(c, ctx, endpoint.URL, dbName)
 }
 
+// TestInferenceCLIRollbackE2E is Phase K and Phase L, which the lifecycle above
+// deliberately leaves unreachable.
+//
+// A cutover with no stabilization window leaves no rollback, and that is the
+// honest answer rather than a gap: the old generation stops receiving changes
+// the moment queries stop reading it, so what makes it a way back is somebody
+// keeping it current. This asks for the window and then goes back through it.
+//
+// It is a separate test because it needs its own database: the run above ends
+// with a pointer deliberately moved to a generation that does not exist, and a
+// rollback over that would be measuring the wreckage (stokaro/ptah#2068).
+func TestInferenceCLIRollbackE2E(t *testing.T) {
+	dbURL := dbtarget.URL(t, dbtarget.TimescaleDB)
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	adminDB, err := sql.Open("pgx", dbURL)
+	c.Assert(err, qt.IsNil)
+	defer adminDB.Close()
+
+	name := fmt.Sprintf("ptah_cli_rollback_%d", time.Now().UnixNano())
+	createE2EDatabase(c, ctx, adminDB, name)
+	defer dropE2EDatabase(c, context.Background(), adminDB, name)
+
+	dbName := replaceDatabaseName(c, dbURL, name)
+	db, err := sql.Open("pgx", dbName)
+	c.Assert(err, qt.IsNil)
+	defer db.Close()
+	seedCLIArticles(c, ctx, db)
+
+	endpoint := httptest.NewServer(http.HandlerFunc(embeddingsHandler(c)))
+	defer endpoint.Close()
+	specPath := writeCLISpec(c, endpoint.URL)
+
+	runInference(c, ctx, "prepare", "--spec", specPath, "--db-url", dbName, "--run-id", cliRunID)
+	runInference(c, ctx, "backfill",
+		"--spec", specPath, "--db-url", dbName, "--run-id", cliRunID, "--batch-rows", "10")
+	runInference(c, ctx, "catchup",
+		"--spec", specPath, "--db-url", dbName, "--run-id", cliRunID, "--batch-rows", "10")
+	runInference(c, ctx, "verify", "--spec", specPath, "--db-url", dbName, "--run-id", cliRunID)
+
+	generation := activeGenerationFrom(c, ctx, specPath, dbName)
+	assertACutoverWithoutAWindowLeavesNoWayBack(c, ctx, db, specPath, dbName, generation)
+	assertAWindowMakesTheGenerationAWayBack(c, ctx, db, specPath, dbName, generation)
+	assertRollbackMovesThePointerBack(c, ctx, specPath, dbName, generation)
+}
+
+// assertACutoverWithoutAWindowLeavesNoWayBack is the default, and it says so.
+//
+// An operator who did not ask for a stabilization window does not get one, and
+// the cutover tells them at the moment it happens rather than leaving them to
+// find out when they need it.
+func assertACutoverWithoutAWindowLeavesNoWayBack(
+	c *qt.C, ctx context.Context, db *sql.DB, specPath, dbURL, generation string,
+) {
+	c.Helper()
+	digest := planDigestOf(c, ctx, specPath, dbURL)
+
+	output := runInference(c, ctx, "cutover",
+		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID,
+		"--approve", digest, "--approver", "an operator")
+
+	c.Assert(output, qt.Contains, "no stabilization window was asked for")
+	c.Assert(output, qt.Contains, "there is no rollback to it")
+	c.Assert(maintainedUntil(c, ctx, db, generation).Valid, qt.IsFalse)
+}
+
+// assertAWindowMakesTheGenerationAWayBack is Phase K.
+//
+// The cutover is redone with a window, over a pointer that now records the
+// generation as previous. What the window buys is recorded where the
+// eligibility check reads it.
+func assertAWindowMakesTheGenerationAWayBack(
+	c *qt.C, ctx context.Context, db *sql.DB, specPath, dbURL, generation string,
+) {
+	c.Helper()
+	// Put a different generation in front of it, which is the state a second
+	// migration leaves: this one is now the previous.
+	_, err := db.ExecContext(ctx,
+		`UPDATE ptah_embedding_pointer SET active_generation = 'the-newer-one', previous_generation = $1
+		 WHERE target_table = 'articles'`, generation)
+	c.Assert(err, qt.IsNil)
+	_, err = db.ExecContext(ctx,
+		`UPDATE ptah_embedding_generation SET maintained_until = now() + interval '1 hour'
+		 WHERE identity = $1`, generation)
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(maintainedUntil(c, ctx, db, generation).Valid, qt.IsTrue)
+}
+
+// assertRollbackMovesThePointerBack is Phase L, and the whole point of the two
+// records above.
+//
+// The generation is verified and maintained, so going back to it is something
+// Ptah will do rather than refuse. Every refusal in the other test was a
+// missing one of those.
+func assertRollbackMovesThePointerBack(
+	c *qt.C, ctx context.Context, specPath, dbURL, generation string,
+) {
+	c.Helper()
+
+	output := runInference(c, ctx, "rollback",
+		"--spec", specPath, "--db-url", dbURL, "--to", generation, "--window", "24h")
+
+	c.Assert(output, qt.Contains, "queries now read "+generation)
+	c.Assert(output, qt.Contains, "which replaced the-newer-one")
+	c.Assert(activeGenerationFrom(c, ctx, specPath, dbURL), qt.Equals, generation)
+}
+
+// planDigestOf runs a cutover without an approval to read the plan's digest.
+func planDigestOf(c *qt.C, ctx context.Context, specPath, dbURL string) string {
+	c.Helper()
+	refused, err := runInferenceExpectingFailure(c, ctx, "cutover",
+		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID)
+	c.Assert(err, qt.IsNotNil)
+	return planDigestFrom(c, refused)
+}
+
+// maintainedUntil reads the maintenance window off a generation.
+func maintainedUntil(
+	c *qt.C, ctx context.Context, db *sql.DB, generation string,
+) sql.NullTime {
+	c.Helper()
+	var until sql.NullTime
+	c.Assert(db.QueryRowContext(ctx,
+		`SELECT maintained_until FROM ptah_embedding_generation WHERE identity = $1`,
+		generation).Scan(&until), qt.IsNil)
+	return until
+}
+
 // assertCatchUpRefusesAModeThatRecordsNothing is structural absence rather than
 // a silent no-op.
 //
@@ -132,7 +263,7 @@ func assertAnUnmaintainedPreviousGenerationBlocksNothing(
 	back, err := runInferenceExpectingFailure(c, ctx, "rollback",
 		"--spec", specPath, "--db-url", dbURL, "--to", generation)
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(back, qt.Contains, "never been verified")
+	c.Assert(back, qt.Contains, "no longer maintained")
 
 	output, err := runInferenceExpectingFailure(c, ctx, "retire",
 		"--spec", specPath, "--db-url", dbURL, "--generation", generation)
@@ -539,7 +670,10 @@ func assertRollbackIsRefusedWithoutEvidence(c *qt.C, ctx context.Context, specPa
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(output, qt.Contains, "rollback refused")
-	c.Assert(output, qt.Contains, "never been verified")
+	// Verified, because `verify` ran above and recorded it. Not maintained,
+	// because nothing asked for a stabilization window -- and a generation
+	// nobody is keeping current drifts from the source with every write.
+	c.Assert(output, qt.Contains, "no longer maintained")
 }
 
 // runInference runs one verb and requires it to succeed.

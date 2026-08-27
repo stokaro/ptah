@@ -258,9 +258,11 @@ func runRollback(
 	if err != nil {
 		return err
 	}
-	eligibility := embedcutover.EvaluateRollback(
-		embedcutover.RollbackPolicy{Window: window, RequireIndex: true},
-		state,
+	policy, err := rollbackPolicy(opened, window)
+	if err != nil {
+		return err
+	}
+	eligibility := embedcutover.EvaluateRollback(policy, state,
 		embedcutover.Observed{Now: time.Now().UTC()})
 	if !eligibility.Eligible {
 		return refusal(out, "rollback refused", eligibility.Blockers)
@@ -274,6 +276,26 @@ func runRollback(
 	}
 	return writeLines(out, fmt.Sprintf("queries now read %s, which replaced %s",
 		toGeneration, pointer.Active))
+}
+
+// rollbackPolicy is what a previous generation has to satisfy to be one you can
+// go back to.
+//
+// RequireIndex follows the specification rather than being asserted. A
+// generation that declares no index method has none to be missing, and
+// demanding one refuses every rollback to it while naming an index nobody
+// configured -- the same defect the cutover decision had, one verb over.
+//
+// The index method comes from the specification in hand rather than from the
+// registry, which records what a generation IS and not how it was built. Two
+// generations over one table with different index methods would need the
+// registry to carry it, and that is a change to make when something needs it.
+func rollbackPolicy(opened *session, window time.Duration) (embedcutover.RollbackPolicy, error) {
+	objects, err := opened.loaded.Spec.TargetObjects()
+	if err != nil {
+		return embedcutover.RollbackPolicy{}, err
+	}
+	return embedcutover.RollbackPolicy{Window: window, RequireIndex: objects.HasIndex}, nil
 }
 
 // refusal prints why an operation was refused, and fails.
