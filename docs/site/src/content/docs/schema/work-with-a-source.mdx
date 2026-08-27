@@ -151,9 +151,12 @@ ptah schema validate \
 ```
 
 It prints nothing and exits `0` when every named dialect can express the
-schema, and reports the first structural problem it finds otherwise. That is
-the cheapest check to put in front of a review: it needs no server and no
-migration directory.
+schema. Otherwise it exits `1` and prints every structural problem it found,
+one line per problem, each naming the dialect it was found under. That is the
+cheapest check to put in front of a review: it needs no server and no migration
+directory.
+[Validate and format schema files](../validate-and-format/) covers the verb in
+full, and `ptah schema fmt` beside it.
 
 ## Next steps
 

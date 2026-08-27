@@ -81,16 +81,17 @@ removed the core that held them. They are recorded here as unheld rather than
 quietly dropped: the mutation sweeps that killed 27 mutants between them
 measured a prototype, and a property measured only where the product does not
 run was never a property of the product. Establishing them on the shipping path
-is work #2315 carries.
+is work #2315 carries; two of the three are now held there, and the third is
+recorded with what it would take.
 
 | Property | Held by | Evidence |
 | --- | --- | --- |
 | Identity: distinct objects never collapse under adversarial names | `internal/objectidentity` defect fixtures | 12 mutants killed, 0 survived ([#1345](https://github.com/stokaro/ptah/issues/1345)) |
 | Identifier provenance: quoted and unquoted components round-trip; insufficient provenance fails closed | `objectidentity.Part`, `Builder` equivalence tests | same sweep; folding is asserted equal to `identifier.Semantics` |
 | References: dangling, ambiguous and normalized-collision references are rejected | `objectidentity.Resolve` refusal classes | same sweep |
-| Coverage: not-inspected never becomes absent | **nothing on the shipping path** — `core/coverage` carries the record and the comparison threads it, but no test holds the property end to end | was `schemastate.RequireScope`, removed by [ADR 0012](adr/0012-the-canonical-core-is-removed-and-the-shipping-pipeline-migrates-in-place.md) |
-| Target facts: uncertainty reaches every target-dependent consumer | **nothing** — capability gating refuses what a target cannot do, which is the *missing* fact and not the *unestablished* one | was `schemachange` required facts, removed by ADR 0012 |
-| Determinism: equivalent inputs produce identical output across runs and map orders | **nothing on the shipping path** | was `schemachange` determinism tests, removed by ADR 0012 |
+| Coverage: not-inspected never becomes absent | `TestCompare_NotInspectedNeverBecomesAbsent`, on `schemadiff.Compare` | 9 kinds, each row carrying its own inverse: the same fixture with no limit recorded must plan the removal ([#2315](https://github.com/stokaro/ptah/issues/2315)) |
+| Target facts: uncertainty reaches every target-dependent consumer | **nothing** — `Capabilities.Established` is the mechanism and ONE call site consults it (`internal/embedplan/fact.go`) against 201 `Has` call sites, which read "no answer" as "cannot" | not a missing test: a missing mechanism at 200 sites, and what a consumer does when uncertain is undecided ([#2315](https://github.com/stokaro/ptah/issues/2315)) |
+| Determinism: equivalent inputs produce identical output across runs and map orders | `TestCompare_EquivalentInputsProduceIdenticalOutput`, on `schemadiff.Compare` | 20 runs plus a reversed-input control; deleting one `sort.Strings` in `compare/sequences.go` kills both halves ([#2315](https://github.com/stokaro/ptah/issues/2315)) |
 | Package boundaries: compatibility-only packages are not dependencies of the semantic core | `scripts/check-architecture-boundaries.sh` | `…-selftest.sh`: 4 refusals and 1 false-positive control |
 
 ## Extending the set

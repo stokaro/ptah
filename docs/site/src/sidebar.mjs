@@ -47,9 +47,15 @@ export const sidebar = [
       { slug: 'schema/dbml' },
       { slug: 'schema/orm-and-external' },
       { slug: 'schema/composite' },
+      { slug: 'schema/validate-and-format' },
       { slug: 'schema/visualize' },
+      { slug: 'schema/document' },
+      { slug: 'schema/serve' },
       { slug: 'schema/export' },
       { slug: 'schema/protobuf' },
+      { slug: 'schema/stats' },
+      { slug: 'schema/lineage' },
+      { slug: 'schema/security' },
     ],
   },
   {
@@ -57,6 +63,7 @@ export const sidebar = [
     items: [
       { slug: 'direct/inspect' },
       { slug: 'direct/compare-and-drift' },
+      { slug: 'direct/plan-and-approve' },
       { slug: 'direct/apply' },
     ],
   },

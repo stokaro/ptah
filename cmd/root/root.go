@@ -11,6 +11,7 @@ import (
 
 	assistcmd "go.5x5.cz/ptah/cmd/assist"
 	"go.5x5.cz/ptah/cmd/db"
+	"go.5x5.cz/ptah/cmd/inference"
 	"go.5x5.cz/ptah/cmd/internal/cmdflags"
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
@@ -48,6 +49,7 @@ func NewRootCommand() *cobra.Command {
 	cmd.SetVersionTemplate(versionTemplate(info))
 	cmdutil.ConfigureCommandArgs(cmd, nil)
 
+	cmd.AddCommand(inference.NewCommand())
 	cmd.AddCommand(introspect.NewIntrospectCommand())
 	cmd.AddCommand(schema.NewSchemaCommand())
 	cmd.AddCommand(db.NewDBCommand())

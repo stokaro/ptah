@@ -204,3 +204,80 @@ func quoteAll(names []string) []string {
 func quoteIdentifier(name string) string {
 	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }
+
+// Current returns the rows still present out of a set of keys, and their
+// versions.
+//
+// A key that is absent from the answer is a row that is gone, which is what
+// catch-up turns into a tombstone. The absence is the answer rather than an
+// error: a row deleted between the change event and the reread is the ordinary
+// case, not a fault.
+func (s *Source) Current(ctx context.Context, keys [][]string) ([]embedgen.Row, []string, error) {
+	if len(keys) == 0 {
+		return nil, nil, nil
+	}
+	query, arguments, err := s.currentQuery(keys)
+	if err != nil {
+		return nil, nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, query, arguments...)
+	if err != nil {
+		return nil, nil, fmt.Errorf("reread %s: %w", s.spec.Source.Table, err)
+	}
+	defer rows.Close()
+
+	page, err := s.readPage(rows, len(keys)+1)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("reread %s: %w", s.spec.Source.Table, err)
+	}
+	return page.Rows, page.Versions, nil
+}
+
+// currentQuery renders the reread.
+//
+// A row comparison per key rather than an IN over one column, because the key
+// may have several parts and `id IN (...) AND tenant IN (...)` is a different
+// query: it matches every combination of the two lists, which for two tenants
+// and two ids is four rows where two were asked for.
+func (s *Source) currentQuery(keys [][]string) (string, []any, error) {
+	keyColumns := quoteAll(s.spec.Source.KeyFields)
+	columns := append([]string(nil), keyColumns...)
+	columns = append(columns, quoteAll(s.spec.Source.InputFields)...)
+	columns = append(columns, quoteAll(s.versionColumns())...)
+
+	var arguments []any
+	tuples := make([]string, 0, len(keys))
+	for _, key := range keys {
+		if len(key) != len(keyColumns) {
+			return "", nil, fmt.Errorf("a key has %d components and the key has %d",
+				len(key), len(keyColumns))
+		}
+		placeholders := make([]string, len(key))
+		for index, value := range key {
+			arguments = append(arguments, value)
+			placeholders[index] = fmt.Sprintf("$%d", len(arguments))
+		}
+		tuples = append(tuples, "("+strings.Join(placeholders, ", ")+")")
+	}
+	// #nosec G201 -- PostgreSQL takes no bind parameter for a relation or column
+	// name. The identifiers come from the specification and go through
+	// quoteIdentifier; the key VALUES are all placeholders.
+	query := fmt.Sprintf("SELECT %s FROM %s WHERE (%s) IN (%s) ORDER BY %s",
+		strings.Join(columns, ", "), s.qualifiedTable(),
+		strings.Join(castToText(keyColumns), ", "), strings.Join(tuples, ", "),
+		strings.Join(keyColumns, ", "))
+	return query, arguments, nil
+}
+
+// castToText renders the key columns as text, so a key carried as strings
+// compares against a column of any type.
+func castToText(columns []string) []string {
+	cast := make([]string, len(columns))
+	for index, column := range columns {
+		cast[index] = column + "::text"
+	}
+	return cast
+}
