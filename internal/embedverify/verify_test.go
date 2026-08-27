@@ -364,3 +364,92 @@ func TestVerify_TheReportIsBoundedAndStable(t *testing.T) {
 	c.Assert(summaries(first), qt.DeepEquals, summaries(second))
 	c.Assert(first.Findings[0].Keys, qt.DeepEquals, second.Findings[0].Keys)
 }
+
+// TestVerify_ASourceWithoutVersionsIsNotStale keeps the version comparison from
+// firing where there is nothing to compare.
+//
+// Under a strategy that establishes no source version -- a content hash, say --
+// every source row reports an empty one, and a verifier comparing it against
+// what the target recorded would call the entire generation stale on every run.
+func TestVerify_ASourceWithoutVersionsIsNotStale(t *testing.T) {
+	c := qt.New(t)
+	expectation, structure, source, target, state := healthy()
+	source[0].Version = ""
+	source[1].Version = ""
+
+	report := embedverify.Verify(expectation, structure, source, target, state)
+
+	c.Assert(report.Passed(), qt.IsTrue, qt.Commentf("%v", summaries(report)))
+}
+
+// TestVerify_ATombstoneForADeletedSourceRowIsCorrect pins the state a delete
+// leaves behind.
+//
+// The source row is gone and the target says so. That is what a tombstone is
+// for, and a verifier reading it as a row outside the source's scope would fail
+// every generation that ever saw a deletion.
+func TestVerify_ATombstoneForADeletedSourceRowIsCorrect(t *testing.T) {
+	c := qt.New(t)
+	expectation, structure, source, target, state := healthy()
+	target = append(target, embedverify.TargetRow{Key: "gone", Generation: generation, Tombstone: true})
+
+	report := embedverify.Verify(expectation, structure, source, target, state)
+
+	c.Assert(report.Passed(), qt.IsTrue, qt.Commentf("%v", summaries(report)))
+}
+
+// TestVerify_ATombstoneOverALiveSourceRowIsAGap is the other side, and it is
+// Scenario 4 read back.
+//
+// A row was deleted, the tombstone was written, and the source has it again.
+// The target still refuses to answer for a key the source has, which is a
+// coverage gap and not a freshness one -- there is no vector to be stale.
+func TestVerify_ATombstoneOverALiveSourceRowIsAGap(t *testing.T) {
+	tests := []struct {
+		name string
+		mark func(*embedverify.TargetRow)
+	}{
+		{name: "a tombstone", mark: func(row *embedverify.TargetRow) { row.Tombstone = true }},
+		{name: "a skip", mark: func(row *embedverify.TargetRow) { row.Skipped = true }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			expectation, structure, source, target, state := healthy()
+			target[1] = embedverify.TargetRow{Key: "2", Generation: generation}
+			test.mark(&target[1])
+
+			report := embedverify.Verify(expectation, structure, source, target, state)
+
+			c.Assert(report.Passed(), qt.IsFalse)
+			c.Assert(summaries(report), qt.Contains,
+				"1 in-scope source rows have no vector in this generation")
+		})
+	}
+}
+
+// TestVerify_TheListedKeysAreTheSortedPrefix makes the bound mean something.
+//
+// Twenty keys out of a hundred thousand is only useful if it is the same twenty
+// every time and an operator can find them. Whatever order the rows were walked
+// in, the report lists the first twenty in key order.
+func TestVerify_TheListedKeysAreTheSortedPrefix(t *testing.T) {
+	c := qt.New(t)
+	expectation, structure, _, _, state := healthy()
+	source := make([]embedverify.SourceRow, 0, 100)
+	for index := range 100 {
+		// Walk order and key order deliberately disagree: this emits "aa",
+		// "ba", "ca" ... so a report listing what it happened to visit first
+		// would start "aa", "ba", "ca" rather than "aa", "ab", "ac".
+		source = append(source, embedverify.SourceRow{
+			Key: string(rune('a'+index%26)) + string(rune('a'+index/26)), InputHash: "hash",
+		})
+	}
+
+	report := embedverify.Verify(expectation, structure, source, nil, state)
+
+	c.Assert(report.Findings[0].Keys, qt.DeepEquals, []string{
+		"aa", "ab", "ac", "ad", "ba", "bb", "bc", "bd", "ca", "cb",
+		"cc", "cd", "da", "db", "dc", "dd", "ea", "eb", "ec", "ed",
+	})
+}
