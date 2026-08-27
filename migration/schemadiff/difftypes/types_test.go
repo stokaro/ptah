@@ -94,14 +94,14 @@ func TestSchemaDiff_HasChanges(t *testing.T) {
 		{
 			name: "extensions added",
 			diff: &difftypes.SchemaDiff{
-				ExtensionsAdded: []string{"pg_trgm"},
+				ExtensionsAdded: difftypes.ExtensionChanges{{Name: "pg_trgm"}},
 			},
 			expected: true,
 		},
 		{
 			name: "extensions removed",
 			diff: &difftypes.SchemaDiff{
-				ExtensionsRemoved: []string{"btree_gin"},
+				ExtensionsRemoved: difftypes.ExtensionChanges{{Name: "btree_gin"}},
 			},
 			expected: true,
 		},

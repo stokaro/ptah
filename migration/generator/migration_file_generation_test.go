@@ -146,19 +146,19 @@ func TestReverseSchemaDiff_ExtensionFieldsPresent(t *testing.T) {
 
 	// Test that the reverseSchemaDiff function properly handles extension fields
 	originalDiff := &difftypes.SchemaDiff{
-		ExtensionsAdded:   []string{"pg_trgm", "btree_gin"},
-		ExtensionsRemoved: []string{"postgis"},
+		ExtensionsAdded:   difftypes.ExtensionChanges{{Name: "pg_trgm"}, {Name: "btree_gin"}},
+		ExtensionsRemoved: difftypes.ExtensionChanges{{Name: "postgis"}},
 	}
 
 	reversedDiff := reverseSchemaDiff(originalDiff)
 
 	// Verify that extension fields are properly reversed
-	c.Assert(reversedDiff.ExtensionsAdded, qt.DeepEquals, originalDiff.ExtensionsRemoved)
-	c.Assert(reversedDiff.ExtensionsRemoved, qt.DeepEquals, originalDiff.ExtensionsAdded)
+	c.Assert(reversedDiff.ExtensionsAdded.Names(), qt.DeepEquals, originalDiff.ExtensionsRemoved.Names())
+	c.Assert(reversedDiff.ExtensionsRemoved.Names(), qt.DeepEquals, originalDiff.ExtensionsAdded.Names())
 
 	// Verify the specific values
-	c.Assert(reversedDiff.ExtensionsAdded, qt.DeepEquals, []string{"postgis"})
-	c.Assert(reversedDiff.ExtensionsRemoved, qt.DeepEquals, []string{"pg_trgm", "btree_gin"})
+	c.Assert(reversedDiff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"postgis"})
+	c.Assert(reversedDiff.ExtensionsRemoved.Names(), qt.DeepEquals, []string{"pg_trgm", "btree_gin"})
 }
 
 func TestExtensionMigrationSQL_CompleteFlow(t *testing.T) {
@@ -197,8 +197,8 @@ func TestExtensionMigrationSQL_CompleteFlow(t *testing.T) {
 	c.Assert(downSQL, qt.Contains, "DROP EXTENSION IF EXISTS pg_trgm;")
 
 	// 4. Verify the cycle is complete
-	c.Assert(upDiff.ExtensionsAdded, qt.DeepEquals, []string{"pg_trgm"})
-	c.Assert(upDiff.ExtensionsRemoved, qt.HasLen, 0)
+	c.Assert(upDiff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"pg_trgm"})
+	c.Assert(upDiff.ExtensionsRemoved.Names(), qt.HasLen, 0)
 }
 
 // TestMigrationFileGeneration_EmptyDiffPrevention tests the fix for issue #36

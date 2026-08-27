@@ -86,9 +86,9 @@ func TestGenerateMigrationOptions_CompareOptions_NilHandling_DefaultBehavior(t *
 	diff := schemadiff.CompareWithOptions(desired, database, nil)
 
 	// With nil options, should use defaults (ignore plpgsql)
-	c.Assert(diff.ExtensionsAdded, qt.DeepEquals, []string{"pg_trgm"})
-	c.Assert(diff.ExtensionsRemoved, qt.HasLen, 1) // adminpack should be removed
-	c.Assert(diff.ExtensionsRemoved, qt.Contains, "adminpack")
+	c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"pg_trgm"})
+	c.Assert(diff.ExtensionsRemoved.Names(), qt.HasLen, 1) // adminpack should be removed
+	c.Assert(diff.ExtensionsRemoved.Names(), qt.Contains, "adminpack")
 }
 
 // TestGenerateMigrationOptions_CompareOptions_NilHandling_CustomOptions tests behavior when
@@ -115,8 +115,8 @@ func TestGenerateMigrationOptions_CompareOptions_NilHandling_CustomOptions(t *te
 	diff := schemadiff.CompareWithOptions(desired, database, compareOptions)
 
 	// With custom options ignoring both plpgsql and adminpack
-	c.Assert(diff.ExtensionsAdded, qt.DeepEquals, []string{"pg_trgm"})
-	c.Assert(diff.ExtensionsRemoved, qt.HasLen, 0) // both should be ignored
+	c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"pg_trgm"})
+	c.Assert(diff.ExtensionsRemoved.Names(), qt.HasLen, 0) // both should be ignored
 }
 
 // TestGenerateMigrationOptions_CompareOptions_ConfigurationValidation tests that
@@ -195,9 +195,9 @@ func TestGenerateMigrationOptions_CompareOptions_ConfigurationValidation(t *test
 
 			diff := schemadiff.CompareWithOptions(desired, database, tt.compareOptions)
 
-			c.Assert(diff.ExtensionsAdded, qt.HasLen, tt.expectedAddedCount,
+			c.Assert(diff.ExtensionsAdded.Names(), qt.HasLen, tt.expectedAddedCount,
 				qt.Commentf("Expected %d extensions to be added", tt.expectedAddedCount))
-			c.Assert(diff.ExtensionsRemoved, qt.HasLen, tt.expectedRemovedCount,
+			c.Assert(diff.ExtensionsRemoved.Names(), qt.HasLen, tt.expectedRemovedCount,
 				qt.Commentf("Expected %d extensions to be removed", tt.expectedRemovedCount))
 		})
 	}

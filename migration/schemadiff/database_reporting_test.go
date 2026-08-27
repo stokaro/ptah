@@ -35,7 +35,7 @@ func TestCompareWithDatabaseReportingUndecidedAdditionsUsesDatabaseDefaults(t *t
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.HasChanges(), qt.IsFalse)
-	c.Assert(diff.ExtensionsRemoved, qt.HasLen, 0)
+	c.Assert(diff.ExtensionsRemoved.Names(), qt.HasLen, 0)
 	c.Assert(undecided, qt.DeepEquals, []coverage.Object{
 		{Kind: coverage.Sequence, Name: "order_seq"},
 	})

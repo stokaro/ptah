@@ -86,8 +86,15 @@ func TestExtensionMigration_EndToEnd(t *testing.T) {
 			expectedUpSQL: []string{
 				"DROP EXTENSION IF EXISTS pg_trgm;",
 			},
+			// The down migration recreates the extension WHERE AND AS it was:
+			// the removal carries the extension the catalog reported, schema
+			// and version included (stokaro/ptah#2315). It used to emit a bare
+			// CREATE because the planner read the definition out of the
+			// stripped-down schema this test builds below, not because a bare
+			// one was the intent -- internal/convert/dbschematogo carries the
+			// version too, so a real down migration already looked like this.
 			expectedDownSQL: []string{
-				"CREATE EXTENSION IF NOT EXISTS pg_trgm;",
+				"CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public VERSION '1.6';",
 			},
 			unexpectedUpSQL: []string{
 				"CREATE EXTENSION IF NOT EXISTS pg_trgm;",
@@ -198,8 +205,8 @@ func TestExtensionMigration_UpDownCycle(t *testing.T) {
 
 	// 1. Calculate initial diff (should add extensions)
 	upDiff := schemadiff.Compare(generatedSchema, databaseSchema)
-	c.Assert(upDiff.ExtensionsAdded, qt.HasLen, 2)
-	c.Assert(upDiff.ExtensionsRemoved, qt.HasLen, 0)
+	c.Assert(upDiff.ExtensionsAdded.Names(), qt.HasLen, 2)
+	c.Assert(upDiff.ExtensionsRemoved.Names(), qt.HasLen, 0)
 
 	// 2. Simulate applying the up migration (database now has extensions)
 	simulatedDatabaseAfterUp := &catalog.Database{
@@ -211,10 +218,10 @@ func TestExtensionMigration_UpDownCycle(t *testing.T) {
 
 	// 3. Calculate down diff (should remove extensions)
 	downDiff := schemadiff.Compare(&schemamodel.Database{Extensions: make([]schemamodel.Extension, 0)}, simulatedDatabaseAfterUp)
-	c.Assert(downDiff.ExtensionsAdded, qt.HasLen, 0)
-	c.Assert(downDiff.ExtensionsRemoved, qt.HasLen, 2)
+	c.Assert(downDiff.ExtensionsAdded.Names(), qt.HasLen, 0)
+	c.Assert(downDiff.ExtensionsRemoved.Names(), qt.HasLen, 2)
 
 	// 4. Verify the cycle is complete
-	c.Assert(upDiff.ExtensionsAdded, qt.DeepEquals, downDiff.ExtensionsRemoved)
-	c.Assert(upDiff.ExtensionsRemoved, qt.DeepEquals, downDiff.ExtensionsAdded)
+	c.Assert(upDiff.ExtensionsAdded.Names(), qt.DeepEquals, downDiff.ExtensionsRemoved.Names())
+	c.Assert(upDiff.ExtensionsRemoved.Names(), qt.DeepEquals, downDiff.ExtensionsAdded.Names())
 }

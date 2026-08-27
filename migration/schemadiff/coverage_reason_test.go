@@ -76,7 +76,7 @@ func TestWithheldAdditionCarriesTheReasonTheReadRecorded(t *testing.T) {
 
 			diff, undecided := schemadiff.CompareReportingUndecidedAdditions(desired, current, nil)
 
-			c.Assert(diff.ExtensionsAdded, qt.HasLen, 0)
+			c.Assert(diff.ExtensionsAdded.Names(), qt.HasLen, 0)
 			c.Assert(undecided, qt.DeepEquals, []coverage.Object{{
 				Kind:       coverage.Extension,
 				Name:       "citext",

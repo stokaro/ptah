@@ -47,7 +47,7 @@ func TestScopeApplyStatesDoesNotReAddCurrentSupportExtension(t *testing.T) {
 		got.desiredReports.Selection,
 	)
 	diff := schemadiff.CompareWithDialect(got.desired, got.current, platform.Postgres)
-	c.Assert(diff.ExtensionsAdded, qt.HasLen, 0)
-	c.Assert(diff.ExtensionsRemoved, qt.HasLen, 0)
+	c.Assert(diff.ExtensionsAdded.Names(), qt.HasLen, 0)
+	c.Assert(diff.ExtensionsRemoved.Names(), qt.HasLen, 0)
 	c.Assert(diff.TablesAdded, qt.HasLen, 1)
 }

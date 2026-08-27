@@ -1150,7 +1150,9 @@ func TestPlanner_GenerateMigrationAST_MissingIndexRejected(t *testing.T) {
 
 func TestPlanner_GenerateMigrationAST_ExtensionInstallationSchema(t *testing.T) {
 	c := qt.New(t)
-	diff := &difftypes.SchemaDiff{ExtensionsAdded: []string{"pgcrypto"}}
+	diff := &difftypes.SchemaDiff{ExtensionsAdded: difftypes.ExtensionChanges{
+		{Name: "pgcrypto", Schema: " Extension Store "},
+	}}
 	desired := &schemamodel.Database{Extensions: []schemamodel.Extension{{
 		Name: "pgcrypto", Schema: " Extension Store ",
 	}}}
@@ -1171,7 +1173,9 @@ func TestPlanner_GenerateMigrationAST_ExtensionInstallationSchema(t *testing.T) 
 
 func TestPlanner_GenerateMigrationAST_WhitespaceOnlyExtensionInstallationSchema(t *testing.T) {
 	c := qt.New(t)
-	diff := &difftypes.SchemaDiff{ExtensionsAdded: []string{"pgcrypto"}}
+	diff := &difftypes.SchemaDiff{ExtensionsAdded: difftypes.ExtensionChanges{
+		{Name: "pgcrypto", Schema: " "},
+	}}
 	desired := &schemamodel.Database{Extensions: []schemamodel.Extension{{
 		Name: "pgcrypto", Schema: " ",
 	}}}
@@ -1192,7 +1196,9 @@ func TestPlanner_GenerateMigrationAST_WhitespaceOnlyExtensionInstallationSchema(
 
 func TestPlanner_GenerateMigrationAST_SystemExtensionInstallationSchemaNeedsNoPrecondition(t *testing.T) {
 	c := qt.New(t)
-	diff := &difftypes.SchemaDiff{ExtensionsAdded: []string{"plpgsql"}}
+	diff := &difftypes.SchemaDiff{ExtensionsAdded: difftypes.ExtensionChanges{
+		{Name: "plpgsql", Schema: "pg_catalog", Version: "1.0", IfNotExists: true},
+	}}
 	desired := &schemamodel.Database{Extensions: []schemamodel.Extension{{
 		Name: "plpgsql", Schema: "pg_catalog", Version: "1.0", IfNotExists: true,
 	}}}
@@ -1217,7 +1223,9 @@ func TestPlanner_GenerateMigrationAST_ExtensionsAdded(t *testing.T) {
 		{
 			name: "single extension added",
 			diff: &difftypes.SchemaDiff{
-				ExtensionsAdded: []string{"pg_trgm"},
+				ExtensionsAdded: difftypes.ExtensionChanges{
+					{Name: "pg_trgm", IfNotExists: true, Comment: "Enable trigram similarity search"},
+				},
 			},
 			desired: &schemamodel.Database{
 				Extensions: []schemamodel.Extension{
@@ -1240,7 +1248,10 @@ func TestPlanner_GenerateMigrationAST_ExtensionsAdded(t *testing.T) {
 		{
 			name: "multiple extensions added",
 			diff: &difftypes.SchemaDiff{
-				ExtensionsAdded: []string{"pg_trgm", "btree_gin"},
+				ExtensionsAdded: difftypes.ExtensionChanges{
+					{Name: "pg_trgm", IfNotExists: true, Comment: "Enable trigram similarity search"},
+					{Name: "btree_gin", IfNotExists: true, Comment: "Enable GIN indexes on btree types"},
+				},
 			},
 			desired: &schemamodel.Database{
 				Extensions: []schemamodel.Extension{
@@ -1271,7 +1282,9 @@ func TestPlanner_GenerateMigrationAST_ExtensionsAdded(t *testing.T) {
 		{
 			name: "extension with version",
 			diff: &difftypes.SchemaDiff{
-				ExtensionsAdded: []string{"postgis"},
+				ExtensionsAdded: difftypes.ExtensionChanges{
+					{Name: "postgis", Version: "3.0", IfNotExists: true, Comment: "Geographic data support"},
+				},
 			},
 			desired: &schemamodel.Database{
 				Extensions: []schemamodel.Extension{
@@ -1408,7 +1421,7 @@ func TestPlanner_GenerateMigrationAST_ExtensionsRemoved(t *testing.T) {
 		{
 			name: "single extension removed",
 			diff: &difftypes.SchemaDiff{
-				ExtensionsRemoved: []string{"pg_trgm"},
+				ExtensionsRemoved: difftypes.ExtensionChanges{{Name: "pg_trgm"}},
 			},
 			desired: &schemamodel.Database{},
 			expected: func(nodes []ast.Node) bool {
@@ -1436,7 +1449,7 @@ func TestPlanner_GenerateMigrationAST_ExtensionsRemoved(t *testing.T) {
 		{
 			name: "multiple extensions removed",
 			diff: &difftypes.SchemaDiff{
-				ExtensionsRemoved: []string{"pg_trgm", "btree_gin"},
+				ExtensionsRemoved: difftypes.ExtensionChanges{{Name: "pg_trgm"}, {Name: "btree_gin"}},
 			},
 			desired: &schemamodel.Database{},
 			expected: func(nodes []ast.Node) bool {
@@ -1493,7 +1506,9 @@ func TestPlanner_ExtensionSQL_Generation(t *testing.T) {
 		{
 			name: "extension creation SQL",
 			diff: &difftypes.SchemaDiff{
-				ExtensionsAdded: []string{"pg_trgm"},
+				ExtensionsAdded: difftypes.ExtensionChanges{
+					{Name: "pg_trgm", IfNotExists: true, Comment: "Enable trigram similarity search"},
+				},
 			},
 			desired: &schemamodel.Database{
 				Extensions: []schemamodel.Extension{
@@ -1511,7 +1526,7 @@ func TestPlanner_ExtensionSQL_Generation(t *testing.T) {
 		{
 			name: "extension removal SQL",
 			diff: &difftypes.SchemaDiff{
-				ExtensionsRemoved: []string{"pg_trgm"},
+				ExtensionsRemoved: difftypes.ExtensionChanges{{Name: "pg_trgm"}},
 			},
 			desired: &schemamodel.Database{},
 			expectedSQL: []string{
@@ -1527,7 +1542,9 @@ func TestPlanner_ExtensionSQL_Generation(t *testing.T) {
 		{
 			name: "extension with version SQL",
 			diff: &difftypes.SchemaDiff{
-				ExtensionsAdded: []string{"postgis"},
+				ExtensionsAdded: difftypes.ExtensionChanges{
+					{Name: "postgis", Version: "3.0", IfNotExists: true, Comment: "Geographic data support"},
+				},
 			},
 			desired: &schemamodel.Database{
 				Extensions: []schemamodel.Extension{

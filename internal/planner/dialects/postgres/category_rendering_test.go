@@ -147,10 +147,10 @@ func diffCategoryFixtures() []categoryFixture {
 		},
 		{
 			"ExtensionsAdded",
-			&difftypes.SchemaDiff{ExtensionsAdded: []string{"pg_trgm"}},
+			&difftypes.SchemaDiff{ExtensionsAdded: difftypes.ExtensionChanges{{Name: "pg_trgm"}}},
 			&schemamodel.Database{Extensions: []schemamodel.Extension{{Name: "pg_trgm"}}},
 		},
-		{"ExtensionsRemoved", &difftypes.SchemaDiff{ExtensionsRemoved: []string{"pg_trgm"}}, &schemamodel.Database{}},
+		{"ExtensionsRemoved", &difftypes.SchemaDiff{ExtensionsRemoved: difftypes.ExtensionChanges{{Name: "pg_trgm"}}}, &schemamodel.Database{}},
 		{
 			"FunctionsAdded",
 			&difftypes.SchemaDiff{FunctionsAdded: []string{"f"}},

@@ -22,6 +22,37 @@ import (
 	"go.5x5.cz/ptah/core/schemamodel"
 )
 
+// ExtensionChanges is a set of extensions one change applies to, carrying each
+// one's declaration and not only its name.
+//
+// The fourth family off `[]string` under stokaro/ptah#2315. See [RangeChanges]
+// for why both sides carry the operand and why the wire shape does not change.
+//
+// An extension is named globally rather than per schema, so the name here is
+// the bare one, which is what the comparator has always keyed on.
+type ExtensionChanges []schemamodel.Extension
+
+// MarshalJSON writes the names alone, the shape `extensions_added` and
+// `extensions_removed` have always had.
+func (e ExtensionChanges) MarshalJSON() ([]byte, error) {
+	if e == nil {
+		return []byte("null"), nil
+	}
+	return json.Marshal(e.Names())
+}
+
+// Names is the extension names this change applies to.
+func (e ExtensionChanges) Names() []string {
+	if e == nil {
+		return nil
+	}
+	names := make([]string, 0, len(e))
+	for _, extension := range e {
+		names = append(names, extension.Name)
+	}
+	return names
+}
+
 // SequenceChanges is a set of sequences one change applies to, carrying each
 // one's definition and not only its name.
 //
@@ -387,11 +418,11 @@ type SchemaDiff struct {
 
 	// ExtensionsAdded contains names of PostgreSQL extensions that exist in the target schema
 	// but not in the current database schema
-	ExtensionsAdded []string `json:"extensions_added"`
+	ExtensionsAdded ExtensionChanges `json:"extensions_added"`
 
 	// ExtensionsRemoved contains names of PostgreSQL extensions that exist in the current database
 	// but not in the target schema (potentially dangerous - may break existing functionality)
-	ExtensionsRemoved []string `json:"extensions_removed"`
+	ExtensionsRemoved ExtensionChanges `json:"extensions_removed"`
 
 	// ExtensionsModified contains PostgreSQL extensions whose installation schema differs.
 	// PostgreSQL extension names are database-wide identities; schema is placement, not identity.

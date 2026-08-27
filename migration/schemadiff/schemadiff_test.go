@@ -31,8 +31,8 @@ func TestCompare_DefaultBehavior(t *testing.T) {
 	diff := schemadiff.Compare(desired, database)
 
 	// plpgsql should be ignored by default, so no extensions should be removed
-	c.Assert(diff.ExtensionsAdded, qt.DeepEquals, []string{"pg_trgm"})
-	c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, make([]string, 0))
+	c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"pg_trgm"})
+	c.Assert(diff.ExtensionsRemoved.Names(), qt.DeepEquals, make([]string, 0))
 }
 
 func TestCompareWithDialect_MySQLFamilyInlineEnumsMatchGeneratedEnumFields(t *testing.T) {
@@ -1152,8 +1152,8 @@ func TestCompareWithOptions_CustomIgnoreList(t *testing.T) {
 	diff := schemadiff.CompareWithOptions(desired, database, opts)
 
 	// adminpack should be ignored, plpgsql should be marked for removal
-	c.Assert(diff.ExtensionsAdded, qt.DeepEquals, []string{"pg_trgm"})
-	c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, []string{"plpgsql"})
+	c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"pg_trgm"})
+	c.Assert(diff.ExtensionsRemoved.Names(), qt.DeepEquals, []string{"plpgsql"})
 }
 
 func TestCompareWithOptions_NoIgnoredExtensions(t *testing.T) {
@@ -1177,8 +1177,8 @@ func TestCompareWithOptions_NoIgnoredExtensions(t *testing.T) {
 	diff := schemadiff.CompareWithOptions(desired, database, opts)
 
 	// All database extensions should be marked for removal
-	c.Assert(diff.ExtensionsAdded, qt.DeepEquals, []string{"pg_trgm"})
-	c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, []string{"adminpack", "plpgsql"})
+	c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"pg_trgm"})
+	c.Assert(diff.ExtensionsRemoved.Names(), qt.DeepEquals, []string{"adminpack", "plpgsql"})
 }
 
 func TestCompareWithOptions_AdditionalIgnoredExtensions(t *testing.T) {
@@ -1203,8 +1203,8 @@ func TestCompareWithOptions_AdditionalIgnoredExtensions(t *testing.T) {
 	diff := schemadiff.CompareWithOptions(desired, database, opts)
 
 	// plpgsql and adminpack should be ignored, only pg_stat_statements should be removed
-	c.Assert(diff.ExtensionsAdded, qt.DeepEquals, []string{"pg_trgm"})
-	c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, []string{"pg_stat_statements"})
+	c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"pg_trgm"})
+	c.Assert(diff.ExtensionsRemoved.Names(), qt.DeepEquals, []string{"pg_stat_statements"})
 }
 
 func TestCompareWithOptions_NilOptions(t *testing.T) {
@@ -1226,8 +1226,8 @@ func TestCompareWithOptions_NilOptions(t *testing.T) {
 	diff := schemadiff.CompareWithOptions(desired, database, nil)
 
 	// Should behave the same as Compare() - ignore plpgsql by default
-	c.Assert(diff.ExtensionsAdded, qt.DeepEquals, []string{"pg_trgm"})
-	c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, make([]string, 0))
+	c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"pg_trgm"})
+	c.Assert(diff.ExtensionsRemoved.Names(), qt.DeepEquals, make([]string, 0))
 }
 
 func TestLibraryUsageExamples(t *testing.T) {
@@ -1250,8 +1250,8 @@ func TestLibraryUsageExamples(t *testing.T) {
 		c := qt.New(t)
 		diff := schemadiff.Compare(desired, database)
 
-		c.Assert(diff.ExtensionsAdded, qt.DeepEquals, []string{"btree_gin"})
-		c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, make([]string, 0)) // plpgsql ignored
+		c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"btree_gin"})
+		c.Assert(diff.ExtensionsRemoved.Names(), qt.DeepEquals, make([]string, 0)) // plpgsql ignored
 	})
 
 	t.Run("custom ignore list", func(t *testing.T) {
@@ -1260,8 +1260,8 @@ func TestLibraryUsageExamples(t *testing.T) {
 		opts := config.WithIgnoredExtensions("plpgsql", "adminpack")
 		diff := schemadiff.CompareWithOptions(desired, database, opts)
 
-		c.Assert(diff.ExtensionsAdded, qt.DeepEquals, []string{"btree_gin"})
-		c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, make([]string, 0))
+		c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"btree_gin"})
+		c.Assert(diff.ExtensionsRemoved.Names(), qt.DeepEquals, make([]string, 0))
 	})
 
 	t.Run("manage all extensions", func(t *testing.T) {
@@ -1270,8 +1270,8 @@ func TestLibraryUsageExamples(t *testing.T) {
 		opts := config.WithIgnoredExtensions()
 		diff := schemadiff.CompareWithOptions(desired, database, opts)
 
-		c.Assert(diff.ExtensionsAdded, qt.DeepEquals, []string{"btree_gin"})
-		c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, []string{"plpgsql"})
+		c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"btree_gin"})
+		c.Assert(diff.ExtensionsRemoved.Names(), qt.DeepEquals, []string{"plpgsql"})
 	})
 
 	t.Run("add to default ignore list", func(t *testing.T) {
@@ -1280,8 +1280,8 @@ func TestLibraryUsageExamples(t *testing.T) {
 		opts := config.WithAdditionalIgnoredExtensions("uuid-ossp")
 		diff := schemadiff.CompareWithOptions(desired, database, opts)
 
-		c.Assert(diff.ExtensionsAdded, qt.DeepEquals, []string{"btree_gin"})
-		c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, make([]string, 0)) // plpgsql still ignored
+		c.Assert(diff.ExtensionsAdded.Names(), qt.DeepEquals, []string{"btree_gin"})
+		c.Assert(diff.ExtensionsRemoved.Names(), qt.DeepEquals, make([]string, 0)) // plpgsql still ignored
 	})
 }
 
