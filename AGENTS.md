@@ -971,8 +971,16 @@ node docs/site/scripts/check-matrix-citations.mjs --selftest
 node docs/site/scripts/check-matrix-citations.mjs
 node docs/site/scripts/check-matrix-flag-names.mjs --selftest
 node docs/site/scripts/check-matrix-flag-names.mjs
+node docs/site/scripts/check-route-retirement.mjs
 node docs/site/scripts/build-feature-matrix.mjs --check
 ```
+
+`check-route-retirement.mjs` is the one on that list a new page trips, and it
+was added to it after a page shipped without its entry. A route this site has
+published stays reachable, so adding a page means adding it to
+`docs/site/scripts/data/published-routes.json` with
+`node docs/site/scripts/check-route-retirement.mjs --write`, and retiring one
+means a `redirectRoutes` entry pointing at its new home.
 
 **Those are not the whole job.** A second set runs from `docs/site` and needs
 `npm ci` first, and a change that passes everything above can still fail the

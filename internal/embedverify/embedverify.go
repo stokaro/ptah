@@ -86,6 +86,12 @@ type Report struct {
 	// coverage rather than instead of it.
 	SourceRows int
 	TargetRows int
+	// Unmeasured names the checks that did not run at all.
+	//
+	// A check that could not be made is not a check that passed, and the
+	// difference is invisible in a list of findings: a layer that found nothing
+	// and a layer nobody asked read exactly the same.
+	Unmeasured []string
 }
 
 // Blocking lists the findings that stop a cutover.

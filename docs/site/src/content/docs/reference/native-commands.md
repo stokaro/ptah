@@ -254,6 +254,26 @@ stdout therefore gets a document in every case except `2`.
 | `ptah project adopt` | Rewrite a project file's compat-only spellings into their native equivalents; `--check` reports the classification without writing; `--preflight` also reads the revision history in the project's database and reports whether native Ptah may take it over, writing nothing there. |
 | `ptah sql lint` | Lint standalone SQL files. |
 
+## Embedding generations: `ptah inference`
+
+| Command | Purpose |
+| --- | --- |
+| `ptah inference plan` | Report what a generation change would do, labeling every answer with where it came from: measured, configured, inferred, unknown, or unsupported. |
+| `ptah inference prepare` | Create the target column, the run's own tables, the outbox, and the snapshot boundary the backfill embeds. |
+| `ptah inference backfill` | Embed the source into the new generation, resumably; an interrupted run continues from its checkpoint. |
+| `ptah inference catchup` | Process the source changes made while the backfill ran; `--maintain-for` also keeps a previous generation current during its stabilization window. |
+| `ptah inference verify` | Run the deterministic checks a cutover rests on, and report what it did not measure; `--publish-evidence` writes the report to an OCI registry. |
+| `ptah inference evaluate` | Measure what the generation retrieves against a corpus you wrote, recording the query parameters the numbers were taken under. |
+| `ptah inference status` | Report what a run has done and what it is waiting for. |
+| `ptah inference cutover` | Make the new generation the one queries read, approved by plan digest; `--stabilize-for` keeps the previous generation eligible for a rollback. |
+| `ptah inference rollback` | Put the previous generation back, while it is still current enough to be a place to go back to. |
+| `ptah inference retire` | Destroy a generation, approved by plan digest, and refused while queries still read it. This cannot be undone. |
+
+None of these is implied by another. A backfill finishing does not mean the
+corpus is right; verification passing does not mean anything has cut over; and
+cutting over does not make the old generation disposable. The task-oriented
+walkthrough is [Inference migrations](../../operate/inference-migrations/).
+
 ## Top-level verbs
 
 | Command | Purpose |

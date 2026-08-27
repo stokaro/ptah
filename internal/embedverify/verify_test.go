@@ -568,3 +568,51 @@ func TestVerify_AMissingIndexReportsOnceRatherThanCascading(t *testing.T) {
 
 	c.Assert(summaries(report), qt.DeepEquals, []string{"the generation's index does not exist"})
 }
+
+// TestVerify_TheVectorValuesAreOnlyCheckedWhenTheyWereRead is Decision 13 in
+// this layer.
+//
+// A caller that hands over a zero-filled placeholder of the right length gets a
+// dimension check and a silent "finite" about numbers nobody looked at. Where a
+// target refuses a non-finite vector on write -- pgvector does -- reading every
+// vector back proves nothing, so the honest answer is to say the check did not
+// run rather than to report it as passed.
+func TestVerify_TheVectorValuesAreOnlyCheckedWhenTheyWereRead(t *testing.T) {
+	tests := []struct {
+		name       string
+		read       bool
+		unmeasured int
+	}{
+		{name: "only their shape was read", read: false, unmeasured: 1},
+		{name: "the values were read", read: true, unmeasured: 0},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			expectation, structure, source, target, state := healthy()
+			state.VectorValuesRead = test.read
+
+			report := embedverify.Verify(expectation, structure, source, target, state)
+
+			c.Assert(report.Passed(), qt.IsTrue, qt.Commentf("%v", summaries(report)))
+			c.Assert(report.Unmeasured, qt.HasLen, test.unmeasured)
+		})
+	}
+}
+
+// TestVerify_AnUnmeasuredVectorCheckIsNotABlocker keeps the note from stopping
+// a cutover.
+//
+// It is something the operator should know, not a reason to refuse: the layer
+// that could not run is one that cannot fail on this target anyway.
+func TestVerify_AnUnmeasuredVectorCheckIsNotABlocker(t *testing.T) {
+	c := qt.New(t)
+
+	report := embedverify.Verify(healthy())
+
+	c.Assert(report.Blocking(), qt.HasLen, 0)
+	c.Assert(report.Unmeasured, qt.DeepEquals, []string{
+		"the stored vectors were not read back, so their dimension was checked and their " +
+			"values were not",
+	})
+}

@@ -94,6 +94,16 @@ type RunState struct {
 	ConsistencyMode string
 	// SourceMutable reports whether the source can change during the run.
 	SourceMutable bool
+	// VectorValuesRead reports whether the target rows carry the vectors
+	// themselves or only their shape.
+	//
+	// Stated rather than inferred, because a caller that passed a zero-filled
+	// placeholder of the right length gets a vector layer that checks the
+	// length and silently answers "finite" about numbers it never saw. Where a
+	// target refuses a non-finite vector on write -- pgvector does -- reading
+	// every vector back to prove it proves nothing, and saying so once beats a
+	// check that cannot fail.
+	VectorValuesRead bool
 }
 
 // Verify runs every layer and returns one report.
@@ -116,6 +126,11 @@ func Verify(
 	verifyStructure(&report, expectation, structure)
 	verifyCoverageAndFreshness(&report, expectation, source, target)
 	verifyVectors(&report, expectation, target)
+	if !state.VectorValuesRead {
+		report.Unmeasured = append(report.Unmeasured,
+			"the stored vectors were not read back, so their dimension was checked and their "+
+				"values were not")
+	}
 	verifyConsistency(&report, state)
 	report.sortFindings()
 	return report
