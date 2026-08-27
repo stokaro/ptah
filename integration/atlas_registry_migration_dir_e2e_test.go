@@ -277,3 +277,69 @@ func sqliteTableNames(c *qt.C, dbURL string) []string {
 	c.Assert(rows.Err(), qt.IsNil)
 	return names
 }
+
+// TestOCIMigrationDirE2E is the live acceptance for an `oci://` migration
+// directory in a project file (stokaro/ptah#1215).
+//
+// `--migrations-dir` accepted `oci://` while `migration.dir` did not, so
+// normalizing an adopted project -- rewriting `atlas://acme` into the
+// `oci://…` the adoption analysis says it becomes -- would have produced a file
+// whose reference nothing resolves. Measured before the fix:
+// `atlas.hcl migration.dir: only local file:// migration directories are
+// supported`.
+//
+// PTAH_ATLAS_REGISTRY is set to a namespace the artifact is NOT in, and that is
+// the point rather than tidiness. An `oci://` reference carries its own
+// registry, so the resolver that composes a location for a bare `atlas://`
+// repository must be skipped for it. Sending one through anyway either refuses
+// it -- Resolve accepts only the vendor scheme -- or pulls from a repository
+// the author never wrote, and this row is what separates those from a pull that
+// used the reference verbatim.
+func TestOCIMigrationDirE2E(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	registry := requiredOCIRegistry(t)
+	repository := fmt.Sprintf("ptah-oci-dir-%d", time.Now().UnixNano())
+	pushAtlasMigrationArtifact(c, ctx, registry, repository, "latest",
+		"1_oci_dir.sql", "CREATE TABLE oci_dir_applied (id INTEGER PRIMARY KEY);")
+
+	// A namespace that is not where the artifact lives. Composing it onto the
+	// reference below would name a repository this test never pushed.
+	t.Setenv("PTAH_ATLAS_REGISTRY", registry+"/not-this-namespace")
+	t.Setenv("PTAH_ATLAS_REGISTRY_PLAIN_HTTP", "1")
+
+	tests := []struct {
+		name      string
+		reference string
+	}{
+		{name: "no tag", reference: "oci://" + registry + "/" + repository},
+		{name: "an explicit tag", reference: "oci://" + registry + "/" + repository + ":latest"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := t.TempDir()
+			dbURL := "sqlite://" + filepath.ToSlash(filepath.Join(dir, "oci.db"))
+			project := filepath.Join(dir, "atlas.hcl")
+			c.Assert(os.WriteFile(project, []byte(`env "local" {
+  url = "`+dbURL+`"
+  migration {
+    dir = "`+test.reference+`"
+  }
+}
+`), 0o600), qt.IsNil)
+
+			out, err := runAtlasCompat(
+				"migrate", "apply", "--config", "file://"+filepath.ToSlash(project), "--env", "local")
+
+			c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", out))
+			// The table decides it. A refusal, an empty directory and the wrong
+			// artifact all produce a plausible status; only the bytes that
+			// arrived say which repository was read.
+			c.Assert(sqliteTableNames(c, dbURL), qt.Contains, "oci_dir_applied")
+		})
+	}
+}
