@@ -1,48 +1,28 @@
 #!/usr/bin/env node
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+// Every declared redirect has to be a redirect that works: a source that is no
+// longer a page, a target that is one, and no chains.
+//
+// Both halves of that comparison come from scripts/lib/docroutes.mjs -- the
+// redirect map's one parser, and the live route set, enumerated through git.
+// Neither is spelled again here. A walk of the content directory is what this
+// gate used to ask, and a walk cannot tell this site's pages from a git
+// worktree parked under the content root: measured, 68 pages by git against
+// 209 by a walk, the extra 141 belonging to somebody else's branch, and the
+// gate believing every one of them.
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { dirname, extname, join, relative, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+import { liveRoutes } from './lib/docroutes.mjs';
+// One parser for the redirect map, shared with the gates that ask which
+// retirements were declared. See the header of scripts/lib/docroutes.mjs.
+import { parseRedirectRoutes } from './lib/docroutes.mjs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const siteRoot = join(scriptDir, '..');
 const routePattern = /^\/(?:[a-z0-9-]+\/)+$|^\/$/;
-
-function toPosix(value) {
-  return value.split(sep).join('/');
-}
-
-function walk(dir) {
-  const files = [];
-  for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-    const fullPath = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      files.push(...walk(fullPath));
-      continue;
-    }
-    if (entry.isFile() && ['.md', '.mdx'].includes(extname(entry.name))) {
-      files.push(fullPath);
-    }
-  }
-  return files;
-}
-
-function routeFor(root, file) {
-  let route = toPosix(relative(root, file)).replace(/\.(md|mdx)$/, '');
-  if (route === 'index') return '/';
-  if (route.endsWith('/index')) route = route.slice(0, -'/index'.length);
-  return `/${route}/`;
-}
-
-export function parseRedirectRoutes(configSource) {
-  const block = configSource.match(/const redirectRoutes = \{([\s\S]*?)\};/);
-  if (!block) return null;
-  const entries = [];
-  for (const match of block[1].matchAll(/'([^']+)':\s*'([^']+)'/g)) {
-    entries.push([match[1], match[2]]);
-  }
-  return entries;
-}
 
 export function checkRedirects(root, configSource) {
   const errors = [];
@@ -52,7 +32,7 @@ export function checkRedirects(root, configSource) {
     return { errors: ['astro.config.mjs: redirectRoutes map not found; moved pages must keep their redirect entries'], count: 0 };
   }
 
-  const routes = new Set(walk(root).map((file) => routeFor(root, file)));
+  const routes = liveRoutes(root);
   const sources = new Set(entries.map(([from]) => from));
 
   for (const [from, to] of entries) {
@@ -100,6 +80,10 @@ function selftest() {
   const root = join(tmp, 'src', 'content', 'docs');
 
   try {
+    // The fixture is a real checkout because the live routes are git's answer,
+    // not a walk's. A plain directory would make this selftest exercise a
+    // discovery path the gate no longer has.
+    execFileSync('git', ['-c', 'init.defaultBranch=main', 'init', '-q', tmp], { stdio: ['ignore', 'pipe', 'pipe'] });
     writeDoc(root, 'index.mdx', '---\ntitle: Home\n---\n');
     writeDoc(root, 'start/quick-start.md', '---\ntitle: Quick start\n---\n');
     writeDoc(root, 'lingering.md', '---\ntitle: Lingering\n---\n');
@@ -150,7 +134,18 @@ function main() {
     return;
   }
 
-  const { errors, count } = checkRedirects(docsRoot, readFileSync(configPath, 'utf8'));
+  let errors;
+  let count;
+  try {
+    ({ errors, count } = checkRedirects(docsRoot, readFileSync(configPath, 'utf8')));
+  } catch (error) {
+    // docroutes refuses an input it cannot answer for rather than handing back
+    // a shorter list, and a refusal is exit 2 the way a missing content root
+    // already is: nothing was compared, so nothing can be reported.
+    console.error(`check-redirects.mjs: ${error.message}`);
+    process.exitCode = 2;
+    return;
+  }
 
   if (errors.length > 0) {
     console.error('Redirect check failed:');
@@ -164,4 +159,11 @@ function main() {
   console.log(`check-redirects.mjs: OK (${count} redirects)`);
 }
 
-main();
+// Importing this file must not run the check. It exports checkRedirects for
+// another gate to reuse, and until this guard existed that import printed
+// `check-redirects.mjs: OK (30 redirects)` as a side effect and could set an
+// exit code its importer never asked for.
+const invokedPath = process.argv[1];
+if (invokedPath !== undefined && import.meta.url === pathToFileURL(invokedPath).href) {
+  main();
+}

@@ -983,8 +983,9 @@ cd docs/site
 npm ci
 npm run check:links:selftest && npm run check:links
 npm run check:redirects:selftest && npm run check:redirects
+npm run check:route-retirement:selftest && npm run check:route-retirement
 npm run check:core-doc-links
-npm run check:page-health
+npm run check:page-health:selftest && npm run check:page-health
 npm run check:exit-codes:selftest && npm run check:exit-codes
 DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run build
 ```
@@ -998,6 +999,64 @@ The reason for the whole list rather than a habit: `check:links` refuses a
 root-relative link, `check:core-doc-links` refuses a GitHub link from a site
 page, and `check:page-health` reads the sidebar — three failures a run of the
 node scripts above would not have produced.
+
+`check:route-retirement` is the gate that notices a URL going away. A page
+renamed with no redirect entry passes `check:redirects`, `check:links`,
+`check:page-health` and the site build alike -- measured, seven for seven --
+because every one of them reasons about what the tree holds now, and the defect
+is a route that used to be in it. The record it compares against is
+`docs/site/scripts/data/published-routes.json`, and a page added in a PR joins
+it in that PR:
+
+```bash
+cd docs/site && node scripts/check-route-retirement.mjs --write
+```
+
+That regeneration only ever adds, and it adds to the ledger **on disk**. Both
+halves matter: a `--write` that seeded from nothing whenever the file was
+missing would rebuild the record from the tree, erase every retirement in it,
+and leave a diff that reads like the rename it is hiding. So a ledger git
+tracks but the working tree does not have is reported as the deletion it is,
+`--seed` is the separate flag for a repository that has never had one, and
+neither path can construct an empty ledger in memory.
+
+Two more modes, each closing a way a line could leave the ledger:
+
+```bash
+# The secondary assertion: nothing recorded at the merge base has been dropped.
+# Needs history, so it runs in the docs `build` job, the one with fetch-depth: 0.
+node scripts/check-route-retirement.mjs --against origin/master
+
+# The honest exit for a route this branch invented and renamed before it merged.
+# Refused for any route the ledger at the merge base already recorded.
+node scripts/check-route-retirement.mjs --forget /schema/newthing/ --against origin/master
+```
+
+`--against` is what makes hand-deleting a ledger line stop working: `analyze`
+iterates the ledger, so a route deleted from it is a route it never visits, and
+a retirement plus a one-line ledger edit leaves every other documentation gate
+green. An unresolvable base exits 2 rather than skipping, because a secondary
+assertion that quietly reports nothing is the gate that reports without running.
+
+**A route is Astro's, not the file path's.** `docs/site/scripts/lib/docroutes.mjs`
+is the one place that answers "which routes does this site publish", and it
+models what Astro does rather than what the directory looks like: a frontmatter
+`slug:` replaces the path, a basename starting with `_` publishes nothing, and
+two files that resolve to one route are refused rather than counted once.
+A path segment Astro would put through github-slugger -- anything outside
+`[a-z0-9_-]` -- is refused by name, because these gates carry no npm dependency
+and a guessed route is worse than a loud one. Measured: `reference/CLI.md`
+builds `/reference/cli/`, and a page carrying `slug: schema/dbml-renamed` leaves
+`/schema/dbml/` dead in the navigation of every other page.
+
+`check:page-health` reads the sidebar in both directions, so a navigation typo
+fails here rather than inside the site build. The sidebar it reads is
+`docs/site/src/sidebar.mjs`, a module `astro.config.mjs` imports: a gate cannot
+import the config, and reading the config as text is blind to a nested group, to
+a `link:` entry in either direction, and to a commented-out entry, which it
+counts as coverage while the page vanishes from every reader's navigation. Add a
+page and its entry in the same change; the gate reports an entry naming no page
+and a page named by no entry alike.
 
 **`docs/site/src/content/docs/atlas/feature-matrix.md` is generated.** Its
 source is `docs/site/scripts/data/feature-matrix-rows.json`; edit that and run

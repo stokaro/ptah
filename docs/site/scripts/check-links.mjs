@@ -1,41 +1,30 @@
 #!/usr/bin/env node
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+// Every internal link has to resolve: to a route this site publishes, and to a
+// heading that route's page actually produces.
+//
+// The pages and their routes come from scripts/lib/docroutes.mjs rather than
+// from a walk of the content directory. A walk cannot tell this site's pages
+// from a git worktree parked under the content root -- measured, 68 pages by
+// git against 209 by a walk, the extra 141 belonging to somebody else's branch
+// -- and it cannot see that a frontmatter `slug:` moves a page's route, which
+// is the difference between validating links against what the site serves and
+// validating them against what the file names suggest.
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { dirname, extname, join, relative, sep } from 'node:path';
+import { dirname, join, relative, sep } from 'node:path';
 import path from 'node:path/posix';
 import { fileURLToPath } from 'node:url';
+
+import { pages as collectPages } from './lib/docroutes.mjs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const siteRoot = join(scriptDir, '..');
 const docsRoot = join(siteRoot, 'src', 'content', 'docs');
-const docExts = new Set(['.md', '.mdx']);
 const externalSchemes = /^[a-z][a-z0-9+.-]*:/i;
 
 function toPosix(value) {
   return value.split(sep).join('/');
-}
-
-function walk(dir) {
-  const files = [];
-  const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
-  for (const entry of entries) {
-    const fullPath = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      files.push(...walk(fullPath));
-      continue;
-    }
-    if (entry.isFile() && docExts.has(extname(entry.name))) {
-      files.push(fullPath);
-    }
-  }
-  return files;
-}
-
-function routeFor(root, file) {
-  let route = toPosix(relative(root, file)).replace(/\.(md|mdx)$/, '');
-  if (route === 'index') return '/';
-  if (route.endsWith('/index')) route = route.slice(0, -'/index'.length);
-  return `/${route}/`;
 }
 
 function normalizeRoute(route) {
@@ -88,8 +77,8 @@ function headingAnchors(source) {
   return anchors;
 }
 
-function extractLinks(file) {
-  const source = stripFencedCode(readFileSync(file, 'utf8'));
+function extractLinks(pageSource) {
+  const source = stripFencedCode(pageSource);
   const links = [];
   const patterns = [
     // Link text may wrap. Excluding \n here made every hard-wrapped link
@@ -145,7 +134,7 @@ function resolveRoute(sourceRoute, href) {
 // anchorError reports an anchor that no heading on the target page produces.
 // A renamed heading silently breaks every link into it; nothing 404s, the
 // reader just lands at the top of a long page and has to hunt.
-function anchorError(anchorsByRoute, file, href, route, cwd) {
+function anchorError(anchorsByRoute, page, href, route, cwd) {
   const anchor = targetAnchor(href);
   if (!anchor) return null;
   const anchors = anchorsByRoute.get(route);
@@ -154,51 +143,51 @@ function anchorError(anchorsByRoute, file, href, route, cwd) {
   if (!anchors || anchors.size === 0) return null;
   if (anchors.has(anchor)) return null;
   return (
-    `${toPosix(relative(cwd, file))}: ${href} points at #${anchor}, which no heading on ${route} produces`
+    `${toPosix(relative(cwd, page.absolute))}: ${href} points at #${anchor}, which no heading on ${route} produces`
   );
 }
 
-function validateLink(root, routes, anchorsByRoute, file, href, cwd) {
+function validateLink(routes, anchorsByRoute, page, href, cwd) {
   if (!href || externalSchemes.test(href)) {
     return null;
   }
 
-  const sourceRoute = routeFor(root, file);
+  // The page's own route, as the site serves it. Taking it from the file path
+  // would disagree with the route set the moment a page declares a `slug:`.
+  const sourceRoute = page.route;
 
   // A bare #anchor stays on the page it was written on.
   if (href.startsWith('#')) {
-    return anchorError(anchorsByRoute, file, href, sourceRoute, cwd);
+    return anchorError(anchorsByRoute, page, href, sourceRoute, cwd);
   }
 
   const cleanHref = targetPath(href);
   if (!cleanHref) return null;
 
   if (cleanHref.startsWith('/')) {
-    return `${toPosix(relative(cwd, file))}: ${href} is root-relative; use a docs-relative link so GitHub Pages keeps /ptah/<version>/ in the URL`;
+    return `${toPosix(relative(cwd, page.absolute))}: ${href} is root-relative; use a docs-relative link so GitHub Pages keeps /ptah/<version>/ in the URL`;
   }
 
   const { escaped, route: resolved } = resolveRoute(sourceRoute, cleanHref);
   if (escaped) {
-    return `${toPosix(relative(cwd, file))}: ${href} escapes the docs route root`;
+    return `${toPosix(relative(cwd, page.absolute))}: ${href} escapes the docs route root`;
   }
-  if (routes.has(resolved)) return anchorError(anchorsByRoute, file, href, resolved, cwd);
+  if (routes.has(resolved)) return anchorError(anchorsByRoute, page, href, resolved, cwd);
 
-  return `${toPosix(relative(cwd, file))}: ${href} resolves to missing route ${resolved}`;
+  return `${toPosix(relative(cwd, page.absolute))}: ${href} resolves to missing route ${resolved}`;
 }
 
 function checkLinks(root, cwd) {
-  const files = walk(root);
-  const routes = new Set(files.map((file) => routeFor(root, file)));
-  const anchorsByRoute = new Map(
-    files.map((file) => [routeFor(root, file), headingAnchors(readFileSync(file, 'utf8'))]),
-  );
+  const files = collectPages(root);
+  const routes = new Set(files.map((page) => page.route));
+  const anchorsByRoute = new Map(files.map((page) => [page.route, headingAnchors(page.source)]));
   const errors = [];
   let links = 0;
 
-  for (const file of files) {
-    for (const href of extractLinks(file)) {
+  for (const page of files) {
+    for (const href of extractLinks(page.source)) {
       links += 1;
-      const error = validateLink(root, routes, anchorsByRoute, file, href, cwd);
+      const error = validateLink(routes, anchorsByRoute, page, href, cwd);
       if (error) errors.push(error);
     }
   }
@@ -222,6 +211,10 @@ function selftest() {
   const root = join(tmp, 'src', 'content', 'docs');
 
   try {
+    // The fixture is a real checkout because the pages are git's answer, not a
+    // walk's. A plain directory would make this selftest exercise a discovery
+    // path the gate no longer has.
+    execFileSync('git', ['-c', 'init.defaultBranch=main', 'init', '-q', tmp], { stdio: ['ignore', 'pipe', 'pipe'] });
     writeDoc(root, 'index.mdx', '---\ntitle: Home\n---\n[Start](./reference/comparison/)\n');
     writeDoc(root, 'operate/conformance.md', '---\ntitle: Conformance\n---\n');
     writeDoc(root, 'workflows/go-schema.md', '---\ntitle: Go schema\n---\n');
@@ -341,7 +334,18 @@ function main() {
     return;
   }
 
-  const { errors, files, routes, anchors, links } = checkLinks(docsRoot, process.cwd());
+  let result;
+  try {
+    result = checkLinks(docsRoot, process.cwd());
+  } catch (error) {
+    // docroutes refuses an input it cannot answer for rather than handing back
+    // a shorter list, and a refusal is exit 2 the way a missing content root
+    // already is: nothing was compared, so nothing can be reported.
+    console.error(`check-links.mjs: ${error.message}`);
+    process.exitCode = 2;
+    return;
+  }
+  const { errors, files, routes, anchors, links } = result;
 
   if (errors.length > 0) {
     console.error('Broken internal documentation links:');

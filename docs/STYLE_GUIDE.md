@@ -447,10 +447,24 @@ a reader recognizes on sight and cannot reconstruct from a paragraph.
 - "Next steps" sections contain at most three links, each phrased as a
   decision, not a generic list.
 - Moved pages always get a redirect entry; content links always point at the
-  new home directly, never through a redirect.
-- Every reader page is registered in the site sidebar (`astro.config.mjs`). An
-  unregistered page is unreachable by navigation, so `check-page-health.mjs`
-  fails it.
+  new home directly, never through a redirect. `check:redirects` validates the
+  entries that exist; `check:route-retirement` is what notices the one that does
+  not, by comparing the routes the site publishes today against
+  `docs/site/scripts/data/published-routes.json`, the record of every route it
+  has published. Measured: a page renamed with no redirect passes every other
+  gate in this list and 404s on the built site.
+- A page's file name is its URL, so it is lowercase, and uses only
+  `[a-z0-9-]`. Astro puts each path segment through github-slugger, and the
+  route gates model only the segments that survive it unchanged: anything else
+  is refused by name rather than guessed at. A frontmatter `slug:` is honored
+  where a page genuinely has to move without moving its file, and a basename
+  starting with `_` is a partial that publishes nothing.
+- Every page is named by a sidebar entry in `docs/site/src/sidebar.mjs`, and
+  every entry names something that exists: a `slug:` names a page, an internal
+  `link:` names a route the site publishes or a redirect it declares. Both
+  directions are enforced by `check-page-health.mjs`. Either kind of entry
+  counts as coverage, so a section index authored as `{ label, link }` is a
+  reachable page rather than an orphan.
 - `reference/exit-codes` is the canonical page for exit codes, and
   `check-exit-codes.mjs` holds it in lockstep with the codes the binaries
   return. Document an exit code there and link to it, rather than restating the
@@ -497,7 +511,9 @@ Complete this for every documentation PR:
    `stokaro/ptah-atlas-conformance` reports.
 5. `npm run check:links:selftest && npm run check:links &&
    npm run check:redirects:selftest && npm run check:redirects &&
-   npm run check:core-doc-links && npm run check:page-health &&
+   npm run check:route-retirement:selftest && npm run check:route-retirement &&
+   npm run check:core-doc-links &&
+   npm run check:page-health:selftest && npm run check:page-health &&
    npm run check:exit-codes:selftest && npm run check:exit-codes &&
    npm run check:style:selftest && npm run check:style &&
    npm run check:limitations:selftest && npm run check:limitations &&
@@ -509,7 +525,11 @@ Complete this for every documentation PR:
    check whose self-test is failing is not reporting on your content.
 6. `docs/site/CONTENT_INVENTORY.md` updated for any added, moved, merged,
    split, or retired page.
-7. Redirects added for every moved URL; no content links through a redirect.
+7. Redirects added for every moved URL; no content links through a redirect. A
+   new page joins `published-routes.json` in the same PR, through
+   `node scripts/check-route-retirement.mjs --write`. A line is never removed
+   from that file by hand: `--forget <route> --against <ref>` is the one way,
+   and it works only for a route the merge base never recorded.
 8. Desktop and mobile visual pass for structural changes. `check:responsive`
    covers horizontal overflow at 390px and 1280px; judgment about hierarchy,
    density, and orientation still needs a person looking at the page.
@@ -546,10 +566,14 @@ in this guide is a review responsibility.
 | No `testify` in code samples | 8 | `check:style` |
 | Every image carries alt text | 11.3 | `check:style` |
 | `title` and `description` frontmatter | 13 | `check:page-health` |
-| Page registered in the sidebar | 12 | `check:page-health` |
+| Every page is named by a sidebar entry | 12 | `check:page-health` |
+| Every sidebar entry names a page or a route | 12 | `check:page-health` |
 | No `TODO`/`TBD`/`FIXME`/"coming soon" | 14 | `check:page-health` |
 | Site-internal links resolve | 12 | `check:links` |
-| Moved URLs keep a redirect | 12 | `check:redirects` |
+| A declared redirect is well formed | 12 | `check:redirects` |
+| A retired URL keeps a redirect | 12 | `check:route-retirement` |
+| A published route stays recorded | 12 | `check:route-retirement` |
+| A file name Astro would re-spell | 12 | every route gate, through `docroutes` |
 | Site pages never link protected root docs | 12 | `check:core-doc-links` |
 | Exit-code tables stay in lockstep | 12 | `check:exit-codes` |
 | Table cells under 350 characters | 10 | `check:style` |

@@ -6,7 +6,10 @@ This directory contains the Astro + Starlight documentation site.
 npm ci
 ASTRO_TELEMETRY_DISABLED=1 npm run check:links:selftest
 ASTRO_TELEMETRY_DISABLED=1 npm run check:links
+ASTRO_TELEMETRY_DISABLED=1 npm run check:route-retirement:selftest
+ASTRO_TELEMETRY_DISABLED=1 npm run check:route-retirement
 ASTRO_TELEMETRY_DISABLED=1 npm run check:core-doc-links
+ASTRO_TELEMETRY_DISABLED=1 npm run check:page-health:selftest
 ASTRO_TELEMETRY_DISABLED=1 npm run check:page-health
 ASTRO_TELEMETRY_DISABLED=1 npm run check:exit-codes
 ASTRO_TELEMETRY_DISABLED=1 npm run build
@@ -22,9 +25,84 @@ ASTRO_TELEMETRY_DISABLED=1 npm run dev
 
 The site is versioned by `DOCS_VERSION`; `edge` tracks `master`.
 The docs workflow runs internal link validation, core-reference link checks,
-page-health checks, and exit-code reference validation before building `edge`
-and before building released tags that include the relevant checker scripts.
-Older historical tags without those checkers are still built with a warning.
+page-health checks, route-retirement checks, and exit-code reference validation
+before building `edge` and before building released tags that include the
+relevant checker scripts. Older historical tags without those checkers are still
+built with a warning.
+
+## Published routes
+
+`scripts/data/published-routes.json` records every route this site has
+published, and `scripts/check-route-retirement.mjs` requires each of them to be
+either a live page today or the source of a redirect in `astro.config.mjs`.
+That is the one thing no other gate here can see: `check-redirects` validates
+the redirects that exist, `check-links` reports a broken link between pages,
+and a page renamed with no redirect involves neither. It 404s for every bookmark
+and search result instead.
+
+Add a page, then record its route in the same change:
+
+```bash
+node scripts/check-route-retirement.mjs --write
+```
+
+The regeneration only adds, and it adds to the ledger on disk. It never drops
+an entry, because the entry for a route whose page this change deleted is
+exactly what the gate is looking for -- and it refuses to run at all when the
+ledger file is missing, since rebuilding it from the tree would erase the same
+evidence a different way. A ledger git still tracks is reported as a deletion to
+restore; `--seed` is the separate flag for a repository that has never had one.
+
+Two further modes:
+
+```bash
+# Nothing recorded at the merge base has been dropped from the ledger.
+node scripts/check-route-retirement.mjs --against origin/master
+
+# Drop a route this branch invented and renamed before it merged. Refused for
+# any route the ledger at the merge base already recorded.
+node scripts/check-route-retirement.mjs --forget /schema/newthing/ --against origin/master
+```
+
+`--against` runs in the docs `build` job, which is checked out with
+`fetch-depth: 0`. It is the answer to the one escape the primary invariant
+cannot see: the check iterates the ledger, so a hand-deleted line is a line it
+never visits.
+
+The ledger sits under `scripts/data/` rather than in the content collection
+because `docs/docs.go` embeds that collection whole, and a file placed there
+would ship inside every `ptah` binary.
+
+## Which files are routes
+
+`scripts/lib/docroutes.mjs` is the single answer to "which routes does this site
+publish", and `check-links`, `check-redirects`, `check-page-health` and
+`check-route-retirement` all read the tree through it. It enumerates pages with
+`git ls-files` rather than by walking the directory, so a checkout parked under
+the content root contributes nothing, and it derives each route the way Astro
+does:
+
+- a frontmatter `slug:` replaces the file path;
+- a basename starting with `_` is a partial and publishes no route;
+- two files that resolve to one route are refused, not silently merged;
+- a path segment Astro would put through github-slugger -- anything outside
+  `[a-z0-9_-]` -- is refused by name. These gates carry no npm dependency, so
+  the slugifier is not available to them, and an unmodeled route is reported
+  loudly rather than recorded wrongly. Rename the file.
+
+## Navigation
+
+The sidebar is `src/sidebar.mjs`, a module `astro.config.mjs` imports. It lives
+outside the config because `scripts/check-page-health.mjs` reads it, and a plain
+Node script cannot import the config: Starlight's entry point is TypeScript
+inside `node_modules`, which Node refuses to strip types for. Keep the module
+dependency-free so the gate keeps reading a value rather than a regex over a
+file.
+
+The gate reads it in both directions. Every page needs an entry, and every entry
+needs something at the other end: a `slug:` names a page, an internal `link:`
+names a route the site publishes or a redirect `astro.config.mjs` declares.
+Either kind counts as coverage. External `link:` values are left alone.
 
 ## Brand assets
 

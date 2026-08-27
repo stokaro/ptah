@@ -6,10 +6,18 @@
 # them say so in their own headers: "a gate that compares nothing to nothing
 # reports success at exactly the moment it stopped working."
 #
-# Eleven gates could already prove otherwise -- three shell ones carry a
-# `-selftest.sh` companion and eight `check-*.mjs` take `--selftest`. The rest
-# carried nothing, and an audit that broke each rule by hand is a photograph:
-# nothing keeps it true (stokaro/ptah#1923).
+# Some gates could already prove otherwise -- three shell ones carry a
+# `-selftest.sh` companion and twelve of the thirteen `check-*.mjs` take
+# `--selftest`. The rest carried nothing, and an audit that broke each rule by
+# hand is a photograph: nothing keeps it true (stokaro/ptah#1923).
+#
+# A `--selftest` is not by itself a proof either, and the gap is worth naming
+# because the docs job cannot see it: a self-test reduced to a bare
+# `OK (0 assertions)` still exits 0, so `npm run check:*:selftest` reports the
+# same success whether the gate asserts everything or nothing. What can tell
+# them apart is breaking the rule the self-test covers and requiring the
+# SELF-TEST to go red -- a self-test that asserts nothing stays green under that
+# mutation. run_node_selftest_case below does exactly that.
 #
 # This is the single-harness shape that issue proposes, with its violations as
 # the fixtures. Each one breaks the rule the gate states, runs the gate, and
@@ -42,14 +50,23 @@ failures=0
 checked=0
 # fixtured accumulates the gates run_case was given, so the coverage guard at
 # the end reads what actually ran rather than a second list beside it.
+# mjs_fixtured does the same for the `.mjs` gates, which have their own guard.
 fixtured=()
+mjs_fixtured=()
 
 # run_case breaks one rule and requires the gate to notice.
 #
 # The mutation is a shell snippet run inside the worktree. Restoring is
-# `git checkout` plus `git clean`, because some mutations add files and
-# `checkout` alone leaves those behind -- a leftover from one case would then
-# decide the next one.
+# `git reset --hard` plus `git clean`, because a mutation can reach the index as
+# well as the working tree and can add files: `git checkout -- .` restores the
+# tree FROM the index, so a staged deletion survives it, and `clean` is what
+# removes an added file that would otherwise decide the next case. A route gate
+# enumerates pages with `git ls-files --cached`, so staging is how a fixture
+# retires a page at all, which is what makes the difference load-bearing here.
+restore_worktree() {
+	(cd "$worktree" && git reset -q --hard HEAD >/dev/null 2>&1 && git clean -fdq >/dev/null 2>&1)
+}
+
 run_case() {
 	local gate="$1" description="$2" mutation="$3"
 	checked=$((checked + 1))
@@ -64,7 +81,7 @@ run_case() {
 	(cd "$worktree" && eval "$mutation")
 	local status=0
 	(cd "$worktree" && bash "scripts/${gate}" >/dev/null 2>&1) || status=$?
-	(cd "$worktree" && git checkout -- . >/dev/null 2>&1 && git clean -fdq >/dev/null 2>&1)
+	restore_worktree
 
 	if [ "$status" -eq 0 ]; then
 		echo "check-gate-selftests: ${gate} PASSED with ${description}" >&2
@@ -72,6 +89,66 @@ run_case() {
 		return
 	fi
 	printf '  %-40s %s\n' "$gate" "$description"
+}
+
+# run_node_gate_case is run_case for a `.mjs` gate under docs/site/scripts. The
+# gate is invoked directly rather than through npm, because the throwaway
+# worktree has no node_modules -- and these gates deliberately have no npm
+# dependency, which is the property that lets them be exercised here at all.
+run_node_gate_case() {
+	local script="$1" description="$2" mutation="$3"
+	local gate
+	gate="$(basename "$script")"
+	checked=$((checked + 1))
+	mjs_fixtured+=("$gate")
+
+	if ! (cd "$worktree" && node "docs/site/scripts/${script}" >/dev/null 2>&1); then
+		echo "check-gate-selftests: ${gate} fails on an UNMODIFIED tree; the fixture below proves nothing" >&2
+		failures=$((failures + 1))
+		return
+	fi
+
+	(cd "$worktree" && eval "$mutation")
+	local status=0
+	(cd "$worktree" && node "docs/site/scripts/${script}" >/dev/null 2>&1) || status=$?
+	restore_worktree
+
+	if [ "$status" -eq 0 ]; then
+		echo "check-gate-selftests: ${gate} PASSED with ${description}" >&2
+		failures=$((failures + 1))
+		return
+	fi
+	printf '  %-40s %s\n' "$gate" "$description"
+}
+
+# run_node_selftest_case breaks a rule and requires the gate's own `--selftest`
+# to notice, which is the only thing that distinguishes a self-test still
+# reading from one reduced to a bare `OK`. The docs job runs these self-tests
+# and reads their exit code; nothing there reads whether they assert.
+run_node_selftest_case() {
+	local script="$1" description="$2" mutation="$3"
+	local gate
+	gate="$(basename "$script")"
+	checked=$((checked + 1))
+	mjs_fixtured+=("$gate")
+
+	if ! (cd "$worktree" && node "docs/site/scripts/${script}" --selftest >/dev/null 2>&1); then
+		echo "check-gate-selftests: ${gate} --selftest fails on an UNMODIFIED tree; the fixture below proves nothing" >&2
+		failures=$((failures + 1))
+		return
+	fi
+
+	(cd "$worktree" && eval "$mutation")
+	local status=0
+	(cd "$worktree" && node "docs/site/scripts/${script}" --selftest >/dev/null 2>&1) || status=$?
+	restore_worktree
+
+	if [ "$status" -eq 0 ]; then
+		echo "check-gate-selftests: ${gate} --selftest PASSED with ${description}" >&2
+		failures=$((failures + 1))
+		return
+	fi
+	printf '  %-40s %s\n' "${gate} --selftest" "$description"
 }
 
 echo "check-gate-selftests: breaking each gate's own rule and requiring it to notice"
@@ -163,6 +240,44 @@ run_case check-renovate-regex.sh \
 	"a backreference put back into a custom-manager pattern" \
 	"perl -0pi -e 's/\\[a-z\\]\\[\\\\\\\\w\\.\\/-\\]\\*:/\\\\\\\\k<depName>:/' renovate.json"
 
+# The `.mjs` route gates under docs/site/scripts. They take no npm dependency,
+# so they run here exactly as they run in the docs job.
+#
+# Two fixtures each, and the pair is the point. The first breaks the site and
+# requires the GATE to notice, which is what run_case does everywhere above. The
+# second breaks the rule in the gate's own source and requires its `--selftest`
+# to notice, which is the only thing that can tell a self-test that still reads
+# from one that has been reduced to a bare `OK`.
+
+# `git mv`, not `mv`, because a route gate enumerates pages with `git ls-files
+# --cached`: a page deleted and left unstaged still reads as live, and the gate
+# says so in its own header.
+run_node_gate_case check-route-retirement.mjs \
+	"a published route retired with no redirect left behind" \
+	"git mv docs/site/src/content/docs/schema/dbml.md docs/site/src/content/docs/schema/dbml-export.md"
+
+run_node_selftest_case check-route-retirement.mjs \
+	"the retirement rule short-circuited inside analyze()" \
+	"perl -0pi -e 's/if \\(liveSet\\.has\\(route\\) \\|\\| sources\\.has\\(route\\)\\) continue;/if (true) continue;/' docs/site/scripts/check-route-retirement.mjs"
+
+# Two files publishing one route. The build resolves it by serving one body in
+# place of the other and exits 0, so the refusal has to be on this gate's path
+# and not only on the retirement gate's.
+run_node_gate_case check-page-health.mjs \
+	"a second page shadowing an existing route" \
+	"mkdir -p docs/site/src/content/docs/schema/dbml && printf -- '---\ntitle: DBML\ndescription: A shadow.\n---\n' >docs/site/src/content/docs/schema/dbml/index.md"
+
+run_node_selftest_case check-page-health.mjs \
+	"the sidebar-to-page rule short-circuited inside analyze()" \
+	"perl -0pi -e 's/if \\(!liveRoutes\\.has\\(entry\\.route\\)\\) \\{/if (false) {/' docs/site/scripts/check-page-health.mjs"
+
+# The library both route gates read the tree through. Its self-test is the only
+# thing asserting that pages come from git rather than from a walk, and that a
+# route Astro would spell differently is refused rather than guessed at.
+run_node_selftest_case lib/docroutes.mjs \
+	"the unmodeled-segment refusal removed from routeFor" \
+	"perl -0pi -e 's/^  assertSlugStable\\(withoutExtension.*\\n//m' docs/site/scripts/lib/docroutes.mjs"
+
 # What this harness does NOT cover, and why. A data table rather than a
 # paragraph, because the guard at the end of this file reads it: a coverage list
 # nobody checks is the same failure mode the harness exists to prevent --
@@ -198,7 +313,58 @@ done
 for gate in $(companion_gates); do
 	printf '    %-40s %s\n' "$gate" "carries its own -selftest.sh companion"
 done
-printf '    %-40s %s\n' "check-*.mjs" "take --selftest and run it in the docs job"
+
+# The `.mjs` gates under docs/site/scripts, and what is claimed about each.
+#
+# Five fixtures above watched three of them go red on a broken rule. Every other
+# one is covered by the text scan below and by nothing else, which asks only
+# whether the file takes `--selftest` at all. That is weaker, deliberately, and
+# the weakness is worth writing down rather than leaving for the next reader: a
+# `--selftest` reduced to a bare `OK (0 assertions)` still exits 0, so neither
+# this scan nor `npm run check:*:selftest` in the docs job can tell a gate that
+# asserts from one that stopped. Only a mutation fixture can, and giving the
+# remaining gates one is work rather than a decision (stokaro/ptah#1923).
+#
+# The glob is `check-*.mjs` on purpose. `build-feature-matrix.mjs` is a
+# generator with a `--check` mode rather than a gate, and `gen-versions.mjs`
+# carries its own `versions:selftest`; neither is a `check-*` gate and neither
+# is claimed here. `lib/docroutes.mjs` is a library, not a gate, and it is
+# covered by a fixture above instead.
+uncovered_mjs=(
+	"check-core-doc-links.mjs	a substring scan over pinned core paths; it takes no --selftest yet"
+)
+
+echo
+echo "  docs/site/scripts .mjs gates, and what is claimed about each:"
+mjs_guarded=0
+mjs_unlisted=""
+for path in docs/site/scripts/check-*.mjs; do
+	gate="$(basename "$path")"
+	mjs_guarded=$((mjs_guarded + 1))
+	listed=""
+	for covered in ${mjs_fixtured[@]+"${mjs_fixtured[@]}"}; do
+		[ "$covered" = "$gate" ] && listed="fixture"
+	done
+	# The `${a[@]+...}` guard is not decoration: with `set -u`, expanding an
+	# EMPTY array is an error in bash 3.2, and this list is empty the moment
+	# the last gate without a --selftest gets one.
+	for entry in ${uncovered_mjs[@]+"${uncovered_mjs[@]}"}; do
+		[ "${entry%%	*}" = "$gate" ] && listed="reason: ${entry##*	}"
+	done
+	if [ "$listed" = "fixture" ]; then
+		printf '    %-40s %s\n' "$gate" "a fixture above required it to fail"
+		continue
+	fi
+	if [ -n "$listed" ]; then
+		printf '    %-40s %s\n' "$gate" "$listed"
+		continue
+	fi
+	if grep -q -- '--selftest' "$path"; then
+		printf '    %-40s %s\n' "$gate" "takes --selftest, run in the docs job; no mutation fixture here"
+		continue
+	fi
+	mjs_unlisted="${mjs_unlisted} ${gate}"
+done
 
 # The coverage guard. Every shell gate has to be in one of the three lists
 # above, or this harness reports a number that means less than it looks like:
@@ -228,9 +394,18 @@ if [ -n "$unlisted" ]; then
 	echo "  add a run_case for it, give it a -selftest.sh, or say in uncovered why not" >&2
 	exit 1
 fi
+if [ -n "$mjs_unlisted" ]; then
+	echo "check-gate-selftests: no fixture, no --selftest and no reason for:${mjs_unlisted}" >&2
+	echo "  give it a --selftest and run it in the docs job, add a run_node_selftest_case," >&2
+	echo "  or say in uncovered_mjs why not" >&2
+	exit 1
+fi
 if [ "$failures" -gt 0 ]; then
 	echo "check-gate-selftests: ${failures} of ${checked} gates did not notice their own broken rule" >&2
 	exit 1
 fi
+# Both numbers, because a run that accounts for every shell gate while saying
+# nothing about the .mjs ones is the same silence-that-reads-as-completeness
+# this harness exists to prevent.
 echo "check-gate-selftests: OK (${checked} gates each failed on their own broken rule," \
-	"${guarded} shell gates all accounted for)"
+	"${guarded} shell gates and ${mjs_guarded} docs/site .mjs gates all accounted for)"
