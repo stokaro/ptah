@@ -64,8 +64,8 @@ issue that owns each.
 
 | Boundary | What is lost | Owner |
 | --- | --- | --- |
-| `goschema.Database` ↔ `types.DBSchema` | Two families are spelled differently and several exist on only one side; five packages under `internal/convert` move between them. [#1662](https://github.com/stokaro/ptah/issues/1662) closed with the boundary still here: it put the COLUMN family on the canonical model, not the conversion. | [#1343](https://github.com/stokaro/ptah/issues/1343) |
-| `difftypes.SchemaDiff` per-family name lists | A change carries a name, so the planner takes the desired description as a second parameter to recover the rest — `GenerateSchemaDiffAST(diff, generated, dialect)`. The name lists are still `[]string`. | [#1343](https://github.com/stokaro/ptah/issues/1343) |
+| `goschema.Database` ↔ `types.DBSchema` | Two families are spelled differently and several exist on only one side; five packages under `internal/convert` move between them. [#1662](https://github.com/stokaro/ptah/issues/1662) closed with the boundary still here: it put the COLUMN family on the canonical model, not the conversion. | [#2315](https://github.com/stokaro/ptah/issues/2315) |
+| `difftypes.SchemaDiff` per-family name lists | A change carries a name, so the planner takes the desired description as a second parameter to recover the rest — `GenerateSchemaDiffAST(diff, desired, dialect)`. The name lists are still `[]string`. | [#2315](https://github.com/stokaro/ptah/issues/2315) |
 | Converted foreign migration layouts | The rebuilt directory carries no integrity file, so source checksums are dropped. Carried out of band since [#1209](https://github.com/stokaro/ptah/issues/1209). | closed |
 | Routine overload identity | Closed: comparison pairs overloads on a signature normalized to agree with the catalog, consulted only where a name is overloaded. | closed |
 | Single-column uniqueness | Closed: a guarantee is a `schemastate.UniqueKey` object rather than a flag on a column, and `ReferencedColumnsAreUnique` asks about the column list, so a composite key is a key. | closed |
