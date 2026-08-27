@@ -143,27 +143,48 @@ func assertACutoverWithoutAWindowLeavesNoWayBack(
 	c.Assert(maintainedUntil(c, ctx, db, generation).Valid, qt.IsFalse)
 }
 
-// assertAWindowMakesTheGenerationAWayBack is Phase K.
+// assertAWindowMakesTheGenerationAWayBack is Phase K, through the flag that
+// opens it.
 //
-// The cutover is redone with a window, over a pointer that now records the
-// generation as previous. What the window buys is recorded where the
-// eligibility check reads it.
+// The pointer is put back where it was and the cutover redone with
+// `--stabilize-for`, so the window is opened by the verb rather than written
+// into the table by the test. A fixture that set the column itself would pass
+// over a cutover that never opened one.
 func assertAWindowMakesTheGenerationAWayBack(
 	c *qt.C, ctx context.Context, db *sql.DB, specPath, dbURL, generation string,
 ) {
 	c.Helper()
-	// Put a different generation in front of it, which is the state a second
-	// migration leaves: this one is now the previous.
+	// Rewind: the previous cutover left this generation active, and a second
+	// migration would leave it as the previous one. This is that state, minus
+	// the window -- which is what the cutover below has to add.
+	registerBareGeneration(c, ctx, db, "the-older-one")
 	_, err := db.ExecContext(ctx,
+		`UPDATE ptah_embedding_pointer SET active_generation = 'the-older-one', previous_generation = NULL
+		 WHERE target_table = 'articles'`)
+	c.Assert(err, qt.IsNil)
+	c.Assert(maintainedUntil(c, ctx, db, generation).Valid, qt.IsFalse)
+
+	digest := planDigestOf(c, ctx, specPath, dbURL)
+	output := runInference(c, ctx, "cutover",
+		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID,
+		"--approve", digest, "--approver", "an operator", "--stabilize-for", "1h")
+
+	c.Assert(output, qt.Contains, "stays a way back until ")
+	// The window landed on the generation being REPLACED, which is the one a
+	// rollback would return to -- not on the one being cut over to.
+	c.Assert(maintainedUntil(c, ctx, db, "the-older-one").Valid, qt.IsTrue)
+
+	// And now the pointer records this generation as previous, so the rollback
+	// below has somewhere to go back from.
+	_, err = db.ExecContext(ctx,
 		`UPDATE ptah_embedding_pointer SET active_generation = 'the-newer-one', previous_generation = $1
 		 WHERE target_table = 'articles'`, generation)
 	c.Assert(err, qt.IsNil)
 	_, err = db.ExecContext(ctx,
-		`UPDATE ptah_embedding_generation SET maintained_until = now() + interval '1 hour'
-		 WHERE identity = $1`, generation)
+		`UPDATE ptah_embedding_generation SET maintained_until =
+			(SELECT maintained_until FROM ptah_embedding_generation WHERE identity = $2)
+		 WHERE identity = $1`, generation, "the-older-one")
 	c.Assert(err, qt.IsNil)
-
-	c.Assert(maintainedUntil(c, ctx, db, generation).Valid, qt.IsTrue)
 }
 
 // assertRollbackMovesThePointerBack is Phase L, and the whole point of the two
@@ -192,6 +213,22 @@ func planDigestOf(c *qt.C, ctx context.Context, specPath, dbURL string) string {
 		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID)
 	c.Assert(err, qt.IsNotNil)
 	return planDigestFrom(c, refused)
+}
+
+// registerBareGeneration puts a generation in the registry with nothing behind
+// it.
+//
+// It stands in for the one a previous migration left: the pointer names it, the
+// registry knows it, and this test is not about how it was built.
+func registerBareGeneration(c *qt.C, ctx context.Context, db *sql.DB, identity string) {
+	c.Helper()
+	_, err := db.ExecContext(ctx,
+		`INSERT INTO ptah_embedding_generation (
+			identity, spec_digest, reproducibility, dimension,
+			target_table, target_column, created_at)
+		 VALUES ($1, $1, 'full', 4, 'articles', 'embedding', now())
+		 ON CONFLICT (identity) DO NOTHING`, identity)
+	c.Assert(err, qt.IsNil)
 }
 
 // maintainedUntil reads the maintenance window off a generation.

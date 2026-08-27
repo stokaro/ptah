@@ -311,7 +311,17 @@ func openStabilization(
 				"generation current and there is no rollback to it"))...)
 	}
 	until := now.Add(window)
-	if err := opened.store.Maintain(ctx, plan.Previous, until); err != nil {
+	err := opened.store.Maintain(ctx, plan.Previous, until)
+	if errorsIs(err, embedstore.ErrNotFound) || errorsIs(err, embedstore.ErrRetired) {
+		// The pointer names a generation the registry does not have, or has as
+		// destroyed. The cutover itself already happened -- failing here would
+		// leave an operator with a moved pointer and an error, which is the
+		// worst of both. Say what could not be recorded and why it matters.
+		return writeLines(out, append(lines, bullet(fmt.Sprintf(
+			"no window was opened over %s: %v, so there is no rollback to it",
+			plan.Previous, err)))...)
+	}
+	if err != nil {
 		return err
 	}
 	return writeLines(out, append(lines, bullet(fmt.Sprintf(
