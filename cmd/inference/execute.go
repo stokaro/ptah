@@ -13,6 +13,7 @@ import (
 	"go.5x5.cz/ptah/internal/embedengine"
 	"go.5x5.cz/ptah/internal/embedpg"
 	"go.5x5.cz/ptah/internal/embedprovider"
+	"go.5x5.cz/ptah/internal/embedreport"
 	"go.5x5.cz/ptah/internal/embedrun"
 	"go.5x5.cz/ptah/internal/embedstore"
 )
@@ -133,7 +134,7 @@ func runCatchUp(ctx context.Context, out io.Writer, options executeOptions) erro
 		// itself caught up on a source it never watched.
 		return fmt.Errorf(
 			"catch-up needs a consistency mode that records changes, and this specification "+
-				"selects %q", modeName(opened.loaded.Mode))
+				"selects %q", embedreport.ModeName(opened.loaded.Mode))
 	}
 	outbox, err := embedpg.NewOutbox(opened.db, opened.loaded.Spec)
 	if err != nil {

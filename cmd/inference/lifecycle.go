@@ -12,6 +12,7 @@ import (
 	"go.5x5.cz/ptah/internal/embedcatchup"
 	"go.5x5.cz/ptah/internal/embedcutover"
 	"go.5x5.cz/ptah/internal/embedpg"
+	"go.5x5.cz/ptah/internal/embedreport"
 	"go.5x5.cz/ptah/internal/embedrun"
 	"go.5x5.cz/ptah/internal/embedstore"
 )
@@ -133,10 +134,7 @@ func createRun(
 
 // boundaryText renders the recorded boundary, or says there is none.
 func boundaryText(boundary string) string {
-	if boundary == "" {
-		return "none, because the selected consistency mode records no boundary"
-	}
-	return boundary
+	return embedreport.BoundaryText(boundary)
 }
 
 // isConflict reports whether an error is the store refusing a duplicate.
@@ -178,34 +176,43 @@ func runStatus(ctx context.Context, out io.Writer, options commonOptions, runID 
 	}
 	defer opened.close()
 
-	run, err := opened.store.Run(ctx, runID)
+	status, err := embedreport.ReadStatus(ctx, opened.store, runID)
 	if err != nil {
 		return err
 	}
+	return printStatus(out, status)
+}
+
+// printStatus renders a run for a person.
+//
+// The status itself is read by internal/embedreport, which both this verb and
+// the agent surface consume. What is here is the rendering.
+func printStatus(out io.Writer, status embedreport.Status) error {
 	lines := []string{
-		fmt.Sprintf("run %s: %s, %s", run.ID, run.Phase, run.Status),
-		bullet("generation: " + run.GenerationIdentity),
+		fmt.Sprintf("run %s: %s, %s", status.RunID, status.Phase, status.State),
+		bullet("generation: " + status.Generation),
 		bullet(fmt.Sprintf("scanned %d, embedded %d, skipped %d, deleted %d",
-			run.Progress.RowsScanned, run.Progress.RowsEmbedded,
-			run.Progress.RowsSkipped, run.Progress.RowsDeleted)),
+			status.Progress.RowsScanned, status.Progress.RowsEmbedded,
+			status.Progress.RowsSkipped, status.Progress.RowsDeleted)),
 		bullet(fmt.Sprintf("%d batches committed, %d retries since the last one",
-			run.Progress.BatchesCommitted, run.Progress.RetryCount)),
-		bullet("snapshot boundary: " + boundaryText(run.SnapshotWatermark)),
-		bullet("catch-up watermark: " + boundaryText(run.CatchUpWatermark)),
-		bullet(fmt.Sprintf("lease: %s, fencing token %d", leaseText(run), run.FencingToken)),
+			status.Progress.BatchesCommitted, status.Progress.RetryCount)),
+		bullet("snapshot boundary: " + status.SnapshotWatermark),
+		bullet("catch-up watermark: " + status.CatchUpWatermark),
+		bullet(fmt.Sprintf("lease: %s, fencing token %d",
+			leaseText(status), status.FencingToken)),
 	}
-	if run.FailureClass != "" {
-		lines = append(lines, bullet("failed in "+run.FailureClass+": "+run.FailureDetail))
+	if status.FailureClass != "" {
+		lines = append(lines, bullet("failed in "+status.FailureClass+": "+status.FailureDetail))
 	}
 	return writeLines(out, lines...)
 }
 
 // leaseText renders who holds the run.
-func leaseText(run embedrun.Run) string {
-	if run.LeaseOwner == "" {
+func leaseText(status embedreport.Status) string {
+	if status.LeaseHolder == "" {
 		return "held by nobody"
 	}
-	return run.LeaseOwner
+	return status.LeaseHolder
 }
 
 // newRollbackCommand returns "ptah inference rollback".

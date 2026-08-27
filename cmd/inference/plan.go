@@ -4,13 +4,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/internal/embedcatchup"
-	"go.5x5.cz/ptah/internal/embedpg"
-	"go.5x5.cz/ptah/internal/embedplan"
-	"go.5x5.cz/ptah/internal/embedspec"
+	"go.5x5.cz/ptah/internal/embedreport"
 )
 
 // newPlanCommand returns "ptah inference plan".
@@ -57,109 +55,75 @@ func runPlan(ctx context.Context, out io.Writer, options commonOptions, current 
 	}
 	defer opened.close()
 
-	inputs, err := resolvePlanInputs(ctx, opened, current)
+	plan, err := embedreport.BuildPlan(ctx, opened.db, opened.loaded, current)
 	if err != nil {
 		return err
 	}
-	plan := embedplan.Build(inputs)
-	return printPlan(out, plan, opened.loaded)
-}
-
-// resolvePlanInputs measures what it can and reports what it cannot.
-func resolvePlanInputs(
-	ctx context.Context, opened *session, current string,
-) (embedplan.Inputs, error) {
-	spec := opened.loaded.Spec
-	facts := embedplan.Facts{
-		embedplan.ConfiguredFact("source.table", spec.Source.Table, opened.loaded.Spec.Name),
-		embedplan.ConfiguredFact("model.identifier", spec.Model.Identifier, "the specification"),
-		embedplan.ConfiguredFact("model.revision", spec.Model.Revision, "the specification"),
-		embedplan.ConfiguredFact("provider.credential", opened.loaded.Credential,
-			"the specification, as a reference rather than a value"),
-	}
-
-	targetExists, err := embedpg.ColumnExists(ctx, opened.db, spec.Target.Table, spec.Target.Column)
-	if err != nil {
-		return embedplan.Inputs{}, err
-	}
-	rows, err := embedpg.CountRows(ctx, opened.db, spec)
-	if err != nil {
-		return embedplan.Inputs{}, err
-	}
-	capabilities, err := embedpg.VectorCapabilities(ctx, opened.db)
-	if err != nil {
-		return embedplan.Inputs{}, err
-	}
-
-	return embedplan.Inputs{
-		Current:         current,
-		Desired:         spec.Identity().Digest,
-		Facts:           facts,
-		TargetExists:    targetExists,
-		SourceMutable:   opened.loaded.Source.Mutable,
-		ConsistencyMode: string(opened.loaded.Mode),
-		EstimatedRows:   rows,
-		Capabilities:    capabilities,
-		// Planning reads. The permission a plan needs is the one it has by
-		// being able to open the database at all, and pretending otherwise
-		// would be a check with nothing behind it.
-		Permissions: map[string]bool{"inference:plan": true},
-	}, nil
+	return printPlan(out, plan)
 }
 
 // printPlan renders the plan for a person.
-func printPlan(out io.Writer, plan embedplan.Plan, loaded embedspec.Loaded) error {
-	if err := writeLines(out, plan.String()); err != nil {
+//
+// The plan itself is built by internal/embedreport, which both this verb and
+// the agent surface consume. What is here is the rendering, which is the only
+// half that differs between a terminal and a protocol.
+func printPlan(out io.Writer, plan embedreport.Plan) error {
+	lines := []string{"generation " + plan.Desired}
+	for _, fact := range plan.Facts {
+		detail := ""
+		if fact.Detail != "" {
+			detail = ": " + fact.Detail
+		}
+		lines = append(lines, fmt.Sprintf("  %s = %s (%s%s)",
+			fact.Name, fact.Value, fact.Provenance, detail))
+	}
+	for _, step := range plan.Steps {
+		lines = append(lines, fmt.Sprintf("  [%s] %s", step.Phase, step.Detail))
+	}
+	for _, blocker := range plan.Blockers {
+		lines = append(lines, "  blocked: "+blocker)
+	}
+	if err := writeLines(out, lines...); err != nil {
 		return err
 	}
-	if len(plan.Uncertain) > 0 {
-		lines := []string{section("What is not established:")}
-		for _, fact := range plan.Uncertain {
-			lines = append(lines, bullet(fact))
-		}
-		if err := writeLines(out, lines...); err != nil {
-			return err
-		}
+	if err := printUncertain(out, plan); err != nil {
+		return err
 	}
-	return printConsistency(out, plan, loaded)
+	return printDisclosure(out, plan)
 }
 
-// printConsistency says what the selected mode can prove, before anything runs.
-//
-// It is printed at plan time rather than at cutover time because that is when
-// an operator can still change it: a dual-write migration whose writer has no
-// evidence contract is a decision to take now, not a refusal to meet in an hour.
-func printConsistency(out io.Writer, plan embedplan.Plan, loaded embedspec.Loaded) error {
-	if !loaded.Source.Mutable {
-		return writeLines(out, section("The source is declared immutable, so no changes have to be accounted for."))
+// printUncertain says what the plan needed and does not have.
+func printUncertain(out io.Writer, plan embedreport.Plan) error {
+	if len(plan.Uncertain) == 0 {
+		return nil
 	}
-	lines := []string{section(fmt.Sprintf("Consistency mode: %s", modeName(loaded.Mode)))}
-	switch loaded.Mode {
-	case embedcatchup.ModeOutbox:
-		lines = append(lines, bullet(
-			"the outbox event and the source change are one transaction, so a change that "+
-				"committed has an event"))
-	case embedcatchup.ModeDualWrite:
-		lines = append(lines, bullet(
-			"completeness will rest on what the writer reports; Ptah observes the reports and "+
-				"not the writes"))
-	case embedcatchup.ModeImmutable:
-		lines = append(lines, bullet(
-			"this requires writes to be paused for the duration, and the run refuses to declare "+
-				"itself ready if they are not"))
-	case embedcatchup.ModeNone:
-		lines = append(lines, bullet(
-			"nothing will establish that the backfill covers the source as it is now, and the "+
-				"cutover will refuse"))
+	lines := []string{section("What is not established:")}
+	for _, fact := range plan.Uncertain {
+		lines = append(lines, bullet(fact))
 	}
-	_ = plan
 	return writeLines(out, lines...)
 }
 
-// modeName renders a mode for a person, including the absence of one.
-func modeName(mode embedcatchup.Mode) string {
-	if mode == embedcatchup.ModeNone {
-		return "none selected"
+// printDisclosure says what would leave the database, which is a decision an
+// operator takes separately from whether the plan is right.
+func printDisclosure(out io.Writer, plan embedreport.Plan) error {
+	disclosure := plan.Disclosure
+	lines := []string{
+		section("What leaves the database:"),
+		bullet(fmt.Sprintf("%s at %s, declared %s",
+			disclosure.Model, disclosure.Endpoint, disclosure.EndpointClass)),
+		bullet("the text of " + strings.Join(disclosure.Fields, ", ")),
+		bullet(rowsInScopeText(disclosure.RowsInScope)),
+		section("Consistency mode: " + plan.ConsistencyMode),
+		bullet(plan.Consistency),
 	}
-	return string(mode)
+	return writeLines(out, lines...)
+}
+
+// rowsInScopeText renders a count, including nobody having taken one.
+func rowsInScopeText(rows int64) string {
+	if rows < 0 {
+		return "for a number of rows nobody counted"
+	}
+	return fmt.Sprintf("for %d rows", rows)
 }

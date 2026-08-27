@@ -106,6 +106,8 @@ the server a workspace and a target dialect:
 | `schema_lineage` | which base columns feed each view column |
 | `search_docs` | what Ptah's own documentation says about a question, with the document and heading it came from |
 | `read_database` | the schema a configured database currently holds |
+| `inference_plan` | what changing an embedding model would do, what blocks it, and what text would leave the database |
+| `inference_status` | how far a generation run has got, and why a cutover is blocked |
 
 An agent starts with `describe_session`. It reports two different things, and
 keeping them apart is the point: **what the policy permits**, as the whole

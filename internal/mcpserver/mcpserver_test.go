@@ -96,6 +96,8 @@ func TestServer_OffersExactlyTheReadOnlyOperations(t *testing.T) {
 		{name: "schema_lineage", owner: "internal/schemalineage"},
 		{name: "search_docs", owner: "internal/docsembed"},
 		{name: "read_database", owner: "dbschema"},
+		{name: "inference_plan", owner: "internal/embedreport"},
+		{name: "inference_status", owner: "internal/embedreport"},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
@@ -105,6 +107,22 @@ func TestServer_OffersExactlyTheReadOnlyOperations(t *testing.T) {
 	}
 	c.Assert(offered, qt.HasLen, len(rows),
 		qt.Commentf("a tool added without a row here is a surface nobody reviewed"))
+
+	// The inference lifecycle's mutating verbs are absent for a different
+	// reason than the three below, and the distinction is worth keeping: those
+	// need a scratch database, while these move a pointer production queries
+	// read. An agent explaining why a cutover is blocked is a different thing
+	// from an agent authorized to unblock it (stokaro/ptah#2068).
+	for _, forbidden := range []string{
+		"inference_prepare", "inference_backfill", "inference_catchup",
+		"inference_cutover", "inference_rollback", "inference_retire",
+	} {
+		t.Run("absent "+forbidden, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(offered[forbidden], qt.IsFalse,
+				qt.Commentf("this surface explains the lifecycle and does not drive it"))
+		})
+	}
 
 	for _, forbidden := range []string{"inspect_schema", "diff_schema", "lint_migrations"} {
 		t.Run("absent "+forbidden, func(t *testing.T) {

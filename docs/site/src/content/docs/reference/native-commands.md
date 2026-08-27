@@ -301,7 +301,7 @@ walkthrough is [Inference migrations](../../operate/inference-migrations/).
 client or coding agent can drive Ptah's operations directly. It is not a command
 to run by hand: a client starts it and speaks the protocol to it.
 
-Six reading tools, each forwarding to the operation that already owns the work:
+Eight reading tools, each forwarding to the operation that already owns the work:
 
 | tool | answers |
 | --- | --- |
@@ -311,6 +311,8 @@ Six reading tools, each forwarding to the operation that already owns the work:
 | `schema_lineage` | which base columns feed each view column |
 | `search_docs` | what Ptah's own documentation says about a question, with the document and heading it came from |
 | `read_database` | the schema a live database currently holds |
+| `inference_plan` | what changing an embedding model would do, what blocks it, and what text would leave the database |
+| `inference_status` | how far a generation run has got, and why a cutover is blocked |
 
 Three of Ptah's own reading verbs are deliberately absent: `schema inspect`,
 `schema diff` and `migrations lint`. Each needs a scratch database that Ptah

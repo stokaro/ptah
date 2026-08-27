@@ -12,8 +12,9 @@
 //
 // # Two tool groups, and what decides which you get
 //
-// The six reading tools are always present: describe_session, validate_schema,
-// render_schema, schema_lineage, search_docs and read_database. The three
+// The eight reading tools are always present: describe_session, validate_schema,
+// render_schema, schema_lineage, search_docs, read_database, inference_plan and
+// inference_status. The three
 // artifact tools -- read, preview, apply -- are present when the operator
 // started the server with a workspace, and absent when they did not.
 //
@@ -229,6 +230,26 @@ func registerReadTools(server *mcp.Server, session *agentapi.Session) {
 		// Open world: it dials whatever address the caller names.
 		Annotations: readOnly(true),
 	}, wrap(session.ReadDatabase))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "inference_plan",
+		Description: "Explain what changing an embedding model would do to one of the operator's " +
+			"configured databases: the steps, what blocks them, what each answer rests on and " +
+			"where it came from, and what text would leave the database for the embedding " +
+			"endpoint. Reads catalogs and run state; creates nothing and writes nothing. " +
+			"Returns no source rows and no vectors.",
+		Annotations: readOnly(true),
+	}, wrap(session.InferencePlan))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "inference_status",
+		Description: "Report what a generation run has done and what it is waiting for: its phase, " +
+			"progress counts, watermarks, which holder may still commit, why it failed if it " +
+			"did, and whether a rollback is still possible. Answers why a cutover is blocked. " +
+			"Returns no source rows and no vectors, and moves nothing: this surface explains " +
+			"the lifecycle and does not drive it.",
+		Annotations: readOnly(true),
+	}, wrap(session.InferenceStatus))
 }
 
 // registerArtifactTools adds the workspace half.
