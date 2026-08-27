@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
 	"go.5x5.cz/ptah/internal/embedcutover"
 	"go.5x5.cz/ptah/internal/embedgen"
@@ -121,17 +122,68 @@ func RollbackState(
 		return embedcutover.RollbackState{}, err
 	}
 
+	stale, missing, err := generationFreshness(ctx, db, previous, registered)
+	if err != nil {
+		return embedcutover.RollbackState{}, err
+	}
 	return embedcutover.RollbackState{
 		Present:    structure.ColumnExists,
 		IndexReady: structure.IndexExists && structure.IndexValid,
 		Retired:    registered.Retired(),
 		CutOverAt:  pointer.CutOverAt,
-		// Maintained and the row counts come from a verification of the
-		// previous generation, which is a separate run rather than something
-		// this read can invent. Until one exists, VerifiedAt is zero and the
-		// eligibility check reports the generation as unverified -- which is
-		// the honest answer and not a placeholder.
+		// Both of these are recorded rather than inferred. A generation nobody
+		// verified has a zero VerifiedAt and is reported as unmeasured; one
+		// nobody is feeding is not maintained, and from the moment the feeding
+		// stops it drifts from the source with every write.
+		VerifiedAt:  registered.VerifiedAt,
+		Maintained:  registered.Maintained(time.Now().UTC()),
+		StaleRows:   stale,
+		MissingRows: missing,
 	}, nil
+}
+
+// generationFreshness counts what is wrong with a generation right now.
+//
+// Measured against the source rather than read from a status column, which is
+// the epic's rule: rollback must not be reported as available merely because
+// the old tables still exist. A generation last verified an hour ago and
+// unmaintained since has counts this can answer and a verification timestamp
+// that cannot.
+//
+// It runs the verification layers rather than walking the rows itself. Coverage
+// and freshness are exactly what those layers decide, and a second walk here
+// would be a second answer to them -- one that agreed on the fixtures it was
+// written against and diverged on a skipped row, a tombstone, or a row
+// belonging to another generation, which are the three cases the layers get
+// right and a rewrite gets wrong.
+//
+// The structure is passed as satisfied because this is not asking whether the
+// generation is well-formed -- the caller has already read that and reports it
+// separately. What it wants is the two counts.
+func generationFreshness(
+	ctx context.Context, db *sql.DB, spec embedgen.Spec, registered embedstore.Generation,
+) (stale, missing int, err error) {
+	sources, targets, err := ReadVerificationRows(ctx, db, spec)
+	if err != nil {
+		return 0, 0, err
+	}
+	report := embedverify.Verify(
+		embedverify.Expectation{Generation: registered.Identity, Dimension: registered.Dimension},
+		embedverify.Structure{
+			ColumnExists: true, ExtensionPresent: true, Dimension: registered.Dimension,
+		},
+		sources, targets,
+		embedverify.RunState{SnapshotComplete: true, CatchUpReached: true})
+
+	for _, finding := range report.Blocking() {
+		switch finding.Layer {
+		case embedverify.LayerCoverage:
+			missing += finding.Count
+		case embedverify.LayerFreshness:
+			stale += finding.Count
+		}
+	}
+	return stale, missing, nil
 }
 
 // ReadVerificationRows reads both sides of the comparison out of the source

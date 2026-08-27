@@ -42,6 +42,26 @@ type Generation struct {
 	CreatedAt time.Time
 	// RetiredAt is when it was destroyed, zero while it exists.
 	RetiredAt time.Time
+	// VerifiedAt is when a verification last passed over it, zero when none
+	// has.
+	//
+	// It is what a rollback rests on, and it is recorded by the verification
+	// rather than claimed by anything else: a generation somebody says is fine
+	// is not a generation anybody measured.
+	VerifiedAt time.Time
+	// MaintainedUntil is how long something is keeping this generation current,
+	// zero when nothing is.
+	//
+	// This is the difference between a generation whose tables exist and one
+	// you can go back to. After a cutover the old generation stops receiving
+	// changes unless somebody keeps feeding it, and from that moment it drifts
+	// from the source with every write.
+	MaintainedUntil time.Time
+}
+
+// Maintained reports whether something is keeping this generation current.
+func (g Generation) Maintained(now time.Time) bool {
+	return !g.MaintainedUntil.IsZero() && now.Before(g.MaintainedUntil)
 }
 
 // Retired reports whether the generation was destroyed.
@@ -83,6 +103,13 @@ type Store interface {
 	Generation(ctx context.Context, identity string) (Generation, error)
 	// RetireGeneration marks one destroyed, which is terminal.
 	RetireGeneration(ctx context.Context, identity string, at time.Time) error
+	// RecordVerification records that a verification passed over a generation.
+	RecordVerification(ctx context.Context, identity string, at time.Time) error
+	// Maintain records how long something will keep a generation current.
+	//
+	// A zero time clears it, which is what stops a generation being reported as
+	// a way back the moment nobody is feeding it.
+	Maintain(ctx context.Context, identity string, until time.Time) error
 
 	// CreateRun records a new run.
 	CreateRun(ctx context.Context, run embedrun.Run) error

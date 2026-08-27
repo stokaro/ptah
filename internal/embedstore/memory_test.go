@@ -383,3 +383,107 @@ func TestMemory_AReadEventTrailDoesNotShareTheStoresSlice(t *testing.T) {
 	c.Assert(again[0].Detail, qt.Equals, "the provider was unreachable")
 	c.Assert(string(again[0].Kind), qt.Equals, "paused")
 }
+
+// TestMemory_AVerificationIsRecordedOnlyByAVerification is what a rollback
+// rests on.
+//
+// A generation somebody asserts is fine is not a generation anybody measured,
+// and the eligibility check reads this timestamp rather than a claim.
+func TestMemory_AVerificationIsRecordedOnlyByAVerification(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	store := embedstore.NewMemory()
+	_, err := store.RegisterGeneration(ctx, aGeneration())
+	c.Assert(err, qt.IsNil)
+
+	before, err := store.Generation(ctx, "gen-1")
+	c.Assert(err, qt.IsNil)
+	c.Assert(before.VerifiedAt.IsZero(), qt.IsTrue)
+
+	c.Assert(store.RecordVerification(ctx, "gen-1", at), qt.IsNil)
+
+	after, err := store.Generation(ctx, "gen-1")
+	c.Assert(err, qt.IsNil)
+	c.Assert(after.VerifiedAt, qt.Equals, at)
+}
+
+// TestMemory_MaintenanceIsAWindowAndNotAFlag is the difference between a
+// generation whose tables exist and one you can go back to.
+//
+// Something has to be keeping it current, and a promise to do so until Tuesday
+// stops being true on Wednesday without anybody writing anything.
+func TestMemory_MaintenanceIsAWindowAndNotAFlag(t *testing.T) {
+	tests := []struct {
+		name       string
+		until      time.Time
+		now        time.Time
+		maintained bool
+	}{
+		{name: "inside the window", until: at.Add(time.Hour), now: at, maintained: true},
+		{name: "at its end", until: at, now: at, maintained: false},
+		{name: "past it", until: at, now: at.Add(time.Second), maintained: false},
+		{name: "never opened", until: time.Time{}, now: at, maintained: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			ctx := context.Background()
+			store := embedstore.NewMemory()
+			_, err := store.RegisterGeneration(ctx, aGeneration())
+			c.Assert(err, qt.IsNil)
+			c.Assert(store.Maintain(ctx, "gen-1", test.until), qt.IsNil)
+
+			generation, err := store.Generation(ctx, "gen-1")
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(generation.Maintained(test.now), qt.Equals, test.maintained)
+		})
+	}
+}
+
+// TestMemory_ARetiredGenerationRecordsNeither keeps a destroyed generation from
+// looking like a way back.
+//
+// The vectors are gone. A verification recorded against it, or a maintenance
+// window opened over it, would make the eligibility check answer yes about
+// something that no longer exists.
+func TestMemory_ARetiredGenerationRecordsNeither(t *testing.T) {
+	tests := []struct {
+		name string
+		call func(context.Context, *embedstore.Memory) error
+	}{
+		{
+			name: "a verification", call: func(ctx context.Context, s *embedstore.Memory) error {
+				return s.RecordVerification(ctx, "gen-1", at)
+			},
+		},
+		{
+			name: "a maintenance window", call: func(ctx context.Context, s *embedstore.Memory) error {
+				return s.Maintain(ctx, "gen-1", at.Add(time.Hour))
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			ctx := context.Background()
+			store := embedstore.NewMemory()
+			_, err := store.RegisterGeneration(ctx, aGeneration())
+			c.Assert(err, qt.IsNil)
+			c.Assert(store.RetireGeneration(ctx, "gen-1", at), qt.IsNil)
+
+			c.Assert(test.call(ctx, store), qt.ErrorIs, embedstore.ErrRetired)
+		})
+	}
+}
+
+// TestMemory_RecordingAgainstAGenerationThatIsNotThereIsItsOwnAnswer keeps a
+// typo from silently doing nothing.
+func TestMemory_RecordingAgainstAGenerationThatIsNotThereIsItsOwnAnswer(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	store := embedstore.NewMemory()
+
+	c.Assert(store.RecordVerification(ctx, "nothing", at), qt.ErrorIs, embedstore.ErrNotFound)
+	c.Assert(store.Maintain(ctx, "nothing", at), qt.ErrorIs, embedstore.ErrNotFound)
+}

@@ -75,6 +75,310 @@ func TestInferenceCLIE2E(t *testing.T) {
 	assertCatchUpRefusesAModeThatRecordsNothing(c, ctx, endpoint.URL, dbName)
 }
 
+// TestInferenceCLIRollbackE2E is Phase K and Phase L, which the lifecycle above
+// deliberately leaves unreachable.
+//
+// A cutover with no stabilization window leaves no rollback, and that is the
+// honest answer rather than a gap: the old generation stops receiving changes
+// the moment queries stop reading it, so what makes it a way back is somebody
+// keeping it current. This asks for the window and then goes back through it.
+//
+// It is a separate test because it needs its own database: the run above ends
+// with a pointer deliberately moved to a generation that does not exist, and a
+// rollback over that would be measuring the wreckage (stokaro/ptah#2068).
+func TestInferenceCLIRollbackE2E(t *testing.T) {
+	dbURL := dbtarget.URL(t, dbtarget.TimescaleDB)
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	adminDB, err := sql.Open("pgx", dbURL)
+	c.Assert(err, qt.IsNil)
+	defer adminDB.Close()
+
+	name := fmt.Sprintf("ptah_cli_rollback_%d", time.Now().UnixNano())
+	createE2EDatabase(c, ctx, adminDB, name)
+	defer dropE2EDatabase(c, context.Background(), adminDB, name)
+
+	dbName := replaceDatabaseName(c, dbURL, name)
+	db, err := sql.Open("pgx", dbName)
+	c.Assert(err, qt.IsNil)
+	defer db.Close()
+	seedCLIArticles(c, ctx, db)
+
+	endpoint := httptest.NewServer(http.HandlerFunc(embeddingsHandler(c)))
+	defer endpoint.Close()
+	specPath := writeCLISpec(c, endpoint.URL)
+
+	runInference(c, ctx, "prepare", "--spec", specPath, "--db-url", dbName, "--run-id", cliRunID)
+	runInference(c, ctx, "backfill",
+		"--spec", specPath, "--db-url", dbName, "--run-id", cliRunID, "--batch-rows", "10")
+	runInference(c, ctx, "catchup",
+		"--spec", specPath, "--db-url", dbName, "--run-id", cliRunID, "--batch-rows", "10")
+	runInference(c, ctx, "verify", "--spec", specPath, "--db-url", dbName, "--run-id", cliRunID)
+
+	generation := activeGenerationFrom(c, ctx, specPath, dbName)
+	assertACutoverWithoutAWindowLeavesNoWayBack(c, ctx, db, specPath, dbName, generation)
+	assertAWindowMakesTheGenerationAWayBack(c, ctx, db, specPath, dbName, generation)
+	assertRollbackMovesThePointerBack(c, ctx, specPath, dbName, generation)
+	assertNoWindowIsAskedForMeansNoWindow(c, ctx, db, specPath, dbName)
+	assertADriftedGenerationIsNotAWayBack(c, ctx, db, specPath, dbName, generation)
+	assertASkipIsNotAGapAndAGapIsNotASkip(c, ctx, db, specPath, dbName, generation)
+}
+
+// assertASkipIsNotAGapAndAGapIsNotASkip separates the two things a coverage
+// layer reports about a rollback target.
+//
+// A row the specification declined to embed is a deliberate gap and does not
+// make a generation unusable -- counting it would refuse a rollback to a corpus
+// that is exactly what was asked for. A row nothing ever embedded is a real
+// gap, and going back to a generation that has none of it answers those queries
+// with nothing.
+//
+// The two are one finding apart in the same layer, which is why they need one
+// fixture each.
+func assertASkipIsNotAGapAndAGapIsNotASkip(
+	c *qt.C, ctx context.Context, db *sql.DB, specPath, dbURL, generation string,
+) {
+	c.Helper()
+	// Bring the generation back up to date after the drift above, so the only
+	// thing either step below changes is coverage.
+	runInference(c, ctx, "catchup",
+		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID, "--batch-rows", "10")
+	makeTheGenerationAWayBack(c, ctx, db, generation)
+	c.Assert(runInference(c, ctx, "rollback",
+		"--spec", specPath, "--db-url", dbURL, "--to", generation, "--window", "24h"),
+		qt.Contains, "queries now read "+generation)
+
+	// A row the empty policy declines, caught up so the generation records the
+	// skip. It is still a way back.
+	_, err := db.ExecContext(ctx,
+		`INSERT INTO articles (id, title, body, updated_at) VALUES (77, '', '', '30')`)
+	c.Assert(err, qt.IsNil)
+	runInference(c, ctx, "catchup",
+		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID, "--batch-rows", "10")
+	makeTheGenerationAWayBack(c, ctx, db, generation)
+
+	c.Assert(runInference(c, ctx, "rollback",
+		"--spec", specPath, "--db-url", dbURL, "--to", generation, "--window", "24h"),
+		qt.Contains, "queries now read "+generation)
+
+	// A row nothing embedded, with no catch-up behind it. Now it is not.
+	_, err = db.ExecContext(ctx,
+		`INSERT INTO articles (id, title, body, updated_at) VALUES (78, 'Never', 'embedded', '31')`)
+	c.Assert(err, qt.IsNil)
+	makeTheGenerationAWayBack(c, ctx, db, generation)
+
+	output, err := runInferenceExpectingFailure(c, ctx, "rollback",
+		"--spec", specPath, "--db-url", dbURL, "--to", generation, "--window", "24h")
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(output, qt.Contains, "1 rows are missing and this policy allows 0")
+}
+
+// makeTheGenerationAWayBack puts the generation where a rollback would return
+// to it, with a live window, so nothing but the corpus can be the reason.
+func makeTheGenerationAWayBack(c *qt.C, ctx context.Context, db *sql.DB, generation string) {
+	c.Helper()
+	_, err := db.ExecContext(ctx,
+		`UPDATE ptah_embedding_pointer SET active_generation = 'the-newest-one',
+			previous_generation = $1 WHERE target_table = 'articles'`, generation)
+	c.Assert(err, qt.IsNil)
+	_, err = db.ExecContext(ctx,
+		`UPDATE ptah_embedding_generation SET maintained_until = now() + interval '1 hour'
+		 WHERE identity = $1`, generation)
+	c.Assert(err, qt.IsNil)
+}
+
+// assertADriftedGenerationIsNotAWayBack is the epic's rule that rollback is
+// measured against the source rather than read off a status column.
+//
+// The generation is verified, maintained and present -- everything a status
+// field would record. The source has moved since, so going back to it would
+// answer queries with text that is no longer there, and the only thing that can
+// say so is a comparison against the source right now.
+func assertADriftedGenerationIsNotAWayBack(
+	c *qt.C, ctx context.Context, db *sql.DB, specPath, dbURL, generation string,
+) {
+	c.Helper()
+	// Put the generation back where a rollback would return to it, with a live
+	// window, so nothing else can be the reason.
+	_, err := db.ExecContext(ctx,
+		`UPDATE ptah_embedding_pointer SET active_generation = 'the-newest-one',
+			previous_generation = $1 WHERE target_table = 'articles'`, generation)
+	c.Assert(err, qt.IsNil)
+	_, err = db.ExecContext(ctx,
+		`UPDATE ptah_embedding_generation SET maintained_until = now() + interval '1 hour'
+		 WHERE identity = $1`, generation)
+	c.Assert(err, qt.IsNil)
+
+	// It is a way back, right up until the source moves.
+	c.Assert(runInference(c, ctx, "rollback",
+		"--spec", specPath, "--db-url", dbURL, "--to", generation, "--window", "24h"),
+		qt.Contains, "queries now read "+generation)
+
+	_, err = db.ExecContext(ctx,
+		`UPDATE articles SET body = 'about pricing, revised again', updated_at = '20' WHERE id = 1`)
+	c.Assert(err, qt.IsNil)
+	_, err = db.ExecContext(ctx,
+		`UPDATE ptah_embedding_pointer SET active_generation = 'the-newest-one',
+			previous_generation = $1 WHERE target_table = 'articles'`, generation)
+	c.Assert(err, qt.IsNil)
+
+	output, err := runInferenceExpectingFailure(c, ctx, "rollback",
+		"--spec", specPath, "--db-url", dbURL, "--to", generation, "--window", "24h")
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(output, qt.Contains, "rollback refused")
+	c.Assert(output, qt.Contains, "1 rows are stale and this policy allows 0")
+}
+
+// assertNoWindowIsAskedForMeansNoWindow is the flag's other answer, over a
+// pointer that has somewhere to point.
+//
+// The first cutover in this test had no previous generation at all, so it took
+// the same branch for a different reason. This one replaces a real generation
+// and still asks for nothing, which is the only shape that separates "there is
+// nobody to keep current" from "you did not ask me to".
+func assertNoWindowIsAskedForMeansNoWindow(
+	c *qt.C, ctx context.Context, db *sql.DB, specPath, dbURL string,
+) {
+	c.Helper()
+	registerBareGeneration(c, ctx, db, "the-replaced-one")
+	_, err := db.ExecContext(ctx,
+		`UPDATE ptah_embedding_pointer SET active_generation = 'the-replaced-one',
+			previous_generation = NULL WHERE target_table = 'articles'`)
+	c.Assert(err, qt.IsNil)
+
+	digest := planDigestOf(c, ctx, specPath, dbURL)
+	output := runInference(c, ctx, "cutover",
+		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID,
+		"--approve", digest, "--approver", "an operator")
+
+	c.Assert(output, qt.Contains, "no stabilization window was asked for")
+	c.Assert(maintainedUntil(c, ctx, db, "the-replaced-one").Valid, qt.IsFalse)
+}
+
+// assertACutoverWithoutAWindowLeavesNoWayBack is the default, and it says so.
+//
+// An operator who did not ask for a stabilization window does not get one, and
+// the cutover tells them at the moment it happens rather than leaving them to
+// find out when they need it.
+func assertACutoverWithoutAWindowLeavesNoWayBack(
+	c *qt.C, ctx context.Context, db *sql.DB, specPath, dbURL, generation string,
+) {
+	c.Helper()
+	digest := planDigestOf(c, ctx, specPath, dbURL)
+
+	output := runInference(c, ctx, "cutover",
+		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID,
+		"--approve", digest, "--approver", "an operator")
+
+	c.Assert(output, qt.Contains, "no stabilization window was asked for")
+	c.Assert(output, qt.Contains, "there is no rollback to it")
+	c.Assert(maintainedUntil(c, ctx, db, generation).Valid, qt.IsFalse)
+}
+
+// assertAWindowMakesTheGenerationAWayBack is Phase K, through the flag that
+// opens it.
+//
+// The pointer is put back where it was and the cutover redone with
+// `--stabilize-for`, so the window is opened by the verb rather than written
+// into the table by the test. A fixture that set the column itself would pass
+// over a cutover that never opened one.
+func assertAWindowMakesTheGenerationAWayBack(
+	c *qt.C, ctx context.Context, db *sql.DB, specPath, dbURL, generation string,
+) {
+	c.Helper()
+	// Rewind: the previous cutover left this generation active, and a second
+	// migration would leave it as the previous one. This is that state, minus
+	// the window -- which is what the cutover below has to add.
+	registerBareGeneration(c, ctx, db, "the-older-one")
+	_, err := db.ExecContext(ctx,
+		`UPDATE ptah_embedding_pointer SET active_generation = 'the-older-one', previous_generation = NULL
+		 WHERE target_table = 'articles'`)
+	c.Assert(err, qt.IsNil)
+	c.Assert(maintainedUntil(c, ctx, db, generation).Valid, qt.IsFalse)
+
+	digest := planDigestOf(c, ctx, specPath, dbURL)
+	output := runInference(c, ctx, "cutover",
+		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID,
+		"--approve", digest, "--approver", "an operator", "--stabilize-for", "1h")
+
+	c.Assert(output, qt.Contains, "stays a way back until ")
+	// The window landed on the generation being REPLACED, which is the one a
+	// rollback would return to -- not on the one being cut over to.
+	c.Assert(maintainedUntil(c, ctx, db, "the-older-one").Valid, qt.IsTrue)
+
+	// And now the pointer records this generation as previous, so the rollback
+	// below has somewhere to go back from.
+	_, err = db.ExecContext(ctx,
+		`UPDATE ptah_embedding_pointer SET active_generation = 'the-newer-one', previous_generation = $1
+		 WHERE target_table = 'articles'`, generation)
+	c.Assert(err, qt.IsNil)
+	_, err = db.ExecContext(ctx,
+		`UPDATE ptah_embedding_generation SET maintained_until =
+			(SELECT maintained_until FROM ptah_embedding_generation WHERE identity = $2)
+		 WHERE identity = $1`, generation, "the-older-one")
+	c.Assert(err, qt.IsNil)
+}
+
+// assertRollbackMovesThePointerBack is Phase L, and the whole point of the two
+// records above.
+//
+// The generation is verified and maintained, so going back to it is something
+// Ptah will do rather than refuse. Every refusal in the other test was a
+// missing one of those.
+func assertRollbackMovesThePointerBack(
+	c *qt.C, ctx context.Context, specPath, dbURL, generation string,
+) {
+	c.Helper()
+
+	output := runInference(c, ctx, "rollback",
+		"--spec", specPath, "--db-url", dbURL, "--to", generation, "--window", "24h")
+
+	c.Assert(output, qt.Contains, "queries now read "+generation)
+	c.Assert(output, qt.Contains, "which replaced the-newer-one")
+	c.Assert(activeGenerationFrom(c, ctx, specPath, dbURL), qt.Equals, generation)
+}
+
+// planDigestOf runs a cutover without an approval to read the plan's digest.
+func planDigestOf(c *qt.C, ctx context.Context, specPath, dbURL string) string {
+	c.Helper()
+	refused, err := runInferenceExpectingFailure(c, ctx, "cutover",
+		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID)
+	c.Assert(err, qt.IsNotNil)
+	return planDigestFrom(c, refused)
+}
+
+// registerBareGeneration puts a generation in the registry with nothing behind
+// it.
+//
+// It stands in for the one a previous migration left: the pointer names it, the
+// registry knows it, and this test is not about how it was built.
+func registerBareGeneration(c *qt.C, ctx context.Context, db *sql.DB, identity string) {
+	c.Helper()
+	_, err := db.ExecContext(ctx,
+		`INSERT INTO ptah_embedding_generation (
+			identity, spec_digest, reproducibility, dimension,
+			target_table, target_column, created_at)
+		 VALUES ($1, $1, 'full', 4, 'articles', 'embedding', now())
+		 ON CONFLICT (identity) DO NOTHING`, identity)
+	c.Assert(err, qt.IsNil)
+}
+
+// maintainedUntil reads the maintenance window off a generation.
+func maintainedUntil(
+	c *qt.C, ctx context.Context, db *sql.DB, generation string,
+) sql.NullTime {
+	c.Helper()
+	var until sql.NullTime
+	c.Assert(db.QueryRowContext(ctx,
+		`SELECT maintained_until FROM ptah_embedding_generation WHERE identity = $1`,
+		generation).Scan(&until), qt.IsNil)
+	return until
+}
+
 // assertCatchUpRefusesAModeThatRecordsNothing is structural absence rather than
 // a silent no-op.
 //
@@ -132,7 +436,7 @@ func assertAnUnmaintainedPreviousGenerationBlocksNothing(
 	back, err := runInferenceExpectingFailure(c, ctx, "rollback",
 		"--spec", specPath, "--db-url", dbURL, "--to", generation)
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(back, qt.Contains, "never been verified")
+	c.Assert(back, qt.Contains, "no longer maintained")
 
 	output, err := runInferenceExpectingFailure(c, ctx, "retire",
 		"--spec", specPath, "--db-url", dbURL, "--generation", generation)
@@ -539,7 +843,10 @@ func assertRollbackIsRefusedWithoutEvidence(c *qt.C, ctx context.Context, specPa
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(output, qt.Contains, "rollback refused")
-	c.Assert(output, qt.Contains, "never been verified")
+	// Verified, because `verify` ran above and recorded it. Not maintained,
+	// because nothing asked for a stabilization window -- and a generation
+	// nobody is keeping current drifts from the source with every write.
+	c.Assert(output, qt.Contains, "no longer maintained")
 }
 
 // runInference runs one verb and requires it to succeed.

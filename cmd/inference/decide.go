@@ -47,7 +47,13 @@ others.`,
 	return cmd
 }
 
-// runVerify reads both sides and reports.
+// runVerify reads both sides, reports, and records a pass.
+//
+// Recording it is not bookkeeping. A rollback rests on a generation having been
+// verified, and nothing else in the lifecycle can say that it was: a generation
+// somebody asserts is fine is not a generation anybody measured. The record is
+// written only on a pass, so a failing verification leaves the last passing one
+// standing rather than replacing it with a newer lie.
 func runVerify(ctx context.Context, out io.Writer, options commonOptions, runID string) error {
 	report, _, err := verify(ctx, options, runID)
 	if err != nil {
@@ -59,7 +65,17 @@ func runVerify(ctx context.Context, out io.Writer, options commonOptions, runID 
 	if !report.Passed() {
 		return fmt.Errorf("verification found %d blocking findings", len(report.Blocking()))
 	}
-	return nil
+	return recordVerification(ctx, options, report.Generation)
+}
+
+// recordVerification writes the pass onto the generation.
+func recordVerification(ctx context.Context, options commonOptions, generation string) error {
+	opened, err := open(ctx, options)
+	if err != nil {
+		return err
+	}
+	defer opened.close()
+	return opened.store.RecordVerification(ctx, generation, time.Now().UTC())
 }
 
 // verify runs every deterministic layer against the live generation.
@@ -206,6 +222,7 @@ func newCutoverCommand() *cobra.Command {
 	var runID string
 	var approvalDigest string
 	var approver string
+	var stabilizeFor time.Duration
 
 	cmd := &cobra.Command{
 		Use:   "cutover",
@@ -222,7 +239,8 @@ digest. Any change to the evidence produces a different plan and the approval
 stops applying -- which is the point of it.`,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runCutover(cmd.Context(), cmd.OutOrStdout(), options, runID, approvalDigest, approver)
+			return runCutover(cmd.Context(), cmd.OutOrStdout(), options,
+				runID, approvalDigest, approver, stabilizeFor)
 		},
 	}
 	addCommonFlags(cmd, &options)
@@ -230,12 +248,15 @@ stops applying -- which is the point of it.`,
 	cmd.Flags().StringVar(&approvalDigest, "approve", "",
 		"Plan digest this cutover is approved for; run without it to see the digest")
 	cmd.Flags().StringVar(&approver, "approver", "", "Who approved it")
+	cmd.Flags().DurationVar(&stabilizeFor, "stabilize-for", 0,
+		"How long the previous generation stays a way back; zero leaves no rollback")
 	return cmd
 }
 
 // runCutover builds a plan, decides, and moves the pointer.
 func runCutover(
-	ctx context.Context, out io.Writer, options commonOptions, runID, approvalDigest, approver string,
+	ctx context.Context, out io.Writer, options commonOptions,
+	runID, approvalDigest, approver string, stabilizeFor time.Duration,
 ) error {
 	report, run, err := verify(ctx, options, runID)
 	if err != nil {
@@ -258,15 +279,54 @@ func runCutover(
 		return refusal(out, "cutover refused", decision.Blockers)
 	}
 
+	now := time.Now().UTC()
 	if err := opened.store.MovePointer(ctx, embedstore.Pointer{
 		TargetTable: opened.loaded.Spec.Target.Table, Active: plan.Generation,
-		Previous: plan.Previous, CutOverAt: time.Now().UTC(),
+		Previous: plan.Previous, CutOverAt: now,
 		CutOverBy: approver, PlanDigest: plan.Digest(),
 	}, plan.Previous); err != nil {
 		return err
 	}
-	return writeLines(out, fmt.Sprintf("queries now read generation %s (plan %s)",
-		plan.Generation, plan.Short()))
+	return openStabilization(ctx, out, opened, plan, now, stabilizeFor)
+}
+
+// openStabilization starts the window in which the previous generation is still
+// a way back.
+//
+// Phase K. The old generation stops receiving changes the moment queries stop
+// reading it, so what makes it a rollback target is somebody keeping it
+// current -- and the window is a promise to do that, recorded where the
+// eligibility check reads it. A zero window records nothing, which is the
+// honest answer for an operator who did not ask for one: the previous
+// generation is immediately not a way back, and rollback says so.
+func openStabilization(
+	ctx context.Context, out io.Writer, opened *session,
+	plan embedcutover.Plan, now time.Time, window time.Duration,
+) error {
+	lines := []string{fmt.Sprintf("queries now read generation %s (plan %s)",
+		plan.Generation, plan.Short())}
+	if plan.Previous == "" || window <= 0 {
+		return writeLines(out, append(lines, bullet(
+			"no stabilization window was asked for, so nothing is keeping the previous "+
+				"generation current and there is no rollback to it"))...)
+	}
+	until := now.Add(window)
+	err := opened.store.Maintain(ctx, plan.Previous, until)
+	if errorsIs(err, embedstore.ErrNotFound) || errorsIs(err, embedstore.ErrRetired) {
+		// The pointer names a generation the registry does not have, or has as
+		// destroyed. The cutover itself already happened -- failing here would
+		// leave an operator with a moved pointer and an error, which is the
+		// worst of both. Say what could not be recorded and why it matters.
+		return writeLines(out, append(lines, bullet(fmt.Sprintf(
+			"no window was opened over %s: %v, so there is no rollback to it",
+			plan.Previous, err)))...)
+	}
+	if err != nil {
+		return err
+	}
+	return writeLines(out, append(lines, bullet(fmt.Sprintf(
+		"generation %s stays a way back until %s, for as long as catch-up keeps feeding it",
+		plan.Previous, until.Format(time.RFC3339))))...)
 }
 
 // buildCutoverPlan assembles the plan and what is true now.
@@ -543,8 +603,11 @@ func rollbackEligibility(
 	if err != nil {
 		return embedcutover.RollbackEligibility{}, err
 	}
-	return embedcutover.EvaluateRollback(
-		embedcutover.RollbackPolicy{RequireIndex: true}, state,
+	policy, err := rollbackPolicy(opened, 0)
+	if err != nil {
+		return embedcutover.RollbackEligibility{}, err
+	}
+	return embedcutover.EvaluateRollback(policy, state,
 		embedcutover.Observed{Now: time.Now().UTC()}), nil
 }
 

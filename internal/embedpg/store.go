@@ -49,8 +49,9 @@ func (s *Store) RegisterGeneration(
 ) (embedstore.Generation, error) {
 	const query = `INSERT INTO ` + embedstore.GenerationTable + ` (
 		identity, spec_digest, name, reproducibility, reproducibility_reason,
-		resolved_model, dimension, target_table, target_column, created_at, retired_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+		resolved_model, dimension, target_table, target_column, created_at, retired_at,
+		verified_at, maintained_until)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
 		ON CONFLICT (identity) DO NOTHING`
 	if _, err := s.db.ExecContext(ctx, query,
 		generation.Identity, generation.SpecDigest, generation.Name,
@@ -58,6 +59,7 @@ func (s *Store) RegisterGeneration(
 		nullable(generation.ResolvedModel), generation.Dimension,
 		generation.TargetTable, generation.TargetColumn,
 		generation.CreatedAt.UTC(), nullableTime(generation.RetiredAt),
+		nullableTime(generation.VerifiedAt), nullableTime(generation.MaintainedUntil),
 	); err != nil {
 		return embedstore.Generation{}, fmt.Errorf("register generation: %w", err)
 	}
@@ -68,15 +70,15 @@ func (s *Store) RegisterGeneration(
 func (s *Store) Generation(ctx context.Context, identity string) (embedstore.Generation, error) {
 	const query = `SELECT identity, spec_digest, COALESCE(name,''), reproducibility,
 		COALESCE(reproducibility_reason,''), COALESCE(resolved_model,''), dimension,
-		target_table, target_column, created_at, retired_at
+		target_table, target_column, created_at, retired_at, verified_at, maintained_until
 		FROM ` + embedstore.GenerationTable + ` WHERE identity = $1`
 	var generation embedstore.Generation
-	var retired sql.NullTime
+	var retired, verified, maintained sql.NullTime
 	err := s.db.QueryRowContext(ctx, query, identity).Scan(
 		&generation.Identity, &generation.SpecDigest, &generation.Name,
 		&generation.Reproducibility, &generation.ReproducibilityReason, &generation.ResolvedModel,
 		&generation.Dimension, &generation.TargetTable, &generation.TargetColumn,
-		&generation.CreatedAt, &retired)
+		&generation.CreatedAt, &retired, &verified, &maintained)
 	if errors.Is(err, sql.ErrNoRows) {
 		return embedstore.Generation{}, fmt.Errorf("%w: generation %s", embedstore.ErrNotFound, identity)
 	}
@@ -85,6 +87,12 @@ func (s *Store) Generation(ctx context.Context, identity string) (embedstore.Gen
 	}
 	if retired.Valid {
 		generation.RetiredAt = retired.Time.UTC()
+	}
+	if verified.Valid {
+		generation.VerifiedAt = verified.Time.UTC()
+	}
+	if maintained.Valid {
+		generation.MaintainedUntil = maintained.Time.UTC()
 	}
 	generation.CreatedAt = generation.CreatedAt.UTC()
 	return generation, nil
@@ -123,6 +131,41 @@ func (s *Store) explainRetirementRefusal(ctx context.Context, identity string) e
 	}
 	return fmt.Errorf("%w: generation %s was retired at %s",
 		embedstore.ErrRetired, identity, generation.RetiredAt.Format(time.RFC3339))
+}
+
+// RecordVerification records that a verification passed over a generation.
+func (s *Store) RecordVerification(ctx context.Context, identity string, at time.Time) error {
+	return s.updateGeneration(ctx, identity, "verified_at", nullableTime(at))
+}
+
+// Maintain records how long something will keep a generation current.
+func (s *Store) Maintain(ctx context.Context, identity string, until time.Time) error {
+	return s.updateGeneration(ctx, identity, "maintained_until", nullableTime(until))
+}
+
+// updateGeneration writes one column of a generation that is there and not
+// retired.
+//
+// The retired clause is in the WHERE rather than in a check before it, for the
+// reason every other rule in this file is: between a check and a write is where
+// the thing being checked changes.
+func (s *Store) updateGeneration(ctx context.Context, identity, column string, value any) error {
+	// #nosec G201 -- the column is one of two literals chosen by the two
+	// methods above; nothing a caller supplies reaches it.
+	query := fmt.Sprintf(`UPDATE %s SET %s = $2 WHERE identity = $1 AND retired_at IS NULL`,
+		embedstore.GenerationTable, column)
+	result, err := s.db.ExecContext(ctx, query, identity, value)
+	if err != nil {
+		return fmt.Errorf("record %s for generation %s: %w", column, identity, err)
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("record %s for generation %s: %w", column, identity, err)
+	}
+	if changed == 1 {
+		return nil
+	}
+	return s.explainRetirementRefusal(ctx, identity)
 }
 
 // CreateRun records a new run.

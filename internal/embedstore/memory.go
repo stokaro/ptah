@@ -77,6 +77,42 @@ func (m *Memory) RetireGeneration(_ context.Context, identity string, at time.Ti
 	return nil
 }
 
+// RecordVerification records that a verification passed over a generation.
+func (m *Memory) RecordVerification(_ context.Context, identity string, at time.Time) error {
+	return m.updateGeneration(identity, func(generation *Generation) {
+		generation.VerifiedAt = at
+	})
+}
+
+// Maintain records how long something will keep a generation current.
+func (m *Memory) Maintain(_ context.Context, identity string, until time.Time) error {
+	return m.updateGeneration(identity, func(generation *Generation) {
+		generation.MaintainedUntil = until
+	})
+}
+
+// updateGeneration applies a change to a generation that is there and not
+// retired.
+//
+// Retired is refused rather than ignored: recording a verification against a
+// destroyed generation would make it look like a way back, and the vectors are
+// gone.
+func (m *Memory) updateGeneration(identity string, change func(*Generation)) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	generation, found := m.generations[identity]
+	if !found {
+		return fmt.Errorf("%w: generation %s", ErrNotFound, identity)
+	}
+	if generation.Retired() {
+		return fmt.Errorf("%w: generation %s was retired at %s",
+			ErrRetired, identity, generation.RetiredAt.UTC().Format(time.RFC3339))
+	}
+	change(&generation)
+	m.generations[identity] = generation
+	return nil
+}
+
 // CreateRun records a new run.
 func (m *Memory) CreateRun(_ context.Context, run embedrun.Run) error {
 	m.mu.Lock()

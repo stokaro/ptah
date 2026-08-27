@@ -85,6 +85,10 @@ func GenerationFields() []schemamodel.Field {
 		text(GenerationTable, "target_column", false, "and in which column"),
 		timestamp(GenerationTable, "created_at", false, "when Ptah first recorded it"),
 		timestamp(GenerationTable, "retired_at", true, "when it was destroyed, which is terminal"),
+		timestamp(GenerationTable, "verified_at", true,
+			"when a verification last passed over it, which is what a rollback rests on"),
+		timestamp(GenerationTable, "maintained_until", true,
+			"how long something is keeping it current, which is what makes it a way back"),
 	}
 }
 
