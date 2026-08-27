@@ -259,7 +259,9 @@ the structural comparison those statements were planned from — what differs,
 with tables, columns, enums, indexes, constraints, views, triggers, roles and
 grants each under their own key. A check like "does this diff drop a column"
 reads a field; deciding it from `statements` means parsing DDL, and a DDL parser
-is wrong for every dialect it was not tested against.
+is wrong for every dialect it was not tested against. What that dropped column
+would break in a view is a separate question, answered by
+[Trace view column lineage](../../schema/lineage/).
 
 The two halves always agree. `changes` reports the comparison after
 [diff policy](../../reference/configuration/) has been applied, so a diff run

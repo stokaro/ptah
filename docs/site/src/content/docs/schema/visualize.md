@@ -70,7 +70,10 @@ ptah viz --root-dir ./models --exclude-tables task_comments,task_tags
 
 `--security` runs the [schema security rules](../../reference/native-commands/#schema-security-findings)
 over the same schema and marks the tables they attach to, so the diagram shows
-where the findings are instead of sending the reader to a separate report:
+where the findings are instead of sending the reader to a separate report. For
+the findings as a report over a live database, with the codes a rule reports and
+a `--fail-on` gate, use
+[`ptah schema security`](../security/):
 
 ```bash
 ptah viz --root-dir ./models --format dot --security
@@ -91,13 +94,16 @@ codes:
 Where a node is found by two rules, the row lists both codes and the color is
 the worse severity.
 
-`--dialect` (default `postgres`) decides which rules can run, the same way it
-does for `ptah schema security`, and `--server-version` names the server that
-dialect stands for. Measured on this tree, the one capability a rule reads —
-row-level security — varies by dialect and not within any release line, so the
-version changes no answer today; it is read so the rules see the target the
-operator named rather than the dialect default. A rule that cannot be answered on the target is
-named in a comment rather than passed over:
+`--dialect` (default `postgres`) decides which rules can run, and
+`--server-version` names the server that dialect stands for. Both belong to
+`ptah viz`. [`ptah schema security`](../security/) registers neither and takes
+its dialect from the database `--db-url` names.
+
+Measured on this tree, the one capability a rule reads — row-level security —
+varies by dialect and not within any release line, so the version changes no
+answer today. It is read so the rules see the target the operator named rather
+than the dialect default. A rule that cannot be answered on the target is named
+in a comment rather than passed over:
 
 ```text
   // PRV01 not checked here: the target does not model row-level security

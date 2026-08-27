@@ -21,10 +21,11 @@ The examples use a local SQLite database, `sqlite://$PWD/app.db`, whose one
 the file. Substitute your own database URL throughout.
 
 :::caution
-The apply-time approval is this workflow's only gate: there is no migration
-file to review and no revision history to replay. Keep direct applies on
-databases you alone own — for shared and production databases, use
-[versioned migrations](../../versioned/overview/).
+A direct apply leaves no migration file to review and no revision history to
+replay. Keep direct applies on databases you alone own. For shared and
+production databases, use [versioned migrations](../../versioned/overview/), or
+require a reviewer's signature on the plan with
+[Plan and approve changes](../plan-and-approve/).
 :::
 
 ## Native spellings
@@ -163,6 +164,11 @@ Auto-approval enabled; applying schema changes.
 Schema apply completed successfully.
 ```
 
+A plan file can also carry a reviewer's signature. `ptah schema approve` signs
+one with an SSH key and `ptah schema apply --plan --require-approval` refuses a
+plan that carries no signature from a list of approvers you commit:
+[Plan and approve changes](../plan-and-approve/).
+
 ## Verification
 
 After an apply, rerunning the dry run confirms nothing is left to change:
@@ -199,7 +205,7 @@ YAML, or HCL — `ptah schema drift` gives the same confirmation with
 ## Failure modes
 
 - Running a plan file against a database that changed since the plan was
-  computed refuses with exit code `1` instead of executing reviewed SQL
+  computed refuses with exit code `2` instead of executing reviewed SQL
   against unreviewed state:
 
   ```text

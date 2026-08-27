@@ -351,6 +351,40 @@ Schema publication fails closed:
 
 Ptah never pushes a partial schema artifact.
 
+### Decide which tags a push writes
+
+A push with no tag flag moves `latest` onto the new digest and writes nothing
+else. Four flags widen that:
+
+| Flag | Writes | Movable |
+| --- | --- | --- |
+| `--version v1.0.0` | that tag, plus `latest` | no — write-once |
+| `--generated-version` | `v<UTC timestamp>-<id>`, plus `latest` | no — write-once |
+| `--latest` | `latest` | yes |
+| `--tag stable` | that tag, repeatable, plus `latest` | yes |
+
+The receipt names every tag the push wrote:
+
+```text
+Pushed schema as oci://ghcr.io/acme/app-schema:latest
+Digest: sha256:20ec84e49b907163744a887dc2126491053bba1f2c82ddf6c73c006babc81512
+Version: v1.0.0
+Tags: [v1.0.0 latest]
+```
+
+A write-once tag is not reserved, it is pinned to a digest. Pushing the same
+content under a version tag that already exists succeeds and changes nothing.
+Pushing different content under it refuses, names both digests, and exits `2`:
+
+```text
+error: push oci://ghcr.io/acme/app-schema:latest: OCI write-once tag already exists: "v1.0.0" resolves to sha256:20ec84e4... instead of sha256:5b238472...
+```
+
+`Version:` is blank on a push that assigned no version tag, which is every push
+without `--version` or `--generated-version`.
+
+### Pull an artifact back to a file
+
 Pulling validates the artifact and creates a new canonical HCL file:
 
 ```bash
@@ -359,7 +393,26 @@ ptah schema pull \
   --out ./schema.hcl
 ```
 
-The output file must not already exist.
+The output file must not already exist. A second pull to the same path refuses
+with `error: schema artifact output already exists: <path>` and exits `2`, so a
+pull never overwrites a working copy. A reference the registry does not hold
+refuses with `error: pull ...: fetch OCI manifest: ...: not found` and exits `2`
+as well.
+
+### Exit codes
+
+Both verbs exit `0` on success and `2` on every refusal: a usage error, an
+authentication or transport failure, a lossy schema, a write-once tag collision,
+an `--out` path that exists, or a reference that does not resolve. Neither uses
+`1`. See [Exit codes](../../reference/exit-codes/).
+
+:::caution
+A source that declares no tables is published rather than refused. The push
+exits `0` and writes an artifact whose canonical HCL is the generated-file
+header and nothing else, so a build step that reads only the exit code can move
+`latest` onto an empty schema. Check that the source parsed —
+`ptah schema render` over it prints the tables — before the push step.
+:::
 
 ## Consume a desired schema
 
