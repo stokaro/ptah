@@ -93,6 +93,9 @@ func DefaultRules() []Rule {
 }
 
 func LintSource(source Source, opts Options) ([]Finding, error) {
+	if err := refuseUnsilenceable(opts.DisabledRules); err != nil {
+		return nil, err
+	}
 	caps, err := effectiveCapabilities(opts)
 	if err != nil {
 		return nil, err
@@ -310,6 +313,41 @@ func effectiveRules(opts Options) []Rule {
 		return opts.Rules
 	}
 	return DefaultRules()
+}
+
+// unsilenceableRules report that the file could not be analyzed rather than an
+// opinion about what it says.
+var unsilenceableRules = []string{RuleParseError, RuleUnsupportedStatement}
+
+// refuseUnsilenceable rejects a --disable selector that would hide the fact
+// that nothing was analyzed.
+//
+// The history is why this refuses rather than ignores. A selector naming
+// SQL001 or SQL002 was once accepted and silently dropped -- the finding was
+// still reported and the run still exited 1 -- and that was fixed on the
+// principle that "a flag that is accepted and does nothing is worse than a flag
+// that refuses" (internal/sqllint/disable_test.go). Making it work opened the
+// other hole: `ptah sql lint --disable SQL001` over a file the parser cannot
+// read reports nothing and exits 0, which is the file passing.
+//
+// #1270 asks for the opposite in those words: "Parse/analysis incompleteness is
+// visible to the user." So the third option is the right one -- neither ignored
+// nor obeyed, but refused, with the reason.
+//
+// Prefix selectors are checked too: `--disable SQL` covers SQL001.
+func refuseUnsilenceable(disabled []string) error {
+	for _, item := range disabled {
+		for _, rule := range unsilenceableRules {
+			if !ruleDisabled(rule, []string{item}) {
+				continue
+			}
+			return fmt.Errorf(
+				"--disable %s covers %s, which reports that the file could not be analyzed; "+
+					"it cannot be disabled, because a run that analyzed nothing must not report clean",
+				item, rule)
+		}
+	}
+	return nil
 }
 
 func ruleDisabled(ruleID string, disabled []string) bool {

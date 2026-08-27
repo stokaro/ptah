@@ -53,12 +53,6 @@ func TestDisableReachesEveryIdentifier(t *testing.T) {
 			want: []string{"SQL001"},
 		},
 		{
-			name:     "parse error, its own code disabled",
-			sql:      "CREATE TABLE ;",
-			disabled: []string{"SQL001"},
-			want:     make([]string, 0),
-		},
-		{
 			name:     "parse error, another rule's code disabled",
 			sql:      "CREATE TABLE ;",
 			disabled: []string{"DDL001"},
@@ -68,24 +62,6 @@ func TestDisableReachesEveryIdentifier(t *testing.T) {
 			name: "statement the linter does not model, nothing disabled",
 			sql:  "SELECT 1;",
 			want: []string{"SQL002"},
-		},
-		{
-			name:     "statement the linter does not model, its own code disabled",
-			sql:      "SELECT 1;",
-			disabled: []string{"SQL002"},
-			want:     make([]string, 0),
-		},
-		{
-			name:     "both parse-path codes, the family disabled",
-			sql:      "CREATE TABLE ;\nSELECT 1;",
-			disabled: []string{"SQL"},
-			want:     make([]string, 0),
-		},
-		{
-			name:     "both parse-path codes, one of them disabled",
-			sql:      "CREATE TABLE ;\nSELECT 1;",
-			disabled: []string{"SQL001"},
-			want:     []string{"SQL002"},
 		},
 		{
 			name: "table without a primary key, nothing disabled",
@@ -107,4 +83,54 @@ func TestDisableReachesEveryIdentifier(t *testing.T) {
 			c.Assert(reportedCodes(t, row.sql, row.disabled), qt.DeepEquals, row.want)
 		})
 	}
+}
+
+// TestDisableRefusesTheParsePathCodes pins the third option.
+//
+// SQL001 and SQL002 do not report an opinion about the SQL; they report that no
+// opinion could be formed. Silencing one turns "I could not read this file"
+// into a clean run at exit 0, which is what #1270 means by "Parse/analysis
+// incompleteness is visible to the user".
+func TestDisableRefusesTheParsePathCodes(t *testing.T) {
+	rows := []struct {
+		name     string
+		disabled []string
+		covers   string
+	}{
+		{name: "the parse error's own code", disabled: []string{"SQL001"}, covers: "SQL001"},
+		{name: "the unmodeled statement's own code", disabled: []string{"SQL002"}, covers: "SQL002"},
+		{name: "the family prefix, which covers both", disabled: []string{"SQL"}, covers: "SQL001"},
+		{name: "lower case, since selectors are folded", disabled: []string{"sql001"}, covers: "SQL001"},
+		{
+			// Refused for the one selector that covers a parse-path code, even
+			// when another selector in the same flag is fine.
+			name: "beside a selector that is allowed", disabled: []string{"DDL001", "SQL002"}, covers: "SQL002",
+		},
+	}
+
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			_, err := sqllint.LintSource(
+				sqllint.Source{Name: "probe.sql", SQL: "CREATE TABLE ;"},
+				sqllint.Options{Dialect: platform.Postgres, DisabledRules: row.disabled},
+			)
+
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(err.Error(), qt.Contains, row.covers)
+			c.Assert(err.Error(), qt.Contains, "could not be analyzed")
+		})
+	}
+}
+
+// TestDisableStillReachesAnOpinionRule is the control the refusal needs.
+//
+// Without it, refusing every selector would pass: a --disable that never works
+// is the flag this file was written to prevent.
+func TestDisableStillReachesAnOpinionRule(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(reportedCodes(t, "CREATE TABLE users (email TEXT NOT NULL);", []string{"DDL001"}),
+		qt.DeepEquals, make([]string, 0))
 }

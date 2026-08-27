@@ -205,7 +205,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 
 ## Default severities
 
-14 rules report at error severity by default: `CAP001`, `CD101`, `CD102`, `CD103`, `DS101`, `DS102`, `DS104`, `DS105`, `DS106`, `DS107`, `DS108`, `DS109`, `SQL001`, `SQL002`. The other 34 default to warning. A committed `.ptah-lint.yaml` replaces either for the migration lint rules, per rule or per family. It does not reach the SQL linter: `ptah sql lint` reads no policy file and takes only `--disable`, so the severities above are the ones `CAP001`, `DDL001`, `SQL001`, `SQL002`, `SQL003` and `SQL004` report.
+14 rules report at error severity by default: `CAP001`, `CD101`, `CD102`, `CD103`, `DS101`, `DS102`, `DS104`, `DS105`, `DS106`, `DS107`, `DS108`, `DS109`, `SQL001`, `SQL002`. The other 34 default to warning. A committed `.ptah-lint.yaml` replaces either for the migration lint rules, per rule or per family. It does not reach the SQL linter: `ptah sql lint` reads no policy file and takes only `--disable`, so the severities above are the ones `CAP001`, `DDL001`, `SQL001`, `SQL002`, `SQL003` and `SQL004` report. `--disable` refuses a selector covering `SQL001` or `SQL002`: those report that the file could not be analyzed, and a run that analyzed nothing must not report clean.
 
 ## What ptah-compat prints
 
