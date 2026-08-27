@@ -147,8 +147,19 @@ func RollbackState(
 // Measured against the source rather than read from a status column, which is
 // the epic's rule: rollback must not be reported as available merely because
 // the old tables still exist. A generation last verified an hour ago and
-// unmaintained since has a count these two queries can answer and a
-// verification timestamp that cannot.
+// unmaintained since has counts this can answer and a verification timestamp
+// that cannot.
+//
+// It runs the verification layers rather than walking the rows itself. Coverage
+// and freshness are exactly what those layers decide, and a second walk here
+// would be a second answer to them -- one that agreed on the fixtures it was
+// written against and diverged on a skipped row, a tombstone, or a row
+// belonging to another generation, which are the three cases the layers get
+// right and a rewrite gets wrong.
+//
+// The structure is passed as satisfied because this is not asking whether the
+// generation is well-formed -- the caller has already read that and reports it
+// separately. What it wants is the two counts.
 func generationFreshness(
 	ctx context.Context, db *sql.DB, spec embedgen.Spec, registered embedstore.Generation,
 ) (stale, missing int, err error) {
@@ -156,21 +167,20 @@ func generationFreshness(
 	if err != nil {
 		return 0, 0, err
 	}
-	byKey := make(map[string]embedverify.TargetRow, len(targets))
-	for _, row := range targets {
-		byKey[row.Key] = row
-	}
-	for _, source := range sources {
-		if source.Skipped {
-			continue
-		}
-		target, found := byKey[source.Key]
-		switch {
-		case !found, target.Generation != registered.Identity, target.Tombstone:
-			missing++
-		case target.InputHash != source.InputHash,
-			source.Version != "" && target.Version != source.Version:
-			stale++
+	report := embedverify.Verify(
+		embedverify.Expectation{Generation: registered.Identity, Dimension: registered.Dimension},
+		embedverify.Structure{
+			ColumnExists: true, ExtensionPresent: true, Dimension: registered.Dimension,
+		},
+		sources, targets,
+		embedverify.RunState{SnapshotComplete: true, CatchUpReached: true})
+
+	for _, finding := range report.Blocking() {
+		switch finding.Layer {
+		case embedverify.LayerCoverage:
+			missing += finding.Count
+		case embedverify.LayerFreshness:
+			stale += finding.Count
 		}
 	}
 	return stale, missing, nil
