@@ -4,6 +4,13 @@
 - Deciders: Ptah maintainers
 - Issue: [#1349](https://github.com/stokaro/ptah/issues/1349), under [#1343](https://github.com/stokaro/ptah/issues/1343)
 - Supersedes: nothing
+- Superseded in part: sections 8 and 9 by
+  [ADR 0012](0012-the-canonical-core-is-removed-and-the-shipping-pipeline-migrates-in-place.md),
+  which removes the parallel core the staged plan was to migrate onto and
+  migrates the shipping pipeline in place instead. Sections 1 through 7 stand:
+  the two schema states, the identity model, the invariant set and the
+  information-loss inventory are unchanged, and the prototype proved the model
+  rather than disproving it.
 - Prototype: [#1350](https://github.com/stokaro/ptah/issues/1350), reported in
   [the canonical-pipeline prototype](../canonical_pipeline_prototype.md)
 
