@@ -504,15 +504,18 @@ func TestBackfill_AnEmptyPageThatSaysNothingIsRefused(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			h := newHarness(c, defaultBounds())
-			h.source.emptyPagesBefore = 1
+			// The second scan, not the first: with an empty cursor the two
+			// answers are the same bytes, and a fixture that used the first
+			// scan would let either rule stand in for the other.
+			h.source.emptyPageOnScan = 2
 			h.source.emptyPageMode = test.mode
 
 			run, err := h.engine.Backfill(context.Background(), "run-1")
 
 			c.Assert(err, qt.ErrorIs, embedengine.ErrStalled)
 			c.Assert(run.FailureClass, qt.Equals, "source")
-			c.Assert(h.target.commits, qt.HasLen, 0)
-			c.Assert(run.Cursor, qt.HasLen, 0)
+			c.Assert(h.target.commits, qt.HasLen, 1)
+			c.Assert(run.Cursor, qt.DeepEquals, []string{"2"})
 		})
 	}
 }
