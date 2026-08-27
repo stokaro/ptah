@@ -22,6 +22,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
+	"go.5x5.cz/ptah/internal/servertarget"
 	"go.5x5.cz/ptah/internal/sqlrunner"
 )
 
@@ -283,28 +284,39 @@ func captureResolutionReport(t *testing.T, level slog.Level, info catalog.Server
 	previousLogger := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(&output, &slog.HandlerOptions{Level: level})))
 	defer slog.SetDefault(previousLogger)
-	reportCapabilityResolution(info, resolveDatabaseCapabilities(info))
+	resolution := resolveDatabaseCapabilities(info)
+	// Assembled the way getDatabaseInfoWithCapabilities assembles it. A test
+	// that hand-wrote the note would report on a sentence production never
+	// produces, and the reporter's own early return would go unmeasured.
+	info.CapabilityNote = servertarget.VersionNote(info.Dialect, info.Version, resolution)
+	reportCapabilityResolution(info, resolution)
 	return output.String()
 }
 
 // TestReportCapabilityResolution covers the one production caller of the
-// version-aware selector.
+// version-aware selector, and pins WHICH of its cases a person sees.
 //
-// Every row asserts the same thing first: nothing is written at the level a
-// default command runs at. A saturated resolution is not an incident, so a
-// WARN there would fire on every connection after a vendor ships a new major.
-// cliobs.QuietDefaultLogger's contract is that a clean run emits nothing at
-// WARN or above; a supported server is a clean run.
+// One does. A server newer than the newest measured line plans with that
+// line's preset, so anything the newer release gained or lost is unmodeled, and
+// only the operator can decide whether that matters. It is rare and it ends
+// when the line is measured (stokaro/ptah#916).
 //
-// The debug column is the other half: the fact is recorded, not dropped, and
-// `--log-level debug` shows it. The quiet row is the non-interference control
-// — without it, a reporter that said nothing at any level would pass.
+// The others do not, and the rows below are what keeps that from drifting into
+// a blanket WARN. A dialect with no version ladder resolves the same way on
+// every connection forever -- every SQL Server command would carry a permanent,
+// unactionable line. cliobs.QuietDefaultLogger's contract is that a clean run
+// emits nothing at WARN or above, and those runs are clean.
+//
+// The debug column is the other half: every case is recorded, not dropped, and
+// `--log-level debug` shows it. The quiet rows are the non-interference control
+// — without them, a reporter that said nothing at any level would pass.
 func TestReportCapabilityResolution(t *testing.T) {
 	tests := []struct {
 		name           string
 		info           catalog.ServerInfo
 		wantDebug      []string
 		wantDebugQuiet bool
+		wantWarn       []string
 	}{
 		{
 			name: "mysql inside the measured line says nothing at all",
@@ -328,24 +340,29 @@ func TestReportCapabilityResolution(t *testing.T) {
 			wantDebugQuiet: true,
 		},
 		{
-			name:      "mysql past the newest measured line is recorded at debug",
+			name:      "mysql past the newest measured line reaches a person",
 			info:      catalog.ServerInfo{Dialect: "mysql", Version: "99.0"},
-			wantDebug: []string{"level=DEBUG", "newest measured capability line", "dialect=mysql", "version=99.0", "newest_measured=26.7"},
+			wantDebug: []string{"level=WARN", "newer than the newest measured release line", "dialect=mysql", "version=99.0", "newest_measured=26.7"},
+			wantWarn:  []string{"level=WARN", "newer than the newest measured release line", "newest_measured=26.7"},
 		},
 		{
-			name:      "mariadb past the newest measured line is recorded at debug",
+			name:      "mariadb past the newest measured line reaches a person",
 			info:      catalog.ServerInfo{Dialect: "mariadb", Version: "99.0-MariaDB"},
-			wantDebug: []string{"level=DEBUG", "dialect=mariadb", "version=99.0-MariaDB", "newest_measured=12.3"},
+			wantDebug: []string{"level=WARN", "dialect=mariadb", "version=99.0-MariaDB", "newest_measured=12.3"},
+			wantWarn:  []string{"level=WARN", "newest_measured=12.3"},
 		},
 		{
-			name:      "postgres past the newest measured line is recorded at debug",
+			name:      "postgres past the newest measured line reaches a person",
 			info:      catalog.ServerInfo{Dialect: "postgres", Version: "PostgreSQL 99.0"},
-			wantDebug: []string{"level=DEBUG", "dialect=postgres", "newest_measured=18.x"},
+			wantDebug: []string{"level=WARN", "dialect=postgres", "newest_measured=18.x"},
+			wantWarn:  []string{"level=WARN", "newest_measured=18.x"},
 		},
 		{
-			name:      "an unparseable version stays a debug-level fallback",
-			info:      catalog.ServerInfo{Dialect: "mysql", Version: "who knows"},
-			wantDebug: []string{"level=DEBUG", "falling back from an unmeasured server version"},
+			name: "an unparseable version stays a debug-level fallback",
+			info: catalog.ServerInfo{Dialect: "mysql", Version: "who knows"},
+			// A gap or an unreadable banner stays a debug record: it is not
+			// rare, it does not end, and there is nothing to act on.
+			wantDebug: []string{"level=DEBUG", "does not name a mysql server version Ptah can read"},
 		},
 	}
 	for _, tt := range tests {
@@ -353,7 +370,11 @@ func TestReportCapabilityResolution(t *testing.T) {
 			c := qt.New(t)
 
 			atDefault := captureResolutionReport(t, defaultCLILogLevel, tt.info)
-			c.Assert(atDefault, qt.Equals, "", qt.Commentf("emitted on default stderr: %q", atDefault))
+			c.Assert(atDefault == "", qt.Equals, len(tt.wantWarn) == 0,
+				qt.Commentf("emitted on default stderr: %q", atDefault))
+			for _, want := range tt.wantWarn {
+				c.Assert(atDefault, qt.Contains, want)
+			}
 
 			atDebug := captureResolutionReport(t, slog.LevelDebug, tt.info)
 			c.Assert(atDebug == "", qt.Equals, tt.wantDebugQuiet, qt.Commentf("logged: %q", atDebug))
