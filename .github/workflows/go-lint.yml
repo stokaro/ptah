@@ -65,6 +65,9 @@ jobs:
       - name: Check the Renovate custom-manager patterns
         run: scripts/check-renovate-regex.sh
 
+      - name: Check goreleaser artifact names
+        run: scripts/check-goreleaser-artifact-names.sh
+
       - name: Check documented lint rules
         run: scripts/check-lint-rules.sh
 

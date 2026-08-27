@@ -464,6 +464,32 @@ func (b Builder) Constraint(qualifiedTable, constraint string) ID {
 	}
 }
 
+// IndexParts builds an index identity from components a catalog reports
+// separately, each one bare.
+//
+// It exists beside [Builder.Index] for the reason [Builder.PolicyParts] does: a
+// catalog names the schema, the table and the index as three values with no
+// quoting to mark where each begins, so joining them into the one string
+// [Builder.Index] takes would let a name containing the separator spell a
+// boundary it does not have.
+//
+// Whether the table is part of the identity is the target's rule, not this
+// function's: an index name is unique within its table on MySQL and across the
+// schema on PostgreSQL, and [identifier.Semantics.IndexNamespace] is what says
+// which.
+func (b Builder) IndexParts(schema, table, index string) ID {
+	owner := b.TableParts(schema, table)
+	id := ID{
+		Kind:   KindIndex,
+		Schema: owner.Schema,
+		Name:   b.namePart(strings.TrimSpace(index), b.semantics.IndexIdentityKey),
+	}
+	if b.semantics.IndexNamespace != identifier.IndexNamespaceSchema {
+		id.Parent = owner.Name
+	}
+	return id
+}
+
 // ConstraintParts builds a constraint identity from components the caller
 // already has, folding each under the target's rule.
 //

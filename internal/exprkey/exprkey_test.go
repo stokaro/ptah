@@ -102,3 +102,39 @@ func TestGenerated_ComponentsCannotForgeABoundary(t *testing.T) {
 	c.Assert(exprkey.Generated(platform.Postgres, "", "orders.2024", "total"), qt.Not(qt.Equals),
 		exprkey.Generated(platform.Postgres, "", "orders", "2024.total"))
 }
+
+// TestIndex_TheNamespaceIsTheTargets pins that whether an index name is unique
+// within its table or across the schema comes from the dialect.
+//
+// A key folded from the name alone can express neither: it merges two indexes
+// that PostgreSQL keeps apart by case, and it merges two MySQL indexes of the
+// same name on different tables, which are two objects there.
+func TestIndex_TheNamespaceIsTheTargets(t *testing.T) {
+	c := qt.New(t)
+
+	postgres := semanticsFor(platform.Postgres)
+	c.Assert(exprkey.Index(postgres, "public.a", "Idx"), qt.Not(qt.Equals),
+		exprkey.Index(postgres, "public.a", "idx"),
+		qt.Commentf("PostgreSQL preserves an index name's case"))
+	c.Assert(exprkey.Index(postgres, "public.a", "idx"), qt.Equals,
+		exprkey.Index(postgres, "public.b", "idx"),
+		qt.Commentf("an index name is unique across the schema on PostgreSQL"))
+
+	mysql := identifier.ForDialect(platform.MySQL)
+	c.Assert(exprkey.Index(mysql, "a", "idx"), qt.Not(qt.Equals),
+		exprkey.Index(mysql, "b", "idx"),
+		qt.Commentf("an index name is unique within its table on MySQL"))
+}
+
+// TestIndex_TheTwoSidesOfOneIndexAgree holds the declaration's spelling and the
+// components a catalog reports to each other.
+func TestIndex_TheTwoSidesOfOneIndexAgree(t *testing.T) {
+	c := qt.New(t)
+	semantics := semanticsFor(platform.Postgres)
+
+	c.Assert(exprkey.Index(semantics, "public.t", "idx"), qt.Equals,
+		exprkey.IndexParts(semantics, "public", "t", "idx"))
+	c.Assert(exprkey.Index(semantics, "t", "idx"), qt.Equals,
+		exprkey.IndexParts(semantics, "public", "t", "idx"),
+		qt.Commentf("an unqualified declaration falls on the default schema"))
+}

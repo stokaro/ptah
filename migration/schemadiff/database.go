@@ -336,7 +336,7 @@ func resolveIndexExpressions(
 	}
 	held := make(map[string]struct{}, len(database.Indexes))
 	for _, index := range database.Indexes {
-		held[strings.ToLower(strings.TrimSpace(index.Name))] = struct{}{}
+		held[exprkey.IndexParts(semantics, index.Schema, index.TableName, index.Name)] = struct{}{}
 	}
 	columns := liveTableColumns(database, semantics)
 
@@ -352,7 +352,7 @@ func resolveIndexExpressions(
 		if expression == "" && strings.TrimSpace(index.Condition) == "" {
 			continue
 		}
-		key := strings.ToLower(strings.TrimSpace(index.Name))
+		key := exprkey.Index(semantics, owners[position], index.Name)
 		if _, exists := held[key]; !exists {
 			continue
 		}
