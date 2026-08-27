@@ -90,9 +90,9 @@ func validateExportSource(opts exportOptions) error {
 		return fmt.Errorf(
 			"--%s is not supported with --%s %s: that target rewrites the Go files it reads "+
 				"(--%s removes their annotations), so its source is --%s; "+
-				"use --%s openapi-v3, graphql, or protobuf to export a schema file",
+				"use --%s %s to export a schema file",
 			exportSchemaFileFlag, exportToFlag, exportFormatHCL,
-			cleanupGoAnnotationsFlag, exportRootDirFlag, exportToFlag,
+			cleanupGoAnnotationsFlag, exportRootDirFlag, exportToFlag, exportSchemaFileTargets(),
 		)
 	}
 	if !opts.fromExplicit {

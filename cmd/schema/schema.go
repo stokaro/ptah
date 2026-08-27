@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -69,6 +70,50 @@ const (
 	protoOnTypeMoveFlag           = "proto-on-type-move"
 	protoCommentsFlag             = "proto-comments"
 )
+
+// exportTargetFormats is every value --to takes, in the order the flag's help
+// and validateExportOptions's refusal both name them.
+//
+// One list, read by both, because the two were written out separately and only
+// the refusal was kept current: the flag's help advertised four of the seven,
+// so markdown, html and dbml were reachable and unadvertised. exportFormatLegacyHCL
+// is deliberately absent -- normalizeExportFormat still folds it onto hcl, and
+// advertising a spelling that is on its way out would invite new callers to it.
+var exportTargetFormats = []string{
+	exportFormatHCL,
+	exportFormatOpenAPI,
+	exportFormatGraphQL,
+	exportFormatProtobuf,
+	exportFormatMarkdown,
+	exportFormatHTML,
+	exportFormatDBML,
+}
+
+// exportTargetList renders exportTargetFormats as an English list, which is the
+// form both the help and the refusal want.
+func exportTargetList() string {
+	return orList(exportTargetFormats)
+}
+
+// exportSchemaFileTargets names the --to values that read --schema-file.
+//
+// That is every target except hcl, which rewrites the Go files it reads and so
+// takes its source from --root-dir. It is derived from the one list rather than
+// written out, because the written-out version named three of the six and sent
+// a reader who wanted markdown, html or dbml looking for another command.
+func exportSchemaFileTargets() string {
+	return orList(slices.DeleteFunc(slices.Clone(exportTargetFormats), func(format string) bool {
+		return format == exportFormatHCL
+	}))
+}
+
+// orList renders values as "a, b, or c".
+func orList(values []string) string {
+	if len(values) < 2 {
+		return strings.Join(values, "")
+	}
+	return strings.Join(values[:len(values)-1], ", ") + ", or " + values[len(values)-1]
+}
 
 // NewSchemaCommand returns the native schema command tree.
 func NewSchemaCommand() *cobra.Command {
@@ -199,7 +244,8 @@ func newSchemaExportCommand() *cobra.Command {
 		Long: `Export a Ptah schema to another format.
 
 Convert a desired schema to an HCL schema, an OpenAPI 3.0 component schema, a
-GraphQL SDL, a Protobuf definition, or Markdown reference documentation:
+GraphQL SDL, a Protobuf definition, a DBML diagram source, or Markdown or HTML
+reference documentation:
 
   ptah schema export --to hcl         --root-dir ./models --out schema.hcl
   ptah schema export --to openapi-v3  --root-dir ./models --out openapi.yaml
@@ -208,10 +254,11 @@ GraphQL SDL, a Protobuf definition, or Markdown reference documentation:
     --out ./proto/acme/inventory/v1/schema.proto --proto-package acme.inventory.v1
   ptah schema export --to markdown    --root-dir ./models --out SCHEMA.md
   ptah schema export --to html        --root-dir ./models --out schema.html
+  ptah schema export --to dbml        --root-dir ./models --out schema.dbml
 
-The source is Go annotations under --root-dir by default. The openapi-v3,
-graphql, and protobuf targets also read a YAML, HCL, or SQL schema file, which
---schema-file names as "ptah schema render" does:
+The source is Go annotations under --root-dir by default. Every target except
+hcl also reads a YAML, HCL, or SQL schema file, which --schema-file names as
+"ptah schema render" does:
 
   ptah schema export --to protobuf --schema-file schema.yaml \
     --out ./proto/acme/inventory/v1/schema.proto --proto-package acme.inventory.v1
@@ -290,7 +337,7 @@ part of the compatibility state, so all of them must be committed together.`,
 
 	flags := cmd.Flags()
 	flags.StringVar(&from, exportFromFlag, exportFormatGo, "Source schema format: go, yaml, hcl, sql, or dbml")
-	flags.StringVar(&to, exportToFlag, exportFormatHCL, "Target schema format: hcl, openapi-v3, graphql, or protobuf")
+	flags.StringVar(&to, exportToFlag, exportFormatHCL, "Target schema format: "+exportTargetList())
 	flags.StringVar(&rootDir, exportRootDirFlag, ".", "Root directory to scan for Go annotations")
 	flags.StringArrayVar(&schemaFiles, exportSchemaFileFlag, nil,
 		"YAML, HCL, or SQL schema file to export instead of Go annotations (repeatable; "+
@@ -583,13 +630,8 @@ func validateExportOptions(opts exportOptions) error {
 	if err := validateExportSource(opts); err != nil {
 		return err
 	}
-	switch opts.to {
-	case exportFormatHCL, exportFormatOpenAPI, exportFormatGraphQL, exportFormatProtobuf,
-		exportFormatMarkdown, exportFormatHTML, exportFormatDBML:
-	default:
-		return fmt.Errorf("unsupported --to %q: expected %s, %s, %s, %s, %s, %s, or %s",
-			opts.to, exportFormatHCL, exportFormatOpenAPI, exportFormatGraphQL, exportFormatProtobuf,
-			exportFormatMarkdown, exportFormatHTML, exportFormatDBML)
+	if !slices.Contains(exportTargetFormats, opts.to) {
+		return fmt.Errorf("unsupported --to %q: expected %s", opts.to, exportTargetList())
 	}
 	if opts.to == exportFormatHCL && strings.TrimSpace(opts.outPath) == "" {
 		return fmt.Errorf("--out is required for --%s %s", exportToFlag, exportFormatHCL)

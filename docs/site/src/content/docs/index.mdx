@@ -1,10 +1,10 @@
 ---
 title: Ptah
-description: Documentation for Ptah, a schema management and database migration tool with several schema sources and an Atlas-compatible surface.
+description: Ptah helps you inspect, define, compare, visualize, test, and change database schemas, using versioned migrations, declarative schema changes, or both.
 template: splash
 hero:
   title: Ptah
-  tagline: Write migrations or describe the schema you want — Ptah plans, applies and records the change, on eight engines, with an Atlas-compatible surface beside it.
+  tagline: Ptah helps you inspect, define, compare, visualize, test, and change database schemas. Use versioned migrations, declarative schema changes, or both, across supported databases.
   image:
     alt: Ptah logo
     file: ../../assets/logo.svg
@@ -25,28 +25,201 @@ hero:
 
 import { LinkCard, CardGrid } from '@astrojs/starlight/components';
 
-Some systems are built to carry the weight of the world as it already exists.
+Ptah is a command-line tool for database schema management. It reads the schema
+you want, reads the schema a live database has, and works out the difference
+between them. You choose what happens next: record the difference as versioned
+migration files, or apply it to the database directly. One project can do both.
 
-Ptah begins from a different premise: infrastructure should not merely bear
-complexity, but shape it. Named after the ancient Egyptian god of architects and
-craftsmen, Ptah turns intent into structure through four deliberate stages:
-**Parse, Transform, Apply, Harmonize**.
+## How a change moves through Ptah
 
-It is built to understand the current state, reshape it with precision, apply
-change safely, and bring systems into alignment — without inheriting more weight
-than necessary.
+A schema change moves through these stages.
 
-## What do you need?
+<svg viewBox="0 0 1030 272" width="1030" height="272" role="img" aria-labelledby="flow-wide-title" class="sl-hidden md:sl-block">
+  <title id="flow-wide-title">Schema sources or a live database produce a desired schema. Ptah inspects, compares and plans against it, then either writes versioned migrations or applies the change directly, and both routes reach the database.</title>
+  <defs>
+    <marker id="ptah-flow-arrow-wide" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" fill-opacity="0.55" />
+    </marker>
+  </defs>
+  <g fill="none" stroke="currentColor" stroke-opacity="0.55" stroke-width="1.5" marker-end="url(#ptah-flow-arrow-wide)">
+    <path d="M 178 58 H 198 V 136 H 214" />
+    <path d="M 178 214 H 198 V 136 H 214" />
+    <path d="M 388 136 H 424" />
+    <path d="M 618 136 V 58 H 634" />
+    <path d="M 618 136 V 214 H 634" />
+    <path d="M 808 58 H 828 V 136 H 844" />
+    <path d="M 808 214 H 828 V 136 H 844" />
+  </g>
+  <path d="M 598 136 H 618" fill="none" stroke="currentColor" stroke-opacity="0.55" stroke-width="1.5" />
+  <g fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-opacity="0.35" stroke-width="1.5">
+    <rect x="8" y="24" width="170" height="68" rx="8" />
+    <rect x="8" y="180" width="170" height="68" rx="8" />
+    <rect x="428" y="102" width="170" height="68" rx="8" />
+    <rect x="638" y="24" width="170" height="68" rx="8" />
+    <rect x="638" y="180" width="170" height="68" rx="8" />
+  </g>
+  <g fill="currentColor" fill-opacity="0.08" stroke="currentColor" stroke-opacity="0.85" stroke-width="2">
+    <rect x="218" y="102" width="170" height="68" rx="8" />
+    <rect x="848" y="102" width="170" height="68" rx="8" />
+  </g>
+  <g fill="currentColor" font-family="inherit" font-size="15" font-weight="600" text-anchor="middle">
+    <text x="93" y="48">Schema sources</text>
+    <text x="93" y="209">Live database</text>
+    <text x="303" y="131">Desired schema</text>
+    <text x="513" y="131" font-size="14">Inspect, compare, plan</text>
+    <text x="723" y="53">Versioned migrations</text>
+    <text x="723" y="209">Direct apply</text>
+    <text x="933" y="131">Database</text>
+  </g>
+  <g fill="currentColor" fill-opacity="0.72" font-family="inherit" font-size="11.5" text-anchor="middle">
+    <text x="93" y="67">SQL, YAML, HCL, DBML,</text>
+    <text x="93" y="83">ORM loaders, Go annotations</text>
+    <text x="93" y="228">read what exists today</text>
+    <text x="303" y="150">one merged model</text>
+    <text x="513" y="150">the SQL that closes the gap</text>
+    <text x="723" y="72">generate, hash, apply</text>
+    <text x="723" y="228">apply the desired schema</text>
+    <text x="933" y="150">your target server</text>
+  </g>
+</svg>
+
+<svg viewBox="0 0 344 512" width="344" height="512" role="img" aria-labelledby="flow-stacked-title" class="md:sl-hidden">
+  <title id="flow-stacked-title">Schema sources or a live database produce a desired schema. Ptah inspects, compares and plans against it, then either writes versioned migrations or applies the change directly, and both routes reach the database.</title>
+  <defs>
+    <marker id="ptah-flow-arrow-tall" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" fill-opacity="0.55" />
+    </marker>
+  </defs>
+  <g fill="none" stroke="currentColor" stroke-opacity="0.55" stroke-width="1.5" marker-end="url(#ptah-flow-arrow-tall)">
+    <path d="M 172 148 V 172" />
+    <path d="M 172 228 V 252" />
+    <path d="M 92 328 V 344" />
+    <path d="M 252 328 V 344" />
+    <path d="M 172 424 V 440" />
+  </g>
+  <g fill="none" stroke="currentColor" stroke-opacity="0.55" stroke-width="1.5">
+    <path d="M 172 308 V 328 M 92 328 H 252" />
+    <path d="M 92 404 V 424 M 252 404 V 424 M 92 424 H 252" />
+  </g>
+  <g fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-opacity="0.35" stroke-width="1.5">
+    <rect x="16" y="8" width="312" height="64" rx="8" />
+    <rect x="16" y="96" width="312" height="52" rx="8" />
+    <rect x="16" y="256" width="312" height="52" rx="8" />
+    <rect x="16" y="348" width="152" height="56" rx="8" />
+    <rect x="176" y="348" width="152" height="56" rx="8" />
+  </g>
+  <g fill="currentColor" fill-opacity="0.08" stroke="currentColor" stroke-opacity="0.85" stroke-width="2">
+    <rect x="16" y="176" width="312" height="52" rx="8" />
+    <rect x="16" y="444" width="312" height="52" rx="8" />
+  </g>
+  <g fill="currentColor" font-family="inherit" font-size="14" font-weight="600" text-anchor="middle">
+    <text x="172" y="30">Schema sources</text>
+    <text x="172" y="118">Live database</text>
+    <text x="172" y="198">Desired schema</text>
+    <text x="172" y="278">Inspect, compare, plan</text>
+    <text x="92" y="371" font-size="13">Versioned migrations</text>
+    <text x="252" y="371" font-size="13">Direct apply</text>
+    <text x="172" y="466">Database</text>
+  </g>
+  <g fill="currentColor" fill-opacity="0.72" font-family="inherit" font-size="11" text-anchor="middle">
+    <text x="172" y="49">SQL, YAML, HCL, DBML,</text>
+    <text x="172" y="65">ORM loaders, Go annotations</text>
+    <text x="172" y="136">read what exists today</text>
+    <text x="172" y="216">one merged model</text>
+    <text x="172" y="296">the SQL that closes the gap</text>
+    <text x="92" y="389" font-size="10.5">generate, hash, apply</text>
+    <text x="252" y="389" font-size="10.5">apply the desired schema</text>
+    <text x="172" y="484">your target server</text>
+  </g>
+  <g fill="currentColor" fill-opacity="0.72" font-family="inherit" font-size="11" text-anchor="middle">
+    <text x="172" y="88">or</text>
+  </g>
+</svg>
+
+1. **Schema sources or a live database.** Ptah reads the schema you want from
+   SQL, YAML, HCL, DBML, an ORM loader, or Go annotations. It also reads the
+   schema a running server already has. See
+   [Work with a schema source](./schema/work-with-a-source/).
+2. **Desired schema.** Every source parses into the same model, so the stages
+   after this one behave the same whichever format you wrote. Several sources
+   can be merged into one desired schema.
+3. **Inspect, compare, plan.** Ptah reports what the database contains,
+   compares it with the desired schema, and produces the SQL that would close
+   the gap. See [Compare and detect drift](./direct/compare-and-drift/).
+4. **Versioned migrations or direct apply.** Write the change into timestamped
+   migration files that you review and commit, or apply it to the database in
+   one step. See [Versioned migrations](./versioned/overview/) and
+   [Apply a schema directly](./direct/apply/).
+5. **Database.** Both routes reach the same server. The versioned route also
+   records which versions are applied, and `ptah migrations status` reads that
+   record back.
+
+## Two workflows, and how to combine them
+
+### Versioned migrations
+
+You own a directory of SQL files. Ptah creates them, protects them with an
+integrity file, applies them in version order, and rolls them back.
+
+```bash
+ptah migrations create create_users --migrations-dir ./migrations
+ptah migrations hash --dir ./migrations
+ptah migrations up --db-url "$DATABASE_URL" --migrations-dir ./migrations
+ptah migrations status --db-url "$DATABASE_URL" --migrations-dir ./migrations
+```
+
+### Declarative schema changes
+
+You own a description of the schema you want. Ptah works out the SQL that gets
+the database there, and tells you when the database has moved away from it.
+
+```bash
+ptah schema compare --db-url "$DATABASE_URL" --schema-file schema.sql
+ptah schema apply --db-url "$DATABASE_URL" --schema-file schema.sql
+ptah schema drift --db-url "$DATABASE_URL" --schema-file schema.sql
+```
+
+### Both at once
+
+Keep the schema description as the thing you edit, and let Ptah turn each
+change into reviewable migration files. One command bridges the two workflows.
+
+```bash
+ptah migrations generate --db-url "$DATABASE_URL" --schema-file schema.sql \
+  --migrations-dir ./migrations --name create_users
+```
+
+[Choose a workflow](./start/choose-a-workflow/) sets out which combinations
+exist and what each one costs.
+
+## What the project includes
+
+Ptah is published under the MIT license. Migration integrity, deterministic
+planning, drift detection, approvals, advisory locking on the engines that
+provide it, recovery, testing, and artifact distribution are all part of the
+same open-source project. Deterministic means that the same inputs produce the
+same SQL on every run.
+
+The [database support matrix](./databases/support-matrix/) lists every engine
+Ptah supports, the dialect name and URL scheme each one uses, and how deep the
+support goes.
+
+The CLI runs on its own and needs no Go toolchain. Go projects can also embed
+Ptah through its [documented Go packages](./extend/public-api/), use
+[Go annotations](./schema/go-annotations/) as one of the schema sources, and
+run the `ptah-ls` language server for annotation support in an editor.
+
+## Start here
 
 <CardGrid>
-  <LinkCard title="Start" href="./start/quick-start/" description="Install Ptah, run a migration end to end — create, validate, apply, inspect, roll back — then add declarative schema management on top." />
-  <LinkCard title="Model your schema" href="./concepts/desired-schema-and-sources/" description="Describe the schema you want in SQL, YAML, HCL, Go annotations, or an ORM loader; merge sources, visualize, and export." />
+  <LinkCard title="Start" href="./start/quick-start/" description="Install Ptah, run a migration end to end (create, validate, apply, inspect, roll back), then add declarative schema management on top." />
+  <LinkCard title="Model your schema" href="./schema/work-with-a-source/" description="Describe the schema you want in SQL, YAML, HCL, DBML, an ORM loader, or Go annotations, and merge several sources into one desired schema." />
   <LinkCard title="Direct schema changes" href="./direct/inspect/" description="Inspect a live database, compare it with the desired schema, gate on drift, and apply changes directly." />
-  <LinkCard title="Versioned migrations" href="./versioned/overview/" description="Generate, apply, roll back, verify, import, and maintain a migration directory — with checkpoints and reference data." />
-  <LinkCard title="Test and CI" href="./testing/migrations-and-schema/" description="Run declarative migration and schema tests locally and gate pull requests in CI." />
+  <LinkCard title="Versioned migrations" href="./versioned/overview/" description="Generate, apply, roll back, verify, import, and maintain a migration directory, with checkpoints and reference data." />
+  <LinkCard title="Test and CI" href="./testing/migrations-and-schema/" description="Run declarative migration and schema tests locally, and gate pull requests in CI." />
   <LinkCard title="Distribute and operate" href="./operate/oci-registry/" description="Publish and consume migrations and schemas through your OCI registry, apply seed data, and diagnose failures." />
   <LinkCard title="Databases" href="./databases/support-matrix/" description="Check engine support and the PostgreSQL, MySQL/MariaDB, SQLite, and SQL Server differences that matter." />
-  <LinkCard title="Atlas compatibility" href="./atlas/overview/" description="Run Atlas-style commands through the ptah-compat drop-in binary, and read parity, conformance, and license-boundary evidence." />
+  <LinkCard title="Atlas compatibility" href="./atlas/overview/" description="Run Atlas-style commands through the separate ptah-compat binary, and read the compatibility, conformance, and license-boundary evidence." />
   <LinkCard title="Extend Ptah" href="./extend/public-api/" description="Embed the stable Go API, reuse parser and migrator components, and build dialect-aware queries." />
   <LinkCard title="Concepts" href="./concepts/desired-schema-and-sources/" description="Understand desired schemas, migration directories, database URLs, dialects, and capabilities." />
   <LinkCard title="Reference" href="./reference/native-commands/" description="Look up commands, annotation directives, configuration, schema formats, test cases, and exit codes." />
@@ -64,14 +237,26 @@ than necessary.
 | An ORM that owns the schema | [ORM and external loaders](./schema/orm-and-external/) |
 | No decision yet on versioned versus direct changes | [Choose a workflow](./start/choose-a-workflow/) |
 | An OCI registry for migration or schema distribution | [OCI registry artifacts](./operate/oci-registry/) |
-| Scripts written for Atlas OSS commands | [Atlas compatibility overview](./atlas/overview/) |
+| Scripts written for the Atlas CLI | [Atlas compatibility overview](./atlas/overview/) |
 | A pull-request gate to build | [CI](./testing/ci/) |
-| A compatibility question | [Atlas docs coverage](./atlas/docs-coverage/) and [Conformance](./atlas/conformance/) |
 
-:::caution[Atlas parity status]
-Ptah is working toward Atlas OSS command and behavior parity, but full parity is not claimed here. The current evidence is tracked in the separate conformance repository and summarized in [Conformance](./atlas/conformance/).
-:::
+## Atlas compatibility
 
-## License-clean implementation
+A separate `ptah-compat` binary presents an Atlas-compatible command surface for
+scripts written against the Atlas CLI. The
+[Atlas compatibility overview](./atlas/overview/) explains what it covers and
+where it differs. The native `ptah` binary has no Atlas command spellings.
 
-Ptah does not use Atlas source code. Atlas interface behavior and Apache-2.0 test assets are evaluated in the separate `ptah-atlas-conformance` repository so the Ptah source tree stays MIT and implementation-independent. See [License boundary](./atlas/license-boundary/).
+## License and provenance
+
+Ptah is an independent implementation that does not use Atlas source code and is
+not affiliated with or endorsed by Ariga. The
+[license boundary](./atlas/license-boundary/) page records the provenance policy
+and its legal basis.
+
+## The name
+
+Ptah is named after the Egyptian god of architects and craftsmen. The four
+stages the name stands for are the ones the diagram above walks through:
+**Parse** a schema source, **Transform** it into the change the database needs,
+**Apply** that change, and **Harmonize** the result with the schema you declared.

@@ -84,7 +84,7 @@ func TestSchemaExportHelpUsesNeutralHCLName(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr.String()))
-	c.Assert(stdout.String(), qt.Contains, "Target schema format: hcl, openapi-v3, graphql, or protobuf")
+	c.Assert(stdout.String(), qt.Contains, "Target schema format: hcl, openapi-v3, graphql, protobuf, markdown, html, or dbml")
 	c.Assert(stdout.String(), qt.Contains, "ptah schema export --to hcl")
 	c.Assert(stdout.String(), qt.Not(qt.Contains), "atlas-hcl, openapi-v3")
 }

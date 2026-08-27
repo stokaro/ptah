@@ -9,7 +9,7 @@ Some PostgreSQL extensions (like `plpgsql`) are installed by default in database
 - **Configurable ignore list**: Specify which extensions to ignore
 - **Default behavior**: `plpgsql` is ignored by default
 - **Programmatic API**: Clean Go API for library usage
-- **Flexible configuration**: Multiple ways to configure the ignore list
+- **Three ways to set the list**: keep the defaults, replace them, or add to them
 
 ## Key Behaviors
 

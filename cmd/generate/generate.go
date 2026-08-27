@@ -68,17 +68,29 @@ source can provide the desired schema too.`,
 	return cmd
 }
 
-func registerFlags(cmd *cobra.Command, opts *options) {
-	const dialectUsage = "Database dialect (postgres, mysql, mariadb, sqlite, clickhouse, " +
-		"cockroachdb, yugabytedb, sqlserver, spanner). If empty, attempts the built-in " +
-		"review targets and emits output only if every target succeeds"
+// dialectUsage names every dialect --dialect takes.
+//
+// The list is discovered rather than written out. capability.DefaultDialects
+// returns the names capability.ForDialect has a preset for, which is the same
+// set core/renderer builds a renderer for, so a dialect Ptah gains is named
+// here by the act of gaining a preset. internal/ddltx already treats that
+// function as the authority for "a dialect Ptah has".
+//
+// The written-out version was the alternative, and it is what this replaces: it
+// listed nine names and omitted oracle, which the flag accepted and rendered
+// real Oracle DDL for, from the day the dialect landed until it was measured.
+func dialectUsage() string {
+	return "Database dialect (" + strings.Join(capability.DefaultDialects(), ", ") + "). " +
+		"If empty, attempts the built-in review targets and emits output only if every target succeeds"
+}
 
+func registerFlags(cmd *cobra.Command, opts *options) {
 	flags := cmd.Flags()
 	flags.StringArrayVar(&opts.rootDirs, rootDirFlag, nil, "Root directory to scan for Go entities (repeatable; multiple roots merge into one composite schema; defaults to ./)")
 	flags.StringArrayVar(&opts.schemaFiles, schemaFileFlag, nil, "YAML, HCL, or SQL schema file to generate from instead of, or combined with, Go entities (repeatable; multiple sources merge into one composite schema)")
 	flags.StringVar(&opts.schemaCmd, schemaCmdFlag, "", schemaCmdUsage)
 	flags.StringVar(&opts.schemaFormat, schemaFormatFlag, "sql", "Format of the --schema-cmd output: sql, hcl, or yaml")
-	flags.StringVar(&opts.dialect, dialectFlag, "", dialectUsage)
+	flags.StringVar(&opts.dialect, dialectFlag, "", dialectUsage())
 	serverversion.Register(flags, &opts.serverVersion)
 	dbcli.RegisterPlainHTTPFlag(flags, &opts.plainHTTP)
 	flags.StringVar(&opts.configPath, dbcli.ConfigFlagName, "", "Path to a ptah.yaml config file (default: ./ptah.yaml when present)")

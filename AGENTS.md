@@ -950,7 +950,7 @@ merged, split, or retired, update the content inventory at
 [`docs/site/CONTENT_INVENTORY.md`](docs/site/CONTENT_INVENTORY.md) in the same
 PR.
 
-CI enforces the mechanical half of that guide. Section 13 of the guide lists
+CI enforces the mechanical half of that guide. Section 16 of the guide lists
 exactly which rules fail a build and which stay a reading responsibility. Run
 `node docs/site/scripts/check-style.mjs` for any documentation change: it needs
 no npm install, and it governs this file, the repository docs, the examples,

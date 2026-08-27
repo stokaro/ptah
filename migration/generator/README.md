@@ -296,7 +296,7 @@ Review these defaults before production deployment and adjust them per migration
 
 ### `GenerateMigrationOptions`
 
-The `GenerateMigrationOptions` struct provides comprehensive configuration for migration generation:
+The `GenerateMigrationOptions` struct carries the configuration for migration generation:
 
 ```go
 type GenerateMigrationOptions struct {

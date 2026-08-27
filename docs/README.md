@@ -4,9 +4,9 @@ The human-facing documentation site source lives in [`site`](site).
 
 Start with:
 
-- [Quick start](site/src/content/docs/start/quick-start.md)
-- [Comparison](site/src/content/docs/atlas/comparison.md)
-- [Declarative database testing](testing.md)
+- [Install](site/src/content/docs/start/install.md)
+- [Quick start](site/src/content/docs/start/quick-start.mdx)
+- [Choose a workflow](site/src/content/docs/start/choose-a-workflow.md)
 - [Troubleshooting](site/src/content/docs/operate/troubleshooting.md)
 
 The other Markdown files in this directory remain only where they provide

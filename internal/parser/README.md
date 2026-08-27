@@ -1,6 +1,6 @@
 # SQL Parser
 
-This package provides a comprehensive SQL DDL (Data Definition Language) parser that converts SQL tokens into Abstract Syntax Tree (AST) nodes. The parser is designed to work with the Ptah schema management system and supports multiple SQL dialects.
+This package provides a SQL DDL (Data Definition Language) parser that converts SQL tokens into Abstract Syntax Tree (AST) nodes. The parser is designed to work with the Ptah schema management system and supports multiple SQL dialects.
 
 ## Features
 
@@ -253,7 +253,7 @@ _, err := parser.Parse()
 
 ## Testing
 
-The parser includes comprehensive tests covering:
+The parser tests cover:
 - Basic CREATE TABLE statements
 - Complex tables with constraints and options
 - ALTER TABLE operations

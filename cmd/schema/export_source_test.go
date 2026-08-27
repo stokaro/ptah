@@ -451,14 +451,14 @@ func TestSchemaExportRefusesSourcesItCannotRead(t *testing.T) {
 			args: []string{"--out", filepath.Join(dir, "out.hcl"), "--schema-file", yamlPath},
 			wantErr: `--schema-file is not supported with --to hcl: that target rewrites the Go files it reads ` +
 				`(--cleanup-go-annotations removes their annotations), so its source is --root-dir; ` +
-				`use --to openapi-v3, graphql, or protobuf to export a schema file`,
+				`use --to openapi-v3, graphql, protobuf, markdown, html, or dbml to export a schema file`,
 		},
 		{
 			name: "a schema file for the target that rewrites its source",
 			args: []string{"--to", "hcl", "--out", filepath.Join(dir, "out.hcl"), "--schema-file", yamlPath},
 			wantErr: `--schema-file is not supported with --to hcl: that target rewrites the Go files it reads ` +
 				`(--cleanup-go-annotations removes their annotations), so its source is --root-dir; ` +
-				`use --to openapi-v3, graphql, or protobuf to export a schema file`,
+				`use --to openapi-v3, graphql, protobuf, markdown, html, or dbml to export a schema file`,
 		},
 	}
 

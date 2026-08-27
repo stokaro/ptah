@@ -277,7 +277,7 @@ stdout therefore gets a document in every case except `2`.
 client or coding agent can drive Ptah's operations directly. It is not a command
 to run by hand: a client starts it and speaks the protocol to it.
 
-Five reading tools, each forwarding to the operation that already owns the work:
+Six reading tools, each forwarding to the operation that already owns the work:
 
 | tool | answers |
 | --- | --- |
@@ -715,11 +715,11 @@ refused, because a digest names content that already exists.
 `ptah oci capabilities <oci-reference>` asks the registry whether it answers
 the referrers API. Ptah publishes referrers both through the standard index and
 through its own content-derived tag and merges them on read, so its own
-discovery is robust whatever the registry does — and where the API is absent, a
-referrer Ptah published is one another OCI client may never find. The question
-is put with the client pinned to the API so a success cannot have come from the
-tag-schema fallback, and a failure to ask is reported as an error rather than
-folded into a no.
+discovery works whether or not the registry answers that API — and where the
+API is absent, a referrer Ptah published is one another OCI client may never
+find. The question is put with the client pinned to the API so a success cannot
+have come from the tag-schema fallback, and a failure to ask is reported as an
+error rather than folded into a no.
 
 This does not implement the Atlas Cloud command paths. The Atlas-compatible
 `migrate push` and `schema push` remain Atlas community-edition boundary
