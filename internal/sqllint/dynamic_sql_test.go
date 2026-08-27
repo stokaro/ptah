@@ -21,6 +21,11 @@ import (
 // The rows that matter are the ones that DO NOT report. A rule that fired on
 // every routine, or on every dialect, would pass a fixture set containing only
 // the first row.
+//
+// Both PostgreSQL node types are here because a routine reaches the linter as
+// one of two: a procedure as PostgresRoutineNode, a function as
+// CreateFunctionNode with its body in RoutineBody. Covering one and calling the
+// other unparsed is the mistake this file previously recorded as a fact.
 func TestDynamicSQL_TheBoundaryIsReportedWhereItIs(t *testing.T) {
 	const executes = "CREATE PROCEDURE p() AS $$\nBEGIN\n" +
 		"EXECUTE 'TRUNCATE t';\nEND;\n$$ LANGUAGE plpgsql;"
@@ -56,18 +61,26 @@ func TestDynamicSQL_TheBoundaryIsReportedWhereItIs(t *testing.T) {
 			why:     "each is a separate place the analysis stops, and each gets its own position",
 		},
 		{
-			// The measured limit, kept as a row rather than as prose. On
-			// PostgreSQL only CREATE PROCEDURE takes the routine parser;
-			// CREATE FUNCTION falls through to parseCreateFunction and arrives
-			// as a CreateFunctionNode with no statement list at all, so there
-			// is nothing here to read. When that changes this row changes with
-			// it, which is the point of writing it down as a test.
-			name: "a function composing SQL is not reached",
+			// A function arrives as a DIFFERENT node than a procedure --
+			// CreateFunctionNode rather than PostgresRoutineNode -- and its
+			// body is parsed into RoutineBody by attachPostgresFunctionBody.
+			// Reading only the procedure node left every function unexamined
+			// while looking like a parser limitation, which is what an earlier
+			// version of this row asserted and got wrong.
+			name: "a function composing SQL",
 			sql: "CREATE FUNCTION f() RETURNS void AS $$\nBEGIN\n" +
 				"EXECUTE 'TRUNCATE t';\nEND;\n$$ LANGUAGE plpgsql;",
 			dialect: platform.Postgres,
+			want:    1,
+			why:     "the body is parsed for a function too, on the other node",
+		},
+		{
+			name: "a function that does not",
+			sql: "CREATE FUNCTION f() RETURNS void AS $$\nBEGIN\n" +
+				"PERFORM pg_notify('done', 'x');\nEND;\n$$ LANGUAGE plpgsql;",
+			dialect: platform.Postgres,
 			want:    0,
-			why:     "CREATE FUNCTION does not parse a body on this path; the rule has nothing to read",
+			why:     "the control for the row above: the node type is not what makes a boundary",
 		},
 		{
 			name:    "a dialect with no execute Kind",
