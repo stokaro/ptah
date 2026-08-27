@@ -121,6 +121,33 @@ func TestInferenceCLIRollbackE2E(t *testing.T) {
 	assertACutoverWithoutAWindowLeavesNoWayBack(c, ctx, db, specPath, dbName, generation)
 	assertAWindowMakesTheGenerationAWayBack(c, ctx, db, specPath, dbName, generation)
 	assertRollbackMovesThePointerBack(c, ctx, specPath, dbName, generation)
+	assertNoWindowIsAskedForMeansNoWindow(c, ctx, db, specPath, dbName)
+}
+
+// assertNoWindowIsAskedForMeansNoWindow is the flag's other answer, over a
+// pointer that has somewhere to point.
+//
+// The first cutover in this test had no previous generation at all, so it took
+// the same branch for a different reason. This one replaces a real generation
+// and still asks for nothing, which is the only shape that separates "there is
+// nobody to keep current" from "you did not ask me to".
+func assertNoWindowIsAskedForMeansNoWindow(
+	c *qt.C, ctx context.Context, db *sql.DB, specPath, dbURL string,
+) {
+	c.Helper()
+	registerBareGeneration(c, ctx, db, "the-replaced-one")
+	_, err := db.ExecContext(ctx,
+		`UPDATE ptah_embedding_pointer SET active_generation = 'the-replaced-one',
+			previous_generation = NULL WHERE target_table = 'articles'`)
+	c.Assert(err, qt.IsNil)
+
+	digest := planDigestOf(c, ctx, specPath, dbURL)
+	output := runInference(c, ctx, "cutover",
+		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID,
+		"--approve", digest, "--approver", "an operator")
+
+	c.Assert(output, qt.Contains, "no stabilization window was asked for")
+	c.Assert(maintainedUntil(c, ctx, db, "the-replaced-one").Valid, qt.IsFalse)
 }
 
 // assertACutoverWithoutAWindowLeavesNoWayBack is the default, and it says so.
