@@ -71,6 +71,56 @@ func TestInferenceCLIE2E(t *testing.T) {
 	assertRollbackIsRefusedWithoutEvidence(c, ctx, specPath, dbName)
 	assertACutoverIsRefusedWhenTheSourceHasMovedOn(c, ctx, db, specPath, dbName)
 	assertACutoverIsRefusedWhenSomebodyElseMovedThePointer(c, ctx, db, specPath, dbName)
+	assertAnUnmaintainedPreviousGenerationBlocksNothing(c, ctx, db, specPath, dbName)
+}
+
+// assertAnUnmaintainedPreviousGenerationBlocksNothing records where this build
+// actually stands, rather than where the design points.
+//
+// The retirement decision refuses a generation something can still roll back
+// to. Reaching that refusal needs the previous generation to be ELIGIBLE, and
+// eligibility is measured: verified recently, still maintained, index intact.
+// Nothing here maintains an old generation after a cutover -- keeping both
+// generations current for a stabilization window is Phase K, and it is not
+// built.
+//
+// So the dependency is recorded and it protects nothing, which is the correct
+// behaviour for the state the product is in: a way back nobody is keeping
+// current is not a way back, and refusing a retirement to preserve it would
+// leave the corpus twice its size for a rollback that would not work.
+//
+// The assertion is written this way on purpose. A fixture that forced the
+// refusal by inventing eligibility would be testing a Phase K that does not
+// exist, and it would go on passing after Phase K arrived and changed the
+// answer (stokaro/ptah#2068).
+func assertAnUnmaintainedPreviousGenerationBlocksNothing(
+	c *qt.C, ctx context.Context, db *sql.DB, specPath, dbURL string,
+) {
+	c.Helper()
+	generation := activeGenerationFrom(c, ctx, specPath, dbURL)
+	// The state a cutover leaves behind: the pointer records this generation as
+	// the one before the active one.
+	_, err := db.ExecContext(ctx,
+		`UPDATE ptah_embedding_pointer
+		 SET active_generation = 'the-newer-one', previous_generation = $1
+		 WHERE target_table = 'articles'`, generation)
+	c.Assert(err, qt.IsNil)
+
+	// Going back to it is refused, and the reason is what makes the retirement
+	// answer below correct rather than lax.
+	back, err := runInferenceExpectingFailure(c, ctx, "rollback",
+		"--spec", specPath, "--db-url", dbURL, "--to", generation)
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(back, qt.Contains, "never been verified")
+
+	output, err := runInferenceExpectingFailure(c, ctx, "retire",
+		"--spec", specPath, "--db-url", dbURL, "--generation", generation)
+
+	c.Assert(err, qt.IsNotNil)
+	// Refused for the approval the policy requires, and NOT for a rollback
+	// dependency that would not survive being relied on.
+	c.Assert(output, qt.Contains, "this policy requires an approval and none was given")
+	c.Assert(output, qt.Not(qt.Contains), "can still be rolled back to this one")
 }
 
 // assertACutoverIsRefusedWhenTheSourceHasMovedOn is the verification result

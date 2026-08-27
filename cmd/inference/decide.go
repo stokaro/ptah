@@ -448,16 +448,12 @@ func runRetire(ctx context.Context, out io.Writer, options retireOptions) error 
 		Table: registered.TargetTable, Column: registered.TargetColumn,
 		DropsIndex: true, DropsColumn: options.dropColumn, RowCount: rows,
 	}
-	active := activePointer(ctx, opened, registered.TargetTable)
-	decision := embedcutover.DecideRetirement(plan,
-		embedcutover.RetirementState{IsActive: active == options.generation},
-		embedcutover.Observed{
-			ActivePointer: active,
-			Permissions:   []embedcutover.Permission{embedcutover.PermissionRetire},
-			Now:           time.Now().UTC(),
-		},
-		retirementApproval(plan, options),
-		opened.loaded.Policy)
+	state, observed, err := retirementFacts(ctx, opened, registered, options.generation)
+	if err != nil {
+		return err
+	}
+	decision := embedcutover.DecideRetirement(plan, state, observed,
+		retirementApproval(plan, options), opened.loaded.Policy)
 	if !decision.Allowed {
 		_ = writeLines(out, fmt.Sprintf("plan %s (%d rows)", plan.Short(), rows))
 		return refusal(out, "retirement refused", decision.Blockers)
@@ -476,6 +472,56 @@ func runRetire(ctx context.Context, out io.Writer, options retireOptions) error 
 	}
 	return writeLines(out, fmt.Sprintf("generation %s is gone, with %d vectors",
 		options.generation, rows))
+}
+
+// retirementFacts reads what is true about a generation somebody wants gone.
+//
+// IsActive is deliberately left alone and the pointer answers instead. Both
+// fields say whether queries read this generation, and this caller has one
+// source for that -- filling in two would be two answers to one question, and
+// whichever the decision happened to read would be the only one anybody could
+// test.
+//
+// The rollback dependency is the field that matters here. A generation the
+// pointer records as the one before the active generation is somebody's way
+// back, and destroying it while that is still true removes a rollback the
+// operator believes they have.
+func retirementFacts(
+	ctx context.Context, opened *session, registered embedstore.Generation, generation string,
+) (embedcutover.RetirementState, embedcutover.Observed, error) {
+	pointer, err := opened.store.Pointer(ctx, registered.TargetTable)
+	if err != nil && !errorsIs(err, embedstore.ErrNotFound) {
+		return embedcutover.RetirementState{}, embedcutover.Observed{}, err
+	}
+
+	state := embedcutover.RetirementState{}
+	if pointer.Previous == generation {
+		state.IsRollbackTargetFor = pointer.Active
+		eligibility, err := rollbackEligibility(ctx, opened, generation, pointer)
+		if err != nil {
+			return embedcutover.RetirementState{}, embedcutover.Observed{}, err
+		}
+		state.RollbackEligible = eligibility.Eligible
+	}
+	return state, embedcutover.Observed{
+		ActivePointer: pointer.Active,
+		Permissions:   []embedcutover.Permission{embedcutover.PermissionRetire},
+		Now:           time.Now().UTC(),
+	}, nil
+}
+
+// rollbackEligibility measures whether a previous generation is still a place
+// to go back to.
+func rollbackEligibility(
+	ctx context.Context, opened *session, generation string, pointer embedstore.Pointer,
+) (embedcutover.RollbackEligibility, error) {
+	state, err := embedpg.RollbackState(ctx, opened.db, opened.loaded.Spec, generation, pointer)
+	if err != nil {
+		return embedcutover.RollbackEligibility{}, err
+	}
+	return embedcutover.EvaluateRollback(
+		embedcutover.RollbackPolicy{RequireIndex: true}, state,
+		embedcutover.Observed{Now: time.Now().UTC()}), nil
 }
 
 // retirementApproval builds the approval a caller supplied, or none.
