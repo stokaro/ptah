@@ -55,6 +55,13 @@ type Options struct {
 	Capabilities  capability.Capabilities
 	Rules         []Rule
 	DisabledRules []string
+	// Severities overrides a rule's default severity, keyed by identifier.
+	//
+	// It is a plain map rather than the policy type so that this package stays
+	// out of migration/lint: the command reads the file and passes the answer.
+	// An entry for a code the linter does not report is an error, because a
+	// severity nobody applies is a policy the operator believes is in force.
+	Severities map[string]Severity
 }
 
 type Finding struct {
@@ -96,6 +103,9 @@ func LintSource(source Source, opts Options) ([]Finding, error) {
 	if err := refuseUnsilenceable(opts.DisabledRules); err != nil {
 		return nil, err
 	}
+	if err := validateSeverities(opts.Severities); err != nil {
+		return nil, err
+	}
 	caps, err := effectiveCapabilities(opts)
 	if err != nil {
 		return nil, err
@@ -122,7 +132,49 @@ func LintSource(source Source, opts Options) ([]Finding, error) {
 	if len(unanalyzedKinds) > 0 {
 		findings = append(findings, statementsNotAnalyzedFinding(source, opts, unanalyzedKinds))
 	}
-	return keepEnabled(findings, opts.DisabledRules), nil
+	return applySeverities(keepEnabled(findings, opts.DisabledRules), opts.Severities), nil
+}
+
+// applySeverities replaces the severity of every finding a policy names.
+func applySeverities(findings []Finding, severities map[string]Severity) []Finding {
+	if len(severities) == 0 {
+		return findings
+	}
+	for i := range findings {
+		if severity, ok := severities[findings[i].Rule]; ok {
+			findings[i].Severity = severity
+		}
+	}
+	return findings
+}
+
+// validateSeverities refuses a policy this linter could not honor.
+//
+// Two refusals, and both are about a policy that would read as being in force
+// while doing nothing or the wrong thing.
+//
+// A code the linter does not report cannot be configured: an operator who wrote
+// it believes a rule is set to warning, and silence would leave them believing
+// it. That is the same failure `--disable` had before it refused.
+//
+// The parse-path codes cannot be lowered below error, for the reason they
+// cannot be disabled: only error decides the exit code, so a file the parser
+// could not read would pass (stokaro/ptah#1270).
+func validateSeverities(severities map[string]Severity) error {
+	for code, severity := range severities {
+		if !slices.Contains(CatalogIDs(), code) {
+			return fmt.Errorf(
+				"severity set for %s, which `ptah sql lint` does not report; "+
+					"it reports %s", code, strings.Join(CatalogIDs(), ", "))
+		}
+		if slices.Contains(unsilenceableRules, code) && severity != SeverityError {
+			return fmt.Errorf(
+				"severity for %s set to %s: it reports that the file could not be analyzed, "+
+					"and only error decides the exit code, so lowering it lets an unread file pass",
+				code, severity)
+		}
+	}
+	return nil
 }
 
 // appendUnanalyzed adds kinds not already recorded, keeping first-seen order so

@@ -180,9 +180,9 @@ func writeSeverities(w io.Writer, entries []Entry) error {
 	out.WriteString("## Default severities\n\n")
 	fmt.Fprintf(&out,
 		"%d rules report at error severity by default: %s. The other %d default to warning. "+
-			"A committed `.ptah-lint.yaml` replaces either for the migration lint rules, per rule "+
-			"or per family. It does not reach the SQL linter: `ptah sql lint` reads no policy file "+
-			"and takes only `--disable`, so the severities above are the ones %s report. "+
+			"A committed `.ptah-lint.yaml` replaces either, per rule or per family. `ptah sql lint` "+
+			"reads the same file "+
+			"and now reads the `rules:` severities it sets for %s, so the severities above are the defaults. "+
 			"`--disable` refuses a selector covering `SQL001` or `SQL002`: those report that the "+
 			"file could not be analyzed, and a run that analyzed nothing must not report clean.\n\n",
 		len(errors), strings.Join(errors, ", "), warnings,
