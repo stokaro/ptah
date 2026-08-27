@@ -56,6 +56,15 @@ type Construct struct {
 	// Detail says what the class means for this construct: the native
 	// equivalent for a compat-only one, the position for an unsupported one.
 	Detail string `json:"detail,omitempty"`
+	// Current and Native are the compat-only spelling and what it becomes.
+	//
+	// They are separate from Detail because the rewriting half needs the two
+	// values, and reading them back out of a sentence written for a human is
+	// how a normalizer comes to write whatever the prose happened to say. Both
+	// are empty unless Class is compat-only AND the native spelling could be
+	// named.
+	Current string `json:"current,omitempty"`
+	Native  string `json:"native,omitempty"`
 }
 
 // AdoptionReport is what `project adopt --check` answers.
@@ -77,7 +86,7 @@ func newProjectAdoptCommand() *cobra.Command {
 	opts := adoptOptions{}
 	cmd := &cobra.Command{
 		Use:   "adopt",
-		Short: "Report what it would take to operate this project with native Ptah",
+		Short: "Adopt this project into native Ptah, or report what that would take",
 		Long: `Report what it would take to operate this project with native Ptah.
 
 Every construct the project file declares is put in one of three classes:
@@ -91,8 +100,9 @@ Every construct the project file declares is put in one of three classes:
 A project with nothing in the last two classes is native-ready: it can be
 operated by native Ptah as it stands, without its file being rewritten.
 
-Only the read-only analysis exists. --check is required, and this command
-contacts no database and writes no file.`,
+--check reports the analysis and writes nothing. Without it, the compat-only
+spellings are rewritten in place; a project declaring anything unsupported is
+refused rather than half-converted. Neither form contacts a database.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAdopt(cmd, opts)
 		},
@@ -103,22 +113,12 @@ contacts no database and writes no file.`,
 	flags.StringVar(&opts.envName, "env", "", "Project environment to resolve")
 	flags.StringVar(&opts.format, "format", inspectFormatText, "Output format: text or json")
 	flags.BoolVar(&opts.check, "check", false,
-		"Report the analysis without changing anything (currently required)")
+		"Report the analysis without changing anything")
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd
 }
 
 func runAdopt(cmd *cobra.Command, opts adoptOptions) error {
-	if !opts.check {
-		// Refused rather than defaulted to the analysis: `adopt` without a flag
-		// will one day rewrite the project file, and a reader who learns today
-		// that it is safe would be wrong then. Naming what is missing is what
-		// keeps an unsupported construct from disappearing into a conversion
-		// nobody wrote (stokaro/ptah#1215).
-		return cmdutil.Fail(cmd, fmt.Errorf(
-			"adoption rewrites the project file and is not implemented: "+
-				"run with --check for the read-only analysis of what it would have to change"))
-	}
 	if opts.format != inspectFormatText && opts.format != inspectFormatJSON {
 		return cmdutil.Fail(cmd, fmt.Errorf("unsupported --format %q: use text or json", opts.format))
 	}
@@ -135,6 +135,9 @@ func runAdopt(cmd *cobra.Command, opts adoptOptions) error {
 	}
 
 	report := adoptionReportFor(config)
+	if !opts.check {
+		return runAdoptWrite(cmd, opts, report)
+	}
 	if opts.format == inspectFormatJSON {
 		encoder := json.NewEncoder(cmd.OutOrStdout())
 		encoder.SetIndent("", "  ")
@@ -151,6 +154,58 @@ func runAdopt(cmd *cobra.Command, opts adoptOptions) error {
 			needingAdoption(report), len(report.Constructs)))
 	}
 	return nil
+}
+
+// runAdoptWrite normalizes the project file, or says why it will not.
+//
+// Three answers, and the refusal is the one that matters. An unsupported
+// construct is a name Ptah read and acts on nothing, so a rewrite would produce
+// a file that LOOKS adopted while the behaviour that name asked for is still
+// missing -- which is exactly how such a construct disappears into a conversion
+// nobody wrote. Adoption refuses and names it instead (stokaro/ptah#1215).
+func runAdoptWrite(cmd *cobra.Command, opts adoptOptions, report AdoptionReport) error {
+	if unsupported := constructsInClass(report, classUnsupported); len(unsupported) > 0 {
+		writeAdoptionText(cmd.OutOrStdout(), report)
+		return cmdutil.Fail(cmd, fmt.Errorf(
+			"this project declares %d construct(s) Ptah acts on nothing for, so adoption cannot carry it: "+
+				"remove them from the file, or keep operating it through ptah-compat",
+			len(unsupported)))
+	}
+	if report.NativeReady {
+		fmt.Fprintln(cmd.OutOrStdout(),
+			"Nothing to rewrite: every construct already means the same thing in a native Ptah project.")
+		return nil
+	}
+
+	path := opts.atlasPath
+	if path == "" {
+		path = projectconfig.AtlasFileName
+	}
+	changed, err := normalizeProject(path, report)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	if len(changed) == 0 {
+		// Compat-only, and no native spelling could be named -- the namespace
+		// is unset, so the analysis reported the gap rather than inventing a
+		// repository. Writing nothing and saying so beats writing a guess.
+		writeAdoptionText(cmd.OutOrStdout(), report)
+		return cmdutil.Fail(cmd, fmt.Errorf(
+			"no compat-only construct has an unambiguous native spelling, so nothing was rewritten"))
+	}
+	writeNormalizationText(cmd.OutOrStdout(), path, changed)
+	return nil
+}
+
+// constructsInClass is the members of one class, in report order.
+func constructsInClass(report AdoptionReport, class string) []Construct {
+	members := make([]Construct, 0, len(report.Constructs))
+	for _, construct := range report.Constructs {
+		if construct.Class == class {
+			members = append(members, construct)
+		}
+	}
+	return members
 }
 
 // adoptionReportFor classifies everything the resolved config holds.
@@ -215,11 +270,16 @@ func migrationDirConstruct(config projectconfig.Config) (Construct, bool) {
 	if !registered || !atlasregistry.IsReference(source.Path) {
 		return Construct{Name: "migration dir", Class: classExact}, true
 	}
-	return Construct{
+	construct := Construct{
 		Name:   "migration dir",
 		Class:  classCompatOnly,
 		Detail: nativeReferenceFor(source.Path),
-	}, true
+	}
+	if resolved, err := atlasregistry.Resolve(source.Path); err == nil {
+		construct.Current = source.Path
+		construct.Native = resolved.OCI
+	}
+	return construct, true
 }
 
 // nativeReferenceFor says what an `atlas://` reference becomes natively, or why
