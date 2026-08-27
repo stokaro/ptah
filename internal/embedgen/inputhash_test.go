@@ -100,6 +100,22 @@ func TestTargetRow_StaleNamesWhichQuestionFailed(t *testing.T) {
 			row:        embedgen.TargetRow{GenerationIdentity: generation, SourceInputHash: inputHash},
 			generation: generation, inputHash: inputHash,
 		},
+		{
+			// The row was written without a version and the caller has one
+			// now. That is a strategy change, not evidence the source moved:
+			// there is no earlier version to have moved FROM, and reporting
+			// stale here would recompute a corpus that is fresh.
+			name:       "the row carries no version and the caller does",
+			row:        embedgen.TargetRow{GenerationIdentity: generation, SourceInputHash: inputHash},
+			generation: generation, inputHash: inputHash, version: "8",
+		},
+		{
+			// And the reverse: the caller cannot establish a version now, so
+			// it cannot say the row's is behind.
+			name:       "the caller has no version and the row does",
+			row:        embedgen.TargetRow{GenerationIdentity: generation, SourceInputHash: inputHash, SourceVersion: "7"},
+			generation: generation, inputHash: inputHash,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
