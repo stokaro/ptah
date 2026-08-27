@@ -16,7 +16,7 @@ import (
 // Each names exactly one object kind so a refusal can only come from that
 // kind's own gate.
 func viewFixture916() (*difftypes.SchemaDiff, *schemamodel.Database) {
-	return &difftypes.SchemaDiff{ViewsAdded: []string{"active_notes"}},
+	return &difftypes.SchemaDiff{ViewsAdded: difftypes.ViewChanges{{Name: "active_notes"}}},
 		&schemamodel.Database{Views: []schemamodel.View{{
 			Name: "active_notes",
 			Body: "SELECT id FROM notes WHERE body IS NOT NULL",

@@ -216,14 +216,15 @@ func TestGenerateMigrationAST_NilSchemaHappyPath(t *testing.T) {
 }
 
 func TestGenerateMigrationAST_MissingDesiredViewRejected(t *testing.T) {
+	// The addition row that used to sit beside this one is gone, and
+	// TestGenerateMigrationAST_AnAddedViewNeedsNoDesiredDeclaration is what
+	// replaced it: an added view travels with the change, so there is no
+	// lookup left to miss (stokaro/ptah#2315). A modification carries its name
+	// alone, so this is still the answer for one.
 	tests := []struct {
 		name string
 		diff *difftypes.SchemaDiff
 	}{
-		{
-			name: "addition",
-			diff: &difftypes.SchemaDiff{ViewsAdded: []string{"analytics.missing"}},
-		},
 		{
 			name: "modification",
 			diff: &difftypes.SchemaDiff{ViewsModified: []difftypes.ViewDiff{{ViewName: "analytics.missing"}}},
@@ -250,7 +251,7 @@ func TestGenerateMigrationAST_DisabledViewsNeedNoDesiredDeclaration(t *testing.T
 	}{
 		{
 			name: "addition",
-			diff: &difftypes.SchemaDiff{ViewsAdded: []string{"analytics.missing"}},
+			diff: &difftypes.SchemaDiff{ViewsAdded: difftypes.ViewChanges{{Name: "analytics.missing"}}},
 		},
 		{
 			name:        "modification",
@@ -280,7 +281,7 @@ func TestNewWithCapabilities_NilIsConservative(t *testing.T) {
 	planner := clickhouse.NewWithCapabilities(nil)
 
 	nodes, err := planner.GenerateMigrationAST(
-		&difftypes.SchemaDiff{ViewsAdded: []string{"analytics.report"}},
+		&difftypes.SchemaDiff{ViewsAdded: difftypes.ViewChanges{{Name: "analytics.report"}}},
 		&schemamodel.Database{Views: []schemamodel.View{{
 			Name: "analytics.report",
 			Body: "SELECT 1",
@@ -407,7 +408,11 @@ func TestGenerateMigrationAST_ViewReadingAMaterializedViewIsOrderedAfterIt(t *te
 
 	nodes, err := clickhouse.New().GenerateMigrationAST(
 		&difftypes.SchemaDiff{
-			ViewsAdded:             []string{"analytics.reader"},
+			// The body travels WITH the change, and the order this test is
+			// about is computed from it.
+			ViewsAdded: difftypes.ViewChanges{
+				{Name: "analytics.reader", Body: "SELECT c FROM analytics.user_counts"},
+			},
 			MaterializedViewsAdded: []string{"analytics.user_counts"},
 		},
 		desired,
@@ -542,7 +547,9 @@ func TestGenerateMigrationAST_KindChangeDropsTheLiveObjectFirst(t *testing.T) {
 		{
 			name: "materialized view becomes a plain view",
 			diff: &difftypes.SchemaDiff{
-				ViewsAdded:               []string{"user_counts"},
+				ViewsAdded: difftypes.ViewChanges{
+					{Name: "user_counts", Body: "SELECT count() AS c FROM analytics.users"},
+				},
 				MaterializedViewsRemoved: []string{"analytics.user_counts"},
 			},
 			desired: viewDesired,
@@ -558,7 +565,7 @@ func TestGenerateMigrationAST_KindChangeDropsTheLiveObjectFirst(t *testing.T) {
 			name: "plain view becomes a materialized view",
 			diff: &difftypes.SchemaDiff{
 				MaterializedViewsAdded: []string{"user_counts"},
-				ViewsRemoved:           []string{"analytics.user_counts"},
+				ViewsRemoved:           difftypes.ViewChanges{{Name: "analytics.user_counts"}},
 			},
 			desired: materializedDesired,
 			wantNodes: []ast.Node{
@@ -600,7 +607,7 @@ func TestGenerateMigrationAST_UnrelatedRemovalStaysAfterTheCreates(t *testing.T)
 
 	nodes, err := clickhouse.New().GenerateMigrationAST(
 		&difftypes.SchemaDiff{
-			ViewsAdded:               []string{"analytics.reader"},
+			ViewsAdded:               difftypes.ViewChanges{{Name: "analytics.reader"}},
 			MaterializedViewsRemoved: []string{"analytics.user_counts"},
 		},
 		desired,
@@ -745,4 +752,29 @@ func TestGenerateMigrationAST_RefreshTransitionsThatCannotBeAltered(t *testing.T
 			c.Assert(kinds["*ast.DropMaterializedViewNode"], qt.Not(qt.Equals), 0)
 		})
 	}
+}
+
+// TestGenerateMigrationAST_AnAddedViewNeedsNoDesiredDeclaration is the half of
+// the rejection above that stopped being a rejection.
+//
+// An added view carries its body, so a desired schema that does not declare it
+// is no longer a diff the planner has to refuse -- it is a diff it can plan in
+// full. The empty desired schema is the point: it is what made the old addition
+// row fail, and the statement is rendered from the change alone.
+func TestGenerateMigrationAST_AnAddedViewNeedsNoDesiredDeclaration(t *testing.T) {
+	c := qt.New(t)
+
+	diff := &difftypes.SchemaDiff{ViewsAdded: difftypes.ViewChanges{
+		{Name: "analytics.daily", Body: "SELECT 1"},
+	}}
+
+	nodes, err := clickhouse.New().GenerateMigrationAST(diff, &schemamodel.Database{})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(nodes, qt.HasLen, 1)
+	created, ok := nodes[0].(*ast.CreateViewNode)
+	c.Assert(ok, qt.IsTrue, qt.Commentf("node is %T", nodes[0]))
+	c.Assert(created.Name, qt.Equals, "analytics.daily")
+	c.Assert(created.Body, qt.Equals, "SELECT 1",
+		qt.Commentf("the body came from the change, not from a lookup"))
 }

@@ -88,8 +88,8 @@ func TestViews_DetectsAmbiguousDatabaseSchemasForUnqualifiedGeneratedView(t *tes
 		},
 	}, diff)
 
-	c.Assert(diff.ViewsAdded, qt.DeepEquals, []string{"active_users"})
-	c.Assert(diff.ViewsRemoved, qt.DeepEquals, []string{"other.active_users", "tenant.active_users"})
+	c.Assert(diff.ViewsAdded.Names(), qt.DeepEquals, []string{"active_users"})
+	c.Assert(diff.ViewsRemoved.Names(), qt.DeepEquals, []string{"other.active_users", "tenant.active_users"})
 	c.Assert(diff.ViewsModified, qt.HasLen, 0)
 }
 

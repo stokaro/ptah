@@ -22,6 +22,44 @@ import (
 	"go.5x5.cz/ptah/core/schemamodel"
 )
 
+// ViewChanges is a set of views one change applies to, carrying each one's
+// body and not only its name.
+//
+// The seventh family off `[]string` under stokaro/ptah#2315, and the first
+// whose name is ALREADY the identity: schemamodel.View has no Schema field
+// because the parser folds a declared schema into the name, so the carried
+// view's Name is the qualified spelling the name list held.
+//
+// Its rule is the check option. The catalog reports a word -- NONE, LOCAL,
+// CASCADED, or an equivalent a dialect chose -- where the model has a bool, and
+// the read is routed by [sqlutil.CheckOptionRequestsCheck] so the comparison
+// and the conversion cannot answer it differently.
+//
+// See [RangeChanges] for why both sides carry the operand and why the wire
+// shape does not change.
+type ViewChanges []schemamodel.View
+
+// MarshalJSON writes the names alone, the shape `views_added` and
+// `views_removed` have always had.
+func (v ViewChanges) MarshalJSON() ([]byte, error) {
+	if v == nil {
+		return []byte("null"), nil
+	}
+	return json.Marshal(v.Names())
+}
+
+// Names is the view names this change applies to.
+func (v ViewChanges) Names() []string {
+	if v == nil {
+		return nil
+	}
+	names := make([]string, 0, len(v))
+	for _, view := range v {
+		names = append(names, view.Name)
+	}
+	return names
+}
+
 // DomainChanges is a set of domain types one change applies to, carrying each
 // one's definition and not only its name.
 //
@@ -578,11 +616,11 @@ type SchemaDiff struct {
 
 	// ViewsAdded contains names of views that exist in the target schema
 	// but not in the current database schema.
-	ViewsAdded []string `json:"views_added"`
+	ViewsAdded ViewChanges `json:"views_added"`
 
 	// ViewsRemoved contains names of views that exist in the current database
 	// but not in the target schema.
-	ViewsRemoved []string `json:"views_removed"`
+	ViewsRemoved ViewChanges `json:"views_removed"`
 
 	// HypertablesAdded names the tables a declaration asks to partition and the
 	// database reports as ordinary.
