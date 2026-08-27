@@ -8,6 +8,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/internal/exprkey"
 	"go.5x5.cz/ptah/internal/indexscope"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -644,7 +645,7 @@ func appendIndexDifferences(
 			databaseEntry,
 			dialect,
 			semantics,
-			indexes[strings.ToLower(strings.TrimSpace(generatedEntry.ref.Name))],
+			indexes[exprkey.Index(semantics, generatedEntry.ref.TableName, generatedEntry.ref.Name)],
 		):
 			appendIndexAddition(diff, generatedEntry.ref)
 			appendIndexRemoval(diff, databaseEntry)

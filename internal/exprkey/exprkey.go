@@ -63,6 +63,22 @@ func PolicyParts(semantics identifier.Semantics, schema, table, policy string) s
 	return encode(objectidentity.NewBuilder(semantics).PolicyParts(schema, table, policy))
 }
 
+// Index is the key for an index expression whose owning table arrives as one
+// possibly qualified string, which is how a declaration spells it.
+//
+// The table is carried rather than dropped because whether an index name is
+// unique within its table or across the schema is the target's rule, and
+// [objectidentity.Builder.Index] is where that rule lives.
+func Index(semantics identifier.Semantics, qualifiedTable, index string) string {
+	return encode(objectidentity.NewBuilder(semantics).Index(qualifiedTable, index))
+}
+
+// IndexParts is [Index] for a catalog, which reports the schema, the table and
+// the index as three separate values.
+func IndexParts(semantics identifier.Semantics, schema, table, index string) string {
+	return encode(objectidentity.NewBuilder(semantics).IndexParts(schema, table, index))
+}
+
 // Generated is the key for one generated column, whose schema may be empty
 // because the declaration did not qualify the table.
 //
