@@ -56,6 +56,27 @@ opens a network listener. Artifact mutation is decided by
 [ADR 0004](adr/0004-constrained-artifact-mutation.md); this table is not a
 verdict on any of it.
 
+## What the walk sees
+
+Five rows are cobra's rather than Ptah's: `help`, and `completion` for bash,
+fish, powershell and zsh. Nothing in the native command tree registers them:
+cobra adds them in `ExecuteC`, after the program has finished assembling its own
+tree, so they are absent from what `cmd/root` returns and present in what the
+binary answers to. The walk calls the same two initializers before it measures, which is what
+gives every leaf `ptah --help` reaches a row here. The compatibility binary
+differs: `cmd/atlas` registers `completion` itself, so that Atlas-style group
+help can rewrite it, and `help` is the only name that arrives that late there.
+
+Two spellings are not rows, and no walk can make them rows. `__complete` and its
+alias `__completeNoDesc` are the protocol a shell uses to ask a running binary
+what to suggest next. cobra registers them from an unexported initializer that
+also removes the command again unless the invocation being parsed is that
+command, so they are unreachable from a constructed tree and hidden from
+`--help`. Measured, `ptah __complete ""` prints the top-level verb names and
+exits 0; it reads no database and takes no database flag. A row for either would
+be hand-written, and a hand-written row is the thing the generated table exists
+to rule out — so they are named here, where a claim nothing measures belongs.
+
 ## Every verb
 
 <!-- BEGIN GENERATED AGENT SURFACE -->
@@ -69,9 +90,14 @@ verdict on any of it.
 | `assist sessions list` | none | none | — | lists the conversations saved under the project's .ptah directory; neither a database nor a model endpoint is opened |
 | `assist sessions prune` | none | none | — | removes saved conversation files untouched for longer than a given age; no database is opened, and the audit log is left alone |
 | `assist sessions show` | none | none | — | prints one saved conversation from disk, including what Ptah's tools answered during it; nothing is opened to do so |
+| `completion bash` | none | none | — | writes a bash completion script to stdout, generated from the command tree; it opens no database and writes no file |
+| `completion fish` | none | none | — | writes a fish completion script to stdout, generated from the command tree; it opens no database and writes no file |
+| `completion powershell` | none | none | — | writes a PowerShell completion script to stdout, generated from the command tree; it opens no database and writes no file |
+| `completion zsh` | none | none | — | writes a zsh completion script to stdout, generated from the command tree; it opens no database and writes no file |
 | `db capabilities` | reads | none | `--db-url` | reads the server's version and catalogs to report the capability profile Ptah resolves |
 | `db drop-all` | **writes** | none | `--db-url` | drops every schema object in the database it is given |
 | `db read` | reads | none | `--db-url` | introspects the database and prints what it found |
+| `help` | none | none | — | prints the help text of the verb it names, or of the root when it names none; the verb itself is not run and nothing is opened |
 | `inference backfill` | **writes** | none | `--db-url` | reads the source, sends it to the embedding endpoint the specification names, and writes vectors and checkpoints into the target database |
 | `inference catchup` | **writes** | none | `--db-url` | rereads the source rows recorded as changed and writes their vectors, which sends that text to the embedding endpoint |
 | `inference cutover` | **writes** | none | `--db-url` | moves the pointer queries read to a different generation, and refuses when the pointer is not where the plan it was built from expects |
@@ -166,8 +192,13 @@ permission.
 | `assist sessions list` | lists the conversations saved under the project's .ptah directory; neither a database nor a model endpoint is opened |
 | `assist sessions prune` | removes saved conversation files untouched for longer than a given age; no database is opened, and the audit log is left alone |
 | `assist sessions show` | prints one saved conversation from disk, including what Ptah's tools answered during it; nothing is opened to do so |
+| `completion bash` | writes a bash completion script to stdout, generated from the command tree; it opens no database and writes no file |
+| `completion fish` | writes a fish completion script to stdout, generated from the command tree; it opens no database and writes no file |
+| `completion powershell` | writes a PowerShell completion script to stdout, generated from the command tree; it opens no database and writes no file |
+| `completion zsh` | writes a zsh completion script to stdout, generated from the command tree; it opens no database and writes no file |
 | `db capabilities` | reads the server's version and catalogs to report the capability profile Ptah resolves |
 | `db read` | introspects the database and prints what it found |
+| `help` | prints the help text of the verb it names, or of the root when it names none; the verb itself is not run and nothing is opened |
 | `inference evaluate` | searches the generation with queries from a corpus, which sends those queries to the embedding endpoint; the database is only read |
 | `inference plan` | resolves a specification against the database and prints what would happen; nothing is created and nothing is written |
 | `inference status` | prints a run's phase, progress and watermarks from the run-state tables |

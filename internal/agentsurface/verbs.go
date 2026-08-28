@@ -9,6 +9,9 @@ package agentsurface
 // is the sentence a reader would otherwise have to go and find.
 var verbs = map[string]Verb{
 	// Top level.
+	"help": {TargetNone, ScratchNone,
+		"prints the help text of the verb it names, or of the root when it names none; the verb " +
+			"itself is not run and nothing is opened"},
 	"introspect": {TargetReads, ScratchNone,
 		"reads a live database and writes annotated Go models to disk; the database is only read"},
 	"license": {TargetNone, ScratchNone,
@@ -46,6 +49,22 @@ var verbs = map[string]Verb{
 	"assist sessions show": {TargetNone, ScratchNone,
 		"prints one saved conversation from disk, including what Ptah's tools answered during " +
 			"it; nothing is opened to do so"},
+
+	// completion. cobra builds this group, not Ptah, so nothing in cmd/ names
+	// these four. They are still verbs the shipped binary answers to, and
+	// [Walk] reaches them for the reason written there.
+	"completion bash": {TargetNone, ScratchNone,
+		"writes a bash completion script to stdout, generated from the command tree; it opens " +
+			"no database and writes no file"},
+	"completion fish": {TargetNone, ScratchNone,
+		"writes a fish completion script to stdout, generated from the command tree; it opens " +
+			"no database and writes no file"},
+	"completion powershell": {TargetNone, ScratchNone,
+		"writes a PowerShell completion script to stdout, generated from the command tree; it " +
+			"opens no database and writes no file"},
+	"completion zsh": {TargetNone, ScratchNone,
+		"writes a zsh completion script to stdout, generated from the command tree; it opens " +
+			"no database and writes no file"},
 
 	// db.
 	"db capabilities": {TargetReads, ScratchNone,
