@@ -1,13 +1,13 @@
 ---
 title: Install Ptah
-description: Download a signed release archive, verify it, and put the ptah, ptah-compat, and ptah-ls binaries on your PATH.
+description: Install ptah, ptah-compat, and ptah-ls with one command, or download and verify a release archive by hand.
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-Ptah publishes release archives for Linux, macOS, and Windows, on amd64 and
-arm64. One archive carries all three command-line tools, and the download route
-needs no Go toolchain and no compiler.
+One command installs the three Ptah binaries into a directory inside your home
+folder. Ptah publishes release archives for Linux, macOS, and Windows on both
+amd64 and arm64, and one archive carries `ptah`, `ptah-compat`, and `ptah-ls`.
 
 The commands on this page were run against release `v0.2.0`. A binary built
 from a checkout of `master` carries more commands than that release, so run
@@ -15,11 +15,184 @@ from a checkout of `master` carries more commands than that release, so run
 
 ## What you need
 
-- A terminal.
-- On Linux and macOS, `curl` and `tar`, plus `sudo` rights to create and write
-  `/usr/local/bin`. On Windows, PowerShell 5.1 or later, and no elevation.
+- On Linux and macOS: a terminal, `tar`, and either `curl` or `wget`.
+- On Windows: PowerShell 5.1 or later.
+- No administrator rights. The install script writes inside your home directory
+  and calls no `sudo`.
 
-## Download a release
+## Install with one command
+
+<Tabs syncKey="install-platform">
+<TabItem label="Linux">
+
+```bash
+curl -fsSL https://stokaro.github.io/ptah/install.sh | sh
+```
+
+On a machine with no `curl`, `wget` reads the same file:
+
+```bash
+wget -qO- https://stokaro.github.io/ptah/install.sh | sh
+```
+
+</TabItem>
+<TabItem label="macOS">
+
+```bash
+curl -fsSL https://stokaro.github.io/ptah/install.sh | sh
+```
+
+</TabItem>
+<TabItem label="Windows">
+
+```powershell
+irm https://stokaro.github.io/ptah/install.ps1 | iex
+```
+
+`irm` is `Invoke-RestMethod` and `iex` is `Invoke-Expression`.
+
+</TabItem>
+</Tabs>
+
+Expected output includes, on standard output:
+
+```text
+ptah: resolved latest to v0.2.0
+ptah: platform linux/amd64
+ptah: downloading ptah_0.2.0_linux_amd64.tar.gz
+ptah: sha256 verified against checksums.txt
+ptah: installed ptah, ptah-compat, ptah-ls in ~/.local/bin
+Version: 0.2.0
+ptah: ~/.local/bin is not on your PATH.
+ptah: add it for this shell:
+    export PATH="$HOME/.local/bin:$PATH"
+ptah: to keep it, add that line to your shell's startup file.
+```
+
+That run was on Linux, so the platform and the archive name differ on your own
+machine. The `Version:` line comes from the binary that was installed: running
+it is the script's last step, so a file that cannot run on this machine is reported here
+rather than the next time you type `ptah`. The four `PATH` lines appear only
+when the install directory is not on your `PATH` already, and the script names
+your startup file when `$SHELL` says which one you use. The line it prints for
+you to paste spells `$HOME` where the lines above it print `~`, because a tilde
+does not expand inside those double quotes: the `~` form would add a directory
+literally named `~` to your `PATH`.
+
+### What the script does
+
+- **Resolves the newest release.** It follows the `releases/latest` redirect on
+  github.com, which needs no token and no API call.
+- **Verifies what it downloaded.** It reads `checksums.txt` from the same
+  release and compares the archive's SHA-256 against the line naming that
+  archive. A mismatch stops the install, and so does a checksums file that has
+  no line for the archive.
+- **Installs three binaries.** `ptah`, `ptah-compat`, and `ptah-ls` go into
+  `~/.local/bin`, or `%LOCALAPPDATA%\Ptah\bin` on Windows.
+- **Asks for no root.** It runs no `sudo` and writes nothing outside the
+  install directory.
+- **Leaves your shell configuration alone.** It edits no startup file. When the
+  install directory is not on your `PATH`, it prints the line that adds it and
+  exits 0 anyway.
+
+That last bullet has one exception per platform. Under GitHub Actions the
+script appends the install directory to `$GITHUB_PATH`, so the next step of the
+job finds `ptah`. On Windows it sets the directory in your user `Path`
+variable, because there is no startup file to print a line for.
+`--no-modify-path`, or `PTAH_INSTALL_NO_MODIFY_PATH=1`, turns both off.
+
+### Read it before you run it
+
+The URL serves a plain file, and nothing requires the one-line form. Download
+the script, read it, and run it as a separate step:
+
+```bash
+curl -fsSL https://stokaro.github.io/ptah/install.sh -o install.sh
+less install.sh
+sh ./install.sh
+```
+
+On Windows:
+
+```powershell
+irm https://stokaro.github.io/ptah/install.ps1 -OutFile install.ps1
+Get-Content install.ps1 | more
+```
+
+If your execution policy refuses to run a saved script file, evaluate the text
+you have read instead:
+
+```powershell
+Get-Content install.ps1 -Raw | Invoke-Expression
+```
+
+### Pin a version
+
+An automated environment is better off naming the release it installs. A pinned
+version is reproducible, and it saves the round trip that resolves `latest`.
+
+```bash
+curl -fsSL https://stokaro.github.io/ptah/install.sh | sh -s -- --version v0.2.0
+```
+
+`sh -s --` is what passes arguments to a script arriving on standard input.
+Without it the flags reach `sh` itself rather than the script.
+
+Every flag also has an environment variable, for the places where that spelling
+is awkward:
+
+```bash
+curl -fsSL https://stokaro.github.io/ptah/install.sh | PTAH_INSTALL_VERSION=v0.2.0 sh
+```
+
+`irm ... | iex` evaluates the script text with no arguments at all, so on
+Windows the environment variable is the form to use in the piped command:
+
+```powershell
+$env:PTAH_INSTALL_VERSION = 'v0.2.0'
+irm https://stokaro.github.io/ptah/install.ps1 | iex
+```
+
+The script's own parameters are reachable through the script-block form, which
+passes arguments to the text it evaluates:
+
+```powershell
+&([scriptblock]::Create((irm https://stokaro.github.io/ptah/install.ps1))) -Version v0.2.0
+```
+
+### Flags and environment variables
+
+An absent option selects the default: the newest release, `~/.local/bin`, all
+three binaries, and none of the extra behavior below.
+
+| Flag | Environment variable | What it does |
+| --- | --- | --- |
+| `--version <tag>` | `PTAH_INSTALL_VERSION` | Installs one release. `v0.2.0` and `0.2.0` both work. |
+| `--bin-dir <dir>` | `PTAH_INSTALL_DIR` | Installs somewhere else. `$XDG_BIN_HOME` moves it too. |
+| `--only <list>` | `PTAH_INSTALL_BINARIES` | Installs a comma-separated subset of the three binaries. |
+| `--no-modify-path` | `PTAH_INSTALL_NO_MODIFY_PATH` | Leaves `$GITHUB_PATH` and the Windows user `Path` alone. |
+| `--verify-signature` | `PTAH_INSTALL_VERIFY_SIGNATURE` | Also verifies `checksums.txt` with cosign, and fails without cosign. |
+| `--dry-run` | `PTAH_INSTALL_DRY_RUN` | Prints the plan. Downloads nothing and writes nothing. |
+| `--quiet` | `PTAH_INSTALL_QUIET` | Reports errors only. |
+| `--help`, `-h` | — | Prints the usage and the exit codes. |
+| — | `PTAH_INSTALL_BASE_URL` | Reads the release assets from a mirror. |
+
+The Windows script takes the same options as PowerShell parameters, spelled
+`-Version`, `-BinDir`, `-Only`, `-NoModifyPath`, `-VerifySignature`, `-DryRun`,
+`-Quiet`, and `-Help`. The environment variables are the same on both.
+
+The boolean variables take `1`, `0`, `true`, `false`, `yes`, or `no`. Any other
+value is a configuration error and the script refuses to run, rather than
+falling back to the default that a typo would otherwise select.
+
+## Install by hand
+
+The script is a convenience, not a requirement. An air-gapped machine, a
+mirrored artifact store, and an audit that wants every step visible can do the
+same work directly.
+
+<details>
+<summary>Download, verify, and install without the script</summary>
 
 Every release publishes one archive per platform:
 
@@ -36,65 +209,36 @@ The tag carries a leading `v` and the archive name does not, so release
 `v0.2.0` publishes `ptah_0.2.0_linux_amd64.tar.gz` and both spellings appear in
 one URL.
 
-Each script below resolves the current release tag, downloads the archive for
-its platform, checks the download against the published `checksums.txt`, and
-installs the three binaries.
-
-<Tabs syncKey="install-platform">
-<TabItem label="Linux">
+**Linux and macOS.** This block resolves the current tag, downloads the archive
+for the machine it runs on, checks it against the published `checksums.txt`,
+and installs the three binaries under your home directory:
 
 ```bash
 set -euo pipefail
 
-VERSION="$(curl -sSL https://api.github.com/repos/stokaro/ptah/releases/latest \
+VERSION="$(curl -fsSL -H 'Accept: application/json' \
+  https://github.com/stokaro/ptah/releases/latest \
   | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')"
 NUM="${VERSION#v}"
+OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
 ARCH="$(uname -m)"
 case "$ARCH" in x86_64) ARCH=amd64 ;; aarch64) ARCH=arm64 ;; esac
+ARCHIVE="ptah_${NUM}_${OS}_${ARCH}.tar.gz"
+BASE="https://github.com/stokaro/ptah/releases/download/${VERSION}"
 
 cd "$(mktemp -d)"
-curl -sSLO "https://github.com/stokaro/ptah/releases/download/${VERSION}/ptah_${NUM}_linux_${ARCH}.tar.gz"
-curl -sSLO "https://github.com/stokaro/ptah/releases/download/${VERSION}/checksums.txt"
-sha256sum --ignore-missing -c checksums.txt
+curl -fsSLO "${BASE}/${ARCHIVE}"
+curl -fsSLO "${BASE}/checksums.txt"
+if command -v sha256sum >/dev/null; then
+  sha256sum --ignore-missing -c checksums.txt
+else
+  shasum -a 256 --ignore-missing -c checksums.txt
+fi
 
-tar -xzf "ptah_${NUM}_linux_${ARCH}.tar.gz"
-sudo install -d /usr/local/bin
-sudo install -m 0755 ptah ptah-compat ptah-ls /usr/local/bin/
-ptah version
-```
-
-Expected output includes, on standard output:
-
-```text
-ptah_0.2.0_linux_amd64.tar.gz: OK
-Version: 0.2.0
-Commit: 371c172de4719c9723b51321672cbf18e5ee3577
-Date: 2026-08-02T16:42:06Z
-Go: go1.26.5
-Platform: linux/amd64
-```
-
-</TabItem>
-<TabItem label="macOS">
-
-```bash
-set -euo pipefail
-
-VERSION="$(curl -sSL https://api.github.com/repos/stokaro/ptah/releases/latest \
-  | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')"
-NUM="${VERSION#v}"
-ARCH="$(uname -m)"
-case "$ARCH" in x86_64) ARCH=amd64 ;; aarch64) ARCH=arm64 ;; esac
-
-cd "$(mktemp -d)"
-curl -sSLO "https://github.com/stokaro/ptah/releases/download/${VERSION}/ptah_${NUM}_darwin_${ARCH}.tar.gz"
-curl -sSLO "https://github.com/stokaro/ptah/releases/download/${VERSION}/checksums.txt"
-shasum -a 256 --ignore-missing -c checksums.txt
-
-tar -xzf "ptah_${NUM}_darwin_${ARCH}.tar.gz"
-sudo install -d /usr/local/bin
-sudo install -m 0755 ptah ptah-compat ptah-ls /usr/local/bin/
-ptah version
+tar -xzf "$ARCHIVE"
+mkdir -p "$HOME/.local/bin"
+install -m 0755 ptah ptah-compat ptah-ls "$HOME/.local/bin/"
+"$HOME/.local/bin/ptah" version
 ```
 
 Expected output includes, on standard output:
@@ -108,47 +252,53 @@ Go: go1.26.5
 Platform: darwin/arm64
 ```
 
-`shasum -a 256` is the spelling present on every macOS release, which is why
-the macOS script uses it rather than `sha256sum`.
+Five details in that block carry weight:
 
-macOS does not create `/usr/local/bin`, and on a Mac that has never had it the
-copy fails after the download and the checksum have both succeeded. The
-`install -d` line creates the directory and does nothing when it already
-exists.
+- **`set -euo pipefail` is what makes the checksum a gate.** Without it a
+  mismatch prints its warning and the block installs the archive anyway,
+  exiting 0.
+- **`curl -f` is what makes a missing asset an error.** Without it a 404 exits
+  0 and writes a nine-byte file containing `Not Found`. The checksum step then
+  reports a mismatch for an archive that never arrived, which sends the reader
+  looking for a corrupt download.
+- **`--ignore-missing` is required.** `checksums.txt` covers every artifact of
+  the release, so without that flag the check reports every artifact you did
+  not download as unreadable and fails.
+- **The release tag has to be resolved first.** The asset name embeds the
+  version, so `releases/latest/download/<name>` resolves to nothing. Reading
+  the tag from the `releases/latest` redirect keeps the lookup off
+  `api.github.com`, which limits an unauthenticated address to 60 requests per
+  hour.
+- **The archive has no top-level directory.** Extracting it straight into a
+  binary directory would deposit `LICENSE` and `README.md` there too, so the
+  block extracts first and installs the three binaries by name.
 
-:::caution
-Apple does not notarize the Ptah binaries; they carry an ad-hoc linker
-signature. `curl` does not mark a download, so the script above is unaffected.
-A web browser does mark it, and macOS kills a marked binary the first time it
-runs, before it writes anything to either stream. If you downloaded the archive
-with a browser, clear the mark before running the binaries.
+Stock macOS ships `shasum` rather than `sha256sum`, which is what the
+`command -v` branch selects between.
 
-```bash
-xattr -d com.apple.quarantine /usr/local/bin/ptah /usr/local/bin/ptah-compat /usr/local/bin/ptah-ls
-```
-:::
-
-</TabItem>
-<TabItem label="Windows">
+**Windows.** Set `$version` to the release you want; the
+[releases page](https://github.com/stokaro/ptah/releases) lists them.
 
 ```powershell
 $ErrorActionPreference = 'Stop'
 
-$version = (Invoke-RestMethod https://api.github.com/repos/stokaro/ptah/releases/latest).tag_name
+$version = 'v0.2.0'
 $num     = $version.TrimStart('v')
 $arch    = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'amd64' }
 $base    = "https://github.com/stokaro/ptah/releases/download/$version"
 
-$tmp = New-Item -ItemType Directory -Path (Join-Path $env:TEMP ([guid]::NewGuid()))
-Invoke-WebRequest "$base/ptah_${num}_windows_$arch.zip" -OutFile "$tmp\ptah.zip"
-Invoke-WebRequest "$base/checksums.txt"                 -OutFile "$tmp\checksums.txt"
+$name = "ptah_${num}_windows_$arch.zip"
+$tmp  = New-Item -ItemType Directory -Path (Join-Path $env:TEMP ([guid]::NewGuid()))
+Invoke-WebRequest "$base/$name"         -OutFile "$tmp\ptah.zip"
+Invoke-WebRequest "$base/checksums.txt" -OutFile "$tmp\checksums.txt"
 
-$expected = (Select-String -Path "$tmp\checksums.txt" -Pattern "ptah_${num}_windows_$arch.zip").Line.Split()[0]
+$line     = Get-Content "$tmp\checksums.txt" | Where-Object { $_.EndsWith(" $name") }
+$expected = $line.Split()[0]
 $actual   = (Get-FileHash "$tmp\ptah.zip" -Algorithm SHA256).Hash.ToLower()
 if ($expected -ne $actual) { throw "checksum mismatch: got $actual, expected $expected" }
 
-Expand-Archive "$tmp\ptah.zip" -DestinationPath "$env:LOCALAPPDATA\Ptah" -Force
-$env:Path = "$env:LOCALAPPDATA\Ptah;$env:Path"
+Expand-Archive "$tmp\ptah.zip" -DestinationPath "$env:LOCALAPPDATA\Ptah\bin" -Force
+$env:Path = "$env:LOCALAPPDATA\Ptah\bin;$env:Path"
 ptah version
 ```
 
@@ -167,144 +317,35 @@ what refuses a mismatched download. `$ErrorActionPreference` cannot stand in
 for it: that setting governs cmdlet errors, and does not stop a script when a
 program exits non-zero.
 
+The `EndsWith` filter has to select one line. `checksums.txt` also carries an
+entry for `ptah_<version>_windows_<arch>.zip.sbom.json`, whose name starts with
+the archive's, so a filter that matches on the archive name alone selects two
+lines and leaves an array where the hash should be.
+
 That `$env:Path` assignment lasts for the current session. To keep the
 directory on your `PATH` in every new session:
 
 ```powershell
 [Environment]::SetEnvironmentVariable(
   'Path',
-  "$env:LOCALAPPDATA\Ptah;" + [Environment]::GetEnvironmentVariable('Path', 'User'),
+  "$env:LOCALAPPDATA\Ptah\bin;" + [Environment]::GetEnvironmentVariable('Path', 'User'),
   'User')
 ```
 
-</TabItem>
-</Tabs>
+</details>
 
-The archive name and the `Platform:` line name the operating system and
-architecture you downloaded for.
-
-Four details in those scripts carry weight:
-
-- **`set -euo pipefail`, and the `if` that throws, are what make the checksum a
-  gate.** Without them a mismatch prints its warning and the script goes on to
-  install the archive anyway, exiting 0.
-- **`--ignore-missing` is required.** `checksums.txt` covers every artifact of
-  the release, so without that flag the check reports every artifact you did
-  not download as unreadable and fails.
-- **The release tag has to be resolved first.** The asset name embeds the
-  version, so `releases/latest/download/<name>` resolves to nothing.
-- **The archive has no top-level directory.** Extracting it straight into a
-  binary directory would deposit `LICENSE` and `README.md` there too, so the
-  scripts extract first and install the three binaries by name.
-
-The tag lookup is an unauthenticated GitHub API call, which is limited to 60
-requests per hour per address. Pin `VERSION` to a release tag on a build agent
-that installs Ptah often.
-
-## Verify the signature
-
-Ptah signs `checksums.txt` with [Sigstore](https://docs.sigstore.dev/) keyless
-signing, and `checksums.txt` records each archive's SHA-256. The chain is two
-links: the signature proves the checksum file came from Ptah's release
-workflow, and the checksum proves the archive matches that file. There is no
-signature file for an archive on its own.
-
-This step needs [cosign](https://github.com/sigstore/cosign) on your `PATH`.
-
-<Tabs syncKey="install-platform">
-<TabItem label="Linux">
+:::caution
+Apple does not notarize the Ptah binaries; they carry an ad-hoc linker
+signature. `curl` marks no download, so a binary the install script put in
+place runs. A web browser does mark one, and macOS kills a marked binary the
+first time it runs, before it writes anything to either stream. If you
+downloaded the archive from the releases page with a browser, clear the mark
+before running the binaries.
 
 ```bash
-set -euo pipefail
-
-VERSION="$(curl -sSL https://api.github.com/repos/stokaro/ptah/releases/latest \
-  | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')"
-
-cd "$(mktemp -d)"
-curl -sSLO "https://github.com/stokaro/ptah/releases/download/${VERSION}/checksums.txt"
-curl -sSLO "https://github.com/stokaro/ptah/releases/download/${VERSION}/checksums.txt.sigstore.json"
-
-cosign verify-blob --bundle checksums.txt.sigstore.json checksums.txt \
-  --certificate-identity-regexp 'github.com/stokaro/ptah' \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+xattr -d com.apple.quarantine ~/.local/bin/ptah ~/.local/bin/ptah-compat ~/.local/bin/ptah-ls
 ```
-
-</TabItem>
-<TabItem label="macOS">
-
-```bash
-set -euo pipefail
-
-VERSION="$(curl -sSL https://api.github.com/repos/stokaro/ptah/releases/latest \
-  | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')"
-
-cd "$(mktemp -d)"
-curl -sSLO "https://github.com/stokaro/ptah/releases/download/${VERSION}/checksums.txt"
-curl -sSLO "https://github.com/stokaro/ptah/releases/download/${VERSION}/checksums.txt.sigstore.json"
-
-cosign verify-blob --bundle checksums.txt.sigstore.json checksums.txt \
-  --certificate-identity-regexp 'github.com/stokaro/ptah' \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com
-```
-
-</TabItem>
-<TabItem label="Windows">
-
-```powershell
-$ErrorActionPreference = 'Stop'
-
-$version = (Invoke-RestMethod https://api.github.com/repos/stokaro/ptah/releases/latest).tag_name
-$base    = "https://github.com/stokaro/ptah/releases/download/$version"
-
-$tmp = New-Item -ItemType Directory -Path (Join-Path $env:TEMP ([guid]::NewGuid()))
-Set-Location $tmp
-Invoke-WebRequest "$base/checksums.txt"               -OutFile checksums.txt
-Invoke-WebRequest "$base/checksums.txt.sigstore.json" -OutFile checksums.txt.sigstore.json
-
-cosign verify-blob --bundle checksums.txt.sigstore.json checksums.txt `
-  --certificate-identity-regexp 'github.com/stokaro/ptah' `
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com
-```
-
-</TabItem>
-</Tabs>
-
-Expected output includes, on standard error:
-
-```text
-Verified OK
-```
-
-Nothing reaches standard output, so a build step that captures only standard
-output sees an empty result on success. Read the exit status instead: `cosign`
-exits 0 when the signature matches and 1 when it does not.
-
-The identity pattern is what the check is about. `github.com/stokaro/ptah`
-matches the workflow that publishes Ptah releases; a pattern naming any other
-repository fails with `no matching CertificateIdentity found`.
-
-Each archive also ships an SPDX 2.3 software bill of materials named
-`ptah_<version>_<os>_<arch>.tar.gz.sbom.json`, with its own `.sigstore.json`
-bundle. The same `cosign verify-blob` command verifies it.
-
-## What the archive contains
-
-| File | What it is |
-| --- | --- |
-| `ptah` | The Ptah CLI |
-| `ptah-compat` | The Atlas-compatible drop-in binary |
-| `ptah-ls` | The language server for `//ptah` annotations |
-| `LICENSE`, `README.md` | Project license and readme |
-
-There is no `ptah-compat` download of its own, and no separate `ptah-ls`
-download: one archive carries all three. On Windows the same five files appear
-in the zip, with `.exe` on the three binaries.
-
-For a script that calls an executable named `atlas`, copy or symlink
-`ptah-compat` under that name. `ptah-compat` reads its own file name, so a copy
-called `atlas` reports itself as `atlas` in help and diagnostics. The
-[Atlas compatibility overview](../../atlas/overview/#installing-under-the-name-atlas)
-covers the rename.
+:::
 
 ## Install with the Go toolchain
 
@@ -365,6 +406,90 @@ To build one binary on its own:
 go build -o ./bin/ptah ./cmd/ptah
 ```
 
+## What the archive contains
+
+| File | What it is |
+| --- | --- |
+| `ptah` | The Ptah CLI |
+| `ptah-compat` | The Atlas-compatible drop-in binary |
+| `ptah-ls` | The language server for `//ptah` annotations |
+| `LICENSE`, `README.md` | Project license and readme |
+
+There is no `ptah-compat` download of its own, and no separate `ptah-ls`
+download: one archive carries all three. On Windows the same five files appear
+in the zip, with `.exe` on the three binaries.
+
+For a script that calls an executable named `atlas`, copy or symlink
+`ptah-compat` under that name. `ptah-compat` reads its own file name, so a copy
+called `atlas` reports itself as `atlas` in help and diagnostics. The
+[Atlas compatibility overview](../../atlas/overview/#installing-under-the-name-atlas)
+covers the rename.
+
+## Verify the signature
+
+Ptah signs `checksums.txt` with [Sigstore](https://docs.sigstore.dev/) keyless
+signing, and `checksums.txt` records each archive's SHA-256. The chain is two
+links: the signature proves the checksum file came from Ptah's release
+workflow, and the checksum proves the archive matches that file. There is no
+signature file for an archive on its own.
+
+The install script checks that chain when you pass `--verify-signature`. The
+flag needs [cosign](https://github.com/sigstore/cosign) on your `PATH`, and it
+fails when cosign is absent rather than skipping the check.
+
+To run the same verification by hand, against the release you downloaded:
+
+```bash
+set -euo pipefail
+
+VERSION=v0.2.0
+BASE="https://github.com/stokaro/ptah/releases/download/${VERSION}"
+
+cd "$(mktemp -d)"
+curl -fsSLO "${BASE}/checksums.txt"
+curl -fsSLO "${BASE}/checksums.txt.sigstore.json"
+
+cosign verify-blob --bundle checksums.txt.sigstore.json checksums.txt \
+  --certificate-identity-regexp 'github.com/stokaro/ptah' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+The same commands in PowerShell:
+
+```powershell
+$ErrorActionPreference = 'Stop'
+
+$version = 'v0.2.0'
+$base    = "https://github.com/stokaro/ptah/releases/download/$version"
+
+$tmp = New-Item -ItemType Directory -Path (Join-Path $env:TEMP ([guid]::NewGuid()))
+Set-Location $tmp
+Invoke-WebRequest "$base/checksums.txt"               -OutFile checksums.txt
+Invoke-WebRequest "$base/checksums.txt.sigstore.json" -OutFile checksums.txt.sigstore.json
+
+cosign verify-blob --bundle checksums.txt.sigstore.json checksums.txt `
+  --certificate-identity-regexp 'github.com/stokaro/ptah' `
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+Expected output includes, on standard error:
+
+```text
+Verified OK
+```
+
+Nothing reaches standard output, so a build step that captures only standard
+output sees an empty result on success. Read the exit status instead: `cosign`
+exits 0 when the signature matches and 1 when it does not.
+
+The identity pattern is what the check is about. `github.com/stokaro/ptah`
+matches the workflow that publishes Ptah releases; a pattern naming any other
+repository fails with `no matching CertificateIdentity found`.
+
+Each archive also ships an SPDX 2.3 software bill of materials named
+`ptah_<version>_<os>_<arch>.tar.gz.sbom.json`, with its own `.sigstore.json`
+bundle. The same `cosign verify-blob` command verifies it.
+
 ## Shell completion
 
 Both `ptah` and `ptah-compat` generate a completion script for bash, fish,
@@ -379,11 +504,13 @@ prints where to write the script so that every new session loads it.
 
 ## Optional tools
 
-The primary path needs none of these. Each one belongs to a specific workflow:
+The install script needs none of these. Each one belongs to a specific
+workflow:
 
 | Tool | Needed for |
 | --- | --- |
 | [Graphviz](https://graphviz.org/download/) `dot` | `ptah viz --format svg` |
+| [cosign](https://github.com/sigstore/cosign) | `--verify-signature`, and verifying a release by hand |
 | A database server or client | Live `db`, `schema`, and `migrations` workflows against a server |
 | `ptah-ls` | Annotation hover, completion, and diagnostics in your editor |
 
@@ -397,8 +524,8 @@ Graphviz either, but that target is newer than `v0.2.0`: on that release `--to`
 takes `hcl`, `openapi-v3`, `graphql`, or `protobuf`, and refuses anything else
 by name. `ptah schema export --help` lists what your own build takes.
 
-`ptah-ls` is already installed if you downloaded the archive. To wire it into
-an editor, see
+`ptah-ls` is already installed if you ran the install script or downloaded the
+archive. To wire it into an editor, see
 [Editor support](../../reference/go-annotations/#editor-support).
 
 ## Check the install
@@ -421,13 +548,24 @@ lives.
 
 ## Failure modes
 
-**The checksum line says `FAILED`.** The download did not match the published
-hash. Delete it and download again. If it fails a second time, verify the
-signature on `checksums.txt` before trusting anything else in the directory.
+**`ptah: command not found` after the install script finished.** The binaries
+are in `~/.local/bin`. A default macOS shell does not have that directory on
+its `PATH`, and Debian and Ubuntu add it in the first session started after the
+directory exists. Add it to the running shell:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Write that line into `~/.zshrc` or `~/.bashrc` to keep it in every new session.
+
+**The install stopped at a checksum mismatch.** The download did not match the
+published hash. Run the install again. If it fails a second time, verify the
+signature on `checksums.txt` before trusting anything else you downloaded.
 
 **A macOS binary exits with no output at all.** The file carries the browser's
-quarantine mark. Remove it with `xattr -d com.apple.quarantine`, as the macOS
-tab describes, or download with `curl` instead.
+quarantine mark. Remove it with `xattr -d com.apple.quarantine`, as the caution
+above describes, or install with the script instead.
 
 **`ptah: command not found` after `go install`.** The binary is in
 `$(go env GOPATH)/bin`, which is not on your `PATH` by default.
@@ -435,6 +573,24 @@ tab describes, or download with `curl` instead.
 **A command in the documentation is missing from your binary.** The
 documentation version you are reading can be ahead of the release you
 installed. Compare against `ptah --help`, or build from a checkout.
+
+Both install scripts name the kind of failure in the exit status, which
+PowerShell reports as `$LASTEXITCODE`:
+
+| Code | Meaning |
+| --- | --- |
+| `0` | The install succeeded. |
+| `1` | An unexpected failure. |
+| `2` | A usage or configuration error: a flag, an argument, or a variable. |
+| `3` | An unsupported operating system or architecture. |
+| `4` | A prerequisite is missing: `curl` or `wget`, `tar`, `mktemp`, or a SHA-256 tool. |
+| `5` | A download failure, including a release that has no such asset. |
+| `6` | An integrity failure: the archive did not match `checksums.txt`. |
+| `7` | The install directory cannot be used. |
+
+Those codes belong to the install script. The `ptah`, `ptah-compat`, and
+`ptah-ls` binaries have their own set, on
+[Exit codes](../../reference/exit-codes/).
 
 ## Next steps
 
