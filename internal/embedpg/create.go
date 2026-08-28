@@ -3,9 +3,11 @@ package embedpg
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
+	"go.5x5.cz/ptah/internal/embeddigest"
 	"go.5x5.cz/ptah/internal/embedgen"
 )
 
@@ -51,7 +53,43 @@ func EnsureTarget(ctx context.Context, db *sql.DB, spec embedgen.Spec) error {
 	if _, err := db.ExecContext(ctx, comment); err != nil {
 		return fmt.Errorf("comment the target column: %w", err)
 	}
-	return nil
+	return refuseAnotherGenerationsColumn(ctx, db, spec)
+}
+
+// refuseAnotherGenerationsColumn says so before any embedding is paid for.
+//
+// The write path refuses a row belonging to another generation, which is where
+// the guarantee lives -- but it refuses one row at a time, in the middle of a
+// backfill, after the provider has already been called for that batch. A
+// generation whose column is somebody else's is a specification to edit, and
+// the moment to learn that is before the run starts (stokaro/ptah#2391).
+//
+// Two generations over one table need two columns. That is Decision 6, and it
+// is what makes a cutover a pointer move rather than a data migration: the
+// previous generation's vectors are still there to go back to.
+func refuseAnotherGenerationsColumn(
+	ctx context.Context, db *sql.DB, spec embedgen.Spec,
+) error {
+	// #nosec G201 -- identifiers from the specification, through quoteIdentifier.
+	query := fmt.Sprintf(
+		"SELECT DISTINCT %s FROM %s WHERE %s IS NOT NULL AND %s <> $1 LIMIT 1",
+		quoteIdentifier(spec.Target.Column+GenerationSuffix), qualifiedTargetTable(spec),
+		quoteIdentifier(spec.Target.Column+GenerationSuffix),
+		quoteIdentifier(spec.Target.Column+GenerationSuffix))
+
+	var occupant string
+	switch err := db.QueryRowContext(ctx, query, spec.Identity().Digest).Scan(&occupant); {
+	case errors.Is(err, sql.ErrNoRows):
+		return nil
+	case err != nil:
+		return fmt.Errorf("read the target generation: %w", err)
+	}
+	return fmt.Errorf(
+		"column %q on %s holds generation %s, and this run is generation %s: a generation "+
+			"writes its own column so the previous one is still there to go back to. "+
+			"Give this one its own target.column in the specification",
+		spec.Target.Column, spec.Target.Table,
+		embeddigest.Short(occupant), spec.Identity().Short())
 }
 
 // requireVectorExtension refuses before the ALTER rather than after it.

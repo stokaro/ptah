@@ -389,16 +389,18 @@ cases:
 
 	// Document one points exactly where the query does and is far along that
 	// direction; document two points elsewhere and is closer in absolute terms.
-	cosineSpec := writeCLISpecWithMetric(c, endpointURL, "cosine")
+	cosineSpec := writeCLISpecWithMetric(c, endpointURL, "cosine", "embedding")
 	backfillFor(c, ctx, cosineSpec, metricURL, "cosine-run")
 	c.Assert(runInference(c, ctx, "evaluate",
 		"--spec", cosineSpec, "--db-url", metricURL, "--corpus", corpus),
 		qt.Not(qt.Contains), "blocking:")
 
 	// The same two documents, the same query, the other metric, the other
-	// answer. The metric is part of the generation identity, so the vectors are
-	// written again under the new one rather than reinterpreted.
-	l2Spec := writeCLISpecWithMetric(c, endpointURL, "l2")
+	// answer. The metric is part of the generation identity, so this is a
+	// second generation -- and a generation writes its own column. It used to
+	// name the same one, which worked only because nothing stopped it from
+	// overwriting the first (stokaro/ptah#2391).
+	l2Spec := writeCLISpecWithMetric(c, endpointURL, "l2", "embedding_l2")
 	backfillFor(c, ctx, l2Spec, metricURL, "l2-run")
 
 	output, err := runInferenceExpectingFailure(c, ctx, "evaluate",

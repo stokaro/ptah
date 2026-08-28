@@ -75,8 +75,13 @@ func TestEnsureTarget_LeavesVectorsAloneLive(t *testing.T) {
 
 	spec := loadTargetSpec(c, table)
 	c.Assert(embedpg.EnsureTarget(ctx, db, spec), qt.IsNil)
+	// Tagged with this specification's own generation, because a column holding
+	// somebody else's is refused now -- that refusal has its own test, and this
+	// one is about a second EnsureTarget not destroying what the first one's
+	// backfill put there.
 	_, err := db.ExecContext(ctx, fmt.Sprintf(
-		"UPDATE %s SET embedding = '[1,2,3,4]', embedding_generation = 'gen-1'", table))
+		"UPDATE %s SET embedding = '[1,2,3,4]', embedding_generation = $1", table),
+		spec.Identity().Digest)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(embedpg.EnsureTarget(ctx, db, spec), qt.IsNil)
@@ -86,7 +91,7 @@ func TestEnsureTarget_LeavesVectorsAloneLive(t *testing.T) {
 		"SELECT embedding::text, embedding_generation FROM %s", table)).
 		Scan(&vector, &generation), qt.IsNil)
 	c.Assert(vector, qt.Equals, "[1,2,3,4]")
-	c.Assert(generation, qt.Equals, "gen-1")
+	c.Assert(generation, qt.Equals, spec.Identity().Digest)
 }
 
 // TestEnsureTarget_RefusesWithoutPgvectorLive is the failure path, and it needs
@@ -157,6 +162,10 @@ func targetColumnsDatabase(
 		_, err := db.ExecContext(ctx, statement)
 		c.Assert(err, qt.IsNil, qt.Commentf("%s", statement))
 	}
+	// The run tables, because Target.Commit writes the run's progress in the
+	// same transaction as the vectors -- which is the point of that design and
+	// not something a test gets to opt out of.
+	c.Assert(embedpg.NewStore(db).EnsureSchema(ctx), qt.IsNil)
 	return db, table
 }
 

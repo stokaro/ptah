@@ -73,8 +73,24 @@ func (t *Target) Commit(ctx context.Context, writes []embedrun.TargetWrite, run 
 	}
 	defer func() { _ = transaction.Rollback() }()
 
+	// What the target already holds for these keys, read inside the same
+	// transaction and locked, so the decision below is made against what is
+	// there rather than against what this worker believes. embedrun.ResolveWrite
+	// is the decision; before stokaro/ptah#2391 nothing called it and every
+	// write won unconditionally.
+	existing, err := t.existingWrites(ctx, transaction, writes)
+	if err != nil {
+		return err
+	}
 	for _, write := range writes {
-		if err := t.applyWrite(ctx, transaction, write); err != nil {
+		resolved, changed, err := embedrun.ResolveWrite(existing[writeKey(write.Key)], write)
+		if err != nil {
+			return fmt.Errorf("write %v: %w", write.Key, err)
+		}
+		if !changed {
+			continue
+		}
+		if err := t.applyWrite(ctx, transaction, resolved); err != nil {
 			return err
 		}
 	}
@@ -88,6 +104,93 @@ func (t *Target) Commit(ctx context.Context, writes []embedrun.TargetWrite, run 
 }
 
 // applyWrite writes one row.
+// existingWrites reads what the target holds for a batch's keys.
+//
+// FOR UPDATE, because two workers embedding the same row are exactly what the
+// resolution exists to order: without the lock both read the same prior state,
+// both decide they win, and the later commit is the one that happens to be
+// second rather than the one that is newer.
+//
+// A row whose generation column is NULL has never been written, and is absent
+// from the answer -- ResolveWrite reads a nil as "nothing here yet", which is
+// the same thing said once instead of twice.
+func (t *Target) existingWrites(
+	ctx context.Context, transaction *sql.Tx, writes []embedrun.TargetWrite,
+) (map[string]*embedrun.TargetWrite, error) {
+	held := make(map[string]*embedrun.TargetWrite, len(writes))
+	if len(writes) == 0 {
+		return held, nil
+	}
+	column := t.spec.Target.Column
+	keys := t.spec.Source.KeyFields
+
+	arguments := make([]any, 0, len(writes)*len(keys))
+	tuples := make([]string, 0, len(writes))
+	for _, write := range writes {
+		placeholders := make([]string, 0, len(keys))
+		for index := range keys {
+			arguments = append(arguments, write.Key[index])
+			placeholders = append(placeholders, fmt.Sprintf("$%d", len(arguments)))
+		}
+		tuples = append(tuples, "("+strings.Join(placeholders, ", ")+")")
+	}
+
+	selected := make([]string, 0, len(keys)+4)
+	for _, key := range keys {
+		selected = append(selected, quoteIdentifier(key)+"::text")
+	}
+	for _, suffix := range MetadataSuffixes() {
+		selected = append(selected, quoteIdentifier(column+suffix))
+	}
+	casted := make([]string, 0, len(keys))
+	for _, key := range keys {
+		casted = append(casted, quoteIdentifier(key)+"::text")
+	}
+	// #nosec G201 -- identifiers from the specification, through quoteIdentifier.
+	query := fmt.Sprintf("SELECT %s FROM %s WHERE (%s) IN (%s) FOR UPDATE",
+		strings.Join(selected, ", "), t.qualifiedTable(),
+		strings.Join(casted, ", "), strings.Join(tuples, ", "))
+
+	rows, err := transaction.QueryContext(ctx, query, arguments...)
+	if err != nil {
+		return nil, fmt.Errorf("read the target rows: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		key := make([]string, len(keys))
+		var generation, inputHash, version, state sql.NullString
+		destinations := make([]any, 0, len(keys)+4)
+		for index := range key {
+			destinations = append(destinations, &key[index])
+		}
+		destinations = append(destinations, &generation, &inputHash, &version, &state)
+		if err := rows.Scan(destinations...); err != nil {
+			return nil, fmt.Errorf("read the target rows: %w", err)
+		}
+		if !generation.Valid {
+			continue
+		}
+		held[writeKey(key)] = &embedrun.TargetWrite{
+			Key: key, Generation: generation.String, InputHash: inputHash.String,
+			Version: version.String, Kind: embedrun.WriteKind(state.String),
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read the target rows: %w", err)
+	}
+	return held, nil
+}
+
+// writeKey renders a composite key as one map key.
+//
+// NUL separates the components because a PostgreSQL text value cannot contain
+// one, so no pair of distinct keys can render to the same string. Joining on a
+// printable separator would make ("a", "b|c") and ("a|b", "c") the same row.
+func writeKey(key []string) string {
+	return strings.Join(key, "\x00")
+}
+
 func (t *Target) applyWrite(ctx context.Context, transaction *sql.Tx, write embedrun.TargetWrite) error {
 	query, arguments := t.upsertStatement(write)
 	if _, err := transaction.ExecContext(ctx, query, arguments...); err != nil {

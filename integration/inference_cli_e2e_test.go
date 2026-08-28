@@ -640,19 +640,19 @@ func writeCLISpec(c *qt.C, endpoint string) string {
 }
 
 // writeCLISpecWithMetric writes one with a chosen distance metric.
-func writeCLISpecWithMetric(c *qt.C, endpoint, metric string) string {
+func writeCLISpecWithMetric(c *qt.C, endpoint, metric, column string) string {
 	c.Helper()
-	return writeCLISpecFull(c, endpoint, "outbox", metric)
+	return writeCLISpecFull(c, endpoint, "outbox", metric, column)
 }
 
 // writeCLISpecWithMode writes one with a chosen consistency mode.
 func writeCLISpecWithMode(c *qt.C, endpoint, mode string) string {
 	c.Helper()
-	return writeCLISpecFull(c, endpoint, mode, "cosine")
+	return writeCLISpecFull(c, endpoint, mode, "cosine", "embedding")
 }
 
 // writeCLISpecFull writes one with both chosen.
-func writeCLISpecFull(c *qt.C, endpoint, mode, metric string) string {
+func writeCLISpecFull(c *qt.C, endpoint, mode, metric, column string) string {
 	c.Helper()
 	document := fmt.Sprintf(`
 version: 1
@@ -682,7 +682,7 @@ model:
 target:
   schema: public
   table: articles
-  column: embedding
+  column: %s
   representation: vector
   metric: %s
 consistency:
@@ -690,7 +690,7 @@ consistency:
 policy:
   require_exact_approval: true
   require_consistency_mode: true
-`, endpoint, metric, mode)
+`, endpoint, column, metric, mode)
 	path := filepath.Join(c.TempDir(), "spec.yaml")
 	c.Assert(os.WriteFile(path, []byte(document), 0o600), qt.IsNil)
 	return path
