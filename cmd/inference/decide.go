@@ -76,6 +76,9 @@ func runVerify(
 		// holding only the passes is a record of nothing.
 		return fmt.Errorf("verification found %d blocking findings", len(report.Blocking()))
 	}
+	if err := reachPhase(ctx, options, runID, embedrun.PhaseVerified); err != nil {
+		return err
+	}
 	return recordVerification(ctx, options, report.Generation)
 }
 
@@ -321,6 +324,9 @@ func runCutover(
 	if err := openStabilization(ctx, out, opened, plan, now, stabilizeFor); err != nil {
 		return err
 	}
+	if err := reachPhase(ctx, options, runID, embedrun.PhaseCutOver); err != nil {
+		return err
+	}
 	return publishCutover(ctx, out, opened, plan, report, approver, now, stabilizeFor, evidence)
 }
 
@@ -544,6 +550,23 @@ type retireOptions struct {
 	approvalDigest string
 	approver       string
 	dropColumn     bool
+}
+
+// reachPhase records how far a verb got, on its own connection.
+//
+// Its own, because the verbs call it after the work is done, when the session
+// they did it through may already be closed. It is a second connection on a
+// path that has just written to the database, and it is the alternative to
+// threading a session through every return.
+func reachPhase(
+	ctx context.Context, options commonOptions, runID string, to embedrun.Phase,
+) error {
+	opened, err := open(ctx, options)
+	if err != nil {
+		return err
+	}
+	defer opened.close()
+	return opened.store.ReachPhase(ctx, runID, to)
 }
 
 // runRetire decides and destroys.

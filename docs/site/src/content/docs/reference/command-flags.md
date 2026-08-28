@@ -259,6 +259,7 @@ Read the columns as follows.
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
 
 **`ptah inference plan`**

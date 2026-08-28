@@ -68,7 +68,8 @@ func TestInferenceIndexE2E(t *testing.T) {
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(before, qt.Contains, "index")
 
-	built := runInference(c, ctx, "index", "--spec", specPath, "--db-url", dbName)
+	built := runInference(c, ctx, "index",
+		"--spec", specPath, "--db-url", dbName, "--run-id", cliRunID)
 	c.Assert(built, qt.Contains, "has a valid index")
 
 	// After. The same command, the same run, the same data -- the index is the
@@ -78,7 +79,8 @@ func TestInferenceIndexE2E(t *testing.T) {
 	c.Assert(after, qt.Contains, "every deterministic layer passed")
 
 	// And running it again is the finished state rather than an error.
-	again := runInference(c, ctx, "index", "--spec", specPath, "--db-url", dbName)
+	again := runInference(c, ctx, "index",
+		"--spec", specPath, "--db-url", dbName, "--run-id", cliRunID)
 	c.Assert(again, qt.Contains, "already has a valid index")
 }
 

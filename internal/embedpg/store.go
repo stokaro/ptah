@@ -399,3 +399,32 @@ func decodeCursor(encoded sql.NullString) ([]string, error) {
 	}
 	return cursor, nil
 }
+
+// ReachPhase records that a run has got as far as a phase.
+//
+// Read, decide, save — and the decision is embedrun.Run.Reach, which leaves a
+// phase already at or past the target alone. That is why this is one call
+// rather than a read and a write at every verb: the caller says how far it got,
+// not what the phase should now be, and a verb re-run out of order tells the
+// run nothing rather than dragging it backwards.
+//
+// The stored token is the one offered, because the caller here is an operator
+// running a command rather than a worker holding a lease. The fence exists to
+// stop a worker the run has moved past from committing; a person naming a run
+// on the command line is not that, and the guards on what they asked for --
+// the plan digest a cutover binds to, the freshness a rollback needs -- are the
+// ones that decide whether the work happens at all.
+func (s *Store) ReachPhase(ctx context.Context, runID string, to embedrun.Phase) error {
+	run, err := s.Run(ctx, runID)
+	if err != nil {
+		return err
+	}
+	before := run.Phase
+	if err := run.Reach(run.FencingToken, to); err != nil {
+		return err
+	}
+	if run.Phase == before {
+		return nil
+	}
+	return s.SaveRun(ctx, run)
+}
