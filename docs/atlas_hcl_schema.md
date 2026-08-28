@@ -15,7 +15,7 @@ used as a Ptah schema source.
 ## Generate SQL
 
 ```bash
-go run ./cmd schema render --schema-file schema.hcl --dialect postgres
+go run ./cmd/ptah schema render --schema-file schema.hcl --dialect postgres
 ```
 
 `--schema-file` accepts `.hcl`, `.yaml`, `.yml`, and `.sql` inputs and is
