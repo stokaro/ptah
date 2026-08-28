@@ -7,6 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/cmd/root"
 	"go.5x5.cz/ptah/internal/agentsurface"
 	"go.5x5.cz/ptah/internal/atlascompatpolicy"
 	"go.5x5.cz/ptah/internal/cmdref"
@@ -176,4 +177,160 @@ func TestRendering_FailurePath(t *testing.T) {
 
 func compatNodes(policy atlascompatpolicy.Policy) []agentsurface.Node {
 	return agentsurface.Nodes(atlas.NewCompatCommandWithPolicy("ptah-compat", policy))
+}
+
+// nativeSurface is the tree the reference's native half is rendered from, in
+// the shape the generator hands over.
+func nativeSurface() cmdref.Surface {
+	return cmdref.Surface{Program: "ptah", Nodes: agentsurface.Nodes(root.NewRootCommand()), Classified: true}
+}
+
+// flagRow is one (command, flag) pair, which is the shape both the page and
+// these assertions are indexed by.
+type flagRow struct {
+	command string
+	flag    agentsurface.Flag
+}
+
+// approvalRows selects the flags the page's environment-variable paragraph
+// makes a claim about. It builds the data a table-driven test iterates; it
+// chooses nothing about how a row is asserted.
+func approvalRows(nodes []agentsurface.Node) []flagRow {
+	rows := make([]flagRow, 0, len(nodes))
+	for _, node := range nodes {
+		for _, flag := range node.Flags {
+			if flag.Name == "auto-approve" || flag.Name == "allow-database-inspect" {
+				rows = append(rows, flagRow{command: node.Name, flag: flag})
+			}
+		}
+	}
+	return rows
+}
+
+// TestFlagsPage_NoNativeApprovalFlagReadsAVariable is the first half of the
+// claim the page's environment-variable paragraph makes.
+//
+// The paragraph it replaced made the claim about every binary: "Every
+// `--auto-approve` and every `--allow-database-inspect` is one of those:
+// approval is not something a script can grant by exporting a variable." The
+// same page's rows contradicted it four times over, so the claim is now about
+// the native surface, where it holds and where cmdflags.DisableEnvBinding is
+// what makes it hold.
+func TestFlagsPage_NoNativeApprovalFlagReadsAVariable(t *testing.T) {
+	rows := approvalRows(agentsurface.Nodes(root.NewRootCommand()))
+
+	// A selection that matched nothing would agree with any claim at all,
+	// including the one this test exists to have found false.
+	qt.New(t).Assert(len(rows) > 0, qt.IsTrue)
+
+	for _, row := range rows {
+		t.Run(row.command+" --"+row.flag.Name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(row.flag.Environment, qt.Equals, "")
+		})
+	}
+}
+
+// TestFlagsPage_TheCompatibilityCounterexampleIsReal is the other half, and it
+// is not decoration.
+//
+// Without it, deleting the compatibility binding would leave the page's second
+// clause false and this suite green, and narrowing the claim to the native
+// surface would read as caution rather than as a measurement. The binding is
+// live rather than an annotation on the usage string:
+// `PTAH_AUTO_APPROVE=notabool ptah-compat schema plan new` answers `invalid
+// boolean value "notabool" for PTAH_AUTO_APPROVE` and exits 1, where the same
+// run with the variable unset gets as far as `--from is required`.
+func TestFlagsPage_TheCompatibilityCounterexampleIsReal(t *testing.T) {
+	c := qt.New(t)
+
+	indexed := make(map[string]agentsurface.Flag)
+	for _, row := range approvalRows(compatNodes(atlascompatpolicy.Full())) {
+		indexed[row.command+" --"+row.flag.Name] = row.flag
+	}
+	flag, registered := indexed["schema plan --auto-approve"]
+
+	c.Assert(registered, qt.IsTrue)
+	c.Assert(flag.Environment, qt.Equals, "PTAH_AUTO_APPROVE")
+}
+
+// TestFlagsPage_SaysBothHalves keeps the prose and the rows on one page from
+// disagreeing, which is the defect the two tests above measure the ground for.
+func TestFlagsPage_SaysBothHalves(t *testing.T) {
+	c := qt.New(t)
+
+	page, err := cmdref.FlagsPage([]cmdref.Surface{
+		nativeSurface(),
+		{Program: "ptah-compat", Nodes: compatNodes(atlascompatpolicy.Full())},
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(page, qt.Contains, "no `--auto-approve` and no")
+	c.Assert(page, qt.Contains, "surface's `ptah-compat schema plan` verbs do bind one")
+	c.Assert(page, qt.Contains,
+		"| `ptah-compat schema plan` | `--auto-approve` | `bool` | `false` | `PTAH_AUTO_APPROVE` | — |\n")
+	c.Assert(page, qt.Contains,
+		"| `ptah schema apply` | `--auto-approve` | `bool` | `false` | — | — |\n")
+}
+
+// TestCommands_ALeafCellIsItsClassification pins where the native index's cells
+// come from, because the page says so in prose and said the opposite for one
+// release.
+//
+// It read "the command's own one-line description — the line `ptah --help`
+// prints beside it — so it is short by construction". Measured over the whole
+// block, 11 of the 102 cells equal cobra's Short and they are exactly the 11
+// group rows; the other 91 are the classification, which averages 99
+// characters against Short's 45. The sentence had been carried over from the
+// compatibility page, where every cell really is Short because nothing
+// classifies that tree.
+func TestCommands_ALeafCellIsItsClassification(t *testing.T) {
+	rendered, indexed := renderedNativeIndex(qt.New(t))
+
+	for _, name := range []string{"db read", "schema render", "migrations up"} {
+		t.Run(name, func(t *testing.T) {
+			c := qt.New(t)
+			verb, classified := agentsurface.Lookup(name)
+			node := indexed[name]
+
+			c.Assert(classified, qt.IsTrue)
+			c.Assert(node.Leaf, qt.IsTrue)
+			// Derived rather than restated: everything after the first rune,
+			// which the renderer capitalizes and nothing else touches.
+			c.Assert(rendered, qt.Contains, verb.Reason[1:]+" |")
+			// The two really are different strings, so the assertion above
+			// cannot be satisfied by Short.
+			c.Assert(verb.Reason, qt.Not(qt.Equals), node.Summary)
+			c.Assert(rendered, qt.Not(qt.Contains), "| `ptah "+name+"` | "+node.Summary+" |")
+		})
+	}
+}
+
+// TestCommands_AGroupCellIsItsShort is the other half of the same sentence.
+func TestCommands_AGroupCellIsItsShort(t *testing.T) {
+	rendered, indexed := renderedNativeIndex(qt.New(t))
+
+	for _, name := range []string{"db", "schema", "migrations"} {
+		t.Run(name, func(t *testing.T) {
+			c := qt.New(t)
+			node := indexed[name]
+
+			c.Assert(node.Leaf, qt.IsFalse)
+			c.Assert(rendered, qt.Contains, "| `ptah "+name+"` | "+node.Summary+" | group |\n")
+		})
+	}
+}
+
+// renderedNativeIndex renders the native command table and indexes the nodes it
+// came from, so an assertion can be made against both.
+func renderedNativeIndex(c *qt.C) (string, map[string]agentsurface.Node) {
+	surface := nativeSurface()
+	rendered, err := cmdref.Commands(surface)
+	c.Assert(err, qt.IsNil)
+
+	indexed := make(map[string]agentsurface.Node, len(surface.Nodes))
+	for _, node := range surface.Nodes {
+		indexed[node.Name] = node
+	}
+	return rendered, indexed
 }

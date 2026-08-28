@@ -107,6 +107,69 @@ func TestDatabaseSafe_ExcludesWhatCanDestroySomething(t *testing.T) {
 	}
 }
 
+// TestClassification_TheMaintenanceVerbsShareOneAnswer pins that three names
+// for one code path carry one class.
+//
+// `migrations edit`, `migrations rebase` and `migrations rm` each rewrite the
+// migration directory through internal/migrateops, which opens no database, and
+// each reaches one only through migratemaint.Options.Guard, which reads the
+// applied set and refuses an already-applied version unless --force. They were
+// classified reads, writes and writes, and the two writers said so in their
+// reasons: "updates the target's tracking table", for commands that never write
+// a row. The reference started printing those reasons in a user-facing column,
+// which is how the disagreement became visible.
+//
+// `migrations repair` is the control. It is the neighbouring verb that really
+// does rewrite revision metadata, so a change that made every migrations verb a
+// reader would fail here rather than agree with itself.
+func TestClassification_TheMaintenanceVerbsShareOneAnswer(t *testing.T) {
+	tests := []struct {
+		name        string
+		verb        string
+		wantTarget  agentsurface.Target
+		wantScratch agentsurface.Scratch
+		wantSafe    bool
+	}{
+		{name: "edit", verb: "migrations edit", wantTarget: agentsurface.TargetReads, wantScratch: agentsurface.ScratchNone, wantSafe: true},
+		{name: "rebase", verb: "migrations rebase", wantTarget: agentsurface.TargetReads, wantScratch: agentsurface.ScratchNone, wantSafe: true},
+		{name: "rm", verb: "migrations rm", wantTarget: agentsurface.TargetReads, wantScratch: agentsurface.ScratchNone, wantSafe: true},
+		{name: "repair, which really writes", verb: "migrations repair", wantTarget: agentsurface.TargetWrites, wantScratch: agentsurface.ScratchNone, wantSafe: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			verb, known := agentsurface.Lookup(test.verb)
+
+			c.Assert(known, qt.IsTrue)
+			c.Assert(verb.Target, qt.Equals, test.wantTarget)
+			c.Assert(verb.Scratch, qt.Equals, test.wantScratch)
+			c.Assert(verb.DatabaseSafe(), qt.Equals, test.wantSafe)
+		})
+	}
+}
+
+// TestClassification_TheMaintenanceReasonsDescribeTheReadTheyDo is the same
+// finding read off the prose rather than off the class.
+//
+// A class is four values and a reason is a sentence, so a class can be
+// corrected while the sentence that argued for the wrong one stays. The three
+// share a clause because they share the function that does the work.
+func TestClassification_TheMaintenanceReasonsDescribeTheReadTheyDo(t *testing.T) {
+	const guarded = "the target is read to check whether the migration has been applied"
+
+	for _, name := range []string{"migrations edit", "migrations rebase", "migrations rm"} {
+		t.Run(name, func(t *testing.T) {
+			c := qt.New(t)
+			verb, known := agentsurface.Lookup(name)
+
+			c.Assert(known, qt.IsTrue)
+			c.Assert(verb.Reason, qt.Contains, guarded)
+			c.Assert(verb.Reason, qt.Not(qt.Contains), "updates the target")
+		})
+	}
+}
+
 // TestNodes_AgreesWithWalkAboutWhatIsALeaf keeps the two views of the one
 // traversal from becoming two traversals.
 //

@@ -18,9 +18,13 @@ Read the columns as follows.
 - **Default** is the value the flag holds when nothing sets one, in the
   spelling the flag parser reports.
 - **Environment variable** is what the flag reads when it is not typed on the
-  command line, and an em dash means it reads none. Every `--auto-approve` and
-  every `--allow-database-inspect` is one of those: approval is not something
-  a script can grant by exporting a variable.
+  command line, and an em dash means it reads none. Approval is where the
+  column earns its place: no `--auto-approve` and no
+  `--allow-database-inspect` the native binary registers reads a variable, so
+  nothing a script exports can approve a `ptah` run. That is a rule about the
+  native surface rather than about the spelling — the compatibility
+  surface's `ptah-compat schema plan` verbs do bind one — so read the row
+  rather than the flag name.
 - **Notes** carries `hidden` for a flag `--help` does not list and still
   parses, and `inherited by subcommands` for one declared on a group.
 

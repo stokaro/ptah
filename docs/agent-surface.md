@@ -126,9 +126,9 @@ to rule out — so they are named here, where a claim nothing measures belongs.
 | `migrations plan` | reads | none | `--db-url` | reads the target and prints the migration SQL the difference implies, writing nothing |
 | `migrations pull` | none | none | — | downloads a migration directory from an OCI registry and writes it to disk |
 | `migrations push` | none | none | — | uploads a migration directory from disk to an OCI registry |
-| `migrations rebase` | **writes** | none | `--db-url` | moves a migration to the end of history and updates the target's tracking table |
+| `migrations rebase` | reads | none | `--db-url` | re-timestamps a migration to the end of history and re-hashes the directory; the target is read to check whether the migration has been applied |
 | `migrations repair` | **writes** | none | `--db-url` | rewrites revision metadata in the target's tracking table |
-| `migrations rm` | **writes** | none | `--db-url` | deletes a migration, re-hashes the directory and updates the target's tracking table |
+| `migrations rm` | reads | none | `--db-url` | deletes a migration's file pair and re-hashes the directory; the target is read to check whether the migration has been applied |
 | `migrations set` | **writes** | none | `--db-url` | sets the revision boundary in the target's tracking table to a named version |
 | `migrations show` | none | none | — | prints the SQL of one or more migration files, reading nothing but the files |
 | `migrations status` | reads | none | `--db-url` | reads the target's tracking table and reports which migrations are applied |
@@ -216,6 +216,8 @@ permission.
 | `migrations plan` | reads the target and prints the migration SQL the difference implies, writing nothing |
 | `migrations pull` | downloads a migration directory from an OCI registry and writes it to disk |
 | `migrations push` | uploads a migration directory from disk to an OCI registry |
+| `migrations rebase` | re-timestamps a migration to the end of history and re-hashes the directory; the target is read to check whether the migration has been applied |
+| `migrations rm` | deletes a migration's file pair and re-hashes the directory; the target is read to check whether the migration has been applied |
 | `migrations show` | prints the SQL of one or more migration files, reading nothing but the files |
 | `migrations status` | reads the target's tracking table and reports which migrations are applied |
 | `oci capabilities` | asks the registry behind a reference which features it supports, and prints them |

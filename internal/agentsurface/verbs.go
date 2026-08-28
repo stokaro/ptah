@@ -121,6 +121,14 @@ var verbs = map[string]Verb{
 	"migrations down": {TargetWrites, ScratchRewrites,
 		"rolls back migrations against the target, after replaying and verifying the rollback " +
 			"plan in an ephemeral shadow database"},
+	// edit, rebase and rm are one code path with three names. Each rewrites the
+	// migration directory through internal/migrateops, which opens nothing, and
+	// each reaches a database only through migratemaint.Options.Guard, which
+	// reads the applied set and refuses an already-applied version unless
+	// --force. So all three read the target and none of them writes it; they
+	// carried two different classes until the reference started printing the
+	// reason, and a reader met "updates the target's tracking table" for a
+	// command that never writes a row.
 	"migrations edit": {TargetReads, ScratchNone,
 		"rewrites a migration file and re-hashes the directory; the target is read to check " +
 			"whether the migration has been applied"},
@@ -141,12 +149,14 @@ var verbs = map[string]Verb{
 		"downloads a migration directory from an OCI registry and writes it to disk"},
 	"migrations push": {TargetNone, ScratchNone,
 		"uploads a migration directory from disk to an OCI registry"},
-	"migrations rebase": {TargetWrites, ScratchNone,
-		"moves a migration to the end of history and updates the target's tracking table"},
+	"migrations rebase": {TargetReads, ScratchNone,
+		"re-timestamps a migration to the end of history and re-hashes the directory; the " +
+			"target is read to check whether the migration has been applied"},
 	"migrations repair": {TargetWrites, ScratchNone,
 		"rewrites revision metadata in the target's tracking table"},
-	"migrations rm": {TargetWrites, ScratchNone,
-		"deletes a migration, re-hashes the directory and updates the target's tracking table"},
+	"migrations rm": {TargetReads, ScratchNone,
+		"deletes a migration's file pair and re-hashes the directory; the target is read to " +
+			"check whether the migration has been applied"},
 	"migrations set": {TargetWrites, ScratchNone,
 		"sets the revision boundary in the target's tracking table to a named version"},
 	"migrations show": {TargetNone, ScratchNone,

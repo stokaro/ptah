@@ -83,9 +83,9 @@ rather than a person.
 | `ptah migrations plan` | Reads the target and prints the migration SQL the difference implies, writing nothing | — |
 | `ptah migrations pull` | Downloads a migration directory from an OCI registry and writes it to disk | — |
 | `ptah migrations push` | Uploads a migration directory from disk to an OCI registry | — |
-| `ptah migrations rebase` | Moves a migration to the end of history and updates the target's tracking table | — |
+| `ptah migrations rebase` | Re-timestamps a migration to the end of history and re-hashes the directory; the target is read to check whether the migration has been applied | — |
 | `ptah migrations repair` | Rewrites revision metadata in the target's tracking table | — |
-| `ptah migrations rm` | Deletes a migration, re-hashes the directory and updates the target's tracking table | — |
+| `ptah migrations rm` | Deletes a migration's file pair and re-hashes the directory; the target is read to check whether the migration has been applied | — |
 | `ptah migrations set` | Sets the revision boundary in the target's tracking table to a named version | — |
 | `ptah migrations show` | Prints the SQL of one or more migration files, reading nothing but the files | — |
 | `ptah migrations status` | Reads the target's tracking table and reports which migrations are applied | — |
@@ -139,12 +139,12 @@ rather than a person.
 
 ## Sources and output formats
 
-An index cell is the command's own one-line description — the line
-`ptah --help` prints beside it — so it is short by construction, and the verbs
-that accept several inputs or write several formats cannot state the set there.
-The set is here. For the flags that select within it, `ptah <command> --help` is
-authoritative and [Command flags](../command-flags/) is the same inventory as a
-page.
+An index cell above says what the verb does to the databases it is given; on a
+namespace row it is instead the line `ptah --help` prints beside the group.
+Neither shape holds an enumeration, so the verbs that accept several inputs or
+write several formats cannot state the set there. The set is here. For the
+flags that select within it, `ptah <command> --help` is authoritative and
+[Command flags](../command-flags/) is the same inventory as a page.
 
 | Verb | Reads | Writes |
 | --- | --- | --- |
