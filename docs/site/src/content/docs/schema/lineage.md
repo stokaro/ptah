@@ -1,12 +1,13 @@
 ---
 title: Trace view column lineage
-description: Run ptah schema lineage to find which base columns each view column and each routine reads, before dropping or renaming one of them.
+description: Run ptah schema lineage to find which base columns each view column and each routine reads, and which tables and columns each routine writes, before dropping or renaming one of them.
 ---
 
 `ptah schema lineage` derives column-to-column dependencies from the view and
-materialized-view bodies a schema declares, and the columns each routine body
-reads. It answers "what breaks if I drop this column" before the drop rather
-than after.
+materialized-view bodies a schema declares, the columns each routine body
+reads, and the tables and columns each routine writes. It answers "what breaks
+if I drop this column" before the drop rather than after, and "what changes this
+column" alongside it.
 
 The analysis reads a schema source and contacts no database, so it answers
 before a change is applied. What it cannot attribute it reports as undecided
@@ -118,20 +119,36 @@ Expected output:
 SOURCE           READ BY          KIND
 customers.email  customer_emails  function
 
+TARGET             WRITTEN BY      STATEMENT
+customers.country  touch_customer  update
+
 1 routine(s) not fully resolved:
-  touch_customer: the body is plpgsql rather than plain SQL
+  touch_customer: the body is plpgsql: every statement was classified, so the writes are complete; the columns it reads are not resolved
 ```
 
 The boundary is the same one the view half draws, in the same place. A body
 that is a single `SELECT` -- which is the shape a `LANGUAGE sql` routine has --
-resolves through the same reader, with the same four undecided shapes in the
-table above. A procedural body written in PL/pgSQL or any other language lands
-in `undecided` naming its language, because resolving control flow needs more
-than this analysis does today.
+resolves to the columns it reads, through the same reader and with the same four
+undecided shapes in the table above.
 
-That distinction is the whole point of reading the list. `touch_customer`
-writes `customers.country`, and nothing above says so: an undecided routine is
-a routine whose dependencies were not established, not one with none.
+A procedural body is resolved for what it **writes**: the tables and columns its
+`INSERT`, `UPDATE`, `DELETE` and `TRUNCATE` statements name, including the ones
+inside an `IF` or a loop. Its reads are not derived, so it is always reported in
+`undecided` as well, and the reason says which of two things happened:
+
+| Reason ends | Meaning |
+| --- | --- |
+| `every statement was classified, so the writes are complete; the columns it reads are not resolved` | the write list above is the whole set |
+| `..., so neither the writes nor the columns it reads are complete` | something in the body could write and was not resolved |
+
+Four things land in the second row: an `EXECUTE`, which composes its statement
+at run time; a statement whose leading word is not one this analysis knows,
+because `CALL`, `MERGE` and `COPY` all write; a `TRUNCATE` naming more than one
+table, refused rather than half-read; and a control-flow statement whose
+contents the parser could not split.
+
+That distinction is the whole point of reading the list. A routine reported with
+writes and nothing else would say its reads are none rather than unknown.
 
 ## Take the answer as JSON
 
@@ -170,8 +187,9 @@ Expected output includes:
 only when at least one view landed there. A check that wants to fail on an
 unresolved view reads that key, since the exit code stays `0` either way.
 
-Routines carry the same two halves under `routines`, so a reader parsing
-`edges` keeps parsing exactly the view edges it always parsed:
+Routines carry their reads, their writes and their undecided list under
+`routines`, so a reader parsing `edges` keeps parsing exactly the view edges it
+always parsed:
 
 ```json
 {
@@ -185,10 +203,19 @@ Routines carry the same two halves under `routines`, so a reader parsing
         "kind": "function"
       }
     ],
+    "writes": [
+      {
+        "table": "customers",
+        "column": "country",
+        "by_routine": "touch_customer",
+        "kind": "function",
+        "statement": "update"
+      }
+    ],
     "undecided": [
       {
         "routine": "touch_customer",
-        "reason": "the body is plpgsql rather than plain SQL",
+        "reason": "the body is plpgsql: every statement was classified, so the writes are complete; the columns it reads are not resolved",
         "kind": "function"
       }
     ]
@@ -207,9 +234,17 @@ usage error exits `2` with one line on stderr. See
 - The resolvable shape is a select list over a single `FROM` source, with
   columns named plainly or aliased. The four shapes in the table above land in
   `undecided` instead.
-- A routine body resolves only when it is one such `SELECT`. A procedural body
-  is reported as undecided naming its language, and the columns it writes are
-  never reported at all -- lineage answers what is read, not what is written.
+- A routine's **reads** resolve only when its body is one such `SELECT`. A
+  procedural body's reads are not derived, which is why every procedural routine
+  appears in `undecided` even when its writes are complete.
+- A **write** is resolved from the statement that performs it, so it is exact
+  about the table and about the columns an `UPDATE` assigns or an `INSERT`
+  lists. A statement naming the table alone -- a `DELETE`, a `TRUNCATE`, an
+  `INSERT` with no column list -- is reported with no column, which means the
+  whole table rather than an unknown column.
+- `SET (a, b) = (...)` is not read as a column list. The statement goes
+  unresolved instead, because reading the left-hand names as columns would work
+  and reading the right-hand tuple as more of them would not.
 - An arithmetic expression in the select list with no alias produces an edge
   that is wrong rather than an `undecided` entry. For a view declared
   `SELECT a + b FROM t`, the command reports one edge, `t.a` feeding a view

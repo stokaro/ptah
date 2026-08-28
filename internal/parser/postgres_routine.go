@@ -603,3 +603,17 @@ func dollarQuoteDelimiter(value string) string {
 	}
 	return value[:end+2]
 }
+
+// ParseRoutineBody splits a routine body into the statements it holds.
+//
+// The whole-statement parser reaches this through a CREATE FUNCTION it just
+// read, and had the only way in. A caller holding a body and its language --
+// which is what a schema model carries -- had to synthesize a CREATE FUNCTION
+// around the text to get it parsed again, and synthesized SQL is a second
+// grammar to keep correct (stokaro/ptah#2394).
+//
+// The delimiter is metadata the body carries rather than something the split
+// consumes, so a caller that no longer has it loses nothing by omitting it.
+func ParseRoutineBody(body, language string) ast.PostgresRoutineBody {
+	return parsePostgresRoutineBody(body, language, "")
+}

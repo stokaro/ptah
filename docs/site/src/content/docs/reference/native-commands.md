@@ -30,7 +30,7 @@ Use `ptah <command> --help` for the exact flag set in an installed binary.
 | `ptah schema pull` | Pull a canonical desired schema from an OCI registry. |
 | `ptah schema test` | Apply a desired schema from Go annotations, a SQL or HCL file, or a live database to a throwaway database and run declarative seed/SQL/assert cases against it. |
 | `ptah schema security` | Report security findings over a live schema: privileges granted to `PUBLIC`, tables reachable with no row-level security, and routines that run with their owner's privileges. Reads the database and nothing else. |
-| `ptah schema lineage` | Trace which base columns feed each view and materialized-view column, and which base columns each routine reads, from a schema source, with no database. |
+| `ptah schema lineage` | Trace which base columns feed each view and materialized-view column, which base columns each routine reads, and which tables and columns each routine writes, from a schema source, with no database. |
 | `ptah schema stats` | Count the objects in a live schema and write one OpenMetrics gauge per object kind. |
 | `ptah schema serve` | Serve a read-only web page holding the desired schema and how a live database differs from it, re-read on every request. |
 
@@ -262,6 +262,7 @@ stdout therefore gets a document in every case except `2`.
 | `ptah inference prepare` | Create the target column, the run's own tables, the outbox, and the snapshot boundary the backfill embeds. |
 | `ptah inference backfill` | Embed the source into the new generation, resumably; an interrupted run continues from its checkpoint. |
 | `ptah inference catchup` | Process the source changes made while the backfill ran; `--maintain-for` also keeps a previous generation current during its stabilization window. |
+| `ptah inference index` | Build the generation's vector index concurrently and leave it valid; an invalid index left by a failed build is dropped and built again. |
 | `ptah inference verify` | Run the deterministic checks a cutover rests on, and report what it did not measure; `--publish-evidence` writes the report to an OCI registry. |
 | `ptah inference evaluate` | Measure what the generation retrieves against a corpus you wrote, recording the query parameters the numbers were taken under. |
 | `ptah inference status` | Report what a run has done and what it is waiting for. |

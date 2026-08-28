@@ -1227,7 +1227,7 @@
   },
   {
     "name": "schema_lineage",
-    "description": "Trace which base columns feed each view column, and which base columns each routine reads, in a declared Ptah schema. Answers what breaks if a column is dropped, before the drop. Views and routines whose bodies cannot be resolved are reported rather than omitted.",
+    "description": "Trace which base columns feed each view column, which base columns each routine reads, and which tables and columns each routine writes, in a declared Ptah schema. Answers what breaks if a column is dropped, before the drop. Views and routines whose bodies cannot be resolved are reported rather than omitted.",
     "input_schema": {
       "additionalProperties": false,
       "properties": {
@@ -1362,10 +1362,45 @@
                 "null",
                 "array"
               ]
+            },
+            "writes": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "by_routine": {
+                    "type": "string"
+                  },
+                  "column": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "type": "string"
+                  },
+                  "statement": {
+                    "type": "string"
+                  },
+                  "table": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "table",
+                  "column",
+                  "by_routine",
+                  "kind",
+                  "statement"
+                ],
+                "type": "object"
+              },
+              "type": [
+                "null",
+                "array"
+              ]
             }
           },
           "required": [
             "edges",
+            "writes",
             "undecided"
           ],
           "type": "object"
