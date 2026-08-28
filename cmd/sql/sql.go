@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/spf13/cobra"
 
@@ -17,6 +18,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/internal/servertarget"
 	"go.5x5.cz/ptah/internal/sqllint"
+	migrationlint "go.5x5.cz/ptah/migration/lint"
 )
 
 const (
@@ -145,6 +147,11 @@ func runSQLLint(cmd *cobra.Command, opts sqlLintOptions) error {
 		return writeSQLLintError(cmd.ErrOrStderr(), opts.format, err.Error())
 	}
 
+	severities, err := sqlLintSeverities()
+	if err != nil {
+		return writeSQLLintError(cmd.ErrOrStderr(), opts.format, err.Error())
+	}
+
 	var findings []sqllint.Finding
 	for _, source := range sources {
 		sourceFindings, err := sqllint.LintSource(source, sqllint.Options{
@@ -152,6 +159,7 @@ func runSQLLint(cmd *cobra.Command, opts sqlLintOptions) error {
 			Version:       opts.version,
 			Capabilities:  target.Capabilities,
 			DisabledRules: opts.disabled,
+			Severities:    severities,
 		})
 		if err != nil {
 			return writeSQLLintError(cmd.ErrOrStderr(), opts.format, err.Error())
@@ -303,4 +311,33 @@ func sourceNames(sources []sqllint.Source) []string {
 		names = append(names, source.Name)
 	}
 	return names
+}
+
+// sqlLintSeverities reads the per-rule severities a committed policy sets for
+// this linter.
+//
+// The same `.ptah-lint.yaml` the migration linter reads, and only the rows
+// naming identifiers this linter reports: a project configures its rules in one
+// file, and #1270 asks for severity "through the normal Ptah policy mechanism"
+// rather than a second one invented here.
+//
+// The file is read from the working directory, which is where the migration
+// linter finds it too. A missing file is not an error.
+//
+// migration/lint owns the format; sqllint takes a plain map, so the dependency
+// stays here in the command rather than between the two libraries.
+func sqlLintSeverities() (map[string]sqllint.Severity, error) {
+	cfg, err := migrationlint.LoadConfigFS(os.DirFS("."), migrationlint.ConfigFileName)
+	if err != nil {
+		return nil, err
+	}
+	reported := sqllint.CatalogIDs()
+	severities := make(map[string]sqllint.Severity)
+	for code, rule := range cfg.Rules {
+		if rule.Severity == "" || !slices.Contains(reported, code) {
+			continue
+		}
+		severities[code] = sqllint.Severity(rule.Severity)
+	}
+	return severities, nil
 }

@@ -97,11 +97,15 @@ func TestDynamicSQL_TheBoundaryIsReportedWhereItIs(t *testing.T) {
 
 			findings, err := sqllint.LintSource(
 				sqllint.Source{Name: "routine.sql", SQL: test.sql},
-				sqllint.Options{Dialect: test.dialect, DisabledRules: []string{"SQL001", "SQL002"}},
+				sqllint.Options{Dialect: test.dialect},
 			)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(findings, qt.HasLen, test.want, qt.Commentf("%s", test.why))
+			// Filtered rather than disabled: SQL001 and SQL002 report that the
+			// file could not be analyzed and are refused as --disable
+			// selectors, so a test that wants only the boundary rule selects it
+			// here (stokaro/ptah#1270).
+			c.Assert(dynamicSQLFindings(findings), qt.HasLen, test.want, qt.Commentf("%s", test.why))
 		})
 	}
 }
@@ -118,13 +122,28 @@ func TestDynamicSQL_TheFindingPointsAtTheExecute(t *testing.T) {
 	findings, err := sqllint.LintSource(
 		sqllint.Source{Name: "routine.sql", SQL: "CREATE PROCEDURE p() AS $$\nBEGIN\n" +
 			"    EXECUTE 'TRUNCATE t';\nEND;\n$$ LANGUAGE plpgsql;"},
-		sqllint.Options{Dialect: platform.Postgres, DisabledRules: []string{"SQL002"}},
+		sqllint.Options{Dialect: platform.Postgres},
 	)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(findings, qt.HasLen, 1)
-	c.Assert(findings[0].Line, qt.Equals, 3)
-	c.Assert(findings[0].Column, qt.Equals, 5)
-	c.Assert(findings[0].Severity, qt.Equals, sqllint.SeverityInfo,
+	// Selected rather than assumed to be alone: the same routine also reports
+	// that the linter does not model it, and the parse-path codes can no longer
+	// be disabled to hide that (stokaro/ptah#1270).
+	boundary := dynamicSQLFindings(findings)
+	c.Assert(boundary, qt.HasLen, 1, qt.Commentf("findings: %#v", findings))
+	c.Assert(boundary[0].Line, qt.Equals, 3)
+	c.Assert(boundary[0].Column, qt.Equals, 5)
+	c.Assert(boundary[0].Severity, qt.Equals, sqllint.SeverityInfo,
 		qt.Commentf("a routine that composes SQL is doing something legitimate; this reports a limit, not a defect"))
+}
+
+// dynamicSQLFindings keeps the boundary rule's findings.
+func dynamicSQLFindings(findings []sqllint.Finding) []sqllint.Finding {
+	kept := make([]sqllint.Finding, 0, len(findings))
+	for _, finding := range findings {
+		if finding.Rule == sqllint.RuleDynamicSQL {
+			kept = append(kept, finding)
+		}
+	}
+	return kept
 }

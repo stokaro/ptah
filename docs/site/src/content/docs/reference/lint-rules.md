@@ -101,6 +101,29 @@ The suffix marks an extension of someone else's family, not authorship. The
 identifiers chosen before the convention existed are counted and listed at the
 bottom of this page rather than left for a reader to notice.
 
+## How the analysis is performed
+
+Three kinds of analyzer are worth telling apart, because they fail differently
+and because two of the three are not built. Nothing below is a plan; it is what
+the tree does today.
+
+| Kind | In Ptah today |
+| --- | --- |
+| **Builtin** | Every rule on this page. It decides from what it is handed — the migration SQL, or the SQL file — and reaches no server and no other process. |
+| **Server-assisted** | One: the `baseline schema` input above, replayed onto the dev database `--dev-url` names. It is optional, and its absence is announced rather than absorbed. |
+| **Optional provider** | None. No external analyzer is integrated, and no analysis path starts another process. The only process any lint path runs is `git`, to resolve `--git-base`. |
+
+The server-assisted one is optional in the strict sense: without a dev database
+the rules that wanted it resolve nothing and report less, the command still
+exits 0, and **the run says so on stderr, naming each rule that asked** — the
+report on stdout is left byte-identical so a `--format json` consumer and a
+compatibility consumer both keep parsing it. A gap that only shows as a smaller
+report is the hardest kind to notice from CI.
+
+That leaves one thing to know about a clean lint result: it means every builtin
+rule looked and found nothing. It does not mean a routine body was read — see
+`AC101` and `SQL004`, which exist to keep those two apart.
+
 <!-- BEGIN GENERATED LINT RULES -->
 ## Identifier families
 
@@ -108,6 +131,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 
 | Prefix | Namespace | What the family covers |
 | --- | --- | --- |
+| `AC` | Ptah | analysis coverage: what the linter did not read, so a clean result is not mistaken for a checked one |
 | `BC` | Atlas | changes that break code already deployed against the old schema |
 | `CAP` | Ptah | the target server version lacks a capability the statement needs |
 | `CD` | Atlas | constraint deletions, split by the constraint type the SQL names |
@@ -126,12 +150,13 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 
 ## Migration lint rules
 
-42 rules, registered in `migration/lint`. `ptah migrations lint` reports the whole registry, and `ptah-compat migrate lint` reports all of it but `BC101`, which only native `ptah` emits. Neither apply gate reports even that much, so a rule listed below is not by itself a check that stands between an apply and a database: `ptah migrations up` disables the `MF`, `BC`, `PG` and `MY` families and refuses only on blocking `DS` findings, and `ptah-compat schema apply` runs only the rules an `atlas.hcl` `lint` block names, which means a project without such a block gets no lint pass there at all. The tables are grouped by the dialects each rule applies to, which is why they carry no dialect column.
+43 rules, registered in `migration/lint`. `ptah migrations lint` reports the whole registry, and `ptah-compat migrate lint` reports all of it but `BC101`, which only native `ptah` emits. Neither apply gate reports even that much, so a rule listed below is not by itself a check that stands between an apply and a database: `ptah migrations up` disables the `MF`, `BC`, `PG` and `MY` families and refuses only on blocking `DS` findings, and `ptah-compat schema apply` runs only the rules an `atlas.hcl` `lint` block names, which means a project without such a block gets no lint pass there at all. The tables are grouped by the dialects each rule applies to, which is why they carry no dialect column.
 
 ### Every dialect
 
 | Rule | Meaning | Surface | Origin |
 | --- | --- | --- | --- |
+| `AC101` | the migration defines a routine whose body is not analyzed, so a clean result says nothing about what the body does | both | Ptah |
 | `BC101` | a rename retires a name deployed code still refers to | native only | Atlas |
 | `CD101` | dropping a foreign key removes referential-integrity enforcement | both | Atlas |
 | `CD102` | dropping a check constraint removes a value-validation guarantee | both | Atlas |
@@ -205,7 +230,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 
 ## Default severities
 
-14 rules report at error severity by default: `CAP001`, `CD101`, `CD102`, `CD103`, `DS101`, `DS102`, `DS104`, `DS105`, `DS106`, `DS107`, `DS108`, `DS109`, `SQL001`, `SQL002`. The other 34 default to warning. A committed `.ptah-lint.yaml` replaces either for the migration lint rules, per rule or per family. It does not reach the SQL linter: `ptah sql lint` reads no policy file and takes only `--disable`, so the severities above are the ones `CAP001`, `DDL001`, `SQL001`, `SQL002`, `SQL003` and `SQL004` report.
+14 rules report at error severity by default: `CAP001`, `CD101`, `CD102`, `CD103`, `DS101`, `DS102`, `DS104`, `DS105`, `DS106`, `DS107`, `DS108`, `DS109`, `SQL001`, `SQL002`. The other 35 default to warning. A committed `.ptah-lint.yaml` replaces either, per rule or per family. `ptah sql lint` reads the same file and now reads the `rules:` severities it sets for `CAP001`, `DDL001`, `SQL001`, `SQL002`, `SQL003` and `SQL004`, so the severities above are the defaults. `--disable` refuses a selector covering `SQL001` or `SQL002`: those report that the file could not be analyzed, and a run that analyzed nothing must not report clean.
 
 ## What ptah-compat prints
 

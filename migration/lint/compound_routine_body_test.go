@@ -83,14 +83,17 @@ func TestAnalyzeFS_ARoutineBodyIsNotAMigrationStatement(t *testing.T) {
 		wantRule []string
 	}{
 		{
+			// AC101 says the body was not read; no DS rule says it was
+			// destructive, which is the claim this test holds
+			// (stokaro/ptah#1270).
 			name:     "a drop inside a routine body",
 			sql:      "CREATE PROCEDURE purge()\nBEGIN\n  DELETE FROM audit;\n  DROP TABLE users;\nEND;\n",
-			wantRule: nil,
+			wantRule: []string{"AC101"},
 		},
 		{
 			name:     "a drop the migration really performs, after the routine",
 			sql:      "CREATE PROCEDURE purge()\nBEGIN\n  DELETE FROM audit;\n  DROP TABLE sessions;\nEND;\n\nDROP TABLE users;\n",
-			wantRule: []string{"DS101"},
+			wantRule: []string{"AC101", "DS101"},
 		},
 	}
 
@@ -151,9 +154,11 @@ func TestAnalyzeFS_DS106ReadsTheStatementAndNotTheBody(t *testing.T) {
 	}{
 		{
 			// The row the issue is about: tokenized body, unanchored scan.
-			name:     "a pg_enum delete inside a BEGIN ATOMIC body",
-			sql:      "CREATE FUNCTION f() RETURNS void LANGUAGE SQL\nBEGIN ATOMIC DELETE FROM pg_enum; END;\n",
-			wantRule: nil,
+			name: "a pg_enum delete inside a BEGIN ATOMIC body",
+			sql:  "CREATE FUNCTION f() RETURNS void LANGUAGE SQL\nBEGIN ATOMIC DELETE FROM pg_enum; END;\n",
+			// AC101 says the body was not read; DS106 must not say it removed
+			// an enum value.
+			wantRule: []string{"AC101"},
 		},
 		{
 			// The same body the parser hands over as one token. It reported
@@ -162,7 +167,7 @@ func TestAnalyzeFS_DS106ReadsTheStatementAndNotTheBody(t *testing.T) {
 			// disagreement.
 			name:     "the same body dollar-quoted",
 			sql:      "CREATE FUNCTION f() RETURNS void LANGUAGE plpgsql AS $$ BEGIN DELETE FROM pg_enum; END; $$;\n",
-			wantRule: nil,
+			wantRule: []string{"AC101"},
 		},
 		{
 			// The control that keeps the anchor from being a blanket silence.
@@ -234,4 +239,86 @@ func TestAnalyzeFS_DS107CoversEveryObjectItClaims(t *testing.T) {
 			c.Assert(findingRules(analysis.Findings()), qt.DeepEquals, row.wantRule)
 		})
 	}
+}
+
+// TestAnalyzeFS_ARoutineWhoseBodyIsNotReadIsNotCleanEither pins the other half
+// of the principle above.
+//
+// The rules correctly say nothing about what a routine body does -- it runs
+// when somebody calls the routine, never at migration time. But silence about
+// the body and silence about the whole file are different facts, and until
+// AC101 the operator could not tell them apart: a migration whose only
+// statement was a function dropping a table inside its body reported no
+// findings and exit 0, which reads as "checked and safe" rather than "not
+// checked" (stokaro/ptah#1270).
+func TestAnalyzeFS_ARoutineWhoseBodyIsNotReadIsNotCleanEither(t *testing.T) {
+	rows := []struct {
+		name     string
+		sql      string
+		dialect  string
+		wantRule []string
+	}{
+		{
+			// The row the criterion is about.
+			name: "a function whose body drops a table",
+			sql: "CREATE FUNCTION f() RETURNS void AS $$\nBEGIN\n" +
+				"  DROP TABLE legacy_audit;\nEND;\n$$ LANGUAGE plpgsql;\n",
+			dialect: "postgres", wantRule: []string{"AC101"},
+		},
+		{
+			name:    "a compound procedure body",
+			sql:     "CREATE PROCEDURE p()\nBEGIN\n  DROP TABLE legacy_audit;\nEND;\n",
+			dialect: "mysql", wantRule: []string{"AC101"},
+		},
+		{
+			name:    "a replaced routine is still a routine",
+			sql:     "CREATE OR REPLACE FUNCTION f() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;\n",
+			dialect: "postgres", wantRule: []string{"AC101"},
+		},
+		{
+			// The control that keeps AC101 from swallowing the real finding:
+			// a DROP the migration performs is still reported, at error.
+			name:    "the same drop the migration really performs",
+			sql:     "DROP TABLE legacy_audit;\n",
+			dialect: "postgres", wantRule: []string{"DS101"},
+		},
+		{
+			// The control that keeps it from firing on everything.
+			name:    "a migration with no routine",
+			sql:     "CREATE TABLE users (id BIGINT PRIMARY KEY);\n",
+			dialect: "postgres", wantRule: nil,
+		},
+	}
+
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			analysis, err := lint.AnalyzeFS(routineFS(row.sql), lint.Options{
+				DirFormat: migrationfile.DirFormatAtlas,
+				Dialect:   row.dialect,
+			})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(findingRules(analysis.Findings()), qt.DeepEquals, row.wantRule)
+		})
+	}
+}
+
+// TestAnalyzeFS_TheRoutineCoverageFindingDoesNotBlock pins the severity.
+//
+// Nothing is wrong with a migration that defines a routine. What is incomplete
+// is the analysis, and a finding that refused an apply for that would be a
+// worse answer than the silence it replaces.
+func TestAnalyzeFS_TheRoutineCoverageFindingDoesNotBlock(t *testing.T) {
+	c := qt.New(t)
+
+	analysis, err := lint.AnalyzeFS(routineFS(
+		"CREATE FUNCTION f() RETURNS void AS $$ BEGIN DROP TABLE t; END; $$ LANGUAGE plpgsql;\n",
+	), lint.Options{DirFormat: migrationfile.DirFormatAtlas, Dialect: "postgres"})
+
+	c.Assert(err, qt.IsNil)
+	findings := analysis.Findings()
+	c.Assert(findings, qt.HasLen, 1)
+	c.Assert(findings[0].Severity, qt.Equals, lint.SeverityInfo)
 }

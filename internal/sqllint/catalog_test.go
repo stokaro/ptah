@@ -242,8 +242,7 @@ func TestCatalogRowsMatchTheEmittedFindings(t *testing.T) {
 			source: sqllint.Source{Name: "routine.sql", SQL: "CREATE PROCEDURE p() AS $$\nBEGIN\n" +
 				"EXECUTE 'TRUNCATE t';\nEND;\n$$ LANGUAGE plpgsql;"},
 			options: sqllint.Options{
-				Dialect:       platform.Postgres,
-				DisabledRules: []string{"SQL002"},
+				Dialect: platform.Postgres,
 			},
 			code: "SQL003",
 		},
@@ -268,10 +267,25 @@ func TestCatalogRowsMatchTheEmittedFindings(t *testing.T) {
 
 			findings, err := sqllint.LintSource(row.source, row.options)
 			c.Assert(err, qt.IsNil)
-			c.Assert(findings, qt.HasLen, 1)
-			c.Assert(findings[0].Rule, qt.Equals, row.code)
-			c.Assert(findings[0].Title, qt.Equals, sqllint.CatalogTitle(row.code))
-			c.Assert(findings[0].Severity, qt.Equals, sqllint.CatalogSeverity(row.code))
+			// The fixture has to EMIT the identifier; it need not be the only
+			// one. A routine that composes SQL reports both that the linter
+			// does not model the routine and where its analysis stops, and the
+			// parse-path codes can no longer be disabled to isolate one
+			// (stokaro/ptah#1270).
+			emitted := findingFor(findings, row.code)
+			c.Assert(emitted, qt.IsNotNil, qt.Commentf("findings: %#v", findings))
+			c.Assert(emitted.Title, qt.Equals, sqllint.CatalogTitle(row.code))
+			c.Assert(emitted.Severity, qt.Equals, sqllint.CatalogSeverity(row.code))
 		})
 	}
+}
+
+// findingFor returns the finding reporting one identifier, nil when none does.
+func findingFor(findings []sqllint.Finding, code string) *sqllint.Finding {
+	for i := range findings {
+		if findings[i].Rule == code {
+			return &findings[i]
+		}
+	}
+	return nil
 }
