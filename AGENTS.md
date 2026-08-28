@@ -9,18 +9,32 @@ against a live database, and plans, generates and applies migrations. It ships
 two command-line binaries: the native `ptah`, and `ptah-compat`, a drop-in
 replacement for the Atlas CLI.
 
-`--dialect` accepts nine spellings: `postgres`, `mysql`, `mariadb`, `sqlite`,
-`clickhouse`, `cockroachdb`, `yugabytedb`, `sqlserver` and `spanner`. A dialect
-being accepted is not a promise that every construct renders on it. `SERIAL`,
-for one, is refused by name on ClickHouse, CockroachDB and Spanner rather than
-downgraded behind the author's back, which is the compatibility policy below
-applied to dialects. [`docs/capabilities.md`](docs/capabilities.md) explains how
-capability sets decide what a concrete target accepts.
+`--dialect` accepts every spelling `core/platform.NormalizeDialect` resolves:
+the canonical names declared in `core/platform/constants.go`, plus the aliases
+that fold onto them, and `core/platform/capability.DefaultDialects()` returns
+the canonical set itself. Read the answer out of those declarations rather than
+out of a count written down here — and not out of a `--dialect` help line
+either, because each verb registering the flag states its own range.
+`ptah schema render` prints the canonical names; `ptah migrations lint` and
+`ptah sql lint` print a shorter list that leaves Oracle out. That omission is
+deliberate, since no lint rule analyzes Oracle, and
+`internal/lintdialect/dialect.go` and `cmd/sql/sql.go` each say so where their
+list is declared.
 
-`dbschema.ConnectToDatabase` dispatches on the URL scheme to five drivers: `pgx`
-for the PostgreSQL family (`postgres`, `cockroachdb`, `yugabytedb`, `spanner`),
-`mysql` for MySQL and MariaDB, and one each for ClickHouse, SQLite and SQL
-Server. A scheme outside that set is refused rather than guessed at.
+A dialect being accepted is not a promise that every construct renders on it.
+`SERIAL`, for one, is refused by name on ClickHouse, CockroachDB and Spanner
+rather than downgraded behind the author's back, which is the compatibility
+policy below applied to dialects.
+[`docs/capabilities.md`](docs/capabilities.md) explains how capability sets
+decide what a concrete target accepts.
+
+`dbschema.ConnectToDatabase` dispatches on the URL scheme, and
+`databaseDriverConfig` in `dbschema/connection.go` is the one place that names
+the driver each dialect takes. Read the driver list there rather than from a
+count written down here: the mapping is not one driver per dialect, and it is
+not decided by the dialect alone. `sqlite` covers a local file while `libsql`
+covers a remote Turso target, and which one a `sqlite` URL takes depends on the
+URL. A scheme outside that set is refused rather than guessed at.
 
 ## Repository Layout
 
@@ -57,8 +71,8 @@ meets first. `docs/public_api.md` is the authority on what is public.
   `core/renderer/internal/dialects/`.
 - `core/platform` — dialect names, normalization, and family predicates such as
   `IsPostgresFamily`.
-- `core/yamlschema` — the YAML authoring format's reader; one of the five
-  readers that produce `goschema.Database`.
+- `core/yamlschema` — the YAML authoring format's reader; one of the readers
+  that produce a `core/schemamodel.Database`.
 - `dbschema` — connection management plus schema reading and writing against a
   live database.
 - `migration/generator` — migration file generation from schema diffs.

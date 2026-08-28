@@ -36,7 +36,7 @@ the database has".
 
 ```mermaid
 flowchart LR
-  GO["Go annotations<br/>goschema.Database"] --> ADAPT
+  GO["Go annotations<br/>schemamodel.Database"] --> ADAPT
   CAT["Live catalog<br/>types.DBSchema"] --> ADAPT
   ADAPT["schemastate adapters<br/>peers, not converters"] --> STATE["Canonical state<br/>identity-keyed"]
   PROFILE["Profile<br/>dialect + semantics + capabilities"] --> NORM
@@ -58,7 +58,7 @@ func Plan(changes []Change, profile schemastate.Profile) ([]PlannedOperation, er
 against the existing path's
 
 ```go
-func GenerateSchemaDiffAST(diff *difftypes.SchemaDiff, generated *goschema.Database, dialect string) ([]ast.Node, error)
+func GenerateSchemaDiffAST(diff *difftypes.SchemaDiff, generated *schemamodel.Database, dialect string) ([]ast.Node, error)
 ```
 
 The second parameter there is where the planner recovers what a diff of name
@@ -280,8 +280,8 @@ criteria:
   constraint kinds are planned: `nodesFor` dispatches on the change's kind and
   each has a renderer.
 - No source adapter other than Go annotations and the catalog. HCL and YAML
-  reach `goschema.Database` first, so they are covered transitively rather than
-  directly, and a native adapter for each is per-family migration work.
+  reach `schemamodel.Database` first, so they are covered transitively rather
+  than directly, and a native adapter for each is per-family migration work.
 - No integration with the CLI, the migration generator, or versioned execution.
   ADR 0001 decision 9 puts that boundary deliberately outside the prototype.
 - No public API. The model stays internal until the ADR is accepted, because a

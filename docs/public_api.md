@@ -112,15 +112,15 @@ database.
 
 `core/yamlschema` reads a desired schema written in Ptah's YAML format. `Parse`
 takes the document as bytes and `ParseFile` reads it from a path; both return
-the `*goschema.Database` that Go annotations, HCL, SQL, and DBML also produce,
-and nothing downstream can tell which reader filled it. Parsing is strict in
-two ways: an unknown key is an error rather than a silent drop, and a second
-YAML document in the same stream is refused rather than ignored.
+the `*schemamodel.Database` that Go annotations, HCL, SQL, and DBML also
+produce, and nothing downstream can tell which reader filled it. Parsing is
+strict in two ways: an unknown key is an error rather than a silent drop, and a
+second YAML document in the same stream is refused rather than ignored.
 `core/schemasource` covers the other direction — an external program that
 writes YAML to its standard output — and parses that output through this
 package.
 
-`goschema.Extension.Schema` records a PostgreSQL extension's installation
+`schemamodel.Extension.Schema` records a PostgreSQL extension's installation
 schema. `ast.ExtensionNode.Schema` and `SetSchema` carry the same intent into
 SQL rendering, which emits `CREATE EXTENSION ... WITH SCHEMA ...` after any
 `IF NOT EXISTS` clause and before `VERSION`. An empty schema means the target's
@@ -128,13 +128,14 @@ default schema. Embedders should preserve the field when converting or copying
 schema IR; dropping it can move an extension into the wrong namespace.
 
 `core/coverage` carries what a schema description does **not** claim to
-describe. `goschema.Database.NotDescribed` and `catalog.Database.NotDescribed`
-hold one, and schema comparison consults both: the desired state's record gates
-removals and the introspected state's record gates additions. Its zero value
-claims everything, so an embedder that never sets one gets exactly the
-comparison it got before the field existed. Set it when a reader was asked about
-less than the whole database, or a projection left something out on purpose;
-leaving it zero there is how an object nobody looked at becomes a `DROP`.
+describe. `schemamodel.Database.NotDescribed` and
+`catalog.Database.NotDescribed` hold one, and schema comparison consults both:
+the desired state's record gates removals and the introspected state's record
+gates additions. Its zero value claims everything, so an embedder that never
+sets one gets exactly the comparison it got before the field existed. Set it
+when a reader was asked about less than the whole database, or a projection
+left something out on purpose; leaving it zero there is how an object nobody
+looked at becomes a `DROP`.
 
 `schemadiff.CompareReportingUndecidedAdditions` exposes desired additions that
 an offline comparison could not plan safely, and
@@ -152,9 +153,9 @@ preserve both fields; missing facts fail closed with
 `ptaherr.ErrInvalidSchemaDiff`. Offline comparison has no live ownership facts
 and is not the safety boundary for applying such a replacement.
 
-`goschema.Finalize` rebuilds materialized inline, JSON, and relation fields on
-every call. `Field.GeneratedFromEmbedded` identifies those derived fields so a
-caller can mutate the source fields or embedded declarations and finalize the
+`schemamodel.Finalize` rebuilds materialized inline, JSON, and relation fields
+on every call. `Field.GeneratedFromEmbedded` identifies those derived fields so
+a caller can mutate the source fields or embedded declarations and finalize the
 database again without retaining stale or duplicate columns. Treat the flag as
 derived metadata: source declarations should leave it false.
 

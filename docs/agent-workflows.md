@@ -26,7 +26,9 @@ connect ──▶ describe_session ──▶ validate_schema
                               ├─▶ render_schema
                               ├─▶ schema_lineage
                               ├─▶ search_docs
-                              └─▶ read_database
+                              ├─▶ read_database
+                              ├─▶ inference_plan
+                              └─▶ inference_status
 ```
 
 No state is kept between calls. `describe_session` comes first by convention
@@ -34,7 +36,7 @@ rather than by rule: it reports which artifact directories exist, which database
 targets the operator configured, and what the policy permits, so a caller that
 starts there does not have to discover the boundary by being refused at it.
 
-Each of the six reading operations asks the capability broker before it runs.
+Each of the eight reading operations asks the capability broker before it runs.
 The verdicts are the operator's, resolved once at startup — see
 [ADR 0006](adr/0006-one-authorized-agent-runtime.md).
 

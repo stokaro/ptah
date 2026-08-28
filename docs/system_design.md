@@ -53,7 +53,7 @@ The system operates through four main layers:
   - Handles embedded structs and topological sorting
 
 #### Internal YAML Schema Frontend
-- **Purpose**: Parses language-agnostic YAML schema files into the same `goschema.Database` IR used by Go annotations
+- **Purpose**: Parses language-agnostic YAML schema files into the same `schemamodel.Database` IR used by Go annotations
 - **Input**: `.yaml` and `.yml` files passed to `ptah schema render --schema-file`
 - **Functionality**:
   - Supports tables, columns, indexes, constraints, enums, extensions, functions, views, materialized views, triggers, row-level security, roles, and dialect overrides
@@ -61,7 +61,7 @@ The system operates through four main layers:
   - Applies strict validation for unknown fields, duplicate ordered keys, invalid indexes and constraints, and multiple YAML documents
 
 #### Internal HCL Schema Frontend
-- **Purpose**: Parses HCL schema files into the same `goschema.Database` IR used by Go annotations
+- **Purpose**: Parses HCL schema files into the same `schemamodel.Database` IR used by Go annotations
 - **Input**: `.hcl` files passed to `ptah schema render --schema-file`
 - **Functionality**:
   - Uses HashiCorp HCL syntax parsing instead of ad hoc string parsing

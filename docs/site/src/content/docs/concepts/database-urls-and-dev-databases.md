@@ -22,7 +22,7 @@ page defines all four; other pages link here instead of redefining them.
 | CockroachDB | `cockroachdb://user:pass@localhost:26257/app` |
 | YugabyteDB | `yugabytedb://user:pass@localhost:5433/app` |
 | Spanner (PostgreSQL interface) | `spanner://user:pass@localhost:5432/app` |
-| Oracle | `oracle://user:pass@localhost:1521/service` (renders and plans; reading a live catalog is not implemented) |
+| Oracle | `oracle://user:pass@localhost:1521/service` (renders, plans, and reads a live catalog) |
 
 Scheme aliases normalize to the canonical dialect (`postgresql://`,
 `sqlite3://`, `mssql://`, `crdb://`, `ysql://`, `ch://`, and more) — the full

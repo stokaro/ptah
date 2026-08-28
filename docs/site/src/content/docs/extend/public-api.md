@@ -89,7 +89,7 @@ preserves the collection. Ptah's CLI reports each entry; embedders decide how
 to expose the same metadata.
 
 `renderer.ValidateSchema` and `renderer.ValidateSchemaWithCapabilities` check
-a complete `goschema.Database` without rendering SQL. They use the same
+a complete `schemamodel.Database` without rendering SQL. They use the same
 foreign-key and capability validation as ordered schema rendering and migration
 planning.
 
@@ -101,20 +101,20 @@ type or an unresolved foreign key reaches the AST and is reported by
 `core/renderer` or by the database.
 
 `core/yamlschema` reads Ptah's YAML authoring format: `Parse` from bytes,
-`ParseFile` from a path, both returning the `*goschema.Database` that Go
-annotations, HCL, SQL, and DBML also produce. Parsing refuses an unknown key and
-refuses a second YAML document in the same stream, so a misspelled attribute
-cannot pass as an intentional setting. Use `core/schemasource` when the YAML is
-written by an external program rather than held in a file.
+`ParseFile` from a path, both returning the `*schemamodel.Database` that Go
+annotations, HCL, SQL, and DBML also produce. Parsing refuses an unknown key
+and refuses a second YAML document in the same stream, so a misspelled
+attribute cannot pass as an intentional setting. Use `core/schemasource` when
+the YAML is written by an external program rather than held in a file.
 
-`goschema.Extension.Schema` is the PostgreSQL installation namespace.
+`schemamodel.Extension.Schema` is the PostgreSQL installation namespace.
 `ast.ExtensionNode.Schema` and `SetSchema` preserve it through SQL rendering;
 the renderer emits `CREATE EXTENSION ... WITH SCHEMA ...` in PostgreSQL's
 required clause order. Empty means the target's default schema. Preserve the
 field in custom schema codecs so an extension is not relocated silently.
 
-`goschema.Finalize` can be called again after mutating schema input. It rebuilds
-materialized embedded fields and marks them with
+`schemamodel.Finalize` can be called again after mutating schema input. It
+rebuilds materialized embedded fields and marks them with
 `Field.GeneratedFromEmbedded`; source declarations should leave that derived
 metadata false.
 

@@ -43,7 +43,37 @@ type Leaf struct {
 // A group with subcommands is not a leaf even when cobra will run it: running
 // `ptah schema` prints help, and a help printer is not an operation anyone
 // classifies.
+//
+// The tree a binary is CONSTRUCTED from is not the tree it SHIPS, so the walk
+// finishes the construction the way cobra does before it measures anything.
+// [cobra.Command.ExecuteC] calls InitDefaultHelpCmd and InitDefaultCompletionCmd
+// after the program has assembled its own tree, and those supply `help` and
+// `completion` with one leaf per shell. Measured: `root.NewRootCommand()` walks
+// to 86 leaves, and the shipped `ptah` answers to the 91 its `--help` lists.
+// Without these two calls the inventory describes the constructor, and the five
+// verbs an agent can actually reach are missing from a document whose first
+// claim is that it answers for every verb.
+//
+// Both initializers are idempotent, which is what makes calling them here a
+// completion of the tree rather than an override of it. `ptah-compat` is the
+// case that proves it: cmd/atlas registers `completion` itself, calling
+// InitDefaultCompletionCmd at cmd/atlas/atlas.go:469 so that Atlas-style group
+// help can rewrite the command afterwards. That tree is short by `help` alone,
+// not by six names, and InitDefaultCompletionCmd returns early against it
+// rather than replacing the rewritten command.
+//
+// Two spellings the shipped binary answers to stay outside this walk, and no
+// walk can reach them: `__complete` and its alias `__completeNoDesc` come from
+// cobra's unexported initCompleteCmd, which also removes the command again
+// unless the invocation being parsed is that command. They are hidden, they
+// answer a shell rather than a person or an agent, and a row for either would
+// have to be hand-written and therefore unchecked -- which is the failure this
+// package exists to prevent. docs/agent-surface.md names them in prose instead,
+// outside the generated tables, where a claim nothing measures belongs.
 func Walk(root *cobra.Command) []Leaf {
+	root.InitDefaultHelpCmd()
+	root.InitDefaultCompletionCmd()
+
 	var leaves []Leaf
 	var visit func(cmd *cobra.Command, path string)
 	visit = func(cmd *cobra.Command, path string) {
