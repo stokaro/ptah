@@ -213,7 +213,15 @@ func TestMigrationFileGeneration_EmptyDiffPrevention(t *testing.T) {
 		description     string
 	}{
 		{
-			name: "table modification with missing field definitions should not generate migration",
+			// This row used to name a column the generated schema did not
+			// define, and asserted that nothing was written. That state is
+			// gone: a column travels WITH its change now, so a diff that names
+			// one carries its definition and there is nothing left to be
+			// missing (stokaro/ptah#2315).
+			//
+			// What survives is the property the row was really about: a table
+			// diff that changes nothing writes no migration.
+			name: "table modification that changes nothing should not generate migration",
 			generatedSchema: &schemamodel.Database{
 				Tables: []schemamodel.Table{
 					{Name: "users", StructName: "User"},
@@ -232,13 +240,10 @@ func TestMigrationFileGeneration_EmptyDiffPrevention(t *testing.T) {
 			},
 			diff: &difftypes.SchemaDiff{
 				TablesModified: []difftypes.TableDiff{
-					{
-						TableName:    "users",
-						ColumnsAdded: []string{"email"}, // This field doesn't exist in generated schema
-					},
+					{TableName: "users"},
 				},
 			},
-			description: "When field definitions are missing, no migration should be generated",
+			description: "A table diff carrying no change writes no migration",
 		},
 		{
 			name: "completely empty diff should not generate migration",

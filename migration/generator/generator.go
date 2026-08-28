@@ -2889,7 +2889,7 @@ func stringSet(values []string) map[string]struct{} {
 func tableDiffAddsColumn(tableDiffs []difftypes.TableDiff, table schemamodel.Table, column string) bool {
 	for _, tableDiff := range tableDiffs {
 		if (tableDiff.TableName == table.Name || tableDiff.TableName == table.QualifiedName() ||
-			tableDiff.TableName == table.StructName) && slices.Contains(tableDiff.ColumnsAdded, column) {
+			tableDiff.TableName == table.StructName) && slices.Contains(tableDiff.ColumnsAdded.Names(), column) {
 			return true
 		}
 	}
@@ -2913,7 +2913,7 @@ func appendAddedColumnForeignKeyRemovals(
 		for _, field := range schema.Fields {
 			if field.StructName != table.StructName ||
 				field.Foreign == "" ||
-				!slices.Contains(tableDiff.ColumnsAdded, field.Name) {
+				!slices.Contains(tableDiff.ColumnsAdded.Names(), field.Name) {
 				continue
 			}
 			name := field.ForeignKeyName

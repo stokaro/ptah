@@ -123,7 +123,16 @@ func TestPlanner_FieldLevelForeignKeyActions(t *testing.T) {
 			name: "ALTER TABLE ADD COLUMN with FK carries ON DELETE RESTRICT",
 			diff: &difftypes.SchemaDiff{
 				TablesModified: []difftypes.TableDiff{
-					{TableName: "posts", ColumnsAdded: []string{"owner_id"}},
+					{TableName: "posts", ColumnsAdded: difftypes.ColumnChanges{{
+						// The column travels WITH the change, and the foreign
+						// key this test is about is read off it.
+						StructName:     "Post",
+						Name:           "owner_id",
+						Type:           "INT",
+						Foreign:        "users(id)",
+						ForeignKeyName: "fk_post_owner",
+						OnDelete:       "RESTRICT",
+					}}},
 				},
 			},
 			desired: &schemamodel.Database{

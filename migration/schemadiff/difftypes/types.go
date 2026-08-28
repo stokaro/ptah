@@ -195,6 +195,49 @@ func (a ContinuousAggregateChanges) Names() []string {
 	return names
 }
 
+// ColumnChanges is a set of columns one table change applies to, carrying each
+// one's definition and not only its name.
+//
+// The twelfth family off `[]string` under stokaro/ptah#2315, and the one a name
+// cost the most. `ALTER TABLE ... ADD COLUMN` needs the type, the nullability,
+// the default and everything else a column declares, and a planner handed a
+// name recovered them by finding the table's Go STRUCT name and then scanning
+// every field in the schema for one matching both -- a parser artifact reaching
+// into the planner, and a silent no-op when either half of the match failed.
+//
+// Both sides carry, and they have to: `reverseTableDiffs` swaps the added and
+// removed lists to build a down migration, so a rollback that restores a
+// dropped column reads its definition out of what the REMOVAL carried. A
+// removed column is absent from the desired schema by definition, so the
+// comparison describes it from the catalog through
+// [go.5x5.cz/ptah/internal/catalogfield.Field].
+//
+// A removal carries the column and NOT its keys. See [TableDiff.ColumnsRemoved].
+//
+// See [RangeChanges] for why the wire shape does not change.
+type ColumnChanges []schemamodel.Field
+
+// MarshalJSON writes the names alone, the shape `columns_added` and
+// `columns_removed` have always had.
+func (c ColumnChanges) MarshalJSON() ([]byte, error) {
+	if c == nil {
+		return []byte("null"), nil
+	}
+	return json.Marshal(c.Names())
+}
+
+// Names is the column names this change applies to.
+func (c ColumnChanges) Names() []string {
+	if c == nil {
+		return nil
+	}
+	names := make([]string, 0, len(c))
+	for _, column := range c {
+		names = append(names, column.Name)
+	}
+	return names
+}
+
 // DomainChanges is a set of domain types one change applies to, carrying each
 // one's definition and not only its name.
 //
@@ -1251,11 +1294,21 @@ type TableDiff struct {
 	TableName string `json:"table_name"`
 
 	// ColumnsAdded contains names of columns that need to be added to the table
-	ColumnsAdded []string `json:"columns_added"`
+	ColumnsAdded ColumnChanges `json:"columns_added"`
 
-	// ColumnsRemoved contains names of columns that need to be removed from the table
+	// ColumnsRemoved contains the columns that need to be removed from the table
 	// (potentially dangerous - may cause data loss)
-	ColumnsRemoved []string `json:"columns_removed"`
+	//
+	// It carries the column's definition because the DOWN direction reads it:
+	// `reverseTableDiffs` turns a removal into an addition, and the rollback
+	// renders `ADD COLUMN` from what this carried.
+	//
+	// It deliberately carries no PRIMARY KEY and no FOREIGN KEY. Those belong
+	// to the constraint comparison, which reports them for a dropped column
+	// already; carrying them here as well is what made a rolled-back column
+	// emit its foreign key twice, which PostgreSQL answers with `constraint
+	// ... already exists` (stokaro/ptah#2404).
+	ColumnsRemoved ColumnChanges `json:"columns_removed"`
 
 	// ColumnsModified contains detailed information about columns that exist in both
 	// schemas but have different properties (type, constraints, defaults, etc.)

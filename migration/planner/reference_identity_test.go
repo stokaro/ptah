@@ -40,7 +40,7 @@ func TestGenerateSchemaDiffSQL_SQLiteRebuildUsesStructuralIdentity(t *testing.T)
 	diff := &difftypes.SchemaDiff{
 		TablesModified: []difftypes.TableDiff{{
 			TableName:      "tenant.data",
-			ColumnsRemoved: []string{"obsolete"},
+			ColumnsRemoved: difftypes.ColumnChanges{{Name: "obsolete"}},
 		}},
 	}
 

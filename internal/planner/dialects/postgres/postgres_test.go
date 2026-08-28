@@ -265,7 +265,7 @@ func TestPlanner_GenerateMigrationSQL_TablesModified(t *testing.T) {
 				TablesModified: []difftypes.TableDiff{
 					{
 						TableName:    "users",
-						ColumnsAdded: []string{"created_at"},
+						ColumnsAdded: difftypes.ColumnChanges{{Name: "created_at", Type: "TIMESTAMP", StructName: "User", Nullable: false}},
 					},
 				},
 			},
@@ -302,8 +302,15 @@ func TestPlanner_GenerateMigrationSQL_TablesModified(t *testing.T) {
 			diff: &difftypes.SchemaDiff{
 				TablesModified: []difftypes.TableDiff{
 					{
-						TableName:    "posts",
-						ColumnsAdded: []string{"user_id"},
+						TableName: "posts",
+						ColumnsAdded: difftypes.ColumnChanges{{
+							Name:           "user_id",
+							Type:           "INTEGER",
+							StructName:     "Post",
+							Nullable:       false,
+							Foreign:        "users(id)",
+							ForeignKeyName: "fk_posts_user",
+						}},
 					},
 				},
 			},
@@ -417,12 +424,21 @@ func TestPlanner_ForeignKeyDependencyOrdering(t *testing.T) {
 			diff: &difftypes.SchemaDiff{
 				TablesModified: []difftypes.TableDiff{
 					{
-						TableName:    "users",
-						ColumnsAdded: []string{"id"},
+						TableName: "users",
+						ColumnsAdded: difftypes.ColumnChanges{{Name: "id",
+							Type:       "TEXT",
+							StructName: "User",
+							Primary:    true,
+							Nullable:   false}},
 					},
 					{
-						TableName:    "restore_steps",
-						ColumnsAdded: []string{"user_id"},
+						TableName: "restore_steps",
+						ColumnsAdded: difftypes.ColumnChanges{{Name: "user_id",
+							Type:           "TEXT",
+							StructName:     "RestoreStep",
+							Nullable:       false,
+							Foreign:        "users(id)",
+							ForeignKeyName: "fk_entity_user"}},
 					},
 				},
 			},
@@ -547,12 +563,21 @@ func TestPlanner_ForeignKeyDependencyOrdering_SQLOutput(t *testing.T) {
 	diff := &difftypes.SchemaDiff{
 		TablesModified: []difftypes.TableDiff{
 			{
-				TableName:    "users",
-				ColumnsAdded: []string{"id"},
+				TableName: "users",
+				ColumnsAdded: difftypes.ColumnChanges{{Name: "id",
+					Type:       "TEXT",
+					StructName: "User",
+					Primary:    true,
+					Nullable:   false}},
 			},
 			{
-				TableName:    "restore_steps",
-				ColumnsAdded: []string{"user_id"},
+				TableName: "restore_steps",
+				ColumnsAdded: difftypes.ColumnChanges{{Name: "user_id",
+					Type:           "TEXT",
+					StructName:     "RestoreStep",
+					Nullable:       false,
+					Foreign:        "users(id)",
+					ForeignKeyName: "fk_entity_user"}},
 			},
 		},
 	}

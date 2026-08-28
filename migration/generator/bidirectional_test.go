@@ -211,7 +211,7 @@ func TestPlanBidirectionalSchemaDiff_MySQLCompositeAddedColumnBackingCleanupOrde
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{
 		TablesModified: []difftypes.TableDiff{{
-			TableName: "children", ColumnsAdded: []string{"tenant_id"},
+			TableName: "children", ColumnsAdded: difftypes.ColumnChanges{{StructName: "Child", Name: "tenant_id", Type: "BIGINT"}},
 		}},
 		ConstraintsAdded: []string{"fk_parent"},
 		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
@@ -252,7 +252,7 @@ func TestPlanBidirectionalSchemaDiff_MySQLReferencedAddedColumnDropsForeignKeyFi
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{
 		TablesModified: []difftypes.TableDiff{{
-			TableName: "parents", ColumnsAdded: []string{"code"},
+			TableName: "parents", ColumnsAdded: difftypes.ColumnChanges{{StructName: "Parent", Name: "code", Type: "VARCHAR(36)", Unique: true}},
 		}},
 		ConstraintsAdded: []string{"fk_parent_code"},
 		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
@@ -399,7 +399,7 @@ func TestPlanBidirectionalSchemaDiff_MySQLAddedColumnInlineKeyAvoidsPhantomClean
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			diff := &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
-				TableName: "children", ColumnsAdded: []string{"parent_id"},
+				TableName: "children", ColumnsAdded: difftypes.ColumnChanges{{Name: "parent_id"}},
 			}}}
 			desired := &schemamodel.Database{
 				Tables: []schemamodel.Table{

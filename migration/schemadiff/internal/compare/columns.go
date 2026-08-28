@@ -11,6 +11,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/internal/catalogfield"
 	"go.5x5.cz/ptah/internal/exprkey"
 	"go.5x5.cz/ptah/internal/normalize"
 	"go.5x5.cz/ptah/internal/oracletype"
@@ -158,13 +159,13 @@ func tableColumnsWithSemantics(
 	// Find added and removed columns
 	for identity, column := range genColumns {
 		if _, exists := dbColumns[identity]; !exists {
-			tableDiff.ColumnsAdded = append(tableDiff.ColumnsAdded, column.Name)
+			tableDiff.ColumnsAdded = append(tableDiff.ColumnsAdded, column)
 		}
 	}
 
 	for identity, column := range dbColumns {
 		if _, exists := genColumns[identity]; !exists {
-			tableDiff.ColumnsRemoved = append(tableDiff.ColumnsRemoved, column.Name)
+			tableDiff.ColumnsRemoved = append(tableDiff.ColumnsRemoved, removedColumn(column))
 		}
 	}
 
@@ -199,8 +200,8 @@ func tableColumnsWithSemantics(
 	}
 
 	// Sort for consistent output
-	sort.Strings(tableDiff.ColumnsAdded)
-	sort.Strings(tableDiff.ColumnsRemoved)
+	sortColumns(tableDiff.ColumnsAdded)
+	sortColumns(tableDiff.ColumnsRemoved)
 	sort.Slice(tableDiff.ColumnsModified, func(i, j int) bool {
 		return tableDiff.ColumnsModified[i].ColumnName < tableDiff.ColumnsModified[j].ColumnName
 	})
@@ -1261,4 +1262,38 @@ func writeSQLServerBracketedIdentifier(b *strings.Builder, expression string, st
 
 	b.WriteByte('[')
 	return start
+}
+
+// removedColumn describes a column the database reported and the desired schema
+// does not declare, in the shape a rollback renders it from.
+//
+// The description is [catalogfield.Field], the same one the conversion that
+// writes a document uses, so the two cannot answer differently. What it is NOT
+// given is the column's keys, and that omission is the point.
+//
+// A dropped column's PRIMARY KEY and FOREIGN KEY are reported by the CONSTRAINT
+// comparison, which turns them back into additions in the same reversal. A
+// column that also carried them would have them restored twice: measured, the
+// rollback of a column with a foreign key emitted `ADD CONSTRAINT` for it once
+// from the column and once from the constraint, and PostgreSQL answers the
+// second with `constraint ... already exists` (stokaro/ptah#2404).
+//
+// The forward direction is unaffected: a DECLARED field carries its own foreign
+// key, the constraint comparison reports none for it, and the column path is
+// the only one that emits it.
+func removedColumn(reported catalog.Column) schemamodel.Field {
+	field := catalogfield.Field(reported, catalogfield.Options{})
+	field.Primary = false
+	field.Foreign = ""
+	field.ForeignKeyName = ""
+	field.OnDelete = ""
+	field.OnUpdate = ""
+	field.Deferrable = false
+	field.Initially = ""
+	return field
+}
+
+// sortColumns orders by the key the name list was sorted on.
+func sortColumns(columns difftypes.ColumnChanges) {
+	sort.Slice(columns, func(i, j int) bool { return columns[i].Name < columns[j].Name })
 }

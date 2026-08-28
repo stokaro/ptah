@@ -62,7 +62,7 @@ func TestColumnDDLResolvesTheTableAcrossSchemaSpellings(t *testing.T) {
 			statements, err := planner.GenerateSchemaDiffSQLStatements(
 				&difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 					TableName:    test.diffName,
-					ColumnsAdded: []string{"note"},
+					ColumnsAdded: difftypes.ColumnChanges{{StructName: "Event", Name: "note", Type: "String"}},
 				}}},
 				eventsTable(test.tableSchema),
 				"clickhouse",
@@ -85,7 +85,7 @@ func TestColumnDDLDoesNotGuessBetweenSchemas(t *testing.T) {
 	statements, err := planner.GenerateSchemaDiffSQLStatements(
 		&difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 			TableName:    "app.events",
-			ColumnsAdded: []string{"note"},
+			ColumnsAdded: difftypes.ColumnChanges{{StructName: "Event", Name: "note", Type: "String"}},
 		}}},
 		eventsTable("reporting"),
 		"clickhouse",

@@ -318,7 +318,7 @@ func TestPlannerWritesNoDDLForARelationTheSchemaDoesNotDeclare(t *testing.T) {
 			desired: reportingUsers,
 			diff: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:    "app.users",
-				ColumnsAdded: []string{"note"},
+				ColumnsAdded: difftypes.ColumnChanges{{StructName: "User", Name: "note", Type: "TEXT"}},
 			}}},
 			unwantedSQL: "ADD COLUMN",
 		},

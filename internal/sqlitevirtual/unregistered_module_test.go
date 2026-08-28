@@ -595,8 +595,8 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			database: holdingFTS4,
 			diff: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:      "docs_content",
-				ColumnsAdded:   []string{"spurious"},
-				ColumnsRemoved: []string{"c1body"},
+				ColumnsAdded:   difftypes.ColumnChanges{{Name: "spurious"}},
+				ColumnsRemoved: difftypes.ColumnChanges{{Name: "c1body"}},
 			}}},
 			wantErr:         true,
 			wantUnsupported: true,
@@ -612,7 +612,7 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			database: holdingFTS4,
 			diff: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:        "docs_content",
-				ColumnsAdded:     []string{"spurious"},
+				ColumnsAdded:     difftypes.ColumnChanges{{Name: "spurious"}},
 				ConstraintsAdded: []string{"docs_content_chk"},
 			}}},
 			wantErr:         true,
@@ -632,7 +632,7 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			diff: &difftypes.SchemaDiff{
 				TablesModified: []difftypes.TableDiff{{
 					TableName:    "docs_content",
-					ColumnsAdded: []string{"spurious"},
+					ColumnsAdded: difftypes.ColumnChanges{{Name: "spurious"}},
 				}},
 				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
 					{Name: "docs_content_chk", TableName: "docs_content", Type: "CHECK"},
@@ -999,7 +999,7 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			database: holdingFTS4,
 			diff: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:      "users",
-				ColumnsRemoved: []string{"legacy"},
+				ColumnsRemoved: difftypes.ColumnChanges{{Name: "legacy"}},
 			}}},
 			policy:  sqlitevirtual.Policy{SkipDropColumn: true},
 			wantErr: false,
@@ -1017,7 +1017,7 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			database: holdingFTS4,
 			diff: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:      "docs_content",
-				ColumnsRemoved: []string{"c1body"},
+				ColumnsRemoved: difftypes.ColumnChanges{{Name: "c1body"}},
 				ColumnsModified: []difftypes.ColumnDiff{{
 					ColumnName: "c0title",
 					Changes:    map[string]string{"type": "TEXT -> INTEGER"},
@@ -1039,7 +1039,7 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			database: holdingFTS4,
 			diff: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:      "docs_content",
-				ColumnsRemoved: []string{"c1body"},
+				ColumnsRemoved: difftypes.ColumnChanges{{Name: "c1body"}},
 			}}},
 			wantErr:         true,
 			wantUnsupported: true,
@@ -1124,7 +1124,7 @@ func TestValidatePlannedRollbackRefusesADestructiveRollback(t *testing.T) {
 			forward:  addingColumn("docs_content"),
 			reverse: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:      "docs_content",
-				ColumnsRemoved: []string{"email"},
+				ColumnsRemoved: difftypes.ColumnChanges{{Name: "email"}},
 			}}},
 			wantErr:         true,
 			wantUnsupported: true,
@@ -1331,7 +1331,7 @@ func TestValidatePlannedRollbackRefusesADestructiveRollback(t *testing.T) {
 			forward:  addingColumn("docs"),
 			reverse: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:      "docs",
-				ColumnsRemoved: []string{"email"},
+				ColumnsRemoved: difftypes.ColumnChanges{{Name: "email"}},
 			}}},
 			wantErr: false,
 		},
@@ -1343,7 +1343,7 @@ func TestValidatePlannedRollbackRefusesADestructiveRollback(t *testing.T) {
 			forward:  addingColumn("docs_content"),
 			reverse: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:      "docs_content",
-				ColumnsRemoved: []string{"email"},
+				ColumnsRemoved: difftypes.ColumnChanges{{Name: "email"}},
 			}}},
 			wantErr: false,
 		},
@@ -1355,7 +1355,7 @@ func TestValidatePlannedRollbackRefusesADestructiveRollback(t *testing.T) {
 			forward:  addingColumn("docs_content"),
 			reverse: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:      "docs_content",
-				ColumnsRemoved: []string{"email"},
+				ColumnsRemoved: difftypes.ColumnChanges{{Name: "email"}},
 			}}},
 			wantErr: false,
 		},
@@ -1416,7 +1416,7 @@ func TestDiffPolicySkipKindsAreClassified(t *testing.T) {
 			kind: diffpolicy.DropColumn,
 			diff: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:      "docs_content",
-				ColumnsRemoved: []string{"c1body"},
+				ColumnsRemoved: difftypes.ColumnChanges{{Name: "c1body"}},
 			}}},
 			policy: sqlitevirtual.Policy{SkipDropColumn: true},
 		},
@@ -1495,7 +1495,7 @@ func modifying(table string) *difftypes.SchemaDiff {
 func addingColumn(table string) *difftypes.SchemaDiff {
 	return &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 		TableName:    table,
-		ColumnsAdded: []string{"email"},
+		ColumnsAdded: difftypes.ColumnChanges{{Name: "email"}},
 	}}}
 }
 

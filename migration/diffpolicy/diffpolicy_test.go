@@ -67,7 +67,7 @@ func TestApplyDropTableRemovesDependents(t *testing.T) {
 	diff := &difftypes.SchemaDiff{
 		TablesRemoved: []string{"users"},
 		TablesModified: []difftypes.TableDiff{
-			{TableName: "orders", ColumnsRemoved: []string{"note"}},
+			{TableName: "orders", ColumnsRemoved: difftypes.ColumnChanges{{Name: "note"}}},
 		},
 		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_users_email", TableName: "users"},
@@ -125,19 +125,19 @@ func TestApplyDropColumn(t *testing.T) {
 
 	diff := &difftypes.SchemaDiff{
 		TablesModified: []difftypes.TableDiff{
-			{TableName: "users", ColumnsAdded: []string{"age"}, ColumnsRemoved: []string{"legacy", "old"}},
+			{TableName: "users", ColumnsAdded: difftypes.ColumnChanges{{Name: "age"}}, ColumnsRemoved: difftypes.ColumnChanges{{Name: "legacy"}, {Name: "old"}}},
 		},
 	}
 
 	got, skipped := diffpolicy.Apply(diff, diffpolicy.NewSkipSet(diffpolicy.DropColumn))
 
 	c.Assert(got.TablesModified[0].ColumnsRemoved, qt.HasLen, 0)
-	c.Assert(got.TablesModified[0].ColumnsAdded, qt.DeepEquals, []string{"age"})
+	c.Assert(got.TablesModified[0].ColumnsAdded.Names(), qt.DeepEquals, []string{"age"})
 	c.Assert(skipped, qt.HasLen, 2)
 	c.Assert(skipped[0].Object, qt.Equals, "users.legacy")
 	c.Assert(skipped[1].Object, qt.Equals, "users.old")
 	// Input not mutated.
-	c.Assert(diff.TablesModified[0].ColumnsRemoved, qt.DeepEquals, []string{"legacy", "old"})
+	c.Assert(diff.TablesModified[0].ColumnsRemoved.Names(), qt.DeepEquals, []string{"legacy", "old"})
 }
 
 func TestApplyDropIndexPreservesReplacements(t *testing.T) {

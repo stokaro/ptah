@@ -181,7 +181,7 @@ func TestGenerateSchemaDiffAST_WrapsPlannerFailures(t *testing.T) {
 	c := qt.New(t)
 
 	diff := &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{
-		{TableName: "users", ColumnsRemoved: []string{"name"}},
+		{TableName: "users", ColumnsRemoved: difftypes.ColumnChanges{{Name: "name"}}},
 	}}
 
 	nodes, err := planner.GenerateSchemaDiffAST(diff, &schemamodel.Database{}, platform.SQLite)

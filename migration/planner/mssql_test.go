@@ -110,7 +110,7 @@ func TestGenerateSchemaDiffSQL_SQLServerAddsColumnToQualifiedTable(t *testing.T)
 	diff := &difftypes.SchemaDiff{
 		TablesModified: []difftypes.TableDiff{{
 			TableName:    "dbo.users",
-			ColumnsAdded: []string{"nickname"},
+			ColumnsAdded: difftypes.ColumnChanges{{StructName: "User", Name: "nickname", Type: "VARCHAR(64)", Nullable: true}},
 		}},
 	}
 	desired := &schemamodel.Database{
@@ -161,7 +161,7 @@ func TestGenerateSchemaDiffSQL_SQLServerRejectsColumnRemoval(t *testing.T) {
 	diff := &difftypes.SchemaDiff{
 		TablesModified: []difftypes.TableDiff{{
 			TableName:      "users",
-			ColumnsRemoved: []string{"legacy_id"},
+			ColumnsRemoved: difftypes.ColumnChanges{{Name: "legacy_id"}},
 		}},
 	}
 	desired := &schemamodel.Database{

@@ -296,18 +296,22 @@ func (p *Planner) addNewTableColumns(
 	desired *schemamodel.Database,
 	semantics identifier.Semantics,
 ) []ast.Node {
-	for _, colName := range tableDiff.ColumnsAdded {
-		var targetField *schemamodel.Field
-		if targetTable := findGeneratedTable(desired.Tables, tableDiff.TableName, semantics); targetTable != nil {
-			for _, field := range desired.Fields {
-				if field.StructName == targetTable.StructName && field.Name == colName {
-					targetField = &field
-					break
-				}
-			}
-		}
+	// The TABLE still has to be declared. The column travels with the change
+	// now, so the field lookup that used to fail here cannot -- but the guard
+	// it provided is load-bearing on its own: a diff naming `app.users` against
+	// a schema that declares `reporting.users` must write no DDL, because the
+	// statement would apply cleanly to a relation nobody declared.
+	if findGeneratedTable(desired.Tables, tableDiff.TableName, semantics) == nil {
+		return result
+	}
 
-		if targetField != nil {
+	// The column itself is no longer looked up: it used to be found by the
+	// table's Go STRUCT name and a scan of every field in the schema
+	// (stokaro/ptah#2315).
+	for _, column := range tableDiff.ColumnsAdded {
+		targetField := &column
+
+		{
 			columnNode := fromschema.FromField(*targetField, desired.Enums, p.targetDialect())
 
 			// Create operations list starting with ADD COLUMN
@@ -542,14 +546,14 @@ func (p *Planner) removeColumns(result []ast.Node, tableDiff *difftypes.TableDif
 			),
 		}
 	}
-	for _, colName := range tableDiff.ColumnsRemoved {
+	for _, column := range tableDiff.ColumnsRemoved {
 		// Generate DROP COLUMN statement using AST
 		alterNode := &ast.AlterTableNode{
 			Name:       tableDiff.TableName,
-			Operations: []ast.AlterOperation{&ast.DropColumnOperation{ColumnName: colName}},
+			Operations: []ast.AlterOperation{&ast.DropColumnOperation{ColumnName: column.Name}},
 		}
 		result = append(result, alterNode)
-		astCommentNode := ast.NewComment(fmt.Sprintf("WARNING: Dropping column %s.%s - This will delete data!", tableDiff.TableName, colName))
+		astCommentNode := ast.NewComment(fmt.Sprintf("WARNING: Dropping column %s.%s - This will delete data!", tableDiff.TableName, column.Name))
 		result = append(result, astCommentNode)
 	}
 	return result, nil
@@ -1008,7 +1012,7 @@ func foreignKeyBlockingColumnChangesByTable(
 				result[tableIdentity] = columns
 			}
 			for _, column := range tableDiff.ColumnsRemoved {
-				columns[semantics.ColumnIdentityKey(column)] = struct{}{}
+				columns[semantics.ColumnIdentityKey(column.Name)] = struct{}{}
 			}
 		}
 	}

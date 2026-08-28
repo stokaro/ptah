@@ -217,7 +217,7 @@ func planTableRebuilds(
 		if !sqliterebuild.NeedsTableRebuild(table) {
 			continue
 		}
-		add(table.TableName, table.ColumnsAdded)
+		add(table.TableName, table.ColumnsAdded.Names())
 	}
 
 	// A column shape `ALTER TABLE ... ADD COLUMN` cannot express is a reason to
@@ -228,12 +228,13 @@ func planTableRebuilds(
 	// Refusing here instead told the operator a rebuild plan was required by a
 	// tool that writes rebuild plans (stokaro/ptah#1707).
 	for _, table := range diff.TablesModified {
-		for _, columnName := range table.ColumnsAdded {
-			column := findColumn(desired, table.TableName, columnName)
-			if column == nil || !addedColumnNeedsRebuild(column) {
+		for _, field := range table.ColumnsAdded {
+			// The column travels WITH the change, so its shape is read off the
+			// change rather than looked back up (stokaro/ptah#2315).
+			if !addedColumnNeedsRebuild(fromschema.FromField(field, desired.Enums, DialectName)) {
 				continue
 			}
-			add(table.TableName, table.ColumnsAdded)
+			add(table.TableName, table.ColumnsAdded.Names())
 			break
 		}
 	}
@@ -507,13 +508,13 @@ func (p *Planner) modifyTables(
 			emitted[tableDiff.TableName] = true
 			continue
 		}
-		for _, columnName := range tableDiff.ColumnsAdded {
-			if column := findColumn(desired, tableDiff.TableName, columnName); column != nil {
-				result = append(result, &ast.AlterTableNode{
-					Name:       tableDiff.TableName,
-					Operations: []ast.AlterOperation{&ast.AddColumnOperation{Column: column}},
-				})
-			}
+		for _, field := range tableDiff.ColumnsAdded {
+			result = append(result, &ast.AlterTableNode{
+				Name: tableDiff.TableName,
+				Operations: []ast.AlterOperation{&ast.AddColumnOperation{
+					Column: fromschema.FromField(field, desired.Enums, DialectName),
+				}},
+			})
 		}
 	}
 	// Tables reached only through a constraint change never appear in
@@ -895,20 +896,6 @@ func isNullLiteral(value string) bool {
 	return strings.EqualFold(strings.TrimSpace(value), "NULL")
 }
 
-func findColumn(desired *schemamodel.Database, tableName, columnName string) *ast.ColumnNode {
-	for _, table := range desired.Tables {
-		if table.Name != tableName && table.QualifiedName() != tableName {
-			continue
-		}
-		for _, field := range desired.Fields {
-			if field.StructName == table.StructName && field.Name == columnName {
-				return fromschema.FromField(field, desired.Enums, DialectName)
-			}
-		}
-	}
-	return nil
-}
-
 func (p *Planner) addIndexes(
 	diff *difftypes.SchemaDiff,
 	indexes *indexscope.Resolver,
@@ -1094,7 +1081,7 @@ func addedColumnsFor(diff *difftypes.SchemaDiff, tableName string, semantics ide
 	if table == nil {
 		return nil
 	}
-	return table.ColumnsAdded
+	return table.ColumnsAdded.Names()
 }
 
 // The four helpers below turn one object kind's "modified" list into names.

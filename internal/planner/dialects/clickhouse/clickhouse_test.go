@@ -45,11 +45,11 @@ func TestGenerateMigrationAST_AddTableDropTableAndAlter(t *testing.T) {
 		TablesModified: []difftypes.TableDiff{
 			{
 				TableName:    "existing",
-				ColumnsAdded: []string{"new_col"},
+				ColumnsAdded: difftypes.ColumnChanges{{StructName: "Existing", Name: "new_col", Type: "INTEGER", Nullable: false}},
 				ColumnsModified: []difftypes.ColumnDiff{
 					{ColumnName: "id", Changes: map[string]string{"type": "Int64"}},
 				},
-				ColumnsRemoved: []string{"old_col"},
+				ColumnsRemoved: difftypes.ColumnChanges{{Name: "old_col"}},
 			},
 		},
 	}

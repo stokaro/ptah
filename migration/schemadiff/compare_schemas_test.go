@@ -51,7 +51,7 @@ func TestCompareSchemas_PlansAddedColumnAndIndex(t *testing.T) {
 	c.Assert(diff.TablesModified, qt.HasLen, 1)
 	modified := diff.TablesModified[0]
 	c.Assert(modified.TableName, qt.Equals, "users")
-	c.Assert(modified.ColumnsAdded, qt.DeepEquals, []string{"created_at"})
+	c.Assert(modified.ColumnsAdded.Names(), qt.DeepEquals, []string{"created_at"})
 	c.Assert(modified.ColumnsRemoved, qt.HasLen, 0)
 	c.Assert(modified.ColumnsModified, qt.HasLen, 0)
 	c.Assert(modified.ConstraintsAdded, qt.HasLen, 0)

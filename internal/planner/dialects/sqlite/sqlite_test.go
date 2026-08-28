@@ -146,7 +146,7 @@ func TestPlannerAddsColumnsAndIndexes(t *testing.T) {
 	}
 	diff := &difftypes.SchemaDiff{
 		TablesModified: []difftypes.TableDiff{
-			{TableName: "users", ColumnsAdded: []string{"display_name"}},
+			{TableName: "users", ColumnsAdded: difftypes.ColumnChanges{{Name: "display_name", Type: "TEXT", StructName: "User", Nullable: true}}},
 		},
 		IndexesAdded: []difftypes.IndexRef{
 			{Name: "idx_users_display_name", TableName: "users"},
@@ -184,7 +184,7 @@ func TestPlannerRebuildsTableWhenDroppingColumn(t *testing.T) {
 	}
 	diff := &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 		TableName:      "users",
-		ColumnsRemoved: []string{"name"},
+		ColumnsRemoved: difftypes.ColumnChanges{{Name: "name"}},
 	}}}
 
 	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.SQLite)
@@ -217,7 +217,7 @@ func TestPlannerRebuildStepsAsideFromADeclaredTableName(t *testing.T) {
 	}
 	diff := &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 		TableName:      "users",
-		ColumnsRemoved: []string{"name"},
+		ColumnsRemoved: difftypes.ColumnChanges{{Name: "name"}},
 	}}}
 
 	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.SQLite)
@@ -252,7 +252,7 @@ func TestPlannerRejectsUnsafeTableRebuildPreconditions(t *testing.T) {
 	}
 	diff := &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 		TableName:      "users",
-		ColumnsRemoved: []string{"name"},
+		ColumnsRemoved: difftypes.ColumnChanges{{Name: "name"}},
 	}}}
 
 	for _, tt := range tests {
@@ -314,7 +314,7 @@ func TestPlannerRebuildsATableOtherTablesReferTo(t *testing.T) {
 	}
 	diff := &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 		TableName:      "users",
-		ColumnsRemoved: []string{"name"},
+		ColumnsRemoved: difftypes.ColumnChanges{{Name: "name"}},
 	}}}
 
 	for _, tt := range tests {
@@ -360,7 +360,7 @@ func TestPlannerRebuildStepsAsideFromARemovedTableName(t *testing.T) {
 		TablesRemoved: []string{"__ptah_rebuild_users"},
 		TablesModified: []difftypes.TableDiff{{
 			TableName:      "users",
-			ColumnsRemoved: []string{"name"},
+			ColumnsRemoved: difftypes.ColumnChanges{{Name: "name"}},
 		}},
 	}
 
@@ -424,7 +424,7 @@ func TestPlannerRebuildsForAddColumnShapesAlterCannotExpress(t *testing.T) {
 			desired := addColumnRebuildSchema(tt.field)
 			diff := &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:    "users",
-				ColumnsAdded: []string{tt.field.Name},
+				ColumnsAdded: difftypes.ColumnChanges{tt.field},
 			}}}
 
 			sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.SQLite)
@@ -458,7 +458,7 @@ func TestPlannerRefusesRebuiltNotNullAddWithoutDefault(t *testing.T) {
 	desired := addColumnRebuildSchema(field)
 	diff := &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 		TableName:    "users",
-		ColumnsAdded: []string{field.Name},
+		ColumnsAdded: difftypes.ColumnChanges{field},
 	}}}
 
 	nodes, err := planner.GenerateSchemaDiffAST(diff, desired, platform.SQLite)
@@ -666,8 +666,8 @@ func TestPlannerRebuildsTableForChangesAlterTableCannotExpress(t *testing.T) {
 			),
 			diff: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:      "users",
-				ColumnsAdded:   []string{"nickname"},
-				ColumnsRemoved: []string{"email"},
+				ColumnsAdded:   difftypes.ColumnChanges{{Name: "nickname", Type: "TEXT", StructName: "User", Nullable: true}},
+				ColumnsRemoved: difftypes.ColumnChanges{{Name: "email", Type: "TEXT", StructName: "User"}},
 			}}},
 			wantSQL: []string{
 				`"nickname" TEXT`,
@@ -712,8 +712,8 @@ func TestPlannerRebuildRefusesAddedNotNullColumnWithoutDefault(t *testing.T) {
 	)
 	diff := &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 		TableName:      "users",
-		ColumnsAdded:   []string{"email"},
-		ColumnsRemoved: []string{"legacy"},
+		ColumnsAdded:   difftypes.ColumnChanges{{Name: "email", Type: "TEXT", StructName: "User"}},
+		ColumnsRemoved: difftypes.ColumnChanges{{Name: "legacy"}},
 	}}}
 
 	nodes, err := planner.GenerateSchemaDiffAST(diff, desired, platform.SQLite)
@@ -900,7 +900,7 @@ func TestPlannerRebuildExcludesColumnsAddedBesideAConstraintChange(t *testing.T)
 	diff := &difftypes.SchemaDiff{
 		TablesModified: []difftypes.TableDiff{{
 			TableName:    "users",
-			ColumnsAdded: []string{"note"},
+			ColumnsAdded: difftypes.ColumnChanges{{Name: "note", Type: "TEXT", StructName: "User", Nullable: true}},
 		}},
 		ConstraintsAdded: []string{"uq_users_name"},
 		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
@@ -919,4 +919,35 @@ func TestPlannerRebuildExcludesColumnsAddedBesideAConstraintChange(t *testing.T)
 	c.Assert(sql, qt.Not(qt.Contains), `SELECT "id", "name", "note"`)
 	c.Assert(sql, qt.Contains, `CREATE TABLE "__ptah_rebuild_users"`)
 	c.Assert(sql, qt.Contains, `"note" TEXT`)
+}
+
+// TestPlanner_RefusesAColumnOnARelationTheSchemaDoesNotDeclare is SQLite's
+// answer to the property the PostgreSQL planner holds by writing nothing.
+//
+// A column travels WITH its change now (stokaro/ptah#2315), so the lookup that
+// used to fail for an undeclared table cannot fail any more. On PostgreSQL the
+// guard that lookup provided had to be restored explicitly; here it did not,
+// because SQLite already refuses -- and refusing is the better answer, since an
+// operator is told which table to declare rather than being handed a plan that
+// quietly does less than they asked.
+//
+// Measured: adding the PostgreSQL-style guard here changed no test, because
+// this refusal happens first.
+func TestPlanner_RefusesAColumnOnARelationTheSchemaDoesNotDeclare(t *testing.T) {
+	c := qt.New(t)
+
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Name: "users", Schema: "main"}},
+		Fields: []schemamodel.Field{{StructName: "User", Name: "id", Type: "INTEGER", Primary: true}},
+	}
+	diff := &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
+		TableName:    "other.users",
+		ColumnsAdded: difftypes.ColumnChanges{{StructName: "User", Name: "note", Type: "TEXT"}},
+	}}}
+
+	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.SQLite)
+
+	c.Assert(err, qt.ErrorMatches, `.*requires its desired definition.*`)
+	c.Assert(sql, qt.Equals, "",
+		qt.Commentf("no DDL for a relation the desired schema never declared"))
 }

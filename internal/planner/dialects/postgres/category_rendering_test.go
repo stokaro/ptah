@@ -107,7 +107,7 @@ func diffCategoryFixtures() []categoryFixture {
 		{"TablesRemoved", &difftypes.SchemaDiff{TablesRemoved: []string{"t"}}, &schemamodel.Database{}},
 		{
 			"TablesModified",
-			&difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{TableName: "t", ColumnsAdded: []string{"c"}}}},
+			&difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{TableName: "t", ColumnsAdded: difftypes.ColumnChanges{{Name: "c", StructName: "T", Type: "TEXT"}}}}},
 			oneTable,
 		},
 		{

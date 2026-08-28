@@ -81,7 +81,7 @@ func TestRebuildCarriesAddedColumnsAcrossSchemaSpellings(t *testing.T) {
 			diff := &difftypes.SchemaDiff{
 				TablesModified: []difftypes.TableDiff{{
 					TableName:    test.diffTableName,
-					ColumnsAdded: []string{"author"},
+					ColumnsAdded: difftypes.ColumnChanges{{StructName: "Note", Name: "author", Type: "TEXT", Nullable: true}},
 				}},
 				ConstraintsAdded: []string{"ck_notes_body"},
 				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
