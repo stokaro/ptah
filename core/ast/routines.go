@@ -75,6 +75,19 @@ const (
 type PostgresRoutineStatement struct {
 	Kind PostgresRoutineStatementKind
 	SQL  string
+
+	// Statements are the statements a control-flow statement carries, empty for
+	// every other kind and for one this parser could not split.
+	//
+	// The model was flat, and SQL is the whole text either way -- an IF carries
+	// its own `END IF`. A consumer that stopped at the top level therefore saw
+	// the IF and not what runs inside it, which is how an EXECUTE inside a
+	// conditional went unreported by the rule whose whole job is to say where
+	// analysis stops (stokaro/ptah#2393).
+	//
+	// Additive on purpose: the top-level list is unchanged, so a reader that
+	// does not care about nesting sees exactly what it saw before.
+	Statements []PostgresRoutineStatement `json:",omitempty"`
 }
 
 // SQLServerRoutineNode represents a SQL Server CREATE FUNCTION or CREATE
