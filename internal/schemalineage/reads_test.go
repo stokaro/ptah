@@ -82,6 +82,28 @@ func TestDeriveRoutines_AReadInsideABranchIsReached(t *testing.T) {
 	c.Assert(readTargets(result), qt.DeepEquals, []string{"customers.email:select", "customers.id:select"})
 }
 
+// TestDeriveRoutines_TSQLReadsAreDerived is the other half of the dialect rule.
+//
+// A T-SQL variable carries an @ prefix and cannot collide with a column name,
+// so the ambiguity that stops MySQL does not arise. Without this row the only
+// evidence for the T-SQL arm is the MySQL refusal, and a rule that answered for
+// PostgreSQL alone would pass that test unchanged.
+//
+// It reads whole only because stokaro/ptah#2451 stopped the splitter breaking
+// an UPDATE at its SET clause; before that this statement arrived in two halves
+// and neither was an update.
+func TestDeriveRoutines_TSQLReadsAreDerived(t *testing.T) {
+	c := qt.New(t)
+
+	result := schemalineage.DeriveRoutines(customersSchema("procedure", "sql",
+		"UPDATE customers SET country = 'CZ' WHERE id = 1;"), "sqlserver")
+
+	c.Assert(readTargets(result), qt.DeepEquals, []string{"customers.id:update"})
+	c.Assert(writeTargets(result), qt.DeepEquals, []string{"customers.country:update"})
+	c.Assert(result.Undecided, qt.HasLen, 1)
+	c.Assert(result.Undecided[0].Reason, qt.Contains, "the reads are those of its statements that name one table")
+}
+
 // TestDeriveRoutines_MySQLReadsAreRefusedWithTheirReason is the property that
 // decides which dialects can be answered at all.
 //
