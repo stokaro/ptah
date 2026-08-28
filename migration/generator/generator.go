@@ -2121,8 +2121,12 @@ func reverseSchemaDiffWithSchemaForDialect(
 		// column of theirs names a type as that database declared it
 		// (stokaro/ptah#2315).
 		DeclaredUserTypes: difftypes.UserTypeVocabularyOf(prior),
-		TablesRemoved:     deporder.TableDropOrder(diff.TablesAdded.Names(), schema), // Tables to add become tables to remove
-		TablesModified:    reverseTableDiffs(diff.TablesModified),
+		// The same reasoning for the tables a foreign key may point at: this
+		// direction restores what the pre-change database held, and a reference
+		// of theirs names a table as that database had it.
+		DeclaredTables: priorTables(prior),
+		TablesRemoved:  deporder.TableDropOrder(diff.TablesAdded.Names(), schema), // Tables to add become tables to remove
+		TablesModified: reverseTableDiffs(diff.TablesModified),
 
 		// Reverse enum operations
 		EnumsAdded:    diff.EnumsRemoved, // Enums to remove become enums to add
@@ -3837,6 +3841,14 @@ func priorRole(prior *schemamodel.Database, name string) schemamodel.Role {
 		}
 	}
 	return schemamodel.Role{}
+}
+
+// priorTables is every table the pre-change database declared.
+func priorTables(prior *schemamodel.Database) []schemamodel.Table {
+	if prior == nil {
+		return nil
+	}
+	return prior.Tables
 }
 
 // tableCreationsFromRemovals turns the forward direction's removals into the

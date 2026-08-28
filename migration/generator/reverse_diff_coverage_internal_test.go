@@ -83,6 +83,17 @@ func assertReverseCoverageField(
 		// Signature is what holds that, since this gate structurally cannot.
 		return
 	}
+	if field.Name == "DeclaredTables" {
+		// An OUTPUT of the reverse, for the reason DeclaredUserTypes below is.
+		// A rollback restores the tables the pre-change database held, and a
+		// foreign key of theirs names a table as THAT database had it -- so the
+		// reverse derives the list from the introspected schema and the forward
+		// value cannot reach it.
+		//
+		// TestReverseSchemaDiff_ARolledBackForeignKeyResolvesAgainstThePriorTables
+		// is what holds that, since this gate structurally cannot.
+		return
+	}
 	if field.Name == "DeclaredUserTypes" {
 		// An OUTPUT of the reverse rather than an input, for the reason the
 		// signatures above are. The vocabulary the down direction needs is the
@@ -544,4 +555,34 @@ func TestReverseSchemaDiff_ARolledBackTableIsTypedByThePriorVocabulary(t *testin
 	c.Assert(qualified[0].Fields[0].Type, qt.Equals,
 		revCoverageDomainOwner+"."+revCoverageDomainName,
 		qt.Commentf("the restored column is typed by the domain that database declared"))
+}
+
+// TestReverseSchemaDiff_ARolledBackForeignKeyResolvesAgainstThePriorTables is
+// the companion to the vocabulary assertion above, for the other schema-wide
+// fact a rollback needs.
+//
+// A restored table's foreign key names the table it references, and that table
+// is one the PRE-CHANGE database held. Resolving it against the desired
+// schema's tables would qualify it by a declaration that no longer describes
+// the database being rolled back to -- or leave it unqualified, to be resolved
+// by whatever the connection's search path finds.
+func TestReverseSchemaDiff_ARolledBackForeignKeyResolvesAgainstThePriorTables(t *testing.T) {
+	c := qt.New(t)
+
+	schema, dbSchema := reverseCoverageContext()
+	forward := &difftypes.SchemaDiff{
+		TablesRemoved: []string{revCoverageTypedTable},
+		// The desired schema's tables, which do not include the one the
+		// rollback restores: the reverse must not resolve through them.
+		DeclaredTables: schema.Tables,
+	}
+
+	reversed := reverseSchemaDiffWithSchema(forward, schema, dbSchema)
+
+	names := make([]string, 0, len(reversed.DeclaredTables))
+	for _, table := range reversed.DeclaredTables {
+		names = append(names, table.QualifiedName())
+	}
+	c.Assert(names, qt.Contains, revCoverageTypedTable,
+		qt.Commentf("the reference vocabulary comes from the database that held the table"))
 }

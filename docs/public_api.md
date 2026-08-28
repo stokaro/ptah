@@ -630,6 +630,14 @@ the comparison produced, and the JSON is unchanged: `tables_added` has always
 been an array of names. `TablesRemoved` stays `[]string`, because DROP TABLE is
 written from the name.
 
+`SchemaDiff.DeclaredTables` carries every table the declaration holds, also once
+and off the wire. A foreign key names the table it references, and that table is
+usually one the diff does not touch — an existing parent a new child points at —
+so resolving `parents` to `app.parents` needs the declared list rather than
+anything a per-entry operand could carry. A `TableCreation` carries the columns
+whose references become constraints and the self-references the declaration
+recorded for it; this is the other half.
+
 `SchemaDiff.DeclaredUserTypes` carries the declaration's type vocabulary — the
 domains, composite types, ranges and enums a column may name — once for the
 whole diff rather than on each entry. A column carries a type NAME and the

@@ -150,6 +150,9 @@ func TablesAndColumnsWithGeneratedExpressions(
 	// diff rather than per table: a column may name a type nothing here changes
 	// (stokaro/ptah#2315).
 	diff.DeclaredUserTypes = difftypes.UserTypeVocabularyOf(desired)
+	// Every declared table, for resolving the table a foreign key references --
+	// usually one this diff does not touch.
+	diff.DeclaredTables = desired.Tables
 	for identity, table := range genTables {
 		if _, exists := dbTables[identity]; !exists {
 			diff.TablesAdded = append(diff.TablesAdded, difftypes.TableCreationFor(
