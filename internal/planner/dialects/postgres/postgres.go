@@ -1748,7 +1748,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 	result = p.revokeGrantOptions(result, diff)
 
 	// 8. Enable RLS on tables (must be done after table creation and modification)
-	result = p.enableRLSOnTables(result, diff, desired, semantics)
+	result = p.enableRLSOnTables(result, diff, semantics)
 
 	// 9. Add RLS policies (must be done after RLS is enabled and columns exist)
 	result, err = p.addNewRLSPolicies(result, diff)
@@ -2775,6 +2775,11 @@ func findMaterializedView(
 // on a table whose row-level security is off protects nothing, so the
 // enablement is emitted with the table rather than left to the operator.
 //
+// That second source is read off the DIFF rather than off the desired schema
+// (stokaro/ptah#2315). The two are the same set here: a policy on a table this
+// plan creates cannot already exist, so it is an addition, and a policy on an
+// existing table is skipped by the isNew test either way.
+//
 // Which table a policy belongs to is decided under the target's identifier
 // semantics, the same rules [addNewRLSPolicies] resolves the policy itself
 // with. `orders` and `public.orders` are one relation and two strings, so
@@ -2794,7 +2799,6 @@ func findMaterializedView(
 func (p *Planner) enableRLSOnTables(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
 	semantics identifier.Semantics,
 ) []ast.Node {
 	tablesNeedingRLS := make(map[string]string)
@@ -2815,8 +2819,8 @@ func (p *Planner) enableRLSOnTables(
 			addedTables[key] = tableName
 		}
 	}
-	for _, policy := range desired.RLSPolicies {
-		addedTable, isNew := addedTables[semantics.QualifiedTableIdentityKey(policy.Table)]
+	for _, policy := range diff.RLSPoliciesAdded {
+		addedTable, isNew := addedTables[semantics.QualifiedTableIdentityKey(policy.TableName)]
 		if !isNew {
 			continue
 		}

@@ -24,19 +24,17 @@ import (
 // constraint, not changing a base type or a default -- so planning a rename of
 // the whole shape would emit a statement that changes something else. It stays
 // unplanned until there is a measurement to write it from.
-func (p *Planner) planDomains(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
+func (p *Planner) planDomains(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	if !p.capabilities().Has(capability.DomainTypes) {
 		return result
 	}
-	declared := make(map[string]schemamodel.Domain, len(desired.Domains))
-	for _, domain := range desired.Domains {
-		declared[domain.Name] = domain
-	}
+	// The domain travels WITH the change, so this renders what it was handed
+	// (stokaro/ptah#2315). It used to index the desired schema by Name and look
+	// the entry up by QualifiedName, which are the same string only for a
+	// domain that names no schema: a declaration carrying one produced no node
+	// at all, and the plan reported success. Measured on the Oracle preset --
+	// `zip` planned one statement and `app.zip` planned none.
 	for _, domain := range diff.DomainsAdded {
-		domain, found := declared[domain.QualifiedName()]
-		if !found {
-			continue
-		}
 		result = append(result, fromschema.FromDomain(domain))
 	}
 	return result
@@ -56,28 +54,23 @@ func (p *Planner) planDomains(result []ast.Node, diff *difftypes.SchemaDiff, des
 // Composites go before tables for the reason domains do: a column may be
 // declared with the type, and Oracle resolves that name through the catalog
 // when the table is created.
-func (p *Planner) planCompositeTypes(
-	result []ast.Node,
-	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
-) []ast.Node {
+func (p *Planner) planCompositeTypes(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	if !p.capabilities().Has(capability.CompositeTypes) {
 		return result
 	}
-	declared := make(map[string]schemamodel.CompositeType, len(desired.CompositeTypes))
-	for _, composite := range desired.CompositeTypes {
-		declared[composite.Name] = composite
-	}
-	names := make([]string, 0, len(diff.CompositeTypesAdded)+len(diff.CompositeTypesModified))
-	names = append(names, diff.CompositeTypesAdded.Names()...)
+	// Both halves travel WITH their change (stokaro/ptah#2315), and for the
+	// reason planDomains records: the lookup this replaces keyed the desired
+	// schema by Name and searched it by qualified name, so a composite
+	// declaring a schema was silently left unplanned.
+	declarations := make([]schemamodel.CompositeType, 0,
+		len(diff.CompositeTypesAdded)+len(diff.CompositeTypesModified))
+	declarations = append(declarations, diff.CompositeTypesAdded...)
 	for _, changed := range diff.CompositeTypesModified {
-		names = append(names, changed.TypeName)
-	}
-	for _, name := range names {
-		composite, found := declared[name]
-		if !found {
-			continue
+		if changed.Desired.Name != "" {
+			declarations = append(declarations, changed.Desired)
 		}
+	}
+	for _, composite := range declarations {
 		result = append(result, fromschema.FromCompositeType(composite))
 	}
 	return result

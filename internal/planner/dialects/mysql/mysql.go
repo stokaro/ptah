@@ -1290,8 +1290,8 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 
 	// 0a3. Plan the domains this target does host, before tables: a column may
 	// be declared with the domain as its type.
-	result = p.planDomains(result, diff, desired)
-	result = p.planCompositeTypes(result, diff, desired)
+	result = p.planDomains(result, diff)
+	result = p.planCompositeTypes(result, diff)
 
 	// 0b. Plan the stored functions this target does host. Functions are
 	// planned before tables because a generated column or a CHECK constraint
