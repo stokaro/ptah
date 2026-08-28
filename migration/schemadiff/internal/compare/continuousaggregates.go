@@ -103,6 +103,7 @@ func continuousAggregateChange(
 		NewBody:             declared.Body,
 		OldMaterializedOnly: reported.MaterializedOnly,
 		NewMaterializedOnly: declaredMaterializedOnly(declared.MaterializedOnly, reported.MaterializedOnly),
+		Desired:             declared,
 	}
 }
 

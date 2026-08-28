@@ -1700,7 +1700,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 	result = p.addNewExtensions(result, diff, desired)
 
 	// 1. Add new roles (roles may be referenced by RLS policies and functions)
-	result = p.addNewRoles(result, diff, desired)
+	result = p.addNewRoles(result, diff)
 
 	// 2. Add new functions (functions may be used by RLS policies)
 	result = p.addNewFunctions(result, diff, desired)
@@ -1753,14 +1753,14 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 	result = p.addNewSynonyms(result, diff)
 	result = p.addNewHypertables(result, diff)
 	result = p.addNewContinuousAggregates(result, diff)
-	result = p.modifyExistingContinuousAggregates(result, diff, desired)
+	result = p.modifyExistingContinuousAggregates(result, diff)
 	result = p.addExtendedProperties(result, diff)
 	result = p.modifyExistingMaterializedViews(result, diff, desired)
 	result = p.addNewTriggers(result, diff, desired)
 	result = p.modifyExistingTriggers(result, diff, desired)
 
 	// 7. Modify existing roles (must be done before RLS policies that reference them)
-	result = p.modifyExistingRoles(result, diff, desired)
+	result = p.modifyExistingRoles(result, diff)
 
 	// 7.5. Revoke removed grants before adding replacement grants.
 	result = p.removeGrants(result, diff)
@@ -1890,7 +1890,7 @@ func (p *Planner) validateExtensionInstallationSchemas(diff *difftypes.SchemaDif
 	return nil
 }
 
-func (p *Planner) addNewRoles(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
+func (p *Planner) addNewRoles(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	// The attributes travel WITH the change, so this renders what it was
 	// handed rather than scanning the desired schema for a role of that name
 	// (stokaro/ptah#2315).
@@ -1900,12 +1900,15 @@ func (p *Planner) addNewRoles(result []ast.Node, diff *difftypes.SchemaDiff, des
 	return result
 }
 
-func (p *Planner) modifyExistingRoles(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
+func (p *Planner) modifyExistingRoles(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	// The role travels WITH the change (stokaro/ptah#2315). It supplies the one
+	// value the change map cannot: the password a `password_update_required`
+	// entry asks to be set.
 	for _, roleDiff := range diff.RolesModified {
-		targetRole := p.findTargetRole(roleDiff.RoleName, desired)
-		if targetRole == nil {
-			continue // Skip if role not found in target schema
+		if roleDiff.Desired.Name == "" {
+			continue // The pre-change database held no role of this name.
 		}
+		targetRole := &roleDiff.Desired
 
 		alterRoleNode := p.buildAlterRoleNode(roleDiff, targetRole)
 		if len(alterRoleNode.Operations) > 0 {
@@ -1914,16 +1917,6 @@ func (p *Planner) modifyExistingRoles(result []ast.Node, diff *difftypes.SchemaD
 		}
 	}
 	return result
-}
-
-// findTargetRole finds a role by name in the generated database schema
-func (p *Planner) findTargetRole(roleName string, desired *schemamodel.Database) *schemamodel.Role {
-	for _, role := range desired.Roles {
-		if role.Name == roleName {
-			return &role
-		}
-	}
-	return nil
 }
 
 // buildAlterRoleNode creates an ALTER ROLE node with operations based on role changes
@@ -2605,16 +2598,18 @@ func (p *Planner) addNewContinuousAggregates(result []ast.Node, diff *difftypes.
 func (p *Planner) modifyExistingContinuousAggregates(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
 ) []ast.Node {
+	// The aggregate travels WITH the change, so this renders what it was handed
+	// rather than resolving the name against the schema the planner was given
+	// (stokaro/ptah#2315). A change carrying no aggregate names one the
+	// pre-change database did not hold, and there is nothing to recreate.
 	for _, change := range diff.ContinuousAggregatesModified {
-		aggregate := findContinuousAggregate(desired.ContinuousAggregates, change.Name)
-		if aggregate == nil {
+		if change.Desired.Name == "" {
 			continue
 		}
 		result = append(result,
-			dropContinuousAggregate(*aggregate),
-			fromschema.FromContinuousAggregate(*aggregate))
+			dropContinuousAggregate(change.Desired),
+			fromschema.FromContinuousAggregate(change.Desired))
 	}
 	return result
 }
@@ -2642,20 +2637,6 @@ func dropContinuousAggregate(aggregate schemamodel.ContinuousAggregate) *ast.Dro
 	return ast.NewDropContinuousAggregate(aggregate.Name).
 		SetSchema(aggregate.Schema).
 		SetIfExists()
-}
-
-// findContinuousAggregate resolves a declared aggregate by the name a diff
-// carries, which is qualified when the declaration names a schema.
-func findContinuousAggregate(
-	aggregates []schemamodel.ContinuousAggregate,
-	name string,
-) *schemamodel.ContinuousAggregate {
-	for i := range aggregates {
-		if aggregates[i].QualifiedName() == name || aggregates[i].Name == name {
-			return &aggregates[i]
-		}
-	}
-	return nil
 }
 
 // refuseHypertableChanges refuses what TimescaleDB has no statement for.

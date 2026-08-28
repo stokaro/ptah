@@ -2198,7 +2198,7 @@ func reverseSchemaDiffWithSchemaForDialect(
 		// down plan's desired schema is the introspected one.
 		ContinuousAggregatesAdded:    slices.Clone(diff.ContinuousAggregatesRemoved),
 		ContinuousAggregatesRemoved:  slices.Clone(diff.ContinuousAggregatesAdded),
-		ContinuousAggregatesModified: reverseContinuousAggregateDiffs(diff.ContinuousAggregatesModified),
+		ContinuousAggregatesModified: reverseContinuousAggregateDiffs(diff.ContinuousAggregatesModified, prior, semantics),
 
 		// An extended property is a name, an address and a value, and the
 		// reversal needs no schema side because all three are already in the
@@ -2232,7 +2232,7 @@ func reverseSchemaDiffWithSchemaForDialect(
 		// Reverse role operations
 		RolesAdded:          diff.RolesRemoved, // Roles to remove become roles to add
 		RolesRemoved:        diff.RolesAdded,   // Roles to add become roles to remove
-		RolesModified:       reverseRoleDiffs(diff.RolesModified),
+		RolesModified:       reverseRoleDiffs(diff.RolesModified, prior),
 		GrantsAdded:         diff.GrantsRemoved,       // Grants to remove become grants to add
 		GrantsRemoved:       diff.GrantsAdded,         // Grants to add become grants to revoke
 		GrantOptionsAdded:   diff.GrantOptionsRevoked, // Revoked grant options become grant-option additions
@@ -3175,7 +3175,11 @@ func reverseHypertableDiffs(changes []difftypes.HypertableDiff) []difftypes.Hype
 
 // reverseContinuousAggregateDiffs swaps the two sides of each aggregate change,
 // so a rollback restores the body and the option the database had.
-func reverseContinuousAggregateDiffs(changes []difftypes.ContinuousAggregateDiff) []difftypes.ContinuousAggregateDiff {
+func reverseContinuousAggregateDiffs(
+	changes []difftypes.ContinuousAggregateDiff,
+	prior *schemamodel.Database,
+	semantics identifier.Semantics,
+) []difftypes.ContinuousAggregateDiff {
 	reversed := make([]difftypes.ContinuousAggregateDiff, 0, len(changes))
 	for _, change := range changes {
 		reversed = append(reversed, difftypes.ContinuousAggregateDiff{
@@ -3184,9 +3188,33 @@ func reverseContinuousAggregateDiffs(changes []difftypes.ContinuousAggregateDiff
 			NewBody:             change.OldBody,
 			OldMaterializedOnly: change.NewMaterializedOnly,
 			NewMaterializedOnly: change.OldMaterializedOnly,
+			// Swapping the bodies without swapping the operand would have the
+			// down direction drop the aggregate and create the very definition
+			// it is undoing, since the operand is what the create renders from
+			// (stokaro/ptah#2315).
+			Desired: priorContinuousAggregate(prior, change.Name, semantics),
 		})
 	}
 	return reversed
+}
+
+// priorContinuousAggregate is the aggregate the pre-change database held.
+//
+// The diff spells a qualified name the declaration produced, and the aggregate
+// a read reports carries the schema the server puts it under, so the two are
+// compared as qualified names on the connection's own identifier terms.
+func priorContinuousAggregate(
+	prior *schemamodel.Database,
+	name string,
+	semantics identifier.Semantics,
+) schemamodel.ContinuousAggregate {
+	if prior == nil {
+		return schemamodel.ContinuousAggregate{}
+	}
+	if aggregate := objectlookup.Qualified(prior.ContinuousAggregates, name, semantics); aggregate != nil {
+		return *aggregate
+	}
+	return schemamodel.ContinuousAggregate{}
 }
 
 func reverseSynonymDiffs(diffs []difftypes.SynonymDiff) []difftypes.SynonymDiff {
@@ -3375,7 +3403,7 @@ func reverseRLSPolicyDiffs(policyDiffs []difftypes.RLSPolicyDiff) []difftypes.RL
 }
 
 // reverseRoleDiffs reverses role modifications for down migrations
-func reverseRoleDiffs(roleDiffs []difftypes.RoleDiff) []difftypes.RoleDiff {
+func reverseRoleDiffs(roleDiffs []difftypes.RoleDiff, prior *schemamodel.Database) []difftypes.RoleDiff {
 	reversed := make([]difftypes.RoleDiff, len(roleDiffs))
 	for i, roleDiff := range roleDiffs {
 		// For role changes, we need to reverse the direction of changes
@@ -3394,9 +3422,35 @@ func reverseRoleDiffs(roleDiffs []difftypes.RoleDiff) []difftypes.RoleDiff {
 		reversed[i] = difftypes.RoleDiff{
 			RoleName: roleDiff.RoleName,
 			Changes:  reversedChanges,
+			// A password entry does not reverse: what it changed from is
+			// unreadable, so the reversed change still says one is required.
+			// The operand is what decides whether anything is written, and the
+			// pre-change database holds no password -- which is the honest
+			// answer, and the reason this rewrite is not optional. Carrying the
+			// declaration's role through would have the down direction set the
+			// NEW password (stokaro/ptah#2315).
+			Desired: priorRole(prior, roleDiff.RoleName),
 		}
 	}
 	return reversed
+}
+
+// priorRole is the role the pre-change database held.
+//
+// A role name is compared exactly, which is the identity the comparison that
+// produced the change already used: a role lives outside any schema and is not
+// resolved against a search path, so there is no qualified spelling of one and
+// nothing for identifier semantics to fold.
+func priorRole(prior *schemamodel.Database, name string) schemamodel.Role {
+	if prior == nil {
+		return schemamodel.Role{}
+	}
+	for _, role := range prior.Roles {
+		if role.Name == name {
+			return role
+		}
+	}
+	return schemamodel.Role{}
 }
 
 // nextAvailableMigrationVersion answers the version question over the names

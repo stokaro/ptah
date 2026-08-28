@@ -129,6 +129,7 @@ func TestContinuousAggregates_TheBodyIsComparedOnlyThroughTheServer(t *testing.T
 			},
 			want: []difftypes.ContinuousAggregateDiff{{
 				Name: "hourly", OldBody: theStored, NewBody: theBody,
+				Desired: schemamodel.ContinuousAggregate{Name: "hourly", Body: theBody},
 			}},
 		},
 	}
@@ -175,6 +176,11 @@ func TestContinuousAggregates_TheOptionIsComparedWithoutOne(t *testing.T) {
 	c.Assert(diff.ContinuousAggregatesModified, qt.DeepEquals, []difftypes.ContinuousAggregateDiff{{
 		Name: "hourly", OldBody: theStored, NewBody: theBody,
 		OldMaterializedOnly: false, NewMaterializedOnly: true,
+		// The change carries the declaration the planner recreates from: the
+		// two body strings are the change, not the object (stokaro/ptah#2315).
+		Desired: schemamodel.ContinuousAggregate{
+			Name: "hourly", Body: theBody, MaterializedOnly: new(true),
+		},
 	}})
 }
 

@@ -236,6 +236,7 @@ func RoleDefinitions(desired schemamodel.Role, database catalog.Role) difftypes.
 	roleDiff := difftypes.RoleDiff{
 		RoleName: desired.Name,
 		Changes:  make(map[string]string),
+		Desired:  desired,
 	}
 
 	// Compare login capability
