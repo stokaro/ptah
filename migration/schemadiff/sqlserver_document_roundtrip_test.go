@@ -75,7 +75,7 @@ func TestCompare_AnHCLDocumentThatOmitsThemNowDropsThem(t *testing.T) {
 	diff := schemadiff.Compare(parsed, live)
 
 	c.Assert(diff.ExtendedPropertiesRemoved, qt.HasLen, 1)
-	c.Assert(diff.SynonymsRemoved, qt.DeepEquals, []string{"dbo.s_users"})
+	c.Assert(diff.SynonymsRemoved.Names(), qt.DeepEquals, []string{"dbo.s_users"})
 }
 
 // TestCompare_AGoSchemaThatCouldNameThemStillDropsThem is the control.
@@ -97,7 +97,7 @@ func TestCompare_AGoSchemaThatCouldNameThemStillDropsThem(t *testing.T) {
 	diff := schemadiff.Compare(declared, live)
 
 	c.Assert(diff.ExtendedPropertiesRemoved, qt.HasLen, 1)
-	c.Assert(diff.SynonymsRemoved, qt.DeepEquals, []string{"dbo.s_users"})
+	c.Assert(diff.SynonymsRemoved.Names(), qt.DeepEquals, []string{"dbo.s_users"})
 }
 
 // sqlServerDatabaseWithUnwritableObjects is a database holding one of each of

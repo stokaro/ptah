@@ -1329,7 +1329,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 	result = p.addNewViews(result, diff)
 	result = p.modifyExistingViews(result, diff, desired)
 	result = p.retargetSynonyms(result, diff, desired)
-	result = p.addNewSynonyms(result, diff, desired)
+	result = p.addNewSynonyms(result, diff)
 	result = p.addExtendedProperties(result, diff)
 	if err := p.rejectMaterializedViews(diff); err != nil {
 		return nil, err
@@ -1502,11 +1502,11 @@ func (p *Planner) removeViews(result []ast.Node, diff *difftypes.SchemaDiff) []a
 	return result
 }
 
-func (p *Planner) addNewSynonyms(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
-	for _, name := range diff.SynonymsAdded {
-		if synonym := findSynonym(desired.Synonyms, name); synonym != nil {
-			result = append(result, fromschema.FromSynonym(*synonym))
-		}
+func (p *Planner) addNewSynonyms(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	// The target travels WITH the change, so this renders what it was handed
+	// rather than looking the name back up in the desired schema.
+	for _, synonym := range diff.SynonymsAdded {
+		result = append(result, fromschema.FromSynonym(synonym))
 	}
 	return result
 }
@@ -1530,8 +1530,8 @@ func (p *Planner) retargetSynonyms(result []ast.Node, diff *difftypes.SchemaDiff
 }
 
 func (p *Planner) removeSynonyms(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	for _, name := range diff.SynonymsRemoved {
-		result = append(result, ast.NewDropSynonym(name).SetIfExists())
+	for _, synonym := range diff.SynonymsRemoved {
+		result = append(result, ast.NewDropSynonym(synonym.QualifiedName()).SetIfExists())
 	}
 	return result
 }

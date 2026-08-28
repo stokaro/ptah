@@ -524,7 +524,7 @@ func Synonyms(
 	for name, generatedSynonym := range generatedSynonyms {
 		databaseSynonym, exists := databaseSynonyms[name]
 		if !exists {
-			diff.SynonymsAdded = append(diff.SynonymsAdded, name)
+			diff.SynonymsAdded = append(diff.SynonymsAdded, generatedSynonym)
 			continue
 		}
 		if !sameSynonymTarget(generatedSynonym.Target, databaseSynonym) {
@@ -551,11 +551,11 @@ func Synonyms(
 		if !cov.PlansRemoval(coverage.Synonym, databaseSynonym.Schema, databaseSynonym.Name, name) {
 			continue
 		}
-		diff.SynonymsRemoved = append(diff.SynonymsRemoved, name)
+		diff.SynonymsRemoved = append(diff.SynonymsRemoved, synonymFromCatalog(databaseSynonym))
 	}
 
-	sort.Strings(diff.SynonymsAdded)
-	sort.Strings(diff.SynonymsRemoved)
+	sortSynonyms(diff.SynonymsAdded)
+	sortSynonyms(diff.SynonymsRemoved)
 	sort.Slice(diff.SynonymsModified, func(i, j int) bool {
 		return diff.SynonymsModified[i].SynonymName < diff.SynonymsModified[j].SynonymName
 	})
@@ -1014,4 +1014,26 @@ func stripDefaultColumnAliases(body string) string {
 
 func stripSimpleComparisonParentheses(body string) string {
 	return simpleComparisonParenthesesPattern.ReplaceAllString(body, "$1")
+}
+
+// synonymFromCatalog carries a synonym the database reported into the shape the
+// diff holds.
+//
+// Only the target needs a rule, and it is catalog.Synonym.DeclaredTarget --
+// shared with the conversion path rather than spelled a second time here,
+// because the two are answering the same question about the same row.
+func synonymFromCatalog(reported catalog.Synonym) schemamodel.Synonym {
+	return schemamodel.Synonym{
+		Name:    reported.Name,
+		Schema:  reported.Schema,
+		Target:  reported.DeclaredTarget(),
+		Comment: reported.Comment,
+	}
+}
+
+// sortSynonyms orders by the key the name list was sorted on.
+func sortSynonyms(synonyms difftypes.SynonymChanges) {
+	sort.Slice(synonyms, func(i, j int) bool {
+		return synonyms[i].QualifiedName() < synonyms[j].QualifiedName()
+	})
 }

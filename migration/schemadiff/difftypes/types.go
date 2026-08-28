@@ -93,6 +93,44 @@ func (m MaterializedViewChanges) Names() []string {
 	return names
 }
 
+// SynonymChanges is a set of synonyms one change applies to, carrying each
+// one's target and not only its name.
+//
+// The ninth family off `[]string` under stokaro/ptah#2315. A synonym IS its
+// target -- there is nothing else to it -- so a change that carried only the
+// name carried the half that does not say what the statement should do.
+//
+// Its rule is that target's spelling. A catalog records base_object_name with
+// the server's own bracket quoting and the parsed parts beside it, and a
+// declaration writes one to four unquoted dot-separated parts;
+// [catalog.Synonym.DeclaredTarget] is the one answer both the conversion and
+// this comparison take.
+//
+// See [RangeChanges] for why both sides carry the operand and why the wire
+// shape does not change.
+type SynonymChanges []schemamodel.Synonym
+
+// MarshalJSON writes the names alone, the shape `synonyms_added` and
+// `synonyms_removed` have always had.
+func (s SynonymChanges) MarshalJSON() ([]byte, error) {
+	if s == nil {
+		return []byte("null"), nil
+	}
+	return json.Marshal(s.Names())
+}
+
+// Names is the synonym names this change applies to.
+func (s SynonymChanges) Names() []string {
+	if s == nil {
+		return nil
+	}
+	names := make([]string, 0, len(s))
+	for _, synonym := range s {
+		names = append(names, synonym.QualifiedName())
+	}
+	return names
+}
+
 // DomainChanges is a set of domain types one change applies to, carrying each
 // one's definition and not only its name.
 //
@@ -698,11 +736,11 @@ type SchemaDiff struct {
 
 	// SynonymsAdded contains names of synonyms that exist in the target schema
 	// and not in the database.
-	SynonymsAdded []string `json:"synonyms_added"`
+	SynonymsAdded SynonymChanges `json:"synonyms_added"`
 
 	// SynonymsRemoved contains names of synonyms that exist in the database and
 	// not in the target schema.
-	SynonymsRemoved []string `json:"synonyms_removed"`
+	SynonymsRemoved SynonymChanges `json:"synonyms_removed"`
 
 	// SynonymsModified contains synonyms whose target changed.
 	//
