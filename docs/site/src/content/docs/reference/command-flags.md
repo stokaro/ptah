@@ -1608,4 +1608,3 @@ Read the columns as follows.
 | `--quiet` | `bool` | `false` | `PTAH_QUIET` | — |
 | `--run` | `string` | — | `PTAH_RUN` | — |
 | `--url` | `string` | — | `PTAH_URL` | — |
-
