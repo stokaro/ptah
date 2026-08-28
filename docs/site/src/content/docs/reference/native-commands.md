@@ -121,7 +121,7 @@ rather than a person.
 | `ptah schema export` | Converts one desired-schema source format into another on disk; no database is opened | — |
 | `ptah schema fmt` | Rewrites HCL schema files in the repository into canonical form; no database is opened | — |
 | `ptah schema inspect` | Reads a schema source and prints it; the dev database it names "is reset destructively" | — |
-| `ptah schema lineage` | Traces which base columns feed each view column, from the desired schema alone | — |
+| `ptah schema lineage` | Traces which columns each view and routine reads and writes; --db-url reads the target | — |
 | `ptah schema plan` | Saves a fingerprinted apply plan; the dev database is where the plan is rehearsed | — |
 | `ptah schema pull` | Downloads a desired-schema document from an OCI registry and writes it to disk | — |
 | `ptah schema push` | Uploads a desired-schema document from disk to an OCI registry | — |
