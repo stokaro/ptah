@@ -239,7 +239,7 @@ var verbs = map[string]Verb{
 	"schema inspect": {TargetReads, ScratchRewrites,
 		"reads a schema source and prints it; the dev database it names \"is reset destructively\""},
 	"schema lineage": {TargetReads, ScratchNone,
-		"traces which columns each view and routine reads and writes; --db-url reads the target"},
+		"traces which columns each view and routine reads and writes; `--db-url` reads the target"},
 	"schema plan": {TargetReads, ScratchRewrites,
 		"saves a fingerprinted apply plan; the dev database is where the plan is rehearsed"},
 	"schema pull": {TargetNone, ScratchNone,
