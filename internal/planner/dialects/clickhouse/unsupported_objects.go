@@ -229,11 +229,33 @@ func reportViewLikes(
 		objects = append(objects, object)
 		nodes[identityOf(object)] = node
 	}
+	// The view a modification leaves behind travels WITH it, in the direction
+	// being planned (stokaro/ptah#2315). #2411 converted the other three
+	// planners and left this one looking the name back up, so a ClickHouse
+	// rollback still rendered from whichever schema it was handed rather than
+	// from the change.
 	for _, view := range diff.ViewsModified {
-		object, node, err := clickHouseViewChange(desired, view.ViewName, semantics, caps)
-		if err != nil {
-			return nil, err
+		declared := view.Desired
+		// A target whose capability set declines views renders identity only,
+		// and identity is the diff's own name -- so it needs no declaration,
+		// which is what TestGenerateMigrationAST_DisabledViewsNeedNoDesiredDeclaration
+		// pins. The refusal below is for the case where a statement WOULD be
+		// written.
+		if declared.Name == "" {
+			if caps.Has(capability.Views) {
+				// A REFUSAL rather than a skip, which is what the name lookup
+				// did here: this planner reported a modification it could not
+				// resolve instead of planning past it. The other three
+				// planners skip, because a failed lookup is what they did.
+				return nil, fmt.Errorf(
+					"%w: ClickHouse view %q named by diff carries no declaration",
+					ptaherr.ErrInvalidSchemaDiff,
+					view.ViewName,
+				)
+			}
+			declared.Name = view.ViewName
 		}
+		object, node := clickHouseViewChangeFor(declared, caps)
 		node.SetReplace()
 		objects = append(objects, object)
 		nodes[identityOf(object)] = node
@@ -318,33 +340,6 @@ func appendMaterializedViewReplacementDrop(
 		return result
 	}
 	return append(result, ast.NewDropMaterializedView(name).SetIfExists())
-}
-
-// clickHouseViewChange builds the create node for one plain view.
-//
-// A capability set without Views yields a node carrying identity only, because
-// that is all the renderer's diagnostic reads, and requiring a desired
-// declaration for an object that will never be emitted would fail a plan that
-// the render path completes.
-func clickHouseViewChange(
-	desired *schemamodel.Database,
-	name string,
-	semantics identifier.Semantics,
-	caps capability.Capabilities,
-) (deporder.ViewLike, *ast.CreateViewNode, error) {
-	if !caps.Has(capability.Views) {
-		return deporder.ViewLike{Name: name}, ast.NewCreateView(name), nil
-	}
-	view := objectlookup.View(desired.Views, name, semantics)
-	if view == nil {
-		return deporder.ViewLike{}, nil, fmt.Errorf(
-			"%w: ClickHouse view %q named by diff is missing from the desired schema",
-			ptaherr.ErrInvalidSchemaDiff,
-			name,
-		)
-	}
-	object, node := clickHouseViewChangeFor(*view, caps)
-	return object, node, nil
 }
 
 // clickHouseViewChangeFor is clickHouseViewChange for a change that carries the
