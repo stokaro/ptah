@@ -250,7 +250,7 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseMaterializedViewCarriesItsBod
 	}}}
 
 	statements, err := planner.GenerateSchemaDiffSQLStatements(
-		&difftypes.SchemaDiff{MaterializedViewsAdded: []string{"analytics.user_counts"}},
+		&difftypes.SchemaDiff{MaterializedViewsAdded: difftypes.MaterializedViewChanges{{Name: "analytics.user_counts", Body: "SELECT count() FROM users"}}},
 		desired,
 		platform.ClickHouse,
 	)

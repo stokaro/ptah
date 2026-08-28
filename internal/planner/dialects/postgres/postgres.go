@@ -498,7 +498,7 @@ func (p *Planner) addSchemaPreconditions(
 	names = append(names, diff.SequencesAdded.Names()...)
 	names = append(names, diff.FunctionsAdded...)
 	names = append(names, diff.ViewsAdded.Names()...)
-	names = append(names, diff.MaterializedViewsAdded...)
+	names = append(names, diff.MaterializedViewsAdded.Names()...)
 	for _, trigger := range diff.TriggersAdded {
 		names = append(names, trigger.TableName)
 	}
@@ -2344,10 +2344,10 @@ func (p *Planner) addNewViewLikeObjects(result []ast.Node, diff *difftypes.Schem
 		// computes no longer depends on finding the view again.
 		objects = append(objects, deporder.ViewLike{Name: view.Name, Body: view.Body})
 	}
-	for _, viewName := range diff.MaterializedViewsAdded {
-		if view := findMaterializedView(desired.MaterializedViews, viewName, semantics); view != nil {
-			objects = append(objects, deporder.ViewLike{Name: view.Name, Body: view.Body, Materialized: true})
-		}
+	for _, view := range diff.MaterializedViewsAdded {
+		// The body travels WITH the change, so the dependency order this
+		// computes no longer depends on finding the view again.
+		objects = append(objects, deporder.ViewLike{Name: view.Name, Body: view.Body, Materialized: true})
 	}
 
 	// The dialect is what lets a body reference resolve through PostgreSQL's
@@ -2577,8 +2577,8 @@ func (p *Planner) modifyExistingMaterializedViews(result []ast.Node, diff *difft
 }
 
 func (p *Planner) removeMaterializedViews(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	for _, viewName := range diff.MaterializedViewsRemoved {
-		result = append(result, ast.NewDropMaterializedView(viewName).SetIfExists().SetCascade())
+	for _, view := range diff.MaterializedViewsRemoved {
+		result = append(result, ast.NewDropMaterializedView(view.Name).SetIfExists().SetCascade())
 	}
 	return result
 }

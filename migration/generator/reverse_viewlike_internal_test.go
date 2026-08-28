@@ -125,7 +125,7 @@ func TestGenerateDownMigrationSQL_DropsViewLikeObjectsCreatedByUp(t *testing.T) 
 	upDiff := schemadiff.CompareWithDialect(schema, db, "postgres")
 
 	c.Assert(upDiff.ViewsAdded.Names(), qt.DeepEquals, []string{"rev_active_users"})
-	c.Assert(upDiff.MaterializedViewsAdded, qt.DeepEquals, []string{"rev_user_stats"})
+	c.Assert(upDiff.MaterializedViewsAdded.Names(), qt.DeepEquals, []string{"rev_user_stats"})
 	c.Assert(upDiff.TriggersAdded, qt.DeepEquals, []difftypes.TriggerRef{
 		{TriggerName: "rev_touch", TableName: "rev_view_users"},
 	})
@@ -172,7 +172,7 @@ func TestGenerateDownMigrationSQL_RestoresViewLikeObjectsDroppedByUp(t *testing.
 	upDiff := schemadiff.CompareWithDialect(schema, db, "postgres")
 
 	c.Assert(upDiff.ViewsRemoved.Names(), qt.DeepEquals, []string{"rev_active_users"})
-	c.Assert(upDiff.MaterializedViewsRemoved, qt.DeepEquals, []string{"rev_user_stats"})
+	c.Assert(upDiff.MaterializedViewsRemoved.Names(), qt.DeepEquals, []string{"rev_user_stats"})
 	c.Assert(upDiff.TriggersRemoved, qt.DeepEquals, []difftypes.TriggerRef{
 		{TriggerName: "rev_touch", TableName: "rev_view_users"},
 	})

@@ -156,8 +156,8 @@ func collectViewMismatches(diff *difftypes.SchemaDiff) []Mismatch {
 		func(value difftypes.ViewDiff) string { return value.ViewName },
 		func(value difftypes.ViewDiff) map[string]string { return value.Changes },
 	)...)
-	mismatches = append(mismatches, namedMismatches(diff.MaterializedViewsAdded, "missing_materialized_view", "missing materialized view")...)
-	mismatches = append(mismatches, namedMismatches(diff.MaterializedViewsRemoved, "extra_materialized_view", "extra materialized view")...)
+	mismatches = append(mismatches, namedMismatches(diff.MaterializedViewsAdded.Names(), "missing_materialized_view", "missing materialized view")...)
+	mismatches = append(mismatches, namedMismatches(diff.MaterializedViewsRemoved.Names(), "extra_materialized_view", "extra materialized view")...)
 	mismatches = append(mismatches, changedObjectMismatches(
 		diff.MaterializedViewsModified,
 		"materialized_view_mismatch",

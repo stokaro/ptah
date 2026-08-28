@@ -78,7 +78,7 @@ func TestMaterializedViewLifecycleRoundTripsLive(t *testing.T) {
 		readClickHouseMaterializedViews(t, db, database),
 		platform.ClickHouse,
 	)
-	c.Assert(creationDiff.MaterializedViewsAdded, qt.DeepEquals, []string{viewName})
+	c.Assert(creationDiff.MaterializedViewsAdded.Names(), qt.DeepEquals, []string{viewName})
 	createStatements, err := planner.GenerateSchemaDiffSQLStatements(
 		creationDiff,
 		created,
@@ -139,7 +139,7 @@ func TestMaterializedViewLifecycleRoundTripsLive(t *testing.T) {
 		changedReadback,
 		platform.ClickHouse,
 	)
-	c.Assert(removalDiff.MaterializedViewsRemoved, qt.DeepEquals, []string{viewName})
+	c.Assert(removalDiff.MaterializedViewsRemoved.Names(), qt.DeepEquals, []string{viewName})
 	dropStatements, err := planner.GenerateSchemaDiffSQLStatements(
 		removalDiff,
 		&schemamodel.Database{},
@@ -605,7 +605,7 @@ func TestViewKindChangeAppliesLive(t *testing.T) {
 		platform.ClickHouse,
 	)
 	c.Assert(toPlainDiff.ViewsAdded.Names(), qt.DeepEquals, []string{viewName})
-	c.Assert(toPlainDiff.MaterializedViewsRemoved, qt.DeepEquals, []string{viewName})
+	c.Assert(toPlainDiff.MaterializedViewsRemoved.Names(), qt.DeepEquals, []string{viewName})
 	toPlainStatements, err := planner.GenerateSchemaDiffSQLStatements(
 		toPlainDiff,
 		asPlainView,
@@ -637,7 +637,7 @@ func TestViewKindChangeAppliesLive(t *testing.T) {
 		plainReadback,
 		platform.ClickHouse,
 	)
-	c.Assert(toMaterializedDiff.MaterializedViewsAdded, qt.DeepEquals, []string{viewName})
+	c.Assert(toMaterializedDiff.MaterializedViewsAdded.Names(), qt.DeepEquals, []string{viewName})
 	c.Assert(toMaterializedDiff.ViewsRemoved.Names(), qt.DeepEquals, []string{viewName})
 	toMaterializedStatements, err := planner.GenerateSchemaDiffSQLStatements(
 		toMaterializedDiff,

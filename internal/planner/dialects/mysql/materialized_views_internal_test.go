@@ -8,6 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/schemamodel"
@@ -43,7 +44,7 @@ func TestRejectMaterializedViews_AsksTheCapabilityNotThePlanner(t *testing.T) {
 
 			planner := NewForDialect(test.dialect, capability.ForDialect(test.dialect))
 			err := planner.rejectMaterializedViews(&difftypes.SchemaDiff{
-				MaterializedViewsAdded: []string{"mv_sales"},
+				MaterializedViewsAdded: difftypes.MaterializedViewChanges{{Name: "mv_sales"}},
 			})
 
 			c.Assert(err != nil, qt.Equals, test.wantRefusal)
@@ -81,8 +82,10 @@ func TestMaterializedViewPlanning_EmitsTheThreeStatementsAChangeNeeds(t *testing
 	planner := NewForDialect(platform.Oracle, capability.ForDialect(platform.Oracle))
 
 	added := planner.addNewMaterializedViews(nil, &difftypes.SchemaDiff{
-		MaterializedViewsAdded: []string{"order_totals"},
-	}, desired)
+		MaterializedViewsAdded: difftypes.MaterializedViewChanges{
+			{Name: "order_totals", Body: "SELECT id, amount FROM orders"},
+		},
+	})
 	c.Assert(added, qt.HasLen, 1)
 
 	modified := planner.modifyExistingMaterializedViews(nil, &difftypes.SchemaDiff{
@@ -91,13 +94,23 @@ func TestMaterializedViewPlanning_EmitsTheThreeStatementsAChangeNeeds(t *testing
 	c.Assert(modified, qt.HasLen, 2)
 
 	removed := planner.removeMaterializedViews(nil, &difftypes.SchemaDiff{
-		MaterializedViewsRemoved: []string{"order_totals"},
+		MaterializedViewsRemoved: difftypes.MaterializedViewChanges{{Name: "order_totals"}},
 	})
 	c.Assert(removed, qt.HasLen, 1)
 
-	// A name the declaration does not carry produces nothing rather than a nil
-	// node the renderer would have to survive.
-	c.Assert(planner.addNewMaterializedViews(nil, &difftypes.SchemaDiff{
-		MaterializedViewsAdded: []string{"absent"},
-	}, desired), qt.HasLen, 0)
+	// An addition no longer depends on the desired schema at all: the view
+	// travels with the change, so what used to be a name the declaration did
+	// not carry -- and produced nothing -- is now a view that renders in full
+	// (stokaro/ptah#2315). The empty desired schema is what makes that
+	// measurable rather than incidental.
+	fromChangeAlone := planner.addNewMaterializedViews(nil, &difftypes.SchemaDiff{
+		MaterializedViewsAdded: difftypes.MaterializedViewChanges{
+			{Name: "absent_from_desired", Body: "SELECT 1"},
+		},
+	})
+	c.Assert(fromChangeAlone, qt.HasLen, 1)
+	created, ok := fromChangeAlone[0].(*ast.CreateMaterializedViewNode)
+	c.Assert(ok, qt.IsTrue, qt.Commentf("node is %T", fromChangeAlone[0]))
+	c.Assert(created.Name, qt.Equals, "absent_from_desired")
+	c.Assert(created.Body, qt.Equals, "SELECT 1")
 }

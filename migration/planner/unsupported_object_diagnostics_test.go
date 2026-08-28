@@ -65,7 +65,7 @@ func unhostableCreationDiff() *difftypes.SchemaDiff {
 		FunctionsAdded:         []string{"bump"},
 		TablesAdded:            []string{"t"},
 		ViewsAdded:             difftypes.ViewChanges{{Name: "v1", Body: "SELECT id FROM t"}},
-		MaterializedViewsAdded: []string{"mv1"},
+		MaterializedViewsAdded: difftypes.MaterializedViewChanges{{Name: "mv1", Body: "SELECT id FROM t"}},
 		RLSEnabledTablesAdded:  []string{"t"},
 		RLSPoliciesAdded:       []difftypes.RLSPolicyRef{{PolicyName: "p1", TableName: "t"}},
 		GrantsAdded: []difftypes.GrantRef{{
@@ -219,7 +219,7 @@ func TestPlan_ClickHouseNamesRemovedObjectsToo(t *testing.T) {
 		RolesRemoved:             []string{"app_role"},
 		FunctionsRemoved:         []string{"bump"},
 		ViewsRemoved:             difftypes.ViewChanges{{Name: "v1"}},
-		MaterializedViewsRemoved: []string{"mv1"},
+		MaterializedViewsRemoved: difftypes.MaterializedViewChanges{{Name: "mv1"}},
 		RLSEnabledTablesRemoved:  []string{"t"},
 		RLSPoliciesRemoved:       []difftypes.RLSPolicyRef{{PolicyName: "p1", TableName: "t"}},
 		GrantsRemoved: []difftypes.GrantRef{{

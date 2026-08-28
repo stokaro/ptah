@@ -1334,7 +1334,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 	if err := p.rejectMaterializedViews(diff); err != nil {
 		return nil, err
 	}
-	result = p.addNewMaterializedViews(result, diff, desired)
+	result = p.addNewMaterializedViews(result, diff)
 	result = p.modifyExistingMaterializedViews(result, diff, desired)
 	result = p.addNewTriggers(result, diff, desired)
 	result = p.modifyExistingTriggers(result, diff, desired)
@@ -1626,13 +1626,11 @@ func (p *Planner) removeTriggers(result []ast.Node, diff *difftypes.SchemaDiff) 
 func (p *Planner) addNewMaterializedViews(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
 ) []ast.Node {
-	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
-	for _, viewName := range diff.MaterializedViewsAdded {
-		if view := findMaterializedView(desired.MaterializedViews, viewName, semantics); view != nil {
-			result = append(result, fromschema.FromMaterializedView(*view))
-		}
+	// The view travels WITH the change, so this renders what it was handed
+	// rather than looking the name back up in the desired schema.
+	for _, view := range diff.MaterializedViewsAdded {
+		result = append(result, fromschema.FromMaterializedView(view))
 	}
 	return result
 }
@@ -1660,8 +1658,8 @@ func (p *Planner) modifyExistingMaterializedViews(
 // removeMaterializedViews drops the materialized views a diff removes, before
 // the tables they read.
 func (p *Planner) removeMaterializedViews(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	for _, viewName := range diff.MaterializedViewsRemoved {
-		result = append(result, ast.NewDropMaterializedView(viewName).SetIfExists())
+	for _, view := range diff.MaterializedViewsRemoved {
+		result = append(result, ast.NewDropMaterializedView(view.Name).SetIfExists())
 	}
 	return result
 }
@@ -2536,7 +2534,7 @@ func previousColumnNullable(change string) bool {
 // changedMaterializedViewNames lists every materialized view the diff touches,
 // sorted and deduplicated so the refusal reads the same on every run.
 func changedMaterializedViewNames(diff *difftypes.SchemaDiff) []string {
-	names := slices.Concat(diff.MaterializedViewsAdded, diff.MaterializedViewsRemoved)
+	names := slices.Concat(diff.MaterializedViewsAdded.Names(), diff.MaterializedViewsRemoved.Names())
 	for _, view := range diff.MaterializedViewsModified {
 		names = append(names, view.ViewName)
 	}

@@ -72,7 +72,7 @@ func TestSchemaObjects_RoundTripAndBodyChange_PostgreSQL_Integration(t *testing.
 	tableOnly := schemaObjectsTableOnly()
 	removalDiff := schemadiff.Compare(tableOnly, modifiedFiltered)
 	c.Assert(removalDiff.ViewsRemoved.Names(), qt.DeepEquals, []string{"ptah_schema_objects_active_users"})
-	c.Assert(removalDiff.MaterializedViewsRemoved, qt.DeepEquals, []string{"ptah_schema_objects_user_stats"})
+	c.Assert(removalDiff.MaterializedViewsRemoved.Names(), qt.DeepEquals, []string{"ptah_schema_objects_user_stats"})
 	c.Assert(removalDiff.TriggersRemoved, qt.DeepEquals, []difftypes.TriggerRef{{
 		TriggerName: "ptah_schema_objects_set_updated_at",
 		TableName:   "ptah_schema_objects_users",
