@@ -43,7 +43,7 @@ func TestNewWithCapabilitiesRejectsSQLServerColumnRemoval(t *testing.T) {
 	diff := &difftypes.SchemaDiff{
 		TablesModified: []difftypes.TableDiff{{
 			TableName:      "users",
-			ColumnsRemoved: []string{"legacy_id"},
+			ColumnsRemoved: difftypes.ColumnChanges{{Name: "legacy_id"}},
 		}},
 	}
 	desired := &schemamodel.Database{

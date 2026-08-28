@@ -96,7 +96,7 @@ func TestPlanner_ThePolicyIsRetargetedBeforeItsColumnIsDropped(t *testing.T) {
 	statements := planRowDeletionPolicy(c, &difftypes.SchemaDiff{
 		TablesModified: []difftypes.TableDiff{{
 			TableName:      "sessions",
-			ColumnsRemoved: []string{"created_at"},
+			ColumnsRemoved: difftypes.ColumnChanges{{Name: "created_at"}},
 			RowDeletionPolicyChange: &difftypes.RowDeletionPolicyChange{
 				Desired: &ast.RowDeletionPolicySpec{Column: "updated_at", Interval: "30 days"},
 				Current: &ast.RowDeletionPolicySpec{Column: "created_at", Interval: "30 days"},
@@ -118,7 +118,7 @@ func TestPlanner_TheDroppedPolicyGoesBeforeItsColumn(t *testing.T) {
 	statements := planRowDeletionPolicy(c, &difftypes.SchemaDiff{
 		TablesModified: []difftypes.TableDiff{{
 			TableName:      "sessions",
-			ColumnsRemoved: []string{"created_at"},
+			ColumnsRemoved: difftypes.ColumnChanges{{Name: "created_at"}},
 			RowDeletionPolicyChange: &difftypes.RowDeletionPolicyChange{
 				Current: &ast.RowDeletionPolicySpec{Column: "created_at", Interval: "30 days"},
 			},

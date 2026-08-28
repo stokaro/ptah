@@ -672,39 +672,28 @@ func (p *Planner) addNewTableColumns(
 	desired *schemamodel.Database,
 	semantics identifier.Semantics,
 ) []ast.Node {
-	for _, colName := range tableDiff.ColumnsAdded {
-		// Find the field definition for this column
-		// We need to find the struct name that corresponds to this table name
-		var targetField *schemamodel.Field
-		var targetStructName string
+	// The TABLE still has to be declared. The column travels with the change
+	// now, so the field lookup that used to fail here cannot -- but the guard
+	// it provided is load-bearing on its own: a diff naming `app.users` against
+	// a schema that declares `reporting.users` must write no DDL, because the
+	// statement would apply cleanly to a relation nobody declared. Measured on
+	// PostgreSQL 17.10; see TestPlannerWritesNoDDLForARelationTheSchemaDoesNotDeclare.
+	if findGeneratedTableByDiffName(desired, tableDiff.TableName, semantics) == nil {
+		return result
+	}
 
-		// First, find the struct name for this table
-		if table := findGeneratedTableByDiffName(desired, tableDiff.TableName, semantics); table != nil {
-			targetStructName = table.StructName
-		}
+	// The column itself is no longer looked up: it used to be found by the
+	// table's Go STRUCT name and a scan of every field in the schema, which is
+	// a parser artifact reaching into the planner (stokaro/ptah#2315).
+	for _, column := range tableDiff.ColumnsAdded {
+		columnNode := fromschema.FromFieldWithoutForeignKeys(column, desired.Enums, "postgres")
 
-		// Now find the field using the correct struct name
-		for _, field := range desired.Fields {
-			if field.StructName == targetStructName && field.Name == colName {
-				targetField = &field
-				break
-			}
-		}
-
-		if targetField != nil {
-			columnNode := fromschema.FromFieldWithoutForeignKeys(*targetField, desired.Enums, "postgres")
-
-			// Only add the column - foreign key constraints will be added separately
-			// to ensure proper dependency ordering (columns must exist before FK constraints)
-			operations := []ast.AlterOperation{&ast.AddColumnOperation{Column: columnNode}}
-
-			// Generate ALTER TABLE statement with only the ADD COLUMN operation
-			alterNode := &ast.AlterTableNode{
-				Name:       tableDiff.TableName,
-				Operations: operations,
-			}
-			result = append(result, alterNode)
-		}
+		// Only add the column - foreign key constraints will be added separately
+		// to ensure proper dependency ordering (columns must exist before FK constraints)
+		result = append(result, &ast.AlterTableNode{
+			Name:       tableDiff.TableName,
+			Operations: []ast.AlterOperation{&ast.AddColumnOperation{Column: columnNode}},
+		})
 	}
 	return result
 }
@@ -717,30 +706,21 @@ func (p *Planner) addForeignKeyConstraintsForNewColumns(
 	desired *schemamodel.Database,
 	semantics identifier.Semantics,
 ) []ast.Node {
-	for _, colName := range tableDiff.ColumnsAdded {
-		// Find the field definition for this column
-		var targetField *schemamodel.Field
-		var targetStructName string
+	for _, column := range tableDiff.ColumnsAdded {
 		var targetTableName string
 		var targetTable *schemamodel.Table
 
-		// First, find the struct name for this table
+		// The TABLE is still looked up, because qualifying the reference needs
+		// the declaration's own schema. The COLUMN is not: it travels with the
+		// change (stokaro/ptah#2315).
 		if table := findGeneratedTableByDiffName(desired, tableDiff.TableName, semantics); table != nil {
 			targetTable = table
-			targetStructName = table.StructName
 			targetTableName = table.Name
 		}
-
-		// Now find the field using the correct struct name
-		for _, field := range desired.Fields {
-			if field.StructName == targetStructName && field.Name == colName {
-				targetField = &field
-				break
-			}
-		}
+		targetField := &column
 
 		// Only process fields that have foreign key constraints
-		if targetField != nil && targetField.Foreign != "" {
+		if targetField.Foreign != "" {
 			// Parse the foreign key reference
 			fkRef := fromschema.ParseForeignKeyReference(targetField.Foreign)
 			if fkRef != nil {
@@ -1017,10 +997,10 @@ func previousColumnNullable(change string) bool {
 }
 
 func (p *Planner) removeTableColumnsFromDiff(result []ast.Node, tableDiff difftypes.TableDiff) []ast.Node {
-	for _, colName := range tableDiff.ColumnsRemoved {
+	for _, column := range tableDiff.ColumnsRemoved {
 		// Generate DROP COLUMN statement using AST with CASCADE to handle dependencies
 		dropOp := &ast.DropColumnOperation{
-			ColumnName: colName,
+			ColumnName: column.Name,
 			Cascade:    true, // Use CASCADE to automatically drop dependent RLS policies
 		}
 		alterNode := &ast.AlterTableNode{
@@ -1028,7 +1008,7 @@ func (p *Planner) removeTableColumnsFromDiff(result []ast.Node, tableDiff diffty
 			Operations: []ast.AlterOperation{dropOp},
 		}
 		result = append(result, alterNode)
-		astCommentNode := ast.NewComment(fmt.Sprintf("WARNING: Dropping column %s.%s with CASCADE - This will delete data and dependent objects!", tableDiff.TableName, colName))
+		astCommentNode := ast.NewComment(fmt.Sprintf("WARNING: Dropping column %s.%s with CASCADE - This will delete data and dependent objects!", tableDiff.TableName, column.Name))
 		result = append(result, astCommentNode)
 	}
 	return result

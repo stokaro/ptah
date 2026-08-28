@@ -513,8 +513,8 @@ func TestReverseSchemaDiff_TableModifications(t *testing.T) {
 		TablesModified: []difftypes.TableDiff{
 			{
 				TableName:      "users",
-				ColumnsAdded:   []string{"email", "created_at"},
-				ColumnsRemoved: []string{"legacy_field"},
+				ColumnsAdded:   difftypes.ColumnChanges{{Name: "email"}, {Name: "created_at"}},
+				ColumnsRemoved: difftypes.ColumnChanges{{Name: "legacy_field"}},
 				ColumnsModified: []difftypes.ColumnDiff{
 					{
 						ColumnName: "name",
@@ -531,8 +531,8 @@ func TestReverseSchemaDiff_TableModifications(t *testing.T) {
 
 	reversedTable := result.TablesModified[0]
 	c.Assert(reversedTable.TableName, qt.Equals, "users")
-	c.Assert(reversedTable.ColumnsAdded, qt.DeepEquals, []string{"legacy_field"})
-	c.Assert(reversedTable.ColumnsRemoved, qt.DeepEquals, []string{"email", "created_at"})
+	c.Assert(reversedTable.ColumnsAdded.Names(), qt.DeepEquals, []string{"legacy_field"})
+	c.Assert(reversedTable.ColumnsRemoved.Names(), qt.DeepEquals, []string{"email", "created_at"})
 
 	c.Assert(reversedTable.ColumnsModified, qt.HasLen, 1)
 	reversedColumn := reversedTable.ColumnsModified[0]

@@ -269,7 +269,7 @@ func skipColumnRemovals(tables []difftypes.TableDiff, skipped []SkippedChange) (
 			continue
 		}
 		for _, column := range out[i].ColumnsRemoved {
-			skipped = append(skipped, SkippedChange{Kind: DropColumn, Object: out[i].TableName + "." + column})
+			skipped = append(skipped, SkippedChange{Kind: DropColumn, Object: out[i].TableName + "." + column.Name})
 		}
 		out[i].ColumnsRemoved = nil
 	}

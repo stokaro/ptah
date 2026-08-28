@@ -751,3 +751,73 @@ func TestTimescaleChanges_TheOperandsSurviveInMemory(t *testing.T) {
 	c.Assert(hypertables.Names(), qt.DeepEquals, []string{"public.readings"})
 	c.Assert(aggregates.Names(), qt.DeepEquals, []string{"public.hourly"})
 }
+
+// TestColumnChanges_TheWireShapeIsUnchanged is the same promise for the twelfth
+// family off `[]string`.
+func TestColumnChanges_TheWireShapeIsUnchanged(t *testing.T) {
+	tests := []struct {
+		name    string
+		changes difftypes.ColumnChanges
+		want    string
+		why     string
+	}{
+		{
+			name:    "nil is null",
+			changes: nil,
+			want:    "null",
+			why:     "null is a comparison that did not run",
+		},
+		{
+			name:    "empty is an empty array",
+			changes: difftypes.ColumnChanges{},
+			want:    "[]",
+			why:     "[] is a comparison that ran and found nothing",
+		},
+		{
+			name: "the definition does not reach the wire",
+			changes: difftypes.ColumnChanges{{
+				StructName: "User",
+				Name:       "email",
+				Type:       "VARCHAR(255)",
+				Nullable:   true,
+				Foreign:    "accounts(id)",
+			}},
+			want: `["email"]`,
+			why:  "a name list is what format_version 1 has always carried here",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			encoded, err := json.Marshal(test.changes)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(string(encoded), qt.Equals, test.want, qt.Commentf("%s", test.why))
+		})
+	}
+}
+
+// TestColumnChanges_TheDefinitionSurvivesInMemory is the other half, on the
+// fields `ALTER TABLE ... ADD COLUMN` is written from.
+//
+// A column planned from a name alone renders as a name and nothing else, which
+// is not a statement any engine accepts.
+func TestColumnChanges_TheDefinitionSurvivesInMemory(t *testing.T) {
+	c := qt.New(t)
+
+	changes := difftypes.ColumnChanges{{
+		Name:     "email",
+		Type:     "VARCHAR(255)",
+		Nullable: true,
+		Default:  "'unknown'",
+	}}
+
+	c.Assert(changes[0].Type, qt.Equals, "VARCHAR(255)",
+		qt.Commentf("ADD COLUMN is written from this, and a name cannot carry it"))
+	c.Assert(changes[0].Nullable, qt.IsTrue)
+	c.Assert(changes[0].Default, qt.Equals, "'unknown'")
+	c.Assert(changes.Names(), qt.DeepEquals, []string{"email"},
+		qt.Commentf("and the name list a consumer reads is unchanged"))
+}

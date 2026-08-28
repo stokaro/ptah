@@ -79,7 +79,7 @@ func TestPlannerDoesNotWriteToARelationTheSchemaNeverDeclaredLive(t *testing.T) 
 			}
 			diff := &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:    "app.users",
-				ColumnsAdded: []string{"note"},
+				ColumnsAdded: difftypes.ColumnChanges{{StructName: "User", Name: "note", Type: "TEXT"}},
 			}}}
 
 			statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, "postgres")

@@ -26,7 +26,7 @@ func newSchemaMismatchError(diff *difftypes.SchemaDiff) *VerificationError {
 
 func collectModifiedTableMismatches(table difftypes.TableDiff) []Mismatch {
 	var mismatches []Mismatch
-	for _, columnName := range sortedStrings(table.ColumnsAdded) {
+	for _, columnName := range sortedStrings(table.ColumnsAdded.Names()) {
 		message := fmt.Sprintf("missing column %s.%s", table.TableName, columnName)
 		mismatches = append(mismatches, Mismatch{Kind: "missing_column", Table: table.TableName, Column: columnName, Object: table.TableName + "." + columnName, Message: message})
 	}
@@ -38,7 +38,7 @@ func collectModifiedTableMismatches(table difftypes.TableDiff) []Mismatch {
 		message := fmt.Sprintf("column mismatch %s.%s: %s", table.TableName, column.ColumnName, describeChanges(column.Changes))
 		mismatches = append(mismatches, Mismatch{Kind: "column_mismatch", Table: table.TableName, Column: column.ColumnName, Object: table.TableName + "." + column.ColumnName, Changes: maps.Clone(column.Changes), Message: message})
 	}
-	for _, columnName := range sortedStrings(table.ColumnsRemoved) {
+	for _, columnName := range sortedStrings(table.ColumnsRemoved.Names()) {
 		message := fmt.Sprintf("extra column %s.%s", table.TableName, columnName)
 		mismatches = append(mismatches, Mismatch{Kind: "extra_column", Table: table.TableName, Column: columnName, Object: table.TableName + "." + columnName, Message: message})
 	}

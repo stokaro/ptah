@@ -134,7 +134,7 @@ func TestPlanner_UnchangedTTLPlansNothing(t *testing.T) {
 	c := qt.New(t)
 
 	diff := &difftypes.SchemaDiff{
-		TablesModified: []difftypes.TableDiff{{TableName: "sessions", ColumnsAdded: []string{"note"}}},
+		TablesModified: []difftypes.TableDiff{{TableName: "sessions", ColumnsAdded: difftypes.ColumnChanges{{Name: "note"}}}},
 	}
 
 	planner := postgres.NewForDialect(platform.CockroachDB, capability.CockroachDB26())
@@ -196,7 +196,7 @@ func TestPlanner_TheTTLIsSetBeforeItsColumnIsDropped(t *testing.T) {
 	statements := planRowTTL(c, &difftypes.SchemaDiff{
 		TablesModified: []difftypes.TableDiff{{
 			TableName:      "sessions",
-			ColumnsRemoved: []string{"expires_at"},
+			ColumnsRemoved: difftypes.ColumnChanges{{Name: "expires_at"}},
 			RowTTLChange: &difftypes.RowTTLChange{
 				Desired: &ast.RowTTLSpec{ExpirationExpression: "deleted_at"},
 				Current: &ast.RowTTLSpec{ExpirationExpression: "expires_at"},
@@ -217,7 +217,7 @@ func TestPlanner_TheTTLIsResetBeforeItsColumnIsDropped(t *testing.T) {
 	statements := planRowTTL(c, &difftypes.SchemaDiff{
 		TablesModified: []difftypes.TableDiff{{
 			TableName:      "sessions",
-			ColumnsRemoved: []string{"expires_at"},
+			ColumnsRemoved: difftypes.ColumnChanges{{Name: "expires_at"}},
 			RowTTLChange: &difftypes.RowTTLChange{
 				Current: &ast.RowTTLSpec{ExpirationExpression: "expires_at"},
 			},

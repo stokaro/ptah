@@ -20,7 +20,7 @@ func skipPolicyFixture() (*difftypes.SchemaDiff, *schemamodel.Database) {
 			{Name: "idx_legacy", TableName: "users"},
 		},
 		TablesModified: []difftypes.TableDiff{
-			{TableName: "users", ColumnsRemoved: []string{"middle_name"}},
+			{TableName: "users", ColumnsRemoved: difftypes.ColumnChanges{{Name: "middle_name"}}},
 		},
 	}
 	desired := &schemamodel.Database{

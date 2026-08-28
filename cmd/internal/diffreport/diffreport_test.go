@@ -41,7 +41,7 @@ func TestCategoriesNamesEveryChangedObject(t *testing.T) {
 		{
 			name: "per-object diffs are named by their object",
 			diff: &difftypes.SchemaDiff{
-				TablesModified: []difftypes.TableDiff{{TableName: "products", ColumnsAdded: []string{"price"}}},
+				TablesModified: []difftypes.TableDiff{{TableName: "products", ColumnsAdded: difftypes.ColumnChanges{{Name: "price"}}}},
 				EnumsModified:  []difftypes.EnumDiff{{EnumName: "status", ValuesAdded: []string{"archived"}}},
 			},
 			want: []diffreport.Category{

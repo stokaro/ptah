@@ -59,7 +59,7 @@ func TestPlanBidirectionalSchemaDiffGatesTheRollbackItGenerates(t *testing.T) {
 			env:  envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			diff: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:    "docs_content",
-				ColumnsAdded: []string{"spurious"},
+				ColumnsAdded: difftypes.ColumnChanges{{StructName: "DocContent", Name: "spurious", Type: "TEXT", Nullable: true}},
 			}}},
 			desired: declaredLiveTablesWithSpuriousColumn(),
 			wantErr: true,
@@ -97,7 +97,7 @@ func TestPlanBidirectionalSchemaDiffGatesTheRollbackItGenerates(t *testing.T) {
 			env:  envbooltest.Set(sqlitevirtual.AllowUnregisteredModuleEnvVar, "1"),
 			diff: &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:    "docs_content",
-				ColumnsAdded: []string{"spurious"},
+				ColumnsAdded: difftypes.ColumnChanges{{StructName: "DocContent", Name: "spurious", Type: "TEXT", Nullable: true}},
 			}}},
 			desired: declaredLiveTablesWithSpuriousColumn(),
 			wantErr: false,

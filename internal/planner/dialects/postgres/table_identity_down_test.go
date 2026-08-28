@@ -208,7 +208,7 @@ func TestPlannerColumnLookupDoesNotGuessBetweenSchemas(t *testing.T) {
 		statements, err := planner.GenerateSchemaDiffSQLStatements(
 			&difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:    "reporting.users",
-				ColumnsAdded: []string{"note"},
+				ColumnsAdded: difftypes.ColumnChanges{{StructName: "AppUser", Name: "note", Type: "TEXT"}},
 			}}},
 			desired,
 			"postgres",

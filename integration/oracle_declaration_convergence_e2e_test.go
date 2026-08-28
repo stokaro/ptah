@@ -277,10 +277,10 @@ func oracleDiffSummary(diff *difftypes.SchemaDiff) []string {
 			changes = append(changes, "constraint removed: "+table.TableName+"."+name)
 		}
 		for _, column := range table.ColumnsAdded {
-			changes = append(changes, "column added: "+table.TableName+"."+column)
+			changes = append(changes, "column added: "+table.TableName+"."+column.Name)
 		}
 		for _, column := range table.ColumnsRemoved {
-			changes = append(changes, "column removed: "+table.TableName+"."+column)
+			changes = append(changes, "column removed: "+table.TableName+"."+column.Name)
 		}
 		for _, column := range table.ColumnsModified {
 			changes = append(changes, fmt.Sprintf("column modified: %s.%s %v",

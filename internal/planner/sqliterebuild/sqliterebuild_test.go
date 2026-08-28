@@ -29,12 +29,12 @@ func TestNeedsTableRebuildReadsEveryChangeField(t *testing.T) {
 			// The exclusion, and the reason this predicate is shared rather
 			// than spelled twice.
 			name:  "added columns alone are an ALTER TABLE",
-			table: difftypes.TableDiff{TableName: "users", ColumnsAdded: []string{"email"}},
+			table: difftypes.TableDiff{TableName: "users", ColumnsAdded: difftypes.ColumnChanges{{Name: "email"}}},
 			want:  false,
 		},
 		{
 			name:  "removed columns rebuild",
-			table: difftypes.TableDiff{TableName: "users", ColumnsRemoved: []string{"email"}},
+			table: difftypes.TableDiff{TableName: "users", ColumnsRemoved: difftypes.ColumnChanges{{Name: "email"}}},
 			want:  true,
 		},
 		{
@@ -62,8 +62,8 @@ func TestNeedsTableRebuildReadsEveryChangeField(t *testing.T) {
 			name: "added columns beside a removal still rebuild",
 			table: difftypes.TableDiff{
 				TableName:      "users",
-				ColumnsAdded:   []string{"email"},
-				ColumnsRemoved: []string{"legacy"},
+				ColumnsAdded:   difftypes.ColumnChanges{{Name: "email"}},
+				ColumnsRemoved: difftypes.ColumnChanges{{Name: "legacy"}},
 			},
 			want: true,
 		},

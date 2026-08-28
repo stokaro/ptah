@@ -192,7 +192,7 @@ func TestPlanner_GenerateMigrationAST_TablesModified(t *testing.T) {
 				TablesModified: []difftypes.TableDiff{
 					{
 						TableName:    "users",
-						ColumnsAdded: []string{"created_at"},
+						ColumnsAdded: difftypes.ColumnChanges{{Name: "created_at", Type: "TIMESTAMP", StructName: "User", Nullable: false}},
 					},
 				},
 			},
@@ -229,8 +229,15 @@ func TestPlanner_GenerateMigrationAST_TablesModified(t *testing.T) {
 			diff: &difftypes.SchemaDiff{
 				TablesModified: []difftypes.TableDiff{
 					{
-						TableName:    "posts",
-						ColumnsAdded: []string{"user_id"},
+						TableName: "posts",
+						ColumnsAdded: difftypes.ColumnChanges{{
+							Name:           "user_id",
+							Type:           "INTEGER",
+							StructName:     "Post",
+							Nullable:       false,
+							Foreign:        "users(id)",
+							ForeignKeyName: "fk_posts_user",
+						}},
 					},
 				},
 			},

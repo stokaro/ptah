@@ -165,13 +165,12 @@ func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.Schema
 			continue
 		}
 
-		for _, colName := range td.ColumnsAdded {
-			field := lookupField(desired, structName, colName)
-			if field == nil {
-				result = append(result, ast.NewComment(fmt.Sprintf("WARNING: ClickHouse planner could not find field %s.%s; skipping ADD COLUMN", td.TableName, colName)))
-				continue
-			}
-			col := fromschema.FromField(*field, desired.Enums, platform.ClickHouse)
+		// The column travels WITH the change, so the "could not find field"
+		// warning below has no addition to warn about any more: there is no
+		// lookup left to fail. The modification path keeps both, because a
+		// ColumnDiff still carries a name alone (stokaro/ptah#2315).
+		for _, column := range td.ColumnsAdded {
+			col := fromschema.FromField(column, desired.Enums, platform.ClickHouse)
 			result = append(result, &ast.AlterTableNode{
 				Name:       td.TableName,
 				Operations: []ast.AlterOperation{&ast.AddColumnOperation{Column: col}},
@@ -196,10 +195,10 @@ func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.Schema
 			})
 		}
 
-		for _, colName := range td.ColumnsRemoved {
+		for _, column := range td.ColumnsRemoved {
 			result = append(result, &ast.AlterTableNode{
 				Name:       td.TableName,
-				Operations: []ast.AlterOperation{&ast.DropColumnOperation{ColumnName: colName}},
+				Operations: []ast.AlterOperation{&ast.DropColumnOperation{ColumnName: column.Name}},
 			})
 		}
 	}

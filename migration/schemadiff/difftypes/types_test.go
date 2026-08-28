@@ -45,7 +45,7 @@ func TestSchemaDiff_HasChanges(t *testing.T) {
 			name: "tables modified",
 			diff: &difftypes.SchemaDiff{
 				TablesModified: []difftypes.TableDiff{
-					{TableName: "users", ColumnsAdded: []string{"email"}},
+					{TableName: "users", ColumnsAdded: difftypes.ColumnChanges{{Name: "email"}}},
 				},
 			},
 			expected: true,

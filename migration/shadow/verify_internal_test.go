@@ -25,7 +25,7 @@ func TestDescribeDiffMissingColumn(t *testing.T) {
 		TablesModified: []difftypes.TableDiff{
 			{
 				TableName:    "users",
-				ColumnsAdded: []string{"email", "name"},
+				ColumnsAdded: difftypes.ColumnChanges{{Name: "email"}, {Name: "name"}},
 			},
 		},
 	}
@@ -73,8 +73,8 @@ func TestCollectMismatchesCoversEverySchemaDiffCategory(t *testing.T) {
 		TablesRemoved: []string{"extra_table"},
 		TablesModified: []difftypes.TableDiff{{
 			TableName:          "changed_table",
-			ColumnsAdded:       []string{"missing_column"},
-			ColumnsRemoved:     []string{"extra_column"},
+			ColumnsAdded:       difftypes.ColumnChanges{{Name: "missing_column"}},
+			ColumnsRemoved:     difftypes.ColumnChanges{{Name: "extra_column"}},
 			ColumnsModified:    []difftypes.ColumnDiff{{ColumnName: "changed_column", Changes: changes}},
 			ConstraintsAdded:   []string{"missing_table_constraint"},
 			ConstraintsRemoved: []string{"extra_table_constraint"},

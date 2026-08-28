@@ -51,7 +51,7 @@ func TestTableColumns_UnhappyPath(t *testing.T) {
 			},
 			expected: difftypes.TableDiff{
 				TableName:    "users",
-				ColumnsAdded: []string{"id"},
+				ColumnsAdded: difftypes.ColumnChanges{{Name: "id"}},
 			},
 		},
 	}
@@ -63,8 +63,11 @@ func TestTableColumns_UnhappyPath(t *testing.T) {
 			result := compare.TableColumns(tt.genTable, tt.dbTable, tt.desired)
 
 			c.Assert(result.TableName, qt.Equals, tt.expected.TableName)
-			c.Assert(result.ColumnsAdded, qt.DeepEquals, tt.expected.ColumnsAdded)
-			c.Assert(result.ColumnsRemoved, qt.DeepEquals, tt.expected.ColumnsRemoved)
+			// Compared by name: these rows are about WHICH columns the
+			// comparison reports, and the definitions each one carries are
+			// covered where they are rendered (stokaro/ptah#2315).
+			c.Assert(result.ColumnsAdded.Names(), qt.DeepEquals, tt.expected.ColumnsAdded.Names())
+			c.Assert(result.ColumnsRemoved.Names(), qt.DeepEquals, tt.expected.ColumnsRemoved.Names())
 		})
 	}
 }
@@ -1730,7 +1733,7 @@ func TestTablesAndColumns_HappyPath(t *testing.T) {
 				TablesModified: []difftypes.TableDiff{
 					{
 						TableName:    "users",
-						ColumnsAdded: []string{"email"},
+						ColumnsAdded: difftypes.ColumnChanges{{StructName: "User", Name: "email", Type: "VARCHAR(255)", Nullable: false}},
 					},
 				},
 			},
@@ -1766,7 +1769,7 @@ func TestTablesAndColumns_HappyPath(t *testing.T) {
 				TablesModified: []difftypes.TableDiff{
 					{
 						TableName:      "users",
-						ColumnsRemoved: []string{"legacy_field"},
+						ColumnsRemoved: difftypes.ColumnChanges{{Name: "legacy_field", Type: "varchar"}},
 					},
 				},
 			},
@@ -1786,8 +1789,8 @@ func TestTablesAndColumns_HappyPath(t *testing.T) {
 
 			for i, expectedTableDiff := range tt.expected.TablesModified {
 				c.Assert(diff.TablesModified[i].TableName, qt.Equals, expectedTableDiff.TableName)
-				c.Assert(diff.TablesModified[i].ColumnsAdded, qt.DeepEquals, expectedTableDiff.ColumnsAdded)
-				c.Assert(diff.TablesModified[i].ColumnsRemoved, qt.DeepEquals, expectedTableDiff.ColumnsRemoved)
+				c.Assert(diff.TablesModified[i].ColumnsAdded.Names(), qt.DeepEquals, expectedTableDiff.ColumnsAdded.Names())
+				c.Assert(diff.TablesModified[i].ColumnsRemoved.Names(), qt.DeepEquals, expectedTableDiff.ColumnsRemoved.Names())
 			}
 		})
 	}
@@ -1872,7 +1875,7 @@ func TestTableColumns_HappyPath(t *testing.T) {
 			},
 			expected: difftypes.TableDiff{
 				TableName:    "users",
-				ColumnsAdded: []string{"email"},
+				ColumnsAdded: difftypes.ColumnChanges{{StructName: "User", Name: "email", Type: "VARCHAR(255)", Nullable: false}},
 			},
 		},
 		{
@@ -1893,7 +1896,7 @@ func TestTableColumns_HappyPath(t *testing.T) {
 			},
 			expected: difftypes.TableDiff{
 				TableName:      "users",
-				ColumnsRemoved: []string{"legacy_field"},
+				ColumnsRemoved: difftypes.ColumnChanges{{Name: "legacy_field", Type: "varchar"}},
 			},
 		},
 	}
@@ -1905,8 +1908,11 @@ func TestTableColumns_HappyPath(t *testing.T) {
 			result := compare.TableColumns(tt.genTable, tt.dbTable, tt.desired)
 
 			c.Assert(result.TableName, qt.Equals, tt.expected.TableName)
-			c.Assert(result.ColumnsAdded, qt.DeepEquals, tt.expected.ColumnsAdded)
-			c.Assert(result.ColumnsRemoved, qt.DeepEquals, tt.expected.ColumnsRemoved)
+			// Compared by name: these rows are about WHICH columns the
+			// comparison reports, and the definitions each one carries are
+			// covered where they are rendered (stokaro/ptah#2315).
+			c.Assert(result.ColumnsAdded.Names(), qt.DeepEquals, tt.expected.ColumnsAdded.Names())
+			c.Assert(result.ColumnsRemoved.Names(), qt.DeepEquals, tt.expected.ColumnsRemoved.Names())
 		})
 	}
 }
@@ -1940,5 +1946,5 @@ func TestTableColumns_WithEmbeddedFields(t *testing.T) {
 	result := compare.TableColumns(genTable, dbTable, desired)
 
 	c.Assert(result.TableName, qt.Equals, "users")
-	c.Assert(result.ColumnsAdded, qt.DeepEquals, []string{"created_at", "updated_at"})
+	c.Assert(result.ColumnsAdded.Names(), qt.DeepEquals, []string{"created_at", "updated_at"})
 }

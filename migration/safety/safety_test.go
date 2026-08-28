@@ -22,8 +22,8 @@ func TestClassifySchemaDiff_HighestSeverity(t *testing.T) {
 		TablesModified: []difftypes.TableDiff{
 			{
 				TableName:      "products",
-				ColumnsAdded:   []string{"sku"},
-				ColumnsRemoved: []string{"legacy_code"},
+				ColumnsAdded:   difftypes.ColumnChanges{{Name: "sku"}},
+				ColumnsRemoved: difftypes.ColumnChanges{{Name: "legacy_code"}},
 			},
 		},
 		IndexesRemoved: []difftypes.IndexRef{
@@ -60,8 +60,8 @@ func TestClassifySchemaDiff_AggregatesRepeatedCategories(t *testing.T) {
 
 	diff := &difftypes.SchemaDiff{
 		TablesModified: []difftypes.TableDiff{
-			{TableName: "users", ColumnsAdded: []string{"email"}},
-			{TableName: "posts", ColumnsAdded: []string{"slug", "status"}},
+			{TableName: "users", ColumnsAdded: difftypes.ColumnChanges{{Name: "email"}}},
+			{TableName: "posts", ColumnsAdded: difftypes.ColumnChanges{{Name: "slug"}, {Name: "status"}}},
 		},
 	}
 

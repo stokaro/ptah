@@ -105,7 +105,7 @@ func TestColumnDDLResolvesTheTableAcrossSchemaSpellings(t *testing.T) {
 			added, err := planner.GenerateSchemaDiffSQLStatements(
 				&difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 					TableName:    test.diffName,
-					ColumnsAdded: []string{"note"},
+					ColumnsAdded: difftypes.ColumnChanges{{StructName: "Order", Name: "note", Type: "TEXT"}},
 				}}},
 				test.desired,
 				test.dialect,
@@ -144,7 +144,7 @@ func TestColumnDDLDoesNotGuessBetweenSchemas(t *testing.T) {
 	statements, err := planner.GenerateSchemaDiffSQLStatements(
 		&difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 			TableName:    "app.orders",
-			ColumnsAdded: []string{"note"},
+			ColumnsAdded: difftypes.ColumnChanges{{StructName: "Order", Name: "note", Type: "TEXT"}},
 		}}},
 		ordersTable("reporting"),
 		"mysql",

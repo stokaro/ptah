@@ -82,7 +82,7 @@ func TestCompareDoesNotPlanColumnChangesForASQLiteVirtualTable(t *testing.T) {
 func modifiedColumnAdditions(modified []difftypes.TableDiff) []string {
 	var columns []string
 	for _, tableDiff := range modified {
-		columns = append(columns, tableDiff.ColumnsAdded...)
+		columns = append(columns, tableDiff.ColumnsAdded.Names()...)
 	}
 	sort.Strings(columns)
 	return columns
