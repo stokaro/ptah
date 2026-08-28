@@ -133,6 +133,41 @@ func ordersSchema(tableSchema, policyTable string) *schemamodel.Database {
 	}
 }
 
+// shipmentsSchema declares a table the diff creates beside one it does not,
+// with the policy on the one it does not.
+func shipmentsSchema() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
+			{Name: "shipments", StructName: "Shipment"},
+			{Name: "legacy", StructName: "Legacy"},
+		},
+		Fields: []schemamodel.Field{
+			{Name: "id", StructName: "Shipment", Type: "INTEGER", Primary: true},
+			{Name: "id", StructName: "Legacy", Type: "INTEGER", Primary: true},
+		},
+		RLSPolicies: []schemamodel.RLSPolicy{{
+			Name:            "tenant_isolation",
+			Table:           "legacy",
+			PolicyFor:       "ALL",
+			ToRoles:         "PUBLIC",
+			UsingExpression: "tenant_id = 1",
+		}},
+	}
+}
+
+// ordersCreation is the table creation the diff carries, built from the same
+// declaration the row's desired schema carries.
+//
+// A creation holding only a name renders no CREATE TABLE, so the policy below
+// it lands on a table that was never made and PostgreSQL answers `relation
+// "orders" does not exist`. TablesAdded stopped being a name list, and a
+// literal converted to the new shape by name alone still compiles
+// (stokaro/ptah#2315).
+func ordersCreation(tableSchema, policyTable, name string) difftypes.TableChanges {
+	schema := ordersSchema(tableSchema, policyTable)
+	return difftypes.TableChanges{difftypes.TableCreationFor(schema, schema.Tables[0], name)}
+}
+
 // ordersPolicy is the policy both the desired schema and the diff rows carry.
 //
 // One declaration rather than two: a diff entry's Desired is the operand the
@@ -187,7 +222,7 @@ func TestPlannerEnablesRowSecurityForANewTableWhoseSpellingDiffersLivePostgres(t
 		{
 			name: "the diff creates orders and the policy names public.orders",
 			diff: &difftypes.SchemaDiff{
-				TablesAdded: difftypes.TableChanges{{Name: "orders"}},
+				TablesAdded: ordersCreation("", "public.orders", "orders"),
 				RLSPoliciesAdded: []difftypes.RLSPolicyRef{
 					{PolicyName: "tenant_isolation", TableName: "public.orders", Desired: ordersPolicy("public.orders")},
 				},
@@ -199,7 +234,7 @@ func TestPlannerEnablesRowSecurityForANewTableWhoseSpellingDiffersLivePostgres(t
 		{
 			name: "the diff creates public.orders and the policy names orders",
 			diff: &difftypes.SchemaDiff{
-				TablesAdded: difftypes.TableChanges{{Name: "public.orders"}},
+				TablesAdded: ordersCreation("public", "orders", "public.orders"),
 				RLSPoliciesAdded: []difftypes.RLSPolicyRef{
 					{PolicyName: "tenant_isolation", TableName: "orders", Desired: ordersPolicy("orders")},
 				},
@@ -211,7 +246,7 @@ func TestPlannerEnablesRowSecurityForANewTableWhoseSpellingDiffersLivePostgres(t
 		{
 			name: "both sides spell the table the same way",
 			diff: &difftypes.SchemaDiff{
-				TablesAdded: difftypes.TableChanges{{Name: "orders"}},
+				TablesAdded: ordersCreation("", "orders", "orders"),
 				RLSPoliciesAdded: []difftypes.RLSPolicyRef{
 					{PolicyName: "tenant_isolation", TableName: "orders", Desired: ordersPolicy("orders")},
 				},
@@ -231,25 +266,16 @@ func TestPlannerEnablesRowSecurityForANewTableWhoseSpellingDiffersLivePostgres(t
 				`CREATE TABLE legacy (id INTEGER PRIMARY KEY, tenant_id INTEGER)`,
 			},
 			diff: &difftypes.SchemaDiff{
-				TablesAdded: difftypes.TableChanges{{Name: "shipments"}},
-			},
-			desired: &schemamodel.Database{
-				Tables: []schemamodel.Table{
-					{Name: "shipments", StructName: "Shipment"},
-					{Name: "legacy", StructName: "Legacy"},
+				// The creation carries its declaration for the reason the rows
+				// above do, and here it is what makes the row discriminate: a
+				// planner that ignored TablesAdded entirely would also leave
+				// the policy alone, so a creation that renders nothing tests
+				// nothing.
+				TablesAdded: difftypes.TableChanges{
+					difftypes.TableCreationFor(shipmentsSchema(), shipmentsSchema().Tables[0], "shipments"),
 				},
-				Fields: []schemamodel.Field{
-					{Name: "id", StructName: "Shipment", Type: "INTEGER", Primary: true},
-					{Name: "id", StructName: "Legacy", Type: "INTEGER", Primary: true},
-				},
-				RLSPolicies: []schemamodel.RLSPolicy{{
-					Name:            "tenant_isolation",
-					Table:           "legacy",
-					PolicyFor:       "ALL",
-					ToRoles:         "PUBLIC",
-					UsingExpression: "tenant_id = 1",
-				}},
 			},
+			desired:         shipmentsSchema(),
 			wantPolicies:    make([]string, 0),
 			wantRowSecurity: make([]string, 0),
 		},

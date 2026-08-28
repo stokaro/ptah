@@ -14129,7 +14129,7 @@ type SchemaDiff struct {
     // DeclaredUserTypes is the type vocabulary a column may name, carried once
     // for the whole diff. A planner resolves a created table's column types
     // through it; see [UserTypeVocabulary] for why it is not per entry.
-    DeclaredUserTypes UserTypeVocabulary `json:"-"`
+    DeclaredUserTypes UserTypeVocabulary `json:"-" diff:"operand"`
 
     // DeclaredTables is every table the declaration holds, carried once for the
     // whole diff and off the wire.
@@ -14142,7 +14142,7 @@ type SchemaDiff struct {
     //
     // It holds the tables, not their columns: what a reference resolution reads
     // is the name and the schema.
-    DeclaredTables []schemamodel.Table `json:"-"`
+    DeclaredTables []schemamodel.Table `json:"-" diff:"operand"`
 
     // RLSEnabledTablesAdded contains names of tables that need RLS enabled
     RLSEnabledTablesAdded RLSEnabledTableChanges `json:"rls_enabled_tables_added"`

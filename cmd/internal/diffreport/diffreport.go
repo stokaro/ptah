@@ -92,7 +92,22 @@ func Names(categories []Category) []string {
 // rather than what differs — the live catalog identifier rules, for one — and
 // reporting them as changes would make a synced schema look modified.
 func isChangeCategory(field reflect.StructField) bool {
-	return field.IsExported() && field.Type.Kind() == reflect.Slice
+	return field.IsExported() && field.Type.Kind() == reflect.Slice && !isOperand(field)
+}
+
+// isOperand reports whether a field is context a planner reads rather than a
+// change the comparison found.
+//
+// The two are the same shape -- an exported slice -- and telling them apart by
+// shape reported `DeclaredTables` as a difference, so `ptah schema compare` on
+// a converged schema answered "Differences detected (1 category)" and then
+// warned that the planner had produced nothing for it (stokaro/ptah#2315).
+//
+// The mark is on the field because that is the only place that cannot drift
+// from the name. `json:"-"` is not the mark: RLSPolicyIdentityConflicts is off
+// the wire too and is a refusal a reader has to see.
+func isOperand(field reflect.StructField) bool {
+	return field.Tag.Get("diff") == "operand"
 }
 
 // categoryName prefers the field's JSON name so reports and serialized diffs
