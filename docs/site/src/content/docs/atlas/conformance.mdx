@@ -154,7 +154,7 @@ sections carry the detail.
 | [Declarative migration and schema tests](#declarative-migration-and-schema-tests) | `ptah migrations test`, `ptah schema test` | Cannot run either command |
 | [Migration directory maintenance](#migration-directory-maintenance) | `ptah migrations edit`, `rebase`, `rm` | Cannot run any of the three |
 | [Verified and reported rollback](#verified-and-reported-rollback) | `ptah migrations down --shadow-db` | `migrate down` is absent |
-| [Pre-approved declarative plans](#pre-approved-declarative-plans) | Same engine as `schema apply` | `schema plan` aborts |
+| [Pre-approved direct schema plans](#pre-approved-direct-schema-plans) | Same engine as `schema apply` | `schema plan` aborts |
 
 This is a workflow-parity record, not a claim of full Atlas Pro compatibility.
 For the code-by-code status of the analyzer checks Atlas marks as Pro, see
@@ -204,7 +204,7 @@ the live runners. This workflow is not counted as a schema-object fixture.
 **Evidence.** Unit coverage over live SQLite: verification success and pre-target abort on both paths, report rendering including partial-failure reports, waiver rejections, non-interactive execution with EOF stdin, rejection of the non-Atlas `--confirm` flag, byte-identical execution output against a pre-approved native run, and revision-format regressions proving a bare `ptah-compat migrate down` reverts revisions written by `ptah-compat migrate apply`. A subprocess test runs the built `ptah-compat` binary with EOF stdin and checks the SQLite end state
 
 
-### Pre-approved declarative plans
+### Pre-approved direct schema plans
 
 **Native Ptah.** Ptah plans and applies direct schema changes through the same engine that powers `schema apply`
 

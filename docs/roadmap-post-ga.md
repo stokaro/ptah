@@ -33,7 +33,7 @@ live projection of the issue tracker.
 The README states what Ptah claims to be:
 
 > Ptah helps you inspect, define, compare, visualize, test, and change database
-> schemas. Use versioned migrations, declarative schema changes, or both, across
+> schemas. Use versioned migrations, direct schema changes, or both, across
 > supported databases.
 
 Every open issue was measured against one question: **does Ptah, as it

@@ -267,7 +267,7 @@ policy from `atlas.hcl`, including local variable defaults, locals, `getenv`,
 
 Supported `diff` policy includes `skip.drop_table` and PostgreSQL `concurrent_index.create` where the command can run without a surrounding transaction.
 
-Both declarative paths accept desired-state URL sources through one typed resolver: directly connectable database URLs (live schema introspected), migration directories (`file://` directories containing `atlas.sum`, replayed on a required `--dev-url` dev database), and `env://` references (`src`, `schema.src`, `url`, `dev`, `migration.dir`) resolved through the evaluated `atlas.hcl` env with variables and relative paths honored; one source kind per flag, deterministic conflict errors, and pre-target failures for unsupported schemes such as `atlas://`.
+Both direct schema paths accept desired-state URL sources through one typed resolver: directly connectable database URLs (live schema introspected), migration directories (`file://` directories containing `atlas.sum`, replayed on a required `--dev-url` dev database), and `env://` references (`src`, `schema.src`, `url`, `dev`, `migration.dir`) resolved through the evaluated `atlas.hcl` env with variables and relative paths honored; one source kind per flag, deterministic conflict errors, and pre-target failures for unsupported schemes such as `atlas://`.
 
 Before a non-dry-run apply, `--dev-url` rehearses the exact ordered plan on the dev database (reset, current target schema recreated, planned or edited statements executed under the apply's transaction mode); a failed rehearsal refuses the apply with the target unchanged.
 

@@ -435,6 +435,7 @@ Under (c) the boundary is testable in one sentence: a planner that compiles
 without access to the source description is a planner that cannot rediscover a
 diff.
 
+<!-- terminology-allow: declarative planning -- an ADR records a decision in the words it was made in, so the heading keeps the spelling the decision was written with -->
 ### D9. Declarative planning versus versioned migration
 
 **Alternatives.** (a) One pipeline, with file and revision concerns as options.

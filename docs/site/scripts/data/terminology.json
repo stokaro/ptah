@@ -1,0 +1,325 @@
+{
+  "$comment": [
+    "The Ptah terminology registry: the canonical name for each thing Ptah has a",
+    "preferred spelling for, and the machine-checkable half of the rule attached to it.",
+    "",
+    "This file is the source. Section 7 of docs/STYLE_GUIDE.md is generated from it",
+    "between markers by docs/site/scripts/check-terminology.mjs --write, and the same",
+    "script reads the bans below to check reader-facing prose. cmd/internal/",
+    "terminologyguard reads this file too, and checks the native command tree's help",
+    "text against the same bans -- one registry, two readers, so a spelling cannot be",
+    "retired in prose while the binary keeps printing it.",
+    "",
+    "Adding a term is a data change: one entry here, then --write. A term with no",
+    "`bans` key is a name reviewers hold each other to; a term with one is a name a",
+    "gate holds the tree to."
+  ],
+
+  "markers": {
+    "file": "docs/STYLE_GUIDE.md",
+    "begin": "<!-- BEGIN GENERATED TERMINOLOGY -->",
+    "end": "<!-- END GENERATED TERMINOLOGY -->"
+  },
+
+  "corpus": {
+    "$comment": [
+      "The files every ban is read over, derived rather than listed. A ban narrows",
+      "this corpus and never widens it, so no page can be governed by one rule and",
+      "invisible to another because two lists disagree.",
+      "",
+      "It was a hand-written list of six globs for one commit, and measured at",
+      "86e683888 that list left 54 of the 161 tracked Markdown files outside every",
+      "ban -- among them internal/parser/README.md, migration/generator/README.md and",
+      "migration/migrator/README.md, all three named in AGENTS.md's documentation",
+      "impact map. docs/site/src/sidebar.mjs was outside it too, and it carries the",
+      "26 labels of the site's primary navigation: the retired workflow label could",
+      "be planted in the nav with every gate green. check-style.mjs already derives",
+      "its corpus and states the reason -- a new package cannot opt out by existing",
+      "-- and this is the same property for vocabulary."
+    ],
+    "extensions": [".md", ".mdx"],
+    "also": [
+      "docs/site/src/sidebar.mjs",
+      "docs/site/astro.config.mjs",
+      "docs/site/src/components/**/*.astro"
+    ],
+    "alsoReason": "Reader-facing site text that is not Markdown: the sidebar's `label`, the Astro config's site title, and the components' own strings. Each glob is refused when it matches no file, so a renamed source fails the gate instead of quietly taking its text out of the corpus.",
+    "exclude": [
+      "docs/site/scripts/data/feature-matrix.head.md",
+      "docs/site/scripts/data/feature-matrix.tail.md"
+    ],
+    "excludeReason": "The two halves docs/site/src/content/docs/atlas/feature-matrix.md is assembled around. The assembled page IS in the corpus and carries a generatedSources redirect, so a violation in either half is reported once, on the page a reader reads, naming the file to edit. Governing both ends would report it twice, and a gate that reports one sentence twice is a gate an author learns to skim."
+  },
+
+  "terms": [
+    {
+      "id": "native-commands",
+      "term": "native commands",
+      "meaning": "The `ptah <verb>` tree.",
+      "rule": "Never described with Atlas spellings; root-level Atlas aliases (`ptah migrate apply`) are documented as intentionally absent."
+    },
+    {
+      "id": "atlas-compatible-commands",
+      "term": "Atlas-compatible commands",
+      "meaning": "The command tree of the separate `ptah-compat` binary.",
+      "rule": "Invocations are spelled `ptah-compat <command> ...`, the name the binary ships under. The drop-in rename (installing the binary under the name `atlas`) is documented once, on the Atlas compatibility overview."
+    },
+    {
+      "id": "ptah-compat",
+      "term": "`ptah-compat`",
+      "meaning": "The binary-level drop-in replacement for scripts expecting an Atlas-style executable. The only Atlas-compatible command surface; the native `ptah` binary has none."
+    },
+    {
+      "id": "desired-schema",
+      "term": "desired schema",
+      "meaning": "What the schema sources declare.",
+      "rule": "Do not write \"desired state\" except inside the established compound for composite sources.",
+      "bans": [
+        {
+          "id": "desired-state",
+          "stems": ["desired"],
+          "bannedHeads": ["state", "state sources"],
+          "allowedHeads": [],
+          "onUnknownHead": "allow",
+          "message": "\"desired state\" names what the schema sources declare; the canonical spelling is \"desired schema\"",
+          "enforced": false,
+          "backlog": {
+            "commit": "86e683888",
+            "rawGrep": { "prose": 103, "help": 89 },
+            "why": "The largest backlog in section 7 by an order of magnitude, and the compatibility surface holds two thirds of it. Enforcing it today would land a red gate, and a gate that is red on arrival is a gate the next person in a hurry turns off. It ships as data with its count recorded, the way AGENTS.md records a qtlint rule's backlog until it reaches zero, and the ratchet below refuses a count that grows. Flip `enforced` to true in the change that clears it, and delete `ratchet` in the same edit.",
+            "whyTheTwoNumbersDiffer": "`rawGrep` is what a repository-wide grep answers and is recorded because the census measured it. `ratchet` is what THIS gate measures over the whole corpus, on the prose stream with code spans, fenced blocks and link destinations already dropped. The two differ because the stream drops text a grep counts, not because the ratchet covers less: the ratchet caps every file the corpus holds.",
+            "whyTheScopeIsNotNarrowed": "It was, for one commit: the ratchet read 15 over the non-Atlas site pages, and the other 91 findings were free to grow. A ratchet is only a ceiling over what it counts, so narrowing it to an easier frontier is the one thing it must not do. The number is larger and the property is stronger."
+          },
+          "ratchet": 103
+        }
+      ]
+    },
+    {
+      "id": "schema-source",
+      "term": "schema source",
+      "meaning": "A Go-annotation tree, YAML file, HCL file, SQL file, external loader, or live database used as input."
+    },
+    {
+      "id": "composite-desired-schema",
+      "term": "composite desired schema",
+      "meaning": "The merged result of multiple schema sources."
+    },
+    {
+      "id": "direct-schema-changes",
+      "term": "direct schema changes",
+      "meaning": "The workflow that runs a computed difference against the database with no migration file in between: `ptah schema plan`, `ptah schema apply`, `ptah schema drift`.",
+      "rule": "Never \"declarative schema changes\". `ptah migrations generate` reads the same desired schema, so \"declarative\" names where a change came from, not how it lands; what separates the two workflows is whether the difference runs now or is committed as a file first.",
+      "bans": [
+        {
+          "id": "declarative-as-workflow-label",
+          "stems": ["declarative", "declaratively"],
+
+          "$comment": [
+            "The ban is `declarative` PLUS the noun it heads, never `declarative` alone.",
+            "Measured at 86e683888: the word appears 118 times in reader-facing text and",
+            "24 times in non-test Go under cmd/, against 19 violations. Banning the word",
+            "would report 123 sentences that are correct as written, and a gate that fires",
+            "on legitimate prose is disabled by the next person to meet it.",
+            "",
+            "Getting the unit right removes most of the problem rather than exempting it:",
+            "61 of the 103 non-findings -- capability names, other vendors' terms, ordinary",
+            "English -- are not findings at all once the head noun decides."
+          ],
+
+          "bannedHeads": [
+            "changes",
+            "change",
+            "schema changes",
+            "schema change",
+            "schema management",
+            "workflow",
+            "workflows",
+            "quick start",
+            "apply",
+            "apply plan",
+            "plan",
+            "plans",
+            "plan file",
+            "planning",
+            "path",
+            "paths",
+            "verb",
+            "verbs"
+          ],
+
+          "allowedHeads": [
+            "reference",
+            "reference data",
+            "reference rows",
+            "reference-data or data-migration-generation",
+            "data",
+            "data management",
+            "data model",
+            "seed",
+
+            "test",
+            "tests",
+            "test case",
+            "test cases",
+            "test commands",
+            "test file",
+            "test files",
+            "test loader",
+            "test runner",
+            "testing",
+            "testing engine",
+            "testing detail",
+            "database testing",
+            "database test",
+            "database test runner",
+            "yaml cases",
+            "yaml test",
+            "yaml test cases",
+            "yaml schema test",
+            "yaml migration test",
+            "migration and schema tests",
+            "migration tests",
+            "migration test",
+            "schema tests",
+            "and white-box-test",
+
+            "foreign key",
+            "foreign keys",
+            "partitioned",
+            "partitioned parent",
+            "partitioning",
+
+            "and imperative",
+            "idea",
+            "model",
+            "rule",
+            "means",
+            "alias",
+            "policy",
+            "description",
+            "document",
+            "contrast",
+            "state",
+            "in full",
+            "applies",
+            "controls",
+
+            "schema apply",
+            "schema diff",
+            "schema file",
+            "schema settings",
+            "schema tool",
+            "schema work",
+            "diff",
+            "migration",
+            "migrations",
+            "migration plan",
+            "migration for",
+            "migration from"
+          ],
+
+          "onUnknownHead": "report",
+          "$unknownHeadComment": [
+            "An unknown head is a finding, and this is the property that keeps the gate",
+            "honest. The literal string `declarative schema changes` occurs TWICE in the",
+            "tree outside the rule row, against 19 violations: a gate matching literal",
+            "phrases would find 2 of 19 and report green. It would also miss",
+            "`Declarative and direct schema changes`, which is the banned phrase split",
+            "across a conjunction, and `Declarative changes`, which is it shortened.",
+            "",
+            "The fix for a false report is one line of data in `allowedHeads`, in the same",
+            "file as the ban, so the ban and its exceptions are read together."
+          ],
+
+          "message": "\"declarative\" names where a change came from, not how it lands; the workflow is \"direct schema changes\"",
+
+          "enforced": true,
+
+          "helpText": {
+            "tree": "native",
+            "reason": "cmd/internal/terminologyguard walks cmd/root.NewRootCommand() and reads every Short, Long, Example and flag usage under it. The compatibility tree is left out for the reason `scope.exclude` gives for the atlas/ pages: `ptah-compat` describes itself in the vocabulary its users arrived with, and the decision is recorded once here rather than twice in two readers. A ban with no `helpText` governs prose only."
+          },
+
+          "scope": {
+            "exclude": [],
+            "excludeReason": "Nothing is excluded, including the compatibility surface and the file that states this rule. Both used to be. docs/STYLE_GUIDE.md needs no exemption because its row spells the retired label in quotation marks, which the mention rule reads as naming rather than using. The compatibility pages needed one only because the reason recorded here was wrong: it claimed `26 occurrences across those paths, 0 of them a native-workflow label`, and re-running the ban with the exclusion lifted answered 6 -- `Pre-approved declarative plans` twice, `Both declarative paths accept desired-state URL sources`, and `the declarative plan` describing `ptah-compat schema plan` twice. One of them is verbatim a fixture in this checker's own --selftest. They were Ptah's own prose about Ptah's own verbs, in the spelling section 7 retired, and they are fixed rather than excused. What the exclusion was FOR survives without it: Atlas's own names -- `Declarative schema apply`, `Declarative migrations`, declarative data management, declarative test cases -- stay silent through allowedHeads, through link destinations, and through the mention rule, which is where a vocabulary decision belongs. Measured after the fix: 0 findings across the whole corpus."
+          },
+
+          "generatedSources": {
+            "docs/capabilities.md": "core/platform/capability, regenerated by scripts/check-capability-tables.sh",
+            "docs/agent-surface.md": "cmd/, regenerated by scripts/check-agent-surface.sh",
+            "docs/site/src/content/docs/reference/lint-rules.md": "internal/lintcatalog, regenerated by scripts/check-lint-rules.sh",
+            "docs/site/src/content/docs/atlas/feature-matrix.md": "the AREA_MAP section titles and SECTION_INTROS in docs/site/scripts/build-feature-matrix.mjs, or a row's feature/note in docs/site/scripts/data/feature-matrix-rows.json, or docs/site/scripts/data/feature-matrix.head.md / .tail.md; regenerated by node docs/site/scripts/build-feature-matrix.mjs"
+          },
+          "$generatedComment": "A finding in a generated file is redirected, not suppressed: the message names the file the author must edit instead. Silencing it is how a violation in a generator's source lives forever, and redirecting it is what stops the author fixing the page and being overwritten."
+        }
+      ]
+    },
+    {
+      "id": "versioned-migrations",
+      "term": "versioned migrations",
+      "meaning": "The workflow that records a change as ordered `*.up.sql`/`*.down.sql` files and replays them: the `ptah migrations` tree.",
+      "rule": "The peer of direct schema changes, and the other half of every \"which workflow\" sentence."
+    },
+    {
+      "id": "migration-directory",
+      "term": "migration directory",
+      "meaning": "The versioned directory of `*.up.sql`/`*.down.sql` (or Atlas-format) files."
+    },
+    {
+      "id": "integrity-file",
+      "term": "integrity file",
+      "meaning": "`ptah.sum` (native) or `atlas.sum` (Atlas-format)."
+    },
+    {
+      "id": "revision-table",
+      "term": "revision table",
+      "meaning": "The database table recording applied migrations."
+    },
+    {
+      "id": "dev-database",
+      "term": "dev database",
+      "meaning": "The replay target behind `--dev-url` (validate/lint/Atlas-compatible verbs)."
+    },
+    {
+      "id": "shadow-database",
+      "term": "shadow database",
+      "meaning": "The verification replay target behind `--shadow-db` (generate, checkpoint, baseline)."
+    },
+    {
+      "id": "throwaway-database",
+      "term": "throwaway database",
+      "meaning": "The disposable database that `migrations test` and `schema test` run cases against."
+    },
+    {
+      "id": "dialect",
+      "term": "dialect",
+      "meaning": "A SQL rendering flavor (what Ptah generates). Distinct from the database/engine you connect to."
+    },
+    {
+      "id": "capability",
+      "term": "capability",
+      "meaning": "A per-dialect feature gate."
+    },
+    {
+      "id": "drift",
+      "term": "drift",
+      "meaning": "Divergence between the desired schema and a live database."
+    },
+    {
+      "id": "conformance",
+      "term": "conformance",
+      "meaning": "Atlas-compatibility evidence in `stokaro/ptah-atlas-conformance`."
+    },
+    {
+      "id": "clean-room-implementation",
+      "term": "clean-room implementation",
+      "meaning": "Ptah does not use Atlas source code; only observable behavior is studied."
+    },
+    {
+      "id": "pre-ga",
+      "term": "pre-GA",
+      "meaning": "Ptah's current maturity: no legacy aliases, no compatibility wrappers, breaking cleanups allowed."
+    }
+  ]
+}

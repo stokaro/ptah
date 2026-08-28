@@ -16,7 +16,7 @@ plus the flag translation rules are on the
 | --- | --- |
 | `ptah-compat schema inspect` | Inspects a live database, a local schema file, a migration directory, or an `env://` reference (non-database sources evaluated on the `--dev-url` dev database) and writes Atlas-shaped HCL, SQL, JSON, or custom-template output, including split/write file exports. |
 | `ptah-compat schema apply` | Diffs a desired-state source (schema files, a database URL, a migration directory, or an `env://` reference) against a live database and applies the planned SQL after confirmation. |
-| `ptah-compat schema plan` | Saves the declarative plan as a fingerprinted local plan file for a later `schema apply --plan`. |
+| `ptah-compat schema plan` | Saves the direct schema plan as a fingerprinted local plan file for a later `schema apply --plan`. |
 | `ptah-compat schema plan lint` | Verifies a saved plan file against the transition, then reports what the migration lint rules find in its SQL. |
 | `ptah-compat schema diff` | Diffs two desired-state sources (schema files, database URLs, migration directories, or `env://` references) and prints migration SQL. |
 | `ptah-compat schema fmt` | Formats local `.hcl` files using HCL canonical layout. |
@@ -1421,7 +1421,7 @@ ptah-compat schema apply \
 `ptah-compat schema plan` is the open local replacement for Atlas's Pro
 registry-gated plan workflow, and it speaks Atlas's plan-file format.
 
-It computes the same declarative plan `schema apply` would generate — from the
+It computes the same direct schema plan `schema apply` would generate — from the
 `--from` target database to the local `--to` schema files — and saves it as a
 local plan file. The default format is the Atlas `.plan.hcl` shape: one
 `plan "<name>"` block with `from`/`to` fingerprints and the migration SQL in a

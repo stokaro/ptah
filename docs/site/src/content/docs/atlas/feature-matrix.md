@@ -147,7 +147,7 @@ seven of them as open capabilities regardless.
 
 </div>
 
-## Declarative and direct schema changes
+## Direct schema changes
 
 <div class="ptah-wide-table">
 

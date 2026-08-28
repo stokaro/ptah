@@ -1,16 +1,16 @@
 ---
-title: "Quick start: declarative changes"
+title: "Quick start: direct schema changes"
 description: Describe a schema in one SQL file, let Ptah change a SQLite database to match, add a column, and check that the database still matches the file.
 quickstart: true
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-This tutorial runs the declarative workflow end to end. You keep one file that
+This tutorial runs a direct schema change end to end. You keep one file that
 describes the schema you want; Ptah reads the live database, works out the
-difference, and applies it.
+difference, and applies it to the database with no migration file in between.
 
-You will produce a `ptah-declarative` directory holding `schema.sql` and a
+You will produce a `ptah-direct` directory holding `schema.sql` and a
 SQLite database that matches it, after one change that Ptah turns into an
 `ALTER TABLE` rather than a rebuild.
 
@@ -55,16 +55,16 @@ reproduced here.
 <TabItem label="Bash">
 
 ```bash
-mkdir ptah-declarative
-cd ptah-declarative
+mkdir ptah-direct
+cd ptah-direct
 ```
 
 </TabItem>
 <TabItem label="PowerShell">
 
 ```powershell
-New-Item -ItemType Directory ptah-declarative | Out-Null
-Set-Location ptah-declarative
+New-Item -ItemType Directory ptah-direct | Out-Null
+Set-Location ptah-direct
 ```
 
 </TabItem>
@@ -324,8 +324,8 @@ ALTER TABLE "users" ADD COLUMN "created_at" TEXT;
 ```
 
 Ptah planned an `ALTER TABLE`, not a second `CREATE TABLE`. This is the step
-that shows what declarative means: the file describes the destination, and Ptah
-derives the route from the database's current shape.
+that shows what "declarative" means: the file describes the destination, and
+Ptah derives the route from the database's current shape.
 
 ## Step 9. Apply the change
 
@@ -431,7 +431,7 @@ check.
 
 ```bash
 cd ..
-rm -rf ptah-declarative
+rm -rf ptah-direct
 ```
 
 </TabItem>
@@ -439,7 +439,7 @@ rm -rf ptah-declarative
 
 ```powershell
 Set-Location ..
-Remove-Item -Recurse -Force ptah-declarative
+Remove-Item -Recurse -Force ptah-direct
 ```
 
 </TabItem>

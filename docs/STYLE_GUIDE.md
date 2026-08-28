@@ -287,30 +287,41 @@ Remove the explanation after the behavior changes, not before.
 
 ## 7. Ptah terminology
 
-Canonical names. Do not introduce synonyms.
+Canonical names. Do not introduce synonyms. This table is the registry: check a
+term here before writing it, and read the **Held by** column. It says, per row,
+whether a gate holds the tree to that name or a reviewer does — most rows are
+held by review, and a row held by review is not a weaker rule, only an
+unchecked one.
 
-| Term | Meaning and usage rule |
-| --- | --- |
-| native commands | The `ptah <verb>` tree. Never described with Atlas spellings; root-level Atlas aliases (`ptah migrate apply`) are documented as intentionally absent. |
-| Atlas-compatible commands | The command tree of the separate `ptah-compat` binary. Invocations are spelled `ptah-compat <command> ...`, the name the binary ships under. The drop-in rename (installing the binary under the name `atlas`) is documented once, on the Atlas compatibility overview. |
-| `ptah-compat` | The binary-level drop-in replacement for scripts expecting an Atlas-style executable. The only Atlas-compatible command surface; the native `ptah` binary has none. |
-| desired schema | What the schema sources declare. Do not write "desired state" except inside the established compound for composite sources. |
-| schema source | A Go-annotation tree, YAML file, HCL file, SQL file, external loader, or live database used as input. |
-| composite desired schema | The merged result of multiple schema sources. |
-| direct schema changes | The workflow that runs a computed difference against the database with no migration file in between: `ptah schema plan`, `ptah schema apply`, `ptah schema drift`. Never "declarative schema changes". `ptah migrations generate` reads the same desired schema, so "declarative" names where a change came from, not how it lands; what separates the two workflows is whether the difference runs now or is committed as a file first. |
-| versioned migrations | The workflow that records a change as ordered `*.up.sql`/`*.down.sql` files and replays them: the `ptah migrations` tree. The peer of direct schema changes, and the other half of every "which workflow" sentence. |
-| migration directory | The versioned directory of `*.up.sql`/`*.down.sql` (or Atlas-format) files. |
-| integrity file | `ptah.sum` (native) or `atlas.sum` (Atlas-format). |
-| revision table | The database table recording applied migrations. |
-| dev database | The replay target behind `--dev-url` (validate/lint/Atlas-compatible verbs). |
-| shadow database | The verification replay target behind `--shadow-db` (generate, checkpoint, baseline). |
-| throwaway database | The disposable database that `migrations test` and `schema test` run cases against. |
-| dialect | A SQL rendering flavor (what Ptah generates). Distinct from the database/engine you connect to. |
-| capability | A per-dialect feature gate. |
-| drift | Divergence between the desired schema and a live database. |
-| conformance | Atlas-compatibility evidence in `stokaro/ptah-atlas-conformance`. |
-| clean-room implementation | Ptah does not use Atlas source code; only observable behavior is studied. |
-| pre-GA | Ptah's current maturity: no legacy aliases, no compatibility wrappers, breaking cleanups allowed. |
+The table is generated from `docs/site/scripts/data/terminology.json`. Add or
+change a term there and run
+`node docs/site/scripts/check-terminology.mjs --write`; editing the table by
+hand fails the check.
+
+<!-- BEGIN GENERATED TERMINOLOGY -->
+| Term | Meaning and usage rule | Held by |
+| --- | --- | --- |
+| native commands | The `ptah <verb>` tree. Never described with Atlas spellings; root-level Atlas aliases (`ptah migrate apply`) are documented as intentionally absent. | review |
+| Atlas-compatible commands | The command tree of the separate `ptah-compat` binary. Invocations are spelled `ptah-compat <command> ...`, the name the binary ships under. The drop-in rename (installing the binary under the name `atlas`) is documented once, on the Atlas compatibility overview. | review |
+| `ptah-compat` | The binary-level drop-in replacement for scripts expecting an Atlas-style executable. The only Atlas-compatible command surface; the native `ptah` binary has none. | review |
+| desired schema | What the schema sources declare. Do not write "desired state" except inside the established compound for composite sources. | `check:terminology`, ratcheted |
+| schema source | A Go-annotation tree, YAML file, HCL file, SQL file, external loader, or live database used as input. | review |
+| composite desired schema | The merged result of multiple schema sources. | review |
+| direct schema changes | The workflow that runs a computed difference against the database with no migration file in between: `ptah schema plan`, `ptah schema apply`, `ptah schema drift`. Never "declarative schema changes". `ptah migrations generate` reads the same desired schema, so "declarative" names where a change came from, not how it lands; what separates the two workflows is whether the difference runs now or is committed as a file first. | `check:terminology`; `terminologyguard` |
+| versioned migrations | The workflow that records a change as ordered `*.up.sql`/`*.down.sql` files and replays them: the `ptah migrations` tree. The peer of direct schema changes, and the other half of every "which workflow" sentence. | review |
+| migration directory | The versioned directory of `*.up.sql`/`*.down.sql` (or Atlas-format) files. | review |
+| integrity file | `ptah.sum` (native) or `atlas.sum` (Atlas-format). | review |
+| revision table | The database table recording applied migrations. | review |
+| dev database | The replay target behind `--dev-url` (validate/lint/Atlas-compatible verbs). | review |
+| shadow database | The verification replay target behind `--shadow-db` (generate, checkpoint, baseline). | review |
+| throwaway database | The disposable database that `migrations test` and `schema test` run cases against. | review |
+| dialect | A SQL rendering flavor (what Ptah generates). Distinct from the database/engine you connect to. | review |
+| capability | A per-dialect feature gate. | review |
+| drift | Divergence between the desired schema and a live database. | review |
+| conformance | Atlas-compatibility evidence in `stokaro/ptah-atlas-conformance`. | review |
+| clean-room implementation | Ptah does not use Atlas source code; only observable behavior is studied. | review |
+| pre-GA | Ptah's current maturity: no legacy aliases, no compatibility wrappers, breaking cleanups allowed. | review |
+<!-- END GENERATED TERMINOLOGY -->
 
 Dev, shadow, and throwaway databases are three distinct things. Define each
 once on its concept page and link; do not re-define them per page.
@@ -507,7 +518,10 @@ Complete this for every documentation PR:
 
 1. Page type declared for each touched page and its template followed
    (section 2–3).
-2. Terminology matches section 7; no retired synonyms introduced.
+2. Terminology matches section 7; no retired synonyms introduced. Check the
+   term in the table before writing it, and read its **Held by** column: a row
+   naming a gate is checked in CI, and a row saying `review` is checked here
+   and nowhere else.
 3. Examples executed against a built binary; shown output is current.
 4. Parity and conformance claims checked against current
    `stokaro/ptah-atlas-conformance` reports.
@@ -518,6 +532,7 @@ Complete this for every documentation PR:
    npm run check:page-health:selftest && npm run check:page-health &&
    npm run check:exit-codes:selftest && npm run check:exit-codes &&
    npm run check:style:selftest && npm run check:style &&
+   npm run check:terminology:selftest && npm run check:terminology &&
    npm run check:limitations:selftest && npm run check:limitations &&
    npm run check:responsive:selftest && npm run versions:selftest &&
    npm run build && npm run check:responsive &&
@@ -566,6 +581,9 @@ in this guide is a review responsibility.
 | Every fenced block is closed | 8 | `check:style` |
 | Admonitions limited to note/tip/caution/danger | 9 | `check:style` |
 | No `testify` in code samples | 8 | `check:style` |
+| A retired spelling on a section 7 row whose **Held by** names a gate | 7 | `check:terminology` |
+| Section 7's table matches the registry it is generated from | 7 | `check:terminology` |
+| Native help text obeys the section 7 rows `terminologyguard` holds | 7 | `cmd/internal/terminologyguard` |
 | Every image carries alt text | 11.3 | `check:style` |
 | `title` and `description` frontmatter | 13 | `check:page-health` |
 | Every page is named by a sidebar entry | 12 | `check:page-health` |
@@ -593,6 +611,34 @@ in this guide is a review responsibility.
 not only the site. Package READMEs are discovered by walking the repository, so
 a new package cannot opt out by existing. This file is the one exemption: it
 necessarily contains the words it bans.
+
+Section 7 is a generated rendering of
+`docs/site/scripts/data/terminology.json`, and the registry is what both
+checkers read: `check:terminology` for Markdown prose, and
+`cmd/internal/terminologyguard` for the native command tree's help text, in
+`go test ./...` rather than in this workflow, because a Go-only change does not
+trigger it.
+
+Most of section 7 is held by review, and the table's **Held by** column says so
+per row rather than leaving a reader to infer it from these three entries. Such
+a row carries no machine-checkable rule at all: `native commands` asks that the
+tree is never described with Atlas spellings, and no checker can tell an Atlas
+spelling from a sentence about one. Those rows are not a backlog working
+towards zero — they are names reviewers hold each other to, which is checklist
+item 2 and nothing else.
+
+A row whose **Held by** names `check:terminology` is enforced over the corpus
+below, and one that also names `terminologyguard` is enforced over the native
+command tree's help text as well. A row that adds `ratcheted` is one whose
+backlog has not reached zero: its count is recorded in the registry, can shrink
+and cannot grow, and it becomes a plain gate in the change that clears it.
+`desired schema` is the row in that state today.
+
+`check:terminology` derives its corpus rather than listing it — every tracked
+Markdown file, plus the site sources that carry reader-facing text without
+being Markdown, such as the sidebar's labels. A new page or package README is
+governed by existing, the same property `check:style` has and for the same
+reason.
 
 The table lists the rules this guide states. The documentation job also runs
 `check:limitations`, `check:glossary`, and the four checks that hold

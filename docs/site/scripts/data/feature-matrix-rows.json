@@ -558,7 +558,7 @@
     "evidence": "Measured 2026-08-02 against pinned Atlas CE v1.2.0. CE registers `migrate checkpoint` but gates it (bare invocation -> 'Abort: not supported by the community version', exit 1) and registers NONE of its own flags: flag parsing precedes the gate, so --dir-format/--dir/--dev-url/--edit/--format/--qualifier/--schema/--lock-name/--lock-timeout all return 'unknown flag' while --config/--env reach the abort; the nonsense control `atlas migrate frobnicate` instead prints the migrate group help, exit 0. So there is no CE flag surface to conform to and this is a Pro-surface addition (issue #951 second standing constraint); Atlas Pro registers --dir-format with default 'atlas', which is why compat now defaults to atlas while native `ptah migrations checkpoint` stays ptah. Write side verified end to end: `ptah-compat migrate checkpoint --dir file://m --dev-url sqlite://s.db` wrote 20260802120402_checkpoint.sql (directive on line 1) and an atlas.sum covering all three files; the PINNED CE binary then `migrate validate` exit 0, `migrate apply` on a fresh db ran only the checkpoint and recorded 20260802120402|checkpoint|2|1|1, and on a pre-checkpoint db printed 'No migration files to execute' exit 0 - ptah-compat produced the identical revision row and identical sqlite schema. Note CE cannot WRITE a checkpoint but does HONOR the directive on read, so the pinned oracle covers both halves. Two shapes are refused before anything is written, both found by review rather than by a failing test: a checkpoint that would leave BOTH ptah.sum and atlas.sum behind (--dir-format auto then refuses the directory outright), and an atlas checkpoint into a directory holding ptah-convention files at all, hashed or not - an UNHASHED ptah directory has no sum to detect, and converting it made the checkpoint permanently invisible (discovery reads the ptah pair, while validate found the new atlas.sum and called the directory sound). Version resolution takes the MAXIMUM of the Atlas timestamp and one above the newest migration: on m/20250801000001_init.sql + m/sub/29990101000000_future.sql the checkpoint used to replay the nested file into its body yet sort below it, and a fresh apply then re-ran it - 'table future_tbl already exists', exit 1, dirty revision row, i.e. #954 reproduced by our own writer. That was also a we-fail-where-CE-succeeds divergence, since CE's reader is shallow and applied the same directory at exit 0 with one clean row. The recursive walk that produced the disagreement was removed in stokaro/ptah#976: an Atlas-format directory now selects exactly the files atlas.sum covers, so the nested file is neither replayed into the body nor counted toward the bound nor executed, and the version is the plain timestamp. Measured post-fix, a fresh apply of that same directory records one revision row for the checkpoint, table ckpt_future does NOT exist, and the nested file is named on stderr as declined - a strictly stronger post-condition than raising the bound above it, which only hid the double-apply. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: 'Migration checkpoints' is Starter ✗ / Pro ✓, grounding oss=no and pro=yes (stokaro/ptah#951, #954)"
   },
   {
-    "area": "Declarative / direct schema workflow",
+    "area": "Direct schema workflow",
     "feature": "schema inspect to HCL, SQL, or JSON",
     "ptah": "yes",
     "atlas_oss": "yes",
@@ -567,7 +567,7 @@
     "evidence": "Measured 2026-08-11 against pinned Atlas CE v1.3.0 for empty and populated SQLite: exact bare --format hcl/sql/json emit only that literal with no LF; whitespace-wrapped hcl/sql/json preserve the template bytes with no extra LF; omitting --format renders HCL, and explicit {{ hcl . }}/{{ sql . }}/{{ json . }} render. Unit and tagged process coverage: cmd/atlas/schema_inspect_format_internal_test.go and integration/atlascmd/schema_inspect_format_literals_process_test.go (stokaro/ptah#1235 cell 6.6)."
   },
   {
-    "area": "Declarative / direct schema workflow",
+    "area": "Direct schema workflow",
     "feature": "Inspect non-database sources via `--dev-url`",
     "ptah": "yes",
     "atlas_oss": "yes",
@@ -576,7 +576,7 @@
     "evidence": "conformance gaps.md probe `inspect-source-workflow`; docs/site/src/content/docs/atlas/schema-commands.md"
   },
   {
-    "area": "Declarative / direct schema workflow",
+    "area": "Direct schema workflow",
     "feature": "Inspect split/write file exports",
     "ptah": "yes",
     "atlas_oss": "no",
@@ -585,7 +585,7 @@
     "evidence": "Verified: `ptah-compat schema inspect --format '{{ hcl . | split | write \"exp\" }}'` wrote exp/tables/{posts,users}.hcl; comparison.md:139"
   },
   {
-    "area": "Declarative / direct schema workflow",
+    "area": "Direct schema workflow",
     "feature": "schema apply against a live database",
     "ptah": "yes",
     "atlas_oss": "yes",
@@ -594,7 +594,7 @@
     "evidence": "Verified: `ptah-compat schema apply --url sqlite://target.db --to file://new.sql --auto-approve`; conformance cli-surface.md `atlas schema apply`. Measured 2026-08-01, CE v1.2.0 (scratch env): `atlas schema apply --url sqlite://t.db --to file://schema.sql --dev-url 'sqlite://file?mode=memory' --auto-approve` planned and applied, exit 0; without `--dev-url` CE errors '--dev-url cannot be empty'. The pricing page's 'Declarative migrations' Starter cross refers to the plan/approve product flow, not to `schema apply`. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: 'Declarative migrations' is listed Starter ✗ / Pro ✓ and links /declarative/plan — tension with the measured CE apply; read as covering the pre-planned (`schema plan`) flow, not plain `schema apply`, so the measured oss=yes stands"
   },
   {
-    "area": "Declarative / direct schema workflow",
+    "area": "Direct schema workflow",
     "feature": "`--dry-run`, `--auto-approve`, and `--edit`",
     "ptah": "yes",
     "atlas_oss": "yes",
@@ -603,7 +603,7 @@
     "evidence": "Verified: a scripted $EDITOR replaced the plan and `schema apply --edit --auto-approve` applied the edited SQL; `ptah-compat schema apply --help`; conformance cli-surface.md lists all three in the CE `atlas schema apply` flag set. Measured 2026-08-08 against the pinned community binary v1.3.0 on SQLite: `schema apply -u sqlite://t.db --to file://schema.sql --dev-url 'sqlite://dv?mode=memory' --dry-run --auto-approve` exits 1 with 'if any flags in the group [dry-run auto-approve] are set none of the others can be; [auto-approve dry-run] were all set' where ptah-compat printed the plan at exit 0 (stokaro/ptah#1231 case 5, fixed on this branch, byte-identical refusal); each flag alone still exits 0 on both. The rule reads argv rather than pflag's Changed bit: `PTAH_DRY_RUN=1 ptah-compat schema apply … --auto-approve` exits 0 and prints the plan, matching the 0 that binary returns for the same command line, and a second dry run over the same target still has the table to create"
   },
   {
-    "area": "Declarative / direct schema workflow",
+    "area": "Direct schema workflow",
     "feature": "Dev-database rehearsal before apply",
     "ptah": "yes",
     "atlas_oss": "yes",
@@ -612,7 +612,7 @@
     "evidence": "Reproduced: `pc schema apply --url sqlite://t4.db --to file://b.sql --auto-approve --dev-url sqlite://dv4.db` -> `Schema apply completed successfully.` (exit 0); `--dev-url sqlite://r1.db` equal to --url -> `error: --dev-url must not point at the target database: the dev database is reset destructively before the plan is rehearsed on it` (exit 1). Conformance gaps.md lines 25-27 record the reset, failed-rehearsal, and dev!=target observations. The only refused form is docker://, covered by the existing 'Docker dev databases' row. stokaro/ptah#940 items A and D then moved the rehearsal above the --dry-run exit and added the missing --dev-url requirement, both measured 2026-08-08 against the pinned community binary: `pc schema apply -u sqlite://r.db --to file://schema.sql --dev-url 'sqlite:///nonexistent-dir-xyz/dev.db' --dry-run` exits 1 where it used to exit 0, while a reachable dev database exits 0 on both sides; `pc schema apply -u sqlite://nodev.db --to file://schema.sql --dry-run` exits 1 with `--dev-url cannot be empty`, and a database --to with no --dev-url still exits 0 on both. PTAH_ATLAS_APPLY_WITHOUT_DEV_URL=1 restores planning a file desired state without a dev database, which that binary refuses."
   },
   {
-    "area": "Declarative / direct schema workflow",
+    "area": "Direct schema workflow",
     "feature": "Apply advisory lock, `--lock-timeout`, `--lock-name`, `--skip-lock`",
     "ptah": "yes",
     "atlas_oss": "partial",
@@ -621,7 +621,7 @@
     "evidence": "internal/dblock/dblock.go:54-64 returns true for Postgres, YugabyteDB, MySQL, MariaDB, SQLServer — the previous note wrongly listed YugabyteDB as unlocked. cmd/atlas/schema_apply.go emits the stderr note. Reproduced: `pc schema apply --url sqlite://t1.db --to file://b.sql --auto-approve --lock-timeout 10s` -> `note: schema apply locking is not supported for dialect \"sqlite\"; --lock-timeout is ignored and the apply proceeds without a database lock` then a successful apply (exit 0). CE registers --lock-timeout on schema apply per cli-surface.md:43. Updated 2026-08-03 (stokaro/ptah#951): --lock-name and --skip-lock added. Measured on the pinned community binary v1.3.0 by RUNNING each spelling: `atlas schema apply --lock-name x` and `--skip-lock` both answer `unknown flag`, with `--dry-run` answering present and `--frobnicate-nonsense` answering unknown on the same run, so CE registers neither. Atlas's published CLI reference (atlasgo.io/cli-reference, retrieved 2026-08-03) registers both on `atlas schema apply`, verbatim: `--lock-name string   set the name of the advisory lock to use. If not set, the default is used (atlas_migrate_execute)` and `--skip-lock   skip acquiring a database advisory lock`; controls on the same fetch: `atlas migrate apply` present 10 times, `frobnicate` 0 times, `--lock-name` exactly 2 occurrences across the whole page (migrate apply and schema apply). Ptah's default lock name stays ptah_schema_apply so an in-flight fleet does not de-serialize mid-upgrade; `--lock-name atlas_migrate_execute` is the explicit spelling for coordinating with Atlas. --skip-lock acquires nothing at all (nil lock, no wait, no timeout) and is refused together with --lock-name. A PostgreSQL lock is proved to exclude before the run continues (stokaro/ptah#1933), and the proof is covered live in stokaro/ptah#1957, which runs PgBouncer 1.25.2 in pool_mode = transaction in front of the PostgreSQL service. A PostgreSQL advisory lock is SESSION-scoped, and a transaction pooler hands a client whichever backend is free between transactions -- measured, three attempts on one key all answered true and all landed on backend 113, so the lock fails OPEN and two runs would both believe they held it. Ptah asks a second connection for the same lock and refuses when that succeeds, naming the property rather than the proxy, so the check holds for any topology that shares backends and costs one round trip against a direct server. PTAH_ALLOW_UNVERIFIED_MIGRATION_LOCK skips the proof and not the lock, and is under test too. A TRANSACTION-scoped advisory lock does survive the pooler -- measured, two concurrent transactions on one key answered true on backend 79 and false on backend 82 -- and is not what this lock uses, because it is held across planning and applying rather than inside one transaction (stokaro/ptah#1029)."
   },
   {
-    "area": "Declarative / direct schema workflow",
+    "area": "Direct schema workflow",
     "feature": "Desired-state sources for `--to` and `--from`",
     "ptah": "yes",
     "atlas_oss": "yes",
@@ -630,7 +630,7 @@
     "evidence": "internal/atlassource/atlassource.go classifyLocal and :123-124 for the atlas:// rejection. The plain-directory case was closed by stokaro/ptah#940 item B: measured 2026-08-08, `pc schema diff --from file://empty.hcl --to file://sqldir --dev-url 'sqlite://file?mode=memory'` plans both tables at exit 0, matching the pinned community binary, where it previously exited 1 with \"load --to schema: schema file is a directory\". A directory containing atlas.sum is still classified as a migration directory and replayed, on both sides."
   },
   {
-    "area": "Declarative / direct schema workflow",
+    "area": "Direct schema workflow",
     "feature": "Local pre-approved plan files",
     "ptah": "yes",
     "atlas_oss": "no",
@@ -639,7 +639,7 @@
     "evidence": "Fixed by #958 (measured: mutual plan-file unreadability, opposite --plan/--to contracts, foreign fingerprints). Verified: `schema apply --url sqlite://b.db --to file://desired.sql --plan file://atlas.plan.hcl --auto-approve` applies the real Atlas-authored oracle plan end to end (cmd/atlas/internal/schematests/schema_apply_planhcl_test.go); `schema plan --from sqlite://x.db --to file://new.sql --output x.plan.hcl` round-trips. The canonical internal/atlasschema/testdata/atlas-plan-oracle bundle preserves Atlas's artifact, source and desired SQL, file hashes, and the capture fields that were not recorded. Ptah-written `.plan.hcl` parses in Atlas's reader but its sha256 fingerprints cannot satisfy Atlas's own hash verification (no local recipe, either direction)."
   },
   {
-    "area": "Declarative / direct schema workflow",
+    "area": "Direct schema workflow",
     "feature": "schema diff between two schema states",
     "ptah": "yes",
     "atlas_oss": "yes",
@@ -648,7 +648,7 @@
     "evidence": "Re-measured 2026-08-16 on SQLite 3.51, same inputs to both binaries: a NOT NULL change and a column type change both plan a create-copy-drop-rename rebuild, exit 0 either way. With a second table holding a foreign key to the rebuilt one, both now emit that rebuild wrapped in PRAGMA foreign_keys off/on; Ptah used to answer `sqlite: rebuilding table t with inbound foreign keys requires a manual rebuild plan` (stokaro/ptah#1561). Applying it needs more than emitting it: the pragma is a no-op inside a transaction, so Ptah suspends enforcement on the connection and runs PRAGMA foreign_key_check before the commit, which the community binary does not."
   },
   {
-    "area": "Declarative / direct schema workflow",
+    "area": "Direct schema workflow",
     "feature": "`--schema` / -s scoping of both sides",
     "ptah": "yes",
     "atlas_oss": "yes",
@@ -657,7 +657,7 @@
     "evidence": "conformance gaps.md `atlas schema apply -s` and `atlas schema diff -s` shorthand rows; internal/atlasfilter/scope_extension_schema_universe_test.go; internal/atlasschema/diff_scope_internal_test.go; integration/atlascmd/schema_scope_live_test.go; integration/atlascmd/schema_apply_extension_schema_live_test.go; docs/site/src/content/docs/atlas/schema-commands.md"
   },
   {
-    "area": "Declarative / direct schema workflow",
+    "area": "Direct schema workflow",
     "feature": "`--include` resource selectors",
     "ptah": "yes",
     "atlas_oss": "no",
@@ -666,7 +666,7 @@
     "evidence": "cli-surface.md lines 43,45 (--include registered on CE apply/diff); atlas/comparison.md: 'Atlas CE aborts --include as a non-community feature'; schema-scope-workflow probe in gaps.md; pinned CE v1.2.0 `schema diff --include users` exits 1 with \"Abort: 'atlas schema diff --include' is not supported by the community version\", and `schema inspect --include users` exits 1 with \"Error: unknown flag: --include\""
   },
   {
-    "area": "Declarative / direct schema workflow",
+    "area": "Direct schema workflow",
     "feature": "`--exclude` glob and type selectors",
     "ptah": "yes",
     "atlas_oss": "yes",
@@ -675,7 +675,7 @@
     "evidence": "internal/atlasfilter/filter.go ExcludeDatabaseWithDefaultSchema and exclusionState.effectiveSchema resolve a blank object schema to the connection default, so `--exclude public.users` matches the same table `--exclude users` does; stripSchemaTypeSegment rewrites a leading `<glob>[type=schema].` into that plain schema qualification, and parsePatterns then skips prefixing the connection's schema onto a pattern that filled its own schema slot. Measured 2026-08-09, pinned community binary (reports \"atlas community version v1.3.0\") vs ptah-compat built from this branch, against PostgreSQL 16 in Docker seeded across schemas public and app, database URL with -s public -s app. `--exclude '*[type=schema].*[type=table]'`: that binary is exit 0 with both tables gone and both enums and both schema blocks kept; ptah-compat was exit 1 'type selectors are supported on the final pattern segment only' and now returns the same shape - table \"users\" and table \"orders\" gone, enum \"color\", enum \"mood\", schema \"app\" and schema \"public\" kept. Narrowing control, both binaries: `--exclude 'app[type=schema].*[type=table]'` leaves table \"users\" alone. Re-measured 2026-08-12 on a SQLite file diff: that binary accepts the same multi-segment selector but leaves the CREATE TABLE plan byte-identical to the unfiltered control, while Ptah honors the selector as written and removes the plan, like the final-type-only control `*[type=table]`; integration/atlas_compat_selector_semantics_e2e_test.go pins Ptah's source-independent answer. Divergence as recorded before the re-measurement below, deliberate and pre-existing (#1184): `--exclude public.users.id` is exit 1 in ptah-compat in every scope ('too many parts in pattern: \"public.public.users.id\"') while that binary honors it on a database URL and refuses it on a schema-bound one; Ptah has one rule for both scopes and picks the refusing one. Atlas CE side from conformance cli-surface.md line 43/45/47 (--exclude registered on schema apply, diff, inspect) The deliberate column-selector divergence this row records was defended only by a merged pull request and this row; it is now stokaro/ptah#1703. Re-measured 2026-08-19 against the pinned community binary v1.3.0 and a ptah-compat built from master, same SQLite database, same four patterns. The previous note said \"a column selector is refused\", which is not what either binary does: `--exclude users.secret` keeps the table and drops the column on BOTH, on a file source and on a database URL alike; `--exclude users` drops the whole table on both; `--exclude users.nonexistent` and `--exclude nosuch.secret` change nothing on both. What is refused is the fully qualified three-part spelling on a schema-bound scope, and the two binaries refuse it with the same sentence, doubled prefix included: `Error: too many parts in pattern: \"main.main.users.secret\"`. The doubled quote is the binary's own -- it prefixes the connection's schema before counting -- and Ptah counts the same way while quoting the pattern that was typed, recorded as a retained divergence in docs/conformance.md. internal/atlasfilter/filter_pattern_depth_test.go pins both halves: TestExcludeDatabaseWithDefaultSchema_RefusesPatternsDeeperThanTheScope carries the refusal text, and TestExcludeDatabaseWithDefaultSchema_SchemaRelativeChildrenStayAddressable is the cost control proving the refusal costs a spelling and not a capability. stokaro/ptah#1703 asked for the column form and for the typed pattern in the message; both are present -- the refusal now quotes the pattern as written and names the spelling that reaches the same object, which is the same refusal with a better diagnostic rather than a looser one. Re-measured 2026-08-22 against the pinned community binary v1.3.0 and a ptah-compat built from this branch, one PostgreSQL 17 database seeded with public.users(id,email,secret) and other.notes(id,body), the two URLs differing only by search_path. The divergence recorded above holds for the schema-bound URL and does not hold for the database URL: that binary answers the same pattern two ways and the URL is what decides it. Ten patterns measured on both scopes; the six the column form reaches now agree byte for byte -- `public.users.id` drops the column on the database URL and is refused as \"public.public.users.id\" on the schema-bound one, `other.notes.body` reaches across schemas, and `public.users.nosuch` names nothing and takes nothing, which separates \"the depth is allowed\" from \"the pattern is honored\". The same acceptance holds on `schema diff` and `schema apply`, measured on both URLs. Scope.RealmRelativePatterns carries the answer and DefaultSchema keeps its own job, deliberately as two fields: blanking one string for a realm run also stops the qualified spelling of an object in the connection's own schema from matching anything, which is an exclusion accepted and silently ignored. Four divergences remain and are a different fact -- exclusionState.nameCandidates offers the bare name as well as the qualified one, so `--exclude users` on a database URL drops public.users where that binary keeps it; the looseness is documented there and is not what stokaro/ptah#1703 asked about."
   },
   {
-    "area": "Declarative / direct schema workflow",
+    "area": "Direct schema workflow",
     "feature": "schema fmt (HCL canonical layout)",
     "ptah": "yes",
     "atlas_oss": "yes",
@@ -684,7 +684,7 @@
     "evidence": "`ptah-compat schema fmt --help`; conformance cli-surface.md flags and usage rows for `atlas schema fmt`"
   },
   {
-    "area": "Declarative / direct schema workflow",
+    "area": "Direct schema workflow",
     "feature": "schema clean",
     "ptah": "yes",
     "atlas_oss": "yes",
@@ -693,7 +693,7 @@
     "evidence": "internal/schemaclean/clean.go coverageFor maps each dialect onto its writer's coverage; integration/schemaclean/clean_live_test.go compares the plan against the objects that actually disappeared on a live PostgreSQL. Measured on PostgreSQL 18 with a table, view, materialized view, enum, domain, composite, range, sequence, function and FK: the plan named 11 objects and the catalog census showed exactly those 11 destroyed, while a control schema `keepme` appeared in neither set. SQLite case from the original report prints `DROP TABLE IF EXISTS \"users\"` and `DROP VIEW IF EXISTS \"v_const\"`. CE registers schema clean per cli-surface.md:44. Selectors were added under #951 from the Atlas-side CLI reference (`--exclude strings`, `--include strings` on schema clean); the pinned community binary v1.3.0 registers neither, measured by running the spelling (`--url` present, `--frobnicate-nonsense` missing as controls). On SQLite, selecting `users` drops it and leaves `audit_log`. On PostgreSQL, selected known dependents execute first, live catalog depth orders a selected `z_child` view before its selected `a_base` dependency, and every scoped DROP uses RESTRICT. A table selected without its dependent view or another table's foreign key fails and the scoped transaction leaves every object unchanged even when earlier selected drops ran. A narrowed plan executes only its reported statements via schemaclean.ApplyPlan rather than widening to DropAllTables. The unflagged path still calls DropAllTables and retains the full Ptah/Pro-like cleanup capability. Filed as stokaro/ptah#1704: the safety property is right and the diagnostic is not, since a user cannot enumerate the unselected dependents without querying the catalog themselves. Re-measured on master at 22cc26b5, 2026-08-20, with binaries built from it. The row's gap was the diagnostic, closed by #1704: a selection whose dependent is unselected used to surface `cannot drop table t because other objects depend on it (SQLSTATE 2BP01)` and now answers `scoped cleanup would leave dependents behind: view \"v\" depends on t. Add them to the selection so they are dropped together`, before the first statement. RESTRICT still cannot cascade outside the selection, which is the safety design the issue asked to keep, not an unfinished item."
   },
   {
-    "area": "Declarative / direct schema workflow",
+    "area": "Direct schema workflow",
     "feature": "`schema inspect --output`",
     "ptah": "yes",
     "atlas_oss": "no",
@@ -702,7 +702,7 @@
     "evidence": "Added under #951; Atlas-side source atlasgo.io/cli-reference (`-o, --output string  output file path` on schema inspect). The pinned community binary v1.3.0 does not register it, measured by running the spelling: `schema inspect --output f.hcl` -> `unknown flag`, with `--format` present and `--frobnicate-nonsense` missing as controls. Verified: long flag and `-o` both write the file, explicit `--format '{{ sql . }}'` decides what lands in it, stdout stays empty, an existing file is replaced rather than appended to, and an undirectory destination fails with `stage output file` instead of losing the inspection (cmd/atlas/internal/schematests/schema_inspect_output_test.go)"
   },
   {
-    "area": "Declarative / direct schema workflow",
+    "area": "Direct schema workflow",
     "feature": "`schema diff --export`",
     "ptah": "yes",
     "atlas_oss": "no",
@@ -711,7 +711,7 @@
     "evidence": "Decided under #951 rather than implemented: accepting it would emit the default diff and report an export that never happened, and leaving it unregistered would give a script no way to learn why its spelling did nothing. Atlas-side source atlasgo.io/cli-reference (`--export  use exporter defined in env` on schema diff and schema inspect). The pinned community binary v1.3.0 registers it on neither, measured by running the spelling, with `--format` present and `--frobnicate-nonsense` missing as controls. Verified: `ptah-compat schema diff --from ... --to ... --export` exits 1 naming the missing `exporter` block, before any config or database work (cmd/atlas/internal/schematests/schema_ui_flags_test.go). config/projectconfig tolerates an `exporter` block and evaluates nothing from it. The twin `schema inspect --export` carried the same verdict and was left unregistered by that batch of #951 Tracked by stokaro/ptah#1620, which asks for `exporter` blocks to be evaluated in the project config and selected by `--export` on both `schema diff` and `schema inspect`, or for a retained-divergence entry that survives its issue being closed - the current behavior was decided under stokaro/ptah#951, which is closed, so the reasoning has no owner. Closed by stokaro/ptah#1620. An exporter is a Go text/template over the same report --format renders, declared once by a top-level `exporter` block and chosen by an env's `exporter` attribute, so the flag needs no evaluator of its own -- it is --format with the template kept in the project instead of in every invocation. The alternative considered and rejected was a declarative description of output structure: a second language to learn, document and version, doing what the template surface already does. Registered on both verbs, closing the twin this row left open: a flag on one verb and not the other was the inconsistency the earlier batch flagged and deferred. Every way an export can fail to name a template refuses rather than emitting the ordinary report -- no project config, an env selecting none, an env naming one nothing declares, a block declaring no template, a name declared twice, and --export passed alongside --format -- because each of those would otherwise let an operator believe their exporter ran, which is what the registered refusal existed to prevent. Measured 2026-08-21: `schema diff --env local --export` renders the declared markdown template while the same command without the flag emits the default SQL, and `schema inspect --export` renders its own env's template."
   },
   {
-    "area": "Declarative / direct schema workflow",
+    "area": "Direct schema workflow",
     "feature": "Drift detection against desired schema",
     "ptah": "yes",
     "atlas_oss": "no",
@@ -720,7 +720,7 @@
     "evidence": "`ptah schema drift --help`; docs/site/src/content/docs/atlas/docs-coverage.md section \"Drift detection\". Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: 'Drift detection & alerts' is listed under the Schema Monitoring product, Starter ✗, with Schema Monitoring itself unavailable on Starter and priced $39/mo per monitored database on Pro — Atlas-side support for oss=no (no free-tier drift) and for pro=yes as paid Schema Monitoring, per the note's Cloud-scope caveat"
   },
   {
-    "area": "Declarative / direct schema workflow",
+    "area": "Direct schema workflow",
     "feature": "Go-template `--format` output",
     "ptah": "yes",
     "atlas_oss": "yes",
@@ -1593,7 +1593,7 @@
     "evidence": "`ptah schema security --db-url ...` connects, reads the schema through the same path `schema stats` uses, and reports findings with a code, a risk.Severity, the object they attach to, the values their suggestion names, and the suggestion. Measured against PostgreSQL 18 seeded with a grant to PUBLIC, a granted table with no row-level security, a SECURITY DEFINER routine and their negative counterparts: PRV01 on the granted table, PRV02 on the definer routine, PRV03 on the PUBLIC grant, and nothing on the table whose RLS is enabled, the INVOKER routine or the grant to a named role. PostgreSQL's shipped USAGE on schema public to PUBLIC is excluded by name, because a finding present in every database is one a reader learns to skip; CREATE on that schema is not excluded, since PostgreSQL 15 revoked it from PUBLIC by default. On a target that does not model row-level security the rule is listed as skipped with its reason rather than passing silently. --fail-on error|any|none decides the exit code, spelled as `ptah lint` spells it; measured 1 for any and 0 for error on that database, since no rule in this release is error-severity. Atlas's equivalent is the Security view of its commercial UI, observed on atlasgo.io/blog/2026/07/30/atlas-v1-3 (retrieved 2026-08-02): an object graph whose nodes carry findings with a code, a severity and a suggestion. The analysis half of that is local, which is why Ptah's own form is a verb rather than a service (stokaro/ptah#1035). Rules needing role membership or object ownership -- ROL01, ROL03, ROL04, OWN01 -- wait on core/goschema, which models neither, and attaching findings to `ptah viz` nodes is the follow-up Findings attach to `ptah viz --security` diagram nodes, drawn in the severity's color with the codes beside them; mermaid carries them as comments because erDiagram has no per-entity styling. Two more rules read the server's role graph, which the PostgreSQL reader now reports: ROL04 names a role that cannot log in and that nobody holds, and ROL03 names two roles held by one member that grant nearly the same privileges -- measured against a server where alice holds reader and analyst with identical grants (100% of the smaller set, reported) and where a role granted to nobody is reported while the login role and the two held roles are not. Both report themselves skipped where the role graph was not read, which is what separates a clean report from an unasked question The role graph is read from pg_auth_members on the PostgreSQL family, mysql.role_edges on MySQL and mysql.roles_mapping on MariaDB; measured on PostgreSQL 18, MySQL 8.4 and MariaDB 11.8 seeded identically, all three report the same two findings. An admin-option edge is not counted as somebody holding the role, because CREATE ROLE on MariaDB writes one from the creator by itself -- counting it made ROL04 unable to fire there and made ROL03 name the creator on every server OWN01 reports one finding per role that can log in and owns objects, aggregated rather than one row per object because PostgreSQL makes the creating role the owner and a per-object rule would bury every other finding; the owner's login flag is read from pg_roles beside the owner, so the rule answers where the owner is a role Ptah does not describe. Measured on PostgreSQL 18: a table owned by a NOLOGIN role and the public schema owned by pg_database_owner are not reported, and the one table owned by the connecting login role is SQL Server reads the same two facts from sys.database_role_members and sys.objects/sys.schemas, with the fixed roles and public excluded on the role side and ownership resolved through the schema for an object that has no owner of its own; measured on SQL Server 2025, all four rules report there. MySQL has no object owner to read, so OWN01 reports itself skipped rather than answering from a concept the engine lacks (internal/schemasecurity/schemasecurity.go, cmd/schema/security.go, internal/dbschema/postgres/reader.go, internal/dbschema/mysql/roles.go, internal/dbschema/mssql/reader.go)."
   },
   {
-    "area": "Declarative and direct schema changes",
+    "area": "Direct schema changes",
     "feature": "JSON output for native schema diff",
     "ptah": "yes",
     "atlas_oss": "na",
@@ -1647,7 +1647,7 @@
     "evidence": "`ptah migrations show --migrations-dir <dir> --version N` writes the migration's bytes to standard output unchanged, adding no trailing newline of its own; repeating `--version` prints several bodies in the order asked for, separated by a blank line, with a repeat printed once, and `--direction down` selects the reverse half of a Ptah pair. Every requested version is located before anything is printed, so a run naming one missing version prints nothing. `ptah-compat migrate show 20240101000000 20240102000000 --dir file://<dir>` forwards each positional as its own `--version`. Gated by cmd/migrateshow/migrateshow_test.go and cmd/atlas/internal/migratetests/migrate_read_verbs_test.go."
   },
   {
-    "area": "Declarative and direct schema changes",
+    "area": "Direct schema changes",
     "feature": "Verb `schema validate`",
     "ptah": "yes",
     "atlas_oss": "no",
@@ -1656,7 +1656,7 @@
     "evidence": "Verified: /tmp/c-compat schema validate -> 'unknown command'; /tmp/c-ptah schema render --help exists; comparison.md gap register 'Verbs beyond the CE pin'; absent from cli-surface.md inventory. Measured 2026-08-01, CE v1.2.0 (scratch env): `atlas schema validate` falls through to the parent group help, exit 0 - never registered, distinct from the community-abort stubs. `atlas schema validate` exists in Atlas (measured; observation study, scenario, verbs-and-flags) Filed as stokaro/ptah#1711 together with schema stats: both were triaged in the gap register and neither had an issue. Closed by stokaro/ptah#1711: internal/schemavalidate collects problems instead of stopping at the first, and adds the checks the renderer never made. Measured 2026-08-20 on master before the change: `CREATE INDEX i ON orders (nosuchcolumn)` rendered and exited 0, and so did an index naming a table no declaration defines; a dangling foreign key was caught but only after the dependency and creation-order output the caller has to read past, and only the first fault of any kind was reported. After: `schema validate --schema-file s.sql --dialect postgres` prints one line per fault and exits 1, prints nothing and exits 0 on a clean schema, and exits 2 for a usage error, so a pre-commit hook can use the status alone. --dialect is repeatable and each target answers under its own name. The check also catches an index left pointing at a materialized view scoped away from the target, which the renderer emits as CREATE INDEX ... ON `Struct` -- the shape stokaro/ptah#1725 found on the render side. The compat verb carries the native flag set, because the pinned community binary v1.3.0 registers no such verb to take one from, and it is community-gated under PTAH_ATLAS_STRICT_COMPAT beside plan, push and test."
   },
   {
-    "area": "Declarative and direct schema changes",
+    "area": "Direct schema changes",
     "feature": "Verb `schema stats`",
     "ptah": "yes",
     "atlas_oss": "no",

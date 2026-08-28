@@ -31,7 +31,7 @@ const BANNED = /\b(simply|easily|just|seamless|powerful|blazing|effortless|cutti
 // Reader-facing section order, folding the audit's fine-grained area labels.
 const AREA_MAP = [
   ['Schema sources', ['schema sources', 'go-first modeling']],
-  ['Declarative and direct schema changes', ['declarative', 'schema inspection filters']],
+  ['Direct schema changes', ['direct schema', 'schema inspection filters']],
   ['Versioned migrations', ['versioned migrations', 'migration directory formats', 'migration import']],
   ['Linting and safety', ['lint', 'migration linting', 'safety gates']],
   ['Testing', ['test frameworks', 'testing framework', 'verification and contracts', 'testing']],
@@ -81,9 +81,9 @@ const AREAS = new Set([
   'Data and distribution',
   'Data management',
   'Database engines',
-  'Declarative / direct schema workflow',
-  'Declarative and direct schema changes',
   'Dev databases',
+  'Direct schema changes',
+  'Direct schema workflow',
   'Editor tooling',
   'Go embedding',
   'Go embedding and developer tooling',

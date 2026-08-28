@@ -24,6 +24,8 @@
     "check:route-retirement:selftest": "node scripts/check-route-retirement.mjs --selftest",
     "check:style": "node scripts/check-style.mjs",
     "check:style:selftest": "node scripts/check-style.mjs --selftest",
+    "check:terminology": "node scripts/check-terminology.mjs",
+    "check:terminology:selftest": "node scripts/check-terminology.mjs --selftest",
     "check:limitations": "node scripts/check-limitations.mjs",
     "check:limitations:selftest": "node scripts/check-limitations.mjs --selftest",
     "check:responsive": "node scripts/check-responsive.mjs",

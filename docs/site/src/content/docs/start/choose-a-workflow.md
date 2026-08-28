@@ -62,6 +62,8 @@ hand-written half of this loop end to end.
 
 ### Direct schema changes
 
+If you arrived looking for a "declarative" workflow, this is it. Ptah does not use that word as the name, because `ptah migrations generate` reads the same desired schema and is not in this group: "declarative" names where a change came from, not how it lands. [Direct schema changes](../../direct/overview/) sets out the distinction.
+
 Native commands cover the whole loop: `ptah db read` prints a live schema, `ptah schema compare` shows how it differs from the desired schema, `ptah schema drift` turns that difference into a check that exits non-zero when the database has diverged, and `ptah schema apply` applies the planned change directly.
 
 ```bash

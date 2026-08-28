@@ -154,7 +154,7 @@ func executeWithRecovery(cmd *cobra.Command) (err error) {
 // what the conformance evidence proves, and the conformance page says in as
 // many words that green reports do not prove it.
 const rootLongDescription = `Ptah helps you inspect, define, compare, visualize,
-test, and change database schemas. Use versioned migrations, declarative schema
+test, and change database schemas. Use versioned migrations, direct schema
 changes, or both, across supported databases.
 
 Run "ptah db capabilities --db-url <url>" to see what Ptah resolves for a

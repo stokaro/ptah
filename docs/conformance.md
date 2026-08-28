@@ -153,7 +153,7 @@ The Atlas-compatible test verbs run Ptah-native YAML/Go test cases; Atlas
 **Evidence.** Unit tests over live SQLite cover verification success and pre-target abort on both paths, report rendering (including partial-failure reports), waiver rejections, non-interactive execution with EOF stdin, rejection of the non-Atlas `--confirm` flag, byte-identical execution output against a pre-approved native run, and revision-format regressions proving a bare `ptah-compat migrate down` reverts revisions written by `ptah-compat migrate apply` while an explicit ptah override leaves them untouched. A subprocess test runs the built `ptah-compat` binary with EOF stdin and checks the SQLite end state.
 
 
-### Pre-approved declarative plans
+### Pre-approved direct schema plans
 
 **Native Ptah.** Ptah plans and applies direct schema changes through the same `internal/atlasschema` engine that powers `schema apply`.
 
