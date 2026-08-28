@@ -136,6 +136,12 @@
       "claimed_by": "docs/site/src/content/docs/operate/inference-migrations.md"
     },
     {
+      "id": "cli-ptah-inference-index",
+      "kind": "native-verb",
+      "surface": "ptah inference index",
+      "claimed_by": null
+    },
+    {
       "id": "cli-ptah-inference-plan",
       "kind": "native-verb",
       "surface": "ptah inference plan",
