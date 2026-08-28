@@ -1344,10 +1344,13 @@ func (p *Planner) plannedUserTypes(
 			// emitted, so there is nothing to put back.
 			continue
 		}
-		if domain := findDomain(desired.Domains, domainDiff.DomainName, semantics); domain != nil {
+		// The domain travels WITH the change (stokaro/ptah#2315). An empty one
+		// is a change whose object could not be resolved, and dropModifiedUserTypes
+		// withheld the drop for it, so there is nothing to put back.
+		if domain := domainDiff.Desired; domain.Name != "" {
 			planned = append(planned, plannedUserType{
 				dep:  deporder.UserType{Name: domainDiff.DomainName, References: []string{domain.BaseType}},
-				node: fromschema.FromDomain(*domain).SetComment(fmt.Sprintf("Recreate domain %s", domainDiff.DomainName)),
+				node: fromschema.FromDomain(domain).SetComment(fmt.Sprintf("Recreate domain %s", domainDiff.DomainName)),
 			})
 		}
 	}
@@ -1357,10 +1360,10 @@ func (p *Planner) plannedUserTypes(
 			// emitted, so there is nothing to put back.
 			continue
 		}
-		if composite := findCompositeType(desired.CompositeTypes, compositeDiff.TypeName, semantics); composite != nil {
+		if composite := compositeDiff.Desired; composite.Name != "" {
 			planned = append(planned, plannedUserType{
-				dep:  deporder.UserType{Name: compositeDiff.TypeName, References: compositeFieldTypes(*composite)},
-				node: fromschema.FromCompositeType(*composite).SetComment(fmt.Sprintf("Recreate composite type %s", compositeDiff.TypeName)),
+				dep:  deporder.UserType{Name: compositeDiff.TypeName, References: compositeFieldTypes(composite)},
+				node: fromschema.FromCompositeType(composite).SetComment(fmt.Sprintf("Recreate composite type %s", compositeDiff.TypeName)),
 			})
 		}
 	}
@@ -1368,10 +1371,10 @@ func (p *Planner) plannedUserTypes(
 	// the same drop-and-recreate path domains and composites already use
 	// (stokaro/ptah#931 item 2).
 	for _, rangeDiff := range diff.RangesModified {
-		if rangeType := findRange(desired.Ranges, rangeDiff.RangeName, semantics); rangeType != nil {
+		if rangeType := rangeDiff.Desired; rangeType.Name != "" {
 			planned = append(planned, plannedUserType{
 				dep:  deporder.UserType{Name: rangeDiff.RangeName, References: []string{rangeType.Subtype}},
-				node: fromschema.FromRange(*rangeType).SetComment(fmt.Sprintf("Recreate range type %s", rangeDiff.RangeName)),
+				node: fromschema.FromRange(rangeType).SetComment(fmt.Sprintf("Recreate range type %s", rangeDiff.RangeName)),
 			})
 		}
 	}
@@ -1439,12 +1442,7 @@ func (p *Planner) removeUserTypes(result []ast.Node, diff *difftypes.SchemaDiff)
 // in the cases it can. Where the definition still does not resolve, the pair is
 // withheld and a comment says so: a type Ptah cannot rebuild is a type Ptah must
 // not drop.
-func (p *Planner) dropModifiedUserTypes(
-	result []ast.Node,
-	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
-) []ast.Node {
-	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
+func (p *Planner) dropModifiedUserTypes(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	rebuilt := rebuiltUserTypes(diff)
 	byName := make(map[string]ast.Node, len(diff.DomainsModified)+len(diff.CompositeTypesModified))
 	deps := make([]deporder.UserType, 0, len(diff.DomainsModified)+len(diff.CompositeTypesModified))
@@ -1457,7 +1455,7 @@ func (p *Planner) dropModifiedUserTypes(
 			// any domain a column uses.
 			continue
 		}
-		if findDomain(desired.Domains, domainDiff.DomainName, semantics) == nil {
+		if domainDiff.Desired.Name == "" {
 			unresolved = append(unresolved, unrecreatableUserTypeComment("domain", domainDiff.DomainName))
 			continue
 		}
@@ -1472,7 +1470,7 @@ func (p *Planner) dropModifiedUserTypes(
 			// table column uses, which is the case the ALTER exists for.
 			continue
 		}
-		if findCompositeType(desired.CompositeTypes, compositeDiff.TypeName, semantics) == nil {
+		if compositeDiff.Desired.Name == "" {
 			unresolved = append(unresolved, unrecreatableUserTypeComment("composite type", compositeDiff.TypeName))
 			continue
 		}
@@ -1481,7 +1479,7 @@ func (p *Planner) dropModifiedUserTypes(
 		deps = append(deps, deporder.UserType{Name: compositeDiff.TypeName, References: compositeDiff.CurrentFieldTypes})
 	}
 	for _, rangeDiff := range diff.RangesModified {
-		if findRange(desired.Ranges, rangeDiff.RangeName, semantics) == nil {
+		if rangeDiff.Desired.Name == "" {
 			unresolved = append(unresolved, unrecreatableUserTypeComment("range type", rangeDiff.RangeName))
 			continue
 		}
@@ -1503,7 +1501,7 @@ func (p *Planner) dropModifiedUserTypes(
 // schema does not hold, in place of the DROP that would have had no recreate.
 func unrecreatableUserTypeComment(kind, name string) ast.Node {
 	return ast.NewComment(fmt.Sprintf(
-		"WARNING: %s %s changed, but the target definition was not found in the schema; "+
+		"WARNING: %s %s changed, but the change carries no definition to recreate it from; "+
 			"neither DROP nor CREATE emitted, manual migration required",
 		kind,
 		name,
@@ -1529,22 +1527,6 @@ func currentRangeReferences(rangeDiff difftypes.RangeDiff) []string {
 		return nil
 	}
 	return []string{rangeDiff.CurrentSubtype}
-}
-
-func findDomain(domains []schemamodel.Domain, name string, semantics identifier.Semantics) *schemamodel.Domain {
-	return objectlookup.Qualified(domains, name, semantics)
-}
-
-func findCompositeType(
-	composites []schemamodel.CompositeType,
-	name string,
-	semantics identifier.Semantics,
-) *schemamodel.CompositeType {
-	return objectlookup.Qualified(composites, name, semantics)
-}
-
-func findRange(ranges []schemamodel.Range, name string, semantics identifier.Semantics) *schemamodel.Range {
-	return objectlookup.Qualified(ranges, name, semantics)
 }
 
 // GenerateMigrationAST generates PostgreSQL-specific migration AST statements from schema differences.
@@ -1665,20 +1647,19 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 	if err != nil {
 		return nil, err
 	}
-	// Row-level security references are validated with the indexes, before any
-	// node is emitted, for the reason the index resolver is: a reference the
-	// target schema cannot resolve used to be skipped, so the plan came back
-	// successful with an access-control operation missing from it
-	// (stokaro/ptah#1311). Validating the diff as it arrived, ahead of the skip
-	// policy below, means a malformed reference is refused even when the policy
-	// would have removed it -- the diff is either coherent or it is not.
-	policies, err := rlsscope.NewResolverWithSemantics(
-		p.targetDialect(),
-		semantics,
-		diff,
-		desired,
-	)
-	if err != nil {
+	// Row-level security entries are validated before any node is emitted, for
+	// the reason they always were: an entry the plan could not render used to be
+	// skipped, so the plan came back successful with an access-control operation
+	// missing from it (stokaro/ptah#1311). Validating the diff as it arrived,
+	// ahead of the skip policy below, means a malformed reference is refused
+	// even when the policy would have removed it -- the diff is either coherent
+	// or it is not.
+	//
+	// It reads the diff and nothing else now: every policy travels with its
+	// entry, and the one thing the entries cannot show -- two declarations that
+	// resolved to one identity -- is recorded by the comparison for this check
+	// to find (stokaro/ptah#2440).
+	if err := rlsscope.Validate(p.targetDialect(), diff); err != nil {
 		return nil, err
 	}
 
@@ -1708,7 +1689,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 	// 2b. Modify existing function definitions (body, volatility, security, language).
 	// PostgreSQL CREATE OR REPLACE FUNCTION updates the live definition in place
 	// without affecting policies or triggers that reference the function.
-	result = p.modifyExistingFunctions(result, diff, desired)
+	result = p.modifyExistingFunctions(result, diff)
 
 	// 2c. Add new sequences before tables, since a table column may draw its
 	// DEFAULT from a sequence. OWNED BY is applied later, after tables exist.
@@ -1719,15 +1700,15 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 
 	// 3c. Recreate changed user-defined types (drop then create), then create
 	// new domains/ranges/composites before tables can reference them.
-	result = p.dropModifiedUserTypes(result, diff, desired)
+	result = p.dropModifiedUserTypes(result, diff)
 	result = p.addNewUserTypes(result, diff, desired)
 
 	// 3d. Change in place the domains that need no rebuild. It follows the
 	// creations so that a domain added in this same plan is not also altered,
 	// and it stays ahead of the tables, whose columns take their default and
 	// their constraint from the domain as it is when the column is created.
-	result = p.alterModifiedDomains(result, diff, desired)
-	result = p.alterModifiedCompositeTypes(result, diff, desired)
+	result = p.alterModifiedDomains(result, diff)
+	result = p.alterModifiedCompositeTypes(result, diff)
 
 	// 4. Modify existing enums
 	result = p.modifyExistingEnums(result, diff, desired)
@@ -1744,20 +1725,20 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 	// 6.7. Associate added sequences with their owning table.column and apply
 	// option changes to existing sequences, now that tables exist.
 	result = p.addSequenceOwnership(result, diff, desired)
-	result = p.modifyExistingSequences(result, diff, desired)
+	result = p.modifyExistingSequences(result, diff)
 
 	// 6.6. Add and modify views, materialized views, and triggers after their tables/functions exist.
 	result = p.addNewViewLikeObjects(result, diff, desired)
 	result = p.modifyExistingViews(result, diff, desired)
-	result = p.retargetSynonyms(result, diff, desired)
+	result = p.retargetSynonyms(result, diff)
 	result = p.addNewSynonyms(result, diff)
 	result = p.addNewHypertables(result, diff)
 	result = p.addNewContinuousAggregates(result, diff)
 	result = p.modifyExistingContinuousAggregates(result, diff)
 	result = p.addExtendedProperties(result, diff)
-	result = p.modifyExistingMaterializedViews(result, diff, desired)
-	result = p.addNewTriggers(result, diff, desired)
-	result = p.modifyExistingTriggers(result, diff, desired)
+	result = p.modifyExistingMaterializedViews(result, diff)
+	result = p.addNewTriggers(result, diff)
+	result = p.modifyExistingTriggers(result, diff)
 
 	// 7. Modify existing roles (must be done before RLS policies that reference them)
 	result = p.modifyExistingRoles(result, diff)
@@ -1767,14 +1748,14 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 	result = p.revokeGrantOptions(result, diff)
 
 	// 8. Enable RLS on tables (must be done after table creation and modification)
-	result = p.enableRLSOnTables(result, diff, desired, semantics)
+	result = p.enableRLSOnTables(result, diff, semantics)
 
 	// 9. Add RLS policies (must be done after RLS is enabled and columns exist)
-	result, err = p.addNewRLSPolicies(result, diff, policies)
+	result, err = p.addNewRLSPolicies(result, diff)
 	if err != nil {
 		return nil, err
 	}
-	result, err = p.modifyExistingRLSPolicies(result, diff, policies)
+	result, err = p.modifyExistingRLSPolicies(result, diff)
 	if err != nil {
 		return nil, err
 	}
@@ -2103,23 +2084,18 @@ func (p *Planner) addNewFunctions(result []ast.Node, diff *difftypes.SchemaDiff,
 	return result
 }
 
-func (p *Planner) modifyExistingFunctions(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
+func (p *Planner) modifyExistingFunctions(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	// The definition travels WITH the change (stokaro/ptah#2315). Without it
+	// there is no faithful CREATE OR REPLACE to emit -- the change map records
+	// what differs, never the whole body and attribute set -- so a change
+	// carrying none is skipped.
 	for _, fnDiff := range diff.FunctionsModified {
-		// Find the target function definition. Without it we can't emit a
-		// faithful CREATE OR REPLACE, so skip silently (the diff alone would
-		// not tell us the new body/attributes).
-		var target *schemamodel.Function
-		for i := range desired.Functions {
-			if desired.Functions[i].Name == fnDiff.FunctionName {
-				target = &desired.Functions[i]
-				break
-			}
-		}
-		if target == nil {
+		target := fnDiff.Desired
+		if target.Name == "" {
 			continue
 		}
 
-		functionNode := fromschema.FromFunction(*target)
+		functionNode := fromschema.FromFunction(target)
 		functionNode.SetComment(fmt.Sprintf("Modify function %s: %s", target.Name, summarizeFunctionChanges(fnDiff)))
 		result = append(result, functionNode)
 	}
@@ -2171,16 +2147,6 @@ func (p *Planner) removeFunctions(result []ast.Node, diff *difftypes.SchemaDiff)
 	return result
 }
 
-// findSequence returns the generated sequence the diff entry names, under the
-// identifier rules of the target dialect.
-func findSequence(
-	sequences []schemamodel.Sequence,
-	name string,
-	semantics identifier.Semantics,
-) *schemamodel.Sequence {
-	return objectlookup.Qualified(sequences, name, semantics)
-}
-
 // addNewSequences emits CREATE SEQUENCE for newly added sequences. The OWNED BY
 // association is deliberately omitted here and emitted later by
 // addSequenceOwnership, because a sequence referenced by a column DEFAULT must
@@ -2214,14 +2180,15 @@ func (p *Planner) addSequenceOwnership(result []ast.Node, diff *difftypes.Schema
 
 // modifyExistingSequences emits ALTER SEQUENCE for sequences whose options
 // changed. Only the changed options (per the diff) are emitted.
-func (p *Planner) modifyExistingSequences(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
-	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
+func (p *Planner) modifyExistingSequences(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	// The sequence travels WITH the change; the change map names the options
+	// that moved and this carries their values (stokaro/ptah#2315).
 	for _, sequenceDiff := range diff.SequencesModified {
-		sequence := findSequence(desired.Sequences, sequenceDiff.SequenceName, semantics)
-		if sequence == nil {
+		sequence := sequenceDiff.Desired
+		if sequence.Name == "" {
 			continue
 		}
-		node := alterSequenceFromDiff(*sequence, sequenceDiff.Changes)
+		node := alterSequenceFromDiff(sequence, sequenceDiff.Changes)
 		node.SetComment(fmt.Sprintf("Modify sequence %s: %s", sequenceDiff.SequenceName, summarizeSequenceChanges(sequenceDiff)))
 		result = append(result, node)
 	}
@@ -2526,12 +2493,14 @@ func (p *Planner) removeViews(result []ast.Node, diff *difftypes.SchemaDiff) []a
 	return result
 }
 
-func (p *Planner) modifyExistingMaterializedViews(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
-	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
+func (p *Planner) modifyExistingMaterializedViews(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	// The view travels WITH the change (stokaro/ptah#2315). A change carrying
+	// none names a view the pre-change database did not hold, and there is
+	// nothing to recreate.
 	for _, viewDiff := range diff.MaterializedViewsModified {
-		if view := findMaterializedView(desired.MaterializedViews, viewDiff.ViewName, semantics); view != nil {
+		if view := viewDiff.Desired; view.Name != "" {
 			result = append(result, ast.NewDropMaterializedView(view.Name).SetIfExists().SetCascade())
-			result = append(result, fromschema.FromMaterializedView(*view))
+			result = append(result, fromschema.FromMaterializedView(view))
 		}
 	}
 	return result
@@ -2681,14 +2650,16 @@ func (p *Planner) addNewSynonyms(result []ast.Node, diff *difftypes.SchemaDiff) 
 
 // retargetSynonyms drops and recreates a synonym whose target changed, in that
 // order, because no dialect has an ALTER SYNONYM to do it in one statement.
-func (p *Planner) retargetSynonyms(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
+func (p *Planner) retargetSynonyms(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	// The synonym travels WITH the change (stokaro/ptah#2315). The two target
+	// strings are the change; the create needs the object.
 	for _, synonymDiff := range diff.SynonymsModified {
-		synonym := findSynonym(desired.Synonyms, synonymDiff.SynonymName)
-		if synonym == nil {
+		synonym := synonymDiff.Desired
+		if synonym.Name == "" {
 			continue
 		}
 		result = append(result, ast.NewDropSynonym(synonymDiff.SynonymName).SetIfExists())
-		result = append(result, fromschema.FromSynonym(*synonym))
+		result = append(result, fromschema.FromSynonym(synonym))
 	}
 	return result
 }
@@ -2745,31 +2716,21 @@ func extendedPropertyNode(
 		SetValue(ref.Value)
 }
 
-// findSynonym returns the declared synonym with the given qualified name.
-func findSynonym(synonyms []schemamodel.Synonym, name string) *schemamodel.Synonym {
-	for i := range synonyms {
-		if synonyms[i].QualifiedName() == name {
-			return &synonyms[i]
-		}
-	}
-	return nil
-}
-
-func (p *Planner) addNewTriggers(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
-	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
+func (p *Planner) addNewTriggers(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	// The definition travels WITH the entry (stokaro/ptah#2315). An entry
+	// carrying none names a trigger nothing can render, so it plans nothing.
 	for _, triggerRef := range diff.TriggersAdded {
-		if trigger := findTrigger(desired.Triggers, triggerRef.TableName, triggerRef.TriggerName, semantics); trigger != nil {
-			result = append(result, fromschema.FromTrigger(*trigger))
+		if triggerRef.Desired.Name != "" {
+			result = append(result, fromschema.FromTrigger(triggerRef.Desired))
 		}
 	}
 	return result
 }
 
-func (p *Planner) modifyExistingTriggers(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
-	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
+func (p *Planner) modifyExistingTriggers(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, triggerDiff := range diff.TriggersModified {
-		if trigger := findTrigger(desired.Triggers, triggerDiff.TableName, triggerDiff.TriggerName, semantics); trigger != nil {
-			result = append(result, fromschema.FromTrigger(*trigger).SetReplace())
+		if triggerDiff.Desired.Name != "" {
+			result = append(result, fromschema.FromTrigger(triggerDiff.Desired).SetReplace())
 		}
 	}
 	return result
@@ -2798,14 +2759,6 @@ func findMaterializedView(
 	return objectlookup.MaterializedView(views, name, semantics)
 }
 
-func findTrigger(
-	triggers []schemamodel.Trigger,
-	tableName, triggerName string,
-	semantics identifier.Semantics,
-) *schemamodel.Trigger {
-	return objectlookup.Trigger(triggers, tableName, triggerName, semantics)
-}
-
 // enableRLSOnTables emits ALTER TABLE ... ENABLE ROW LEVEL SECURITY.
 //
 // Two sources feed it, and both are needed.
@@ -2821,6 +2774,11 @@ func findTrigger(
 // declare a policy without a separate enablement annotation, and CREATE POLICY
 // on a table whose row-level security is off protects nothing, so the
 // enablement is emitted with the table rather than left to the operator.
+//
+// That second source is read off the DIFF rather than off the desired schema
+// (stokaro/ptah#2315). The two are the same set here: a policy on a table this
+// plan creates cannot already exist, so it is an addition, and a policy on an
+// existing table is skipped by the isNew test either way.
 //
 // Which table a policy belongs to is decided under the target's identifier
 // semantics, the same rules [addNewRLSPolicies] resolves the policy itself
@@ -2841,7 +2799,6 @@ func findTrigger(
 func (p *Planner) enableRLSOnTables(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
 	semantics identifier.Semantics,
 ) []ast.Node {
 	tablesNeedingRLS := make(map[string]string)
@@ -2851,7 +2808,7 @@ func (p *Planner) enableRLSOnTables(
 			tablesNeedingRLS[key] = tableName
 		}
 	}
-	for _, tableName := range diff.RLSEnabledTablesAdded {
+	for _, tableName := range diff.RLSEnabledTablesAdded.Names() {
 		rememberTable(tableName)
 	}
 
@@ -2862,8 +2819,8 @@ func (p *Planner) enableRLSOnTables(
 			addedTables[key] = tableName
 		}
 	}
-	for _, policy := range desired.RLSPolicies {
-		addedTable, isNew := addedTables[semantics.QualifiedTableIdentityKey(policy.Table)]
+	for _, policy := range diff.RLSPoliciesAdded {
+		addedTable, isNew := addedTables[semantics.QualifiedTableIdentityKey(policy.TableName)]
 		if !isNew {
 			continue
 		}
@@ -2899,7 +2856,7 @@ func (p *Planner) disableRLSOnTables(result []ast.Node, diff *difftypes.SchemaDi
 	}
 
 	tablesToDisable := make(map[string]bool)
-	for _, tableName := range diff.RLSEnabledTablesRemoved {
+	for _, tableName := range diff.RLSEnabledTablesRemoved.Names() {
 		if droppedTables[tableName] {
 			continue
 		}
@@ -2943,15 +2900,31 @@ func (p *Planner) disableRLSOnTables(result []ast.Node, diff *difftypes.SchemaDi
 // An unresolved reference is an error rather than a skip. A plan that omits a
 // CREATE POLICY and still reports success leaves the database without the
 // protection the migration was generated to add (stokaro/ptah#1311).
+// unrenderableRLSPolicy refuses an entry that names a policy and carries no
+// declaration to build it from.
+//
+// It is a refusal rather than a skip for the reason the whole family is: the
+// only alternative is emitting no statement, and a plan that silently drops an
+// access-control operation reports success while leaving the database
+// unprotected (stokaro/ptah#1311).
+func unrenderableRLSPolicy(operation, policyName, tableName string) error {
+	return fmt.Errorf(
+		"%w: %s RLS policy %s on table %s carries no declaration to render it from",
+		ptaherr.ErrInvalidSchemaDiff,
+		operation,
+		policyName,
+		tableName,
+	)
+}
+
 func (p *Planner) addNewRLSPolicies(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
-	policies *rlsscope.Resolver,
 ) ([]ast.Node, error) {
 	for _, policyRef := range diff.RLSPoliciesAdded {
-		policy, err := policies.Resolve(policyRef)
-		if err != nil {
-			return nil, err
+		policy := policyRef.Desired
+		if policy.Name == "" {
+			return nil, unrenderableRLSPolicy("added", policyRef.PolicyName, policyRef.TableName)
 		}
 		policyNode := fromschema.FromRLSPolicy(policy)
 		// Set Replace flag to handle conflicts gracefully during migrations
@@ -2961,28 +2934,26 @@ func (p *Planner) addNewRLSPolicies(
 	return result, nil
 }
 
-// modifyExistingRLSPolicies re-renders each modified policy from the schema the
-// plan is targeting, through the same resolver [addNewRLSPolicies] uses.
+// modifyExistingRLSPolicies re-renders each modified policy from the
+// declaration the change carries.
 //
-// The two sides of a modification do not spell the owning table the same way.
-// The comparator normalizes `orders` and `public.orders` to one table and then
+// It used to resolve the name against the schema the plan was targeting, and
+// the two sides of a modification do not spell the owning table the same way:
+// the comparator normalizes `orders` and `public.orders` to one table and then
 // reports the DESIRED side's spelling, while a rollback plans against the
 // INTROSPECTED schema, whose policy carries the database's spelling. A
-// raw-string lookup therefore found nothing on the down direction and the
-// generated rollback was `-- No rollback operations needed`: a policy body
-// changed on the way up and nothing put it back (stokaro/ptah#1311).
+// raw-string lookup found nothing on the down direction and the generated
+// rollback was `-- No rollback operations needed` (stokaro/ptah#1311). The
+// operand travels with the change now, so there is no spelling left to
+// reconcile here.
 func (p *Planner) modifyExistingRLSPolicies(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
-	policies *rlsscope.Resolver,
 ) ([]ast.Node, error) {
 	for _, policyDiff := range diff.RLSPoliciesModified {
-		policy, err := policies.Resolve(difftypes.RLSPolicyRef{
-			PolicyName: policyDiff.PolicyName,
-			TableName:  policyDiff.TableName,
-		})
-		if err != nil {
-			return nil, err
+		policy := policyDiff.Desired
+		if policy.Name == "" {
+			return nil, unrenderableRLSPolicy("modified", policyDiff.PolicyName, policyDiff.TableName)
 		}
 		policyNode := fromschema.FromRLSPolicy(policy).SetReplace()
 		policyNode.SetComment(fmt.Sprintf("Modify RLS policy %s on table %s: %s",

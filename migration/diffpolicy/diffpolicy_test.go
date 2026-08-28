@@ -86,7 +86,7 @@ func TestApplyDropTableRemovesDependents(t *testing.T) {
 			{PolicyName: "p_users", TableName: "users"},
 			{PolicyName: "p_orders", TableName: "orders"},
 		},
-		RLSEnabledTablesRemoved: []string{"users", "orders"},
+		RLSEnabledTablesRemoved: difftypes.RLSEnabledTableChanges{{Table: "users"}, {Table: "orders"}},
 		GrantsRemoved: []difftypes.GrantRef{
 			{Role: "app", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "users"},
 			{Role: "app", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "orders"},
@@ -108,7 +108,7 @@ func TestApplyDropTableRemovesDependents(t *testing.T) {
 	c.Assert(got.TriggersRemoved[0].TableName, qt.Equals, "orders")
 	c.Assert(got.RLSPoliciesRemoved, qt.HasLen, 1)
 	c.Assert(got.RLSPoliciesRemoved[0].TableName, qt.Equals, "orders")
-	c.Assert(got.RLSEnabledTablesRemoved, qt.DeepEquals, []string{"orders"})
+	c.Assert(got.RLSEnabledTablesRemoved.Names(), qt.DeepEquals, []string{"orders"})
 	c.Assert(got.GrantsRemoved, qt.HasLen, 2)
 
 	c.Assert(skipped, qt.HasLen, 1)

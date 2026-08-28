@@ -92,7 +92,8 @@ func applyDiffPolicy(diff *difftypes.SchemaDiff, policy DiffPolicy) *difftypes.S
 	filtered.RLSPoliciesRemoved = slices.DeleteFunc(slices.Clone(filtered.RLSPoliciesRemoved), func(ref difftypes.RLSPolicyRef) bool {
 		return hasTable(removedTables, ref.TableName)
 	})
-	filtered.RLSEnabledTablesRemoved = slices.DeleteFunc(slices.Clone(filtered.RLSEnabledTablesRemoved), func(name string) bool {
+	filtered.RLSEnabledTablesRemoved = slices.DeleteFunc(slices.Clone(filtered.RLSEnabledTablesRemoved), func(table schemamodel.RLSEnabledTable) bool {
+		name := table.Table
 		return hasTable(removedTables, name)
 	})
 	filtered.GrantsRemoved = slices.DeleteFunc(slices.Clone(filtered.GrantsRemoved), func(ref difftypes.GrantRef) bool {

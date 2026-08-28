@@ -175,10 +175,10 @@ func (p *Planner) reportUnsupportedRowLevelSecurity(result []ast.Node, diff *dif
 		// would put a skip comment beside the statement it says was skipped.
 		return result
 	}
-	for _, table := range diff.RLSEnabledTablesAdded {
+	for _, table := range diff.RLSEnabledTablesAdded.Names() {
 		result = append(result, ast.NewAlterTableEnableRLS(table))
 	}
-	for _, table := range diff.RLSEnabledTablesRemoved {
+	for _, table := range diff.RLSEnabledTablesRemoved.Names() {
 		result = append(result, ast.NewAlterTableDisableRLS(table))
 	}
 	for _, policy := range diff.RLSPoliciesAdded {
@@ -224,8 +224,8 @@ func (p *Planner) planFunctions(result []ast.Node, diff *difftypes.SchemaDiff, d
 		result = append(result, fromschema.FromFunction(routine.Function))
 	}
 	for _, fnDiff := range diff.FunctionsModified {
-		fn, ok := findGeneratedFunction(desired, fnDiff.FunctionName)
-		if !ok {
+		fn := fnDiff.Desired
+		if fn.Name == "" {
 			continue
 		}
 		changes := strings.Join(slices.Sorted(maps.Keys(fnDiff.Changes)), ", ")
@@ -277,18 +277,6 @@ func (p *Planner) planFunctions(result []ast.Node, diff *difftypes.SchemaDiff, d
 			SetComment("WARNING: Ensure no other objects depend on this procedure"))
 	}
 	return result
-}
-
-// findGeneratedFunction returns the desired definition the diff entry names.
-// The diff carries names only, so without the definition there is no faithful
-// CREATE to emit.
-func findGeneratedFunction(desired *schemamodel.Database, name string) (schemamodel.Function, bool) {
-	for _, fn := range desired.Functions {
-		if fn.Name == name {
-			return fn, true
-		}
-	}
-	return schemamodel.Function{}, false
 }
 
 // routineWord names the object a plan comment is about, so a comment on a

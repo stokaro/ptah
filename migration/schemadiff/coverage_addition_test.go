@@ -115,9 +115,11 @@ func TestAPolicyAdditionSurvivesAReadThatDidNotLook(t *testing.T) {
 
 	diff, undecided := schemadiff.CompareReportingUndecidedAdditions(desired, database, nil)
 
-	c.Assert(diff.RLSPoliciesAdded, qt.DeepEquals, []difftypes.RLSPolicyRef{
-		{PolicyName: "p", TableName: "guarded"},
-	})
+	c.Assert(diff.RLSPoliciesAdded, qt.HasLen, 1)
+	c.Assert(diff.RLSPoliciesAdded[0].PolicyName, qt.Equals, "p")
+	c.Assert(diff.RLSPoliciesAdded[0].TableName, qt.Equals, "guarded")
+	c.Assert(diff.RLSPoliciesAdded[0].Desired.Name, qt.Equals, "p",
+		qt.Commentf("an addition carries the declaration it renders from (stokaro/ptah#2315)"))
 	c.Assert(undecided, qt.HasLen, 0)
 }
 

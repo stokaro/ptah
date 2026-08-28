@@ -611,6 +611,71 @@ privileges on the view and fails loudly if the engine refuses it, while a
 rollback drops and recreates, which always applies. Embedders that build a
 `ViewDiff` by hand and leave both fields empty get the forward answer.
 
+`migration/schemadiff/difftypes.RLSPolicyRef` and `RLSPolicyDiff` carry a
+`Desired` policy and a `TableSchema`, both off the wire. The policy is what
+CREATE POLICY renders from; the schema is the one the owning table is declared
+under, which SQL Server addresses a policy by and which cannot be read off the
+policy itself. An added or modified entry carrying no policy is refused with
+`ptaherr.ErrInvalidSchemaDiff` rather than skipped, because a plan that
+silently drops an access-control operation reports success while leaving the
+database unprotected. A removal carries neither: `DROP POLICY name ON table` is
+written from the two names.
+
+`SchemaDiff.RLSEnabledTablesAdded` and `RLSEnabledTablesRemoved` are
+`RLSEnabledTableChanges` rather than `[]string`. An ADDED entry is the
+declaration, which is what a target rendering a declared comment needs; a
+REMOVED entry carries the table name and nothing else, because the enablement
+being removed is one the database reports and no declaration describes.
+`Names()` gives the table names, and the JSON is unchanged: both keys have
+always been arrays of names.
+
+`SchemaDiff.RLSPolicyIdentityConflicts` is the companion, also off the wire. It
+records declared policies that resolve to one identity — something the three
+lists cannot show, because a colliding pair is already one entry by the time
+they exist. A planner refuses a diff that carries any. An embedder building a
+diff by hand will not produce one and need not populate it; an embedder reading
+a diff the comparison produced must not plan it while it is non-empty.
+
+`migration/schemadiff/difftypes.MaterializedViewDiff` carries one too. No engine
+has an in-place replacement that keeps a materialized view's rows, so a change
+other than a ClickHouse refresh schedule is a drop and a create, and the create
+renders from this field. The type now has two fields called `Desired`, at
+different scales: this one is the view, and `RefreshChange.Desired` is one
+schedule.
+
+`migration/schemadiff/difftypes.TriggerRef` and `TriggerDiff` carry a `Desired`
+field too, and the reference type is the one place where it means something on
+one list and nothing on another: a `TriggersAdded` entry carries the declaration
+CREATE TRIGGER renders from, while a `TriggersRemoved` entry carries none,
+because a DROP is written from the trigger's name and its table. A rollback
+therefore does more than exchange the two lists: it resolves each reversed
+addition against the pre-change database, and strips the operand from each
+reversed removal.
+
+`migration/schemadiff/difftypes.FunctionDiff`, `SequenceDiff` and
+`SynonymDiff` carry a `Desired` field for the same reason: a function
+modification renders as CREATE OR REPLACE and needs the whole body and
+attribute set, an ALTER SEQUENCE reads the option values off the declaration
+while the change map only names which options moved, and a retargeted synonym
+is a drop and a create because no dialect has an ALTER SYNONYM. An empty one
+plans nothing for that entry. `FunctionDiff.Desired` is the declaration as
+written, not the copy the comparison folds: the comparison canonicalizes case
+and normalizes MySQL type spellings on both sides so that two spellings of one
+function converge, and rendering from that copy would write Ptah's
+normalization into the user's DDL.
+
+`migration/schemadiff/difftypes.DomainDiff`, `CompositeTypeDiff` and
+`RangeDiff` each carry a `Desired` field, off the wire, holding the definition
+the change is reconciled to. PostgreSQL has no in-place ALTER for a domain's
+base type, a composite's field list or a range's subtype, so those changes are
+planned as DROP TYPE followed by CREATE TYPE, and the create renders from this
+field. An empty one withholds BOTH halves and emits a warning comment naming
+the object: a type Ptah cannot rebuild is a type Ptah must not drop. An
+embedder that builds one of these entries by hand and leaves `Desired` empty
+therefore gets the warning rather than a plan. A reversal resolves the field
+against the pre-change database, so a rolled-back modification rebuilds the
+definition that database held.
+
 Two more modification entries carry the object they render rather than a
 reference to it. `migration/schemadiff/difftypes.ContinuousAggregateDiff` and
 `RoleDiff` each hold a `Desired` field, off the wire, holding the declaration

@@ -126,9 +126,11 @@ func TestGenerateDownMigrationSQL_DropsViewLikeObjectsCreatedByUp(t *testing.T) 
 
 	c.Assert(upDiff.ViewsAdded.Names(), qt.DeepEquals, []string{"rev_active_users"})
 	c.Assert(upDiff.MaterializedViewsAdded.Names(), qt.DeepEquals, []string{"rev_user_stats"})
-	c.Assert(upDiff.TriggersAdded, qt.DeepEquals, []difftypes.TriggerRef{
-		{TriggerName: "rev_touch", TableName: "rev_view_users"},
-	})
+	c.Assert(upDiff.TriggersAdded, qt.HasLen, 1)
+	c.Assert(upDiff.TriggersAdded[0].TriggerName, qt.Equals, "rev_touch")
+	c.Assert(upDiff.TriggersAdded[0].TableName, qt.Equals, "rev_view_users")
+	c.Assert(upDiff.TriggersAdded[0].Desired.Name, qt.Equals, "rev_touch",
+		qt.Commentf("an addition carries the declaration it renders from (stokaro/ptah#2315)"))
 
 	downSQL, err := generateDownMigrationSQL(upDiff, schema, db, "postgres")
 	c.Assert(err, qt.IsNil)

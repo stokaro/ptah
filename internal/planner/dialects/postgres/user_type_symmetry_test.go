@@ -16,14 +16,18 @@ import (
 //
 // PostgreSQL has no in-place ALTER for a domain's base type, a composite's field
 // list or a range's subtype, so a modification is planned as DROP TYPE followed
-// by CREATE TYPE. The drop was emitted from the diff alone while the recreate was
-// emitted only where the target definition resolved out of the schema. Where it
-// did not, the plan dropped the type and put nothing back -- and that is not a
+// by CREATE TYPE. The drop is emitted from the diff alone and the recreate from
+// the definition the change carries, so a change carrying none must emit
+// neither -- a plan that drops the type and puts nothing back is not a
 // migration that fails, it is one that succeeds having deleted a type.
+//
+// The schema passed alongside is empty in every row. The definition travels
+// with the change (stokaro/ptah#2315), so the rows that recreate prove the
+// planner needs nothing else, and the rows that do not prove the withholding
+// is decided by the change rather than by what the planner was handed.
 func TestModifiedUserTypeNeverDropsWhatItCannotRecreate(t *testing.T) {
 	tests := []struct {
 		name        string
-		desired     *schemamodel.Database
 		diff        *difftypes.SchemaDiff
 		wantDrop    bool
 		wantCreate  bool
@@ -32,30 +36,26 @@ func TestModifiedUserTypeNeverDropsWhatItCannotRecreate(t *testing.T) {
 		{
 			// Control. The definition resolves, so both halves are emitted and
 			// the pair is what it has always been.
-			name: "a modified domain the schema declares is dropped and recreated",
-			desired: &schemamodel.Database{
-				Domains: []schemamodel.Domain{{Name: "zip", Schema: "app", BaseType: "VARCHAR(10)"}},
-			},
+			name: "a modified domain the change carries is dropped and recreated",
 			diff: &difftypes.SchemaDiff{DomainsModified: []difftypes.DomainDiff{{
 				DomainName:      "app.zip",
 				Changes:         map[string]string{"type": "character varying(5) -> VARCHAR(10)"},
 				CurrentBaseType: "character varying(5)",
+				Desired:         schemamodel.Domain{Name: "zip", Schema: "app", BaseType: "VARCHAR(10)"},
 			}}},
 			wantDrop:   true,
 			wantCreate: true,
 		},
 		{
-			// The declaration and the diff spell the schema differently. Under
-			// identifier semantics they are one domain, so both halves are
-			// emitted -- and they name the same object.
-			name: "a modified domain spelled bare in the schema still recreates",
-			desired: &schemamodel.Database{
-				Domains: []schemamodel.Domain{{Name: "zip", BaseType: "VARCHAR(10)"}},
-			},
+			// The change's name and the operand spell the schema differently.
+			// The drop is written from the first and the create from the
+			// second, so this is the row where the pair could come apart.
+			name: "a modified domain whose operand is spelled bare still recreates",
 			diff: &difftypes.SchemaDiff{DomainsModified: []difftypes.DomainDiff{{
 				DomainName:      "public.zip",
 				Changes:         map[string]string{"type": "character varying(5) -> VARCHAR(10)"},
 				CurrentBaseType: "character varying(5)",
+				Desired:         schemamodel.Domain{Name: "zip", BaseType: "VARCHAR(10)"},
 			}}},
 			wantDrop:   true,
 			wantCreate: true,
@@ -63,10 +63,7 @@ func TestModifiedUserTypeNeverDropsWhatItCannotRecreate(t *testing.T) {
 		{
 			// The definition is genuinely absent. Neither half is emitted, and
 			// the omission is stated rather than silent.
-			name: "a modified domain the schema does not declare is left alone",
-			desired: &schemamodel.Database{
-				Domains: []schemamodel.Domain{{Name: "other", Schema: "app", BaseType: "TEXT"}},
-			},
+			name: "a modified domain the change carries no definition for is left alone",
 			diff: &difftypes.SchemaDiff{DomainsModified: []difftypes.DomainDiff{{
 				DomainName:      "app.zip",
 				Changes:         map[string]string{"type": "character varying(5) -> VARCHAR(10)"},
@@ -74,26 +71,20 @@ func TestModifiedUserTypeNeverDropsWhatItCannotRecreate(t *testing.T) {
 			}}},
 			wantDrop:    false,
 			wantCreate:  false,
-			wantWarning: "domain app.zip changed, but the target definition was not found",
+			wantWarning: "domain app.zip changed, but the change carries no definition",
 		},
 		{
-			name: "a modified composite type the schema does not declare is left alone",
-			desired: &schemamodel.Database{
-				CompositeTypes: []schemamodel.CompositeType{{Name: "other", Schema: "app"}},
-			},
+			name: "a modified composite type the change carries no definition for is left alone",
 			diff: &difftypes.SchemaDiff{CompositeTypesModified: []difftypes.CompositeTypeDiff{{
 				TypeName: "app.addr",
 				Changes:  map[string]string{"fields": "a text -> a text, b text"},
 			}}},
 			wantDrop:    false,
 			wantCreate:  false,
-			wantWarning: "composite type app.addr changed, but the target definition was not found",
+			wantWarning: "composite type app.addr changed, but the change carries no definition",
 		},
 		{
-			name: "a modified range type the schema does not declare is left alone",
-			desired: &schemamodel.Database{
-				Ranges: []schemamodel.Range{{Name: "other", Schema: "app", Subtype: "int8"}},
-			},
+			name: "a modified range type the change carries no definition for is left alone",
 			diff: &difftypes.SchemaDiff{RangesModified: []difftypes.RangeDiff{{
 				RangeName:      "app.span",
 				Changes:        map[string]string{"subtype": "int4 -> int8"},
@@ -101,14 +92,14 @@ func TestModifiedUserTypeNeverDropsWhatItCannotRecreate(t *testing.T) {
 			}}},
 			wantDrop:    false,
 			wantCreate:  false,
-			wantWarning: "range type app.span changed, but the target definition was not found",
+			wantWarning: "range type app.span changed, but the change carries no definition",
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			statements, err := planner.GenerateSchemaDiffSQLStatements(test.diff, test.desired, "postgres")
+			statements, err := planner.GenerateSchemaDiffSQLStatements(test.diff, &schemamodel.Database{}, "postgres")
 			c.Assert(err, qt.IsNil)
 			plan := strings.Join(statements, "\n")
 			c.Assert(strings.Contains(plan, "DROP DOMAIN") || strings.Contains(plan, "DROP TYPE"),

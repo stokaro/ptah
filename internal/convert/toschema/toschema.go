@@ -682,6 +682,9 @@ func ToDatabase(statements *ast.StatementList, sourcePlatform string) schemamode
 // dropped, which is what issue #932 reported for views, domains, composite and
 // range types, extensions, functions and triggers.
 func appendStatement(database *schemamodel.Database, stmt ast.Node, sourcePlatform string) {
+	if appendRoutine(database, stmt) {
+		return
+	}
 	switch node := stmt.(type) {
 	case *ast.CreateSchemaNode:
 		database.Schemas = append(database.Schemas, schemamodel.Schema{
@@ -723,6 +726,32 @@ func appendStatement(database *schemamodel.Database, stmt ast.Node, sourcePlatfo
 	case *ast.CommentNode:
 		applyRoleComment(database, node)
 	}
+}
+
+// appendRoutine records the routine nodes CREATE PROCEDURE parses to, and
+// reports whether it recognized one.
+//
+// Separate from the statement switch because three more cases took that
+// function past the cyclomatic threshold, and because these three answer one
+// question: CREATE FUNCTION reaches this package as a CreateFunctionNode and
+// CREATE PROCEDURE as whichever of these the dialect selected.
+//
+// The sentence above appendStatement already said a node with no case is
+// dropped in silence, and these three were missed anyway. A comment is read by
+// whoever is already thinking about the switch, which is never the person
+// adding a node kind (stokaro/ptah#932, stokaro/ptah#2435).
+func appendRoutine(database *schemamodel.Database, stmt ast.Node) bool {
+	switch node := stmt.(type) {
+	case *ast.PostgresRoutineNode:
+		database.Functions = append(database.Functions, toPostgresRoutine(node))
+	case *ast.SQLServerRoutineNode:
+		database.Functions = append(database.Functions, toSQLServerRoutine(node))
+	case *ast.MySQLRoutineNode:
+		database.Functions = append(database.Functions, toMySQLRoutine(node))
+	default:
+		return false
+	}
+	return true
 }
 
 func appendCreateTable(database *schemamodel.Database, node *ast.CreateTableNode, sourcePlatform string) {

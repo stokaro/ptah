@@ -61,25 +61,6 @@ func TestViewAndTriggerLookupsDoNotCrossSchemas(t *testing.T) {
 			}}},
 			unwantedSQL: "MATERIALIZED VIEW",
 		},
-		{
-			name: "a trigger whose table is declared in another schema is left alone",
-			desired: &schemamodel.Database{
-				Triggers: []schemamodel.Trigger{{
-					StructName: "User",
-					Name:       "touch",
-					Table:      "reporting.users",
-					Timing:     "AFTER",
-					Event:      "UPDATE",
-					ForEach:    "ROW",
-					Body:       "BEGIN RETURN NEW; END;",
-				}},
-			},
-			diff: &difftypes.SchemaDiff{TriggersAdded: []difftypes.TriggerRef{{
-				TriggerName: "touch",
-				TableName:   "app.users",
-			}}},
-			unwantedSQL: "TRIGGER",
-		},
 	}
 
 	for _, test := range tests {
@@ -93,53 +74,55 @@ func TestViewAndTriggerLookupsDoNotCrossSchemas(t *testing.T) {
 	}
 }
 
-// TestViewAndTriggerLookupsResolveAcrossSpellings is the capability half: the
-// spellings that DO name one object still resolve, so the rows above are a
-// refusal to guess rather than a refusal to work.
+// TestCompare_ATriggerResolvesTheDiffSpelling is the capability half of the
+// refusal above, measured where it now happens.
 //
-// Its view row moved to TestCompare_AModifiedViewResolvesTheDiffSpelling below.
-// A modified view carries the definition it leaves behind now
-// (stokaro/ptah#2315), so the spelling is resolved where the SEMANTICS are
-// known -- by the comparison -- rather than by the planner guessing from a
-// name. The trigger row stays here, because a trigger reference still is a
-// name.
-func TestViewAndTriggerLookupsResolveAcrossSpellings(t *testing.T) {
-	tests := []struct {
-		name    string
-		desired *schemamodel.Database
-		diff    *difftypes.SchemaDiff
-		wantSQL string
-	}{
-		{
-			name: "a trigger whose table the diff qualifies with public",
-			desired: &schemamodel.Database{
-				Triggers: []schemamodel.Trigger{{
-					StructName: "User",
-					Name:       "touch",
-					Table:      "users",
-					Timing:     "AFTER",
-					Event:      "UPDATE",
-					ForEach:    "ROW",
-					Body:       "BEGIN RETURN NEW; END;",
-				}},
-			},
-			diff: &difftypes.SchemaDiff{TriggersAdded: []difftypes.TriggerRef{{
-				TriggerName: "touch",
-				TableName:   "public.users",
-			}}},
-			wantSQL: "TRIGGER",
-		},
+// A declaration writes the table as `users` and a server reports it as
+// `public.users`. The planner used to reconcile the two by looking the trigger
+// up; the comparison does it now, and the entry carries the trigger it resolved
+// to (stokaro/ptah#2315). Driving the comparison rather than hand-building the
+// diff is the point: a hand-built one bypasses the resolution, which is exactly
+// what the planner no longer performs.
+//
+// The refusal half moved too, and its home is
+// TestCompareWithDialect_DifferentSchemaDoesNotMatchSchemaObjects in
+// migration/schemadiff: a trigger on `public.items` and one on
+// `reporting.items` come back as one addition and one removal, never as a
+// modification of a single object.
+func TestCompare_ATriggerResolvesTheDiffSpelling(t *testing.T) {
+	c := qt.New(t)
+
+	desired := &schemamodel.Database{
+		Triggers: []schemamodel.Trigger{{
+			StructName: "User",
+			Name:       "touch",
+			Table:      "users",
+			Timing:     "AFTER",
+			Event:      "UPDATE",
+			ForEach:    "ROW",
+			Body:       "BEGIN RETURN NEW; END;",
+		}},
+	}
+	database := &catalog.Database{
+		Triggers: []catalog.Trigger{{
+			Schema: "public", Name: "touch", Table: "users",
+			Timing: "AFTER", Event: "UPDATE", ForEach: "ROW",
+		}},
 	}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			statements, err := planner.GenerateSchemaDiffSQLStatements(test.diff, test.desired, "postgres")
-			c.Assert(err, qt.IsNil)
-			plan := strings.Join(statements, "\n")
-			c.Assert(plan, qt.Contains, test.wantSQL, qt.Commentf("plan:\n%s", plan))
-		})
-	}
+	diff := schemadiff.CompareWithDialect(desired, database, "postgres")
+
+	c.Assert(diff.TriggersAdded, qt.HasLen, 0,
+		qt.Commentf("the two spellings are one trigger, not one to add and one to drop"))
+	c.Assert(diff.TriggersRemoved, qt.HasLen, 0)
+	c.Assert(diff.TriggersModified, qt.HasLen, 1)
+	c.Assert(diff.TriggersModified[0].Desired.Name, qt.Equals, "touch",
+		qt.Commentf("the comparison resolved the two spellings to one declaration"))
+
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, "postgres")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(strings.Join(statements, "\n"), qt.Contains, "TRIGGER")
 }
 
 // TestCompare_AModifiedViewResolvesTheDiffSpelling is the view half of the

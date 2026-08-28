@@ -15,22 +15,22 @@ import (
 func planModifiedPolicy(c *qt.C, policyFor, withCheck string) string {
 	c.Helper()
 
+	// The policy travels WITH the change (stokaro/ptah#2315), so the schema
+	// handed to the planner is empty.
 	diff := &difftypes.SchemaDiff{
 		RLSPoliciesModified: []difftypes.RLSPolicyDiff{{
 			PolicyName: "tenant_filter", TableName: "docs",
 			Changes: map[string]string{"for": "ALL -> " + policyFor},
-		}},
-	}
-	desired := &schemamodel.Database{
-		RLSPolicies: []schemamodel.RLSPolicy{{
-			Name: "tenant_filter", Table: "docs",
-			PolicyFor:           policyFor,
-			UsingExpression:     "dbo.fn_pred(tenant)",
-			WithCheckExpression: withCheck,
+			Desired: schemamodel.RLSPolicy{
+				Name: "tenant_filter", Table: "docs",
+				PolicyFor:           policyFor,
+				UsingExpression:     "dbo.fn_pred(tenant)",
+				WithCheckExpression: withCheck,
+			},
 		}},
 	}
 
-	nodes, err := mssql.New().GenerateMigrationAST(diff, desired)
+	nodes, err := mssql.New().GenerateMigrationAST(diff, &schemamodel.Database{})
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("sqlserver", nodes...)
 	c.Assert(err, qt.IsNil)

@@ -35,7 +35,13 @@ func TestPlanner_CapabilityGatesRLSAndRoleManagement(t *testing.T) {
 			{Role: "app_role", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "users"},
 		},
 		RLSPoliciesAdded: []difftypes.RLSPolicyRef{
-			{PolicyName: "tenant_policy", TableName: "users"},
+			{
+				PolicyName: "tenant_policy", TableName: "users",
+				Desired: schemamodel.RLSPolicy{
+					Name: "tenant_policy", Table: "users",
+					PolicyFor: "ALL", ToRoles: "app_role", UsingExpression: "true",
+				},
+			},
 		},
 		RLSPoliciesRemoved: []difftypes.RLSPolicyRef{
 			{PolicyName: "old_policy", TableName: "users"},

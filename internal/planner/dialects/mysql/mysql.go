@@ -1282,7 +1282,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 	// 0a. Plan the sequences this target does host, before tables: a column
 	// DEFAULT may draw from one, and SQL Server enforces that dependency in
 	// both directions.
-	result = p.planSequences(result, diff, desired)
+	result = p.planSequences(result, diff)
 
 	// 0a2. Plan the roles this target does manage, before tables, because a
 	// grant names a role that has to exist.
@@ -1290,8 +1290,8 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 
 	// 0a3. Plan the domains this target does host, before tables: a column may
 	// be declared with the domain as its type.
-	result = p.planDomains(result, diff, desired)
-	result = p.planCompositeTypes(result, diff, desired)
+	result = p.planDomains(result, diff)
+	result = p.planCompositeTypes(result, diff)
 
 	// 0b. Plan the stored functions this target does host. Functions are
 	// planned before tables because a generated column or a CHECK constraint
@@ -1332,16 +1332,16 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 	// 4.5. Add and modify views/triggers after tables exist.
 	result = p.addNewViews(result, diff)
 	result = p.modifyExistingViews(result, diff)
-	result = p.retargetSynonyms(result, diff, desired)
+	result = p.retargetSynonyms(result, diff)
 	result = p.addNewSynonyms(result, diff)
 	result = p.addExtendedProperties(result, diff)
 	if err := p.rejectMaterializedViews(diff); err != nil {
 		return nil, err
 	}
 	result = p.addNewMaterializedViews(result, diff)
-	result = p.modifyExistingMaterializedViews(result, diff, desired)
-	result = p.addNewTriggers(result, diff, desired)
-	result = p.modifyExistingTriggers(result, diff, desired)
+	result = p.modifyExistingMaterializedViews(result, diff)
+	result = p.addNewTriggers(result, diff)
+	result = p.modifyExistingTriggers(result, diff)
 
 	// 5. Add new indexes
 	result, err = p.addNewIndexes(result, diff, indexes)
@@ -1522,14 +1522,16 @@ func (p *Planner) addNewSynonyms(result []ast.Node, diff *difftypes.SchemaDiff) 
 // and CREATE SYNONYM refuses a name that already exists. Splitting the two
 // across the add and remove phases would put the create before the drop and
 // fail at the server.
-func (p *Planner) retargetSynonyms(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
+func (p *Planner) retargetSynonyms(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	// The synonym travels WITH the change (stokaro/ptah#2315). The two target
+	// strings are the change; the create needs the object.
 	for _, synonymDiff := range diff.SynonymsModified {
-		synonym := findSynonym(desired.Synonyms, synonymDiff.SynonymName)
-		if synonym == nil {
+		synonym := synonymDiff.Desired
+		if synonym.Name == "" {
 			continue
 		}
 		result = append(result, ast.NewDropSynonym(synonymDiff.SynonymName).SetIfExists())
-		result = append(result, fromschema.FromSynonym(*synonym))
+		result = append(result, fromschema.FromSynonym(synonym))
 	}
 	return result
 }
@@ -1586,31 +1588,20 @@ func extendedPropertyNode(
 		SetValue(ref.Value)
 }
 
-// findSynonym returns the declared synonym with the given qualified name.
-func findSynonym(synonyms []schemamodel.Synonym, name string) *schemamodel.Synonym {
-	for i := range synonyms {
-		if synonyms[i].QualifiedName() == name {
-			return &synonyms[i]
-		}
-	}
-	return nil
-}
-
-func (p *Planner) addNewTriggers(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
-	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
+func (p *Planner) addNewTriggers(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	// The definition travels WITH the entry (stokaro/ptah#2315).
 	for _, triggerRef := range diff.TriggersAdded {
-		if trigger := findTrigger(desired.Triggers, triggerRef.TableName, triggerRef.TriggerName, semantics); trigger != nil {
-			result = append(result, fromschema.FromTrigger(*trigger))
+		if triggerRef.Desired.Name != "" {
+			result = append(result, fromschema.FromTrigger(triggerRef.Desired))
 		}
 	}
 	return result
 }
 
-func (p *Planner) modifyExistingTriggers(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
-	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
+func (p *Planner) modifyExistingTriggers(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, triggerDiff := range diff.TriggersModified {
-		if trigger := findTrigger(desired.Triggers, triggerDiff.TableName, triggerDiff.TriggerName, semantics); trigger != nil {
-			result = append(result, fromschema.FromTrigger(*trigger).SetReplace())
+		if triggerDiff.Desired.Name != "" {
+			result = append(result, fromschema.FromTrigger(triggerDiff.Desired).SetReplace())
 		}
 	}
 	return result
@@ -1648,13 +1639,12 @@ func (p *Planner) addNewMaterializedViews(
 func (p *Planner) modifyExistingMaterializedViews(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
 ) []ast.Node {
-	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
+	// The view travels WITH the change (stokaro/ptah#2315).
 	for _, viewDiff := range diff.MaterializedViewsModified {
-		if view := findMaterializedView(desired.MaterializedViews, viewDiff.ViewName, semantics); view != nil {
+		if view := viewDiff.Desired; view.Name != "" {
 			result = append(result, ast.NewDropMaterializedView(view.Name).SetIfExists())
-			result = append(result, fromschema.FromMaterializedView(*view))
+			result = append(result, fromschema.FromMaterializedView(view))
 		}
 	}
 	return result
@@ -1667,22 +1657,6 @@ func (p *Planner) removeMaterializedViews(result []ast.Node, diff *difftypes.Sch
 		result = append(result, ast.NewDropMaterializedView(view.Name).SetIfExists())
 	}
 	return result
-}
-
-func findMaterializedView(
-	views []schemamodel.MaterializedView,
-	name string,
-	semantics identifier.Semantics,
-) *schemamodel.MaterializedView {
-	return objectlookup.MaterializedView(views, name, semantics)
-}
-
-func findTrigger(
-	triggers []schemamodel.Trigger,
-	tableName, triggerName string,
-	semantics identifier.Semantics,
-) *schemamodel.Trigger {
-	return objectlookup.Trigger(triggers, tableName, triggerName, semantics)
 }
 
 // addNewConstraints adds new table-level constraints via ALTER TABLE statements.

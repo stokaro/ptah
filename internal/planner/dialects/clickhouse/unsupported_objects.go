@@ -272,12 +272,7 @@ func reportViewLikes(
 			result = append(result, alter)
 			continue
 		}
-		object, node, err := clickHouseMaterializedViewChange(
-			desired,
-			view.ViewName,
-			semantics,
-			caps,
-		)
+		object, node, err := clickHouseMaterializedViewChange(view, caps)
 		if err != nil {
 			return nil, err
 		}
@@ -362,25 +357,26 @@ func clickHouseViewChangeFor(
 // kind; the Materialized flag is what keeps the two apart in the shared
 // dependency order and in the node map.
 func clickHouseMaterializedViewChange(
-	desired *schemamodel.Database,
-	name string,
-	semantics identifier.Semantics,
+	change difftypes.MaterializedViewDiff,
 	caps capability.Capabilities,
 ) (deporder.ViewLike, *ast.CreateMaterializedViewNode, error) {
+	name := change.ViewName
+	// The capability check comes first, and it stays first: a target that has
+	// no materialized views renders a placeholder from the name alone, so it
+	// must not be refused for carrying no declaration it would never read.
 	if !caps.Has(capability.MaterializedViews) {
 		return deporder.ViewLike{Name: name, Materialized: true},
 			ast.NewCreateMaterializedView(name),
 			nil
 	}
-	view := objectlookup.MaterializedView(desired.MaterializedViews, name, semantics)
-	if view == nil {
+	if change.Desired.Name == "" {
 		return deporder.ViewLike{}, nil, fmt.Errorf(
-			"%w: ClickHouse materialized view %q named by diff is missing from the desired schema",
+			"%w: ClickHouse materialized view %q named by diff carries no declaration to recreate it from",
 			ptaherr.ErrInvalidSchemaDiff,
 			name,
 		)
 	}
-	object, node := clickHouseMaterializedViewChangeFor(*view, caps)
+	object, node := clickHouseMaterializedViewChangeFor(change.Desired, caps)
 	return object, node, nil
 }
 
@@ -413,10 +409,10 @@ func reportRowLevelSecurity(
 		// skipped.
 		return result
 	}
-	for _, table := range diff.RLSEnabledTablesAdded {
+	for _, table := range diff.RLSEnabledTablesAdded.Names() {
 		result = append(result, ast.NewAlterTableEnableRLS(table))
 	}
-	for _, table := range diff.RLSEnabledTablesRemoved {
+	for _, table := range diff.RLSEnabledTablesRemoved.Names() {
 		result = append(result, ast.NewAlterTableDisableRLS(table))
 	}
 	for _, policy := range diff.RLSPoliciesAdded {

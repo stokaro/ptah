@@ -78,7 +78,7 @@ func TestRLSEnabledTables_ADeclaredPolicyIsNotARequestToDisable(t *testing.T) {
 
 			compare.RLSEnabledTablesWithSemantics(declared, live, diff, rlsSemantics())
 
-			c.Assert(diff.RLSEnabledTablesRemoved, qt.DeepEquals, test.wantRemoved)
+			c.Assert(diff.RLSEnabledTablesRemoved.Names(), qt.DeepEquals, test.wantRemoved)
 		})
 	}
 }

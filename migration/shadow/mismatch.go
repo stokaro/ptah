@@ -201,8 +201,8 @@ func collectAccessControlMismatches(diff *difftypes.SchemaDiff) []Mismatch {
 		message := fmt.Sprintf("RLS policy mismatch %s: %s", object, describeChanges(policy.Changes))
 		mismatches = append(mismatches, Mismatch{Kind: "rls_policy_mismatch", Table: policy.TableName, Object: object, Changes: maps.Clone(policy.Changes), Message: message})
 	}
-	mismatches = append(mismatches, tableMismatches(diff.RLSEnabledTablesAdded, "missing_rls_enablement", "missing RLS enablement")...)
-	mismatches = append(mismatches, tableMismatches(diff.RLSEnabledTablesRemoved, "extra_rls_enablement", "extra RLS enablement")...)
+	mismatches = append(mismatches, tableMismatches(diff.RLSEnabledTablesAdded.Names(), "missing_rls_enablement", "missing RLS enablement")...)
+	mismatches = append(mismatches, tableMismatches(diff.RLSEnabledTablesRemoved.Names(), "extra_rls_enablement", "extra RLS enablement")...)
 	mismatches = append(mismatches, namedMismatches(diff.RolesAdded.Names(), "missing_role", "missing role")...)
 	mismatches = append(mismatches, namedMismatches(diff.RolesRemoved.Names(), "extra_role", "extra role")...)
 	mismatches = append(mismatches, changedObjectMismatches(

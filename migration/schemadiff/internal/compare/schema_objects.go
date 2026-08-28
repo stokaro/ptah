@@ -537,6 +537,7 @@ func Synonyms(
 				SynonymName: name,
 				OldTarget:   databaseSynonym.Target,
 				NewTarget:   generatedSynonym.Target,
+				Desired:     generatedSynonym,
 			})
 		}
 	}
@@ -670,6 +671,10 @@ func FunctionDefinitionsWithDialect(
 	functionDiff := difftypes.FunctionDiff{
 		FunctionName: genFunction.Name,
 		Changes:      make(map[string]string),
+		// Captured BEFORE the folding below. The planner renders CREATE OR
+		// REPLACE from this, and the folding exists to make two spellings
+		// compare equal, not to decide what gets written (stokaro/ptah#2315).
+		Desired: genFunction,
 	}
 
 	// Defense-in-depth: canonicalize a local copy. The annotation parser at
@@ -888,6 +893,7 @@ func MaterializedViewDefinitionsWithDialect(
 	viewDiff := difftypes.MaterializedViewDiff{
 		ViewName: genView.Name,
 		Changes:  make(map[string]string),
+		Desired:  genView,
 	}
 
 	if !schemaObjectBodiesEqual(genView.Body, dbView.Body, dialect, dbView.Schema) {

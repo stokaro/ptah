@@ -43,6 +43,12 @@ func TestCompareWithDialect_DifferentSchemaDoesNotMatchSchemaObjects(t *testing.
 	c.Assert(diff.TriggersAdded, qt.DeepEquals, []difftypes.TriggerRef{{
 		TriggerName: "tr_ctl",
 		TableName:   "public.items",
+		// An addition carries the declaration the planner renders from
+		// (stokaro/ptah#2315); a removal below needs only the two names.
+		Desired: schemamodel.Trigger{
+			Name: "tr_ctl", Table: "public.items",
+			Timing: "BEFORE", Event: "INSERT", ForEach: "ROW", Body: "SELECT 1",
+		},
 	}})
 	c.Assert(diff.TriggersRemoved, qt.DeepEquals, []difftypes.TriggerRef{{
 		TriggerName: "tr_ctl",

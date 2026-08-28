@@ -28,19 +28,19 @@ func planRowPolicies(
 	if !caps.Has(capability.RowLevelSecurity) {
 		return result
 	}
+	// The declaration travels WITH the entry (stokaro/ptah#2315).
 	for _, table := range diff.RLSEnabledTablesAdded {
-		if declaration := rlsEnabledTable(desired.RLSEnabledTables, table); declaration != nil {
-			result = append(result, fromschema.FromRLSEnabledTable(*declaration))
-		}
+		result = append(result, fromschema.FromRLSEnabledTable(table))
 	}
+	// The policy travels WITH the entry (stokaro/ptah#2315).
 	for _, policy := range diff.RLSPoliciesAdded {
-		if declaration := rlsPolicy(desired.RLSPolicies, policy.PolicyName, policy.TableName); declaration != nil {
-			result = append(result, fromschema.FromRLSPolicy(*declaration))
+		if policy.Desired.Name != "" {
+			result = append(result, fromschema.FromRLSPolicy(policy.Desired))
 		}
 	}
 	for _, policy := range diff.RLSPoliciesModified {
-		if declaration := rlsPolicy(desired.RLSPolicies, policy.PolicyName, policy.TableName); declaration != nil {
-			result = append(result, fromschema.FromRLSPolicy(*declaration).SetReplace())
+		if policy.Desired.Name != "" {
+			result = append(result, fromschema.FromRLSPolicy(policy.Desired).SetReplace())
 		}
 	}
 	return result
@@ -57,31 +57,8 @@ func removeRowPolicies(result []ast.Node, diff *difftypes.SchemaDiff, caps capab
 	for _, policy := range diff.RLSPoliciesRemoved {
 		result = append(result, ast.NewDropPolicy(policy.PolicyName, policy.TableName).SetIfExists())
 	}
-	for _, table := range diff.RLSEnabledTablesRemoved {
+	for _, table := range diff.RLSEnabledTablesRemoved.Names() {
 		result = append(result, ast.NewAlterTableDisableRLS(table))
 	}
 	return result
-}
-
-// rlsPolicy returns the declaration behind a diff entry, matched on the pair the
-// diff reports rather than on the policy name alone: a row policy is named
-// inside its table, and two tables may carry policies of the same name.
-func rlsPolicy(declarations []schemamodel.RLSPolicy, name, table string) *schemamodel.RLSPolicy {
-	for i := range declarations {
-		if declarations[i].Name == name && declarations[i].Table == table {
-			return &declarations[i]
-		}
-	}
-	return nil
-}
-
-// rlsEnabledTable returns the declaration that asked for row-level security on a
-// table, or nil when the diff names a table nothing declared.
-func rlsEnabledTable(declarations []schemamodel.RLSEnabledTable, table string) *schemamodel.RLSEnabledTable {
-	for i := range declarations {
-		if declarations[i].Table == table {
-			return &declarations[i]
-		}
-	}
-	return nil
 }

@@ -19,16 +19,65 @@ type categoryFixture struct {
 	desired *schemamodel.Database
 }
 
+// refusedFixture is one category the planner answers with an error, together
+// with the reason it does.
+type refusedFixture struct {
+	why  string
+	diff *difftypes.SchemaDiff
+}
+
 var supplementalDiffCategories = map[string]string{
 	"ForeignKeysRemovedWithTables":    "supplements matching ConstraintsRemovedWithTables entries with column identities for MySQL/MariaDB drop ordering; it creates no operation by itself and PostgreSQL deliberately ignores it",
 	"FunctionsRemovedWithSignatures":  "the same removals FunctionsRemoved names, with the argument list that makes each one addressable; the planner reads this list and falls back to the bare names, so it creates no operation of its own and a fixture would exercise the same DROP twice (stokaro/ptah#2296)",
 	"ProceduresRemovedWithSignatures": "ProceduresRemoved with signatures, supplemental for the same reason",
 }
 
-var refusedDiffCategories = map[string]string{
-	"ExtensionsModified":  "PostgreSQL extension placement drift is detected but refused before emission until ALTER EXTENSION SET SCHEMA planning is supported",
-	"HypertablesRemoved":  "TimescaleDB has no statement that turns a hypertable back into an ordinary table -- measured on 2.29.2, drop_hypertable does not exist -- so the planner refuses instead of emitting nothing and calling the two sides equal",
-	"HypertablesModified": "TimescaleDB has no statement that repartitions an existing hypertable either, and the refusal is what keeps a permanent divergence from reading as no change",
+// refusedDiffCategories are the categories the planner answers with an error
+// rather than with SQL. Each carries a fixture, and
+// TestEveryRefusedDiffCategoryIsRefused drives it: an exemption that only
+// removed a category from the walk would let a category stop being refused
+// without anything noticing, which is the failure this whole file exists to
+// prevent one level down.
+var refusedDiffCategories = map[string]refusedFixture{
+	"HypertablesRemoved": {
+		why: "TimescaleDB has no statement that turns a hypertable back into an ordinary table -- measured on 2.29.2, drop_hypertable does not exist -- so the planner refuses instead of emitting nothing and calling the two sides equal",
+		diff: &difftypes.SchemaDiff{HypertablesRemoved: difftypes.HypertableChanges{{
+			Table: "readings", Column: "ts",
+		}}},
+	},
+	"HypertablesModified": {
+		why: "TimescaleDB has no statement that repartitions an existing hypertable either, and the refusal is what keeps a permanent divergence from reading as no change",
+		diff: &difftypes.SchemaDiff{HypertablesModified: []difftypes.HypertableDiff{{
+			Table: "readings", OldColumn: "ts", NewColumn: "created_at",
+		}}},
+	},
+	"RLSPolicyIdentityConflicts": {
+		why: "two declared policies that resolve to one identity cannot be planned: the comparison already reduced them to one entry, so applying it would apply whichever the map kept (stokaro/ptah#2440)",
+		diff: &difftypes.SchemaDiff{RLSPolicyIdentityConflicts: []difftypes.RLSPolicyConflict{{
+			First:  schemamodel.RLSPolicy{Name: "tenant", Table: "orders", PolicyFor: "ALL", UsingExpression: "a = 1"},
+			Second: schemamodel.RLSPolicy{Name: "tenant", Table: "public.orders", PolicyFor: "ALL", UsingExpression: "b = 2"},
+		}}},
+	},
+}
+
+// TestEveryRefusedDiffCategoryIsRefused is the control for the exemption above.
+//
+// Without it the map is a list of categories nothing checks, and a planner that
+// quietly started rendering one -- or silently ignoring it -- would pass. Each
+// row asserts the error, not merely that no SQL came out: a category that
+// produced neither would satisfy "did not render" while doing exactly the thing
+// the refusal exists to prevent.
+func TestEveryRefusedDiffCategoryIsRefused(t *testing.T) {
+	for field, fixture := range refusedDiffCategories {
+		t.Run(field, func(t *testing.T) {
+			c := qt.New(t)
+
+			nodes, err := postgres.New().GenerateMigrationAST(fixture.diff, &schemamodel.Database{})
+
+			c.Assert(err, qt.IsNotNil, qt.Commentf("%s: %s", field, fixture.why))
+			c.Assert(nodes, qt.IsNil)
+		})
+	}
 }
 
 // TestEveryDiffCategoryRendersSQL walks the change categories of SchemaDiff and
@@ -160,8 +209,12 @@ func diffCategoryFixtures() []categoryFixture {
 		{"ProceduresRemoved", &difftypes.SchemaDiff{ProceduresRemoved: difftypes.FunctionChanges{{Function: schemamodel.Function{Name: "p"}}}}, &schemamodel.Database{}},
 		{
 			"FunctionsModified",
-			&difftypes.SchemaDiff{FunctionsModified: []difftypes.FunctionDiff{{FunctionName: "f", Changes: map[string]string{"body": "x -> y"}}}},
-			&schemamodel.Database{Functions: []schemamodel.Function{{Name: "f", Returns: "int", Body: "SELECT 2"}}},
+			&difftypes.SchemaDiff{FunctionsModified: []difftypes.FunctionDiff{{
+				FunctionName: "f",
+				Changes:      map[string]string{"body": "x -> y"},
+				Desired:      schemamodel.Function{Name: "f", Returns: "int", Body: "SELECT 2"},
+			}}},
+			&schemamodel.Database{},
 		},
 		{
 			"SequencesAdded",
@@ -171,8 +224,12 @@ func diffCategoryFixtures() []categoryFixture {
 		{"SequencesRemoved", &difftypes.SchemaDiff{SequencesRemoved: difftypes.SequenceChanges{{Name: "s"}}}, &schemamodel.Database{}},
 		{
 			"SequencesModified",
-			&difftypes.SchemaDiff{SequencesModified: []difftypes.SequenceDiff{{SequenceName: "s", Changes: map[string]string{"increment": "1 -> 2"}}}},
-			&schemamodel.Database{Sequences: []schemamodel.Sequence{{Name: "s", Increment: &increment}}},
+			&difftypes.SchemaDiff{SequencesModified: []difftypes.SequenceDiff{{
+				SequenceName: "s",
+				Changes:      map[string]string{"increment": "1 -> 2"},
+				Desired:      schemamodel.Sequence{Name: "s", Increment: &increment},
+			}}},
+			&schemamodel.Database{},
 		},
 		{
 			"DomainsAdded",
@@ -267,10 +324,11 @@ func diffCategoryFixtures() []categoryFixture {
 		},
 		{
 			"SynonymsModified",
-			&difftypes.SchemaDiff{SynonymsModified: []difftypes.SynonymDiff{
-				{SynonymName: "s", OldTarget: "dbo.old", NewTarget: "dbo.new"},
-			}},
-			&schemamodel.Database{Synonyms: []schemamodel.Synonym{{Name: "s", Target: "dbo.new"}}},
+			&difftypes.SchemaDiff{SynonymsModified: []difftypes.SynonymDiff{{
+				SynonymName: "s", OldTarget: "dbo.old", NewTarget: "dbo.new",
+				Desired: schemamodel.Synonym{Name: "s", Target: "dbo.new"},
+			}}},
+			&schemamodel.Database{},
 		},
 		{
 			"ExtendedPropertiesAdded",
@@ -304,15 +362,22 @@ func diffCategoryFixtures() []categoryFixture {
 		{"MaterializedViewsRemoved", &difftypes.SchemaDiff{MaterializedViewsRemoved: difftypes.MaterializedViewChanges{{Name: "mv"}}}, &schemamodel.Database{}},
 		{
 			"MaterializedViewsModified",
-			&difftypes.SchemaDiff{MaterializedViewsModified: []difftypes.MaterializedViewDiff{{ViewName: "mv", Changes: map[string]string{"body": "a -> b"}}}},
-			&schemamodel.Database{MaterializedViews: []schemamodel.MaterializedView{{Name: "mv", Body: "SELECT 2"}}},
+			&difftypes.SchemaDiff{MaterializedViewsModified: []difftypes.MaterializedViewDiff{{
+				ViewName: "mv",
+				Changes:  map[string]string{"body": "a -> b"},
+				Desired:  schemamodel.MaterializedView{Name: "mv", Body: "SELECT 2"},
+			}}},
+			&schemamodel.Database{},
 		},
 		{
 			"TriggersAdded",
-			&difftypes.SchemaDiff{TriggersAdded: []difftypes.TriggerRef{{TriggerName: "tg", TableName: "t"}}},
-			&schemamodel.Database{Triggers: []schemamodel.Trigger{
-				{Name: "tg", Table: "t", Timing: "BEFORE", Event: "INSERT", ForEach: "ROW", Body: "RETURN NEW;"},
-			}},
+			&difftypes.SchemaDiff{TriggersAdded: []difftypes.TriggerRef{{
+				TriggerName: "tg", TableName: "t",
+				Desired: schemamodel.Trigger{
+					Name: "tg", Table: "t", Timing: "BEFORE", Event: "INSERT", ForEach: "ROW", Body: "RETURN NEW;",
+				},
+			}}},
+			&schemamodel.Database{},
 		},
 		{
 			"TriggersRemoved",
@@ -321,15 +386,36 @@ func diffCategoryFixtures() []categoryFixture {
 		},
 		{
 			"TriggersModified",
-			&difftypes.SchemaDiff{TriggersModified: []difftypes.TriggerDiff{{TriggerName: "tg", TableName: "t", Changes: map[string]string{"timing": "BEFORE -> AFTER"}}}},
-			&schemamodel.Database{Triggers: []schemamodel.Trigger{
-				{Name: "tg", Table: "t", Timing: "AFTER", Event: "INSERT", ForEach: "ROW", Body: "RETURN NEW;"},
-			}},
+			&difftypes.SchemaDiff{TriggersModified: []difftypes.TriggerDiff{{
+				TriggerName: "tg", TableName: "t",
+				Changes: map[string]string{"timing": "BEFORE -> AFTER"},
+				Desired: schemamodel.Trigger{
+					Name: "tg", Table: "t", Timing: "AFTER", Event: "INSERT", ForEach: "ROW", Body: "RETURN NEW;",
+				},
+			}}},
+			&schemamodel.Database{},
+		},
+		{
+			// This row was exempt as "refused before emission until ALTER
+			// EXTENSION SET SCHEMA planning is supported" until
+			// TestEveryRefusedDiffCategoryIsRefused asked whether it still was.
+			// stokaro/ptah#1718 replaced that blanket refusal with real
+			// planning, and the exemption outlived it -- so the category had
+			// been out of this walk ever since, which is the state this file
+			// exists to prevent.
+			"ExtensionsModified",
+			&difftypes.SchemaDiff{ExtensionsModified: []difftypes.ExtensionDiff{{
+				Name: "pg_trgm", FromSchema: "public", ToSchema: "extensions", Relocatable: true,
+			}}},
+			&schemamodel.Database{},
 		},
 		{
 			"RLSPoliciesAdded",
-			&difftypes.SchemaDiff{RLSPoliciesAdded: []difftypes.RLSPolicyRef{{PolicyName: "pol", TableName: "t"}}},
-			&schemamodel.Database{RLSPolicies: []schemamodel.RLSPolicy{{Name: "pol", Table: "t", PolicyFor: "ALL", ToRoles: "app"}}},
+			&difftypes.SchemaDiff{RLSPoliciesAdded: []difftypes.RLSPolicyRef{{
+				PolicyName: "pol", TableName: "t",
+				Desired: schemamodel.RLSPolicy{Name: "pol", Table: "t", PolicyFor: "ALL", ToRoles: "app"},
+			}}},
+			&schemamodel.Database{},
 		},
 		{
 			"RLSPoliciesRemoved",
@@ -338,11 +424,15 @@ func diffCategoryFixtures() []categoryFixture {
 		},
 		{
 			"RLSPoliciesModified",
-			&difftypes.SchemaDiff{RLSPoliciesModified: []difftypes.RLSPolicyDiff{{PolicyName: "pol", TableName: "t", Changes: map[string]string{"using": "a -> b"}}}},
-			&schemamodel.Database{RLSPolicies: []schemamodel.RLSPolicy{{Name: "pol", Table: "t", PolicyFor: "ALL", ToRoles: "app"}}},
+			&difftypes.SchemaDiff{RLSPoliciesModified: []difftypes.RLSPolicyDiff{{
+				PolicyName: "pol", TableName: "t",
+				Changes: map[string]string{"using": "a -> b"},
+				Desired: schemamodel.RLSPolicy{Name: "pol", Table: "t", PolicyFor: "ALL", ToRoles: "app"},
+			}}},
+			&schemamodel.Database{},
 		},
-		{"RLSEnabledTablesAdded", &difftypes.SchemaDiff{RLSEnabledTablesAdded: []string{"t"}}, &schemamodel.Database{}},
-		{"RLSEnabledTablesRemoved", &difftypes.SchemaDiff{RLSEnabledTablesRemoved: []string{"t"}}, &schemamodel.Database{}},
+		{"RLSEnabledTablesAdded", &difftypes.SchemaDiff{RLSEnabledTablesAdded: difftypes.RLSEnabledTableChanges{{Table: "t"}}}, &schemamodel.Database{}},
+		{"RLSEnabledTablesRemoved", &difftypes.SchemaDiff{RLSEnabledTablesRemoved: difftypes.RLSEnabledTableChanges{{Table: "t"}}}, &schemamodel.Database{}},
 		{
 			"RolesAdded",
 			&difftypes.SchemaDiff{RolesAdded: difftypes.RoleChanges{{Name: "app"}}},

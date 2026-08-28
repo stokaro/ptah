@@ -21,6 +21,7 @@ import (
 	"slices"
 	"strings"
 
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/indexscope"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -224,7 +225,8 @@ func dropTableDependents(diff difftypes.SchemaDiff, removedTables []string) diff
 	diff.RLSPoliciesRemoved = slices.DeleteFunc(slices.Clone(diff.RLSPoliciesRemoved), func(ref difftypes.RLSPolicyRef) bool {
 		return hasKey(tables, ref.TableName)
 	})
-	diff.RLSEnabledTablesRemoved = slices.DeleteFunc(slices.Clone(diff.RLSEnabledTablesRemoved), func(name string) bool {
+	diff.RLSEnabledTablesRemoved = slices.DeleteFunc(slices.Clone(diff.RLSEnabledTablesRemoved), func(table schemamodel.RLSEnabledTable) bool {
+		name := table.Table
 		return hasKey(tables, name)
 	})
 	diff.GrantsRemoved = slices.DeleteFunc(slices.Clone(diff.GrantsRemoved), func(ref difftypes.GrantRef) bool {

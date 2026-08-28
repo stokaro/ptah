@@ -18,7 +18,7 @@ func TestCategoriesNamesEveryChangedObject(t *testing.T) {
 	}{
 		{
 			name: "plain names",
-			diff: &difftypes.SchemaDiff{RLSEnabledTablesAdded: []string{"other.secured", "public.p"}},
+			diff: &difftypes.SchemaDiff{RLSEnabledTablesAdded: difftypes.RLSEnabledTableChanges{{Table: "other.secured"}, {Table: "public.p"}}},
 			want: []diffreport.Category{
 				{Name: "rls_enabled_tables_added", Objects: []string{"other.secured", "public.p"}},
 			},
@@ -99,7 +99,7 @@ func TestCategoryCountAndNames(t *testing.T) {
 
 	categories := diffreport.Categories(&difftypes.SchemaDiff{
 		TablesAdded:           []string{"public.orders", "public.order_items"},
-		RLSEnabledTablesAdded: []string{"other.secured"},
+		RLSEnabledTablesAdded: difftypes.RLSEnabledTableChanges{{Table: "other.secured"}},
 	})
 
 	c.Assert(categories, qt.HasLen, 2)
