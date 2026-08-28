@@ -76,6 +76,7 @@ func domainsWithSemantics(
 					Changes:                 changes,
 					CurrentBaseType:         current.BaseType,
 					CurrentCheckConstraints: domainCheckConstraintNames(current),
+					Desired:                 target,
 				})
 			}
 			continue
@@ -290,6 +291,7 @@ func compositeTypesWithSemantics(
 				CurrentFieldTypes: dbCompositeFieldTypes(current),
 				AttributesAdded:   added,
 				AttributesRemoved: removed,
+				Desired:           target,
 			})
 		}
 	}
@@ -481,6 +483,7 @@ func rangesWithSemantics(
 				RangeName:      generatedNames[identity],
 				Changes:        changes,
 				CurrentSubtype: current.Subtype,
+				Desired:        target,
 			})
 		}
 	}

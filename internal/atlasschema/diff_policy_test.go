@@ -30,7 +30,7 @@ func TestApplyDiffPolicy_SkipDropTableFiltersOnlyDroppedTableRemovals(t *testing
 			{PolicyName: "old_users_policy", TableName: "old_users"},
 			{PolicyName: "posts_policy", TableName: "posts"},
 		},
-		RLSEnabledTablesRemoved: []string{"old_users", "posts"},
+		RLSEnabledTablesRemoved: difftypes.RLSEnabledTableChanges{{Table: "old_users"}, {Table: "posts"}},
 		GrantsRemoved: []difftypes.GrantRef{
 			{Role: "app", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "old_users"},
 			{Role: "app", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "posts"},
@@ -54,7 +54,7 @@ func TestApplyDiffPolicy_SkipDropTableFiltersOnlyDroppedTableRemovals(t *testing
 	c.Assert(got.RLSPoliciesRemoved, qt.DeepEquals, []difftypes.RLSPolicyRef{
 		{PolicyName: "posts_policy", TableName: "posts"},
 	})
-	c.Assert(got.RLSEnabledTablesRemoved, qt.DeepEquals, []string{"posts"})
+	c.Assert(got.RLSEnabledTablesRemoved.Names(), qt.DeepEquals, []string{"posts"})
 	c.Assert(got.GrantsRemoved, qt.DeepEquals, []difftypes.GrantRef{
 		{Role: "app", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "posts"},
 		{Role: "app", Privilege: "USAGE", ObjectType: "SCHEMA", ObjectName: "old_users"},
@@ -73,7 +73,7 @@ func TestApplyDiffPolicy_SkipDropTableFiltersOnlyDroppedTableRemovals(t *testing
 		{PolicyName: "old_users_policy", TableName: "old_users"},
 		{PolicyName: "posts_policy", TableName: "posts"},
 	})
-	c.Assert(diff.RLSEnabledTablesRemoved, qt.DeepEquals, []string{"old_users", "posts"})
+	c.Assert(diff.RLSEnabledTablesRemoved.Names(), qt.DeepEquals, []string{"old_users", "posts"})
 	c.Assert(diff.GrantsRemoved, qt.DeepEquals, []difftypes.GrantRef{
 		{Role: "app", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "old_users"},
 		{Role: "app", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "posts"},

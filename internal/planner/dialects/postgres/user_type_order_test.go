@@ -11,27 +11,26 @@ import (
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
-// userTypeOrderSchema holds one type of each kind that names another kind, in
-// both directions, so a plan that emits kind by kind gets at least one of them
-// wrong whichever kind it puts first.
-func userTypeOrderSchema() *schemamodel.Database {
-	return &schemamodel.Database{
-		Domains: []schemamodel.Domain{
-			{Name: "d_comp", BaseType: "addr"},
-			{Name: "d_range", BaseType: "myrange"},
-			{Name: "d_int", BaseType: "integer", Check: "VALUE > 0"},
-		},
-		CompositeTypes: []schemamodel.CompositeType{
-			{Name: "addr", Fields: []schemamodel.CompositeField{{Name: "street", Type: "text"}, {Name: "city", Type: "text"}}},
-			{Name: "measure", Fields: []schemamodel.CompositeField{{Name: "qty", Type: "d_int"}}},
-			{Name: "envelope", Fields: []schemamodel.CompositeField{{Name: "recipient", Type: "addr"}}},
-		},
-		Ranges: []schemamodel.Range{
-			{Name: "myrange", Subtype: "integer"},
-			{Name: "posrange", Subtype: "d_int"},
-		},
+// The types below name one another in both directions, so a plan that emits
+// kind by kind gets at least one of them wrong whichever kind it puts first.
+//
+// Every definition travels with its change (stokaro/ptah#2315), so the schema
+// each test hands the planner is empty and the orderings asserted here are
+// computed from the diff alone.
+var (
+	orderDomains = map[string]schemamodel.Domain{
+		"d_comp":  {Name: "d_comp", BaseType: "addr"},
+		"d_range": {Name: "d_range", BaseType: "myrange"},
+		"d_int":   {Name: "d_int", BaseType: "integer", Check: "VALUE > 0"},
 	}
-}
+	orderComposites = map[string]schemamodel.CompositeType{
+		"addr": {Name: "addr", Fields: []schemamodel.CompositeField{
+			{Name: "street", Type: "text"}, {Name: "city", Type: "text"},
+		}},
+		"measure":  {Name: "measure", Fields: []schemamodel.CompositeField{{Name: "qty", Type: "d_int"}}},
+		"envelope": {Name: "envelope", Fields: []schemamodel.CompositeField{{Name: "recipient", Type: "addr"}}},
+	}
+)
 
 // TestPlanner_GenerateMigrationAST_CreatesUserTypesBeforeTheTypesThatNameThem
 // is the ordering the round trip depends on.
@@ -69,7 +68,7 @@ func TestPlanner_GenerateMigrationAST_CreatesUserTypesBeforeTheTypesThatNameThem
 		},
 	}
 
-	nodes, err := planner.GenerateMigrationAST(diff, userTypeOrderSchema())
+	nodes, err := planner.GenerateMigrationAST(diff, &schemamodel.Database{})
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -106,17 +105,35 @@ func TestPlanner_GenerateMigrationAST_RecreatesUserTypesInDependencyOrder(t *tes
 	planner := postgres.New()
 
 	diff := &difftypes.SchemaDiff{
-		DomainsModified: []difftypes.DomainDiff{
-			{DomainName: "d_int", Changes: map[string]string{"type": "smallint -> integer"}, CurrentBaseType: "smallint"},
-		},
+		DomainsModified: []difftypes.DomainDiff{{
+			DomainName:      "d_int",
+			Changes:         map[string]string{"type": "smallint -> integer"},
+			CurrentBaseType: "smallint",
+			Desired:         orderDomains["d_int"],
+		}},
 		CompositeTypesModified: []difftypes.CompositeTypeDiff{
-			{TypeName: "addr", Changes: map[string]string{"fields": "street text -> street text, city text"}, CurrentFieldTypes: []string{"text"}},
-			{TypeName: "measure", Changes: map[string]string{"fields": "qty d_int -> qty d_int, note text"}, CurrentFieldTypes: []string{"d_int"}},
-			{TypeName: "envelope", Changes: map[string]string{"fields": "recipient addr -> recipient addr, stamp text"}, CurrentFieldTypes: []string{"addr"}},
+			{
+				TypeName:          "addr",
+				Changes:           map[string]string{"fields": "street text -> street text, city text"},
+				CurrentFieldTypes: []string{"text"},
+				Desired:           orderComposites["addr"],
+			},
+			{
+				TypeName:          "measure",
+				Changes:           map[string]string{"fields": "qty d_int -> qty d_int, note text"},
+				CurrentFieldTypes: []string{"d_int"},
+				Desired:           orderComposites["measure"],
+			},
+			{
+				TypeName:          "envelope",
+				Changes:           map[string]string{"fields": "recipient addr -> recipient addr, stamp text"},
+				CurrentFieldTypes: []string{"addr"},
+				Desired:           orderComposites["envelope"],
+			},
 		},
 	}
 
-	nodes, err := planner.GenerateMigrationAST(diff, userTypeOrderSchema())
+	nodes, err := planner.GenerateMigrationAST(diff, &schemamodel.Database{})
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -144,12 +161,14 @@ func TestPlanner_GenerateMigrationAST_CreatesRecreatedUserTypesBeforeNewDependen
 
 	diff := &difftypes.SchemaDiff{
 		DomainsAdded: difftypes.DomainChanges{{Name: "d_comp", BaseType: "addr"}},
-		CompositeTypesModified: []difftypes.CompositeTypeDiff{
-			{TypeName: "addr", Changes: map[string]string{"fields": "old -> new"}},
-		},
+		CompositeTypesModified: []difftypes.CompositeTypeDiff{{
+			TypeName: "addr",
+			Changes:  map[string]string{"fields": "old -> new"},
+			Desired:  orderComposites["addr"],
+		}},
 	}
 
-	nodes, err := planner.GenerateMigrationAST(diff, userTypeOrderSchema())
+	nodes, err := planner.GenerateMigrationAST(diff, &schemamodel.Database{})
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)

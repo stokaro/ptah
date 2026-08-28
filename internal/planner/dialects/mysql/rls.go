@@ -27,19 +27,23 @@ func (p *Planner) planRLS(result []ast.Node, diff *difftypes.SchemaDiff, desired
 	if !p.capabilities().Has(capability.RowLevelSecurity) {
 		return result
 	}
+	// The declaration travels WITH the entry (stokaro/ptah#2315), so an
+	// enablement no longer goes unplanned because the schema handed alongside
+	// spelled its table differently.
 	for _, table := range diff.RLSEnabledTablesAdded {
-		declaration := findRLSEnabledTable(desired.RLSEnabledTables, table)
-		if declaration == nil {
-			continue
-		}
-		result = append(result, fromschema.FromRLSEnabledTable(*declaration))
+		result = append(result, fromschema.FromRLSEnabledTable(table))
 	}
+	// The policy travels WITH the entry, and so does the schema its table is
+	// declared under, which is what SQL Server addresses it by
+	// (stokaro/ptah#2315). An entry carrying no policy is left alone here
+	// rather than refused: this tree plans row-level security for targets that
+	// merely tolerate it, and the PostgreSQL planner is where the refusal is.
 	for _, policy := range diff.RLSPoliciesAdded {
-		declaration := findRLSPolicy(desired.RLSPolicies, policy.PolicyName, policy.TableName)
-		if declaration == nil {
+		if policy.Desired.Name == "" {
 			continue
 		}
-		result = append(result, fromschema.FromRLSPolicy(fromschema.QualifyRLSPolicyForTarget(*declaration, *desired, p.targetDialect())))
+		result = append(result, fromschema.FromRLSPolicy(
+			fromschema.QualifyRLSPolicyForTarget(policy.Desired, policy.TableSchema, p.targetDialect())))
 	}
 	// A modified policy is planned as a drop followed by a create. T-SQL has
 	// ALTER SECURITY POLICY, but it alters the state and the predicate list
@@ -48,11 +52,10 @@ func (p *Planner) planRLS(result []ast.Node, diff *difftypes.SchemaDiff, desired
 	// pair is what a replacement is here, the same answer planFunctions
 	// reached for the same reason.
 	for _, policy := range diff.RLSPoliciesModified {
-		declaration := findRLSPolicy(desired.RLSPolicies, policy.PolicyName, policy.TableName)
-		if declaration == nil {
+		if policy.Desired.Name == "" {
 			continue
 		}
-		qualified := fromschema.QualifyRLSPolicyForTarget(*declaration, *desired, p.targetDialect())
+		qualified := fromschema.QualifyRLSPolicyForTarget(policy.Desired, policy.TableSchema, p.targetDialect())
 		// A replacement whose create half the renderer would refuse must not
 		// contribute its drop half. The pair would leave the table with no
 		// row-level security at all, which is a worse answer than the
@@ -84,33 +87,8 @@ func (p *Planner) removeRLS(result []ast.Node, diff *difftypes.SchemaDiff) []ast
 		result = append(result, ast.NewDropPolicy(policy.PolicyName, policy.TableName).SetIfExists())
 	}
 
-	for _, table := range diff.RLSEnabledTablesRemoved {
+	for _, table := range diff.RLSEnabledTablesRemoved.Names() {
 		result = append(result, ast.NewAlterTableDisableRLS(table))
 	}
 	return result
-}
-
-// findRLSPolicy returns the declaration behind a diff entry, matched on the
-// pair the diff reports rather than on the policy name alone.
-//
-// The pair is the identity: SQL Server lets one policy carry predicates for
-// several tables, so a name on its own does not name a declaration.
-func findRLSPolicy(declarations []schemamodel.RLSPolicy, name, table string) *schemamodel.RLSPolicy {
-	for i := range declarations {
-		if declarations[i].Name == name && declarations[i].Table == table {
-			return &declarations[i]
-		}
-	}
-	return nil
-}
-
-// findRLSEnabledTable returns the declaration that asked for row-level security
-// on a table, or nil when the diff names a table nothing declared.
-func findRLSEnabledTable(declarations []schemamodel.RLSEnabledTable, table string) *schemamodel.RLSEnabledTable {
-	for i := range declarations {
-		if declarations[i].Table == table {
-			return &declarations[i]
-		}
-	}
-	return nil
 }

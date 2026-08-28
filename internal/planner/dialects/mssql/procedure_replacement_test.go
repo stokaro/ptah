@@ -22,21 +22,21 @@ import (
 // the statements, so the assertion is on what the server would be given.
 func planProcedureReplacement(c *qt.C, kind string) string {
 	c.Helper()
-	desired := &schemamodel.Database{
-		Functions: []schemamodel.Function{{
-			StructName: "Report", Name: "dbo.p_report", Kind: kind,
-			Parameters: "@id int", Language: "sql",
-			Body: "BEGIN SELECT @id; END",
-		}},
-	}
+	// The routine travels WITH the change (stokaro/ptah#2315), so the schema
+	// handed to the planner is empty.
 	diff := &difftypes.SchemaDiff{
 		FunctionsModified: []difftypes.FunctionDiff{{
 			FunctionName: "dbo.p_report",
 			Changes:      map[string]string{"body": "old -> new"},
+			Desired: schemamodel.Function{
+				StructName: "Report", Name: "dbo.p_report", Kind: kind,
+				Parameters: "@id int", Language: "sql",
+				Body: "BEGIN SELECT @id; END",
+			},
 		}},
 	}
 
-	nodes, err := mssqlplanner.New().GenerateMigrationAST(diff, desired)
+	nodes, err := mssqlplanner.New().GenerateMigrationAST(diff, &schemamodel.Database{})
 	c.Assert(err, qt.IsNil)
 
 	var rendered strings.Builder

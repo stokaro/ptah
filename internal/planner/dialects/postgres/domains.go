@@ -64,24 +64,20 @@ func compositeIsAlterableInPlace(
 // CHECK was therefore not merely inconvenient to apply -- it could not be
 // applied at all on any domain in use, which is every domain that matters
 // (stokaro/ptah#1717).
-func (p *Planner) alterModifiedDomains(
-	result []ast.Node,
-	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
-) []ast.Node {
-	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
+func (p *Planner) alterModifiedDomains(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, domainDiff := range diff.DomainsModified {
 		if !domainIsAlterableInPlace(domainDiff) {
 			continue
 		}
-		domain := findDomain(desired.Domains, domainDiff.DomainName, semantics)
-		if domain == nil {
-			// The same rule the rebuild path follows: a definition the schema
-			// does not hold is not one to plan statements from.
+		// The domain travels WITH the change (stokaro/ptah#2315).
+		domain := domainDiff.Desired
+		if domain.Name == "" {
+			// The same rule the rebuild path follows: a definition the change
+			// does not carry is not one to plan statements from.
 			result = append(result, unrecreatableUserTypeComment("domain", domainDiff.DomainName))
 			continue
 		}
-		if node := alterDomainNode(domainDiff, *domain); node != nil {
+		if node := alterDomainNode(domainDiff, domain); node != nil {
 			result = append(result, node)
 		}
 	}
@@ -260,18 +256,13 @@ func bareTypeName(name string) string {
 // column already uses, and refuses to DROP the type itself in exactly that
 // case. Before this, a composite gaining a field was reconciled by dropping and
 // recreating it, which is the one thing the engine will not do there.
-func (p *Planner) alterModifiedCompositeTypes(
-	result []ast.Node,
-	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
-) []ast.Node {
-	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
+func (p *Planner) alterModifiedCompositeTypes(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	rebuilt := rebuiltUserTypes(diff)
 	for _, compositeDiff := range diff.CompositeTypesModified {
 		if !compositeIsAlterableInPlace(compositeDiff, rebuilt) {
 			continue
 		}
-		if findCompositeType(desired.CompositeTypes, compositeDiff.TypeName, semantics) == nil {
+		if compositeDiff.Desired.Name == "" {
 			result = append(result, unrecreatableUserTypeComment("composite type", compositeDiff.TypeName))
 			continue
 		}

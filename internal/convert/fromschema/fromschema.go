@@ -2581,7 +2581,8 @@ func appendPostTableObjectStatements(
 	}
 	for _, rlsPolicy := range database.RLSPolicies {
 		statements.Statements = append(statements.Statements,
-			FromRLSPolicy(QualifyRLSPolicyForTarget(rlsPolicy, database, targetPlatform)))
+			FromRLSPolicy(QualifyRLSPolicyForTarget(
+				rlsPolicy, declaredTableSchema(database, rlsPolicy.Table), targetPlatform)))
 	}
 	for _, grant := range database.Grants {
 		statements.Statements = append(statements.Statements, FromGrant(grant))
@@ -2589,6 +2590,24 @@ func appendPostTableObjectStatements(
 	for _, trigger := range database.Triggers {
 		statements.Statements = append(statements.Statements, FromTrigger(trigger))
 	}
+}
+
+// declaredTableSchema is the schema a declared table is written under, or empty
+// when nothing declares it.
+//
+// It exists here because this path renders a whole database rather than a diff,
+// so the tables are in hand and there is nothing to carry the answer. A plan
+// built from a diff gets it from the entry instead (stokaro/ptah#2315).
+//
+// The name is matched as written, which is what the search inside
+// QualifyRLSPolicyForTarget did with the same two values before it was narrowed.
+func declaredTableSchema(database schemamodel.Database, tableName string) string {
+	for _, declared := range database.Tables {
+		if declared.Name == tableName {
+			return declared.Schema
+		}
+	}
+	return ""
 }
 
 func appendOrderedViewLikeStatements(
@@ -3186,25 +3205,24 @@ func processEmbeddedFieldsForStruct(embeddedFields []schemamodel.EmbeddedField, 
 // accepted -- a policy may name a target in another schema -- but a policy in
 // dbo lies outside the scope a read of the table's schema covers, and an object
 // the reader cannot see is one the comparator plans forever.
+//
+// tableSchema is that schema, resolved by the caller. It used to be searched
+// for here, in the whole desired database, which is what kept a schema the
+// planner had no other use for on the planning path (stokaro/ptah#2315). The
+// comparison resolves it now and the change carries it, so an empty value means
+// the declaration named no schema for the table -- exactly what the search
+// answered when it found none.
 func QualifyRLSPolicyForTarget(
 	policy schemamodel.RLSPolicy,
-	database schemamodel.Database,
-	targetPlatform string,
+	tableSchema, targetPlatform string,
 ) schemamodel.RLSPolicy {
 	if targetPlatform != platform.SQLServer {
 		return policy
 	}
-	schema := ""
-	for _, declared := range database.Tables {
-		if declared.Name == policy.Table {
-			schema = declared.Schema
-			break
-		}
-	}
-	if schema == "" {
+	if tableSchema == "" {
 		return policy
 	}
-	policy.Table = schema + "." + policy.Table
-	policy.Name = schema + "." + policy.Name
+	policy.Table = tableSchema + "." + policy.Table
+	policy.Name = tableSchema + "." + policy.Name
 	return policy
 }

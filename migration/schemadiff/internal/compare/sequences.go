@@ -80,6 +80,7 @@ func sequencesWithSemantics(
 			diff.SequencesModified = append(diff.SequencesModified, difftypes.SequenceDiff{
 				SequenceName: generatedNames[identity],
 				Changes:      changes,
+				Desired:      generatedSequence,
 			})
 		}
 	}

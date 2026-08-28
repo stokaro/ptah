@@ -89,8 +89,11 @@ func TestMaterializedViewPlanning_EmitsTheThreeStatementsAChangeNeeds(t *testing
 	c.Assert(added, qt.HasLen, 1)
 
 	modified := planner.modifyExistingMaterializedViews(nil, &difftypes.SchemaDiff{
-		MaterializedViewsModified: []difftypes.MaterializedViewDiff{{ViewName: "order_totals"}},
-	}, desired)
+		MaterializedViewsModified: []difftypes.MaterializedViewDiff{{
+			ViewName: "order_totals",
+			Desired:  desired.MaterializedViews[0],
+		}},
+	})
 	c.Assert(modified, qt.HasLen, 2)
 
 	removed := planner.removeMaterializedViews(nil, &difftypes.SchemaDiff{

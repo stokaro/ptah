@@ -56,7 +56,7 @@ func TestPostgreSQLMultiSchemaGenerateApplyReadDiffIntegration(t *testing.T) {
 		RLSPoliciesAdded: []difftypes.RLSPolicyRef{
 			{PolicyName: "ptah_ms_users_visible", TableName: "ptah_ms_auth.ptah_ms_users"},
 		},
-		RLSEnabledTablesAdded: []string{"ptah_ms_auth.ptah_ms_users"},
+		RLSEnabledTablesAdded: difftypes.RLSEnabledTableChanges{{Table: "ptah_ms_auth.ptah_ms_users"}},
 	}
 	nodes, err := planner.GenerateSchemaDiffAST(diff, desired, "postgres")
 	c.Assert(err, qt.IsNil)

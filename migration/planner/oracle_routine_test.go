@@ -104,6 +104,7 @@ func TestGenerateSchemaDiffSQLStatements_OracleReplacesARoutineWithBothHalves(t 
 	diff := &difftypes.SchemaDiff{FunctionsModified: []difftypes.FunctionDiff{{
 		FunctionName: "fn_double",
 		Changes:      map[string]string{"body": "old -> new"},
+		Desired:      desired.Functions[0],
 	}}}
 
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
@@ -139,6 +140,7 @@ func TestGenerateSchemaDiffSQLStatements_OracleDropsNothingItCannotRecreate(t *t
 	diff := &difftypes.SchemaDiff{FunctionsModified: []difftypes.FunctionDiff{{
 		FunctionName: "fn_double",
 		Changes:      map[string]string{"body": "old -> new"},
+		Desired:      desired.Functions[0],
 	}}}
 
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(

@@ -2129,7 +2129,7 @@ func reverseSchemaDiffWithSchemaForDialect(
 		// merge into one addition list without losing which was which.
 		FunctionsAdded:    append(slices.Clone(diff.FunctionsRemoved), diff.ProceduresRemoved...),
 		FunctionsRemoved:  reverseFunctionsRemoved(diff.FunctionsAdded),
-		FunctionsModified: reverseFunctionDiffs(diff.FunctionsModified),
+		FunctionsModified: reverseFunctionDiffs(diff.FunctionsModified, prior),
 		// A removed procedure comes back as an addition, and the planner reads
 		// its kind off the declaration -- which is why the reverse of a removal
 		// needs no kind of its own. The reverse of an ADDITION does: nothing
@@ -2141,17 +2141,17 @@ func reverseSchemaDiffWithSchemaForDialect(
 		// Reverse user-defined type operations
 		DomainsAdded:           diff.DomainsRemoved,
 		DomainsRemoved:         diff.DomainsAdded,
-		DomainsModified:        reverseDomainDiffs(diff.DomainsModified, schema),
+		DomainsModified:        reverseDomainDiffs(diff.DomainsModified, schema, prior, semantics),
 		CompositeTypesAdded:    diff.CompositeTypesRemoved,
 		CompositeTypesRemoved:  diff.CompositeTypesAdded,
-		CompositeTypesModified: reverseCompositeTypeDiffs(diff.CompositeTypesModified, schema, prior),
+		CompositeTypesModified: reverseCompositeTypeDiffs(diff.CompositeTypesModified, schema, prior, semantics),
 		RangesAdded:            diff.RangesRemoved,
 		RangesRemoved:          diff.RangesAdded,
-		RangesModified:         reverseRangeDiffs(diff.RangesModified, schema),
+		RangesModified:         reverseRangeDiffs(diff.RangesModified, schema, prior, semantics),
 
 		SequencesAdded:    diff.SequencesRemoved, // Sequences to remove become sequences to add
 		SequencesRemoved:  diff.SequencesAdded,   // Sequences to add become sequences to remove
-		SequencesModified: reverseSequenceDiffs(diff.SequencesModified),
+		SequencesModified: reverseSequenceDiffs(diff.SequencesModified, prior, semantics),
 
 		// Reverse view, materialized view and trigger operations.
 		//
@@ -2177,7 +2177,7 @@ func reverseSchemaDiffWithSchemaForDialect(
 		// planner drops and recreates either way.
 		SynonymsAdded:    diff.SynonymsRemoved,
 		SynonymsRemoved:  diff.SynonymsAdded,
-		SynonymsModified: reverseSynonymDiffs(diff.SynonymsModified),
+		SynonymsModified: reverseSynonymDiffs(diff.SynonymsModified, prior),
 
 		// A hypertable reverses like a synonym in the diff and unlike one in
 		// the plan. The swap is the same -- what the up direction partitioned,
@@ -2211,19 +2211,33 @@ func reverseSchemaDiffWithSchemaForDialect(
 
 		MaterializedViewsAdded:    diff.MaterializedViewsRemoved, // Materialized views to remove become materialized views to add
 		MaterializedViewsRemoved:  diff.MaterializedViewsAdded,   // Materialized views to add become materialized views to remove
-		MaterializedViewsModified: reverseMaterializedViewDiffs(diff.MaterializedViewsModified),
+		MaterializedViewsModified: reverseMaterializedViewDiffs(diff.MaterializedViewsModified, prior, semantics),
 
-		TriggersAdded:    diff.TriggersRemoved, // Triggers to remove become triggers to add
-		TriggersRemoved:  diff.TriggersAdded,   // Triggers to add become triggers to remove
-		TriggersModified: reverseTriggerDiffs(diff.TriggersModified),
+		// Exchanged, but not carried across untouched. An addition renders from
+		// its operand and a removal from its names, so the two directions want
+		// opposite things: the reversed addition needs the definition the
+		// pre-change database held, and the reversed removal needs none
+		// (stokaro/ptah#2315).
+		TriggersAdded:    triggerAdditionsFromRemovals(diff.TriggersRemoved, prior, semantics),
+		TriggersRemoved:  triggerRemovalsFromAdditions(diff.TriggersAdded),
+		TriggersModified: reverseTriggerDiffs(diff.TriggersModified, prior, semantics),
 
 		// Reverse RLS policy operations. Both directions carry the owning
 		// table, so reversing is a swap and no name-to-table resolution is
 		// needed -- the resolution that used to happen here keyed a map by
 		// policy name and lost one of two policies that shared one.
-		RLSPoliciesAdded:    slices.Clone(diff.RLSPoliciesRemoved), // Policies to remove become policies to add
-		RLSPoliciesRemoved:  slices.Clone(diff.RLSPoliciesAdded),   // Policies to add become policies to remove
-		RLSPoliciesModified: reverseRLSPolicyDiffs(diff.RLSPoliciesModified),
+		// Exchanged, and rewritten on the way. An addition renders CREATE POLICY
+		// from its operand and a removal is written from its two names, so the
+		// reversed addition needs the declaration the pre-change database held
+		// and the reversed removal needs none (stokaro/ptah#2315).
+		RLSPoliciesAdded:    rlsAdditionsFromRemovals(diff.RLSPoliciesRemoved, prior, semantics),
+		RLSPoliciesRemoved:  rlsRemovalsFromAdditions(diff.RLSPoliciesAdded),
+		RLSPoliciesModified: reverseRLSPolicyDiffs(diff.RLSPoliciesModified, prior, semantics),
+		// Carried, not dropped. A declaration in which two policies share one
+		// identity cannot be planned in either direction, and a rollback that
+		// became plannable by forgetting the conflict would plan against the
+		// very declaration the forward direction refused (stokaro/ptah#2440).
+		RLSPolicyIdentityConflicts: diff.RLSPolicyIdentityConflicts,
 
 		// Reverse RLS table enablement operations
 		RLSEnabledTablesAdded:   diff.RLSEnabledTablesRemoved, // Tables to disable RLS become tables to enable RLS
@@ -3058,7 +3072,10 @@ func reverseEnumDiffs(enumDiffs []difftypes.EnumDiff) []difftypes.EnumDiff {
 }
 
 // reverseFunctionDiffs reverses function modifications for down migrations
-func reverseFunctionDiffs(functionDiffs []difftypes.FunctionDiff) []difftypes.FunctionDiff {
+func reverseFunctionDiffs(
+	functionDiffs []difftypes.FunctionDiff,
+	prior *schemamodel.Database,
+) []difftypes.FunctionDiff {
 	reversed := make([]difftypes.FunctionDiff, len(functionDiffs))
 	for i, functionDiff := range functionDiffs {
 		// For function changes, we need to reverse the direction of changes
@@ -3077,13 +3094,21 @@ func reverseFunctionDiffs(functionDiffs []difftypes.FunctionDiff) []difftypes.Fu
 		reversed[i] = difftypes.FunctionDiff{
 			FunctionName: functionDiff.FunctionName,
 			Changes:      reversedChanges,
+			// The replacement renders from the operand, so reversing the change
+			// map without reversing the operand would have the down direction
+			// re-apply the body it is undoing (stokaro/ptah#2315).
+			Desired: priorFunction(prior, functionDiff.FunctionName),
 		}
 	}
 	return reversed
 }
 
 // reverseSequenceDiffs reverses sequence modifications for down migrations.
-func reverseSequenceDiffs(sequenceDiffs []difftypes.SequenceDiff) []difftypes.SequenceDiff {
+func reverseSequenceDiffs(
+	sequenceDiffs []difftypes.SequenceDiff,
+	prior *schemamodel.Database,
+	semantics identifier.Semantics,
+) []difftypes.SequenceDiff {
 	reversed := make([]difftypes.SequenceDiff, len(sequenceDiffs))
 	for i, sequenceDiff := range sequenceDiffs {
 		reversedChanges := make(map[string]string)
@@ -3100,6 +3125,7 @@ func reverseSequenceDiffs(sequenceDiffs []difftypes.SequenceDiff) []difftypes.Se
 		reversed[i] = difftypes.SequenceDiff{
 			SequenceName: sequenceDiff.SequenceName,
 			Changes:      reversedChanges,
+			Desired:      priorSequence(prior, sequenceDiff.SequenceName, semantics),
 		}
 	}
 	return reversed
@@ -3125,7 +3151,11 @@ func reverseChangeMap(changes map[string]string) map[string]string {
 // the up migration created. schema is the up direction's target, so that is
 // where the down direction's from-side lives. A nil schema leaves it empty and
 // the drop ordering falls back to declaration order.
-func reverseDomainDiffs(domainDiffs []difftypes.DomainDiff, schema *schemamodel.Database) []difftypes.DomainDiff {
+func reverseDomainDiffs(
+	domainDiffs []difftypes.DomainDiff,
+	schema, prior *schemamodel.Database,
+	semantics identifier.Semantics,
+) []difftypes.DomainDiff {
 	reversed := make([]difftypes.DomainDiff, len(domainDiffs))
 	for i, domainDiff := range domainDiffs {
 		reversed[i] = difftypes.DomainDiff{
@@ -3136,9 +3166,29 @@ func reverseDomainDiffs(domainDiffs []difftypes.DomainDiff, schema *schemamodel.
 			// changing away from. CurrentCheckConstraints cannot be: see
 			// nestedCoverageExempt.
 			CurrentBaseType: targetDomainBaseType(schema, domainDiff.DomainName),
+			// The recreate half renders from the operand, so reversing the
+			// change map without reversing the operand would rebuild the very
+			// definition the rollback is undoing (stokaro/ptah#2315).
+			Desired: priorDomain(prior, domainDiff.DomainName, semantics),
 		}
 	}
 	return reversed
+}
+
+// priorDomain is the domain the pre-change database held, or a zero one when it
+// held none -- which is what withholds the drop.
+func priorDomain(
+	prior *schemamodel.Database,
+	name string,
+	semantics identifier.Semantics,
+) schemamodel.Domain {
+	if prior == nil {
+		return schemamodel.Domain{}
+	}
+	if domain := objectlookup.Qualified(prior.Domains, name, semantics); domain != nil {
+		return *domain
+	}
+	return schemamodel.Domain{}
 }
 
 // reverseViewDiffs carries modified views into the down direction.
@@ -3242,7 +3292,10 @@ func priorContinuousAggregate(
 	return schemamodel.ContinuousAggregate{}
 }
 
-func reverseSynonymDiffs(diffs []difftypes.SynonymDiff) []difftypes.SynonymDiff {
+func reverseSynonymDiffs(
+	diffs []difftypes.SynonymDiff,
+	prior *schemamodel.Database,
+) []difftypes.SynonymDiff {
 	if len(diffs) == 0 {
 		return nil
 	}
@@ -3252,9 +3305,61 @@ func reverseSynonymDiffs(diffs []difftypes.SynonymDiff) []difftypes.SynonymDiff 
 			SynonymName: diff.SynonymName,
 			OldTarget:   diff.NewTarget,
 			NewTarget:   diff.OldTarget,
+			Desired:     priorSynonym(prior, diff.SynonymName),
 		})
 	}
 	return reversed
+}
+
+// priorFunction is the function the pre-change database held.
+//
+// The name is compared exactly, which is the identity the comparison that
+// produced the change already used: it pairs a declared routine with a reported
+// one by the name the declaration carries.
+func priorFunction(prior *schemamodel.Database, name string) schemamodel.Function {
+	if prior == nil {
+		return schemamodel.Function{}
+	}
+	for _, function := range prior.Functions {
+		if function.Name == name {
+			return function
+		}
+	}
+	return schemamodel.Function{}
+}
+
+// priorSequence is the sequence the pre-change database held, resolved on the
+// three identity tiers, because the diff spells a name the declaration produced
+// and a read reports the schema the server puts the sequence under.
+func priorSequence(
+	prior *schemamodel.Database,
+	name string,
+	semantics identifier.Semantics,
+) schemamodel.Sequence {
+	if prior == nil {
+		return schemamodel.Sequence{}
+	}
+	if sequence := objectlookup.Qualified(prior.Sequences, name, semantics); sequence != nil {
+		return *sequence
+	}
+	return schemamodel.Sequence{}
+}
+
+// priorSynonym is the synonym the pre-change database held.
+//
+// The qualified name is the key on both sides, which is the one the comparison
+// that produced the change already used: it maps declared synonyms by
+// QualifiedName and pairs them with the reported ones under the same key.
+func priorSynonym(prior *schemamodel.Database, name string) schemamodel.Synonym {
+	if prior == nil {
+		return schemamodel.Synonym{}
+	}
+	for _, synonym := range prior.Synonyms {
+		if synonym.QualifiedName() == name {
+			return synonym
+		}
+	}
+	return schemamodel.Synonym{}
 }
 
 func reverseViewDiffs(
@@ -3294,16 +3399,36 @@ func priorView(prior *schemamodel.Database, name string, semantics identifier.Se
 }
 
 // reverseRangeDiffs mirrors reverseDomainDiffs for range types.
-func reverseRangeDiffs(rangeDiffs []difftypes.RangeDiff, schema *schemamodel.Database) []difftypes.RangeDiff {
+func reverseRangeDiffs(
+	rangeDiffs []difftypes.RangeDiff,
+	schema, prior *schemamodel.Database,
+	semantics identifier.Semantics,
+) []difftypes.RangeDiff {
 	reversed := make([]difftypes.RangeDiff, len(rangeDiffs))
 	for i, rangeDiff := range rangeDiffs {
 		reversed[i] = difftypes.RangeDiff{
 			RangeName:      rangeDiff.RangeName,
 			Changes:        reverseChangeMap(rangeDiff.Changes),
 			CurrentSubtype: targetRangeSubtype(schema, rangeDiff.RangeName),
+			Desired:        priorRange(prior, rangeDiff.RangeName, semantics),
 		}
 	}
 	return reversed
+}
+
+// priorRange mirrors [priorDomain] for range types.
+func priorRange(
+	prior *schemamodel.Database,
+	name string,
+	semantics identifier.Semantics,
+) schemamodel.Range {
+	if prior == nil {
+		return schemamodel.Range{}
+	}
+	if rangeType := objectlookup.Qualified(prior.Ranges, name, semantics); rangeType != nil {
+		return *rangeType
+	}
+	return schemamodel.Range{}
 }
 
 func generatedViewBody(schema *schemamodel.Database, viewName string) string {
@@ -3334,7 +3459,11 @@ func targetRangeSubtype(schema *schemamodel.Database, name string) string {
 // down direction, on the same terms as reverseViewDiffs. A materialized view
 // has no in-place replace at all, so there is no prior body to record: both
 // directions drop and recreate it.
-func reverseMaterializedViewDiffs(viewDiffs []difftypes.MaterializedViewDiff) []difftypes.MaterializedViewDiff {
+func reverseMaterializedViewDiffs(
+	viewDiffs []difftypes.MaterializedViewDiff,
+	prior *schemamodel.Database,
+	semantics identifier.Semantics,
+) []difftypes.MaterializedViewDiff {
 	reversed := make([]difftypes.MaterializedViewDiff, len(viewDiffs))
 	for i, viewDiff := range viewDiffs {
 		reversed[i] = difftypes.MaterializedViewDiff{
@@ -3346,9 +3475,31 @@ func reverseMaterializedViewDiffs(viewDiffs []difftypes.MaterializedViewDiff) []
 			// the view without the schedule it had, so its rows would be right
 			// once and never again (stokaro/ptah#2418).
 			RefreshChange: reverseRefreshChange(viewDiff.RefreshChange),
+			// The recreate half renders from the operand, so reversing the
+			// change map without reversing the operand would rebuild the very
+			// definition the rollback is undoing (stokaro/ptah#2315).
+			Desired: priorMaterializedView(prior, viewDiff.ViewName, semantics),
 		}
 	}
 	return reversed
+}
+
+// priorMaterializedView is the materialized view the pre-change database held,
+// resolved the way [priorView] resolves a plain one: the diff spells a name the
+// declaration used, and a database view carries the schema the server reports it
+// under.
+func priorMaterializedView(
+	prior *schemamodel.Database,
+	name string,
+	semantics identifier.Semantics,
+) schemamodel.MaterializedView {
+	if prior == nil {
+		return schemamodel.MaterializedView{}
+	}
+	if view := objectlookup.MaterializedView(prior.MaterializedViews, name, semantics); view != nil {
+		return *view
+	}
+	return schemamodel.MaterializedView{}
 }
 
 // reverseTriggerDiffs carries modified triggers into the down direction, on the
@@ -3356,22 +3507,91 @@ func reverseMaterializedViewDiffs(viewDiffs []difftypes.MaterializedViewDiff) []
 // rather than a changed value, so it is preserved. PostgreSQL 17.10 accepts
 // CREATE OR REPLACE TRIGGER even for a timing change, so a trigger needs no
 // legality test of its own.
-func reverseTriggerDiffs(triggerDiffs []difftypes.TriggerDiff) []difftypes.TriggerDiff {
+func reverseTriggerDiffs(
+	triggerDiffs []difftypes.TriggerDiff,
+	prior *schemamodel.Database,
+	semantics identifier.Semantics,
+) []difftypes.TriggerDiff {
 	reversed := make([]difftypes.TriggerDiff, len(triggerDiffs))
 	for i, triggerDiff := range triggerDiffs {
 		reversed[i] = difftypes.TriggerDiff{
 			TriggerName: triggerDiff.TriggerName,
 			TableName:   triggerDiff.TableName,
 			Changes:     reverseChangeMap(triggerDiff.Changes),
+			// The replacement renders from the operand, so reversing the change
+			// map without reversing the operand would have the down direction
+			// re-apply the definition it is undoing.
+			Desired: priorTrigger(prior, triggerDiff.TableName, triggerDiff.TriggerName, semantics),
 		}
 	}
 	return reversed
+}
+
+// triggerAdditionsFromRemovals turns the forward direction's removals into the
+// rollback's additions, giving each the definition the pre-change database held.
+//
+// A removal carries names only, which is all a DROP needs. The addition it
+// becomes renders CREATE TRIGGER, so the operand has to be recovered here or
+// the rollback drops a trigger it never puts back.
+func triggerAdditionsFromRemovals(
+	removals []difftypes.TriggerRef,
+	prior *schemamodel.Database,
+	semantics identifier.Semantics,
+) []difftypes.TriggerRef {
+	if len(removals) == 0 {
+		return nil
+	}
+	additions := make([]difftypes.TriggerRef, len(removals))
+	for i, ref := range removals {
+		additions[i] = difftypes.TriggerRef{
+			TriggerName: ref.TriggerName,
+			TableName:   ref.TableName,
+			Desired:     priorTrigger(prior, ref.TableName, ref.TriggerName, semantics),
+		}
+	}
+	return additions
+}
+
+// triggerRemovalsFromAdditions turns the forward direction's additions into the
+// rollback's removals, dropping the operand each one carried.
+//
+// A DROP is written from the two names. Carrying the declaration into a removal
+// would leave the entry holding a definition nothing reads, which reads to the
+// next person as though something did.
+func triggerRemovalsFromAdditions(additions []difftypes.TriggerRef) []difftypes.TriggerRef {
+	if len(additions) == 0 {
+		return nil
+	}
+	removals := make([]difftypes.TriggerRef, len(additions))
+	for i, ref := range additions {
+		removals[i] = difftypes.TriggerRef{TriggerName: ref.TriggerName, TableName: ref.TableName}
+	}
+	return removals
+}
+
+// priorTrigger is the trigger the pre-change database held, resolved on the
+// terms [objectlookup.Trigger] applies: the table half carries the schema, so
+// the identity tiers are applied to it and the trigger's own name is folded by
+// the same comparison rule.
+func priorTrigger(
+	prior *schemamodel.Database,
+	tableName, triggerName string,
+	semantics identifier.Semantics,
+) schemamodel.Trigger {
+	if prior == nil {
+		return schemamodel.Trigger{}
+	}
+	if trigger := objectlookup.Trigger(prior.Triggers, tableName, triggerName, semantics); trigger != nil {
+		return *trigger
+	}
+	return schemamodel.Trigger{}
 }
 
 // reverseCompositeTypeDiffs mirrors reverseDomainDiffs for composite types.
 func reverseCompositeTypeDiffs(
 	compositeDiffs []difftypes.CompositeTypeDiff,
 	schema, prior *schemamodel.Database,
+	semantics identifier.Semantics,
 ) []difftypes.CompositeTypeDiff {
 	reversed := make([]difftypes.CompositeTypeDiff, len(compositeDiffs))
 	for i, compositeDiff := range compositeDiffs {
@@ -3385,9 +3605,25 @@ func reverseCompositeTypeDiffs(
 			// (stokaro/ptah#2418).
 			AttributesAdded:   restoredCompositeAttributes(prior, compositeDiff.TypeName, compositeDiff.AttributesRemoved),
 			AttributesRemoved: compositeAttributeNames(compositeDiff.AttributesAdded),
+			Desired:           priorCompositeType(prior, compositeDiff.TypeName, semantics),
 		}
 	}
 	return reversed
+}
+
+// priorCompositeType mirrors [priorDomain] for composite types.
+func priorCompositeType(
+	prior *schemamodel.Database,
+	name string,
+	semantics identifier.Semantics,
+) schemamodel.CompositeType {
+	if prior == nil {
+		return schemamodel.CompositeType{}
+	}
+	if composite := objectlookup.Qualified(prior.CompositeTypes, name, semantics); composite != nil {
+		return *composite
+	}
+	return schemamodel.CompositeType{}
 }
 
 func targetDomainBaseType(schema *schemamodel.Database, name string) string {
@@ -3420,7 +3656,11 @@ func targetCompositeFieldTypes(schema *schemamodel.Database, name string) []stri
 }
 
 // reverseRLSPolicyDiffs reverses RLS policy modifications for down migrations
-func reverseRLSPolicyDiffs(policyDiffs []difftypes.RLSPolicyDiff) []difftypes.RLSPolicyDiff {
+func reverseRLSPolicyDiffs(
+	policyDiffs []difftypes.RLSPolicyDiff,
+	prior *schemamodel.Database,
+	semantics identifier.Semantics,
+) []difftypes.RLSPolicyDiff {
 	reversed := make([]difftypes.RLSPolicyDiff, len(policyDiffs))
 	for i, policyDiff := range policyDiffs {
 		// For policy changes, we need to reverse the direction of changes
@@ -3436,13 +3676,106 @@ func reverseRLSPolicyDiffs(policyDiffs []difftypes.RLSPolicyDiff) []difftypes.RL
 			}
 		}
 
+		policy, tableSchema := priorRLSPolicy(prior, policyDiff.PolicyName, policyDiff.TableName, semantics)
 		reversed[i] = difftypes.RLSPolicyDiff{
 			PolicyName: policyDiff.PolicyName,
 			TableName:  policyDiff.TableName,
 			Changes:    reversedChanges,
+			// CREATE POLICY renders from the operand, so reversing the change
+			// map without reversing the operand would have the down direction
+			// re-apply the predicate it is undoing.
+			Desired:     policy,
+			TableSchema: tableSchema,
 		}
 	}
 	return reversed
+}
+
+// rlsAdditionsFromRemovals turns the forward direction's removals into the
+// rollback's additions, giving each the declaration the pre-change database
+// held.
+//
+// A removal carries two names, which is all a DROP needs. The addition it
+// becomes renders CREATE POLICY, so the operand has to be recovered here or the
+// rollback drops an access-control operation and puts nothing back.
+func rlsAdditionsFromRemovals(
+	removals []difftypes.RLSPolicyRef,
+	prior *schemamodel.Database,
+	semantics identifier.Semantics,
+) []difftypes.RLSPolicyRef {
+	if len(removals) == 0 {
+		return nil
+	}
+	additions := make([]difftypes.RLSPolicyRef, len(removals))
+	for i, ref := range removals {
+		policy, tableSchema := priorRLSPolicy(prior, ref.PolicyName, ref.TableName, semantics)
+		additions[i] = difftypes.RLSPolicyRef{
+			PolicyName:  ref.PolicyName,
+			TableName:   ref.TableName,
+			Desired:     policy,
+			TableSchema: tableSchema,
+		}
+	}
+	return additions
+}
+
+// rlsRemovalsFromAdditions turns the forward direction's additions into the
+// rollback's removals, dropping the operand each one carried.
+//
+// `DROP POLICY name ON table` is written from the two names. Carrying the
+// declaration into a removal would leave the entry holding a policy nothing
+// reads, which tells the next reader that something does.
+func rlsRemovalsFromAdditions(additions []difftypes.RLSPolicyRef) []difftypes.RLSPolicyRef {
+	if len(additions) == 0 {
+		return nil
+	}
+	removals := make([]difftypes.RLSPolicyRef, len(additions))
+	for i, ref := range additions {
+		removals[i] = difftypes.RLSPolicyRef{PolicyName: ref.PolicyName, TableName: ref.TableName}
+	}
+	return removals
+}
+
+// priorRLSPolicy is the policy the pre-change database held, and the schema its
+// table is declared under there.
+//
+// The two are resolved together because they are one answer: SQL Server
+// addresses a policy by its table's schema, so a policy recovered without it
+// would be rendered under a name the target cannot bind.
+//
+// The table half goes through the identity tiers, because the declaration and a
+// database read do not have to spell it the same way -- which is the whole
+// reason a modification's operand could not be found on the down direction
+// before (stokaro/ptah#1311).
+func priorRLSPolicy(
+	prior *schemamodel.Database,
+	policyName, tableName string,
+	semantics identifier.Semantics,
+) (schemamodel.RLSPolicy, string) {
+	if prior == nil {
+		return schemamodel.RLSPolicy{}, ""
+	}
+	wanted := semantics.QualifiedTableIdentityKey(tableName)
+	for _, policy := range prior.RLSPolicies {
+		if policy.Name != policyName {
+			continue
+		}
+		if semantics.QualifiedTableIdentityKey(policy.Table) != wanted {
+			continue
+		}
+		return policy, priorTableSchema(prior, policy.Table)
+	}
+	return schemamodel.RLSPolicy{}, ""
+}
+
+// priorTableSchema is the schema the pre-change database declares a table under.
+func priorTableSchema(prior *schemamodel.Database, tableName string) string {
+	for _, table := range prior.Tables {
+		if table.Name == tableName {
+			return table.Schema
+		}
+	}
+	return ""
 }
 
 // reverseRoleDiffs reverses role modifications for down migrations

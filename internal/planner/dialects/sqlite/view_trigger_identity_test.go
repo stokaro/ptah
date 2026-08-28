@@ -40,25 +40,6 @@ func TestViewAndTriggerLookupsDoNotCrossSchemas(t *testing.T) {
 			}}},
 			unwantedSQL: "VIEW",
 		},
-		{
-			name: "a trigger whose table is declared in another schema is left alone",
-			desired: &schemamodel.Database{
-				Triggers: []schemamodel.Trigger{{
-					StructName: "Note",
-					Name:       "touch",
-					Table:      "attached.notes",
-					Timing:     "AFTER",
-					Event:      "UPDATE",
-					ForEach:    "ROW",
-					Body:       "SELECT 1;",
-				}},
-			},
-			diff: &difftypes.SchemaDiff{TriggersAdded: []difftypes.TriggerRef{{
-				TriggerName: "touch",
-				TableName:   "main.notes",
-			}}},
-			unwantedSQL: "TRIGGER",
-		},
 	}
 
 	for _, test := range tests {
@@ -72,47 +53,50 @@ func TestViewAndTriggerLookupsDoNotCrossSchemas(t *testing.T) {
 	}
 }
 
-// TestViewAndTriggerLookupsFoldASCIICase is the capability half, and it is the
-// half the structural rule could not answer at all: SQLite folds ASCII, so
-// `Active_Notes` and `active_notes` are one object and only a folding rule joins
-// them.
-func TestViewAndTriggerLookupsFoldASCIICase(t *testing.T) {
-	tests := []struct {
-		name    string
-		desired *schemamodel.Database
-		diff    *difftypes.SchemaDiff
-		wantSQL string
-	}{
-		{
-			name: "a trigger whose table is spelled in a different case",
-			desired: &schemamodel.Database{
-				Triggers: []schemamodel.Trigger{{
-					StructName: "Note",
-					Name:       "touch",
-					Table:      "Notes",
-					Timing:     "AFTER",
-					Event:      "UPDATE",
-					ForEach:    "ROW",
-					Body:       "SELECT 1;",
-				}},
-			},
-			diff: &difftypes.SchemaDiff{TriggersAdded: []difftypes.TriggerRef{{
-				TriggerName: "touch",
-				TableName:   "notes",
-			}}},
-			wantSQL: "TRIGGER",
-		},
+// TestCompare_ATriggerFoldsACaseDifference is the capability half of the
+// refusal above, measured where it now happens.
+//
+// SQLite folds ASCII, so a declaration writing the table as `Notes` and a
+// server reporting `notes` name one object, and only a folding rule joins them.
+// The planner used to reconcile the two by looking the trigger up; the
+// comparison does it now, and the entry carries the trigger it resolved to
+// (stokaro/ptah#2315). Driving the comparison rather than hand-building the diff
+// is the point: a hand-built one bypasses the resolution the planner no longer
+// performs.
+func TestCompare_ATriggerFoldsACaseDifference(t *testing.T) {
+	c := qt.New(t)
+
+	desired := &schemamodel.Database{
+		Triggers: []schemamodel.Trigger{{
+			StructName: "Note",
+			Name:       "touch",
+			Table:      "Notes",
+			Timing:     "AFTER",
+			Event:      "UPDATE",
+			ForEach:    "ROW",
+			Body:       "SELECT 1;",
+		}},
+	}
+	database := &catalog.Database{
+		Triggers: []catalog.Trigger{{
+			Name: "touch", Table: "notes",
+			Timing: "BEFORE", Event: "UPDATE", ForEach: "ROW",
+		}},
 	}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			statements, err := planner.GenerateSchemaDiffSQLStatements(test.diff, test.desired, "sqlite")
-			c.Assert(err, qt.IsNil)
-			plan := strings.Join(statements, "\n")
-			c.Assert(plan, qt.Contains, test.wantSQL, qt.Commentf("plan:\n%s", plan))
-		})
-	}
+	diff := schemadiff.CompareWithDialect(desired, database, "sqlite")
+
+	c.Assert(diff.TriggersAdded, qt.HasLen, 0,
+		qt.Commentf("the two spellings are one trigger, not one to add and one to drop"))
+	c.Assert(diff.TriggersRemoved, qt.HasLen, 0)
+	c.Assert(diff.TriggersModified, qt.HasLen, 1)
+	c.Assert(diff.TriggersModified[0].Desired.Table, qt.Equals, "Notes",
+		qt.Commentf("the entry carries the declaration as written, not the folded spelling"))
+
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, "sqlite")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(strings.Join(statements, "\n"), qt.Contains, "TRIGGER")
 }
 
 // TestCompare_AModifiedViewResolvesACaseDifference is the view half of the

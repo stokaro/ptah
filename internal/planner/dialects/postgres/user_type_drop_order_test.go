@@ -33,24 +33,24 @@ func TestPlanner_GenerateMigrationAST_DropsModifiedUserTypesAgainstTheCurrentSha
 	c := qt.New(t)
 	planner := postgres.New()
 
-	desired := &schemamodel.Database{
-		Domains: []schemamodel.Domain{
-			{Name: "dd", BaseType: "integer"},
-		},
-		CompositeTypes: []schemamodel.CompositeType{
-			{Name: "cc", Fields: []schemamodel.CompositeField{{Name: "f", Type: "dd"}}},
-		},
-	}
 	diff := &difftypes.SchemaDiff{
-		DomainsModified: []difftypes.DomainDiff{
-			{DomainName: "dd", Changes: map[string]string{"type": "cc -> integer"}, CurrentBaseType: "cc"},
-		},
-		CompositeTypesModified: []difftypes.CompositeTypeDiff{
-			{TypeName: "cc", Changes: map[string]string{"fields": "f integer -> f dd"}, CurrentFieldTypes: []string{"integer"}},
-		},
+		DomainsModified: []difftypes.DomainDiff{{
+			DomainName:      "dd",
+			Changes:         map[string]string{"type": "cc -> integer"},
+			CurrentBaseType: "cc",
+			Desired:         schemamodel.Domain{Name: "dd", BaseType: "integer"},
+		}},
+		CompositeTypesModified: []difftypes.CompositeTypeDiff{{
+			TypeName:          "cc",
+			Changes:           map[string]string{"fields": "f integer -> f dd"},
+			CurrentFieldTypes: []string{"integer"},
+			Desired: schemamodel.CompositeType{
+				Name: "cc", Fields: []schemamodel.CompositeField{{Name: "f", Type: "dd"}},
+			},
+		}},
 	}
 
-	nodes, err := planner.GenerateMigrationAST(diff, desired)
+	nodes, err := planner.GenerateMigrationAST(diff, &schemamodel.Database{})
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -81,28 +81,24 @@ func TestPlanner_GenerateMigrationAST_DropsModifiedUserTypesTheDesiredShapeNoLon
 	c := qt.New(t)
 	planner := postgres.New()
 
-	desired := &schemamodel.Database{
-		Domains: []schemamodel.Domain{
-			{Name: "qty", BaseType: "bigint", Check: "VALUE > 0"},
-		},
-		CompositeTypes: []schemamodel.CompositeType{
-			{Name: "meas", Fields: []schemamodel.CompositeField{{Name: "q", Type: "bigint"}, {Name: "label", Type: "text"}}},
-		},
-	}
 	diff := &difftypes.SchemaDiff{
-		DomainsModified: []difftypes.DomainDiff{
-			{DomainName: "qty", Changes: map[string]string{"type": "integer -> bigint"}, CurrentBaseType: "integer"},
-		},
-		CompositeTypesModified: []difftypes.CompositeTypeDiff{
-			{
-				TypeName:          "meas",
-				Changes:           map[string]string{"fields": "q qty, label text -> q bigint, label text"},
-				CurrentFieldTypes: []string{"qty", "text"},
-			},
-		},
+		DomainsModified: []difftypes.DomainDiff{{
+			DomainName:      "qty",
+			Changes:         map[string]string{"type": "integer -> bigint"},
+			CurrentBaseType: "integer",
+			Desired:         schemamodel.Domain{Name: "qty", BaseType: "bigint", Check: "VALUE > 0"},
+		}},
+		CompositeTypesModified: []difftypes.CompositeTypeDiff{{
+			TypeName:          "meas",
+			Changes:           map[string]string{"fields": "q qty, label text -> q bigint, label text"},
+			CurrentFieldTypes: []string{"qty", "text"},
+			Desired: schemamodel.CompositeType{Name: "meas", Fields: []schemamodel.CompositeField{
+				{Name: "q", Type: "bigint"}, {Name: "label", Type: "text"},
+			}},
+		}},
 	}
 
-	nodes, err := planner.GenerateMigrationAST(diff, desired)
+	nodes, err := planner.GenerateMigrationAST(diff, &schemamodel.Database{})
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -130,20 +126,24 @@ func TestPlanner_GenerateMigrationAST_DropsModifiedUserTypesWithinOneKind(t *tes
 	c := qt.New(t)
 	planner := postgres.New()
 
-	desired := &schemamodel.Database{
-		Domains: []schemamodel.Domain{
-			{Name: "d_base", BaseType: "text"},
-			{Name: "d_over", BaseType: "text"},
-		},
-	}
 	diff := &difftypes.SchemaDiff{
 		DomainsModified: []difftypes.DomainDiff{
-			{DomainName: "d_base", Changes: map[string]string{"type": "integer -> text"}, CurrentBaseType: "integer"},
-			{DomainName: "d_over", Changes: map[string]string{"type": "d_base -> text"}, CurrentBaseType: "d_base"},
+			{
+				DomainName:      "d_base",
+				Changes:         map[string]string{"type": "integer -> text"},
+				CurrentBaseType: "integer",
+				Desired:         schemamodel.Domain{Name: "d_base", BaseType: "text"},
+			},
+			{
+				DomainName:      "d_over",
+				Changes:         map[string]string{"type": "d_base -> text"},
+				CurrentBaseType: "d_base",
+				Desired:         schemamodel.Domain{Name: "d_over", BaseType: "text"},
+			},
 		},
 	}
 
-	nodes, err := planner.GenerateMigrationAST(diff, desired)
+	nodes, err := planner.GenerateMigrationAST(diff, &schemamodel.Database{})
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -164,24 +164,22 @@ func TestPlanner_GenerateMigrationAST_DropsModifiedUserTypesInCallerOrderWithout
 	c := qt.New(t)
 	planner := postgres.New()
 
-	desired := &schemamodel.Database{
-		Domains: []schemamodel.Domain{
-			{Name: "dd", BaseType: "integer"},
-		},
-		CompositeTypes: []schemamodel.CompositeType{
-			{Name: "cc", Fields: []schemamodel.CompositeField{{Name: "f", Type: "dd"}}},
-		},
-	}
 	diff := &difftypes.SchemaDiff{
-		DomainsModified: []difftypes.DomainDiff{
-			{DomainName: "dd", Changes: map[string]string{"type": "cc -> integer"}},
-		},
-		CompositeTypesModified: []difftypes.CompositeTypeDiff{
-			{TypeName: "cc", Changes: map[string]string{"fields": "f integer -> f dd"}},
-		},
+		DomainsModified: []difftypes.DomainDiff{{
+			DomainName: "dd",
+			Changes:    map[string]string{"type": "cc -> integer"},
+			Desired:    schemamodel.Domain{Name: "dd", BaseType: "integer"},
+		}},
+		CompositeTypesModified: []difftypes.CompositeTypeDiff{{
+			TypeName: "cc",
+			Changes:  map[string]string{"fields": "f integer -> f dd"},
+			Desired: schemamodel.CompositeType{
+				Name: "cc", Fields: []schemamodel.CompositeField{{Name: "f", Type: "dd"}},
+			},
+		}},
 	}
 
-	nodes, err := planner.GenerateMigrationAST(diff, desired)
+	nodes, err := planner.GenerateMigrationAST(diff, &schemamodel.Database{})
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)

@@ -66,12 +66,30 @@ func unhostableCreationDiff() *difftypes.SchemaDiff {
 		TablesAdded:            []string{"t"},
 		ViewsAdded:             difftypes.ViewChanges{{Name: "v1", Body: "SELECT id FROM t"}},
 		MaterializedViewsAdded: difftypes.MaterializedViewChanges{{Name: "mv1", Body: "SELECT id FROM t"}},
-		RLSEnabledTablesAdded:  []string{"t"},
-		RLSPoliciesAdded:       []difftypes.RLSPolicyRef{{PolicyName: "p1", TableName: "t"}},
+		RLSEnabledTablesAdded:  difftypes.RLSEnabledTableChanges{{Table: "t"}},
+		RLSPoliciesAdded: []difftypes.RLSPolicyRef{{
+			PolicyName: "p1", TableName: "t",
+			// An addition carries the declaration it renders from
+			// (stokaro/ptah#2315); an entry without one is refused, which would
+			// end the plan rather than contribute a diagnostic.
+			Desired: schemamodel.RLSPolicy{
+				StructName: "T", Name: "p1", Table: "t",
+				PolicyFor: "ALL", UsingExpression: "true",
+			},
+		}},
 		GrantsAdded: []difftypes.GrantRef{{
 			Role: "app_role", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "app.t",
 		}},
-		TriggersAdded: []difftypes.TriggerRef{{TriggerName: "trg1", TableName: "t"}},
+		TriggersAdded: []difftypes.TriggerRef{{
+			TriggerName: "trg1", TableName: "t",
+			// An addition carries the declaration it renders from
+			// (stokaro/ptah#2315); an entry without one plans nothing, which
+			// would take this object out of the diagnostic comparison.
+			Desired: schemamodel.Trigger{
+				StructName: "T", Name: "trg1", Table: "t",
+				Timing: "AFTER", Event: "INSERT", ForEach: "ROW", Body: "BEGIN RETURN NEW; END;",
+			},
+		}},
 	}
 }
 
@@ -220,7 +238,7 @@ func TestPlan_ClickHouseNamesRemovedObjectsToo(t *testing.T) {
 		FunctionsRemoved:         difftypes.FunctionChanges{{Function: schemamodel.Function{Name: "bump"}}},
 		ViewsRemoved:             difftypes.ViewChanges{{Name: "v1"}},
 		MaterializedViewsRemoved: difftypes.MaterializedViewChanges{{Name: "mv1"}},
-		RLSEnabledTablesRemoved:  []string{"t"},
+		RLSEnabledTablesRemoved:  difftypes.RLSEnabledTableChanges{{Table: "t"}},
 		RLSPoliciesRemoved:       []difftypes.RLSPolicyRef{{PolicyName: "p1", TableName: "t"}},
 		GrantsRemoved: []difftypes.GrantRef{{
 			Role: "app_role", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "app.t",

@@ -1024,12 +1024,22 @@ type SchemaDiff struct {
 	// schemas but have different definitions (expressions, roles, etc.)
 	RLSPoliciesModified []RLSPolicyDiff `json:"rls_policies_modified"`
 
+	// RLSPolicyIdentityConflicts records declared policies that collapse onto
+	// one identity, which the lists above cannot show: a colliding pair is
+	// already one entry by the time they exist.
+	//
+	// A planner refuses a diff that carries any, because the alternative is
+	// applying one of two policies nobody chose between. It stays off the wire:
+	// a refusal is not a plan, so there is nothing for a reader of a stored one
+	// to do with it (stokaro/ptah#2440).
+	RLSPolicyIdentityConflicts []RLSPolicyConflict `json:"-"`
+
 	// RLSEnabledTablesAdded contains names of tables that need RLS enabled
-	RLSEnabledTablesAdded []string `json:"rls_enabled_tables_added"`
+	RLSEnabledTablesAdded RLSEnabledTableChanges `json:"rls_enabled_tables_added"`
 
 	// RLSEnabledTablesRemoved contains names of tables that need RLS disabled
 	// (potentially dangerous - removes row-level security)
-	RLSEnabledTablesRemoved []string `json:"rls_enabled_tables_removed"`
+	RLSEnabledTablesRemoved RLSEnabledTableChanges `json:"rls_enabled_tables_removed"`
 
 	// RolesAdded contains names of PostgreSQL roles that exist in the target schema
 	// but not in the current database schema
@@ -1626,6 +1636,21 @@ type FunctionDiff struct {
 	// Changes maps change types to their old->new value transitions
 	// Format: "change_type" -> "old_value -> new_value"
 	Changes map[string]string `json:"changes"`
+
+	// Desired is the function this change asks the database to hold.
+	//
+	// A modification renders as CREATE OR REPLACE, and the change map records
+	// what differs rather than the body and attributes that replacement needs.
+	// Carrying the declaration is what lets the planner write it without being
+	// handed the schema it came out of (stokaro/ptah#2315).
+	//
+	// It is the declaration as written, NOT the copy the comparison folds. The
+	// comparison canonicalizes case and normalizes MySQL type spellings on both
+	// sides so that two spellings of one function converge; rendering from that
+	// copy would write Ptah's normalization into the user's DDL.
+	//
+	// It stays off the wire. The change map is the change; this is the operand.
+	Desired schemamodel.Function `json:"-"`
 }
 
 // DomainDiff represents changes to a PostgreSQL domain type.
@@ -1665,6 +1690,17 @@ type DomainDiff struct {
 	// could not enumerate them; the planner then leaves the CHECK alone rather
 	// than guessing a name (stokaro/ptah#1717).
 	CurrentCheckConstraints []string `json:"current_check_constraints,omitempty"`
+
+	// Desired is the domain this change asks the database to hold.
+	//
+	// A change with no in-place ALTER is a drop and a recreate, and the
+	// recreate renders from this. Carrying it is what lets the planner write
+	// the pair without being handed the schema the domain came out of
+	// (stokaro/ptah#2315), and an empty one is what withholds the drop: a type
+	// Ptah cannot rebuild is a type Ptah must not drop.
+	//
+	// It stays off the wire. The change map is the change; this is the operand.
+	Desired schemamodel.Domain `json:"-"`
 }
 
 // RangeDiff represents changes to an existing PostgreSQL range type.
@@ -1681,6 +1717,13 @@ type RangeDiff struct {
 	// Empty when the caller built the diff by hand; the drop ordering then falls
 	// back to declaration order.
 	CurrentSubtype string `json:"current_subtype,omitempty"`
+
+	// Desired is the range type this change asks the database to hold.
+	//
+	// PostgreSQL has no ALTER TYPE ... AS RANGE, so every change here is a drop
+	// and a recreate. It plays the part [DomainDiff.Desired] plays, with the
+	// same empty-means-withhold-the-drop rule.
+	Desired schemamodel.Range `json:"-"`
 }
 
 // CompositeTypeDiff represents changes to a PostgreSQL composite type.
@@ -1719,6 +1762,12 @@ type CompositeTypeDiff struct {
 	AttributesAdded []CompositeAttribute `json:"attributes_added,omitempty"`
 	// AttributesRemoved names the fields to remove. See AttributesAdded.
 	AttributesRemoved []string `json:"attributes_removed,omitempty"`
+
+	// Desired is the composite type this change asks the database to hold.
+	//
+	// It plays the part [DomainDiff.Desired] plays, for the same reason and
+	// with the same empty-means-withhold-the-drop rule.
+	Desired schemamodel.CompositeType `json:"-"`
 }
 
 // CompositeAttribute is one field of a composite type, as a declaration spells
@@ -1736,6 +1785,16 @@ type SequenceDiff struct {
 	// Changes maps change types to their old->new value transitions
 	// Format: "change_type" -> "old_value -> new_value"
 	Changes map[string]string `json:"changes"`
+
+	// Desired is the sequence this change asks the database to hold.
+	//
+	// An ALTER SEQUENCE emits only the options the change map names, and it
+	// reads their VALUES off this: the map records the transition as prose.
+	// Carrying the declaration is what lets the planner reach them without
+	// being handed the schema (stokaro/ptah#2315).
+	//
+	// It stays off the wire. The change map is the change; this is the operand.
+	Desired schemamodel.Sequence `json:"-"`
 }
 
 // ExtensionDiff represents a PostgreSQL extension installation-schema change.
@@ -1837,6 +1896,18 @@ type SynonymDiff struct {
 	SynonymName string `json:"synonym_name"`
 	OldTarget   string `json:"old_target"`
 	NewTarget   string `json:"new_target"`
+
+	// Desired is the synonym this change asks the database to hold.
+	//
+	// No dialect has an ALTER SYNONYM, so a retarget is a drop and a create,
+	// and the create needs what the two target strings do not carry: the
+	// schema, and whether the synonym is public. Carrying the declaration is
+	// what lets the planner render it without being handed the schema
+	// (stokaro/ptah#2315).
+	//
+	// It stays off the wire. The two targets are the change; this is the
+	// operand.
+	Desired schemamodel.Synonym `json:"-"`
 }
 
 // ViewDiff represents changes to a view definition.
@@ -1912,6 +1983,21 @@ type MaterializedViewDiff struct {
 	// 'MODIFY_REFRESH' is not supported by storage MaterializedView`
 	// (stokaro/ptah#1802).
 	RefreshChange *MatViewRefreshChange `json:"refresh_change,omitzero"`
+
+	// Desired is the materialized view this change asks the database to hold.
+	//
+	// No engine has an in-place replacement for one that keeps its rows, so a
+	// modification other than a schedule change is a drop and a create, and the
+	// create needs the whole declaration. Carrying it is what lets the planner
+	// render the pair without being handed the schema it came out of
+	// (stokaro/ptah#2315).
+	//
+	// It is the view, where [MatViewRefreshChange.Desired] on the field above
+	// is one schedule; the two are named alike because both answer "what is
+	// being asked for", at different scales.
+	//
+	// It stays off the wire. The change map is the change; this is the operand.
+	Desired schemamodel.MaterializedView `json:"-"`
 }
 
 // MatViewRefreshChange is one materialized view's refresh-schedule transition.
@@ -1930,6 +2016,25 @@ type MatViewRefreshChange struct {
 type TriggerRef struct {
 	TriggerName string `json:"trigger_name"`
 	TableName   string `json:"table_name"`
+
+	// Desired is the trigger this entry asks the database to hold.
+	//
+	// It is populated for an ADDITION, where the planner renders CREATE
+	// TRIGGER from it (stokaro/ptah#2315), and empty for a REMOVAL, which needs
+	// nothing but the two names above: the DROP is written from them, and so is
+	// the PostgreSQL trigger function the drop takes with it.
+	//
+	// It is the declaration as written, not the copy the comparison folds. That
+	// fold -- uppercasing the timing, the event and the FOR EACH clause, and
+	// supplying ROW where none was written -- exists to answer "did this
+	// change", and carrying it would make the diff the author of the DDL. It is
+	// not visible in today's output, because the renderer normalizes the same
+	// three the same way; the carry is the faithful one, not a guarantee about
+	// the rendered text. [FunctionDiff.Desired] is where the same rule IS
+	// visible.
+	//
+	// It stays off the wire. The names are the reference; this is the operand.
+	Desired schemamodel.Trigger `json:"-"`
 }
 
 // TriggerDiff represents changes to a trigger definition.
@@ -1937,6 +2042,14 @@ type TriggerDiff struct {
 	TriggerName string            `json:"trigger_name"`
 	TableName   string            `json:"table_name"`
 	Changes     map[string]string `json:"changes"`
+
+	// Desired is the trigger this change asks the database to hold.
+	//
+	// A modification renders as CREATE OR REPLACE TRIGGER, which needs the whole
+	// definition rather than the change map's record of what differs. It carries
+	// the declaration as written, for the reason [TriggerRef.Desired] gives, and
+	// stays off the wire for the same one.
+	Desired schemamodel.Trigger `json:"-"`
 }
 
 // RLSPolicyRef represents a reference to an RLS policy with its table information.
@@ -1959,6 +2072,32 @@ type RLSPolicyRef struct {
 
 	// TableName is the name of the table the policy applies to
 	TableName string `json:"table_name"`
+
+	// Desired is the policy this entry asks the database to hold.
+	//
+	// It is populated for an ADDITION and for a MODIFICATION, both of which
+	// render CREATE POLICY from a declaration, and empty for a REMOVAL, which
+	// `DROP POLICY name ON table` builds from the two names above.
+	//
+	// An added or modified entry that carries none is refused rather than
+	// skipped. The planner's only alternative is to emit no statement, and a
+	// plan that silently drops an access-control operation reports success
+	// while leaving the database unprotected (stokaro/ptah#1311).
+	//
+	// It stays off the wire. The names are the reference; this is the operand.
+	Desired schemamodel.RLSPolicy `json:"-"`
+
+	// TableSchema is the schema the owning table is declared under, or empty
+	// when the declaration does not say.
+	//
+	// SQL Server needs it: a policy there is addressed as `schema.name` on
+	// `schema.table`, and the schema is a property of the TABLE rather than of
+	// the policy, so it cannot be read off [RLSPolicyRef.Desired]. Resolving it
+	// where the declared tables are in hand is what lets the planner render the
+	// policy without being handed the schema (stokaro/ptah#2315).
+	//
+	// It stays off the wire for the reason Desired does: it is an operand.
+	TableSchema string `json:"-"`
 }
 
 // RLSPolicyDiff represents changes to Row-Level Security policy definitions.
@@ -1995,6 +2134,32 @@ type RLSPolicyDiff struct {
 	// Changes maps change types to their old->new value transitions
 	// Format: "change_type" -> "old_value -> new_value"
 	Changes map[string]string `json:"changes"`
+
+	// Desired is the policy this entry asks the database to hold.
+	//
+	// It is populated for an ADDITION and for a MODIFICATION, both of which
+	// render CREATE POLICY from a declaration, and empty for a REMOVAL, which
+	// `DROP POLICY name ON table` builds from the two names above.
+	//
+	// An added or modified entry that carries none is refused rather than
+	// skipped. The planner's only alternative is to emit no statement, and a
+	// plan that silently drops an access-control operation reports success
+	// while leaving the database unprotected (stokaro/ptah#1311).
+	//
+	// It stays off the wire. The names are the reference; this is the operand.
+	Desired schemamodel.RLSPolicy `json:"-"`
+
+	// TableSchema is the schema the owning table is declared under, or empty
+	// when the declaration does not say.
+	//
+	// SQL Server needs it: a policy there is addressed as `schema.name` on
+	// `schema.table`, and the schema is a property of the TABLE rather than of
+	// the policy, so it cannot be read off [RLSPolicyRef.Desired]. Resolving it
+	// where the declared tables are in hand is what lets the planner render the
+	// policy without being handed the schema (stokaro/ptah#2315).
+	//
+	// It stays off the wire for the reason Desired does: it is an operand.
+	TableSchema string `json:"-"`
 }
 
 // RoleDiff represents changes to PostgreSQL role definitions.
@@ -2043,6 +2208,59 @@ type RoleDiff struct {
 	// It stays off the wire, and here that is more than tidiness: this field
 	// holds a password.
 	Desired schemamodel.Role `json:"-"`
+}
+
+// RLSEnabledTableChanges is a list of row-level-security enablements a diff
+// adds or removes.
+//
+// The list used to be table names alone, which meant a planner that renders
+// anything beyond the name -- a declared comment, on the targets that carry one
+// -- had to find the declaration in a schema handed to it alongside the diff,
+// and planned nothing for an enablement it could not find (stokaro/ptah#2315).
+type RLSEnabledTableChanges []schemamodel.RLSEnabledTable
+
+// MarshalJSON writes the table names alone, the shape
+// `rls_enabled_tables_added` and `rls_enabled_tables_removed` have always had.
+func (r RLSEnabledTableChanges) MarshalJSON() ([]byte, error) {
+	if r == nil {
+		return []byte("null"), nil
+	}
+	return json.Marshal(r.Names())
+}
+
+// Names is the table names this change applies to.
+//
+// A REMOVED entry carries nothing else: the enablement is one the database
+// reports and no declaration describes, so the name is all there is to carry.
+func (r RLSEnabledTableChanges) Names() []string {
+	if r == nil {
+		return nil
+	}
+	names := make([]string, 0, len(r))
+	for _, table := range r {
+		names = append(names, table.Table)
+	}
+	return names
+}
+
+// RLSPolicyConflict records two declared row-level security policies that
+// resolve to one identity under the target's identifier rules.
+//
+// A comparison keys declarations by that identity to pair them with what the
+// database reports, so a colliding pair is reduced to one entry and the plan
+// would depend on which one the map happened to keep. Recording the pair is
+// what lets the planner refuse instead: by the time the diff exists the two
+// declarations are already one entry, so nothing downstream could otherwise see
+// that there were two (stokaro/ptah#2440).
+//
+// Both sides keep the spelling their declaration supplied, because the refusal
+// names them and the author has to recognize what they wrote.
+type RLSPolicyConflict struct {
+	// First is the declaration the comparison met first.
+	First schemamodel.RLSPolicy
+
+	// Second is the one that resolved to the same identity.
+	Second schemamodel.RLSPolicy
 }
 
 // GrantRef identifies one PostgreSQL privilege grant.

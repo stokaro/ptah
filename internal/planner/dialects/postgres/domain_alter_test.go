@@ -12,15 +12,14 @@ import (
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
-// alterDomainSchema declares one domain of each shape the in-place path emits a
-// statement for.
-func alterDomainSchema() *schemamodel.Database {
-	return &schemamodel.Database{Domains: []schemamodel.Domain{
-		{Name: "positive", BaseType: "integer", Check: "VALUE > 0"},
-		{Name: "labelled", BaseType: "text", Default: "x"},
-		{Name: "expr_default", BaseType: "timestamptz", DefaultExpr: "now()"},
-		{Name: "required", BaseType: "text", NotNull: true},
-	}}
+// alterDomains declares one domain of each shape the in-place path emits a
+// statement for. Each change below carries the one it names
+// (stokaro/ptah#2315), so the schema handed to the planner stays empty.
+var alterDomains = map[string]schemamodel.Domain{
+	"positive":     {Name: "positive", BaseType: "integer", Check: "VALUE > 0"},
+	"labelled":     {Name: "labelled", BaseType: "text", Default: "x"},
+	"expr_default": {Name: "expr_default", BaseType: "timestamptz", DefaultExpr: "now()"},
+	"required":     {Name: "required", BaseType: "text", NotNull: true},
 }
 
 // TestPlanner_AltersDomainsInPlaceRatherThanRebuildingThem is why the
@@ -42,6 +41,7 @@ func TestPlanner_AltersDomainsInPlaceRatherThanRebuildingThem(t *testing.T) {
 				DomainName:              "positive",
 				Changes:                 map[string]string{"check": "(VALUE > 9) -> (VALUE > 0)"},
 				CurrentCheckConstraints: []string{"positive_check"},
+				Desired:                 alterDomains["positive"],
 			},
 			want: []string{
 				"ALTER DOMAIN positive DROP CONSTRAINT positive_check;",
@@ -54,6 +54,7 @@ func TestPlanner_AltersDomainsInPlaceRatherThanRebuildingThem(t *testing.T) {
 				DomainName:              "positive",
 				Changes:                 map[string]string{"check": "two -> one"},
 				CurrentCheckConstraints: []string{"lower_check", "upper_check"},
+				Desired:                 alterDomains["positive"],
 			},
 			want: []string{
 				"ALTER DOMAIN positive DROP CONSTRAINT lower_check;",
@@ -66,6 +67,7 @@ func TestPlanner_AltersDomainsInPlaceRatherThanRebuildingThem(t *testing.T) {
 			modified: difftypes.DomainDiff{
 				DomainName: "labelled",
 				Changes:    map[string]string{"default": "'w'::text -> 'x'::text"},
+				Desired:    alterDomains["labelled"],
 			},
 			want: []string{"ALTER DOMAIN labelled SET DEFAULT 'x';"},
 		},
@@ -74,6 +76,7 @@ func TestPlanner_AltersDomainsInPlaceRatherThanRebuildingThem(t *testing.T) {
 			modified: difftypes.DomainDiff{
 				DomainName: "expr_default",
 				Changes:    map[string]string{"default": "CURRENT_TIMESTAMP -> now()"},
+				Desired:    alterDomains["expr_default"],
 			},
 			want: []string{"ALTER DOMAIN expr_default SET DEFAULT now();"},
 		},
@@ -82,6 +85,7 @@ func TestPlanner_AltersDomainsInPlaceRatherThanRebuildingThem(t *testing.T) {
 			modified: difftypes.DomainDiff{
 				DomainName: "required",
 				Changes:    map[string]string{"not_null": "false -> true"},
+				Desired:    alterDomains["required"],
 			},
 			want: []string{"ALTER DOMAIN required SET NOT NULL;"},
 		},
@@ -93,7 +97,7 @@ func TestPlanner_AltersDomainsInPlaceRatherThanRebuildingThem(t *testing.T) {
 			planner := postgres.New()
 
 			diff := &difftypes.SchemaDiff{DomainsModified: []difftypes.DomainDiff{test.modified}}
-			nodes, err := planner.GenerateMigrationAST(diff, alterDomainSchema())
+			nodes, err := planner.GenerateMigrationAST(diff, &schemamodel.Database{})
 			c.Assert(err, qt.IsNil)
 			sql, err := renderer.RenderSQL("postgres", nodes...)
 			c.Assert(err, qt.IsNil)
@@ -119,9 +123,10 @@ func TestPlanner_RebuildsADomainWhoseBaseTypeChanged(t *testing.T) {
 		Changes:                 map[string]string{"type": "smallint -> integer"},
 		CurrentBaseType:         "smallint",
 		CurrentCheckConstraints: []string{"positive_check"},
+		Desired:                 alterDomains["positive"],
 	}}}
 
-	nodes, err := planner.GenerateMigrationAST(diff, alterDomainSchema())
+	nodes, err := planner.GenerateMigrationAST(diff, &schemamodel.Database{})
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -150,9 +155,10 @@ func TestPlanner_RebuildsADomainThatMixesAnAlterableChangeWithARebuild(t *testin
 		},
 		CurrentBaseType:         "smallint",
 		CurrentCheckConstraints: []string{"positive_check"},
+		Desired:                 alterDomains["positive"],
 	}}}
 
-	nodes, err := planner.GenerateMigrationAST(diff, alterDomainSchema())
+	nodes, err := planner.GenerateMigrationAST(diff, &schemamodel.Database{})
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)

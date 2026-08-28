@@ -49,8 +49,20 @@ func TestPlanner_GenerateMigrationAST_SchemaObjectsModified(t *testing.T) {
 				Body: "SELECT id FROM users WHERE deleted_at IS NULL"},
 			Changes: map[string]string{"body": "old -> new"},
 		}},
-		MaterializedViewsModified: []difftypes.MaterializedViewDiff{{ViewName: "user_stats", Changes: map[string]string{"body": "old -> new"}}},
-		TriggersModified:          []difftypes.TriggerDiff{{TriggerName: "set_updated_at", TableName: "users", Changes: map[string]string{"body": "old -> new"}}},
+		MaterializedViewsModified: []difftypes.MaterializedViewDiff{{
+			ViewName: "user_stats",
+			Changes:  map[string]string{"body": "old -> new"},
+			Desired:  desired.MaterializedViews[0],
+		}},
+		TriggersModified: []difftypes.TriggerDiff{{
+			TriggerName: "set_updated_at", TableName: "users",
+			Changes: map[string]string{"body": "old -> new"},
+			Desired: schemamodel.Trigger{
+				StructName: "User", Name: "set_updated_at", Table: "users",
+				Timing: "BEFORE", Event: "UPDATE",
+				Body: "NEW.updated_at = NOW(); RETURN NEW;",
+			},
+		}},
 	}
 
 	nodes, err := planner.GenerateMigrationAST(diff, desired)
@@ -677,8 +689,8 @@ func TestPlanner_GenerateMigrationAST_DuplicateTriggerNamesUseDistinctFunctions(
 	}
 	diff := &difftypes.SchemaDiff{
 		TriggersAdded: []difftypes.TriggerRef{
-			{TriggerName: "set_updated_at", TableName: "users"},
-			{TriggerName: "set_updated_at", TableName: "posts"},
+			{TriggerName: "set_updated_at", TableName: "users", Desired: desired.Triggers[0]},
+			{TriggerName: "set_updated_at", TableName: "posts", Desired: desired.Triggers[1]},
 		},
 	}
 
@@ -808,10 +820,11 @@ func TestPlanner_GenerateMigrationAST_ModifiesRLSPolicies(t *testing.T) {
 			PolicyName: "tenant_isolation",
 			TableName:  "accounts",
 			Changes:    map[string]string{"using_expression": "old -> new"},
+			Desired:    desired.RLSPolicies[0],
 		}},
 	}
 
-	nodes, err := planner.GenerateMigrationAST(diff, desired)
+	nodes, err := planner.GenerateMigrationAST(diff, &schemamodel.Database{})
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
