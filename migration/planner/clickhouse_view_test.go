@@ -35,7 +35,10 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseViewLifecycle(t *testing.T) {
 			name: "replace",
 			diff: &difftypes.SchemaDiff{ViewsModified: []difftypes.ViewDiff{{
 				ViewName: "analytics.active_users",
-				Changes:  map[string]string{"body": "SELECT 1 -> " + viewBody},
+				// The view this change leaves behind travels WITH it
+				// (stokaro/ptah#2315).
+				Desired: schemamodel.View{Name: "analytics.active_users", Body: viewBody},
+				Changes: map[string]string{"body": "SELECT 1 -> " + viewBody},
 			}}},
 			desired: desired,
 			want:    "CREATE OR REPLACE VIEW `analytics`.`active_users` AS\n" + viewBody,
@@ -89,6 +92,7 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseViewCapabilityDisabled(t *tes
 			name: "replace",
 			diff: &difftypes.SchemaDiff{ViewsModified: []difftypes.ViewDiff{{
 				ViewName: "analytics.active_users",
+				Desired:  schemamodel.View{Name: "analytics.active_users", Body: "SELECT 1"},
 				Changes:  map[string]string{"body": "SELECT 0 -> SELECT 1"},
 			}}},
 			want: `-- CLICKHOUSE: CREATE OR REPLACE VIEW "analytics.active_users" is not supported`,
@@ -183,8 +187,16 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseOrdersReplacementDependencies
 		{
 			name: "two replacements",
 			diff: &difftypes.SchemaDiff{ViewsModified: []difftypes.ViewDiff{
-				{ViewName: "analytics.a_dep", Changes: map[string]string{"body": "changed"}},
-				{ViewName: "analytics.z_base", Changes: map[string]string{"body": "changed"}},
+				{
+					ViewName: "analytics.a_dep",
+					Desired:  schemamodel.View{Name: "analytics.a_dep", Body: "SELECT n FROM `analytics`.`z_base`"},
+					Changes:  map[string]string{"body": "changed"},
+				},
+				{
+					ViewName: "analytics.z_base",
+					Desired:  schemamodel.View{Name: "analytics.z_base", Body: "SELECT 1 AS n"},
+					Changes:  map[string]string{"body": "changed"},
+				},
 			}},
 			firstVerb:  "CREATE OR REPLACE VIEW `analytics`.`z_base`",
 			secondVerb: "CREATE OR REPLACE VIEW `analytics`.`a_dep`",
@@ -197,6 +209,7 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseOrdersReplacementDependencies
 				},
 				ViewsModified: []difftypes.ViewDiff{{
 					ViewName: "analytics.z_base",
+					Desired:  schemamodel.View{Name: "analytics.z_base", Body: "SELECT 1 AS n"},
 					Changes:  map[string]string{"body": "changed"},
 				}},
 			},
