@@ -125,14 +125,14 @@ func reportSequences(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 }
 
 func reportFunctions(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	for _, name := range diff.FunctionsAdded {
-		result = append(result, ast.NewCreateFunction(name))
+	for _, routine := range diff.FunctionsAdded {
+		result = append(result, ast.NewCreateFunction(routine.Name))
 	}
 	for _, function := range diff.FunctionsModified {
 		result = append(result, ast.NewCreateFunction(function.FunctionName))
 	}
-	for _, name := range diff.FunctionsRemoved {
-		result = append(result, ast.NewDropFunction(name))
+	for _, routine := range diff.FunctionsRemoved {
+		result = append(result, ast.NewDropFunction(routine.Name))
 	}
 	return result
 }

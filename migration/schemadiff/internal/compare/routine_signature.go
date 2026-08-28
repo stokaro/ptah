@@ -230,15 +230,15 @@ type routinePair struct {
 func pairRoutineOverloads(
 	declared []schemamodel.Function,
 	recorded []catalog.Function,
-) (pairs []routinePair, unmatchedDeclared int, removed []catalog.Function) {
+) (pairs []routinePair, added []schemamodel.Function, removed []catalog.Function) {
 	if len(declared) == 0 {
-		return nil, 0, recorded
+		return nil, nil, recorded
 	}
 	if len(recorded) == 0 {
-		return nil, len(declared), nil
+		return nil, declared, nil
 	}
 	if len(declared) == 1 && len(recorded) == 1 {
-		return []routinePair{{declared: declared[0], recorded: recorded[0]}}, 0, nil
+		return []routinePair{{declared: declared[0], recorded: recorded[0]}}, nil, nil
 	}
 
 	used := make([]bool, len(recorded))
@@ -246,24 +246,32 @@ func pairRoutineOverloads(
 	for _, function := range declared {
 		index := matchRecordedRoutine(function, recorded, used)
 		if index < 0 {
-			unmatchedDeclared++
+			added = append(added, function)
 			continue
 		}
 		used[index] = true
 		pairs = append(pairs, routinePair{declared: function, recorded: recorded[index]})
 	}
-	// The routines themselves rather than a count: a removal has to name the
-	// overload it removes, and only the recorded routine carries the signature
-	// that does. Returning how MANY were removed was enough to plan
-	// `DROP FUNCTION IF EXISTS f`, which PostgreSQL refuses with
+	// The routines themselves rather than a count, on BOTH sides. A removal has
+	// to name the overload it removes, and only the recorded routine carries
+	// the signature that does; returning how MANY were removed was enough to
+	// plan `DROP FUNCTION IF EXISTS f`, which PostgreSQL refuses with
 	// `function name "f" is not unique` whenever there is more than one
 	// (stokaro/ptah#2296).
+	//
+	// The addition side was left as a count then, because the diff carried a
+	// name and a name was all it needed. That was wrong for the same reason in
+	// the other direction: two declared overloads appended the same name twice,
+	// the planner resolved it by exact match to the same declaration both
+	// times, and one overload was created twice while the other was never
+	// created at all -- with the migration reporting success, because a second
+	// `CREATE OR REPLACE` is a no-op (stokaro/ptah#2408).
 	for index, taken := range used {
 		if !taken {
 			removed = append(removed, recorded[index])
 		}
 	}
-	return pairs, unmatchedDeclared, removed
+	return pairs, added, removed
 }
 
 // matchRecordedRoutine finds the unused recorded routine whose signature equals

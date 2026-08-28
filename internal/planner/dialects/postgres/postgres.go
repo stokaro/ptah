@@ -496,7 +496,7 @@ func (p *Planner) addSchemaPreconditions(
 	names = append(names, diff.CompositeTypesAdded.Names()...)
 	names = append(names, diff.RangesAdded.Names()...)
 	names = append(names, diff.SequencesAdded.Names()...)
-	names = append(names, diff.FunctionsAdded...)
+	names = append(names, diff.FunctionsAdded.Names()...)
 	names = append(names, diff.ViewsAdded.Names()...)
 	names = append(names, diff.MaterializedViewsAdded.Names()...)
 	for _, trigger := range diff.TriggersAdded {
@@ -2104,7 +2104,7 @@ func (p *Planner) removeExtensions(result []ast.Node, diff *difftypes.SchemaDiff
 }
 
 func (p *Planner) addNewFunctions(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
-	for _, fn := range deporder.FunctionsForCreate(desired, diff.FunctionsAdded) {
+	for _, fn := range deporder.FunctionsForCreate(desired, diff.FunctionsAdded.Declarations()) {
 		result = append(result, fromschema.FromFunction(fn))
 	}
 	return result
@@ -2145,23 +2145,13 @@ func summarizeFunctionChanges(fnDiff difftypes.FunctionDiff) string {
 // The fallback is not a formality: a SchemaDiff can be decoded from JSON
 // written before the richer list existed, and a bare name still drops a routine
 // correctly on every schema that does not overload it.
-func routineRemovals(withSignatures []difftypes.RoutineRemoval, names []string) []difftypes.RoutineRemoval {
-	if len(withSignatures) > 0 {
-		return withSignatures
-	}
-	removals := make([]difftypes.RoutineRemoval, 0, len(names))
-	for _, name := range names {
-		removals = append(removals, difftypes.RoutineRemoval{Name: name})
-	}
-	return removals
-}
 
 func (p *Planner) removeFunctions(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	// The signature is what makes the statement addressable. A name alone is
 	// refused with `function name "f" is not unique` on any schema that
 	// overloads, and IF EXISTS does not help because the refusal is about
 	// ambiguity rather than existence (stokaro/ptah#2296).
-	for _, removal := range routineRemovals(diff.FunctionsRemovedWithSignatures, diff.FunctionsRemoved) {
+	for _, removal := range diff.FunctionsRemoved.Removals() {
 		dropFunctionNode := ast.NewDropFunction(removal.Name).
 			SetIfExists().
 			SetComment("WARNING: Ensure no other objects depend on this function")
@@ -2174,7 +2164,7 @@ func (p *Planner) removeFunctions(result []ast.Node, diff *difftypes.SchemaDiff)
 	// `DROP FUNCTION` aimed at one with `could not find a function named ...`,
 	// so the kind the comparator kept is what makes the statement run
 	// (stokaro/ptah#1722).
-	for _, removal := range routineRemovals(diff.ProceduresRemovedWithSignatures, diff.ProceduresRemoved) {
+	for _, removal := range diff.ProceduresRemoved.Removals() {
 		dropProcedureNode := ast.NewDropFunction(removal.Name).
 			SetKind(schemamodel.FunctionKindProcedure).
 			SetIfExists().

@@ -64,7 +64,12 @@ func TestGenerateSchemaDiffSQLStatements_KeepsAnOracleRoutineInOneStatement(t *t
 				Volatility: "VOLATILE",
 				Body:       test.body,
 			}}}
-			diff := &difftypes.SchemaDiff{FunctionsAdded: []string{"fn_double"}}
+			// The declaration travels WITH the change, so the diff carries the
+			// same routine the schema declares rather than a name the planner
+			// resolves back (stokaro/ptah#2315).
+			diff := &difftypes.SchemaDiff{
+				FunctionsAdded: difftypes.FunctionChanges{{Function: desired.Functions[0]}},
+			}
 
 			statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 				diff, desired, platform.Oracle,

@@ -2040,88 +2040,49 @@ func reverseSchemaDiffWithSchema(diff *difftypes.SchemaDiff, schema *schemamodel
 	return reverseSchemaDiffWithSchemaForDialect(diff, schema, dbSchema, "")
 }
 
-// bareRoutineRemovals is the answer when there is no schema to read parameters
-// from, which is the behavior the bare name list already had.
-func bareRoutineRemovals(names []string) []difftypes.RoutineRemoval {
-	removals := make([]difftypes.RoutineRemoval, 0, len(names))
-	for _, name := range names {
-		removals = append(removals, difftypes.RoutineRemoval{Name: name})
-	}
-	return removals
-}
-
-// routineRemovalsWithSignatures pairs each name with the parameters the desired
-// schema declares for it.
-//
-// A name alone does not select an overload, and the reverse of an addition has
-// no other source for the argument list: the forward diff recorded the addition
-// by name. A routine the schema no longer declares gets an empty signature,
-// which drops correctly wherever the name is unique and is the same answer the
-// bare list gave before (stokaro/ptah#2296).
-func routineRemovalsWithSignatures(names []string, schema *schemamodel.Database) []difftypes.RoutineRemoval {
-	if len(names) == 0 {
-		return nil
-	}
-	if schema == nil {
-		return bareRoutineRemovals(names)
-	}
-	declared := make(map[string]string, len(schema.Functions))
-	for _, routine := range schema.Functions {
-		declared[strings.ToLower(routine.Name)] = routine.Parameters
-	}
-	removals := make([]difftypes.RoutineRemoval, 0, len(names))
-	for _, name := range names {
-		removals = append(removals, difftypes.RoutineRemoval{
-			Name:      name,
-			Signature: declared[strings.ToLower(name)],
-		})
-	}
-	return removals
-}
-
 // reverseProceduresRemoved names which of the added routines are procedures, so
 // the rollback drops each with the verb its object takes.
 //
-// The forward diff records an addition by name only; the kind lives on the
-// declaration the addition came from, which is what this looks up. A name the
-// desired schema no longer holds is left with the functions, because a DROP
+// reverseRoutinesOfKind splits the additions a forward diff recorded into the
+// removals a rollback plans, by the kind each one carries.
+//
+// The kind used to be looked up in the desired schema, because the forward diff
+// recorded an addition by name only. It travels with the change now
+// (stokaro/ptah#2315), so a rollback no longer depends on the declaration still
+// being there -- and the signature comes with it, which is what makes the DROP
+// addressable when the name is overloaded (stokaro/ptah#2296).
+//
+// A routine whose kind is unset is left with the functions, because a DROP
 // FUNCTION that is refused is a louder failure than a DROP PROCEDURE aimed at a
 // function (stokaro/ptah#1722).
-func reverseFunctionsRemoved(added []string, schema *schemamodel.Database) []string {
-	procedures := reverseProceduresRemoved(added, schema)
-	if len(procedures) == 0 {
-		return added
-	}
-	isProcedure := make(map[string]struct{}, len(procedures))
-	for _, name := range procedures {
-		isProcedure[name] = struct{}{}
-	}
-	kept := make([]string, 0, len(added))
-	for _, name := range added {
-		if _, skip := isProcedure[name]; !skip {
-			kept = append(kept, name)
-		}
-	}
-	return kept
-}
-
-func reverseProceduresRemoved(added []string, schema *schemamodel.Database) []string {
-	if schema == nil || len(added) == 0 {
+func reverseRoutinesOfKind(added difftypes.FunctionChanges, isKind func(difftypes.RoutineChange) bool) difftypes.FunctionChanges {
+	if len(added) == 0 {
 		return nil
 	}
-	procedures := make(map[string]struct{}, len(schema.Functions))
-	for _, routine := range schema.Functions {
-		if routine.IsProcedure() {
-			procedures[strings.ToLower(routine.Name)] = struct{}{}
+	var removals difftypes.FunctionChanges
+	for _, routine := range added {
+		if !isKind(routine) {
+			continue
 		}
+		// The declaration's parameters are the signature a rollback drops by:
+		// the routine being dropped is the one this addition created, so what
+		// it was created with is what identifies it.
+		routine.Signature = routine.Parameters
+		removals = append(removals, routine)
 	}
-	var removed []string
-	for _, name := range added {
-		if _, isProcedure := procedures[strings.ToLower(name)]; isProcedure {
-			removed = append(removed, name)
-		}
-	}
-	return removed
+	return removals
+}
+
+// reverseFunctionsRemoved is the additions that were plain functions.
+func reverseFunctionsRemoved(added difftypes.FunctionChanges) difftypes.FunctionChanges {
+	return reverseRoutinesOfKind(added, func(routine difftypes.RoutineChange) bool {
+		return !routine.IsProcedure()
+	})
+}
+
+// reverseProceduresRemoved is the additions that were procedures.
+func reverseProceduresRemoved(added difftypes.FunctionChanges) difftypes.FunctionChanges {
+	return reverseRoutinesOfKind(added, difftypes.RoutineChange.IsProcedure)
 }
 
 func reverseSchemaDiffWithSchemaForDialect(
@@ -2152,25 +2113,18 @@ func reverseSchemaDiffWithSchemaForDialect(
 		ExtensionsRemoved:  diff.ExtensionsAdded,   // Extensions to add become extensions to remove
 		ExtensionsModified: reverseExtensionDiffs(diff.ExtensionsModified),
 
-		// Reverse function operations
+		// Reverse function operations. A removed routine of either kind comes
+		// back as an addition carrying its own kind, so the two removal lists
+		// merge into one addition list without losing which was which.
 		FunctionsAdded:    append(slices.Clone(diff.FunctionsRemoved), diff.ProceduresRemoved...),
-		FunctionsRemoved:  reverseFunctionsRemoved(diff.FunctionsAdded, schema),
+		FunctionsRemoved:  reverseFunctionsRemoved(diff.FunctionsAdded),
 		FunctionsModified: reverseFunctionDiffs(diff.FunctionsModified),
-		// The rollback of an ADDED overload is as ambiguous as the forward drop
-		// was: `DROP FUNCTION IF EXISTS f` is refused whenever the name is not
-		// unique. The forward diff records an addition by name only, so the
-		// signature comes from the same place the kind does -- the declaration
-		// the addition came from (stokaro/ptah#2296).
-		FunctionsRemovedWithSignatures: routineRemovalsWithSignatures(
-			reverseFunctionsRemoved(diff.FunctionsAdded, schema), schema),
-		ProceduresRemovedWithSignatures: routineRemovalsWithSignatures(
-			reverseProceduresRemoved(diff.FunctionsAdded, schema), schema),
 		// A removed procedure comes back as an addition, and the planner reads
 		// its kind off the declaration -- which is why the reverse of a removal
 		// needs no kind of its own. The reverse of an ADDITION does: nothing
 		// here knows whether the added routine was a procedure, so
 		// reverseProceduresRemoved asks the desired schema.
-		ProceduresRemoved: reverseProceduresRemoved(diff.FunctionsAdded, schema),
+		ProceduresRemoved: reverseProceduresRemoved(diff.FunctionsAdded),
 
 		// Reverse sequence operations
 		// Reverse user-defined type operations

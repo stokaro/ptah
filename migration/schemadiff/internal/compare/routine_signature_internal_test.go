@@ -163,10 +163,12 @@ func TestPairRoutineOverloads(t *testing.T) {
 			pairs, added, removed := pairRoutineOverloads(test.declared, test.recorded)
 
 			c.Assert(pairs, qt.HasLen, test.wantPairs)
-			c.Assert(added, qt.Equals, test.wantAdded)
-			// The removals are the routines themselves rather than a count,
-			// because only they carry the signature a DROP needs to address an
-			// overload (stokaro/ptah#2296).
+			// Both sides are the routines themselves rather than counts. The
+			// removals carry the signature a DROP needs to address an overload
+			// (stokaro/ptah#2296); the additions carry the declaration a CREATE
+			// is written from, without which two overloads of one name were
+			// created as the same one twice (stokaro/ptah#2408).
+			c.Assert(added, qt.HasLen, test.wantAdded)
 			c.Assert(removed, qt.HasLen, test.wantRemoved)
 			c.Assert(firstPairBody(pairs), qt.Equals, test.wantFirstPair)
 		})

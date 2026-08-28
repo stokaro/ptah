@@ -348,34 +348,44 @@ func GeneratedTableDependencies(schema *schemamodel.Database) map[string][]strin
 	return dependencies
 }
 
-// FunctionsForCreate returns target functions in dependency order.
-func FunctionsForCreate(schema *schemamodel.Database, functionNames []string) []schemamodel.Function {
-	if schema == nil || len(functionNames) == 0 {
+// FunctionsForCreate orders the routines a change adds by their dependencies.
+//
+// It takes the routines rather than their names, and keeps every one of them.
+// Keyed by name it kept a map entry per name instead, so two overloads of one
+// name collapsed to whichever the schema listed last: one was created twice and
+// the other never (stokaro/ptah#2408). The dependency graph is still name-level
+// -- a routine body names another routine, not one of its overloads -- so the
+// ORDER comes from the names and the OUTPUT is every routine that carries one.
+func FunctionsForCreate(schema *schemamodel.Database, routines []schemamodel.Function) []schemamodel.Function {
+	if schema == nil || len(routines) == 0 {
 		return nil
 	}
 
-	functionByName := make(map[string]schemamodel.Function, len(schema.Functions))
-	requested := make(map[string]struct{}, len(functionNames))
-	for _, functionName := range functionNames {
-		requested[functionName] = struct{}{}
+	byName := make(map[string][]schemamodel.Function, len(routines))
+	for _, routine := range routines {
+		byName[routine.Name] = append(byName[routine.Name], routine)
 	}
-	names := make([]string, 0, len(functionNames))
+
+	// Declaration order, so the sort below is stable against the schema rather
+	// than against a map walk.
+	names := make([]string, 0, len(routines))
+	seen := make(map[string]struct{}, len(routines))
 	for _, fn := range schema.Functions {
-		functionByName[fn.Name] = fn
-		if _, ok := requested[fn.Name]; ok {
-			names = append(names, fn.Name)
+		if _, wanted := byName[fn.Name]; !wanted {
+			continue
 		}
+		if _, already := seen[fn.Name]; already {
+			continue
+		}
+		seen[fn.Name] = struct{}{}
+		names = append(names, fn.Name)
 	}
 
-	orderedNames := StableTopologicalSort(names, schema.FunctionDependencies)
-
-	functions := make([]schemamodel.Function, 0, len(orderedNames))
-	for _, name := range orderedNames {
-		if fn, ok := functionByName[name]; ok {
-			functions = append(functions, fn)
-		}
+	ordered := make([]schemamodel.Function, 0, len(routines))
+	for _, name := range StableTopologicalSort(names, schema.FunctionDependencies) {
+		ordered = append(ordered, byName[name]...)
 	}
-	return functions
+	return ordered
 }
 
 // ViewLikesForCreate returns views and materialized views in dependency order

@@ -144,6 +144,6 @@ func TestFunctions_OracleStillReportsAFunctionThatIsNotThere(t *testing.T) {
 	diff := &difftypes.SchemaDiff{}
 	compare.FunctionsWithDialect(desired, database, diff, platform.Oracle)
 
-	c.Assert(diff.FunctionsAdded, qt.DeepEquals, []string{"fn_triple"})
-	c.Assert(diff.FunctionsRemoved, qt.DeepEquals, []string{"FN_DOUBLE"})
+	c.Assert(diff.FunctionsAdded.Names(), qt.DeepEquals, []string{"fn_triple"})
+	c.Assert(diff.FunctionsRemoved.Names(), qt.DeepEquals, []string{"FN_DOUBLE"})
 }

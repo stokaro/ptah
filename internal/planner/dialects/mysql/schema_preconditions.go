@@ -77,7 +77,7 @@ func schemasAddedObjectsNeed(diff *difftypes.SchemaDiff) []string {
 	qualified = append(qualified, diff.TablesAdded...)
 	qualified = append(qualified, diff.ViewsAdded.Names()...)
 	qualified = append(qualified, diff.MaterializedViewsAdded.Names()...)
-	qualified = append(qualified, diff.FunctionsAdded...)
+	qualified = append(qualified, diff.FunctionsAdded.Names()...)
 	qualified = append(qualified, diff.SequencesAdded.Names()...)
 	qualified = append(qualified, diff.SynonymsAdded.Names()...)
 	for _, trigger := range diff.TriggersAdded {

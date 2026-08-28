@@ -26,8 +26,8 @@ func TestCompareWithDialect_DifferentSchemaDoesNotMatchSchemaObjects(t *testing.
 
 	diff := schemadiff.CompareWithDialect(desired, database, "postgres")
 
-	c.Assert(diff.FunctionsAdded, qt.DeepEquals, []string{"public.f_ctl"})
-	c.Assert(diff.FunctionsRemoved, qt.DeepEquals, []string{"reporting.f_ctl"})
+	c.Assert(diff.FunctionsAdded.Names(), qt.DeepEquals, []string{"public.f_ctl"})
+	c.Assert(diff.FunctionsRemoved.Names(), qt.DeepEquals, []string{"reporting.f_ctl"})
 	c.Assert(diff.SequencesAdded.Names(), qt.DeepEquals, []string{"public.s_ctl"})
 	c.Assert(diff.SequencesRemoved.Names(), qt.DeepEquals, []string{"reporting.s_ctl"})
 	c.Assert(diff.DomainsAdded.Names(), qt.DeepEquals, []string{"public.d_ctl"})

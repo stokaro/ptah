@@ -89,8 +89,8 @@ func collectSchemaObjectMismatches(diff *difftypes.SchemaDiff) []Mismatch {
 			return map[string]string{"schema": value.FromSchema + " -> " + value.ToSchema}
 		},
 	)...)
-	mismatches = append(mismatches, namedMismatches(diff.FunctionsAdded, "missing_function", "missing function")...)
-	mismatches = append(mismatches, namedMismatches(diff.FunctionsRemoved, "extra_function", "extra function")...)
+	mismatches = append(mismatches, namedMismatches(diff.FunctionsAdded.Names(), "missing_function", "missing function")...)
+	mismatches = append(mismatches, namedMismatches(diff.FunctionsRemoved.Names(), "extra_function", "extra function")...)
 	mismatches = append(mismatches, changedObjectMismatches(
 		diff.FunctionsModified,
 		"function_mismatch",

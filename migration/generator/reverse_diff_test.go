@@ -281,8 +281,8 @@ func TestReverseSchemaDiff_CompleteReversal(t *testing.T) {
 		},
 		ExtensionsAdded:   difftypes.ExtensionChanges{{Name: "pg_trgm"}, {Name: "btree_gin"}},
 		ExtensionsRemoved: difftypes.ExtensionChanges{{Name: "postgis"}},
-		FunctionsAdded:    []string{"get_tenant_id", "set_tenant_context"},
-		FunctionsRemoved:  []string{"old_function"},
+		FunctionsAdded:    difftypes.FunctionChanges{{Function: schemamodel.Function{Name: "get_tenant_id"}}, {Function: schemamodel.Function{Name: "set_tenant_context"}}},
+		FunctionsRemoved:  difftypes.FunctionChanges{{Function: schemamodel.Function{Name: "old_function"}}},
 		RLSPoliciesAdded: []difftypes.RLSPolicyRef{
 			{PolicyName: "user_policy", TableName: "users"},
 			{PolicyName: "tenant_policy", TableName: "posts"},
@@ -321,8 +321,8 @@ func TestReverseSchemaDiff_CompleteReversal(t *testing.T) {
 	c.Assert(result.ExtensionsRemoved.Names(), qt.DeepEquals, input.ExtensionsAdded.Names())
 
 	// Verify function reversals
-	c.Assert(result.FunctionsAdded, qt.DeepEquals, input.FunctionsRemoved)
-	c.Assert(result.FunctionsRemoved, qt.DeepEquals, input.FunctionsAdded)
+	c.Assert(result.FunctionsAdded.Names(), qt.DeepEquals, input.FunctionsRemoved.Names())
+	c.Assert(result.FunctionsRemoved.Names(), qt.DeepEquals, input.FunctionsAdded.Names())
 
 	// Verify RLS policy reversals
 	expectedRLSPoliciesAdded := []difftypes.RLSPolicyRef{
@@ -664,7 +664,7 @@ func TestReverseSchemaDiff_Issue39_Integration(t *testing.T) {
 	// (simulating a migration that creates these objects)
 	upDiff := &difftypes.SchemaDiff{
 		// Add some functions
-		FunctionsAdded: []string{"get_current_tenant_id", "set_tenant_context"},
+		FunctionsAdded: difftypes.FunctionChanges{{Function: schemamodel.Function{Name: "get_current_tenant_id"}}, {Function: schemamodel.Function{Name: "set_tenant_context"}}},
 
 		// Add some RLS policies
 		RLSPoliciesAdded: []difftypes.RLSPolicyRef{
@@ -688,7 +688,7 @@ func TestReverseSchemaDiff_Issue39_Integration(t *testing.T) {
 	// Verify that the down migration includes removal of all the objects that were added
 
 	// Functions should be removed in down migration
-	c.Assert(downDiff.FunctionsRemoved, qt.DeepEquals, []string{"get_current_tenant_id", "set_tenant_context"})
+	c.Assert(downDiff.FunctionsRemoved.Names(), qt.DeepEquals, []string{"get_current_tenant_id", "set_tenant_context"})
 	c.Assert(downDiff.FunctionsAdded, qt.HasLen, 0)
 
 	// RLS policies should be removed in down migration

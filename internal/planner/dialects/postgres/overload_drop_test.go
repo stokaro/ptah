@@ -44,9 +44,10 @@ func TestRemoveFunctions_ADroppedOverloadNamesItsArguments(t *testing.T) {
 	c := qt.New(t)
 
 	sql := droppedRoutineSQL(c, &difftypes.SchemaDiff{
-		FunctionsRemoved: []string{"f"},
-		FunctionsRemovedWithSignatures: []difftypes.RoutineRemoval{
-			{Name: "f", Signature: "a text"},
+		// The signature travels WITH the removal now; it used to need a
+		// parallel list beside this one (stokaro/ptah#2315).
+		FunctionsRemoved: difftypes.FunctionChanges{
+			{Function: schemamodel.Function{Name: "f"}, Signature: "a text"},
 		},
 	})
 
@@ -59,9 +60,8 @@ func TestRemoveFunctions_ADroppedProcedureNamesItsArguments(t *testing.T) {
 	c := qt.New(t)
 
 	sql := droppedRoutineSQL(c, &difftypes.SchemaDiff{
-		ProceduresRemoved: []string{"p"},
-		ProceduresRemovedWithSignatures: []difftypes.RoutineRemoval{
-			{Name: "p", Signature: "a integer"},
+		ProceduresRemoved: difftypes.FunctionChanges{
+			{Function: schemamodel.Function{Name: "p"}, Signature: "a integer"},
 		},
 	})
 
@@ -78,7 +78,7 @@ func TestRemoveFunctions_ADroppedProcedureNamesItsArguments(t *testing.T) {
 func TestRemoveFunctions_ARoutineWithNoSignatureIsStillDropped(t *testing.T) {
 	c := qt.New(t)
 
-	sql := droppedRoutineSQL(c, &difftypes.SchemaDiff{FunctionsRemoved: []string{"solo"}})
+	sql := droppedRoutineSQL(c, &difftypes.SchemaDiff{FunctionsRemoved: difftypes.FunctionChanges{{Function: schemamodel.Function{Name: "solo"}}}})
 
 	c.Assert(sql, qt.Contains, `DROP FUNCTION IF EXISTS "solo"`)
 	c.Assert(sql, qt.Not(qt.Contains), "()")

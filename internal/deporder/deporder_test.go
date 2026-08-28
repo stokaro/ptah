@@ -134,7 +134,7 @@ func TestFunctionsForCreate_UsesFunctionDependencyMap(t *testing.T) {
 		},
 	}
 
-	functions := deporder.FunctionsForCreate(schema, []string{"a_child", "z_parent"})
+	functions := deporder.FunctionsForCreate(schema, []schemamodel.Function{{Name: "a_child"}, {Name: "z_parent"}})
 
 	c.Assert(functionNames(functions), qt.DeepEquals, []string{"z_parent", "a_child"})
 }
@@ -148,7 +148,7 @@ func TestFunctionsForCreate_FallsBackToGeneratedFunctionOrder(t *testing.T) {
 		},
 	}
 
-	functions := deporder.FunctionsForCreate(schema, []string{"a_child", "z_parent"})
+	functions := deporder.FunctionsForCreate(schema, []schemamodel.Function{{Name: "a_child"}, {Name: "z_parent"}})
 
 	c.Assert(functionNames(functions), qt.DeepEquals, []string{"z_parent", "a_child"})
 }
