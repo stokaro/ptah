@@ -140,6 +140,22 @@ signs:
     artifacts: sbom
     output: true
 
+release:
+  # A re-run of a tag must reach the Docker steps.
+  #
+  # GoReleaser uploads the release assets before it builds and pushes images.
+  # On a re-run every asset is already on the release, GitHub answers the
+  # upload with `422 Validation Failed [Resource:ReleaseAsset
+  # Field:name Code:already_exists]`, and GoReleaser aborts -- so `dockers:`
+  # and `docker_manifests:` below never run at all. Measured on the four tag
+  # runs of 2026-08-27: all four failed on that upload, and the published
+  # image is still the one an earlier release pushed (stokaro/ptah#2362).
+  #
+  # This makes the 422 recoverable: GoReleaser deletes the asset that is in
+  # the way and retries the upload. It costs an extra API call per collision
+  # and only on a collision, which is exactly the case that is broken today.
+  replace_existing_artifacts: true
+
 dockers:
   - id: ptah-linux-amd64
     ids:
