@@ -2141,13 +2141,13 @@ func reverseSchemaDiffWithSchemaForDialect(
 		// Reverse user-defined type operations
 		DomainsAdded:           diff.DomainsRemoved,
 		DomainsRemoved:         diff.DomainsAdded,
-		DomainsModified:        reverseDomainDiffs(diff.DomainsModified, schema),
+		DomainsModified:        reverseDomainDiffs(diff.DomainsModified, schema, prior, semantics),
 		CompositeTypesAdded:    diff.CompositeTypesRemoved,
 		CompositeTypesRemoved:  diff.CompositeTypesAdded,
-		CompositeTypesModified: reverseCompositeTypeDiffs(diff.CompositeTypesModified, schema, prior),
+		CompositeTypesModified: reverseCompositeTypeDiffs(diff.CompositeTypesModified, schema, prior, semantics),
 		RangesAdded:            diff.RangesRemoved,
 		RangesRemoved:          diff.RangesAdded,
-		RangesModified:         reverseRangeDiffs(diff.RangesModified, schema),
+		RangesModified:         reverseRangeDiffs(diff.RangesModified, schema, prior, semantics),
 
 		SequencesAdded:    diff.SequencesRemoved, // Sequences to remove become sequences to add
 		SequencesRemoved:  diff.SequencesAdded,   // Sequences to add become sequences to remove
@@ -3125,7 +3125,11 @@ func reverseChangeMap(changes map[string]string) map[string]string {
 // the up migration created. schema is the up direction's target, so that is
 // where the down direction's from-side lives. A nil schema leaves it empty and
 // the drop ordering falls back to declaration order.
-func reverseDomainDiffs(domainDiffs []difftypes.DomainDiff, schema *schemamodel.Database) []difftypes.DomainDiff {
+func reverseDomainDiffs(
+	domainDiffs []difftypes.DomainDiff,
+	schema, prior *schemamodel.Database,
+	semantics identifier.Semantics,
+) []difftypes.DomainDiff {
 	reversed := make([]difftypes.DomainDiff, len(domainDiffs))
 	for i, domainDiff := range domainDiffs {
 		reversed[i] = difftypes.DomainDiff{
@@ -3136,9 +3140,29 @@ func reverseDomainDiffs(domainDiffs []difftypes.DomainDiff, schema *schemamodel.
 			// changing away from. CurrentCheckConstraints cannot be: see
 			// nestedCoverageExempt.
 			CurrentBaseType: targetDomainBaseType(schema, domainDiff.DomainName),
+			// The recreate half renders from the operand, so reversing the
+			// change map without reversing the operand would rebuild the very
+			// definition the rollback is undoing (stokaro/ptah#2315).
+			Desired: priorDomain(prior, domainDiff.DomainName, semantics),
 		}
 	}
 	return reversed
+}
+
+// priorDomain is the domain the pre-change database held, or a zero one when it
+// held none -- which is what withholds the drop.
+func priorDomain(
+	prior *schemamodel.Database,
+	name string,
+	semantics identifier.Semantics,
+) schemamodel.Domain {
+	if prior == nil {
+		return schemamodel.Domain{}
+	}
+	if domain := objectlookup.Qualified(prior.Domains, name, semantics); domain != nil {
+		return *domain
+	}
+	return schemamodel.Domain{}
 }
 
 // reverseViewDiffs carries modified views into the down direction.
@@ -3294,16 +3318,36 @@ func priorView(prior *schemamodel.Database, name string, semantics identifier.Se
 }
 
 // reverseRangeDiffs mirrors reverseDomainDiffs for range types.
-func reverseRangeDiffs(rangeDiffs []difftypes.RangeDiff, schema *schemamodel.Database) []difftypes.RangeDiff {
+func reverseRangeDiffs(
+	rangeDiffs []difftypes.RangeDiff,
+	schema, prior *schemamodel.Database,
+	semantics identifier.Semantics,
+) []difftypes.RangeDiff {
 	reversed := make([]difftypes.RangeDiff, len(rangeDiffs))
 	for i, rangeDiff := range rangeDiffs {
 		reversed[i] = difftypes.RangeDiff{
 			RangeName:      rangeDiff.RangeName,
 			Changes:        reverseChangeMap(rangeDiff.Changes),
 			CurrentSubtype: targetRangeSubtype(schema, rangeDiff.RangeName),
+			Desired:        priorRange(prior, rangeDiff.RangeName, semantics),
 		}
 	}
 	return reversed
+}
+
+// priorRange mirrors [priorDomain] for range types.
+func priorRange(
+	prior *schemamodel.Database,
+	name string,
+	semantics identifier.Semantics,
+) schemamodel.Range {
+	if prior == nil {
+		return schemamodel.Range{}
+	}
+	if rangeType := objectlookup.Qualified(prior.Ranges, name, semantics); rangeType != nil {
+		return *rangeType
+	}
+	return schemamodel.Range{}
 }
 
 func generatedViewBody(schema *schemamodel.Database, viewName string) string {
@@ -3372,6 +3416,7 @@ func reverseTriggerDiffs(triggerDiffs []difftypes.TriggerDiff) []difftypes.Trigg
 func reverseCompositeTypeDiffs(
 	compositeDiffs []difftypes.CompositeTypeDiff,
 	schema, prior *schemamodel.Database,
+	semantics identifier.Semantics,
 ) []difftypes.CompositeTypeDiff {
 	reversed := make([]difftypes.CompositeTypeDiff, len(compositeDiffs))
 	for i, compositeDiff := range compositeDiffs {
@@ -3385,9 +3430,25 @@ func reverseCompositeTypeDiffs(
 			// (stokaro/ptah#2418).
 			AttributesAdded:   restoredCompositeAttributes(prior, compositeDiff.TypeName, compositeDiff.AttributesRemoved),
 			AttributesRemoved: compositeAttributeNames(compositeDiff.AttributesAdded),
+			Desired:           priorCompositeType(prior, compositeDiff.TypeName, semantics),
 		}
 	}
 	return reversed
+}
+
+// priorCompositeType mirrors [priorDomain] for composite types.
+func priorCompositeType(
+	prior *schemamodel.Database,
+	name string,
+	semantics identifier.Semantics,
+) schemamodel.CompositeType {
+	if prior == nil {
+		return schemamodel.CompositeType{}
+	}
+	if composite := objectlookup.Qualified(prior.CompositeTypes, name, semantics); composite != nil {
+		return *composite
+	}
+	return schemamodel.CompositeType{}
 }
 
 func targetDomainBaseType(schema *schemamodel.Database, name string) string {

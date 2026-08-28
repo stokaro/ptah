@@ -611,6 +611,18 @@ privileges on the view and fails loudly if the engine refuses it, while a
 rollback drops and recreates, which always applies. Embedders that build a
 `ViewDiff` by hand and leave both fields empty get the forward answer.
 
+`migration/schemadiff/difftypes.DomainDiff`, `CompositeTypeDiff` and
+`RangeDiff` each carry a `Desired` field, off the wire, holding the definition
+the change is reconciled to. PostgreSQL has no in-place ALTER for a domain's
+base type, a composite's field list or a range's subtype, so those changes are
+planned as DROP TYPE followed by CREATE TYPE, and the create renders from this
+field. An empty one withholds BOTH halves and emits a warning comment naming
+the object: a type Ptah cannot rebuild is a type Ptah must not drop. An
+embedder that builds one of these entries by hand and leaves `Desired` empty
+therefore gets the warning rather than a plan. A reversal resolves the field
+against the pre-change database, so a rolled-back modification rebuilds the
+definition that database held.
+
 Two more modification entries carry the object they render rather than a
 reference to it. `migration/schemadiff/difftypes.ContinuousAggregateDiff` and
 `RoleDiff` each hold a `Desired` field, off the wire, holding the declaration

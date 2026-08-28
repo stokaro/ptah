@@ -1665,6 +1665,17 @@ type DomainDiff struct {
 	// could not enumerate them; the planner then leaves the CHECK alone rather
 	// than guessing a name (stokaro/ptah#1717).
 	CurrentCheckConstraints []string `json:"current_check_constraints,omitempty"`
+
+	// Desired is the domain this change asks the database to hold.
+	//
+	// A change with no in-place ALTER is a drop and a recreate, and the
+	// recreate renders from this. Carrying it is what lets the planner write
+	// the pair without being handed the schema the domain came out of
+	// (stokaro/ptah#2315), and an empty one is what withholds the drop: a type
+	// Ptah cannot rebuild is a type Ptah must not drop.
+	//
+	// It stays off the wire. The change map is the change; this is the operand.
+	Desired schemamodel.Domain `json:"-"`
 }
 
 // RangeDiff represents changes to an existing PostgreSQL range type.
@@ -1681,6 +1692,13 @@ type RangeDiff struct {
 	// Empty when the caller built the diff by hand; the drop ordering then falls
 	// back to declaration order.
 	CurrentSubtype string `json:"current_subtype,omitempty"`
+
+	// Desired is the range type this change asks the database to hold.
+	//
+	// PostgreSQL has no ALTER TYPE ... AS RANGE, so every change here is a drop
+	// and a recreate. It plays the part [DomainDiff.Desired] plays, with the
+	// same empty-means-withhold-the-drop rule.
+	Desired schemamodel.Range `json:"-"`
 }
 
 // CompositeTypeDiff represents changes to a PostgreSQL composite type.
@@ -1719,6 +1737,12 @@ type CompositeTypeDiff struct {
 	AttributesAdded []CompositeAttribute `json:"attributes_added,omitempty"`
 	// AttributesRemoved names the fields to remove. See AttributesAdded.
 	AttributesRemoved []string `json:"attributes_removed,omitempty"`
+
+	// Desired is the composite type this change asks the database to hold.
+	//
+	// It plays the part [DomainDiff.Desired] plays, for the same reason and
+	// with the same empty-means-withhold-the-drop rule.
+	Desired schemamodel.CompositeType `json:"-"`
 }
 
 // CompositeAttribute is one field of a composite type, as a declaration spells

@@ -1344,10 +1344,13 @@ func (p *Planner) plannedUserTypes(
 			// emitted, so there is nothing to put back.
 			continue
 		}
-		if domain := findDomain(desired.Domains, domainDiff.DomainName, semantics); domain != nil {
+		// The domain travels WITH the change (stokaro/ptah#2315). An empty one
+		// is a change whose object could not be resolved, and dropModifiedUserTypes
+		// withheld the drop for it, so there is nothing to put back.
+		if domain := domainDiff.Desired; domain.Name != "" {
 			planned = append(planned, plannedUserType{
 				dep:  deporder.UserType{Name: domainDiff.DomainName, References: []string{domain.BaseType}},
-				node: fromschema.FromDomain(*domain).SetComment(fmt.Sprintf("Recreate domain %s", domainDiff.DomainName)),
+				node: fromschema.FromDomain(domain).SetComment(fmt.Sprintf("Recreate domain %s", domainDiff.DomainName)),
 			})
 		}
 	}
@@ -1357,10 +1360,10 @@ func (p *Planner) plannedUserTypes(
 			// emitted, so there is nothing to put back.
 			continue
 		}
-		if composite := findCompositeType(desired.CompositeTypes, compositeDiff.TypeName, semantics); composite != nil {
+		if composite := compositeDiff.Desired; composite.Name != "" {
 			planned = append(planned, plannedUserType{
-				dep:  deporder.UserType{Name: compositeDiff.TypeName, References: compositeFieldTypes(*composite)},
-				node: fromschema.FromCompositeType(*composite).SetComment(fmt.Sprintf("Recreate composite type %s", compositeDiff.TypeName)),
+				dep:  deporder.UserType{Name: compositeDiff.TypeName, References: compositeFieldTypes(composite)},
+				node: fromschema.FromCompositeType(composite).SetComment(fmt.Sprintf("Recreate composite type %s", compositeDiff.TypeName)),
 			})
 		}
 	}
@@ -1368,10 +1371,10 @@ func (p *Planner) plannedUserTypes(
 	// the same drop-and-recreate path domains and composites already use
 	// (stokaro/ptah#931 item 2).
 	for _, rangeDiff := range diff.RangesModified {
-		if rangeType := findRange(desired.Ranges, rangeDiff.RangeName, semantics); rangeType != nil {
+		if rangeType := rangeDiff.Desired; rangeType.Name != "" {
 			planned = append(planned, plannedUserType{
 				dep:  deporder.UserType{Name: rangeDiff.RangeName, References: []string{rangeType.Subtype}},
-				node: fromschema.FromRange(*rangeType).SetComment(fmt.Sprintf("Recreate range type %s", rangeDiff.RangeName)),
+				node: fromschema.FromRange(rangeType).SetComment(fmt.Sprintf("Recreate range type %s", rangeDiff.RangeName)),
 			})
 		}
 	}
@@ -1439,12 +1442,7 @@ func (p *Planner) removeUserTypes(result []ast.Node, diff *difftypes.SchemaDiff)
 // in the cases it can. Where the definition still does not resolve, the pair is
 // withheld and a comment says so: a type Ptah cannot rebuild is a type Ptah must
 // not drop.
-func (p *Planner) dropModifiedUserTypes(
-	result []ast.Node,
-	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
-) []ast.Node {
-	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
+func (p *Planner) dropModifiedUserTypes(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	rebuilt := rebuiltUserTypes(diff)
 	byName := make(map[string]ast.Node, len(diff.DomainsModified)+len(diff.CompositeTypesModified))
 	deps := make([]deporder.UserType, 0, len(diff.DomainsModified)+len(diff.CompositeTypesModified))
@@ -1457,7 +1455,7 @@ func (p *Planner) dropModifiedUserTypes(
 			// any domain a column uses.
 			continue
 		}
-		if findDomain(desired.Domains, domainDiff.DomainName, semantics) == nil {
+		if domainDiff.Desired.Name == "" {
 			unresolved = append(unresolved, unrecreatableUserTypeComment("domain", domainDiff.DomainName))
 			continue
 		}
@@ -1472,7 +1470,7 @@ func (p *Planner) dropModifiedUserTypes(
 			// table column uses, which is the case the ALTER exists for.
 			continue
 		}
-		if findCompositeType(desired.CompositeTypes, compositeDiff.TypeName, semantics) == nil {
+		if compositeDiff.Desired.Name == "" {
 			unresolved = append(unresolved, unrecreatableUserTypeComment("composite type", compositeDiff.TypeName))
 			continue
 		}
@@ -1481,7 +1479,7 @@ func (p *Planner) dropModifiedUserTypes(
 		deps = append(deps, deporder.UserType{Name: compositeDiff.TypeName, References: compositeDiff.CurrentFieldTypes})
 	}
 	for _, rangeDiff := range diff.RangesModified {
-		if findRange(desired.Ranges, rangeDiff.RangeName, semantics) == nil {
+		if rangeDiff.Desired.Name == "" {
 			unresolved = append(unresolved, unrecreatableUserTypeComment("range type", rangeDiff.RangeName))
 			continue
 		}
@@ -1503,7 +1501,7 @@ func (p *Planner) dropModifiedUserTypes(
 // schema does not hold, in place of the DROP that would have had no recreate.
 func unrecreatableUserTypeComment(kind, name string) ast.Node {
 	return ast.NewComment(fmt.Sprintf(
-		"WARNING: %s %s changed, but the target definition was not found in the schema; "+
+		"WARNING: %s %s changed, but the change carries no definition to recreate it from; "+
 			"neither DROP nor CREATE emitted, manual migration required",
 		kind,
 		name,
@@ -1529,22 +1527,6 @@ func currentRangeReferences(rangeDiff difftypes.RangeDiff) []string {
 		return nil
 	}
 	return []string{rangeDiff.CurrentSubtype}
-}
-
-func findDomain(domains []schemamodel.Domain, name string, semantics identifier.Semantics) *schemamodel.Domain {
-	return objectlookup.Qualified(domains, name, semantics)
-}
-
-func findCompositeType(
-	composites []schemamodel.CompositeType,
-	name string,
-	semantics identifier.Semantics,
-) *schemamodel.CompositeType {
-	return objectlookup.Qualified(composites, name, semantics)
-}
-
-func findRange(ranges []schemamodel.Range, name string, semantics identifier.Semantics) *schemamodel.Range {
-	return objectlookup.Qualified(ranges, name, semantics)
 }
 
 // GenerateMigrationAST generates PostgreSQL-specific migration AST statements from schema differences.
@@ -1719,15 +1701,15 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 
 	// 3c. Recreate changed user-defined types (drop then create), then create
 	// new domains/ranges/composites before tables can reference them.
-	result = p.dropModifiedUserTypes(result, diff, desired)
+	result = p.dropModifiedUserTypes(result, diff)
 	result = p.addNewUserTypes(result, diff, desired)
 
 	// 3d. Change in place the domains that need no rebuild. It follows the
 	// creations so that a domain added in this same plan is not also altered,
 	// and it stays ahead of the tables, whose columns take their default and
 	// their constraint from the domain as it is when the column is created.
-	result = p.alterModifiedDomains(result, diff, desired)
-	result = p.alterModifiedCompositeTypes(result, diff, desired)
+	result = p.alterModifiedDomains(result, diff)
+	result = p.alterModifiedCompositeTypes(result, diff)
 
 	// 4. Modify existing enums
 	result = p.modifyExistingEnums(result, diff, desired)

@@ -205,71 +205,67 @@ func TestEnumAdditionFollowsItsOperand(t *testing.T) {
 		qt.Commentf("the desired schema's spelling must not reach the plan:\n%s", plan))
 }
 
-// TestUserTypeLookupResolvesAcrossSchemaSpellings pins findCompositeType and
-// findRange the way the existing symmetry test already pins findDomain.
+// TestUserTypeRecreationPairsAcrossSchemaSpellings pins the two halves of a
+// user-type recreation to one another when the two spellings disagree.
 //
-// A modified user type is planned as DROP TYPE followed by CREATE TYPE. Both
-// halves go through the same lookup, so the row that matters is the one where
-// the two sides spell the schema differently: the pair must still be a pair.
-func TestUserTypeLookupResolvesAcrossSchemaSpellings(t *testing.T) {
+// A modified user type is planned as DROP TYPE followed by CREATE TYPE. The
+// drop is written from the name the change carries and the create from the
+// operand's own name, so the row that matters is the one where those two spell
+// the schema differently: the pair must still be a pair.
+//
+// The lookup this used to pin lives in the reversal now, where the operand for
+// the down direction is resolved out of the pre-change schema
+// (stokaro/ptah#2315). It is pinned there, in migration/generator.
+func TestUserTypeRecreationPairsAcrossSchemaSpellings(t *testing.T) {
 	tests := []struct {
-		name    string
-		desired *schemamodel.Database
-		diff    *difftypes.SchemaDiff
+		name string
+		diff *difftypes.SchemaDiff
 	}{
 		{
-			name: "a composite type qualified in the diff and bare in the schema",
-			desired: &schemamodel.Database{
-				CompositeTypes: []schemamodel.CompositeType{{
+			name: "a composite type qualified in the change and bare in the operand",
+			diff: &difftypes.SchemaDiff{CompositeTypesModified: []difftypes.CompositeTypeDiff{{
+				TypeName: "public.addr",
+				Changes:  map[string]string{"fields": "line1 text -> line1 text, line2 text"},
+				Desired: schemamodel.CompositeType{
 					Name: "addr",
 					Fields: []schemamodel.CompositeField{
 						{Name: "line1", Type: "text"},
 						{Name: "line2", Type: "text"},
 					},
-				}},
-			},
-			diff: &difftypes.SchemaDiff{CompositeTypesModified: []difftypes.CompositeTypeDiff{{
-				TypeName: "public.addr",
-				Changes:  map[string]string{"fields": "line1 text -> line1 text, line2 text"},
+				},
 			}}},
 		},
 		{
-			name: "a composite type bare in the diff and qualified in the schema",
-			desired: &schemamodel.Database{
-				CompositeTypes: []schemamodel.CompositeType{{
+			name: "a composite type bare in the change and qualified in the operand",
+			diff: &difftypes.SchemaDiff{CompositeTypesModified: []difftypes.CompositeTypeDiff{{
+				TypeName: "addr",
+				Changes:  map[string]string{"fields": "line1 text -> line1 text, line2 text"},
+				Desired: schemamodel.CompositeType{
 					Name:   "addr",
 					Schema: "public",
 					Fields: []schemamodel.CompositeField{
 						{Name: "line1", Type: "text"},
 						{Name: "line2", Type: "text"},
 					},
-				}},
-			},
-			diff: &difftypes.SchemaDiff{CompositeTypesModified: []difftypes.CompositeTypeDiff{{
-				TypeName: "addr",
-				Changes:  map[string]string{"fields": "line1 text -> line1 text, line2 text"},
+				},
 			}}},
 		},
 		{
-			name: "a range type qualified in the diff and bare in the schema",
-			desired: &schemamodel.Database{
-				Ranges: []schemamodel.Range{{Name: "span", Subtype: "int8"}},
-			},
+			name: "a range type qualified in the change and bare in the operand",
 			diff: &difftypes.SchemaDiff{RangesModified: []difftypes.RangeDiff{{
 				RangeName:      "public.span",
 				Changes:        map[string]string{"subtype": "int4 -> int8"},
 				CurrentSubtype: "int4",
+				Desired:        schemamodel.Range{Name: "span", Subtype: "int8"},
 			}}},
 		},
 		{
-			name: "a range type bare in the diff and qualified in the schema",
-			desired: &schemamodel.Database{
-				Ranges: []schemamodel.Range{{Name: "span", Schema: "public", Subtype: "int8"}},
-			},
+			name: "a range type bare in the change and qualified in the operand",
 			diff: &difftypes.SchemaDiff{RangesModified: []difftypes.RangeDiff{{
 				RangeName:      "span",
 				Changes:        map[string]string{"subtype": "int4 -> int8"},
 				CurrentSubtype: "int4",
+				Desired:        schemamodel.Range{Name: "span", Schema: "public", Subtype: "int8"},
 			}}},
 		},
 	}
@@ -277,12 +273,13 @@ func TestUserTypeLookupResolvesAcrossSchemaSpellings(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			statements, err := planner.GenerateSchemaDiffSQLStatements(test.diff, test.desired, "postgres")
+			statements, err := planner.GenerateSchemaDiffSQLStatements(
+				test.diff, &schemamodel.Database{}, "postgres")
 			c.Assert(err, qt.IsNil)
 			plan := strings.Join(statements, "\n")
 			c.Assert(plan, qt.Contains, "DROP TYPE", qt.Commentf("plan:\n%s", plan))
 			c.Assert(plan, qt.Contains, "CREATE TYPE", qt.Commentf("plan:\n%s", plan))
-			c.Assert(plan, qt.Not(qt.Contains), "was not found", qt.Commentf("plan:\n%s", plan))
+			c.Assert(plan, qt.Not(qt.Contains), "carries no definition", qt.Commentf("plan:\n%s", plan))
 		})
 	}
 }
