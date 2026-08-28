@@ -8,6 +8,7 @@ import (
 
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/planner/dialects/mysql"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -24,7 +25,18 @@ var mysqlFamilyDialects = []string{"mysql", "mariadb"}
 
 // renderMySQLFamily generates the migration AST once per invocation and
 // renders it with the given dialect.
+// renderMySQLFamily plans and renders a diff, completing any column
+// modification whose operand the fixture left out.
+//
+// A ColumnDiff carries the column the plan renders from, and a comparison
+// always fills it. A hand-built fixture states the CHANGE -- which is what
+// each of these tests is about -- and leaving it to also restate the column
+// would put the same declaration in two places, where a reader has to check
+// they agree. This resolves it from the declaration the plan is applied
+// against, which is what the comparison does and the only answer that can be
+// right.
 func renderMySQLFamily(c *qt.C, dialect string, diff *difftypes.SchemaDiff, desired *schemamodel.Database) string {
+	diff = withDeclaredColumnOperands(diff, desired)
 	nodes, err := mysql.New().GenerateMigrationAST(diff, desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL(dialect, nodes...)
@@ -757,4 +769,46 @@ func TestPlanner_GenerateMigrationAST_TableQualifiedPrimaryKeyRemovalSuppressesC
 			c.Assert(sql, qt.Not(qt.Contains), "MODIFY COLUMN user_id")
 		})
 	}
+}
+
+// withDeclaredColumnOperands fills each column modification's operand from
+// desired, leaving one that already carries an operand alone.
+//
+// It resolves the way the comparison does: the table's struct, then that
+// struct's fields with embedded structs folded in. A column desired does not
+// declare is left with no operand, so a fixture testing that case still reaches
+// the planner's report.
+func withDeclaredColumnOperands(
+	diff *difftypes.SchemaDiff,
+	desired *schemamodel.Database,
+) *difftypes.SchemaDiff {
+	completed := *diff
+	completed.TablesModified = make([]difftypes.TableDiff, len(diff.TablesModified))
+	copy(completed.TablesModified, diff.TablesModified)
+	for tableIndex, tableDiff := range completed.TablesModified {
+		columns := make([]difftypes.ColumnDiff, len(tableDiff.ColumnsModified))
+		copy(columns, tableDiff.ColumnsModified)
+		for columnIndex, colDiff := range columns {
+			if colDiff.Desired.Name != "" {
+				continue
+			}
+			columns[columnIndex].Desired = declaredColumn(desired, tableDiff.TableName, colDiff.ColumnName)
+		}
+		completed.TablesModified[tableIndex].ColumnsModified = columns
+	}
+	return &completed
+}
+
+func declaredColumn(desired *schemamodel.Database, tableName, columnName string) schemamodel.Field {
+	for _, table := range desired.Tables {
+		if table.Name != tableName && table.QualifiedName() != tableName {
+			continue
+		}
+		for _, field := range fromschema.ProcessEmbeddedFields(desired.EmbeddedFields, desired.Fields) {
+			if field.StructName == table.StructName && field.Name == columnName {
+				return field
+			}
+		}
+	}
+	return schemamodel.Field{}
 }

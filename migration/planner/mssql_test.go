@@ -136,6 +136,7 @@ func TestGenerateSchemaDiffSQL_SQLServerModifiesColumnOnQualifiedTable(t *testin
 			TableName: "dbo.users",
 			ColumnsModified: []difftypes.ColumnDiff{{
 				ColumnName: "email",
+				Desired:    schemamodel.Field{StructName: "User", Name: "email", Type: "NVARCHAR(320)", Nullable: false},
 				Changes: map[string]string{
 					"type":     "NVARCHAR(100) -> NVARCHAR(320)",
 					"nullable": "true -> false",

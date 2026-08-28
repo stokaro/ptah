@@ -444,7 +444,9 @@ func TestPlanBidirectionalSchemaDiff_MySQLModifyColumnUniqueCoversForeignKey(t *
 	diff.TablesModified = []difftypes.TableDiff{{
 		TableName: "children",
 		ColumnsModified: []difftypes.ColumnDiff{{
-			ColumnName: "parent_id", Changes: map[string]string{"unique": "false -> true"},
+			ColumnName: "parent_id",
+			Desired:    schemamodel.Field{StructName: "Child", Name: "parent_id", Type: "BIGINT", Unique: true},
+			Changes:    map[string]string{"unique": "false -> true"},
 		}},
 	}}
 	desired := &schemamodel.Database{

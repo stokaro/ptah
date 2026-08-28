@@ -19,7 +19,14 @@ func TestGenerateSchemaDiffSQL_TableModificationUsesStructuralIdentity(t *testin
 			TableName: "tenant.data",
 			ColumnsModified: []difftypes.ColumnDiff{{
 				ColumnName: "payload",
-				Changes:    map[string]string{"type": "TEXT -> BIGINT"},
+				// The operand is the QUALIFIED table's column, which is the one a
+				// comparison of this declaration produces: `tenant.data` names the
+				// table in schema `tenant`, not the table literally called
+				// `tenant.data`. That resolution is asserted against the comparison
+				// in TestCompare_ACollidingTableNameCarriesTheStructurallyIdentifiedColumn;
+				// what this test holds is that the plan spells the TABLE the same way.
+				Desired: schemamodel.Field{StructName: "Qualified", Name: "payload", Type: "BIGINT"},
+				Changes: map[string]string{"type": "TEXT -> BIGINT"},
 			}},
 		}},
 	}

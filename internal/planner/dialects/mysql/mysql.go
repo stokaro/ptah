@@ -403,30 +403,23 @@ func (p *Planner) modifyExistingColumns(
 			return result, err
 		}
 
-		var targetField *schemamodel.Field
-		var targetStructName string
-		if targetTable := findGeneratedTable(desired.Tables, tableDiff.TableName, semantics); targetTable != nil {
-			targetStructName = targetTable.StructName
-			for _, field := range desired.Fields {
-				if field.StructName == targetStructName && field.Name == colDiff.ColumnName {
-					targetField = &field
-					break
-				}
-			}
-		}
-
-		if targetField == nil {
-			astCommentNode := ast.NewComment(fmt.Sprintf("ERROR: Could not find field definition for %s.%s (struct: %s)", tableDiff.TableName, colDiff.ColumnName, targetStructName))
-			result = append(result, astCommentNode)
+		// The operand the comparison carried, rather than a second resolution
+		// here. The one this replaced read desired.Fields directly, with no
+		// embedded-field fold, so a column declared inside an embedded struct
+		// was reported as `ERROR: Could not find field definition` -- as a
+		// COMMENT, in a migration that applied cleanly and left the column
+		// alone (stokaro/ptah#2315).
+		if colDiff.Desired.Name == "" {
+			result = append(result, ast.NewComment(fmt.Sprintf(
+				"ERROR: the diff carries no column definition for %s.%s", tableDiff.TableName, colDiff.ColumnName)))
 			continue
 		}
 
-		// Create a column definition with the target field properties
-		field := *targetField
+		field := colDiff.Desired
 		if suppressColumnPrimary {
 			field.Primary = false
 		}
-		columnNode := fromschema.FromField(field, desired.Enums, p.targetDialect())
+		columnNode := fromschema.FromField(field, diff.DeclaredUserTypes.Enums, p.targetDialect())
 
 		// Generate ALTER COLUMN statements using AST
 		alterNode := &ast.AlterTableNode{

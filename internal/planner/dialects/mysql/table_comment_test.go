@@ -139,8 +139,12 @@ func columnCommentOnlyDiff() *difftypes.SchemaDiff {
 		TablesModified: []difftypes.TableDiff{{
 			TableName: "users",
 			ColumnsModified: []difftypes.ColumnDiff{{
-				ColumnName:    "email",
-				Changes:       make(map[string]string),
+				ColumnName: "email",
+				Changes:    make(map[string]string),
+				// The same column commentedTableSchema declares, because the
+				// MODIFY this test is about restates the whole definition and the
+				// comment rides inside it.
+				Desired:       commentedTableSchema().Fields[1],
 				CommentChange: &difftypes.CommentChange{Current: "login address", Desired: "primary contact"},
 			}},
 		}},

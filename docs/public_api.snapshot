@@ -12711,6 +12711,25 @@ type ColumnDiff struct {
     // column. Comparing those would report a difference on every table nobody
     // changed (stokaro/ptah#2161).
     NotNullConstraintNameChange *NotNullConstraintNameChange `json:"not_null_constraint_name_change,omitzero"`
+
+    // Desired is the column as the declaration writes it, with embedded fields
+    // already folded in.
+    //
+    // Changes says WHAT moved, in a form a person reads: `type` maps to
+    // `"INTEGER -> BIGINT"`. It is not what a planner renders from. Rendering
+    // `ALTER COLUMN` needs the column itself -- its type, default, nullability,
+    // collation, identity and generated expression -- and reading `" -> "` back
+    // out of a display string would recover a fraction of that.
+    //
+    // So the planner resolved the column instead: struct name for the table,
+    // embedded-field fold over the whole declaration, then a linear scan for the
+    // column. A resolution that failed emitted `ERROR: Could not find field
+    // definition ...` as a COMMENT in the migration and moved on, which is a
+    // column silently left as it was (stokaro/ptah#2315).
+    //
+    // It rides off the wire. `columns_modified` is a display shape and stays
+    // one; this is the operand behind it.
+    Desired schemamodel.Field `json:"-"`
 }
     ColumnDiff represents specific property changes within a database column.
 

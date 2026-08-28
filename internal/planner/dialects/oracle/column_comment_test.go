@@ -70,8 +70,12 @@ func columnCommentDiff(desired string) *difftypes.SchemaDiff {
 		TablesModified: []difftypes.TableDiff{{
 			TableName: "USERS",
 			ColumnsModified: []difftypes.ColumnDiff{{
-				ColumnName:    "EMAIL",
-				Changes:       make(map[string]string),
+				ColumnName: "EMAIL",
+				Changes:    make(map[string]string),
+				// The column commentedColumnSchema declares. A comment-only change
+				// renders no MODIFY on Oracle, but a row that also changes something
+				// else does, and it renders from this.
+				Desired:       commentedColumnSchema().Fields[1],
 				CommentChange: &difftypes.CommentChange{Current: "login address", Desired: desired},
 			}},
 		}},

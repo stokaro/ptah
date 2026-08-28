@@ -235,7 +235,9 @@ func TestPrimaryKeyOwnershipDoesNotCrossSchemas(t *testing.T) {
 			TableName: "app.orders",
 			ColumnsModified: []difftypes.ColumnDiff{{
 				ColumnName: "id",
-				Changes:    map[string]string{"primary_key": "false -> true"},
+				// The column ordersTable declares for the schema this plan targets.
+				Desired: ordersTable("app").Fields[0],
+				Changes: map[string]string{"primary_key": "false -> true"},
 			}},
 		}},
 		ConstraintsAdded: []string{"pk_orders"},

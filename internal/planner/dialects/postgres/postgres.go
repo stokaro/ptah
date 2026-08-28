@@ -770,42 +770,31 @@ func (p *Planner) addForeignKeyConstraintsForNewColumns(
 	return result
 }
 
+// modifyExistingTableColumns renders each modified column from the operand the
+// comparison carried for it.
+//
+// It used to resolve the column instead: struct name for the table, an
+// embedded-field fold over the whole declaration, then a linear scan. A
+// resolution that failed emitted `ERROR: Could not find field definition ...`
+// as a COMMENT and moved on -- a column left as it was, in a migration that
+// applied cleanly (stokaro/ptah#2315).
+//
+// The vocabulary is the diff's own, for the same reason a created column's is:
+// a column may name an enum this diff does not change, so the type list cannot
+// come from the change itself.
 func (p *Planner) modifyExistingTableColumns(
 	result []ast.Node,
 	tableDiff difftypes.TableDiff,
-	desired *schemamodel.Database,
-	semantics identifier.Semantics,
+	vocabulary difftypes.UserTypeVocabulary,
 ) []ast.Node {
-	allFields := fromschema.ProcessEmbeddedFields(desired.EmbeddedFields, desired.Fields)
 	for _, colDiff := range tableDiff.ColumnsModified {
-		// Find the target field definition for this column
-		// We need to find the struct name that corresponds to this table name
-		var targetField *schemamodel.Field
-		var targetStructName string
-
-		// First, find the struct name for this table
-		if table := findGeneratedTableByDiffName(desired, tableDiff.TableName, semantics); table != nil {
-			targetStructName = table.StructName
-		}
-
-		// Now find the field using the correct struct name
-		for _, field := range allFields {
-			if field.StructName == targetStructName && field.Name == colDiff.ColumnName {
-				targetField = &field
-				break
-			}
-		}
-
-		if targetField == nil {
-			astCommentNode := ast.NewComment(fmt.Sprintf("ERROR: Could not find field definition for %s.%s (struct: %s)", tableDiff.TableName, colDiff.ColumnName, targetStructName))
-			result = append(result, astCommentNode)
-			continue
-		}
-
-		// Create a column definition with the target field properties
-		columnNode := fromschema.FromField(*targetField, desired.Enums, "postgres")
 		if isGeneratedColumnChange(colDiff) {
-			result = p.modifyGeneratedColumnExpression(result, tableDiff.TableName, colDiff, columnNode)
+			node, ok := columnNodeFor(colDiff, vocabulary)
+			if !ok {
+				result = append(result, missingColumnDefinition(tableDiff.TableName, colDiff))
+				continue
+			}
+			result = p.modifyGeneratedColumnExpression(result, tableDiff.TableName, colDiff, node)
 			continue
 		}
 
@@ -818,6 +807,16 @@ func (p *Planner) modifyExistingTableColumns(
 		result = appendColumnComment(result, tableDiff.TableName, colDiff)
 		result = p.appendNotNullConstraintRename(result, tableDiff.TableName, colDiff)
 		if len(colDiff.Changes) == 0 {
+			continue
+		}
+
+		// Only the statements below render the COLUMN. A comment transition and
+		// a NOT NULL constraint rename are written from the diff alone, so they
+		// are emitted above this and reach a column the diff carries no
+		// definition for.
+		columnNode, ok := columnNodeFor(colDiff, vocabulary)
+		if !ok {
+			result = append(result, missingColumnDefinition(tableDiff.TableName, colDiff))
 			continue
 		}
 
@@ -844,6 +843,31 @@ func (p *Planner) modifyExistingTableColumns(
 		result = append(result, astCommentNode)
 	}
 	return result
+}
+
+// columnNodeFor renders the column a modification carries, and reports whether
+// it carried one.
+//
+// The vocabulary is the diff's rather than the change's: a column may name an
+// enum this diff does not touch, so the type list cannot come from the change.
+func columnNodeFor(
+	colDiff difftypes.ColumnDiff,
+	vocabulary difftypes.UserTypeVocabulary,
+) (*ast.ColumnNode, bool) {
+	if colDiff.Desired.Name == "" {
+		return nil, false
+	}
+	return fromschema.FromField(colDiff.Desired, vocabulary.Enums, "postgres"), true
+}
+
+// missingColumnDefinition reports a modification whose operand never arrived.
+//
+// Reported rather than skipped: a column the plan was asked to change and did
+// not is a fact the operator needs, and rendering it anyway spells the column as
+// the empty string -- `ALTER COLUMN "" TYPE` against a real table.
+func missingColumnDefinition(tableName string, colDiff difftypes.ColumnDiff) ast.Node {
+	return ast.NewComment(fmt.Sprintf(
+		"ERROR: the diff carries no column definition for %s.%s", tableName, colDiff.ColumnName))
 }
 
 // appendNotNullConstraintRename emits the column's NOT NULL constraint name
@@ -1063,7 +1087,7 @@ func (p *Planner) addAndModifyTableColumns(result []ast.Node, diff *difftypes.Sc
 			result = p.addNewTableColumns(result, tableDiff, desired, semantics)
 
 			// Modify existing columns
-			result = p.modifyExistingTableColumns(result, tableDiff, desired, semantics)
+			result = p.modifyExistingTableColumns(result, tableDiff, diff.DeclaredUserTypes)
 
 			// Only add the comment if actual operations were performed
 			if len(result) > initialLength {

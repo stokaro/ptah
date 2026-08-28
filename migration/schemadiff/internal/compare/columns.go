@@ -368,6 +368,7 @@ func columnsWithDesiredDomains(
 ) difftypes.ColumnDiff {
 	colDiff := difftypes.ColumnDiff{
 		ColumnName:    genCol.Name,
+		Desired:       genCol,
 		Changes:       make(map[string]string),
 		CommentChange: commentChange(genCol.Comment, dbCol.Comment),
 		NotNullConstraintNameChange: notNullConstraintNameChange(
