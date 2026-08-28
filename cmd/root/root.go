@@ -36,7 +36,7 @@ func NewRootCommand() *cobra.Command {
 	info := buildinfo.Resolve()
 	cmd := &cobra.Command{
 		Use:   "ptah",
-		Short: "Ptah inspects, defines, compares, visualizes, tests, and changes database schemas",
+		Short: rootShortDescription,
 		Long:  rootLongDescription,
 		// Version is what makes cobra register --version/-v at all; the
 		// template below is what makes those spellings answer with the same
@@ -139,6 +139,16 @@ func executeWithRecovery(cmd *cobra.Command) (err error) {
 	return cmdutil.NormalizeCommandError(executed, err, 2)
 }
 
+// rootShortDescription is the product in one line.
+//
+// It says what Ptah manages rather than listing the verbs it offers: the verb
+// list read as the whole product while persistent inference state was half of
+// it, and a list of six is also a list that goes stale. `.goreleaser.yaml`
+// carries the same sentence for `brew info`, and a test holds the two together
+// (stokaro/ptah#2361).
+const rootShortDescription = "Ptah manages database change across schemas and " +
+	"persistent inference state"
+
 // rootLongDescription is the first sentence most users read about Ptah, so it
 // describes the product rather than one of the six sources a schema can be
 // written in.
@@ -153,9 +163,16 @@ func executeWithRecovery(cmd *cobra.Command) (err error) {
 // docs/STYLE_GUIDE.md and atlas/license-boundary.md both reserve that claim for
 // what the conformance evidence proves, and the conformance page says in as
 // many words that green reports do not prove it.
-const rootLongDescription = `Ptah helps you inspect, define, compare, visualize,
-test, and change database schemas. Use versioned migrations, direct schema
-changes, or both, across supported databases.
+const rootLongDescription = `Ptah manages database change across schemas and
+persistent inference state.
+
+For schemas, it compares a desired schema with a live database and either writes
+versioned migrations or applies an approved plan directly. Use either route, or
+both, across supported databases.
+
+For inference state, it builds a candidate embedding generation beside the
+active one, calls an external embedding endpoint, verifies the result, and
+switches consumers with a rollback path.
 
 Run "ptah db capabilities --db-url <url>" to see what Ptah resolves for a
 specific server. Scripts written for the Atlas CLI can use the separate
