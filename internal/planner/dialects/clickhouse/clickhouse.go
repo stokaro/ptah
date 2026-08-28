@@ -143,7 +143,7 @@ func (p *Planner) addNewTables(result []ast.Node, diff *difftypes.SchemaDiff, de
 	semantics := diff.EffectiveIdentifierSemantics(platform.ClickHouse)
 
 	for _, table := range desired.Tables {
-		if !objectlookup.Contains(diff.TablesAdded, table.QualifiedName(), semantics) {
+		if !objectlookup.Contains(diff.TablesAdded.Names(), table.QualifiedName(), semantics) {
 			continue
 		}
 		// FromTable applies platform.clickhouse.* overrides into the AST

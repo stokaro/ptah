@@ -150,7 +150,7 @@ func TestPlanGeneratedMigrationSpecs_SplitsTransactionalAndConcurrentIndex(t *te
 	c := qt.New(t)
 
 	diff := indexOnlyDiff()
-	diff.TablesAdded = []string{"posts"}
+	diff.TablesAdded = difftypes.TableChanges{{Name: "posts"}}
 	desired := indexOnlyGeneratedSchema()
 	desired.Tables = append(desired.Tables, schemamodel.Table{StructName: "Post", Name: "posts"})
 	desired.Fields = append(desired.Fields, schemamodel.Field{
@@ -242,7 +242,7 @@ func TestPlanGeneratedMigrationSpecs_LeadsWithTheEnumValueAddition(t *testing.T)
 	c := qt.New(t)
 
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: []string{"users"},
+		TablesAdded: difftypes.TableChanges{{Name: "users"}},
 		EnumsModified: []difftypes.EnumDiff{{
 			EnumName:    "status",
 			ValuesAdded: []string{"archived"},
@@ -391,7 +391,7 @@ func TestPlanGeneratedMigrationSpecs_ConcurrentIndexDropSplitsFromTransactional(
 	c := qt.New(t)
 
 	diff := indexRemovalOnlyDiff()
-	diff.TablesAdded = []string{"posts"}
+	diff.TablesAdded = difftypes.TableChanges{{Name: "posts"}}
 	desired := indexOnlyGeneratedSchema()
 	desired.Tables = append(desired.Tables, schemamodel.Table{StructName: "Post", Name: "posts"})
 	desired.Fields = append(desired.Fields, schemamodel.Field{

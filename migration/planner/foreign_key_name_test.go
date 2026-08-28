@@ -22,7 +22,7 @@ func TestGenerateSchemaDiffSQL_AssignsLengthLimitedForeignKeyNames(t *testing.T)
 	fieldName := strings.Repeat("parent_", 5) + "id"
 	schema := plannerForeignKeyNameSchema(tableName, fieldName)
 	schemamodel.Finalize(schema)
-	diff := &difftypes.SchemaDiff{TablesAdded: []string{"parents", tableName}}
+	diff := &difftypes.SchemaDiff{TablesAdded: difftypes.TableChanges{{Name: "parents"}, {Name: tableName}}}
 
 	sql, err := planner.GenerateSchemaDiffSQL(diff, schema, platform.MySQL)
 
@@ -44,7 +44,7 @@ func TestGenerateSchemaDiffSQL_AvoidsExplicitAndGeneratedForeignKeyNameCollision
 		ForeignKeyName: "FK_CHILDREN_PARENT_ID",
 	})
 	schemamodel.Finalize(schema)
-	diff := &difftypes.SchemaDiff{TablesAdded: []string{"parents", "children"}}
+	diff := &difftypes.SchemaDiff{TablesAdded: difftypes.TableChanges{{Name: "parents"}, {Name: "children"}}}
 
 	sql, err := planner.GenerateSchemaDiffSQL(diff, schema, platform.MySQL)
 

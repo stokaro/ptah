@@ -70,7 +70,7 @@ func TestCollectMismatchesCoversEverySchemaDiffCategory(t *testing.T) {
 	c := qt.New(t)
 	changes := map[string]string{"definition": "old -> new"}
 	diff := &difftypes.SchemaDiff{
-		TablesAdded:   []string{"missing_table"},
+		TablesAdded:   difftypes.TableChanges{{Name: "missing_table"}},
 		TablesRemoved: []string{"extra_table"},
 		TablesModified: []difftypes.TableDiff{{
 			TableName:          "changed_table",

@@ -187,7 +187,7 @@ func TestPlannerEnablesRowSecurityForANewTableWhoseSpellingDiffersLivePostgres(t
 		{
 			name: "the diff creates orders and the policy names public.orders",
 			diff: &difftypes.SchemaDiff{
-				TablesAdded: []string{"orders"},
+				TablesAdded: difftypes.TableChanges{{Name: "orders"}},
 				RLSPoliciesAdded: []difftypes.RLSPolicyRef{
 					{PolicyName: "tenant_isolation", TableName: "public.orders", Desired: ordersPolicy("public.orders")},
 				},
@@ -199,7 +199,7 @@ func TestPlannerEnablesRowSecurityForANewTableWhoseSpellingDiffersLivePostgres(t
 		{
 			name: "the diff creates public.orders and the policy names orders",
 			diff: &difftypes.SchemaDiff{
-				TablesAdded: []string{"public.orders"},
+				TablesAdded: difftypes.TableChanges{{Name: "public.orders"}},
 				RLSPoliciesAdded: []difftypes.RLSPolicyRef{
 					{PolicyName: "tenant_isolation", TableName: "orders", Desired: ordersPolicy("orders")},
 				},
@@ -211,7 +211,7 @@ func TestPlannerEnablesRowSecurityForANewTableWhoseSpellingDiffersLivePostgres(t
 		{
 			name: "both sides spell the table the same way",
 			diff: &difftypes.SchemaDiff{
-				TablesAdded: []string{"orders"},
+				TablesAdded: difftypes.TableChanges{{Name: "orders"}},
 				RLSPoliciesAdded: []difftypes.RLSPolicyRef{
 					{PolicyName: "tenant_isolation", TableName: "orders", Desired: ordersPolicy("orders")},
 				},
@@ -231,7 +231,7 @@ func TestPlannerEnablesRowSecurityForANewTableWhoseSpellingDiffersLivePostgres(t
 				`CREATE TABLE legacy (id INTEGER PRIMARY KEY, tenant_id INTEGER)`,
 			},
 			diff: &difftypes.SchemaDiff{
-				TablesAdded: []string{"shipments"},
+				TablesAdded: difftypes.TableChanges{{Name: "shipments"}},
 			},
 			desired: &schemamodel.Database{
 				Tables: []schemamodel.Table{

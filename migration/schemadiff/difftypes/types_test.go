@@ -30,7 +30,7 @@ func TestSchemaDiff_HasChanges(t *testing.T) {
 		{
 			name: "tables added",
 			diff: &difftypes.SchemaDiff{
-				TablesAdded: []string{"users"},
+				TablesAdded: difftypes.TableChanges{{Name: "users"}},
 			},
 			expected: true,
 		},

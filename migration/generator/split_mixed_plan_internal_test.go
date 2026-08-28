@@ -24,7 +24,7 @@ func TestSplitEnumValueAdditionDiff_MovesOnlyTheAdditions(t *testing.T) {
 	c := qt.New(t)
 
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: []string{"users"},
+		TablesAdded: difftypes.TableChanges{{Name: "users"}},
 		EnumsModified: []difftypes.EnumDiff{{
 			EnumName:      "status",
 			ValuesAdded:   []string{"archived"},
@@ -42,5 +42,5 @@ func TestSplitEnumValueAdditionDiff_MovesOnlyTheAdditions(t *testing.T) {
 	c.Assert(groups.transactional.EnumsModified, qt.HasLen, 1)
 	c.Assert(groups.transactional.EnumsModified[0].ValuesRemoved, qt.DeepEquals, []string{"draft"})
 	c.Assert(groups.transactional.EnumsModified[0].ValuesAdded, qt.IsNil)
-	c.Assert(groups.transactional.TablesAdded, qt.DeepEquals, []string{"users"})
+	c.Assert(groups.transactional.TablesAdded.Names(), qt.DeepEquals, []string{"users"})
 }

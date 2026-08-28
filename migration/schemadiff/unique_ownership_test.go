@@ -239,7 +239,7 @@ func TestCompareWithDialect_LiteralDotDoesNotMatchSchemaQualification(t *testing
 
 	diff := schemadiff.CompareWithDialect(desired, database, "postgres")
 
-	c.Assert(diff.TablesAdded, qt.DeepEquals, []string{`"tenant.data"`})
+	c.Assert(diff.TablesAdded.Names(), qt.DeepEquals, []string{`"tenant.data"`})
 	c.Assert(diff.TablesRemoved, qt.DeepEquals, []string{"tenant.data"})
 	c.Assert(diff.TablesModified, qt.HasLen, 0)
 }
@@ -254,7 +254,7 @@ func TestCompareWithDialect_LiteralDotAndQualifiedTablesRemainDistinct(t *testin
 
 	diff := schemadiff.CompareWithDialect(desired, &catalog.Database{}, "postgres")
 
-	c.Assert(diff.TablesAdded, qt.DeepEquals, []string{`"tenant.data"`, "tenant.data"})
+	c.Assert(diff.TablesAdded.Names(), qt.DeepEquals, []string{`"tenant.data"`, "tenant.data"})
 }
 
 func TestCompareWithDialect_ConstraintMembersPreserveStructuralIdentity(t *testing.T) {

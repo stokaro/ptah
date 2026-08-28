@@ -621,6 +621,15 @@ silently drops an access-control operation reports success while leaving the
 database unprotected. A removal carries neither: `DROP POLICY name ON table` is
 written from the two names.
 
+`SchemaDiff.TablesAdded` is `TableChanges` rather than `[]string`. Each entry
+carries the table's declaration, that table's columns with embedded fields
+already folded in, and the enums those columns name — everything CREATE TABLE
+renders from, which otherwise lives in three flat lists keyed by the Go struct
+rather than owned by the table. `Names()` gives the table names in the spelling
+the comparison produced, and the JSON is unchanged: `tables_added` has always
+been an array of names. `TablesRemoved` stays `[]string`, because DROP TABLE is
+written from the name.
+
 `SchemaDiff.RLSEnabledTablesAdded` and `RLSEnabledTablesRemoved` are
 `RLSEnabledTableChanges` rather than `[]string`. An ADDED entry is the
 declaration, which is what a target rendering a declared comment needs; a

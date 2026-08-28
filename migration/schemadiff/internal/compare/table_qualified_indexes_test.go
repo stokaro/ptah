@@ -78,7 +78,7 @@ func TestIndexes_AddedTableIndexCarriesOwner(t *testing.T) {
 		},
 	}
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: []string{"users"},
+		TablesAdded: difftypes.TableChanges{{Name: "users"}},
 	}
 
 	compare.Indexes(desired, &catalog.Database{}, diff)

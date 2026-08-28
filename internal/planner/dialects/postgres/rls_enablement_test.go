@@ -64,7 +64,7 @@ func TestPlannerRendersRLSEnablementFromDiff(t *testing.T) {
 		{
 			name: "a new table carrying a policy is enabled without a diff entry",
 			diff: &difftypes.SchemaDiff{
-				TablesAdded: []string{"tenants"},
+				TablesAdded: difftypes.TableChanges{{Name: "tenants"}},
 				RLSPoliciesAdded: []difftypes.RLSPolicyRef{{
 					PolicyName: "tenant_isolation", TableName: "tenants",
 					Desired: schemamodel.RLSPolicy{
@@ -95,7 +95,7 @@ func TestPlannerRendersRLSEnablementFromDiff(t *testing.T) {
 		{
 			name: "a table listed twice is enabled once",
 			diff: &difftypes.SchemaDiff{
-				TablesAdded:           []string{"tenants"},
+				TablesAdded:           difftypes.TableChanges{{Name: "tenants"}},
 				RLSEnabledTablesAdded: difftypes.RLSEnabledTableChanges{{Table: "tenants"}},
 				RLSPoliciesAdded: []difftypes.RLSPolicyRef{
 					{

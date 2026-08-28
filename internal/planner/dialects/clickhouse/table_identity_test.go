@@ -129,7 +129,7 @@ func TestCreateTableResolvesTheTableAcrossSchemaSpellings(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			statements, err := planner.GenerateSchemaDiffSQLStatements(
-				&difftypes.SchemaDiff{TablesAdded: []string{test.diffName}},
+				&difftypes.SchemaDiff{TablesAdded: difftypes.TableChanges{{Name: test.diffName}}},
 				eventsTable(test.tableSchema),
 				"clickhouse",
 			)
@@ -147,7 +147,7 @@ func TestCreateTableDoesNotGuessBetweenSchemas(t *testing.T) {
 	c := qt.New(t)
 
 	statements, err := planner.GenerateSchemaDiffSQLStatements(
-		&difftypes.SchemaDiff{TablesAdded: []string{"app.events"}},
+		&difftypes.SchemaDiff{TablesAdded: difftypes.TableChanges{{Name: "app.events"}}},
 		eventsTable("reporting"),
 		"clickhouse",
 	)

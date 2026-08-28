@@ -16,7 +16,7 @@ import (
 func TestGenerateSchemaDiffAST_SQLServerUnknownTableSemantics_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: []string{"dbo.orders", "dbo.users"},
+		TablesAdded: difftypes.TableChanges{{Name: "dbo.orders"}, {Name: "dbo.users"}},
 	}
 	desired := &schemamodel.Database{Tables: []schemamodel.Table{
 		{StructName: "Order", Schema: "dbo", Name: "orders"},
@@ -37,7 +37,7 @@ func TestGenerateSchemaDiffAST_SQLServerUnknownTableSemantics_FailurePath(t *tes
 func TestGenerateSchemaDiffAST_SQLServerUnknownColumnSemantics_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: []string{"dbo.users"},
+		TablesAdded: difftypes.TableChanges{{Name: "dbo.users"}},
 	}
 	desired := &schemamodel.Database{
 		Tables: []schemamodel.Table{
@@ -72,7 +72,7 @@ func TestGenerateSchemaDiffAST_SQLServerIncompleteSnapshot_FailurePath(t *testin
 		})
 	diff := &difftypes.SchemaDiff{
 		IdentifierSemantics: &semantics,
-		TablesAdded:         []string{"dbo.users"},
+		TablesAdded:         difftypes.TableChanges{{Name: "dbo.users"}},
 	}
 	desired := &schemamodel.Database{Tables: []schemamodel.Table{
 		{StructName: "User", Schema: "dbo", Name: "users"},

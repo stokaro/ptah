@@ -58,7 +58,7 @@ type User struct {
 
 		// Create a schema diff for table creation
 		diff := &difftypes.SchemaDiff{
-			TablesAdded: []string{"users"},
+			TablesAdded: difftypes.TableChanges{{Name: "users"}},
 		}
 
 		// Generate migration AST
@@ -167,7 +167,7 @@ type Post struct {
 
 		// Create a schema diff for table creation
 		diff := &difftypes.SchemaDiff{
-			TablesAdded: []string{"posts"},
+			TablesAdded: difftypes.TableChanges{{Name: "posts"}},
 		}
 
 		// Generate migration AST
@@ -262,7 +262,7 @@ type Post struct {
 
 		// Create a schema diff for table creation
 		diff := &difftypes.SchemaDiff{
-			TablesAdded: []string{"users", "posts"},
+			TablesAdded: difftypes.TableChanges{{Name: "users"}, {Name: "posts"}},
 		}
 
 		// Generate migration AST

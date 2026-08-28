@@ -190,9 +190,6 @@ func keepPlannedAdditions[T any](
 	return kept, withheld
 }
 
-// itself is the display function for a change still spelled as its name.
-func itself(name string) string { return name }
-
 // withheldAddition builds the record for one addition this comparison could not
 // decide, carrying the reason and the provenance the CURRENT side gave for its
 // silence.

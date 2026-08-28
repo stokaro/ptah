@@ -327,7 +327,7 @@ func TestGenerateMigrationAST(t *testing.T) {
 			name:    "postgres migration generation",
 			dialect: platform.Postgres,
 			diff: &difftypes.SchemaDiff{
-				TablesAdded: []string{"users"},
+				TablesAdded: difftypes.TableChanges{{Name: "users"}},
 			},
 			desired: &schemamodel.Database{
 				Tables: []schemamodel.Table{
@@ -342,7 +342,7 @@ func TestGenerateMigrationAST(t *testing.T) {
 			name:    "mysql migration generation",
 			dialect: platform.MySQL,
 			diff: &difftypes.SchemaDiff{
-				TablesAdded: []string{"users"},
+				TablesAdded: difftypes.TableChanges{{Name: "users"}},
 			},
 			desired: &schemamodel.Database{
 				Tables: []schemamodel.Table{

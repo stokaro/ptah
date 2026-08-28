@@ -447,7 +447,7 @@ func quotePostgresIdentifier(name string) string {
 }
 
 func (p *Planner) addNewTables(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
-	orderedTables := deporder.TablesForCreate(desired, diff.TablesAdded)
+	orderedTables := deporder.TablesForCreate(desired, diff.TablesAdded.Names())
 
 	// Phase 1: Create tables without foreign key constraints
 	result = p.createTablesWithoutForeignKeys(result, desired, orderedTables)
@@ -456,7 +456,7 @@ func (p *Planner) addNewTables(result []ast.Node, diff *difftypes.SchemaDiff, de
 }
 
 func (p *Planner) addForeignKeyConstraintsForNewTables(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
-	return p.addForeignKeyConstraints(result, desired, deporder.TablesForCreate(desired, diff.TablesAdded))
+	return p.addForeignKeyConstraints(result, desired, deporder.TablesForCreate(desired, diff.TablesAdded.Names()))
 }
 
 // addSchemaPreconditions creates every schema this migration is about to put an
@@ -490,7 +490,7 @@ func (p *Planner) addSchemaPreconditions(
 	desired *schemamodel.Database,
 ) []ast.Node {
 	names := make([]string, 0, len(diff.TablesAdded))
-	names = append(names, diff.TablesAdded...)
+	names = append(names, diff.TablesAdded.Names()...)
 	names = append(names, diff.EnumsAdded.Names()...)
 	names = append(names, diff.DomainsAdded.Names()...)
 	names = append(names, diff.CompositeTypesAdded.Names()...)
@@ -2813,7 +2813,7 @@ func (p *Planner) enableRLSOnTables(
 	}
 
 	addedTables := make(map[string]string, len(diff.TablesAdded))
-	for _, tableName := range diff.TablesAdded {
+	for _, tableName := range diff.TablesAdded.Names() {
 		key := semantics.QualifiedTableIdentityKey(tableName)
 		if _, seen := addedTables[key]; !seen {
 			addedTables[key] = tableName

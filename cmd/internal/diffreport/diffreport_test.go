@@ -53,7 +53,7 @@ func TestCategoriesNamesEveryChangedObject(t *testing.T) {
 			name: "categories are reported in diff field order",
 			diff: &difftypes.SchemaDiff{
 				ConstraintsRemoved: []string{"uq_products_sku"},
-				TablesAdded:        []string{"public.orders"},
+				TablesAdded:        difftypes.TableChanges{{Name: "public.orders"}},
 			},
 			want: []diffreport.Category{
 				{Name: "tables_added", Objects: []string{"public.orders"}},
@@ -98,7 +98,7 @@ func TestCategoryCountAndNames(t *testing.T) {
 	c := qt.New(t)
 
 	categories := diffreport.Categories(&difftypes.SchemaDiff{
-		TablesAdded:           []string{"public.orders", "public.order_items"},
+		TablesAdded:           difftypes.TableChanges{{Name: "public.orders"}, {Name: "public.order_items"}},
 		RLSEnabledTablesAdded: difftypes.RLSEnabledTableChanges{{Table: "other.secured"}},
 	})
 

@@ -71,7 +71,7 @@ func TestGenerateSchemaDiffSQL_SQLiteTableCreationUsesStructuralIdentity(t *test
 		},
 	}
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: []string{`"tenant.data"`, "tenant.data"},
+		TablesAdded: difftypes.TableChanges{{Name: `"tenant.data"`}, {Name: "tenant.data"}},
 	}
 
 	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.SQLite)
@@ -108,7 +108,7 @@ func TestGenerateSchemaDiffSQL_ForeignKeyPreservesStructuralIdentity(t *testing.
 			c := qt.New(t)
 			desired := referenceCollisionForeignKeySchema()
 			sql, err := planner.GenerateSchemaDiffSQL(
-				&difftypes.SchemaDiff{TablesAdded: []string{`"tenant.data"`, "tenant.data"}},
+				&difftypes.SchemaDiff{TablesAdded: difftypes.TableChanges{{Name: `"tenant.data"`}, {Name: "tenant.data"}}},
 				desired,
 				tt.dialect,
 			)

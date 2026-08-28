@@ -1252,7 +1252,7 @@ func TestTablesAndColumns_SortingConsistency(t *testing.T) {
 	compare.TablesAndColumns(desired, database, diff)
 
 	// Check that results are sorted alphabetically
-	c.Assert(diff.TablesAdded, qt.DeepEquals, []string{"alpha_table", "zebra_table"})
+	c.Assert(diff.TablesAdded.Names(), qt.DeepEquals, []string{"alpha_table", "zebra_table"})
 	c.Assert(diff.TablesRemoved, qt.DeepEquals, []string{"alpha_old_table", "zebra_old_table"})
 }
 
@@ -1285,7 +1285,7 @@ func TestTablesAndColumns_UsesSchemaQualifiedTableIdentity(t *testing.T) {
 	diff := &difftypes.SchemaDiff{}
 	compare.TablesAndColumns(desired, database, diff)
 
-	c.Assert(diff.TablesAdded, qt.DeepEquals, []string{"billing.users"})
+	c.Assert(diff.TablesAdded.Names(), qt.DeepEquals, []string{"billing.users"})
 	c.Assert(diff.TablesRemoved, qt.HasLen, 0)
 	c.Assert(diff.TablesModified, qt.HasLen, 0)
 }
@@ -1688,7 +1688,7 @@ func TestTablesAndColumns_HappyPath(t *testing.T) {
 				Tables: make([]catalog.Table, 0),
 			},
 			expected: &difftypes.SchemaDiff{
-				TablesAdded: []string{"users"},
+				TablesAdded: difftypes.TableChanges{{Name: "users"}},
 			},
 		},
 		{
@@ -1764,7 +1764,7 @@ func TestTablesAndColumns_HappyPath(t *testing.T) {
 				},
 			},
 			expected: &difftypes.SchemaDiff{
-				TablesAdded:   []string{"posts"},
+				TablesAdded:   difftypes.TableChanges{{Name: "posts"}},
 				TablesRemoved: []string{"old_table"},
 				TablesModified: []difftypes.TableDiff{
 					{
@@ -1783,7 +1783,10 @@ func TestTablesAndColumns_HappyPath(t *testing.T) {
 			diff := &difftypes.SchemaDiff{}
 			compare.TablesAndColumns(tt.desired, tt.database, diff)
 
-			c.Assert(diff.TablesAdded, qt.DeepEquals, tt.expected.TablesAdded)
+			// The names rather than the whole creations: these rows are about
+			// WHICH tables the comparison reports, and the bundle each one
+			// carries has its own test (stokaro/ptah#2315).
+			c.Assert(diff.TablesAdded.Names(), qt.DeepEquals, tt.expected.TablesAdded.Names())
 			c.Assert(diff.TablesRemoved, qt.DeepEquals, tt.expected.TablesRemoved)
 			c.Assert(diff.TablesModified, qt.HasLen, len(tt.expected.TablesModified))
 
@@ -1830,7 +1833,7 @@ func TestTablesAndColumns_UnhappyPath(t *testing.T) {
 				Tables: make([]catalog.Table, 0),
 			},
 			expected: &difftypes.SchemaDiff{
-				TablesAdded: []string{"users"},
+				TablesAdded: difftypes.TableChanges{{Name: "users"}},
 			},
 		},
 	}
@@ -1842,7 +1845,10 @@ func TestTablesAndColumns_UnhappyPath(t *testing.T) {
 			diff := &difftypes.SchemaDiff{}
 			compare.TablesAndColumns(tt.desired, tt.database, diff)
 
-			c.Assert(diff.TablesAdded, qt.DeepEquals, tt.expected.TablesAdded)
+			// The names rather than the whole creations: these rows are about
+			// WHICH tables the comparison reports, and the bundle each one
+			// carries has its own test (stokaro/ptah#2315).
+			c.Assert(diff.TablesAdded.Names(), qt.DeepEquals, tt.expected.TablesAdded.Names())
 			c.Assert(diff.TablesRemoved, qt.DeepEquals, tt.expected.TablesRemoved)
 			c.Assert(diff.TablesModified, qt.HasLen, len(tt.expected.TablesModified))
 		})

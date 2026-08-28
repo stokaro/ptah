@@ -74,7 +74,7 @@ func (p *Planner) planSchemaPreconditions(result []ast.Node, diff *difftypes.Sch
 // 2760 when `app` is absent.
 func schemasAddedObjectsNeed(diff *difftypes.SchemaDiff) []string {
 	qualified := make([]string, 0, len(diff.TablesAdded))
-	qualified = append(qualified, diff.TablesAdded...)
+	qualified = append(qualified, diff.TablesAdded.Names()...)
 	qualified = append(qualified, diff.ViewsAdded.Names()...)
 	qualified = append(qualified, diff.MaterializedViewsAdded.Names()...)
 	qualified = append(qualified, diff.FunctionsAdded.Names()...)

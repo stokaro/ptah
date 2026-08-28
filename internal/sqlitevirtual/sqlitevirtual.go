@@ -796,7 +796,7 @@ type created struct {
 // a rollback, where the removals ARE the forward direction's additions.
 func createdBy(diff *difftypes.SchemaDiff) created {
 	semantics := diffSemantics(diff)
-	set := created{tables: diff.TablesAdded}
+	set := created{tables: diff.TablesAdded.Names()}
 	removedIndexes := diff.IndexRemovals()
 	for _, ref := range diff.IndexAdditions() {
 		if containsIndexRef(removedIndexes, ref, semantics) {

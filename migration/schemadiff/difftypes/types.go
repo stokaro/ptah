@@ -769,7 +769,7 @@ type SchemaDiff struct {
 
 	// TablesAdded contains names of tables that exist in the target schema
 	// but not in the current database schema
-	TablesAdded []string `json:"tables_added"`
+	TablesAdded TableChanges `json:"tables_added"`
 
 	// TablesRemoved contains names of tables that exist in the current database
 	// but not in the target schema (potentially dangerous - data loss)
@@ -2208,6 +2208,60 @@ type RoleDiff struct {
 	// It stays off the wire, and here that is more than tidiness: this field
 	// holds a password.
 	Desired schemamodel.Role `json:"-"`
+}
+
+// TableCreation is a table a diff creates, together with everything CREATE
+// TABLE renders from.
+//
+// The lists a planner used to reach for are keyed by the Go struct rather than
+// owned by the table -- `Database.Fields` holds every column of every table --
+// so rendering one table meant being handed the whole desired schema and
+// filtering it. The filtering happens once, where the schema is already in
+// hand, and the result travels with the change (stokaro/ptah#2315).
+type TableCreation struct {
+	// Name is the spelling the diff carries for this table, which is the one a
+	// plan and a report name it by. It is not derived from Table: the
+	// comparison qualifies a name per dialect, and MySQL's answer differs from
+	// PostgreSQL's for the same declaration.
+	Name string
+
+	// Table is the declaration itself.
+	Table schemamodel.Table
+
+	// Fields are this table's columns, embedded fields already resolved into
+	// them. The renderer still filters by struct name, so a list holding only
+	// this table's columns renders exactly what the whole list did.
+	Fields []schemamodel.Field
+
+	// Enums are the enumerated types this table's columns name. A column
+	// declared with one renders as that type rather than as its Go spelling,
+	// and the renderer resolves it through this list.
+	Enums []schemamodel.Enum
+}
+
+// TableChanges is a list of tables a diff creates.
+type TableChanges []TableCreation
+
+// MarshalJSON writes the table names alone, the shape `tables_added` has always
+// had.
+func (t TableChanges) MarshalJSON() ([]byte, error) {
+	if t == nil {
+		return []byte("null"), nil
+	}
+	return json.Marshal(t.Names())
+}
+
+// Names is the table names this change applies to, in the spelling the
+// comparison produced.
+func (t TableChanges) Names() []string {
+	if t == nil {
+		return nil
+	}
+	names := make([]string, 0, len(t))
+	for _, creation := range t {
+		names = append(names, creation.Name)
+	}
+	return names
 }
 
 // RLSEnabledTableChanges is a list of row-level-security enablements a diff
