@@ -42,7 +42,7 @@ func TestPlanner_DropsAnUndeclaredContinuousAggregate(t *testing.T) {
 	c := qt.New(t)
 
 	nodes, err := postgres.New().GenerateMigrationAST(
-		&difftypes.SchemaDiff{ContinuousAggregatesRemoved: []string{"public.hourly"}},
+		&difftypes.SchemaDiff{ContinuousAggregatesRemoved: difftypes.ContinuousAggregateChanges{{Name: "public.hourly"}}},
 		&schemamodel.Database{})
 
 	c.Assert(err, qt.IsNil)
@@ -66,8 +66,8 @@ func TestPlanner_CreatesAnAggregateAfterTheHypertableItReads(t *testing.T) {
 	}
 
 	nodes, err := postgres.New().GenerateMigrationAST(&difftypes.SchemaDiff{
-		HypertablesAdded:          []string{"readings"},
-		ContinuousAggregatesAdded: []string{"hourly"},
+		HypertablesAdded:          difftypes.HypertableChanges{{Table: "readings"}},
+		ContinuousAggregatesAdded: difftypes.ContinuousAggregateChanges{{Name: "hourly"}},
 	}, declared)
 
 	c.Assert(err, qt.IsNil)

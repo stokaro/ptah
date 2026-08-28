@@ -62,8 +62,8 @@ func TestHypertables_ComparesByTheTableItPartitions(t *testing.T) {
 
 			compare.Hypertables(declared, live, diff, compare.CoverageOf(declared, live))
 
-			c.Assert(diff.HypertablesAdded, qt.DeepEquals, test.wantAdded)
-			c.Assert(diff.HypertablesRemoved, qt.DeepEquals, test.wantRemoved)
+			c.Assert(diff.HypertablesAdded.Names(), qt.DeepEquals, test.wantAdded)
+			c.Assert(diff.HypertablesRemoved.Names(), qt.DeepEquals, test.wantRemoved)
 			c.Assert(diff.HypertablesModified, qt.HasLen, 0)
 		})
 	}
@@ -177,5 +177,5 @@ func TestHypertables_ADescriptionThatCouldNotSayItDoesNotUndoIt(t *testing.T) {
 	speaking := &schemamodel.Database{}
 	plain := &difftypes.SchemaDiff{}
 	compare.Hypertables(speaking, live, plain, compare.CoverageOf(speaking, live))
-	c.Assert(plain.HypertablesRemoved, qt.DeepEquals, []string{"public.conditions"})
+	c.Assert(plain.HypertablesRemoved.Names(), qt.DeepEquals, []string{"public.conditions"})
 }

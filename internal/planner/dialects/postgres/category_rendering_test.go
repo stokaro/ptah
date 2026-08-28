@@ -234,21 +234,21 @@ func diffCategoryFixtures() []categoryFixture {
 		{"SynonymsRemoved", &difftypes.SchemaDiff{SynonymsRemoved: difftypes.SynonymChanges{{Name: "s"}}}, &schemamodel.Database{}},
 		{
 			"HypertablesAdded",
-			&difftypes.SchemaDiff{HypertablesAdded: []string{"conditions"}},
+			&difftypes.SchemaDiff{HypertablesAdded: difftypes.HypertableChanges{{Table: "conditions"}}},
 			&schemamodel.Database{Hypertables: []schemamodel.Hypertable{
 				{Table: "conditions", Column: "time"},
 			}},
 		},
 		{
 			"ContinuousAggregatesAdded",
-			&difftypes.SchemaDiff{ContinuousAggregatesAdded: []string{"hourly"}},
+			&difftypes.SchemaDiff{ContinuousAggregatesAdded: difftypes.ContinuousAggregateChanges{{Name: "hourly"}}},
 			&schemamodel.Database{ContinuousAggregates: []schemamodel.ContinuousAggregate{
 				{Name: "hourly", Body: "SELECT 1"},
 			}},
 		},
 		{
 			"ContinuousAggregatesRemoved",
-			&difftypes.SchemaDiff{ContinuousAggregatesRemoved: []string{"hourly"}},
+			&difftypes.SchemaDiff{ContinuousAggregatesRemoved: difftypes.ContinuousAggregateChanges{{Name: "hourly"}}},
 			&schemamodel.Database{},
 		},
 		{

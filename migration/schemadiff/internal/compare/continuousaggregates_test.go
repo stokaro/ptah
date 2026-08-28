@@ -86,8 +86,8 @@ func TestContinuousAggregates_ComparesByTheQualifiedName(t *testing.T) {
 			compare.ContinuousAggregates(declared, live, diff, compare.CoverageOf(declared, live), nil,
 				postgresSemantics())
 
-			c.Assert(diff.ContinuousAggregatesAdded, qt.DeepEquals, test.wantAdded)
-			c.Assert(diff.ContinuousAggregatesRemoved, qt.DeepEquals, test.wantRemoved)
+			c.Assert(diff.ContinuousAggregatesAdded.Names(), qt.DeepEquals, test.wantAdded)
+			c.Assert(diff.ContinuousAggregatesRemoved.Names(), qt.DeepEquals, test.wantRemoved)
 			c.Assert(diff.ContinuousAggregatesModified, qt.HasLen, 0)
 		})
 	}
@@ -207,7 +207,7 @@ func TestContinuousAggregates_ADescriptionThatCouldNotSayItDoesNotDropIt(t *test
 	plain := &difftypes.SchemaDiff{}
 	compare.ContinuousAggregates(speaking, live, plain, compare.CoverageOf(speaking, live), nil,
 		postgresSemantics())
-	c.Assert(plain.ContinuousAggregatesRemoved, qt.DeepEquals, []string{"public.hourly"})
+	c.Assert(plain.ContinuousAggregatesRemoved.Names(), qt.DeepEquals, []string{"public.hourly"})
 }
 
 // postgresSemantics is the identifier rule the comparison runs under: an

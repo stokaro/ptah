@@ -102,8 +102,8 @@ func TestTimescaleContinuousAggregateConvergesE2E(t *testing.T) {
 // form an assertion can read.
 func aggregateChanges(diff *difftypes.SchemaDiff, name string) []string {
 	changes := make([]string, 0, 3)
-	changes = append(changes, prefixedMatches("added:", diff.ContinuousAggregatesAdded, name)...)
-	changes = append(changes, prefixedMatches("removed:", diff.ContinuousAggregatesRemoved, name)...)
+	changes = append(changes, prefixedMatches("added:", diff.ContinuousAggregatesAdded.Names(), name)...)
+	changes = append(changes, prefixedMatches("removed:", diff.ContinuousAggregatesRemoved.Names(), name)...)
 	for _, change := range diff.ContinuousAggregatesModified {
 		changes = append(changes, prefixedMatches("modified:", []string{change.Name}, name)...)
 	}
