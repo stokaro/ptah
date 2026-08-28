@@ -13,6 +13,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/internal/chrefresh"
 	"go.5x5.cz/ptah/internal/mysqlroutine"
 	"go.5x5.cz/ptah/internal/objectidentity"
@@ -779,7 +780,11 @@ func ViewDefinitionsWithDialect(genView schemamodel.View, dbView catalog.View, d
 		viewDiff.Changes["body"] = fmt.Sprintf("%s -> %s", strings.TrimSpace(dbView.Body), strings.TrimSpace(genView.Body))
 	}
 
-	dbWithCheck := !strings.EqualFold(dbView.CheckOption, "") && !strings.EqualFold(dbView.CheckOption, "NONE")
+	// The third place this rule was written, and the one #2315's view
+	// conversion missed: the same words decide whether a view asks for
+	// WITH CHECK OPTION, and a copy that answers differently is what
+	// sqlutil.CheckOptionRequestsCheck exists to prevent.
+	dbWithCheck := sqlutil.CheckOptionRequestsCheck(dbView.CheckOption)
 	if genView.WithCheck != dbWithCheck {
 		viewDiff.Changes["with_check"] = fmt.Sprintf("%t -> %t", dbWithCheck, genView.WithCheck)
 	}
