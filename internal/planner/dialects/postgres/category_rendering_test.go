@@ -160,8 +160,12 @@ func diffCategoryFixtures() []categoryFixture {
 		{"ProceduresRemoved", &difftypes.SchemaDiff{ProceduresRemoved: difftypes.FunctionChanges{{Function: schemamodel.Function{Name: "p"}}}}, &schemamodel.Database{}},
 		{
 			"FunctionsModified",
-			&difftypes.SchemaDiff{FunctionsModified: []difftypes.FunctionDiff{{FunctionName: "f", Changes: map[string]string{"body": "x -> y"}}}},
-			&schemamodel.Database{Functions: []schemamodel.Function{{Name: "f", Returns: "int", Body: "SELECT 2"}}},
+			&difftypes.SchemaDiff{FunctionsModified: []difftypes.FunctionDiff{{
+				FunctionName: "f",
+				Changes:      map[string]string{"body": "x -> y"},
+				Desired:      schemamodel.Function{Name: "f", Returns: "int", Body: "SELECT 2"},
+			}}},
+			&schemamodel.Database{},
 		},
 		{
 			"SequencesAdded",
@@ -171,8 +175,12 @@ func diffCategoryFixtures() []categoryFixture {
 		{"SequencesRemoved", &difftypes.SchemaDiff{SequencesRemoved: difftypes.SequenceChanges{{Name: "s"}}}, &schemamodel.Database{}},
 		{
 			"SequencesModified",
-			&difftypes.SchemaDiff{SequencesModified: []difftypes.SequenceDiff{{SequenceName: "s", Changes: map[string]string{"increment": "1 -> 2"}}}},
-			&schemamodel.Database{Sequences: []schemamodel.Sequence{{Name: "s", Increment: &increment}}},
+			&difftypes.SchemaDiff{SequencesModified: []difftypes.SequenceDiff{{
+				SequenceName: "s",
+				Changes:      map[string]string{"increment": "1 -> 2"},
+				Desired:      schemamodel.Sequence{Name: "s", Increment: &increment},
+			}}},
+			&schemamodel.Database{},
 		},
 		{
 			"DomainsAdded",
@@ -267,10 +275,11 @@ func diffCategoryFixtures() []categoryFixture {
 		},
 		{
 			"SynonymsModified",
-			&difftypes.SchemaDiff{SynonymsModified: []difftypes.SynonymDiff{
-				{SynonymName: "s", OldTarget: "dbo.old", NewTarget: "dbo.new"},
-			}},
-			&schemamodel.Database{Synonyms: []schemamodel.Synonym{{Name: "s", Target: "dbo.new"}}},
+			&difftypes.SchemaDiff{SynonymsModified: []difftypes.SynonymDiff{{
+				SynonymName: "s", OldTarget: "dbo.old", NewTarget: "dbo.new",
+				Desired: schemamodel.Synonym{Name: "s", Target: "dbo.new"},
+			}}},
+			&schemamodel.Database{},
 		},
 		{
 			"ExtendedPropertiesAdded",

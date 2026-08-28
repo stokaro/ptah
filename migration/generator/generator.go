@@ -2129,7 +2129,7 @@ func reverseSchemaDiffWithSchemaForDialect(
 		// merge into one addition list without losing which was which.
 		FunctionsAdded:    append(slices.Clone(diff.FunctionsRemoved), diff.ProceduresRemoved...),
 		FunctionsRemoved:  reverseFunctionsRemoved(diff.FunctionsAdded),
-		FunctionsModified: reverseFunctionDiffs(diff.FunctionsModified),
+		FunctionsModified: reverseFunctionDiffs(diff.FunctionsModified, prior),
 		// A removed procedure comes back as an addition, and the planner reads
 		// its kind off the declaration -- which is why the reverse of a removal
 		// needs no kind of its own. The reverse of an ADDITION does: nothing
@@ -2151,7 +2151,7 @@ func reverseSchemaDiffWithSchemaForDialect(
 
 		SequencesAdded:    diff.SequencesRemoved, // Sequences to remove become sequences to add
 		SequencesRemoved:  diff.SequencesAdded,   // Sequences to add become sequences to remove
-		SequencesModified: reverseSequenceDiffs(diff.SequencesModified),
+		SequencesModified: reverseSequenceDiffs(diff.SequencesModified, prior, semantics),
 
 		// Reverse view, materialized view and trigger operations.
 		//
@@ -2177,7 +2177,7 @@ func reverseSchemaDiffWithSchemaForDialect(
 		// planner drops and recreates either way.
 		SynonymsAdded:    diff.SynonymsRemoved,
 		SynonymsRemoved:  diff.SynonymsAdded,
-		SynonymsModified: reverseSynonymDiffs(diff.SynonymsModified),
+		SynonymsModified: reverseSynonymDiffs(diff.SynonymsModified, prior),
 
 		// A hypertable reverses like a synonym in the diff and unlike one in
 		// the plan. The swap is the same -- what the up direction partitioned,
@@ -3058,7 +3058,10 @@ func reverseEnumDiffs(enumDiffs []difftypes.EnumDiff) []difftypes.EnumDiff {
 }
 
 // reverseFunctionDiffs reverses function modifications for down migrations
-func reverseFunctionDiffs(functionDiffs []difftypes.FunctionDiff) []difftypes.FunctionDiff {
+func reverseFunctionDiffs(
+	functionDiffs []difftypes.FunctionDiff,
+	prior *schemamodel.Database,
+) []difftypes.FunctionDiff {
 	reversed := make([]difftypes.FunctionDiff, len(functionDiffs))
 	for i, functionDiff := range functionDiffs {
 		// For function changes, we need to reverse the direction of changes
@@ -3077,13 +3080,21 @@ func reverseFunctionDiffs(functionDiffs []difftypes.FunctionDiff) []difftypes.Fu
 		reversed[i] = difftypes.FunctionDiff{
 			FunctionName: functionDiff.FunctionName,
 			Changes:      reversedChanges,
+			// The replacement renders from the operand, so reversing the change
+			// map without reversing the operand would have the down direction
+			// re-apply the body it is undoing (stokaro/ptah#2315).
+			Desired: priorFunction(prior, functionDiff.FunctionName),
 		}
 	}
 	return reversed
 }
 
 // reverseSequenceDiffs reverses sequence modifications for down migrations.
-func reverseSequenceDiffs(sequenceDiffs []difftypes.SequenceDiff) []difftypes.SequenceDiff {
+func reverseSequenceDiffs(
+	sequenceDiffs []difftypes.SequenceDiff,
+	prior *schemamodel.Database,
+	semantics identifier.Semantics,
+) []difftypes.SequenceDiff {
 	reversed := make([]difftypes.SequenceDiff, len(sequenceDiffs))
 	for i, sequenceDiff := range sequenceDiffs {
 		reversedChanges := make(map[string]string)
@@ -3100,6 +3111,7 @@ func reverseSequenceDiffs(sequenceDiffs []difftypes.SequenceDiff) []difftypes.Se
 		reversed[i] = difftypes.SequenceDiff{
 			SequenceName: sequenceDiff.SequenceName,
 			Changes:      reversedChanges,
+			Desired:      priorSequence(prior, sequenceDiff.SequenceName, semantics),
 		}
 	}
 	return reversed
@@ -3266,7 +3278,10 @@ func priorContinuousAggregate(
 	return schemamodel.ContinuousAggregate{}
 }
 
-func reverseSynonymDiffs(diffs []difftypes.SynonymDiff) []difftypes.SynonymDiff {
+func reverseSynonymDiffs(
+	diffs []difftypes.SynonymDiff,
+	prior *schemamodel.Database,
+) []difftypes.SynonymDiff {
 	if len(diffs) == 0 {
 		return nil
 	}
@@ -3276,9 +3291,61 @@ func reverseSynonymDiffs(diffs []difftypes.SynonymDiff) []difftypes.SynonymDiff 
 			SynonymName: diff.SynonymName,
 			OldTarget:   diff.NewTarget,
 			NewTarget:   diff.OldTarget,
+			Desired:     priorSynonym(prior, diff.SynonymName),
 		})
 	}
 	return reversed
+}
+
+// priorFunction is the function the pre-change database held.
+//
+// The name is compared exactly, which is the identity the comparison that
+// produced the change already used: it pairs a declared routine with a reported
+// one by the name the declaration carries.
+func priorFunction(prior *schemamodel.Database, name string) schemamodel.Function {
+	if prior == nil {
+		return schemamodel.Function{}
+	}
+	for _, function := range prior.Functions {
+		if function.Name == name {
+			return function
+		}
+	}
+	return schemamodel.Function{}
+}
+
+// priorSequence is the sequence the pre-change database held, resolved on the
+// three identity tiers, because the diff spells a name the declaration produced
+// and a read reports the schema the server puts the sequence under.
+func priorSequence(
+	prior *schemamodel.Database,
+	name string,
+	semantics identifier.Semantics,
+) schemamodel.Sequence {
+	if prior == nil {
+		return schemamodel.Sequence{}
+	}
+	if sequence := objectlookup.Qualified(prior.Sequences, name, semantics); sequence != nil {
+		return *sequence
+	}
+	return schemamodel.Sequence{}
+}
+
+// priorSynonym is the synonym the pre-change database held.
+//
+// The qualified name is the key on both sides, which is the one the comparison
+// that produced the change already used: it maps declared synonyms by
+// QualifiedName and pairs them with the reported ones under the same key.
+func priorSynonym(prior *schemamodel.Database, name string) schemamodel.Synonym {
+	if prior == nil {
+		return schemamodel.Synonym{}
+	}
+	for _, synonym := range prior.Synonyms {
+		if synonym.QualifiedName() == name {
+			return synonym
+		}
+	}
+	return schemamodel.Synonym{}
 }
 
 func reverseViewDiffs(

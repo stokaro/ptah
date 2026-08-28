@@ -1626,6 +1626,21 @@ type FunctionDiff struct {
 	// Changes maps change types to their old->new value transitions
 	// Format: "change_type" -> "old_value -> new_value"
 	Changes map[string]string `json:"changes"`
+
+	// Desired is the function this change asks the database to hold.
+	//
+	// A modification renders as CREATE OR REPLACE, and the change map records
+	// what differs rather than the body and attributes that replacement needs.
+	// Carrying the declaration is what lets the planner write it without being
+	// handed the schema it came out of (stokaro/ptah#2315).
+	//
+	// It is the declaration as written, NOT the copy the comparison folds. The
+	// comparison canonicalizes case and normalizes MySQL type spellings on both
+	// sides so that two spellings of one function converge; rendering from that
+	// copy would write Ptah's normalization into the user's DDL.
+	//
+	// It stays off the wire. The change map is the change; this is the operand.
+	Desired schemamodel.Function `json:"-"`
 }
 
 // DomainDiff represents changes to a PostgreSQL domain type.
@@ -1760,6 +1775,16 @@ type SequenceDiff struct {
 	// Changes maps change types to their old->new value transitions
 	// Format: "change_type" -> "old_value -> new_value"
 	Changes map[string]string `json:"changes"`
+
+	// Desired is the sequence this change asks the database to hold.
+	//
+	// An ALTER SEQUENCE emits only the options the change map names, and it
+	// reads their VALUES off this: the map records the transition as prose.
+	// Carrying the declaration is what lets the planner reach them without
+	// being handed the schema (stokaro/ptah#2315).
+	//
+	// It stays off the wire. The change map is the change; this is the operand.
+	Desired schemamodel.Sequence `json:"-"`
 }
 
 // ExtensionDiff represents a PostgreSQL extension installation-schema change.
@@ -1861,6 +1886,18 @@ type SynonymDiff struct {
 	SynonymName string `json:"synonym_name"`
 	OldTarget   string `json:"old_target"`
 	NewTarget   string `json:"new_target"`
+
+	// Desired is the synonym this change asks the database to hold.
+	//
+	// No dialect has an ALTER SYNONYM, so a retarget is a drop and a create,
+	// and the create needs what the two target strings do not carry: the
+	// schema, and whether the synonym is public. Carrying the declaration is
+	// what lets the planner render it without being handed the schema
+	// (stokaro/ptah#2315).
+	//
+	// It stays off the wire. The two targets are the change; this is the
+	// operand.
+	Desired schemamodel.Synonym `json:"-"`
 }
 
 // ViewDiff represents changes to a view definition.

@@ -611,6 +611,18 @@ privileges on the view and fails loudly if the engine refuses it, while a
 rollback drops and recreates, which always applies. Embedders that build a
 `ViewDiff` by hand and leave both fields empty get the forward answer.
 
+`migration/schemadiff/difftypes.FunctionDiff`, `SequenceDiff` and
+`SynonymDiff` carry a `Desired` field for the same reason: a function
+modification renders as CREATE OR REPLACE and needs the whole body and
+attribute set, an ALTER SEQUENCE reads the option values off the declaration
+while the change map only names which options moved, and a retargeted synonym
+is a drop and a create because no dialect has an ALTER SYNONYM. An empty one
+plans nothing for that entry. `FunctionDiff.Desired` is the declaration as
+written, not the copy the comparison folds: the comparison canonicalizes case
+and normalizes MySQL type spellings on both sides so that two spellings of one
+function converge, and rendering from that copy would write Ptah's
+normalization into the user's DDL.
+
 `migration/schemadiff/difftypes.DomainDiff`, `CompositeTypeDiff` and
 `RangeDiff` each carry a `Desired` field, off the wire, holding the definition
 the change is reconciled to. PostgreSQL has no in-place ALTER for a domain's

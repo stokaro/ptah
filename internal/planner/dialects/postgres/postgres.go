@@ -1690,7 +1690,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 	// 2b. Modify existing function definitions (body, volatility, security, language).
 	// PostgreSQL CREATE OR REPLACE FUNCTION updates the live definition in place
 	// without affecting policies or triggers that reference the function.
-	result = p.modifyExistingFunctions(result, diff, desired)
+	result = p.modifyExistingFunctions(result, diff)
 
 	// 2c. Add new sequences before tables, since a table column may draw its
 	// DEFAULT from a sequence. OWNED BY is applied later, after tables exist.
@@ -1726,12 +1726,12 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 	// 6.7. Associate added sequences with their owning table.column and apply
 	// option changes to existing sequences, now that tables exist.
 	result = p.addSequenceOwnership(result, diff, desired)
-	result = p.modifyExistingSequences(result, diff, desired)
+	result = p.modifyExistingSequences(result, diff)
 
 	// 6.6. Add and modify views, materialized views, and triggers after their tables/functions exist.
 	result = p.addNewViewLikeObjects(result, diff, desired)
 	result = p.modifyExistingViews(result, diff, desired)
-	result = p.retargetSynonyms(result, diff, desired)
+	result = p.retargetSynonyms(result, diff)
 	result = p.addNewSynonyms(result, diff)
 	result = p.addNewHypertables(result, diff)
 	result = p.addNewContinuousAggregates(result, diff)
@@ -2085,23 +2085,18 @@ func (p *Planner) addNewFunctions(result []ast.Node, diff *difftypes.SchemaDiff,
 	return result
 }
 
-func (p *Planner) modifyExistingFunctions(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
+func (p *Planner) modifyExistingFunctions(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	// The definition travels WITH the change (stokaro/ptah#2315). Without it
+	// there is no faithful CREATE OR REPLACE to emit -- the change map records
+	// what differs, never the whole body and attribute set -- so a change
+	// carrying none is skipped.
 	for _, fnDiff := range diff.FunctionsModified {
-		// Find the target function definition. Without it we can't emit a
-		// faithful CREATE OR REPLACE, so skip silently (the diff alone would
-		// not tell us the new body/attributes).
-		var target *schemamodel.Function
-		for i := range desired.Functions {
-			if desired.Functions[i].Name == fnDiff.FunctionName {
-				target = &desired.Functions[i]
-				break
-			}
-		}
-		if target == nil {
+		target := fnDiff.Desired
+		if target.Name == "" {
 			continue
 		}
 
-		functionNode := fromschema.FromFunction(*target)
+		functionNode := fromschema.FromFunction(target)
 		functionNode.SetComment(fmt.Sprintf("Modify function %s: %s", target.Name, summarizeFunctionChanges(fnDiff)))
 		result = append(result, functionNode)
 	}
@@ -2153,16 +2148,6 @@ func (p *Planner) removeFunctions(result []ast.Node, diff *difftypes.SchemaDiff)
 	return result
 }
 
-// findSequence returns the generated sequence the diff entry names, under the
-// identifier rules of the target dialect.
-func findSequence(
-	sequences []schemamodel.Sequence,
-	name string,
-	semantics identifier.Semantics,
-) *schemamodel.Sequence {
-	return objectlookup.Qualified(sequences, name, semantics)
-}
-
 // addNewSequences emits CREATE SEQUENCE for newly added sequences. The OWNED BY
 // association is deliberately omitted here and emitted later by
 // addSequenceOwnership, because a sequence referenced by a column DEFAULT must
@@ -2196,14 +2181,15 @@ func (p *Planner) addSequenceOwnership(result []ast.Node, diff *difftypes.Schema
 
 // modifyExistingSequences emits ALTER SEQUENCE for sequences whose options
 // changed. Only the changed options (per the diff) are emitted.
-func (p *Planner) modifyExistingSequences(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
-	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
+func (p *Planner) modifyExistingSequences(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	// The sequence travels WITH the change; the change map names the options
+	// that moved and this carries their values (stokaro/ptah#2315).
 	for _, sequenceDiff := range diff.SequencesModified {
-		sequence := findSequence(desired.Sequences, sequenceDiff.SequenceName, semantics)
-		if sequence == nil {
+		sequence := sequenceDiff.Desired
+		if sequence.Name == "" {
 			continue
 		}
-		node := alterSequenceFromDiff(*sequence, sequenceDiff.Changes)
+		node := alterSequenceFromDiff(sequence, sequenceDiff.Changes)
 		node.SetComment(fmt.Sprintf("Modify sequence %s: %s", sequenceDiff.SequenceName, summarizeSequenceChanges(sequenceDiff)))
 		result = append(result, node)
 	}
@@ -2663,14 +2649,16 @@ func (p *Planner) addNewSynonyms(result []ast.Node, diff *difftypes.SchemaDiff) 
 
 // retargetSynonyms drops and recreates a synonym whose target changed, in that
 // order, because no dialect has an ALTER SYNONYM to do it in one statement.
-func (p *Planner) retargetSynonyms(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
+func (p *Planner) retargetSynonyms(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	// The synonym travels WITH the change (stokaro/ptah#2315). The two target
+	// strings are the change; the create needs the object.
 	for _, synonymDiff := range diff.SynonymsModified {
-		synonym := findSynonym(desired.Synonyms, synonymDiff.SynonymName)
-		if synonym == nil {
+		synonym := synonymDiff.Desired
+		if synonym.Name == "" {
 			continue
 		}
 		result = append(result, ast.NewDropSynonym(synonymDiff.SynonymName).SetIfExists())
-		result = append(result, fromschema.FromSynonym(*synonym))
+		result = append(result, fromschema.FromSynonym(synonym))
 	}
 	return result
 }
@@ -2725,16 +2713,6 @@ func extendedPropertyNode(
 	return ast.NewExtendedProperty(operation, ref.Name).
 		SetOwner(ref.Schema, ref.Table, ref.Column).
 		SetValue(ref.Value)
-}
-
-// findSynonym returns the declared synonym with the given qualified name.
-func findSynonym(synonyms []schemamodel.Synonym, name string) *schemamodel.Synonym {
-	for i := range synonyms {
-		if synonyms[i].QualifiedName() == name {
-			return &synonyms[i]
-		}
-	}
-	return nil
 }
 
 func (p *Planner) addNewTriggers(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {

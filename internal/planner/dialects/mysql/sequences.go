@@ -10,7 +10,6 @@ import (
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
-	"go.5x5.cz/ptah/internal/planner/objectlookup"
 	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -29,22 +28,22 @@ import (
 // Creations run before tables because a column DEFAULT may draw from the
 // sequence, and on SQL Server that dependency is enforced: the engine refuses
 // `DROP SEQUENCE` while a default still references it.
-func (p *Planner) planSequences(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
+func (p *Planner) planSequences(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	if !p.capabilities().Has(capability.Sequences) {
 		return result
 	}
-	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
-	// No lookup: the change carries the sequence (stokaro/ptah#2315), so a
-	// name the desired schema could not resolve no longer plans nothing.
+	// No lookup on either branch: the change carries the sequence
+	// (stokaro/ptah#2315), so a name the desired schema could not resolve no
+	// longer plans nothing.
 	for _, sequence := range diff.SequencesAdded {
 		result = append(result, fromschema.FromSequence(sequence))
 	}
 	for _, sequenceDiff := range diff.SequencesModified {
-		sequence := objectlookup.Qualified(desired.Sequences, sequenceDiff.SequenceName, semantics)
-		if sequence == nil {
+		sequence := sequenceDiff.Desired
+		if sequence.Name == "" {
 			continue
 		}
-		node := alterSequenceFromDiff(*sequence, sequenceDiff.Changes)
+		node := alterSequenceFromDiff(sequence, sequenceDiff.Changes)
 		node.SetComment(fmt.Sprintf("Modify sequence %s: %s",
 			sequenceDiff.SequenceName, summarizeSequenceChanges(sequenceDiff)))
 		result = append(result, node)

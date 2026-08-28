@@ -22,25 +22,23 @@ func TestPlanner_GenerateMigrationAST_FunctionsModified_EmitsCreateOrReplace(t *
 					"body":     "OLD BODY -> NEW BODY",
 					"security": "DEFINER -> INVOKER",
 				},
-			},
-		},
-	}
-	desired := &schemamodel.Database{
-		Functions: []schemamodel.Function{
-			{
-				Name:       "set_tenant_context",
-				Parameters: "tenant_id_param TEXT",
-				Returns:    "VOID",
-				Language:   "plpgsql",
-				Security:   "INVOKER",
-				Volatility: "VOLATILE",
-				Body:       "BEGIN PERFORM set_config('app.current_tenant_id', tenant_id_param, true); END;",
+				// The definition travels with the change, so the schema below
+				// is empty (stokaro/ptah#2315).
+				Desired: schemamodel.Function{
+					Name:       "set_tenant_context",
+					Parameters: "tenant_id_param TEXT",
+					Returns:    "VOID",
+					Language:   "plpgsql",
+					Security:   "INVOKER",
+					Volatility: "VOLATILE",
+					Body:       "BEGIN PERFORM set_config('app.current_tenant_id', tenant_id_param, true); END;",
+				},
 			},
 		},
 	}
 
 	planner := postgres.New()
-	nodes, err := planner.GenerateMigrationAST(diff, desired)
+	nodes, err := planner.GenerateMigrationAST(diff, &schemamodel.Database{})
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.Not(qt.HasLen), 0)
 
@@ -61,8 +59,8 @@ func TestPlanner_GenerateMigrationAST_FunctionsModified_EmitsCreateOrReplace(t *
 func TestPlanner_GenerateMigrationAST_FunctionsModified_SkippedWhenTargetMissing(t *testing.T) {
 	c := qt.New(t)
 
-	// FunctionsModified references a function not present in generated.Functions:
-	// the planner must skip silently rather than emitting a malformed CREATE.
+	// A FunctionsModified entry carrying no definition: the planner must skip
+	// silently rather than emitting a malformed CREATE.
 	diff := &difftypes.SchemaDiff{
 		FunctionsModified: []difftypes.FunctionDiff{
 			{
@@ -81,5 +79,5 @@ func TestPlanner_GenerateMigrationAST_FunctionsModified_SkippedWhenTargetMissing
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 	c.Assert(sql, qt.Not(qt.Contains), "ghost",
-		qt.Commentf("planner must not emit SQL for a modified function whose target definition is missing"))
+		qt.Commentf("planner must not emit SQL for a modified function the change carries no definition for"))
 }

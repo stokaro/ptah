@@ -1282,7 +1282,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 	// 0a. Plan the sequences this target does host, before tables: a column
 	// DEFAULT may draw from one, and SQL Server enforces that dependency in
 	// both directions.
-	result = p.planSequences(result, diff, desired)
+	result = p.planSequences(result, diff)
 
 	// 0a2. Plan the roles this target does manage, before tables, because a
 	// grant names a role that has to exist.
@@ -1332,7 +1332,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 	// 4.5. Add and modify views/triggers after tables exist.
 	result = p.addNewViews(result, diff)
 	result = p.modifyExistingViews(result, diff)
-	result = p.retargetSynonyms(result, diff, desired)
+	result = p.retargetSynonyms(result, diff)
 	result = p.addNewSynonyms(result, diff)
 	result = p.addExtendedProperties(result, diff)
 	if err := p.rejectMaterializedViews(diff); err != nil {
@@ -1522,14 +1522,16 @@ func (p *Planner) addNewSynonyms(result []ast.Node, diff *difftypes.SchemaDiff) 
 // and CREATE SYNONYM refuses a name that already exists. Splitting the two
 // across the add and remove phases would put the create before the drop and
 // fail at the server.
-func (p *Planner) retargetSynonyms(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
+func (p *Planner) retargetSynonyms(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	// The synonym travels WITH the change (stokaro/ptah#2315). The two target
+	// strings are the change; the create needs the object.
 	for _, synonymDiff := range diff.SynonymsModified {
-		synonym := findSynonym(desired.Synonyms, synonymDiff.SynonymName)
-		if synonym == nil {
+		synonym := synonymDiff.Desired
+		if synonym.Name == "" {
 			continue
 		}
 		result = append(result, ast.NewDropSynonym(synonymDiff.SynonymName).SetIfExists())
-		result = append(result, fromschema.FromSynonym(*synonym))
+		result = append(result, fromschema.FromSynonym(synonym))
 	}
 	return result
 }
@@ -1584,16 +1586,6 @@ func extendedPropertyNode(
 	return ast.NewExtendedProperty(operation, ref.Name).
 		SetOwner(ref.Schema, ref.Table, ref.Column).
 		SetValue(ref.Value)
-}
-
-// findSynonym returns the declared synonym with the given qualified name.
-func findSynonym(synonyms []schemamodel.Synonym, name string) *schemamodel.Synonym {
-	for i := range synonyms {
-		if synonyms[i].QualifiedName() == name {
-			return &synonyms[i]
-		}
-	}
-	return nil
 }
 
 func (p *Planner) addNewTriggers(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {

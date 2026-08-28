@@ -55,16 +55,19 @@ func TestPlanner_SequencesModified_EmitsAlterForChangedOptionsOnly(t *testing.T)
 
 	diff := &difftypes.SchemaDiff{
 		SequencesModified: []difftypes.SequenceDiff{
-			{SequenceName: "order_seq", Changes: map[string]string{"increment": "1 -> 5", "cache": "20 -> 50"}},
-		},
-	}
-	desired := &schemamodel.Database{
-		Sequences: []schemamodel.Sequence{
-			{Name: "order_seq", Increment: new(int64(5)), Cache: new(int64(50)), Start: new(int64(1))},
+			{
+				SequenceName: "order_seq",
+				Changes:      map[string]string{"increment": "1 -> 5", "cache": "20 -> 50"},
+				// The option VALUES travel with the change; the map only names
+				// which ones moved (stokaro/ptah#2315).
+				Desired: schemamodel.Sequence{
+					Name: "order_seq", Increment: new(int64(5)), Cache: new(int64(50)), Start: new(int64(1)),
+				},
+			},
 		},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff, desired)
+	nodes, err := postgres.New().GenerateMigrationAST(diff, &schemamodel.Database{})
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
