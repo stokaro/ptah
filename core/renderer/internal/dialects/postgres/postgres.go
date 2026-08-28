@@ -1896,8 +1896,12 @@ func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
 		attributes = append(attributes, fmt.Sprintf("SECURITY %s", node.Security))
 	}
 
-	// Volatility attribute
-	if node.Volatility != "" {
+	// Volatility attribute. A procedure takes none, for the same reason it
+	// takes no RETURNS: measured on PostgreSQL 18, `CREATE PROCEDURE ...
+	// LANGUAGE plpgsql SECURITY INVOKER VOLATILE` answers `ERROR: invalid
+	// attribute in procedure definition` and the identical statement without
+	// it succeeds. SECURITY is accepted on both (stokaro/ptah#2435).
+	if node.Volatility != "" && !node.IsProcedure() {
 		attributes = append(attributes, node.Volatility)
 	}
 

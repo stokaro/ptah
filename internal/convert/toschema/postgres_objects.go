@@ -321,3 +321,58 @@ func trimTriggerFunctionWrapper(body string) string {
 	}
 	return strings.TrimSpace(inner[:len(inner)-len("END;")])
 }
+
+// toPostgresRoutine converts a routine the PostgreSQL routine parser modelled.
+//
+// CREATE FUNCTION reaches this package as a CreateFunctionNode and CREATE
+// PROCEDURE as this one, so a schema's procedures were parsed and then not
+// converted (stokaro/ptah#2435).
+func toPostgresRoutine(node *ast.PostgresRoutineNode) schemamodel.Function {
+	function := schemamodel.Function{
+		Name:       normalizeSQLTableReference(node.Name),
+		Kind:       string(node.Kind),
+		Parameters: node.Parameters,
+		Language:   node.Language,
+		Body:       strings.TrimSpace(node.Body.SQL),
+	}
+	function.Canonicalize()
+	return function
+}
+
+// toSQLServerRoutine converts a routine the SQL Server routine parser modelled.
+func toSQLServerRoutine(node *ast.SQLServerRoutineNode) schemamodel.Function {
+	function := schemamodel.Function{
+		Name:       normalizeSQLTableReference(node.Name),
+		Kind:       string(node.Kind),
+		Parameters: node.Parameters,
+		Returns:    node.Returns,
+		// The body is this dialect's own procedural language, not PL/pgSQL.
+		// A routine reaching the model with no language is defaulted to
+		// plpgsql, and the renderer then skips it saying it "declares language
+		// plpgsql" -- a sentence about a T-SQL body that never said any such
+		// thing (stokaro/ptah#2435).
+		Language: "sql",
+		Body:     strings.TrimSpace(node.Body.SQL),
+	}
+	function.Canonicalize()
+	return function
+}
+
+// toMySQLRoutine converts a routine the MySQL routine parser modelled.
+func toMySQLRoutine(node *ast.MySQLRoutineNode) schemamodel.Function {
+	function := schemamodel.Function{
+		Name:       normalizeSQLTableReference(node.Name),
+		Kind:       string(node.Kind),
+		Parameters: node.Parameters,
+		Returns:    node.Returns,
+		// The body is this dialect's own procedural language, not PL/pgSQL.
+		// A routine reaching the model with no language is defaulted to
+		// plpgsql, and the renderer then skips it saying it "declares language
+		// plpgsql" -- a sentence about a T-SQL body that never said any such
+		// thing (stokaro/ptah#2435).
+		Language: "sql",
+		Body:     strings.TrimSpace(node.Body.SQL),
+	}
+	function.Canonicalize()
+	return function
+}
