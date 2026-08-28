@@ -118,6 +118,24 @@ title would otherwise repeat the group label. `collapsed: true` hides a
 subgroup's items until the reader opens it, and opens the group anyway
 whenever the current page is inside it.
 
+## Page context and actions
+
+`src/components/PageTitle.astro` replaces Starlight's page-title component. It
+derives each breadcrumb from the rendered sidebar tree, including its current
+page marker, so the page hierarchy has no second label map to maintain. The
+home crumb uses Starlight's version-aware site URL.
+
+`Copy page` reads a generated Markdown representation from
+`page-source/<page-id>.md`. The endpoint strips frontmatter, restores the title
+and description, and records the canonical page URL. Keeping that text outside
+the HTML avoids sending a second copy of a long reference page to every reader.
+The ChatGPT and Claude actions copy the same Markdown before opening a new chat;
+they do not depend on undocumented prompt query parameters.
+
+The source endpoints are build artifacts, not reader pages. They are omitted
+from the sitemap and from the published-route ledger, and no sidebar entry
+points at them.
+
 ## The Pages root
 
 The site is served from `https://stokaro.github.io/ptah/`, and everything a
