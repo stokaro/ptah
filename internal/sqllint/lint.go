@@ -640,6 +640,23 @@ func statementLabelForName(name string) string {
 	return strings.ToUpper(strings.Join(words, " "))
 }
 
+// flattenRoutineStatements walks a body and everything its control-flow
+// statements carry.
+//
+// The boundary this rule reports does not care how deeply the EXECUTE sits: a
+// routine that composes SQL inside a condition is the ordinary shape, since a
+// condition is usually what the composition is for. Before the body model
+// carried nesting, an EXECUTE at the top of a body reported SQL003 and the same
+// EXECUTE inside IF or LOOP reported nothing (stokaro/ptah#2393).
+func flattenRoutineStatements(statements []ast.PostgresRoutineStatement) []ast.PostgresRoutineStatement {
+	flat := make([]ast.PostgresRoutineStatement, 0, len(statements))
+	for _, statement := range statements {
+		flat = append(flat, statement)
+		flat = append(flat, flattenRoutineStatements(statement.Statements)...)
+	}
+	return flat
+}
+
 // postgresRoutineStatements is the parsed body of whichever node a PostgreSQL
 // routine arrived as, with a label naming it for the finding.
 //
@@ -699,7 +716,7 @@ func (dynamicSQLRule) CheckStatement(ctx Context, stmt ast.Node) []Finding {
 	}
 
 	var findings []Finding
-	for _, statement := range statements {
+	for _, statement := range flattenRoutineStatements(statements) {
 		if statement.Kind != ast.PostgresRoutineStatementExecute {
 			continue
 		}

@@ -147,3 +147,71 @@ func dynamicSQLFindings(findings []sqllint.Finding) []sqllint.Finding {
 	}
 	return kept
 }
+
+// TestDynamicSQL_TheBoundaryIsFoundAtAnyDepth pins that the rule does not care
+// how deeply the EXECUTE sits.
+//
+// A routine that composes SQL inside a condition is the ordinary shape, since a
+// condition is usually what the composition is for. Before the body model
+// carried nesting, an EXECUTE at the top of a body reported SQL003 and the same
+// EXECUTE one level in reported nothing: the boundary was there and the rule
+// that exists to name it was silent (stokaro/ptah#2393).
+func TestDynamicSQL_TheBoundaryIsFoundAtAnyDepth(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want int
+	}{
+		{name: "at the top of the body", body: "EXECUTE 'a';", want: 1},
+		{name: "inside IF", body: "IF a THEN\n  EXECUTE 'a';\nEND IF;", want: 1},
+		{
+			name: "inside the ELSE branch",
+			body: "IF a THEN\n  PERFORM 1;\nELSE\n  EXECUTE 'a';\nEND IF;", want: 1,
+		},
+		{
+			name: "inside an ELSIF branch",
+			body: "IF a THEN\n  PERFORM 1;\nELSIF b THEN\n  EXECUTE 'a';\nEND IF;", want: 1,
+		},
+		{name: "inside LOOP", body: "LOOP\n  EXECUTE 'a';\nEND LOOP;", want: 1},
+		{
+			name: "inside FOR ... LOOP",
+			body: "FOR r IN SELECT 1 LOOP\n  EXECUTE 'a';\nEND LOOP;", want: 1,
+		},
+		{
+			name: "inside WHILE ... LOOP",
+			body: "WHILE a LOOP\n  EXECUTE 'a';\nEND LOOP;", want: 1,
+		},
+		{
+			name: "two levels down",
+			body: "IF a THEN\n  LOOP\n    EXECUTE 'a';\n  END LOOP;\nEND IF;", want: 1,
+		},
+		{
+			name: "twice at different depths",
+			body: "EXECUTE 'a';\nIF b THEN\n  EXECUTE 'c';\nEND IF;", want: 2,
+		},
+		{
+			// The control. Without it, reporting every nested statement would
+			// pass every row above.
+			name: "a conditional that composes nothing",
+			body: "IF a THEN\n  PERFORM pg_notify('x', 'y');\nEND IF;", want: 0,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			findings, err := sqllint.LintSource(
+				sqllint.Source{
+					Name: "routine.sql",
+					SQL:  "CREATE PROCEDURE p() AS $$\nBEGIN\n" + test.body + "\nEND;\n$$ LANGUAGE plpgsql;",
+				},
+				sqllint.Options{Dialect: platform.Postgres},
+			)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(dynamicSQLFindings(findings), qt.HasLen, test.want,
+				qt.Commentf("findings: %#v", findings))
+		})
+	}
+}
