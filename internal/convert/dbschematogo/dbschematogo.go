@@ -5,7 +5,6 @@
 package dbschematogo
 
 import (
-	"fmt"
 	"maps"
 	"slices"
 	"strings"
@@ -13,6 +12,7 @@ import (
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/core/sqlutil"
+	"go.5x5.cz/ptah/internal/catalogfield"
 )
 
 // ConvertDBSchemaToGoSchema converts a database schema to goschema format
@@ -155,48 +155,29 @@ func convertTablesAndFields(
 
 		// Convert columns to fields
 		for _, dbColumn := range dbTable.Columns {
-			field := schemamodel.Field{
-				StructName:         structName,
-				FieldName:          generateFieldName(dbColumn.Name),
-				Name:               dbColumn.Name,
-				Type:               goSchemaFieldType(dbColumn),
-				Comment:            dbColumn.Comment,
-				TypeIsDeclaredText: dbColumn.TypeIsDeclaredText,
-				Nullable:           dbColumn.IsNullable == "YES",
-				// Carried from the catalog rather than derived. PostgreSQL 18
-				// names every NOT NULL and flags none of them as generated, so
-				// a faithful description returns what the catalog holds
-				// (stokaro/ptah#2161).
-				NotNullConstraintName: dbColumn.NotNullConstraintName,
-				Primary:               dbColumn.IsPrimaryKey && !tablePKColumns[dbTable.QualifiedName()][dbColumn.Name],
-				AutoInc:               dbColumn.IsAutoIncrement,
-				Unique:                dbColumn.IsUnique,
-				Charset:               dbColumn.Charset,
-				Collate:               dbColumn.Collate,
-				GeneratedKind:         dbColumn.GeneratedKind,
-				UpdateExpression:      dbColumn.UpdateExpression,
-				IdentityGeneration:    dbColumn.IdentityGeneration,
-				IdentityStart:         dbColumn.IdentityStart,
-				IdentityIncrement:     dbColumn.IdentityIncrement,
+			opts := catalogfield.Options{
+				CoveredByTablePrimaryKey: tablePKColumns[dbTable.QualifiedName()][dbColumn.Name],
 			}
-			if dbColumn.GeneratedExpression != nil {
-				field.GeneratedExpression = *dbColumn.GeneratedExpression
-			}
-
-			if dbColumn.ColumnDefault != nil && postgresSerialType(dbColumn) == "" {
-				setFieldDefaultFromDB(&field, *dbColumn.ColumnDefault)
-			}
-
 			// Carry the field-level foreign key (reference + referential actions)
 			// so down migrations can reconstruct it with the prior action.
 			if fk, ok := fkByColumn[tableMemberKey{table: dbTable.QualifiedName(), member: dbColumn.Name}]; ok {
-				field.Foreign = fk.foreign
-				field.ForeignKeyName = fk.name
-				field.OnDelete = fk.onDelete
-				field.Deferrable = fk.deferrable
-				field.Initially = fk.initially
-				field.OnUpdate = fk.onUpdate
+				opts.ForeignKey = &catalogfield.ForeignKey{
+					Name:       fk.name,
+					Reference:  fk.foreign,
+					OnDelete:   fk.onDelete,
+					OnUpdate:   fk.onUpdate,
+					Deferrable: fk.deferrable,
+					Initially:  fk.initially,
+				}
 			}
+
+			// The column itself is described by catalogfield, which the schema
+			// comparison reaches too. What is added here is what that package
+			// deliberately does not know: the Go source a field was parsed
+			// from (stokaro/ptah#2315).
+			field := catalogfield.Field(dbColumn, opts)
+			field.StructName = structName
+			field.FieldName = generateFieldName(dbColumn.Name)
 
 			database.Fields = append(database.Fields, field)
 		}
@@ -835,147 +816,6 @@ func firstString(values []string) string {
 		return ""
 	}
 	return values[0]
-}
-
-func goSchemaFieldType(dbColumn catalog.Column) string {
-	if serialType := postgresSerialType(dbColumn); serialType != "" {
-		return serialType
-	}
-	// The server's own spelling wins wherever the reader had to ask for it,
-	// which today means PostgreSQL array and domain columns. DataType for an
-	// array is the bare category "ARRAY" -- a word no engine accepts as a type,
-	// so a schema read back out of a database rendered DDL that could not be
-	// executed (stokaro/ptah#1138).
-	//
-	// It is read from FormattedType rather than from ColumnType deliberately.
-	// ColumnType is also what the Atlas-compatible JSON inspect output prints,
-	// and measured on the pinned community binary v1.3.0 that output is
-	// `"type": "ARRAY"` for an array column -- the same value Ptah prints there
-	// today. Routing the fix through ColumnType would have made that surface
-	// disagree with the binary in order to fix a surface the binary does not
-	// have.
-	//
-	// It stays AHEAD of the USER-DEFINED branch below, and that order is the
-	// whole content of one half of #1138. A domain whose base type is itself
-	// user-defined is reported by information_schema with data_type
-	// "USER-DEFINED" and udt_name naming the BASE, while domain_name names the
-	// domain -- so with the branches the other way round the domain was
-	// flattened to its base and the CHECK it carries was silently dropped.
-	// Measured on PostgreSQL 17, one cluster, two domains that differ only in
-	// what they are built on:
-	//
-	//	CREATE DOMAIN point3d AS cube CHECK (cube_dim(VALUE) = 3);
-	//	CREATE DOMAIN positive_int AS integer CHECK (VALUE > 0);
-	//
-	//	column      data_type      udt_name   domain_name   format_type
-	//	c_point3d   USER-DEFINED   cube       point3d       point3d
-	//	c_domain    integer        int4       positive_int  positive_int
-	//
-	// Before this, c_point3d inspected as `cube` and c_domain as
-	// `positive_int`: applying that document back built the column as a bare
-	// cube, so the domain and its constraint were gone from the database with
-	// nothing reported. The pinned community binary v1.3.0 renders
-	// `sql("point3d")` for the same column, so this is also the compatible
-	// answer. The same split is visible on stock extension domains -- `lo`
-	// (over oid) survived while `earth` (over cube) did not.
-	if dbColumn.FormattedType != "" {
-		return dbColumn.FormattedType
-	}
-	if strings.EqualFold(dbColumn.DataType, "USER-DEFINED") && dbColumn.UDTName != "" {
-		return dbColumn.UDTName
-	}
-	if dbColumn.ColumnType != "" {
-		return dbColumn.ColumnType
-	}
-	if sizedType := sizedColumnType(dbColumn); sizedType != "" {
-		return sizedType
-	}
-	return dbColumn.DataType
-}
-
-// postgresSerialType reports the SERIAL shorthand a column can be written back
-// as, or "" when it cannot.
-//
-// A domain column can never be written back as SERIAL. PostgreSQL's SERIAL
-// shorthand only ever builds a column of an integer type, so spelling a column
-// of domain `positive` as SERIAL rebuilds it as a plain integer and drops the
-// domain's CHECK with it. The domain wins, and the sequence default it was
-// drawing from is then carried as an ordinary default rather than folded into
-// the shorthand. Measured on PostgreSQL 17.10 against `id positive DEFAULT
-// nextval('s')` with the sequence OWNED BY that column: the pinned binary
-// v1.3.0 reports `type = sql("positive")` with the nextval default beside it,
-// and Ptah reported `type = serial` with no default at all. See
-// stokaro/ptah#1242.
-func postgresSerialType(dbColumn catalog.Column) string {
-	if dbColumn.DomainName != "" {
-		return ""
-	}
-	if !dbColumn.IsAutoIncrement || dbColumn.ColumnDefault == nil ||
-		!strings.Contains(strings.ToLower(*dbColumn.ColumnDefault), "nextval(") {
-		return ""
-	}
-	switch strings.ToLower(strings.TrimSpace(dbColumn.DataType)) {
-	case "smallint":
-		return "SMALLSERIAL"
-	case "integer":
-		return "SERIAL"
-	case "bigint":
-		return "BIGSERIAL"
-	default:
-		return ""
-	}
-}
-
-// sizedColumnType renders the width a read carried in a field of its own.
-//
-// Every family PostgreSQL keeps a width for belongs here, and the two bit ones
-// were missing. `ptah schema inspect` wrote a `bit(4)` column as `bit`, and
-// replaying that document into a fresh database produced `bit(1)` -- measured
-// on PostgreSQL 17.11, three bits of every value gone. A `bit varying(8)` came
-// back unlimited, and applying the document to the SOURCE database removed the
-// declared width from the live column (stokaro/ptah#2034).
-func sizedColumnType(dbColumn catalog.Column) string {
-	dataType := strings.ToLower(strings.TrimSpace(dbColumn.DataType))
-	switch dataType {
-	case "character varying", "varchar":
-		if dbColumn.CharacterMaxLength != nil {
-			return fmt.Sprintf("VARCHAR(%d)", *dbColumn.CharacterMaxLength)
-		}
-	case "character", "char":
-		if dbColumn.CharacterMaxLength != nil {
-			return fmt.Sprintf("CHAR(%d)", *dbColumn.CharacterMaxLength)
-		}
-	case "bit":
-		if dbColumn.CharacterMaxLength != nil {
-			return fmt.Sprintf("BIT(%d)", *dbColumn.CharacterMaxLength)
-		}
-	case "bit varying", "varbit":
-		// Lower case, unlike the arms around it. Those are modeled HCL type
-		// names that the renderer lower-cases on the way out; this one is not
-		// writable bare -- two identifiers separated by a space is not one HCL
-		// expression -- so it reaches the document through sql() carrying
-		// whatever case it has here, and that binary's type names are case
-		// sensitive.
-		if dbColumn.CharacterMaxLength != nil {
-			return fmt.Sprintf("bit varying(%d)", *dbColumn.CharacterMaxLength)
-		}
-	case "numeric", "decimal":
-		if dbColumn.NumericPrecision != nil && dbColumn.NumericScale != nil {
-			return fmt.Sprintf("NUMERIC(%d,%d)", *dbColumn.NumericPrecision, *dbColumn.NumericScale)
-		}
-		if dbColumn.NumericPrecision != nil {
-			return fmt.Sprintf("NUMERIC(%d)", *dbColumn.NumericPrecision)
-		}
-	}
-	return ""
-}
-
-func setFieldDefaultFromDB(field *schemamodel.Field, defaultSQL string) {
-	if sqlutil.DefaultLooksLikeExpression(defaultSQL) {
-		field.DefaultExpr = defaultSQL
-		return
-	}
-	field.Default = defaultSQL
 }
 
 // setDomainDefaultFromDB routes a domain's catalog default the way a column's
