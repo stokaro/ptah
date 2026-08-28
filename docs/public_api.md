@@ -611,6 +611,13 @@ privileges on the view and fails loudly if the engine refuses it, while a
 rollback drops and recreates, which always applies. Embedders that build a
 `ViewDiff` by hand and leave both fields empty get the forward answer.
 
+`migration/schemadiff/difftypes.MaterializedViewDiff` carries one too. No engine
+has an in-place replacement that keeps a materialized view's rows, so a change
+other than a ClickHouse refresh schedule is a drop and a create, and the create
+renders from this field. The type now has two fields called `Desired`, at
+different scales: this one is the view, and `RefreshChange.Desired` is one
+schedule.
+
 `migration/schemadiff/difftypes.TriggerRef` and `TriggerDiff` carry a `Desired`
 field too, and the reference type is the one place where it means something on
 one list and nothing on another: a `TriggersAdded` entry carries the declaration

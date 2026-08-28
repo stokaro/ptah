@@ -1973,6 +1973,21 @@ type MaterializedViewDiff struct {
 	// 'MODIFY_REFRESH' is not supported by storage MaterializedView`
 	// (stokaro/ptah#1802).
 	RefreshChange *MatViewRefreshChange `json:"refresh_change,omitzero"`
+
+	// Desired is the materialized view this change asks the database to hold.
+	//
+	// No engine has an in-place replacement for one that keeps its rows, so a
+	// modification other than a schedule change is a drop and a create, and the
+	// create needs the whole declaration. Carrying it is what lets the planner
+	// render the pair without being handed the schema it came out of
+	// (stokaro/ptah#2315).
+	//
+	// It is the view, where [MatViewRefreshChange.Desired] on the field above
+	// is one schedule; the two are named alike because both answer "what is
+	// being asked for", at different scales.
+	//
+	// It stays off the wire. The change map is the change; this is the operand.
+	Desired schemamodel.MaterializedView `json:"-"`
 }
 
 // MatViewRefreshChange is one materialized view's refresh-schedule transition.

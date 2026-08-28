@@ -1339,7 +1339,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 		return nil, err
 	}
 	result = p.addNewMaterializedViews(result, diff)
-	result = p.modifyExistingMaterializedViews(result, diff, desired)
+	result = p.modifyExistingMaterializedViews(result, diff)
 	result = p.addNewTriggers(result, diff)
 	result = p.modifyExistingTriggers(result, diff)
 
@@ -1639,13 +1639,12 @@ func (p *Planner) addNewMaterializedViews(
 func (p *Planner) modifyExistingMaterializedViews(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
 ) []ast.Node {
-	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
+	// The view travels WITH the change (stokaro/ptah#2315).
 	for _, viewDiff := range diff.MaterializedViewsModified {
-		if view := findMaterializedView(desired.MaterializedViews, viewDiff.ViewName, semantics); view != nil {
+		if view := viewDiff.Desired; view.Name != "" {
 			result = append(result, ast.NewDropMaterializedView(view.Name).SetIfExists())
-			result = append(result, fromschema.FromMaterializedView(*view))
+			result = append(result, fromschema.FromMaterializedView(view))
 		}
 	}
 	return result
@@ -1658,14 +1657,6 @@ func (p *Planner) removeMaterializedViews(result []ast.Node, diff *difftypes.Sch
 		result = append(result, ast.NewDropMaterializedView(view.Name).SetIfExists())
 	}
 	return result
-}
-
-func findMaterializedView(
-	views []schemamodel.MaterializedView,
-	name string,
-	semantics identifier.Semantics,
-) *schemamodel.MaterializedView {
-	return objectlookup.MaterializedView(views, name, semantics)
 }
 
 // addNewConstraints adds new table-level constraints via ALTER TABLE statements.

@@ -893,6 +893,7 @@ func MaterializedViewDefinitionsWithDialect(
 	viewDiff := difftypes.MaterializedViewDiff{
 		ViewName: genView.Name,
 		Changes:  make(map[string]string),
+		Desired:  genView,
 	}
 
 	if !schemaObjectBodiesEqual(genView.Body, dbView.Body, dialect, dbView.Schema) {

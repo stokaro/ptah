@@ -49,7 +49,11 @@ func TestPlanner_GenerateMigrationAST_SchemaObjectsModified(t *testing.T) {
 				Body: "SELECT id FROM users WHERE deleted_at IS NULL"},
 			Changes: map[string]string{"body": "old -> new"},
 		}},
-		MaterializedViewsModified: []difftypes.MaterializedViewDiff{{ViewName: "user_stats", Changes: map[string]string{"body": "old -> new"}}},
+		MaterializedViewsModified: []difftypes.MaterializedViewDiff{{
+			ViewName: "user_stats",
+			Changes:  map[string]string{"body": "old -> new"},
+			Desired:  desired.MaterializedViews[0],
+		}},
 		TriggersModified: []difftypes.TriggerDiff{{
 			TriggerName: "set_updated_at", TableName: "users",
 			Changes: map[string]string{"body": "old -> new"},

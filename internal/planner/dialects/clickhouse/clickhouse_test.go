@@ -360,18 +360,19 @@ func TestGenerateMigrationAST_MaterializedViewCreateCarriesItsBody(t *testing.T)
 // See the comment on reportViewLikes.
 func TestGenerateMigrationAST_MaterializedViewChangeDropsBeforeCreating(t *testing.T) {
 	c := qt.New(t)
-	desired := &schemamodel.Database{MaterializedViews: []schemamodel.MaterializedView{{
-		StructName: "UserCounts",
-		Name:       "analytics.user_counts",
-		Body:       "SELECT count() AS c FROM analytics.users WHERE active",
-	}}}
-
+	// The view travels WITH the change (stokaro/ptah#2315), so the schema is
+	// empty and the create below is rendered from the entry alone.
 	nodes, err := clickhouse.New().GenerateMigrationAST(
 		&difftypes.SchemaDiff{MaterializedViewsModified: []difftypes.MaterializedViewDiff{{
 			ViewName: "analytics.user_counts",
 			Changes:  map[string]string{"body": "old -> new"},
+			Desired: schemamodel.MaterializedView{
+				StructName: "UserCounts",
+				Name:       "analytics.user_counts",
+				Body:       "SELECT count() AS c FROM analytics.users WHERE active",
+			},
 		}}},
-		desired,
+		&schemamodel.Database{},
 	)
 
 	c.Assert(err, qt.IsNil)
@@ -659,6 +660,8 @@ func matViewRefreshDiff(desired, current *ast.MatViewRefreshSpec) *difftypes.Sch
 			ViewName:      "mv",
 			Changes:       map[string]string{"refresh": "x -> y"},
 			RefreshChange: &difftypes.MatViewRefreshChange{Desired: desired, Current: current},
+			// The view the recreate path renders, for the rows that take it.
+			Desired: matViewRefreshSchema().MaterializedViews[0],
 		}},
 	}
 }
@@ -750,7 +753,7 @@ func TestGenerateMigrationAST_RefreshTransitionsThatCannotBeAltered(t *testing.T
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			nodes, err := clickhouse.New().GenerateMigrationAST(test.diff, matViewRefreshSchema())
+			nodes, err := clickhouse.New().GenerateMigrationAST(test.diff, &schemamodel.Database{})
 
 			c.Assert(err, qt.IsNil)
 			kinds := nodeKinds(nodes)

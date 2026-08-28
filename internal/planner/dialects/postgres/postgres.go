@@ -1737,7 +1737,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 	result = p.addNewContinuousAggregates(result, diff)
 	result = p.modifyExistingContinuousAggregates(result, diff)
 	result = p.addExtendedProperties(result, diff)
-	result = p.modifyExistingMaterializedViews(result, diff, desired)
+	result = p.modifyExistingMaterializedViews(result, diff)
 	result = p.addNewTriggers(result, diff)
 	result = p.modifyExistingTriggers(result, diff)
 
@@ -2494,12 +2494,14 @@ func (p *Planner) removeViews(result []ast.Node, diff *difftypes.SchemaDiff) []a
 	return result
 }
 
-func (p *Planner) modifyExistingMaterializedViews(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
-	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
+func (p *Planner) modifyExistingMaterializedViews(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	// The view travels WITH the change (stokaro/ptah#2315). A change carrying
+	// none names a view the pre-change database did not hold, and there is
+	// nothing to recreate.
 	for _, viewDiff := range diff.MaterializedViewsModified {
-		if view := findMaterializedView(desired.MaterializedViews, viewDiff.ViewName, semantics); view != nil {
+		if view := viewDiff.Desired; view.Name != "" {
 			result = append(result, ast.NewDropMaterializedView(view.Name).SetIfExists().SetCascade())
-			result = append(result, fromschema.FromMaterializedView(*view))
+			result = append(result, fromschema.FromMaterializedView(view))
 		}
 	}
 	return result

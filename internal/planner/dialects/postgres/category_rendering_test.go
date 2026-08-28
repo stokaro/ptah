@@ -313,8 +313,12 @@ func diffCategoryFixtures() []categoryFixture {
 		{"MaterializedViewsRemoved", &difftypes.SchemaDiff{MaterializedViewsRemoved: difftypes.MaterializedViewChanges{{Name: "mv"}}}, &schemamodel.Database{}},
 		{
 			"MaterializedViewsModified",
-			&difftypes.SchemaDiff{MaterializedViewsModified: []difftypes.MaterializedViewDiff{{ViewName: "mv", Changes: map[string]string{"body": "a -> b"}}}},
-			&schemamodel.Database{MaterializedViews: []schemamodel.MaterializedView{{Name: "mv", Body: "SELECT 2"}}},
+			&difftypes.SchemaDiff{MaterializedViewsModified: []difftypes.MaterializedViewDiff{{
+				ViewName: "mv",
+				Changes:  map[string]string{"body": "a -> b"},
+				Desired:  schemamodel.MaterializedView{Name: "mv", Body: "SELECT 2"},
+			}}},
+			&schemamodel.Database{},
 		},
 		{
 			"TriggersAdded",

@@ -2211,7 +2211,7 @@ func reverseSchemaDiffWithSchemaForDialect(
 
 		MaterializedViewsAdded:    diff.MaterializedViewsRemoved, // Materialized views to remove become materialized views to add
 		MaterializedViewsRemoved:  diff.MaterializedViewsAdded,   // Materialized views to add become materialized views to remove
-		MaterializedViewsModified: reverseMaterializedViewDiffs(diff.MaterializedViewsModified),
+		MaterializedViewsModified: reverseMaterializedViewDiffs(diff.MaterializedViewsModified, prior, semantics),
 
 		// Exchanged, but not carried across untouched. An addition renders from
 		// its operand and a removal from its names, so the two directions want
@@ -3450,7 +3450,11 @@ func targetRangeSubtype(schema *schemamodel.Database, name string) string {
 // down direction, on the same terms as reverseViewDiffs. A materialized view
 // has no in-place replace at all, so there is no prior body to record: both
 // directions drop and recreate it.
-func reverseMaterializedViewDiffs(viewDiffs []difftypes.MaterializedViewDiff) []difftypes.MaterializedViewDiff {
+func reverseMaterializedViewDiffs(
+	viewDiffs []difftypes.MaterializedViewDiff,
+	prior *schemamodel.Database,
+	semantics identifier.Semantics,
+) []difftypes.MaterializedViewDiff {
 	reversed := make([]difftypes.MaterializedViewDiff, len(viewDiffs))
 	for i, viewDiff := range viewDiffs {
 		reversed[i] = difftypes.MaterializedViewDiff{
@@ -3462,9 +3466,31 @@ func reverseMaterializedViewDiffs(viewDiffs []difftypes.MaterializedViewDiff) []
 			// the view without the schedule it had, so its rows would be right
 			// once and never again (stokaro/ptah#2418).
 			RefreshChange: reverseRefreshChange(viewDiff.RefreshChange),
+			// The recreate half renders from the operand, so reversing the
+			// change map without reversing the operand would rebuild the very
+			// definition the rollback is undoing (stokaro/ptah#2315).
+			Desired: priorMaterializedView(prior, viewDiff.ViewName, semantics),
 		}
 	}
 	return reversed
+}
+
+// priorMaterializedView is the materialized view the pre-change database held,
+// resolved the way [priorView] resolves a plain one: the diff spells a name the
+// declaration used, and a database view carries the schema the server reports it
+// under.
+func priorMaterializedView(
+	prior *schemamodel.Database,
+	name string,
+	semantics identifier.Semantics,
+) schemamodel.MaterializedView {
+	if prior == nil {
+		return schemamodel.MaterializedView{}
+	}
+	if view := objectlookup.MaterializedView(prior.MaterializedViews, name, semantics); view != nil {
+		return *view
+	}
+	return schemamodel.MaterializedView{}
 }
 
 // reverseTriggerDiffs carries modified triggers into the down direction, on the
