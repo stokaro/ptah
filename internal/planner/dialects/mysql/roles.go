@@ -22,15 +22,9 @@ func (p *Planner) planRoles(result []ast.Node, diff *difftypes.SchemaDiff, desir
 	if !p.capabilities().Has(capability.RoleManagement) {
 		return result
 	}
-	declared := make(map[string]schemamodel.Role)
-	for _, role := range desired.Roles {
-		declared[role.Name] = role
-	}
-	for _, name := range diff.RolesAdded {
-		role, found := declared[name]
-		if !found {
-			continue
-		}
+	// The attributes travel WITH the change, so this renders what it was
+	// handed rather than looking the name back up (stokaro/ptah#2315).
+	for _, role := range diff.RolesAdded {
 		result = append(result, fromschema.FromRole(role))
 	}
 	for _, roleDiff := range diff.RolesModified {
@@ -79,8 +73,8 @@ func (p *Planner) removeGrantsAndRoles(result []ast.Node, diff *difftypes.Schema
 		result = append(result, ast.NewRevokePrivilege(
 			grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege}))
 	}
-	for _, name := range diff.RolesRemoved {
-		result = append(result, ast.NewDropRole(name).
+	for _, role := range diff.RolesRemoved {
+		result = append(result, ast.NewDropRole(role.Name).
 			SetIfExists().
 			SetComment("WARNING: Ensure no other objects depend on this role"))
 	}

@@ -292,8 +292,8 @@ func TestReverseSchemaDiff_CompleteReversal(t *testing.T) {
 		},
 		RLSEnabledTablesAdded:   []string{"users", "posts"},
 		RLSEnabledTablesRemoved: []string{"old_table"},
-		RolesAdded:              []string{"app_user", "admin_user"},
-		RolesRemoved:            []string{"old_role"},
+		RolesAdded:              difftypes.RoleChanges{{Name: "app_user"}, {Name: "admin_user"}},
+		RolesRemoved:            difftypes.RoleChanges{{Name: "old_role"}},
 		GrantsAdded: []difftypes.GrantRef{
 			{Role: "app_user", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "users"},
 		},
@@ -344,8 +344,8 @@ func TestReverseSchemaDiff_CompleteReversal(t *testing.T) {
 	c.Assert(result.RLSEnabledTablesRemoved, qt.DeepEquals, input.RLSEnabledTablesAdded)
 
 	// Verify role reversals
-	c.Assert(result.RolesAdded, qt.DeepEquals, input.RolesRemoved)
-	c.Assert(result.RolesRemoved, qt.DeepEquals, input.RolesAdded)
+	c.Assert(result.RolesAdded.Names(), qt.DeepEquals, input.RolesRemoved.Names())
+	c.Assert(result.RolesRemoved.Names(), qt.DeepEquals, input.RolesAdded.Names())
 	c.Assert(result.GrantsAdded, qt.DeepEquals, input.GrantsRemoved)
 	c.Assert(result.GrantsRemoved, qt.DeepEquals, input.GrantsAdded)
 	c.Assert(result.GrantOptionsAdded, qt.DeepEquals, input.GrantOptionsRevoked)
@@ -676,7 +676,7 @@ func TestReverseSchemaDiff_Issue39_Integration(t *testing.T) {
 		RLSEnabledTablesAdded: []string{"users", "areas"},
 
 		// Add some roles
-		RolesAdded: []string{"inventario_app"},
+		RolesAdded: difftypes.RoleChanges{{Name: "inventario_app"}},
 
 		// Also add a table to make it a realistic scenario
 		TablesAdded: []string{"users"},
@@ -704,7 +704,7 @@ func TestReverseSchemaDiff_Issue39_Integration(t *testing.T) {
 	c.Assert(downDiff.RLSEnabledTablesAdded, qt.HasLen, 0)
 
 	// Roles should be removed in down migration
-	c.Assert(downDiff.RolesRemoved, qt.DeepEquals, []string{"inventario_app"})
+	c.Assert(downDiff.RolesRemoved.Names(), qt.DeepEquals, []string{"inventario_app"})
 	c.Assert(downDiff.RolesAdded, qt.HasLen, 0)
 
 	// Tables should be removed in down migration (existing behavior)

@@ -157,7 +157,7 @@ func TestAnUnguardedCreationIsWithheldAndNamed(t *testing.T) {
 				return &schemamodel.Database{Roles: []schemamodel.Role{{Name: "admin_user", Login: true}}}
 			},
 			notDescribed: coverage.Set{}.WithObject(coverage.Role, "admin_user"),
-			read:         func(diff *difftypes.SchemaDiff) []string { return diff.RolesAdded },
+			read:         func(diff *difftypes.SchemaDiff) []string { return diff.RolesAdded.Names() },
 			wantWithheld: []coverage.Object{{Kind: coverage.Role, Name: "admin_user"}},
 		},
 		{
@@ -219,7 +219,7 @@ func TestAnUndeclaredReadPlansEveryAdditionAndWithholdsNothing(t *testing.T) {
 			desired: func() *schemamodel.Database {
 				return &schemamodel.Database{Roles: []schemamodel.Role{{Name: "admin_user", Login: true}}}
 			},
-			read:        func(diff *difftypes.SchemaDiff) []string { return diff.RolesAdded },
+			read:        func(diff *difftypes.SchemaDiff) []string { return diff.RolesAdded.Names() },
 			wantPlanned: []string{"admin_user"},
 		},
 		{

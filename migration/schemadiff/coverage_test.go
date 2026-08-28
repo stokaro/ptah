@@ -95,7 +95,7 @@ func coverageCases() []coverageCase {
 			},
 			database:     func() *catalog.Database { return &catalog.Database{} },
 			notDescribed: coverage.Set{}.WithObject(coverage.Role, "admin_user"),
-			read:         func(diff *difftypes.SchemaDiff) []string { return diff.RolesAdded },
+			read:         func(diff *difftypes.SchemaDiff) []string { return diff.RolesAdded.Names() },
 			wantWithout:  []string{"admin_user"},
 		},
 		{

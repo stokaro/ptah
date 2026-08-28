@@ -1891,15 +1891,11 @@ func (p *Planner) validateExtensionInstallationSchemas(diff *difftypes.SchemaDif
 }
 
 func (p *Planner) addNewRoles(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
-	for _, roleName := range diff.RolesAdded {
-		// Find the role definition
-		for _, role := range desired.Roles {
-			if role.Name == roleName {
-				roleNode := fromschema.FromRole(role)
-				result = append(result, roleNode)
-				break
-			}
-		}
+	// The attributes travel WITH the change, so this renders what it was
+	// handed rather than scanning the desired schema for a role of that name
+	// (stokaro/ptah#2315).
+	for _, role := range diff.RolesAdded {
+		result = append(result, fromschema.FromRole(role))
 	}
 	return result
 }
@@ -2028,8 +2024,8 @@ func (p *Planner) addPasswordOperation(alterRoleNode *ast.AlterRoleNode, changeV
 }
 
 func (p *Planner) removeRoles(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	for _, roleName := range diff.RolesRemoved {
-		dropRoleNode := ast.NewDropRole(roleName).
+	for _, role := range diff.RolesRemoved {
+		dropRoleNode := ast.NewDropRole(role.Name).
 			SetIfExists().
 			SetComment("WARNING: Ensure no other objects depend on this role")
 		result = append(result, dropRoleNode)

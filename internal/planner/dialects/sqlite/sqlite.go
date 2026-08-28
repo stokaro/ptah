@@ -414,7 +414,7 @@ func rowLevelSecurityNames(diff *difftypes.SchemaDiff) []string {
 // roleAndGrantNames lists every role the diff changes and every role a changed
 // grant names, which is what an operator has to find in their schema.
 func roleAndGrantNames(diff *difftypes.SchemaDiff) []string {
-	names := slices.Concat(diff.RolesAdded, diff.RolesRemoved)
+	names := slices.Concat(diff.RolesAdded.Names(), diff.RolesRemoved.Names())
 	for _, role := range diff.RolesModified {
 		names = append(names, role.RoleName)
 	}

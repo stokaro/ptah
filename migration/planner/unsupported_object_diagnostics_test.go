@@ -61,7 +61,7 @@ func unhostableCreationDiff() *difftypes.SchemaDiff {
 	return &difftypes.SchemaDiff{
 		ExtensionsAdded:        difftypes.ExtensionChanges{{Name: "pg_trgm"}},
 		SequencesAdded:         difftypes.SequenceChanges{{Name: "order_number_seq"}},
-		RolesAdded:             []string{"app_role"},
+		RolesAdded:             difftypes.RoleChanges{{Name: "app_role"}},
 		FunctionsAdded:         []string{"bump"},
 		TablesAdded:            []string{"t"},
 		ViewsAdded:             difftypes.ViewChanges{{Name: "v1", Body: "SELECT id FROM t"}},
@@ -216,7 +216,7 @@ func TestPlan_ClickHouseNamesRemovedObjectsToo(t *testing.T) {
 		DomainsRemoved:           difftypes.DomainChanges{{Name: "email"}},
 		CompositeTypesRemoved:    difftypes.CompositeTypeChanges{{Name: "addr"}},
 		RangesRemoved:            difftypes.RangeChanges{{Name: "tsr"}},
-		RolesRemoved:             []string{"app_role"},
+		RolesRemoved:             difftypes.RoleChanges{{Name: "app_role"}},
 		FunctionsRemoved:         []string{"bump"},
 		ViewsRemoved:             difftypes.ViewChanges{{Name: "v1"}},
 		MaterializedViewsRemoved: difftypes.MaterializedViewChanges{{Name: "mv1"}},
@@ -607,7 +607,7 @@ func TestPlan_MySQLFamilyRoleRefusalNamesTheSameRoleAtEitherGate(t *testing.T) {
 				c := qt.New(t)
 
 				statements, err := planner.GenerateSchemaDiffSQLStatements(
-					&difftypes.SchemaDiff{RolesAdded: added}, test.desired, dialect)
+					&difftypes.SchemaDiff{RolesAdded: rolesCarrying(added...)}, test.desired, dialect)
 
 				c.Assert(statements, qt.HasLen, 0)
 				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
@@ -649,7 +649,7 @@ func roleFamilySchema() *schemamodel.Database {
 
 func roleFamilyCreationDiff() *difftypes.SchemaDiff {
 	return &difftypes.SchemaDiff{
-		RolesAdded:  []string{"app_reader"},
+		RolesAdded:  difftypes.RoleChanges{{Name: "app_reader"}},
 		TablesAdded: []string{"t"},
 		GrantsAdded: []difftypes.GrantRef{{
 			Role: "app_reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t",
@@ -719,4 +719,14 @@ func rolesDeclaringLogin(names ...string) *schemamodel.Database {
 		roles = append(roles, schemamodel.Role{StructName: "R", Name: name, Login: true})
 	}
 	return &schemamodel.Database{Roles: roles}
+}
+
+// rolesCarrying builds the change compare.Roles carries for these roles: the
+// LOGIN they declare travels with it, which is what the refusal reads.
+func rolesCarrying(names ...string) difftypes.RoleChanges {
+	roles := make(difftypes.RoleChanges, 0, len(names))
+	for _, name := range names {
+		roles = append(roles, schemamodel.Role{StructName: "R", Name: name, Login: true})
+	}
+	return roles
 }

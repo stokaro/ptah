@@ -180,7 +180,7 @@ func TestGenerateMigrationAST_ClickHouseCreateRoleCarriesOnlyTheName(t *testing.
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			nodes := planClickHouse(c, &difftypes.SchemaDiff{RolesAdded: test.roles}, &schemamodel.Database{})
+			nodes := planClickHouse(c, &difftypes.SchemaDiff{RolesAdded: rolesNamed(test.roles...)}, &schemamodel.Database{})
 
 			c.Assert(nodes, qt.HasLen, len(test.want))
 			got := make([]string, 0, len(nodes))
@@ -216,7 +216,7 @@ func TestGenerateMigrationAST_ClickHouseRolesArePlannedBeforeTheGrantsThatNameTh
 
 	diff := &difftypes.SchemaDiff{
 		TablesAdded:         []string{"events"},
-		RolesAdded:          []string{"reporting"},
+		RolesAdded:          difftypes.RoleChanges{{Name: "reporting"}},
 		GrantsRemoved:       []difftypes.GrantRef{rbacGrant("DROP")},
 		GrantOptionsRevoked: []difftypes.GrantRef{rbacGrant("ALTER")},
 		GrantsAdded:         []difftypes.GrantRef{rbacGrant("SELECT")},
@@ -274,7 +274,7 @@ func TestGenerateMigrationAST_ClickHouseGrantsKeepTheSlotTheRenderPathUsesForThe
 	c := qt.New(t)
 
 	diff := &difftypes.SchemaDiff{
-		RolesAdded:            []string{"reporting"},
+		RolesAdded:            difftypes.RoleChanges{{Name: "reporting"}},
 		FunctionsAdded:        []string{"bump"},
 		RLSEnabledTablesAdded: []string{"events"},
 		RLSPoliciesAdded:      []difftypes.RLSPolicyRef{{PolicyName: "p1", TableName: "events"}},
@@ -332,7 +332,7 @@ func TestGenerateMigrationAST_ClickHouseRoleChangesWithNoStatementAreNamed(t *te
 		},
 		{
 			name: "removed role",
-			diff: &difftypes.SchemaDiff{RolesRemoved: []string{"reporting"}},
+			diff: &difftypes.SchemaDiff{RolesRemoved: difftypes.RoleChanges{{Name: "reporting"}}},
 			want: `CLICKHOUSE: role "reporting" exists on the server and not in the schema; Ptah does not drop ClickHouse roles`,
 		},
 	}
@@ -349,4 +349,15 @@ func TestGenerateMigrationAST_ClickHouseRoleChangesWithNoStatementAreNamed(t *te
 			c.Assert(comment.Text, qt.Equals, test.want)
 		})
 	}
+}
+
+// rolesNamed builds the change a comparison would carry for roles that declare
+// nothing beyond their names, which is what ClickHouse renders: role membership
+// there always inherits, so an attribute would be refused rather than emitted.
+func rolesNamed(names ...string) difftypes.RoleChanges {
+	roles := make(difftypes.RoleChanges, 0, len(names))
+	for _, name := range names {
+		roles = append(roles, schemamodel.Role{Name: name})
+	}
+	return roles
 }

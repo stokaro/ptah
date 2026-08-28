@@ -125,7 +125,7 @@ func TestCompareWithDatabaseInfoStillComparesAnOrdinaryRole(t *testing.T) {
 			)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(diff.RolesAdded, qt.DeepEquals, test.wantAdded)
+			c.Assert(diff.RolesAdded.Names(), qt.DeepEquals, test.wantAdded)
 			c.Assert(diff.RolesModified, qt.HasLen, 0)
 		})
 	}
@@ -149,5 +149,5 @@ func TestCompareWithDatabaseInfoOptInPlansTheReservedRoleAnyway(t *testing.T) {
 	)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(diff.RolesAdded, qt.DeepEquals, []string{"pg_monitor", "postgres"})
+	c.Assert(diff.RolesAdded.Names(), qt.DeepEquals, []string{"pg_monitor", "postgres"})
 }

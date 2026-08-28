@@ -71,7 +71,7 @@ func TestClickHouseRoleAndGrantLifecycleRoundTripsLive(t *testing.T) {
 	// [clickHouseCreationPlan] for why the order of these two statements is a
 	// correctness requirement rather than a preference.
 	creation, createStatements := planClickHouseRBAC(c, conn, declared)
-	c.Assert(creation.RolesAdded, qt.DeepEquals, []string{role})
+	c.Assert(creation.RolesAdded.Names(), qt.DeepEquals, []string{role})
 	c.Assert(createStatements, qt.DeepEquals, clickHouseCreationPlan(role, database, table))
 	applyClickHouseRBACPlan(c, conn, createStatements)
 
@@ -602,7 +602,7 @@ func TestClickHouseDatabaseScopeGrantRoundTripsLive(t *testing.T) {
 	declared := clickHouseDatabaseScopeDeclaration(role, database)
 
 	creation, createStatements := planClickHouseRBAC(c, conn, declared)
-	c.Assert(creation.RolesAdded, qt.DeepEquals, []string{role})
+	c.Assert(creation.RolesAdded.Names(), qt.DeepEquals, []string{role})
 	c.Assert(createStatements, qt.DeepEquals, []string{
 		"CREATE ROLE IF NOT EXISTS " + quotedRole,
 		"GRANT SELECT ON " + sqlident.Quote(platform.ClickHouse, database) + ".* TO " + quotedRole,

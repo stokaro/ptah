@@ -194,11 +194,11 @@ func oracleRoleDeclaration(role, schema string, grants []oracleDeclaredGrant) *s
 // reported, so a failure says which one rather than that a count was not zero.
 func oracleRoleDiffSummary(diff *difftypes.SchemaDiff) []string {
 	var changes []string
-	for _, name := range diff.RolesAdded {
-		changes = append(changes, "role added: "+name)
+	for _, role := range diff.RolesAdded {
+		changes = append(changes, "role added: "+role.Name)
 	}
-	for _, name := range diff.RolesRemoved {
-		changes = append(changes, "role removed: "+name)
+	for _, role := range diff.RolesRemoved {
+		changes = append(changes, "role removed: "+role.Name)
 	}
 	for _, role := range diff.RolesModified {
 		changes = append(changes, "role modified: "+role.RoleName)

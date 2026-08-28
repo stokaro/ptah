@@ -821,3 +821,69 @@ func TestColumnChanges_TheDefinitionSurvivesInMemory(t *testing.T) {
 	c.Assert(changes.Names(), qt.DeepEquals, []string{"email"},
 		qt.Commentf("and the name list a consumer reads is unchanged"))
 }
+
+// TestRoleChanges_TheWireShapeIsUnchanged is the same promise for the
+// thirteenth family off `[]string`, and the one where it is a security
+// property rather than only a compatibility one.
+func TestRoleChanges_TheWireShapeIsUnchanged(t *testing.T) {
+	tests := []struct {
+		name    string
+		changes difftypes.RoleChanges
+		want    string
+		why     string
+	}{
+		{
+			name:    "nil is null",
+			changes: nil,
+			want:    "null",
+			why:     "null is a comparison that did not run",
+		},
+		{
+			name:    "empty is an empty array",
+			changes: difftypes.RoleChanges{},
+			want:    "[]",
+			why:     "[] is a comparison that ran and found nothing",
+		},
+		{
+			name: "the attributes do not reach the wire, and neither does the password",
+			changes: difftypes.RoleChanges{{
+				Name:      "app_user",
+				Login:     true,
+				Superuser: true,
+				Password:  "hunter2",
+			}},
+			want: `["app_user"]`,
+			why:  "a role's password must not appear in a migration document",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			encoded, err := json.Marshal(test.changes)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(string(encoded), qt.Equals, test.want, qt.Commentf("%s", test.why))
+			c.Assert(string(encoded), qt.Not(qt.Contains), "hunter2",
+				qt.Commentf("asserted separately from the shape, because this is the half that matters"))
+		})
+	}
+}
+
+// TestRoleChanges_TheAttributesSurviveInMemory is the other half, on the fields
+// `CREATE ROLE` is written from.
+//
+// A role planned from a name alone is created with every attribute defaulted,
+// which for LOGIN and SUPERUSER is a different account from the one declared.
+func TestRoleChanges_TheAttributesSurviveInMemory(t *testing.T) {
+	c := qt.New(t)
+
+	changes := difftypes.RoleChanges{{Name: "app_user", Login: true, CreateDB: true, Inherit: true}}
+
+	c.Assert(changes[0].Login, qt.IsTrue,
+		qt.Commentf("CREATE ROLE is written from this, and a name cannot carry it"))
+	c.Assert(changes[0].CreateDB, qt.IsTrue)
+	c.Assert(changes.Names(), qt.DeepEquals, []string{"app_user"},
+		qt.Commentf("and the name list a consumer reads is unchanged"))
+}

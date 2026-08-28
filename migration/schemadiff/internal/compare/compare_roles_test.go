@@ -40,8 +40,8 @@ func TestRolesComparison(t *testing.T) {
 		compare.Roles(desired, database, diff, compare.CoverageOf(desired, database))
 
 		c.Assert(diff.RolesAdded, qt.HasLen, 2)
-		c.Assert(diff.RolesAdded, qt.Contains, "app_user")
-		c.Assert(diff.RolesAdded, qt.Contains, "admin_user")
+		c.Assert(diff.RolesAdded.Names(), qt.Contains, "app_user")
+		c.Assert(diff.RolesAdded.Names(), qt.Contains, "admin_user")
 		c.Assert(diff.RolesRemoved, qt.HasLen, 0)
 		c.Assert(diff.RolesModified, qt.HasLen, 0)
 	})
@@ -111,7 +111,7 @@ func TestRolesComparison(t *testing.T) {
 		compare.Roles(desired, database, diff, compare.CoverageOf(desired, database))
 
 		c.Assert(diff.RolesAdded, qt.HasLen, 1)
-		c.Assert(diff.RolesAdded[0], qt.Equals, "new_role")
+		c.Assert(diff.RolesAdded[0].Name, qt.Equals, "new_role")
 
 		// Roles are not automatically removed for safety
 		c.Assert(diff.RolesRemoved, qt.HasLen, 0)
@@ -142,7 +142,7 @@ func TestRolesComparison(t *testing.T) {
 		compare.Roles(desired, database, diff, compare.CoverageOf(desired, database))
 
 		// Check added roles are sorted
-		c.Assert(diff.RolesAdded, qt.DeepEquals, []string{"a_role", "z_role"})
+		c.Assert(diff.RolesAdded.Names(), qt.DeepEquals, []string{"a_role", "z_role"})
 
 		// Roles are not automatically removed for safety
 		c.Assert(diff.RolesRemoved, qt.HasLen, 0)
@@ -196,7 +196,7 @@ func TestRolesTreatsOutOfScopeRolesAsPresent(t *testing.T) {
 
 		compare.Roles(desired, database, diff, compare.CoverageOf(desired, database))
 
-		c.Assert(diff.RolesAdded, qt.DeepEquals, []string{"brand_new_user"})
+		c.Assert(diff.RolesAdded.Names(), qt.DeepEquals, []string{"brand_new_user"})
 	})
 
 	t.Run("still alters a role the description leaves out", func(t *testing.T) {
@@ -306,7 +306,7 @@ func TestRolesAnswerIsTheSameWhicheverListTheRoleWasReadInto(t *testing.T) {
 	describedDiff := &difftypes.SchemaDiff{}
 	compare.Roles(desired, described, describedDiff, compare.CoverageOf(desired, described))
 
-	c.Assert(scopedDiff.RolesAdded, qt.DeepEquals, []string{"nowhere_at_all"})
+	c.Assert(scopedDiff.RolesAdded.Names(), qt.DeepEquals, []string{"nowhere_at_all"})
 	c.Assert(scopedDiff.RolesModified, qt.HasLen, 1)
 	c.Assert(scopedDiff.RolesModified[0].RoleName, qt.Equals, "scoped_out")
 	c.Assert(describedDiff, qt.DeepEquals, scopedDiff,
@@ -355,12 +355,12 @@ func TestRolesReservedNameIsRefusedBeforeThisComparisonRunsAtAll(t *testing.T) {
 
 	compare.Roles(desired, database, diff, compare.CoverageOf(desired, database))
 
-	c.Assert(diff.RolesAdded, qt.DeepEquals, []string{"pg_monitor", "postgres"},
+	c.Assert(diff.RolesAdded.Names(), qt.DeepEquals, []string{"pg_monitor", "postgres"},
 		qt.Commentf("reserved names are in neither database list, so they read as absent"))
 	c.Assert(diff.RolesModified, qt.HasLen, 0)
-	for _, roleName := range diff.RolesAdded {
-		c.Assert(reservedrole.Is(roleName), qt.IsTrue,
-			qt.Commentf("%q read as absent but the refusal would not have caught it", roleName))
+	for _, role := range diff.RolesAdded {
+		c.Assert(reservedrole.Is(role.Name), qt.IsTrue,
+			qt.Commentf("%q read as absent but the refusal would not have caught it", role.Name))
 	}
 	c.Assert(reservedrole.ValidateDeclared("postgres", desired.Roles), qt.IsNotNil,
 		qt.Commentf("the desired schema this comparison received should never have reached it"))
