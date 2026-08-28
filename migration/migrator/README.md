@@ -269,12 +269,12 @@ metadata.
 ### Migrate Up
 Apply all pending migrations:
 ```bash
-go run ./cmd migrations up --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations
+go run ./cmd/ptah migrations up --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations
 ```
 
 With dry run:
 ```bash
-go run ./cmd migrations up --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --dry-run
+go run ./cmd/ptah migrations up --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --dry-run
 ```
 
 Dry-run reads existing revision metadata and selects only pending migrations.
@@ -289,69 +289,69 @@ legacy revision layouts.
 
 Allow applying a migration whose version is below the current high-water mark:
 ```bash
-go run ./cmd migrations up --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --exec-order non-linear
+go run ./cmd/ptah migrations up --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --exec-order non-linear
 ```
 
 With a custom migration state table:
 ```bash
-go run ./cmd migrations up --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --migrations-schema infra --migrations-table ptah_migrations
+go run ./cmd/ptah migrations up --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --migrations-schema infra --migrations-table ptah_migrations
 ```
 
 With an Atlas-style versioned migration directory:
 ```bash
-go run ./cmd migrations up --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --dir-format atlas
+go run ./cmd/ptah migrations up --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --dir-format atlas
 ```
 
 Continue an Atlas-managed database using `atlas_schema_revisions`:
 ```bash
-go run ./cmd migrations up --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --dir-format atlas --revision-format atlas
+go run ./cmd/ptah migrations up --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --dir-format atlas --revision-format atlas
 ```
 
 ### Migrate Down
 Roll back to a specific version:
 ```bash
-go run ./cmd migrations down --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --target 5
+go run ./cmd/ptah migrations down --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --target 5
 ```
 
 With confirmation skip (dangerous!):
 ```bash
-go run ./cmd migrations down --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --target 5 --confirm
+go run ./cmd/ptah migrations down --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --target 5 --confirm
 ```
 
 With a custom migration state table:
 ```bash
-go run ./cmd migrations down --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --target 5 --migrations-schema infra --migrations-table ptah_migrations
+go run ./cmd/ptah migrations down --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --target 5 --migrations-schema infra --migrations-table ptah_migrations
 ```
 
 ### Migration Status
 Check current migration status:
 ```bash
-go run ./cmd migrations status --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations
+go run ./cmd/ptah migrations status --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations
 ```
 
 Verbose output:
 ```bash
-go run ./cmd migrations status --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --verbose
+go run ./cmd/ptah migrations status --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --verbose
 ```
 
 JSON output:
 ```bash
-go run ./cmd migrations status --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --json
+go run ./cmd/ptah migrations status --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --json
 ```
 
 With a custom migration state table:
 ```bash
-go run ./cmd migrations status --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --migrations-schema infra --migrations-table ptah_migrations
+go run ./cmd/ptah migrations status --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --migrations-schema infra --migrations-table ptah_migrations
 ```
 
 With an Atlas-style versioned migration directory:
 ```bash
-go run ./cmd migrations status --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --dir-format atlas
+go run ./cmd/ptah migrations status --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --dir-format atlas
 ```
 
 Check an Atlas-managed revisions table:
 ```bash
-go run ./cmd migrations status --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --dir-format atlas --revision-format atlas
+go run ./cmd/ptah migrations status --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --dir-format atlas --revision-format atlas
 ```
 
 ## Observability
@@ -724,7 +724,7 @@ that wait. Timed-out callers receive a typed error that can be detected with
 Set CLI defaults for every pending migration:
 
 ```bash
-go run ./cmd migrations up --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --lock-timeout 3s --statement-timeout 30s --migration-lock-timeout 30s
+go run ./cmd/ptah migrations up --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --lock-timeout 3s --statement-timeout 30s --migration-lock-timeout 30s
 ```
 
 Override those defaults in a specific migration file with top-of-file directives:

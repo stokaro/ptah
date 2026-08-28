@@ -11,7 +11,7 @@ tool needs to generate a Ptah schema from another language.
 ## Generate SQL
 
 ```bash
-go run ./cmd schema render --schema-file schema.yaml --dialect postgres
+go run ./cmd/ptah schema render --schema-file schema.yaml --dialect postgres
 ```
 
 `--schema-file` accepts `.yaml`, `.yml`, `.hcl`, and `.sql` files and is
