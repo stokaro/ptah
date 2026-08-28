@@ -3,11 +3,50 @@ title: Command reference
 description: Every ptah inference verb, what it does, and the flags it takes.
 ---
 
-Eleven verbs. Each is a decision taken separately: none of them is implied by
+Twelve verbs. Each is a decision taken separately: none of them is implied by
 another.
 
 Every verb takes `--spec` and `--db-url`. Most take `--run-id`, which is an
 identifier you choose and which is how a resumed run finds its checkpoint.
+
+## `describe`
+
+Reads a specification and reports what it says on its own. **The only verb that
+opens no connection**, which is what makes it usable where every other one
+cannot be: writing a specification, and asking in CI whether an edit changed the
+corpus.
+
+| Flag | Meaning |
+| --- | --- |
+| `--format` | `text` or `json` |
+
+It reports the generation identity, whether that generation can be rebuilt and
+why not, what running it would send out of the database, what the consistency
+mode can establish, and the objects a generation would write.
+
+Nothing here is measured. The row count is **absent rather than zero**, because
+counting needs the database and an uncounted source rendered as zero says the
+disclosure is empty.
+
+```console
+$ ptah inference describe --spec spec.yaml
+articles: generation 31122cc8322d44317514ca2b54f29853f1c43d19ecd3b2a1b183320ef8f5bb37
+  - reproducibility: partial (provider "openai-compatible" exposes no immutable
+    revision for model "text-embedding-3-small", so asking it again may answer
+    with different vectors)
+  - target: articles.embedding_v2 vector(1536)
+  - index: articles_embedding_v2_31122cc8322d_idx using hnsw
+```
+
+The JSON form is what a CI job diffs:
+
+```bash
+ptah inference describe --spec spec.yaml --format json |
+  python3 -c 'import json,sys; print(json.load(sys.stdin)["generation"])'
+```
+
+Two digests that differ mean the edit changed the corpus, and every vector will
+have to be computed again.
 
 ## `plan`
 

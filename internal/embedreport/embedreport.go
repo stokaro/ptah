@@ -17,7 +17,6 @@ package embedreport
 import (
 	"context"
 	"database/sql"
-	"fmt"
 
 	"go.5x5.cz/ptah/internal/embedcatchup"
 	"go.5x5.cz/ptah/internal/embedpg"
@@ -348,11 +347,66 @@ func BoundaryText(watermark string) string {
 	return watermark
 }
 
-// Describe renders a plan for a person.
-func Describe(plan Plan) []string {
-	lines := []string{fmt.Sprintf("generation %s", plan.Desired)}
-	for _, fact := range plan.Facts {
-		lines = append(lines, fmt.Sprintf("  %s = %s (%s)", fact.Name, fact.Value, fact.Provenance))
+// Specification is what a specification file says on its own.
+//
+// Everything here comes from the file. Nothing is measured, and that is the
+// point: every other answer this package produces needs a live database, so a
+// specification could not be checked at all without one. An author writing one
+// and a CI job asking "does this edit change the corpus" both need the file's
+// own answer, and neither has a PostgreSQL to hand.
+type Specification struct {
+	Name string `json:"name"`
+	// Generation is the identity this specification addresses, and Short is the
+	// prefix an operator types.
+	Generation string `json:"generation"`
+	Short      string `json:"generation_short"`
+	// Reproducibility says whether the generation can be rebuilt, and Reason
+	// why not where it cannot. A file that says neither reads as "yes".
+	Reproducibility string `json:"reproducibility"`
+	Reason          string `json:"reproducibility_reason,omitempty"`
+	// Disclosure is what running it would send out of the database. RowsInScope
+	// is negative here: nobody counted, because counting needs the database.
+	Disclosure Disclosure `json:"disclosure"`
+	// ConsistencyMode is what would account for source changes, and Consistency
+	// says what that mode can establish.
+	ConsistencyMode string `json:"consistency_mode"`
+	Consistency     string `json:"consistency"`
+	// Target names the column a generation would write and the index over it,
+	// which is what tells an author whether two specifications collide.
+	TargetTable  string `json:"target_table"`
+	TargetColumn string `json:"target_column"`
+	TargetType   string `json:"target_type"`
+	IndexName    string `json:"index_name,omitempty"`
+	IndexMethod  string `json:"index_method,omitempty"`
+}
+
+// DescribeSpecification reads a loaded specification into what it says.
+func DescribeSpecification(loaded embedspec.Loaded) (Specification, error) {
+	objects, err := loaded.Spec.TargetObjects()
+	if err != nil {
+		return Specification{}, err
 	}
-	return lines
+	identity := loaded.Spec.Identity()
+
+	described := Specification{
+		Name:       loaded.Spec.Name,
+		Generation: identity.Digest,
+		Short:      identity.Short(),
+		// Rendered as the plan renders it, so the two agree on the words.
+		Reproducibility: string(identity.Reproducibility),
+		Reason:          identity.ReproducibilityReason,
+		// Negative rather than zero: an uncounted source rendered as zero says
+		// the disclosure is empty, which is the one answer it must not give.
+		Disclosure:      disclosureOf(loaded, -1),
+		ConsistencyMode: modeName(loaded.Mode),
+		Consistency:     consistencyOf(loaded),
+		TargetTable:     loaded.Spec.Target.Table,
+		TargetColumn:    objects.Column.Name,
+		TargetType:      objects.Column.Type,
+	}
+	if objects.HasIndex {
+		described.IndexName = objects.Index.Name
+		described.IndexMethod = objects.Index.Type
+	}
+	return described, nil
 }
