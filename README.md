@@ -12,255 +12,126 @@
   <a href="https://github.com/stokaro/ptah/blob/master/LICENSE"><img src="https://img.shields.io/github/license/stokaro/ptah?label=license&color=blue" alt="The license badge, reading MIT"></a>
 </p>
 
-<p align="center"><a href="#install">Install</a> · <a href="https://stokaro.github.io/ptah/edge/">Documentation</a> · <a href="https://stokaro.github.io/ptah/edge/start/quick-start/">Quick start</a> · <a href="https://stokaro.github.io/ptah/edge/databases/support-matrix/">Supported databases</a></p>
+<p align="center"><a href="#install">Install</a> · <a href="https://stokaro.github.io/ptah/edge/start/quick-start/">Quick start</a> · <a href="https://stokaro.github.io/ptah/edge/">Documentation</a> · <a href="https://stokaro.github.io/ptah/edge/databases/support-matrix/">Database support</a></p>
 
-<p align="center">
-  <a href="https://stokaro.github.io/ptah/edge/databases/postgresql/">PostgreSQL</a> ·
-  <a href="https://stokaro.github.io/ptah/edge/databases/support-matrix/">MySQL</a> ·
-  <a href="https://stokaro.github.io/ptah/edge/databases/support-matrix/">MariaDB</a> ·
-  <a href="https://stokaro.github.io/ptah/edge/databases/sqlite/">SQLite</a> ·
-  <a href="https://stokaro.github.io/ptah/edge/databases/sqlserver/">SQL Server</a> ·
-  <a href="https://stokaro.github.io/ptah/edge/databases/support-matrix/">ClickHouse</a> ·
-  <a href="https://stokaro.github.io/ptah/edge/databases/support-matrix/">CockroachDB</a> ·
-  <a href="https://stokaro.github.io/ptah/edge/databases/support-matrix/">YugabyteDB</a> ·
-  <a href="https://stokaro.github.io/ptah/edge/databases/support-matrix/">Oracle</a> ·
-  <a href="https://stokaro.github.io/ptah/edge/databases/support-matrix/">Spanner</a>
-</p>
+Ptah reads a desired schema, inspects a live database, and computes the change
+between them. You can keep that change as versioned migration files or review
+and apply it directly. The command-line interface runs without a Go toolchain,
+and the same planning components are available as Go packages.
 
-Ptah reads the schema you want, compares it with the schema a live database
-already has, and turns the difference into SQL you can review, apply, or roll
-back. The `ptah` binary runs on its own and needs no Go toolchain. The
-[database support matrix](https://stokaro.github.io/ptah/edge/databases/support-matrix/)
-gives the dialect name and URL scheme each engine uses, and how deep the support
-goes.
+<p align="center"><img src="docs/site/src/assets/readme-product-flow.png" alt="Schema sources and the current database meet at compare and plan. The plan follows either versioned migrations through generate, review, commit, and apply, or direct schema changes through review, approval, and apply. Both routes update the target database." width="1000"></p>
 
-<p align="center"><picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/site/src/assets/readme-hero-dark.png">
-  <img src="docs/site/src/assets/readme-hero-light.png" alt="Two small stepped stacks feed one square, and an amber dot beside it marks the difference they produced. From the dot an upper route runs through a stack of three sheets and a lower route runs straight through a single node; both arrive at the same larger stepped stack." width="900">
-</picture></p>
-
-<p align="center">One comparison, two routes: the difference becomes migration files you review, or a change applied now. Both arrive at the same database.</p>
+Both workflows use the same comparison and planning model. The difference is
+whether SQL becomes a reviewed artifact in version control before it runs.
 
 > [!NOTE]
-> Ptah is pre-GA. The native command tree can still change.
-
-## Two ways to change a schema
-
-A schema source is the schema you want, written as SQL, YAML, HCL, or DBML, or
-read from annotations in Go code. Ptah compares a schema source with a live
-database and hands you the difference along one of two routes.
-
-| Workflow | You write | Pick it when | Start with |
-| --- | --- | --- | --- |
-| Versioned migrations | Numbered SQL files kept in version control | a person reviews the change before it runs, and the file belongs in the pull request | `ptah migrations generate` |
-| Direct schema changes | The schema you want, in any supported source format | the declared schema is the source of truth, and drift is the thing you fix | `ptah schema apply` |
-
-The two combine. One command reads a schema source, compares it with a live
-database, and writes the difference as a reversible migration pair:
-
-```bash
-ptah migrations generate --db-url "sqlite://app.db" --schema-file schema.sql \
-  --migrations-dir ./migrations --name create_users
-```
-
-[Choose a workflow](https://stokaro.github.io/ptah/edge/start/choose-a-workflow/)
-compares the two in detail.
-
-## What Ptah does
-
-Each row is one capability, the command to start from, and the page that owns
-it. Deterministic means the same inputs produce the same SQL on every run.
-
-| Capability | Start with | Read |
-| --- | --- | --- |
-| Migration integrity | `ptah migrations validate` | [Integrity and safety](https://stokaro.github.io/ptah/edge/versioned/integrity-and-safety/) |
-| Deterministic planning | `ptah schema plan` | [Apply directly](https://stokaro.github.io/ptah/edge/direct/apply/) |
-| Drift detection | `ptah schema drift` | [Compare and drift](https://stokaro.github.io/ptah/edge/direct/compare-and-drift/) |
-| Approvals | `ptah schema approve` | [Native commands](https://stokaro.github.io/ptah/edge/reference/native-commands/) |
-| Advisory locking | `ptah schema apply --lock-timeout` | [Capabilities](https://stokaro.github.io/ptah/edge/reference/capabilities/) |
-| Recovery | `ptah migrations down` | [Roll back migrations](https://stokaro.github.io/ptah/edge/versioned/rollback/) |
-| Testing | `ptah schema test` | [Test migrations and schemas](https://stokaro.github.io/ptah/edge/testing/migrations-and-schema/) |
-| Artifact distribution | `ptah schema push` | [OCI registry artifacts](https://stokaro.github.io/ptah/edge/operate/oci-registry/) |
-| Diagrams | `ptah viz` | [Visualize the schema](https://stokaro.github.io/ptah/edge/schema/visualize/) |
-| API contract export | `ptah schema export` | [API schema export](https://stokaro.github.io/ptah/edge/schema/export/) |
-
-Not every engine provides every capability. Advisory locking is the clearest
-example: PostgreSQL, YugabyteDB, MySQL, MariaDB and SQL Server take a lock, and
-on the remaining engines the migration runs without one.
-`ptah db capabilities --db-url <url>` resolves it for one server.
+> Ptah is pre-GA. The native command tree and public Go API can still change.
 
 ## Install
 
-One command installs `ptah`, `ptah-compat`, and `ptah-ls` into `~/.local/bin`.
-The released archives cover Linux, macOS, and Windows on both `amd64` and
-`arm64`, and the script picks the one for the machine it runs on.
-
-The script downloads with `curl` rather than a browser on purpose: the macOS
-binaries are ad-hoc signed, and macOS quarantines such a binary when a browser
-fetches it.
+The installer selects the current release for Linux, macOS, or Windows, verifies
+its checksum, and installs `ptah`, `ptah-compat`, and `ptah-ls` under your home
+directory.
 
 ```bash
 curl -fsSL https://stokaro.github.io/ptah/install.sh | sh
 ```
 
-On Windows, in PowerShell:
+In PowerShell:
 
 ```powershell
 irm https://stokaro.github.io/ptah/install.ps1 | iex
 ```
 
-The script resolves the newest release, checks the archive against the
-published `checksums.txt`, installs the three binaries under your home
-directory, and edits no shell startup file. It calls no `sudo`. The URL serves
-a plain file: add `-o install.sh` to read the script before running it, and
-`sh -s -- --version v0.2.0` to pin a release.
+The [installation guide](https://stokaro.github.io/ptah/edge/start/install/)
+covers version pinning, signature verification, download-without-execution,
+and building from source.
 
-The [install guide](https://stokaro.github.io/ptah/edge/start/install/) covers the
-flags, the download-and-verify route that uses no script, signature
-verification, and building from a checkout.
+## Try Ptah with SQLite
 
-The install guide link, and every other documentation link in this file, points
-at the `edge` channel, which is built from `master` and describes this tree
-rather than the release the command above installs. The
-[documentation front door](https://stokaro.github.io/ptah/) opens the newest
-released version instead.
-
-## Run it end to end
-
-Three `ptah` commands against SQLite, then cleanup. No server, no credentials,
-no Docker.
-
-### Write the schema
-
-Save the schema you want as `schema.sql`. This one is plain SQL:
+Save this desired schema as `schema.sql`:
 
 ```sql
 CREATE TABLE users (
     id INTEGER PRIMARY KEY,
-    email TEXT NOT NULL UNIQUE,
-    created_at TEXT NOT NULL
+    email TEXT NOT NULL UNIQUE
 );
 ```
 
-### See the SQL
+Render the SQL, apply it to a throwaway database, and check that the database
+matches the file:
 
 ```bash
 ptah schema render --schema-file schema.sql --dialect sqlite
-```
-
-Expected output includes:
-
-```sql
--- Statement 1/1
-CREATE TABLE "users" (
-  "id" INTEGER PRIMARY KEY,
-  "email" TEXT NOT NULL UNIQUE,
-  "created_at" TEXT NOT NULL
-);
-```
-
-Ptah writes the payload to standard output and progress messages to standard
-error, so the block above is what a pipe receives.
-
-### Apply it
-
-```bash
 ptah schema apply --db-url "sqlite://app.db" --schema-file schema.sql --auto-approve
-```
-
-Expected output includes:
-
-```text
-Auto-approval enabled; applying schema changes.
-Schema apply completed successfully.
-```
-
-> [!CAUTION]
-> `--auto-approve` answers the confirmation prompt for you, and a direct
-> apply drops the objects the schema no longer declares. It is here because
-> `app.db` is a throwaway file. Against a database whose contents matter, run
-> the command without the flag and read the plan it prints, or save one first
-> with `ptah schema plan`.
-
-### Check for drift
-
-`ptah schema drift` exits 0 when the database and the file agree and 1 when
-they do not, so it also works as a CI gate:
-
-```bash
 ptah schema drift --db-url "sqlite://app.db" --schema-file schema.sql
 ```
 
-Expected output includes:
+The final command prints `No schema drift detected.` and exits 0. Remove
+`app.db` and `schema.sql` when you are done.
 
-```text
-No schema drift detected.
-```
+> [!CAUTION]
+> `--auto-approve` skips the confirmation prompt. A direct schema change can
+> drop objects that the desired schema does not declare. Use it here only
+> because `app.db` is disposable.
 
-When you are done, remove the database with `rm app.db`.
+For a complete workflow with expected output and verification, use the
+[direct schema changes tutorial](https://stokaro.github.io/ptah/edge/start/quick-start-direct/)
+or the
+[versioned migrations tutorial](https://stokaro.github.io/ptah/edge/start/quick-start-migrations/).
 
-## Where to go next
+## Choose how changes land
 
-| I want to | Read |
-| --- | --- |
-| Run my first migration | [Quick start: versioned migrations](https://stokaro.github.io/ptah/edge/start/quick-start-migrations/) |
-| Apply a schema without writing migration files | [Quick start: direct schema changes](https://stokaro.github.io/ptah/edge/start/quick-start-direct/) |
-| Decide between the two workflows | [Choose a workflow](https://stokaro.github.io/ptah/edge/start/choose-a-workflow/) |
-| Bring a database Ptah did not create under management | [Adopt an existing database](https://stokaro.github.io/ptah/edge/start/adopt-an-existing-database/) |
-| Write the schema in SQL, YAML, HCL, DBML, or an external loader | [Work with a desired schema](https://stokaro.github.io/ptah/edge/schema/work-with-a-source/) |
-| Read the schema a live database already has | [Inspect a database](https://stokaro.github.io/ptah/edge/direct/inspect/) |
-| Gate a pull request on schemas and migrations | [CI](https://stokaro.github.io/ptah/edge/testing/ci/) |
-| Check engine support and dialect differences | [Database support matrix](https://stokaro.github.io/ptah/edge/databases/support-matrix/) |
-| Look up a command, a format, or an exit code | [Native commands](https://stokaro.github.io/ptah/edge/reference/native-commands/), [Exit codes](https://stokaro.github.io/ptah/edge/reference/exit-codes/) |
-| Diagnose a failure | [Troubleshooting](https://stokaro.github.io/ptah/edge/operate/troubleshooting/) |
+| Workflow | Use it when | Start with |
+| --- | --- | --- |
+| Versioned migrations | SQL files belong in code review and deployment history | `ptah migrations generate` |
+| Direct schema changes | The desired schema is authoritative and you want to review and apply the plan now | `ptah schema plan` |
+
+Schema sources can come from SQL, YAML, HCL, DBML, Go annotations, external
+loaders, or a live database. Database and feature coverage vary by engine; use
+the [support matrix](https://stokaro.github.io/ptah/edge/databases/support-matrix/)
+and `ptah db capabilities --db-url <url>` for the concrete target.
+
+## Explore the documentation
+
+- [Choose a workflow](https://stokaro.github.io/ptah/edge/start/choose-a-workflow/)
+  to compare versioned migrations with direct schema changes.
+- [Inspect a live database](https://stokaro.github.io/ptah/edge/direct/inspect/)
+  or [compare and detect drift](https://stokaro.github.io/ptah/edge/direct/compare-and-drift/).
+- [Validate migration integrity](https://stokaro.github.io/ptah/edge/versioned/integrity-and-safety/)
+  or [test migrations and schemas](https://stokaro.github.io/ptah/edge/testing/migrations-and-schema/).
+- [Visualize](https://stokaro.github.io/ptah/edge/schema/visualize/)
+  or [export](https://stokaro.github.io/ptah/edge/schema/export/) a schema.
+- [Migrate persistent inference state](https://stokaro.github.io/ptah/edge/operate/inference-migrations/)
+  while an external endpoint computes embeddings.
+- [Look up native commands](https://stokaro.github.io/ptah/edge/reference/native-commands/)
+  or [diagnose a failure](https://stokaro.github.io/ptah/edge/operate/troubleshooting/).
 
 The site source lives in [`docs/site`](docs/site). [`docs/README.md`](docs/README.md)
-indexes the contributor and implementation documents that sit beyond it.
+indexes contributor and implementation documents outside the reader site.
 
-## Use Ptah from Go
+## Go packages and Atlas compatibility
 
-The CLI needs no Go toolchain. Go projects can also embed Ptah through its
-documented packages, use Go annotations as one schema source, and run the
-`ptah-ls` language server for annotation support in an editor.
+Go projects can embed the documented packages, use annotated structs as schema
+sources, and run `ptah-ls` for editor support. Start with the
+[public API ledger](https://stokaro.github.io/ptah/edge/extend/public-api/),
+[reusable components](https://stokaro.github.io/ptah/edge/extend/components/),
+or [Go annotations](https://stokaro.github.io/ptah/edge/schema/go-annotations/).
 
-- [Public Go API](https://stokaro.github.io/ptah/edge/extend/public-api/)
-- [Reusable components](https://stokaro.github.io/ptah/edge/extend/components/)
-- [Go annotations](https://stokaro.github.io/ptah/edge/schema/go-annotations/)
+The separate `ptah-compat` binary exposes an Atlas-compatible command surface;
+the native `ptah` command tree does not use Atlas command paths. Ptah does not
+claim full Atlas parity. The
+[compatibility overview](https://stokaro.github.io/ptah/edge/atlas/overview/)
+and [conformance results](https://stokaro.github.io/ptah/edge/atlas/conformance/)
+state the measured coverage and differences.
 
-Runnable examples: [schema visualization](examples/viz),
-[embedded migrator](examples/migrator), [annotation parser](examples/annotation_parser).
+## License and help
 
-## Atlas compatibility
-
-A separate `ptah-compat` binary presents an Atlas-compatible command surface for
-scripts written against the Atlas CLI, invoked as `ptah-compat <command> ...`.
-The native `ptah` binary has no Atlas command paths; its migration verbs live
-under `ptah migrations`. The two binaries share capabilities, not command lines.
-
-Ptah does not claim full Atlas parity. The
-[Atlas compatibility overview](https://stokaro.github.io/ptah/edge/atlas/overview/)
-explains what the surface covers and where it differs, and
-[Conformance](https://stokaro.github.io/ptah/edge/atlas/conformance/) summarizes
-the measurements taken in
-[`stokaro/ptah-atlas-conformance`](https://github.com/stokaro/ptah-atlas-conformance).
-
-## License and provenance
-
-Ptah is published under the [MIT license](LICENSE). It is an independent
-implementation that does not use Atlas source code and is not affiliated with or
-endorsed by Ariga. The
+Ptah is an independent clean-room implementation published under the
+[MIT license](LICENSE). It does not use Atlas source code and is not affiliated
+with or endorsed by Ariga. The
 [license boundary](https://stokaro.github.io/ptah/edge/atlas/license-boundary/)
-page records the provenance policy and its legal basis. `ptah license` prints
-the license and attribution from the binary itself.
+records the provenance policy.
 
-## The name
-
-Ptah is the Egyptian god of architects and craftsmen. The name also spells the
-four stages a schema change moves through: **Parse** a schema source,
-**Transform** it into statements for one dialect, **Apply** the change, and
-**Harmonize** the database with the schema you declared.
-
-## Get help
-
-Open an issue at
-[github.com/stokaro/ptah/issues](https://github.com/stokaro/ptah/issues).
+For questions and bug reports, open an issue in
+[stokaro/ptah](https://github.com/stokaro/ptah/issues).

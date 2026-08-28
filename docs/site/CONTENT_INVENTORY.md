@@ -248,7 +248,7 @@ list in the same PR.
 
 | File (words) | Audience | Purpose | Overlaps | Disposition |
 | --- | --- | --- | --- | --- |
-| `README.md` (643) | everyone landing on GitHub | Project pitch, start-here table, install, surfaces, compatibility status | `index.mdx`, `install.md`, `getting-started.md`, `operate/license-boundary` | keep + rewrite links when site URLs move; must never diverge from the site on parity claims |
+| `README.md` (722) | everyone landing on GitHub | What is Ptah, how does a schema change move through it, and where do I start? | `index.mdx`, `start/install`, `start/quick-start`, `atlas/overview` | keep as the repository entry point: product model, one runnable SQLite path, workflow choice, and links into canonical documentation; must never diverge from the site on parity claims |
 | `docs/site/README.md` (107) | contributor | How to build the site | none | keep |
 | `testkit` README (178) | Go embedder | Test-harness package (separate repository and module) | `extend/public-api` | moved to stokaro/ptah-testkit; linked from `extend/public-api` |
 | `internal/parser/README.md` (1,331) | contributor | SQL parser internals | none | keep (contributor surface) |
