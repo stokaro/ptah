@@ -14,7 +14,7 @@ hero:
       icon: right-arrow
       variant: primary
     - text: Inference migrations
-      link: ./operate/inference-migrations/
+      link: ./inference/overview/
       icon: right-arrow
       variant: secondary
     - text: Install
@@ -35,7 +35,7 @@ not run inference.
 
 <CardGrid>
   <LinkCard title="Database schemas" href="./start/choose-a-workflow/" description="Compare a desired schema with a live database, then keep the change as versioned migration files or review and apply it directly." />
-  <LinkCard title="Persistent inference state" href="./operate/inference-migrations/" description="Build a candidate generation beside the active one, catch up concurrent changes, verify it, cut over, and retain a rollback path." />
+  <LinkCard title="Persistent inference state" href="./inference/overview/" description="Build a candidate generation beside the active one, catch up concurrent changes, verify it, cut over, and retain a rollback path." />
 </CardGrid>
 
 ## How a schema change moves through Ptah
@@ -210,7 +210,7 @@ endpoint only returns embeddings.
 
 ![Ptah builds a candidate inference generation from a specification and source rows, calls an external embedding endpoint during backfill and catch-up, verifies the result, switches the active generation at cutover, and retains the previous generation for rollback.](../../assets/inference-state-migration.png)
 
-The [inference migrations guide](./operate/inference-migrations/) covers the
+The [inference migrations guide](./inference/overview/) covers the
 specification, execution lifecycle, approvals, rollback window, and retirement.
 
 ## What the project includes
@@ -236,7 +236,7 @@ run the `ptah-ls` language server for annotation support in an editor.
   <LinkCard title="Start" href="./start/quick-start/" description="Install Ptah, then run one of the two quick starts: versioned migration files you write and roll back, or a change Ptah derives from the schema you want." />
   <LinkCard title="Versioned migrations" href="./versioned/overview/" description="Generate, apply, roll back, verify, import, and maintain a directory of timestamped SQL files that you review and commit." />
   <LinkCard title="Direct schema changes" href="./direct/overview/" description="Inspect a live database, compare it with the desired schema, gate on drift, and apply the change without writing migration files." />
-  <LinkCard title="Inference migrations" href="./operate/inference-migrations/" description="Change an embedding model or preprocessing contract through a candidate generation, verification, cutover, and rollback lifecycle." />
+  <LinkCard title="Inference migrations" href="./inference/overview/" description="Change an embedding model or preprocessing contract through a candidate generation, verification, cutover, and rollback lifecycle." />
   <LinkCard title="Schema" href="./schema/work-with-a-source/" description="Describe the schema you want in SQL, YAML, HCL, DBML, an ORM loader, or Go annotations, then validate, visualize, document, and export it." />
   <LinkCard title="Databases" href="./databases/support-matrix/" description="Check which engines Ptah supports and how deep the support goes, and read the PostgreSQL, SQLite, and SQL Server guides." />
   <LinkCard title="Integrations" href="./extend/public-api/" description="Embed the documented Go API, reuse parser and migrator components, and give an AI agent a schema surface to work against." />
@@ -254,7 +254,7 @@ run the `ptah-ls` language server for annotation support in an editor.
 | SQL, YAML, or HCL schema files | [SQL schema](./schema/sql/), [YAML schema](./schema/yaml/), or [HCL schema](./schema/hcl/) |
 | A Go application with schema annotations | [Go annotations](./schema/go-annotations/) |
 | An ORM that owns the schema | [ORM and external loaders](./schema/orm-and-external/) |
-| An embedding model, preprocessing contract, or vector corpus to replace | [Inference migrations](./operate/inference-migrations/) |
+| An embedding model, preprocessing contract, or vector corpus to replace | [Inference migrations](./inference/overview/) |
 | No decision yet on versioned versus direct changes | [Choose a workflow](./start/choose-a-workflow/) |
 | An OCI registry for migration or schema distribution | [OCI registry artifacts](./operate/oci-registry/) |
 | Scripts written for the Atlas CLI | [Atlas compatibility overview](./atlas/overview/) |

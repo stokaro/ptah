@@ -53,10 +53,10 @@ Word counts were measured with `wc -w` at the audited commit.
 
 | Page (words) | Audience | Reader question | Type | Source of truth | Overlaps | Disposition |
 | --- | --- | --- | --- | --- | --- | --- |
-| `start/quick-start.mdx` (routing) | new user | Which schema quick start should I run, or where do I start with persistent inference state? | navigation | this page (the schema decision, what both quick starts need, and the route to inference migrations) | `start/choose-a-workflow` carries the longer schema decision; `operate/inference-migrations` owns the separate inference lifecycle | split → `start/quick-start-migrations` and `start/quick-start-direct`; URL kept, so the `/getting-started/` redirect still resolves; persistent inference state routes to its canonical how-to instead of being presented as a third schema path |
+| `start/quick-start.mdx` (routing) | new user | Which schema quick start should I run, or where do I start with persistent inference state? | navigation | this page (the schema decision, what both quick starts need, and the route to inference migrations) | `start/choose-a-workflow` carries the longer schema decision; `inference/overview` owns the separate inference lifecycle | split → `start/quick-start-migrations` and `start/quick-start-direct`; URL kept, so the `/getting-started/` redirect still resolves; persistent inference state routes to its canonical how-to instead of being presented as a third schema path |
 | `start/quick-start-migrations.mdx` | new user, any language | How do I write a migration, apply it, and roll it back? | tutorial | this page; every command and output block run against a built binary | `versioned/generate` (the hand-written half), `versioned/rollback` | created (stokaro/ptah#1228 onboarding split); keep |
 | `start/quick-start-direct.mdx` | new user, any language | How do I make a database match a file that describes the schema I want? | tutorial | this page; every command and output block run against a built binary | `direct/apply`, `direct/compare-and-drift` | created (stokaro/ptah#1228 onboarding split); renamed from `start/quick-start-declarative` under section 7's `direct schema changes` rule, old route redirects; keep |
-| `start/choose-a-workflow.md` (925 visible words) | new user deciding integration shape | How should schema changes reach my databases, and where does persistent inference state fit? | concept | this page for the two schema axes; `operate/inference-migrations` for the separate generation lifecycle; command shapes verified against the built binary | `versioned/overview`, `direct/overview`, `operate/inference-migrations` | created (section 9, item 4); keep — the opening scopes its matrix to schema changes and routes inference state separately |
+| `start/choose-a-workflow.md` (925 visible words) | new user deciding integration shape | How should schema changes reach my databases, and where does persistent inference state fit? | concept | this page for the two schema axes; `inference/overview` for the separate generation lifecycle; command shapes verified against the built binary | `versioned/overview`, `direct/overview`, `inference/overview` | created (section 9, item 4); keep — the opening scopes its matrix to schema changes and routes inference state separately |
 | `start/adopt-an-existing-database.md` (1,000) | brownfield database adopter | How do I put an existing database under Ptah management without recreating it? | howto | this page; `ptah introspect`, `ptah migrations baseline`, `ptah migrations import` runs against the built binary | `workflows/checkpoints` (baseline contrast), `workflows/migrations` import section | created (section 9, item 3); keep |
 
 ### `Model your schema` group (added by the restructuring)
@@ -191,8 +191,46 @@ a first-class state-change lifecycle rather than a distribution topic.
 | --- | --- | --- | --- | --- | --- | --- |
 | `operate/ai-agents.md` (1568) | operator/app developer | How do I connect an AI client to Ptah, and what may it read, propose, and write? | howto | this page; `cmd/mcp`, `internal/mcpserver` and `internal/agentapi`; every tool name and flag run against the built binary over the protocol | `reference/native-commands` (`ptah mcp` row and section, summary there), `atlas/feature-matrix` (the Copilot row's Ptah answer) | created (stokaro/ptah#1487); keep |
 | `operate/ai-assist.md` (1820) | operator/app developer | How do I point Ptah Assist at my own model, and check that it works? | howto | this page; `cmd/assist`, `internal/aiprovider` and `internal/assistconfig`; every command run against the built binary, and the conversation, resume and write paths measured against a live endpoint | `operate/ai-agents` (the other surface, no provider needed), `reference/native-commands` (the two command rows) | created (stokaro/ptah#1488); keep |
-| `operate/inference-migrations.md` (1080) | operator/app developer | How do I change an embedding model without breaking what queries read? | howto | this page; `cmd/inference` and the `internal/embed*` packages; every command and flag run against the built binary, and the lifecycle measured against a live PostgreSQL with pgvector | `reference/native-commands` (the ten verb rows), `operate/oci-registry` (where the evidence goes) | created (stokaro/ptah#2068); surfaced directly under `Workflows`; keep |
+| `operate/inference-migrations.md` (1080) | operator/app developer | How do I change an embedding model without breaking what queries read? | howto | superseded by the `inference/` area | — | retired (stokaro/ptah#2369): one page could not carry concepts, guides, strategies, reference and troubleshooting at once; the URL redirects to `inference/overview` |
 | `operate/seed-data.md` (506) | app developer/operator | How do I load one-off, environment-scoped setup rows? | howto | this page; `cmd/seed` and `migration/seeder`; every command and output run against the built binary | `versioned/reference-data` (declarative contrast, canonical there), `reference/exit-codes` (`ptah seed` row) | created (section 9, item 6); keep |
+
+### `Inference migrations` area (added by stokaro/ptah#2369)
+
+Eighteen pages in four groups. The area exists because one how-to could not
+carry concepts, task guides, operational strategies, exact reference and
+troubleshooting at once, and a reader arriving with "should I use this at all"
+met a page that assumed they had decided.
+
+Every command, flag and message below was read from the built binary or from the
+code that produces it. `operate/inference-migrations.md` is retired into this
+area and its URL redirects to `inference/overview`.
+
+| Page | Audience | Reader question | Type |
+| --- | --- | --- | --- |
+| `inference/overview.md` | everyone arriving | What is this, and does it apply to my system? | navigation |
+| `inference/quick-start.md` | new user | Can I see one work end to end? | tutorial |
+| `inference/concepts/embeddings-and-inference-state.md` | new user | What do these words mean? | concept |
+| `inference/concepts/generations.md` | app developer | Why can I not overwrite my vector column? | concept |
+| `inference/concepts/lifecycle.md` | operator | What does each phase do, and why are they separate? | concept |
+| `inference/concepts/consistency.md` | app developer/DBA | What happens to writes during a migration? | concept |
+| `inference/concepts/verification-and-cutover.md` | operator/SRE | What is checked, and when is rollback possible? | concept |
+| `inference/concepts/security-and-data-boundaries.md` | security reviewer | What leaves my database? | concept |
+| `inference/guides/create-first-generation.md` | app developer | How do I add vectors to a table that has none? | howto |
+| `inference/guides/migrate-to-another-model.md` | ML/app developer | How do I replace the vectors I have? | howto |
+| `inference/guides/migrate-a-live-table.md` | operator | How do I do it without losing concurrent writes? | howto |
+| `inference/guides/migrate-a-paused-source.md` | operator | What is the simpler path when writes are stopped? | howto |
+| `inference/guides/resume-and-recover.md` | SRE | The run stopped — what now? | troubleshooting |
+| `inference/guides/rollback-and-retire.md` | SRE | How do I go back, and when may I destroy the old vectors? | howto |
+| `inference/strategies/choose-a-consistency-mode.md` | app developer/DBA | Which mode, and what does each fail to prove? | concept |
+| `inference/strategies/choose-a-target-layout.md` | DBA | Where should the vectors live? | concept |
+| `inference/strategies/plan-provider-capacity.md` | platform engineer | How do I size and budget the backfill? | howto |
+| `inference/strategies/plan-vector-indexes.md` | DBA | Which index, when, and why do the numbers move? | concept |
+| `inference/strategies/production-rollout.md` | SRE | What order, and what evidence do I keep? | howto |
+| `inference/reference/specification.md` | all | What does every field mean? | reference |
+| `inference/reference/commands.md` | all | What does every verb and flag do? | reference |
+| `inference/reference/run-status-and-findings.md` | operator/SRE | How do I read status and verification output? | reference |
+| `inference/reference/support-and-limitations.md` | evaluator | What is supported, and which guarantees are mine? | status |
+| `inference/troubleshooting.md` | all | I saw this message — what does it mean? | troubleshooting |
 
 ### `Operate` group
 
@@ -252,7 +290,7 @@ list in the same PR.
 
 | File (words) | Audience | Purpose | Overlaps | Disposition |
 | --- | --- | --- | --- | --- |
-| `README.md` (852) | everyone landing on GitHub | What does Ptah manage, how do schema and inference-state changes move through it, and where do I start? | `index.mdx`, `start/install`, `start/quick-start`, `operate/inference-migrations`, `atlas/overview` | keep as the repository entry point: product model, both lifecycle diagrams, one runnable SQLite path, scoped schema workflow choice, and links into canonical documentation; must never diverge from the site on parity claims |
+| `README.md` (852) | everyone landing on GitHub | What does Ptah manage, how do schema and inference-state changes move through it, and where do I start? | `index.mdx`, `start/install`, `start/quick-start`, `inference/overview`, `atlas/overview` | keep as the repository entry point: product model, both lifecycle diagrams, one runnable SQLite path, scoped schema workflow choice, and links into canonical documentation; must never diverge from the site on parity claims |
 | `docs/site/README.md` (107) | contributor | How to build the site | none | keep |
 | `testkit` README (178) | Go embedder | Test-harness package (separate repository and module) | `extend/public-api` | moved to stokaro/ptah-testkit; linked from `extend/public-api` |
 | `internal/parser/README.md` (1,331) | contributor | SQL parser internals | none | keep (contributor surface) |

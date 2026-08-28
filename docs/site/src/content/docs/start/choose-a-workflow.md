@@ -7,7 +7,7 @@ For schema changes, wiring Ptah into a project answers two questions, and they
 are independent.
 
 Persistent inference state follows a separate generation lifecycle. Start with
-[Inference migrations](../../operate/inference-migrations/).
+[Inference migrations](../../inference/overview/).
 
 **Where does the change come from?** Either you write the migration yourself —
 `ptah migrations create`, then the SQL — or you describe the schema you want and

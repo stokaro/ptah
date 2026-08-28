@@ -87,7 +87,55 @@ export const sidebar = [
           { slug: 'direct/apply' },
         ],
       },
-      { slug: 'operate/inference-migrations', label: 'Inference migrations' },
+      {
+        label: 'Inference migrations',
+        items: [
+          { slug: 'inference/overview', label: 'Overview' },
+          { slug: 'inference/quick-start' },
+          {
+            label: 'Concepts',
+            items: [
+              { slug: 'inference/concepts/embeddings-and-inference-state' },
+              { slug: 'inference/concepts/generations' },
+              { slug: 'inference/concepts/lifecycle' },
+              { slug: 'inference/concepts/consistency' },
+              { slug: 'inference/concepts/verification-and-cutover' },
+              { slug: 'inference/concepts/security-and-data-boundaries' },
+            ],
+          },
+          {
+            label: 'Guides',
+            items: [
+              { slug: 'inference/guides/create-first-generation' },
+              { slug: 'inference/guides/migrate-to-another-model' },
+              { slug: 'inference/guides/migrate-a-live-table' },
+              { slug: 'inference/guides/migrate-a-paused-source' },
+              { slug: 'inference/guides/resume-and-recover' },
+              { slug: 'inference/guides/rollback-and-retire' },
+            ],
+          },
+          {
+            label: 'Strategies',
+            items: [
+              { slug: 'inference/strategies/choose-a-consistency-mode' },
+              { slug: 'inference/strategies/choose-a-target-layout' },
+              { slug: 'inference/strategies/plan-provider-capacity' },
+              { slug: 'inference/strategies/plan-vector-indexes' },
+              { slug: 'inference/strategies/production-rollout' },
+            ],
+          },
+          {
+            label: 'Reference',
+            items: [
+              { slug: 'inference/reference/specification' },
+              { slug: 'inference/reference/commands' },
+              { slug: 'inference/reference/run-status-and-findings' },
+              { slug: 'inference/reference/support-and-limitations' },
+            ],
+          },
+          { slug: 'inference/troubleshooting' },
+        ],
+      },
       {
         label: 'Test and CI',
         items: [
