@@ -48,7 +48,7 @@ func Hypertables(
 	for key, hypertable := range declared {
 		reported, exists := live[key]
 		if !exists {
-			diff.HypertablesAdded = append(diff.HypertablesAdded, hypertable.Table)
+			diff.HypertablesAdded = append(diff.HypertablesAdded, hypertable)
 			continue
 		}
 		if changed := hypertableChange(hypertable, reported); changed != nil {
@@ -69,11 +69,11 @@ func Hypertables(
 		if !cov.PlansRemoval(coverage.Hypertable, reported.Schema, reported.Name, name) {
 			continue
 		}
-		diff.HypertablesRemoved = append(diff.HypertablesRemoved, name)
+		diff.HypertablesRemoved = append(diff.HypertablesRemoved, hypertableFromCatalog(reported))
 	}
 
-	sort.Strings(diff.HypertablesAdded)
-	sort.Strings(diff.HypertablesRemoved)
+	sortHypertables(diff.HypertablesAdded)
+	sortHypertables(diff.HypertablesRemoved)
 	sort.Slice(diff.HypertablesModified, func(i, j int) bool {
 		return diff.HypertablesModified[i].Table < diff.HypertablesModified[j].Table
 	})
@@ -115,4 +115,26 @@ func hypertableKey(table string) string {
 		return strings.ToLower(strings.TrimSpace(table))
 	}
 	return strings.ToLower(strings.TrimSpace(ref.Name))
+}
+
+// hypertableFromCatalog carries a hypertable the database reported into the
+// shape the diff holds.
+//
+// The two models name the same things differently: the catalog reports a schema
+// and a relation, and the declaration writes one qualified table name; the
+// catalog's PrimaryDimension is the declaration's Column. The chunk interval is
+// carried as reported, which is what a removal describes -- a declaration is
+// free to leave it to the server, and [Hypertables] says why comparing the two
+// would churn.
+func hypertableFromCatalog(reported catalog.Hypertable) schemamodel.Hypertable {
+	return schemamodel.Hypertable{
+		Table:         reported.QualifiedName(),
+		Column:        reported.PrimaryDimension,
+		ChunkInterval: reported.ChunkInterval,
+	}
+}
+
+// sortHypertables orders by the key the name list was sorted on.
+func sortHypertables(hypertables difftypes.HypertableChanges) {
+	sort.Slice(hypertables, func(i, j int) bool { return hypertables[i].Table < hypertables[j].Table })
 }

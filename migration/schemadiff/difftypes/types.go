@@ -131,6 +131,70 @@ func (s SynonymChanges) Names() []string {
 	return names
 }
 
+// HypertableChanges is a set of hypertables one change applies to, carrying
+// each one's partitioning and not only its table name.
+//
+// The tenth family off `[]string` under stokaro/ptah#2315. `create_hypertable`
+// takes the column to partition on and the chunk interval, neither of which a
+// table name carries.
+//
+// See [RangeChanges] for why both sides carry the operand and why the wire
+// shape does not change.
+type HypertableChanges []schemamodel.Hypertable
+
+// MarshalJSON writes the table names alone, the shape `hypertables_added` and
+// `hypertables_removed` have always had.
+func (h HypertableChanges) MarshalJSON() ([]byte, error) {
+	if h == nil {
+		return []byte("null"), nil
+	}
+	return json.Marshal(h.Names())
+}
+
+// Names is the tables this change partitions or stops partitioning.
+func (h HypertableChanges) Names() []string {
+	if h == nil {
+		return nil
+	}
+	names := make([]string, 0, len(h))
+	for _, hypertable := range h {
+		names = append(names, hypertable.Table)
+	}
+	return names
+}
+
+// ContinuousAggregateChanges is a set of continuous aggregates one change
+// applies to, carrying each one's body and not only its name.
+//
+// The eleventh family off `[]string` under stokaro/ptah#2315, and the plain
+// twin of [HypertableChanges]: an aggregate is a materialized view over a
+// hypertable, so the body is the statement.
+//
+// See [RangeChanges] for why both sides carry the operand and why the wire
+// shape does not change.
+type ContinuousAggregateChanges []schemamodel.ContinuousAggregate
+
+// MarshalJSON writes the names alone, the shape `continuous_aggregates_added`
+// and `continuous_aggregates_removed` have always had.
+func (a ContinuousAggregateChanges) MarshalJSON() ([]byte, error) {
+	if a == nil {
+		return []byte("null"), nil
+	}
+	return json.Marshal(a.Names())
+}
+
+// Names is the aggregate names this change applies to.
+func (a ContinuousAggregateChanges) Names() []string {
+	if a == nil {
+		return nil
+	}
+	names := make([]string, 0, len(a))
+	for _, aggregate := range a {
+		names = append(names, aggregate.QualifiedName())
+	}
+	return names
+}
+
 // DomainChanges is a set of domain types one change applies to, carrying each
 // one's definition and not only its name.
 //
@@ -695,7 +759,7 @@ type SchemaDiff struct {
 
 	// HypertablesAdded names the tables a declaration asks to partition and the
 	// database reports as ordinary.
-	HypertablesAdded []string `json:"hypertables_added"`
+	HypertablesAdded HypertableChanges `json:"hypertables_added"`
 
 	// HypertablesRemoved names the tables the database reports as hypertables
 	// and the declaration does not.
@@ -705,7 +769,7 @@ type SchemaDiff struct {
 	// `function drop_hypertable(unknown) does not exist`, and the only way back
 	// to an ordinary table is dropping this one and its data. So the planner
 	// refuses rather than plans (stokaro/ptah#1026).
-	HypertablesRemoved []string `json:"hypertables_removed"`
+	HypertablesRemoved HypertableChanges `json:"hypertables_removed"`
 
 	// HypertablesModified names the tables whose partitioning declaration
 	// differs from what the catalog reports.
@@ -716,7 +780,7 @@ type SchemaDiff struct {
 
 	// ContinuousAggregatesAdded names the continuous aggregates a declaration
 	// asks for and the database does not report.
-	ContinuousAggregatesAdded []string `json:"continuous_aggregates_added"`
+	ContinuousAggregatesAdded ContinuousAggregateChanges `json:"continuous_aggregates_added"`
 
 	// ContinuousAggregatesRemoved names the continuous aggregates the database
 	// reports and the declaration does not.
@@ -724,7 +788,7 @@ type SchemaDiff struct {
 	// Unlike a hypertable this one CAN be honored, and the statement is DROP
 	// MATERIALIZED VIEW rather than DROP VIEW -- measured on 2.29.2, DROP VIEW
 	// answers `cannot drop continuous aggregate using DROP VIEW`.
-	ContinuousAggregatesRemoved []string `json:"continuous_aggregates_removed"`
+	ContinuousAggregatesRemoved ContinuousAggregateChanges `json:"continuous_aggregates_removed"`
 
 	// ContinuousAggregatesModified names the aggregates whose declared body or
 	// options differ from the ones the catalog reports.

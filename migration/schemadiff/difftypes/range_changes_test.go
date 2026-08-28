@@ -641,3 +641,113 @@ func TestSynonymChanges_TheTargetSurvivesInMemory(t *testing.T) {
 	c.Assert(changes.Names(), qt.DeepEquals, []string{"dbo.s_users"},
 		qt.Commentf("and the name list a consumer reads is unchanged"))
 }
+
+// TestHypertableChanges_TheWireShapeIsUnchanged is the same promise for the
+// tenth family off `[]string`.
+func TestHypertableChanges_TheWireShapeIsUnchanged(t *testing.T) {
+	tests := []struct {
+		name    string
+		changes difftypes.HypertableChanges
+		want    string
+		why     string
+	}{
+		{
+			name:    "nil is null",
+			changes: nil,
+			want:    "null",
+			why:     "null is a comparison that did not run",
+		},
+		{
+			name:    "empty is an empty array",
+			changes: difftypes.HypertableChanges{},
+			want:    "[]",
+			why:     "[] is a comparison that ran and found nothing",
+		},
+		{
+			name: "the partitioning does not reach the wire",
+			changes: difftypes.HypertableChanges{
+				{Table: "public.readings", Column: "time", ChunkInterval: "7 days"},
+			},
+			want: `["public.readings"]`,
+			why:  "a table-name list is what format_version 1 has always carried here",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			encoded, err := json.Marshal(test.changes)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(string(encoded), qt.Equals, test.want, qt.Commentf("%s", test.why))
+		})
+	}
+}
+
+// TestContinuousAggregateChanges_TheWireShapeIsUnchanged is the same promise
+// for the eleventh.
+func TestContinuousAggregateChanges_TheWireShapeIsUnchanged(t *testing.T) {
+	tests := []struct {
+		name    string
+		changes difftypes.ContinuousAggregateChanges
+		want    string
+		why     string
+	}{
+		{
+			name:    "nil is null",
+			changes: nil,
+			want:    "null",
+			why:     "null is a comparison that did not run",
+		},
+		{
+			name:    "empty is an empty array",
+			changes: difftypes.ContinuousAggregateChanges{},
+			want:    "[]",
+			why:     "[] is a comparison that ran and found nothing",
+		},
+		{
+			name: "the body does not reach the wire",
+			changes: difftypes.ContinuousAggregateChanges{
+				{Name: "hourly", Schema: "public", Body: "SELECT time_bucket('1 hour', time) FROM readings"},
+			},
+			want: `["public.hourly"]`,
+			why:  "a name list is what format_version 1 has always carried here",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			encoded, err := json.Marshal(test.changes)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(string(encoded), qt.Equals, test.want, qt.Commentf("%s", test.why))
+		})
+	}
+}
+
+// TestTimescaleChanges_TheOperandsSurviveInMemory is the other half for both,
+// on the fields a name cannot carry.
+//
+// `create_hypertable` takes the column to partition on, and an aggregate IS its
+// body. A change planned from a name alone has neither.
+func TestTimescaleChanges_TheOperandsSurviveInMemory(t *testing.T) {
+	c := qt.New(t)
+
+	hypertables := difftypes.HypertableChanges{
+		{Table: "public.readings", Column: "time", ChunkInterval: "7 days"},
+	}
+	aggregates := difftypes.ContinuousAggregateChanges{
+		{Name: "hourly", Schema: "public", Body: "SELECT 1"},
+	}
+
+	c.Assert(hypertables[0].Column, qt.Equals, "time",
+		qt.Commentf("create_hypertable takes this, and a table name cannot carry it"))
+	c.Assert(hypertables[0].ChunkInterval, qt.Equals, "7 days")
+	c.Assert(aggregates[0].Body, qt.Equals, "SELECT 1",
+		qt.Commentf("an aggregate is its body"))
+	c.Assert(hypertables.Names(), qt.DeepEquals, []string{"public.readings"})
+	c.Assert(aggregates.Names(), qt.DeepEquals, []string{"public.hourly"})
+}

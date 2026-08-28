@@ -53,8 +53,7 @@ func ContinuousAggregates(
 	for key, aggregate := range declared {
 		reported, exists := live[key]
 		if !exists {
-			diff.ContinuousAggregatesAdded = append(
-				diff.ContinuousAggregatesAdded, aggregate.QualifiedName())
+			diff.ContinuousAggregatesAdded = append(diff.ContinuousAggregatesAdded, aggregate)
 			continue
 		}
 		if changed := continuousAggregateChange(aggregate, reported, bodies); changed != nil {
@@ -75,11 +74,12 @@ func ContinuousAggregates(
 		if !cov.PlansRemoval(coverage.ContinuousAggregate, reported.Schema, reported.Name, name) {
 			continue
 		}
-		diff.ContinuousAggregatesRemoved = append(diff.ContinuousAggregatesRemoved, name)
+		diff.ContinuousAggregatesRemoved = append(
+			diff.ContinuousAggregatesRemoved, continuousAggregateFromCatalog(reported))
 	}
 
-	sort.Strings(diff.ContinuousAggregatesAdded)
-	sort.Strings(diff.ContinuousAggregatesRemoved)
+	sortContinuousAggregates(diff.ContinuousAggregatesAdded)
+	sortContinuousAggregates(diff.ContinuousAggregatesRemoved)
 	sort.Slice(diff.ContinuousAggregatesModified, func(i, j int) bool {
 		return diff.ContinuousAggregatesModified[i].Name < diff.ContinuousAggregatesModified[j].Name
 	})
@@ -171,4 +171,28 @@ func continuousAggregateIdentity(
 	semantics identifier.Semantics,
 ) objectIdentity {
 	return newObjectIdentity(objectidentity.KindContinuousAggregate, schema, name, semantics)
+}
+
+// continuousAggregateFromCatalog carries an aggregate the database reported
+// into the shape the diff holds.
+//
+// MaterializedOnly is the one field that changes kind: the catalog reports a
+// bool and the model holds a pointer, where nil means a declaration said
+// nothing. A description of what exists always has an answer, so the address of
+// the reported value is the faithful carry -- writing nil would say the server
+// declined to tell us.
+func continuousAggregateFromCatalog(reported catalog.ContinuousAggregate) schemamodel.ContinuousAggregate {
+	return schemamodel.ContinuousAggregate{
+		Name:             reported.Name,
+		Schema:           reported.Schema,
+		Body:             reported.Definition,
+		MaterializedOnly: &reported.MaterializedOnly,
+	}
+}
+
+// sortContinuousAggregates orders by the key the name list was sorted on.
+func sortContinuousAggregates(aggregates difftypes.ContinuousAggregateChanges) {
+	sort.Slice(aggregates, func(i, j int) bool {
+		return aggregates[i].QualifiedName() < aggregates[j].QualifiedName()
+	})
 }

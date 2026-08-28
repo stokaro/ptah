@@ -14,6 +14,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/migration/schemadiff"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
@@ -35,7 +36,7 @@ func TestGenerateDownMigration_ContinuousAggregate(t *testing.T) {
 	}{
 		{
 			name: "rolling back a create drops it",
-			diff: &difftypes.SchemaDiff{ContinuousAggregatesAdded: []string{"public.hourly"}},
+			diff: &difftypes.SchemaDiff{ContinuousAggregatesAdded: difftypes.ContinuousAggregateChanges{{Name: "public.hourly"}}},
 			want: []string{`DROP MATERIALIZED VIEW IF EXISTS "public"."hourly"`},
 			// DROP VIEW would be refused by the server, so a rollback carrying
 			// it could not run at all.
@@ -43,7 +44,15 @@ func TestGenerateDownMigration_ContinuousAggregate(t *testing.T) {
 		},
 		{
 			name: "rolling back a drop restores the body the database had",
-			diff: &difftypes.SchemaDiff{ContinuousAggregatesRemoved: []string{"public.hourly"}},
+			// Carried in the shape the comparison produces for a removal: the
+			// schema and name apart, and the body the database reported. The
+			// reversal renders from this rather than reading the database
+			// again, which is what makes the body the change's own.
+			diff: &difftypes.SchemaDiff{ContinuousAggregatesRemoved: difftypes.ContinuousAggregateChanges{{
+				Schema: "public",
+				Name:   "hourly",
+				Body:   "SELECT time_bucket('01:00:00'::interval, \"time\") FROM readings",
+			}}},
 			want: []string{
 				`CREATE MATERIALIZED VIEW "public"."hourly" WITH (timescaledb.continuous`,
 				"SELECT time_bucket('01:00:00'::interval, \"time\") FROM readings",
@@ -85,4 +94,45 @@ func TestGenerateDownMigration_ContinuousAggregate(t *testing.T) {
 			c.Assert(strings.TrimSpace(sql), qt.Not(qt.Equals), "")
 		})
 	}
+}
+
+// TestGenerateDownMigration_ContinuousAggregateBodyComesFromTheComparison
+// drives the whole path rather than a hand-built diff.
+//
+// The test above supplies the change itself, so it measures the planner and not
+// where the body came from. The body is carried by the COMPARISON now
+// (stokaro/ptah#2315): a removal describes the aggregate the database reported,
+// and the reversal renders that description instead of reading the database
+// again. Blanking `Body` in the carry leaves every hand-built fixture green,
+// which is why this one starts from two schemas.
+func TestGenerateDownMigration_ContinuousAggregateBodyComesFromTheComparison(t *testing.T) {
+	c := qt.New(t)
+
+	const definition = "SELECT time_bucket('01:00:00'::interval, \"time\") FROM readings"
+
+	// The desired schema does not name the aggregate; the database has it.
+	// That is what puts it in ContinuousAggregatesRemoved.
+	desired := &schemamodel.Database{}
+	database := &catalog.Database{
+		ContinuousAggregates: []catalog.ContinuousAggregate{{
+			Schema: "public", Name: "hourly",
+			HypertableSchema: "public", HypertableName: "readings",
+			Definition: definition,
+		}},
+	}
+
+	upDiff := schemadiff.CompareWithDialect(desired, database, platform.Postgres)
+	c.Assert(upDiff.ContinuousAggregatesRemoved.Names(), qt.DeepEquals, []string{"public.hourly"})
+
+	sql, err := generateDownMigrationSQL(
+		upDiff,
+		desired,
+		database,
+		platform.Postgres,
+		capability.Postgres17().With(capability.ContinuousAggregates, true),
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, definition,
+		qt.Commentf("the rollback rebuilds the aggregate from the body the comparison carried"))
 }

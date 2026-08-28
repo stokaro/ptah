@@ -27,7 +27,7 @@ func TestPlanner_RefusesWhatTimescaleDBCannotUndo(t *testing.T) {
 	}{
 		{
 			name: "the declaration stops naming it",
-			diff: &difftypes.SchemaDiff{HypertablesRemoved: []string{"public.readings"}},
+			diff: &difftypes.SchemaDiff{HypertablesRemoved: difftypes.HypertableChanges{{Table: "public.readings"}}},
 			want: "no statement that turns a hypertable back into an ordinary table",
 		},
 		{
@@ -63,7 +63,7 @@ func TestPlanner_PlansAnAddedHypertable(t *testing.T) {
 	}}
 
 	nodes, err := postgres.New().GenerateMigrationAST(
-		&difftypes.SchemaDiff{HypertablesAdded: []string{"public.readings"}}, declared)
+		&difftypes.SchemaDiff{HypertablesAdded: difftypes.HypertableChanges{{Table: "public.readings"}}}, declared)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.Not(qt.HasLen), 0)

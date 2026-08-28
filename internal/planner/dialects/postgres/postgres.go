@@ -1771,8 +1771,8 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 	result = p.modifyExistingViews(result, diff, desired)
 	result = p.retargetSynonyms(result, diff, desired)
 	result = p.addNewSynonyms(result, diff)
-	result = p.addNewHypertables(result, diff, desired)
-	result = p.addNewContinuousAggregates(result, diff, desired)
+	result = p.addNewHypertables(result, diff)
+	result = p.addNewContinuousAggregates(result, diff)
 	result = p.modifyExistingContinuousAggregates(result, diff, desired)
 	result = p.addExtendedProperties(result, diff)
 	result = p.modifyExistingMaterializedViews(result, diff, desired)
@@ -2599,15 +2599,11 @@ func (p *Planner) removeMaterializedViews(result []ast.Node, diff *difftypes.Sch
 // `relation "conditions" does not exist`, and against a table holding one row
 // it answers `table "loaded" is not empty` -- so a plan that ran it too early
 // or too late would leave the table ordinary either way.
-func (p *Planner) addNewHypertables(
-	result []ast.Node,
-	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
-) []ast.Node {
-	for _, table := range diff.HypertablesAdded {
-		if hypertable := findHypertable(desired.Hypertables, table); hypertable != nil {
-			result = append(result, fromschema.FromHypertable(*hypertable))
-		}
+func (p *Planner) addNewHypertables(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	// The partitioning travels WITH the change, so this renders what it was
+	// handed rather than looking the table name back up in the desired schema.
+	for _, hypertable := range diff.HypertablesAdded {
+		result = append(result, fromschema.FromHypertable(hypertable))
 	}
 	return result
 }
@@ -2620,15 +2616,11 @@ func (p *Planner) addNewHypertables(
 // (timescaledb.continuous) over an ordinary table answers `invalid continuous
 // aggregate view`, so an aggregate planned before the table it reads was
 // partitioned would fail the migration it belongs to.
-func (p *Planner) addNewContinuousAggregates(
-	result []ast.Node,
-	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
-) []ast.Node {
-	for _, name := range diff.ContinuousAggregatesAdded {
-		if aggregate := findContinuousAggregate(desired.ContinuousAggregates, name); aggregate != nil {
-			result = append(result, fromschema.FromContinuousAggregate(*aggregate))
-		}
+func (p *Planner) addNewContinuousAggregates(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	// The body travels WITH the change, so this renders what it was handed
+	// rather than looking the name back up in the desired schema.
+	for _, aggregate := range diff.ContinuousAggregatesAdded {
+		result = append(result, fromschema.FromContinuousAggregate(aggregate))
 	}
 	return result
 }
@@ -2666,8 +2658,12 @@ func (p *Planner) modifyExistingContinuousAggregates(
 // DROP VIEW answers `cannot drop continuous aggregate using DROP VIEW`, and a
 // plan that emitted it would never apply.
 func (p *Planner) removeContinuousAggregates(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	for _, name := range diff.ContinuousAggregatesRemoved {
-		result = append(result, ast.NewDropContinuousAggregate(name).SetIfExists())
+	for _, aggregate := range diff.ContinuousAggregatesRemoved {
+		// Addressed by the qualified name, which is the spelling the name list
+		// carried. dropContinuousAggregate below addresses the replacement half
+		// through SetSchema instead; the two are not unified here, because that
+		// would change what this statement renders.
+		result = append(result, ast.NewDropContinuousAggregate(aggregate.QualifiedName()).SetIfExists())
 	}
 	return result
 }
@@ -2713,7 +2709,7 @@ func (p *Planner) refuseHypertableChanges(diff *difftypes.SchemaDiff) error {
 			"%w: %s is a hypertable and the desired schema does not declare one; TimescaleDB has no "+
 				"statement that turns a hypertable back into an ordinary table, so this needs an explicit "+
 				"migration that drops and recreates it",
-			ptaherr.ErrUnsupportedFeature, diff.HypertablesRemoved[0])
+			ptaherr.ErrUnsupportedFeature, diff.HypertablesRemoved[0].Table)
 	}
 	if len(diff.HypertablesModified) > 0 {
 		change := diff.HypertablesModified[0]
@@ -2721,16 +2717,6 @@ func (p *Planner) refuseHypertableChanges(diff *difftypes.SchemaDiff) error {
 			"%w: hypertable %s is partitioned on %q and the desired schema declares %q; TimescaleDB has no "+
 				"statement that repartitions an existing hypertable, so this needs an explicit migration",
 			ptaherr.ErrUnsupportedFeature, change.Table, change.OldColumn, change.NewColumn)
-	}
-	return nil
-}
-
-// findHypertable resolves a declared hypertable by the table it partitions.
-func findHypertable(hypertables []schemamodel.Hypertable, table string) *schemamodel.Hypertable {
-	for i := range hypertables {
-		if hypertables[i].Table == table {
-			return &hypertables[i]
-		}
 	}
 	return nil
 }
