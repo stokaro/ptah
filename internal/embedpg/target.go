@@ -73,6 +73,20 @@ func (t *Target) Commit(ctx context.Context, writes []embedrun.TargetWrite, run 
 	}
 	defer func() { _ = transaction.Rollback() }()
 
+	// The run first, which is the fencing check: its UPDATE carries the token
+	// in its WHERE clause, so a worker whose lease was taken is refused here.
+	//
+	// Before the writes rather than after them, and the order is the
+	// diagnostic. Both refusals roll the same transaction back, so nothing
+	// lands either way -- but a fenced worker asked to resolve its writes first
+	// is told whichever row-level rule its stale batch happens to trip, and the
+	// answer an operator can act on is that the lease moved. It also takes the
+	// run's row lock before any target row, which is the order two workers
+	// should contend in.
+	if err := saveRunTx(ctx, transaction, run); err != nil {
+		return err
+	}
+
 	// What the target already holds for these keys, read inside the same
 	// transaction and locked, so the decision below is made against what is
 	// there rather than against what this worker believes. embedrun.ResolveWrite
@@ -93,9 +107,6 @@ func (t *Target) Commit(ctx context.Context, writes []embedrun.TargetWrite, run 
 		if err := t.applyWrite(ctx, transaction, resolved); err != nil {
 			return err
 		}
-	}
-	if err := saveRunTx(ctx, transaction, run); err != nil {
-		return err
 	}
 	if err := transaction.Commit(); err != nil {
 		return fmt.Errorf("commit: %w", err)
