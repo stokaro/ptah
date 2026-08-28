@@ -34,7 +34,9 @@ func TestPlanner_GenerateMigrationAST_ViewsAndTriggersModified(t *testing.T) {
 		}},
 	}
 	diff := &difftypes.SchemaDiff{
-		ViewsModified:    []difftypes.ViewDiff{{ViewName: "active_users", Changes: map[string]string{"body": "old -> new"}}},
+		ViewsModified: []difftypes.ViewDiff{{ViewName: "active_users",
+			Desired: schemamodel.View{Name: "active_users",
+				Body: "SELECT id FROM users WHERE deleted_at IS NULL"}, Changes: map[string]string{"body": "old -> new"}}},
 		TriggersModified: []difftypes.TriggerDiff{{TriggerName: "set_updated_at", TableName: "users", Changes: map[string]string{"body": "old -> new"}}},
 	}
 

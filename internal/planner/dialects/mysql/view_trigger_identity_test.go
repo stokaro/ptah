@@ -6,8 +6,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/planner"
+	"go.5x5.cz/ptah/migration/schemadiff"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
@@ -85,21 +88,6 @@ func TestViewAndTriggerLookupsResolveAcrossDatabaseSpellings(t *testing.T) {
 		wantSQL string
 	}{
 		{
-			name: "a modified view the diff qualifies with the database",
-			desired: &schemamodel.Database{
-				Views: []schemamodel.View{{
-					Name: "active_orders",
-					Body: "SELECT id FROM orders WHERE open",
-				}},
-			},
-			diff: &difftypes.SchemaDiff{ViewsModified: []difftypes.ViewDiff{{
-				ViewName:     "app.active_orders",
-				PreviousBody: "SELECT id FROM orders",
-				Changes:      map[string]string{"body": "changed"},
-			}}},
-			wantSQL: "VIEW",
-		},
-		{
 			name: "a trigger whose table the diff qualifies with the database",
 			desired: &schemamodel.Database{
 				Triggers: []schemamodel.Trigger{{
@@ -129,4 +117,33 @@ func TestViewAndTriggerLookupsResolveAcrossDatabaseSpellings(t *testing.T) {
 			c.Assert(plan, qt.Contains, test.wantSQL, qt.Commentf("plan:\n%s", plan))
 		})
 	}
+}
+
+// TestCompare_AModifiedViewResolvesTheDatabaseQualifier is the view half of the
+// capability above, measured where it now happens.
+//
+// A declaration writes `active_orders` and MySQL reports every view under its
+// database name. The planner used to reconcile the two by looking the name up;
+// the comparison does it now, and the change carries the view it resolved to
+// (stokaro/ptah#2315).
+func TestCompare_AModifiedViewResolvesTheDatabaseQualifier(t *testing.T) {
+	c := qt.New(t)
+
+	desired := &schemamodel.Database{
+		Views: []schemamodel.View{{Name: "active_orders", Body: "SELECT id FROM orders WHERE open"}},
+	}
+	database := &catalog.Database{
+		Views: []catalog.View{{Schema: "app", Name: "active_orders", Body: "SELECT id FROM orders"}},
+	}
+
+	diff := schemadiff.CompareWithDialect(desired, database, platform.MySQL)
+
+	c.Assert(diff.ViewsModified, qt.HasLen, 1)
+	c.Assert(diff.ViewsModified[0].Desired.Name, qt.Equals, "active_orders",
+		qt.Commentf("the comparison resolved the qualified readback to the declaration"))
+
+	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.MySQL)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, "VIEW")
 }
