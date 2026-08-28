@@ -5,6 +5,7 @@ package gonative_test
 import (
 	"bytes"
 	"database/sql"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -361,10 +362,21 @@ func TestGoFixtures_ParseDirForSchemaObjects(t *testing.T) {
 	c.Assert(result.Roles[0].Name, qt.Equals, "fixture_app_user")
 
 	// Exercise CLI schema render entry point against the fixture (drives real ParseDir path in cmd/generate, per AC3)
-	goMain := filepath.Join(rootDir, "cmd/main.go")
+	// cmd/ptah is the CLI. The second copy at cmd/main.go was removed in
+	// stokaro/ptah#2413, and this reference outlived it: the path is resolved
+	// at RUN time rather than imported, so nothing in the offline build failed
+	// and the break reached master as an integration-only red.
+	goMain := filepath.Join(rootDir, "cmd/ptah/main.go")
+	// Named before it is run, so a moved entry point fails as "this path is
+	// gone" rather than as `exit status 1` from `go run`. That is the whole
+	// difference this reference needs: it is resolved at RUN time, so nothing
+	// in the offline build notices when the file it names stops existing.
+	_, statErr := os.Stat(goMain)
+	c.Assert(statErr, qt.IsNil, qt.Commentf("the CLI entry point this test drives is not at %s", goMain))
+
 	genCmd := exec.Command("go", "run", goMain, "schema", "render", "--root-dir", absFixture, "--dialect", "postgres")
 	genOut, err := genCmd.CombinedOutput()
-	c.Assert(err, qt.IsNil)
+	c.Assert(err, qt.IsNil, qt.Commentf("go run %s:\n%s", goMain, genOut))
 	outStr := legacyRenderedSQL(string(genOut))
 	c.Assert(outStr, qt.Contains, "CREATE VIEW active_users")
 	c.Assert(outStr, qt.Contains, "CREATE MATERIALIZED VIEW user_stats")
