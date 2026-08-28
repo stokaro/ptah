@@ -58,7 +58,7 @@ fixture() {
 	local path="$1" steps="$2"
 	mkdir -p "$(dirname "$path")"
 	{
-		printf '# Fixture\n\n## Run it end to end\n\n'
+		printf '# Fixture\n\n<!-- ptah:readme-example -->\n## Run it end to end\n\n'
 		printf 'Save the schema you want as `schema.sql`:\n\n'
 		printf '```sql\nCREATE TABLE users (id INTEGER PRIMARY KEY);\n```\n\n'
 		printf '%s' "$steps"
@@ -146,10 +146,21 @@ fixture "$work_dir/unchecked/README.md" "$(
 )"
 run_case "commands nobody states an output for" "$work_dir/unchecked/README.md" fails
 
-# The section heading is how the gate finds anything at all. A renamed heading
-# must be a failure rather than an empty, successful run.
-printf '# Fixture\n\n## Somewhere else\n\nNothing here.\n' >"$work_dir/no-section-README.md"
-run_case "the section renamed out from under the gate" "$work_dir/no-section-README.md" fails
+# The marker is how the gate finds anything at all, and it is deliberately NOT
+# the heading: `## Run it end to end` was reworded to `## Try Ptah with SQLite`
+# in an ordinary rewrite and this gate failed with "0 sections headed ...",
+# which reads as though the example had been deleted rather than renamed.
+#
+# So the pair below is what the marker is worth. A renamed heading must still
+# pass, and a missing marker must still fail -- the second case is the one that
+# keeps an absent example from becoming an empty, successful run.
+fixture "$work_dir/renamed/README.md" "$faithful_steps"
+sed -i.bak 's/## Run it end to end/## A heading nobody warned the gate about/' "$work_dir/renamed/README.md"
+rm -f "$work_dir/renamed/README.md.bak"
+run_case "the heading reworded, the marker kept" "$work_dir/renamed/README.md" passes
+
+printf '# Fixture\n\n## Somewhere else\n\nNothing here.\n' >"$work_dir/no-marker-README.md"
+run_case "the marker gone from the README" "$work_dir/no-marker-README.md" fails
 
 echo
 if [ "$failures" -ne 0 ]; then

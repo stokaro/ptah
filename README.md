@@ -66,6 +66,7 @@ The [installation guide](https://stokaro.github.io/ptah/edge/start/install/)
 covers version pinning, signature verification, download-without-execution,
 and building from source.
 
+<!-- ptah:readme-example -->
 ## Try Ptah with SQLite
 
 Save this desired schema as `schema.sql`:
@@ -86,8 +87,26 @@ ptah schema apply --db-url "sqlite://app.db" --schema-file schema.sql --auto-app
 ptah schema drift --db-url "sqlite://app.db" --schema-file schema.sql
 ```
 
-The final command prints `No schema drift detected.` and exits 0. Remove
-`app.db` and `schema.sql` when you are done.
+Expected output includes:
+
+```text
+CREATE TABLE "users" (
+```
+
+Expected output includes:
+
+```text
+Schema apply completed successfully.
+```
+
+Expected output includes:
+
+```text
+No schema drift detected.
+```
+
+The last command exits 0 when the database matches the file, which is what makes
+it usable as a CI gate. Remove `app.db` and `schema.sql` when you are done.
 
 > [!CAUTION]
 > `--auto-approve` skips the confirmation prompt. A direct schema change can

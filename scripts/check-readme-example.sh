@@ -15,7 +15,8 @@
 #
 # What it reads out of README.md, and nothing else:
 #
-#   * the section headed by $README_SECTION, up to the next `## ` heading;
+#   * the section marked by `<!-- ptah:readme-example -->`, from the heading
+#     below it up to the next `## `;
 #   * inside it, a fenced block is EXPECTED OUTPUT when the nearest preceding
 #     prose line is `Expected output includes:`;
 #   * the first `sql` block that is not expected output is the schema file, and
@@ -43,7 +44,7 @@ repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
 readme="${README_EXAMPLE_FILE:-README.md}"
-section="${README_EXAMPLE_SECTION:-## Run it end to end}"
+marker="${README_EXAMPLE_MARKER:-<!-- ptah:readme-example -->}"
 
 if [ ! -f "$readme" ]; then
 	echo "check-readme-example: ${readme} is missing" >&2
@@ -66,7 +67,7 @@ if [ ! -x "$binary" ]; then
 fi
 
 README_EXAMPLE_READ="$readme" \
-	README_EXAMPLE_HEAD="$section" \
+	README_EXAMPLE_MARKER_VALUE="$marker" \
 	README_EXAMPLE_RUN="$binary" \
 	README_EXAMPLE_DIR="$work_dir/sandbox" \
 	python3 - <<'PY'
@@ -76,7 +77,7 @@ import subprocess
 import sys
 
 README = os.environ["README_EXAMPLE_READ"]
-SECTION = os.environ["README_EXAMPLE_HEAD"]
+MARKER = os.environ["README_EXAMPLE_MARKER_VALUE"]
 BINARY = os.path.abspath(os.environ["README_EXAMPLE_RUN"])
 SANDBOX = os.environ["README_EXAMPLE_DIR"]
 
@@ -96,11 +97,31 @@ def fail(message):
 
 
 def section_lines(source):
+    """The section the README MARKS as its runnable example.
+
+    Matched by an invisible marker rather than by the heading's words. A heading
+    is prose: `## Run it end to end` became `## Try Ptah with SQLite` in an
+    ordinary rewrite, and this gate failed with "0 sections headed ..." -- which
+    reads as though the example had been deleted rather than renamed. The marker
+    says the section is the example, and no rewording of the sentence above it
+    changes that. Removing the example still fails, which is the case the gate
+    exists for.
+    """
     lines = source.split("\n")
-    starts = [i for i, line in enumerate(lines) if line.strip() == SECTION]
+    starts = [i for i, line in enumerate(lines) if line.strip() == MARKER]
     if len(starts) != 1:
-        fail(f"{README} has {len(starts)} sections headed {SECTION!r}; expected exactly one")
+        fail(
+            f"{README} carries {len(starts)} {MARKER!r} markers; expected exactly one."
+            " Put it on the line above the heading of the section holding the"
+            " runnable example."
+        )
     start = starts[0] + 1
+    # The marker sits above the heading, so skip it and any blank line after it.
+    while start < len(lines) and (not lines[start].strip() or lines[start].startswith("## ")):
+        heading = lines[start].startswith("## ")
+        start += 1
+        if heading:
+            break
     end = len(lines)
     for i in range(start, len(lines)):
         if lines[i].startswith("## "):
@@ -135,7 +156,7 @@ def blocks(lines):
             continue
         body.append(line)
     if fence is not None:
-        fail(f"{README} leaves a fenced block open inside {SECTION!r}")
+        fail(f"{README} leaves a fenced block open inside the marked example section")
     return found
 
 
@@ -161,7 +182,7 @@ def plan(lines):
             continue
 
     if schema_body is None:
-        fail(f"{README} shows no schema file in {SECTION!r}")
+        fail(f"{README} shows no schema file in the marked example section")
     if not seen_names:
         fail(f"{README} never names the schema file it asks the reader to save")
     schema_name = seen_names[0]
@@ -174,9 +195,18 @@ with open(README, encoding="utf-8") as handle:
 schema_name, schema_body, steps = plan(lines)
 expectations = sum(len(step["expected"]) for step in steps)
 
-if len(steps) < MIN_COMMANDS:
+# Count the command LINES, not the fenced blocks. A block is the unit this gate
+# EXECUTES -- its whole body goes to one `bash -c` -- but it is not the unit a
+# README is written in: three commands in one block is a better thing to hand a
+# reader than three blocks, and the floor exists to catch a section that runs
+# nothing, not to insist on a layout.
+commands = sum(
+    len([line for line in step["command"].splitlines() if line.strip()])
+    for step in steps
+)
+if commands < MIN_COMMANDS:
     fail(
-        f"found {len(steps)} command(s) in {SECTION!r}, expected at least {MIN_COMMANDS}; "
+        f"found {commands} command(s) in the marked example section, expected at least {MIN_COMMANDS}; "
         "either the example changed shape or the pattern stopped matching, and a gate "
         "that runs nothing must not report success"
     )
@@ -193,7 +223,7 @@ with open(os.path.join(SANDBOX, schema_name), "w", encoding="utf-8") as handle:
 env = dict(os.environ)
 env["PATH"] = os.path.dirname(BINARY) + os.pathsep + env.get("PATH", "")
 
-print(f"check-readme-example: {schema_name}, {len(steps)} command(s), {expectations} expectation(s)")
+print(f"check-readme-example: {schema_name}, {commands} command(s) in {len(steps)} block(s), {expectations} expectation(s)")
 
 failed = 0
 for step in steps:
