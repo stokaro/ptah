@@ -139,7 +139,7 @@ func Roles(
 	// Find added roles
 	for roleName := range generatedRoleMap {
 		if _, exists := databaseRoleMap[roleName]; !exists {
-			diff.RolesAdded = append(diff.RolesAdded, roleName)
+			diff.RolesAdded = append(diff.RolesAdded, generatedRoleMap[roleName])
 		}
 	}
 
@@ -168,14 +168,14 @@ func Roles(
 	// `CREATE ROLE` has no conditional form on any dialect Ptah renders, so a
 	// withheld role is recorded as undecided instead of vanishing.
 	kept, withheld := keepPlannedAdditions(cov,
-		coverage.Role, diff.RolesAdded, globalName, itself, unguardedCreations(),
+		coverage.Role, diff.RolesAdded, roleSpelling, roleDisplay, unguardedCreations(),
 	)
 	diff.RolesAdded = kept
 	cov.recordUndecidedAdditions(withheld)
 
 	// Ensure consistent ordering of results
-	sort.Strings(diff.RolesAdded)
-	sort.Strings(diff.RolesRemoved)
+	sort.Slice(diff.RolesAdded, func(i, j int) bool { return diff.RolesAdded[i].Name < diff.RolesAdded[j].Name })
+	sort.Slice(diff.RolesRemoved, func(i, j int) bool { return diff.RolesRemoved[i].Name < diff.RolesRemoved[j].Name })
 	sort.Slice(diff.RolesModified, func(i, j int) bool {
 		return diff.RolesModified[i].RoleName < diff.RolesModified[j].RoleName
 	})
@@ -277,3 +277,12 @@ func RoleDefinitions(desired schemamodel.Role, database catalog.Role) difftypes.
 
 	return roleDiff
 }
+
+// roleSpelling is globalName for a change that carries its operand. A role is
+// not owned by a schema, so it has none to name.
+func roleSpelling(role schemamodel.Role) (schema string, spellings []string) {
+	return globalName(role.Name)
+}
+
+// roleDisplay names one for a record a person reads.
+func roleDisplay(role schemamodel.Role) string { return role.Name }

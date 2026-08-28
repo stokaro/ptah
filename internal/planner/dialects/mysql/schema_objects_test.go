@@ -153,7 +153,7 @@ func TestPlanner_GenerateMigrationAST_RoutesEveryRoleChangeToItsStatement(t *tes
 	}{
 		{
 			name:     "added role",
-			diff:     &difftypes.SchemaDiff{RolesAdded: []string{"app_role"}},
+			diff:     &difftypes.SchemaDiff{RolesAdded: difftypes.RoleChanges{{Name: "app_role"}}},
 			wantNode: "*ast.CreateRoleNode",
 			wantSQL:  "CREATE ROLE IF NOT EXISTS `app_role`;",
 		},
@@ -168,7 +168,7 @@ func TestPlanner_GenerateMigrationAST_RoutesEveryRoleChangeToItsStatement(t *tes
 		},
 		{
 			name:     "removed role",
-			diff:     &difftypes.SchemaDiff{RolesRemoved: []string{"app_role"}},
+			diff:     &difftypes.SchemaDiff{RolesRemoved: difftypes.RoleChanges{{Name: "app_role"}}},
 			wantNode: "*ast.DropRoleNode",
 			wantSQL:  "DROP ROLE IF EXISTS `app_role`;",
 		},

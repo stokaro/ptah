@@ -44,8 +44,8 @@ func planRoles(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 // only behavior: role membership always inherits, which is why clickhouserbac
 // refuses a declared inherit="false" instead of emitting one.
 func createRoles(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	for _, name := range diff.RolesAdded {
-		result = append(result, ast.NewCreateRole(name))
+	for _, role := range diff.RolesAdded {
+		result = append(result, ast.NewCreateRole(role.Name))
 	}
 	return result
 }
@@ -86,10 +86,10 @@ func reportRoleModifications(result []ast.Node, diff *difftypes.SchemaDiff) []as
 // The category is still named, so a diff that somehow carries one is not
 // planned silently past.
 func reportRoleRemovals(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	for _, name := range diff.RolesRemoved {
+	for _, role := range diff.RolesRemoved {
 		result = append(result, ast.NewComment(fmt.Sprintf(
 			"CLICKHOUSE: role %q exists on the server and not in the schema; Ptah does not drop ClickHouse roles",
-			name,
+			role.Name,
 		)))
 	}
 	return result

@@ -120,14 +120,14 @@ func (p *Planner) reportUnsupportedRoles(result []ast.Node, diff *difftypes.Sche
 	if p.capabilities().Has(capability.RoleManagement) {
 		return result
 	}
-	for _, name := range diff.RolesAdded {
-		result = append(result, ast.NewCreateRole(name))
+	for _, role := range diff.RolesAdded {
+		result = append(result, ast.NewCreateRole(role.Name))
 	}
 	for _, role := range diff.RolesModified {
 		result = append(result, ast.NewAlterRole(role.RoleName))
 	}
-	for _, name := range diff.RolesRemoved {
-		result = append(result, ast.NewDropRole(name))
+	for _, role := range diff.RolesRemoved {
+		result = append(result, ast.NewDropRole(role.Name))
 	}
 	return result
 }

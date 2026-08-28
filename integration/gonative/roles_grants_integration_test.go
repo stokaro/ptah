@@ -532,7 +532,7 @@ func TestPostgreSQLRoleOutOfScopeIsPresentNotAbsentIntegration(t *testing.T) {
 	}
 	diff := schemadiff.Compare(desired, rolesOnly)
 
-	c.Assert(diff.RolesAdded, qt.DeepEquals, []string{"ptah_scope_absent_137"})
+	c.Assert(diff.RolesAdded.Names(), qt.DeepEquals, []string{"ptah_scope_absent_137"})
 
 	// And the plan applies. Before this fix the same plan carried
 	// CREATE ROLE "ptah_scope_outside_137" and died on it.
@@ -718,7 +718,7 @@ CREATE ROLE pgbouncer_undescribed_137 LOGIN;`)
 		Roles:           full.Roles,
 		RolesOutOfScope: full.RolesOutOfScope,
 	})
-	c.Assert(diff.RolesAdded, qt.DeepEquals, []string{"ptah_undescribed_absent_137"})
+	c.Assert(diff.RolesAdded.Names(), qt.DeepEquals, []string{"ptah_undescribed_absent_137"})
 }
 
 func cleanupUndescribedRolesIntegration(c *qt.C, db *sql.DB) {

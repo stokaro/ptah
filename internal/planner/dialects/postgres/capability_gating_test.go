@@ -17,11 +17,11 @@ func TestPlanner_CapabilityGatesRLSAndRoleManagement(t *testing.T) {
 	c := qt.New(t)
 
 	diff := &difftypes.SchemaDiff{
-		RolesAdded: []string{"app_role"},
+		RolesAdded: difftypes.RoleChanges{{Name: "app_role"}},
 		RolesModified: []difftypes.RoleDiff{
 			{RoleName: "existing_role", Changes: map[string]string{"login": "false -> true"}},
 		},
-		RolesRemoved: []string{"old_role"},
+		RolesRemoved: difftypes.RoleChanges{{Name: "old_role"}},
 		GrantsRemoved: []difftypes.GrantRef{
 			{Role: "app_role", Privilege: "DELETE", ObjectType: "TABLE", ObjectName: "users"},
 		},

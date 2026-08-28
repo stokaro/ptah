@@ -83,8 +83,8 @@ func TestSQLServerLiveRoleAndGrantRoundTrip(t *testing.T) {
 	// about. Comparing the same description against what the server now holds
 	// must produce nothing to do.
 	settled := schemadiff.CompareWithDialect(description, live, platform.SQLServer)
-	c.Assert(rolesNamed(settled.RolesAdded, role), qt.HasLen, 0)
-	c.Assert(rolesNamed(settled.RolesRemoved, role), qt.HasLen, 0)
+	c.Assert(rolesNamed(settled.RolesAdded.Names(), role), qt.HasLen, 0)
+	c.Assert(rolesNamed(settled.RolesRemoved.Names(), role), qt.HasLen, 0)
 	c.Assert(settled.RolesModified, qt.HasLen, 0)
 	c.Assert(grantsFor(settled.GrantsAdded, role), qt.HasLen, 0)
 	c.Assert(grantsFor(settled.GrantsRemoved, role), qt.HasLen, 0)

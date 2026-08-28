@@ -238,6 +238,48 @@ func (c ColumnChanges) Names() []string {
 	return names
 }
 
+// RoleChanges is a set of roles one change applies to, carrying each one's
+// attributes and not only its name.
+//
+// The thirteenth family off `[]string` under stokaro/ptah#2315. `CREATE ROLE`
+// takes LOGIN, SUPERUSER, CREATEDB, CREATEROLE, INHERIT and REPLICATION, none
+// of which a name carries, and both planners that emit one recovered them by
+// scanning the desired schema for a role of that name.
+//
+// Removals carry too, because `reverseSchemaDiff` swaps the two lists to build
+// a down migration and they have to be one type. The comparison itself never
+// fills the removal list -- see [compare.Roles], which declines to plan a
+// `DROP ROLE` nobody asked for -- so a removal reaching a planner came from
+// that reversal, where it started as an addition and carried its attributes.
+//
+// The wire is unchanged, and here that is a property worth naming rather than
+// a compatibility note: [schemamodel.Role] carries a Password, and the name
+// list this marshals to does not. A role's password does not reach a migration
+// document.
+type RoleChanges []schemamodel.Role
+
+// MarshalJSON writes the names alone, the shape `roles_added` and
+// `roles_removed` have always had. A role's attributes -- its password among
+// them -- stay in memory.
+func (r RoleChanges) MarshalJSON() ([]byte, error) {
+	if r == nil {
+		return []byte("null"), nil
+	}
+	return json.Marshal(r.Names())
+}
+
+// Names is the role names this change applies to.
+func (r RoleChanges) Names() []string {
+	if r == nil {
+		return nil
+	}
+	names := make([]string, 0, len(r))
+	for _, role := range r {
+		names = append(names, role.Name)
+	}
+	return names
+}
+
 // DomainChanges is a set of domain types one change applies to, carrying each
 // one's definition and not only its name.
 //
@@ -925,11 +967,11 @@ type SchemaDiff struct {
 
 	// RolesAdded contains names of PostgreSQL roles that exist in the target schema
 	// but not in the current database schema
-	RolesAdded []string `json:"roles_added"`
+	RolesAdded RoleChanges `json:"roles_added"`
 
 	// RolesRemoved contains names of PostgreSQL roles that exist in the current database
 	// but not in the target schema (potentially dangerous - may break existing functionality)
-	RolesRemoved []string `json:"roles_removed"`
+	RolesRemoved RoleChanges `json:"roles_removed"`
 
 	// RolesModified contains detailed information about roles that exist in both
 	// schemas but have different definitions (attributes, passwords, etc.)
