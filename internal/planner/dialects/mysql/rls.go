@@ -27,12 +27,11 @@ func (p *Planner) planRLS(result []ast.Node, diff *difftypes.SchemaDiff, desired
 	if !p.capabilities().Has(capability.RowLevelSecurity) {
 		return result
 	}
+	// The declaration travels WITH the entry (stokaro/ptah#2315), so an
+	// enablement no longer goes unplanned because the schema handed alongside
+	// spelled its table differently.
 	for _, table := range diff.RLSEnabledTablesAdded {
-		declaration := findRLSEnabledTable(desired.RLSEnabledTables, table)
-		if declaration == nil {
-			continue
-		}
-		result = append(result, fromschema.FromRLSEnabledTable(*declaration))
+		result = append(result, fromschema.FromRLSEnabledTable(table))
 	}
 	// The policy travels WITH the entry, and so does the schema its table is
 	// declared under, which is what SQL Server addresses it by
@@ -88,19 +87,8 @@ func (p *Planner) removeRLS(result []ast.Node, diff *difftypes.SchemaDiff) []ast
 		result = append(result, ast.NewDropPolicy(policy.PolicyName, policy.TableName).SetIfExists())
 	}
 
-	for _, table := range diff.RLSEnabledTablesRemoved {
+	for _, table := range diff.RLSEnabledTablesRemoved.Names() {
 		result = append(result, ast.NewAlterTableDisableRLS(table))
 	}
 	return result
-}
-
-// findRLSEnabledTable returns the declaration that asked for row-level security
-// on a table, or nil when the diff names a table nothing declared.
-func findRLSEnabledTable(declarations []schemamodel.RLSEnabledTable, table string) *schemamodel.RLSEnabledTable {
-	for i := range declarations {
-		if declarations[i].Table == table {
-			return &declarations[i]
-		}
-	}
-	return nil
 }

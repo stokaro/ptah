@@ -112,7 +112,7 @@ func TestWriteComparisonPrintsCategoriesAndSQL(t *testing.T) {
 	c := qt.New(t)
 
 	diff := &difftypes.SchemaDiff{
-		RLSEnabledTablesAdded: []string{"other.secured"},
+		RLSEnabledTablesAdded: difftypes.RLSEnabledTableChanges{{Table: "other.secured"}},
 		GrantsAdded: []difftypes.GrantRef{
 			{Role: "app", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "other.granted"},
 		},

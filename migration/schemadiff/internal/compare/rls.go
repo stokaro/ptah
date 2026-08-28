@@ -343,9 +343,12 @@ func RLSEnabledTablesWithSemantics(
 	semantics identifier.Semantics,
 ) {
 	// Create sets for comparison
-	genRLSTables := make(map[tableIdentity]string)
+	// The declaration rather than its name: the enablement travels with the
+	// change, so a planner that renders a declared comment reads it off the
+	// entry (stokaro/ptah#2315).
+	genRLSTables := make(map[tableIdentity]schemamodel.RLSEnabledTable)
 	for _, rlsTable := range desired.RLSEnabledTables {
-		genRLSTables[newQualifiedTableIdentity(rlsTable.Table, semantics)] = rlsTable.Table
+		genRLSTables[newQualifiedTableIdentity(rlsTable.Table, semantics)] = rlsTable
 	}
 
 	dbRLSTables := make(map[tableIdentity]string)
@@ -356,9 +359,9 @@ func RLSEnabledTablesWithSemantics(
 	}
 
 	// Find tables that need RLS enabled
-	for identity, tableName := range genRLSTables {
+	for identity, declared := range genRLSTables {
 		if _, enabled := dbRLSTables[identity]; !enabled {
-			diff.RLSEnabledTablesAdded = append(diff.RLSEnabledTablesAdded, tableName)
+			diff.RLSEnabledTablesAdded = append(diff.RLSEnabledTablesAdded, declared)
 		}
 	}
 
@@ -391,12 +394,15 @@ func RLSEnabledTablesWithSemantics(
 		if _, hasPolicies := declaredPolicyTables[identity]; hasPolicies {
 			continue
 		}
-		diff.RLSEnabledTablesRemoved = append(diff.RLSEnabledTablesRemoved, tableName)
+		// The name alone, and only the name: this enablement is one the database
+		// reports and no declaration describes.
+		diff.RLSEnabledTablesRemoved = append(diff.RLSEnabledTablesRemoved,
+			schemamodel.RLSEnabledTable{Table: tableName})
 	}
 
 	// Sort for consistent output
-	sort.Strings(diff.RLSEnabledTablesAdded)
-	sort.Strings(diff.RLSEnabledTablesRemoved)
+	sortRLSEnabledTables(diff.RLSEnabledTablesAdded)
+	sortRLSEnabledTables(diff.RLSEnabledTablesRemoved)
 }
 
 // RLSPolicyDefinitions performs detailed comparison between generated and database RLS policy definitions.
@@ -514,4 +520,10 @@ func declaredTableSchemas(desired *schemamodel.Database) map[string]string {
 		schemas[table.Name] = table.Schema
 	}
 	return schemas
+}
+
+// sortRLSEnabledTables orders enablements by the table name the list was sorted
+// on when it was a list of names.
+func sortRLSEnabledTables(tables difftypes.RLSEnabledTableChanges) {
+	sort.Slice(tables, func(i, j int) bool { return tables[i].Table < tables[j].Table })
 }

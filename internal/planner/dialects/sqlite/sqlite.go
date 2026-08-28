@@ -400,7 +400,7 @@ func rejectUnsupportedAccessControl(diff *difftypes.SchemaDiff) error {
 // rowLevelSecurityNames lists every policy and every table whose row-level
 // security the diff changes.
 func rowLevelSecurityNames(diff *difftypes.SchemaDiff) []string {
-	names := slices.Concat(diff.RLSEnabledTablesAdded, diff.RLSEnabledTablesRemoved)
+	names := slices.Concat(diff.RLSEnabledTablesAdded.Names(), diff.RLSEnabledTablesRemoved.Names())
 	for _, policy := range slices.Concat(diff.RLSPoliciesAdded, diff.RLSPoliciesRemoved) {
 		names = append(names, policy.PolicyName)
 	}

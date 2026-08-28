@@ -2804,7 +2804,7 @@ func (p *Planner) enableRLSOnTables(
 			tablesNeedingRLS[key] = tableName
 		}
 	}
-	for _, tableName := range diff.RLSEnabledTablesAdded {
+	for _, tableName := range diff.RLSEnabledTablesAdded.Names() {
 		rememberTable(tableName)
 	}
 
@@ -2852,7 +2852,7 @@ func (p *Planner) disableRLSOnTables(result []ast.Node, diff *difftypes.SchemaDi
 	}
 
 	tablesToDisable := make(map[string]bool)
-	for _, tableName := range diff.RLSEnabledTablesRemoved {
+	for _, tableName := range diff.RLSEnabledTablesRemoved.Names() {
 		if droppedTables[tableName] {
 			continue
 		}

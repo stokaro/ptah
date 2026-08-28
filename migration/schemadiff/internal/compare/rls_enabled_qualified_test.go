@@ -91,8 +91,8 @@ func TestRLSEnabledTablesWithSemantics_QualifiedTableIdentity(t *testing.T) {
 				desired, database, diff, identifier.ForDialect(platform.Postgres),
 			)
 
-			c.Assert(diff.RLSEnabledTablesAdded, qt.DeepEquals, test.wantAdded)
-			c.Assert(diff.RLSEnabledTablesRemoved, qt.DeepEquals, test.wantRemoved)
+			c.Assert(diff.RLSEnabledTablesAdded.Names(), qt.DeepEquals, test.wantAdded)
+			c.Assert(diff.RLSEnabledTablesRemoved.Names(), qt.DeepEquals, test.wantRemoved)
 		})
 	}
 }

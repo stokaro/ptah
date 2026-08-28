@@ -621,6 +621,14 @@ silently drops an access-control operation reports success while leaving the
 database unprotected. A removal carries neither: `DROP POLICY name ON table` is
 written from the two names.
 
+`SchemaDiff.RLSEnabledTablesAdded` and `RLSEnabledTablesRemoved` are
+`RLSEnabledTableChanges` rather than `[]string`. An ADDED entry is the
+declaration, which is what a target rendering a declared comment needs; a
+REMOVED entry carries the table name and nothing else, because the enablement
+being removed is one the database reports and no declaration describes.
+`Names()` gives the table names, and the JSON is unchanged: both keys have
+always been arrays of names.
+
 `SchemaDiff.RLSPolicyIdentityConflicts` is the companion, also off the wire. It
 records declared policies that resolve to one identity — something the three
 lists cannot show, because a colliding pair is already one entry by the time

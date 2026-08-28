@@ -409,10 +409,10 @@ func reportRowLevelSecurity(
 		// skipped.
 		return result
 	}
-	for _, table := range diff.RLSEnabledTablesAdded {
+	for _, table := range diff.RLSEnabledTablesAdded.Names() {
 		result = append(result, ast.NewAlterTableEnableRLS(table))
 	}
-	for _, table := range diff.RLSEnabledTablesRemoved {
+	for _, table := range diff.RLSEnabledTablesRemoved.Names() {
 		result = append(result, ast.NewAlterTableDisableRLS(table))
 	}
 	for _, policy := range diff.RLSPoliciesAdded {

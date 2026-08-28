@@ -28,10 +28,9 @@ func planRowPolicies(
 	if !caps.Has(capability.RowLevelSecurity) {
 		return result
 	}
+	// The declaration travels WITH the entry (stokaro/ptah#2315).
 	for _, table := range diff.RLSEnabledTablesAdded {
-		if declaration := rlsEnabledTable(desired.RLSEnabledTables, table); declaration != nil {
-			result = append(result, fromschema.FromRLSEnabledTable(*declaration))
-		}
+		result = append(result, fromschema.FromRLSEnabledTable(table))
 	}
 	// The policy travels WITH the entry (stokaro/ptah#2315).
 	for _, policy := range diff.RLSPoliciesAdded {
@@ -58,19 +57,8 @@ func removeRowPolicies(result []ast.Node, diff *difftypes.SchemaDiff, caps capab
 	for _, policy := range diff.RLSPoliciesRemoved {
 		result = append(result, ast.NewDropPolicy(policy.PolicyName, policy.TableName).SetIfExists())
 	}
-	for _, table := range diff.RLSEnabledTablesRemoved {
+	for _, table := range diff.RLSEnabledTablesRemoved.Names() {
 		result = append(result, ast.NewAlterTableDisableRLS(table))
 	}
 	return result
-}
-
-// rlsEnabledTable returns the declaration that asked for row-level security on a
-// table, or nil when the diff names a table nothing declared.
-func rlsEnabledTable(declarations []schemamodel.RLSEnabledTable, table string) *schemamodel.RLSEnabledTable {
-	for i := range declarations {
-		if declarations[i].Table == table {
-			return &declarations[i]
-		}
-	}
-	return nil
 }

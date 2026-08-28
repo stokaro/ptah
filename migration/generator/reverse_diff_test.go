@@ -290,8 +290,8 @@ func TestReverseSchemaDiff_CompleteReversal(t *testing.T) {
 		RLSPoliciesRemoved: []difftypes.RLSPolicyRef{
 			{PolicyName: "old_policy", TableName: "old_table"},
 		},
-		RLSEnabledTablesAdded:   []string{"users", "posts"},
-		RLSEnabledTablesRemoved: []string{"old_table"},
+		RLSEnabledTablesAdded:   difftypes.RLSEnabledTableChanges{{Table: "users"}, {Table: "posts"}},
+		RLSEnabledTablesRemoved: difftypes.RLSEnabledTableChanges{{Table: "old_table"}},
 		RolesAdded:              difftypes.RoleChanges{{Name: "app_user"}, {Name: "admin_user"}},
 		RolesRemoved:            difftypes.RoleChanges{{Name: "old_role"}},
 		GrantsAdded: []difftypes.GrantRef{
@@ -673,7 +673,7 @@ func TestReverseSchemaDiff_Issue39_Integration(t *testing.T) {
 		},
 
 		// Enable RLS on tables
-		RLSEnabledTablesAdded: []string{"users", "areas"},
+		RLSEnabledTablesAdded: difftypes.RLSEnabledTableChanges{{Table: "users"}, {Table: "areas"}},
 
 		// Add some roles
 		RolesAdded: difftypes.RoleChanges{{Name: "inventario_app"}},
@@ -700,7 +700,7 @@ func TestReverseSchemaDiff_Issue39_Integration(t *testing.T) {
 	c.Assert(downDiff.RLSPoliciesAdded, qt.HasLen, 0)
 
 	// RLS should be disabled on tables in down migration
-	c.Assert(downDiff.RLSEnabledTablesRemoved, qt.DeepEquals, []string{"users", "areas"})
+	c.Assert(downDiff.RLSEnabledTablesRemoved.Names(), qt.DeepEquals, []string{"users", "areas"})
 	c.Assert(downDiff.RLSEnabledTablesAdded, qt.HasLen, 0)
 
 	// Roles should be removed in down migration

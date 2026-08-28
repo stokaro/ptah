@@ -1035,11 +1035,11 @@ type SchemaDiff struct {
 	RLSPolicyIdentityConflicts []RLSPolicyConflict `json:"-"`
 
 	// RLSEnabledTablesAdded contains names of tables that need RLS enabled
-	RLSEnabledTablesAdded []string `json:"rls_enabled_tables_added"`
+	RLSEnabledTablesAdded RLSEnabledTableChanges `json:"rls_enabled_tables_added"`
 
 	// RLSEnabledTablesRemoved contains names of tables that need RLS disabled
 	// (potentially dangerous - removes row-level security)
-	RLSEnabledTablesRemoved []string `json:"rls_enabled_tables_removed"`
+	RLSEnabledTablesRemoved RLSEnabledTableChanges `json:"rls_enabled_tables_removed"`
 
 	// RolesAdded contains names of PostgreSQL roles that exist in the target schema
 	// but not in the current database schema
@@ -2208,6 +2208,39 @@ type RoleDiff struct {
 	// It stays off the wire, and here that is more than tidiness: this field
 	// holds a password.
 	Desired schemamodel.Role `json:"-"`
+}
+
+// RLSEnabledTableChanges is a list of row-level-security enablements a diff
+// adds or removes.
+//
+// The list used to be table names alone, which meant a planner that renders
+// anything beyond the name -- a declared comment, on the targets that carry one
+// -- had to find the declaration in a schema handed to it alongside the diff,
+// and planned nothing for an enablement it could not find (stokaro/ptah#2315).
+type RLSEnabledTableChanges []schemamodel.RLSEnabledTable
+
+// MarshalJSON writes the table names alone, the shape
+// `rls_enabled_tables_added` and `rls_enabled_tables_removed` have always had.
+func (r RLSEnabledTableChanges) MarshalJSON() ([]byte, error) {
+	if r == nil {
+		return []byte("null"), nil
+	}
+	return json.Marshal(r.Names())
+}
+
+// Names is the table names this change applies to.
+//
+// A REMOVED entry carries nothing else: the enablement is one the database
+// reports and no declaration describes, so the name is all there is to carry.
+func (r RLSEnabledTableChanges) Names() []string {
+	if r == nil {
+		return nil
+	}
+	names := make([]string, 0, len(r))
+	for _, table := range r {
+		names = append(names, table.Table)
+	}
+	return names
 }
 
 // RLSPolicyConflict records two declared row-level security policies that
