@@ -52,7 +52,10 @@ after a worker was paused long enough for its lease to lapse and then resumed: i
 still believes it holds the run, and the token is what stops it.
 
 A worker whose token is behind the run's is refused before it touches your
-table.
+table. The token moves when a worker **takes** the run: `prepare` takes it, and
+so does every verb that does work. So a second `backfill` started against a run
+another process is already embedding fences the first at its next commit, rather
+than both writing.
 
 ## Reading `verify`
 

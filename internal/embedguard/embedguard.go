@@ -51,8 +51,6 @@ var Exempt = map[string]string{
 	// does not have. Tracked in stokaro/ptah#2474.
 	"Stale": "stokaro/ptah#2474: the staleness rule a target row answers, called by " +
 		"nothing; verification derives freshness its own way",
-	"Claim": "stokaro/ptah#2474: takes a run for a worker and issues a fencing token; " +
-		"prepare writes token 1 directly and no verb ever claims",
 	"Pause":  "stokaro/ptah#2474: pauses a run, and there is no verb that pauses one",
 	"Resume": "stokaro/ptah#2474: the other half of the same missing pair",
 	"SameGeneration": "stokaro/ptah#2474: compares two specifications for one generation; " +

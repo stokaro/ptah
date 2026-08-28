@@ -40,11 +40,10 @@ type Rereader interface {
 // what a cutover over a live source rests on: the backfill covers the source as
 // of the boundary, and this covers everything since (stokaro/ptah#2068).
 func (e *Engine) CatchUp(ctx context.Context, runID string, changes Changes, source Rereader) (embedrun.Run, error) {
-	run, err := e.Store.Run(ctx, runID)
+	run, token, err := e.claim(ctx, runID)
 	if err != nil {
-		return embedrun.Run{}, fmt.Errorf("load run %s: %w", runID, err)
+		return embedrun.Run{}, err
 	}
-	token := run.FencingToken
 	cursor, err := parseWatermark(run.CatchUpWatermark, run.SnapshotWatermark)
 	if err != nil {
 		return run, err
