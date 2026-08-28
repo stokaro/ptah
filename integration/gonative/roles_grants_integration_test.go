@@ -360,9 +360,17 @@ func TestGoFixtures_ParseDirForSchemaObjects(t *testing.T) {
 	c.Assert(result.Roles, qt.HasLen, 1)
 	c.Assert(result.Roles[0].Name, qt.Equals, "fixture_app_user")
 
-	// Exercise CLI schema render entry point against the fixture (drives real ParseDir path in cmd/generate, per AC3)
-	goMain := filepath.Join(rootDir, "cmd/main.go")
-	genCmd := exec.Command("go", "run", goMain, "schema", "render", "--root-dir", absFixture, "--dialect", "postgres")
+	// Exercise the CLI's schema render entry point against the fixture, which
+	// is what drives the real ParseDir path in cmd/generate.
+	//
+	// The package rather than a file: `go run ./cmd/ptah` builds whatever that
+	// package holds, so a file added or renamed inside it needs no edit here.
+	// Naming one file is how this broke -- cmd/main.go was the second copy of
+	// the CLI, it was removed in stokaro/ptah#2413, and nothing pointed at the
+	// removal because `go run` reports a missing file as `exit status 1`.
+	genCmd := exec.Command("go", "run", "./cmd/ptah",
+		"schema", "render", "--root-dir", absFixture, "--dialect", "postgres")
+	genCmd.Dir = rootDir
 	genOut, err := genCmd.CombinedOutput()
 	c.Assert(err, qt.IsNil)
 	outStr := legacyRenderedSQL(string(genOut))
