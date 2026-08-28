@@ -97,12 +97,16 @@ func run(opts options) error {
 // a kind that stopped deriving -- and rewriting the file around it would record
 // the mistake as the new truth.
 func writeArtifact(doc *featureinventory.Document, problems []featureinventory.Problem) error {
+	refusing := 0
 	for _, problem := range problems {
 		if problem.Rule == featureinventory.RuleOwnedBelowFloor {
 			continue
 		}
 		fmt.Fprintln(os.Stderr, "featureinventory: "+problem.String())
-		return fmt.Errorf("refusing to write an inventory that %d rule(s) refuse", len(problems))
+		refusing++
+	}
+	if refusing > 0 {
+		return fmt.Errorf("refusing to write an inventory that %d rule(s) refuse", refusing)
 	}
 	if doc.Owned > doc.OwnedFloor {
 		doc.OwnedFloor = doc.Owned
