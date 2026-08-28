@@ -324,6 +324,25 @@ usage error exits `2` with one line on stderr. See
   `No view or routine columns to trace.` and exits `0`, which reads the same as
   a schema with no views. Name the source.
 
+## Trace a live database
+
+`--db-url` traces the schema a server reports instead of one a file declares,
+which is how the same question is asked about a database nobody has a
+declaration for:
+
+```bash
+ptah schema lineage --db-url "postgres://user:pass@localhost/app" --schemas public
+```
+
+The dialect comes from the server rather than from `--dialect`: a lineage traced
+against a live database is about that database, and a routine body is read by
+its own engine's parser.
+
+`--schemas` narrows what is read, the same way it does for
+[`ptah db read`](../../reference/native-commands/). Everything below applies
+unchanged -- the resolvable shapes, the undecided list and the JSON document are
+the same whether the schema was declared or read back.
+
 ## Exact reference
 
 Run `ptah schema lineage --help` for the flag set with its environment
