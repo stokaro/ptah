@@ -90,9 +90,38 @@ recorded with what it would take.
 | Identifier provenance: quoted and unquoted components round-trip; insufficient provenance fails closed | `objectidentity.Part`, `Builder` equivalence tests | same sweep; folding is asserted equal to `identifier.Semantics` |
 | References: dangling, ambiguous and normalized-collision references are rejected | `objectidentity.Resolve` refusal classes | same sweep |
 | Coverage: not-inspected never becomes absent | `TestCompare_NotInspectedNeverBecomesAbsent`, on `schemadiff.Compare` | 9 kinds, each row carrying its own inverse: the same fixture with no limit recorded must plan the removal ([#2315](https://github.com/stokaro/ptah/issues/2315)) |
-| Target facts: uncertainty reaches every target-dependent consumer | **nothing** — `Capabilities.Established` is the mechanism and ONE call site consults it (`internal/embedplan/fact.go`) against 201 `Has` call sites, which read "no answer" as "cannot" | not a missing test: a missing mechanism at 200 sites, and what a consumer does when uncertain is undecided ([#2315](https://github.com/stokaro/ptah/issues/2315)) |
+| Target facts: uncertainty reaches every target-dependent consumer | the two entry points, plus `TestDefaultWriterCapabilitiesAnswerEveryKeyThisPackageConsults` | see [How target facts are held](#how-target-facts-are-held) ([#2315](https://github.com/stokaro/ptah/issues/2315)) |
 | Determinism: equivalent inputs produce identical output across runs and map orders | `TestCompare_EquivalentInputsProduceIdenticalOutput`, on `schemadiff.Compare` | 20 runs plus a reversed-input control; deleting one `sort.Strings` in `compare/sequences.go` kills both halves ([#2315](https://github.com/stokaro/ptah/issues/2315)) |
 | Package boundaries: compatibility-only packages are not dependencies of the semantic core | `scripts/check-architecture-boundaries.sh` | `…-selftest.sh`: 4 refusals and 1 false-positive control |
+
+## How target facts are held
+
+`Capabilities.Has` reports false both for a key a preset decided against and for
+one nobody answered, so this property is about whether silence can reach a
+consumer at all. Measured rather than assumed:
+
+- All ten dialects Ptah knows answer all 52 registered keys. `ForDialect`
+  answers nothing only for an unrecognized dialect string.
+- Both entry points refuse such a string before planning. `ptah schema render
+  --dialect nonsense` and `planner.GenerateSchemaDiffSQLStatements` each answer
+  `unsupported database dialect`, exit 2, zero statements.
+- The PostgreSQL reader's default constructor takes a whole preset.
+
+What was left was one production set built by hand: the PostgreSQL writer's
+default constructor listed the keys its own code consulted, which is a claim
+that was true when it was written. It drifted once already —
+[#1811](https://github.com/stokaro/ptah/issues/1811), where the query's gating
+grew a key the set did not, and the cleanup silently dropped its
+extension-owned-routine filter for every caller of that constructor.
+
+The gate reads the keys out of the package's own source and requires the set to
+have an **answer** for each, so a deliberate no is written `false` rather than
+left out. Attribution is by receiver: a function reading `r.caps` is the
+reader's, not the writer's.
+
+Two mutants, both killed: dropping a consulted key from the set reddens the
+gate, and a scan that reads no files reddens its own control rather than passing
+while measuring nothing.
 
 ## Extending the set
 

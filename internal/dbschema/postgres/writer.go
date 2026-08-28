@@ -107,6 +107,17 @@ func NewPostgreSQLWriterForRunner(
 			// pg_inherits, for the same reason: a caller that does not name its
 			// dialect gets the full set of checks.
 			capability.CatalogPartitions: true,
+			// False, and written down rather than left out. A set answers a key
+			// or it does not, and Has reports false for both -- so a key this
+			// package consults and the set omits reads as a decision nobody
+			// made (stokaro/ptah#2315).
+			//
+			// The decision here is the one stokaro/ptah#1811 measured: Spanner
+			// behind PGAdapter refuses `DROP CONSTRAINT IF EXISTS`, and
+			// dropping unguarded is safe on this path because the cleanup
+			// enumerates from the catalog a moment earlier. See
+			// [constraintDropGuard].
+			capability.DropConstraintIfExists: false,
 		})
 }
 
