@@ -20,6 +20,7 @@ import (
 	"go.5x5.cz/ptah/internal/pgindexstorage"
 	"go.5x5.cz/ptah/internal/sqlitekey"
 	"go.5x5.cz/ptah/internal/tableref"
+	"go.5x5.cz/ptah/migration/risk"
 )
 
 // GeneratedCodeMarker is the first line of every native Ptah HCL schema
@@ -40,12 +41,13 @@ func primaryKeyImpliesNotNull(dialect string) bool {
 	return platform.NormalizeDialect(dialect) != platform.SQLite
 }
 
-// Severity is the diagnostic severity emitted by the exporter.
-type Severity string
+// Severity is the diagnostic severity emitted by the exporter, on the one
+// scale every Ptah producer expresses findings on (stokaro/ptah#2395).
+type Severity = risk.Severity
 
 const (
 	// SeverityWarning reports a lossy or currently unsupported export path.
-	SeverityWarning Severity = "warning"
+	SeverityWarning = risk.Warning
 )
 
 // Diagnostic describes an unsupported or lossy export detail.

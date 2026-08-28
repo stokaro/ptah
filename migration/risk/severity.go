@@ -9,7 +9,19 @@
 // several rather than this package's subject (stokaro/ptah#2246 section 2.2).
 package risk
 
-// Severity is the level a finding carries, shared by every producer of them.
+// Severity is the level a finding carries, and the one scale every producer of
+// findings expresses them on.
+//
+// Two packages declare their own type named Severity and are not producers of
+// findings: internal/adoptpreflight scores a preflight outcome (ok, action,
+// refuse) and internal/embedverify scores a gate outcome (blocking, advisory).
+// Neither is a level, and folding them onto this scale would put a word in a
+// published document that does not mean what it says there.
+//
+// severity_vocabulary_test.go reads the tree and holds that sentence to it: a
+// third vocabulary has to be recorded there with its reason, which is the
+// review a package-local `type Severity string` never got
+// (stokaro/ptah#2395).
 type Severity string
 
 const (

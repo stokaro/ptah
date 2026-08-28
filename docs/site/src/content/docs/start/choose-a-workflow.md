@@ -1,9 +1,13 @@
 ---
 title: Choose a workflow
-description: Decide between versioned migrations and direct schema changes before wiring Ptah into a project.
+description: Decide between versioned migrations and direct schema changes for schema work. Persistent inference state uses a separate lifecycle.
 ---
 
-Wiring Ptah into a project answers two questions, and they are independent.
+For schema changes, wiring Ptah into a project answers two questions, and they
+are independent.
+
+Persistent inference state follows a separate generation lifecycle. Start with
+[Inference migrations](../../operate/inference-migrations/).
 
 **Where does the change come from?** Either you write the migration yourself —
 `ptah migrations create`, then the SQL — or you describe the schema you want and

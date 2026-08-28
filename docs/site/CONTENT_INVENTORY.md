@@ -44,7 +44,7 @@ Word counts were measured with `wc -w` at the audited commit.
 
 | Page (words) | Audience | Reader question | Type | Source of truth | Overlaps | Disposition |
 | --- | --- | --- | --- | --- | --- | --- |
-| `index.mdx` (1023 prose words, two inline SVG diagrams) | everyone | What is Ptah and where do I start? | navigation | this page (product model, product-flow diagram, the two workflows and the command that bridges them) | root `README.md` product description, which states the same product model | done: rewritten in place — product sentence in the hero, product-flow diagram with the same five stages as text, one card per sidebar group in sidebar order, "Choose your path" kept, Atlas compatibility and license moved below the product explanation |
+| `index.mdx` (1,196 visible words, two inline SVG diagrams, one raster diagram) | everyone | What does Ptah manage, how do schema and inference-state changes move through it, and where do I start? | navigation | this page (product model, both lifecycle diagrams, the two schema workflows and the inference route) | root `README.md` product description, which states the same product model | done: rewritten in place — schema and persistent inference state are named in the hero and opening paragraph; both lifecycles are visible before the navigation cards; "Choose your path," Atlas compatibility and the license boundary remain routing surfaces |
 | `getting-started.md` (788) | new Go user | How do I try Ptah end to end locally? | tutorial | this page (runnable SQLite flow with expected output and cleanup) | root `README.md` minimal example; `install.md` | done: moved → `start/quick-start`, old URL redirects |
 | `install.md` (386) | new user | How do I install, build, and verify the CLI? | howto | this page | root `README.md` "Install Or Build" | done: moved → `start/install`, old URL redirects |
 | `documentation-map.md` (441) | everyone | Where is the documentation for task X? | navigation | none (routing only) | the entire sidebar; layers table duplicated on `index.mdx`; maintenance rule overlaps `AGENTS.md` | done: retired — old URL redirects to home; layers and maintenance-rule text moved to `docs/README.md`; this inventory carries the meta function |
@@ -53,10 +53,10 @@ Word counts were measured with `wc -w` at the audited commit.
 
 | Page (words) | Audience | Reader question | Type | Source of truth | Overlaps | Disposition |
 | --- | --- | --- | --- | --- | --- | --- |
-| `start/quick-start.mdx` (routing) | new user | Which quick start should I run? | navigation | this page (the one decision, plus what both quick starts need) | `start/choose-a-workflow` carries the longer version of the same decision | split → `start/quick-start-migrations` and `start/quick-start-direct`; URL kept, so the `/getting-started/` redirect still resolves |
+| `start/quick-start.mdx` (routing) | new user | Which schema quick start should I run, or where do I start with persistent inference state? | navigation | this page (the schema decision, what both quick starts need, and the route to inference migrations) | `start/choose-a-workflow` carries the longer schema decision; `operate/inference-migrations` owns the separate inference lifecycle | split → `start/quick-start-migrations` and `start/quick-start-direct`; URL kept, so the `/getting-started/` redirect still resolves; persistent inference state routes to its canonical how-to instead of being presented as a third schema path |
 | `start/quick-start-migrations.mdx` | new user, any language | How do I write a migration, apply it, and roll it back? | tutorial | this page; every command and output block run against a built binary | `versioned/generate` (the hand-written half), `versioned/rollback` | created (stokaro/ptah#1228 onboarding split); keep |
 | `start/quick-start-direct.mdx` | new user, any language | How do I make a database match a file that describes the schema I want? | tutorial | this page; every command and output block run against a built binary | `direct/apply`, `direct/compare-and-drift` | created (stokaro/ptah#1228 onboarding split); renamed from `start/quick-start-declarative` under section 7's `direct schema changes` rule, old route redirects; keep |
-| `start/choose-a-workflow.md` (742) | new user deciding integration shape | Should changes reach my databases as versioned migration files or as direct applies? | concept | this page; command shapes verified against the built binary | `workflows/migrations`, `workflows/atlas-cli`, `reference/comparison` | created (section 9, item 4); keep |
+| `start/choose-a-workflow.md` (925 visible words) | new user deciding integration shape | How should schema changes reach my databases, and where does persistent inference state fit? | concept | this page for the two schema axes; `operate/inference-migrations` for the separate generation lifecycle; command shapes verified against the built binary | `versioned/overview`, `direct/overview`, `operate/inference-migrations` | created (section 9, item 4); keep — the opening scopes its matrix to schema changes and routes inference state separately |
 | `start/adopt-an-existing-database.md` (1,000) | brownfield database adopter | How do I put an existing database under Ptah management without recreating it? | howto | this page; `ptah introspect`, `ptah migrations baseline`, `ptah migrations import` runs against the built binary | `workflows/checkpoints` (baseline contrast), `workflows/migrations` import section | created (section 9, item 3); keep |
 
 ### `Model your schema` group (added by the restructuring)
@@ -177,17 +177,18 @@ the page the restructuring created.
 | `reference/go-annotations.md` (2,895) | Go schema author | Which directives and attributes does the annotation parser accept? | reference | `internal/annotationmeta` exported by `ptah schema annotations` (committed copy: `schemas/ptah-annotations.schema.json`); placement, bare-boolean, and unknown-attribute behavior spot-checked against the built binary | `schema/go-annotations` (workflow home), directive fragments in `docs/POSTGRESQL_ROLES.md`, `docs/sequences.md`, `docs/user_defined_types.md` | created (section 9, items 7 and 9, including the `ptah-ls` editor-support section); keep |
 | `reference/lint-rules.md` (3,692) | CI operator, migration author, Atlas migration user | Which lint identifier is this, which command can report it, and is the name Atlas's or Ptah's? | reference | the rule registries themselves: `migration/lint` and `internal/sqllint`, joined in `internal/lintcatalog` and rendered between generated markers; the apply-gate scope is rendered from `internal/migrationlintgate`; the Atlas analyzer check list is a reading of <https://atlasgo.io/lint/analyzers> | `atlas/comparison` (its Pro analyzer table moved here), `versioned/integrity-and-safety` and `atlas/migrate-commands` (lint workflow, canonical there), `reference/exit-codes` (what a blocking finding exits with) | created (#1482); keep — the generated block is gated by `scripts/check-lint-rules.sh` and by a Go test, so a rule added to either registry cannot leave the page behind |
 
-### `Distribute and operate` group (added by the restructuring)
+### `Workflows` and `Distribute and operate` additions
 
 `operate/oci-registry` and `operate/troubleshooting` keep their rows in the
-`Use Ptah` and `Operate` tables with `done` dispositions; this table lists the
-page the restructuring created.
+`Use Ptah` and `Operate` tables with `done` dispositions. Inference migrations
+use an `operate/` route but appear directly under `Workflows`, because they are
+a first-class state-change lifecycle rather than a distribution topic.
 
 | Page (words) | Audience | Reader question | Type | Source of truth | Overlaps | Disposition |
 | --- | --- | --- | --- | --- | --- | --- |
 | `operate/ai-agents.md` (1568) | operator/app developer | How do I connect an AI client to Ptah, and what may it read, propose, and write? | howto | this page; `cmd/mcp`, `internal/mcpserver` and `internal/agentapi`; every tool name and flag run against the built binary over the protocol | `reference/native-commands` (`ptah mcp` row and section, summary there), `atlas/feature-matrix` (the Copilot row's Ptah answer) | created (stokaro/ptah#1487); keep |
 | `operate/ai-assist.md` (1820) | operator/app developer | How do I point Ptah Assist at my own model, and check that it works? | howto | this page; `cmd/assist`, `internal/aiprovider` and `internal/assistconfig`; every command run against the built binary, and the conversation, resume and write paths measured against a live endpoint | `operate/ai-agents` (the other surface, no provider needed), `reference/native-commands` (the two command rows) | created (stokaro/ptah#1488); keep |
-| `operate/inference-migrations.md` (1080) | operator/app developer | How do I change an embedding model without breaking what queries read? | howto | this page; `cmd/inference` and the `internal/embed*` packages; every command and flag run against the built binary, and the lifecycle measured against a live PostgreSQL with pgvector | `reference/native-commands` (the ten verb rows), `operate/oci-registry` (where the evidence goes) | created (stokaro/ptah#2068); keep |
+| `operate/inference-migrations.md` (1080) | operator/app developer | How do I change an embedding model without breaking what queries read? | howto | this page; `cmd/inference` and the `internal/embed*` packages; every command and flag run against the built binary, and the lifecycle measured against a live PostgreSQL with pgvector | `reference/native-commands` (the ten verb rows), `operate/oci-registry` (where the evidence goes) | created (stokaro/ptah#2068); surfaced directly under `Workflows`; keep |
 | `operate/seed-data.md` (506) | app developer/operator | How do I load one-off, environment-scoped setup rows? | howto | this page; `cmd/seed` and `migration/seeder`; every command and output run against the built binary | `versioned/reference-data` (declarative contrast, canonical there), `reference/exit-codes` (`ptah seed` row) | created (section 9, item 6); keep |
 
 ### `Operate` group
@@ -248,7 +249,7 @@ list in the same PR.
 
 | File (words) | Audience | Purpose | Overlaps | Disposition |
 | --- | --- | --- | --- | --- |
-| `README.md` (643) | everyone landing on GitHub | Project pitch, start-here table, install, surfaces, compatibility status | `index.mdx`, `install.md`, `getting-started.md`, `operate/license-boundary` | keep + rewrite links when site URLs move; must never diverge from the site on parity claims |
+| `README.md` (852) | everyone landing on GitHub | What does Ptah manage, how do schema and inference-state changes move through it, and where do I start? | `index.mdx`, `start/install`, `start/quick-start`, `operate/inference-migrations`, `atlas/overview` | keep as the repository entry point: product model, both lifecycle diagrams, one runnable SQLite path, scoped schema workflow choice, and links into canonical documentation; must never diverge from the site on parity claims |
 | `docs/site/README.md` (107) | contributor | How to build the site | none | keep |
 | `testkit` README (178) | Go embedder | Test-harness package (separate repository and module) | `extend/public-api` | moved to stokaro/ptah-testkit; linked from `extend/public-api` |
 | `internal/parser/README.md` (1,331) | contributor | SQL parser internals | none | keep (contributor surface) |
@@ -344,6 +345,10 @@ The landing page follows the same rule. Its "Choose your path" table leads with
 migrations you write yourself, an existing migration directory, and a live
 database, and "Model your schema" points at the format-neutral concept page
 rather than at the Go one.
+
+Persistent inference state is a separate lifecycle, not another cell in the
+schema workflow matrix. The landing page and both routing pages name that
+boundary near their opening and lead to `operate/inference-migrations`.
 
 ## 6b. The two workflow axes (stokaro/ptah#1228)
 
@@ -579,6 +584,7 @@ Workflows
     Compare and drift                 direct/compare-and-drift
     Plan and approve changes          direct/plan-and-approve
     Apply directly                    direct/apply
+  Inference migrations                operate/inference-migrations
   Test and CI
     Test migrations and schemas       testing/migrations-and-schema
     CI                                testing/ci
@@ -671,7 +677,7 @@ subgroups do not. `Atlas compatibility` and `Databases` carry theirs as a
 top-level leaf for the same reason.
 
 The shape, measured by importing `src/sidebar.mjs` rather than by counting the
-block above: 7 top-level groups, 16 subgroups, 75 leaf entries, maximum depth 2,
+block above: 7 top-level groups, 16 subgroups, 78 leaf entries, maximum depth 2,
 and one collapsed subgroup (`Atlas compatibility > Differences and evidence`).
 The largest sibling list anywhere is 8, reached twice — `Workflows > Versioned
 migrations` and `Schema > Sources` — so the rule that sent the sidebar to two
@@ -689,8 +695,8 @@ whichever gate happens to stay green:
   directions, so it catches a page named by no entry and an entry naming no
   page, but a page named twice satisfies both directions. The tell is in the
   numbers it prints: entries should run exactly one below pages, the one being
-  `index.mdx`, which renders no sidebar. `76 pages, 75 sidebar entries` is
-  correct; `76 pages, 76 sidebar entries` is a duplicate.
+  `index.mdx`, which renders no sidebar. `79 pages, 78 sidebar entries` is
+  correct; `79 pages, 79 sidebar entries` is a duplicate.
 
 Rationale by group (each maps to the top-level question a reader faces, in
 order):
@@ -698,9 +704,11 @@ order):
 1. **Start** — "What is this and how do I try it?" Install, a runnable quick
    start, the one decision that shapes everything else (versioned vs direct vs
    hybrid), and the brownfield entry.
-2. **Workflows** — "How do I change the database?" The two peer subgroups
-   `Versioned migrations` and `Direct schema changes` mirror the
-   choose-a-workflow decision, each opening with its own overview. The
+2. **Workflows** — "How do I change database state?" The two peer subgroups
+   `Versioned migrations` and `Direct schema changes` mirror the schema
+   choose-a-workflow decision, each opening with its own overview. `Inference
+   migrations` is a peer leaf because its generation lifecycle changes
+   persistent inference state rather than following either schema route. The
    versioned subgroup decomposes along the lifecycle (generate → apply →
    rollback → integrity → maintain → import). `Test and CI`, `Load data` and
    `Distribute and operate` follow, because they are what a reader does once

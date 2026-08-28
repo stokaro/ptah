@@ -14,6 +14,7 @@ import (
 	"go.5x5.cz/ptah/internal/lexer"
 	"go.5x5.cz/ptah/internal/parser"
 	"go.5x5.cz/ptah/internal/servertarget"
+	"go.5x5.cz/ptah/migration/risk"
 )
 
 const (
@@ -36,12 +37,20 @@ const (
 	RuleStatementsNotAnalyzed = "SQL004"
 )
 
-type Severity string
+// Severity is the level a finding carries, on the one scale every Ptah
+// producer expresses findings on.
+//
+// An alias rather than a second declaration: the three values here were already
+// spelled exactly as [risk] spells them, so a reader of `ptah sql lint --format
+// json` saw the shared vocabulary while the code did not (stokaro/ptah#2395).
+// `ptah sql lint` reports on three of the five; the config file is what rejects
+// the other two, at load time.
+type Severity = risk.Severity
 
 const (
-	SeverityInfo    Severity = "info"
-	SeverityWarning Severity = "warning"
-	SeverityError   Severity = "error"
+	SeverityInfo    = risk.Info
+	SeverityWarning = risk.Warning
+	SeverityError   = risk.Error
 )
 
 type Source struct {
