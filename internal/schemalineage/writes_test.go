@@ -267,3 +267,43 @@ func TestDeriveRoutines_APlainSQLRoutineReportsNoWrites(t *testing.T) {
 	c.Assert(result.Edges, qt.HasLen, 1)
 	c.Assert(result.Undecided, qt.HasLen, 0)
 }
+
+// TestDeriveRoutines_AProcedureBodyIsNotReportedAsTheWrongShape covers the
+// routines the schema converter started handing this package.
+//
+// A SQL Server or MySQL routine reaches the model with no language of its own
+// and is recorded as plain SQL, so it takes the single-SELECT path and fails
+// it. "The body does not begin with SELECT" says the body was the wrong shape;
+// what happened is that nothing looked at its statements, and only a PL/pgSQL
+// body is looked at today (stokaro/ptah#2435 made these reachable).
+func TestDeriveRoutines_AProcedureBodyIsNotReportedAsTheWrongShape(t *testing.T) {
+	c := qt.New(t)
+
+	result := schemalineage.DeriveRoutines(&schemamodel.Database{
+		Functions: []schemamodel.Function{
+			{Name: "p", Kind: "procedure", Language: "sql", Body: "UPDATE t SET c = 1;"},
+		},
+	})
+
+	c.Assert(result.Undecided, qt.HasLen, 1)
+	c.Assert(result.Undecided[0].Reason, qt.Contains, "procedure body rather than a single SELECT")
+	c.Assert(result.Undecided[0].Reason, qt.Contains, "only where the routine declares PL/pgSQL")
+}
+
+// TestDeriveRoutines_AFunctionKeepsTheReadersOwnReason is the control.
+//
+// The reason a plain-SQL function did not resolve belongs to the reader that
+// tried, and replacing it for every routine would lose the four shapes the
+// view half reports by name.
+func TestDeriveRoutines_AFunctionKeepsTheReadersOwnReason(t *testing.T) {
+	c := qt.New(t)
+
+	result := schemalineage.DeriveRoutines(&schemamodel.Database{
+		Functions: []schemamodel.Function{
+			{Name: "f", Language: "sql", Body: "SELECT a FROM x JOIN y ON y.id = x.id"},
+		},
+	})
+
+	c.Assert(result.Undecided, qt.HasLen, 1)
+	c.Assert(result.Undecided[0].Reason, qt.Contains, "more than one source")
+}

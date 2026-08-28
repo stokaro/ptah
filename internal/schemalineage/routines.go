@@ -91,7 +91,7 @@ func deriveRoutine(routine schemamodel.Function, columns map[string][]string) Ro
 	// one answer rather than two that drift.
 	viewResult := deriveView(routine.Name, routine.Body, false, columns)
 	if len(viewResult.Undecided) > 0 {
-		return undecided(viewResult.Undecided[0].Reason)
+		return undecided(unresolvedPlainSQLReason(kind, viewResult.Undecided[0].Reason))
 	}
 
 	edges := make([]RoutineEdge, 0, len(viewResult.Edges))
@@ -135,6 +135,23 @@ func proceduralReason(language string, unresolved []string) string {
 	return fmt.Sprintf(
 		"the body is %s: %s, so neither the writes nor the columns it reads are complete",
 		language, strings.Join(unresolved, "; "))
+}
+
+// unresolvedPlainSQLReason says why a routine declaring plain SQL did not
+// resolve.
+//
+// A procedure whose body is not a single SELECT is procedural code, and this
+// package analyzes a procedural body only where it declares PL/pgSQL: a SQL
+// Server or MySQL routine reaches the model with no language of its own and is
+// recorded as plain SQL. Reporting "the body does not begin with SELECT" there
+// says the body was the wrong shape, when what happened is that nothing looked
+// at its statements (stokaro/ptah#2394).
+func unresolvedPlainSQLReason(kind, viewReason string) string {
+	if kind != "procedure" {
+		return viewReason
+	}
+	return "the body is a procedure body rather than a single SELECT, and its " +
+		"statements are analyzed only where the routine declares PL/pgSQL"
 }
 
 // routineKind names the routine family, defaulting to a function for the
