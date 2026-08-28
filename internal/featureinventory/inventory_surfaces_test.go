@@ -31,10 +31,18 @@ func TestInventorySurfaces_ReadsEverySurfaceItClaimsTo(t *testing.T) {
 	c := qt.New(t)
 	surfaces := shippedSurfaces(c)
 
-	c.Assert(surfaces.Packages, qt.HasLen, 35)
+	// Floors, not exact counts. This test is the anti-vacuity control: a
+	// discovery that returned nothing would find every inventory row correct
+	// and every gap absent. Completeness in the other direction -- a surface
+	// nothing claims -- belongs to
+	// TestInventorySurfaces_EverySurfaceIsClaimedAndEveryClaimExists, which
+	// derives both sides. Pinning an exact number here reddens this control
+	// every time the tree gains a package or a program, which is a claim that
+	// was true when it was written rather than a property worth holding.
+	c.Assert(len(surfaces.Packages) >= 35, qt.IsTrue)
 	c.Assert(surfaces.Packages, qt.Contains, "go.5x5.cz/ptah/core/ast")
 
-	c.Assert(surfaces.Programs, qt.HasLen, 24)
+	c.Assert(len(surfaces.Programs) >= 24, qt.IsTrue)
 	c.Assert(programDirs(surfaces), qt.Contains, "cmd/ptah")
 	c.Assert(programDirs(surfaces), qt.Contains, "cmd/ptah-ls")
 	// The finding this discovery exists for. `cmd/main.go` is three lines and a
