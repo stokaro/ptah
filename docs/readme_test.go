@@ -69,7 +69,7 @@ func TestReadmeRoutesToTheSupportMatrix(t *testing.T) {
 	body, err := os.ReadFile(readmePath)
 	c.Assert(err, qt.IsNil)
 
-	c.Assert(strings.Contains(string(body), supportMatrixRoute), qt.IsTrue,
+	c.Assert(string(body), qt.Contains, supportMatrixRoute,
 		qt.Commentf("the README links %s nowhere; it is the only route a reader has"+
 			" to the engine list since the names left the page", supportMatrixRoute))
 }
