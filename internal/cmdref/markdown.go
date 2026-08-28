@@ -155,7 +155,7 @@ func Flags(surfaces []Surface) (string, error) {
 			return "", errEmpty("the flag set of " + surface.Program)
 		}
 	}
-	return out.String(), nil
+	return strings.TrimRight(out.String(), "\n") + "\n", nil
 }
 
 // FlagsPage renders the flag reference as a whole page rather than a block,

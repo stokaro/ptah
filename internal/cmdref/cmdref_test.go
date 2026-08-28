@@ -127,6 +127,7 @@ func TestRendering_HappyPath(t *testing.T) {
 		"**`ptah seed`**\n\n| Flag | Type | Default | Environment variable | Notes |\n")
 	c.Assert(flags, qt.Contains,
 		"| `--env` | `string` | `a\\|b` | `PTAH_ENV` | inherited by subcommands, hidden |\n")
+	c.Assert(flags, qt.Matches, `(?s).*\|\n\z`)
 }
 
 // TestRendering_FailurePath pins the refusal that keeps this gate from
