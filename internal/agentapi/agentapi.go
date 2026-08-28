@@ -305,9 +305,22 @@ type LineageRoutineUndecided struct {
 	Kind    string `json:"kind"`
 }
 
+// LineageRoutineWrite is one table or column a routine writes.
+//
+// Column is empty where the statement named the table and no column, which is
+// the whole table rather than an unknown column.
+type LineageRoutineWrite struct {
+	Table     string `json:"table"`
+	Column    string `json:"column"`
+	ByRoutine string `json:"by_routine"`
+	Kind      string `json:"kind"`
+	Statement string `json:"statement"`
+}
+
 // LineageRoutines is the routine half of a lineage answer.
 type LineageRoutines struct {
 	Edges     []LineageRoutineEdge      `json:"edges"`
+	Writes    []LineageRoutineWrite     `json:"writes"`
 	Undecided []LineageRoutineUndecided `json:"undecided"`
 }
 
@@ -358,6 +371,7 @@ func schemaLineage(ctx context.Context, req SchemaLineageRequest) (*SchemaLineag
 		Undecided: make([]LineageUndecided, 0, len(derived.Undecided)),
 		Routines: LineageRoutines{
 			Edges:     make([]LineageRoutineEdge, 0, len(derivedRoutines.Edges)),
+			Writes:    make([]LineageRoutineWrite, 0, len(derivedRoutines.Writes)),
 			Undecided: make([]LineageRoutineUndecided, 0, len(derivedRoutines.Undecided)),
 		},
 	}
@@ -376,6 +390,12 @@ func schemaLineage(ctx context.Context, req SchemaLineageRequest) (*SchemaLineag
 		response.Routines.Edges = append(response.Routines.Edges, LineageRoutineEdge{
 			FromTable: edge.FromTable, FromColumn: edge.FromColumn,
 			ToRoutine: edge.ToRoutine, Kind: edge.Kind,
+		})
+	}
+	for _, write := range derivedRoutines.Writes {
+		response.Routines.Writes = append(response.Routines.Writes, LineageRoutineWrite{
+			Table: write.Table, Column: write.Column, ByRoutine: write.ByRoutine,
+			Kind: write.Kind, Statement: write.Statement,
 		})
 	}
 	for _, undecided := range derivedRoutines.Undecided {

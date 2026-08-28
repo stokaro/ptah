@@ -30,7 +30,7 @@ Use `ptah <command> --help` for the exact flag set in an installed binary.
 | `ptah schema pull` | Pull a canonical desired schema from an OCI registry. |
 | `ptah schema test` | Apply a desired schema from Go annotations, a SQL or HCL file, or a live database to a throwaway database and run declarative seed/SQL/assert cases against it. |
 | `ptah schema security` | Report security findings over a live schema: privileges granted to `PUBLIC`, tables reachable with no row-level security, and routines that run with their owner's privileges. Reads the database and nothing else. |
-| `ptah schema lineage` | Trace which base columns feed each view and materialized-view column, and which base columns each routine reads, from a schema source, with no database. |
+| `ptah schema lineage` | Trace which base columns feed each view and materialized-view column, which base columns each routine reads, and which tables and columns each routine writes, from a schema source, with no database. |
 | `ptah schema stats` | Count the objects in a live schema and write one OpenMetrics gauge per object kind. |
 | `ptah schema serve` | Serve a read-only web page holding the desired schema and how a live database differs from it, re-read on every request. |
 
