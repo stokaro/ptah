@@ -143,6 +143,9 @@ func writeLineageJSON(w io.Writer, document lineageDocument) error {
 	if document.Routines.Writes == nil {
 		document.Routines.Writes = make([]schemalineage.RoutineWrite, 0)
 	}
+	if document.Routines.Reads == nil {
+		document.Routines.Reads = make([]schemalineage.RoutineRead, 0)
+	}
 	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(document)
@@ -151,7 +154,8 @@ func writeLineageJSON(w io.Writer, document lineageDocument) error {
 func writeLineageTable(w io.Writer, document lineageDocument) error {
 	result, routines := document.Result, document.Routines
 	if len(result.Edges) == 0 && len(result.Undecided) == 0 &&
-		len(routines.Edges) == 0 && len(routines.Writes) == 0 && len(routines.Undecided) == 0 {
+		len(routines.Edges) == 0 && len(routines.Reads) == 0 && len(routines.Writes) == 0 &&
+		len(routines.Undecided) == 0 {
 		_, err := fmt.Fprintln(w, "No view or routine columns to trace.")
 		return err
 	}
@@ -188,6 +192,9 @@ func writeLineageTable(w io.Writer, document lineageDocument) error {
 		if err := table.Flush(); err != nil {
 			return err
 		}
+	}
+	if err := writeLineageRoutineReads(w, routines); err != nil {
+		return err
 	}
 	if err := writeLineageRoutineWrites(w, routines); err != nil {
 		return err
@@ -264,4 +271,29 @@ func writeTargetName(write schemalineage.RoutineWrite) string {
 		return write.Table
 	}
 	return write.Table + "." + write.Column
+}
+
+// writeLineageRoutineReads reports the columns routine bodies read.
+//
+// Its own table beside the writes: "what breaks if I drop this column" and
+// "what changes this column" are different questions, and one merged list would
+// answer neither cleanly.
+func writeLineageRoutineReads(w io.Writer, routines schemalineage.RoutineResult) error {
+	if len(routines.Reads) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	table := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	if _, err := fmt.Fprintln(table, "SOURCE\tREAD BY\tSTATEMENT"); err != nil {
+		return err
+	}
+	for _, read := range routines.Reads {
+		if _, err := fmt.Fprintf(table, "%s.%s\t%s\t%s\n",
+			read.Table, read.Column, read.ByRoutine, read.Statement); err != nil {
+			return err
+		}
+	}
+	return table.Flush()
 }
