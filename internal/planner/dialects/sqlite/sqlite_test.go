@@ -759,8 +759,14 @@ func TestPlannerRebuildEmitsIndexesAndTriggersOnce(t *testing.T) {
 			TableName:       "users",
 			ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "name", Changes: map[string]string{"type": "text -> integer"}}},
 		}},
-		IndexesAdded:  []difftypes.IndexRef{{Name: "idx_users_name", TableName: "users"}},
-		TriggersAdded: []difftypes.TriggerRef{{TriggerName: "trg_users_name", TableName: "users"}},
+		IndexesAdded: []difftypes.IndexRef{{Name: "idx_users_name", TableName: "users"}},
+		TriggersAdded: []difftypes.TriggerRef{{
+			TriggerName: "trg_users_name", TableName: "users",
+			Desired: schemamodel.Trigger{
+				StructName: "User", Name: "trg_users_name", Table: "users",
+				Timing: "AFTER", Event: "INSERT", ForEach: "ROW", Body: "BEGIN SELECT NEW.id; END",
+			},
+		}},
 	}
 
 	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.SQLite)
@@ -801,8 +807,14 @@ func TestPlannerEmitsTriggerChangesWithoutRebuild(t *testing.T) {
 		},
 	}
 	diff := &difftypes.SchemaDiff{
-		TriggersAdded:    []difftypes.TriggerRef{{TriggerName: "trg_users_insert", TableName: "users"}},
-		TriggersModified: []difftypes.TriggerDiff{{TriggerName: "trg_users_update", TableName: "users"}},
+		TriggersAdded: []difftypes.TriggerRef{{
+			TriggerName: "trg_users_insert", TableName: "users",
+			Desired: desired.Triggers[0],
+		}},
+		TriggersModified: []difftypes.TriggerDiff{{
+			TriggerName: "trg_users_update", TableName: "users",
+			Desired: desired.Triggers[1],
+		}},
 	}
 
 	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.SQLite)

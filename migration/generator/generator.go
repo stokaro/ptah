@@ -2213,9 +2213,14 @@ func reverseSchemaDiffWithSchemaForDialect(
 		MaterializedViewsRemoved:  diff.MaterializedViewsAdded,   // Materialized views to add become materialized views to remove
 		MaterializedViewsModified: reverseMaterializedViewDiffs(diff.MaterializedViewsModified),
 
-		TriggersAdded:    diff.TriggersRemoved, // Triggers to remove become triggers to add
-		TriggersRemoved:  diff.TriggersAdded,   // Triggers to add become triggers to remove
-		TriggersModified: reverseTriggerDiffs(diff.TriggersModified),
+		// Exchanged, but not carried across untouched. An addition renders from
+		// its operand and a removal from its names, so the two directions want
+		// opposite things: the reversed addition needs the definition the
+		// pre-change database held, and the reversed removal needs none
+		// (stokaro/ptah#2315).
+		TriggersAdded:    triggerAdditionsFromRemovals(diff.TriggersRemoved, prior, semantics),
+		TriggersRemoved:  triggerRemovalsFromAdditions(diff.TriggersAdded),
+		TriggersModified: reverseTriggerDiffs(diff.TriggersModified, prior, semantics),
 
 		// Reverse RLS policy operations. Both directions carry the owning
 		// table, so reversing is a swap and no name-to-table resolution is
@@ -3467,16 +3472,84 @@ func reverseMaterializedViewDiffs(viewDiffs []difftypes.MaterializedViewDiff) []
 // rather than a changed value, so it is preserved. PostgreSQL 17.10 accepts
 // CREATE OR REPLACE TRIGGER even for a timing change, so a trigger needs no
 // legality test of its own.
-func reverseTriggerDiffs(triggerDiffs []difftypes.TriggerDiff) []difftypes.TriggerDiff {
+func reverseTriggerDiffs(
+	triggerDiffs []difftypes.TriggerDiff,
+	prior *schemamodel.Database,
+	semantics identifier.Semantics,
+) []difftypes.TriggerDiff {
 	reversed := make([]difftypes.TriggerDiff, len(triggerDiffs))
 	for i, triggerDiff := range triggerDiffs {
 		reversed[i] = difftypes.TriggerDiff{
 			TriggerName: triggerDiff.TriggerName,
 			TableName:   triggerDiff.TableName,
 			Changes:     reverseChangeMap(triggerDiff.Changes),
+			// The replacement renders from the operand, so reversing the change
+			// map without reversing the operand would have the down direction
+			// re-apply the definition it is undoing.
+			Desired: priorTrigger(prior, triggerDiff.TableName, triggerDiff.TriggerName, semantics),
 		}
 	}
 	return reversed
+}
+
+// triggerAdditionsFromRemovals turns the forward direction's removals into the
+// rollback's additions, giving each the definition the pre-change database held.
+//
+// A removal carries names only, which is all a DROP needs. The addition it
+// becomes renders CREATE TRIGGER, so the operand has to be recovered here or
+// the rollback drops a trigger it never puts back.
+func triggerAdditionsFromRemovals(
+	removals []difftypes.TriggerRef,
+	prior *schemamodel.Database,
+	semantics identifier.Semantics,
+) []difftypes.TriggerRef {
+	if len(removals) == 0 {
+		return nil
+	}
+	additions := make([]difftypes.TriggerRef, len(removals))
+	for i, ref := range removals {
+		additions[i] = difftypes.TriggerRef{
+			TriggerName: ref.TriggerName,
+			TableName:   ref.TableName,
+			Desired:     priorTrigger(prior, ref.TableName, ref.TriggerName, semantics),
+		}
+	}
+	return additions
+}
+
+// triggerRemovalsFromAdditions turns the forward direction's additions into the
+// rollback's removals, dropping the operand each one carried.
+//
+// A DROP is written from the two names. Carrying the declaration into a removal
+// would leave the entry holding a definition nothing reads, which reads to the
+// next person as though something did.
+func triggerRemovalsFromAdditions(additions []difftypes.TriggerRef) []difftypes.TriggerRef {
+	if len(additions) == 0 {
+		return nil
+	}
+	removals := make([]difftypes.TriggerRef, len(additions))
+	for i, ref := range additions {
+		removals[i] = difftypes.TriggerRef{TriggerName: ref.TriggerName, TableName: ref.TableName}
+	}
+	return removals
+}
+
+// priorTrigger is the trigger the pre-change database held, resolved on the
+// terms [objectlookup.Trigger] applies: the table half carries the schema, so
+// the identity tiers are applied to it and the trigger's own name is folded by
+// the same comparison rule.
+func priorTrigger(
+	prior *schemamodel.Database,
+	tableName, triggerName string,
+	semantics identifier.Semantics,
+) schemamodel.Trigger {
+	if prior == nil {
+		return schemamodel.Trigger{}
+	}
+	if trigger := objectlookup.Trigger(prior.Triggers, tableName, triggerName, semantics); trigger != nil {
+		return *trigger
+	}
+	return schemamodel.Trigger{}
 }
 
 // reverseCompositeTypeDiffs mirrors reverseDomainDiffs for composite types.

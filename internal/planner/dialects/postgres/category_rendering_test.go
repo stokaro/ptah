@@ -318,10 +318,13 @@ func diffCategoryFixtures() []categoryFixture {
 		},
 		{
 			"TriggersAdded",
-			&difftypes.SchemaDiff{TriggersAdded: []difftypes.TriggerRef{{TriggerName: "tg", TableName: "t"}}},
-			&schemamodel.Database{Triggers: []schemamodel.Trigger{
-				{Name: "tg", Table: "t", Timing: "BEFORE", Event: "INSERT", ForEach: "ROW", Body: "RETURN NEW;"},
-			}},
+			&difftypes.SchemaDiff{TriggersAdded: []difftypes.TriggerRef{{
+				TriggerName: "tg", TableName: "t",
+				Desired: schemamodel.Trigger{
+					Name: "tg", Table: "t", Timing: "BEFORE", Event: "INSERT", ForEach: "ROW", Body: "RETURN NEW;",
+				},
+			}}},
+			&schemamodel.Database{},
 		},
 		{
 			"TriggersRemoved",
@@ -330,10 +333,14 @@ func diffCategoryFixtures() []categoryFixture {
 		},
 		{
 			"TriggersModified",
-			&difftypes.SchemaDiff{TriggersModified: []difftypes.TriggerDiff{{TriggerName: "tg", TableName: "t", Changes: map[string]string{"timing": "BEFORE -> AFTER"}}}},
-			&schemamodel.Database{Triggers: []schemamodel.Trigger{
-				{Name: "tg", Table: "t", Timing: "AFTER", Event: "INSERT", ForEach: "ROW", Body: "RETURN NEW;"},
-			}},
+			&difftypes.SchemaDiff{TriggersModified: []difftypes.TriggerDiff{{
+				TriggerName: "tg", TableName: "t",
+				Changes: map[string]string{"timing": "BEFORE -> AFTER"},
+				Desired: schemamodel.Trigger{
+					Name: "tg", Table: "t", Timing: "AFTER", Event: "INSERT", ForEach: "ROW", Body: "RETURN NEW;",
+				},
+			}}},
+			&schemamodel.Database{},
 		},
 		{
 			"RLSPoliciesAdded",

@@ -611,6 +611,15 @@ privileges on the view and fails loudly if the engine refuses it, while a
 rollback drops and recreates, which always applies. Embedders that build a
 `ViewDiff` by hand and leave both fields empty get the forward answer.
 
+`migration/schemadiff/difftypes.TriggerRef` and `TriggerDiff` carry a `Desired`
+field too, and the reference type is the one place where it means something on
+one list and nothing on another: a `TriggersAdded` entry carries the declaration
+CREATE TRIGGER renders from, while a `TriggersRemoved` entry carries none,
+because a DROP is written from the trigger's name and its table. A rollback
+therefore does more than exchange the two lists: it resolves each reversed
+addition against the pre-change database, and strips the operand from each
+reversed removal.
+
 `migration/schemadiff/difftypes.FunctionDiff`, `SequenceDiff` and
 `SynonymDiff` carry a `Desired` field for the same reason: a function
 modification renders as CREATE OR REPLACE and needs the whole body and

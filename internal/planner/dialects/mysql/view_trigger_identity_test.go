@@ -44,25 +44,6 @@ func TestViewAndTriggerLookupsDoNotCrossDatabases(t *testing.T) {
 			}}},
 			unwantedSQL: "VIEW",
 		},
-		{
-			name: "a trigger whose table is declared in another database is left alone",
-			desired: &schemamodel.Database{
-				Triggers: []schemamodel.Trigger{{
-					StructName: "Order",
-					Name:       "touch",
-					Table:      "reporting.orders",
-					Timing:     "AFTER",
-					Event:      "UPDATE",
-					ForEach:    "ROW",
-					Body:       "SET @x = 1;",
-				}},
-			},
-			diff: &difftypes.SchemaDiff{TriggersAdded: []difftypes.TriggerRef{{
-				TriggerName: "touch",
-				TableName:   "app.orders",
-			}}},
-			unwantedSQL: "TRIGGER",
-		},
 	}
 
 	for _, test := range tests {
@@ -76,47 +57,58 @@ func TestViewAndTriggerLookupsDoNotCrossDatabases(t *testing.T) {
 	}
 }
 
-// TestViewAndTriggerLookupsResolveAcrossDatabaseSpellings is the capability
-// half. MySQL's reader reports the database name for every view while a Go
-// annotation leaves it bare, which is the case that made objectlookup exist
-// (stokaro/ptah#1287) and the one no static default schema can answer.
-func TestViewAndTriggerLookupsResolveAcrossDatabaseSpellings(t *testing.T) {
-	tests := []struct {
-		name    string
-		desired *schemamodel.Database
-		diff    *difftypes.SchemaDiff
-		wantSQL string
-	}{
-		{
-			name: "a trigger whose table the diff qualifies with the database",
-			desired: &schemamodel.Database{
-				Triggers: []schemamodel.Trigger{{
-					StructName: "Order",
-					Name:       "touch",
-					Table:      "orders",
-					Timing:     "AFTER",
-					Event:      "UPDATE",
-					ForEach:    "ROW",
-					Body:       "SET @x = 1;",
-				}},
-			},
-			diff: &difftypes.SchemaDiff{TriggersAdded: []difftypes.TriggerRef{{
-				TriggerName: "touch",
-				TableName:   "app.orders",
-			}}},
-			wantSQL: "TRIGGER",
-		},
+// TestCompare_ATriggerDoesNotResolveTheDatabaseQualifier records what MySQL
+// actually does with the case the view test above resolves, and it is not the
+// same answer.
+//
+// A declaration writes the table as `orders` and MySQL's reader reports it as
+// `app.orders`. For a view that is one modification; for a trigger it is one
+// addition and one removal, so the plan drops the trigger and creates it again
+// on every run. The two families resolve identity differently -- views through
+// objectlookup's three tiers, triggers through a map key, and a key has no tier
+// for "unqualified matches qualified when only one candidate does", because that
+// tier needs the whole candidate set.
+//
+// This is stokaro/ptah#2436 and it is not what the carry changed: the comparison
+// produced the same pair before it, and the planner rendered them from the same
+// declaration. The assertions below are deliberately the MEASUREMENT rather than
+// the wish, so that fixing #2436 turns this test red and it gets rewritten to
+// the answer the view already gives.
+func TestCompare_ATriggerDoesNotResolveTheDatabaseQualifier(t *testing.T) {
+	c := qt.New(t)
+
+	desired := &schemamodel.Database{
+		Triggers: []schemamodel.Trigger{{
+			StructName: "Order",
+			Name:       "touch",
+			Table:      "orders",
+			Timing:     "AFTER",
+			Event:      "UPDATE",
+			ForEach:    "ROW",
+			Body:       "SET @x = 1;",
+		}},
+	}
+	database := &catalog.Database{
+		Triggers: []catalog.Trigger{{
+			Schema: "app", Name: "touch", Table: "orders",
+			Timing: "AFTER", Event: "UPDATE", ForEach: "ROW",
+		}},
 	}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			statements, err := planner.GenerateSchemaDiffSQLStatements(test.diff, test.desired, "mysql")
-			c.Assert(err, qt.IsNil)
-			plan := strings.Join(statements, "\n")
-			c.Assert(plan, qt.Contains, test.wantSQL, qt.Commentf("plan:\n%s", plan))
-		})
-	}
+	diff := schemadiff.CompareWithDialect(desired, database, platform.MySQL)
+
+	c.Assert(diff.TriggersModified, qt.HasLen, 0)
+	c.Assert(diff.TriggersAdded, qt.HasLen, 1)
+	c.Assert(diff.TriggersRemoved, qt.HasLen, 1)
+	c.Assert(diff.TriggersAdded[0].Desired.Name, qt.Equals, "touch",
+		qt.Commentf("the addition still carries the declaration it renders from"))
+	c.Assert(diff.TriggersRemoved[0].Desired.Name, qt.Equals, "",
+		qt.Commentf("a removal is written from its two names and carries no operand"))
+
+	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.MySQL)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, "TRIGGER")
 }
 
 // TestCompare_AModifiedViewResolvesTheDatabaseQualifier is the view half of the

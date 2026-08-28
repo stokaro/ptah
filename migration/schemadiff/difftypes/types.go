@@ -1991,6 +1991,25 @@ type MatViewRefreshChange struct {
 type TriggerRef struct {
 	TriggerName string `json:"trigger_name"`
 	TableName   string `json:"table_name"`
+
+	// Desired is the trigger this entry asks the database to hold.
+	//
+	// It is populated for an ADDITION, where the planner renders CREATE
+	// TRIGGER from it (stokaro/ptah#2315), and empty for a REMOVAL, which needs
+	// nothing but the two names above: the DROP is written from them, and so is
+	// the PostgreSQL trigger function the drop takes with it.
+	//
+	// It is the declaration as written, not the copy the comparison folds. That
+	// fold -- uppercasing the timing, the event and the FOR EACH clause, and
+	// supplying ROW where none was written -- exists to answer "did this
+	// change", and carrying it would make the diff the author of the DDL. It is
+	// not visible in today's output, because the renderer normalizes the same
+	// three the same way; the carry is the faithful one, not a guarantee about
+	// the rendered text. [FunctionDiff.Desired] is where the same rule IS
+	// visible.
+	//
+	// It stays off the wire. The names are the reference; this is the operand.
+	Desired schemamodel.Trigger `json:"-"`
 }
 
 // TriggerDiff represents changes to a trigger definition.
@@ -1998,6 +2017,14 @@ type TriggerDiff struct {
 	TriggerName string            `json:"trigger_name"`
 	TableName   string            `json:"table_name"`
 	Changes     map[string]string `json:"changes"`
+
+	// Desired is the trigger this change asks the database to hold.
+	//
+	// A modification renders as CREATE OR REPLACE TRIGGER, which needs the whole
+	// definition rather than the change map's record of what differs. It carries
+	// the declaration as written, for the reason [TriggerRef.Desired] gives, and
+	// stays off the wire for the same one.
+	Desired schemamodel.Trigger `json:"-"`
 }
 
 // RLSPolicyRef represents a reference to an RLS policy with its table information.

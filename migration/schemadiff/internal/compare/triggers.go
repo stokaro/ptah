@@ -43,9 +43,17 @@ func TriggersWithSemantics(
 ) {
 	semantics = semantics.Normalize("")
 	generatedTriggers := make(map[tableMemberKey]schemamodel.Trigger)
+	// The declaration as written, alongside the folded copy the comparison
+	// needs. Canonicalize touches the timing, the event and the FOR EACH clause
+	// -- never the name or the table -- so the two maps are keyed alike, and the
+	// entry carries what the author wrote (stokaro/ptah#2315).
+	declaredTriggers := make(map[tableMemberKey]schemamodel.Trigger)
 	for _, trigger := range desired.Triggers {
+		declared := trigger
 		trigger.Canonicalize()
-		generatedTriggers[triggerKey(trigger.Table, trigger.Name, semantics)] = trigger
+		key := triggerKey(trigger.Table, trigger.Name, semantics)
+		generatedTriggers[key] = trigger
+		declaredTriggers[key] = declared
 	}
 
 	databaseTriggers := make(map[tableMemberKey]catalog.Trigger)
@@ -58,6 +66,7 @@ func TriggersWithSemantics(
 			diff.TriggersAdded = append(diff.TriggersAdded, difftypes.TriggerRef{
 				TriggerName: trigger.Name,
 				TableName:   trigger.Table,
+				Desired:     declaredTriggers[key],
 			})
 		}
 	}
@@ -73,6 +82,7 @@ func TriggersWithSemantics(
 		if databaseTrigger, exists := databaseTriggers[key]; exists {
 			triggerDiff := TriggerDefinitions(generatedTrigger, databaseTrigger)
 			if len(triggerDiff.Changes) > 0 {
+				triggerDiff.Desired = declaredTriggers[key]
 				diff.TriggersModified = append(diff.TriggersModified, triggerDiff)
 			}
 		}

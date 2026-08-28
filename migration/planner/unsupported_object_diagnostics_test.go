@@ -71,7 +71,16 @@ func unhostableCreationDiff() *difftypes.SchemaDiff {
 		GrantsAdded: []difftypes.GrantRef{{
 			Role: "app_role", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "app.t",
 		}},
-		TriggersAdded: []difftypes.TriggerRef{{TriggerName: "trg1", TableName: "t"}},
+		TriggersAdded: []difftypes.TriggerRef{{
+			TriggerName: "trg1", TableName: "t",
+			// An addition carries the declaration it renders from
+			// (stokaro/ptah#2315); an entry without one plans nothing, which
+			// would take this object out of the diagnostic comparison.
+			Desired: schemamodel.Trigger{
+				StructName: "T", Name: "trg1", Table: "t",
+				Timing: "AFTER", Event: "INSERT", ForEach: "ROW", Body: "BEGIN RETURN NEW; END;",
+			},
+		}},
 	}
 }
 

@@ -24,15 +24,20 @@ func viewFixture916() (*difftypes.SchemaDiff, *schemamodel.Database) {
 }
 
 func triggerFixture916() (*difftypes.SchemaDiff, *schemamodel.Database) {
-	return &difftypes.SchemaDiff{TriggersAdded: []difftypes.TriggerRef{{TriggerName: "touch", TableName: "notes"}}},
-		&schemamodel.Database{Triggers: []schemamodel.Trigger{{
-			StructName: "Note",
-			Name:       "touch",
-			Table:      "notes",
-			Timing:     "AFTER",
-			Event:      "UPDATE",
-			Body:       "SELECT 1",
-		}}}
+	trigger := schemamodel.Trigger{
+		StructName: "Note",
+		Name:       "touch",
+		Table:      "notes",
+		Timing:     "AFTER",
+		Event:      "UPDATE",
+		Body:       "SELECT 1",
+	}
+	// The declaration travels with the entry (stokaro/ptah#2315); the schema is
+	// returned alongside because the caller hands it to the planner.
+	return &difftypes.SchemaDiff{TriggersAdded: []difftypes.TriggerRef{{
+			TriggerName: "touch", TableName: "notes", Desired: trigger,
+		}}},
+		&schemamodel.Database{Triggers: []schemamodel.Trigger{trigger}}
 }
 
 // TestSQLitePlanner_RefusesObjectKindsTheTargetDeclines pins both arms of the

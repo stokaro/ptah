@@ -1007,8 +1007,9 @@ func (p *Planner) addTriggers(
 		if rebuilds.contains(ref.TableName) {
 			continue
 		}
-		if trigger := findTrigger(desired.Triggers, ref.TableName, ref.TriggerName, semantics); trigger != nil {
-			result = append(result, fromschema.FromTrigger(*trigger))
+		// The definition travels WITH the entry (stokaro/ptah#2315).
+		if ref.Desired.Name != "" {
+			result = append(result, fromschema.FromTrigger(ref.Desired))
 		}
 	}
 	return result
@@ -1025,8 +1026,8 @@ func (p *Planner) modifyTriggers(
 		if rebuilds.contains(triggerDiff.TableName) {
 			continue
 		}
-		if trigger := findTrigger(desired.Triggers, triggerDiff.TableName, triggerDiff.TriggerName, semantics); trigger != nil {
-			result = append(result, fromschema.FromTrigger(*trigger).SetReplace())
+		if triggerDiff.Desired.Name != "" {
+			result = append(result, fromschema.FromTrigger(triggerDiff.Desired).SetReplace())
 		}
 	}
 	return result
@@ -1038,14 +1039,6 @@ func (p *Planner) removeTriggers(diff *difftypes.SchemaDiff) []ast.Node {
 		result = append(result, ast.NewDropTrigger(ref.TriggerName, ref.TableName).SetIfExists())
 	}
 	return result
-}
-
-func findTrigger(
-	triggers []schemamodel.Trigger,
-	tableName, triggerName string,
-	semantics identifier.Semantics,
-) *schemamodel.Trigger {
-	return objectlookup.Trigger(triggers, tableName, triggerName, semantics)
 }
 
 func unsupportedFeaturef(format string, args ...any) error {

@@ -50,7 +50,15 @@ func TestPlanner_GenerateMigrationAST_SchemaObjectsModified(t *testing.T) {
 			Changes: map[string]string{"body": "old -> new"},
 		}},
 		MaterializedViewsModified: []difftypes.MaterializedViewDiff{{ViewName: "user_stats", Changes: map[string]string{"body": "old -> new"}}},
-		TriggersModified:          []difftypes.TriggerDiff{{TriggerName: "set_updated_at", TableName: "users", Changes: map[string]string{"body": "old -> new"}}},
+		TriggersModified: []difftypes.TriggerDiff{{
+			TriggerName: "set_updated_at", TableName: "users",
+			Changes: map[string]string{"body": "old -> new"},
+			Desired: schemamodel.Trigger{
+				StructName: "User", Name: "set_updated_at", Table: "users",
+				Timing: "BEFORE", Event: "UPDATE",
+				Body: "NEW.updated_at = NOW(); RETURN NEW;",
+			},
+		}},
 	}
 
 	nodes, err := planner.GenerateMigrationAST(diff, desired)
@@ -677,8 +685,8 @@ func TestPlanner_GenerateMigrationAST_DuplicateTriggerNamesUseDistinctFunctions(
 	}
 	diff := &difftypes.SchemaDiff{
 		TriggersAdded: []difftypes.TriggerRef{
-			{TriggerName: "set_updated_at", TableName: "users"},
-			{TriggerName: "set_updated_at", TableName: "posts"},
+			{TriggerName: "set_updated_at", TableName: "users", Desired: desired.Triggers[0]},
+			{TriggerName: "set_updated_at", TableName: "posts", Desired: desired.Triggers[1]},
 		},
 	}
 

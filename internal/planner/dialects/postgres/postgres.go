@@ -1738,8 +1738,8 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 	result = p.modifyExistingContinuousAggregates(result, diff)
 	result = p.addExtendedProperties(result, diff)
 	result = p.modifyExistingMaterializedViews(result, diff, desired)
-	result = p.addNewTriggers(result, diff, desired)
-	result = p.modifyExistingTriggers(result, diff, desired)
+	result = p.addNewTriggers(result, diff)
+	result = p.modifyExistingTriggers(result, diff)
 
 	// 7. Modify existing roles (must be done before RLS policies that reference them)
 	result = p.modifyExistingRoles(result, diff)
@@ -2715,21 +2715,21 @@ func extendedPropertyNode(
 		SetValue(ref.Value)
 }
 
-func (p *Planner) addNewTriggers(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
-	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
+func (p *Planner) addNewTriggers(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	// The definition travels WITH the entry (stokaro/ptah#2315). An entry
+	// carrying none names a trigger nothing can render, so it plans nothing.
 	for _, triggerRef := range diff.TriggersAdded {
-		if trigger := findTrigger(desired.Triggers, triggerRef.TableName, triggerRef.TriggerName, semantics); trigger != nil {
-			result = append(result, fromschema.FromTrigger(*trigger))
+		if triggerRef.Desired.Name != "" {
+			result = append(result, fromschema.FromTrigger(triggerRef.Desired))
 		}
 	}
 	return result
 }
 
-func (p *Planner) modifyExistingTriggers(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
-	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
+func (p *Planner) modifyExistingTriggers(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, triggerDiff := range diff.TriggersModified {
-		if trigger := findTrigger(desired.Triggers, triggerDiff.TableName, triggerDiff.TriggerName, semantics); trigger != nil {
-			result = append(result, fromschema.FromTrigger(*trigger).SetReplace())
+		if triggerDiff.Desired.Name != "" {
+			result = append(result, fromschema.FromTrigger(triggerDiff.Desired).SetReplace())
 		}
 	}
 	return result
@@ -2756,14 +2756,6 @@ func findMaterializedView(
 	semantics identifier.Semantics,
 ) *schemamodel.MaterializedView {
 	return objectlookup.MaterializedView(views, name, semantics)
-}
-
-func findTrigger(
-	triggers []schemamodel.Trigger,
-	tableName, triggerName string,
-	semantics identifier.Semantics,
-) *schemamodel.Trigger {
-	return objectlookup.Trigger(triggers, tableName, triggerName, semantics)
 }
 
 // enableRLSOnTables emits ALTER TABLE ... ENABLE ROW LEVEL SECURITY.
