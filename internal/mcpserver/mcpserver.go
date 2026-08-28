@@ -206,9 +206,10 @@ func registerReadTools(server *mcp.Server, session *agentapi.Session) {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "schema_lineage",
-		Description: "Trace which base columns feed each view column in a declared Ptah schema. " +
-			"Answers what breaks if a column is dropped, before the drop. Views whose bodies " +
-			"cannot be resolved are reported rather than omitted.",
+		Description: "Trace which base columns feed each view column, and which base columns " +
+			"each routine reads, in a declared Ptah schema. Answers what breaks if a column is " +
+			"dropped, before the drop. Views and routines whose bodies cannot be resolved are " +
+			"reported rather than omitted.",
 		Annotations: readOnly(false),
 	}, wrap(session.SchemaLineage))
 

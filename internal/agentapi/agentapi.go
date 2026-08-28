@@ -283,6 +283,34 @@ type LineageUndecided struct {
 	Reason string `json:"reason"`
 }
 
+// LineageRoutineEdge is one base column a routine reads.
+//
+// Its own type rather than [LineageEdge] with a widened meaning: ToView names a
+// view, and a routine arriving in that field would be a lie in the field name
+// of an answer a model parses.
+type LineageRoutineEdge struct {
+	FromTable  string `json:"from_table"`
+	FromColumn string `json:"from_column"`
+	ToRoutine  string `json:"to_routine"`
+	Kind       string `json:"kind"`
+}
+
+// LineageRoutineUndecided is a routine body the analysis could not resolve.
+//
+// It names the routine for the reason [LineageUndecided] names a view: the
+// whole body went unresolved, so there are no columns to name.
+type LineageRoutineUndecided struct {
+	Routine string `json:"routine"`
+	Reason  string `json:"reason"`
+	Kind    string `json:"kind"`
+}
+
+// LineageRoutines is the routine half of a lineage answer.
+type LineageRoutines struct {
+	Edges     []LineageRoutineEdge      `json:"edges"`
+	Undecided []LineageRoutineUndecided `json:"undecided"`
+}
+
 // SchemaLineageResponse carries both halves.
 //
 // Undecided is not omitted when empty in the caller's reading of it: a lineage
@@ -291,6 +319,10 @@ type LineageUndecided struct {
 type SchemaLineageResponse struct {
 	Edges     []LineageEdge      `json:"edges"`
 	Undecided []LineageUndecided `json:"undecided"`
+	// Routines carries the same two halves for routine bodies, under its own
+	// key: a caller parsing Edges keeps parsing the view edges it always
+	// parsed, and gains routines by asking for them.
+	Routines LineageRoutines `json:"routines"`
 	// Notice says the content below is repository data rather than
 	// instructions. See [UntrustedContentNotice].
 	//
@@ -316,6 +348,7 @@ func schemaLineage(ctx context.Context, req SchemaLineageRequest) (*SchemaLineag
 		return nil, err
 	}
 	derived := schemalineage.Derive(database)
+	derivedRoutines := schemalineage.DeriveRoutines(database)
 	// Both lists start non-nil so the encoded answer carries [] rather than
 	// null. A caller reading null as "no lineage" and [] as "no lineage" would
 	// be right by accident; one reading null as an absent field would not.
@@ -323,6 +356,10 @@ func schemaLineage(ctx context.Context, req SchemaLineageRequest) (*SchemaLineag
 		Notice:    UntrustedContentNotice,
 		Edges:     make([]LineageEdge, 0, len(derived.Edges)),
 		Undecided: make([]LineageUndecided, 0, len(derived.Undecided)),
+		Routines: LineageRoutines{
+			Edges:     make([]LineageRoutineEdge, 0, len(derivedRoutines.Edges)),
+			Undecided: make([]LineageRoutineUndecided, 0, len(derivedRoutines.Undecided)),
+		},
 	}
 	for _, edge := range derived.Edges {
 		response.Edges = append(response.Edges, LineageEdge{
@@ -333,6 +370,17 @@ func schemaLineage(ctx context.Context, req SchemaLineageRequest) (*SchemaLineag
 	for _, undecided := range derived.Undecided {
 		response.Undecided = append(response.Undecided, LineageUndecided{
 			View: undecided.View, Reason: undecided.Reason,
+		})
+	}
+	for _, edge := range derivedRoutines.Edges {
+		response.Routines.Edges = append(response.Routines.Edges, LineageRoutineEdge{
+			FromTable: edge.FromTable, FromColumn: edge.FromColumn,
+			ToRoutine: edge.ToRoutine, Kind: edge.Kind,
+		})
+	}
+	for _, undecided := range derivedRoutines.Undecided {
+		response.Routines.Undecided = append(response.Routines.Undecided, LineageRoutineUndecided{
+			Routine: undecided.Routine, Reason: undecided.Reason, Kind: undecided.Kind,
 		})
 	}
 	return response, nil
