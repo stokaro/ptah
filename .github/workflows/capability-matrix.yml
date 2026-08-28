@@ -244,6 +244,15 @@ jobs:
             echo "reason=requested on this pull request: ${cells}"
           } >>"${GITHUB_OUTPUT}"
 
+      # The selector decides whether this run probes 26 cells or none, and the
+      # step below is the only caller. Its selftest was in the tree and reached
+      # by nothing -- no workflow and no Makefile target ran it -- which is how
+      # the inline copy of the rule drifted from the script for three nights
+      # without anything going red. It runs here, in the job that depends on the
+      # answer, so a change to the rule is proven before it is used.
+      - name: Prove the cell selector
+        run: scripts/select-capability-cells-selftest.sh
+
       # Which of those cells this RUN probes, and why.
       #
       # Separate from the emit step above on purpose. That step's "zero runnable
@@ -272,51 +281,35 @@ jobs:
           LABEL_NAME: ${{ github.event.label.name }}
         run: |
           set -euo pipefail
-          all="${ALL}"
-          request=""
+
+          # The selection rule lives in scripts/select-capability-cells.sh, and
+          # this step calls it rather than restating it. It was restated once,
+          # and the copy drifted: the script exempted the `all` sentinel from
+          # the typo check and the copy did not, so every scheduled run failed
+          # with "requested cells matched nothing: all" while the script's own
+          # selftest passed on the same case. A selftest that cannot reach what
+          # CI runs proves nothing about it (stokaro/ptah#2185).
+          #
+          # A pull request request is read in the step above and passed in here,
+          # because reading it needs the API and the script takes no network.
+          request="${REQUESTED:-}"
           case "${EVENT}" in
-            schedule)
-              request="all"
-              reason="the nightly tier 2 run probes every declared cell"
-              ;;
-            workflow_dispatch|repository_dispatch)
-              request="${REQUESTED:-all}"
-              reason="requested by hand: ${request}"
-              ;;
-            push)
-              request="none"
-              reason="the probe fan-out does not run on a push; it runs nightly, and on request from the workflow's Run button"
-              ;;
             pull_request|pull_request_target)
               request="${PR_REQUEST:-none}"
-              reason="${PR_REASON}"
-              ;;
-            *)
-              request="none"
-              reason="not requested on this event (${EVENT}); comment \`/capability-matrix\` on the pull request to run it, or use the workflow's Run button"
               ;;
           esac
 
-          if [ "${request}" = "all" ]; then
-            selected="${all}"
-          elif [ "${request}" = "none" ] || [ -z "${request}" ]; then
-            selected="[]"
-          else
-            # A request names cell ids or dialect prefixes. Matching by prefix
-            # is what makes `postgres` mean every PostgreSQL line without the
-            # requester having to know the line numbers.
-            #
-            # `. as $w` is load-bearing. Written as `$id | startswith(. + "-")`
-            # the pipe rebinds `.` to $id, so every request compared the id to
-            # itself and matched nothing -- `postgres` selected zero cells and
-            # the run said the request was a typo. Caught by exercising the
-            # block against a sample matrix before it shipped.
-            selected="$(REQUEST="${request}" jq -c '
-              [ .[] as $id
-                | ($ENV.REQUEST | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))) as $want
-                | select(any($want[]; . as $w | $id == $w or ($id | startswith($w + "-"))))
-                | $id ]' <<<"${all}")"
-          fi
+          output="$(scripts/select-capability-cells.sh "${EVENT}" "${request}" "${ALL}")"
+          selected="$(printf '%s\n' "${output}" | sed -n 's/^selected=//p')"
+          reason="$(printf '%s\n' "${output}" | sed -n 's/^reason=//p')"
+
+          # The pull request path carries its own sentence, which names the
+          # comment that asked. The script cannot know it.
+          case "${EVENT}" in
+            pull_request|pull_request_target)
+              reason="${PR_REASON:-${reason}}"
+              ;;
+          esac
 
           count="$(jq 'length' <<<"${selected}")"
           {
@@ -329,28 +322,6 @@ jobs:
             echo
             echo "Cells probed: ${count}. ${reason}"
           } >>"${GITHUB_STEP_SUMMARY}"
-
-          # A request that names something the matrix does not have is a typo,
-          # and answering it with silence would be the same defect this file is
-          # about.
-          #
-          # EVERY selector is checked, not the count. `postgres,postgrez` has a
-          # valid half, so a count-only check passes while the misspelled half
-          # is discarded -- the run then probes fewer cells than were asked for
-          # and reports that it honored the request. Only "none" may match
-          # nothing: it asked for nothing and got it.
-          if [ "${request}" != "none" ] && [ -n "${request}" ]; then
-            unmatched="$(REQUEST="${request}" jq -r '
-              . as $ids
-              | ($ENV.REQUEST | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0)))
-              | map(select(. as $w | ($ids | any(. == $w or startswith($w + "-"))) | not))
-              | join(", ")' <<<"${all}")"
-            if [ -n "${unmatched}" ]; then
-              echo "requested cells matched nothing: ${unmatched}" >&2
-              echo "the matrix declares: ${all}" >&2
-              exit 1
-            fi
-          fi
 
           # A run the LABEL started that then probes nothing is the defect this
           # whole file exists to remove, wearing the one disguise it has left: a

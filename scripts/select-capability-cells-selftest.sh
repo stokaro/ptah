@@ -35,8 +35,11 @@ selected_for() {
 	printf '%s\n' "$out" | sed -n 's/^selected=//p'
 }
 
+checked=0
+
 expect() {
 	local label="$1" event="$2" request="$3" want="$4" got
+	checked=$((checked + 1))
 	got="$(selected_for "$event" "$request")"
 	if [ "$got" != "$want" ]; then
 		echo "select-capability-cells-selftest: ${label}: expected ${want}, got ${got}" >&2
@@ -47,7 +50,6 @@ expect() {
 # A pull request probes nothing, and a schedule probes everything. These two are
 # the policy the issue asked for; if they ever agree, the tier is either always
 # on or always off and nothing below distinguishes the cases.
-expect "a pull request selects no cells" pull_request "" "[]"
 expect "a push selects no cells" push "" "[]"
 expect "the nightly run selects every cell" schedule "" "$cells"
 expect "dispatch with no argument selects every cell" workflow_dispatch "" "$cells"
@@ -58,6 +60,20 @@ expect "dispatch can ask for nothing" workflow_dispatch none "[]"
 expect "a dialect prefix selects that dialect's lines" workflow_dispatch postgres '["postgres-18","postgres-17"]'
 expect "a dialect prefix stops at the separator" workflow_dispatch mysql '["mysql-9-7","mysql-8-4"]'
 expect "an exact cell id selects only itself" workflow_dispatch postgres-17 '["postgres-17"]'
+
+# A request with one good half and one typo. A refusal that counted the
+# selection would pass this: `postgres` selects two cells, so the count is not
+# zero, and `postgrez` would be discarded in silence while the run reported that
+# it had honored the request.
+expect "one misspelled selector refuses the whole request" workflow_dispatch postgres,postgrez REFUSED
+
+# The pull request path. The caller reads the `/capability-matrix` comment and
+# passes what it found, so an empty argument means nobody asked -- and the
+# default branch of the case statement would answer that way too, which is why
+# the second row is here: it is the one that distinguishes a pull request from
+# an unrecognized event.
+expect "a pull request with no request selects nothing" pull_request "" "[]"
+expect "a pull request selects what its comment asked for" pull_request postgres '["postgres-18","postgres-17"]'
 expect "a comma list selects the union, in matrix order" workflow_dispatch "mysql, oracle-21" '["mysql-9-7","mysql-8-4","oracle-21"]'
 expect "surrounding space is not part of a name" workflow_dispatch "  postgres-18  " '["postgres-18"]'
 
@@ -79,6 +95,7 @@ for event in pull_request push schedule workflow_dispatch; do
 done
 
 # The selector must not invent a matrix when it was handed none.
+checked=$((checked + 1))
 if "$selector" schedule "" "" >/dev/null 2>&1; then
 	echo "select-capability-cells-selftest: an empty cell list was accepted" >&2
 	failures=$((failures + 1))
@@ -89,4 +106,12 @@ if [ "$failures" -ne 0 ]; then
 	exit 1
 fi
 
-echo "select-capability-cells-selftest: 16 cases checked, selection and refusal both observed"
+# The count is derived rather than written down. A literal here is a claim that
+# was true when it was typed, and a case added without touching it would leave
+# the file reporting a number that had stopped describing the run.
+if [ "$checked" -lt 10 ]; then
+	echo "select-capability-cells-selftest: only ${checked} case(s) ran; the file is not exercising the selector" >&2
+	exit 1
+fi
+
+echo "select-capability-cells-selftest: ${checked} cases checked, selection and refusal both observed"

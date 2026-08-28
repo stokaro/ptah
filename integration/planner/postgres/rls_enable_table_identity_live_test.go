@@ -129,13 +129,23 @@ func ordersSchema(tableSchema, policyTable string) *schemamodel.Database {
 			{Name: "id", StructName: "Order", Type: "INTEGER", Primary: true},
 			{Name: "tenant_id", StructName: "Order", Type: "INTEGER"},
 		},
-		RLSPolicies: []schemamodel.RLSPolicy{{
-			Name:            "tenant_isolation",
-			Table:           policyTable,
-			PolicyFor:       "ALL",
-			ToRoles:         "PUBLIC",
-			UsingExpression: "tenant_id = 1",
-		}},
+		RLSPolicies: []schemamodel.RLSPolicy{ordersPolicy(policyTable)},
+	}
+}
+
+// ordersPolicy is the policy both the desired schema and the diff rows carry.
+//
+// One declaration rather than two: a diff entry's Desired is the operand the
+// planner renders from, so a row whose operand disagreed with the schema it is
+// applied against would be testing a state no comparator produces
+// (stokaro/ptah#1311).
+func ordersPolicy(policyTable string) schemamodel.RLSPolicy {
+	return schemamodel.RLSPolicy{
+		Name:            "tenant_isolation",
+		Table:           policyTable,
+		PolicyFor:       "ALL",
+		ToRoles:         "PUBLIC",
+		UsingExpression: "tenant_id = 1",
 	}
 }
 
@@ -179,7 +189,7 @@ func TestPlannerEnablesRowSecurityForANewTableWhoseSpellingDiffersLivePostgres(t
 			diff: &difftypes.SchemaDiff{
 				TablesAdded: []string{"orders"},
 				RLSPoliciesAdded: []difftypes.RLSPolicyRef{
-					{PolicyName: "tenant_isolation", TableName: "public.orders"},
+					{PolicyName: "tenant_isolation", TableName: "public.orders", Desired: ordersPolicy("public.orders")},
 				},
 			},
 			desired:         ordersSchema("", "public.orders"),
@@ -191,7 +201,7 @@ func TestPlannerEnablesRowSecurityForANewTableWhoseSpellingDiffersLivePostgres(t
 			diff: &difftypes.SchemaDiff{
 				TablesAdded: []string{"public.orders"},
 				RLSPoliciesAdded: []difftypes.RLSPolicyRef{
-					{PolicyName: "tenant_isolation", TableName: "orders"},
+					{PolicyName: "tenant_isolation", TableName: "orders", Desired: ordersPolicy("orders")},
 				},
 			},
 			desired:         ordersSchema("public", "orders"),
@@ -203,7 +213,7 @@ func TestPlannerEnablesRowSecurityForANewTableWhoseSpellingDiffersLivePostgres(t
 			diff: &difftypes.SchemaDiff{
 				TablesAdded: []string{"orders"},
 				RLSPoliciesAdded: []difftypes.RLSPolicyRef{
-					{PolicyName: "tenant_isolation", TableName: "orders"},
+					{PolicyName: "tenant_isolation", TableName: "orders", Desired: ordersPolicy("orders")},
 				},
 			},
 			desired:         ordersSchema("", "orders"),
